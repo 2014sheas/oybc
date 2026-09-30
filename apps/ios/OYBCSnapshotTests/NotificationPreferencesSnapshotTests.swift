@@ -7,6 +7,11 @@ import SnapshotTesting
 /// presentational leaf `NotificationPreferencesContent` (props + closures), so
 /// — unlike the AuthService-bound container — it needs no Firebase/DB. Covers
 /// the master-off, enabled, daily-time-expanded, and denied states.
+///
+/// Profile reorg PR3 added the "BOARD RENEWALS" card (always shown,
+/// independent of the master toggle) below the existing "Reminders
+/// scheduled on this device…" footer — every fixed height below is bumped
+/// to fit it without clipping.
 @MainActor
 final class NotificationPreferencesSnapshotTests: XCTestCase {
 
@@ -23,7 +28,7 @@ final class NotificationPreferencesSnapshotTests: XCTestCase {
         assertSnapshot(
             of: NotificationPreferencesContent(
                 preferences: prefs(master: false), authorizationStatus: .notDetermined),
-            as: .image(layout: .fixed(width: 393, height: 460)),
+            as: .image(layout: .fixed(width: 393, height: 740)),
             record: recordMode
         )
     }
@@ -32,7 +37,7 @@ final class NotificationPreferencesSnapshotTests: XCTestCase {
         assertSnapshot(
             of: NotificationPreferencesContent(
                 preferences: prefs(master: true), authorizationStatus: .authorized),
-            as: .image(layout: .fixed(width: 393, height: 720)),
+            as: .image(layout: .fixed(width: 393, height: 1000)),
             record: recordMode
         )
     }
@@ -41,7 +46,7 @@ final class NotificationPreferencesSnapshotTests: XCTestCase {
         assertSnapshot(
             of: NotificationPreferencesContent(
                 preferences: prefs(master: true, daily: true), authorizationStatus: .authorized),
-            as: .image(layout: .fixed(width: 393, height: 800)),
+            as: .image(layout: .fixed(width: 393, height: 1080)),
             record: recordMode
         )
     }
@@ -50,7 +55,7 @@ final class NotificationPreferencesSnapshotTests: XCTestCase {
         assertSnapshot(
             of: NotificationPreferencesContent(
                 preferences: prefs(master: true), authorizationStatus: .denied),
-            as: .image(layout: .fixed(width: 393, height: 480)),
+            as: .image(layout: .fixed(width: 393, height: 760)),
             record: recordMode
         )
     }
@@ -60,7 +65,7 @@ final class NotificationPreferencesSnapshotTests: XCTestCase {
             of: NotificationPreferencesContent(
                 preferences: prefs(master: true, daily: true), authorizationStatus: .authorized),
             as: .image(
-                layout: .fixed(width: 393, height: 800),
+                layout: .fixed(width: 393, height: 1080),
                 traits: .init(userInterfaceStyle: .dark)),
             record: recordMode
         )

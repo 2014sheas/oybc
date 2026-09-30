@@ -11,14 +11,32 @@ import SwiftUI
 /// 2. A repeating-boards roster — ALL spawn records, active AND paused
 ///    (the safety net for paused boards; unlike the old templates page
 ///    there's no `+ New` here — creation happens from the Create hub's
-///    "Start a recurring board" CTA) — with Pause/Resume (reusing
-///    `RecurringTemplateCard`'s toggle) and Edit tasks (opens the recurring
+///    "Start a recurring board" CTA, or this screen's own "New ›" link,
+///    which routes to the same entry) — with Pause/Resume (reusing
+///    `RecurringTemplateCard`'s toggle) and Edit (opens the recurring
 ///    wizard in edit mode via `fullScreenCover` — "EDIT RECURRING BOARD").
 ///
-/// Container view stays thin: it owns loading + the two sheet
-/// presentations; all form logic lives in the two sheet views.
+/// Profile reorg PR3 restructured the groups to "EVERY NEW BOARD" /
+/// "PRE-FILLED TASKS BY TIMEFRAME" / "REPEATING BOARDS" (renamed from
+/// "New board defaults" / "Core board defaults" / "Repeating boards") and
+/// moved the "Recurring board reminders" group to
+/// `NotificationPreferencesView` — see `design_handoff_profile_reorg/
+/// README.md` §4. This container stays thin: it owns loading + the two
+/// sheet presentations; all layout/copy lives in the presentational
+/// `BoardSettingsContent` leaf, split out the same way
+/// `NotificationPreferencesView`/`NotificationPreferencesContent` already
+/// are so the restructured screen is snapshot-testable without
+/// Firebase/DB.
 struct BoardSettingsView: View {
     @EnvironmentObject var authService: AuthService
+
+    /// Opens the Create tab's recurring-board wizard entry (the same
+    /// `enterFreshWizard(startRecurring: true)` path
+    /// `CreateHubBoardCTAView(kind: .recurring)` uses) — wired by
+    /// `MainTabView` to a cross-tab hop, the way `.createBoard` is
+    /// handled for tutorial deep-links. Defaults to a no-op for previews/
+    /// tests that don't exercise cross-tab navigation.
+    var onNewRepeatingBoard: () -> Void = {}
 
     @State private var coreDefaultsByTimeframe: [Timeframe: CoreBoardDefault] = [:]
     @State private var pools: [Pool] = []
@@ -43,71 +61,33 @@ struct BoardSettingsView: View {
     @State private var defaultsEditTarget: DefaultsEditTarget?
     @State private var rosterEditTarget: RosterEditTarget?
 
-    /// `.custom` is excluded — same reason as everywhere else in this
-    /// feature: a "default" tied to a computed recurring window has no
-    /// semantic for a custom-window board.
-    private static let coreTimeframes: [Timeframe] = [.daily, .weekly, .monthly, .yearly]
-
     private var tasksById: [String: Task] {
         Dictionary(uniqueKeysWithValues: tasks.map { ($0.id, $0) })
     }
     private var poolsById: [String: Pool] {
         Dictionary(uniqueKeysWithValues: pools.map { ($0.id, $0) })
     }
+    private var preferences: UserPreferences { authService.userPreferences }
 
     var body: some View {
-        ZStack {
-            RisoPaperBackground()
-            ScrollView(showsIndicators: false) {
-                VStack(alignment: .leading, spacing: 0) {
-                    RisoSubPageHeader(title: "Board settings")
-                        .padding(.top, 16)
-                        .padding(.bottom, 16)
-
-                    Text("Core-board defaults pre-fill setup for a fresh Daily/Weekly/Monthly/Yearly board. Repeating boards print a fresh card each cycle from a pool.")
-                        .font(.risoBody(13, .regular))
-                        .foregroundStyle(Color.risoMuted)
-                        .padding(.horizontal, Riso.gutter)
-                        .padding(.bottom, 14)
-
-                    sectionLabel("New board defaults")
-                    newBoardsCard
-                        .padding(.horizontal, Riso.gutter)
-                        .padding(.bottom, 20)
-
-                    sectionLabel("Core board defaults")
-                    VStack(spacing: 10) {
-                        ForEach(Self.coreTimeframes, id: \.self) { tf in
-                            defaultsRow(tf)
-                        }
-                    }
-                    .padding(.horizontal, Riso.gutter)
-                    .padding(.bottom, 20)
-
-                    sectionLabel("Repeating boards")
-                    rosterSection
-                        .padding(.horizontal, Riso.gutter)
-                        .padding(.bottom, 20)
-
-                    sectionLabel("Recurring board reminders")
-                    Text("When enabled, the Boards tab will prompt you to create a board for each new window. Detection runs only when you open the app — no background notifications.")
-                        .font(.risoBody(13, .regular))
-                        .foregroundStyle(Color.risoMuted)
-                        .padding(.horizontal, Riso.gutter)
-                        .padding(.bottom, 10)
-                    recurringRemindersCard
-                        .padding(.horizontal, Riso.gutter)
-                        .padding(.bottom, 20)
-
-                    if let loadError {
-                        Text(loadError)
-                            .font(.risoBody(12, .regular)).foregroundStyle(Color.risoRed)
-                            .padding(.horizontal, Riso.gutter).padding(.bottom, 12)
-                    }
-                }
-            }
-        }
-        .navigationBarHidden(true)
+        BoardSettingsContent(
+            preferences: preferences,
+            coreDefaultsByTimeframe: coreDefaultsByTimeframe,
+            poolsById: poolsById,
+            tasksById: tasksById,
+            templates: rosterVM.templates,
+            attentionByTemplateId: rosterVM.attentionByTemplateId,
+            taskCountByTemplateId: rosterVM.mixByTemplateId.mapValues { $0.count },
+            loadError: loadError,
+            onSetDefaultSize: { bind(\.defaultBoardSize).wrappedValue = $0 },
+            onSetDefaultTimeframe: { bind(\.defaultTimeframe).wrappedValue = $0 },
+            onSetCenterType: { bind(\.defaultCenterType).wrappedValue = $0 },
+            onSetWeekStart: { bind(\.weekStartDay).wrappedValue = $0 },
+            onTapDefaultsRow: { defaultsEditTarget = .timeframe($0) },
+            onNewRepeatingBoard: onNewRepeatingBoard,
+            onTapTemplate: { rosterEditTarget = RosterEditTarget(template: $0) },
+            onToggleTemplateActive: { tpl, newValue in setActive(tpl, newValue) }
+        )
         .onAppear { reload() }
         .sheet(item: $defaultsEditTarget) { target in
             switch target {
@@ -132,13 +112,14 @@ struct BoardSettingsView: View {
             }
         }
         .fullScreenCover(item: $rosterEditTarget) { target in
-            // Board Creation Split (PR B) — "Edit tasks" now opens the full
-            // recurring wizard in EDIT mode (kicker "EDIT RECURRING BOARD",
-            // schedule note "Changes apply from the next board · current
-            // board keeps playing", footer Cancel / "Save Changes") instead
-            // of the retired local `RepeatingBoardEditSheetView`. Pause/
-            // resume (`setActive`, below) is unaffected — it stays a
-            // direct roster-row toggle, no wizard hop.
+            // Board Creation Split (PR B) — tapping a roster row opens the
+            // full recurring wizard in EDIT mode (kicker "EDIT RECURRING
+            // BOARD", schedule note "Changes apply from the next board ·
+            // current board keeps playing", footer Cancel / "Save
+            // Changes") instead of the retired local
+            // `RepeatingBoardEditSheetView`. Pause/resume (`setActive`,
+            // below) is unaffected — it stays a direct roster-row toggle,
+            // no wizard hop.
             BoardWizardView(
                 userId: authService.currentUser?.id ?? "",
                 preferences: preferences,
@@ -156,100 +137,11 @@ struct BoardSettingsView: View {
         }
     }
 
-    // MARK: - Section label
-
-    private func sectionLabel(_ title: String) -> some View {
-        Text(title)
-            .risoSectionLabel()
-            .padding(.horizontal, Riso.gutter)
-            .padding(.bottom, 8)
-    }
-
-    // MARK: - New board defaults card
+    // MARK: - Preferences bindings
     //
     // Ported verbatim from the retired `BoardPreferencesView` (Default size /
     // Center square / Week starts). All controls write through
     // `AppDatabase.updateUserPreferences` via the `bind(_:)` helper below.
-
-    private var preferences: UserPreferences { authService.userPreferences }
-
-    private var newBoardsCard: some View {
-        VStack(spacing: 0) {
-            segRow(label: "Default size",
-                   options: [(DefaultBoardSize.three, "3×3"),
-                             (DefaultBoardSize.four, "4×4"),
-                             (DefaultBoardSize.five, "5×5")],
-                   selection: bind(\.defaultBoardSize))
-            rowDivider
-            defaultTimeframeRow
-            rowDivider
-            segRow(label: "Center square",
-                   options: [(DefaultCenterSquareType.free, "Free"),
-                             (DefaultCenterSquareType.none, "None")],
-                   selection: bind(\.defaultCenterType))
-            rowDivider
-            VStack(alignment: .leading, spacing: 4) {
-                segRow(label: "Week starts",
-                       options: [(WeekStartDay.monday, "Mon"),
-                                 (WeekStartDay.sunday, "Sun")],
-                       selection: bind(\.weekStartDay))
-                Text("Sets when weekly boards reset and renew.")
-                    .font(.risoBody(12, .regular)).foregroundStyle(Color.risoMuted)
-                    .padding(.horizontal, Riso.cardPadding).padding(.bottom, 10)
-            }
-        }
-        .risoCard()
-        .risoHardShadow(Riso.Shadow.small, radius: Riso.cardRadius)
-    }
-
-    private func segRow<V: Hashable>(
-        label: String,
-        options: [(V, String)],
-        selection: Binding<V>
-    ) -> some View {
-        HStack(spacing: 10) {
-            Text(label).font(.risoBody(14, .bold)).foregroundStyle(Color.risoInk)
-                .frame(minWidth: 80, alignment: .leading)
-            Spacer()
-            // Sizes-to-content (not `.fixedSize()`, which collapsed the
-            // equal-width layout into mismatched, clipping pills).
-            RisoSegmented(options: options.map { (value: $0.0, label: $0.1) },
-                          selection: selection,
-                          equalWidth: false)
-        }
-        .padding(.horizontal, Riso.cardPadding)
-        .padding(.vertical, 12)
-    }
-
-    private var rowDivider: some View {
-        Divider().background(Color.risoInk.opacity(0.12))
-            .padding(.horizontal, Riso.cardPadding)
-    }
-
-    /// "Default timeframe" — mirrors web's New-board-defaults `<select>`
-    /// (`BoardSettingsPage.tsx` "Default timeframe" row) exactly: Custom /
-    /// Daily / Weekly / Monthly / Yearly, bound to `UserPreferences.
-    /// defaultTimeframe`, which seeds the wizard's one-off Timeframe picker
-    /// (`BoardWizardViewModel.resolveTimeframe`). Five segments are too
-    /// cramped to sit beside a label in `segRow`'s HStack, so this stacks
-    /// the label above a full-width `RisoSegmented` instead — the same
-    /// layout the wizard's own timeframe picker uses
-    /// (`RisoBoardSetupForm.timeframeSection`).
-    private var defaultTimeframeRow: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Default timeframe").font(.risoBody(14, .bold)).foregroundStyle(Color.risoInk)
-            RisoSegmented(
-                options: [(DefaultTimeframe.custom, "Custom"),
-                          (DefaultTimeframe.daily, "Daily"),
-                          (DefaultTimeframe.weekly, "Weekly"),
-                          (DefaultTimeframe.monthly, "Monthly"),
-                          (DefaultTimeframe.yearly, "Yearly")],
-                selection: bind(\.defaultTimeframe)
-            )
-        }
-        .padding(.horizontal, Riso.cardPadding)
-        .padding(.vertical, 12)
-    }
 
     /// Two-way Binding for a UserPreferences field that writes through
     /// AppDatabase.updateUserPreferences (bumps version/updatedAt + enqueues sync).
@@ -271,82 +163,6 @@ struct BoardSettingsView: View {
                 }
             }
         )
-    }
-
-    // MARK: - Recurring board reminders card
-    //
-    // Phase 6.1 "prompt me" toggles (§Recurring Boards, CLAUDE.md) — drive
-    // the Boards-tab banner, gated per-timeframe. iOS already HELD and
-    // CONSUMED these four `UserPreferences` fields (banner gating in
-    // `RecurringBoards.swift`, notification planning in
-    // `NotificationPlanner.swift`) with no UI to change them; this card
-    // closes that parity gap. Labels/copy mirror web's
-    // `BoardSettingsPage.tsx` `RECURRING_TOGGLES` verbatim.
-
-    private var recurringRemindersCard: some View {
-        VStack(spacing: 0) {
-            reminderToggleRow(label: "Prompt for daily board", value: bind(\.recurringDailyEnabled))
-            rowDivider
-            reminderToggleRow(label: "Prompt for weekly board", value: bind(\.recurringWeeklyEnabled))
-            rowDivider
-            reminderToggleRow(label: "Prompt for monthly board", value: bind(\.recurringMonthlyEnabled))
-            rowDivider
-            reminderToggleRow(label: "Prompt for yearly board", value: bind(\.recurringYearlyEnabled))
-        }
-        .risoCard()
-        .risoHardShadow(Riso.Shadow.small, radius: Riso.cardRadius)
-    }
-
-    private func reminderToggleRow(label: String, value: Binding<Bool>) -> some View {
-        HStack(spacing: 10) {
-            Text(label).font(.risoBody(14, .bold)).foregroundStyle(Color.risoInk)
-            Spacer()
-            RisoPillSwitch(isOn: value)
-        }
-        .padding(.horizontal, Riso.cardPadding)
-        .padding(.vertical, 12)
-    }
-
-    // MARK: - Core-board defaults rows
-
-    private func defaultsRow(_ tf: Timeframe) -> some View {
-        let coreDefault = coreDefaultsByTimeframe[tf]
-        let resolved = BoardWizardViewModel.resolveCoreBoardDefaultPrefill(
-            corePoolIds: coreDefault?.corePoolIds ?? [],
-            coreDefaultTaskIds: coreDefault?.coreDefaultTaskIds ?? [],
-            poolsById: poolsById,
-            tasksById: tasksById
-        )
-        let poolNames = resolved.pulledPoolIds.compactMap { poolsById[$0]?.name }
-        // Per-timeframe size + centre — the suffix appears only when this
-        // timeframe explicitly overrides either field; an inheriting row
-        // shows no suffix even though it still resolves to a size.
-        let setup = hasExplicitCoreBoardSetup(coreDefault)
-            ? resolveCoreBoardSetupDefaults(coreDefault: coreDefault, preferences: preferences)
-            : nil
-        let summary = Self.formatDefaultsSummary(
-            resolvedCount: resolved.selectedTaskIds.count, poolNames: poolNames, setup: setup
-        )
-
-        return Button { defaultsEditTarget = .timeframe(tf) } label: {
-            HStack(spacing: 10) {
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(tf.risoDisplayName)
-                        .font(.risoHead(15, .bold)).foregroundStyle(Color.risoInk)
-                    Text(summary)
-                        .font(.risoBody(12, .regular))
-                        .foregroundStyle(resolved.selectedTaskIds.isEmpty ? Color.risoMuted : Color.risoInk)
-                }
-                Spacer()
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 12, weight: .bold))
-                    .foregroundStyle(Color.risoMuted)
-            }
-            .padding(Riso.cardPadding)
-            .risoCard()
-            .risoHardShadow(Riso.Shadow.small, radius: Riso.cardRadius)
-        }
-        .buttonStyle(.plain)
     }
 
     /// Pure, testable summary line for a defaults row. Copy rule (owner-
@@ -392,33 +208,6 @@ struct BoardSettingsView: View {
         return setup.centerType == .free ? "\(size) · free space" : "\(size) · no free space"
     }
 
-    // MARK: - Repeating-boards roster
-
-    @ViewBuilder
-    private var rosterSection: some View {
-        if rosterVM.templates.isEmpty {
-            Text("No repeating boards yet — turn one on from a board's \"Repeats\" setting when you create it, or \"Repeat this board…\" from an existing one.")
-                .font(.risoBody(12.5, .regular))
-                .foregroundStyle(Color.risoMuted)
-        } else {
-            VStack(spacing: 10) {
-                ForEach(rosterVM.templates, id: \.id) { tpl in
-                    RecurringTemplateCard(
-                        template: tpl,
-                        attentionReason: rosterVM.attentionByTemplateId[tpl.id],
-                        poolPreview: rosterVM.poolPreviewByTemplateId[tpl.id] ?? [],
-                        poolPreviewOverflow: rosterVM.poolPreviewOverflowByTemplateId[tpl.id] ?? 0,
-                        poolTaskCount: rosterVM.mixByTemplateId[tpl.id]?.count,
-                        onEdit: { rosterEditTarget = RosterEditTarget(template: tpl) },
-                        onToggleActive: { newValue in setActive(tpl, newValue) },
-                        onDelete: { deleteTemplate(id: tpl.id) },
-                        onAddTasks: { rosterEditTarget = RosterEditTarget(template: tpl) }
-                    )
-                }
-            }
-        }
-    }
-
     // MARK: - Roster actions
 
     /// Pause / resume a repeating board. Routes through
@@ -435,20 +224,6 @@ struct BoardSettingsView: View {
                 )
                 await MainActor.run { rosterVM.reloadAsync(userId: userId) }
             } catch { dlog("[BoardSettingsView] toggle active failed: \(error)") }
-        }
-    }
-
-    /// Soft-delete a repeating board. Spawned boards are intentionally
-    /// left untouched (see the card's confirm copy).
-    private func deleteTemplate(id: String) {
-        guard let userId = authService.currentUser?.id else { return }
-        _Concurrency.Task.detached {
-            do {
-                try AppDatabase.shared.softDeleteRecurringBoardTemplateAndEnqueue(
-                    id: id, now: AppDatabase.currentTimestamp()
-                )
-                await MainActor.run { rosterVM.reloadAsync(userId: userId) }
-            } catch { dlog("[BoardSettingsView] deleteTemplate failed: \(error)") }
         }
     }
 

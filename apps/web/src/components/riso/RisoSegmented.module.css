@@ -65,6 +65,42 @@
   color: var(--riso-on-color);
 }
 
+/* ---- card, compact ----
+   Smaller bordered buttons for a right-aligned inline row control (Board
+   settings' Size / Center square / Week starts rows) — natural width, no
+   90px min-width, so 2–3 short options sit compactly beside a row label. */
+.card.compact {
+  gap: 6px;
+}
+.card.compact .seg {
+  min-width: 0;
+  border-width: 1.5px;
+  font-size: 13px;
+  padding: 7px 12px;
+}
+
+/* ---- card, fullWidth ----
+   Stretches to the container width and splits evenly across ALL options
+   with no wrap — for a fixed-count full-width row (Board settings'
+   5-option Timeframe picker must not wrap even at a 393px viewport). Pairs
+   with `.compact` for smaller per-segment padding/font so five labels
+   ("Monthly") still fit without wrapping their own text. */
+.card.fullWidth {
+  width: 100%;
+  flex-wrap: nowrap;
+}
+.card.fullWidth .seg {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.card.fullWidth.compact .seg {
+  padding: 8px 2px;
+  font-size: 11px;
+}
+
 /* Keyboard focus ring for both pill and card segments. */
 .seg:focus-visible {
   outline: 3px solid var(--riso-blue);

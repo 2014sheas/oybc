@@ -51,6 +51,34 @@
   margin-top: 0.5rem;
 }
 
+/* Section label + trailing link, e.g. "REPEATING BOARDS … New ›" — mirrors
+   ProfilePage's `.countersHeader`/`.countersAllLink` pattern (self-contained
+   copy per this file's own convention). */
+.sectionHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.sectionHeader .sectionLabel {
+  margin: 0;
+}
+.sectionHeaderLink {
+  margin: 1.5rem 0 0.5rem;
+  font-family: var(--riso-font-head);
+  font-weight: 700;
+  font-size: 0.85rem;
+  color: var(--riso-blue);
+  text-decoration: none;
+}
+.sectionHeaderLink:hover {
+  text-decoration: underline;
+}
+.sectionHeaderLink:focus-visible {
+  outline: 3px solid var(--riso-blue);
+  outline-offset: 2px;
+}
+
 .card {
   background: var(--riso-paper-2);
   border: 2px solid var(--riso-ink);
@@ -136,40 +164,19 @@
   gap: 10px;
 }
 
-/* ─── New board defaults ──────────────────────────────────────────────
-   Self-contained copy of ProfilePage's settingsRow/select pattern (retired
-   `BoardPreferencesPage` used ProfilePage.module.css directly; this page
-   keeps its own CSS module self-contained per convention, so the classes
-   are duplicated here rather than cross-imported). The toggle/browseLink/
-   sectionIntro rules that used to live here for the "Recurring board
-   reminders" group moved with it to SettingsPage.module.css (Profile reorg
-   PR1, owner decision 3) — that group no longer renders on this page. */
-.settingsRow {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 13px 16px;
-  border-bottom: 1.5px solid var(--riso-hair);
-}
-.settingsRow:last-child {
-  border-bottom: none;
-}
+/* "EVERY NEW BOARD" (Size/Timeframe/Center square/Week starts) moved into
+   its own `EveryNewBoardCard` component + CSS module (Profile reorg PR3) —
+   this page no longer renders the plain `<select>` row markup that used to
+   live here. The toggle/browseLink/sectionIntro rules that used to live
+   here for the "Recurring board reminders" group moved with it to
+   SettingsPage.module.css (Profile reorg PR1, owner decision 3) — that
+   group no longer renders on this page either. */
 
-.select {
-  background: var(--riso-paper);
-  border: 2px solid var(--riso-ink);
-  border-radius: var(--riso-r-card);
-  color: var(--riso-ink);
-  font-family: var(--riso-font-head);
-  font-weight: 700;
-  font-size: 14px;
-  padding: 7px 10px;
-  min-width: 112px;
-  cursor: pointer;
-}
-.select:focus-visible {
-  outline: 3px solid var(--riso-blue);
-  outline-offset: 1px;
+.footerHelper {
+  margin: 10px 2px 0;
+  font-size: 0.8rem;
+  font-weight: 500;
+  line-height: 1.5;
+  color: var(--riso-muted);
 }
 

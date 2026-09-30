@@ -228,6 +228,31 @@ export async function seedTemplate(page: Page, template: SeedTemplate): Promise<
   }, row);
 }
 
+/**
+ * Read one `RecurringBoardTemplate` row by id via raw IndexedDB (same
+ * pattern as `readCoreBoardDefault`/`readUserPreferences`). Used by
+ * `board-settings.spec.ts` to assert a repeating-board row's Pause/Resume
+ * toggle actually persisted `isActive` to Dexie (Profile reorg PR3).
+ */
+export async function readTemplate(page: Page, id: string): Promise<Record<string, unknown> | null> {
+  return await page.evaluate(async (templateId) => {
+    return new Promise<Record<string, unknown> | null>((resolve, reject) => {
+      const openReq = indexedDB.open('oybc');
+      openReq.onerror = () => reject(openReq.error);
+      openReq.onsuccess = () => {
+        const db = openReq.result;
+        const tx = db.transaction(['recurringBoardTemplates'], 'readonly');
+        const req = tx.objectStore('recurringBoardTemplates').get(templateId);
+        req.onsuccess = () => {
+          db.close();
+          resolve((req.result as Record<string, unknown> | undefined) ?? null);
+        };
+        req.onerror = () => reject(req.error);
+      };
+    });
+  }, id);
+}
+
 // ─── Task Pools + Recurring Boards Rework (P1/P3) — Pool seed helper ───────
 
 /** Shape of a `Pool` row (P1). Same loose-typed-Record convention as

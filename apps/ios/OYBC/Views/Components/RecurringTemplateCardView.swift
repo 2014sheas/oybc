@@ -1,38 +1,41 @@
 import SwiftUI
 
-/// RecurringTemplateCard — Riso keyline card for one recurring board
-/// template on the Profile "Recurring templates" sub-page. iOS twin of
-/// web's `RecurringTemplateRow.tsx`.
+/// RecurringTemplateCard — compact one-line row for one repeating board
+/// template on `BoardSettingsView`'s "REPEATING BOARDS" card (Profile reorg
+/// PR3, `design_handoff_profile_reorg/README.md` §4). iOS twin of web's
+/// `components/boardSettings/RepeatingBoardRow.tsx` (meta line helpers ↔
+/// its `repeatingBoardMeta.ts`).
 ///
-/// Header row: name + timeframe tag + active toggle. Meta row: board
-/// size · pool size · renew cadence (or "paused"), with a trailing
-/// Delete affordance (confirm-guarded), matching web's visible Delete
-/// button + confirm copy. Below that: an optional pool-preview chip row
-/// (first 3 resolved task titles + "+{k} more" overflow) and a trailing
-/// "Add tasks" link that deep-links into the wizard's Tasks step — both
-/// issue #321. "Add tasks" is its own row rather than packed into
-/// `metaRow`, which already runs tight against the meta label group
-/// (e.g. "renews Mondays") and would truncate it. An optional "needs
-/// attention" badge surfaces an empty / invalid pool (see
-/// `attentionReason`), mirroring web's `attentionBadge` semantics + copy.
+/// Row 1: name (muted when paused) + timeframe tag, trailing active toggle
+/// + chevron. Row 2 (meta): `{size} board · {n}-task pool · renews {day}`
+/// or `… · paused`. An optional "needs attention" badge surfaces an empty /
+/// invalid pool (see `attentionReason`), mirroring web's `attentionBadge`
+/// semantics + copy.
 ///
-/// Tapping the card opens the board wizard hydrated from this template
-/// (edit mode) — the same cross-tab route web's row Edit button used.
-/// The card is not wrapped in a `Button` (which would swallow the inner
-/// toggle / Delete controls); it uses `.onTapGesture` on the card body
-/// so the toggle and Delete keep their own hit targets.
+/// Profile reorg PR3 dropped the pool-preview chip row, the "Add tasks"
+/// link, and the inline "Delete" affordance that this component used to
+/// render (issue #321 / Board Creation Split PR B) — those stayed useful
+/// while this WAS the only place to manage a repeating board, but the
+/// design now routes editing entirely through the wizard's "EDIT RECURRING
+/// BOARD" mode (`onEdit`), and the card chrome (border/shadow/background)
+/// moved OUT to the single composite card `BoardSettingsContent` wraps
+/// every row in — this component is now a plain row, not its own card.
+/// Delete now lives in the editor: the "Delete repeating board" row on the
+/// wizard's Setup step (`BoardWizardSetupStepView` → `BoardWizardView`'s
+/// `.alert` → `deleteEditedRecurringTemplate`, the same soft-delete op
+/// this row used to call).
+///
+/// Tapping the row opens the board wizard hydrated from this template
+/// (edit mode) — the same cross-tab route web's row Edit button used. The
+/// row is not wrapped in a `Button` (which would swallow the inner
+/// toggle), so it uses `.onTapGesture` + `.contentShape(Rectangle())` on
+/// the row body instead.
 struct RecurringTemplateCard: View {
 
     let template: RecurringBoardTemplate
     /// Non-nil when this template's pool can't spawn — surfaces a badge.
-    /// Strict mirror of web's `attentionReason` (see `RecurringTemplateRow`).
+    /// Strict mirror of web's `attentionReason` (see `RepeatingBoardRow`).
     let attentionReason: SpawnAttentionReason?
-    /// First-3 resolved task titles from the pool, in mix order (issue
-    /// #321). Empty ⇒ no chip row (e.g. zero resolvable titles).
-    var poolPreview: [String] = []
-    /// Count of additional resolved titles beyond `poolPreview`'s first 3.
-    /// 0 ⇒ no "+{k} more" overflow chip.
-    var poolPreviewOverflow: Int = 0
     /// The "N-task pool" meta-row count. P1 (Task Pools + Recurring
     /// Boards Rework) — `template.seedTaskIds.count` goes stale the first
     /// time the legacy-editor write-through edits the linked Pool (see
@@ -42,43 +45,29 @@ struct RecurringTemplateCard: View {
     /// previews/snapshots that construct a bare template with no live
     /// mix data.
     var poolTaskCount: Int? = nil
+    /// User's week-start preference (Mon/Sun) — a weekly template's
+    /// "renews {day}" text honors this instead of assuming Monday.
+    /// Defaults to `.monday` for call sites (previews/snapshots) that
+    /// don't otherwise care.
+    var weekStartDay: WeekStartDay = .monday
     let onEdit: () -> Void
     let onToggleActive: (Bool) -> Void
-    let onDelete: () -> Void
-    /// Deep-links into the wizard hydrated from this template, landing on
-    /// the Tasks step (step 2) instead of Setup (step 1) — issue #321.
-    var onAddTasks: () -> Void = {}
-
-    @State private var showDeleteConfirm = false
 
     private var active: Bool { template.isActive }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 6) {
             headerRow
-            metaRow
-            poolPreviewRow
-            addTasksRow
+            metaLabelGroup
             if let reason = attentionReason {
                 attentionBadge(reason)
             }
         }
-        .padding(Riso.cardPadding)
-        .risoCard(fill: active ? .risoPaper2 : .risoPaper)
-        .risoHardShadow(Riso.Shadow.small, radius: Riso.cardRadius)
+        .padding(.horizontal, Riso.cardPadding)
+        .padding(.vertical, 12)
         .opacity(active ? 1.0 : 0.7)
         .contentShape(Rectangle())
         .onTapGesture { onEdit() }
-        .confirmationDialog(
-            "Delete \"\(template.name)\"?",
-            isPresented: $showDeleteConfirm,
-            titleVisibility: .visible
-        ) {
-            Button("Delete template", role: .destructive) { onDelete() }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("Boards spawned from this template will not be deleted.")
-        }
     }
 
     // MARK: - Rows
@@ -86,86 +75,30 @@ struct RecurringTemplateCard: View {
     private var headerRow: some View {
         HStack(spacing: 8) {
             Text(template.name)
-                .font(.risoHead(17, .extraBold))
+                .font(.risoHead(16, .extraBold))
                 .foregroundStyle(active ? Color.risoInk : Color.risoMuted)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .lineLimit(1)
             timeframeTag
             RisoPillSwitch(isOn: Binding(get: { active }, set: { onToggleActive($0) }))
+            Image(systemName: "chevron.right")
+                .font(.system(size: 12, weight: .bold))
+                .foregroundStyle(Color.risoMuted)
+                .accessibilityHidden(true) // decorative — the row itself is the affordance
         }
-    }
-
-    private var metaRow: some View {
-        HStack(spacing: 4) {
-            metaLabelGroup
-                .lineLimit(1)
-            Spacer(minLength: 6)
-            Button { showDeleteConfirm = true } label: {
-                Text("Delete")
-                    .font(.risoBody(12, .semibold))
-                    .foregroundStyle(Color.risoRed)
-            }
-            .buttonStyle(.plain)
-        }
-    }
-
-    /// "Add tasks" deep-link (issue #321) — its own row rather than crowding
-    /// into `metaRow`, which already runs tight against the meta label
-    /// group (e.g. "renews Mondays"); packing a second button in there
-    /// truncated it.
-    private var addTasksRow: some View {
-        HStack {
-            Spacer()
-            Button(action: onAddTasks) {
-                Text("Add tasks")
-                    .font(.risoBody(12, .semibold))
-                    .foregroundStyle(Color.risoBlue)
-            }
-            .buttonStyle(.plain)
-        }
-    }
-
-    /// Compact pool-preview chip row (issue #321) — up to 3 resolved task
-    /// titles, plus a "+{k} more" overflow chip. Empty `poolPreview` ⇒ no
-    /// row at all (e.g. every seed id is unresolvable).
-    @ViewBuilder
-    private var poolPreviewRow: some View {
-        if !poolPreview.isEmpty {
-            FlowLayout(spacing: 6) {
-                ForEach(poolPreview, id: \.self) { title in
-                    poolPreviewChip(title.isEmpty ? "(untitled)" : title)
-                }
-                if poolPreviewOverflow > 0 {
-                    poolPreviewChip("+\(poolPreviewOverflow) more")
-                }
-            }
-        }
-    }
-
-    private func poolPreviewChip(_ text: String) -> some View {
-        Text(text)
-            .font(.risoBody(11, .regular))
-            .foregroundStyle(Color.risoInk)
-            .lineLimit(1)
-            .padding(.vertical, 4)
-            .padding(.horizontal, 9)
-            .background(Capsule().fill(Color.risoPaper2))
-            .overlay(Capsule().strokeBorder(Color.risoInk, lineWidth: Riso.Keyline.dense))
     }
 
     private var metaLabelGroup: some View {
-        HStack(spacing: 4) {
-            Text("\(template.boardSize)×\(template.boardSize)").font(.risoBody(12, .bold))
-                .foregroundStyle(active ? Color.risoInk : Color.risoMuted)
-            Text("board").font(.risoBody(12, .regular)).foregroundStyle(Color.risoMuted)
-            Text("·").foregroundStyle(Color.risoMuted)
-            Text("\(poolTaskCount ?? template.seedTaskIds.count)").font(.risoBody(12, .bold))
-                .foregroundStyle(active ? Color.risoInk : Color.risoMuted)
-            Text("-task pool").font(.risoBody(12, .regular)).foregroundStyle(Color.risoMuted)
-            Text("·").foregroundStyle(Color.risoMuted)
-            Text(active ? "renews \(renewText)" : "paused")
-                .font(.risoBody(12, .regular)).foregroundStyle(Color.risoMuted)
-        }
+        Text(Self.formatMetaLine(
+            boardSize: template.boardSize,
+            taskCount: poolTaskCount ?? template.seedTaskIds.count,
+            isActive: active,
+            timeframe: template.timeframe,
+            weekStartDay: weekStartDay
+        ))
+        .font(.risoBody(12, .regular))
+        .foregroundStyle(Color.risoMuted)
+        .lineLimit(1)
     }
 
     // MARK: - Attention badge
@@ -226,14 +159,36 @@ struct RecurringTemplateCard: View {
             .overlay(Capsule().strokeBorder(Color.risoInk, lineWidth: Riso.Keyline.dense))
     }
 
-    private var renewText: String {
-        switch template.timeframe {
-        case .weekly: return "Mondays"
+    // MARK: - Pure, testable meta-line helpers (RecurringTemplateMetaTests)
+
+    /// Renewal-day copy for a repeating board's meta line. Weekly honors
+    /// the user's `WeekStartDay` preference (Mon/Sun); the other
+    /// timeframes are fixed. `.custom` / `.indefinite` are excluded from
+    /// repeating-board creation at the form layer but handled here too so
+    /// the switch stays exhaustive.
+    static func renewalDayText(timeframe: Timeframe, weekStartDay: WeekStartDay) -> String {
+        switch timeframe {
+        case .weekly: return weekStartDay == .monday ? "Mondays" : "Sundays"
         case .monthly: return "the 1st"
         case .daily: return "every morning"
         case .yearly: return "Jan 1"
         case .custom: return "custom"
         case .indefinite: return "ongoing"
         }
+    }
+
+    /// Full meta line: `"{size}×{size} board · {n}-task pool · renews
+    /// {day}"`, or `"… · paused"` when the template is inactive (paused
+    /// state never shows a renewal day — there isn't one until resumed).
+    static func formatMetaLine(
+        boardSize: Int,
+        taskCount: Int,
+        isActive: Bool,
+        timeframe: Timeframe,
+        weekStartDay: WeekStartDay
+    ) -> String {
+        let base = "\(boardSize)×\(boardSize) board · \(taskCount)-task pool"
+        guard isActive else { return "\(base) · paused" }
+        return "\(base) · renews \(renewalDayText(timeframe: timeframe, weekStartDay: weekStartDay))"
     }
 }

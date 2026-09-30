@@ -1,20 +1,38 @@
-/* RepeatingBoardRow — Board-settings roster row (P7). Row/chip/badge/action
-   classes carried over verbatim from the retired RecurringTemplatesPage's
-   row styling (docs/POOLS_RECURRING.md §Migration). */
+/* RepeatingBoardRow — Board-settings compact repeating-board row (Profile
+   reorg PR3). The whole row is a button (opens the template editor); the
+   toggle stops propagation so Pause/Resume doesn't also open the editor.
+   The toggle-switch rules are a self-contained copy of SettingsPage's (both
+   files already follow this "duplicate rather than cross-import" CSS
+   convention). */
 
 .row {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: 12px;
+  width: 100%;
   padding: 14px;
   background: var(--riso-paper-2);
-  border: 2px solid var(--riso-ink);
-  border-radius: var(--riso-r-card);
-  box-shadow: 3px 3px 0 var(--riso-shadow-ink);
+  border: none;
+  border-bottom: 1.5px solid var(--riso-hair);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
 }
-.rowInactive {
-  opacity: 0.6;
+.row:last-child {
+  border-bottom: none;
 }
+.row:hover {
+  background: var(--riso-paper);
+}
+.row:focus-visible {
+  outline: 3px solid var(--riso-blue);
+  outline-offset: -3px;
+}
+.rowInactive .rowName {
+  color: var(--riso-muted);
+}
+
 .rowMain {
   flex: 1;
   display: flex;
@@ -22,14 +40,31 @@
   gap: 4px;
   min-width: 0;
 }
+.rowNameLine {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
 .rowName {
   font-family: var(--riso-font-head);
-  font-size: 15px;
-  font-weight: 700;
+  font-size: 16px;
+  font-weight: 800;
   color: var(--riso-ink);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.timeframeBadge {
+  flex-shrink: 0;
+  padding: 2px 8px;
+  background: var(--riso-blue);
+  border-radius: 999px;
+  font-family: var(--riso-font-head);
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  color: var(--riso-on-color);
 }
 .rowMeta {
   font-size: 12px;
@@ -37,34 +72,8 @@
   color: var(--riso-muted);
 }
 
-.poolPreview {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 5px;
-  margin-top: 6px;
-}
-.poolChip {
-  display: inline-block;
-  max-width: 160px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  padding: 2px 8px;
-  background: var(--riso-paper-2);
-  border: 1.5px solid var(--riso-ink);
-  border-radius: 999px;
-  font-family: var(--riso-font-body);
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--riso-ink);
-}
-.poolChipMore {
-  border-style: dashed;
-  color: var(--riso-muted);
-}
-
 .attentionBadge {
-  margin-top: 6px;
+  margin-top: 2px;
   padding: 7px 10px;
   /* filled warning badge — red text on cream paper is only ~3:1 (fails AA);
      a red fill + static cream follows the dark contract and reads clearly. */
@@ -80,52 +89,57 @@
 .rowActions {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   flex-shrink: 0;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-}
-.activeToggle {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-family: var(--riso-font-head);
-  font-size: 12px;
-  font-weight: 700;
-  color: var(--riso-ink);
-  cursor: pointer;
 }
 
-.editButton,
-.deleteButton {
-  background: var(--riso-paper-2);
-  border: 2px solid var(--riso-ink);
-  color: var(--riso-ink);
-  padding: 7px 12px;
-  border-radius: var(--riso-r-card);
-  font-family: var(--riso-font-head);
-  font-size: 12px;
-  font-weight: 700;
+.toggleSwitch {
+  position: relative;
+  display: inline-block;
+  width: 46px;
+  height: 26px;
   cursor: pointer;
-  transition: background 0.12s, color 0.12s;
+  flex-shrink: 0;
 }
-.editButton:hover {
+.toggleSwitch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+.toggleTrack {
+  position: absolute;
+  inset: 0;
   background: var(--riso-paper);
-  color: var(--riso-blue);
+  border: 2px solid var(--riso-ink);
+  border-radius: 999px;
+  transition: background 0.15s;
 }
-.deleteButton {
-  color: var(--riso-red);
+.toggleTrack::before {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 18px;
+  height: 18px;
+  background: var(--riso-ink);
+  border-radius: 50%;
+  transition: transform 0.15s, background 0.15s;
 }
-.deleteButton:hover {
-  background: var(--riso-paper);
+.toggleSwitch input:checked + .toggleTrack {
+  background: var(--riso-green);
 }
-.editButton:disabled,
-.deleteButton:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
+.toggleSwitch input:checked + .toggleTrack::before {
+  transform: translateX(20px);
+  background: var(--riso-on-color);
 }
-.editButton:focus-visible,
-.deleteButton:focus-visible {
+.toggleSwitch input:focus-visible + .toggleTrack {
   outline: 3px solid var(--riso-blue);
   outline-offset: 2px;
+}
+
+.rowArrow {
+  font-family: var(--riso-font-head);
+  font-weight: 800;
+  color: var(--riso-muted);
+  font-size: 16px;
 }

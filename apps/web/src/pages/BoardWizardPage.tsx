@@ -19,8 +19,10 @@ import { BoardWizardSetupStep } from '../components/wizard/BoardWizardSetupStep'
 import { BoardWizardTasksStep } from '../components/wizard/BoardWizardTasksStep';
 import { BoardWizardPreviewStep } from '../components/wizard/BoardWizardPreviewStep';
 import { BoardWizardCancelDialog } from '../components/wizard/BoardWizardCancelDialog';
+import { DeleteRepeatingBoardConfirmDialog } from '../components/wizard/DeleteRepeatingBoardConfirmDialog';
 import {
   buildWizardPlacement,
+  deleteEditedRecurringTemplate,
   persistRecurringTemplate,
   persistWizardBoard,
   resolveWizardDates,
@@ -265,6 +267,34 @@ export function BoardWizardPage({
     setCancelDialogError(null);
   }
 
+  // Profile reorg PR3 — "Delete repeating board" (edit mode only). The
+  // Setup step asks; this page confirms (`DeleteRepeatingBoardConfirmDialog`)
+  // and runs `deleteEditedRecurringTemplate` — the same soft-delete op the
+  // retired roster-row button called — then closes via `onTemplateComplete`
+  // (the overlay routes it back to Board settings, whose live roster query
+  // drops the tombstoned row). Mirrors iOS `BoardWizardView`'s `.alert`.
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+
+  async function handleDeleteConfirmed(): Promise<void> {
+    setDeleteError(null);
+    setIsDeleting(true);
+    try {
+      const templateId = await deleteEditedRecurringTemplate({ controller: wizard });
+      setShowDeleteConfirm(false);
+      onTemplateComplete?.(templateId);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Unknown error.';
+      setShowDeleteConfirm(false);
+      setDeleteError(`Failed to delete repeating board: ${msg}`);
+    } finally {
+      setIsDeleting(false);
+    }
+  }
+
+  const globalError = cancelDialogError ?? deleteError;
+
   // Board Creation Split (web PR C) — kicker carries the mode identity
   // (red one-off / blue recurring) through every step; the H2 became the
   // current step's own name (Setup / Tasks|Pool / Preview), mirroring
@@ -320,6 +350,9 @@ export function BoardWizardPage({
             controller={wizard}
             onCancel={handleCancelRequested}
             onNext={wizard.goNext}
+            onDeleteRepeatingBoard={
+              editingTemplate !== undefined ? () => setShowDeleteConfirm(true) : undefined
+            }
           />
         )}
 
@@ -425,9 +458,18 @@ export function BoardWizardPage({
         }
       />
 
-      {cancelDialogError && (
+      {showDeleteConfirm && editingTemplate !== undefined && (
+        <DeleteRepeatingBoardConfirmDialog
+          boardName={editingTemplate.name}
+          busy={isDeleting}
+          onConfirm={() => void handleDeleteConfirmed()}
+          onCancel={() => setShowDeleteConfirm(false)}
+        />
+      )}
+
+      {globalError && (
         <div className={styles.globalError} role="alert">
-          {cancelDialogError}
+          {globalError}
         </div>
       )}
     </div>

@@ -36,7 +36,16 @@ struct NotificationPreferencesView: View {
             onSetRecurringWindow: { setPref(\.recurringWindowReminders, $0) },
             onSetDailyEnabled: { setPref(\.dailyPlayReminderEnabled, $0) },
             onSetDailyTime: setDailyTime,
-            onOpenSettings: openSystemSettings
+            onOpenSettings: openSystemSettings,
+            // Profile reorg PR3 — these four moved here from Board settings.
+            // They gate the Boards-tab "set up the next window" banner AND
+            // the per-timeframe "new recurring window" reminder
+            // (`NotificationPlanner.isTimeframeEnabled`), so a flip
+            // reconciles the OS pending set like every other toggle here.
+            onSetRecurringDaily: { setPref(\.recurringDailyEnabled, $0) },
+            onSetRecurringWeekly: { setPref(\.recurringWeeklyEnabled, $0) },
+            onSetRecurringMonthly: { setPref(\.recurringMonthlyEnabled, $0) },
+            onSetRecurringYearly: { setPref(\.recurringYearlyEnabled, $0) }
         )
         .navigationBarHidden(true)
         // Refresh the OS status on appear so a change made in iOS Settings
@@ -157,6 +166,11 @@ struct NotificationPreferencesContent: View {
     var onSetDailyEnabled: (Bool) -> Void = { _ in }
     var onSetDailyTime: (Date) -> Void = { _ in }
     var onOpenSettings: () -> Void = {}
+    // Profile reorg PR3 — "BOARD RENEWALS" group (moved from Board settings).
+    var onSetRecurringDaily: (Bool) -> Void = { _ in }
+    var onSetRecurringWeekly: (Bool) -> Void = { _ in }
+    var onSetRecurringMonthly: (Bool) -> Void = { _ in }
+    var onSetRecurringYearly: (Bool) -> Void = { _ in }
 
     private var isDenied: Bool { authorizationStatus == .denied }
     private var masterOn: Bool { preferences.notificationsEnabled }
@@ -185,6 +199,17 @@ struct NotificationPreferencesContent: View {
                     Text("Reminders are scheduled on this device from your boards — no account messages, no marketing.")
                         .font(.risoBody(12, .regular)).foregroundStyle(Color.risoMuted)
                         .multilineTextAlignment(.center).frame(maxWidth: .infinity)
+                        .padding(.horizontal, Riso.gutter).padding(.bottom, 16)
+
+                    // Profile reorg PR3 — moved from Board settings. These
+                    // gate the Boards-tab "set up the next window" banner
+                    // (lazy, checked on app-open), not an OS notification —
+                    // independent of the master toggle above, so always shown.
+                    sectionLabel("Board renewals")
+                    boardRenewalsCard.padding(.horizontal, Riso.gutter).padding(.bottom, 16)
+
+                    Text("When on, the Boards tab prompts you to set up the next daily, weekly, monthly or yearly board. Checked when you open the app; never a push.")
+                        .font(.risoBody(12, .regular)).foregroundStyle(Color.risoMuted)
                         .padding(.horizontal, Riso.gutter).padding(.bottom, 24)
                 }
             }
@@ -272,6 +297,36 @@ struct NotificationPreferencesContent: View {
             },
             set: { onSetDailyTime($0) }
         )
+    }
+
+    // MARK: - Board renewals card (Profile reorg PR3)
+
+    private var boardRenewalsCard: some View {
+        VStack(spacing: 0) {
+            recurringToggleRow(label: "Prompt for daily board", value: preferences.recurringDailyEnabled, onChange: onSetRecurringDaily)
+            rowDivider
+            recurringToggleRow(label: "Prompt for weekly board", value: preferences.recurringWeeklyEnabled, onChange: onSetRecurringWeekly)
+            rowDivider
+            recurringToggleRow(label: "Prompt for monthly board", value: preferences.recurringMonthlyEnabled, onChange: onSetRecurringMonthly)
+            rowDivider
+            recurringToggleRow(label: "Prompt for yearly board", value: preferences.recurringYearlyEnabled, onChange: onSetRecurringYearly)
+        }
+        .risoCard()
+        .risoHardShadow(Riso.Shadow.small, radius: Riso.cardRadius)
+    }
+
+    /// No icon square (unlike `toggleRow`) — matches the four renewal
+    /// toggles' plain-label appearance in `BoardSettingsView`'s retired
+    /// "Recurring board reminders" card, which this group replaces verbatim.
+    private func recurringToggleRow(label: String, value: Bool, onChange: @escaping (Bool) -> Void) -> some View {
+        HStack(spacing: 10) {
+            Text(label).font(.risoBody(14, .bold)).foregroundStyle(Color.risoInk)
+            Spacer()
+            RisoPillSwitch(isOn: Binding(get: { value }, set: { onChange($0) }))
+        }
+        .padding(.horizontal, Riso.cardPadding)
+        .padding(.vertical, 12)
+        .contentShape(Rectangle())
     }
 
     // MARK: - Row helpers (mirror BoardPreferencesView)

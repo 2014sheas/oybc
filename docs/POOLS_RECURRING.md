@@ -281,6 +281,17 @@ acceptance above; not treated as a bug to fix.
    sheet; repeating-boards roster (the safety net for paused boards) with
    Edit tasks + Pause/Resume; roster edit sheet (pool toggles UNION with the
    mix — never wipe the manual layer).
+   *Profile reorg PR3 (2026-09-30) restructured the page into three groups —
+   EVERY NEW BOARD (the new-board defaults as segmented rows) / PRE-FILLED
+   TASKS BY TIMEFRAME (these core-defaults rows, unchanged) / REPEATING
+   BOARDS (compact rows: name + timeframe badge, `{size} board · {n}-task
+   pool · renews {day}` or `… · paused`, Active toggle, chevron → the
+   recurring wizard in edit mode; "New ›" → the Create tab's repeating-board
+   entry). The roster row's inline chips / "Add tasks" / "Delete" are gone;
+   Delete now lives on the editor's Setup step ("Delete repeating board",
+   confirm-guarded, same soft-delete op). iOS's "Recurring board reminders"
+   group moved to Notifications › BOARD RENEWALS (web: the Settings page's
+   BOARD RENEWALS card).*
 10. **Pool picker sheet (shared)** — rows w/ health note; "+ Build a new
     pool…" round-trips back to the launching context with the new pool
     selected.

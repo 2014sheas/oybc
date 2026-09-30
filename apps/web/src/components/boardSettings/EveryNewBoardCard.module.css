@@ -1,0 +1,50 @@
+/* EveryNewBoardCard — Board settings "EVERY NEW BOARD" group (Profile
+   reorg PR3). Self-contained per BoardSettingsPage's own convention (its
+   CSS module duplicates rather than cross-imports shared row/card rules). */
+
+.card {
+  background: var(--riso-paper-2);
+  border: 2px solid var(--riso-ink);
+  border-radius: 14px;
+  box-shadow: 4px 4px 0 var(--riso-shadow-ink);
+  padding: 4px 16px;
+}
+
+.rowLabel {
+  font-family: var(--riso-font-head);
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--riso-ink);
+}
+
+/* Label + control on one line (Size / Center square / Week starts — 2–3
+   short options, compact + right-aligned). */
+.inlineRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 13px 0;
+  border-bottom: 1.5px solid var(--riso-hair);
+}
+.inlineRow:last-of-type {
+  border-bottom: none;
+}
+
+/* Label on its own line, control spanning the full card width below it
+   (Timeframe — the 5-option row that must never wrap). */
+.stackedRow {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 13px 0;
+  border-bottom: 1.5px solid var(--riso-hair);
+}
+
+.helper {
+  margin: 0;
+  padding: 0 0 13px;
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: var(--riso-muted);
+}

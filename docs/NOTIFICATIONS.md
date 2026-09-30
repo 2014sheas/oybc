@@ -80,6 +80,8 @@ Four new fields on `UserPreferences` (shared type + Zod schema + iOS struct), al
 
 Plus the previously-dead `expiringReminders` (default true), now live. They ride the existing user-prefs LWW sync path (no new collection). Each device schedules its own local notifications from the synced prefs; dedup is inherent (local delivery + deterministic identifiers).
 
+**Board renewals group (iOS, 2026-09-30 Profile reorg PR3).** The Notifications screen also hosts a "BOARD RENEWALS" card — the four Phase 6.1 `recurringDailyEnabled` / `recurringWeeklyEnabled` / `recurringMonthlyEnabled` / `recurringYearlyEnabled` "Prompt for {timeframe} board" toggles, moved here from Board settings (web keeps them on `/profile/settings`, which has no Notifications sub-page). They are shown regardless of the master toggle because they primarily gate the Boards-tab renewal banner, but they ALSO feed the planner's per-timeframe eligibility for the "new recurring window" reminder (`NotificationPlanner.isTimeframeEnabled`), so a flip reconciles the OS pending set like every other toggle on the screen. Helper copy, verbatim: "When on, the Boards tab prompts you to set up the next daily, weekly, monthly or yearly board. Checked when you open the app; never a push."
+
 ## Files
 
 - `Services/NotificationPlanner.swift` — pure planner (+ `OYBCTests/NotificationPlannerTests.swift`)

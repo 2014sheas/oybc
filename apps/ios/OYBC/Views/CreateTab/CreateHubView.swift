@@ -41,6 +41,13 @@ struct CreateHubView: View {
     /// `MainTabView` when a DRAFT board is tapped on the Boards tab — drafts
     /// are never opened as a playable board, so this is the resume entry.
     var pendingDraftId: Binding<String?> = .constant(nil)
+    /// Profile reorg PR3 — cross-tab deep-link from Board settings'
+    /// "REPEATING BOARDS" section "New ›" link. When `true` on appear, the
+    /// hub immediately enters the fresh wizard in recurring mode (the same
+    /// `enterFreshWizard(startRecurring: true)` path the BLUE
+    /// `CreateHubBoardCTAView(kind: .recurring)` CTA below uses) and resets
+    /// the binding to `false`. Set by `MainTabView`.
+    var pendingStartRecurringWizard: Binding<Bool> = .constant(false)
     /// Called after a board is successfully activated or saved as a
     /// draft. Parent typically navigates to the created board; the
     /// hub itself always returns to its landing view.
@@ -73,6 +80,12 @@ struct CreateHubView: View {
                 .onAppear {
                     vm.reloadDrafts(userId: userId)
                     pendingRecurringVM.reloadAsync(userId: userId)
+                    // Consume the Board-settings "New ›" deep link, if any.
+                    if pendingStartRecurringWizard.wrappedValue {
+                        pendingStartRecurringWizard.wrappedValue = false
+                        vm.enterFreshWizard(startRecurring: true)
+                        return
+                    }
                     // Consume the recurring-banner deep link, if any.
                     // Same behavior as web's URL-param consumption +
                     // immediate clear in `useRecurringTimeframeParam`.

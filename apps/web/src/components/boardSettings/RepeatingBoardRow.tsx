@@ -3,21 +3,19 @@ import {
   Timeframe,
   type RecurringBoardTemplate,
   type SpawnPoolFailureReason,
+  type WeekStartDay,
 } from '@oybc/shared';
-import {
-  softDeleteRecurringBoardTemplate,
-  updateRecurringBoardTemplate,
-} from '../../db/operations/recurringBoardTemplates';
-import { POOL_PREVIEW_LIMIT } from '../recurringTemplates/poolPreview';
+import { updateRecurringBoardTemplate } from '../../db/operations/recurringBoardTemplates';
+import { formatRepeatingBoardMeta } from './repeatingBoardMeta';
 import styles from './RepeatingBoardRow.module.css';
 
 const TIMEFRAME_LABELS: Record<Timeframe, string> = {
-  [Timeframe.DAILY]: 'Daily',
-  [Timeframe.WEEKLY]: 'Weekly',
-  [Timeframe.MONTHLY]: 'Monthly',
-  [Timeframe.YEARLY]: 'Yearly',
-  [Timeframe.CUSTOM]: 'Custom',
-  [Timeframe.INDEFINITE]: 'Ongoing', // unreachable — repeating boards exclude indefinite
+  [Timeframe.DAILY]: 'DAILY',
+  [Timeframe.WEEKLY]: 'WEEKLY',
+  [Timeframe.MONTHLY]: 'MONTHLY',
+  [Timeframe.YEARLY]: 'YEARLY',
+  [Timeframe.CUSTOM]: 'CUSTOM', // unreachable — repeating boards exclude custom
+  [Timeframe.INDEFINITE]: 'ONGOING', // unreachable
 };
 
 const ATTENTION_COPY: Record<
@@ -39,51 +37,59 @@ const ATTENTION_COPY: Record<
 
 export interface RepeatingBoardRowProps {
   template: RecurringBoardTemplate;
-  /** The board's CURRENT resolved mix size, for the "N-task mix" meta
-   *  text. Computed at the page level from `useTemplateRosterHealth` — NOT
-   *  `template.seedTaskIds.length`, which goes stale after a Pool-linked
-   *  write-through (docs/POOLS_RECURRING.md §Migration "seedTaskIds end
-   *  state"). */
+  /** The board's CURRENT resolved mix size, for the meta line's "N-task
+   *  pool" clause. Computed at the page level from `useTemplateRosterHealth`
+   *  — NOT `template.seedTaskIds.length`, which goes stale after a
+   *  Pool-linked write-through (docs/POOLS_RECURRING.md §Migration
+   *  "seedTaskIds end state"). */
   taskCount: number;
+  /** The user's week-start preference — feeds the meta line's "renews
+   *  {day}" clause for a WEEKLY board. */
+  weekStartDay: WeekStartDay;
   /** Set when this board's last spawn was skipped — surfaces a badge. */
   attentionReason?:
     | SpawnPoolFailureReason
     | 'no_pool_tasks_resolved'
     | 'spawn_failed'
     | 'source_board_missing';
-  /** First few resolved mix task titles (≤ POOL_PREVIEW_LIMIT, in mix
-   *  order); the page resolves ids against the library. Empty/omitted
-   *  renders no chip row. */
-  poolPreview?: string[];
-  /** Count of additional resolved titles beyond `poolPreview` (0 ⇒ no
-   *  "+k more" chip). See `computePoolPreview`. */
-  poolPreviewOverflow?: number;
-  /** "Edit tasks" — opens the roster edit sheet for this board. */
-  onEditTasks: (template: RecurringBoardTemplate) => void;
+  /** Row click (anywhere but the toggle) — opens the existing template
+   *  editor (`RepeatingBoardWizardOverlay` wrapping `BoardWizardPage` in
+   *  edit mode). */
+  onOpen: (template: RecurringBoardTemplate) => void;
 }
 
 /**
- * RepeatingBoardRow — one row on the Board-settings repeating-boards
- * roster (Task Pools + Recurring Boards Rework, P7,
- * docs/POOLS_RECURRING.md §Surfaces item 9). Adapted from the retired
- * `RecurringTemplateRow` (Profile → Recurring templates, deleted in P7):
- * same Pause/Resume toggle + Delete + attention badge + pool-preview
- * chips, but "Edit"/"Add tasks" collapse into ONE "Edit tasks" button that
- * opens the roster edit sheet in place — no more cross-tab navigation into
- * the wizard's template-edit mode (that deep link retired with the old
- * templates page; see docs/POOLS_RECURRING.md §Migration).
+ * RepeatingBoardRow — one compact row on the Board-settings repeating-boards
+ * roster (Profile reorg PR3, `design_handoff_profile_reorg/README.md` §4 /
+ * screenshot `4c-board-settings.png`). Replaces the earlier expanded row
+ * (pool-preview chips, separate "Edit tasks"/"Delete" buttons) with: name
+ * (muted when paused) + timeframe badge, one meta line, an optional
+ * attention badge, a trailing Active/Paused toggle, and a chevron. The
+ * whole row opens the template editor — pool-preview chips and the "Edit
+ * tasks"/"Delete" buttons are dropped from this list per the
+ * owner-decisions PR3 paragraph — they stay in the editor: Delete is the
+ * "Delete repeating board" row on the editor's Setup step
+ * (`BoardWizardSetupStep` → `DeleteRepeatingBoardConfirmDialog` →
+ * `deleteEditedRecurringTemplate`, the same soft-delete op this row used to
+ * call).
+ *
+ * The row is a `role="button"` DIV (not a literal `<button>`) because it
+ * contains a real nested interactive control (the toggle's `<input
+ * type="checkbox">`) — the HTML content model forbids interactive content
+ * inside a `<button>`. `onKeyDown` restores button-equivalent Enter/Space
+ * activation for keyboard + AT users.
  */
 export function RepeatingBoardRow({
   template,
   taskCount,
+  weekStartDay,
   attentionReason,
-  poolPreview = [],
-  poolPreviewOverflow = 0,
-  onEditTasks,
+  onOpen,
 }: RepeatingBoardRowProps): React.ReactElement {
   const [busy, setBusy] = useState(false);
 
-  const toggleActive = async () => {
+  const toggleActive = async (e: React.MouseEvent | React.ChangeEvent) => {
+    e.stopPropagation();
     if (busy) return;
     setBusy(true);
     try {
@@ -95,43 +101,35 @@ export function RepeatingBoardRow({
     }
   };
 
-  const handleDelete = async () => {
-    if (busy) return;
-    const ok = window.confirm(
-      `Delete "${template.name}"? Boards already spawned from it will not be deleted.`,
-    );
-    if (!ok) return;
-    setBusy(true);
-    try {
-      await softDeleteRecurringBoardTemplate(template.id);
-    } finally {
-      setBusy(false);
-    }
-  };
+  const meta = formatRepeatingBoardMeta(
+    template.boardSize,
+    taskCount,
+    template.timeframe,
+    weekStartDay,
+    template.isActive,
+  );
+
+  const handleOpen = () => onOpen(template);
 
   return (
-    <div className={`${styles.row} ${!template.isActive ? styles.rowInactive : ''}`}>
+    <div
+      role="button"
+      tabIndex={0}
+      className={`${styles.row} ${!template.isActive ? styles.rowInactive : ''}`}
+      onClick={handleOpen}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          handleOpen();
+        }
+      }}
+    >
       <div className={styles.rowMain}>
-        <div className={styles.rowName}>{template.name}</div>
-        <div className={styles.rowMeta}>
-          {TIMEFRAME_LABELS[template.timeframe]} ·{' '}
-          {template.boardSize}×{template.boardSize} ·{' '}
-          {`${taskCount}-task mix`}
+        <div className={styles.rowNameLine}>
+          <span className={styles.rowName}>{template.name}</span>
+          <span className={styles.timeframeBadge}>{TIMEFRAME_LABELS[template.timeframe]}</span>
         </div>
-        {poolPreview.length > 0 && (
-          <div className={styles.poolPreview} aria-label="Mix preview">
-            {poolPreview.slice(0, POOL_PREVIEW_LIMIT).map((title, i) => (
-              <span key={`${title}-${i}`} className={styles.poolChip}>
-                {title}
-              </span>
-            ))}
-            {poolPreviewOverflow > 0 && (
-              <span className={`${styles.poolChip} ${styles.poolChipMore}`}>
-                +{poolPreviewOverflow} more
-              </span>
-            )}
-          </div>
-        )}
+        <div className={styles.rowMeta}>{meta}</div>
         {attentionReason && (
           <div className={styles.attentionBadge} role="status">
             ⚠️ {ATTENTION_COPY[attentionReason]}
@@ -139,33 +137,19 @@ export function RepeatingBoardRow({
         )}
       </div>
       <div className={styles.rowActions}>
-        <label className={styles.activeToggle}>
+        <label className={styles.toggleSwitch} onClick={(e) => e.stopPropagation()}>
           <input
             type="checkbox"
             checked={template.isActive}
-            onChange={() => void toggleActive()}
+            onChange={(e) => void toggleActive(e)}
             disabled={busy}
             aria-label={`${template.isActive ? 'Pause' : 'Resume'} ${template.name}`}
           />
-          <span>{template.isActive ? 'Active' : 'Paused'}</span>
+          <span className={styles.toggleTrack} />
         </label>
-        <button
-          type="button"
-          className={styles.editButton}
-          onClick={() => onEditTasks(template)}
-          disabled={busy}
-        >
-          Edit tasks
-        </button>
-        <button
-          type="button"
-          className={styles.deleteButton}
-          onClick={() => void handleDelete()}
-          disabled={busy}
-          aria-label={`Delete ${template.name}`}
-        >
-          Delete
-        </button>
+        <span className={styles.rowArrow} aria-hidden="true">
+          &rarr;
+        </span>
       </div>
     </div>
   );

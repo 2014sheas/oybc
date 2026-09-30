@@ -76,3 +76,31 @@
   outline: 3px solid var(--riso-blue);
   outline-offset: 2px;
 }
+
+/* Profile reorg PR3 — edit-mode danger row at the bottom of the card:
+   "Delete repeating board" as a quiet red text link (the same treatment as
+   CounterDetailPage's Delete link), never a filled button. */
+.dangerRow {
+  display: flex;
+  justify-content: center;
+  padding-top: 14px;
+  border-top: 1.5px solid var(--riso-hair);
+}
+.deleteLink {
+  background: transparent;
+  border: 0;
+  padding: 6px 10px;
+  color: var(--riso-red);
+  font-family: var(--riso-font-head);
+  font-weight: 700;
+  font-size: 13px;
+  cursor: pointer;
+}
+.deleteLink:hover {
+  text-decoration: underline;
+}
+.deleteLink:focus-visible {
+  outline: 3px solid var(--riso-blue);
+  outline-offset: 2px;
+  border-radius: 3px;
+}

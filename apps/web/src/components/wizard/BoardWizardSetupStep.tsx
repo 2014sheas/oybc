@@ -6,6 +6,12 @@ export interface BoardWizardSetupStepProps {
   controller: BoardWizardController;
   onCancel: () => void;
   onNext: () => void;
+  /** Profile reorg PR3 — "Delete repeating board". Rendered as a quiet red
+   *  danger row at the bottom of the card ONLY while the wizard is editing
+   *  an existing repeating board (`controller.editingTemplateId !== null`)
+   *  AND the parent wires it. The parent (`BoardWizardPage`) owns the
+   *  confirm dialog + the soft-delete; this step only asks. */
+  onDeleteRepeatingBoard?: () => void;
 }
 
 /**
@@ -17,11 +23,19 @@ export interface BoardWizardSetupStepProps {
  * The form's layout (one-off / recurring / core) is driven by the
  * controller's read-only `isRecurring` / `isCore` flags, both set at
  * wizard entry — there's no in-step timeframe lock or recurring toggle.
+ *
+ * Edit mode (Profile reorg PR3): a "Delete repeating board" danger row sits
+ * at the bottom of the card. It lives on THIS step — the one the editor
+ * lands on — rather than the last step because the stepper only jumps
+ * backwards and the Pool step's Next is capacity-gated, so an under-filled
+ * repeating board could never reach a Preview-step Delete. iOS twin:
+ * `BoardWizardSetupStepView.onDeleteRepeatingBoard`.
  */
 export function BoardWizardSetupStep({
   controller,
   onCancel,
   onNext,
+  onDeleteRepeatingBoard,
 }: BoardWizardSetupStepProps): React.ReactElement {
   const {
     name,
@@ -84,6 +98,14 @@ export function BoardWizardSetupStep({
           </button>
         </div>
       </div>
+
+      {controller.editingTemplateId !== null && onDeleteRepeatingBoard && (
+        <div className={styles.dangerRow}>
+          <button type="button" className={styles.deleteLink} onClick={onDeleteRepeatingBoard}>
+            Delete repeating board
+          </button>
+        </div>
+      )}
     </div>
   );
 }
