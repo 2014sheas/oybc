@@ -559,3 +559,168 @@ describe('buildSharedCounterGroups (fixture-driven, tests/fixtures/sharedCounter
     });
   }
 });
+
+/**
+ * Member visibility — the Counters hub's "Show expired tasks" rule, moved
+ * INTO the kernel (bugfix/hub-root-hidden-when-members-expire).
+ *
+ * The bug: the hub used to drop expired members BEFORE grouping. A
+ * board-born counter is a root only because a live task links to it, so
+ * once its only members (last week's derived rows) expired, the root
+ * stopped being a root and the whole counter vanished from the hub and the
+ * Profile home — "Show expired" brought it back. Roots must be detected
+ * over ALL live tasks; expiry only decides which MEMBERS are listed.
+ */
+describe('buildSharedCounterGroups — memberVisibility (hub expired filter)', () => {
+  const NOW = new Date('2026-09-18T12:00:00.000Z');
+
+  const counting = (id: string, over: Partial<Task> = {}): Task => ({
+    ...toTask({
+      id,
+      title: `Task ${id}`,
+      currentCount: 0,
+      maxCount: 10,
+      sharedCounterId: null,
+      baseline: null,
+      isDeleted: false,
+    }),
+    ...over,
+  });
+
+  /** A window-stamped derived member of `root` whose window has closed. */
+  const expiredMember = (id: string, root: string): Task =>
+    counting(id, {
+      sharedCounterId: root,
+      createdInWizard: true,
+      timeframe: Timeframe.WEEKLY,
+      startDate: '2026-09-07T00:00:00.000',
+      endDate: '2026-09-13T23:59:59.999',
+      maxCount: 5,
+    });
+
+  /** A window-stamped derived member of `root` whose window is still open. */
+  const liveMember = (id: string, root: string): Task =>
+    counting(id, {
+      sharedCounterId: root,
+      createdInWizard: true,
+      timeframe: Timeframe.WEEKLY,
+      startDate: '2026-09-14T00:00:00.000',
+      endDate: '2026-09-20T23:59:59.999',
+      maxCount: 5,
+    });
+
+  it('keeps a root whose ONLY member has expired — as a single-member group', () => {
+    // The board-born case: a plain counting task (not `isCounter`) that is a
+    // root purely because a derived weekly row links to it.
+    const root = counting('root', { currentCount: 40 });
+    const stale = expiredMember('m-stale', 'root');
+
+    const groups = buildSharedCounterGroups({
+      tasks: [root, stale],
+      boards: [],
+      boardTasks: [],
+      memberVisibility: { showExpired: false, now: NOW },
+    });
+
+    expect(groups.map((g) => g.counterId)).toEqual(['root']);
+    expect(groups[0].lifetime).toBe(40);
+    expect(groups[0].taskCount).toBe(1);
+    expect(groups[0].activeTaskCount).toBe(0);
+    expect(groups[0].tasks.map((t) => t.taskId)).toEqual(['root']);
+  });
+
+  it('drops only the expired member; a live member and the source stay', () => {
+    const root = counting('root', { currentCount: 40 });
+    const live = liveMember('m-live', 'root');
+    const stale = expiredMember('m-stale', 'root');
+
+    const groups = buildSharedCounterGroups({
+      tasks: [root, live, stale],
+      boards: [],
+      boardTasks: [],
+      memberVisibility: { showExpired: false, now: NOW },
+    });
+
+    expect(groups).toHaveLength(1);
+    expect(groups[0].tasks.map((t) => t.taskId)).toEqual(['root', 'm-live']);
+    expect(groups[0].taskCount).toBe(2);
+  });
+
+  it('showExpired: true lists every member', () => {
+    const root = counting('root', { currentCount: 40 });
+    const live = liveMember('m-live', 'root');
+    const stale = expiredMember('m-stale', 'root');
+
+    const groups = buildSharedCounterGroups({
+      tasks: [root, live, stale],
+      boards: [],
+      boardTasks: [],
+      memberVisibility: { showExpired: true, now: NOW },
+    });
+
+    expect(groups[0].tasks.map((t) => t.taskId)).toEqual(['root', 'm-live', 'm-stale']);
+  });
+
+  it('never hides a root, however old its own endDate', () => {
+    // A timeboxed counter the user made themselves (a monthly root whose
+    // window closed): it IS the counter, so it stays listed with its
+    // lifetime total.
+    const root = counting('root', {
+      currentCount: 12,
+      timeframe: Timeframe.MONTHLY,
+      startDate: '2026-07-01T00:00:00.000',
+      endDate: '2026-07-31T23:59:59.999',
+    });
+    const stale = expiredMember('m-stale', 'root');
+
+    const groups = buildSharedCounterGroups({
+      tasks: [root, stale],
+      boards: [],
+      boardTasks: [],
+      memberVisibility: { showExpired: false, now: NOW },
+    });
+
+    expect(groups.map((g) => g.counterId)).toEqual(['root']);
+    expect(groups[0].lifetime).toBe(12);
+  });
+
+  it('keeps a member with no endDate at all (indefinite, never expired)', () => {
+    const root = counting('root');
+    const open = counting('m-open', { sharedCounterId: 'root' });
+
+    const groups = buildSharedCounterGroups({
+      tasks: [root, open],
+      boards: [],
+      boardTasks: [],
+      memberVisibility: { showExpired: false, now: NOW },
+    });
+
+    expect(groups[0].tasks.map((t) => t.taskId)).toEqual(['root', 'm-open']);
+  });
+
+  it('a hidden member contributes no board row or active count', () => {
+    const root = counting('root', { isCounter: true });
+    const stale = expiredMember('m-stale', 'root');
+    const board = toBoard({ id: 'b-old', name: 'Old week', status: 'active', isDeleted: false });
+
+    const groups = buildSharedCounterGroups({
+      tasks: [root, stale],
+      boards: [board],
+      boardTasks: [toBoardTask({ taskId: 'm-stale', boardId: 'b-old' })],
+      memberVisibility: { showExpired: false, now: NOW },
+    });
+
+    expect(groups[0].taskCount).toBe(1);
+    expect(groups[0].boardCount).toBe(0);
+    expect(groups[0].activeTaskCount).toBe(0);
+  });
+
+  it('with no memberVisibility the output is unchanged (every live member listed)', () => {
+    const root = counting('root');
+    const stale = expiredMember('m-stale', 'root');
+
+    const groups = buildSharedCounterGroups({ tasks: [root, stale], boards: [], boardTasks: [] });
+
+    expect(groups[0].tasks.map((t) => t.taskId)).toEqual(['root', 'm-stale']);
+  });
+});

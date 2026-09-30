@@ -126,7 +126,7 @@ struct CounterDetailView: View {
         let id = counterId
         let visibility = showExpired
         _Concurrency.Task.detached(priority: .userInitiated) {
-            // RC9 — filtered BEFORE grouping, exactly as the hub does.
+            // RC9 — the kernel drops expired members after the root walk (as the hub).
             let groups = AppDatabase.shared.fetchSharedCounterGroups(
                 userId: userId, showExpired: visibility
             ).groups

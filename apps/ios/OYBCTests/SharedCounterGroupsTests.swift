@@ -387,7 +387,13 @@ final class SharedCounterGroupsTests: XCTestCase {
         XCTAssertEqual(groups[0].name, "Stored Title")
     }
 
-    // MARK: - 16. RC9 — expired-member visibility (`filterCounterTasks`)
+    // MARK: - 16. RC9 — expired-member visibility (`memberVisibility`)
+    //
+    // Mirror of the TS "memberVisibility (hub expired filter)" block. The
+    // rule lives in the kernel and runs AFTER root detection, so a root
+    // never disappears when its members expire (the
+    // hub-root-hidden-when-members-expire bug — the old `filterCounterTasks`
+    // ran before grouping and un-rooted a board-born counter).
 
     /// Fixed "now" for the expiry cases: every date below sits an
     /// unambiguous distance either side of it.
@@ -395,7 +401,30 @@ final class SharedCounterGroupsTests: XCTestCase {
         ISO8601DateFormatter().date(from: "2026-03-01T12:00:00Z")!
     }
 
-    func test_filterCounterTasks_hidesAnExpiredDerivedMemberByDefault() {
+    private var hideExpired: SharedCounterMemberVisibility {
+        SharedCounterMemberVisibility(showExpired: false, now: rc9Now)
+    }
+
+    func test_memberVisibility_keepsARootWhoseOnlyMemberExpired_asASingleMemberGroup() {
+        // The board-born case: a plain counting task (not `isCounter`) that
+        // is a root purely because a derived weekly row links to it.
+        let root = counter("root", currentCount: 40)
+        let expired = counter(
+            "expired", sharedCounterId: "root", endDate: "2026-02-07T23:59:59.999Z"
+        )
+
+        let groups = buildSharedCounterGroups(
+            tasks: [root, expired], boardTasks: [], boards: [], memberVisibility: hideExpired
+        )
+
+        XCTAssertEqual(groups.map(\.counterId), ["root"], "the root stays listed")
+        XCTAssertEqual(groups.first?.lifetime, 40)
+        XCTAssertEqual(groups.first?.taskCount, 1)
+        XCTAssertEqual(groups.first?.activeTaskCount, 0)
+        XCTAssertEqual(groups.first?.tasks.map(\.taskId), ["root"])
+    }
+
+    func test_memberVisibility_dropsOnlyTheExpiredMember() {
         let root = counter("root", currentCount: 40)
         let live = counter(
             "live", sharedCounterId: "root", endDate: "2026-03-31T23:59:59.999Z"
@@ -404,42 +433,71 @@ final class SharedCounterGroupsTests: XCTestCase {
             "expired", sharedCounterId: "root", endDate: "2026-02-07T23:59:59.999Z"
         )
 
-        let visible = filterCounterTasks([root, live, expired], showExpired: false, now: rc9Now)
+        let groups = buildSharedCounterGroups(
+            tasks: [root, live, expired], boardTasks: [], boards: [], memberVisibility: hideExpired
+        )
 
-        XCTAssertEqual(visible.map(\.id), ["root", "live"],
+        XCTAssertEqual(groups.count, 1)
+        XCTAssertEqual(groups.first?.tasks.map(\.taskId), ["root", "live"],
                        "only the member whose window has ended is dropped")
+        XCTAssertEqual(groups.first?.taskCount, 2)
     }
 
-    func test_filterCounterTasks_neverHidesARootHoweverOldItsOwnEndDate() {
-        // A root with a long-past endDate: dropping it would delete the whole
-        // group from the hub rather than tidy one row out of it.
-        let root = counter("root", currentCount: 40, endDate: "2020-01-01T00:00:00.000Z")
-
-        let visible = filterCounterTasks([root], showExpired: false, now: rc9Now)
-
-        XCTAssertEqual(visible.map(\.id), ["root"])
-    }
-
-    func test_filterCounterTasks_showExpiredReturnsTheInputUnchanged() {
+    func test_memberVisibility_showExpiredListsEveryMember() {
         let root = counter("root", currentCount: 40)
+        let live = counter(
+            "live", sharedCounterId: "root", endDate: "2026-03-31T23:59:59.999Z"
+        )
         let expired = counter(
             "expired", sharedCounterId: "root", endDate: "2026-02-07T23:59:59.999Z"
         )
-        let input = [root, expired]
 
-        let visible = filterCounterTasks(input, showExpired: true, now: rc9Now)
+        let groups = buildSharedCounterGroups(
+            tasks: [root, live, expired], boardTasks: [], boards: [],
+            memberVisibility: SharedCounterMemberVisibility(showExpired: true, now: rc9Now)
+        )
 
-        XCTAssertEqual(visible.map(\.id), input.map(\.id))
+        // Source first, then placeless members by id ("expired" < "live").
+        XCTAssertEqual(groups.first?.tasks.map(\.taskId), ["root", "expired", "live"])
     }
 
-    func test_filterCounterTasks_keepsADatelessDerivedMember() {
+    func test_memberVisibility_neverHidesARootHoweverOldItsOwnEndDate() {
+        // A root with a long-past endDate: it IS the counter, so it stays
+        // listed with its lifetime total.
+        let root = counter("root", currentCount: 12, endDate: "2020-01-01T00:00:00.000Z")
+        let expired = counter(
+            "expired", sharedCounterId: "root", endDate: "2026-02-07T23:59:59.999Z"
+        )
+
+        let groups = buildSharedCounterGroups(
+            tasks: [root, expired], boardTasks: [], boards: [], memberVisibility: hideExpired
+        )
+
+        XCTAssertEqual(groups.map(\.counterId), ["root"])
+        XCTAssertEqual(groups.first?.lifetime, 12)
+    }
+
+    func test_memberVisibility_keepsADatelessDerivedMember() {
         let root = counter("root", currentCount: 40)
         // No endDate at all — "indefinite", never expired (TaskExpiry).
         let member = counter("member", sharedCounterId: "root")
 
-        let visible = filterCounterTasks([root, member], showExpired: false, now: rc9Now)
+        let groups = buildSharedCounterGroups(
+            tasks: [root, member], boardTasks: [], boards: [], memberVisibility: hideExpired
+        )
 
-        XCTAssertEqual(visible.map(\.id), ["root", "member"])
+        XCTAssertEqual(groups.first?.tasks.map(\.taskId), ["root", "member"])
+    }
+
+    func test_memberVisibility_nilListsEveryLiveMember() {
+        let root = counter("root", currentCount: 40)
+        let expired = counter(
+            "expired", sharedCounterId: "root", endDate: "2026-02-07T23:59:59.999Z"
+        )
+
+        let groups = buildSharedCounterGroups(tasks: [root, expired], boardTasks: [], boards: [])
+
+        XCTAssertEqual(groups.first?.tasks.map(\.taskId), ["root", "expired"])
     }
 
     // MARK: - sharedCounterRootIds (the extracted family-root test)
@@ -506,22 +564,26 @@ final class SharedCounterGroupsTests: XCTestCase {
         XCTAssertEqual(Set(groups.map { $0.counterId }), sharedCounterRootIds(tasks))
     }
 
-    func test_filterCounterTasks_hidingAMemberAlsoRemovesItsGroupContribution() {
-        // The filter runs BEFORE grouping, so an expired member can't
-        // contribute a board row to the group the hub renders.
+    func test_memberVisibility_aHiddenMemberContributesNoBoardRowOrActiveCount() {
+        // The member is dropped before the member-view pass, so it can't
+        // contribute a board row or an active count to the group.
         let root = counter("root", currentCount: 40, isCounter: true)
         let expired = counter(
             "expired", sharedCounterId: "root", endDate: "2026-02-07T23:59:59.999Z"
         )
+        let oldWeek = board("b-old", status: .active)
         let withExpired = buildSharedCounterGroups(
-            tasks: [root, expired], boardTasks: [], boards: []
+            tasks: [root, expired], boardTasks: [placement("expired", "b-old")], boards: [oldWeek]
         )
-        XCTAssertEqual(withExpired.first?.taskCount, 2, "both members before filtering")
+        XCTAssertEqual(withExpired.first?.taskCount, 2, "both members without the rule")
+        XCTAssertEqual(withExpired.first?.boardCount, 1)
 
         let filtered = buildSharedCounterGroups(
-            tasks: filterCounterTasks([root, expired], showExpired: false, now: rc9Now),
-            boardTasks: [], boards: []
+            tasks: [root, expired], boardTasks: [placement("expired", "b-old")], boards: [oldWeek],
+            memberVisibility: hideExpired
         )
         XCTAssertEqual(filtered.first?.taskCount, 1, "the expired member never reaches the group")
+        XCTAssertEqual(filtered.first?.boardCount, 0)
+        XCTAssertEqual(filtered.first?.activeTaskCount, 0)
     }
 }

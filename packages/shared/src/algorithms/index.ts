@@ -207,8 +207,9 @@ export { buildSharedCounterGroups, sharedCounterRootIds } from './sharedCounterG
 export type {
   SharedCounterGroup,
   SharedCounterMemberTask,
+  SharedCounterMemberVisibility,
   BuildSharedCounterGroupsInput,
-} from './sharedCounterGroups';
+} from "./sharedCounterGroups";
 
 // ===== Shared Counters — passive-completion arrival detection (P3) =====
 export { detectCounterArrivals, snapshotCounterSquares } from './counterArrivals';

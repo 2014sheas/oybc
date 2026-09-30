@@ -36,6 +36,7 @@ import { formatTimeframeLabel } from './calendarBoundaries';
 import { formatCounterName } from './counterName';
 import { isWindowStampedDerived } from './memberRules';
 import { resolveLinkedCounterDisplay } from './taskEvents';
+import { isTaskExpired } from './taskExpiry';
 
 /**
  * One member task of a shared counter, resolved to its board placement +
@@ -123,6 +124,36 @@ export interface BuildSharedCounterGroupsInput {
    * derivation, byte-identical to before.
    */
   eventsByTaskId?: Readonly<Record<string, TaskEvent[]>>;
+  /**
+   * Optional — which linked MEMBERS a group lists (§Member rules B3 RC9,
+   * the Counters hub's "Show expired tasks" toggle). Per-window derived
+   * counters carry their board window's `endDate`, so a counter that has
+   * ridden a few boards accumulates members that are over; with
+   * `showExpired: false` those are dropped from the group by the Tasks
+   * tab's own predicate (`isTaskExpired(member, now)`).
+   *
+   * Applied AFTER root detection, never before it: a board-born counter is
+   * a root only because a live task links to it, so filtering the task set
+   * up front used to un-root a counter the moment its last member's window
+   * closed and delete the whole group from the hub (the
+   * hub-root-hidden-when-members-expire bug). A ROOT is never hidden,
+   * whatever its own `endDate` — it IS the counter. A root whose members
+   * have all expired is listed as a single-member group (lifetime total,
+   * nothing counting now).
+   *
+   * Absent → every live member is listed (byte-identical to the
+   * vector-pinned output).
+   */
+  memberVisibility?: SharedCounterMemberVisibility;
+}
+
+/** See {@link BuildSharedCounterGroupsInput.memberVisibility}. */
+export interface SharedCounterMemberVisibility {
+  /** `true` lists expired members too. */
+  showExpired: boolean;
+  /** Reference time for `isTaskExpired`; defaults to `new Date()` — inject
+   *  it in tests. */
+  now?: Date;
 }
 
 /**
@@ -197,12 +228,28 @@ export function sharedCounterRootIds(tasks: Task[]): Set<string> {
 }
 
 /**
+ * The member-row predicate {@link buildSharedCounterGroups} applies once the
+ * roots are known: with `showExpired: false` a linked member whose window has
+ * ended is left out of its group. Roots never pass through this (the source
+ * row is always listed). Mirror of the Swift `isVisibleCounterMember`.
+ */
+function isVisibleCounterMember(
+  member: Task,
+  visibility: SharedCounterMemberVisibility | undefined,
+): boolean {
+  if (!visibility || visibility.showExpired) return true;
+  return !isTaskExpired(member, visibility.now ?? new Date());
+}
+
+/**
  * Build the Counters-Hub / Counter-Detail view-models from the task graph.
  *
  * @returns One `SharedCounterGroup` per source counting task that has at least
  *   one live linked task OR is flagged `isCounter` (P5 hub-born counters),
  *   sorted by counter name (case-insensitive) for a stable display order.
- *   Empty array when the user has no shared counters.
+ *   Empty array when the user has no shared counters. Root detection runs
+ *   over EVERY live task; `input.memberVisibility` then decides which linked
+ *   members each group lists (a root is never dropped).
  */
 export function buildSharedCounterGroups(
   input: BuildSharedCounterGroupsInput,
@@ -228,6 +275,9 @@ export function buildSharedCounterGroups(
     // A link whose target is missing / deleted / not a counter has no key —
     // the helper already applied this function's own orphan predicate, so the
     // `?.` drops exactly the members whose group the loop below would skip.
+    // Expired members are dropped HERE — after the root walk above, which
+    // saw them — so a root keeps its group when every member is over.
+    if (!isVisibleCounterMember(t, input.memberVisibility)) continue;
     linkedBySource.get(src)?.push(t);
   }
 

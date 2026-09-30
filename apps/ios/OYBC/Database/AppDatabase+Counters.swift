@@ -251,12 +251,16 @@ extension AppDatabase {
     // MARK: - Counters Hub / Detail read
 
     /// The Counters Hub / Counter Detail read: the user's live tasks and the
-    /// counter groups built from them (§Member rules RC9 expiry filter applied
-    /// BEFORE grouping). The user's non-deleted events are passed to
-    /// `buildSharedCounterGroups` so a window-stamped member's `logged` is its
-    /// root's in-window sum — the play cell's and the kernel's rule — never
-    /// `lifetime − baseline` (docs/WINDOWED_COMPLETION.md §Derived-task
-    /// carve-out, amended 2026-09-23). Mirrors web `useSharedCounterGroups`.
+    /// counter groups built from them. The §Member rules RC9 expiry rule is
+    /// the kernel's (`memberVisibility`), applied AFTER root detection over
+    /// the WHOLE live task set — so a board-born counter whose members have
+    /// all expired is still a root and still listed (the pre-fix read
+    /// filtered the task set first and un-rooted it). The user's non-deleted
+    /// events are passed to `buildSharedCounterGroups` so a window-stamped
+    /// member's `logged` is its root's in-window sum — the play cell's and
+    /// the kernel's rule — never `lifetime − baseline`
+    /// (docs/WINDOWED_COMPLETION.md §Derived-task carve-out, amended
+    /// 2026-09-23). Mirrors web `useSharedCounterGroups`.
     ///
     /// Read failures degrade to empty sets (the screens show their empty
     /// state), matching the previous inline `try?` reads.
@@ -264,21 +268,24 @@ extension AppDatabase {
     /// - Parameters:
     ///   - userId: The signed-in user.
     ///   - showExpired: `true` keeps expired derived members in.
-    /// - Returns: The UNfiltered live tasks (the hub's "+ New counter" dedupe
-    ///   set) and the grouped view-models.
+    ///   - now: Reference time for the expiry rule; injected for tests.
+    /// - Returns: The live tasks (the hub's "+ New counter" dedupe set) and
+    ///   the grouped view-models.
     func fetchSharedCounterGroups(
         userId: String,
-        showExpired: Bool
+        showExpired: Bool,
+        now: Date = Date()
     ) -> (tasks: [Task], groups: [SharedCounterGroup]) {
         let tasks = (try? fetchTasks(userId: userId)) ?? []
         let boards = (try? fetchBoards(userId: userId)) ?? []
         let boardTasks = (try? fetchAllBoardTasks()) ?? []
         let events = (try? fetchNonDeletedTaskEvents(userId: userId)) ?? []
         let groups = buildSharedCounterGroups(
-            tasks: filterCounterTasks(tasks, showExpired: showExpired),
+            tasks: tasks,
             boardTasks: boardTasks,
             boards: boards,
-            eventsByTaskId: Dictionary(grouping: events, by: \.taskId)
+            eventsByTaskId: Dictionary(grouping: events, by: \.taskId),
+            memberVisibility: SharedCounterMemberVisibility(showExpired: showExpired, now: now)
         )
         return (tasks, groups)
     }
