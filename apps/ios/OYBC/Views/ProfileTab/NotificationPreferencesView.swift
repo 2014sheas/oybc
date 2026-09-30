@@ -169,7 +169,9 @@ struct NotificationPreferencesContent: View {
             RisoPaperBackground()
             ScrollView(showsIndicators: false) {
                 VStack(alignment: .leading, spacing: 0) {
-                    RisoSubPageHeader(title: "Notifications")
+                    // Profile reorg PR1 — moved off Profile, now reachable
+                    // only from Settings, so the kicker changes accordingly.
+                    RisoSubPageHeader(title: "Notifications", kicker: "Settings")
                         .padding(.top, 16).padding(.bottom, 20)
 
                     sectionLabel("Notifications")

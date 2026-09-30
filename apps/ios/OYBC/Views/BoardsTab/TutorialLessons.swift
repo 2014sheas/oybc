@@ -15,6 +15,14 @@ enum ProfileRoute: Hashable {
     case boardSettings
     /// Streaks & history page (handoff §5e).
     case streaks
+    /// Settings sub-page (Profile reorg PR1) — Appearance/Preferences/Sign
+    /// Out, pushed from the gear button on Profile.
+    case settings
+    /// Notifications sub-page (Profile reorg PR1) — moved off Profile,
+    /// now reachable only from Settings.
+    case notifications
+    /// Help & getting started sub-page (Profile reorg PR1) — new.
+    case help
 }
 
 /// Where a tutorial lesson's "Try it" button deep-links. Routed by
@@ -24,7 +32,7 @@ enum TutorialDeepLink {
     case addTasks        // → Tasks tab / library
     case openABoard      // → newest board, else Create
     case boardSettings   // → Profile › Board settings (P7 — was recurringTemplates/defaultPools)
-    case settings        // → Profile tab
+    case settings        // → Profile › Settings (Profile reorg PR1 — was the Profile tab root)
     case shareGreenlog   // → sample GREENLOG preview overlay
 }
 
