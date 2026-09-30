@@ -14,8 +14,7 @@ import Observation
 /// instantiated only by the retired `Views/ProfileTab/RecurringTemplatesView.swift`
 /// page. That page is gone (folded into `BoardSettingsView`'s
 /// "Repeating boards" roster section), but every computed property here
-/// (`templates`, `attentionByTemplateId`, `poolPreviewByTemplateId`,
-/// `poolPreviewOverflowByTemplateId`, `mixByTemplateId`) is exactly what
+/// (`templates`, `attentionByTemplateId`, `mixByTemplateId`) is exactly what
 /// the roster needs too, so this VM was ADAPTED in place (reused
 /// verbatim, not reinvented) rather than deleted — `BoardSettingsView`
 /// now owns the single live instance.
@@ -32,10 +31,10 @@ final class RecurringBoardTemplatesViewModel {
     /// docs/POOLS_RECURRING.md §Migration "seedTaskIds end state" —
     /// "never read after P1" is unconditional) — this used to be computed
     /// implicitly by walking `template.seedTaskIds` directly inside
-    /// `computeAttention`/`computePoolPreview`. That went stale the first
+    /// `computeAttention`. That went stale the first
     /// time the legacy-editor write-through ran (it edits the linked
     /// Pool's `taskIds`, not this field), which could show a WRONG
-    /// pool-health badge or preview chip row. Batched (one `fetchPools`
+    /// pool-health badge. Batched (one `fetchPools`
     /// call for every template's pools, not N calls) — mirrors the
     /// boards-list perf lesson. iOS twin of web's `useTemplateRosterHealth`.
     var mixByTemplateId: [String: [String]] = [:]
@@ -50,16 +49,9 @@ final class RecurringBoardTemplatesViewModel {
     /// the form can't add unknown ids), otherwise the validation failure
     /// reason is surfaced. Absent key ⇒ healthy, no badge.
     var attentionByTemplateId: [String: SpawnAttentionReason] = [:]
-
-    /// First-3 resolved task titles (in mix order) per template, for the
-    /// card's pool-preview chip row (issue #321). Unresolved ids (e.g. a
-    /// soft-deleted task) are skipped rather than rendered as blank chips.
-    /// A template with zero resolvable titles has no entry here.
-    var poolPreviewByTemplateId: [String: [String]] = [:]
-
-    /// Count of additional resolved titles beyond the first 3, for the
-    /// card's "+{k} more" overflow chip. Absent (or 0) ⇒ no overflow chip.
-    var poolPreviewOverflowByTemplateId: [String: Int] = [:]
+    // (The pool-preview chip-row maps that lived here — issue #321 — were
+    // removed with the chips in Profile reorg PR3; web's `poolPreview.ts`
+    // went the same way.)
 
     // MARK: - Race-condition guard
     //
@@ -106,16 +98,11 @@ final class RecurringBoardTemplatesViewModel {
                 resolutionByTemplateId: resolutionByTemplateId,
                 tasksById: tasksById
             )
-            let (preview, overflow) = Self.computePoolPreview(
-                templates: result, liveTasks: liveTasks, mixByTemplateId: mixByTemplateId
-            )
             await MainActor.run {
                 guard mySeq == latestSeq else { return }
                 self.templates = result
                 self.mixByTemplateId = mixByTemplateId
                 self.attentionByTemplateId = attention
-                self.poolPreviewByTemplateId = preview
-                self.poolPreviewOverflowByTemplateId = overflow
                 self.loadError = nil
             }
         } catch {
@@ -125,8 +112,6 @@ final class RecurringBoardTemplatesViewModel {
                 self.templates = []
                 self.mixByTemplateId = [:]
                 self.attentionByTemplateId = [:]
-                self.poolPreviewByTemplateId = [:]
-                self.poolPreviewOverflowByTemplateId = [:]
             }
         }
     }
@@ -233,39 +218,5 @@ final class RecurringBoardTemplatesViewModel {
 
     func reloadAsync(userId: String) {
         _Concurrency.Task { await reload(userId: userId) }
-    }
-
-    /// Pure pool-preview computation (issue #321) — resolves each
-    /// template's CURRENT mix (`mixByTemplateId`, falling back to
-    /// `seedTaskIds`) against the live library (in mix order), skipping
-    /// ids that don't resolve (soft-deleted / not-yet-synced), and caps
-    /// the first result at 3 titles for the card's chip row. `static`
-    /// (like `computeAttention`) so unit tests can exercise it directly
-    /// without a database.
-    ///
-    /// - Parameter mixByTemplateId: See `computeAttention`'s parameter
-    ///   doc — same fallback semantics.
-    /// - Returns: `(preview, overflow)` — `preview[id]` is the first-3
-    ///   resolved titles in mix order (absent if 0 resolve); `overflow[id]`
-    ///   is the count of additional resolved titles beyond those 3
-    ///   (absent/0 ⇒ no overflow chip).
-    static func computePoolPreview(
-        templates: [RecurringBoardTemplate],
-        liveTasks: [Task],
-        mixByTemplateId: [String: [String]] = [:]
-    ) -> (preview: [String: [String]], overflow: [String: Int]) {
-        let taskMap = Dictionary(liveTasks.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
-        var preview: [String: [String]] = [:]
-        var overflow: [String: Int] = [:]
-        for template in templates {
-            let mixTaskIds = mixByTemplateId[template.id] ?? template.seedTaskIds
-            let resolvedTitles = mixTaskIds.compactMap { taskMap[$0]?.title }
-            guard !resolvedTitles.isEmpty else { continue }
-            preview[template.id] = Array(resolvedTitles.prefix(3))
-            if resolvedTitles.count > 3 {
-                overflow[template.id] = resolvedTitles.count - 3
-            }
-        }
-        return (preview, overflow)
     }
 }

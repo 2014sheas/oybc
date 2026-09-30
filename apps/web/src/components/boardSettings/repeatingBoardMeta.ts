@@ -19,8 +19,10 @@ import { Timeframe, type WeekStartDay } from '@oybc/shared';
  */
 export function formatRenewsCaption(timeframe: Timeframe, weekStartDay: WeekStartDay): string {
   switch (timeframe) {
+    // Per-timeframe strings are the SAME on iOS
+    // (`RecurringTemplateCard.renewalDayText`) — change both together.
     case Timeframe.DAILY:
-      return 'renews daily';
+      return 'renews every morning';
     case Timeframe.WEEKLY:
       return weekStartDay === 'sunday' ? 'renews Sundays' : 'renews Mondays';
     case Timeframe.MONTHLY:
@@ -28,8 +30,9 @@ export function formatRenewsCaption(timeframe: Timeframe, weekStartDay: WeekStar
     case Timeframe.YEARLY:
       return 'renews Jan 1';
     case Timeframe.CUSTOM:
+      return 'renews custom'; // unreachable — repeating boards exclude custom
     case Timeframe.INDEFINITE:
-      return 'renews'; // unreachable — repeating boards exclude these
+      return 'renews ongoing'; // unreachable — repeating boards exclude indefinite
   }
 }
 

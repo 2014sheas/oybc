@@ -194,7 +194,11 @@ export function BoardSettingsPage(): React.ReactElement {
 
       <div className={styles.sectionHeader}>
         <span className={styles.sectionLabel}>Repeating boards</span>
-        <Link to="/create?newBoard=recurring" className={styles.sectionHeaderLink}>
+        <Link
+          to="/create?newBoard=recurring"
+          className={styles.sectionHeaderLink}
+          aria-label="New repeating board"
+        >
           New &rsaquo;
         </Link>
       </div>

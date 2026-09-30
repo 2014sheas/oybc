@@ -38,12 +38,14 @@ struct NotificationPreferencesView: View {
             onSetDailyTime: setDailyTime,
             onOpenSettings: openSystemSettings,
             // Profile reorg PR3 — these four moved here from Board settings.
-            // They gate the Boards-tab "set up the next window" banner, not
-            // an OS notification, so writing them never needs a reconcile.
-            onSetRecurringDaily: { setPref(\.recurringDailyEnabled, $0, reconcileAfter: false) },
-            onSetRecurringWeekly: { setPref(\.recurringWeeklyEnabled, $0, reconcileAfter: false) },
-            onSetRecurringMonthly: { setPref(\.recurringMonthlyEnabled, $0, reconcileAfter: false) },
-            onSetRecurringYearly: { setPref(\.recurringYearlyEnabled, $0, reconcileAfter: false) }
+            // They gate the Boards-tab "set up the next window" banner AND
+            // the per-timeframe "new recurring window" reminder
+            // (`NotificationPlanner.isTimeframeEnabled`), so a flip
+            // reconciles the OS pending set like every other toggle here.
+            onSetRecurringDaily: { setPref(\.recurringDailyEnabled, $0) },
+            onSetRecurringWeekly: { setPref(\.recurringWeeklyEnabled, $0) },
+            onSetRecurringMonthly: { setPref(\.recurringMonthlyEnabled, $0) },
+            onSetRecurringYearly: { setPref(\.recurringYearlyEnabled, $0) }
         )
         .navigationBarHidden(true)
         // Refresh the OS status on appear so a change made in iOS Settings

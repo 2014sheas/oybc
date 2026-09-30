@@ -3,9 +3,9 @@ import { Timeframe } from '@oybc/shared';
 import { formatRenewsCaption, formatRepeatingBoardMeta } from '../repeatingBoardMeta';
 
 describe('formatRenewsCaption', () => {
-  it('renews daily for a DAILY board, regardless of week start', () => {
-    expect(formatRenewsCaption(Timeframe.DAILY, 'monday')).toBe('renews daily');
-    expect(formatRenewsCaption(Timeframe.DAILY, 'sunday')).toBe('renews daily');
+  it('renews every morning for a DAILY board, regardless of week start (same string as iOS)', () => {
+    expect(formatRenewsCaption(Timeframe.DAILY, 'monday')).toBe('renews every morning');
+    expect(formatRenewsCaption(Timeframe.DAILY, 'sunday')).toBe('renews every morning');
   });
 
   it('renews on the week-start day for a WEEKLY board', () => {
@@ -39,7 +39,7 @@ describe('formatRepeatingBoardMeta', () => {
 
   it('reflects a DAILY cadence', () => {
     expect(formatRepeatingBoardMeta(4, 16, Timeframe.DAILY, 'sunday', true)).toBe(
-      '4×4 board · 16-task pool · renews daily',
+      '4×4 board · 16-task pool · renews every morning',
     );
   });
 
