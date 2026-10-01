@@ -97,3 +97,28 @@ node .ds-sync/package-validate.mjs ./ds-bundle
 ## Known render warns
 
 None — validate exits clean with 0 warnings. Any warn on a future run is new.
+
+## 2026-09-30 re-sync (teal + prop drift)
+
+- Trigger: compound task type went green → teal (#522; an orange step in #520
+  was rejected), and props drifted since #509. `dtsPropsFor` updated by hand:
+  `RisoButton.kind` + `'teal'` (compound-type submit CTA), `RisoSegmented` +
+  `fullWidth?: boolean`, `RisoIcon.name` + `'shuffle'`, `RisoTypeBadge` doc
+  compound → K (teal). Previews: `RisoButton` kinds sweep + Teal;
+  `RisoSegmented` + `FullWidth` story (five equal segments at 353px).
+- `cfg.overrides.RisoSegmented = {"cardMode": "column"}` — the FullWidth story
+  trips `[GRID_OVERFLOW]` (wider than a grid cell), same remedy as DiceButton.
+- `conventions.md` accents row + on-fill rows now name `--riso-teal` (dark fill
+  → `--riso-on-color`); re-verified every token against `ds-bundle/tokens/riso.css`.
+- Build the shared package WITH its deps before the converter:
+  `pnpm -F "@oybc/shared..." build` (a bare `--filter @oybc/shared build` fails
+  with tsc exit 2 because `@oybc/bingo-core` has no dist in a fresh worktree).
+- `.ds-sync/` staging needs its own `package.json` before `npm i` (the skill's
+  `echo '{"name":"ds-sync-deps",...}'` line) or the install lands nowhere; deps
+  this run: esbuild, ts-morph, @types/react, playwright@1.62.0 (cached
+  `chromium_headless_shell-1234`).
+- Review-sheet trap: sheets are rendered scaled down in the Read tool, so a
+  353px full-width story LOOKS like natural-width segments. Measure with
+  playwright (`getBoundingClientRect`) before grading `needs-work`.
+- Driver verdict: 9 verified-by-upload, 2 re-graded (RisoButton, RisoSegmented),
+  4 uploaded (+ RisoIcon/RisoTypeBadge doc-only), 0 deletes. Atomic path.

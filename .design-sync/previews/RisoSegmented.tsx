@@ -32,3 +32,25 @@ export function Pill() {
     />
   );
 }
+
+/** Five options in one full-width row of equal segments (Board settings' Timeframe row). */
+export function FullWidth() {
+  const [value, setValue] = React.useState<string | number>('weekly');
+  return (
+    <div style={{ width: 353 }}>
+      <RisoSegmented
+        aria-label="Timeframe"
+        fullWidth
+        options={[
+          { value: 'custom', label: 'Custom' },
+          { value: 'daily', label: 'Daily' },
+          { value: 'weekly', label: 'Weekly' },
+          { value: 'monthly', label: 'Monthly' },
+          { value: 'yearly', label: 'Yearly' },
+        ]}
+        value={value}
+        onChange={setValue}
+      />
+    </div>
+  );
+}
