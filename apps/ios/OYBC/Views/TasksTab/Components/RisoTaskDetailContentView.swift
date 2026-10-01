@@ -30,6 +30,8 @@ struct RisoTaskDetailContentView: View {
     let onDeleteTap: () -> Void
     let onOpenTask: (String) -> Void
     let onOpenBoard: (String) -> Void
+    /// Opens Counter detail for the given shared-counter id (linked row).
+    var onOpenCounter: (String) -> Void = { _ in }
 
     // MARK: - Local state
 
@@ -47,7 +49,7 @@ struct RisoTaskDetailContentView: View {
                 // Shared-counter link caption (Phase 2) — restored so linked
                 // counting tasks surface their source here, like the original detail.
                 if task.type == .counting, let sharedCounterId = task.sharedCounterId {
-                    LinkedCounterCaptionView(sharedCounterId: sharedCounterId, database: database)
+                    LinkedCounterCaptionView(sharedCounterId: sharedCounterId, database: database, onOpenCounter: onOpenCounter)
                 }
                 usageRow
                 if task.type == .compound && !compoundChildren.isEmpty {

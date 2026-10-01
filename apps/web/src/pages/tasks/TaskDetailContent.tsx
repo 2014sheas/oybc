@@ -33,6 +33,7 @@ import {
 } from '../../db/operations/recurringBoardTemplates';
 import { TypeBadge } from '../../components/TypeBadge';
 import { formatRelativeTime } from '../../utils/relativeTime';
+import { LinkedCounterCaptionView } from './LinkedCounterCaptionView';
 import { TaskEditSheet } from './TaskEditSheet';
 import { TaskConfirmDeleteDialog } from './TaskConfirmDeleteDialog';
 import { displayedCountFor } from './taskCountDisplay';
@@ -60,6 +61,11 @@ export interface TaskDetailContentProps {
    * Sheet consumer: swaps internal taskId state (replace semantics).
    */
   onOpenTask?: (taskId: string) => void;
+  /**
+   * Called when the "Linked to {root}" row on a linked counting task is
+   * tapped. Receives the task's `sharedCounterId`.
+   */
+  onOpenCounter?: (sharedCounterId: string) => void;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -97,7 +103,13 @@ function StatusPill({ task }: { task: Task }): React.ReactElement {
   return <span className={`${styles.statusPill} ${styles.statusNeverStarted}`}>Never started</span>;
 }
 
-function CountingSourceCaption({ sharedCounterId }: { sharedCounterId: string }): React.ReactElement {
+function CountingSourceCaption({
+  sharedCounterId,
+  onOpenCounter,
+}: {
+  sharedCounterId: string;
+  onOpenCounter?: (sharedCounterId: string) => void;
+}): React.ReactElement {
   // Phase 2 — Shared Counters: single-row lookup for the source task title.
   // Rendered only when sharedCounterId is present, so the hook always fires.
   //
@@ -122,15 +134,12 @@ function CountingSourceCaption({ sharedCounterId }: { sharedCounterId: string })
   const found = sourceTask !== null && !sourceTask.isDeleted;
 
   return (
-    <p className={styles.linkedCounterCaption}>
-      Linked to{' '}
-      {isLoading
-        ? <em>loading…</em>
-        : found
-          ? <strong>{(sourceTask as Task).title}</strong>
-          : <em>source task (deleted or not found)</em>
-      }
-    </p>
+    <LinkedCounterCaptionView
+      sharedCounterId={sharedCounterId}
+      isLoading={isLoading}
+      sourceTask={found ? (sourceTask as Task) : null}
+      onOpenCounter={onOpenCounter}
+    />
   );
 }
 
@@ -209,7 +218,13 @@ function AchievementTemplateFact({
   );
 }
 
-function TypeSpecificFacts({ task }: { task: Task }): React.ReactElement | null {
+function TypeSpecificFacts({
+  task,
+  onOpenCounter,
+}: {
+  task: Task;
+  onOpenCounter?: (sharedCounterId: string) => void;
+}): React.ReactElement | null {
   if (task.type === TaskType.COUNTING) {
     // RB7 — baseline-adjusted for a linked member (see `taskCountDisplay`).
     const current = displayedCountFor(task);
@@ -228,7 +243,7 @@ function TypeSpecificFacts({ task }: { task: Task }): React.ReactElement | null 
         )}
         {/* Phase 2 — Linked counter indicator. Detail-sheet only (no list/cell badge). */}
         {task.sharedCounterId != null && (
-          <CountingSourceCaption sharedCounterId={task.sharedCounterId} />
+          <CountingSourceCaption sharedCounterId={task.sharedCounterId} onOpenCounter={onOpenCounter} />
         )}
       </section>
     );
@@ -278,6 +293,7 @@ export function TaskDetailContent({
   onChanged,
   onClose,
   onOpenTask,
+  onOpenCounter,
 }: TaskDetailContentProps): React.ReactElement {
   const taskId = task.id;
 
@@ -403,7 +419,7 @@ export function TaskDetailContent({
       </section>
 
       {/* Type-specific facts */}
-      <TypeSpecificFacts task={task} />
+      <TypeSpecificFacts task={task} onOpenCounter={onOpenCounter} />
 
       {/* Subtask of: parent compound back-refs */}
       {parentCompounds && parentCompounds.length > 0 && (

@@ -16,8 +16,10 @@ struct LinkedCounterCaptionView: View {
     let sharedCounterId: String
     /// Injected for tests; defaults to the production singleton.
     var database: AppDatabase = .shared
+    /// Tap handler for the found-state row; receives `sharedCounterId`.
+    var onOpenCounter: (String) -> Void = { _ in }
 
-    @State private var sourceTitle: String? = nil
+    @State private var source: LinkedCounterSource? = nil
     @State private var loading = true
 
     var body: some View {
@@ -25,7 +27,9 @@ struct LinkedCounterCaptionView: View {
             if loading {
                 EmptyView()
             } else {
-                LinkedCounterCaptionLabel(sourceTitle: sourceTitle)
+                LinkedCounterCaptionLabel(source: source) {
+                    onOpenCounter(sharedCounterId)
+                }
             }
         }
         // Keyed on the id so a different linked counter refetches, and
@@ -38,52 +42,80 @@ struct LinkedCounterCaptionView: View {
         let db = database
         let id = sharedCounterId
         do {
-            let title = try await _Concurrency.Task.detached(priority: .userInitiated) {
-                try Self.resolveSourceTitle(database: db, sharedCounterId: id)
+            let resolved = try await _Concurrency.Task.detached(priority: .userInitiated) {
+                try Self.resolveSource(database: db, sharedCounterId: id)
             }.value
             guard !_Concurrency.Task.isCancelled else { return }
-            sourceTitle = title
+            source = resolved
         } catch {
             guard !_Concurrency.Task.isCancelled else { return }
             dlog("linked counter caption: failed to load source \(id): \(error)")
-            sourceTitle = nil
+            source = nil
         }
         loading = false
     }
 
-    /// The live source task's title, or nil when the source is missing or
-    /// soft-deleted (the caption then reads "deleted or not found").
+    /// The live source task's title, lifetime count and unit, or nil when
+    /// the source is missing or soft-deleted (the caption then reads
+    /// "deleted or not found"). One primary-key read.
     ///
     /// - Parameters:
     ///   - database: The database to read from.
     ///   - sharedCounterId: The linked counter's source task id.
-    /// - Returns: The source title, or nil.
+    /// - Returns: The resolved source, or nil.
     /// - Throws: Any GRDB read error.
-    nonisolated static func resolveSourceTitle(database: AppDatabase, sharedCounterId: String) throws -> String? {
+    nonisolated static func resolveSource(database: AppDatabase, sharedCounterId: String) throws -> LinkedCounterSource? {
         let task = try database.read { db in
             try OYBC.Task.fetchOne(db, key: sharedCounterId)
         }
-        return task?.isDeleted == false ? task?.title : nil
+        guard let task, !task.isDeleted else { return nil }
+        return LinkedCounterSource(title: task.title, lifetime: task.currentCount ?? 0, unit: task.unit ?? "")
     }
 }
 
-/// The caption's pixels — "Linked to <title>", or the not-found line when
-/// `sourceTitle` is nil. A pure prop view (snapshotted by
-/// `LinkedCounterCaptionSnapshotTests`).
+/// What the linked-counter row shows about the family root.
+struct LinkedCounterSource: Equatable {
+    let title: String
+    /// The root's lifetime count (`Task.currentCount`).
+    let lifetime: Int
+    let unit: String
+}
+
+/// The caption's pixels — a tappable "Linked to" row (title + lifetime +
+/// chevron), or the non-interactive not-found line when `source` is nil. A
+/// pure prop view (snapshotted by `LinkedCounterCaptionSnapshotTests`).
 struct LinkedCounterCaptionLabel: View {
 
-    let sourceTitle: String?
+    let source: LinkedCounterSource?
+    var onOpen: () -> Void = {}
 
     var body: some View {
-        if let sourceTitle {
-            HStack(spacing: 4) {
-                Text("Linked to")
-                    .font(.risoBody(12, .regular))
-                    .foregroundStyle(Color.risoMuted)
-                Text(sourceTitle)
-                    .font(.risoBody(12, .medium))
-                    .foregroundStyle(Color.risoInk)
+        if let source {
+            Button(action: onOpen) {
+                HStack(alignment: .center, spacing: 10) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Linked to")
+                            .risoSectionLabel()
+                        Text(source.title)
+                            .font(.risoBody(14, .medium))
+                            .foregroundStyle(Color.risoInk)
+                    }
+                    Spacer(minLength: 0)
+                    Text("\(source.lifetime.formatted()) \(source.unit)")
+                        .font(.risoHead(14, .bold))
+                        .foregroundStyle(Color.risoBlue)
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundStyle(Color.risoMuted)
+                }
+                .padding(12)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .risoCard(keyline: Riso.Keyline.dense)
+                // Plain-style buttons hit-test only opaque content.
+                .contentShape(Rectangle())
             }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Open the \(source.title) counter")
         } else {
             // No `.italic()`: the bundled Archivo has no italic face, so the
             // old system-font italic can't carry over — muted ink marks it.

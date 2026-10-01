@@ -1,5 +1,6 @@
 import { useEffect, useCallback, useState, useRef } from 'react';
 import { useModalA11y } from '../hooks/useModalA11y';
+import { TypeBadge } from './TypeBadge';
 import styles from './InteractiveTaskSquare.module.css';
 import {
   progressFraction,
@@ -703,6 +704,18 @@ export function DetailModal({
             )}
             {sharedHint && (
               <div className={styles.sharedHint}>{sharedHint}</div>
+            )}
+            {onOpenInLibrary && (
+              <button
+                type="button"
+                className={styles.taskDetailsRow}
+                aria-label="Task details"
+                onClick={() => onOpenInLibrary(sq.id)}
+              >
+                <TypeBadge type="counting" size="small" letterOnly />
+                <span className={styles.taskDetailsText}>Task details</span>
+                <span className={styles.taskDetailsChevron} aria-hidden="true">›</span>
+              </button>
             )}
           </>
         )}

@@ -49,6 +49,9 @@ struct RisoCountingStepperSheet: View {
     /// default, matching the copy contract). `nil` → default chip shows "1"
     /// too (harmless — mirrors Counter Detail's `defaultLogAmount ?? 1`).
     var defaultLogAmount: Int? = nil
+    /// When non-nil, a full-width "Task details ›" row is appended; the tap
+    /// handler opens this square's task detail.
+    var onOpenTask: (() -> Void)? = nil
 
     // MARK: - Actions
 
@@ -75,9 +78,11 @@ struct RisoCountingStepperSheet: View {
         sharedHint: String? = nil,
         isSharedCounter: Bool = false,
         defaultLogAmount: Int? = nil,
+        onOpenTask: (() -> Void)? = nil,
         onIncrement: @escaping (Int, Bool) -> Void = { _, _ in },
         onDecrement: @escaping (Int, Bool) -> Void = { _, _ in }
     ) {
+        self.onOpenTask = onOpenTask
         self.taskTitle = taskTitle
         self.currentCount = currentCount
         self.maxCount = maxCount
@@ -121,6 +126,11 @@ struct RisoCountingStepperSheet: View {
                         .lineLimit(2)
                         .padding(.horizontal, Riso.gutter)
                 }
+
+                // ── Task details row ──
+                if let onOpenTask {
+                    taskDetailsRow(onOpenTask)
+                }
             }
             .padding(.top, 18)
             .padding(.horizontal, Riso.gutter)
@@ -136,7 +146,32 @@ struct RisoCountingStepperSheet: View {
         if isSharedCounter { height += 56 }
         if isSharedCounter && customOpen { height += 44 }
         if sharedHint != nil { height += 40 }
+        if onOpenTask != nil { height += 56 }
         return height
+    }
+
+    /// "Task details ›" row — same chrome as `RisoTaskRowView`.
+    private func taskDetailsRow(_ action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 8) {
+                RisoTypeBadge(kind: .counting, style: .letterSquare)
+                Text("Task details")
+                    .font(.risoBody(13, .semibold))
+                    .foregroundStyle(Color.risoInk)
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundStyle(Color.risoMuted)
+            }
+            .padding(.horizontal, 13)
+            .padding(.vertical, 11)
+            .frame(maxWidth: .infinity)
+            .risoCard(keyline: Riso.Keyline.dense)
+            // Plain-style buttons hit-test only opaque content.
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Task details")
     }
 
     // MARK: - Label pill
@@ -387,6 +422,21 @@ private struct StepperButtonStyle: ButtonStyle {
                 sharedHint: "↔ Shared · also counts on Daily Grind",
                 isSharedCounter: true,
                 defaultLogAmount: 10
+            )
+        }
+}
+
+#Preview("Counting stepper sheet — Task details row") {
+    Color.risoPaper
+        .sheet(isPresented: .constant(true)) {
+            RisoCountingStepperSheet(
+                taskTitle: "Push-ups",
+                currentCount: 20,
+                maxCount: 30,
+                unitText: "reps",
+                isLinkedCounter: false,
+                sharedHint: "↔ Shared · also counts on February Fitness",
+                onOpenTask: {}
             )
         }
 }

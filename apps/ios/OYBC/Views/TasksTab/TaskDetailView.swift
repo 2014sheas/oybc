@@ -15,6 +15,9 @@ struct TaskDetailView: View {
     /// switch to the Boards tab and push BoardPlayView for that id.
     /// Plumbed in from MainTabView, which owns boardsPath + selectedTab.
     let onOpenBoard: (String) -> Void
+    /// Opens Counter detail for a linked task's shared counter (pushed on the
+    /// caller's stack — Tasks tab).
+    var onOpenCounter: (String) -> Void = { _ in }
     /// Injected database (ROADMAP B3 seam); defaults to the app singleton.
     var database: AppDatabase = .shared
 
@@ -64,7 +67,8 @@ struct TaskDetailView: View {
                     onOpenTask: { id in
                         openedChildTaskId = TaskIdItem(id: id)
                     },
-                    onOpenBoard: onOpenBoard
+                    onOpenBoard: onOpenBoard,
+                    onOpenCounter: onOpenCounter
                 )
             } else {
                 Text("Loading…").foregroundStyle(Color.risoMuted).padding()
@@ -82,6 +86,7 @@ struct TaskDetailView: View {
                 onChanged: onChanged,
                 onDeleted: onChanged,
                 onOpenBoard: onOpenBoard,
+                onOpenCounter: onOpenCounter,
                 database: database
             )
         }

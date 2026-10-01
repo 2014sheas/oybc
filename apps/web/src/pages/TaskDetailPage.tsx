@@ -99,6 +99,7 @@ export function TaskDetailPage(): React.ReactElement {
         onChanged={() => {}}
         onClose={() => navigate('/tasks')}
         onOpenTask={(taskId) => { navigate(`/tasks/${taskId}`); }}
+        onOpenCounter={(id) => { navigate(`/profile/counters/${id}`); }}
       />
     </div>
   );

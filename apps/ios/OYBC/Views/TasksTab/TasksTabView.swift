@@ -470,6 +470,7 @@ struct TasksTabView: View {
                     if !path.isEmpty { path.removeLast() }
                 },
                 onOpenBoard: onOpenBoard,
+                onOpenCounter: { path.append(TasksTabRoute.counter(id: $0)) },
                 database: database
             )
         }
