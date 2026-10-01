@@ -106,6 +106,11 @@ struct TaskDetailSheetView: View {
             .navigationDestination(item: $openedCounterId) { counterId in
                 CounterDetailView(counterId: counterId, showExpired: false, onOpenBoard: onOpenBoard)
             }
+            // Counter detail can delete/unlink the counter; refresh the task
+            // (and its "Linked to" row) when it pops back here.
+            .onChange(of: openedCounterId) { _, newValue in
+                if newValue == nil { _Concurrency.Task { await reload() } }
+            }
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
                     RisoToolbarPill(title: "Done") { onClose() }

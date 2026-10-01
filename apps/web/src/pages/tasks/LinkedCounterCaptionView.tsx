@@ -34,7 +34,7 @@ export function LinkedCounterCaptionView({
         <span className={styles.linkedCounterLabel}>Linked to</span>
         <span className={styles.linkedCounterTitle}>{sourceTask.title}</span>
         <span className={styles.linkedCounterTotal}>
-          {sourceTask.currentCount ?? 0} {sourceTask.unit}
+          {(sourceTask.currentCount ?? 0).toLocaleString()} {sourceTask.unit}
         </span>
         <span className={styles.linkedCounterChevron} aria-hidden="true">›</span>
       </button>

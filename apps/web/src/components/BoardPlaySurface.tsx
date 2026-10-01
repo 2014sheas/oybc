@@ -1109,7 +1109,7 @@ export function BoardPlaySurface({
             onCompoundChildToggle={
               squareData.type === 'compound' ? handleCompoundChildToggle : undefined
             }
-            onOpenInLibrary={(taskId) => setOpenedTaskInLibrary(taskId)}
+            onOpenInLibrary={(taskId) => { setSelectedSquareId(null); setOpenedTaskInLibrary(taskId); }}
             sharedHint={modalSharedHint}
             quickAmount={quickAmount}
             achievementBadge={achievementBadgesByBoardTaskId[bt.id]}

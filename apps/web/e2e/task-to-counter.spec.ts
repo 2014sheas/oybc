@@ -51,6 +51,12 @@ test.describe('Task → counter navigation', () => {
     await expect(details).toBeVisible();
     await page.screenshot({ path: '.playwright-mcp/task-to-counter-popup.png' });
     await details.click();
-    await expect(page.getByRole('dialog', { name: 'Task detail' })).toBeVisible();
+    // The popup must be gone (not just covered) and the sheet must sit on
+    // top: Playwright's click fails if another element would receive it.
+    await expect(details).toBeHidden();
+    const sheet = page.getByRole('dialog', { name: 'Task detail' });
+    await expect(sheet).toBeVisible();
+    await sheet.getByRole('button', { name: 'Done' }).click();
+    await expect(sheet).toBeHidden();
   });
 });
