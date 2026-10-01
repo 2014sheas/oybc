@@ -108,7 +108,8 @@ extension BoardPlayView {
             let current: Int = {
                 guard task.sharedCounterId != nil else { return viewModel.windowedState(of: task).count }
                 return resolveLinkedCounterDisplay(
-                    task: task, eventsByTaskId: viewModel.windowEventsByTaskId, sealedAt: board?.sealedAt
+                    task: task, eventsByTaskId: viewModel.windowEventsByTaskId, sealedAt: board?.sealedAt,
+                    window: board.map(LinkedCounterWindow.init(board:))
                 ).displayed
             }()
             LateLogSheetView(
@@ -135,7 +136,8 @@ extension BoardPlayView {
                     }
                     if child.sharedCounterId != nil {
                         return resolveLinkedCounterDisplay(
-                            task: child, eventsByTaskId: viewModel.windowEventsByTaskId, sealedAt: board?.sealedAt
+                            task: child, eventsByTaskId: viewModel.windowEventsByTaskId, sealedAt: board?.sealedAt,
+                            window: board.map(LinkedCounterWindow.init(board:))
                         ).isCompleted
                     }
                     return viewModel.windowedState(of: child).isCompleted

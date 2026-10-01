@@ -1131,26 +1131,31 @@ final class DerivationPassTests: XCTestCase {
         XCTAssertNil(cell?.achievement)
     }
 
-    func testComputeBoardGrid_DerivedCounterCarveOut_CellStateReadsLifetimeCacheNotWindow() {
-        // sharedCounterId set + windowContext present but NO events — the
-        // carve-out must still read the lifetime cache, not resolve
-        // windowed-to-false (which would be wrong for a derived counter).
+    /// Owner rule 2026-10-01 (retired the hub-linked latch carve-out on a
+    /// board): a linked counter that is NOT window-stamped resolves from the
+    /// ROOT's increments inside THIS board's window — never its lifetime latch.
+    func testComputeBoardGrid_HubLinkedCounter_CellStateReadsRootEventsInBoardWindow() {
         let b = board("b1", boardSize: 3, startDate: "2026-07-05T00:00:00.000Z", endDate: "2026-07-06T00:00:00.000Z")
-        var derived = task("t-derived", isCompleted: true)
+        var derived = task("t-derived", isCompleted: true) // stale latch says done
         derived.type = .counting
         derived.sharedCounterId = "source-task"
         derived.currentCount = 10
         derived.maxCount = 10
         let bts = [boardTask("b1", "t-derived", 0, 0)]
-
-        let built = DerivationPass.computeBoardGrid(
-            board: b, boardTasksOnBoard: bts, childrenByCompound: [:],
-            taskById: ["t-derived": derived], allBoards: [],
-            windowContext: WindowEvaluationContext(eventsByTaskId: [:])
-        )
-        let cell = built.cells.first { $0.boardTaskId == "b1-t-derived" }
-        XCTAssertEqual(cell?.isCompleted, true)
-        XCTAssertNil(cell?.achievement)
+        func cell(_ events: [String: [TaskEvent]]) -> Bool? {
+            DerivationPass.computeBoardGrid(
+                board: b, boardTasksOnBoard: bts, childrenByCompound: [:],
+                taskById: ["t-derived": derived], allBoards: [],
+                windowContext: WindowEvaluationContext(eventsByTaskId: events)
+            ).cells.first { $0.boardTaskId == "b1-t-derived" }?.isCompleted
+        }
+        XCTAssertEqual(cell([:]), false, "no in-window root events — the latch is not read")
+        XCTAssertEqual(cell(["source-task": [
+            incrementEvent("e1", taskId: "source-task", occurredAt: "2026-06-01T00:00:00.000Z", delta: 10),
+        ]]), false, "out-of-window root events don't count")
+        XCTAssertEqual(cell(["source-task": [
+            incrementEvent("e2", taskId: "source-task", occurredAt: "2026-07-05T09:00:00.000Z", delta: 10),
+        ]]), true)
     }
 
     func testComputeBoardGrid_AchievementBoardMode_MetAndUnmet() {

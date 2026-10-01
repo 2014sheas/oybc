@@ -1,7 +1,6 @@
 import { useMemo } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import {
-  BoardStatus,
   computeBoardGrid,
   detectBingos,
   type Board,
@@ -20,6 +19,7 @@ import { useBoards } from './useBoards';
 import { useRecurringBoardTemplatesQuery } from './useRecurringBoardTemplates';
 import { useSquareWindowContext } from './useSquareWindowContext';
 import { useTaskLibrary } from '../pages/createPage/useTaskLibrary';
+import { buildSharedCounterHints } from '../utils/sharedCounterHints';
 import { isBoardExpired } from '../utils/boardDisplayUtils';
 import type { AchievementSquareBadgeData } from '../components/InteractiveTaskSquare';
 
@@ -267,64 +267,18 @@ export function useBoardPlayData(board: Board, userId: string | undefined): Boar
    * The hint is used by FloatingContextMenu and DetailModal so the user knows
    * a tap will ripple.
    */
-  const sharedCounterHintsByTaskId = useMemo<Map<string, string>>(() => {
-    const hints = new Map<string, string>();
-    // Build a lookup from boardId → board for active boards.
-    const activeBoardsById = new Map<string, Board>();
-    for (const b of allBoards) {
-      if (!b.isDeleted && b.status === BoardStatus.ACTIVE) {
-        activeBoardsById.set(b.id, b);
-      }
-    }
-    // Build a lookup from taskId → set of active boardIds (workspace-wide).
-    const activeBoardsByTask = new Map<string, Set<string>>();
-    for (const bt of allBoardTasks) {
-      if (activeBoardsById.has(bt.boardId)) {
-        let set = activeBoardsByTask.get(bt.taskId);
-        if (!set) { set = new Set(); activeBoardsByTask.set(bt.taskId, set); }
-        set.add(bt.boardId);
-      }
-    }
-
-    // For each shared-counter group, collect all member task ids,
-    // resolve their OTHER active board names, and build the hint.
-    for (const sourceId of Object.keys(taskMap)) {
-      // Only process sources (tasks that other tasks point to).
-      if (!sharedCounterSourceIds.has(sourceId)) continue;
-
-      // Find all member task ids: source + every linked task.
-      const memberIds: string[] = [sourceId];
-      for (const t of Object.values(taskMap)) {
-        if (t.sharedCounterId === sourceId) memberIds.push(t.id);
-      }
-
-      // Collect distinct active board names EXCLUDING the current play board.
-      const otherBoardNames = new Set<string>();
-      for (const memberId of memberIds) {
-        const memberBoards = activeBoardsByTask.get(memberId);
-        if (!memberBoards) continue;
-        for (const bId of memberBoards) {
-          if (bId === boardId) continue;
-          const b = activeBoardsById.get(bId);
-          if (b) otherBoardNames.add(b.name);
-        }
-      }
-
-      if (otherBoardNames.size === 0) continue;
-
-      const namesArr = [...otherBoardNames];
-      const hint =
-        namesArr.length === 1
-          ? `↔ Shared · also counts on ${namesArr[0]}`
-          : `↔ Shared · also counts on ${namesArr[0]} + ${namesArr.length - 1} more`;
-
-      // Apply the same hint to every member task in this group.
-      for (const memberId of memberIds) {
-        if (taskMap[memberId]) hints.set(memberId, hint);
-      }
-    }
-    return hints;
-  }, [taskMap, sharedCounterSourceIds, allBoardTasks, allBoards, boardId]);
+  const sharedCounterHintsByTaskId = useMemo<Map<string, string>>(
+    () =>
+      buildSharedCounterHints({
+        taskMap,
+        sharedCounterSourceIds,
+        allBoardTasks,
+        allBoards,
+        boardId,
+        now: new Date(),
+      }),
+    [taskMap, sharedCounterSourceIds, allBoardTasks, allBoards, boardId],
+  );
 
   // `boardTasks` is already `resolvePlacements` output above — sorted by
   // (row, col, id) with at most one row per cell — so this sort/dict-build

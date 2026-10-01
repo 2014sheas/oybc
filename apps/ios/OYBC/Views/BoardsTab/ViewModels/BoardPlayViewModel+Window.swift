@@ -93,7 +93,10 @@ extension BoardPlayViewModel {
     /// - Returns: Whether the square previews as complete.
     func windowedIsCompleted(for task: Task) -> Bool {
         if task.sharedCounterId != nil {
-            return resolveLinkedCounterDisplay(task: task, eventsByTaskId: windowEventsByTaskId).isCompleted
+            return resolveLinkedCounterDisplay(
+                task: task, eventsByTaskId: windowEventsByTaskId, sealedAt: board?.sealedAt,
+                window: board.map(LinkedCounterWindow.init(board:))
+            ).isCompleted
         }
         guard isEventOwningTask(task) else { return task.isCompleted }
         return windowedState(forTaskId: task.id).isCompleted
@@ -125,7 +128,10 @@ extension BoardPlayViewModel {
             )
         }
         if child.sharedCounterId != nil {
-            return resolveLinkedCounterDisplay(task: child, eventsByTaskId: windowEventsByTaskId).isCompleted
+            return resolveLinkedCounterDisplay(
+                task: child, eventsByTaskId: windowEventsByTaskId, sealedAt: board?.sealedAt,
+                window: board.map(LinkedCounterWindow.init(board:))
+            ).isCompleted
         }
         // Final-review F12: a non-event-owning child owns no events, so it
         // reads its latch (web `resolveCompoundChildCompleted` parity).

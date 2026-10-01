@@ -177,7 +177,7 @@ stays reachable in the library. Not mitigated further in v1.
 
 - "Add to a board" button on Counter Detail — the template-picker /
   link-suggestion path covers the need; button deferred with a seam.
-- Per-window derived display (`WINDOWED_COMPLETION.md` Phase 2) and P4 stats.
+- P4 stats. (Per-window derived display SHIPPED: member rules 2026-09 for wizard-minted rows; 2026-10-01 for every placed linked row — `WINDOWED_COMPLETION.md` §Derived-task carve-out.)
 - Counter merge UI; counter editing (rename / re-unit).
 
 ### Delivery

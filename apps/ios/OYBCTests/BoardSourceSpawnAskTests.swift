@@ -300,7 +300,11 @@ final class BoardSourceSpawnAskTests: XCTestCase {
             try BoardTask.filter(Column("boardId") == boardId).fetchAll(grdb)
         }.map { $0.taskId }
         XCTAssertEqual(placedIds.count, 4)
-        let famPlaced = placedIds.filter { $0 == "fam-root" || $0 == "fam-derived" }
+        // Owner rule 2026-10-01: the linked member is re-minted as THIS board's
+        // window-stamped row (`derivedTaskId`), so the family's one square may
+        // carry that id instead of the hand-added "fam-derived".
+        let mintedId = BoardSources.derivedTaskId(boardId: boardId, rootTaskId: "fam-root")
+        let famPlaced = placedIds.filter { $0 == "fam-root" || $0 == "fam-derived" || $0 == mintedId }
         XCTAssertEqual(famPlaced.count, 1, "one square per shared-counter family")
         for id in ["f1", "f2", "f3"] {
             XCTAssertTrue(placedIds.contains(id), "filler \(id) must fill the freed cell")

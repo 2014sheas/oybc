@@ -533,7 +533,7 @@ final class BoardPlayViewModelTests: XCTestCase {
         try seedUser(db)
         // Two active boards; source counter on b1, linked derived counter on b2.
         try db.saveBoard(makeBoard(id: "b1"))
-        try db.saveBoard(makeBoard(id: "b2"))
+        try db.saveBoard(makeBoard(id: "b2", endDate: nil)) // open window: still creditable
         try db.saveTask(makeCountingTask("c-src", maxCount: 5, currentCount: 0))
         try db.saveTask(makeCountingTask("c-lnk", maxCount: 5, currentCount: 0, sharedCounterId: "c-src"))
         try db.saveBoardTask(makeBoardTask(id: "bt-src", boardId: "b1", taskId: "c-src", row: 0, col: 0))
@@ -634,7 +634,7 @@ final class BoardPlayViewModelTests: XCTestCase {
         let db = try makeDb()
         try seedUser(db)
         try db.saveBoard(makeBoard(id: "b1"))
-        try db.saveBoard(makeBoard(id: "b2"))
+        try db.saveBoard(makeBoard(id: "b2", endDate: nil)) // open window: still creditable
         try db.saveTask(makeCountingTask("c-src", maxCount: 20, currentCount: 3))
         try db.saveTask(makeCountingTask("c-lnk", maxCount: 20, currentCount: 3, sharedCounterId: "c-src"))
         try db.saveBoardTask(makeBoardTask(id: "bt-src", boardId: "b1", taskId: "c-src", row: 0, col: 0))
@@ -1704,10 +1704,11 @@ final class BoardPlayViewModelTests: XCTestCase {
         )
     }
 
-    /// Derived (shared-counter-linked) counting tasks are carved out of
-    /// windowed evaluation — they stay on their propagation-stamped lifetime
-    /// cache in both the live grid and the edit preview.
-    func test_windowedIsCompleted_derivedCountingTask_staysOnLifetimeCache() throws {
+    /// Owner rule 2026-10-01: a linked (hub-linked) counting task resolves from
+    /// the ROOT's increments inside the board's window — its propagation-stamped
+    /// lifetime latch is no longer read on a board, in the live grid or the
+    /// edit preview.
+    func test_windowedIsCompleted_hubLinkedCountingTask_readsRootEventsInWindowNotLatch() throws {
         let db = try makeDb()
         try seedUser(db)
 
@@ -1725,9 +1726,9 @@ final class BoardPlayViewModelTests: XCTestCase {
         XCTAssertTrue(waitUntil { vm.board?.id == "b1" && vm.allTasks.contains { $0.id == "d1" } })
 
         let liveTask = try XCTUnwrap(vm.taskMap["d1"])
-        XCTAssertTrue(
+        XCTAssertFalse(
             vm.windowedIsCompleted(for: liveTask),
-            "derived counting tasks are carved out — the preview reads the lifetime cache, unchanged"
+            "no in-window root events — the stale latch must not paint the square done"
         )
     }
 

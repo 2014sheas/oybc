@@ -98,7 +98,7 @@ extension AppDatabase {
     ///   - now: The mint instant, stamped on a revive.
     /// - Returns: True when a row was written (insert or revive).
     @discardableResult
-    private static func writeMintedTask(db: Database, row: Task, now: String) throws -> Bool {
+    static func writeMintedTask(db: Database, row: Task, now: String) throws -> Bool {
         guard let existing = try Task.fetchOne(db, key: row.id) else {
             try row.insert(db)
             try SyncQueueBuilder.makeItem(
@@ -702,11 +702,11 @@ extension AppDatabase {
     ///   - b: The other (its candidate board's).
     /// - Returns: True when both name the same instant (or the same literal).
     static func sameWindowStart(_ a: String?, _ b: String?) -> Bool {
-        guard let a, let b else { return a == b }
-        guard let da = DateFormatting.parseISO(a), let db = DateFormatting.parseISO(b) else {
-            return a == b
-        }
-        return da == db
+        // The definition moved to `BoardSources.sameWindowStart` (Helpers/
+        // LinkedCounterWindowHeal.swift) so the placement gate
+        // `isWindowStampedForBoard` and this file share one instant compare;
+        // this forwarder keeps the existing call sites.
+        BoardSources.sameWindowStart(a, b)
     }
 
     /// Was this row MINTED FOR `board` — i.e. is it this board's own

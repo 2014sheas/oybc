@@ -130,7 +130,10 @@ func wizardPreviewIsCompleted(
         )
     }
     if task.sharedCounterId != nil {
-        return resolveLinkedCounterDisplay(task: task, eventsByTaskId: eventsByTaskId).isCompleted
+        return resolveLinkedCounterDisplay(
+            task: task, eventsByTaskId: eventsByTaskId,
+            window: LinkedCounterWindow(startDate: windowStart, endDate: windowEnd)
+        ).isCompleted
     }
     guard isEventOwningTask(task) else { return task.isCompleted }
     return resolveTaskWindowState(

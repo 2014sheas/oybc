@@ -82,7 +82,10 @@ export function buildArrivalSquares(input: BuildArrivalSquaresInput): ArrivalSqu
 
     const displayed =
       task.sharedCounterId != null
-        ? resolveLinkedCounterDisplay(task, windowContext.eventsByTaskId).displayed
+        ? resolveLinkedCounterDisplay(task, windowContext.eventsByTaskId, undefined, {
+            startDate: windowContext.windowStart,
+            endDate: windowContext.windowEnd,
+          }).displayed
         : resolveTaskWindowState(
             task,
             windowContext.eventsByTaskId[task.id] ?? [],

@@ -180,6 +180,10 @@ final class TaskEventVectorTests: XCTestCase {
         let task: MiniTask
         let eventsByTaskId: [String: [WindowEvent]]?
         let sealedAt: String?
+        /// Optional (owner rule 2026-10-01) — the placing board's window for
+        /// a non-window-stamped row; absent or null = no window.
+        let window: Window?
+        struct Window: Decodable { let startDate: String; let endDate: String? }
         let expected: Expected
     }
 
@@ -206,7 +210,10 @@ final class TaskEventVectorTests: XCTestCase {
                     (rootId, evs.map { makeEvent($0, taskId: rootId) })
                 })
             }
-            let result = resolveLinkedCounterDisplay(task: task, eventsByTaskId: events, sealedAt: v.sealedAt)
+            let window = v.window.map { LinkedCounterWindow(startDate: $0.startDate, endDate: $0.endDate) }
+            let result = resolveLinkedCounterDisplay(
+                task: task, eventsByTaskId: events, sealedAt: v.sealedAt, window: window
+            )
             XCTAssertEqual(result.displayed, v.expected.displayed, "Vector '\(v.name)' displayed")
             XCTAssertEqual(result.isCompleted, v.expected.isCompleted, "Vector '\(v.name)' isCompleted")
         }

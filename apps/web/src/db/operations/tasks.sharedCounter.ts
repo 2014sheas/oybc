@@ -3,7 +3,6 @@ import type {
   Task,
 } from '@oybc/shared';
 import {
-  BoardStatus,
   SyncOperationType,
   TaskType,
   boardWindowEnd,
@@ -19,6 +18,7 @@ import { addToSyncQueue } from './syncQueue';
 import { runBoardCascadeForTasks } from './orchestration';
 import { insertIncrementEventRaw, lateLogStampForBoard, getSealImmuneWindowsForTask } from './taskEvents';
 import { refreshDerivedBaselines } from './derivedCounters';
+import { isBoardCreditable } from '../../utils/boardDisplayUtils';
 import { reDeriveSealedBoardsForTasks } from './sealing';
 import { resolveAffectedBoardIds, refreshWatchersForBoards } from './boardLifecycle';
 
@@ -126,7 +126,9 @@ export async function propagateToLinkedRows(
     ? await db.boards.where('id').anyOf(uniqueBoardIds).toArray()
     : [];
   const affectedBoards: AffectedBoard[] = boardRows
-    .filter((b) => !b.isDeleted && b.status === BoardStatus.ACTIVE)
+    // Windowed linked counters: a sealed (Closed) or ended board cannot change,
+    // so it is never credited (`status` alone leaves a closed board `.active`).
+    .filter((b) => isBoardCreditable(b, new Date(now)))
     .map((b) => ({ boardId: b.id, boardName: b.name }));
 
   // ONE batched cascade: lookups + window context built once, each affected

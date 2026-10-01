@@ -74,7 +74,7 @@ describe('wizard preview — windowed completion', () => {
     expect(model.count).toEqual({ cur: 2, max: 5 });
   });
 
-  it('derived (shared-counter-linked) counting keeps its lifetime carve-out', () => {
+  it('linked (shared-counter) counting resolves from the root\'s window events, not its latch (owner rule 2026-10-01)', () => {
     const task = makeTask({
       type: TaskType.COUNTING,
       maxCount: 10,
@@ -84,7 +84,14 @@ describe('wizard preview — windowed completion', () => {
       baseline: 0,
     });
     const model = taskToModel(task, { [task.id]: task }, {}, ctx([]));
-    expect(model.done).toBe(true);
+    expect(model.done).toBe(false);
+    const met = taskToModel(
+      task,
+      { [task.id]: task },
+      {},
+      ctx([makeEvent('src-1', 'increment', IN_WINDOW, 10)]),
+    );
+    expect(met.done).toBe(true);
   });
 
   it('compound: evaluates windowed through its children, not the lifetime cache', () => {

@@ -195,18 +195,25 @@ final class BoardPreviewCellsTests: XCTestCase {
         XCTAssertEqual(result.cells[0], .task(completed: true))
     }
 
-    func testDerivedCounterStaysOnLifetimeCacheIgnoringWindowEvents() {
+    /// Owner rule 2026-10-01: a hub-linked (non-window-stamped) counter previews
+    /// from the ROOT's increments inside the board's window, not its latch.
+    func testHubLinkedCounterReadsRootEventsInBoardWindowNotLatch() {
         let board = makeBoard(boardSize: 3, startDate: "2026-07-05T00:00:00.000Z")
         let derived = makeCountingTask("t-derived", isCompleted: true, currentCount: 10, sharedCounterId: "source-task", baseline: 0)
         let boardTasks = [makeBoardTask(boardId: board.id, taskId: derived.id, row: 0, col: 0)]
-
-        // No events at all — if incorrectly windowed, zero events would
-        // resolve incomplete; the carve-out must still say true.
-        let result = BoardPreviewCells.build(
-            board: board, boardTasks: boardTasks, taskMap: [derived.id: derived],
-            childrenByCompound: [:], eventsByTaskId: [:]
+        func preview(_ events: [String: [TaskEvent]]) -> BoardPreviewCellsResult {
+            BoardPreviewCells.build(
+                board: board, boardTasks: boardTasks, taskMap: [derived.id: derived],
+                childrenByCompound: [:], eventsByTaskId: events
+            )
+        }
+        XCTAssertEqual(preview([:]).cells[0], .task(completed: false), "stale latch ignored")
+        let inWindow = TaskEvent(
+            id: "e", userId: userId, taskId: "source-task", kind: .increment, delta: 10,
+            occurredAt: "2026-07-06T00:00:00.000Z", boardId: nil, createdAt: "2026-07-06T00:00:00.000Z",
+            updatedAt: "2026-07-06T00:00:00.000Z", lastSyncedAt: nil, version: 1, isDeleted: false, deletedAt: nil
         )
-        XCTAssertEqual(result.cells[0], .task(completed: true))
+        XCTAssertEqual(preview(["source-task": [inWindow]]).cells[0], .task(completed: true))
     }
 
     func testCompoundTaskEvaluatesViaOperatorAgainstWindowedChildren() {

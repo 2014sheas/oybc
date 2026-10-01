@@ -359,19 +359,23 @@ export interface PlanDerivedTasksResult {
 }
 
 /**
- * A member is already a window-stamped derived counter when it has both marks.
+ * A member is LINKED to a shared counter — a window-stamped derived counter
+ * (both marks) OR a hub-linked copy (`sharedCounterId` alone).
  *
+ * Owner rule 2026-10-01: a counting square on a board accounts only for the
+ * counter's logs inside that board's window, so EVERY linked hand-added
+ * member is re-minted as a window-stamped row for the window being planned
+ * (before, only an already-window-stamped member or a vary > 0 roll minted).
  * Deliberately looser than the exported {@link isWindowStampedDerived}, which
- * also requires `createdInWizard`: a PLANNED member is re-minted for the new
- * window on the strength of the two marks alone (`PlanTask` doesn't carry the
- * provenance flag), while the exported predicate identifies a STORED row as
- * one of our per-window derived counters and wants all three.
+ * also requires `createdInWizard` — a PLANNED member is judged on
+ * `sharedCounterId` alone (`PlanTask` doesn't carry the provenance flag),
+ * while the exported predicate identifies a STORED row and wants all three.
  *
  * @param t - The member being planned.
- * @returns True when the member is itself a window-stamped derived counter.
+ * @returns True when the member derives from a shared-counter root.
  */
-function isWindowStampedMember(t: PlanTask): boolean {
-  return !!t.sharedCounterId && !!t.startDate;
+function isLinkedMember(t: PlanTask): boolean {
+  return !!t.sharedCounterId;
 }
 
 /**
@@ -522,13 +526,18 @@ export function planDerivedTasks(args: PlanDerivedTasksArgs): PlanDerivedTasksRe
     if (t.type === TaskType.COUNTING) {
       const goal = goalOf(t);
       if (goal === null) {
+        // Goal-less (an accumulator — including a goal-less LINKED member):
+        // nothing to mint a per-window target from, so it is placed as-is.
+        // Documented edge of the 2026-10-01 rule; `TaskSchema` requires a
+        // goal on every non-hub-born counting task, so this is defensive.
         placementIds.push(id);
         continue;
       }
       if (isManual) {
         const vary = manualTaskVary[id] ?? 0;
-        // A member that is ALREADY window-stamped is re-minted for this window.
-        if (isWindowStampedMember(t)) {
+        // A LINKED member (window-stamped OR hub-linked) is ALWAYS minted for
+        // this window — owner rule 2026-10-01. Vary off consumes no rng.
+        if (isLinkedMember(t)) {
           placementIds.push(mint(t, id, goal, vary).id);
           continue;
         }

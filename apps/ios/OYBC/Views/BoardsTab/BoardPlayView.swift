@@ -333,7 +333,8 @@ struct BoardPlayView: View {
     private func windowedIsCompleted(_ task: Task) -> Bool {
         if task.sharedCounterId != nil {
             return resolveLinkedCounterDisplay(
-                task: task, eventsByTaskId: windowEventsByTaskId, sealedAt: board?.sealedAt
+                task: task, eventsByTaskId: windowEventsByTaskId, sealedAt: board?.sealedAt,
+                window: board.map(LinkedCounterWindow.init(board:))
             ).isCompleted
         }
         return viewModel.windowedState(of: task).isCompleted
@@ -345,7 +346,8 @@ struct BoardPlayView: View {
     func windowedCount(_ task: Task) -> Int {
         if task.sharedCounterId != nil {
             return resolveLinkedCounterDisplay(
-                task: task, eventsByTaskId: windowEventsByTaskId, sealedAt: board?.sealedAt
+                task: task, eventsByTaskId: windowEventsByTaskId, sealedAt: board?.sealedAt,
+                window: board.map(LinkedCounterWindow.init(board:))
             ).displayed
         }
         return viewModel.windowedState(of: task).count
@@ -1103,8 +1105,11 @@ struct BoardPlayView: View {
             guard memberIds.contains(bt.taskId),
                   !seenBoardIds.contains(bt.boardId)
             else { continue }
+            // Only boards a log can still change, via a row live for its window.
+            let nowIso = AppDatabase.currentTimestamp()
             if let b = allBoardsInWorkspace.first(where: { $0.id == bt.boardId }),
-               !b.isDeleted, b.status == .active {
+               AppDatabase.boardCanStillCountLogs(b, now: nowIso),
+               !(allTasks.first(where: { $0.id == bt.taskId }).map { BoardSources.isFrozenDerivedRow($0, now: nowIso) } ?? false) {
                 seenBoardIds.insert(b.id)
                 otherBoardNames.append(b.name)
             }

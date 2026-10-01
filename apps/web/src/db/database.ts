@@ -418,6 +418,16 @@ export class AppDatabase extends Dexie {
       // Dynamic import avoids a top-of-file cycle (migrationV17 imports `db`).
       return import('./operations/migrationV17').then((mod) => mod.runMigrationV17(tx));
     });
+
+    // v18: windowed linked counters (owner rule 2026-10-01) — heals pre-rule
+    // hub-linked counters placed on boards into per-board window-stamped
+    // rows. See `operations/migrationV18.ts`. No schema shape change
+    // (`.stores({})` no-op); the version bump is the vehicle for the
+    // `.upgrade()`, same pattern as v13/v14/v16/v17.
+    this.version(18).stores({}).upgrade((tx) => {
+      // Dynamic import avoids a top-of-file cycle (migrationV18 imports `db`).
+      return import('./operations/migrationV18').then((mod) => mod.runMigrationV18(tx));
+    });
   }
 }
 

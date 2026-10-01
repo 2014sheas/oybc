@@ -276,11 +276,20 @@ func buildSharedCounterGroups(
             )
             // Window-stamped members read their own window from the root's
             // events (never `lifetime − baseline`, which counts later
-            // windows' logs too).
+            // windows' logs too); any other PLACED member reads its primary
+            // board's window the same way (owner rule 2026-10-01). An
+            // unplaced hub-linked member — no board, so no window — keeps
+            // the lifetime arithmetic.
+            let memberWindow: LinkedCounterWindow? = {
+                guard !BoardSources.isWindowStampedDerived(m), let board else { return nil }
+                return LinkedCounterWindow(startDate: board.startDate, endDate: board.endDate)
+            }()
             let displayed: Int
-            if !isSource, let eventsByTaskId, BoardSources.isWindowStampedDerived(m) {
+            if !isSource, let eventsByTaskId,
+               BoardSources.isWindowStampedDerived(m) || memberWindow != nil {
                 displayed = resolveLinkedCounterDisplay(
-                    task: m, eventsByTaskId: eventsByTaskId, sealedAt: board?.sealedAt
+                    task: m, eventsByTaskId: eventsByTaskId, sealedAt: board?.sealedAt,
+                    window: memberWindow
                 ).displayed
             } else {
                 displayed = deriveDisplayedCount(

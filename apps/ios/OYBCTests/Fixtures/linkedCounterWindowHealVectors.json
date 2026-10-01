@@ -1,0 +1,1503 @@
+{
+  "_note": "Hand-authored vectors for linkedCounterWindowHeal.ts ↔ Helpers/LinkedCounterWindowHeal.swift (owner rule 2026-10-01: a counting square on a board accounts only for the counter's logs inside that board's window). Every expectation was hand-computed; the copy ids are literal uuidv5 outputs (name \"sources:derived:<boardId>:<root>\", computed ONCE with the TS uuidv5) that Swift must reproduce independently. `planLinkedCounterWindowHeal` vectors share the `boards` roster below unless a vector carries its own `boards`. Task rows carry every field the planner reads; `null` = absent.",
+  "sameWindowStart": [
+    {
+      "name": "identical strings",
+      "a": "2026-09-18T00:00:00.000Z",
+      "b": "2026-09-18T00:00:00.000Z",
+      "expected": true
+    },
+    {
+      "name": "fractional vs whole seconds, same instant",
+      "a": "2026-09-18T00:00:00.000Z",
+      "b": "2026-09-18T00:00:00Z",
+      "expected": true
+    },
+    {
+      "name": "offset form vs UTC form, same instant",
+      "a": "2026-09-18T04:00:00.000Z",
+      "b": "2026-09-18T00:00:00-04:00",
+      "expected": true
+    },
+    {
+      "name": "different instants",
+      "a": "2026-09-18T00:00:00.000Z",
+      "b": "2026-09-19T00:00:00.000Z",
+      "expected": false
+    },
+    {
+      "name": "both absent",
+      "a": null,
+      "b": null,
+      "expected": true
+    },
+    {
+      "name": "one absent",
+      "a": null,
+      "b": "2026-09-18T00:00:00.000Z",
+      "expected": false
+    },
+    {
+      "name": "both unparseable and equal → literal match",
+      "a": "not-a-date",
+      "b": "not-a-date",
+      "expected": true
+    },
+    {
+      "name": "unparseable vs parseable → no match",
+      "a": "not-a-date",
+      "b": "2026-09-18T00:00:00.000Z",
+      "expected": false
+    }
+  ],
+  "isWindowStampedForBoard": [
+    {
+      "name": "window-stamped for this board's window",
+      "task": {
+        "sharedCounterId": "root-1",
+        "startDate": "2026-02-01T00:00:00.000Z",
+        "createdInWizard": true
+      },
+      "board": {
+        "startDate": "2026-02-01T00:00:00.000Z"
+      },
+      "expected": true
+    },
+    {
+      "name": "window-stamped, same instant in the other encoding",
+      "task": {
+        "sharedCounterId": "root-1",
+        "startDate": "2026-02-01T00:00:00Z",
+        "createdInWizard": true
+      },
+      "board": {
+        "startDate": "2026-02-01T00:00:00.000Z"
+      },
+      "expected": true
+    },
+    {
+      "name": "window-stamped for ANOTHER window",
+      "task": {
+        "sharedCounterId": "root-1",
+        "startDate": "2026-01-01T00:00:00.000Z",
+        "createdInWizard": true
+      },
+      "board": {
+        "startDate": "2026-02-01T00:00:00.000Z"
+      },
+      "expected": false
+    },
+    {
+      "name": "hub-linked (no startDate)",
+      "task": {
+        "sharedCounterId": "root-1",
+        "startDate": null,
+        "createdInWizard": false
+      },
+      "board": {
+        "startDate": "2026-02-01T00:00:00.000Z"
+      },
+      "expected": false
+    },
+    {
+      "name": "windowed but not wizard-born",
+      "task": {
+        "sharedCounterId": "root-1",
+        "startDate": "2026-02-01T00:00:00.000Z",
+        "createdInWizard": false
+      },
+      "board": {
+        "startDate": "2026-02-01T00:00:00.000Z"
+      },
+      "expected": false
+    },
+    {
+      "name": "no sharedCounterId (a plain wizard-born timeboxed task)",
+      "task": {
+        "sharedCounterId": null,
+        "startDate": "2026-02-01T00:00:00.000Z",
+        "createdInWizard": true
+      },
+      "board": {
+        "startDate": "2026-02-01T00:00:00.000Z"
+      },
+      "expected": false
+    }
+  ],
+  "planLinkedCounterWindowHeal": {
+    "boards": [
+      {
+        "id": "b-jan",
+        "timeframe": "monthly",
+        "startDate": "2026-01-01T00:00:00.000Z",
+        "endDate": "2026-01-31T23:59:59.999Z",
+        "isDeleted": false
+      },
+      {
+        "id": "b-feb",
+        "timeframe": "monthly",
+        "startDate": "2026-02-01T00:00:00.000Z",
+        "endDate": "2026-02-28T23:59:59.999Z",
+        "isDeleted": false
+      },
+      {
+        "id": "b-mar",
+        "timeframe": "monthly",
+        "startDate": "2026-03-01T00:00:00.000Z",
+        "endDate": "2026-03-31T23:59:59.999Z",
+        "isDeleted": false
+      },
+      {
+        "id": "b-apr",
+        "timeframe": "monthly",
+        "startDate": "2026-04-01T00:00:00.000Z",
+        "endDate": "2026-04-30T23:59:59.999Z",
+        "isDeleted": false
+      },
+      {
+        "id": "b-open",
+        "timeframe": "indefinite",
+        "startDate": "2026-02-15T00:00:00.000Z",
+        "endDate": null,
+        "isDeleted": false
+      },
+      {
+        "id": "b-del",
+        "timeframe": "monthly",
+        "startDate": "2026-01-01T00:00:00.000Z",
+        "endDate": "2026-01-31T23:59:59.999Z",
+        "isDeleted": true
+      }
+    ],
+    "vectors": [
+      {
+        "name": "single direct placement → stamp in place, no copy",
+        "note": "One live placement: the row takes that board's window.",
+        "tasks": [
+          {
+            "id": "hub1",
+            "type": "counting",
+            "sharedCounterId": "root-1",
+            "startDate": null,
+            "endDate": null,
+            "timeframe": null,
+            "createdInWizard": false,
+            "isDeleted": false,
+            "maxCount": 5
+          },
+          {
+            "id": "root-1",
+            "type": "counting",
+            "sharedCounterId": null,
+            "startDate": null,
+            "endDate": null,
+            "timeframe": null,
+            "createdInWizard": false,
+            "isDeleted": false,
+            "maxCount": null
+          }
+        ],
+        "boardTasks": [
+          {
+            "id": "bt-mar",
+            "boardId": "b-mar",
+            "taskId": "hub1",
+            "isDeleted": false
+          }
+        ],
+        "compoundChildren": [],
+        "expected": {
+          "stamps": [
+            {
+              "taskId": "hub1",
+              "boardId": "b-mar",
+              "timeframe": "monthly",
+              "startDate": "2026-03-01T00:00:00.000Z",
+              "endDate": "2026-03-31T23:59:59.999Z"
+            }
+          ],
+          "copies": []
+        }
+      },
+      {
+        "name": "two direct placements → the EARLIEST board (by startDate) stamps, the later one gets a copy; placement listing order is irrelevant",
+        "note": "boardTasks list March first; February still wins the stamp.",
+        "tasks": [
+          {
+            "id": "hub1",
+            "type": "counting",
+            "sharedCounterId": "root-1",
+            "startDate": null,
+            "endDate": null,
+            "timeframe": null,
+            "createdInWizard": false,
+            "isDeleted": false,
+            "maxCount": 5
+          },
+          {
+            "id": "root-1",
+            "type": "counting",
+            "sharedCounterId": null,
+            "startDate": null,
+            "endDate": null,
+            "timeframe": null,
+            "createdInWizard": false,
+            "isDeleted": false,
+            "maxCount": null
+          }
+        ],
+        "boardTasks": [
+          {
+            "id": "bt-mar",
+            "boardId": "b-mar",
+            "taskId": "hub1",
+            "isDeleted": false
+          },
+          {
+            "id": "bt-feb",
+            "boardId": "b-feb",
+            "taskId": "hub1",
+            "isDeleted": false
+          }
+        ],
+        "compoundChildren": [],
+        "expected": {
+          "stamps": [
+            {
+              "taskId": "hub1",
+              "boardId": "b-feb",
+              "timeframe": "monthly",
+              "startDate": "2026-02-01T00:00:00.000Z",
+              "endDate": "2026-02-28T23:59:59.999Z"
+            }
+          ],
+          "copies": [
+            {
+              "id": "41684bc5-903a-5edd-be8d-5248ce41959c",
+              "boardId": "b-mar",
+              "boardTaskId": "bt-mar",
+              "sourceTaskId": "hub1",
+              "rootTaskId": "root-1",
+              "timeframe": "monthly",
+              "startDate": "2026-03-01T00:00:00.000Z",
+              "endDate": "2026-03-31T23:59:59.999Z"
+            }
+          ]
+        }
+      },
+      {
+        "name": "direct + reached via a compound → the reached (earlier) board stamps, the later direct placement is copied",
+        "note": "compA on February holds hub1 as a child; hub1 is placed directly on March.",
+        "tasks": [
+          {
+            "id": "hub1",
+            "type": "counting",
+            "sharedCounterId": "root-1",
+            "startDate": null,
+            "endDate": null,
+            "timeframe": null,
+            "createdInWizard": false,
+            "isDeleted": false,
+            "maxCount": 5
+          },
+          {
+            "id": "compA",
+            "type": "compound",
+            "sharedCounterId": null,
+            "startDate": null,
+            "endDate": null,
+            "timeframe": null,
+            "createdInWizard": false,
+            "isDeleted": false,
+            "maxCount": null
+          },
+          {
+            "id": "root-1",
+            "type": "counting",
+            "sharedCounterId": null,
+            "startDate": null,
+            "endDate": null,
+            "timeframe": null,
+            "createdInWizard": false,
+            "isDeleted": false,
+            "maxCount": null
+          }
+        ],
+        "boardTasks": [
+          {
+            "id": "bt-cA-feb",
+            "boardId": "b-feb",
+            "taskId": "compA",
+            "isDeleted": false
+          },
+          {
+            "id": "bt-mar",
+            "boardId": "b-mar",
+            "taskId": "hub1",
+            "isDeleted": false
+          }
+        ],
+        "compoundChildren": [
+          {
+            "compoundTaskId": "compA",
+            "childTaskId": "hub1",
+            "isDeleted": false
+          }
+        ],
+        "expected": {
+          "stamps": [
+            {
+              "taskId": "hub1",
+              "boardId": "b-feb",
+              "timeframe": "monthly",
+              "startDate": "2026-02-01T00:00:00.000Z",
+              "endDate": "2026-02-28T23:59:59.999Z"
+            }
+          ],
+          "copies": [
+            {
+              "id": "41684bc5-903a-5edd-be8d-5248ce41959c",
+              "boardId": "b-mar",
+              "boardTaskId": "bt-mar",
+              "sourceTaskId": "hub1",
+              "rootTaskId": "root-1",
+              "timeframe": "monthly",
+              "startDate": "2026-03-01T00:00:00.000Z",
+              "endDate": "2026-03-31T23:59:59.999Z"
+            }
+          ]
+        }
+      },
+      {
+        "name": "further REACHED-only boards are skipped (documented limitation)",
+        "note": "hub1 direct on January (stamps); compA places it on February and March only through the compound — no copy, the kernel still renders those boards over their own windows.",
+        "tasks": [
+          {
+            "id": "hub1",
+            "type": "counting",
+            "sharedCounterId": "root-1",
+            "startDate": null,
+            "endDate": null,
+            "timeframe": null,
+            "createdInWizard": false,
+            "isDeleted": false,
+            "maxCount": 5
+          },
+          {
+            "id": "compA",
+            "type": "compound",
+            "sharedCounterId": null,
+            "startDate": null,
+            "endDate": null,
+            "timeframe": null,
+            "createdInWizard": false,
+            "isDeleted": false,
+            "maxCount": null
+          },
+          {
+            "id": "root-1",
+            "type": "counting",
+            "sharedCounterId": null,
+            "startDate": null,
+            "endDate": null,
+            "timeframe": null,
+            "createdInWizard": false,
+            "isDeleted": false,
+            "maxCount": null
+          }
+        ],
+        "boardTasks": [
+          {
+            "id": "bt-jan",
+            "boardId": "b-jan",
+            "taskId": "hub1",
+            "isDeleted": false
+          },
+          {
+            "id": "bt-cA-feb",
+            "boardId": "b-feb",
+            "taskId": "compA",
+            "isDeleted": false
+          },
+          {
+            "id": "bt-cA-mar",
+            "boardId": "b-mar",
+            "taskId": "compA",
+            "isDeleted": false
+          }
+        ],
+        "compoundChildren": [
+          {
+            "compoundTaskId": "compA",
+            "childTaskId": "hub1",
+            "isDeleted": false
+          }
+        ],
+        "expected": {
+          "stamps": [
+            {
+              "taskId": "hub1",
+              "boardId": "b-jan",
+              "timeframe": "monthly",
+              "startDate": "2026-01-01T00:00:00.000Z",
+              "endDate": "2026-01-31T23:59:59.999Z"
+            }
+          ],
+          "copies": []
+        }
+      },
+      {
+        "name": "reached-only single board → stamp (direct or reached alike)",
+        "note": "No direct placement at all; the first (only) board is reached through compA.",
+        "tasks": [
+          {
+            "id": "hub1",
+            "type": "counting",
+            "sharedCounterId": "root-1",
+            "startDate": null,
+            "endDate": null,
+            "timeframe": null,
+            "createdInWizard": false,
+            "isDeleted": false,
+            "maxCount": 5
+          },
+          {
+            "id": "compA",
+            "type": "compound",
+            "sharedCounterId": null,
+            "startDate": null,
+            "endDate": null,
+            "timeframe": null,
+            "createdInWizard": false,
+            "isDeleted": false,
+            "maxCount": null
+          },
+          {
+            "id": "root-1",
+            "type": "counting",
+            "sharedCounterId": null,
+            "startDate": null,
+            "endDate": null,
+            "timeframe": null,
+            "createdInWizard": false,
+            "isDeleted": false,
+            "maxCount": null
+          }
+        ],
+        "boardTasks": [
+          {
+            "id": "bt-cA-apr",
+            "boardId": "b-apr",
+            "taskId": "compA",
+            "isDeleted": false
+          }
+        ],
+        "compoundChildren": [
+          {
+            "compoundTaskId": "compA",
+            "childTaskId": "hub1",
+            "isDeleted": false
+          }
+        ],
+        "expected": {
+          "stamps": [
+            {
+              "taskId": "hub1",
+              "boardId": "b-apr",
+              "timeframe": "monthly",
+              "startDate": "2026-04-01T00:00:00.000Z",
+              "endDate": "2026-04-30T23:59:59.999Z"
+            }
+          ],
+          "copies": []
+        }
+      },
+      {
+        "name": "unplaced candidate → nothing",
+        "note": "A library-only hub-linked row keeps its lifetime display.",
+        "tasks": [
+          {
+            "id": "hub1",
+            "type": "counting",
+            "sharedCounterId": "root-1",
+            "startDate": null,
+            "endDate": null,
+            "timeframe": null,
+            "createdInWizard": false,
+            "isDeleted": false,
+            "maxCount": 5
+          },
+          {
+            "id": "root-1",
+            "type": "counting",
+            "sharedCounterId": null,
+            "startDate": null,
+            "endDate": null,
+            "timeframe": null,
+            "createdInWizard": false,
+            "isDeleted": false,
+            "maxCount": null
+          }
+        ],
+        "boardTasks": [],
+        "compoundChildren": [],
+        "expected": {
+          "stamps": [],
+          "copies": []
+        }
+      },
+      {
+        "name": "already window-stamped row → no-op even when placed on two boards",
+        "note": "isWindowStampedDerived rows are never candidates (also the idempotency anchor).",
+        "tasks": [
+          {
+            "id": "stamped-feb",
+            "type": "counting",
+            "sharedCounterId": "root-1",
+            "startDate": "2026-02-01T00:00:00.000Z",
+            "endDate": "2026-02-28T23:59:59.999Z",
+            "timeframe": "monthly",
+            "createdInWizard": true,
+            "isDeleted": false,
+            "maxCount": 5
+          },
+          {
+            "id": "root-1",
+            "type": "counting",
+            "sharedCounterId": null,
+            "startDate": null,
+            "endDate": null,
+            "timeframe": null,
+            "createdInWizard": false,
+            "isDeleted": false,
+            "maxCount": null
+          }
+        ],
+        "boardTasks": [
+          {
+            "id": "bt-feb",
+            "boardId": "b-feb",
+            "taskId": "stamped-feb",
+            "isDeleted": false
+          },
+          {
+            "id": "bt-mar",
+            "boardId": "b-mar",
+            "taskId": "stamped-feb",
+            "isDeleted": false
+          }
+        ],
+        "compoundChildren": [],
+        "expected": {
+          "stamps": [],
+          "copies": []
+        }
+      },
+      {
+        "name": "deleted board and tombstoned placement are ignored",
+        "note": "Live placement on a deleted board (b-del) and a tombstoned placement on March both drop out; April is the only live one.",
+        "tasks": [
+          {
+            "id": "hub1",
+            "type": "counting",
+            "sharedCounterId": "root-1",
+            "startDate": null,
+            "endDate": null,
+            "timeframe": null,
+            "createdInWizard": false,
+            "isDeleted": false,
+            "maxCount": 5
+          },
+          {
+            "id": "root-1",
+            "type": "counting",
+            "sharedCounterId": null,
+            "startDate": null,
+            "endDate": null,
+            "timeframe": null,
+            "createdInWizard": false,
+            "isDeleted": false,
+            "maxCount": null
+          }
+        ],
+        "boardTasks": [
+          {
+            "id": "bt-del",
+            "boardId": "b-del",
+            "taskId": "hub1",
+            "isDeleted": false
+          },
+          {
+            "id": "bt-mar",
+            "boardId": "b-mar",
+            "taskId": "hub1",
+            "isDeleted": true
+          },
+          {
+            "id": "bt-apr",
+            "boardId": "b-apr",
+            "taskId": "hub1",
+            "isDeleted": false
+          }
+        ],
+        "compoundChildren": [],
+        "expected": {
+          "stamps": [
+            {
+              "taskId": "hub1",
+              "boardId": "b-apr",
+              "timeframe": "monthly",
+              "startDate": "2026-04-01T00:00:00.000Z",
+              "endDate": "2026-04-30T23:59:59.999Z"
+            }
+          ],
+          "copies": []
+        }
+      },
+      {
+        "name": "endDate-null (indefinite) board → the stamp carries endDate null",
+        "note": "",
+        "tasks": [
+          {
+            "id": "hub1",
+            "type": "counting",
+            "sharedCounterId": "root-1",
+            "startDate": null,
+            "endDate": null,
+            "timeframe": null,
+            "createdInWizard": false,
+            "isDeleted": false,
+            "maxCount": 5
+          },
+          {
+            "id": "root-1",
+            "type": "counting",
+            "sharedCounterId": null,
+            "startDate": null,
+            "endDate": null,
+            "timeframe": null,
+            "createdInWizard": false,
+            "isDeleted": false,
+            "maxCount": null
+          }
+        ],
+        "boardTasks": [
+          {
+            "id": "bt-open",
+            "boardId": "b-open",
+            "taskId": "hub1",
+            "isDeleted": false
+          }
+        ],
+        "compoundChildren": [],
+        "expected": {
+          "stamps": [
+            {
+              "taskId": "hub1",
+              "boardId": "b-open",
+              "timeframe": "indefinite",
+              "startDate": "2026-02-15T00:00:00.000Z",
+              "endDate": null
+            }
+          ],
+          "copies": []
+        }
+      },
+      {
+        "name": "an open-ended board orders by its startDate among the others; copies sort by boardId",
+        "note": "Feb 1 (b-feb) < Feb 15 (b-open) < Mar 1 (b-mar): February stamps; copies for b-mar and b-open, listed by boardId.",
+        "tasks": [
+          {
+            "id": "hub1",
+            "type": "counting",
+            "sharedCounterId": "root-1",
+            "startDate": null,
+            "endDate": null,
+            "timeframe": null,
+            "createdInWizard": false,
+            "isDeleted": false,
+            "maxCount": 5
+          },
+          {
+            "id": "root-1",
+            "type": "counting",
+            "sharedCounterId": null,
+            "startDate": null,
+            "endDate": null,
+            "timeframe": null,
+            "createdInWizard": false,
+            "isDeleted": false,
+            "maxCount": null
+          }
+        ],
+        "boardTasks": [
+          {
+            "id": "bt-open",
+            "boardId": "b-open",
+            "taskId": "hub1",
+            "isDeleted": false
+          },
+          {
+            "id": "bt-mar",
+            "boardId": "b-mar",
+            "taskId": "hub1",
+            "isDeleted": false
+          },
+          {
+            "id": "bt-feb",
+            "boardId": "b-feb",
+            "taskId": "hub1",
+            "isDeleted": false
+          }
+        ],
+        "compoundChildren": [],
+        "expected": {
+          "stamps": [
+            {
+              "taskId": "hub1",
+              "boardId": "b-feb",
+              "timeframe": "monthly",
+              "startDate": "2026-02-01T00:00:00.000Z",
+              "endDate": "2026-02-28T23:59:59.999Z"
+            }
+          ],
+          "copies": [
+            {
+              "id": "41684bc5-903a-5edd-be8d-5248ce41959c",
+              "boardId": "b-mar",
+              "boardTaskId": "bt-mar",
+              "sourceTaskId": "hub1",
+              "rootTaskId": "root-1",
+              "timeframe": "monthly",
+              "startDate": "2026-03-01T00:00:00.000Z",
+              "endDate": "2026-03-31T23:59:59.999Z"
+            },
+            {
+              "id": "0baeb968-aeba-55d2-aa8c-792f788b20cc",
+              "boardId": "b-open",
+              "boardTaskId": "bt-open",
+              "sourceTaskId": "hub1",
+              "rootTaskId": "root-1",
+              "timeframe": "indefinite",
+              "startDate": "2026-02-15T00:00:00.000Z",
+              "endDate": null
+            }
+          ]
+        }
+      },
+      {
+        "name": "goal-less linked row → stamp only, never a copy (documented limitation)",
+        "note": "No maxCount means no per-window target to copy.",
+        "tasks": [
+          {
+            "id": "nogoal",
+            "type": "counting",
+            "sharedCounterId": "root-1",
+            "startDate": null,
+            "endDate": null,
+            "timeframe": null,
+            "createdInWizard": false,
+            "isDeleted": false,
+            "maxCount": null
+          },
+          {
+            "id": "root-1",
+            "type": "counting",
+            "sharedCounterId": null,
+            "startDate": null,
+            "endDate": null,
+            "timeframe": null,
+            "createdInWizard": false,
+            "isDeleted": false,
+            "maxCount": null
+          }
+        ],
+        "boardTasks": [
+          {
+            "id": "bt-feb",
+            "boardId": "b-feb",
+            "taskId": "nogoal",
+            "isDeleted": false
+          },
+          {
+            "id": "bt-mar",
+            "boardId": "b-mar",
+            "taskId": "nogoal",
+            "isDeleted": false
+          }
+        ],
+        "compoundChildren": [],
+        "expected": {
+          "stamps": [
+            {
+              "taskId": "nogoal",
+              "boardId": "b-feb",
+              "timeframe": "monthly",
+              "startDate": "2026-02-01T00:00:00.000Z",
+              "endDate": "2026-02-28T23:59:59.999Z"
+            }
+          ],
+          "copies": []
+        }
+      },
+      {
+        "name": "direct and reached on the SAME board count once",
+        "note": "compA (holding hub1) and hub1 itself are both on February: one board, one stamp, no copy.",
+        "tasks": [
+          {
+            "id": "hub1",
+            "type": "counting",
+            "sharedCounterId": "root-1",
+            "startDate": null,
+            "endDate": null,
+            "timeframe": null,
+            "createdInWizard": false,
+            "isDeleted": false,
+            "maxCount": 5
+          },
+          {
+            "id": "compA",
+            "type": "compound",
+            "sharedCounterId": null,
+            "startDate": null,
+            "endDate": null,
+            "timeframe": null,
+            "createdInWizard": false,
+            "isDeleted": false,
+            "maxCount": null
+          },
+          {
+            "id": "root-1",
+            "type": "counting",
+            "sharedCounterId": null,
+            "startDate": null,
+            "endDate": null,
+            "timeframe": null,
+            "createdInWizard": false,
+            "isDeleted": false,
+            "maxCount": null
+          }
+        ],
+        "boardTasks": [
+          {
+            "id": "bt-cA-feb",
+            "boardId": "b-feb",
+            "taskId": "compA",
+            "isDeleted": false
+          },
+          {
+            "id": "bt-feb",
+            "boardId": "b-feb",
+            "taskId": "hub1",
+            "isDeleted": false
+          }
+        ],
+        "compoundChildren": [
+          {
+            "compoundTaskId": "compA",
+            "childTaskId": "hub1",
+            "isDeleted": false
+          }
+        ],
+        "expected": {
+          "stamps": [
+            {
+              "taskId": "hub1",
+              "boardId": "b-feb",
+              "timeframe": "monthly",
+              "startDate": "2026-02-01T00:00:00.000Z",
+              "endDate": "2026-02-28T23:59:59.999Z"
+            }
+          ],
+          "copies": []
+        }
+      },
+      {
+        "name": "tombstoned link, deleted compound parent and a non-counting linked row are all ignored",
+        "note": "compA→hub1 link is tombstoned (February not reached); compDel is deleted (March not reached); normalLinked has a sharedCounterId but is NORMAL (not a candidate).",
+        "tasks": [
+          {
+            "id": "hub1",
+            "type": "counting",
+            "sharedCounterId": "root-1",
+            "startDate": null,
+            "endDate": null,
+            "timeframe": null,
+            "createdInWizard": false,
+            "isDeleted": false,
+            "maxCount": 5
+          },
+          {
+            "id": "compA",
+            "type": "compound",
+            "sharedCounterId": null,
+            "startDate": null,
+            "endDate": null,
+            "timeframe": null,
+            "createdInWizard": false,
+            "isDeleted": false,
+            "maxCount": null
+          },
+          {
+            "id": "compDel",
+            "type": "compound",
+            "sharedCounterId": null,
+            "startDate": null,
+            "endDate": null,
+            "timeframe": null,
+            "createdInWizard": false,
+            "isDeleted": true,
+            "maxCount": null
+          },
+          {
+            "id": "normalLinked",
+            "type": "normal",
+            "sharedCounterId": "root-1",
+            "startDate": null,
+            "endDate": null,
+            "timeframe": null,
+            "createdInWizard": false,
+            "isDeleted": false,
+            "maxCount": null
+          },
+          {
+            "id": "root-1",
+            "type": "counting",
+            "sharedCounterId": null,
+            "startDate": null,
+            "endDate": null,
+            "timeframe": null,
+            "createdInWizard": false,
+            "isDeleted": false,
+            "maxCount": null
+          }
+        ],
+        "boardTasks": [
+          {
+            "id": "bt-cA-feb",
+            "boardId": "b-feb",
+            "taskId": "compA",
+            "isDeleted": false
+          },
+          {
+            "id": "bt-cD-mar",
+            "boardId": "b-mar",
+            "taskId": "compDel",
+            "isDeleted": false
+          },
+          {
+            "id": "bt-nl-apr",
+            "boardId": "b-apr",
+            "taskId": "normalLinked",
+            "isDeleted": false
+          },
+          {
+            "id": "bt-apr",
+            "boardId": "b-apr",
+            "taskId": "hub1",
+            "isDeleted": false
+          }
+        ],
+        "compoundChildren": [
+          {
+            "compoundTaskId": "compA",
+            "childTaskId": "hub1",
+            "isDeleted": true
+          },
+          {
+            "compoundTaskId": "compDel",
+            "childTaskId": "hub1",
+            "isDeleted": false
+          }
+        ],
+        "expected": {
+          "stamps": [
+            {
+              "taskId": "hub1",
+              "boardId": "b-apr",
+              "timeframe": "monthly",
+              "startDate": "2026-04-01T00:00:00.000Z",
+              "endDate": "2026-04-30T23:59:59.999Z"
+            }
+          ],
+          "copies": []
+        }
+      },
+      {
+        "name": "two candidates → stamps and copies sorted by taskId then boardId",
+        "note": "hub2 is listed before hub1 in tasks; output is still hub1 first.",
+        "tasks": [
+          {
+            "id": "hub2",
+            "type": "counting",
+            "sharedCounterId": "root-2",
+            "startDate": null,
+            "endDate": null,
+            "timeframe": null,
+            "createdInWizard": false,
+            "isDeleted": false,
+            "maxCount": 3
+          },
+          {
+            "id": "hub1",
+            "type": "counting",
+            "sharedCounterId": "root-1",
+            "startDate": null,
+            "endDate": null,
+            "timeframe": null,
+            "createdInWizard": false,
+            "isDeleted": false,
+            "maxCount": 5
+          },
+          {
+            "id": "root-1",
+            "type": "counting",
+            "sharedCounterId": null,
+            "startDate": null,
+            "endDate": null,
+            "timeframe": null,
+            "createdInWizard": false,
+            "isDeleted": false,
+            "maxCount": null
+          },
+          {
+            "id": "root-2",
+            "type": "counting",
+            "sharedCounterId": null,
+            "startDate": null,
+            "endDate": null,
+            "timeframe": null,
+            "createdInWizard": false,
+            "isDeleted": false,
+            "maxCount": null
+          }
+        ],
+        "boardTasks": [
+          {
+            "id": "bt-h2-mar",
+            "boardId": "b-mar",
+            "taskId": "hub2",
+            "isDeleted": false
+          },
+          {
+            "id": "bt-h2-feb",
+            "boardId": "b-feb",
+            "taskId": "hub2",
+            "isDeleted": false
+          },
+          {
+            "id": "bt-h1-feb",
+            "boardId": "b-feb",
+            "taskId": "hub1",
+            "isDeleted": false
+          },
+          {
+            "id": "bt-h1-mar",
+            "boardId": "b-mar",
+            "taskId": "hub1",
+            "isDeleted": false
+          }
+        ],
+        "compoundChildren": [],
+        "expected": {
+          "stamps": [
+            {
+              "taskId": "hub1",
+              "boardId": "b-feb",
+              "timeframe": "monthly",
+              "startDate": "2026-02-01T00:00:00.000Z",
+              "endDate": "2026-02-28T23:59:59.999Z"
+            },
+            {
+              "taskId": "hub2",
+              "boardId": "b-feb",
+              "timeframe": "monthly",
+              "startDate": "2026-02-01T00:00:00.000Z",
+              "endDate": "2026-02-28T23:59:59.999Z"
+            }
+          ],
+          "copies": [
+            {
+              "id": "41684bc5-903a-5edd-be8d-5248ce41959c",
+              "boardId": "b-mar",
+              "boardTaskId": "bt-h1-mar",
+              "sourceTaskId": "hub1",
+              "rootTaskId": "root-1",
+              "timeframe": "monthly",
+              "startDate": "2026-03-01T00:00:00.000Z",
+              "endDate": "2026-03-31T23:59:59.999Z"
+            },
+            {
+              "id": "a4d609bd-bb9f-510a-8b63-e6bffc1ead92",
+              "boardId": "b-mar",
+              "boardTaskId": "bt-h2-mar",
+              "sourceTaskId": "hub2",
+              "rootTaskId": "root-2",
+              "timeframe": "monthly",
+              "startDate": "2026-03-01T00:00:00.000Z",
+              "endDate": "2026-03-31T23:59:59.999Z"
+            }
+          ]
+        }
+      },
+      {
+        "name": "idempotent: the healed state of the two-placement case plans nothing",
+        "note": "hub1 stamped for February (createdInWizard set by the stamp) and the March placement repointed at the minted copy row: both rows are window-stamped, nothing is a candidate.",
+        "tasks": [
+          {
+            "id": "hub1",
+            "type": "counting",
+            "sharedCounterId": "root-1",
+            "startDate": "2026-02-01T00:00:00.000Z",
+            "endDate": "2026-02-28T23:59:59.999Z",
+            "timeframe": "monthly",
+            "createdInWizard": true,
+            "isDeleted": false,
+            "maxCount": 5
+          },
+          {
+            "id": "41684bc5-903a-5edd-be8d-5248ce41959c",
+            "type": "counting",
+            "sharedCounterId": "root-1",
+            "startDate": "2026-03-01T00:00:00.000Z",
+            "endDate": "2026-03-31T23:59:59.999Z",
+            "timeframe": "monthly",
+            "createdInWizard": true,
+            "isDeleted": false,
+            "maxCount": 5
+          },
+          {
+            "id": "root-1",
+            "type": "counting",
+            "sharedCounterId": null,
+            "startDate": null,
+            "endDate": null,
+            "timeframe": null,
+            "createdInWizard": false,
+            "isDeleted": false,
+            "maxCount": null
+          }
+        ],
+        "boardTasks": [
+          {
+            "id": "bt-feb",
+            "boardId": "b-feb",
+            "taskId": "hub1",
+            "isDeleted": false
+          },
+          {
+            "id": "bt-mar",
+            "boardId": "b-mar",
+            "taskId": "41684bc5-903a-5edd-be8d-5248ce41959c",
+            "isDeleted": false
+          }
+        ],
+        "compoundChildren": [],
+        "expected": {
+          "stamps": [],
+          "copies": []
+        }
+      },
+      {
+        "name": "two live placements of one task on one board (malformed) → the smallest boardTask id is repointed",
+        "note": "Defensive determinism: bt-y < bt-z.",
+        "tasks": [
+          {
+            "id": "hub1",
+            "type": "counting",
+            "sharedCounterId": "root-1",
+            "startDate": null,
+            "endDate": null,
+            "timeframe": null,
+            "createdInWizard": false,
+            "isDeleted": false,
+            "maxCount": 5
+          },
+          {
+            "id": "root-1",
+            "type": "counting",
+            "sharedCounterId": null,
+            "startDate": null,
+            "endDate": null,
+            "timeframe": null,
+            "createdInWizard": false,
+            "isDeleted": false,
+            "maxCount": null
+          }
+        ],
+        "boardTasks": [
+          {
+            "id": "bt-x",
+            "boardId": "b-feb",
+            "taskId": "hub1",
+            "isDeleted": false
+          },
+          {
+            "id": "bt-z",
+            "boardId": "b-mar",
+            "taskId": "hub1",
+            "isDeleted": false
+          },
+          {
+            "id": "bt-y",
+            "boardId": "b-mar",
+            "taskId": "hub1",
+            "isDeleted": false
+          }
+        ],
+        "compoundChildren": [],
+        "expected": {
+          "stamps": [
+            {
+              "taskId": "hub1",
+              "boardId": "b-feb",
+              "timeframe": "monthly",
+              "startDate": "2026-02-01T00:00:00.000Z",
+              "endDate": "2026-02-28T23:59:59.999Z"
+            }
+          ],
+          "copies": [
+            {
+              "id": "41684bc5-903a-5edd-be8d-5248ce41959c",
+              "boardId": "b-mar",
+              "boardTaskId": "bt-y",
+              "sourceTaskId": "hub1",
+              "rootTaskId": "root-1",
+              "timeframe": "monthly",
+              "startDate": "2026-03-01T00:00:00.000Z",
+              "endDate": "2026-03-31T23:59:59.999Z"
+            }
+          ]
+        }
+      },
+      {
+        "name": "unparseable startDates fall back to string order",
+        "note": "Neither board start parses; \"aaa\" < \"zzz\" as strings, so b-bad-z stamps.",
+        "boards": [
+          {
+            "id": "b-bad-a",
+            "timeframe": "custom",
+            "startDate": "zzz-not-a-date",
+            "endDate": null,
+            "isDeleted": false
+          },
+          {
+            "id": "b-bad-z",
+            "timeframe": "custom",
+            "startDate": "aaa-not-a-date",
+            "endDate": null,
+            "isDeleted": false
+          }
+        ],
+        "tasks": [
+          {
+            "id": "hub1",
+            "type": "counting",
+            "sharedCounterId": "root-1",
+            "startDate": null,
+            "endDate": null,
+            "timeframe": null,
+            "createdInWizard": false,
+            "isDeleted": false,
+            "maxCount": 5
+          },
+          {
+            "id": "root-1",
+            "type": "counting",
+            "sharedCounterId": null,
+            "startDate": null,
+            "endDate": null,
+            "timeframe": null,
+            "createdInWizard": false,
+            "isDeleted": false,
+            "maxCount": null
+          }
+        ],
+        "boardTasks": [
+          {
+            "id": "bt-a",
+            "boardId": "b-bad-a",
+            "taskId": "hub1",
+            "isDeleted": false
+          },
+          {
+            "id": "bt-z",
+            "boardId": "b-bad-z",
+            "taskId": "hub1",
+            "isDeleted": false
+          }
+        ],
+        "compoundChildren": [],
+        "expected": {
+          "stamps": [
+            {
+              "taskId": "hub1",
+              "boardId": "b-bad-z",
+              "timeframe": "custom",
+              "startDate": "aaa-not-a-date",
+              "endDate": null
+            }
+          ],
+          "copies": [
+            {
+              "id": "ce52920c-db18-55e8-9208-4ad3532c9d13",
+              "boardId": "b-bad-a",
+              "boardTaskId": "bt-a",
+              "sourceTaskId": "hub1",
+              "rootTaskId": "root-1",
+              "timeframe": "custom",
+              "startDate": "zzz-not-a-date",
+              "endDate": null
+            }
+          ]
+        }
+      }
+    ]
+  },
+  "windowStampedCopyDraft": [
+    {
+      "name": "full source → draft carries the source's own target/title/action/unit and the copy's window",
+      "copy": {
+        "id": "41684bc5-903a-5edd-be8d-5248ce41959c",
+        "boardId": "b-mar",
+        "boardTaskId": "bt-mar",
+        "sourceTaskId": "hub1",
+        "rootTaskId": "root-1",
+        "timeframe": "monthly",
+        "startDate": "2026-03-01T00:00:00.000Z",
+        "endDate": "2026-03-31T23:59:59.999Z"
+      },
+      "sourceTask": {
+        "title": "Run 5 miles",
+        "action": "Run",
+        "unit": "miles",
+        "maxCount": 5
+      },
+      "baseline": 7,
+      "expected": {
+        "id": "41684bc5-903a-5edd-be8d-5248ce41959c",
+        "rootTaskId": "root-1",
+        "sourceMemberId": "hub1",
+        "replacesId": "hub1",
+        "maxCount": 5,
+        "baseline": 7,
+        "title": "Run 5 miles",
+        "action": "Run",
+        "unit": "miles",
+        "timeframe": "monthly",
+        "startDate": "2026-03-01T00:00:00.000Z",
+        "endDate": "2026-03-31T23:59:59.999Z"
+      }
+    },
+    {
+      "name": "action-less source keeps its own title; action/unit become empty strings",
+      "copy": {
+        "id": "0baeb968-aeba-55d2-aa8c-792f788b20cc",
+        "boardId": "b-open",
+        "boardTaskId": "bt-open",
+        "sourceTaskId": "hub1",
+        "rootTaskId": "root-1",
+        "timeframe": "indefinite",
+        "startDate": "2026-02-15T00:00:00.000Z",
+        "endDate": null
+      },
+      "sourceTask": {
+        "title": "Meditate",
+        "action": null,
+        "unit": null,
+        "maxCount": 12
+      },
+      "baseline": 0,
+      "expected": {
+        "id": "0baeb968-aeba-55d2-aa8c-792f788b20cc",
+        "rootTaskId": "root-1",
+        "sourceMemberId": "hub1",
+        "replacesId": "hub1",
+        "maxCount": 12,
+        "baseline": 0,
+        "title": "Meditate",
+        "action": "",
+        "unit": "",
+        "timeframe": "indefinite",
+        "startDate": "2026-02-15T00:00:00.000Z",
+        "endDate": null
+      }
+    },
+    {
+      "name": "negative baseline clamps to 0",
+      "copy": {
+        "id": "167529b7-2dde-5d6d-aad6-a99ba03b3da4",
+        "boardId": "b-feb",
+        "boardTaskId": "bt-feb",
+        "sourceTaskId": "hub1",
+        "rootTaskId": "root-1",
+        "timeframe": "monthly",
+        "startDate": "2026-02-01T00:00:00.000Z",
+        "endDate": "2026-02-28T23:59:59.999Z"
+      },
+      "sourceTask": {
+        "title": "ignored",
+        "action": "Read",
+        "unit": "pages",
+        "maxCount": 4
+      },
+      "baseline": -3,
+      "expected": {
+        "id": "167529b7-2dde-5d6d-aad6-a99ba03b3da4",
+        "rootTaskId": "root-1",
+        "sourceMemberId": "hub1",
+        "replacesId": "hub1",
+        "maxCount": 4,
+        "baseline": 0,
+        "title": "Read 4 pages",
+        "action": "Read",
+        "unit": "pages",
+        "timeframe": "monthly",
+        "startDate": "2026-02-01T00:00:00.000Z",
+        "endDate": "2026-02-28T23:59:59.999Z"
+      }
+    },
+    {
+      "name": "goal-less source → null",
+      "copy": {
+        "id": "41684bc5-903a-5edd-be8d-5248ce41959c",
+        "boardId": "b-mar",
+        "boardTaskId": "bt-mar",
+        "sourceTaskId": "hub1",
+        "rootTaskId": "root-1",
+        "timeframe": "monthly",
+        "startDate": "2026-03-01T00:00:00.000Z",
+        "endDate": "2026-03-31T23:59:59.999Z"
+      },
+      "sourceTask": {
+        "title": "Run",
+        "action": "Run",
+        "unit": "miles",
+        "maxCount": null
+      },
+      "baseline": 0,
+      "expected": null
+    },
+    {
+      "name": "zero goal → null",
+      "copy": {
+        "id": "41684bc5-903a-5edd-be8d-5248ce41959c",
+        "boardId": "b-mar",
+        "boardTaskId": "bt-mar",
+        "sourceTaskId": "hub1",
+        "rootTaskId": "root-1",
+        "timeframe": "monthly",
+        "startDate": "2026-03-01T00:00:00.000Z",
+        "endDate": "2026-03-31T23:59:59.999Z"
+      },
+      "sourceTask": {
+        "title": "Run",
+        "action": "Run",
+        "unit": "miles",
+        "maxCount": 0
+      },
+      "baseline": 0,
+      "expected": null
+    }
+  ]
+}

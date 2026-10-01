@@ -244,10 +244,9 @@ describe('buildBoardPreviewCells', () => {
     expect(cells[0]).toEqual({ kind: 'task', completed: true });
   });
 
-  it('a derived (shared-counter-linked) counter stays on its lifetime cache, ignoring window events', () => {
+  it('a linked (shared-counter) counter resolves from the ROOT\'s window events, never its lifetime latch (owner rule 2026-10-01)', () => {
     const board = makeBoard({ boardSize: 3, startDate: '2026-07-05T00:00:00.000Z' });
-    // Derived counters are carved out of windowed evaluation — isCompleted is
-    // a propagation-stamped lifetime cache, never event-derived.
+    // The latch (`isCompleted: true`) is not read on a board.
     const derived = makeCountingTask('t-derived', {
       isCompleted: true,
       sharedCounterId: 'source-task',
@@ -256,11 +255,15 @@ describe('buildBoardPreviewCells', () => {
     });
     const boardTasks = [makeBoardTask(board.id, derived.id, 0, 0)];
     const taskMap = { [derived.id]: derived };
-    // No events at all for this task — if the code incorrectly windowed it,
-    // zero events would resolve to incomplete; the carve-out must still say true.
-    const { cells } = buildBoardPreviewCells(board, boardTasks, taskMap, {}, {});
+    // No root events at all → incomplete despite the latch.
+    const none = buildBoardPreviewCells(board, boardTasks, taskMap, {}, {});
+    expect(none.cells[0]).toEqual({ kind: 'task', completed: false });
 
-    expect(cells[0]).toEqual({ kind: 'task', completed: true });
+    // The root's in-window increments meeting the goal complete it.
+    const met = buildBoardPreviewCells(board, boardTasks, taskMap, {}, {
+      'source-task': [{ ...completionEvent('e-inc', 'source-task', '2026-07-06T00:00:00.000Z'), kind: 'increment', delta: 10 }],
+    });
+    expect(met.cells[0]).toEqual({ kind: 'task', completed: true });
   });
 
   it('a compound task evaluates via its operator against its (windowed) children', () => {

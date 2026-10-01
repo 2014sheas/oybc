@@ -205,7 +205,7 @@
       "expected": { "isCompleted": false, "count": 2 }
     }
   ],
-  "_linkedCounterDisplayNote": "resolveLinkedCounterDisplay (taskEvents.ts) <-> Swift resolveLinkedCounterDisplay (Helpers/TaskEvents.swift): what a LINKED counting square/row shows. Window-stamped rows (sharedCounterId + startDate + createdInWizard, COUNTING) with an event map = the ROOT's in-window increment sum ([startDate, endDate] inclusive, optional sealedAt bound) for BOTH count and completion; hub-linked rows or no event map = currentCount - baseline (low-clamped) + the latch. eventsByTaskId null = no map. Consumed by packages/shared/tests/algorithms/taskEvents.test.ts and apps/ios/OYBCTests/TaskEventVectorTests.swift.",
+  "_linkedCounterDisplayNote": "resolveLinkedCounterDisplay (taskEvents.ts) <-> Swift resolveLinkedCounterDisplay (Helpers/TaskEvents.swift): what a LINKED counting square/row shows. Window-stamped rows (sharedCounterId + startDate + createdInWizard, COUNTING) with an event map = the ROOT's in-window increment sum ([startDate, endDate] inclusive, optional sealedAt bound) for BOTH count and completion; any other linked row WITH an event map AND a `window` (the placing board's { startDate, endDate }, 4th argument - owner rule 2026-10-01) = the ROOT's increment sum inside THAT window (optional sealedAt bound), the row's own non-wizard-born stamp ignored; no event map, or no window for a non-window-stamped row = currentCount - baseline (low-clamped) + the latch. eventsByTaskId null = no map; `window` absent or null = no window. Consumed by packages/shared/tests/algorithms/taskEvents.test.ts and apps/ios/OYBCTests/TaskEventVectorTests.swift.",
   "linkedCounterDisplay": [
     {
       "name": "window-stamped-in-window-sum-not-lifetime-total",
@@ -286,6 +286,69 @@
       "eventsByTaskId": null,
       "sealedAt": null,
       "expected": { "displayed": 7, "isCompleted": true }
+    },
+    {
+      "name": "hub-linked-with-board-window-sums-root-inside-that-window-not-lifetime-math",
+      "note": "Owner rule 2026-10-01: a hub-linked row rendered ON a board reads the ROOT's increments inside the BOARD's window (+2 on Sep 16); the +4 before and +3 after fall out. Old display: currentCount - baseline = 5, latch true.",
+      "task": {"type": "counting", "maxCount": 5, "sharedCounterId": "root-1", "startDate": null, "endDate": null, "createdInWizard": null, "baseline": 10, "currentCount": 15, "isCompleted": true},
+      "eventsByTaskId": { "root-1": [{ "kind": "increment", "delta": 4, "occurredAt": "2026-09-10T09:00:00.000Z", "isDeleted": false }, { "kind": "increment", "delta": 2, "occurredAt": "2026-09-16T18:00:00.000Z", "isDeleted": false }, { "kind": "increment", "delta": 3, "occurredAt": "2026-09-23T12:00:00.000Z", "isDeleted": false }] },
+      "sealedAt": null,
+      "window": { "startDate": "2026-09-14T00:00:00.000Z", "endDate": "2026-09-20T23:59:59.999Z" },
+      "expected": { "displayed": 2, "isCompleted": false }
+    },
+    {
+      "name": "hub-linked-with-board-window-reaches-goal-latch-false-ignored",
+      "note": "The latch says false and currentCount - baseline = 0, but the in-window root sum meets the goal: complete.",
+      "task": {"type": "counting", "maxCount": 2, "sharedCounterId": "root-1", "startDate": null, "endDate": null, "createdInWizard": null, "baseline": 15, "currentCount": 15, "isCompleted": false},
+      "eventsByTaskId": { "root-1": [{ "kind": "increment", "delta": 2, "occurredAt": "2026-09-16T18:00:00.000Z", "isDeleted": false }] },
+      "sealedAt": null,
+      "window": { "startDate": "2026-09-14T00:00:00.000Z", "endDate": "2026-09-20T23:59:59.999Z" },
+      "expected": { "displayed": 2, "isCompleted": true }
+    },
+    {
+      "name": "hub-linked-with-indefinite-board-window-bounded-by-sealedAt",
+      "note": "The board window is open-ended (endDate null) and the board is sealed Sep 18: the Sep 19 root log is dropped by the seal bound.",
+      "task": {"type": "counting", "maxCount": 5, "sharedCounterId": "root-1", "startDate": null, "endDate": null, "createdInWizard": null, "baseline": 10, "currentCount": 15, "isCompleted": true},
+      "eventsByTaskId": { "root-1": [{ "kind": "increment", "delta": 2, "occurredAt": "2026-09-16T18:00:00.000Z", "isDeleted": false }, { "kind": "increment", "delta": 3, "occurredAt": "2026-09-19T12:00:00.000Z", "isDeleted": false }] },
+      "sealedAt": "2026-09-18T00:00:00.000Z",
+      "window": { "startDate": "2026-09-14T00:00:00.000Z", "endDate": null },
+      "expected": { "displayed": 2, "isCompleted": false }
+    },
+    {
+      "name": "hub-linked-with-board-window-deleted-and-completion-root-events-ignored",
+      "note": "A tombstoned increment and a completion event inside the window contribute nothing; signed deltas sum.",
+      "task": {"type": "counting", "maxCount": 3, "sharedCounterId": "root-1", "startDate": null, "endDate": null, "createdInWizard": null, "baseline": 10, "currentCount": 15, "isCompleted": true},
+      "eventsByTaskId": { "root-1": [{ "kind": "increment", "delta": 5, "occurredAt": "2026-09-15T10:00:00.000Z", "isDeleted": true }, { "kind": "completion", "delta": null, "occurredAt": "2026-09-15T11:00:00.000Z", "isDeleted": false }, { "kind": "increment", "delta": 4, "occurredAt": "2026-09-16T18:00:00.000Z", "isDeleted": false }, { "kind": "increment", "delta": -1, "occurredAt": "2026-09-17T18:00:00.000Z", "isDeleted": false }] },
+      "sealedAt": null,
+      "window": { "startDate": "2026-09-14T00:00:00.000Z", "endDate": "2026-09-20T23:59:59.999Z" },
+      "expected": { "displayed": 3, "isCompleted": true }
+    },
+    {
+      "name": "hub-linked-without-window-keeps-baseline-math-and-latch-even-with-events",
+      "note": "No board window (a library / lifetime reader): the event map alone does not switch a hub-linked row to windowed display.",
+      "task": {"type": "counting", "maxCount": 5, "sharedCounterId": "root-1", "startDate": null, "endDate": null, "createdInWizard": null, "baseline": 10, "currentCount": 15, "isCompleted": true},
+      "eventsByTaskId": { "root-1": [{ "kind": "increment", "delta": 2, "occurredAt": "2026-09-16T18:00:00.000Z", "isDeleted": false }] },
+      "sealedAt": null,
+      "window": null,
+      "expected": { "displayed": 5, "isCompleted": true }
+    },
+    {
+      "name": "not-wizard-born-linked-row-with-board-window-reads-board-window-not-its-own-stamp",
+      "note": "A linked row carrying a window but not createdInWizard is ordinary user data: on a board it reads the BOARD window (Sep 14-20 gives +1), never its own August stamp (+3).",
+      "task": {"type": "counting", "maxCount": 3, "sharedCounterId": "root-1", "startDate": "2026-08-01T00:00:00.000Z", "endDate": "2026-08-31T23:59:59.999Z", "createdInWizard": false, "baseline": 0, "currentCount": 4, "isCompleted": true},
+      "eventsByTaskId": { "root-1": [{ "kind": "increment", "delta": 3, "occurredAt": "2026-08-15T12:00:00.000Z", "isDeleted": false }, { "kind": "increment", "delta": 1, "occurredAt": "2026-09-16T18:00:00.000Z", "isDeleted": false }] },
+      "sealedAt": null,
+      "window": { "startDate": "2026-09-14T00:00:00.000Z", "endDate": "2026-09-20T23:59:59.999Z" },
+      "expected": { "displayed": 1, "isCompleted": false }
+    },
+    {
+      "name": "window-stamped-row-ignores-a-passed-board-window-keeps-its-own-stamp",
+      "note": "A window-stamped row keeps its OWN stamped window (Sep 14-20 gives +3) even when a caller passes a different board window (October): the +9 in October does not count.",
+      "task": {"type": "counting", "maxCount": 5, "sharedCounterId": "root-1", "startDate": "2026-09-14T00:00:00.000Z", "endDate": "2026-09-20T23:59:59.999Z", "createdInWizard": true, "baseline": 0, "currentCount": 12, "isCompleted": true},
+      "eventsByTaskId": { "root-1": [{ "kind": "increment", "delta": 3, "occurredAt": "2026-09-16T18:00:00.000Z", "isDeleted": false }, { "kind": "increment", "delta": 9, "occurredAt": "2026-10-05T12:00:00.000Z", "isDeleted": false }] },
+      "sealedAt": null,
+      "window": { "startDate": "2026-10-01T00:00:00.000Z", "endDate": "2026-10-31T23:59:59.999Z" },
+      "expected": { "displayed": 3, "isCompleted": false }
     }
   ],
   "lateLogOccurredAt": [

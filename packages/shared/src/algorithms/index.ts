@@ -48,6 +48,7 @@ export type {
   CompoundWindowContext,
   WindowEvaluationContext,
   SealImmuneWindow,
+  LinkedCounterWindow,
 } from './taskEvents';
 
 // ===== Windowed Completion — board sealing detection (PR C) =====
@@ -377,3 +378,18 @@ export type {
   CoreBoardSetupOverrides,
   CoreBoardSetupPrefs,
 } from './coreBoardSetupDefaults';
+
+// ===== Windowed linked counters — heal planner + placement gate (owner rule 2026-10-01) =====
+export {
+  sameWindowStart,
+  isWindowStampedForBoard,
+  planLinkedCounterWindowHeal,
+  windowStampedCopyDraft,
+} from './linkedCounterWindowHeal';
+
+export type {
+  LinkedCounterWindowHealInput,
+  LinkedCounterWindowStamp,
+  LinkedCounterWindowCopy,
+  LinkedCounterWindowHealPlan,
+} from './linkedCounterWindowHeal';
