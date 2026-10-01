@@ -110,6 +110,40 @@
   color: var(--riso-muted);
 }
 
+.linkedCounterRow {
+  margin-top: 10px;
+}
+.linkedCounterLabel {
+  font-size: 0.82rem;
+  font-weight: 500;
+  color: var(--riso-muted);
+}
+.linkedCounterTitle {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--riso-font-head);
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--riso-ink);
+}
+.linkedCounterTotal {
+  font-family: var(--riso-font-head);
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--riso-blue);
+  white-space: nowrap;
+}
+.linkedCounterChevron {
+  font-family: var(--riso-font-head);
+  font-size: 18px;
+  font-weight: 800;
+  color: var(--riso-muted);
+  line-height: 1;
+}
+
 /* ── Board list (usage) ── */
 .boardList {
   margin: 0;

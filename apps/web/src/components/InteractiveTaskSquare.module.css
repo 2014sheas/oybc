@@ -204,19 +204,6 @@
   margin: 0;
 }
 
-/* Phase 3 — Shared Counters: caption shown in the detail modal for linked tasks. */
-.linkedCounterCaption {
-  font-size: 0.82rem;
-  color: var(--riso-muted);
-  font-style: italic;
-  margin: 0.5rem 0 0.5rem;
-  padding: 0.4rem 0.75rem;
-  background: color-mix(in srgb, var(--riso-blue) 8%, transparent);
-  border: 1px solid color-mix(in srgb, var(--riso-blue) 20%, transparent);
-  border-radius: var(--radius-sm);
-  text-align: center;
-}
-
 .modalProgressBar {
   position: relative;
   height: 16px;
@@ -717,3 +704,39 @@
   max-width: 100%;
 }
 
+
+.taskDetailsRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  margin-top: 10px;
+  padding: 8px 10px;
+  border-radius: var(--riso-r-card);
+  cursor: pointer;
+  background: var(--riso-paper-2);
+  border: 2px solid var(--riso-ink);
+  text-align: left;
+  transition: background 0.1s;
+}
+.taskDetailsRow:hover {
+  background: var(--riso-paper);
+}
+.taskDetailsRow:focus-visible {
+  outline: 3px solid var(--riso-blue);
+  outline-offset: -3px;
+}
+.taskDetailsText {
+  flex: 1;
+  font-family: var(--riso-font-head);
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--riso-ink);
+}
+.taskDetailsChevron {
+  font-family: var(--riso-font-head);
+  font-size: 18px;
+  font-weight: 800;
+  color: var(--riso-muted);
+  line-height: 1;
+}

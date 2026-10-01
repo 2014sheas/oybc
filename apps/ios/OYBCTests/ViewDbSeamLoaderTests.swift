@@ -66,13 +66,13 @@ final class ViewDbSeamLoaderTests: XCTestCase {
         return board
     }
 
-    private func seedTask(_ db: AppDatabase, id: String, title: String, isDeleted: Bool = false) throws {
+    private func seedTask(_ db: AppDatabase, id: String, title: String, isDeleted: Bool = false, currentCount: Int = 0) throws {
         let task = OYBC.Task(
             id: id, userId: userId, title: title, description: nil, type: .counting,
             action: "Read", unit: "pages", maxCount: 35,
             operatorType: nil, threshold: nil,
             totalCompletions: 0, totalInstances: 0,
-            isCompleted: false, completedAt: nil, currentCount: 0,
+            isCompleted: false, completedAt: nil, currentCount: currentCount,
             createdAt: Self.ts, updatedAt: Self.ts,
             lastSyncedAt: nil, version: 1, isDeleted: isDeleted, deletedAt: nil
         )
@@ -152,21 +152,21 @@ final class ViewDbSeamLoaderTests: XCTestCase {
 
     // MARK: - Linked-counter caption
 
-    func test_captionSourceTitle_liveSource_isItsTitle() throws {
+    func test_captionSource_liveSource_isTitleLifetimeAndUnit() throws {
         let db = try makeDb()
-        try seedTask(db, id: "root", title: "Read 35 pages")
+        try seedTask(db, id: "root", title: "Read 35 pages", currentCount: 512)
 
         XCTAssertEqual(
-            try LinkedCounterCaptionView.resolveSourceTitle(database: db, sharedCounterId: "root"),
-            "Read 35 pages"
+            try LinkedCounterCaptionView.resolveSource(database: db, sharedCounterId: "root"),
+            LinkedCounterSource(title: "Read 35 pages", lifetime: 512, unit: "pages")
         )
     }
 
-    func test_captionSourceTitle_deletedOrMissingSource_isNil() throws {
+    func test_captionSource_deletedOrMissingSource_isNil() throws {
         let db = try makeDb()
         try seedTask(db, id: "gone", title: "Deleted root", isDeleted: true)
 
-        XCTAssertNil(try LinkedCounterCaptionView.resolveSourceTitle(database: db, sharedCounterId: "gone"))
-        XCTAssertNil(try LinkedCounterCaptionView.resolveSourceTitle(database: db, sharedCounterId: "never-existed"))
+        XCTAssertNil(try LinkedCounterCaptionView.resolveSource(database: db, sharedCounterId: "gone"))
+        XCTAssertNil(try LinkedCounterCaptionView.resolveSource(database: db, sharedCounterId: "never-existed"))
     }
 }

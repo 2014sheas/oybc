@@ -36,6 +36,11 @@ struct TaskDetailSheetView: View {
         self.database = database
     }
 
+    /// Counter detail pushed inside this sheet's own NavigationStack (from the
+    /// linked-counter row). Its board taps reuse `onOpenBoard`, which the
+    /// presenter implements as stash-then-dismiss.
+    @State private var openedCounterId: String?
+
     // MARK: - Async state
 
     @State private var task: Task?
@@ -86,7 +91,8 @@ struct TaskDetailSheetView: View {
                             currentTaskId = taskId
                             _Concurrency.Task { await reload() }
                         },
-                        onOpenBoard: onOpenBoard
+                        onOpenBoard: onOpenBoard,
+                        onOpenCounter: { openedCounterId = $0 }
                     )
                 } else {
                     Text("Loading…")
@@ -97,6 +103,14 @@ struct TaskDetailSheetView: View {
             }
             .navigationTitle("")
             .navigationBarTitleDisplayMode(.inline)
+            .navigationDestination(item: $openedCounterId) { counterId in
+                CounterDetailView(counterId: counterId, showExpired: false, onOpenBoard: onOpenBoard)
+            }
+            // Counter detail can delete/unlink the counter; refresh the task
+            // (and its "Linked to" row) when it pops back here.
+            .onChange(of: openedCounterId) { _, newValue in
+                if newValue == nil { _Concurrency.Task { await reload() } }
+            }
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
                     RisoToolbarPill(title: "Done") { onClose() }

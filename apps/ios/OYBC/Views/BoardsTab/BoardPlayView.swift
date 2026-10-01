@@ -147,7 +147,7 @@ struct BoardPlayView: View {
 
     // internal for the +Header extension split
     var board: Board? { viewModel.board }
-    private var boardTasks: [BoardTask] { viewModel.boardTasks }
+    var boardTasks: [BoardTask] { viewModel.boardTasks }
     private var allTasks: [Task] { viewModel.allTasks }
     // Phase 6.3 — workspace-wide boards + templates feed both the
     // achievement-square config sheet (for the pickers) and the per-
@@ -192,7 +192,12 @@ struct BoardPlayView: View {
     /// aware copy + Undo pill) — see `triggerCreditToast(payload:)`.
     @State private var creditToast: CreditToastState? = nil
     /// Board task id of the counting cell whose stepper sheet is open.
-    @State private var countingStepperBoardTaskId: String?
+    // internal for the +CountingStepper extension split
+    @State var countingStepperBoardTaskId: String?
+    /// Task whose detail sheet opens once the counting stepper sheet has
+    /// finished dismissing (see `drainPendingTaskDetail`).
+    // internal for the +CountingStepper extension split
+    @State var pendingTaskDetailTaskId: String?
     /// D15 late-log sheet target + its inline error (internal for `+LateLog`).
     @State var lateLogTarget: LateLogSheetItem?
     @State var lateLogErrorMessage: String?
@@ -207,7 +212,8 @@ struct BoardPlayView: View {
     @State private var arrivalNavTarget: ArrivalNavTarget? = nil
     @State private var detailBoardTaskId: String?
     /// Drives the task-detail library sheet (separate from the board-play detail sheet).
-    @State private var taskDetailSheetTaskId: TaskIdItem?
+    // internal for the +CountingStepper extension split
+    @State var taskDetailSheetTaskId: TaskIdItem?
     /// Child task detail opened from INSIDE the on-board detail sheet (the
     /// compound child ⓘ button). Deliberately a separate item from
     /// `taskDetailSheetTaskId`: that sheet presents from the view root, and
@@ -306,7 +312,7 @@ struct BoardPlayView: View {
 
     /// O(1) task lookup by task ID. Delegates to the view model (B2-I2), which
     /// owns the same lookup for its interaction handlers.
-    private var taskMap: [String: Task] { viewModel.taskMap }
+    var taskMap: [String: Task] { viewModel.taskMap }
 
     // MARK: - Windowed reads (Windowed Completion)
 
@@ -336,7 +342,7 @@ struct BoardPlayView: View {
     /// Windowed count of a counting square: event-owning (source / plain) via
     /// its own events; a linked counter via `resolveLinkedCounterDisplay`
     /// (window-stamped: root sum in its window; hub-linked: count − baseline).
-    private func windowedCount(_ task: Task) -> Int {
+    func windowedCount(_ task: Task) -> Int {
         if task.sharedCounterId != nil {
             return resolveLinkedCounterDisplay(
                 task: task, eventsByTaskId: windowEventsByTaskId, sealedAt: board?.sealedAt
@@ -764,51 +770,18 @@ struct BoardPlayView: View {
         // Board Edit redesign slice 3 (T5) — the `.editEvent` outcome
         // observer (saved / saveFailed / boardClosed) moved into
         // `BoardEditPresenter`, which owns the alerts it drives.
-        // Counting stepper sheet — Riso pill stepper for counting cells.
-        // Wires to handleCountingTap / handleCountingDecrement; dismiss clears state.
+        // Counting stepper sheet — content + "Task details" hand-off live in
+        // `BoardPlayView+CountingStepper.swift`. The task-detail sheet is
+        // presented from `onDismiss` (SwiftUI queues a sibling sheet while
+        // another is up), via the `pendingTaskDetailTaskId` stash.
         .sheet(
             isPresented: Binding(
                 get: { countingStepperBoardTaskId != nil },
                 set: { if !$0 { countingStepperBoardTaskId = nil } }
-            )
+            ),
+            onDismiss: drainPendingTaskDetail
         ) {
-            if let btId = countingStepperBoardTaskId,
-               let bt = boardTasks.first(where: { $0.id == btId }),
-               let task = taskMap[bt.taskId] {
-                let maxVal = task.maxCount ?? 0
-                let isLinked = task.sharedCounterId != nil
-                // Windowed Completion — the stepper shows the WINDOWED count
-                // (`windowedCount` owns the linked-counter rule).
-                let displayed = windowedCount(task)
-                // P2: Compute shared hint — other ACTIVE boards where a member
-                // task lives, excluding the current board.
-                let sharedHint: String? = sharedStepperHint(for: task)
-                // R3: resolve the shared-counter SOURCE (if any) to gate the
-                // amount-chip row and seed its "+{default}" chip — the chip
-                // row is shared-counting-squares-only per the copy contract;
-                // standalone counters keep the plain +/- stepper.
-                let sourceId = viewModel.sharedCounterSourceId(for: task)
-                let isSharedCounter = sourceId != nil
-                let defaultLogAmount = sourceId.flatMap { taskMap[$0]?.defaultLogAmount }
-                RisoCountingStepperSheet(
-                    taskTitle: task.title,
-                    currentCount: displayed,
-                    maxCount: maxVal,
-                    unitText: task.unit ?? "",
-                    isLinkedCounter: isLinked,
-                    sharedHint: sharedHint,
-                    isSharedCounter: isSharedCounter,
-                    defaultLogAmount: defaultLogAmount,
-                    onIncrement: { amount, persistAsDefault in
-                        viewModel.handleCountingTap(boardTask: bt, task: task, amount: amount, persistAsDefault: persistAsDefault)
-                    },
-                    onDecrement: { amount, persistAsDefault in
-                        viewModel.handleCountingDecrement(boardTask: bt, task: task, amount: amount, persistAsDefault: persistAsDefault)
-                    }
-                    // Dismissal clears `countingStepperBoardTaskId` via the
-                    // .sheet(isPresented:) binding setter above.
-                )
-            }
+            countingStepperSheetContent
         }
         // D15 closed-board late-log sheet.
         .sheet(item: $lateLogTarget) { item in lateLogSheet(for: item) }
@@ -1104,7 +1077,7 @@ struct BoardPlayView: View {
     /// or has no OTHER active boards to mention.
     ///
     /// - Parameter task: The `Task` backing the tapped counting square.
-    private func sharedStepperHint(for task: Task) -> String? {
+    func sharedStepperHint(for task: Task) -> String? {
         // R3: source detection extracted to `viewModel.sharedCounterSourceId(for:)`
         // — shares the exact same rule as the tap-routing handlers and the
         // chip-visibility gate below, instead of re-deriving it a third time.

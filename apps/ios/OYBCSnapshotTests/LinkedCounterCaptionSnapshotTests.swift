@@ -16,14 +16,15 @@ import SnapshotTesting
 final class LinkedCounterCaptionSnapshotTests: XCTestCase {
 
     private let recordMode: SnapshotTestingConfiguration.Record? = .missing
-    private let size = SwiftUISnapshotLayout.fixed(width: 393, height: 56)
+    private let size = SwiftUISnapshotLayout.fixed(width: 393, height: 84)
 
     /// The caption as `RisoTaskDetailContentView` would show it for the
     /// family's member, on the paper ground the detail surface uses.
     private func captionView(sourceFound: Bool) -> some View {
         let family = SnapshotFixtures.counterFamily()
         precondition(family.member.sharedCounterId == family.root.id)
-        return LinkedCounterCaptionLabel(sourceTitle: sourceFound ? family.root.title : nil)
+        return LinkedCounterCaptionLabel(source: sourceFound
+            ? LinkedCounterSource(title: family.root.title, lifetime: 512, unit: "reps") : nil)
             .padding(Riso.gutter)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
             .background(Color.risoPaper)

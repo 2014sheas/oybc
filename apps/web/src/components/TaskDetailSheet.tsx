@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { useLocation } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { fetchTask } from '../db/operations';
 import { useModalA11y } from '../hooks/useModalA11y';
 import { TaskDetailContent } from '../pages/tasks/TaskDetailContent';
@@ -91,6 +91,7 @@ function SheetBody({ taskId, onClose, onOpenTask }: SheetBodyProps): React.React
   // Internal chip-to-detail swaps (`setInnerTaskId`) don't change the
   // URL, so they don't trigger this effect.
   const location = useLocation();
+  const navigate = useNavigate();
   const initialPath = useRef(location.pathname);
   const { ref: modalRef, props: modalProps } = useModalA11y<HTMLDivElement>({
     open: true,
@@ -185,6 +186,7 @@ function SheetBody({ taskId, onClose, onOpenTask }: SheetBodyProps): React.React
             onChanged={handleChanged}
             onClose={onClose}
             onOpenTask={onOpenTask}
+            onOpenCounter={(id) => { onClose(); navigate(`/profile/counters/${id}`); }}
           />
         )}
       </div>
