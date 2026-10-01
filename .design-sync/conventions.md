@@ -44,14 +44,14 @@ Style your own layout glue with these tokens (real names — all defined in
 |---|---|
 | Surfaces | `--riso-paper` (page), `--riso-paper-2` (cards/inputs/cells) |
 | Text | `--riso-ink` (primary), `--riso-muted` (secondary) |
-| Accents | `--riso-blue` (counting/active/progress), `--riso-red` (primary/danger/done), `--riso-green` (success/greenlog), `--riso-gold` (bingo/FREE/highlights), `--riso-achievement` (achievement type) |
-| On a fill | `--riso-on-color` (cream — for text on DARK fills: red/blue/green), `--riso-ink-static` (dark — for text on the GOLD fill) |
+| Accents | `--riso-blue` (counting/active/progress), `--riso-red` (primary/danger/done), `--riso-green` (success/greenlog), `--riso-teal` (compound type), `--riso-gold` (bingo/FREE/highlights), `--riso-achievement` (achievement type) |
+| On a fill | `--riso-on-color` (cream — for text on DARK fills: red/blue/green/teal), `--riso-ink-static` (dark — for text on the GOLD fill) |
 | Type | `--riso-font-head` (Bricolage), `--riso-font-body` (Archivo) |
 | Shape | `--riso-r-card` (8px), `--riso-r-cell` (7px) |
 | Lines/shadow | `--riso-hair` (dividers), `--riso-shadow-ink` (the hard offset shadow ink) |
 
 **Dark contract (critical):** text placed on a *colored fill* must use a static
-foreground so it does not flip in dark mode — `--riso-on-color` on red/blue/green
+foreground so it does not flip in dark mode — `--riso-on-color` on red/blue/green/teal
 fills, `--riso-ink-static` on the gold fill. Adaptive `--riso-ink`/`--riso-muted`
 are only for text/borders on paper.
 

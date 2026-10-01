@@ -7,6 +7,7 @@ export function Kinds() {
       <RisoButton kind="primary">Primary</RisoButton>
       <RisoButton kind="blue">Blue</RisoButton>
       <RisoButton kind="green">Green</RisoButton>
+      <RisoButton kind="teal">Teal</RisoButton>
       <RisoButton kind="gold">Gold</RisoButton>
       <RisoButton kind="ghost">Ghost</RisoButton>
     </div>
