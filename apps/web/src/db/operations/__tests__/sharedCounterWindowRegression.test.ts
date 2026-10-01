@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   BoardStatus,
   Timeframe,
+  boardWindowEnd,
   derivedTaskId,
   resolveLinkedCounterDisplay,
   type TaskEvent,
@@ -9,6 +10,7 @@ import {
 import { db } from '../../internal';
 import { healLinkedCounterWindows } from '../linkedCounterWindowHeal';
 import { incrementSharedCounter } from '../tasks.sharedCounter';
+import { buildSquareWindowContext, taskToSquareState } from '../../adapters';
 import { buildSharedCounterHints } from '../../../utils/sharedCounterHints';
 import {
   JUNE,
@@ -185,5 +187,41 @@ describe('a late log on an ended September board never moves the closed June boa
 
     const { affectedBoards } = await incrementSharedCounter(ROOT, 1);
     expect(affectedBoards.map((b) => b.boardId)).not.toContain(OPEN);
+  });
+
+  it('PRE-HEAL: the kernel fallback alone keeps June\'s UNSTAMPED row at 2 through the real grid path', async () => {
+    // No heal: June's row is still hub-linked (unstamped) with the latch the
+    // owner's device has.
+    await db.tasks.put(hubLinked('H-june', { maxCount: 5, currentCount: 2, isCompleted: false }));
+    await incrementSharedCounter(ROOT, 5, SEPT.id);
+
+    const june = (await db.boards.get(JUNE.id))!;
+    expect(june.sealedAt).toBe(SEALED_AT);
+    const events = await db.taskEvents.toArray();
+    const ctx = buildSquareWindowContext(events, june.startDate, boardWindowEnd(june));
+    const tasks = await db.tasks.toArray();
+    const taskMap = Object.fromEntries(tasks.map((t) => [t.id, t]));
+    const state = taskToSquareState(taskMap['H-june'], [], taskMap, {}, ctx);
+
+    expect(state.currentCount).toBe(2);
+    expect(state.isCompleted).toBe(false);
+  });
+
+  it('sealed re-derivation after the heal actually CHANGES June: a latched-complete cell drops out', async () => {
+    // The owner's device: June's row carries the lifetime latch (7 >= 5, complete)
+    // although only 2 miles fall inside June; June was sealed with the old latch.
+    await db.taskEvents.put(incEvent('e-aug', ROOT, 5, '2026-08-01T00:00:00.000Z'));
+    await db.tasks.put(rootTask({ currentCount: 7 }));
+    await db.tasks.put(hubLinked('H-june', { maxCount: 5, currentCount: 7, isCompleted: true }));
+    await db.boards.put(
+      boardRow(JUNE, { sealedAt: SEALED_AT, sealedCompletedCells: [0], completedTasks: 1 }),
+    );
+    expect((await db.boards.get(JUNE.id))!.sealedCompletedCells).toEqual([0]);
+
+    await healLinkedCounterWindows('user-1');
+
+    const june = (await db.boards.get(JUNE.id))!;
+    expect(june.sealedCompletedCells).toEqual([]);
+    expect(june.completedTasks).toBe(0);
   });
 });

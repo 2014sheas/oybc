@@ -74,8 +74,10 @@ extension BoardSources {
         let endDate: String?
     }
 
-    /// Mint a fresh per-board copy for a FURTHER direct placement of a
-    /// hub-linked row, and repoint that placement at it. `id` is
+    /// Mint a fresh per-board copy for a direct placement that cannot keep
+    /// its row — a FURTHER placement of a hub-linked row being stamped
+    /// elsewhere, or a window-stamped row placed on a board it is not
+    /// stamped for — and repoint that placement at it. `id` is
     /// `derivedTaskId(boardId, rootTaskId)` — the same id the wizard / spawn
     /// would mint for this window, so a later re-plan or a concurrent device
     /// converges on one row. Twin of the TS `LinkedCounterWindowCopy`.
@@ -85,7 +87,7 @@ extension BoardSources {
         let boardId: String
         /// The `board_tasks` row to repoint from `sourceTaskId` to `id`.
         let boardTaskId: String
-        /// The hub-linked row this copy stands in for on `boardId`.
+        /// The linked row this copy stands in for on `boardId`.
         let sourceTaskId: String
         /// The shared-counter root (`sourceTask.sharedCounterId`).
         let rootTaskId: String
@@ -113,13 +115,34 @@ extension BoardSources {
         return a.id < b.id
     }
 
-    /// Plan the one-time heal of pre-rule hub-linked counters (and any linked
-    /// row that is windowed but not wizard-born) into per-board window-stamped
-    /// rows. Semantics (candidates, placing boards, stamp vs copy, the
-    /// reached-only and goal-less limitations, determinism, idempotency,
-    /// output order): see the TS twin `planLinkedCounterWindowHeal` in
-    /// `linkedCounterWindowHeal.ts` — mirrored exactly and pinned by the
-    /// shared vectors.
+    /// Plan the one-time heal of linked counters into per-board
+    /// window-stamped rows. Two kinds of row are planned:
+    ///
+    /// 1. **Unstamped candidates** (COUNTING, `sharedCounterId` set, not
+    ///    `isWindowStampedDerived`): all-or-nothing. The row is stamped with
+    ///    its FIRST placing board's window (direct or reached through a
+    ///    compound alike; boards ordered by startDate as instants, then id)
+    ///    ONLY IF every further placing board is a DIRECT placement AND —
+    ///    when there is more than one board — the row has a goal; every
+    ///    further board then gets a copy (`derivedTaskId(board, root)`,
+    ///    placement repointed). Otherwise (a further board reached only
+    ///    through a compound, or goal-less on >1 board) the plan holds
+    ///    NOTHING for the row: once stamped it would resolve from its own
+    ///    window everywhere and freeze the skipped boards out of
+    ///    propagation, whereas unstamped the kernel's context-window
+    ///    fallback renders every board correctly. Single-board candidates
+    ///    are stamped regardless of goal. Unplaced rows → nothing.
+    /// 2. **Mis-placed window-stamped rows** (`isWindowStampedDerived`, with
+    ///    a goal): a copy for every live DIRECT placement on a board the row
+    ///    is not `isWindowStampedForBoard` — no stamp, the row keeps its own
+    ///    window. A placement whose board's deterministic id is the row's
+    ///    own id is left alone (that row IS the board's artifact with stale
+    ///    dates — the Board Edit date path's job; a copy would repoint the
+    ///    placement at itself forever).
+    ///
+    /// Deterministic and idempotent; output sorted by task id then board id.
+    /// Mirrors the TS twin `planLinkedCounterWindowHeal` in
+    /// `linkedCounterWindowHeal.ts` exactly, pinned by the shared vectors.
     ///
     /// - Parameters:
     ///   - tasks: Every task row (deleted rows are skipped here).
@@ -158,10 +181,38 @@ extension BoardSources {
         var stamps: [LinkedCounterWindowStamp] = []
         var copies: [LinkedCounterWindowCopy] = []
 
+        func copy(for task: Task, root: String, board: Board, boardTaskId: String) -> LinkedCounterWindowCopy {
+            LinkedCounterWindowCopy(
+                id: derivedTaskId(boardId: board.id, rootTaskId: root),
+                boardId: board.id,
+                boardTaskId: boardTaskId,
+                sourceTaskId: task.id,
+                rootTaskId: root,
+                timeframe: board.timeframe,
+                startDate: board.startDate,
+                endDate: board.endDate
+            )
+        }
+
         for task in tasksById.values {
-            guard task.type == .counting, let root = task.sharedCounterId, !root.isEmpty,
-                  !isWindowStampedDerived(task) else { continue }
+            guard task.type == .counting, let root = task.sharedCounterId, !root.isEmpty else { continue }
             let direct = placementsByTaskId[task.id] ?? [:]
+            let hasGoal = (task.maxCount ?? 0) >= 1
+
+            if isWindowStampedDerived(task) {
+                // 2. Mis-placed window-stamped rows: a copy per direct placement
+                //    on a board the row is not stamped for; no stamp.
+                guard hasGoal else { continue }
+                for (boardId, boardTaskId) in direct {
+                    guard let board = boardsById[boardId], !isWindowStampedForBoard(task, board: board),
+                          derivedTaskId(boardId: board.id, rootTaskId: root) != task.id else { continue }
+                    copies.append(copy(for: task, root: root, board: board, boardTaskId: boardTaskId))
+                }
+                continue
+            }
+
+            // 1. Unstamped candidates: stamp the first board and copy every
+            //    further one — or do nothing at all.
             var boardIds = Set(direct.keys)
             for parentId in parentsByChildId[task.id] ?? [] {
                 for boardId in (placementsByTaskId[parentId] ?? [:]).keys { boardIds.insert(boardId) }
@@ -169,29 +220,20 @@ extension BoardSources {
             if boardIds.isEmpty { continue }
 
             let ordered = boardIds.compactMap { boardsById[$0] }.sorted(by: boardWindowPrecedes)
-            let hasGoal = (task.maxCount ?? 0) >= 1
-            for (index, board) in ordered.enumerated() {
-                if index == 0 {
-                    stamps.append(LinkedCounterWindowStamp(
-                        taskId: task.id,
-                        boardId: board.id,
-                        timeframe: board.timeframe,
-                        startDate: board.startDate,
-                        endDate: board.endDate
-                    ))
-                    continue
-                }
-                guard let boardTaskId = direct[board.id], hasGoal else { continue }
-                copies.append(LinkedCounterWindowCopy(
-                    id: derivedTaskId(boardId: board.id, rootTaskId: root),
-                    boardId: board.id,
-                    boardTaskId: boardTaskId,
-                    sourceTaskId: task.id,
-                    rootTaskId: root,
-                    timeframe: board.timeframe,
-                    startDate: board.startDate,
-                    endDate: board.endDate
-                ))
+            guard let first = ordered.first else { continue }
+            let further = ordered.dropFirst()
+            let repointable = further.allSatisfy { direct[$0.id] != nil } && (further.isEmpty || hasGoal)
+            guard repointable else { continue }
+
+            stamps.append(LinkedCounterWindowStamp(
+                taskId: task.id,
+                boardId: first.id,
+                timeframe: first.timeframe,
+                startDate: first.startDate,
+                endDate: first.endDate
+            ))
+            for board in further {
+                copies.append(copy(for: task, root: root, board: board, boardTaskId: direct[board.id]!))
             }
         }
 
@@ -212,7 +254,7 @@ extension BoardSources {
     /// sets `createdInWizard`, mirrors the root's count, stamps the latch, …).
     ///
     /// Title / action / unit / goal come from the SOURCE row (the copy keeps
-    /// the hub-linked row's own target — no pro-rating, no vary); `replacesId`
+    /// the linked row's own target — no pro-rating, no vary); `replacesId`
     /// / `sourceMemberId` are the source; the window is the copy's.
     /// `baseline` is the caller's event-derived count of the root at the
     /// copy's `startDate` (``computeWindowBaseline(rootTaskId:events:boundary:)``),
@@ -222,7 +264,7 @@ extension BoardSources {
     ///
     /// - Parameters:
     ///   - copy: The planned copy.
-    ///   - sourceTask: The hub-linked row it stands in for.
+    ///   - sourceTask: The linked row it stands in for.
     ///   - baseline: The root's event-derived count at the copy's window start.
     /// - Returns: The draft, or `nil` when the source has no goal.
     static func windowStampedCopyDraft(

@@ -26,6 +26,8 @@ import { healLinkedCounterWindows } from './linkedCounterWindowHeal';
  * post-pull sweep in `syncService.ts` re-runs it for data that arrives later
  * (a fresh install pulling pre-rule rows).
  *
+ * A heal that throws is caught + logged per user (never rejects the upgrade).
+ *
  * @param _tx The Dexie upgrade transaction (unused directly — Dexie binds
  *            all `db` table ops to the active transaction inside the
  *            callback, same convention as `migrationV16`/`V17`). The heal
@@ -34,6 +36,12 @@ import { healLinkedCounterWindows } from './linkedCounterWindowHeal';
 export async function runMigrationV18(_tx: Transaction): Promise<void> {
   const users = await db.users.toArray();
   for (const user of users) {
-    await healLinkedCounterWindows(user.id);
+    // A failed heal must NEVER brick DB open: swallow + log, and let the
+    // post-pull sweep in `syncService.ts` retry (the heal is idempotent).
+    try {
+      await healLinkedCounterWindows(user.id);
+    } catch (err) {
+      console.warn('[migrationV18] linked-counter window heal failed; the post-pull sweep will retry', err);
+    }
   }
 }

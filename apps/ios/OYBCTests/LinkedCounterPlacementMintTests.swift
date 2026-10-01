@@ -116,4 +116,76 @@ final class LinkedCounterPlacementMintTests: XCTestCase {
         let rowCount = try db.read { try Task.filter(Column("sharedCounterId") == "root").fetchCount($0) }
         XCTAssertEqual(rowCount, 2, "hubA + exactly one minted row")
     }
+
+    // MARK: - Board Edit override remap (review Major)
+
+    private let patch = SquareEditTaskSheet.Patch(
+        title: "Renamed", type: .counting, action: "Cycle", unit: "km", maxCount: 12
+    )
+
+    private func saveAndWait(_ vm: BoardPlayViewModel) {
+        XCTAssertTrue(vm.handleEditSave())
+        XCTAssertTrue(waitUntil { vm.editEvent?.outcome == .saved })
+    }
+
+    func test_boardEditSave_replaceWithLinked_override_patchesCopy_notLibrarySource() throws {
+        let db = try makeDb()
+        try db.saveTask(K.task("old", maxCount: 5))
+        try db.saveTask(K.task("hubA", sharedCounterId: "root"))
+        try db.saveBoardTask(K.placement(id: "bt", boardId: "b1", taskId: "old", size: 3))
+        let vm = loadedVM(db)
+        vm.seedEditDraft(from: try XCTUnwrap(vm.board))
+
+        vm.handleEditReplace(cellKey: "0-0", taskId: "hubA")
+        vm.handleEditTaskOverride(taskId: "hubA", patch: patch)
+        saveAndWait(vm)
+
+        let copy = try XCTUnwrap(K.fetchTask(db, derived("b1")))
+        XCTAssertEqual(try db.fetchBoardTasks(boardId: "b1").first?.taskId, derived("b1"))
+        XCTAssertEqual(copy.title, "Renamed")
+        XCTAssertEqual(copy.maxCount, 12)
+        XCTAssertEqual(copy.unit, "km")
+        let source = try XCTUnwrap(K.fetchTask(db, "hubA"))
+        XCTAssertEqual(source.title, "hubA", "the library source is not patched")
+        XCTAssertEqual(source.version, 1)
+        XCTAssertEqual(source.maxCount, 10)
+    }
+
+    func test_boardEditSave_addLinked_override_patchesCopy_notLibrarySource() throws {
+        let db = try makeDb()
+        try db.saveTask(K.task("old", maxCount: 5))
+        try db.saveTask(K.task("hubB", sharedCounterId: "root"))
+        try db.saveBoardTask(K.placement(id: "bt", boardId: "b1", taskId: "old", size: 3))
+        let vm = loadedVM(db)
+        vm.seedEditDraft(from: try XCTUnwrap(vm.board))
+
+        vm.handleEditAdd(cellKey: "1-1", taskId: "hubB")
+        vm.handleEditTaskOverride(taskId: "hubB", patch: patch)
+        saveAndWait(vm)
+
+        let placed = try db.fetchBoardTasks(boardId: "b1").first { $0.row == 1 && $0.col == 1 }
+        XCTAssertEqual(placed?.taskId, derived("b1"))
+        let copy = try XCTUnwrap(K.fetchTask(db, derived("b1")))
+        XCTAssertEqual(copy.title, "Renamed")
+        XCTAssertEqual(copy.maxCount, 12)
+        let source = try XCTUnwrap(K.fetchTask(db, "hubB"))
+        XCTAssertEqual(source.title, "hubB")
+        XCTAssertEqual(source.version, 1)
+    }
+
+    func test_boardEditSave_plainTaskOverride_stillPatchesTheTask() throws {
+        let db = try makeDb()
+        try db.saveTask(K.task("plain", maxCount: 5))
+        try db.saveBoardTask(K.placement(id: "bt", boardId: "b1", taskId: "plain", size: 3))
+        let vm = loadedVM(db)
+        vm.seedEditDraft(from: try XCTUnwrap(vm.board))
+
+        vm.handleEditTaskOverride(taskId: "plain", patch: patch)
+        saveAndWait(vm)
+
+        let t = try XCTUnwrap(K.fetchTask(db, "plain"))
+        XCTAssertEqual(t.title, "Renamed")
+        XCTAssertEqual(t.maxCount, 12)
+        XCTAssertEqual(try db.fetchBoardTasks(boardId: "b1").first?.taskId, "plain")
+    }
 }

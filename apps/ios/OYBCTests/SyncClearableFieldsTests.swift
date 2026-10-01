@@ -45,7 +45,7 @@ final class SyncClearableFieldsTests: XCTestCase {
 
     func test_applyClearableBoardFieldDeletes_noOpForNonBoardsCollection() {
         var cleaned: [String: Any] = ["id": "t1"]
-        SyncService.applyClearableFieldDeletes(collection: "tasks", cleaned: &cleaned)
+        SyncService.applyClearableFieldDeletes(collection: "boardTasks", cleaned: &cleaned)
         for field in clearableBoardFields {
             XCTAssertNil(cleaned[field], "non-boards collections must never get the boards-only carve-out")
         }
@@ -107,8 +107,32 @@ final class SyncClearableFieldsTests: XCTestCase {
         let db = try AppDatabase.makeTestInstance()
         // Should not throw / touch anything for a table with no clearable fields.
         try db.write { conn in
+            try SyncService.applyClearableFieldNulls(db: conn, grdbTable: "board_tasks", cleaned: ["id": "t1"])
+        }
+    }
+
+    // MARK: - tasks.endDate (windowed-linked-counter heal stamp onto an indefinite board)
+
+    func test_applyClearableFieldDeletes_tasks_stampsEndDateDeleteWhenAbsent() {
+        var cleaned: [String: Any] = ["id": "t1", "title": "Run"]
+        SyncService.applyClearableFieldDeletes(collection: "tasks", cleaned: &cleaned)
+        XCTAssertTrue(cleaned["endDate"] is FieldValue, "a nil task endDate must push a delete")
+        var present: [String: Any] = ["id": "t1", "endDate": "2026-09-30T00:00:00.000Z"]
+        SyncService.applyClearableFieldDeletes(collection: "tasks", cleaned: &present)
+        XCTAssertEqual(present["endDate"] as? String, "2026-09-30T00:00:00.000Z")
+    }
+
+    func test_applyClearableFieldNulls_tasks_clearsEndDateWhenAbsentFromRemote() throws {
+        let db = try AppDatabase.makeTestInstance()
+        try seedUser(db)
+        try db.saveTask(LinkedWindowKit.task(
+            "t1", startDate: "2026-09-01T00:00:00.000Z", endDate: "2026-09-30T00:00:00.000Z"
+        ))
+        try db.write { conn in
             try SyncService.applyClearableFieldNulls(db: conn, grdbTable: "tasks", cleaned: ["id": "t1"])
         }
+        let end = try db.read { try String.fetchOne($0, sql: "SELECT endDate FROM tasks WHERE id = 't1'") }
+        XCTAssertNil(end)
     }
 
     // MARK: - coreBoardDefaults: per-timeframe size / centre overrides (2026-09-29)
@@ -118,7 +142,8 @@ final class SyncClearableFieldsTests: XCTestCase {
         // `boards` entry, so comparing the two would assert nothing.
         XCTAssertEqual(Set(SyncService.clearableFields(for: "boards")), ["endDate", "completedAt", "sealedAt", "sealedCompletedCells"])
         XCTAssertEqual(Set(SyncService.clearableFields(for: "coreBoardDefaults")), ["defaultBoardSize", "defaultCenterType"])
-        XCTAssertEqual(SyncService.clearableFields(for: "tasks"), [])
+        XCTAssertEqual(SyncService.clearableFields(for: "tasks"), ["endDate"])
+        XCTAssertEqual(SyncService.clearableFields(for: "boardTasks"), [])
         XCTAssertEqual(SyncService.clearableFields(for: "nope"), [])
     }
 

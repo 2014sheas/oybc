@@ -99,7 +99,7 @@ describe('healLinkedCounterWindows', () => {
     expect((await db.tasks.toArray()).map((t) => [t.id, t.version])).toEqual(versions);
   });
 
-  it('revives a tombstoned deterministic row instead of duplicating it (version + 1)', async () => {
+  it('does NOT revive a tombstoned deterministic row: the copy is skipped and the placement left on the source', async () => {
     const copyId = derivedTaskId(SEPT.id, ROOT);
     await db.tasks.put(
       hubLinked(copyId, { isDeleted: true, deletedAt: '2026-08-01T00:00:00.000Z', version: 3, createdInWizard: true }),
@@ -108,14 +108,53 @@ describe('healLinkedCounterWindows', () => {
     await db.boards.bulkPut([boardRow(JUNE), boardRow(SEPT)]);
     await db.boardTasks.bulkPut([placement('bt-j', JUNE.id, 'H'), placement('bt-s', SEPT.id, 'H')]);
 
+    const result = await healLinkedCounterWindows(USER);
+
+    expect(result.copied).toBe(0);
+    const tomb = (await db.tasks.get(copyId))!;
+    expect(tomb.isDeleted).toBe(true);
+    expect(tomb.version).toBe(3);
+    expect((await db.boardTasks.get('bt-s'))!.taskId).toBe('H');
+    expect(await queued('boardTasks')).toEqual([]);
+  });
+
+  it('never duplicates a square: a board already holding a LIVE copy placement is skipped (no mint, no repoint)', async () => {
+    const copyId = derivedTaskId(SEPT.id, ROOT);
+    const liveCopy = hubLinked(copyId, {
+      createdInWizard: true,
+      timeframe: Timeframe.MONTHLY,
+      startDate: SEPT.startDate,
+      endDate: SEPT.endDate,
+      version: 5,
+    });
+    await db.tasks.bulkPut([hubLinked('H'), liveCopy]);
+    await db.boards.bulkPut([boardRow(JUNE), boardRow(SEPT)]);
+    await db.boardTasks.bulkPut([
+      placement('bt-j', JUNE.id, 'H'),
+      placement('bt-s', SEPT.id, 'H', 0, 0),
+      placement('bt-s2', SEPT.id, copyId, 0, 1),
+    ]);
+
+    const result = await healLinkedCounterWindows(USER);
+
+    expect(result.copied).toBe(0);
+    expect((await db.boardTasks.get('bt-s'))!.taskId).toBe('H');
+    expect((await db.boardTasks.get('bt-s2'))!.taskId).toBe(copyId);
+    expect((await db.tasks.get(copyId))!.version).toBe(5);
+    expect(await queued('boardTasks')).toEqual([]);
+  });
+
+  it('queues the stamped row with its baseline already computed (payload parity with iOS)', async () => {
+    await db.taskEvents.put(incEvent('e1', ROOT, 3, '2026-05-20T00:00:00.000Z'));
+    await db.tasks.put(hubLinked('H', { baseline: 0 }));
+    await db.boards.put(boardRow(JUNE));
+    await db.boardTasks.put(placement('bt-j', JUNE.id, 'H'));
+
     await healLinkedCounterWindows(USER);
 
-    const copy = (await db.tasks.get(copyId))!;
-    expect(copy.isDeleted).toBe(false);
-    expect(copy.deletedAt).toBeUndefined();
-    expect(copy.version).toBe(4);
-    expect(copy.startDate).toBe(SEPT.startDate);
-    expect((await db.boardTasks.get('bt-s'))!.taskId).toBe(copyId);
+    const item = (await db.syncQueue.toArray()).find((i) => i.entityType === 'tasks' && i.entityId === 'H')!;
+    const payload = typeof item.payload === 'string' ? JSON.parse(item.payload) : item.payload;
+    expect((payload as { baseline?: number }).baseline).toBe(3);
   });
 
   it('refreshes baselines from the root events before each window start', async () => {

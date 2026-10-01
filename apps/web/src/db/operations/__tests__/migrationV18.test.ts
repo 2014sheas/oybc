@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Transaction } from 'dexie';
 import { isWindowStampedDerived } from '@oybc/shared';
 import { db } from '../../internal';
@@ -32,6 +32,23 @@ describe('migrationV18 — windowed linked counters heal', () => {
 
     await runMigrationV18({} as Transaction);
     expect((await db.tasks.get('H'))!.version).toBe(version);
+  });
+
+  it('a heal that throws leaves the upgrade resolved (never bricks DB open) and logs', async () => {
+    await db.users.put(
+      { id: USER, email: 'a@b.c', createdAt: JUNE.startDate, updatedAt: JUNE.startDate, version: 1, isDeleted: false } as never,
+    );
+    // Make the heal's own read blow up (inside its transaction).
+    const spy = vi.spyOn(db.boards, 'toArray').mockRejectedValue(new Error('boom'));
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      await expect(runMigrationV18({} as Transaction)).resolves.toBeUndefined();
+      expect(spy).toHaveBeenCalled();
+      expect(warn).toHaveBeenCalled();
+    } finally {
+      spy.mockRestore();
+      warn.mockRestore();
+    }
   });
 
   it('is a no-op on an empty database', async () => {

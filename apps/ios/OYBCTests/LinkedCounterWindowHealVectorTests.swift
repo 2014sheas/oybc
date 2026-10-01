@@ -296,8 +296,16 @@ final class LinkedCounterWindowHealVectorTests: XCTestCase {
 
     func testPlanLinkedCounterWindowHeal() throws {
         let section = try loadFixture().planLinkedCounterWindowHeal
-        XCTAssertGreaterThanOrEqual(section.vectors.count, 12)
+        XCTAssertGreaterThanOrEqual(section.vectors.count, 20)
         XCTAssertTrue(section.vectors.contains { !$0.expected.copies.isEmpty })
+        // The all-or-nothing veto: a PLACED unstamped row that is left alone.
+        XCTAssertTrue(section.vectors.contains { v in
+            !v.boardTasks.isEmpty
+                && v.tasks.contains { $0.sharedCounterId != nil && !$0.createdInWizard }
+                && v.expected.stamps.isEmpty && v.expected.copies.isEmpty
+        })
+        // A mis-placed window-stamped row: copies with no stamp.
+        XCTAssertTrue(section.vectors.contains { $0.expected.stamps.isEmpty && !$0.expected.copies.isEmpty })
         let sharedBoards = try section.boards.map(makeBoard)
 
         for v in section.vectors {

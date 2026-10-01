@@ -118,7 +118,21 @@ extension AppDatabase {
             stamped += 1
         }
 
+        // board id -> live placements, built once (the duplicate-square guard).
+        var livePlacementsByBoard: [String: [BoardTask]] = [:]
+        for placement in boardTasks { livePlacementsByBoard[placement.boardId, default: []].append(placement) }
+
         for copy in plan.copies {
+            // Residual (i): the board already shows a LIVE square for the copy id
+            // (e.g. a peer's sweep already repointed another placement) — minting +
+            // repointing would put the same task on two squares. Skip; the stale
+            // placement stays on the source row until the user edits it.
+            if livePlacementsByBoard[copy.boardId]?.contains(where: { $0.taskId == copy.id }) == true { continue }
+            // Residual (ii): the deterministic copy row exists TOMBSTONED. Reviving it
+            // could lose to a higher-version remote tombstone and orphan the repointed
+            // placement, so the sweep never revives (the placement choke point, which
+            // is user-authored intent, still does). The row stays on the source.
+            if let dead = try Task.fetchOne(db, key: copy.id), dead.isDeleted { continue }
             guard let source = tasksById[copy.sourceTaskId],
                   let rootTask = try Task.fetchOne(db, key: copy.rootTaskId) else { continue }
             let baseline = BoardSources.computeWindowBaseline(
@@ -127,7 +141,9 @@ extension AppDatabase {
             guard let draft = BoardSources.windowStampedCopyDraft(
                 copy: copy, sourceTask: source, baseline: baseline
             ) else { continue }
-            try mintLinkedCounterCopy(db: db, draft: draft, root: rootTask, userId: userId, now: now)
+            try mintLinkedCounterCopy(
+                db: db, draft: draft, root: rootTask, userId: userId, now: now, reviveTombstoned: false
+            )
 
             if var placement = try BoardTask.fetchOne(db, key: copy.boardTaskId), !placement.isDeleted {
                 placement.taskId = copy.id
@@ -154,7 +170,8 @@ extension AppDatabase {
     /// and write it idempotently (insert + CREATE enqueue, skip a live row,
     /// or RESTORE a tombstoned deterministic row with a version bump).
     private static func mintLinkedCounterCopy(
-        db: Database, draft: BoardSources.DerivedTaskDraft, root: Task, userId: String, now: String
+        db: Database, draft: BoardSources.DerivedTaskDraft, root: Task, userId: String, now: String,
+        reviveTombstoned: Bool = true
     ) throws {
         let rows = BoardSources.buildDerivedRows(
             drafts: BoardSources.PlanDerivedTasksResult(
@@ -162,7 +179,9 @@ extension AppDatabase {
             ),
             userId: userId, now: now, rootsById: [root.id: root], compoundsById: [:]
         )
-        for row in rows.tasks { try writeMintedTask(db: db, row: row, now: now) }
+        for row in rows.tasks {
+            try writeMintedTask(db: db, row: row, now: now, ownerUid: userId, reviveTombstoned: reviveTombstoned)
+        }
     }
 
     /// The placement choke points' gate (docs: owner rule 2026-10-01). If

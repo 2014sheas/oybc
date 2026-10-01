@@ -251,11 +251,21 @@ writes (version bump + enqueue) with deterministic content so every device
 converges and the sweep is idempotent. A row placed on several boards keeps
 its id for the earliest board (by `startDate`, then id) and gets a
 deterministic per-board copy (`derivedTaskId(boardId, root)`, placement
-repointed) for each further DIRECT placement; a row reached only through a
-compound placed on further boards is left to the kernel fallback
+repointed) for each further DIRECT placement. The stamp is **all-or-nothing**:
+once stamped, a row resolves from its own window everywhere (the stamped path
+ignores the context window), so a row whose further boards are not all
+repointable — any further board reached only through a compound, or a
+goal-less row on more than one board — is left UNSTAMPED with no copies, and
+the kernel fallback keeps rendering every board over its own window. A
+window-stamped row placed on a board it is not stamped for (an old-app
+placement, or a wrong "first board") gets that board's copy, no stamp
 (`planLinkedCounterWindowHeal`, shared `linkedCounterWindowHeal.ts` ↔
 `Helpers/LinkedCounterWindowHeal.swift`, pinned by
-`linkedCounterWindowHealVectors.json`). After the heal the freeze
+`linkedCounterWindowHealVectors.json`). A repointed placement may sit on a SEALED board — the one named exception to
+"sealed boards never mutate" besides Close / Reopen / Archive / Repeat: the
+row id changes (authored) and the board re-derives deterministically in the
+same transaction, so a closed cell can flip (green → not green, COMPLETED →
+ACTIVE) once, to what its in-window logs say. After the heal the freeze
 (`isFrozenDerivedRow`), the hub, the arrival snapshot and the closed-board
 display all treat the row like any wizard-minted one. Going forward the two
 placement choke points (`addBoardTaskToBoard` / `updateBoardTaskAndCascade`
@@ -263,7 +273,10 @@ placement choke points (`addBoardTaskToBoard` / `updateBoardTaskAndCascade`
 and the planner's hand-added branch (`planDerivedTasks`) always place a
 per-board window-stamped row (`isWindowStampedForBoard`) for a linked task, so
 a hub-linked placement can no longer be created. A linked row with no goal is
-stamped but never copied (a derived row needs a per-window target).
+never copied (a derived row needs a per-window target), so it is stamped only
+when it sits on a single board. `tasks.endDate` is a clearable sync field
+(`CLEARABLE_FIELDS_BY_COLLECTION.tasks`) so a stamp onto an indefinite board
+clears a legacy window end on every device.
 
 **Window-stamped derived counters (Board Sources member rules, design locked
 2026-09-17 — [`BOARD_SOURCES.md` §Member rules](BOARD_SOURCES.md#member-rules--counting--compound-tasks-pulled-from-sources-design-locked-2026-09-17);

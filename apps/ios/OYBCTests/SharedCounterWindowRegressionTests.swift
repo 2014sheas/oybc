@@ -114,4 +114,73 @@ final class SharedCounterWindowRegressionTests: XCTestCase {
         XCTAssertEqual(DateFormatting.parseISO(ev[0].occurredAt), DateFormatting.parseISO(juneEnd))
         XCTAssertEqual(try XCTUnwrap(db.fetchBoard(id: "june")).sealedCompletedCells ?? [], [], "3 < 6 — still not complete")
     }
+
+    /// PRE-HEAL variant: June's row is still the UNSTAMPED hub-linked copy.
+    /// The +5 on September writes June's lifetime latch (complete: 7 >= 6), but
+    /// the kernel fallback alone — through the real grid path with June's SEALED
+    /// context — still shows 2 miles and an incomplete cell.
+    func test_preHeal_septemberLog_juneGridStillShowsTwo_viaKernelFallback() throws {
+        let db = try seed()
+        _ = try db.incrementSharedCounter(sourceTaskId: "miles", by: 5, boardId: "sept", now: logNow)
+
+        let june = try XCTUnwrap(db.fetchBoard(id: "june"))
+        let juneRow = try XCTUnwrap(K.fetchTask(db, "june-miles"))
+        XCTAssertNil(juneRow.startDate, "still the unstamped hub-linked row (no heal ran)")
+
+        let allEvents = try db.read { try TaskEvent.filter(Column("isDeleted") == false).fetchAll($0) }
+        let byTask = Dictionary(grouping: allEvents, by: \.taskId)
+        let sealedMs = try XCTUnwrap(DateFormatting.parseISO(try XCTUnwrap(june.sealedAt))).timeIntervalSince1970 * 1000
+        let ctx = boundWindowContextAtSeal(eventsByTaskId: byTask, sealedAtMs: sealedMs)
+        let root = try XCTUnwrap(K.fetchTask(db, "miles"))
+
+        let result = DerivationPass.computeBoardGrid(
+            board: june,
+            boardTasksOnBoard: try db.fetchBoardTasks(boardId: "june"),
+            childrenByCompound: [:],
+            taskById: ["june-miles": juneRow, "miles": root],
+            allBoards: [june],
+            windowContext: ctx
+        )
+        XCTAssertEqual(result.cells.count, 1)
+        XCTAssertFalse(result.cells[0].isCompleted, "2 in-window miles < 6 whatever the latch says")
+        XCTAssertEqual(result.completedTasks, 0)
+
+        let shown = resolveLinkedCounterDisplay(
+            task: juneRow, eventsByTaskId: byTask, sealedAt: june.sealedAt,
+            window: LinkedCounterWindow(board: june)
+        )
+        XCTAssertEqual(shown.displayed, 2)
+        XCTAssertFalse(shown.isCompleted)
+    }
+
+    /// A sealed re-derivation after the heal where June's cell actually CHANGES:
+    /// the old latch (7 >= 5) painted it green and the snapshot recorded it;
+    /// only 2 miles fall in June, so the heal's re-derivation drops it.
+    func test_heal_reDerivesSealedJune_cellDropsWhenLatchWasWrong() throws {
+        let db = try AppDatabase.makeTestInstance()
+        try K.seedUser(db)
+        try db.saveTask(K.task("miles", maxCount: 100, currentCount: 7))
+        try db.saveTask(K.task(
+            "june-miles", maxCount: 5, sharedCounterId: "miles", baseline: 0, currentCount: 7, isCompleted: true
+        ))
+        try db.saveBoard(K.board(id: "june", startDate: juneStart, endDate: juneEnd))
+        try db.saveBoardTask(K.placement(id: "btJ", boardId: "june", taskId: "june-miles"))
+        try K.addIncrement(db, taskId: "miles", delta: 2, occurredAt: "2026-06-10T00:00:00.000Z")
+        try K.addIncrement(db, taskId: "miles", delta: 5, occurredAt: "2026-09-10T00:00:00.000Z")
+        XCTAssertTrue(try db.sealBoard(boardId: "june", now: "2026-07-02T00:00:00.000Z"))
+        // Seal with the OLD latch's answer: the cell recorded as complete.
+        try db.write {
+            try $0.execute(sql: "UPDATE boards SET sealedCompletedCells = '[0]', completedTasks = 1 WHERE id = 'june'")
+        }
+        let before = try XCTUnwrap(db.fetchBoard(id: "june"))
+        XCTAssertEqual(before.sealedCompletedCells ?? [], [0])
+        XCTAssertEqual(before.completedTasks, 1)
+
+        let r = try db.healLinkedCounterWindows(userId: K.userId)
+        XCTAssertEqual(r.stamped, 1)
+
+        let after = try XCTUnwrap(db.fetchBoard(id: "june"))
+        XCTAssertEqual(after.sealedCompletedCells ?? [], [], "the snapshot no longer contains the cell")
+        XCTAssertEqual(after.completedTasks, 0, "completedTasks dropped")
+    }
 }

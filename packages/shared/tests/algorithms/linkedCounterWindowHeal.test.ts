@@ -81,8 +81,22 @@ describe('planLinkedCounterWindowHeal', () => {
   const P = V.planLinkedCounterWindowHeal;
 
   it('fixture section is non-trivial', () => {
-    expect(P.vectors.length).toBeGreaterThanOrEqual(12);
+    expect(P.vectors.length).toBeGreaterThanOrEqual(20);
     expect(P.vectors.some((v: any) => v.expected.copies.length > 0)).toBe(true);
+    // The all-or-nothing veto: a PLACED unstamped row that is left alone.
+    expect(
+      P.vectors.some(
+        (v: any) =>
+          v.boardTasks.length > 0 &&
+          v.tasks.some((t: any) => t.sharedCounterId && !t.createdInWizard) &&
+          v.expected.stamps.length === 0 &&
+          v.expected.copies.length === 0
+      )
+    ).toBe(true);
+    // A mis-placed window-stamped row: copies with no stamp.
+    expect(
+      P.vectors.some((v: any) => v.expected.stamps.length === 0 && v.expected.copies.length > 0)
+    ).toBe(true);
   });
 
   it.each(P.vectors as any[])('$name', (v: any) => {
@@ -112,6 +126,35 @@ describe('planLinkedCounterWindowHeal', () => {
         ? { ...t, timeframe: s.timeframe, startDate: s.startDate, endDate: orUndef(s.endDate), createdInWizard: true }
         : t;
     });
+    for (const c of plan.copies) {
+      tasks.push({
+        id: c.id,
+        type: 'counting' as HealTask['type'],
+        sharedCounterId: c.rootTaskId,
+        startDate: c.startDate,
+        endDate: orUndef(c.endDate),
+        timeframe: c.timeframe,
+        createdInWizard: true,
+        isDeleted: false,
+        maxCount: 5,
+      });
+    }
+    const boardTasks = input.boardTasks.map((bt) => {
+      const c = plan.copies.find((x) => x.boardTaskId === bt.id);
+      return c ? { ...bt, taskId: c.id } : bt;
+    });
+    expect(planLinkedCounterWindowHeal({ ...input, tasks, boardTasks })).toEqual({ stamps: [], copies: [] });
+  });
+
+  it('is idempotent for a mis-placed window-stamped row: repointing the placement at the minted copy leaves nothing to plan', () => {
+    const v = P.vectors.find((x: any) => x.name.startsWith('window-stamped for February placed on March only'));
+    expect(v).toBeDefined();
+    const input = toInput(v, P.boards);
+    const plan = planLinkedCounterWindowHeal(input);
+    expect(plan.stamps).toEqual([]);
+    expect(plan.copies).toHaveLength(1);
+
+    const tasks: HealTask[] = [...input.tasks];
     for (const c of plan.copies) {
       tasks.push({
         id: c.id,

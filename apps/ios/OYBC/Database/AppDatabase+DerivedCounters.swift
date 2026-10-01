@@ -96,9 +96,16 @@ extension AppDatabase {
     ///   - db: The caller's open transaction.
     ///   - row: The freshly built row, carrying this window's field values.
     ///   - now: The mint instant, stamped on a revive.
+    ///   - ownerUid: The uid stamped on the enqueued items (defaults to the live
+    ///     signed-in uid; a launch-time migration passes the row owner's uid).
+    ///   - reviveTombstoned: When false a tombstoned row is left untouched (the
+    ///     heal sweep: a revive could lose to a higher-version remote tombstone).
     /// - Returns: True when a row was written (insert or revive).
     @discardableResult
-    static func writeMintedTask(db: Database, row: Task, now: String) throws -> Bool {
+    static func writeMintedTask(
+        db: Database, row: Task, now: String,
+        ownerUid: String? = SyncQueueOwnership.currentUid(), reviveTombstoned: Bool = true
+    ) throws -> Bool {
         guard let existing = try Task.fetchOne(db, key: row.id) else {
             try row.insert(db)
             try SyncQueueBuilder.makeItem(
@@ -106,11 +113,12 @@ extension AppDatabase {
                 entityId: row.id,
                 operationType: .create,
                 payload: row,
-                now: now
+                now: now,
+                ownerUid: ownerUid
             ).enqueue(db)
             return true
         }
-        guard existing.isDeleted else { return false }
+        guard existing.isDeleted, reviveTombstoned else { return false }
         var revived = row
         revived.createdAt = existing.createdAt
         revived.updatedAt = now
@@ -123,7 +131,8 @@ extension AppDatabase {
             entityId: row.id,
             operationType: .update,
             payload: revived,
-            now: now
+            now: now,
+            ownerUid: ownerUid
         ).enqueue(db)
         return true
     }

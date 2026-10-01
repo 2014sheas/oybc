@@ -6,6 +6,7 @@ import {
   windowStampedCopyDraft,
   type Board,
   type LinkedCounterWindowCopy,
+  TaskType,
   type Task,
 } from '@oybc/shared';
 import { db } from '../internal';
@@ -45,15 +46,27 @@ import { refreshDerivedBaselines, writeMintedRow } from './derivedCounters';
  * @param sourceTask - The linked row it stands in for (target/title source).
  * @param userId - Owner stamped on a new row.
  * @param now - ISO8601 mint instant.
+ * @param options - `reviveTombstoned` (default true): when false, a tombstoned
+ *   row holding `copy.id` yields `null` instead of being revived.
  * @returns The row now holding `copy.id`, or `null` when the source has no
- *   goal (a goal-less linked row has no per-window target to copy).
+ *   goal (a goal-less linked row has no per-window target to copy) or the id
+ *   is tombstoned and revival was disabled.
  */
 export async function materializeWindowCopy(
   copy: LinkedCounterWindowCopy,
   sourceTask: Task,
   userId: string,
   now: string,
+  options: { reviveTombstoned?: boolean } = {},
 ): Promise<Task | null> {
+  const { reviveTombstoned = true } = options;
+  if (!reviveTombstoned) {
+    // The heal path: a tombstoned deterministic row is NOT revived (the
+    // revive could lose to a higher-version remote tombstone and orphan the
+    // repointed placement). The placement choke points keep the default.
+    const existing = await db.tasks.get(copy.id);
+    if (existing?.isDeleted) return null;
+  }
   const rootEvents = await db.taskEvents.where('taskId').equals(copy.rootTaskId).toArray();
   const baseline = computeWindowBaseline(copy.rootTaskId, rootEvents, copy.startDate);
   const draft = windowStampedCopyDraft(copy, sourceTask, baseline);
@@ -95,10 +108,22 @@ export async function resolveBoardPlacementTaskId(
   now: string,
 ): Promise<string> {
   const task = await db.tasks.get(taskId);
-  if (!task || !task.sharedCounterId || isWindowStampedForBoard(task, board)) return taskId;
+  if (
+    !task ||
+    task.type !== TaskType.COUNTING ||
+    !task.sharedCounterId ||
+    isWindowStampedForBoard(task, board)
+  ) {
+    return taskId;
+  }
   const root = task.sharedCounterId;
+  const copyId = derivedTaskId(board.id, root);
+  // Mirror iOS `resolveWindowStampedPlacementId`: a LIVE deterministic row that
+  // is not window-stamped for this board is left alone — place the original.
+  const existing = await db.tasks.get(copyId);
+  if (existing && !existing.isDeleted && !isWindowStampedForBoard(existing, board)) return taskId;
   const copy: LinkedCounterWindowCopy = {
-    id: derivedTaskId(board.id, root),
+    id: copyId,
     boardId: board.id,
     boardTaskId: '',
     sourceTaskId: task.id,

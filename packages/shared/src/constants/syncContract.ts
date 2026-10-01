@@ -126,6 +126,11 @@ export const LEGACY_PULL_SKIP_COLLECTIONS = [
  *  - `coreBoardDefaults.defaultBoardSize` / `defaultCenterType` — a
  *    per-timeframe size / centre override cleared back to "inherit prefs"
  *    (docs/POOLS_RECURRING.md §Per-timeframe size + centre).
+ *  - `tasks.endDate` — the windowed-linked-counter heal (2026-10-01,
+ *    `planLinkedCounterWindowHeal`) stamps a linked row with its board's
+ *    window; a stamp onto an INDEFINITE board (`endDate` absent) must clear a
+ *    legacy task-level `endDate` on every device, or the row's window would
+ *    end on one device and run open on another.
  *
  * Consumers: web push (`syncService.ts` — `deleteField()` for each absent
  * field of the row's collection, via `clearableFieldsFor`); iOS push
@@ -138,6 +143,7 @@ export const LEGACY_PULL_SKIP_COLLECTIONS = [
  */
 export const CLEARABLE_FIELDS_BY_COLLECTION = {
   boards: ['endDate', 'completedAt', 'sealedAt', 'sealedCompletedCells'],
+  tasks: ['endDate'],
   coreBoardDefaults: ['defaultBoardSize', 'defaultCenterType'],
 } as const satisfies Partial<Record<SyncCollection, readonly string[]>>;
 

@@ -93,7 +93,7 @@ export function buildSharedCounterHints({
 
     if (otherBoardNames.size === 0) continue;
 
-    const namesArr = [...otherBoardNames];
+    const namesArr = [...otherBoardNames].sort((a, b) => a.localeCompare(b));
     const hint =
       namesArr.length === 1
         ? `↔ Shared · also counts on ${namesArr[0]}`

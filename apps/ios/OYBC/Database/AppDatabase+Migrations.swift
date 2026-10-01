@@ -116,10 +116,22 @@ extension AppDatabase {
         // each clean pull (`SyncService`) to catch rows other devices wrote.
         migrator.registerMigration("v37") { db in
             let userIds = try String.fetchAll(db, sql: "SELECT id FROM users")
+            // Best-effort: a heal failure must NEVER brick database open — the
+            // post-pull sweep retries it (idempotent), so log and move on.
             for userId in userIds {
-                try AppDatabase.healLinkedCounterWindowsTx(
-                    db: db, userId: userId, now: AppDatabase.currentTimestamp()
-                )
+                do {
+                    // Savepoint: a mid-heal failure rolls back that user's partial writes.
+                    try db.inSavepoint {
+                        try AppDatabase.healLinkedCounterWindowsTx(
+                            db: db, userId: userId, now: AppDatabase.currentTimestamp()
+                        )
+                        return .commit
+                    }
+                } catch {
+                    #if DEBUG
+                    dlog("[Migration v37] linked-counter heal skipped for a user: \(error.localizedDescription)")
+                    #endif
+                }
             }
         }
     }

@@ -36,6 +36,9 @@
       "sealedAt",
       "sealedCompletedCells"
     ],
+    "tasks": [
+      "endDate"
+    ],
     "coreBoardDefaults": [
       "defaultBoardSize",
       "defaultCenterType"

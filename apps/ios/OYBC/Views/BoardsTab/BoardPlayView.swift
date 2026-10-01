@@ -1111,7 +1111,7 @@ struct BoardPlayView: View {
                AppDatabase.boardCanStillCountLogs(b, now: nowIso),
                !(allTasks.first(where: { $0.id == bt.taskId }).map { BoardSources.isFrozenDerivedRow($0, now: nowIso) } ?? false) {
                 seenBoardIds.insert(b.id)
-                otherBoardNames.append(b.name)
+                otherBoardNames.append(b.displayName)
             }
         }
         guard !otherBoardNames.isEmpty else { return nil }

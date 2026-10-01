@@ -1,5 +1,6 @@
 import {
   SyncOperationType,
+  computeWindowBaseline,
   planLinkedCounterWindowHeal,
   type BoardTask,
   type Task,
@@ -46,6 +47,15 @@ import { currentTimestamp } from '../utils';
  * next run plans nothing and returns `{0, 0}` without opening any writes.
  * Safe to call after every clean pull and from the Dexie v18 upgrade.
  *
+ * Documented residuals (the source placement is then left as-is; the kernel
+ * fallback still renders it windowed, and a later sweep re-plans it):
+ *   - the board ALREADY holds a live placement of the copy id (repointing would
+ *     duplicate a square) — the copy is skipped entirely;
+ *   - the deterministic copy id is TOMBSTONED — it is NOT revived here (the
+ *     revive could lose to a higher-version remote tombstone and orphan the
+ *     repointed placement). The placement choke points still revive, since
+ *     there it is user-authored intent.
+ *
  * Swift twin: `AppDatabase+LinkedCounterWindowHeal.swift`.
  *
  * @param userId The owning user's uid (scope guard + sync owner).
@@ -86,8 +96,17 @@ export async function healLinkedCounterWindows(
       for (const stamp of plan.stamps) {
         const task = taskById.get(stamp.taskId);
         if (!task) continue;
+        // Baseline BEFORE the put/enqueue so the queued payload is not stale
+        // (iOS parity); `refreshDerivedBaselines` below stays as the cache refresh.
+        const rootEvents = task.sharedCounterId
+          ? await db.taskEvents.where('taskId').equals(task.sharedCounterId).toArray()
+          : [];
+        const baseline = task.sharedCounterId
+          ? computeWindowBaseline(task.sharedCounterId, rootEvents, stamp.startDate)
+          : task.baseline;
         const next: Task = {
           ...task,
+          ...(baseline !== undefined ? { baseline } : {}),
           timeframe: stamp.timeframe,
           startDate: stamp.startDate,
           createdInWizard: true,
@@ -103,11 +122,24 @@ export async function healLinkedCounterWindows(
         stamped += 1;
       }
 
+      const btById = new Map<string, BoardTask>(boardTasks.map((b) => [b.id, b]));
+      const livePlacedTaskIdsByBoard = new Map<string, Set<string>>();
+      for (const b of boardTasks) {
+        if (b.isDeleted) continue;
+        let ids = livePlacedTaskIdsByBoard.get(b.boardId);
+        if (!ids) livePlacedTaskIdsByBoard.set(b.boardId, (ids = new Set()));
+        ids.add(b.taskId);
+      }
+
       for (const copy of plan.copies) {
         const source = taskById.get(copy.sourceTaskId);
-        const bt = boardTasks.find((b) => b.id === copy.boardTaskId);
+        const bt = btById.get(copy.boardTaskId);
         if (!source || !bt) continue;
-        const row = await materializeWindowCopy(copy, source, userId, now);
+        // Never duplicate a square: the board already shows `copy.id`.
+        if (livePlacedTaskIdsByBoard.get(copy.boardId)?.has(copy.id)) continue;
+        const row = await materializeWindowCopy(copy, source, userId, now, {
+          reviveTombstoned: false,
+        });
         if (!row) continue;
         const repointed: BoardTask = {
           ...bt,
@@ -122,6 +154,10 @@ export async function healLinkedCounterWindows(
         touchedRoots.add(copy.rootTaskId);
         touchedIds.add(copy.id);
         touchedIds.add(copy.sourceTaskId);
+        livePlacedTaskIdsByBoard.get(copy.boardId)?.delete(copy.sourceTaskId);
+        let placed = livePlacedTaskIdsByBoard.get(copy.boardId);
+        if (!placed) livePlacedTaskIdsByBoard.set(copy.boardId, (placed = new Set()));
+        placed.add(copy.id);
         copied += 1;
       }
 

@@ -166,7 +166,7 @@ final class LinkedCounterWindowHealTests: XCTestCase {
         XCTAssertEqual(try K.fetchTask(db, "hub")?.version, 2)
     }
 
-    func test_tombstonedDeterministicRow_isRestored() throws {
+    func test_tombstonedDeterministicRow_isNotRevived_andPlacementNotRepointed() throws {
         let db = try makeDb()
         try db.saveTask(K.task("hub", sharedCounterId: "root"))
         try db.saveBoard(K.board(id: "J", startDate: juneStart, endDate: juneEnd))
@@ -179,11 +179,47 @@ final class LinkedCounterWindowHealTests: XCTestCase {
         try db.saveTask(dead)
 
         _ = try heal(db)
-        let revived = try XCTUnwrap(K.fetchTask(db, copyId))
-        XCTAssertFalse(revived.isDeleted)
-        XCTAssertEqual(revived.version, 5)
-        XCTAssertEqual(revived.startDate, septStart)
-        XCTAssertEqual(try K.queue(db, type: "tasks", id: copyId).first?.operationType, .update)
+        let still = try XCTUnwrap(K.fetchTask(db, copyId))
+        XCTAssertTrue(still.isDeleted, "the sweep never revives a tombstone (could lose to a remote tombstone)")
+        XCTAssertEqual(still.version, 4)
+        XCTAssertTrue(try K.queue(db, type: "tasks", id: copyId).isEmpty)
+        XCTAssertEqual(try db.fetchBoardTasks(boardId: "S").first?.taskId, "hub", "placement not repointed at a dead row")
+        XCTAssertTrue(try K.queue(db, type: "boardTasks", id: "btS").isEmpty)
+    }
+
+    func test_boardAlreadyShowsCopy_isSkipped_noDuplicateSquare() throws {
+        let db = try makeDb()
+        try db.saveTask(K.task("hub", sharedCounterId: "root"))
+        try db.saveBoard(K.board(id: "J", startDate: juneStart, endDate: juneEnd))
+        try db.saveBoard(K.board(id: "S", startDate: septStart, endDate: septEnd, size: 2))
+        try db.saveBoardTask(K.placement(id: "btJ", boardId: "J", taskId: "hub"))
+        try db.saveBoardTask(K.placement(id: "btS", boardId: "S", taskId: "hub", cell: 0, size: 2))
+        let copyId = BoardSources.derivedTaskId(boardId: "S", rootTaskId: "root")
+        try db.saveTask(K.task(
+            copyId, sharedCounterId: "root", startDate: septStart, endDate: septEnd, createdInWizard: true
+        ))
+        try db.saveBoardTask(K.placement(id: "btS2", boardId: "S", taskId: copyId, cell: 1, size: 2))
+
+        _ = try heal(db)
+        XCTAssertEqual(try db.fetchBoardTasks(boardId: "S").filter { $0.taskId == copyId }.count, 1)
+        XCTAssertEqual(try db.fetchBoardTasks(boardId: "S").first { $0.id == "btS" }?.taskId, "hub", "not repointed")
+        XCTAssertTrue(try K.queue(db, type: "boardTasks", id: "btS").isEmpty)
+    }
+
+    func test_healEnqueues_carryOwnerUid_evenWithNoLiveProvider() throws {
+        let db = try makeDb()
+        try db.saveTask(K.task("hub", sharedCounterId: "root"))
+        try db.saveBoard(K.board(id: "J", startDate: juneStart, endDate: juneEnd))
+        try db.saveBoard(K.board(id: "S", startDate: septStart, endDate: septEnd))
+        try db.saveBoardTask(K.placement(id: "btJ", boardId: "J", taskId: "hub"))
+        try db.saveBoardTask(K.placement(id: "btS", boardId: "S", taskId: "hub"))
+        let before = Set(try db.fetchPendingSyncItems().map(\.id))
+        _ = try heal(db)
+        let healItems = try db.fetchPendingSyncItems().filter { !before.contains($0.id) }
+        XCTAssertFalse(healItems.isEmpty)
+        for item in healItems where ["tasks", "boardTasks"].contains(item.entityType) {
+            XCTAssertEqual(item.ownerUid, K.userId, "\(item.entityType)/\(item.entityId) must carry the owner")
+        }
     }
 
     func test_reachedViaCompound_childIsStamped() throws {

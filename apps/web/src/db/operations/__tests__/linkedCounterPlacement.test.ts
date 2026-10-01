@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { derivedTaskId, isWindowStampedDerived, Timeframe } from '@oybc/shared';
+import { derivedTaskId, isWindowStampedDerived, TaskType, Timeframe } from '@oybc/shared';
 import { db } from '../../internal';
 import { addBoardTaskToBoard, updateBoardTaskAndCascade } from '../boardTasks';
 import {
@@ -89,6 +89,25 @@ describe('addBoardTaskToBoard — linked counters', () => {
     expect(third.taskId).toBe(SEPT_ROW);
     expect(revived.isDeleted).toBe(false);
     expect(revived.version).toBe(v + 1);
+  });
+
+  it('leaves a non-COUNTING task carrying a sharedCounterId alone (type guard)', async () => {
+    await db.tasks.put(hubLinked('N', { type: TaskType.NORMAL }));
+    const bt = await addBoardTaskToBoard(SEPT.id, 'N', 0, 0);
+    expect(bt.taskId).toBe('N');
+    expect(await db.tasks.get(SEPT_ROW)).toBeUndefined();
+  });
+
+  it('places the ORIGINAL id when a live deterministic row exists but is not stamped for this board', async () => {
+    // A live row at the deterministic id whose window is NOT this board's.
+    await db.tasks.put(
+      hubLinked(SEPT_ROW, { createdInWizard: true, timeframe: SEPT_TF, startDate: JUNE.startDate, endDate: JUNE.endDate }),
+    );
+    await db.tasks.put(hubLinked('H'));
+    const bt = await addBoardTaskToBoard(SEPT.id, 'H', 0, 0);
+    expect(bt.taskId).toBe('H');
+    // The mismatched row is untouched.
+    expect((await db.tasks.get(SEPT_ROW))!.startDate).toBe(JUNE.startDate);
   });
 
   it('leaves roots and plain counters alone', async () => {
