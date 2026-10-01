@@ -576,13 +576,6 @@ export function DetailModal({
             <p className={styles.modalMeta}>
               {sq.action} · {sq.maxCount} {sq.unit}
             </p>
-            {/* Phase 3 — Shared Counters: linked derived counters show a
-                caption indicating they are driven by a source task. */}
-            {sq.sharedCounterId != null && (
-              <p className={styles.linkedCounterCaption}>
-                Linked counter — tap + to increment the shared source
-              </p>
-            )}
             {/* Progress bar */}
             <div className={styles.modalProgressBar}>
               <div
