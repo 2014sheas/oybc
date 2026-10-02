@@ -119,7 +119,8 @@ extension BoardPlayViewModel {
             type: patch.type,
             action: patch.action.isEmpty ? nil : patch.action,
             unit: patch.unit.isEmpty ? nil : patch.unit,
-            maxCount: patch.maxCount
+            maxCount: patch.maxCount,
+            compound: patch.compound
         )
     }
 
@@ -247,6 +248,16 @@ extension BoardPlayViewModel {
         let centerKeepLocked = draftSnapshot.values
             .first(where: { $0.id == editOriginalCenterBoardTaskId })?.isLocked ?? true
 
+        // Compound overrides (conversion / edited compound): reject BEFORE
+        // opening the write so the user gets the specific alert, not a failed
+        // transaction. `applyStagedOverrides` re-checks inside the transaction.
+        if let problem = Self.compoundOverrideProblem(
+            database: database, overrides: overridesSnapshot, pendingPayloads: draftSnapshot.values.compactMap(\.pending)
+        ) {
+            emitEdit(.saveFailed(problem))
+            return false
+        }
+
         editSaveInFlight = true
         let bid = boardId
         let database = self.database
@@ -271,7 +282,11 @@ extension BoardPlayViewModel {
                             entityType: "tasks", entityId: task.id,
                             operationType: .create, payload: task, now: now
                         ).enqueue(db)
-                        for (childTask, link) in zip(payload.childTasks, payload.childLinks) {
+                        // Child tasks and links are written INDEPENDENTLY: a
+                        // picked EXISTING library sub-task has a link but no
+                        // child task in the payload, so the two arrays differ
+                        // in length (a zip misaligned / dropped them).
+                        for childTask in payload.childTasks {
                             var child = childTask
                             child.createdInWizard = false
                             try child.save(db)
@@ -279,6 +294,8 @@ extension BoardPlayViewModel {
                                 entityType: "tasks", entityId: child.id,
                                 operationType: .create, payload: child, now: now
                             ).enqueue(db)
+                        }
+                        for link in payload.childLinks {
                             try link.save(db)
                             try SyncQueueBuilder.makeItem(
                                 entityType: "compoundChildren", entityId: link.id,
@@ -362,6 +379,11 @@ extension BoardPlayViewModel {
                     self.reload()
                     self.emitEdit(.saved)
                 }
+            } catch AppDatabase.TaskEditError.invalid(let message) {
+                await MainActor.run {
+                    self.editSaveInFlight = false
+                    self.emitEdit(.saveFailed(message))
+                }
             } catch BoardEditError.boardNotEditable {
                 await MainActor.run {
                     self.editSaveInFlight = false
@@ -425,9 +447,32 @@ extension BoardPlayViewModel {
             }
             if targets.isEmpty { targets = [input.stagedId] }
             for target in Set(targets).sorted() {
-                let row: Task? = target == input.stagedId ? input.mapTask : try Task.fetchOne(db, key: target)
-                guard let row else { continue }
-                var updated = Self.applyingOverride(input.override, to: row)
+                // A pending task's plain override was merged into its payload
+                // at step 1 (no `mapTask`); only a compound override still
+                // needs the inserted row (child CRUD + rule).
+                var row: Task? = target == input.stagedId ? input.mapTask : try Task.fetchOne(db, key: target)
+                if row == nil && input.override.compound != nil { row = try Task.fetchOne(db, key: target) }
+                guard let base = row else { continue }
+                var updated = Self.applyingOverride(input.override, to: base)
+                if let structure = input.override.compound {
+                    // Mirrors `applyTaskEditPatch`'s compound branch, minus
+                    // its `type == .compound` gate (a conversion's row is
+                    // converted by `applyingOverride` just above).
+                    guard updated.type == .compound else { continue }
+                    var titled = structure
+                    titled.title = input.override.title
+                    if let problem = try AppDatabase.compoundLinkProblem(db: db, parentId: updated.id, patch: titled) {
+                        throw AppDatabase.TaskEditError.invalid(message: problem)
+                    }
+                    if let problem = titled.validate(type: .compound) {
+                        throw AppDatabase.TaskEditError.invalid(message: problem)
+                    }
+                    updated.updatedAt = now
+                    updated.version += 1
+                    try AppDatabase.applyStagedCompoundChildEdits(db: db, parent: updated, patch: titled, now: now)
+                    try AppDatabase.saveTaskAndCascade(db: db, task: updated)
+                    continue
+                }
                 updated.updatedAt = now
                 updated.version += 1
                 try AppDatabase.saveTaskAndCascade(db: db, task: updated)
@@ -435,24 +480,61 @@ extension BoardPlayViewModel {
         }
     }
 
-    /// Whether Board Edit may switch a task from `from` to `to`. Only
-    /// Simple ⇄ Counting: a Compound carries `compound_children` + a rule and
-    /// an Achievement carries its trigger + board/template target — neither
-    /// can be entered or left from the "Edit task…" sheet (their structure is
-    /// edited from Task Detail), so their type is immutable here.
+    /// The first blocking problem among staged compound overrides (a
+    /// conversion into Compound or an edited compound), or nil. Pure
+    /// `validate(type: .compound)` plus the link guard against the live DB
+    /// (a pending compound's own sub-tasks aren't in the DB yet, so they are
+    /// excluded from the guard — their payload already vetted them).
+    ///
+    /// - Parameters:
+    ///   - database: The injected database (read only).
+    ///   - overrides: Staged overrides keyed by staged task id.
+    ///   - pendingPayloads: The staged not-yet-created tasks.
+    /// - Returns: A user-facing message, or nil when every compound override is saveable.
+    static func compoundOverrideProblem(
+        database: AppDatabase, overrides: [String: StagedTaskOverride], pendingPayloads: [PendingTaskPayload]
+    ) -> String? {
+        let pendingChildIds = Set(pendingPayloads.flatMap { $0.childTasks.map(\.id) })
+        for (taskId, override) in overrides.sorted(by: { $0.key < $1.key }) {
+            guard var structure = override.compound else { continue }
+            structure.title = override.title
+            if let problem = structure.validate(type: .compound) { return problem }
+            var guarded = structure
+            guarded.children.removeAll { $0.childTaskId.map(pendingChildIds.contains) ?? false }
+            do {
+                if let problem = try database.read({ db in
+                    try AppDatabase.compoundLinkProblem(db: db, parentId: taskId, patch: guarded)
+                }) { return problem }
+            } catch {
+                return "Couldn’t check the sub-tasks — please try again."
+            }
+        }
+        return nil
+    }
+
+    /// Whether Board Edit may switch a task from `from` to `to`: Simple ⇄
+    /// Counting, and Simple / Counting → Compound (the sheet's compound editor
+    /// supplies the rule + sub-tasks). Never OUT of Compound (its sub-tasks'
+    /// fate is undecided) and never into/out of Achievement (it carries its
+    /// trigger + board/template target, edited from Task Detail).
     nonisolated static func boardEditAllowsTypeSwitch(from: TaskType, to: TaskType) -> Bool {
         let switchable: Set<TaskType> = [.normal, .counting]
-        return switchable.contains(from) && switchable.contains(to)
+        guard switchable.contains(from) else { return false }
+        return switchable.contains(to) || to == .compound
     }
 
     /// Applies a staged "Edit task…" override to a task's fields (title,
-    /// type — Simple ⇄ Counting only, see `boardEditAllowsTypeSwitch` — and
-    /// the counting fields). Shared by the Save's step 4 (existing tasks),
-    /// step 1 (pending tasks) and the staged grid (`editDraftTaskMap`).
+    /// type — see `boardEditAllowsTypeSwitch` — the counting fields, and a
+    /// compound's rule). Shared by the Save's step 7b (existing tasks), step 1
+    /// (pending tasks) and the staged grid (`editDraftTaskMap`). A switch INTO
+    /// Compound needs the override's `compound` patch (otherwise it is ignored,
+    /// never minting a zero-child compound); child Task/link CRUD is NOT done
+    /// here (`applyStagedCompoundChildEdits` at Save).
     nonisolated static func applyingOverride(_ override: StagedTaskOverride, to task: Task) -> Task {
         var updated = task
         updated.title = override.title
-        if boardEditAllowsTypeSwitch(from: task.type, to: override.type) {
+        if boardEditAllowsTypeSwitch(from: task.type, to: override.type),
+           override.type != .compound || override.compound != nil {
             updated.type = override.type
         }
         switch updated.type {
@@ -465,6 +547,21 @@ extension BoardPlayViewModel {
                 updated.action   = nil
                 updated.unit     = nil
                 updated.maxCount = nil
+            }
+        case .compound:
+            if task.type != .compound {
+                // Conversion: drop the counting fields and the old own latch
+                // (a compound's completion derives from its sub-tasks; its old
+                // events become inert — same accepted class as Simple ⇄ Counting).
+                updated.action = nil
+                updated.unit = nil
+                updated.maxCount = nil
+                updated.isCompleted = false
+                updated.completedAt = nil
+            }
+            if var structure = override.compound {
+                structure.title = override.title
+                updated = structure.applied(to: updated)
             }
         default:
             break

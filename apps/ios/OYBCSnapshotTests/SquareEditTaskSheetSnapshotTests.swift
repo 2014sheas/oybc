@@ -72,6 +72,45 @@ final class SquareEditTaskSheetSnapshotTests: XCTestCase {
         )
     }
 
+    // MARK: - Compound editing (Board Edit "Edit task…")
+
+    /// A Simple task: the type picker offers Simple / Counting / Compound.
+    func testNormalThreeSegmentPickerLight() {
+        assertSnapshot(
+            of: makeSheet(task: normalTask()),
+            as: .image(layout: .fixed(width: 393, height: 480)),
+            record: recordMode
+        )
+    }
+
+    /// Compound picked on a Simple task: the editor opens with the default
+    /// rule and no sub-tasks (Done is blocked until two are added).
+    func testConvertedCompoundEditorLight() {
+        assertSnapshot(
+            of: SquareEditTaskSheet(
+                task: normalTask(), startingType: .compound, onDone: { _ in }, onCancel: {}
+            ),
+            as: .image(layout: .fixed(width: 393, height: 900)),
+            record: recordMode
+        )
+    }
+
+    /// An existing compound: type fixed (badge, no picker), editor open with
+    /// its sub-tasks.
+    func testExistingCompoundFixedTypeEditorLight() {
+        let kids = [
+            SnapshotFixtures.makeTask(id: "sett-kid-1", title: "Stretch", type: .normal),
+            SnapshotFixtures.makeTask(id: "sett-kid-2", title: "Hydrate", type: .normal),
+        ]
+        assertSnapshot(
+            of: SquareEditTaskSheet(
+                task: compoundTask(), compoundChildren: kids, onDone: { _ in }, onCancel: {}
+            ),
+            as: .image(layout: .fixed(width: 393, height: 900)),
+            record: recordMode
+        )
+    }
+
     // MARK: - Achievement task
 
     /// P0 regression: an achievement opens with its real type badge, no

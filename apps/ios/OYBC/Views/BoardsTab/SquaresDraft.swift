@@ -32,9 +32,9 @@ struct SquaresDraftCell {
     /// the picker's quick-add or special-type panel — Normal / Counting /
     /// Achievement). Inserted at Save (D15 step 1) with `createdInWizard:
     /// false` — a deliberate library task, unlike the wizard's hidden
-    /// drafts. Compound is the D14 exception: it is created IMMEDIATELY by
-    /// the special panel, so a compound placement always arrives with
-    /// `pending == nil`.
+    /// drafts. A Compound picked from the special panel is deferred the same
+    /// way on iOS: its child tasks + links ride in the payload and are
+    /// inserted at Save (web persists a picker-born compound immediately).
     var pending: PendingTaskPayload?
     /// Draft lock state (`Lock in place` / `Unlock`). For a staged add this
     /// is written directly by `addBoardTaskToBoard(isLocked:)` at Save — it
@@ -64,9 +64,9 @@ struct SquaresDraftCell {
 /// timeboxed dates, achievement config — none of those are exposed from the
 /// board-edit context.
 ///
-/// `type` only takes effect Simple ⇄ Counting (`BoardPlayViewModel
-/// .applyingOverride`); a compound's or an achievement's type is immutable
-/// through Board Edit.
+/// `type` only takes effect Simple ⇄ Counting and Simple/Counting → Compound
+/// (`BoardPlayViewModel.applyingOverride`); a compound's or an achievement's
+/// type is never changed through Board Edit.
 struct StagedTaskOverride {
     var title: String
     var type: TaskType
@@ -74,6 +74,9 @@ struct StagedTaskOverride {
     var action: String?
     var unit: String?
     var maxCount: Int?
+    /// Compound rule + sub-task edits (a conversion into Compound, or an
+    /// edited existing compound) — applied at Save by `applyStagedOverrides`.
+    var compound: TaskEditPatch?
 }
 
 // MARK: - EditModeTaskTarget

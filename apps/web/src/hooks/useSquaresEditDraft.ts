@@ -8,12 +8,13 @@ import {
   type Task,
 } from '@oybc/shared';
 import { taskToSquareData, taskToSquareState, type SquareWindowContext } from '../db/adapters';
-import type { UpdateTaskPatch } from '../db/operations/tasks';
 import type { PendingTaskPayload } from '../pages/createPage/useCreateFormState';
 import { type BoardCellModel } from '../components/board/RisoBoardCell';
 import { freeCellModel, toBoardCellModel } from '../components/board/cellModel';
 import { isSquareDirty, type SquareDraftCell } from './squareEditCount';
 import {
+  applyOverrideForDisplay,
+  overlayStagedCompounds,
   commitReorder as commitReorderPure,
   deriveCanShuffle,
   deriveCenterCellKeepLocked,
@@ -30,10 +31,12 @@ import {
   stageTaskEdit as stageTaskEditPure,
   toggleLock as toggleLockPure,
   type KeyboardMoveDir,
+  type BoardEditTaskOverride,
   type SquaresEditDraftState,
 } from './squaresEditReducer';
 
 export type { SquareDraftCell } from './squareEditCount';
+export type { BoardEditTaskOverride } from './squaresEditReducer';
 export { reorderToSlot, isFixedSlot } from './squaresEditReducer';
 
 /**
@@ -66,7 +69,7 @@ export interface UseSquaresEditDraftResult {
   slots: EditSlot[];
   cells: SquareDraftCell[];
   cellsById: Record<string, SquareDraftCell>;
-  taskOverrides: Map<string, UpdateTaskPatch>;
+  taskOverrides: Map<string, BoardEditTaskOverride>;
   /** The draft's stored center-type value — legacy CHOSEN preserved verbatim
    *  until Save (D1/D2); read it through `effectiveCenter` everywhere else. */
   draftCenterType: CenterSquareType;
@@ -80,7 +83,7 @@ export interface UseSquaresEditDraftResult {
   stageReplace: (cellId: string, pick: { taskId: string } | { pending: PendingTaskPayload }) => void;
   stageRemove: (cellId: string) => void;
   toggleLock: (cellId: string) => void;
-  stageTaskEdit: (taskId: string, patch: UpdateTaskPatch) => void;
+  stageTaskEdit: (taskId: string, patch: BoardEditTaskOverride) => void;
   /** Commit a drag-to-insert reorder (the grid's full post-drag slot order). */
   commitReorder: (newSlots: EditSlot[]) => void;
   /** D9 — Alt+Arrow: swap a movable cell with its neighbor one slot over. */
@@ -162,7 +165,7 @@ export function useSquaresEditDraft(
   const stageRemove = useCallback((cellId: string) => setState((s) => stageRemovePure(s, cellId)), []);
   const toggleLock = useCallback((cellId: string) => setState((s) => toggleLockPure(s, cellId)), []);
   const stageTaskEdit = useCallback(
-    (taskId: string, patch: UpdateTaskPatch) => setState((s) => stageTaskEditPure(s, taskId, patch)),
+    (taskId: string, patch: BoardEditTaskOverride) => setState((s) => stageTaskEditPure(s, taskId, patch)),
     [],
   );
   const commitReorder = useCallback(
@@ -194,8 +197,7 @@ export function useSquaresEditDraft(
     (taskId: string): Task | undefined => {
       const base = taskMap[taskId] ?? state.cells.find((c) => c.taskId === taskId)?.pending?.task;
       if (!base) return undefined;
-      const override = state.taskOverrides.get(taskId);
-      return override ? { ...base, ...(override as Partial<Task>) } : base;
+      return applyOverrideForDisplay(base, state.taskOverrides.get(taskId));
     },
     [taskMap, state.cells, state.taskOverrides],
   );
@@ -204,6 +206,14 @@ export function useSquaresEditDraft(
   const canShuffle = deriveCanShuffle(state, gridSize);
   const centerCellKeepLocked = deriveCenterCellKeepLocked(state, gridSize);
   const pinnedCenter = isPinnedCenterPure(state.draftCenterType);
+
+  // Staged compound structures (an edited compound, or a task being turned
+  // into one) overlaid so the square renders as a compound with its parts
+  // while staged (same helpers the wizard Preview uses).
+  const stagedOverlay = useMemo(
+    () => overlayStagedCompounds(state.taskOverrides, taskMap, compoundChildrenByCompound, board.userId),
+    [state.taskOverrides, taskMap, compoundChildrenByCompound, board.userId],
+  );
 
   const slots = useMemo<EditSlot[]>(() => {
     if (!editMode) return [];
@@ -225,9 +235,9 @@ export function useSquaresEditDraft(
           const task = resolveTask(draftCell.taskId);
           let model: BoardCellModel | null = null;
           if (task) {
-            const children = compoundChildrenByCompound[task.id] ?? [];
-            const squareData = taskToSquareData(task, children, taskMap, compoundChildrenByCompound, squareWindowContext);
-            const squareState = taskToSquareState(task, children, taskMap, compoundChildrenByCompound, squareWindowContext);
+            const children = stagedOverlay.children[task.id] ?? [];
+            const squareData = taskToSquareData(task, children, stagedOverlay.tasks, stagedOverlay.children, squareWindowContext);
+            const squareState = taskToSquareState(task, children, stagedOverlay.tasks, stagedOverlay.children, squareWindowContext);
             model = toBoardCellModel({
               key: draftCell.cellId,
               task,
@@ -264,8 +274,7 @@ export function useSquaresEditDraft(
     pinnedCenter,
     state.cells,
     state.taskOverrides,
-    taskMap,
-    compoundChildrenByCompound,
+    stagedOverlay,
     squareWindowContext,
     resolveTask,
   ]);

@@ -1,8 +1,25 @@
-import { useState } from 'react';
-import { TaskType, generateCounterTaskTitle, type Task } from '@oybc/shared';
-import type { UpdateTaskPatch } from '../../db/operations/tasks';
+import { useEffect, useState } from 'react';
+import { TaskType, generateCounterTaskTitle, type CompoundChild, type Task } from '@oybc/shared';
+import {
+  compoundLinkProblemForPatch,
+  fetchCompoundChildren,
+  fetchTasksByIds,
+} from '../../db/operations';
+import type { TaskEditPatch } from '../../db/taskEditPatch';
 import { useModalA11y } from '../../hooks/useModalA11y';
+import { loadLibraryInputs } from '../../pages/tasks/loadLibraryInputs';
 import { TypeBadge } from '../TypeBadge';
+import { RisoSegmented } from '../riso';
+import { CompoundFields, type LibraryInputsState } from '../wizard/CompoundFields';
+import {
+  buildSheetOverride,
+  parseGoal,
+  seedCompoundDraft,
+  sheetValidationProblem,
+  showsCompoundEditor,
+  typeControlMode,
+  type BoardEditTaskOverride,
+} from './boardEditTaskSheetModel';
 import styles from './BoardEditTaskSheet.module.css';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -14,22 +31,31 @@ export interface BoardEditTaskSheetProps {
    * previously staged values, not the DB state.
    */
   task: Task;
+  /** The task's already-staged override, if any (carries a staged `compound`). */
+  staged?: BoardEditTaskOverride;
   /**
-   * Called when the user taps "Done". Receives a `UpdateTaskPatch` whose
-   * fields can be spread into the caller's `taskOverrides` map. NO DB write
-   * happens here — the caller stages the patch and commits on Save.
+   * Called when the user taps "Done". Receives the staged override (task
+   * fields, plus `compound` for a compound). NO DB write happens here — the
+   * caller stages it and commits on Save.
    *
    * @param taskId - The task being edited (same as `task.id`)
    * @param patch - Validated staged changes for this task
    */
-  onDone: (taskId: string, patch: UpdateTaskPatch) => void;
+  onDone: (taskId: string, patch: BoardEditTaskOverride) => void;
   /** Dismiss without staging any changes. */
   onCancel: () => void;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-/** Human-readable type label for the type-indicator chips (no "Free" — Phase 2b). */
+/** Type labels shared with iOS. */
+const TYPE_OPTIONS = [
+  { value: TaskType.NORMAL, label: 'Simple' },
+  { value: TaskType.COUNTING, label: 'Counting' },
+  { value: TaskType.COMPOUND, label: 'Compound' },
+];
+
+/** Human-readable type label for the fixed type indicator. */
 function typeLabel(type: TaskType | string): string {
   switch (type) {
     case TaskType.NORMAL:      return 'Simple';
@@ -43,25 +69,26 @@ function typeLabel(type: TaskType | string): string {
 // ─── Component ────────────────────────────────────────────────────────────────
 
 /**
- * BoardEditTaskSheet — bottom-sheet for staged edits to a global Task's fields
- * in Board Edit mode. Distinct from the Tasks-tab `TaskEditSheet` in two ways:
+ * BoardEditTaskSheet — bottom-sheet for staged edits to a global Task in
+ * Board Edit mode. Distinct from the Tasks-tab `TaskEditSheet`:
  *
  *   1. It does NOT write to the database on Done — it calls `onDone` with a
- *      validated `UpdateTaskPatch` that the caller stages in memory.
- *   2. It covers only the fields relevant to board display: name, and per-type
- *      Counting fields (action / goal / unit with live "Reads as…" preview).
- *      Compound shows the title + a read-only step-count note.
- *      Type is displayed but NOT changeable (immutable post-creation).
+ *      validated override that the caller stages in memory.
+ *   2. A Simple / Counting task gets a Simple / Counting / Compound type
+ *      control (an in-place type switch applied at Save); a Compound shows its
+ *      type fixed with the rule + sub-task editor always open; Achievement is
+ *      title only.
  *
- * "Editing this task changes it everywhere it's used." hint is always visible
- * so users understand the global impact before staging the change.
+ * "Editing this task changes it everywhere it's used." hint is always visible.
  *
  * @param task - The task (with any caller-applied overrides pre-merged)
- * @param onDone - Receives the staged patch; caller increments squareEditCount
+ * @param staged - Its staged override, if any
+ * @param onDone - Receives the staged override; caller increments squareEditCount
  * @param onCancel - Dismiss without staging
  */
 export function BoardEditTaskSheet({
   task,
+  staged,
   onDone,
   onCancel,
 }: BoardEditTaskSheetProps): React.ReactElement {
@@ -73,6 +100,7 @@ export function BoardEditTaskSheet({
 
   // ── Seed from task (which has overrides pre-merged by caller) ────────────
 
+  const [selected, setSelected] = useState<TaskType>(task.type);
   const [title, setTitle] = useState(task.title ?? '');
 
   // Counting fields
@@ -82,64 +110,99 @@ export function BoardEditTaskSheet({
   );
   const [unit, setUnit] = useState(task.unit ?? '');
 
+  // Compound editor. A staged compound is the seed on re-open; otherwise an
+  // existing compound loads its sub-tasks, and a non-compound starts empty.
+  const [compoundDraft, setCompoundDraft] = useState<TaskEditPatch | null>(
+    staged?.compound ?? (task.type === TaskType.COMPOUND ? null : seedCompoundDraft(task, [])),
+  );
+  const [compoundLoadError, setCompoundLoadError] = useState<string | null>(null);
+  const [libraryTasks, setLibraryTasks] = useState<Task[]>([]);
+  const [allLinks, setAllLinks] = useState<CompoundChild[]>([]);
+  const [libraryInputsState, setLibraryInputsState] = useState<LibraryInputsState>('loading');
+  const [doneError, setDoneError] = useState<string | null>(null);
+  const [checking, setChecking] = useState(false);
+
+  const editorOpen = showsCompoundEditor(selected);
+
+  // Load the sub-tasks (existing compound without a staged structure) and the
+  // quick-add library inputs once the compound editor first opens.
+  useEffect(() => {
+    if (!editorOpen) return;
+    let cancelled = false;
+    if (task.type === TaskType.COMPOUND && !staged?.compound) {
+      void (async () => {
+        try {
+          const links = (await fetchCompoundChildren(task.id))
+            .filter((l) => !l.isDeleted)
+            .sort((a, b) => a.childIndex - b.childIndex);
+          const kids = await fetchTasksByIds(links.map((l) => l.childTaskId));
+          const byId = new Map(kids.map((t) => [t.id, t]));
+          const ordered = links.map((l) => byId.get(l.childTaskId)).filter((t): t is Task => !!t);
+          if (!cancelled) setCompoundDraft(seedCompoundDraft(task, ordered));
+        } catch (e) {
+          if (!cancelled) setCompoundLoadError(`Couldn't load sub-tasks: ${(e as Error).message}`);
+        }
+      })();
+    }
+    void (async () => {
+      try {
+        const library = await loadLibraryInputs(task.userId);
+        if (!cancelled) {
+          setLibraryTasks(library.libraryTasks);
+          setAllLinks(library.allLinks);
+          setLibraryInputsState('loaded');
+        }
+      } catch (e) {
+        console.error('[BoardEditTaskSheet] loading sub-task library inputs failed', e);
+        if (!cancelled) setLibraryInputsState('failed');
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // Load once per sheet (first time the editor is shown) — later task
+    // refreshes must not clobber the draft.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editorOpen]);
+
   // ── Validation ───────────────────────────────────────────────────────────
 
-  const goalNum = parseFloat(goalStr);
-  const goalValid = goalStr.trim() !== '' && Number.isInteger(goalNum) && goalNum > 0;
-
-  /** Whether the Done button should be enabled. */
-  const canSave: boolean = (() => {
-    switch (task.type) {
-      case TaskType.NORMAL:
-      case TaskType.COMPOUND:
-      case TaskType.ACHIEVEMENT:
-        // Title required; counting-specific fields don't apply.
-        return title.trim().length > 0;
-      case TaskType.COUNTING:
-        // Title is optional (auto-generated from action+goal+unit when blank).
-        // Goal must be a positive integer; unit must be non-empty.
-        return goalValid && unit.trim().length > 0;
-      default:
-        return title.trim().length > 0;
-    }
-  })();
+  const input = { original: task, selected, title, action, goalStr, unit, compoundDraft };
+  const problem = sheetValidationProblem(input);
+  const canSave = problem === null && !checking;
+  const goalNum = parseGoal(goalStr);
 
   // ── "Reads as" preview (Counting only) ──────────────────────────────────
 
   const readsAs: string | null =
-    task.type === TaskType.COUNTING && goalValid && unit.trim()
+    selected === TaskType.COUNTING && goalNum !== null && unit.trim()
       ? generateCounterTaskTitle(action.trim(), goalNum, unit.trim(), title.trim() || undefined)
       : null;
 
   // ── Submit ───────────────────────────────────────────────────────────────
 
-  const handleDone = () => {
+  const handleDone = async () => {
     if (!canSave) return;
-
-    const patch: UpdateTaskPatch = {};
-
-    switch (task.type) {
-      case TaskType.COUNTING: {
-        // Title is optional for counting — send trimmed value (may be '' which
-        // means "use auto-generated title"). If blank, preserve existing title
-        // so the display doesn't flash to '' while staged.
-        patch.title = title.trim() || task.title;
-        patch.action = action.trim();
-        patch.maxCount = Math.max(1, goalNum);
-        patch.unit = unit.trim();
-        break;
-      }
-      case TaskType.NORMAL:
-      case TaskType.COMPOUND:
-      case TaskType.ACHIEVEMENT:
-      default: {
-        patch.title = title.trim();
-        break;
+    setDoneError(null);
+    const patch = buildSheetOverride(input);
+    if (patch.compound) {
+      // Link eligibility (loop / achievement / goal-less counter): needs the
+      // DB, so it runs here; Save re-checks inside its transaction.
+      setChecking(true);
+      try {
+        const linkProblem = await compoundLinkProblemForPatch(task.id, patch.compound);
+        if (linkProblem !== null) {
+          setDoneError(linkProblem);
+          return;
+        }
+      } finally {
+        setChecking(false);
       }
     }
-
     onDone(task.id, patch);
   };
+
+  const mode = typeControlMode(task.type);
 
   // ── Render ───────────────────────────────────────────────────────────────
 
@@ -162,20 +225,36 @@ export function BoardEditTaskSheet({
           </p>
         </div>
 
-        {/* Type indicator (read-only) */}
+        {/* Type: a switch for Simple/Counting, fixed for Compound/Achievement */}
         <div className={styles.typeRow}>
           <span className={styles.typeLabel}>Type</span>
-          <div className={styles.typeBadgeWrap}>
-            <TypeBadge type={task.type} size="small" />
-            <span className={styles.typeReadOnly}>{typeLabel(task.type)}</span>
-          </div>
+          {mode === 'switch' ? (
+            <div className={styles.typeSwitch}>
+              <RisoSegmented
+                aria-label="Task type"
+                size="compact"
+                fullWidth
+                options={TYPE_OPTIONS}
+                value={selected}
+                onChange={(next) => {
+                  setSelected(next);
+                  setDoneError(null);
+                }}
+              />
+            </div>
+          ) : (
+            <div className={styles.typeBadgeWrap}>
+              <TypeBadge type={task.type} size="small" />
+              <span className={styles.typeReadOnly}>{typeLabel(task.type)}</span>
+            </div>
+          )}
         </div>
 
         {/* Task name */}
         <label className={styles.field}>
           <span className={styles.fieldLabel}>
             Task name
-            {task.type === TaskType.COUNTING && (
+            {selected === TaskType.COUNTING && (
               <span className={styles.optional}> (optional)</span>
             )}
           </span>
@@ -186,7 +265,7 @@ export function BoardEditTaskSheet({
             onChange={(e) => setTitle(e.target.value)}
             autoFocus
             placeholder={
-              task.type === TaskType.COUNTING
+              selected === TaskType.COUNTING
                 ? 'Auto-generated from goal if blank…'
                 : 'Task name…'
             }
@@ -194,7 +273,7 @@ export function BoardEditTaskSheet({
         </label>
 
         {/* Counting-specific fields */}
-        {task.type === TaskType.COUNTING && (
+        {selected === TaskType.COUNTING && (
           <>
             <label className={styles.field}>
               <span className={styles.fieldLabel}>Action</span>
@@ -241,12 +320,34 @@ export function BoardEditTaskSheet({
           </>
         )}
 
-        {/* Compound: show read-only step info */}
-        {task.type === TaskType.COMPOUND && (
-          <p className={styles.compoundNote}>
-            Sub-tasks and the completion rule are edited from the task&apos;s detail
-            page — only the name can be changed here.
-          </p>
+        {/* Compound: rule + sub-task editor */}
+        {editorOpen && (
+          <div className={styles.compoundEditor}>
+            {compoundDraft !== null ? (
+              <CompoundFields
+                draft={{ ...compoundDraft, title }}
+                onDraftChange={(next) => {
+                  setCompoundDraft(next);
+                  setDoneError(null);
+                }}
+                parentId={task.id}
+                libraryTasks={libraryTasks}
+                allLinks={allLinks}
+                libraryInputsState={libraryInputsState}
+              />
+            ) : compoundLoadError !== null ? (
+              <p className={styles.problem} role="alert">{compoundLoadError}</p>
+            ) : (
+              <p className={styles.problem}>Loading sub-tasks…</p>
+            )}
+            {compoundDraft !== null && problem !== null && (
+              <p className={styles.problem}>{problem}</p>
+            )}
+          </div>
+        )}
+
+        {doneError !== null && (
+          <p className={styles.problem} role="alert">{doneError}</p>
         )}
 
         {/* Footer */}
@@ -262,7 +363,7 @@ export function BoardEditTaskSheet({
             type="button"
             className={styles.doneBtn}
             disabled={!canSave}
-            onClick={handleDone}
+            onClick={() => void handleDone()}
           >
             Done
           </button>

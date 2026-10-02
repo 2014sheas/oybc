@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { CenterSquareType, type BoardTask } from '@oybc/shared';
+import { CenterSquareType, OperatorType, TaskType, type BoardTask, type Task } from '@oybc/shared';
+import { newChildPatch, type TaskEditPatch } from '../../db/taskEditPatch';
 import {
+  applyOverrideForDisplay,
+  overlayStagedCompounds,
   commitReorder,
   deriveCanShuffle,
   deriveCenterCellKeepLocked,
@@ -371,5 +374,65 @@ describe('deriveEditCount (D11)', () => {
       cells: shuffled.cells.map((c) => ({ ...c, row: c.originalRow, col: c.originalCol })),
     };
     expect(deriveEditCount({ state: restored, boardCenterType: CenterSquareType.NONE })).toBe(0);
+  });
+});
+
+describe('compound overrides (Board Edit — edit / convert to compound)', () => {
+  const patch = (titles: string[], over: Partial<TaskEditPatch> = {}): TaskEditPatch => ({
+    title: 'Combo', action: '', goal: '', unit: '',
+    children: titles.map((t) => ({ ...newChildPatch(false), title: t })),
+    operator: OperatorType.AND,
+    ...over,
+  });
+  const base: Task = {
+    id: 't1', userId: 'u', title: 'Walk', type: TaskType.NORMAL,
+    isCompleted: false, totalCompletions: 0, totalInstances: 0,
+    createdAt: '', updatedAt: '', version: 1, isDeleted: false,
+  };
+
+  it('stageTaskEdit merges plain fields and REPLACES `compound` wholesale', () => {
+    const s0 = seedDraft([bt('bt-a', 'task-a', 0, 0)], CenterSquareType.NONE, 3);
+    const s1 = stageTaskEdit(s0, 'task-a', { title: 'A', type: TaskType.COMPOUND, compound: patch(['x', 'y', 'z']) });
+    const s2 = stageTaskEdit(s1, 'task-a', { compound: patch(['only']) });
+    const o = s2.taskOverrides.get('task-a')!;
+    expect(o.title).toBe('A');
+    expect(o.type).toBe(TaskType.COMPOUND);
+    expect(o.compound!.children.map((c) => c.title)).toEqual(['only']);
+  });
+
+  it('a later override without compound keeps the staged compound', () => {
+    const s0 = seedDraft([bt('bt-a', 'task-a', 0, 0)], CenterSquareType.NONE, 3);
+    const s1 = stageTaskEdit(s0, 'task-a', { type: TaskType.COMPOUND, compound: patch(['x', 'y']) });
+    const s2 = stageTaskEdit(s1, 'task-a', { title: 'Renamed' });
+    expect(s2.taskOverrides.get('task-a')!.compound!.children).toHaveLength(2);
+  });
+
+  it('applyOverrideForDisplay shows the type switch and the staged compound rule/title', () => {
+    const shown = applyOverrideForDisplay(base, {
+      type: TaskType.COMPOUND,
+      compound: patch(['x', 'y'], { title: 'Combo', operator: OperatorType.OR }),
+    });
+    expect(shown).toMatchObject({ type: TaskType.COMPOUND, title: 'Combo', operator: OperatorType.OR });
+    expect(applyOverrideForDisplay(base, undefined)).toBe(base);
+  });
+
+  it('overlayStagedCompounds renders a converted task as a compound with placeholder children', () => {
+    const o = new Map([['t1', { type: TaskType.COMPOUND, compound: patch(['x', 'y']) }]]);
+    const { tasks, children } = overlayStagedCompounds(o, { t1: base }, {}, 'u');
+    expect(children.t1).toHaveLength(2);
+    for (const link of children.t1) expect(tasks[link.childTaskId]?.title).toBeTruthy();
+    expect(children.t1.map((l) => tasks[l.childTaskId].title)).toEqual(['x', 'y']);
+  });
+
+  it('overlayStagedCompounds is a no-op without staged compounds', () => {
+    const tasks = { t1: base };
+    const out = overlayStagedCompounds(new Map([['t1', { title: 'x' }]]), tasks, {}, 'u');
+    expect(out.tasks).toBe(tasks);
+  });
+
+  it('the dirty edit count is keyed on override presence (a compound override counts as one edit)', () => {
+    const s0 = seedDraft([bt('bt-a', 'task-a', 0, 0)], CenterSquareType.NONE, 3);
+    const s1 = stageTaskEdit(s0, 'task-a', { type: TaskType.COMPOUND, compound: patch(['x', 'y']) });
+    expect(deriveEditCount({ state: s1, boardCenterType: CenterSquareType.NONE })).toBe(1);
   });
 });

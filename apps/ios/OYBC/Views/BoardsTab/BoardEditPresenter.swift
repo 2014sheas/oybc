@@ -98,6 +98,9 @@ struct BoardEditPresenter: ViewModifier {
             .sheet(item: $taskEditTarget) { target in
                 SquareEditTaskSheet(
                     task: target.task,
+                    compoundChildren: pendingCompoundChildren(for: target.task),
+                    libraryInputsState: .loading,
+                    loadInputs: compoundInputsLoader(for: target.task),
                     onDone: { patch in
                         taskEditTarget = nil
                         viewModel.handleEditTaskOverride(taskId: target.task.id, patch: patch)
@@ -182,6 +185,51 @@ struct BoardEditPresenter: ViewModifier {
             }
         }
         Button("Cancel", role: .cancel) {}
+    }
+
+    // MARK: - Edit-task compound inputs
+
+    /// A still-pending (picker-born, not yet saved) compound's ordered
+    /// sub-tasks, read from its staged payload — they are not in the DB, so
+    /// the sheet is seeded synchronously. nil for every other task.
+    private func pendingCompoundChildren(for task: Task) -> [Task]? {
+        guard task.type == .compound,
+              let payload = viewModel.editSquaresDraft.values.compactMap(\.pending).first(where: { $0.task.id == task.id })
+        else { return nil }
+        let byId = Dictionary(payload.childTasks.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+        return payload.childLinks.sorted { $0.childIndex < $1.childIndex }.compactMap { byId[$0.childTaskId] }
+    }
+
+    /// Loader for the edit sheet's compound inputs (sub-tasks of an existing
+    /// compound + the quick-add row's library/links), read through the view
+    /// model's injected database off the main actor. nil for an achievement
+    /// (no compound editor).
+    private func compoundInputsLoader(for task: Task) -> (() async -> SquareEditTaskSheet.CompoundInputs)? {
+        guard task.type != .achievement else { return nil }
+        let database = viewModel.database
+        let needsChildren = task.type == .compound && pendingCompoundChildren(for: task) == nil
+        let taskId = task.id
+        let userId = task.userId
+        return {
+            await _Concurrency.Task.detached(priority: .userInitiated) {
+                var inputs = SquareEditTaskSheet.CompoundInputs(children: nil, libraryTasks: [], allLinks: [])
+                if needsChildren {
+                    do {
+                        inputs.children = try database.fetchCompoundChildrenTasks(parentTaskId: taskId)
+                    } catch {
+                        inputs.childrenError = "Couldn’t load sub-tasks: \(error.localizedDescription)"
+                    }
+                }
+                do {
+                    let library = try database.fetchCompoundPickerInputs(userId: userId)
+                    inputs.libraryTasks = library.libraryTasks
+                    inputs.allLinks = library.allLinks
+                } catch {
+                    inputs.libraryLoaded = false
+                }
+                return inputs
+            }.value
+        }
     }
 
     // MARK: - Candidates

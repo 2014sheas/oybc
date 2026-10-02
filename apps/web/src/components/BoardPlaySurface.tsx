@@ -970,7 +970,7 @@ export function BoardPlaySurface({
         if (!sheetTask) return null;
         return (
           <BoardEditTaskSheet
-            task={sheetTask}
+            task={sheetTask} staged={editDraft.taskOverrides.get(editTaskSheetId)}
             onDone={(taskId, patch) => {
               editDraft.stageTaskEdit(taskId, patch);
               setEditTaskSheetId(null);
