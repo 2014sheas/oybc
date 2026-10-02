@@ -105,7 +105,7 @@ export function resolveCompoundChildCompleted(
     return evaluateCompound(childTask, childrenByCompound, taskMap, compoundCtx);
   }
   const derived = windowContext
-    ? resolveDerivedCounterWindowState(childTask, windowContext.eventsByTaskId)
+    ? resolveDerivedCounterWindowState(childTask, windowContext.eventsByTaskId, windowContext)
     : null;
   if (derived) return derived.isCompleted;
   if (windowContext && isEventOwningTask(childTask)) {
@@ -302,11 +302,19 @@ export function taskToSquareState(
   //     derivation kernel resolves the cell with, so a cell can never paint
   //     green (or read N/N) while board stats count it incomplete. The
   //     one-way latch is not read.
-  //   - HUB-LINKED rows (no `startDate`) and context-less reads: the
-  //     baseline-adjusted mirror (`currentCount − baseline`) + the
-  //     propagation-stamped latch — the kernel's carve-out, unchanged.
+  //   - HUB-LINKED rows (no window stamp) WITH a window context: the root's
+  //     increment sum inside THIS board's window (owner rule 2026-10-01).
+  //   - Context-less reads (library): the baseline-adjusted mirror
+  //     (`currentCount − baseline`) + the propagation-stamped latch.
   if (task.sharedCounterId != null) {
-    const { displayed, isCompleted } = resolveLinkedCounterDisplay(task, windowContext?.eventsByTaskId);
+    // A non-window-stamped linked row resolves over THIS board's window too
+    // (owner rule 2026-10-01); a context-less caller keeps the lifetime read.
+    const { displayed, isCompleted } = resolveLinkedCounterDisplay(
+      task,
+      windowContext?.eventsByTaskId,
+      undefined,
+      windowContext ? { startDate: windowContext.windowStart, endDate: windowContext.windowEnd } : null,
+    );
     return {
       isCompleted,
       currentCount: displayed,
@@ -353,9 +361,8 @@ export function taskToSquareState(
  * never disagree — but synchronous, built from an already-loaded event map
  * (`SquareWindowContext.eventsByTaskId`) for render-time use.
  *
- * A hub-linked derived counter (no `startDate`) has no windowed display —
- * callers must not tap-route to this square (OQ2); this falls back to its
- * lifetime read defensively.
+ * A hub-linked linked row (no window stamp) shows the root's sealed-bounded
+ * sum over the board's own window (owner rule 2026-10-01) — no lifetime read.
  *
  * @param task           The COUNTING task (or window-stamped derived row).
  * @param eventsByTaskId The workspace's non-deleted events grouped by taskId.
@@ -366,10 +373,6 @@ export function resolveClosedBoardCounterDisplay(
   eventsByTaskId: Record<string, TaskEvent[]>,
   board: { startDate: string; endDate?: string | null; sealedAt?: string | null },
 ): { displayed: number; isCompleted: boolean } {
-  if (task.sharedCounterId != null && !isWindowStampedDerived(task)) {
-    return { displayed: task.currentCount ?? 0, isCompleted: task.isCompleted };
-  }
-
   const rootId = task.sharedCounterId ?? task.id;
   const rootEvents = (eventsByTaskId[rootId] ?? []).filter((e) => !e.isDeleted);
   const sealedMs = board.sealedAt ? new Date(board.sealedAt).getTime() : NaN;
@@ -379,6 +382,15 @@ export function resolveClosedBoardCounterDisplay(
 
   if (isWindowStampedDerived(task)) {
     const state = resolveWindowStampedDerivedState(task, bounded);
+    return { displayed: state.count, isCompleted: state.isCompleted };
+  }
+  if (task.sharedCounterId != null) {
+    // Owner rule 2026-10-01: a linked row that is not window-stamped is the
+    // root's sealed-bounded sum over THIS board's window — never the latch.
+    const state = resolveWindowStampedDerivedState(
+      { startDate: board.startDate, endDate: board.endDate ?? null, maxCount: task.maxCount },
+      bounded,
+    );
     return { displayed: state.count, isCompleted: state.isCompleted };
   }
   const { count, isCompleted } = resolveTaskWindowState(task, bounded, board.startDate, board.endDate ?? null);

@@ -49,6 +49,10 @@ function completion(taskId: string, occurredAt: string): TaskEvent {
   };
 }
 
+function increment(taskId: string, occurredAt: string, delta: number): TaskEvent {
+  return { ...completion(taskId, occurredAt), id: `ev-i-${taskId}-${occurredAt}`, kind: 'increment', delta };
+}
+
 function link(compoundTaskId: string, childTaskId: string, childIndex: number): CompoundChild {
   return {
     id: `link-${compoundTaskId}-${childTaskId}`,
@@ -140,7 +144,7 @@ describe('evaluateCompound — windowed', () => {
     expect(evaluateCompound(parent, children, taskById, ctxUnsat)).toBe(false);
   });
 
-  it('derived-counting child resolves via its lifetime cache (carve-out), not events', () => {
+  it('hub-linked derived-counting child resolves from its ROOT\'s events over the host window, not its latch (owner rule 2026-10-01)', () => {
     const parent = makeTask({ id: 'p', type: TaskType.COMPOUND, operator: OperatorType.AND });
     const derived = makeTask({
       id: 'd',
@@ -148,16 +152,35 @@ describe('evaluateCompound — windowed', () => {
       maxCount: 10,
       sharedCounterId: 'src-1',
       baseline: 0,
-      isCompleted: true, // cache says complete
+      isCompleted: true, // the propagation latch says complete — never read on a board
     });
     const children = { p: [link('p', 'd', 0)] };
     const taskById = { p: parent, d: derived };
-    // No events for the derived task — windowed mode still honors the cache.
-    const ctx: CompoundWindowContext = { windowStart: WINDOW_START, windowEnd: null, eventsByTaskId: {} };
-    expect(evaluateCompound(parent, children, taskById, ctx)).toBe(true);
+    // No root events at all → 0 < 10 → incomplete, latch ignored.
+    const empty: CompoundWindowContext = { windowStart: WINDOW_START, windowEnd: null, eventsByTaskId: {} };
+    expect(evaluateCompound(parent, children, taskById, empty)).toBe(false);
 
+    // Root logged +10 inside the host window → complete even with the latch false.
     derived.isCompleted = false;
-    expect(evaluateCompound(parent, children, taskById, ctx)).toBe(false);
+    const inWindow: CompoundWindowContext = {
+      windowStart: WINDOW_START,
+      windowEnd: null,
+      eventsByTaskId: { 'src-1': [increment('src-1', IN_WINDOW, 10)] },
+    };
+    expect(evaluateCompound(parent, children, taskById, inWindow)).toBe(true);
+
+    // The same +10 BEFORE the host window does not count.
+    const preWindow: CompoundWindowContext = {
+      windowStart: WINDOW_START,
+      windowEnd: null,
+      eventsByTaskId: { 'src-1': [increment('src-1', PRE_WINDOW, 10)] },
+    };
+    expect(evaluateCompound(parent, children, taskById, preWindow)).toBe(false);
+
+    // A LIFETIME context (no windowStart) is the only place the latch survives.
+    derived.isCompleted = true;
+    const lifetime: CompoundWindowContext = { windowStart: null, windowEnd: null, eventsByTaskId: {} };
+    expect(evaluateCompound(parent, children, taskById, lifetime)).toBe(true);
   });
 });
 
@@ -239,19 +262,26 @@ describe('computeBoardStatsUpdate — window context', () => {
     expect(result.completedTasks).toBe(1);
   });
 
-  it('windowed: derived-counting square reads its isCompleted cache (carve-out)', () => {
+  it('windowed: hub-linked derived-counting square resolves from its ROOT\'s events over the board window, not its latch (owner rule 2026-10-01)', () => {
     const derived = makeTask({
       id: 'd',
       type: TaskType.COUNTING,
       maxCount: 10,
       sharedCounterId: 'src-1',
       baseline: 0,
-      isCompleted: true,
+      isCompleted: true, // the propagation latch — never read on a board
     });
     const board = makeBoard({});
-    const windowCtx: WindowEvaluationContext = { eventsByTaskId: {} };
-    const result = computeBoardStatsUpdate(board, [placement('d', 0, 0)], {}, { d: derived }, [], windowCtx);
-    expect(result.completedTasks).toBe(1);
+    // No root events → incomplete despite the latch.
+    const empty: WindowEvaluationContext = { eventsByTaskId: {} };
+    expect(computeBoardStatsUpdate(board, [placement('d', 0, 0)], {}, { d: derived }, [], empty).completedTasks).toBe(0);
+    // +10 on the ROOT inside the board window → complete, with the latch false.
+    derived.isCompleted = false;
+    const inWindow: WindowEvaluationContext = { eventsByTaskId: { 'src-1': [increment('src-1', IN_WINDOW, 10)] } };
+    expect(computeBoardStatsUpdate(board, [placement('d', 0, 0)], {}, { d: derived }, [], inWindow).completedTasks).toBe(1);
+    // The same +10 before the window does not count.
+    const preWindow: WindowEvaluationContext = { eventsByTaskId: { 'src-1': [increment('src-1', PRE_WINDOW, 10)] } };
+    expect(computeBoardStatsUpdate(board, [placement('d', 0, 0)], {}, { d: derived }, [], preWindow).completedTasks).toBe(0);
   });
 
   it('windowed: plain counting square sums in-window increments', () => {

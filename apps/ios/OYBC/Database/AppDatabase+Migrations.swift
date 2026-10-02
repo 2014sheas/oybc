@@ -106,5 +106,33 @@ extension AppDatabase {
             try db.execute(sql: "ALTER TABLE core_board_defaults ADD COLUMN defaultBoardSize INTEGER")
             try db.execute(sql: "ALTER TABLE core_board_defaults ADD COLUMN defaultCenterType TEXT")
         }
+
+        // v37: windowed linked counters (owner rule 2026-10-01 — a counting
+        // square accounts only for logs inside its board's window). Heals every
+        // pre-rule hub-linked counter placed on a board into per-board
+        // window-stamped rows (stamp in place for the earliest board, a
+        // deterministic copy for each further one) — AUTHORED writes, so peers
+        // converge. Data-only, no schema change; the same sweep re-runs after
+        // each clean pull (`SyncService`) to catch rows other devices wrote.
+        migrator.registerMigration("v37") { db in
+            let userIds = try String.fetchAll(db, sql: "SELECT id FROM users")
+            // Best-effort: a heal failure must NEVER brick database open — the
+            // post-pull sweep retries it (idempotent), so log and move on.
+            for userId in userIds {
+                do {
+                    // Savepoint: a mid-heal failure rolls back that user's partial writes.
+                    try db.inSavepoint {
+                        try AppDatabase.healLinkedCounterWindowsTx(
+                            db: db, userId: userId, now: AppDatabase.currentTimestamp()
+                        )
+                        return .commit
+                    }
+                } catch {
+                    #if DEBUG
+                    dlog("[Migration v37] linked-counter heal skipped for a user: \(error.localizedDescription)")
+                    #endif
+                }
+            }
+        }
     }
 }

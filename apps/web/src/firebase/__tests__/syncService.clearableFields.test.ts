@@ -141,7 +141,7 @@ describe('pushSync — CLEARABLE_BOARD_FIELDS field-delete wiring (D2)', () => {
     await db.table('coreBoardDefaults').clear();
   });
 
-  it('a non-board entity type never gets the clearable-field treatment', async () => {
+  it('a non-board entity type never gets the board clearable-field treatment', async () => {
     await db.table('tasks').put({ id: 't1', userId: USER, version: 1, updatedAt: '2026-07-10T00:00:00.000Z', isDeleted: false });
     await addToSyncQueue('tasks', 't1', SyncOperationType.UPDATE, {
       id: 't1',
@@ -155,7 +155,29 @@ describe('pushSync — CLEARABLE_BOARD_FIELDS field-delete wiring (D2)', () => {
     await pushSync(USER, { store });
 
     expect(writes[0].data).not.toHaveProperty('sealedAt');
-    expect(writes[0].data).not.toHaveProperty('endDate');
+    expect(writes[0].data).not.toHaveProperty('completedAt');
+    await db.syncQueue.clear();
+    await db.table('tasks').clear();
+  });
+
+  it('a task with an absent endDate (stamped onto an indefinite board) pushes deleteField() for it; a set endDate pushes the value', async () => {
+    const base = { userId: USER, version: 3, updatedAt: '2026-10-01T00:00:00.000Z', isDeleted: false };
+    const cleared = { id: 't-clr', ...base } as SyncableEntity;
+    const set = { id: 't-set', ...base, endDate: '2026-10-31T23:59:59.999Z' } as SyncableEntity;
+    for (const row of [cleared, set]) {
+      await db.table('tasks').put(row);
+      await addToSyncQueue('tasks', row.id, SyncOperationType.UPDATE, row);
+    }
+    const { store, writes } = makeFakeStore();
+
+    const result = await pushSync(USER, { store });
+
+    expect(result).toMatchObject({ pushed: 2, failed: 0 });
+    const byPath = Object.fromEntries(writes.map((w) => [w.path, w.data]));
+    // Key present (not omitted) AND not a plain value — it is the delete sentinel.
+    expect(Object.keys(byPath[`users/${USER}/tasks/t-clr`])).toContain('endDate');
+    expect(byPath[`users/${USER}/tasks/t-clr`].endDate).not.toBe('2026-10-31T23:59:59.999Z');
+    expect(byPath[`users/${USER}/tasks/t-set`].endDate).toBe('2026-10-31T23:59:59.999Z');
     await db.syncQueue.clear();
     await db.table('tasks').clear();
   });

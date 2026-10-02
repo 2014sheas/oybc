@@ -178,7 +178,7 @@ the same inclusive-both-ends convention.
 | ---- | ------------------------ | ----- |
 | Normal | complete iff a non-deleted `completion` event exists with `occurredAt` in `[B.startDate, B.endDate]` | `B.endDate == null` → no upper bound |
 | Counting (plain / source) | `windowCount = max(0, Σ delta of non-deleted increments with occurredAt in [B.startDate, B.endDate])`; complete iff `windowCount >= maxCount` | Low-end clamp only — **overshoot invariant preserved**, sums are never high-clamped |
-| Counting (**derived**, `sharedCounterId` set) | hub-linked (no `startDate`): **unchanged from today** — the propagation-stamped cache, NOT windowed, NOT event-owning. **Window-stamped** (`startDate` set, wizard-born): complete iff `max(0, Σ delta of the ROOT's non-deleted increments with occurredAt in [row.startDate, row.endDate]) >= maxCount` | See [§Derived-task carve-out](#derived-task-carve-out) (rule 4, amended 2026-09-23) |
+| Counting (**derived**, `sharedCounterId` set) | NOT event-owning. **Window-stamped** (`startDate` set, wizard-born): complete iff `max(0, Σ delta of the ROOT's non-deleted increments with occurredAt in [row.startDate, row.endDate]) >= maxCount`. **Any other linked row placed on a board** (amended 2026-10-01): the same sum over the HOST board's window `[windowStart, windowEnd]`; the propagation-stamped latch is read only with no context window (library) | See [§Derived-task carve-out](#derived-task-carve-out) (rule 4, amended 2026-10-01) |
 | Compound | derived from children as today, but child state is resolved **against the host board's window** `[startDate, endDate]` | `evaluateCompound` takes a `CompoundWindowContext { windowStart, windowEnd, eventsByTaskId }` (`windowEnd` required, `null` = open-ended); nested compounds inherit the same host window; derived-counting children resolve via the carve-out row above |
 | Achievement | unchanged (reads referenced board / spawn-set state) | Sealing makes watched historical state *more* stable |
 
@@ -224,15 +224,59 @@ finding C1). Explicitly:
    applies only to event-owning tasks. Derived-task caches remain
    propagation-stamped (preserving the one-way completion latch); compound /
    achievement cache fields remain never-written/never-read as today.
-4. **Derivation-pass branch** (amended 2026-09-23). A *hub-linked* derived
-   counting square (`sharedCounterId` set, no `startDate`) resolves from its
-   propagation-stamped `isCompleted` cache, not `resolveTaskWindowState`. A
-   *window-stamped* derived counter (`isWindowStampedDerived`) resolves from
-   its ROOT's events instead — see the next paragraph. Neither reads
-   `baseline`.
+4. **Derivation-pass branch** (amended 2026-10-01 — owner rule: *"any
+   counter should only ever account for actions logged within its board's
+   window"*). A *window-stamped* derived counter (`isWindowStampedDerived`)
+   resolves from its ROOT's events inside its own stamped window — see the
+   next paragraph. **Every other linked row** (`sharedCounterId` set, not
+   window-stamped — the pre-member-rules "hub-linked" copies made by the
+   retired "From a board…" tap=Link, the still-live "Derive smaller version…"
+   / auto-link / compound-child creators, and hand-timeboxed rows) resolves
+   from the ROOT's events over the HOST board's context window
+   `[windowStart, windowEnd]` (`resolveDerivedCounterWindowState(task,
+   events, contextWindow)` ↔ Swift `windowStart:windowEnd:`; compound
+   children inherit the host window). The propagation-stamped `isCompleted`
+   latch is read only when there is NO context window (library / lifetime
+   readers). Neither reads `baseline`. Pinned by the renamed
+   `hub-linked-derived-on-board-*` vectors in `derivationPassVectors.json`.
 
-**Honest consequence:** a *hub-authored* derived counter square on a recurring
-board still bleeds across windows in v1; a *plain* counting square does not.
+**The 2026-09-23 "honest consequence" is retired (2026-10-01):** no derived
+square bleeds across windows any more. On top of the kernel fallback, a
+one-time **heal** (web Dexie v18 `migrationV18` / iOS GRDB `v37`, plus a
+post-pull sweep `healLinkedCounterWindows` right after
+`healMissingCompletionEvents`, mirroring §Heal-on-pull) stamps every PLACED
+non-window-stamped linked row with its board's `timeframe` / `startDate` /
+`endDate` and `createdInWizard = true` (the three-mark predicate) — AUTHORED
+writes (version bump + enqueue) with deterministic content so every device
+converges and the sweep is idempotent. A row placed on several boards keeps
+its id for the earliest board (by `startDate`, then id) and gets a
+deterministic per-board copy (`derivedTaskId(boardId, root)`, placement
+repointed) for each further DIRECT placement. The stamp is **all-or-nothing**:
+once stamped, a row resolves from its own window everywhere (the stamped path
+ignores the context window), so a row whose further boards are not all
+repointable — any further board reached only through a compound, or a
+goal-less row on more than one board — is left UNSTAMPED with no copies, and
+the kernel fallback keeps rendering every board over its own window. A
+window-stamped row placed on a board it is not stamped for (an old-app
+placement, or a wrong "first board") gets that board's copy, no stamp
+(`planLinkedCounterWindowHeal`, shared `linkedCounterWindowHeal.ts` ↔
+`Helpers/LinkedCounterWindowHeal.swift`, pinned by
+`linkedCounterWindowHealVectors.json`). A repointed placement may sit on a SEALED board — the one named exception to
+"sealed boards never mutate" besides Close / Reopen / Archive / Repeat: the
+row id changes (authored) and the board re-derives deterministically in the
+same transaction, so a closed cell can flip (green → not green, COMPLETED →
+ACTIVE) once, to what its in-window logs say. After the heal the freeze
+(`isFrozenDerivedRow`), the hub, the arrival snapshot and the closed-board
+display all treat the row like any wizard-minted one. Going forward the two
+placement choke points (`addBoardTaskToBoard` / `updateBoardTaskAndCascade`
+↔ `AppDatabase+BoardTasks.swift` — what Board Edit's add/replace square uses)
+and the planner's hand-added branch (`planDerivedTasks`) always place a
+per-board window-stamped row (`isWindowStampedForBoard`) for a linked task, so
+a hub-linked placement can no longer be created. A linked row with no goal is
+never copied (a derived row needs a per-window target), so it is stamped only
+when it sits on a single board. `tasks.endDate` is a clearable sync field
+(`CLEARABLE_FIELDS_BY_COLLECTION.tasks`) so a stamp onto an indefinite board
+clears a legacy window end on every device.
 
 **Window-stamped derived counters (Board Sources member rules, design locked
 2026-09-17 — [`BOARD_SOURCES.md` §Member rules](BOARD_SOURCES.md#member-rules--counting--compound-tasks-pulled-from-sources-design-locked-2026-09-17);
@@ -290,8 +334,10 @@ additionally cascades, cascade-only (still no write / enqueue / credit), the
 frozen rows whose window contains the undone entry's `occurredAt`
 (`isFrozenRowReachedByEvent(row, occurredAt, now)`, shared + Swift twin,
 `frozenRowReachedByEvent` vectors), and the ended board's stored stats revert
-with the undo instead of waiting for a seal or pull. No-`endDate`, hub-linked
-and in-window rows propagate as before, and `refreshDerivedBaselines` still
+with the undo instead of waiting for a seal or pull. No-`endDate` and
+in-window rows propagate as before (an unplaced hub-linked row too — its latch
+is only ever read by the library; after the 2026-10-01 heal every PLACED row
+is window-stamped and freezes), and `refreshDerivedBaselines` still
 refreshes a frozen row's non-authored `baseline`. The web ops run ONE batched
 `runBoardCascadeForTasks` over the root + unfrozen rows (+ undo's reached
 frozen rows); iOS batches via `runSharedCounterCascade` (`cascadeOnlyTaskIds`).
@@ -304,8 +350,10 @@ arrival snapshot and the Counters hub row — goes through
 the same root-event window sum the kernel uses (hub rows also bounded at the
 board's `sealedAt`), so a cell never paints green or reads N/N while board
 stats count it incomplete, and a late-synced in-window event moves both. Only
-hub-linked rows and context-less (lifetime) readers still show
-`currentCount − baseline`. Sealed play cells keep their max/0 snapshot display
+context-less (lifetime) readers still show `currentCount − baseline`; since
+2026-10-01 `resolveLinkedCounterDisplay(task, events, sealedAt, window)` takes
+the placing board's window for a non-stamped linked row (play cell, closed-board
+display, arrivals, Sources done-filter, preview, hub member via `primaryBoard`). Sealed play cells keep their max/0 snapshot display
 *(amended 2026-09-27, slice 4 D16: a closed board's counting cell now shows the
 sealed-bounded window count so a partial late log is visible; green still comes
 from `sealedCompletedCells`)*.
@@ -611,7 +659,7 @@ Tuesday, forgot 5 mi, logs it Friday from the Tuesday board.
   complete in the sealed window); plain COUNTING → one increment, partial and
   overshoot allowed; window-stamped derived → the increment lands on the ROOT
   (frozen rows are reached cascade-only via `isFrozenRowReachedByEvent`);
-  hub-linked derived and ACHIEVEMENT → not tappable; COMPOUND → staged parts
+  an UNHEALED hub-linked derived row (none after the v18/v37 heal) and ACHIEVEMENT → not tappable; COMPOUND → staged parts
   (NORMAL child → completion, plain COUNTING child → +1), committed only when
   the compound's rule is met under the staged state — enforced in the DB op
   on both platforms, with the sheet's button pre-checked by the same planner
@@ -685,8 +733,9 @@ user-favorable double credit. That edge caused the root-square counter bug
 
 - **Source count** = lifetime event sum (cache `currentCount`). Derived tasks
   own no events — see [§Derived-task carve-out](#derived-task-carve-out). A
-  HUB-LINKED derived member still displays `deriveDisplayedCount` (baseline
-  math) and completes by its latch; a WINDOW-STAMPED member (amended
+  non-stamped linked member displays `deriveDisplayedCount` (baseline
+  math) ONLY when it has no placing board (unplaced; since 2026-10-01 a placed
+  one reads its `primaryBoard`'s window); a WINDOW-STAMPED member (amended
   2026-09-23) displays and completes from its ROOT's events inside its own
   window via `resolveLinkedCounterDisplay` — on board cells, previews, the
   Sources done-filter and the Counters hub (`buildSharedCounterGroups` takes

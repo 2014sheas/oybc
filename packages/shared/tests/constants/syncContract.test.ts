@@ -94,6 +94,10 @@ describe('syncContract fixture', () => {
     ]);
   });
 
+  it('tasks clears endDate — a heal stamp onto an indefinite board drops a legacy window end (2026-10-01)', () => {
+    expect([...CLEARABLE_FIELDS_BY_COLLECTION.tasks]).toEqual(['endDate']);
+  });
+
   it('every clearable collection is a real sync collection', () => {
     for (const name of Object.keys(CLEARABLE_FIELDS_BY_COLLECTION)) {
       expect([...SYNC_COLLECTIONS]).toContain(name);
@@ -103,7 +107,8 @@ describe('syncContract fixture', () => {
   it('clearableFieldsFor returns the map entry, and [] for a collection with none', () => {
     expect(clearableFieldsFor('boards')).toEqual([...CLEARABLE_BOARD_FIELDS]);
     expect(clearableFieldsFor('coreBoardDefaults')).toEqual(['defaultBoardSize', 'defaultCenterType']);
-    expect(clearableFieldsFor('tasks')).toEqual([]);
+    expect(clearableFieldsFor('tasks')).toEqual(['endDate']);
+    expect(clearableFieldsFor('boardTasks')).toEqual([]);
     expect(clearableFieldsFor('not-a-collection')).toEqual([]);
   });
 });

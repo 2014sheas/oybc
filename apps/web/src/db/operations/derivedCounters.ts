@@ -8,6 +8,7 @@ import {
   expandToWindowStampedDerived,
   isWindowStampedDerived,
   planDerivedTasks,
+  sameWindowStart,
   type Board,
   type BoardWindow,
   type CompoundChild,
@@ -160,7 +161,7 @@ export function candidateRootIds(
  * @param now - The mint instant, stamped on a revive.
  * @returns True when a row was written (insert or revive).
  */
-async function writeMintedRow<T extends Task | CompoundChild>(
+export async function writeMintedRow<T extends Task | CompoundChild>(
   table: 'tasks' | 'compoundChildren',
   row: T,
   now: string,
@@ -469,29 +470,9 @@ async function hasLivePlacementElsewhere(
   return false;
 }
 
-/**
- * Do two stored `startDate`s name the same window opening (final-review M2)?
- *
- * `Board.startDate` has TWO live encodings — the local ISO the wizard writes
- * (`2026-09-18T00:00:00`, no offset) and the full UTC form a sync round-trip
- * can hand back — and a derived row copies whichever one its board carried at
- * mint time. Those two never compare equal as strings, so a plain `!==` would
- * make {@link isMintedForBoard} answer "not mine" for a re-encoded pull and
- * silently skip the retire. Comparing INSTANTS is what makes the two
- * encodings agree; a stamp that doesn't parse on either side falls back to
- * string equality rather than claiming a match.
- *
- * @param a - One stored start date (a derived row's).
- * @param b - The other (its candidate board's).
- * @returns True when both name the same instant (or the same literal string).
- */
-function sameWindowStart(a: string | null | undefined, b: string | null | undefined): boolean {
-  if (a == null || b == null) return a === b;
-  const ta = Date.parse(a);
-  const tb = Date.parse(b);
-  if (Number.isNaN(ta) || Number.isNaN(tb)) return a === b;
-  return ta === tb;
-}
+// `sameWindowStart` (final-review M2) now lives in `@oybc/shared`
+// (`linkedCounterWindowHeal.ts`) so the placement gate `isWindowStampedForBoard`
+// and this file's `isMintedForBoard` share one instant-compare definition.
 
 /**
  * Was this row MINTED FOR `board` — i.e. is it this board's own per-window

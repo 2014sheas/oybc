@@ -274,7 +274,9 @@ export function computeSealedCompletedCells(
  * behavior (lifetime `isCompleted` cache); when present, primitive squares
  * resolve against the board's window via events, window-stamped derived
  * counters resolve from their root's events inside their own window, and
- * hub-linked derived-counting squares stay on their cache (the carve-out).
+ * every other linked counting square resolves from its root's events inside
+ * THIS board's window (owner rule 2026-10-01 — the hub-linked latch
+ * carve-out is retired on boards).
  */
 export function computeBoardGrid(
   board: Board,
@@ -303,16 +305,18 @@ export function computeBoardGrid(
   /** Resolve a primitive (normal / counting) square, windowed or lifetime. */
   const resolvePrimitive = (t: Task): boolean => {
     if (!windowContext) return t.isCompleted;
-    // Window-stamped derived counter (`isWindowStampedDerived`): resolved from
-    // its ROOT's increment events inside the row's own `[startDate, endDate]`
-    // — never the one-way latch, which a later window's increments can set
-    // (docs §Derived-task carve-out rule 4, amended 2026-09-23). The sealed
+    // Linked (derived) counter: resolved from its ROOT's increment events —
+    // never the one-way latch, which a later window's increments can set
+    // (docs §Derived-task carve-out rule 4, amended 2026-09-23 / 2026-10-01).
+    // A window-stamped row reads its own `[startDate, endDate]`; any other
+    // linked row reads THIS board's window (`compoundCtx`), the owner rule
+    // that retired the hub-linked latch carve-out on boards. The sealed
     // path's context is already bounded at `sealedAt`, so this is a pure
     // function of the converged in-window event union there too.
-    const derived = resolveDerivedCounterWindowState(t, windowContext.eventsByTaskId);
+    const derived = resolveDerivedCounterWindowState(t, windowContext.eventsByTaskId, compoundCtx);
     if (derived) return derived.isCompleted;
-    // Derived-task carve-out: HUB-LINKED derived counters (`sharedCounterId`
-    // set, no `startDate`) keep their propagation-stamped lifetime cache.
+    // Compound / achievement rows never reach here (they're branched above);
+    // this is the defensive non-event-owning fallthrough.
     if (!isEventOwningTask(t)) return t.isCompleted;
     const events = windowContext.eventsByTaskId[t.id] ?? [];
     return resolveTaskWindowState(t, events, board.startDate, windowEnd).isCompleted;

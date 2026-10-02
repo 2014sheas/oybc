@@ -91,6 +91,9 @@ interface LinkedDisplayVector {
   };
   eventsByTaskId: Record<string, VectorEvent[]> | null;
   sealedAt: string | null;
+  /** Optional (owner rule 2026-10-01) — the placing board's window for a
+   *  non-window-stamped row; absent or null = no window. */
+  window?: { startDate: string; endDate: string | null } | null;
   expected: { displayed: number; isCompleted: boolean };
 }
 const fixture: {
@@ -277,7 +280,7 @@ describe('resolveLinkedCounterDisplay (fixture-driven, taskWindowStateVectors.js
           );
         }
       }
-      expect(resolveLinkedCounterDisplay(task, eventsByTaskId, v.sealedAt)).toEqual(v.expected);
+      expect(resolveLinkedCounterDisplay(task, eventsByTaskId, v.sealedAt, v.window ?? null)).toEqual(v.expected);
     });
   }
 });

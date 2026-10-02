@@ -38,6 +38,29 @@ export function isBoardExpired(
 }
 
 /**
+ * Can a shared-counter log still change this board's squares — i.e. should
+ * it appear in the "also counted on" credit toast / stepper hint?
+ *
+ * Windowed linked counters (owner rule 2026-10-01): only a live, ACTIVE board
+ * that is neither sealed (Closed) nor ended qualifies. `status` alone is not
+ * enough — a sealed board keeps `.active` unless it was a greenlog, which is
+ * how a closed June board got credited by a September log. `ended` compares
+ * the board's LOCAL-ISO `endDate` with `now` as instants (never against a
+ * `toISOString()` string).
+ *
+ * @param board - The board row (only the named fields are read).
+ * @param now - The pinned clock.
+ * @returns True when the board's window is open and it is not sealed.
+ */
+export function isBoardCreditable(
+  board: { isDeleted: boolean; status: BoardStatus; sealedAt?: string | null; endDate?: string | null },
+  now: Date,
+): boolean {
+  if (board.isDeleted || board.status !== BoardStatus.ACTIVE || board.sealedAt != null) return false;
+  return !isTimeframeExpired(board.endDate, now);
+}
+
+/**
  * Boards-list filter-chip predicate (All / Active / Completed / Draft),
  * shared by `BoardsPage` and pinned by unit tests — mirror of iOS
  * `boardMatchesListFilter(_:filter:)` in `TimeframeFormatting.swift`.

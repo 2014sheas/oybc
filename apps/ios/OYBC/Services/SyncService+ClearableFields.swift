@@ -10,8 +10,10 @@ import GRDB
 // `coreBoardDefaults.defaultBoardSize` / `defaultCenterType`. Under Firestore's
 // `merge: true` write, simply omitting an absent field would PRESERVE the stale
 // value remotely (silently undoing the clear) or leave it stuck locally on
-// pull. This file centralizes every such field behind one per-collection map,
-// mirroring the TS `CLEARABLE_FIELDS_BY_COLLECTION`
+// pull. `tasks.endDate` joined for the windowed-linked-counter heal: stamping
+// a legacy task row onto an INDEFINITE board must clear its old `endDate`
+// cross-device. This file centralizes every such field behind one
+// per-collection map, mirroring the TS `CLEARABLE_FIELDS_BY_COLLECTION`
 // (`packages/shared/src/constants/syncContract.ts`), pinned equal by
 // `SyncContractTests.testClearableFieldsByCollectionMatchesFixture`.
 
@@ -23,6 +25,7 @@ import GRDB
 let clearableFieldsByCollection: [String: [String]] = [
     "boards": ["endDate", "completedAt", "sealedAt", "sealedCompletedCells"],
     "coreBoardDefaults": ["defaultBoardSize", "defaultCenterType"],
+    "tasks": ["endDate"],
 ]
 
 /// The `boards` entry of `clearableFieldsByCollection` — kept as a named

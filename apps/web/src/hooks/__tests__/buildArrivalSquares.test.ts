@@ -79,18 +79,20 @@ describe('buildArrivalSquares', () => {
     ]);
   });
 
-  it('emits a square for a LINKED member with baseline-adjusted displayed count', () => {
+  it('emits a square for a LINKED member showing the root\'s increments inside the board window', () => {
     const source = makeTask({ id: 'src', title: 'Push-ups', currentCount: 20 });
-    // baseline 5 → displayed = max(0, 20 - 5) = 15
+    // Owner rule 2026-10-01: a linked row that is not window-stamped counts
+    // the ROOT's in-window increments (ctx() events: +12 at 2026-01-10 → 12),
+    // not `currentCount − baseline` (which would be 15).
     const linked = makeTask({ id: 'lnk', sharedCounterId: 'src', baseline: 5, currentCount: 20, maxCount: 30 });
     const squares = buildArrivalSquares({
       boardTasks: [bt('lnk')],
       taskMap: { src: source, lnk: linked },
       sharedCounterSourceIds: new Set(['src']),
-      windowContext: ctx(),
+      windowContext: ctx({ src: [increment('src', 12)] }),
     });
     expect(squares).toEqual([
-      { taskId: 'lnk', counterId: 'src', counterName: 'Push-ups', displayed: 15 },
+      { taskId: 'lnk', counterId: 'src', counterName: 'Push-ups', displayed: 12 },
     ]);
   });
 

@@ -25,9 +25,10 @@ enum CompoundEvaluation {
     /// **Windowed evaluation (Windowed Completion, PR A/B).** When
     /// `windowContext` is supplied, primitive children resolve against the host
     /// board's window via `resolveTaskWindowState` instead of reading the
-    /// lifetime `isCompleted` cache; derived (shared-counter-linked) counting
-    /// children fall back to their cache (the carve-out); nested compounds
-    /// inherit the SAME window (host-window inheritance). When `windowContext`
+    /// lifetime `isCompleted` cache; linked (shared-counter) counting children
+    /// resolve from their root's events — over their own stamped window, or
+    /// the host window (owner rule 2026-10-01); nested compounds inherit the
+    /// SAME window (host-window inheritance). When `windowContext`
     /// is omitted the behavior is byte-identical to before — the lifetime
     /// default that keeps every existing caller unchanged.
     ///
@@ -59,25 +60,30 @@ enum CompoundEvaluation {
     }
 
     /// Resolve a single primitive (non-compound) child's completion, honoring
-    /// the window context when present. Window-stamped derived counters
-    /// resolve from their root's events; hub-linked derived-counting children
-    /// are carved out (read their lifetime cache); every other event-owning
-    /// primitive resolves windowed. Mirrors the TS `resolvePrimitiveChildState`.
+    /// the window context when present. Linked (derived) counting children
+    /// resolve from their root's events — a window-stamped one over its own
+    /// window, any other over the host window (owner rule 2026-10-01; the
+    /// hub-linked latch carve-out is retired on boards); every other
+    /// event-owning primitive resolves windowed. Only a context with no
+    /// `windowStart` (lifetime) still reads a linked child's latch. Mirrors
+    /// the TS `resolvePrimitiveChildState`.
     private static func resolvePrimitiveChildState(
         _ child: Task,
         _ windowContext: CompoundWindowContext?
     ) -> Bool {
         guard let windowContext else { return child.isCompleted }
-        // Window-stamped derived counter child (a "Split up" member's part):
-        // resolve from the ROOT's events inside the child's own window, never
-        // the latch — the same branch `DerivationPass.computeBoardGrid` takes.
+        // Linked counter child (a "Split up" member's part, or a hub-linked
+        // copy): resolve from the ROOT's events inside the applicable window,
+        // never the latch — the same branch `DerivationPass.computeBoardGrid`
+        // takes.
         if let derived = resolveDerivedCounterWindowState(
-            task: child, eventsByTaskId: windowContext.eventsByTaskId
+            task: child, eventsByTaskId: windowContext.eventsByTaskId,
+            windowStart: windowContext.windowStart, windowEnd: windowContext.windowEnd
         ) {
             return derived.isCompleted
         }
-        // Derived-task carve-out: HUB-LINKED derived counting children keep
-        // their propagation-stamped lifetime cache — they don't own events.
+        // Lifetime context (no `windowStart`) for a linked child, and the
+        // defensive non-event-owning fallthrough: the cache.
         if !isEventOwningTask(child) { return child.isCompleted }
         let events = windowContext.eventsByTaskId[child.id] ?? []
         return resolveTaskWindowState(

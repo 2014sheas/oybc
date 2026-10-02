@@ -138,15 +138,15 @@ extension AppDatabase {
             ).enqueue(db)
         }
 
-        // Build the credit-toast result: ACTIVE boards that hold any member task.
+        // Build the credit-toast result: boards that can still count a log
+        // (live, active, not closed, not ended) holding any member task.
         let memberTaskIdSet = Set(allChangedTaskIds)
         var seenBoardIds = Set<String>()
         var creditBoards: [AffectedBoard] = []
         for bt in allBoardTasks {
             guard memberTaskIdSet.contains(bt.taskId),
                   let board = allBoards.first(where: { $0.id == bt.boardId }),
-                  !board.isDeleted,
-                  board.status == .active,
+                  Self.boardCanStillCountLogs(board, now: now),
                   !seenBoardIds.contains(board.id)
             else { continue }
             seenBoardIds.insert(board.id)
@@ -237,12 +237,14 @@ extension AppDatabase {
     ///     `BoardPlayViewModel` passes it. Event provenance `boardId` stays
     ///     `nil`, as before — only `occurredAt` is clamped. A SEALED board is
     ///     a full no-op (no event, no write) — a sealed board authors no event.
-    /// - Returns: `SharedCounterCreditResult` with the ACTIVE boards holding
-    ///   any member task, for use in the P2 "credited" toast.
+    ///   - now: The operation's ISO8601 clock (injectable for tests).
+    /// - Returns: `SharedCounterCreditResult` with the boards that can still
+    ///   count the log (live, active, not closed, not ended), for use in the P2 "credited" toast.
     func incrementSharedCounter(
         sourceTaskId: String,
         by: Int = 1,
-        boardId: String? = nil
+        boardId: String? = nil,
+        now: String = AppDatabase.currentTimestamp()
     ) throws -> SharedCounterCreditResult {
         guard by >= 1 else {
             throw NSError(
@@ -254,8 +256,6 @@ extension AppDatabase {
         }
 
         return try write { db in
-            let now = Self.currentTimestamp()
-
             // 1. Fetch and validate the source task.
             guard var source = try Task.fetchOne(db, key: sourceTaskId) else {
                 return SharedCounterCreditResult(affectedBoards: [])

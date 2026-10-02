@@ -301,13 +301,21 @@ export function buildSharedCounterGroups(
       const goal = m.maxCount ?? 0;
       const board = pickPrimaryBoard(m.id, input.boardTasks, boardsById);
       // Window-stamped members read their own window from the root's events
-      // (never `lifetime − baseline`, which counts later windows' logs too).
+      // (never `lifetime − baseline`, which counts later windows' logs too);
+      // any other PLACED member reads its primary board's window the same
+      // way (owner rule 2026-10-01). An unplaced hub-linked member — no
+      // board, so no window — keeps the lifetime arithmetic.
+      const memberWindow =
+        !isWindowStampedDerived(m) && board
+          ? { startDate: board.startDate, endDate: board.endDate ?? null }
+          : null;
       const displayed =
-        !isSource && input.eventsByTaskId && isWindowStampedDerived(m)
+        !isSource && input.eventsByTaskId && (isWindowStampedDerived(m) || memberWindow)
           ? resolveLinkedCounterDisplay(
               m,
               input.eventsByTaskId as Record<string, TaskEvent[]>,
               board?.sealedAt ?? null,
+              memberWindow,
             ).displayed
           : deriveDisplayedCount({ baseline, maxCount: goal }, { currentCount: lifetime }).displayed;
 

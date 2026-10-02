@@ -93,20 +93,22 @@ final class WizardPreviewCompletionTests: XCTestCase {
         XCTAssertFalse(done, "only the in-window sum (2 of 5) counts toward the goal")
     }
 
-    func testDerivedCounterKeepsLifetimeCarveOut() {
+    /// Owner rule 2026-10-01: a hub-linked counter previews from the ROOT's
+    /// in-window increments (the prospective board's window), not its latch.
+    func testHubLinkedCounterReadsRootEventsInWindowNotLatch() {
         let task = makeTask(
             "d1", type: .counting, maxCount: 10,
             isCompleted: true, currentCount: 10, sharedCounterId: "src-1"
         )
-        let done = wizardPreviewIsCompleted(
-            task: task,
-            taskById: [task.id: task],
-            childrenByCompound: [:],
-            eventsByTaskId: [:],
-            windowStart: windowStart,
-            windowEnd: nil
-        )
-        XCTAssertTrue(done, "derived counters read their propagation-stamped lifetime cache")
+        func preview(_ events: [String: [TaskEvent]]) -> Bool {
+            wizardPreviewIsCompleted(
+                task: task, taskById: [task.id: task], childrenByCompound: [:],
+                eventsByTaskId: events, windowStart: windowStart, windowEnd: nil
+            )
+        }
+        XCTAssertFalse(preview([:]), "the stale latch is not read")
+        XCTAssertFalse(preview(["src-1": [makeEvent(taskId: "src-1", kind: .increment, occurredAt: beforeWindow, delta: 10)]]))
+        XCTAssertTrue(preview(["src-1": [makeEvent(taskId: "src-1", kind: .increment, occurredAt: inWindow, delta: 10)]]))
     }
 
     func testCompoundEvaluatesWindowedThroughChildren() {

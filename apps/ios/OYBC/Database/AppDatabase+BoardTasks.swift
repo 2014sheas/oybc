@@ -97,10 +97,21 @@ extension AppDatabase {
                   !owningBoard.isDeleted, owningBoard.sealedAt == nil else { return }
 
             let oldTaskId = boardTask.taskId
+            let now = Self.currentTimestamp()
+
+            // Windowed linked counters (owner rule 2026-10-01): a linked
+            // counting task that isn't window-stamped for THIS board resolves
+            // to the board's own per-window row. This is what makes Board
+            // Edit's replace-square (BoardPlayViewModel+EditCommit → here)
+            // window-safe — it bypasses the wizard's member-rule planner.
+            var newTaskId = newTaskId
+            if let target = try Task.fetchOne(db, key: newTaskId) {
+                newTaskId = try Self.resolveWindowStampedPlacementId(
+                    db: db, task: target, board: owningBoard, now: now
+                )
+            }
             // No-op guard: swapping to the same task writes nothing.
             guard oldTaskId != newTaskId else { return }
-
-            let now = Self.currentTimestamp()
 
             // ── Pre-patch workspace snapshot (for old-task cascade side) ──
 
@@ -679,6 +690,18 @@ extension AppDatabase {
         isLocked: Bool = false
     ) throws -> BoardTask {
         let now = AppDatabase.currentTimestamp()
+
+        // Windowed linked counters (owner rule 2026-10-01): a linked counting
+        // task that isn't window-stamped for THIS board resolves to the
+        // board's own per-window row. This is what makes Board Edit's
+        // add-square (BoardPlayViewModel+EditCommit → here) window-safe — it
+        // bypasses the wizard's member-rule planner. Closed / missing boards
+        // are left to the guard below (nothing is minted for them).
+        var taskId = taskId
+        if let target = try Task.fetchOne(db, key: taskId),
+           let board = try Board.fetchOne(db, key: boardId), !board.isDeleted, board.sealedAt == nil {
+            taskId = try Self.resolveWindowStampedPlacementId(db: db, task: target, board: board, now: now)
+        }
 
         let newBoardTask = BoardTask(
             id: AppDatabase.generateUUID(),

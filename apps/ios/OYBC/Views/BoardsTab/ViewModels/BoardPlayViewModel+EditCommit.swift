@@ -188,12 +188,19 @@ extension BoardPlayViewModel {
             .filter { !$0.isNew && $0.taskId != $0.originalTaskId }
             .map { (boardTaskId: $0.id, newTaskId: $0.taskId) }
 
-        // (4) Task-field overrides — unchanged shape from slice 2.
-        var taskOverridePairs: [(task: Task, override: StagedTaskOverride)] = []
-        for (taskId, override) in editTaskOverrides {
-            if let task = taskMap[taskId] {
-                taskOverridePairs.append((task: task, override: override))
-            }
+        // (4) Task-field overrides — keyed by the STAGED task id. They are
+        // applied AFTER replacements + adds (step 7b) so each can be remapped to
+        // the id the placement choke point ACTUALLY placed: a linked counting
+        // task lands as the board's own window-stamped copy, and the override
+        // must patch that copy (never the library source).
+        let stagedOverrides: [StagedOverrideInput] = editTaskOverrides.map { taskId, override in
+            StagedOverrideInput(stagedId: taskId, override: override, mapTask: taskMap[taskId])
+        }
+        let stagedCellRefs: [StagedCellRef] = draftSnapshot.compactMap { key, cell in
+            guard let (row, col) = parseSquareCellKey(key) else { return nil }
+            return StagedCellRef(
+                boardTaskId: cell.id, isNew: cell.isNew, row: row, col: col, stagedTaskId: cell.taskId
+            )
         }
 
         // (5) Removals — baseline ids missing from the current draft. This
@@ -295,13 +302,7 @@ extension BoardPlayViewModel {
                         )
                     }
 
-                    // 4. Staged task-field overrides.
-                    for (task, override) in taskOverridePairs {
-                        var updated = Self.applyingOverride(override, to: task)
-                        updated.updatedAt = now
-                        updated.version  += 1
-                        try AppDatabase.saveTaskAndCascade(db: db, task: updated)
-                    }
+                    // 4. (moved to 7b — overrides remap to the placed ids.)
 
                     // 5. Staged removals — BEFORE moves/adds (D15) so a
                     //    freed position is never mistaken for occupied.
@@ -339,6 +340,12 @@ extension BoardPlayViewModel {
                         )
                     }
 
+                    // 7b. Staged task-field overrides, remapped onto the ids the
+                    //     replacements/adds actually placed on this board.
+                    try Self.applyStagedOverrides(
+                        db: db, boardId: bid, overrides: stagedOverrides, cells: stagedCellRefs, now: now
+                    )
+
                     // 8. Staged LOCKS on existing placements — after the moves.
                     for boardTaskId in locks {
                         try AppDatabase.setBoardTaskLocked(db: db, boardTaskId: boardTaskId, locked: true)
@@ -370,6 +377,62 @@ extension BoardPlayViewModel {
             }
         }
         return true
+    }
+
+    /// One staged "Edit task…" override with the pre-save `taskMap` row it
+    /// would patch when its task is placed as-is.
+    struct StagedOverrideInput {
+        let stagedId: String
+        let override: StagedTaskOverride
+        let mapTask: Task?
+    }
+
+    /// One draft cell, reduced to what override remapping needs.
+    struct StagedCellRef {
+        let boardTaskId: String
+        let isNew: Bool
+        let row: Int
+        let col: Int
+        let stagedTaskId: String
+    }
+
+    /// Step 7b — apply each staged override to the task id actually placed on
+    /// this board. An override whose task was placed as-is patches that task
+    /// (the `taskMap` row, as before); one whose placement resolved to a
+    /// different id (a linked counter's window-stamped copy) patches ONLY the
+    /// placed row — the library source is never touched. Runs inside the Save
+    /// transaction, after the replacement/add/move writes.
+    ///
+    /// - Parameters:
+    ///   - db: The Save's open write transaction.
+    ///   - boardId: The board being edited.
+    ///   - overrides: Staged overrides keyed by staged task id.
+    ///   - cells: The draft cells (staged task id per cell).
+    ///   - now: ISO8601 write stamp.
+    nonisolated static func applyStagedOverrides(
+        db: Database, boardId: String, overrides: [StagedOverrideInput],
+        cells: [StagedCellRef], now: String
+    ) throws {
+        guard !overrides.isEmpty else { return }
+        let placements = try BoardTask
+            .filter(Column("boardId") == boardId && Column("isDeleted") == false).fetchAll(db)
+        for input in overrides {
+            var targets: [String] = cells.filter { $0.stagedTaskId == input.stagedId }.map { cell in
+                let placed = cell.isNew
+                    ? placements.first { $0.row == cell.row && $0.col == cell.col }
+                    : placements.first { $0.id == cell.boardTaskId }
+                return placed?.taskId ?? input.stagedId
+            }
+            if targets.isEmpty { targets = [input.stagedId] }
+            for target in Set(targets).sorted() {
+                let row: Task? = target == input.stagedId ? input.mapTask : try Task.fetchOne(db, key: target)
+                guard let row else { continue }
+                var updated = Self.applyingOverride(input.override, to: row)
+                updated.updatedAt = now
+                updated.version += 1
+                try AppDatabase.saveTaskAndCascade(db: db, task: updated)
+            }
+        }
     }
 
     /// Whether Board Edit may switch a task from `from` to `to`. Only

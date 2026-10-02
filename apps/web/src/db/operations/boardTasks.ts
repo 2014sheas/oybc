@@ -19,6 +19,7 @@ import { generateUUID, currentTimestamp } from '../utils';
 import { addToSyncQueue } from './syncQueue';
 import { fetchAllCompoundChildren } from './compoundChildren';
 import { buildWindowContext } from './windowContext';
+import { resolveBoardPlacementTaskId } from './linkedCounterPlacement';
 import { assertBoardEditable, updateBoard } from './boards';
 
 /**
@@ -386,7 +387,7 @@ export async function addBoardTaskToBoard(
 ): Promise<BoardTask> {
   const now = currentTimestamp();
 
-  const newBoardTask: BoardTask = {
+  let newBoardTask: BoardTask = {
     id: generateUUID(),
     boardId,
     taskId,
@@ -416,7 +417,7 @@ export async function addBoardTaskToBoard(
 
   await db.transaction(
     'rw',
-    [db.boardTasks, db.boards, db.tasks, db.compoundChildren, db.syncQueue],
+    [db.boardTasks, db.boards, db.tasks, db.compoundChildren, db.taskEvents, db.syncQueue],
     async () => {
       // Board-integrity PR-2 (Part 4) — sealed-board guard: re-fetch the
       // OWNING board fresh inside the write txn. The app-shell backstop can
@@ -448,6 +449,18 @@ export async function addBoardTaskToBoard(
       }
       if (liveOnBoard.some((bt) => bt.taskId === taskId)) {
         throw new Error(`addBoardTaskToBoard: task ${taskId} is already placed on board ${boardId}`);
+      }
+
+      // Windowed linked counters (owner rule 2026-10-01): a linked counter
+      // that is not this board's own window-stamped row resolves to the
+      // board's deterministic per-window row. This is what makes Board
+      // Edit's add square (which bypasses the wizard's planner) window-safe.
+      const placedTaskId = await resolveBoardPlacementTaskId(owningBoard, taskId, now);
+      if (placedTaskId !== taskId) {
+        if (liveOnBoard.some((bt) => bt.taskId === placedTaskId)) {
+          throw new Error(`addBoardTaskToBoard: task ${placedTaskId} is already placed on board ${boardId}`);
+        }
+        newBoardTask = { ...newBoardTask, taskId: placedTaskId };
       }
 
       // 1. Write the new BoardTask placement.
@@ -867,7 +880,7 @@ export async function updateBoardTaskAndCascade(
   // 3. Write the patch + cascade in one transaction.
   await db.transaction(
     'rw',
-    [db.boardTasks, db.boards, db.tasks, db.compoundChildren, db.syncQueue],
+    [db.boardTasks, db.boards, db.tasks, db.compoundChildren, db.taskEvents, db.syncQueue],
     async () => {
       // Board-integrity PR-2 (Part 4) — sealed-board guard: re-fetch the
       // OWNING board fresh inside the write txn (see removeBoardTaskFromBoard
@@ -876,10 +889,15 @@ export async function updateBoardTaskAndCascade(
       const owningBoard = await db.boards.get(existing.boardId);
       if (!owningBoard || owningBoard.isDeleted || owningBoard.sealedAt) return;
 
+      // Windowed linked counters (owner rule 2026-10-01): replacing a square
+      // with a linked counter places THIS board's own per-window row (see
+      // addBoardTaskToBoard — Board Edit bypasses the wizard planner).
+      const placedTaskId = await resolveBoardPlacementTaskId(owningBoard, newTaskId, now);
+
       // 3a. Patch the BoardTask row.
       const patched: BoardTask = {
         ...existing,
-        taskId: newTaskId,
+        taskId: placedTaskId,
         updatedAt: now,
         version: (existing.version ?? 0) + 1,
       };

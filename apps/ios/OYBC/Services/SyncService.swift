@@ -557,18 +557,13 @@ final class SyncService: ObservableObject {
         // Only advance watermark if no pull errors occurred
         let hadErrors = result.details.contains { $0.contains("Pull failed") }
         if !hadErrors {
-            // Heal-on-pull (docs/WINDOWED_COMPLETION.md §Heal-on-pull): mint any
-            // completion event a fresh install is missing so completed squares
-            // don't render incomplete. Gated on a clean pull — a partial pull
-            // could be missing a task's real events, and we must not mint over
-            // that. Idempotent + self-limiting; before the watermark advances so
-            // a mid-heal failure simply re-heals next pull. Counts toward
-            // `result.pulled` so the changes-applied refresh fires.
+            // Heal-on-pull (docs/WINDOWED_COMPLETION.md §Heal-on-pull) + the
+            // windowed-linked-counter sweep: clean pulls only, idempotent,
+            // before the watermark advances; counts toward `result.pulled`.
             let healed = healMissingCompletionEvents(userId: userId)
-            if healed > 0 {
-                result.pulled += healed
-                result.details.append("Healed \(healed) missing completion event(s)")
-            }
+            if healed > 0 { result.pulled += healed; result.details.append("Healed \(healed) missing completion event(s)") }
+            let windowed = database.healLinkedCounterWindowsSweep(userId: userId)
+            if windowed > 0 { result.pulled += windowed; result.details.append("Windowed \(windowed) linked counter(s)") }
 
             let now = AppDatabase.currentTimestamp()
             do {

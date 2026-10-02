@@ -1341,7 +1341,7 @@ final class BoardPlayViewModel: ObservableObject {
 
             let displayed: Int
             if task.sharedCounterId != nil {
-                displayed = resolveLinkedCounterDisplay(task: task, eventsByTaskId: windowEventsByTaskId).displayed
+                displayed = resolveLinkedCounterDisplay(task: task, eventsByTaskId: windowEventsByTaskId, sealedAt: board?.sealedAt, window: board.map(LinkedCounterWindow.init(board:))).displayed
             } else {
                 // Issue #377: a SOURCE counting square's grid cell shows the
                 // board-WINDOWED count, so the arrival baseline must match —

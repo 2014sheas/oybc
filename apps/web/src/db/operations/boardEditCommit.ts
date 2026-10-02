@@ -51,8 +51,9 @@ export interface CommitSquareEditsInput {
  *   2. `normalizeLegacyChosenCenter` if the on-disk board is still CHOSEN
  *      (D2) — runs regardless of what the rest of the session touched, as
  *      long as SOME edit landed here (Save is disabled at 0 edits).
- *   3. Replacements (`updateBoardTaskAndCascade`).
- *   4. Task-field overrides (`updateTaskAndCascade`).
+ *   3. Replacements (`updateBoardTaskAndCascade`). A linked counter lands as
+ *      its per-board copy, so the staged→placed id is recorded.
+ *   4. (moved to 7b — see below.)
  *   5. Removals (`removeBoardTaskFromBoard`) — BEFORE moves/adds so freed
  *      positions are not occupied.
  *   5b. UNLOCKS on pre-existing cells (`setBoardTaskLocked(false)`) — BEFORE
@@ -61,6 +62,9 @@ export interface CommitSquareEditsInput {
  *      lock first (slice-3 self-review).
  *   6. Moves (`reorderBoardTasks`).
  *   7. Adds (`addBoardTaskToBoard`, with `isLocked` from the draft).
+ *   7b. Task-field overrides (`updateTaskAndCascade`), remapped from the staged
+ *      id to the id actually placed (the per-board copy of a linked counter);
+ *      the library source is never patched by a remapped override.
  *   8. LOCKS on pre-existing cells (`setBoardTaskLocked(true)`) — AFTER
  *      moves, so "move → Lock in place" lands the row at its new slot first.
  *      A NEW cell's lock was already written by step 7.
@@ -105,16 +109,22 @@ export async function commitSquareEdits(input: CommitSquareEditsInput): Promise<
         await normalizeLegacyChosenCenter(boardId, centerCellKeepLocked);
       }
 
+      // staged (library) task id -> the id actually placed on THIS board.
+      // A linked counter is placed as its per-board window-stamped copy
+      // (`derivedTaskId(board, root)`), so step 4's overrides — keyed by the
+      // staged id — must be remapped onto the placed row, never the library
+      // source. Populated by steps 3 and 7 only when the two ids differ.
+      const placedIdByStagedId = new Map<string, string>();
+
       // 3. Replacements.
       for (const cell of cells) {
         if (cell.originalTaskId !== null && cell.taskId !== cell.originalTaskId) {
           await updateBoardTaskAndCascade(cell.cellId, cell.taskId);
+          const placed = await db.boardTasks.get(cell.cellId);
+          if (placed && placed.taskId !== cell.taskId) {
+            placedIdByStagedId.set(cell.taskId, placed.taskId);
+          }
         }
-      }
-
-      // 4. Task-field overrides.
-      for (const [taskId, patch] of taskOverrides.entries()) {
-        await updateTaskAndCascade(taskId, patch);
       }
 
       // 5. Removals — before moves/adds so freed cells aren't occupied.
@@ -144,10 +154,24 @@ export async function commitSquareEdits(input: CommitSquareEditsInput): Promise<
       // 7. Adds.
       for (const cell of cells) {
         if (cell.originalTaskId === null) {
-          await addBoardTaskToBoard(boardId, cell.taskId, cell.row, cell.col, {
+          const added = await addBoardTaskToBoard(boardId, cell.taskId, cell.row, cell.col, {
             isLocked: cell.isLocked,
           });
+          if (added.taskId !== cell.taskId) placedIdByStagedId.set(cell.taskId, added.taskId);
         }
+      }
+
+      // 7b. Task-field overrides — AFTER replacements and adds so each lands on
+      //     the id actually placed (see `placedIdByStagedId`). Overrides apply
+      //     to the placed row ONLY; a remapped override never patches the
+      //     library source. Removals/unlocks/moves are independent of task
+      //     fields, so running these here preserves their ordering.
+      const patched = new Set<string>();
+      for (const [stagedId, patch] of taskOverrides.entries()) {
+        const targetId = placedIdByStagedId.get(stagedId) ?? stagedId;
+        if (patched.has(targetId)) continue;
+        patched.add(targetId);
+        await updateTaskAndCascade(targetId, patch);
       }
 
       // 8. Locks on pre-existing cells — after moves (see doc above).

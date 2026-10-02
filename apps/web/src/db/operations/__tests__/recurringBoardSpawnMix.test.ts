@@ -865,8 +865,21 @@ describe('spawnTemplateBoard — counter-family exclusivity (2026-09-08)', () =>
       .equals(result.boardId)
       .toArray();
     const placedIds = new Set(placements.map((bt) => bt.taskId));
-    expect(placedIds.has('win-derived')).toBe(true);
+    // The hand-added family member wins the family slot — and, since the
+    // windowed-linked-counters rule (2026-10-01), a hand-added LINKED member
+    // is minted as this board's own window-stamped row rather than placed as
+    // itself: the placed id is `derivedTaskId(board, root)`, derived from the
+    // hand-added member (its goal 4, not the root's 10). The pool-supplied
+    // root still never lands.
+    const minted = derivedTaskId(result.boardId, 'win-root');
+    expect(placedIds.has(minted)).toBe(true);
+    expect(placedIds.has('win-derived')).toBe(false);
     expect(placedIds.has('win-root')).toBe(false);
+    const mintedRow = await db.tasks.get(minted);
+    expect(mintedRow?.sharedCounterId).toBe('win-root');
+    expect(mintedRow?.maxCount).toBe(4);
+    expect(mintedRow?.startDate).toBe(WINDOW_START);
+    expect(mintedRow?.createdInWizard).toBe(true);
   });
 });
 

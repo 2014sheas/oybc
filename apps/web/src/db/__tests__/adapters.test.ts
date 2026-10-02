@@ -276,9 +276,15 @@ describe('resolveClosedBoardCounterDisplay (Board Edit redesign slice 4, D16)', 
     expect(resolveClosedBoardCounterDisplay(derived, events, BOARD)).toEqual({ displayed: 3, isCompleted: false });
   });
 
-  it('a hub-linked derived counter (no startDate) falls back to its lifetime read (not tappable — OQ2)', () => {
+  it('a hub-linked row (no window stamp) shows the ROOT\'s sealed-bounded sum over the board window, never its latch (owner rule 2026-10-01)', () => {
     const hubLinked = counter('linked', 5, { sharedCounterId: 'root', currentCount: 7, isCompleted: true });
-    expect(resolveClosedBoardCounterDisplay(hubLinked, {}, BOARD)).toEqual({ displayed: 7, isCompleted: true });
+    const events = {
+      root: [
+        inc('e1', 'root', 3, '2026-07-01T10:00:00.000Z'), // in window
+        inc('e2', 'root', 9, '2026-07-03T00:00:00.000Z'), // after the seal → dropped
+      ],
+    };
+    expect(resolveClosedBoardCounterDisplay(hubLinked, events, BOARD)).toEqual({ displayed: 3, isCompleted: false });
   });
 
   it('agrees with the sealed snapshot bound: an event exactly at sealedAt counts (when sealedAt is the binding bound), one ms after does not', () => {

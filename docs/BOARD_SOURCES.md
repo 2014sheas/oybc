@@ -736,7 +736,10 @@ Both platforms, one PR (#491).
   (`isFrozenRowReachedByEvent`); a changed root id now reaches the
   sealed boards that place its window-stamped rows, so a late in-window root
   event converges every device's sealed snapshot. Hub-linked derived rows
-  (no `startDate`) keep the latch carve-out unchanged. Canonical:
+  (no `startDate`) kept the latch carve-out until 2026-10-01: the kernel now
+  resolves any placed linked row over its host board's window and a one-time
+  heal stamps such rows with their board's window (web Dexie v18 / iOS v37 +
+  post-pull sweep) — see `WINDOWED_COMPLETION.md` §Derived-task carve-out. Canonical:
   [`WINDOWED_COMPLETION.md` §Derived-task carve-out](WINDOWED_COMPLETION.md#derived-task-carve-out).
 - **`baseline` is a lifetime-display cache only.** It stays the
   non-authored, event-derived cache defined above (`refreshDerivedBaselines`
@@ -745,15 +748,16 @@ Both platforms, one PR (#491).
   those read `resolveLinkedCounterDisplay` — count AND completion from the
   same root-event window sum the kernel uses (pinned by
   `taskWindowStateVectors.json#linkedCounterDisplay`). Only readers with no
-  event map (and hub-linked rows) still show `currentCount − baseline`.
+  event map (or no board window, i.e. the library) still show `currentCount − baseline`.
 - **Closed-board late log (Board Edit redesign slice 4, 2026-09-27).** A
   late log on a CLOSED board's window-stamped derived square lands on the
   ROOT at the board's `endDate` (`lateLogIncrement` ↔
   `AppDatabase.lateLogIncrement`); frozen rows are reached cascade-only via
   `isFrozenRowReachedByEvent`, unchanged, and every sealed board placing the
-  row re-derives from the root's events in the same transaction. A
-  hub-linked derived square on a closed board is not tappable (its latch is
-  lifetime, not windowed). See `WINDOWED_COMPLETION.md` §Closed boards.
+  row re-derives from the root's events in the same transaction. Since
+  the 2026-10-01 heal every placed linked row is window-stamped, so this path
+  covers the pre-member-rules copies too (an unhealed hub-linked square stays
+  non-tappable). See `WINDOWED_COMPLETION.md` §Closed boards.
 
 #### Plan B3 — implementation notes (2026-09-19)
 

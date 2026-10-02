@@ -264,9 +264,10 @@ extension AppDatabase {
         let taskById = Dictionary(uniqueKeysWithValues: tasks.map { ($0.id, $0) })
 
         // Event-owning ids + the ROOT of each window-stamped derived row (its
-        // done-state reads the root's events; a root is never placed).
+        // done-state reads the root's events; a root is never placed). Any
+        // linked counting row (owner rule 2026-10-01) reads its root the same way.
         let eventTaskIds = Set(tasks.filter { isEventOwningTask($0) }.map { $0.id })
-            .union(tasks.compactMap { BoardSources.isWindowStampedDerived($0) ? $0.sharedCounterId : nil })
+            .union(tasks.compactMap { $0.type == .counting ? $0.sharedCounterId : nil })
         var eventsByTaskId: [String: [TaskEvent]] = [:]
         if !eventTaskIds.isEmpty {
             let events = try TaskEvent
@@ -293,7 +294,10 @@ extension AppDatabase {
             // §Derived-task carve-out, amended 2026-09-23) — never the one-way
             // latch a later window's logs can set. Its count is deliberately
             // NOT fed to the prefill (`windowCountByTaskId` stays event-owning).
-            if let derived = resolveDerivedCounterWindowState(task: task, eventsByTaskId: eventsByTaskId) {
+            if let derived = resolveDerivedCounterWindowState(
+                task: task, eventsByTaskId: eventsByTaskId,
+                windowStart: board.startDate, windowEnd: boardWindowEnd(board)
+            ) {
                 isDone = derived.isCompleted
             } else if isEventOwningTask(task) {
                 let state = resolveTaskWindowState(

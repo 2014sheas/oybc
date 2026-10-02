@@ -3251,7 +3251,7 @@
       ]
     },
     {
-      "name": "windowed-derived-counter-carve-out-honors-lifetime-cache",
+      "name": "hub-linked-derived-on-board-no-root-events-incomplete-despite-latch",
       "board": {
         "id": "b1",
         "boardSize": 3,
@@ -3295,7 +3295,7 @@
       },
       "expected": {
         "boardId": "b1",
-        "completedTasks": 1,
+        "completedTasks": 0,
         "linesCompleted": 0,
         "completedLineIds": [],
         "newBingos": [],
@@ -3308,7 +3308,7 @@
           "row": 0,
           "col": 0,
           "idx": 0,
-          "isCompleted": true
+          "isCompleted": false
         }
       ]
     },
@@ -4055,7 +4055,7 @@
       ]
     },
     {
-      "name": "hub-linked-derived-no-startDate-keeps-latch-despite-root-events",
+      "name": "hub-linked-derived-root-event-before-board-window-excluded-latch-ignored",
       "board": {
         "id": "b1",
         "boardSize": 3,
@@ -4122,7 +4122,7 @@
       },
       "expected": {
         "boardId": "b1",
-        "completedTasks": 1,
+        "completedTasks": 0,
         "linesCompleted": 0,
         "completedLineIds": [],
         "newBingos": [],
@@ -4135,12 +4135,12 @@
           "row": 0,
           "col": 0,
           "idx": 0,
-          "isCompleted": true
+          "isCompleted": false
         }
       ]
     },
     {
-      "name": "linked-counter-with-startDate-but-not-wizard-born-keeps-latch",
+      "name": "linked-not-wizard-born-resolves-over-board-window-not-own-stamp-root-event-after-endDate-excluded",
       "board": {
         "id": "b1",
         "boardSize": 3,
@@ -4210,6 +4210,96 @@
       },
       "expected": {
         "boardId": "b1",
+        "completedTasks": 0,
+        "linesCompleted": 0,
+        "completedLineIds": [],
+        "newBingos": [],
+        "lostBingos": []
+      },
+      "expectedCells": [
+        {
+          "boardTaskId": "b1-d1",
+          "taskId": "d1",
+          "row": 0,
+          "col": 0,
+          "idx": 0,
+          "isCompleted": false
+        }
+      ]
+    },
+    {
+      "name": "hub-linked-derived-root-events-inside-board-window-reach-target-complete-latch-false",
+      "board": {
+        "id": "b1",
+        "boardSize": 3,
+        "centerSquareType": "none",
+        "startDate": "2026-04-01T00:00:00.000Z",
+        "endDate": "2026-04-30T23:59:59.000Z",
+        "status": "active",
+        "linesCompleted": 0,
+        "completedLineIds": [],
+        "isDeleted": false,
+        "spawnedFromTemplateId": null
+      },
+      "boardTasksOnBoard": [
+        {
+          "taskId": "d1",
+          "row": 0,
+          "col": 0
+        }
+      ],
+      "childrenByCompound": {},
+      "taskById": {
+        "root-1": {
+          "id": "root-1",
+          "type": "counting",
+          "isCompleted": false,
+          "isDeleted": false,
+          "operator": null,
+          "threshold": null,
+          "referencedBoardId": null,
+          "referencedTemplateId": null,
+          "achievementTrigger": null,
+          "requiredCount": null,
+          "maxCount": null,
+          "currentCount": 0,
+          "sharedCounterId": null
+        },
+        "d1": {
+          "id": "d1",
+          "type": "counting",
+          "isCompleted": false,
+          "isDeleted": false,
+          "operator": null,
+          "threshold": null,
+          "referencedBoardId": null,
+          "referencedTemplateId": null,
+          "achievementTrigger": null,
+          "requiredCount": null,
+          "maxCount": 3,
+          "currentCount": 0,
+          "sharedCounterId": "root-1"
+        }
+      },
+      "allBoards": [],
+      "windowContext": {
+        "eventsByTaskId": {
+          "root-1": [
+            {
+              "kind": "increment",
+              "occurredAt": "2026-04-10T12:00:00.000Z",
+              "delta": 2
+            },
+            {
+              "kind": "increment",
+              "occurredAt": "2026-04-20T12:00:00.000Z",
+              "delta": 1
+            }
+          ]
+        }
+      },
+      "expected": {
+        "boardId": "b1",
         "completedTasks": 1,
         "linesCompleted": 0,
         "completedLineIds": [],
@@ -4220,6 +4310,356 @@
         {
           "boardTaskId": "b1-d1",
           "taskId": "d1",
+          "row": 0,
+          "col": 0,
+          "idx": 0,
+          "isCompleted": true
+        }
+      ]
+    },
+    {
+      "name": "hub-linked-derived-root-event-after-board-endDate-excluded",
+      "board": {
+        "id": "b1",
+        "boardSize": 3,
+        "centerSquareType": "none",
+        "startDate": "2026-04-01T00:00:00.000Z",
+        "endDate": "2026-04-30T23:59:59.000Z",
+        "status": "active",
+        "linesCompleted": 0,
+        "completedLineIds": [],
+        "isDeleted": false,
+        "spawnedFromTemplateId": null
+      },
+      "boardTasksOnBoard": [
+        {
+          "taskId": "d1",
+          "row": 0,
+          "col": 0
+        }
+      ],
+      "childrenByCompound": {},
+      "taskById": {
+        "root-1": {
+          "id": "root-1",
+          "type": "counting",
+          "isCompleted": false,
+          "isDeleted": false,
+          "operator": null,
+          "threshold": null,
+          "referencedBoardId": null,
+          "referencedTemplateId": null,
+          "achievementTrigger": null,
+          "requiredCount": null,
+          "maxCount": null,
+          "currentCount": 0,
+          "sharedCounterId": null
+        },
+        "d1": {
+          "id": "d1",
+          "type": "counting",
+          "isCompleted": false,
+          "isDeleted": false,
+          "operator": null,
+          "threshold": null,
+          "referencedBoardId": null,
+          "referencedTemplateId": null,
+          "achievementTrigger": null,
+          "requiredCount": null,
+          "maxCount": 3,
+          "currentCount": 0,
+          "sharedCounterId": "root-1"
+        }
+      },
+      "allBoards": [],
+      "windowContext": {
+        "eventsByTaskId": {
+          "root-1": [
+            {
+              "kind": "increment",
+              "occurredAt": "2026-04-10T12:00:00.000Z",
+              "delta": 2
+            },
+            {
+              "kind": "increment",
+              "occurredAt": "2026-05-01T00:00:00.000Z",
+              "delta": 5
+            }
+          ]
+        }
+      },
+      "expected": {
+        "boardId": "b1",
+        "completedTasks": 0,
+        "linesCompleted": 0,
+        "completedLineIds": [],
+        "newBingos": [],
+        "lostBingos": []
+      },
+      "expectedCells": [
+        {
+          "boardTaskId": "b1-d1",
+          "taskId": "d1",
+          "row": 0,
+          "col": 0,
+          "idx": 0,
+          "isCompleted": false
+        }
+      ]
+    },
+    {
+      "name": "hub-linked-derived-compound-children-resolve-over-host-window-and-incomplete-latches-ignored",
+      "board": {
+        "id": "b1",
+        "boardSize": 3,
+        "centerSquareType": "none",
+        "startDate": "2026-04-01T00:00:00.000Z",
+        "endDate": "2026-04-30T23:59:59.000Z",
+        "status": "active",
+        "linesCompleted": 0,
+        "completedLineIds": [],
+        "isDeleted": false,
+        "spawnedFromTemplateId": null
+      },
+      "boardTasksOnBoard": [
+        {
+          "taskId": "comp",
+          "row": 0,
+          "col": 0
+        }
+      ],
+      "childrenByCompound": {
+        "comp": [
+          {
+            "compoundTaskId": "comp",
+            "childTaskId": "d1",
+            "isDeleted": false
+          },
+          {
+            "compoundTaskId": "comp",
+            "childTaskId": "d2",
+            "isDeleted": false
+          }
+        ]
+      },
+      "taskById": {
+        "root-1": {
+          "id": "root-1",
+          "type": "counting",
+          "isCompleted": false,
+          "isDeleted": false,
+          "operator": null,
+          "threshold": null,
+          "referencedBoardId": null,
+          "referencedTemplateId": null,
+          "achievementTrigger": null,
+          "requiredCount": null,
+          "maxCount": null,
+          "currentCount": 0,
+          "sharedCounterId": null
+        },
+        "comp": {
+          "id": "comp",
+          "type": "compound",
+          "isCompleted": true,
+          "isDeleted": false,
+          "operator": "AND",
+          "threshold": null,
+          "referencedBoardId": null,
+          "referencedTemplateId": null,
+          "achievementTrigger": null,
+          "requiredCount": null
+        },
+        "d1": {
+          "id": "d1",
+          "type": "counting",
+          "isCompleted": false,
+          "isDeleted": false,
+          "operator": null,
+          "threshold": null,
+          "referencedBoardId": null,
+          "referencedTemplateId": null,
+          "achievementTrigger": null,
+          "requiredCount": null,
+          "maxCount": 2,
+          "currentCount": 0,
+          "sharedCounterId": "root-1"
+        },
+        "d2": {
+          "id": "d2",
+          "type": "counting",
+          "isCompleted": true,
+          "isDeleted": false,
+          "operator": null,
+          "threshold": null,
+          "referencedBoardId": null,
+          "referencedTemplateId": null,
+          "achievementTrigger": null,
+          "requiredCount": null,
+          "maxCount": 10,
+          "currentCount": 0,
+          "sharedCounterId": "root-1"
+        }
+      },
+      "allBoards": [],
+      "windowContext": {
+        "eventsByTaskId": {
+          "root-1": [
+            {
+              "kind": "increment",
+              "occurredAt": "2026-04-05T12:00:00.000Z",
+              "delta": 2
+            },
+            {
+              "kind": "increment",
+              "occurredAt": "2026-05-02T12:00:00.000Z",
+              "delta": 20
+            }
+          ]
+        }
+      },
+      "expected": {
+        "boardId": "b1",
+        "completedTasks": 0,
+        "linesCompleted": 0,
+        "completedLineIds": [],
+        "newBingos": [],
+        "lostBingos": []
+      },
+      "expectedCells": [
+        {
+          "boardTaskId": "b1-comp",
+          "taskId": "comp",
+          "row": 0,
+          "col": 0,
+          "idx": 0,
+          "isCompleted": false
+        }
+      ]
+    },
+    {
+      "name": "hub-linked-derived-compound-children-resolve-over-host-window-or-complete",
+      "board": {
+        "id": "b1",
+        "boardSize": 3,
+        "centerSquareType": "none",
+        "startDate": "2026-04-01T00:00:00.000Z",
+        "endDate": "2026-04-30T23:59:59.000Z",
+        "status": "active",
+        "linesCompleted": 0,
+        "completedLineIds": [],
+        "isDeleted": false,
+        "spawnedFromTemplateId": null
+      },
+      "boardTasksOnBoard": [
+        {
+          "taskId": "comp",
+          "row": 0,
+          "col": 0
+        }
+      ],
+      "childrenByCompound": {
+        "comp": [
+          {
+            "compoundTaskId": "comp",
+            "childTaskId": "d1",
+            "isDeleted": false
+          },
+          {
+            "compoundTaskId": "comp",
+            "childTaskId": "d2",
+            "isDeleted": false
+          }
+        ]
+      },
+      "taskById": {
+        "root-1": {
+          "id": "root-1",
+          "type": "counting",
+          "isCompleted": false,
+          "isDeleted": false,
+          "operator": null,
+          "threshold": null,
+          "referencedBoardId": null,
+          "referencedTemplateId": null,
+          "achievementTrigger": null,
+          "requiredCount": null,
+          "maxCount": null,
+          "currentCount": 0,
+          "sharedCounterId": null
+        },
+        "comp": {
+          "id": "comp",
+          "type": "compound",
+          "isCompleted": true,
+          "isDeleted": false,
+          "operator": "OR",
+          "threshold": null,
+          "referencedBoardId": null,
+          "referencedTemplateId": null,
+          "achievementTrigger": null,
+          "requiredCount": null
+        },
+        "d1": {
+          "id": "d1",
+          "type": "counting",
+          "isCompleted": false,
+          "isDeleted": false,
+          "operator": null,
+          "threshold": null,
+          "referencedBoardId": null,
+          "referencedTemplateId": null,
+          "achievementTrigger": null,
+          "requiredCount": null,
+          "maxCount": 2,
+          "currentCount": 0,
+          "sharedCounterId": "root-1"
+        },
+        "d2": {
+          "id": "d2",
+          "type": "counting",
+          "isCompleted": true,
+          "isDeleted": false,
+          "operator": null,
+          "threshold": null,
+          "referencedBoardId": null,
+          "referencedTemplateId": null,
+          "achievementTrigger": null,
+          "requiredCount": null,
+          "maxCount": 10,
+          "currentCount": 0,
+          "sharedCounterId": "root-1"
+        }
+      },
+      "allBoards": [],
+      "windowContext": {
+        "eventsByTaskId": {
+          "root-1": [
+            {
+              "kind": "increment",
+              "occurredAt": "2026-04-05T12:00:00.000Z",
+              "delta": 2
+            },
+            {
+              "kind": "increment",
+              "occurredAt": "2026-05-02T12:00:00.000Z",
+              "delta": 20
+            }
+          ]
+        }
+      },
+      "expected": {
+        "boardId": "b1",
+        "completedTasks": 1,
+        "linesCompleted": 0,
+        "completedLineIds": [],
+        "newBingos": [],
+        "lostBingos": []
+      },
+      "expectedCells": [
+        {
+          "boardTaskId": "b1-comp",
+          "taskId": "comp",
           "row": 0,
           "col": 0,
           "idx": 0,
@@ -4759,7 +5199,7 @@
   ],
   "expandToWindowStampedDerived": [
     {
-      "name": "root-expands-to-its-live-window-stamped-rows-only",
+      "name": "root-expands-to-every-live-linked-row-window-stamped-and-hub-linked-alike",
       "ids": [
         "root-1"
       ],
@@ -4831,6 +5271,8 @@
       "expected": [
         "d1",
         "d2",
+        "hand-timeboxed",
+        "hub",
         "root-1"
       ]
     },
@@ -4909,6 +5351,8 @@
         "d1",
         "d2",
         "d3",
+        "hand-timeboxed",
+        "hub",
         "root-1",
         "root-2"
       ]

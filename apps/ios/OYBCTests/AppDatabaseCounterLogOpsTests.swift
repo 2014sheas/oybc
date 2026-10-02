@@ -159,7 +159,9 @@ final class AppDatabaseCounterLogOpsTests: XCTestCase {
             "status": BoardStatus.active.rawValue, "boardSize": 3,
             "timeframe": Timeframe.monthly.rawValue,
             "startDate": "2026-06-01T00:00:00.000",
-            "endDate": "2026-06-30T23:59:59.999",
+            // Open window: the credit list only names boards a log can still
+            // change (owner rule 2026-10-01 — not closed, not ended).
+            "endDate": "2099-12-31T23:59:59.999",
             "centerSquareType": CenterSquareType.free.rawValue,
             "isRandomized": false, "totalTasks": 9, "completedTasks": 0,
             "linesCompleted": 0,

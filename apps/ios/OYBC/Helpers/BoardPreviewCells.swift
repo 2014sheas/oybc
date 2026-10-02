@@ -146,10 +146,11 @@ enum BoardPreviewCells {
                 } else if task.sharedCounterId != nil {
                     // Linked counters: a window-stamped row resolves from its
                     // ROOT's events in its own window (the kernel's rule, docs
-                    // §Derived-task carve-out amended 2026-09-23); a hub-linked
-                    // row keeps its propagation-stamped latch.
+                    // §Derived-task carve-out amended 2026-09-23); any other
+                    // linked row reads THIS board's window (owner rule 2026-10-01).
                     completed = resolveLinkedCounterDisplay(
-                        task: task, eventsByTaskId: eventsByTaskId
+                        task: task, eventsByTaskId: eventsByTaskId,
+                        window: LinkedCounterWindow(board: board)
                     ).isCompleted
                 } else {
                     completed = resolveTaskWindowState(

@@ -122,7 +122,10 @@ export function resolveBoardSourceSupply(
     // amended 2026-09-23) — never the one-way latch, which a later window's
     // logs can set. Its window count is deliberately NOT fed to the prefill
     // (`windowCountByTaskId`): that map stays event-owning counters only.
-    const derived = resolveDerivedCounterWindowState(task, eventsByTaskId);
+    const derived = resolveDerivedCounterWindowState(task, eventsByTaskId, {
+      windowStart: board.startDate,
+      windowEnd: boardWindowEnd(board),
+    });
     if (derived) {
       isDone = derived.isCompleted;
     } else if (isEventOwningTask(task)) {

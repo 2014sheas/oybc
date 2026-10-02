@@ -27,9 +27,11 @@ struct TaskWindowState: Equatable {
 /// "evaluateCompound gains a window-context parameter"). When present,
 /// primitive children resolve against `windowStart` via
 /// `resolveTaskWindowState`; window-stamped derived counters resolve from
-/// their root's events (`resolveDerivedCounterWindowState`); hub-linked
-/// derived-counting children fall back to their lifetime cache (the carve-out); nested compounds inherit the SAME
-/// `windowStart` / `windowEnd` (host-window inheritance). Mirrors the TS `CompoundWindowContext`.
+/// their root's events (`resolveDerivedCounterWindowState`); any other linked
+/// counting child resolves over the host window the same way (owner rule
+/// 2026-10-01 — only a context with no `windowStart` still reads such a
+/// child's latch); nested compounds inherit the SAME `windowStart` /
+/// `windowEnd` (host-window inheritance). Mirrors the TS `CompoundWindowContext`.
 struct CompoundWindowContext {
     /// Window lower bound (`board.startDate`), or `nil` for lifetime.
     let windowStart: String?
@@ -235,7 +237,20 @@ func lateLogOccurredAt(board: Board, nowIso: String) -> String {
 ///     are ignored internally.
 /// - Returns: `{ isCompleted, count }` with `count` the clamped in-window sum.
 func resolveWindowStampedDerivedState(task: Task, rootEvents: [TaskEvent]) -> TaskWindowState {
-    windowStampedDerivedState(task: task, rootEvents: rootEvents, sealedBound: nil)
+    windowStampedDerivedState(
+        startDate: task.startDate, endDate: task.endDate, maxCount: task.maxCount,
+        rootEvents: rootEvents, sealedBound: nil
+    )
+}
+
+/// A board's window as a linked counting square is evaluated against it:
+/// `[startDate, endDate]`, inclusive both ends (`endDate == nil` = open-ended).
+/// The shape a display / hub reader hands `resolveLinkedCounterDisplay` for a
+/// row that is NOT window-stamped — the placing board's own window. Twin of
+/// the TS `LinkedCounterWindow`.
+struct LinkedCounterWindow: Equatable {
+    let startDate: String
+    let endDate: String?
 }
 
 /// Shared body of `resolveWindowStampedDerivedState` and the sealed display
@@ -252,21 +267,26 @@ func resolveWindowStampedDerivedState(task: Task, rootEvents: [TaskEvent]) -> Ta
 /// with `occurredAt > sealedBound` (the `boundWindowContextAtSeal` rule).
 ///
 /// - Parameters:
-///   - task: The window-stamped derived counter.
+///   - startDate: The window's inclusive lower bound (a row's own stamp, or
+///     the placing board's `startDate`).
+///   - endDate: The window's inclusive upper bound, or `nil` for open-ended.
+///   - maxCount: The per-window target (`task.maxCount`).
 ///   - rootEvents: The ROOT task's events.
 ///   - sealedBound: The parsed `sealedAt` of the row's board, or `nil`.
 /// - Returns: `{ isCompleted, count }` with `count` the clamped in-window sum.
 private func windowStampedDerivedState(
-    task: Task,
+    startDate: String?,
+    endDate: String?,
+    maxCount: Int?,
     rootEvents: [TaskEvent],
     sealedBound: Date?
 ) -> TaskWindowState {
     /// Clamped-below in-window sum; 0 when the bounds don't parse.
     func windowSum() -> Int {
-        guard let startDate = task.startDate, !startDate.isEmpty,
+        guard let startDate, !startDate.isEmpty,
               let lower = DateFormatting.parseISO(startDate) else { return 0 }
         var upper: Date?
-        if let endDate = task.endDate {
+        if let endDate {
             // Present but unparseable → nothing is in-window.
             guard let parsed = DateFormatting.parseISO(endDate) else { return 0 }
             upper = parsed
@@ -282,29 +302,57 @@ private func windowStampedDerivedState(
         return sum
     }
     let count = max(0, windowSum())
-    return TaskWindowState(isCompleted: count >= (task.maxCount ?? 0), count: count)
+    return TaskWindowState(isCompleted: count >= (maxCount ?? 0), count: count)
 }
 
-/// Kernel dispatch for the window-stamped derived-counter branch: a `.counting`
-/// row that `BoardSources.isWindowStampedDerived` identifies resolves from its
-/// root's events via `resolveWindowStampedDerivedState`; anything else returns
-/// `nil` so the caller falls through (event-owning → `resolveTaskWindowState`;
-/// hub-linked derived with no `startDate` → the lifetime latch, unchanged).
+/// Kernel dispatch for the derived-counter branch: a `.counting` row with a
+/// `sharedCounterId` resolves from its ROOT's increment events over the window
+/// that applies to it; anything else returns `nil` so the caller falls through
+/// (event-owning → `resolveTaskWindowState`).
+///
+/// Which window (owner rule 2026-10-01 — a counting square on a board accounts
+/// ONLY for the counter's logs inside that board's window):
+///   - Window-stamped (`BoardSources.isWindowStampedDerived`) → the row's OWN
+///     stamped `[startDate, endDate]`, as before.
+///   - Any other linked row (hub-linked, or windowed but not wizard-born) WITH
+///     a context window (`windowStart != nil`) → the CONTEXT window
+///     `[windowStart, windowEnd]` — the placing board's. The lifetime-latch
+///     carve-out these rows used to take on a board is retired.
+///   - No context window (a lifetime / library reader) → `nil`: the caller
+///     keeps its latch read for that context-less case only.
 ///
 /// A root with no entry in `eventsByTaskId` resolves as zero events — never as
 /// a latch fallback. Every production context builder loads the workspace's
 /// non-deleted events keyed by `taskId`, and the sealed context drops only keys
-/// whose events were all bounded away. The only latch fallback is a
-/// context-less (lifetime) resolution, handled by callers before this branch.
+/// whose events were all bounded away (its bound is already applied).
 ///
 /// Mirrors the TS `resolveDerivedCounterWindowState`.
+///
+/// - Parameters:
+///   - task: The task being resolved.
+///   - eventsByTaskId: The window context's grouped events.
+///   - windowStart: The evaluating board's window start, or `nil` (context-less).
+///   - windowEnd: Its inclusive upper bound, or `nil` for open-ended.
+/// - Returns: The derived window state, or `nil` when `task` is not a linked
+///   counter, or is a non-window-stamped one with no context window.
 func resolveDerivedCounterWindowState(
     task: Task,
-    eventsByTaskId: [String: [TaskEvent]]
+    eventsByTaskId: [String: [TaskEvent]],
+    windowStart: String? = nil,
+    windowEnd: String? = nil
 ) -> TaskWindowState? {
-    guard task.type == .counting, BoardSources.isWindowStampedDerived(task),
-          let rootId = task.sharedCounterId else { return nil }
-    return resolveWindowStampedDerivedState(task: task, rootEvents: eventsByTaskId[rootId] ?? [])
+    guard task.type == .counting, let rootId = task.sharedCounterId else { return nil }
+    let rootEvents = eventsByTaskId[rootId] ?? []
+    if BoardSources.isWindowStampedDerived(task) {
+        return resolveWindowStampedDerivedState(task: task, rootEvents: rootEvents)
+    }
+    // Owner rule 2026-10-01: a linked row that is NOT window-stamped resolves
+    // over the CONTEXT window — the placing board's — never its lifetime latch.
+    guard let windowStart else { return nil }
+    return windowStampedDerivedState(
+        startDate: windowStart, endDate: windowEnd, maxCount: task.maxCount,
+        rootEvents: rootEvents, sealedBound: nil
+    )
 }
 
 /// What a LINKED (derived) counting square or row SHOWS: its displayed count
@@ -319,9 +367,16 @@ func resolveDerivedCounterWindowState(
 ///   `sealedAt` (the row's board is sealed) root events after it are dropped
 ///   first, matching `boundWindowContextAtSeal`; an unparseable `sealedAt`
 ///   applies no bound. Overshoot is shown, never high-clamped.
-/// - Hub-linked (no `startDate`) or no event map: `currentCount − baseline`
-///   (low-clamped) for the count and the propagation-stamped latch
-///   `task.isCompleted` for completion — the kernel's own carve-out.
+/// - Any other linked row (hub-linked, or windowed but not wizard-born) with
+///   an event map AND a `window` — the placing board's `[startDate, endDate]`
+///   (owner rule 2026-10-01): the ROOT's increment sum inside THAT window,
+///   bounded at `sealedAt` the same way. The kernel resolves the cell over the
+///   same context window (`resolveDerivedCounterWindowState`), so display and
+///   stats agree here too. The row's own `startDate` (if any) is NOT read.
+/// - No event map, or a non-window-stamped row with no `window` (library /
+///   lifetime readers): `currentCount − baseline` (low-clamped) for the count
+///   and the propagation-stamped latch `task.isCompleted` for completion — the
+///   only place the latch is still read for a linked row.
 ///
 /// Mirrors the TS `resolveLinkedCounterDisplay`; pinned by
 /// `taskWindowStateVectors.json#linkedCounterDisplay`.
@@ -330,18 +385,26 @@ func resolveDerivedCounterWindowState(
 ///   - task: The linked counting task being rendered.
 ///   - eventsByTaskId: Non-deleted events grouped by `taskId`, or `nil`.
 ///   - sealedAt: The row's board `sealedAt`, when that board is sealed.
+///   - window: The placing board's window, for a row that is not
+///     window-stamped; ignored for a window-stamped row.
 /// - Returns: The displayed count and completion.
 func resolveLinkedCounterDisplay(
     task: Task,
     eventsByTaskId: [String: [TaskEvent]]?,
-    sealedAt: String? = nil
+    sealedAt: String? = nil,
+    window: LinkedCounterWindow? = nil
 ) -> DeriveDisplayedCountResult {
-    if let eventsByTaskId, task.type == .counting, BoardSources.isWindowStampedDerived(task),
-       let rootId = task.sharedCounterId {
+    if let eventsByTaskId, task.type == .counting, let rootId = task.sharedCounterId,
+       BoardSources.isWindowStampedDerived(task) || window != nil {
+        let stamped = BoardSources.isWindowStampedDerived(task)
         // An unparseable `sealedAt` applies no bound (parsed once, not per event).
         let sealedBound = sealedAt.flatMap { DateFormatting.parseISO($0) }
         let state = windowStampedDerivedState(
-            task: task, rootEvents: eventsByTaskId[rootId] ?? [], sealedBound: sealedBound
+            startDate: stamped ? task.startDate : window?.startDate,
+            endDate: stamped ? task.endDate : window?.endDate,
+            maxCount: task.maxCount,
+            rootEvents: eventsByTaskId[rootId] ?? [],
+            sealedBound: sealedBound
         )
         return DeriveDisplayedCountResult(displayed: state.count, isCompleted: state.isCompleted)
     }
@@ -353,26 +416,28 @@ func resolveLinkedCounterDisplay(
     return DeriveDisplayedCountResult(displayed: shown.displayed, isCompleted: task.isCompleted)
 }
 
-/// Cascade reachability for window-stamped derived counters: `ids` UNION the
-/// ids of every live window-stamped derived row
-/// (`BoardSources.isWindowStampedDerived`) whose `sharedCounterId` is in `ids`.
-/// A root is never placed, but its window-stamped rows resolve FROM its
-/// events, so a changed root must reach the boards placing them — in the LIVE
-/// pull cascade and the SEALED re-derivation alike. Hub-linked rows are not
-/// added (they resolve from their latch). Non-root ids pass through.
+/// Cascade reachability for linked (derived) counters: `ids` UNION the ids
+/// of every LIVE row whose `sharedCounterId` is in `ids` — window-stamped AND
+/// hub-linked alike (owner rule 2026-10-01; before it, only
+/// `BoardSources.isWindowStampedDerived` rows were added). A root is never
+/// placed, but every linked row resolves FROM its events on a board (its own
+/// window, or the placing board's), so a changed root must reach the boards
+/// placing any of them — in the LIVE cascade, the SEALED re-derivation and
+/// the increment cascade alike. Non-root ids pass through. (The name predates
+/// the widening and is kept for its call sites.)
 ///
 /// Mirrors the TS `expandToWindowStampedDerived`.
 ///
 /// - Parameters:
 ///   - ids: The task ids whose events changed.
 ///   - tasks: Candidate rows (any superset of the linked rows).
-/// - Returns: `ids` plus the reachable window-stamped derived row ids.
+/// - Returns: `ids` plus the reachable linked row ids.
 func expandToWindowStampedDerived<S: Sequence>(ids: Set<String>, tasks: S) -> Set<String> where S.Element == Task {
     var out = ids
     guard !ids.isEmpty else { return out }
     for t in tasks where !t.isDeleted {
-        guard let root = t.sharedCounterId, ids.contains(root) else { continue }
-        if BoardSources.isWindowStampedDerived(t) { out.insert(t.id) }
+        guard let root = t.sharedCounterId, !root.isEmpty, ids.contains(root) else { continue }
+        out.insert(t.id)
     }
     return out
 }

@@ -353,17 +353,20 @@ extension BoardSources {
         let derivedCompounds: [DerivedCompoundDraft]
     }
 
-    /// A member is already a window-stamped derived counter when it has both marks.
+    /// A member is LINKED to a shared counter — a window-stamped derived
+    /// counter (both marks) OR a hub-linked copy (`sharedCounterId` alone).
     ///
-    /// Deliberately looser than the exported
-    /// ``isWindowStampedDerived(_:)``, which also requires
-    /// `createdInWizard`: a PLANNED member is re-minted for the new window on
-    /// the strength of the two marks alone, while the exported predicate
-    /// identifies a STORED row as one of our per-window derived counters and
-    /// wants all three. (Renamed from `isWindowStampedDerived` in B2 so the
-    /// exported name is free — same rename as the TS twin.)
-    private static func isWindowStampedMember(_ task: Task) -> Bool {
-        !(task.sharedCounterId ?? "").isEmpty && !(task.startDate ?? "").isEmpty
+    /// Owner rule 2026-10-01: a counting square on a board accounts only for
+    /// the counter's logs inside that board's window, so EVERY linked
+    /// hand-added member is re-minted as a window-stamped row for the window
+    /// being planned (before, only an already-window-stamped member or a
+    /// vary > 0 roll minted). Deliberately looser than the exported
+    /// ``isWindowStampedDerived(_:)``, which also requires `createdInWizard`
+    /// — a PLANNED member is judged on `sharedCounterId` alone, while the
+    /// exported predicate identifies a STORED row and wants all three. Twin
+    /// of the TS `isLinkedMember`.
+    private static func isLinkedMember(_ task: Task) -> Bool {
+        !(task.sharedCounterId ?? "").isEmpty
     }
 
     /// A counting task's own goal, or `nil` when it is goal-less (an
@@ -526,14 +529,20 @@ extension BoardSources {
 
             if task.type == .counting {
                 guard let goal = goalOf(task) else {
+                    // Goal-less (an accumulator — including a goal-less
+                    // LINKED member): nothing to mint a per-window target
+                    // from, so it is placed as-is. Documented edge of the
+                    // 2026-10-01 rule; `TaskSchema` requires a goal on every
+                    // non-hub-born counting task, so this is defensive.
                     placementIds.append(id)
                     continue
                 }
                 if isManual {
                     let vary = manualTaskVary[id] ?? .off
-                    // A member that is ALREADY window-stamped is re-minted
-                    // for this window.
-                    if isWindowStampedMember(task) {
+                    // A LINKED member (window-stamped OR hub-linked) is ALWAYS
+                    // minted for this window — owner rule 2026-10-01. Vary off
+                    // consumes no rng.
+                    if isLinkedMember(task) {
                         placementIds.append(mint(task, replacesId: id, target: goal, vary: vary).id)
                         continue
                     }

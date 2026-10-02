@@ -175,9 +175,17 @@ describe('window-stamped derived cells render what the kernel resolves (items 4 
     expect(metHtml).toMatch(DONE_CLASS);
   });
 
-  it('a hub-linked member (no startDate) keeps the latch and currentCount − baseline', () => {
+  it('a hub-linked member (no window stamp) counts the root\'s increments inside the BOARD window, never its latch (owner rule 2026-10-01)', () => {
     const hub = baseTask({ id: 'hub', sharedCounterId: ROOT, maxCount: 10, baseline: 5, currentCount: 20, isCompleted: true });
-    expect(taskToSquareState(hub, undefined, { ...taskMap, hub }, {}, ctx(EVENTS))).toMatchObject({
+    // Board window [WS, WE]: only the +3 counts; the latch (true) and
+    // `currentCount − baseline` (15) are not read.
+    const windowed = { ...ctx(EVENTS), windowEnd: WE };
+    expect(taskToSquareState(hub, undefined, { ...taskMap, hub }, {}, windowed)).toMatchObject({
+      isCompleted: false,
+      currentCount: 3,
+    });
+    // Context-less (library) reads keep the lifetime mirror.
+    expect(taskToSquareState(hub, undefined, { ...taskMap, hub }, {})).toMatchObject({
       isCompleted: true,
       currentCount: 15,
     });

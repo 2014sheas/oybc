@@ -992,6 +992,116 @@
           ]
         }
       ]
+    },
+    {
+      "name": "hub-linked-placed-member-logs-its-board-window-sum-unplaced-member-keeps-lifetime-math",
+      "note": "Owner rule 2026-10-01. The fixture board window is the runner's default [2026-02-01T12:00Z, 2026-02-07T12:00Z]. `hub` is a hub-linked member (no startDate) PLACED on an active board: logged = root increments inside that board window (+3 on Feb 3); the +17 on Feb 10 falls out (lifetime math would show 20 - 5 = 15, met). `lib` is the same kind of row with NO placement: no board, no window, so it keeps lifetime - baseline = 15 and met. Member order: source first, then boardName (\"\" sorts before \"Board hub\").",
+      "tasks": [
+        {
+          "id": "root",
+          "title": "Counter root",
+          "currentCount": 20,
+          "maxCount": null,
+          "sharedCounterId": null,
+          "baseline": null,
+          "isDeleted": false
+        },
+        {
+          "id": "hub",
+          "title": "Counter hub",
+          "currentCount": 20,
+          "maxCount": 10,
+          "sharedCounterId": "root",
+          "baseline": 5,
+          "isDeleted": false
+        },
+        {
+          "id": "lib",
+          "title": "Counter lib",
+          "currentCount": 20,
+          "maxCount": 10,
+          "sharedCounterId": "root",
+          "baseline": 5,
+          "isDeleted": false
+        }
+      ],
+      "boards": [
+        {
+          "id": "b-hub",
+          "name": "Board hub",
+          "status": "active",
+          "isDeleted": false
+        }
+      ],
+      "boardTasks": [
+        {
+          "taskId": "hub",
+          "boardId": "b-hub"
+        }
+      ],
+      "eventsByTaskId": {
+        "root": [
+          {
+            "id": "e1",
+            "kind": "increment",
+            "delta": 3,
+            "occurredAt": "2026-02-03T12:00:00.000Z",
+            "isDeleted": false
+          },
+          {
+            "id": "e2",
+            "kind": "increment",
+            "delta": 17,
+            "occurredAt": "2026-02-10T12:00:00.000Z",
+            "isDeleted": false
+          }
+        ]
+      },
+      "expected": [
+        {
+          "counterId": "root",
+          "name": "Counter root",
+          "lifetime": 20,
+          "taskCount": 3,
+          "boardCount": 1,
+          "activeTaskCount": 1,
+          "tasks": [
+            {
+              "taskId": "root",
+              "isSource": true,
+              "boardId": null,
+              "boardName": null,
+              "goal": 0,
+              "logged": 20,
+              "met": false,
+              "over": 0,
+              "isActive": false
+            },
+            {
+              "taskId": "lib",
+              "isSource": false,
+              "boardId": null,
+              "boardName": null,
+              "goal": 10,
+              "logged": 15,
+              "met": true,
+              "over": 5,
+              "isActive": false
+            },
+            {
+              "taskId": "hub",
+              "isSource": false,
+              "boardId": "b-hub",
+              "boardName": "Board hub",
+              "goal": 10,
+              "logged": 3,
+              "met": false,
+              "over": 0,
+              "isActive": true
+            }
+          ]
+        }
+      ]
     }
   ]
 }
