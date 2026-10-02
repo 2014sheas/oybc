@@ -6,7 +6,8 @@ import SwiftUI
 /// mode (Phase 2 — Edit tasks sub-mode).
 ///
 /// This sheet edits **only** the subset of task fields exposed in the board-edit
-/// flow: name, type (Simple ⇄ Counting only), and type-specific counters.
+/// flow: name, type (Simple / Counting / Compound), type-specific counters and,
+/// for a compound, its rule + sub-tasks (the shared `RisoCompoundEditFieldsView`).
 /// Nothing is written to the database on Done — the parent (`BoardPlayView`)
 /// stages a `StagedTaskOverride` and commits on "Save changes".
 ///
@@ -17,10 +18,11 @@ import SwiftUI
 ///     override into or out of Achievement too
 ///     (`BoardPlayViewModel.boardEditAllowsTypeSwitch`).
 ///   - The "Free" type chip is Phase 2b (center conversion) — omitted here.
-///   - No switching into or out of Compound: the type picker offers Simple /
-///     Counting only and is hidden for a compound (whose sub-tasks and rule
-///     are edited from Task Detail). The commit path ignores such an override
-///     too (`BoardPlayViewModel+EditCommit`).
+///   - Switching INTO Compound is allowed from Simple / Counting (the
+///     picker's third segment opens the compound editor); never OUT of it:
+///     a compound's type is fixed (no picker) and its editor is always open.
+///     The commit path enforces the same rule
+///     (`BoardPlayViewModel.boardEditAllowsTypeSwitch`).
 ///   - The "everywhere" hint is always visible so the user understands they are
 ///     editing the task globally, not cloning it per-square.
 ///
@@ -34,8 +36,40 @@ struct SquareEditTaskSheet: View {
     /// Task to edit. Caller pre-applies any existing `StagedTaskOverride` so
     /// the sheet opens with the most recent staged state.
     let task: Task
+    /// The task as STORED (or as its pending payload holds it) — before any
+    /// staged override. Decides whether the type picker shows and what
+    /// "Compound" means (a conversion vs an edit), and supplies the counting
+    /// fields when the user switches back to Counting. nil ⇒ `task` itself.
+    var original: Task? = nil
+    /// The compound rule + sub-tasks already STAGED for this task (its
+    /// `StagedTaskOverride.compound`). When set the editor reopens on it, so
+    /// reopen-then-Done re-stages the same structure instead of dropping it.
+    var stagedCompound: TaskEditPatch? = nil
+    /// An existing compound's ordered sub-tasks, when the caller already holds
+    /// them (snapshot fixtures; a still-pending compound whose children are
+    /// not in the DB yet). nil ⇒ `loadInputs` supplies them.
+    var compoundChildren: [Task]? = nil
+    /// Sub-task quick-add inputs (browsable library + every live link).
+    var libraryTasks: [Task] = []
+    var allLinks: [CompoundChild] = []
+    var libraryInputsState: RisoCompoundEditFieldsView.LibraryInputsState = .loaded
+    /// Optional async loader the presenter supplies (reads through the
+    /// injected database); results replace the props above on appear.
+    var loadInputs: (() async -> CompoundInputs)? = nil
     let onDone: (Patch) -> Void
     let onCancel: () -> Void
+
+    /// What `loadInputs` returns.
+    struct CompoundInputs {
+        /// The compound's ordered live sub-tasks; nil keeps the current seed.
+        var children: [Task]?
+        var libraryTasks: [Task]
+        var allLinks: [CompoundChild]
+        /// False ⇒ the library inputs failed to load (editor still usable).
+        var libraryLoaded: Bool = true
+        /// Non-nil ⇒ the sub-tasks failed to load (shown, Done stays blocked).
+        var childrenError: String? = nil
+    }
 
     // MARK: - Patch
 
@@ -49,6 +83,11 @@ struct SquareEditTaskSheet: View {
         var unit: String
         /// nil = no valid goal entered (non-counting or blank).
         var maxCount: Int?
+        /// Compound rule + sub-tasks — non-nil for a conversion INTO Compound
+        /// and for an EDITED existing compound (an untouched one stays nil so
+        /// a stored-invalid compound can still be renamed). Title is the
+        /// sheet's Title field.
+        var compound: TaskEditPatch? = nil
     }
 
     // MARK: - Local state
@@ -58,23 +97,129 @@ struct SquareEditTaskSheet: View {
     @State private var action: String
     @State private var unit: String
     @State private var maxCountStr: String
+    // Compound editor draft (rule + sub-tasks). nil only while an EXISTING
+    // compound's sub-tasks are still loading. The draft's own `title` is
+    // ignored — the Title field is the single source.
+    @State private var compoundDraft: TaskEditPatch?
+    /// What the editor opened with — an existing compound submits only an
+    /// edited structure.
+    @State private var compoundBaseline: TaskEditPatch?
+    /// True when the editor was seeded from a STAGED compound — Done then
+    /// always re-stages the draft (never overwrites the override with nil).
+    @State private var seededFromStaged = false
+    @State private var compoundLoadError: String?
+    @State private var pickerLibraryTasks: [Task]
+    @State private var pickerLinks: [CompoundChild]
+    @State private var pickerInputsState: RisoCompoundEditFieldsView.LibraryInputsState
 
     // MARK: - Init
 
     init(
         task: Task,
+        original: Task? = nil,
+        stagedCompound: TaskEditPatch? = nil,
+        compoundChildren: [Task]? = nil,
+        libraryTasks: [Task] = [],
+        allLinks: [CompoundChild] = [],
+        libraryInputsState: RisoCompoundEditFieldsView.LibraryInputsState = .loaded,
+        loadInputs: (() async -> CompoundInputs)? = nil,
+        startingType: TaskType? = nil,
         onDone: @escaping (Patch) -> Void,
         onCancel: @escaping () -> Void
     ) {
         self.task = task
+        self.original = original
+        self.stagedCompound = stagedCompound
+        self.compoundChildren = compoundChildren
+        self.libraryTasks = libraryTasks
+        self.allLinks = allLinks
+        self.libraryInputsState = libraryInputsState
+        self.loadInputs = loadInputs
         self.onDone = onDone
         self.onCancel = onCancel
 
         _title       = State(initialValue: task.title)
-        _type        = State(initialValue: Self.initialType(for: task))
-        _action      = State(initialValue: task.action ?? "")
-        _unit        = State(initialValue: task.unit ?? "")
-        _maxCountStr = State(initialValue: task.maxCount.map { String($0) } ?? "")
+        // `startingType` pre-selects a segment (snapshot fixtures render the
+        // converted-Compound state without driving a tap); production leaves nil.
+        _type        = State(initialValue: startingType ?? Self.initialType(for: task))
+        // Counting fields seed from the merged task while it is Counting (it
+        // carries any staged edit), else from the ORIGINAL — so switching back
+        // to Counting offers the stored values, not blanks.
+        let countingSource = task.type == .counting ? task : (original ?? task)
+        _action      = State(initialValue: countingSource.action ?? "")
+        _unit        = State(initialValue: countingSource.unit ?? "")
+        _maxCountStr = State(initialValue: countingSource.maxCount.map { String($0) } ?? "")
+        _pickerLibraryTasks = State(initialValue: libraryTasks)
+        _pickerLinks = State(initialValue: allLinks)
+        _pickerInputsState = State(initialValue: libraryInputsState)
+        let seed = Self.compoundSeed(task: task, original: original, staged: stagedCompound, children: compoundChildren)
+        _compoundDraft = State(initialValue: seed.draft)
+        _compoundBaseline = State(initialValue: seed.baseline)
+        _seededFromStaged = State(initialValue: seed.fromStaged)
+    }
+
+    /// What the compound editor opens with.
+    struct CompoundSeed {
+        /// nil only while an EXISTING compound's sub-tasks are still loading.
+        var draft: TaskEditPatch?
+        /// The stored structure an unedited existing compound is compared to.
+        var baseline: TaskEditPatch?
+        /// True ⇒ seeded from a STAGED compound (Done always re-stages it).
+        var fromStaged: Bool
+    }
+
+    /// The editor's initial structure. A STAGED compound (a conversion or an
+    /// edited existing compound being reopened) wins over the stored / pending
+    /// task, so reopen shows — and Done re-stages — what was staged; else an
+    /// existing compound seeds from its children (nil until loaded), and a
+    /// Simple / Counting task starts from the default empty "all" rule.
+    ///
+    /// - Parameters:
+    ///   - task: The override-merged task.
+    ///   - original: The task as stored / pending (nil ⇒ `task`).
+    ///   - staged: The override's staged compound, if any.
+    ///   - children: An existing compound's ordered sub-tasks, if held.
+    static func compoundSeed(task: Task, original: Task?, staged: TaskEditPatch?, children: [Task]?) -> CompoundSeed {
+        if let staged { return CompoundSeed(draft: staged, baseline: nil, fromStaged: true) }
+        if (original ?? task).type == .compound {
+            guard let children else { return CompoundSeed(draft: nil, baseline: nil, fromStaged: false) }
+            let seeded = EditTaskSheet.seedCompoundDraft(task: task, children: children)
+            return CompoundSeed(draft: seeded, baseline: seeded, fromStaged: false)
+        }
+        return CompoundSeed(draft: newCompoundDraft(for: task), baseline: nil, fromStaged: false)
+    }
+
+    /// The compound structure Done submits for the chosen `type`, or nil.
+    /// A conversion INTO Compound, or an editor reopened on a staged compound,
+    /// always submits the draft; an existing compound submits only an edited
+    /// structure (so a stored-invalid one can still be renamed).
+    static func compoundSubmission(
+        type: TaskType, originalType: TaskType, seededFromStaged: Bool,
+        baseline: TaskEditPatch?, draft: TaskEditPatch?, title: String
+    ) -> TaskEditPatch? {
+        guard type == .compound else { return nil }
+        if originalType != .compound || seededFromStaged {
+            guard var d = draft else { return nil }
+            d.title = title.trimmingCharacters(in: .whitespacesAndNewlines)
+            return d
+        }
+        return EditTaskSheet.compoundSubmission(baseline: baseline, draft: draft, title: title)
+    }
+
+    /// Whether the Simple / Counting / Compound picker shows: only for a task
+    /// that may still switch type (never a compound, an achievement or a
+    /// linked counter).
+    static func showsTypePicker(task: Task, original: Task?) -> Bool {
+        let t = (original ?? task).type
+        return (t == .normal || t == .counting) && task.sharedCounterId == nil
+    }
+
+    /// The empty compound structure a Simple / Counting task starts from when
+    /// the user picks Compound (default "all" rule, no sub-tasks).
+    static func newCompoundDraft(for task: Task) -> TaskEditPatch {
+        var draft = TaskEditPatch(title: task.title)
+        draft.operatorType = .and
+        return draft
     }
 
     /// The type the sheet's local state is seeded with (and therefore the
@@ -88,26 +233,83 @@ struct SquareEditTaskSheet: View {
         task.type
     }
 
-    /// Whether the Simple / Counting type picker is shown — only for a task
-    /// that may switch between them (never a compound or an achievement).
-    private var showsTypePicker: Bool {
-        task.type == .normal || task.type == .counting
-    }
+    /// Whether the Simple / Counting / Compound type picker is shown — only
+    /// for a task that may still switch type (never a compound or an
+    /// achievement).
+    private var showsTypePicker: Bool { Self.showsTypePicker(task: task, original: original) }
+
+    /// The task's stored (pre-override) type.
+    private var originalType: TaskType { (original ?? task).type }
 
     // MARK: - Validation
 
     /// Done is enabled iff:
     ///   - title is non-empty (all types).
     ///   - counting: goal is a positive integer AND unit is non-empty.
+    ///   - compound: the editor has loaded and, for a conversion (or an EDITED
+    ///     existing compound), `TaskEditPatch.validate(type: .compound)` passes.
+    ///     The link guard (self / duplicate / loop) runs at Save; the editor
+    ///     only offers eligible library tasks.
     private var isValid: Bool {
         let trimTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimTitle.isEmpty else { return false }
+        if type == .compound { return !isCompoundBlocked }
         if type == .counting {
             let goalOK = (Int(maxCountStr.trimmingCharacters(in: .whitespaces)) ?? 0) > 0
             let unitOK = !unit.trimmingCharacters(in: .whitespaces).isEmpty
             return goalOK && unitOK
         }
         return true
+    }
+
+    // MARK: - Compound state
+
+    /// The edited structure titled from the Title field, or nil while loading.
+    private var titledDraft: TaskEditPatch? {
+        guard var d = compoundDraft else { return nil }
+        d.title = title
+        return d
+    }
+
+    /// Whether a conversion is in progress (picked Compound on a non-compound).
+    private var isConverting: Bool { originalType != .compound && type == .compound }
+
+    /// The blocking validation message for the compound structure, or nil.
+    /// An UNEDITED existing compound is never blocked (a stored-invalid one
+    /// can still be renamed), mirroring `EditTaskSheet`.
+    private var compoundValidation: String? {
+        guard type == .compound, let d = titledDraft else { return nil }
+        if !isConverting && !seededFromStaged
+            && !EditTaskSheet.compoundStructureChanged(baseline: compoundBaseline, draft: compoundDraft) {
+            return nil
+        }
+        return d.validate(type: .compound)
+    }
+
+    private var isCompoundBlocked: Bool {
+        compoundDraft == nil || compoundValidation != nil
+    }
+
+    /// The compound structure Done submits, or nil (non-compound; untouched
+    /// existing compound).
+    private var compoundSubmission: TaskEditPatch? {
+        Self.compoundSubmission(
+            type: type, originalType: originalType, seededFromStaged: seededFromStaged,
+            baseline: compoundBaseline, draft: compoundDraft, title: title
+        )
+    }
+
+    /// Pulls the presenter's loaded inputs into the sheet state.
+    private func applyLoaded(_ inputs: CompoundInputs) {
+        if originalType == .compound, compoundDraft == nil, let kids = inputs.children {
+            let seeded = EditTaskSheet.seedCompoundDraft(task: task, children: kids)
+            compoundBaseline = seeded
+            compoundDraft = seeded
+        }
+        compoundLoadError = inputs.childrenError
+        pickerLibraryTasks = inputs.libraryTasks
+        pickerLinks = inputs.allLinks
+        pickerInputsState = inputs.libraryLoaded ? .loaded : .failed
     }
 
     // MARK: - Counting preview
@@ -139,6 +341,10 @@ struct SquareEditTaskSheet: View {
                 .padding(16)
             }
             .background(Color.risoPaper.ignoresSafeArea())
+            .task(id: task.id) {
+                guard let loadInputs else { return }
+                applyLoaded(await loadInputs())
+            }
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .principal) {
@@ -190,6 +396,7 @@ struct SquareEditTaskSheet: View {
                 options: [
                     (.normal,   "Simple"),
                     (.counting, "Counting"),
+                    (.compound, "Compound"),
                 ],
                 selection: $type
             )
@@ -224,14 +431,40 @@ struct SquareEditTaskSheet: View {
         }
     }
 
-    /// Read-only notice for compound tasks. Subtasks are not editable from
-    /// the board-edit flow — direct the user to the task's detail page.
+    /// The compound structure editor — the shared `RisoCompoundEditFieldsView`
+    /// (rule + sub-task cards + quick-add row) over a `TaskEditPatch` draft.
     private var compoundSection: some View {
-        editSection(label: "Compound") {
-            Text("Sub-tasks and the completion rule are edited from the task's detail page. The title can still be changed here.")
-                .font(.risoBody(13, .semibold))
-                .foregroundStyle(Color.risoMuted)
-                .frame(maxWidth: .infinity, alignment: .leading)
+        editSection(label: "Sub-tasks & rule") {
+            VStack(alignment: .leading, spacing: 8) {
+                if let draft = compoundDraft {
+                    RisoCompoundEditFieldsView(
+                        draft: Binding(
+                            get: { compoundDraft ?? draft },
+                            set: { compoundDraft = $0 }
+                        ),
+                        parentId: task.id,
+                        libraryTasks: pickerLibraryTasks,
+                        allLinks: pickerLinks,
+                        libraryInputsState: pickerInputsState
+                    )
+                    if let problem = compoundValidation {
+                        Text(problem)
+                            .font(.risoBody(11.5, .extraBold))
+                            .foregroundStyle(Color.risoRed)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                } else if let error = compoundLoadError {
+                    Text(error)
+                        .font(.risoBody(12, .semibold))
+                        .foregroundStyle(Color.risoRed)
+                        .fixedSize(horizontal: false, vertical: true)
+                } else {
+                    Text("Loading sub-tasks…")
+                        .font(.risoBody(12, .semibold))
+                        .foregroundStyle(Color.risoMuted)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 
@@ -298,7 +531,8 @@ struct SquareEditTaskSheet: View {
                 type: type,
                 action: action.trimmingCharacters(in: .whitespaces),
                 unit: unit.trimmingCharacters(in: .whitespaces),
-                maxCount: Int(maxCountStr.trimmingCharacters(in: .whitespaces))
+                maxCount: Int(maxCountStr.trimmingCharacters(in: .whitespaces)),
+                compound: compoundSubmission
             )
         )
     }

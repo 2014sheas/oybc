@@ -60,10 +60,11 @@
   line-height: 1.4;
 }
 
-/* ─── Type row (read-only indicator) ─── */
+/* ─── Type row (switch, or the fixed indicator) ─── */
 .typeRow {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 10px;
 }
 
@@ -75,6 +76,11 @@
   letter-spacing: 0.06em;
   color: var(--riso-muted);
   flex: 0 0 auto;
+}
+
+.typeSwitch {
+  flex: 1 1 200px;
+  min-width: 0;
 }
 
 .typeBadgeWrap {
@@ -165,15 +171,17 @@
   color: var(--riso-ink);
 }
 
-/* ─── Compound note ─── */
-.compoundNote {
+/* ─── Compound editor ─── */
+.compoundEditor {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.problem {
   margin: 0;
-  padding: 10px 12px;
-  background: var(--riso-paper);
-  border: 2px dashed var(--riso-ink);
-  border-radius: var(--riso-r-card);
   font-size: 0.85rem;
-  font-weight: 500;
+  font-weight: 600;
   color: var(--riso-muted);
   line-height: 1.4;
 }

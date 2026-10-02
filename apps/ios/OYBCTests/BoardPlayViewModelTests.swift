@@ -1226,11 +1226,12 @@ final class BoardPlayViewModelTests: XCTestCase {
         XCTAssertFalse(center.isCenter)
     }
 
-    /// Board Edit can no longer switch a task into or out of Compound: a
-    /// compound → Simple override would orphan its `compound_children`, and a
-    /// Simple → Compound override would mint a zero-child compound with no
-    /// rule (below the 2-sub-task minimum). The title still commits.
-    func test_editCommit_ignoresTypeOverrideIntoOrOutOfCompound() throws {
+    /// Board Edit's type switch: Simple/Counting → Compound is allowed (with
+    /// the compound editor's rule + sub-tasks), but never OUT of Compound (a
+    /// compound → Simple override would orphan its `compound_children`), and a
+    /// switch into Compound with no compound patch is ignored (it would mint a
+    /// zero-child compound). The title still commits in every case.
+    func test_editCommit_allowsTypeOverrideIntoCompound_ignoresOutOfCompound() throws {
         let db = try makeDb()
         try seedUser(db)
         try db.saveBoard(makeBoard(id: "b1"))
@@ -1238,8 +1239,10 @@ final class BoardPlayViewModelTests: XCTestCase {
         try db.saveTask(makeTask("c1"))
         try db.saveTask(makeTask("c2"))
         try db.saveTask(makeTask("tn"))
+        try db.saveTask(makeTask("tn2"))
         try db.saveBoardTask(makeBoardTask(id: "bt-c", boardId: "b1", taskId: "tc", row: 0, col: 0))
         try db.saveBoardTask(makeBoardTask(id: "bt-n", boardId: "b1", taskId: "tn", row: 0, col: 1))
+        try db.saveBoardTask(makeBoardTask(id: "bt-n2", boardId: "b1", taskId: "tn2", row: 0, col: 2))
         try db.dbQueue.write { database in
             try makeCompoundChild(parent: "tc", child: "c1", idx: 0).insert(database)
             try makeCompoundChild(parent: "tc", child: "c2", idx: 1).insert(database)
@@ -1252,9 +1255,21 @@ final class BoardPlayViewModelTests: XCTestCase {
             taskId: "tc",
             patch: .init(title: "Renamed compound", type: .normal, action: "", unit: "", maxCount: nil)
         )
+        var toCompound = TaskEditPatch(title: "Renamed normal")
+        toCompound.operatorType = .or
+        toCompound.children = [
+            ChildPatch(id: "n1", childTaskId: nil, title: "Sub A", isCounting: false),
+            ChildPatch(id: "n2", childTaskId: nil, title: "Sub B", isCounting: false),
+        ]
         vm.handleEditTaskOverride(
             taskId: "tn",
-            patch: .init(title: "Renamed normal", type: .compound, action: "", unit: "", maxCount: nil)
+            patch: .init(title: "Renamed normal", type: .compound, action: "", unit: "", maxCount: nil,
+                         compound: toCompound)
+        )
+        // No compound patch ⇒ the switch is ignored (title still commits).
+        vm.handleEditTaskOverride(
+            taskId: "tn2",
+            patch: .init(title: "Renamed bare", type: .compound, action: "", unit: "", maxCount: nil)
         )
 
         XCTAssertTrue(vm.handleEditSave(), "save should dispatch")
@@ -1267,9 +1282,15 @@ final class BoardPlayViewModelTests: XCTestCase {
         XCTAssertEqual(try db.fetchCompoundChildrenTasks(parentTaskId: "tc").map(\.id), ["c1", "c2"],
                        "the compound's links stay intact")
 
-        let normal = try XCTUnwrap(dbTask(db, "tn"))
-        XCTAssertEqual(normal.type, .normal, "a task cannot be switched into Compound")
-        XCTAssertEqual(normal.title, "Renamed normal", "the title still commits")
+        let converted = try XCTUnwrap(dbTask(db, "tn"))
+        XCTAssertEqual(converted.type, .compound, "a Simple task can be switched into Compound")
+        XCTAssertEqual(converted.title, "Renamed normal")
+        XCTAssertEqual(converted.operatorType, .or)
+        XCTAssertEqual(try db.fetchCompoundChildrenTasks(parentTaskId: "tn").map(\.title), ["Sub A", "Sub B"])
+
+        let bare = try XCTUnwrap(dbTask(db, "tn2"))
+        XCTAssertEqual(bare.type, .normal, "a switch into Compound without a rule + sub-tasks is ignored")
+        XCTAssertEqual(bare.title, "Renamed bare", "the title still commits")
     }
 
     // MARK: - I3 (Board Edit consolidation, D8 `keep`) — Board details Save
@@ -1752,10 +1773,12 @@ final class BoardPlayViewModelTests: XCTestCase {
     func test_handleEditSave_subOpThrows_rollsBackEntireTransaction() throws {
         let db = try makeDb()
         try seedUser(db)
-        try db.saveBoard(makeBoard(id: "b1"))   // FREE center, 3×3, NO placements
+        try db.saveBoard(makeBoard(id: "b1"))   // FREE center, 3×3
 
-        // A real task to stage an override for.
+        // A real task to stage an override for — PLACED, since an override for
+        // a square no longer on the board is dropped at Save.
         try db.saveTask(makeTask("t-real"))
+        try db.saveBoardTask(makeBoardTask(id: "bt-real", boardId: "b1", taskId: "t-real", row: 0, col: 0))
 
         // Load the VM BEFORE seeding the poison: Item 4 made reload() an
         // all-or-nothing snapshot read, so an undecodable row present at

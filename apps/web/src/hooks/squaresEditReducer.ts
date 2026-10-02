@@ -3,9 +3,18 @@ import {
   effectiveCenter,
   isLegacyChosenCenterLocked,
   shuffleUnlockedSlots,
+  TaskType,
   type BoardTask,
+  type CompoundChild,
+  type Task,
 } from '@oybc/shared';
 import type { UpdateTaskPatch } from '../db/operations/tasks';
+import {
+  applyPatchToTask,
+  overlayCompoundChildrenWithStagedEdits,
+  stagedNewChildPlaceholders,
+  type TaskEditPatch,
+} from '../db/taskEditPatch';
 import type { PendingTaskPayload } from '../pages/createPage/useCreateFormState';
 import { deriveSquareEditCount, type SquareDraftCell } from './squareEditCount';
 
@@ -21,9 +30,17 @@ export type { SquareDraftCell } from './squareEditCount';
  * builder, which needs `Task`/`BoardCellModel` data and so stays untested
  * directly (covered by e2e).
  */
+/**
+ * The staged shape for one task in Board Edit: ordinary field overrides plus,
+ * when the task is (or is being turned into) a compound, the rule + sub-task
+ * structure. Applied at Save (`applyBoardEditTaskOverrideInTransaction`).
+ * `type` is only present when the staged type differs from the stored one.
+ */
+export type BoardEditTaskOverride = UpdateTaskPatch & { compound?: TaskEditPatch };
+
 export interface SquaresEditDraftState {
   cells: SquareDraftCell[];
-  taskOverrides: Map<string, UpdateTaskPatch>;
+  taskOverrides: Map<string, BoardEditTaskOverride>;
   /** The draft's stored center-type value — legacy CHOSEN preserved verbatim
    *  until Save (D1/D2); read it through `effectiveCenter` everywhere else. */
   draftCenterType: CenterSquareType;
@@ -192,9 +209,11 @@ export function toggleLock(state: SquaresEditDraftState, cellId: string): Square
 export function stageTaskEdit(
   state: SquaresEditDraftState,
   taskId: string,
-  patch: UpdateTaskPatch,
+  patch: BoardEditTaskOverride,
 ): SquaresEditDraftState {
   const taskOverrides = new Map(state.taskOverrides);
+  // Plain fields merge key-by-key; a later `compound` REPLACES the earlier
+  // one wholesale (object spread, never a deep merge).
   taskOverrides.set(taskId, { ...(taskOverrides.get(taskId) ?? {}), ...patch });
   return { ...state, taskOverrides };
 }
@@ -378,3 +397,38 @@ export function deriveEditCount({ state, boardCenterType }: DeriveEditCountInput
   });
 }
 
+
+// ─── Display resolution ─────────────────────────────────────────────────────
+
+/**
+ * A task as the grid should show it while an override is staged: the override's
+ * plain fields (incl. a `type` switch) laid over the base, and — when the
+ * result is a compound with a staged structure — its staged title / rule.
+ */
+export function applyOverrideForDisplay(base: Task, override: BoardEditTaskOverride | undefined): Task {
+  if (!override) return base;
+  const { compound, ...fields } = override;
+  const merged = { ...base, ...(fields as Partial<Task>) };
+  return compound && merged.type === TaskType.COMPOUND ? applyPatchToTask(compound, merged) : merged;
+}
+
+/**
+ * The task + compound-link maps with every staged compound structure overlaid
+ * (synthetic links in draft order, placeholder child Tasks for brand-new
+ * sub-tasks), so a converted / edited compound renders with its parts while
+ * staged. Returns the inputs untouched when nothing is staged.
+ */
+export function overlayStagedCompounds(
+  overrides: ReadonlyMap<string, BoardEditTaskOverride>,
+  taskMap: Record<string, Task>,
+  childrenByCompound: Record<string, CompoundChild[]>,
+  userId: string,
+): { tasks: Record<string, Task>; children: Record<string, CompoundChild[]> } {
+  const staged = new Map<string, TaskEditPatch>();
+  for (const [id, o] of overrides) if (o.compound) staged.set(id, o.compound);
+  if (staged.size === 0) return { tasks: taskMap, children: childrenByCompound };
+  return {
+    tasks: { ...taskMap, ...stagedNewChildPlaceholders(userId, staged) },
+    children: overlayCompoundChildrenWithStagedEdits(childrenByCompound, staged),
+  };
+}

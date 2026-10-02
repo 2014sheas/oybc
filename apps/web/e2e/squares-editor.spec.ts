@@ -426,3 +426,81 @@ test.describe('Squares editor (k) — a board with zero squares still renders', 
     await expect(page.getByText('Refill from library')).toBeVisible();
   });
 });
+
+test.describe('Squares editor (l) — Edit task… turns a plain square into a compound', () => {
+  const BOARD_ID = 'cccccccc-sqed-0012-0000-000000000000';
+  const TASK_A = 'cccccccc-sqed-0012-task-000000000001';
+
+  test.beforeEach(async ({ page }) => {
+    await seedBoard(page, {
+      id: BOARD_ID, name: 'Editor board L', boardSize: 3, timeframe: 'monthly', status: 'active',
+      startDate: START, endDate: END, centerSquareType: 'free',
+    });
+    await seedTask(page, { id: TASK_A, title: 'Morning routine', type: 'normal' });
+    await seedBoardTask(page, { id: 'cccccccc-sqed-0012-bt-000000000001', boardId: BOARD_ID, taskId: TASK_A, row: 0, col: 0 });
+  });
+
+  test('type Compound → add two sub-tasks → Done → Save → the square is a compound; reopen shows both parts', async ({ page }) => {
+    await page.goto(`/boards/${BOARD_ID}?__oybc_test_bypass=1`);
+    await page.getByRole('button', { name: 'Edit board' }).click();
+    await page.getByRole('button', { name: /^Morning routine$/ }).click();
+    await page.getByRole('button', { name: 'Edit task…' }).click();
+
+    const sheet = page.getByRole('dialog', { name: 'Edit task' });
+    await sheet.getByRole('button', { name: 'Compound', exact: true }).click();
+    // One sub-task is not enough: Done stays disabled.
+    await sheet.getByLabel('New normal task title').fill('Stretch');
+    await sheet.getByLabel('New normal task title').press('Enter');
+    await expect(sheet.getByRole('button', { name: 'Done' })).toBeDisabled();
+    await sheet.getByLabel('New normal task title').fill('Journal');
+    await sheet.getByLabel('New normal task title').press('Enter');
+    await expect(sheet.getByLabel('Sub-task 2 title')).toHaveValue('Journal');
+    await sheet.getByRole('button', { name: 'Done' }).click();
+
+    // Staged: one edit, the square already shows the compound tag.
+    await expect(page.getByRole('img', { name: 'Unsaved edit' })).toHaveCount(1);
+    await expect(page.getByText('≡')).toBeVisible();
+    await page.getByRole('button', { name: 'Save changes' }).click();
+    await expect(page.getByText('Board saved')).toBeVisible();
+
+    await page.reload();
+    await expect(page.getByText('≡')).toBeVisible();
+
+    // Reopen Edit task: the type is fixed and the editor shows both parts.
+    await page.getByRole('button', { name: 'Edit board' }).click();
+    await page.getByRole('button', { name: /^Morning routine$/ }).click();
+    await page.getByRole('button', { name: 'Edit task…' }).click();
+    const reopened = page.getByRole('dialog', { name: 'Edit task' });
+    await expect(reopened.getByRole('button', { name: 'Counting', exact: true })).toHaveCount(0);
+    await expect(reopened.getByLabel('Sub-task 1 title')).toHaveValue('Stretch');
+    await expect(reopened.getByLabel('Sub-task 2 title')).toHaveValue('Journal');
+  });
+  test('stage Compound → reopen → switch back to Simple → Done → still Simple after Save', async ({ page }) => {
+    await page.goto(`/boards/${BOARD_ID}?__oybc_test_bypass=1`);
+    await page.getByRole('button', { name: 'Edit board' }).click();
+    await page.getByRole('button', { name: /^Morning routine$/ }).click();
+    await page.getByRole('button', { name: 'Edit task…' }).click();
+    const sheet = page.getByRole('dialog', { name: 'Edit task' });
+    await sheet.getByRole('button', { name: 'Compound', exact: true }).click();
+    await sheet.getByLabel('New normal task title').fill('Stretch');
+    await sheet.getByLabel('New normal task title').press('Enter');
+    await sheet.getByLabel('New normal task title').fill('Journal');
+    await sheet.getByLabel('New normal task title').press('Enter');
+    await sheet.getByRole('button', { name: 'Done' }).click();
+    await expect(page.getByText('≡')).toBeVisible();
+
+    // Reopen the staged compound: the type control is still a switch (original is Simple).
+    await page.getByRole('button', { name: /Morning routine/ }).first().click();
+    await page.getByRole('button', { name: 'Edit task…' }).click();
+    const reopened = page.getByRole('dialog', { name: 'Edit task' });
+    await reopened.getByRole('button', { name: 'Simple', exact: true }).click();
+    await reopened.getByRole('button', { name: 'Done' }).click();
+    await expect(page.getByText('≡')).toHaveCount(0);
+
+    await page.getByRole('button', { name: 'Save changes' }).click();
+    await expect(page.getByText('Board saved')).toBeVisible();
+    await page.reload();
+    await expect(page.getByText('≡')).toHaveCount(0);
+    await expect(page.getByRole('button', { name: /Morning routine/ })).toBeVisible();
+  });
+});

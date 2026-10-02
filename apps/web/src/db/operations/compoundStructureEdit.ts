@@ -22,6 +22,7 @@
  * `./tasks.crud`; `tasks.crud.ts` must NEVER import this module (circular).
  */
 import {
+  OperatorType,
   SyncOperationType,
   TaskType,
   compoundChildLinkProblem,
@@ -367,4 +368,107 @@ export async function saveTaskEdit(taskId: string, submit: TaskEditSubmit): Prom
     return;
   }
   await updateTaskAndCascade(taskId, basicPatch);
+}
+
+/** The Task fields that only a Counting task carries (cleared on any switch away). */
+const COUNTING_ONLY_FIELDS = ['action', 'unit', 'maxCount', 'currentCount'] as const;
+
+/**
+ * Applies ONE Board Edit "Edit task…" override at Save, inside the squares
+ * editor's single transaction (`commitSquareEdits` step 7b). It is the one
+ * place a Task's `type` may change after creation:
+ *
+ *   a. Simple ⇄ Counting (`override.type` differs, no `compound`): a
+ *      whole-row update that DELIBERATELY BYPASSES `updateTask`'s
+ *      type-immutability guard. Board Edit's in-place switch is the
+ *      owner-approved exception (mirrors iOS `applyingOverride`); Counting →
+ *      Simple clears `action` / `unit` / `maxCount` (explicit `undefined`
+ *      keys, which Dexie `update` deletes). Version bump + enqueue + cascade.
+ *   b. `override.compound` present (edit an existing compound, or turn a
+ *      Simple/Counting task into one): link guard + `validatePatch`, then —
+ *      for a conversion — the row becomes `type: COMPOUND` with the counting
+ *      fields cleared, `isCompleted: false` and `completedAt` unset (a
+ *      compound's own latch is never read), THEN the shared
+ *      {@link applyCompoundStructureEditInTransaction} writes operator /
+ *      threshold / title, the sub-task CRUD, the version bump + enqueue and
+ *      the batched cascade.
+ *   c. Anything else: today's `updateTaskAndCascade`.
+ *
+ * Any validation failure THROWS so the whole Save rolls back (Dexie aborts
+ * the ambient transaction). Switching OUT of a compound, or to/from
+ * Achievement, is rejected.
+ *
+ * REQUIRES an active Dexie transaction over `boards`, `boardTasks`, `tasks`,
+ * `compoundChildren`, `taskEvents` and `syncQueue`.
+ *
+ * @param taskId - The (already remapped) placed task id.
+ * @param override - The staged override.
+ * @param now - ISO8601 timestamp for version bumps + sync-queue rows.
+ * @throws CompoundEditValidationError for an invalid compound structure;
+ *   Error for a disallowed type change or an incomplete Counting target.
+ */
+export async function applyBoardEditTaskOverrideInTransaction(
+  taskId: string,
+  override: TaskEditSubmit,
+  now: string,
+): Promise<void> {
+  const existing = await db.tasks.get(taskId);
+  if (!existing || existing.isDeleted) return;
+  const { compound, ...fields } = override;
+  const nextType = fields.type ?? existing.type;
+  const typeChanged = nextType !== existing.type;
+
+  // A linked / window-stamped derived counter keeps its type and has no
+  // structure: reject (throw → the whole Save rolls back).
+  if (existing.sharedCounterId != null && (typeChanged || compound)) {
+    throw new Error(`Task ${taskId}: a linked counter cannot change type or become a compound`);
+  }
+
+  if (compound) {
+    if (nextType !== TaskType.COMPOUND) throw new Error(`Task ${taskId}: a compound structure needs type compound`);
+    if (typeChanged && existing.type !== TaskType.NORMAL && existing.type !== TaskType.COUNTING) {
+      throw new Error(`Task ${taskId}: cannot convert a ${existing.type} task to compound`);
+    }
+    const linkProblem = await compoundLinkProblemForPatch(taskId, compound);
+    if (linkProblem !== null) throw new CompoundEditValidationError(linkProblem);
+    const problem = validatePatch(compound, TaskType.COMPOUND);
+    if (problem !== null) throw new CompoundEditValidationError(problem);
+    let base: Task = existing;
+    if (typeChanged) {
+      base = { ...existing, type: TaskType.COMPOUND, isCompleted: false, completedAt: undefined };
+      for (const k of COUNTING_ONLY_FIELDS) base[k] = undefined;
+    }
+    const description = 'description' in fields ? (fields.description ?? '') : undefined;
+    // A conversion must never write an operator-less compound (iOS defaults `.and`).
+    const structure = typeChanged ? { ...compound, operator: compound.operator ?? OperatorType.AND } : compound;
+    await applyCompoundStructureEditInTransaction(base, structure, { description }, now);
+    return;
+  }
+
+  if (typeChanged) {
+    const simpleCounting = [TaskType.NORMAL, TaskType.COUNTING];
+    if (!simpleCounting.includes(existing.type) || !simpleCounting.includes(nextType)) {
+      throw new Error(`Task ${taskId}: cannot change type ${existing.type} -> ${nextType} in Board Edit`);
+    }
+    if (nextType === TaskType.COUNTING) {
+      const goal = fields.maxCount ?? 0;
+      if (!(goal > 0) || !(fields.unit ?? '').trim()) {
+        throw new Error(`Task ${taskId}: a Counting task needs a goal and a unit`);
+      }
+    }
+    // Bypasses `updateTask`'s type guard on purpose (see doc above).
+    const patch: Partial<Task> = {
+      ...(fields as Partial<Task>),
+      updatedAt: now,
+      version: (existing.version ?? 0) + 1,
+    };
+    if (nextType === TaskType.NORMAL) for (const k of ['action', 'unit', 'maxCount'] as const) patch[k] = undefined;
+    await db.tasks.update(taskId, patch);
+    const updated = await db.tasks.get(taskId);
+    if (updated) await addToSyncQueue('tasks', taskId, SyncOperationType.UPDATE, updated);
+    await runBoardCascadeForTasks([taskId]);
+    return;
+  }
+
+  await updateTaskAndCascade(taskId, fields);
 }

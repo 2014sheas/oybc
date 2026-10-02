@@ -22,8 +22,9 @@ enum SquarePickerMode: Equatable {
 /// Everything staged here is written to the DB only when `BoardEditPanel`'s
 /// Save commits (D14) — `onConfirm` hands the caller a `(taskId, pending)`
 /// pair; the VM's `handleEditAdd` / `handleEditReplace` store it in the
-/// draft. The one exception is Compound (D14): the special panel creates it
-/// immediately, so `onConfirm` receives `pending: nil` for it.
+/// draft. A Compound is deferred like every other new task on iOS: the panel
+/// hands it over as a `PendingTaskPayload` (task + child tasks + links)
+/// inserted at Save (web persists a picker-born compound immediately).
 struct SquarePickerSheetView: View {
 
     // MARK: - Props

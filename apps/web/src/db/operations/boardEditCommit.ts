@@ -9,9 +9,11 @@ import {
   setBoardTaskLocked,
   updateBoardTaskAndCascade,
 } from './boardTasks';
-import { updateTaskAndCascade, type UpdateTaskPatch } from './tasks';
+import { applyBoardEditTaskOverrideInTransaction } from './compoundStructureEdit';
 import { persistWizardPendingTasks } from './wizardBoard';
 import type { SquareDraftCell } from '../../hooks/squareEditCount';
+import type { BoardEditTaskOverride } from '../../hooks/squaresEditReducer';
+import { currentTimestamp } from '../utils';
 
 /**
  * Board Edit redesign slice 3 (D15) — the squares editor's ONE Save
@@ -26,7 +28,7 @@ export interface CommitSquareEditsInput {
   cells: SquareDraftCell[];
   /** ids of live placements (present at seed) absent from `cells` — staged removals. */
   removedBoardTaskIds: string[];
-  taskOverrides: Map<string, UpdateTaskPatch>;
+  taskOverrides: Map<string, BoardEditTaskOverride>;
   /** Whether the on-disk board is still legacy CHOSEN (D2's conversion gate). */
   isLegacyChosenOnDisk: boolean;
   /** The draft's current lock state for the positional-center cell — `normalizeLegacyChosenCenter`'s `keepLocked`. */
@@ -62,7 +64,9 @@ export interface CommitSquareEditsInput {
  *      lock first (slice-3 self-review).
  *   6. Moves (`reorderBoardTasks`).
  *   7. Adds (`addBoardTaskToBoard`, with `isLocked` from the draft).
- *   7b. Task-field overrides (`updateTaskAndCascade`), remapped from the staged
+ *   7b. Task-field overrides (`applyBoardEditTaskOverrideInTransaction` — a
+ *       Simple⇄Counting type switch, or a compound edit / conversion that
+ *       THROWS on invalid input so the whole Save rolls back), remapped from the staged
  *      id to the id actually placed (the per-board copy of a linked counter);
  *      the library source is never patched by a remapped override.
  *   8. LOCKS on pre-existing cells (`setBoardTaskLocked(true)`) — AFTER
@@ -166,12 +170,18 @@ export async function commitSquareEdits(input: CommitSquareEditsInput): Promise<
       //     to the placed row ONLY; a remapped override never patches the
       //     library source. Removals/unlocks/moves are independent of task
       //     fields, so running these here preserves their ordering.
+      const now = currentTimestamp();
+      // Only overrides for a task STILL placed by a final cell commit: a staged
+      // edit on a removed / replaced square would otherwise be a destructive
+      // conversion of a task that left the board.
+      const placedStagedIds = new Set(cells.map((c) => c.taskId));
       const patched = new Set<string>();
       for (const [stagedId, patch] of taskOverrides.entries()) {
+        if (!placedStagedIds.has(stagedId)) continue;
         const targetId = placedIdByStagedId.get(stagedId) ?? stagedId;
         if (patched.has(targetId)) continue;
         patched.add(targetId);
-        await updateTaskAndCascade(targetId, patch);
+        await applyBoardEditTaskOverrideInTransaction(targetId, patch, now);
       }
 
       // 8. Locks on pre-existing cells — after moves (see doc above).

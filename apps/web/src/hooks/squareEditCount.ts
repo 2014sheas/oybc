@@ -1,5 +1,5 @@
 import type { PendingTaskPayload } from '../pages/createPage/useCreateFormState';
-import type { UpdateTaskPatch } from '../db/operations/tasks';
+import type { BoardEditTaskOverride } from './squaresEditReducer';
 
 /**
  * Board Edit redesign slice 3 (D11/D12) — the squares editor's staged draft
@@ -31,7 +31,7 @@ export interface SquareDraftCell {
 export interface SquareEditCountInput {
   cells: SquareDraftCell[];
   /** Staged global task-field overrides, keyed by taskId. */
-  taskOverrides: ReadonlyMap<string, UpdateTaskPatch>;
+  taskOverrides: ReadonlyMap<string, BoardEditTaskOverride>;
   /** Count of live placements (present at seed time) staged for removal. */
   removedCount: number;
   /** Whether the center Free⇄Task type differs from baseline (`effectiveCenter` compare, D1). */
@@ -51,7 +51,7 @@ export interface SquareEditCountInput {
  */
 export function isSquareDirty(
   cell: SquareDraftCell,
-  taskOverrides: ReadonlyMap<string, UpdateTaskPatch>,
+  taskOverrides: ReadonlyMap<string, BoardEditTaskOverride>,
 ): boolean {
   return (
     cell.originalTaskId === null ||

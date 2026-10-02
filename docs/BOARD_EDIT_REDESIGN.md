@@ -82,10 +82,14 @@ claude.ai artifact "Board Edit Redesign Brief" (2026-09-26).
 Independent of the train (bugfix PRs any time): ~~iOS Board Edit rewrites an
 achievement task's type (P0)~~ — **fixed in #514**: `SquareEditTaskSheet`
 seeded an achievement's type as `.normal` and `applyingOverride` only guarded
-Compound, so a plain rename saved the task as Simple; type switches are now
+Compound, so a plain rename saved the task as Simple; type switches were
 Simple ⇄ Counting only (`boardEditAllowsTypeSwitch`) and the sheet edits an
-achievement's title only (web was never affected — its sheet never sends
-`type`). ~~zero-placement boards show "Loading…" forever
+achievement's title only (web was never affected — its sheet never sent
+`type`). **Amended 2026-10-02 (owner):** the sheet now also switches Simple /
+Counting **into** Compound and edits a compound's rule + sub-tasks in place
+(staged `compound: TaskEditPatch`, the Task Detail editor embedded; never
+OUT of Compound, never Achievement), and web's sheet gained the Simple ⇄
+Counting switch — see `docs/TASK_SYSTEM.md` §Editing a task. ~~zero-placement boards show "Loading…" forever
 (web)~~ — **fixed in slice 3**: `BoardPlaySurface` gated its grid on
 `sortedBoardTasks.length === 0`, conflating "query unresolved" with "loaded,
 no squares"; it now gates on `boardTasksLoaded` from `useBoardPlayData`
@@ -299,15 +303,22 @@ together (rule 6).
   special-task panel (Replace: kicker "Replace square"; Add: "Add square" /
   "Empty square"). New normal / counting / achievement tasks are staged and
   written only at Save, with `createdInWizard = false` (children too);
-  Cancel discards them. **Compound carve-out**: the special panel writes a
-  compound immediately (web parity), so only its placement is staged — a
-  compound created in a cancelled session stays in the library.
+  Cancel discards them. **Compound carve-out (corrected 2026-10-02)**: on WEB the
+  special panel writes a compound immediately, so only its placement is
+  staged (a compound created in a cancelled session stays in the library);
+  on iOS the panel DEFERS it as a pending payload like every other new task
+  (its child links are written one by one at Save — the zip-by-index bug that
+  dropped an existing-library sub-task's link was fixed 2026-10-02).
 - **Save transaction (D15)**, one atomic transaction on both platforms
   (web `commitSquareEdits` in `db/operations/boardEditCommit.ts` ↔ iOS
   `handleEditSave`): `assertBoardEditable` → insert pending tasks →
   `normalizeLegacyChosenCenter` (if still CHOSEN on disk) → replacements →
-  task overrides → removals → **unlocks** → moves → adds (with their lock) →
-  **locks** → the center metadata patch (FREE ⇄ NONE, only when changed).
+  removals → **unlocks** → moves → adds (with their lock) → task overrides
+  (step 7b, AFTER replacements/adds so each override is remapped from the
+  staged library id to the id actually placed — a minted per-window counter
+  copy, #537; a compound conversion / structure edit runs here through
+  `applyStagedCompoundChildEdits`) → **locks** → the center metadata patch
+  (FREE ⇄ NONE, only when changed).
   Unlocks run before moves because the move op rejects a row locked on disk
   ("Unlock → hold-drag → Save" in one session); locks run after moves.
 - **"Remove from board" leaves a dashed empty square (D16)**; "Make it a
