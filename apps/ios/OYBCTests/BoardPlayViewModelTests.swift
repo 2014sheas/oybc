@@ -1773,10 +1773,12 @@ final class BoardPlayViewModelTests: XCTestCase {
     func test_handleEditSave_subOpThrows_rollsBackEntireTransaction() throws {
         let db = try makeDb()
         try seedUser(db)
-        try db.saveBoard(makeBoard(id: "b1"))   // FREE center, 3×3, NO placements
+        try db.saveBoard(makeBoard(id: "b1"))   // FREE center, 3×3
 
-        // A real task to stage an override for.
+        // A real task to stage an override for — PLACED, since an override for
+        // a square no longer on the board is dropped at Save.
         try db.saveTask(makeTask("t-real"))
+        try db.saveBoardTask(makeBoardTask(id: "bt-real", boardId: "b1", taskId: "t-real", row: 0, col: 0))
 
         // Load the VM BEFORE seeding the poison: Item 4 made reload() an
         // all-or-nothing snapshot read, so an undecodable row present at

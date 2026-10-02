@@ -117,6 +117,7 @@ final class BoardEditCompoundTests: XCTestCase {
         var counting = makeTask("tc", type: .counting, action: "Run", unit: "km", maxCount: 5)
         counting.isCompleted = true
         counting.completedAt = "2026-06-22T00:00:00.000"
+        counting.currentCount = 3
         try db.saveTask(counting)
         try place(db, "tc", col: 0)
 
@@ -136,6 +137,7 @@ final class BoardEditCompoundTests: XCTestCase {
         XCTAssertNil(row.action); XCTAssertNil(row.unit); XCTAssertNil(row.maxCount)
         XCTAssertFalse(row.isCompleted)
         XCTAssertNil(row.completedAt)
+        XCTAssertNil(row.currentCount, "conversion clears the counting latch (web parity)")
         XCTAssertGreaterThan(row.version, 1, "version bumped")
         XCTAssertEqual(try db.fetchCompoundChildrenTasks(parentTaskId: "tc").map(\.title), ["Stretch", "Hydrate"])
         let sync = try db.fetchPendingSyncItems()
@@ -283,6 +285,317 @@ final class BoardEditCompoundTests: XCTestCase {
         XCTAssertNotNil(dbTask(db, "newkid"))
         let sync = try db.fetchPendingSyncItems()
         XCTAssertEqual(sync.filter { $0.entityType == "compoundChildren" }.count, 2)
+    }
+
+    // MARK: - Reopen (the sheet's seeding + Done, driven through the real VM path)
+
+    /// What the presenter hands the sheet for `id`, then what reopen-and-Done
+    /// stages: seeds via the sheet's own `compoundSeed`, submits via its own
+    /// `compoundSubmission`, then `handleEditTaskOverride`. Returns the seed.
+    @discardableResult
+    private func reopenAndDone(
+        _ vm: BoardPlayViewModel, _ id: String, chooseType: TaskType? = nil,
+        title: String? = nil, children: [Task]? = nil
+    ) throws -> SquareEditTaskSheet.CompoundSeed {
+        let merged = try XCTUnwrap(vm.editDraftTaskMap[id])
+        let original = vm.taskMap[id]
+        let seed = SquareEditTaskSheet.compoundSeed(
+            task: merged, original: original,
+            staged: vm.editTaskOverrides[id]?.compound, children: children
+        )
+        let type = chooseType ?? merged.type
+        let compound = SquareEditTaskSheet.compoundSubmission(
+            type: type, originalType: (original ?? merged).type, seededFromStaged: seed.fromStaged,
+            baseline: seed.baseline, draft: seed.draft, title: title ?? merged.title
+        )
+        vm.handleEditTaskOverride(taskId: id, patch: patch(title ?? merged.title, type, compound: compound))
+        return seed
+    }
+
+    /// Critical: convert → reopen → the editor shows the staged sub-tasks →
+    /// Done re-stages them (it used to overwrite the override with nil, which
+    /// silently dropped the conversion) → Save converts.
+    func test_convertThenReopenDone_keepsStagedConversion() throws {
+        let db = try makeDb()
+        try seedUser(db)
+        try db.saveBoard(makeBoard(id: "b1"))
+        try db.saveTask(makeTask("tn"))
+        try place(db, "tn", col: 0)
+
+        let vm = loadedVM(db)
+        var structure = SquareEditTaskSheet.newCompoundDraft(for: try XCTUnwrap(dbTask(db, "tn")))
+        structure.children = [newSub("n1", "Stretch"), newSub("n2", "Hydrate")]
+        vm.handleEditTaskOverride(taskId: "tn", patch: patch("Task tn", .compound, compound: structure))
+
+        let seed = try reopenAndDone(vm, "tn")
+        XCTAssertTrue(seed.fromStaged)
+        XCTAssertEqual(seed.draft?.children.map(\.title), ["Stretch", "Hydrate"], "reopen shows the staged sub-tasks")
+        XCTAssertEqual(vm.editTaskOverrides["tn"]?.compound?.children.count, 2, "Done re-stages, not nil")
+        XCTAssertEqual(vm.editDraftTaskMap["tn"]?.type, .compound)
+
+        XCTAssertEqual(save(vm), .saved)
+        XCTAssertEqual(dbTask(db, "tn")?.type, .compound)
+        XCTAssertEqual(try db.fetchCompoundChildrenTasks(parentTaskId: "tn").map(\.title), ["Stretch", "Hydrate"])
+    }
+
+    /// The same for an existing compound: a staged rule + sub-task edit
+    /// survives reopen-then-Done and applies at Save.
+    func test_existingCompoundStagedEdit_reopenDone_applies() throws {
+        let db = try makeDb()
+        try seedUser(db)
+        try db.saveBoard(makeBoard(id: "b1"))
+        try db.saveTask(makeTask("cmp", type: .compound))
+        for id in ["c1", "c2", "c3"] { try db.saveTask(makeTask(id)) }
+        try place(db, "cmp", col: 0)
+        try db.dbQueue.write { d in
+            try link("cmp", "c1", 0).insert(d)
+            try link("cmp", "c2", 1).insert(d)
+        }
+
+        let vm = loadedVM(db)
+        let existing = try db.fetchCompoundChildrenTasks(parentTaskId: "cmp")
+        var structure = EditTaskSheet.seedCompoundDraft(task: try XCTUnwrap(dbTask(db, "cmp")), children: existing)
+        structure.operatorType = .or
+        structure.children[1].markedDeleted = true
+        structure.children.append(ChildPatch(from: try XCTUnwrap(dbTask(db, "c3"))))
+        vm.handleEditTaskOverride(taskId: "cmp", patch: patch("Task cmp", .compound, compound: structure))
+
+        // Reopen: children are NOT passed (the staged draft wins over the DB).
+        let seed = try reopenAndDone(vm, "cmp")
+        XCTAssertTrue(seed.fromStaged)
+        XCTAssertEqual(seed.draft?.operatorType, .or)
+        XCTAssertNotNil(vm.editTaskOverrides["cmp"]?.compound, "Done keeps the staged edit")
+
+        XCTAssertEqual(save(vm), .saved)
+        XCTAssertEqual(dbTask(db, "cmp")?.operatorType, .or)
+        XCTAssertEqual(try db.fetchCompoundChildrenTasks(parentTaskId: "cmp").map(\.id), ["c1", "c3"])
+    }
+
+    /// An UNEDITED existing compound reopened and Done'd stages no structure.
+    func test_existingCompoundUntouched_reopenDone_stagesNoStructure() throws {
+        let db = try makeDb()
+        try seedUser(db)
+        try db.saveBoard(makeBoard(id: "b1"))
+        try db.saveTask(makeTask("cmp", type: .compound))
+        try db.saveTask(makeTask("c1")); try db.saveTask(makeTask("c2"))
+        try place(db, "cmp", col: 0)
+        try db.dbQueue.write { d in
+            try link("cmp", "c1", 0).insert(d)
+            try link("cmp", "c2", 1).insert(d)
+        }
+        let vm = loadedVM(db)
+        try reopenAndDone(vm, "cmp", title: "Just a rename",
+                          children: try db.fetchCompoundChildrenTasks(parentTaskId: "cmp"))
+        XCTAssertNil(vm.editTaskOverrides["cmp"]?.compound)
+        XCTAssertEqual(save(vm), .saved)
+        XCTAssertEqual(dbTask(db, "cmp")?.title, "Just a rename")
+    }
+
+    // MARK: - Switch back before Save
+
+    func test_stagedCompound_reopen_switchBackToSimple_isPlainTitleEdit() throws {
+        let db = try makeDb()
+        try seedUser(db)
+        try db.saveBoard(makeBoard(id: "b1"))
+        try db.saveTask(makeTask("tn"))
+        try place(db, "tn", col: 0)
+
+        let vm = loadedVM(db)
+        var structure = SquareEditTaskSheet.newCompoundDraft(for: try XCTUnwrap(dbTask(db, "tn")))
+        structure.children = [newSub("n1", "A"), newSub("n2", "B")]
+        vm.handleEditTaskOverride(taskId: "tn", patch: patch("Task tn", .compound, compound: structure))
+
+        // Reopen: the merged task is Compound, but the sheet knows the original.
+        let merged = try XCTUnwrap(vm.editDraftTaskMap["tn"])
+        XCTAssertEqual(merged.type, .compound)
+        XCTAssertTrue(SquareEditTaskSheet.showsTypePicker(task: merged, original: vm.taskMap["tn"]),
+                      "the picker stays so the user can switch back")
+        XCTAssertFalse(SquareEditTaskSheet.showsTypePicker(task: merged, original: nil),
+                       "without the original a merged compound would look fixed")
+
+        try reopenAndDone(vm, "tn", chooseType: .normal, title: "Renamed")
+        XCTAssertNil(vm.editTaskOverrides["tn"]?.compound)
+        XCTAssertEqual(vm.editDraftTaskMap["tn"]?.type, .normal)
+
+        XCTAssertEqual(save(vm), .saved)
+        let row = try XCTUnwrap(dbTask(db, "tn"))
+        XCTAssertEqual(row.type, .normal, "no conversion")
+        XCTAssertEqual(row.title, "Renamed")
+        XCTAssertTrue(try db.fetchAllCompoundChildren().isEmpty)
+        XCTAssertNil(dbTask(db, "n1"), "no sub-task rows were minted")
+    }
+
+    // MARK: - Linked counters are not convertible
+
+    private func linkedCounter(_ id: String) -> Task {
+        var t = makeTask(id, type: .counting, action: "Run", unit: "km", maxCount: 5)
+        t.sharedCounterId = "sc1"
+        return t
+    }
+
+    func test_linkedCounter_sheetShowsFixedType() {
+        let t = linkedCounter("lc")
+        XCTAssertFalse(SquareEditTaskSheet.showsTypePicker(task: t, original: t))
+        XCTAssertTrue(SquareEditTaskSheet.showsTypePicker(task: makeTask("plain", type: .counting), original: nil))
+    }
+
+    func test_linkedCounter_typeOrCompoundOverride_rejectedBeforeSave() throws {
+        let db = try makeDb()
+        try seedUser(db)
+        try db.saveBoard(makeBoard(id: "b1"))
+        try db.saveTask(linkedCounter("lc"))
+        try db.saveTask(makeTask("other"))
+        try place(db, "lc", col: 0)
+        try place(db, "other", col: 1)
+
+        let vm = loadedVM(db)
+        var structure = TaskEditPatch(title: "X")
+        structure.operatorType = .and
+        structure.children = [newSub("n1", "A"), newSub("n2", "B")]
+        vm.handleEditTaskOverride(taskId: "lc", patch: patch("X", .compound, compound: structure))
+        vm.handleEditTaskOverride(taskId: "other", patch: patch("Renamed other", .normal))
+        XCTAssertEqual(vm.editDraftTaskMap["lc"]?.type, .counting, "the grid never shows a linked conversion")
+
+        XCTAssertFalse(vm.handleEditSave())
+        guard case .saveFailed(let m) = try XCTUnwrap(vm.editEvent?.outcome) else { return XCTFail("expected .saveFailed") }
+        XCTAssertEqual(m, BoardPlayViewModel.linkedCounterTypeMessage)
+        XCTAssertEqual(dbTask(db, "lc")?.type, .counting)
+        XCTAssertEqual(dbTask(db, "other")?.title, "Task other")
+
+        // Counting → Simple is refused too.
+        vm.editTaskOverrides = [:]
+        vm.handleEditTaskOverride(taskId: "lc", patch: patch("Plain", .normal))
+        XCTAssertFalse(vm.handleEditSave())
+    }
+
+    /// The in-transaction guard throws (and rolls the write back) even if the
+    /// pre-validation were bypassed.
+    func test_linkedCounter_typeOverride_throwsInTransaction() throws {
+        let db = try makeDb()
+        try seedUser(db)
+        try db.saveBoard(makeBoard(id: "b1"))
+        try db.saveTask(linkedCounter("lc"))
+        try place(db, "lc", col: 0)
+        let task = try XCTUnwrap(dbTask(db, "lc"))
+        let override = StagedTaskOverride(title: "Plain", type: .normal, action: nil, unit: nil, maxCount: nil, compound: nil)
+        let cell = BoardPlayViewModel.StagedCellRef(boardTaskId: "bt-lc", isNew: false, row: 0, col: 0, stagedTaskId: "lc")
+        XCTAssertThrowsError(try db.write { d in
+            try BoardPlayViewModel.applyStagedOverrides(
+                db: d, boardId: "b1",
+                overrides: [.init(stagedId: "lc", override: override, mapTask: task)],
+                cells: [cell], now: AppDatabase.currentTimestamp()
+            )
+        })
+        XCTAssertEqual(dbTask(db, "lc")?.type, .counting)
+    }
+
+    // MARK: - Overrides for squares no longer on the board are dropped
+
+    func test_convertThenRemove_commitsNothing() throws {
+        let db = try makeDb()
+        try seedUser(db)
+        try db.saveBoard(makeBoard(id: "b1"))
+        try db.saveTask(makeTask("ta"))
+        try db.saveTask(makeTask("tb"))
+        try place(db, "ta", col: 0)
+        try place(db, "tb", col: 1)
+
+        let vm = loadedVM(db)
+        var structure = SquareEditTaskSheet.newCompoundDraft(for: try XCTUnwrap(dbTask(db, "ta")))
+        structure.children = [newSub("n1", "A"), newSub("n2", "B")]
+        vm.handleEditTaskOverride(taskId: "ta", patch: patch("Task ta", .compound, compound: structure))
+        vm.handleEditRemove(cellKey: "0-0")
+
+        XCTAssertEqual(save(vm), .saved)
+        XCTAssertEqual(dbTask(db, "ta")?.type, .normal, "the removed square's conversion must not commit")
+        XCTAssertTrue(try db.fetchAllCompoundChildren().isEmpty)
+    }
+
+    /// An INVALID staged compound on a square that was then removed must not
+    /// block the Save either.
+    func test_invalidCompoundOnRemovedSquare_doesNotBlockSave() throws {
+        let db = try makeDb()
+        try seedUser(db)
+        try db.saveBoard(makeBoard(id: "b1"))
+        try db.saveTask(makeTask("ta"))
+        try db.saveTask(makeTask("tb"))
+        try place(db, "ta", col: 0)
+        try place(db, "tb", col: 1)
+
+        let vm = loadedVM(db)
+        var structure = TaskEditPatch(title: "Solo")
+        structure.operatorType = .and
+        structure.children = [newSub("n1", "Only")]
+        vm.handleEditTaskOverride(taskId: "ta", patch: patch("Solo", .compound, compound: structure))
+        vm.handleEditRemove(cellKey: "0-0")
+        XCTAssertEqual(save(vm), .saved)
+        XCTAssertEqual(dbTask(db, "ta")?.type, .normal)
+    }
+
+    func test_convertThenReplace_commitsNothingOnOriginal() throws {
+        let db = try makeDb()
+        try seedUser(db)
+        try db.saveBoard(makeBoard(id: "b1"))
+        try db.saveTask(makeTask("ta"))
+        try db.saveTask(makeTask("tb"))
+        try place(db, "ta", col: 0)
+
+        let vm = loadedVM(db)
+        var structure = SquareEditTaskSheet.newCompoundDraft(for: try XCTUnwrap(dbTask(db, "ta")))
+        structure.children = [newSub("n1", "A"), newSub("n2", "B")]
+        vm.handleEditTaskOverride(taskId: "ta", patch: patch("Task ta", .compound, compound: structure))
+        vm.handleEditReplace(cellKey: "0-0", taskId: "tb")
+
+        XCTAssertEqual(save(vm), .saved)
+        XCTAssertEqual(dbTask(db, "ta")?.type, .normal)
+        XCTAssertEqual(dbTask(db, "tb")?.type, .normal)
+        XCTAssertTrue(try db.fetchAllCompoundChildren().isEmpty)
+        XCTAssertEqual(try db.fetchBoardTasks(boardId: "b1").first { $0.id == "bt-ta" }?.taskId, "tb")
+    }
+
+    // MARK: - Default operator + real derivation
+
+    /// The sheet's default rule is "all" (`.and`); a converted compound
+    /// completes only when BOTH sub-tasks are complete, through the real
+    /// completion + derivation path.
+    func test_convertedCompound_defaultsToAnd_andCompletesWhenBothChildrenDo() throws {
+        let db = try makeDb()
+        try seedUser(db)
+        try db.saveBoard(makeBoard(id: "b1"))
+        try db.saveTask(makeTask("tn"))
+        let bt = BoardTask(
+            id: "bt-tn", boardId: "b1", taskId: "tn", row: 0, col: 0, isCenter: false,
+            createdAt: AppDatabase.currentTimestamp(), updatedAt: AppDatabase.currentTimestamp(),
+            lastSyncedAt: nil, version: 1
+        )
+        try db.saveBoardTask(bt)
+
+        let vm = loadedVM(db)
+        var structure = SquareEditTaskSheet.newCompoundDraft(for: try XCTUnwrap(dbTask(db, "tn")))
+        XCTAssertEqual(structure.operatorType, .and, "the sheet's default rule")
+        structure.children = [newSub("n1", "One"), newSub("n2", "Two")]
+        vm.handleEditTaskOverride(taskId: "tn", patch: patch("Task tn", .compound, compound: structure))
+        XCTAssertEqual(save(vm), .saved)
+
+        let row = try XCTUnwrap(dbTask(db, "tn"))
+        XCTAssertEqual(row.operatorType, .and)
+        let kids = try db.fetchCompoundChildrenTasks(parentTaskId: "tn")
+        XCTAssertEqual(kids.count, 2)
+
+        let now = AppDatabase.currentTimestamp()
+        func complete(_ id: String) throws {
+            let board = try XCTUnwrap(try db.fetchBoard(id: "b1"))
+            _ = try db.completeTaskOrchestrated(
+                board: board, taskId: id, intent: .setCompleted(true), boardTask: bt, now: now
+            )
+        }
+        // Board stats: the FREE center counts as 1; the compound adds 1 only once derived complete.
+        try complete(kids[0].id)
+        XCTAssertEqual(try XCTUnwrap(try db.fetchBoard(id: "b1")).completedTasks, 1,
+                       "one of two is not enough under AND")
+        try complete(kids[1].id)
+        XCTAssertEqual(try XCTUnwrap(try db.fetchBoard(id: "b1")).completedTasks, 2,
+                       "both children complete the compound")
     }
 
     // MARK: - Simple ⇄ Counting (unchanged)

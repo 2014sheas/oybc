@@ -252,7 +252,9 @@ extension BoardPlayViewModel {
         // opening the write so the user gets the specific alert, not a failed
         // transaction. `applyStagedOverrides` re-checks inside the transaction.
         if let problem = Self.compoundOverrideProblem(
-            database: database, overrides: overridesSnapshot, pendingPayloads: draftSnapshot.values.compactMap(\.pending)
+            database: database, overrides: overridesSnapshot,
+            pendingPayloads: draftSnapshot.values.compactMap(\.pending),
+            placedTaskIds: Set(draftSnapshot.values.map(\.taskId))
         ) {
             emitEdit(.saveFailed(problem))
             return false
@@ -439,13 +441,14 @@ extension BoardPlayViewModel {
         let placements = try BoardTask
             .filter(Column("boardId") == boardId && Column("isDeleted") == false).fetchAll(db)
         for input in overrides {
-            var targets: [String] = cells.filter { $0.stagedTaskId == input.stagedId }.map { cell in
+            // Only a square still on the board commits its staged edit: a
+            // removed / replaced square's override is dropped (no targets).
+            let targets: [String] = cells.filter { $0.stagedTaskId == input.stagedId }.map { cell in
                 let placed = cell.isNew
                     ? placements.first { $0.row == cell.row && $0.col == cell.col }
                     : placements.first { $0.id == cell.boardTaskId }
                 return placed?.taskId ?? input.stagedId
             }
-            if targets.isEmpty { targets = [input.stagedId] }
             for target in Set(targets).sorted() {
                 // A pending task's plain override was merged into its payload
                 // at step 1 (no `mapTask`); only a compound override still
@@ -453,6 +456,10 @@ extension BoardPlayViewModel {
                 var row: Task? = target == input.stagedId ? input.mapTask : try Task.fetchOne(db, key: target)
                 if row == nil && input.override.compound != nil { row = try Task.fetchOne(db, key: target) }
                 guard let base = row else { continue }
+                // A linked counter is never converted or given sub-tasks.
+                if base.sharedCounterId != nil, input.override.type != base.type || input.override.compound != nil {
+                    throw AppDatabase.TaskEditError.invalid(message: Self.linkedCounterTypeMessage)
+                }
                 var updated = Self.applyingOverride(input.override, to: base)
                 if let structure = input.override.compound {
                     // Mirrors `applyTaskEditPatch`'s compound branch, minus
@@ -492,10 +499,18 @@ extension BoardPlayViewModel {
     ///   - pendingPayloads: The staged not-yet-created tasks.
     /// - Returns: A user-facing message, or nil when every compound override is saveable.
     static func compoundOverrideProblem(
-        database: AppDatabase, overrides: [String: StagedTaskOverride], pendingPayloads: [PendingTaskPayload]
+        database: AppDatabase, overrides: [String: StagedTaskOverride], pendingPayloads: [PendingTaskPayload],
+        placedTaskIds: Set<String>
     ) -> String? {
         let pendingChildIds = Set(pendingPayloads.flatMap { $0.childTasks.map(\.id) })
         for (taskId, override) in overrides.sorted(by: { $0.key < $1.key }) {
+            // An override for a square no longer on the board never commits.
+            guard placedTaskIds.contains(taskId) else { continue }
+            // A linked counter can't change type or gain sub-tasks.
+            if let stored = try? database.fetchTask(id: taskId), stored.sharedCounterId != nil,
+               override.type != stored.type || override.compound != nil {
+                return linkedCounterTypeMessage
+            }
             guard var structure = override.compound else { continue }
             structure.title = override.title
             if let problem = structure.validate(type: .compound) { return problem }
@@ -511,6 +526,9 @@ extension BoardPlayViewModel {
         }
         return nil
     }
+
+    /// Shown when a staged edit would change a linked counter's type.
+    nonisolated static let linkedCounterTypeMessage = "A linked counter’s type can’t be changed here."
 
     /// Whether Board Edit may switch a task from `from` to `to`: Simple ⇄
     /// Counting, and Simple / Counting → Compound (the sheet's compound editor
@@ -533,7 +551,8 @@ extension BoardPlayViewModel {
     nonisolated static func applyingOverride(_ override: StagedTaskOverride, to task: Task) -> Task {
         var updated = task
         updated.title = override.title
-        if boardEditAllowsTypeSwitch(from: task.type, to: override.type),
+        if task.sharedCounterId == nil,
+           boardEditAllowsTypeSwitch(from: task.type, to: override.type),
            override.type != .compound || override.compound != nil {
             updated.type = override.type
         }
@@ -558,6 +577,7 @@ extension BoardPlayViewModel {
                 updated.maxCount = nil
                 updated.isCompleted = false
                 updated.completedAt = nil
+                updated.currentCount = nil
             }
             if var structure = override.compound {
                 structure.title = override.title

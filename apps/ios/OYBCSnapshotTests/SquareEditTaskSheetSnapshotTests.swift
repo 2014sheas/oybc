@@ -111,6 +111,17 @@ final class SquareEditTaskSheetSnapshotTests: XCTestCase {
         )
     }
 
+    /// A linked counter: type fixed (no picker), title + counting fields only.
+    func testLinkedCounterFixedTypeLight() {
+        var task = countingTask()
+        task.sharedCounterId = "sett-shared"
+        assertSnapshot(
+            of: makeSheet(task: task),
+            as: .image(layout: .fixed(width: 393, height: 780)),
+            record: recordMode
+        )
+    }
+
     // MARK: - Achievement task
 
     /// P0 regression: an achievement opens with its real type badge, no

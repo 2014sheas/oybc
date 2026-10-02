@@ -171,8 +171,13 @@ export async function commitSquareEdits(input: CommitSquareEditsInput): Promise<
       //     library source. Removals/unlocks/moves are independent of task
       //     fields, so running these here preserves their ordering.
       const now = currentTimestamp();
+      // Only overrides for a task STILL placed by a final cell commit: a staged
+      // edit on a removed / replaced square would otherwise be a destructive
+      // conversion of a task that left the board.
+      const placedStagedIds = new Set(cells.map((c) => c.taskId));
       const patched = new Set<string>();
       for (const [stagedId, patch] of taskOverrides.entries()) {
+        if (!placedStagedIds.has(stagedId)) continue;
         const targetId = placedIdByStagedId.get(stagedId) ?? stagedId;
         if (patched.has(targetId)) continue;
         patched.add(targetId);

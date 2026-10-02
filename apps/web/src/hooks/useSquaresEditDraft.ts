@@ -79,6 +79,8 @@ export interface UseSquaresEditDraftResult {
   canShuffle: boolean;
   /** Resolve a task for display, applying any staged override. */
   resolveTask: (taskId: string) => Task | undefined;
+  /** The task as stored / pending, WITHOUT any staged override. */
+  resolveOriginalTask: (taskId: string) => Task | undefined;
   stageAdd: (row: number, col: number, pick: { taskId: string } | { pending: PendingTaskPayload }) => void;
   stageReplace: (cellId: string, pick: { taskId: string } | { pending: PendingTaskPayload }) => void;
   stageRemove: (cellId: string) => void;
@@ -202,6 +204,12 @@ export function useSquaresEditDraft(
     [taskMap, state.cells, state.taskOverrides],
   );
 
+  const resolveOriginalTask = useCallback(
+    (taskId: string): Task | undefined =>
+      taskMap[taskId] ?? state.cells.find((c) => c.taskId === taskId)?.pending?.task,
+    [taskMap, state.cells],
+  );
+
   const editCount = seeded ? deriveEditCount({ state, boardCenterType }) : 0;
   const canShuffle = deriveCanShuffle(state, gridSize);
   const centerCellKeepLocked = deriveCenterCellKeepLocked(state, gridSize);
@@ -292,6 +300,7 @@ export function useSquaresEditDraft(
     editCount,
     canShuffle,
     resolveTask,
+    resolveOriginalTask,
     stageAdd,
     stageReplace,
     stageRemove,

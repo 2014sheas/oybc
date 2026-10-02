@@ -22,6 +22,7 @@
  * `./tasks.crud`; `tasks.crud.ts` must NEVER import this module (circular).
  */
 import {
+  OperatorType,
   SyncOperationType,
   TaskType,
   compoundChildLinkProblem,
@@ -417,6 +418,12 @@ export async function applyBoardEditTaskOverrideInTransaction(
   const nextType = fields.type ?? existing.type;
   const typeChanged = nextType !== existing.type;
 
+  // A linked / window-stamped derived counter keeps its type and has no
+  // structure: reject (throw → the whole Save rolls back).
+  if (existing.sharedCounterId != null && (typeChanged || compound)) {
+    throw new Error(`Task ${taskId}: a linked counter cannot change type or become a compound`);
+  }
+
   if (compound) {
     if (nextType !== TaskType.COMPOUND) throw new Error(`Task ${taskId}: a compound structure needs type compound`);
     if (typeChanged && existing.type !== TaskType.NORMAL && existing.type !== TaskType.COUNTING) {
@@ -432,7 +439,9 @@ export async function applyBoardEditTaskOverrideInTransaction(
       for (const k of COUNTING_ONLY_FIELDS) base[k] = undefined;
     }
     const description = 'description' in fields ? (fields.description ?? '') : undefined;
-    await applyCompoundStructureEditInTransaction(base, compound, { description }, now);
+    // A conversion must never write an operator-less compound (iOS defaults `.and`).
+    const structure = typeChanged ? { ...compound, operator: compound.operator ?? OperatorType.AND } : compound;
+    await applyCompoundStructureEditInTransaction(base, structure, { description }, now);
     return;
   }
 

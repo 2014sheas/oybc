@@ -475,4 +475,32 @@ test.describe('Squares editor (l) — Edit task… turns a plain square into a c
     await expect(reopened.getByLabel('Sub-task 1 title')).toHaveValue('Stretch');
     await expect(reopened.getByLabel('Sub-task 2 title')).toHaveValue('Journal');
   });
+  test('stage Compound → reopen → switch back to Simple → Done → still Simple after Save', async ({ page }) => {
+    await page.goto(`/boards/${BOARD_ID}?__oybc_test_bypass=1`);
+    await page.getByRole('button', { name: 'Edit board' }).click();
+    await page.getByRole('button', { name: /^Morning routine$/ }).click();
+    await page.getByRole('button', { name: 'Edit task…' }).click();
+    const sheet = page.getByRole('dialog', { name: 'Edit task' });
+    await sheet.getByRole('button', { name: 'Compound', exact: true }).click();
+    await sheet.getByLabel('New normal task title').fill('Stretch');
+    await sheet.getByLabel('New normal task title').press('Enter');
+    await sheet.getByLabel('New normal task title').fill('Journal');
+    await sheet.getByLabel('New normal task title').press('Enter');
+    await sheet.getByRole('button', { name: 'Done' }).click();
+    await expect(page.getByText('≡')).toBeVisible();
+
+    // Reopen the staged compound: the type control is still a switch (original is Simple).
+    await page.getByRole('button', { name: /Morning routine/ }).first().click();
+    await page.getByRole('button', { name: 'Edit task…' }).click();
+    const reopened = page.getByRole('dialog', { name: 'Edit task' });
+    await reopened.getByRole('button', { name: 'Simple', exact: true }).click();
+    await reopened.getByRole('button', { name: 'Done' }).click();
+    await expect(page.getByText('≡')).toHaveCount(0);
+
+    await page.getByRole('button', { name: 'Save changes' }).click();
+    await expect(page.getByText('Board saved')).toBeVisible();
+    await page.reload();
+    await expect(page.getByText('≡')).toHaveCount(0);
+    await expect(page.getByRole('button', { name: /Morning routine/ })).toBeVisible();
+  });
 });

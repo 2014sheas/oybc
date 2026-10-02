@@ -31,6 +31,12 @@ export interface BoardEditTaskSheetProps {
    * previously staged values, not the DB state.
    */
   task: Task;
+  /**
+   * The task BEFORE any staged override (stored or pending). Drives the type
+   * control and lets the user switch back to the original type before Save.
+   * Defaults to `task` (nothing staged).
+   */
+  original?: Task;
   /** The task's already-staged override, if any (carries a staged `compound`). */
   staged?: BoardEditTaskOverride;
   /**
@@ -82,12 +88,14 @@ function typeLabel(type: TaskType | string): string {
  * "Editing this task changes it everywhere it's used." hint is always visible.
  *
  * @param task - The task (with any caller-applied overrides pre-merged)
+ * @param original - The task before any staged override
  * @param staged - Its staged override, if any
  * @param onDone - Receives the staged override; caller increments squareEditCount
  * @param onCancel - Dismiss without staging
  */
 export function BoardEditTaskSheet({
   task,
+  original: originalProp,
   staged,
   onDone,
   onCancel,
@@ -100,6 +108,7 @@ export function BoardEditTaskSheet({
 
   // ── Seed from task (which has overrides pre-merged by caller) ────────────
 
+  const original = originalProp ?? task;
   const [selected, setSelected] = useState<TaskType>(task.type);
   const [title, setTitle] = useState(task.title ?? '');
 
@@ -113,8 +122,11 @@ export function BoardEditTaskSheet({
   // Compound editor. A staged compound is the seed on re-open; otherwise an
   // existing compound loads its sub-tasks, and a non-compound starts empty.
   const [compoundDraft, setCompoundDraft] = useState<TaskEditPatch | null>(
-    staged?.compound ?? (task.type === TaskType.COMPOUND ? null : seedCompoundDraft(task, [])),
+    staged?.compound ?? (original.type === TaskType.COMPOUND ? null : seedCompoundDraft(original, [])),
   );
+  // The STORED compound's seeded structure (null for a non-compound original
+  // or a re-opened staged structure) — the unedited-compound gate's baseline.
+  const [compoundBaseline, setCompoundBaseline] = useState<TaskEditPatch | null>(null);
   const [compoundLoadError, setCompoundLoadError] = useState<string | null>(null);
   const [libraryTasks, setLibraryTasks] = useState<Task[]>([]);
   const [allLinks, setAllLinks] = useState<CompoundChild[]>([]);
@@ -129,7 +141,7 @@ export function BoardEditTaskSheet({
   useEffect(() => {
     if (!editorOpen) return;
     let cancelled = false;
-    if (task.type === TaskType.COMPOUND && !staged?.compound) {
+    if (original.type === TaskType.COMPOUND && !staged?.compound) {
       void (async () => {
         try {
           const links = (await fetchCompoundChildren(task.id))
@@ -138,7 +150,11 @@ export function BoardEditTaskSheet({
           const kids = await fetchTasksByIds(links.map((l) => l.childTaskId));
           const byId = new Map(kids.map((t) => [t.id, t]));
           const ordered = links.map((l) => byId.get(l.childTaskId)).filter((t): t is Task => !!t);
-          if (!cancelled) setCompoundDraft(seedCompoundDraft(task, ordered));
+          if (!cancelled) {
+            const seeded = seedCompoundDraft(original, ordered);
+            setCompoundBaseline(seeded);
+            setCompoundDraft(seeded);
+          }
         } catch (e) {
           if (!cancelled) setCompoundLoadError(`Couldn't load sub-tasks: ${(e as Error).message}`);
         }
@@ -167,7 +183,7 @@ export function BoardEditTaskSheet({
 
   // ── Validation ───────────────────────────────────────────────────────────
 
-  const input = { original: task, selected, title, action, goalStr, unit, compoundDraft };
+  const input = { original, selected, title, action, goalStr, unit, compoundDraft, compoundBaseline };
   const problem = sheetValidationProblem(input);
   const canSave = problem === null && !checking;
   const goalNum = parseGoal(goalStr);
@@ -202,7 +218,7 @@ export function BoardEditTaskSheet({
     onDone(task.id, patch);
   };
 
-  const mode = typeControlMode(task.type);
+  const mode = typeControlMode(original.type, task.sharedCounterId != null);
 
   // ── Render ───────────────────────────────────────────────────────────────
 
@@ -237,6 +253,13 @@ export function BoardEditTaskSheet({
                 options={TYPE_OPTIONS}
                 value={selected}
                 onChange={(next) => {
+                  // Switching back to an originally-Counting task after a staged
+                  // switch away: the merged task has no counting fields, so reseed.
+                  if (next === TaskType.COUNTING && original.type === TaskType.COUNTING && !action && !goalStr && !unit) {
+                    setAction(original.action ?? '');
+                    setGoalStr(original.maxCount !== undefined ? String(original.maxCount) : '');
+                    setUnit(original.unit ?? '');
+                  }
                   setSelected(next);
                   setDoneError(null);
                 }}

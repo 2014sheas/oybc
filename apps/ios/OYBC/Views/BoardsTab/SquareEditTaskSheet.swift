@@ -36,6 +36,15 @@ struct SquareEditTaskSheet: View {
     /// Task to edit. Caller pre-applies any existing `StagedTaskOverride` so
     /// the sheet opens with the most recent staged state.
     let task: Task
+    /// The task as STORED (or as its pending payload holds it) — before any
+    /// staged override. Decides whether the type picker shows and what
+    /// "Compound" means (a conversion vs an edit), and supplies the counting
+    /// fields when the user switches back to Counting. nil ⇒ `task` itself.
+    var original: Task? = nil
+    /// The compound rule + sub-tasks already STAGED for this task (its
+    /// `StagedTaskOverride.compound`). When set the editor reopens on it, so
+    /// reopen-then-Done re-stages the same structure instead of dropping it.
+    var stagedCompound: TaskEditPatch? = nil
     /// An existing compound's ordered sub-tasks, when the caller already holds
     /// them (snapshot fixtures; a still-pending compound whose children are
     /// not in the DB yet). nil ⇒ `loadInputs` supplies them.
@@ -95,6 +104,9 @@ struct SquareEditTaskSheet: View {
     /// What the editor opened with — an existing compound submits only an
     /// edited structure.
     @State private var compoundBaseline: TaskEditPatch?
+    /// True when the editor was seeded from a STAGED compound — Done then
+    /// always re-stages the draft (never overwrites the override with nil).
+    @State private var seededFromStaged = false
     @State private var compoundLoadError: String?
     @State private var pickerLibraryTasks: [Task]
     @State private var pickerLinks: [CompoundChild]
@@ -104,6 +116,8 @@ struct SquareEditTaskSheet: View {
 
     init(
         task: Task,
+        original: Task? = nil,
+        stagedCompound: TaskEditPatch? = nil,
         compoundChildren: [Task]? = nil,
         libraryTasks: [Task] = [],
         allLinks: [CompoundChild] = [],
@@ -114,6 +128,8 @@ struct SquareEditTaskSheet: View {
         onCancel: @escaping () -> Void
     ) {
         self.task = task
+        self.original = original
+        self.stagedCompound = stagedCompound
         self.compoundChildren = compoundChildren
         self.libraryTasks = libraryTasks
         self.allLinks = allLinks
@@ -126,24 +142,76 @@ struct SquareEditTaskSheet: View {
         // `startingType` pre-selects a segment (snapshot fixtures render the
         // converted-Compound state without driving a tap); production leaves nil.
         _type        = State(initialValue: startingType ?? Self.initialType(for: task))
-        _action      = State(initialValue: task.action ?? "")
-        _unit        = State(initialValue: task.unit ?? "")
-        _maxCountStr = State(initialValue: task.maxCount.map { String($0) } ?? "")
+        // Counting fields seed from the merged task while it is Counting (it
+        // carries any staged edit), else from the ORIGINAL — so switching back
+        // to Counting offers the stored values, not blanks.
+        let countingSource = task.type == .counting ? task : (original ?? task)
+        _action      = State(initialValue: countingSource.action ?? "")
+        _unit        = State(initialValue: countingSource.unit ?? "")
+        _maxCountStr = State(initialValue: countingSource.maxCount.map { String($0) } ?? "")
         _pickerLibraryTasks = State(initialValue: libraryTasks)
         _pickerLinks = State(initialValue: allLinks)
         _pickerInputsState = State(initialValue: libraryInputsState)
-        if task.type == .compound {
-            // An existing compound: seed synchronously when the caller holds
-            // its children, otherwise `loadInputs` seeds on appear.
-            if let kids = compoundChildren {
-                let seeded = EditTaskSheet.seedCompoundDraft(task: task, children: kids)
-                _compoundDraft = State(initialValue: seeded)
-                _compoundBaseline = State(initialValue: seeded)
-            }
-        } else {
-            // A Simple / Counting task converting: no sub-tasks yet, default rule.
-            _compoundDraft = State(initialValue: Self.newCompoundDraft(for: task))
+        let seed = Self.compoundSeed(task: task, original: original, staged: stagedCompound, children: compoundChildren)
+        _compoundDraft = State(initialValue: seed.draft)
+        _compoundBaseline = State(initialValue: seed.baseline)
+        _seededFromStaged = State(initialValue: seed.fromStaged)
+    }
+
+    /// What the compound editor opens with.
+    struct CompoundSeed {
+        /// nil only while an EXISTING compound's sub-tasks are still loading.
+        var draft: TaskEditPatch?
+        /// The stored structure an unedited existing compound is compared to.
+        var baseline: TaskEditPatch?
+        /// True ⇒ seeded from a STAGED compound (Done always re-stages it).
+        var fromStaged: Bool
+    }
+
+    /// The editor's initial structure. A STAGED compound (a conversion or an
+    /// edited existing compound being reopened) wins over the stored / pending
+    /// task, so reopen shows — and Done re-stages — what was staged; else an
+    /// existing compound seeds from its children (nil until loaded), and a
+    /// Simple / Counting task starts from the default empty "all" rule.
+    ///
+    /// - Parameters:
+    ///   - task: The override-merged task.
+    ///   - original: The task as stored / pending (nil ⇒ `task`).
+    ///   - staged: The override's staged compound, if any.
+    ///   - children: An existing compound's ordered sub-tasks, if held.
+    static func compoundSeed(task: Task, original: Task?, staged: TaskEditPatch?, children: [Task]?) -> CompoundSeed {
+        if let staged { return CompoundSeed(draft: staged, baseline: nil, fromStaged: true) }
+        if (original ?? task).type == .compound {
+            guard let children else { return CompoundSeed(draft: nil, baseline: nil, fromStaged: false) }
+            let seeded = EditTaskSheet.seedCompoundDraft(task: task, children: children)
+            return CompoundSeed(draft: seeded, baseline: seeded, fromStaged: false)
         }
+        return CompoundSeed(draft: newCompoundDraft(for: task), baseline: nil, fromStaged: false)
+    }
+
+    /// The compound structure Done submits for the chosen `type`, or nil.
+    /// A conversion INTO Compound, or an editor reopened on a staged compound,
+    /// always submits the draft; an existing compound submits only an edited
+    /// structure (so a stored-invalid one can still be renamed).
+    static func compoundSubmission(
+        type: TaskType, originalType: TaskType, seededFromStaged: Bool,
+        baseline: TaskEditPatch?, draft: TaskEditPatch?, title: String
+    ) -> TaskEditPatch? {
+        guard type == .compound else { return nil }
+        if originalType != .compound || seededFromStaged {
+            guard var d = draft else { return nil }
+            d.title = title.trimmingCharacters(in: .whitespacesAndNewlines)
+            return d
+        }
+        return EditTaskSheet.compoundSubmission(baseline: baseline, draft: draft, title: title)
+    }
+
+    /// Whether the Simple / Counting / Compound picker shows: only for a task
+    /// that may still switch type (never a compound, an achievement or a
+    /// linked counter).
+    static func showsTypePicker(task: Task, original: Task?) -> Bool {
+        let t = (original ?? task).type
+        return (t == .normal || t == .counting) && task.sharedCounterId == nil
     }
 
     /// The empty compound structure a Simple / Counting task starts from when
@@ -168,9 +236,10 @@ struct SquareEditTaskSheet: View {
     /// Whether the Simple / Counting / Compound type picker is shown — only
     /// for a task that may still switch type (never a compound or an
     /// achievement).
-    private var showsTypePicker: Bool {
-        task.type == .normal || task.type == .counting
-    }
+    private var showsTypePicker: Bool { Self.showsTypePicker(task: task, original: original) }
+
+    /// The task's stored (pre-override) type.
+    private var originalType: TaskType { (original ?? task).type }
 
     // MARK: - Validation
 
@@ -203,14 +272,14 @@ struct SquareEditTaskSheet: View {
     }
 
     /// Whether a conversion is in progress (picked Compound on a non-compound).
-    private var isConverting: Bool { task.type != .compound && type == .compound }
+    private var isConverting: Bool { originalType != .compound && type == .compound }
 
     /// The blocking validation message for the compound structure, or nil.
     /// An UNEDITED existing compound is never blocked (a stored-invalid one
     /// can still be renamed), mirroring `EditTaskSheet`.
     private var compoundValidation: String? {
         guard type == .compound, let d = titledDraft else { return nil }
-        if !isConverting
+        if !isConverting && !seededFromStaged
             && !EditTaskSheet.compoundStructureChanged(baseline: compoundBaseline, draft: compoundDraft) {
             return nil
         }
@@ -224,18 +293,15 @@ struct SquareEditTaskSheet: View {
     /// The compound structure Done submits, or nil (non-compound; untouched
     /// existing compound).
     private var compoundSubmission: TaskEditPatch? {
-        guard type == .compound else { return nil }
-        if isConverting {
-            guard var d = compoundDraft else { return nil }
-            d.title = title.trimmingCharacters(in: .whitespacesAndNewlines)
-            return d
-        }
-        return EditTaskSheet.compoundSubmission(baseline: compoundBaseline, draft: compoundDraft, title: title)
+        Self.compoundSubmission(
+            type: type, originalType: originalType, seededFromStaged: seededFromStaged,
+            baseline: compoundBaseline, draft: compoundDraft, title: title
+        )
     }
 
     /// Pulls the presenter's loaded inputs into the sheet state.
     private func applyLoaded(_ inputs: CompoundInputs) {
-        if task.type == .compound, compoundDraft == nil, let kids = inputs.children {
+        if originalType == .compound, compoundDraft == nil, let kids = inputs.children {
             let seeded = EditTaskSheet.seedCompoundDraft(task: task, children: kids)
             compoundBaseline = seeded
             compoundDraft = seeded

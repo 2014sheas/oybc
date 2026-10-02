@@ -1,5 +1,6 @@
-import { TaskType, generateCounterTaskTitle, type Task } from '@oybc/shared';
+import { OperatorType, TaskType, generateCounterTaskTitle, type Task } from '@oybc/shared';
 import type { BoardEditTaskOverride } from '../../hooks/squaresEditReducer';
+import { compoundStructureChanged } from '../../pages/tasks/compoundEditGate';
 import {
   childPatchFromTask,
   seedPatchForEditor,
@@ -24,9 +25,12 @@ export type TypeControlMode = 'switch' | 'fixed' | 'none';
  * three-way switch; a Compound shows its type fixed (switching OUT of a
  * compound is out of scope); Achievement shows none (title only).
  *
- * @param type - The task's current type.
+ * @param type - The task's ORIGINAL (stored / pending) type, not an override-merged one.
+ * @param linkedCounter - `task.sharedCounterId != null`: type is fixed.
  */
-export function typeControlMode(type: TaskType): TypeControlMode {
+export function typeControlMode(type: TaskType, linkedCounter = false): TypeControlMode {
+  // A linked / window-stamped derived counter is never convertible.
+  if (linkedCounter) return type === TaskType.ACHIEVEMENT ? 'none' : 'fixed';
   if (type === TaskType.NORMAL || type === TaskType.COUNTING) return 'switch';
   if (type === TaskType.COMPOUND) return 'fixed';
   return 'none';
@@ -48,13 +52,20 @@ export function showsCompoundEditor(selected: TaskType): boolean {
  */
 export function seedCompoundDraft(task: Task, children: Task[]): TaskEditPatch {
   const seeded = seedPatchForEditor(task);
-  if (task.type !== TaskType.COMPOUND) return { ...seeded, children: [] };
+  // A converted compound must never be written without an operator (iOS `.and`).
+  if (task.type !== TaskType.COMPOUND) {
+    return { ...seeded, operator: seeded.operator ?? OperatorType.AND, children: [] };
+  }
   return { ...seeded, children: children.filter((t) => !t.isDeleted).map(childPatchFromTask) };
 }
 
 /** The sheet's editable state. */
 export interface SheetInput {
-  /** The task as opened (overrides pre-merged by the caller). */
+  /**
+   * The task as it was BEFORE any staged override (stored or pending). Its
+   * type is what `buildSheetOverride` diffs against, so selecting it again
+   * stages no type change.
+   */
   original: Task;
   /** The type currently selected in the control. */
   selected: TaskType;
@@ -64,6 +75,24 @@ export interface SheetInput {
   unit: string;
   /** `null` until the compound draft has loaded / been seeded. */
   compoundDraft: TaskEditPatch | null;
+  /**
+   * The structure seeded from the STORED compound (`null` when unknown — a
+   * staged structure was re-opened, or the original is not a compound). Lets
+   * an unedited compound skip structure validation / submission.
+   */
+  compoundBaseline?: TaskEditPatch | null;
+}
+
+/**
+ * Whether the compound structure must be validated / submitted: always for a
+ * non-compound original (a conversion), and for an existing compound only when
+ * its rule / sub-tasks differ from the stored baseline (so a stored-invalid
+ * compound can still be renamed — iOS parity).
+ */
+export function compoundStructureEdited(input: SheetInput): boolean {
+  if (input.original.type !== TaskType.COMPOUND) return true;
+  if (input.compoundBaseline == null) return true;
+  return compoundStructureChanged(input.compoundBaseline, input.compoundDraft);
 }
 
 /** A positive-integer goal, or `null`. */
@@ -90,6 +119,9 @@ export function sheetValidationProblem(input: SheetInput): string | null {
       return null;
     case TaskType.COMPOUND:
       if (input.compoundDraft === null) return 'Loading sub-tasks…';
+      if (!compoundStructureEdited(input)) {
+        return title.trim().length === 0 ? 'A title is required.' : null;
+      }
       return validatePatch({ ...input.compoundDraft, title }, TaskType.COMPOUND);
     default:
       return title.trim().length === 0 ? 'A title is required.' : null;
@@ -113,8 +145,12 @@ export function buildSheetOverride(input: SheetInput): BoardEditTaskOverride {
   const { original, selected } = input;
   const title = input.title.trim();
   const typeChanged = selected !== original.type;
-  const patch: BoardEditTaskOverride = {};
-  if (typeChanged) patch.type = selected;
+  // `compound: undefined` on EVERY non-compound branch: the reducer spreads,
+  // so a stale staged structure would otherwise survive a switch back.
+  const patch: BoardEditTaskOverride = { compound: undefined };
+  // Explicit `type` always (even back to the original) so a stale staged type
+  // is overwritten; the commit op treats type === stored as unchanged.
+  patch.type = selected;
 
   switch (selected) {
     case TaskType.COUNTING: {
@@ -132,7 +168,7 @@ export function buildSheetOverride(input: SheetInput): BoardEditTaskOverride {
     }
     case TaskType.COMPOUND: {
       patch.title = title;
-      if (input.compoundDraft) patch.compound = { ...input.compoundDraft, title };
+      if (input.compoundDraft && compoundStructureEdited(input)) patch.compound = { ...input.compoundDraft, title };
       break;
     }
     default: {

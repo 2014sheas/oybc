@@ -48,6 +48,11 @@ describe('typeControlMode / showsCompoundEditor', () => {
     expect(typeControlMode(TaskType.ACHIEVEMENT)).toBe('none');
   });
 
+  it('a linked counter shows its type fixed (no switch)', () => {
+    expect(typeControlMode(TaskType.COUNTING, true)).toBe('fixed');
+    expect(typeControlMode(TaskType.NORMAL, true)).toBe('fixed');
+  });
+
   it('the compound editor is open only for the Compound selection', () => {
     expect(showsCompoundEditor(TaskType.COMPOUND)).toBe(true);
     expect(showsCompoundEditor(TaskType.NORMAL)).toBe(false);
@@ -56,11 +61,11 @@ describe('typeControlMode / showsCompoundEditor', () => {
 });
 
 describe('seedCompoundDraft', () => {
-  it('a non-compound task seeds an empty-children draft with no operator', () => {
+  it('a non-compound task seeds an empty-children draft with the default AND operator', () => {
     const d = seedCompoundDraft(task({ title: 'Walk' }), [task({ id: 'ignored' })]);
     expect(d.children).toEqual([]);
     expect(d.title).toBe('Walk');
-    expect(d.operator).toBeUndefined();
+    expect(d.operator).toBe(OperatorType.AND);
   });
 
   it('an existing compound seeds its live child tasks, rule and threshold', () => {
@@ -108,8 +113,8 @@ describe('sheetValidationProblem', () => {
 });
 
 describe('buildSheetOverride', () => {
-  it('Simple rename: title only, no type', () => {
-    expect(buildSheetOverride(input({ title: ' New ' }))).toEqual({ title: 'New' });
+  it('Simple rename: title, the unchanged type, and an explicit cleared compound', () => {
+    expect(buildSheetOverride(input({ title: ' New ' }))).toEqual({ title: 'New', type: TaskType.NORMAL, compound: undefined });
   });
 
   it('Simple → Counting: type + counting fields; blank title auto-generates', () => {
@@ -122,7 +127,7 @@ describe('buildSheetOverride', () => {
   it('Counting edit keeps the stored title when blank and sends no type', () => {
     const counting = task({ type: TaskType.COUNTING, title: 'Run 5 km', action: 'Run', maxCount: 5, unit: 'km' });
     const o = buildSheetOverride(input({ original: counting, title: '', action: 'Run', goalStr: '8', unit: 'km' }));
-    expect(o.type).toBeUndefined();
+    expect(o.type).toBe(TaskType.COUNTING);
     expect(o).toMatchObject({ title: 'Run 5 km', maxCount: 8 });
   });
 
@@ -143,10 +148,40 @@ describe('buildSheetOverride', () => {
     expect(o.compound?.children).toHaveLength(2);
   });
 
-  it('an existing compound edit sends compound but no type', () => {
+  it('an existing compound edit sends compound with the unchanged type', () => {
     const parent = task({ type: TaskType.COMPOUND });
     const o = buildSheetOverride(input({ original: parent, compoundDraft: draft() }));
-    expect(o.type).toBeUndefined();
+    expect(o.type).toBe(TaskType.COMPOUND);
     expect(o.compound).toBeDefined();
+  });
+
+  it('switching back to the original type clears a staged structure (explicit compound: undefined)', () => {
+    const o = buildSheetOverride(input({ selected: TaskType.NORMAL, compoundDraft: draft() }));
+    expect(o.type).toBe(TaskType.NORMAL);
+    expect('compound' in o && o.compound === undefined).toBe(true);
+  });
+
+  it('Counting original → Compound → back to Counting: no compound, counting fields from the sheet', () => {
+    const counting = task({ type: TaskType.COUNTING, title: 'Run 5 km', action: 'Run', maxCount: 5, unit: 'km' });
+    const o = buildSheetOverride(input({ original: counting, selected: TaskType.COUNTING, title: '', action: 'Run', goalStr: '5', unit: 'km', compoundDraft: draft() }));
+    expect(o).toMatchObject({ type: TaskType.COUNTING, title: 'Run 5 km', maxCount: 5 });
+    expect('compound' in o && o.compound === undefined).toBe(true);
+  });
+
+  it('an UNEDITED existing compound submits no structure and skips structure validation', () => {
+    const parent = task({ type: TaskType.COMPOUND, title: 'Combo' });
+    const stored = draft({ children: [kid('only')] }); // stored-invalid: 1 child
+    const i = input({ original: parent, title: 'Renamed', compoundDraft: stored, compoundBaseline: stored });
+    expect(sheetValidationProblem(i)).toBeNull();
+    expect(buildSheetOverride(i).compound).toBeUndefined();
+  });
+
+  it('an EDITED existing compound is still validated and submitted', () => {
+    const parent = task({ type: TaskType.COMPOUND, title: 'Combo' });
+    const baseline = draft({ children: [kid('a'), kid('b')] });
+    const edited = draft({ children: [kid('a')] });
+    expect(sheetValidationProblem(input({ original: parent, compoundDraft: edited, compoundBaseline: baseline }))).toMatch(/two sub-tasks/);
+    const ok = draft({ children: [kid('a'), kid('b'), kid('c')] });
+    expect(buildSheetOverride(input({ original: parent, compoundDraft: ok, compoundBaseline: baseline })).compound).toBeDefined();
   });
 });

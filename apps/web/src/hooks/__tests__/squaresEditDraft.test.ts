@@ -400,6 +400,16 @@ describe('compound overrides (Board Edit — edit / convert to compound)', () =>
     expect(o.compound!.children.map((c) => c.title)).toEqual(['only']);
   });
 
+  it('a later override with `compound: undefined` removes the staged structure', () => {
+    const s0 = seedDraft([bt('bt-a', 'task-a', 0, 0)], CenterSquareType.NONE, 3);
+    const s1 = stageTaskEdit(s0, 'task-a', { type: TaskType.COMPOUND, compound: patch(['x', 'y']) });
+    const s2 = stageTaskEdit(s1, 'task-a', { type: TaskType.NORMAL, title: 'Walk', compound: undefined });
+    const o = s2.taskOverrides.get('task-a')!;
+    expect(o.compound).toBeUndefined();
+    expect(o.type).toBe(TaskType.NORMAL);
+    expect(applyOverrideForDisplay(base, o).type).toBe(TaskType.NORMAL);
+  });
+
   it('a later override without compound keeps the staged compound', () => {
     const s0 = seedDraft([bt('bt-a', 'task-a', 0, 0)], CenterSquareType.NONE, 3);
     const s1 = stageTaskEdit(s0, 'task-a', { type: TaskType.COMPOUND, compound: patch(['x', 'y']) });

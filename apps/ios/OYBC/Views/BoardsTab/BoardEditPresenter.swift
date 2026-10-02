@@ -96,11 +96,15 @@ struct BoardEditPresenter: ViewModifier {
             }
             // Edit-task sheet (i6, unchanged from slice 2).
             .sheet(item: $taskEditTarget) { target in
+                let original = originalTask(for: target.task)
+                let staged = viewModel.editTaskOverrides[target.task.id]?.compound
                 SquareEditTaskSheet(
                     task: target.task,
-                    compoundChildren: pendingCompoundChildren(for: target.task),
+                    original: original,
+                    stagedCompound: staged,
+                    compoundChildren: staged == nil ? pendingCompoundChildren(for: original) : nil,
                     libraryInputsState: .loading,
-                    loadInputs: compoundInputsLoader(for: target.task),
+                    loadInputs: compoundInputsLoader(for: original, hasStagedCompound: staged != nil),
                     onDone: { patch in
                         taskEditTarget = nil
                         viewModel.handleEditTaskOverride(taskId: target.task.id, patch: patch)
@@ -189,6 +193,15 @@ struct BoardEditPresenter: ViewModifier {
 
     // MARK: - Edit-task compound inputs
 
+    /// The task as stored (or as its pending payload holds it) — before any
+    /// staged "Edit task…" override. `target.task` is override-merged.
+    private func originalTask(for merged: Task) -> Task {
+        if let pending = viewModel.editSquaresDraft.values.compactMap(\.pending).first(where: { $0.task.id == merged.id }) {
+            return pending.task
+        }
+        return viewModel.taskMap[merged.id] ?? merged
+    }
+
     /// A still-pending (picker-born, not yet saved) compound's ordered
     /// sub-tasks, read from its staged payload — they are not in the DB, so
     /// the sheet is seeded synchronously. nil for every other task.
@@ -204,10 +217,10 @@ struct BoardEditPresenter: ViewModifier {
     /// compound + the quick-add row's library/links), read through the view
     /// model's injected database off the main actor. nil for an achievement
     /// (no compound editor).
-    private func compoundInputsLoader(for task: Task) -> (() async -> SquareEditTaskSheet.CompoundInputs)? {
+    private func compoundInputsLoader(for task: Task, hasStagedCompound: Bool) -> (() async -> SquareEditTaskSheet.CompoundInputs)? {
         guard task.type != .achievement else { return nil }
         let database = viewModel.database
-        let needsChildren = task.type == .compound && pendingCompoundChildren(for: task) == nil
+        let needsChildren = task.type == .compound && !hasStagedCompound && pendingCompoundChildren(for: task) == nil
         let taskId = task.id
         let userId = task.userId
         return {
