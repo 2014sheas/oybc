@@ -305,6 +305,7 @@
 		8C36023A6B488E7C92161ED0 /* RisoPoolRowEditorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2BC707E0A8CCCC6B284FDBF5 /* RisoPoolRowEditorView.swift */; };
 		8E702A09CB7A29B25DD75E79 /* HelpSnapshotTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D45228BC98E78D745F859D13 /* HelpSnapshotTests.swift */; };
 		8F1F8F77C1D1A7116B8A3402 /* AppDatabase+Sync.swift in Sources */ = {isa = PBXBuildFile; fileRef = D42A2BC2F86BDCA61937AA8D /* AppDatabase+Sync.swift */; };
+		8F31B08C030858C5E7FC208F /* WizardPreviewWindowed.swift in Sources */ = {isa = PBXBuildFile; fileRef = A217E4A7501E75F1211450D2 /* WizardPreviewWindowed.swift */; };
 		8F51BD4C2015CF74C38EE0E6 /* LateLogTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 024C694E1EED23BCBF9951B9 /* LateLogTests.swift */; };
 		8F561408FA0E962E9B2C82D7 /* RisoEditProfileSheetSnapshotTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4D5ECF6D5AA63DA4306784FE /* RisoEditProfileSheetSnapshotTests.swift */; };
 		9055DBF7BCED743488975889 /* counterArrivalsVectors.json in Resources */ = {isa = PBXBuildFile; fileRef = AAACA731C4F2E69E86250A09 /* counterArrivalsVectors.json */; };
@@ -888,6 +889,7 @@
 		A13D4A0DE05DC8355C8A2551 /* RisoKitGallery.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RisoKitGallery.swift; sourceTree = "<group>"; };
 		A1D83ABC2029097355B7D378 /* BoardWizardPersist+DeleteRecurringTemplate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "BoardWizardPersist+DeleteRecurringTemplate.swift"; sourceTree = "<group>"; };
 		A21392B9218C35E587B83EC5 /* RisoProfileSnapshotTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RisoProfileSnapshotTests.swift; sourceTree = "<group>"; };
+		A217E4A7501E75F1211450D2 /* WizardPreviewWindowed.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WizardPreviewWindowed.swift; sourceTree = "<group>"; };
 		A26AD6B44858BA231B338C25 /* AuthClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthClient.swift; sourceTree = "<group>"; };
 		A2B9CC1100E046499CED2041 /* RisoProfileRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RisoProfileRow.swift; sourceTree = "<group>"; };
 		A3121102B28AB610792A5AC1 /* BoardCloseReopenSnapshotTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BoardCloseReopenSnapshotTests.swift; sourceTree = "<group>"; };
@@ -1072,7 +1074,7 @@
 		FF5F9FDA837D8BC9484CCF6C /* CoreBoardDefault.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoreBoardDefault.swift; sourceTree = "<group>"; };
 		FF67441213041C9A9901261C /* RisoCoreTimeframeGrid.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RisoCoreTimeframeGrid.swift; sourceTree = "<group>"; };
 		FFB954BE701004999E12FBE9 /* CoreBoardWindowViewModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoreBoardWindowViewModelTests.swift; sourceTree = "<group>"; };
-		"TEMP_B487A13F-884F-4247-847D-89E1A25C3426" /* Signing.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Signing.xcconfig; sourceTree = "<group>"; };
+		"TEMP_CF89B94E-1C39-4A92-8E5C-B56D92B48C13" /* Signing.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Signing.xcconfig; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -1769,6 +1771,7 @@
 				ECCBF1C8380F30B8C320AABD /* BoardWizardView.swift */,
 				672279842817679C05C429E7 /* CreateHubView.swift */,
 				577A9FF2077DA1361731C107 /* RecurringDraftMixPayload.swift */,
+				A217E4A7501E75F1211450D2 /* WizardPreviewWindowed.swift */,
 				AF5FC4716596DB1CFB3B658D /* Components */,
 				7538C39CB55CE0565035BE29 /* ViewModels */,
 			);
@@ -1872,10 +1875,10 @@
 			path = OYBCUITests;
 			sourceTree = "<group>";
 		};
-		"TEMP_B8CAE2A3-17DE-4659-BDFC-7D3556434F35" /* ios */ = {
+		"TEMP_05D4A2CC-B01B-4B49-91BF-2FDF80B2F79B" /* ios */ = {
 			isa = PBXGroup;
 			children = (
-				"TEMP_B487A13F-884F-4247-847D-89E1A25C3426" /* Signing.xcconfig */,
+				"TEMP_CF89B94E-1C39-4A92-8E5C-B56D92B48C13" /* Signing.xcconfig */,
 			);
 			path = ios;
 			sourceTree = "<group>";
@@ -2364,6 +2367,7 @@
 				BECA1D3017CA6E0A229E6533 /* UUIDv5.swift in Sources */,
 				AE68974162C7670D2CBD065C /* UpgradeAccountSheet.swift in Sources */,
 				9C24CDBF218203559E063F7F /* User.swift in Sources */,
+				8F31B08C030858C5E7FC208F /* WizardPreviewWindowed.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -2622,7 +2626,7 @@
 /* Begin XCBuildConfiguration section */
 		017A8B55D46C455027C5CBDA /* Debug */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = "TEMP_B487A13F-884F-4247-847D-89E1A25C3426" /* Signing.xcconfig */;
+			baseConfigurationReference = "TEMP_CF89B94E-1C39-4A92-8E5C-B56D92B48C13" /* Signing.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = OYBC/OYBC.entitlements;
@@ -2719,7 +2723,7 @@
 		};
 		2D2075CA2813758686875591 /* Release */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = "TEMP_B487A13F-884F-4247-847D-89E1A25C3426" /* Signing.xcconfig */;
+			baseConfigurationReference = "TEMP_CF89B94E-1C39-4A92-8E5C-B56D92B48C13" /* Signing.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = OYBC/OYBC.entitlements;
