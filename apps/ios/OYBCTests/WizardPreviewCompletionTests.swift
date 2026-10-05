@@ -142,4 +142,42 @@ final class WizardPreviewCompletionTests: XCTestCase {
         )
         XCTAssertTrue(fresh)
     }
+
+    // MARK: - wizardPreviewCount (owner report 2026-10-04: Board Edit / the
+    // wizard's Rearrange grid showed a counter's LIFETIME progress)
+
+    func testPreviewCountSumsOnlyInWindowIncrements_notLifetimeCache() {
+        let task = makeTask("c1", type: .counting, maxCount: 50, currentCount: 40)
+        let events = [
+            makeEvent(taskId: task.id, kind: .increment, occurredAt: beforeWindow, delta: 30),
+            makeEvent(taskId: task.id, kind: .increment, occurredAt: inWindow, delta: 12),
+        ]
+        let count = wizardPreviewCount(
+            task: task, eventsByTaskId: [task.id: events],
+            windowStart: windowStart, windowEnd: nil
+        )
+        XCTAssertEqual(count, 12, "only the in-window increment counts; the lifetime cache (40) is never read")
+    }
+
+    func testPreviewCountLinkedRowReadsRootEventsInWindow() {
+        let root = makeTask("root", type: .counting, maxCount: 100, currentCount: 77)
+        let linked = makeTask("linked", type: .counting, maxCount: 20, currentCount: 77, sharedCounterId: root.id)
+        let events = [
+            makeEvent(taskId: root.id, kind: .increment, occurredAt: beforeWindow, delta: 70),
+            makeEvent(taskId: root.id, kind: .increment, occurredAt: inWindow, delta: 7),
+        ]
+        let count = wizardPreviewCount(
+            task: linked, eventsByTaskId: [root.id: events],
+            windowStart: windowStart, windowEnd: nil
+        )
+        XCTAssertEqual(count, 7, "a linked row shows the ROOT's in-window sum, not its propagated lifetime mirror")
+    }
+
+    func testPreviewCountNonCountingKeepsCache() {
+        let task = makeTask("n1", currentCount: 3)
+        XCTAssertEqual(
+            wizardPreviewCount(task: task, eventsByTaskId: [:], windowStart: windowStart, windowEnd: nil),
+            3
+        )
+    }
 }

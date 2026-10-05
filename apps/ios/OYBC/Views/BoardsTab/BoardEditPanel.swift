@@ -64,6 +64,8 @@ struct BoardEditPanel: View {
     /// Windowed-Completion-aware completion read (Windowed Completion —
     /// docs/WINDOWED_COMPLETION.md §Task caches).
     var windowedIsCompleted: (Task) -> Bool = { $0.isCompleted }
+    /// Windowed count twin of `windowedIsCompleted` for counting squares.
+    var windowedCount: (Task) -> Int = { $0.currentCount ?? 0 }
 
     // MARK: - Saving indicator
 
@@ -224,7 +226,8 @@ struct BoardEditPanel: View {
                 onReorder: onReorder,
                 onKeyboardMove: onKeyboardMove,
                 onLiftChange: { isSquareLifted = $0 },
-                windowedIsCompleted: windowedIsCompleted
+                windowedIsCompleted: windowedIsCompleted,
+                windowedCount: windowedCount
             )
         }
     }

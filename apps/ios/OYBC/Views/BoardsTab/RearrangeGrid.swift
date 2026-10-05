@@ -121,6 +121,9 @@ struct RearrangeGrid: View {
     /// never carry completed tasks — don't copy that pattern into a real
     /// surface.
     var windowedIsCompleted: (Task) -> Bool = { $0.isCompleted }
+    /// Windowed count twin for counting squares (the wizard preview injects
+    /// `previewCount`, windowed against the prospective board).
+    var windowedCount: (Task) -> Int = { $0.currentCount ?? 0 }
 
     /// Cell ids (boardTaskIds) with a staged, unsaved edit other than a move
     /// (replace / task override / lock change) — drawn with the pencil chip.
@@ -344,7 +347,7 @@ struct RearrangeGrid: View {
             isCompleted: isTaskCompleted,
             showsLockChip: cell.isLocked,
             showsDirtyChip: isDirty,
-            currentCount: task?.currentCount ?? 0,
+            currentCount: task.map(windowedCount) ?? 0,
             maxCount: task?.maxCount ?? 0
         )
     }

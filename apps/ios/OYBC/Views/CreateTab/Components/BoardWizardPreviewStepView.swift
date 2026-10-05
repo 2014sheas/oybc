@@ -360,6 +360,15 @@ struct BoardWizardPreviewStepView: View {
         )
     }
 
+    /// Windowed count for a counting preview cell — twin of `previewIsCompleted`.
+    private func previewCount(_ task: Task) -> Int {
+        guard let window = previewWindow else { return task.currentCount ?? 0 }
+        return wizardPreviewCount(
+            task: task, eventsByTaskId: eventsByTaskId,
+            windowStart: window.start, windowEnd: window.end
+        )
+    }
+
     /// Load the events read-model for windowed preview completion.
     private func loadPreviewEvents() {
         do {
@@ -512,7 +521,8 @@ struct BoardWizardPreviewStepView: View {
                             rearrange: arrangeSubMode == .rearrange,
                             sideLength: gridSideLength,
                             onReorder: { handleReorder($0) },
-                            windowedIsCompleted: { previewIsCompleted($0) }
+                            windowedIsCompleted: { previewIsCompleted($0) },
+                            windowedCount: { previewCount($0) }
                         )
                     }
 

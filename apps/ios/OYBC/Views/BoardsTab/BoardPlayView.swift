@@ -652,6 +652,7 @@ struct BoardPlayView: View {
                     // finding): the edit preview must show the WINDOWED
                     // state, not the lifetime cache.
                     windowedIsCompleted: viewModel.windowedIsCompleted,
+                    windowedCount: windowedCount,
                     isSaving: editSaving,
                     onSave: {
                         // The VM validates + dispatches the commit; it returns
