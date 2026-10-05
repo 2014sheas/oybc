@@ -58,6 +58,13 @@ struct BoardListView: View {
     /// stack (the existing `String` `.navigationDestination`). Nil in preview.
     var onOpenClosingBoard: ((String) -> Void)? = nil
 
+    /// A non-draft board card tap. Wired by MainTabView to `pushBoard`, the
+    /// Boards stack's ONE push point, so a core board lands in its window
+    /// pager and only a non-core board opens on the plain route (owner report
+    /// 2026-10-05: the cards were hidden `NavigationLink(value: id)` rows and
+    /// pushed the plain route directly). Nil in preview.
+    var onOpenBoard: ((String) -> Void)? = nil
+
     // MARK: - Dependencies
 
     @EnvironmentObject var authService: AuthService
@@ -266,16 +273,15 @@ struct BoardListView: View {
                                 )
                             }
                         } else {
-                            // ZStack + hidden NavigationLink (rather than
-                            // wrapping RisoBoardCard directly in the link's
-                            // label) so List doesn't detect a bare
-                            // NavigationLink row and append its trailing
-                            // disclosure chevron — that reserved width was
-                            // why non-draft cards didn't line up with the
-                            // banners/draft cards above/around them.
-                            ZStack {
-                                NavigationLink(value: board.id) { EmptyView() }
-                                    .opacity(0)
+                            // A Button (like the draft card above), not a
+                            // NavigationLink: the tap goes through
+                            // `onOpenBoard` → `MainTabView.pushBoard`, which
+                            // resolves a core board to its pager window. A
+                            // Button row also adds no trailing disclosure
+                            // chevron, so the card keeps its full width.
+                            Button {
+                                onOpenBoard?(board.id)
+                            } label: {
                                 RisoBoardCard(
                                     board: board,
                                     timeframeLabel: boardTimeframeLabel(board),
@@ -284,6 +290,7 @@ struct BoardListView: View {
                                     template: template(for: board),
                                     templatesLoaded: templatesLoaded
                                 )
+                                .contentShape(Rectangle())
                             }
                         }
                     }
