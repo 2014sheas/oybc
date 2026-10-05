@@ -42,7 +42,7 @@ struct RisoSpecialTaskPanel: View {
     let onCompoundCreated: (OYBC.Task) -> Void
     let onPendingCreated: ((_ payload: PendingTaskPayload) -> Void)?
     let onLibraryReloadRequested: () -> Void
-    /// False in pool context (`PoolEditSheetView`): drops the Achievement
+    /// False in pool context (`PoolEditorView`): drops the Achievement
     /// chip and shortens the collapsed label — achievements are banned
     /// from pools (owner decision 2026-09-10; supply-side twin:
     /// `BoardSources.isSourceSupplyTask`). Default true (wizard Tasks

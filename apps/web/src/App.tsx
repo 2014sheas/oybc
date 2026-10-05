@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route, Navigate, useNavigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, useNavigate, useParams } from 'react-router-dom';
 import { AuthProvider } from './firebase/AuthContext';
 import { AuthGate } from './components/AuthGate';
 import { AppShell } from './components/appShell/AppShell';
@@ -8,6 +8,7 @@ import { BoardPlayPage } from './pages/BoardPlayPage';
 import { CreateHubPage } from './pages/CreateHubPage';
 import { TasksPage } from './pages/TasksPage';
 import { TaskDetailPage } from './pages/TaskDetailPage';
+import { PoolEditorPage } from './pages/PoolEditorPage';
 import { ProfilePage } from './pages/ProfilePage';
 import { SettingsPage } from './pages/SettingsPage';
 import { HelpPage } from './pages/HelpPage';
@@ -81,6 +82,18 @@ function TasksRoute(): React.ReactElement | null {
   return <TasksPage userId={user.id} />;
 }
 
+/**
+ * Route-level wrapper for the full-screen pool editor: `/tasks/pools/new`
+ * (no `:id` ⇒ create mode) and `/tasks/pools/:id` (edit). Keyed on the id so
+ * moving between pools remounts the form's seeded state.
+ */
+function PoolEditorRoute(): React.ReactElement | null {
+  const { user } = useAuth();
+  const { id } = useParams<{ id: string }>();
+  if (!user?.id) return null;
+  return <PoolEditorPage key={id ?? 'new'} userId={user.id} poolId={id} />;
+}
+
 // ─── Authenticated Layout ─────────────────────────────────────────────────────
 
 /**
@@ -110,6 +123,9 @@ function AuthenticatedLayout(): React.ReactElement {
         <Route path="/boards/:id" element={<BoardPlayPage />} />
         <Route path="/create" element={<CreateRoute />} />
         <Route path="/tasks" element={<TasksRoute />} />
+        {/* `pools` is a literal segment and the path is three deep, so `/tasks/:id` never matches it. */}
+        <Route path="/tasks/pools/new" element={<PoolEditorRoute />} />
+        <Route path="/tasks/pools/:id" element={<PoolEditorRoute />} />
         <Route path="/tasks/:id" element={<TaskDetailPage />} />
         <Route path="/profile" element={<ProfilePage />} />
         <Route path="/profile/settings" element={<SettingsPage />} />

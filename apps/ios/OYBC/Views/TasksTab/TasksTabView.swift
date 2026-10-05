@@ -16,6 +16,24 @@ enum TasksTabRoute: Hashable {
     case counter(id: String)
 }
 
+/// Library/Pools segment mode. Mirrors web `TasksSegment`.
+enum TasksTabSegment: Hashable {
+    case library
+    case pools
+
+    /// What the header "+" does in this segment (owner 2026-10-05): Pools
+    /// creates a pool, Library creates a task.
+    var plusAction: TasksTabPlusAction { self == .pools ? .newPool : .newTask }
+}
+
+/// The header "+" action. Pure so the routing is unit-testable.
+enum TasksTabPlusAction: Equatable {
+    case newTask
+    case newPool
+
+    var accessibilityLabel: String { self == .newPool ? "New pool" : "New task" }
+}
+
 /// Tasks tab — Riso-styled library browser.
 ///
 /// Reskinned in the "Riso" direction: cream paper background, Bricolage
@@ -77,23 +95,6 @@ struct TasksTabView: View {
 
     // MARK: - Pools segment (Task Pools + Recurring Boards Rework, P2)
 
-    /// Library/Pools segment mode. Mirrors web `TasksSegment`.
-    private enum TasksTabSegment: Hashable {
-        case library
-        case pools
-    }
-
-    private enum PoolEditTarget: Identifiable {
-        case new
-        case existing(Pool)
-        var id: String {
-            switch self {
-            case .new: return "new"
-            case .existing(let p): return p.id
-            }
-        }
-    }
-
     @State private var segment: TasksTabSegment = .library
     /// The user's non-deleted pools — loaded on appear (cheap; also needed
     /// for the segment's "Pools · N" label) rather than only when the
@@ -124,7 +125,6 @@ struct TasksTabView: View {
     /// only the newest run may commit (the `RecurringBoardTemplatesViewModel`
     /// `latestSeq` pattern).
     @State private var poolLoadSeq: UInt64 = 0
-    @State private var poolEditTarget: PoolEditTarget?
     @State private var poolLoadError: String?
 
     // MARK: - Body
@@ -211,8 +211,8 @@ struct TasksTabView: View {
                             pools: pools,
                             poolTasksById: poolTasksById,
                             healthByPoolId: healthByPoolId,
-                            onSelectPool: { poolEditTarget = .existing($0) },
-                            onNewPool: { poolEditTarget = .new }
+                            onSelectPool: { path.append(PoolEditorRoute.edit(poolId: $0.id)) },
+                            onNewPool: { path.append(PoolEditorRoute.new) }
                         )
                         .listRowInsets(EdgeInsets(top: 12, leading: Riso.gutter, bottom: 20, trailing: Riso.gutter))
                         .listRowSeparator(.hidden)
@@ -433,23 +433,10 @@ struct TasksTabView: View {
                 }
             )
         }
-        .sheet(item: $poolEditTarget) { target in
-            PoolEditSheetView(
-                pool: { if case .existing(let p) = target { return p }; return nil }(),
-                templates: poolTemplates,
-                library: library,
-                userId: userId,
-                onSaved: {
-                    poolEditTarget = nil
-                    loadPools()
-                },
-                onDeleted: {
-                    poolEditTarget = nil
-                    loadPools()
-                }
-            )
-        }
         // ── Navigation destination ────────────────────────────────────
+        .navigationDestination(for: PoolEditorRoute.self) { route in
+            poolEditor(for: route)
+        }
         .navigationDestination(for: TasksTabRoute.self) { route in
             switch route {
             case .counter(let counterId):
@@ -524,9 +511,44 @@ struct TasksTabView: View {
             }
             Spacer(minLength: 12)
             RisoIconButton(systemImage: "plus") {
-                showNewTaskSheet = true
+                switch segment.plusAction {
+                case .newTask: showNewTaskSheet = true
+                case .newPool: path.append(PoolEditorRoute.new)
+                }
             }
-            .accessibilityLabel("New task")
+            .accessibilityLabel(segment.plusAction.accessibilityLabel)
+        }
+    }
+
+    // MARK: - Pool editor (pushed full screen)
+
+    /// Pops the editor and reloads the pools list.
+    private func closePoolEditor() {
+        if !path.isEmpty { path.removeLast() }
+        loadPools()
+    }
+
+    @ViewBuilder
+    private func poolEditor(for route: PoolEditorRoute) -> some View {
+        switch route {
+        case .new:
+            PoolEditorView(
+                pool: nil, templates: poolTemplates, library: library, userId: userId,
+                database: database,
+                onSaved: { closePoolEditor() },
+                onDeleted: { closePoolEditor() },
+                onCancel: { closePoolEditor() }
+            )
+        case .edit(let poolId):
+            if let pool = pools.first(where: { $0.id == poolId }) {
+                PoolEditorView(
+                    pool: pool, templates: poolTemplates, library: library, userId: userId,
+                    database: database,
+                    onSaved: { closePoolEditor() },
+                    onDeleted: { closePoolEditor() },
+                    onCancel: { closePoolEditor() }
+                )
+            }
         }
     }
 

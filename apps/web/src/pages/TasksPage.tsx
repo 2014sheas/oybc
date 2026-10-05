@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { TaskType, type Task } from '@oybc/shared';
 import { RisoButton, RisoIcon, RisoSegmented } from '../components/riso';
 import { NewTaskSheet } from '../components/wizard/NewTaskSheet';
@@ -17,10 +17,14 @@ import { TaskRow } from './tasks/TaskRow';
 import { TaskEditSheet } from './tasks/TaskEditSheet';
 import { TaskConfirmDeleteDialog } from './tasks/TaskConfirmDeleteDialog';
 import { useTasksFilters } from './tasks/useTasksFilters';
+import {
+  NEW_POOL_PATH,
+  TASKS_SEGMENT_PARAM,
+  parseTasksSegment,
+  tasksPrimaryAction,
+  type TasksSegment,
+} from './tasks/tasksSegment';
 import styles from './TasksPage.module.css';
-
-/** Library/Pools segment mode (Task Pools + Recurring Boards Rework, P2). */
-type TasksSegment = 'library' | 'pools';
 
 export interface TasksPageProps {
   userId: string;
@@ -28,9 +32,9 @@ export interface TasksPageProps {
 
 /**
  * TasksPage — Dedicated Tasks tab. Composes:
- * - Header row with a compact "+ New task" button; tapping it opens
- *   the existing `NewTaskSheet` modal so the form doesn't dominate
- *   the page (the library is the primary surface).
+ * - Header row with a segment-aware "+" button: Library → "+ New task"
+ *   (opens the `NewTaskSheet` modal so the form doesn't dominate the
+ *   page); Pools → "+ New pool" (routes to the full-screen pool editor).
  * - Filter + sort controls (search + type chips + status / usage
  *   dropdowns + sort dropdown).
  * - Scrolling list of task rows; tapping a row deep-links into the
@@ -49,7 +53,13 @@ export function TasksPage({ userId }: TasksPageProps): React.ReactElement {
   // Task Pools + Recurring Boards Rework (P2) — Library/Pools segment.
   // `pools` only powers the "Pools · N" count here; PoolsBrowse loads its
   // own (batched) data when the segment is active.
-  const [segment, setSegment] = useState<TasksSegment>('library');
+  // The segment lives in the URL (`?segment=pools`) so the full-screen pool
+  // editor can return to Pools; absent = Library.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const segment = parseTasksSegment(searchParams);
+  const setSegment = (next: TasksSegment): void =>
+    setSearchParams(next === 'pools' ? { [TASKS_SEGMENT_PARAM]: 'pools' } : {}, { replace: true });
+  const primaryAction = tasksPrimaryAction(segment);
   const pools = usePools(userId);
 
   // Quick-action state for row-level edit / delete. Both modals are
@@ -143,9 +153,11 @@ export function TasksPage({ userId }: TasksPageProps): React.ReactElement {
         <RisoButton
           kind="primary"
           icon={<RisoIcon name="plus" size={16} />}
-          onClick={() => setShowNewTaskSheet(true)}
+          onClick={() =>
+            primaryAction.kind === 'new-pool' ? navigate(NEW_POOL_PATH) : setShowNewTaskSheet(true)
+          }
         >
-          New task
+          {primaryAction.label}
         </RisoButton>
       </header>
 
@@ -167,7 +179,6 @@ export function TasksPage({ userId }: TasksPageProps): React.ReactElement {
           userId={userId}
           pools={pools}
           allTasks={library.allTasks}
-          browsableTasks={filters.browsableTasks}
         />
       ) : (
         <>

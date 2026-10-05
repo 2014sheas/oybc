@@ -22,7 +22,13 @@ function countingGoal(task: Task): number {
   return task.type === TaskType.COUNTING ? (task.maxCount ?? 0) : 0;
 }
 
+/** Which surface hosts the list — drives only the copy: the board wizard's
+ *  Tasks step ('board', default) or the pool editor ('pool'). */
+export type PoolListSurface = 'board' | 'pool';
+
 export interface PoolListProps {
+  /** Copy surface; defaults to `'board'` so the wizard is untouched. */
+  surface?: PoolListSurface;
   /** Insertion order (`useBoardWizard.poolOrder`) — renders in THIS order,
    *  never re-sorted, so a later inline rename (PR-2) can't reshuffle the
    *  list. Ids without a resolvable task (mid-hydration race) are skipped. */
@@ -100,6 +106,7 @@ export interface PoolListProps {
  * achievements are never inline-editable) · ✕ remove.
  */
 export function PoolList({
+  surface = 'board',
   poolOrder,
   effectiveTaskMap,
   effectiveChildrenByCompound,
@@ -129,13 +136,17 @@ export function PoolList({
   return (
     <div className={styles.section}>
       <div className={styles.sectionHeader}>
-        <span className={styles.sectionLabel}>On your board</span>
+        <span className={styles.sectionLabel}>
+          {surface === 'pool' ? 'In this pool' : 'On your board'}
+        </span>
         <span className={styles.countPill}>{countOverride ?? poolTasks.length}</span>
       </div>
 
       {poolTasks.length === 0 && !leadingRows ? (
         <p className={styles.emptyNote}>
-          Nothing in your pool yet — type your own, add a special type, or pull from a pool or board.
+          {surface === 'pool'
+            ? 'Nothing in this pool yet — type your own or add a special type.'
+            : 'Nothing in your pool yet — type your own, add a special type, or pull from a pool or board.'}
         </p>
       ) : (
         <ul className={styles.list}>
@@ -254,8 +265,8 @@ export function PoolList({
                     type="button"
                     className={styles.gutterSlot}
                     onClick={() => onRemove(task.id)}
-                    aria-label={`Remove ${task.title || 'task'} from board`}
-                    title="Remove from board"
+                    aria-label={`Remove ${task.title || 'task'} from ${surface}`}
+                    title={`Remove from ${surface}`}
                   >
                     <span className={styles.removeGlyph}>✕</span>
                   </button>

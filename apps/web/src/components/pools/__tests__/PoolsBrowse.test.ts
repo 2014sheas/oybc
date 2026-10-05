@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
+import { MemoryRouter } from 'react-router-dom';
 import {
   CenterSquareType,
   TaskType,
@@ -98,12 +99,15 @@ const TEMPLATE: RecurringBoardTemplate = {
 
 function render(): string {
   return renderToStaticMarkup(
-    React.createElement(PoolsBrowse, {
-      userId: 'u1',
-      pools: [POOL],
-      allTasks: TASKS,
-      browsableTasks: TASKS,
-    }),
+    React.createElement(
+      MemoryRouter,
+      null,
+      React.createElement(PoolsBrowse, {
+        userId: 'u1',
+        pools: [POOL],
+        allTasks: TASKS,
+      }),
+    ),
   );
 }
 

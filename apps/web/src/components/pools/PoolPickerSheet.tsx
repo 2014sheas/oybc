@@ -3,7 +3,7 @@ import { formatPoolShortSummary } from '@oybc/shared';
 import type { Pool, RecurringBoardTemplate, Task } from '@oybc/shared';
 import { useModalA11y } from '../../hooks/useModalA11y';
 import { RisoButton, RisoChip } from '../riso';
-import { PoolEditSheet } from './PoolEditSheet';
+import { PoolEditorModal } from './PoolEditorModal';
 import { computePoolHealthByPoolId, isPoolHealthResolved } from './poolHealthBatch';
 import { shouldSelectAfterPoolCreated } from './poolPickerLogic';
 import styles from './PoolPickerSheet.module.css';
@@ -23,7 +23,7 @@ export interface PoolPickerSheetProps {
   /** id → Task lookup for health + the create-sheet's chip resolution. */
   tasksById: Record<string, Task>;
   /** The draft-filtered subset of tasks — passed straight through to the
-   *  nested `PoolEditSheet`'s "reuse a task from your library" picker. */
+   *  nested `PoolEditorModal`'s "reuse a task from your library" picker. */
   browsableTasks: Task[];
   /** Currently-selected pool ids in the launching context (the defaults
    *  sheet's `corePoolIds` or the roster edit sheet's `poolIds`). */
@@ -48,7 +48,7 @@ export interface PoolPickerSheetProps {
  * (Task Pools + Recurring Boards Rework, P7, docs/POOLS_RECURRING.md
  * §Surfaces item 10). Used by both the Board-settings defaults sheet
  * (`corePoolIds`) and the repeating-boards roster edit sheet (`poolIds`) —
- * a SELECTOR over existing pools, distinct from `PoolEditSheet` (a single
+ * a SELECTOR over existing pools, distinct from `PoolEditorModal` (a single
  * pool's own editor, which this sheet opens in create mode for
  * "+ Build a new pool…").
  *
@@ -154,19 +154,18 @@ export function PoolPickerSheet({
         </div>
       </div>
 
-      {/* Third-tier stacking context, same convention as `PoolEditSheet`'s
+      {/* Third-tier stacking context, same convention as `PoolEditorModal`'s
           own nested `NewTaskSheet` layer — the create sheet paints above
           this picker's backdrop. */}
       {showCreateSheet && (
         <div className={styles.createLayer}>
-          <PoolEditSheet
+          <PoolEditorModal
             userId={userId}
             templates={templates}
             allTasks={allTasks}
             browsableTasks={browsableTasks}
             onClose={() => setShowCreateSheet(false)}
             onSaved={handlePoolCreated}
-            onDeleted={() => setShowCreateSheet(false)}
           />
         </div>
       )}

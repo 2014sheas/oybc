@@ -41,7 +41,7 @@ import { SquareTapMenu } from '../boardEdit/SquareTapMenu';
 import { SquarePickerSheet } from '../boardEdit/SquarePickerSheet';
 import { DetailModal } from '../InteractiveTaskSquare';
 import { TaskDetailSheet } from '../TaskDetailSheet';
-import { PoolEditSheet } from '../pools/PoolEditSheet';
+import { PoolEditorModal } from '../pools/PoolEditorModal';
 import { PoolPickerSheet } from '../pools/PoolPickerSheet';
 import { CoreDefaultsSheet } from '../boardSettings/CoreDefaultsSheet';
 import { ShareBoardSheet } from '../share/ShareBoardSheet';
@@ -266,16 +266,15 @@ const CASES: DialogCase[] = [
       }),
   },
   {
-    name: 'PoolEditSheet',
+    name: 'PoolEditorModal',
     element: () =>
-      React.createElement(PoolEditSheet, {
+      React.createElement(PoolEditorModal, {
         userId: 'user-1',
         templates: [],
         allTasks: [TASK],
         browsableTasks: [TASK],
         onClose: noop,
         onSaved: noop,
-        onDeleted: noop,
       }),
   },
   {

@@ -11,6 +11,21 @@ import SwiftUI
 /// `toggleSelection` helper to keep deselection logic centralized.
 struct RisoPoolListView: View {
 
+    /// Which surface hosts the list — only the copy differs (the pool editor
+    /// reuses the wizard's list verbatim). `.board` is the wizard default.
+    enum Surface {
+        case board, pool
+
+        var header: String { self == .board ? "On your board" : "In this pool" }
+        var removeLabel: String { self == .board ? "Remove from board" : "Remove from pool" }
+        var emptyNote: String {
+            self == .board
+                ? "Nothing in your pool yet — type your own, add a special type, or pull from a pool or board."
+                : "Nothing in this pool yet — type your own or add a special type."
+        }
+    }
+
+    var surface: Surface = .board
     let selectedTaskIds: Set<String>
     /// Render order (insertion order from `BoardWizardViewModel.poolOrder`).
     /// Rows render in this order — no alphabetical sort — so a renamed task
@@ -82,7 +97,7 @@ struct RisoPoolListView: View {
             VStack(alignment: .leading, spacing: 9) {
                 // Section header
                 HStack(spacing: 6) {
-                    Text("On your board")
+                    Text(surface.header)
                         .risoSectionLabel()
                     // Count pill (capacity when sources are in play).
                     Text("\(countOverride ?? selectedTaskIds.count)")
@@ -110,7 +125,7 @@ struct RisoPoolListView: View {
     // MARK: - Empty state
 
     private var emptyPoolNote: some View {
-        Text("Nothing in your pool yet — type your own, add a special type, or pull from a pool or board.")
+        Text(surface.emptyNote)
             .font(.risoBody(12.5, .semibold))
             .foregroundStyle(Color.risoMuted)
             .multilineTextAlignment(.center)
@@ -197,7 +212,7 @@ struct RisoPoolListView: View {
             }
             .buttonStyle(.plain)
             .contentShape(Rectangle())
-            .accessibilityLabel("Remove from board")
+            .accessibilityLabel(surface.removeLabel)
         }
         .padding(.horizontal, 11)
         .padding(.vertical, 9)

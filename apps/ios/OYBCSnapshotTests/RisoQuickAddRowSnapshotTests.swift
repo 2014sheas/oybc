@@ -5,7 +5,7 @@ import SnapshotTesting
 
 /// Snapshot coverage for `RisoQuickAddRowView`'s OPTIONAL library-poll
 /// dropdown (owner decision 2026-07-21) — the shared quick-add row used by
-/// both `PoolEditSheetView` and `BoardWizardTasksStepView`.
+/// both `PoolEditorBodyView` and `BoardWizardTasksStepView`.
 ///
 /// Renders the **real** view via its `seedText:` initialiser (mirrors
 /// `RisoCompoundFieldsView(seed:)`'s testability pattern), which pre-fills

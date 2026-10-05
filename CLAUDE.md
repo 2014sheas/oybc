@@ -293,8 +293,18 @@ apps/web/src/                                        apps/ios/OYBC/
     │   (SelectableTaskItem.tsx — REMOVED, dead code; iOS SelectableTaskItemView.swift also removed)
     │   (PoolItem.tsx / PoolItemView.swift — superseded by the pools rework;
     │    pools UI now lives in web components/pools/ ←→ iOS pool views —
-    │    PoolCard/PoolEditSheet/PoolPickerSheet ←→ PoolEditSheetView/
-    │    PoolsBrowseView/PoolPickerSheetView + CreateTab/Components/RisoPool*)
+    │    PoolCard/PoolPickerSheet ←→ PoolsBrowseView/PoolPickerSheetView +
+    │    CreateTab/Components/RisoPool*; the pool EDITOR is a full-screen page
+    │    since 2026-10-05: pages/PoolEditorPage.tsx + components/pools/
+    │    PoolEditorBody.tsx + poolEditorModel.ts (+ db/operations/poolSave.ts,
+    │    the one-txn save) ←→ Views/TasksTab/PoolEditorView.swift +
+    │    PoolEditorBodyView.swift + Views/TasksTab/ViewModels/
+    │    PoolEditorViewModel.swift (+ AppDatabase+StagedTaskEdits.swift, the
+    │    apply-staged-edits helper shared with the wizard persist), reusing the
+    │    wizard's PoolList/PoolRowEditor ←→ RisoPoolListView/RisoPoolRowEditorView
+    │    with `surface: pool` copy. The picker's "+ Build a new pool…" hosts the
+    │    same body: web PoolEditorModal.tsx (thin shell, was PoolEditSheet.tsx)
+    │    ←→ a fullScreenCover of PoolEditorView; PoolEditSheetView.swift deleted)
     │   (SubtaskChip.tsx — REMOVED, dead code; iOS SubtaskChipView.swift also removed)
     ├── OperatorSelector.tsx    ←→                  (no standalone iOS view — compound operator +
     ├── CounterStepper.tsx      ←→                   counting fields are inline in
@@ -716,7 +726,7 @@ Rule for all three: **shrink the baseline as you clean up (the scripts emit a no
 
 **Navigation**: bottom tab bar — Boards (default), Tasks, Create, Profile.
 
-**Routes (web)** (canonical: `apps/web/src/App.tsx`): `/home`, `/boards`, `/boards/:id`, `/boards/core/:timeframe/:date` (`/boards/core/:timeframe` redirects to today's window), `/tasks`, `/tasks/:id`, `/create`, `/profile`, `/profile/settings`, `/profile/help`, `/profile/streaks`, `/profile/board-settings`, `/profile/account-security`, `/profile/counters`, `/profile/counters/:counterId`, `/playground` (dev builds only). `/` and unknown paths redirect to `/home`. (`/profile/recurring-templates` and `/profile/default-pools`(+`/:timeframe`) retired in the Task Pools + Recurring Boards Rework P7 — see [`docs/POOLS_RECURRING.md`](docs/POOLS_RECURRING.md) §Surfaces item 9 — merged into the one `/profile/board-settings` page; iOS twin is `Views/ProfileTab/BoardSettingsView.swift`, replacing the deleted `RecurringTemplatesView`/`DefaultPoolsListView`. **Per-timeframe default size + free space (2026-09-29, both platforms):** `CoreBoardDefault.defaultBoardSize` / `defaultCenterType` override the global "New board defaults" for one core timeframe (absent = inherit; edited in the same "Core defaults…" sheet's BOARD section, reached from Board settings and a core board's Edit screen), resolved ONLY through the shared `resolveCoreBoardSetupDefaults` (`packages/shared/src/algorithms/coreBoardSetupDefaults.ts` ↔ `Helpers/CoreBoardSetupDefaults.swift`, vector-pinned) at both wizards' core-prefill point; a clear back to inherit stores the field ABSENT and syncs via `CLEARABLE_FIELDS_BY_COLLECTION.coreBoardDefaults` (GRDB v36). See [`docs/POOLS_RECURRING.md`](docs/POOLS_RECURRING.md) §Per-timeframe size + centre.)
+**Routes (web)** (canonical: `apps/web/src/App.tsx`): `/home`, `/boards`, `/boards/:id`, `/boards/core/:timeframe/:date` (`/boards/core/:timeframe` redirects to today's window), `/tasks` (`?segment=pools` restores the Pools segment), `/tasks/:id`, `/tasks/pools/new`, `/tasks/pools/:id` (the full-screen pool editor, 2026-10-05), `/create`, `/profile`, `/profile/settings`, `/profile/help`, `/profile/streaks`, `/profile/board-settings`, `/profile/account-security`, `/profile/counters`, `/profile/counters/:counterId`, `/playground` (dev builds only). `/` and unknown paths redirect to `/home`. (`/profile/recurring-templates` and `/profile/default-pools`(+`/:timeframe`) retired in the Task Pools + Recurring Boards Rework P7 — see [`docs/POOLS_RECURRING.md`](docs/POOLS_RECURRING.md) §Surfaces item 9 — merged into the one `/profile/board-settings` page; iOS twin is `Views/ProfileTab/BoardSettingsView.swift`, replacing the deleted `RecurringTemplatesView`/`DefaultPoolsListView`. **Per-timeframe default size + free space (2026-09-29, both platforms):** `CoreBoardDefault.defaultBoardSize` / `defaultCenterType` override the global "New board defaults" for one core timeframe (absent = inherit; edited in the same "Core defaults…" sheet's BOARD section, reached from Board settings and a core board's Edit screen), resolved ONLY through the shared `resolveCoreBoardSetupDefaults` (`packages/shared/src/algorithms/coreBoardSetupDefaults.ts` ↔ `Helpers/CoreBoardSetupDefaults.swift`, vector-pinned) at both wizards' core-prefill point; a clear back to inherit stores the field ABSENT and syncs via `CLEARABLE_FIELDS_BY_COLLECTION.coreBoardDefaults` (GRDB v36). See [`docs/POOLS_RECURRING.md`](docs/POOLS_RECURRING.md) §Per-timeframe size + centre.)
 
 ### Known follow-ups
 

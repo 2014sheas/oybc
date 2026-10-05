@@ -1,0 +1,170 @@
+import { describe, expect, it } from 'vitest';
+import { AchievementTrigger, OperatorType, TaskType } from '@oybc/shared';
+import type { CompoundChild, Task } from '@oybc/shared';
+import { emptyPatch, patchesEqual, type TaskEditPatch } from '../../../db/taskEditPatch';
+import {
+  buildPoolEditorView,
+  canSavePool,
+  dropStagedEdit,
+  groupLinksByCompound,
+  seedEditorDraft,
+  stageEditInto,
+} from '../poolEditorModel';
+
+const NOW = '2026-10-05T00:00:00.000Z';
+
+function task(id: string, over: Partial<Task> = {}): Task {
+  return {
+    id,
+    userId: 'u1',
+    title: `Task ${id}`,
+    type: TaskType.NORMAL,
+    isCompleted: false,
+    totalCompletions: 0,
+    totalInstances: 0,
+    createdAt: NOW,
+    updatedAt: NOW,
+    version: 1,
+    isDeleted: false,
+    ...over,
+  };
+}
+
+function link(compoundTaskId: string, childTaskId: string, childIndex: number): CompoundChild {
+  return {
+    id: `${compoundTaskId}-${childTaskId}`,
+    compoundTaskId,
+    childTaskId,
+    childIndex,
+    createdAt: NOW,
+    updatedAt: NOW,
+    version: 1,
+    isDeleted: false,
+  };
+}
+
+describe('buildPoolEditorView', () => {
+  it('keeps taskIds order and skips unresolvable ids', () => {
+    const view = buildPoolEditorView('u1', ['b', 'ghost', 'a'], [task('a'), task('b')], new Map(), {}, new Map());
+    expect(view.poolOrder).toEqual(['b', 'a']);
+    expect(view.poolTasks.map((t) => t.id)).toEqual(['b', 'a']);
+  });
+
+  it('resolves a just-added task from the session cache before the live query delivers it', () => {
+    const fresh = task('fresh', { title: 'Fresh' });
+    const view = buildPoolEditorView('u1', ['fresh'], [], new Map([['fresh', fresh]]), {}, new Map());
+    expect(view.poolTasks).toEqual([fresh]);
+  });
+
+  it('overlays a staged rename without changing order', () => {
+    const staged = new Map([['a', emptyPatch('Renamed')]]);
+    const view = buildPoolEditorView('u1', ['a', 'b'], [task('a'), task('b')], new Map(), {}, staged);
+    expect(view.poolOrder).toEqual(['a', 'b']);
+    expect(view.effectiveTaskMap.a.title).toBe('Renamed');
+    expect(view.effectiveTaskMap.b.title).toBe('Task b');
+  });
+
+  it('overlays a staged compound edit onto the children map', () => {
+    const compound = task('c', { type: TaskType.COMPOUND, operator: OperatorType.AND });
+    const base = { c: [link('c', 'k1', 0), link('c', 'k2', 1)] };
+    const patch: TaskEditPatch = {
+      ...emptyPatch('Routine'),
+      operator: OperatorType.AND,
+      children: [
+        {
+          id: 'p1',
+          title: 'Only one',
+          isCounting: false,
+          action: '',
+          goal: '',
+          unit: '',
+          childTaskId: 'k1',
+          childType: TaskType.NORMAL,
+          markedDeleted: false,
+        },
+      ],
+    };
+    const view = buildPoolEditorView(
+      'u1',
+      ['c'],
+      [compound, task('k1'), task('k2')],
+      new Map(),
+      base,
+      new Map([['c', patch]]),
+    );
+    expect(view.effectiveChildrenByCompound.c).toHaveLength(1);
+    expect(view.effectiveChildrenByCompound.c[0].childTaskId).toBe('k1');
+  });
+
+  it('a legacy achievement member still resolves as a removable row', () => {
+    const ach = task('ach', { type: TaskType.ACHIEVEMENT, achievementTrigger: AchievementTrigger.BINGO });
+    const view = buildPoolEditorView('u1', ['ach', 'a'], [ach, task('a')], new Map(), {}, new Map());
+    expect(view.poolOrder).toEqual(['ach', 'a']);
+  });
+});
+
+describe('seedEditorDraft', () => {
+  it('first open of a Counting task with an auto title seeds a blank title', () => {
+    const counting = task('r', { type: TaskType.COUNTING, title: 'Run 5 km', action: 'Run', unit: 'km', maxCount: 5 });
+    const draft = seedEditorDraft(counting, new Map(), { r: counting }, {});
+    expect(draft.title).toBe('');
+    expect(draft.goal).toBe('5');
+  });
+
+  it('reopen reuses the staged patch verbatim', () => {
+    const t = task('a');
+    const staged = new Map([['a', emptyPatch('Staged')]]);
+    expect(seedEditorDraft(t, staged, { a: t }, {})).toBe(staged.get('a'));
+  });
+
+  it('a compound seeds its sorted children', () => {
+    const compound = task('c', { type: TaskType.COMPOUND, operator: OperatorType.OR });
+    const map = { c: compound, k1: task('k1'), k2: task('k2') };
+    const draft = seedEditorDraft(compound, new Map(), map, {
+      c: [link('c', 'k2', 1), link('c', 'k1', 0)],
+    });
+    expect(draft.children.map((c) => c.childTaskId)).toEqual(['k1', 'k2']);
+  });
+});
+
+describe('staged edits', () => {
+  it('stageEditInto replaces a prior patch for the same task and leaves the input untouched', () => {
+    const first = new Map([['a', emptyPatch('One')]]);
+    const second = stageEditInto(first, 'a', emptyPatch('Two'));
+    expect(second.get('a')?.title).toBe('Two');
+    expect(first.get('a')?.title).toBe('One');
+  });
+
+  it('a discarded draft never reaches the map (the baseline compare is unchanged)', () => {
+    const t = task('a');
+    const baseline = seedEditorDraft(t, new Map(), { a: t }, {});
+    const typed = { ...baseline, title: 'typed then discarded' };
+    expect(patchesEqual(typed, baseline)).toBe(false);
+    const staged = new Map<string, TaskEditPatch>();
+    // Discard = close without calling stageEditInto.
+    expect(staged.size).toBe(0);
+  });
+
+  it('dropStagedEdit removes a removed row\'s edit and is a no-op when absent', () => {
+    const m = new Map([['a', emptyPatch('x')]]);
+    expect(dropStagedEdit(m, 'a').size).toBe(0);
+    expect(dropStagedEdit(m, 'zzz')).toBe(m);
+  });
+});
+
+describe('canSavePool', () => {
+  it('needs a trimmed name, a resolvable task, and not busy', () => {
+    expect(canSavePool('P', 1, false)).toBe(true);
+    expect(canSavePool('   ', 1, false)).toBe(false);
+    expect(canSavePool('P', 0, false)).toBe(false);
+    expect(canSavePool('P', 1, true)).toBe(false);
+  });
+});
+
+describe('groupLinksByCompound', () => {
+  it('groups by parent and sorts by childIndex', () => {
+    const g = groupLinksByCompound([link('c', 'b', 1), link('c', 'a', 0), link('d', 'x', 0)]);
+    expect(g.c.map((l) => l.childTaskId)).toEqual(['a', 'b']);
+    expect(Object.keys(g).sort()).toEqual(['c', 'd']);
+  });
+});

@@ -1,7 +1,7 @@
 import type { Task } from '@oybc/shared';
 
 /**
- * poolEditSheetSelectors.ts — pure derivations `PoolEditSheet` needs from
+ * poolEditSheetSelectors.ts — pure derivations `PoolEditorBody` needs from
  * its raw `taskIds` + task lookups (Task Pools + Recurring Boards Rework,
  * P2 final review I-2/I-3). Extracted from the component so both
  * concerns have a directly testable seam without a component-render

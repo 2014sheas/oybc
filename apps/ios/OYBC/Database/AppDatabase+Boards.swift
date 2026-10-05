@@ -563,32 +563,12 @@ extension AppDatabase {
             }
 
             guard !stagedEdits.isEmpty else { return }
-            let pendingIds = Set(pendingTasks.map { $0.task.id })
-            for (taskId, patch) in stagedEdits {
-                guard var task = try Task.fetchOne(db, key: taskId) else { continue }
-                // Defensive: never persist an invalid edit (the UI blocks
-                // Save, but a stale draft shouldn't corrupt the row).
-                guard patch.validate(type: task.type) == nil else { continue }
-                if task.type == .compound {
-                    // An ineligible newly linked existing task skips the whole
-                    // edit (never half-applied), exactly like an invalid patch.
-                    guard try Self.compoundLinkProblem(db: db, parentId: taskId, patch: patch) == nil else { continue }
-                    task = patch.applied(to: task)
-                    task.version += 1
-                    task.updatedAt = now
-                    try Self.applyStagedCompoundChildEdits(db: db, parent: task, patch: patch, now: now)
-                    try Self.saveTaskAndCascade(db: db, task: task)
-                } else {
-                    // simple/counting: a pending task's edit is merged into
-                    // its payload already by the caller, so skip it here;
-                    // apply library-task edits.
-                    if pendingIds.contains(taskId) { continue }
-                    task = patch.applied(to: task)
-                    task.version += 1
-                    task.updatedAt = now
-                    try Self.saveTaskAndCascade(db: db, task: task)
-                }
-            }
+            try Self.applyStagedTaskEdits(
+                db: db,
+                stagedEdits: stagedEdits,
+                skipSimpleIds: Set(pendingTasks.map { $0.task.id }),
+                now: now
+            )
         }
     }
 
@@ -661,35 +641,12 @@ extension AppDatabase {
             //   • simple/counting — a PENDING one was already merged into its
             //     payload (persistWizardBoard), so skip it here; apply LIBRARY ones.
             if board.status == .active {
-                let pendingIds = Set(pendingTasks.map { $0.task.id })
-                for (taskId, patch) in stagedEdits {
-                    guard var task = try Task.fetchOne(db, key: taskId) else { continue }
-                    // Defensive: never persist an invalid edit (the UI blocks
-                    // Save, but a stale draft shouldn't corrupt the row).
-                    guard patch.validate(type: task.type) == nil else { continue }
-                    if task.type == .compound {
-                        // An ineligible newly linked existing task skips the
-                        // whole edit (never half-applied), like an invalid patch.
-                        guard try Self.compoundLinkProblem(db: db, parentId: taskId, patch: patch) == nil else { continue }
-                        // Parent fields + child/link CRUD. Works for library AND
-                        // pending compounds — the pending loop above already wrote
-                        // the pending compound's rows, so they're real rows here.
-                        task = patch.applied(to: task)
-                        task.version += 1
-                        task.updatedAt = now
-                        try Self.applyStagedCompoundChildEdits(db: db, parent: task, patch: patch, now: now)
-                        try Self.saveTaskAndCascade(db: db, task: task)
-                    } else {
-                        // simple/counting: a pending task's edit was merged into
-                        // its payload already (persistWizardBoard), so skip it
-                        // here; apply library-task edits.
-                        if pendingIds.contains(taskId) { continue }
-                        task = patch.applied(to: task)
-                        task.version += 1
-                        task.updatedAt = now
-                        try Self.saveTaskAndCascade(db: db, task: task)
-                    }
-                }
+                try Self.applyStagedTaskEdits(
+                    db: db,
+                    stagedEdits: stagedEdits,
+                    skipSimpleIds: Set(pendingTasks.map { $0.task.id }),
+                    now: now
+                )
             }
 
             // ── Board Sources §Member rules (B2): mint before placing ──────

@@ -4,7 +4,7 @@ import SwiftUI
 /// docs/POOLS_RECURRING.md §Surfaces item 10 ("Pool picker sheet
 /// (shared)"). A toggleable list of the user's pools, each row showing a
 /// derived health note (`PoolHealth.formatPoolShortSummary`), plus a
-/// dashed "+ Build a new pool…" affordance that opens `PoolEditSheetView`
+/// dashed "+ Build a new pool…" affordance that opens `PoolEditorView` (full-screen cover)
 /// in create mode and hands the new pool back to the caller SELECTED.
 ///
 /// Deliberately callback-based (never a raw `Binding<Set<String>>`) rather
@@ -25,7 +25,7 @@ import SwiftUI
 /// plain "the user tapped this pool's row" signal.
 ///
 /// Props-only, DB-free (mirrors `RisoPoolPullCardView`'s leaf pattern)
-/// EXCEPT for presenting `PoolEditSheetView` itself, which owns its own
+/// EXCEPT for presenting `PoolEditorView` itself, which owns its own
 /// persistence — this view never writes to `pools` directly.
 struct PoolPickerSheetView: View {
 
@@ -39,7 +39,7 @@ struct PoolPickerSheetView: View {
     /// Batched ONCE per screen by the caller (never per-row) —
     /// `PoolHealth.computePoolHealth`'s "batched once" contract.
     let healthByPoolId: [String: PoolHealth.Result]
-    /// Needed only to construct `PoolEditSheetView`'s deck-preview floor
+    /// Needed only to construct `PoolEditorView`'s deck-preview floor
     /// when creating a new pool.
     let templates: [RecurringBoardTemplate]
     /// Read reactively so a quick-added task's title resolves immediately.
@@ -86,16 +86,19 @@ struct PoolPickerSheetView: View {
                 }
             }
         }
-        .sheet(isPresented: $showCreateSheet) {
-            PoolEditSheetView(
-                pool: nil,
-                templates: templates,
-                library: library,
-                userId: userId,
-                onSaved: { showCreateSheet = false },
-                onDeleted: {},
-                onCreated: { newPool in onPoolCreated(newPool) }
-            )
+        .fullScreenCover(isPresented: $showCreateSheet) {
+            NavigationStack {
+                PoolEditorView(
+                    pool: nil,
+                    templates: templates,
+                    library: library,
+                    userId: userId,
+                    onSaved: { showCreateSheet = false },
+                    onDeleted: {},
+                    onCancel: { showCreateSheet = false },
+                    onCreated: { newPool in onPoolCreated(newPool) }
+                )
+            }
         }
     }
 

@@ -236,8 +236,19 @@ acceptance above; not treated as a bug to fix.
    (locked): no "use in board", no FEEDS control, no default pinning.
    Starter packs: **deferred** (locked 2026-07-19) — the card design exists,
    ships when curated content does.
-2. **Pool edit sheet** — extends iOS `PoolEditSheet`: NAME field replaces
-   timeframe keying; TASKS chips w/ ✕; ADD TASKS mirrors the wizard pattern
+2. **Pool editor** — *(amended 2026-10-05, owner: "mirror board creation as
+   much as possible")* a FULL-SCREEN page, not a modal: web `/tasks/pools/new`
+   + `/tasks/pools/:id` → `PoolEditorPage` ↔ iOS `PoolEditorView` pushed on
+   the Tasks tab stack (the pool picker's "+ Build a new pool…" mid-wizard
+   hosts the same body in its own modal/full-screen cover); the Tasks tab's
+   "+" creates a NEW POOL while the Pools segment is selected. NAME field;
+   TASKS = the board wizard's resting task LIST + inline ROW EDITOR
+   (`PoolList`/`PoolRowEditor` ↔ `RisoPoolListView`/`RisoPoolRowEditorView`,
+   `surface: pool` copy) — the chip strip is retired; row edits are STAGED
+   like the wizard's and applied with the membership in ONE save transaction
+   (web `savePoolFromSheet` ↔ iOS `createPoolAndEnqueue`/`updatePoolAndEnqueue`
+   via the shared apply-staged-edits helper; Cancel discards them, created /
+   reused library tasks stay). ADD TASKS mirrors the wizard pattern
    (quick-add row + library reuse picker); dashed deck-preview line (e.g.
    `"8 tasks in the deck · fills a 3×3"` when healthy, or `"6 tasks in the
    deck · short on required tasks"` when short — the short branch drops the

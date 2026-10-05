@@ -13,6 +13,8 @@ const HEADER_LABEL: Record<TaskType, string> = {
 };
 
 export interface PoolRowEditorProps {
+  /** Copy surface for the footer staging line; defaults to the board wizard. */
+  surface?: 'board' | 'pool';
   /** The task being edited (the compound link guard's `parentId`). */
   taskId: string;
   taskType: TaskType;
@@ -53,6 +55,7 @@ export interface PoolRowEditorProps {
  * own quick-add row to add a sub-task ("New sub: Normal / Counting").
  */
 export function PoolRowEditor({
+  surface = 'board',
   taskId,
   taskType,
   draft,
@@ -78,10 +81,11 @@ export function PoolRowEditor({
     }
   }
 
+  const stagedUntil = surface === 'pool' ? 'Staged until you save the pool' : 'Staged until you create the board';
   const everywhereLine =
     usedOnBoardCount > 0
-      ? `Staged until you create the board. It then changes here and on ${usedOnBoardCount} other board${usedOnBoardCount === 1 ? '' : 's'}.`
-      : 'Staged until you create the board, then applied everywhere this task is used.';
+      ? `${stagedUntil}. It then changes here and on ${usedOnBoardCount} other board${usedOnBoardCount === 1 ? '' : 's'}.`
+      : `${stagedUntil}, then applied everywhere this task is used.`;
 
   return (
     <div className={styles.editor} onKeyDown={handleKeyDown}>

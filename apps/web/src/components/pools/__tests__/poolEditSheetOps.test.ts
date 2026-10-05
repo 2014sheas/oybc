@@ -1,4 +1,6 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { TaskType, type Task } from '@oybc/shared';
+import { emptyPatch, type TaskEditPatch } from '../../../db/taskEditPatch';
 import { db } from '../../../db/internal';
 import { fetchPool } from '../../../db/operations/pools';
 import { deletePoolFromSheet, savePoolFromSheet } from '../poolEditSheetOps';
@@ -12,9 +14,32 @@ import { deletePoolFromSheet, savePoolFromSheet } from '../poolEditSheetOps';
  */
 
 afterEach(async () => {
+  vi.restoreAllMocks();
   await db.pools.clear();
+  await db.tasks.clear();
   await db.syncQueue.clear();
 });
+
+const NOW = '2026-10-05T00:00:00.000Z';
+function seedable(id: string, over: Partial<Task> = {}): Task {
+  return {
+    id,
+    userId: 'user-1',
+    title: `Task ${id}`,
+    type: TaskType.NORMAL,
+    isCompleted: false,
+    totalCompletions: 0,
+    totalInstances: 0,
+    createdAt: NOW,
+    updatedAt: NOW,
+    version: 1,
+    isDeleted: false,
+    ...over,
+  };
+}
+function titlePatch(title: string): Map<string, TaskEditPatch> {
+  return new Map([['t1', emptyPatch(title)]]);
+}
 
 describe('savePoolFromSheet', () => {
   it('create mode (pool undefined): mints a new pool, trimming the name', async () => {
@@ -116,5 +141,89 @@ describe('deletePoolFromSheet', () => {
     const stored = await fetchPool(created.id);
     expect(stored?.isDeleted).toBe(true);
     expect(stored?.taskIds).toEqual(['t1']); // taskIds untouched — detachment is derived, not cascaded
+  });
+});
+
+describe('savePoolFromSheet — staged inline edits ride the same transaction', () => {
+  it('create mode: applies the staged edit AND writes the membership', async () => {
+    await db.tasks.add(seedable('t1', { title: 'Old title' }));
+
+    const pool = await savePoolFromSheet('user-1', undefined, {
+      name: 'P',
+      taskIds: ['t1'],
+      stagedEdits: titlePatch('New title'),
+    });
+
+    expect((await db.tasks.get('t1'))?.title).toBe('New title');
+    expect((await db.tasks.get('t1'))?.version).toBe(2);
+    expect((await fetchPool(pool.id))?.taskIds).toEqual(['t1']);
+    const queued = (await db.syncQueue.toArray()).map((r) => r.entityType).sort();
+    expect(queued).toEqual(['pools', 'tasks']);
+  });
+
+  it('edit mode: applies the staged edit and updates the membership', async () => {
+    await db.tasks.add(seedable('t1', { title: 'Old title' }));
+    const created = await savePoolFromSheet('user-1', undefined, { name: 'P', taskIds: [] });
+
+    const updated = await savePoolFromSheet('user-1', created, {
+      name: 'P2',
+      taskIds: ['t1'],
+      stagedEdits: titlePatch('Renamed'),
+    });
+
+    expect(updated.name).toBe('P2');
+    expect((await db.tasks.get('t1'))?.title).toBe('Renamed');
+  });
+
+  it('derives a Counting task blank title from action / goal / unit', async () => {
+    await db.tasks.add(
+      seedable('t1', { type: TaskType.COUNTING, title: 'Run 5 km', action: 'Run', unit: 'km', maxCount: 5 }),
+    );
+    const patch: TaskEditPatch = { ...emptyPatch(''), action: 'Walk', goal: '8', unit: 'km' };
+
+    await savePoolFromSheet('user-1', undefined, {
+      name: 'P',
+      taskIds: ['t1'],
+      stagedEdits: new Map([['t1', patch]]),
+    });
+
+    const stored = await db.tasks.get('t1');
+    expect(stored?.maxCount).toBe(8);
+    expect(stored?.title).toBe('Walk 8 km');
+  });
+
+  it('a failing staged edit rolls back — no pool row is written', async () => {
+    await db.tasks.add(seedable('t1', { title: 'Old title' }));
+    vi.spyOn(db.tasks, 'update').mockRejectedValueOnce(new Error('boom'));
+
+    await expect(
+      savePoolFromSheet('user-1', undefined, {
+        name: 'P',
+        taskIds: ['t1'],
+        stagedEdits: titlePatch('New title'),
+      }),
+    ).rejects.toThrow('boom');
+
+    expect(await db.pools.count()).toBe(0);
+    expect((await db.tasks.get('t1'))?.title).toBe('Old title');
+    expect(await db.syncQueue.count()).toBe(0);
+  });
+
+  it('a failing membership write rolls the staged edit back', async () => {
+    await db.tasks.add(seedable('t1', { title: 'Old title' }));
+    const ghost = { ...(await savePoolFromSheet('user-1', undefined, { name: 'G', taskIds: [] })), id: 'gone' };
+    await db.syncQueue.clear();
+
+    await expect(
+      savePoolFromSheet('user-1', ghost, {
+        name: 'P',
+        taskIds: ['t1'],
+        stagedEdits: titlePatch('New title'),
+      }),
+    ).rejects.toThrow('Pool no longer exists');
+
+    expect((await db.tasks.get('t1'))?.title).toBe('Old title');
+    expect((await db.tasks.get('t1'))?.version).toBe(1);
+    expect(await db.syncQueue.count()).toBe(0);
   });
 });

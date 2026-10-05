@@ -1,54 +1,22 @@
-/* PoolEditSheet — Tasks-tab pool editor (P2). Chrome mirrors
-   NewTaskSheet.module.css (backdrop + scrollable body); fields mirror
-   CreateCounterSheet.module.css's kicker/input pattern. */
+/* PoolEditorBody — the pool editor's fields + footer (hosted by the
+   full-screen PoolEditorPage and the picker's PoolEditorModal). Field
+   styles descend from the old PoolEditSheet; the chip strip is retired
+   (rows come from the wizard's PoolList). */
 
-.backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: 1100;
-  background: rgba(0, 0, 0, 0.55);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 24px;
-  animation: fadeIn 0.15s ease-out;
-}
-
-.sheet {
-  background: var(--riso-paper-2);
-  border: 2px solid var(--riso-ink);
-  border-radius: 14px;
-  width: 100%;
-  max-width: 560px;
-  max-height: 90vh;
+.root {
   display: flex;
   flex-direction: column;
-  box-shadow: 6px 6px 0 var(--riso-shadow-ink);
-  animation: slideUp 0.2s ease-out;
+  min-width: 0;
 }
 
-.header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 18px 24px;
-  border-bottom: 2px solid var(--riso-ink);
-}
-
-.title {
-  margin: 0;
-  font-family: var(--riso-font-head);
-  font-size: 1.15rem;
-  font-weight: 800;
-  color: var(--riso-ink);
-}
-
-.body {
-  padding: 20px 24px;
-  overflow-y: auto;
+.fields {
   display: flex;
   flex-direction: column;
   gap: 6px;
+}
+
+.listBlock {
+  margin-top: 16px;
 }
 
 .kicker {
@@ -62,9 +30,6 @@
   margin: 14px 0 6px;
 }
 
-.body > .kicker:first-child {
-  margin-top: 0;
-}
 
 .nameInput {
   width: 100%;
@@ -86,64 +51,6 @@
 .nameInput:focus-visible {
   outline: 3px solid var(--riso-blue);
   outline-offset: 1px;
-}
-
-.tasksHeader {
-  display: flex;
-  align-items: center;
-}
-
-.helper {
-  margin: 0 0 4px;
-  font-family: var(--riso-font-body);
-  font-size: 12px;
-  color: var(--riso-muted);
-  line-height: 1.4;
-}
-
-.chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin: 6px 0 2px;
-}
-
-.chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-family: var(--riso-font-body);
-  font-weight: 600;
-  font-size: 12.5px;
-  padding: 5px 7px 5px 11px;
-  border: 1.5px solid var(--riso-ink);
-  border-radius: 999px;
-  background: var(--riso-paper);
-  color: var(--riso-ink);
-}
-
-.chipRemove {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 16px;
-  height: 16px;
-  padding: 0;
-  border: none;
-  border-radius: 999px;
-  background: transparent;
-  color: var(--riso-muted);
-  font-size: 11px;
-  cursor: pointer;
-  line-height: 1;
-}
-.chipRemove:hover {
-  background: var(--riso-hair);
-  color: var(--riso-ink);
-}
-.chipRemove:disabled {
-  cursor: not-allowed;
-  opacity: 0.5;
 }
 
 .quickAddRow {
@@ -259,11 +166,18 @@
 }
 
 .footer {
-  padding: 16px 24px 20px;
+  margin-top: 20px;
+  padding-top: 16px;
   border-top: 2px solid var(--riso-ink);
   display: flex;
   flex-direction: column;
   gap: 10px;
+}
+.footerSticky {
+  position: sticky;
+  bottom: 0;
+  background: var(--riso-paper-2);
+  padding-bottom: 20px;
 }
 
 .deleteLink {
@@ -311,21 +225,3 @@
   display: flex;
   gap: 10px;
 }
-
-@keyframes fadeIn {
-  from { opacity: 0; }
-  to { opacity: 1; }
-}
-
-@keyframes slideUp {
-  from { opacity: 0; transform: translateY(8px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .backdrop,
-  .sheet {
-    animation: none;
-  }
-}
-

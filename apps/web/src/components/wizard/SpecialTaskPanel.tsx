@@ -18,7 +18,7 @@ export interface SpecialTaskPanelProps {
   defaultTimeframe?: Timeframe;
   defaultStartDate?: string;
   defaultEndDate?: string;
-  /** False in pool context (`PoolEditSheet`): drops the Achievement type
+  /** False in pool context (`PoolEditorBody`): drops the Achievement type
    *  option and shortens the collapsed label to match. Default true (the
    *  wizard Tasks step — boards hand-place achievements). */
   allowAchievement?: boolean;
