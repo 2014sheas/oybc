@@ -1,0 +1,68 @@
+/* PoolEditorModal — the modal shell hosting PoolEditorBody for the picker's "+ Build a new pool…". Chrome mirrors
+   NewTaskSheet.module.css (backdrop + scrollable body); fields mirror
+   CreateCounterSheet.module.css's kicker/input pattern. */
+
+.backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1100;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  animation: fadeIn 0.15s ease-out;
+}
+
+.sheet {
+  background: var(--riso-paper-2);
+  border: 2px solid var(--riso-ink);
+  border-radius: 14px;
+  width: 100%;
+  max-width: 560px;
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 6px 6px 0 var(--riso-shadow-ink);
+  animation: slideUp 0.2s ease-out;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 18px 24px;
+  border-bottom: 2px solid var(--riso-ink);
+}
+
+.title {
+  margin: 0;
+  font-family: var(--riso-font-head);
+  font-size: 1.15rem;
+  font-weight: 800;
+  color: var(--riso-ink);
+}
+
+
+.content {
+  padding: 20px 24px 0;
+  overflow-y: auto;
+  min-height: 0;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .backdrop,
+  .sheet {
+    animation: none;
+  }
+}

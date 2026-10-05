@@ -1,9 +1,10 @@
-import { useMemo, useState } from 'react';
+import { useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import type { Pool, Task } from '@oybc/shared';
 import { useRecurringBoardTemplatesQuery, useTemplateRosterHealth } from '../../hooks';
 import { PoolCard } from './PoolCard';
-import { PoolEditSheet } from './PoolEditSheet';
 import { computePoolHealthByPoolId, isPoolHealthResolved } from './poolHealthBatch';
+import { NEW_POOL_PATH, poolEditorPath } from '../../pages/tasks/tasksSegment';
 import styles from './PoolsBrowse.module.css';
 
 export interface PoolsBrowseProps {
@@ -15,27 +16,15 @@ export interface PoolsBrowseProps {
   pools: Pool[];
   /** The user's full non-deleted task library — likewise already loaded at
    *  `TasksPage` via `useTaskLibrary`; reused here instead of a second
-   *  `useTasks` subscription. Feeds chip/health resolution — NEVER the
-   *  library-reuse picker (see `browsableTasks`). */
+   *  `useTasks` subscription. Feeds card/health resolution. */
   allTasks: Task[];
-  /** The draft-filtered subset of `allTasks` (`useTasksFilters`'
-   *  `browsableTasks`, the same set the Library segment browses) — passed
-   *  through to `PoolEditSheet` for its "reuse a task from your library"
-   *  picker ONLY (P2 I-2). Pickers are browse surfaces: a wizard-born
-   *  draft task the Library hides shouldn't be offered here either, even
-   *  though a pool that already references one still resolves its chip
-   *  via `allTasks`. */
-  browsableTasks: Task[];
 }
-
-/** Sheet visibility: closed, creating a new pool, or editing an existing one. */
-type SheetState = { kind: 'closed' } | { kind: 'create' } | { kind: 'edit'; pool: Pool };
 
 /**
  * PoolsBrowse — the Tasks-tab "Pools" segment (Task Pools + Recurring
  * Boards Rework, P2). Lists the user's pools as cards + a dashed
- * "+ New pool" entry; tapping a card (or "+ New pool") opens
- * `PoolEditSheet`. See docs/POOLS_RECURRING.md §Surfaces item 1 +
+ * "+ New pool" entry; tapping a card (or "+ New pool") routes to
+ * the full-screen `PoolEditorPage`. See docs/POOLS_RECURRING.md §Surfaces item 1 +
  * the handoff screenshot `01-pools.png`.
  *
  * **NO board-related actions anywhere on this surface** (locked decision)
@@ -59,7 +48,6 @@ export function PoolsBrowse({
   userId,
   pools,
   allTasks,
-  browsableTasks,
 }: PoolsBrowseProps): React.ReactElement {
   // Tri-state: `undefined` until read, so "no templates" isn't confused
   // with "not loaded yet" (which would paint cards before their warning).
@@ -69,7 +57,7 @@ export function PoolsBrowse({
   // board's achievable pick, resolved the way its next spawn would.
   const rosterHealth = useTemplateRosterHealth(templates);
   const healthResolved = isPoolHealthResolved(templatesQuery, rosterHealth?.mixByTemplateId);
-  const [sheet, setSheet] = useState<SheetState>({ kind: 'closed' });
+  const navigate = useNavigate();
 
   const tasksById = useMemo(() => {
     const m: Record<string, Task> = {};
@@ -93,8 +81,6 @@ export function PoolsBrowse({
     return m;
   }, [pools, tasksById]);
 
-  const closeSheet = (): void => setSheet({ kind: 'closed' });
-
   return (
     <div className={styles.shell}>
       <p className={styles.intro}>Keep like tasks together. Any board can draw from a pool.</p>
@@ -113,7 +99,7 @@ export function PoolsBrowse({
               pool={pool}
               tasks={poolTasksById[pool.id] ?? []}
               health={healthByPoolId[pool.id] ?? { taskCount: 0, consumers: [] }}
-              onClick={(p) => setSheet({ kind: 'edit', pool: p })}
+              onClick={(p) => navigate(poolEditorPath(p.id))}
             />
           ))}
         </div>
@@ -122,23 +108,10 @@ export function PoolsBrowse({
       <button
         type="button"
         className={styles.newPoolButton}
-        onClick={() => setSheet({ kind: 'create' })}
+        onClick={() => navigate(NEW_POOL_PATH)}
       >
         + New pool
       </button>
-
-      {sheet.kind !== 'closed' && (
-        <PoolEditSheet
-          userId={userId}
-          pool={sheet.kind === 'edit' ? sheet.pool : undefined}
-          templates={templates}
-          allTasks={allTasks}
-          browsableTasks={browsableTasks}
-          onClose={closeSheet}
-          onSaved={closeSheet}
-          onDeleted={closeSheet}
-        />
-      )}
     </div>
   );
 }

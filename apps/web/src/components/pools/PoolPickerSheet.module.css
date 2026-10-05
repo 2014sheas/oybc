@@ -1,5 +1,5 @@
 /* PoolPickerSheet — shared "choose pools" selector (P7). Chrome mirrors
-   PoolEditSheet.module.css's backdrop/sheet/header pattern; z-index tiers
+   PoolEditorModal.module.css's backdrop/sheet/header pattern; z-index tiers
    follow the recursive-nesting convention (a caller wraps this sheet in
    an elevated stacking context so its 1100/1200 tiers land above
    whatever opened it). */
@@ -127,7 +127,7 @@
 }
 
 /* Third-tier stacking context for "+ Build a new pool…"'s nested
-   PoolEditSheet (create mode). */
+   PoolEditorModal (create mode). */
 .createLayer {
   position: relative;
   z-index: 1200;

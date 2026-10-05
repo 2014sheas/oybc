@@ -159,6 +159,92 @@ final class AppDatabasePoolsTests: XCTestCase {
         XCTAssertEqual(rows.first?.operationType, .create)
     }
 
+    // MARK: - savePoolWithStagedEdits (pool editor Save — one transaction)
+
+    private func makeTask(_ id: String, title: String, type: TaskType = .normal,
+                          action: String? = nil, unit: String? = nil, maxCount: Int? = nil) -> Task {
+        let now = AppDatabase.currentTimestamp()
+        return Task(
+            id: id, userId: userId, title: title, description: nil, type: type,
+            action: action, unit: unit, maxCount: maxCount,
+            operatorType: nil, threshold: nil,
+            referencedBoardId: nil, referencedTemplateId: nil,
+            achievementTrigger: nil, requiredCount: nil,
+            totalCompletions: 0, totalInstances: 0,
+            isCompleted: false, completedAt: nil, currentCount: nil,
+            createdAt: now, updatedAt: now,
+            lastSyncedAt: nil, version: 1, isDeleted: false, deletedAt: nil,
+            timeframe: nil, startDate: nil, endDate: nil,
+            sharedCounterId: nil, baseline: nil,
+            lastSyncedCount: nil, createdInWizard: false
+        )
+    }
+
+    func testSavePoolWithStagedEdits_CreateMode_AppliesEditsAndInsertsPoolTogether() throws {
+        let db = try makeDb()
+        try seedUser(db)
+        try db.saveTask(makeTask("t1", title: "Old"))
+        let counting = makeTask("c1", title: "Run 5 km", type: .counting, action: "Run", unit: "km", maxCount: 5)
+        try db.saveTask(counting)
+        var normalPatch = TaskEditPatch(title: "Renamed")
+        normalPatch.title = "Renamed"
+        var countingPatch = TaskEditPatch(from: counting)
+        countingPatch.title = ""          // blank ⇒ derived on apply
+        countingPatch.goal = "12"
+
+        let pool = try XCTUnwrap(try db.savePoolWithStagedEdits(
+            existingId: nil, userId: userId, name: "P", taskIds: ["t1", "c1"],
+            stagedEdits: ["t1": normalPatch, "c1": countingPatch],
+            now: AppDatabase.currentTimestamp()
+        ))
+
+        XCTAssertEqual(pool.taskIds, ["t1", "c1"])
+        XCTAssertEqual(try db.read { try Task.fetchOne($0, key: "t1") }?.title, "Renamed")
+        let c = try XCTUnwrap(try db.read { try Task.fetchOne($0, key: "c1") })
+        XCTAssertEqual(c.maxCount, 12)
+        XCTAssertEqual(c.title, TaskTitle.generateCounterTaskTitle(action: "Run", maxCount: 12, unit: "km"))
+        let rows = try syncRows(db)
+        XCTAssertEqual(count(rows, type: "pools", op: .create), 1)
+        XCTAssertGreaterThanOrEqual(rows.filter { $0.entityType == "tasks" }.count, 2)
+    }
+
+    func testSavePoolWithStagedEdits_EditMode_UpdatesMembershipAndName() throws {
+        let db = try makeDb()
+        try seedUser(db)
+        try db.saveTask(makeTask("t1", title: "One"))
+        let existing = try db.createPoolAndEnqueue(userId: userId, name: "Old", taskIds: ["t1"], now: AppDatabase.currentTimestamp())
+
+        let updated = try XCTUnwrap(try db.savePoolWithStagedEdits(
+            existingId: existing.id, userId: userId, name: "New", taskIds: ["t1", "t9"],
+            stagedEdits: [:], now: AppDatabase.currentTimestamp()
+        ))
+
+        XCTAssertEqual(updated.id, existing.id)
+        XCTAssertEqual(updated.name, "New")
+        XCTAssertEqual(updated.taskIds, ["t1", "t9"])
+        XCTAssertEqual(updated.version, 2)
+    }
+
+    func testSavePoolWithStagedEdits_FailingEditRollsBackMembershipAndEarlierEdits() throws {
+        let db = try makeDb()
+        try seedUser(db)
+        try db.saveTask(makeTask("t1", title: "Keep"))
+        try db.saveTask(makeTask("t2", title: "Other"))
+        let good = TaskEditPatch(title: "Changed")
+        let bad = TaskEditPatch(title: "   ")   // blank normal title fails validate
+
+        XCTAssertThrowsError(try db.savePoolWithStagedEdits(
+            existingId: nil, userId: userId, name: "P", taskIds: ["t1", "t2"],
+            stagedEdits: ["t1": good, "t2": bad], now: AppDatabase.currentTimestamp()
+        )) { error in
+            XCTAssertEqual((error as? AppDatabase.StagedTaskEditError)?.taskId, "t2")
+        }
+
+        XCTAssertTrue(try db.fetchPools(userId: userId).isEmpty, "membership rolled back")
+        XCTAssertEqual(try db.read { try Task.fetchOne($0, key: "t1") }?.title, "Keep", "earlier edit rolled back")
+        XCTAssertTrue(try syncRows(db).isEmpty, "no sync rows survive the rollback")
+    }
+
     // MARK: - CoreBoardDefault CRUD
 
     func testUpsertCoreBoardDefaultAndEnqueue_CreatesThenUpdatesSameRow() throws {

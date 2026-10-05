@@ -3,7 +3,7 @@ import SwiftUI
 /// PoolsBrowseView — the Tasks-tab "Pools" segment content (Task Pools +
 /// Recurring Boards Rework, P2). Lists the user's pools as cards + a dashed
 /// "+ New pool" entry; tapping a card (or "+ New pool") opens
-/// `PoolEditSheetView`. See docs/POOLS_RECURRING.md §Surfaces item 1 + the
+/// `PoolEditorView`. See docs/POOLS_RECURRING.md §Surfaces item 1 + the
 /// handoff screenshot `01-pools.png`.
 ///
 /// **NO board-related actions anywhere on this surface** (locked decision)

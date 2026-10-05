@@ -14,6 +14,10 @@ counting goal means abandoning the wizard and going to the Tasks tab. This adds
 an **inline row editor**: tapping a row's pencil expands that row in place into
 an editing panel (title, counting fields, compound steps) with **staged saving**
 (no DB write until the board is created), validation, and one level of undo.
+*(2026-10-05: the Tasks tab's full-screen **pool editor** reuses the same list +
+row editor with `surface: pool` copy and the same staging — its Save applies the
+staged edits and the pool membership in one transaction; see
+`docs/POOLS_RECURRING.md` §Surfaces item 2.)*
 
 ## Scope & platform
 

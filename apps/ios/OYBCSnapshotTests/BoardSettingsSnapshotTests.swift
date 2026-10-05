@@ -7,7 +7,7 @@ import SnapshotTesting
 /// Board-settings surfaces: `CoreDefaultsEditSheetView` and the shared
 /// `PoolPickerSheetView`. Both are DB-free, props-only leaf views during
 /// RENDER (writes only happen inside action closures, never on appear) —
-/// the exact pattern `PoolEditSheetView` already proved snapshot-safe in
+/// the exact pattern `PoolEditorBodyView` already proved snapshot-safe in
 /// `RisoPoolsSnapshotTests`. `BoardSettingsView` (the container) itself is
 /// NOT snapshotted here — see `RisoProfileSubpagesSnapshotTests`'s file
 /// header for why.

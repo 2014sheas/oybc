@@ -15,23 +15,15 @@ import {
  *     click, so the dialog's render-time opener is gone; the menu hands
  *     focus back to what held it before it opened, and the dialog restores
  *     THAT on close — never <body> (where Escape reaches nothing).
- *  2. A modal nested INSIDE another (the pool sheet's inline delete
- *     confirm): one Escape closes only the confirm, and focus falls back
- *     into the sheet even though the "Delete pool" link that opened the
- *     confirm has been unmounted.
+ *  2. The pool editor page's inline delete confirm (the only dialog left
+ *     on that page): one Escape closes only the confirm, and focus falls
+ *     back into the page even though the "Delete pool" link that opened
+ *     the confirm has been unmounted.
  */
 
 const STRETCH_ID = '71000000-0000-0000-0000-000000000001';
 const COUNTER_ID = '71000000-0000-0000-0000-000000000002';
 const POOL_ID = '71000000-0000-0000-0000-000000000010';
-
-/** True when the focused element sits inside the element matching `selector`. */
-async function focusIsInside(page: Page, selector: string): Promise<boolean> {
-  return page.evaluate(
-    (sel) => document.activeElement?.closest(sel) != null,
-    selector,
-  );
-}
 
 /** Tag name of the focused element (`BODY` when focus has been dropped). */
 async function focusedTag(page: Page): Promise<string | undefined> {
@@ -77,8 +69,8 @@ test.describe('RowContextMenu → dialog — focus is handed back, never dropped
   });
 });
 
-test.describe('Pool sheet — the nested delete confirm', () => {
-  test('one Escape closes only the confirm; the sheet stays open with focus inside it', async ({
+test.describe('Pool editor page — the delete confirm is the one dialog', () => {
+  test('Delete pool opens the confirm (focus on Cancel); Escape closes only it; Delete returns to Pools', async ({
     page,
   }) => {
     await seedTask(page, { id: STRETCH_ID, title: 'Stretch', type: 'normal' });
@@ -89,9 +81,10 @@ test.describe('Pool sheet — the nested delete confirm', () => {
     await page.getByRole('button', { name: /^Pools · 1/ }).click();
     await page.getByRole('button', { name: 'Edit pool Mobility' }).click();
 
-    const sheet = page.getByRole('dialog', { name: 'Edit pool' });
-    await expect(sheet).toBeVisible();
-    await sheet.getByRole('button', { name: 'Delete pool' }).click();
+    // The editor is a page now — no dialog until the delete confirm.
+    await expect(page).toHaveURL(new RegExp(`/tasks/pools/${POOL_ID}$`));
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+    await page.getByRole('button', { name: 'Delete pool' }).click();
 
     const confirm = page.getByRole('alertdialog', { name: 'Confirm delete pool' });
     await expect(confirm).toBeVisible();
@@ -99,13 +92,43 @@ test.describe('Pool sheet — the nested delete confirm', () => {
 
     await page.keyboard.press('Escape');
     await expect(confirm).toHaveCount(0);
-    await expect(sheet).toBeVisible();
-    // "Delete pool" (the confirm's opener) was unmounted while the confirm
-    // showed, so focus falls back to the enclosing sheet.
-    await expect.poll(() => focusIsInside(page, '[aria-labelledby="pool-edit-sheet-title"]')).toBe(true);
+    // Still on the editor page; focus went back to the link that opened the confirm.
+    await expect(page).toHaveURL(new RegExp(`/tasks/pools/${POOL_ID}$`));
+    await expect(page.getByRole('button', { name: 'Delete pool' })).toBeFocused();
 
-    // The sheet still owns Escape afterwards.
+    await page.getByRole('button', { name: 'Delete pool' }).click();
+    await page
+      .getByRole('alertdialog', { name: 'Confirm delete pool' })
+      .getByRole('button', { name: 'Delete', exact: true })
+      .click();
+    await expect(page).toHaveURL(/\/tasks\?segment=pools$/);
+    await expect(page.getByRole('button', { name: 'Edit pool Mobility' })).toHaveCount(0);
+  });
+});
+
+// The pool picker's "+ Build a new pool…" is the one place the editor stays a
+// MODAL (a full-page navigation would abandon the surrounding sheet). On web
+// the picker is hosted by the Core defaults sheet (Board settings), not the
+// wizard's Sources sheet, so that is the reachable path.
+test.describe('PoolEditorModal — the picker\'s "+ Build a new pool…"', () => {
+  test('opens as a dialog, Escape closes it, focus returns to the trigger', async ({ page }) => {
+    await page.goto('/profile/board-settings?__oybc_test_bypass=1');
+    await page
+      .getByRole('group', { name: 'Pre-filled tasks by timeframe' })
+      .getByRole('button', { name: /^Daily/ })
+      .click();
+    await page.getByRole('button', { name: /Start with a pool|Add more pools/ }).click();
+    await expect(page.getByRole('dialog', { name: 'Choose pools' })).toBeVisible();
+
+    const trigger = page.getByRole('button', { name: '+ Build a new pool…' });
+    await trigger.click();
+    const modal = page.getByRole('dialog', { name: 'New pool' });
+    await expect(modal).toBeVisible();
+
     await page.keyboard.press('Escape');
-    await expect(sheet).toHaveCount(0);
+    await expect(modal).toHaveCount(0);
+    // The picker underneath survives and focus is back on the trigger.
+    await expect(page.getByRole('dialog', { name: 'Choose pools' })).toBeVisible();
+    await expect(trigger).toBeFocused();
   });
 });

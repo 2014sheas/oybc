@@ -57,27 +57,7 @@ extension AppDatabase {
     @discardableResult
     func createPoolAndEnqueue(userId: String, name: String, taskIds: [String], now: String) throws -> Pool {
         try write { db in
-            let pool = Pool(
-                id: Self.generateUUID(),
-                userId: userId,
-                name: name,
-                taskIds: taskIds,
-                createdAt: now,
-                updatedAt: now,
-                lastSyncedAt: nil,
-                version: 1,
-                isDeleted: false,
-                deletedAt: nil
-            )
-            try pool.insert(db)
-            try SyncQueueBuilder.makeItem(
-                entityType: "pools",
-                entityId: pool.id,
-                operationType: .create,
-                payload: pool,
-                now: now
-            ).enqueue(db)
-            return pool
+            try Self.insertPool(db: db, userId: userId, name: name, taskIds: taskIds, now: now)
         }
     }
 
@@ -92,21 +72,87 @@ extension AppDatabase {
         now: String
     ) throws -> Pool? {
         try write { db in
-            guard var pool = try Pool.fetchOne(db, key: id) else { return nil }
-            if let name = name { pool.name = name }
-            if let taskIds = taskIds { pool.taskIds = taskIds }
-            pool.updatedAt = now
-            pool.version += 1
-            try pool.update(db)
-            try SyncQueueBuilder.makeItem(
-                entityType: "pools",
-                entityId: pool.id,
-                operationType: .update,
-                payload: pool,
-                now: now
-            ).enqueue(db)
-            return pool
+            try Self.updatePool(db: db, id: id, name: name, taskIds: taskIds, now: now)
         }
+    }
+
+    /// Pool editor Save: applies the editor's staged inline task edits
+    /// (`stagedEdits`) AND writes pool membership (`createPool…` /
+    /// `updatePool…` semantics, incl. the sync enqueue) in ONE transaction.
+    /// A throwing edit (strict mode — see `applyStagedTaskEdits`) rolls the
+    /// membership write back with it, so the pool never saves half of what
+    /// the user staged.
+    ///
+    /// - Parameters:
+    ///   - existingId: The pool being edited; `nil` creates a new pool.
+    ///   - userId: Owner uid (create mode).
+    ///   - name: Trimmed pool name.
+    ///   - taskIds: The pool's full ordered `taskIds` (unresolvable ids kept).
+    ///   - stagedEdits: Inline edits keyed by task id.
+    ///   - now: ISO8601 timestamp.
+    /// - Returns: The persisted pool (nil only when `existingId` vanished).
+    /// - Throws: `StagedTaskEditError` or a GRDB error; nothing is written.
+    @discardableResult
+    func savePoolWithStagedEdits(
+        existingId: String?,
+        userId: String,
+        name: String,
+        taskIds: [String],
+        stagedEdits: [String: TaskEditPatch],
+        now: String
+    ) throws -> Pool? {
+        try write { db in
+            try Self.applyStagedTaskEdits(db: db, stagedEdits: stagedEdits, strict: true, now: now)
+            if let existingId {
+                return try Self.updatePool(db: db, id: existingId, name: name, taskIds: taskIds, now: now)
+            }
+            return try Self.insertPool(db: db, userId: userId, name: name, taskIds: taskIds, now: now)
+        }
+    }
+
+    /// In-transaction pool insert + create-enqueue (shared by
+    /// `createPoolAndEnqueue` and `savePoolWithStagedEdits`).
+    static func insertPool(db: Database, userId: String, name: String, taskIds: [String], now: String) throws -> Pool {
+        let pool = Pool(
+            id: Self.generateUUID(),
+            userId: userId,
+            name: name,
+            taskIds: taskIds,
+            createdAt: now,
+            updatedAt: now,
+            lastSyncedAt: nil,
+            version: 1,
+            isDeleted: false,
+            deletedAt: nil
+        )
+        try pool.insert(db)
+        try SyncQueueBuilder.makeItem(
+            entityType: "pools",
+            entityId: pool.id,
+            operationType: .create,
+            payload: pool,
+            now: now
+        ).enqueue(db)
+        return pool
+    }
+
+    /// In-transaction pool update + update-enqueue (shared by
+    /// `updatePoolAndEnqueue` and `savePoolWithStagedEdits`).
+    static func updatePool(db: Database, id: String, name: String?, taskIds: [String]?, now: String) throws -> Pool? {
+        guard var pool = try Pool.fetchOne(db, key: id) else { return nil }
+        if let name = name { pool.name = name }
+        if let taskIds = taskIds { pool.taskIds = taskIds }
+        pool.updatedAt = now
+        pool.version += 1
+        try pool.update(db)
+        try SyncQueueBuilder.makeItem(
+            entityType: "pools",
+            entityId: pool.id,
+            operationType: .update,
+            payload: pool,
+            now: now
+        ).enqueue(db)
+        return pool
     }
 
     /// Soft-delete a pool and enqueue the delete op atomically. Never

@@ -250,6 +250,22 @@ export async function persistWizardPendingTasksAndStagedEdits(
   );
 }
 
+/** Why a strict staged-edit application refused. */
+export type StagedEditErrorReason = 'missing-task' | 'invalid-patch' | 'link-guard';
+
+/** Thrown by strict `applyStagedTaskEditsForWizardPersist` to roll the save back. */
+export class StagedEditError extends Error {
+  readonly reason: StagedEditErrorReason;
+  readonly taskId: string;
+
+  constructor(reason: StagedEditErrorReason, taskId: string, message: string) {
+    super(message);
+    this.name = 'StagedEditError';
+    this.reason = reason;
+    this.taskId = taskId;
+  }
+}
+
 /**
  * Applies every staged inline task edit (Inline Task Editing, web PR-2) in
  * the SAME transaction as the wizard's pending-task drain — mirroring iOS
@@ -287,23 +303,41 @@ export async function persistWizardPendingTasksAndStagedEdits(
  *   until-the-drain-above) NON-COMPOUND tasks whose edit was already merged
  *   into their `PendingTaskPayload` — skipped here to avoid double-apply.
  * @param now - ISO8601 timestamp for version bumps + sync-queue rows.
+ * @param options - `strict: true` (the pool save) THROWS a `StagedEditError`
+ *   for a missing task, an invalid patch, or a failed compound link guard
+ *   instead of skipping, so the surrounding transaction rolls back and a Save
+ *   never silently drops the user's edit. Default false (wizard persist).
+ * @throws StagedEditError in strict mode only.
  */
 export async function applyStagedTaskEditsForWizardPersist(
   stagedEdits: Map<string, TaskEditPatch>,
   skipIfPendingIds: ReadonlySet<string>,
   now: string,
+  options: { strict?: boolean } = {},
 ): Promise<void> {
   if (stagedEdits.size === 0) return;
+  const strict = options.strict === true;
 
   for (const [taskId, patch] of stagedEdits) {
     const task = await db.tasks.get(taskId);
-    if (!task) continue;
-    if (validatePatch(patch, task.type) !== null) continue;
+    if (!task) {
+      if (strict) throw new StagedEditError('missing-task', taskId, 'A task you edited no longer exists');
+      continue;
+    }
+    const invalid = validatePatch(patch, task.type);
+    if (invalid !== null) {
+      if (strict) throw new StagedEditError('invalid-patch', taskId, invalid);
+      continue;
+    }
 
     if (task.type === TaskType.COMPOUND) {
       // An ineligible newly linked existing task skips the whole edit
       // (never half-applied), exactly like an invalid patch.
-      if ((await compoundLinkProblemForPatch(taskId, patch)) !== null) continue;
+      const linkProblem = await compoundLinkProblemForPatch(taskId, patch);
+      if (linkProblem !== null) {
+        if (strict) throw new StagedEditError('link-guard', taskId, linkProblem);
+        continue;
+      }
       await applyCompoundStructureEditInTransaction(task, patch, {}, now);
     } else {
       if (skipIfPendingIds.has(taskId)) continue;

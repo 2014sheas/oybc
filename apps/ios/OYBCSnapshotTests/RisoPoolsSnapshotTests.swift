@@ -5,7 +5,7 @@ import SnapshotTesting
 
 /// Snapshot coverage for the Task Pools + Recurring Boards Rework (P2)
 /// Tasks-tab Pools segment surfaces: `PoolsBrowseView` (browse list +
-/// dashed "+ New pool") and `PoolEditSheetView` (create/edit sheet). Both
+/// dashed "+ New pool") and `PoolEditorBodyView` (full-screen create/edit editor). Both
 /// are DB-free, props-only leaf views (mirrors `RisoTasksTabSnapshotTests`'
 /// pattern) — fixture data only, no `AppDatabase.shared` involved. See
 /// docs/POOLS_RECURRING.md §Surfaces items 1-2 + the handoff screenshots
@@ -144,61 +144,90 @@ final class RisoPoolsSnapshotTests: XCTestCase {
         )
     }
 
-    // MARK: - PoolEditSheetView
+    // MARK: - PoolEditorView (full screen)
 
-    private func editSheet(existing: Bool) -> some View {
-        let library = TaskLibraryViewModel()
+    private func editor(existing: Bool, openRow: Bool = false, legacyAchievement: Bool = false) -> some View {
+        let db = try! AppDatabase.makeTestInstance()
+        let library = TaskLibraryViewModel(database: db)
         let tasks = [
             SnapshotFixtures.makeTask(id: "t1", title: "Meditate 10 min", type: .normal),
             SnapshotFixtures.makeTask(id: "t2", title: "Drink 64 oz water", type: .normal),
             SnapshotFixtures.makeTask(id: "t3", title: "Read 30 min", type: .normal),
         ]
-        library.libraryTasks = tasks
-        // None of the fixture tasks are wizard-born drafts, so the
-        // browsable (picker) set is identical to the full library set —
-        // keep both populated so a future test that opens the library
-        // picker doesn't silently render empty (P2 I-2: the picker reads
-        // `browsableTasks`, never `libraryTasks`).
+        library.libraryTasks = tasks + (legacyAchievement
+            ? [SnapshotFixtures.makeTask(id: "a1", title: "Weekly bingo watcher", type: .achievement)] : [])
         library.browsableTasks = tasks
-        let existingPool = existing ? pool("p1", "Morning Kickstart", taskIds: ["t1", "t2"]) : nil
-        return PoolEditSheetView(
-            pool: existingPool,
-            templates: [],
-            library: library,
-            userId: SnapshotFixtures.userId,
-            onSaved: {},
-            onDeleted: {}
+        let existingPool = existing
+            ? pool("p1", "Morning Kickstart", taskIds: legacyAchievement ? ["t1", "a1"] : ["t1", "t2"]) : nil
+        let vm = PoolEditorViewModel(
+            pool: existingPool, userId: SnapshotFixtures.userId, library: library,
+            initialTaskIds: existing ? [] : ["t1", "t3"], database: db
         )
+        if openRow { vm.openEditor("t1") }
+        return ZStack(alignment: .top) {
+            RisoPaperBackground()
+            VStack(spacing: 0) {
+                HStack(alignment: .top) {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(existing ? "EDIT POOL" : "NEW POOL").risoKicker(.risoBlue)
+                        Text(existing ? "Edit pool" : "New pool").risoH2()
+                    }
+                    Spacer()
+                }
+                .padding(.horizontal, Riso.gutter).padding(.top, 16)
+                ScrollView {
+                    PoolEditorBodyView(vm: vm)
+                        .padding(.horizontal, Riso.gutter).padding(.top, 14)
+                }
+            }
+        }
     }
 
-    func testEditSheetNewLight() {
+    func testEditorNewLight() {
         assertSnapshot(
-            of: editSheet(existing: false),
-            as: .image(layout: .fixed(width: 393, height: 680), traits: lightTraits()),
+            of: editor(existing: false),
+            as: .image(layout: .fixed(width: 393, height: 900), traits: lightTraits()),
             record: recordMode
         )
     }
 
-    func testEditSheetNewDark() {
+    func testEditorNewDark() {
         assertSnapshot(
-            of: editSheet(existing: false),
-            as: .image(layout: .fixed(width: 393, height: 680), traits: darkTraits()),
+            of: editor(existing: false),
+            as: .image(layout: .fixed(width: 393, height: 900), traits: darkTraits()),
             record: recordMode
         )
     }
 
-    func testEditSheetEditLight() {
+    func testEditorEditLight() {
         assertSnapshot(
-            of: editSheet(existing: true),
-            as: .image(layout: .fixed(width: 393, height: 740), traits: lightTraits()),
+            of: editor(existing: true),
+            as: .image(layout: .fixed(width: 393, height: 900), traits: lightTraits()),
             record: recordMode
         )
     }
 
-    func testEditSheetEditDark() {
+    func testEditorEditDark() {
         assertSnapshot(
-            of: editSheet(existing: true),
-            as: .image(layout: .fixed(width: 393, height: 740), traits: darkTraits()),
+            of: editor(existing: true),
+            as: .image(layout: .fixed(width: 393, height: 900), traits: darkTraits()),
+            record: recordMode
+        )
+    }
+
+    func testEditorRowEditorOpenLight() {
+        assertSnapshot(
+            of: editor(existing: true, openRow: true),
+            as: .image(layout: .fixed(width: 393, height: 900), traits: lightTraits()),
+            record: recordMode
+        )
+    }
+
+    /// Legacy achievement member: removable, no pencil, NO "TASKS TAB" marker.
+    func testEditorLegacyAchievementLight() {
+        assertSnapshot(
+            of: editor(existing: true, legacyAchievement: true),
+            as: .image(layout: .fixed(width: 393, height: 900), traits: lightTraits()),
             record: recordMode
         )
     }

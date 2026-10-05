@@ -187,7 +187,7 @@ enum PoolHealth {
         return "Short on \(consumers.count) boards"
     }
 
-    // MARK: - Pool-size preview (consumed by `PoolEditSheetView`; the
+    // MARK: - Pool-size preview (consumed by `PoolEditorView`; the
     // wizard Preview "deck" surface that also shared this was retired in
     // the sources rework). Lives here rather than in the view — originally
     // extracted per docs/POOLS_RECURRING.md §Surfaces item 2 (owner
@@ -232,7 +232,7 @@ enum PoolHealth {
     /// tasks"` — byte-identical to web's `formatDeckPreview` (owner
     /// decision, 2026-07-20: the short branch drops the missing-count and
     /// board-size detail; "in the deck" → "in the pool" in the
-    /// sources-rework copy convergence). Consumed by `PoolEditSheetView`
+    /// sources-rework copy convergence). Consumed by `PoolEditorView`
     /// (deckFloor = the smallest consuming board's floor, via
     /// `computeDeckFloor`).
     static func formatDeckPreview(taskCount: Int, deckFloor: DeckFloor) -> String {

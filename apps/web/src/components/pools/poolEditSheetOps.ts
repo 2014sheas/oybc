@@ -1,10 +1,16 @@
 import type { Pool } from '@oybc/shared';
-import { createPool, softDeletePool, updatePool } from '../../db/operations/pools';
+import { softDeletePool } from '../../db/operations/pools';
+import { savePoolWithStagedEdits } from '../../db/operations/poolSave';
+import type { TaskEditPatch } from '../../db/taskEditPatch';
 
 /** The fields `PoolEditSheet` collects before a save. */
 export interface PoolEditSheetSaveInput {
   name: string;
   taskIds: string[];
+  /** Inline row edits staged in the editor (task id → patch). Applied in
+   *  the SAME transaction as the membership write — see `savePoolFromSheet`.
+   *  Omitted ⇒ none. */
+  stagedEdits?: Map<string, TaskEditPatch>;
 }
 
 /** `PoolSchema.name` bound (`packages/shared/src/validation/schemas.ts`) —
@@ -16,7 +22,7 @@ export interface PoolEditSheetSaveInput {
 export const POOL_NAME_MAX_LENGTH = 120;
 
 /**
- * Persists a `PoolEditSheet` save — extracted from the component so the
+ * Persists a pool-editor save — extracted from the component so the
  * create-vs-update branch (and the P1 CRUD ops it delegates to) has a
  * directly testable seam without a component-render harness (this repo
  * has none; see CLAUDE.md's iOS-only snapshot-test guidance — web has no
@@ -28,6 +34,11 @@ export const POOL_NAME_MAX_LENGTH = 120;
  * push, then fail `PoolSchema` on the next pull — I-1) or if `updatePool`
  * reports the pool no longer exists (soft-deleted or removed out from
  * under the open sheet).
+ *
+ * The staged inline edits and the membership write run in ONE Dexie `rw`
+ * transaction (the wizard's apply-staged-edits precedent first, then
+ * `createPool` / `updatePool`): a thrown edit — or a failed membership
+ * write — rolls the whole save back, so nothing is half-applied.
  */
 export async function savePoolFromSheet(
   userId: string,
@@ -38,14 +49,7 @@ export async function savePoolFromSheet(
   if (name.length > POOL_NAME_MAX_LENGTH) {
     throw new Error(`Pool name must be ${POOL_NAME_MAX_LENGTH} characters or fewer.`);
   }
-  if (pool) {
-    const updated = await updatePool(pool.id, { name, taskIds: input.taskIds });
-    if (!updated) {
-      throw new Error('Pool no longer exists');
-    }
-    return updated;
-  }
-  return createPool(userId, { name, taskIds: input.taskIds });
+  return savePoolWithStagedEdits(userId, pool, { name, taskIds: input.taskIds, stagedEdits: input.stagedEdits });
 }
 
 /**
