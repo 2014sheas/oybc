@@ -243,7 +243,10 @@ struct MainTabView: View {
                         // stack (we're already on the Boards tab), matching
                         // the Core Boards grid's onOpenCoreWindow pattern.
                         pushBoard(boardId)
-                    }
+                    },
+                    // Board card tap → the stack's one push point (core →
+                    // pager window, else the plain route).
+                    onOpenBoard: { boardId in pushBoard(boardId) }
                 )
                 .navigationDestination(for: TutorialRoute.self) { _ in
                     TutorialBoardView(
