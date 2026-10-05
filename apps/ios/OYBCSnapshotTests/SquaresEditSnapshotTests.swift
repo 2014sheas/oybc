@@ -54,7 +54,8 @@ final class SquaresEditSnapshotTests: XCTestCase {
     private func makeGrid(
         draft: [String: SquaresDraftCell],
         centerType: CenterSquareType,
-        taskMap: [String: Task]
+        taskMap: [String: Task],
+        windowedCount: @escaping (Task) -> Int = { $0.currentCount ?? 0 }
     ) -> some View {
         let cells = buildSquaresEditCells(draft: draft, gridSize: 3, centerType: centerType)
         return SquaresEditGrid(
@@ -64,7 +65,8 @@ final class SquaresEditSnapshotTests: XCTestCase {
             sideLength: sideLength,
             onTap: { _ in },
             onReorder: { _ in },
-            onKeyboardMove: { _, _ in .ignored }
+            onKeyboardMove: { _, _ in .ignored },
+            windowedCount: windowedCount
         )
         .padding(Riso.gutter)
         .background(Color.risoPaper)
@@ -91,6 +93,23 @@ final class SquaresEditSnapshotTests: XCTestCase {
                 layout: .fixed(width: 393, height: 460),
                 traits: .init(userInterfaceStyle: .dark)
             ),
+            record: recordMode
+        )
+    }
+
+    // MARK: - Counting squares show the WINDOWED count, never the lifetime cache
+    // (owner report 2026-10-04). "Read 50 pages" carries a lifetime 40 but the
+    // injected windowed count says 12 → the cell must read 12/50.
+
+    func testEditCountingWindowedCountLight() {
+        var tasks = makeTasks()
+        if let i = tasks.firstIndex(where: { $0.id == "se-t4" }) { tasks[i].currentCount = 40 }
+        let taskMap = Dictionary(uniqueKeysWithValues: tasks.map { ($0.id, $0) })
+        let draft = SnapshotFixtures.makeSquaresDraft(from: makeBoardTasks(boardId: "se-b1", includeCenter: false))
+        assertSnapshot(
+            of: makeGrid(draft: draft, centerType: .free, taskMap: taskMap,
+                         windowedCount: { $0.id == "se-t4" ? 12 : 0 }),
+            as: .image(layout: .fixed(width: 393, height: 460)),
             record: recordMode
         )
     }

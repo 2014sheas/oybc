@@ -61,6 +61,10 @@ struct SquaresEditGrid: View {
     /// Windowed-Completion-aware completion read (docs/WINDOWED_COMPLETION.md
     /// §Task caches) — see the equivalent doc on the retired `RearrangeGrid`.
     var windowedIsCompleted: (Task) -> Bool = { $0.isCompleted }
+    /// Windowed count for a counting square — the board's in-window progress,
+    /// never the lifetime cache (owner report 2026-10-04: Board Edit showed
+    /// lifetime progress). `BoardEditPanel` injects `BoardPlayView.windowedCount`.
+    var windowedCount: (Task) -> Int = { $0.currentCount ?? 0 }
 
     // MARK: - Internal state
 
@@ -276,7 +280,7 @@ struct SquaresEditGrid: View {
             isCompleted: isTaskCompleted,
             showsLockChip: cell.isLocked,
             showsDirtyChip: cell.isDirty,
-            currentCount: task?.currentCount ?? 0,
+            currentCount: task.map(windowedCount) ?? 0,
             maxCount: task?.maxCount ?? 0
         )
     }

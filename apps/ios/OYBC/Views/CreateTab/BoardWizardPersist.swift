@@ -144,6 +144,40 @@ func wizardPreviewIsCompleted(
     ).isCompleted
 }
 
+/// Windowed COUNT for a counting preview cell — the twin of
+/// `wizardPreviewIsCompleted` for the number a counting square shows: a
+/// linked counter resolves over the prospective board's window
+/// (`resolveLinkedCounterDisplay`), an event-owning counter sums its own
+/// in-window increments, anything else keeps its lifetime cache.
+///
+/// - Parameters:
+///   - task: The placed task.
+///   - eventsByTaskId: Non-deleted events grouped by task id.
+///   - windowStart: The prospective board's `startDate`.
+///   - windowEnd: The prospective board's `endDate` (nil = open-ended).
+/// - Returns: The count the cell should display.
+func wizardPreviewCount(
+    task: Task,
+    eventsByTaskId: [String: [TaskEvent]],
+    windowStart: String,
+    windowEnd: String?
+) -> Int {
+    guard task.type == .counting else { return task.currentCount ?? 0 }
+    if task.sharedCounterId != nil {
+        return resolveLinkedCounterDisplay(
+            task: task, eventsByTaskId: eventsByTaskId,
+            window: LinkedCounterWindow(startDate: windowStart, endDate: windowEnd)
+        ).displayed
+    }
+    guard isEventOwningTask(task) else { return task.currentCount ?? 0 }
+    return resolveTaskWindowState(
+        task: task,
+        events: eventsByTaskId[task.id] ?? [],
+        windowStart: windowStart,
+        windowEnd: windowEnd
+    ).count
+}
+
 enum WizardStatus: String {
     case active
     case draft
