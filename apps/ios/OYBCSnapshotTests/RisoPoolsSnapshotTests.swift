@@ -146,7 +146,7 @@ final class RisoPoolsSnapshotTests: XCTestCase {
 
     // MARK: - PoolEditorView (full screen)
 
-    private func editor(existing: Bool, openRow: Bool = false) -> some View {
+    private func editor(existing: Bool, openRow: Bool = false, legacyAchievement: Bool = false) -> some View {
         let db = try! AppDatabase.makeTestInstance()
         let library = TaskLibraryViewModel(database: db)
         let tasks = [
@@ -154,9 +154,11 @@ final class RisoPoolsSnapshotTests: XCTestCase {
             SnapshotFixtures.makeTask(id: "t2", title: "Drink 64 oz water", type: .normal),
             SnapshotFixtures.makeTask(id: "t3", title: "Read 30 min", type: .normal),
         ]
-        library.libraryTasks = tasks
+        library.libraryTasks = tasks + (legacyAchievement
+            ? [SnapshotFixtures.makeTask(id: "a1", title: "Weekly bingo watcher", type: .achievement)] : [])
         library.browsableTasks = tasks
-        let existingPool = existing ? pool("p1", "Morning Kickstart", taskIds: ["t1", "t2"]) : nil
+        let existingPool = existing
+            ? pool("p1", "Morning Kickstart", taskIds: legacyAchievement ? ["t1", "a1"] : ["t1", "t2"]) : nil
         let vm = PoolEditorViewModel(
             pool: existingPool, userId: SnapshotFixtures.userId, library: library,
             initialTaskIds: existing ? [] : ["t1", "t3"], database: db
@@ -216,6 +218,15 @@ final class RisoPoolsSnapshotTests: XCTestCase {
     func testEditorRowEditorOpenLight() {
         assertSnapshot(
             of: editor(existing: true, openRow: true),
+            as: .image(layout: .fixed(width: 393, height: 900), traits: lightTraits()),
+            record: recordMode
+        )
+    }
+
+    /// Legacy achievement member: removable, no pencil, NO "TASKS TAB" marker.
+    func testEditorLegacyAchievementLight() {
+        assertSnapshot(
+            of: editor(existing: true, legacyAchievement: true),
             as: .image(layout: .fixed(width: 393, height: 900), traits: lightTraits()),
             record: recordMode
         )

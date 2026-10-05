@@ -121,6 +121,24 @@ export function dropStagedEdit(
   return next;
 }
 
+/**
+ * Prunes staged edits to the rows the save will actually keep: ids still in
+ * `taskIds` AND still resolvable in the editor model (a task deleted by sync
+ * after staging has vanished — its edit is dropped, mirroring iOS's prune).
+ */
+export function pruneStagedEdits(
+  stagedEdits: Map<string, TaskEditPatch>,
+  taskIds: readonly string[],
+  resolvableIds: ReadonlySet<string>,
+): Map<string, TaskEditPatch> {
+  const kept = new Set(taskIds);
+  const next = new Map<string, TaskEditPatch>();
+  for (const [id, patch] of stagedEdits) {
+    if (kept.has(id) && resolvableIds.has(id)) next.set(id, patch);
+  }
+  return next;
+}
+
 /** Save gate: a trimmed name, at least one resolvable task, not mid-write. */
 export function canSavePool(name: string, resolvableCount: number, busy: boolean): boolean {
   return name.trim() !== '' && resolvableCount > 0 && !busy;

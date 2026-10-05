@@ -197,7 +197,9 @@ struct RisoPoolListView: View {
             // marker (achievement). Compound in PR 1 shows neither.
             if showsPencil {
                 pencilButton(task)
-            } else if task.type == .achievement {
+            } else if task.type == .achievement && surface == .board {
+                // Board surface only: the pool editor already lives in the
+                // Tasks tab, so a legacy achievement row keeps an empty gutter.
                 tasksTabMarker
             }
 

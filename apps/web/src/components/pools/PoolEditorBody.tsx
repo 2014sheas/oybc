@@ -23,6 +23,7 @@ import {
   canSavePool,
   dropStagedEdit,
   groupLinksByCompound,
+  pruneStagedEdits,
   seedEditorDraft,
   stageEditInto,
 } from './poolEditorModel';
@@ -213,7 +214,7 @@ export function PoolEditorBody({
       const saved = await savePoolFromSheet(userId, pool, {
         name: name.trim(),
         taskIds,
-        stagedEdits,
+        stagedEdits: pruneStagedEdits(stagedEdits, taskIds, new Set(view.poolOrder)),
       });
       onSaved(saved);
     } catch (e) {
@@ -266,7 +267,6 @@ export function PoolEditorBody({
             centerTaskId={null}
             onCenterClick={NOOP}
             onRemove={removeTask}
-            onContextMenu={NOOP}
             editingTaskId={editingTaskId}
             onEdit={openEditor}
             editor={(task) =>

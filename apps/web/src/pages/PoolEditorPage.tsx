@@ -46,6 +46,10 @@ export function PoolEditorPage({ userId, poolId }: PoolEditorPageProps): React.R
   const back = (): void => {
     void navigate(TASKS_POOLS_PATH);
   };
+  // After Save / Delete the editor route must leave history (Back would land on a blank or stale editor).
+  const backReplacing = (): void => {
+    void navigate(TASKS_POOLS_PATH, { replace: true });
+  };
 
   useEffect(() => {
     if (pool === null) navigate(TASKS_POOLS_PATH, { replace: true });
@@ -76,8 +80,8 @@ export function PoolEditorPage({ userId, poolId }: PoolEditorPageProps): React.R
         allTasks={library.allTasks}
         browsableTasks={browsableTasks}
         onCancel={back}
-        onSaved={back}
-        onDeleted={back}
+        onSaved={backReplacing}
+        onDeleted={backReplacing}
       />
     </div>
   );

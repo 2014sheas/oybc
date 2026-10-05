@@ -105,3 +105,30 @@ test.describe('Pool editor page — the delete confirm is the one dialog', () =>
     await expect(page.getByRole('button', { name: 'Edit pool Mobility' })).toHaveCount(0);
   });
 });
+
+// The pool picker's "+ Build a new pool…" is the one place the editor stays a
+// MODAL (a full-page navigation would abandon the surrounding sheet). On web
+// the picker is hosted by the Core defaults sheet (Board settings), not the
+// wizard's Sources sheet, so that is the reachable path.
+test.describe('PoolEditorModal — the picker\'s "+ Build a new pool…"', () => {
+  test('opens as a dialog, Escape closes it, focus returns to the trigger', async ({ page }) => {
+    await page.goto('/profile/board-settings?__oybc_test_bypass=1');
+    await page
+      .getByRole('group', { name: 'Pre-filled tasks by timeframe' })
+      .getByRole('button', { name: /^Daily/ })
+      .click();
+    await page.getByRole('button', { name: /Start with a pool|Add more pools/ }).click();
+    await expect(page.getByRole('dialog', { name: 'Choose pools' })).toBeVisible();
+
+    const trigger = page.getByRole('button', { name: '+ Build a new pool…' });
+    await trigger.click();
+    const modal = page.getByRole('dialog', { name: 'New pool' });
+    await expect(modal).toBeVisible();
+
+    await page.keyboard.press('Escape');
+    await expect(modal).toHaveCount(0);
+    // The picker underneath survives and focus is back on the trigger.
+    await expect(page.getByRole('dialog', { name: 'Choose pools' })).toBeVisible();
+    await expect(trigger).toBeFocused();
+  });
+});

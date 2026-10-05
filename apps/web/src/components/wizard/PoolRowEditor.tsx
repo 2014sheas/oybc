@@ -13,7 +13,7 @@ const HEADER_LABEL: Record<TaskType, string> = {
 };
 
 export interface PoolRowEditorProps {
-  /** Copy surface for the footer staging line; defaults to the board wizard. */
+  /** Board wizard (default) shows the footer staging line; the pool surface hides it. */
   surface?: 'board' | 'pool';
   /** The task being edited (the compound link guard's `parentId`). */
   taskId: string;
@@ -81,7 +81,8 @@ export function PoolRowEditor({
     }
   }
 
-  const stagedUntil = surface === 'pool' ? 'Staged until you save the pool' : 'Staged until you create the board';
+  // The pool surface shows no staging line (iOS has no twin; terse UI).
+  const stagedUntil = 'Staged until you create the board';
   const everywhereLine =
     usedOnBoardCount > 0
       ? `${stagedUntil}. It then changes here and on ${usedOnBoardCount} other board${usedOnBoardCount === 1 ? '' : 's'}.`
@@ -162,10 +163,12 @@ export function PoolRowEditor({
         )}
 
         <div className={styles.footer}>
-          <span className={styles.stagingLine}>
-            <RisoIcon name="shield" size={14} />
-            {everywhereLine}
-          </span>
+          {surface !== 'pool' && (
+            <span className={styles.stagingLine}>
+              <RisoIcon name="shield" size={14} />
+              {everywhereLine}
+            </span>
+          )}
           {isBlocked && <span className={styles.errorText}>{validationMessage}</span>}
           <div className={styles.actions}>
             <RisoButton kind="neutral" onClick={onDiscard}>

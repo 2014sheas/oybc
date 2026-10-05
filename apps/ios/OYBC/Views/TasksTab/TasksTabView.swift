@@ -548,6 +548,10 @@ struct TasksTabView: View {
                     onDeleted: { closePoolEditor() },
                     onCancel: { closePoolEditor() }
                 )
+            } else {
+                // The pool vanished (deleted/synced away): pop rather than
+                // leave a blank pushed screen.
+                Color.clear.onAppear { if !path.isEmpty { path.removeLast() } }
             }
         }
     }

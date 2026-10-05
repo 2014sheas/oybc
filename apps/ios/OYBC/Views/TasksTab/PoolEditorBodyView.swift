@@ -49,7 +49,7 @@ struct PoolEditorBodyView: View {
         VStack(alignment: .leading, spacing: 12) {
             RisoPoolListView(
                 surface: .pool,
-                selectedTaskIds: Set(vm.poolTaskIds),
+                selectedTaskIds: Set(vm.selectedTasks.map(\.id)),
                 orderedTaskIds: vm.poolTaskIds,
                 effectiveTaskById: vm.effectiveTaskById,
                 effectiveChildrenByCompound: vm.effectiveChildrenByCompound,

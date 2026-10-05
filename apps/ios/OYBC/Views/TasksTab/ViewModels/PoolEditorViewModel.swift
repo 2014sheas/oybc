@@ -155,6 +155,27 @@ final class PoolEditorViewModel {
         if editingTaskId == taskId { editingTaskId = nil }
     }
 
+    /// Drops staged edits whose task is no longer a pool member or no longer
+    /// resolves in the library (e.g. deleted by sync after staging), so the
+    /// strict apply at Save can't throw for a row the user can't see.
+    func pruneStaleStagedEdits() {
+        stagedEdits = Self.pruneStagedEdits(
+            stagedEdits, poolTaskIds: poolTaskIds,
+            resolvableIds: Set(library.libraryTasks.map(\.id))
+        )
+        if let id = editingTaskId, stagedEdits[id] == nil, !Set(library.libraryTasks.map(\.id)).contains(id) {
+            editingTaskId = nil
+        }
+    }
+
+    /// Pure core of `pruneStaleStagedEdits`.
+    static func pruneStagedEdits(
+        _ edits: [String: TaskEditPatch], poolTaskIds: [String], resolvableIds: Set<String>
+    ) -> [String: TaskEditPatch] {
+        let members = Set(poolTaskIds)
+        return edits.filter { members.contains($0.key) && resolvableIds.contains($0.key) }
+    }
+
     // MARK: - Inline row editor (wizard `openEditor`/`saveEdit`/`discardEdit` twin)
 
     /// Open a row. Reopening reuses the staged patch verbatim (the overlay
@@ -225,6 +246,7 @@ final class PoolEditorViewModel {
         let uid = userId
         let trimmed = trimmedName
         let ids = poolTaskIds
+        pruneStaleStagedEdits()
         let edits = stagedEdits
         do {
             let saved = try await _Concurrency.Task.detached(priority: .userInitiated) {

@@ -47,6 +47,13 @@ test.describe('Pool editor — full page with wizard rows', () => {
 
     // Back on Tasks → Pools with the card.
     await expect(page).toHaveURL(/\/tasks\?segment=pools$/);
+    // The editor route was REPLACED: browser Back lands on the Tasks page,
+    // never the blank /tasks/pools/new editor.
+    await page.goBack();
+    await expect(page).not.toHaveURL(/\/tasks\/pools\/new/);
+    await expect(page).toHaveURL(/\/(tasks|boards)/);
+    await page.goForward();
+    await expect(page).toHaveURL(/\/tasks\?segment=pools$/);
     const card = page.getByRole('button', { name: 'Edit pool Morning set' });
     await expect(card).toBeVisible();
     await expect(card).toContainText('2 tasks');

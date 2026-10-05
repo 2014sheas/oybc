@@ -11,7 +11,7 @@ import { applyStagedTaskEditsForWizardPersist } from './wizardBoard';
  * first (the wizard's `applyStagedTaskEditsForWizardPersist` precedent —
  * counting blank titles derived through `applyPatchToTask`, compound
  * structure edits, board cascades), then `createPool` / `updatePool`. A
- * thrown edit, or a failed membership write, rolls the whole save back.
+ * refused edit (`StagedEditError`), or a failed membership write, rolls the whole save back.
  *
  * @param userId - Owner of a newly created pool.
  * @param pool - The pool to update, or `undefined` to create.
@@ -28,11 +28,16 @@ export async function savePoolWithStagedEdits(
     'rw',
     [db.boards, db.boardTasks, db.tasks, db.compoundChildren, db.taskEvents, db.pools, db.syncQueue],
     async () => {
-      await applyStagedTaskEditsForWizardPersist(
-        input.stagedEdits ?? new Map(),
-        new Set(),
-        currentTimestamp(),
+      // A removed row's edit never applies; strict mode then throws (rolling
+      // the whole save back) on a missing task / invalid patch / link-guard
+      // failure instead of silently dropping the user's edit (iOS twin).
+      const kept = new Set(input.taskIds);
+      const edits = new Map(
+        [...(input.stagedEdits ?? new Map<string, TaskEditPatch>())].filter(([id]) => kept.has(id)),
       );
+      await applyStagedTaskEditsForWizardPersist(edits, new Set(), currentTimestamp(), {
+        strict: true,
+      });
       if (pool) {
         const updated = await updatePool(pool.id, { name: input.name, taskIds: input.taskIds });
         if (!updated) throw new Error('Pool no longer exists');

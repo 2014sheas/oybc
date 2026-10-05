@@ -7,6 +7,7 @@ import {
   canSavePool,
   dropStagedEdit,
   groupLinksByCompound,
+  pruneStagedEdits,
   seedEditorDraft,
   stageEditInto,
 } from '../poolEditorModel';
@@ -135,14 +136,29 @@ describe('staged edits', () => {
     expect(first.get('a')?.title).toBe('One');
   });
 
-  it('a discarded draft never reaches the map (the baseline compare is unchanged)', () => {
+  it('discarding a draft leaves the staged map exactly as it was; saving it stages the patch', () => {
     const t = task('a');
     const baseline = seedEditorDraft(t, new Map(), { a: t }, {});
     const typed = { ...baseline, title: 'typed then discarded' };
     expect(patchesEqual(typed, baseline)).toBe(false);
-    const staged = new Map<string, TaskEditPatch>();
-    // Discard = close without calling stageEditInto.
-    expect(staged.size).toBe(0);
+    const before = new Map<string, TaskEditPatch>([['z', emptyPatch('prior')]]);
+    // Discard = the editor closes WITHOUT calling stageEditInto: reopening
+    // seeds from the (unchanged) map, so the typed draft is gone.
+    const reopened = seedEditorDraft(t, before, { a: t }, {});
+    expect(patchesEqual(reopened, baseline)).toBe(true);
+    expect(before.has('a')).toBe(false);
+    // Save is the only path that stages it.
+    expect(stageEditInto(before, 'a', typed).get('a')).toBe(typed);
+  });
+
+  it('pruneStagedEdits keeps only ids still in the pool AND still resolvable', () => {
+    const m = new Map([
+      ['kept', emptyPatch('k')],
+      ['removed', emptyPatch('r')],
+      ['vanished', emptyPatch('v')],
+    ]);
+    const pruned = pruneStagedEdits(m, ['kept', 'vanished'], new Set(['kept']));
+    expect([...pruned.keys()]).toEqual(['kept']);
   });
 
   it('dropStagedEdit removes a removed row\'s edit and is a no-op when absent', () => {

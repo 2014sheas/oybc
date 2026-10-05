@@ -282,4 +282,57 @@ final class PoolEditorViewModelTests: XCTestCase {
         XCTAssertEqual(vm.errorMessage, "Could not save pool: Pool name must be 120 characters or fewer.")
         XCTAssertTrue(try vm.database.fetchPools(userId: "u1").isEmpty)
     }
+
+    // MARK: - Review fixes (count/empty over resolvable rows; stale staged edits)
+
+    func testSelectedTasks_AllUnresolvableIds_YieldsNoRows_SoListShowsEmptyNote() throws {
+        let vm = try makeVM([], poolTaskIds: ["g1", "g2", "g3"])
+        XCTAssertTrue(vm.selectedTasks.isEmpty, "count pill / empty note derive from resolvable rows, not raw ids")
+        XCTAssertEqual(vm.poolTaskIds.count, 3, "ids are still kept for save")
+    }
+
+    func testPruneStagedEdits_DropsNonMembersAndUnresolvable() {
+        let edits = ["a": TaskEditPatch(title: "A"), "b": TaskEditPatch(title: "B"), "c": TaskEditPatch(title: "C")]
+        let kept = PoolEditorViewModel.pruneStagedEdits(edits, poolTaskIds: ["a", "b"], resolvableIds: ["a", "c"])
+        XCTAssertEqual(Set(kept.keys), ["a"])
+    }
+
+    private func seededDB() throws -> AppDatabase {
+        let db = try AppDatabase.makeTestInstance()
+        let now = AppDatabase.currentTimestamp()
+        try db.saveUser(User(
+            id: "u1", email: "t@e.com", displayName: "T", photoURL: nil,
+            preferences: User.encodePreferences(.defaults),
+            createdAt: now, updatedAt: now, lastSyncedAt: nil, version: 1
+        ))
+        return db
+    }
+
+    func testSave_StagedEditOnSinceDeletedTask_SucceedsAndAppliesNoEdit() async throws {
+        let db = try seededDB()
+        let t1 = buildTask("t1", title: "Keep"), t2 = buildTask("t2", title: "Gone")
+        try db.saveTask(t1)
+        let vm = try makeVM([t1, t2], poolTaskIds: ["t1", "t2"], db: db, name: "P")
+        vm.openEditor("t2"); vm.editDraft.title = "Renamed"; vm.saveEdit()
+        // Sync deleted t2 after staging: library reload no longer resolves it.
+        vm.library.libraryTasks = [t1]
+        let outcome = await vm.save()
+        guard case .saved(let created) = outcome else { return XCTFail("expected saved, got error: \(vm.errorMessage ?? "-")") }
+        XCTAssertEqual(try XCTUnwrap(created).taskIds, ["t1", "t2"])
+        XCTAssertTrue(vm.stagedEdits.isEmpty)
+        XCTAssertNil(try db.read { try Task.fetchOne($0, key: "t2") })
+    }
+
+    func testSave_StagedEditOnRemovedRow_IsNotApplied() async throws {
+        let db = try seededDB()
+        let t1 = buildTask("t1", title: "Keep"), t2 = buildTask("t2", title: "Orig")
+        try db.saveTask(t1); try db.saveTask(t2)
+        let vm = try makeVM([t1, t2], poolTaskIds: ["t1", "t2"], db: db, name: "P")
+        vm.openEditor("t2"); vm.editDraft.title = "Renamed"; vm.saveEdit()
+        vm.stagedEdits["t2"] = TaskEditPatch(title: "Renamed") // simulate a leaked entry
+        vm.poolTaskIds.removeAll { $0 == "t2" }
+        let outcome = await vm.save()
+        guard case .saved = outcome else { return XCTFail("expected saved") }
+        XCTAssertEqual(try XCTUnwrap(try db.read { try Task.fetchOne($0, key: "t2") }).title, "Orig")
+    }
 }

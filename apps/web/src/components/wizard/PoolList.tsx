@@ -44,7 +44,7 @@ export interface PoolListProps {
   /** Removes the row. Routes through the wizard's `onToggleSelection` so
    *  the Bug #85 `pendingTasks` purge still fires on a pending task. */
   onRemove: (taskId: string) => void;
-  onContextMenu: (taskId: string, x: number, y: number) => void;
+  onContextMenu?: (taskId: string, x: number, y: number) => void;
 
   /**
    * Web inline-editing port PR-2 — the currently-open editor row (at most
@@ -203,10 +203,14 @@ export function PoolList({
                         }
                       : undefined
                   }
-                  onContextMenu={(e) => {
-                    e.preventDefault();
-                    onContextMenu(task.id, e.clientX, e.clientY);
-                  }}
+                  onContextMenu={
+                    onContextMenu
+                      ? (e) => {
+                          e.preventDefault();
+                          onContextMenu(task.id, e.clientX, e.clientY);
+                        }
+                      : undefined
+                  }
                 >
                   <TypeBadge type={task.type} letterOnly />
                   <div className={styles.rowText}>
