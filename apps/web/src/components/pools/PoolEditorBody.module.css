@@ -15,6 +15,10 @@
   gap: 6px;
 }
 
+.headerBlock {
+  margin-top: 16px;
+}
+
 .listBlock {
   margin-top: 16px;
 }
@@ -53,27 +57,31 @@
   outline-offset: 1px;
 }
 
-.quickAddRow {
-  margin-top: 2px;
+.quickAddCard {
+  padding: 12px;
+  border: 2px solid var(--riso-ink);
+  border-radius: var(--riso-r-card);
+  background: var(--riso-paper);
+  box-shadow: 3px 3px 0 var(--riso-shadow-ink);
 }
 
 .libraryToggle {
   margin-top: 10px;
-  padding: 11px 14px;
+  width: 100%;
+  padding: 12px;
   border: 2px dashed var(--riso-ink);
   border-radius: var(--riso-r-card);
   background: transparent;
-  color: var(--riso-muted);
+  color: var(--riso-ink);
   font-family: var(--riso-font-head);
   font-weight: 700;
   font-size: 13px;
   text-align: left;
   cursor: pointer;
-  transition: background 0.15s, color 0.15s;
+  transition: background 0.15s;
 }
 .libraryToggle:hover {
-  background: var(--riso-paper);
-  color: var(--riso-ink);
+  background: var(--riso-paper-2);
 }
 .libraryToggle:focus-visible {
   outline: 3px solid var(--riso-blue);
@@ -144,17 +152,6 @@
   font-weight: 600;
   font-size: 13.5px;
   color: var(--riso-ink);
-}
-
-.deckPreview {
-  margin: 14px 0 0;
-  padding: 10px 14px;
-  border: 2px dashed var(--riso-ink);
-  border-radius: var(--riso-r-card);
-  font-family: var(--riso-font-body);
-  font-weight: 600;
-  font-size: 12.5px;
-  color: var(--riso-muted);
 }
 
 .error {

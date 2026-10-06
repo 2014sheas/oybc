@@ -136,10 +136,24 @@ final class PoolEditorViewModel {
 
     /// The claim is about what boards can PULL, so supply-eligible only.
     func deckPreviewText() -> String {
-        PoolHealth.formatDeckPreview(
+        headerInputs().note
+    }
+
+    /// Inputs for the wizard-style header card: count (supply-eligible pool
+    /// tasks), required (the deck floor) and the deck-preview note.
+    func headerInputs() -> (count: Int, required: Int, note: String) {
+        Self.headerInputs(
             taskCount: selectedTasks.filter { BoardSources.isSourceSupplyTask($0) }.count,
             deckFloor: PoolHealth.computeDeckFloor(templates: templates, poolId: pool?.id ?? "")
         )
+    }
+
+    /// Pure core of `headerInputs()`.
+    static func headerInputs(
+        taskCount: Int, deckFloor: PoolHealth.DeckFloor
+    ) -> (count: Int, required: Int, note: String) {
+        (taskCount, deckFloor.floor,
+         PoolHealth.formatDeckPreview(taskCount: taskCount, deckFloor: deckFloor))
     }
 
     // MARK: - Membership

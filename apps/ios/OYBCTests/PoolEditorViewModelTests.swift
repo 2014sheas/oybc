@@ -81,6 +81,20 @@ final class PoolEditorViewModelTests: XCTestCase {
 
     // MARK: - I-2: filterLibraryResults
 
+    func testHeaderInputs_HealthyAndShort() {
+        let floor = PoolHealth.DeckFloor(boardSize: 3, floor: 8)
+        let ok = PoolEditorViewModel.headerInputs(taskCount: 9, deckFloor: floor)
+        XCTAssertEqual(ok.count, 9)
+        XCTAssertEqual(ok.required, 8)
+        XCTAssertEqual(ok.note, "9 tasks in the pool · fills a 3×3")
+        let short = PoolEditorViewModel.headerInputs(taskCount: 1, deckFloor: floor)
+        XCTAssertEqual(short.note, "1 task in the pool · short on required tasks")
+        let over = PoolEditorViewModel.headerInputs(taskCount: 12, deckFloor: floor)
+        XCTAssertEqual(over.count, 12)
+        XCTAssertEqual(over.required, 8)
+        XCTAssertEqual(over.note, "12 tasks in the pool · fills a 3×3")
+    }
+
     func testFilterLibraryResults_ExcludesAlreadySelectedIds() {
         let t1 = buildTask("t1")
         let t2 = buildTask("t2")

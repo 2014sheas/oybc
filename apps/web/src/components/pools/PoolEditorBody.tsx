@@ -16,7 +16,8 @@ import { PoolRowEditor } from '../wizard/PoolRowEditor';
 import { SpecialTaskPanel } from '../wizard/SpecialTaskPanel';
 import { WizardQuickAddRow } from '../wizard/WizardQuickAddRow';
 import { RisoButton, RisoIcon, RisoTypeBadge } from '../riso';
-import { computeDeckFloor, formatDeckPreview } from './poolDeckPreview';
+import { TasksPoolHeader } from '../wizard/TasksPoolHeader';
+import { computeDeckFloor, poolHeaderInputs } from './poolDeckPreview';
 import { deletePoolFromSheet, savePoolFromSheet, POOL_NAME_MAX_LENGTH } from './poolEditSheetOps';
 import {
   buildPoolEditorView,
@@ -62,10 +63,11 @@ export interface PoolEditorBodyProps {
 
 /**
  * PoolEditorBody — the pool editor, shaped like the board wizard's Tasks
- * step: NAME → the wizard's resting `PoolList` rows (tap ✎ for the inline
- * `PoolRowEditor`; edits are STAGED here and applied with the membership in
- * one transaction at Save) → the ADD section (quick-add row, special-type
- * panel, library picker) → deck preview → Delete pool (edit mode) → Cancel /
+ * step: NAME → the wizard's `TasksPoolHeader` card (count / deck floor / deck
+ * preview note) → the ADD section (quick-add row, special-type panel) → the
+ * dashed library-reuse row → the wizard's resting `PoolList` rows (tap ✎ for
+ * the inline `PoolRowEditor`; edits are STAGED here and applied with the
+ * membership in one transaction at Save) → Delete pool (edit mode) → Cancel /
  * Save. Hosted by the full-screen `PoolEditorPage` and by the pool picker's
  * "+ Build a new pool…" modal (`PoolEditorModal`). See
  * docs/POOLS_RECURRING.md §Surfaces item 2.
@@ -163,7 +165,7 @@ export function PoolEditorBody({
   );
 
   const deckFloor = useMemo(() => computeDeckFloor(templates, pool?.id ?? ''), [templates, pool?.id]);
-  const deckPreviewText = formatDeckPreview(
+  const headerInputs = poolHeaderInputs(
     view.poolTasks.filter(isSourceSupplyTask).length,
     deckFloor,
   );
@@ -256,42 +258,21 @@ export function PoolEditorBody({
           maxLength={POOL_NAME_MAX_LENGTH}
         />
 
-        <div className={styles.listBlock}>
-          <PoolList
-            surface="pool"
-            poolOrder={view.poolOrder}
-            effectiveTaskMap={view.effectiveTaskMap}
-            effectiveChildrenByCompound={view.effectiveChildrenByCompound}
-            taskBoardCounts={taskBoardCounts}
+        <div className={styles.headerBlock}>
+          <TasksPoolHeader
+            capacity={headerInputs.capacity}
+            tasksRequired={headerInputs.tasksRequired}
+            note={headerInputs.note}
+            isRecurring={false}
             centerTaskMode={false}
-            centerTaskId={null}
-            onCenterClick={NOOP}
-            onRemove={removeTask}
-            editingTaskId={editingTaskId}
-            onEdit={openEditor}
-            editor={(task) =>
-              editDraft && (
-                <PoolRowEditor
-                  surface="pool"
-                  taskId={task.id}
-                  taskType={task.type}
-                  draft={editDraft}
-                  onDraftChange={setEditDraft}
-                  onSave={() => saveEdit(task.id)}
-                  onDiscard={discardEdit}
-                  usedOnBoardCount={taskBoardCounts[task.id] ?? 0}
-                  libraryTasks={pickerLibraryTasks}
-                  allLinks={pickerLinks}
-                />
-              )
-            }
+            centerSatisfied={false}
           />
         </div>
 
         <span className={styles.kicker}>Add tasks</span>
         {/* Polling quick-add: typing polls `browsableTasks` for up to 4 reuse
             matches; picking one appends the EXISTING task (no create). */}
-        <div className={styles.quickAddRow}>
+        <div className={styles.quickAddCard}>
           <WizardQuickAddRow
             userId={userId}
             libraryTasks={poolableBrowsableTasks}
@@ -351,7 +332,37 @@ export function PoolEditorBody({
           </div>
         )}
 
-        <p className={styles.deckPreview}>{deckPreviewText}</p>
+        <div className={styles.listBlock}>
+          <PoolList
+            surface="pool"
+            poolOrder={view.poolOrder}
+            effectiveTaskMap={view.effectiveTaskMap}
+            effectiveChildrenByCompound={view.effectiveChildrenByCompound}
+            taskBoardCounts={taskBoardCounts}
+            centerTaskMode={false}
+            centerTaskId={null}
+            onCenterClick={NOOP}
+            onRemove={removeTask}
+            editingTaskId={editingTaskId}
+            onEdit={openEditor}
+            editor={(task) =>
+              editDraft && (
+                <PoolRowEditor
+                  surface="pool"
+                  taskId={task.id}
+                  taskType={task.type}
+                  draft={editDraft}
+                  onDraftChange={setEditDraft}
+                  onSave={() => saveEdit(task.id)}
+                  onDiscard={discardEdit}
+                  usedOnBoardCount={taskBoardCounts[task.id] ?? 0}
+                  libraryTasks={pickerLibraryTasks}
+                  allLinks={pickerLinks}
+                />
+              )
+            }
+          />
+        </div>
 
         {error !== null && (
           <p className={styles.error} role="alert">

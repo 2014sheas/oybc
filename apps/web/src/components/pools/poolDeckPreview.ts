@@ -65,3 +65,26 @@ export function formatDeckPreview(taskCount: number, deckFloor: DeckFloor): stri
   }
   return `${base} · short on required tasks`;
 }
+
+/** Inputs for the shared `TasksPoolHeader` card on the pool editor. */
+export interface PoolHeaderInputs {
+  /** Resolvable pool task count (the card's N). */
+  capacity: number;
+  /** The deck floor (the card's /required). */
+  tasksRequired: number;
+  /** The card's note line — the deck-preview text. */
+  note: string;
+}
+
+/**
+ * Derives the pool editor header card's inputs from the live task count and
+ * the deck floor (no repeating board ⇒ `computeDeckFloor`'s 3×3-FREE default
+ * of 8). Pure.
+ */
+export function poolHeaderInputs(taskCount: number, deckFloor: DeckFloor): PoolHeaderInputs {
+  return {
+    capacity: taskCount,
+    tasksRequired: deckFloor.floor,
+    note: formatDeckPreview(taskCount, deckFloor),
+  };
+}
