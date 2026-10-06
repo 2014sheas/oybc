@@ -88,7 +88,12 @@ struct RisoCompoundEditFieldsView: View {
             set: { newRule in
                 draft.operatorType = newRule.toOperator()
                 if newRule == .atLeastN {
-                    if draft.threshold == nil { draft.threshold = 2 }
+                    // Seed clamped to the live child count (web
+                    // `clampThreshold(2, subCount)`): a one-child compound
+                    // shows "1 of 1", never a 2 that only persist would clamp.
+                    if draft.threshold == nil {
+                        draft.threshold = CompoundEvaluation.clampCompoundThreshold(2, childCount: draft.liveChildren.count)
+                    }
                 } else {
                     draft.threshold = nil
                 }
