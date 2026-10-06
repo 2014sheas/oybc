@@ -545,12 +545,6 @@ final class MemberRuleVectorTests: XCTestCase {
         let expected: [String: Int]
     }
 
-    private struct SeedFromPoolVector: Decodable {
-        let name: String
-        let pool: RawPool
-        let expected: [String: BoardSourceMemberRule]
-    }
-
     private struct EffectiveRulesVector: Decodable {
         let name: String
         let source: RawSource
@@ -568,7 +562,6 @@ final class MemberRuleVectorTests: XCTestCase {
 
     private struct PoolDefaultsSection: Decodable {
         let prunePoolMemberVary: [PruneMemberVaryVector]
-        let seedMemberRulesFromPool: [SeedFromPoolVector]
         let effectiveMemberRules: [EffectiveRulesVector]
         let shouldKeepVaryOff: [ShouldKeepVaryOffVector]
     }
@@ -1783,18 +1776,6 @@ final class MemberRuleVectorTests: XCTestCase {
         for v in section.shouldKeepVaryOff {
             XCTAssertEqual(
                 BoardSources.shouldKeepVaryOff(pool: try pool(v.pool), taskId: v.taskId),
-                v.expected,
-                v.name
-            )
-        }
-    }
-
-    func testSeedMemberRulesFromPool() throws {
-        let section = try loadFixture().poolDefaults
-        XCTAssertFalse(section.seedMemberRulesFromPool.isEmpty)
-        for v in section.seedMemberRulesFromPool {
-            XCTAssertEqual(
-                BoardSources.seedMemberRulesFromPool(try XCTUnwrap(try pool(v.pool))),
                 v.expected,
                 v.name
             )

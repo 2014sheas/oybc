@@ -42,9 +42,11 @@ struct Pool: Codable, FetchableRecord, PersistableRecord {
     /// Task id → default dice level. Only `.little` / `.lot` are ever stored
     /// (`BoardSources.prunePoolMemberVary` drops `.off`, as `withMemberRule`
     /// prunes a `vary: 0` off a source rule); an id missing from the map has
-    /// no default. Read by `BoardSources.seedMemberRulesFromPool` (the
-    /// Sources sheet) and `BoardSources.effectiveMemberRules` (spawn /
-    /// prefill fallback).
+    /// no default. LIVE, never copied: pulling the pool stores no rule, and
+    /// every reader (`BoardSources.effectiveMemberRules` at persist / spawn /
+    /// Preview, the Sources-sheet member row via
+    /// `WizardSourceSupply.poolDefaultVary`) resolves a member whose stored
+    /// rule carries no `vary` from this map at read time.
     var memberVary: [String: VaryLevel]
 
     // Timestamps

@@ -16,7 +16,6 @@
 
 import {
   removeSourceLossSentence,
-  seedMemberRulesFromPool,
   seededTargetsForSource,
   sourceConfiguration,
   sourceHasConfiguration,
@@ -24,7 +23,6 @@ import {
   type BoardSourceFilter,
   type BoardSourceKind,
   type BoardWindow,
-  type Pool,
   type Task,
 } from '@oybc/shared';
 import type {
@@ -84,21 +82,25 @@ export function newSourceFilter(kind: BoardSourceKind): BoardSourceFilter {
  * filtered supply. Every LATER supply/filter/exclude change routes through
  * `clampAllSourceRanges` as before.
  *
+ * A pool's default dice (`Pool.memberVary`, 2026-10-06) are NEVER copied
+ * onto the new row: they stay LIVE on the pool and every reader resolves a
+ * member with no stored `vary` from it (`effectiveMemberRules` at persist /
+ * spawn / Preview, `poolDefaultVary` on the supply entry for the member
+ * row), so a changed pool default reaches every open wizard and every
+ * board's next creation. A freshly pulled pool therefore carries no
+ * `memberRules` key at all.
+ *
  * @param sources - The current source rows, in row order.
  * @param sourceId - `Pool.id` or `Board.id` being pulled.
  * @param kind - Which of the two the id names.
- * @param pool - The pulled pool (kind `'pool'`): its default dice seed the new
- *   source's `memberRules` (only when it has any — never `memberRules: {}`).
  * @returns The next rows (input array when already pulled).
  */
 export function appendSource(
   sources: BoardSource[],
   sourceId: string,
   kind: BoardSourceKind,
-  pool?: Pool,
 ): BoardSource[] {
   if (sources.some((source) => source.sourceId === sourceId)) return sources;
-  const seeded = kind === 'pool' && pool !== undefined ? seedMemberRulesFromPool(pool) : {};
   return [
     ...sources,
     {
@@ -108,7 +110,6 @@ export function appendSource(
       max: null,
       excludedTaskIds: [],
       filter: newSourceFilter(kind),
-      ...(Object.keys(seeded).length > 0 ? { memberRules: seeded } : {}),
     },
   ];
 }

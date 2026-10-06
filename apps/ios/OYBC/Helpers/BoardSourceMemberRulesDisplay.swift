@@ -806,7 +806,7 @@ extension BoardSources {
 
     // MARK: - Pool-level defaults (docs/BOARD_SOURCES.md §Member rules → Pool-level defaults, 2026-10-06)
     //
-    // Swift twins of `prunePoolMemberVary` / `seedMemberRulesFromPool` /
+    // Swift twins of `prunePoolMemberVary` / `shouldKeepVaryOff` /
     // `effectiveMemberRules` / `withEffectiveMemberRules` in
     // `memberRulesDisplay.ts`, pinned by the `poolDefaults` section of
     // `memberRuleVectors.json`.
@@ -844,24 +844,6 @@ extension BoardSources {
         return isStoredPoolDefault(pool.memberVary[taskId])
     }
 
-    /// The member rules the wizard attaches to a pool source THE MOMENT the
-    /// pool is pulled (`BoardWizardViewModel+Sources.pullPool`): `{ vary }`
-    /// for every member of `pool.taskIds` that carries a stored default. An
-    /// AUTHORED copy — from then on the rule is the person's to edit per
-    /// board like any other (which is also why `isAuthoredMemberRule` counts
-    /// it as configured; accepted). Ids not in `pool.taskIds` are inert.
-    ///
-    /// - Parameter pool: The pool being pulled.
-    /// - Returns: id → rule, empty when the pool has no defaults.
-    static func seedMemberRulesFromPool(_ pool: Pool) -> [String: BoardSourceMemberRule] {
-        var rules: [String: BoardSourceMemberRule] = [:]
-        for taskId in pool.taskIds {
-            guard let level = pool.memberVary[taskId], isStoredPoolDefault(level) else { continue }
-            rules[taskId] = BoardSourceMemberRule(vary: level)
-        }
-        return rules
-    }
-
     /// A pool source's rules as the PLANNER should read them: the stored
     /// `source.memberRules`, plus — for every member of `pool.taskIds` whose
     /// stored rule carries NO `vary` — the pool's default dice.
@@ -870,10 +852,12 @@ extension BoardSources {
     /// wins — `.little` / `.lot`, or an explicit `.off` stored via
     /// `withMemberRule(..., keepVaryOff: true)`, the per-board "override to
     /// off"; the pool default fills in only where the source says nothing —
-    /// a member added to the pool after the source was pulled, a template
-    /// authored before pool defaults existed, or a rule carrying other fields
-    /// but no dice. A pure read: nothing is stored, so a repeating board
-    /// picks up a NEW member's default at its next spawn with no template
+    /// which is EVERY member of a freshly pulled pool (pulling never copies
+    /// the defaults onto the row), a member added to the pool later, a
+    /// template authored before pool defaults existed, or a rule carrying
+    /// other fields but no dice. A pure read: nothing is stored, so the pool
+    /// default is LIVE — a changed default reaches every open wizard's row
+    /// and every board's next creation / spawn with no source or template
     /// write. Returns the stored rules unchanged for a board-kind source, a
     /// nil pool, or a pool whose `id` is not this source's `sourceId`.
     ///

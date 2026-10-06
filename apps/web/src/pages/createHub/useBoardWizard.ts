@@ -572,7 +572,7 @@ export function useBoardWizard({
         const pool = poolsById[poolId];
         return pool !== undefined && !pool.isDeleted;
       })
-      .reduce<BoardSource[]>((acc, poolId) => appendSource(acc, poolId, 'pool', poolsById[poolId]), []);
+      .reduce<BoardSource[]>((acc, poolId) => appendSource(acc, poolId, 'pool'), []);
     const prefillManual = coreBoardDefault.coreDefaultTaskIds.filter((taskId) => {
       const task = tasksById[taskId];
       return task !== undefined && !task.isDeleted;

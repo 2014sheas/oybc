@@ -346,7 +346,6 @@ export {
   compoundSummary,
   prunePoolMemberVary,
   shouldKeepVaryOff,
-  seedMemberRulesFromPool,
   effectiveMemberRules,
   withEffectiveMemberRules,
 } from './memberRulesDisplay';

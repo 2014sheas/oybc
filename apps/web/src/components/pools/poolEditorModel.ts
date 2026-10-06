@@ -174,3 +174,22 @@ export function dropMemberVary(
   delete next[taskId];
   return next;
 }
+
+/**
+ * `memberVary` restricted to the rows being saved — a dice left behind by a
+ * task that is no longer a member never reaches the store (iOS twin:
+ * `PoolEditorViewModel.save()`'s `memberVary.filter { ids.contains($0.key) }`).
+ *
+ * @param memberVary - The editor's draft map.
+ * @param taskIds - The pool's task ids at Save.
+ * @returns A new map carrying only entries for `taskIds` (input untouched).
+ */
+export function pruneMemberVaryToMembers(
+  memberVary: Record<string, VaryLevel>,
+  taskIds: readonly string[],
+): Record<string, VaryLevel> {
+  const kept = new Set(taskIds);
+  const next: Record<string, VaryLevel> = {};
+  for (const [id, level] of Object.entries(memberVary)) if (kept.has(id)) next[id] = level;
+  return next;
+}

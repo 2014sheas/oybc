@@ -562,36 +562,6 @@ export function shouldKeepVaryOff(pool: PoolDefaultsSource | undefined, taskId: 
 }
 
 /**
- * The member rules a wizard attaches to a pool source THE MOMENT the pool
- * is pulled (web `appendSource` / `pullPool` ↔ iOS
- * `BoardWizardViewModel+Sources.pullPool`): `{ [taskId]: { vary } }` for
- * every member of `pool.taskIds` that carries a stored pool default.
- *
- * This is an AUTHORED copy — once seeded, the source's rule is the
- * person's to edit per board exactly like any other rule (the dice shows
- * lit in the Sources sheet, and turning it off prunes the rule the usual
- * way). It is also why `isAuthoredMemberRule` counts a seeded vary as
- * configured: the remove-confirm cannot tell a seeded dice from a hand-set
- * one, and that is accepted (the person pulled a pool that varies).
- *
- * Only ids in `pool.taskIds` are seeded — a stale `memberVary` key for a
- * task no longer in the pool is inert, matching every other stale-rule
- * idiom in this module.
- *
- * @param pool - The pool being pulled.
- * @returns id → `{ vary }`, or `{}` when the pool has no defaults.
- */
-export function seedMemberRulesFromPool(pool: PoolDefaultsSource): Record<string, BoardSourceMemberRule> {
-  const rules: Record<string, BoardSourceMemberRule> = {};
-  const defaults = pool.memberVary ?? {};
-  for (const taskId of pool.taskIds) {
-    const level = defaults[taskId];
-    if (isStoredPoolDefault(level)) rules[taskId] = { vary: level };
-  }
-  return rules;
-}
-
-/**
  * A pool source's rules as the PLANNER should read them: the stored
  * `source.memberRules`, plus — for every member of `pool.taskIds` whose
  * stored rule carries NO `vary` — the pool's default dice.
@@ -600,11 +570,13 @@ export function seedMemberRulesFromPool(pool: PoolDefaultsSource): Record<string
  * defaults): a stored `vary` on the source ALWAYS wins — `1 | 2`, or an
  * explicit `0` stored via `withMemberRule(..., { keepVaryOff: true })`,
  * which is the per-board "override to off"; the pool default fills in
- * only where the source says nothing — a member added to the pool after
- * the source was pulled, a template authored before pool defaults
+ * only where the source says nothing — which is EVERY member of a freshly
+ * pulled pool (pulling never copies the defaults onto the row), a member
+ * added to the pool later, a template authored before pool defaults
  * existed, or a rule that carries other fields but no dice. The function
- * is a pure read: nothing here is stored, so a repeating board picks up a
- * NEW member's default at its next spawn without a template write.
+ * is a pure read: nothing here is stored, so the pool default is LIVE — a
+ * changed default reaches every open wizard's row and every board's next
+ * creation / spawn without a source or template write.
  *
  * Returns `source.memberRules ?? {}` unchanged (as a fresh object) for a
  * board-kind source, a missing pool, or a pool whose `id` is not this

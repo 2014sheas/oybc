@@ -31,10 +31,14 @@ struct WizardSourceSupply: Equatable {
 }
 
 extension WizardSourceSupply {
-    /// The default-dice map a pool contributes (empty for nil / no defaults).
+    /// The default-dice map a pool contributes (empty for nil / no defaults):
+    /// `Pool.memberVary` pruned to `.little` / `.lot`, members only. Read
+    /// LIVE off the pool — nothing is ever copied onto the source row. Web
+    /// twin: `poolSupplyEntry(...).poolDefaultVary`.
     static func defaultVary(of pool: Pool?) -> [String: VaryLevel] {
         guard let pool else { return [:] }
-        return BoardSources.seedMemberRulesFromPool(pool).compactMapValues(\.vary)
+        return BoardSources.prunePoolMemberVary(pool.memberVary)
+            .filter { pool.taskIds.contains($0.key) }
     }
 }
 
@@ -171,19 +175,14 @@ extension BoardWizardViewModel {
         return out
     }
 
-    /// Core-defaults prefill sources: one `.all` pool row per id, each seeded
-    /// with the pool's default dice (never an empty map).
-    static func seededPoolSources(_ poolIds: [String], database: AppDatabase) -> [BoardSource] {
-        let poolsById = Dictionary(
-            ((try? database.fetchPools(ids: poolIds)) ?? []).map { ($0.id, $0) },
-            uniquingKeysWith: { a, _ in a }
-        )
-        return poolIds.map { id in
-            let seed = poolsById[id].map(BoardSources.seedMemberRulesFromPool) ?? [:]
-            return BoardSource(
-                sourceId: id, kind: .pool, filter: newSourceFilter(for: .pool),
-                memberRules: seed.isEmpty ? nil : seed
-            )
+    /// Core-defaults prefill sources: one plain `.all` pool row per id with
+    /// NO member rules — a pool's default dice stay live on the pool
+    /// (`hydrateSourcesState` caches them on the supply entry, and persist /
+    /// Preview read them through `withEffectiveMemberRules`). Web twin: the
+    /// `appendSource` reduce in `useBoardWizard`'s core prefill.
+    static func corePrefillPoolSources(_ poolIds: [String]) -> [BoardSource] {
+        poolIds.map { id in
+            BoardSource(sourceId: id, kind: .pool, filter: newSourceFilter(for: .pool))
         }
     }
 
@@ -290,12 +289,12 @@ extension BoardWizardViewModel {
             doneTaskIds: [],
             poolDefaultVary: WizardSourceSupply.defaultVary(of: pool)
         )
-        // Pool-level default dice (2026-10-06): seed the new source's rules so
-        // the Sources sheet shows them and the person can override per board.
-        let seed = BoardSources.seedMemberRulesFromPool(pool)
+        // Pool-level default dice (2026-10-06) are NEVER copied onto the row:
+        // they stay live on the pool (cached on the supply entry above) and
+        // the member row / Preview / persist resolve a member with no stored
+        // `vary` from them. A per-board change stores a rule as usual.
         sources.append(BoardSource(
-            sourceId: pool.id, kind: .pool, filter: Self.newSourceFilter(for: .pool),
-            memberRules: seed.isEmpty ? nil : seed
+            sourceId: pool.id, kind: .pool, filter: Self.newSourceFilter(for: .pool)
         ))
         refreshCompoundChildren()
         recomputeSelectionFromSources()

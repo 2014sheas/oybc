@@ -26,6 +26,7 @@ import {
   dropMemberVary,
   dropStagedEdit,
   groupLinksByCompound,
+  pruneMemberVaryToMembers,
   pruneStagedEdits,
   seedEditorDraft,
   setMemberVaryLevel,
@@ -223,7 +224,7 @@ export function PoolEditorBody({
         name: name.trim(),
         taskIds,
         stagedEdits: pruneStagedEdits(stagedEdits, taskIds, new Set(view.poolOrder)),
-        memberVary,
+        memberVary: pruneMemberVaryToMembers(memberVary, taskIds),
       });
       onSaved(saved);
     } catch (e) {

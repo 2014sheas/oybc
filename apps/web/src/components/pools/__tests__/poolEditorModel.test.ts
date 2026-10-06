@@ -8,6 +8,7 @@ import {
   dropMemberVary,
   dropStagedEdit,
   groupLinksByCompound,
+  pruneMemberVaryToMembers,
   pruneStagedEdits,
   seedEditorDraft,
   setMemberVaryLevel,
@@ -200,5 +201,12 @@ describe('pool-level default dice (memberVary)', () => {
     const m = { a: 1 as const, b: 2 as const };
     expect(dropMemberVary(m, 'a')).toEqual({ b: 2 });
     expect(dropMemberVary(m, 'zzz')).toBe(m);
+  });
+
+  it('Save keeps only the dice of current members — iOS save() parity', () => {
+    const m = { a: 1 as const, gone: 2 as const };
+    expect(pruneMemberVaryToMembers(m, ['a', 'b'])).toEqual({ a: 1 });
+    expect(pruneMemberVaryToMembers(m, [])).toEqual({});
+    expect(m).toEqual({ a: 1, gone: 2 });
   });
 });

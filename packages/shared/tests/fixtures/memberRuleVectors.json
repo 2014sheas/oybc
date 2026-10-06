@@ -441,7 +441,7 @@
   ],
   "poolDefaults": {
     "notes": {
-      "model": "Pool-level default dice (docs/BOARD_SOURCES.md §Member rules → Pool-level defaults, 2026-10-06). `Pool.memberVary` is task id → VaryLevel; only 1 | 2 are ever STORED (prunePoolMemberVary drops a 0, the same default-pruning rule withMemberRule applies to a source rule). seedMemberRulesFromPool is what the Sources sheet attaches to a freshly pulled pool source (an AUTHORED copy the person then edits per board); effectiveMemberRules is the spawn / prefill FALLBACK: a stored source `vary` always wins, the pool default fills in only where the member's stored rule carries no `vary` at all. Nothing here is persisted — the effective map is handed to the planner in place of the stored row.",
+      "model": "Pool-level default dice (docs/BOARD_SOURCES.md §Member rules → Pool-level defaults, 2026-10-06). `Pool.memberVary` is task id → VaryLevel; only 1 | 2 are ever STORED (prunePoolMemberVary drops a 0, the same default-pruning rule withMemberRule applies to a source rule). Pool defaults are LIVE — pulling a pool stores NO rule on the source; effectiveMemberRules is the read-time FALLBACK every reader applies (persist / spawn / Preview / the member row): a stored source `vary` always wins, the pool default fills in only where the member's stored rule carries no `vary` at all. Nothing here is persisted — the effective map is handed to the planner in place of the stored row.",
       "shapes": "`pool` carries only the three fields the helpers read — `id`, `taskIds`, and an optional `memberVary` map (a MISSING key means the field is absent, which both platforms read as an empty map). `source` carries `sourceId`, `kind` and an optional `memberRules` (null = no key, exactly as the display vectors above). The harness wraps each into a full BoardSource / Pool with neutral values for every other field. `memberVary` values are raw ints so Swift maps them through VaryLevel(rawValue:).",
       "shouldKeepVaryOff": "shouldKeepVaryOff vectors use the same `pool` shape (null = no pool); `expected` is the bare boolean a Sources-sheet setter passes as withMemberRule's keepVaryOff.",
       "unchangedSource": "effectiveMemberRules vectors carry `unchangedSource`: true pins that withEffectiveMemberRules returns its input UNCHANGED — the identical object on TS (`toBe`), an equal value on Swift — so a source that inherits nothing stays byte-identical (a rule-less source keeps NO memberRules key, never gains `{}`). false pins that the returned copy's memberRules equal `expected`. `expected` is always the full effective map as effectiveMemberRules returns it, `{}` when empty."
@@ -451,13 +451,6 @@
       { "name": "an absent map prunes to an empty map", "memberVary": null, "expected": {} },
       { "name": "all dice off stores an empty map, never a map of zeros", "memberVary": { "a": 0, "b": 0 }, "expected": {} },
       { "name": "a map that is already clean is returned as-is", "memberVary": { "a": 2 }, "expected": { "a": 2 } }
-    ],
-    "seedMemberRulesFromPool": [
-      { "name": "one { vary } rule per member that carries a default", "pool": { "id": "p1", "taskIds": ["a", "b", "c"], "memberVary": { "a": 1, "c": 2 } }, "expected": { "a": { "vary": 1 }, "c": { "vary": 2 } } },
-      { "name": "a default for a task no longer in the pool is inert", "pool": { "id": "p1", "taskIds": ["a"], "memberVary": { "a": 2, "z": 1 } }, "expected": { "a": { "vary": 2 } } },
-      { "name": "a 0 default seeds nothing", "pool": { "id": "p1", "taskIds": ["a", "b"], "memberVary": { "a": 0, "b": 1 } }, "expected": { "b": { "vary": 1 } } },
-      { "name": "an empty map seeds no rules", "pool": { "id": "p1", "taskIds": ["a"], "memberVary": {} }, "expected": {} },
-      { "name": "an absent map seeds no rules", "pool": { "id": "p1", "taskIds": ["a"] }, "expected": {} }
     ],
     "effectiveMemberRules": [
       { "name": "a member with no stored rule inherits the pool default", "source": { "sourceId": "p1", "kind": "pool", "memberRules": null }, "pool": { "id": "p1", "taskIds": ["a", "b"], "memberVary": { "a": 2 } }, "expected": { "a": { "vary": 2 } }, "unchangedSource": false },

@@ -49,10 +49,10 @@ export interface Pool {
    * `RecurringBoardTemplate.manualTaskVary` posture). iOS decodes a
    * missing column to `[:]`.
    *
-   * Consumed by `seedMemberRulesFromPool` (the Sources sheet copies the
-   * defaults onto the pulled source's `memberRules`) and
-   * `effectiveMemberRules` (spawn / prefill fallback for a member that
-   * carries no stored `vary`).
+   * LIVE, never copied: pulling the pool stores no rule, and every reader
+   * (`effectiveMemberRules` at persist / spawn / Preview, the Sources-sheet
+   * member row) resolves a member whose stored rule carries no `vary` from
+   * this map at read time.
    */
   memberVary?: Record<string, VaryLevel>;
 

@@ -25,7 +25,6 @@ import {
   compoundSummary,
   prunePoolMemberVary,
   shouldKeepVaryOff,
-  seedMemberRulesFromPool,
   effectiveMemberRules,
   withEffectiveMemberRules,
 } from '../../src/algorithms/memberRulesDisplay';
@@ -288,12 +287,6 @@ describe('prunePoolMemberVary', () => {
 describe('shouldKeepVaryOff', () => {
   it.each(PD.shouldKeepVaryOff as any[])('$name', (v: any) => {
     expect(shouldKeepVaryOff(poolOf(v.pool), v.taskId)).toBe(v.expected);
-  });
-});
-
-describe('seedMemberRulesFromPool', () => {
-  it.each(PD.seedMemberRulesFromPool as any[])('$name', (v: any) => {
-    expect(seedMemberRulesFromPool(poolOf(v.pool)!)).toEqual(v.expected);
   });
 });
 

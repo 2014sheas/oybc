@@ -418,32 +418,35 @@ describe('sourceRemovalLossSentence (the confirm body)', () => {
   });
 });
 
-describe('appendSource - pool default dice seeding', () => {
+describe('appendSource - pool defaults stay LIVE on the pool (never copied onto the row)', () => {
   const pool = (memberVary?: Pool['memberVary']): Pool =>
-    ({ id: 'pool-1', taskIds: ['c1', 'c2'], memberVary }) as unknown as Pool;
+    ({ id: 'pool-1', name: 'P', taskIds: ['c1', 'c2'], memberVary }) as unknown as Pool;
 
-  it('seeds memberRules from the pool defaults when pulled', () => {
-    const next = appendSource([], 'pool-1', 'pool', pool({ c1: 2 }));
-    expect(next[0].memberRules).toEqual({ c1: { vary: 2 } });
+  it('pulling a pool with defaults stores NO memberRules key; the supply entry carries them', () => {
+    const next = appendSource([], 'pool-1', 'pool');
+    expect('memberRules' in next[0]).toBe(false);
+    expect(next[0]).toEqual({
+      sourceId: 'pool-1',
+      kind: 'pool',
+      min: 0,
+      max: null,
+      excludedTaskIds: [],
+      filter: 'all',
+    });
+    // The live path: the member row + Preview read the dice off the pool.
+    expect(poolSupplyEntry(pool({ c1: 2 }), {}).poolDefaultVary).toEqual({ c1: 2 });
   });
 
-  it('leaves no memberRules key for a pool without defaults', () => {
-    expect('memberRules' in appendSource([], 'pool-1', 'pool', pool({}))[0]).toBe(false);
-    expect('memberRules' in appendSource([], 'pool-1', 'pool', pool(undefined))[0]).toBe(false);
-    expect('memberRules' in appendSource([], 'pool-1', 'pool')[0]).toBe(false);
+  it('a freshly pulled pool whose pool HAS defaults removes with NO confirm', () => {
+    const [row] = appendSource([], 'pool-1', 'pool');
+    expect(sourceRemovalNeedsConfirm(row)).toBe(false);
+    expect(sourceRemovalLossSentence(row)).toBeNull();
   });
 
-  it('core-default prefill (reduce over pool ids) seeds each pool', () => {
-    const pools: Record<string, Pool> = { 'pool-1': pool({ c2: 1 }) };
-    const next = ['pool-1'].reduce<BoardSource[]>(
-      (acc, id) => appendSource(acc, id, 'pool', pools[id]),
-      [],
-    );
-    expect(next[0].memberRules).toEqual({ c2: { vary: 1 } });
-  });
-
-  it('never seeds a board source', () => {
-    expect('memberRules' in appendSource([], 'b1', 'board', pool({ c1: 2 }))[0]).toBe(false);
+  it('an explicit stored off (vary 0, kept via keepVaryOff) IS configuration and asks', () => {
+    const row = { ...appendSource([], 'pool-1', 'pool')[0], memberRules: { c1: { vary: 0 as const } } };
+    expect(sourceRemovalNeedsConfirm(row)).toBe(true);
+    expect(sourceRemovalLossSentence(row)).toMatch(/member rule/);
   });
 });
 
