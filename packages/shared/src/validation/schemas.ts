@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { AchievementTrigger, BoardStatus, TaskType, Timeframe, CenterSquareType, SyncOperationType, SyncStatus, OperatorType } from '../constants/enums';
+import { ManualTaskVarySchema } from './boardSource';
 
 /**
  * Validation schemas using Zod
@@ -725,6 +726,7 @@ export const RecurringCenterSquareTypeSchema = z.preprocess(
 export const CreatePoolInputSchema = z.object({
   name: z.string().trim().min(1).max(120),
   taskIds: z.array(z.string().uuid()),
+  memberVary: ManualTaskVarySchema.optional(),
 }).refine(
   (data) => new Set(data.taskIds).size === data.taskIds.length,
   { message: 'taskIds must not contain duplicates' },
@@ -733,6 +735,7 @@ export const CreatePoolInputSchema = z.object({
 export const UpdatePoolInputSchema = z.object({
   name: z.string().trim().min(1).max(120).optional(),
   taskIds: z.array(z.string().uuid()).optional(),
+  memberVary: ManualTaskVarySchema.optional(),
 }).refine(
   (data) => {
     if (data.taskIds === undefined) return true;
@@ -746,6 +749,9 @@ export const PoolSchema = z.object({
   userId: z.string(),
   name: z.string().min(1).max(120),
   taskIds: z.array(z.string().uuid()),
+  // Pool-level default dice (2026-10-06). A doc from a client that predates
+  // the field reads as `{}` — same `VaryLevel` map shape as `manualTaskVary`.
+  memberVary: ManualTaskVarySchema.default({}),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
   lastSyncedAt: z.string().datetime().optional(),

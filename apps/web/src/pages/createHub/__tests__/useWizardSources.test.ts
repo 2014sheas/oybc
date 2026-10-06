@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { TaskType, Timeframe, type BoardSource, type Task } from '@oybc/shared';
+import { TaskType, Timeframe, type BoardSource, type Pool, type Task } from '@oybc/shared';
 import {
   appendSource,
   boardSupplyEntry,
@@ -15,8 +15,10 @@ import {
   withSourceRange,
 } from '../wizardSourcesLogic';
 import {
+  algorithmSupplies,
   availableCountForSource,
   clampAllSourceRanges,
+  poolSupplyEntry,
   selectionUnion,
   type SupplyInfoMap,
 } from '../wizardSources';
@@ -413,5 +415,59 @@ describe('sourceRemovalLossSentence (the confirm body)', () => {
 
   it('has nothing to say about an untouched row', () => {
     expect(sourceRemovalLossSentence(appendSource([], 'pool-1', 'pool')[0])).toBeNull();
+  });
+});
+
+describe('appendSource - pool defaults stay LIVE on the pool (never copied onto the row)', () => {
+  const pool = (memberVary?: Pool['memberVary']): Pool =>
+    ({ id: 'pool-1', name: 'P', taskIds: ['c1', 'c2'], memberVary }) as unknown as Pool;
+
+  it('pulling a pool with defaults stores NO memberRules key; the supply entry carries them', () => {
+    const next = appendSource([], 'pool-1', 'pool');
+    expect('memberRules' in next[0]).toBe(false);
+    expect(next[0]).toEqual({
+      sourceId: 'pool-1',
+      kind: 'pool',
+      min: 0,
+      max: null,
+      excludedTaskIds: [],
+      filter: 'all',
+    });
+    // The live path: the member row + Preview read the dice off the pool.
+    expect(poolSupplyEntry(pool({ c1: 2 }), {}).poolDefaultVary).toEqual({ c1: 2 });
+  });
+
+  it('a freshly pulled pool whose pool HAS defaults removes with NO confirm', () => {
+    const [row] = appendSource([], 'pool-1', 'pool');
+    expect(sourceRemovalNeedsConfirm(row)).toBe(false);
+    expect(sourceRemovalLossSentence(row)).toBeNull();
+  });
+
+  it('an explicit stored off (vary 0, kept via keepVaryOff) IS configuration and asks', () => {
+    const row = { ...appendSource([], 'pool-1', 'pool')[0], memberRules: { c1: { vary: 0 as const } } };
+    expect(sourceRemovalNeedsConfirm(row)).toBe(true);
+    expect(sourceRemovalLossSentence(row)).toMatch(/member rule/);
+  });
+});
+
+describe('algorithmSupplies - preview parity with persist', () => {
+  it('a pool source carries the pool default dice as effective rules', () => {
+    const src = makeSource({ sourceId: 'pool-1' });
+    const pool = { id: 'pool-1', taskIds: ['c1'], memberVary: { c1: 2 } } as unknown as Pool;
+    const info = { 'pool-1': supplyEntry('P', ['c1']) };
+    const [supply] = algorithmSupplies([src], info, {}, {}, { 'pool-1': pool });
+    expect(supply.source.memberRules).toEqual({ c1: { vary: 2 } });
+    const [bare] = algorithmSupplies([src], info);
+    expect(bare.source.memberRules).toBeUndefined();
+  });
+
+  it('the pool supply entry carries the pruned default dice for the member row', () => {
+    const pool = {
+      id: 'pool-1',
+      taskIds: ['c1', 'c2'],
+      memberVary: { c1: 1, c2: 0 },
+    } as unknown as Pool;
+    expect(poolSupplyEntry(pool, {}).poolDefaultVary).toEqual({ c1: 1 });
+    expect(poolSupplyEntry({ ...pool, memberVary: undefined }, {}).poolDefaultVary).toEqual({});
   });
 });

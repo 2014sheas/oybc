@@ -54,25 +54,43 @@ extension AppDatabase {
     /// `saveTaskAndEnqueueUpdate`: the model write and its sync-queue item
     /// live in ONE transaction so a crash between them can't leave the
     /// local row ahead of Firestore with no recovery).
+    ///
+    /// `memberVary` (pool-level default dice, 2026-10-06) is ALWAYS written —
+    /// pruned of `.off`, `[:]` when the caller passes nothing.
     @discardableResult
-    func createPoolAndEnqueue(userId: String, name: String, taskIds: [String], now: String) throws -> Pool {
+    func createPoolAndEnqueue(
+        userId: String,
+        name: String,
+        taskIds: [String],
+        memberVary: [String: VaryLevel] = [:],
+        now: String
+    ) throws -> Pool {
         try write { db in
-            try Self.insertPool(db: db, userId: userId, name: name, taskIds: taskIds, now: now)
+            try Self.insertPool(
+                db: db, userId: userId, name: name, taskIds: taskIds, memberVary: memberVary, now: now
+            )
         }
     }
 
-    /// Update an existing pool's `name` and/or `taskIds` + enqueue its
-    /// sync op atomically. Bumps `version` + `updatedAt`. Returns nil (no
-    /// write) when the id doesn't exist.
+    /// Update an existing pool's `name`, `taskIds` and/or `memberVary` +
+    /// enqueue its sync op atomically. Bumps `version` + `updatedAt`.
+    /// Returns nil (no write) when the id doesn't exist.
+    ///
+    /// `memberVary`, when non-nil, REPLACES the stored map (pruned of `.off`
+    /// — clearing every dice stores `[:]`, so the clear propagates by
+    /// overwrite); nil leaves the stored map alone.
     @discardableResult
     func updatePoolAndEnqueue(
         id: String,
         name: String? = nil,
         taskIds: [String]? = nil,
+        memberVary: [String: VaryLevel]? = nil,
         now: String
     ) throws -> Pool? {
         try write { db in
-            try Self.updatePool(db: db, id: id, name: name, taskIds: taskIds, now: now)
+            try Self.updatePool(
+                db: db, id: id, name: name, taskIds: taskIds, memberVary: memberVary, now: now
+            )
         }
     }
 
@@ -89,6 +107,9 @@ extension AppDatabase {
     ///   - name: Trimmed pool name.
     ///   - taskIds: The pool's full ordered `taskIds` (unresolvable ids kept).
     ///   - stagedEdits: Inline edits keyed by task id.
+    ///   - memberVary: The editor's pool-level default dice (2026-10-06).
+    ///     nil leaves an existing pool's map alone and creates a new pool
+    ///     with `[:]`; a map replaces it (pruned of `.off`).
     ///   - now: ISO8601 timestamp.
     /// - Returns: The persisted pool (nil only when `existingId` vanished).
     /// - Throws: `StagedTaskEditError` or a GRDB error; nothing is written.
@@ -99,25 +120,38 @@ extension AppDatabase {
         name: String,
         taskIds: [String],
         stagedEdits: [String: TaskEditPatch],
+        memberVary: [String: VaryLevel]? = nil,
         now: String
     ) throws -> Pool? {
         try write { db in
             try Self.applyStagedTaskEdits(db: db, stagedEdits: stagedEdits, strict: true, now: now)
             if let existingId {
-                return try Self.updatePool(db: db, id: existingId, name: name, taskIds: taskIds, now: now)
+                return try Self.updatePool(
+                    db: db, id: existingId, name: name, taskIds: taskIds, memberVary: memberVary, now: now
+                )
             }
-            return try Self.insertPool(db: db, userId: userId, name: name, taskIds: taskIds, now: now)
+            return try Self.insertPool(
+                db: db, userId: userId, name: name, taskIds: taskIds, memberVary: memberVary ?? [:], now: now
+            )
         }
     }
 
     /// In-transaction pool insert + create-enqueue (shared by
     /// `createPoolAndEnqueue` and `savePoolWithStagedEdits`).
-    static func insertPool(db: Database, userId: String, name: String, taskIds: [String], now: String) throws -> Pool {
+    static func insertPool(
+        db: Database,
+        userId: String,
+        name: String,
+        taskIds: [String],
+        memberVary: [String: VaryLevel] = [:],
+        now: String
+    ) throws -> Pool {
         let pool = Pool(
             id: Self.generateUUID(),
             userId: userId,
             name: name,
             taskIds: taskIds,
+            memberVary: BoardSources.prunePoolMemberVary(memberVary),
             createdAt: now,
             updatedAt: now,
             lastSyncedAt: nil,
@@ -138,10 +172,18 @@ extension AppDatabase {
 
     /// In-transaction pool update + update-enqueue (shared by
     /// `updatePoolAndEnqueue` and `savePoolWithStagedEdits`).
-    static func updatePool(db: Database, id: String, name: String?, taskIds: [String]?, now: String) throws -> Pool? {
+    static func updatePool(
+        db: Database,
+        id: String,
+        name: String?,
+        taskIds: [String]?,
+        memberVary: [String: VaryLevel]? = nil,
+        now: String
+    ) throws -> Pool? {
         guard var pool = try Pool.fetchOne(db, key: id) else { return nil }
         if let name = name { pool.name = name }
         if let taskIds = taskIds { pool.taskIds = taskIds }
+        if let memberVary = memberVary { pool.memberVary = BoardSources.prunePoolMemberVary(memberVary) }
         pool.updatedAt = now
         pool.version += 1
         try pool.update(db)

@@ -389,9 +389,13 @@ extension BoardSources {
     /// normalises an emptied `parts` to nil on its own before calling this,
     /// so the only way to reach a stored `parts: {}` is an explicit
     /// `.set([:])` — which no caller makes on either platform.
-    private static func pruned(_ rule: BoardSourceMemberRule) -> BoardSourceMemberRule {
+    ///
+    /// `keepVaryOff` (pool-level defaults, 2026-10-06) keeps a `vary == .off`
+    /// — the stored per-board "override to off" for a member whose pool
+    /// carries a default dice; `split == false` is always pruned.
+    private static func pruned(_ rule: BoardSourceMemberRule, keepVaryOff: Bool = false) -> BoardSourceMemberRule {
         var out = rule
-        if out.vary == .off { out.vary = nil }
+        if out.vary == .off && !keepVaryOff { out.vary = nil }
         if out.split == false { out.split = nil }
         return out
     }
@@ -435,15 +439,24 @@ extension BoardSources {
     /// leaves NO entry for `taskId`, and clearing the last rule on a source
     /// drops the `memberRules` key entirely.
     ///
+    /// **Explicit off** (pool-level defaults, 2026-10-06): with
+    /// `keepVaryOff` a `vary == .off` in the merged rule is STORED rather
+    /// than pruned — the per-board "override to off" for a member whose pool
+    /// carries a default dice (see ``shouldKeepVaryOff(pool:taskId:)``).
+    /// Clearing the field still removes it, which hands the member back to
+    /// the pool default. ``withPartRule`` never keeps an off.
+    ///
     /// - Parameters:
     ///   - source: The source to update (a value type — never mutated).
     ///   - taskId: The member's task id.
     ///   - patch: Fields to set / clear.
+    ///   - keepVaryOff: Store a `vary == .off` instead of pruning it.
     /// - Returns: A new `BoardSource` with the rule applied.
     static func withMemberRule(
         _ source: BoardSource,
         taskId: String,
-        patch: MemberRulePatch
+        patch: MemberRulePatch,
+        keepVaryOff: Bool = false
     ) -> BoardSource {
         let current = memberRule(for: taskId, in: source)
         var merged = BoardSourceMemberRule(
@@ -452,7 +465,7 @@ extension BoardSources {
             split: patch.split.applied(to: current.split),
             parts: patch.parts.applied(to: current.parts)
         )
-        merged = pruned(merged)
+        merged = pruned(merged, keepVaryOff: keepVaryOff)
         var rules = source.memberRules ?? [:]
         if isEmpty(merged) {
             rules.removeValue(forKey: taskId)
@@ -520,16 +533,18 @@ extension BoardSources {
     ///   - sourceId: The row the member was pulled through.
     ///   - taskId: The member's task id.
     ///   - patch: Fields to set / clear.
+    ///   - keepVaryOff: See ``withMemberRule(_:taskId:patch:keepVaryOff:)``.
     /// - Returns: The next rows.
     static func withMemberRuleInSource(
         _ sources: [BoardSource],
         sourceId: String,
         taskId: String,
-        patch: MemberRulePatch
+        patch: MemberRulePatch,
+        keepVaryOff: Bool = false
     ) -> [BoardSource] {
         sources.map { source in
             source.sourceId == sourceId
-                ? withMemberRule(source, taskId: taskId, patch: patch)
+                ? withMemberRule(source, taskId: taskId, patch: patch, keepVaryOff: keepVaryOff)
                 : source
         }
     }
@@ -787,5 +802,100 @@ extension BoardSources {
             )
         }
         return seeded
+    }
+
+    // MARK: - Pool-level defaults (docs/BOARD_SOURCES.md §Member rules → Pool-level defaults, 2026-10-06)
+    //
+    // Swift twins of `prunePoolMemberVary` / `shouldKeepVaryOff` /
+    // `effectiveMemberRules` / `withEffectiveMemberRules` in
+    // `memberRulesDisplay.ts`, pinned by the `poolDefaults` section of
+    // `memberRuleVectors.json`.
+
+    /// True for the two storable dice levels — a pool default is never `.off`.
+    private static func isStoredPoolDefault(_ level: VaryLevel?) -> Bool {
+        level == .little || level == .lot
+    }
+
+    /// The `Pool.memberVary` map as the ops STORE it: every `.off` entry
+    /// dropped, the `.little` / `.lot` entries kept as-is — "off" is the
+    /// absence of a default, never a stored value (the same default-pruning
+    /// `withMemberRule` applies to a source rule's `vary`).
+    ///
+    /// - Parameter memberVary: The editor's raw map (nil reads as empty).
+    /// - Returns: A new map carrying only `.little` / `.lot` entries.
+    static func prunePoolMemberVary(_ memberVary: [String: VaryLevel]?) -> [String: VaryLevel] {
+        (memberVary ?? [:]).filter { isStoredPoolDefault($0.value) }
+    }
+
+    /// Whether a Sources-sheet setter must STORE a `vary == .off` for this
+    /// member rather than prune it — true exactly when the pool carries a
+    /// `.little` / `.lot` default for `taskId` (a member of `pool.taskIds`):
+    /// only then does "off" differ from "no rule" (absent falls back to the
+    /// pool default at spawn / persist, an explicit `.off` wins over it).
+    /// Pass the result as `withMemberRule(..., keepVaryOff:)`. TS twin:
+    /// `shouldKeepVaryOff`.
+    ///
+    /// - Parameters:
+    ///   - pool: The pool the member was pulled through, if resolvable.
+    ///   - taskId: The member's task id.
+    /// - Returns: True when the pool has a stored default dice for the member.
+    static func shouldKeepVaryOff(pool: Pool?, taskId: String) -> Bool {
+        guard let pool, pool.taskIds.contains(taskId) else { return false }
+        return isStoredPoolDefault(pool.memberVary[taskId])
+    }
+
+    /// A pool source's rules as the PLANNER should read them: the stored
+    /// `source.memberRules`, plus — for every member of `pool.taskIds` whose
+    /// stored rule carries NO `vary` — the pool's default dice.
+    ///
+    /// Precedence (the fallback rule): a stored `vary` on the source ALWAYS
+    /// wins — `.little` / `.lot`, or an explicit `.off` stored via
+    /// `withMemberRule(..., keepVaryOff: true)`, the per-board "override to
+    /// off"; the pool default fills in only where the source says nothing —
+    /// which is EVERY member of a freshly pulled pool (pulling never copies
+    /// the defaults onto the row), a member added to the pool later, a
+    /// template authored before pool defaults existed, or a rule carrying
+    /// other fields but no dice. A pure read: nothing is stored, so the pool
+    /// default is LIVE — a changed default reaches every open wizard's row
+    /// and every board's next creation / spawn with no source or template
+    /// write. Returns the stored rules unchanged for a board-kind source, a
+    /// nil pool, or a pool whose `id` is not this source's `sourceId`.
+    ///
+    /// - Parameters:
+    ///   - source: The pulled source row.
+    ///   - pool: The pool it names, if resolvable.
+    /// - Returns: The effective rules map (never nil; input untouched).
+    static func effectiveMemberRules(source: BoardSource, pool: Pool?) -> [String: BoardSourceMemberRule] {
+        var rules = source.memberRules ?? [:]
+        guard source.kind == .pool, let pool, pool.id == source.sourceId else { return rules }
+        for taskId in pool.taskIds {
+            guard let level = pool.memberVary[taskId], isStoredPoolDefault(level) else { continue }
+            let stored = rules[taskId]
+            if stored?.vary != nil { continue }
+            var merged = stored ?? BoardSourceMemberRule()
+            merged.vary = level
+            rules[taskId] = merged
+        }
+        return rules
+    }
+
+    /// `source` with ``effectiveMemberRules(source:pool:)`` applied — what a
+    /// supply builder hands the planner in place of the stored row. Returns
+    /// `source` UNCHANGED when no default was inherited (a rule-less source
+    /// keeps `memberRules == nil`, never gains `[:]`); otherwise a copy
+    /// carrying the effective map.
+    ///
+    /// - Parameters:
+    ///   - source: The pulled source row.
+    ///   - pool: The pool it names, if resolvable.
+    /// - Returns: `source` itself, or a copy with the inherited dice filled in.
+    static func withEffectiveMemberRules(source: BoardSource, pool: Pool?) -> BoardSource {
+        let effective = effectiveMemberRules(source: source, pool: pool)
+        let stored = source.memberRules ?? [:]
+        let changed = effective.contains { taskId, rule in rule.vary != stored[taskId]?.vary }
+        guard changed else { return source }
+        var out = source
+        out.memberRules = effective
+        return out
     }
 }

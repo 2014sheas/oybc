@@ -26,6 +26,8 @@ import {
   type CompoundChild,
   type ExpandedSupply,
   type Task,
+  shouldKeepVaryOff,
+  type Pool,
   type VaryLevel,
 } from '@oybc/shared';
 import { overlayCompoundChildrenWithStagedEdits, type TaskEditPatch } from '../../db/taskEditPatch';
@@ -80,6 +82,8 @@ export function useWizardCompoundChildren(
   }, [compoundChildrenByCompound, pendingTasks, stagedEdits]);
 }
 
+const EMPTY_POOLS: Record<string, Pool> = {};
+
 export interface UseWizardMemberRulesArgs {
   /** Lazy initial `manualTaskVary` (draft blob > repeating record > `{}`). */
   initialManualTaskVary: () => Record<string, VaryLevel>;
@@ -103,6 +107,8 @@ export interface UseWizardMemberRulesArgs {
   pendingTasks: Map<string, PendingTaskPayload>;
   /** The live compound-children map (see {@link useWizardCompoundChildren}). */
   childrenByCompoundId: Record<string, CompoundChild[]>;
+  /** Live pools — the dry run reads a pool source's rules with its default dice applied. */
+  poolsById?: Record<string, Pool>;
 }
 
 export interface WizardMemberRulesController {
@@ -170,13 +176,14 @@ export function useWizardMemberRules({
   tasksById,
   pendingTasks,
   childrenByCompoundId,
+  poolsById = EMPTY_POOLS,
 }: UseWizardMemberRulesArgs): WizardMemberRulesController {
   const [manualTaskVary, setManualTaskVary] =
     useState<Record<string, VaryLevel>>(initialManualTaskVary);
 
   const expandedSupplies = useMemo<ExpandedSupply[]>(
-    () => algorithmSupplies(sources, supplyInfoBySourceId, childrenByCompoundId, tasksById),
-    [sources, supplyInfoBySourceId, childrenByCompoundId, tasksById],
+    () => algorithmSupplies(sources, supplyInfoBySourceId, childrenByCompoundId, tasksById, poolsById),
+    [sources, supplyInfoBySourceId, childrenByCompoundId, tasksById, poolsById],
   );
 
   /**
@@ -209,9 +216,13 @@ export function useWizardMemberRules({
 
   const setMemberVary = useCallback(
     (sourceId: string, taskId: string, level: VaryLevel) => {
-      setSources((prev) => withMemberRuleInSource(prev, sourceId, taskId, { vary: level }));
+      setSources((prev) =>
+        withMemberRuleInSource(prev, sourceId, taskId, { vary: level }, {
+          keepVaryOff: shouldKeepVaryOff(poolsById[sourceId], taskId),
+        }),
+      );
     },
-    [setSources],
+    [setSources, poolsById],
   );
 
   const setMemberSplit = useCallback(

@@ -486,6 +486,7 @@ export function useBoardWizard({
     tasksById,
     pendingTasks,
     childrenByCompoundId,
+    poolsById,
   });
 
   // Selection recompute — `selectedTaskIds` tracks the sources-union ∪

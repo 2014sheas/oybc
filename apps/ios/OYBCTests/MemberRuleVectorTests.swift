@@ -442,6 +442,8 @@ final class MemberRuleVectorTests: XCTestCase {
         let taskId: String
         let childId: String?
         let patch: RawPatch
+        /// Fixture note `keepVaryOff`: absent = false (default pruning).
+        let keepVaryOff: Bool?
     }
 
     private struct WithRuleVector: Decodable {
@@ -521,6 +523,49 @@ final class MemberRuleVectorTests: XCTestCase {
         let compoundSummary: [CompoundSummaryVector]
     }
 
+    // MARK: - Pool-level defaults fixture decoding (2026-10-06)
+
+    /// The fixture's `pool` shape (note `shapes`): a MISSING `memberVary` key
+    /// is the absent field, which `Pool` reads as an empty map.
+    private struct RawPool: Decodable {
+        let id: String
+        let taskIds: [String]
+        let memberVary: [String: Int]?
+    }
+
+    private struct RawSource: Decodable {
+        let sourceId: String
+        let kind: String
+        let memberRules: [String: BoardSourceMemberRule]?
+    }
+
+    private struct PruneMemberVaryVector: Decodable {
+        let name: String
+        let memberVary: [String: Int]?
+        let expected: [String: Int]
+    }
+
+    private struct EffectiveRulesVector: Decodable {
+        let name: String
+        let source: RawSource
+        let pool: RawPool?
+        let expected: [String: BoardSourceMemberRule]
+        let unchangedSource: Bool
+    }
+
+    private struct ShouldKeepVaryOffVector: Decodable {
+        let name: String
+        let pool: RawPool?
+        let taskId: String
+        let expected: Bool
+    }
+
+    private struct PoolDefaultsSection: Decodable {
+        let prunePoolMemberVary: [PruneMemberVaryVector]
+        let effectiveMemberRules: [EffectiveRulesVector]
+        let shouldKeepVaryOff: [ShouldKeepVaryOffVector]
+    }
+
     private struct Fixture: Decodable {
         let windowDays: [WindowDaysVector]
         let autoTarget: [AutoTargetVector]
@@ -533,6 +578,7 @@ final class MemberRuleVectorTests: XCTestCase {
         let applyMemberRules: ApplySection
         let planDerivedTasks: PlanSection
         let display: DisplaySection
+        let poolDefaults: PoolDefaultsSection
     }
 
     private func loadFixture() throws -> Fixture {
@@ -1594,11 +1640,14 @@ final class MemberRuleVectorTests: XCTestCase {
             var source = displaySource(v.startMemberRules)
             for step in v.steps {
                 source = BoardSources.withMemberRule(
-                    source, taskId: step.taskId, patch: try memberPatch(step.patch)
+                    source, taskId: step.taskId, patch: try memberPatch(step.patch),
+                    keepVaryOff: step.keepVaryOff ?? false
                 )
             }
             try assertMemberRules(source, v.expectedMemberRules, v.name)
         }
+        let modes = Set(section.withMemberRule.flatMap { $0.steps.map { $0.keepVaryOff ?? false } })
+        XCTAssertEqual(modes, [true, false], "the fixture pins both pruning modes")
     }
 
     func testWithPartRule() throws {
@@ -1679,5 +1728,85 @@ final class MemberRuleVectorTests: XCTestCase {
         }
         let part = BoardSources.partRule(for: childId, in: rule)
         return part.target != nil || part.vary != nil || part.excluded != nil
+    }
+
+    // MARK: - Pool-level defaults (docs/BOARD_SOURCES.md §Member rules → Pool-level defaults, 2026-10-06)
+
+    private func varyMap(_ raw: [String: Int]?) throws -> [String: VaryLevel]? {
+        guard let raw else { return nil }
+        var out: [String: VaryLevel] = [:]
+        for (k, v) in raw { out[k] = try varyLevel(v) }
+        return out
+    }
+
+    /// A full `Pool` from the fixture's three fields — every other field is
+    /// neutral (the helpers never read them).
+    private func pool(_ raw: RawPool?) throws -> Pool? {
+        guard let raw else { return nil }
+        return Pool(
+            id: raw.id, userId: "u1", name: "P", taskIds: raw.taskIds,
+            memberVary: try varyMap(raw.memberVary) ?? [:],
+            createdAt: Self.isoStamp, updatedAt: Self.isoStamp
+        )
+    }
+
+    private func source(_ raw: RawSource) throws -> BoardSource {
+        BoardSource(
+            sourceId: raw.sourceId,
+            kind: try XCTUnwrap(BoardSource.Kind(rawValue: raw.kind), "unknown kind \(raw.kind)"),
+            min: 0, max: nil, excludedTaskIds: [], filter: .all, memberRules: raw.memberRules
+        )
+    }
+
+    func testPrunePoolMemberVary() throws {
+        let section = try loadFixture().poolDefaults
+        XCTAssertFalse(section.prunePoolMemberVary.isEmpty)
+        for v in section.prunePoolMemberVary {
+            XCTAssertEqual(
+                BoardSources.prunePoolMemberVary(try varyMap(v.memberVary)),
+                try XCTUnwrap(try varyMap(v.expected)),
+                v.name
+            )
+        }
+    }
+
+    func testShouldKeepVaryOff() throws {
+        let section = try loadFixture().poolDefaults
+        XCTAssertFalse(section.shouldKeepVaryOff.isEmpty)
+        for v in section.shouldKeepVaryOff {
+            XCTAssertEqual(
+                BoardSources.shouldKeepVaryOff(pool: try pool(v.pool), taskId: v.taskId),
+                v.expected,
+                v.name
+            )
+        }
+    }
+
+    /// `effectiveMemberRules` pins the map; `withEffectiveMemberRules` pins
+    /// that an un-inherited source comes back EQUAL (a rule-less source keeps
+    /// `memberRules == nil`, never gains `[:]`) and an inherited one carries
+    /// exactly the expected map with every other field untouched.
+    func testEffectiveMemberRules() throws {
+        let section = try loadFixture().poolDefaults
+        XCTAssertFalse(section.effectiveMemberRules.isEmpty)
+        XCTAssertEqual(Set(section.effectiveMemberRules.map(\.unchangedSource)), [true, false],
+                       "the fixture pins both outcomes of unchangedSource")
+        for v in section.effectiveMemberRules {
+            let src = try source(v.source)
+            let p = try pool(v.pool)
+            XCTAssertEqual(BoardSources.effectiveMemberRules(source: src, pool: p), v.expected, v.name)
+
+            let result = BoardSources.withEffectiveMemberRules(source: src, pool: p)
+            if v.unchangedSource {
+                XCTAssertEqual(result, src, v.name)
+                XCTAssertEqual(result.memberRules, src.memberRules, v.name)
+            } else {
+                XCTAssertNotEqual(result, src, v.name)
+                XCTAssertEqual(result.memberRules, v.expected, v.name)
+                var stripped = result
+                stripped.memberRules = src.memberRules
+                XCTAssertEqual(stripped, src, "\(v.name): every other field rides along untouched")
+            }
+        }
     }
 }

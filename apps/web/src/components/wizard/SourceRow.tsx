@@ -98,6 +98,14 @@ export function SourceRow({
 
   const subtitle = buildSubtitle(source, supply, isDefaultRange, rangeText);
 
+  /** The stored rule, falling back to the pool's default dice when it
+   *  carries no `vary` (a stored level, incl. an explicit off, wins) — what
+   *  persist/Preview apply, so the dice never reads "off" while Create rolls. */
+  const effectiveRuleFor = (taskId: string) => {
+    const rule = memberRuleFor(source, taskId);
+    const inherited = supply.poolDefaultVary?.[taskId];
+    return rule.vary == null && inherited != null ? { ...rule, vary: inherited } : rule;
+  };
   const memberState = (taskId: string): MemberState => {
     if (source.kind === 'board' && source.filter === 'todo' && supply.doneTaskIds.has(taskId)) {
       return 'filteredDone';
@@ -198,7 +206,7 @@ export function SourceRow({
                 taskById={taskById}
                 state={memberState(taskId)}
                 clashTitle={counterClashByTaskId?.get(taskId)}
-                rule={memberRuleFor(source, taskId)}
+                rule={effectiveRuleFor(taskId)}
                 parts={compoundChildrenByCompound?.[taskId] ?? []}
                 fromBoard={source.kind === 'board'}
                 sourceWindow={supply.sourceWindow}

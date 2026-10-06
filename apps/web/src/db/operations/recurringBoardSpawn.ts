@@ -9,6 +9,7 @@ import {
   computeBoardStatsUpdate,
   fillableCellCount,
   poolSourceSupplyById,
+  withEffectiveMemberRules,
   availableSupplyIds,
   applyMemberRules,
   resolveSourceAvailable,
@@ -207,7 +208,10 @@ export async function spawnTemplateBoard(
       for (const source of sources) {
         if (source.kind === 'pool') {
           supplies.push({
-            source,
+            // Pool-level default dice (2026-10-06): a member whose stored
+            // rule carries no `vary` inherits the pool's default at THIS
+            // spawn, so a changed pool default reaches the next window.
+            source: withEffectiveMemberRules(source, poolsById[source.sourceId]),
             supplyTaskIds: poolSourceSupplyById(source.sourceId, poolsById, tasksById),
           });
           continue;

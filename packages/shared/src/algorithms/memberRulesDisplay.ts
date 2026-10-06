@@ -24,6 +24,7 @@
 
 import { TaskType } from '../constants/enums';
 import type { BoardSource, BoardSourceMemberRule, BoardSourcePartRule, VaryLevel } from '../types/boardSource';
+import type { Pool } from '../types/pool';
 import type { Task } from '../types/task';
 import { autoTarget, nominalWindowDays, varyRange } from './memberRules';
 import type { BoardWindow, PlanMode } from './memberRules';
@@ -156,10 +157,28 @@ export function partRuleFor(rule: BoardSourceMemberRule, childId: string): Board
   return rule.parts?.[childId] ?? {};
 }
 
-/** `vary: 0` / `split: false` are the field defaults — pruned so a rule that only carries defaults serialises as absent. */
-function pruneMemberRule(rule: BoardSourceMemberRule): BoardSourceMemberRule {
+/** Options for {@link withMemberRule} (and its internal pruning). */
+export interface WithMemberRuleOptions {
+  /**
+   * Keep a `vary: 0` in the stored rule instead of pruning it. Pass
+   * `shouldKeepVaryOff(pool, taskId)` from a Sources-sheet setter: on a
+   * member whose POOL carries a default dice, "off" is an authored
+   * override that `effectiveMemberRules` must see (a stored `vary` always
+   * wins over the pool default), so it has to survive as an explicit `0`.
+   * Default `false` — pruned as before.
+   */
+  keepVaryOff?: boolean;
+}
+
+/**
+ * `vary: 0` / `split: false` are the field defaults — pruned so a rule that
+ * only carries defaults serialises as absent. With `keepVaryOff` a `vary: 0`
+ * is kept (see {@link WithMemberRuleOptions}); `split: false` is always
+ * pruned.
+ */
+function pruneMemberRule(rule: BoardSourceMemberRule, options?: WithMemberRuleOptions): BoardSourceMemberRule {
   const out: BoardSourceMemberRule = { ...rule };
-  if (out.vary === 0) delete out.vary;
+  if (out.vary === 0 && !options?.keepVaryOff) delete out.vary;
   if (out.split === false) delete out.split;
   return out;
 }
@@ -206,17 +225,28 @@ function withoutMemberRules(source: BoardSource): BoardSource {
  * rule-less source serialising byte-identically whether or not it was ever
  * touched by the rule editor.
  *
+ * **Explicit off** (pool-level defaults, 2026-10-06): with
+ * `options.keepVaryOff` a `vary: 0` in the merged rule is STORED rather than
+ * pruned — the per-board "override to off" for a member whose pool carries
+ * a default dice (see {@link shouldKeepVaryOff}). Clearing the field
+ * (`vary: undefined`) still removes it, which hands the member back to the
+ * pool default. {@link withPartRule} never keeps an off (a part patch on a
+ * member with a stored `vary: 0` re-prunes it — pool defaults are
+ * counting-only, so no caller reaches that).
+ *
  * @param source - The source to update (not mutated).
  * @param taskId - The member's task id.
  * @param patch - Fields to set; a field set to `undefined` is cleared.
+ * @param options - See {@link WithMemberRuleOptions}.
  * @returns A new `BoardSource` with the rule applied.
  */
 export function withMemberRule(
   source: BoardSource,
   taskId: string,
-  patch: Partial<BoardSourceMemberRule>
+  patch: Partial<BoardSourceMemberRule>,
+  options?: WithMemberRuleOptions
 ): BoardSource {
-  const merged = pruneMemberRule(applyPatch(memberRuleFor(source, taskId), patch));
+  const merged = pruneMemberRule(applyPatch(memberRuleFor(source, taskId), patch), options);
   const rules = { ...(source.memberRules ?? {}) };
   if (Object.keys(merged).length === 0) {
     delete rules[taskId];
@@ -482,4 +512,122 @@ export function seededTargetsForSource(
     });
   }
   return seeded;
+}
+
+// ===== Pool-level defaults (docs/BOARD_SOURCES.md §Member rules → Pool-level defaults, 2026-10-06) =====
+
+/** The `Pool` fields the pool-default helpers read. */
+export type PoolDefaultsSource = Pick<Pool, 'id' | 'taskIds' | 'memberVary'>;
+
+/** True for the two storable dice levels — a pool default is never `0`. */
+function isStoredPoolDefault(level: VaryLevel | undefined): level is 1 | 2 {
+  return level === 1 || level === 2;
+}
+
+/**
+ * The `Pool.memberVary` map as the ops STORE it: every `0` entry dropped,
+ * the `1 | 2` entries kept as-is. `pruneMemberRule` deletes a `vary: 0`
+ * from a source rule for the same reason — "off" is the absence of a
+ * default, never a stored value — so a pool whose every dice is off stores
+ * `{}`.
+ *
+ * @param memberVary - The editor's raw map (absent reads as `{}`).
+ * @returns A new map carrying only `1 | 2` entries.
+ */
+export function prunePoolMemberVary(
+  memberVary: Record<string, VaryLevel> | undefined
+): Record<string, VaryLevel> {
+  const out: Record<string, VaryLevel> = {};
+  for (const [taskId, level] of Object.entries(memberVary ?? {})) {
+    if (isStoredPoolDefault(level)) out[taskId] = level;
+  }
+  return out;
+}
+
+/**
+ * Whether a Sources-sheet setter must STORE a `vary: 0` for this member
+ * rather than prune it — true exactly when the pool carries a `1 | 2`
+ * default for `taskId` (a member of `pool.taskIds`), because only then does
+ * "off" differ from "no rule": absent falls back to the pool default at
+ * spawn / persist ({@link effectiveMemberRules}), an explicit `0` wins over
+ * it. Pass the result as `withMemberRule(..., { keepVaryOff })`.
+ *
+ * @param pool - The pool the member was pulled through, if resolvable.
+ * @param taskId - The member's task id.
+ * @returns True when the pool has a stored default dice for the member.
+ */
+export function shouldKeepVaryOff(pool: PoolDefaultsSource | undefined, taskId: string): boolean {
+  if (pool === undefined || !pool.taskIds.includes(taskId)) return false;
+  return isStoredPoolDefault(pool.memberVary?.[taskId]);
+}
+
+/**
+ * A pool source's rules as the PLANNER should read them: the stored
+ * `source.memberRules`, plus — for every member of `pool.taskIds` whose
+ * stored rule carries NO `vary` — the pool's default dice.
+ *
+ * Precedence (the fallback rule, docs/BOARD_SOURCES.md §Pool-level
+ * defaults): a stored `vary` on the source ALWAYS wins — `1 | 2`, or an
+ * explicit `0` stored via `withMemberRule(..., { keepVaryOff: true })`,
+ * which is the per-board "override to off"; the pool default fills in
+ * only where the source says nothing — which is EVERY member of a freshly
+ * pulled pool (pulling never copies the defaults onto the row), a member
+ * added to the pool later, a template authored before pool defaults
+ * existed, or a rule that carries other fields but no dice. The function
+ * is a pure read: nothing here is stored, so the pool default is LIVE — a
+ * changed default reaches every open wizard's row and every board's next
+ * creation / spawn without a source or template write.
+ *
+ * Returns `source.memberRules ?? {}` unchanged (as a fresh object) for a
+ * board-kind source, a missing pool, or a pool whose `id` is not this
+ * source's `sourceId` — the fallback never applies across sources.
+ *
+ * @param source - The pulled source row.
+ * @param pool - The pool it names, if resolvable.
+ * @returns The effective rules map (never `undefined`; input never mutated).
+ */
+export function effectiveMemberRules(
+  source: BoardSource,
+  pool: PoolDefaultsSource | undefined
+): Record<string, BoardSourceMemberRule> {
+  const rules: Record<string, BoardSourceMemberRule> = { ...(source.memberRules ?? {}) };
+  if (source.kind !== 'pool' || pool === undefined || pool.id !== source.sourceId) return rules;
+  const defaults = pool.memberVary ?? {};
+  for (const taskId of pool.taskIds) {
+    const level = defaults[taskId];
+    if (!isStoredPoolDefault(level)) continue;
+    const stored = rules[taskId];
+    // `== null`, not `=== undefined`: an explicit JSON `null` from a
+    // foreign writer must read as "no vary" on both platforms.
+    if (stored?.vary != null) continue;
+    rules[taskId] = { ...stored, vary: level };
+  }
+  return rules;
+}
+
+/**
+ * `source` with {@link effectiveMemberRules} applied — what a supply
+ * builder hands the planner in place of the stored source row.
+ *
+ * Returns the SAME object when no default was inherited (so a rule-less
+ * source stays rule-less — `memberRules` omitted, never `{}` — and the
+ * supply builders pay nothing for a pool without defaults); otherwise a
+ * shallow copy carrying the effective map. Never mutates `source`.
+ *
+ * @param source - The pulled source row.
+ * @param pool - The pool it names, if resolvable.
+ * @returns `source` itself, or a copy with the inherited dice filled in.
+ */
+export function withEffectiveMemberRules(source: BoardSource, pool: PoolDefaultsSource | undefined): BoardSource {
+  const effective = effectiveMemberRules(source, pool);
+  const stored = source.memberRules ?? {};
+  let changed = false;
+  for (const taskId of Object.keys(effective)) {
+    if (effective[taskId].vary !== stored[taskId]?.vary) {
+      changed = true;
+      break;
+    }
+  }
+  if (!changed) return source;
+  return { ...source, memberRules: effective };
 }

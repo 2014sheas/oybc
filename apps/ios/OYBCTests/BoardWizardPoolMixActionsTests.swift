@@ -586,4 +586,103 @@ final class BoardWizardPoolMixActionsTests: XCTestCase {
         XCTAssertEqual(vm.selectedTaskIds, ["bt1", "bt2"])
         XCTAssertEqual(vm.availableCount(forSourceId: "b1"), 2)
     }
+
+    // MARK: - Pool-level default dice (2026-10-06)
+
+    private func poolWithDefaults(_ vary: [String: VaryLevel]) -> Pool {
+        var pool = makePool(id: "A", ["x", "y"])
+        pool.memberVary = vary
+        return pool
+    }
+
+    /// Pool defaults are LIVE — pulling a pool stores NO rule on the row; the
+    /// supply entry carries the defaults for the member row / Preview /
+    /// persist to resolve at read time. Web twin: the `appendSource` "stays
+    /// LIVE" case in `useWizardSources.test.ts`.
+    func test_pullPool_storesNoMemberRules_andTheSupplyCarriesThePoolDefaults() {
+        let vm = makeVM()
+        let (_, tasksById) = workedExampleFixtures()
+        vm.pullPool(poolWithDefaults(["x": .little, "y": .lot]), tasksById: tasksById)
+        XCTAssertNil(vm.sources.first?.memberRules, "pulling never copies the defaults onto the row")
+        XCTAssertEqual(vm.supplyInfoBySourceId["A"]?.poolDefaultVary, ["x": .little, "y": .lot])
+        // The row's ✕ needs no confirm: nothing authored yet (the pool
+        // default is not a stored rule).
+        XCTAssertFalse(BoardSources.sourceHasConfiguration(
+            vm.sources[0], defaultFilter: BoardWizardViewModel.newSourceFilter(for: .pool)
+        ))
+    }
+
+    func test_pullPool_noDefaults_leavesMemberRulesNil_andAnEmptyDefaultMap() {
+        let vm = makeVM()
+        let (poolsById, tasksById) = workedExampleFixtures()
+        vm.pullPool(poolsById["A"]!, tasksById: tasksById)
+        XCTAssertNil(vm.sources.first?.memberRules, "never an empty map")
+        XCTAssertEqual(vm.supplyInfoBySourceId["A"]?.poolDefaultVary, [:])
+    }
+
+    func test_corePrefillPoolSources_plainAllRowsWithNoMemberRules() throws {
+        let sources = BoardWizardViewModel.corePrefillPoolSources(["A", "B"])
+        XCTAssertEqual(sources.map(\.sourceId), ["A", "B"])
+        XCTAssertEqual(sources.map(\.filter), [.all, .all])
+        XCTAssertTrue(sources.allSatisfy { $0.memberRules == nil })
+    }
+
+    /// The prefill's LIVE path: `hydrateSourcesState` caches the pool default
+    /// on the supply entry, so an un-ruled prefill row still expands with it.
+    func test_hydrateSourcesState_corePrefillRowsCarryThePoolDefaultOnTheSupply() throws {
+        let db = try AppDatabase.makeTestInstance()
+        let (_, tasksById) = workedExampleFixtures()
+        let now = "2026-01-01T00:00:00.000Z"
+        try db.write { grdb in
+            // tasks.userId is a real FK — seed the owning user first.
+            try User(
+                id: "u1", email: "t@e.com", displayName: "T", photoURL: nil,
+                preferences: User.encodePreferences(.defaults),
+                createdAt: now, updatedAt: now, lastSyncedAt: nil, version: 1
+            ).insert(grdb)
+        }
+        for task in tasksById.values { try db.saveTask(task) }
+        try db.savePool(poolWithDefaults(["x": .lot]))
+        try db.savePool(makePool(id: "B", ["y", "z"]))
+        let hydrated = BoardWizardViewModel.hydrateSourcesState(
+            sources: BoardWizardViewModel.corePrefillPoolSources(["A", "B"]),
+            manualTaskIds: [],
+            database: db
+        )
+        XCTAssertTrue(hydrated.sources.allSatisfy { $0.memberRules == nil })
+        XCTAssertEqual(hydrated.supplyInfo["A"]?.poolDefaultVary, ["x": .lot])
+        XCTAssertEqual(hydrated.supplyInfo["B"]?.poolDefaultVary, [:])
+    }
+
+    func test_setMemberVaryOff_onPoolDefaultMember_storesExplicitOff() {
+        let vm = makeVM()
+        let (_, tasksById) = workedExampleFixtures()
+        vm.pullPool(poolWithDefaults(["x": .little]), tasksById: tasksById)
+        vm.setMemberVary(sourceId: "A", taskId: "x", level: .off)
+        XCTAssertEqual(vm.sources.first?.memberRules?["x"]?.vary, VaryLevel.off)
+        // And the explicit off beats the pool default in the expansion.
+        XCTAssertEqual(vm.expandedSupplies.first?.source.memberRules?["x"]?.vary, VaryLevel.off)
+    }
+
+    func test_setMemberVaryOff_withoutPoolDefault_removesTheRule() {
+        let vm = makeVM()
+        let (poolsById, tasksById) = workedExampleFixtures()
+        vm.pullPool(poolsById["A"]!, tasksById: tasksById)
+        vm.setMemberVary(sourceId: "A", taskId: "x", level: .lot)
+        XCTAssertEqual(vm.sources.first?.memberRules?["x"]?.vary, .lot)
+        vm.setMemberVary(sourceId: "A", taskId: "x", level: .off)
+        XCTAssertNil(vm.sources.first?.memberRules?["x"])
+    }
+
+    /// THE primary pin of the live path: a freshly pulled pool stores no rule,
+    /// yet Preview/capacity expand the member with the pool default — the
+    /// same effective rules persist reads (`withEffectiveMemberRules`).
+    func test_expandedSupplies_carryThePoolDefaultWhenTheStoredRuleHasNoVary() {
+        let vm = makeVM()
+        let (_, tasksById) = workedExampleFixtures()
+        vm.pullPool(poolWithDefaults(["x": .lot]), tasksById: tasksById)
+        XCTAssertNil(vm.sources[0].memberRules)
+        XCTAssertEqual(vm.expandedSupplies.first?.source.memberRules?["x"]?.vary, .lot)
+        XCTAssertNil(vm.expandedSupplies.first?.source.memberRules?["y"])
+    }
 }

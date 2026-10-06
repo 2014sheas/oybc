@@ -1462,6 +1462,27 @@
         "filter": null
       },
       "expectedHasConfiguration": true
+    },
+    {
+      "name": "an explicit stored off (vary 0, pool-level defaults 2026-10-06) is an authored override and counts",
+      "source": {
+        "sourceId": "pool-1",
+        "kind": "pool",
+        "min": 0,
+        "max": null,
+        "excludedTaskIds": [],
+        "filter": "all",
+        "memberRules": { "task-1": { "vary": 0 } }
+      },
+      "defaultFilter": "all",
+      "expected": {
+        "excludedCount": 0,
+        "memberRuleCount": 1,
+        "rangeNarrowed": false,
+        "filterChanged": false,
+        "filter": null
+      },
+      "expectedHasConfiguration": true
     }
   ],
   "lossSentenceVectors": [

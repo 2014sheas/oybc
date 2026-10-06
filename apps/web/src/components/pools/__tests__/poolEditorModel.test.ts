@@ -5,10 +5,13 @@ import { emptyPatch, patchesEqual, type TaskEditPatch } from '../../../db/taskEd
 import {
   buildPoolEditorView,
   canSavePool,
+  dropMemberVary,
   dropStagedEdit,
   groupLinksByCompound,
+  pruneMemberVaryToMembers,
   pruneStagedEdits,
   seedEditorDraft,
+  setMemberVaryLevel,
   stageEditInto,
 } from '../poolEditorModel';
 
@@ -182,5 +185,28 @@ describe('groupLinksByCompound', () => {
     const g = groupLinksByCompound([link('c', 'b', 1), link('c', 'a', 0), link('d', 'x', 0)]);
     expect(g.c.map((l) => l.childTaskId)).toEqual(['a', 'b']);
     expect(Object.keys(g).sort()).toEqual(['c', 'd']);
+  });
+});
+
+describe('pool-level default dice (memberVary)', () => {
+  it('seeds from the pool map, sets a level, and level 0 removes the key', () => {
+    const seed = { a: 2 as const };
+    const set = setMemberVaryLevel(seed, 'b', 1);
+    expect(set).toEqual({ a: 2, b: 1 });
+    expect(seed).toEqual({ a: 2 });
+    expect(setMemberVaryLevel(set, 'a', 0)).toEqual({ b: 1 });
+  });
+
+  it('removing a row drops its entry (and is identity when absent)', () => {
+    const m = { a: 1 as const, b: 2 as const };
+    expect(dropMemberVary(m, 'a')).toEqual({ b: 2 });
+    expect(dropMemberVary(m, 'zzz')).toBe(m);
+  });
+
+  it('Save keeps only the dice of current members — iOS save() parity', () => {
+    const m = { a: 1 as const, gone: 2 as const };
+    expect(pruneMemberVaryToMembers(m, ['a', 'b'])).toEqual({ a: 1 });
+    expect(pruneMemberVaryToMembers(m, [])).toEqual({});
+    expect(m).toEqual({ a: 1, gone: 2 });
   });
 });

@@ -119,7 +119,9 @@ struct PoolEditorBodyView: View {
                             onDiscard: { vm.discardEdit() }
                         )
                     )
-                }
+                },
+                manualTaskVary: vm.memberVary,
+                onSetManualVary: { vm.setMemberVary(taskId: $0, level: $1) }
             )
             .disabled(vm.busy)
         }

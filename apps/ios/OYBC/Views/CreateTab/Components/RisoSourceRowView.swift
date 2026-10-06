@@ -268,6 +268,14 @@ struct RisoSourceRowView: View {
     /// One `RisoMemberRuleRowView` per supplied member — it owns the whole
     /// row (title, ✕/UNDO/✓ AND the §Member rules controls), so this file
     /// stays a header + range-block renderer.
+    /// The stored rules, falling back to the pool's default dice where a
+    /// member carries no `vary` (a stored level, incl. an explicit off,
+    /// wins) — what persist/Preview apply, so the dice never reads "off"
+    /// while Create rolls. Web twin: `SourceRow.effectiveRuleFor`.
+    private var effectiveSource: BoardSource {
+        BoardWizardViewModel.sourceApplyingPoolDefaults(source, defaults: supply.poolDefaultVary)
+    }
+
     private var memberRows: some View {
         VStack(spacing: 0) {
             ForEach(supply.rawSupplyTaskIds, id: \.self) { taskId in
@@ -276,7 +284,7 @@ struct RisoSourceRowView: View {
                     taskById: taskById,
                     state: memberState(for: taskId),
                     clashTitle: counterClashByTaskId[taskId],
-                    rule: BoardSources.memberRule(for: taskId, in: source),
+                    rule: BoardSources.memberRule(for: taskId, in: effectiveSource),
                     parts: compoundChildrenByCompound[taskId] ?? [],
                     fromBoard: source.kind == .board,
                     sourceWindow: supply.sourceWindow,

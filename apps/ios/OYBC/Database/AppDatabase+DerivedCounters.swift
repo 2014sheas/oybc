@@ -360,7 +360,11 @@ extension AppDatabase {
             switch source.kind {
             case .pool:
                 rawSupplies.append(BoardSources.Supply(
-                    source: source,
+                    // Pool-level default dice (2026-10-06) — the fallback for a
+                    // member the Sources sheet never seeded.
+                    source: BoardSources.withEffectiveMemberRules(
+                        source: source, pool: poolsById[source.sourceId]
+                    ),
                     supplyTaskIds: BoardSources.poolSourceSupplyById(
                         source.sourceId, poolsById: poolsById, tasksById: tasksById
                     )

@@ -134,5 +134,15 @@ extension AppDatabase {
                 }
             }
         }
+
+        // v38: Pool-level default dice (docs/BOARD_SOURCES.md §Member rules →
+        // Pool-level defaults, 2026-10-06) — `Pool.memberVary`, a JSON-string
+        // TEXT column exactly like v31's `manualTaskVary`. Nullable: a
+        // pre-v38 row stays NULL and `Pool.init(from:)` decodes that to
+        // `[:]`; every write after this encodes the map (`{}` when empty).
+        // Web: no Dexie bump (no index), `PoolSchema` defaults the key.
+        migrator.registerMigration("v38") { db in
+            try db.execute(sql: "ALTER TABLE pools ADD COLUMN memberVary TEXT")
+        }
     }
 }

@@ -399,7 +399,10 @@ extension AppDatabase {
             for source in entry.sources {
                 if source.kind == .pool {
                     supplies.append(BoardSources.Supply(
-                        source: source,
+                        // Same effective rules the spawn reads (pool-level default dice).
+                        source: BoardSources.withEffectiveMemberRules(
+                            source: source, pool: poolsById[source.sourceId]
+                        ),
                         supplyTaskIds: BoardSources.poolSourceSupplyById(
                             source.sourceId, poolsById: poolsById, tasksById: tasksById
                         )
@@ -503,7 +506,10 @@ extension AppDatabase {
             switch source.kind {
             case .pool:
                 supplies.append(BoardSources.Supply(
-                    source: source,
+                    // Same effective rules the spawn reads (pool-level default dice).
+                    source: BoardSources.withEffectiveMemberRules(
+                        source: source, pool: poolsById[source.sourceId]
+                    ),
                     supplyTaskIds: BoardSources.poolSourceSupplyById(
                         source.sourceId, poolsById: poolsById, tasksById: tasksById
                     )

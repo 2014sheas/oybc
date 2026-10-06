@@ -1376,6 +1376,76 @@ is a pre-existing bug that B makes visible; fix it, don't special-case.
   change spawn identity + placement-row convergence — out of scope, noted
   as a follow-up.
 
+### Pool-level defaults (2026-10-06)
+
+Owner ask: "have counter tasks be randomizable from the pool creation, so we
+don't need to select a randomization option on every new board create."
+
+- **Field:** `Pool.memberVary: Record<taskId, VaryLevel>` (shared `types/pool.ts`
+  ↔ iOS `Pool.swift`), the `manualTaskVary` shape. Only `1 | 2` are ever
+  stored — the ops prune a `0` (`prunePoolMemberVary`), the same
+  default-pruning `withMemberRule` applies to a source rule's `vary`. The ops
+  ALWAYS write the map (`{}` when empty) so a clear propagates by overwrite,
+  never as a clearable-field delete; `PoolSchema` defaults a pulled doc to
+  `{}`; iOS GRDB **v38** adds `pools.memberVary TEXT` (nullable — a pre-v38
+  row decodes to `[:]`); web needs no Dexie bump (no index). On the TS type
+  the field is optional (absent ≡ `{}`, read through `?? {}`) because a local
+  Dexie row written before the field existed carries no key. A pulled doc
+  written by an OLD client (field absent) lands as `{}` on web
+  (`PoolSchema.default`) but keeps the local map on iOS (a missing column is
+  retained on upsert) — accepted: the next pool save from any current client
+  always writes the map and converges both.
+- **LIVE, never copied (decision 2026-10-06).** Pulling a pool stores **no
+  member rule** — `appendSource` / `pullPool` mint a plain `[0, all]` row with
+  no `memberRules` key, the same for the core-defaults prefill
+  (`corePrefillPoolSources` ↔ the `appendSource` reduce in `useBoardWizard`).
+  There is no seeding step and no "seeded copy": the pool's defaults are read
+  at every read site, so a changed pool default reaches every open wizard's
+  member row and every board's next creation / spawn with no source or
+  template write.
+- **Every reader resolves through the same fallback:** `effectiveMemberRules`
+  / `withEffectiveMemberRules` (↔ Swift `BoardSources.effectiveMemberRules` /
+  `withEffectiveMemberRules`; the wizard's cached form is
+  `sourceApplyingPoolDefaults` over `WizardSourceSupply.poolDefaultVary`) =
+  the stored rules plus, for each `pool.taskIds` member whose stored rule
+  carries **no `vary`**, `{ ...rule, vary: pool.memberVary[id] }`. Applied at
+  spawn (web `recurringBoardSpawn.ts` ↔ iOS `AppDatabase+RecurringTemplates`),
+  one-off persist (`wizardBoard.ts` ↔ `+DerivedCounters`), stored-template
+  resolution (`boardSources.ts` ↔ `+BoardSources`), the wizard's Preview /
+  capacity dry run (`algorithmSupplies` ↔ `expandedSupplies`), and the member
+  row's dice (`SourceRow.effectiveRuleFor` ↔ `RisoSourceRowView.effectiveSource`
+  via `poolSupplyEntry(...).poolDefaultVary` ↔
+  `WizardSourceSupply.defaultVary(of:)`). Nothing is stored anywhere.
+- **Precedence:** a stored source `vary` ALWAYS wins — `1 | 2` (a hand-set
+  level) or an **explicit `0`**; the pool default fills in only where the
+  source carries no `vary` at all. Because nothing is seeded, a freshly pulled
+  pool is UNCONFIGURED: `isAuthoredMemberRule` sees no rule, so its row's ✕
+  removes without a confirm; the explicit `0` below IS an authored override
+  and does count.
+- **Explicit off (the per-board override):** `withMemberRule` normally prunes
+  `vary: 0` to "no rule", which on a pool-default member would mean "inherit"
+  — so the Sources-sheet setters pass `withMemberRule(source, id, patch,
+  { keepVaryOff: shouldKeepVaryOff(pool, id) })` (↔ Swift
+  `withMemberRule(_:taskId:patch:keepVaryOff:)` /
+  `shouldKeepVaryOff(pool:taskId:)`). `shouldKeepVaryOff` is true exactly when
+  the pool carries a `1 | 2` default for that member; then turning the dice
+  off STORES `{ vary: 0 }`, which `effectiveMemberRules` honours as off and
+  `isAuthoredMemberRule` counts as configured (it is an authored override).
+  Clearing the field (`vary: undefined` / `.clear`) removes the rule and hands
+  the member back to the pool default. Members without a pool default keep
+  the old pruning byte-for-byte; `withPartRule` never keeps an off (pool
+  defaults are counting-only).
+- Pinned by the `poolDefaults` section of `memberRuleVectors.json`
+  (`prunePoolMemberVary` / `effectiveMemberRules` + `withEffectiveMemberRules`
+  / `shouldKeepVaryOff`), the `keepVaryOff` steps of `display.withMemberRule`,
+  and the explicit-off `configurationVectors` entry in
+  `boardSourceVectors.json` (both platforms); the "pulling stores no rule"
+  pins (`useWizardSources.test.ts` ↔ `BoardWizardPoolMixActionsTests`); spawn
+  + one-off persist tests on both platforms; `SyncWirePayloadTests` pins the
+  wire shape; e2e `pool-default-vary.spec.ts` (explicit off places the root
+  itself — no derived copy; inherited rolls inside `varyRange`, which only
+  LOWERS: `hi = min(goal, …)`).
+
 ### UI contract (frames 2a/2b/4a/5a/5b/5c; both platforms)
 
 **Member rows replace #471's ⋯ menu outright** — delete `memberHasActions`

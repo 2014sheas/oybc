@@ -23,6 +23,23 @@ struct WizardSourceSupply: Equatable {
     /// source ("Deleted board"), which leaves this false. Web twin:
     /// `WizardSourceSupply.noBoardForWindow`.
     var noBoardForWindow: Bool = false
+    /// Pool sources only — the pool's stored default dice (`Pool.memberVary`
+    /// pruned to `.little`/`.lot`, members only), so the Preview/capacity
+    /// expansion reads the same EFFECTIVE rules the persist does
+    /// (`BoardSources.withEffectiveMemberRules`). Empty for boards.
+    var poolDefaultVary: [String: VaryLevel] = [:]
+}
+
+extension WizardSourceSupply {
+    /// The default-dice map a pool contributes (empty for nil / no defaults):
+    /// `Pool.memberVary` pruned to `.little` / `.lot`, members only. Read
+    /// LIVE off the pool — nothing is ever copied onto the source row. Web
+    /// twin: `poolSupplyEntry(...).poolDefaultVary`.
+    static func defaultVary(of pool: Pool?) -> [String: VaryLevel] {
+        guard let pool else { return [:] }
+        return BoardSources.prunePoolMemberVary(pool.memberVary)
+            .filter { pool.taskIds.contains($0.key) }
+    }
 }
 
 extension WizardSourceSupply {
@@ -118,6 +135,7 @@ extension BoardWizardViewModel {
     ) -> [BoardSources.ExpandedSupply] {
         let raw = sources.map { source -> BoardSources.Supply in
             let info = supplyInfo[source.sourceId]
+            let source = Self.sourceApplyingPoolDefaults(source, defaults: info?.poolDefaultVary ?? [:])
             let ids = BoardSources.availableSupplyIds(
                 source: source,
                 supplyTaskIds: info?.rawSupplyTaskIds ?? [],
@@ -135,6 +153,37 @@ extension BoardWizardViewModel {
             childrenByCompoundId: childrenByCompoundId,
             tasksById: tasksById
         )
+    }
+
+    /// `source` with the pool's default dice filled in for every member whose
+    /// stored rule carries no `vary` — the same fallback as
+    /// `BoardSources.withEffectiveMemberRules(source:pool:)`, read from the
+    /// cached `WizardSourceSupply.poolDefaultVary` so Preview/capacity agree
+    /// with persist. A stored `vary` (incl. an explicit `.off`) always wins.
+    static func sourceApplyingPoolDefaults(
+        _ source: BoardSource, defaults: [String: VaryLevel]
+    ) -> BoardSource {
+        guard source.kind == .pool, !defaults.isEmpty else { return source }
+        var rules = source.memberRules ?? [:]
+        for (taskId, level) in defaults where rules[taskId]?.vary == nil {
+            var merged = rules[taskId] ?? BoardSourceMemberRule()
+            merged.vary = level
+            rules[taskId] = merged
+        }
+        var out = source
+        out.memberRules = rules
+        return out
+    }
+
+    /// Core-defaults prefill sources: one plain `.all` pool row per id with
+    /// NO member rules — a pool's default dice stay live on the pool
+    /// (`hydrateSourcesState` caches them on the supply entry, and persist /
+    /// Preview read them through `withEffectiveMemberRules`). Web twin: the
+    /// `appendSource` reduce in `useBoardWizard`'s core prefill.
+    static func corePrefillPoolSources(_ poolIds: [String]) -> [BoardSource] {
+        poolIds.map { id in
+            BoardSource(sourceId: id, kind: .pool, filter: newSourceFilter(for: .pool))
+        }
     }
 
     /// The expanded supplies as plain ``BoardSources/Supply`` values, for
@@ -237,9 +286,16 @@ extension BoardWizardViewModel {
             rawSupplyTaskIds: BoardSources.poolSourceSupplyById(
                 pool.id, poolsById: [pool.id: pool], tasksById: tasksById
             ),
-            doneTaskIds: []
+            doneTaskIds: [],
+            poolDefaultVary: WizardSourceSupply.defaultVary(of: pool)
         )
-        sources.append(BoardSource(sourceId: pool.id, kind: .pool, filter: Self.newSourceFilter(for: .pool)))
+        // Pool-level default dice (2026-10-06) are NEVER copied onto the row:
+        // they stay live on the pool (cached on the supply entry above) and
+        // the member row / Preview / persist resolve a member with no stored
+        // `vary` from them. A per-board change stores a rule as usual.
+        sources.append(BoardSource(
+            sourceId: pool.id, kind: .pool, filter: Self.newSourceFilter(for: .pool)
+        ))
         refreshCompoundChildren()
         recomputeSelectionFromSources()
     }
@@ -487,7 +543,8 @@ extension BoardWizardViewModel {
                     rawSupplyTaskIds: BoardSources.poolSourceSupplyById(
                         source.sourceId, poolsById: poolsById, tasksById: tasksById
                     ),
-                    doneTaskIds: []
+                    doneTaskIds: [],
+                    poolDefaultVary: WizardSourceSupply.defaultVary(of: poolsById[source.sourceId])
                 )
             case .board:
                 let resolution = (try? database.fetchOpenBoardSourceSupply(
@@ -553,7 +610,8 @@ extension BoardWizardViewModel {
                     rawSupplyTaskIds: BoardSources.poolSourceSupplyById(
                         source.sourceId, poolsById: poolsById, tasksById: tasksById
                     ),
-                    doneTaskIds: []
+                    doneTaskIds: [],
+                    poolDefaultVary: WizardSourceSupply.defaultVary(of: poolsById[source.sourceId])
                 )
             case .board:
                 // §Member rules (B3) — the RC4/RC5 fields ride along HERE

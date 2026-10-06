@@ -344,12 +344,18 @@ export {
   seededTargetsForSource,
   countingSummary,
   compoundSummary,
+  prunePoolMemberVary,
+  shouldKeepVaryOff,
+  effectiveMemberRules,
+  withEffectiveMemberRules,
 } from './memberRulesDisplay';
 
 export type {
   MemberSummary,
   SeededTargetSupply,
   SeededTargetTask,
+  PoolDefaultsSource,
+  WithMemberRuleOptions,
 } from './memberRulesDisplay';
 
 // ===== Seeded RNG — the repo's one deterministic LCG (see seededRng.ts) =====

@@ -40,6 +40,10 @@ final class PoolEditorViewModel {
     var poolTaskIds: [String]
     /// Staged inline edits keyed by task id.
     var stagedEdits: [String: TaskEditPatch] = [:]
+    /// The pool's default dice per member (`Pool.memberVary`); only
+    /// `.little` / `.lot` are held — `.off` removes the key. Always passed
+    /// explicitly to the save so an edit REPLACES the stored map.
+    var memberVary: [String: VaryLevel]
 
     // Inline row editor (at most one open).
     var editingTaskId: String?
@@ -70,6 +74,7 @@ final class PoolEditorViewModel {
         self.database = database
         self.name = pool?.name ?? ""
         self.poolTaskIds = pool?.taskIds ?? initialTaskIds
+        self.memberVary = pool?.memberVary ?? [:]
     }
 
     var isEditMode: Bool { pool != nil }
@@ -165,8 +170,18 @@ final class PoolEditorViewModel {
     /// Remove a row; purges its staged edit and closes its editor.
     func remove(_ taskId: String) {
         poolTaskIds.removeAll { $0 == taskId }
+        memberVary.removeValue(forKey: taskId)
         stagedEdits.removeValue(forKey: taskId)
         if editingTaskId == taskId { editingTaskId = nil }
+    }
+
+    /// Set a member's default dice; `.off` removes the entry.
+    func setMemberVary(taskId: String, level: VaryLevel) {
+        if level == .off {
+            memberVary.removeValue(forKey: taskId)
+        } else {
+            memberVary[taskId] = level
+        }
     }
 
     /// Drops staged edits whose task is no longer a pool member or no longer
@@ -262,11 +277,12 @@ final class PoolEditorViewModel {
         let ids = poolTaskIds
         pruneStaleStagedEdits()
         let edits = stagedEdits
+        let vary = memberVary.filter { ids.contains($0.key) }
         do {
             let saved = try await _Concurrency.Task.detached(priority: .userInitiated) {
                 try db.savePoolWithStagedEdits(
                     existingId: existingId, userId: uid, name: trimmed, taskIds: ids,
-                    stagedEdits: edits, now: AppDatabase.currentTimestamp()
+                    stagedEdits: edits, memberVary: vary, now: AppDatabase.currentTimestamp()
                 )
             }.value
             busy = false

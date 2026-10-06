@@ -7,6 +7,7 @@ import {
   type Pool,
   type RecurringBoardTemplate,
   type Task,
+  type VaryLevel,
 } from '@oybc/shared';
 import { useModalA11y } from '../../hooks/useModalA11y';
 import { fetchAllBoardTasks, fetchAllCompoundChildren } from '../../db/operations';
@@ -22,10 +23,13 @@ import { deletePoolFromSheet, savePoolFromSheet, POOL_NAME_MAX_LENGTH } from './
 import {
   buildPoolEditorView,
   canSavePool,
+  dropMemberVary,
   dropStagedEdit,
   groupLinksByCompound,
+  pruneMemberVaryToMembers,
   pruneStagedEdits,
   seedEditorDraft,
+  setMemberVaryLevel,
   stageEditInto,
 } from './poolEditorModel';
 import { selectLibraryPickerResults } from './poolEditSheetSelectors';
@@ -96,6 +100,8 @@ export function PoolEditorBody({
   const [taskIds, setTaskIds] = useState<string[]>(() => pool?.taskIds ?? initialTaskIds ?? []);
   const [sessionTaskCache, setSessionTaskCache] = useState<Map<string, Task>>(() => new Map());
   const [stagedEdits, setStagedEdits] = useState<Map<string, TaskEditPatch>>(() => new Map());
+
+  const [memberVary, setMemberVary] = useState<Record<string, VaryLevel>>(() => pool?.memberVary ?? {});
 
   const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
   const [editDraft, setEditDraft] = useState<TaskEditPatch | null>(null);
@@ -186,6 +192,7 @@ export function PoolEditorBody({
   function removeTask(taskId: string): void {
     setTaskIds((ids) => ids.filter((id) => id !== taskId));
     setStagedEdits((prev) => dropStagedEdit(prev, taskId));
+    setMemberVary((prev) => dropMemberVary(prev, taskId));
     if (editingTaskId === taskId) setEditingTaskId(null);
   }
 
@@ -217,6 +224,7 @@ export function PoolEditorBody({
         name: name.trim(),
         taskIds,
         stagedEdits: pruneStagedEdits(stagedEdits, taskIds, new Set(view.poolOrder)),
+        memberVary: pruneMemberVaryToMembers(memberVary, taskIds),
       });
       onSaved(saved);
     } catch (e) {
@@ -343,6 +351,8 @@ export function PoolEditorBody({
             centerTaskId={null}
             onCenterClick={NOOP}
             onRemove={removeTask}
+            manualTaskVary={memberVary}
+            onSetManualVary={(id, level) => setMemberVary((prev) => setMemberVaryLevel(prev, id, level))}
             editingTaskId={editingTaskId}
             onEdit={openEditor}
             editor={(task) =>

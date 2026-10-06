@@ -1,4 +1,4 @@
-import { TaskType, type CompoundChild, type Task } from '@oybc/shared';
+import { TaskType, type CompoundChild, type Task, type VaryLevel } from '@oybc/shared';
 import {
   childPatchFromTask,
   overlayCompoundChildrenWithStagedEdits,
@@ -150,4 +150,46 @@ export function groupLinksByCompound(links: readonly CompoundChild[]): Record<st
   for (const l of links) (m[l.compoundTaskId] ??= []).push(l);
   for (const id of Object.keys(m)) m[id].sort((a, b) => a.childIndex - b.childIndex);
   return m;
+}
+
+/** Returns a copy of `memberVary` with `level` set for `taskId`; level 0 removes the key. */
+export function setMemberVaryLevel(
+  memberVary: Record<string, VaryLevel>,
+  taskId: string,
+  level: VaryLevel,
+): Record<string, VaryLevel> {
+  const next = { ...memberVary };
+  if (level === 0) delete next[taskId];
+  else next[taskId] = level;
+  return next;
+}
+
+/** Returns `memberVary` without `taskId` (a removed row's dice is dropped). */
+export function dropMemberVary(
+  memberVary: Record<string, VaryLevel>,
+  taskId: string,
+): Record<string, VaryLevel> {
+  if (!(taskId in memberVary)) return memberVary;
+  const next = { ...memberVary };
+  delete next[taskId];
+  return next;
+}
+
+/**
+ * `memberVary` restricted to the rows being saved — a dice left behind by a
+ * task that is no longer a member never reaches the store (iOS twin:
+ * `PoolEditorViewModel.save()`'s `memberVary.filter { ids.contains($0.key) }`).
+ *
+ * @param memberVary - The editor's draft map.
+ * @param taskIds - The pool's task ids at Save.
+ * @returns A new map carrying only entries for `taskIds` (input untouched).
+ */
+export function pruneMemberVaryToMembers(
+  memberVary: Record<string, VaryLevel>,
+  taskIds: readonly string[],
+): Record<string, VaryLevel> {
+  const kept = new Set(taskIds);
+  const next: Record<string, VaryLevel> = {};
+  for (const [id, level] of Object.entries(memberVary)) if (kept.has(id)) next[id] = level;
+  return next;
 }

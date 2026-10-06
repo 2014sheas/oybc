@@ -35,8 +35,25 @@ describe('PoolSchema', () => {
   });
 
   it('round-trips through parse', () => {
-    const input = validPool();
+    const input = validPool({ memberVary: { [uuid(1)]: 2 } });
     expect(PoolSchema.parse(input)).toEqual(input);
+  });
+
+  // Pool-level default dice (2026-10-06, docs/BOARD_SOURCES.md §Member rules
+  // → Pool-level defaults): a doc from a client that predates the field
+  // must read as an EMPTY map, so every reader sees the same shape.
+  it('defaults a missing memberVary to {} (pre-feature doc)', () => {
+    const input = validPool();
+    expect('memberVary' in input).toBe(false);
+    expect(PoolSchema.parse(input)).toEqual({ ...input, memberVary: {} });
+  });
+
+  it('accepts every VaryLevel in memberVary and rejects anything else', () => {
+    for (const level of [0, 1, 2]) {
+      expect(() => PoolSchema.parse(validPool({ memberVary: { [uuid(1)]: level } }))).not.toThrow();
+    }
+    expect(() => PoolSchema.parse(validPool({ memberVary: { [uuid(1)]: 3 } }))).toThrow();
+    expect(() => PoolSchema.parse(validPool({ memberVary: { 'not-a-uuid': 1 } }))).toThrow();
   });
 
   it('accepts an empty taskIds array (created empty, filled later)', () => {
@@ -89,6 +106,13 @@ describe('CreatePoolInputSchema', () => {
     ).toThrow();
   });
 
+  it('accepts an optional memberVary map', () => {
+    expect(() =>
+      CreatePoolInputSchema.parse({ name: 'A', taskIds: [uuid(1)], memberVary: { [uuid(1)]: 1 } }),
+    ).not.toThrow();
+    expect(CreatePoolInputSchema.parse({ name: 'A', taskIds: [] })).not.toHaveProperty('memberVary');
+  });
+
   it('rejects duplicate taskIds', () => {
     expect(() =>
       CreatePoolInputSchema.parse({
@@ -114,6 +138,11 @@ describe('UpdatePoolInputSchema', () => {
 
   it('accepts an empty patch (no-op)', () => {
     expect(() => UpdatePoolInputSchema.parse({})).not.toThrow();
+  });
+
+  it('accepts a memberVary-only update and rejects a bad level', () => {
+    expect(() => UpdatePoolInputSchema.parse({ memberVary: { [uuid(1)]: 2 } })).not.toThrow();
+    expect(() => UpdatePoolInputSchema.parse({ memberVary: { [uuid(1)]: 5 } })).toThrow();
   });
 
   it('rejects duplicates in a taskIds update', () => {
