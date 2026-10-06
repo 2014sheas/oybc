@@ -129,7 +129,7 @@ export function parseGoal(goalStr: string): number | null {
 /**
  * The blocking message for the current sheet state, or `null` when Done may
  * proceed. Simple needs a title; Counting needs a positive goal + a unit
- * (title optional); Compound = `validatePatch` (title, ≥2 sub-tasks, counting
+ * (title optional); Compound = `validatePatch` (title, ≥1 sub-task, counting
  * sub-task goal/unit, M_OF_N threshold). The DB-backed link guard runs at
  * Done (`compoundLinkProblemForPatch`) and again at Save.
  *

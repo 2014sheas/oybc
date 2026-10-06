@@ -232,10 +232,11 @@ struct RisoCompoundFieldsView: View {
     }
 
     /// Gates the "Add to board ✦" button — title must be non-empty and at
-    /// least 2 sub-tasks must be present.
+    /// least 1 sub-task must be present (one is enough since 2026-10-06;
+    /// zero stays blocked).
     private var canSubmitCompound: Bool {
         !compoundTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
-        compoundSubs.count >= 2
+        compoundSubs.count >= 1
     }
 
     /// Autocomplete matches — up to 3 non-compound library tasks whose title
@@ -254,10 +255,9 @@ struct RisoCompoundFieldsView: View {
     }
 
     /// The effective threshold for "At least N", clamped to the valid stored
-    /// range via the shared `clampCompoundThreshold` (used at persist, line
-    /// ~610). "At least N" is only selectable at ≥2 sub-tasks, so this matches
-    /// the old `max(2, …)` ceiling for every reachable state while staying
-    /// byte-identical to web's stored value.
+    /// range `[1, max(1, subCount)]` via the shared `clampCompoundThreshold`
+    /// (used at persist) — a single sub-task yields threshold 1, byte-identical
+    /// to web's stored value.
     private var effectiveThreshold: Int {
         CompoundEvaluation.clampCompoundThreshold(compoundThreshold, childCount: compoundSubs.count)
     }
@@ -395,9 +395,9 @@ struct RisoCompoundFieldsView: View {
                 }
             }
 
-            // "A compound task needs at least two sub-tasks." warning (same copy as TaskEditPatch validation)
-            if compoundSubs.count < 2 {
-                Text("A compound task needs at least two sub-tasks.")
+            // "A compound task needs a sub-task." warning (same copy as TaskEditPatch validation)
+            if compoundSubs.count < 1 {
+                Text("A compound task needs a sub-task.")
                     .font(.risoBody(11, .semibold))
                     .foregroundStyle(Color.risoRed)
             }

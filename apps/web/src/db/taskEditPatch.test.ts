@@ -188,20 +188,25 @@ describe('taskEditPatch — compound validation', () => {
     expect(validatePatch(p, TaskType.COMPOUND)).toBe('A title is required.');
   });
 
-  it('needs two sub-tasks', () => {
+  it('needs a sub-task (zero blocks)', () => {
+    const p = compoundPatch([]);
+    expect(validatePatch(p, TaskType.COMPOUND)).toBe('A compound task needs a sub-task.');
+  });
+
+  it('a single sub-task is valid (one is enough, 2026-10-06)', () => {
     const p = compoundPatch([simpleStep('only', 'a')]);
-    expect(validatePatch(p, TaskType.COMPOUND)).toBe('A compound task needs at least two sub-tasks.');
+    expect(validatePatch(p, TaskType.COMPOUND)).toBeNull();
   });
 
   it('blank-titled sub-tasks do not count', () => {
-    const p = compoundPatch([simpleStep('A', 'a'), simpleStep('   ', 'b'), simpleStep('', 'c')]);
-    expect(validatePatch(p, TaskType.COMPOUND)).toBe('A compound task needs at least two sub-tasks.');
+    const p = compoundPatch([simpleStep('   ', 'b'), simpleStep('', 'c')]);
+    expect(validatePatch(p, TaskType.COMPOUND)).toBe('A compound task needs a sub-task.');
   });
 
   it('deleted sub-tasks do not count', () => {
     const deleted = { ...simpleStep('B', 'b'), markedDeleted: true };
-    const p = compoundPatch([simpleStep('A', 'a'), deleted]);
-    expect(validatePatch(p, TaskType.COMPOUND)).toBe('A compound task needs at least two sub-tasks.');
+    const p = compoundPatch([deleted]);
+    expect(validatePatch(p, TaskType.COMPOUND)).toBe('A compound task needs a sub-task.');
   });
 
   it('two normal sub-tasks is valid', () => {

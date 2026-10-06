@@ -448,10 +448,11 @@ test.describe('Squares editor (l) — Edit task… turns a plain square into a c
 
     const sheet = page.getByRole('dialog', { name: 'Edit task' });
     await sheet.getByRole('button', { name: 'Compound', exact: true }).click();
-    // One sub-task is not enough: Done stays disabled.
+    // Zero sub-tasks: Done stays disabled. One is enough (2026-10-06).
+    await expect(sheet.getByRole('button', { name: 'Done' })).toBeDisabled();
     await sheet.getByLabel('New normal task title').fill('Stretch');
     await sheet.getByLabel('New normal task title').press('Enter');
-    await expect(sheet.getByRole('button', { name: 'Done' })).toBeDisabled();
+    await expect(sheet.getByRole('button', { name: 'Done' })).toBeEnabled();
     await sheet.getByLabel('New normal task title').fill('Journal');
     await sheet.getByLabel('New normal task title').press('Enter');
     await expect(sheet.getByLabel('Sub-task 2 title')).toHaveValue('Journal');
@@ -471,9 +472,12 @@ test.describe('Squares editor (l) — Edit task… turns a plain square into a c
     await page.getByRole('button', { name: /^Morning routine$/ }).click();
     await page.getByRole('button', { name: 'Edit task…' }).click();
     const reopened = page.getByRole('dialog', { name: 'Edit task' });
-    await expect(reopened.getByRole('button', { name: 'Counting', exact: true })).toHaveCount(0);
     await expect(reopened.getByLabel('Sub-task 1 title')).toHaveValue('Stretch');
     await expect(reopened.getByLabel('Sub-task 2 title')).toHaveValue('Journal');
+    // The type selector is gone (no "Simple" option) — the compound editor's own
+    // "New sub: Normal / Counting" chips are NOT the type selector, so don't
+    // assert on "Counting" here: that count is 0 only until the editor mounts.
+    await expect(reopened.getByRole('button', { name: 'Simple', exact: true })).toHaveCount(0);
   });
   test('stage Compound → reopen → switch back to Simple → Done → still Simple after Save', async ({ page }) => {
     await page.goto(`/boards/${BOARD_ID}?__oybc_test_bypass=1`);

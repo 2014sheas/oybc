@@ -183,7 +183,7 @@ The evaluator recurses naturally: evaluating "Wellness routine" requires evaluat
 
 ### Constraints
 
-- Minimum 2 children to save a compound.
+- Minimum 1 child to save a compound (2026-10-06; a single-sub-task compound is allowed — owner ask). Zero stays blocked.
 - No duplicate children (same `childTaskId` cannot appear twice).
 - No circular references (a compound cannot transitively reference itself). Validated at creation.
 - Soft-deleting a child Task cascades a soft-delete to its `compound_children` rows.
@@ -359,7 +359,7 @@ The unification collapsed these at the model level; the physical SQLite tables (
 - `title` required.
 - `operator` required.
 - `threshold` required iff `operator='M_OF_N'`; integer in `[1, childCount]` (clamped on child changes).
-- Minimum 2 children at save time.
+- Minimum 1 child at save time (2026-10-06; a single-sub-task compound is allowed — owner ask).
 - No duplicate `childTaskId` across `compound_children` rows for the same `compoundTaskId`.
 - No circular references — adding a child must not produce a cycle. Validated at creation by walking the descendant tree.
 

@@ -221,20 +221,26 @@ final class TaskEditPatchTests: XCTestCase {
         XCTAssertEqual(p.validate(type: .compound), "A title is required.")
     }
 
-    func test_compound_needs_two_steps() {
+    func test_compound_needs_a_step_zeroBlocks() {
+        let p = compoundPatch([])
+        XCTAssertEqual(p.validate(type: .compound), "A compound task needs a sub-task.")
+    }
+
+    func test_compound_single_step_valid() {
+        // One sub-task is enough (2026-10-06, owner ask).
         let p = compoundPatch([simpleStep("only", id: "a")])
-        XCTAssertEqual(p.validate(type: .compound), "A compound task needs at least two sub-tasks.")
+        XCTAssertNil(p.validate(type: .compound))
     }
 
     func test_compound_blank_titled_steps_dont_count() {
-        let p = compoundPatch([simpleStep("A", id: "a"), simpleStep("   ", id: "b"), simpleStep("", id: "c")])
-        XCTAssertEqual(p.validate(type: .compound), "A compound task needs at least two sub-tasks.")
+        let p = compoundPatch([simpleStep("   ", id: "b"), simpleStep("", id: "c")])
+        XCTAssertEqual(p.validate(type: .compound), "A compound task needs a sub-task.")
     }
 
     func test_compound_deleted_steps_dont_count() {
         var deleted = simpleStep("B", id: "b"); deleted.markedDeleted = true
-        let p = compoundPatch([simpleStep("A", id: "a"), deleted])
-        XCTAssertEqual(p.validate(type: .compound), "A compound task needs at least two sub-tasks.")
+        let p = compoundPatch([deleted])
+        XCTAssertEqual(p.validate(type: .compound), "A compound task needs a sub-task.")
     }
 
     func test_compound_two_simple_steps_valid() {

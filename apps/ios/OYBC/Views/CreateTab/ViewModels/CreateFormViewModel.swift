@@ -583,7 +583,8 @@ final class CreateFormViewModel {
     ) {
         let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedTitle.isEmpty else { return }
-        guard subs.count >= 2 else { return }
+        // One sub-task is enough (2026-10-06, owner ask); zero stays blocked.
+        guard subs.count >= 1 else { return }
 
         isSubmitting = true
         errorMessage = nil

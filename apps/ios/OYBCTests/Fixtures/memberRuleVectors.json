@@ -340,7 +340,8 @@
     "compoundSummary": [
       { "name": "one square with the dice off then 1 square, not varying", "split": false, "partIds": ["p1", "p2", "p3"], "excludedPartIds": [], "level": 0, "expected": { "text": "1 square", "varying": false } },
       { "name": "one square with the dice lit then still 1 square but varying", "split": false, "partIds": ["p1", "p2"], "excludedPartIds": [], "level": 2, "expected": { "text": "1 square", "varying": true } },
-      { "name": "split up then the included-part count, and never varying because the dice moved onto the parts", "split": true, "partIds": ["p1", "p2", "p3"], "excludedPartIds": ["p2"], "level": 2, "expected": { "text": "2 squares", "varying": false } }
+      { "name": "split up then the included-part count, and never varying because the dice moved onto the parts", "split": true, "partIds": ["p1", "p2", "p3"], "excludedPartIds": ["p2"], "level": 2, "expected": { "text": "2 squares", "varying": false } },
+      { "name": "split up over a single-sub-task compound (allowed since 2026-10-06) then the singular 1 square", "split": true, "partIds": ["p1"], "excludedPartIds": [], "level": 0, "expected": { "text": "1 square", "varying": false } }
     ],
     "remainingTarget": [
       { "name": "35 goal minus 12 windows already run then 23", "goal": 35, "windowCount": 12, "expected": 23 },

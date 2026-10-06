@@ -275,7 +275,8 @@ export function validatePatch(patch: TaskEditPatch, type: TaskType): string | nu
     case TaskType.COMPOUND: {
       if (trimmedTitle.length === 0) return 'A title is required.';
       const kept = liveChildren(patch);
-      if (kept.length < 2) return 'A compound task needs at least two sub-tasks.';
+      // One sub-task is enough (2026-10-06, owner ask); zero stays blocked.
+      if (kept.length < 1) return 'A compound task needs a sub-task.';
       for (const child of kept) {
         if (!child.isCounting) continue;
         const g = parseInt(child.goal.trim(), 10);

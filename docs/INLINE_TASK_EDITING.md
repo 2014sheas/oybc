@@ -176,7 +176,7 @@ they share the transaction. Version-bump every mutated row.
 - empty title → "A title is required."
 - counting, goal ≤ 0 or unparsed → "Set a goal above zero."
 - counting, empty unit → "Add a unit, like km or pages."
-- compound with < 2 non-empty sub-tasks → "A compound task needs at least two sub-tasks." (same copy on both platforms and in the wizard's inline compound builder)
+- compound with no non-empty sub-task → "A compound task needs a sub-task." (same copy on both platforms and in the wizard's inline compound builder; one sub-task is enough since 2026-10-06)
 - progress step missing goal/unit → `Progress step "Stretch" needs a goal and a unit.`
 - Blank-titled steps are dropped on save.
 

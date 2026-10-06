@@ -116,12 +116,13 @@ export function BuildStep({
     return { readyCount: ready };
   }, [subtasks]);
 
-  const hasMinimum = subtasks.length >= 2;
-  const allReady = readyCount === subtasks.length && readyCount >= 2;
+  // One sub-task is enough (2026-10-06, owner ask); zero stays blocked.
+  const hasMinimum = subtasks.length >= 1;
+  const allReady = readyCount === subtasks.length && readyCount >= 1;
   const canAdvance = hasMinimum && allReady;
 
   const statusText: string = !hasMinimum
-    ? `Add at least 2 subtasks (${subtasks.length} so far).`
+    ? 'Add a subtask.'
     : !allReady
       ? `${subtasks.length - readyCount} card${subtasks.length - readyCount === 1 ? '' : 's'} still need attention.`
       : `${readyCount} subtask${readyCount === 1 ? '' : 's'} ready.`;
@@ -190,7 +191,7 @@ export function BuildStep({
     <div className={styles.container}>
       {/* Prominent status banner — was a small top-right caption before,
        *  easy to miss. Now tied to canAdvance with a tinted background
-       *  + icon so the gate message ("Add at least 2 subtasks") is
+       *  + icon so the gate message ("Add a subtask.") is
        *  impossible to overlook. */}
       <div
         className={canAdvance ? styles.statusBannerReady : styles.statusBannerWait}

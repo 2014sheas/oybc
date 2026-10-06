@@ -194,7 +194,7 @@ final class BoardEditCompoundTests: XCTestCase {
         let vm = loadedVM(db)
         var structure = TaskEditPatch(title: "Solo")
         structure.operatorType = .and
-        structure.children = [newSub("n1", "Only one")]
+        structure.children = [] // zero sub-tasks: the only remaining structural block
         vm.handleEditTaskOverride(taskId: "tn", patch: patch("Solo", .compound, compound: structure))
         vm.handleEditTaskOverride(taskId: "other", patch: patch("Renamed other", .normal))
 
@@ -202,7 +202,7 @@ final class BoardEditCompoundTests: XCTestCase {
         guard case .saveFailed(let message) = try XCTUnwrap(vm.editEvent?.outcome) else {
             return XCTFail("expected .saveFailed")
         }
-        XCTAssertTrue(message.contains("at least two"), message)
+        XCTAssertTrue(message.contains("needs a sub-task"), message)
         XCTAssertEqual(dbTask(db, "tn")?.type, .normal)
         XCTAssertEqual(dbTask(db, "other")?.title, "Task other", "the other staged edit did not commit")
         XCTAssertTrue(try db.fetchAllCompoundChildren().isEmpty)

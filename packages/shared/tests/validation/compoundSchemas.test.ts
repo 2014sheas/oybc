@@ -421,11 +421,29 @@ describe('CreateCompoundTaskInputSchema', () => {
     expect(result.success).toBe(false);
   });
 
-  it('invalid: only 1 child → fails', () => {
+  it('valid: a single child → passes (one sub-task is enough, 2026-10-06)', () => {
     const result = CreateCompoundTaskInputSchema.safeParse(
       validCreateCompoundTaskInput({
         children: [{ childTaskId: '00000000-0000-0000-0000-000000000001' }],
       })
+    );
+    expect(result.success).toBe(true);
+  });
+
+  it('valid: M_OF_N with threshold=1 over a single child → passes', () => {
+    const result = CreateCompoundTaskInputSchema.safeParse(
+      validCreateCompoundTaskInput({
+        operator: OperatorType.M_OF_N,
+        threshold: 1,
+        children: [{ childTaskId: '00000000-0000-0000-0000-000000000001' }],
+      })
+    );
+    expect(result.success).toBe(true);
+  });
+
+  it('invalid: zero children → fails', () => {
+    const result = CreateCompoundTaskInputSchema.safeParse(
+      validCreateCompoundTaskInput({ children: [] })
     );
     expect(result.success).toBe(false);
   });

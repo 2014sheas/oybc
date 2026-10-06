@@ -278,17 +278,29 @@ describe('editCompoundStructure — standalone Task Detail save', () => {
     expect(cTasks[0].userId).toBe(USER);
   });
 
-  it('refuses fewer than two sub-tasks with the unified message and writes nothing (Review Focus 3)', async () => {
+  it('keeps a single sub-task: the other link is tombstoned, one live row remains (one is enough, 2026-10-06)', async () => {
+    const oneChild = structureFor({ title: 'P', operator: OperatorType.AND }, [childPatchFromTask(A)]);
+    await editCompoundStructure(P_ID, oneChild);
+    const links = await db.compoundChildren.where('compoundTaskId').equals(P_ID).toArray();
+    const live = links.filter((l) => !l.isDeleted);
+    expect(live).toHaveLength(1);
+    expect(live[0].childTaskId).toBe(A_ID);
+    expect(live[0].childIndex).toBe(0);
+    expect(links.find((l) => l.childTaskId === B_ID)?.isDeleted).toBe(true);
+    expect((await db.tasks.get(B_ID))?.isDeleted).toBe(false);
+  });
+
+  it('refuses zero sub-tasks with the unified message and writes nothing (Review Focus 3)', async () => {
     const before = {
       p: await db.tasks.get(P_ID),
       links: await db.compoundChildren.toArray(),
       x: await db.boards.get(X_ID),
       q: await db.syncQueue.count(),
     };
-    const oneChild = structureFor({ title: 'P', operator: OperatorType.AND }, [childPatchFromTask(A)]);
+    const oneChild = structureFor({ title: 'P', operator: OperatorType.AND }, []);
     await expect(editCompoundStructure(P_ID, oneChild)).rejects.toBeInstanceOf(CompoundEditValidationError);
     await expect(editCompoundStructure(P_ID, oneChild)).rejects.toThrow(
-      'A compound task needs at least two sub-tasks.',
+      'A compound task needs a sub-task.',
     );
     expect(await db.tasks.get(P_ID)).toEqual(before.p);
     expect(await db.compoundChildren.toArray()).toEqual(before.links);

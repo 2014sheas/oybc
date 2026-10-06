@@ -449,7 +449,23 @@ describe('commitSquareEdits — type switches and compound overrides', () => {
     expect(row.version).toBe(2);
   });
 
-  it('an invalid compound (1 child) rejects the Save and NOTHING was written', async () => {
+  it('Simple → Compound with ONE new child saves: one child task + one link (one sub-task is enough, 2026-10-06)', async () => {
+    await seedPlaced(seedTask('task-a'));
+    await commitSquareEdits(
+      baseInput({
+        cells: [cell({ cellId: 'bt-a', taskId: 'task-a', row: 0, col: 0 })],
+        taskOverrides: new Map([['task-a', { type: TaskType.COMPOUND, title: 'Combo', compound: compoundPatch([sub('Only one')]) }]]),
+      }),
+    );
+    expect(await db.tasks.get('task-a')).toMatchObject({ type: TaskType.COMPOUND, title: 'Combo', version: 2 });
+    const links = await liveLinks('task-a');
+    expect(links).toHaveLength(1);
+    expect(await db.compoundChildren.count()).toBe(1);
+    expect((await db.tasks.get(links[0].childTaskId))?.title).toBe('Only one');
+    expect(await db.tasks.count()).toBe(2);
+  });
+
+  it('an invalid compound (0 children) rejects the Save and NOTHING was written', async () => {
     await seedPlaced(seedTask('task-a'));
     await db.tasks.add(seedTask('task-b'));
     await db.boardTasks.add(seedPlacement('bt-b', 'task-b', 0, 1));
@@ -460,10 +476,10 @@ describe('commitSquareEdits — type switches and compound overrides', () => {
           // an earlier step (a removal) would have written before 7b throws
           removedBoardTaskIds: ['bt-b'],
           cells: [cell({ cellId: 'bt-a', taskId: 'task-a', row: 0, col: 0 })],
-          taskOverrides: new Map([['task-a', { type: TaskType.COMPOUND, compound: compoundPatch([sub('Only one')]) }]]),
+          taskOverrides: new Map([['task-a', { type: TaskType.COMPOUND, compound: compoundPatch([]) }]]),
         }),
       ),
-    ).rejects.toThrow(/at least two sub-tasks/);
+    ).rejects.toThrow(/needs a sub-task/);
 
     expect((await db.tasks.get('task-a'))).toMatchObject({ type: TaskType.NORMAL, version: 1 });
     expect((await db.boardTasks.get('bt-b'))?.isDeleted).toBe(false);
