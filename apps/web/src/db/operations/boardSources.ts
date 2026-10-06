@@ -10,6 +10,7 @@ import {
   isSourceSupplyTask,
   isWindowStampedDerived,
   poolSourceSupplyById,
+  withEffectiveMemberRules,
   pickOpenSeriesInstance,
   availableSupplyIds,
   resolveDerivedCounterWindowState,
@@ -472,7 +473,8 @@ export async function fetchTemplateSupplyResolution(
     for (const source of entry.sources) {
       if (source.kind === 'pool') {
         supplies.push({
-          source,
+          // Same effective rules the spawn reads (pool-level default dice).
+          source: withEffectiveMemberRules(source, poolsById[source.sourceId]),
           supplyTaskIds: poolSourceSupplyById(source.sourceId, poolsById, tasksById),
         });
         continue;

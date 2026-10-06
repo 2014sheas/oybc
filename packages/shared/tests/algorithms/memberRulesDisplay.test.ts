@@ -23,13 +23,21 @@ import {
   seededTargetsForSource,
   countingSummary,
   compoundSummary,
+  prunePoolMemberVary,
+  shouldKeepVaryOff,
+  seedMemberRulesFromPool,
+  effectiveMemberRules,
+  withEffectiveMemberRules,
 } from '../../src/algorithms/memberRulesDisplay';
 import type { BoardWindow, PlanMode } from '../../src/algorithms/memberRules';
 import type { VaryLevel, BoardSource, BoardSourceMemberRule, BoardSourcePartRule } from '../../src/types';
 
-const V: any = JSON.parse(
+const FIXTURE: any = JSON.parse(
   fs.readFileSync(path.join(__dirname, '..', 'fixtures', 'memberRuleVectors.json'), 'utf8')
-).display;
+);
+const V: any = FIXTURE.display;
+/** The `poolDefaults` section — pool-level default dice (2026-10-06). */
+const PD: any = FIXTURE.poolDefaults;
 
 /** Wraps a bare timeframe string into a `BoardWindow` — startDate/endDate null, per the fixture's `windows` note. */
 const win = (tf: string): BoardWindow => ({ timeframe: tf as Timeframe, startDate: null, endDate: null });
@@ -201,9 +209,19 @@ describe('withMemberRule', () => {
   it.each(V.withMemberRule as any[])('$name', (v: any) => {
     let source = src(v.startMemberRules);
     for (const step of v.steps) {
-      source = withMemberRule(source, step.taskId, buildPatch<BoardSourceMemberRule>(step.patch));
+      // `keepVaryOff` (fixture note) rides as the options argument; absent = default pruning.
+      source = withMemberRule(source, step.taskId, buildPatch<BoardSourceMemberRule>(step.patch), {
+        keepVaryOff: step.keepVaryOff === true,
+      });
     }
     expectMemberRules(source, v.expectedMemberRules);
+  });
+
+  it('the fixture pins both pruning modes', () => {
+    const modes = new Set(
+      (V.withMemberRule as any[]).flatMap((v) => v.steps.map((s: any) => s.keepVaryOff === true)),
+    );
+    expect(modes).toEqual(new Set([true, false]));
   });
 });
 
@@ -237,5 +255,72 @@ describe('withMemberRule / withPartRule immutability', () => {
     }).not.toThrow();
 
     expect(original).toEqual(snapshot);
+  });
+});
+
+// ===== Pool-level defaults (docs/BOARD_SOURCES.md §Member rules → Pool-level defaults) =====
+
+/** The fixture's `pool` shape → the `Pick<Pool, …>` the helpers read; a missing `memberVary` key stays absent. */
+const poolOf = (p: { id: string; taskIds: string[]; memberVary?: Record<string, VaryLevel> } | null) =>
+  p === null ? undefined : { id: p.id, taskIds: p.taskIds, ...(p.memberVary ? { memberVary: p.memberVary } : {}) };
+
+/** The fixture's `source` shape → a full `BoardSource` (`memberRules` omitted when null). */
+const sourceOf = (s: {
+  sourceId: string;
+  kind: 'pool' | 'board';
+  memberRules: Record<string, BoardSourceMemberRule> | null;
+}): BoardSource => ({
+  sourceId: s.sourceId,
+  kind: s.kind,
+  min: 0,
+  max: null,
+  excludedTaskIds: [],
+  filter: 'all',
+  ...(s.memberRules ? { memberRules: s.memberRules } : {}),
+});
+
+describe('prunePoolMemberVary', () => {
+  it.each(PD.prunePoolMemberVary as any[])('$name', (v: any) => {
+    expect(prunePoolMemberVary(v.memberVary ?? undefined)).toEqual(v.expected);
+  });
+});
+
+describe('shouldKeepVaryOff', () => {
+  it.each(PD.shouldKeepVaryOff as any[])('$name', (v: any) => {
+    expect(shouldKeepVaryOff(poolOf(v.pool), v.taskId)).toBe(v.expected);
+  });
+});
+
+describe('seedMemberRulesFromPool', () => {
+  it.each(PD.seedMemberRulesFromPool as any[])('$name', (v: any) => {
+    expect(seedMemberRulesFromPool(poolOf(v.pool)!)).toEqual(v.expected);
+  });
+});
+
+describe('effectiveMemberRules / withEffectiveMemberRules', () => {
+  it.each(PD.effectiveMemberRules as any[])('$name', (v: any) => {
+    const source = deepFreeze(sourceOf(v.source));
+    const pool = deepFreeze(poolOf(v.pool));
+    const snapshot = JSON.parse(JSON.stringify({ source, pool: pool ?? null }));
+
+    expect(effectiveMemberRules(source, pool)).toEqual(v.expected);
+
+    const result = withEffectiveMemberRules(source, pool);
+    if (v.unchangedSource) {
+      expect(result).toBe(source);
+    } else {
+      expect(result).not.toBe(source);
+      expect(result.memberRules).toEqual(v.expected);
+      // Every other field rides along untouched.
+      expect({ ...result, memberRules: undefined }).toEqual({ ...source, memberRules: undefined });
+    }
+    // Neither helper mutates its inputs (both are frozen, so a write would
+    // throw in strict mode — the snapshot comparison is the belt to that brace).
+    expect(JSON.parse(JSON.stringify({ source, pool: pool ?? null }))).toEqual(snapshot);
+  });
+
+  it('the fixture pins both outcomes of unchangedSource', () => {
+    const flags = new Set((PD.effectiveMemberRules as any[]).map((v) => v.unchangedSource));
+    expect(flags).toEqual(new Set([true, false]));
   });
 });

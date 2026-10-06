@@ -7,6 +7,7 @@ import {
   computeBoardStatsUpdate,
   isGoalLessCounter,
   poolSourceSupplyById,
+  withEffectiveMemberRules,
   availableSupplyIds,
   resolveSourceAvailable,
   type BoardSource,
@@ -412,7 +413,9 @@ async function mintWizardDerivedRows(
   for (const source of sources) {
     if (source.kind === 'pool') {
       rawSupplies.push({
-        source,
+        // Pool-level default dice (2026-10-06) — the fallback for a member
+        // the Sources sheet never seeded (pulled before the pool gained it).
+        source: withEffectiveMemberRules(source, poolsById[source.sourceId]),
         supplyTaskIds: poolSourceSupplyById(source.sourceId, poolsById, tasksById),
       });
       continue;

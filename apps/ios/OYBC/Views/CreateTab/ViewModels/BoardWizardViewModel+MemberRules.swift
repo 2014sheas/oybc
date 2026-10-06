@@ -191,7 +191,10 @@ extension BoardWizardViewModel {
             sources,
             sourceId: sourceId,
             taskId: taskId,
-            patch: BoardSources.MemberRulePatch(vary: .set(level))
+            patch: BoardSources.MemberRulePatch(vary: .set(level)),
+            // A member with a pool default stores an explicit `.off` (the
+            // per-board override) instead of pruning to "inherit".
+            keepVaryOff: supplyInfoBySourceId[sourceId]?.poolDefaultVary[taskId] != nil
         )
     }
 

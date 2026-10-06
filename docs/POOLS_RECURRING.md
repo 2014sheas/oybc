@@ -38,6 +38,9 @@ favor of one "Board settings" page.
 Pool {
   id, userId, name,            // user-named ("Morning Kickstart")
   taskIds: string[],           // REFERENCES into the task library, never copies
+  memberVary?: Record<taskId, VaryLevel>,  // pool-level default dice (2026-10-06); only 1 | 2 stored,
+                               // ops always write it ({} when empty); absent ≡ {}. GRDB v38.
+                               // See docs/BOARD_SOURCES.md §Member rules → Pool-level defaults.
   createdAt / updatedAt / lastSyncedAt? / version / isDeleted / deletedAt
 }
 ```

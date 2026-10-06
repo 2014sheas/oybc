@@ -227,3 +227,49 @@ describe('savePoolFromSheet — staged inline edits ride the same transaction', 
     expect(await db.syncQueue.count()).toBe(0);
   });
 });
+
+describe('savePoolFromSheet - memberVary (pool-level default dice)', () => {
+  it('create mode stores the editor map', async () => {
+    const created = await savePoolFromSheet('user-1', undefined, {
+      name: 'P',
+      taskIds: ['t1'],
+      memberVary: { t1: 2 },
+    });
+    expect(created.memberVary).toEqual({ t1: 2 });
+    expect((await fetchPool(created.id))?.memberVary).toEqual({ t1: 2 });
+  });
+
+  it('edit mode with the editor map replaces the stored dice (0 pruned)', async () => {
+    const created = await savePoolFromSheet('user-1', undefined, {
+      name: 'P',
+      taskIds: ['t1', 't2'],
+      memberVary: { t1: 2, t2: 1 },
+    });
+    const saved = await savePoolFromSheet('user-1', created, {
+      name: 'P',
+      taskIds: ['t1', 't2'],
+      memberVary: { t1: 1 },
+    });
+    expect(saved.memberVary).toEqual({ t1: 1 });
+    const cleared = await savePoolFromSheet('user-1', saved, {
+      name: 'P',
+      taskIds: ['t1', 't2'],
+      memberVary: {},
+    });
+    expect(cleared.memberVary).toEqual({});
+  });
+
+  it('edit mode that passes the unchanged map does not wipe the stored dice', async () => {
+    const created = await savePoolFromSheet('user-1', undefined, {
+      name: 'P',
+      taskIds: ['t1'],
+      memberVary: { t1: 2 },
+    });
+    const saved = await savePoolFromSheet('user-1', created, {
+      name: 'Renamed',
+      taskIds: ['t1'],
+      memberVary: created.memberVary,
+    });
+    expect(saved.memberVary).toEqual({ t1: 2 });
+  });
+});

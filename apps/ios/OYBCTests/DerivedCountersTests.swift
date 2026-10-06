@@ -924,4 +924,133 @@ final class DerivedCountersTests: XCTestCase {
         }
         XCTAssertEqual(placements.map { $0.taskId }, [rootId])
     }
+
+    // MARK: - 10. Pool-level default dice (docs/BOARD_SOURCES.md §Member rules → Pool-level defaults, 2026-10-06)
+
+    private let dicePoolId = "pool-dice"
+
+    /// Seeds the counting root (goal 10) plus three normal fillers inside one
+    /// pool — 4 members for the 2×2 NONE template's 4 cells — with the given
+    /// pool-level default dice.
+    private func seedDicePool(_ database: AppDatabase, memberVary: [String: VaryLevel]) throws {
+        try database.write { db in
+            try self.makeCountingTask(id: self.rootId, maxCount: 10, currentCount: 0).save(db)
+            for id in ["pf1", "pf2", "pf3"] { try self.makeNormalTask(id: id).save(db) }
+            try Pool(
+                id: self.dicePoolId, userId: self.userId, name: "Dice pool",
+                taskIds: [self.rootId, "pf1", "pf2", "pf3"], memberVary: memberVary,
+                createdAt: self.now, updatedAt: self.now
+            ).save(db)
+        }
+    }
+
+    private func spawnedPlacements(_ database: AppDatabase) throws -> [String] {
+        try database.read { db in
+            try BoardTask.filter(Column("boardId") == "spawned-1" && Column("isDeleted") == false)
+                .fetchAll(db)
+                .map { $0.taskId }
+        }
+    }
+
+    /// A pool member with no stored rule inherits the pool's default at
+    /// spawn (`withEffectiveMemberRules` in the supply builder): the spawned
+    /// copy is a ROLL inside `varyRange`, not the root placed as-is. Twin of
+    /// web `recurringBoardSpawnMix.test.ts` "pool-level default dice".
+    func test_spawn_poolDefaultDice_mintsARolledTargetInsideVaryRange() throws {
+        let database = try makeDb()
+        try seedDicePool(database, memberVary: [rootId: .lot])
+        let template = try seedTemplate(
+            database, sources: [BoardSource(sourceId: dicePoolId, kind: .pool)], manualTaskIds: []
+        )
+
+        let outcome = try spawn(database, template)
+        guard case .spawned = outcome else { return XCTFail("expected a spawn, got \(outcome)") }
+
+        let derivedId = BoardSources.derivedTaskId(boardId: "spawned-1", rootTaskId: rootId)
+        let derived = try XCTUnwrap(try database.read { try Task.fetchOne($0, key: derivedId) })
+        let range = BoardSources.varyRange(t: 10, level: .lot, goal: 10)
+        XCTAssertLessThan(range.lowerBound, range.upperBound, "the range is real, not collapsed")
+        let maxCount = try XCTUnwrap(derived.maxCount)
+        XCTAssertTrue(range.contains(maxCount),
+                      "rolled target \(maxCount) must land inside \(range.lowerBound)…\(range.upperBound)")
+        XCTAssertEqual(derived.sharedCounterId, rootId)
+
+        let placed = try spawnedPlacements(database)
+        XCTAssertTrue(placed.contains(derivedId))
+        XCTAssertFalse(placed.contains(rootId), "the pool member itself is NOT placed")
+    }
+
+    /// Control: without a pool default (and no rule) the member is placed
+    /// as-is — the mint above happens only because the default arrived.
+    func test_spawn_poolWithoutDefault_placesTheMemberItself() throws {
+        let database = try makeDb()
+        try seedDicePool(database, memberVary: [:])
+        let template = try seedTemplate(
+            database, sources: [BoardSource(sourceId: dicePoolId, kind: .pool)], manualTaskIds: []
+        )
+
+        let outcome = try spawn(database, template)
+        guard case .spawned = outcome else { return XCTFail("expected a spawn, got \(outcome)") }
+
+        let derivedId = BoardSources.derivedTaskId(boardId: "spawned-1", rootTaskId: rootId)
+        XCTAssertNil(try database.read { try Task.fetchOne($0, key: derivedId) })
+        XCTAssertTrue(try spawnedPlacements(database).contains(rootId))
+    }
+
+    /// Seeds the root (goal 10) in a pool with the given default and returns
+    /// the active board whose centre places the root.
+    private func seedPoolCentre(_ database: AppDatabase, memberVary: [String: VaryLevel]) throws -> Board {
+        let board = try seedHandAddedCounter(database)
+        try database.write { db in
+            try Pool(
+                id: self.dicePoolId, userId: self.userId, name: "Dice pool",
+                taskIds: [self.rootId], memberVary: memberVary,
+                createdAt: self.now, updatedAt: self.now
+            ).save(db)
+        }
+        return board
+    }
+
+    /// ONE-OFF persist applies the same fallback. Seeded rng pins the LOW end
+    /// of the range: the pool's `.lot` bottoms at 5. Twin of web
+    /// `wizardBoard.test.ts` "pool-level default dice".
+    func test_saveWizardBoard_poolDefaultDice_appliesWhenTheSourceStoresNoVary() throws {
+        let database = try makeDb()
+        let board = try seedPoolCentre(database, memberVary: [rootId: .lot])
+
+        try database.saveWizardBoard(
+            board: board, boardTasks: [makeCentrePlacement()], pendingTasks: [],
+            isUpdate: false, sources: [BoardSource(sourceId: dicePoolId, kind: .pool)],
+            manualTaskIds: [], now: now, rng: { 0 }
+        )
+
+        let derivedId = BoardSources.derivedTaskId(boardId: boardId, rootTaskId: rootId)
+        let derived = try XCTUnwrap(try database.read { try Task.fetchOne($0, key: derivedId) })
+        XCTAssertEqual(derived.maxCount, BoardSources.varyRange(t: 10, level: .lot, goal: 10).lowerBound)
+        XCTAssertEqual(derived.sharedCounterId, rootId)
+    }
+
+    /// A stored source `vary` ALWAYS wins over the pool default: `.little`
+    /// bottoms at 8, the pool's `.lot` at 5 — told apart by value.
+    func test_saveWizardBoard_poolDefaultDice_aStoredSourceVaryWins() throws {
+        let database = try makeDb()
+        let board = try seedPoolCentre(database, memberVary: [rootId: .lot])
+
+        try database.saveWizardBoard(
+            board: board, boardTasks: [makeCentrePlacement()], pendingTasks: [],
+            isUpdate: false,
+            sources: [BoardSource(
+                sourceId: dicePoolId, kind: .pool, min: 0, max: nil,
+                excludedTaskIds: [], filter: .all,
+                memberRules: [rootId: BoardSourceMemberRule(vary: .little)]
+            )],
+            manualTaskIds: [], now: now, rng: { 0 }
+        )
+
+        let derivedId = BoardSources.derivedTaskId(boardId: boardId, rootTaskId: rootId)
+        let derived = try XCTUnwrap(try database.read { try Task.fetchOne($0, key: derivedId) })
+        let overrideLow = BoardSources.varyRange(t: 10, level: .little, goal: 10).lowerBound
+        XCTAssertNotEqual(overrideLow, BoardSources.varyRange(t: 10, level: .lot, goal: 10).lowerBound)
+        XCTAssertEqual(derived.maxCount, overrideLow)
+    }
 }

@@ -1,4 +1,4 @@
-import type { Pool } from '@oybc/shared';
+import type { Pool, VaryLevel } from '@oybc/shared';
 import { softDeletePool } from '../../db/operations/pools';
 import { savePoolWithStagedEdits } from '../../db/operations/poolSave';
 import type { TaskEditPatch } from '../../db/taskEditPatch';
@@ -11,6 +11,8 @@ export interface PoolEditSheetSaveInput {
    *  the SAME transaction as the membership write — see `savePoolFromSheet`.
    *  Omitted ⇒ none. */
   stagedEdits?: Map<string, TaskEditPatch>;
+  /** The editor's pool-level default dice (task id → level). Omitted ⇒ stored dice kept. */
+  memberVary?: Record<string, VaryLevel>;
 }
 
 /** `PoolSchema.name` bound (`packages/shared/src/validation/schemas.ts`) —
@@ -49,7 +51,12 @@ export async function savePoolFromSheet(
   if (name.length > POOL_NAME_MAX_LENGTH) {
     throw new Error(`Pool name must be ${POOL_NAME_MAX_LENGTH} characters or fewer.`);
   }
-  return savePoolWithStagedEdits(userId, pool, { name, taskIds: input.taskIds, stagedEdits: input.stagedEdits });
+  return savePoolWithStagedEdits(userId, pool, {
+    name,
+    taskIds: input.taskIds,
+    stagedEdits: input.stagedEdits,
+    memberVary: input.memberVary,
+  });
 }
 
 /**

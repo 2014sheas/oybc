@@ -146,7 +146,7 @@ final class RisoPoolsSnapshotTests: XCTestCase {
 
     // MARK: - PoolEditorView (full screen)
 
-    private func editor(existing: Bool, openRow: Bool = false, legacyAchievement: Bool = false) -> some View {
+    private func editor(existing: Bool, openRow: Bool = false, legacyAchievement: Bool = false, dice: Bool = false) -> some View {
         let db = try! AppDatabase.makeTestInstance()
         let library = TaskLibraryViewModel(database: db)
         let tasks = [
@@ -154,15 +154,22 @@ final class RisoPoolsSnapshotTests: XCTestCase {
             SnapshotFixtures.makeTask(id: "t2", title: "Drink 64 oz water", type: .normal),
             SnapshotFixtures.makeTask(id: "t3", title: "Read 30 min", type: .normal),
         ]
-        library.libraryTasks = tasks + (legacyAchievement
+        let allTasks = dice
+            ? tasks + [SnapshotFixtures.makeTask(
+                id: "t4", title: "Run 5 km", type: .counting, action: "Run", unit: "km", maxCount: 5)]
+            : tasks
+        library.libraryTasks = allTasks + (legacyAchievement
             ? [SnapshotFixtures.makeTask(id: "a1", title: "Weekly bingo watcher", type: .achievement)] : [])
-        library.browsableTasks = tasks
+        library.browsableTasks = allTasks
         let existingPool = existing
-            ? pool("p1", "Morning Kickstart", taskIds: legacyAchievement ? ["t1", "a1"] : ["t1", "t2"]) : nil
+            ? pool("p1", "Morning Kickstart",
+                   taskIds: legacyAchievement ? ["t1", "a1"] : (dice ? ["t1", "t4"] : ["t1", "t2"]))
+            : nil
         let vm = PoolEditorViewModel(
             pool: existingPool, userId: SnapshotFixtures.userId, library: library,
             initialTaskIds: existing ? [] : ["t1", "t3"], database: db
         )
+        if dice { vm.setMemberVary(taskId: "t4", level: .little) }
         if openRow { vm.openEditor("t1") }
         return ZStack(alignment: .top) {
             RisoPaperBackground()
@@ -227,6 +234,15 @@ final class RisoPoolsSnapshotTests: XCTestCase {
     func testEditorLegacyAchievementLight() {
         assertSnapshot(
             of: editor(existing: true, legacyAchievement: true),
+            as: .image(layout: .fixed(width: 393, height: 900), traits: lightTraits()),
+            record: recordMode
+        )
+    }
+
+    /// A counting member whose pool default is "a little": the dice shows lit.
+    func testEditorMemberDiceLight() {
+        assertSnapshot(
+            of: editor(existing: true, dice: true),
             as: .image(layout: .fixed(width: 393, height: 900), traits: lightTraits()),
             record: recordMode
         )

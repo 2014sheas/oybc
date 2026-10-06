@@ -55,15 +55,24 @@ final class SyncWirePayloadTests: XCTestCase {
         )
     }
 
-    /// Encodes `template` the same way `SyncQueueBuilder.makeItem` /
+    /// Encodes `payload` the same way `SyncQueueBuilder.makeItem` /
     /// `SyncService`'s push path do, then decodes the JSON string back into
     /// a `[String: Any]` dictionary — the pre-expansion shape a Firestore
     /// write would see if `expandJSONStrings` were never applied.
-    private func encodeToDict(_ template: RecurringBoardTemplate) throws -> [String: Any] {
-        let json = SyncQueueBuilder.encodePayload(template)
+    private func encodeToDict<T: Codable>(_ payload: T) throws -> [String: Any] {
+        let json = SyncQueueBuilder.encodePayload(payload)
         let data = json.data(using: .utf8)!
         let obj = try JSONSerialization.jsonObject(with: data)
         return obj as! [String: Any]
+    }
+
+    private func makePool() -> Pool {
+        let now = "2026-10-06T00:00:00.000Z"
+        return Pool(
+            id: "pool-1", userId: "u1", name: "Dice pool",
+            taskIds: ["t1", "t2"], memberVary: ["t1": .lot],
+            createdAt: now, updatedAt: now
+        )
     }
 
     // MARK: - The hazard is real: GRDB/Codable encodes these as strings
@@ -112,6 +121,50 @@ final class SyncWirePayloadTests: XCTestCase {
         XCTAssertEqual(wire["manualTaskIds"] as? [String], ["t1"])
         XCTAssertNotNil(wire["seedTaskIds"] as? [String])
         XCTAssertEqual(wire["removedTaskIds"] as? [String], [])
+    }
+
+    // MARK: - Pool.memberVary (pool-level default dice, 2026-10-06)
+
+    /// `Pool.memberVary` is a JSON-string TEXT column (GRDB v38, the
+    /// `manualTaskVary` codec): a string before expansion, a native dict on
+    /// the wire — the shape web's `PoolSchema` (`ManualTaskVarySchema`)
+    /// accepts — and, stringified back the way the pull path's generic SQL
+    /// upsert does it, a map again once the row is decoded.
+    func testPool_MemberVaryExpandsToADictOnPushAndRoundTripsOnPull() throws {
+        let dict = try encodeToDict(makePool())
+        XCTAssertTrue(dict["memberVary"] is String, "memberVary should be a JSON string before expansion")
+        XCTAssertTrue(dict["taskIds"] is String)
+
+        let wire = SyncWirePayload.expandJSONStrings(dict)
+        XCTAssertEqual(wire["memberVary"] as? [String: Int], ["t1": VaryLevel.lot.rawValue])
+        XCTAssertEqual(wire["taskIds"] as? [String], ["t1", "t2"])
+
+        // Pull: `SyncService.applyPulledDocument` re-encodes a dict value as a
+        // JSON string for the TEXT column; `Pool.init(from:)` reads it back.
+        var row = wire
+        let memberVaryData = try JSONSerialization.data(withJSONObject: wire["memberVary"] as Any)
+        row["memberVary"] = String(data: memberVaryData, encoding: .utf8)
+        let taskIdsData = try JSONSerialization.data(withJSONObject: wire["taskIds"] as Any)
+        row["taskIds"] = String(data: taskIdsData, encoding: .utf8)
+        let pulled = try JSONDecoder().decode(Pool.self, from: JSONSerialization.data(withJSONObject: row))
+        XCTAssertEqual(pulled.memberVary, ["t1": .lot])
+        XCTAssertEqual(pulled.taskIds, ["t1", "t2"])
+    }
+
+    /// A pool without defaults still carries the key (`{}`) on the wire — a
+    /// clear propagates as an overwrite, never as a field delete — and a doc
+    /// from a client that predates the field decodes to an empty map.
+    func testPool_EmptyMemberVaryIsWrittenAsAnEmptyDict_AndAMissingKeyDecodesEmpty() throws {
+        var pool = makePool()
+        pool.memberVary = [:]
+        let wire = SyncWirePayload.expandJSONStrings(try encodeToDict(pool))
+        XCTAssertNotNil(wire["memberVary"] as? [String: Any], "the key must be present on the wire")
+        XCTAssertEqual((wire["memberVary"] as? [String: Any])?.isEmpty, true)
+
+        var legacy = try encodeToDict(makePool())
+        legacy["memberVary"] = nil
+        let decoded = try JSONDecoder().decode(Pool.self, from: JSONSerialization.data(withJSONObject: legacy))
+        XCTAssertEqual(decoded.memberVary, [:])
     }
 
     // MARK: - Edge cases

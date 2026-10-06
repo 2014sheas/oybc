@@ -300,7 +300,13 @@ extension AppDatabase {
                     switch source.kind {
                     case .pool:
                         supplies.append(BoardSources.Supply(
-                            source: source,
+                            // Pool-level default dice (2026-10-06): a member
+                            // whose stored rule carries no `vary` inherits the
+                            // pool's default at THIS spawn, so a changed pool
+                            // default reaches the next window.
+                            source: BoardSources.withEffectiveMemberRules(
+                                source: source, pool: poolsById[source.sourceId]
+                            ),
                             supplyTaskIds: BoardSources.poolSourceSupplyById(
                                 source.sourceId, poolsById: poolsById, tasksById: tasksById
                             )

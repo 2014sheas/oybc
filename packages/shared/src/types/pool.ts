@@ -20,6 +20,8 @@
  *
  * Canonical design: docs/POOLS_RECURRING.md §Data model → New entity: Pool.
  */
+import type { VaryLevel } from './boardSource';
+
 export interface Pool {
   // Identity
   id: string;                // UUID (client-generated)
@@ -34,6 +36,25 @@ export interface Pool {
    * user's intent survives a temporary delete/undo.
    */
   taskIds: string[];
+  /**
+   * Pool-level default dice per member (docs/BOARD_SOURCES.md §Member
+   * rules → *Pool-level defaults*, 2026-10-06): task id → `VaryLevel`.
+   * Only levels `1 | 2` are stored (the ops prune a `0`, exactly as
+   * `pruneMemberRule` does for a source rule); an id missing from the map
+   * has no default. **Absent ≡ `{}`**: the ops always WRITE the map (`{}`
+   * when empty, so a clear propagates as an overwrite, never a field
+   * delete) and `PoolSchema` defaults a pulled doc to `{}`, but a local
+   * row written before the field existed carries no key — readers go
+   * through `pool.memberVary ?? {}` (the `BoardSource.memberRules` /
+   * `RecurringBoardTemplate.manualTaskVary` posture). iOS decodes a
+   * missing column to `[:]`.
+   *
+   * Consumed by `seedMemberRulesFromPool` (the Sources sheet copies the
+   * defaults onto the pulled source's `memberRules`) and
+   * `effectiveMemberRules` (spawn / prefill fallback for a member that
+   * carries no stored `vary`).
+   */
+  memberVary?: Record<string, VaryLevel>;
 
   // Timestamps
   createdAt: string;          // ISO8601
@@ -54,6 +75,8 @@ export interface Pool {
 export interface CreatePoolInput {
   name: string;
   taskIds: string[];
+  /** Pool-level default dice; absent = none (stored as `{}`). `0` entries are pruned. */
+  memberVary?: Record<string, VaryLevel>;
 }
 
 /**
@@ -62,4 +85,6 @@ export interface CreatePoolInput {
 export interface UpdatePoolInput {
   name?: string;
   taskIds?: string[];
+  /** Replaces the stored map when present (pruned of `0`s); absent = leave as is. */
+  memberVary?: Record<string, VaryLevel>;
 }

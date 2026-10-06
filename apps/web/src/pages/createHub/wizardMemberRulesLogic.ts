@@ -25,6 +25,7 @@ import {
   withPartRule,
   TaskType,
   type BoardSource,
+  type WithMemberRuleOptions,
   type BoardWindow,
   type BoardSourceMemberRule,
   type BoardSourcePartRule,
@@ -42,6 +43,7 @@ import type { SupplyChildrenMap, WizardSourceSupply } from './wizardSources';
  * @param sourceId - The row the member was pulled through.
  * @param taskId - The member's task id.
  * @param patch - Fields to set; a field set to `undefined` is cleared.
+ * @param options - `keepVaryOff` stores an explicit `vary: 0` (pool-default override).
  * @returns The next rows.
  */
 export function withMemberRuleInSource(
@@ -49,9 +51,10 @@ export function withMemberRuleInSource(
   sourceId: string,
   taskId: string,
   patch: Partial<BoardSourceMemberRule>,
+  options?: WithMemberRuleOptions,
 ): BoardSource[] {
   return sources.map((source) =>
-    source.sourceId === sourceId ? withMemberRule(source, taskId, patch) : source,
+    source.sourceId === sourceId ? withMemberRule(source, taskId, patch, options) : source,
   );
 }
 

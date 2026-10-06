@@ -91,6 +91,42 @@ describe('pools CRUD', () => {
     expect(JSON.parse(queue[0].payload).name).toBe('Renamed');
   });
 
+  // Pool-level default dice (2026-10-06, docs/BOARD_SOURCES.md §Member rules
+  // → Pool-level defaults). The map is ALWAYS written (`{}` when empty) and
+  // only levels 1 | 2 are stored — a 0 is pruned exactly as `withMemberRule`
+  // prunes a `vary: 0` off a source rule.
+  it('createPool always writes memberVary — {} when absent, pruned of 0s otherwise', async () => {
+    const bare = await createPool('user-1', { name: 'Bare', taskIds: ['t1'] });
+    expect(bare.memberVary).toEqual({});
+    expect((await db.pools.get(bare.id))?.memberVary).toEqual({});
+
+    const dice = await createPool('user-1', {
+      name: 'Dice',
+      taskIds: ['t1', 't2', 't3'],
+      memberVary: { t1: 0, t2: 1, t3: 2 },
+    });
+    expect(dice.memberVary).toEqual({ t2: 1, t3: 2 });
+    expect((await db.pools.get(dice.id))?.memberVary).toEqual({ t2: 1, t3: 2 });
+    const queued = JSON.parse(
+      (await db.syncQueue.filter((q) => q.entityId === dice.id).toArray())[0].payload,
+    );
+    expect(queued.memberVary).toEqual({ t2: 1, t3: 2 });
+  });
+
+  it('updatePool replaces memberVary when given (pruned; a full clear stores {}) and leaves it alone when absent', async () => {
+    const pool = await createPool('user-1', { name: 'A', taskIds: ['t1', 't2'], memberVary: { t1: 2 } });
+
+    const renamed = await updatePool(pool.id, { name: 'Renamed' });
+    expect(renamed?.memberVary).toEqual({ t1: 2 }); // untouched
+
+    const changed = await updatePool(pool.id, { memberVary: { t1: 0, t2: 1 } });
+    expect(changed?.memberVary).toEqual({ t2: 1 });
+
+    const cleared = await updatePool(pool.id, { memberVary: {} });
+    expect(cleared?.memberVary).toEqual({});
+    expect('memberVary' in (await db.pools.get(pool.id))!).toBe(true);
+  });
+
   it('updatePool returns undefined for a missing id (no throw)', async () => {
     expect(await updatePool('does-not-exist', { name: 'X' })).toBeUndefined();
   });

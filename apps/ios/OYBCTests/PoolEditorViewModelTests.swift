@@ -349,4 +349,64 @@ final class PoolEditorViewModelTests: XCTestCase {
         guard case .saved = outcome else { return XCTFail("expected saved") }
         XCTAssertEqual(try XCTUnwrap(try db.read { try Task.fetchOne($0, key: "t2") }).title, "Orig")
     }
+
+    // MARK: - Pool-level default dice (2026-10-06)
+
+    func testMemberVary_SeedsFromPool() throws {
+        let t1 = buildTask("t1")
+        let db = try AppDatabase.makeTestInstance()
+        let library = TaskLibraryViewModel(database: db)
+        library.libraryTasks = [t1]
+        let pool = Pool(
+            id: "p1", userId: "u1", name: "P", taskIds: ["t1"], memberVary: ["t1": .lot],
+            createdAt: Self.ts, updatedAt: Self.ts
+        )
+        let vm = PoolEditorViewModel(pool: pool, userId: "u1", library: library, database: db)
+        XCTAssertEqual(vm.memberVary, ["t1": .lot])
+    }
+
+    func testSetMemberVary_SetsAndLevelZeroRemoves() throws {
+        let vm = try makeVM([buildTask("t1")], poolTaskIds: ["t1"])
+        vm.setMemberVary(taskId: "t1", level: .little)
+        XCTAssertEqual(vm.memberVary["t1"], .little)
+        vm.setMemberVary(taskId: "t1", level: .off)
+        XCTAssertNil(vm.memberVary["t1"])
+    }
+
+    func testRemoveRow_DropsItsDice() throws {
+        let vm = try makeVM([buildTask("t1"), buildTask("t2")], poolTaskIds: ["t1", "t2"])
+        vm.setMemberVary(taskId: "t1", level: .lot)
+        vm.setMemberVary(taskId: "t2", level: .little)
+        vm.remove("t1")
+        XCTAssertEqual(vm.memberVary, ["t2": .little])
+    }
+
+    func testSave_Create_PersistsMemberVary() async throws {
+        let db = try seededDB()
+        let t1 = buildTask("t1"); try db.saveTask(t1)
+        let vm = try makeVM([t1], poolTaskIds: ["t1"], db: db, name: "P")
+        vm.setMemberVary(taskId: "t1", level: .little)
+        let outcome = await vm.save()
+        guard case .saved(let created) = outcome else { return XCTFail("expected saved") }
+        XCTAssertEqual(try XCTUnwrap(created).memberVary, ["t1": .little])
+        XCTAssertEqual(try db.fetchPools(userId: "u1").first?.memberVary, ["t1": .little])
+    }
+
+    func testSave_Edit_ReplacesStoredDice() async throws {
+        let db = try seededDB()
+        let t1 = buildTask("t1"), t2 = buildTask("t2")
+        try db.saveTask(t1); try db.saveTask(t2)
+        let pool = Pool(
+            id: "p1", userId: "u1", name: "P", taskIds: ["t1", "t2"],
+            memberVary: ["t1": .lot, "t2": .little], createdAt: Self.ts, updatedAt: Self.ts
+        )
+        try db.savePool(pool)
+        let library = TaskLibraryViewModel(database: db)
+        library.libraryTasks = [t1, t2]; library.browsableTasks = [t1, t2]
+        let vm = PoolEditorViewModel(pool: pool, userId: "u1", library: library, database: db)
+        vm.setMemberVary(taskId: "t1", level: .off) // clear one, keep the other
+        let outcome = await vm.save()
+        guard case .saved = outcome else { return XCTFail("expected saved: \(vm.errorMessage ?? "-")") }
+        XCTAssertEqual(try db.fetchPools(userId: "u1").first?.memberVary, ["t2": .little])
+    }
 }

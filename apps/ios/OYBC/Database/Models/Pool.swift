@@ -20,6 +20,12 @@ import GRDB
 /// - `taskIds` is stored as a JSON-string TEXT column (same pattern as
 ///   `RecurringBoardTemplate.seedTaskIds` and `Board.completedLineIds`)
 ///   since SQLite has no native array type.
+/// - `memberVary` (pool-level default dice, docs/BOARD_SOURCES.md §Member
+///   rules → *Pool-level defaults*, 2026-10-06) is a JSON-string TEXT column
+///   added in GRDB v38 (nullable; the `manualTaskVary` codec). A missing /
+///   NULL column decodes to `[:]` and the encoder ALWAYS writes the map, so
+///   the wire doc carries `memberVary: {}` for a pool without defaults —
+///   web's `PoolSchema` defaults a missing key to `{}` the same way.
 ///
 /// Canonical design: docs/POOLS_RECURRING.md §Data model → New entity: Pool.
 struct Pool: Codable, FetchableRecord, PersistableRecord {
@@ -33,6 +39,13 @@ struct Pool: Codable, FetchableRecord, PersistableRecord {
     /// Soft-deleted tasks are NOT auto-removed from this list; consumers
     /// (`PoolMix.resolveMix`, core-defaults resolution) filter at read time.
     var taskIds: [String]
+    /// Task id → default dice level. Only `.little` / `.lot` are ever stored
+    /// (`BoardSources.prunePoolMemberVary` drops `.off`, as `withMemberRule`
+    /// prunes a `vary: 0` off a source rule); an id missing from the map has
+    /// no default. Read by `BoardSources.seedMemberRulesFromPool` (the
+    /// Sources sheet) and `BoardSources.effectiveMemberRules` (spawn /
+    /// prefill fallback).
+    var memberVary: [String: VaryLevel]
 
     // Timestamps
     var createdAt: String
@@ -51,7 +64,7 @@ struct Pool: Codable, FetchableRecord, PersistableRecord {
     // MARK: - Codable
 
     enum CodingKeys: String, CodingKey {
-        case id, userId, name, taskIds
+        case id, userId, name, taskIds, memberVary
         case createdAt, updatedAt
         case lastSyncedAt, version, isDeleted, deletedAt
     }
@@ -61,6 +74,7 @@ struct Pool: Codable, FetchableRecord, PersistableRecord {
         userId: String,
         name: String,
         taskIds: [String],
+        memberVary: [String: VaryLevel] = [:],
         createdAt: String,
         updatedAt: String,
         lastSyncedAt: String? = nil,
@@ -72,6 +86,7 @@ struct Pool: Codable, FetchableRecord, PersistableRecord {
         self.userId = userId
         self.name = name
         self.taskIds = taskIds
+        self.memberVary = memberVary
         self.createdAt = createdAt
         self.updatedAt = updatedAt
         self.lastSyncedAt = lastSyncedAt
@@ -96,6 +111,17 @@ struct Pool: Codable, FetchableRecord, PersistableRecord {
             taskIds = []
         }
 
+        // Pool-level default dice — JSON-string TEXT column (v38). A row
+        // written before the column existed (NULL) or a pulled doc without
+        // the key decodes to an EMPTY map; same tri-state-tolerant read as
+        // `RecurringBoardTemplate.manualTaskVary`, collapsed onto `[:]`.
+        if let jsonString = (try? container.decodeIfPresent(String.self, forKey: .memberVary)) ?? nil,
+           let data = jsonString.data(using: .utf8) {
+            memberVary = (try? JSONDecoder().decode([String: VaryLevel].self, from: data)) ?? [:]
+        } else {
+            memberVary = [:]
+        }
+
         createdAt = try container.decode(String.self, forKey: .createdAt)
         updatedAt = try container.decode(String.self, forKey: .updatedAt)
         lastSyncedAt = try container.decodeIfPresent(String.self, forKey: .lastSyncedAt)
@@ -117,6 +143,15 @@ struct Pool: Codable, FetchableRecord, PersistableRecord {
             try container.encode(jsonString, forKey: .taskIds)
         } else {
             try container.encode("[]", forKey: .taskIds)
+        }
+
+        // ALWAYS written (`{}` when empty) so a clear propagates as an
+        // overwrite on the wire, never as a field delete.
+        if let data = try? JSONEncoder().encode(memberVary),
+           let jsonString = String(data: data, encoding: .utf8) {
+            try container.encode(jsonString, forKey: .memberVary)
+        } else {
+            try container.encode("{}", forKey: .memberVary)
         }
 
         try container.encode(createdAt, forKey: .createdAt)

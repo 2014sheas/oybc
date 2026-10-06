@@ -469,9 +469,7 @@ final class BoardWizardViewModel {
                     let corePoolIds = rawPoolIds.filter { livePoolIds.contains($0) }
                     let coreDefaultTaskIds = rawDefaultIds.filter { liveDefaultIds.contains($0) }
                     let hydrated = Self.hydrateSourcesState(
-                        sources: corePoolIds.map {
-                            BoardSource(sourceId: $0, kind: .pool, filter: Self.newSourceFilter(for: .pool))
-                        },
+                        sources: Self.seededPoolSources(corePoolIds, database: database),
                         manualTaskIds: coreDefaultTaskIds,
                         database: database
                     )

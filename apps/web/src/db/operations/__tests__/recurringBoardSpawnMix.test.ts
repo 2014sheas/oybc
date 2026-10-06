@@ -6,6 +6,7 @@ import {
   TaskType,
   derivedTaskId,
   resolveMix,
+  varyRange,
   type Pool,
   type RecurringBoardTemplate,
   type Task,
@@ -1469,5 +1470,142 @@ describe('spawnTemplateBoard — Split up expands the selectable supply', () => 
     expect(placed).toHaveLength(8);
     expect(new Set(placed)).toEqual(new Set([...fillers, PART_A, PART_B]));
     expect(placed).not.toContain(COMPOUND);
+  });
+});
+
+/**
+ * Pool-level default dice (2026-10-06, docs/BOARD_SOURCES.md §Member rules →
+ * Pool-level defaults): a pool source's member whose stored rule carries no
+ * `vary` inherits the POOL's default at spawn time (`withEffectiveMemberRules`
+ * in the supply builder), so a repeating board authored before the pool
+ * gained a default — or a member added to the pool later — varies at its
+ * next window without a template write. A stored source `vary` always wins.
+ */
+describe('spawnTemplateBoard — pool-level default dice (2026-10-06)', () => {
+  const ROOT = 'pool-root-counter';
+  const POOL = 'pool-with-dice';
+  const GOAL = 10;
+  const FILLERS = ['pf1', 'pf2', 'pf3', 'pf4', 'pf5', 'pf6', 'pf7'];
+
+  async function seedPool(memberVary: Pool['memberVary']): Promise<void> {
+    await db.tasks.add({
+      id: ROOT,
+      userId: 'user-1',
+      title: 'Do 10 reps',
+      type: TaskType.COUNTING,
+      action: 'Do',
+      unit: 'reps',
+      maxCount: GOAL,
+      currentCount: 0,
+      isCompleted: false,
+      totalCompletions: 0,
+      totalInstances: 0,
+      createdAt: NOW,
+      updatedAt: NOW,
+      version: 1,
+      isDeleted: false,
+    } as Task);
+    for (const id of FILLERS) await seedTask(id);
+    const pool: Pool = {
+      id: POOL,
+      userId: 'user-1',
+      name: 'Dice pool',
+      taskIds: [ROOT, ...FILLERS],
+      ...(memberVary ? { memberVary } : {}),
+      createdAt: NOW,
+      updatedAt: NOW,
+      version: 1,
+      isDeleted: false,
+    };
+    await db.pools.add(pool);
+  }
+
+  const poolTemplate = (memberRules?: Record<string, { vary: 0 | 1 | 2 }>): RecurringBoardTemplate => ({
+    id: 'tmpl-pool-dice',
+    userId: 'user-1',
+    name: 'Daily from pool',
+    timeframe: Timeframe.DAILY,
+    boardSize: 3,
+    centerSquareType: CenterSquareType.FREE, // 8 fillable cells = the pool's 8 members
+    isRandomized: false,
+    seedTaskIds: [],
+    manualTaskIds: [],
+    sources: [
+      {
+        sourceId: POOL,
+        kind: 'pool',
+        min: 0,
+        max: null,
+        excludedTaskIds: [],
+        filter: 'all',
+        ...(memberRules ? { memberRules } : {}),
+      },
+    ],
+    lastSpawnedWindowKey: null,
+    isActive: true,
+    createdAt: NOW,
+    updatedAt: NOW,
+    version: 1,
+    isDeleted: false,
+  });
+
+  async function spawnOnce(template: RecurringBoardTemplate): Promise<string> {
+    await db.recurringBoardTemplates.add(template);
+    const result = await spawnTemplateBoard({
+      template,
+      windowStart: WINDOW_START,
+      windowEnd: WINDOW_END,
+      suggestedName: 'Daily — July 19',
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error('spawn failed');
+    return result.boardId;
+  }
+
+  async function placedIds(boardId: string): Promise<string[]> {
+    return (await db.boardTasks.where('boardId').equals(boardId).toArray()).map((bt) => bt.taskId);
+  }
+
+  it('a member with no stored rule inherits the pool default: the spawned copy is ROLLED inside varyRange', async () => {
+    await seedPool({ [ROOT]: 2 });
+    const boardId = await spawnOnce(poolTemplate());
+
+    const [lo, hi] = varyRange(GOAL, 2, GOAL);
+    expect(lo).toBeLessThan(hi); // the range is real, not collapsed
+    const derived = await db.tasks.get(derivedTaskId(boardId, ROOT));
+    expect(derived).toBeDefined();
+    expect(derived?.sharedCounterId).toBe(ROOT);
+    expect(derived?.maxCount).toBeGreaterThanOrEqual(lo);
+    expect(derived?.maxCount).toBeLessThanOrEqual(hi);
+
+    const placed = await placedIds(boardId);
+    expect(placed).toContain(derived?.id);
+    expect(placed).not.toContain(ROOT);
+  });
+
+  it('a stored source vary wins over the pool default (seeded platform rng pins the level)', async () => {
+    // The spawn path has no rng seam, so the platform rng is pinned at 0:
+    // `varyRange(10, 1, 10)` bottoms at 8 while the pool's level 2 bottoms
+    // at 5 — only the stored level-1 rule can produce 8.
+    const random = vi.spyOn(Math, 'random').mockReturnValue(0);
+    try {
+      await seedPool({ [ROOT]: 2 });
+      const boardId = await spawnOnce(poolTemplate({ [ROOT]: { vary: 1 } }));
+
+      const [loOverride] = varyRange(GOAL, 1, GOAL);
+      const [loDefault] = varyRange(GOAL, 2, GOAL);
+      expect(loOverride).not.toBe(loDefault); // the assertion discriminates
+      expect(await db.tasks.get(derivedTaskId(boardId, ROOT))).toMatchObject({ maxCount: loOverride });
+    } finally {
+      random.mockRestore();
+    }
+  });
+
+  it('control: without a pool default the member is placed as-is and nothing is minted', async () => {
+    await seedPool(undefined);
+    const boardId = await spawnOnce(poolTemplate());
+
+    expect(await db.tasks.get(derivedTaskId(boardId, ROOT))).toBeUndefined();
+    expect(await placedIds(boardId)).toContain(ROOT);
   });
 });

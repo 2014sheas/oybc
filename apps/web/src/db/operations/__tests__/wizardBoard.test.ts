@@ -13,6 +13,7 @@ import {
   type TaskEvent,
 } from '@oybc/shared';
 import { db } from '../../internal';
+import type { Pool } from '@oybc/shared';
 import { emptyPatch, type ChildPatch, type TaskEditPatch } from '../../taskEditPatch';
 import {
   applyStagedTaskEditsForWizardPersist,
@@ -47,6 +48,7 @@ afterEach(async () => {
   await db.tasks.clear();
   await db.compoundChildren.clear();
   await db.taskEvents.clear();
+  await db.pools.clear();
   await db.syncQueue.clear();
 });
 
@@ -925,6 +927,112 @@ describe('persistWizardBoardRows — manualTaskVary (B3)', () => {
     expect(await db.tasks.get(derivedTaskId(boardId, HAND))).toBeUndefined();
     const rows = await db.boardTasks.where('boardId').equals(boardId).toArray();
     expect(rows[0].taskId).toBe(HAND);
+  });
+});
+
+/**
+ * Pool-level default dice (2026-10-06, docs/BOARD_SOURCES.md §Member rules →
+ * Pool-level defaults) at ONE-OFF persist: the supply builder reads the pool
+ * source through `withEffectiveMemberRules`, so a member the Sources sheet
+ * never seeded (no stored `vary`) still inherits the pool's default, while a
+ * stored `vary` on the source always wins. Seeded rng pins the LOW end of
+ * each range — level 1 bottoms at 8, level 2 at 5 — so the two cases are
+ * told apart by value, not just by range membership.
+ */
+describe('persistWizardBoardRows — pool-level default dice (2026-10-06)', () => {
+  const MEMBER = uuid(96);
+  const POOL = uuid(97);
+  const GOAL = 10;
+
+  async function seedPoolMember(memberVary: Pool['memberVary']): Promise<Task> {
+    const task: Task = {
+      id: MEMBER,
+      userId: USER,
+      title: 'Push-ups',
+      type: TaskType.COUNTING,
+      action: 'Do',
+      unit: 'reps',
+      maxCount: GOAL,
+      isCompleted: false,
+      totalCompletions: 0,
+      totalInstances: 0,
+      createdAt: START,
+      updatedAt: START,
+      version: 1,
+      isDeleted: false,
+    };
+    await db.tasks.add(task);
+    await db.pools.add({
+      id: POOL,
+      userId: USER,
+      name: 'Dice pool',
+      taskIds: [MEMBER],
+      ...(memberVary ? { memberVary } : {}),
+      createdAt: START,
+      updatedAt: START,
+      version: 1,
+      isDeleted: false,
+    });
+    return task;
+  }
+
+  const poolSource = (memberRules?: Record<string, { vary: 0 | 1 | 2 }>) => ({
+    sourceId: POOL,
+    kind: 'pool' as const,
+    min: 0,
+    max: null,
+    excludedTaskIds: [],
+    filter: 'all' as const,
+    ...(memberRules ? { memberRules } : {}),
+  });
+
+  it('a member with no stored rule inherits the pool default (level 2 → the range bottoms at 5)', async () => {
+    const task = await seedPoolMember({ [MEMBER]: 2 });
+    const placement = new Array(9).fill(null);
+    placement[0] = task;
+
+    const boardId = await persistWizardBoardRows(
+      baseInput({ placement, sources: [poolSource()], manualTaskIds: [], rng: () => 0 }),
+    );
+
+    const [lo] = varyRange(GOAL, 2, GOAL);
+    const derived = await db.tasks.get(derivedTaskId(boardId, MEMBER));
+    expect(derived).toMatchObject({ sharedCounterId: MEMBER, maxCount: lo });
+    const rows = await db.boardTasks.where('boardId').equals(boardId).toArray();
+    expect(rows[0].taskId).toBe(derived?.id);
+  });
+
+  it('a stored source vary wins over the pool default (level 1 → the range bottoms at 8)', async () => {
+    const task = await seedPoolMember({ [MEMBER]: 2 });
+    const placement = new Array(9).fill(null);
+    placement[0] = task;
+
+    const boardId = await persistWizardBoardRows(
+      baseInput({
+        placement,
+        sources: [poolSource({ [MEMBER]: { vary: 1 } })],
+        manualTaskIds: [],
+        rng: () => 0,
+      }),
+    );
+
+    const [loOverride] = varyRange(GOAL, 1, GOAL);
+    expect(loOverride).not.toBe(varyRange(GOAL, 2, GOAL)[0]);
+    expect(await db.tasks.get(derivedTaskId(boardId, MEMBER))).toMatchObject({ maxCount: loOverride });
+  });
+
+  it('control: no pool default and no rule places the member itself — nothing is minted', async () => {
+    const task = await seedPoolMember(undefined);
+    const placement = new Array(9).fill(null);
+    placement[0] = task;
+
+    const boardId = await persistWizardBoardRows(
+      baseInput({ placement, sources: [poolSource()], manualTaskIds: [] }),
+    );
+
+    expect(await db.tasks.get(derivedTaskId(boardId, MEMBER))).toBeUndefined();
+    const rows = await db.boardTasks.where('boardId').equals(boardId).toArray();
+    expect(rows[0].taskId).toBe(MEMBER);
   });
 });
 

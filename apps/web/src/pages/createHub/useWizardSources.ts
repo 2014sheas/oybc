@@ -306,9 +306,9 @@ export function useWizardSources({
   const pullPool = useCallback(
     (poolId: string) => {
       markUserTouched();
-      setSources((prev) => appendSource(prev, poolId, 'pool'));
+      setSources((prev) => appendSource(prev, poolId, 'pool', poolsById[poolId]));
     },
-    [markUserTouched],
+    [markUserTouched, poolsById],
   );
 
   /**

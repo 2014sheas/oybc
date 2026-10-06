@@ -586,4 +586,70 @@ final class BoardWizardPoolMixActionsTests: XCTestCase {
         XCTAssertEqual(vm.selectedTaskIds, ["bt1", "bt2"])
         XCTAssertEqual(vm.availableCount(forSourceId: "b1"), 2)
     }
+
+    // MARK: - Pool-level default dice (2026-10-06)
+
+    private func poolWithDefaults(_ vary: [String: VaryLevel]) -> Pool {
+        var pool = makePool(id: "A", ["x", "y"])
+        pool.memberVary = vary
+        return pool
+    }
+
+    func test_pullPool_seedsMemberRulesFromPoolDefaults() {
+        let vm = makeVM()
+        let (_, tasksById) = workedExampleFixtures()
+        vm.pullPool(poolWithDefaults(["x": .little, "y": .lot]), tasksById: tasksById)
+        XCTAssertEqual(vm.sources.first?.memberRules?["x"]?.vary, .little)
+        XCTAssertEqual(vm.sources.first?.memberRules?["y"]?.vary, .lot)
+    }
+
+    func test_pullPool_noDefaults_leavesMemberRulesNil() {
+        let vm = makeVM()
+        let (poolsById, tasksById) = workedExampleFixtures()
+        vm.pullPool(poolsById["A"]!, tasksById: tasksById)
+        XCTAssertNil(vm.sources.first?.memberRules, "never an empty map")
+    }
+
+    func test_seededPoolSources_corePrefillSeedsDefaultsAndNeverAnEmptyMap() throws {
+        let db = try AppDatabase.makeTestInstance()
+        try db.savePool(poolWithDefaults(["x": .lot]))
+        try db.savePool(makePool(id: "B", ["y", "z"]))
+        let sources = BoardWizardViewModel.seededPoolSources(["A", "B"], database: db)
+        XCTAssertEqual(sources.map(\.sourceId), ["A", "B"])
+        XCTAssertEqual(sources[0].memberRules?["x"]?.vary, .lot)
+        XCTAssertNil(sources[1].memberRules)
+        XCTAssertEqual(sources[0].filter, .all)
+    }
+
+    func test_setMemberVaryOff_onPoolDefaultMember_storesExplicitOff() {
+        let vm = makeVM()
+        let (_, tasksById) = workedExampleFixtures()
+        vm.pullPool(poolWithDefaults(["x": .little]), tasksById: tasksById)
+        vm.setMemberVary(sourceId: "A", taskId: "x", level: .off)
+        XCTAssertEqual(vm.sources.first?.memberRules?["x"]?.vary, VaryLevel.off)
+        // And the explicit off beats the pool default in the expansion.
+        XCTAssertEqual(vm.expandedSupplies.first?.source.memberRules?["x"]?.vary, VaryLevel.off)
+    }
+
+    func test_setMemberVaryOff_withoutPoolDefault_removesTheRule() {
+        let vm = makeVM()
+        let (poolsById, tasksById) = workedExampleFixtures()
+        vm.pullPool(poolsById["A"]!, tasksById: tasksById)
+        vm.setMemberVary(sourceId: "A", taskId: "x", level: .lot)
+        XCTAssertEqual(vm.sources.first?.memberRules?["x"]?.vary, .lot)
+        vm.setMemberVary(sourceId: "A", taskId: "x", level: .off)
+        XCTAssertNil(vm.sources.first?.memberRules?["x"])
+    }
+
+    /// Preview/capacity parity: a source stored WITHOUT the seeded rule (a
+    /// hydrated draft, a pre-default template) still expands with the pool
+    /// default — the same effective rules persist reads.
+    func test_expandedSupplies_carryThePoolDefaultWhenTheStoredRuleHasNoVary() {
+        let vm = makeVM()
+        let (_, tasksById) = workedExampleFixtures()
+        vm.pullPool(poolWithDefaults(["x": .lot]), tasksById: tasksById)
+        vm.sources[0].memberRules = nil
+        XCTAssertEqual(vm.expandedSupplies.first?.source.memberRules?["x"]?.vary, .lot)
+        XCTAssertNil(vm.expandedSupplies.first?.source.memberRules?["y"])
+    }
 }

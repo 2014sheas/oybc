@@ -1,6 +1,6 @@
 import { db } from '../internal';
 import type { Pool, CreatePoolInput, UpdatePoolInput } from '@oybc/shared';
-import { SyncOperationType } from '@oybc/shared';
+import { SyncOperationType, prunePoolMemberVary } from '@oybc/shared';
 import { generateUUID, currentTimestamp } from '../utils';
 import { addToSyncQueue } from './syncQueue';
 
@@ -46,7 +46,9 @@ export async function fetchPoolsByIds(ids: string[]): Promise<Pool[]> {
 }
 
 /**
- * Create a new pool.
+ * Create a new pool. `memberVary` (pool-level default dice, 2026-10-06) is
+ * ALWAYS written — pruned of `0`s, `{}` when absent — so the stored row and
+ * its pushed doc carry the map explicitly.
  */
 export async function createPool(userId: string, input: CreatePoolInput): Promise<Pool> {
   const now = currentTimestamp();
@@ -55,6 +57,7 @@ export async function createPool(userId: string, input: CreatePoolInput): Promis
     userId,
     name: input.name.trim(),
     taskIds: [...input.taskIds],
+    memberVary: prunePoolMemberVary(input.memberVary),
     createdAt: now,
     updatedAt: now,
     version: 1,
@@ -67,9 +70,13 @@ export async function createPool(userId: string, input: CreatePoolInput): Promis
 }
 
 /**
- * Update an existing pool's `name` and/or `taskIds`. Bumps `version` +
- * `updatedAt`. Returns the updated row (or undefined when the id doesn't
- * exist).
+ * Update an existing pool's `name`, `taskIds` and/or `memberVary`. Bumps
+ * `version` + `updatedAt`. Returns the updated row (or undefined when the
+ * id doesn't exist).
+ *
+ * `memberVary`, when present, REPLACES the stored map (pruned of `0`s —
+ * clearing every dice stores `{}`, never deletes the key, so the clear
+ * propagates by overwrite); when absent the stored map is left alone.
  */
 export async function updatePool(
   id: string,
@@ -81,6 +88,7 @@ export async function updatePool(
   const patch: Partial<Pool> = {
     name: updates.name !== undefined ? updates.name.trim() : undefined,
     taskIds: updates.taskIds ? [...updates.taskIds] : undefined,
+    memberVary: updates.memberVary !== undefined ? prunePoolMemberVary(updates.memberVary) : undefined,
     updatedAt: currentTimestamp(),
     version: (existing.version ?? 0) + 1,
   };

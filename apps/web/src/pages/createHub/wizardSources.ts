@@ -22,6 +22,9 @@ import {
   type ExpandedSupply,
   type Pool,
   type Task,
+  type VaryLevel,
+  prunePoolMemberVary,
+  withEffectiveMemberRules,
 } from '@oybc/shared';
 
 /**
@@ -71,6 +74,14 @@ export interface WizardSourceSupply {
    */
   sourceWindow?: BoardWindow;
   /**
+   * Pool sources only (2026-10-06) — the pool's default dice per member
+   * (`Pool.memberVary`, pruned to 1|2), so the member row shows the level a
+   * member INHERITS when its stored rule carries no `vary` — the same
+   * fallback persist/Preview apply (`withEffectiveMemberRules`). iOS twin:
+   * `WizardSourceSupply.poolDefaultVary`.
+   */
+  poolDefaultVary?: Record<string, VaryLevel>;
+  /**
    * Board sources only — the source still exists but resolved to NO board
    * for the window being built (owner ruling 2026-09-24: a series with no
    * instance open now, or an ended/sealed one-off).
@@ -100,6 +111,9 @@ export type SupplyInfoMap = Record<string, WizardSourceSupply>;
  * @param childrenByCompoundId - Compound id → its `compound_children` rows.
  *   Omitted = no expansion (every split rule stale-inert).
  * @param tasksById - Id → task (only `id`/`type` are read).
+ * @param poolsById - Live pools: a pool source's rules are read through
+ *   `withEffectiveMemberRules` so the dry run rolls the same pool-default
+ *   dice the persist does. Omitted = stored rules only.
  * @returns One expanded supply per source, order preserved.
  */
 export function algorithmSupplies(
@@ -107,8 +121,10 @@ export function algorithmSupplies(
   supplyInfo: SupplyInfoMap,
   childrenByCompoundId: SupplyChildrenMap = {},
   tasksById: SupplyTasksMap = {},
+  poolsById: Record<string, Pool> = {},
 ): ExpandedSupply[] {
-  const raw = sources.map((source) => {
+  const raw = sources.map((stored) => {
+    const source = withEffectiveMemberRules(stored, poolsById[stored.sourceId]);
     const info = supplyInfo[source.sourceId];
     const ids = availableSupplyIds(source, info?.rawSupplyTaskIds ?? [], info?.doneTaskIds);
     return { source, supplyTaskIds: resolveSourceAvailable({ source, supplyTaskIds: ids }) };
@@ -348,6 +364,7 @@ export function poolSupplyEntry(
     displayName: pool.name,
     rawSupplyTaskIds: poolSourceSupplyById(pool.id, { [pool.id]: pool }, tasksById),
     doneTaskIds: new Set(),
+    poolDefaultVary: prunePoolMemberVary(pool.memberVary),
   };
 }
 

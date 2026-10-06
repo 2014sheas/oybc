@@ -3,6 +3,7 @@ import {
   poolSourceSupplyById,
   availableSupplyIds,
   sourcesForRecord,
+  withEffectiveMemberRules,
   type BoardSourceSupply,
   type Pool,
   type RecurringBoardTemplate,
@@ -57,7 +58,7 @@ export function useSpawnNoteSupplies(
       for (const source of sources) {
         if (source.kind === 'pool') {
           resolved.push({
-            source,
+            source: withEffectiveMemberRules(source, poolsById[source.sourceId]),
             supplyTaskIds: poolSourceSupplyById(source.sourceId, poolsById, taskMap),
           });
           continue;

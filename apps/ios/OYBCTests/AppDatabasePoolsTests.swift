@@ -105,6 +105,118 @@ final class AppDatabasePoolsTests: XCTestCase {
         XCTAssertEqual(count(rows, type: "pools", op: .update), 1)
     }
 
+    // MARK: - Pool-level default dice (docs/BOARD_SOURCES.md §Member rules → Pool-level defaults, 2026-10-06)
+
+    /// Only `.little` / `.lot` are stored — `.off` is pruned, exactly as
+    /// `withMemberRule` prunes a `vary: 0` off a source rule — and the map
+    /// rides the enqueued payload. iOS twin of web `pools.test.ts`
+    /// "createPool always writes memberVary".
+    func testCreatePoolAndEnqueue_MemberVary_PrunesOffAndPersists() throws {
+        let db = try makeDb()
+        try seedUser(db)
+        let now = AppDatabase.currentTimestamp()
+
+        let pool = try db.createPoolAndEnqueue(
+            userId: userId, name: "Dice", taskIds: ["t1", "t2", "t3"],
+            memberVary: ["t1": .off, "t2": .little, "t3": .lot], now: now
+        )
+        XCTAssertEqual(pool.memberVary, ["t2": .little, "t3": .lot])
+        let fetched = try XCTUnwrap(try db.fetchPool(id: pool.id))
+        XCTAssertEqual(fetched.memberVary, ["t2": .little, "t3": .lot])
+
+        let payload = try XCTUnwrap(try syncRows(db).first { $0.entityId == pool.id }?.payload)
+        let dict = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(payload.utf8)) as? [String: Any])
+        let wire = SyncWirePayload.expandJSONStrings(dict)
+        XCTAssertEqual(wire["memberVary"] as? [String: Int], ["t2": 1, "t3": 2])
+
+        let bare = try db.createPoolAndEnqueue(userId: userId, name: "Bare", taskIds: ["t1"], now: now)
+        XCTAssertEqual(try db.fetchPool(id: bare.id)?.memberVary, [:])
+    }
+
+    /// nil leaves the stored map alone; a map REPLACES it (pruned); `[:]`
+    /// clears it. Twin of web "updatePool replaces memberVary when given".
+    func testUpdatePoolAndEnqueue_MemberVary_ReplacesWhenGivenLeavesWhenNil() throws {
+        let db = try makeDb()
+        try seedUser(db)
+        let now = AppDatabase.currentTimestamp()
+        let pool = try db.createPoolAndEnqueue(
+            userId: userId, name: "A", taskIds: ["t1", "t2"], memberVary: ["t1": .lot], now: now
+        )
+
+        let renamed = try XCTUnwrap(try db.updatePoolAndEnqueue(id: pool.id, name: "Renamed", now: now))
+        XCTAssertEqual(renamed.memberVary, ["t1": .lot], "a nil map leaves the stored dice alone")
+
+        let changed = try XCTUnwrap(try db.updatePoolAndEnqueue(
+            id: pool.id, memberVary: ["t1": .off, "t2": .little], now: now
+        ))
+        XCTAssertEqual(changed.memberVary, ["t2": .little])
+
+        let cleared = try XCTUnwrap(try db.updatePoolAndEnqueue(id: pool.id, memberVary: [:], now: now))
+        XCTAssertEqual(cleared.memberVary, [:])
+        XCTAssertEqual(try db.fetchPool(id: pool.id)?.memberVary, [:])
+    }
+
+    /// `savePoolWithStagedEdits` threads the map the same way: nil keeps an
+    /// existing pool's dice, a map replaces them, and create mode stores
+    /// `[:]` when nothing is passed.
+    func testSavePoolWithStagedEdits_MemberVary_ThreadsThroughCreateAndEdit() throws {
+        let db = try makeDb()
+        try seedUser(db)
+        let now = AppDatabase.currentTimestamp()
+
+        let created = try XCTUnwrap(try db.savePoolWithStagedEdits(
+            existingId: nil, userId: userId, name: "New", taskIds: ["t1"], stagedEdits: [:], now: now
+        ))
+        XCTAssertEqual(created.memberVary, [:])
+
+        let withDice = try XCTUnwrap(try db.savePoolWithStagedEdits(
+            existingId: created.id, userId: userId, name: "New", taskIds: ["t1"], stagedEdits: [:],
+            memberVary: ["t1": .little, "t2": .off], now: now
+        ))
+        XCTAssertEqual(withDice.memberVary, ["t1": .little])
+
+        let untouched = try XCTUnwrap(try db.savePoolWithStagedEdits(
+            existingId: created.id, userId: userId, name: "Renamed", taskIds: ["t1"], stagedEdits: [:], now: now
+        ))
+        XCTAssertEqual(untouched.memberVary, ["t1": .little], "nil in edit mode never clears the dice")
+    }
+
+    /// GRDB v38 added `pools.memberVary` as a NULLABLE TEXT column: a row
+    /// written before the migration keeps NULL there, and `Pool.init(from:)`
+    /// reads that as an empty map (no backfill needed). The raw INSERT is
+    /// exactly the pre-v38 column set.
+    func testMigrationV38_PreExistingRowWithNullMemberVaryDecodesToEmpty() throws {
+        let db = try makeDb()
+        try seedUser(db)
+        let now = AppDatabase.currentTimestamp()
+
+        let columns: [String] = try db.read { db in
+            try Row.fetchAll(db, sql: "PRAGMA table_info('pools')").map { row in row["name"] }
+        }
+        XCTAssertTrue(columns.contains("memberVary"), "v38 must add pools.memberVary; found \(columns)")
+
+        try db.write { db in
+            try db.execute(
+                sql: """
+                INSERT INTO pools (id, userId, name, taskIds, createdAt, updatedAt, version, isDeleted)
+                VALUES ('legacy-pool', ?, 'Legacy', '["t1"]', ?, ?, 1, 0)
+                """,
+                arguments: [self.userId, now, now]
+            )
+        }
+        let legacy = try XCTUnwrap(try db.fetchPool(id: "legacy-pool"))
+        XCTAssertEqual(legacy.memberVary, [:])
+        XCTAssertEqual(legacy.taskIds, ["t1"])
+
+        // The first write after the upgrade stores the map explicitly.
+        let touched = try XCTUnwrap(try db.updatePoolAndEnqueue(id: "legacy-pool", name: "Legacy 2", now: now))
+        XCTAssertEqual(touched.memberVary, [:])
+        let stored: String? = try db.read { db in
+            try String.fetchOne(db, sql: "SELECT memberVary FROM pools WHERE id = 'legacy-pool'")
+        }
+        XCTAssertEqual(stored, "{}")
+    }
+
     func testUpdatePoolAndEnqueue_UnknownId_ReturnsNilNoWrite() throws {
         let db = try makeDb()
         try seedUser(db)

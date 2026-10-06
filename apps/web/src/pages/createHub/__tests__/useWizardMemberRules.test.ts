@@ -3,6 +3,8 @@ import {
   TaskType,
   Timeframe,
   memberRuleFor,
+  shouldKeepVaryOff,
+  type Pool,
   partRuleFor,
   type BoardSource,
   type BoardWindow,
@@ -494,5 +496,32 @@ describe('prefillRemainingTargets (RC4 — one-off remaining prefill)', () => {
     expect(initialPrefilledSourceIds(saved).has('b1')).toBe(true);
     const anyway = prefillRemainingTargets(saved, 'b1', supply(), tasksById, weeklyTarget);
     expect(memberRuleFor(anyway.sources[0], 'c10').target).toBe(2);
+  });
+});
+
+describe('explicit off against a pool default dice', () => {
+  const pool = { id: 'p1', taskIds: ['c1', 'c2'], memberVary: { c1: 2 } } as unknown as Pool;
+  const seeded = makeSource({
+    sourceId: 'p1',
+    kind: 'pool',
+    memberRules: { c1: { vary: 2 }, c2: { target: 5 } },
+  });
+
+  it('vary 0 on a member whose pool default is 2 STORES { vary: 0 }', () => {
+    const next = withMemberRuleInSource([seeded], 'p1', 'c1', { vary: 0 }, {
+      keepVaryOff: shouldKeepVaryOff(pool, 'c1'),
+    });
+    expect(next[0].memberRules?.c1).toEqual({ vary: 0 });
+  });
+
+  it('vary 0 on a member without a default removes the rule', () => {
+    const next = withMemberRuleInSource(
+      [makeSource({ sourceId: 'p1', kind: 'pool', memberRules: { c2: { vary: 1 } } })],
+      'p1',
+      'c2',
+      { vary: 0 },
+      { keepVaryOff: shouldKeepVaryOff(pool, 'c2') },
+    );
+    expect(next[0].memberRules).toBeUndefined();
   });
 });

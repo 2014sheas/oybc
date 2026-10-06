@@ -1,4 +1,4 @@
-import type { Pool } from '@oybc/shared';
+import type { Pool, VaryLevel } from '@oybc/shared';
 import { db } from '../internal';
 import { currentTimestamp } from '../utils';
 import type { TaskEditPatch } from '../taskEditPatch';
@@ -15,14 +15,21 @@ import { applyStagedTaskEditsForWizardPersist } from './wizardBoard';
  *
  * @param userId - Owner of a newly created pool.
  * @param pool - The pool to update, or `undefined` to create.
- * @param input - The already-trimmed name, the raw ordered `taskIds`, and the staged edits.
+ * @param input - The already-trimmed name, the raw ordered `taskIds`, the staged edits,
+ *   and the editor's pool-level default dice (`memberVary`, 2026-10-06 — absent leaves an
+ *   existing pool's map alone and creates a new pool with `{}`).
  * @returns The persisted pool.
  * @throws If the pool no longer exists (edit mode) or any write fails.
  */
 export async function savePoolWithStagedEdits(
   userId: string,
   pool: Pool | undefined,
-  input: { name: string; taskIds: string[]; stagedEdits?: Map<string, TaskEditPatch> },
+  input: {
+    name: string;
+    taskIds: string[];
+    stagedEdits?: Map<string, TaskEditPatch>;
+    memberVary?: Record<string, VaryLevel>;
+  },
 ): Promise<Pool> {
   return db.transaction(
     'rw',
@@ -39,11 +46,19 @@ export async function savePoolWithStagedEdits(
         strict: true,
       });
       if (pool) {
-        const updated = await updatePool(pool.id, { name: input.name, taskIds: input.taskIds });
+        const updated = await updatePool(pool.id, {
+          name: input.name,
+          taskIds: input.taskIds,
+          memberVary: input.memberVary,
+        });
         if (!updated) throw new Error('Pool no longer exists');
         return updated;
       }
-      return createPool(userId, { name: input.name, taskIds: input.taskIds });
+      return createPool(userId, {
+        name: input.name,
+        taskIds: input.taskIds,
+        memberVary: input.memberVary,
+      });
     },
   );
 }

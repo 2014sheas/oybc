@@ -16,6 +16,7 @@
 
 import {
   removeSourceLossSentence,
+  seedMemberRulesFromPool,
   seededTargetsForSource,
   sourceConfiguration,
   sourceHasConfiguration,
@@ -23,6 +24,7 @@ import {
   type BoardSourceFilter,
   type BoardSourceKind,
   type BoardWindow,
+  type Pool,
   type Task,
 } from '@oybc/shared';
 import type {
@@ -85,17 +87,29 @@ export function newSourceFilter(kind: BoardSourceKind): BoardSourceFilter {
  * @param sources - The current source rows, in row order.
  * @param sourceId - `Pool.id` or `Board.id` being pulled.
  * @param kind - Which of the two the id names.
+ * @param pool - The pulled pool (kind `'pool'`): its default dice seed the new
+ *   source's `memberRules` (only when it has any — never `memberRules: {}`).
  * @returns The next rows (input array when already pulled).
  */
 export function appendSource(
   sources: BoardSource[],
   sourceId: string,
   kind: BoardSourceKind,
+  pool?: Pool,
 ): BoardSource[] {
   if (sources.some((source) => source.sourceId === sourceId)) return sources;
+  const seeded = kind === 'pool' && pool !== undefined ? seedMemberRulesFromPool(pool) : {};
   return [
     ...sources,
-    { sourceId, kind, min: 0, max: null, excludedTaskIds: [], filter: newSourceFilter(kind) },
+    {
+      sourceId,
+      kind,
+      min: 0,
+      max: null,
+      excludedTaskIds: [],
+      filter: newSourceFilter(kind),
+      ...(Object.keys(seeded).length > 0 ? { memberRules: seeded } : {}),
+    },
   ];
 }
 

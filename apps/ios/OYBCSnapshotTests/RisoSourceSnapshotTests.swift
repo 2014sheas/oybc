@@ -34,7 +34,9 @@ final class RisoSourceSnapshotTests: XCTestCase {
         done: Set<String> = [],
         expanded: Bool,
         counterClashByTaskId: [String: String] = [:],
-        noBoardForWindow: Bool = false
+        noBoardForWindow: Bool = false,
+        poolDefaultVary: [String: VaryLevel] = [:],
+        taskOverrides: [String: OYBC.Task] = [:]
     ) -> some View {
         var source = BoardSource(sourceId: "s1", kind: kind)
         source.min = min
@@ -47,13 +49,14 @@ final class RisoSourceSnapshotTests: XCTestCase {
                 displayName: kind == .pool ? "Morning Kickstart" : "Weekday Core",
                 rawSupplyTaskIds: supply,
                 doneTaskIds: done,
-                noBoardForWindow: noBoardForWindow
+                noBoardForWindow: noBoardForWindow,
+                poolDefaultVary: poolDefaultVary
             ),
             availableCount: BoardSources.availableSupplyIds(
                 source: source, supplyTaskIds: supply, doneTaskIds: done
             ).filter { !excluded.contains($0) }.count,
             isExpanded: expanded,
-            taskById: taskById,
+            taskById: taskById.merging(taskOverrides) { _, override in override },
             onToggleExpanded: {},
             onRemove: {},
             onSetFilter: { _ in },
@@ -63,6 +66,24 @@ final class RisoSourceSnapshotTests: XCTestCase {
         )
         .padding(20)
         .background(Color.risoPaper)
+    }
+
+    // MARK: - Inherited pool dice (2026-10-06)
+
+    /// A pool member with NO stored rule shows the dice level it inherits
+    /// from the pool's default — never "off" while Create rolls.
+    func testPoolRowExpandedInheritedDiceLight() {
+        assertSnapshot(
+            of: sourceRow(
+                kind: .pool, expanded: true, poolDefaultVary: ["t2": .lot],
+                taskOverrides: ["t2": SnapshotFixtures.makeTask(
+                    id: "t2", title: "Read 20 pages", type: .counting,
+                    action: "Read", unit: "pages", maxCount: 20
+                )]
+            ),
+            as: .image(layout: .fixed(width: 393, height: 520)),
+            record: recordMode
+        )
     }
 
     // MARK: - Collapsed rows
