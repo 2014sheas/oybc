@@ -52,10 +52,11 @@ final class BoardWizardPreviewDerivedTests: XCTestCase {
     private func makeTask(
         _ id: String,
         type: TaskType = .normal,
-        maxCount: Int? = nil
+        maxCount: Int? = nil,
+        title: String? = nil
     ) -> OYBC.Task {
         OYBC.Task(
-            id: id, userId: userId, title: "Task \(id)", type: type,
+            id: id, userId: userId, title: title ?? "Task \(id)", type: type,
             action: type == .counting ? "Run" : nil,
             unit: type == .counting ? "miles" : nil,
             maxCount: maxCount,
@@ -220,13 +221,10 @@ final class BoardWizardPreviewDerivedTests: XCTestCase {
 
         let range = BoardSources.varyRange(t: countingGoal, level: .lot, goal: countingGoal)
         XCTAssertTrue(range.contains(rolled))
-        XCTAssertNotEqual(standIn.title, "Task cnt",
-                          "the cell must show the generated counter title, not the library one")
-        XCTAssertEqual(
-            standIn.title,
-            TaskTitle.generateCounterTaskTitle(action: "Run", maxCount: rolled, unit: "miles"),
-            "the preview title is the planner's, verbatim"
-        )
+        // "Task cnt" is NOT the auto title for Run / 100 / miles, so it is a
+        // CUSTOM name and the stand-in keeps it verbatim (custom-counter-title
+        // fix, 2026-10-06 — flipped from "shows the generated title").
+        XCTAssertEqual(standIn.title, "Task cnt", "the preview title is the planner's, verbatim")
         XCTAssertEqual(standIn.action, "Run")
         XCTAssertEqual(standIn.unit, "miles")
         XCTAssertEqual(standIn.currentCount, 0, "a fresh window starts at zero")
@@ -234,6 +232,34 @@ final class BoardWizardPreviewDerivedTests: XCTestCase {
 
         // A plain member the rules never touch is handed back untouched.
         XCTAssertEqual(byId["n1"]?.title, "Task n1")
+    }
+
+    /// Control for the custom-title case above: a member whose title IS its
+    /// auto title ("Run 100 miles") is relabelled at the rolled target.
+    func test_standInWithAnAutoTitleShowsTheRolledTitle() throws {
+        let database = try seedSourceBoard()
+        try database.write { db in
+            try self.makeTask(
+                "cnt", type: .counting, maxCount: self.countingGoal,
+                title: TaskTitle.generateCounterTaskTitle(action: "Run", maxCount: self.countingGoal, unit: "miles")
+            ).save(db)
+        }
+        let vm = pulledVM(database)
+        let library = try makeLibrary(database)
+
+        let placement = buildWizardPlacement(
+            controller: vm, library: library, previewRules: PreviewRulesOptions(seed: 3)
+        )
+        let standIn = try XCTUnwrap(cells(placement)["cnt"])
+        let rolled = try XCTUnwrap(standIn.maxCount)
+
+        XCTAssertNotEqual(standIn.title, "Run \(countingGoal) miles",
+                          "the cell must show the regenerated counter title, not the library one")
+        XCTAssertEqual(
+            standIn.title,
+            TaskTitle.generateCounterTaskTitle(action: "Run", maxCount: rolled, unit: "miles"),
+            "the preview title is the planner's, verbatim"
+        )
     }
 
     // MARK: - 4. Derived compounds are NOT stood in (RC6 item 2)

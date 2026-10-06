@@ -37,7 +37,7 @@ import type { TaskEvent } from '../types/taskEvent';
 import type { BoardSourceSupply } from './boardSources';
 import { isTimeframeExpired, isWithinTimeframe } from './calendarBoundaries';
 import { deriveDisplayedCount } from './sharedCounter';
-import { generateCounterTaskTitle } from './taskTitle';
+import { counterCopyTitle } from './taskTitle';
 import { uuidv5 } from './uuidv5';
 
 /** uuidv5 name prefix for a per-window derived counter. */
@@ -499,7 +499,7 @@ export function planDerivedTasks(args: PlanDerivedTasksArgs): PlanDerivedTasksRe
       replacesId,
       maxCount,
       baseline: baselineByRootId[root] ?? 0,
-      title: generateCounterTaskTitle(action, maxCount, unit, action ? undefined : t.title),
+      title: counterCopyTitle(t, maxCount),
       action,
       unit,
       timeframe: window.timeframe,

@@ -75,6 +75,28 @@ describe('healLinkedCounterWindows', () => {
     expect((await queued('tasks')).sort()).toEqual(['H', copyId].sort());
   });
 
+  it('a healed copy keeps the linked row\u2019s CUSTOM title (2026-10-06)', async () => {
+    await db.tasks.put(hubLinked('H', { title: 'Sunday long run' }));
+    await db.boards.bulkPut([boardRow(JUNE), boardRow(SEPT)]);
+    await db.boardTasks.bulkPut([placement('bt-j', JUNE.id, 'H'), placement('bt-s', SEPT.id, 'H')]);
+
+    expect(await healLinkedCounterWindows(USER)).toEqual({ stamped: 1, copied: 1 });
+
+    const copy = (await db.tasks.get(derivedTaskId(SEPT.id, ROOT)))!;
+    expect(copy.title).toBe('Sunday long run');
+    expect((await db.tasks.get('H'))!.title).toBe('Sunday long run');
+  });
+
+  it('a healed copy of an AUTO-titled row is titled from its own fields', async () => {
+    await db.tasks.put(hubLinked('H')); // 'Run 5 miles' == auto for Run / 5 / miles
+    await db.boards.bulkPut([boardRow(JUNE), boardRow(SEPT)]);
+    await db.boardTasks.bulkPut([placement('bt-j', JUNE.id, 'H'), placement('bt-s', SEPT.id, 'H')]);
+
+    await healLinkedCounterWindows(USER);
+
+    expect((await db.tasks.get(derivedTaskId(SEPT.id, ROOT)))!.title).toBe('Run 5 miles');
+  });
+
   it('stamps a child reached only through a compound placement', async () => {
     await db.tasks.bulkPut([hubLinked('H'), compoundTask('C')]);
     await db.compoundChildren.put(link('l1', 'C', 'H'));

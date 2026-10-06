@@ -5,7 +5,8 @@
 // from constants.
 export * from '@oybc/bingo-core';
 
-export { generateCounterTaskTitle } from './taskTitle';
+export { generateCounterTaskTitle, isAutoCounterTitle, counterCopyTitle } from './taskTitle';
+export type { CounterTitleFields } from './taskTitle';
 
 // ===== Pair-derived counter display names (R1 — counters refresh) =====
 export { formatCounterName } from './counterName';

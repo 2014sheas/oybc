@@ -20,11 +20,12 @@ enum LinkedWindowKit {
     static func task(
         _ id: String, maxCount: Int? = 10, sharedCounterId: String? = nil,
         startDate: String? = nil, endDate: String? = nil, createdInWizard: Bool = false,
-        baseline: Int? = nil, currentCount: Int? = nil, isCompleted: Bool = false
+        baseline: Int? = nil, currentCount: Int? = nil, isCompleted: Bool = false,
+        title: String? = nil
     ) -> Task {
         let now = "2026-05-01T00:00:00.000Z"
         return Task(
-            id: id, userId: userId, title: id, description: nil, type: .counting,
+            id: id, userId: userId, title: title ?? id, description: nil, type: .counting,
             action: "Run", unit: "miles", maxCount: maxCount, operatorType: nil, threshold: nil,
             referencedBoardId: nil, referencedTemplateId: nil, achievementTrigger: nil, requiredCount: nil,
             totalCompletions: 0, totalInstances: 0,
@@ -149,6 +150,43 @@ final class LinkedCounterWindowHealTests: XCTestCase {
         let bt = try XCTUnwrap(db.fetchBoardTasks(boardId: "S").first)
         XCTAssertEqual(bt.version, 2)
         XCTAssertEqual(try K.queue(db, type: "boardTasks", id: "btS").first?.operationType, .update)
+    }
+
+    /// Owner bug 2026-10-06: a minted copy regenerated its title from fields
+    /// whenever `action` was set, dropping a custom name. The kit's default
+    /// title is the id ("hub"), which is NOT the auto title for Run / 10 /
+    /// miles — so it is custom and the healed copy must keep it verbatim.
+    /// Mirrors web `linkedCounterWindowHeal.test.ts` "a healed copy keeps
+    /// the linked row's CUSTOM title".
+    func test_copy_keepsTheLinkedRowsCustomTitle() throws {
+        let db = try makeDb()
+        try db.saveTask(K.task("hub", sharedCounterId: "root", title: "Sunday long run"))
+        try db.saveBoard(K.board(id: "J", startDate: juneStart, endDate: juneEnd))
+        try db.saveBoard(K.board(id: "S", startDate: septStart, endDate: septEnd))
+        try db.saveBoardTask(K.placement(id: "btJ", boardId: "J", taskId: "hub"))
+        try db.saveBoardTask(K.placement(id: "btS", boardId: "S", taskId: "hub"))
+
+        let r = try heal(db)
+        XCTAssertEqual(r.copied, 1)
+
+        let copy = try XCTUnwrap(K.fetchTask(db, BoardSources.derivedTaskId(boardId: "S", rootTaskId: "root")))
+        XCTAssertEqual(copy.title, "Sunday long run")
+        XCTAssertEqual(try XCTUnwrap(K.fetchTask(db, "hub")).title, "Sunday long run")
+    }
+
+    /// Control: an AUTO-titled row's copy is titled from its own fields.
+    func test_copy_ofAnAutoTitledRow_isTitledFromItsFields() throws {
+        let db = try makeDb()
+        try db.saveTask(K.task("hub", sharedCounterId: "root", title: "Run 10 miles"))
+        try db.saveBoard(K.board(id: "J", startDate: juneStart, endDate: juneEnd))
+        try db.saveBoard(K.board(id: "S", startDate: septStart, endDate: septEnd))
+        try db.saveBoardTask(K.placement(id: "btJ", boardId: "J", taskId: "hub"))
+        try db.saveBoardTask(K.placement(id: "btS", boardId: "S", taskId: "hub"))
+
+        _ = try heal(db)
+
+        let copy = try XCTUnwrap(K.fetchTask(db, BoardSources.derivedTaskId(boardId: "S", rootTaskId: "root")))
+        XCTAssertEqual(copy.title, "Run 10 miles")
     }
 
     func test_idempotent_secondRunIsNoOp() throws {

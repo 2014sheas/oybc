@@ -36,7 +36,7 @@ import type { CompoundChild } from '../types/compoundChild';
 import type { Task } from '../types/task';
 import { derivedTaskId, isWindowStampedDerived } from './memberRules';
 import type { DerivedTaskDraft } from './memberRules';
-import { generateCounterTaskTitle } from './taskTitle';
+import { counterCopyTitle } from './taskTitle';
 
 /**
  * Do two stored `startDate`s name the same window opening?
@@ -342,10 +342,11 @@ export function planLinkedCounterWindowHeal(input: LinkedCounterWindowHealInput)
  * platform materialises it through the existing `buildDerivedRows` (which
  * sets `createdInWizard`, mirrors the root's count, stamps the latch, …).
  *
- * Title / action / unit / goal come from the SOURCE row (the copy keeps the
+ * Action / unit / goal come from the SOURCE row (the copy keeps the
  * linked row's own target — no pro-rating, no vary, exactly what the
- * user had); `replacesId` / `sourceMemberId` are the source; the window is
- * the copy's. `baseline` is the caller's event-derived count of the root at
+ * user had); the title is `counterCopyTitle` — a custom name carries over
+ * verbatim, an auto one is regenerated (2026-10-06); `replacesId` /
+ * `sourceMemberId` are the source; the window is the copy's. `baseline` is the caller's event-derived count of the root at
  * the copy's `startDate` (`computeWindowBaseline`) — a non-authored cache
  * `refreshDerivedBaselines` keeps fresh. Every field is filled purely.
  *
@@ -374,7 +375,7 @@ export function windowStampedCopyDraft(
     replacesId: copy.sourceTaskId,
     maxCount,
     baseline: Math.max(0, Math.floor(baseline)),
-    title: generateCounterTaskTitle(action, maxCount, unit, action ? undefined : sourceTask.title),
+    title: counterCopyTitle(sourceTask, maxCount),
     action,
     unit,
     timeframe: copy.timeframe,
