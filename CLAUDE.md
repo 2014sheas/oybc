@@ -110,6 +110,7 @@ Invariants not to regress:
 - **Share across platforms**: Constants, formatting, and validation that must be consistent across web and iOS should be centralised in a single definition.
 - Proper error handling and logging for all database and network interactions.
 - Evaluate third-party libraries carefully before importing — must be necessary, well-maintained, and not bloat app size.
+- **No explanatory copy in the UI (owner rule, 2026-09-30, widened 2026-10-06).** User-facing surfaces carry labels, values and controls — never sentences that explain mechanics, consequences or provenance ("Linked to X", "Changes apply everywhere this task is used", "Tap a square to…", helper lines under toggles, "Tip:" notes, footnotes under forms). The UI shows a mechanic by showing the thing (a target, a total, a badge); if a mechanic is invisible without a sentence, fix the control, don't caption it. Kept on purpose: validation errors, loading/error states, confirm-dialog consequence bodies, empty-state one-liners, the tutorial/Help pages, and App Store-required permission priming. Every PR's self-review checks its diff for new sentences of this kind and removes them, and when a PR touches a surface that already carries one it removes that too (both platforms). The backlog of existing instances is [#548](https://github.com/2014sheas/oybc/issues/548) (ROADMAP E11).
 
 ## Testing Standards
 
