@@ -24,7 +24,7 @@ import SnapshotTesting
 /// these five now picture the CLOSED row (title at full width + summary
 /// chip + chevron), not the controls:
 ///   - counting member: chip "35 mi" in muted ink
-///   - counting member with the dice on: chip "28–35 mi" in blue
+///   - counting member with the dice on: chip "28–42 mi" in blue
 ///   - the same counting member pulled from a POOL: identical collapsed
 ///     row (RC5's stepper/no-stepper split now shows only when expanded)
 ///   - compound member One square: chip "1 square", blue (member dice)
@@ -32,7 +32,7 @@ import SnapshotTesting
 ///
 /// B3.1 leaf variants — the same rows with the disclosure seeded OPEN,
 /// which is where the stepper, dice, inline range and part lines live:
-///   - counting, dice on: pill "35 / 35 mi" · dice · "28–35 mi" inline
+///   - counting, dice on: pill "35 / 35 mi" · dice · "28–42 mi" inline
 ///   - the SAME counting member from a POOL: dice alone, no stepper (RC5)
 ///   - a counting member carrying the counter-family clash hint: a
 ///     TWO-LINE title block, so the row is taller than `minHeight: 28`
@@ -513,7 +513,7 @@ final class BoardWizardTasksStepSnapshotTests: XCTestCase {
     /// The included part (Push-ups, goal 210) also carries `vary: .little`,
     /// so this baseline is the only guard left for the §Member rules
     /// clause "the blue range line sits beneath the row/**part** — never
-    /// on the compound itself": it pictures "168–210" under the Push-ups
+    /// on the compound itself": it pictures "168–252" under the Push-ups
     /// line, with nothing beside the One square / Split up pill. The unit
     /// test that used to assert that placement was dropped in the B3.1
     /// rework; the web backstop is the `getByText('8–10')` structural

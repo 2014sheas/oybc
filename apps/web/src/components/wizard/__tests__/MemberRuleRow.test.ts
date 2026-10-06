@@ -185,9 +185,10 @@ describe('MemberRuleRow — counting chip', () => {
 
   it('does not pro-rate a POOL member — it has no source window', () => {
     // A pool member sits at its full goal, so with the dice lit its range
-    // is the goal's, not the daily-pro-rated 5's.
+    // is ± around the goal (28–42, overshooting 35 — the range is symmetric,
+    // never capped at the goal), not the daily-pro-rated 5's.
     const html = render({ task: READING, fromBoard: false, sourceWindow: undefined, rule: { vary: 1 } });
-    expect(html).toContain('28–35 pages');
+    expect(html).toContain('28–42 pages');
     expect(html).toContain(varyRangeLabel(35, 1, 35, 'pages') as string);
     expect(html).not.toContain('4–6 pages');
   });
