@@ -214,20 +214,71 @@ export function appendPickedChild(draft: TaskEditPatch, task: Task): TaskEditPat
   return { ...draft, children: [...draft.children, childPatchFromTask(task)] };
 }
 
+/** The typed goal as a positive integer, or `undefined` when blank/invalid. */
+function parsePositiveGoal(goal: string): number | undefined {
+  // Whole digits only — `parseInt` would truncate "2.5" / "1e3" / "5x" and
+  // silently save a different goal than typed; iOS `Int(_:)` rejects them.
+  const trimmed = goal.trim();
+  if (!/^\d+$/.test(trimmed)) return undefined;
+  const parsed = Number(trimmed);
+  return parsed > 0 ? parsed : undefined;
+}
+
+/**
+ * Whether the quick-add row may append a NEW Counting sub-task: the text
+ * (its action) is non-blank, the goal is a positive integer and the unit
+ * is non-blank — the create panel's `canAddSub` gate, so an untouched Goal
+ * can never silently produce a goal-less child. Mirrors iOS
+ * `RisoCompoundEditFieldsView.canAppendCounting`.
+ *
+ * @param text - The row's text (the action).
+ * @param goal - The Goal field's text.
+ * @param unit - The Counting (unit) field's text.
+ * @returns `true` when all three are valid.
+ */
+export function canAppendCounting(text: string, goal: string, unit: string): boolean {
+  return text.trim().length > 0 && parsePositiveGoal(goal) !== undefined && unit.trim().length > 0;
+}
+
 /**
  * Appends a NEW sub-task typed into the quick-add row (Enter / Add). A
- * Normal sub-task takes the text as its title; a Counting one also takes
- * it as its action (Goal / Unit are then filled on its card).
+ * Normal sub-task takes the text as its title; a Counting one takes it as
+ * its action plus the Goal / Unit from the row's counting config, titled
+ * with the derived counter title ("Run 5 km") — the fields stay editable
+ * on its card. Mirrors iOS `RisoCompoundEditFieldsView.appendTyped`.
  *
  * @param draft - The compound structure being edited.
  * @param text - The trimmed text from the row.
  * @param isCounting - Whether the "Counting" chip is on.
+ * @param goal - The Goal field's text (Counting only).
+ * @param unit - The Counting (unit) field's text (Counting only).
  * @returns The next draft.
  */
-export function appendTypedChild(draft: TaskEditPatch, text: string, isCounting: boolean): TaskEditPatch {
-  const child: ChildPatch = isCounting
-    ? { ...newChildPatch(true), title: text, action: text }
-    : { ...newChildPatch(false), title: text };
+export function appendTypedChild(
+  draft: TaskEditPatch,
+  text: string,
+  isCounting: boolean,
+  goal = '',
+  unit = '',
+): TaskEditPatch {
+  let child: ChildPatch;
+  if (isCounting) {
+    const parsedGoal = parsePositiveGoal(goal);
+    const trimmedUnit = unit.trim();
+    const title =
+      parsedGoal !== undefined && trimmedUnit.length > 0
+        ? generateCounterTaskTitle(text, parsedGoal, trimmedUnit)
+        : text;
+    child = {
+      ...newChildPatch(true),
+      title,
+      action: text,
+      goal: parsedGoal !== undefined ? String(parsedGoal) : '',
+      unit: trimmedUnit,
+    };
+  } else {
+    child = { ...newChildPatch(false), title: text };
+  }
   return { ...draft, children: [...draft.children, child] };
 }
 

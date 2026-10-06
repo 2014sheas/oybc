@@ -198,22 +198,55 @@ final class TaskEditPatchTests: XCTestCase {
         XCTAssertEqual(d.liveChildren.count, 1)
     }
 
-    func test_appendTyped_counting_takes_the_text_as_its_action() {
+    func test_appendTyped_counting_takes_the_text_as_its_action_plus_goal_and_unit() {
         var d = TaskEditPatch(title: "P")
-        RisoCompoundEditFieldsView.appendTyped("Swim", isCounting: true, to: &d)
-        RisoCompoundEditFieldsView.appendTyped("Swim", isCounting: true, to: &d)
+        RisoCompoundEditFieldsView.appendTyped("Swim", isCounting: true, goal: " 5 ", unit: " laps ", to: &d)
+        RisoCompoundEditFieldsView.appendTyped("Swim", isCounting: true, goal: "5", unit: "laps", to: &d)
         let added = d.children[0]
         XCTAssertTrue(added.isNew)
-        XCTAssertEqual(added.title, "Swim")
+        XCTAssertEqual(added.title, "Swim 5 laps")
         XCTAssertEqual(added.action, "Swim")
         XCTAssertTrue(added.isCounting)
         XCTAssertEqual(added.childType, .counting)
-        XCTAssertEqual(added.goal, "")
-        XCTAssertEqual(added.unit, "")
+        XCTAssertEqual(added.goal, "5")
+        XCTAssertEqual(added.unit, "laps")
         // Each typed entry is its own new sub-task (fresh ids).
         XCTAssertNotEqual(d.children[0].id, d.children[1].id)
-        // Live, so validation then asks for its Goal / Unit on the card.
         XCTAssertEqual(d.liveChildren.count, 2)
+        // Complete on arrival — nothing left for validation to ask for.
+        d.children.append(ChildPatch(id: "n", childTaskId: nil, title: "Normal", isCounting: false))
+        XCTAssertNil(d.validate(type: .compound))
+    }
+
+    func test_appendTyped_counting_without_goal_or_unit_keeps_the_text_as_its_title() {
+        var d = TaskEditPatch(title: "P")
+        RisoCompoundEditFieldsView.appendTyped("Swim", isCounting: true, to: &d)
+        RisoCompoundEditFieldsView.appendTyped("Swim", isCounting: true, goal: "5", unit: "", to: &d)
+        RisoCompoundEditFieldsView.appendTyped("Swim", isCounting: true, goal: "0", unit: "laps", to: &d)
+        XCTAssertEqual(d.children.map(\.title), ["Swim", "Swim", "Swim"])
+        XCTAssertEqual(d.children.map(\.goal), ["", "5", ""])
+        XCTAssertEqual(d.children.map(\.unit), ["", "", "laps"])
+        XCTAssertTrue(d.children.allSatisfy { $0.isCounting && $0.action == "Swim" })
+        // Live, so validation then asks for the Goal / Unit on the card.
+        XCTAssertEqual(d.liveChildren.count, 3)
+        XCTAssertEqual(d.validate(type: .compound), "Counting sub-task \"Swim\" needs a goal and a unit.")
+    }
+
+    func test_canAppendCounting_requires_text_positive_goal_and_unit() {
+        XCTAssertTrue(RisoCompoundEditFieldsView.canAppendCounting(text: "Run", goal: "5", unit: "km"))
+        XCTAssertTrue(RisoCompoundEditFieldsView.canAppendCounting(text: " Run ", goal: " 12 ", unit: " km "))
+        XCTAssertFalse(RisoCompoundEditFieldsView.canAppendCounting(text: "", goal: "5", unit: "km"))
+        XCTAssertFalse(RisoCompoundEditFieldsView.canAppendCounting(text: "   ", goal: "5", unit: "km"))
+        XCTAssertFalse(RisoCompoundEditFieldsView.canAppendCounting(text: "Run", goal: "", unit: "km"))
+        XCTAssertFalse(RisoCompoundEditFieldsView.canAppendCounting(text: "Run", goal: "0", unit: "km"))
+        XCTAssertFalse(RisoCompoundEditFieldsView.canAppendCounting(text: "Run", goal: "-3", unit: "km"))
+        XCTAssertFalse(RisoCompoundEditFieldsView.canAppendCounting(text: "Run", goal: "five", unit: "km"))
+        // Whole digits only (web parity): no truncation of a typed goal.
+        XCTAssertFalse(RisoCompoundEditFieldsView.canAppendCounting(text: "Run", goal: "2.5", unit: "km"))
+        XCTAssertFalse(RisoCompoundEditFieldsView.canAppendCounting(text: "Run", goal: "1e3", unit: "km"))
+        XCTAssertFalse(RisoCompoundEditFieldsView.canAppendCounting(text: "Run", goal: "5x", unit: "km"))
+        XCTAssertFalse(RisoCompoundEditFieldsView.canAppendCounting(text: "Run", goal: "5", unit: ""))
+        XCTAssertFalse(RisoCompoundEditFieldsView.canAppendCounting(text: "Run", goal: "5", unit: "  "))
     }
 
     func test_compound_empty_title_blocks() {

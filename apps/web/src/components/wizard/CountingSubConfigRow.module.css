@@ -1,0 +1,21 @@
+/* Goal + Counting pair for a new counting sub-task — a row in the compound
+   edit editor, stacked inside the create wizard's CountingStepFields. */
+.row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  min-width: 0;
+}
+.goalGroup {
+  flex: 0 0 90px;
+  min-width: 0;
+}
+.unitGroup {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}

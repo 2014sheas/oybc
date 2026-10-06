@@ -13,6 +13,7 @@ import { WizardQuickAddRow } from '../WizardQuickAddRow';
 import {
   appendPickedChild,
   appendTypedChild,
+  canAppendCounting,
   emptyPatch,
   isNewChild,
   subtaskQuickAddCandidates,
@@ -82,6 +83,9 @@ describe('CompoundFields', () => {
     expect(html).toContain('New sub:');
     expect(html).toMatch(/aria-pressed="true"[^>]*>Normal</);
     expect(html).toMatch(/aria-pressed="false"[^>]*>Counting</);
+    // Normal on: no Goal / Counting config row under the chips.
+    expect(html).not.toContain('id="new-sub-P-maxcount"');
+    expect(html).not.toContain('id="new-sub-P-unit"');
     // Task 7's buttons and picker dialog are gone.
     expect(html).not.toContain('+ Normal sub-task');
     expect(html).not.toContain('+ Counting sub-task');
@@ -209,13 +213,54 @@ describe('CompoundFields append paths', () => {
     expect(liveChildren(next)).toHaveLength(3);
   });
 
-  it('with the Counting chip on, Enter appends a NEW Counting sub-task whose action is the text', () => {
-    const next = appendTypedChild(TWO_CHILD_AND, 'Swim', true);
+  it('with the Counting chip on, Enter appends a complete Counting sub-task — action = text, Goal / Unit from the config row, derived title', () => {
+    const next = appendTypedChild(TWO_CHILD_AND, 'Swim', true, ' 5 ', ' laps ');
     const added = next.children[2];
     expect(isNewChild(added)).toBe(true);
-    expect(added).toMatchObject({ title: 'Swim', action: 'Swim', isCounting: true, childType: TaskType.COUNTING, goal: '', unit: '' });
-    // Live (non-blank title) — the card then asks for its Goal / Unit.
+    expect(added).toMatchObject({
+      title: 'Swim 5 laps',
+      action: 'Swim',
+      isCounting: true,
+      childType: TaskType.COUNTING,
+      goal: '5',
+      unit: 'laps',
+    });
     expect(liveChildren(next)).toHaveLength(3);
+    expect(TWO_CHILD_AND.children).toHaveLength(2);
+  });
+
+  it('a Counting append without a valid goal / unit keeps the text as its title (the card asks for them)', () => {
+    const added = appendTypedChild(TWO_CHILD_AND, 'Swim', true).children[2];
+    expect(added).toMatchObject({ title: 'Swim', action: 'Swim', isCounting: true, goal: '', unit: '' });
+    const noUnit = appendTypedChild(TWO_CHILD_AND, 'Swim', true, '5', '').children[2];
+    expect(noUnit).toMatchObject({ title: 'Swim', goal: '5', unit: '' });
+  });
+
+  it('canAppendCounting requires non-blank text, a positive integer goal and a non-blank unit', () => {
+    expect(canAppendCounting('Run', '5', 'km')).toBe(true);
+    expect(canAppendCounting(' Run ', ' 12 ', ' km ')).toBe(true);
+    expect(canAppendCounting('', '5', 'km')).toBe(false);
+    expect(canAppendCounting('   ', '5', 'km')).toBe(false);
+    expect(canAppendCounting('Run', '', 'km')).toBe(false);
+    expect(canAppendCounting('Run', '0', 'km')).toBe(false);
+    expect(canAppendCounting('Run', '-3', 'km')).toBe(false);
+    expect(canAppendCounting('Run', 'five', 'km')).toBe(false);
+    // Whole digits only (iOS `Int(_:)` parity): no truncation of a typed goal.
+    expect(canAppendCounting('Run', '2.5', 'km')).toBe(false);
+    expect(canAppendCounting('Run', '1e3', 'km')).toBe(false);
+    expect(canAppendCounting('Run', '5x', 'km')).toBe(false);
+    expect(canAppendCounting('Run', '5', '')).toBe(false);
+    expect(canAppendCounting('Run', '5', '  ')).toBe(false);
+  });
+
+  it('a fixed placeholder replaces the quick-add row\'s rotating pool (Counting on names the field "Do")', () => {
+    // (The canSubmitText gate needs typed text — a static render cannot
+    // exercise it; the Task Detail e2e covers Add-disabled / Enter-ignored.)
+    const named = renderToStaticMarkup(
+      React.createElement(WizardQuickAddRow, { userId: '', onTaskCreated: () => {}, onSubmitText: () => {}, placeholder: 'Do' }),
+    );
+    expect(named).toContain('placeholder="Do"');
+    expect(named).not.toContain('placeholder="e.g. Meditate 10 min"');
   });
 });
 

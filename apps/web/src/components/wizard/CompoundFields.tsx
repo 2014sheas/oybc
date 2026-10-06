@@ -6,6 +6,7 @@ import { CounterStepper } from '../CounterStepper';
 import {
   appendPickedChild,
   appendTypedChild,
+  canAppendCounting,
   clampThreshold,
   liveChildren,
   readsAsPreview,
@@ -15,6 +16,7 @@ import {
 } from '../../db/taskEditPatch';
 import { MiniTypeBadge, type MiniBadgeType } from './MiniTypeBadge';
 import { WizardQuickAddRow } from './WizardQuickAddRow';
+import { CountingSubConfigRow } from './CountingSubConfigRow';
 import styles from './PoolRowEditor.module.css';
 
 /** Whether the host's library inputs (`libraryTasks` / `allLinks`) have
@@ -53,7 +55,10 @@ export interface CompoundFieldsProps {
  * button per card, and the wizard's own quick-add row (`WizardQuickAddRow`)
  * to add a sub-task: typing lists matching eligible library tasks — click
  * one to link it (`childPatchFromTask`); Enter / Add appends a NEW sub-task
- * titled with the text, Normal or Counting per the "New sub:" chips. Same
+ * titled with the text, Normal or Counting per the "New sub:" chips. With
+ * Counting on, the create panel's Goal + Counting config row
+ * (`CountingSubConfigRow`) and "Reads as" preview sit under the chips and
+ * gate the append (`canAppendCounting`) — the text is the action. Same
  * job, same interface as adding a task to a board.
  *
  * Shared by the wizard's inline pool-row editor (`PoolRowEditor`) and the
@@ -70,6 +75,9 @@ export function CompoundFields({
   libraryInputsState = 'loaded',
 }: CompoundFieldsProps): React.ReactElement {
   const [newSubCounting, setNewSubCounting] = useState(false);
+  const [newSubText, setNewSubText] = useState('');
+  const [newSubGoal, setNewSubGoal] = useState('');
+  const [newSubUnit, setNewSubUnit] = useState('');
   const subCount = liveChildren(draft).length;
   const operator = draft.operator ?? OperatorType.AND;
   const threshold = draft.threshold ?? 2;
@@ -100,6 +108,15 @@ export function CompoundFields({
   }
 
   const candidates = subtaskQuickAddCandidates(parentId, libraryTasks, allLinks, draft);
+  const newSubPreview = newSubCounting ? readsAsPreview(newSubText, newSubGoal, newSubUnit) : undefined;
+
+  function appendTyped(text: string): void {
+    onDraftChange(appendTypedChild(draft, text, newSubCounting, newSubGoal, newSubUnit));
+    // Back to Normal for the next one, like the create panel.
+    setNewSubCounting(false);
+    setNewSubGoal('');
+    setNewSubUnit('');
+  }
 
   return (
     <div className={styles.compoundSection}>
@@ -135,7 +152,10 @@ export function CompoundFields({
         libraryTasks={candidates}
         selectedIds={NO_SELECTED_IDS}
         onExistingTaskPicked={(task) => onDraftChange(appendPickedChild(draft, task))}
-        onSubmitText={(text) => onDraftChange(appendTypedChild(draft, text, newSubCounting))}
+        onSubmitText={appendTyped}
+        onTextChange={setNewSubText}
+        canSubmitText={!newSubCounting || canAppendCounting(newSubText, newSubGoal, newSubUnit)}
+        placeholder={newSubCounting ? 'Do' : undefined}
       />
       <div className={styles.newSubTypeRow}>
         <span className={styles.newSubTypeLabel}>New sub:</span>
@@ -146,6 +166,18 @@ export function CompoundFields({
           Counting
         </RisoChip>
       </div>
+      {newSubCounting && (
+        <div className={styles.newSubCountingConfig}>
+          <CountingSubConfigRow
+            idPrefix={`new-sub-${parentId}`}
+            goal={newSubGoal}
+            unit={newSubUnit}
+            onGoalChange={setNewSubGoal}
+            onUnitChange={setNewSubUnit}
+          />
+          {newSubPreview && <span className={styles.subtaskReadsAs}>{newSubPreview}</span>}
+        </div>
+      )}
       {libraryInputsState === 'loading' && <p className={styles.subtaskNote}>Loading your tasks…</p>}
       {libraryInputsState === 'failed' && (
         <p className={styles.libraryError} role="alert">

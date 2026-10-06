@@ -6,7 +6,10 @@ import SwiftUI
 /// the wizard's own quick-add row (`RisoQuickAddRowView`) to add a sub-task:
 /// typing lists matching eligible library tasks — tap one to link it
 /// (`appendPicked`); Return / Add appends a NEW sub-task titled with the
-/// text, Normal or Counting per the "New sub:" chips (`appendTyped`). Same
+/// text, Normal or Counting per the "New sub:" chips (`appendTyped`). With
+/// Counting on, the create panel's Goal + Counting config row
+/// (`RisoCountingSubConfigRow`) and "Reads as" preview sit under the chips
+/// and gate the append (`canAppendCounting`) — the text is the action. Same
 /// job, same interface as adding a task to a board. Bound to a
 /// `TaskEditPatch`.
 ///
@@ -38,8 +41,52 @@ struct RisoCompoundEditFieldsView: View {
         case loading, loaded, failed
     }
 
+    /// Initial state of the new-sub entry (the "New sub:" chip + the row's
+    /// text + the Counting config) — seeded by snapshot tests; production
+    /// hosts start blank on Normal.
+    struct NewSubSeed {
+        var counting = false
+        var text = ""
+        var goal = ""
+        var unit = ""
+    }
+
     /// The "New sub:" chip — whether Return / Add appends a Counting sub-task.
-    @State private var newSubCounting = false
+    @State private var newSubCounting: Bool
+    /// The quick-add row's text, mirrored via `onTextChange` — the new
+    /// Counting sub-task's action (preview + gate).
+    @State private var newSubText: String
+    /// The new Counting sub-task's Goal / Counting (unit) config.
+    @State private var newSubGoal: String
+    @State private var newSubUnit: String
+    private let seedText: String
+
+    /// - Parameters:
+    ///   - draft: The compound structure being edited.
+    ///   - parentId: The compound being edited — the link guard's `parentId`.
+    ///   - libraryTasks: Browsable library tasks offered as quick-add matches.
+    ///   - allLinks: Live compound links across ALL compounds (loop check).
+    ///   - libraryInputsState: Load state of the host's library inputs.
+    ///   - newSubSeed: Initial new-sub entry state (tests only).
+    init(
+        draft: Binding<TaskEditPatch>,
+        parentId: String,
+        libraryTasks: [Task],
+        allLinks: [CompoundChild],
+        libraryInputsState: LibraryInputsState = .loaded,
+        newSubSeed: NewSubSeed = NewSubSeed()
+    ) {
+        _draft = draft
+        self.parentId = parentId
+        self.libraryTasks = libraryTasks
+        self.allLinks = allLinks
+        self.libraryInputsState = libraryInputsState
+        _newSubCounting = State(initialValue: newSubSeed.counting)
+        _newSubText = State(initialValue: newSubSeed.text)
+        _newSubGoal = State(initialValue: newSubSeed.goal)
+        _newSubUnit = State(initialValue: newSubSeed.unit)
+        seedText = newSubSeed.text
+    }
 
     var body: some View {
         compoundFields
@@ -57,23 +104,71 @@ struct RisoCompoundEditFieldsView: View {
         draft.children.append(ChildPatch(from: task))
     }
 
+    /// The typed goal as a positive Int, or nil when blank/invalid.
+    private static func parsePositiveGoal(_ goal: String) -> Int? {
+        guard let g = Int(goal.trimmingCharacters(in: .whitespacesAndNewlines)), g > 0 else { return nil }
+        return g
+    }
+
+    /// Whether the quick-add row may append a NEW Counting sub-task: the
+    /// text (its action) is non-blank, the goal is a positive integer and
+    /// the unit is non-blank — the create panel's `canAddSub` gate, so an
+    /// untouched Goal can never silently produce a goal-less child. Twin of
+    /// web `canAppendCounting`.
+    ///
+    /// - Parameters:
+    ///   - text: The row's text (the action).
+    ///   - goal: The Goal field's text.
+    ///   - unit: The Counting (unit) field's text.
+    /// - Returns: `true` when all three are valid.
+    static func canAppendCounting(text: String, goal: String, unit: String) -> Bool {
+        !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && parsePositiveGoal(goal) != nil
+            && !unit.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
     /// Appends a NEW sub-task typed into the quick-add row (Return / Add). A
-    /// Normal sub-task takes the text as its title; a Counting one also takes
-    /// it as its action (Goal / Unit are then filled on its card). Twin of
-    /// web `appendTypedChild`.
+    /// Normal sub-task takes the text as its title; a Counting one takes it
+    /// as its action plus the Goal / Unit from the row's counting config,
+    /// titled with the derived counter title ("Run 5 km") — the fields stay
+    /// editable on its card. Twin of web `appendTypedChild`.
     ///
     /// - Parameters:
     ///   - text: The trimmed text from the row.
     ///   - isCounting: Whether the "Counting" chip is on.
+    ///   - goal: The Goal field's text (Counting only).
+    ///   - unit: The Counting (unit) field's text (Counting only).
     ///   - draft: The compound structure being edited.
-    static func appendTyped(_ text: String, isCounting: Bool, to draft: inout TaskEditPatch) {
+    static func appendTyped(
+        _ text: String,
+        isCounting: Bool,
+        goal: String = "",
+        unit: String = "",
+        to draft: inout TaskEditPatch
+    ) {
+        guard isCounting else {
+            draft.children.append(
+                ChildPatch(id: AppDatabase.generateUUID(), childTaskId: nil, title: text, isCounting: false)
+            )
+            return
+        }
+        let parsedGoal = parsePositiveGoal(goal)
+        let trimmedUnit = unit.trimmingCharacters(in: .whitespacesAndNewlines)
+        let title: String
+        if let g = parsedGoal, !trimmedUnit.isEmpty {
+            title = TaskTitle.generateCounterTaskTitle(action: text, maxCount: g, unit: trimmedUnit)
+        } else {
+            title = text
+        }
         draft.children.append(
             ChildPatch(
                 id: AppDatabase.generateUUID(),
                 childTaskId: nil,
-                title: text,
-                isCounting: isCounting,
-                action: isCounting ? text : ""
+                title: title,
+                isCounting: true,
+                action: text,
+                goal: parsedGoal.map(String.init) ?? "",
+                unit: trimmedUnit
             )
         )
     }
@@ -203,11 +298,22 @@ struct RisoCompoundEditFieldsView: View {
         }
     }
 
+    /// Appends the typed sub-task per the chip, then resets the chip to
+    /// Normal and clears the Counting config for the next one, like the
+    /// create panel (the row clears its own text).
+    private func appendTyped(_ text: String) {
+        Self.appendTyped(text, isCounting: newSubCounting, goal: newSubGoal, unit: newSubUnit, to: &draft)
+        newSubCounting = false
+        newSubGoal = ""
+        newSubUnit = ""
+    }
+
     /// The wizard's own quick-add row, draft-only (`onSubmitText`): Return
     /// appends a new sub-task (no task is created until Save); a tapped match
     /// links that existing task. `userId` / `onTaskCreated` /
     /// `onLibraryReloadRequested` feed only the create path, which
-    /// `onSubmitText` replaces. Below it: the "New sub:" type chips and the
+    /// `onSubmitText` replaces. Below it: the "New sub:" type chips, the
+    /// Counting config row + "Reads as" preview (Counting on) and the
     /// library load line.
     private var subtaskQuickAdd: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -225,7 +331,12 @@ struct RisoCompoundEditFieldsView: View {
                     currentChildIds: draft.keptChildTaskIds
                 ),
                 onExistingTaskPicked: { task in Self.appendPicked(task, to: &draft) },
-                onSubmitText: { text in Self.appendTyped(text, isCounting: newSubCounting, to: &draft) }
+                onSubmitText: { text in appendTyped(text) },
+                submitTextEnabled: !newSubCounting
+                    || Self.canAppendCounting(text: newSubText, goal: newSubGoal, unit: newSubUnit),
+                onTextChange: { newSubText = $0 },
+                placeholderOverride: newSubCounting ? "Do" : nil,
+                seedText: seedText
             )
             .disabled(libraryInputsState == .loading)
 
@@ -237,6 +348,17 @@ struct RisoCompoundEditFieldsView: View {
                     .accessibilityAddTraits(!newSubCounting ? .isSelected : [])
                 RisoChip(title: "Counting", isOn: newSubCounting) { newSubCounting = true }
                     .accessibilityAddTraits(newSubCounting ? .isSelected : [])
+            }
+
+            if newSubCounting {
+                VStack(alignment: .leading, spacing: 5) {
+                    RisoCountingSubConfigRow(goal: $newSubGoal, unit: $newSubUnit)
+                    if let preview = risoReadsAsPreview(action: newSubText, goal: newSubGoal, unit: newSubUnit) {
+                        Text(preview)
+                            .font(.risoBody(10.5, .extraBold))
+                            .foregroundStyle(Color.risoBlue)
+                    }
+                }
             }
 
             switch libraryInputsState {

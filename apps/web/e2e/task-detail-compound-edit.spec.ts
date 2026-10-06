@@ -17,6 +17,33 @@ const CHILD_B_ID = 'cccccccc-0003-0000-0000-000000000003';
 const LIBRARY_ID = 'cccccccc-0004-0000-0000-000000000004';
 const UNITLESS_ID = 'cccccccc-0005-0000-0000-000000000005';
 
+/** Reads the stored counting child titled `title` straight from IndexedDB. */
+async function readCountingChild(
+  page: Page,
+  title: string,
+): Promise<{ type?: string; action?: string; maxCount?: number; unit?: string } | null> {
+  return page.evaluate(async (wanted) => {
+    return new Promise((resolve, reject) => {
+      const openReq = indexedDB.open('oybc');
+      openReq.onerror = () => reject(openReq.error);
+      openReq.onsuccess = () => {
+        const db = openReq.result;
+        const req = db.transaction(['tasks'], 'readonly').objectStore('tasks').getAll();
+        req.onsuccess = () => {
+          db.close();
+          const row = (req.result as Array<Record<string, unknown>>).find((r) => r.title === wanted && !r.isDeleted);
+          resolve(
+            row
+              ? { type: row.type as string, action: row.action as string, maxCount: row.maxCount as number, unit: row.unit as string }
+              : null,
+          );
+        };
+        req.onerror = () => reject(req.error);
+      };
+    });
+  }, title);
+}
+
 /** Reads the compound's stored rule straight from IndexedDB. */
 async function readRule(page: Page): Promise<{ operator?: string; threshold?: number; version?: number }> {
   return page.evaluate(async (id) => {
@@ -99,6 +126,55 @@ test.describe('Task Detail — compound editing', () => {
     const reopened = page.getByRole('dialog', { name: 'Edit task' });
     await expect(reopened.getByLabel('Sub-task 3 title')).toHaveValue('Third');
     await expect(reopened.getByText('of 3 sub-tasks')).toBeVisible();
+  });
+
+  test('with the Counting chip on, the Goal / Counting row appears, gates Enter, and Save persists a counting child', async ({ page }) => {
+    await page.goto(`/tasks/${PARENT_ID}?__oybc_test_bypass=1`);
+    await expect(page.getByRole('heading', { name: 'Subtasks (2)' })).toBeVisible();
+    await page.getByRole('button', { name: 'Edit', exact: true }).click();
+    const sheet = page.getByRole('dialog', { name: 'Edit task' });
+    await expect(sheet.getByLabel('Sub-task 2 title')).toHaveValue('Squats');
+
+    // Normal on: no config row.
+    const goal = sheet.getByRole('spinbutton', { name: 'Goal*', exact: true });
+    const unit = sheet.getByRole('textbox', { name: 'Counting*', exact: true });
+    await expect(goal).toHaveCount(0);
+    await sheet.getByRole('button', { name: 'Counting', exact: true }).click();
+    await expect(goal).toBeVisible();
+    await expect(unit).toBeVisible();
+    const field = sheet.getByLabel('New normal task title');
+    await expect(field).toHaveAttribute('placeholder', 'Do');
+
+    // Text alone doesn't append — Enter is ignored until Goal + Counting are valid.
+    await field.fill('Run');
+    await expect(sheet.getByText('Reads as: Run — — — —')).toBeVisible();
+    await expect(sheet.getByRole('button', { name: 'Add task' })).toBeDisabled();
+    await field.press('Enter');
+    await expect(sheet.getByLabel('Sub-task 3 title')).toHaveCount(0);
+    await expect(field).toHaveValue('Run');
+
+    await goal.fill('5');
+    await unit.fill('km');
+    await expect(sheet.getByText('Reads as: Run — 5 — km')).toBeVisible();
+    await expect(sheet.getByRole('button', { name: 'Add task' })).toBeEnabled();
+    await field.press('Enter');
+
+    // The appended card is complete: derived title + editable Action/Goal/Unit.
+    await expect(sheet.getByLabel('Sub-task 3 title')).toHaveValue('Run 5 km');
+    await expect(sheet.getByLabel('Sub-task 3 action')).toHaveValue('Run');
+    await expect(sheet.getByLabel('Sub-task 3 goal')).toHaveValue('5');
+    await expect(sheet.getByLabel('Sub-task 3 unit')).toHaveValue('km');
+    // The row clears and the chip is back on Normal for the next sub-task
+    // (the create panel's behaviour), so the Goal / Counting row is gone.
+    await expect(field).toHaveValue('');
+    await expect(goal).toHaveCount(0);
+    await expect(unit).toHaveCount(0);
+
+    await sheet.getByRole('button', { name: /save changes/i }).click();
+    await expect(sheet).toHaveCount(0);
+    await expect(page.getByRole('heading', { name: 'Subtasks (3)' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Open subtask: Run 5 km' })).toBeVisible();
+    expect(await readCountingChild(page, 'Run 5 km')).toEqual({ type: 'counting', action: 'Run', maxCount: 5, unit: 'km' });
   });
 
   test('saves a compound down to ONE sub-task; removing the last one is blocked', async ({ page }) => {
