@@ -559,7 +559,7 @@ final class CreateFormViewModel {
     ///   - userId: Authenticated user id for Task.userId.
     ///   - title: Trimmed compound task title. Must be non-empty.
     ///   - rule: Completion rule — drives operator/threshold.
-    ///   - subs: Ordered list of sub-task entries (min 2).
+    ///   - subs: Ordered list of sub-task entries (min 1).
     ///   - onTaskCreated: Called on main queue with (parentId, title, "Compound").
     ///   - onLibraryReloadRequested: Called on main queue after an immediate-persist
     ///     write so the library refresh includes the new task.
@@ -583,7 +583,8 @@ final class CreateFormViewModel {
     ) {
         let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedTitle.isEmpty else { return }
-        guard subs.count >= 2 else { return }
+        // One sub-task is enough (2026-10-06, owner ask); zero stays blocked.
+        guard subs.count >= 1 else { return }
 
         isSubmitting = true
         errorMessage = nil

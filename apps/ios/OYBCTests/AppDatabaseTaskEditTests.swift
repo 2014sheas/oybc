@@ -466,17 +466,37 @@ final class AppDatabaseTaskEditTests: XCTestCase {
         XCTAssertEqual(rows.filter { $0.entityType == "tasks" && $0.operationType == .create }.count, 1)
     }
 
-    func test_editCompound_refusesFewerThanTwo_writesNothing() throws {
+    func test_editCompound_keepsSingleChild_unlinksTheOther() throws {
+        // One sub-task is enough (2026-10-06, owner ask): keeping only A
+        // tombstones B's link and leaves exactly one live row.
+        let db = try makeDb(); let f = try compoundFixture(db)
+
+        try db.applyTaskEditPatch(
+            taskId: f.p.id,
+            patch: basicPatch(title: "P", compound: structure(
+                f.p, operator: .and, children: [ChildPatch(from: f.a)])),
+            now: now
+        )
+
+        let live = try liveLinks(db, parent: f.p.id)
+        XCTAssertEqual(live.count, 1)
+        XCTAssertEqual(live.first?.childTaskId, f.a.id)
+        XCTAssertEqual(live.first?.childIndex, 0)
+        XCTAssertEqual(try db.read { try CompoundChild.fetchOne($0, key: "l-b") }?.isDeleted, true)
+        XCTAssertEqual(try db.read { try Task.fetchOne($0, key: f.b.id) }?.isDeleted, false)
+    }
+
+    func test_editCompound_refusesZeroChildren_writesNothing() throws {
         let db = try makeDb(); let f = try compoundFixture(db)
         let before = try db.read { (try Task.fetchOne($0, key: f.p.id), try SyncQueueItem.fetchCount($0)) }
 
         XCTAssertThrowsError(try db.applyTaskEditPatch(
             taskId: f.p.id,
             patch: basicPatch(title: "Renamed", compound: structure(
-                f.p, operator: .or, children: [ChildPatch(from: f.a)])),
+                f.p, operator: .or, children: [])),
             now: now
         )) { err in
-            XCTAssertEqual(err as? AppDatabase.TaskEditError, .invalid(message: "A compound task needs at least two sub-tasks."))
+            XCTAssertEqual(err as? AppDatabase.TaskEditError, .invalid(message: "A compound task needs a sub-task."))
         }
 
         let after = try db.read { (try Task.fetchOne($0, key: f.p.id), try SyncQueueItem.fetchCount($0)) }

@@ -6,8 +6,9 @@ import { emptyPatch, newChildPatch, type ChildPatch, type TaskEditPatch } from '
 /**
  * The Task Detail sheet only routes through the compound-structure save when
  * the rule / sub-tasks actually changed. A compound whose STORED structure
- * already fails validation (one child left, a stale threshold, zero
- * children) must still be renameable / re-describable via the basic route.
+ * already fails validation (zero children, a stale threshold) must still be
+ * renameable / re-describable via the basic route. (One child is valid since
+ * 2026-10-06; `ONE_CHILD` here is just a small baseline for the change gate.)
  */
 
 function child(id: string, title: string): ChildPatch {

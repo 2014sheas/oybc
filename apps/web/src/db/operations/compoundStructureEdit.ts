@@ -224,7 +224,7 @@ export type CompoundEditBasic = {
 
 /**
  * Thrown by {@link editCompoundStructure} when the structure patch fails
- * `validatePatch` (e.g. fewer than two sub-tasks). The message is
+ * `validatePatch` (e.g. no sub-tasks left). The message is
  * `validatePatch`'s user-facing string; nothing has been written.
  */
 export class CompoundEditValidationError extends Error {

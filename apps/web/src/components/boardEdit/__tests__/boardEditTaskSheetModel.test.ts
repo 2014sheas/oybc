@@ -115,10 +115,11 @@ describe('sheetValidationProblem', () => {
     expect(sheetValidationProblem(input({ ...base, goalStr: '3', unit: 'km' }))).toBeNull();
   });
 
-  it('Compound: needs title, >=2 sub-tasks, and a valid M_OF_N threshold', () => {
+  it('Compound: needs title, >=1 sub-task, and a valid M_OF_N threshold', () => {
     const sel = { selected: TaskType.COMPOUND } as const;
     expect(sheetValidationProblem(input({ ...sel, compoundDraft: null }))).toMatch(/Loading/);
-    expect(sheetValidationProblem(input({ ...sel, compoundDraft: draft({ children: [kid('a')] }) }))).toMatch(/two sub-tasks/);
+    expect(sheetValidationProblem(input({ ...sel, compoundDraft: draft({ children: [] }) }))).toMatch(/needs a sub-task/);
+    expect(sheetValidationProblem(input({ ...sel, compoundDraft: draft({ children: [kid('a')] }) }))).toBeNull();
     expect(sheetValidationProblem(input({ ...sel, title: '', compoundDraft: draft() }))).toMatch(/title/);
     expect(
       sheetValidationProblem(input({ ...sel, compoundDraft: draft({ operator: OperatorType.M_OF_N, threshold: 3 }) })),
@@ -198,7 +199,7 @@ describe('buildSheetOverride', () => {
 
   it('an UNEDITED existing compound submits no structure and skips structure validation', () => {
     const parent = task({ type: TaskType.COMPOUND, title: 'Combo' });
-    const stored = draft({ children: [kid('only')] }); // stored-invalid: 1 child
+    const stored = draft({ children: [] }); // stored-invalid: 0 children
     const i = input({ original: parent, title: 'Renamed', compoundDraft: stored, compoundBaseline: stored });
     expect(sheetValidationProblem(i)).toBeNull();
     expect(buildSheetOverride(i).compound).toBeUndefined();
@@ -207,8 +208,8 @@ describe('buildSheetOverride', () => {
   it('an EDITED existing compound is still validated and submitted', () => {
     const parent = task({ type: TaskType.COMPOUND, title: 'Combo' });
     const baseline = draft({ children: [kid('a'), kid('b')] });
-    const edited = draft({ children: [kid('a')] });
-    expect(sheetValidationProblem(input({ original: parent, compoundDraft: edited, compoundBaseline: baseline }))).toMatch(/two sub-tasks/);
+    const edited = draft({ children: [] });
+    expect(sheetValidationProblem(input({ original: parent, compoundDraft: edited, compoundBaseline: baseline }))).toMatch(/needs a sub-task/);
     const ok = draft({ children: [kid('a'), kid('b'), kid('c')] });
     expect(buildSheetOverride(input({ original: parent, compoundDraft: ok, compoundBaseline: baseline })).compound).toBeDefined();
   });

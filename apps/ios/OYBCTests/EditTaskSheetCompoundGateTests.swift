@@ -53,8 +53,9 @@ final class EditTaskSheetCompoundGateTests: XCTestCase {
     }
 
     func test_invalidStoredStructure_titleOnlyEdit_submitsNoCompound() {
-        // One sub-task left — the stored structure already fails validation.
-        let base = seeded(childCount: 1)
+        // No sub-tasks left — the stored structure already fails validation
+        // (one sub-task is enough since 2026-10-06, so zero is the invalid case).
+        let base = seeded(childCount: 0)
         XCTAssertNotNil(base.validate(type: .compound))
         // The draft carries the title edit (like the web twin) — the gate must
         // be title-insensitive, so a title-only change still submits nothing.

@@ -101,20 +101,45 @@ test.describe('Task Detail — compound editing', () => {
     await expect(reopened.getByText('of 3 sub-tasks')).toBeVisible();
   });
 
-  test('blocks saving a compound down to one sub-task', async ({ page }) => {
+  test('saves a compound down to ONE sub-task; removing the last one is blocked', async ({ page }) => {
+    // One sub-task is enough (2026-10-06, owner ask); zero stays blocked.
     await page.goto(`/tasks/${PARENT_ID}?__oybc_test_bypass=1`);
     await page.getByRole('button', { name: 'Edit', exact: true }).click();
     const sheet = page.getByRole('dialog', { name: 'Edit task' });
     await expect(sheet.getByLabel('Sub-task 2 title')).toHaveValue('Squats');
 
     await sheet.getByRole('button', { name: 'Delete sub-task' }).nth(1).click();
-    await expect(sheet.getByText('A compound task needs at least two sub-tasks.')).toBeVisible();
-    await expect(sheet.getByRole('button', { name: /save changes/i })).toBeDisabled();
+    await expect(sheet.getByText('A compound task needs a sub-task.')).toHaveCount(0);
+    await expect(sheet.getByRole('button', { name: /save changes/i })).toBeEnabled();
+    await sheet.getByRole('button', { name: /save changes/i }).click();
+    await expect(sheet).toHaveCount(0);
+    await expect(page.getByRole('heading', { name: 'Subtasks (1)' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Open subtask: Pushups' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Open subtask: Squats' })).toHaveCount(0);
+
+    // Persisted: a reload re-reads IndexedDB.
+    await page.reload();
+    await expect(page.getByRole('heading', { name: 'Subtasks (1)' })).toBeVisible();
+
+    // Zero sub-tasks is still a block.
+    await page.getByRole('button', { name: 'Edit', exact: true }).click();
+    const reopened = page.getByRole('dialog', { name: 'Edit task' });
+    await expect(reopened.getByLabel('Sub-task 1 title')).toHaveValue('Pushups');
+    await reopened.getByRole('button', { name: 'Delete sub-task' }).first().click();
+    await expect(reopened.getByText('A compound task needs a sub-task.')).toBeVisible();
+    await expect(reopened.getByRole('button', { name: /save changes/i })).toBeDisabled();
   });
 
-  test('an already-invalid compound (one sub-task left) can still be renamed', async ({ page }) => {
-    // Drop Squats' link so the STORED structure fails validation.
+  test('an already-invalid compound (no sub-tasks left) can still be renamed', async ({ page }) => {
+    // Drop BOTH links so the STORED structure fails validation.
     await page.goto(`/tasks/${PARENT_ID}?__oybc_test_bypass=1`);
+    await seedCompoundChild(page, {
+      id: 'cccccccc-aaaa-0000-0000-000000000001',
+      compoundTaskId: PARENT_ID,
+      childTaskId: CHILD_A_ID,
+      childIndex: 0,
+      isDeleted: true,
+    });
     await seedCompoundChild(page, {
       id: 'cccccccc-aaaa-0000-0000-000000000002',
       compoundTaskId: PARENT_ID,
@@ -123,19 +148,18 @@ test.describe('Task Detail — compound editing', () => {
       isDeleted: true,
     });
     await page.reload();
-    await expect(page.getByRole('heading', { name: 'Subtasks (1)' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Subtasks', exact: true })).toBeVisible();
 
     await page.getByRole('button', { name: 'Edit', exact: true }).click();
     const sheet = page.getByRole('dialog', { name: 'Edit task' });
-    await expect(sheet.getByLabel('Sub-task 1 title')).toHaveValue('Pushups');
     // The validation line still shows as a hint, but Save isn't blocked by it.
-    await expect(sheet.getByText('A compound task needs at least two sub-tasks.')).toBeVisible();
+    await expect(sheet.getByText('A compound task needs a sub-task.')).toBeVisible();
     await sheet.getByLabel('Title', { exact: true }).fill('Arm day');
     await sheet.getByRole('button', { name: /save changes/i }).click();
 
     await expect(sheet).toHaveCount(0);
     await expect(page.getByRole('heading', { name: 'Arm day' })).toBeVisible();
-    await expect(page.getByRole('heading', { name: 'Subtasks (1)' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Subtasks', exact: true })).toBeVisible();
   });
 
   test('links an existing library task by typing and clicking its match', async ({ page }) => {

@@ -395,7 +395,8 @@ export const CreateCompoundTaskInputSchema = z.object({
   description: z.string().max(1000).optional(),
   operator: z.nativeEnum(OperatorType),
   threshold: z.number().int().positive().optional(),
-  children: z.array(CreateCompoundChildEntrySchema).min(2),
+  // One sub-task is enough (2026-10-06, owner ask); zero stays blocked.
+  children: z.array(CreateCompoundChildEntrySchema).min(1),
   // Phase 6.Y — Timeboxed Tasks. Optional; when set, the parent
   // compound AND all inline-created children inherit this triple at
   // creation time (see createCompound in db/operations/tasks.ts).

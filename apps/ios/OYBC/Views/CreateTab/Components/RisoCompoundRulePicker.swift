@@ -13,7 +13,8 @@ struct RisoCompoundRulePicker: View {
     @Binding var rule: CompoundRuleChoice
     @Binding var threshold: Int
     /// Current live sub-task count — clamps the stepper's max to
-    /// `max(2, subCount)` and drives the "of N sub-tasks" caption.
+    /// `max(1, subCount)` (web parity — a one-sub-task compound steps 1…1)
+    /// and drives the "of N sub-tasks" caption.
     let subCount: Int
 
     /// The displayed threshold, clamped into the valid range for the
@@ -21,7 +22,7 @@ struct RisoCompoundRulePicker: View {
     /// binding is only written back through the stepper's own setter or
     /// user interaction, never implicitly by this getter.
     private var effectiveThreshold: Int {
-        let maxN = Swift.max(2, subCount)
+        let maxN = Swift.max(1, subCount)
         return Swift.min(Swift.max(1, threshold), maxN)
     }
 
@@ -41,10 +42,10 @@ struct RisoCompoundRulePicker: View {
                     RisoInlineStepperView(
                         value: Binding(
                             get: { effectiveThreshold },
-                            set: { threshold = Swift.min(Swift.max(1, $0), Swift.max(2, subCount)) }
+                            set: { threshold = Swift.min(Swift.max(1, $0), Swift.max(1, subCount)) }
                         ),
                         min: 1,
-                        max: Swift.max(2, subCount)
+                        max: Swift.max(1, subCount)
                     )
                     Text("of \(subCount == 0 ? "…" : "\(subCount)") sub-tasks")
                         .font(.risoBody(11, .semibold))
