@@ -1,9 +1,9 @@
 import { generateCounterTaskTitle } from '@oybc/shared';
+import { CountingSubConfigRow } from './wizard/CountingSubConfigRow';
 import styles from './CountingStepFields.module.css';
 
-/** Maximum character lengths matching shared validation schemas */
+/** Maximum action length matching the shared validation schema */
 const ACTION_MAX_LENGTH = 50;
-const UNIT_MAX_LENGTH = 50;
 
 /**
  * Validation error state for counting step fields.
@@ -34,7 +34,9 @@ interface CountingStepFieldsProps {
  * ("Refining counters" design handoff §Creation Surfaces). `action` still
  * carries the verb and `unit` still carries the counted noun; only the
  * labels/placeholders changed. Used inside the compound builder's
- * `SubtaskCard` inline counting fields.
+ * `SubtaskCard` inline counting fields. The Goal + Counting pair is the
+ * shared `CountingSubConfigRow` (also the compound edit editor's new-sub
+ * config row).
  *
  * @param idPrefix - Unique prefix for input IDs (e.g., "step-abc123")
  * @param action - Current verb value (stored as `action`)
@@ -82,43 +84,18 @@ export function CountingStepFields({
       </div>
 
       {/* Goal (drives completion threshold; user input may exceed it
-          intentionally — see feedback_counter_overshoot_is_valid). */}
-      <div className={styles.fieldGroup}>
-        <label className={styles.label} htmlFor={`${idPrefix}-maxcount`}>
-          Goal<span className={styles.required}>*</span>
-        </label>
-        <input
-          id={`${idPrefix}-maxcount`}
-          type="number"
-          className={`${styles.input} ${errors?.maxCount ? styles.inputError : ''}`}
-          value={maxCount}
-          onChange={(e) => onChange('maxCount', e.target.value)}
-          placeholder="100"
-          min="1"
-        />
-        {errors?.maxCount && (
-          <span className={styles.fieldError}>{errors.maxCount}</span>
-        )}
-      </div>
-
-      {/* Counting */}
-      <div className={styles.fieldGroup}>
-        <label className={styles.label} htmlFor={`${idPrefix}-unit`}>
-          Counting<span className={styles.required}>*</span>
-        </label>
-        <input
-          id={`${idPrefix}-unit`}
-          type="text"
-          className={`${styles.input} ${errors?.unit ? styles.inputError : ''}`}
-          value={unit}
-          onChange={(e) => onChange('unit', e.target.value)}
-          placeholder="push-ups"
-          maxLength={UNIT_MAX_LENGTH}
-        />
-        {errors?.unit && (
-          <span className={styles.fieldError}>{errors.unit}</span>
-        )}
-      </div>
+          intentionally — see feedback_counter_overshoot_is_valid) +
+          Counting — the shared pair the compound edit editor also uses. */}
+      <CountingSubConfigRow
+        idPrefix={idPrefix}
+        goal={maxCount}
+        unit={unit}
+        onGoalChange={(value) => onChange('maxCount', value)}
+        onUnitChange={(value) => onChange('unit', value)}
+        goalError={errors?.maxCount}
+        unitError={errors?.unit}
+        stacked
+      />
 
       {titlePreview && (
         <div className={styles.titlePreview}>

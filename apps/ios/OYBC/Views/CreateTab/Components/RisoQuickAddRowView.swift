@@ -52,6 +52,17 @@ struct RisoQuickAddRowView: View {
     /// keeps every existing host's create path. Web twin:
     /// `WizardQuickAddRow.onSubmitText`.
     var onSubmitText: ((String) -> Void)? = nil
+    /// Draft-only submit gate (default `true`). `false` dims Add and ignores
+    /// Return (the text stays put) while the host's own inputs are
+    /// incomplete — the compound editor's new Counting sub-task needs a goal
+    /// and a unit beside the text. Web twin: `WizardQuickAddRow.canSubmitText`.
+    var submitTextEnabled: Bool = true
+    /// Mirrors every text change (typing, clears) to the host — a draft-only
+    /// host previews / gates on the text. Web twin: `onTextChange`.
+    var onTextChange: ((String) -> Void)? = nil
+    /// Fixed placeholder instead of the rotating pool (the compound editor's
+    /// Counting mode names the field the action: "Do").
+    var placeholderOverride: String? = nil
 
     @State private var text: String = ""
     @State private var form = CreateFormViewModel()
@@ -66,9 +77,9 @@ struct RisoQuickAddRowView: View {
     ]
     @State private var placeholderIndex: Int = 0
 
-    private var placeholder: String { placeholders[placeholderIndex % placeholders.count] }
+    private var placeholder: String { placeholderOverride ?? placeholders[placeholderIndex % placeholders.count] }
     private var trimmedText: String { text.trimmingCharacters(in: .whitespacesAndNewlines) }
-    private var canSubmit: Bool { !trimmedText.isEmpty }
+    private var canSubmit: Bool { !trimmedText.isEmpty && submitTextEnabled }
 
     /// Library-poll matches — up to 4 browsable tasks whose title contains
     /// the trimmed, lowercased input, excluding already-selected ids.
@@ -109,6 +120,9 @@ struct RisoQuickAddRowView: View {
         selectedIds: Set<String> = [],
         onExistingTaskPicked: ((OYBC.Task) -> Void)? = nil,
         onSubmitText: ((String) -> Void)? = nil,
+        submitTextEnabled: Bool = true,
+        onTextChange: ((String) -> Void)? = nil,
+        placeholderOverride: String? = nil,
         seedText: String = ""
     ) {
         self.userId = userId
@@ -122,6 +136,9 @@ struct RisoQuickAddRowView: View {
         self.selectedIds = selectedIds
         self.onExistingTaskPicked = onExistingTaskPicked
         self.onSubmitText = onSubmitText
+        self.submitTextEnabled = submitTextEnabled
+        self.onTextChange = onTextChange
+        self.placeholderOverride = placeholderOverride
         _text = State(initialValue: seedText)
     }
 
@@ -138,6 +155,7 @@ struct RisoQuickAddRowView: View {
                     .focused($focused)
                     .submitLabel(.done)
                     .onSubmit { submit() }
+                    .onChange(of: text) { _, newValue in onTextChange?(newValue) }
                     .padding(.horizontal, 12)
                     .padding(.vertical, 11)
                     .background(Color.risoPaper)
@@ -207,7 +225,7 @@ struct RisoQuickAddRowView: View {
 
     private func submit() {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return }
+        guard canSubmit else { return }
 
         // Draft-only host: hand over the text, reset exactly like a create.
         if let onSubmitText {

@@ -71,6 +71,19 @@ export interface WizardQuickAddRowProps {
    * which keep the create path. iOS twin: `RisoQuickAddRowView.onSubmitText`.
    */
   onSubmitText?: (text: string) => void;
+  /**
+   * Draft-only submit gate — OPTIONAL, default `true`. `false` disables Add
+   * and ignores Enter (the text stays put) while the host's own inputs are
+   * incomplete — the compound editor's new Counting sub-task needs a goal
+   * and a unit beside the text. iOS twin: `RisoQuickAddRowView.submitTextEnabled`.
+   */
+  canSubmitText?: boolean;
+  /** Mirrors every text change (typing, clears) to the host — a draft-only
+   *  host previews / gates on the text. iOS twin: `onTextChange`. */
+  onTextChange?: (text: string) => void;
+  /** Fixed placeholder instead of the rotating pool (the compound editor's
+   *  Counting mode names the field the action: "Do"). */
+  placeholder?: string;
 }
 
 /** Stable empty-Set identity for the `selectedIds` default — avoids a new
@@ -128,6 +141,9 @@ export function WizardQuickAddRow({
   selectedIds,
   onExistingTaskPicked,
   onSubmitText,
+  canSubmitText = true,
+  onTextChange,
+  placeholder: fixedPlaceholder,
 }: WizardQuickAddRowProps): React.ReactElement {
   const [text, setText] = useState('');
   const [placeholderIndex, setPlaceholderIndex] = useState(0);
@@ -135,9 +151,15 @@ export function WizardQuickAddRow({
   const inputRef = useRef<HTMLInputElement>(null);
 
   const trimmed = text.trim();
-  const canSubmit = trimmed.length > 0 && !isSubmitting && !disabled;
-  const placeholder = PLACEHOLDERS[placeholderIndex % PLACEHOLDERS.length];
+  const canSubmit = trimmed.length > 0 && !isSubmitting && !disabled && canSubmitText;
+  const placeholder = fixedPlaceholder ?? PLACEHOLDERS[placeholderIndex % PLACEHOLDERS.length];
   const deferPersist = onPendingCreated !== undefined;
+
+  /** Sets the field's text and mirrors it to the host. */
+  function updateText(next: string): void {
+    setText(next);
+    onTextChange?.(next);
+  }
 
   // Library-poll matches — only computed when both polling props are
   // present. `selectQuickAddMatches` reuses `selectLibraryPickerResults`
@@ -158,7 +180,7 @@ export function WizardQuickAddRow({
     onExistingTaskPicked!(task);
     // Clear + refocus, same reset as a create — hides the dropdown since
     // it requires non-empty text.
-    setText('');
+    updateText('');
     inputRef.current?.focus();
   }
 
@@ -167,7 +189,7 @@ export function WizardQuickAddRow({
     if (onSubmitText !== undefined) {
       // Draft-only host: hand over the text, reset exactly like a create.
       onSubmitText(trimmed);
-      setText('');
+      updateText('');
       setPlaceholderIndex((i) => i + 1);
       inputRef.current?.focus();
       return;
@@ -221,7 +243,7 @@ export function WizardQuickAddRow({
       }
 
       // Reset and rotate placeholder — keep focus for rapid entry.
-      setText('');
+      updateText('');
       setPlaceholderIndex((i) => i + 1);
       inputRef.current?.focus();
     } catch {
@@ -239,10 +261,11 @@ export function WizardQuickAddRow({
     if (e.key === 'Enter') {
       e.preventDefault();
       // Draft-only hosts (compound editors) sit inside an editor whose
-      // ⌘↵ saves: an Enter that appends a sub-task must not also reach it,
-      // or the save runs on the pre-append draft. An empty row still lets
-      // ⌘↵ through to save. The wizard never passes `onSubmitText`.
-      if (onSubmitText !== undefined && canSubmit) e.stopPropagation();
+      // ⌘↵ saves: an Enter on a row holding text must not also reach it,
+      // or the save runs on the pre-append draft (whether the text appends
+      // now or is still waiting on its goal / unit). An empty row still
+      // lets ⌘↵ through to save. The wizard never passes `onSubmitText`.
+      if (onSubmitText !== undefined && trimmed.length > 0) e.stopPropagation();
       void handleSubmit();
     }
   }
@@ -256,7 +279,7 @@ export function WizardQuickAddRow({
           className={styles.input}
           placeholder={placeholder}
           value={text}
-          onChange={(e) => setText(e.target.value)}
+          onChange={(e) => updateText(e.target.value)}
           onKeyDown={handleKeyDown}
           aria-label="New normal task title"
           autoComplete="off"

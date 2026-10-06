@@ -261,6 +261,16 @@
   font-weight: 600;
   color: var(--riso-muted);
 }
+/* New Counting sub-task config (Goal + Counting row + "Reads as"). */
+.newSubCountingConfig {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+}
+.newSubCountingConfig .subtaskReadsAs {
+  flex: none;
+}
 .libraryError {
   margin: 0;
   font-size: 11.5px;

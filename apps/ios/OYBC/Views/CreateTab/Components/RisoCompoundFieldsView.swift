@@ -366,18 +366,9 @@ struct RisoCompoundFieldsView: View {
             // web's CountingStepFields exactly).
             if newSubType == .counting {
                 VStack(alignment: .leading, spacing: 5) {
-                    HStack(spacing: 10) {
-                        VStack(alignment: .leading, spacing: 5) {
-                            fieldLabel("Goal", required: true)
-                            RisoNumberField(placeholder: "100", text: $subGoalText)
-                                .frame(width: 70)
-                        }
-                        VStack(alignment: .leading, spacing: 5) {
-                            fieldLabel("Counting", required: true)
-                            RisoTextField(placeholder: "push-ups", text: $subUnitText)
-                                .onChange(of: subUnitText) { _, _ in updateSubLinkSuggestion() }
-                        }
-                    }
+                    // Shared with the compound edit editor's new-sub config.
+                    RisoCountingSubConfigRow(goal: $subGoalText, unit: $subUnitText)
+                        .onChange(of: subUnitText) { _, _ in updateSubLinkSuggestion() }
 
                     if !subCountingTitle.isEmpty {
                         (Text("Title: ")

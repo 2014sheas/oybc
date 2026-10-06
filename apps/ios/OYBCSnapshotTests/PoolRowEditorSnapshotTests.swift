@@ -123,6 +123,22 @@ final class PoolRowEditorSnapshotTests: XCTestCase {
         assertSnapshot(of: view, as: .image(layout: .fixed(width: 393, height: 720)), record: recordMode)
     }
 
+    /// New sub = Counting: the create panel's Goal / Counting config row +
+    /// "Reads as" preview under the "New sub:" chips (the editor leaf itself —
+    /// the chip is internal state, seeded here).
+    func testCompoundEditorNewSubCountingLight() {
+        let view = host(
+            RisoCompoundEditFieldsView(
+                draft: .constant(compoundDraft()),
+                parentId: "t",
+                libraryTasks: [],
+                allLinks: [],
+                newSubSeed: .init(counting: true, text: "Run", goal: "5", unit: "km")
+            )
+        )
+        assertSnapshot(of: view, as: .image(layout: .fixed(width: 393, height: 640)), record: recordMode)
+    }
+
     // MARK: - Simple (normal) editor
 
     func testNormalEditorLight() {
