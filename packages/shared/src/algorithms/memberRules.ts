@@ -172,7 +172,11 @@ const VARY_P: Record<VaryLevel, number> = { 0: 0, 1: 0.2, 2: 0.5 };
 export function varyRange(t: number, level: VaryLevel, goal: number): [number, number] {
   const tc = Math.min(Math.max(1, t), goal);
   const p = VARY_P[level];
-  return [Math.max(1, Math.round(tc * (1 - p))), Math.round(tc * (1 + p))];
+  const lo = Math.max(1, Math.round(tc * (1 - p)));
+  // `lo <= hi` holds for every `goal >= 1` (the only reachable input); the
+  // `max` only keeps a malformed `goal < 1` from inverting the range, so both
+  // twins then return a degenerate `[1, 1]` and consume no rng.
+  return [lo, Math.max(lo, Math.round(tc * (1 + p)))];
 }
 
 /**

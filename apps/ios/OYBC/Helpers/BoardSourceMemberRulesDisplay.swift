@@ -107,7 +107,7 @@ extension BoardSources {
     /// - Parameters:
     ///   - t: The pre-vary target (see ``effectiveMemberTarget``).
     ///   - level: Vary level. `.off` renders nothing — there is no range.
-    ///   - goal: The member's own `maxCount`, the hard ceiling.
+    ///   - goal: The member's own `maxCount`; clamps `t` only — the range may exceed it.
     ///   - unit: The counting member's unit, or `""` when it has none.
     /// - Returns: `"lo–hi unit"`, `"lo unit"` when the range collapsed, or
     ///   nil at vary level `.off`.
@@ -238,7 +238,7 @@ extension BoardSources {
     /// - Parameters:
     ///   - target: The pre-vary target (see ``effectiveMemberTarget``).
     ///   - level: The member's vary level.
-    ///   - goal: The member's own `maxCount`, the hard ceiling.
+    ///   - goal: The member's own `maxCount`; clamps `t` only — the range may exceed it.
     ///   - unit: The counting member's unit, or `""` when it has none.
     /// - Returns: The chip, or nil when it would only restate the title.
     static func countingSummary(
