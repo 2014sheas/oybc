@@ -146,6 +146,15 @@ describe('poolHeaderInputs', () => {
     });
   });
 
+  it('over capacity still reports the floor and the "fills" note', () => {
+    const floor = computeDeckFloor([], 'p1');
+    expect(poolHeaderInputs(12, floor)).toEqual({
+      capacity: 12,
+      tasksRequired: 8,
+      note: '12 tasks in the pool · fills a 3×3',
+    });
+  });
+
   it('meeting the floor yields the "fills" note', () => {
     const floor = computeDeckFloor([], 'p1');
     expect(poolHeaderInputs(8, floor)).toEqual({

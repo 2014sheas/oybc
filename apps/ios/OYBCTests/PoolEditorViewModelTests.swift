@@ -89,6 +89,10 @@ final class PoolEditorViewModelTests: XCTestCase {
         XCTAssertEqual(ok.note, "9 tasks in the pool · fills a 3×3")
         let short = PoolEditorViewModel.headerInputs(taskCount: 1, deckFloor: floor)
         XCTAssertEqual(short.note, "1 task in the pool · short on required tasks")
+        let over = PoolEditorViewModel.headerInputs(taskCount: 12, deckFloor: floor)
+        XCTAssertEqual(over.count, 12)
+        XCTAssertEqual(over.required, 8)
+        XCTAssertEqual(over.note, "12 tasks in the pool · fills a 3×3")
     }
 
     func testFilterLibraryResults_ExcludesAlreadySelectedIds() {

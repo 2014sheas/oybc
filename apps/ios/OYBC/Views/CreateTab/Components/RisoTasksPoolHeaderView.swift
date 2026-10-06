@@ -23,8 +23,6 @@ struct RisoTasksPoolHeaderView: View {
     let isRecurring: Bool
     let centerTaskMode: Bool
     let centerSatisfied: Bool
-    /// Kicker text. Defaults to the wizard's; the pool editor passes "In this pool".
-    var kicker: String = "Your task pool"
     /// When set, replaces the pool-model note (green when satisfied, red when
     /// short). The pool editor passes its deck-preview line.
     var noteOverride: String? = nil
@@ -42,7 +40,7 @@ struct RisoTasksPoolHeaderView: View {
         VStack(alignment: .leading, spacing: 0) {
             // Kicker + count row
             HStack(alignment: .firstTextBaseline, spacing: 0) {
-                Text(kicker)
+                Text("Your task pool")
                     .risoKicker(.risoInk)
                 Spacer()
                 countBadge

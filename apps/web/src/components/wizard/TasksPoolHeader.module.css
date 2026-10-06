@@ -77,7 +77,9 @@
   font-weight: 700;
 }
 .noteShort {
-  color: var(--riso-muted);
+  /* Red like iOS `RisoTasksPoolHeaderView`'s short note and the step's
+     "! Add N more" footer line (parity, 2026-10-06). */
+  color: var(--riso-red);
 }
 
 .centerLine {
