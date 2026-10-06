@@ -155,19 +155,28 @@ export function autoTarget(goal: number, sourceDays: number | null, targetDays: 
 const VARY_P: Record<VaryLevel, number> = { 0: 0, 1: 0.2, 2: 0.5 };
 
 /**
- * Inclusive `[lo, hi]` a rolled target may land in. `t` is clamped to `1…goal`
- * first, `lo` never drops below 1, and `hi` never rises above `goal` — a vary
- * roll may soften a target but never asks for more than the member's own goal.
+ * Inclusive `[lo, hi]` a rolled target may land in: symmetric ± `p` around the
+ * target (docs/BOARD_SOURCES.md §Member rules — "a little" = ±20 %, "a lot" =
+ * ±50 %). `t` is clamped to `1…goal` first (the stepper is goal-capped) and
+ * `lo` never drops below 1, but `hi` has NO ceiling — a roll may land above
+ * the target by up to `+p`, so a goal-10 member on "a little" rolls inside
+ * `[8, 12]`. Overshooting the goal is a feature: `currentCount > maxCount` is
+ * valid in this product. (Fixed 2026-10-06 — the first implementation capped
+ * `hi` at the goal and only ever lowered.)
  *
  * @param t - The pre-vary target.
  * @param level - Vary level (0 = off).
- * @param goal - The member's own `maxCount`, the hard ceiling.
+ * @param goal - The member's own `maxCount`; clamps `t`, never `hi`.
  * @returns The inclusive `[lo, hi]` pair.
  */
 export function varyRange(t: number, level: VaryLevel, goal: number): [number, number] {
   const tc = Math.min(Math.max(1, t), goal);
   const p = VARY_P[level];
-  return [Math.max(1, Math.round(tc * (1 - p))), Math.min(goal, Math.round(tc * (1 + p)))];
+  const lo = Math.max(1, Math.round(tc * (1 - p)));
+  // `lo <= hi` holds for every `goal >= 1` (the only reachable input); the
+  // `max` only keeps a malformed `goal < 1` from inverting the range, so both
+  // twins then return a degenerate `[1, 1]` and consume no rng.
+  return [lo, Math.max(lo, Math.round(tc * (1 + p)))];
 }
 
 /**
@@ -177,7 +186,7 @@ export function varyRange(t: number, level: VaryLevel, goal: number): [number, n
  *
  * @param t - The pre-vary target.
  * @param level - Vary level (0 = off).
- * @param goal - The member's own `maxCount`, the hard ceiling.
+ * @param goal - The member's own `maxCount`; clamps `t` (see {@link varyRange}).
  * @param rng - Uniform `[0, 1)` source; consumed at most once.
  * @returns The rolled target (integer in `[lo, hi]`).
  */

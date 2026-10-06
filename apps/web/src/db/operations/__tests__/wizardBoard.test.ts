@@ -871,9 +871,10 @@ describe('persistWizardBoardRows — manualTaskVary (B3)', () => {
     const placement = new Array(9).fill(null);
     placement[0] = task;
 
-    // Seeded rng — `varyRange(10, 1, 10)` is [8, 10] and its top IS the goal,
-    // so a range-only assertion would also pass against a no-roll
-    // implementation. Pinning the low end proves the roll happened.
+    // Seeded rng — `varyRange(10, 1, 10)` is [8, 12] (± around the goal, no
+    // ceiling), and a range-only assertion would also pass against a no-roll
+    // implementation (10 is inside it). Pinning the low end proves the roll
+    // happened.
     const boardId = await persistWizardBoardRows(
       baseInput({
         placement,

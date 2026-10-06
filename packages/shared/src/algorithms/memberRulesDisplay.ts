@@ -101,7 +101,7 @@ export function effectiveMemberTarget(args: {
  *
  * @param t - The pre-vary target (see {@link effectiveMemberTarget}).
  * @param level - Vary level. `0` renders nothing — there is no range to show.
- * @param goal - The member's own `maxCount`, the hard ceiling.
+ * @param goal - The member's own `maxCount`; clamps `t` only — the range may exceed it.
  * @param unit - The counting member's unit, or `''` when it has none.
  * @returns `"lo–hi unit"`, `"lo unit"` when the range collapsed, or `null` at vary level 0.
  */
@@ -407,7 +407,7 @@ export interface MemberSummary {
  *
  * @param target - The pre-vary target (see {@link effectiveMemberTarget}).
  * @param level - The member's vary level.
- * @param goal - The member's own `maxCount`, the hard ceiling.
+ * @param goal - The member's own `maxCount`; clamps `t` only — the range may exceed it.
  * @param unit - The counting member's unit, or `''` when it has none.
  * @returns The chip, or null when it would only restate the title.
  */

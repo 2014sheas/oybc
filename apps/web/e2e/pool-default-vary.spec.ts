@@ -15,8 +15,8 @@ import {
  * board that pulls the pool — pulling stores no rule on the source; the
  * Sources-sheet member row, Preview and Create all resolve the dice from the
  * pool. It is overridable to an explicit off per board, and honoured at
- * Create. `varyRange` only lowers (hi = min(goal, …)), so "a little" on a
- * goal of 10 rolls inside 8–10.
+ * Create. `varyRange` is symmetric (± around the target, no ceiling at the
+ * goal — fixed 2026-10-06), so "a little" on a goal of 10 rolls inside 8–12.
  */
 
 const POOL_ID = '73000000-0000-0000-0000-000000000001';
@@ -150,7 +150,7 @@ test.describe('Pool-level default vary', () => {
     expect(await runnerTasks(page)).toEqual([{ id: COUNTER_ID, maxCount: 10 }]);
   });
 
-  test('left inherited (the LIVE pool default), the placed goal is within 8-10', async ({ page }) => {
+  test('left inherited (the LIVE pool default), the placed goal is within 8-12', async ({ page }) => {
     await seedPoolWithCounter(page);
     await setPoolDiceALittle(page);
 
@@ -165,14 +165,14 @@ test.describe('Pool-level default vary', () => {
     await expect(cell).toBeVisible();
     const previewGoal = Number(/\d+/.exec((await cell.textContent()) ?? '')![0]);
     expect(previewGoal).toBeGreaterThanOrEqual(8);
-    expect(previewGoal).toBeLessThanOrEqual(10);
+    expect(previewGoal).toBeLessThanOrEqual(12);
 
     await page.getByRole('button', { name: 'Activate Board' }).click();
     await expect(page).toHaveURL(/\/boards/);
     await expect.poll(async () => (await placedTaskIds(page)).length).toBeGreaterThan(0);
     for (const { maxCount } of await runnerTasks(page)) {
       expect(maxCount).toBeGreaterThanOrEqual(8);
-      expect(maxCount).toBeLessThanOrEqual(10);
+      expect(maxCount).toBeLessThanOrEqual(12);
     }
   });
 });

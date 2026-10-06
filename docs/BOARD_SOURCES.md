@@ -1029,6 +1029,8 @@ per-member rules on the source entry: a **target** (board sources only —
 how much of the counter belongs on *this* board), a **vary** level (dice:
 off / a little ±20 % / a lot ±50 %), and for compounds **One square /
 Split up** with per-part rules. Hand-added counting tasks get dice too.
+The dice is **± around the target** — "a little" on a goal of 10 is 8–12,
+never 8–10 (fixed 2026-10-06 — the first implementation capped at the goal).
 Rules are resolved at persist (one-off) or at every spawn (recurring) into
 **derived counters** — ordinary `Task` rows linked to the family root by
 `sharedCounterId`, stamped with the board's window, with a
@@ -1209,9 +1211,13 @@ instances, any task list for a recurring board.
    onto a LONGER window, and any pull whose source window length is unknown:
    INDEFINITE, an unresolved supply, or a CUSTOM window missing a bound)
    behaves exactly as it did before the ruling.
-   - `varyRange(t, level, goal) = [max(1, round(t·(1−p))), min(goal, round(t·(1+p)))]`,
+   - `varyRange(t, level, goal) = [max(1, round(t·(1−p))), round(t·(1+p))]`,
      `p ∈ {0, 0.2, 0.5}`; `rollTarget(t, level, goal, rng)` picks a whole
-     number uniformly in that range. `t` is clamped 1…goal first.
+     number uniformly in that range. `t` is clamped 1…goal first; `hi` has
+     NO ceiling — the range is symmetric around the target, so a roll may
+     land above the member's goal by up to `+p` (overshoot is a feature:
+     `currentCount > maxCount` is valid). Fixed 2026-10-06 — the first
+     implementation capped `hi = min(goal, …)` and only ever lowered.
    - `rng` is the seeded rng `selectBoardTasks` already takes: Preview
      Shuffle re-rolls by re-running the plan (`shuffleNonce` ↔
      `reseedPlacement`); spawn uses the platform default rng.
@@ -1443,8 +1449,8 @@ don't need to select a randomization option on every new board create."
   pins (`useWizardSources.test.ts` ↔ `BoardWizardPoolMixActionsTests`); spawn
   + one-off persist tests on both platforms; `SyncWirePayloadTests` pins the
   wire shape; e2e `pool-default-vary.spec.ts` (explicit off places the root
-  itself — no derived copy; inherited rolls inside `varyRange`, which only
-  LOWERS: `hi = min(goal, …)`).
+  itself — no derived copy; inherited rolls inside `varyRange`, ± around the
+  target — "a little" on a goal of 10 rolls inside 8–12).
 
 ### UI contract (frames 2a/2b/4a/5a/5b/5c; both platforms)
 

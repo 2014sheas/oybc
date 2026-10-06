@@ -166,10 +166,15 @@ extension BoardSources {
         }
     }
 
-    /// Inclusive `lo...hi` a rolled target may land in. `t` is clamped to
-    /// `1…goal` first, `lo` never drops below 1, and `hi` never rises above
-    /// `goal` — a vary roll may soften a target but never asks for more than
-    /// the member's own goal.
+    /// Inclusive `lo...hi` a rolled target may land in: symmetric ± `p`
+    /// around the target (docs/BOARD_SOURCES.md §Member rules — "a little"
+    /// = ±20 %, "a lot" = ±50 %). `t` is clamped to `1…goal` first (the
+    /// stepper is goal-capped) and `lo` never drops below 1, but `hi` has NO
+    /// ceiling — a roll may land above the target by up to `+p`, so a
+    /// goal-10 member on "a little" rolls inside `8...12`. Overshooting the
+    /// goal is a feature: `currentCount > maxCount` is valid in this product.
+    /// (Fixed 2026-10-06 — the first implementation capped `hi` at the goal
+    /// and only ever lowered.)
     ///
     /// Rounding is HALF-UP (`.rounded()` = `.toNearestOrAwayFromZero`),
     /// matching JS `Math.round` on the positive values this ever sees. Do
@@ -178,13 +183,13 @@ extension BoardSources {
     /// - Parameters:
     ///   - t: The pre-vary target.
     ///   - level: Vary level (`.off` = no spread).
-    ///   - goal: The member's own `maxCount`, the hard ceiling.
+    ///   - goal: The member's own `maxCount`; clamps `t`, never `hi`.
     /// - Returns: The inclusive range.
     static func varyRange(t: Int, level: VaryLevel, goal: Int) -> ClosedRange<Int> {
         let clamped = Swift.min(Swift.max(1, t), goal)
         let fraction = varyFraction(level)
         let lo = Swift.max(1, Int((Double(clamped) * (1 - fraction)).rounded()))
-        let hi = Swift.min(goal, Int((Double(clamped) * (1 + fraction)).rounded()))
+        let hi = Int((Double(clamped) * (1 + fraction)).rounded())
         // `lo <= hi` holds for every `goal >= 1` (the only reachable input —
         // `goalOf` filters the rest); the outer `max` only stops a malformed
         // `goal < 1` from trapping on an inverted ClosedRange, where the TS
@@ -200,7 +205,7 @@ extension BoardSources {
     /// - Parameters:
     ///   - t: The pre-vary target.
     ///   - level: Vary level (`.off` = no spread).
-    ///   - goal: The member's own `maxCount`, the hard ceiling.
+    ///   - goal: The member's own `maxCount`; clamps `t` (see ``varyRange(t:level:goal:)``).
     ///   - rng: Uniform `[0, 1)` source; consumed at most once.
     /// - Returns: The rolled target (integer inside the range).
     static func rollTarget(t: Int, level: VaryLevel, goal: Int, rng: () -> Double) -> Int {

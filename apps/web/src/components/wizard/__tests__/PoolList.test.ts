@@ -81,7 +81,7 @@ describe('PoolList — hand-added dice', () => {
     const little = render({ [RUN.id]: 1 });
     // The literal AND the shared helper — a format change in one must not
     // slide both sides of the assertion together.
-    expect(little).toContain('16–20 min');
+    expect(little).toContain('16–24 min');
     expect(little).toContain(varyRangeLabel(20, 1, 20, 'min') as string);
     expect(little).toContain('aria-label="Vary: a little"');
   });
@@ -90,6 +90,6 @@ describe('PoolList — hand-added dice', () => {
     const html = render({ [RUN.id]: 1 }, false);
     expect(html).not.toContain('aria-label="Vary: ');
     // An unactionable blue range with no control to change it is a dead end.
-    expect(html).not.toContain('16–20 min');
+    expect(html).not.toContain('16–24 min');
   });
 });
