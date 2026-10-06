@@ -245,6 +245,10 @@ describe('CompoundFields append paths', () => {
     expect(canAppendCounting('Run', '0', 'km')).toBe(false);
     expect(canAppendCounting('Run', '-3', 'km')).toBe(false);
     expect(canAppendCounting('Run', 'five', 'km')).toBe(false);
+    // Whole digits only (iOS `Int(_:)` parity): no truncation of a typed goal.
+    expect(canAppendCounting('Run', '2.5', 'km')).toBe(false);
+    expect(canAppendCounting('Run', '1e3', 'km')).toBe(false);
+    expect(canAppendCounting('Run', '5x', 'km')).toBe(false);
     expect(canAppendCounting('Run', '5', '')).toBe(false);
     expect(canAppendCounting('Run', '5', '  ')).toBe(false);
   });

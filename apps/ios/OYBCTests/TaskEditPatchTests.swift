@@ -241,6 +241,10 @@ final class TaskEditPatchTests: XCTestCase {
         XCTAssertFalse(RisoCompoundEditFieldsView.canAppendCounting(text: "Run", goal: "0", unit: "km"))
         XCTAssertFalse(RisoCompoundEditFieldsView.canAppendCounting(text: "Run", goal: "-3", unit: "km"))
         XCTAssertFalse(RisoCompoundEditFieldsView.canAppendCounting(text: "Run", goal: "five", unit: "km"))
+        // Whole digits only (web parity): no truncation of a typed goal.
+        XCTAssertFalse(RisoCompoundEditFieldsView.canAppendCounting(text: "Run", goal: "2.5", unit: "km"))
+        XCTAssertFalse(RisoCompoundEditFieldsView.canAppendCounting(text: "Run", goal: "1e3", unit: "km"))
+        XCTAssertFalse(RisoCompoundEditFieldsView.canAppendCounting(text: "Run", goal: "5x", unit: "km"))
         XCTAssertFalse(RisoCompoundEditFieldsView.canAppendCounting(text: "Run", goal: "5", unit: ""))
         XCTAssertFalse(RisoCompoundEditFieldsView.canAppendCounting(text: "Run", goal: "5", unit: "  "))
     }

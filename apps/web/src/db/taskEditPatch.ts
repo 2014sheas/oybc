@@ -216,8 +216,12 @@ export function appendPickedChild(draft: TaskEditPatch, task: Task): TaskEditPat
 
 /** The typed goal as a positive integer, or `undefined` when blank/invalid. */
 function parsePositiveGoal(goal: string): number | undefined {
-  const parsed = parseInt(goal.trim(), 10);
-  return Number.isInteger(parsed) && parsed > 0 ? parsed : undefined;
+  // Whole digits only — `parseInt` would truncate "2.5" / "1e3" / "5x" and
+  // silently save a different goal than typed; iOS `Int(_:)` rejects them.
+  const trimmed = goal.trim();
+  if (!/^\d+$/.test(trimmed)) return undefined;
+  const parsed = Number(trimmed);
+  return parsed > 0 ? parsed : undefined;
 }
 
 /**
