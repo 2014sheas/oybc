@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { CenterSquareType, Timeframe } from '@oybc/shared';
 import type { RecurringBoardTemplate } from '@oybc/shared';
-import { computeDeckFloor, formatDeckPreview } from '../poolDeckPreview';
+import { computeDeckFloor, formatDeckPreview, poolHeaderInputs } from '../poolDeckPreview';
 
 /**
  * poolDeckPreview.test.ts — Pool edit sheet's dashed deck-preview line
@@ -133,5 +133,25 @@ describe('formatDeckPreview', () => {
     expect(formatDeckPreview(1, { boardSize: 3, floor: 8 })).toBe(
       '1 task in the pool · short on required tasks',
     );
+  });
+});
+
+describe('poolHeaderInputs', () => {
+  it('no consumer: required is the 3x3-FREE default 8, note is the deck preview', () => {
+    const floor = computeDeckFloor([], 'p1');
+    expect(poolHeaderInputs(3, floor)).toEqual({
+      capacity: 3,
+      tasksRequired: 8,
+      note: '3 tasks in the pool · short on required tasks',
+    });
+  });
+
+  it('meeting the floor yields the "fills" note', () => {
+    const floor = computeDeckFloor([], 'p1');
+    expect(poolHeaderInputs(8, floor)).toEqual({
+      capacity: 8,
+      tasksRequired: 8,
+      note: '8 tasks in the pool · fills a 3×3',
+    });
   });
 });

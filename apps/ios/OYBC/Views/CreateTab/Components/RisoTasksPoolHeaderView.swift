@@ -23,6 +23,11 @@ struct RisoTasksPoolHeaderView: View {
     let isRecurring: Bool
     let centerTaskMode: Bool
     let centerSatisfied: Bool
+    /// Kicker text. Defaults to the wizard's; the pool editor passes "In this pool".
+    var kicker: String = "Your task pool"
+    /// When set, replaces the pool-model note (green when satisfied, red when
+    /// short). The pool editor passes its deck-preview line.
+    var noteOverride: String? = nil
 
     // MARK: - Derived
 
@@ -37,7 +42,7 @@ struct RisoTasksPoolHeaderView: View {
         VStack(alignment: .leading, spacing: 0) {
             // Kicker + count row
             HStack(alignment: .firstTextBaseline, spacing: 0) {
-                Text("Your task pool")
+                Text(kicker)
                     .risoKicker(.risoInk)
                 Spacer()
                 countBadge
@@ -85,6 +90,17 @@ struct RisoTasksPoolHeaderView: View {
 
     @ViewBuilder
     private var poolModelNote: some View {
+        if let noteOverride {
+            Text(noteOverride)
+                .font(.risoBody(11, .semibold))
+                .foregroundStyle(isSatisfied ? Color.risoGreen : Color.risoRed)
+        } else {
+            defaultPoolModelNote
+        }
+    }
+
+    @ViewBuilder
+    private var defaultPoolModelNote: some View {
         // Board Creation Split (README §Copy strings) — this note's copy is
         // now byte-identical across one-off and recurring: "✓ Fills your
         // board · {X} extra rotate in" / "Add {X} more — extras shuffle

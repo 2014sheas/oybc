@@ -33,8 +33,22 @@ test.describe('Pool editor — full page with wizard rows', () => {
     await quick.fill('Journal');
     await page.getByRole('button', { name: 'Add task' }).click();
 
+    // Header card (count / required + deck-preview note) sits ABOVE the
+    // Add tasks section, which sits ABOVE the rows list (wizard order).
+    const header = page.getByLabel('Capacity 2 of 8 tasks');
+    await expect(header).toBeVisible();
+    await expect(page.getByText('2 tasks in the pool · short on required tasks')).toBeVisible();
+    const yOf = async (loc: import('@playwright/test').Locator): Promise<number> =>
+      (await loc.boundingBox())!.y;
+    const headerY = await yOf(header);
+    const addY = await yOf(page.getByText('Add tasks', { exact: true }));
+    const rowsY = await yOf(page.getByRole('button', { name: 'Edit Stretch' }));
+    expect(headerY).toBeLessThan(addY);
+    expect(addY).toBeLessThan(rowsY);
+
     // Rows (the wizard's PoolList), not chips.
-    await expect(page.getByText('In this pool')).toBeVisible();
+    await expect(page.getByText('Your task pool', { exact: true })).toBeVisible();
+    await expect(page.getByText('In this pool', { exact: true })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Edit Stretch' })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Remove Journal from pool' })).toBeVisible();
 

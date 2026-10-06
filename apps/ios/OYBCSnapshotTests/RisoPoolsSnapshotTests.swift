@@ -170,7 +170,7 @@ final class RisoPoolsSnapshotTests: XCTestCase {
                 HStack(alignment: .top) {
                     VStack(alignment: .leading, spacing: 3) {
                         Text(existing ? "EDIT POOL" : "NEW POOL").risoKicker(.risoBlue)
-                        Text(existing ? "Edit pool" : "New pool").risoH2()
+                        Text("Pool").risoH2() // production title (kicker carries NEW / EDIT)
                     }
                     Spacer()
                 }

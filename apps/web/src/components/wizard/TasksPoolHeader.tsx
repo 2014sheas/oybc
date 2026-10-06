@@ -16,6 +16,8 @@ export interface TasksPoolHeaderProps {
   centerTaskMode: boolean;
   /** True when a center task has been marked AND is still selected. */
   centerSatisfied: boolean;
+  /** Replaces the pool-model note line (pool editor: the deck-preview text). */
+  note?: string;
 }
 
 /**
@@ -44,6 +46,7 @@ export function TasksPoolHeader({
   isRecurring: _isRecurring,
   centerTaskMode,
   centerSatisfied,
+  note,
 }: TasksPoolHeaderProps): React.ReactElement {
   const remaining = Math.max(0, tasksRequired - capacity);
   const extra = Math.max(0, capacity - tasksRequired);
@@ -78,7 +81,9 @@ export function TasksPoolHeader({
       </div>
 
       <p className={styles.note}>
-        {isSatisfied ? (
+        {note !== undefined ? (
+          <span className={isSatisfied ? styles.noteOk : styles.noteShort}>{note}</span>
+        ) : isSatisfied ? (
           extra > 0 ? (
             <span className={styles.noteOk}>
               ✓ Fills your board · <strong>{extra} extra{extra === 1 ? '' : 's'}</strong> rotate

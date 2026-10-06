@@ -1,10 +1,10 @@
 import SwiftUI
 
 /// PoolEditorBodyView — the pool editor's scrolling content, shaped like the
-/// board wizard's Tasks step: NAME field → the wizard's resting task list
-/// (`RisoPoolListView`, `surface: .pool`) with the inline row editor
-/// (`RisoPoolRowEditorView`) → the unchanged ADD section (quick-add row +
-/// special-type panel + library picker) → deck-preview line.
+/// board wizard's Tasks step: NAME field → pool header card (count / deck
+/// floor / deck-preview note) → "Add tasks" (quick-add row + special-type
+/// panel) → dashed library-reuse row → the task list (`RisoPoolListView`,
+/// `surface: .pool`) with the inline row editor (`RisoPoolRowEditorView`).
 ///
 /// Leaf view over a `PoolEditorViewModel`; chrome (header / Save / Delete)
 /// lives in `PoolEditorView`. Twin of web `PoolEditorBody`.
@@ -18,14 +18,8 @@ struct PoolEditorBodyView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
             nameField
+            headerCard
             tasksSection
-            Text(vm.deckPreviewText())
-                .font(.risoBody(12.5, .semibold)).foregroundStyle(Color.risoMuted)
-                .frame(maxWidth: .infinity, alignment: .leading).padding(12)
-                .background(RoundedRectangle(cornerRadius: Riso.cardRadius).fill(Color.risoPaper2))
-                .overlay(RoundedRectangle(cornerRadius: Riso.cardRadius)
-                    .strokeBorder(Color.risoInk.opacity(0.4),
-                                  style: StrokeStyle(lineWidth: 1.5, dash: [6, 4])))
             if let errorMessage = vm.errorMessage {
                 Text(errorMessage)
                     .font(.risoBody(13, .semibold)).foregroundStyle(Color.risoRed)
@@ -43,39 +37,25 @@ struct PoolEditorBodyView: View {
         }
     }
 
+    // MARK: - Header card (wizard's pool header, deck-preview inputs)
+
+    private var headerCard: some View {
+        let h = vm.headerInputs()
+        return RisoTasksPoolHeaderView(
+            capacity: h.count,
+            tasksRequired: h.required,
+            isRecurring: false,
+            centerTaskMode: false,
+            centerSatisfied: false,
+            noteOverride: h.note
+        )
+    }
+
     // MARK: - Tasks
 
     private var tasksSection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            RisoPoolListView(
-                surface: .pool,
-                selectedTaskIds: Set(vm.selectedTasks.map(\.id)),
-                orderedTaskIds: vm.poolTaskIds,
-                effectiveTaskById: vm.effectiveTaskById,
-                effectiveChildrenByCompound: vm.effectiveChildrenByCompound,
-                isRecurring: false,
-                onRemove: { vm.remove($0) },
-                onEdit: { vm.openEditor($0) },
-                sharedCountByTaskId: vm.sharedCountByTaskId,
-                editingTaskId: vm.editingTaskId,
-                editor: { task in
-                    AnyView(
-                        RisoPoolRowEditorView(
-                            taskId: task.id,
-                            taskType: task.type,
-                            draft: $vm.editDraft,
-                            libraryTasks: vm.pickerLibraryTasks,
-                            allLinks: vm.allLinks,
-                            onSave: { vm.saveEdit() },
-                            onDiscard: { vm.discardEdit() }
-                        )
-                    )
-                }
-            )
-            .disabled(vm.busy)
-
-            Text("ADD TASKS").font(.risoBody(11, .bold)).tracking(1.1).foregroundStyle(Color.risoMuted)
-                .padding(.top, 4)
+            Text("Add tasks").risoSectionLabel()
 
             // Polling quick-add row (owner decision 2026-07-21). Immediate
             // persist (`onPendingCreated: nil`) — a pool is not a wizard draft.
@@ -115,6 +95,33 @@ struct PoolEditorBodyView: View {
 
             libraryPickerToggle
             if showLibraryPicker { libraryPicker }
+
+            RisoPoolListView(
+                surface: .pool,
+                selectedTaskIds: Set(vm.selectedTasks.map(\.id)),
+                orderedTaskIds: vm.poolTaskIds,
+                effectiveTaskById: vm.effectiveTaskById,
+                effectiveChildrenByCompound: vm.effectiveChildrenByCompound,
+                isRecurring: false,
+                onRemove: { vm.remove($0) },
+                onEdit: { vm.openEditor($0) },
+                sharedCountByTaskId: vm.sharedCountByTaskId,
+                editingTaskId: vm.editingTaskId,
+                editor: { task in
+                    AnyView(
+                        RisoPoolRowEditorView(
+                            taskId: task.id,
+                            taskType: task.type,
+                            draft: $vm.editDraft,
+                            libraryTasks: vm.pickerLibraryTasks,
+                            allLinks: vm.allLinks,
+                            onSave: { vm.saveEdit() },
+                            onDiscard: { vm.discardEdit() }
+                        )
+                    )
+                }
+            )
+            .disabled(vm.busy)
         }
     }
 
@@ -124,18 +131,21 @@ struct PoolEditorBodyView: View {
         Button {
             showLibraryPicker.toggle()
         } label: {
-            HStack {
+            HStack(spacing: 8) {
+                Image(systemName: "books.vertical")
+                    .font(.system(size: 15, weight: .bold)).foregroundStyle(Color.risoMuted)
                 Text("Reuse a task from your library \(showLibraryPicker ? "▴" : "▾")")
-                    .font(.risoHead(13, .bold)).foregroundStyle(Color.risoMuted)
+                    .font(.risoHead(13, .bold)).foregroundStyle(Color.risoInk)
                 Spacer()
             }
-            .padding(.horizontal, 14).padding(.vertical, 11)
+            .padding(12)
             .frame(maxWidth: .infinity)
-            .contentShape(RoundedRectangle(cornerRadius: Riso.cardRadius)) // whole dashed row is the tap target
-            .overlay(
+            .background(
                 RoundedRectangle(cornerRadius: Riso.cardRadius)
-                    .strokeBorder(Color.risoInk.opacity(0.5), style: StrokeStyle(lineWidth: 1.5, dash: [6, 4]))
+                    .strokeBorder(Color.risoInk.opacity(0.5),
+                                  style: StrokeStyle(lineWidth: Riso.Keyline.container, dash: [5, 4]))
             )
+            .contentShape(Rectangle()) // whole dashed row is the tap target
         }
         .buttonStyle(.plain)
         .disabled(vm.busy)
