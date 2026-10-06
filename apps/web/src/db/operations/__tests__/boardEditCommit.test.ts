@@ -14,6 +14,7 @@ import { commitSquareEdits, type CommitSquareEditsInput } from '../boardEditComm
 import type { SquareDraftCell } from '../../../hooks/squareEditCount';
 import { taskToSquareState } from '../../adapters';
 import { newChildPatch, type ChildPatch, type TaskEditPatch } from '../../taskEditPatch';
+import { buildSheetOverride, seedSheetTitle } from '../../../components/boardEdit/boardEditTaskSheetModel';
 
 /**
  * Board Edit redesign slice 3 (T2) — `commitSquareEdits`, the squares
@@ -394,6 +395,42 @@ describe('commitSquareEdits — type switches and compound overrides', () => {
       type: TaskType.COUNTING, title: 'Run 5 km', action: 'Run', maxCount: 5, unit: 'km', version: 2,
     });
     expect((await db.syncQueue.toArray()).some((q) => q.entityType === 'tasks' && q.entityId === 'task-a')).toBe(true);
+  });
+
+  it('a goal-only edit on an auto-titled Counting task commits the title regenerated at the new goal', async () => {
+    const stored = seedTask('task-a', { type: TaskType.COUNTING, title: 'Run 5 km', action: 'Run', unit: 'km', maxCount: 5 });
+    await seedPlaced(stored);
+    // Drive the REAL sheet model: the field opens blank for an auto title and
+    // Done regenerates from the edited goal (the "Reads as" preview).
+    const override = buildSheetOverride({
+      original: stored, selected: TaskType.COUNTING, title: seedSheetTitle(stored),
+      action: 'Run', goalStr: '8', unit: 'km', compoundDraft: null,
+    });
+    await commitSquareEdits(
+      baseInput({
+        cells: [cell({ cellId: 'bt-a', taskId: 'task-a', row: 0, col: 0 })],
+        taskOverrides: new Map([['task-a', override]]),
+      }),
+    );
+    expect(await db.tasks.get('task-a')).toMatchObject({
+      type: TaskType.COUNTING, title: 'Run 8 km', action: 'Run', maxCount: 8, unit: 'km', version: 2,
+    });
+  });
+
+  it('a goal-only edit on a custom-titled Counting task keeps the custom title', async () => {
+    const stored = seedTask('task-a', { type: TaskType.COUNTING, title: 'Morning run', action: 'Run', unit: 'km', maxCount: 5 });
+    await seedPlaced(stored);
+    const override = buildSheetOverride({
+      original: stored, selected: TaskType.COUNTING, title: seedSheetTitle(stored),
+      action: 'Run', goalStr: '8', unit: 'km', compoundDraft: null,
+    });
+    await commitSquareEdits(
+      baseInput({
+        cells: [cell({ cellId: 'bt-a', taskId: 'task-a', row: 0, col: 0 })],
+        taskOverrides: new Map([['task-a', override]]),
+      }),
+    );
+    expect(await db.tasks.get('task-a')).toMatchObject({ title: 'Morning run', maxCount: 8, version: 2 });
   });
 
   it('Counting → Simple clears action / unit / maxCount', async () => {

@@ -138,7 +138,9 @@ struct SquareEditTaskSheet: View {
         self.onDone = onDone
         self.onCancel = onCancel
 
-        _title       = State(initialValue: task.title)
+        // Blank for an auto-titled Counting task so the title re-derives
+        // from Action/Goal/Unit (see `seededTitle(for:)`).
+        _title       = State(initialValue: Self.seededTitle(for: task))
         // `startingType` pre-selects a segment (snapshot fixtures render the
         // converted-Compound state without driving a tap); production leaves nil.
         _type        = State(initialValue: startingType ?? Self.initialType(for: task))
@@ -222,6 +224,24 @@ struct SquareEditTaskSheet: View {
         return draft
     }
 
+    /// What the Title field opens with. A Counting task whose stored title is
+    /// still its AUTO one (`TaskTitle.isAutoCounterTitle`) seeds BLANK so the
+    /// title keeps re-deriving as Action/Goal/Unit change — seeded as text it
+    /// would read as a chosen name and `applyingOverride` would carry the
+    /// stale "Run 10 miles" onto a goal of 5. A custom title (and any other
+    /// type) seeds verbatim. Mirrors `TaskEditPatch.seededForEditor(from:)`
+    /// and web `seedSheetTitle`.
+    ///
+    /// - Parameter task: The task being edited (any staged override merged).
+    /// - Returns: The initial Title field text.
+    static func seededTitle(for task: Task) -> String {
+        guard task.type == .counting else { return task.title }
+        let isAuto = TaskTitle.isAutoCounterTitle(
+            title: task.title, action: task.action ?? "", maxCount: task.maxCount, unit: task.unit ?? ""
+        )
+        return isAuto ? "" : task.title
+    }
+
     /// The type the sheet's local state is seeded with (and therefore the
     /// `Patch.type` Done returns when the type segment is left untouched).
     ///
@@ -244,21 +264,23 @@ struct SquareEditTaskSheet: View {
     // MARK: - Validation
 
     /// Done is enabled iff:
-    ///   - title is non-empty (all types).
+    ///   - title is non-empty (every type but Counting — a blank Counting
+    ///     title is auto-generated from Action/Goal/Unit at Save, matching
+    ///     `TaskEditPatch.validate` and the web sheet).
     ///   - counting: goal is a positive integer AND unit is non-empty.
     ///   - compound: the editor has loaded and, for a conversion (or an EDITED
     ///     existing compound), `TaskEditPatch.validate(type: .compound)` passes.
     ///     The link guard (self / duplicate / loop) runs at Save; the editor
     ///     only offers eligible library tasks.
     private var isValid: Bool {
-        let trimTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimTitle.isEmpty else { return false }
-        if type == .compound { return !isCompoundBlocked }
         if type == .counting {
             let goalOK = (Int(maxCountStr.trimmingCharacters(in: .whitespaces)) ?? 0) > 0
             let unitOK = !unit.trimmingCharacters(in: .whitespaces).isEmpty
             return goalOK && unitOK
         }
+        let trimTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimTitle.isEmpty else { return false }
+        if type == .compound { return !isCompoundBlocked }
         return true
     }
 

@@ -1806,7 +1806,7 @@
       }
     },
     {
-      "name": "negative baseline clamps to 0",
+      "name": "negative baseline clamps to 0 (source title is the auto one, so it is regenerated unchanged)",
       "copy": {
         "id": "167529b7-2dde-5d6d-aad6-a99ba03b3da4",
         "boardId": "b-feb",
@@ -1818,7 +1818,7 @@
         "endDate": "2026-02-28T23:59:59.999Z"
       },
       "sourceTask": {
-        "title": "ignored",
+        "title": "Read 4 pages",
         "action": "Read",
         "unit": "pages",
         "maxCount": 4
@@ -1880,6 +1880,142 @@
       },
       "baseline": 0,
       "expected": null
+    },
+    {
+      "name": "custom title kept verbatim: 'Morning pages' != auto 'Read 4 pages' (owner bug 2026-10-06)",
+      "copy": {
+        "id": "41684bc5-903a-5edd-be8d-5248ce41959c",
+        "boardId": "b-mar",
+        "boardTaskId": "bt-mar",
+        "sourceTaskId": "hub1",
+        "rootTaskId": "root-1",
+        "timeframe": "monthly",
+        "startDate": "2026-03-01T00:00:00.000Z",
+        "endDate": "2026-03-31T23:59:59.999Z"
+      },
+      "sourceTask": {
+        "title": "Morning pages",
+        "action": "Read",
+        "unit": "pages",
+        "maxCount": 4
+      },
+      "baseline": 1,
+      "expected": {
+        "id": "41684bc5-903a-5edd-be8d-5248ce41959c",
+        "rootTaskId": "root-1",
+        "sourceMemberId": "hub1",
+        "replacesId": "hub1",
+        "maxCount": 4,
+        "baseline": 1,
+        "title": "Morning pages",
+        "action": "Read",
+        "unit": "pages",
+        "timeframe": "monthly",
+        "startDate": "2026-03-01T00:00:00.000Z",
+        "endDate": "2026-03-31T23:59:59.999Z"
+      }
+    },
+    {
+      "name": "auto title regenerated: an end-padded '  Read 4 pages  ' is the auto title after trimming, so the copy gets the clean regenerated 'Read 4 pages'",
+      "copy": {
+        "id": "41684bc5-903a-5edd-be8d-5248ce41959c",
+        "boardId": "b-mar",
+        "boardTaskId": "bt-mar",
+        "sourceTaskId": "hub1",
+        "rootTaskId": "root-1",
+        "timeframe": "monthly",
+        "startDate": "2026-03-01T00:00:00.000Z",
+        "endDate": "2026-03-31T23:59:59.999Z"
+      },
+      "sourceTask": {
+        "title": "  Read 4 pages  ",
+        "action": "Read",
+        "unit": "pages",
+        "maxCount": 4
+      },
+      "baseline": 0,
+      "expected": {
+        "id": "41684bc5-903a-5edd-be8d-5248ce41959c",
+        "rootTaskId": "root-1",
+        "sourceMemberId": "hub1",
+        "replacesId": "hub1",
+        "maxCount": 4,
+        "baseline": 0,
+        "title": "Read 4 pages",
+        "action": "Read",
+        "unit": "pages",
+        "timeframe": "monthly",
+        "startDate": "2026-03-01T00:00:00.000Z",
+        "endDate": "2026-03-31T23:59:59.999Z"
+      }
+    },
+    {
+      "name": "case-sensitive: 'read 4 pages' differs from auto 'Read 4 pages' only by case and is therefore a CUSTOM title, kept verbatim",
+      "copy": {
+        "id": "41684bc5-903a-5edd-be8d-5248ce41959c",
+        "boardId": "b-mar",
+        "boardTaskId": "bt-mar",
+        "sourceTaskId": "hub1",
+        "rootTaskId": "root-1",
+        "timeframe": "monthly",
+        "startDate": "2026-03-01T00:00:00.000Z",
+        "endDate": "2026-03-31T23:59:59.999Z"
+      },
+      "sourceTask": {
+        "title": "read 4 pages",
+        "action": "Read",
+        "unit": "pages",
+        "maxCount": 4
+      },
+      "baseline": 0,
+      "expected": {
+        "id": "41684bc5-903a-5edd-be8d-5248ce41959c",
+        "rootTaskId": "root-1",
+        "sourceMemberId": "hub1",
+        "replacesId": "hub1",
+        "maxCount": 4,
+        "baseline": 0,
+        "title": "read 4 pages",
+        "action": "Read",
+        "unit": "pages",
+        "timeframe": "monthly",
+        "startDate": "2026-03-01T00:00:00.000Z",
+        "endDate": "2026-03-31T23:59:59.999Z"
+      }
+    },
+    {
+      "name": "empty title is auto: regenerated from the source's fields",
+      "copy": {
+        "id": "41684bc5-903a-5edd-be8d-5248ce41959c",
+        "boardId": "b-mar",
+        "boardTaskId": "bt-mar",
+        "sourceTaskId": "hub1",
+        "rootTaskId": "root-1",
+        "timeframe": "monthly",
+        "startDate": "2026-03-01T00:00:00.000Z",
+        "endDate": "2026-03-31T23:59:59.999Z"
+      },
+      "sourceTask": {
+        "title": "   ",
+        "action": "Read",
+        "unit": "pages",
+        "maxCount": 4
+      },
+      "baseline": 0,
+      "expected": {
+        "id": "41684bc5-903a-5edd-be8d-5248ce41959c",
+        "rootTaskId": "root-1",
+        "sourceMemberId": "hub1",
+        "replacesId": "hub1",
+        "maxCount": 4,
+        "baseline": 0,
+        "title": "Read 4 pages",
+        "action": "Read",
+        "unit": "pages",
+        "timeframe": "monthly",
+        "startDate": "2026-03-01T00:00:00.000Z",
+        "endDate": "2026-03-31T23:59:59.999Z"
+      }
     }
   ]
 }

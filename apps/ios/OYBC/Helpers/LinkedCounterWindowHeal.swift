@@ -253,9 +253,11 @@ extension BoardSources {
     /// ``buildDerivedRows(drafts:userId:now:rootsById:compoundsById:)`` (which
     /// sets `createdInWizard`, mirrors the root's count, stamps the latch, …).
     ///
-    /// Title / action / unit / goal come from the SOURCE row (the copy keeps
-    /// the linked row's own target — no pro-rating, no vary); `replacesId`
-    /// / `sourceMemberId` are the source; the window is the copy's.
+    /// Action / unit / goal come from the SOURCE row (the copy keeps the
+    /// linked row's own target — no pro-rating, no vary); the title is
+    /// `TaskTitle.counterCopyTitle` — a custom name carries over verbatim, an
+    /// auto one is regenerated (2026-10-06); `replacesId` / `sourceMemberId`
+    /// are the source; the window is the copy's.
     /// `baseline` is the caller's event-derived count of the root at the
     /// copy's `startDate` (``computeWindowBaseline(rootTaskId:events:boundary:)``),
     /// low-clamped at 0. Returns `nil` for a goal-less source — the planner
@@ -282,12 +284,7 @@ extension BoardSources {
             replacesId: copy.sourceTaskId,
             maxCount: maxCount,
             baseline: Swift.max(0, baseline),
-            title: TaskTitle.generateCounterTaskTitle(
-                action: action,
-                maxCount: maxCount,
-                unit: unit,
-                providedTitle: action.isEmpty ? sourceTask.title : nil
-            ),
+            title: TaskTitle.counterCopyTitle(member: sourceTask, newMaxCount: maxCount),
             action: action,
             unit: unit,
             timeframe: copy.timeframe,

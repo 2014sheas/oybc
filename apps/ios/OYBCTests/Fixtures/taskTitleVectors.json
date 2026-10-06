@@ -1,0 +1,245 @@
+{
+  "_note": "Cross-platform vectors for packages/shared/src/algorithms/taskTitle.ts <-> apps/ios/OYBC/Helpers/TaskTitle.swift. generateCounterTaskTitle: a null maxCount is the goal-less hub-born form (pair-derived name); a JSON null action/unit is passed as '' by both harnesses. isAutoCounterTitle (2026-10-06, custom-counter-title fix): a title is AUTO iff, after trimming, it is empty OR equal (case-SENSITIVE, trimmed) to generateCounterTaskTitle(own action, own maxCount, own unit). counterCopyTitle(member, newMaxCount): a custom title carries over verbatim (trimmed) regardless of the copy's target; an auto/empty one is regenerated from action / newMaxCount / unit. iOS maxCount is Int, so no fractional-goal vectors here (the TS floor is pinned by taskTitle.test.ts alone).",
+  "generateCounterTaskTitle": [
+    {
+      "name": "formula",
+      "action": "Read",
+      "maxCount": 100,
+      "unit": "pages",
+      "expected": "Read 100 pages"
+    },
+    {
+      "name": "formula trims action and unit",
+      "action": "  Walk  ",
+      "maxCount": 10,
+      "unit": "  km  ",
+      "expected": "Walk 10 km"
+    },
+    {
+      "name": "providedTitle wins, trimmed",
+      "action": "Read",
+      "maxCount": 100,
+      "unit": "pages",
+      "providedTitle": "  My Custom Title  ",
+      "expected": "My Custom Title"
+    },
+    {
+      "name": "blank providedTitle falls back to the formula",
+      "action": "Run",
+      "maxCount": 5,
+      "unit": "miles",
+      "providedTitle": "   ",
+      "expected": "Run 5 miles"
+    },
+    {
+      "name": "goal-less elides a default Do",
+      "action": "Do",
+      "maxCount": null,
+      "unit": "push-ups",
+      "expected": "Push-ups"
+    },
+    {
+      "name": "goal-less keeps a non-Do verb",
+      "action": "Run",
+      "maxCount": null,
+      "unit": "miles",
+      "expected": "Run miles"
+    }
+  ],
+  "isAutoCounterTitle": [
+    {
+      "name": "exact auto title -> true",
+      "title": "Read 10 pages",
+      "action": "Read",
+      "maxCount": 10,
+      "unit": "pages",
+      "expected": true
+    },
+    {
+      "name": "custom name -> false",
+      "title": "Morning pages",
+      "action": "Read",
+      "maxCount": 10,
+      "unit": "pages",
+      "expected": false
+    },
+    {
+      "name": "empty -> true",
+      "title": "",
+      "action": "Read",
+      "maxCount": 10,
+      "unit": "pages",
+      "expected": true
+    },
+    {
+      "name": "whitespace-only -> true",
+      "title": "   ",
+      "action": "Read",
+      "maxCount": 10,
+      "unit": "pages",
+      "expected": true
+    },
+    {
+      "name": "end-padded auto title -> true (trimmed compare)",
+      "title": "  Read 10 pages  ",
+      "action": "Read",
+      "maxCount": 10,
+      "unit": "pages",
+      "expected": true
+    },
+    {
+      "name": "case differs -> false (case-sensitive compare)",
+      "title": "read 10 pages",
+      "action": "Read",
+      "maxCount": 10,
+      "unit": "pages",
+      "expected": false
+    },
+    {
+      "name": "inner spacing differs -> false",
+      "title": "Read  10 pages",
+      "action": "Read",
+      "maxCount": 10,
+      "unit": "pages",
+      "expected": false
+    },
+    {
+      "name": "auto title at a DIFFERENT goal -> false (it is not this task's auto title)",
+      "title": "Read 5 pages",
+      "action": "Read",
+      "maxCount": 10,
+      "unit": "pages",
+      "expected": false
+    },
+    {
+      "name": "action and unit are trimmed before generating",
+      "title": "Walk 10 km",
+      "action": "  Walk  ",
+      "maxCount": 10,
+      "unit": "  km  ",
+      "expected": true
+    },
+    {
+      "name": "action-less: the formula yields ' 12 ' which trims to '12'",
+      "title": "12",
+      "action": "",
+      "maxCount": 12,
+      "unit": "",
+      "expected": true
+    },
+    {
+      "name": "action-less custom title -> false",
+      "title": "Meditate",
+      "action": "",
+      "maxCount": 12,
+      "unit": "",
+      "expected": false
+    },
+    {
+      "name": "goal-less: the pair-derived name is the auto title",
+      "title": "Push-ups",
+      "action": "Do",
+      "maxCount": null,
+      "unit": "push-ups",
+      "expected": true
+    },
+    {
+      "name": "goal-less custom name -> false",
+      "title": "Daily tally",
+      "action": "Do",
+      "maxCount": null,
+      "unit": "push-ups",
+      "expected": false
+    }
+  ],
+  "counterCopyTitle": [
+    {
+      "name": "custom title kept verbatim at a different target",
+      "member": {
+        "title": "Morning pages",
+        "action": "Read",
+        "unit": "pages",
+        "maxCount": 10
+      },
+      "newMaxCount": 5,
+      "expected": "Morning pages"
+    },
+    {
+      "name": "custom title is trimmed when carried over",
+      "member": {
+        "title": "  Morning pages  ",
+        "action": "Read",
+        "unit": "pages",
+        "maxCount": 10
+      },
+      "newMaxCount": 5,
+      "expected": "Morning pages"
+    },
+    {
+      "name": "auto title regenerated at the new target",
+      "member": {
+        "title": "Read 10 pages",
+        "action": "Read",
+        "unit": "pages",
+        "maxCount": 10
+      },
+      "newMaxCount": 5,
+      "expected": "Read 5 pages"
+    },
+    {
+      "name": "empty title regenerated at the new target",
+      "member": {
+        "title": "",
+        "action": "Read",
+        "unit": "pages",
+        "maxCount": 10
+      },
+      "newMaxCount": 5,
+      "expected": "Read 5 pages"
+    },
+    {
+      "name": "case-differing title is custom and kept",
+      "member": {
+        "title": "read 10 pages",
+        "action": "Read",
+        "unit": "pages",
+        "maxCount": 10
+      },
+      "newMaxCount": 5,
+      "expected": "read 10 pages"
+    },
+    {
+      "name": "action-less member keeps its own title (pre-fix behaviour preserved)",
+      "member": {
+        "title": "Meditate",
+        "action": null,
+        "unit": null,
+        "maxCount": 12
+      },
+      "newMaxCount": 2,
+      "expected": "Meditate"
+    },
+    {
+      "name": "action-less member with an empty title regenerates the bare formula (pre-fix behaviour preserved)",
+      "member": {
+        "title": "",
+        "action": null,
+        "unit": null,
+        "maxCount": 12
+      },
+      "newMaxCount": 2,
+      "expected": " 2 "
+    },
+    {
+      "name": "same target: auto title regenerated to itself",
+      "member": {
+        "title": "Run 4 miles",
+        "action": "Run",
+        "unit": "miles",
+        "maxCount": 4
+      },
+      "newMaxCount": 4,
+      "expected": "Run 4 miles"
+    }
+  ]
+}

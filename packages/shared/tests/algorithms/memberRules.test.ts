@@ -135,6 +135,7 @@ describe('planDerivedTasks', () => {
     expect(derivedTaskId(P.boardId, 'c1')).toBe(P.idPins['derived:c1']);
     expect(derivedTaskId(P.boardId, 'c3')).toBe(P.idPins['derived:c3']);
     expect(derivedTaskId(P.boardId, 'a1')).toBe(P.idPins['derived:a1']);
+    expect(derivedTaskId(P.boardId, 'r3')).toBe(P.idPins['derived:r3']);
     expect(derivedCompoundId(P.boardId, 'C2')).toBe(P.idPins['derivedCompound:C2']);
     expect(derivedLinkId(P.idPins['derivedCompound:C2'], P.idPins['derived:c3'])).toBe(
       P.idPins['link:derivedCompound:C2:derived:c3']

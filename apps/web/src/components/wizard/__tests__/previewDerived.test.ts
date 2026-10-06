@@ -289,10 +289,9 @@ describe('applyPreviewDerivedCells — the Preview dry run (B3 RC6)', () => {
     // A board source always mints (the target/vary branch is open to it), and
     // since the 2026-09-21 owner ruling a one-off board pro-rates just like a
     // recurring one — so a weekly 30 onto this DAILY board targets
-    // ceil(30 × 1 / 7) = 5 and the title is REGENERATED from that. A member
-    // whose stored title drifted from `action + target + unit` visibly snaps
-    // back here, which is exactly what the board will carry.
-    const counter = makeCounter('c1', 30, { title: 'Long run (old name)' });
+    // ceil(30 × 1 / 7) = 5 and an AUTO title ('Run 30 miles') is REGENERATED
+    // from that, which is exactly what the board will carry.
+    const counter = makeCounter('c1', 30);
     const controller = makeController({
       tasks: [counter],
       supplyTaskIds: ['c1'],
@@ -308,6 +307,29 @@ describe('applyPreviewDerivedCells — the Preview dry run (B3 RC6)', () => {
     expect(out[0]!.id).toBe('c1');
     expect(out[0]!.maxCount).toBe(5);
     expect(out[0]!.title).toBe('Run 5 miles');
+  });
+
+  it('keeps a CUSTOM title on the pro-rated stand-in (2026-10-06)', () => {
+    // Flipped from "a drifted title snaps back" (B3 RC6): a title that is not
+    // the member's own auto title is a name the user chose, and the
+    // custom-counter-title fix carries it over verbatim at the new target —
+    // in the Preview exactly as on the persisted board.
+    const counter = makeCounter('c1', 30, { title: 'Long run (old name)' });
+    const controller = makeController({
+      tasks: [counter],
+      supplyTaskIds: ['c1'],
+    });
+
+    const out = applyPreviewDerivedCells(
+      placementOf([counter]),
+      controller,
+      makeLibrary([counter]),
+      makePreviewRng(0),
+    );
+
+    expect(out[0]!.id).toBe('c1');
+    expect(out[0]!.maxCount).toBe(5);
+    expect(out[0]!.title).toBe('Long run (old name)');
   });
 
   it('previews a stand-in as unstarted rather than inheriting another window\'s progress', () => {

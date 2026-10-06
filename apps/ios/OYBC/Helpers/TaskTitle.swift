@@ -46,3 +46,63 @@ enum TaskTitle {
         return "\(trimmedAction) \(maxCount) \(trimmedUnit)"
     }
 }
+
+// MARK: - Custom vs auto titles (owner bug 2026-10-06)
+
+extension TaskTitle {
+
+    /// Whether a counting task's title is the AUTO one — i.e. not a name the
+    /// user chose. Twin of the TS `isAutoCounterTitle`.
+    ///
+    /// A title is auto iff, after trimming, it is empty OR equal to the title
+    /// ``generateCounterTaskTitle(action:maxCount:unit:providedTitle:)``
+    /// builds from the task's OWN `action` / `maxCount` / `unit` (also
+    /// trimmed). The compare is **case-sensitive** ("read 10 pages" is a
+    /// custom name for a "Read" / 10 / "pages" counter) and
+    /// **whitespace-insensitive at the ends only** — inner spacing must match
+    /// exactly.
+    ///
+    /// - Parameters:
+    ///   - title: The stored title.
+    ///   - action: The task's own action verb (`""` when absent).
+    ///   - maxCount: The task's own goal (`nil` for goal-less).
+    ///   - unit: The task's own unit (`""` when absent).
+    /// - Returns: `true` when the title is empty or generated; `false` when custom.
+    static func isAutoCounterTitle(
+        title: String,
+        action: String,
+        maxCount: Int?,
+        unit: String
+    ) -> Bool {
+        let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty { return true }
+        let auto = generateCounterTaskTitle(action: action, maxCount: maxCount, unit: unit)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed == auto
+    }
+
+    /// The title a per-board COPY of a counting member carries. Twin of the
+    /// TS `counterCopyTitle`.
+    ///
+    /// A custom member title (``isAutoCounterTitle(title:action:maxCount:unit:)``
+    /// is `false`) carries over VERBATIM (trimmed) — even when the copy's
+    /// target differs, because the user chose that name. An auto (or empty)
+    /// title is regenerated from the copy's `action` / NEW `maxCount` /
+    /// `unit`, exactly as before the 2026-10-06 fix. Shared by
+    /// `BoardSources.planDerivedTasks`'s mint and the linked-counter window
+    /// heal's `windowStampedCopyDraft` so the two mint paths can never
+    /// disagree.
+    ///
+    /// - Parameters:
+    ///   - member: The member being copied (its own title / action / unit / goal).
+    ///   - newMaxCount: The copy's target.
+    /// - Returns: The copy's title.
+    static func counterCopyTitle(member: Task, newMaxCount: Int) -> String {
+        let action = member.action ?? ""
+        let unit = member.unit ?? ""
+        if !isAutoCounterTitle(title: member.title, action: action, maxCount: member.maxCount, unit: unit) {
+            return member.title.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        return generateCounterTaskTitle(action: action, maxCount: newMaxCount, unit: unit)
+    }
+}

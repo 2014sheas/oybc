@@ -734,7 +734,7 @@ final class MemberRuleVectorTests: XCTestCase {
         let board = plan.boardId
         let pins = plan.idPins
 
-        for root in ["r1", "r2", "c1", "c3", "a1"] {
+        for root in ["r1", "r2", "c1", "c3", "a1", "r3"] {
             XCTAssertEqual(
                 BoardSources.derivedTaskId(boardId: board, rootTaskId: root),
                 pins["derived:\(root)"],

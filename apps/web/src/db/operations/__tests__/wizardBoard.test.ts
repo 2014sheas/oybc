@@ -929,6 +929,102 @@ describe('persistWizardBoardRows — manualTaskVary (B3)', () => {
 });
 
 /**
+ * Owner bug 2026-10-06 — a counting task given a CUSTOM name in the wizard
+ * showed its default "{Action} {goal} {unit}" name once the board was
+ * created: since #537 a hand-added member linked to a shared counter is
+ * ALWAYS minted, and the mint regenerated the copy's title from fields
+ * whenever `action` was set. `counterCopyTitle` now carries a custom name
+ * over verbatim and regenerates only an auto one. Mirrors iOS
+ * `DerivedCountersTests.test_saveWizardBoard_handAddedLinkedCustomTitle_*`.
+ */
+describe('persistWizardBoardRows — custom counter title survives the mint (2026-10-06)', () => {
+  const HUB_ROOT = uuid(96);
+  const LINKED = uuid(97);
+
+  /** A hub-born root plus the wizard-created, auto-linked member pointing at it. */
+  async function seedLinkedMember(title: string): Promise<Task> {
+    const root: Task = {
+      id: HUB_ROOT,
+      userId: USER,
+      title: 'Push-ups',
+      type: TaskType.COUNTING,
+      action: 'Do',
+      unit: 'push-ups',
+      currentCount: 0,
+      isCompleted: false,
+      totalCompletions: 0,
+      totalInstances: 0,
+      createdAt: START,
+      updatedAt: START,
+      version: 1,
+      isDeleted: false,
+    };
+    const linked: Task = {
+      id: LINKED,
+      userId: USER,
+      title,
+      type: TaskType.COUNTING,
+      action: 'Do',
+      unit: 'push-ups',
+      maxCount: 20,
+      sharedCounterId: HUB_ROOT,
+      createdInWizard: true,
+      currentCount: 0,
+      isCompleted: false,
+      totalCompletions: 0,
+      totalInstances: 0,
+      createdAt: START,
+      updatedAt: START,
+      version: 1,
+      isDeleted: false,
+    };
+    await db.tasks.bulkAdd([root, linked]);
+    return linked;
+  }
+
+  it('a hand-added auto-linked counter with a CUSTOM title is minted and the placed copy keeps that title', async () => {
+    const linked = await seedLinkedMember('Morning push-ups');
+    const placement = new Array(9).fill(null);
+    placement[0] = linked;
+
+    const boardId = await persistWizardBoardRows(
+      baseInput({ placement, sources: [], manualTaskIds: [LINKED] }),
+    );
+
+    const derived = await db.tasks.get(derivedTaskId(boardId, HUB_ROOT));
+    expect(derived).toBeDefined();
+    expect(derived?.sharedCounterId).toBe(HUB_ROOT);
+    expect(derived?.maxCount).toBe(20);
+    expect(derived?.title).toBe('Morning push-ups');
+
+    const rows = await db.boardTasks.where('boardId').equals(boardId).toArray();
+    expect(rows[0].taskId).toBe(derived?.id);
+  });
+
+  it('control: an AUTO title is regenerated at the copy\u2019s rolled target', async () => {
+    const linked = await seedLinkedMember('Do 20 push-ups');
+    const placement = new Array(9).fill(null);
+    placement[0] = linked;
+
+    const boardId = await persistWizardBoardRows(
+      baseInput({
+        placement,
+        sources: [],
+        manualTaskIds: [LINKED],
+        manualTaskVary: { [LINKED]: 1 },
+        rng: () => 0,
+      }),
+    );
+
+    const [lo] = varyRange(20, 1, 20);
+    expect(lo).toBeLessThan(20); // the regenerated title below really differs from the source's
+    const derived = await db.tasks.get(derivedTaskId(boardId, HUB_ROOT));
+    expect(derived?.maxCount).toBe(lo);
+    expect(derived?.title).toBe(`Do ${lo} push-ups`);
+  });
+});
+
+/**
  * Board Edit slice 3 (D4) — the wizard's "Choose" centre stays in the UI, but
  * an ACTIVE persist writes it as the slice-3 shape: `centerSquareType = NONE`,
  * no `centerTaskId`, and the centre placement `isLocked: true, isCenter:

@@ -499,12 +499,7 @@ extension BoardSources {
                 replacesId: replacesId,
                 maxCount: maxCount,
                 baseline: baselineByRootId[root] ?? 0,
-                title: TaskTitle.generateCounterTaskTitle(
-                    action: action,
-                    maxCount: maxCount,
-                    unit: unit,
-                    providedTitle: action.isEmpty ? task.title : nil
-                ),
+                title: TaskTitle.counterCopyTitle(member: task, newMaxCount: maxCount),
                 action: action,
                 unit: unit,
                 timeframe: window.timeframe,

@@ -807,6 +807,102 @@ final class DerivedCountersTests: XCTestCase {
         XCTAssertEqual(placements.first?.taskId, derivedId)
     }
 
+    // MARK: - 9. Custom counter title survives the mint (owner bug 2026-10-06)
+
+    private let hubRootId = "hub-root"
+    private let linkedId = "linked-1"
+
+    /// Seeds a hub-born root plus the wizard-created, auto-linked member
+    /// pointing at it (`sharedCounterId` set, no window stamp — the shape
+    /// that is ALWAYS minted since #537), and returns the active board whose
+    /// centre places the member.
+    private func seedLinkedMember(_ database: AppDatabase, title: String) throws -> Board {
+        try database.write { db in
+            try Task(
+                id: self.hubRootId, userId: self.userId, title: "Push-ups", type: .counting,
+                action: "Do", unit: "push-ups", maxCount: nil,
+                totalCompletions: 0, totalInstances: 0,
+                isCompleted: false, currentCount: 0,
+                createdAt: self.now, updatedAt: self.now, version: 1, isDeleted: false
+            ).save(db)
+            try Task(
+                id: self.linkedId, userId: self.userId, title: title, type: .counting,
+                action: "Do", unit: "push-ups", maxCount: 20,
+                totalCompletions: 0, totalInstances: 0,
+                isCompleted: false, currentCount: 0,
+                createdAt: self.now, updatedAt: self.now, version: 1, isDeleted: false,
+                sharedCounterId: self.hubRootId, createdInWizard: true
+            ).save(db)
+        }
+        return try makeBoard(id: boardId, status: .active, centerTaskId: linkedId)
+    }
+
+    private func makeLinkedCentrePlacement() -> BoardTask {
+        BoardTask(
+            id: "bt-centre", boardId: boardId, taskId: linkedId,
+            row: 1, col: 1, isCenter: true,
+            createdAt: now, updatedAt: now, lastSyncedAt: nil,
+            version: 1, isDeleted: false, deletedAt: nil
+        )
+    }
+
+    /// The owner's exact path: a counting task given a CUSTOM name in the
+    /// wizard, auto-linked to a shared counter and hand-added, showed its
+    /// default "{Action} {goal} {unit}" name once the board was created —
+    /// the mint regenerated the copy's title. `TaskTitle.counterCopyTitle`
+    /// now carries a custom name over verbatim. Mirrors web
+    /// `wizardBoard.test.ts` "custom counter title survives the mint".
+    func test_saveWizardBoard_handAddedLinkedCustomTitle_survivesTheMint() throws {
+        let database = try makeDb()
+        let board = try seedLinkedMember(database, title: "Morning push-ups")
+
+        try database.saveWizardBoard(
+            board: board, boardTasks: [makeLinkedCentrePlacement()], pendingTasks: [],
+            isUpdate: false, sources: [], manualTaskIds: [linkedId],
+            manualTaskVary: [:], now: now
+        )
+
+        let derivedId = BoardSources.derivedTaskId(boardId: boardId, rootTaskId: hubRootId)
+        let derived = try XCTUnwrap(try database.read { try Task.fetchOne($0, key: derivedId) })
+        XCTAssertEqual(derived.sharedCounterId, hubRootId)
+        XCTAssertEqual(derived.maxCount, 20)
+        XCTAssertEqual(derived.title, "Morning push-ups")
+
+        let placements = try database.read { db in
+            try BoardTask.filter(Column("boardId") == self.boardId && Column("isDeleted") == false)
+                .fetchAll(db)
+        }
+        XCTAssertEqual(placements.map { $0.taskId }, [derivedId])
+    }
+
+    /// Control: an AUTO title ("Do 20 push-ups" for Do / 20 / push-ups) is
+    /// regenerated from the copy's OWN fields — with dice on, from the rolled
+    /// target, so the copy's title follows its target exactly as before.
+    ///
+    /// Seeded rng (web twin `rng: () => 0`): `varyRange(20, .lot, 20)`
+    /// INCLUDES the goal itself, so an unseeded roll landing on 20 would make
+    /// "Do 20 push-ups" pass vacuously — carried verbatim as a "custom" title
+    /// would read identically. Pinning the low end proves the roll happened
+    /// AND that the title followed it.
+    func test_saveWizardBoard_handAddedLinkedAutoTitle_isRegeneratedAtTheCopysTarget() throws {
+        let database = try makeDb()
+        let board = try seedLinkedMember(database, title: "Do 20 push-ups")
+
+        try database.saveWizardBoard(
+            board: board, boardTasks: [makeLinkedCentrePlacement()], pendingTasks: [],
+            isUpdate: false, sources: [], manualTaskIds: [linkedId],
+            manualTaskVary: [linkedId: .lot], now: now, rng: { 0 }
+        )
+
+        let range = BoardSources.varyRange(t: 20, level: .lot, goal: 20)
+        XCTAssertLessThan(range.lowerBound, 20, "the assertions below would be degenerate")
+        let derivedId = BoardSources.derivedTaskId(boardId: boardId, rootTaskId: hubRootId)
+        let derived = try XCTUnwrap(try database.read { try Task.fetchOne($0, key: derivedId) })
+        XCTAssertEqual(derived.maxCount, range.lowerBound)
+        XCTAssertNotEqual(derived.maxCount, 20)
+        XCTAssertEqual(derived.title, "Do \(range.lowerBound) push-ups")
+    }
+
     /// Control: the SAME save without dice mints nothing and places the
     /// original member — so the test above is pinning the threading, not a
     /// mint that would have happened anyway.
