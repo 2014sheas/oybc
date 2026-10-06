@@ -15,6 +15,7 @@ import {
   buildSheetOverride,
   parseGoal,
   seedCompoundDraft,
+  seedSheetTitle,
   sheetValidationProblem,
   showsCompoundEditor,
   typeControlMode,
@@ -110,7 +111,8 @@ export function BoardEditTaskSheet({
 
   const original = originalProp ?? task;
   const [selected, setSelected] = useState<TaskType>(task.type);
-  const [title, setTitle] = useState(task.title ?? '');
+  // Blank for an auto-titled Counting task so the title re-derives (see model).
+  const [title, setTitle] = useState(seedSheetTitle(task));
 
   // Counting fields
   const [action, setAction] = useState(task.action ?? '');

@@ -607,6 +607,9 @@ extension AppDatabase {
     ///   - manualTaskVary: §Member rules (B3) — dice for hand-added counting
     ///     members, keyed by task id. Empty = nothing varies on that layer.
     ///   - now: ISO8601 timestamp for the sync-queue rows.
+    ///   - rng: Uniform `[0, 1)` source for the member-rule dice rolls —
+    ///     unseeded in production; tests inject a fixed one (web twin
+    ///     `persistWizardBoardRows({ rng })`).
     func saveWizardBoard(
         board: Board,
         boardTasks: [BoardTask],
@@ -616,7 +619,8 @@ extension AppDatabase {
         sources: [BoardSource] = [],
         manualTaskIds: [String] = [],
         manualTaskVary: [String: VaryLevel] = [:],
-        now: String
+        now: String,
+        rng: () -> Double = { Double.random(in: 0..<1) }
     ) throws {
         try write { db in
             // ── Bug #85: pending tasks (placed-only) ───────────────
@@ -680,7 +684,8 @@ extension AppDatabase {
                         timeframe: board.timeframe,
                         startDate: board.startDate,
                         endDate: board.endDate
-                    )
+                    ),
+                    rng: rng
                 )
                 // Two members sharing a shared-counter root collapse onto ONE
                 // derived counter. Counter-family exclusivity forbids that at

@@ -40,11 +40,12 @@ final class BoardEditCompoundTests: XCTestCase {
     }
 
     private func makeTask(
-        _ id: String, type: TaskType = .normal, action: String? = nil, unit: String? = nil, maxCount: Int? = nil
+        _ id: String, type: TaskType = .normal, title: String? = nil,
+        action: String? = nil, unit: String? = nil, maxCount: Int? = nil
     ) -> Task {
         let now = AppDatabase.currentTimestamp()
         return Task(
-            id: id, userId: "u1", title: "Task \(id)", description: nil, type: type,
+            id: id, userId: "u1", title: title ?? "Task \(id)", description: nil, type: type,
             action: action, unit: unit, maxCount: maxCount,
             operatorType: type == .compound ? .and : nil, threshold: nil,
             referencedBoardId: nil, referencedTemplateId: nil, achievementTrigger: nil, requiredCount: nil,
@@ -621,6 +622,82 @@ final class BoardEditCompoundTests: XCTestCase {
         let c = try XCTUnwrap(dbTask(db, "c"))
         XCTAssertEqual(c.type, .normal)
         XCTAssertNil(c.action); XCTAssertNil(c.unit); XCTAssertNil(c.maxCount)
+    }
+
+    // MARK: - Counting title: auto seeds blank, blank regenerates at Save
+
+    func test_seededTitle_autoCountingTitleSeedsBlank_customAndOtherTypesVerbatim() {
+        typealias Sheet = SquareEditTaskSheet
+        // Auto ("Run 5 km" for Run / 5 / km) → blank; end-whitespace and an
+        // empty title are auto too.
+        XCTAssertEqual(Sheet.seededTitle(for: makeTask("a", type: .counting, title: "Run 5 km", action: "Run", unit: "km", maxCount: 5)), "")
+        XCTAssertEqual(Sheet.seededTitle(for: makeTask("a", type: .counting, title: " Run 5 km ", action: "Run", unit: "km", maxCount: 5)), "")
+        XCTAssertEqual(Sheet.seededTitle(for: makeTask("a", type: .counting, title: "", action: "Run", unit: "km", maxCount: 5)), "")
+        // Custom (case-sensitive compare) → verbatim.
+        XCTAssertEqual(Sheet.seededTitle(for: makeTask("a", type: .counting, title: "Morning run", action: "Run", unit: "km", maxCount: 5)), "Morning run")
+        XCTAssertEqual(Sheet.seededTitle(for: makeTask("a", type: .counting, title: "run 5 km", action: "Run", unit: "km", maxCount: 5)), "run 5 km")
+        // Never blanks a non-Counting title, even one that looks generated.
+        XCTAssertEqual(Sheet.seededTitle(for: makeTask("a", title: "Run 5 km", action: "Run", unit: "km", maxCount: 5)), "Run 5 km")
+        XCTAssertEqual(Sheet.seededTitle(for: makeTask("a", type: .compound, title: "Combo")), "Combo")
+    }
+
+    /// The staged grid (`editDraftTaskMap`) reads through `applyingOverride`
+    /// too, so a blank Counting title shows regenerated — never an empty cell.
+    func test_applyingOverride_blankCountingTitle_regeneratesFromFields() {
+        let stored = makeTask("c", type: .counting, title: "Run 5 km", action: "Run", unit: "km", maxCount: 5)
+        let override = StagedTaskOverride(title: "", type: .counting, action: "Run", unit: "km", maxCount: 8, compound: nil)
+        let merged = BoardPlayViewModel.applyingOverride(override, to: stored)
+        XCTAssertEqual(merged.title, "Run 8 km")
+        XCTAssertEqual(merged.maxCount, 8)
+        // A typed title is carried verbatim.
+        let custom = StagedTaskOverride(title: "Morning run", type: .counting, action: "Run", unit: "km", maxCount: 8, compound: nil)
+        XCTAssertEqual(BoardPlayViewModel.applyingOverride(custom, to: stored).title, "Morning run")
+        // A blank title on a Simple task stays blank here (the sheet never
+        // submits one — Done is disabled); only Counting regenerates.
+        let simple = StagedTaskOverride(title: "", type: .normal, action: nil, unit: nil, maxCount: nil, compound: nil)
+        XCTAssertEqual(BoardPlayViewModel.applyingOverride(simple, to: makeTask("s")).title, "")
+    }
+
+    func test_countingGoalOnlyEdit_autoTitle_isRegeneratedAtTheNewGoal() throws {
+        let db = try makeDb()
+        try seedUser(db)
+        try db.saveBoard(makeBoard(id: "b1"))
+        let stored = makeTask("c", type: .counting, title: "Run 5 km", action: "Run", unit: "km", maxCount: 5)
+        try db.saveTask(stored)
+        try place(db, "c", col: 0)
+
+        let vm = loadedVM(db)
+        // The sheet opens an auto-titled counter BLANK and Done submits the
+        // field as-is; only the goal changed.
+        let seeded = SquareEditTaskSheet.seededTitle(for: stored)
+        XCTAssertEqual(seeded, "")
+        vm.handleEditTaskOverride(taskId: "c", patch: patch(seeded, .counting, action: "Run", unit: "km", maxCount: 8))
+        XCTAssertEqual(save(vm), .saved)
+
+        let c = try XCTUnwrap(dbTask(db, "c"))
+        XCTAssertEqual(c.type, .counting)
+        XCTAssertEqual(c.maxCount, 8)
+        XCTAssertEqual(c.title, "Run 8 km", "the stale 'Run 5 km' must not survive a goal of 8")
+        XCTAssertEqual(c.version, 2)
+    }
+
+    func test_countingGoalOnlyEdit_customTitle_isKept() throws {
+        let db = try makeDb()
+        try seedUser(db)
+        try db.saveBoard(makeBoard(id: "b1"))
+        let stored = makeTask("c", type: .counting, title: "Morning run", action: "Run", unit: "km", maxCount: 5)
+        try db.saveTask(stored)
+        try place(db, "c", col: 0)
+
+        let vm = loadedVM(db)
+        let seeded = SquareEditTaskSheet.seededTitle(for: stored)
+        XCTAssertEqual(seeded, "Morning run")
+        vm.handleEditTaskOverride(taskId: "c", patch: patch(seeded, .counting, action: "Run", unit: "km", maxCount: 8))
+        XCTAssertEqual(save(vm), .saved)
+
+        let c = try XCTUnwrap(dbTask(db, "c"))
+        XCTAssertEqual(c.maxCount, 8)
+        XCTAssertEqual(c.title, "Morning run")
     }
 
     func test_boardEditAllowsTypeSwitch_matrix() {

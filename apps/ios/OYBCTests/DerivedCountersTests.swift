@@ -878,6 +878,12 @@ final class DerivedCountersTests: XCTestCase {
     /// Control: an AUTO title ("Do 20 push-ups" for Do / 20 / push-ups) is
     /// regenerated from the copy's OWN fields — with dice on, from the rolled
     /// target, so the copy's title follows its target exactly as before.
+    ///
+    /// Seeded rng (web twin `rng: () => 0`): `varyRange(20, .lot, 20)`
+    /// INCLUDES the goal itself, so an unseeded roll landing on 20 would make
+    /// "Do 20 push-ups" pass vacuously — carried verbatim as a "custom" title
+    /// would read identically. Pinning the low end proves the roll happened
+    /// AND that the title followed it.
     func test_saveWizardBoard_handAddedLinkedAutoTitle_isRegeneratedAtTheCopysTarget() throws {
         let database = try makeDb()
         let board = try seedLinkedMember(database, title: "Do 20 push-ups")
@@ -885,14 +891,16 @@ final class DerivedCountersTests: XCTestCase {
         try database.saveWizardBoard(
             board: board, boardTasks: [makeLinkedCentrePlacement()], pendingTasks: [],
             isUpdate: false, sources: [], manualTaskIds: [linkedId],
-            manualTaskVary: [linkedId: .lot], now: now
+            manualTaskVary: [linkedId: .lot], now: now, rng: { 0 }
         )
 
+        let range = BoardSources.varyRange(t: 20, level: .lot, goal: 20)
+        XCTAssertLessThan(range.lowerBound, 20, "the assertions below would be degenerate")
         let derivedId = BoardSources.derivedTaskId(boardId: boardId, rootTaskId: hubRootId)
         let derived = try XCTUnwrap(try database.read { try Task.fetchOne($0, key: derivedId) })
-        let maxCount = try XCTUnwrap(derived.maxCount)
-        XCTAssertTrue(BoardSources.varyRange(t: 20, level: .lot, goal: 20).contains(maxCount))
-        XCTAssertEqual(derived.title, "Do \(maxCount) push-ups")
+        XCTAssertEqual(derived.maxCount, range.lowerBound)
+        XCTAssertNotEqual(derived.maxCount, 20)
+        XCTAssertEqual(derived.title, "Do \(range.lowerBound) push-ups")
     }
 
     /// Control: the SAME save without dice mints nothing and places the

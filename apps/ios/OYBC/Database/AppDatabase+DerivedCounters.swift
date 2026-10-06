@@ -325,6 +325,8 @@ extension AppDatabase {
     ///   - manualTaskIds: The hand-added layer.
     ///   - manualTaskVary: Dice for hand-added counting members (B3).
     ///   - window: The board's own window.
+    ///   - rng: Uniform `[0, 1)` source for the dice rolls — unseeded in
+    ///     production; injected in tests.
     /// - Returns: The ids to place, positionally 1:1 with `selectedIds`.
     static func mintWizardDerivedRows(
         db: Database,
@@ -335,7 +337,8 @@ extension AppDatabase {
         sources: [BoardSource],
         manualTaskIds: [String],
         manualTaskVary: [String: VaryLevel],
-        window: BoardSources.BoardWindow
+        window: BoardSources.BoardWindow,
+        rng: () -> Double = { Double.random(in: 0..<1) }
     ) throws -> [String] {
         // The planner gets LIVE rows only — a soft-deleted root reachable
         // through a member's `sharedCounterId` must not be mirrored into a new
@@ -456,7 +459,8 @@ extension AppDatabase {
             tasksById: tasksById,
             childrenByCompoundId: childrenByCompoundId,
             sourceWindowByTaskId: sourceWindowByTaskId,
-            events: events
+            events: events,
+            rng: rng
         ).placementIds
     }
 

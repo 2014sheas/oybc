@@ -547,7 +547,11 @@ extension BoardPlayViewModel {
     /// (pending tasks) and the staged grid (`editDraftTaskMap`). A switch INTO
     /// Compound needs the override's `compound` patch (otherwise it is ignored,
     /// never minting a zero-child compound); child Task/link CRUD is NOT done
-    /// here (`applyStagedCompoundChildEdits` at Save).
+    /// here (`applyStagedCompoundChildEdits` at Save). A BLANK Counting title
+    /// is regenerated from the resulting action / goal / unit (the sheet
+    /// opens an auto-titled counter blank — `SquareEditTaskSheet.seededTitle`
+    /// — so a goal-only edit re-derives the title instead of keeping the
+    /// stored one at the old goal), mirroring `TaskEditPatch.applied(to:)`.
     nonisolated static func applyingOverride(_ override: StagedTaskOverride, to task: Task) -> Task {
         var updated = task
         updated.title = override.title
@@ -561,6 +565,11 @@ extension BoardPlayViewModel {
             updated.action = override.action
             if let u = override.unit   { updated.unit   = u }
             if let m = override.maxCount { updated.maxCount = m }
+            if override.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                updated.title = TaskTitle.generateCounterTaskTitle(
+                    action: updated.action ?? "", maxCount: updated.maxCount, unit: updated.unit ?? ""
+                )
+            }
         case .normal:
             if task.type == .counting {
                 updated.action   = nil

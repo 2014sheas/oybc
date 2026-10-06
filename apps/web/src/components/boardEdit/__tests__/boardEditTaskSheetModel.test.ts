@@ -4,6 +4,7 @@ import { newChildPatch, type TaskEditPatch } from '../../../db/taskEditPatch';
 import {
   buildSheetOverride,
   seedCompoundDraft,
+  seedSheetTitle,
   sheetValidationProblem,
   showsCompoundEditor,
   typeControlMode,
@@ -81,6 +82,25 @@ describe('seedCompoundDraft', () => {
   });
 });
 
+describe('seedSheetTitle', () => {
+  it('an auto Counting title seeds blank', () => {
+    expect(seedSheetTitle(task({ type: TaskType.COUNTING, title: 'Run 5 km', action: 'Run', maxCount: 5, unit: 'km' }))).toBe('');
+    // Trailing whitespace is still the auto title; an empty title is too.
+    expect(seedSheetTitle(task({ type: TaskType.COUNTING, title: ' Run 5 km ', action: 'Run', maxCount: 5, unit: 'km' }))).toBe('');
+    expect(seedSheetTitle(task({ type: TaskType.COUNTING, title: '', action: 'Run', maxCount: 5, unit: 'km' }))).toBe('');
+  });
+
+  it('a custom Counting title seeds as-is (case-sensitive compare)', () => {
+    expect(seedSheetTitle(task({ type: TaskType.COUNTING, title: 'Morning run', action: 'Run', maxCount: 5, unit: 'km' }))).toBe('Morning run');
+    expect(seedSheetTitle(task({ type: TaskType.COUNTING, title: 'run 5 km', action: 'Run', maxCount: 5, unit: 'km' }))).toBe('run 5 km');
+  });
+
+  it('a non-Counting task seeds its title verbatim even when it looks generated', () => {
+    expect(seedSheetTitle(task({ title: 'Run 5 km', action: 'Run', maxCount: 5, unit: 'km' }))).toBe('Run 5 km');
+    expect(seedSheetTitle(task({ type: TaskType.COMPOUND, title: 'Combo' }))).toBe('Combo');
+  });
+});
+
 describe('sheetValidationProblem', () => {
   it('Simple needs a title', () => {
     expect(sheetValidationProblem(input({ title: '  ' }))).not.toBeNull();
@@ -124,11 +144,19 @@ describe('buildSheetOverride', () => {
     expect(o.title).not.toBe('Walk');
   });
 
-  it('Counting edit keeps the stored title when blank and sends no type', () => {
+  it('a goal-only edit on an auto-titled Counting task regenerates the title at the new goal', () => {
     const counting = task({ type: TaskType.COUNTING, title: 'Run 5 km', action: 'Run', maxCount: 5, unit: 'km' });
-    const o = buildSheetOverride(input({ original: counting, title: '', action: 'Run', goalStr: '8', unit: 'km' }));
+    // The sheet opens with the auto title blanked (seedSheetTitle) …
+    const o = buildSheetOverride(input({ original: counting, title: seedSheetTitle(counting), action: 'Run', goalStr: '8', unit: 'km' }));
     expect(o.type).toBe(TaskType.COUNTING);
-    expect(o).toMatchObject({ title: 'Run 5 km', maxCount: 8 });
+    // … so the stale "Run 5 km" is NOT carried onto a goal of 8.
+    expect(o).toMatchObject({ title: 'Run 8 km', maxCount: 8 });
+  });
+
+  it('a custom Counting title survives a goal-only edit verbatim', () => {
+    const counting = task({ type: TaskType.COUNTING, title: 'Morning run', action: 'Run', maxCount: 5, unit: 'km' });
+    const o = buildSheetOverride(input({ original: counting, title: seedSheetTitle(counting), action: 'Run', goalStr: '8', unit: 'km' }));
+    expect(o).toMatchObject({ title: 'Morning run', maxCount: 8 });
   });
 
   it('Counting → Simple: type + explicitly cleared action/unit/maxCount', () => {

@@ -1,4 +1,10 @@
-import { OperatorType, TaskType, generateCounterTaskTitle, type Task } from '@oybc/shared';
+import {
+  OperatorType,
+  TaskType,
+  generateCounterTaskTitle,
+  isAutoCounterTitle,
+  type Task,
+} from '@oybc/shared';
 import type { BoardEditTaskOverride } from '../../hooks/squaresEditReducer';
 import { compoundStructureChanged } from '../../pages/tasks/compoundEditGate';
 import {
@@ -39,6 +45,25 @@ export function typeControlMode(type: TaskType, linkedCounter = false): TypeCont
 /** Whether the compound editor is open for the chosen type. */
 export function showsCompoundEditor(selected: TaskType): boolean {
   return selected === TaskType.COMPOUND;
+}
+
+/**
+ * What the sheet's Title field opens with. A Counting task whose stored title
+ * is still its AUTO one (`isAutoCounterTitle`) seeds BLANK so the title keeps
+ * re-deriving as Action/Goal/Unit change — seeded as text it would read as a
+ * chosen name and `buildSheetOverride` would carry the stale "Run 10 miles"
+ * onto a goal of 5. A custom title (and any other type) seeds verbatim.
+ * Mirrors `seedPatchForEditor` (`db/taskEditPatch.ts`) and iOS
+ * `SquareEditTaskSheet.seededTitle(for:)`.
+ *
+ * @param task - The task being edited (any staged override already merged).
+ */
+export function seedSheetTitle(task: Task): string {
+  const title = task.title ?? '';
+  if (task.type === TaskType.COUNTING && isAutoCounterTitle(title, task.action ?? '', task.maxCount, task.unit ?? '')) {
+    return '';
+  }
+  return title;
 }
 
 /**
@@ -134,8 +159,8 @@ export function sheetValidationProblem(input: SheetInput): string | null {
  *
  * - Simple → `{ title }` (+ `type`/cleared counting fields when switching
  *   from Counting: `action`/`unit`/`maxCount` are explicit `undefined`).
- * - Counting → title/action/goal/unit (+ `type` when switching from Simple;
- *   a blank title then auto-generates).
+ * - Counting → title/action/goal/unit (+ `type` when switching from Simple);
+ *   a blank title auto-generates from the sheet's action/goal/unit.
  * - Compound → `{ title, type?, compound }` — `compound` carries the whole
  *   structure (a later stage REPLACES it wholesale).
  *
@@ -144,7 +169,6 @@ export function sheetValidationProblem(input: SheetInput): string | null {
 export function buildSheetOverride(input: SheetInput): BoardEditTaskOverride {
   const { original, selected } = input;
   const title = input.title.trim();
-  const typeChanged = selected !== original.type;
   // `compound: undefined` on EVERY non-compound branch: the reducer spreads,
   // so a stale staged structure would otherwise survive a switch back.
   const patch: BoardEditTaskOverride = { compound: undefined };
@@ -157,10 +181,12 @@ export function buildSheetOverride(input: SheetInput): BoardEditTaskOverride {
       const goal = Math.max(1, parseGoal(input.goalStr) ?? 1);
       const action = input.action.trim();
       const unit = input.unit.trim();
-      // Blank counting title = auto-generated. When merely editing an existing
-      // Counting task keep its stored title (no flash while staged); on a
-      // switch from Simple the old title is not a counting title.
-      patch.title = title || (typeChanged ? generateCounterTaskTitle(action, goal, unit) : original.title);
+      // Blank counting title = auto-generated from the sheet's CURRENT
+      // action / goal / unit — exactly what the "Reads as" preview shows. The
+      // field opens blank for an auto-titled task (`seedSheetTitle`), so a
+      // goal-only edit regenerates the title instead of keeping the stored
+      // one at the old goal.
+      patch.title = title || generateCounterTaskTitle(action, goal, unit);
       patch.action = action;
       patch.maxCount = goal;
       patch.unit = unit;
