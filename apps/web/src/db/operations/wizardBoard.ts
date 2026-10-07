@@ -31,6 +31,7 @@ import { buildWindowContext } from './windowContext';
 import { createBoardTask, deleteBoardTasksForBoard } from './boardTasks';
 import { runBoardCascadeForTask } from './orchestration';
 import { addToSyncQueue } from './syncQueue';
+import { withRootCountKind } from './countKindSwitch';
 import {
   applyCompoundStructureEditInTransaction,
   compoundLinkProblemForPatch,
@@ -180,9 +181,12 @@ export async function persistWizardPendingTasks(
         }
       }
 
-      await db.tasks.add(payload.task);
-      await addToSyncQueue('tasks', payload.task.id, SyncOperationType.CREATE, payload.task);
-      for (const childTask of payload.childTasks) {
+      // Counter kinds (D5): a linked pending row carries its root's kind.
+      const task = await withRootCountKind(payload.task);
+      await db.tasks.add(task);
+      await addToSyncQueue('tasks', task.id, SyncOperationType.CREATE, task);
+      for (const pendingChild of payload.childTasks) {
+        const childTask = await withRootCountKind(pendingChild);
         await db.tasks.add(childTask);
         await addToSyncQueue('tasks', childTask.id, SyncOperationType.CREATE, childTask);
       }

@@ -1,7 +1,7 @@
 # Counter kinds — Count · Amount · Time
 
-**Status:** DESIGN (2026-10-06). Data + logic decided (§2–§4); interface pending
-Claude Design (brief: [`docs/design/counter-kinds/BRIEF.md`](design/counter-kinds/BRIEF.md)).
+**Status:** PR 1 #551 shipped; PR 2 (logic) in review; UI pending design
+(brief: [`docs/design/counter-kinds/BRIEF.md`](design/counter-kinds/BRIEF.md)).
 **Ships:** pre-launch, whole feature (owner decision 2026-10-06). Every PR lands
 web + iOS together (CLAUDE.md rule 6).
 

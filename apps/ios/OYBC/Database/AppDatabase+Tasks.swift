@@ -337,6 +337,8 @@ extension AppDatabase {
     ///   - now: ISO8601 timestamp for the sync-queue row.
     func createTaskAndEnqueue(_ task: Task, now: String) throws {
         try write { db in
+            // Counter kinds (D5): a linked row carries its root's kind.
+            let task = try Self.withRootCountKind(db: db, task)
             try task.save(db)
             try SyncQueueBuilder.makeItem(
                 entityType: "tasks",
@@ -394,7 +396,8 @@ extension AppDatabase {
                 now: now
             ).enqueue(db)
 
-            for (childTask, link) in zip(childTasks, childLinks) {
+            for (pendingChild, link) in zip(childTasks, childLinks) {
+                let childTask = try Self.withRootCountKind(db: db, pendingChild)
                 try childTask.save(db)
                 try SyncQueueBuilder.makeItem(
                     entityType: "tasks",
@@ -473,7 +476,9 @@ extension AppDatabase {
             //    the Task insert — the Task already lives in GRDB.
             for link in childLinks {
                 if newChildIds.contains(link.childTaskId),
-                   let childTask = newChildTasks.first(where: { $0.id == link.childTaskId }) {
+                   let newChild = newChildTasks.first(where: { $0.id == link.childTaskId }) {
+                    // Counter kinds (D5): an auto-linked child carries its root's kind.
+                    let childTask = try Self.withRootCountKind(db: db, newChild)
                     try childTask.save(db)
                     try SyncQueueBuilder.makeItem(
                         entityType: "tasks",

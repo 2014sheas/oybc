@@ -78,6 +78,8 @@ Compound subsumes what used to be modeled as two separate concepts (`Progress` a
 
 The optional title auto-fills from `action + maxCount + unit` via `generateCounterTaskTitle()` in `@oybc/shared` if blank — don't duplicate that logic.
 
+**Counter kinds** ([`docs/COUNTER_KINDS.md`](COUNTER_KINDS.md)): `countKind?: 'discrete' | 'continuous' | 'duration'` (absent = `discrete`) says what a counting task counts — whole units, 2-decimal amounts, or whole minutes. Values are quantized to 2 dp once per write; a whole kind rounds the window *sum* at read time, so events are never rewritten. Linked and minted copies carry their root's kind (written at create time), and `switchCounterKind` (web `db/operations/countKindSwitch.ts` ↔ iOS `AppDatabase+CountKindSwitch.swift`) moves a root between `discrete` and `continuous` together with its live family — frozen ended-window rows keep their kind; `duration` never switches.
+
 #### Shared counters (linked counting tasks)
 
 One real-world activity can feed **many** Counting tasks from a single running tally (Issue #84, shipped both platforms). A **source** counting task's `currentCount` is the one true accumulator; any other `COUNTING` task can **link** to it as a **derived** task via three fields on `Task`:

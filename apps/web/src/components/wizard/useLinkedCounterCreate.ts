@@ -67,6 +67,8 @@ export function useLinkedCounterCreate({
             currentCount: 0,
             sharedCounterId: input.source.id,
             baseline: input.baseline,
+            // Counter kinds (D5): the linked row carries its root's kind.
+            ...(input.source.countKind ? { countKind: input.source.countKind } : {}),
             isCompleted: false,
             totalCompletions: 0,
             totalInstances: 0,

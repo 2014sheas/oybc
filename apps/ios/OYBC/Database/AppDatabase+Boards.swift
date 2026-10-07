@@ -488,15 +488,18 @@ extension AppDatabase {
     private static func writePendingTaskPayload(
         _ payload: PendingTaskPayload, db: Database, now: String
     ) throws {
-        try payload.task.save(db)
+        // Counter kinds (D5): a linked pending row carries its root's kind.
+        let task = try withRootCountKind(db: db, payload.task)
+        try task.save(db)
         try SyncQueueBuilder.makeItem(
             entityType: "tasks",
-            entityId: payload.task.id,
+            entityId: task.id,
             operationType: .create,
-            payload: payload.task,
+            payload: task,
             now: now
         ).enqueue(db)
-        for childTask in payload.childTasks {
+        for pendingChild in payload.childTasks {
+            let childTask = try withRootCountKind(db: db, pendingChild)
             try childTask.save(db)
             try SyncQueueBuilder.makeItem(
                 entityType: "tasks",
