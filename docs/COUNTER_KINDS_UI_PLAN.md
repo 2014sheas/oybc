@@ -29,14 +29,16 @@ Binding values (verbatim from the spec / owner rulings — every task's requirem
 - Long-press / right-click (Continuous / Duration): `+ Add {last} {unit}`, `# Custom amount…` (opens the sheet), `− Remove {last} {unit}`; `{last}` = `defaultLogAmount ?? first chip`. Discrete menus unchanged.
 - Kind switch: only **Continuous → Discrete** confirms. Title `Switch to Discrete?`; rows `{title} → {rounded title}` and `{logged} logged → {rounded} logged`; body `Switching back restores the exact values.` + (`Follows on {n} linked squares.` / `Follows on 1 linked square.` only when n > 0); buttons `Cancel` / `Switch`. Discrete → Continuous switches silently. Duration never switches (D4).
 - Kind picker states: create = none locked; existing Discrete/Continuous = Duration locked; existing Duration = all locked, lock glyph on the selected segment; locked segments 45% opacity, not hit-testable. Linked rows (and auto-linking creates) show a kind tag, never a picker.
-- Duration hides the Unit field; a Duration title is `{Action} {Xh Ym}` ("Practice 10h 30m").
-- Board cells: bar text tiers **`cur/max` → `cur` → fill only**; the `×goal` tag always shows the goal; overshoot shows the real value with a **gold** bar fill; never clamp.
+- Duration hides the Unit field on TASK surfaces; a Duration title is `{Action} {Xh Ym}` ("Practice 10h 30m"). The hub New counter keeps its noun for every kind (it names the counter — Ruling U4), and a Duration task never auto-links by name.
+- Board cells: bar text tiers **`cur/max` → `cur` → fill only**; the `×goal` tag always shows the goal; overshoot shows the real value with a **gold** bar fill; never clamp. Gold appears exactly where the handoff draws it (Ruling U5): board cells (both platforms) and the web DetailModal's progress bar (`LogSheet.dc.html` web frame); the iOS stepper sheet has no bar; hub / Counter Detail rows keep the green "met" fill.
 - Vary range: both ends at the more precise end's precision for Continuous ("21.0–31.4 miles"); Duration ranges are whole minutes ("8h 24m–12h 36m").
 - Lifetime totals keep thousands grouping (`formatCountTotal`, R7): "1,240", "148.6", "112h 15m".
 - **No explanatory copy** (CLAUDE.md, owner rule 2026-09-30/10-06): no helper lines, tips, provenance captions. Every task that touches a surface carrying a #548 caption removes it on both platforms (rows listed per task) and updates the snapshot / e2e that pinned it. Kept on purpose: validation errors, loading/error states, the switch-confirm consequence body, empty-state one-liners.
-- Rule 6: every task that touches a twin lands web + iOS in the same commit.
+- Rule 6: every task that touches a twin lands web + iOS in the same commit (Ruling U3 — the one justified exception is Task 1 → Task 2, inert shared helpers, stated in Task 1's commit message).
+- Barrel exports (Ruling U2): `packages/shared/src/algorithms/index.ts` uses explicit named lists; the task that creates a shared helper adds it there in the same commit (Tasks 1, 13), and its test asserts the barrel exposes it.
+- Extract-at-three (Ruling U7): the "switch kind, then guard the goal" step and the Continuous → Discrete confirm seam exist ONCE per platform (Task 8) and are reused by Tasks 9, 10, 12.
 - Reuse the Riso kit (`RisoSegmented`, `RisoNumberField`, `RisoChip`, `RisoButton`, `RisoSectionLabel`) — extend, never fork. Tokens only; no new colours (gold = `--riso-gold` / `Color.risoGold`, on gold use `--riso-ink-static` / `Color.risoInkStatic`).
-- File-size guardrail (`node scripts/check-file-sizes.mjs`): no source file > 1000 lines; allowlisted files may not grow (`BoardPlayView.swift` 1996, `BoardPlayViewModel.swift` 1518, `BoardPlaySurface.tsx` 1241, `CounterDetailView.swift` 1009). Never bump a cap; extract helpers instead. Shrink an allowlist entry when a task shrinks the file.
+- File-size guardrail (`node scripts/check-file-sizes.mjs`): no source file > 1000 lines; allowlisted files may not grow (`BoardPlayView.swift` 1996, `BoardPlayViewModel.swift` 1518, `BoardPlaySurface.tsx` 1241, `CounterDetailView.swift` 1009). Never bump a cap; extract helpers instead (Ruling U8): Task 5's stepper extraction runs before Task 6 so `RisoSpecialTaskPanel.swift` (921) has headroom; PR 4's per-file budget table (top of PR 4) keeps the three shared god-files within their caps, and only Task 21 lowers caps, to the final counts. `BoardWizardTasksStep.tsx` (994, not allow-listed) may only shrink.
 - iOS: `_Concurrency.Task { }` for async closures; run `xcodegen generate` in `apps/ios` after adding a `.swift` file; never drive the simulator.
 - Vector fixtures: edit under `packages/shared/tests/fixtures/`, then `pnpm --filter @oybc/shared run gen:sync-fixtures` and commit the iOS copy in the same task.
 
@@ -53,11 +55,11 @@ Binding values (verbatim from the spec / owner rulings — every task's requirem
 
 ## Review Focus
 
-1. **Typing a partial or locale-formatted decimal** — "3," / "3." / ",5" / "26,2" in a Continuous field must parse (3, 3, 0.5, 26.2) and never silently drop to an integer; "3.125" must be refused, not rounded. Pinned by Task 1's `parseCountInput` vectors (`partial separator`, `comma decimal`, `three places refused`) and Task 4's GoalEntry tests.
-2. **A Duration goal typed as minutes vs hours** — "90", "1:30", "1h 30m" and "1h30m" all mean 90 minutes; "1.5h" is refused (not 1 minute or 90 hours). Pinned by Task 1 vectors (`duration bare minutes`, `duration colon`, `duration compact`, `duration fractional hours refused`).
-3. **Switching an auto-linked create** — a create whose (verb, noun) pair auto-links to a Continuous counter must save Continuous even if the picker last showed Discrete, and the preview must render the root's kind (R19). Pinned by Task 5's `useCreateFormState` test (`linked create takes the root kind`) and the iOS `CreateFormViewModelCountKindTests.testLinkedCreateTakesRootKind`.
-4. **Board Edit Save with a staged Continuous → Discrete switch plus a goal edit** — one transaction: the switch rounds, then the typed goal wins; a failing step rolls both back. Pinned by Task 9's `boardEditCommit` test (`kind switch then goal edit, atomic`) and iOS `BoardEditKindSwitchTests.testSwitchThenGoalEditAtomic`.
-5. **Overshoot in a 5×5 cell at the widest Duration value** — `112h 15m/500h` drops to `112h 15m`; an overshoot `28.4/26.2` keeps its real value and a gold full bar. Pinned by Task 20's `cellCountFit` vectors and the `RisoBoardCellKinds` snapshots.
+1. **Typing a partial or locale-formatted decimal** — "3," / "3." / ",5" / "26,2" in a Continuous field must parse (3, 3, 0.5, 26.2) and never silently drop to an integer; "3.125" must be refused, not rounded. Pinned by Task 1's `parseCountInput` vectors (`continuous partial separator`, `continuous comma decimal`, `continuous three places refused`) and their Swift run in Task 2.
+2. **A Duration goal typed as minutes vs hours** — "90", "1:30", "1h 30m" and "1h30m" all mean 90 minutes; "1.5h" is refused. Pinned by Task 1 vectors (`duration bare minutes`, `duration colon`, `duration compact`, `duration fractional hours refused`) + Task 2.
+3. **An auto-linking create whose picker said another kind** — a 6.2 goal typed while the picker shows Discrete, auto-linking to a Continuous root, must parse AND save as Continuous (and a pending wizard copy must carry the root kind before the drain — R19). Pinned by Task 6: web `createFormCounting.test.ts` "linked create takes the root kind…", iOS `testLinkedCreateSavesRootKindAndParsesAtIt` (goes through `handleCreateAndAddToPool` and reads the stored row) and `testDeferredLinkedCreateCarriesRootKindOnThePayload`.
+4. **Board Edit Save with a staged Continuous → Discrete switch plus a goal edit** — one transaction: the switch rounds, the typed goal wins; a fractional goal at the new whole kind rolls the switch back. Pinned by Task 8's guard tests (both platforms) and Task 10: web `boardEditCommit.countKind.test.ts` "kind switch then goal edit, atomic" / "…rolls the whole Save back", iOS `BoardEditKindSwitchTests.testSwitchThenGoalEditAtomic` / `testFractionalGoalAtTheNewWholeKindRollsTheSaveBack` (real `handleEditTaskOverride` → `handleEditSave` path).
+5. **The widest Duration value in a small cell, and overshoot** — `112h 15m/500h` drops to `112h 15m` in a 90px web cell and to fill only at 58px; an overshoot `28.4/26.2` keeps its real value with a full gold bar. Pinned by Task 19's `cellCountFit` table + `RisoBoardCell` tests (web) and `RisoBoardCellKindsSnapshotTests` (iOS 3×3 / 4×4 / 5×5, measured by `ViewThatFits`).
 
 ---
 
@@ -67,7 +69,9 @@ Binding values (verbatim from the spec / owner rulings — every task's requirem
 **Shared (PR 4)** — `packages/shared/src/algorithms/logAmounts.ts` (create), `sharedCounterGroups.ts` (+`countKind`), fixture `logAmountVectors.json` (create), `sharedCounterGroupsVectors.json`.
 **iOS helpers** — `Helpers/CountEntry.swift` (create), `Helpers/CountValue.swift`, `Helpers/TaskTitle.swift`, `Helpers/BoardSourceMemberRulesDisplay.swift`, `Helpers/CounterLogAmount.swift`, `Helpers/SharedCounterGroups.swift`.
 **Components** — web `components/counters/KindPicker.tsx`, `KindTag.tsx`, `GoalEntry.tsx`, `KindSwitchConfirmDialog.tsx` (create, each with `.module.css`), `components/riso/RisoSegmented.tsx` (+`lockedValues`); iOS `Views/Riso/KindPickerView.swift`, `Views/Riso/GoalEntryView.swift`, `Views/Components/KindSwitchConfirmView.swift`, `Views/Riso/RisoCountStepperView.swift` (create), `Views/Riso/RisoControls.swift` (`RisoSegmented.lockedValues`, `RisoNumberField.keyboard`).
-**PR 4 extractions** — web `components/boardPlay/useCountingLogModal.ts` (create; shrinks `BoardPlaySurface.tsx`), iOS `Views/ProfileTab/Components/CounterDetailLogCard.swift` (create; shrinks `CounterDetailView.swift`).
+**Switch seam (Task 8)** — web `db/operations/countKindSwitch.ts` (+`switchCounterKindInTransaction`, `applyKindSwitchThenGoalGuard`, `previewCounterKindSwitch`, `planKindSwitchPreview`), `components/counters/{kindSwitchModel.ts, KindSwitchConfirmDialog.tsx, useKindSwitchRequest.tsx}`; iOS `AppDatabase+CountKindSwitch.swift`, `Views/Components/KindSwitchConfirmView.swift`.
+**PR 4 extractions** — web `components/boardPlay/{countingLogModel.ts, useCountingLogModal.ts}` (shrinks `BoardPlaySurface.tsx`), `components/lateLog/lateLogCountingModel.ts`, `components/counters/{ledgerPill.ts, counterDetailCaption.ts, counterRowTitle.ts}`; iOS `Views/BoardsTab/Components/{CountingStepperModel.swift, CountingMenuLabels.swift}`, `Views/ProfileTab/Components/CounterDetailLogCard.swift` (shrinks `CounterDetailView.swift` under 1000).
+**Guard (Task 21)** — `scripts/audit/check-count-formatting.mjs` + allow-list.
 
 ---
 
@@ -84,11 +88,11 @@ Branch: `feature/counter-kinds-authoring` (this worktree). Push with `git push o
 - Modify: `packages/shared/src/algorithms/countValue.ts` (append `formatCountTotal`, `formatCountRange` after `formatCountForInput`, ~line 113)
 - Modify: `packages/shared/src/algorithms/taskTitle.ts:16-34` (`generateCounterTaskTitle`), `:69-78` (`isAutoCounterTitle`), `:42-47` (`CounterTitleFields.countKind`), `counterCopyTitle`
 - Modify: `packages/shared/src/algorithms/memberRulesDisplay.ts:116-129` (`varyRangeLabel` → `formatCountRange`)
-- Modify: `packages/shared/src/algorithms/index.ts` (export `countEntry`)
+- Modify: `packages/shared/src/algorithms/index.ts:12-27` — the barrel uses EXPLICIT named lists (no `export *`): add `formatCountForInput`, `formatCountTotal`, `formatCountRange` to the `./countValue` list and a new explicit `./countEntry` block (Ruling U2 — a helper not in the barrel is `undefined` to every `@oybc/shared` importer)
 - Modify: `packages/shared/src/validation/schemas.ts:262-271` (create refine), `:369-386` (`AutoCreateCompoundChildTaskSchema` + `countKind`)
 - Modify: `packages/shared/src/types/task.ts:348-371` (`AutoCreateCompoundChildTask.countKind?: CountKind`)
 - Modify: `packages/shared/tests/fixtures/countValueVectors.json` (+`formatTotal`, `formatRange`), `taskTitleVectors.json` (+duration cases), `memberRuleVectors.json` (`display.varyRangeLabel` +2 cases)
-- Test: `packages/shared/tests/algorithms/countValue.test.ts`, `taskTitleVectors.test.ts`, `memberRulesDisplay.test.ts`, `packages/shared/tests/validation/schemas.test.ts` (or the existing schema test file — `grep -l CreateTaskInputSchema packages/shared/tests`)
+- Test: `packages/shared/tests/algorithms/countValue.test.ts:9-19` (`CountValueFixture` gains `formatTotal` / `formatRange`), `taskTitleVectors.test.ts:24,36` (pass `v.countKind`), `memberRulesDisplay.test.ts`, `packages/shared/tests/algorithms/countEntrySchemas.test.ts` (create)
 
 **Interfaces:**
 - Consumes: `CountKind`, `quantizeCount`, `formatCount`, `formatCountForInput`, `resolveCountKind` (`countValue.ts`, PR 1).
@@ -187,7 +191,8 @@ Branch: `feature/counter-kinds-authoring` (this worktree). Push with `git push o
 - [ ] **Step 2: Write the failing test** `packages/shared/tests/algorithms/countEntry.test.ts`:
 
 ```ts
-import vectors from '../fixtures/countEntryVectors.json';
+import * as fs from 'fs';
+import * as path from 'path';
 import {
   COUNT_KIND_LABELS,
   countKindNeedsUnit,
@@ -203,6 +208,20 @@ import {
   type KindPickerLock,
 } from '../../src/algorithms/countEntry';
 import type { CountKind } from '../../src/algorithms/countValue';
+import * as barrel from '../../src/algorithms';
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const vectors: any = JSON.parse(fs.readFileSync(path.join(__dirname, '../fixtures/countEntryVectors.json'), 'utf8'));
+
+describe('barrel (Ruling U2)', () => {
+  it('re-exports every helper a web surface imports from @oybc/shared', () => {
+    for (const name of ['parseCountInput', 'kindPickerLock', 'isKindSegmentLocked', 'kindSegmentShowsLock', 'COUNT_KIND_LABELS',
+      'durationToFields', 'durationFromFields', 'countUnitSuffix', 'formatCountWithUnit', 'resolveFamilyCountKind',
+      'countKindNeedsUnit', 'formatCountForInput', 'formatCountTotal', 'formatCountRange']) {
+      expect(typeof (barrel as Record<string, unknown>)[name]).not.toBe('undefined');
+    }
+  });
+});
 
 describe('countEntry vectors', () => {
   it.each(vectors.parse)('parse: $name', ({ raw, kind, allowZero, expected }) => {
@@ -545,7 +564,24 @@ and its message `'Counting tasks must have action, unit (unless duration), and m
   countKind?: CountKind;
 ```
 
-Export from `algorithms/index.ts`: `export * from './countEntry';`.
+Barrel (`algorithms/index.ts`) — add to the existing `./countValue` list `formatCountForInput, formatCountTotal, formatCountRange,` and below it:
+
+```ts
+export {
+  COUNT_KIND_LABELS,
+  kindPickerLock,
+  isKindSegmentLocked,
+  kindSegmentShowsLock,
+  parseCountInput,
+  durationToFields,
+  durationFromFields,
+  countKindNeedsUnit,
+  countUnitSuffix,
+  formatCountWithUnit,
+  resolveFamilyCountKind,
+} from './countEntry';
+export type { KindPickerLock } from './countEntry';
+```
 
 - [ ] **Step 5: Add the vectors for the countValue / title / range changes.** Append to `countValueVectors.json`:
 
@@ -567,7 +603,14 @@ Export from `algorithms/index.ts`: `export * from './countEntry';`.
   ]
 ```
 
-and the tests in `countValue.test.ts`:
+extend `CountValueFixture` (`countValue.test.ts:9-19`) with
+
+```ts
+  formatTotal: Array<{ name: string; value: number; kind: string; locale: string; expected: string }>;
+  formatRange: Array<{ name: string; lo: number; hi: number; kind: string; locale: string; expected: string }>;
+```
+
+(import `formatCountTotal`, `formatCountRange` beside the existing imports) and add the tests:
 
 ```ts
   it.each(vectors.formatTotal)('formatTotal: $name', ({ value, kind, locale, expected }) => {
@@ -578,7 +621,17 @@ and the tests in `countValue.test.ts`:
   });
 ```
 
-Append to `taskTitleVectors.json` `generateCounterTaskTitle` (the test reads `countKind` when present — extend its `it.each` call to pass `v.providedTitle, v.countKind`):
+In `taskTitleVectors.test.ts` change the two calls to pass the kind (absent ⇒ the default):
+
+```ts
+      generateCounterTaskTitle(v.action, v.maxCount ?? null, v.unit, v.providedTitle ?? undefined, v.countKind ?? undefined)
+```
+
+```ts
+    expect(isAutoCounterTitle(v.title, v.action, v.maxCount ?? null, v.unit, v.countKind ?? undefined)).toBe(v.expected);
+```
+
+Append to `taskTitleVectors.json` `generateCounterTaskTitle`:
 
 ```json
     { "name": "duration renders Xh Ym and drops the unit", "action": "Practice", "maxCount": 630, "unit": "", "countKind": "duration", "expected": "Practice 10h 30m" },
@@ -599,9 +652,12 @@ Append to `memberRuleVectors.json` `display.varyRangeLabel`:
       { "name": "duration 1-minute range: t 630 a little then 8h 24m–12h 36m", "t": 630, "level": 1, "goal": 630, "unit": "", "countKind": "duration", "expected": "8h 24m–12h 36m" }
 ```
 
-Add a schema test:
+Create `packages/shared/tests/algorithms/countEntrySchemas.test.ts`:
 
 ```ts
+import { TaskType } from '../../src/constants/enums';
+import { AutoCreateCompoundChildTaskSchema, CreateTaskInputSchema } from '../../src/validation/schemas';
+
 it('a duration counting task needs no unit; discrete still does', () => {
   const base = { title: 'Practice 10h', type: TaskType.COUNTING, action: 'Practice', maxCount: 600 };
   expect(CreateTaskInputSchema.safeParse({ ...base, countKind: 'duration' }).success).toBe(true);
@@ -617,10 +673,18 @@ it('a duration counting task needs no unit; discrete still does', () => {
 
 ```bash
 git add packages/shared apps/ios/OYBCTests/Fixtures
-git commit -m "feat(counters): shared count-entry module, kind-aware titles/ranges/totals, duration needs no unit (PR 3 Task 1)"
+git commit -m "feat(counters): shared count-entry module, kind-aware titles/ranges/totals, duration needs no unit (PR 3 Task 1)
+
+Rule-6 gap, justified (Ruling U3): inert shared helpers plus the TS half of
+two display helpers; nothing user-visible calls them until Task 3+. The
+Swift twin lands in the next commit (Task 2); the synced iOS fixture
+copies are committed here so fixtureSync stays green.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01VMfDbTv2B1UEUUgsnYEFag"
 ```
 
-(The iOS fixture copies land here; their Swift tests arrive in Task 2 — the iOS `TaskTitleVectorTests` / `MemberRuleVectorTests` are red between Task 1 and Task 2 inside the PR, as PR 1 did.)
+(The iOS `TaskTitleVectorTests` / `MemberRuleVectorTests` decode the new vectors only after Task 2; run Task 2 before pushing.)
 
 ---
 
@@ -629,11 +693,10 @@ git commit -m "feat(counters): shared count-entry module, kind-aware titles/rang
 **Files:**
 - Create: `apps/ios/OYBC/Helpers/CountEntry.swift`
 - Create: `apps/ios/OYBCTests/CountEntryVectorTests.swift`
-- Create: `apps/ios/OYBCTests/TestTaskBuilders.swift` (`Task.counting(id:maxCount:)`, reused by Tasks 6, 8)
 - Modify: `apps/ios/OYBC/Helpers/CountValue.swift` (append `formatCountTotal`, `formatCountRange` after `formatCountForInput`, line ~66)
 - Modify: `apps/ios/OYBC/Helpers/TaskTitle.swift:25-50` (+`countKind:`), `isAutoCounterTitle`, `counterCopyTitle`
 - Modify: `apps/ios/OYBC/Helpers/BoardSourceMemberRulesDisplay.swift:120-129` (`varyRangeLabel` → `formatCountRange`)
-- Modify: `apps/ios/OYBCTests/CountValueVectorTests.swift` (Fixture + 2 tests), `TaskTitleVectorTests.swift` (decode `countKind`), `MemberRuleVectorTests.swift` (nothing if it already decodes `countKind` for `varyRangeLabel`; verify)
+- Modify: `apps/ios/OYBCTests/CountValueVectorTests.swift` (Fixture + 2 tests), `TaskTitleVectorTests.swift` (decode `countKind`). `MemberRuleVectorTests.swift` needs no change — its `varyRangeLabel` vector struct already decodes `countKind` (PR 2) and calls `BoardSources.varyRangeLabel(…, kind:)`
 
 **Interfaces:**
 - Consumes: Task 1 vectors (synced copies).
@@ -719,34 +782,16 @@ final class CountEntryVectorTests: XCTestCase {
         XCTAssertEqual(CountKind.allCases.map(\.label), ["Discrete", "Continuous", "Duration"])
     }
     func testFamilyKind() {
-        var root = Task.counting(id: "root", maxCount: 26.2)
+        var root = LinkedWindowKit.task("root", maxCount: 26.2)
         root.countKind = .continuous
-        var linked = Task.counting(id: "row", maxCount: 6.2)
-        linked.sharedCounterId = "root"
+        let linked = LinkedWindowKit.task("row", maxCount: 6.2, sharedCounterId: "root", baseline: 0)
         XCTAssertEqual(resolveFamilyCountKind(linked, lookup: { $0 == "root" ? root : nil }), .continuous)
         XCTAssertEqual(resolveFamilyCountKind(linked, lookup: { _ in nil }), .discrete)
     }
 }
 ```
 
-`Task.counting(id:maxCount:)` — there is no shared counting builder in `OYBCTests` (each file has a private `makeTask`), so add it to `apps/ios/OYBCTests/TestTaskBuilders.swift` (create; later tasks reuse it) as:
-
-```swift
-@testable import OYBC
-
-extension Task {
-    /// Minimal live COUNTING task for logic tests.
-    static func counting(id: String, maxCount: CountValue, userId: String = "u1") -> Task {
-        Task(
-            id: id, userId: userId, title: "T \(id)", type: .counting,
-            action: "Run", unit: "mi", maxCount: maxCount,
-            totalCompletions: 0, totalInstances: 0,
-            createdAt: "2026-10-01T00:00:00Z", updatedAt: "2026-10-01T00:00:00Z",
-            version: 1, isDeleted: false
-        )
-    }
-}
-```
+(`LinkedWindowKit.task(_:maxCount:sharedCounterId:…)` is the shared counting-task builder in `apps/ios/OYBCTests/LinkedCounterWindowHealTests.swift:20`; later tasks reuse it.)
 
 Extend `CountValueVectorTests.Fixture` with `let formatTotal: [FormatVector]` and `let formatRange: [RangeVector]` (`private struct RangeVector: Decodable { let name: String; let lo: Double; let hi: Double; let kind: CountKind; let locale: String; let expected: String }`) and add:
 
@@ -943,7 +988,7 @@ func formatCountRange(_ lo: CountValue, _ hi: CountValue, kind: CountKind, local
 }
 ```
 
-`TaskTitle.generateCounterTaskTitle` gains `countKind: CountKind = .discrete` (last parameter) and, after the goal-less guard:
+`TaskTitle.generateCounterTaskTitle` (`TaskTitle.swift:25-50`, whose body already binds `trimmedAction` and the unwrapped `maxCount`) gains `countKind: CountKind = .discrete` (last parameter) and, after the `guard let maxCount` line:
 
 ```swift
         if countKind == .duration {
@@ -982,7 +1027,7 @@ git commit -m "feat(counters): CountEntry.swift twin + kind-aware titles, groupe
   - web `<KindPicker value: CountKind; lock: KindPickerLock; onChange(kind: CountKind): void; size?: 'default' | 'compact'; id?: string />` — `aria-label="Kind"`
   - web `<KindTag kind: CountKind; counterName?: string; lifetime?: number />` — renders `Continuous ●● · Miles · 148.6 all-time` (name/total only when both given)
   - iOS `RisoSegmented(options:selection:…, lockedValues: Set<T> = [], lockGlyphValues: Set<T> = [])`
-  - iOS `KindPickerView(selection: Binding<CountKind>, lock: KindPickerLock, size: RisoSegmentedSize = .regular, onRequest: ((CountKind) -> Void)? = nil)` — when `onRequest` is set, a tap calls it INSTEAD of writing the binding (the caller confirms then writes; Task 7)
+  - iOS `KindPickerView(selection: Binding<CountKind>, lock: KindPickerLock, onRequest: ((CountKind) -> Void)? = nil)` — when `onRequest` is set, a tap calls it INSTEAD of writing the binding (the caller confirms then writes; Task 8). iOS `.card` has no compact size, so every surface uses the one size
   - iOS `KindTagView(kind: CountKind, counterName: String? = nil, lifetime: CountValue? = nil)`
 
 - [ ] **Step 1: Write the failing web tests.** Append to `RisoSegmented.test.ts`:
@@ -1083,8 +1128,9 @@ and the button render:
 ```tsx
       {options.map((opt) => {
         const selected = opt.value === value;
-        const locked = lockedValues?.includes(opt.value) ?? false;
-        const glyph = lockGlyphValues?.includes(opt.value) ?? false;
+        // card-only by contract: the pill variants ignore locks.
+        const locked = variant === 'card' && (lockedValues?.includes(opt.value) ?? false);
+        const glyph = variant === 'card' && (lockGlyphValues?.includes(opt.value) ?? false);
         return (
           <button
             key={String(opt.value)}
@@ -1112,8 +1158,7 @@ and the button render:
 .card .seg.locked { cursor: default; }
 .card .seg.locked:not(.on) { opacity: 0.45; }
 .card .seg.locked:hover:not(.on) { background: var(--riso-paper-2); }
-.card .seg { display: inline-flex; align-items: center; justify-content: center; gap: 5px; }
-.lockGlyph { display: inline-grid; place-items: center; margin-top: -1px; }
+.lockGlyph { display: inline-grid; place-items: center; margin-left: 5px; vertical-align: -1px; }
 ```
 
 Create `KindPicker.tsx`:
@@ -1134,7 +1179,7 @@ export interface KindPickerProps {
   value: CountKind;
   /** Lock state — `kindPickerLock(mode, kind)`. */
   lock: KindPickerLock;
-  /** Called with a live (unlocked) segment's kind. The caller confirms Continuous → Discrete (Task 7). */
+  /** Called with a live (unlocked) segment's kind. The caller confirms Continuous → Discrete (Task 8). */
   onChange: (kind: CountKind) => void;
   /** `compact` for dense rows (compound sub-task, pool row). */
   size?: 'default' | 'compact';
@@ -1318,7 +1363,7 @@ import SwiftUI
 ///
 /// When `onRequest` is set a tap on a live segment calls it instead of
 /// writing `selection`, so the caller can confirm Continuous → Discrete
-/// (`KindSwitchConfirmView`, Task 7) and write the binding itself.
+/// (`KindSwitchConfirmView`, Task 8) and write the binding itself.
 struct KindPickerView: View {
     @Binding var selection: CountKind
     let lock: KindPickerLock
@@ -1376,7 +1421,7 @@ struct KindTagView: View {
 }
 ```
 
-(`Color.risoPaper` on blue follows the iOS on-colour divergence — CLAUDE.md C8.) Add to `RisoKitGallery.swift` a `section("Kind picker") { KindPickerView(selection: $sampleKind, lock: .duration) }` with `@State private var sampleKind: CountKind = .continuous` — follow the gallery's existing `section` helper.
+(`Color.risoPaper` on blue follows the iOS on-colour divergence — CLAUDE.md C8.) In `RisoKitGallery.swift` add, after the last existing `sectionLabel(...)` block, `sectionLabel("Kind picker")` followed by `KindPickerView(selection: $sampleKind, lock: .duration)`, with `@State private var sampleKind: CountKind = .continuous` beside the gallery's other sample state.
 
 - [ ] **Step 8: Record + verify.** `cd apps/ios && xcodegen generate`; delete `__Snapshots__/RisoKitSnapshotTests/testKitLight.1.png` and `testKitDark.1.png`; run `IOS_SNAP -only-testing:OYBCSnapshotTests/RisoKitSnapshotTests` twice (record, then green). Read the four new / re-recorded PNGs: the existing gallery sections must be pixel-identical above the new section; the states preview must match handoff §1 (45% Duration, lock glyph placement). Every other `RisoKitSnapshotTests` test must stay green unmodified (it proves the `.card` change is invisible).
 
@@ -1776,1118 +1821,9 @@ git commit -m "feat(counters): GoalEntry — numeric / decimal / h:m amount fiel
 ```
 
 ---
-### Task 5: A1 — special panel / Create New Task form (kind row, linked tag, Duration without unit)
+### Task 5: Member-rule steppers are kind-aware (R8 / R16) — runs before A1 (Ruling U8)
 
-**Files:**
-- Modify: `packages/shared/src/algorithms/linkableCounter.ts:28-41,109-114` (`LinkableCounter.countKind`) + `apps/ios/OYBC/Helpers/LinkableCounter.swift:34-46,114-119` (`LinkableCounterSuggestion.countKind`); tests `packages/shared/tests/algorithms/linkableCounter.test.ts`, `apps/ios/OYBCTests/LinkableCounterTests.swift` (whichever exists — `ls apps/ios/OYBCTests | grep -i linkable`)
-- Modify: `apps/web/src/pages/createPage/useCreateFormState.ts` (`countKind` state + setter; `validateForm` at `:75-123` kind-aware; the two COUNTING create branches at `:511-540` and `:606-625` pass `countKind`; `resetCountingFields` clears it)
-- Modify: `apps/web/src/pages/createPage/CreateNewTaskForm.tsx:129-130` (`goalValid` via `parseCountInput`), `:398-468` (Verb → Kind → Goal · Unit; Unit hidden for Duration; title preview kind-aware), `:152-200` (linked submit passes the root kind); remove the #548 captions at `:269` (Achievement explainer paragraph) and `:374` (`helpText` "Greenlog — …") — rows 67/68
-- Modify: `apps/web/src/components/counters/CounterLinkHint.tsx` — drop both sentences (#548 rows 77/78): render the pill only, `aria-label` "Link to {counter}" / "Don't link to {counter}"
-- Modify: `apps/ios/OYBC/Views/CreateTab/ViewModels/CreateFormViewModel.swift:109-131` (+`var countingKind: CountKind = .discrete`), `:254-284` (validation), `:319-326` (title), `:780-792` (`buildCreateTask` sets `countKind`), `:429-466` (resets)
-- Modify: `apps/ios/OYBC/Views/CreateTab/Components/RisoSpecialTaskPanel.swift:199-356` (kind state, row, goal field, unit hidden, linked tag, submit)
-- Modify: `apps/ios/OYBC/Views/CreateTab/Components/RisoCounterLinkHintView.swift:40-50` — drop both sentences (rows 77/78), keep the pill
-- Test: `apps/web/src/pages/createPage/__tests__/useCreateFormState.countKind.test.ts` (create), `apps/web/src/pages/createPage/__tests__/CreateNewTaskForm.countKind.test.ts` (create), `apps/ios/OYBCTests/CreateFormViewModelCountKindTests.swift` (create), `apps/ios/OYBCSnapshotTests/RisoSpecialPanelCountingSnapshotTests.swift` (create), e2e `apps/web/e2e/counter-kinds-authoring.spec.ts` (create)
-- Re-record (intentional — #548 caption removal in compound panels using the link hint): `RisoCompoundPanelSnapshotTests/testCompoundNewSubCountingLinked{Light,Dark}`, `testCompoundNewSubCountingOptedOut{Light,Dark}`
-
-**Interfaces:**
-- Consumes: `KindPicker`, `KindTag`, `GoalEntry` (Tasks 3–4); `parseCountInput`, `countKindNeedsUnit`, `generateCounterTaskTitle(…, countKind)` (Task 1).
-- Produces:
-  - `LinkableCounter.countKind: CountKind` / `LinkableCounterSuggestion.countKind: CountKind` (= `resolveCountKind(best)`)
-  - web `UseCreateFormState.countKind: CountKind`, `setCountKind(kind: CountKind): void`; `validateForm(type, title, description, action, unit, maxCountStr, achievementMode?, achievementReferenceId?, achievementRequiredCountStr?, countKind: CountKind = 'discrete')`
-  - iOS `CreateFormViewModel.countingKind: CountKind`
-  - Rule: an auto-linking create saves the ROOT's kind and shows `KindTag` in place of the picker; tapping "Don't link" restores the picker at the user's last chosen kind.
-
-- [ ] **Step 1: Failing web tests.** `useCreateFormState.countKind.test.ts` (the hook's `validateForm` is exported — test it directly, plus a create through Dexie with `fake-indexeddb` the way `apps/web/src/pages/createPage/__tests__` already does; copy that folder's setup/teardown verbatim):
-
-```ts
-import { describe, expect, it } from 'vitest';
-import { TaskType } from '@oybc/shared';
-import { validateForm } from '../useCreateFormState';
-
-const counting = (overrides: Partial<{ action: string; unit: string; goal: string; kind: 'discrete' | 'continuous' | 'duration' }>) => {
-  const o = { action: 'Run', unit: 'miles', goal: '26.2', kind: 'continuous' as const, ...overrides };
-  // validateForm(type, title, description, action, unit, maxCountStr, achievementMode?, achievementReferenceId?,
-  // achievementRequiredCountStr?, countKind?) — countKind is the new trailing parameter.
-  return validateForm(TaskType.COUNTING, '', '', o.action, o.unit, o.goal, undefined, undefined, undefined, o.kind);
-};
-
-describe('validateForm — counter kinds', () => {
-  it('continuous accepts a 1- and 2-place goal, refuses 3', () => {
-    expect(counting({ goal: '26.2' }).maxCount).toBeUndefined();
-    expect(counting({ goal: '12.75' }).maxCount).toBeUndefined();
-    expect(counting({ goal: '3.125' }).maxCount).toBe('Goal must be a number above zero with up to 2 decimals');
-  });
-  it('discrete keeps the whole-number message', () => {
-    expect(counting({ kind: 'discrete', goal: '2.5' }).maxCount).toBe('Goal must be a positive integer');
-  });
-  it('duration needs no unit and takes h:m', () => {
-    const e = counting({ kind: 'duration', unit: '', goal: '10h 30m' });
-    expect(e.unit).toBeUndefined();
-    expect(e.maxCount).toBeUndefined();
-    expect(counting({ kind: 'duration', unit: '', goal: '1.5h' }).maxCount).toBe('Goal must be a duration above zero');
-  });
-});
-```
-
-(`validateForm`'s real signature is `useCreateFormState.ts:75-85`; the call above matches it. The hook's own call site passes `countKind` as the new 10th argument.)
-
-`CreateNewTaskForm.countKind.test.ts` — render with `renderToStaticMarkup` and a stub `form` object (the component is presentational, `CreateNewTaskFormProps.form` is the hook's return type; build it with `{ ...defaultFormStub, taskType: TaskType.COUNTING, countKind: 'duration' }` where `defaultFormStub` is constructed in the test file from the `UseCreateFormState` keys):
-
-```ts
-it('duration hides the Counting (unit) field and shows h / m fields', () => {
-  const html = render({ taskType: TaskType.COUNTING, countKind: 'duration', action: 'Practice', maxCountStr: '10h 30m' });
-  expect(html).toContain('aria-label="Kind"');
-  expect(html).not.toContain('id="create-task-unit"');
-  expect(html).toContain('aria-label="Goal hours"');
-  expect(html).toContain('Practice 10h 30m');
-});
-it('continuous shows the decimal goal field and the unit', () => {
-  const html = render({ taskType: TaskType.COUNTING, countKind: 'continuous', action: 'Run', unit: 'miles', maxCountStr: '26.2' });
-  expect(html).toContain('inputMode="decimal"');
-  expect(html).toContain('id="create-task-unit"');
-  expect(html).toContain('Run 26.2 miles');
-});
-it('no Greenlog/Bingo explainer sentence (#548 row 68)', () => {
-  const html = render({ taskType: TaskType.ACHIEVEMENT });
-  expect(html).not.toContain('the whole board is completed');
-});
-```
-
-- [ ] **Step 2: Run — expect FAIL.** `WEB_TEST useCreateFormState.countKind CreateNewTaskForm.countKind`
-
-- [ ] **Step 3: Implement web.**
-  - `linkableCounter.ts`: add `/** The counter's kind (D5) — a linked create takes it. */ countKind: CountKind;` to `LinkableCounter` and `countKind: resolveCountKind(best),` in the return (`:109-114`).
-  - `useCreateFormState.ts`: `const [countKind, setCountKind] = useState<CountKind>('discrete');` beside `maxCountStr` (`:286`); expose both on the returned object and in `UseCreateFormState`; reset to `'discrete'` wherever `setMaxCountStr('')` runs in the reset helpers (`:405`, `:413`). `validateForm` counting branch:
-
-```ts
-    if (countKindNeedsUnit(countKind)) {
-      if (unit.trim().length === 0) {
-        errors.unit = 'Counting is required';
-      } else if (unit.trim().length > UNIT_MAX_LENGTH) {
-        errors.unit = `Counting must be ${UNIT_MAX_LENGTH} characters or less`;
-      }
-    }
-
-    if (maxCountStr.trim().length === 0) {
-      errors.maxCount = 'Goal is required';
-    } else if (parseCountInput(maxCountStr, countKind) === null) {
-      errors.maxCount =
-        countKind === 'discrete'
-          ? 'Goal must be a positive integer'
-          : countKind === 'continuous'
-            ? 'Goal must be a number above zero with up to 2 decimals'
-            : 'Goal must be a duration above zero';
-    }
-```
-
-    Both COUNTING create branches replace `parseInt(maxCountStr, 10)` with `parseCountInput(maxCountStr, countKind) as number` (validation already passed), pass `countKind` as `generateCounterTaskTitle`'s 5th argument, write `unit: countKindNeedsUnit(countKind) ? unit.trim() : ''`, and add `...(countKind !== 'discrete' ? { countKind } : {})` (the pending payload literal at `:519-540` and the `createTask` input at `:613-625`). Add `countKind` to the `useCallback` dependency list at `:667`.
-  - `CreateNewTaskForm.tsx`: `const parsedMaxCount = parseCountInput(form.maxCountStr, form.countKind); const goalValid = parsedMaxCount !== null;` (`:129-130`). The counter match ignores Duration: `form.taskType === TaskType.COUNTING && form.countKind !== 'duration' && trimmedAction && trimmedUnit`. Effective kind: `const effectiveKind = linkHint?.linked ? linkHint.match.countKind : form.countKind;`. Between the Verb `fieldGroup` and the Goal `fieldGroup` insert:
-
-```tsx
-              <div className={styles.fieldGroup}>
-                <span className={styles.label}>Kind</span>
-                {linkHint?.linked ? (
-                  <KindTag kind={linkHint.match.countKind} counterName={linkHint.match.name} lifetime={linkHint.match.lifetime} />
-                ) : (
-                  <KindPicker value={form.countKind} lock="none" onChange={form.setCountKind} />
-                )}
-              </div>
-```
-
-    Replace the Goal `<input type="number" …>` with:
-
-```tsx
-                <GoalEntry
-                  id="create-task-maxcount"
-                  aria-label="Goal"
-                  kind={effectiveKind}
-                  value={form.maxCountStr}
-                  onChange={form.setMaxCountStr}
-                  placeholder={effectiveKind === 'duration' ? '0h 0m' : '100'}
-                  invalid={Boolean(form.errors.maxCount)}
-                />
-```
-
-    Wrap the Counting (unit) `fieldGroup` in `{countKindNeedsUnit(effectiveKind) && ( … )}`. Title preview: `{goalValid && trimmedAction && (trimmedUnit || effectiveKind === 'duration') && ( … generateCounterTaskTitle(trimmedAction, parsedMaxCount, trimmedUnit, undefined, effectiveKind) … )}`. In `handleFormSubmit` the linked branch's `finalTitle` passes `sourceTask.countKind ?? 'discrete'` as the 5th argument and `maxCount: parsedMaxCount as number`. Delete the Achievement explainer `<p>` at `:269` and the `<span className={styles.helpText}>Greenlog — … </span>` at `:374` (delete the nodes, not just the text; drop any now-unused `helpText` CSS class).
-  - `CounterLinkHint.tsx`: replace the `hintText` block with nothing and give the pill `aria-label={linked ? `Don't link to ${counterName}` : `Link to ${counterName}`}`; delete the `lifetime` / `goal` props (no longer rendered) and update every call site (`grep -rn "<CounterLinkHint" apps/web/src`) — TypeScript flags each. The Kind row's `KindTag` now carries the counter name and total.
-
-- [ ] **Step 4: Run** `WEB_TEST useCreateFormState CreateNewTaskForm linkableCounter` and `SHARED_TEST linkableCounter` — PASS; `WEB_CHECK`.
-
-- [ ] **Step 5: iOS failing tests.** `CreateFormViewModelCountKindTests.swift`:
-
-```swift
-import XCTest
-@testable import OYBC
-
-@MainActor
-final class CreateFormViewModelCountKindTests: XCTestCase {
-    private func makeForm(kind: CountKind, goal: String, unit: String, database: AppDatabase = .shared) -> CreateFormViewModel {
-        let form = CreateFormViewModel(database: database)
-        form.taskType = .counting
-        form.countingAction = "Practice"
-        form.countingUnit = unit
-        form.countingMaxCount = goal
-        form.countingKind = kind
-        return form
-    }
-
-    func testDurationCreateHasNoUnitAndStoresMinutes() throws {
-        let db = try AppDatabase.makeTestInstance()
-        let form = makeForm(kind: .duration, goal: "10h 30m", unit: "", database: db)
-        let created = expectation(description: "created")
-        var createdId: String?
-        form.handleCreateAndAddToPool(
-            userId: "u1",
-            onTaskCreated: { id, _, _ in createdId = id; created.fulfill() },
-            onLibraryReloadRequested: {}
-        )
-        wait(for: [created], timeout: 2)
-        let task = try XCTUnwrap(try db.fetchTask(id: XCTUnwrap(createdId)))
-        XCTAssertEqual(task.countKind, .duration)
-        XCTAssertEqual(task.maxCount, 630)
-        XCTAssertEqual(task.title, "Practice 10h 30m")
-    }
-
-    func testContinuousRejectsThreePlaces() {
-        let form = makeForm(kind: .continuous, goal: "3.125", unit: "mi")
-        form.handleCreateAndAddToPool(userId: "u1", onTaskCreated: { _, _, _ in XCTFail("must not create") }, onLibraryReloadRequested: {})
-        XCTAssertEqual(form.errorMessage, "Goal must be a number above zero with up to 2 decimals")
-    }
-
-    func testLinkedCreateTakesRootKind() {
-        let form = makeForm(kind: .discrete, goal: "6.2", unit: "miles")
-        form.countingSharedCounterId = "root"
-        form.countingBaseline = 0
-        form.applyLinkedRootKind(.continuous)
-        XCTAssertEqual(form.countingKind, .continuous)
-    }
-}
-```
-
-(`CreateFormViewModel` already takes `init(database:)` (`CreateFormViewModel.swift:176`) and writes through it; `AppDatabase.fetchTask(id:)` is at `AppDatabase+Tasks.swift:16`.)
-
-Snapshot `RisoSpecialPanelCountingSnapshotTests.swift` — render `RisoSpecialTaskPanel` expanded on Counting. The panel has no init today (memberwise only), so add a snapshot seam mirroring `RisoCompoundFieldsView.Seed`: `struct CountingSeed { var action = ""; var goal = ""; var unit = ""; var kind: CountKind = .discrete }` plus a stored `var countingSeed: CountingSeed? = nil` applied in `.onAppear` (sets `isExpanded = true`, `selectedType = .counting` and the counting `@State`s) — a stored defaulted property keeps every existing memberwise call compiling:
-
-```swift
-final class RisoSpecialPanelCountingSnapshotTests: XCTestCase {
-    private let recordMode: SnapshotTestingConfiguration.Record? = .missing
-    private func panel(_ seed: RisoSpecialTaskPanel.CountingSeed) -> some View {
-        RisoSpecialTaskPanel(countingSeed: seed).padding(16).background(Color.risoPaper)
-    }
-    func testContinuousLight() {
-        assertSnapshot(of: panel(.init(action: "Run", goal: "26.2", unit: "miles", kind: .continuous)), as: .image(layout: .fixed(width: 393, height: 420)), record: recordMode)
-    }
-    func testContinuousDark() {
-        assertSnapshot(of: panel(.init(action: "Run", goal: "26.2", unit: "miles", kind: .continuous)), as: .image(layout: .fixed(width: 393, height: 420), traits: .init(userInterfaceStyle: .dark)), record: recordMode)
-    }
-    func testDurationLight() {
-        assertSnapshot(of: panel(.init(action: "Practice", goal: "10h 30m", unit: "", kind: .duration)), as: .image(layout: .fixed(width: 393, height: 420)), record: recordMode)
-    }
-    func testDiscreteLight() {
-        assertSnapshot(of: panel(.init(action: "Read", goal: "300", unit: "pages", kind: .discrete)), as: .image(layout: .fixed(width: 393, height: 420)), record: recordMode)
-    }
-}
-```
-
-(The panel's other init parameters take the defaults the existing snapshot tests use — copy them from `RisoNewTaskSheetSnapshotTests.swift`.)
-
-- [ ] **Step 6: Run — expect FAIL.** `cd apps/ios && xcodegen generate && cd - && IOS_TEST -only-testing:OYBCTests/CreateFormViewModelCountKindTests`
-
-- [ ] **Step 7: Implement iOS.**
-  - `LinkableCounter.swift`: `let countKind: CountKind` on the struct and `countKind: resolveCountKind(best.countKind)` in the initializer at `:114-119`.
-  - `CreateFormViewModel.swift`: `var countingKind: CountKind = .discrete` beside `countingMaxCount`; `func applyLinkedRootKind(_ kind: CountKind) { countingKind = kind }`; validation `:269-284` becomes:
-
-```swift
-            if countKindNeedsUnit(countingKind) {
-                guard !u.isEmpty else {
-                    errorMessage = "Counting is required"
-                    return
-                }
-                guard u.count <= CreateFormLimits.unit else {
-                    errorMessage = "Counting must be \(CreateFormLimits.unit) characters or less"
-                    return
-                }
-            }
-            guard !m.isEmpty else {
-                errorMessage = "Goal is required"
-                return
-            }
-            guard parseCountInput(m, kind: countingKind) != nil else {
-                switch countingKind {
-                case .discrete: errorMessage = "Goal must be a positive integer"
-                case .continuous: errorMessage = "Goal must be a number above zero with up to 2 decimals"
-                case .duration: errorMessage = "Goal must be a duration above zero"
-                }
-                return
-            }
-```
-
-    `:322` and `:783` use `parseCountInput(countingMaxCount, kind: countingKind) ?? 0`; `:323` passes `countKind: countingKind` to `TaskTitle.generateCounterTaskTitle`; `buildCreateTask` `.counting` case adds `unit: countKindNeedsUnit(countingKind) ? u : ""` and sets `t.countKind = countingKind == .discrete ? nil : countingKind` after construction (`var t = Task(…); t.countKind = …; return t`). Every reset that clears `countingMaxCount` sets `countingKind = .discrete`.
-  - `RisoSpecialTaskPanel.swift`: `@State private var countingKind: CountKind = .discrete`; `countingGoal` (`:225-228`) = `parseCountInput(countingGoalText, kind: effectiveKind)`; `countingTitle` uses it and passes `countKind: effectiveKind`; `canSubmitCounting` requires the unit only when `countKindNeedsUnit(effectiveKind)`; `private var effectiveKind: CountKind { (linkSuggestion != nil && !linkDisabled) ? linkSuggestion!.countKind : countingKind }`; `updateLinkSuggestion` returns nil for Duration (`guard countingKind != .duration else { linkSuggestion = nil; return }`) and re-runs `.onChange(of: countingKind)`. `countingFields` body:
-
-```swift
-            fieldRow(label: "Verb", required: true) {
-                RisoTextField(placeholder: "Do", text: $countingActionText)
-            }
-            fieldRow(label: "Kind") {
-                if let suggestion = linkSuggestion, !linkDisabled {
-                    KindTagView(kind: suggestion.countKind, counterName: suggestion.name, lifetime: suggestion.lifetime)
-                } else {
-                    KindPickerView(selection: $countingKind, lock: .none)
-                }
-            }
-            HStack(alignment: .top, spacing: 10) {
-                VStack(alignment: .leading, spacing: 5) {
-                    fieldLabel("Goal", required: true)
-                    GoalEntryView(kind: effectiveKind, text: $countingGoalText, placeholder: effectiveKind == .duration ? "0h 0m" : "100")
-                }
-                if countKindNeedsUnit(effectiveKind) {
-                    VStack(alignment: .leading, spacing: 5) {
-                        fieldLabel("Counting", required: true)
-                        RisoTextField(placeholder: "push-ups", text: $countingUnitText)
-                    }
-                }
-            }
-```
-
-    `submitCounting` sets `form.countingKind = effectiveKind` (R19 — the pending payload carries the root's kind before the drain's `withRootCountKind`), `form.countingUnit = countKindNeedsUnit(effectiveKind) ? … : ""`; resets clear `countingKind`. Add the `CountingSeed` init from Step 5. Net line change must keep the file < 1000 (it is 921; Task 11 later removes ~290 lines of stepper code from this file — if this task alone would cross 1000, do Task 11's extraction of `RisoInlineStepperView`'s compact style first).
-  - `RisoCounterLinkHintView.swift`: delete the two `Text` sentences (`:44-48`), keep the pill with `.accessibilityLabel(linked ? "Don't link to \(counterName)" : "Link to \(counterName)")`; drop the now-unused `lifetime` / `goal` parameters and fix the call sites the compiler flags (`RisoSpecialTaskPanel`, `RisoCompoundFieldsView`, `RisoCompoundEditFieldsView`).
-
-- [ ] **Step 8: Run iOS.** `IOS_TEST -only-testing:OYBCTests/CreateFormViewModelCountKindTests -only-testing:OYBCTests/LinkableCounterTests` PASS. Record `RisoSpecialPanelCountingSnapshotTests` (new) and re-record the four `RisoCompoundPanelSnapshotTests` link-hint baselines listed above (delete → record → green). Read each PNG against handoff A1 (picker between Verb and Goal; Duration: no Counting field, wheel field "10h 30m").
-
-- [ ] **Step 9: e2e + Playwright validation.** Create `apps/web/e2e/counter-kinds-authoring.spec.ts`:
-
-```ts
-import { test, expect, readTask } from './_fixtures/bypass';
-
-test.describe('Counter kinds — authoring (A1)', () => {
-  test('Tasks tab: create a Continuous and a Duration counter', async ({ page }) => {
-    await page.goto('/tasks?__oybc_test_bypass=1');
-    await page.getByRole('button', { name: 'Add a counting, compound or achievement task' }).click();
-    await page.getByRole('button', { name: 'Counting', exact: true }).click();
-    await page.getByLabel('Verb').fill('Run');
-    await page.getByRole('group', { name: 'Kind' }).getByRole('button', { name: 'Continuous' }).click();
-    await page.getByLabel('Goal', { exact: true }).fill('26,2');
-    await page.getByLabel('Counting').fill('miles');
-    await expect(page.getByText('Run 26.2 miles')).toBeVisible();
-    await page.getByRole('button', { name: /^Add/ }).click();
-    await expect(page.getByText('Run 26.2 miles')).toBeVisible();
-
-    await page.getByRole('button', { name: 'Add a counting, compound or achievement task' }).click();
-    await page.getByRole('button', { name: 'Counting', exact: true }).click();
-    await page.getByLabel('Verb').fill('Practice');
-    await page.getByRole('group', { name: 'Kind' }).getByRole('button', { name: 'Duration' }).click();
-    await expect(page.getByLabel('Counting')).toHaveCount(0);
-    await page.getByLabel('Goal hours').fill('10');
-    await page.getByLabel('Goal minutes').fill('30');
-    await page.getByRole('button', { name: /^Add/ }).click();
-    await expect(page.getByText('Practice 10h 30m')).toBeVisible();
-  });
-});
-```
-
-(Use the fixture helpers `_fixtures/bypass.ts` exports; if there is no `readTask`, drop that import. Match the submit button's real label from `CreateNewTaskForm`'s `submitLabel` on the Tasks tab.) Run `WEB_E2E e2e/counter-kinds-authoring.spec.ts` — PASS. Then the Playwright MCP validation: `/tasks`, open the counting panel, screenshot light + dark with Continuous selected and with Duration selected → `.playwright-mcp/task5-a1-{continuous,duration}-{light,dark}.png`; compare to handoff A1 web frame.
-
-- [ ] **Step 10: Commit**
-
-```bash
-git add packages/shared apps/web apps/ios
-git commit -m "feat(counters): A1 kind picker + goal entry in the special panel / create form; linked creates take the root kind (R19); drop link-hint + achievement captions (#548 67/68, 77/78) (PR 3 Task 5)"
-```
-
----
-
-### Task 6: A2 — compound sub-tasks (create + edit) carry a kind
-
-**Files:**
-- Modify: `apps/web/src/components/wizard/CountingSubConfigRow.tsx` (+`kind`, `onKindChange`; Goal → `GoalEntry`; unit hidden for Duration)
-- Modify: `apps/web/src/components/CountingStepFields.tsx:14-95` (+`countKind`, `onKindChange`; title via `parseCountInput`)
-- Modify: `apps/web/src/components/compoundWizard/compoundSubtaskDraft.ts:22-43` (`InlineSubtaskDraft.countKind?: CountKind`), `:75-90` (readiness via `parseCountInput`)
-- Modify: `apps/web/src/components/compoundWizard/SubtaskCard.tsx:312-330` (pass kind); delete the #548 row 65 caption at `:292` ("(auto-generated from action + count + unit if blank)")
-- Modify: `apps/web/src/components/compoundWizard/CompoundTaskWizard.tsx:255-283` (`autoCreate.countKind`, `parseCountInput`)
-- Modify: `apps/web/src/db/taskEditPatch.ts:21-62` (`ChildPatch.countKind: CountKind`; `newChildPatch`, `childPatchFromTask` seed it), `:218-240` (`parsePositiveGoal(goal, kind)`, `canAppendCounting(text, goal, unit, kind)`)
-- Modify: `apps/web/src/components/wizard/CompoundFields.tsx:150-190` (new-sub kind row), `:229-237` (existing child goal → `GoalEntry` at the child's kind, unit hidden for Duration); delete the #548 row 61 caption at `:188`
-- Modify: `apps/web/src/db/operations/tasks.crud.ts:243-260` (`autoCreate.countKind` written), `apps/web/src/db/operations/compoundStructureEdit.ts` (`applyStagedCompoundChildEdits` writes `countKind` for a new counting child — `:69`)
-- Modify: `apps/ios/OYBC/Views/CreateTab/Components/RisoCountingSubConfigRow.swift` (+`kind: Binding<CountKind>`; Goal → `GoalEntryView`)
-- Modify: `apps/ios/OYBC/Views/CreateTab/Components/RisoCompoundFieldsView.swift:25-33,97-98,154-155,207-231,370,586-604` (sub kind state, parse, seed)
-- Modify: `apps/ios/OYBC/Views/CreateTab/Components/RisoCompoundEditFieldsView.swift:108-111` (`parsePositiveGoal(_:kind:)`), `:263-268` (existing child goal), `:355` (new sub kind); delete the #548 row 62 caption at `:225`
-- Modify: `apps/ios/OYBC/Views/CreateTab/Components/TaskEditPatch.swift:15-62` (`ChildPatch.countKind`), `:105` (`parsedGoal` kind-aware), `:151` (child goal parse)
-- Modify: `apps/ios/OYBC/Views/CreateTab/ViewModels/CreateFormViewModel.swift:474-500` (`CompoundSubItem.newCounting(… countKind:)`), `:640-670` (child Task gets `countKind`)
-- Modify: `apps/ios/OYBC/Database/AppDatabase+CompoundStructureEdit.swift:38,107` (new counting child gets `countKind`)
-- Test: `apps/web/src/db/__tests__/taskEditPatch.countKind.test.ts` (create), `apps/web/src/db/operations/__tests__/compoundCreate.countKind.test.ts` (create), `apps/ios/OYBCTests/CompoundSubKindTests.swift` (create)
-- Re-record (intentional — kind row in the sub config + caption removal): `RisoCompoundPanelSnapshotTests/testCompoundNewSubCounting{Light,Dark}`, `testCompoundNewSubCountingLinked{Light,Dark}`, `testCompoundNewSubCountingOptedOut{Light,Dark}` (Task 5 re-recorded the last four for the hint; record again here), `RisoCompoundPanelSnapshotTests/testCompoundWithSubs{Light,Dark}` only if red, `PoolRowEditorSnapshotTests/testCompoundEditorNewSubCountingLight`, `RisoEditTaskSheetSnapshotTests/testCompound{Light,Dark}` (row 62 caption)
-
-**Interfaces:**
-- Consumes: Tasks 1–5.
-- Produces:
-  - web `CountingSubConfigRowProps.kind: CountKind`, `onKindChange: (kind: CountKind) => void`, `kindLock?: KindPickerLock` (default `'none'`)
-  - web `ChildPatch.countKind: CountKind`; `canAppendCounting(text, goal, unit, kind: CountKind = 'discrete')`
-  - iOS `RisoCountingSubConfigRow(goal:unit:kind:)`; `ChildPatch.countKind: CountKind`; `CompoundSubItem.newCounting(action:goal:unit:sharedCounterId:baseline:countKind:)`
-  - Rule (ruling): only a NEW sub-task picks a kind; an existing sub-task's goal edits at its own kind, no picker (its kind is changed from its own Task Detail).
-
-- [ ] **Step 1: Failing web tests.** `taskEditPatch.countKind.test.ts`:
-
-```ts
-import { describe, expect, it } from 'vitest';
-import { TaskType, type Task } from '@oybc/shared';
-import { canAppendCounting, childPatchFromTask, newChildPatch } from '../taskEditPatch';
-
-describe('ChildPatch countKind', () => {
-  it('a new counting child starts discrete', () => {
-    expect(newChildPatch(true).countKind).toBe('discrete');
-  });
-  it('an existing child seeds its kind and goal text', () => {
-    const child = { id: 'c', title: 'Run 26.2 mi', type: TaskType.COUNTING, action: 'Run', unit: 'mi', maxCount: 26.2, countKind: 'continuous' } as Task;
-    const patch = childPatchFromTask(child);
-    expect(patch.countKind).toBe('continuous');
-    expect(patch.goal).toBe('26.2');
-  });
-  it('canAppendCounting is kind-aware', () => {
-    expect(canAppendCounting('Run', '3.1', 'mi', 'continuous')).toBe(true);
-    expect(canAppendCounting('Run', '3.1', 'mi', 'discrete')).toBe(false);
-    expect(canAppendCounting('Practice', '1h 30m', '', 'duration')).toBe(true);
-    expect(canAppendCounting('Practice', '90', '', 'discrete')).toBe(false);
-  });
-});
-```
-
-`compoundCreate.countKind.test.ts` (Dexie via `fake-indexeddb`, copy the setup of `apps/web/src/db/operations/__tests__/countKindWritePaths.test.ts`):
-
-```ts
-it('createCompound writes an inline Duration child with countKind and no unit', async () => {
-  const compound = await createCompound('u1', {
-    title: 'Music week',
-    operator: OperatorType.AND,
-    children: [{ autoCreate: { type: TaskType.COUNTING, title: '', action: 'Practice', maxCount: 630, countKind: 'duration' } }],
-  });
-  const links = await db.compoundChildren.where('parentTaskId').equals(compound.id).toArray();
-  const child = await db.tasks.get(links[0].childTaskId);
-  expect(child?.countKind).toBe('duration');
-  expect(child?.title).toBe('Practice 10h 30m');
-  expect(child?.maxCount).toBe(630);
-});
-```
-
-- [ ] **Step 2: Run — expect FAIL.** `WEB_TEST taskEditPatch.countKind compoundCreate.countKind`
-
-- [ ] **Step 3: Implement web.**
-  - `ChildPatch` gains `countKind: CountKind;` — `newChildPatch` sets `'discrete'`, `childPatchFromTask` sets `resolveCountKind(child)` and `goal: child.maxCount !== undefined ? formatCountForInput(child.maxCount, resolveCountKind(child)) : ''`.
-  - `parsePositiveGoal(goal: string, kind: CountKind = 'discrete'): number | undefined` → `parseCountInput(goal, kind) ?? undefined`; `canAppendCounting(text, goal, unit, kind = 'discrete')` = `text.trim().length > 0 && parsePositiveGoal(goal, kind) !== undefined && (!countKindNeedsUnit(kind) || unit.trim().length > 0)`. Update every `parsePositiveGoal(` call in the file to pass the child's / draft's kind.
-  - `CountingSubConfigRow.tsx` — props gain `kind`, `onKindChange`, `kindLock?: KindPickerLock`; render `<KindPicker value={kind} lock={kindLock ?? 'none'} onChange={onKindChange} size="compact" />` as the first row, Goal as `<GoalEntry kind={kind} value={goal} onChange={onGoalChange} id={`${idPrefix}-goal`} aria-label="Goal" dense invalid={Boolean(goalError)} placeholder={kind === 'duration' ? '0h 0m' : '100'} />`, and the Counting field only `{countKindNeedsUnit(kind) && …}`.
-  - `CountingStepFields.tsx` — props gain `countKind: CountKind; onKindChange(kind)`; `const parsed = parseCountInput(maxCount, countKind); const goalValid = parsed !== null;` and the title `generateCounterTaskTitle(trimmedAction, parsed, trimmedUnit, undefined, countKind)` gated on `(trimmedUnit || countKind === 'duration')`.
-  - `compoundSubtaskDraft.ts` — `InlineSubtaskDraft.countKind?: CountKind` (absent = discrete); readiness `parseCountInput(draft.maxCountStr, draft.countKind ?? 'discrete') !== null` and the unit check skipped for Duration.
-  - `SubtaskCard.tsx` passes `countKind={draft.countKind ?? 'discrete'}` and `onKindChange={(k) => onUpdate({ countKind: k, linkDisabled: false } as Partial<InlineSubtaskDraft>)}`; `InlineCounterLinkHint` is not rendered for Duration. Delete the `:292` caption node.
-  - `CompoundTaskWizard.tsx:257-281`: `const kind = subtask.countKind ?? 'discrete'; const maxCount = parseCountInput(subtask.maxCountStr, kind);` and `autoCreate: { …, unit: countKindNeedsUnit(kind) ? trimmedUnit || undefined : undefined, maxCount: maxCount ?? undefined, ...(kind !== 'discrete' ? { countKind: kind } : {}) }`; the match is skipped for Duration.
-  - `CompoundFields.tsx` — new-sub state `const [newSubKind, setNewSubKind] = useState<CountKind>('discrete');` passed to `CountingSubConfigRow`, to `canAppendCounting(…, newSubKind)` (`:157`) and to the appended `ChildPatch` (`countKind: newSubKind`). Existing child row `:229-237`: replace the `type="number"` input with `<GoalEntry kind={child.countKind} value={child.goal} onChange={(v) => onUpdate({ goal: v })} aria-label={`Sub-task ${index} goal`} dense />` and render the unit input only for `countKindNeedsUnit(child.countKind)`. Delete the `:188` `subtaskNote` span (row 61).
-  - `tasks.crud.ts:243-260` add `...(entry.autoCreate.countKind ? { countKind: entry.autoCreate.countKind } : {})` and the title via `generateCounterTaskTitle(…, entry.autoCreate.countKind ?? 'discrete')` where the child title is generated (`withRootCountKind` still overrides for a linked child).
-  - `compoundStructureEdit.ts` `applyStagedCompoundChildEdits`: when it creates a new counting child from a `ChildPatch`, set `countKind: step.countKind` (omit for discrete), `maxCount: parseCountInput(step.goal, step.countKind)`, unit `''` for Duration, title with the kind.
-
-- [ ] **Step 4: Run** `WEB_TEST taskEditPatch compoundCreate CompoundFields SubtaskCard CountingStepFields` — PASS (existing tests of these files must stay green); `WEB_CHECK`.
-
-- [ ] **Step 5: iOS failing tests** `CompoundSubKindTests.swift`:
-
-```swift
-import XCTest
-@testable import OYBC
-
-final class CompoundSubKindTests: XCTestCase {
-    func testNewCountingSubCarriesKindIntoTheChildTask() throws {
-        let db = try AppDatabase.makeTestInstance()
-        let form = CreateFormViewModel(database: db)
-        let done = expectation(description: "created")
-        form.handleCreateCompoundAndAddToPool(
-            userId: "u1",
-            title: "Music week",
-            rule: .allOf,
-            subs: [.newCounting(action: "Practice", goal: 630, unit: "", sharedCounterId: nil, baseline: nil, countKind: .duration)],
-            onTaskCreated: { _, _, _ in done.fulfill() },
-            onLibraryReloadRequested: {}
-        )
-        wait(for: [done], timeout: 2)
-        let child = try XCTUnwrap(try db.read { try Task.filter(Column("action") == "Practice").fetchOne($0) })
-        XCTAssertEqual(child.countKind, .duration)
-        XCTAssertEqual(child.title, "Practice 10h 30m")
-    }
-
-    func testChildPatchSeedsKindAndParsesPerKind() {
-        var t = Task.counting(id: "c", maxCount: 26.2)
-        t.countKind = .continuous
-        let patch = ChildPatch(from: t)
-        XCTAssertEqual(patch.countKind, .continuous)
-        XCTAssertEqual(patch.goal, "26.2")
-        XCTAssertTrue(RisoCompoundEditFieldsView.canAppendCounting(text: "Run", goal: "3.1", unit: "mi", kind: .continuous))
-        XCTAssertFalse(RisoCompoundEditFieldsView.canAppendCounting(text: "Run", goal: "3.1", unit: "mi", kind: .discrete))
-        XCTAssertTrue(RisoCompoundEditFieldsView.canAppendCounting(text: "Practice", goal: "90", unit: "", kind: .duration))
-    }
-}
-```
-
-(`CompoundRule` is the enum at `CreateFormViewModel.swift:516` — `.allOf` / `.anyOf` / `.atLeastN(threshold:)`.)
-
-- [ ] **Step 6: Run — expect build FAIL.** `IOS_TEST -only-testing:OYBCTests/CompoundSubKindTests`
-
-- [ ] **Step 7: Implement iOS.**
-  - `RisoCountingSubConfigRow`: add `@Binding var kind: CountKind` and `var kindLock: KindPickerLock = .none`; body = `KindPickerView(selection: $kind, lock: kindLock)` row, then the `HStack` with `GoalEntryView(kind: kind, text: $goal, placeholder: kind == .duration ? "0h 0m" : "100")` and the Counting field only when `countKindNeedsUnit(kind)`.
-  - `RisoCompoundFieldsView`: `@State private var subKind: CountKind` (seeded from `Seed.subKind`, default `.discrete`), goal parse `parseCountInput(subGoalText, kind: subKind)` at `:217`, unit requirement gated at `:231`, `RisoCountingSubConfigRow(goal: $subGoalText, unit: $subUnitText, kind: $subKind)` at `:370`, `.newCounting(…, countKind: subKind)` where the sub is appended (`:586-600`), reset `subKind = .discrete` at `:603`/`:656`. Link suggestion skipped for Duration.
-  - `CompoundSubItem.newCounting` gains `countKind: CountKind` (last associated value); `displayTitle` passes it; the create loop (`CreateFormViewModel.swift` ~`:648-668`) passes `countKind:` to `TaskTitle.generateCounterTaskTitle`, writes `unit: countKindNeedsUnit(countKind) ? … : ""` and sets `child.countKind = countKind == .discrete ? nil : countKind`.
-  - `TaskEditPatch.swift`: `ChildPatch.countKind: CountKind = .discrete`, seeded in `init(from:)` (`:62` already formats with the kind — also assign `countKind = resolveCountKind(child.countKind)`); `parsedGoal` → `parseCountInput(goal, kind: countKind)` where `TaskEditPatch` gains `var countKind: CountKind = .discrete` seeded at `:98` (used by Tasks 8/12); child goal `:151` → `parseCountInput(child.goal, kind: child.countKind) ?? 0`.
-  - `RisoCompoundEditFieldsView`: `parsePositiveGoal(_ goal: String, kind: CountKind) -> CountValue?` = `parseCountInput(goal, kind: kind)`; `canAppendCounting(text:goal:unit:kind:)` (static, so the test can call it); new-sub `@State private var newSubKind: CountKind = .discrete` passed to `RisoCountingSubConfigRow` at `:355` and to the appended `ChildPatch`; existing child row `:266` → `GoalEntryView(kind: child.wrappedValue.countKind, text: child.goal).frame(width: 84)`, unit field only for `countKindNeedsUnit`. Delete the `:225` caption `Text` (row 62).
-  - `AppDatabase+CompoundStructureEdit.swift` — the new-child builder (`applyStagedStepToChild` / the new-child branch of `applyStagedCompoundChildEdits`) sets `countKind` from the step and parses `goal` with it.
-
-- [ ] **Step 8: Run iOS** `IOS_TEST -only-testing:OYBCTests/CompoundSubKindTests -only-testing:OYBCTests/BoardEditCompoundTests -only-testing:OYBCTests/AppDatabaseTaskEditTests` PASS. Re-record the baselines listed under **Files** (delete → record → green), read each against handoff A2 (Duration sub-task: no Counting field).
-
-- [ ] **Step 9: Playwright validation.** `/tasks` → Compound → add a Counting sub, pick Duration, set 1h 30m; screenshot light/dark → `.playwright-mcp/task6-a2-{light,dark}.png`; then open an existing compound's Task Detail → Edit, add a Continuous sub "Run 3.1 mi", save; reload and confirm the sub reads "Run 3.1 mi".
-
-- [ ] **Step 10: Commit**
-
-```bash
-git add apps/web apps/ios packages/shared
-git commit -m "feat(counters): A2 compound sub-tasks pick a kind (create + edit); inline children carry countKind; drop sub-task captions (#548 61/62, 65) (PR 3 Task 6)"
-```
-
----
-
-### Task 7: Kind-switch infrastructure — in-transaction switch, impact preview, confirm dialog
-
-**Files:**
-- Modify: `apps/web/src/db/operations/countKindSwitch.ts:73-140` (extract `switchCounterKindInTransaction`; add `previewCounterKindSwitch`)
-- Modify: `apps/ios/OYBC/Database/AppDatabase+CountKindSwitch.swift:45-106` (extract `static func switchCounterKind(db:rootTaskId:to:now:)`; batch the family fetch — R-perf; add `previewCounterKindSwitch(rootTaskId:to:)`)
-- Create: `apps/web/src/components/counters/KindSwitchConfirmDialog.tsx`, `KindSwitchConfirmDialog.module.css`, `apps/web/src/components/counters/kindSwitchModel.ts`
-- Create: `apps/ios/OYBC/Views/Components/KindSwitchConfirmView.swift`
-- Test: `apps/web/src/db/operations/__tests__/countKindSwitch.test.ts` (+preview + in-transaction cases), `apps/web/src/components/counters/__tests__/kindSwitchModel.test.ts` (create), `apps/ios/OYBCTests/AppDatabaseCountKindSwitchTests.swift` (+cases), `apps/ios/OYBCSnapshotTests/KindSwitchConfirmSnapshotTests.swift` (create)
-
-**Interfaces:**
-- Consumes: `switchCounterKind` (PR 2), `planCountKindSwitch`, `generateCounterTaskTitle(…, countKind)`, `formatCount`.
-- Produces:
-  - web `switchCounterKindInTransaction(rootTaskId: string, to: CountKind, nowIso: string): Promise<string[]>` (written ids; must run inside an `rw` transaction over `boards, boardTasks, tasks, compoundChildren, taskEvents, syncQueue`; `switchCounterKind` wraps it unchanged)
-  - web `previewCounterKindSwitch(rootTaskId: string, to: CountKind, now?: Date): Promise<KindSwitchPreview | null>` with `interface KindSwitchPreview { from: CountKind; to: CountKind; titleBefore: string; titleAfter: string; loggedBefore: number; loggedAfter: number; linkedCount: number }`
-  - web `needsKindSwitchConfirm(from: CountKind, to: CountKind): boolean` (true only continuous → discrete) and `kindSwitchConfirmLines(p: KindSwitchPreview): { title: string; rows: [string, string][]; body: string }` in `kindSwitchModel.ts`
-  - web `<KindSwitchConfirmDialog preview: KindSwitchPreview; onCancel(): void; onConfirm(): void />`
-  - iOS `static func switchCounterKind(db: Database, rootTaskId: String, to: CountKind, now: Date) throws -> [String]`; `func previewCounterKindSwitch(rootTaskId: String, to: CountKind, now: Date = Date()) throws -> KindSwitchPreview?`; `struct KindSwitchPreview: Equatable { from, to: CountKind; titleBefore, titleAfter: String; loggedBefore, loggedAfter: CountValue; linkedCount: Int }`; `enum KindSwitchCopy { static func needsConfirm(from:to:) -> Bool; static func lines(_:) -> (title: String, rows: [(String, String)], body: String) }`; `KindSwitchConfirmView(preview:onCancel:onConfirm:)`
-  - Rule for the preview: `titleAfter` regenerates the auto title only when the title is auto (`isAutoCounterTitle`), else keeps it; `loggedBefore` = the root's lifetime `currentCount`; `loggedAfter` = `finalizeWindowCount(loggedBefore, to)`; `linkedCount` = live family rows that the switch would write (non-frozen, `isFrozenDerivedRow` false at `now`).
-
-- [ ] **Step 1: Failing web tests.** Append to `countKindSwitch.test.ts` (it already seeds a root + family with fractional events — reuse its `seedFamily()` helper):
-
-```ts
-describe('previewCounterKindSwitch', () => {
-  it('continuous → discrete: rounded title, rounded logged, live linked count', async () => {
-    const { rootId } = await seedFamily({ rootMaxCount: 26.2, rootTitle: 'Run 26.2 miles', lifetime: 12.75, liveLinked: 2, frozenLinked: 1 });
-    const p = await previewCounterKindSwitch(rootId, 'discrete', NOW);
-    expect(p).toEqual({
-      from: 'continuous', to: 'discrete',
-      titleBefore: 'Run 26.2 miles', titleAfter: 'Run 26 miles',
-      loggedBefore: 12.75, loggedAfter: 13, linkedCount: 2,
-    });
-  });
-  it('a custom title is kept', async () => {
-    const { rootId } = await seedFamily({ rootMaxCount: 26.2, rootTitle: 'Marathon', lifetime: 1, liveLinked: 0 });
-    expect((await previewCounterKindSwitch(rootId, 'discrete', NOW))?.titleAfter).toBe('Marathon');
-  });
-  it('refused switches preview null', async () => {
-    const { rootId } = await seedFamily({ rootMaxCount: 26.2, rootTitle: 'Run 26.2 miles', lifetime: 0, liveLinked: 0 });
-    expect(await previewCounterKindSwitch(rootId, 'duration', NOW)).toBeNull();
-  });
-});
-
-describe('switchCounterKindInTransaction', () => {
-  it('runs inside a caller transaction and rolls back with it', async () => {
-    const { rootId } = await seedFamily({ rootMaxCount: 26.2, rootTitle: 'Run 26.2 miles', lifetime: 3, liveLinked: 1 });
-    await expect(
-      db.transaction('rw', [db.boards, db.boardTasks, db.tasks, db.compoundChildren, db.taskEvents, db.syncQueue], async () => {
-        await switchCounterKindInTransaction(rootId, 'discrete', NOW.toISOString());
-        throw new Error('caller failed');
-      }),
-    ).rejects.toThrow('caller failed');
-    expect((await db.tasks.get(rootId))?.countKind).toBe('continuous');
-  });
-});
-```
-
-(If `seedFamily` does not take these options, extend it in the test file — it is test-local.) `kindSwitchModel.test.ts`:
-
-```ts
-import { describe, expect, it } from 'vitest';
-import { kindSwitchConfirmLines, needsKindSwitchConfirm } from '../kindSwitchModel';
-
-describe('kindSwitchModel', () => {
-  it('only continuous → discrete confirms', () => {
-    expect(needsKindSwitchConfirm('continuous', 'discrete')).toBe(true);
-    expect(needsKindSwitchConfirm('discrete', 'continuous')).toBe(false);
-  });
-  it('copy matches the handoff', () => {
-    const lines = kindSwitchConfirmLines({
-      from: 'continuous', to: 'discrete', titleBefore: 'Run 26.2 miles', titleAfter: 'Run 26 miles',
-      loggedBefore: 12.75, loggedAfter: 13, linkedCount: 2,
-    });
-    expect(lines.title).toBe('Switch to Discrete?');
-    expect(lines.rows).toEqual([['Run 26.2 miles', 'Run 26 miles'], ['12.75 logged', '13 logged']]);
-    expect(lines.body).toBe('Switching back restores the exact values. Follows on 2 linked squares.');
-  });
-  it('no family line without a family; singular for one', () => {
-    const base = { from: 'continuous' as const, to: 'discrete' as const, titleBefore: 'a', titleAfter: 'a', loggedBefore: 0, loggedAfter: 0 };
-    expect(kindSwitchConfirmLines({ ...base, linkedCount: 0 }).body).toBe('Switching back restores the exact values.');
-    expect(kindSwitchConfirmLines({ ...base, linkedCount: 1 }).body).toBe('Switching back restores the exact values. Follows on 1 linked square.');
-  });
-});
-```
-
-- [ ] **Step 2: Run — expect FAIL.** `WEB_TEST countKindSwitch kindSwitchModel`
-
-- [ ] **Step 3: Implement web.** In `countKindSwitch.ts` move the body of the transaction callback into:
-
-```ts
-/**
- * The body of {@link switchCounterKind}, for a caller that already holds the
- * `rw` transaction (Board Edit Save, staged pool / wizard edits, Task Detail
- * save) so the switch and the caller's other writes commit or roll back
- * together. Same rules and errors as `switchCounterKind`.
- *
- * @param rootTaskId - The counter root.
- * @param to - The requested kind.
- * @param nowIso - The switch instant (also the freeze clock).
- * @returns The ids written (root first).
- * @throws {CountKindSwitchError} as `switchCounterKind`.
- */
-export async function switchCounterKindInTransaction(rootTaskId: string, to: CountKind, nowIso: string): Promise<string[]> {
-  // … the existing callback body verbatim, ending with:
-  await runBoardCascadeForTasks(writtenIds);
-  return writtenIds;
-}
-```
-
-and `switchCounterKind` becomes `await db.transaction('rw', [...same tables], () => switchCounterKindInTransaction(rootTaskId, to, now.toISOString()));`. Add:
-
-```ts
-/** What a kind switch would change — feeds the Continuous → Discrete confirm. */
-export interface KindSwitchPreview {
-  from: CountKind;
-  to: CountKind;
-  titleBefore: string;
-  titleAfter: string;
-  loggedBefore: number;
-  loggedAfter: number;
-  linkedCount: number;
-}
-
-/**
- * Read-only preview of {@link switchCounterKind} for the confirm dialog.
- *
- * @param rootTaskId - The counter root.
- * @param to - The requested kind.
- * @param now - The freeze clock for counting live linked rows.
- * @returns The preview, or null when the switch would be refused / the task is not a live counting root.
- */
-export async function previewCounterKindSwitch(rootTaskId: string, to: CountKind, now: Date = new Date()): Promise<KindSwitchPreview | null> {
-  const root = await db.tasks.get(rootTaskId);
-  if (!root || root.isDeleted || root.type !== TaskType.COUNTING || root.sharedCounterId != null) return null;
-  const from = resolveCountKind(root);
-  const patch = planCountKindSwitch(root, from, to);
-  if (!patch) return null;
-  const nowIso = now.toISOString();
-  const family = await db.tasks.where('sharedCounterId').equals(root.id).filter((t) => !t.isDeleted).toArray();
-  const action = root.action ?? '';
-  const unit = root.unit ?? '';
-  const auto = isAutoCounterTitle(root.title, action, root.maxCount, unit, from);
-  return {
-    from,
-    to,
-    titleBefore: root.title,
-    titleAfter: auto ? generateCounterTaskTitle(action, patch.maxCount ?? root.maxCount, unit, undefined, to) : root.title,
-    loggedBefore: root.currentCount ?? 0,
-    loggedAfter: finalizeWindowCount(root.currentCount ?? 0, to),
-    linkedCount: family.filter((row) => !isFrozenDerivedRow(row, nowIso)).length,
-  };
-}
-```
-
-`kindSwitchModel.ts`:
-
-```ts
-import { COUNT_KIND_LABELS, formatCount, type CountKind } from '@oybc/shared';
-import type { KindSwitchPreview } from '../../db/operations/countKindSwitch';
-
-/** D4 / §5: only the rounding direction confirms. */
-export function needsKindSwitchConfirm(from: CountKind, to: CountKind): boolean {
-  return from === 'continuous' && to === 'discrete';
-}
-
-/**
- * The confirm's copy — the one place a consequence sentence is allowed.
- *
- * @param p - The switch preview.
- * @returns Title, before → after rows, consequence body.
- */
-export function kindSwitchConfirmLines(p: KindSwitchPreview): { title: string; rows: [string, string][]; body: string } {
-  const family =
-    p.linkedCount === 0 ? '' : ` Follows on ${p.linkedCount} linked square${p.linkedCount === 1 ? '' : 's'}.`;
-  return {
-    title: `Switch to ${COUNT_KIND_LABELS[p.to]}?`,
-    rows: [
-      [p.titleBefore, p.titleAfter],
-      [`${formatCount(p.loggedBefore, p.from)} logged`, `${formatCount(p.loggedAfter, p.to)} logged`],
-    ],
-    body: `Switching back restores the exact values.${family}`,
-  };
-}
-```
-
-`KindSwitchConfirmDialog.tsx` — follow the existing confirm-dialog chrome (`CounterDeleteConfirmDialog.tsx` + `useModalA11y`):
-
-```tsx
-import { useModalA11y } from '../../hooks/useModalA11y';
-import type { KindSwitchPreview } from '../../db/operations/countKindSwitch';
-import { RisoButton } from '../riso';
-import { kindSwitchConfirmLines } from './kindSwitchModel';
-import styles from './KindSwitchConfirmDialog.module.css';
-
-export interface KindSwitchConfirmDialogProps {
-  preview: KindSwitchPreview;
-  onCancel: () => void;
-  onConfirm: () => void;
-}
-
-/**
- * Continuous → Discrete confirm (docs/COUNTER_KINDS.md §5): before → after
- * rows for the title and the logged total, the consequence body, Cancel /
- * Switch. iOS twin: `KindSwitchConfirmView`.
- *
- * @returns The modal dialog.
- */
-export function KindSwitchConfirmDialog({ preview, onCancel, onConfirm }: KindSwitchConfirmDialogProps): React.ReactElement {
-  const { ref, props } = useModalA11y<HTMLDivElement>({ open: true, onCancel });
-  const lines = kindSwitchConfirmLines(preview);
-  return (
-    <div className={styles.backdrop} onClick={onCancel}>
-      <div ref={ref} {...props} role="dialog" aria-modal="true" aria-labelledby="kind-switch-title" className={styles.dialog} onClick={(e) => e.stopPropagation()}>
-        <h2 id="kind-switch-title" className={styles.title}>{lines.title}</h2>
-        <div className={styles.rows}>
-          {lines.rows.map(([before, after]) => (
-            <div key={before} className={styles.row}>
-              <span className={styles.before}>{before}</span>
-              <span aria-hidden="true">→</span>
-              <span>{after}</span>
-            </div>
-          ))}
-        </div>
-        <p className={styles.body}>{lines.body}</p>
-        <div className={styles.actions}>
-          <RisoButton kind="ghost" onClick={onCancel}>Cancel</RisoButton>
-          <RisoButton kind="blue" onClick={onConfirm}>Switch</RisoButton>
-        </div>
-      </div>
-    </div>
-  );
-}
-```
-
-(Copy `backdrop` / `dialog` / `actions` CSS from `CreateCounterSheet.module.css`'s dialog chrome — the handoff's stated source; `.before { color: var(--riso-muted); text-decoration: line-through; }`. Verify the real `useModalA11y` import path with `grep -rn "export function useModalA11y" apps/web/src`.)
-
-- [ ] **Step 4: Run** `WEB_TEST countKindSwitch kindSwitchModel` — PASS (existing `countKindSwitch` tests stay green: the wrapper is behaviour-identical); `WEB_CHECK`.
-
-- [ ] **Step 5: iOS failing tests.** Append to `AppDatabaseCountKindSwitchTests.swift` (reuse its seeding helpers):
-
-```swift
-    func testPreviewRoundsTitleAndLoggedAndCountsLiveFamily() throws {
-        let (db, rootId) = try seedFamily(rootMaxCount: 26.2, rootTitle: "Run 26.2 miles", lifetime: 12.75, liveLinked: 2, frozenLinked: 1)
-        let p = try XCTUnwrap(db.previewCounterKindSwitch(rootTaskId: rootId, to: .discrete, now: Self.now))
-        XCTAssertEqual(p, KindSwitchPreview(from: .continuous, to: .discrete, titleBefore: "Run 26.2 miles", titleAfter: "Run 26 miles",
-                                           loggedBefore: 12.75, loggedAfter: 13, linkedCount: 2))
-    }
-
-    func testSwitchInsideCallerTransactionRollsBackWithIt() throws {
-        let (db, rootId) = try seedFamily(rootMaxCount: 26.2, rootTitle: "Run 26.2 miles", lifetime: 3, liveLinked: 1, frozenLinked: 0)
-        struct CallerFailed: Error {}
-        XCTAssertThrowsError(try db.write { conn in
-            _ = try AppDatabase.switchCounterKind(db: conn, rootTaskId: rootId, to: .discrete, now: Self.now)
-            throw CallerFailed()
-        })
-        XCTAssertEqual(try db.fetchTask(id: rootId)?.countKind, .continuous)
-    }
-
-    func testConfirmCopy() {
-        let p = KindSwitchPreview(from: .continuous, to: .discrete, titleBefore: "Run 26.2 miles", titleAfter: "Run 26 miles",
-                                  loggedBefore: 12.75, loggedAfter: 13, linkedCount: 2)
-        let lines = KindSwitchCopy.lines(p)
-        XCTAssertEqual(lines.title, "Switch to Discrete?")
-        XCTAssertEqual(lines.rows.map { "\($0.0)→\($0.1)" }, ["Run 26.2 miles→Run 26 miles", "12.75 logged→13 logged"])
-        XCTAssertEqual(lines.body, "Switching back restores the exact values. Follows on 2 linked squares.")
-        XCTAssertTrue(KindSwitchCopy.needsConfirm(from: .continuous, to: .discrete))
-        XCTAssertFalse(KindSwitchCopy.needsConfirm(from: .discrete, to: .continuous))
-    }
-```
-
-Snapshot `KindSwitchConfirmSnapshotTests.swift`: `testConfirmLight` / `testConfirmDark` rendering `KindSwitchConfirmView(preview: p, onCancel: {}, onConfirm: {})` at `.fixed(width: 393, height: 320)`.
-
-- [ ] **Step 6: Run — expect build FAIL.** `IOS_TEST -only-testing:OYBCTests/AppDatabaseCountKindSwitchTests`
-
-- [ ] **Step 7: Implement iOS.** Extract the `write { db in … }` body of `switchCounterKind(rootTaskId:to:now:)` into `static func switchCounterKind(db: Database, rootTaskId: String, to: CountKind, now: Date) throws -> [String]` (returns written ids); the instance method becomes `try write { db in _ = try Self.switchCounterKind(db: db, rootTaskId: rootTaskId, to: to, now: now) }`. Perf (carried item): fetch the family once with `Task.filter(Column("sharedCounterId") == rootTaskId && Column("isDeleted") == false).fetchAll(db)`, compute every patch first, then write each row (version bump + `.update` enqueue) and run ONE board cascade over all written ids at the end — the existing per-row cascade calls are removed. Add `KindSwitchPreview` + `previewCounterKindSwitch` mirroring the web function (`read { … }`; `isAutoCounterTitle`, `TaskTitle.generateCounterTaskTitle(…, countKind: to)`, `finalizeWindowCount`, `isFrozenDerivedRow`). `KindSwitchCopy` mirrors `kindSwitchModel.ts`. `KindSwitchConfirmView`:
-
-```swift
-import SwiftUI
-
-/// Continuous → Discrete confirm (docs/COUNTER_KINDS.md §5). Web twin:
-/// `KindSwitchConfirmDialog.tsx`. Presented as a `.sheet` with a fitted detent.
-struct KindSwitchConfirmView: View {
-    let preview: KindSwitchPreview
-    let onCancel: () -> Void
-    let onConfirm: () -> Void
-
-    var body: some View {
-        let lines = KindSwitchCopy.lines(preview)
-        VStack(alignment: .leading, spacing: 14) {
-            Text(lines.title).font(.risoHead(18, .extraBold)).foregroundStyle(Color.risoInk)
-            VStack(alignment: .leading, spacing: 6) {
-                ForEach(Array(lines.rows.enumerated()), id: \.offset) { _, row in
-                    HStack(spacing: 8) {
-                        Text(row.0).strikethrough().foregroundStyle(Color.risoMuted)
-                        Text("→").foregroundStyle(Color.risoMuted).accessibilityHidden(true)
-                        Text(row.1).foregroundStyle(Color.risoInk)
-                    }
-                    .font(.risoBody(13, .semibold))
-                }
-            }
-            Text(lines.body).font(.risoBody(12, .regular)).foregroundStyle(Color.risoInk)
-            HStack(spacing: 10) {
-                RisoButton(title: "Cancel", kind: .neutral, fullWidth: true, action: onCancel)
-                RisoButton(title: "Switch", kind: .blue, fullWidth: true, action: onConfirm)
-            }
-        }
-        .padding(Riso.gutter)
-        .background(Color.risoPaper)
-        .presentationDetents([.height(300)])
-        .presentationBackground(Color.risoPaper)
-    }
-}
-```
-
-- [ ] **Step 8: Run iOS** `IOS_TEST -only-testing:OYBCTests/AppDatabaseCountKindSwitchTests` — PASS (existing switch tests unchanged). `xcodegen generate`, record `KindSwitchConfirmSnapshotTests`, read vs handoff "Switch confirm".
-
-- [ ] **Step 9: Commit**
-
-```bash
-git add apps/web apps/ios
-git commit -m "feat(counters): switchCounterKind in a caller transaction + impact preview + Continuous→Discrete confirm; iOS family switch batched (PR 3 Task 7)"
-```
-
----
-
-### Task 8: A4 — Task Detail edit picks / switches the kind
-
-**Files:**
-- Modify: `apps/web/src/pages/tasks/TaskEditSheet.tsx:77-80` (kind state), `:200-220` (submit), `:320-352` (Action / Kind / Goal / Unit)
-- Modify: `apps/web/src/db/operations/compoundStructureEdit.ts:345-371` (`TaskEditSubmit.countKind`; `saveTaskEdit` switches first, in one transaction)
-- Modify: `apps/ios/OYBC/Views/TasksTab/EditTaskSheet.swift:44-60` (`Patch.countKind: CountKind?`), `:75,116` (state), `:219-240` (fields), `:470-490` (submit), confirm sheet
-- Modify: `apps/ios/OYBC/Database/AppDatabase+TaskEditing.swift:98-130` (`applyTaskEditPatch` switches first inside its `write`; goal parsed at the new kind)
-- Test: `apps/web/src/db/operations/__tests__/saveTaskEdit.countKind.test.ts` (create), `apps/web/src/pages/tasks/__tests__/TaskEditSheet.countKind.test.ts` (create), `apps/ios/OYBCTests/AppDatabaseTaskEditTests.swift` (+cases)
-- Re-record (intentional — Kind row): `RisoEditTaskSheetSnapshotTests/testCounting{Light,Dark}`; add `testCountingDurationLockedLight`, `testCountingContinuousLight`
-
-**Interfaces:**
-- Consumes: `KindPicker`, `GoalEntry`, `KindTag`, `KindSwitchConfirmDialog` / `KindSwitchConfirmView`, `previewCounterKindSwitch`, `switchCounterKindInTransaction` / `AppDatabase.switchCounterKind(db:…)`, `needsKindSwitchConfirm`, `kindPickerLock('edit', kind)`.
-- Produces: `TaskEditSubmit.countKind?: CountKind`; iOS `EditTaskSheet.Patch.countKind: CountKind?` (nil = unchanged). Rule: Save = switch (when the kind changed) → field patch, one transaction; the typed goal is parsed at the NEW kind and written after the switch's rounding.
-
-- [ ] **Step 1: Failing web test** `saveTaskEdit.countKind.test.ts`:
-
-```ts
-it('switches continuous → discrete then applies the typed goal, atomically', async () => {
-  const root = await seedCounting({ maxCount: 26.2, countKind: 'continuous', title: 'Run 26.2 miles', action: 'Run', unit: 'miles' });
-  await saveTaskEdit(root.id, { countKind: 'discrete', maxCount: 30, action: 'Run', unit: 'miles', title: '' });
-  const saved = await db.tasks.get(root.id);
-  expect(saved?.countKind).toBe('discrete');
-  expect(saved?.maxCount).toBe(30);
-});
-it('a failing field patch rolls back the switch', async () => {
-  const root = await seedCounting({ maxCount: 26.2, countKind: 'continuous', title: 'Run 26.2 miles', action: 'Run', unit: 'miles' });
-  await expect(saveTaskEdit(root.id, { countKind: 'discrete', maxCount: 2.5 })).rejects.toThrow();
-  expect((await db.tasks.get(root.id))?.countKind).toBe('continuous');
-});
-it('an unchanged kind does not call the switch (no extra version bump)', async () => {
-  const root = await seedCounting({ maxCount: 5, title: 'Read 5 pages', action: 'Read', unit: 'pages' });
-  await saveTaskEdit(root.id, { countKind: 'discrete', maxCount: 6 });
-  expect((await db.tasks.get(root.id))?.version).toBe(root.version + 1);
-});
-```
-
-(`seedCounting` — reuse `countKindWritePaths.test.ts`'s seed helper or add it locally.) `TaskEditSheet.countKind.test.ts` renders the sheet for a Continuous task, a Duration task and a linked row and asserts: Continuous → `aria-disabled="true"` once (Duration); Duration → three, no `id="…unit"` field; linked → no `aria-label="Kind"` group, a `KindTag`.
-
-- [ ] **Step 2: Run — expect FAIL.** `WEB_TEST saveTaskEdit.countKind TaskEditSheet.countKind`
-
-- [ ] **Step 3: Implement web.** `compoundStructureEdit.ts`:
-
-```ts
-export type TaskEditSubmit = UpdateTaskPatch & { compound?: TaskEditPatch; countKind?: CountKind };
-
-export async function saveTaskEdit(taskId: string, submit: TaskEditSubmit): Promise<void> {
-  const { compound, countKind, ...basicPatch } = submit;
-  if (compound) {
-    const description = 'description' in basicPatch ? (basicPatch.description ?? '') : undefined;
-    await editCompoundStructure(taskId, compound, { description });
-    return;
-  }
-  const existing = await db.tasks.get(taskId);
-  const switching = countKind !== undefined && existing != null && resolveCountKind(existing) !== countKind;
-  if (!switching) {
-    await updateTaskAndCascade(taskId, basicPatch);
-    return;
-  }
-  if (basicPatch.maxCount != null && isWholeCountKind(countKind) && !Number.isInteger(basicPatch.maxCount)) {
-    throw new Error('Whole-number kinds need whole goals'); // nothing written yet
-  }
-  await db.transaction('rw', [db.boards, db.boardTasks, db.tasks, db.compoundChildren, db.taskEvents, db.syncQueue], async () => {
-    await switchCounterKindInTransaction(taskId, countKind, new Date().toISOString());
-    await updateTaskAndCascade(taskId, basicPatch);
-  });
-}
-```
-
-(Confirm `updateTaskAndCascade` opens its transaction over a subset of these tables so Dexie nests it; if it uses a table outside the list, add that table to the outer list.) `TaskEditSheet.tsx`: `const [countKind, setCountKind] = useState<CountKind>(resolveCountKind(task)); const [pendingSwitch, setPendingSwitch] = useState<KindSwitchPreview | null>(null);` seed `maxCountStr` with `formatCountForInput(task.maxCount, resolveCountKind(task))`. Kind row (between Action and Goal, matching handoff A4's "Action / Kind / Goal · Unit / Reads as"):
-
-```tsx
-{task.sharedCounterId ? (
-  <KindTag kind={resolveCountKind(task)} />
-) : (
-  <KindPicker
-    value={countKind}
-    lock={kindPickerLock('edit', resolveCountKind(task))}
-    onChange={async (next) => {
-      if (needsKindSwitchConfirm(countKind, next)) {
-        setPendingSwitch(await previewCounterKindSwitch(task.id, next));
-        return;
-      }
-      setCountKind(next);
-    }}
-  />
-)}
-{pendingSwitch && (
-  <KindSwitchConfirmDialog
-    preview={pendingSwitch}
-    onCancel={() => setPendingSwitch(null)}
-    onConfirm={() => {
-      setCountKind(pendingSwitch.to);
-      const rounded = parseCountInput(maxCountStr, 'continuous');
-      if (rounded !== null) setMaxCountStr(formatCountForInput(Math.max(1, Math.floor(rounded + 0.5)), 'discrete'));
-      setPendingSwitch(null);
-    }}
-  />
-)}
-```
-
-Goal input → `GoalEntry kind={countKind}`; unit field only `countKindNeedsUnit(countKind)`; submit (`:209-217`) uses `parseCountInput(maxCountStr, countKind)` with the kind-specific messages from Task 5 and sets `patch.countKind = countKind`. The "Reads as" preview passes the kind.
-
-- [ ] **Step 4: Run** `WEB_TEST saveTaskEdit TaskEditSheet compoundStructureEdit` PASS; `WEB_CHECK`.
-
-- [ ] **Step 5: iOS failing tests** (append to `AppDatabaseTaskEditTests.swift`):
-
-```swift
-    func testEditSwitchesThenAppliesTypedGoal() throws {
-        let db = try AppDatabase.makeTestInstance()
-        var root = Task.counting(id: "r", maxCount: 26.2); root.countKind = .continuous; root.title = "Run 26.2 mi"
-        try db.saveTaskForTest(root)
-        _ = try db.applyTaskEditPatch(taskId: "r", patch: .countingPatch(action: "Run", unit: "mi", maxCountStr: "30", countKind: .discrete))
-        let saved = try XCTUnwrap(db.fetchTask(id: "r"))
-        XCTAssertEqual(saved.countKind, .discrete)
-        XCTAssertEqual(saved.maxCount, 30)
-    }
-
-    func testEditRefusesThreePlaceGoalAndKeepsKind() throws {
-        let db = try AppDatabase.makeTestInstance()
-        var root = Task.counting(id: "r", maxCount: 26.2); root.countKind = .continuous
-        try db.saveTaskForTest(root)
-        XCTAssertThrowsError(try db.applyTaskEditPatch(taskId: "r", patch: .countingPatch(action: "Run", unit: "mi", maxCountStr: "2.5", countKind: .discrete)))
-        XCTAssertEqual(try db.fetchTask(id: "r")?.countKind, .continuous)
-    }
-```
-
-(Add `static func countingPatch(action:unit:maxCountStr:countKind:)` to a test-only `extension EditTaskSheet.Patch` in the test file, filling the achievement fields with neutral values; `saveTaskForTest` = whatever insert helper the existing tests in this file use.)
-
-- [ ] **Step 6: Run — expect FAIL.** `IOS_TEST -only-testing:OYBCTests/AppDatabaseTaskEditTests`
-
-- [ ] **Step 7: Implement iOS.** `Patch` gains `var countKind: CountKind? = nil`. In `applyTaskEditPatch` before `applyBasicFields`:
-
-```swift
-            if let to = patch.countKind, task.type == .counting, resolveCountKind(task.countKind) != to {
-                _ = try Self.switchCounterKind(db: db, rootTaskId: taskId, to: to, now: Date())
-                guard let refreshed = try Task.fetchOne(db, key: taskId) else { throw TaskEditError.taskNotFound }
-                task = refreshed
-            }
-```
-
-`applyBasicFields` parses `maxCountStr` with `parseCountInput(patch.maxCountStr, kind: resolveCountKind(task.countKind))` and throws the existing validation error when nil. `EditTaskSheet`: `@State private var countKind: CountKind` (seeded `resolveCountKind(task.countKind)`), `@State private var pendingSwitch: KindSwitchPreview?`; the Counting fields (`:219-240`) become Action → `fieldLabel("Kind")` + (`task.sharedCounterId != nil` ? `KindTagView(kind: resolveCountKind(task.countKind))` : `KindPickerView(selection: $countKind, lock: kindPickerLock(mode: .edit, kind: resolveCountKind(task.countKind)), onRequest: requestKind)`) → `GoalEntryView(kind: countKind, text: $maxCountStr)` → Unit only when `countKindNeedsUnit(countKind)`. `requestKind(_:)`: if `KindSwitchCopy.needsConfirm(from: countKind, to: next)` set `pendingSwitch = try? database.previewCounterKindSwitch(rootTaskId: task.id, to: next)`, else `countKind = next`; `.sheet(item: $pendingSwitch)` (make `KindSwitchPreview: Identifiable` with `var id: String { "\(from)-\(to)" }`) presenting `KindSwitchConfirmView` whose confirm sets `countKind = .discrete`, rounds `maxCountStr` (as web) and clears. The submit (`:479`) passes `countKind: countKind`.
-
-- [ ] **Step 8: Run + snapshots.** `IOS_TEST -only-testing:OYBCTests/AppDatabaseTaskEditTests -only-testing:OYBCTests/EditTaskSheetCompoundGateTests` PASS. Re-record `RisoEditTaskSheetSnapshotTests/testCounting{Light,Dark}`, add + record `testCountingDurationLockedLight` (handoff A4: Duration locked in) and `testCountingContinuousLight`; read them.
-
-- [ ] **Step 9: Playwright validation.** `/tasks/:id` of a seeded Continuous task → Edit → tap Discrete → the confirm shows "Run 26.2 miles → Run 26 miles", "12.75 logged → 13 logged" → Switch → Save; reload: the row reads "Run 26 miles"; screenshot the confirm light/dark → `.playwright-mcp/task8-a4-confirm-{light,dark}.png`. Add this flow to `counter-kinds-authoring.spec.ts` as `test('Task Detail: Continuous → Discrete confirms and rounds')` seeding the task with `seedTask(page, { …, countKind: 'continuous', maxCount: 26.2 })`.
-
-- [ ] **Step 10: Commit**
-
-```bash
-git add apps/web apps/ios
-git commit -m "feat(counters): A4 Task Detail edit — kind picker, Continuous→Discrete confirm, switch+patch in one transaction (PR 3 Task 8)"
-```
-
----
-
-### Task 9: A3 — Board Edit square sheet (staged; applied at Save)
-
-**Files:**
-- Modify: `apps/web/src/components/boardEdit/boardEditTaskSheetModel.ts:88-115` (`SheetInput.countKind`), `:124-127` (`parseGoal(goalStr, kind)`), `:138-160` (`sheetValidationProblem`), `:169-210` (`buildSheetOverride` carries `countKind`)
-- Modify: `apps/web/src/components/boardEdit/BoardEditTaskSheet.tsx:119-125` (state), `:255-330` (Kind row, GoalEntry, unit); delete the #548 row 23 caption at `:242` ("Editing this task changes it everywhere it's used.")
-- Modify: `apps/web/src/db/operations/compoundStructureEdit.ts:410-470` (`applyBoardEditTaskOverrideInTransaction`: switch first when `override.countKind` differs, then fields)
-- Modify: `apps/ios/OYBC/Views/BoardsTab/SquareEditTaskSheet.swift:80-100` (`EditResult.countKind`), `:99,153` (state), `:268-280` (validation), `:430-445` (fields), `:550-560` (result); delete the #548 row 24 caption at `:511`
-- Modify: `apps/ios/OYBC/Views/BoardsTab/ViewModels/BoardPlayViewModel+EditCommit.swift:113-125` (`StagedTaskOverride.countKind`), `:439-470` (`applyStagedOverrides` switches first)
-- Test: `apps/web/src/components/boardEdit/__tests__/boardEditTaskSheetModel.countKind.test.ts` (create), `apps/web/src/db/operations/__tests__/boardEditCommit.countKind.test.ts` (create), `apps/ios/OYBCTests/BoardEditKindSwitchTests.swift` (create)
-- Re-record (intentional — Kind row + row-24 caption removal): `SquareEditTaskSheetSnapshotTests/testCounting{Light,Dark}`, `testLinkedCounterFixedTypeLight` (kind tag), `testNormal{Light,Dark}`, `testNormalThreeSegmentPickerLight`, `testCompoundLight`, `testConvertedCompoundEditorLight`, `testExistingCompoundFixedTypeEditorLight`, `testAchievementLight` (the row-24 caption sits on every type's sheet — re-record each that goes red, list the ones that did in the commit body)
-
-**Interfaces:**
-- Consumes: Tasks 3, 4, 7.
-- Produces: web `SheetInput.countKind: CountKind` (the sheet's model input), `parseGoal(goalStr: string, kind: CountKind = 'discrete'): number | null`; override = `TaskEditSubmit` (now carrying `countKind`); iOS `SquareEditTaskSheet.EditResult.countKind: CountKind?`, `StagedTaskOverride.countKind: CountKind?`.
-- Rules: Simple → Counting in the sheet starts the picker in `create` mode (the task becomes counting now); an existing counting task uses `edit` mode; a linked / window-stamped row shows `KindTag`. The switch applies at Save inside the squares-editor transaction, to the staged id's ROOT only when the staged task is itself a root (`sharedCounterId == null`); a remapped override never switches a placed copy.
-
-- [ ] **Step 1: Failing web tests.** `boardEditTaskSheetModel.countKind.test.ts`:
-
-```ts
-import { describe, expect, it } from 'vitest';
-import { TaskType, type Task } from '@oybc/shared';
-import { buildSheetOverride, parseGoal, sheetValidationProblem } from '../boardEditTaskSheetModel';
-
-const original = { id: 't', type: TaskType.COUNTING, title: 'Run 26.2 mi', action: 'Run', unit: 'mi', maxCount: 26.2, countKind: 'continuous' } as Task;
-const input = (o: object) => ({ original, selected: TaskType.COUNTING, title: '', action: 'Run', goalStr: '26.2', unit: 'mi', countKind: 'continuous', compoundDraft: undefined, compoundBaseline: undefined, ...o });
-
-describe('Board Edit sheet — counter kinds', () => {
-  it('parses the goal at the sheet kind', () => {
-    expect(parseGoal('26.2', 'continuous')).toBe(26.2);
-    expect(parseGoal('26.2', 'discrete')).toBeNull();
-    expect(parseGoal('1h 30m', 'duration')).toBe(90);
-  });
-  it('a staged switch rides on the override', () => {
-    expect(buildSheetOverride(input({ countKind: 'discrete', goalStr: '26' }) as never).countKind).toBe('discrete');
-  });
-  it('duration validates without a unit', () => {
-    expect(sheetValidationProblem(input({ countKind: 'duration', goalStr: '1h', unit: '' }) as never)).toBeNull();
-  });
-});
-```
-
-(The model's exports are `SheetInput` (`:88`), `parseGoal` (`:124`), `sheetValidationProblem` (`:138`, returns the message or null) and `buildSheetOverride` (`:169`).) `boardEditCommit.countKind.test.ts` (Dexie; copy the board + placement seeding of `apps/web/src/db/operations/__tests__/boardEditLinkedOverride.test.ts`, which already builds a `CommitSquareEditsInput` around a placed counter):
-
-```ts
-const commit = (boardId: string, cells: SquareDraftCell[], rootId: string, override: BoardEditTaskOverride) =>
-  commitSquareEdits({
-    boardId,
-    cells,
-    removedBoardTaskIds: [],
-    taskOverrides: new Map([[rootId, override]]),
-    isLegacyChosenOnDisk: false,
-    centerCellKeepLocked: false,
-  });
-
-it('kind switch then goal edit, atomic', async () => {
-  const { boardId, rootId, cells } = await seedBoardWithCounter({ maxCount: 26.2, countKind: 'continuous' });
-  await commit(boardId, cells, rootId, { countKind: 'discrete', maxCount: 30, action: 'Run', unit: 'mi', title: '' });
-  const root = await db.tasks.get(rootId);
-  expect(root?.countKind).toBe('discrete');
-  expect(root?.maxCount).toBe(30);
-});
-it('a rejected override rolls back the staged switch', async () => {
-  const { boardId, rootId, cells } = await seedBoardWithCounter({ maxCount: 26.2, countKind: 'continuous' });
-  await expect(commit(boardId, cells, rootId, { countKind: 'discrete', maxCount: 2.5 })).rejects.toThrow();
-  expect((await db.tasks.get(rootId))?.countKind).toBe('continuous');
-});
-```
-
-(`seedBoardWithCounter` is a test-local helper: one active board, one placed COUNTING root with the given `maxCount` / `countKind`, `cells` = the board's current `SquareDraftCell[]` as `boardEditLinkedOverride.test.ts` builds them.)
-
-- [ ] **Step 2: Run — expect FAIL.** `WEB_TEST boardEditTaskSheetModel.countKind boardEditCommit.countKind`
-
-- [ ] **Step 3: Implement web.** `parseGoal(goalStr, kind = 'discrete')` → `parseCountInput(goalStr, kind)`; the model input type gains `countKind: CountKind`; validation's unit requirement is gated on `countKindNeedsUnit(input.countKind)`; `buildSheetOverride`'s counting branch (`:178-195`) uses `parseGoal(input.goalStr, input.countKind)`, title via `generateCounterTaskTitle(action, goal, unit, undefined, input.countKind)`, and sets `patch.countKind = input.countKind` (always explicit on a counting override). `BoardEditTaskSheet.tsx`: `const [countKind, setCountKind] = useState<CountKind>(resolveCountKind(task))` + `pendingSwitch` exactly as Task 8; the picker mode is `original.type === TaskType.COUNTING ? 'edit' : 'create'`; linked (`task.sharedCounterId != null`) → `KindTag`; Goal `GoalEntry` with `goalStr`; unit gated; include `countKind` in `input` (`:188`). Delete the `:242` caption node. `applyBoardEditTaskOverrideInTransaction`: before the existing field write,
-
-```ts
-  if (fields.countKind !== undefined && existing.type === TaskType.COUNTING && existing.sharedCounterId == null
-      && resolveCountKind(existing) !== fields.countKind) {
-    await switchCounterKindInTransaction(taskId, fields.countKind, now);
-  }
-  const { countKind: _kind, ...rest } = fields; // the switch owns countKind; never write it raw
-```
-
-and continue with `rest` (re-read `existing` after the switch so the field patch's version bump stacks on the switch's). Guard the goal at the final kind before writing: `const finalKind = fields.countKind ?? resolveCountKind(existing); if (rest.maxCount != null && isWholeCountKind(finalKind) && !Number.isInteger(rest.maxCount)) throw new Error('Whole-number kinds need whole goals');` — the throw rolls the whole Save back (Review Focus 4). iOS `applyStagedOverrides` carries the same guard (`throw BoardEditCommitError.invalidGoal` — add the case).
-
-- [ ] **Step 4: Run** `WEB_TEST boardEdit` (every Board Edit test) — PASS; `WEB_CHECK`.
-
-- [ ] **Step 5: iOS failing test** `BoardEditKindSwitchTests.swift` — seed a board with a Continuous root placed, stage `StagedTaskOverride(title: "", action: "Run", unit: "mi", maxCount: 30, countKind: .discrete)` through `BoardPlayViewModel.stageTaskOverride` and run the commit (copy the harness from `BoardEditCompoundTests.swift`):
-
-```swift
-    func testSwitchThenGoalEditAtomic() throws { /* commit → root.countKind == .discrete, maxCount == 30 */ }
-    func testRejectedOverrideRollsBackSwitch() throws { /* maxCount 2.5 with .discrete → commit throws; root still .continuous */ }
-    func testLinkedCopyIsNeverSwitchedByAnOverride() throws { /* override on a placed linked copy carrying countKind → copy and root unchanged */ }
-```
-
-(Each body follows the `BoardEditCompoundTests` pattern verbatim: build `AppDatabase.makeTestInstance()`, seed, `let vm = BoardPlayViewModel(boardId:database:)`, stage, `try await vm.commitEdit()`, assert with `db.fetchTask`.)
-
-- [ ] **Step 6: Run — expect FAIL.** `IOS_TEST -only-testing:OYBCTests/BoardEditKindSwitchTests`
-
-- [ ] **Step 7: Implement iOS.** `EditResult` and `StagedTaskOverride` gain `countKind: CountKind?`; `stageTaskOverride` copies it; `applyingOverride(_:to:)` (pending tasks, `:179-181`) sets `task.countKind` and rounds via `planCountKindSwitch` (a pending task has no events, so the plan is the whole story); `applyStagedOverrides` (`:439`) runs `try AppDatabase.switchCounterKind(db: db, rootTaskId: id, to: kind, now: Date())` first when the target is a live counting ROOT whose kind differs, then the field write. `SquareEditTaskSheet`: `@State private var countKind: CountKind`, `pendingSwitch`, the Kind row between Action and Goal (`KindPickerView(… lock: kindPickerLock(mode: original.type == .counting ? .edit : .create, kind: resolveCountKind(original.countKind)), onRequest: requestKind)` or `KindTagView` when linked), `GoalEntryView(kind: countKind, text: $maxCountStr)` at `:438`, unit gated, validation `:277` → `parseCountInput(maxCountStr, kind: countKind) != nil`, result `:556` → `maxCount: parseCountInput(maxCountStr, kind: countKind), countKind: countKind`. Delete the `:511` caption.
-
-- [ ] **Step 8: Run + snapshots.** `IOS_TEST -only-testing:OYBCTests/BoardEditKindSwitchTests -only-testing:OYBCTests/BoardEditCompoundTests` PASS; run `IOS_SNAP -only-testing:OYBCSnapshotTests/SquareEditTaskSheetSnapshotTests`, re-record the reds listed under Files, add `testCountingContinuousDurationLockedLight` (handoff A3), read each.
-
-- [ ] **Step 9: e2e + Playwright.** Extend `apps/web/e2e/squares-editor.spec.ts` (or `counter-kinds-authoring.spec.ts`) with: seeded Continuous counter on a board → Edit → tap the square → Edit task → Discrete → confirm → Save → the cell's `×` tag reads `×26`. Run `WEB_E2E e2e/squares-editor.spec.ts e2e/counter-kinds-authoring.spec.ts`. Screenshot the sheet light/dark → `.playwright-mcp/task9-a3-{light,dark}.png`.
-
-- [ ] **Step 10: Commit**
-
-```bash
-git add apps/web apps/ios
-git commit -m "feat(counters): A3 Board Edit sheet stages a kind switch applied in the Save transaction; drop 'changes it everywhere' caption (#548 23/24) (PR 3 Task 9)"
-```
-
----
-
-### Task 10: A6 — Counters hub New counter (kind, Start from)
-
-**Files:**
-- Modify: `apps/web/src/db/operations/tasks.counter.ts:50-90` (`createCounterTask` input + `countKind`)
-- Modify: `apps/web/src/components/counters/CreateCounterSheet.tsx:64,95,120-124,150-215` (Kind row first; "Start from" → `GoalEntry` with `allowZero`; previews via `formatCountTotal`); delete #548 rows 69, 71, 73, 75 (`:164`, `:178`, `:194`, `:204`)
-- Modify: `apps/ios/OYBC/Database/AppDatabase+Counters.swift:38` (`createCounterTask(… countKind:)`)
-- Modify: `apps/ios/OYBC/Views/ProfileTab/NewCounterSheetView.swift:47,68-70,92,135-145,170-290` (kind state; Start from via `GoalEntryView`; R7 `.formatted()` at `:245`, `:283` → `formatCountTotal`); delete #548 rows 70, 72, 74, 76 (`:188`, `:197`, `:205`, `:250`)
-- Test: `apps/web/src/db/operations/__tests__/createCounterTask.countKind.test.ts` (create), `apps/web/src/components/counters/__tests__/CreateCounterSheet.test.ts` (create), `apps/ios/OYBCTests/AppDatabaseCounterCreateKindTests.swift` (create)
-- Re-record (intentional): `CountersHubSnapshotTests/testNewCounterSheetDefault{Light,Dark}`, `testNewCounterSheetEstablishedMatch{Light,Dark}`; add `testNewCounterSheetContinuousLight`, `testNewCounterSheetContinuousDark`
-
-**Interfaces:**
-- Consumes: `KindPicker`, `GoalEntry`, `parseCountInput(…, { allowZero: true })`, `formatCountTotal`.
-- Produces: web `createCounterTask(userId, { action, unit, startingCount?, countKind?: CountKind })`; iOS `createCounterTask(userId:action:unit:startingCount:countKind:)`. Rule (ruling): the hub keeps the noun field for every kind — it names the counter (`formatCounterName`) — and the noun is never appended to a Duration amount (`countUnitSuffix`).
-
-- [ ] **Step 1: Failing tests.** Web:
-
-```ts
-it('creates a continuous counter seeded with a fractional starting count', async () => {
-  const t = await createCounterTask('u1', { action: 'Run', unit: 'miles', startingCount: 148.6, countKind: 'continuous' });
-  expect(t.countKind).toBe('continuous');
-  expect((await db.tasks.get(t.id))?.currentCount).toBe(148.6);
-  const seed = await db.taskEvents.where('taskId').equals(t.id).first();
-  expect(seed?.delta).toBe(148.6);
-});
-it('a discrete counter refuses a fractional seed', async () => {
-  await expect(createCounterTask('u1', { action: 'Do', unit: 'push-ups', startingCount: 2.5 })).rejects.toThrow();
-});
-```
-
-`CreateCounterSheet.test.ts` — render; assert the Kind group is the first field, no `A plural noun`, `Used in task titles`, `Already partway`, `link up automatically` text, and a Continuous kind renders `inputMode="decimal"` for Start from. iOS `AppDatabaseCounterCreateKindTests` mirrors the two web tests.
-
-- [ ] **Step 2: Run — expect FAIL.** `WEB_TEST createCounterTask.countKind CreateCounterSheet` / `IOS_TEST -only-testing:OYBCTests/AppDatabaseCounterCreateKindTests`
-
-- [ ] **Step 3: Implement.** Web `createCounterTask`: `const countKind = input.countKind ?? 'discrete';` validate `isQuantizedCount(startingCount) && startingCount >= 0 && (!isWholeCountKind(countKind) || Number.isInteger(startingCount))`; add `...(countKind !== 'discrete' ? { countKind } : {})` to both the `CreateTaskInputSchema.parse` input and the `task` literal. `CreateCounterSheet`: `const [countKind, setCountKind] = useState<CountKind>('discrete');` render `<KindPicker value={countKind} lock="none" onChange={setCountKind} />` under a "Kind" label as the first field; replace the Start from `<input type="number">` with `<GoalEntry kind={countKind} value={startingCountStr} onChange={setStartingCountStr} aria-label="Start from" placeholder="0" dense />`; `startFromNum = parseCountInput(startingCountStr, countKind, { allowZero: true })` (`:95`, `:120`); `startingCount: startFromNum ?? undefined, countKind`; preview `:200` → `formatCountTotal(previewCount, countKind)`, `:215` → `formatCountTotal(match.lifetime, resolveCountKind(match.task))`; delete the four caption nodes. iOS mirrors exactly (`NewCounterSheetView` passes `countKind` through `startingCountText` parse `parseCountInput(…, kind: countKind, allowZero: true)`; `AppDatabase.createCounterTask` gains `countKind: CountKind = .discrete`, written as `nil` for discrete).
-
-- [ ] **Step 4: Run** both test commands — PASS; `WEB_CHECK`. Re-record / record the four + two `CountersHubSnapshotTests` baselines; read vs handoff A6 (Kind first, decimal pad, 148.6 preview, no captions).
-
-- [ ] **Step 5: Playwright validation.** `/profile/counters` → New counter → Continuous → noun "miles", verb "Run", Start from "148,6" → Create → the hub card reads `148.6`; screenshot the sheet light/dark → `.playwright-mcp/task10-a6-{light,dark}.png`.
-
-- [ ] **Step 6: Commit**
-
-```bash
-git add apps/web apps/ios
-git commit -m "feat(counters): A6 hub New counter picks a kind + fractional Start from; grouped totals (R7); drop four helper captions (#548 69-76) (PR 3 Task 10)"
-```
-
----
-
-### Task 11: Member-rule steppers are kind-aware (R8 / R16)
+Ordering: this task moves ~290 lines of compact-stepper code out of `RisoSpecialTaskPanel.swift` (921 lines), so Task 6 (A1) has headroom under the 1000-line guardrail. It has no dependency on the picker / goal-entry components beyond Task 4's `GoalEntryModel`.
 
 **Files:**
 - Create: `apps/ios/OYBC/Views/Riso/RisoCountStepperView.swift` (`RisoCountStepperView` + `RisoCountStepperMath`) — the compact member-row stepper, moved out of `RisoSpecialTaskPanel.swift`
@@ -2901,7 +1837,7 @@ git commit -m "feat(counters): A6 hub New counter picks a kind + fractional Star
 - Modify: `apps/web/src/components/CounterStepper.tsx:5-130` (`kind?: CountKind`; step `countTargetStep(kind)`; field text `formatCountForInput`; commit via `parseCountInput`; width from `formatCountForInput(max, kind).length`)
 - Modify: `apps/web/src/components/wizard/MemberRuleRow.tsx:130-163,319-329,419-469` (kind resolved from the task; passed to `effectiveMemberTarget({ …, kind })`, `varyRangeLabel(…, kind)`, `countingSummary(…, kind)`, `CounterStepper kind={kind} min={countTargetStep(kind)}`; suffix `/ ${formatCount(goal, kind)}${countUnitSuffix(kind, unit)}`; part caption `of ${formatCount(goal, kind)}`); delete the #548 row 47 caption at `:225`
 - Modify: `apps/web/src/pages/createHub/wizardMemberRulesLogic.ts` (pass kind wherever a target helper is called without one — `grep -n "effectiveMemberTarget\|remainingTarget\|prefilledOneOffTarget" apps/web/src/pages/createHub`)
-- Test: `apps/web/src/components/__tests__/CounterStepper.test.ts` (+kind cases), `apps/web/src/components/wizard/__tests__/MemberRuleRow.countKind.test.ts` (create), `apps/ios/OYBCTests/MemberRuleRowModelTests.swift` (+kind cases)
+- Test: `apps/web/src/components/__tests__/CounterStepper.test.ts` (+kind cases), `apps/web/src/components/wizard/__tests__/MemberRuleRow.test.ts` (+3 cases in a new `describe`), `apps/ios/OYBCTests/MemberRuleRowModelTests.swift` (+kind cases)
 - Re-record (intentional — #548 row 47/48 caption removal): `BoardWizardTasksStepSnapshotTests/testMemberRowCountingClashExpanded`, `testMemberRowCountingClashExpandedLargeText`, `RisoSourceSnapshotTests/testPoolRowExpandedCounterClashHintLight`. Every other `BoardWizardTasksStepSnapshotTests` / `RisoKitSnapshotTests/testMemberRulePrimitives*` baseline must stay GREEN (discrete renders identically — the pin that the move changed nothing).
 
 **Interfaces:**
@@ -2940,9 +1876,29 @@ describe('compact stepper — counter kinds', () => {
 });
 ```
 
-`MemberRuleRow.countKind.test.ts` — render `MemberRuleRow` (copy the props builder from `apps/web/src/components/wizard/__tests__/MemberRuleRow*.test.ts`) expanded for a Continuous member `Run 26.2 miles` at vary level 1 and assert the HTML contains `/ 26.2 miles`, `21.0–31.4 miles`, `inputMode="decimal"`; for a Duration member `Practice 10h 30m` (goal 630) assert `/ 10h 30m`, `8h 24m–12h 36m`, `value="10h 30m"`; and that `shares a counter with` never appears.
+`MemberRuleRow.test.ts` — append (reuses the file's `render`, `makeTask` helpers; rows render COLLAPSED in the node harness, so the pins are the summary chip — the expanded stepper is pinned by the e2e in Step 6):
 
-iOS `RisoCountStepperMathTests.swift` — every case of the deleted `RisoCompactStepperMathTests` ported with `kind: .discrete`, plus:
+```ts
+describe('MemberRuleRow — counter kinds (collapsed chip)', () => {
+  const RUN = makeTask('t-run', { title: 'Run 26.2 miles', type: TaskType.COUNTING, action: 'Run', unit: 'miles', maxCount: 26.2, countKind: 'continuous' });
+  const PRACTICE = makeTask('t-prac', { title: 'Practice 10h 30m', type: TaskType.COUNTING, action: 'Practice', unit: '', maxCount: 630, countKind: 'duration' });
+
+  it('a continuous pool member at a little vary shows the precision-matched range', () => {
+    expect(render({ task: RUN, fromBoard: false, rule: { vary: 1 } })).toContain('21.0–31.4 miles');
+  });
+  it('a duration pool member at a little vary shows whole-minute bounds', () => {
+    expect(render({ task: PRACTICE, fromBoard: false, rule: { vary: 1 } })).toContain('8h 24m–12h 36m');
+  });
+  it('a continuous board member pro-rates in tenths (weekly 26.2 → daily 3.8)', () => {
+    // autoTarget continuous: ceil(26.2 / 7, 0.1) = 3.8 — the chip shows it with the unit.
+    expect(render({ task: RUN, rule: {} })).toContain('3.8 miles');
+  });
+});
+```
+
+(Uses the file's `WEEKLY_SOURCE` → `DAILY_WINDOW` defaults for the board case. `26.2 / 7 = 3.742…` → ceil to 0.1 = 3.8 per `ceilToCountStep`.)
+
+iOS `RisoCountStepperMathTests.swift` — the eleven cases of the deleted `RisoCompactStepperMathTests` ported verbatim at `kind: .discrete` (`Math.committed(draft: "7", kind: .discrete, min: 1, max: 35) == 7`; `"900"` → 35; `"0"` → 1; `"  12  "` → 12; `""`, `"abc"`, `"-"`, `"1.5"` → nil; `base(value: 6, draft: nil…) == 6`; `base(6, "20") == 20`; `base(6, "abc") == 6`, `base(6, "") == 6`; `base(1, "5") == 5`, `base(35, "5") == 5`; `stepped(6, "20", +1) == 21`, `(6, "20", -1) == 19`; `stepped(6, nil, ±1) == 7 / 5`; `stepped(35, nil, +1) == 35`, `(1, nil, -1) == 1`; `stepped(6, "900", +1) == 35`, `(6, "0", -1) == 1`; `stepped(6, "abc", +1) == 7`; `stepped(1000, nil, ±1, max: 5000) == 1001 / 999`), plus:
 
 ```swift
     func testContinuousStepsTenths() {
@@ -2956,7 +1912,25 @@ iOS `RisoCountStepperMathTests.swift` — every case of the deleted `RisoCompact
     }
 ```
 
-`MemberRuleRowModelTests.swift` additions: a Continuous member model has `targetSuffix == "/ 26.2 miles"` and `rangeLabel == "21.0–31.4 miles"` at `.aLittle`; a Duration member `"/ 10h 30m"` and `"8h 24m–12h 36m"`.
+`MemberRuleRowModelTests.swift` additions (use the file's `task(...)` / `model(...)` helpers; set `countKind` on the returned task):
+
+```swift
+    func testContinuousMemberSuffixAndRangeUseTheKind() {
+        var t = task("c", type: .counting, maxCount: 26.2, unit: "miles"); t.countKind = .continuous
+        let m = model(task: t, rule: BoardSourceMemberRule(vary: .little), fromBoard: false)
+        XCTAssertEqual(m.kind, .continuous)
+        XCTAssertEqual(m.rangeLabel, "21.0\u{2013}31.4 miles")
+        let board = model(task: t, rule: BoardSourceMemberRule(vary: .off))
+        XCTAssertEqual(board.targetSuffix, "/ 26.2 miles")
+    }
+
+    func testDurationMemberSuffixAndRangeAreWholeMinutes() {
+        var t = task("d", type: .counting, maxCount: 630, unit: ""); t.countKind = .duration
+        let m = model(task: t, rule: BoardSourceMemberRule(vary: .little), fromBoard: false)
+        XCTAssertEqual(m.rangeLabel, "8h 24m\u{2013}12h 36m")
+        XCTAssertEqual(model(task: t).targetSuffix, "/ 10h 30m")
+    }
+```
 
 - [ ] **Step 2: Run — expect FAIL.** `WEB_TEST CounterStepper MemberRuleRow` / `IOS_TEST -only-testing:OYBCTests/RisoCountStepperMathTests -only-testing:OYBCTests/MemberRuleRowModelTests`
 
@@ -3095,16 +2069,1968 @@ enum RisoCountStepperMath {
 
 The member-row model gains `let kind: CountKind` (= `task.map { resolveCountKind($0.countKind) } ?? .discrete`), passes `kind:` to `BoardSources.effectiveMemberTarget` and `varyRangeLabel`, and builds `targetSuffix = "/ \(formatCount(goal, kind: kind))\(countUnitSuffix(kind, unit: unit))"`; part caption `"of \(formatCount(partGoal, kind: partKind))"`. Replace both `RisoInlineStepperView(… style: .compact …)` call sites with `RisoCountStepperView(value: Binding(get: { model.target }, set: { onSetTarget($0) }), kind: model.kind, max: model.goal, suffix: model.targetSuffix)` (parts: `max: Swift.max(countTargetStep(part.kind), part.goal)`). Delete the row-48 captions. `xcodegen generate`.
 
-- [ ] **Step 5: Run** the Step 2 commands — PASS; then `IOS_SNAP -only-testing:OYBCSnapshotTests/BoardWizardTasksStepSnapshotTests -only-testing:OYBCSnapshotTests/RisoKitSnapshotTests -only-testing:OYBCSnapshotTests/RisoSourceSnapshotTests`: only the three listed caption baselines may be red; re-record them, read them. Run `node scripts/check-file-sizes.mjs` (RisoSpecialTaskPanel shrank ~290 lines).
+- [ ] **Step 5: Run** the Step 2 commands — PASS; then `IOS_SNAP -only-testing:OYBCSnapshotTests/BoardWizardTasksStepSnapshotTests -only-testing:OYBCSnapshotTests/RisoKitSnapshotTests -only-testing:OYBCSnapshotTests/RisoSourceSnapshotTests`: only the three listed caption baselines may be red; re-record them, read them. Run `node scripts/check-file-sizes.mjs` (RisoSpecialTaskPanel shrank ~290 lines — Task 6 depends on that headroom).
 
-- [ ] **Step 6: e2e + Playwright.** `WEB_E2E e2e/member-rules.spec.ts e2e/pool-default-vary.spec.ts` must stay green. Playwright MCP: wizard → Add from a pool or board → a board holding `Run 26.2 miles` (Continuous) → expand the member → step − three times (26.2 → 25.9), dice a little shows `21.0–31.4 miles`; screenshot → `.playwright-mcp/task11-member-{light,dark}.png`.
+- [ ] **Step 6: e2e + Playwright.** `WEB_E2E e2e/member-rules.spec.ts e2e/pool-default-vary.spec.ts` must stay green. Add to `apps/web/e2e/member-rules.spec.ts` a case seeding a MONTHLY source board holding `Run 26.2 miles` (`seedTask(page, { …, countKind: 'continuous' })` — `SeedTask.countKind` is added in Task 6 Step 9; land that one-line fixture field here if this task runs first) into a monthly wizard (no pro-rate, target = goal): expand the member, press the dice once → the inline range reads `21.0–31.4 miles`; press "Decrease target" three times → the field reads `25.9` and the range `20.7–31.1 miles` (`varyRange` is ± around the TARGET: 25.9 × 0.8 = 20.72 → 20.7, × 1.2 = 31.08 → 31.1). Playwright MCP screenshot → `.playwright-mcp/task5-member-{light,dark}.png`.
 
 - [ ] **Step 7: Commit**
 
 ```bash
 git add apps/web apps/ios
 git rm apps/ios/OYBCTests/RisoCompactStepperMathTests.swift
-git commit -m "feat(counters): member-row target steppers step per kind (0.1 / 1 min), callers pass the kind (R8, R16); drop 'shares a counter' caption (#548 47/48) (PR 3 Task 11)"
+git commit -m "feat(counters): member-row target steppers step per kind (0.1 / 1 min), callers pass the kind (R8, R16); drop 'shares a counter' caption (#548 47/48) (PR 3 Task 5)"
+```
+
+---
+
+### Task 6: A1 — special panel / Create New Task form (kind row, linked tag, Duration without unit)
+
+**Files:**
+- Modify: `packages/shared/src/algorithms/linkableCounter.ts:28-41,109-114` (`LinkableCounter.countKind`), test `packages/shared/tests/algorithms/linkableCounter.test.ts` (+1 case); `apps/ios/OYBC/Helpers/LinkableCounter.swift:34-46,114-119` (`LinkableCounterSuggestion.countKind`), test `apps/ios/OYBCTests/LinkableCounterTests.swift` (+1 case; create the file if `ls apps/ios/OYBCTests | grep -i linkable` is empty)
+- Create: `apps/web/src/pages/createPage/createFormCounting.ts` — pure model of the counting fields (effective kind, goal parse, unit visibility, title preview, linked-create input)
+- Create: `apps/web/src/pages/createPage/__tests__/createFormCounting.test.ts` (new folder)
+- Modify: `apps/web/src/pages/createPage/useCreateFormState.ts:75-123` (`validateForm` + `countKind`), `:286` (state), `:405,:413` (resets), `:511-540`, `:606-625` (create branches), `:667` (deps), `:676-700` (returned object + `UseCreateFormState`)
+- Modify: `apps/web/src/pages/createPage/CreateNewTaskForm.tsx:129-200` (model-driven), `:398-468` (Verb → Kind → Goal · Unit); delete the #548 row 67 Achievement explainer `<p>` at `:269` and row 68 `<span className={styles.helpText}>` at `:374`
+- Modify: `apps/ios/OYBC/Views/CreateTab/ViewModels/CreateFormViewModel.swift:109-131` (`countingKind`, `countingLinkedRootKind`), `:254-284` (validation), `:319-326` (title), `:780-792` (`buildCreateTask`), `:429-466` (resets)
+- Modify: `apps/ios/OYBC/Views/CreateTab/Components/RisoSpecialTaskPanel.swift:199-356` (kind state, row, goal field, unit gating, linked tag, submit) + a `countingSeed` snapshot seam
+- Modify: `apps/web/e2e/_fixtures/bypass.ts:376-420` (`SeedTask.countKind?: 'discrete' | 'continuous' | 'duration'` — `seedTask` spreads the row, so the field is the whole change)
+- Test: `apps/ios/OYBCTests/CreateFormViewModelCountKindTests.swift` (create), `apps/ios/OYBCSnapshotTests/RisoSpecialPanelCountingSnapshotTests.swift` (create), `apps/web/e2e/counter-kinds-authoring.spec.ts` (create)
+
+**Interfaces:**
+- Consumes: `KindPicker`, `KindTag`, `GoalEntry` (Tasks 3–4); `parseCountInput`, `countKindNeedsUnit`, `generateCounterTaskTitle(…, countKind)` (Task 1).
+- Produces:
+  - `LinkableCounter.countKind: CountKind` / `LinkableCounterSuggestion.countKind: CountKind`
+  - web `createFormCounting.ts`:
+    - `effectiveCountingKind(picked: CountKind, link: { linked: boolean; countKind: CountKind } | null): CountKind`
+    - `countingGoalError(goalText: string, kind: CountKind): string | undefined` (exact messages below)
+    - `countingTitlePreview(action: string, goalText: string, unit: string, kind: CountKind): string | null`
+    - `buildLinkedCreateInput(args: { source: Task; goalText: string; title: string; action: string; unit: string; baseline: number }): LinkedCounterInput | null` — parses the goal at the SOURCE's kind
+  - web `UseCreateFormState.countKind: CountKind`, `setCountKind(kind: CountKind): void`; `validateForm(type, title, description, action, unit, maxCountStr, achievementMode?, achievementReferenceId?, achievementRequiredCountStr?, countKind: CountKind = 'discrete')`
+  - iOS `CreateFormViewModel.countingKind: CountKind` (picker), `countingLinkedRootKind: CountKind?` (set by the panel while auto-linking), `effectiveCountingKind: CountKind { countingLinkedRootKind ?? countingKind }` — validation, parse, title and the stored row all use the effective kind (Review Focus 3).
+  - Goal messages (both platforms, exact): discrete `Goal must be a positive integer` (unchanged), continuous `Goal must be a number above zero with up to 2 decimals`, duration `Goal must be a duration above zero`.
+- The CounterLinkHint sentences (#548 rows 77/78) are removed in Task 7 (the hint is shared with the compound panels; removing it there re-records those baselines once).
+
+- [ ] **Step 1: Failing web tests.** `apps/web/src/pages/createPage/__tests__/createFormCounting.test.ts`:
+
+```ts
+import { describe, expect, it } from 'vitest';
+import { TaskType, type Task } from '@oybc/shared';
+import {
+  buildLinkedCreateInput,
+  countingGoalError,
+  countingTitlePreview,
+  effectiveCountingKind,
+} from '../createFormCounting';
+import { validateForm } from '../useCreateFormState';
+
+const ROOT = {
+  id: 'root', userId: 'u1', title: 'Run 26.2 miles', type: TaskType.COUNTING, action: 'Run', unit: 'miles',
+  maxCount: 26.2, countKind: 'continuous', currentCount: 148.6, isCompleted: false, totalCompletions: 0,
+  totalInstances: 0, createdAt: 't', updatedAt: 't', version: 1, isDeleted: false,
+} as Task;
+
+describe('createFormCounting', () => {
+  it('an auto-linking create takes the root kind; opting out restores the picker', () => {
+    expect(effectiveCountingKind('discrete', { linked: true, countKind: 'continuous' })).toBe('continuous');
+    expect(effectiveCountingKind('discrete', { linked: false, countKind: 'continuous' })).toBe('discrete');
+    expect(effectiveCountingKind('duration', null)).toBe('duration');
+  });
+  it('goal errors per kind', () => {
+    expect(countingGoalError('26.2', 'continuous')).toBeUndefined();
+    expect(countingGoalError('3.125', 'continuous')).toBe('Goal must be a number above zero with up to 2 decimals');
+    expect(countingGoalError('2.5', 'discrete')).toBe('Goal must be a positive integer');
+    expect(countingGoalError('1.5h', 'duration')).toBe('Goal must be a duration above zero');
+    expect(countingGoalError('', 'continuous')).toBe('Goal is required');
+  });
+  it('title preview: duration has no unit; continuous keeps decimals', () => {
+    expect(countingTitlePreview('Practice', '10h 30m', '', 'duration')).toBe('Practice 10h 30m');
+    expect(countingTitlePreview('Run', '26,2', 'miles', 'continuous')).toBe('Run 26.2 miles');
+    expect(countingTitlePreview('Run', '26.2', '', 'continuous')).toBeNull();
+  });
+  it('linked create takes the root kind: a 6.2 goal typed while the picker said Discrete still saves', () => {
+    const input = buildLinkedCreateInput({ source: ROOT, goalText: '6.2', title: '', action: 'Run', unit: 'miles', baseline: 148.6 });
+    expect(input).toEqual({ source: ROOT, maxCount: 6.2, title: 'Run 6.2 miles', baselineMode: 'startFromZero', baseline: 148.6 });
+  });
+  it('a linked create with a goal invalid at the root kind is refused', () => {
+    expect(buildLinkedCreateInput({ source: { ...ROOT, countKind: undefined }, goalText: '6.2', title: '', action: 'Run', unit: 'miles', baseline: 0 })).toBeNull();
+  });
+});
+
+describe('validateForm — counter kinds', () => {
+  const v = (action: string, unit: string, goal: string, kind: 'discrete' | 'continuous' | 'duration') =>
+    validateForm(TaskType.COUNTING, '', '', action, unit, goal, undefined, undefined, undefined, kind);
+  it('duration needs no unit', () => {
+    const e = v('Practice', '', '10h 30m', 'duration');
+    expect(e.unit).toBeUndefined();
+    expect(e.maxCount).toBeUndefined();
+  });
+  it('continuous still needs the unit and takes a decimal goal', () => {
+    expect(v('Run', '', '26.2', 'continuous').unit).toBe('Counting is required');
+    expect(v('Run', 'miles', '26.2', 'continuous').maxCount).toBeUndefined();
+  });
+  it('discrete is unchanged', () => {
+    expect(v('Read', 'pages', '2.5', 'discrete').maxCount).toBe('Goal must be a positive integer');
+  });
+});
+```
+
+Add to `packages/shared/tests/algorithms/linkableCounter.test.ts`:
+
+```ts
+it('a suggestion carries the matched root kind', () => {
+  const root = { ...counting('r', 'Run', 'miles'), countKind: 'continuous' as const };
+  expect(findLinkableCounter({ action: 'run', unit: 'miles' }, [root])?.countKind).toBe('continuous');
+  expect(findLinkableCounter({ action: 'run', unit: 'miles' }, [{ ...root, countKind: undefined }])?.countKind).toBe('discrete');
+});
+```
+
+(`counting(id, action, unit)` = whatever the file's existing counting-task builder is called; read the top of the file and use it.)
+
+- [ ] **Step 2: Run — expect FAIL.** `WEB_TEST createFormCounting` and `SHARED_TEST linkableCounter`
+
+- [ ] **Step 3: Implement web.** `linkableCounter.ts`: add `/** The counter's kind (D5) — a linked create takes it. */ countKind: CountKind;` to `LinkableCounter`, return `countKind: resolveCountKind(best),`. Create `createFormCounting.ts`:
+
+```ts
+import {
+  countKindNeedsUnit,
+  generateCounterTaskTitle,
+  parseCountInput,
+  resolveCountKind,
+  type CountKind,
+  type Task,
+} from '@oybc/shared';
+import type { LinkedCounterInput } from '../../components/wizard/CountingTemplatePicker';
+
+/**
+ * The kind a counting create saves (docs/COUNTER_KINDS.md §5, D5): an
+ * auto-linking create follows the matched root; otherwise the picker.
+ */
+export function effectiveCountingKind(
+  picked: CountKind,
+  link: { linked: boolean; countKind: CountKind } | null,
+): CountKind {
+  return link?.linked ? link.countKind : picked;
+}
+
+/** The Goal field's validation message at a kind, or undefined when valid. */
+export function countingGoalError(goalText: string, kind: CountKind): string | undefined {
+  if (goalText.trim() === '') return 'Goal is required';
+  if (parseCountInput(goalText, kind) !== null) return undefined;
+  if (kind === 'discrete') return 'Goal must be a positive integer';
+  return kind === 'continuous'
+    ? 'Goal must be a number above zero with up to 2 decimals'
+    : 'Goal must be a duration above zero';
+}
+
+/** The live "Title:" preview, or null until Action, Goal (and Unit, unless Duration) are valid. */
+export function countingTitlePreview(action: string, goalText: string, unit: string, kind: CountKind): string | null {
+  const a = action.trim();
+  const u = unit.trim();
+  const goal = parseCountInput(goalText, kind);
+  if (!a || goal === null || (countKindNeedsUnit(kind) && !u)) return null;
+  return generateCounterTaskTitle(a, goal, countKindNeedsUnit(kind) ? u : '', undefined, kind);
+}
+
+/**
+ * The auto-link create input, with the goal parsed at the SOURCE's kind
+ * (Review Focus 3 — the picker may have shown another kind).
+ *
+ * @returns The input, or null when the goal is invalid at the root kind.
+ */
+export function buildLinkedCreateInput(args: {
+  source: Task; goalText: string; title: string; action: string; unit: string; baseline: number;
+}): LinkedCounterInput | null {
+  const kind = resolveCountKind(args.source);
+  const maxCount = parseCountInput(args.goalText, kind);
+  if (maxCount === null) return null;
+  const title = args.title.trim() || generateCounterTaskTitle(args.action.trim(), maxCount, args.unit.trim(), undefined, kind);
+  return { source: args.source, maxCount, title, baselineMode: 'startFromZero', baseline: args.baseline };
+}
+```
+
+  `useCreateFormState.ts`: `const [countKind, setCountKind] = useState<CountKind>('discrete');` (beside `maxCountStr`, `:286`); expose `countKind`, `setCountKind` on `UseCreateFormState` and the returned object; reset to `'discrete'` in both reset helpers (`:405`, `:413`). `validateForm` gains the trailing `countKind: CountKind = 'discrete'` and its counting branch becomes:
+
+```ts
+    if (countKindNeedsUnit(countKind)) {
+      if (unit.trim().length === 0) {
+        errors.unit = 'Counting is required';
+      } else if (unit.trim().length > UNIT_MAX_LENGTH) {
+        errors.unit = `Counting must be ${UNIT_MAX_LENGTH} characters or less`;
+      }
+    }
+    errors.maxCount = countingGoalError(maxCountStr, countKind);
+```
+
+  (keep the `errors.maxCount` key absent when undefined — `if (goalError) errors.maxCount = goalError;`). The hook's own `validateForm(...)` call passes `countKind` as the 10th argument. Both COUNTING create branches (`:511-540` pending payload, `:606-625` `createTask` input) use `const parsedMaxCount = parseCountInput(maxCountStr, countKind) as number;` (validation already passed), pass `countKind` as `generateCounterTaskTitle`'s 5th argument, write `unit: countKindNeedsUnit(countKind) ? unit.trim() : ''`, and add `...(countKind !== 'discrete' ? { countKind } : {})`. Add `countKind` to the `useCallback` deps (`:667`).
+  `CreateNewTaskForm.tsx`: replace `:129-130` with
+
+```ts
+  const counterMatch = useMemo(
+    () =>
+      form.taskType === TaskType.COUNTING && form.countKind !== 'duration' && trimmedAction && trimmedUnit
+        ? findLinkableCounter({ action: trimmedAction, unit: trimmedUnit }, matchPool)
+        : null,
+    [form.taskType, form.countKind, trimmedAction, trimmedUnit, matchPool],
+  );
+  const linked = Boolean(counterMatch && onCreateLinked && !linkDisabled);
+  const kind = effectiveCountingKind(form.countKind, counterMatch ? { linked, countKind: counterMatch.countKind } : null);
+  const titlePreview = countingTitlePreview(form.action, form.maxCountStr, form.unit, kind);
+  const goalValid = parseCountInput(form.maxCountStr, kind) !== null;
+```
+
+  (the old `counterMatch` memo moves up; `linkHint.goal` keeps `parseCountInput(form.maxCountStr, kind) ?? 0`). `handleFormSubmit`'s linked branch replaces the inline title/`maxCount` code with `const input = buildLinkedCreateInput({ source: sourceTask, goalText: form.maxCountStr, title: form.title, action: trimmedAction, unit: trimmedUnit, baseline: counterMatch.lifetime }); if (!input) { void form.handleSubmit(e); return; } onCreateLinked(input);`. Fields: between the Verb `fieldGroup` and the Goal `fieldGroup` insert
+
+```tsx
+              <div className={styles.fieldGroup}>
+                <span className={styles.label}>Kind</span>
+                {linked && counterMatch ? (
+                  <KindTag kind={counterMatch.countKind} counterName={counterMatch.name} lifetime={counterMatch.lifetime} />
+                ) : (
+                  <KindPicker value={form.countKind} lock="none" onChange={form.setCountKind} />
+                )}
+              </div>
+```
+
+  replace the Goal `<input type="number" …>` with
+
+```tsx
+                <GoalEntry
+                  id="create-task-maxcount"
+                  aria-label="Goal"
+                  kind={kind}
+                  value={form.maxCountStr}
+                  onChange={form.setMaxCountStr}
+                  placeholder={kind === 'duration' ? '0h 0m' : '100'}
+                  invalid={Boolean(form.errors.maxCount)}
+                />
+```
+
+  wrap the Counting (unit) `fieldGroup` in `{countKindNeedsUnit(kind) && ( … )}`, and the title preview becomes `{titlePreview && (<div className={styles.titlePreview}>Title: <strong>{titlePreview}</strong></div>)}`. Delete the two caption nodes (rows 67/68) and the now-unused `.helpText` CSS rule if nothing else uses it (`grep -n helpText apps/web/src/pages/createPage/*.tsx`). `bypass.ts`: add to `SeedTask`
+
+```ts
+  /** Counter kinds — absent = discrete. */
+  countKind?: 'discrete' | 'continuous' | 'duration';
+```
+
+- [ ] **Step 4: Run** `WEB_TEST createFormCounting` and `SHARED_TEST linkableCounter` — PASS; `WEB_CHECK`.
+
+- [ ] **Step 5: iOS failing tests.** `CreateFormViewModelCountKindTests.swift`:
+
+```swift
+import XCTest
+import GRDB
+@testable import OYBC
+
+@MainActor
+final class CreateFormViewModelCountKindTests: XCTestCase {
+    private typealias K = LinkedWindowKit
+
+    private func form(_ db: AppDatabase, kind: CountKind, goal: String, unit: String, action: String = "Run") -> CreateFormViewModel {
+        let f = CreateFormViewModel(database: db)
+        f.taskType = .counting
+        f.countingAction = action
+        f.countingUnit = unit
+        f.countingMaxCount = goal
+        f.countingKind = kind
+        return f
+    }
+
+    private func create(_ f: CreateFormViewModel) -> String? {
+        let done = expectation(description: "created")
+        var id: String?
+        f.handleCreateAndAddToPool(userId: K.userId, onTaskCreated: { tid, _, _ in id = tid; done.fulfill() }, onLibraryReloadRequested: {})
+        wait(for: [done], timeout: 5)
+        return id
+    }
+
+    func testDurationCreateHasNoUnitAndStoresMinutes() throws {
+        let db = try AppDatabase.makeTestInstance(); try K.seedUser(db)
+        let id = try XCTUnwrap(create(form(db, kind: .duration, goal: "10h 30m", unit: "", action: "Practice")))
+        let task = try XCTUnwrap(db.fetchTask(id: id))
+        XCTAssertEqual(task.countKind, .duration)
+        XCTAssertEqual(task.maxCount, 630)
+        XCTAssertEqual(task.unit, "")
+        XCTAssertEqual(task.title, "Practice 10h 30m")
+    }
+
+    func testContinuousRejectsThreePlaces() throws {
+        let db = try AppDatabase.makeTestInstance(); try K.seedUser(db)
+        let f = form(db, kind: .continuous, goal: "3.125", unit: "mi")
+        f.handleCreateAndAddToPool(userId: K.userId, onTaskCreated: { _, _, _ in XCTFail("must not create") }, onLibraryReloadRequested: {})
+        XCTAssertEqual(f.errorMessage, "Goal must be a number above zero with up to 2 decimals")
+    }
+
+    /// Review Focus 3 — the picker said Discrete, the create auto-links to a
+    /// Continuous root: the 6.2 goal must PARSE at the root kind and the row
+    /// must SAVE as Continuous.
+    func testLinkedCreateSavesRootKindAndParsesAtIt() throws {
+        let db = try AppDatabase.makeTestInstance(); try K.seedUser(db)
+        var root = K.task("root", maxCount: 26.2, currentCount: 148.6); root.countKind = .continuous
+        try db.saveTask(root)
+        let f = form(db, kind: .discrete, goal: "6.2", unit: "miles")
+        f.countingSharedCounterId = "root"
+        f.countingBaseline = 148.6
+        f.countingLinkedRootKind = .continuous
+        let id = try XCTUnwrap(create(f))
+        let row = try XCTUnwrap(db.fetchTask(id: id))
+        XCTAssertEqual(row.countKind, .continuous)
+        XCTAssertEqual(row.maxCount, 6.2)
+        XCTAssertEqual(row.title, "Run 6.2 miles")
+    }
+
+    /// R19 — a deferred (wizard) create carries the root kind on the pending
+    /// payload itself, before the drain's `withRootCountKind`.
+    func testDeferredLinkedCreateCarriesRootKindOnThePayload() throws {
+        let db = try AppDatabase.makeTestInstance(); try K.seedUser(db)
+        let f = form(db, kind: .discrete, goal: "6.2", unit: "miles")
+        f.countingSharedCounterId = "root"; f.countingBaseline = 0; f.countingLinkedRootKind = .continuous
+        let done = expectation(description: "pending")
+        var payload: PendingTaskPayload?
+        f.handleCreateAndAddToPool(userId: K.userId, onTaskCreated: { _, _, _ in }, onLibraryReloadRequested: {},
+                                   deferPersist: true, onPendingCreated: { payload = $0; done.fulfill() })
+        wait(for: [done], timeout: 5)
+        XCTAssertEqual(payload?.task.countKind, .continuous)
+    }
+}
+```
+
+`LinkableCounterTests.swift` (+case): a root with `countKind = .continuous` → `findLinkableCounter(action: "run", unit: "miles", tasks: [root])?.countKind == .continuous`.
+
+Snapshot `RisoSpecialPanelCountingSnapshotTests.swift`:
+
+```swift
+import XCTest
+import SwiftUI
+import SnapshotTesting
+@testable import OYBC
+
+final class RisoSpecialPanelCountingSnapshotTests: XCTestCase {
+    private let recordMode: SnapshotTestingConfiguration.Record? = .missing
+
+    private func panel(_ seed: RisoSpecialTaskPanel.CountingSeed) -> some View {
+        RisoSpecialTaskPanel(
+            userId: "u1", defaultStartDate: nil, defaultEndDate: nil,
+            onTaskCreated: { _, _, _ in }, onCompoundCreated: { _ in }, onPendingCreated: nil,
+            onLibraryReloadRequested: {}, countingSeed: seed
+        )
+        .padding(16)
+        .background(Color.risoPaper)
+    }
+
+    func testContinuousLight() { snap(.init(action: "Run", goal: "26.2", unit: "miles", kind: .continuous), dark: false) }
+    func testContinuousDark() { snap(.init(action: "Run", goal: "26.2", unit: "miles", kind: .continuous), dark: true) }
+    func testDurationLight() { snap(.init(action: "Practice", goal: "10h 30m", unit: "", kind: .duration), dark: false) }
+    func testDiscreteLight() { snap(.init(action: "Read", goal: "300", unit: "pages", kind: .discrete), dark: false) }
+
+    private func snap(_ seed: RisoSpecialTaskPanel.CountingSeed, dark: Bool, file: StaticString = #file, testName: String = #function, line: UInt = #line) {
+        assertSnapshot(of: panel(seed), as: .image(layout: .fixed(width: 393, height: 460), traits: .init(userInterfaceStyle: dark ? .dark : .light)),
+                       record: recordMode, file: file, testName: testName, line: line)
+    }
+}
+```
+
+(Those are the panel's non-defaulted stored properties, `RisoSpecialTaskPanel.swift:22-33`; `countingSeed` is declared LAST so the memberwise order holds.)
+
+- [ ] **Step 6: Run — expect FAIL.** `cd apps/ios && xcodegen generate && cd - && IOS_TEST -only-testing:OYBCTests/CreateFormViewModelCountKindTests -only-testing:OYBCTests/LinkableCounterTests`
+
+- [ ] **Step 7: Implement iOS.**
+  - `LinkableCounter.swift`: `let countKind: CountKind` on the struct; `countKind: resolveCountKind(best.countKind)` at `:114-119`.
+  - `CreateFormViewModel.swift`: beside `countingMaxCount` add `var countingKind: CountKind = .discrete`, `var countingLinkedRootKind: CountKind? = nil` and `var effectiveCountingKind: CountKind { countingLinkedRootKind ?? countingKind }`. Validation `:269-284`:
+
+```swift
+            let kind = effectiveCountingKind
+            if countKindNeedsUnit(kind) {
+                guard !u.isEmpty else { errorMessage = "Counting is required"; return }
+                guard u.count <= CreateFormLimits.unit else {
+                    errorMessage = "Counting must be \(CreateFormLimits.unit) characters or less"; return
+                }
+            }
+            guard !m.isEmpty else { errorMessage = "Goal is required"; return }
+            guard parseCountInput(m, kind: kind) != nil else {
+                switch kind {
+                case .discrete: errorMessage = "Goal must be a positive integer"
+                case .continuous: errorMessage = "Goal must be a number above zero with up to 2 decimals"
+                case .duration: errorMessage = "Goal must be a duration above zero"
+                }
+                return
+            }
+```
+
+    `:322` and `:783`: `let m = parseCountInput(countingMaxCount, kind: effectiveCountingKind) ?? 0`; `:323` passes `countKind: effectiveCountingKind`; `buildCreateTask`'s `.counting` case writes `unit: countKindNeedsUnit(effectiveCountingKind) ? u : ""` and becomes `var t = Task(…); t.countKind = effectiveCountingKind == .discrete ? nil : effectiveCountingKind; return t`. Every reset that clears `countingMaxCount` (`:429`, `:455`, `:465`) also sets `countingKind = .discrete; countingLinkedRootKind = nil`.
+  - `RisoSpecialTaskPanel.swift`: `@State private var countingKind: CountKind = .discrete`; `struct CountingSeed { var action = ""; var goal = ""; var unit = ""; var kind: CountKind = .discrete }` and a stored `var countingSeed: CountingSeed? = nil` applied in the body's `.onAppear { if let s = countingSeed { isExpanded = true; selectedType = .counting; countingActionText = s.action; countingGoalText = s.goal; countingUnitText = s.unit; countingKind = s.kind } }` (a defaulted stored property keeps every memberwise call compiling). Derived:
+
+```swift
+    private var linkedSuggestion: LinkableCounterSuggestion? { linkDisabled ? nil : linkSuggestion }
+    private var effectiveKind: CountKind { linkedSuggestion?.countKind ?? countingKind }
+```
+
+    `countingGoal` (`:225-228`) = `parseCountInput(countingGoalText, kind: effectiveKind)`; `countingTitle` passes `countKind: effectiveKind` and drops the unit requirement for Duration; `canSubmitCounting` requires the unit only when `countKindNeedsUnit(effectiveKind)`; `updateLinkSuggestion()` starts with `guard countingKind != .duration else { linkSuggestion = nil; return }` and also runs `.onChange(of: countingKind)`. `countingFields` (`:236-278`):
+
+```swift
+            fieldRow(label: "Verb", required: true) {
+                RisoTextField(placeholder: "Do", text: $countingActionText)
+            }
+            fieldRow(label: "Kind") {
+                if let s = linkedSuggestion {
+                    KindTagView(kind: s.countKind, counterName: s.name, lifetime: s.lifetime)
+                } else {
+                    KindPickerView(selection: $countingKind, lock: .none)
+                }
+            }
+            HStack(alignment: .top, spacing: 10) {
+                VStack(alignment: .leading, spacing: 5) {
+                    fieldLabel("Goal", required: true)
+                    GoalEntryView(kind: effectiveKind, text: $countingGoalText, placeholder: effectiveKind == .duration ? "0h 0m" : "100")
+                }
+                if countKindNeedsUnit(effectiveKind) {
+                    VStack(alignment: .leading, spacing: 5) {
+                        fieldLabel("Counting", required: true)
+                        RisoTextField(placeholder: "push-ups", text: $countingUnitText)
+                    }
+                }
+            }
+```
+
+    `submitCounting()` additionally sets `form.countingKind = countingKind`, `form.countingLinkedRootKind = linkedSuggestion?.countKind`, `form.countingUnit = countKindNeedsUnit(effectiveKind) ? <trimmed unit> : ""`; the post-submit reset clears `countingKind = .discrete`. `wc -l` must stay < 1000 (≈ 670 after Task 5).
+
+- [ ] **Step 8: Run iOS** `IOS_TEST -only-testing:OYBCTests/CreateFormViewModelCountKindTests -only-testing:OYBCTests/LinkableCounterTests` — PASS. Record `RisoSpecialPanelCountingSnapshotTests` (4 new), read each against handoff A1 (Kind between Verb and Goal; Duration: no Counting field, field reads "10h 30m"). `RisoNewTaskSheetSnapshotTests/testDefault{Light,Dark}` (collapsed panel) must stay green.
+
+- [ ] **Step 9: e2e + Playwright validation.** Create `apps/web/e2e/counter-kinds-authoring.spec.ts`:
+
+```ts
+import { test, expect } from './_fixtures/bypass';
+
+test.describe('Counter kinds — authoring (A1)', () => {
+  test('Tasks tab: create a Continuous and a Duration counting task', async ({ page }) => {
+    await page.goto('/tasks?__oybc_test_bypass=1');
+    await page.getByRole('button', { name: '+ New task' }).click();
+    await page.getByRole('button', { name: 'Counting', exact: true }).click();
+    await page.getByLabel('Verb').fill('Run');
+    await page.getByRole('group', { name: 'Kind' }).getByRole('button', { name: 'Continuous' }).click();
+    await page.getByLabel('Goal', { exact: true }).fill('26,2');
+    await page.getByLabel('Counting', { exact: true }).fill('miles');
+    await expect(page.getByText('Run 26.2 miles')).toBeVisible();
+    await page.getByRole('button', { name: 'Add to library' }).click();
+    await expect(page.getByRole('button', { name: 'Open Run 26.2 miles details' })).toBeVisible();
+
+    await page.getByRole('button', { name: '+ New task' }).click();
+    await page.getByRole('button', { name: 'Counting', exact: true }).click();
+    await page.getByLabel('Verb').fill('Practice');
+    await page.getByRole('group', { name: 'Kind' }).getByRole('button', { name: 'Duration' }).click();
+    await expect(page.getByLabel('Counting', { exact: true })).toHaveCount(0);
+    await page.getByLabel('Goal hours').fill('10');
+    await page.getByLabel('Goal minutes').fill('30');
+    await page.getByRole('button', { name: 'Add to library' }).click();
+    await expect(page.getByRole('button', { name: 'Open Practice 10h 30m details' })).toBeVisible();
+  });
+});
+```
+
+(`+ New task` is the Tasks tab header button and `Add to library` the form's `submitLabel` on that page — `TasksPage.tsx:35,290`; `Open {title} details` is the row name `windowed-completion.spec.ts:218` already uses.) Run `WEB_E2E e2e/counter-kinds-authoring.spec.ts` — PASS. Playwright MCP: screenshot the panel with Continuous and with Duration, light + dark → `.playwright-mcp/task6-a1-{continuous,duration}-{light,dark}.png`; compare to handoff A1 web.
+
+- [ ] **Step 10: Commit**
+
+```bash
+git add packages/shared apps/web apps/ios
+git commit -m "feat(counters): A1 kind picker + goal entry in the special panel / create form; linked creates parse and save at the root kind (R19); drop achievement captions (#548 67/68) (PR 3 Task 6)"
+```
+
+---
+
+### Task 7: A2 — compound sub-tasks (create + edit) carry a kind; link hint loses its sentences
+
+**Files:**
+- Modify: `apps/web/src/components/compoundWizard/compoundSubtaskDraft.ts:22-43` (`InlineSubtaskDraft.countKind?: CountKind`), `:75-90` (readiness per kind); add `inlineSubtaskToAutoCreate(subtask, allTasks)` (moved out of `CompoundTaskWizard.tsx:255-283`, now generating the counting title)
+- Modify: `apps/web/src/components/compoundWizard/CompoundTaskWizard.tsx:255-283` (calls `inlineSubtaskToAutoCreate`)
+- Modify: `apps/web/src/components/CountingStepFields.tsx:14-95` (+`countKind`, `onKindChange`)
+- Modify: `apps/web/src/components/compoundWizard/SubtaskCard.tsx:312-330` (kind props), `:360-380` (`InlineCounterLinkHint` hidden for Duration); delete the #548 row 65 caption at `:292`
+- Modify: `apps/web/src/components/wizard/CountingSubConfigRow.tsx` (+`kind`, `onKindChange`; `GoalEntry`; unit hidden for Duration)
+- Modify: `apps/web/src/db/taskEditPatch.ts:21-62` (`ChildPatch.countKind`), `:218-226` (`parsePositiveGoal(goal, kind)`), `:240` (`canAppendCounting(…, kind)`), `:257-290` (`appendTypedChild(…, kind)`), `:331-339` (`validatePatch`'s compound-child loop parses each counting child at its kind; unit required only when `countKindNeedsUnit`)
+- Modify: `apps/web/src/components/wizard/CompoundFields.tsx:105-190` (new-sub kind state + row), `:229-245` (existing counting child: `GoalEntry` at its kind; unit hidden for Duration); delete row 61 caption `:187-189`; shorten row 63 `:182-186` to `Couldn't load your tasks.`
+- Modify: `apps/web/src/db/operations/compoundStructureEdit.ts:69-140` (`applyStagedCompoundChildEdits` writes `countKind` + parses at it for a new counting child), `apps/web/src/db/operations/tasks.crud.ts:243-260` (`autoCreate.countKind` written)
+- Modify: `apps/web/src/components/counters/CounterLinkHint.tsx` — #548 rows 77/78: render `{counterName}` + the pill only; props `lifetime` / `goal` removed; call sites `CountingTemplatePicker.tsx:113-119`, `SubtaskCard.tsx:372-378`
+- Modify: `apps/ios/OYBC/Views/CreateTab/Components/RisoCounterLinkHintView.swift` — same reduction (rows 77/78); call sites `RisoSpecialTaskPanel.swift:304`, `RisoCompoundFieldsView.swift:544`
+- Modify: `apps/ios/OYBC/Views/CreateTab/Components/RisoCountingSubConfigRow.swift` (+`kind: Binding<CountKind>`)
+- Modify: `apps/ios/OYBC/Views/CreateTab/Components/RisoCompoundFieldsView.swift:25-33,97-98,154-155,192-231,370,586-604,656` (sub kind state + seed + parse)
+- Modify: `apps/ios/OYBC/Views/CreateTab/Components/RisoCompoundEditFieldsView.swift:108-111` (`parsePositiveGoal(_:kind:)`), `:115-175` (`canAppendCounting` / `appendTyped` + `kind`), `:263-268` (existing child goal), `:350-356` (new-sub kind), `:225` (delete row 62 caption), `:370` (shorten row 63)
+- Modify: `apps/ios/OYBC/Views/CreateTab/Components/TaskEditPatch.swift:15-62` (`ChildPatch.countKind`), `:76-100` (`TaskEditPatch.countKind`, used by Task 12), `:105` (`parsedGoal`), `:151` (child goal)
+- Modify: `apps/ios/OYBC/Views/CreateTab/ViewModels/CreateFormViewModel.swift:474-500` (`CompoundSubItem.newCounting(…, countKind:)`), `:640-670` (child task kind/unit/title)
+- Modify: `apps/ios/OYBC/Database/AppDatabase+CompoundStructureEdit.swift:38-60,107-140` (new counting child gets `countKind`)
+- Test: `apps/web/src/db/__tests__/taskEditPatch.countKind.test.ts` (create), `apps/web/src/components/compoundWizard/__tests__/compoundSubtaskDraft.countKind.test.ts` (create, new folder), `apps/web/src/components/counters/__tests__/CounterLinkHint.test.ts` (create), `apps/ios/OYBCTests/CompoundSubKindTests.swift` (create)
+- Re-record (intentional — kind row in the sub config + rows 62/77/78): `RisoCompoundPanelSnapshotTests/testCompoundNewSubCounting{Light,Dark}`, `testCompoundNewSubCountingLinked{Light,Dark}`, `testCompoundNewSubCountingOptedOut{Light,Dark}`; `PoolRowEditorSnapshotTests/testCompoundEditorNewSubCountingLight`; `RisoEditTaskSheetSnapshotTests/testCompound{Light,Dark}`. Must stay GREEN: `RisoCompoundPanelSnapshotTests/testCompoundEmpty*`, `testCompoundAtLeastN*`, `testCompoundWithSubs*` (no counting new-sub row is open in those fixtures).
+
+**Interfaces:**
+- Consumes: Tasks 1–4, 6.
+- Produces:
+  - web `CountingSubConfigRowProps.kind: CountKind`, `onKindChange: (kind: CountKind) => void` (always `lock="none"` — only a NEW sub-task shows the picker)
+  - web `ChildPatch.countKind: CountKind`; `canAppendCounting(text, goal, unit, kind: CountKind = 'discrete')`; `appendTypedChild(draft, text, isCounting, goal = '', unit = '', kind: CountKind = 'discrete')`
+  - web `inlineSubtaskToAutoCreate(subtask: InlineSubtaskDraft, allTasks: Task[]): CreateCompoundChildEntry`
+  - web `CounterLinkHintProps = { counterName: string; linked: boolean; onToggle: () => void }`
+  - iOS `RisoCountingSubConfigRow(goal:unit:kind:)`; `ChildPatch.countKind: CountKind`; `TaskEditPatch.countKind: CountKind`; `CompoundSubItem.newCounting(action:goal:unit:sharedCounterId:baseline:countKind:)`; `RisoCompoundEditFieldsView.canAppendCounting(text:goal:unit:kind:)`, `appendTyped(_:isCounting:goal:unit:kind:to:)`; `RisoCounterLinkHintView(counterName:linked:onToggle:)`
+  - Rule (ruling): an EXISTING sub-task's goal edits at its own kind, no picker.
+
+- [ ] **Step 1: Failing web tests.** `apps/web/src/db/__tests__/taskEditPatch.countKind.test.ts`:
+
+```ts
+import { describe, expect, it } from 'vitest';
+import { TaskType, type Task } from '@oybc/shared';
+import { appendTypedChild, canAppendCounting, childPatchFromTask, newChildPatch, validatePatch, type TaskEditPatch } from '../taskEditPatch';
+
+const EMPTY: TaskEditPatch = { title: 'Music week', action: '', goal: '', unit: '', children: [] };
+
+describe('ChildPatch countKind', () => {
+  it('a new counting child starts discrete', () => {
+    expect(newChildPatch(true).countKind).toBe('discrete');
+  });
+  it('an existing child seeds its kind and goal text', () => {
+    const child = { id: 'c', title: 'Run 26.2 mi', type: TaskType.COUNTING, action: 'Run', unit: 'mi', maxCount: 26.2, countKind: 'continuous' } as Task;
+    const patch = childPatchFromTask(child);
+    expect(patch.countKind).toBe('continuous');
+    expect(patch.goal).toBe('26.2');
+  });
+  it('canAppendCounting is kind-aware', () => {
+    expect(canAppendCounting('Run', '3.1', 'mi', 'continuous')).toBe(true);
+    expect(canAppendCounting('Run', '3.1', 'mi', 'discrete')).toBe(false);
+    expect(canAppendCounting('Practice', '1h 30m', '', 'duration')).toBe(true);
+    expect(canAppendCounting('Practice', '90', '', 'discrete')).toBe(false);
+  });
+  it('a Duration child validates without a unit; a continuous child refuses 3 places', () => {
+    const dur = appendTypedChild(EMPTY, 'Practice', true, '1h 30m', '', 'duration');
+    expect(validatePatch(dur, TaskType.COMPOUND)).toBeNull();
+    const bad = { ...EMPTY, children: [{ ...newChildPatch(true), title: 'Run', action: 'Run', goal: '3.125', unit: 'mi', countKind: 'continuous' as const }] };
+    expect(validatePatch(bad, TaskType.COMPOUND)).toBe('Counting sub-task "Run" needs a goal and a unit.');
+  });
+  it('appendTypedChild titles a Duration sub-task without a unit', () => {
+    const next = appendTypedChild(EMPTY, 'Practice', true, '1h 30m', '', 'duration');
+    expect(next.children[0]).toMatchObject({ title: 'Practice 1h 30m', countKind: 'duration', goal: '1h 30m', unit: '' });
+  });
+});
+```
+
+`apps/web/src/components/compoundWizard/__tests__/compoundSubtaskDraft.countKind.test.ts`:
+
+```ts
+import { describe, expect, it } from 'vitest';
+import { TaskType } from '@oybc/shared';
+import { evaluateSubtaskReadiness, inlineSubtaskToAutoCreate, type InlineSubtaskDraft } from '../compoundSubtaskDraft';
+
+const draft = (o: Partial<InlineSubtaskDraft>): InlineSubtaskDraft => ({
+  id: 'd', mode: 'inline', inlineType: 'counting', title: '', action: 'Practice', unit: '', maxCountStr: '1h 30m', steps: [], ...o,
+});
+
+describe('inline counting sub-task — counter kinds', () => {
+  it('a blank-titled Duration sub-task gets a generated title, minutes and no unit', () => {
+    expect(inlineSubtaskToAutoCreate(draft({ countKind: 'duration' }), [])).toEqual({
+      autoCreate: { type: TaskType.COUNTING, title: 'Practice 1h 30m', action: 'Practice', unit: undefined, maxCount: 90, countKind: 'duration', sharedCounterId: undefined, baseline: undefined },
+    });
+  });
+  it('a continuous sub-task keeps its typed title and decimal goal', () => {
+    const entry = inlineSubtaskToAutoCreate(draft({ countKind: 'continuous', title: 'Long run', action: 'Run', unit: 'mi', maxCountStr: '3,1' }), []);
+    expect(entry.autoCreate).toMatchObject({ title: 'Long run', maxCount: 3.1, countKind: 'continuous', unit: 'mi' });
+  });
+  it('readiness: duration needs no unit; continuous refuses 3 places', () => {
+    expect(evaluateSubtaskReadiness(draft({ countKind: 'duration' }), new Set()).ready).toBe(true);
+    expect(evaluateSubtaskReadiness(draft({ countKind: 'continuous', unit: 'mi', maxCountStr: '3.125' }), new Set()).ready).toBe(false);
+  });
+});
+```
+
+(`evaluateSubtaskReadiness(draft: SubtaskDraft, excludedIds: Set<string>)` is at `compoundSubtaskDraft.ts:61`.) `CounterLinkHint.test.ts`:
+
+```ts
+import { describe, expect, it } from 'vitest';
+import React from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
+import { CounterLinkHint } from '../CounterLinkHint';
+
+describe('CounterLinkHint (#548 rows 77/78)', () => {
+  it('shows the counter and the pill, never a sentence', () => {
+    const html = renderToStaticMarkup(React.createElement(CounterLinkHint, { counterName: 'Miles', linked: true, onToggle: () => {} }));
+    expect(html).toContain('Miles');
+    expect(html).toContain("Don&#x27;t link");
+    expect(html).not.toContain('all-time');
+    expect(html).not.toContain('keeps its own');
+    expect(html).not.toContain('Creates a separate');
+  });
+});
+```
+
+- [ ] **Step 2: Run — expect FAIL.** `WEB_TEST taskEditPatch.countKind compoundSubtaskDraft.countKind CounterLinkHint`
+
+- [ ] **Step 3: Implement web.**
+  - `taskEditPatch.ts`: `ChildPatch` gains `countKind: CountKind;`; `newChildPatch` sets `countKind: 'discrete'`; `childPatchFromTask` sets `countKind: resolveCountKind(child)` and `goal: child.maxCount !== undefined ? formatCountForInput(child.maxCount, resolveCountKind(child)) : ''`. `parsePositiveGoal(goal: string, kind: CountKind = 'discrete'): number | undefined` returns `parseCountInput(goal, kind) ?? undefined`; every call in the file passes the child's / draft's kind. `canAppendCounting(text, goal, unit, kind = 'discrete')`:
+
+```ts
+export function canAppendCounting(text: string, goal: string, unit: string, kind: CountKind = 'discrete'): boolean {
+  return text.trim().length > 0 && parsePositiveGoal(goal, kind) !== undefined && (!countKindNeedsUnit(kind) || unit.trim().length > 0);
+}
+```
+
+    `validatePatch`'s compound-child loop (`:331-339`) becomes
+
+```ts
+      for (const child of kept) {
+        if (!child.isCounting) continue;
+        const ok = parsePositiveGoal(child.goal, child.countKind) !== undefined
+          && (!countKindNeedsUnit(child.countKind) || child.unit.trim().length > 0);
+        if (!ok) return `Counting sub-task "${child.title.trim()}" needs a goal and a unit.`;
+      }
+```
+
+    (a Duration child has no unit; a `parseInt` goal would have accepted "1h 30m" as 1). `appendTypedChild(draft, text, isCounting, goal = '', unit = '', kind = 'discrete')` counting branch:
+
+```ts
+    const parsedGoal = parsePositiveGoal(goal, kind);
+    const trimmedUnit = countKindNeedsUnit(kind) ? unit.trim() : '';
+    const title =
+      parsedGoal !== undefined && (trimmedUnit.length > 0 || !countKindNeedsUnit(kind))
+        ? generateCounterTaskTitle(text, parsedGoal, trimmedUnit, undefined, kind)
+        : text;
+    child = {
+      ...newChildPatch(true),
+      title,
+      action: text,
+      goal: parsedGoal !== undefined ? formatCountForInput(parsedGoal, kind) : '',
+      unit: trimmedUnit,
+      countKind: kind,
+    };
+```
+
+  - `compoundSubtaskDraft.ts`: `InlineSubtaskDraft.countKind?: CountKind` (absent = discrete). Readiness counting branch:
+
+```ts
+    case 'counting': {
+      const kind = draft.countKind ?? 'discrete';
+      if (!draft.action.trim()) return { ready: false, message: 'Add an action (e.g. "Run").' };
+      if (countKindNeedsUnit(kind) && !draft.unit.trim()) return { ready: false, message: 'Add a unit (e.g. "miles").' };
+      if (parseCountInput(draft.maxCountStr, kind) === null) return { ready: false, message: 'Add a goal above zero.' };
+      return { ready: true, message: null };
+    }
+```
+
+    and add (moved from `CompoundTaskWizard.tsx:257-281`, now title-generating — the wizard used to send `subtask.title.trim()`, which is `''` for a blank-titled counting sub-task):
+
+```ts
+/**
+ * An inline sub-task's `createCompound` entry. A blank-titled counting
+ * sub-task gets the generated "{Action} {Goal} {Unit}" / "{Action} {Xh Ym}"
+ * title; the auto-link match is skipped for Duration (no noun to match).
+ */
+export function inlineSubtaskToAutoCreate(subtask: InlineSubtaskDraft, allTasks: Task[]): CreateCompoundChildEntry {
+  if (subtask.inlineType !== 'counting') return { autoCreate: { type: TaskType.NORMAL, title: subtask.title.trim() } };
+  const kind = subtask.countKind ?? 'discrete';
+  const action = subtask.action.trim();
+  const unit = countKindNeedsUnit(kind) ? subtask.unit.trim() : '';
+  const maxCount = parseCountInput(subtask.maxCountStr, kind) ?? undefined;
+  const match =
+    !subtask.linkDisabled && kind !== 'duration' && action && unit
+      ? findLinkableCounter({ action, unit }, allTasks)
+      : null;
+  const title = subtask.title.trim() || (maxCount !== undefined ? generateCounterTaskTitle(action, maxCount, unit, undefined, kind) : action);
+  return {
+    autoCreate: {
+      type: TaskType.COUNTING,
+      title,
+      action: action || undefined,
+      unit: unit || undefined,
+      maxCount,
+      ...(kind !== 'discrete' ? { countKind: kind } : {}),
+      sharedCounterId: match ? match.counterId : undefined,
+      baseline: match ? match.lifetime : undefined,
+    },
+  };
+}
+```
+
+    `CompoundTaskWizard.tsx`: the inline branch becomes `return inlineSubtaskToAutoCreate(subtask, allTasks);`.
+  - `CountingSubConfigRow.tsx`: props gain `kind: CountKind; onKindChange: (kind: CountKind) => void;`; render `<KindPicker value={kind} lock="none" onChange={onKindChange} size="compact" />` first; Goal `<GoalEntry kind={kind} value={goal} onChange={onGoalChange} id={`${idPrefix}-goal`} aria-label="Goal" dense invalid={Boolean(goalError)} placeholder={kind === 'duration' ? '0h 0m' : '100'} />`; the Counting field only `{countKindNeedsUnit(kind) && …}`.
+  - `CountingStepFields.tsx`: props gain `countKind: CountKind; onKindChange: (kind: CountKind) => void;`, passed to `CountingSubConfigRow`; title preview `const parsed = parseCountInput(maxCount, countKind); … parsed !== null && trimmedAction && (trimmedUnit || countKind === 'duration') ? generateCounterTaskTitle(trimmedAction, parsed, countKindNeedsUnit(countKind) ? trimmedUnit : '', undefined, countKind) : null`.
+  - `SubtaskCard.tsx` `:312-330`: `countKind={draft.countKind ?? 'discrete'}`, `onKindChange={(k) => onUpdate({ countKind: k, linkDisabled: false } as Partial<InlineSubtaskDraft>)}`; `InlineCounterLinkHint` returns null when `(draft.countKind ?? 'discrete') === 'duration'` and its `goalValid` uses `parseCountInput(draft.maxCountStr, draft.countKind ?? 'discrete')`; pass `counterName={match.name} linked={linked} onToggle={…}` only. Delete the `:292` caption node.
+  - `CompoundFields.tsx`: `const [newSubKind, setNewSubKind] = useState<CountKind>('discrete');` → `CountingSubConfigRow kind={newSubKind} onKindChange={setNewSubKind}`, `canAppendCounting(newSubText, newSubGoal, newSubUnit, newSubKind)` (`:157`), `appendTypedChild(draft, text, newSubCounting, newSubGoal, newSubUnit, newSubKind)` (`:114`), `readsAsPreview(...)` unchanged. Existing child row `:229-245`: replace the `type="number"` input with `<GoalEntry kind={child.countKind} value={child.goal} onChange={(v) => onUpdate({ goal: v })} aria-label={`Sub-task ${index} goal`} dense />` and render the unit input only when `countKindNeedsUnit(child.countKind)`. Delete the `:187-189` `subtaskNote` span (row 61). Row 63 (`:182-186`): the `role="alert"` paragraph text becomes `Couldn&apos;t load your tasks.` (error state — shortened per #548's note, not removed).
+  - `compoundStructureEdit.ts` `applyStagedCompoundChildEdits` new-counting-child branch: `maxCount: parseCountInput(step.goal, step.countKind) ?? undefined`, `unit: countKindNeedsUnit(step.countKind) ? step.unit.trim() : ''`, `...(step.countKind !== 'discrete' ? { countKind: step.countKind } : {})`, title via `generateCounterTaskTitle(…, step.countKind)` when the staged title is auto/blank.
+  - `tasks.crud.ts:243-260`: add `...(entry.autoCreate.countKind ? { countKind: entry.autoCreate.countKind } : {}),` to the inline-created child (`withRootCountKind` still overrides a linked child).
+  - `CounterLinkHint.tsx`:
+
+```tsx
+export interface CounterLinkHintProps {
+  /** The matched counter's pair-derived display name. */
+  counterName: string;
+  /** Whether this create currently links to the counter. */
+  linked: boolean;
+  /** Toggles the link on/off for this create. */
+  onToggle: () => void;
+}
+
+/** The matched counter + the link toggle. The kind tag beside the Goal shows the family's total (#548 77/78). */
+export function CounterLinkHint({ counterName, linked, onToggle }: CounterLinkHintProps): React.ReactElement {
+  return (
+    <div className={styles.hint} role="region" aria-label="Counter link">
+      <p className={styles.hintTitle}>{counterName}</p>
+      <button type="button" className={styles.hintPill} onClick={onToggle} aria-label={linked ? `Don't link to ${counterName}` : `Link to ${counterName}`}>
+        {linked ? "Don't link" : 'Link'}
+      </button>
+    </div>
+  );
+}
+```
+
+    (drop the `.hintText` / `.hintSub` CSS rules). Fix `CountingTemplatePicker.tsx:113-119` to pass the three props.
+
+- [ ] **Step 4: Run** `WEB_TEST taskEditPatch compoundSubtaskDraft CounterLinkHint compoundFields createFormCounting` — PASS (the existing `compoundFields.test.ts` must stay green); `WEB_CHECK`.
+
+- [ ] **Step 5: iOS failing tests** `apps/ios/OYBCTests/CompoundSubKindTests.swift`:
+
+```swift
+import XCTest
+import GRDB
+@testable import OYBC
+
+@MainActor
+final class CompoundSubKindTests: XCTestCase {
+    func testNewDurationSubCarriesKindIntoTheChildTask() throws {
+        let db = try AppDatabase.makeTestInstance(); try LinkedWindowKit.seedUser(db)
+        let form = CreateFormViewModel(database: db)
+        let done = expectation(description: "created")
+        form.handleCreateCompoundAndAddToPool(
+            userId: LinkedWindowKit.userId,
+            title: "Music week",
+            rule: .allOf,
+            subs: [.newCounting(action: "Practice", goal: 90, unit: "", sharedCounterId: nil, baseline: nil, countKind: .duration)],
+            onTaskCreated: { _, _, _ in done.fulfill() },
+            onLibraryReloadRequested: {}
+        )
+        wait(for: [done], timeout: 5)
+        let child = try XCTUnwrap(try db.read { try Task.filter(Column("action") == "Practice").fetchOne($0) })
+        XCTAssertEqual(child.countKind, .duration)
+        XCTAssertEqual(child.maxCount, 90)
+        XCTAssertEqual(child.unit, "")
+        XCTAssertEqual(child.title, "Practice 1h 30m")
+    }
+
+    func testChildPatchSeedsKindAndTheAppendGateParsesPerKind() {
+        var t = LinkedWindowKit.task("c", maxCount: 26.2); t.countKind = .continuous
+        let patch = ChildPatch(from: t)
+        XCTAssertEqual(patch.countKind, .continuous)
+        XCTAssertEqual(patch.goal, "26.2")
+        XCTAssertTrue(RisoCompoundEditFieldsView.canAppendCounting(text: "Run", goal: "3.1", unit: "mi", kind: .continuous))
+        XCTAssertFalse(RisoCompoundEditFieldsView.canAppendCounting(text: "Run", goal: "3.1", unit: "mi", kind: .discrete))
+        XCTAssertTrue(RisoCompoundEditFieldsView.canAppendCounting(text: "Practice", goal: "90", unit: "", kind: .duration))
+    }
+
+    func testAppendTypedDurationTitlesWithoutAUnit() {
+        var draft = TaskEditPatch(title: "Music week")
+        RisoCompoundEditFieldsView.appendTyped("Practice", isCounting: true, goal: "1h 30m", unit: "ignored", kind: .duration, to: &draft)
+        XCTAssertEqual(draft.children.first?.title, "Practice 1h 30m")
+        XCTAssertEqual(draft.children.first?.unit, "")
+        XCTAssertEqual(draft.children.first?.countKind, .duration)
+    }
+}
+```
+
+- [ ] **Step 6: Run — expect build FAIL.** `IOS_TEST -only-testing:OYBCTests/CompoundSubKindTests`
+
+- [ ] **Step 7: Implement iOS.**
+  - `RisoCountingSubConfigRow`:
+
+```swift
+struct RisoCountingSubConfigRow: View {
+    @Binding var goal: String
+    @Binding var unit: String
+    @Binding var kind: CountKind
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            KindPickerView(selection: $kind, lock: .none)
+            HStack(alignment: .top, spacing: 10) {
+                VStack(alignment: .leading, spacing: 5) {
+                    requiredLabel("Goal")
+                    GoalEntryView(kind: kind, text: $goal, placeholder: kind == .duration ? "0h 0m" : "100")
+                }
+                if countKindNeedsUnit(kind) {
+                    VStack(alignment: .leading, spacing: 5) {
+                        requiredLabel("Counting")
+                        RisoTextField(placeholder: "push-ups", text: $unit)
+                    }
+                }
+            }
+        }
+    }
+    // requiredLabel(_:) unchanged
+}
+```
+
+  - `TaskEditPatch.swift`: `ChildPatch` gains `var countKind: CountKind = .discrete` (and the `init(id:…)` gains `countKind: CountKind = .discrete` last); `init(from child:)` sets `countKind = resolveCountKind(child.countKind)`. `TaskEditPatch` gains `var countKind: CountKind = .discrete`, seeded at `:98` from `resolveCountKind(task.countKind)`; `parsedGoal` = `parseCountInput(goal, kind: countKind)`; child goal at `:151` = `parseCountInput(child.goal, kind: child.countKind) ?? 0`, and the counting-child unit requirement there is gated on `countKindNeedsUnit(child.countKind)`.
+  - `RisoCompoundEditFieldsView`: `private static func parsePositiveGoal(_ goal: String, kind: CountKind) -> CountValue? { parseCountInput(goal, kind: kind) }`; `static func canAppendCounting(text:goal:unit:kind:)` = non-blank text && `parsePositiveGoal(goal, kind:) != nil` && (`!countKindNeedsUnit(kind)` || non-blank unit); `appendTyped(_:isCounting:goal:unit:kind: CountKind = .discrete, to:)` counting branch mirrors the web code (unit `""` for Duration, title via `TaskTitle.generateCounterTaskTitle(…, countKind: kind)`, `goal: formatCountForInput(g, kind: kind)`, `countKind: kind`). `@State private var newSubKind: CountKind = .discrete` → `RisoCountingSubConfigRow(goal: $newSubGoal, unit: $newSubUnit, kind: $newSubKind)` at `:355`, passed to both static calls in the private `appendTyped` (`:304`). Existing child `:266`: `GoalEntryView(kind: child.wrappedValue.countKind, text: child.goal).frame(width: 84)` and the unit field only when `countKindNeedsUnit(child.wrappedValue.countKind)`. Delete the `:225` caption `Text` (row 62); `:370` text becomes `"Couldn't load your tasks."` (row 63).
+  - `RisoCompoundFieldsView`: `Seed` gains `var subKind: CountKind = .discrete`; `@State private var subKind: CountKind` seeded in both inits (`:154`, `:192`); goal parse `:217` = `parseCountInput(subGoalText, kind: subKind)`; unit gate `:231` = `!countKindNeedsUnit(subKind) || !subUnitText…isEmpty`; `RisoCountingSubConfigRow(goal: $subGoalText, unit: $subUnitText, kind: $subKind)` at `:370`; the appended item `.newCounting(…, countKind: subKind)` (`:586-600`) with `unit: countKindNeedsUnit(subKind) ? unit : ""`; resets at `:603`/`:656` set `subKind = .discrete`; `updateSubLinkSuggestion()` returns nil for Duration; `subCounterLinkBanner` passes `RisoCounterLinkHintView(counterName: suggestion.name, linked: !subLinkDisabled, onToggle: …)`.
+  - `CreateFormViewModel.swift`: `case newCounting(action: String, goal: CountValue, unit: String, sharedCounterId: String?, baseline: CountValue?, countKind: CountKind)`; `displayTitle` passes `countKind:`; the child-builder (`:648-668`) uses `TaskTitle.generateCounterTaskTitle(action: action, maxCount: goal, unit: unit, countKind: countKind)`, `unit: countKindNeedsUnit(countKind) ? trimmedUnit : ""`, then `child.countKind = countKind == .discrete ? nil : countKind`.
+  - `AppDatabase+CompoundStructureEdit.swift`: the new-child builder parses `step.goal` with `step.countKind`, writes `unit` `""` for Duration and sets `countKind` (nil for discrete).
+  - `RisoCounterLinkHintView`: properties `counterName`, `linked`, `onToggle`; body = `HStack { Text(counterName).font(.risoHead(13, .bold)).foregroundStyle(Color.risoPaper); Spacer(minLength: 0); <the existing pill button> }` with `.accessibilityLabel(linked ? "Don't link to \(counterName)" : "Link to \(counterName)")` on the pill. Fix the two call sites.
+
+- [ ] **Step 8: Run iOS** `IOS_TEST -only-testing:OYBCTests/CompoundSubKindTests -only-testing:OYBCTests/BoardEditCompoundTests -only-testing:OYBCTests/AppDatabaseTaskEditTests` — PASS. Re-record exactly the seven baselines listed under Files (delete → record → green), confirm the must-stay-green ones are green, read each re-record against handoff A2 (Duration sub-task: no Counting field; link hint = name + pill).
+
+- [ ] **Step 9: e2e + Playwright.** `WEB_E2E e2e/task-detail-compound-edit.spec.ts e2e/pool-row-editor.spec.ts` must stay green (update any assertion on the removed "A sub-task's type is fixed…" caption by deleting it). Playwright MCP validation (the compound wizard's multi-step flow is covered by the unit tests above): `/tasks?__oybc_test_bypass=1` → `+ New task` → Compound → Title "Music week" → `Next ›` → add an inline Counting sub-task, Verb "Practice", Kind Duration, 1 h 30 m → `Next ›` → create; confirm the library shows `Practice 1h 30m`; screenshot the sub-task card with Duration selected light/dark → `.playwright-mcp/task7-a2-{light,dark}.png`.
+
+- [ ] **Step 10: Commit**
+
+```bash
+git add apps/web apps/ios
+git commit -m "feat(counters): A2 compound sub-tasks pick a kind (create + edit); blank counting sub-tasks get a generated title; link hint keeps only the counter + toggle (#548 61-63, 65, 77/78) (PR 3 Task 7)"
+```
+
+---
+
+### Task 8: Kind-switch infrastructure — in-transaction switch, switch-then-guard helper, preview, confirm (Ruling U7)
+
+One helper per platform owns "switch the kind if it changed, then refuse a fractional goal at a whole kind"; Tasks 9, 10 and 12 call it inside their own transactions and never restate it. One confirm seam per platform (`useKindSwitchRequest` ↔ `.kindSwitchConfirm`) owns the Continuous → Discrete dialog + goal rounding for every editing sheet.
+
+**Files:**
+- Modify: `apps/web/src/db/operations/countKindSwitch.ts:73-140` — extract `switchCounterKindInTransaction`; add `KindGoalError`, `applyKindSwitchThenGoalGuard`, `planKindSwitchPreview` (pure), `previewCounterKindSwitch`
+- (No `db/operations/index.ts` change: `countKindSwitch.ts` is not in that barrel today — callers import it by path, as PR 2's tests do.)
+- Create: `apps/web/src/components/counters/kindSwitchModel.ts`, `KindSwitchConfirmDialog.tsx` (+`.module.css`), `useKindSwitchRequest.tsx`
+- Modify: `apps/ios/OYBC/Database/AppDatabase+CountKindSwitch.swift:13-106` (`CountKindSwitchError.goalNotWhole`; `static func switchCounterKind(db:…)`; `static func applyKindSwitchThenGoalGuard(db:…)`; `KindSwitchPreview` + `previewCounterKindSwitch`)
+- Modify: `apps/ios/OYBC/Database/AppDatabase+Tasks.swift:75` (+`runBoardCascadeForTasks(db:changedTaskIds:now:)` — one snapshot, each affected board derived once; carried perf item)
+- Create: `apps/ios/OYBC/Views/Components/KindSwitchConfirmView.swift` (`KindSwitchCopy`, `KindSwitchConfirmView`, `View.kindSwitchConfirm(pending:onConfirm:)`)
+- Test: `apps/web/src/db/operations/__tests__/countKindSwitch.test.ts` (+cases, reusing its `seedFamily(opts: FamilyOptions)`, `ROOT`, `LIVE`, `ENDED`, `NOW`), `apps/web/src/components/counters/__tests__/kindSwitchModel.test.ts` (create), `apps/ios/OYBCTests/AppDatabaseCountKindSwitchTests.swift` (+cases, reusing its `seedFamily(kind:rootGoal:liveTarget:endedTarget:deltas:)` and `now`), `apps/ios/OYBCSnapshotTests/KindSwitchConfirmSnapshotTests.swift` (create)
+
+**Interfaces:**
+- Consumes: `switchCounterKind` (PR 2), `planCountKindSwitch`, `isAutoCounterTitle(…, kind)`, `generateCounterTaskTitle(…, kind)`, `finalizeWindowCount`, `quantizeCount`, `isFrozenDerivedRow`, `formatCount`, `formatCountForInput`, `parseCountInput`.
+- Produces (web):
+  - `switchCounterKindInTransaction(rootTaskId: string, to: CountKind, nowIso: string): Promise<string[]>` — inside a caller `rw` transaction over `boards, boardTasks, tasks, compoundChildren, taskEvents, syncQueue`
+  - `class KindGoalError extends Error` (message `Whole-number kinds need whole goals`)
+  - `applyKindSwitchThenGoalGuard(taskId: string, to: CountKind | undefined, maxCount: number | null | undefined, nowIso: string): Promise<boolean>` — switches only a live COUNTING ROOT whose kind differs (returns true when it switched), then throws `KindGoalError` when `maxCount` is fractional at the FINAL kind and that kind is whole. Throwing after the switch rolls the caller's whole transaction back.
+  - `interface KindSwitchPreview { from: CountKind; to: CountKind; titleBefore: string; titleAfter: string; loggedBefore: number; loggedAfter: number; linkedCount: number }`
+  - `planKindSwitchPreview(task: Pick<Task, 'title' | 'action' | 'unit' | 'maxCount' | 'currentCount' | 'countKind'>, to: CountKind, linkedCount: number): KindSwitchPreview | null` (pure — used for pending tasks too)
+  - `previewCounterKindSwitch(rootTaskId: string, to: CountKind, now?: Date): Promise<KindSwitchPreview | null>`
+  - `needsKindSwitchConfirm(from, to): boolean`; `kindSwitchConfirmLines(p): { title: string; rows: [string, string][]; body: string }`; `switchedGoalText(goalText: string, from: CountKind, to: CountKind): string`
+  - `type KindSwitchSubject = Pick<Task, 'id' | 'title' | 'action' | 'unit' | 'maxCount' | 'currentCount' | 'countKind'>`
+  - `useKindSwitchRequest(args: { subject: KindSwitchSubject; kind: CountKind; goalText: string; onSwitched: (kind: CountKind, goalText: string) => void; setKind: (k: CountKind) => void }): { requestKind: (next: CountKind) => void; dialog: React.ReactElement | null }` — `setKind` applies a change that needs no confirm; `onSwitched` receives the confirmed kind AND the rounded goal text in ONE call (pool rows hold both in one draft object)
+- Produces (iOS): `CountKindSwitchError.goalNotWhole`; `static func switchCounterKind(db: Database, rootTaskId: String, to: CountKind, now: Date) throws -> [String]`; `@discardableResult static func applyKindSwitchThenGoalGuard(db: Database, taskId: String, to: CountKind?, maxCount: CountValue?, now: Date) throws -> Bool`; `struct KindSwitchPreview: Equatable, Identifiable` (same fields; `id` = `"\(from.rawValue)-\(to.rawValue)"`) with `static func planned(task: Task, to: CountKind, linkedCount: Int) -> KindSwitchPreview?`; `func previewCounterKindSwitch(rootTaskId: String, to: CountKind, now: Date = Date()) throws -> KindSwitchPreview?`; `static func runBoardCascadeForTasks(db: Database, changedTaskIds: [String], now: String) throws`; `enum KindSwitchCopy { static func needsConfirm(from:to:) -> Bool; static func lines(_:) -> (title: String, rows: [(String, String)], body: String); static func switchedGoalText(_:from:to:) -> String }`; `KindSwitchConfirmView(preview:onCancel:onConfirm:)`; `extension View { func kindSwitchConfirm(pending: Binding<KindSwitchPreview?>, onConfirm: @escaping (KindSwitchPreview) -> Void) -> some View }`.
+- Preview rules: `titleAfter` regenerates only an auto title (`isAutoCounterTitle` at `from`) else keeps it; `loggedBefore` = `quantizeCount(root.currentCount ?? 0)` (lifetime); `loggedAfter` = `finalizeWindowCount(loggedBefore, to)`; `linkedCount` = live family rows the switch would write (not `isFrozenDerivedRow` at `now`).
+
+- [ ] **Step 1: Failing web tests.** Append to `countKindSwitch.test.ts`:
+
+```ts
+describe('previewCounterKindSwitch', () => {
+  it('continuous → discrete: rounded logged, custom title kept, live linked count only', async () => {
+    await seedFamily({ countKind: 'continuous', rootGoal: 26.2, deltas: [12.75] });
+    expect(await previewCounterKindSwitch(ROOT, 'discrete', NOW)).toEqual({
+      from: 'continuous', to: 'discrete', titleBefore: 'Run', titleAfter: 'Run',
+      loggedBefore: 12.75, loggedAfter: 13, linkedCount: 1, // LIVE counts, ENDED is frozen
+    });
+  });
+  it('an auto title regenerates at the rounded goal', async () => {
+    await seedFamily({ countKind: 'continuous', rootGoal: 26.2, deltas: [] });
+    await db.tasks.update(ROOT, { title: 'Run 26.2 km' });
+    expect((await previewCounterKindSwitch(ROOT, 'discrete', NOW))?.titleAfter).toBe('Run 26 km');
+  });
+  it('refused switches and linked rows preview null', async () => {
+    await seedFamily({ countKind: 'continuous', rootGoal: 26.2 });
+    expect(await previewCounterKindSwitch(ROOT, 'duration', NOW)).toBeNull();
+    expect(await previewCounterKindSwitch(LIVE, 'discrete', NOW)).toBeNull();
+  });
+});
+
+describe('applyKindSwitchThenGoalGuard', () => {
+  const TABLES = () => [db.boards, db.boardTasks, db.tasks, db.compoundChildren, db.taskEvents, db.syncQueue];
+  it('switches the root and the live family, then accepts a whole goal', async () => {
+    await seedFamily({ countKind: 'continuous', rootGoal: 26.2, liveTarget: 6.1 });
+    const switched = await db.transaction('rw', TABLES(), () => applyKindSwitchThenGoalGuard(ROOT, 'discrete', 30, NOW.toISOString()));
+    expect(switched).toBe(true);
+    expect(await db.tasks.get(ROOT)).toMatchObject({ countKind: 'discrete', maxCount: 26 });
+    expect((await db.tasks.get(LIVE))?.countKind).toBe('discrete');
+  });
+  it('a fractional goal at the new whole kind throws AFTER the switch and rolls the switch back', async () => {
+    await seedFamily({ countKind: 'continuous', rootGoal: 26.2 });
+    await expect(
+      db.transaction('rw', TABLES(), () => applyKindSwitchThenGoalGuard(ROOT, 'discrete', 26.5, NOW.toISOString())),
+    ).rejects.toBeInstanceOf(KindGoalError);
+    expect(await db.tasks.get(ROOT)).toMatchObject({ countKind: 'continuous', maxCount: 26.2, version: 1 });
+  });
+  it('never switches a linked row; an unchanged kind writes nothing', async () => {
+    await seedFamily({ countKind: 'continuous', rootGoal: 26.2 });
+    expect(await db.transaction('rw', TABLES(), () => applyKindSwitchThenGoalGuard(LIVE, 'discrete', undefined, NOW.toISOString()))).toBe(false);
+    expect(await db.transaction('rw', TABLES(), () => applyKindSwitchThenGoalGuard(ROOT, 'continuous', 26.3, NOW.toISOString()))).toBe(false);
+    expect((await db.tasks.get(ROOT))?.version).toBe(1);
+    expect((await db.tasks.get(LIVE))?.countKind).toBe('continuous');
+  });
+});
+```
+
+(`seedFamily` sets the root's `currentCount` to the delta sum — `[12.75]` gives exactly 12.75; the root title from the file's `counting()` builder is `'Run'`, unit `'km'`.) `kindSwitchModel.test.ts`:
+
+```ts
+import { describe, expect, it } from 'vitest';
+import { kindSwitchConfirmLines, needsKindSwitchConfirm, switchedGoalText } from '../kindSwitchModel';
+import { planKindSwitchPreview } from '../../../db/operations/countKindSwitch';
+
+describe('kindSwitchModel', () => {
+  it('only continuous → discrete confirms', () => {
+    expect(needsKindSwitchConfirm('continuous', 'discrete')).toBe(true);
+    expect(needsKindSwitchConfirm('discrete', 'continuous')).toBe(false);
+  });
+  it('copy matches the handoff', () => {
+    const lines = kindSwitchConfirmLines({
+      from: 'continuous', to: 'discrete', titleBefore: 'Run 26.2 miles', titleAfter: 'Run 26 miles',
+      loggedBefore: 12.75, loggedAfter: 13, linkedCount: 2,
+    });
+    expect(lines.title).toBe('Switch to Discrete?');
+    expect(lines.rows).toEqual([['Run 26.2 miles', 'Run 26 miles'], ['12.75 logged', '13 logged']]);
+    expect(lines.body).toBe('Switching back restores the exact values. Follows on 2 linked squares.');
+  });
+  it('family line: absent at 0, singular at 1', () => {
+    const base = { from: 'continuous' as const, to: 'discrete' as const, titleBefore: 'a', titleAfter: 'a', loggedBefore: 0, loggedAfter: 0 };
+    expect(kindSwitchConfirmLines({ ...base, linkedCount: 0 }).body).toBe('Switching back restores the exact values.');
+    expect(kindSwitchConfirmLines({ ...base, linkedCount: 1 }).body).toBe('Switching back restores the exact values. Follows on 1 linked square.');
+  });
+  it('switchedGoalText rounds a typed decimal goal for the new whole kind', () => {
+    expect(switchedGoalText('26.2', 'continuous', 'discrete')).toBe('26');
+    expect(switchedGoalText('0.3', 'continuous', 'discrete')).toBe('1');
+    expect(switchedGoalText('26', 'discrete', 'continuous')).toBe('26');
+    expect(switchedGoalText('', 'continuous', 'discrete')).toBe('');
+  });
+  it('a pending task previews from its own fields', () => {
+    expect(planKindSwitchPreview({ title: 'Run 26.2 mi', action: 'Run', unit: 'mi', maxCount: 26.2, currentCount: 0, countKind: 'continuous' }, 'discrete', 0))
+      .toEqual({ from: 'continuous', to: 'discrete', titleBefore: 'Run 26.2 mi', titleAfter: 'Run 26 mi', loggedBefore: 0, loggedAfter: 0, linkedCount: 0 });
+  });
+});
+```
+
+- [ ] **Step 2: Run — expect FAIL.** `WEB_TEST countKindSwitch kindSwitchModel`
+
+- [ ] **Step 3: Implement web.** In `countKindSwitch.ts`, move the transaction callback body of `switchCounterKind` into
+
+```ts
+export async function switchCounterKindInTransaction(rootTaskId: string, to: CountKind, nowIso: string): Promise<string[]> {
+  // … the existing body verbatim (root read + refusals, root write, family loop, cascade) …
+  await runBoardCascadeForTasks(writtenIds);
+  return writtenIds;
+}
+```
+
+and make `switchCounterKind` = `await db.transaction('rw', [db.boards, db.boardTasks, db.tasks, db.compoundChildren, db.taskEvents, db.syncQueue], () => switchCounterKindInTransaction(rootTaskId, to, now.toISOString()));`. Add:
+
+```ts
+/** A whole kind received a fractional goal (D4) — the caller's transaction rolls back. */
+export class KindGoalError extends Error {
+  constructor() {
+    super('Whole-number kinds need whole goals');
+    this.name = 'KindGoalError';
+  }
+}
+
+/**
+ * The ONE "switch if changed, then guard the goal" step every editing save
+ * runs inside its own transaction (Task Detail, Board Edit, staged pool /
+ * wizard edits — Ruling U7).
+ *
+ * @param taskId - The edited task.
+ * @param to - The kind the editor chose; undefined = unchanged.
+ * @param maxCount - The goal the caller is about to write, if any.
+ * @param nowIso - Switch instant / freeze clock.
+ * @returns True when a switch was written.
+ * @throws {KindGoalError} when `maxCount` is fractional at a whole final kind.
+ */
+export async function applyKindSwitchThenGoalGuard(
+  taskId: string,
+  to: CountKind | undefined,
+  maxCount: number | null | undefined,
+  nowIso: string,
+): Promise<boolean> {
+  const task = await db.tasks.get(taskId);
+  if (!task || task.isDeleted || task.type !== TaskType.COUNTING) return false;
+  const from = resolveCountKind(task);
+  let switched = false;
+  if (to !== undefined && to !== from && task.sharedCounterId == null) {
+    await switchCounterKindInTransaction(taskId, to, nowIso);
+    switched = true;
+  }
+  const finalKind = switched && to !== undefined ? to : from;
+  if (maxCount != null && isWholeCountKind(finalKind) && !Number.isInteger(maxCount)) throw new KindGoalError();
+  return switched;
+}
+
+export interface KindSwitchPreview {
+  from: CountKind;
+  to: CountKind;
+  titleBefore: string;
+  titleAfter: string;
+  loggedBefore: number;
+  loggedAfter: number;
+  linkedCount: number;
+}
+
+/** Pure preview from a task's own fields (pending tasks use it directly). */
+export function planKindSwitchPreview(
+  task: Pick<Task, 'title' | 'action' | 'unit' | 'maxCount' | 'currentCount' | 'countKind'>,
+  to: CountKind,
+  linkedCount: number,
+): KindSwitchPreview | null {
+  const from = resolveCountKind(task);
+  const patch = planCountKindSwitch(task, from, to);
+  if (!patch) return null;
+  const action = task.action ?? '';
+  const unit = task.unit ?? '';
+  const auto = isAutoCounterTitle(task.title, action, task.maxCount, unit, from);
+  const loggedBefore = quantizeCount(task.currentCount ?? 0);
+  return {
+    from,
+    to,
+    titleBefore: task.title,
+    titleAfter: auto ? generateCounterTaskTitle(action, patch.maxCount ?? task.maxCount, unit, undefined, to) : task.title,
+    loggedBefore,
+    loggedAfter: finalizeWindowCount(loggedBefore, to),
+    linkedCount,
+  };
+}
+
+/** Read-only preview of {@link switchCounterKind} for a stored root. */
+export async function previewCounterKindSwitch(rootTaskId: string, to: CountKind, now: Date = new Date()): Promise<KindSwitchPreview | null> {
+  const root = await db.tasks.get(rootTaskId);
+  if (!root || root.isDeleted || root.type !== TaskType.COUNTING || root.sharedCounterId != null) return null;
+  const nowIso = now.toISOString();
+  const family = await db.tasks.where('sharedCounterId').equals(root.id).filter((t) => !t.isDeleted).toArray();
+  return planKindSwitchPreview(root, to, family.filter((row) => !isFrozenDerivedRow(row, nowIso)).length);
+}
+```
+
+(imports: `isAutoCounterTitle`, `generateCounterTaskTitle`, `finalizeWindowCount`, `quantizeCount`, `isWholeCountKind` from `@oybc/shared`.) `kindSwitchModel.ts`:
+
+```ts
+import { COUNT_KIND_LABELS, formatCount, formatCountForInput, parseCountInput, planCountKindSwitch, type CountKind } from '@oybc/shared';
+import type { KindSwitchPreview } from '../../db/operations/countKindSwitch';
+
+/** D4 / §5: only the rounding direction confirms. */
+export function needsKindSwitchConfirm(from: CountKind, to: CountKind): boolean {
+  return from === 'continuous' && to === 'discrete';
+}
+
+/** The confirm's copy — the one consequence body the no-explanatory-copy rule allows. */
+export function kindSwitchConfirmLines(p: KindSwitchPreview): { title: string; rows: [string, string][]; body: string } {
+  const family = p.linkedCount === 0 ? '' : ` Follows on ${p.linkedCount} linked square${p.linkedCount === 1 ? '' : 's'}.`;
+  return {
+    title: `Switch to ${COUNT_KIND_LABELS[p.to]}?`,
+    rows: [
+      [p.titleBefore, p.titleAfter],
+      [`${formatCount(p.loggedBefore, p.from)} logged`, `${formatCount(p.loggedAfter, p.to)} logged`],
+    ],
+    body: `Switching back restores the exact values.${family}`,
+  };
+}
+
+/** The Goal field's text after a confirmed switch (rounded for a whole kind). */
+export function switchedGoalText(goalText: string, from: CountKind, to: CountKind): string {
+  const goal = parseCountInput(goalText, from);
+  if (goal === null) return goalText;
+  const patch = planCountKindSwitch({ maxCount: goal }, from, to);
+  return patch?.maxCount != null ? formatCountForInput(patch.maxCount, to) : goalText;
+}
+```
+
+`KindSwitchConfirmDialog.tsx` (chrome copied from `CounterDeleteConfirmDialog.tsx:78-110` — `backdrop` / `sheet` / `role="alertdialog"` / `useModalA11y({ open: true, onCancel, initialFocus: 'cancel' })` from `../../hooks/useModalA11y`):
+
+```tsx
+export function KindSwitchConfirmDialog({ preview, onCancel, onConfirm }: KindSwitchConfirmDialogProps): React.ReactElement {
+  const { ref, props } = useModalA11y<HTMLDivElement>({ open: true, onCancel, initialFocus: 'cancel' });
+  const lines = kindSwitchConfirmLines(preview);
+  return (
+    <div className={styles.backdrop} onClick={onCancel}>
+      <div ref={ref} className={styles.sheet} role="alertdialog" aria-label={lines.title} {...props} onClick={(e) => e.stopPropagation()}>
+        <h2 className={styles.heading}>{lines.title}</h2>
+        <div className={styles.rows}>
+          {lines.rows.map(([before, after]) => (
+            <div key={before} className={styles.row}>
+              <span className={styles.before}>{before}</span>
+              <span aria-hidden="true">→</span>
+              <span>{after}</span>
+            </div>
+          ))}
+        </div>
+        <p className={styles.body}>{lines.body}</p>
+        <div className={styles.sheetActions}>
+          <button type="button" className={styles.cancelButton} data-modal-cancel onClick={onCancel}>Cancel</button>
+          <button type="button" className={styles.switchButton} onClick={onConfirm}>Switch</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+```
+
+(Copy `CounterDeleteConfirmDialog.module.css`'s `.backdrop` / `.sheet` / `.sheetHeading` (as `.heading`) / `.sheetActions` / `.cancelButton` rules; `.switchButton` = `.deleteButton` with `background: var(--riso-blue)`; add `.rows { display: grid; gap: 6px; margin: 12px 0; } .row { display: flex; gap: 8px; font-weight: 600; } .before { color: var(--riso-muted); text-decoration: line-through; }`. `data-modal-cancel` is what `initialFocus: 'cancel'` targets — `useModalA11y.ts:23`.) `useKindSwitchRequest.tsx`:
+
+```tsx
+import { useState } from 'react';
+import type { CountKind, Task } from '@oybc/shared';
+import { planKindSwitchPreview, previewCounterKindSwitch, type KindSwitchPreview } from '../../db/operations/countKindSwitch';
+import { KindSwitchConfirmDialog } from './KindSwitchConfirmDialog';
+import { needsKindSwitchConfirm, switchedGoalText } from './kindSwitchModel';
+
+/** What a preview needs — a stored task, or an editor draft for a pending one. */
+export type KindSwitchSubject = Pick<Task, 'id' | 'title' | 'action' | 'unit' | 'maxCount' | 'currentCount' | 'countKind'>;
+
+/**
+ * The one confirm seam for every editing sheet's kind picker (Ruling U7):
+ * Continuous → Discrete opens the dialog (DB preview for a stored root, the
+ * pure preview of `subject` for a pending task); confirming hands the new
+ * kind and the rounded Goal text to `onSwitched` in one call. Every other
+ * permitted change applies at once through `setKind`.
+ */
+export function useKindSwitchRequest(args: {
+  subject: KindSwitchSubject;
+  kind: CountKind;
+  goalText: string;
+  onSwitched: (kind: CountKind, goalText: string) => void;
+  setKind: (k: CountKind) => void;
+}): { requestKind: (next: CountKind) => void; dialog: React.ReactElement | null } {
+  const [pending, setPending] = useState<KindSwitchPreview | null>(null);
+  const requestKind = (next: CountKind): void => {
+    if (!needsKindSwitchConfirm(args.kind, next)) { args.setKind(next); return; }
+    void previewCounterKindSwitch(args.subject.id, next).then((p) =>
+      setPending(p ?? planKindSwitchPreview({ ...args.subject, countKind: args.kind }, next, 0)),
+    );
+  };
+  const dialog = pending ? (
+    <KindSwitchConfirmDialog
+      preview={pending}
+      onCancel={() => setPending(null)}
+      onConfirm={() => {
+        args.onSwitched(pending.to, switchedGoalText(args.goalText, args.kind, pending.to));
+        setPending(null);
+      }}
+    />
+  ) : null;
+  return { requestKind, dialog };
+}
+```
+
+- [ ] **Step 4: Run** `WEB_TEST countKindSwitch kindSwitchModel` — PASS (the existing `countKindSwitch` cases stay green: the wrapper is behaviour-identical); `WEB_CHECK`.
+
+- [ ] **Step 5: iOS failing tests.** Append to `AppDatabaseCountKindSwitchTests.swift`:
+
+```swift
+    func test_preview_roundsLogged_keepsCustomTitle_countsLiveFamilyOnly() throws {
+        let db = try seedFamily(kind: .continuous, rootGoal: 26.2, deltas: [12.75])
+        let p = try XCTUnwrap(db.previewCounterKindSwitch(rootTaskId: "root", to: .discrete, now: now))
+        XCTAssertEqual(p, KindSwitchPreview(from: .continuous, to: .discrete, titleBefore: "root", titleAfter: "root",
+                                            loggedBefore: 12.75, loggedAfter: 13, linkedCount: 1))
+    }
+
+    func test_guard_fractionalGoalAtWholeKind_rollsTheSwitchBack() throws {
+        let db = try seedFamily(kind: .continuous, rootGoal: 26.2)
+        XCTAssertThrowsError(try db.write { conn in
+            try AppDatabase.applyKindSwitchThenGoalGuard(db: conn, taskId: "root", to: .discrete, maxCount: 26.5, now: now)
+        }) { XCTAssertEqual($0 as? CountKindSwitchError, .goalNotWhole) }
+        let root = try XCTUnwrap(K.fetchTask(db, "root"))
+        XCTAssertEqual(root.countKind, .continuous)
+        XCTAssertEqual(root.maxCount, 26.2)
+        XCTAssertEqual(root.version, 1)
+    }
+
+    func test_guard_neverSwitchesALinkedRow_andAnUnchangedKindWritesNothing() throws {
+        let db = try seedFamily(kind: .continuous, rootGoal: 26.2)
+        let a = try db.write { try AppDatabase.applyKindSwitchThenGoalGuard(db: $0, taskId: "live", to: .discrete, maxCount: nil, now: now) }
+        let b = try db.write { try AppDatabase.applyKindSwitchThenGoalGuard(db: $0, taskId: "root", to: .continuous, maxCount: 26.3, now: now) }
+        XCTAssertFalse(a); XCTAssertFalse(b)
+        XCTAssertEqual(try K.fetchTask(db, "root")?.version, 1)
+        XCTAssertEqual(try K.fetchTask(db, "live")?.countKind, .continuous)
+    }
+
+    /// Carried perf item: one board placing two switched rows is derived ONCE.
+    func test_switch_derivesASharedBoardOnce() throws {
+        let db = try seedFamily(kind: .continuous, rootGoal: 26.2)
+        try db.saveBoardTask(K.placement(id: "btRootOnLive", boardId: "bLive", taskId: "root", cell: 1, size: 2))
+        let before = try XCTUnwrap(db.fetchBoard(id: "bLive")).version
+        try db.switchCounterKind(rootTaskId: "root", to: .discrete, now: now)
+        XCTAssertEqual(try XCTUnwrap(db.fetchBoard(id: "bLive")).version, before + 1)
+    }
+
+    func test_confirmCopy_andGoalRounding() {
+        let p = KindSwitchPreview(from: .continuous, to: .discrete, titleBefore: "Run 26.2 miles", titleAfter: "Run 26 miles",
+                                  loggedBefore: 12.75, loggedAfter: 13, linkedCount: 2)
+        let lines = KindSwitchCopy.lines(p)
+        XCTAssertEqual(lines.title, "Switch to Discrete?")
+        XCTAssertEqual(lines.rows.map { "\($0.0)→\($0.1)" }, ["Run 26.2 miles→Run 26 miles", "12.75 logged→13 logged"])
+        XCTAssertEqual(lines.body, "Switching back restores the exact values. Follows on 2 linked squares.")
+        XCTAssertTrue(KindSwitchCopy.needsConfirm(from: .continuous, to: .discrete))
+        XCTAssertFalse(KindSwitchCopy.needsConfirm(from: .discrete, to: .continuous))
+        XCTAssertEqual(KindSwitchCopy.switchedGoalText("26.2", from: .continuous, to: .discrete), "26")
+        XCTAssertEqual(KindSwitchCopy.switchedGoalText("0.3", from: .continuous, to: .discrete), "1")
+    }
+```
+
+(`K.placement(id:boardId:taskId:cell:size:)` is `LinkedWindowKit.placement`; `seedFamily`'s root is titled `"root"` — a custom title, so `titleAfter` keeps it. If `K.placement`'s `cell` maps to an occupied slot of a 1×1 board, pass `size: 2` as shown so the second placement is valid.) Snapshot `KindSwitchConfirmSnapshotTests.swift`: `testConfirmLight` / `testConfirmDark` rendering `KindSwitchConfirmView(preview: p, onCancel: {}, onConfirm: {})` (the preview above) at `.fixed(width: 393, height: 320)`.
+
+- [ ] **Step 6: Run — expect build FAIL.** `IOS_TEST -only-testing:OYBCTests/AppDatabaseCountKindSwitchTests`
+
+- [ ] **Step 7: Implement iOS.**
+  - `CountKindSwitchError` gains `/// A whole kind received a fractional goal (D4). case goalNotWhole`.
+  - Extract the `write { db in … }` body (`:47-105`) into `static func switchCounterKind(db: Database, rootTaskId: String, to: CountKind, now: Date) throws -> [String]`; its final loop becomes `try Self.runBoardCascadeForTasks(db: db, changedTaskIds: writtenIds, now: nowIso)` and it returns `writtenIds`. The instance method = `try write { db in _ = try Self.switchCounterKind(db: db, rootTaskId: rootTaskId, to: to, now: now) }`.
+  - `AppDatabase+Tasks.swift`: add beside `runBoardCascadeForTask`:
+
+```swift
+    /// `runBoardCascadeForTask` for several changed tasks, deriving each
+    /// affected board ONCE from one snapshot (kind switches write a root and
+    /// its family together — counter kinds carried perf item).
+    static func runBoardCascadeForTasks(db: Database, changedTaskIds: [String], now: String) throws {
+        let allChildren = try CompoundChild.filter(Column("isDeleted") == false).fetchAll(db)
+        let allBoardTasks = try BoardTask.filter(Column("isDeleted") == false).fetchAll(db)
+        var boardIds: [String] = []
+        for id in changedTaskIds {
+            let parents = DerivationPass.findTransitiveParentCompounds(changedTaskId: id, children: allChildren)
+            for b in DerivationPass.findAffectedBoardIds(changedTaskId: id, parentCompounds: parents, boardTasks: allBoardTasks)
+            where !boardIds.contains(b) { boardIds.append(b) }
+        }
+        try deriveBoards(db: db, boardIds: boardIds, now: now)
+    }
+```
+
+    and refactor `runBoardCascadeForTask` into "compute `affectedBoardIds`, then `try deriveBoards(db:boardIds:now:)`", where `private static func deriveBoards(db:boardIds:now:)` holds the existing snapshot (`allTasks`, `allBoards`, `windowContext`, maps) and per-board loop body verbatim (`:88-…`). Net line change ≈ +15.
+  - Guard:
+
+```swift
+    /// The ONE "switch if changed, then guard the goal" step every editing
+    /// save runs inside its own write (Ruling U7). Throwing after the switch
+    /// rolls the caller's transaction back.
+    @discardableResult
+    static func applyKindSwitchThenGoalGuard(db: Database, taskId: String, to: CountKind?, maxCount: CountValue?, now: Date) throws -> Bool {
+        guard let task = try Task.fetchOne(db, key: taskId), !task.isDeleted, task.type == .counting else { return false }
+        let from = resolveCountKind(task.countKind)
+        var switched = false
+        if let to, to != from, task.sharedCounterId == nil {
+            _ = try switchCounterKind(db: db, rootTaskId: taskId, to: to, now: now)
+            switched = true
+        }
+        let finalKind = switched ? (to ?? from) : from
+        if let maxCount, isWholeCountKind(finalKind), maxCount.rounded() != maxCount { throw CountKindSwitchError.goalNotWhole }
+        return switched
+    }
+```
+
+  - `KindSwitchPreview` (`Equatable, Identifiable`, `var id: String { "\(from.rawValue)-\(to.rawValue)" }`), `static func planned(task:to:linkedCount:)` (mirrors `planKindSwitchPreview`: `planCountKindSwitch(maxCount:defaultLogAmount:from:to:)`, `TaskTitle.isAutoCounterTitle(…, countKind: from)`, `TaskTitle.generateCounterTaskTitle(…, countKind: to)`, `quantizeCount`, `finalizeWindowCount`), and `func previewCounterKindSwitch(rootTaskId:to:now:)` = `try read { db in … family filter !BoardSources.isFrozenDerivedRow(row, now: nowIso) … KindSwitchPreview.planned(task: root, to: to, linkedCount: n) }` returning nil for a missing / non-counting / linked task.
+  - `KindSwitchConfirmView.swift`:
+
+```swift
+import SwiftUI
+
+/// Copy + rounding behind the Continuous → Discrete confirm. Web twin: `kindSwitchModel.ts`.
+enum KindSwitchCopy {
+    static func needsConfirm(from: CountKind, to: CountKind) -> Bool { from == .continuous && to == .discrete }
+
+    static func lines(_ p: KindSwitchPreview) -> (title: String, rows: [(String, String)], body: String) {
+        let family = p.linkedCount == 0 ? "" : " Follows on \(p.linkedCount) linked square\(p.linkedCount == 1 ? "" : "s")."
+        return (
+            "Switch to \(p.to.label)?",
+            [(p.titleBefore, p.titleAfter),
+             ("\(formatCount(p.loggedBefore, kind: p.from)) logged", "\(formatCount(p.loggedAfter, kind: p.to)) logged")],
+            "Switching back restores the exact values.\(family)"
+        )
+    }
+
+    static func switchedGoalText(_ goalText: String, from: CountKind, to: CountKind) -> String {
+        guard let goal = parseCountInput(goalText, kind: from),
+              let rounded = planCountKindSwitch(maxCount: goal, defaultLogAmount: nil, from: from, to: to)?.maxCount
+        else { return goalText }
+        return formatCountForInput(rounded, kind: to)
+    }
+}
+
+/// Continuous → Discrete confirm (docs/COUNTER_KINDS.md §5). Web twin: `KindSwitchConfirmDialog.tsx`.
+struct KindSwitchConfirmView: View {
+    let preview: KindSwitchPreview
+    let onCancel: () -> Void
+    let onConfirm: () -> Void
+
+    var body: some View {
+        let lines = KindSwitchCopy.lines(preview)
+        VStack(alignment: .leading, spacing: 14) {
+            Text(lines.title).font(.risoHead(18, .extraBold)).foregroundStyle(Color.risoInk)
+            VStack(alignment: .leading, spacing: 6) {
+                ForEach(Array(lines.rows.enumerated()), id: \.offset) { _, row in
+                    HStack(spacing: 8) {
+                        Text(row.0).strikethrough().foregroundStyle(Color.risoMuted)
+                        Text("→").foregroundStyle(Color.risoMuted).accessibilityHidden(true)
+                        Text(row.1).foregroundStyle(Color.risoInk)
+                    }
+                    .font(.risoBody(13, .semibold))
+                }
+            }
+            Text(lines.body).font(.risoBody(12, .regular)).foregroundStyle(Color.risoInk)
+            HStack(spacing: 10) {
+                RisoButton(title: "Cancel", kind: .neutral, fullWidth: true, action: onCancel)
+                RisoButton(title: "Switch", kind: .blue, fullWidth: true, action: onConfirm)
+            }
+        }
+        .padding(Riso.gutter)
+        .background(Color.risoPaper)
+        .presentationDetents([.height(300)])
+        .presentationBackground(Color.risoPaper)
+    }
+}
+
+extension View {
+    /// The one confirm seam for every editing sheet (Ruling U7): presents the
+    /// dialog while `pending` is set; `onConfirm` receives the preview so the
+    /// sheet sets its kind and rounds its goal with `KindSwitchCopy.switchedGoalText`.
+    func kindSwitchConfirm(pending: Binding<KindSwitchPreview?>, onConfirm: @escaping (KindSwitchPreview) -> Void) -> some View {
+        sheet(item: pending) { p in
+            KindSwitchConfirmView(preview: p, onCancel: { pending.wrappedValue = nil }, onConfirm: {
+                onConfirm(p)
+                pending.wrappedValue = nil
+            })
+        }
+    }
+}
+```
+
+- [ ] **Step 8: Run iOS** `IOS_TEST -only-testing:OYBCTests/AppDatabaseCountKindSwitchTests` — PASS (existing switch tests unchanged). `xcodegen generate`; record `KindSwitchConfirmSnapshotTests`; read vs handoff "Switch confirm".
+
+- [ ] **Step 9: Commit**
+
+```bash
+git add apps/web apps/ios
+git commit -m "feat(counters): switchCounterKind in a caller transaction + the shared switch-then-goal-guard step + preview + Continuous→Discrete confirm seam; family cascade derives each board once (PR 3 Task 8)"
+```
+
+---
+
+### Task 9: A4 — Task Detail edit picks / switches the kind
+
+**Files:**
+- Modify: `apps/web/src/db/operations/compoundStructureEdit.ts:345-371` (`TaskEditSubmit.countKind`; `saveTaskEdit` runs the Task 8 guard + the field patch in one transaction)
+- Modify: `apps/web/src/pages/tasks/TaskEditSheet.tsx:77-80` (kind state; goal seeded with `formatCountForInput`), `:200-220` (submit), `:320-352` (Action / Kind / Goal / Unit / Reads as)
+- Modify: `apps/ios/OYBC/Views/TasksTab/EditTaskSheet.swift:44-60` (`Patch.countKind: CountKind? = nil`), `:75,:116` (state), `:219-240` (fields), `:470-490` (submit), `.kindSwitchConfirm`
+- Modify: `apps/ios/OYBC/Database/AppDatabase+TaskEditing.swift:98-130` (guard first, inside the write), `:231-240` (`applyBasicFields` becomes `throws`; parses the goal at the final kind)
+- Test: `apps/web/src/db/operations/__tests__/saveTaskEdit.countKind.test.ts` (create), `apps/ios/OYBCTests/AppDatabaseTaskEditTests.swift` (+3 cases), `apps/web/e2e/counter-kinds-authoring.spec.ts` (+1 case)
+- Re-record (intentional — Kind row): `RisoEditTaskSheetSnapshotTests/testCounting{Light,Dark}`; add `testCountingDurationLockedLight`, `testCountingContinuousLight`
+
+**Interfaces:**
+- Consumes: `KindPicker`, `KindTag`, `GoalEntry` (Tasks 3–4); `applyKindSwitchThenGoalGuard`, `useKindSwitchRequest` / `.kindSwitchConfirm`, `KindSwitchCopy.switchedGoalText` (Task 8); `kindPickerLock('edit', kind)`, `countingGoalError` (Task 6).
+- Produces: `TaskEditSubmit.countKind?: CountKind`; iOS `EditTaskSheet.Patch.countKind: CountKind?` (nil = unchanged). Rule: Save = guard (switch if changed) → field patch, one transaction; the typed goal is parsed at the NEW kind.
+
+- [ ] **Step 1: Failing web test** `saveTaskEdit.countKind.test.ts` (Dexie via `fake-indexeddb`; teardown as in `countKindSwitch.test.ts:156-166`):
+
+```ts
+import { afterEach, describe, expect, it } from 'vitest';
+import { TaskType, type Task } from '@oybc/shared';
+import { db } from '../../internal';
+import { saveTaskEdit } from '../compoundStructureEdit';
+import { KindGoalError } from '../countKindSwitch';
+
+const seed = async (over: Partial<Task>): Promise<Task> => {
+  const t = {
+    id: 'r', userId: 'u1', title: 'Run 26.2 miles', type: TaskType.COUNTING, action: 'Run', unit: 'miles',
+    maxCount: 26.2, countKind: 'continuous', currentCount: 0, isCompleted: false, totalCompletions: 0,
+    totalInstances: 0, createdAt: '2026-10-01T00:00:00.000Z', updatedAt: '2026-10-01T00:00:00.000Z', version: 1, isDeleted: false,
+    ...over,
+  } as Task;
+  await db.tasks.add(t);
+  return t;
+};
+
+afterEach(async () => {
+  await Promise.all([db.tasks.clear(), db.taskEvents.clear(), db.boards.clear(), db.boardTasks.clear(), db.compoundChildren.clear(), db.syncQueue.clear()]);
+});
+
+describe('saveTaskEdit — counter kinds', () => {
+  it('switches continuous → discrete then applies the typed goal', async () => {
+    await seed({});
+    await saveTaskEdit('r', { countKind: 'discrete', maxCount: 30, action: 'Run', unit: 'miles', title: 'Run 30 miles' });
+    expect(await db.tasks.get('r')).toMatchObject({ countKind: 'discrete', maxCount: 30, title: 'Run 30 miles' });
+  });
+  it('a fractional goal at the new whole kind rolls the switch back', async () => {
+    await seed({});
+    await expect(saveTaskEdit('r', { countKind: 'discrete', maxCount: 26.5, title: 'Run 26.5 miles' })).rejects.toBeInstanceOf(KindGoalError);
+    expect(await db.tasks.get('r')).toMatchObject({ countKind: 'continuous', maxCount: 26.2, version: 1 });
+  });
+  it('an unchanged kind is one ordinary version bump', async () => {
+    await seed({ countKind: undefined, maxCount: 5, title: 'Read 5 pages', unit: 'pages', action: 'Read' });
+    await saveTaskEdit('r', { countKind: 'discrete', maxCount: 6, title: 'Read 6 pages' });
+    expect((await db.tasks.get('r'))?.version).toBe(2);
+  });
+});
+```
+
+- [ ] **Step 2: Run — expect FAIL.** `WEB_TEST saveTaskEdit.countKind`
+
+- [ ] **Step 3: Implement web.** `compoundStructureEdit.ts`:
+
+```ts
+export type TaskEditSubmit = UpdateTaskPatch & { compound?: TaskEditPatch; countKind?: CountKind };
+
+export async function saveTaskEdit(taskId: string, submit: TaskEditSubmit): Promise<void> {
+  const { compound, countKind, ...basicPatch } = submit;
+  if (compound) {
+    const description = 'description' in basicPatch ? (basicPatch.description ?? '') : undefined;
+    await editCompoundStructure(taskId, compound, { description });
+    return;
+  }
+  if (countKind === undefined) {
+    await updateTaskAndCascade(taskId, basicPatch);
+    return;
+  }
+  await db.transaction('rw', [db.boards, db.boardTasks, db.tasks, db.compoundChildren, db.taskEvents, db.syncQueue], async () => {
+    await applyKindSwitchThenGoalGuard(taskId, countKind, basicPatch.maxCount, new Date().toISOString());
+    await updateTaskAndCascade(taskId, basicPatch);
+  });
+}
+```
+
+(`updateTaskAndCascade` opens nested `rw` transactions over subsets of these six tables — Dexie joins them to the outer one, so a later throw rolls everything back; if a run reports `SubTransaction` scope errors, add the missing table to the outer list.) `TaskEditSheet.tsx`:
+
+```tsx
+  const storedKind = resolveCountKind(task);
+  const [countKind, setCountKind] = useState<CountKind>(storedKind);
+  const [maxCountStr, setMaxCountStr] = useState(task.maxCount !== undefined ? formatCountForInput(task.maxCount, storedKind) : '');
+  const { requestKind, dialog: kindDialog } = useKindSwitchRequest({
+    subject: task, kind: countKind, goalText: maxCountStr, setKind: setCountKind,
+    onSwitched: (k, g) => { setCountKind(k); setMaxCountStr(g); },
+  });
+```
+
+The counting fields (`:320-352`) become Action → Kind → Goal · Unit → Reads as:
+
+```tsx
+            <div className={styles.field}>
+              <span className={styles.fieldLabel}>Kind</span>
+              {task.sharedCounterId ? (
+                <KindTag kind={storedKind} />
+              ) : (
+                <KindPicker value={countKind} lock={kindPickerLock('edit', storedKind)} onChange={requestKind} />
+              )}
+            </div>
+            <label className={styles.field}>
+              <span className={styles.fieldLabel}>Goal</span>
+              <GoalEntry kind={countKind} value={maxCountStr} onChange={setMaxCountStr} aria-label="Goal" dense />
+            </label>
+            {countKindNeedsUnit(countKind) && ( /* the existing Unit field, unchanged */ )}
+            {kindDialog}
+```
+
+and the submit counting branch:
+
+```ts
+    if (task.type === TaskType.COUNTING) {
+      patch.action = action.trim();
+      patch.unit = countKindNeedsUnit(countKind) ? unit.trim() : '';
+      if (maxCountStr.trim() !== '') {
+        const error = countingGoalError(maxCountStr, countKind);
+        if (error) { setValidationError(error); return; }
+        patch.maxCount = parseCountInput(maxCountStr, countKind) as number;
+      }
+      if (!task.sharedCounterId) patch.countKind = countKind;
+    }
+```
+
+(`countingGoalError` from `../createPage/createFormCounting`; the Reads-as preview passes `countKind`.)
+
+- [ ] **Step 4: Run** `WEB_TEST saveTaskEdit compoundStructureEdit` — PASS; `WEB_CHECK`.
+
+- [ ] **Step 5: iOS failing tests** — append to `AppDatabaseTaskEditTests.swift`:
+
+```swift
+    // MARK: - Counter kinds (PR 3 Task 9)
+
+    private func countingRoot(_ db: AppDatabase, kind: CountKind = .continuous, maxCount: CountValue = 26.2) throws {
+        var t = LinkedWindowKit.task("r", maxCount: maxCount, title: "Run 26.2 miles")
+        t.countKind = kind
+        try db.saveTask(t)
+    }
+
+    private func countingPatch(goal: String, kind: CountKind?, title: String = "Run 30 miles") -> EditTaskSheet.Patch {
+        EditTaskSheet.Patch(
+            title: title, description: "", action: "Run", unit: "miles", maxCountStr: goal,
+            trigger: .greenlog, requiredCountStr: "", refMode: .board, selectedBoardId: "", selectedTemplateId: "",
+            countKind: kind
+        )
+    }
+
+    func testEditSwitchesThenAppliesTypedGoal() throws {
+        let db = try makeDb(); try countingRoot(db)
+        _ = try db.applyTaskEditPatch(taskId: "r", patch: countingPatch(goal: "30", kind: .discrete))
+        let saved = try XCTUnwrap(db.fetchTask(id: "r"))
+        XCTAssertEqual(saved.countKind, .discrete)
+        XCTAssertEqual(saved.maxCount, 30)
+    }
+
+    func testFractionalGoalAfterTheSwitchRollsTheSwitchBack() throws {
+        let db = try makeDb(); try countingRoot(db)
+        XCTAssertThrowsError(try db.applyTaskEditPatch(taskId: "r", patch: countingPatch(goal: "26.2", kind: .discrete)))
+        let saved = try XCTUnwrap(db.fetchTask(id: "r"))
+        XCTAssertEqual(saved.countKind, .continuous)
+        XCTAssertEqual(saved.maxCount, 26.2)
+        XCTAssertEqual(saved.version, 1)
+    }
+
+    func testContinuousGoalEditKeepsDecimals() throws {
+        let db = try makeDb(); try countingRoot(db)
+        _ = try db.applyTaskEditPatch(taskId: "r", patch: countingPatch(goal: "13,1", kind: nil, title: "Run 13.1 miles"))
+        XCTAssertEqual(try db.fetchTask(id: "r")?.maxCount, 13.1)
+    }
+```
+
+(`LinkedWindowKit.task` — `LinkedCounterWindowHealTests.swift:20` — builds a COUNTING row with action "Run", unit "miles"; `makeDb()` seeds user `u1`, matching its `userId`. `countKind` is the Patch's LAST stored property so the memberwise init order above holds.)
+
+- [ ] **Step 6: Run — expect FAIL.** `IOS_TEST -only-testing:OYBCTests/AppDatabaseTaskEditTests`
+
+- [ ] **Step 7: Implement iOS.** `Patch` gains `var countKind: CountKind? = nil` after `compound`. `applyTaskEditPatch` (`:103-107`):
+
+```swift
+        try write { db in
+            guard var task = try Task.fetchOne(db, key: taskId), !task.isDeleted else {
+                throw TaskEditError.taskNotFound
+            }
+            if task.type == .counting,
+               try Self.applyKindSwitchThenGoalGuard(db: db, taskId: taskId, to: patch.countKind, maxCount: nil, now: Date()) {
+                guard let refreshed = try Task.fetchOne(db, key: taskId) else { throw TaskEditError.taskNotFound }
+                task = refreshed
+            }
+            try Self.applyBasicFields(of: patch, to: &task)
+```
+
+`applyBasicFields` (`:231-240`) becomes `throws` and its counting branch:
+
+```swift
+        if task.type == .counting {
+            let kind = resolveCountKind(task.countKind)
+            if !patch.action.isEmpty { task.action = patch.action }
+            if countKindNeedsUnit(kind) { if !patch.unit.isEmpty { task.unit = patch.unit } } else { task.unit = "" }
+            let goal = patch.maxCountStr.trimmingCharacters(in: .whitespaces)
+            if !goal.isEmpty {
+                guard let max = parseCountInput(goal, kind: kind) else {
+                    switch kind {
+                    case .discrete: throw TaskEditError.invalid(message: "Goal must be a positive integer")
+                    case .continuous: throw TaskEditError.invalid(message: "Goal must be a number above zero with up to 2 decimals")
+                    case .duration: throw TaskEditError.invalid(message: "Goal must be a duration above zero")
+                    }
+                }
+                task.maxCount = max
+            }
+        }
+```
+
+(every other caller of `applyBasicFields` gains `try`). `EditTaskSheet`: `@State private var countKind: CountKind` and `@State private var pendingSwitch: KindSwitchPreview?` seeded in `init` from `resolveCountKind(task.countKind)`; the Counting fields (`:219-240`) become Action → `fieldLabel("Kind")` + (`task.sharedCounterId != nil ? AnyView(KindTagView(kind: resolveCountKind(task.countKind))) : AnyView(KindPickerView(selection: $countKind, lock: kindPickerLock(mode: .edit, kind: resolveCountKind(task.countKind)), onRequest: requestKind))`) → `GoalEntryView(kind: countKind, text: $maxCountStr, placeholder: "5")` → Unit only when `countKindNeedsUnit(countKind)`; attach `.kindSwitchConfirm(pending: $pendingSwitch) { p in maxCountStr = KindSwitchCopy.switchedGoalText(maxCountStr, from: p.from, to: p.to); countKind = p.to }`;
+
+```swift
+    private func requestKind(_ next: CountKind) {
+        guard KindSwitchCopy.needsConfirm(from: countKind, to: next) else { countKind = next; return }
+        pendingSwitch = (try? database.previewCounterKindSwitch(rootTaskId: task.id, to: next))
+            ?? KindSwitchPreview.planned(task: task, to: next, linkedCount: 0)
+    }
+```
+
+The submit (`:479`) passes `countKind: task.sharedCounterId == nil ? countKind : nil`.
+
+- [ ] **Step 8: Run + snapshots.** `IOS_TEST -only-testing:OYBCTests/AppDatabaseTaskEditTests -only-testing:OYBCTests/EditTaskSheetCompoundGateTests` PASS. Re-record `RisoEditTaskSheetSnapshotTests/testCounting{Light,Dark}`; add + record `testCountingDurationLockedLight` (a Duration task: all three segments locked, glyph on Duration, no Unit field — handoff A4) and `testCountingContinuousLight` (Duration locked out), using the file's existing counting fixture with `countKind` set; read them.
+
+- [ ] **Step 9: e2e + Playwright.** Append to `counter-kinds-authoring.spec.ts`:
+
+```ts
+  test('Task Detail: Continuous → Discrete confirms, rounds and saves', async ({ page }) => {
+    await page.goto('/tasks?__oybc_test_bypass=1');
+    await seedTask(page, { id: 'e0000000-0000-0000-0000-000000000001', title: 'Run 26.2 miles', type: 'counting', action: 'Run', unit: 'miles', maxCount: 26.2, currentCount: 12.75, countKind: 'continuous' });
+    await page.goto('/tasks/e0000000-0000-0000-0000-000000000001?__oybc_test_bypass=1');
+    await page.getByRole('button', { name: 'Edit', exact: true }).click();
+    await page.getByRole('group', { name: 'Kind' }).getByRole('button', { name: 'Discrete' }).click();
+    const confirm = page.getByRole('alertdialog', { name: 'Switch to Discrete?' });
+    await expect(confirm.getByText('Run 26 miles')).toBeVisible();
+    await expect(confirm.getByText('13 logged')).toBeVisible();
+    await confirm.getByRole('button', { name: 'Switch' }).click();
+    await expect(page.getByLabel('Goal', { exact: true })).toHaveValue('26');
+    await page.getByRole('button', { name: 'Save changes', exact: true }).click();
+    const stored = await readTask(page, 'e0000000-0000-0000-0000-000000000001');
+    expect(stored).toMatchObject({ countKind: 'discrete', maxCount: 26 });
+  });
+```
+
+(import `seedTask`, `readTask` from `./_fixtures/bypass` — both exist (`bypass.ts:425,602`); `Edit` is the Task Detail button `task-detail-compound-edit.spec.ts:95` already clicks, `Save changes` the sheet's submit (`TaskEditSheet.tsx:480`).) Run `WEB_E2E e2e/counter-kinds-authoring.spec.ts`. Screenshot the confirm light/dark → `.playwright-mcp/task9-a4-confirm-{light,dark}.png`.
+
+- [ ] **Step 10: Commit**
+
+```bash
+git add apps/web apps/ios
+git commit -m "feat(counters): A4 Task Detail edit — kind picker, Continuous→Discrete confirm, switch + patch in one transaction (PR 3 Task 9)"
+```
+
+---
+
+### Task 10: A3 — Board Edit square sheet (staged; applied in the Save transaction)
+
+**Files:**
+- Modify: `apps/web/src/components/boardEdit/boardEditTaskSheetModel.ts:88-115` (`SheetInput.countKind`), `:124-127` (`parseGoal(goalStr, kind)`), `:138-160` (`sheetValidationProblem`), `:169-210` (`buildSheetOverride` carries `countKind`)
+- Modify: `apps/web/src/components/boardEdit/BoardEditTaskSheet.tsx:119-125` (kind state + `useKindSwitchRequest`), `:188` (`input.countKind`), `:255-330` (Kind row, `GoalEntry`, unit gating); delete the #548 row 23 caption at `:242`
+- Modify: `apps/web/src/db/operations/compoundStructureEdit.ts:410-475` (`applyBoardEditTaskOverrideInTransaction` runs the Task 8 guard for a root, strips `countKind` from the plain field write, writes it on a Simple → Counting conversion)
+- Modify: `apps/ios/OYBC/Views/BoardsTab/SquareEditTaskSheet.swift:78-90` (`Patch.countKind: CountKind? = nil`, LAST), `:99,:153` (state), `:268-280` (validation), `:430-445` (fields), `:550-560` (result); delete #548 row 24 (`everywhereHint`, `:504-514`, and its call site) and row 25 (the `achievementSection` sentence `:497` — the section has nothing else, so delete `achievementSection` and its call site; the Title field stays editable)
+- Modify: `apps/ios/OYBC/Views/BoardsTab/SquaresDraft.swift:70-80` (`StagedTaskOverride.countKind: CountKind?`)
+- Modify: `apps/ios/OYBC/Views/BoardsTab/ViewModels/BoardPlayViewModel+EditCommit.swift:116-125` (`handleEditTaskOverride` copies `patch.countKind`), `:439-470` (`applyStagedOverrides` runs the guard for a root target), `applyingOverride(_:to:)` (sets `countKind`; a pending task gets `planCountKindSwitch` rounding)
+- Test: `apps/web/src/components/boardEdit/__tests__/boardEditTaskSheetModel.countKind.test.ts` (create), `apps/web/src/db/operations/__tests__/boardEditCommit.countKind.test.ts` (create), `apps/ios/OYBCTests/BoardEditKindSwitchTests.swift` (create)
+- Re-record (intentional — Kind row + rows 24/25 removed from every sheet type): `SquareEditTaskSheetSnapshotTests/testNormalLight`, `testNormalDark`, `testCountingLight`, `testCountingDark`, `testCompoundLight`, `testNormalThreeSegmentPickerLight`, `testConvertedCompoundEditorLight`, `testExistingCompoundFixedTypeEditorLight`, `testLinkedCounterFixedTypeLight` (now shows the kind tag), `testAchievementLight` — all ten. Add `testCountingContinuousLight` (Duration locked out — handoff A3).
+
+**Interfaces:**
+- Consumes: Tasks 3, 4, 8 (`applyKindSwitchThenGoalGuard`, `useKindSwitchRequest` / `.kindSwitchConfirm`, `KindSwitchPreview.planned`).
+- Produces: web `SheetInput.countKind: CountKind`; `parseGoal(goalStr: string, kind: CountKind = 'discrete'): number | null`; override = `TaskEditSubmit` with `countKind`; iOS `SquareEditTaskSheet.Patch.countKind`, `StagedTaskOverride.countKind`.
+- Rules: Simple → Counting starts the picker in `create` mode; an existing counting task uses `edit`; a linked row shows `KindTag`. At Save the switch runs only for a target that IS the staged task and a live root; a remapped placed copy is never switched.
+
+- [ ] **Step 1: Failing web tests.** `boardEditTaskSheetModel.countKind.test.ts`:
+
+```ts
+import { describe, expect, it } from 'vitest';
+import { TaskType, type Task } from '@oybc/shared';
+import { buildSheetOverride, parseGoal, sheetValidationProblem, type SheetInput } from '../boardEditTaskSheetModel';
+
+const original = { id: 't', type: TaskType.COUNTING, title: 'Run 26.2 mi', action: 'Run', unit: 'mi', maxCount: 26.2, countKind: 'continuous' } as Task;
+const input = (o: Partial<SheetInput>): SheetInput => ({
+  original, selected: TaskType.COUNTING, title: '', action: 'Run', goalStr: '26.2', unit: 'mi', countKind: 'continuous',
+  compoundDraft: null, compoundBaseline: null, ...o,
+});
+
+describe('Board Edit sheet — counter kinds', () => {
+  it('parses the goal at the sheet kind', () => {
+    expect(parseGoal('26.2', 'continuous')).toBe(26.2);
+    expect(parseGoal('26.2', 'discrete')).toBeNull();
+    expect(parseGoal('1h 30m', 'duration')).toBe(90);
+  });
+  it('a staged switch rides on the override with the goal parsed at the new kind', () => {
+    expect(buildSheetOverride(input({ countKind: 'discrete', goalStr: '26' }))).toMatchObject({ countKind: 'discrete', maxCount: 26, title: 'Run 26 mi' });
+  });
+  it('duration validates without a unit; discrete refuses a decimal', () => {
+    expect(sheetValidationProblem(input({ countKind: 'duration', goalStr: '1h', unit: '' }))).toBeNull();
+    expect(sheetValidationProblem(input({ countKind: 'discrete', goalStr: '26.2' }))).toBe('Set a goal above zero.');
+  });
+});
+```
+
+(`SheetInput` today = `original, selected, title, action, goalStr, unit, compoundDraft, compoundBaseline?` — `boardEditTaskSheetModel.ts:88-109`; this task adds `countKind`.) `boardEditCommit.countKind.test.ts` — copy the board/placement seeding of `apps/web/src/db/operations/__tests__/boardEditLinkedOverride.test.ts` into a local `seedBoardWithCounter({ maxCount, countKind })` returning `{ boardId, rootId, cells }`:
+
+```ts
+const commit = (boardId: string, cells: SquareDraftCell[], taskId: string, override: BoardEditTaskOverride) =>
+  commitSquareEdits({ boardId, cells, removedBoardTaskIds: [], taskOverrides: new Map([[taskId, override]]), isLegacyChosenOnDisk: false, centerCellKeepLocked: false });
+
+it('kind switch then goal edit, atomic (Review Focus 4)', async () => {
+  const { boardId, rootId, cells } = await seedBoardWithCounter({ maxCount: 26.2, countKind: 'continuous' });
+  await commit(boardId, cells, rootId, { countKind: 'discrete', maxCount: 30, action: 'Run', unit: 'mi', title: 'Run 30 mi' });
+  expect(await db.tasks.get(rootId)).toMatchObject({ countKind: 'discrete', maxCount: 30, title: 'Run 30 mi' });
+});
+it('a fractional goal at the new whole kind rolls the whole Save back', async () => {
+  const { boardId, rootId, cells } = await seedBoardWithCounter({ maxCount: 26.2, countKind: 'continuous' });
+  await expect(commit(boardId, cells, rootId, { countKind: 'discrete', maxCount: 26.5, title: 'x' })).rejects.toBeInstanceOf(KindGoalError);
+  expect(await db.tasks.get(rootId)).toMatchObject({ countKind: 'continuous', maxCount: 26.2, version: 1 });
+});
+it('a Simple square converted to Counting saves the chosen kind', async () => {
+  const { boardId, rootId, cells } = await seedBoardWithCounter({ type: TaskType.NORMAL });
+  await commit(boardId, cells, rootId, { type: TaskType.COUNTING, countKind: 'duration', action: 'Practice', unit: '', maxCount: 90, title: 'Practice 1h 30m' });
+  expect(await db.tasks.get(rootId)).toMatchObject({ type: TaskType.COUNTING, countKind: 'duration', maxCount: 90 });
+});
+```
+
+(`seedBoardWithCounter` accepts `{ type?, maxCount?, countKind? }` and seeds one active board with that task placed at (0,0).)
+
+- [ ] **Step 2: Run — expect FAIL.** `WEB_TEST boardEditTaskSheetModel.countKind boardEditCommit.countKind`
+
+- [ ] **Step 3: Implement web.** Model: `SheetInput.countKind: CountKind`; `parseGoal(goalStr, kind = 'discrete')` → `parseCountInput(goalStr, kind)`; `sheetValidationProblem` counting branch requires the unit only when `countKindNeedsUnit(input.countKind)` and uses `parseGoal(input.goalStr, input.countKind)`; `buildSheetOverride` counting branch (`:178-195`):
+
+```ts
+      const goal = parseGoal(input.goalStr, input.countKind) ?? countTargetStep(input.countKind);
+      const unit = countKindNeedsUnit(input.countKind) ? input.unit.trim() : '';
+      patch.title = title || generateCounterTaskTitle(action, goal, unit, undefined, input.countKind);
+      patch.action = action;
+      patch.unit = unit;
+      patch.maxCount = goal;
+      patch.countKind = input.countKind;
+```
+
+`BoardEditTaskSheet.tsx`: `const storedKind = resolveCountKind(task); const [countKind, setCountKind] = useState<CountKind>(storedKind);`, `goalStr` seeded with `formatCountForInput(task.maxCount, storedKind)`, `const { requestKind, dialog } = useKindSwitchRequest({ subject: task, kind: countKind, goalText: goalStr, setKind: setCountKind, onSwitched: (k, g) => { setCountKind(k); setGoalStr(g); } });`; the Kind row (between Action and Goal): `task.sharedCounterId != null` → `<KindTag kind={storedKind} />`, else `<KindPicker value={countKind} lock={kindPickerLock(original.type === TaskType.COUNTING ? 'edit' : 'create', storedKind)} onChange={requestKind} />`; Goal `<GoalEntry kind={countKind} value={goalStr} onChange={setGoalStr} aria-label="Goal" dense />`; Unit gated on `countKindNeedsUnit(countKind)`; `{dialog}` at the end of the sheet; `countKind` added to `input` (`:188`). Delete the row-23 caption node at `:242`. `applyBoardEditTaskOverrideInTransaction` — before the `if (compound)` block:
+
+```ts
+  const { countKind: stagedKind, ...plainFields } = fields;
+  if (!typeChanged && !compound && existing.type === TaskType.COUNTING) {
+    await applyKindSwitchThenGoalGuard(taskId, stagedKind, plainFields.maxCount, now);
+  }
+```
+
+the conversion branch writes `...(fields as Partial<Task>)` (which keeps `countKind` for a new Counting row; omit it when `stagedKind === 'discrete'`), and the final line becomes `await updateTaskAndCascade(taskId, plainFields);` (the switch owns `countKind`; `updateTask` never writes it raw).
+
+- [ ] **Step 4: Run** `WEB_TEST boardEdit` (every Board Edit test) — PASS; `WEB_CHECK`.
+
+- [ ] **Step 5: iOS failing test** `apps/ios/OYBCTests/BoardEditKindSwitchTests.swift`:
+
+```swift
+import XCTest
+import GRDB
+@testable import OYBC
+
+/// Board Edit kind switch through the REAL path: `handleEditTaskOverride` →
+/// `handleEditSave` → outcome. Fixtures copied from `BoardEditCompoundTests`.
+@MainActor
+final class BoardEditKindSwitchTests: XCTestCase {
+
+    private func makeDb() throws -> AppDatabase {
+        let db = try AppDatabase.makeTestInstance()
+        let now = AppDatabase.currentTimestamp()
+        try db.saveUser(User(id: "u1", email: "t@example.com", displayName: "T", photoURL: nil,
+                             preferences: User.encodePreferences(.defaults), createdAt: now, updatedAt: now, lastSyncedAt: nil, version: 1))
+        let dict: [String: Any] = [
+            "id": "b1", "userId": "u1", "name": "Board b1", "status": BoardStatus.active.rawValue, "boardSize": 3,
+            "timeframe": Timeframe.monthly.rawValue, "startDate": "2026-06-21T00:00:00.000", "endDate": "2026-06-30T23:59:59.999",
+            "centerSquareType": CenterSquareType.free.rawValue, "isRandomized": false, "totalTasks": 9, "completedTasks": 0,
+            "linesCompleted": 0, "createdAt": "2026-06-21T00:00:00.000", "updatedAt": "2026-06-21T00:00:00.000", "version": 1, "isDeleted": false,
+        ]
+        try db.saveBoard(try JSONDecoder().decode(Board.self, from: JSONSerialization.data(withJSONObject: dict)))
+        return db
+    }
+
+    private func counting(_ id: String, kind: CountKind, maxCount: CountValue, sharedCounterId: String? = nil) -> Task {
+        var t = LinkedWindowKit.task(id, maxCount: maxCount, sharedCounterId: sharedCounterId, baseline: sharedCounterId == nil ? nil : 0, title: "Run \(id)")
+        t.countKind = kind
+        return t
+    }
+
+    private func place(_ db: AppDatabase, _ taskId: String, col: Int) throws {
+        let now = AppDatabase.currentTimestamp()
+        try db.saveBoardTask(BoardTask(id: "bt-\(taskId)", boardId: "b1", taskId: taskId, row: 0, col: col, isCenter: false,
+                                       createdAt: now, updatedAt: now, lastSyncedAt: nil, version: 1))
+    }
+
+    private func waitUntil(_ predicate: () -> Bool) -> Bool {
+        let deadline = Date().addingTimeInterval(30)
+        while !predicate() && Date() < deadline { RunLoop.current.run(until: Date().addingTimeInterval(0.01)) }
+        return predicate()
+    }
+
+    private func loadedVM(_ db: AppDatabase) -> BoardPlayViewModel {
+        let vm = BoardPlayViewModel(boardId: "b1", userId: "u1", database: db)
+        vm.reload()
+        _ = waitUntil { vm.board?.id == "b1" && !vm.allTasks.isEmpty }
+        vm.seedEditDraft(from: vm.board!)
+        return vm
+    }
+
+    private func save(_ vm: BoardPlayViewModel) -> BoardPlayEditEvent.Outcome? {
+        XCTAssertTrue(vm.handleEditSave(), "save should dispatch")
+        XCTAssertTrue(waitUntil { vm.editEvent?.outcome != nil }, "no outcome emitted")
+        return vm.editEvent?.outcome
+    }
+
+    private func patch(goal: CountValue?, kind: CountKind?, title: String = "Run 30 miles") -> SquareEditTaskSheet.Patch {
+        .init(title: title, type: .counting, action: "Run", unit: "miles", maxCount: goal, compound: nil, countKind: kind)
+    }
+
+    /// Review Focus 4 — a staged Continuous → Discrete switch plus a goal edit commit together.
+    func testSwitchThenGoalEditAtomic() throws {
+        let db = try makeDb()
+        try db.saveTask(counting("root", kind: .continuous, maxCount: 26.2))
+        try place(db, "root", col: 0)
+        let vm = loadedVM(db)
+        vm.handleEditTaskOverride(taskId: "root", patch: patch(goal: 30, kind: .discrete))
+        XCTAssertEqual(save(vm), .saved)
+        let row = try XCTUnwrap(db.fetchTask(id: "root"))
+        XCTAssertEqual(row.countKind, .discrete)
+        XCTAssertEqual(row.maxCount, 30)
+        XCTAssertEqual(row.title, "Run 30 miles")
+    }
+
+    func testFractionalGoalAtTheNewWholeKindRollsTheSaveBack() throws {
+        let db = try makeDb()
+        try db.saveTask(counting("root", kind: .continuous, maxCount: 26.2))
+        try place(db, "root", col: 0)
+        let vm = loadedVM(db)
+        vm.handleEditTaskOverride(taskId: "root", patch: patch(goal: 26.5, kind: .discrete, title: "x"))
+        guard case .saveFailed = try XCTUnwrap(save(vm)) else { return XCTFail("expected saveFailed") }
+        let row = try XCTUnwrap(db.fetchTask(id: "root"))
+        XCTAssertEqual(row.countKind, .continuous)
+        XCTAssertEqual(row.maxCount, 26.2)
+        XCTAssertEqual(row.version, 1)
+    }
+
+    func testAPlacedLinkedCopyIsNeverSwitched() throws {
+        let db = try makeDb()
+        try db.saveTask(counting("root", kind: .continuous, maxCount: 26.2))
+        try db.saveTask(counting("copy", kind: .continuous, maxCount: 6.2, sharedCounterId: "root"))
+        try place(db, "copy", col: 0)
+        let vm = loadedVM(db)
+        vm.handleEditTaskOverride(taskId: "copy", patch: patch(goal: nil, kind: .discrete, title: "Run copy"))
+        XCTAssertEqual(save(vm), .saved)
+        XCTAssertEqual(try db.fetchTask(id: "copy")?.countKind, .continuous)
+        XCTAssertEqual(try db.fetchTask(id: "root")?.countKind, .continuous)
+    }
+}
+```
+
+(`LinkedWindowKit.task(_:maxCount:sharedCounterId:startDate:endDate:createdInWizard:baseline:currentCount:isCompleted:title:)` — `LinkedCounterWindowHealTests.swift:20`; the fixtures otherwise match `BoardEditCompoundTests.swift:14-110`.)
+
+- [ ] **Step 6: Run — expect build FAIL** (`extra argument 'countKind'`). `IOS_TEST -only-testing:OYBCTests/BoardEditKindSwitchTests`
+
+- [ ] **Step 7: Implement iOS.** `SquareEditTaskSheet.Patch` gains `var countKind: CountKind? = nil` (after `compound`); `StagedTaskOverride` gains `var countKind: CountKind? = nil`; `handleEditTaskOverride` passes `countKind: patch.countKind`. `applyingOverride(_:to:)` (`BoardPlayViewModel+EditCommit.swift:558`) gains `writesKind: Bool = false` and, in its `.counting` case after `maxCount`:
+
+```swift
+            if writesKind, let kind = override.countKind {
+                // A PENDING task (no events yet) or a Simple → Counting
+                // conversion takes the chosen kind directly; a stored counting
+                // row's kind changes only through the guard in applyStagedOverrides.
+                if let m = updated.maxCount, let rounded = planCountKindSwitch(
+                    maxCount: m, defaultLogAmount: nil, from: resolveCountKind(task.countKind), to: kind
+                )?.maxCount { updated.maxCount = rounded }
+                updated.countKind = kind == .discrete ? nil : kind
+            }
+            if override.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                updated.title = TaskTitle.generateCounterTaskTitle(
+                    action: updated.action ?? "", maxCount: updated.maxCount, unit: updated.unit ?? "",
+                    countKind: resolveCountKind(updated.countKind)
+                )
+            }
+```
+
+(the existing title block moves below and gains `countKind:`). Call sites: the pending merge (`:179-181`) passes `writesKind: true`; `applyStagedOverrides` passes `writesKind: input.override.type != base.type`. In `applyStagedOverrides` (`:455`, after the linked-type check):
+
+```swift
+                if target == input.stagedId, base.type == .counting, input.override.type == .counting, base.sharedCounterId == nil,
+                   try AppDatabase.applyKindSwitchThenGoalGuard(db: db, taskId: target, to: input.override.countKind,
+                                                                maxCount: input.override.maxCount, now: Date()) {
+                    guard let refreshed = try Task.fetchOne(db, key: target) else { continue }
+                    base = refreshed
+                }
+```
+
+(make `base` a `var`; a `goalNotWhole` throw propagates out of the save transaction — `handleEditSave` already maps a thrown error to `.saveFailed`). `SquareEditTaskSheet`: `@State private var countKind: CountKind`, `@State private var pendingSwitch: KindSwitchPreview?`; Kind row between Action and Goal — linked (`countingSource.sharedCounterId != nil`) → `KindTagView(kind: resolveCountKind(countingSource.countKind))`, else `KindPickerView(selection: $countKind, lock: kindPickerLock(mode: original.type == .counting ? .edit : .create, kind: resolveCountKind(countingSource.countKind)), onRequest: requestKind)` with `requestKind` exactly as Task 9's; `GoalEntryView(kind: countKind, text: $maxCountStr, placeholder: "5")` at `:438`; Unit only when `countKindNeedsUnit(countKind)`; `.kindSwitchConfirm(pending: $pendingSwitch) { p in maxCountStr = KindSwitchCopy.switchedGoalText(maxCountStr, from: p.from, to: p.to); countKind = p.to }`; validation `:277` = `parseCountInput(maxCountStr, kind: countKind) != nil` and the unit check gated; result `:556` = `maxCount: parseCountInput(maxCountStr, kind: countKind), countKind: type == .counting ? countKind : nil`. Delete `everywhereHint` + its call site and `achievementSection` + its call site.
+
+- [ ] **Step 8: Run + snapshots.** `IOS_TEST -only-testing:OYBCTests/BoardEditKindSwitchTests -only-testing:OYBCTests/BoardEditCompoundTests` PASS. `IOS_SNAP -only-testing:OYBCSnapshotTests/SquareEditTaskSheetSnapshotTests`: re-record the ten listed, add + record `testCountingContinuousLight`; read each (rows 24/25 gone; Kind row on counting; tag on the linked one).
+
+- [ ] **Step 9: e2e + Playwright.** Append to `apps/web/e2e/squares-editor.spec.ts` (it already seeds a board and opens the squares editor — reuse its `beforeEach` helpers): a seeded Continuous `Run 26.2 miles` square (`countKind: 'continuous'`) → Edit → tap the square → `Edit task` → Kind `Discrete` → `Switch` in the confirm → the sheet's Goal reads `26` → Done → Save → `readTask` shows `{ countKind: 'discrete', maxCount: 26 }`. Run `WEB_E2E e2e/squares-editor.spec.ts`. Screenshot the sheet light/dark → `.playwright-mcp/task10-a3-{light,dark}.png`.
+
+- [ ] **Step 10: Commit**
+
+```bash
+git add apps/web apps/ios
+git commit -m "feat(counters): A3 Board Edit sheet stages a kind switch applied in the Save transaction; drop the sheet's two captions (#548 23-25) (PR 3 Task 10)"
+```
+
+---
+
+### Task 11: A6 — Counters hub New counter (kind, Start from)
+
+**Files:**
+- Modify: `apps/web/src/db/operations/tasks.counter.ts:50-90` (`createCounterTask` input + `countKind`)
+- Modify: `apps/web/src/components/counters/CreateCounterSheet.tsx:64` (kind state), `:95,:120-124` (parse), `:150-215` (Kind row first; Start from → `GoalEntry`; R7 `:200`, `:215` → `formatCountTotal`); delete #548 rows 69 (`:164`), 71 (`:176-178`), 73 (`:194`), 75 (`:203-205`, the `previewSub` span — the preview card keeps name · total · "All-time")
+- Modify: `apps/ios/OYBC/Database/AppDatabase+Counters.swift:38-80` (`createCounterTask(…, countKind: CountKind = .discrete, now:)`)
+- Modify: `apps/ios/OYBC/Views/ProfileTab/NewCounterSheetView.swift:47` (kind state), `:68-70,:135-145` (parse + pass), `:170-290` (Kind row first; Start from → `GoalEntryView`; R7 `:245`, `:283` → `formatCountTotal`); delete #548 rows 70 (`:188-190`), 72 (`:195-197`), 74 (`:204-206`), 76 (`:250`)
+- Test: `apps/web/src/db/operations/__tests__/createCounterTask.countKind.test.ts` (create), `apps/web/src/components/counters/__tests__/CreateCounterSheet.test.ts` (create), `apps/ios/OYBCTests/AppDatabaseCounterCreateKindTests.swift` (create)
+- Re-record (intentional): `CountersHubSnapshotTests/testNewCounterSheetDefault{Light,Dark}`, `testNewCounterSheetEstablishedMatch{Light,Dark}`; add `testNewCounterSheetContinuous{Light,Dark}`
+
+**Interfaces:**
+- Consumes: `KindPicker` / `KindPickerView`, `GoalEntry` / `GoalEntryView`, `parseCountInput(…, { allowZero: true })`, `formatCountTotal`, `isWholeCountKind`.
+- Produces: web `createCounterTask(userId, { action, unit, startingCount?, countKind?: CountKind })`; iOS `createCounterTask(userId:action:unit:startingCount:countKind:now:)`. Ruling U4: the hub keeps its noun field for every kind (it names the counter); a Duration amount never shows the noun (`countUnitSuffix`).
+
+- [ ] **Step 1: Failing tests.** `createCounterTask.countKind.test.ts` (Dexie; teardown as in `countKindSwitch.test.ts`):
+
+```ts
+import { afterEach, describe, expect, it } from 'vitest';
+import { db } from '../../internal';
+import { createCounterTask } from '../tasks.counter';
+
+afterEach(async () => { await Promise.all([db.tasks.clear(), db.taskEvents.clear(), db.syncQueue.clear()]); });
+
+describe('createCounterTask — counter kinds', () => {
+  it('creates a continuous counter seeded with a fractional starting count', async () => {
+    const t = await createCounterTask('u1', { action: 'Run', unit: 'miles', startingCount: 148.6, countKind: 'continuous' });
+    expect(t.countKind).toBe('continuous');
+    expect((await db.tasks.get(t.id))?.currentCount).toBe(148.6);
+    expect((await db.taskEvents.where('taskId').equals(t.id).first())?.delta).toBe(148.6);
+  });
+  it('a discrete (default) counter refuses a fractional seed', async () => {
+    await expect(createCounterTask('u1', { action: 'Do', unit: 'push-ups', startingCount: 2.5 })).rejects.toThrow();
+  });
+  it('a duration counter keeps its noun and seeds minutes', async () => {
+    const t = await createCounterTask('u1', { action: 'Practice', unit: 'guitar', startingCount: 90, countKind: 'duration' });
+    expect(t).toMatchObject({ countKind: 'duration', unit: 'guitar', currentCount: 90 });
+  });
+});
+```
+
+`CreateCounterSheet.test.ts` (`renderToStaticMarkup` inside a `MemoryRouter` — the sheet calls `useNavigate`; its props are `open, onClose, tasks, userId, onCreated`, `CreateCounterSheet.tsx:30-36`):
+
+```ts
+import { describe, expect, it } from 'vitest';
+import React from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
+import { MemoryRouter } from 'react-router-dom';
+import { CreateCounterSheet } from '../CreateCounterSheet';
+
+const renderSheet = (): string =>
+  renderToStaticMarkup(
+    React.createElement(MemoryRouter, null,
+      React.createElement(CreateCounterSheet, { open: true, onClose: () => {}, tasks: [], userId: 'u1', onCreated: () => {} })),
+  );
+
+it('Kind is the first field and no helper sentence renders (#548 69-76)', () => {
+  const html = renderSheet();
+  expect(html.indexOf('aria-label="Kind"')).toBeLessThan(html.indexOf('What are you counting?'));
+  for (const s of ['A plural noun', 'Used in task titles', 'Already partway', 'link up automatically']) expect(html).not.toContain(s);
+});
+```
+
+iOS `AppDatabaseCounterCreateKindTests.swift`:
+
+```swift
+import XCTest
+@testable import OYBC
+
+final class AppDatabaseCounterCreateKindTests: XCTestCase {
+    func testContinuousCounterSeedsAFraction() throws {
+        let db = try AppDatabase.makeTestInstance(); try LinkedWindowKit.seedUser(db)
+        let t = try db.createCounterTask(userId: "u1", action: "Run", unit: "miles", startingCount: 148.6, countKind: .continuous, now: "2026-10-07T00:00:00.000Z")
+        XCTAssertEqual(t.countKind, .continuous)
+        XCTAssertEqual(try db.fetchTask(id: t.id)?.currentCount, 148.6)
+    }
+    func testDiscreteRefusesAFractionalSeed() throws {
+        let db = try AppDatabase.makeTestInstance(); try LinkedWindowKit.seedUser(db)
+        XCTAssertThrowsError(try db.createCounterTask(userId: "u1", action: "Do", unit: "push-ups", startingCount: 2.5, now: "2026-10-07T00:00:00.000Z"))
+    }
+}
+```
+
+- [ ] **Step 2: Run — expect FAIL.** `WEB_TEST createCounterTask.countKind CreateCounterSheet` / `IOS_TEST -only-testing:OYBCTests/AppDatabaseCounterCreateKindTests`
+
+- [ ] **Step 3: Implement web.** `createCounterTask`:
+
+```ts
+export async function createCounterTask(
+  userId: string,
+  input: { action: string; unit: string; startingCount?: number; countKind?: CountKind },
+): Promise<Task> {
+  const action = input.action.trim();
+  const unit = input.unit.trim();
+  const startingCount = input.startingCount ?? 0;
+  const countKind = input.countKind ?? 'discrete';
+  if (!action || !unit) throw new Error('createCounterTask: action and unit are required');
+  if (!isQuantizedCount(startingCount) || startingCount < 0 || (isWholeCountKind(countKind) && !Number.isInteger(startingCount))) {
+    throw new Error('createCounterTask: startingCount must be a non-negative count at the counter kind');
+  }
+  const kindField = countKind !== 'discrete' ? { countKind } : {};
+  const validated = CreateTaskInputSchema.parse({
+    title: generateCounterTaskTitle(action, null, unit), type: TaskType.COUNTING, action, unit, isCounter: true, ...kindField,
+  });
+  // … the existing `task` literal, plus `...kindField,` …
+```
+
+`CreateCounterSheet.tsx`: `const [countKind, setCountKind] = useState<CountKind>('discrete');`; first in the form, before the noun label:
+
+```tsx
+        <span className={styles.fieldLabel}>Kind</span>
+        <KindPicker value={countKind} lock="none" onChange={setCountKind} />
+```
+
+Start from (`:182-193`) → `<GoalEntry kind={countKind} value={startingCountStr} onChange={setStartingCountStr} aria-label="Start from" placeholder="0" dense />`; `startFromNum` (`:95`) and the create parse (`:120`) = `parseCountInput(startingCountStr, countKind, { allowZero: true })`; the create call passes `startingCount: startFromNum ?? undefined, countKind`; `:200` → `formatCountTotal(previewCount, countKind)`; `:215` → `formatCountTotal(match.lifetime, resolveCountKind(match.task))`. Delete the three `helperText` divs and the `previewSub` span (keep the `previewFooter` row with "All-time").
+
+- [ ] **Step 4: Implement iOS.** `createCounterTask` gains `countKind: CountKind = .discrete` (before `now:`); its guard becomes `guard count >= 0, isQuantizedCount(count), !isWholeCountKind(countKind) || count.rounded() == count else { throw AppDatabaseError.invalidCounterInput("createCounterTask: startingCount must be a non-negative count at the counter kind") }`; after building `task`, `task.countKind = countKind == .discrete ? nil : countKind` (make it `var`). `NewCounterSheetView`: `@State private var countKind: CountKind = .discrete` passed into the content leaf as `@Binding var countKind: CountKind`; first `fieldBlock(label: "Kind") { KindPickerView(selection: $countKind, lock: .none) }`; Start from → `GoalEntryView(kind: countKind, text: $startingCountText, placeholder: "0")`; parse at `:69` and `:135` = `parseCountInput(startingCountText, kind: countKind, allowZero: true)`; `handleCreate` captures `countKind` and passes `countKind: capturedKind`; `:245` `Text(formatCountTotal(previewCount, kind: countKind))`; `:283` `formatCountTotal(match.lifetime, kind: resolveCountKind(match.task.countKind))` (`CounterCreateMatch.task` — `LinkableCounter.swift:140`). Delete the four caption `Text`s.
+
+- [ ] **Step 5: Run** both test commands — PASS; `WEB_CHECK`. Re-record / record the `CountersHubSnapshotTests` baselines listed under Files; read vs handoff A6 (Kind first, decimal pad, 148.6 preview, no helper lines).
+
+- [ ] **Step 6: Playwright validation.** `/profile/counters?__oybc_test_bypass=1` → `+ New counter` → Kind Continuous → noun `miles`, verb `Run`, Start from `148,6` → `Create counter` → the hub card reads `148.6`; screenshot the sheet light/dark → `.playwright-mcp/task11-a6-{light,dark}.png`.
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add apps/web apps/ios
+git commit -m "feat(counters): A6 hub New counter picks a kind + fractional / h:m Start from; grouped totals (R7); drop four helper captions (#548 69-76) (PR 3 Task 11)"
 ```
 
 ---
@@ -3112,58 +4038,206 @@ git commit -m "feat(counters): member-row target steppers step per kind (0.1 / 1
 ### Task 12: A5 — pool row editor (staged edits carry the kind)
 
 **Files:**
-- Modify: `apps/web/src/db/taskEditPatch.ts:73-90` (`TaskEditPatch.countKind?: CountKind`; `seedPatchForEditor` seeds it; `validatePatch` parses `goal` at it), `readsAsPreview(action, goal, unit, kind?)`
-- Modify: `apps/web/src/components/wizard/PoolRowEditor.tsx:100-150` (Kind row; GoalEntry; unit gated; confirm); delete the #548 rows 52/53 at `:86-89`, `:96`
-- Modify: `apps/web/src/db/operations/wizardBoard.ts:317-380` (`applyStagedTaskEditsForWizardPersist`: switch first when `patch.countKind` differs, then the patch) and the pending-merge path `applyPatchToTask(patch, base)` (`apps/web/src/db/taskEditPatch.ts:362`, called from `wizardPersist.ts:545-550` for pending tasks) — a pending task takes `countKind` + `planCountKindSwitch` rounding directly
-- Modify: `apps/ios/OYBC/Views/CreateTab/Components/TaskEditPatch.swift:76-200` (`countKind` already added in Task 6 — `validate(type:)` uses it; `apply` writes it), `apps/ios/OYBC/Views/CreateTab/Components/RisoPoolRowEditorView.swift:95-150` (Kind row, `GoalEntryView`, unit gated, preview kind), `apps/ios/OYBC/Database/AppDatabase+StagedTaskEdits.swift:40-80` (switch first inside the caller's `db`)
-- Test: `apps/web/src/db/operations/__tests__/stagedEdits.countKind.test.ts` (create), `apps/web/src/components/wizard/__tests__/PoolRowEditor.countKind.test.ts` (create), `apps/ios/OYBCTests/StagedTaskEditsKindTests.swift` (create)
-- Re-record (intentional — Kind row): `PoolRowEditorSnapshotTests/testCountingEditor{Light,Dark}`, `testCountingValidationBlockedLight`
+- Modify: `apps/web/src/db/taskEditPatch.ts:110-124` (`TaskEditPatch.countKind?: CountKind`), `:135-166` (`patchFromTask` / `seedPatchForEditor` seed it + kind-aware auto-title check), `:314-323` (`validatePatch` counting branch), `:362-372` (`applyPatchToTask` counting branch), `readsAsPreview` (unchanged — it echoes the typed text)
+- Modify: `apps/web/src/components/wizard/PoolRowEditor.tsx:15-160` — props `taskId` + `taskType` → one `task: Task` prop (the row's stored task; the kind tag / lock need its kind and link), `usedOnBoardCount` removed (it only fed row 52); Kind row between Title and the Action/Goal/Unit trio; `GoalEntry`; Unit hidden for Duration; `useKindSwitchRequest`; delete #548 row 52 (`stagedUntil` / `everywhereLine` `:84-89` and its render node) and row 53 (the `headerHint` span `:96`)
+- Modify: call sites `apps/web/src/components/wizard/BoardWizardTasksStep.tsx:732-742` (994 lines — this edit is net −2: `task={task}` replaces two props and `usedOnBoardCount` goes; delete `taskBoardCounts` there if it has no other reader) and `apps/web/src/components/pools/PoolEditorBody.tsx:360-370`; iOS `RisoPoolRowEditorView(taskId:taskType:…)` → `RisoPoolRowEditorView(task:…)` at `BoardWizardTasksStepView.swift:491` and `PoolEditorBodyView.swift:112`
+- Modify: `apps/web/src/db/operations/wizardBoard.ts:317-390` (`applyStagedTaskEditsForWizardPersist` non-compound branch runs the Task 8 guard first)
+- Modify: `apps/ios/OYBC/Views/CreateTab/Components/TaskEditPatch.swift:134-142` (`validate` counting branch), `:174-187` (`applied(to:)` counting branch), seed (`:98`, already added in Task 7)
+- Modify: `apps/ios/OYBC/Views/CreateTab/Components/RisoPoolRowEditorView.swift:95-150` (Kind row, `GoalEntryView`, Unit gating, `countingDerivedTitle` kind-aware, `.kindSwitchConfirm`)
+- Modify: `apps/ios/OYBC/Database/AppDatabase+StagedTaskEdits.swift:40-80` (guard first in the non-compound branch)
+- Test: `apps/web/src/db/operations/__tests__/stagedEdits.countKind.test.ts` (create), `apps/web/src/db/__tests__/taskEditPatch.countKind.test.ts` (+3 cases), `apps/ios/OYBCTests/StagedTaskEditsKindTests.swift` (create)
+- Re-record (intentional — Kind row; rows 52/53 are web-only): `PoolRowEditorSnapshotTests/testCountingEditor{Light,Dark}`, `testCountingValidationBlockedLight`
 
 **Interfaces:**
-- Consumes: Tasks 3, 4, 6, 7.
-- Produces: `TaskEditPatch.countKind?: CountKind` (web; iOS non-optional with default from Task 6). Rule: pool rows edit EXISTING tasks (mode `edit`); a pending (this-session) task's staged kind change rewrites its payload directly (no events exist yet), a persisted task's goes through `switchCounterKindInTransaction` inside the pool save / wizard persist transaction.
+- Consumes: Tasks 3, 4, 7 (`TaskEditPatch.countKind` on iOS), 8 (`applyKindSwitchThenGoalGuard`, `useKindSwitchRequest`, `.kindSwitchConfirm`).
+- Produces: web `TaskEditPatch.countKind?: CountKind` (absent = the task's own kind). Rules: pool rows edit EXISTING tasks (picker mode `edit`); a pending task's staged kind is applied directly by `applyPatchToTask` / `applied(to:)` (no events exist); a stored ROOT's goes through the guard inside the pool-save / wizard-persist transaction; a linked row never takes a kind from a patch.
 
-- [ ] **Step 1: Failing tests.** Web `stagedEdits.countKind.test.ts`:
+- [ ] **Step 1: Failing web tests.** Append to `taskEditPatch.countKind.test.ts`:
 
 ```ts
-it('pool save applies a staged Discrete → Continuous switch and a decimal goal', async () => {
-  const t = await seedCounting({ maxCount: 26, title: 'Run 26 miles', action: 'Run', unit: 'miles' });
-  await db.transaction('rw', [db.boards, db.boardTasks, db.tasks, db.compoundChildren, db.taskEvents, db.syncQueue], () =>
-    applyStagedTaskEditsForWizardPersist(new Map([[t.id, { title: '', action: 'Run', goal: '26.2', unit: 'miles', children: [], countKind: 'continuous' }]]), new Set(), NOW_ISO, { strict: true }),
-  );
-  const saved = await db.tasks.get(t.id);
-  expect(saved?.countKind).toBe('continuous');
-  expect(saved?.maxCount).toBe(26.2);
-  expect(saved?.title).toBe('Run 26.2 miles');
-});
-it('strict mode rejects a goal invalid at the staged kind', async () => {
-  const t = await seedCounting({ maxCount: 26, title: 'Run 26 miles', action: 'Run', unit: 'miles' });
-  await expect(db.transaction('rw', [db.boards, db.boardTasks, db.tasks, db.compoundChildren, db.taskEvents, db.syncQueue], () =>
-    applyStagedTaskEditsForWizardPersist(new Map([[t.id, { title: '', action: 'Run', goal: '26.2', unit: 'miles', children: [], countKind: 'discrete' }]]), new Set(), NOW_ISO, { strict: true }),
-  )).rejects.toThrow();
+describe('TaskEditPatch countKind (pool rows)', () => {
+  const run = { id: 'r', type: TaskType.COUNTING, title: 'Run 26.2 miles', action: 'Run', unit: 'miles', maxCount: 26.2, countKind: 'continuous' } as Task;
+  it('seeds the kind and the goal text at it; an auto title seeds blank', () => {
+    expect(seedPatchForEditor(run)).toMatchObject({ countKind: 'continuous', goal: '26.2', title: '' });
+  });
+  it('validates the goal at the patch kind; duration needs no unit', () => {
+    expect(validatePatch({ ...seedPatchForEditor(run), goal: '3.125' }, TaskType.COUNTING)).toBe('Set a goal above zero.');
+    expect(validatePatch({ ...seedPatchForEditor(run), countKind: 'duration', goal: '1h', unit: '' }, TaskType.COUNTING)).toBeNull();
+  });
+  it('applyPatchToTask writes the kind on a pending root, never on a linked row', () => {
+    expect(applyPatchToTask({ ...seedPatchForEditor(run), countKind: 'discrete', goal: '26' }, run)).toMatchObject({ countKind: 'discrete', maxCount: 26, title: 'Run 26 miles' });
+    const linked = { ...run, sharedCounterId: 'root' };
+    expect(applyPatchToTask({ ...seedPatchForEditor(linked), countKind: 'discrete', goal: '6' }, linked).countKind).toBe('continuous');
+  });
 });
 ```
 
-`PoolRowEditor.countKind.test.ts`: a Discrete row renders the Kind group with Duration `aria-disabled`; no `Staged until you create the board`, no `Esc to discard`. iOS `StagedTaskEditsKindTests` mirrors the first web case through `AppDatabase.applyStagedTaskEdits(db:…)`.
-
-- [ ] **Step 2: Run — expect FAIL.**
-
-- [ ] **Step 3: Implement.** Web: `TaskEditPatch.countKind?: CountKind` (seeded from the task in `seedPatchForEditor`); `validatePatch` counting branch parses `parseCountInput(patch.goal, patch.countKind ?? 'discrete')`, requires the unit only when `countKindNeedsUnit`; in `applyStagedTaskEditsForWizardPersist`'s non-compound branch, before writing the patch:
+`stagedEdits.countKind.test.ts` (Dexie; seed + teardown as in `saveTaskEdit.countKind.test.ts`, Task 9):
 
 ```ts
-    const stagedKind = patch.countKind;
-    if (task.type === TaskType.COUNTING && stagedKind && task.sharedCounterId == null && resolveCountKind(task) !== stagedKind) {
-      await switchCounterKindInTransaction(task.id, stagedKind, now);
+const TABLES = () => [db.boards, db.boardTasks, db.tasks, db.compoundChildren, db.taskEvents, db.syncQueue];
+const NOW_ISO = '2026-10-07T12:00:00.000Z';
+
+it('a staged Discrete → Continuous switch and a decimal goal land together', async () => {
+  await seed({ countKind: undefined, maxCount: 26, title: 'Run 26 miles' });
+  await db.transaction('rw', TABLES(), () => applyStagedTaskEditsForWizardPersist(
+    new Map([['r', { title: '', action: 'Run', goal: '26.2', unit: 'miles', children: [], countKind: 'continuous' }]]), new Set(), NOW_ISO, { strict: true }));
+  expect(await db.tasks.get('r')).toMatchObject({ countKind: 'continuous', maxCount: 26.2, title: 'Run 26.2 miles' });
+});
+it('strict mode rejects a goal invalid at the staged kind and writes nothing', async () => {
+  await seed({ countKind: undefined, maxCount: 26, title: 'Run 26 miles' });
+  await expect(db.transaction('rw', TABLES(), () => applyStagedTaskEditsForWizardPersist(
+    new Map([['r', { title: '', action: 'Run', goal: '26.2', unit: 'miles', children: [], countKind: 'discrete' }]]), new Set(), NOW_ISO, { strict: true })))
+    .rejects.toThrow();
+  expect((await db.tasks.get('r'))?.version).toBe(1);
+});
+```
+
+(`seed(over)` is the same local helper as Task 9's test — copy it.)
+
+- [ ] **Step 2: Run — expect FAIL.** `WEB_TEST taskEditPatch.countKind stagedEdits.countKind`
+
+- [ ] **Step 3: Implement web.** `TaskEditPatch` gains `countKind?: CountKind;`; `patchFromTask` sets `countKind: resolveCountKind(task)` and `goal: task.maxCount !== undefined ? formatCountForInput(task.maxCount, resolveCountKind(task)) : ''`; `seedPatchForEditor`'s auto-title check passes `resolveCountKind(task)` as `generateCounterTaskTitle`'s 5th argument. `validatePatch` counting branch:
+
+```ts
+    case TaskType.COUNTING: {
+      const kind = patch.countKind ?? 'discrete';
+      if (parsePositiveGoal(patch.goal, kind) === undefined) return 'Set a goal above zero.';
+      if (countKindNeedsUnit(kind) && patch.unit.trim().length === 0) return 'Add a unit, like km or pages.';
+      return null;
     }
 ```
 
-and the field write uses `parseCountInput(patch.goal, stagedKind ?? resolveCountKind(task))` + the kind-aware title; `applyPatchToTask` sets `countKind` (omitted for discrete) and parses `goal` at it — a pending task has no events, so the parsed goal is the whole story. `PoolRowEditor.tsx`: Kind row (`KindPicker lock={kindPickerLock('edit', resolveCountKind(task))}` or `KindTag` for a linked task) with the Task 7 confirm, `GoalEntry`, unit gated, `readsAsPreview(..., draft.countKind)`; delete the two caption nodes. iOS mirrors in `RisoPoolRowEditorView` (`KindPickerView(selection: $draft.countKind, lock: …, onRequest: …)`), `TaskEditPatch.validate(type:)` (parse at `countKind`, unit gated), and `AppDatabase+StagedTaskEdits.applyStagedTaskEdits` (switch first via `AppDatabase.switchCounterKind(db:…)`).
+`applyPatchToTask` counting branch:
 
-- [ ] **Step 4: Run** tests — PASS; `WEB_CHECK`; `WEB_E2E e2e/pool-row-editor.spec.ts e2e/pool-editor.spec.ts` (update any `getByText('Staged until…')` / `Esc to discard` assertion — delete it, the caption is gone). Re-record the three `PoolRowEditorSnapshotTests` baselines; read vs handoff A5.
+```ts
+    case TaskType.COUNTING: {
+      const kind = base.sharedCounterId == null ? (patch.countKind ?? resolveCountKind(base)) : resolveCountKind(base);
+      const a = patch.action.trim();
+      const u = countKindNeedsUnit(kind) ? patch.unit.trim() : '';
+      const g = parsePositiveGoal(patch.goal, kind) ?? (base.maxCount ?? 0);
+      const title = trimmedTitle.length === 0 ? generateCounterTaskTitle(a, g, u, undefined, kind) : trimmedTitle;
+      const next: Task = { ...base, action: a, unit: u, maxCount: g, title };
+      if (kind === 'discrete') delete next.countKind; else next.countKind = kind;
+      return next;
+    }
+```
 
-- [ ] **Step 5: Playwright validation.** Wizard Tasks step → a counting row → edit → screenshot the row editor with the Kind row light/dark → `.playwright-mcp/task12-a5-{light,dark}.png`.
+`applyStagedTaskEditsForWizardPersist` non-compound branch, before `applyPatchToTask`:
 
-- [ ] **Step 6: Commit**
+```ts
+    if (task.type === TaskType.COUNTING) {
+      const kind = patch.countKind ?? resolveCountKind(task);
+      await applyKindSwitchThenGoalGuard(taskId, patch.countKind, parseCountInput(patch.goal, kind), now);
+      task = (await db.tasks.get(taskId)) ?? task; // the switch bumped the version / rounded fields
+    }
+```
+
+(make `task` a `let`). `PoolRowEditor.tsx`: `const taskId = task.id; const taskType = task.type; const stored = resolveCountKind(task); const kind = draft.countKind ?? stored;` and
+
+```ts
+  const { requestKind, dialog } = useKindSwitchRequest({
+    subject: { ...task, title: draft.title || task.title },
+    kind,
+    goalText: draft.goal,
+    setKind: (k) => onDraftChange({ ...draft, countKind: k }),
+    onSwitched: (k, g) => onDraftChange({ ...draft, countKind: k, goal: g }),
+  });
+```
+
+Render between the Title row and the counting trio:
+
+```tsx
+          {taskType === TaskType.COUNTING && (
+            <div className={styles.kindRow}>
+              <RisoSectionLabel variant="kicker">Kind</RisoSectionLabel>
+              {task.sharedCounterId ? <KindTag kind={stored} /> : <KindPicker value={kind} lock={kindPickerLock('edit', stored)} onChange={requestKind} size="compact" />}
+            </div>
+          )}
+```
+
+the Goal input → `<GoalEntry kind={kind} value={draft.goal} onChange={(g) => onDraftChange({ ...draft, goal: g })} aria-label="Goal" dense placeholder="5" />`, the Unit field wrapped in `countKindNeedsUnit(kind)`, `{dialog}` at the end. Delete row 52 (`stagedUntil`, `everywhereLine` and its render node) and row 53 (`headerHint`).
+
+- [ ] **Step 4: Run** `WEB_TEST taskEditPatch stagedEdits poolSave wizardPersist` — PASS; `WEB_CHECK`; `WEB_E2E e2e/pool-row-editor.spec.ts e2e/pool-editor.spec.ts` (delete any assertion on the two removed captions).
+
+- [ ] **Step 5: iOS failing tests** `StagedTaskEditsKindTests.swift`:
+
+```swift
+import XCTest
+import GRDB
+@testable import OYBC
+
+final class StagedTaskEditsKindTests: XCTestCase {
+    private func seeded(kind: CountKind?, maxCount: CountValue) throws -> AppDatabase {
+        let db = try AppDatabase.makeTestInstance(); try LinkedWindowKit.seedUser(db)
+        var t = LinkedWindowKit.task("r", maxCount: maxCount, title: "Run 26 miles"); t.countKind = kind
+        try db.saveTask(t)
+        return db
+    }
+
+    private func patch(goal: String, kind: CountKind) -> TaskEditPatch {
+        var p = TaskEditPatch(title: "")
+        p.action = "Run"; p.unit = "miles"; p.goal = goal; p.countKind = kind
+        return p
+    }
+
+    func testStagedSwitchAndDecimalGoalLandTogether() throws {
+        let db = try seeded(kind: nil, maxCount: 26)
+        try db.write { try AppDatabase.applyStagedTaskEdits(db: $0, stagedEdits: ["r": patch(goal: "26.2", kind: .continuous)], strict: true, now: "2026-10-07T12:00:00.000Z") }
+        let row = try XCTUnwrap(db.fetchTask(id: "r"))
+        XCTAssertEqual(row.countKind, .continuous)
+        XCTAssertEqual(row.maxCount, 26.2)
+        XCTAssertEqual(row.title, "Run 26.2 miles")
+    }
+
+    func testStrictRejectsAGoalInvalidAtTheStagedKind() throws {
+        let db = try seeded(kind: .continuous, maxCount: 26.2)
+        XCTAssertThrowsError(try db.write { try AppDatabase.applyStagedTaskEdits(db: $0, stagedEdits: ["r": patch(goal: "26.2", kind: .discrete)], strict: true, now: "2026-10-07T12:00:00.000Z") })
+        XCTAssertEqual(try db.fetchTask(id: "r")?.countKind, .continuous)
+    }
+
+    func testAppliedNeverGivesALinkedRowAKind() {
+        var linked = LinkedWindowKit.task("c", maxCount: 6.2, sharedCounterId: "root", baseline: 0); linked.countKind = .continuous
+        XCTAssertEqual(patch(goal: "6", kind: .discrete).applied(to: linked).countKind, .continuous)
+    }
+}
+```
+
+- [ ] **Step 6: Run — expect FAIL.** `IOS_TEST -only-testing:OYBCTests/StagedTaskEditsKindTests`
+
+- [ ] **Step 7: Implement iOS.** `TaskEditPatch.validate` counting branch: `guard parseCountInput(goal, kind: countKind) != nil else { return "Set a goal above zero." }` and the unit check gated on `countKindNeedsUnit(countKind)`. `applied(to:)` counting branch:
+
+```swift
+        case .counting:
+            let kind = base.sharedCounterId == nil ? countKind : resolveCountKind(base.countKind)
+            let a = action.trimmingCharacters(in: .whitespaces)
+            let u = countKindNeedsUnit(kind) ? unit.trimmingCharacters(in: .whitespaces) : ""
+            let g = parseCountInput(goal, kind: kind) ?? base.maxCount ?? 0
+            t.action = a
+            t.unit = u
+            t.maxCount = g
+            t.countKind = kind == .discrete ? nil : kind
+            let typed = trimmedTitle
+            t.title = typed.isEmpty ? TaskTitle.generateCounterTaskTitle(action: a, maxCount: g, unit: u, countKind: kind) : typed
+```
+
+(`TaskEditPatch.countKind` is seeded from the task, so an untouched patch keeps the task's kind.) `applyStagedTaskEdits` non-compound branch, before `task = patch.applied(to: task)`:
+
+```swift
+                if task.type == .counting,
+                   try Self.applyKindSwitchThenGoalGuard(db: db, taskId: taskId, to: patch.countKind,
+                                                         maxCount: parseCountInput(patch.goal, kind: patch.countKind), now: Date()) {
+                    task = try Task.fetchOne(db, key: taskId) ?? task
+                }
+```
+
+`RisoPoolRowEditorView`: `let taskId: String` + `let taskType: TaskType` → `let task: Task` (`taskId` / `taskType` become computed `task.id` / `task.type`); a `Kind` `labeledField` row above the Action/Goal/Unit `HStack` — `task.sharedCounterId != nil` → `KindTagView(kind: resolveCountKind(task.countKind))`, else `KindPickerView(selection: $draft.countKind, lock: kindPickerLock(mode: .edit, kind: resolveCountKind(task.countKind)), onRequest: requestKind)`; Goal → `GoalEntryView(kind: draft.countKind, text: $draft.goal, placeholder: "5")` (width 84); Unit only when `countKindNeedsUnit(draft.countKind)`; `countingDerivedTitle` (`:137-146`) parses with `parseCountInput(g, kind: draft.countKind)` and passes `countKind:`; `@State private var pendingSwitch: KindSwitchPreview?` with `requestKind` exactly as Task 9's (preview by `task.id`, fallback `KindSwitchPreview.planned(task: task, to: next, linkedCount: 0)`) and `.kindSwitchConfirm(pending: $pendingSwitch) { p in draft.goal = KindSwitchCopy.switchedGoalText(draft.goal, from: p.from, to: p.to); draft.countKind = p.to }`.
+
+- [ ] **Step 8: Run iOS** `IOS_TEST -only-testing:OYBCTests/StagedTaskEditsKindTests -only-testing:OYBCTests/AppDatabasePoolsTests` PASS; re-record the three `PoolRowEditorSnapshotTests` baselines; read vs handoff A5.
+
+- [ ] **Step 9: Playwright validation.** Wizard Tasks step → a counting row → edit → screenshot the row editor with the Kind row light/dark → `.playwright-mcp/task12-a5-{light,dark}.png`.
+
+- [ ] **Step 10: Commit**
 
 ```bash
 git add apps/web apps/ios
@@ -3174,28 +4248,35 @@ git commit -m "feat(counters): A5 pool row editor kind picker; staged switches a
 
 ### PR 3 gate (before opening the PR)
 
-- [ ] `pnpm --filter @oybc/shared test:coverage` (80% gate), `pnpm -w test`, `WEB_CHECK`, `node scripts/check-file-sizes.mjs`, `node scripts/check-knip.mjs`, `node scripts/check-sync-contract-rules.mjs` — all green (paste outputs untruncated — `reference_verification_traps`).
+- [ ] `pnpm --filter @oybc/shared test:coverage` (80% gate), `pnpm -w test`, `WEB_CHECK`, `node scripts/check-file-sizes.mjs`, `node scripts/check-knip.mjs`, `node scripts/check-sync-contract-rules.mjs` — all green; paste outputs untruncated.
 - [ ] `IOS_TEST -only-testing:OYBCTests` green; full `IOS_SNAP` red SET = the standing reds only.
-- [ ] `WEB_E2E e2e/counter-kinds-authoring.spec.ts e2e/squares-editor.spec.ts e2e/member-rules.spec.ts e2e/pool-row-editor.spec.ts` green locally.
-- [ ] Self-review the diff for any NEW explanatory sentence (CLAUDE.md rule) — `git diff origin/dev -- apps | grep '^+' | grep -E '"[A-Z][a-z]+ [a-z]+ [a-z]+ .*\."'` and read every hit.
-- [ ] Update `docs/COUNTER_KINDS.md` Status ("PR 3 #NNN shipped"), `docs/TASK_SYSTEM.md` (one paragraph: kinds are chosen on every Goal surface), and the CLAUDE.md "No explanatory copy" backlog line if #548 rows were closed (tick them on the issue in the PR body).
-- [ ] Push `git push origin HEAD:feature/counter-kinds-authoring`, `git fetch`, verify `git rev-parse HEAD` == `git rev-parse origin/feature/counter-kinds-authoring`. PR body lists every re-recorded baseline and every closed #548 row, and ends with the attribution line.
-
----
+- [ ] `WEB_E2E e2e/counter-kinds-authoring.spec.ts e2e/squares-editor.spec.ts e2e/member-rules.spec.ts e2e/pool-row-editor.spec.ts e2e/pool-editor.spec.ts e2e/task-detail-compound-edit.spec.ts` green locally.
+- [ ] Self-review the diff for any NEW explanatory sentence — `git diff origin/dev -- apps | grep '^+' | grep -E '"[A-Z][a-z]+ [a-z]+ [a-z]+ .*\."'` — and read every hit. Every #548 row closed in PR 3 (47/48, 52/53, 61–63, 65, 67/68, 69–76, 77/78, 23–25) is ticked in the PR body.
+- [ ] Docs: `docs/COUNTER_KINDS.md` Status ("PR 3 #NNN shipped"); one paragraph in `docs/TASK_SYSTEM.md` (kinds are chosen on every Goal surface; switching rules).
+- [ ] Push `git push origin HEAD:feature/counter-kinds-authoring`, `git fetch`, verify `git rev-parse HEAD` == `git rev-parse origin/feature/counter-kinds-authoring`. The PR body lists every re-recorded baseline and ends with the attribution line.
 
 # PR 4 — Logging + Display UI
 
 Branch: cut `feature/counter-kinds-logging` from `dev` after PR 3 merges (the main loop creates the external worktree `/Volumes/Stephen/oybc-worktrees/counter-kinds-logging`, seeds `.env.local` + `GoogleService-Info.plist`, runs `pnpm install && pnpm build`). Push with `git push origin HEAD:feature/counter-kinds-logging`.
+
+**File-size budget (Ruling U8).** Three allow-listed files are touched by several PR 4 tasks. No task lowers a cap mid-PR (a later task could not then add its lines); each task only keeps the file ≤ its CURRENT cap, and Task 21 shrinks every cap to the final measured count. Budgets, measured from `dev`:
+
+| File | Cap | Task 14 | Task 15 | Task 19 | Net |
+| --- | --- | --- | --- | --- | --- |
+| `apps/web/src/components/BoardPlaySurface.tsx` | 1241 | −70 (quick-amount state + builder → `useCountingLogModal.ts`; row-9 stat hint −16; tap branch −20; `removeTitle`/hint props −6) | +12 (`amountActions`) | +2 (`countKind` into the cell model) | ≈ −56 |
+| `apps/ios/OYBC/Views/BoardsTab/BoardPlayView.swift` | 1996 | −55 (`sharedStepperHint` + rows 2/4 captions) | +8 (Custom amount… item, `CountingMenuLabels` calls) | +2 (`countKind:` at two cell call sites) | ≈ −45 |
+| `apps/ios/OYBC/Views/BoardsTab/ViewModels/BoardPlayViewModel.swift` | 1518 | +3 (standalone default persist) | 0 | 0 | +3 — Task 13's toast change must free ≥ 3 lines (fold `sharedCreditToastText`'s two branches into one `let verb = …` line) |
+
 
 ### Task 13: Shared log-amount helpers, family kind on counter groups, kind-aware toasts
 
 **Files:**
 - Create: `packages/shared/src/algorithms/logAmounts.ts`, `packages/shared/tests/fixtures/logAmountVectors.json`, `packages/shared/tests/algorithms/logAmounts.test.ts`
 - Modify: `packages/shared/src/algorithms/sharedCounterGroups.ts:81-102,360-370` (`SharedCounterGroup.countKind`), `packages/shared/tests/fixtures/sharedCounterGroupsVectors.json` (+`countKind` on two expected groups, one continuous source)
-- Modify: `packages/shared/src/algorithms/index.ts`
+- Modify: `packages/shared/src/algorithms/index.ts` — explicit block for every `logAmounts.ts` export (Ruling U2): `fixedLogChipAmounts, goalChipAmounts, boardSheetChips, hubChips, lateLogChipAmounts, initialLogSelection, quickLogAmount, customChipLabel, logPillLabel, logPillOpensDetail` + `export type { LogChip }`
 - Modify: `apps/ios/OYBC/Helpers/CounterLogAmount.swift` (Swift twin of `logAmounts.ts`; `parseCustom` delegates to `parseCountInput`), `apps/ios/OYBC/Helpers/SharedCounterGroups.swift:54-76,350-356`
 - Modify: `apps/web/src/components/counters/amountChips.ts` (thin wrappers over `logAmounts.ts`; `parseCustomLogAmount(raw, kind = 'discrete')`), `apps/web/src/components/counters/counterLogToastText.ts` (+`kind`), `apps/web/src/components/counters/CounterLogToast.tsx:81` (passes `kind`)
-- Modify: `apps/ios/OYBC/Views/Components/CounterLogToastView.swift:25-66` (+`kind: CountKind = .discrete`; verb label via `formatCountWithUnit`), `apps/ios/OYBC/Views/BoardsTab/ViewModels/BoardPlayViewModel.swift:1066-1078` (`sharedCreditToastText` takes the source's kind — net line count must not grow: the kind is read from the existing `sourceTask` local)
+- Modify: `apps/ios/OYBC/Views/Components/CounterLogToastView.swift:25-66` (+`kind: CountKind = .discrete`; `static func text(amount:unit:verb:kind:) -> String`; `bodyText = message ?? Self.text(…)`), `apps/ios/OYBC/Views/BoardsTab/ViewModels/BoardPlayViewModel.swift:1066-1078` (`sharedCreditToastText(counterName:amount:otherBoards:isIncrement:kind:)`; its body folds to `let sign = isIncrement ? "+" : "−", phrase = isIncrement ? "also counted on" : "also removed from"; return "\(sign)\(formatCount(amount, kind: kind)) \(counterName) — \(phrase) \(boardNames)."` — net −3 lines, the headroom Task 14 spends; callers pass `resolveCountKind(sourceTask?.countKind)`)
 - Test: `apps/ios/OYBCTests/CounterLogAmountTests.swift` (+vector test), `apps/ios/OYBCTests/SharedCounterGroupsVectorTests.swift` (decode optional `countKind`), `apps/web/src/components/counters/__tests__/amountChips.test.ts`, `counterLogToastText.test.ts` (+kind cases)
 
 **Interfaces:**
@@ -3244,6 +4325,7 @@ Branch: cut `feature/counter-kinds-logging` from `dev` after PR 3 merges (the ma
   "initialSelection": [
     { "name": "discrete preset default", "kind": "discrete", "goal": 200, "default": 10, "expected": { "amount": 10, "isCustom": false } },
     { "name": "discrete off-preset falls back to 1", "kind": "discrete", "goal": 200, "default": 7, "expected": { "amount": 1, "isCustom": false } },
+    { "name": "discrete keeps initialChipAmount's 25 even without a 25 chip", "kind": "discrete", "goal": 200, "default": 25, "expected": { "amount": 25, "isCustom": false } },
     { "name": "continuous custom default shows on #", "kind": "continuous", "goal": 26.2, "default": 3.1, "expected": { "amount": 3.1, "isCustom": true } },
     { "name": "continuous default matching a chip", "kind": "continuous", "goal": 26.2, "default": 13.1, "expected": { "amount": 13.1, "isCustom": false } },
     { "name": "duration no default picks the quarter", "kind": "duration", "goal": 630, "default": null, "expected": { "amount": 158, "isCustom": false } }
@@ -3269,7 +4351,76 @@ Branch: cut `feature/counter-kinds-logging` from `dev` after PR 3 merges (the ma
 }
 ```
 
-- [ ] **Step 2: Failing test** `logAmounts.test.ts` — `it.each` over every section above (`toEqual` for arrays/objects, `toBe` for strings), calling the Produces functions (`boardSheetChips(kind, goal).map(c => c.label)`, `initialLogSelection(kind, boardSheetChips(kind, goal), v.default)`, `quickLogAmount(kind, boardSheetChips(kind, goal), v.default)`); the `toast` section runs through `formatCounterLogToastText` imported from the web module in `counterLogToastText.test.ts` instead (it lives in `apps/web`) — so put the `toast` vectors' test there, importing the shared fixture as `import vectors from '../../../../../../packages/shared/tests/fixtures/logAmountVectors.json';` (six levels up from `__tests__`; if the web `tsconfig.test.json` rejects a JSON import outside `src`, read it with `JSON.parse(readFileSync(new URL('../../../../../../packages/shared/tests/fixtures/logAmountVectors.json', import.meta.url), 'utf8'))`). Run `SHARED_TEST logAmounts` — FAIL.
+- [ ] **Step 2: Failing tests.** `packages/shared/tests/algorithms/logAmounts.test.ts`:
+
+```ts
+import * as fs from 'fs';
+import * as path from 'path';
+import {
+  boardSheetChips, goalChipAmounts, hubChips, initialLogSelection, lateLogChipAmounts,
+  logPillLabel, logPillOpensDetail, quickLogAmount,
+} from '../../src/algorithms/logAmounts';
+import * as barrel from '../../src/algorithms';
+import type { CountKind } from '../../src/algorithms/countValue';
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const V: any = JSON.parse(fs.readFileSync(path.join(__dirname, '../fixtures/logAmountVectors.json'), 'utf8'));
+
+describe('logAmounts vectors', () => {
+  it.each(V.goalChips)('goalChips: $name', (v: any) => expect(goalChipAmounts(v.goal, v.kind as CountKind)).toEqual(v.expected));
+  it.each(V.boardSheetChipLabels)('boardSheetChips: $name', (v: any) =>
+    expect(boardSheetChips(v.kind, v.goal).map((c) => c.label)).toEqual(v.expected));
+  it.each(V.hubChipLabels)('hubChips: $name', (v: any) => expect(hubChips(v.kind).map((c) => c.label)).toEqual(v.expected));
+  it.each(V.lateLogChips)('lateLogChips: $name', (v: any) => expect(lateLogChipAmounts(v.kind, v.goal)).toEqual(v.expected));
+  it.each(V.initialSelection)('initialSelection: $name', (v: any) =>
+    expect(initialLogSelection(v.kind, boardSheetChips(v.kind, v.goal), v.default)).toEqual(v.expected));
+  it.each(V.quickAmount)('quickAmount: $name', (v: any) =>
+    expect(quickLogAmount(v.kind, boardSheetChips(v.kind, v.goal), v.default)).toBe(v.expected));
+  it.each(V.pill)('pill: $name', (v: any) => {
+    expect(logPillLabel(v.kind, v.default)).toBe(v.label);
+    expect(logPillOpensDetail(v.kind, v.default)).toBe(v.opensDetail);
+  });
+  it('every helper is in the barrel (Ruling U2)', () => {
+    for (const n of ['boardSheetChips', 'goalChipAmounts', 'hubChips', 'initialLogSelection', 'lateLogChipAmounts', 'logPillLabel', 'logPillOpensDetail', 'quickLogAmount', 'customChipLabel', 'fixedLogChipAmounts']) {
+      expect(typeof (barrel as Record<string, unknown>)[n]).toBe('function');
+    }
+  });
+});
+```
+
+Append to `apps/web/src/components/counters/__tests__/counterLogToastText.test.ts`:
+
+```ts
+import { readFileSync } from 'fs';
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const LOG: any = JSON.parse(readFileSync(new URL('../../../../../../packages/shared/tests/fixtures/logAmountVectors.json', import.meta.url), 'utf8'));
+
+describe('formatCounterLogToastText — counter kinds (shared vectors)', () => {
+  it.each(LOG.toast)('$name', (v: any) => {
+    expect(formatCounterLogToastText({ amount: v.amount, unit: v.unit, verb: v.verb, kind: v.kind, counterName: v.counterName, boardNames: v.boardNames })).toBe(v.expected);
+  });
+});
+```
+
+and to `amountChips.test.ts`:
+
+```ts
+describe('amountChips wrappers — counter kinds', () => {
+  it('hub chips per kind; board chips per kind; discrete defaults unchanged', () => {
+    expect(buildAmountChipOptions().map((c) => c.label)).toEqual(['1', '10', '25', '#']);
+    expect(buildAmountChipOptions('duration').map((c) => c.label)).toEqual(['15m', '30m', '1h', '#']);
+    expect(buildBoardQuickAmountOptions().map((c) => c.label)).toEqual(['+1', '+10', '#']);
+    expect(buildBoardQuickAmountOptions('continuous', 26.2).map((c) => c.label)).toEqual(['6.6', '13.1', '26.2', '#']);
+  });
+  it('parseCustomLogAmount parses at the kind', () => {
+    expect(parseCustomLogAmount('3,1', 'continuous')).toBe(3.1);
+    expect(parseCustomLogAmount('3.1')).toBeNull();
+    expect(parseCustomLogAmount('1h 30m', 'duration')).toBe(90);
+  });
+});
+```
+
+Run `SHARED_TEST logAmounts` and `WEB_TEST counterLogToastText amountChips` — FAIL.
 
 - [ ] **Step 3: Implement** `logAmounts.ts`:
 
@@ -3345,7 +4496,8 @@ export function initialLogSelection(
 ): { amount: number; isCustom: boolean } {
   const p = presets(chips);
   if (defaultLogAmount != null && p.includes(defaultLogAmount)) return { amount: defaultLogAmount, isCustom: false };
-  if (kind === 'discrete') return { amount: 1, isCustom: false };
+  // Discrete keeps `initialChipAmount` verbatim: a 1 / 10 / 25 default, else 1.
+  if (kind === 'discrete') return { amount: defaultLogAmount != null && FIXED.discrete.includes(defaultLogAmount) ? defaultLogAmount : 1, isCustom: false };
   if (defaultLogAmount != null) return { amount: defaultLogAmount, isCustom: true };
   return { amount: p[0] ?? countTargetStep(kind), isCustom: false };
 }
@@ -3389,204 +4541,380 @@ export function formatCounterLogToastText(input: CounterLogToastTextInput): stri
 }
 ```
 
-(`CounterLogToastTextInput.kind?: CountKind`; `CounterLogToast` gets a `kind?: CountKind` prop and passes it.) Swift: `CounterLogAmount` gains `static func fixedChipAmounts(_:)`, `goalChipAmounts(goal:kind:)`, `boardSheetChips(kind:goal:) -> [LogChip]`, `hubChips(kind:)`, `lateLogChipAmounts(kind:goal:)`, `initialSelection(kind:chips:defaultLogAmount:) -> (amount: CountValue, isCustom: Bool)`, `quickAmount(kind:chips:defaultLogAmount:)`, `customChipLabel(_:kind:)`, `pillLabel(kind:defaultLogAmount:)`, `pillOpensDetail(kind:defaultLogAmount:)`, `struct LogChip: Equatable { let value: CountValue?; let label: String }`; `parseCustom(_ raw: String, kind: CountKind = .discrete)` = `parseCountInput(raw, kind: kind)`. `SharedCounterGroup.countKind`. `CounterLogToastView` gains `var kind: CountKind = .discrete` and `verbLabel` = `"Logged +\(formatCountWithUnit(amount, kind: kind, unit: unit))"` / `"Removed \(…)"` with `bodyText = message ?? verbLabel` (the unit now rides inside `formatCountWithUnit`). `sharedCreditToastText` passes `kind: resolveCountKind(sourceTask?.countKind)` to `formatCount`.
+(`CounterLogToastTextInput.kind?: CountKind`; `CounterLogToast` gets a `kind?: CountKind` prop and passes it.) Swift: `CounterLogAmount` gains `static func fixedChipAmounts(_:)`, `goalChipAmounts(goal:kind:)`, `boardSheetChips(kind:goal:) -> [LogChip]`, `hubChips(kind:)`, `lateLogChipAmounts(kind:goal:)`, `initialSelection(kind:chips:defaultLogAmount:) -> (amount: CountValue, isCustom: Bool)`, `quickAmount(kind:chips:defaultLogAmount:)`, `customChipLabel(_:kind:)`, `pillLabel(kind:defaultLogAmount:)`, `pillOpensDetail(kind:defaultLogAmount:)`, `struct LogChip: Equatable { let value: CountValue?; let label: String }`; `parseCustom(_ raw: String, kind: CountKind = .discrete)` = `parseCountInput(raw, kind: kind)`. `SharedCounterGroup` gains `var countKind: CountKind = .discrete` declared LAST (so existing memberwise calls — `CountersHubSnapshotTests.swift:32,46` — compile unchanged). `CounterLogToastView` gains `var kind: CountKind = .discrete` and
 
-- [ ] **Step 4: Run** `SHARED_TEST logAmounts sharedCounterGroups`, `WEB_TEST amountChips counterLogToastText`, `pnpm --filter @oybc/shared run gen:sync-fixtures`, iOS `CounterLogAmountTests` gets a `testVectors()` reading `logAmountVectors.json` (all sections except `toast`, plus a `toast` test through `CounterLogToastView.bodyText` made `internal` for the test), `IOS_TEST -only-testing:OYBCTests/CounterLogAmountTests -only-testing:OYBCTests/SharedCounterGroupsVectorTests` — PASS. `CountersHubSnapshotTests/testLogToast*` must stay green (discrete text unchanged).
+```swift
+    static func text(amount: CountValue, unit: String, verb: Verb, kind: CountKind) -> String {
+        let a = formatCountWithUnit(amount, kind: kind, unit: unit)
+        return verb == .logged ? "Logged +\(a)" : "Removed \(a)"
+    }
+    private var bodyText: String { message ?? Self.text(amount: amount, unit: unit, verb: verb, kind: kind) }
+```
+
+(`verbLabel` is deleted — the unit now rides inside `formatCountWithUnit`; `Verb` gains `Equatable` if it lacks it.) `sharedCreditToastText` passes `kind: resolveCountKind(sourceTask?.countKind)` to `formatCount`.
+
+- [ ] **Step 4: Run** `SHARED_TEST logAmounts sharedCounterGroups`, `WEB_TEST amountChips counterLogToastText` — PASS. Then `pnpm --filter @oybc/shared run gen:sync-fixtures` and `cd apps/ios && xcodegen generate` (the new `logAmountVectors.json` must enter the iOS test bundle). Append to `apps/ios/OYBCTests/CounterLogAmountTests.swift`:
+
+```swift
+    private struct ChipsV: Decodable { let name: String; let goal: Double?; let kind: CountKind; let expected: [Double] }
+    private struct LabelsV: Decodable { let name: String; let goal: Double?; let kind: CountKind; let expected: [String] }
+    private struct Sel: Decodable, Equatable { let amount: Double; let isCustom: Bool }
+    private struct SelV: Decodable { let name: String; let kind: CountKind; let goal: Double; let `default`: Double?; let expected: Sel }
+    private struct QuickV: Decodable { let name: String; let kind: CountKind; let goal: Double; let `default`: Double?; let expected: Double }
+    private struct PillV: Decodable { let name: String; let kind: CountKind; let `default`: Double?; let label: String; let opensDetail: Bool }
+    private struct ToastV: Decodable { let name: String; let amount: Double; let unit: String; let verb: String; let kind: CountKind; let counterName: String?; let boardNames: [String]?; let expected: String }
+    private struct LogFixture: Decodable {
+        let goalChips: [ChipsV]; let boardSheetChipLabels: [LabelsV]; let hubChipLabels: [LabelsV]; let lateLogChips: [ChipsV]
+        let initialSelection: [SelV]; let quickAmount: [QuickV]; let pill: [PillV]; let toast: [ToastV]
+    }
+
+    func testLogAmountVectors() throws {
+        let url = try XCTUnwrap(Bundle(for: Self.self).url(forResource: "logAmountVectors", withExtension: "json"))
+        let f = try JSONDecoder().decode(LogFixture.self, from: Data(contentsOf: url))
+        for v in f.goalChips { XCTAssertEqual(CounterLogAmount.goalChipAmounts(goal: v.goal ?? 0, kind: v.kind), v.expected, v.name) }
+        for v in f.boardSheetChipLabels { XCTAssertEqual(CounterLogAmount.boardSheetChips(kind: v.kind, goal: v.goal ?? 0).map(\.label), v.expected, v.name) }
+        for v in f.hubChipLabels { XCTAssertEqual(CounterLogAmount.hubChips(kind: v.kind).map(\.label), v.expected, v.name) }
+        for v in f.lateLogChips { XCTAssertEqual(CounterLogAmount.lateLogChipAmounts(kind: v.kind, goal: v.goal ?? 0), v.expected, v.name) }
+        for v in f.initialSelection {
+            let s = CounterLogAmount.initialSelection(kind: v.kind, chips: CounterLogAmount.boardSheetChips(kind: v.kind, goal: v.goal), defaultLogAmount: v.default)
+            XCTAssertEqual(Sel(amount: s.amount, isCustom: s.isCustom), v.expected, v.name)
+        }
+        for v in f.quickAmount {
+            XCTAssertEqual(CounterLogAmount.quickAmount(kind: v.kind, chips: CounterLogAmount.boardSheetChips(kind: v.kind, goal: v.goal), defaultLogAmount: v.default), v.expected, v.name)
+        }
+        for v in f.pill {
+            XCTAssertEqual(CounterLogAmount.pillLabel(kind: v.kind, defaultLogAmount: v.default), v.label, v.name)
+            XCTAssertEqual(CounterLogAmount.pillOpensDetail(kind: v.kind, defaultLogAmount: v.default), v.opensDetail, v.name)
+        }
+        for v in f.toast where v.boardNames == nil {
+            XCTAssertEqual(CounterLogToastView.text(amount: v.amount, unit: v.unit, verb: v.verb == "logged" ? .logged : .removed, kind: v.kind), v.expected, v.name)
+        }
+    }
+```
+
+(`CounterLogToastView.text(amount:unit:verb:kind:)` is a new `static` the view's `bodyText` calls — the credited variant is composed by `BoardPlayViewModel.sharedCreditToastText`, pinned by the existing VM tests.) Run `IOS_TEST -only-testing:OYBCTests/CounterLogAmountTests -only-testing:OYBCTests/SharedCounterGroupsVectorTests` — PASS. `CountersHubSnapshotTests/testLogToast*` stay green (discrete text unchanged).
 
 - [ ] **Step 5: Commit**
 
 ```bash
 git add packages/shared apps/web apps/ios
+git add apps/ios/OYBC.xcodeproj/project.pbxproj
 git commit -m "feat(counters): shared log-amount helpers (chips, initial selection, pill, quick amount), family kind on counter groups, kind-aware toasts (PR 4 Task 13)"
 ```
 
 ---
 
-### Task 14: iOS stepper sheet per kind (B1 iOS)
+### Task 14: B1 — every counting tap opens the stepper sheet / DetailModal, per kind (both platforms, one commit — Ruling U3)
 
-**Files:**
-- Modify: `apps/ios/OYBC/Views/BoardsTab/Components/RisoCountingStepperSheet.swift` (whole body: +`countKind`, chips for every Continuous / Duration square, pinned amount field, kind-aware labels; remove `sharedHint` — #548 row 6)
-- Modify: `apps/ios/OYBC/Views/BoardsTab/BoardPlayView+CountingStepper.swift:24-58` (pass `countKind`, `defaultLogAmount` for standalone squares too; drop `sharedHint`)
-- Modify: `apps/ios/OYBC/Views/BoardsTab/BoardPlayView.swift:1083-1130` (delete `sharedStepperHint(for:)` — row 6; the file shrinks, so shrink its allowlist entry by the removed count)
-- Modify: `apps/ios/OYBC/Views/BoardsTab/ViewModels/BoardPlayViewModel.swift:513-543` (standalone `persistAsDefault` → `setCounterDefaultLogAmount(sourceTaskId: task.id, amount:)`; net-zero lines — replace the `guard task.maxCount != nil` comment block)
-- Modify: `scripts/audit/file-size-allowlist.json` (shrink `BoardPlayView.swift`)
-- Test: `apps/ios/OYBCSnapshotTests/CountingStepperSheetSnapshotTests.swift` (create), `apps/ios/OYBCTests/BoardPlayViewModelTests.swift` (+standalone persist case)
+**Files (web):**
+- Create: `apps/web/src/components/boardPlay/countingLogModel.ts` (pure state + builder), `apps/web/src/components/boardPlay/useCountingLogModal.ts` (hook holding the state)
+- Create: `apps/web/src/components/boardPlay/__tests__/countingLogModel.test.ts`, `apps/web/src/components/__tests__/DetailModalKinds.test.ts`
+- Modify: `apps/web/src/components/interactiveTaskSquareUtils.ts:47-60` (`TaskSquareData.countKind?: CountKind`; export `type QuickAmountProps`), `:164-167` (`progressBarLabel` via `formatCount` + `countUnitSuffix`)
+- Modify: `apps/web/src/db/adapters.ts:158-200` (`taskToSquareData` sets `countKind: resolveFamilyCountKind(task, (id) => taskMap[id])`)
+- Modify: `apps/web/src/components/InteractiveTaskSquare.tsx:418-480` (`DetailModalProps.quickAmount?: QuickAmountProps`), `:567-700` (counting body per kind); delete #548 rows 1 (`:776-778` compound footer), 3 (`:787-790` achievement read-only sentence), 5 (`sharedHint` prop + render `:226`, `:699`, and on `ContextMenuProps`), 7 (`title=…` on the context-menu remove item `:205`), 8 (`:392-394` "Tap: +1 {unit}" span) and their now-unused CSS classes (`.compoundFooter`, `.sharedHint`, `.actionHint`)
+- Modify: `apps/web/src/components/BoardPlaySurface.tsx:228-252` (state → hook), `:615-631` (delete row 9 stat-bar hint `<div className={play.hint}>`), `:804-827` (every counting tap → `setSelectedSquareId(boardTaskId)`), `:1000-1115` (modal props from the hook), `:1080`, `:1149` (drop `removeTitle`, `menuSharedHint`)
+- Modify: `apps/web/src/hooks/useBoardPlayData.ts:72,270-310` (delete `sharedCounterHintsByTaskId`) and `apps/web/src/db/operations/__tests__/sharedCounterWindowRegression.test.ts:150-170` (delete the hint assertions only)
+- Modify: `apps/web/src/components/InteractiveTaskSquare.module.css` (+`.modalProgressFillOver { background: var(--riso-gold); }`)
+- Modify: `apps/web/e2e/windowed-completion.spec.ts:205-207`; Create: `apps/web/e2e/counter-kinds-logging.spec.ts`
 
-**Interfaces:**
-- Consumes: `CounterLogAmount.boardSheetChips/initialSelection/customChipLabel` (Task 13), `GoalEntryView` (Task 4), `formatCountWithUnit`, `countUnitSuffix`.
-- Produces: `RisoCountingStepperSheet(taskTitle:currentCount:maxCount:unitText:countKind:isLinkedCounter:isSharedCounter:defaultLogAmount:onOpenTask:onIncrement:onDecrement:)` — `sharedHint` removed. Behaviour: Discrete = today's sheet verbatim (chips only for shared squares, `+1 · +10 · #`, custom row + OK). Continuous / Duration = chips (¼ · ½ · goal · #) for every square, the amount field always visible (`GoalEntryView` with `suffix: unitText`, Duration wheel open), editing it selects `#` and makes the amount custom (`persistAsDefault: true` on log), no OK; − / + apply the field's amount (disabled when it doesn't parse).
-
-- [ ] **Step 1: Failing snapshot tests** `CountingStepperSheetSnapshotTests.swift` (three sheets of handoff `sheets[]`):
-
-```swift
-import XCTest
-import SwiftUI
-import SnapshotTesting
-@testable import OYBC
-
-final class CountingStepperSheetSnapshotTests: XCTestCase {
-    private let recordMode: SnapshotTestingConfiguration.Record? = .missing
-
-    private func sheet(_ kind: CountKind, title: String, unit: String, cur: CountValue, max: CountValue, shared: Bool, defaultAmount: CountValue?) -> some View {
-        RisoCountingStepperSheet(taskTitle: title, currentCount: cur, maxCount: max, unitText: unit, countKind: kind,
-                                 isLinkedCounter: false, isSharedCounter: shared, defaultLogAmount: defaultAmount, onOpenTask: {})
-            .frame(width: 393, height: kind == .duration ? 520 : 400)
-            .background(Color.risoPaper)
-    }
-
-    func testDiscreteSharedLight() {
-        assertSnapshot(of: sheet(.discrete, title: "Do 200 push-ups", unit: "push-ups", cur: 132, max: 200, shared: true, defaultAmount: 10),
-                       as: .image(layout: .fixed(width: 393, height: 400)), record: recordMode)
-    }
-    func testContinuousCustomLight() {
-        assertSnapshot(of: sheet(.continuous, title: "Run 26.2 mi", unit: "mi", cur: 12.4, max: 26.2, shared: false, defaultAmount: 3.1),
-                       as: .image(layout: .fixed(width: 393, height: 400)), record: recordMode)
-    }
-    func testContinuousCustomDark() {
-        assertSnapshot(of: sheet(.continuous, title: "Run 26.2 mi", unit: "mi", cur: 12.4, max: 26.2, shared: false, defaultAmount: 3.1),
-                       as: .image(layout: .fixed(width: 393, height: 400), traits: .init(userInterfaceStyle: .dark)), record: recordMode)
-    }
-    func testDurationQuarterLight() {
-        assertSnapshot(of: sheet(.duration, title: "Practice 10h 30m", unit: "", cur: 270, max: 630, shared: false, defaultAmount: nil),
-                       as: .image(layout: .fixed(width: 393, height: 520)), record: recordMode)
-    }
-    func testDurationQuarterDark() {
-        assertSnapshot(of: sheet(.duration, title: "Practice 10h 30m", unit: "", cur: 270, max: 630, shared: false, defaultAmount: nil),
-                       as: .image(layout: .fixed(width: 393, height: 520), traits: .init(userInterfaceStyle: .dark)), record: recordMode)
-    }
-    func testOvershootLight() {
-        assertSnapshot(of: sheet(.continuous, title: "Run 26.2 mi", unit: "mi", cur: 28.4, max: 26.2, shared: false, defaultAmount: 3.1),
-                       as: .image(layout: .fixed(width: 393, height: 400)), record: recordMode)
-    }
-}
-```
-
-`BoardPlayViewModelTests` addition: a standalone Continuous square logged with `handleCountingTap(…, amount: 3.1, persistAsDefault: true)` leaves `task.defaultLogAmount == 3.1`; with `persistAsDefault: false` it stays nil.
-
-- [ ] **Step 2: Run — expect build FAIL** (`extra argument 'countKind'`). `IOS_SNAP -only-testing:OYBCSnapshotTests/CountingStepperSheetSnapshotTests`
-
-- [ ] **Step 3: Implement.** In `RisoCountingStepperSheet`: replace `sharedHint` with `let countKind: CountKind` (init parameter after `unitText`, default `.discrete` so previews compile); state seeded from `CounterLogAmount.initialSelection(kind: countKind, chips: chips, defaultLogAmount: defaultLogAmount)` (`selectedAmount`, `isCustomActive`), plus `@State private var amountText: String` seeded `formatCountForInput(selectedAmount, kind: countKind)` for the new kinds. Derived:
-
-```swift
-    private var isEntryKind: Bool { countKind != .discrete }
-    private var chips: [CounterLogAmount.LogChip] { CounterLogAmount.boardSheetChips(kind: countKind, goal: maxCount) }
-    private var showsChips: Bool { isEntryKind || isSharedCounter }
-    private var effectiveAmount: CountValue? {
-        if isEntryKind { return parseCountInput(amountText, kind: countKind) }
-        return isSharedCounter ? selectedAmount : 1
-    }
-    private var progressText: String { "\(formatCount(currentCount, kind: countKind))/\(formatCount(maxCount, kind: countKind))" }
-```
-
-Label pill: `"\(taskTitle) · \(progressText)\(countUnitSuffix(countKind, unit: unitText))"`; the value display `progressText`; − / + call `onDecrement(amount, effectivePersist)` / `onIncrement` only when `effectiveAmount` is non-nil (`.disabled(effectiveAmount == nil)` on +, `|| currentCount == 0` on −). Chip tap for new kinds: `selectedAmount = v; isCustomActive = false; amountText = formatCountForInput(v, kind: countKind)`; `#` focuses the field. Amount field (new kinds, always shown under the chips):
-
-```swift
-                if isEntryKind {
-                    GoalEntryView(kind: countKind, text: Binding(
-                        get: { amountText },
-                        set: { amountText = $0; isCustomActive = parseCountInput($0, kind: countKind).map { v in !chips.contains { $0.value == v } } ?? true }
-                    ), placeholder: "Amount", suffix: unitText.isEmpty ? nil : unitText, startsOpen: countKind == .duration)
-                }
-```
-
-Chip highlighting for new kinds: index of the chip whose value equals `parseCountInput(amountText)`, else `#` (labelled `CounterLogAmount.customChipLabel(_:kind:)` when it holds a value). Discrete path: unchanged code, with `formatCount(…, kind: .discrete)` → `countKind`. Bar fill (if the sheet draws one) gold when `currentCount > maxCount`. `sheetHeight`: `+ 56` chips when `showsChips`, `+ 52` amount field for Continuous, `+ 190` (field + wheel) for Duration, custom row only for discrete. Remove the `sharedHint` block and parameter; update the `#Preview`s.
-
-`BoardPlayView+CountingStepper.swift`: pass `countKind: resolveFamilyCountKind(task, lookup: { taskMap[$0] })`, `defaultLogAmount: (sourceId.flatMap { taskMap[$0] } ?? task).defaultLogAmount` (standalone squares remember their own); drop `sharedHint`. `BoardPlayView.swift`: delete `sharedStepperHint(for:)` and its now-unused helpers (`grep -n "sharedStepperHint" apps/ios/OYBC`), shrink the allowlist number to the new `wc -l`. `BoardPlayViewModel.handleCountingTap` standalone branch: after `runOrchestration(…)`, `if persistAsDefault { try? database.setCounterDefaultLogAmount(sourceTaskId: task.id, amount: amount) }` (log failures through the existing `dlog`); keep the file at ≤ 1518 by collapsing the adjacent comment block.
-
-- [ ] **Step 4: Run** `IOS_TEST -only-testing:OYBCTests/BoardPlayViewModelTests` PASS; `xcodegen generate`; record the six snapshots; read each vs handoff B1 iOS (Continuous: chips 6.6 · 13.1 · 26.2 · #3.1 selected, decimal pad field "3.1 mi"; Duration: ¼ = 2h 38m selected — NOT the handoff's 2h 40m, owner override). `node scripts/check-file-sizes.mjs`.
-
-- [ ] **Step 5: Commit**
-
-```bash
-git add apps/ios scripts/audit/file-size-allowlist.json
-git commit -m "feat(counters): iOS stepper sheet per kind — goal chips, pinned amount field, h:m wheel; standalone counters remember a custom amount; drop shared-hint caption (#548 6) (PR 4 Task 14)"
-```
-
----
-
-### Task 15: Web — every counting tap opens the DetailModal; modal per kind (B1 web)
-
-**Files:**
-- Create: `apps/web/src/components/boardPlay/useCountingLogModal.ts` — the modal quick-amount state + builder moved out of `BoardPlaySurface.tsx:228-252,1010-1080`
-- Modify: `apps/web/src/components/BoardPlaySurface.tsx:804-827` (counting tap → `setSelectedSquareId(boardTaskId)`), `:1000-1115` (modal props via the hook), `:1149` (drop `menuSharedHint`) — net line count must DROP; shrink the allowlist entry
-- Modify: `apps/web/src/components/InteractiveTaskSquare.tsx:418-480` (`DetailModalProps.quickAmount` gains `kind`, `amountText`, `onAmountTextChange`, `addLabel`), `:567-700` (counting body per kind), `:226,699` (drop `sharedHint` — #548 row 5), `:205` + `BoardPlaySurface.tsx:1080` (drop the "Linked counters cannot be decremented directly" title — row 7; the disabled − is the signal), `:393` (delete the "Tap: +1 {unit}" hover hint — row 8)
-- Modify: `apps/web/src/components/interactiveTaskSquareUtils.ts:47-60,164-167` (`TaskSquareData.countKind?: CountKind`; `progressBarLabel` via `formatCount` + `countUnitSuffix`), `apps/web/src/db/adapters.ts:158` (`taskToSquareData` sets `countKind` via `resolveFamilyCountKind`)
-- Modify: `apps/web/src/hooks/useBoardPlayData.ts:72,270-310` (delete `sharedCounterHintsByTaskId`), `apps/web/src/db/operations/__tests__/sharedCounterWindowRegression.test.ts:150-170` (delete the hint assertions — the hint no longer exists; keep the window assertions)
-- Modify: `apps/web/e2e/windowed-completion.spec.ts:205-207` (tap opens the modal; press "Increase")
-- Test: `apps/web/src/components/boardPlay/__tests__/useCountingLogModal.test.ts` (create — pure `buildQuickAmount` function exported from the hook module), `apps/web/src/components/__tests__/DetailModalKinds.test.ts` (create), `apps/web/e2e/counter-kinds-logging.spec.ts` (create)
+**Files (iOS):**
+- Create: `apps/ios/OYBC/Views/BoardsTab/Components/CountingStepperModel.swift` (pure selection model — the twin of `countingLogModel.ts`)
+- Modify: `apps/ios/OYBC/Views/BoardsTab/Components/RisoCountingStepperSheet.swift` (whole view: +`countKind`; chips for every Continuous / Duration square; pinned `GoalEntryView`; kind-aware labels; `sharedHint` removed — row 6)
+- Modify: `apps/ios/OYBC/Views/BoardsTab/BoardPlayView+CountingStepper.swift:24-58` (pass `countKind`, standalone `defaultLogAmount`; drop `sharedHint`)
+- Modify: `apps/ios/OYBC/Views/BoardsTab/BoardPlayView.swift:1076-1130` (delete `sharedStepperHint(for:)` — row 6), `:1779-1782` (delete row 2 `Text`), `:1884-1888` (delete row 4 `Text`)
+- Modify: `apps/ios/OYBC/Views/BoardsTab/ViewModels/BoardPlayViewModel.swift:531-543` (standalone `persistAsDefault` → `database.setCounterDefaultLogAmount(sourceTaskId: task.id, amount:)`)
+- Test: `apps/ios/OYBCTests/CountingStepperModelTests.swift` (create), `apps/ios/OYBCTests/BoardPlayViewModelTests.swift` (+1 case), `apps/ios/OYBCSnapshotTests/CountingStepperSheetSnapshotTests.swift` (create)
 
 **Interfaces:**
-- Consumes: Task 13 helpers, `GoalEntry`, `setCounterDefaultLogAmount`, `handleComplete`, `handleSharedCounterIncrement/Decrement`.
-- Produces:
-  - `useCountingLogModal(args: { selectedSquareId: string | null; boardTasks: BoardTask[]; taskMap: Record<string, Task>; sharedCounterSourceIds: Set<string>; isSealed: boolean; currentCountFor: (boardTaskId: string) => number; onIncrementShared: (sourceId: string, amount: number, persist: boolean) => Promise<void>; onDecrementShared: (sourceId: string, amount: number, persist: boolean) => Promise<void>; onSetStandaloneCount: (boardTaskId: string, next: number) => Promise<void>; onPersistDefault: (taskId: string, amount: number) => Promise<void> }): DetailModalProps['quickAmount'] | undefined`
-  - pure `buildQuickAmount(state: QuickAmountState, ctx: QuickAmountContext): DetailModalProps['quickAmount'] | undefined` (unit-tested)
-  - Rules: Discrete standalone → `undefined` (the plain −/+ stepper, ±1); Discrete shared → today's `+1 · +10 · #` row; Continuous / Duration (any) → goal chips + an always-visible `GoalEntry` amount field + "− | cur/max | + {amount} {unit}" (`addLabel` = `+ ${formatCountWithUnit(amount, kind, unit)}`).
+- Consumes: Task 13 (`boardSheetChips`, `initialLogSelection`, `customChipLabel` ↔ `CounterLogAmount.*`), `GoalEntry(View)`, `formatCountWithUnit`, `resolveFamilyCountKind`, `setCounterDefaultLogAmount`.
+- Produces (web): `type QuickAmountProps = { kind: CountKind; options: LogChip[]; selected: number | null; isCustomActive: boolean; customOpen: boolean; customDraft: string; amountText: string; unit: string; addLabel: string; busy: boolean; removeDisabled: boolean; onSelectChip(v: number): void; onOpenCustom(): void; onCustomDraftChange(raw: string): void; onConfirmCustom(): void; onAmountTextChange(raw: string): void; onAdd(): void; onRemove(): void }`; `interface CountingLogState { boardTaskId: string; amount: number; isCustom: boolean; customOpen: boolean; customDraft: string; amountText: string }`; `interface CountingLogContext { boardTaskId: string; task: Task; taskMap: Record<string, Task>; sourceId: string | null; currentCount: number; isSealed: boolean; onIncrementShared(sourceId: string, amount: number, persist: boolean): void; onDecrementShared(sourceId: string, amount: number, persist: boolean): void; onSetStandaloneCount(boardTaskId: string, next: number): void; onPersistDefault(taskId: string, amount: number): void }`; `initialCountingLogState(ctx): CountingLogState | null`; `buildQuickAmount(state: CountingLogState, ctx, setState: (next: CountingLogState) => void): QuickAmountProps | undefined`; `useCountingLogModal(selectedSquareId: string | null, ctxFor: (boardTaskId: string) => CountingLogContext | null): QuickAmountProps | undefined`.
+- Produces (iOS): `struct CountingStepperModel: Equatable { let kind: CountKind; let chips: [CounterLogAmount.LogChip]; var amountText: String; var selectedAmount: CountValue; var isCustom: Bool; static func initial(kind:goal:defaultLogAmount:isShared:) -> CountingStepperModel; var amount: CountValue?; mutating func selectChip(_:); mutating func setText(_:); func addLabel(unit:) -> String; var showsChips: Bool }`; `RisoCountingStepperSheet(taskTitle:currentCount:maxCount:unitText:countKind:isLinkedCounter:isSharedCounter:defaultLogAmount:onOpenTask:onIncrement:onDecrement:)`.
+- Behaviour (both): Discrete standalone = plain −/+ (±1), Discrete shared = today's `+1 · +10 · #` + custom row + OK; Continuous / Duration (any square) = ¼ · ½ · goal · # chips + the always-visible amount field (no OK), − / + apply the field's amount, an edited field is custom (persisted as the default on log), `#` shows the custom amount. Gold: only the web modal's progress bar when `cur > max` (handoff `LogSheet` web frame); the iOS sheet draws no bar.
 
-- [ ] **Step 1: Failing tests.** `DetailModalKinds.test.ts`:
+- [ ] **Step 1: Failing web tests.** `countingLogModel.test.ts`:
+
+```ts
+import { describe, expect, it, vi } from 'vitest';
+import { TaskType, type Task } from '@oybc/shared';
+import { buildQuickAmount, initialCountingLogState, type CountingLogContext } from '../countingLogModel';
+
+const task = (over: Partial<Task>): Task => ({
+  id: 't', userId: 'u1', title: 'Run 26.2 mi', type: TaskType.COUNTING, action: 'Run', unit: 'mi', maxCount: 26.2,
+  countKind: 'continuous', currentCount: 0, isCompleted: false, totalCompletions: 0, totalInstances: 0,
+  createdAt: 't', updatedAt: 't', version: 1, isDeleted: false, ...over,
+} as Task);
+
+const ctx = (t: Task, over: Partial<CountingLogContext> = {}): CountingLogContext => ({
+  boardTaskId: 'bt', task: t, taskMap: { [t.id]: t }, sourceId: null, currentCount: 12.4, isSealed: false,
+  onIncrementShared: vi.fn(), onDecrementShared: vi.fn(), onSetStandaloneCount: vi.fn(), onPersistDefault: vi.fn(), ...over,
+});
+
+describe('countingLogModel', () => {
+  it('a discrete standalone square keeps the plain stepper', () => {
+    const c = ctx(task({ countKind: undefined, maxCount: 10, unit: 'reps' }));
+    expect(initialCountingLogState(c)).toBeNull();
+  });
+  it('a discrete shared square keeps +1 · +10 · #', () => {
+    const c = ctx(task({ countKind: undefined, maxCount: 200 }), { sourceId: 't' });
+    const q = buildQuickAmount(initialCountingLogState(c)!, c, () => {});
+    expect(q?.options.map((o) => o.label)).toEqual(['+1', '+10', '#']);
+    expect(q?.addLabel).toBe('+ 1');
+  });
+  it('a continuous standalone square opens on its remembered custom amount', () => {
+    const c = ctx(task({ defaultLogAmount: 3.1 }));
+    const q = buildQuickAmount(initialCountingLogState(c)!, c, () => {})!;
+    expect(q).toMatchObject({ kind: 'continuous', isCustomActive: true, amountText: '3.1', selected: 3.1, addLabel: '+ 3.1 mi' });
+    expect(q.options.map((o) => o.label)).toEqual(['6.6', '13.1', '26.2', '#']);
+  });
+  it('adding a custom amount sets the window count and persists the default; a chip does not persist', () => {
+    const c = ctx(task({ defaultLogAmount: 3.1 }));
+    buildQuickAmount(initialCountingLogState(c)!, c, () => {})!.onAdd();
+    expect(c.onSetStandaloneCount).toHaveBeenCalledWith('bt', 15.5);
+    expect(c.onPersistDefault).toHaveBeenCalledWith('t', 3.1);
+    const c2 = ctx(task({}));
+    buildQuickAmount(initialCountingLogState(c2)!, c2, () => {})!.onAdd(); // ¼ chip 6.6 pre-selected
+    expect(c2.onSetStandaloneCount).toHaveBeenCalledWith('bt', 19);
+    expect(c2.onPersistDefault).not.toHaveBeenCalled();
+  });
+  it('fixing 31-for-3.1: the field opens on 31 and − removes exactly 31', () => {
+    const c = ctx(task({ defaultLogAmount: 31 }), { currentCount: 40 });
+    buildQuickAmount(initialCountingLogState(c)!, c, () => {})!.onRemove();
+    expect(c.onSetStandaloneCount).toHaveBeenCalledWith('bt', 9);
+  });
+  it('an invalid field disables + and −', () => {
+    const c = ctx(task({}));
+    const q = buildQuickAmount({ ...initialCountingLogState(c)!, amountText: '3.125', isCustom: true }, c, () => {})!;
+    expect(q.selected).toBeNull();
+    expect(q.removeDisabled).toBe(true);
+  });
+  it('a duration square labels without a unit', () => {
+    const c = ctx(task({ countKind: 'duration', maxCount: 630, unit: '' }), { currentCount: 270 });
+    expect(buildQuickAmount(initialCountingLogState(c)!, c, () => {})!.addLabel).toBe('+ 2h 38m');
+  });
+});
+```
+
+`DetailModalKinds.test.ts`:
 
 ```ts
 import { describe, expect, it } from 'vitest';
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { DetailModal } from '../InteractiveTaskSquare';
+import type { QuickAmountProps } from '../interactiveTaskSquareUtils';
 
-const base = { onClose: () => {}, onToggleComplete: () => {}, onIncrementCount: () => {}, onDecrementCount: () => {} };
-const quick = (o: object) => ({
-  options: [{ value: 6.6, label: '6.6' }, { value: 13.1, label: '13.1' }, { value: 26.2, label: '26.2' }, { value: null, label: '#' }],
-  selected: 3.1, isCustomActive: true, customOpen: false, customDraft: '', unit: 'mi', busy: false,
-  onSelectChip: () => {}, onOpenCustom: () => {}, onCustomDraftChange: () => {}, onConfirmCustom: () => {},
-  onAdd: () => {}, onRemove: () => {}, removeDisabled: false,
-  kind: 'continuous', amountText: '3.1', onAmountTextChange: () => {}, addLabel: '+ 3.1 mi', ...o,
+const noop = () => {};
+const base = { onClose: noop, onToggleComplete: noop, onIncrementCount: noop, onDecrementCount: noop };
+const quick = (o: Partial<QuickAmountProps>): QuickAmountProps => ({
+  kind: 'continuous', options: [{ value: 6.6, label: '6.6' }, { value: 13.1, label: '13.1' }, { value: 26.2, label: '26.2' }, { value: null, label: '#' }],
+  selected: 3.1, isCustomActive: true, customOpen: false, customDraft: '', amountText: '3.1', unit: 'mi', addLabel: '+ 3.1 mi',
+  busy: false, removeDisabled: false, onSelectChip: noop, onOpenCustom: noop, onCustomDraftChange: noop, onConfirmCustom: noop,
+  onAmountTextChange: noop, onAdd: noop, onRemove: noop, ...o,
 });
+const render = (sq: object, cur: number, q?: QuickAmountProps) =>
+  renderToStaticMarkup(React.createElement(DetailModal, { ...base, sq: sq as never, state: { isCompleted: false, currentCount: cur, completedStepIds: new Set() }, quickAmount: q }));
 
 describe('DetailModal — counter kinds', () => {
-  it('continuous: chips, pinned amount field, + {amount} {unit}, no OK', () => {
-    const html = renderToStaticMarkup(React.createElement(DetailModal, {
-      ...base, sq: { id: 's', title: 'Run 26.2 mi', type: 'counting', action: 'Run', maxCount: 26.2, unit: 'mi', countKind: 'continuous' },
-      state: { isCompleted: false, currentCount: 12.4, completedStepIds: new Set() }, quickAmount: quick({}) as never,
-    }));
+  it('continuous: chips with #3.1 selected, pinned decimal field, + {amount} {unit}, no OK', () => {
+    const html = render({ id: 's', title: 'Run 26.2 mi', type: 'counting', action: 'Run', maxCount: 26.2, unit: 'mi', countKind: 'continuous' }, 12.4, quick({}));
     expect(html).toContain('#3.1');
     expect(html).toContain('inputMode="decimal"');
     expect(html).toContain('+ 3.1 mi');
-    expect(html).toContain('12.4/26.2 mi');
+    expect(html).toContain('12.4/26.2');
     expect(html).not.toContain('>OK<');
   });
-  it('duration: h / m fields and no unit', () => {
-    const html = renderToStaticMarkup(React.createElement(DetailModal, {
-      ...base, sq: { id: 's', title: 'Practice 10h 30m', type: 'counting', action: 'Practice', maxCount: 630, unit: '', countKind: 'duration' },
-      state: { isCompleted: false, currentCount: 270, completedStepIds: new Set() },
-      quickAmount: quick({ kind: 'duration', amountText: '2h 38m', unit: '', addLabel: '+ 2h 38m', selected: 158, isCustomActive: false,
-        options: [{ value: 158, label: '2h 38m' }, { value: 315, label: '5h 15m' }, { value: 630, label: '10h 30m' }, { value: null, label: '#' }] }) as never,
-    }));
+  it('duration: h / m fields, no unit in the meta line', () => {
+    const html = render({ id: 's', title: 'Practice 10h 30m', type: 'counting', action: 'Practice', maxCount: 630, unit: '', countKind: 'duration' }, 270,
+      quick({ kind: 'duration', amountText: '2h 38m', unit: '', addLabel: '+ 2h 38m', selected: 158, isCustomActive: false,
+        options: [{ value: 158, label: '2h 38m' }, { value: 315, label: '5h 15m' }, { value: 630, label: '10h 30m' }, { value: null, label: '#' }] }));
     expect(html).toContain('aria-label="Log amount hours"');
     expect(html).toContain('4h 30m/10h 30m');
+    expect(html).toContain('Practice · 10h 30m');
   });
-  it('no shared hint, no hover tap hint, no linked tooltip (#548 5/7/8)', () => {
-    const html = renderToStaticMarkup(React.createElement(DetailModal, {
-      ...base, sq: { id: 's', title: 'Push', type: 'counting', action: 'Do', maxCount: 10, unit: 'reps', sharedCounterId: 'r' },
-      state: { isCompleted: false, currentCount: 3, completedStepIds: new Set() },
-    }));
+  it('overshoot paints the modal bar gold (handoff LogSheet web frame)', () => {
+    const html = render({ id: 's', title: 'Run 26.2 mi', type: 'counting', action: 'Run', maxCount: 26.2, unit: 'mi', countKind: 'continuous' }, 28.4, quick({}));
+    expect(html).toMatch(/modalProgressFillOver/);
+  });
+  it('a linked discrete square renders the plain stepper without the removed captions (#548 5/7/8)', () => {
+    const html = render({ id: 's', title: 'Push', type: 'counting', action: 'Do', maxCount: 10, unit: 'reps', sharedCounterId: 'r' }, 3);
+    expect(html).toContain('3 / 10');
     expect(html).not.toContain('also counts on');
     expect(html).not.toContain('cannot be decremented');
+    expect(html).not.toContain('Tap: +1');
   });
 });
 ```
 
-`useCountingLogModal.test.ts` — `buildQuickAmount` cases: discrete standalone → `undefined`; discrete shared → labels `['+1','+10','#']`; continuous standalone with `defaultLogAmount: 3.1` → `isCustomActive: true`, `amountText: '3.1'`, `addLabel: '+ 3.1 mi'`; `onAdd` on a continuous standalone calls `onSetStandaloneCount(bt, quantizeCount(12.4 + 3.1))` = 15.5 and `onPersistDefault('t', 3.1)` (custom), while a chip amount calls no persist; a typed `'31'` then `onRemove` decrements exactly 31 (Review Focus — the 31-vs-3.1 correction).
+(The last case still renders the plain stepper — `quickAmount` absent — so its absence checks are against the full counting body that used to carry the hint when `sharedHint` was passed; with the prop deleted the type no longer accepts it.)
 
-- [ ] **Step 2: Run — expect FAIL.** `WEB_TEST DetailModalKinds useCountingLogModal`
+- [ ] **Step 2: Run — expect FAIL.** `WEB_TEST countingLogModel DetailModalKinds`
 
-- [ ] **Step 3: Implement.** `useCountingLogModal.ts` holds the `modalQuickAmount` state (moved from `BoardPlaySurface.tsx:228-252`, extended with `amountText`) and exports `buildQuickAmount` (moved from `:1010-1080`, extended):
-  - kind = `resolveFamilyCountKind(task, (id) => taskMap[id])`; source = `resolveSharedCounterSourceId(task, sharedCounterSourceIds)`; `if (kind === 'discrete' && !source) return undefined;`
-  - `options = boardSheetChips(kind, task.maxCount ?? 0)`; the initial state from `initialLogSelection(kind, options, (source ? taskMap[source] : task)?.defaultLogAmount)`; `amountText` seeded `formatCountForInput(amount, kind)` for the new kinds.
-  - `selected` for new kinds = `parseCountInput(amountText, kind)`; `onAdd`/`onRemove` no-op when it is null; standalone new-kind add → `onSetStandaloneCount(bt.id, quantizeCount(cur + amount))`, remove → `Math.max(0, quantizeCount(cur - amount))`; when `isCustomActive` → `onPersistDefault(task.id, amount)`; shared → the existing `onIncrementShared/onDecrementShared(source, amount, isCustomActive)`.
-  - `addLabel = kind === 'discrete' ? `+ ${amount}` : `+ ${formatCountWithUnit(amount, kind, unit)}``.
-  - `removeDisabled = isLinkedCounter || current <= 0 || selected === null`.
-  In `BoardPlaySurface.tsx` the counting tap branch (`:804-827`) collapses to `setSelectedSquareId(boardTaskId);` for every counting square (not sealed); the modal block uses `const quickAmount = useCountingLogModal({ … })` (call the hook at the top level with `selectedSquareId`, not inside the IIFE); `onPersistDefault` = `setCounterDefaultLogAmount`. Delete `modalSharedHint` / `menuSharedHint` / the `removeTitle` string. `DetailModal` counting body: when `quickAmount?.kind` is continuous/duration render the chip row (custom chip label `customChipLabel(selected, kind)` when custom), then `<GoalEntry kind={kind} value={quickAmount.amountText} onChange={quickAmount.onAmountTextChange} aria-label="Log amount" suffix={unit || undefined} dense />` (no OK button, no `customOpen` row), then the actions row `− | {progress} | {addLabel}` where progress = `${formatCount(cur, kind)}/${formatCount(max, kind)}`; meta line `{action} · {formatCountWithUnit(max, kind, unit)}`; the bar fill class gets `modalProgressFillOver` (gold, `background: var(--riso-gold)`) when `cur > max`. The Discrete paths render exactly as today. Remove `sharedHint` from `DetailModalProps` + `ContextMenuProps` and the "Tap: +1" span; drop the now-unused CSS classes (`.sharedHint`, `.actionHint`).
+- [ ] **Step 3: Implement web.** `countingLogModel.ts`:
 
-- [ ] **Step 4: Run** `WEB_TEST DetailModal useCountingLogModal boardPlay sharedCounterWindowRegression` PASS; `WEB_CHECK`; `node scripts/check-file-sizes.mjs` (BoardPlaySurface below 1241 — shrink its entry).
+```ts
+import {
+  boardSheetChips, customChipLabel, formatCountForInput, formatCountWithUnit, initialLogSelection, parseCountInput,
+  quantizeCount, resolveFamilyCountKind, type Task,
+} from '@oybc/shared';
+import type { QuickAmountProps } from '../interactiveTaskSquareUtils';
 
-- [ ] **Step 5: e2e.** Update `windowed-completion.spec.ts:205-207`:
+export interface CountingLogState { boardTaskId: string; amount: number; isCustom: boolean; customOpen: boolean; customDraft: string; amountText: string }
+
+export interface CountingLogContext {
+  boardTaskId: string; task: Task; taskMap: Record<string, Task>; sourceId: string | null; currentCount: number; isSealed: boolean;
+  onIncrementShared(sourceId: string, amount: number, persist: boolean): void;
+  onDecrementShared(sourceId: string, amount: number, persist: boolean): void;
+  onSetStandaloneCount(boardTaskId: string, next: number): void;
+  onPersistDefault(taskId: string, amount: number): void;
+}
+
+const kindOf = (ctx: CountingLogContext) => resolveFamilyCountKind(ctx.task, (id) => ctx.taskMap[id]);
+
+/** The state a square's modal opens with, or null for the plain discrete stepper. */
+export function initialCountingLogState(ctx: CountingLogContext): CountingLogState | null {
+  const kind = kindOf(ctx);
+  if (kind === 'discrete' && !ctx.sourceId) return null;
+  const options = boardSheetChips(kind, ctx.task.maxCount ?? 0);
+  const remembered = (ctx.sourceId ? ctx.taskMap[ctx.sourceId] : ctx.task)?.defaultLogAmount;
+  const sel = initialLogSelection(kind, options, remembered);
+  return { boardTaskId: ctx.boardTaskId, amount: sel.amount, isCustom: sel.isCustom, customOpen: false, customDraft: '', amountText: formatCountForInput(sel.amount, kind) };
+}
+
+/** The DetailModal quick-amount props for the current state (both rows of §5). */
+export function buildQuickAmount(state: CountingLogState, ctx: CountingLogContext, setState: (next: CountingLogState) => void): QuickAmountProps | undefined {
+  const kind = kindOf(ctx);
+  if (kind === 'discrete' && !ctx.sourceId) return undefined;
+  const options = boardSheetChips(kind, ctx.task.maxCount ?? 0);
+  const unit = ctx.task.unit ?? '';
+  const entry = kind !== 'discrete';
+  const selected = entry ? parseCountInput(state.amountText, kind) : state.amount;
+  const isLinked = ctx.task.sharedCounterId != null;
+  const log = (direction: 1 | -1): void => {
+    if (ctx.isSealed || selected === null) return;
+    const persist = state.isCustom;
+    if (ctx.sourceId) {
+      if (direction === 1) ctx.onIncrementShared(ctx.sourceId, selected, persist);
+      else ctx.onDecrementShared(ctx.sourceId, selected, persist);
+      return;
+    }
+    ctx.onSetStandaloneCount(ctx.boardTaskId, Math.max(0, quantizeCount(ctx.currentCount + direction * selected)));
+    if (persist) ctx.onPersistDefault(ctx.task.id, selected);
+  };
+  return {
+    kind, options, selected, unit,
+    isCustomActive: state.isCustom,
+    customOpen: state.customOpen,
+    customDraft: state.customDraft,
+    amountText: state.amountText,
+    busy: ctx.isSealed,
+    removeDisabled: isLinked || ctx.currentCount <= 0 || selected === null,
+    addLabel: entry ? `+ ${formatCountWithUnit(selected ?? 0, kind, unit)}` : `+ ${selected}`,
+    onSelectChip: (v) => setState({ ...state, amount: v, isCustom: false, customOpen: false, amountText: formatCountForInput(v, kind) }),
+    onOpenCustom: () => setState(entry ? { ...state, isCustom: true } : { ...state, customOpen: true, customDraft: state.isCustom ? String(state.amount) : '' }),
+    onCustomDraftChange: (raw) => setState({ ...state, customDraft: raw }),
+    onConfirmCustom: () => {
+      const parsed = parseCountInput(state.customDraft, kind);
+      if (parsed !== null) setState({ ...state, amount: parsed, isCustom: true, customOpen: false, customDraft: '' });
+    },
+    onAmountTextChange: (raw) => {
+      const parsed = parseCountInput(raw, kind);
+      setState({ ...state, amountText: raw, isCustom: parsed === null || !options.some((o) => o.value === parsed) });
+    },
+    onAdd: () => log(1),
+    onRemove: () => { if (!isLinked) log(-1); },
+  };
+}
+
+export { customChipLabel };
+```
+
+`useCountingLogModal.ts`:
+
+```ts
+import { useEffect, useState } from 'react';
+import type { QuickAmountProps } from '../interactiveTaskSquareUtils';
+import { buildQuickAmount, initialCountingLogState, type CountingLogContext, type CountingLogState } from './countingLogModel';
+
+/**
+ * The open DetailModal's quick-amount props. Seeded when a DIFFERENT square
+ * opens (never on a live-query update of the same square — that would clobber
+ * an in-progress amount edit; moved verbatim from BoardPlaySurface).
+ */
+export function useCountingLogModal(
+  selectedSquareId: string | null,
+  ctxFor: (boardTaskId: string) => CountingLogContext | null,
+): QuickAmountProps | undefined {
+  const [state, setState] = useState<CountingLogState | null>(null);
+  useEffect(() => {
+    const ctx = selectedSquareId ? ctxFor(selectedSquareId) : null;
+    setState(ctx ? initialCountingLogState(ctx) : null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedSquareId]);
+  const ctx = selectedSquareId ? ctxFor(selectedSquareId) : null;
+  if (!ctx || !state || state.boardTaskId !== selectedSquareId) return undefined;
+  return buildQuickAmount(state, ctx, setState);
+}
+```
+
+`BoardPlaySurface.tsx`: delete `modalQuickAmount` state + its seeding effect (`:228-252`) and the in-IIFE builder (`:1010-1080`); at the top level add
+
+```ts
+  const quickAmount = useCountingLogModal(selectedSquareId, (btId) => {
+    const bt = boardTasks.find((b) => b.id === btId);
+    const task = bt ? taskMap[bt.taskId] : undefined;
+    if (!bt || !task || task.type !== TaskType.COUNTING) return null;
+    return {
+      boardTaskId: btId, task, taskMap, isSealed,
+      sourceId: resolveSharedCounterSourceId(task, sharedCounterSourceIds),
+      currentCount: cellStateByBoardTaskId[btId]?.currentCount ?? 0,
+      onIncrementShared: (s, a, p) => void handleSharedCounterIncrement(s, a, p),
+      onDecrementShared: (s, a, p) => void handleSharedCounterDecrement(s, a, p),
+      onSetStandaloneCount: (b, next) => void handleComplete(b, { currentCount: next }),
+      onPersistDefault: (id, a) => void setCounterDefaultLogAmount(id, a),
+    };
+  });
+```
+
+(the `currentCount` source is the same windowed value the modal shows today — `modalCurrentCount`; reuse whichever expression `:1000-1008` computes it with) and pass `quickAmount={quickAmount}` to `DetailModal`. The counting tap branch (`:804-827`) becomes `} else if (squareData.type === 'counting') { setSelectedSquareId(boardTaskId); }` (the Discrete +1 tap is gone — §5). Delete the stat-bar hint `<div className={play.hint}>…</div>` (`:618-631`, row 9) and its `.hint` CSS. `DetailModal` counting body: meta line `{sq.action} · {formatCountWithUnit(sq.maxCount ?? 0, kind, sq.unit)}` with `const kind = sq.countKind ?? 'discrete'`; progress fill gets `${cur > max ? styles.modalProgressFillOver : ''}`; then
+
+```tsx
+            {quickAmount && quickAmount.kind !== 'discrete' ? (
+              <div className={styles.quickAmountRow}>
+                <div className={styles.quickChipRow} role="group" aria-label="Log amount presets">
+                  {quickAmount.options.map((chip, i) => {
+                    const isCustom = chip.value === null;
+                    const on = isCustom ? quickAmount.isCustomActive : !quickAmount.isCustomActive && chip.value === quickAmount.selected;
+                    return (
+                      <button key={isCustom ? 'custom' : `${i}-${chip.value}`} type="button"
+                        className={`${styles.quickChip} ${on ? styles.quickChipSelected : ''}`} aria-pressed={on}
+                        onClick={() => (isCustom ? quickAmount.onOpenCustom() : quickAmount.onSelectChip(chip.value as number))}>
+                        {isCustom && on && quickAmount.selected !== null ? customChipLabel(quickAmount.selected, quickAmount.kind) : chip.label}
+                      </button>
+                    );
+                  })}
+                </div>
+                <GoalEntry kind={quickAmount.kind} value={quickAmount.amountText} onChange={quickAmount.onAmountTextChange}
+                  aria-label="Log amount" suffix={quickAmount.unit || undefined} placeholder="Amount" dense />
+                <div className={styles.quickAmountActions}>
+                  <button type="button" className={styles.counterButton} onClick={quickAmount.onRemove}
+                    disabled={quickAmount.busy || quickAmount.removeDisabled} aria-label={`Remove ${quickAmount.addLabel.slice(2)}`}>−</button>
+                  <span className={styles.counterValue}>{formatCount(state.currentCount, quickAmount.kind)}/{formatCount(sq.maxCount ?? 0, quickAmount.kind)}</span>
+                  <button type="button" className={styles.quickAddBtn} onClick={quickAmount.onAdd}
+                    disabled={quickAmount.busy || quickAmount.selected === null}>{quickAmount.addLabel}</button>
+                </div>
+              </div>
+            ) : quickAmount ? (
+              /* the existing discrete shared block (`:594-675`) — unchanged except it reads `quickAmount.options`/`selected` from the new props and drops `title={quickAmount.removeTitle}` */
+            ) : (
+              /* the existing plain stepper (`:676-695`) — unchanged */
+            )}
+```
+
+(the two "unchanged" branches are the current JSX moved verbatim; `quickAmount.selected` is non-null for discrete.) `progressBarLabel` = `${formatCount(state.currentCount, kind)}/${formatCount(sq.maxCount ?? 0, kind)}${countUnitSuffix(kind, sq.unit)}` for counting. Delete `sharedHint` from both prop interfaces and every render; delete `sharedCounterHintsByTaskId` from `useBoardPlayData.ts` and its two reads; in `sharedCounterWindowRegression.test.ts` delete only the hint assertions.
+
+- [ ] **Step 4: Run** `WEB_TEST countingLogModel DetailModal boardPlay sharedCounterWindowRegression` — PASS; `WEB_CHECK`; `node scripts/check-file-sizes.mjs` (BoardPlaySurface well under 1241 — do NOT lower the cap; Task 21 does).
+
+- [ ] **Step 5: e2e (web).** `windowed-completion.spec.ts:205-207` →
 
 ```ts
     // Tap opens the stepper modal (counter kinds §5 — web no longer logs +1 on tap).
@@ -3596,168 +4924,841 @@ describe('DetailModal — counter kinds', () => {
     await expect(counterSquare).toContainText('1/10');
 ```
 
-Create `apps/web/e2e/counter-kinds-logging.spec.ts`: seed a board with a standalone Continuous task (`maxCount: 26.2, countKind: 'continuous', unit: 'mi'`) and a Duration task (`maxCount: 630, countKind: 'duration'`); (1) tap the Continuous square → modal → chip `13.1` → `+ 13.1 mi` → Escape → the cell reads `13.1/26.2`; (2) reopen → type `3,1` into "Log amount" → `+ 3.1 mi` → cell `16.2/26.2`; reload → the modal opens with `#3.1` selected (persisted default); (3) Duration square → `Log amount hours` 1, minutes 30 → `+ 1h 30m` → cell `1h 30m/10h 30m`. Run `WEB_E2E e2e/windowed-completion.spec.ts e2e/counter-kinds-logging.spec.ts` — PASS.
+Create `apps/web/e2e/counter-kinds-logging.spec.ts`:
 
-- [ ] **Step 6: Playwright validation.** Screenshot the Continuous and Duration modals light/dark → `.playwright-mcp/task15-b1-{continuous,duration}-{light,dark}.png`; compare to handoff B1 web.
+```ts
+import { test, expect, seedBoard, seedBoardTask, seedTask, readTask } from './_fixtures/bypass';
+
+const now = new Date();
+const iso = (d: Date) => d.toISOString();
+const START = iso(new Date(now.getTime() - 2 * 864e5));
+const END = iso(new Date(now.getTime() + 5 * 864e5));
+const BOARD = 'f1000000-0000-0000-0000-000000000001';
+const RUN = 'f1000000-0000-0000-0000-000000000002';
+const PRACTICE = 'f1000000-0000-0000-0000-000000000003';
+
+test.describe('Counter kinds — logging (B1)', () => {
+  test.beforeEach(async ({ page }) => {
+    await page.goto('/boards?__oybc_test_bypass=1');
+    await seedTask(page, { id: RUN, title: 'Run 26.2 mi', type: 'counting', action: 'Run', unit: 'mi', maxCount: 26.2, countKind: 'continuous' });
+    await seedTask(page, { id: PRACTICE, title: 'Practice 10h 30m', type: 'counting', action: 'Practice', unit: '', maxCount: 630, countKind: 'duration' });
+    await seedBoard(page, { id: BOARD, name: 'Kinds board', boardSize: 3, timeframe: 'weekly', status: 'active', startDate: START, endDate: END, centerSquareType: 'none' });
+    await seedBoardTask(page, { id: 'f1000000-bt00-0000-0000-000000000001', boardId: BOARD, taskId: RUN, row: 0, col: 0 });
+    await seedBoardTask(page, { id: 'f1000000-bt00-0000-0000-000000000002', boardId: BOARD, taskId: PRACTICE, row: 0, col: 1 });
+    await page.goto(`/boards/${BOARD}?__oybc_test_bypass=1`);
+  });
+
+  test('Continuous: chip, typed custom amount, remembered on reopen', async ({ page }) => {
+    const run = page.getByRole('button', { name: 'Run 26.2 mi' });
+    await run.click();
+    const modal = page.getByRole('dialog');
+    await modal.getByRole('button', { name: '13.1', exact: true }).click();
+    await modal.getByRole('button', { name: '+ 13.1 mi' }).click();
+    await page.keyboard.press('Escape');
+    await expect(run).toContainText('13.1/26.2');
+    await run.click();
+    await modal.getByLabel('Log amount', { exact: true }).fill('3,1');
+    await modal.getByRole('button', { name: '+ 3.1 mi' }).click();
+    await page.keyboard.press('Escape');
+    await expect(run).toContainText('16.2/26.2');
+    expect(await readTask(page, RUN)).toMatchObject({ defaultLogAmount: 3.1 });
+    await run.click();
+    await expect(modal.getByRole('button', { name: '#3.1' })).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  test('Duration: h / m entry', async ({ page }) => {
+    const practice = page.getByRole('button', { name: 'Practice 10h 30m' });
+    await practice.click();
+    const modal = page.getByRole('dialog');
+    await modal.getByLabel('Log amount hours').fill('1');
+    await modal.getByLabel('Log amount minutes').fill('30');
+    await modal.getByRole('button', { name: '+ 1h 30m' }).click();
+    await page.keyboard.press('Escape');
+    await expect(practice).toContainText('1h 30m');
+  });
+});
+```
+
+Run `WEB_E2E e2e/windowed-completion.spec.ts e2e/counter-kinds-logging.spec.ts` — PASS. Playwright MCP: screenshot both modals light/dark → `.playwright-mcp/task14-b1-web-{continuous,duration}-{light,dark}.png` vs handoff B1 web.
+
+- [ ] **Step 6: iOS failing tests.** `CountingStepperModelTests.swift`:
+
+```swift
+import XCTest
+@testable import OYBC
+
+final class CountingStepperModelTests: XCTestCase {
+    func testContinuousOpensOnTheRememberedCustomAmount() {
+        let m = CountingStepperModel.initial(kind: .continuous, goal: 26.2, defaultLogAmount: 3.1, isShared: false)
+        XCTAssertEqual(m.chips.map(\.label), ["6.6", "13.1", "26.2", "#"])
+        XCTAssertTrue(m.isCustom)
+        XCTAssertEqual(m.amountText, "3.1")
+        XCTAssertEqual(m.amount, 3.1)
+        XCTAssertEqual(m.addLabel(unit: "mi"), "+ 3.1 mi")
+    }
+    func testChipAndTypedTextSwitchCustomness() {
+        var m = CountingStepperModel.initial(kind: .continuous, goal: 26.2, defaultLogAmount: nil, isShared: false)
+        XCTAssertEqual(m.amount, 6.6)
+        XCTAssertFalse(m.isCustom)
+        m.setText("31")
+        XCTAssertEqual(m.amount, 31)
+        XCTAssertTrue(m.isCustom)
+        m.selectChip(13.1)
+        XCTAssertEqual(m.amountText, "13.1")
+        XCTAssertFalse(m.isCustom)
+        m.setText("3.125")
+        XCTAssertNil(m.amount, "an invalid entry disables − / +")
+    }
+    func testDurationQuarterIsToTheMinute() {
+        let m = CountingStepperModel.initial(kind: .duration, goal: 630, defaultLogAmount: nil, isShared: false)
+        XCTAssertEqual(m.amount, 158)
+        XCTAssertEqual(m.addLabel(unit: ""), "+ 2h 38m")
+    }
+    func testDiscreteStandaloneHasNoChipsAndStepsOne() {
+        let m = CountingStepperModel.initial(kind: .discrete, goal: 10, defaultLogAmount: 10, isShared: false)
+        XCTAssertFalse(m.showsChips)
+        XCTAssertEqual(m.amount, 1)
+    }
+    func testDiscreteSharedKeepsPlusOnePlusTen() {
+        let m = CountingStepperModel.initial(kind: .discrete, goal: 200, defaultLogAmount: 10, isShared: true)
+        XCTAssertEqual(m.chips.map(\.label), ["+1", "+10", "#"])
+        XCTAssertEqual(m.amount, 10)
+    }
+}
+```
+
+`BoardPlayViewModelTests` addition — use the file's existing standalone-counting fixture (a board + one placed standalone counting task; copy the nearest existing `handleCountingTap` test's setup) with `countKind = .continuous`, then:
+
+```swift
+        vm.handleCountingTap(boardTask: bt, task: task, amount: 3.1, persistAsDefault: true)
+        XCTAssertTrue(waitUntil { (try? db.fetchTask(id: task.id))??.defaultLogAmount == 3.1 })
+        vm.handleCountingTap(boardTask: bt, task: task, amount: 6.6, persistAsDefault: false)
+        XCTAssertEqual(try db.fetchTask(id: task.id)?.defaultLogAmount, 3.1, "a chip amount never overwrites the default")
+```
+
+Snapshot `CountingStepperSheetSnapshotTests.swift` (handoff `sheets[]`):
+
+```swift
+import XCTest
+import SwiftUI
+import SnapshotTesting
+@testable import OYBC
+
+final class CountingStepperSheetSnapshotTests: XCTestCase {
+    private let recordMode: SnapshotTestingConfiguration.Record? = .missing
+    private func sheet(_ kind: CountKind, title: String, unit: String, cur: CountValue, max: CountValue, shared: Bool, defaultAmount: CountValue?) -> some View {
+        RisoCountingStepperSheet(taskTitle: title, currentCount: cur, maxCount: max, unitText: unit, countKind: kind,
+                                 isLinkedCounter: false, isSharedCounter: shared, defaultLogAmount: defaultAmount, onOpenTask: {})
+            .background(Color.risoPaper)
+    }
+    private func snap(_ v: some View, h: CGFloat, dark: Bool = false, testName: String = #function, line: UInt = #line) {
+        assertSnapshot(of: v, as: .image(layout: .fixed(width: 393, height: h), traits: .init(userInterfaceStyle: dark ? .dark : .light)),
+                       record: recordMode, testName: testName, line: line)
+    }
+    func testDiscreteSharedLight() { snap(sheet(.discrete, title: "Do 200 push-ups", unit: "push-ups", cur: 132, max: 200, shared: true, defaultAmount: 10), h: 400) }
+    func testContinuousCustomLight() { snap(sheet(.continuous, title: "Run 26.2 mi", unit: "mi", cur: 12.4, max: 26.2, shared: false, defaultAmount: 3.1), h: 420) }
+    func testContinuousCustomDark() { snap(sheet(.continuous, title: "Run 26.2 mi", unit: "mi", cur: 12.4, max: 26.2, shared: false, defaultAmount: 3.1), h: 420, dark: true) }
+    func testDurationQuarterLight() { snap(sheet(.duration, title: "Practice 10h 30m", unit: "", cur: 270, max: 630, shared: false, defaultAmount: nil), h: 560) }
+    func testDurationQuarterDark() { snap(sheet(.duration, title: "Practice 10h 30m", unit: "", cur: 270, max: 630, shared: false, defaultAmount: nil), h: 560, dark: true) }
+    func testOvershootLight() { snap(sheet(.continuous, title: "Run 26.2 mi", unit: "mi", cur: 28.4, max: 26.2, shared: false, defaultAmount: 3.1), h: 420) }
+}
+```
+
+- [ ] **Step 7: Run — expect build FAIL.** `IOS_TEST -only-testing:OYBCTests/CountingStepperModelTests`
+
+- [ ] **Step 8: Implement iOS.** `CountingStepperModel.swift`:
+
+```swift
+import Foundation
+
+/// The stepper sheet's chip / amount state (docs/COUNTER_KINDS.md §5). Web
+/// twin: `countingLogModel.ts`. Pure — unit-tested without the sheet.
+struct CountingStepperModel: Equatable {
+    let kind: CountKind
+    let chips: [CounterLogAmount.LogChip]
+    let isShared: Bool
+    var amountText: String
+    var selectedAmount: CountValue
+    var isCustom: Bool
+
+    static func initial(kind: CountKind, goal: CountValue, defaultLogAmount: CountValue?, isShared: Bool) -> CountingStepperModel {
+        let chips = CounterLogAmount.boardSheetChips(kind: kind, goal: goal)
+        let sel = CounterLogAmount.initialSelection(kind: kind, chips: chips, defaultLogAmount: defaultLogAmount)
+        return CountingStepperModel(kind: kind, chips: chips, isShared: isShared,
+                                    amountText: formatCountForInput(sel.amount, kind: kind), selectedAmount: sel.amount, isCustom: sel.isCustom)
+    }
+
+    /// Chips show for every Continuous / Duration square and for shared Discrete squares.
+    var showsChips: Bool { kind != .discrete || isShared }
+
+    /// The amount − / + apply: the field for the new kinds, the chip for shared Discrete, 1 otherwise.
+    var amount: CountValue? {
+        if kind != .discrete { return parseCountInput(amountText, kind: kind) }
+        return isShared ? selectedAmount : 1
+    }
+
+    mutating func selectChip(_ value: CountValue) {
+        selectedAmount = value
+        isCustom = false
+        amountText = formatCountForInput(value, kind: kind)
+    }
+
+    mutating func setText(_ raw: String) {
+        amountText = raw
+        let parsed = parseCountInput(raw, kind: kind)
+        isCustom = parsed.map { v in !chips.contains { $0.value == v } } ?? true
+        if let parsed { selectedAmount = parsed }
+    }
+
+    func addLabel(unit: String) -> String {
+        guard let a = amount else { return "+" }
+        return kind == .discrete ? "+ \(formatCount(a, kind: .discrete))" : "+ \(formatCountWithUnit(a, kind: kind, unit: unit))"
+    }
+}
+```
+
+`RisoCountingStepperSheet`: replace `sharedHint`, `selectedAmount`, `isCustomActive` state and the private `AmountChipOption`/`chips` with `let countKind: CountKind` (init parameter after `unitText`, default `.discrete`) and `@State private var model: CountingStepperModel` seeded in `init` via `CountingStepperModel.initial(kind: countKind, goal: maxCount, defaultLogAmount: defaultLogAmount, isShared: isSharedCounter)`; keep `customOpen` / `customDraft` for the Discrete shared custom row. Body:
+
+```swift
+            VStack(spacing: 12) {
+                labelPill
+                stepperRow
+                if model.showsChips { chipRow }
+                if countKind == .discrete, isSharedCounter, customOpen { customInputRow }
+                if countKind != .discrete {
+                    GoalEntryView(kind: countKind, text: Binding(get: { model.amountText }, set: { model.setText($0) }),
+                                  placeholder: "Amount", suffix: unitText.isEmpty ? nil : unitText, startsOpen: countKind == .duration)
+                }
+                if let onOpenTask { taskDetailsRow(onOpenTask) }
+            }
+```
+
+`labelPill` text = `"\(taskTitle) · \(progressText)\(countUnitSuffix(countKind, unit: unitText))"` with `progressText = "\(formatCount(currentCount, kind: countKind))/\(formatCount(maxCount, kind: countKind))"`; the stepper's value `Text(progressText)`; − calls `onDecrement(amount, model.isCustom && (countKind != .discrete || isSharedCounter))` only when `model.amount` is non-nil (`.disabled(model.amount == nil || currentCount == 0)`), + likewise; chip row iterates `model.chips` (selected index: custom → last; else first chip whose `value == model.selectedAmount` when `!model.isCustom`), a chip tap → `model.selectChip(v)`, `#` → for Discrete the existing `openCustomInput()`, for the new kinds `model.isCustom = true` (the field is already there); the `#` label when custom and selected = `CounterLogAmount.customChipLabel(model.amount ?? 0, kind: countKind)`. `confirmCustomInput` (Discrete) → `CounterLogAmount.parseCustom(customDraft, kind: .discrete)` → `model.selectedAmount = v; model.isCustom = true`. `sheetHeight` = `140 + (model.showsChips ? 56 : 0) + (countKind == .continuous ? 52 : 0) + (countKind == .duration ? 190 : 0) + (countKind == .discrete && isSharedCounter && customOpen ? 44 : 0) + (onOpenTask != nil ? 56 : 0)`. Remove the four `sharedHint` previews' argument.
+  `BoardPlayView+CountingStepper.swift`: drop `sharedHint`; pass `countKind: resolveFamilyCountKind(task, lookup: { taskMap[$0] })` and `defaultLogAmount: (sourceId.flatMap { taskMap[$0] } ?? task).defaultLogAmount`. `BoardPlayView.swift`: delete `sharedStepperHint(for:)` and the two caption `Text`s (rows 2, 4) with their modifiers. `BoardPlayViewModel.handleCountingTap` standalone branch, after `runOrchestration(…)`:
+
+```swift
+        if persistAsDefault { try? database.setCounterDefaultLogAmount(sourceTaskId: task.id, amount: amount) }
+```
+
+  (the same for `handleCountingDecrement`; both lines fit the budget Task 13 freed).
+
+- [ ] **Step 9: Run iOS** `IOS_TEST -only-testing:OYBCTests/CountingStepperModelTests -only-testing:OYBCTests/BoardPlayViewModelTests` PASS; `xcodegen generate`; record the six snapshots; read each vs handoff B1 iOS (Continuous: `6.6 · 13.1 · 26.2 · #3.1`, decimal pad field "3.1 mi"; Duration: ¼ = 2h 38m selected — NOT the handoff's 2h 40m, owner override). `node scripts/check-file-sizes.mjs` — every file within its cap.
+
+- [ ] **Step 10: Commit (both platforms, one commit)**
+
+```bash
+git add apps/web apps/ios
+git commit -m "feat(counters): every counting tap opens the stepper sheet / DetailModal per kind (goal chips, pinned amount field, h:m); standalone counters remember a custom amount; drop board-play captions (#548 1-9) (PR 4 Task 14)"
+```
+
+---
+
+### Task 15: B2 — long-press / right-click menu per kind
+
+**Files:**
+- Create: `apps/ios/OYBC/Views/BoardsTab/Components/CountingMenuLabels.swift`
+- Modify: `apps/ios/OYBC/Views/BoardsTab/BoardPlayView.swift:1397-1424` (counting menu; budget +8, Task 13 table)
+- Modify: `apps/web/src/components/InteractiveTaskSquare.tsx:44-60` (`ContextMenuProps.amountActions`), `:146-215` (counting block)
+- Modify: `apps/web/src/components/BoardPlaySurface.tsx:1151-1170` (build `amountActions`; budget +12)
+- Test: `apps/web/src/components/__tests__/FloatingContextMenuKinds.test.ts` (create), `apps/ios/OYBCTests/CountingMenuLabelsTests.swift` (create), `apps/web/e2e/counter-kinds-logging.spec.ts` (+1 case)
+
+**Interfaces:**
+- Consumes: `quickLogAmount`, `boardSheetChips`, `formatCountWithUnit` ↔ `CounterLogAmount.quickAmount`, `formatCountWithUnit` (Task 13 / Task 2).
+- Produces: web `ContextMenuProps.amountActions?: { kind: CountKind; amount: number; unit: string; onAdd(amount: number): void; onRemove(amount: number): void; onOpenCustom(): void; removeDisabled: boolean }` (Continuous / Duration squares only; Discrete keeps `sharedAmountActions` / the plain items); iOS `enum CountingMenuLabels { static func add(amount:kind:unit:action:) -> String; static func remove(amount:kind:unit:action:) -> String }`.
+- Menu for Continuous / Duration: `+ Add {last} {unit}` · `# Custom amount…` (opens the sheet / modal) · `− Remove {last} {unit}` · (web keeps `↺ Reset`) · divider · `View Details` · `Open in library`. `{last}` = `defaultLogAmount ?? first chip`. Discrete menus unchanged on both platforms.
+
+- [ ] **Step 1: Failing tests.** `FloatingContextMenuKinds.test.ts`:
+
+```ts
+import { describe, expect, it } from 'vitest';
+import React from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
+import { FloatingContextMenu } from '../InteractiveTaskSquare';
+
+const noop = () => {};
+const menu = (sq: object, amountActions?: object) =>
+  renderToStaticMarkup(React.createElement(FloatingContextMenu, {
+    sq: sq as never, state: { isCompleted: false, currentCount: 12.4, completedStepIds: new Set() }, position: { x: 0, y: 0 },
+    onClose: noop, onIncrementCount: noop, onDecrementCount: noop, onResetCount: noop, onViewDetails: noop,
+    amountActions: amountActions as never,
+  }));
+
+describe('FloatingContextMenu — counter kinds', () => {
+  it('continuous: + Add {last} unit / # Custom amount… / − Remove {last} unit', () => {
+    const html = menu({ id: 's', title: 'Run', type: 'counting', action: 'Run', maxCount: 26.2, unit: 'mi', countKind: 'continuous' },
+      { kind: 'continuous', amount: 3.1, unit: 'mi', onAdd: noop, onRemove: noop, onOpenCustom: noop, removeDisabled: false });
+    expect(html).toContain('+ Add 3.1 mi');
+    expect(html).toContain('# Custom amount…');
+    expect(html).toContain('− Remove 3.1 mi');
+  });
+  it('duration has no unit', () => {
+    const html = menu({ id: 's', title: 'Practice', type: 'counting', action: 'Practice', maxCount: 630, unit: '', countKind: 'duration' },
+      { kind: 'duration', amount: 90, unit: '', onAdd: noop, onRemove: noop, onOpenCustom: noop, removeDisabled: false });
+    expect(html).toContain('+ Add 1h 30m');
+  });
+  it('a discrete standalone square keeps today\'s items', () => {
+    const html = menu({ id: 's', title: 'Push', type: 'counting', action: 'Do', maxCount: 10, unit: 'reps' });
+    expect(html).toContain('+ Add Do (+1)');
+    expect(html).toContain('− Remove Do (−1)');
+  });
+});
+```
+
+`CountingMenuLabelsTests.swift`:
+
+```swift
+import XCTest
+@testable import OYBC
+
+final class CountingMenuLabelsTests: XCTestCase {
+    func testLabels() {
+        XCTAssertEqual(CountingMenuLabels.add(amount: 3.1, kind: .continuous, unit: "mi", action: "Run"), "+ Add 3.1 mi")
+        XCTAssertEqual(CountingMenuLabels.remove(amount: 90, kind: .duration, unit: "", action: "Practice"), "− Remove 1h 30m")
+        XCTAssertEqual(CountingMenuLabels.add(amount: 1, kind: .discrete, unit: "reps", action: "Do"), "+ Add 1 Do", "discrete keeps today's iOS string")
+        XCTAssertEqual(CountingMenuLabels.remove(amount: 10, kind: .discrete, unit: "reps", action: "Do"), "− Remove 10 Do")
+    }
+}
+```
+
+- [ ] **Step 2: Run — FAIL.** `WEB_TEST FloatingContextMenuKinds` / `IOS_TEST -only-testing:OYBCTests/CountingMenuLabelsTests`
+
+- [ ] **Step 3: Implement.** iOS `CountingMenuLabels.swift`:
+
+```swift
+import Foundation
+
+/// Long-press menu labels per kind (docs/COUNTER_KINDS.md §5). Discrete keeps
+/// the shipped "+ Add {n} {action}" wording; the new kinds name the amount
+/// with its unit ("+ Add 3.1 mi", "+ Add 1h 30m").
+enum CountingMenuLabels {
+    static func add(amount: CountValue, kind: CountKind, unit: String, action: String) -> String {
+        kind == .discrete ? "+ Add \(formatCount(amount, kind: .discrete)) \(action)" : "+ Add \(formatCountWithUnit(amount, kind: kind, unit: unit))"
+    }
+    static func remove(amount: CountValue, kind: CountKind, unit: String, action: String) -> String {
+        kind == .discrete ? "− Remove \(formatCount(amount, kind: .discrete)) \(action)" : "− Remove \(formatCountWithUnit(amount, kind: kind, unit: unit))"
+    }
+}
+```
+
+`BoardPlayView.risoContextMenu` `.counting` case:
+
+```swift
+            if let t = task {
+                let kind = resolveFamilyCountKind(t, lookup: { taskMap[$0] })
+                let source = viewModel.sharedCounterSourceId(for: t).flatMap { taskMap[$0] }
+                // Discrete keeps today's rule (the shared source's default, else 1);
+                // the new kinds remember per task too.
+                let remembered = kind == .discrete ? source?.defaultLogAmount : (source ?? t).defaultLogAmount
+                let chips = CounterLogAmount.boardSheetChips(kind: kind, goal: t.maxCount ?? 0)
+                let quickAmount = CounterLogAmount.quickAmount(kind: kind, chips: chips, defaultLogAmount: remembered)
+                Button(CountingMenuLabels.add(amount: quickAmount, kind: kind, unit: t.unit ?? "", action: t.action ?? "item"), systemImage: "plus") {
+                    guard !isBoardLocked else { return }
+                    viewModel.handleCountingTap(boardTask: boardTask, task: t, amount: quickAmount)
+                }
+                .disabled(isProcessing || isBoardLocked)
+                if kind != .discrete {
+                    Button("Custom amount…", systemImage: "number") { countingStepperBoardTaskId = boardTask.id }
+                        .disabled(isBoardLocked)
+                }
+                Button(CountingMenuLabels.remove(amount: quickAmount, kind: kind, unit: t.unit ?? "", action: t.action ?? "item"), systemImage: "minus") {
+                    guard !isBoardLocked else { return }
+                    viewModel.handleCountingDecrement(boardTask: boardTask, task: t, amount: quickAmount)
+                }
+                .disabled(current == 0 || isProcessing || isBoardLocked)
+                // View Details / Open in library unchanged
+```
+
+(the Discrete `defaultLogAmount` source stays the shared source's only — today's behaviour; a standalone Discrete square adds 1.) Web `ContextMenuProps.amountActions` (doc: "Continuous / Duration squares: + Add / # Custom amount… / − Remove at the last amount"); in the counting block, before the `sharedAmountActions ? … : …` branch:
+
+```tsx
+          {amountActions ? (
+            <>
+              <button className={styles.contextMenuItem} onClick={() => { amountActions.onAdd(amountActions.amount); onClose(); }}>
+                + Add {formatCountWithUnit(amountActions.amount, amountActions.kind, amountActions.unit)}
+              </button>
+              <button className={styles.contextMenuItem} onClick={() => { amountActions.onOpenCustom(); onClose(); }}>
+                # Custom amount…
+              </button>
+              <button className={styles.contextMenuItem} disabled={amountActions.removeDisabled}
+                onClick={() => { amountActions.onRemove(amountActions.amount); onClose(); }}>
+                − Remove {formatCountWithUnit(amountActions.amount, amountActions.kind, amountActions.unit)}
+              </button>
+            </>
+          ) : ( /* the existing sharedAmountActions / plain block, then its − Remove item — unchanged */ )}
+```
+
+(the existing `↺ Reset` item stays below both branches). `BoardPlaySurface` (`:1151`):
+
+```ts
+        const menuKind = resolveFamilyCountKind(task, (id) => taskMap[id]);
+        const amountActions = squareData.type === 'counting' && menuKind !== 'discrete'
+          ? {
+              kind: menuKind,
+              amount: quickLogAmount(menuKind, boardSheetChips(menuKind, task.maxCount ?? 0), (menuSourceId ? taskMap[menuSourceId] : task)?.defaultLogAmount),
+              unit: task.unit ?? '',
+              onAdd: (a: number) => (menuSourceId ? void handleSharedCounterIncrement(menuSourceId, a, false) : void handleComplete(bt.id, { currentCount: quantizeCount(menuCurrentCount + a) })),
+              onRemove: (a: number) => (menuSourceId ? void handleSharedCounterDecrement(menuSourceId, a, false) : void handleComplete(bt.id, { currentCount: Math.max(0, quantizeCount(menuCurrentCount - a)) })),
+              onOpenCustom: () => setSelectedSquareId(bt.id),
+              removeDisabled: isLinkedCounter || menuCurrentCount <= 0,
+            }
+          : undefined;
+```
+
+and `sharedAmountActions` is computed only when `menuKind === 'discrete'`.
+
+- [ ] **Step 4: Run** tests PASS; `WEB_CHECK`; `node scripts/check-file-sizes.mjs` (within the caps); `xcodegen generate`. Append to `counter-kinds-logging.spec.ts`:
+
+```ts
+  test('right-click: + Add {last} unit', async ({ page }) => {
+    const run = page.getByRole('button', { name: 'Run 26.2 mi' });
+    await run.click({ button: 'right' });
+    await page.getByRole('button', { name: '+ Add 6.6 mi' }).click(); // no default yet → the ¼ chip
+    await expect(run).toContainText('6.6/26.2');
+  });
+```
+
+Run `WEB_E2E e2e/counter-kinds-logging.spec.ts`.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add apps/web apps/ios
+git commit -m "feat(counters): long-press / right-click menu adds and removes the last amount per kind; Custom amount opens the sheet (PR 4 Task 15)"
+```
+
+---
+
+### Task 16: B3 — closed-board late log per kind
+
+**Files:**
+- Create: `apps/web/src/components/lateLog/lateLogCountingModel.ts`, `apps/web/src/components/lateLog/__tests__/lateLogCountingModel.test.ts` (new folder)
+- Modify: `apps/web/src/components/lateLog/LateLogSheet.tsx:23-24` (delete `LATE_LOG_CHIP_AMOUNTS`), `:218-330` (`CountingBody` reads the model; custom entry → `GoalEntry`)
+- Modify: `apps/ios/OYBC/Views/BoardsTab/LateLog/LateLogSheetView.swift:30-36` (`Kind.counting(current:max:unit:countKind:)`), `:96-102` (`sheetHeight`), `:156-192` (`countingBody`); add `enum LateLogCountingCopy` (pure, same file)
+- Modify: `apps/ios/OYBC/Views/BoardsTab/BoardPlayView+LateLog.swift:118` (`countKind: resolveFamilyCountKind(task, lookup: { taskMap[$0] })`)
+- Test: `apps/ios/OYBCTests/LateLogCountingCopyTests.swift` (create), `apps/ios/OYBCSnapshotTests/BoardCloseReopenSnapshotTests.swift` (+`testLateLogContinuous{Light,Dark}`, `testLateLogDurationLight`), `apps/web/e2e/late-log-counting.spec.ts` (+1 case)
+
+**Interfaces:**
+- Consumes: `lateLogChipAmounts`, `parseCountInput`, `formatCount`, `formatCountWithUnit` (Task 13 / Task 1).
+- Produces:
+  - web `lateLogCountingModel(args: { kind: CountKind; goal: number; count: number; unit: string; selected: number; customOpen: boolean; customDraft: string }): { chips: { amount: number; label: string }[]; readout: { count: string; max: string; unit: string }; amount: number | null; buttonLabel: string; canLog: boolean }` and `initialLateLogAmount(kind, goal): number` (the first chip)
+  - iOS `enum LateLogCountingCopy { static func chips(kind:goal:) -> [CountValue]; static func chipLabel(_:kind:) -> String; static func readout(current:max:unit:kind:) -> String }`
+  - Copy: chips `+{formatCount}` (`+6.6`, `+2h 38m`) then `Custom…`; web button `Log` for Discrete (unchanged) and `Log +{amount}{ unit}` for Continuous / Duration ("Log +4.9 mi", "Log +1h 30m"); readout `{count}/{max}` + unit (none for Duration).
+
+- [ ] **Step 1: Failing tests.** `lateLogCountingModel.test.ts`:
+
+```ts
+import { describe, expect, it } from 'vitest';
+import { initialLateLogAmount, lateLogCountingModel } from '../lateLogCountingModel';
+
+describe('lateLogCountingModel', () => {
+  it('continuous: goal chips, readout, Log +amount unit', () => {
+    const m = lateLogCountingModel({ kind: 'continuous', goal: 26.2, count: 21.3, unit: 'mi', selected: 6.6, customOpen: false, customDraft: '' });
+    expect(m.chips.map((c) => c.label)).toEqual(['+6.6', '+13.1', '+26.2']);
+    expect(m.readout).toEqual({ count: '21.3', max: '26.2', unit: 'mi' });
+    expect(m.buttonLabel).toBe('Log +6.6 mi');
+  });
+  it('a custom 4.9 drives the label; an invalid custom blocks Log', () => {
+    expect(lateLogCountingModel({ kind: 'continuous', goal: 26.2, count: 21.3, unit: 'mi', selected: 6.6, customOpen: true, customDraft: '4,9' }).buttonLabel).toBe('Log +4.9 mi');
+    expect(lateLogCountingModel({ kind: 'continuous', goal: 26.2, count: 21.3, unit: 'mi', selected: 6.6, customOpen: true, customDraft: '4.999' }).canLog).toBe(false);
+  });
+  it('duration: no unit anywhere', () => {
+    const m = lateLogCountingModel({ kind: 'duration', goal: 630, count: 540, unit: '', selected: 158, customOpen: true, customDraft: '1h 30m' });
+    expect(m.chips[0].label).toBe('+2h 38m');
+    expect(m.readout).toEqual({ count: '9h', max: '10h 30m', unit: '' });
+    expect(m.buttonLabel).toBe('Log +1h 30m');
+  });
+  it('discrete is unchanged: +1 +2 +5 and a plain Log', () => {
+    const m = lateLogCountingModel({ kind: 'discrete', goal: 5, count: 0, unit: 'mi', selected: 1, customOpen: false, customDraft: '' });
+    expect(m.chips.map((c) => c.label)).toEqual(['+1', '+2', '+5']);
+    expect(m.buttonLabel).toBe('Log');
+    expect(initialLateLogAmount('discrete', 5)).toBe(1);
+    expect(initialLateLogAmount('duration', 630)).toBe(158);
+  });
+});
+```
+
+`LateLogCountingCopyTests.swift`:
+
+```swift
+import XCTest
+@testable import OYBC
+
+final class LateLogCountingCopyTests: XCTestCase {
+    func testChipsAndReadoutPerKind() {
+        XCTAssertEqual(LateLogCountingCopy.chips(kind: .continuous, goal: 26.2), [6.6, 13.1, 26.2])
+        XCTAssertEqual(LateLogCountingCopy.chips(kind: .discrete, goal: 5), [1, 2, 5])
+        XCTAssertEqual(LateLogCountingCopy.chipLabel(158, kind: .duration), "+2h 38m")
+        XCTAssertEqual(LateLogCountingCopy.readout(current: 21.3, max: 26.2, unit: "mi", kind: .continuous), "21.3/26.2 mi")
+        XCTAssertEqual(LateLogCountingCopy.readout(current: 540, max: 630, unit: "", kind: .duration), "9h/10h 30m")
+    }
+}
+```
+
+- [ ] **Step 2: Run — FAIL.** `WEB_TEST lateLogCountingModel` / `IOS_TEST -only-testing:OYBCTests/LateLogCountingCopyTests`
+
+- [ ] **Step 3: Implement web.** `lateLogCountingModel.ts`:
+
+```ts
+import { countUnitSuffix, formatCount, formatCountWithUnit, lateLogChipAmounts, parseCountInput, type CountKind } from '@oybc/shared';
+
+/** The first chip — what the sheet opens on. */
+export function initialLateLogAmount(kind: CountKind, goal: number): number {
+  return lateLogChipAmounts(kind, goal)[0];
+}
+
+/** Everything the closed-board COUNTING body renders (docs/COUNTER_KINDS.md §5 B3). */
+export function lateLogCountingModel(a: {
+  kind: CountKind; goal: number; count: number; unit: string; selected: number; customOpen: boolean; customDraft: string;
+}): { chips: { amount: number; label: string }[]; readout: { count: string; max: string; unit: string }; amount: number | null; buttonLabel: string; canLog: boolean } {
+  const amount = a.customOpen ? parseCountInput(a.customDraft, a.kind) : a.selected;
+  const unit = countUnitSuffix(a.kind, a.unit).trim();
+  return {
+    chips: lateLogChipAmounts(a.kind, a.goal).map((v) => ({ amount: v, label: `+${formatCount(v, a.kind)}` })),
+    readout: { count: formatCount(a.count, a.kind), max: formatCount(a.goal, a.kind), unit },
+    amount,
+    buttonLabel: a.kind === 'discrete' || amount === null ? 'Log' : `Log +${formatCountWithUnit(amount, a.kind, a.unit)}`,
+    canLog: amount !== null,
+  };
+}
+```
+
+`CountingBody`: `const kind = resolveCountKind(task); const [selected, setSelected] = useState<number>(() => initialLateLogAmount(kind, task.maxCount ?? 0));` and `const m = lateLogCountingModel({ kind, goal: max, count: state.count, unit: task.unit ?? '', selected, customOpen, customDraft });` (after the loading / null early returns — move the `useState` above them as today). Readout: `{m.readout.count}{max > 0 && <span className={styles.countMax}>/{m.readout.max}</span>}` and `{m.readout.unit && <span className={styles.unit}>{m.readout.unit}</span>}`; chips: `m.chips.map((c) => <RisoChip key={c.amount} on={!customOpen && selected === c.amount} onClick={() => { setCustomOpen(false); setSelected(c.amount); }}>{c.label}</RisoChip>)`; custom row → `<GoalEntry kind={kind} value={customDraft} onChange={setCustomDraft} aria-label="Custom amount" placeholder="Amount" dense />`; button `disabled={busy || !m.canLog}`, `onClick={() => { if (m.amount !== null) void handleLog(m.amount); }}`, label `{m.buttonLabel}`.
+
+- [ ] **Step 4: Implement iOS.**
+
+```swift
+/// Pure copy for the closed-board counting body. Web twin: `lateLogCountingModel.ts`.
+enum LateLogCountingCopy {
+    static func chips(kind: CountKind, goal: CountValue) -> [CountValue] { CounterLogAmount.lateLogChipAmounts(kind: kind, goal: goal) }
+    static func chipLabel(_ amount: CountValue, kind: CountKind) -> String { "+\(formatCount(amount, kind: kind))" }
+    static func readout(current: CountValue, max: CountValue, unit: String, kind: CountKind) -> String {
+        "\(formatCount(current, kind: kind))/\(formatCount(max, kind: kind))\(countUnitSuffix(kind, unit: unit))"
+    }
+}
+```
+
+`Kind.counting(current:max:unit:countKind:)`; `countingBody(current:max:unit:countKind:)`: readout `Text(LateLogCountingCopy.readout(…))`; `ForEach(LateLogCountingCopy.chips(kind: countKind, goal: max), id: \.self) { amount in RisoButton(title: LateLogCountingCopy.chipLabel(amount, kind: countKind), kind: .neutral, small: true) { perform { await onLogAmount(amount) } } }`; custom row `GoalEntryView(kind: countKind, text: $customAmountDraft, placeholder: "Amount", startsOpen: countKind == .duration)` with `CounterLogAmount.parseCustom(customAmountDraft, kind: countKind)` in both the Log action and its `.disabled`; `sheetHeight` `.counting(_, _, _, kind)` = `kind == .duration && customOpen ? 470 : 280`. `BoardPlayView+LateLog.swift:118` passes `countKind:`. Fix the snapshot test helper's `.counting(...)` call in `BoardCloseReopenSnapshotTests.swift:112-120` (add `countKind: .discrete` to the existing cases).
+
+- [ ] **Step 5: Run** both tests PASS; `WEB_CHECK`. Add the three snapshot cases (`LateLogSheetView(windowLabel: "Mar 1 – 31", taskTitle: "Run 26.2 mi", kind: .counting(current: 21.3, max: 26.2, unit: "mi", countKind: .continuous))` at 393×300 light/dark; the Duration twin `(540, 630, "", .duration)` at 393×300 light); record; existing `BoardCloseReopenSnapshotTests` baselines stay green; read vs handoff B3. Append to `late-log-counting.spec.ts`:
+
+```ts
+  test('Continuous late log: +6.6 → "Log +6.6 mi"', async ({ page }) => {
+    await seedTask(page, { id: TASK_ID, title: 'Run 26.2 mi', type: 'counting', action: 'Run', unit: 'mi', maxCount: 26.2, countKind: 'continuous' });
+    await page.goto(`/boards/${BOARD_ID}?__oybc_test_bypass=1`);
+    await page.getByText('Run 26.2 mi').click();
+    const sheet = page.getByRole('dialog', { name: /Run 26.2 mi/ });
+    await sheet.getByRole('button', { name: '+6.6' }).click();
+    await sheet.getByRole('button', { name: 'Log +6.6 mi' }).click();
+    await expect(sheet).toHaveCount(0);
+  });
+```
+
+(the `seedTask` call overwrites the `beforeEach` row — same id, `put` semantics). `WEB_E2E e2e/late-log-counting.spec.ts` — the discrete cases stay green.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add apps/web apps/ios
+git commit -m "feat(counters): closed-board late log per kind — goal chips, decimal / h:m custom entry, Log +amount (PR 4 Task 16)"
+```
+
+---
+
+### Task 17: B4 — hub ledger cards, Profile rows, "+ Log" pills
+
+**Files:**
+- Create: `apps/web/src/components/counters/ledgerPill.ts` (pure), `apps/web/src/components/counters/__tests__/ledgerPill.test.ts`
+- Modify: `apps/web/src/components/counters/CounterLedgerCard.tsx:9-13` (`CounterLoggedEvent.kind`), `:61-190` (pill via `ledgerPill`; lifetime `formatCountTotal` — R7 `:65`; row values `formatCount` — R7 `:174-175`)
+- Modify: `apps/web/src/pages/ProfilePage.tsx:338-416` (compact row: same pill + values — R7 `:392-393`, `:404`); delete #548 row 89 (the empty-state body `<p className={styles.countersEmptyBody}>` `:290-293`)
+- Modify: `apps/web/src/pages/CountersHubPage.tsx:113-116` (delete row 85 intro `<p>`), `:177-179` (delete row 87 `emptySub` `<p>`); pass `kind` to `CounterLogToast`
+- Modify: `apps/ios/OYBC/Views/ProfileTab/Components/SharedCounterLedgerCard.swift:51,81,100,107-118,136,189,236,270` (pill label + VoiceOver; R7 `.formatted()` ×3 → `formatCountTotal`; member values → `formatCount`)
+- Modify: `apps/ios/OYBC/Views/ProfileTab/CountersHubView.swift:141-160` (`handleLog` opens Detail for a never-logged new-kind counter), `:232-236` (delete row 86 intro `Text`), `:300-303` (delete row 88 empty `Text`)
+- Modify: `apps/ios/OYBC/Views/ProfileTab/ViewModels/ProfileHomeViewModel.swift:131-160` (+`static func pillAction(for:)`), `apps/ios/OYBC/Views/ProfileTab/ProfileView.swift:131` (`onLog` routes `.openDetail` to `navigateToCounterId`), `apps/ios/OYBC/Views/ProfileTab/Components/ProfileCountersSection.swift:107-110` (delete row 90 `Text`)
+- Test: `apps/ios/OYBCTests/ProfileHomeViewModelTests.swift` (+1 case; create the file if absent), snapshots, `apps/web/e2e/counter-kinds-logging.spec.ts` (+1 case)
+- Re-record (intentional): `CountersHubSnapshotTests/testHubPopulated{Light,Dark}` (row 86), `testHubEmpty{Light,Dark}` (row 88); `RisoProfileSnapshotTests/testEmptyStreakAndCounters{Light,Dark}` and `testDayOneHero{Light,Dark}` (both pass `counters: []` — row 90; a frame that crops the counters card stays green and is not re-recorded). Add `CountersHubSnapshotTests/testHubContinuousDuration{Light,Dark}` (handoff `ledgers[]`).
+
+**Interfaces:**
+- Consumes: `logPillLabel`, `logPillOpensDetail`, `formatCountTotal`, `formatCount`, `formatCountWithUnit`, `SharedCounterGroup.countKind` (Task 13).
+- Produces: web `ledgerPill(group: Pick<SharedCounterGroup, 'name' | 'unit' | 'countKind' | 'defaultLogAmount'>): { label: string; ariaLabel: string; opensDetail: boolean; amount: number }`; `CounterLoggedEvent.kind: CountKind`; iOS `enum CounterPillAction: Equatable { case log(CountValue); case openDetail }`, `ProfileHomeViewModel.pillAction(for: SharedCounterGroup) -> CounterPillAction` (the hub uses the same static).
+- Rows keep the green "met" fill (handoff `ledgers[].rows`); gold is cells / the web modal bar only.
+
+- [ ] **Step 1: Failing tests.** `ledgerPill.test.ts`:
+
+```ts
+import { describe, expect, it } from 'vitest';
+import { ledgerPill } from '../ledgerPill';
+
+describe('ledgerPill', () => {
+  it('continuous with a remembered amount logs it', () => {
+    expect(ledgerPill({ name: 'Miles', unit: 'mi', countKind: 'continuous', defaultLogAmount: 3.1 }))
+      .toEqual({ label: '+ Log 3.1', ariaLabel: 'Log 3.1 mi for Miles', opensDetail: false, amount: 3.1 });
+  });
+  it('duration labels without a unit', () => {
+    expect(ledgerPill({ name: 'Practice', unit: 'guitar', countKind: 'duration', defaultLogAmount: 30 }))
+      .toMatchObject({ label: '+ Log 30m', ariaLabel: 'Log 30m for Practice' });
+  });
+  it('a never-logged continuous counter opens Counter Detail', () => {
+    expect(ledgerPill({ name: 'Miles', unit: 'mi', countKind: 'continuous', defaultLogAmount: null }))
+      .toMatchObject({ label: '+ Log', opensDetail: true, ariaLabel: 'Log Miles' });
+  });
+  it('discrete is unchanged', () => {
+    expect(ledgerPill({ name: 'Push-ups', unit: 'push-ups', countKind: 'discrete', defaultLogAmount: null }))
+      .toEqual({ label: '+ Log', ariaLabel: 'Log 1 push-ups for Push-ups', opensDetail: false, amount: 1 });
+  });
+});
+```
+
+iOS `ProfileHomeViewModelTests` (+case):
+
+```swift
+    func testPillActionPerKind() {
+        func group(_ kind: CountKind, _ d: CountValue?) -> SharedCounterGroup {
+            SharedCounterGroup(counterId: "c", name: "Miles", action: "Run", unit: "mi", lifetime: 148.6, defaultLogAmount: d,
+                               tasks: [], taskCount: 0, boardCount: 0, activeTaskCount: 0, countKind: kind)
+        }
+        XCTAssertEqual(ProfileHomeViewModel.pillAction(for: group(.continuous, nil)), .openDetail)
+        XCTAssertEqual(ProfileHomeViewModel.pillAction(for: group(.duration, 30)), .log(30))
+        XCTAssertEqual(ProfileHomeViewModel.pillAction(for: group(.discrete, nil)), .log(1))
+    }
+```
+
+(memberwise order of `SharedCounterGroup` — `SharedCounterGroups.swift:54-67` — with Task 13's `var countKind: CountKind = .discrete` declared LAST.)
+
+- [ ] **Step 2: Run — FAIL.** `WEB_TEST ledgerPill` / `IOS_TEST -only-testing:OYBCTests/ProfileHomeViewModelTests`
+
+- [ ] **Step 3: Implement web.** `ledgerPill.ts`:
+
+```ts
+import { formatCountWithUnit, logPillLabel, logPillOpensDetail, type SharedCounterGroup } from '@oybc/shared';
+
+/** The "+ Log" pill's label, accessible name and action (docs/COUNTER_KINDS.md §5). */
+export function ledgerPill(group: Pick<SharedCounterGroup, 'name' | 'unit' | 'countKind' | 'defaultLogAmount'>): {
+  label: string; ariaLabel: string; opensDetail: boolean; amount: number;
+} {
+  const opensDetail = logPillOpensDetail(group.countKind, group.defaultLogAmount);
+  const amount = group.defaultLogAmount ?? 1;
+  return {
+    label: logPillLabel(group.countKind, group.defaultLogAmount),
+    ariaLabel: opensDetail ? `Log ${group.name}` : `Log ${formatCountWithUnit(amount, group.countKind, group.unit)} for ${group.name}`,
+    opensDetail,
+    amount,
+  };
+}
+```
+
+`CounterLedgerCard`: `const pill = ledgerPill(group); const lifetimeStr = formatCountTotal(group.lifetime, group.countKind);`; the pill button `onClick={() => (pill.opensDetail ? openDetail() : void handleLog())}`, `aria-label={pill.ariaLabel}`, text `{pill.label}`; `handleLog` logs `pill.amount` and reports `onLogged({ counterId, amount: pill.amount, unit: group.unit ?? '', kind: group.countKind })`; `LedgerTaskRow` gets `kind` and renders `formatCount(task.logged, kind)` / `formatCount(task.goal, kind)` (aria text via `formatCountWithUnit`). `ProfileCounterRow` mirrors: `const pill = ledgerPill(group); const navigate = useNavigate();` (ProfilePage is inside the router) — pill `onClick={() => (pill.opensDetail ? navigate(`/profile/counters/${group.counterId}`) : void handleLog())}`; member values and the `ALL-TIME` total use `formatCount` / `formatCountTotal` with `group.countKind`. `CountersHubPage` / `ProfilePage` toast renders pass `kind={toast.kind}` (store `kind` from the `CounterLoggedEvent`). Delete the three caption `<p>`s.
+
+- [ ] **Step 4: Implement iOS.** `CounterLogAmount.swift` gains `enum CounterPillAction: Equatable { case log(CountValue); case openDetail }`; `ProfileHomeViewModel`:
+
+```swift
+    /// The "+ Log" pill's action (docs/COUNTER_KINDS.md §5) — shared by the hub.
+    static func pillAction(for group: SharedCounterGroup) -> CounterPillAction {
+        CounterLogAmount.pillOpensDetail(kind: group.countKind, defaultLogAmount: group.defaultLogAmount)
+            ? .openDetail : .log(group.defaultLogAmount ?? 1)
+    }
+```
+
+`ProfileView.swift:131` → `onLog: { group in if ProfileHomeViewModel.pillAction(for: group) == .openDetail { navigateToCounterId = group.counterId } else { handleLog(group) } }`; `CountersHubView.handleLog(group:)` starts with `if ProfileHomeViewModel.pillAction(for: group) == .openDetail { navigateToCounterId = group.counterId; return }`. `SharedCounterLedgerCard`: `Text(CounterLogAmount.pillLabel(kind: group.countKind, defaultLogAmount: group.defaultLogAmount))`; VoiceOver `"Log \(formatCountWithUnit(logAmount, kind: group.countKind, unit: group.unit)) for \(group.name)"`; `:81`, `:136` → `formatCountTotal(group.lifetime, kind: group.countKind)`; `:100`, `:189` a11y lifetime → `formatCountTotal`; `:236`, `:270` member values → `formatCount(…, kind: group.countKind)`. Toasts raised by the hub / Profile pass `kind: group.countKind` to `CounterLogToastView`. Delete the three caption `Text`s.
+
+- [ ] **Step 5: Run** tests PASS; `WEB_CHECK`; snapshots per Files (read `testHubContinuousDuration*` vs handoff B4 ledgers: `148.6 ALL-TIME`, `+ Log 3.1`, `112h 15m`, `+ Log 30m`). Append to `counter-kinds-logging.spec.ts`:
+
+```ts
+  test('hub: a never-logged Continuous counter pill opens Counter Detail; a remembered one logs it', async ({ page }) => {
+    await seedTask(page, { id: 'f2000000-0000-0000-0000-000000000001', title: 'Run miles', type: 'counting', action: 'Run', unit: 'miles', isCounter: true, countKind: 'continuous', currentCount: 148.6 });
+    await page.goto('/profile/counters?__oybc_test_bypass=1');
+    await page.getByRole('button', { name: 'Log Run miles', exact: true }).click(); // the pill, not the card's own open button
+    await expect(page).toHaveURL(/\/profile\/counters\/f2000000-0000-0000-0000-000000000001/);
+  });
+```
+
+`WEB_E2E e2e/profile-home.spec.ts e2e/counter-kinds-logging.spec.ts` (update any `profile-home` assertion on the removed empty-state body by deleting it).
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add apps/web apps/ios
+git commit -m "feat(counters): hub + Profile '+ Log' pills carry the amount per kind (never-logged opens Counter Detail); grouped totals (R7); drop hub/Profile counter captions (#548 85-90) (PR 4 Task 17)"
+```
+
+---
+
+### Task 18: B4 — Counter Detail per kind (extract `CounterDetailLogCard`)
+
+**Files:**
+- Create: `apps/ios/OYBC/Views/ProfileTab/Components/CounterDetailLogCard.swift` — `CounterDetailLogCard` (view) + `CounterDetailLogCard.Model` (pure), moved out of `CounterDetailView.swift` (`selectedAmount`/`isCustomActive`/`customOpen`/`customDraft` state `:303-306`, `AmountChipOption`/`chips`/`selectedChipIndex` `:351-372`, chip actions `:374-395`, `logCard` `:597-638`, `chipRow` `:640-670`, `customInputRow` `:671-685`, `logActionsRow` `:686-730`)
+- Modify: `apps/ios/OYBC/Views/ProfileTab/CounterDetailView.swift` — uses the card; R7 `.formatted()` at `:497`, `:548`, `:555-558`, `:572`, `:779`, `:819`, `:825`, `:884` → `formatCountTotal` / `formatCount` / `formatCountWithUnit` with `group.countKind`; kind-blind `:525`, `:806`; delete #548 rows 80 (`:426-430` explainer), 82 (`:875-876` member captions), 84 (`recentWeeksCard` `:832-842` — a stub whose only content is the caption; delete the card and its call site / section label). The file drops ~200 lines — below 1000, so Task 21 deletes its allow-list entry.
+- Create: `apps/web/src/components/counters/counterDetailCaption.ts` (`buildTaskCardCaption`, moved out of `CounterDetailTaskCard.tsx:121-141`, kind-aware) + `__tests__/counterDetailCaption.test.ts`
+- Modify: `apps/web/src/components/counters/CounterDetailTaskCard.tsx:60-120` (values `formatCount`; caption from the helper; delete #548 row 81 `:69-73` caption `<div>`)
+- Modify: `apps/web/src/pages/CounterDetailPage.tsx:74-170` (chip state per kind), `:239-425` (hero `formatCountTotal` — R7 `:239`; daily/milestone/today stat — R7 `:310`, `:334-342`; chips `hubChips(group.countKind)`; custom input → `GoalEntry`; Add / Remove labels), delete rows 79 (`:430-433` explainer `<p>`) and 83 (`:456-462` history stub card)
+- Test: `apps/ios/OYBCTests/CounterDetailLogCardTests.swift` (create), snapshots, `apps/web/e2e/counter-kinds-logging.spec.ts` (+1 case)
+- Re-record (intentional — rows 80/82/84 and the card move): `CountersHubSnapshotTests/testDetailSingleMember{Light,Dark}`, `testDetailCustomChipActive{Light,Dark}`, `testDetailLoggingStateLight`. Add `testDetailContinuous{Light,Dark}`, `testDetailDurationLight` (handoff `logCards[]` / `detailCards[]`).
+
+**Interfaces:**
+- Consumes: `hubChips`, `initialLogSelection`, `customChipLabel`, `formatCountTotal`, `formatCountWithUnit`, `GoalEntry(View)`.
+- Produces: iOS `struct CounterDetailLogCard.Model: Equatable { let kind: CountKind; let unit: String; let chips: [CounterLogAmount.LogChip]; var selectedAmount: CountValue; var isCustom: Bool; init(kind:unit:defaultLogAmount:initialAmount:initialCustom:); var selectedChipIndex: Int?; func chipLabel(at:) -> String; var addLabel: String; var removeA11y: String; mutating func select(_:); mutating func confirmCustom(_ draft: String) -> Bool }`; `CounterDetailLogCard(group:activeMemberCount:isLogging:logError:model:onLog:)`; web `buildTaskCardCaption(task: SharedCounterMemberTask, unit: string, kind: CountKind): string`.
+- Counter Detail keeps its custom row + OK (handoff `logCards[].customOpen` draws "OK") — the one log surface where the fixed chips make the field secondary; Counter Detail logs ALWAYS persist the amount as the default (R2, unchanged).
+
+- [ ] **Step 1: Failing tests.** `counterDetailCaption.test.ts`:
+
+```ts
+import { describe, expect, it } from 'vitest';
+import { buildTaskCardCaption } from '../counterDetailCaption';
+
+const member = (o: object) => ({ taskId: 't', taskTitle: 'Run 26.2 mi', logged: 12.4, goal: 26.2, met: false, over: 0, window: undefined, ...o }) as never;
+
+describe('buildTaskCardCaption', () => {
+  it('continuous to go', () => expect(buildTaskCardCaption(member({}), 'mi', 'continuous')).toBe('13.8 mi to go'));
+  it('continuous over', () => expect(buildTaskCardCaption(member({ logged: 28.4, met: true, over: 2.2 }), 'mi', 'continuous')).toBe('✓ Goal met · 2.2 over'));
+  it('duration to go has no unit', () => expect(buildTaskCardCaption(member({ logged: 270, goal: 630 }), '', 'duration')).toBe('6h to go'));
+  it('discrete unchanged', () => expect(buildTaskCardCaption(member({ logged: 3, goal: 10 }), 'pages', 'discrete')).toBe('7 pages to go'));
+});
+```
+
+(`SharedCounterMemberTask`'s exact fields are in `packages/shared/src/algorithms/sharedCounterGroups.ts:46-80`; the cast keeps the fixture to the fields the caption reads.) `CounterDetailLogCardTests.swift`:
+
+```swift
+import XCTest
+@testable import OYBC
+
+final class CounterDetailLogCardTests: XCTestCase {
+    func testContinuousCustomDefault() {
+        let m = CounterDetailLogCard.Model(kind: .continuous, unit: "mi", defaultLogAmount: 3.1)
+        XCTAssertEqual(m.chips.map(\.label), ["0.5", "1", "5", "#"])
+        XCTAssertTrue(m.isCustom)
+        XCTAssertEqual(m.selectedChipIndex, 3)
+        XCTAssertEqual(m.chipLabel(at: 3), "#3.1")
+        XCTAssertEqual(m.addLabel, "＋ Add 3.1 mi")
+    }
+    func testDurationPresetDefault() {
+        let m = CounterDetailLogCard.Model(kind: .duration, unit: "guitar", defaultLogAmount: 30)
+        XCTAssertEqual(m.chips.map(\.label), ["15m", "30m", "1h", "#"])
+        XCTAssertEqual(m.selectedChipIndex, 1)
+        XCTAssertEqual(m.addLabel, "＋ Add 30m")
+    }
+    func testConfirmCustomParsesAtTheKind() {
+        var m = CounterDetailLogCard.Model(kind: .continuous, unit: "mi", defaultLogAmount: nil)
+        XCTAssertFalse(m.confirmCustom("3.125"))
+        XCTAssertTrue(m.confirmCustom("4,9"))
+        XCTAssertEqual(m.selectedAmount, 4.9)
+        XCTAssertTrue(m.isCustom)
+    }
+    func testDiscreteUnchanged() {
+        let m = CounterDetailLogCard.Model(kind: .discrete, unit: "pages", defaultLogAmount: 10)
+        XCTAssertEqual(m.chips.map(\.label), ["1", "10", "25", "#"])
+        XCTAssertEqual(m.selectedChipIndex, 1)
+        XCTAssertEqual(m.addLabel, "＋ Add 10")
+    }
+}
+```
+
+- [ ] **Step 2: Run — FAIL.** `WEB_TEST counterDetailCaption` / `IOS_TEST -only-testing:OYBCTests/CounterDetailLogCardTests`
+
+- [ ] **Step 3: Pure move first (iOS).** Move the listed members verbatim into `CounterDetailLogCard.swift` (a `struct CounterDetailLogCard: View` taking `group`, `activeMemberCount`, `isLogging`, `logError`, `onLog`, plus the two snapshot seams `initialSelectedAmount` / `initialCustomActive` forwarded from `CounterDetailContent`'s init); `CounterDetailContent` renders `CounterDetailLogCard(…)` where `logCard` was. `xcodegen generate`; run `IOS_SNAP -only-testing:OYBCSnapshotTests/CountersHubSnapshotTests` before and after the move and compare the red SETS (CLAUDE.md: `CountersHub` carries standing reds) — no `testDetail*` may change state; a pure move renders identically. Commit nothing yet.
+
+- [ ] **Step 4: Make it kind-aware (iOS).** Add the `Model`:
+
+```swift
+extension CounterDetailLogCard {
+    /// Chips + selection for the Log card (docs/COUNTER_KINDS.md §5). Unit-tested.
+    struct Model: Equatable {
+        let kind: CountKind
+        let unit: String
+        let chips: [CounterLogAmount.LogChip]
+        var selectedAmount: CountValue
+        var isCustom: Bool
+
+        init(kind: CountKind, unit: String, defaultLogAmount: CountValue?, initialAmount: CountValue? = nil, initialCustom: Bool = false) {
+            self.kind = kind
+            self.unit = unit
+            chips = CounterLogAmount.hubChips(kind: kind)
+            let sel = CounterLogAmount.initialSelection(kind: kind, chips: chips, defaultLogAmount: defaultLogAmount)
+            selectedAmount = initialAmount ?? sel.amount
+            isCustom = initialCustom || (initialAmount == nil && sel.isCustom)
+        }
+
+        var selectedChipIndex: Int? {
+            isCustom ? chips.count - 1 : chips.firstIndex { $0.value == selectedAmount }
+        }
+        /// The selected `#` chip shows the custom amount: "#3.1" for the new
+        /// kinds, the bare number for Discrete (today's Detail, `CounterDetailView.swift:651`).
+        func chipLabel(at i: Int) -> String {
+            guard chips[i].value == nil, i == selectedChipIndex else { return chips[i].label }
+            return kind == .discrete ? formatCount(selectedAmount, kind: .discrete) : CounterLogAmount.customChipLabel(selectedAmount, kind: kind)
+        }
+        var addLabel: String {
+            kind == .discrete ? "＋ Add \(formatCount(selectedAmount, kind: .discrete))" : "＋ Add \(formatCountWithUnit(selectedAmount, kind: kind, unit: unit))"
+        }
+        var removeA11y: String { "Remove \(formatCountWithUnit(selectedAmount, kind: kind, unit: unit))" }
+        mutating func select(_ v: CountValue) { selectedAmount = v; isCustom = false }
+        mutating func confirmCustom(_ draft: String) -> Bool {
+            guard let v = CounterLogAmount.parseCustom(draft, kind: kind) else { return false }
+            selectedAmount = v; isCustom = true
+            return true
+        }
+    }
+}
+```
+
+The card holds `@State private var model: Model` and `customOpen` / `customDraft`; chips iterate `model.chips` with `model.chipLabel(at:)`; the custom row is `GoalEntryView(kind: model.kind, text: $customDraft, placeholder: "Amount", suffix: model.unit.isEmpty || model.kind == .duration ? nil : model.unit)` + the existing OK (`if model.confirmCustom(customDraft) { customOpen = false }`; disabled while `CounterLogAmount.parseCustom(customDraft, kind: model.kind) == nil`); `logActionsRow` uses `model.selectedAmount`, `model.addLabel`, `model.removeA11y`. The header line `Log \(unitLabel)` keeps; `counts toward N active tasks` keeps (a value, not a mechanic). Then the `CounterDetailView` R7 / kind-blind sites (`formatCountTotal(group.lifetime, kind: group.countKind)` for the hero and its a11y; milestone `"\(formatCountWithUnit(remaining, kind: k, unit: unit)) to \(formatCountTotal(next, kind: k))"`; TODAY stat `formatCountTotal`; member values `formatCount`; captions `"\(formatCountWithUnit(remaining, kind: k, unit: unit)) to go"` and `"✓ Goal met · \(formatCount(member.over, kind: k)) over"`), and delete rows 80 / 82 / 84.
+
+- [ ] **Step 5: Implement web.** `counterDetailCaption.ts`:
+
+```ts
+import { formatCount, formatCountWithUnit, type CountKind, type SharedCounterMemberTask } from '@oybc/shared';
+
+/** A Counter Detail task card's caption (R2 order: remaining first, "ends {window}" last). */
+export function buildTaskCardCaption(task: SharedCounterMemberTask, unit: string, kind: CountKind): string {
+  if (task.met && task.over > 0) return `✓ Goal met · ${formatCount(task.over, kind)} over`;
+  if (task.met) return '✓ Goal met this window';
+  const base = `${formatCountWithUnit(Math.max(0, task.goal - task.logged), kind, unit)} to go`;
+  return task.window ? `${base} · ends ${task.window}` : base;
+}
+```
+
+`CounterDetailTaskCard` gets `kind` (from `group.countKind` at the call site), uses `buildTaskCardCaption(task, unitStr, kind)`, `formatCount(task.logged, kind)` / `formatCount(task.goal, kind)` and drops the `:69-73` caption. `CounterDetailPage`: `const kind = group?.countKind ?? 'discrete'; const chips = hubChips(kind);` replaces `buildAmountChipOptions()`; the seeding effect sets `const sel = initialLogSelection(kind, chips, group.defaultLogAmount); setSelectedAmount(sel.amount); setIsCustomActive(sel.isCustom);`; the custom input → `<GoalEntry kind={kind} value={customDraft} onChange={setCustomDraft} aria-label="Custom amount" placeholder="Amount" suffix={kind === 'duration' ? undefined : group?.unit} dense onEnter={confirmCustomInput} />`; `confirmCustomInput` parses with `parseCustomLogAmount(customDraft, kind)` and `openCustomInput` seeds `formatCountForInput(selectedAmount, kind)`; the selected `#` chip shows `customChipLabel(selectedAmount, kind)` for the new kinds (discrete keeps the bare number, as today); hero `formatCountTotal(group.lifetime, kind)`; milestone / today stat `formatCountTotal`; `＋ Add {kind === 'discrete' ? selectedAmount : formatCountWithUnit(selectedAmount, kind, unitStr)}`; Add / Remove aria via `formatCountWithUnit`; toasts carry `kind`. Delete the row 79 `<p>` and the row 83 history card.
+
+- [ ] **Step 6: Run** `WEB_TEST counterDetailCaption CounterDetail amountChips` / `IOS_TEST -only-testing:OYBCTests/CounterDetailLogCardTests` — PASS; `WEB_CHECK`; snapshots per Files (read vs handoff `logCards[]`: Continuous hero `148.6`, chips `0.5 · 1 · 5 · #3.1`, `＋ Add 3.1 mi`; Duration hero `112h 15m`, `30m` selected). Append to `counter-kinds-logging.spec.ts`:
+
+```ts
+  test('Counter Detail: a Continuous counter logs 0.5', async ({ page }) => {
+    await seedTask(page, { id: 'f3000000-0000-0000-0000-000000000001', title: 'Run miles', type: 'counting', action: 'Run', unit: 'miles', isCounter: true, countKind: 'continuous', currentCount: 148.6 });
+    await page.goto('/profile/counters/f3000000-0000-0000-0000-000000000001?__oybc_test_bypass=1');
+    await page.getByRole('group', { name: 'Log amount' }).getByRole('button', { name: '0.5', exact: true }).click();
+    await page.getByRole('button', { name: 'Add 0.5 miles' }).click();
+    await expect(page.getByText('149.1', { exact: true })).toBeVisible();
+  });
+```
 
 - [ ] **Step 7: Commit**
 
 ```bash
-git add apps/web scripts/audit/file-size-allowlist.json
-git commit -m "feat(counters): web counting tap opens the DetailModal; modal per kind (goal chips, pinned amount field); extract useCountingLogModal; drop shared hint / tap hint / linked tooltip (#548 5, 7, 8) (PR 4 Task 15)"
-```
-
----
-
-### Task 16: Long-press / right-click menu per kind (B2)
-
-**Files:**
-- Modify: `apps/ios/OYBC/Views/BoardsTab/BoardPlayView.swift:1397-1424` (counting menu) — net-zero or smaller
-- Modify: `apps/web/src/components/InteractiveTaskSquare.tsx:44-60,146-215` (`sharedAmountActions` → `amountActions` for every counting square of a new kind), `apps/web/src/components/BoardPlaySurface.tsx:1151-1200`
-- Test: `apps/web/src/components/__tests__/FloatingContextMenuKinds.test.ts` (create), `apps/ios/OYBCTests/BoardPlayContextMenuLabelTests.swift` (create — the label builder is a pure static on a new `enum CountingMenuLabels` in `apps/ios/OYBC/Views/BoardsTab/Components/CountingMenuLabels.swift` so BoardPlayView only calls it)
-
-**Interfaces:**
-- Consumes: `quickLogAmount`, `boardSheetChips`, `formatCountWithUnit` (Task 13).
-- Produces: web `ContextMenuProps.amountActions?: { kind: CountKind; amount: number; unit: string; onAdd(amount): void; onRemove(amount): void; onOpenCustom(): void; removeDisabled: boolean }`; iOS `enum CountingMenuLabels { static func add(amount:kind:unit:action:) -> String; static func remove(amount:kind:unit:action:) -> String }` — Discrete returns today's iOS strings ("+ Add {n} {action}" / "− Remove {n} {action}"); Continuous / Duration return "+ Add 3.1 mi" / "− Remove 3.1 mi" ("+ Add 1h 30m").
-- Menu for Continuous / Duration (both platforms): `+ Add {last} {unit}` · `# Custom amount…` (opens the stepper sheet / modal) · `− Remove {last} {unit}` · (web keeps `↺ Reset`) · divider · `View Details` · `Open in library`. Discrete: unchanged on both platforms.
-
-- [ ] **Step 1: Failing tests.** Web: render `FloatingContextMenu` for a Continuous square with `amountActions: { kind: 'continuous', amount: 3.1, unit: 'mi', … }` → contains `+ Add 3.1 mi`, `# Custom amount…`, `− Remove 3.1 mi`; for a Duration square amount 90 → `+ Add 1h 30m`; for a Discrete standalone square without `amountActions` → `+ Add Do (+1)` (unchanged). iOS `BoardPlayContextMenuLabelTests`:
-
-```swift
-    func testLabels() {
-        XCTAssertEqual(CountingMenuLabels.add(amount: 3.1, kind: .continuous, unit: "mi", action: "Run"), "+ Add 3.1 mi")
-        XCTAssertEqual(CountingMenuLabels.remove(amount: 90, kind: .duration, unit: "", action: "Practice"), "− Remove 1h 30m")
-        XCTAssertEqual(CountingMenuLabels.add(amount: 1, kind: .discrete, unit: "reps", action: "Do"), "+ Add 1 Do")
-    }
-```
-
-- [ ] **Step 2: Run — FAIL.**
-
-- [ ] **Step 3: Implement.** iOS: in `risoContextMenu`'s `.counting` case, `let kind = resolveFamilyCountKind(t, lookup: { taskMap[$0] })`, `let amount = CounterLogAmount.quickAmount(kind: kind, chips: CounterLogAmount.boardSheetChips(kind: kind, goal: t.maxCount ?? 0), defaultLogAmount: (viewModel.sharedCounterSourceId(for: t).flatMap { taskMap[$0] } ?? t).defaultLogAmount)`; buttons use `CountingMenuLabels.add/remove(…)`; for `kind != .discrete` insert `Button("Custom amount…", systemImage: "number") { countingStepperBoardTaskId = boardTask.id }` between Add and Remove. Web: `BoardPlaySurface` builds `amountActions` for every new-kind counting square (shared or not) using `quickLogAmount`; discrete shared squares keep `sharedAmountActions` (unchanged); `FloatingContextMenu` renders the new block when `amountActions` is set (`+ Add {formatCountWithUnit}` → `onAdd(amount)`, `# Custom amount…` → `onOpenCustom` = `setSelectedSquareId(bt.id)`, `− Remove …` disabled by `removeDisabled`).
-
-- [ ] **Step 4: Run** tests PASS; `WEB_CHECK`; `node scripts/check-file-sizes.mjs`; `xcodegen generate`. Extend `counter-kinds-logging.spec.ts`: right-click the Continuous square → `+ Add 3.1 mi` → the cell grows by 3.1.
-
-- [ ] **Step 5: Commit**
-
-```bash
-git add apps/web apps/ios scripts/audit/file-size-allowlist.json
-git commit -m "feat(counters): long-press / right-click menu adds and removes the last amount per kind, Custom amount opens the sheet (PR 4 Task 16)"
-```
-
----
-
-### Task 17: Closed-board late log per kind (B3)
-
-**Files:**
-- Modify: `apps/ios/OYBC/Views/BoardsTab/LateLog/LateLogSheetView.swift:30-36` (`Kind.counting(current:max:unit:countKind:)`), `:156-192` (chips, custom entry via `GoalEntryView`, readout)
-- Modify: `apps/ios/OYBC/Views/BoardsTab/BoardPlayView+LateLog.swift:118` (passes `countKind: resolveFamilyCountKind(task, lookup:)`)
-- Modify: `apps/web/src/components/lateLog/LateLogSheet.tsx:23-24,236-330` (chips via `lateLogChipAmounts`; custom `GoalEntry`; readout `formatCount`; button label)
-- Test: `apps/ios/OYBCSnapshotTests/BoardCloseReopenSnapshotTests.swift` (+`testLateLogContinuous{Light,Dark}`, `testLateLogDuration{Light,Dark}`), `apps/web/e2e/late-log-counting.spec.ts` (+Continuous case), `apps/web/src/components/lateLog/__tests__/LateLogSheet.kinds.test.ts` (create — renders the counting body through a test-exported `CountingLateLogBody` with a stubbed `state`)
-
-**Interfaces:**
-- Consumes: `lateLogChipAmounts`, `parseCountInput`, `formatCountWithUnit`, `GoalEntry(View)`.
-- Produces: iOS `LateLogSheetView.Kind.counting(current:max:unit:countKind:)`; web button label: Discrete `Log` (unchanged); Continuous / Duration `Log +{amount}{ unit}` ("Log +4.9 mi", "Log +1h 30m"). Chip labels `+{formatCount}` (`+6.6`, `+2h 38m`) followed by `Custom…`.
-
-- [ ] **Step 1: Failing tests.** Web `LateLogSheet.kinds.test.ts`: Continuous goal 26.2, count 21.3 → chips `+6.6`, `+13.1`, `+26.2`, `Custom…`; readout `21.3/26.2`; with custom `4.9` the button reads `Log +4.9 mi`; Discrete → chips `+1 +2 +5`, button `Log`. iOS snapshot cases render `LateLogSheetView(windowLabel: "Mar 1 – 31", taskTitle: "Run 26.2 mi", kind: .counting(current: 21.3, max: 26.2, unit: "mi", countKind: .continuous))` and the Duration twin (`540`, `630`, `""`, `.duration`) at 393×360 / 393×520.
-
-- [ ] **Step 2: Run — FAIL.**
-
-- [ ] **Step 3: Implement.** iOS `countingBody(current:max:unit:countKind:)`: readout `"\(formatCount(current, kind: countKind))/\(formatCount(max, kind: countKind))\(countUnitSuffix(countKind, unit: unit))"`; `ForEach(CounterLogAmount.lateLogChipAmounts(kind: countKind, goal: max), id: \.self)` buttons titled `"+\(formatCount(amount, kind: countKind))"`; the custom row's `RisoNumberField` → `GoalEntryView(kind: countKind, text: $customAmountDraft, placeholder: "Amount", startsOpen: countKind == .duration)`; parse with `CounterLogAmount.parseCustom(customAmountDraft, kind: countKind)`; `sheetHeight` `.counting` = `countKind == .duration ? 470 : 280`. Web: `const kind = resolveCountKind(task); const chips = lateLogChipAmounts(kind, task.maxCount ?? 0);` `useState<number>(chips[0])` for `selected`; chip text `+${formatCount(amount, kind)}`; custom `GoalEntry kind={kind} value={customDraft} onChange={setCustomDraft} aria-label="Custom amount" placeholder="Amount" dense`; `customAmount = parseCustomLogAmount(customDraft, kind)`; readout `formatCount(state.count, kind)` / `formatCount(max, kind)`, unit hidden for Duration; button label `kind === 'discrete' ? 'Log' : `Log +${formatCountWithUnit(customOpen ? customAmount ?? 0 : selected, kind, task.unit)}``.
-
-- [ ] **Step 4: Run** tests; `WEB_E2E e2e/late-log-counting.spec.ts` — the existing discrete cases unchanged + new: a closed board with a Continuous `Run 26.2 mi` square → tap → `+6.6` → `Log +6.6 mi` → the frozen record shows `6.6/26.2`. Record the four iOS snapshots; read vs handoff B3.
-
-- [ ] **Step 5: Commit**
-
-```bash
 git add apps/web apps/ios
-git commit -m "feat(counters): closed-board late log per kind — goal chips, decimal / h:m custom entry, Log +amount (PR 4 Task 17)"
+git commit -m "feat(counters): Counter Detail per kind — fixed chips per kind, decimal / h:m custom entry, kind-aware cards and milestone; extract CounterDetailLogCard; drop detail captions + history stub (#548 79-84) (PR 4 Task 18)"
 ```
 
 ---
 
-### Task 18: Hub ledger cards, Profile rows, "+ Log" pills (B4)
+### Task 19: C1 — board cells: fit tiers, ×goal tag, gold overshoot
 
 **Files:**
-- Modify: `apps/web/src/components/counters/CounterLedgerCard.tsx:61-190` (pill label/behaviour; lifetime `formatCountTotal`; row values `formatCount` — R7 sites `:65`, `:174-175`)
-- Modify: `apps/web/src/pages/ProfilePage.tsx:338-416` (compact rows: pill + lifetime + member value — R7 `:392-393`, `:404`)
-- Modify: `apps/web/src/pages/CountersHubPage.tsx:113-116` (delete the #548 row 85 intro `<p>`); the toast gets `kind`
-- Modify: `apps/ios/OYBC/Views/ProfileTab/Components/SharedCounterLedgerCard.swift:51,81,100,107-118,136,189,236,270` (R7 `.formatted()` ×3 → `formatCountTotal` / `formatCount`; pill), `apps/ios/OYBC/Views/ProfileTab/CountersHubView.swift:141-160,232-236` (pill opens detail when `pillOpensDetail`; delete the row 86 intro `Text`), `apps/ios/OYBC/Views/ProfileTab/ViewModels/ProfileHomeViewModel.swift:143-160`, `apps/ios/OYBC/Views/ProfileTab/Components/ProfileCountersSection.swift` (pill → detail)
-- Test: `apps/web/src/components/counters/__tests__/CounterLedgerCard.test.ts` (create), `apps/ios/OYBCTests/ProfileHomeViewModelTests.swift` (+pill cases), snapshots
-- Re-record (intentional): `CountersHubSnapshotTests/testHubPopulated{Light,Dark}`, `testHubEmpty{Light,Dark}` (row 86 intro removal); add `testHubContinuousDurationLight`, `testHubContinuousDurationDark` (handoff `ledgers[]`); `RisoProfileSnapshotTests/testPopulated{Light,Dark}` only if red (discrete rows should be pixel-identical — `formatCountTotal` = the old `.formatted()` for integers; a red there is a regression to fix, not re-record)
-
-**Interfaces:**
-- Consumes: `logPillLabel`, `logPillOpensDetail`, `formatCountTotal`, `SharedCounterGroup.countKind`.
-- Produces: pill behaviour — `logPillOpensDetail(group.countKind, group.defaultLogAmount)` ⇒ navigate to Counter Detail (`/profile/counters/:id` ↔ `navigateToCounterId`), else log `group.defaultLogAmount ?? 1` exactly as today; label `logPillLabel(…)`; aria/VoiceOver `Log {formatCountWithUnit} for {name}`.
-
-- [ ] **Step 1: Failing tests.** Web `CounterLedgerCard.test.ts`: a Continuous group (`lifetime 148.6`, `defaultLogAmount 3.1`) renders `148.6`, `+ Log 3.1`, rows `12.4/26.2` and `28.4/26.2`; a Duration group (`lifetime 6735`, default 30) renders `112h 15m`, `+ Log 30m`; a discrete group `lifetime 1240` renders `1,240` and `+ Log`; a never-logged Continuous group renders a `+ Log` link whose `href` is `/profile/counters/{id}`. iOS `ProfileHomeViewModelTests`: `pillAction(for:)` (new pure static on the VM: `.log(amount)` / `.openDetail`) returns `.openDetail` for a never-logged Continuous group and `.log(30)` for Duration default 30.
-
-- [ ] **Step 2: Run — FAIL.**
-
-- [ ] **Step 3: Implement.** Web `CounterLedgerCard`: `const kind = group.countKind; const lifetimeStr = formatCountTotal(group.lifetime, kind); const opensDetail = logPillOpensDetail(kind, group.defaultLogAmount);` — when `opensDetail`, render the pill as a `<Link to={`/profile/counters/${group.counterId}`}>` with the same class; else the existing button with label `logPillLabel(kind, group.defaultLogAmount)`; `onLogged({ …, kind })`; rows `formatCount(task.logged, kind)` / `formatCount(task.goal, kind)`; the progress bar for an overshoot row keeps the existing green "met" styling (handoff `ledgers[].rows` — met = green; gold is cells only). `ProfilePage` compact row mirrors the same three changes (`:355` amount, `:392-404` values, `:411-415` pill). `CountersHubPage`: delete the intro `<p>`; pass `kind` to `CounterLogToast`. iOS mirrors: `SharedCounterLedgerCard` `logPillButton` label `CounterLogAmount.pillLabel(kind: group.countKind, defaultLogAmount: group.defaultLogAmount)`; `onLog` callers (`CountersHubView.handleLog`, `ProfileHomeViewModel.handleLog`) first check `CounterLogAmount.pillOpensDetail(…)` and set `navigateToCounterId` instead of logging; the three `.formatted()` lifetimes → `formatCountTotal(group.lifetime, kind: group.countKind)`, member values → `formatCount(…, kind: group.countKind)`; delete the row 86 `Text`; toasts pass `kind: group.countKind`.
-
-- [ ] **Step 4: Run** tests PASS; snapshots per the Files list; read `testHubContinuousDuration*` vs handoff B4 ledgers (`148.6 ALL-TIME`, `+ Log 3.1`, `112h 15m`, `+ Log 30m`). Extend `counter-kinds-logging.spec.ts`: hub → a Continuous counter with default 3.1 → `+ Log 3.1` → toast `Logged +3.1 mi` → Undo. `WEB_E2E e2e/profile-home.spec.ts e2e/counter-kinds-logging.spec.ts`.
-
-- [ ] **Step 5: Commit**
-
-```bash
-git add apps/web apps/ios
-git commit -m "feat(counters): hub + Profile '+ Log' pills carry the amount per kind (never-logged opens Counter Detail); grouped totals (R7); drop hub intro caption (#548 85/86) (PR 4 Task 18)"
-```
-
----
-
-### Task 19: Counter Detail per kind (B4 Detail)
-
-**Files:**
-- Create: `apps/ios/OYBC/Views/ProfileTab/Components/CounterDetailLogCard.swift` — `CounterDetailContent`'s Log card + chip state + custom row moved out of `CounterDetailView.swift:303-306,351-395,597-730`
-- Modify: `apps/ios/OYBC/Views/ProfileTab/CounterDetailView.swift` (uses `CounterDetailLogCard`; R7 `.formatted()` at `:497`, `:548`, `:555-558`, `:572`, `:779`, `:819`, `:825`, `:884` → `formatCountTotal` / `formatCount` with `group.countKind`; kind-blind `:383`, `:525`, `:651`, `:702`, `:713`, `:727`, `:806`; delete #548 row 80 explainer `:427` and row 82 captions `:875-876`; shrink the allowlist entry — the file drops ~180 lines, below 1000, so DELETE its allowlist entry)
-- Modify: `apps/web/src/pages/CounterDetailPage.tsx:75-165,239-425` (chips `hubChips(kind)`; custom entry `GoalEntry`; values; R7 `:239`, `:310`, `:334-342`; delete row 79 explainer `:430-433`), `apps/web/src/components/counters/CounterDetailTaskCard.tsx:65-140` (values `formatCount`; "{n} {unit} to go" / "✓ Goal met · {over} over" per kind — R7 `:90-91,133,139`; delete row 81 captions `:69-73`)
-- Test: `apps/web/src/components/counters/__tests__/CounterDetailTaskCard.test.ts` (create), `apps/ios/OYBCTests/CounterDetailLogCardTests.swift` (create — pure `CounterDetailLogCard.Model`), snapshots
-- Re-record (intentional — captions 80/82): `CountersHubSnapshotTests/testDetailSingleMember{Light,Dark}`, `testDetailCustomChipActive{Light,Dark}`, `testDetailLoggingStateLight`; add `testDetailContinuous{Light,Dark}`, `testDetailDurationLight` (handoff `logCards[]` / `detailCards[]`)
-
-**Interfaces:**
-- Consumes: `hubChips`, `initialLogSelection`, `customChipLabel`, `formatCountTotal`, `formatCountWithUnit`, `GoalEntry(View)`.
-- Produces: iOS `CounterDetailLogCard(group: SharedCounterGroup, activeMemberCount: Int, isLogging: Bool, logError: String?, onLog: (CountValue, CounterLogDirection, Bool) -> Void)` with `struct Model` (chips, selection, custom draft parse — unit-tested); the hub keeps the custom row + OK (handoff `logCards[].customOpen` shows "OK") — this is the one log surface that keeps OK, since the chips are fixed and the field is a secondary entry. Task card copy: `"{formatCountWithUnit(remaining)} to go"` ("13.8 mi to go", "6h to go"), `"✓ Goal met · {formatCount(over)} over"` ("2.2 over").
-
-- [ ] **Step 1: Failing tests.** Web `CounterDetailTaskCard.test.ts`: Continuous member logged 12.4 / goal 26.2 → `12.4/26.2`, `13.8 mi to go`; logged 28.4 → `✓ Goal met · 2.2 over`; Duration 270/630 → `4h 30m/10h 30m`, `6h to go`; none of the cards contain `Not on any board yet` / `Starts counting when`. iOS `CounterDetailLogCardTests`: `Model(kind: .continuous, defaultLogAmount: 3.1)` → chip labels `["0.5","1","5","#"]`, selection custom 3.1, custom chip label `#3.1`, add label `＋ Add 3.1 mi`; `Model(kind: .duration, defaultLogAmount: 30)` → chips `["15m","30m","1h","#"]`, selected index 1.
-
-- [ ] **Step 2: Run — FAIL.**
-
-- [ ] **Step 3: Implement.** Move the Log card verbatim into `CounterDetailLogCard.swift` first (one commit-able step: run `IOS_SNAP -only-testing:OYBCSnapshotTests/CountersHubSnapshotTests` — the `testDetail*` baselines must be GREEN after the pure move), then make it kind-aware: chips `CounterLogAmount.hubChips(kind: group.countKind)`, initial selection via `initialSelection`, custom row `GoalEntryView(kind: kind, text: $customDraft, placeholder: "Amount", suffix: unitLabel)` + OK (`parseCustom(customDraft, kind:)`), labels via `formatCountWithUnit`. Then the remaining `CounterDetailView` sites and caption deletions. Web mirrors (`CounterDetailPage` chips `hubChips(group.countKind)`, `GoalEntry` custom input, `formatCountTotal` for the hero / milestone / today stat, `formatCountWithUnit` in the Add / Remove aria labels and `＋ Add {amount}` button). Milestone line: `"{formatCountWithUnit(remaining)} to {formatCountTotal(next)}"` ("1.4 mi to 150", "12h 45m to 125h").
-
-- [ ] **Step 4: Run** tests; snapshots per Files; read vs handoff B4 Detail cards. Delete the `CounterDetailView.swift` allowlist entry (the guardrail script notes it as stale otherwise). `WEB_E2E e2e/counter-kinds-logging.spec.ts` + a Detail case: Continuous counter → chip `0.5` → `＋ Add 0.5 mi` → hero `149.1`.
-
-- [ ] **Step 5: Commit**
-
-```bash
-git add apps/web apps/ios scripts/audit/file-size-allowlist.json
-git commit -m "feat(counters): Counter Detail per kind — fixed chips per kind, decimal / h:m custom entry, kind-aware cards and milestone; extract CounterDetailLogCard; drop detail captions (#548 79-82) (PR 4 Task 19)"
-```
-
----
-
-### Task 20: Board cells — fit tiers, ×goal tag, gold overshoot (C1)
-
-**Files:**
-- Modify: `apps/web/src/components/board/RisoBoardCell.tsx:5-60,107-128` (`count.kind`; tier text; `.over` bar), `RisoBoard.module.css:140-160` (`.cbar.over > i { background: var(--riso-gold); }`)
-- Modify: `apps/web/src/components/board/cellModel.ts:20-74` (`count: { cur, max, kind }`; `taskCellLabel` passes the kind to the title; `cellCountFit` pure function)
-- Modify: `apps/web/src/components/board/RisoBoardGrid.tsx` / `RisoBoard.tsx` (pass `cellSize` down so a cell can size its text — `RisoBoardCell` gains `cellSize?: number`, default 88; `BoardPlaySurface.tsx:670` already uses 90)
-- Modify: `apps/ios/OYBC/Views/BoardsTab/Components/RisoBoardPlayCell.swift:37-38,146-160,245-255,336-386` (`countKind`; three-tier `ViewThatFits`; gold fill on overshoot; ×tag and VoiceOver via `formatCount`), `apps/ios/OYBC/Views/BoardsTab/BoardPlayView.swift:1174-1200,1321-1350` (pass `countKind: resolveFamilyCountKind(task, lookup:)` — net-zero lines), `SquaresEditGrid.swift:266-290`, `RearrangeGrid.swift:335-350`
-- Test: `apps/web/src/components/board/__tests__/cellModel.test.ts` (+`cellCountFit` cases), `RisoBoardCell.test.ts` (+kind cases), `apps/ios/OYBCSnapshotTests/RisoBoardCellKindsSnapshotTests.swift` (create — handoff `boards[]`: 3×3 @113, 4×4 @83, 5×5 @65, light + dark)
-- Existing baselines that must stay GREEN (discrete, no overshoot): `RisoPlayBoardSnapshotTests/*`, `RisoBoardGridSnapshotTests/*`, `SquaresEditSnapshotTests/*`, `RearrangeGridSnapshotTests/*`, `WindowedCompletionSealingSnapshotTests/testSealedGrid*` — with ONE allowed exception: a discrete cell whose bar previously hid its count (too narrow for `cur/max`) now shows the `cur` tier. That is the designed change; re-record exactly those baselines and list each in the commit body. Any other diff is a regression to fix.
+- Modify: `apps/web/src/components/board/cellModel.ts:20-74` (`TaskCellModelInput.countKind?: CountKind`; `count: { cur, max, kind }`; `taskCellLabel` passes the kind to the title — the ONE edit of that function, Task 20 does not touch it; + `cellCountFit`)
+- Modify: `apps/web/src/components/board/RisoBoardCell.tsx:5-60` (`BoardCellModel.count.kind`; `RisoBoardCellProps.cellSize?: number`, default 88), `:107-128` (tag, tier text, `.over`)
+- Modify: `apps/web/src/components/board/RisoBoard.module.css:140-160` (`.cbar.over > i { background: var(--riso-gold); } .cbar.over > span { color: var(--riso-ink-static); }` — an overshoot bar is 100% gold, and adaptive `--riso-ink` turns cream on gold in dark mode, `reference_riso_adaptive_ink_fill_darkmode`)
+- Modify: `apps/web/src/components/board/RisoBoard.tsx:52-56` (`<RisoBoardCell … cellSize={cellSize} />`), `apps/web/src/components/BoardPlaySurface.tsx:774-790` (`toBoardCellModel({ …, countKind: resolveFamilyCountKind(task, (id) => taskMap[id]) })` and `<RisoBoardCell … cellSize={90} />` — matches `RisoBoardGrid cellSize={90}` at `:670`; budget +2)
+- Modify: `apps/web/src/components/board/risoBoardCells.ts:96-105`, `apps/web/src/hooks/useSquaresEditDraft.ts:249-260`, `apps/web/src/components/wizard/BoardWizardPreviewStep.tsx:101-106` (each passes `countKind: resolveFamilyCountKind(task, (id) => taskMap[id])`; R19 for the wizard preview — the pending linked task resolves its root through the preview's task map)
+- Modify: `apps/ios/OYBC/Views/BoardsTab/Components/RisoBoardPlayCell.swift:37-38` (`var countKind: CountKind = .discrete` right after `maxCount`), `:146-160` (VoiceOver), `:245-255` (×tag), `:336-386` (three-tier `ViewThatFits`, gold overshoot)
+- Modify: `apps/ios/OYBC/Views/BoardsTab/BoardPlayView.swift:1321-1332` (`countKind: resolveFamilyCountKind(t, lookup: { taskMap[$0] })` after `maxCount:`; budget +2), `apps/ios/OYBC/Views/BoardsTab/SquaresEditGrid.swift:277-287`, `apps/ios/OYBC/Views/BoardsTab/RearrangeGrid.swift:344-352` (the wizard preview renders through `RearrangeGrid`), each adding `countKind: task.map { resolveFamilyCountKind($0, lookup: { taskMap[$0] }) } ?? .discrete`
+- Test: `apps/web/src/components/board/__tests__/cellModel.test.ts` (+`cellCountFit` table, +R19 case), `apps/web/src/components/board/__tests__/RisoBoardCell.test.ts` (+3 cases), `apps/ios/OYBCSnapshotTests/RisoBoardCellKindsSnapshotTests.swift` (create)
+- Must stay GREEN (discrete, no overshoot): `RisoPlayBoardSnapshotTests/*`, `RisoBoardGridSnapshotTests/*`, `SquaresEditSnapshotTests/*`, `RearrangeGridSnapshotTests/*`, `WindowedCompletionSealingSnapshotTests/testSealedGrid*`, `WizardArrangePreviewSnapshotTests/*` — with ONE allowed exception: a discrete cell whose bar used to HIDE its count (too narrow for `cur/max`) now shows the `cur` tier. That is the designed change; re-record exactly those baselines and name each in the commit body. Any other diff is a regression to fix.
 
 **Interfaces:**
 - Consumes: `formatCount`, `resolveFamilyCountKind`.
-- Produces:
-  - web `BoardCellModel.count?: { cur: number; max: number; kind: CountKind }`
-  - web `cellCountFit(cur: number, max: number, kind: CountKind, cellSize: number): { text: string; tier: 'full' | 'cur' | 'none' }` — inner width `cellSize - 25` (7px padding ×2 + 1.5px border ×2 + 6px slack), char width `9.5 × 0.56`; `full` = `cur/max` fits, else `cur`, else `none`
-  - iOS `RisoBoardPlayCell.countKind: CountKind = .discrete`
-  - Overshoot: bar fill `--riso-gold` / `Color.risoGold` when `cur > max`, width 100%; the text is the real value.
+- Produces: web `BoardCellModel.count?: { cur: number; max: number; kind: CountKind }`; `TaskCellModelInput.countKind?: CountKind` (absent → `resolveCountKind(task)`); `cellCountFit(cur: number, max: number, kind: CountKind, cellSize: number): { text: string; tier: 'full' | 'cur' | 'none' }` (inner width `cellSize − 25`, char width `9.5 × 0.56` px — the web bar's 9.5px head font; deterministic from the known cell size, never measured after paint); `RisoBoardCellProps.cellSize?: number`; iOS `RisoBoardPlayCell.countKind`.
 
 - [ ] **Step 1: Failing tests.** `cellModel.test.ts`:
 
 ```ts
-describe('cellCountFit', () => {
+describe('cellCountFit (Review Focus 5)', () => {
   it.each([
     { cur: 12.75, max: 26.2, kind: 'continuous', size: 90, tier: 'full', text: '12.75/26.2' },
     { cur: 128.5, max: 1000, kind: 'continuous', size: 90, tier: 'full', text: '128.5/1000' },
@@ -3770,13 +5771,94 @@ describe('cellCountFit', () => {
     expect(cellCountFit(cur, max, kind, size)).toEqual({ tier, text });
   });
 });
+
+it('R19: a pending linked task renders its root kind', () => {
+  const root = task({ id: 'root', type: TaskType.COUNTING, action: 'Run', unit: 'mi', maxCount: 26.2, countKind: 'continuous' });
+  const pending = task({ id: 'p', type: TaskType.COUNTING, action: 'Run', unit: 'mi', maxCount: 6.2, sharedCounterId: 'root', baseline: 0 });
+  const model = toBoardCellModel({ key: 'p', task: pending, done: false, currentCount: 3.1,
+    countKind: resolveFamilyCountKind(pending, (id) => ({ root } as Record<string, Task>)[id]) });
+  expect(model.count).toEqual({ cur: 3.1, max: 6.2, kind: 'continuous' });
+});
 ```
 
-(Check the arithmetic in the implementation step — `90 − 25 = 65px / 5.32 ≈ 12.2 chars`; `112h 15m/500h` is 13 → `cur`; at 58px, 33 / 5.32 ≈ 6.2 chars: `112h 15m` (8) → `none`; `3/5` (3) → `full`.) `RisoBoardCell.test.ts`: an overshoot Continuous cell renders the class `over` on `.cbar` and the tag `×26.2`; a Duration cell's tag `×10h 30m`. iOS snapshots `RisoBoardCellKindsSnapshotTests` — a `LazyVGrid` of `RisoBoardPlayCell`s built from the handoff `cells(n, size)` worst-case list (`Run 26.2 mi` 12.75/26.2, `Swim 1000 m` 128.5/1000, `Practice 10h` 270/600, `Code 500h` 6735/30000, overshoot 28.4/26.2 done, `Read 300 pages` 120/300 shared) for n = 3, 4, 5 at the stated cell sizes, light + dark (`testGrid3{Light,Dark}`, `testGrid4{Light,Dark}`, `testGrid5{Light,Dark}`).
+(`task(overrides)` is the file's builder, `cellModel.test.ts:5`; import `cellCountFit` and `resolveFamilyCountKind` beside the existing imports. Arithmetic: room = (90 − 25) / 5.32 = 12.2 chars, (58 − 25) / 5.32 = 6.2.) `RisoBoardCell.test.ts`:
 
-- [ ] **Step 2: Run — FAIL.**
+```ts
+const renderCell = (over: Partial<BoardCellModel>, cellSize: number) =>
+  renderToStaticMarkup(React.createElement(RisoBoardCell, { cell: makeCell({ type: 'counting', ...over }), cellSize }));
 
-- [ ] **Step 3: Implement.** Web `cellModel.ts`:
+it('an overshoot continuous cell keeps its real value, a gold bar and the ×goal tag', () => {
+  const html = renderCell({ label: 'Run 26.2 mi', done: true, count: { cur: 28.4, max: 26.2, kind: 'continuous' } }, 90);
+  expect(html).toContain('28.4/26.2');
+  expect(html).toContain(`class="${styles.cbar} ${styles.over}"`);
+  expect(html).toContain('×26.2');
+});
+it('a duration tag and the cur tier at 90px', () => {
+  const html = renderCell({ label: 'Code 500h', count: { cur: 6735, max: 30000, kind: 'duration' } }, 90);
+  expect(html).toContain('×500h');
+  expect(html).toContain('>112h 15m<');
+  expect(html).not.toContain('112h 15m/500h');
+});
+it('fill only when even cur does not fit', () => {
+  const html = renderCell({ label: 'Code 500h', count: { cur: 6735, max: 30000, kind: 'duration' } }, 58);
+  expect(html).not.toContain('112h');
+});
+```
+
+(`makeCell` and `styles` are the file's own, `RisoBoardCell.test.ts:5,20`.) iOS `RisoBoardCellKindsSnapshotTests.swift`:
+
+```swift
+import XCTest
+import SwiftUI
+import SnapshotTesting
+@testable import OYBC
+
+/// Handoff C1 worst cases at 3×3 (113pt), 4×4 (83pt), 5×5 (65pt) on a 393pt phone.
+final class RisoBoardCellKindsSnapshotTests: XCTestCase {
+    private let recordMode: SnapshotTestingConfiguration.Record? = .missing
+    private struct Worst { let title: String; let kind: CountKind; let cur: CountValue; let max: CountValue; var done = false; var shared = false }
+    private let worst: [Worst] = [
+        .init(title: "Run 26.2 mi", kind: .continuous, cur: 12.75, max: 26.2),
+        .init(title: "Swim 1000 m", kind: .continuous, cur: 128.5, max: 1000),
+        .init(title: "Practice 10h", kind: .duration, cur: 270, max: 600),
+        .init(title: "Code 500h", kind: .duration, cur: 6735, max: 30000),
+        .init(title: "Run 26.2 mi", kind: .continuous, cur: 28.4, max: 26.2, done: true),
+        .init(title: "Read 300 pages", kind: .discrete, cur: 120, max: 300, shared: true),
+    ]
+    private func grid(_ n: Int, cell: CGFloat) -> some View {
+        let total = n * n
+        return LazyVGrid(columns: Array(repeating: GridItem(.fixed(cell), spacing: 6), count: n), spacing: 6) {
+            ForEach(0..<total, id: \.self) { i in
+                if i == total / 2 {
+                    RisoBoardPlayCell(title: "FREE", taskType: .normal, isCompleted: false, isCenter: true)
+                } else {
+                    let w = worst[i % worst.count]
+                    RisoBoardPlayCell(title: w.title, taskType: .counting, isCompleted: w.done,
+                                      currentCount: w.cur, maxCount: w.max, countKind: w.kind, isSharedCounter: w.shared)
+                }
+            }
+        }
+        .frame(width: CGFloat(n) * cell + CGFloat(n - 1) * 6)
+        .padding(12)
+        .background(Color.risoPaper)
+    }
+    private func snap(_ n: Int, _ cell: CGFloat, dark: Bool, testName: String = #function, line: UInt = #line) {
+        let side = CGFloat(n) * cell + CGFloat(n - 1) * 6 + 24
+        assertSnapshot(of: grid(n, cell: cell), as: .image(layout: .fixed(width: side, height: side), traits: .init(userInterfaceStyle: dark ? .dark : .light)),
+                       record: recordMode, testName: testName, line: line)
+    }
+    func testGrid3Light() { snap(3, 113, dark: false) }
+    func testGrid3Dark() { snap(3, 113, dark: true) }
+    func testGrid4Light() { snap(4, 83, dark: false) }
+    func testGrid4Dark() { snap(4, 83, dark: true) }
+    func testGrid5Light() { snap(5, 65, dark: false) }
+    func testGrid5Dark() { snap(5, 65, dark: true) }
+}
+```
+
+- [ ] **Step 2: Run — FAIL.** `WEB_TEST cellModel RisoBoardCell` / `IOS_SNAP -only-testing:OYBCSnapshotTests/RisoBoardCellKindsSnapshotTests` (build error: no `countKind`)
+
+- [ ] **Step 3: Implement web.** `cellModel.ts`:
 
 ```ts
 const BAR_CHAR_PX = 9.5 * 0.56;
@@ -3785,7 +5867,7 @@ const BAR_INSET_PX = 25;
 /**
  * The counting bar's text tier (docs/COUNTER_KINDS.md §5): `cur/max`, else
  * `cur` (the ×tag already carries the goal), else nothing (fill only).
- * Deterministic from the cell size — no measurement, no post-paint change.
+ * Deterministic from the known cell size — no measurement, no post-paint change.
  */
 export function cellCountFit(cur: number, max: number, kind: CountKind, cellSize: number): { text: string; tier: 'full' | 'cur' | 'none' } {
   const room = (cellSize - BAR_INSET_PX) / BAR_CHAR_PX;
@@ -3797,7 +5879,30 @@ export function cellCountFit(cur: number, max: number, kind: CountKind, cellSize
 }
 ```
 
-`toBoardCellModel` sets `count: { cur, max, kind: resolveCountKind(task) }` (callers that know the family pass the root-resolved kind — `BoardPlaySurface` uses `resolveFamilyCountKind(task, (id) => taskMap[id])` and spreads it into the model input via a new optional `countKind` field on `TaskCellModelInput`). `RisoBoardCell`: tag `×${formatCount(cell.count.max, cell.count.kind)}`; bar width `Math.min(100, …)`; `className={[styles.cbar, over ? styles.over : ''].join(' ')}`; `<span>{fit.text}</span>` only when `fit.tier !== 'none'`. iOS `bottomProgressBar`: color `taskType == .counting && cur > max ? Color.risoGold : color`; replace the two-branch `ViewThatFits` with three:
+`taskCellLabel` → `generateCounterTaskTitle(task.action ?? '', task.maxCount ?? 0, task.unit ?? '', undefined, resolveCountKind(task))`; `toBoardCellModel` → `count: type === 'counting' ? { cur: input.currentCount ?? 0, max: task.maxCount ?? 0, kind: input.countKind ?? resolveCountKind(task) } : undefined`. `RisoBoardCell` (`cellSize = 88` default prop):
+
+```tsx
+      {(cell.type === 'counting' || cell.type === 'compound') && (
+        <span className={`${styles.tag} ${cell.type === 'counting' ? styles.counting : styles.compound}`}>
+          {cell.type === 'counting' && cell.count ? `×${formatCount(cell.count.max, cell.count.kind)}` : '≡'}
+        </span>
+      )}
+      <span className={styles.cellText}>{cell.label}</span>
+      {cell.type === 'counting' && cell.count && (() => {
+        const over = cell.count.max > 0 && cell.count.cur > cell.count.max;
+        const fit = cellCountFit(cell.count.cur, cell.count.max, cell.count.kind, cellSize);
+        return (
+          <span className={[styles.cbar, over ? styles.over : ''].filter(Boolean).join(' ')}>
+            <i style={{ width: `${cell.count.max > 0 ? Math.min(100, Math.round((cell.count.cur / cell.count.max) * 100)) : 0}%` }} />
+            {fit.tier !== 'none' && <span>{fit.text}</span>}
+          </span>
+        );
+      })()}
+```
+
+Wire `cellSize` / `countKind` at the listed call sites.
+
+- [ ] **Step 4: Implement iOS.** `RisoBoardPlayCell`: `var countKind: CountKind = .discrete` after `maxCount`; `private var barKind: CountKind { taskType == .counting ? countKind : .discrete }`; VoiceOver `formatCount(…, kind: countKind)`; tag `Text("×\(formatCount(maxCount, kind: countKind))")`; `bottomProgressBar` — the fill colour `taskType == .counting && maxCount > 0 && currentCount > maxCount ? Color.risoGold : color`, and the text:
 
 ```swift
             ViewThatFits(in: [.horizontal, .vertical]) {
@@ -3805,116 +5910,286 @@ export function cellCountFit(cur: number, max: number, kind: CountKind, cellSize
                 barText(formatCount(cur, kind: barKind))
                 Color.clear.frame(width: 0, height: 0)
             }
+            .frame(maxWidth: .infinity)
 ```
 
-with `private var barKind: CountKind { taskType == .counting ? countKind : .discrete }` and `barText` = the existing `Text(...).font(.risoHead(9, .extraBold)).foregroundStyle(Color.risoInk).lineLimit(1).fixedSize()`. Gold fill text stays `risoInkStatic` (content on gold — `reference_riso_dark_mode_tokens`). ×tag `formatCount(maxCount, kind: countKind)`, VoiceOver `formatCount(…, kind: countKind)` (+ `countUnitSuffix` not needed — the title carries the unit).
+with
 
-- [ ] **Step 4: Run** web tests, `WEB_CHECK`; `IOS_SNAP` for every file listed as must-stay-green (red ⇒ fix, except the one `cur`-tier exception named under Files) + record `RisoBoardCellKindsSnapshotTests`, read all six vs handoff C1 (5×5 @65: `112h 15m` drops to fill only; overshoot cell gold full bar `28.4/26.2`).
+```swift
+    private func barText(_ s: String) -> some View {
+        Text(s).font(.risoHead(9, .extraBold)).foregroundStyle(Color.risoInk).lineLimit(1).fixedSize()
+    }
+```
 
-- [ ] **Step 5: Playwright validation.** A seeded 5×5 board with the worst-case cells → screenshot light/dark → `.playwright-mcp/task20-c1-5x5-{light,dark}.png`; vs handoff C1 web (`88px` cells).
+(`risoInk` on gold: in dark mode the adaptive ink is cream — use `Color.risoInkStatic` for the text when the fill is gold, `reference_riso_dark_mode_tokens`.) Wire `countKind:` at the three call sites.
+
+- [ ] **Step 5: Run** web tests + `WEB_CHECK`; `IOS_SNAP` — record the six new baselines; run the must-stay-green classes; handle the `cur`-tier exception as stated; read all new PNGs vs handoff C1 (5×5 @65: `112h 15m` fill only; the overshoot cell's bar gold and full with `28.4/26.2` or `28.4`). `node scripts/check-file-sizes.mjs`.
+
+- [ ] **Step 6: Playwright validation.** Seed a 5×5 board with the worst-case tasks (reuse `counter-kinds-logging.spec.ts`'s seeding pattern in a throwaway MCP session) → screenshot light/dark → `.playwright-mcp/task19-c1-5x5-{light,dark}.png` vs handoff C1 web (88px).
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add apps/web apps/ios
+git commit -m "feat(counters): board cells format per kind with cur/max → cur → fill tiers, ×goal tag, gold overshoot fill; previews resolve the family kind (R19) (PR 4 Task 19)"
+```
+
+---
+
+### Task 20: C2 — rows, subtitles and library rows read the kind
+
+**Files:**
+- Create: `apps/web/src/components/counters/counterRowTitle.ts` — the ONE web helper the three counting-subtitle sites share (extract-at-three)
+- Modify: `apps/web/src/pages/tasks/TaskRow.tsx:170-182` (`computeSubtitle`), `apps/web/src/components/wizard/TaskRow.tsx:83-89` (`buildTaskSubtitle`), `apps/web/src/components/compoundWizard/SubtaskCard.tsx:384-390` (`buildTaskSubtitle`)
+- Modify: `apps/web/src/pages/tasks/taskCountDisplay.ts:55-64` (`computeStatusLabel` via `formatCount`)
+- Modify: `apps/ios/OYBC/Helpers/TaskCountDisplay.swift:61-68` (`countingSubtitle`), `apps/ios/OYBC/Views/TasksTab/Components/RisoTaskRowView.swift:120-121`, `apps/ios/OYBC/Views/CreateTab/Components/RisoLibrarySheetView.swift:429-432`
+- Test: `apps/web/src/components/counters/__tests__/counterRowTitle.test.ts` (create), `apps/web/src/pages/tasks/__tests__/taskCountDisplay.test.ts` (+3 cases; create the file if absent), `apps/ios/OYBCTests/TaskCountDisplayTests.swift` (+2 cases; create if absent)
+- Add snapshots: `RisoTasksTabSnapshotTests/testRowContinuousLight`, `testRowDurationLight` (handoff `taskRows[]`); existing row baselines stay green
+
+**Interfaces:**
+- Consumes: `generateCounterTaskTitle(…, countKind)`, `formatCount`, `countUnitSuffix`, `resolveCountKind`.
+- Produces: web `counterRowTitle(task: Pick<Task, 'action' | 'unit' | 'maxCount' | 'countKind'>): string | null` — the auto title from the task's own fields (`Run 26.2 miles`, `Practice 10h 30m`), or null when the fields cannot form one.
+
+- [ ] **Step 1: Failing tests.** `counterRowTitle.test.ts`:
+
+```ts
+import { describe, expect, it } from 'vitest';
+import { counterRowTitle } from '../counterRowTitle';
+
+describe('counterRowTitle', () => {
+  it('continuous / duration / discrete', () => {
+    expect(counterRowTitle({ action: 'Run', unit: 'miles', maxCount: 26.2, countKind: 'continuous' })).toBe('Run 26.2 miles');
+    expect(counterRowTitle({ action: 'Practice', unit: '', maxCount: 630, countKind: 'duration' })).toBe('Practice 10h 30m');
+    expect(counterRowTitle({ action: 'Read', unit: 'pages', maxCount: 300 })).toBe('Read 300 pages');
+  });
+  it('null when the fields cannot form a title', () => {
+    expect(counterRowTitle({ action: 'Run', unit: '', maxCount: 5 })).toBeNull();
+    expect(counterRowTitle({ action: '', unit: 'mi', maxCount: 5 })).toBeNull();
+    expect(counterRowTitle({ action: 'Run', unit: 'mi' })).toBeNull();
+  });
+});
+```
+
+`taskCountDisplay.test.ts` (+cases; the module's `CountDisplayTask` slice):
+
+```ts
+it('status labels format per kind', () => {
+  const base = { type: TaskType.COUNTING, sharedCounterId: null, baseline: null, isCompleted: false } as const;
+  expect(computeStatusLabel({ ...base, currentCount: 12.4, maxCount: 26.2, countKind: 'continuous' })).toBe('12.4 / 26.2');
+  expect(computeStatusLabel({ ...base, currentCount: 270, maxCount: 630, countKind: 'duration' })).toBe('4h 30m / 10h 30m');
+  expect(computeStatusLabel({ ...base, currentCount: 6, maxCount: 10 })).toBe('6 / 10');
+});
+```
+
+iOS `TaskCountDisplayTests` (+cases):
+
+```swift
+    func testCountingSubtitlePerKind() {
+        var run = LinkedWindowKit.task("r", maxCount: 26.2, currentCount: 12.4); run.countKind = .continuous; run.unit = "mi"
+        XCTAssertEqual(TaskCountDisplay.countingSubtitle(for: run), "Run · 12.4 / 26.2 mi")
+        var practice = LinkedWindowKit.task("p", maxCount: 630, currentCount: 270); practice.countKind = .duration; practice.action = "Practice"; practice.unit = ""
+        XCTAssertEqual(TaskCountDisplay.countingSubtitle(for: practice), "Practice · 4h 30m / 10h 30m")
+    }
+```
+
+- [ ] **Step 2: Run — FAIL.** `WEB_TEST counterRowTitle taskCountDisplay` / `IOS_TEST -only-testing:OYBCTests/TaskCountDisplayTests`
+
+- [ ] **Step 3: Implement.** `counterRowTitle.ts`:
+
+```ts
+import { countKindNeedsUnit, generateCounterTaskTitle, resolveCountKind, type Task } from '@oybc/shared';
+
+/** The auto counting title from a task's own fields, or null when they cannot form one. */
+export function counterRowTitle(task: Pick<Task, 'action' | 'unit' | 'maxCount' | 'countKind'>): string | null {
+  const kind = resolveCountKind(task);
+  const action = (task.action ?? '').trim();
+  const unit = (task.unit ?? '').trim();
+  if (!action || task.maxCount === undefined || task.maxCount === null) return null;
+  if (countKindNeedsUnit(kind) && !unit) return null;
+  return generateCounterTaskTitle(action, task.maxCount, unit, undefined, kind);
+}
+```
+
+`computeSubtitle` (`TaskRow.tsx:179-181`) → `const t = counterRowTitle(task); if (t) return t;`; both `buildTaskSubtitle`s → `const derived = counterRowTitle(task); if (!derived) return ''; return derived.toLowerCase() === task.title.trim().toLowerCase() ? '' : derived;`. `computeStatusLabel`: `const kind = resolveCountKind(task); … return `${formatCount(current, kind)} / ${formatCount(max, kind)}`;`. iOS `countingSubtitle`:
+
+```swift
+    static func countingSubtitle(for task: Task) -> String? {
+        let kind = resolveCountKind(task.countKind)
+        guard let action = task.action, let max = task.maxCount, (task.unit != nil || kind == .duration) else { return nil }
+        return "\(action) · \(formatCount(displayedCount(for: task), kind: kind)) / \(formatCount(max, kind: kind))\(countUnitSuffix(kind, unit: task.unit))"
+    }
+```
+
+`RisoTaskRowView.subtitle` counting → `guard let action = task.action, let max = task.maxCount else { return nil }; let kind = resolveCountKind(task.countKind); guard countKindNeedsUnit(kind) ? !(task.unit ?? "").isEmpty : true else { return nil }; return "\(action) · goal \(formatCountWithUnit(max, kind: kind, unit: task.unit))"`; `RisoLibrarySheetView.buildSubtitle` counting the same with its `!a.isEmpty` guard kept.
+
+- [ ] **Step 4: Run** tests PASS; `WEB_CHECK`; record the two `RisoTasksTabSnapshotTests` additions (rows `Run 26.2 mi · 12.4 / 26.2`, `Practice 10h 30m · 4h 30m / 10h 30m`); the standing `RisoTasksTab` reds stay the same SET.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add apps/web apps/ios
+git commit -m "feat(counters): task rows, library rows and status labels format per kind; one counting-subtitle helper on web (PR 4 Task 20)"
+```
+
+---
+
+### Task 21: Kind-blind sweep, linked-counter row, count-formatting guard, caps
+
+**Files:**
+- Modify: `apps/web/src/pages/tasks/LinkedCounterCaptionView.tsx:26-55` + `apps/ios/OYBC/Views/TasksTab/Components/LinkedCounterCaptionView.swift:60-130` — #548 rows 91/92: the found state stays a navigation row WITHOUT the "Linked to" label (`{title}` · `{formatCountTotal(lifetime, kind)}{unit suffix}` · ›); the loading and not-found states render nothing (`null` / `EmptyView()`); R7 `:104` → `formatCountTotal`. `LinkedCounterSource` gains `kind: CountKind` (from the root task in `resolveSource`).
+- Modify: `apps/web/src/pages/tasks/__tests__/LinkedCounterCaptionView.test.ts` (update to the new contract), `apps/ios/OYBCSnapshotTests/LinkedCounterCaptionSnapshotTests.swift` (re-record `testLinked{Light,Dark}`; `testSourceNotFound{Light,Dark}` become `testSourceNotFoundRendersNothing{Light,Dark}` — a 393×60 frame that must be blank paper; delete the two old PNGs)
+- Create: `scripts/audit/check-count-formatting.mjs`, `scripts/audit/count-formatting-allowlist.json`; Modify: `.github/workflows/drift-guardrails.yml` (one step beside `check-file-sizes`)
+- Modify: `scripts/audit/file-size-allowlist.json` — set `BoardPlaySurface.tsx`, `BoardPlayView.swift`, `BoardPlayViewModel.swift` to their measured `wc -l`; DELETE the `CounterDetailView.swift` entry (Task 18 took it under 1000)
+- Docs: `docs/COUNTER_KINDS.md` Status ("PR 3 #NNN, PR 4 #MMM shipped — feature complete"), strike §7's carried items; `docs/TASK_SYSTEM.md` logging paragraph; CLAUDE.md §Drift guardrails table gains the `check-count-formatting` row
+
+**Interfaces:** `node scripts/audit/check-count-formatting.mjs [--self-test]` — exit 0 clean, 1 on a new offender; allow-list entries are `"<repo-relative path>::<trimmed line>"` strings (a moved line still matches; an edited line re-flags).
+
+- [ ] **Step 1: Failing guard self-test.** `node scripts/audit/check-count-formatting.mjs --self-test` → FAIL (script missing).
+
+- [ ] **Step 2: Implement the guard.**
+
+```js
+#!/usr/bin/env node
+/**
+ * check-count-formatting.mjs — counter kinds drift guard (docs/COUNTER_KINDS.md §5).
+ * Every count on screen goes through formatCount / formatCountTotal with the
+ * task's REAL kind. Fails on a NEW hard-coded discrete kind or a raw
+ * .formatted() / .toLocaleString() on a counting value. Known-intentional
+ * sites live in count-formatting-allowlist.json as "path::trimmed line".
+ * Run: node scripts/audit/check-count-formatting.mjs [--self-test]
+ */
+import { readFileSync, readdirSync, statSync } from 'node:fs';
+import { dirname, join, relative, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const root = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
+const COUNT_NAMES = '(?:lifetime|logged|goal|currentCount|maxCount|remaining|todayTotal|over|next|previewCount|amount|selectedAmount)';
+const RULES = [
+  { ext: '.swift', re: /formatCount(?:ForInput)?\([^)]*kind:\s*\.discrete\)/ },
+  { ext: '.swift', re: new RegExp(`\\b${COUNT_NAMES}\\.formatted\\(\\)`) },
+  { ext: '.ts', re: /formatCount(?:ForInput)?\([^)]*'discrete'\)/ },
+  { ext: '.ts', re: new RegExp(`\\b${COUNT_NAMES}\\)?\\.toLocaleString\\(\\)`) },
+];
+
+export function offenders(path, text) {
+  const ext = path.endsWith('.swift') ? '.swift' : '.ts';
+  return text.split('\n').flatMap((line) =>
+    RULES.some((r) => r.ext === ext && r.re.test(line)) ? [`${path}::${line.trim()}`] : [],
+  );
+}
+
+function walk(dir, out = []) {
+  for (const name of readdirSync(dir)) {
+    const p = join(dir, name);
+    if (statSync(p).isDirectory()) { if (!['node_modules', '__tests__', 'Fixtures'].includes(name)) walk(p, out); }
+    else if (/\.(swift|ts|tsx)$/.test(name) && !/\.test\.tsx?$/.test(name)) out.push(p);
+  }
+  return out;
+}
+
+if (process.argv.includes('--self-test')) {
+  const bad = offenders('x.swift', 'Text(formatCount(v, kind: .discrete))\nText(group.lifetime.formatted())');
+  const good = offenders('x.ts', "formatCount(v, kind)\nconst n = (12).toFixed(2)");
+  if (bad.length !== 2 || good.length !== 0) { console.error('self-test failed', { bad, good }); process.exit(1); }
+  console.log('check-count-formatting self-test OK');
+  process.exit(0);
+}
+
+const allow = new Set(JSON.parse(readFileSync(join(root, 'scripts/audit/count-formatting-allowlist.json'), 'utf8')).entries);
+const found = [join(root, 'apps/ios/OYBC'), join(root, 'apps/web/src')]
+  .flatMap((d) => walk(d))
+  .flatMap((p) => offenders(relative(root, p), readFileSync(p, 'utf8')));
+const fresh = found.filter((f) => !allow.has(f));
+const stale = [...allow].filter((a) => !found.includes(a));
+for (const s of stale) console.log(`note: stale allow-list entry (shrink it): ${s}`);
+if (fresh.length) {
+  console.error('Counts must render through formatCount / formatCountTotal with the task kind:\n' + fresh.map((f) => `  ${f}`).join('\n'));
+  process.exit(1);
+}
+console.log(`check-count-formatting OK (${found.length} allow-listed)`);
+```
+
+`count-formatting-allowlist.json` = `{ "_comment": "Intentional discrete-only / non-count sites (docs/COUNTER_KINDS.md §5). Shrink, never grow to dodge a fix.", "entries": [] }` — then run the script, and for each reported line either fix it (a counting value → the task's kind) or, when it is genuinely discrete by definition (a member-count, a step index, Counter Detail's Discrete `#` chip label), add its `path::line` entry with that reason in the PR body.
+
+- [ ] **Step 3: Run** `node scripts/audit/check-count-formatting.mjs --self-test` PASS, then the full run — fix every offender until it exits 0 with only reasoned allow-list entries.
+
+- [ ] **Step 4: Linked-counter row.** Web test update (`LinkedCounterCaptionView.test.ts`): the found case expects `aria-label="Open Push-ups counter"`, `Push-ups`, `512 reps` and NOT `Linked to`; the not-found and loading cases expect `renderToStaticMarkup(...) === ''`; add a continuous root case (`countKind: 'continuous', currentCount: 1250.5, unit: 'miles'` → `1,250.5 miles`). Implement:
+
+```tsx
+export function LinkedCounterCaptionView({ sharedCounterId, sourceTask, onOpenCounter }: LinkedCounterCaptionViewProps): React.ReactElement | null {
+  if (!sourceTask || !onOpenCounter) return null;
+  const kind = resolveCountKind(sourceTask);
+  return (
+    <button type="button" className={`${styles.subtaskRow} ${styles.linkedCounterRow}`}
+      aria-label={`Open ${sourceTask.title} counter`} onClick={() => onOpenCounter(sharedCounterId)}>
+      <span className={styles.linkedCounterTitle}>{sourceTask.title}</span>
+      <span className={styles.linkedCounterTotal}>
+        {formatCountTotal(sourceTask.currentCount ?? 0, kind)}{countUnitSuffix(kind, sourceTask.unit)}
+      </span>
+      <span className={styles.linkedCounterChevron} aria-hidden="true">›</span>
+    </button>
+  );
+}
+```
+
+(`isLoading` stays in the props type for the caller but is unused — drop it from the destructure; delete `.linkedCounterLabel` / `.linkedCounterCaption` CSS.) iOS: `LinkedCounterSource(title:lifetime:unit:kind:)` (from `resolveCountKind(task.countKind)`); `LinkedCounterCaptionLabel` found branch drops the `Text("Linked to")` and shows `Text(source.title)` + `Text("\(formatCountTotal(source.lifetime, kind: source.kind))\(countUnitSuffix(source.kind, unit: source.unit))")`; the else branch is `EmptyView()`. Re-record per Files and read.
+
+- [ ] **Step 5: Caps + docs.** `wc -l` the three allow-listed files and write the numbers; delete the `CounterDetailView.swift` entry; `node scripts/check-file-sizes.mjs` exits 0 with no "stale" note. Update the docs listed under Files.
 
 - [ ] **Step 6: Commit**
 
 ```bash
-git add apps/web apps/ios
-git commit -m "feat(counters): board cells format per kind with cur/max → cur → fill tiers, ×goal tag, gold overshoot fill (PR 4 Task 20)"
-```
-
----
-
-### Task 21: Rows, titles, previews and wizard rows read the family kind (C2, R19)
-
-**Files:**
-- Modify: `apps/web/src/pages/tasks/taskCountDisplay.ts:55-64` (`computeStatusLabel` → `${formatCount(cur, kind)} / ${formatCount(max, kind)}`)
-- Modify: `apps/web/src/pages/tasks/TaskRow.tsx:95-105`, `apps/web/src/components/wizard/TaskRow.tsx:40-50`, `apps/web/src/components/wizard/LibrarySheet.tsx:135-145`, `apps/web/src/components/board/cellModel.ts:20-27` (`taskCellLabel` → `generateCounterTaskTitle(…, undefined, resolveCountKind(task))`)
-- Modify: `apps/web/src/components/wizard/BoardWizardPreviewStep.tsx:95-107` (pass the family kind into `toBoardCellModel` — R19), `apps/web/src/hooks/useSquaresEditDraft.ts:249` (same)
-- Modify: `apps/ios/OYBC/Helpers/TaskCountDisplay.swift:60-70` (unit suffix via `countUnitSuffix`), `apps/ios/OYBC/Views/TasksTab/Components/RisoTaskRowView.swift:118-122`, `apps/ios/OYBC/Views/CreateTab/Components/RisoLibrarySheetView.swift:428-433` (`"\(a) · goal \(formatCountWithUnit(m, kind:, unit:))"`; Duration rows without a unit), `apps/ios/OYBC/Views/CreateTab/Components/BoardWizardPreviewStepView.swift` + `BoardWizardPreviewDerived.swift` (cells get `countKind: resolveFamilyCountKind`)
-- Test: `apps/web/src/pages/tasks/__tests__/taskCountDisplay.test.ts` (+cases), `apps/web/src/components/board/__tests__/cellModel.test.ts` (+R19 case), `apps/ios/OYBCTests/TaskCountDisplayTests.swift` (+cases)
-- Add snapshots: `RisoTasksTabSnapshotTests/testRowContinuousLight`, `testRowDurationLight` (handoff `taskRows[]`)
-
-**Interfaces:**
-- Consumes: `resolveFamilyCountKind`, `formatCount`, `formatCountWithUnit`, `generateCounterTaskTitle(…, countKind)`.
-- Produces: no new API. Rule (R19): every cell / row builder that receives a `taskMap` resolves the kind through `resolveFamilyCountKind`, so a wizard-pending linked task renders its root's kind before the drain stamps it.
-
-- [ ] **Step 1: Failing tests.** `taskCountDisplay.test.ts`: Continuous 12.4/26.2 → `12.4 / 26.2`; Duration 270/630 → `4h 30m / 10h 30m`; Discrete 6/10 → `6 / 10` (unchanged). `cellModel.test.ts`: `toBoardCellModel({ key, task: pendingLinked /* sharedCounterId: 'root', no countKind */, done: false, currentCount: 3.1, countKind: resolveFamilyCountKind(pendingLinked, lookup) })` → `count.kind === 'continuous'`. iOS `TaskCountDisplayTests`: `"Practice · 4h 30m / 10h 30m"` (no trailing unit space), `"Run · 12.4 / 26.2 mi"`.
-
-- [ ] **Step 2: Run — FAIL.** **Step 3: Implement** the listed sites (each a one-line `formatCount` / kind-thread change). **Step 4: Run** tests + `IOS_SNAP -only-testing:OYBCSnapshotTests/RisoTasksTabSnapshotTests` (the new two recorded; the standing `RisoTasksTab` reds unchanged in SET), `-only-testing:OYBCSnapshotTests/WizardArrangePreviewSnapshotTests` green.
-
-- [ ] **Step 5: Commit**
-
-```bash
-git add apps/web apps/ios
-git commit -m "feat(counters): task rows, library rows, titles and wizard previews read the family kind (R19) (PR 4 Task 21)"
-```
-
----
-
-### Task 22: Kind-blind sweep, R7 remainder, linked-counter row, guard
-
-**Files:**
-- Modify: `apps/web/src/pages/tasks/LinkedCounterCaptionView.tsx:26-55` + `apps/ios/OYBC/Views/TasksTab/Components/LinkedCounterCaptionView.swift:90-125` — #548 rows 91/92: drop the "Linked to" label word and the loading / not-found captions (render nothing in those states); the found row stays a navigation row: `{title} · {formatCountTotal(lifetime, kind)}{countUnitSuffix} ›` (R7 site `:104`)
-- Modify: every remaining `formatCount(…, kind: .discrete)` UI call site on iOS that is a counting value (re-run `grep -rn "kind: \.discrete" apps/ios/OYBC/Views apps/ios/OYBC/Helpers` — after Tasks 13–21 only intentional ones may remain, each with a `// discrete by definition: …` comment) and every `.toLocaleString()` / raw `${…count}` counting display on web (`grep -rn "toLocaleString()\|currentCount}\|maxCount}" apps/web/src --include=*.tsx`)
-- Create: `scripts/audit/check-count-formatting.mjs` — fails when a NEW `formatCount(` with a hard-coded `.discrete` / `'discrete'` kind, or a counting `.formatted()` / `.toLocaleString()`, appears outside an allowlist file (`scripts/audit/count-formatting-allowlist.json`, seeded with the intentional sites from the sweep); wire into `.github/workflows/drift-guardrails.yml` beside `check-file-sizes`
-- Re-record (intentional): `LinkedCounterCaptionSnapshotTests/testLinked{Light,Dark}`, `testSourceNotFound{Light,Dark}` (the not-found case now renders nothing — replace those two tests with `testSourceNotFoundRendersNothing` asserting the view's body is empty via a 1×1 image or delete them and say so in the commit)
-- Docs: `docs/COUNTER_KINDS.md` Status ("PR 3 #NNN, PR 4 #MMM shipped — feature complete"), §7 items struck through; `docs/TASK_SYSTEM.md` logging paragraph; CLAUDE.md §Windowed Completion untouched; tick closed #548 rows in the PR body
-
-**Interfaces:** none new (sweep + guard).
-
-- [ ] **Step 1: Failing guard test.** `scripts/audit/check-count-formatting.mjs` gets a self-test mode (`--self-test` runs it over a fixture string containing `formatCount(x, kind: .discrete)` and expects exit 1); run `node scripts/audit/check-count-formatting.mjs --self-test` — FAIL (script missing).
-- [ ] **Step 2: Implement** the script (pure Node, regex over `apps/ios/OYBC/**/*.swift` and `apps/web/src/**/*.{ts,tsx}` excluding tests; allowlist entries are `path:line-content` strings so a moved line re-flags), seed the allowlist from the sweep, add the workflow step.
-- [ ] **Step 3: Sweep** the sites; update LinkedCounterCaptionView both platforms; re-record per Files.
-- [ ] **Step 4: Run** the full PR 4 gate (below).
-- [ ] **Step 5: Commit**
-
-```bash
-git add apps scripts .github docs
-git commit -m "feat(counters): kind-blind sweep + count-formatting drift guard; linked-counter row shows the thing, not a caption (#548 91/92, R7) (PR 4 Task 22)"
+git add apps scripts .github docs CLAUDE.md
+git commit -m "feat(counters): kind-blind sweep + count-formatting drift guard; linked-counter row shows the thing, not a caption (#548 91/92, R7); file-size caps shrunk to the new counts (PR 4 Task 21)"
 ```
 
 ### PR 4 gate
 
-- [ ] Same checks as the PR 3 gate, plus `node scripts/audit/check-count-formatting.mjs`, plus `WEB_E2E e2e/counter-kinds-logging.spec.ts e2e/windowed-completion.spec.ts e2e/late-log-counting.spec.ts e2e/profile-home.spec.ts`.
-- [ ] `IOS_SNAP` red SET = standing reds only; every re-recorded baseline is listed in the PR body with its reason (kind row / caption removal / new section).
-- [ ] Owner device-test relay (CLAUDE.md — never drive the sim): numbered steps in the PR body — 1. Tasks → new Counting → Continuous "Run 26.2 miles"; 2. put it on a board, tap the square, tap 6.6, +; 3. type 3,1, +; 4. long-press → "+ Add 3.1 mi"; 5. Edit task → Discrete → confirm shows "Run 26 miles", "13 logged"; 6. a Duration "Practice 10h 30m" on a 5×5 board shows `4h 30m/10h 30m` or `4h 30m`.
+- [ ] Same checks as the PR 3 gate, plus `node scripts/audit/check-count-formatting.mjs`, plus `WEB_E2E e2e/counter-kinds-logging.spec.ts e2e/windowed-completion.spec.ts e2e/late-log-counting.spec.ts e2e/profile-home.spec.ts e2e/squares-editor.spec.ts`.
+- [ ] `IOS_SNAP` red SET = the standing reds only; every re-recorded baseline is listed in the PR body with its reason; every #548 row closed in PR 4 (1–9, 79–92) is ticked.
+- [ ] Owner device-test relay (CLAUDE.md — never drive the sim), numbered in the PR body: 1. Tasks → new Counting → Continuous "Run 26.2 miles"; 2. put it on a board, tap the square, tap 6.6, +; 3. type 3,1 in the field, +; 4. long-press → "+ Add 3.1 mi"; 5. Edit task → Discrete → the confirm shows "Run 26 miles" and the rounded logged total; 6. a Duration "Practice 10h 30m" on a 5×5 board shows `4h 30m/10h 30m`, `4h 30m`, or fill only, depending on the cell.
 
 ---
 
 ## Self-review
 
-**Spec coverage** (`docs/COUNTER_KINDS.md` §5 + brief §3 + handoff decisions):
+**Spec coverage** (`docs/COUNTER_KINDS.md` §5 + brief §3 + handoff decisions + owner overrides):
 
 | Requirement | Task |
 | --- | --- |
-| Kind labels Discrete / Continuous / Duration; never "Amount" | 1, 3 (test `never says Amount`) |
-| Kind picker states (create / Duration locked out / locked in / linked tag) | 1 (vectors), 3 |
+| Kind labels Discrete / Continuous / Duration; never "Amount" | 1 (`COUNT_KIND_LABELS`), 3 (`never says Amount`) |
+| Picker states (create / Duration locked out / locked in / linked tag) | 1 (vectors), 2, 3 |
 | Goal entry: number pad / decimal pad / h:m wheel / web h·m fields | 4 |
-| A1 special panel + Tasks-tab quick-add | 5 |
-| A2 compound sub-task create + edit | 6 |
-| A3 Board Edit sheet | 9 |
-| A4 Task Detail edit | 8 |
-| A5 pool row editor | 12 |
-| A6 hub New counter | 10 |
-| Unit hidden for Duration; Duration titles "Practice 10h 30m" | 1, 5, 6 |
-| Only Continuous → Discrete confirms; copy; family line | 7, 8, 9, 12 |
-| Switch through `switchCounterKind`, staged surfaces atomic | 7, 8, 9, 12 |
-| Tap opens the sheet on both platforms; web Discrete +1 tap removed | 14, 15 |
-| Continuous/Duration sheet: pinned field, no OK, chips ¼ · ½ · goal · # | 13, 14, 15 |
-| Chips without a goal per kind | 13, 19 |
-| Last-used pre-selects, else # | 13, 14, 15 |
-| Long-press "+ Add {last} unit" / "− Remove" / Custom… | 16 |
-| Late log | 17 |
-| "+ Log {amount}" pills; never-logged opens Detail | 13, 18 |
-| Toasts per kind | 13, 18 |
-| Counter Detail | 19 |
-| Board cells fit tiers, ×goal, gold overshoot | 20 |
-| Rows / titles / member stepper / vary range precision | 1, 11, 21 |
-| Owner override: Duration 1-minute steps everywhere | 1 (`goalChipAmounts` vectors 158/315), 11 (stepper), 13 |
-| Owner override: Duration ships now | all tasks carry Duration |
-| §7 carried items | Task numbers recorded in `docs/COUNTER_KINDS.md` §7 |
-| No explanatory copy; #548 rows on touched surfaces | 5, 6, 9, 10, 11, 12, 14, 15, 18, 19, 22 |
+| Member-row steppers per kind, 0.1 / 1-minute steps (R8, R16) | 5 |
+| A1 special panel + Tasks-tab quick-add; linked creates take the root kind (R19) | 6 |
+| A2 compound sub-task create + edit; inline children carry `countKind` | 7 |
+| Only Continuous → Discrete confirms; copy; family line; switch-then-guard once (U7) | 8 |
+| A4 Task Detail edit | 9 |
+| A3 Board Edit sheet (staged, atomic at Save) | 10 |
+| A6 hub New counter | 11 |
+| A5 pool row editor (staged) | 12 |
+| Unit hidden for Duration; Duration titles "Practice 10h 30m"; Duration needs no unit in Zod | 1, 6, 7 |
+| Tap opens the sheet on both platforms; web Discrete +1 tap removed | 14 |
+| Continuous / Duration sheet: pinned field, no OK, ¼ · ½ · goal · # | 13, 14 |
+| Chips without a goal per kind | 13, 18 |
+| Last-used pre-selects, else #; Discrete keeps `initialChipAmount` | 13 (vectors incl. "discrete keeps … 25") |
+| Long-press "+ Add {last} unit" / "− Remove" / Custom… | 15 |
+| Late log | 16 |
+| "+ Log {amount}" pills; never-logged opens Detail | 13, 17 |
+| Toasts per kind | 13 |
+| Counter Detail | 18 |
+| Board cells: fit tiers, ×goal, gold overshoot | 19 |
+| Rows / subtitles / library rows | 20 |
+| Vary range precision ("21.0–31.4 miles"), Duration whole minutes | 1, 5 |
+| Grouped lifetime totals (R7) | 1 (`formatCountTotal`), 11, 17, 18, 21 |
+| Owner override: Duration 1-minute steps everywhere | 1 (`formatRange`, `varyRangeLabel` vectors), 5 (stepper), 13 (`goalChips` 158 / 315 / 630) |
+| Owner override: Duration ships now | every task carries Duration |
+| §7 carried items | numbered in `docs/COUNTER_KINDS.md` §7 |
+| No explanatory copy; #548 rows on touched surfaces (U6) | 5, 6, 7, 10, 11, 12, 14, 17, 18, 21 |
+| Kind-blind sweep + a guard so it stays fixed (R9) | 21 |
 
-**Placeholder scan:** where a step says "use the real name — grep …" it names the exact grep and the exact symbol to match; no step defers content.
+**Placeholder scan:** remaining "read the file / use the literal" notes name the exact file:line and symbol (e.g. `TasksPage.tsx:35,290`, `bypass.ts:425,602`, `CounterDeleteConfirmDialog.module.css`); no step defers a decision. Two instructions are deliberately empirical and say exactly how to resolve them: Task 19's `cur`-tier baseline exception (re-record only cells that previously hid their count) and Task 21's allow-list seeding (fix, or allow-list with a reason, every reported line).
 
-**Type consistency:** `KindPickerLock` (`'none' | 'duration' | 'all'`), `parseCountInput(raw, kind, { allowZero })` / Swift `parseCountInput(_:kind:allowZero:)`, `LogChip`, `boardSheetChips(kind, goal)`, `initialLogSelection(kind, chips, default)`, `SharedCounterGroup.countKind`, `switchCounterKindInTransaction` / `AppDatabase.switchCounterKind(db:rootTaskId:to:now:)`, `KindSwitchPreview` fields — used with the same names and orders in every task.
+**Type consistency:** `KindPickerLock`, `parseCountInput(raw, kind, { allowZero })` ↔ `parseCountInput(_:kind:allowZero:)`, `KindSwitchPreview` (same seven fields both platforms), `applyKindSwitchThenGoalGuard(taskId, to, maxCount, nowIso)` ↔ `applyKindSwitchThenGoalGuard(db:taskId:to:maxCount:now:)`, `useKindSwitchRequest({ subject, kind, goalText, setKind, onSwitched })`, `LogChip` ↔ `CounterLogAmount.LogChip`, `boardSheetChips(kind, goal)` ↔ `boardSheetChips(kind:goal:)`, `initialLogSelection` ↔ `initialSelection`, `SharedCounterGroup.countKind` (declared last on iOS), `SquareEditTaskSheet.Patch.countKind` / `StagedTaskOverride.countKind`, `EditTaskSheet.Patch.countKind` — used with the same names and parameter orders in every task that consumes them.
 
-**Review Focus → owning tests:** 1 → Task 1 vectors + Task 4; 2 → Task 1 vectors; 3 → Task 5 (`linked create takes the root kind`, `testLinkedCreateTakesRootKind`); 4 → Task 9 (`kind switch then goal edit, atomic`, `testSwitchThenGoalEditAtomic`); 5 → Task 20 (`cellCountFit` table + `RisoBoardCellKindsSnapshotTests`).
+**Review Focus → owning tests:** 1, 2 → Tasks 1–2 vectors; 3 → Task 6 (web model test + two iOS save-path tests); 4 → Tasks 8 + 10 (guard rollback + real Board Edit Save path, both platforms); 5 → Task 19 (`cellCountFit` table, `RisoBoardCell` tests, iOS grid snapshots). None of these tests asserts its own input back (each drives the production path and reads the stored row or rendered markup).

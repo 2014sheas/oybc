@@ -110,7 +110,9 @@ accepted except for the two owner overrides below.
 quick-add) · A2 compound sub-task (create + the edit editor's new sub-task;
 an existing sub-task keeps its kind) · A3 Board Edit square sheet (staged,
 applied at Save) · A4 Task Detail edit · A5 pool row editor (staged) · A6
-Counters hub New counter ("Start from" uses Goal entry). Duration titles
+Counters hub New counter ("Start from" uses Goal entry; the hub keeps its noun
+field for every kind — it names the counter — so a Duration task, which has no
+unit, never auto-links by name). Duration titles
 generate as "Practice 10h 30m" (no unit).
 
 **Switching (D4).** Only **Continuous → Discrete** confirms: title "Switch to
@@ -151,7 +153,8 @@ zeros trimmed, locale separator, Duration `Xh Ym` with zero parts dropped);
 lifetime totals use the grouped `formatCountTotal`. Board cells fit the bar
 text in tiers — `cur/max` → `cur` → fill only; the `×goal` tag always carries
 the goal. Overshoot shows the real value with a **gold** bar fill (never
-clamped). Vary ranges render both ends at the more precise end's precision
+clamped) — on board cells and on the web DetailModal's bar, where the handoff
+draws it; hub / Counter Detail rows keep the green "met" fill. Vary ranges render both ends at the more precise end's precision
 ("21.0–31.4 miles"); Duration ranges are whole minutes ("8h 24m–12h 36m").
 
 ## 6. PR train
@@ -169,13 +172,13 @@ clamped). Vary ranges render both ends at the more precise end's precision
 
 Carried to PR 3/4 (each closed by the named task in `docs/COUNTER_KINDS_UI_PLAN.md`):
 
-- Member-row steppers are `Int` (R8); UI callers do not pass the kind (R16). → **Task 11**
-- Kind-blind views format as discrete (R9). → **Tasks 13–22** (each surface's own task; Task 22 sweeps the remainder)
-- `.formatted()` grouping at 5 lifetime sites (R7). → **Task 1** (`formatCountTotal`) + **Tasks 10, 18, 19, 22**
-- `AutoCreateCompoundChild` lacks `countKind`. → **Task 1** (type + schema) + **Task 6** (both create paths)
-- Previews of links to a continuous root must resolve the root's kind (R19). → **Task 5** (linked creates stamp the root kind) + **Task 21** (`resolveFamilyCountKind` in cell models)
-- `varyRangeLabel` / `countingSummary` duration copy. → **Task 1** (`formatCountRange`) + **Task 11**
-- iOS `switchCounterKind` cascades per row (perf). → **Task 7** (one family fetch, batched in the shared transaction)
+- Member-row steppers are `Int` (R8); UI callers do not pass the kind (R16). → **Task 5**
+- Kind-blind views format as discrete (R9). → **Tasks 13–20** (each surface's own task) + **Task 21** (sweep + `check-count-formatting` drift guard)
+- `.formatted()` grouping at 5 lifetime sites (R7). → **Task 1** (`formatCountTotal`) + **Tasks 7, 11, 17, 18, 21**
+- `AutoCreateCompoundChild` lacks `countKind`. → **Task 1** (type + schema) + **Task 7** (both create paths)
+- Previews of links to a continuous root must resolve the root's kind (R19). → **Task 6** (linked creates parse and stamp the root kind) + **Task 19** (`resolveFamilyCountKind` in every cell model, incl. the wizard preview)
+- `varyRangeLabel` / `countingSummary` duration copy. → **Task 1** (`formatCountRange`) + **Task 5**
+- iOS `switchCounterKind` cascades per row (perf). → **Task 8** (`runBoardCascadeForTasks`: each affected board derived once)
 - Digit/locale decision: counts use Latin digits (R10). → **Task 1** (parsers accept ASCII digits only; formatters stay `latn`)
 
 ## 8. Testing
