@@ -420,6 +420,35 @@ describe('prefillRemainingTargets (RC4 — one-off remaining prefill)', () => {
     expect(Object.keys(rules).sort()).toEqual(['c10', 'c5']);
   });
 
+  it('a continuous member keeps its fractional goal and pro-rates in 0.1 steps; a discrete sub-1 goal is skipped', () => {
+    const sources = [makeSource({ sourceId: 'b1' })];
+    const byId: Record<string, Task> = {
+      ...tasksById,
+      miles: makeTask('miles', {
+        type: TaskType.COUNTING,
+        maxCount: 26.2,
+        countKind: 'continuous',
+        unit: 'miles',
+        action: 'Run',
+      }),
+      half: counter('half', 0.5),
+    };
+    const { sources: next } = prefillRemainingTargets(
+      sources,
+      'b1',
+      supply({
+        rawSupplyTaskIds: ['miles', 'half'],
+        windowCountByTaskId: { miles: 3.4 },
+        sourceWindow: { timeframe: Timeframe.MONTHLY, startDate: '2026-09-01', endDate: null },
+      }),
+      byId,
+      weeklyTarget,
+    );
+    // remaining 26.2 − 3.4 = 22.8, then ceil(22.8 × 7 / 30 = 5.32) to 0.1 = 5.4.
+    expect(memberRuleFor(next[0], 'miles').target).toBe(5.4);
+    expect(memberRuleFor(next[0], 'half').target).toBeUndefined();
+  });
+
   it('floors at 1 when the member is already at (or past) its goal', () => {
     const sources = [makeSource({ sourceId: 'b1' })];
     const { sources: next } = prefillRemainingTargets(

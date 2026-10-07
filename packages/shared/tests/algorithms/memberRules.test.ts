@@ -71,13 +71,13 @@ describe('nominalWindowDays', () => {
 
 describe('autoTarget', () => {
   it.each(V.autoTarget as any[])('$name', (v: any) => {
-    expect(autoTarget(v.goal, v.sourceDays, v.targetDays)).toBe(v.expected);
+    expect(autoTarget(v.goal, v.sourceDays, v.targetDays, v.countKind ?? 'discrete')).toBe(v.expected);
   });
 });
 
 describe('varyRange', () => {
   it.each(V.varyRange as any[])('$name', (v: any) => {
-    expect(varyRange(v.t, v.level as VaryLevel, v.goal)).toEqual(v.expected);
+    expect(varyRange(v.t, v.level as VaryLevel, v.goal, v.countKind ?? 'discrete')).toEqual(v.expected);
   });
 });
 
@@ -89,7 +89,16 @@ describe('rollTarget', () => {
             throw new Error('rng must not be called');
           }
         : makeSeededRng(v.seed);
-    expect(rollTarget(v.t, v.level as VaryLevel, v.goal, rng)).toBe(v.expected);
+    let calls = 0;
+    const counted = () => {
+      calls += 1;
+      return rng();
+    };
+    expect(rollTarget(v.t, v.level as VaryLevel, v.goal, counted, v.countKind ?? 'discrete')).toBe(
+      v.expected
+    );
+    // Exactly one sample on a real roll, none on level 0 / a degenerate range.
+    expect(calls).toBe(v.seed === null ? 0 : 1);
   });
 });
 
@@ -178,7 +187,7 @@ describe('planDerivedTasks', () => {
       manualTaskIds: v.manual,
       manualTaskVary: v.manualTaskVary,
       boardId: P.boardId,
-      window: P.window,
+      window: v.window ?? P.window,
       mode: v.mode,
       tasksById,
       childrenByCompoundId,
@@ -195,6 +204,7 @@ describe('planDerivedTasks', () => {
         sourceMember: d.sourceMemberId,
         replaces: d.replacesId,
         maxCount: d.maxCount,
+        countKind: d.countKind,
         baseline: d.baseline,
       }))
     ).toEqual(
@@ -203,14 +213,16 @@ describe('planDerivedTasks', () => {
         sourceMember: d.sourceMember,
         replaces: d.replaces,
         maxCount: d.maxCount,
+        countKind: d.countKind ?? 'discrete',
         baseline: d.baseline,
       }))
     );
+    const window = v.window ?? P.window;
     for (const d of out.derivedTasks) {
       expect(d.id).toBe(P.idPins[`derived:${d.rootTaskId}`]);
-      expect(d.timeframe).toBe(P.window.timeframe);
-      expect(d.startDate).toBe(P.window.startDate);
-      expect(d.endDate).toBe(P.window.endDate);
+      expect(d.timeframe).toBe(window.timeframe);
+      expect(d.startDate).toBe(window.startDate);
+      expect(d.endDate).toBe(window.endDate);
     }
     for (const titled of v.expected.derived.filter((d: any) => d.title !== undefined)) {
       const d = out.derivedTasks.find((x) => x.rootTaskId === titled.root);

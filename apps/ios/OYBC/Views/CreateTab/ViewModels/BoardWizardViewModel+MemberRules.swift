@@ -145,7 +145,8 @@ extension BoardWizardViewModel {
         var source = sources[index]
         for id in info.supplyTaskIds {
             guard let task = tasksById[id], task.type == .counting else { continue }
-            guard let goal = task.maxCount, goal >= 1 else { continue }
+            let kind = resolveCountKind(task.countKind)
+            guard let goal = task.maxCount, isWholeCountKind(kind) ? goal >= 1 : goal > 0 else { continue }
             guard BoardSources.memberRule(for: id, in: source).target == nil else { continue }
             source = BoardSources.withMemberRule(
                 source,
@@ -155,7 +156,8 @@ extension BoardWizardViewModel {
                         goal: goal,
                         windowCount: info.windowCountByTaskId[id] ?? 0,
                         sourceWindow: info.sourceWindow,
-                        targetWindow: prefillTargetWindow
+                        targetWindow: prefillTargetWindow,
+                        kind: kind
                     ))
                 )
             )

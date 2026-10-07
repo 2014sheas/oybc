@@ -140,19 +140,21 @@ extension BoardSources {
     ///
     /// Four explicit branches in order: unknown source window, unknown
     /// target window, a target window at least as long as the source's (no
-    /// shrink), else the pro-rated ceiling.
+    /// shrink), else the pro-rated ceiling — to the kind's step (0.1 for
+    /// continuous).
     ///
     /// - Parameters:
-    ///   - goal: The member's own `maxCount` (integer ≥ 1).
+    ///   - goal: The member's own `maxCount` (≥ 1 whole, > 0 continuous).
     ///   - sourceDays: Nominal days of the source board's window, or `nil`.
     ///   - targetDays: Nominal days of the board being assembled, or `nil`.
-    /// - Returns: The auto target (integer ≥ 1, ≤ `goal`).
-    static func autoTarget(goal: CountValue, sourceDays: Int?, targetDays: Int?) -> CountValue {
+    ///   - kind: The member's count kind.
+    /// - Returns: The auto target (one step ≥, ≤ `goal`).
+    static func autoTarget(goal: CountValue, sourceDays: Int?, targetDays: Int?, kind: CountKind = .discrete) -> CountValue {
         guard let sourceDays else { return goal }
         guard let targetDays else { return goal }
         if targetDays >= sourceDays { return goal }
         // Double math throughout, as in the TS twin. Bit-identical in range.
-        let prorated = (goal * Double(targetDays) / Double(sourceDays)).rounded(.up)
+        let prorated = ceilToCountStep(goal * Double(targetDays) / Double(sourceDays), kind: kind)
         return Swift.min(goal, prorated)
     }
 
@@ -173,7 +175,8 @@ extension BoardSources {
     /// goal-10 member on "a little" rolls inside `8...12`. Overshooting the
     /// goal is a feature: `currentCount > maxCount` is valid in this product.
     /// (Fixed 2026-10-06 — the first implementation capped `hi` at the goal
-    /// and only ever lowered.)
+    /// and only ever lowered.) "1" is the kind's step: continuous clamps and
+    /// rounds in tenths (6.1 on "a little" → `4.9...7.3`).
     ///
     /// Rounding is HALF-UP (`.rounded()` = `.toNearestOrAwayFromZero`),
     /// matching JS `Math.round` on the positive values this ever sees. Do
@@ -183,35 +186,45 @@ extension BoardSources {
     ///   - t: The pre-vary target.
     ///   - level: Vary level (`.off` = no spread).
     ///   - goal: The member's own `maxCount`; clamps `t`, never `hi`.
+    ///   - kind: The member's count kind.
     /// - Returns: The inclusive range.
-    static func varyRange(t: CountValue, level: VaryLevel, goal: CountValue) -> ClosedRange<CountValue> {
-        let clamped = Swift.min(Swift.max(1, t), goal)
+    static func varyRange(
+        t: CountValue, level: VaryLevel, goal: CountValue, kind: CountKind = .discrete
+    ) -> ClosedRange<CountValue> {
+        let step = countTargetStep(kind)
+        let clamped = Swift.min(Swift.max(step, t), goal)
         let fraction = varyFraction(level)
-        let lo = Swift.max(1, (clamped * (1 - fraction)).rounded())
-        let hi = (clamped * (1 + fraction)).rounded()
-        // `lo <= hi` holds for every `goal >= 1` (the only reachable input —
+        let lo = Swift.max(step, roundToCountStep(clamped * (1 - fraction), kind: kind))
+        let hi = roundToCountStep(clamped * (1 + fraction), kind: kind)
+        // `lo <= hi` holds for every `goal >= step` (the only reachable input —
         // `goalOf` filters the rest); the outer `max` only stops a malformed
         // `goal < 1` from trapping on an inverted ClosedRange, where the TS
         // twin would merely return a nonsense tuple.
         return lo...Swift.max(lo, hi)
     }
 
-    /// Uniform whole-number roll inside ``varyRange(t:level:goal:)``.
+    /// Uniform roll over the kind's steps inside ``varyRange(t:level:goal:kind:)``.
     /// `.off` never touches `rng`, and neither does a degenerate range
-    /// (`lo == hi`) — which is what keeps a seeded sequence reproducible
-    /// across platforms.
+    /// (`lo == hi`); otherwise exactly ONE sample — which is what keeps a
+    /// seeded sequence reproducible across platforms.
     ///
     /// - Parameters:
     ///   - t: The pre-vary target.
     ///   - level: Vary level (`.off` = no spread).
-    ///   - goal: The member's own `maxCount`; clamps `t` (see ``varyRange(t:level:goal:)``).
+    ///   - goal: The member's own `maxCount`; clamps `t` (see ``varyRange(t:level:goal:kind:)``).
     ///   - rng: Uniform `[0, 1)` source; consumed at most once.
-    /// - Returns: The rolled target (integer inside the range).
-    static func rollTarget(t: CountValue, level: VaryLevel, goal: CountValue, rng: () -> Double) -> CountValue {
-        let range = varyRange(t: t, level: level, goal: goal)
+    ///   - kind: The member's count kind.
+    /// - Returns: The rolled target (a step multiple inside the range).
+    static func rollTarget(
+        t: CountValue, level: VaryLevel, goal: CountValue, rng: () -> Double, kind: CountKind = .discrete
+    ) -> CountValue {
+        let range = varyRange(t: t, level: level, goal: goal, kind: kind)
         if level == .off || range.lowerBound == range.upperBound { return range.lowerBound }
-        let span = range.upperBound - range.lowerBound + 1
-        return range.lowerBound + (rng() * span).rounded(.down)
+        let step = countTargetStep(kind)
+        // Same `n` / index arithmetic as the TS twin → the identical double.
+        let n = ((range.upperBound - range.lowerBound) / step).rounded(.toNearestOrAwayFromZero)
+        let index = (rng() * (n + 1)).rounded(.down)
+        return quantizeCount(range.lowerBound + index * step)
     }
 
     // MARK: - Supply expansion
@@ -376,10 +389,14 @@ extension BoardSources {
     }
 
     /// A counting task's own goal, or `nil` when it is goal-less (an
-    /// accumulator, which has no target to pro-rate or vary).
+    /// accumulator, which has no target to pro-rate or vary). Whole kinds
+    /// need `≥ 1` and floor (TS twin); continuous keeps any positive goal.
     private static func goalOf(_ task: Task) -> CountValue? {
-        guard let maxCount = task.maxCount, maxCount >= 1 else { return nil }
-        return maxCount
+        guard let maxCount = task.maxCount else { return nil }
+        if isWholeCountKind(resolveCountKind(task.countKind)) {
+            return maxCount >= 1 ? maxCount.rounded(.down) : nil
+        }
+        return maxCount > 0 ? quantizeCount(maxCount) : nil
     }
 
     /// One child of a One-square compound, plus the decision made about it.
@@ -462,16 +479,17 @@ extension BoardSources {
         /// a board-pulled member pro-rates on one-off AND recurring boards
         /// alike (owner ruling 2026-09-21).
         ///
-        /// The final `min(max(1, floor(base)), goal)` clamp is redundant for
-        /// integer targets (`varyRange` re-clamps `t` to `1…goal`
-        /// identically) and is only observable on a fractional explicit
-        /// target, which Zod already forbids — kept verbatim so the two
-        /// platforms can never disagree about a malformed stored rule.
+        /// The final `min(max(step, floorToStep(base)), goal)` clamp is
+        /// redundant for on-step targets (`varyRange` re-clamps `t`
+        /// identically) and only observable on an off-step explicit target —
+        /// kept verbatim so the two platforms can never disagree about a
+        /// malformed stored rule.
         func resolveTarget(
             goal: CountValue,
             explicit: CountValue?,
             fromBoard: Bool,
-            taskIdForWindow: String
+            taskIdForWindow: String,
+            kind: CountKind
         ) -> CountValue {
             let base: CountValue
             if let explicit {
@@ -480,12 +498,13 @@ extension BoardSources {
                 base = autoTarget(
                     goal: goal,
                     sourceDays: sourceDaysFor(taskIdForWindow),
-                    targetDays: targetDays
+                    targetDays: targetDays,
+                    kind: kind
                 )
             } else {
                 base = goal
             }
-            return Swift.min(Swift.max(1, base.rounded(.down)), goal)
+            return Swift.min(Swift.max(countTargetStep(kind), floorToCountStep(base, kind: kind)), goal)
         }
         func mint(_ task: Task, replacesId: String, target: CountValue, vary: VaryLevel) -> DerivedTaskDraft {
             // `goalOf` is non-nil at every call site (each branch checks first).
@@ -495,7 +514,8 @@ extension BoardSources {
             // consumes no rng sample, so a seeded sequence reproduces
             // identically on both platforms (TS twin, verbatim).
             if let existing = derivedByRoot[root] { return existing }
-            let maxCount = rollTarget(t: target, level: vary, goal: goal, rng: rng)
+            let countKind = resolveCountKind(task.countKind)
+            let maxCount = rollTarget(t: target, level: vary, goal: goal, rng: rng, kind: countKind)
             let action = task.action ?? ""
             let unit = task.unit ?? ""
             let draft = DerivedTaskDraft(
@@ -504,7 +524,7 @@ extension BoardSources {
                 sourceMemberId: task.id,
                 replacesId: replacesId,
                 maxCount: maxCount,
-                countKind: resolveCountKind(task.countKind),
+                countKind: countKind,
                 baseline: baselineByRootId[root] ?? 0,
                 title: TaskTitle.counterCopyTitle(member: task, newMaxCount: maxCount),
                 action: action,
@@ -568,7 +588,8 @@ extension BoardSources {
                             goal: goal,
                             explicit: fromBoard ? part.target : nil,
                             fromBoard: fromBoard,
-                            taskIdForWindow: id
+                            taskIdForWindow: id,
+                            kind: resolveCountKind(task.countKind)
                         )
                         // No identical clone (owner ruling 2026-09-22): a
                         // derived row exists to carry a DIFFERENT target or a
@@ -613,7 +634,8 @@ extension BoardSources {
                         goal: goal,
                         explicit: rule.target,
                         fromBoard: true,
-                        taskIdForWindow: id
+                        taskIdForWindow: id,
+                        kind: resolveCountKind(task.countKind)
                     )
                     // No identical clone (owner ruling 2026-09-22) — see the
                     // split-part branch above for the reasoning, the
@@ -660,7 +682,8 @@ extension BoardSources {
                         goal: goal,
                         explicit: fromBoard ? part.target : nil,
                         fromBoard: fromBoard,
-                        taskIdForWindow: link.childTaskId
+                        taskIdForWindow: link.childTaskId,
+                        kind: resolveCountKind(child.countKind)
                     )
                     return ChildPlan(link: link, child: child, derive: true, target: target, vary: vary)
                 }

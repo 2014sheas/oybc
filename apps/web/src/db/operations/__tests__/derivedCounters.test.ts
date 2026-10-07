@@ -217,6 +217,32 @@ describe('planAndMintDerivedRows — mint (RB2/RB3)', () => {
     expect(derived?.countKind).toBe('continuous');
   });
 
+  it('a continuous 26.2 member pulled from a MONTHLY board onto this weekly one stores maxCount 6.2', async () => {
+    const root = countingTask(ROOT, {
+      title: 'Run 26.2 miles',
+      unit: 'miles',
+      maxCount: 26.2,
+      currentCount: 0,
+      countKind: 'continuous',
+    });
+    await db.tasks.add(root);
+    const monthly: BoardWindow = {
+      timeframe: Timeframe.MONTHLY,
+      startDate: '2026-08-01T00:00:00.000',
+      endDate: '2026-08-31T23:59:59.999',
+    };
+
+    await mint(
+      mintArgs([ROOT], boardSource(), [root], [], [], { sourceWindowByTaskId: { [ROOT]: monthly } }),
+    );
+
+    const derived = await db.tasks.get(derivedTaskId(BOARD, ROOT));
+    // ceil(26.2 × 7 / 30 = 6.113) to the 0.1 step — a whole-kind ceil would give 7.
+    expect(derived?.maxCount).toBe(6.2);
+    expect(derived?.countKind).toBe('continuous');
+    expect(derived?.title).toBe('Run 6.2 miles');
+  });
+
   it('re-minting the same window is a true no-op — no rewrite, no second sync item', async () => {
     const root = countingTask(ROOT, { currentCount: 30 });
     await db.tasks.add(root);

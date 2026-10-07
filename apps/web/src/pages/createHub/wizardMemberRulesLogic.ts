@@ -21,6 +21,8 @@ import {
   memberRuleFor,
   partRuleFor,
   prefilledOneOffTarget,
+  isWholeCountKind,
+  resolveCountKind,
   withMemberRule,
   withPartRule,
   TaskType,
@@ -362,7 +364,8 @@ export function prefillRemainingTargets(
     }
     if (task.type !== TaskType.COUNTING) continue;
     const goal = task.maxCount;
-    if (typeof goal !== 'number' || goal < 1) continue;
+    const kind = resolveCountKind(task);
+    if (typeof goal !== 'number' || !(isWholeCountKind(kind) ? goal >= 1 : goal > 0)) continue;
     if (memberRuleFor(source, id).target !== undefined) continue;
     const done = supply.windowCountByTaskId?.[id] ?? 0;
     source = withMemberRule(source, id, {
@@ -371,6 +374,7 @@ export function prefillRemainingTargets(
         windowCount: done,
         sourceWindow: supply.sourceWindow,
         targetWindow,
+        kind,
       }),
     });
   }

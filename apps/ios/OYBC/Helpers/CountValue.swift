@@ -92,3 +92,30 @@ func planCountKindSwitch(
 
 /// - Returns: 1 for whole kinds, 0.1 for continuous.
 func countTargetStep(_ kind: CountKind) -> CountValue { isWholeCountKind(kind) ? 1 : 0.1 }
+
+// MARK: - Member-rule step rounding
+
+// Twins of `ceilToCountStep` / `roundToCountStep` / `floorToCountStep` in
+// countValue.ts, pinned by the same vectors. Whole kinds take the exact
+// pre-feature integer ops (no quantize first — 1/366 must still ceil to 1);
+// continuous steps in tenths, quantizing the tenths count first so a product
+// like 6.1 × 10 = 60.999… reads as 61. Inputs are non-negative, so
+// `.toNearestOrAwayFromZero` is JS `Math.round`.
+
+/// Ceil to the kind's target step (1, or 0.1 for continuous).
+func ceilToCountStep(_ x: CountValue, kind: CountKind) -> CountValue {
+    if isWholeCountKind(kind) { return x.rounded(.up) }
+    return quantizeCount((quantizeCount(x * 10) - 1e-9).rounded(.up) / 10)
+}
+
+/// Round half-up to the kind's target step (1, or 0.1 for continuous).
+func roundToCountStep(_ x: CountValue, kind: CountKind) -> CountValue {
+    if isWholeCountKind(kind) { return x.rounded(.toNearestOrAwayFromZero) }
+    return quantizeCount((quantizeCount(x * 10) + 1e-9).rounded(.toNearestOrAwayFromZero) / 10)
+}
+
+/// Floor to the kind's target step (1, or 0.1 for continuous).
+func floorToCountStep(_ x: CountValue, kind: CountKind) -> CountValue {
+    if isWholeCountKind(kind) { return x.rounded(.down) }
+    return quantizeCount((quantizeCount(x * 10) + 1e-9).rounded(.down) / 10)
+}

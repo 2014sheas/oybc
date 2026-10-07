@@ -5,7 +5,8 @@
  * Pure arithmetic + planning for per-member rules on a pulled source: the
  * nominal window length of a timeframe, the pro-rated auto target when a
  * counting member crosses windows, the vary (dice) range and its seeded
- * roll, Split-up supply expansion, and the plan that decides — per selected
+ * roll (those four in `memberRuleTargets.ts`, re-exported here), Split-up
+ * supply expansion, and the plan that decides — per selected
  * id — whether it is placed as-is or replaced by a window-stamped derived
  * counter / derived compound (B1), plus the window baseline those derived
  * counters start from and the complete `Task` / `CompoundChild` rows they
@@ -36,11 +37,15 @@ import type { Task } from '../types/task';
 import type { TaskEvent } from '../types/taskEvent';
 import type { BoardSourceSupply } from './boardSources';
 import { isTimeframeExpired, isWithinTimeframe } from './calendarBoundaries';
-import { quantizeCount, resolveCountKind } from './countValue';
+import { countTargetStep, floorToCountStep, isWholeCountKind, quantizeCount, resolveCountKind } from './countValue';
 import type { CountKind } from './countValue';
+import { autoTarget, nominalWindowDays, rollTarget } from './memberRuleTargets';
 import { deriveDisplayedCount } from './sharedCounter';
 import { counterCopyTitle } from './taskTitle';
 import { uuidv5 } from './uuidv5';
+
+// Target arithmetic lives in memberRuleTargets.ts (1000-line cap); re-exported here.
+export { autoTarget, nominalWindowDays, rollTarget, varyRange } from './memberRuleTargets';
 
 /** uuidv5 name prefix for a per-window derived counter. */
 export const DERIVED_TASK_NS = 'sources:derived';
@@ -81,121 +86,6 @@ export function derivedCompoundId(boardId: string, compoundId: string): string {
  */
 export function derivedLinkId(derivedCompound: string, childId: string): string {
   return uuidv5(`${DERIVED_LINK_NS}:${derivedCompound}:${childId}`);
-}
-
-/**
- * UTC day index of an ISO date's `YYYY-MM-DD` prefix.
- *
- * @param iso - An ISO8601 date or date-time string.
- * @returns Whole days since the epoch, or `null` if the prefix doesn't parse.
- */
-function dayNumber(iso: string): number | null {
-  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso);
-  if (!m) return null;
-  return Math.floor(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])) / 86_400_000);
-}
-
-/**
- * Nominal length of a timeframe window in days. CUSTOM = inclusive calendar
- * span of the `YYYY-MM-DD` prefixes (UTC arithmetic — never local-time
- * subtraction, so a DST boundary inside the span can't shave or add a day);
- * INDEFINITE, or CUSTOM with a missing/unparseable bound, = `null`.
- *
- * @param timeframe - The window's timeframe.
- * @param startDate - CUSTOM only: the window's inclusive first day.
- * @param endDate - CUSTOM only: the window's inclusive last day.
- * @returns The nominal day count, or `null` when it is not knowable.
- */
-export function nominalWindowDays(
-  timeframe: Timeframe,
-  startDate?: string | null,
-  endDate?: string | null
-): number | null {
-  switch (timeframe) {
-    case Timeframe.DAILY:
-      return 1;
-    case Timeframe.WEEKLY:
-      return 7;
-    case Timeframe.MONTHLY:
-      return 30;
-    case Timeframe.YEARLY:
-      return 365;
-    case Timeframe.CUSTOM: {
-      if (!startDate || !endDate) return null;
-      const a = dayNumber(startDate);
-      const b = dayNumber(endDate);
-      if (a === null || b === null) return null;
-      return Math.max(1, b - a + 1);
-    }
-    default:
-      return null;
-  }
-}
-
-/**
- * Auto target for a counting member pulled from a board source onto a board
- * with a different window: the member's goal pro-rated by the window ratio,
- * rounded up, never above the goal itself (docs/BOARD_SOURCES.md §Target math).
- *
- * Four explicit branches in order: unknown source window, unknown target
- * window, a target window at least as long as the source's (no shrink), else
- * the pro-rated ceiling.
- *
- * @param goal - The member's own `maxCount` (integer ≥ 1).
- * @param sourceDays - Nominal days of the source board's window, or `null`.
- * @param targetDays - Nominal days of the board being assembled, or `null`.
- * @returns The auto target (integer ≥ 1, ≤ `goal`).
- */
-export function autoTarget(goal: number, sourceDays: number | null, targetDays: number | null): number {
-  if (sourceDays === null) return goal;
-  if (targetDays === null) return goal;
-  if (targetDays >= sourceDays) return goal;
-  return Math.min(goal, Math.ceil((goal * targetDays) / sourceDays));
-}
-
-/** Vary level → the fraction of `t` the roll may move in either direction. */
-const VARY_P: Record<VaryLevel, number> = { 0: 0, 1: 0.2, 2: 0.5 };
-
-/**
- * Inclusive `[lo, hi]` a rolled target may land in: symmetric ± `p` around the
- * target (docs/BOARD_SOURCES.md §Member rules — "a little" = ±20 %, "a lot" =
- * ±50 %). `t` is clamped to `1…goal` first (the stepper is goal-capped) and
- * `lo` never drops below 1, but `hi` has NO ceiling — a roll may land above
- * the target by up to `+p`, so a goal-10 member on "a little" rolls inside
- * `[8, 12]`. Overshooting the goal is a feature: `currentCount > maxCount` is
- * valid in this product. (Fixed 2026-10-06 — the first implementation capped
- * `hi` at the goal and only ever lowered.)
- *
- * @param t - The pre-vary target.
- * @param level - Vary level (0 = off).
- * @param goal - The member's own `maxCount`; clamps `t`, never `hi`.
- * @returns The inclusive `[lo, hi]` pair.
- */
-export function varyRange(t: number, level: VaryLevel, goal: number): [number, number] {
-  const tc = Math.min(Math.max(1, t), goal);
-  const p = VARY_P[level];
-  const lo = Math.max(1, Math.round(tc * (1 - p)));
-  // `lo <= hi` holds for every `goal >= 1` (the only reachable input); the
-  // `max` only keeps a malformed `goal < 1` from inverting the range, so both
-  // twins then return a degenerate `[1, 1]` and consume no rng.
-  return [lo, Math.max(lo, Math.round(tc * (1 + p)))];
-}
-
-/**
- * Uniform whole-number roll inside {@link varyRange}. Level 0 never touches
- * `rng`, and neither does a degenerate range (`lo === hi`) — which is what
- * keeps a seeded sequence reproducible across platforms.
- *
- * @param t - The pre-vary target.
- * @param level - Vary level (0 = off).
- * @param goal - The member's own `maxCount`; clamps `t` (see {@link varyRange}).
- * @param rng - Uniform `[0, 1)` source; consumed at most once.
- * @returns The rolled target (integer in `[lo, hi]`).
- */
-export function rollTarget(t: number, level: VaryLevel, goal: number, rng: () => number): number {
-  const [lo, hi] = varyRange(t, level, goal);
-  if (level === 0 || lo === hi) return lo;
-  return lo + Math.floor(rng() * (hi - lo + 1));
 }
 
 /** A {@link BoardSourceSupply} after Split-up expansion. */
@@ -393,10 +283,13 @@ function isLinkedMember(t: PlanTask): boolean {
 
 /**
  * A counting task's own goal, or `null` when it is goal-less (an accumulator,
- * which has no target to pro-rate or vary).
+ * which has no target to pro-rate or vary). Whole kinds need `≥ 1` and floor
+ * (pre-feature behaviour); continuous keeps any positive goal, quantized.
  */
 function goalOf(t: PlanTask): number | null {
-  return typeof t.maxCount === 'number' && t.maxCount >= 1 ? Math.floor(t.maxCount) : null;
+  if (typeof t.maxCount !== 'number') return null;
+  if (isWholeCountKind(resolveCountKind(t))) return t.maxCount >= 1 ? Math.floor(t.maxCount) : null;
+  return t.maxCount > 0 ? quantizeCount(t.maxCount) : null;
 }
 
 /**
@@ -478,21 +371,23 @@ export function planDerivedTasks(args: PlanDerivedTasksArgs): PlanDerivedTasksRe
    * part-exclusion only), while a board-pulled member pro-rates on one-off
    * AND recurring boards alike (owner ruling 2026-09-21).
    *
-   * The final `min(max(1, floor(base)), goal)` clamp is redundant for integer
-   * targets (`varyRange` re-clamps `t` to `1…goal` identically) and is only
-   * observable on a fractional explicit target, which Zod already forbids —
-   * keep it anyway, and port it verbatim, so the two platforms can never
-   * disagree about a malformed stored rule.
+   * The final `min(max(step, floorToStep(base)), goal)` clamp is redundant
+   * for on-step targets (`varyRange` re-clamps `t` identically) and is only
+   * observable on an off-step explicit target (4.25 on a whole kind) — keep
+   * it anyway, and port it verbatim, so the two platforms can never disagree
+   * about a malformed stored rule.
    */
   const resolveTarget = (
     goal: number,
     explicit: number | undefined,
     fromBoard: boolean,
-    taskIdForWindow: string
+    taskIdForWindow: string,
+    kind: CountKind
   ): number => {
     const base =
-      explicit ?? (fromBoard ? autoTarget(goal, sourceDaysFor(taskIdForWindow), targetDays) : goal);
-    return Math.min(Math.max(1, Math.floor(base)), goal);
+      explicit ??
+      (fromBoard ? autoTarget(goal, sourceDaysFor(taskIdForWindow), targetDays, kind) : goal);
+    return Math.min(Math.max(countTargetStep(kind), floorToCountStep(base, kind)), goal);
   };
   const mint = (t: PlanTask, replacesId: string, target: number, vary: VaryLevel): DerivedTaskDraft => {
     const goal = goalOf(t)!;
@@ -502,7 +397,8 @@ export function planDerivedTasks(args: PlanDerivedTasksArgs): PlanDerivedTasksRe
     // platforms regardless of how many members/parts share the root.
     const existing = derivedByRoot.get(root);
     if (existing) return existing; // same root twice on one board → one derived counter
-    const maxCount = rollTarget(target, vary, goal, rng);
+    const countKind = resolveCountKind(t);
+    const maxCount = rollTarget(target, vary, goal, rng, countKind);
     const action = t.action ?? '';
     const unit = t.unit ?? '';
     const d: DerivedTaskDraft = {
@@ -511,7 +407,7 @@ export function planDerivedTasks(args: PlanDerivedTasksArgs): PlanDerivedTasksRe
       sourceMemberId: t.id,
       replacesId,
       maxCount,
-      countKind: resolveCountKind(t),
+      countKind,
       baseline: baselineByRootId[root] ?? 0,
       title: counterCopyTitle(t, maxCount),
       action,
@@ -569,7 +465,13 @@ export function planDerivedTasks(args: PlanDerivedTasksArgs): PlanDerivedTasksRe
         // `target` — member- OR part-level — is honoured on board sources only;
         // a pool member offers vary / split / part-exclusion and nothing else.
         if (fromBoard || vary > 0) {
-          const target = resolveTarget(goal, fromBoard ? part.target : undefined, fromBoard, id);
+          const target = resolveTarget(
+            goal,
+            fromBoard ? part.target : undefined,
+            fromBoard,
+            id,
+            resolveCountKind(t)
+          );
           // No identical clone (owner ruling 2026-09-22): a derived row exists
           // to carry a DIFFERENT target or a vary range. When the resolved
           // target already equals the part's own goal and vary is off, place
@@ -602,7 +504,7 @@ export function planDerivedTasks(args: PlanDerivedTasksArgs): PlanDerivedTasksRe
       const rule: BoardSourceMemberRule = rules[id] ?? {};
       const vary = rule.vary ?? 0;
       if (fromBoard) {
-        const target = resolveTarget(goal, rule.target, true, id);
+        const target = resolveTarget(goal, rule.target, true, id, resolveCountKind(t));
         // No identical clone (owner ruling 2026-09-22) — see the split-part
         // branch above for the reasoning, the `sharedCounterId` guard included;
         // same rule, same shape.
@@ -648,7 +550,13 @@ export function planDerivedTasks(args: PlanDerivedTasksArgs): PlanDerivedTasksRe
           k,
           c,
           derive: true as const,
-          target: resolveTarget(goal, fromBoard ? part.target : undefined, fromBoard, k.childTaskId),
+          target: resolveTarget(
+            goal,
+            fromBoard ? part.target : undefined,
+            fromBoard,
+            k.childTaskId,
+            resolveCountKind(c)
+          ),
           vary,
         };
       });

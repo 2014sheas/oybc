@@ -155,3 +155,49 @@ export function planCountKindSwitch(
 export function countTargetStep(kind: CountKind): number {
   return isWholeCountKind(kind) ? 1 : 0.1;
 }
+
+// ── Member-rule step rounding (docs/COUNTER_KINDS.md §3) ────────────────────
+// The pro-rate / vary / clamp steps in memberRules.ts round to the kind's
+// target step. Whole kinds take the EXACT pre-feature integer ops (no
+// quantize first — 1/366 must still ceil to 1, and every discrete vector
+// stays where it was); only continuous steps in tenths, quantizing the tenths
+// count first so a representation-error product like 6.1 × 10 = 60.999…
+// reads as 61 before the ceil/round/floor. The `1e-9` nudges keep an exact
+// tenth on itself. Inputs are non-negative (targets, goals). Swift twins in
+// CountValue.swift run the identical arithmetic.
+
+/**
+ * Ceil to the kind's target step (1, or 0.1 for continuous).
+ *
+ * @param x - A non-negative value.
+ * @param kind - The task's kind.
+ * @returns The smallest step multiple ≥ `x`.
+ */
+export function ceilToCountStep(x: number, kind: CountKind): number {
+  if (isWholeCountKind(kind)) return Math.ceil(x);
+  return quantizeCount(Math.ceil(quantizeCount(x * 10) - 1e-9) / 10);
+}
+
+/**
+ * Round half-up to the kind's target step (1, or 0.1 for continuous).
+ *
+ * @param x - A non-negative value.
+ * @param kind - The task's kind.
+ * @returns The nearest step multiple, ties upward.
+ */
+export function roundToCountStep(x: number, kind: CountKind): number {
+  if (isWholeCountKind(kind)) return Math.round(x);
+  return quantizeCount(Math.round(quantizeCount(x * 10) + 1e-9) / 10);
+}
+
+/**
+ * Floor to the kind's target step (1, or 0.1 for continuous).
+ *
+ * @param x - A non-negative value.
+ * @param kind - The task's kind.
+ * @returns The largest step multiple ≤ `x`.
+ */
+export function floorToCountStep(x: number, kind: CountKind): number {
+  if (isWholeCountKind(kind)) return Math.floor(x);
+  return quantizeCount(Math.floor(quantizeCount(x * 10) + 1e-9) / 10);
+}

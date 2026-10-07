@@ -43,10 +43,11 @@ extension BoardSources {
     /// behaves exactly like `autoTarget` with a nil source (falls back to
     /// `goal`), and a target window at least as long as the source's also
     /// falls back to `goal`, so a same-timeframe pull is unchanged. Either
-    /// way the result is floored and clamped to `1…goal`.
+    /// way the result is floored and clamped to `step…goal` (step 1, or 0.1
+    /// for continuous).
     ///
     /// - Parameters:
-    ///   - goal: The member's own `maxCount` (integer ≥ 1).
+    ///   - goal: The member's own `maxCount` (≥ 1 whole, > 0 continuous).
     ///   - explicit: A stored member-/part-level `target` override, if any.
     ///   - mode: Whether the board being assembled is one-off or recurring.
     ///     **Not read** — see `planDerivedTasks`' `mode`; accepted so this
@@ -55,14 +56,16 @@ extension BoardSources {
     ///   - fromBoard: Whether the supplying source is `kind == .board`.
     ///   - sourceWindow: The window the member was pulled from, if known.
     ///   - targetWindow: The window of the board being assembled.
-    /// - Returns: The effective target (integer ≥ 1, ≤ `goal`).
+    ///   - kind: The member's count kind.
+    /// - Returns: The effective target (one step ≥, ≤ `goal`).
     static func effectiveMemberTarget(
         goal: CountValue,
         explicit: CountValue? = nil,
         mode: PlanMode,
         fromBoard: Bool,
         sourceWindow: BoardWindow? = nil,
-        targetWindow: BoardWindow
+        targetWindow: BoardWindow,
+        kind: CountKind = .discrete
     ) -> CountValue {
         let targetDays = nominalWindowDays(
             targetWindow.timeframe,
@@ -78,12 +81,13 @@ extension BoardSources {
                 sourceDays: sourceWindow.flatMap {
                     nominalWindowDays($0.timeframe, startDate: $0.startDate, endDate: $0.endDate)
                 },
-                targetDays: targetDays
+                targetDays: targetDays,
+                kind: kind
             )
         } else {
             base = goal
         }
-        return Swift.min(Swift.max(1, base), goal)
+        return Swift.min(Swift.max(countTargetStep(kind), floorToCountStep(base, kind: kind)), goal)
     }
 
     /// Human-readable vary range for a rule-editing surface — the inclusive
@@ -109,16 +113,18 @@ extension BoardSources {
     ///   - level: Vary level. `.off` renders nothing — there is no range.
     ///   - goal: The member's own `maxCount`; clamps `t` only — the range may exceed it.
     ///   - unit: The counting member's unit, or `""` when it has none.
+    ///   - kind: The member's count kind; bounds render via `formatCount`.
     /// - Returns: `"lo–hi unit"`, `"lo unit"` when the range collapsed, or
     ///   nil at vary level `.off`.
-    static func varyRangeLabel(t: CountValue, level: VaryLevel, goal: CountValue, unit: String) -> String? {
+    static func varyRangeLabel(
+        t: CountValue, level: VaryLevel, goal: CountValue, unit: String, kind: CountKind = .discrete
+    ) -> String? {
         guard level != .off else { return nil }
-        let range = varyRange(t: t, level: level, goal: goal)
+        let range = varyRange(t: t, level: level, goal: goal, kind: kind)
         let suffix = unit.isEmpty ? "" : " \(unit)"
-        guard range.lowerBound != range.upperBound else {
-            return "\(formatCount(range.lowerBound, kind: .discrete))\(suffix)"
-        }
-        return "\(formatCount(range.lowerBound, kind: .discrete))\u{2013}\(formatCount(range.upperBound, kind: .discrete))\(suffix)"
+        let lo = formatCount(range.lowerBound, kind: kind)
+        guard range.lowerBound != range.upperBound else { return "\(lo)\(suffix)" }
+        return "\(lo)\u{2013}\(formatCount(range.upperBound, kind: kind))\(suffix)"
     }
 
     /// Human-readable "N squares" note for a Split-up compound member — how
@@ -143,14 +149,15 @@ extension BoardSources {
     /// How many more occurrences a counting member's goal needs this window,
     /// given how many windows already ran — the one-off wizard's "remaining"
     /// prefill and a recurring-series countdown note. Floors at 1 so the note
-    /// never reads "0 more".
+    /// never reads "0 more"; quantized so a continuous goal can't surface
+    /// float drift (26.2 − 3 = 23.2).
     ///
     /// - Parameters:
     ///   - goal: The member's own `maxCount`.
     ///   - windowCount: Progress toward the goal already made in the window.
-    /// - Returns: The remaining target (integer ≥ 1).
+    /// - Returns: The remaining target (≥ 1).
     static func remainingTarget(goal: CountValue, windowCount: CountValue) -> CountValue {
-        Swift.max(1, goal - windowCount)
+        quantizeCount(Swift.max(1, goal - windowCount))
     }
 
     /// The explicit `target` a ONE-OFF wizard prefills for a counting member
@@ -178,19 +185,24 @@ extension BoardSources {
     /// TS twin: `prefilledOneOffTarget` in `memberRulesDisplay.ts`.
     ///
     /// - Parameters:
-    ///   - goal: The member's own `maxCount` (integer ≥ 1).
+    ///   - goal: The member's own `maxCount` (floored for whole kinds).
     ///   - windowCount: Its progress in the SOURCE board's window.
     ///   - sourceWindow: The source board's own window, if known.
     ///   - targetWindow: The window of the board being assembled.
-    /// - Returns: The target to seed (integer ≥ 1, ≤ the remaining amount).
+    ///   - kind: The member's count kind.
+    /// - Returns: The target to seed (≥ 1, ≤ the remaining amount).
     static func prefilledOneOffTarget(
         goal: CountValue,
         windowCount: CountValue,
         sourceWindow: BoardWindow? = nil,
-        targetWindow: BoardWindow
+        targetWindow: BoardWindow,
+        kind: CountKind = .discrete
     ) -> CountValue {
         autoTarget(
-            goal: remainingTarget(goal: goal, windowCount: windowCount),
+            goal: remainingTarget(
+                goal: isWholeCountKind(kind) ? goal.rounded(.down) : goal,
+                windowCount: windowCount
+            ),
             sourceDays: sourceWindow.flatMap {
                 nominalWindowDays($0.timeframe, startDate: $0.startDate, endDate: $0.endDate)
             },
@@ -198,7 +210,8 @@ extension BoardSources {
                 targetWindow.timeframe,
                 startDate: targetWindow.startDate,
                 endDate: targetWindow.endDate
-            )
+            ),
+            kind: kind
         )
     }
 
@@ -240,15 +253,16 @@ extension BoardSources {
     ///   - level: The member's vary level.
     ///   - goal: The member's own `maxCount`; clamps `t` only — the range may exceed it.
     ///   - unit: The counting member's unit, or `""` when it has none.
+    ///   - kind: The member's count kind; values render via `formatCount`.
     /// - Returns: The chip, or nil when it would only restate the title.
     static func countingSummary(
-        target: CountValue, level: VaryLevel, goal: CountValue, unit: String
+        target: CountValue, level: VaryLevel, goal: CountValue, unit: String, kind: CountKind = .discrete
     ) -> MemberSummary? {
-        if let range = varyRangeLabel(t: target, level: level, goal: goal, unit: unit) {
+        if let range = varyRangeLabel(t: target, level: level, goal: goal, unit: unit, kind: kind) {
             return MemberSummary(text: range, varying: true)
         }
         if level == .off, target == goal { return nil }
-        let text = formatCount(target, kind: .discrete)
+        let text = formatCount(target, kind: kind)
         return MemberSummary(text: unit.isEmpty ? text : "\(text) \(unit)", varying: false)
     }
 
@@ -739,15 +753,17 @@ extension BoardSources {
     struct SeededTargetTask {
         let type: TaskType
         let maxCount: CountValue?
+        let countKind: CountKind
 
-        init(type: TaskType, maxCount: CountValue?) {
+        init(type: TaskType, maxCount: CountValue?, countKind: CountKind = .discrete) {
             self.type = type
             self.maxCount = maxCount
+            self.countKind = countKind
         }
 
         /// Narrow a live task down to what the seed calculation reads.
         init(_ task: Task) {
-            self.init(type: task.type, maxCount: task.maxCount)
+            self.init(type: task.type, maxCount: task.maxCount, countKind: resolveCountKind(task.countKind))
         }
     }
 
@@ -794,12 +810,14 @@ extension BoardSources {
         var seeded: [String: CountValue] = [:]
         for id in supplyTaskIds {
             guard let task = tasksById[id], task.type == .counting else { continue }
-            guard let goal = task.maxCount, goal >= 1 else { continue }
+            guard let goal = task.maxCount,
+                  isWholeCountKind(task.countKind) ? goal >= 1 : goal > 0 else { continue }
             seeded[id] = prefilledOneOffTarget(
                 goal: goal,
                 windowCount: windowCountByTaskId[id] ?? 0,
                 sourceWindow: sourceWindow,
-                targetWindow: targetWindow
+                targetWindow: targetWindow,
+                kind: task.countKind
             )
         }
         return seeded

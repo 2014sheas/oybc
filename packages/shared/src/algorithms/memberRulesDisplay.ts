@@ -26,6 +26,8 @@ import { TaskType } from '../constants/enums';
 import type { BoardSource, BoardSourceMemberRule, BoardSourcePartRule, VaryLevel } from '../types/boardSource';
 import type { Pool } from '../types/pool';
 import type { Task } from '../types/task';
+import { floorToCountStep, countTargetStep, formatCount, isWholeCountKind, quantizeCount, resolveCountKind } from './countValue';
+import type { CountKind } from './countValue';
 import { autoTarget, nominalWindowDays, varyRange } from './memberRules';
 import type { BoardWindow, PlanMode } from './memberRules';
 
@@ -46,15 +48,17 @@ import type { BoardWindow, PlanMode } from './memberRules';
  * `autoTarget` with a `null` source (falls back to `goal`), and a target
  * window at least as long as the source's also falls back to `goal`, so a
  * same-timeframe pull is unchanged. Either way the result is floored and
- * clamped to `1…goal`, mirroring `resolveTarget` in `memberRules.ts`.
+ * clamped to `step…goal` (step = 1, or 0.1 for continuous), mirroring
+ * `resolveTarget` in `memberRules.ts`.
  *
- * @param args.goal - The member's own `maxCount` (integer ≥ 1).
+ * @param args.goal - The member's own `maxCount` (≥ 1 whole, > 0 continuous).
  * @param args.explicit - A stored member-/part-level `target` override, if any.
  * @param args.mode - Whether the board being assembled is one-off or recurring. **Not read** — see `PlanDerivedTasksArgs.mode`; accepted so this helper keeps one shape with the planner and the fixture can pin mode-independence.
  * @param args.fromBoard - Whether the member's supplying source is `kind: 'board'` — pool-sourced and hand-added members never auto-target, matching `resolveTarget`.
  * @param args.sourceWindow - The window the member was pulled from, if known.
  * @param args.targetWindow - The window of the board being assembled.
- * @returns The effective target (integer ≥ 1, ≤ `goal`).
+ * @param args.kind - The member's count kind (default `'discrete'`).
+ * @returns The effective target (one step ≥, ≤ `goal`).
  */
 export function effectiveMemberTarget(args: {
   goal: number;
@@ -63,8 +67,9 @@ export function effectiveMemberTarget(args: {
   fromBoard: boolean;
   sourceWindow?: BoardWindow;
   targetWindow: BoardWindow;
+  kind?: CountKind;
 }): number {
-  const { goal, explicit, fromBoard, sourceWindow, targetWindow } = args;
+  const { goal, explicit, fromBoard, sourceWindow, targetWindow, kind = 'discrete' } = args;
   const targetDays = nominalWindowDays(targetWindow.timeframe, targetWindow.startDate, targetWindow.endDate);
   const base =
     explicit ??
@@ -74,10 +79,11 @@ export function effectiveMemberTarget(args: {
           sourceWindow
             ? nominalWindowDays(sourceWindow.timeframe, sourceWindow.startDate, sourceWindow.endDate)
             : null,
-          targetDays
+          targetDays,
+          kind
         )
       : goal);
-  return Math.min(Math.max(1, Math.floor(base)), goal);
+  return Math.min(Math.max(countTargetStep(kind), floorToCountStep(base, kind)), goal);
 }
 
 /**
@@ -103,13 +109,21 @@ export function effectiveMemberTarget(args: {
  * @param level - Vary level. `0` renders nothing — there is no range to show.
  * @param goal - The member's own `maxCount`; clamps `t` only — the range may exceed it.
  * @param unit - The counting member's unit, or `''` when it has none.
+ * @param kind - The member's count kind (default `'discrete'`); bounds render via `formatCount`.
  * @returns `"lo–hi unit"`, `"lo unit"` when the range collapsed, or `null` at vary level 0.
  */
-export function varyRangeLabel(t: number, level: VaryLevel, goal: number, unit: string): string | null {
+export function varyRangeLabel(
+  t: number,
+  level: VaryLevel,
+  goal: number,
+  unit: string,
+  kind: CountKind = 'discrete'
+): string | null {
   if (level === 0) return null;
-  const [lo, hi] = varyRange(t, level, goal);
+  const [lo, hi] = varyRange(t, level, goal, kind);
   const suffix = unit ? ` ${unit}` : '';
-  return lo === hi ? `${lo}${suffix}` : `${lo}–${hi}${suffix}`;
+  const a = formatCount(lo, kind);
+  return lo === hi ? `${a}${suffix}` : `${a}–${formatCount(hi, kind)}${suffix}`;
 }
 
 /**
@@ -312,14 +326,15 @@ export function withPartRule(
 /**
  * How many more occurrences a counting member's goal needs this window,
  * given how many windows already ran — a simple countdown note for a
- * recurring-series preview. Floors at 1 so the note never reads "0 more".
+ * recurring-series preview. Floors at 1 so the note never reads "0 more";
+ * quantized so a continuous goal can't surface float drift (26.2 − 3 = 23.2).
  *
  * @param goal - The member's own `maxCount`.
  * @param windowCount - How many windows toward the goal have already run.
- * @returns The remaining target (integer ≥ 1).
+ * @returns The remaining target (≥ 1).
  */
 export function remainingTarget(goal: number, windowCount: number): number {
-  return Math.max(1, goal - windowCount);
+  return quantizeCount(Math.max(1, goal - windowCount));
 }
 
 /**
@@ -342,26 +357,29 @@ export function remainingTarget(goal: number, windowCount: number): number {
  * any pull onto a LONGER window, and any pull whose source window length is
  * unknown) seeds exactly the remaining amount it seeded before this change.
  *
- * @param args.goal - The member's own `maxCount` (floored; integer ≥ 1).
+ * @param args.goal - The member's own `maxCount` (floored for whole kinds).
  * @param args.windowCount - Its progress in the SOURCE board's window.
  * @param args.sourceWindow - The source board's own window, if known.
  * @param args.targetWindow - The window of the board being assembled.
- * @returns The target to seed (integer ≥ 1, ≤ the remaining amount).
+ * @param args.kind - The member's count kind (default `'discrete'`).
+ * @returns The target to seed (≥ 1, ≤ the remaining amount).
  */
 export function prefilledOneOffTarget(args: {
   goal: number;
   windowCount: number;
   sourceWindow?: BoardWindow | null;
   targetWindow: BoardWindow;
+  kind?: CountKind;
 }): number {
-  const { goal, windowCount, sourceWindow, targetWindow } = args;
-  const remaining = remainingTarget(Math.floor(goal), windowCount);
+  const { goal, windowCount, sourceWindow, targetWindow, kind = 'discrete' } = args;
+  const remaining = remainingTarget(isWholeCountKind(kind) ? Math.floor(goal) : goal, windowCount);
   return autoTarget(
     remaining,
     sourceWindow
       ? nominalWindowDays(sourceWindow.timeframe, sourceWindow.startDate, sourceWindow.endDate)
       : null,
-    nominalWindowDays(targetWindow.timeframe, targetWindow.startDate, targetWindow.endDate)
+    nominalWindowDays(targetWindow.timeframe, targetWindow.startDate, targetWindow.endDate),
+    kind
   );
 }
 
@@ -409,18 +427,20 @@ export interface MemberSummary {
  * @param level - The member's vary level.
  * @param goal - The member's own `maxCount`; clamps `t` only — the range may exceed it.
  * @param unit - The counting member's unit, or `''` when it has none.
+ * @param kind - The member's count kind (default `'discrete'`); values render via `formatCount`.
  * @returns The chip, or null when it would only restate the title.
  */
 export function countingSummary(
   target: number,
   level: VaryLevel,
   goal: number,
-  unit: string
+  unit: string,
+  kind: CountKind = 'discrete'
 ): MemberSummary | null {
-  const range = varyRangeLabel(target, level, goal, unit);
+  const range = varyRangeLabel(target, level, goal, unit, kind);
   if (range !== null) return { text: range, varying: true };
   if (level === 0 && target === goal) return null;
-  return { text: `${target}${unit ? ` ${unit}` : ''}`, varying: false };
+  return { text: `${formatCount(target, kind)}${unit ? ` ${unit}` : ''}`, varying: false };
 }
 
 /**
@@ -462,7 +482,7 @@ export interface SeededTargetSupply {
 }
 
 /** The task fields {@link seededTargetsForSource} needs to spot a seedable member. */
-export type SeededTargetTask = Pick<Task, 'type' | 'maxCount'>;
+export type SeededTargetTask = Pick<Task, 'type' | 'maxCount' | 'countKind'>;
 
 /**
  * What the one-off prefill WOULD seed, right now, for each counting member
@@ -503,12 +523,14 @@ export function seededTargetsForSource(
     const task = tasksById[id];
     if (task === undefined || task.type !== TaskType.COUNTING) continue;
     const goal = task.maxCount;
-    if (typeof goal !== 'number' || goal < 1) continue;
+    const kind = resolveCountKind(task);
+    if (typeof goal !== 'number' || !(isWholeCountKind(kind) ? goal >= 1 : goal > 0)) continue;
     seeded[id] = prefilledOneOffTarget({
       goal,
       windowCount: supply.windowCountByTaskId?.[id] ?? 0,
       sourceWindow: supply.sourceWindow,
       targetWindow,
+      kind,
     });
   }
   return seeded;

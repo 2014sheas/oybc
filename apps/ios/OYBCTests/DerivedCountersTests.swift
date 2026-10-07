@@ -192,6 +192,36 @@ final class DerivedCountersTests: XCTestCase {
         XCTAssertEqual(stored.countKind, .continuous)
     }
 
+    func test_mint_continuousMemberProRatesInTenths() throws {
+        let database = try makeDb()
+        var root = makeCountingTask(id: rootId, maxCount: 26.2, currentCount: 0, action: "Run", unit: "miles")
+        root.title = "Run 26.2 miles"
+        root.countKind = .continuous
+        try database.write { db in try root.save(db) }
+
+        let weekly = BoardSources.BoardWindow(
+            timeframe: .weekly, startDate: "2026-09-14T00:00:00.000Z", endDate: "2026-09-20T23:59:59.999Z"
+        )
+        try database.write { db in
+            _ = try AppDatabase.planAndMintDerivedRows(
+                db: db, boardId: self.boardId, userId: self.userId, now: self.now,
+                selectedIds: [self.rootId],
+                supplies: [self.boardSupply([self.rootId], memberRules: [:])],
+                manualTaskIds: [], manualTaskVary: [:],
+                window: weekly, mode: .oneOff,
+                tasksById: [self.rootId: root], childrenByCompoundId: [:],
+                sourceWindowByTaskId: [self.rootId: BoardSources.BoardWindow(timeframe: .monthly)],
+                events: []
+            )
+        }
+        let derivedId = BoardSources.derivedTaskId(boardId: boardId, rootTaskId: rootId)
+        let stored = try XCTUnwrap(try database.read { try Task.fetchOne($0, key: derivedId) })
+        // ceil(26.2 × 7 / 30 = 6.113) to the 0.1 step — a whole-kind ceil would give 7.
+        XCTAssertEqual(stored.maxCount, 6.2)
+        XCTAssertEqual(stored.countKind, .continuous)
+        XCTAssertEqual(stored.title, "Run 6.2 miles")
+    }
+
     func test_buildDerivedRows_continuousDraftIsBornCompleteAtItsFractionalGoal() {
         func rows(_ kind: CountKind) -> Task {
             let draft = BoardSources.DerivedTaskDraft(
