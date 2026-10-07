@@ -1087,7 +1087,7 @@ it('enqueues one sync item per written task', async () => { /* assert syncQueue 
 - [ ] **Step 4: Implement** both per the behaviour list.
 - [ ] **Step 5: Copy `countKind` on every linked-Task construction site** found by the grep in Files; add one assertion per platform that linking a new square to a continuous root yields a continuous linked row.
 - [ ] **Step 6: Run** web (`vitest run`, `build`, `lint`), shared, iOS logic suite — expect PASS.
-- [ ] **Step 7: Commit** `git commit -m "feat(counters): switchCounterKind — Count ⇄ Amount with family cascade; frozen windows keep their kind"`
+- [ ] **Step 7: Commit** `git commit -m "feat(counters): switchCounterKind — Discrete ⇄ Continuous with family cascade; frozen windows keep their kind"`
 
 **PR 2 checkpoint:** push, open PR "Counter kinds PR 2 — logic", self-review, run the full verification list from the PR 1 checkpoint, merge. Update `docs/COUNTER_KINDS.md` §Status ("PR 1 #…, PR 2 #… shipped; UI pending design") and `docs/TASK_SYSTEM.md`'s counting section with one paragraph + link, in the PR 2 branch.
 

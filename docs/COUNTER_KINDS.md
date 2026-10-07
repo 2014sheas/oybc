@@ -1,4 +1,4 @@
-# Counter kinds — Count · Amount · Time
+# Counter kinds — Discrete · Continuous · Duration
 
 **Status:** PR 1 #551 and PR 2 #552 shipped (data + logic); interface pending the Claude Design handoff.
 (brief: [`docs/design/counter-kinds/BRIEF.md`](design/counter-kinds/BRIEF.md)).
@@ -22,10 +22,10 @@ rollout. Before launch the only clients are owner TestFlight builds.
 
 | # | Decision |
 |---|---|
-| D1 | A per-task **kind**: `discrete` (Count, today's behaviour), `continuous` (Amount), `duration` (Time — designed now, build decided after design review). |
+| D1 | A per-task **kind**: `discrete` (whole counts, today's behaviour), `continuous` (decimals), `duration` (hours + minutes — designed now, build decided after design review). These names are used verbatim in code, docs and design hand-offs; on-screen labels are a design decision, and "Amount" is ruled out (it is already the custom log-amount field's placeholder). |
 | D2 | **Representation:** counts are real numbers quantized to **2 decimal places** at every write (not fixed-point integers, not parallel fields). Integers are exact doubles, so discrete counters are bit-identical to today. |
 | D3 | **Precision fixed at 2dp** for `continuous`; display trims trailing zeros. |
-| D4 | **Count ⇄ Amount switches both ways; Time never switches** (no switch into or out of `duration` — a raw number has no unit, so "5 hours" would read as 5 minutes). Events are never rewritten; a discrete task's window sum rounds half-up at read; switching to discrete rounds `maxCount` (min 1) as an ordinary authored edit; switching back restores exact values. |
+| D4 | **Discrete ⇄ Continuous switches both ways; Duration never switches** (no switch into or out of `duration` — a raw number has no unit, so "5 hours" would read as 5 minutes). Events are never rewritten; a discrete task's window sum rounds half-up at read; switching to discrete rounds `maxCount` (min 1) as an ordinary authored edit; switching back restores exact values. |
 | D5 | A shared-counter **family shares its root's kind**; linked/minted copies inherit it and follow a root switch (same cascade as a Goal edit). |
 | D6 | `duration` is stored as **integer minutes** — it reuses the discrete logic branch exactly (all steps snap to 1 minute); only input + display differ. Live start/stop timers are out of scope. |
 | D7 | The UI extends the **existing** counter interactions (tap/stepper sheet, chips, last-used amount, custom entry, late log, toast) per kind rather than inventing new ones; Claude Design adapts them. |
@@ -57,7 +57,7 @@ rollout. Before launch the only clients are owner TestFlight builds.
   resolution, `windowSum`, shared-counter display): sum deltas → `quantizeCount`
   → if discrete/duration, round half-up → clamp ≥ 0 → complete on `count >= maxCount`.
   One rule gives D4 and kills float drift (`0.1+0.2`).
-- **Kind switch** (Count ⇄ Amount only; the kind picker locks Time once a task exists, and locks every kind out of Time): `updateTaskAndCascade` / `applyTaskEditPatch` path, cascaded
+- **Kind switch** (Discrete ⇄ Continuous only; the kind picker locks Duration once a task exists, and locks every kind out of Duration): `updateTaskAndCascade` / `applyTaskEditPatch` path, cascaded
   across the family (D5); to-discrete rounds `maxCount` (min 1) and
   `defaultLogAmount`.
 - **Member rules** (`memberRules.ts` ↔ `BoardSourceMemberRules.swift`), branch
@@ -76,7 +76,7 @@ rollout. Before launch the only clients are owner TestFlight builds.
 Blocked on the Claude Design handoff for [the brief](design/counter-kinds/BRIEF.md).
 Surfaces: kind picker on all six Goal surfaces; decimal / h:m entry (iOS
 `RisoNumberField` `.numberPad` has no decimal key); square tap behaviour for
-Amount/Time; per-kind chip presets (web `amountChips.ts` ↔ iOS
+Continuous/Duration; per-kind chip presets (web `amountChips.ts` ↔ iOS
 `CounterLogAmount.swift`); late-log sheet; hub/Profile "+ Log"; toasts; board
 cell display at 3×3–5×5. Sections written after the handoff is approved.
 
@@ -87,7 +87,7 @@ cell display at 3×3–5×5. Sections written after the handoff is approved.
 2. **Logic**: §4 + vectors.
 3. **Authoring UI**: kind picker + Goal entry on every Goal surface.
 4. **Logging + display UI**: tap, chips, entry sheet, late log, hub, cells.
-5. *(if not folded into 3/4)* **Time** input + display.
+5. *(if not folded into 3/4)* **Duration** input + display.
 
 ## 7. Open items
 

@@ -5,7 +5,7 @@ import GRDB
 //
 // Swift twin of `apps/web/src/db/operations/countKindSwitch.ts`:
 //   - `switchCounterKind(rootTaskId:to:now:)` — switch a counter ROOT between
-//     Count and Amount (`discrete ⇄ continuous`), cascading to its live family.
+//     `.discrete` and `.continuous`, cascading to its live family.
 //   - `withRootCountKind(db:_:)` — the write-time rule that a new linked row
 //     carries its root's kind.
 
