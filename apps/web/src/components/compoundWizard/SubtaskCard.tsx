@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import type { Task } from '@oybc/shared';
 import { TaskType } from '@oybc/shared';
-import { counterRowTitle } from '../counters/counterRowTitle';
+import { counterRowSubtitle } from '../counters/counterRowTitle';
 import { RisoTypeBadge, type RisoTaskType } from '../riso';
 import { CountingStepFields } from '../CountingStepFields';
 import { CounterLinkHint } from '../counters';
@@ -381,9 +381,7 @@ function InlineCounterLinkHint({
 
 function buildTaskSubtitle(task: Task): string {
   if (task.type === TaskType.COUNTING) {
-    const derived = counterRowTitle(task);
-    if (!derived) return '';
-    return derived.toLowerCase() === task.title.trim().toLowerCase() ? '' : derived;
+    return counterRowSubtitle(task);
   }
   // Compound-typed tasks never reach this helper via the 'task' selection
   // branch above — they render via `buildCompoundSubtitle` instead.

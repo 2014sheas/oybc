@@ -28,5 +28,8 @@ final class TaskCountDisplayTests: XCTestCase {
         var noUnit = LinkedWindowKit.task("n", maxCount: 5)
         noUnit.unit = ""
         XCTAssertNil(TaskCountDisplay.goalSubtitle(for: noUnit))
+        var emptyAction = LinkedWindowKit.task("e", maxCount: 5)
+        emptyAction.action = ""
+        XCTAssertNil(TaskCountDisplay.goalSubtitle(for: emptyAction))
     }
 }

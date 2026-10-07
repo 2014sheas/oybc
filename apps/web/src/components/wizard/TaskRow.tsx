@@ -1,5 +1,5 @@
 import { TaskType, formatCounterName, type Task } from '@oybc/shared';
-import { counterRowTitle } from '../counters/counterRowTitle';
+import { counterRowSubtitle } from '../counters/counterRowTitle';
 import { RisoTypeBadge } from '../riso';
 import styles from './BoardWizardTasksStep.module.css';
 
@@ -83,9 +83,7 @@ export function renderTaskRow({
 
 export function buildTaskSubtitle(task: Task): string {
   if (task.type === TaskType.COUNTING) {
-    const derived = counterRowTitle(task);
-    if (!derived) return '';
-    return derived.toLowerCase() === task.title.trim().toLowerCase() ? '' : derived;
+    return counterRowSubtitle(task);
   }
   // Compound-typed tasks never reach this helper — both call sites
   // (`visible.tasks` and expanded-leaf lists) filter TaskType.COMPOUND

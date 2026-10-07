@@ -18,3 +18,18 @@ export function counterRowTitle(
   if (countKindNeedsUnit(kind) && !unit) return null;
   return generateCounterTaskTitle(action, task.maxCount, unit, undefined, kind);
 }
+
+/**
+ * The subtitle a library / wizard row shows under a counting task: its auto
+ * title, or '' when that merely restates the row's own title.
+ *
+ * @param task - The counting task.
+ * @returns The subtitle, or `''`.
+ */
+export function counterRowSubtitle(
+  task: Pick<Task, 'action' | 'unit' | 'maxCount' | 'countKind' | 'title'>,
+): string {
+  const derived = counterRowTitle(task);
+  if (!derived) return '';
+  return derived.toLowerCase() === task.title.trim().toLowerCase() ? '' : derived;
+}
