@@ -72,6 +72,33 @@ final class RisoEditTaskSheetSnapshotTests: XCTestCase {
         )
     }
 
+    func testCountingDurationLockedLight() {
+        var task = countingTask()
+        task.title = "Practice 10h 30m"
+        task.action = "Practice"
+        task.unit = ""
+        task.maxCount = 630
+        task.countKind = .duration
+        assertSnapshot(
+            of: makeSheet(task: task),
+            as: .image(layout: .fixed(width: 393, height: 700)),
+            record: recordMode
+        )
+    }
+
+    func testCountingContinuousLight() {
+        var task = countingTask()
+        task.title = "Run 26.2 miles"
+        task.unit = "miles"
+        task.maxCount = 26.2
+        task.countKind = .continuous
+        assertSnapshot(
+            of: makeSheet(task: task),
+            as: .image(layout: .fixed(width: 393, height: 700)),
+            record: recordMode
+        )
+    }
+
     // MARK: - 3. Achievement — specific board
 
     func testAchievementBoardLight() {

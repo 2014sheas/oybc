@@ -1,4 +1,4 @@
-import { test, expect, openTab, seedTask } from './_fixtures/bypass';
+import { test, expect, openTab, readTask, seedTask } from './_fixtures/bypass';
 
 test.describe('Counter kinds — authoring (A1)', () => {
   test('Tasks tab: create a Continuous and a Duration counting task', async ({ page }) => {
@@ -49,5 +49,21 @@ test.describe('Counter kinds — authoring (A1)', () => {
     await sheet.getByPlaceholder('push-ups').fill('miles');
     await expect(sheet.getByRole('group', { name: 'Kind' })).toHaveCount(0);
     await expect(sheet.getByText('Continuous', { exact: false }).first()).toBeVisible();
+  });
+
+  test('Task Detail: Continuous → Discrete confirms, rounds and saves', async ({ page }) => {
+    const id = 'e0000000-0000-0000-0000-000000000001';
+    await openTab(page, 'Tasks');
+    await seedTask(page, { id, title: 'Run 26.2 miles', type: 'counting', action: 'Run', unit: 'miles', maxCount: 26.2, currentCount: 12.75, countKind: 'continuous' });
+    await page.goto(`/tasks/${id}?__oybc_test_bypass=1`);
+    await page.getByRole('button', { name: 'Edit', exact: true }).click();
+    await page.getByRole('group', { name: 'Kind' }).getByRole('button', { name: 'Discrete' }).click();
+    const confirm = page.getByRole('alertdialog', { name: 'Switch to Discrete?' });
+    await expect(confirm.getByText('Run 26 miles')).toBeVisible();
+    await expect(confirm.getByText('13 logged')).toBeVisible();
+    await confirm.getByRole('button', { name: 'Switch' }).click();
+    await expect(page.getByLabel('Goal', { exact: true })).toHaveValue('26');
+    await page.getByRole('button', { name: 'Save changes', exact: true }).click();
+    await expect.poll(async () => readTask(page, id)).toMatchObject({ countKind: 'discrete', maxCount: 26 });
   });
 });

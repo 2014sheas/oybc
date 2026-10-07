@@ -742,4 +742,43 @@ final class AppDatabaseTaskEditTests: XCTestCase {
         try db.writeWizardPendingTasksAndEnqueue([], stagedEdits: [f.p.id: good], now: now)
         XCTAssertEqual(try liveLinks(db, parent: f.p.id).map(\.childTaskId), [f.b.id, l.id])
     }
+
+    // MARK: - Counter kinds (PR 3 Task 9)
+
+    private func countingRoot(_ db: AppDatabase, kind: CountKind = .continuous, maxCount: CountValue = 26.2) throws {
+        var t = LinkedWindowKit.task("r", maxCount: maxCount, title: "Run 26.2 miles")
+        t.countKind = kind
+        try db.saveTask(t)
+    }
+
+    private func countingPatch(goal: String, kind: CountKind?, title: String = "Run 30 miles") -> EditTaskSheet.Patch {
+        EditTaskSheet.Patch(
+            title: title, description: "", action: "Run", unit: "miles", maxCountStr: goal,
+            trigger: .greenlog, requiredCountStr: "", refMode: .board, selectedBoardId: "", selectedTemplateId: "",
+            countKind: kind
+        )
+    }
+
+    func testEditSwitchesThenAppliesTypedGoal() throws {
+        let db = try makeDb(); try countingRoot(db)
+        _ = try db.applyTaskEditPatch(taskId: "r", patch: countingPatch(goal: "30", kind: .discrete))
+        let saved = try XCTUnwrap(db.fetchTask(id: "r"))
+        XCTAssertEqual(saved.countKind, .discrete)
+        XCTAssertEqual(saved.maxCount, 30)
+    }
+
+    func testFractionalGoalAfterTheSwitchRollsTheSwitchBack() throws {
+        let db = try makeDb(); try countingRoot(db)
+        XCTAssertThrowsError(try db.applyTaskEditPatch(taskId: "r", patch: countingPatch(goal: "26.2", kind: .discrete)))
+        let saved = try XCTUnwrap(db.fetchTask(id: "r"))
+        XCTAssertEqual(saved.countKind, .continuous)
+        XCTAssertEqual(saved.maxCount, 26.2)
+        XCTAssertEqual(saved.version, 1)
+    }
+
+    func testContinuousGoalEditKeepsDecimals() throws {
+        let db = try makeDb(); try countingRoot(db)
+        _ = try db.applyTaskEditPatch(taskId: "r", patch: countingPatch(goal: "13,1", kind: nil, title: "Run 13.1 miles"))
+        XCTAssertEqual(try db.fetchTask(id: "r")?.maxCount, 13.1)
+    }
 }

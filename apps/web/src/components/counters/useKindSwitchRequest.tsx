@@ -16,8 +16,8 @@ export type KindSwitchSubject = Pick<
 
 /**
  * The one confirm seam for every editing sheet's kind picker (Ruling U7):
- * Continuous → Discrete opens the dialog (DB preview for a stored root, the
- * pure preview of `subject` for a pending task); confirming hands the new
+ * Continuous → Discrete opens the dialog (the pure preview of `subject` — the
+ * editor's draft — plus the stored root's linked-square count); confirming hands the new
  * kind and the rounded Goal text to `onSwitched` in one call. Every other
  * permitted change applies at once through `setKind`.
  *
@@ -41,14 +41,14 @@ export function useKindSwitchRequest(args: {
       args.setKind(next);
       return;
     }
-    // The editor's draft fields (goal text, title) may be ahead of the stored
-    // row; the dialog previews the stored root's family when there is one,
-    // else the draft itself.
-    const fallback = (): KindSwitchPreview | null =>
-      planKindSwitchPreview({ ...args.subject, countKind: args.kind }, next, 0);
+    // The dialog previews the editor's DRAFT (title / goal typed in this
+    // sheet, not yet saved); the stored root only supplies how many linked
+    // squares follow.
     void previewCounterKindSwitch(args.subject.id, next)
       .catch(() => null)
-      .then((p) => setPending(p ?? fallback()));
+      .then((stored) =>
+        setPending(planKindSwitchPreview({ ...args.subject, countKind: args.kind }, next, stored?.linkedCount ?? 0)),
+      );
   };
   const dialog = pending ? (
     <KindSwitchConfirmDialog

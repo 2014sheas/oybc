@@ -104,7 +104,14 @@ extension AppDatabase {
             guard var task = try Task.fetchOne(db, key: taskId), !task.isDeleted else {
                 throw TaskEditError.taskNotFound
             }
-            Self.applyBasicFields(of: patch, to: &task)
+            // Switch first (inside this write), then parse the typed goal at the
+            // FINAL kind; a refused goal throws and rolls the switch back.
+            if task.type == .counting,
+               try Self.applyKindSwitchThenGoalGuard(db: db, taskId: taskId, to: patch.countKind, maxCount: nil, now: Date()) {
+                guard let refreshed = try Task.fetchOne(db, key: taskId) else { throw TaskEditError.taskNotFound }
+                task = refreshed
+            }
+            try Self.applyBasicFields(of: patch, to: &task)
 
             if task.type == .compound, let structure = patch.compound {
                 // Link eligibility first: a library task picked as a new
@@ -228,14 +235,25 @@ extension AppDatabase {
     // MARK: - Patch application (pure)
 
     /// Title, description and counting fields — identical for every type.
-    private static func applyBasicFields(of patch: EditTaskSheet.Patch, to task: inout Task) {
+    private static func applyBasicFields(of patch: EditTaskSheet.Patch, to task: inout Task) throws {
         let trimmedDescription = patch.description.trimmingCharacters(in: .whitespacesAndNewlines)
         task.title = patch.title.trimmingCharacters(in: .whitespacesAndNewlines)
         task.description = trimmedDescription.isEmpty ? nil : trimmedDescription
         if task.type == .counting {
+            let kind = resolveCountKind(task.countKind)
             if !patch.action.isEmpty { task.action = patch.action }
-            if !patch.unit.isEmpty { task.unit = patch.unit }
-            if let max = Int(patch.maxCountStr).map(CountValue.init), max > 0 { task.maxCount = max }
+            if countKindNeedsUnit(kind) { if !patch.unit.isEmpty { task.unit = patch.unit } } else { task.unit = "" }
+            let goal = patch.maxCountStr.trimmingCharacters(in: .whitespaces)
+            if !goal.isEmpty {
+                guard let max = parseCountInput(goal, kind: kind) else {
+                    switch kind {
+                    case .discrete: throw TaskEditError.invalid(message: "Goal must be a positive integer")
+                    case .continuous: throw TaskEditError.invalid(message: "Goal must be a number above zero with up to 2 decimals")
+                    case .duration: throw TaskEditError.invalid(message: "Goal must be a duration above zero")
+                    }
+                }
+                task.maxCount = max
+            }
         }
     }
 

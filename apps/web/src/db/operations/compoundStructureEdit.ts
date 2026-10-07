@@ -27,6 +27,7 @@ import {
   TaskType,
   compoundChildLinkProblem,
   type CompoundChild,
+  type CountKind,
   type Task,
 } from '@oybc/shared';
 import { db } from '../internal';
@@ -41,6 +42,7 @@ import {
 } from '../taskEditPatch';
 import { runBoardCascadeForTasks } from './orchestration';
 import { addToSyncQueue } from './syncQueue';
+import { applyKindSwitchThenGoalGuard } from './countKindSwitch';
 import { updateTaskAndCascade, type UpdateTaskPatch } from './tasks.crud';
 
 /**
@@ -342,7 +344,7 @@ export async function editCompoundStructure(
  * plus — for a compound whose structure the user edited — the structure
  * patch.
  */
-export type TaskEditSubmit = UpdateTaskPatch & { compound?: TaskEditPatch };
+export type TaskEditSubmit = UpdateTaskPatch & { compound?: TaskEditPatch; countKind?: CountKind };
 
 /**
  * Router used by both Task Detail edit call sites. A submit carrying
@@ -356,7 +358,7 @@ export type TaskEditSubmit = UpdateTaskPatch & { compound?: TaskEditPatch };
  *   otherwise whatever `updateTaskAndCascade` / `editCompoundStructure` throw.
  */
 export async function saveTaskEdit(taskId: string, submit: TaskEditSubmit): Promise<void> {
-  const { compound, ...basicPatch } = submit;
+  const { compound, countKind, ...basicPatch } = submit;
   if (compound) {
     // The sheet sends `description: undefined` to CLEAR a description (Dexie
     // deletes a key whose update value is `undefined`, which is how
@@ -367,7 +369,21 @@ export async function saveTaskEdit(taskId: string, submit: TaskEditSubmit): Prom
     await editCompoundStructure(taskId, compound, { description });
     return;
   }
-  await updateTaskAndCascade(taskId, basicPatch);
+  if (countKind === undefined) {
+    await updateTaskAndCascade(taskId, basicPatch);
+    return;
+  }
+  // Kind switch + field patch are one write: a goal the final kind refuses
+  // (KindGoalError) rolls the switch back with it. `updateTaskAndCascade`'s
+  // nested transactions join this one.
+  await db.transaction(
+    'rw',
+    [db.boards, db.boardTasks, db.tasks, db.compoundChildren, db.taskEvents, db.syncQueue],
+    async () => {
+      await applyKindSwitchThenGoalGuard(taskId, countKind, basicPatch.maxCount, new Date().toISOString());
+      await updateTaskAndCascade(taskId, basicPatch);
+    },
+  );
 }
 
 /** The Task fields that only a Counting task carries (cleared on any switch away). */
