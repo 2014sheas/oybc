@@ -138,6 +138,28 @@ final class RisoKitSnapshotTests: XCTestCase {
             record: recordMode
         )
     }
+
+    // MARK: - Counter kinds (PR 3) — the four picker states of handoff §1
+
+    private func kindPickerStates() -> some View {
+        KindPickerStatesPreview()
+            .padding(16)
+            .background(Color.risoPaper)
+            .frame(width: 353, height: 230)
+    }
+
+    func testKindPickerStatesLight() {
+        assertSnapshot(of: kindPickerStates(), as: .image(layout: .fixed(width: 353, height: 230)), record: recordMode)
+    }
+
+    func testKindPickerStatesDark() {
+        assertSnapshot(
+            of: kindPickerStates(),
+            as: .image(layout: .fixed(width: 353, height: 230), traits: .init(userInterfaceStyle: .dark)),
+            record: recordMode
+        )
+    }
+
 }
 
 /// `@State` wrappers so the compact stepper + compact segmented render
@@ -192,5 +214,21 @@ private struct PillSegmentedPreview: View {
             selection: $value,
             style: .pill
         )
+    }
+}
+
+/// New (all live) · existing Continuous (Duration locked out) · existing
+/// Duration (locked in) · linked tag — handoff `Counter Kinds.dc.html` §1.
+private struct KindPickerStatesPreview: View {
+    @State private var a: CountKind = .continuous
+    @State private var b: CountKind = .continuous
+    @State private var c: CountKind = .duration
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            KindPickerView(selection: $a, lock: .none)
+            KindPickerView(selection: $b, lock: .duration)
+            KindPickerView(selection: $c, lock: .all)
+            KindTagView(kind: .continuous, counterName: "Miles", lifetime: 148.6)
+        }
     }
 }

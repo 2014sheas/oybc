@@ -129,3 +129,9 @@
 .pill.compact .seg + .seg {
   border-left: 1.5px solid var(--riso-ink);
 }
+
+/* ---- card, locked segment (counter-kind picker) ---- */
+.card .seg.locked { cursor: default; }
+.card .seg.locked:not(.on) { opacity: 0.45; }
+.card .seg.locked:hover:not(.on) { background: var(--riso-paper-2); }
+.lockGlyph { display: inline-grid; place-items: center; margin-left: 5px; vertical-align: -1px; }

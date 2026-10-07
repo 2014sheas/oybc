@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { RisoIcon } from './RisoIcon';
 import styles from './RisoSegmented.module.css';
 
 export interface RisoSegmentedOption<T> {
@@ -35,6 +36,14 @@ export interface RisoSegmentedProps<T> {
    */
   fullWidth?: boolean;
   /**
+   * `card` only: values whose segment ignores taps — 45% opacity, not
+   * hit-testable, `aria-disabled`. The counter-kind picker's locked states
+   * (docs/COUNTER_KINDS.md §5). Omitted ⇒ unchanged markup.
+   */
+  lockedValues?: ReadonlyArray<T>;
+  /** `card` only: values whose segment carries the lock glyph. */
+  lockGlyphValues?: ReadonlyArray<T>;
+  /**
    * Accessible group label — REQUIRED. A `role="group"` with no accessible
    * name fails WCAG 1.3.1, so the kit forces callers to name the control.
    */
@@ -55,6 +64,8 @@ export function RisoSegmented<T extends string | number>({
   variant = 'card',
   size = 'default',
   fullWidth = false,
+  lockedValues,
+  lockGlyphValues,
   'aria-label': ariaLabel,
 }: RisoSegmentedProps<T>): React.ReactElement {
   return (
@@ -71,15 +82,24 @@ export function RisoSegmented<T extends string | number>({
     >
       {options.map((opt) => {
         const selected = opt.value === value;
+        // card-only by contract: the pill variants ignore locks.
+        const locked = variant === 'card' && (lockedValues?.includes(opt.value) ?? false);
+        const glyph = variant === 'card' && (lockGlyphValues?.includes(opt.value) ?? false);
         return (
           <button
             key={String(opt.value)}
             type="button"
-            className={[styles.seg, selected ? styles.on : ''].filter(Boolean).join(' ')}
+            className={[styles.seg, selected ? styles.on : '', locked ? styles.locked : ''].filter(Boolean).join(' ')}
             aria-pressed={selected}
-            onClick={() => onChange(opt.value)}
+            aria-disabled={locked ? true : undefined}
+            onClick={locked ? undefined : () => onChange(opt.value)}
           >
             {opt.label}
+            {glyph && (
+              <span className={styles.lockGlyph} aria-hidden="true">
+                <RisoIcon name="lock" size={11} />
+              </span>
+            )}
           </button>
         );
       })}

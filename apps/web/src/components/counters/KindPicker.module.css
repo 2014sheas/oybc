@@ -1,0 +1,10 @@
+.tagRow { display: flex; align-items: center; gap: 8px; min-height: 38px; }
+.tag {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 6px 10px; border: 2px solid var(--riso-ink); border-radius: var(--riso-r-card);
+  background: var(--riso-blue); color: var(--riso-on-color);
+  font-family: var(--riso-font-head); font-size: 12px; font-weight: 700;
+}
+.dots { display: inline-flex; gap: 2px; }
+.dots i { width: 5px; height: 5px; border-radius: 50%; background: var(--riso-on-color); }
+.tagMeta { font-family: var(--riso-font-body); font-size: 12px; font-weight: 600; color: var(--riso-muted); }
