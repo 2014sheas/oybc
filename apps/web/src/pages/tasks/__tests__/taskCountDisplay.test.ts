@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { TaskType, type Task } from '@oybc/shared';
-import { computeStatusLabel, displayedCountFor } from '../taskCountDisplay';
+import { computeStatusLabel, countingDetailLine, displayedCountFor } from '../taskCountDisplay';
 import { isInProgress } from '../useTasksFilters';
 import type { TaskLibrary } from '../../createPage/useTaskLibrary';
 
@@ -107,5 +107,23 @@ describe('computeStatusLabel per kind', () => {
     expect(computeStatusLabel({ ...base, currentCount: 12.4, maxCount: 26.2, countKind: 'continuous' })).toBe('12.4 / 26.2');
     expect(computeStatusLabel({ ...base, currentCount: 270, maxCount: 630, countKind: 'duration' })).toBe('4h 30m / 10h 30m');
     expect(computeStatusLabel({ ...base, currentCount: 6, maxCount: 10 })).toBe('6 / 10');
+  });
+});
+
+describe('countingDetailLine (Task Detail counting line, per kind)', () => {
+  it('Duration reads h:m both sides and drops the unit', () => {
+    expect(
+      countingDetailLine(task({ action: 'Practice', unit: '', currentCount: 270, maxCount: 630, countKind: 'duration' })),
+    ).toBe('Practice · 4h 30m / 10h 30m');
+  });
+
+  it('Continuous keeps the literal decimals and the unit', () => {
+    expect(
+      countingDetailLine(task({ action: 'Hike', unit: 'mi', currentCount: 3.1, maxCount: 26.2, countKind: 'continuous' })),
+    ).toBe('Hike · 3.1 / 26.2 mi');
+  });
+
+  it('Discrete reads as before, baseline-adjusted for a linked member', () => {
+    expect(countingDetailLine(LINKED)).toBe('Run · 2 / 5 km');
   });
 });

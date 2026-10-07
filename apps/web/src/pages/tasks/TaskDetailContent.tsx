@@ -36,7 +36,7 @@ import { formatRelativeTime } from '../../utils/relativeTime';
 import { LinkedCounterCaptionView } from './LinkedCounterCaptionView';
 import { TaskEditSheet } from './TaskEditSheet';
 import { TaskConfirmDeleteDialog } from './TaskConfirmDeleteDialog';
-import { displayedCountFor } from './taskCountDisplay';
+import { countingDetailLine, displayedCountFor } from './taskCountDisplay';
 import styles from './TaskDetailContent.module.css';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -234,7 +234,7 @@ function TypeSpecificFacts({
       <section className={styles.section}>
         <h2 className={styles.sectionHeading}>Counting</h2>
         <p className={styles.metaLine}>
-          {task.action} · {current} / {max} {task.unit}
+          {countingDetailLine(task)}
         </p>
         {max > 0 && (
           <div className={styles.progressBar} aria-label={`Progress ${pct}%`}>
