@@ -111,7 +111,8 @@ final class CountersHubSnapshotTests: XCTestCase {
         match: CounterCreateMatch?,
         kind: CountKind = .discrete,
         startText: String = "",
-        previewCount: CountValue = 0
+        previewCount: CountValue = 0,
+        startFromInvalid: Bool = false
     ) -> some View {
         NavigationStack {
             ScrollView {
@@ -120,6 +121,7 @@ final class CountersHubSnapshotTests: XCTestCase {
                     unit: .constant(unit),
                     startingCountText: .constant(startText),
                     countKind: .constant(kind),
+                    startFromInvalid: startFromInvalid,
                     previewName: previewName,
                     previewCount: previewCount,
                     trimmedUnit: unit,
@@ -140,6 +142,24 @@ final class CountersHubSnapshotTests: XCTestCase {
     func testNewCounterSheetContinuousDark() {
         let host = sheetHost(verb: "Run", unit: "miles", previewName: "Run miles", match: nil,
                              kind: .continuous, startText: "148.6", previewCount: 148.6)
+        assertSnapshot(
+            of: host,
+            as: .image(layout: .fixed(width: 393, height: 520), traits: .init(userInterfaceStyle: .dark)),
+            record: recordMode
+        )
+    }
+
+    /// I4 — an unparseable "Start from" (3 decimals on Continuous) draws the
+    /// field's invalid state (red keyline), like web `CreateCounterSheet`.
+    func testNewCounterSheetStartFromInvalidLight() {
+        let host = sheetHost(verb: "Run", unit: "miles", previewName: "Run miles", match: nil,
+                             kind: .continuous, startText: "3.125", startFromInvalid: true)
+        assertSnapshot(of: host, as: .image(layout: .fixed(width: 393, height: 520)), record: recordMode)
+    }
+
+    func testNewCounterSheetStartFromInvalidDark() {
+        let host = sheetHost(verb: "Run", unit: "miles", previewName: "Run miles", match: nil,
+                             kind: .continuous, startText: "3.125", startFromInvalid: true)
         assertSnapshot(
             of: host,
             as: .image(layout: .fixed(width: 393, height: 520), traits: .init(userInterfaceStyle: .dark)),

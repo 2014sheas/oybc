@@ -252,6 +252,8 @@ struct RisoSegmented<T: Hashable>: View {
                 .buttonStyle(.plain)
                 .allowsHitTesting(!locked)
                 .accessibilityAddTraits(locked ? [.isStaticText] : [])
+                // A locked segment isn't actionable — don't announce it as a button.
+                .accessibilityRemoveTraits(locked ? [.isButton] : [])
             }
         }
     }
@@ -383,11 +385,13 @@ struct RisoNumberField: View {
     /// `.numberPad` (default — every pre-kind caller) or `.decimalPad` for
     /// Continuous (`GoalEntryModel.keyboard(for:)`).
     var keyboard: UIKeyboardType = .numberPad
+    /// Red keyline for an unparseable entry (web `GoalEntry`'s `.invalid`).
+    var invalid: Bool = false
 
     var body: some View {
         TextField(placeholder, text: $text)
             .keyboardType(keyboard)
-            .fieldStyle()
+            .fieldStyle(invalid: invalid)
     }
 }
 
@@ -412,8 +416,8 @@ struct RisoSecureField: View {
 
 private extension View {
     /// Shared padding/font/background/keyline used by `RisoTextField`
-    /// and `RisoNumberField`.
-    func fieldStyle() -> some View {
+    /// and `RisoNumberField`. `invalid` draws the keyline red.
+    func fieldStyle(invalid: Bool = false) -> some View {
         self
             .font(.risoHead(14, .bold))
             .foregroundStyle(Color.risoInk)
@@ -424,7 +428,7 @@ private extension View {
             .clipShape(RoundedRectangle(cornerRadius: Riso.cardRadius))
             .overlay(
                 RoundedRectangle(cornerRadius: Riso.cardRadius)
-                    .strokeBorder(Color.risoInk, lineWidth: Riso.Keyline.container)
+                    .strokeBorder(invalid ? Color.risoRed : Color.risoInk, lineWidth: Riso.Keyline.container)
             )
     }
 }

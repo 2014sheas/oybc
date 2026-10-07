@@ -595,7 +595,11 @@ extension BoardPlayViewModel {
             updated.action = override.action
             if let u = override.unit   { updated.unit   = u }
             if let m = override.maxCount { updated.maxCount = m }
-            if writesKind, task.sharedCounterId == nil, let kind = override.countKind {
+            // A conversion INTO Counting with no staged kind lands Discrete
+            // explicitly (web `compoundStructureEdit`: `stagedKind ?? 'discrete'`).
+            let convertsIntoCounting = task.type != .counting
+            if writesKind, task.sharedCounterId == nil,
+               let kind = override.countKind ?? (convertsIntoCounting ? .discrete : nil) {
                 // A PENDING task (no events yet) or a Simple → Counting
                 // conversion takes the chosen kind directly; a stored counting
                 // row's kind changes only through the guard in applyStagedOverrides.

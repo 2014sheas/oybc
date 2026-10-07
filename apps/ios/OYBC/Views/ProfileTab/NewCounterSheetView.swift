@@ -210,7 +210,7 @@ struct NewCounterSheetContentView: View {
             }
 
             fieldBlock(label: "Start from (optional)") {
-                GoalEntryView(kind: countKind, text: $startingCountText, placeholder: "0")
+                GoalEntryView(kind: countKind, text: $startingCountText, placeholder: "0", invalid: startFromInvalid)
             }
 
             if !previewName.isEmpty {

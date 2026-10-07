@@ -29,6 +29,8 @@ struct GoalEntryView: View {
     var placeholder: String? = nil
     var suffix: String? = nil
     var startsOpen: Bool = false
+    /// Red keyline for an unparseable entry (web `GoalEntry`'s `invalid`).
+    var invalid: Bool = false
 
     @State private var wheelOpen = false
 
@@ -38,7 +40,7 @@ struct GoalEntryView: View {
 
     private var numericBody: some View {
         ZStack(alignment: .trailing) {
-            RisoNumberField(placeholder: placeholder ?? "100", text: $text, keyboard: GoalEntryModel.keyboard(for: kind))
+            RisoNumberField(placeholder: placeholder ?? "100", text: $text, keyboard: GoalEntryModel.keyboard(for: kind), invalid: invalid)
             if let suffix, !suffix.isEmpty {
                 Text(suffix)
                     .font(.risoBody(11, .semibold))
@@ -65,7 +67,7 @@ struct GoalEntryView: View {
                 .padding(.horizontal, 11)
                 .frame(minHeight: 40)
                 .background(RoundedRectangle(cornerRadius: 7).fill(Color.risoPaper))
-                .overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(Color.risoInk, lineWidth: Riso.Keyline.container))
+                .overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(invalid ? Color.risoRed : Color.risoInk, lineWidth: Riso.Keyline.container))
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
