@@ -122,6 +122,54 @@ func findLinkableCounter(
     )
 }
 
+// MARK: - Create-form auto-link state
+
+/// The auto-link state of one counting create (the special-task panel's
+/// counting fields and the compound builder's new counting sub). Web twins:
+/// `CreateNewTaskForm`'s `linkDisabled` effect and `SubtaskCard`'s
+/// `onKindChange` / `InlineCounterLinkHint`.
+struct CounterLinkState {
+    /// The counter the typed (verb, noun) pair matches, opt-out ignored.
+    private(set) var suggestion: LinkableCounterSuggestion?
+    /// True once the user tapped "Don't link" for the current pair.
+    var linkDisabled: Bool = false
+
+    init(suggestion: LinkableCounterSuggestion? = nil, linkDisabled: Bool = false) {
+        self.suggestion = suggestion
+        self.linkDisabled = linkDisabled
+    }
+
+    /// The counter this create links to — nil when opted out or no match.
+    var linked: LinkableCounterSuggestion? { linkDisabled ? nil : suggestion }
+
+    /// The counter the hint (and its "Don't link" toggle) names. Shown
+    /// whenever a match exists — never gated on the goal, or a goal that only
+    /// parses at the other kind ("3.1" against a Discrete root) would hide
+    /// the very toggle that unlinks it.
+    var hint: LinkableCounterSuggestion? { suggestion }
+
+    /// The kind validation, preview and the saved row use: a linked create
+    /// takes the root's kind (D5 / R19), otherwise the picker's.
+    func effectiveKind(picker: CountKind) -> CountKind { linked?.countKind ?? picker }
+
+    /// The typed (verb, noun) pair changed: re-match and re-offer linking.
+    mutating func pairChanged(action: String, unit: String, kind: CountKind, tasks: [Task]) {
+        rematch(action: action, unit: unit, kind: kind, tasks: tasks)
+        linkDisabled = false
+    }
+
+    /// The picker kind changed: re-match (Duration has no noun, so it never
+    /// links) but keep the opt-out — the picker only shows while unlinked,
+    /// so resetting it would silently re-link to the root the user declined.
+    mutating func kindChanged(action: String, unit: String, kind: CountKind, tasks: [Task]) {
+        rematch(action: action, unit: unit, kind: kind, tasks: tasks)
+    }
+
+    private mutating func rematch(action: String, unit: String, kind: CountKind, tasks: [Task]) {
+        suggestion = kind == .duration ? nil : findLinkableCounter(action: action, unit: unit, tasks: tasks)
+    }
+}
+
 // MARK: - Hub-create dedupe classification (P5)
 
 /// What the hub "+ New counter" form's typed action+unit collided with.

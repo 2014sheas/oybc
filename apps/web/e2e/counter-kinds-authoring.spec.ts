@@ -1,4 +1,4 @@
-import { test, expect, openTab, readTask, seedPool, seedTask } from './_fixtures/bypass';
+import { test, expect, openTab, readTask, readTaskByTitle, seedPool, seedTask } from './_fixtures/bypass';
 
 test.describe('Counter kinds — authoring (A1)', () => {
   test('Tasks tab: create a Continuous and a Duration counting task', async ({ page }) => {
@@ -89,5 +89,72 @@ test.describe('Counter kinds — authoring (A1)', () => {
     await page.getByRole('button', { name: 'Save task' }).click();
     await page.getByRole('button', { name: 'Save', exact: true }).click();
     await expect.poll(async () => readTask(page, id)).toMatchObject({ countKind: 'discrete', maxCount: 26 });
+  });
+});
+
+test.describe('Counter kinds — "Don\'t link" survives a kind change (C1 / C2)', () => {
+  /** A Discrete root "Run 5 miles" that a (Run, miles) create auto-links to. */
+  async function seedDiscreteRoot(page: import('@playwright/test').Page): Promise<void> {
+    await seedTask(page, {
+      id: 'dddddddd-0007-0000-0000-000000000007',
+      title: 'Run 5 miles',
+      type: 'counting',
+      action: 'Run',
+      unit: 'miles',
+      maxCount: 5,
+      currentCount: 2,
+    });
+  }
+
+  test('A1 New task: goal 3.1 still shows the toggle; unlink → Continuous stays unlinked and saves unlinked', async ({ page }) => {
+    await openTab(page, 'Tasks');
+    await seedDiscreteRoot(page);
+    await page.getByRole('button', { name: 'New task', exact: true }).click();
+    const sheet = page.getByRole('dialog', { name: 'New task' });
+    await sheet.getByRole('button', { name: 'Counting', exact: true }).click();
+    await sheet.getByLabel('Verb').fill('Run');
+    await sheet.getByPlaceholder('push-ups').fill('miles');
+    // "3.1" does not parse at the Discrete root's kind — the toggle must still show (C2).
+    await sheet.getByLabel('Goal', { exact: true }).fill('3.1');
+    await sheet.getByRole('button', { name: /^Don't link to / }).click();
+    const kind = sheet.getByRole('group', { name: 'Kind' });
+    await kind.getByRole('button', { name: 'Continuous' }).click();
+    // A kind change never re-links (C1): the picker stays and the pill still offers "Link".
+    await expect(kind).toBeVisible();
+    await expect(sheet.getByRole('button', { name: /^Link to / })).toBeVisible();
+    await sheet.getByRole('button', { name: 'Add to library' }).click();
+    await expect(sheet).not.toBeVisible();
+    await expect.poll(async () => readTaskByTitle(page, 'Run 3.1 miles')).toMatchObject({
+      countKind: 'continuous',
+      maxCount: 3.1,
+    });
+    expect((await readTaskByTitle(page, 'Run 3.1 miles'))?.sharedCounterId ?? null).toBeNull();
+  });
+
+  test('A2 compound inline sub-task: goal 3.1 still shows the toggle; unlink → Continuous stays unlinked and saves unlinked', async ({ page }) => {
+    await openTab(page, 'Tasks');
+    await seedDiscreteRoot(page);
+    await page.getByRole('button', { name: 'New task', exact: true }).click();
+    const sheet = page.getByRole('dialog', { name: 'New task' });
+    await sheet.getByRole('button', { name: 'Compound', exact: true }).click();
+    await sheet.getByLabel(/title/i).first().fill('Weekend');
+    await sheet.getByRole('button', { name: 'Next ›' }).click();
+    await sheet.getByRole('button', { name: '+ New task' }).click();
+    await sheet.getByRole('button', { name: 'Counting', exact: true }).nth(1).click();
+    await sheet.getByLabel('Verb').fill('Run');
+    await sheet.getByPlaceholder('push-ups').fill('miles');
+    await sheet.getByLabel('Goal', { exact: true }).fill('3.1');
+    await sheet.getByRole('button', { name: /^Don't link to / }).click();
+    const kind = sheet.getByRole('group', { name: 'Kind' });
+    await kind.getByRole('button', { name: 'Continuous' }).click();
+    await expect(kind).toBeVisible();
+    await expect(sheet.getByRole('button', { name: /^Link to / })).toBeVisible();
+    await sheet.getByRole('button', { name: 'Next ›' }).click();
+    await sheet.getByRole('button', { name: 'Create Compound' }).click();
+    await expect.poll(async () => readTaskByTitle(page, 'Run 3.1 miles')).toMatchObject({
+      countKind: 'continuous',
+      maxCount: 3.1,
+    });
+    expect((await readTaskByTitle(page, 'Run 3.1 miles'))?.sharedCounterId ?? null).toBeNull();
   });
 });

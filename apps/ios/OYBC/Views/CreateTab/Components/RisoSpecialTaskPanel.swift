@@ -111,9 +111,7 @@ struct RisoSpecialTaskPanel: View {
         countingGoalText = s.goal
         countingUnitText = s.unit
         countingKind = s.kind
-        if s.kind != .duration {
-            linkSuggestion = findLinkableCounter(action: s.action, unit: s.unit, tasks: suggestionPool ?? taskLibrary)
-        }
+        link.pairChanged(action: s.action, unit: s.unit, kind: s.kind, tasks: suggestionPool ?? taskLibrary)
     }
 
     // MARK: - Collapsed button
@@ -227,14 +225,10 @@ struct RisoSpecialTaskPanel: View {
     @State private var countingUnitText: String = ""
     @State private var countingKind: CountKind = .discrete
 
-    // Counter-link suggestion state (R1 counters refresh — auto-link default
-    // ON). Updated whenever the (verb, noun) pair changes.
-    @State private var linkSuggestion: LinkableCounterSuggestion? = nil
-    /// True when the user tapped "Don't link" to opt out of the (default-on)
-    /// suggested link for this create. Reset to `false` whenever the typed
-    /// (verb, noun) pair changes — an edited pair re-offers linking by
-    /// default (web parity).
-    @State private var linkDisabled: Bool = false
+    // Counter-link state (R1 counters refresh — auto-link default ON, "Don't
+    // link" opts out). An edited (verb, noun) pair re-offers linking; a kind
+    // change keeps the opt-out (`CounterLinkState`).
+    @State private var link = CounterLinkState()
 
     /// R1: counting-fields title preview — "Title: {derived title}",
     /// matching web's `CountingStepFields` (Verb → Goal → Counting).
@@ -251,15 +245,13 @@ struct RisoSpecialTaskPanel: View {
 
     /// The matched counter while the create auto-links (Duration never
     /// matches — it has no unit); nil once the user opts out.
-    private var linkedSuggestion: LinkableCounterSuggestion? { linkDisabled ? nil : linkSuggestion }
+    private var linkedSuggestion: LinkableCounterSuggestion? { link.linked }
 
     /// The kind validation, preview and the saved row use: an auto-linking
     /// create takes the root's kind (D5 / R19), otherwise the picker.
-    private var effectiveKind: CountKind { linkedSuggestion?.countKind ?? countingKind }
+    private var effectiveKind: CountKind { link.effectiveKind(picker: countingKind) }
 
     /// The typed goal parsed at the effective kind, or nil when blank/invalid.
-    /// Also gates the counter-link hint (only shown once a valid goal exists —
-    /// mirrors web's `CounterLinkHint` doc contract).
     private var countingGoal: CountValue? {
         parseCountInput(countingGoalText, kind: effectiveKind)
     }
@@ -314,8 +306,8 @@ struct RisoSpecialTaskPanel: View {
                     .foregroundStyle(Color.risoInk))
             }
 
-            // Counter-link hint (only when a match exists AND a valid goal
-            // is entered — R1: auto-link default ON, "Don't link" opts out).
+            // Counter-link hint (whenever a match exists — R1: auto-link
+            // default ON, "Don't link" opts out).
             counterLinkBanner
 
             // Add button
@@ -325,32 +317,21 @@ struct RisoSpecialTaskPanel: View {
             .opacity(canSubmitCounting ? 1 : 0.45)
             .allowsHitTesting(canSubmitCounting)
         }
-        .onChange(of: countingActionText) { _, _ in updateLinkSuggestion() }
-        .onChange(of: countingUnitText) { _, _ in updateLinkSuggestion() }
-        .onChange(of: countingKind) { _, _ in updateLinkSuggestion() }
+        .onChange(of: countingActionText) { _, _ in
+            link.pairChanged(action: countingActionText, unit: countingUnitText, kind: countingKind, tasks: suggestionPool ?? taskLibrary)
+        }
+        .onChange(of: countingUnitText) { _, _ in
+            link.pairChanged(action: countingActionText, unit: countingUnitText, kind: countingKind, tasks: suggestionPool ?? taskLibrary)
+        }
+        .onChange(of: countingKind) { _, _ in
+            link.kindChanged(action: countingActionText, unit: countingUnitText, kind: countingKind, tasks: suggestionPool ?? taskLibrary)
+        }
     }
 
     // MARK: Counter-link suggestion banner
 
-    /// Recomputes the link suggestion whenever the (verb, noun) pair
-    /// changes. Resets the opt-out flag so an edited pair re-offers linking
-    /// by default (web parity).
-    private func updateLinkSuggestion() {
-        guard countingKind != .duration else {
-            linkSuggestion = nil
-            linkDisabled = false
-            return
-        }
-        linkSuggestion = findLinkableCounter(
-            action: countingActionText,
-            unit: countingUnitText,
-            tasks: suggestionPool ?? taskLibrary
-        )
-        linkDisabled = false
-    }
-
-    /// Hint shown in the counting create panel when an existing counter
-    /// matches the typed (verb, noun) pair AND a valid goal is entered. R1
+    /// Hint shown in the counting create panel whenever an existing counter
+    /// matches the typed (verb, noun) pair — independent of the goal. R1
     /// counters refresh: linking is ON by default (no fuzzy matching, no
     /// confirm step) — the hint explains what will happen; the "Don't link"
     /// pill opts out for this create (tapping again re-enables). Baseline is
@@ -358,11 +339,11 @@ struct RisoSpecialTaskPanel: View {
     /// picker was retired.
     @ViewBuilder
     private var counterLinkBanner: some View {
-        if let suggestion = linkSuggestion, countingGoal != nil {
+        if let suggestion = link.hint {
             RisoCounterLinkHintView(
                 counterName: suggestion.name,
-                linked: !linkDisabled,
-                onToggle: { linkDisabled.toggle() }
+                linked: !link.linkDisabled,
+                onToggle: { link.linkDisabled.toggle() }
             )
         }
     }
@@ -382,7 +363,7 @@ struct RisoSpecialTaskPanel: View {
         // via "Don't link". Baseline is always "start fresh": this task's
         // displayed count starts at 0 while the source's all-time keeps
         // climbing.
-        if let suggestion = linkSuggestion, !linkDisabled, countingGoal != nil {
+        if let suggestion = link.linked, countingGoal != nil {
             form.countingSharedCounterId = suggestion.counterId
             form.countingBaseline = suggestion.lifetime
         } else {
@@ -406,8 +387,7 @@ struct RisoSpecialTaskPanel: View {
         countingGoalText = ""
         countingUnitText = ""
         countingKind = .discrete
-        linkSuggestion = nil
-        linkDisabled = false
+        link = CounterLinkState()
         form = CreateFormViewModel()
         collapse()
     }
@@ -641,8 +621,7 @@ struct RisoSpecialTaskPanel: View {
         countingUnitText = ""
         countingKind = .discrete
         // Counter-link suggestion
-        linkSuggestion = nil
-        linkDisabled = false
+        link = CounterLinkState()
         // Achievement
         achievementTitle = ""
         achievementBoardId = nil

@@ -41,12 +41,12 @@ export interface LinkedCounterInput {
 
 /** Auto-link hint state, computed + owned by the host form (which already
  *  loads the task library for submission) and passed down purely for
- *  rendering. `null` when there's no match, no valid goal yet, or the host
- *  isn't tracking the auto-link decision for this context. */
+ *  rendering. `null` when there's no match or the host isn't tracking the
+ *  auto-link decision for this context. Independent of the goal: the
+ *  "Don't link" toggle must stay reachable while the goal is blank or only
+ *  parses at the other kind (e.g. "3.1" against a Discrete root). */
 export interface CounterLinkHintState {
   match: LinkableCounter;
-  /** The new task's own goal (`maxCount`) — the hint's "0–{goal} window". */
-  goal: number;
   /** Whether this create currently links to `match`. */
   linked: boolean;
   /** Toggles `linked` — the "Don't link" / "Link" pill. */

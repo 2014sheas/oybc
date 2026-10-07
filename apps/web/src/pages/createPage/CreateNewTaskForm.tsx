@@ -158,18 +158,19 @@ export function CreateNewTaskForm({
     form.countKind,
     counterMatch ? { linked, countKind: counterMatch.countKind } : null,
   );
-  const parsedGoal = parseCountInput(form.maxCountStr, kind);
-  const goalValid = parsedGoal !== null;
+  const goalValid = parseCountInput(form.maxCountStr, kind) !== null;
   const titlePreview = countingTitlePreview(form.action, form.maxCountStr, form.unit, kind);
 
   // Gate on `onCreateLinked` too — without it, submit can't actually honor
   // the link (see `handleFormSubmit`), so the hint must stay hidden rather
   // than promise a linking behavior the caller didn't wire up.
+  // Shown whenever a (verb, noun) match exists — never gated on the goal,
+  // or a goal that only parses at the other kind (e.g. "3.1" against a
+  // Discrete root) would hide the very toggle that unlinks it.
   const linkHint =
-    counterMatch && parsedGoal !== null && onCreateLinked
+    counterMatch && onCreateLinked
       ? {
           match: counterMatch,
-          goal: parsedGoal,
           linked: !linkDisabled,
           onToggle: () => setLinkDisabled((prev) => !prev),
         }

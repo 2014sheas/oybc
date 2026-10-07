@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import type { Task } from '@oybc/shared';
-import { TaskType, generateCounterTaskTitle, parseCountInput } from '@oybc/shared';
+import { TaskType, generateCounterTaskTitle } from '@oybc/shared';
 import { RisoTypeBadge, type RisoTaskType } from '../riso';
 import { CountingStepFields } from '../CountingStepFields';
 import { CounterLinkHint } from '../counters';
@@ -321,7 +321,10 @@ function InlineFields({
             maxCount={draft.maxCountStr}
             unit={draft.unit}
             countKind={effectiveInlineKind(draft, allTasks)}
-            onKindChange={(k) => onUpdate({ countKind: k, linkDisabled: false } as Partial<InlineSubtaskDraft>)}
+            // A kind change never touches the "Don't link" opt-out: the
+            // picker only shows while unlinked, so resetting it here would
+            // silently re-link the sub-task to the root it opted out of.
+            onKindChange={(k) => onUpdate({ countKind: k } as Partial<InlineSubtaskDraft>)}
             linkedTag={linkedTag}
             onChange={(field, value) => {
               // Verb/Counting changes reset the auto-link opt-out — a fresh
@@ -345,9 +348,11 @@ function InlineFields({
 
 /**
  * R1 counters refresh — auto-link hint for the compound builder's inline
- * counting subtask: the matched counter + the link toggle, once a match and a
- * valid goal (at the effective kind) exist. `inlineSubtaskToAutoCreate`
- * re-derives the same match at submit time (guarded by `draft.linkDisabled`).
+ * counting subtask: the matched counter + the link toggle, whenever a (verb,
+ * noun) match exists — independent of the goal, so a goal that only parses at
+ * the other kind (e.g. "3.1" against a Discrete root) can still be unlinked.
+ * `inlineSubtaskToAutoCreate` re-derives the same match at submit time
+ * (guarded by `draft.linkDisabled`).
  */
 function InlineCounterLinkHint({
   draft,
@@ -359,10 +364,7 @@ function InlineCounterLinkHint({
   onUpdate: (updates: Partial<SubtaskDraft>) => void;
 }): React.ReactElement | null {
   const match = useMemo(() => inlineLinkMatch(draft, allTasks), [draft, allTasks]);
-  const goalValid =
-    parseCountInput(draft.maxCountStr, effectiveInlineKind(draft, allTasks)) !== null;
-
-  if (!match || !goalValid) return null;
+  if (!match) return null;
 
   const linked = !draft.linkDisabled;
   return (
