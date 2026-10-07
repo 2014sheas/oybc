@@ -155,7 +155,6 @@ struct BoardPlayView: View {
     // so the sheet always sees up-to-date data when opened.
     private var allBoardsInWorkspace: [Board] { viewModel.allBoardsInWorkspace }
     private var allTemplatesInWorkspace: [RecurringBoardTemplate] { viewModel.allTemplatesInWorkspace }
-    private var allBoardTasksInWorkspace: [BoardTask] { viewModel.allBoardTasksInWorkspace }
     // (The former `allPoolsInWorkspace` shim fed the spawn-provenance
     // note's `poolsById` lookup — that recompute moved into the VM's
     // `recomputeEditSpawnNote` with the repeat-in-edit rework.)
@@ -1075,58 +1074,6 @@ struct BoardPlayView: View {
         dismissArrivalBanner()
     }
 
-    /// Computes the "↔ Shared · also counts on …" hint shown in the stepper sheet
-    /// for a shared-counter task. Returns `nil` when the task is not in a shared group
-    /// or has no OTHER active boards to mention.
-    ///
-    /// - Parameter task: The `Task` backing the tapped counting square.
-    func sharedStepperHint(for task: Task) -> String? {
-        // R3: source detection extracted to `viewModel.sharedCounterSourceId(for:)`
-        // — shares the exact same rule as the tap-routing handlers and the
-        // chip-visibility gate below, instead of re-deriving it a third time.
-        guard task.type == .counting, let sourceId = viewModel.sharedCounterSourceId(for: task) else {
-            return nil
-        }
-
-        // Collect all member task ids (source + linked).
-        let memberIds: Set<String> = {
-            var ids = Set<String>([sourceId])
-            for t in allTasks where t.sharedCounterId == sourceId && !t.isDeleted {
-                ids.insert(t.id)
-            }
-            return ids
-        }()
-
-        // Find ACTIVE boards (other than the current board) where any member is placed.
-        let currentBid = board?.id
-        var seenBoardIds = Set<String>()
-        if let cid = currentBid { seenBoardIds.insert(cid) }
-        var otherBoardNames: [String] = []
-        for bt in allBoardTasksInWorkspace {
-            guard memberIds.contains(bt.taskId),
-                  !seenBoardIds.contains(bt.boardId)
-            else { continue }
-            // Only boards a log can still change, via a row live for its window.
-            let nowIso = AppDatabase.currentTimestamp()
-            if let b = allBoardsInWorkspace.first(where: { $0.id == bt.boardId }),
-               AppDatabase.boardCanStillCountLogs(b, now: nowIso),
-               !(allTasks.first(where: { $0.id == bt.taskId }).map { BoardSources.isFrozenDerivedRow($0, now: nowIso) } ?? false) {
-                seenBoardIds.insert(b.id)
-                otherBoardNames.append(b.displayName)
-            }
-        }
-        guard !otherBoardNames.isEmpty else { return nil }
-        otherBoardNames.sort()  // stable order
-
-        if otherBoardNames.count == 1 {
-            return "↔ Shared · also counts on \(otherBoardNames[0])"
-        } else {
-            let first = otherBoardNames[0]
-            let more = otherBoardNames.count - 1
-            return "↔ Shared · also counts on \(first) + \(more) more"
-        }
-    }
-
     /// Computes the greenlog streak for the current board (core boards only) and
     /// stores a compact label in `greenlogStreakValue` for the overlay + poster.
     /// Non-core boards → nil (the STREAK card hides). Reads boards off-main.
@@ -1254,7 +1201,7 @@ struct BoardPlayView: View {
         // for a promoted zero-link counter (`isCounter == true`) — mirrors web
         // `useBoardPlayData.ts`'s `sharedCounterSourceIds` set exactly. R3:
         // routed through `viewModel.sharedCounterSourceId(for:)` (single
-        // source of truth for this detection, shared with `sharedStepperHint`
+        // source of truth for this detection, shared with the stepper sheet
         // and the tap-routing handlers).
         let isSharedCounterCell: Bool = {
             guard let t = task, t.type == .counting else { return false }
@@ -1777,12 +1724,6 @@ struct BoardPlayView: View {
                 }
             }
         }
-
-        Text("Completion applies to all boards where this task appears.")
-            .font(.risoBody(12, .regular))
-            .foregroundStyle(Color.risoMuted)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, 4)
     }
 
     /// Phase 6.3 — detail content for an ACHIEVEMENT-typed Task.
@@ -1880,12 +1821,6 @@ struct BoardPlayView: View {
                     .foregroundStyle(Color.risoMuted)
             }
         }
-
-        Text("Derived from the watched target; the cell cannot be toggled directly.")
-            .font(.risoBody(12, .regular))
-            .foregroundStyle(Color.risoMuted)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, 4)
     }
 
     // MARK: - Interaction handlers moved to BoardPlayViewModel (B2-I2)

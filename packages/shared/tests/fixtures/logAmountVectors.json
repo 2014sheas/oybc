@@ -46,6 +46,12 @@
     { "name": "duration logged has no unit", "amount": 90, "unit": "guitar", "verb": "logged", "kind": "duration", "expected": "Logged +1h 30m" },
     { "name": "duration removed", "amount": 30, "unit": "", "verb": "removed", "kind": "duration", "expected": "Removed 30m" },
     { "name": "continuous credited", "amount": 3.1, "unit": "mi", "verb": "logged", "kind": "continuous", "counterName": "Miles", "boardNames": ["Daily grind"], "expected": "+3.1 Miles — also counted on Daily grind." },
+    { "name": "duration credited removed", "amount": 30, "unit": "", "verb": "removed", "kind": "duration", "counterName": "Guitar", "boardNames": ["Daily grind", "October"], "expected": "−30m Guitar — also removed from Daily grind, October." },
     { "name": "discrete unchanged", "amount": 5, "unit": "pages", "verb": "logged", "kind": "discrete", "expected": "Logged +5 pages" }
+  ],
+  "customChipLabel": [
+    { "name": "continuous", "amount": 3.1, "kind": "continuous", "expected": "#3.1" },
+    { "name": "duration", "amount": 90, "kind": "duration", "expected": "#1h 30m" },
+    { "name": "discrete", "amount": 7, "kind": "discrete", "expected": "#7" }
   ]
 }

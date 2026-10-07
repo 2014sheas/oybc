@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import {
-  boardSheetChips, goalChipAmounts, hubChips, initialLogSelection, lateLogChipAmounts,
+  boardSheetChips, customChipLabel, goalChipAmounts, hubChips, initialLogSelection, lateLogChipAmounts,
   logPillLabel, logPillOpensDetail, quickLogAmount,
 } from '../../src/algorithms/logAmounts';
 import * as barrel from '../../src/algorithms';
@@ -24,6 +24,8 @@ describe('logAmounts vectors', () => {
     expect(logPillLabel(v.kind, v.default)).toBe(v.label);
     expect(logPillOpensDetail(v.kind, v.default)).toBe(v.opensDetail);
   });
+  it.each(V.customChipLabel as any[])('customChipLabel: $name', (v: any) =>
+    expect(customChipLabel(v.amount, v.kind)).toBe(v.expected));
   it('every helper is in the barrel (Ruling U2)', () => {
     for (const n of ['boardSheetChips', 'goalChipAmounts', 'hubChips', 'initialLogSelection', 'lateLogChipAmounts', 'logPillLabel', 'logPillOpensDetail', 'quickLogAmount', 'customChipLabel', 'fixedLogChipAmounts']) {
       expect(typeof (barrel as Record<string, unknown>)[n]).toBe('function');

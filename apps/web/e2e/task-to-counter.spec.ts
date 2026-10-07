@@ -44,7 +44,7 @@ test.describe('Task → counter navigation', () => {
 
   test('board-square popup Task details row opens the task sheet', async ({ page }) => {
     await page.goto(`/boards/${BOARD_ID}?__oybc_test_bypass=1`);
-    // Active board: a tap logs; right-click → View Details opens the popup.
+    // Active board: right-click → View Details opens the popup.
     await page.getByText('Push-ups weekly').first().click({ button: 'right' });
     await page.getByRole('button', { name: /View Details/ }).click();
     const details = page.getByRole('button', { name: 'Task details' });

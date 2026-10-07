@@ -19,7 +19,6 @@ import { useBoards } from './useBoards';
 import { useRecurringBoardTemplatesQuery } from './useRecurringBoardTemplates';
 import { useSquareWindowContext } from './useSquareWindowContext';
 import { useTaskLibrary } from '../pages/createPage/useTaskLibrary';
-import { buildSharedCounterHints } from '../utils/sharedCounterHints';
 import { isBoardExpired } from '../utils/boardDisplayUtils';
 import type { AchievementSquareBadgeData } from '../components/InteractiveTaskSquare';
 
@@ -69,7 +68,6 @@ export interface BoardPlayData {
    */
   liveCompletedLineIds: string[];
   sharedCounterSourceIds: Set<string>;
-  sharedCounterHintsByTaskId: Map<string, string>;
   sortedBoardTasks: BoardTask[];
   gridSize: BoardSize;
   btByPosition: Record<string, BoardTask>;
@@ -255,31 +253,6 @@ export function useBoardPlayData(board: Board, userId: string | undefined): Boar
     return sources;
   }, [taskMap]);
 
-  /**
-   * Phase 2 — Shared Counters: for each shared-counter task (source or linked),
-   * map its task id → the hint string listing OTHER active boards the counter
-   * also appears on (excluding the current board being played).
-   *
-   * Format:
-   *   1 other board  → "↔ Shared · also counts on {name}"
-   *   2+ other boards → "↔ Shared · also counts on {name} + {N} more"
-   *
-   * The hint is used by FloatingContextMenu and DetailModal so the user knows
-   * a tap will ripple.
-   */
-  const sharedCounterHintsByTaskId = useMemo<Map<string, string>>(
-    () =>
-      buildSharedCounterHints({
-        taskMap,
-        sharedCounterSourceIds,
-        allBoardTasks,
-        allBoards,
-        boardId,
-        now: new Date(),
-      }),
-    [taskMap, sharedCounterSourceIds, allBoardTasks, allBoards, boardId],
-  );
-
   // `boardTasks` is already `resolvePlacements` output above — sorted by
   // (row, col, id) with at most one row per cell — so this sort/dict-build
   // is now just a cheap re-derivation, not a second source of collision
@@ -307,7 +280,6 @@ export function useBoardPlayData(board: Board, userId: string | undefined): Boar
     cellStateByBoardTaskId,
     liveCompletedLineIds,
     sharedCounterSourceIds,
-    sharedCounterHintsByTaskId,
     sortedBoardTasks,
     gridSize,
     btByPosition,

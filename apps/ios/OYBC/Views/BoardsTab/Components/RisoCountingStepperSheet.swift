@@ -7,21 +7,18 @@ import SwiftUI
 ///
 /// Wires directly to the caller's `handleCountingTap` / `handleCountingDecrement`
 /// via the `onIncrement` / `onDecrement` closures. The sheet itself carries no
-/// write logic.
+/// write logic; its chip / amount state is the pure `CountingStepperModel`.
 ///
-/// P2: `sharedHint` adds an "↔ Shared · also counts on …" line beneath the
-/// stepper when the task belongs to a shared-counter group and the group spans
-/// other boards. `isLinkedCounter` no longer disables the `−` button — the
-/// new `decrementSharedCounter` engine handles shared decrements.
+/// Counter kinds (docs/COUNTER_KINDS.md §5):
+/// - Discrete standalone: the plain −/+ stepper (±1), no chips.
+/// - Discrete shared: `+1 · +10 · #` (gold selected, ink-static content) with
+///   the custom row + OK.
+/// - Continuous / Duration (any square): ¼ · ½ · goal · # chips set the
+///   always-open amount field (decimal pad / h:m wheel); − and + apply the
+///   field's amount; no OK. An edited field is custom.
 ///
-/// R3 (board-play touchpoints): shared counting squares gain an amount-chip
-/// row (`+1` / `+{default}` / `#`) matching Counter Detail's chip styling
-/// (gold selected, ink-static content — dark-mode-safe), gated by
-/// `isSharedCounter` per the copy contract ("Square quick actions — shared
-/// counting squares only"). Standalone counters keep the plain +/- stepper
-/// with no chips. Both `+`/`-` share ONE selected amount (decrement mirrors
-/// the amount that was added); only an explicit custom "#" entry marks
-/// `persistAsDefault: true` on the `onIncrement`/`onDecrement` callback.
+/// Both `+`/`-` share ONE amount (decrement mirrors the amount added); only an
+/// explicit custom amount marks `persistAsDefault: true`.
 struct RisoCountingStepperSheet: View {
 
     // MARK: - Data
@@ -30,24 +27,16 @@ struct RisoCountingStepperSheet: View {
     let currentCount: CountValue
     let maxCount: CountValue
     let unitText: String
+    /// The square's family kind (a linked row follows its root).
+    let countKind: CountKind
     /// True when this task has `sharedCounterId != nil` (a linked derived counter).
-    /// Kept for BoardPlayView routing but no longer disables the `−` button (P2).
+    /// Kept for BoardPlayView routing; does not disable the `−` button (P2).
     let isLinkedCounter: Bool
-    /// Optional "also counts on …" hint shown beneath the stepper for shared-counter
-    /// squares. Nil when the task is not in a shared group or has no other boards.
-    /// Format (verbatim per spec): "↔ Shared · also counts on {board}" or
-    /// "↔ Shared · also counts on {board} + {N} more"
-    var sharedHint: String? = nil
-    /// R3: true when this square participates in a shared-counter group
-    /// (source, linked, or a P5 promoted zero-link counter) — gates the
-    /// amount-chip row. Standalone counting squares get no chips (the copy
-    /// contract scopes amount options to shared counting squares only).
+    /// True when this square participates in a shared-counter group (source,
+    /// linked, or a P5 promoted zero-link counter) — gates the Discrete chip row.
     var isSharedCounter: Bool = false
-    /// The shared counter's persisted default log amount (SOURCE task's
-    /// `Task.defaultLogAmount`) — seeds the "+{default}" chip label and the
-    /// initial selected amount (a plain tap of `+`/`-` therefore logs the
-    /// default, matching the copy contract). `nil` → default chip shows "1"
-    /// too (harmless — mirrors Counter Detail's `defaultLogAmount ?? 1`).
+    /// The counter's remembered last-used amount (the SOURCE task's for a
+    /// shared square, the square's own task otherwise) — seeds the selection.
     var defaultLogAmount: CountValue? = nil
     /// When non-nil, a full-width "Task details ›" row is appended; the tap
     /// handler opens this square's task detail.
@@ -56,16 +45,15 @@ struct RisoCountingStepperSheet: View {
     // MARK: - Actions
 
     /// `(amount, persistAsDefault)`. `persistAsDefault` is `true` only when
-    /// the amount just used came from an explicit custom "#" entry (Global
-    /// Constraints: one-tap chips never overwrite the counter's default).
-    /// For standalone (non-shared) squares, always `(1, false)`.
+    /// the amount just used is an explicit custom entry (one-tap chips never
+    /// overwrite the counter's default).
     var onIncrement: (CountValue, Bool) -> Void = { _, _ in }
     var onDecrement: (CountValue, Bool) -> Void = { _, _ in }
 
-    // MARK: - Chip state (shared counters only)
+    // MARK: - State
 
-    @State private var selectedAmount: CountValue
-    @State private var isCustomActive = false
+    @State private var model: CountingStepperModel
+    /// Discrete shared: the custom-amount row.
     @State private var customOpen = false
     @State private var customDraft = ""
 
@@ -74,8 +62,8 @@ struct RisoCountingStepperSheet: View {
         currentCount: CountValue,
         maxCount: CountValue,
         unitText: String,
+        countKind: CountKind = .discrete,
         isLinkedCounter: Bool,
-        sharedHint: String? = nil,
         isSharedCounter: Bool = false,
         defaultLogAmount: CountValue? = nil,
         onOpenTask: (() -> Void)? = nil,
@@ -87,13 +75,15 @@ struct RisoCountingStepperSheet: View {
         self.currentCount = currentCount
         self.maxCount = maxCount
         self.unitText = unitText
+        self.countKind = countKind
         self.isLinkedCounter = isLinkedCounter
-        self.sharedHint = sharedHint
         self.isSharedCounter = isSharedCounter
         self.defaultLogAmount = defaultLogAmount
         self.onIncrement = onIncrement
         self.onDecrement = onDecrement
-        _selectedAmount = State(initialValue: CounterLogAmount.initialChip(defaultLogAmount))
+        _model = State(initialValue: CountingStepperModel.initial(
+            kind: countKind, goal: maxCount, defaultLogAmount: defaultLogAmount, isShared: isSharedCounter
+        ))
     }
 
     // MARK: - Body
@@ -103,51 +93,33 @@ struct RisoCountingStepperSheet: View {
             Color.risoPaper.ignoresSafeArea()
 
             VStack(spacing: 12) {
-                // ── Label pill ──
                 labelPill
-
-                // ── Stepper row ──
                 stepperRow
-
-                // ── Amount chips (R3 — shared counting squares only) ──
-                if isSharedCounter {
-                    chipRow
-                    if customOpen {
-                        customInputRow
-                    }
+                if model.showsChips { chipRow }
+                if countKind == .discrete, isSharedCounter, customOpen { customInputRow }
+                if countKind != .discrete {
+                    GoalEntryView(
+                        kind: countKind,
+                        text: Binding(get: { model.amountText }, set: { model.setText($0) }),
+                        placeholder: "Amount",
+                        suffix: unitText.isEmpty ? nil : unitText,
+                        startsOpen: countKind == .duration,
+                        invalid: model.amount == nil
+                    )
                 }
-
-                // ── Shared hint (P2) ──
-                if let hint = sharedHint {
-                    Text(hint)
-                        .font(.risoBody(11, .regular))
-                        .foregroundStyle(Color.risoBlue)
-                        .multilineTextAlignment(.center)
-                        .lineLimit(2)
-                        .padding(.horizontal, Riso.gutter)
-                }
-
-                // ── Task details row ──
-                if let onOpenTask {
-                    taskDetailsRow(onOpenTask)
-                }
+                if let onOpenTask { taskDetailsRow(onOpenTask) }
             }
             .padding(.top, 18)
             .padding(.horizontal, Riso.gutter)
         }
-        // Taller with the chip row / custom input / hint present.
         .presentationDetents([.height(sheetHeight)])
         .presentationDragIndicator(.visible)
         .presentationBackground(Color.risoPaper)
     }
 
     private var sheetHeight: CGFloat {
-        var height: CGFloat = 140
-        if isSharedCounter { height += 56 }
-        if isSharedCounter && customOpen { height += 44 }
-        if sharedHint != nil { height += 40 }
-        if onOpenTask != nil { height += 56 }
-        return height
+        140 + (model.showsChips ? 56 : 0) + (countKind == .continuous ? 52 : 0) + (countKind == .duration ? 190 : 0)
+            + (countKind == .discrete && isSharedCounter && customOpen ? 44 : 0) + (onOpenTask != nil ? 56 : 0)
     }
 
     /// "Task details ›" row — same chrome as `RisoTaskRowView`.
@@ -176,8 +148,13 @@ struct RisoCountingStepperSheet: View {
 
     // MARK: - Label pill
 
+    /// "{cur}/{max}" at the square's kind — "12.4/26.2", "4h 30m/10h 30m".
+    private var progressText: String {
+        "\(formatCount(currentCount, kind: countKind))/\(formatCount(maxCount, kind: countKind))"
+    }
+
     private var labelPill: some View {
-        Text("\(taskTitle) · \(formatCount(currentCount, kind: .discrete))/\(formatCount(maxCount, kind: .discrete))\(unitText.isEmpty ? "" : " \(unitText)")")
+        Text("\(taskTitle) · \(progressText)\(countUnitSuffix(countKind, unit: unitText))")
             .font(.risoHead(13, .bold))
             .foregroundStyle(Color.risoPaper)
             .padding(.horizontal, 14)
@@ -189,23 +166,17 @@ struct RisoCountingStepperSheet: View {
 
     // MARK: - Stepper
 
-    /// The amount both `+`/`-` act on: the selected chip for shared
-    /// counters, always 1 for standalone counters (no chip UI to select from).
-    private var effectiveAmount: CountValue {
-        isSharedCounter ? selectedAmount : 1
-    }
-
-    /// Whether the amount currently in effect came from an explicit custom
-    /// "#" entry — only this marks `persistAsDefault: true` upstream.
+    /// Whether the amount in effect is an explicit custom entry — only this
+    /// marks `persistAsDefault: true` upstream.
     private var effectivePersist: Bool {
-        isSharedCounter && isCustomActive
+        model.isCustom && (countKind != .discrete || isSharedCounter)
     }
 
     private var stepperRow: some View {
         HStack(spacing: 0) {
-            // − button: disabled only when count is 0 (P2: no longer disabled for isLinkedCounter)
+            // − button: disabled at 0 or with no valid amount (P2: not for isLinkedCounter)
             Button {
-                onDecrement(effectiveAmount, effectivePersist)
+                if let amount = model.amount { onDecrement(amount, effectivePersist) }
             } label: {
                 Text("−")
                     .font(.risoHead(22, .extraBold))
@@ -214,10 +185,11 @@ struct RisoCountingStepperSheet: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(StepperButtonStyle())
-            .disabled(currentCount == 0)
+            .disabled(model.amount == nil || currentCount == 0)
+            .accessibilityLabel("Remove")
 
             // Value display
-            Text("\(formatCount(currentCount, kind: .discrete))/\(formatCount(maxCount, kind: .discrete))")
+            Text(progressText)
                 .font(.risoHead(15, .extraBold))
                 .foregroundStyle(Color.risoInk)
                 .frame(minWidth: 70)
@@ -237,7 +209,7 @@ struct RisoCountingStepperSheet: View {
 
             // + button
             Button {
-                onIncrement(effectiveAmount, effectivePersist)
+                if let amount = model.amount { onIncrement(amount, effectivePersist) }
             } label: {
                 Text("+")
                     .font(.risoHead(22, .extraBold))
@@ -246,6 +218,8 @@ struct RisoCountingStepperSheet: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(StepperButtonStyle())
+            .disabled(model.amount == nil)
+            .accessibilityLabel(model.addLabel(unit: unitText))
         }
         .background(Color.risoPaper2)
         .clipShape(Capsule())
@@ -258,71 +232,50 @@ struct RisoCountingStepperSheet: View {
         .fixedSize()
     }
 
-    // MARK: - Amount chips (R3)
-
-    private struct AmountChipOption {
-        /// `nil` marks the trailing custom "#" chip.
-        let value: CountValue?
-        let label: String
-
-    }
-
-    /// `+1` / `+{default}` / `#` — three options per the copy contract
-    /// (deliberately NOT R2 Detail's 4-chip "1 / default / 25 / #" set; the
-    /// design handoff mock for board-play squares shows exactly three).
-    private var chips: [AmountChipOption] {
-        // FIXED signed presets (owner decision, 2026-07-21) — no dynamic
-        // "{default}" chip. The remembered default still drives the plain
-        // cell tap; it just doesn't get its own chip here. Mirrors web
-        // buildBoardQuickAmountOptions.
-        return [
-            AmountChipOption(value: 1, label: "+1"),
-            AmountChipOption(value: 10, label: "+10"),
-            AmountChipOption(value: nil, label: "#"),
-        ]
-    }
+    // MARK: - Amount chips
 
     private var selectedChipIndex: Int? {
-        if isCustomActive { return chips.count - 1 }
-        return chips.firstIndex(where: { $0.value == selectedAmount })
-    }
-
-    private func selectChip(_ value: CountValue) {
-        selectedAmount = value
-        isCustomActive = false
-        customOpen = false
+        if model.isCustom { return model.chips.count - 1 }
+        return model.chips.firstIndex(where: { $0.value == model.selectedAmount })
     }
 
     private func openCustomInput() {
-        customDraft = isCustomActive ? formatCountForInput(selectedAmount, kind: .discrete) : ""
+        customDraft = model.isCustom ? formatCountForInput(model.selectedAmount, kind: .discrete) : ""
         customOpen = true
     }
 
     private func confirmCustomInput() {
-        guard let parsed = CounterLogAmount.parseCustom(customDraft) else { return }
-        selectedAmount = parsed
-        isCustomActive = true
+        guard let parsed = CounterLogAmount.parseCustom(customDraft, kind: .discrete) else { return }
+        model.selectedAmount = parsed
+        model.isCustom = true
         customOpen = false
     }
 
-    /// Amount chip row: `+1` / `+{default}` / `#` — selected = gold fill +
-    /// `risoInkStatic` (dark-mode-safe content on gold, per the copy
-    /// contract); idle = ink-bordered/ink-text on this sheet's cream
-    /// (`risoPaper`) background.
+    private func chipLabel(_ chip: LogChip, isSelected: Bool) -> String {
+        guard chip.value == nil, isSelected, let amount = model.amount else { return chip.label }
+        return CounterLogAmount.customChipLabel(amount, kind: countKind)
+    }
+
+    /// Chip row — selected = gold fill + `risoInkStatic` (dark-mode-safe
+    /// content on gold); idle = ink-bordered/ink-text on the sheet's cream.
     private var chipRow: some View {
         HStack(spacing: 8) {
-            ForEach(Array(chips.enumerated()), id: \.offset) { index, chip in
+            ForEach(Array(model.chips.enumerated()), id: \.offset) { index, chip in
                 let isSelected = index == selectedChipIndex
                 Button {
                     if let value = chip.value {
-                        selectChip(value)
-                    } else {
+                        model.selectChip(value)
+                        customOpen = false
+                    } else if countKind == .discrete {
                         openCustomInput()
+                    } else {
+                        model.isCustom = true
                     }
                 } label: {
-                    Text(chip.value == nil && isSelected ? "#\(formatCount(selectedAmount, kind: .discrete))" : chip.label)
+                    Text(chipLabel(chip, isSelected: isSelected))
                         .font(.risoHead(13, .extraBold))
                         .foregroundStyle(isSelected ? Color.risoInkStatic : Color.risoInk)
+                        .lineLimit(1)
                         .frame(minWidth: 40)
                         .padding(.vertical, 8)
                         .padding(.horizontal, 10)
@@ -382,35 +335,7 @@ private struct StepperButtonStyle: ButtonStyle {
         }
 }
 
-#Preview("Counting stepper sheet — shared hint") {
-    Color.risoPaper
-        .sheet(isPresented: .constant(true)) {
-            RisoCountingStepperSheet(
-                taskTitle: "Push-ups",
-                currentCount: 20,
-                maxCount: 30,
-                unitText: "reps",
-                isLinkedCounter: false,
-                sharedHint: "↔ Shared · also counts on February Fitness"
-            )
-        }
-}
-
-#Preview("Counting stepper sheet — shared hint multi-board") {
-    Color.risoPaper
-        .sheet(isPresented: .constant(true)) {
-            RisoCountingStepperSheet(
-                taskTitle: "Push-ups",
-                currentCount: 20,
-                maxCount: 30,
-                unitText: "reps",
-                isLinkedCounter: true,
-                sharedHint: "↔ Shared · also counts on February Fitness + 2 more"
-            )
-        }
-}
-
-#Preview("Counting stepper sheet — R3 amount chips") {
+#Preview("Counting stepper sheet — shared amount chips") {
     Color.risoPaper
         .sheet(isPresented: .constant(true)) {
             RisoCountingStepperSheet(
@@ -419,23 +344,38 @@ private struct StepperButtonStyle: ButtonStyle {
                 maxCount: 200,
                 unitText: "Push-ups",
                 isLinkedCounter: false,
-                sharedHint: "↔ Shared · also counts on Daily Grind",
                 isSharedCounter: true,
                 defaultLogAmount: 10
             )
         }
 }
 
-#Preview("Counting stepper sheet — Task details row") {
+#Preview("Counting stepper sheet — Continuous") {
     Color.risoPaper
         .sheet(isPresented: .constant(true)) {
             RisoCountingStepperSheet(
-                taskTitle: "Push-ups",
-                currentCount: 20,
-                maxCount: 30,
-                unitText: "reps",
+                taskTitle: "Run 26.2 mi",
+                currentCount: 12.4,
+                maxCount: 26.2,
+                unitText: "mi",
+                countKind: .continuous,
                 isLinkedCounter: false,
-                sharedHint: "↔ Shared · also counts on February Fitness",
+                defaultLogAmount: 3.1,
+                onOpenTask: {}
+            )
+        }
+}
+
+#Preview("Counting stepper sheet — Duration") {
+    Color.risoPaper
+        .sheet(isPresented: .constant(true)) {
+            RisoCountingStepperSheet(
+                taskTitle: "Practice 10h 30m",
+                currentCount: 270,
+                maxCount: 630,
+                unitText: "",
+                countKind: .duration,
+                isLinkedCounter: false,
                 onOpenTask: {}
             )
         }

@@ -496,10 +496,10 @@ final class BoardPlayViewModel: ObservableObject {
     ///      high-end clamp) and one-way-latch invariants inside a single
     ///      GRDB write transaction.
     ///  (c) Standalone counter (no shared link): falls through to the legacy
-    ///      `runOrchestration` path, `amount`-aware since R3 too (still
-    ///      always 1 from every current standalone call site — the R3
-    ///      amount-chip UI is shared-counter-squares-only per the copy
-    ///      contract).
+    ///      `runOrchestration` path, `amount`-aware (a Continuous / Duration
+    ///      square logs its sheet amount; a custom one becomes the task's
+    ///      own `defaultLogAmount` — counter kinds §5; Discrete standalone
+    ///      squares always pass 1).
     ///
     /// - Parameters:
     ///   - boardTask: The counting task's `BoardTask` record.
@@ -537,9 +537,10 @@ final class BoardPlayViewModel: ObservableObject {
         let windowed = windowedState(forTaskId: boardTask.taskId)
         runOrchestration(
             taskId: boardTask.taskId,
-            intent: .setWindowedCount(windowed.count + amount),
+            intent: .setWindowedCount(quantizeCount(windowed.count + amount)),
             boardTask: boardTask
         )
+        if persistAsDefault { try? database.setCounterDefaultLogAmount(sourceTaskId: task.id, amount: amount) }
     }
 
     /// Runs the shared-counter increment in a background task, then refreshes
@@ -626,7 +627,7 @@ final class BoardPlayViewModel: ObservableObject {
                         amount: amount,
                         unit: unit,
                         isIncrement: true,
-                        message: self.sharedCreditToastText(
+                        message: Self.sharedCreditToastText(
                             counterName: counterName, amount: amount, kind: kind, otherBoards: otherBoards, isIncrement: true
                         )
                     )
@@ -734,7 +735,7 @@ final class BoardPlayViewModel: ObservableObject {
                         amount: decrementResult.effectiveDelta,
                         unit: unit,
                         isIncrement: false,
-                        message: self.sharedCreditToastText(
+                        message: Self.sharedCreditToastText(
                             counterName: counterName,
                             amount: decrementResult.effectiveDelta, kind: kind,
                             otherBoards: otherBoards,
@@ -855,9 +856,10 @@ final class BoardPlayViewModel: ObservableObject {
         let windowed = windowedState(forTaskId: boardTask.taskId)
         runOrchestration(
             taskId: boardTask.taskId,
-            intent: .setWindowedCount(max(windowed.count - amount, 0)),
+            intent: .setWindowedCount(max(quantizeCount(windowed.count - amount), 0)),
             boardTask: boardTask
         )
+        if persistAsDefault { try? database.setCounterDefaultLogAmount(sourceTaskId: task.id, amount: amount) }
     }
 
     /// Toggles a compound child's WINDOWED completion on this board.
@@ -1063,7 +1065,7 @@ final class BoardPlayViewModel: ObservableObject {
     ///   - amount: The amount just logged/removed (matches what Undo will reverse).
     ///   - otherBoards: Boards OTHER than the current board that were credited.
     ///   - isIncrement: `true` for increment, `false` for decrement.
-    private nonisolated func sharedCreditToastText(
+    nonisolated static func sharedCreditToastText(
         counterName: String,
         amount: CountValue, kind: CountKind,
         otherBoards: [AppDatabase.AffectedBoard],

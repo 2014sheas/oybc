@@ -484,6 +484,28 @@ final class BoardPlayViewModelTests: XCTestCase {
         XCTAssertFalse(c1.isCompleted, "1 of 3 is not complete")
     }
 
+    /// Counter kinds §5 — a standalone Continuous square remembers an explicit
+    /// custom amount as its own `defaultLogAmount`; a chip amount never does.
+    func test_handleCountingTap_standaloneContinuous_persistsOnlyACustomAmount() throws {
+        let db = try makeDb()
+        try seedUser(db)
+        try db.saveBoard(makeBoard(id: "b1"))
+        var c1 = makeCountingTask("c1", maxCount: 26.2, currentCount: 0)
+        c1.countKind = .continuous
+        try db.saveTask(c1)
+        try db.saveBoardTask(makeBoardTask(id: "bt-c1", boardId: "b1", taskId: "c1", row: 0, col: 0))
+
+        let vm = loadedVM(db, boardId: "b1")
+        let bt = try XCTUnwrap(vm.boardTasks.first { $0.taskId == "c1" })
+        let task = try XCTUnwrap(vm.taskMap["c1"])
+
+        vm.handleCountingTap(boardTask: bt, task: task, amount: 3.1, persistAsDefault: true)
+        XCTAssertTrue(waitUntil { self.dbTask(db, "c1")?.defaultLogAmount == 3.1 && !vm.isProcessing })
+        vm.handleCountingTap(boardTask: bt, task: task, amount: 6.6, persistAsDefault: false)
+        XCTAssertTrue(waitUntil { abs((self.dbTask(db, "c1")?.currentCount ?? 0) - 9.7) < 0.001 && !vm.isProcessing })
+        XCTAssertEqual(dbTask(db, "c1")?.defaultLogAmount, 3.1, "a chip amount never overwrites the default")
+    }
+
     func test_handleCountingTap_standalone_completesAtGoal_thenDecrementUncompletes() throws {
         let db = try makeDb()
         try seedUser(db)

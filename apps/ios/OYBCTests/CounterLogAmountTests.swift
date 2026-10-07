@@ -44,9 +44,11 @@ final class CounterLogAmountTests: XCTestCase {
     private struct QuickV: Decodable { let name: String; let kind: CountKind; let goal: Double; let `default`: Double?; let expected: Double }
     private struct PillV: Decodable { let name: String; let kind: CountKind; let `default`: Double?; let label: String; let opensDetail: Bool }
     private struct ToastV: Decodable { let name: String; let amount: Double; let unit: String; let verb: String; let kind: CountKind; let counterName: String?; let boardNames: [String]?; let expected: String }
+    private struct CustomV: Decodable { let name: String; let amount: Double; let kind: CountKind; let expected: String }
     private struct LogFixture: Decodable {
         let goalChips: [ChipsV]; let boardSheetChipLabels: [LabelsV]; let hubChipLabels: [LabelsV]; let lateLogChips: [ChipsV]
         let initialSelection: [SelV]; let quickAmount: [QuickV]; let pill: [PillV]; let toast: [ToastV]
+        let customChipLabel: [CustomV]
     }
 
     func testLogAmountVectors() throws {
@@ -67,8 +69,16 @@ final class CounterLogAmountTests: XCTestCase {
             XCTAssertEqual(CounterLogAmount.pillLabel(kind: v.kind, defaultLogAmount: v.default), v.label, v.name)
             XCTAssertEqual(CounterLogAmount.pillOpensDetail(kind: v.kind, defaultLogAmount: v.default), v.opensDetail, v.name)
         }
-        for v in f.toast where v.boardNames == nil {
-            XCTAssertEqual(CounterLogToastView.text(amount: v.amount, unit: v.unit, verb: v.verb == "logged" ? .logged : .removed, kind: v.kind), v.expected, v.name)
+        for v in f.toast {
+            if let names = v.boardNames {
+                let boards = names.enumerated().map { AppDatabase.AffectedBoard(boardId: "b\($0.offset)", boardName: $0.element) }
+                XCTAssertEqual(BoardPlayViewModel.sharedCreditToastText(
+                    counterName: v.counterName ?? "", amount: v.amount, kind: v.kind, otherBoards: boards, isIncrement: v.verb == "logged"
+                ), v.expected, v.name)
+            } else {
+                XCTAssertEqual(CounterLogToastView.text(amount: v.amount, unit: v.unit, verb: v.verb == "logged" ? .logged : .removed, kind: v.kind), v.expected, v.name)
+            }
         }
+        for v in f.customChipLabel { XCTAssertEqual(CounterLogAmount.customChipLabel(v.amount, kind: v.kind), v.expected, v.name) }
     }
 }

@@ -28,23 +28,19 @@ extension BoardPlayView {
             // Windowed Completion — the stepper shows the WINDOWED count
             // (`windowedCount` owns the linked-counter rule).
             let displayed = windowedCount(task)
-            // P2: shared hint — other ACTIVE boards where a member task
-            // lives, excluding the current board.
-            let sharedHint: String? = sharedStepperHint(for: task)
-            // R3: resolve the shared-counter SOURCE (if any) to gate the
-            // amount-chip row and seed its "+{default}" chip.
+            // R3: the shared-counter SOURCE (if any) gates the Discrete chip
+            // row; its remembered amount (else the square's own) seeds the
+            // selection (counter kinds §5).
             let sourceId = viewModel.sharedCounterSourceId(for: task)
-            let isSharedCounter = sourceId != nil
-            let defaultLogAmount = sourceId.flatMap { taskMap[$0]?.defaultLogAmount }
             RisoCountingStepperSheet(
                 taskTitle: task.title,
                 currentCount: displayed,
                 maxCount: maxVal,
                 unitText: task.unit ?? "",
+                countKind: resolveFamilyCountKind(task, lookup: { taskMap[$0] }),
                 isLinkedCounter: isLinked,
-                sharedHint: sharedHint,
-                isSharedCounter: isSharedCounter,
-                defaultLogAmount: defaultLogAmount,
+                isSharedCounter: sourceId != nil,
+                defaultLogAmount: (sourceId.flatMap { taskMap[$0] } ?? task).defaultLogAmount,
                 onOpenTask: {
                     pendingTaskDetailTaskId = task.id
                     countingStepperBoardTaskId = nil

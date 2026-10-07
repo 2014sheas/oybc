@@ -2,13 +2,16 @@ import { useEffect, useCallback, useState, useRef } from 'react';
 import { useModalA11y } from '../hooks/useModalA11y';
 import { TypeBadge } from './TypeBadge';
 import styles from './InteractiveTaskSquare.module.css';
+import { customChipLabel, formatCount, formatCountWithUnit } from '@oybc/shared';
 import {
   progressFraction,
   progressBarLabel,
+  type QuickAmountProps,
   type TaskSquareData,
   type SquareState,
 } from './interactiveTaskSquareUtils';
-import { parseCustomLogAmount, type AmountChipOption } from './counters/amountChips';
+import { parseCustomLogAmount } from './counters/amountChips';
+import { GoalEntry } from './counters/GoalEntry';
 
 // ─── FloatingContextMenu ──────────────────────────────────────────────────────
 
@@ -36,12 +39,6 @@ interface ContextMenuProps {
    * for ALL task types. Triggers the task library detail sheet.
    */
   onOpenInLibrary?: (taskId: string) => void;
-  /**
-   * Shared-counter hint shown below the counting controls.
-   * Format: "↔ Shared · also counts on {board}" or "↔ Shared · also counts on {board} + N more".
-   * Only set when the task is a shared counting task with placements on other live boards.
-   */
-  sharedHint?: string;
   /**
    * Counters Refresh R3 — quick-action amount options for a shared counting
    * square (source or linked). When present, replaces the counting section's
@@ -87,7 +84,6 @@ export function FloatingContextMenu({
   onResetCount,
   onViewDetails,
   onOpenInLibrary,
-  sharedHint,
   sharedAmountActions,
   children,
 }: ContextMenuProps) {
@@ -202,7 +198,6 @@ export function FloatingContextMenu({
             // no-ops) — disable instead of presenting a dead control, matching
             // the detail modal (#342 review M1).
             disabled={state.currentCount <= 0 || sq.sharedCounterId != null}
-            title={sq.sharedCounterId != null ? 'Linked counters cannot be decremented directly' : undefined}
             onClick={() => {
               onDecrementCount?.(sq.id);
               onClose();
@@ -222,9 +217,6 @@ export function FloatingContextMenu({
           >
             ↺ Reset
           </button>
-          {sharedHint && (
-            <div className={styles.sharedHint}>{sharedHint}</div>
-          )}
         </>
       )}
 
@@ -388,11 +380,6 @@ export function InteractiveTaskSquare({
       {/* Task name */}
       <span className={styles.taskName}>{sq.title}</span>
 
-      {/* Action hint (counting tasks only, visible on hover) */}
-      {sq.type === 'counting' && sq.unit && (
-        <span className={styles.actionHint}>Tap: +1 {sq.unit}</span>
-      )}
-
       {/* Progress bar */}
       {hasProgress && (
         <div className={styles.progressBarWrapper}>
@@ -431,12 +418,6 @@ interface DetailModalProps {
    */
   onOpenInLibrary?: (taskId: string) => void;
   /**
-   * Shared-counter hint shown in the counting section.
-   * Format: "↔ Shared · also counts on {board}" or "↔ Shared · also counts on {board} + N more".
-   * Only set when the task is a shared counting task with placements on other live boards.
-   */
-  sharedHint?: string;
-  /**
    * Board-integrity PR-3 (issue #360) — achievement-square watch-target
    * data, when `sq.type === 'achievement'`. Same shape as the grid badge
    * (`formatAchievementBadgeLabel` below); the modal is the read-only
@@ -446,36 +427,10 @@ interface DetailModalProps {
    */
   achievementBadge?: AchievementSquareBadgeData;
   /**
-   * Counters Refresh R3 — quick-action amount picker for a shared counting
-   * square (source or linked). When present, REPLACES the plain −/value/+
-   * stepper with a "1 / {default} / #" chip row (R2 Detail Log card styling
-   * — gold selected, ink-static) plus mirrored Add/Remove buttons that both
-   * apply the selected amount. Absent for standalone (non-shared) counting
-   * tasks, which keep the original stepper via `onIncrementCount`/`onDecrementCount`.
+   * Log-amount controls (docs/COUNTER_KINDS.md §5) — see `QuickAmountProps`.
+   * Absent for a standalone Discrete square, which keeps the plain −/+ stepper.
    */
-  quickAmount?: {
-    /** 3-position chip row — `buildBoardQuickAmountOptions(defaultAmount)`. */
-    options: AmountChipOption[];
-    /** Currently selected amount (a chip value, or the confirmed custom amount). */
-    selected: number;
-    /** True when `selected` came from the custom "#" input — governs which
-     *  chip renders highlighted AND whether logging persists it as the new default. */
-    isCustomActive: boolean;
-    customOpen: boolean;
-    customDraft: string;
-    unit: string;
-    /** Disables Add/Remove while a write is in flight or the board is locked. */
-    busy: boolean;
-    onSelectChip: (value: number) => void;
-    onOpenCustom: () => void;
-    onCustomDraftChange: (raw: string) => void;
-    onConfirmCustom: () => void;
-    onAdd: () => void;
-    onRemove: () => void;
-    removeDisabled: boolean;
-    /** Tooltip/aria text for a disabled Remove — set for linked (read-only) counters. */
-    removeTitle?: string;
-  };
+  quickAmount?: QuickAmountProps;
 }
 
 /**
@@ -502,7 +457,6 @@ export function DetailModal({
   onDecrementCount,
   onCompoundChildToggle,
   onOpenInLibrary,
-  sharedHint,
   quickAmount,
   achievementBadge,
 }: DetailModalProps) {
@@ -514,6 +468,7 @@ export function DetailModal({
 
   const fraction = progressFraction(sq, state);
   const barLabel = progressBarLabel(sq, state);
+  const countKind = sq.countKind ?? 'discrete';
 
   /** Human-readable caption for the compound operator. */
   function compoundOperatorCaption(): string {
@@ -574,23 +529,82 @@ export function DetailModal({
         {sq.type === 'counting' && (
           <>
             <p className={styles.modalMeta}>
-              {sq.action} · {sq.maxCount} {sq.unit}
+              {sq.action} · {formatCountWithUnit(sq.maxCount ?? 0, countKind, sq.unit)}
             </p>
-            {/* Progress bar */}
+            {/* Progress bar — gold past the goal (handoff LogSheet web frame). */}
             <div className={styles.modalProgressBar}>
               <div
-                className={`${styles.modalProgressFill} ${styles.modalProgressFillCounting}`}
-                style={{ width: `${fraction * 100}%` }}
+                className={`${styles.modalProgressFill} ${styles.modalProgressFillCounting} ${
+                  state.currentCount > (sq.maxCount ?? 0) ? styles.modalProgressFillOver : ''
+                }`}
+                style={{ width: `${Math.min(1, fraction) * 100}%` }}
               />
               <div className={styles.modalProgressLabel}>{barLabel}</div>
             </div>
 
-            {quickAmount ? (
-              // R3 — shared counting square: the "1 / {default} / #" quick-
-              // action row REPLACES the plain stepper. Both Add and Remove
-              // apply `quickAmount.selected` (mirrored), so decrementing
-              // after a bulk add removes the same bulk amount rather than
-              // silently reverting to single-unit stepping.
+            {quickAmount && quickAmount.kind !== 'discrete' ? (
+              // Counter kinds §5 — Continuous / Duration: ¼ · ½ · goal · #
+              // chips set the always-open amount field; − and + apply it.
+              <div className={styles.quickAmountRow}>
+                <div className={styles.quickChipRow} role="group" aria-label="Log amount presets">
+                  {quickAmount.options.map((chip, i) => {
+                    const isCustomChip = chip.value === null;
+                    const on = isCustomChip
+                      ? quickAmount.isCustomActive
+                      : !quickAmount.isCustomActive && chip.value === quickAmount.selected;
+                    return (
+                      <button
+                        key={isCustomChip ? 'custom' : `${i}-${chip.value}`}
+                        type="button"
+                        className={`${styles.quickChip} ${on ? styles.quickChipSelected : ''}`}
+                        aria-pressed={on}
+                        onClick={() => (isCustomChip ? quickAmount.onOpenCustom() : quickAmount.onSelectChip(chip.value as number))}
+                      >
+                        {isCustomChip && on && quickAmount.selected !== null
+                          ? customChipLabel(quickAmount.selected, quickAmount.kind)
+                          : chip.label}
+                      </button>
+                    );
+                  })}
+                </div>
+                <GoalEntry
+                  kind={quickAmount.kind}
+                  value={quickAmount.amountText}
+                  onChange={quickAmount.onAmountTextChange}
+                  aria-label="Log amount"
+                  suffix={quickAmount.unit || undefined}
+                  placeholder="Amount"
+                  invalid={quickAmount.selected === null}
+                  dense
+                />
+                <div className={styles.quickAmountActions}>
+                  <button
+                    type="button"
+                    className={styles.counterButton}
+                    onClick={quickAmount.onRemove}
+                    disabled={quickAmount.busy || quickAmount.removeDisabled}
+                    aria-label={`Remove ${quickAmount.addLabel.slice(2)}`}
+                  >
+                    −
+                  </button>
+                  <span className={styles.counterValue}>
+                    {formatCount(state.currentCount, quickAmount.kind)}/{formatCount(sq.maxCount ?? 0, quickAmount.kind)}
+                  </span>
+                  <button
+                    type="button"
+                    className={styles.quickAddBtn}
+                    onClick={quickAmount.onAdd}
+                    disabled={quickAmount.busy || quickAmount.selected === null}
+                  >
+                    {quickAmount.addLabel}
+                  </button>
+                </div>
+              </div>
+            ) : quickAmount ? (
+              // R3 — shared Discrete square: the "+1 / +10 / #" quick-action
+              // row REPLACES the plain stepper. Both Add and Remove apply
+              // `quickAmount.selected` (mirrored), so decrementing after a
+              // bulk add removes the same bulk amount.
               <div className={styles.quickAmountRow}>
                 <div className={styles.quickChipRow} role="group" aria-label="Log amount">
                   {(() => {
@@ -614,7 +628,7 @@ export function DetailModal({
                             isCustomChip ? quickAmount.onOpenCustom() : quickAmount.onSelectChip(chip.value as number)
                           }
                         >
-                          {isCustomChip && selected ? `#${quickAmount.selected}` : chip.label}
+                          {isCustomChip && selected ? customChipLabel(quickAmount.selected ?? 0, quickAmount.kind) : chip.label}
                         </button>
                       );
                     });
@@ -654,8 +668,7 @@ export function DetailModal({
                     className={styles.counterButton}
                     onClick={quickAmount.onRemove}
                     disabled={quickAmount.busy || quickAmount.removeDisabled}
-                    title={quickAmount.removeTitle}
-                    aria-label={quickAmount.removeTitle ?? `Remove ${quickAmount.selected} ${quickAmount.unit}`}
+                    aria-label={`Remove ${quickAmount.selected} ${quickAmount.unit}`}
                   >
                     −
                   </button>
@@ -669,7 +682,7 @@ export function DetailModal({
                     disabled={quickAmount.busy}
                     aria-label={`Add ${quickAmount.selected} ${quickAmount.unit}`}
                   >
-                    + {quickAmount.selected}
+                    {quickAmount.addLabel}
                   </button>
                 </div>
               </div>
@@ -694,9 +707,6 @@ export function DetailModal({
                   +
                 </button>
               </div>
-            )}
-            {sharedHint && (
-              <div className={styles.sharedHint}>{sharedHint}</div>
             )}
             {onOpenInLibrary && (
               <button
@@ -773,26 +783,17 @@ export function DetailModal({
                 </li>
               ))}
             </ul>
-            <p className={styles.compoundFooter}>
-              Completion applies to all boards where this task appears.
-            </p>
           </>
         )}
 
         {/* Achievement task — board-integrity PR-3 (issue #360). Read-only:
             no toggle/increment affordance. Tap on the grid is a no-op
             (mirrors iOS); this modal (reached via the context menu's "View
-            Details") is the only place the watch target is explained. */}
+            Details") shows the watch target. */}
         {sq.type === 'achievement' && (
-          <>
-            <p className={styles.modalDescription}>
-              Read-only — completion tracks another board or recurring
-              template, not a local toggle.
-            </p>
-            <p className={styles.modalMeta}>
-              {achievementBadge ? formatAchievementBadgeLabel(achievementBadge) : 'No watch target set.'}
-            </p>
-          </>
+          <p className={styles.modalMeta}>
+            {achievementBadge ? formatAchievementBadgeLabel(achievementBadge) : 'No watch target set.'}
+          </p>
         )}
       </div>
     </div>
