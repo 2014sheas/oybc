@@ -128,7 +128,9 @@ async function writeKindSwitch(
     version: (task.version ?? 0) + 1,
   });
   const saved = await db.tasks.get(task.id);
-  if (saved) await addToSyncQueue('tasks', task.id, SyncOperationType.UPDATE, saved, 0);
+  // The row was read in this transaction; a miss means the write did not land.
+  if (!saved) throw new Error(`switchCounterKind: ${task.id} vanished mid-transaction`);
+  await addToSyncQueue('tasks', task.id, SyncOperationType.UPDATE, saved, 0);
 }
 
 /**

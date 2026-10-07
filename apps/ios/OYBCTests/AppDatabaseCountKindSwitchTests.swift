@@ -151,13 +151,17 @@ final class AppDatabaseCountKindSwitchTests: XCTestCase {
         try db.switchCounterKind(rootTaskId: "root", to: .discrete, now: now)
 
         let taskItems = try db.fetchPendingSyncItems().filter { $0.entityType == "tasks" }
-        XCTAssertEqual(Set(taskItems.map(\.entityId)), ["root", "live"])
+        // Two switches, one PENDING row per entity: the queue coalesces
+        // (SyncQueueBuilder), same shape as web's `[ROOT, LIVE]`.
+        XCTAssertEqual(taskItems.map(\.entityId).sorted(), ["live", "root"])
+        XCTAssertEqual(taskItems.count, 2)
         let root = try XCTUnwrap(K.fetchTask(db, "root"))
         XCTAssertEqual(root.countKind, .discrete)
         XCTAssertEqual(root.version, 3)
         let rootPayloads = try taskItems.filter { $0.entityId == "root" }
             .map { try JSONDecoder().decode(Task.self, from: Data($0.payload.utf8)) }
-        let latest = try XCTUnwrap(rootPayloads.max { $0.version < $1.version })
+        XCTAssertEqual(rootPayloads.count, 1)
+        let latest = try XCTUnwrap(rootPayloads.first)
         XCTAssertEqual(latest.countKind, .discrete)
         XCTAssertEqual(latest.version, 3)
     }

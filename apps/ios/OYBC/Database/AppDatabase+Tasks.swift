@@ -387,6 +387,7 @@ extension AppDatabase {
                 }
             }
 
+            let task = try Self.withRootCountKind(db: db, task)
             try task.save(db)
             try SyncQueueBuilder.makeItem(
                 entityType: "tasks",

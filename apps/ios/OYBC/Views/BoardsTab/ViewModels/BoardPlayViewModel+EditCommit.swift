@@ -277,8 +277,10 @@ extension BoardPlayViewModel {
                     //    `createdInWizard: false` (a deliberate library task,
                     //    unlike the wizard's hidden drafts).
                     for payload in pendingPayloads {
-                        var task = payload.task
-                        task.createdInWizard = false
+                        var draft = payload.task
+                        draft.createdInWizard = false
+                        // Counter kinds (D5): a linked row carries its root's kind.
+                        let task = try AppDatabase.withRootCountKind(db: db, draft)
                         try task.save(db)
                         try SyncQueueBuilder.makeItem(
                             entityType: "tasks", entityId: task.id,
@@ -289,8 +291,9 @@ extension BoardPlayViewModel {
                         // child task in the payload, so the two arrays differ
                         // in length (a zip misaligned / dropped them).
                         for childTask in payload.childTasks {
-                            var child = childTask
-                            child.createdInWizard = false
+                            var childDraft = childTask
+                            childDraft.createdInWizard = false
+                            let child = try AppDatabase.withRootCountKind(db: db, childDraft)
                             try child.save(db)
                             try SyncQueueBuilder.makeItem(
                                 entityType: "tasks", entityId: child.id,
