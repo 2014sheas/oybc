@@ -214,7 +214,7 @@ describe('setCounterDefaultLogAmount (R2)', () => {
     await db.tasks.add(source());
     await expect(setCounterDefaultLogAmount('src1', 0)).rejects.toThrow();
     await expect(setCounterDefaultLogAmount('src1', -5)).rejects.toThrow();
-    await expect(setCounterDefaultLogAmount('src1', 1.5)).rejects.toThrow();
+    await expect(setCounterDefaultLogAmount('src1', 1.555)).rejects.toThrow();
   });
 
   it('rejects a linked (derived) task id', async () => {

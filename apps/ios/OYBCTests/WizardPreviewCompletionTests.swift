@@ -16,10 +16,10 @@ final class WizardPreviewCompletionTests: XCTestCase {
     private func makeTask(
         _ id: String,
         type: TaskType = .normal,
-        maxCount: Int? = nil,
+        maxCount: CountValue? = nil,
         operatorType: OperatorType? = nil,
         isCompleted: Bool = false,
-        currentCount: Int? = nil,
+        currentCount: CountValue? = nil,
         sharedCounterId: String? = nil
     ) -> Task {
         Task(
@@ -40,7 +40,7 @@ final class WizardPreviewCompletionTests: XCTestCase {
         taskId: String,
         kind: TaskEventKind,
         occurredAt: String,
-        delta: Int? = nil
+        delta: CountValue? = nil
     ) -> TaskEvent {
         TaskEvent(
             id: UUID().uuidString, userId: "u1", taskId: taskId,

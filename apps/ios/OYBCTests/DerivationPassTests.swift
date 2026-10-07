@@ -1051,7 +1051,7 @@ final class DerivationPassTests: XCTestCase {
         )
     }
 
-    private func incrementEvent(_ id: String, taskId: String, occurredAt: String, delta: Int) -> TaskEvent {
+    private func incrementEvent(_ id: String, taskId: String, occurredAt: String, delta: CountValue) -> TaskEvent {
         TaskEvent(
             id: id, userId: "u", taskId: taskId, kind: .increment, delta: delta,
             occurredAt: occurredAt, boardId: nil, createdAt: occurredAt, updatedAt: occurredAt,

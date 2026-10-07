@@ -64,8 +64,8 @@ final class DerivedCountersTests: XCTestCase {
 
     private func makeCountingTask(
         id: String,
-        maxCount: Int? = 10,
-        currentCount: Int = 0,
+        maxCount: CountValue? = 10,
+        currentCount: CountValue = 0,
         action: String? = "Read",
         unit: String? = "pages"
     ) -> Task {
@@ -78,7 +78,7 @@ final class DerivedCountersTests: XCTestCase {
         )
     }
 
-    private func makeIncrementEvent(id: String, taskId: String, delta: Int, at occurredAt: String) -> TaskEvent {
+    private func makeIncrementEvent(id: String, taskId: String, delta: CountValue, at occurredAt: String) -> TaskEvent {
         TaskEvent(
             id: id, userId: userId, taskId: taskId, kind: .increment, delta: delta,
             occurredAt: occurredAt, boardId: nil,
@@ -371,7 +371,7 @@ final class DerivedCountersTests: XCTestCase {
     /// A window-stamped derived row whose stored `baseline` is stale.
     private func seedDerivedRow(
         _ database: AppDatabase,
-        baseline: Int,
+        baseline: CountValue,
         startDate: String
     ) throws -> Task {
         let derived = Task(
@@ -900,7 +900,7 @@ final class DerivedCountersTests: XCTestCase {
         let derived = try XCTUnwrap(try database.read { try Task.fetchOne($0, key: derivedId) })
         XCTAssertEqual(derived.maxCount, range.lowerBound)
         XCTAssertNotEqual(derived.maxCount, 20)
-        XCTAssertEqual(derived.title, "Do \(range.lowerBound) push-ups")
+        XCTAssertEqual(derived.title, "Do \(formatCount(range.lowerBound, kind: .discrete)) push-ups")
     }
 
     /// Control: the SAME save without dice mints nothing and places the

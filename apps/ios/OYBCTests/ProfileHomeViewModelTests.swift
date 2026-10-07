@@ -17,7 +17,7 @@ final class ProfileHomeViewModelTests: XCTestCase {
         type: TaskType = .counting,
         title: String = "Task",
         sharedCounterId: String? = nil,
-        currentCount: Int? = nil,
+        currentCount: CountValue? = nil,
         action: String? = "Do",
         unit: String? = "reps",
         createdAt: String = "2026-01-01T00:00:00.000",

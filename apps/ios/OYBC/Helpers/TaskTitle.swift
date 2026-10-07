@@ -24,7 +24,7 @@ enum TaskTitle {
     /// - Returns: The resolved task title string.
     static func generateCounterTaskTitle(
         action: String,
-        maxCount: Int?,
+        maxCount: CountValue?,
         unit: String,
         providedTitle: String? = nil
     ) -> String {
@@ -43,7 +43,10 @@ enum TaskTitle {
         guard let maxCount else {
             return CounterName.formatCounterName(action: action, unit: unit)
         }
-        return "\(trimmedAction) \(maxCount) \(trimmedUnit)"
+        // Titles are STORED, so the goal renders locale-independently
+        // (2dp, trimmed, `.` separator) — never the device locale.
+        let goal = formatCount(maxCount, kind: .continuous, locale: Locale(identifier: "en_US_POSIX"))
+        return "\(trimmedAction) \(goal) \(trimmedUnit)"
     }
 }
 
@@ -71,7 +74,7 @@ extension TaskTitle {
     static func isAutoCounterTitle(
         title: String,
         action: String,
-        maxCount: Int?,
+        maxCount: CountValue?,
         unit: String
     ) -> Bool {
         let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -97,7 +100,7 @@ extension TaskTitle {
     ///   - member: The member being copied (its own title / action / unit / goal).
     ///   - newMaxCount: The copy's target.
     /// - Returns: The copy's title.
-    static func counterCopyTitle(member: Task, newMaxCount: Int) -> String {
+    static func counterCopyTitle(member: Task, newMaxCount: CountValue) -> String {
         let action = member.action ?? ""
         let unit = member.unit ?? ""
         if !isAutoCounterTitle(title: member.title, action: action, maxCount: member.maxCount, unit: unit) {

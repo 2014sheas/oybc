@@ -239,7 +239,7 @@ final class PropagateIncrementTests: XCTestCase {
 
         // Simulate 3 increments: source 1 → 2 → 3.
         for i in 1...3 {
-            let result = propagateIncrement(sourceAfterCurrentCount: i, linkedTasks: [state])[0]
+            let result = propagateIncrement(sourceAfterCurrentCount: CountValue(i), linkedTasks: [state])[0]
             state = PropagateIncrementLinkedTask(
                 id: state.id, baseline: state.baseline, maxCount: state.maxCount,
                 isCompleted: result.newIsCompleted
@@ -249,7 +249,7 @@ final class PropagateIncrementTests: XCTestCase {
 
         // Two more: source 4, 5.
         for i in 4...5 {
-            let result = propagateIncrement(sourceAfterCurrentCount: i, linkedTasks: [state])[0]
+            let result = propagateIncrement(sourceAfterCurrentCount: CountValue(i), linkedTasks: [state])[0]
             state = PropagateIncrementLinkedTask(
                 id: state.id, baseline: state.baseline, maxCount: state.maxCount,
                 isCompleted: result.newIsCompleted

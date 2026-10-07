@@ -15,7 +15,7 @@ extension AppDatabase {
         if step.isCounting {
             let action = step.action.trimmingCharacters(in: .whitespaces)
             let unit = step.unit.trimmingCharacters(in: .whitespaces)
-            let goal = Int(step.goal.trimmingCharacters(in: .whitespaces)) ?? 0
+            let goal = Int(step.goal.trimmingCharacters(in: .whitespaces)).map(CountValue.init) ?? 0
             return Task(
                 id: id, userId: userId,
                 title: TaskTitle.generateCounterTaskTitle(action: action, maxCount: goal, unit: unit, providedTitle: title),
@@ -40,7 +40,7 @@ extension AppDatabase {
         if step.isCounting, base.type == .counting {
             let action = step.action.trimmingCharacters(in: .whitespaces)
             let unit = step.unit.trimmingCharacters(in: .whitespaces)
-            let goal = Int(step.goal.trimmingCharacters(in: .whitespaces)) ?? base.maxCount ?? 0
+            let goal = Int(step.goal.trimmingCharacters(in: .whitespaces)).map(CountValue.init) ?? base.maxCount ?? 0
             t.action = action; t.unit = unit; t.maxCount = goal
             t.title = TaskTitle.generateCounterTaskTitle(action: action, maxCount: goal, unit: unit, providedTitle: title)
         } else {

@@ -18,10 +18,10 @@ final class SharedCounterGroupsVectorTests: XCTestCase {
     private struct MiniTask: Decodable {
         let id: String
         let title: String
-        let currentCount: Int?
-        let maxCount: Int?
+        let currentCount: CountValue?
+        let maxCount: CountValue?
         let sharedCounterId: String?
-        let baseline: Int?
+        let baseline: CountValue?
         let isDeleted: Bool
         /// P5 hub-born-counter flag. Optional in the JSON — absent/false on
         /// the core 11 vectors; extend with `decodeIfPresent ?? false` since
@@ -41,10 +41,10 @@ final class SharedCounterGroupsVectorTests: XCTestCase {
             let container = try decoder.container(keyedBy: CodingKeys.self)
             id = try container.decode(String.self, forKey: .id)
             title = try container.decode(String.self, forKey: .title)
-            currentCount = try container.decodeIfPresent(Int.self, forKey: .currentCount)
-            maxCount = try container.decodeIfPresent(Int.self, forKey: .maxCount)
+            currentCount = try container.decodeIfPresent(CountValue.self, forKey: .currentCount)
+            maxCount = try container.decodeIfPresent(CountValue.self, forKey: .maxCount)
             sharedCounterId = try container.decodeIfPresent(String.self, forKey: .sharedCounterId)
-            baseline = try container.decodeIfPresent(Int.self, forKey: .baseline)
+            baseline = try container.decodeIfPresent(CountValue.self, forKey: .baseline)
             isDeleted = try container.decode(Bool.self, forKey: .isDeleted)
             isCounter = try container.decodeIfPresent(Bool.self, forKey: .isCounter) ?? false
             startDate = try container.decodeIfPresent(String.self, forKey: .startDate)
@@ -72,17 +72,17 @@ final class SharedCounterGroupsVectorTests: XCTestCase {
         let isSource: Bool
         let boardId: String?
         let boardName: String?
-        let goal: Int
-        let logged: Int
+        let goal: CountValue
+        let logged: CountValue
         let met: Bool
-        let over: Int
+        let over: CountValue
         let isActive: Bool
     }
 
     private struct MiniGroup: Decodable {
         let counterId: String
         let name: String
-        let lifetime: Int
+        let lifetime: CountValue
         let taskCount: Int
         let boardCount: Int
         let activeTaskCount: Int
@@ -102,7 +102,7 @@ final class SharedCounterGroupsVectorTests: XCTestCase {
     private struct MiniEvent: Decodable {
         let id: String
         let kind: String
-        let delta: Int
+        let delta: CountValue
         let occurredAt: String
         let isDeleted: Bool
     }

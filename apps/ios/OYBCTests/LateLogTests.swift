@@ -21,9 +21,9 @@ final class LateLogTests: XCTestCase {
     }
 
     private func makeTask(
-        _ id: String, type: TaskType = .normal, maxCount: Int? = nil,
+        _ id: String, type: TaskType = .normal, maxCount: CountValue? = nil,
         sharedCounterId: String? = nil, startDate: String? = nil, endDate: String? = nil,
-        createdInWizard: Bool = false, baseline: Int? = nil, currentCount: Int? = nil,
+        createdInWizard: Bool = false, baseline: CountValue? = nil, currentCount: CountValue? = nil,
         isCompleted: Bool = false, operatorType: OperatorType? = nil, threshold: Int? = nil
     ) -> Task {
         let now = AppDatabase.currentTimestamp()

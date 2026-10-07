@@ -25,8 +25,10 @@ describe('generateCounterTaskTitle', () => {
     expect(generateCounterTaskTitle('  Walk  ', 10, '  km  ')).toBe('Walk 10 km');
   });
 
-  it('formats maxCount as integer when given a float', () => {
-    expect(generateCounterTaskTitle('Read', 5.7, 'books')).toBe('Read 5 books');
+  it('renders a fractional maxCount as a trimmed 2dp number', () => {
+    expect(generateCounterTaskTitle('Read', 5.7, 'books')).toBe('Read 5.7 books');
+    expect(generateCounterTaskTitle('Run', 26.2, 'miles')).toBe('Run 26.2 miles');
+    expect(generateCounterTaskTitle('Run', 0.1 + 0.2, 'miles')).toBe('Run 0.3 miles');
   });
 
   it('handles maxCount of 1', () => {

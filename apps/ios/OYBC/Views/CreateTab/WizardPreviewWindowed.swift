@@ -82,7 +82,7 @@ func wizardPreviewCount(
     eventsByTaskId: [String: [TaskEvent]],
     windowStart: String,
     windowEnd: String?
-) -> Int {
+) -> CountValue {
     guard task.type == .counting else { return task.currentCount ?? 0 }
     if task.sharedCounterId != nil {
         return resolveLinkedCounterDisplay(

@@ -133,7 +133,7 @@ final class BoardSourceVectorTests: XCTestCase {
         let source: BoardSource
         let defaultFilter: String
         /// What the one-off prefill would seed right now; absent = no map.
-        let seededTargetByTaskId: [String: Int]?
+        let seededTargetByTaskId: [String: CountValue]?
         let expected: RawConfigurationDetail
         let expectedHasConfiguration: Bool
     }

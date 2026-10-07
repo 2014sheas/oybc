@@ -171,7 +171,7 @@ extension BoardWizardViewModel {
     ///   - sourceId: The row the member was pulled through.
     ///   - taskId: The member's task id.
     ///   - target: The explicit target, or nil to fall back to the auto/goal.
-    func setMemberTarget(sourceId: String, taskId: String, target: Int?) {
+    func setMemberTarget(sourceId: String, taskId: String, target: CountValue?) {
         sources = BoardSources.withMemberRuleInSource(
             sources,
             sourceId: sourceId,
@@ -263,7 +263,7 @@ extension BoardWizardViewModel {
     ///   - taskId: The parent compound member's task id.
     ///   - childId: The part's `compound_children.childTaskId`.
     ///   - target: The explicit target, or nil to fall back to the auto/goal.
-    func setPartTarget(sourceId: String, taskId: String, childId: String, target: Int?) {
+    func setPartTarget(sourceId: String, taskId: String, childId: String, target: CountValue?) {
         sources = BoardSources.withPartRuleInSource(
             sources,
             sourceId: sourceId,

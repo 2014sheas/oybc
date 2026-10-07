@@ -24,7 +24,7 @@ final class CounterDailyTotalsTests: XCTestCase {
 
     private func ev(
         occurredAt: String,
-        delta: Int,
+        delta: CountValue,
         kind: TaskEventKind = .increment,
         taskId: String? = nil,
         isDeleted: Bool = false

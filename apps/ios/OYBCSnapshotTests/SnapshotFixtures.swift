@@ -124,7 +124,7 @@ enum SnapshotFixtures {
         type: TaskType,
         action: String? = nil,
         unit: String? = nil,
-        maxCount: Int? = nil,
+        maxCount: CountValue? = nil,
         operatorType: OperatorType? = nil,
         threshold: Int? = nil,
         isCompleted: Bool = false

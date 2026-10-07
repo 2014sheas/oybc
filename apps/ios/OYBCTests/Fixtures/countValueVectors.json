@@ -1,0 +1,56 @@
+{
+  "_note": "Cross-platform vectors for countValue.ts <-> CountValue.swift (docs/COUNTER_KINDS.md §3). quantize = round half away from zero at 0.01 via Math.round(|x|*100 + 1e-7) / 100 with the sign restored; -0 normalises to 0. finalize = clamp >= 0, quantize, then whole kinds (discrete, duration) round half-up. format uses the given locale with no grouping; duration values are minutes rendered 'Xh Ym' with zero parts dropped ('0m' for zero).",
+  "quantize": [
+    { "name": "integer unchanged", "x": 26, "expected": 26 },
+    { "name": "two places unchanged", "x": 3.12, "expected": 3.12 },
+    { "name": "drift sum", "x": 0.30000000000000004, "expected": 0.3 },
+    { "name": "half rounds away from zero", "x": 1.005, "expected": 1.01 },
+    { "name": "three places down", "x": 2.344, "expected": 2.34 },
+    { "name": "negative half", "x": -1.005, "expected": -1.01 },
+    { "name": "negative zero", "x": -0.001, "expected": 0 }
+  ],
+  "isQuantized": [
+    { "name": "integer", "x": 5, "expected": true },
+    { "name": "one place", "x": 3.1, "expected": true },
+    { "name": "two places", "x": 26.25, "expected": true },
+    { "name": "three places", "x": 3.125, "expected": false },
+    { "name": "drift value", "x": 0.30000000000000004, "expected": false }
+  ],
+  "finalize": [
+    { "name": "continuous drift", "sum": 0.30000000000000004, "kind": "continuous", "expected": 0.3 },
+    { "name": "continuous negative clamps", "sum": -2.5, "kind": "continuous", "expected": 0 },
+    { "name": "discrete integer", "sum": 7, "kind": "discrete", "expected": 7 },
+    { "name": "discrete fractional history rounds half-up", "sum": 1.2000000000000002, "kind": "discrete", "expected": 1 },
+    { "name": "discrete half rounds up", "sum": 2.5, "kind": "discrete", "expected": 3 },
+    { "name": "duration minutes", "sum": 90, "kind": "duration", "expected": 90 }
+  ],
+  "format": [
+    { "name": "continuous trims zeros", "value": 26.2, "kind": "continuous", "locale": "en-US", "expected": "26.2" },
+    { "name": "continuous whole", "value": 5, "kind": "continuous", "locale": "en-US", "expected": "5" },
+    { "name": "continuous two places", "value": 12.75, "kind": "continuous", "locale": "en-US", "expected": "12.75" },
+    { "name": "continuous no grouping", "value": 1250.5, "kind": "continuous", "locale": "en-US", "expected": "1250.5" },
+    { "name": "continuous comma locale", "value": 3.1, "kind": "continuous", "locale": "de-DE", "expected": "3,1" },
+    { "name": "discrete whole", "value": 300, "kind": "discrete", "locale": "en-US", "expected": "300" },
+    { "name": "discrete rounds stray fraction", "value": 2.5, "kind": "discrete", "locale": "en-US", "expected": "3" },
+    { "name": "arabic locale keeps latin digits", "value": 26, "kind": "discrete", "locale": "ar-SA", "expected": "26" },
+    { "name": "arabic locale continuous keeps latin digits", "value": 26.2, "kind": "continuous", "locale": "ar-SA", "expected": "26.2" },
+    { "name": "duration hours and minutes", "value": 270, "kind": "duration", "locale": "en-US", "expected": "4h 30m" },
+    { "name": "duration whole hours", "value": 600, "kind": "duration", "locale": "en-US", "expected": "10h" },
+    { "name": "duration minutes only", "value": 45, "kind": "duration", "locale": "en-US", "expected": "45m" },
+    { "name": "duration zero", "value": 0, "kind": "duration", "locale": "en-US", "expected": "0m" }
+  ],
+  "formatForInput": [
+    { "name": "discrete whole", "value": 26, "kind": "discrete", "expected": "26" },
+    { "name": "continuous fraction", "value": 26.2, "kind": "continuous", "expected": "26.2" },
+    { "name": "continuous point separator", "value": 3.1, "kind": "continuous", "expected": "3.1" }
+  ],
+  "switch": [
+    { "name": "discrete to continuous keeps values", "from": "discrete", "to": "continuous", "fields": { "maxCount": 26, "defaultLogAmount": 3 }, "expected": { "maxCount": 26, "defaultLogAmount": 3 } },
+    { "name": "continuous to discrete rounds", "from": "continuous", "to": "discrete", "fields": { "maxCount": 26.2, "defaultLogAmount": 3.5 }, "expected": { "maxCount": 26, "defaultLogAmount": 4 } },
+    { "name": "continuous to discrete floors at one", "from": "continuous", "to": "discrete", "fields": { "maxCount": 0.3, "defaultLogAmount": 0.25 }, "expected": { "maxCount": 1, "defaultLogAmount": 1 } },
+    { "name": "goal-less counter", "from": "continuous", "to": "discrete", "fields": { "maxCount": null, "defaultLogAmount": null }, "expected": {} },
+    { "name": "into duration refused", "from": "discrete", "to": "duration", "fields": { "maxCount": 30 }, "expected": null },
+    { "name": "out of duration refused", "from": "duration", "to": "continuous", "fields": { "maxCount": 30 }, "expected": null },
+    { "name": "same kind refused", "from": "continuous", "to": "continuous", "fields": { "maxCount": 3 }, "expected": null }
+  ]
+}

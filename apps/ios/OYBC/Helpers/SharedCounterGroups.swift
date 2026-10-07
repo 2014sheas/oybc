@@ -38,13 +38,13 @@ struct SharedCounterMemberTask: Identifiable {
     /// "February 2026", "2026". Nil when no timeframe/date is known.
     let window: String?
     /// The task's personal target (`maxCount`), 0 when unset.
-    let goal: Int
+    let goal: CountValue
     /// The task's window-scoped displayed amount (derived from lifetime).
-    let logged: Int
+    let logged: CountValue
     /// `logged >= goal` (only when goal > 0). Over-achievement is real.
     let met: Bool
     /// `logged - goal` when over the goal, else 0 (for the "N over" caption).
-    let over: Int
+    let over: CountValue
     /// True when this task is "counting now" — its board is ACTIVE.
     /// Draft / completed / archived / placeless tasks are inactive.
     let isActive: Bool
@@ -65,7 +65,7 @@ struct SharedCounterGroup: Identifiable {
     /// Unit noun (e.g. "reps") from the source task.
     let unit: String?
     /// All-time running total = the source task's `currentCount`.
-    let lifetime: Int
+    let lifetime: CountValue
     /// R2 Counters UX refresh — the counter's default log amount: the
     /// source task's `defaultLogAmount`, or `nil` when never set (callers
     /// fall back to `1`). Persisted per-counter via
@@ -73,7 +73,7 @@ struct SharedCounterGroup: Identifiable {
     /// most-recently-used log amount each time the user logs with a
     /// different one. Defaulted here so every pre-existing call site
     /// (previews, tests) that doesn't specify it keeps compiling.
-    var defaultLogAmount: Int? = nil
+    var defaultLogAmount: CountValue? = nil
     /// Source task first, then linked tasks (deterministic order).
     let tasks: [SharedCounterMemberTask]
     /// Total member tasks (source + linked).
@@ -284,7 +284,7 @@ func buildSharedCounterGroups(
                 guard !BoardSources.isWindowStampedDerived(m), let board else { return nil }
                 return LinkedCounterWindow(startDate: board.startDate, endDate: board.endDate)
             }()
-            let displayed: Int
+            let displayed: CountValue
             if !isSource, let eventsByTaskId,
                BoardSources.isWindowStampedDerived(m) || memberWindow != nil {
                 displayed = resolveLinkedCounterDisplay(

@@ -39,7 +39,7 @@ struct LateLogSheetView: View {
 
     enum Kind {
         case normal
-        case counting(current: Int, max: Int, unit: String)
+        case counting(current: CountValue, max: CountValue, unit: String)
         case compound(parts: [LateLogCompoundPart])
     }
     let kind: Kind
@@ -51,7 +51,7 @@ struct LateLogSheetView: View {
     // Every action is `async`: the sheet awaits it under `isBusy` (below).
     var onMarkDone: () async -> Void = {}
     var onUndo: () async -> Void = {}
-    var onLogAmount: (Int) async -> Void = { _ in }
+    var onLogAmount: (CountValue) async -> Void = { _ in }
     var onCommitCompound: ([String]) async -> Void = { _ in }
     /// Compound pre-check: whether the staged child ids meet the rule
     /// (`BoardPlayViewModel.wouldLateLogCompoundRuleBeMet`). Disables
@@ -155,15 +155,15 @@ struct LateLogSheetView: View {
     // MARK: - Counting
 
     @ViewBuilder
-    private func countingBody(current: Int, max: Int, unit: String) -> some View {
-        Text("\(current)/\(max)\(unit.isEmpty ? "" : " \(unit)")")
+    private func countingBody(current: CountValue, max: CountValue, unit: String) -> some View {
+        Text("\(formatCount(current, kind: .discrete))/\(formatCount(max, kind: .discrete))\(unit.isEmpty ? "" : " \(unit)")")
             .font(.risoHead(20, .extraBold))
             .foregroundStyle(Color.risoInk)
             .monospacedDigit()
 
         HStack(spacing: 8) {
-            ForEach([1, 2, 5], id: \.self) { amount in
-                RisoButton(title: "+\(amount)", kind: .neutral, small: true) {
+            ForEach([1, 2, 5] as [CountValue], id: \.self) { amount in
+                RisoButton(title: "+\(formatCount(amount, kind: .discrete))", kind: .neutral, small: true) {
                     perform { await onLogAmount(amount) }
                 }
             }

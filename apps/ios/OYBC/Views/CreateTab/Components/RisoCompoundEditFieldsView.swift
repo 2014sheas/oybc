@@ -156,7 +156,7 @@ struct RisoCompoundEditFieldsView: View {
         let trimmedUnit = unit.trimmingCharacters(in: .whitespacesAndNewlines)
         let title: String
         if let g = parsedGoal, !trimmedUnit.isEmpty {
-            title = TaskTitle.generateCounterTaskTitle(action: text, maxCount: g, unit: trimmedUnit)
+            title = TaskTitle.generateCounterTaskTitle(action: text, maxCount: CountValue(g), unit: trimmedUnit)
         } else {
             title = text
         }

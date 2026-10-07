@@ -35,9 +35,9 @@ struct MemberRuleRowModel: Equatable {
         let excluded: Bool
         /// The part's own `maxCount` when counting, else 0 — the stepper's
         /// ceiling and the number the caption quotes.
-        let goal: Int
+        let goal: CountValue
         /// Pro-rated (or explicit) target — meaningful only with a stepper.
-        let target: Int
+        let target: CountValue
         /// The part's own dice level: its own in split mode, the parent's
         /// while One square (where the parent rolls for the whole square).
         let level: VaryLevel
@@ -60,9 +60,9 @@ struct MemberRuleRowModel: Equatable {
     /// The member's own dice level (also the One-square compound's).
     let memberVary: VaryLevel
     /// The member's `maxCount` when counting, else 0.
-    let goal: Int
+    let goal: CountValue
     /// Pro-rated (or explicit) target — meaningful only with a stepper.
-    let target: Int
+    let target: CountValue
     /// Board sources only: a pool member has no window to pro-rate
     /// against, so it gets the dice alone (RC5).
     let showsStepper: Bool
@@ -142,7 +142,7 @@ struct MemberRuleRowModel: Equatable {
         let showsStepper = isOn && isCounting && fromBoard
         self.showsStepper = showsStepper
         self.targetSuffix = showsStepper
-            ? "/ \(goal)\(unit.isEmpty ? "" : " \(unit)")"
+            ? "/ \(formatCount(goal, kind: .discrete))\(unit.isEmpty ? "" : " \(unit)")"
             : nil
         self.showsDice = isOn && isCounting
         self.rangeLabel = (isOn && isCounting)
@@ -218,7 +218,7 @@ struct MemberRuleRowModel: Equatable {
                 target: partTarget,
                 level: level,
                 showsStepper: showsStepper,
-                caption: showsStepper ? "of \(partGoal)" : nil,
+                caption: showsStepper ? "of \(formatCount(partGoal, kind: .discrete))" : nil,
                 showsDice: partIsCounting && isSplit,
                 showsExclude: isSplit && canExcludeAny,
                 rangeLabel: partIsCounting
@@ -279,11 +279,11 @@ struct RisoMemberRuleRowView: View {
     let mode: BoardSources.PlanMode
 
     let onToggleExclude: () -> Void
-    let onSetTarget: (Int?) -> Void
+    let onSetTarget: (CountValue?) -> Void
     let onSetVary: (VaryLevel) -> Void
     let onSetSplit: (Bool) -> Void
     let onSetPartExcluded: (_ childId: String, _ excluded: Bool) -> Void
-    let onSetPartTarget: (_ childId: String, _ target: Int?) -> Void
+    let onSetPartTarget: (_ childId: String, _ target: CountValue?) -> Void
     let onSetPartVary: (_ childId: String, _ level: VaryLevel) -> Void
 
     /// Seeds the disclosure OPEN on first render. Snapshot use only —
@@ -559,9 +559,10 @@ struct RisoMemberRuleRowView: View {
             } else {
                 if model.showsStepper {
                     RisoInlineStepperView(
-                        value: Binding(get: { model.target }, set: { onSetTarget($0) }),
+                        // PR 1 is integer-only: the stepper stays Int-based.
+                        value: Binding(get: { Int(model.target) }, set: { onSetTarget(CountValue($0)) }),
                         min: 1,
-                        max: model.goal,
+                        max: Int(model.goal),
                         style: .compact,
                         suffix: model.targetSuffix
                     )
@@ -626,11 +627,11 @@ struct RisoMemberRuleRowView: View {
                     if part.showsStepper {
                         RisoInlineStepperView(
                             value: Binding(
-                                get: { part.target },
-                                set: { onSetPartTarget(part.childId, $0) }
+                                get: { Int(part.target) },
+                                set: { onSetPartTarget(part.childId, CountValue($0)) }
                             ),
                             min: 1,
-                            max: Swift.max(1, part.goal),
+                            max: Swift.max(1, Int(part.goal)),
                             style: .compact
                         )
                     }

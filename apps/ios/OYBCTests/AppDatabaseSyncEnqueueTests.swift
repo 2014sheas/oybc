@@ -41,7 +41,7 @@ final class AppDatabaseSyncEnqueueTests: XCTestCase {
         _ id: String,
         userId: String = "u1",
         type: TaskType = .normal,
-        maxCount: Int? = nil,
+        maxCount: CountValue? = nil,
         isCounter: Bool = false
     ) -> Task {
         let now = AppDatabase.currentTimestamp()

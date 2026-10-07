@@ -73,7 +73,7 @@ struct StagedTaskOverride {
     // Counting-specific — nil means "not set by the user in this session".
     var action: String?
     var unit: String?
-    var maxCount: Int?
+    var maxCount: CountValue?
     /// Compound rule + sub-task edits (a conversion into Compound, or an
     /// edited existing compound) — applied at Save by `applyStagedOverrides`.
     var compound: TaskEditPatch?

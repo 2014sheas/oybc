@@ -40,7 +40,7 @@ struct LinkableCounterSuggestion {
     /// counters refresh).
     let name: String
     /// All-time lifetime = the source's `currentCount`.
-    let lifetime: Int
+    let lifetime: CountValue
     /// Tasks already sharing this counter (source + linkers) — for "N tasks".
     let memberCount: Int
 }
@@ -138,7 +138,7 @@ struct CounterCreateMatch {
     let kind: CounterCreateMatchKind
     /// The matched source/standalone Task row (promote target when standalone).
     let task: Task
-    let lifetime: Int
+    let lifetime: CountValue
     let memberCount: Int
 }
 

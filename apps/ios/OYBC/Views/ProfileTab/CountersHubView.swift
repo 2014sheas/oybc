@@ -182,7 +182,7 @@ struct CountersHubView: View {
 /// Page-level toast state for the Counters Hub's "+ Log" pill / Undo flow.
 private struct HubToastState {
     let counterId: String
-    let amount: Int
+    let amount: CountValue
     let unit: String
     let verb: CounterLogToastView.Verb
     let toastKey: String

@@ -32,7 +32,7 @@ final class BoardWizardPoolMixActionsTests: XCTestCase {
 
     /// `goal` non-nil makes it a COUNTING task (the remove-confirm's seeded-
     /// target case needs one); nil keeps the normal task every other test uses.
-    private func makeTask(id: String, isDeleted: Bool = false, goal: Int? = nil) -> OYBC.Task {
+    private func makeTask(id: String, isDeleted: Bool = false, goal: CountValue? = nil) -> OYBC.Task {
         OYBC.Task(
             id: id, userId: "u1", title: "Task \(id)", description: nil,
             type: goal == nil ? .normal : .counting,
@@ -302,7 +302,7 @@ final class BoardWizardPoolMixActionsTests: XCTestCase {
 
     private func seedBoardWithTasks(
         _ db: AppDatabase, boardId: String, name: String, taskIds: [String],
-        countingGoals: [String: Int] = [:]
+        countingGoals: [String: CountValue] = [:]
     ) throws {
         let now = "2026-01-01T00:00:00.000Z"
         let boardDict: [String: Any] = [
@@ -548,7 +548,7 @@ final class BoardWizardPoolMixActionsTests: XCTestCase {
     /// does at removal time — from the VM's own supply cache and window.
     private func seededTargetMap(
         vm: BoardWizardViewModel, sourceId: String, db: AppDatabase
-    ) -> [String: Int] {
+    ) -> [String: CountValue] {
         guard let supply = vm.supplyInfoBySourceId[sourceId] else { return [:] }
         let tasks = (try? db.fetchTasks(ids: supply.rawSupplyTaskIds)) ?? []
         var tasksById: [String: BoardSources.SeededTargetTask] = [:]

@@ -57,19 +57,19 @@ extension BoardSources {
     ///   - targetWindow: The window of the board being assembled.
     /// - Returns: The effective target (integer ≥ 1, ≤ `goal`).
     static func effectiveMemberTarget(
-        goal: Int,
-        explicit: Int? = nil,
+        goal: CountValue,
+        explicit: CountValue? = nil,
         mode: PlanMode,
         fromBoard: Bool,
         sourceWindow: BoardWindow? = nil,
         targetWindow: BoardWindow
-    ) -> Int {
+    ) -> CountValue {
         let targetDays = nominalWindowDays(
             targetWindow.timeframe,
             startDate: targetWindow.startDate,
             endDate: targetWindow.endDate
         )
-        let base: Int
+        let base: CountValue
         if let explicit {
             base = explicit
         } else if fromBoard {
@@ -111,14 +111,14 @@ extension BoardSources {
     ///   - unit: The counting member's unit, or `""` when it has none.
     /// - Returns: `"lo–hi unit"`, `"lo unit"` when the range collapsed, or
     ///   nil at vary level `.off`.
-    static func varyRangeLabel(t: Int, level: VaryLevel, goal: Int, unit: String) -> String? {
+    static func varyRangeLabel(t: CountValue, level: VaryLevel, goal: CountValue, unit: String) -> String? {
         guard level != .off else { return nil }
         let range = varyRange(t: t, level: level, goal: goal)
         let suffix = unit.isEmpty ? "" : " \(unit)"
         guard range.lowerBound != range.upperBound else {
-            return "\(range.lowerBound)\(suffix)"
+            return "\(formatCount(range.lowerBound, kind: .discrete))\(suffix)"
         }
-        return "\(range.lowerBound)\u{2013}\(range.upperBound)\(suffix)"
+        return "\(formatCount(range.lowerBound, kind: .discrete))\u{2013}\(formatCount(range.upperBound, kind: .discrete))\(suffix)"
     }
 
     /// Human-readable "N squares" note for a Split-up compound member — how
@@ -149,7 +149,7 @@ extension BoardSources {
     ///   - goal: The member's own `maxCount`.
     ///   - windowCount: Progress toward the goal already made in the window.
     /// - Returns: The remaining target (integer ≥ 1).
-    static func remainingTarget(goal: Int, windowCount: Int) -> Int {
+    static func remainingTarget(goal: CountValue, windowCount: CountValue) -> CountValue {
         Swift.max(1, goal - windowCount)
     }
 
@@ -184,11 +184,11 @@ extension BoardSources {
     ///   - targetWindow: The window of the board being assembled.
     /// - Returns: The target to seed (integer ≥ 1, ≤ the remaining amount).
     static func prefilledOneOffTarget(
-        goal: Int,
-        windowCount: Int,
+        goal: CountValue,
+        windowCount: CountValue,
         sourceWindow: BoardWindow? = nil,
         targetWindow: BoardWindow
-    ) -> Int {
+    ) -> CountValue {
         autoTarget(
             goal: remainingTarget(goal: goal, windowCount: windowCount),
             sourceDays: sourceWindow.flatMap {
@@ -242,13 +242,14 @@ extension BoardSources {
     ///   - unit: The counting member's unit, or `""` when it has none.
     /// - Returns: The chip, or nil when it would only restate the title.
     static func countingSummary(
-        target: Int, level: VaryLevel, goal: Int, unit: String
+        target: CountValue, level: VaryLevel, goal: CountValue, unit: String
     ) -> MemberSummary? {
         if let range = varyRangeLabel(t: target, level: level, goal: goal, unit: unit) {
             return MemberSummary(text: range, varying: true)
         }
         if level == .off, target == goal { return nil }
-        return MemberSummary(text: unit.isEmpty ? "\(target)" : "\(target) \(unit)", varying: false)
+        let text = formatCount(target, kind: .discrete)
+        return MemberSummary(text: unit.isEmpty ? text : "\(text) \(unit)", varying: false)
     }
 
     /// Collapsed-row summary for a compound member: how many squares it
@@ -344,13 +345,13 @@ extension BoardSources {
 
     /// A patch over one member's rule — see ``RulePatchField``.
     struct MemberRulePatch {
-        var target: RulePatchField<Int> = .keep
+        var target: RulePatchField<CountValue> = .keep
         var vary: RulePatchField<VaryLevel> = .keep
         var split: RulePatchField<Bool> = .keep
         var parts: RulePatchField<[String: BoardSourcePartRule]> = .keep
 
         init(
-            target: RulePatchField<Int> = .keep,
+            target: RulePatchField<CountValue> = .keep,
             vary: RulePatchField<VaryLevel> = .keep,
             split: RulePatchField<Bool> = .keep,
             parts: RulePatchField<[String: BoardSourcePartRule]> = .keep
@@ -364,12 +365,12 @@ extension BoardSources {
 
     /// A patch over one part's rule — see ``RulePatchField``.
     struct PartRulePatch {
-        var target: RulePatchField<Int> = .keep
+        var target: RulePatchField<CountValue> = .keep
         var vary: RulePatchField<VaryLevel> = .keep
         var excluded: RulePatchField<Bool> = .keep
 
         init(
-            target: RulePatchField<Int> = .keep,
+            target: RulePatchField<CountValue> = .keep,
             vary: RulePatchField<VaryLevel> = .keep,
             excluded: RulePatchField<Bool> = .keep
         ) {
@@ -737,9 +738,9 @@ extension BoardSources {
     /// the vector suite can build one without a GRDB row.
     struct SeededTargetTask {
         let type: TaskType
-        let maxCount: Int?
+        let maxCount: CountValue?
 
-        init(type: TaskType, maxCount: Int?) {
+        init(type: TaskType, maxCount: CountValue?) {
             self.type = type
             self.maxCount = maxCount
         }
@@ -786,11 +787,11 @@ extension BoardSources {
     static func seededTargetsForSource(
         supplyTaskIds: [String],
         tasksById: [String: SeededTargetTask],
-        windowCountByTaskId: [String: Int],
+        windowCountByTaskId: [String: CountValue],
         sourceWindow: BoardWindow?,
         targetWindow: BoardWindow
-    ) -> [String: Int] {
-        var seeded: [String: Int] = [:]
+    ) -> [String: CountValue] {
+        var seeded: [String: CountValue] = [:]
         for id in supplyTaskIds {
             guard let task = tasksById[id], task.type == .counting else { continue }
             guard let goal = task.maxCount, goal >= 1 else { continue }

@@ -144,5 +144,14 @@ extension AppDatabase {
         migrator.registerMigration("v38") { db in
             try db.execute(sql: "ALTER TABLE pools ADD COLUMN memberVary TEXT")
         }
+
+        // v39: Counter kinds (docs/COUNTER_KINDS.md §3). Nullable TEXT: every
+        // pre-v39 row stays NULL and `Task.init(from:)` decodes it to nil
+        // (resolved as `.discrete`). Count columns stay INTEGER — SQLite's
+        // INTEGER affinity stores a non-integral REAL losslessly, so no rebuild.
+        // Web: no Dexie bump (unindexed).
+        migrator.registerMigration("v39") { db in
+            try db.execute(sql: "ALTER TABLE tasks ADD COLUMN countKind TEXT")
+        }
     }
 }

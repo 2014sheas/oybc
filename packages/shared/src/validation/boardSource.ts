@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { positiveCount } from './countValue';
 
 /**
  * Zod schema for `BoardSource` (Board Sources rework, docs/BOARD_SOURCES.md
@@ -21,7 +22,7 @@ import { z } from 'zod';
  *   on the template schemas).
  */
 export const VaryLevelSchema = z.union([z.literal(0), z.literal(1), z.literal(2)]);
-const TargetSchema = z.number().int().min(1);
+const TargetSchema = positiveCount();
 export const BoardSourcePartRuleSchema = z.object({
   target: TargetSchema.optional(),
   vary: VaryLevelSchema.optional(),

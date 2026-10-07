@@ -14,7 +14,7 @@ struct DeriveLinkTarget {
     /// `currentCount`. The new task's own window then starts counting from
     /// 0 forward, same semantics as the auto-link path
     /// (`LinkableCounterSuggestion.lifetime` = `best.currentCount ?? 0`).
-    let baseline: Int
+    let baseline: CountValue
 }
 
 /// Resolves the link target for the "Derive smaller version…" context-menu

@@ -31,7 +31,7 @@ export interface TaskEvent {
   // Occurrence
   kind: TaskEventKind;
   /**
-   * Signed, non-zero integer delta. Present ONLY on `increment` events;
+   * Signed, non-zero, 2dp-quantized delta. Present ONLY on `increment` events;
    * forbidden on `completion` events. Enforced by `TaskEventSchema`.
    */
   delta?: number;

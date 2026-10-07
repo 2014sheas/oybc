@@ -22,7 +22,7 @@ final class CounterArrivalsVectorTests: XCTestCase {
         let taskId: String
         let counterId: String
         let counterName: String
-        let displayed: Int
+        let displayed: CountValue
     }
 
     private struct ExpectedCounter: Decodable, Equatable {
@@ -39,7 +39,7 @@ final class CounterArrivalsVectorTests: XCTestCase {
 
     private struct Vector: Decodable {
         let name: String
-        let lastSeen: [String: Int]
+        let lastSeen: [String: CountValue]
         let squares: [VectorSquare]
         let expected: ExpectedResult
     }

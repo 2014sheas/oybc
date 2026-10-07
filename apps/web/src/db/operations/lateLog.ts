@@ -5,7 +5,9 @@ import {
   evaluateCompound,
   isEventOwningTask,
   isEventSealImmune,
+  isQuantizedCount,
   isWindowStampedDerived,
+  quantizeCount,
   lateLogOccurredAt,
   selectClosedBoardLateLogs,
   SyncOperationType,
@@ -192,8 +194,8 @@ export async function lateLogIncrement(
   delta: number,
   now: string = currentTimestamp(),
 ): Promise<void> {
-  if (!Number.isInteger(delta) || delta <= 0) {
-    throw new Error('lateLogIncrement: delta must be a positive integer');
+  if (!isQuantizedCount(delta) || delta <= 0) {
+    throw new Error('lateLogIncrement: delta must be a positive 2dp number');
   }
   await db.transaction('rw', LATE_LOG_TABLES, async () => {
     const board = await requireClosedBoard(boardId);
@@ -209,7 +211,7 @@ export async function lateLogIncrement(
     if (!root || root.isDeleted) return; // orphaned link — defensive no-op
 
     const occurredAt = lateLogOccurredAt(board, now);
-    const newRootCount = (root.currentCount ?? 0) + delta;
+    const newRootCount = quantizeCount((root.currentCount ?? 0) + delta);
     const rootWasCompleted = root.isCompleted;
     const rootNowCompleted =
       rootWasCompleted || (root.maxCount != null && newRootCount >= root.maxCount);
@@ -330,7 +332,7 @@ async function planCompoundActions(
       planned.push({ childTaskId: child.id, kind: 'completion' });
     } else {
       if (child.type !== TaskType.COUNTING || child.sharedCounterId != null) continue;
-      if (!Number.isInteger(action.delta) || (action.delta as number) <= 0) continue;
+      if (!isQuantizedCount(action.delta as number) || (action.delta as number) <= 0) continue;
       planned.push({ childTaskId: child.id, kind: 'increment', delta: action.delta });
     }
   }
@@ -475,7 +477,7 @@ export async function undoLateLog(
     if (root) {
       const entryDelta = entry.delta ?? 0;
       const currentCount = root.currentCount ?? 0;
-      const newRootCount = Math.max(0, currentCount - entryDelta);
+      const newRootCount = Math.max(0, quantizeCount(currentCount - entryDelta));
       const rootWasCompleted = root.isCompleted;
       const rootNowCompleted =
         rootWasCompleted || (root.maxCount != null && newRootCount >= root.maxCount);

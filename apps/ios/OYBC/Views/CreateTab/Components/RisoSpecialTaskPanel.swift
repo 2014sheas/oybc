@@ -215,16 +215,16 @@ struct RisoSpecialTaskPanel: View {
         let a = countingActionText.trimmingCharacters(in: .whitespacesAndNewlines)
         let g = countingGoalText.trimmingCharacters(in: .whitespacesAndNewlines)
         let u = countingUnitText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !a.isEmpty, !u.isEmpty, let goal = Int(g), goal > 0 else { return "" }
+        guard !a.isEmpty, !u.isEmpty, let goal = Int(g).map(CountValue.init), goal > 0 else { return "" }
         return TaskTitle.generateCounterTaskTitle(action: a, maxCount: goal, unit: u)
     }
 
     /// The typed goal as a positive Int, or nil when blank/invalid. Also
     /// gates the counter-link hint (only shown once a valid goal exists —
     /// mirrors web's `CounterLinkHint` doc contract).
-    private var countingGoal: Int? {
+    private var countingGoal: CountValue? {
         guard let g = Int(countingGoalText.trimmingCharacters(in: .whitespacesAndNewlines)), g > 0 else { return nil }
-        return g
+        return CountValue(g)
     }
 
     private var canSubmitCounting: Bool {

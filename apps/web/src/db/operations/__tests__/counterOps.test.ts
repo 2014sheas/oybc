@@ -116,12 +116,12 @@ describe('createCounterTask (P5)', () => {
     await expect(createCounterTask('u1', { action: 'Push-ups', unit: '' })).rejects.toThrow();
   });
 
-  it('rejects a negative or non-integer startingCount', async () => {
+  it('rejects a negative or 3dp startingCount', async () => {
     await expect(
       createCounterTask('u1', { action: 'Push-ups', unit: 'reps', startingCount: -1 }),
     ).rejects.toThrow();
     await expect(
-      createCounterTask('u1', { action: 'Push-ups', unit: 'reps', startingCount: 1.5 }),
+      createCounterTask('u1', { action: 'Push-ups', unit: 'reps', startingCount: 1.555 }),
     ).rejects.toThrow();
   });
 });

@@ -1,6 +1,8 @@
 import { z } from 'zod';
 import { AchievementTrigger, BoardStatus, TaskType, Timeframe, CenterSquareType, SyncOperationType, SyncStatus, OperatorType } from '../constants/enums';
 import { ManualTaskVarySchema } from './boardSource';
+import { CountKindSchema, positiveCount, nonNegativeCount, isValidCountDelta, countFieldsMatchKind } from './countValue';
+import { isQuantizedCount } from '../algorithms/countValue';
 
 /**
  * Validation schemas using Zod
@@ -187,7 +189,7 @@ const sharedCounterFieldsConsistent = (data: {
   if (hasId !== hasBaseline) return false;
   // baseline must be a non-negative integer when present.
   if (hasBaseline && data.baseline !== undefined && data.baseline !== null) {
-    if (!Number.isInteger(data.baseline) || data.baseline < 0) return false;
+    if (!isQuantizedCount(data.baseline) || data.baseline < 0) return false;
   }
   return true;
 };
@@ -236,7 +238,7 @@ export const CreateTaskInputSchema = z.object({
   type: z.nativeEnum(TaskType),
   action: z.string().max(50).optional(),
   unit: z.string().max(50).optional(),
-  maxCount: z.number().int().positive().optional(),
+  maxCount: positiveCount().optional(),
   referencedBoardId: z.string().uuid().optional(),
   referencedTemplateId: z.string().uuid().optional(),
   achievementTrigger: z.nativeEnum(AchievementTrigger).optional(),
@@ -252,10 +254,11 @@ export const CreateTaskInputSchema = z.object({
   // UUID constraint matches how other nullable ID fields are typed in this
   // file (e.g. `referencedBoardId`, `centerTaskId`) — rejects empty strings.
   sharedCounterId: z.string().uuid().nullable().optional(),
-  baseline: z.number().int().min(0).nullable().optional(),
+  baseline: nonNegativeCount().nullable().optional(),
   // P5 — Hub-born counters. See `Task.isCounter` for the full invariant
   // documentation. Canonical design: docs/SHARED_COUNTERS.md §P5.
   isCounter: z.boolean().optional(),
+  countKind: CountKindSchema.optional(),
 }).refine(
   (data) => {
     // Counting tasks must have action, unit, and maxCount — except hub-born
@@ -266,6 +269,9 @@ export const CreateTaskInputSchema = z.object({
     return true;
   },
   { message: 'Counting tasks must have action, unit, and maxCount (unless isCounter)' }
+).refine(
+  countFieldsMatchKind,
+  { message: 'Whole-number kinds need whole goals' },
 ).refine(
   referencedFieldsOnTaskMutuallyExclusive,
   { message: 'Task.referencedBoardId and referencedTemplateId are mutually exclusive — at most one may be set' },
@@ -296,6 +302,7 @@ export const CreateTaskInputSchema = z.object({
 // NORMAL / COUNTING / COMPOUND / ACHIEVEMENT — no Progress branch needed.
 
 export const UpdateTaskInputSchema = z.object({
+  countKind: CountKindSchema.optional(),
   title: z.string().min(1).max(200).optional(),
   description: z.string().max(1000).optional(),
   /**
@@ -319,7 +326,7 @@ export const UpdateTaskInputSchema = z.object({
   // UUID constraint matches CreateTaskInputSchema and other nullable ID fields
   // (e.g. referencedBoardId/referencedTemplateId) — rejects empty strings.
   sharedCounterId: z.string().uuid().nullable().optional(),
-  baseline: z.number().int().min(0).nullable().optional(),
+  baseline: nonNegativeCount().nullable().optional(),
 }).refine(
   referencedFieldsOnTaskMutuallyExclusive,
   { message: 'Task.referencedBoardId and referencedTemplateId are mutually exclusive — at most one may be set' },
@@ -365,10 +372,10 @@ export const AutoCreateCompoundChildTaskSchema = z.object({
   description: z.string().max(1000).optional(),
   action: z.string().min(1).max(50).optional(),
   unit: z.string().min(1).max(50).optional(),
-  maxCount: z.number().int().positive().optional(),
+  maxCount: positiveCount().optional(),
   // R1 counters refresh — auto-link (see AutoCreateCompoundChildTask doc).
   sharedCounterId: z.string().uuid().nullable().optional(),
-  baseline: z.number().int().min(0).nullable().optional(),
+  baseline: nonNegativeCount().nullable().optional(),
 }).refine(
   (data) => {
     if (data.type === TaskType.COUNTING) {
@@ -428,7 +435,7 @@ export const TaskSchema = z.object({
   type: z.nativeEnum(TaskType),
   action: z.string().max(50).optional(),
   unit: z.string().max(50).optional(),
-  maxCount: z.number().int().positive().optional(),
+  maxCount: positiveCount().optional(),
   // Compound task fields
   operator: z.nativeEnum(OperatorType).optional(),
   threshold: z.number().int().positive().optional(),
@@ -463,7 +470,7 @@ export const TaskSchema = z.object({
   // project with stale remote docs would skip every legacy Task.
   isCompleted: z.boolean().default(false),
   completedAt: z.string().datetime().optional(),
-  currentCount: z.number().int().nonnegative().optional(),
+  currentCount: nonNegativeCount().optional(),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
   lastSyncedAt: z.string().datetime().optional(),
@@ -483,11 +490,11 @@ export const TaskSchema = z.object({
   // task whose `currentCount` drives this task's displayed value.
   sharedCounterId: z.string().uuid().nullable().optional(),
   // Phase 2 — Shared Counters. Baseline offset (source count at link time).
-  baseline: z.number().int().min(0).nullable().optional(),
+  baseline: nonNegativeCount().nullable().optional(),
   // RETIRED (Windowed Completion) — Phase 4 additive-merge common-ancestor.
   // Inert residue; nothing reads/writes it (docs/WINDOWED_COMPLETION.md §Shared
   // counters interaction). Kept in the schema for decode compat with old rows.
-  lastSyncedCount: z.number().int().nonnegative().nullable().optional(),
+  lastSyncedCount: nonNegativeCount().nullable().optional(),
   // Draft-board provenance. `true` for wizard-born (deferred-persist)
   // tasks; absent/false for standalone + copied + pre-feature tasks.
   // Library-browse surfaces hide a task iff `createdInWizard` AND it is
@@ -498,10 +505,11 @@ export const TaskSchema = z.object({
   // P5 — Hub-born counters. See `Task.isCounter` for the full invariant
   // documentation. Canonical design: docs/SHARED_COUNTERS.md §P5.
   isCounter: z.boolean().optional(),
+  countKind: CountKindSchema.optional(),
   // Counters UX refresh (R2). See `Task.defaultLogAmount` for the full
   // invariant documentation. Positive integer when present; forward-compat
   // (unknown-drop safe like `isCounter`).
-  defaultLogAmount: z.number().int().positive().optional(),
+  defaultLogAmount: positiveCount().optional(),
 }).refine(
   (data) => {
     // Compound tasks must have an operator.
@@ -535,6 +543,9 @@ export const TaskSchema = z.object({
 ).refine(
   requiredCountRulesOk,
   { message: "requiredCount must be a positive integer when referencedTemplateId is set, and must be unset otherwise" },
+).refine(
+  countFieldsMatchKind,
+  { message: 'Whole-number kinds need whole goals' },
 );
 
 // ===== TaskEvent Schema (Windowed Completion) =====
@@ -557,7 +568,7 @@ export const TaskEventSchema = z
     kind: z.enum(['completion', 'increment']),
     // Present + non-zero integer on increments; forbidden on completions
     // (enforced by the refinement below).
-    delta: z.number().int().optional(),
+    delta: z.number().optional(),
     occurredAt: z.string().datetime(),
     boardId: z.string().uuid().optional(),
     createdAt: z.string().datetime(),
@@ -570,14 +581,14 @@ export const TaskEventSchema = z
   .refine(
     (data) => {
       if (data.kind === 'increment') {
-        return data.delta !== undefined && Number.isInteger(data.delta) && data.delta !== 0;
+        return data.delta !== undefined && isValidCountDelta(data.delta);
       }
       // completion
       return data.delta === undefined;
     },
     {
       message:
-        "TaskEvent.delta must be a non-zero integer when kind='increment', and must be absent when kind='completion'",
+        "TaskEvent.delta must be a non-zero 2dp number when kind='increment', and must be absent when kind='completion'",
     },
   );
 

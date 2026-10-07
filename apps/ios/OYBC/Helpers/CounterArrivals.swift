@@ -36,7 +36,7 @@ struct ArrivalSquare {
     /// The counter's display name — used in the banner copy.
     let counterName: String
     /// The square's current displayed count (post cross-board fan-out).
-    let displayed: Int
+    let displayed: CountValue
 }
 
 /// One distinct counter that arrived, aggregated across its squares on this
@@ -69,7 +69,7 @@ struct CounterArrivalResult {
 /// - Returns: Arrived task ids (to pulse), distinct arrived counters (for the
 ///   banner), and the total arrived-square count. All empty when nothing arrived.
 func detectCounterArrivals(
-    lastSeen: [String: Int],
+    lastSeen: [String: CountValue],
     squares: [ArrivalSquare]
 ) -> CounterArrivalResult {
     var arrivedTaskIds: [String] = []
@@ -117,8 +117,8 @@ func detectCounterArrivals(
 /// from `detectCounterArrivals`, and only `taskId`/`displayed` are used here.
 ///
 /// - Parameter squares: The board's current shared-counting squares.
-func snapshotCounterSquares(squares: [ArrivalSquare]) -> [String: Int] {
-    var out: [String: Int] = [:]
+func snapshotCounterSquares(squares: [ArrivalSquare]) -> [String: CountValue] {
+    var out: [String: CountValue] = [:]
     for sq in squares { out[sq.taskId] = sq.displayed }
     return out
 }

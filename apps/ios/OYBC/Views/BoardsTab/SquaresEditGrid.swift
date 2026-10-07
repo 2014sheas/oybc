@@ -64,7 +64,7 @@ struct SquaresEditGrid: View {
     /// Windowed count for a counting square — the board's in-window progress,
     /// never the lifetime cache (owner report 2026-10-04: Board Edit showed
     /// lifetime progress). `BoardEditPanel` injects `BoardPlayView.windowedCount`.
-    var windowedCount: (Task) -> Int = { $0.currentCount ?? 0 }
+    var windowedCount: (Task) -> CountValue = { $0.currentCount ?? 0 }
 
     // MARK: - Internal state
 

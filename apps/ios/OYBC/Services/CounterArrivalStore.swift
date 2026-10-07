@@ -32,9 +32,9 @@ final class CounterArrivalStore {
     /// - Parameter boardId: The board whose snapshot to read.
     /// - Returns: `taskId → displayed` map; `[:]` when absent or malformed (an
     ///   absent entry is a first view — never an arrival).
-    func lastSeen(boardId: String) -> [String: Int] {
+    func lastSeen(boardId: String) -> [String: CountValue] {
         guard let data = defaults.data(forKey: key(boardId: boardId)),
-              let map = try? JSONDecoder().decode([String: Int].self, from: data)
+              let map = try? JSONDecoder().decode([String: CountValue].self, from: data)
         else { return [:] }
         return map
     }
@@ -44,7 +44,7 @@ final class CounterArrivalStore {
     /// - Parameters:
     ///   - boardId: The board whose snapshot to write.
     ///   - snapshot: `taskId → displayed` map (from `snapshotCounterSquares`).
-    func save(boardId: String, snapshot: [String: Int]) {
+    func save(boardId: String, snapshot: [String: CountValue]) {
         guard let data = try? JSONEncoder().encode(snapshot) else { return }
         defaults.set(data, forKey: key(boardId: boardId))
     }

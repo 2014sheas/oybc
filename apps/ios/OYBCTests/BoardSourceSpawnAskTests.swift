@@ -260,7 +260,7 @@ final class BoardSourceSpawnAskTests: XCTestCase {
     // MARK: - Counter-family exclusivity (2026-09-08)
 
     private func makeCountingTask(
-        _ id: String, maxCount: Int, sharedCounterId: String? = nil
+        _ id: String, maxCount: CountValue, sharedCounterId: String? = nil
     ) -> OYBC.Task {
         OYBC.Task(
             id: id, userId: userId, title: "Count \(id)", description: nil, type: .counting,

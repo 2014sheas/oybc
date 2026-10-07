@@ -147,7 +147,7 @@ struct CounterDetailView: View {
     /// Logs `amount` in `direction`, persists it as the counter's new
     /// default, then surfaces the "Logged/Removed" toast. Mirrors web's
     /// `CounterDetailPage.handleLog`.
-    private func handleLog(amount: Int, direction: CounterLogDirection) {
+    private func handleLog(amount: CountValue, direction: CounterLogDirection) {
         guard !isLogging, amount > 0, let group else { return }
         isLogging = true
         logError = nil
@@ -266,7 +266,7 @@ enum CounterLogDirection {
 
 /// Toast state for the Counter Detail log card's "Logged/Removed +N · Undo" toast.
 private struct DetailToastState {
-    let amount: Int
+    let amount: CountValue
     let unit: String
     let verb: CounterLogToastView.Verb
     let toastKey: String
@@ -292,7 +292,7 @@ struct CounterDetailContent: View {
     /// closed by the time this is shown (mirrors web's close-dialog-on-error
     /// pattern), so it renders on this page itself.
     var deleteError: String?
-    var onLog: (Int, CounterLogDirection) -> Void
+    var onLog: (CountValue, CounterLogDirection) -> Void
     /// Fired by the "⋯" overflow menu's "Delete counter…" item AND the
     /// footer's red text link — the container computes the deletion impact
     /// and shows the confirm sheet.
@@ -300,7 +300,7 @@ struct CounterDetailContent: View {
     /// Member-card tap → open that board (host-routed; core → pager).
     var onOpenBoard: (String) -> Void
 
-    @State private var selectedAmount: Int
+    @State private var selectedAmount: CountValue
     @State private var isCustomActive = false
     @State private var customOpen = false
     @State private var customDraft = ""
@@ -311,12 +311,12 @@ struct CounterDetailContent: View {
         isLogging: Bool = false,
         logError: String? = nil,
         deleteError: String? = nil,
-        initialSelectedAmount: Int? = nil,
+        initialSelectedAmount: CountValue? = nil,
         /// Snapshot-testability seam: forces the "#" custom chip into its
         /// selected (gold, showing the live amount) state without requiring
         /// a real tap sequence. Production call sites never pass this.
         initialCustomActive: Bool = false,
-        onLog: @escaping (Int, CounterLogDirection) -> Void = { _, _ in },
+        onLog: @escaping (CountValue, CounterLogDirection) -> Void = { _, _ in },
         onDeleteTap: @escaping () -> Void = {},
         onOpenBoard: @escaping (String) -> Void = { _ in }
     ) {
@@ -350,7 +350,7 @@ struct CounterDetailContent: View {
 
     private struct AmountChipOption {
         /// `nil` marks the trailing custom "#" chip.
-        let value: Int?
+        let value: CountValue?
         let label: String
 
     }
@@ -373,14 +373,14 @@ struct CounterDetailContent: View {
 
     // MARK: - Chip actions
 
-    private func selectChip(_ value: Int) {
+    private func selectChip(_ value: CountValue) {
         selectedAmount = value
         isCustomActive = false
         customOpen = false
     }
 
     private func openCustomInput() {
-        customDraft = isCustomActive ? "\(selectedAmount)" : ""
+        customDraft = isCustomActive ? formatCountForInput(selectedAmount, kind: .discrete) : ""
         customOpen = true
     }
 
@@ -522,7 +522,7 @@ struct CounterDetailContent: View {
         .risoCard()
         .risoHardShadow(Riso.Shadow.small, radius: Riso.cardRadius)
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(group.name), \(group.lifetime) all-time \(unitLabel)")
+        .accessibilityLabel("\(group.name), \(formatCount(group.lifetime, kind: .discrete)) all-time \(unitLabel)")
     }
 
     /// 7-day sparkline (real data via `dailyTotals`) — 9px-wide bars, blue
@@ -534,7 +534,7 @@ struct CounterDetailContent: View {
                 let isToday = index == dailyTotals.days.count - 1
                 // 6% min-bar floor — matches web's `Math.max(6, …)` percentage
                 // exactly (R2 final review: 0.12 rendered tiny days ~2× taller).
-                let heightFraction = max(0.06, Double(day.total) / Double(maxDaily))
+                let heightFraction = max(0.06, day.total / maxDaily)
                 RoundedRectangle(cornerRadius: 1.5)
                     .fill(isToday ? Color.risoGold : Color.risoBlue)
                     .frame(width: 9, height: 40 * heightFraction)
@@ -648,7 +648,7 @@ struct CounterDetailContent: View {
                         openCustomInput()
                     }
                 } label: {
-                    Text(chip.value == nil && isSelected ? "\(selectedAmount)" : chip.label)
+                    Text(chip.value == nil && isSelected ? formatCount(selectedAmount, kind: .discrete) : chip.label)
                         .font(.risoHead(13, .extraBold))
                         .foregroundStyle(isSelected ? Color.risoInkStatic : Color.risoPaper)
                         .frame(minWidth: 40)
@@ -699,7 +699,7 @@ struct CounterDetailContent: View {
             }
             .buttonStyle(.plain)
             .disabled(isLogging || group.lifetime == 0)
-            .accessibilityLabel("Remove \(selectedAmount) \(unitLabel)")
+            .accessibilityLabel("Remove \(formatCount(selectedAmount, kind: .discrete)) \(unitLabel)")
 
             Button {
                 onLog(selectedAmount, .add)
@@ -710,7 +710,7 @@ struct CounterDetailContent: View {
                             .tint(Color.risoInkStatic)
                             .scaleEffect(0.85)
                     }
-                    Text("＋ Add \(selectedAmount)")
+                    Text("＋ Add \(formatCount(selectedAmount, kind: .discrete))")
                         .font(.risoHead(15, .extraBold))
                 }
                 .foregroundStyle(Color.risoInkStatic)
@@ -724,7 +724,7 @@ struct CounterDetailContent: View {
             }
             .buttonStyle(RisoButtonStyle(offset: Riso.Shadow.small))
             .disabled(isLogging)
-            .accessibilityLabel("Add \(selectedAmount) \(unitLabel)")
+            .accessibilityLabel("Add \(formatCount(selectedAmount, kind: .discrete)) \(unitLabel)")
         }
     }
 
@@ -803,7 +803,7 @@ struct CounterDetailContent: View {
         .disabled(member.boardId == nil)
         .accessibilityElement(children: .combine)
         .accessibilityLabel(
-            "\(member.taskTitle) on \(member.boardName ?? "no board"), \(member.logged) of \(member.goal) \(unitLabel), \(caption(for: member))"
+            "\(member.taskTitle) on \(member.boardName ?? "no board"), \(formatCount(member.logged, kind: .discrete)) of \(formatCount(member.goal, kind: .discrete)) \(unitLabel), \(caption(for: member))"
         )
     }
 

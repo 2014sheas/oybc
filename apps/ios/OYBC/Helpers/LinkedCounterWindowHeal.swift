@@ -272,7 +272,7 @@ extension BoardSources {
     static func windowStampedCopyDraft(
         copy: LinkedCounterWindowCopy,
         sourceTask: Task,
-        baseline: Int
+        baseline: CountValue
     ) -> DerivedTaskDraft? {
         guard let maxCount = sourceTask.maxCount, maxCount >= 1 else { return nil }
         let action = sourceTask.action ?? ""

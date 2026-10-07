@@ -64,7 +64,7 @@ extension BoardPlayViewModel {
     /// Logs `delta` (> 0) on a closed board's COUNTING square — `taskId` is
     /// the PLACED square's id (the DB resolves a window-stamped derived row
     /// to its ROOT itself). Prefer `commitLateLogIncrement(for:delta:)`.
-    func commitLateLogIncrement(taskId: String, delta: Int) async throws {
+    func commitLateLogIncrement(taskId: String, delta: CountValue) async throws {
         let bid = boardId
         try await runLateLogWrite { db in try db.lateLogIncrement(boardId: bid, taskId: taskId, delta: delta) }
     }
@@ -127,7 +127,7 @@ extension BoardPlayViewModel {
     /// Logs `delta` on the tapped COUNTING square. Passes the PLACED id —
     /// never the pre-resolved root, which is not placed and would throw
     /// `LateLogError.taskNotPlaced`. No-op for a non-routable square.
-    func commitLateLogIncrement(for task: Task, delta: Int) async throws {
+    func commitLateLogIncrement(for task: Task, delta: CountValue) async throws {
         guard lateLogEventOwningTaskId(for: task) != nil else { return }
         try await commitLateLogIncrement(taskId: task.id, delta: delta)
     }

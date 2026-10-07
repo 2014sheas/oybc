@@ -346,8 +346,8 @@ final class RisoPlayBoardSnapshotTests: XCTestCase {
                         isCompleted: s.2,
                         isBingoLine: s.3,
                         isCenter: s.4,
-                        currentCount: s.5,
-                        maxCount: s.6,
+                        currentCount: CountValue(s.5),
+                        maxCount: CountValue(s.6),
                         compoundDoneCount: s.7,
                         compoundChildCount: s.8
                     )

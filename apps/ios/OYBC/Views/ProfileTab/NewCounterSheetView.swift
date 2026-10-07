@@ -65,8 +65,8 @@ struct NewCounterSheetView: View {
         return CounterName.formatCounterName(action: effectiveVerb, unit: trimmedUnit)
     }
 
-    private var previewCount: Int {
-        let parsed = Int(startingCountText.trimmingCharacters(in: .whitespacesAndNewlines)) ?? 0
+    private var previewCount: CountValue {
+        let parsed = Int(startingCountText.trimmingCharacters(in: .whitespacesAndNewlines)).map(CountValue.init) ?? 0
         return parsed > 0 ? parsed : 0
     }
 
@@ -132,7 +132,7 @@ struct NewCounterSheetView: View {
         guard canCreate else { return }
         let capturedVerb = effectiveVerb
         let capturedUnit = trimmedUnit
-        let parsedStarting = Int(startingCountText.trimmingCharacters(in: .whitespacesAndNewlines))
+        let parsedStarting = Int(startingCountText.trimmingCharacters(in: .whitespacesAndNewlines)).map(CountValue.init)
         error = nil
         busy = true
         _Concurrency.Task.detached(priority: .userInitiated) {
@@ -174,7 +174,7 @@ struct NewCounterSheetContentView: View {
     var error: String? = nil
     var busy: Bool = false
     var previewName: String = ""
-    var previewCount: Int = 0
+    var previewCount: CountValue = 0
     var trimmedUnit: String = ""
     var match: CounterCreateMatch? = nil
     var onViewCounter: (String) -> Void = { _ in }

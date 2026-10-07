@@ -172,7 +172,7 @@ final class PoolEditorViewModelTests: XCTestCase {
 
     private func buildTyped(
         _ id: String, title: String, type: TaskType,
-        action: String? = nil, unit: String? = nil, maxCount: Int? = nil
+        action: String? = nil, unit: String? = nil, maxCount: CountValue? = nil
     ) -> Task {
         var t = buildTask(id, title: title)
         t.type = type

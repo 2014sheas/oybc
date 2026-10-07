@@ -50,7 +50,7 @@ final class BoardWizardMemberRulesTests: XCTestCase {
     private func makeTask(
         _ id: String,
         type: TaskType = .normal,
-        maxCount: Int? = nil
+        maxCount: CountValue? = nil
     ) -> OYBC.Task {
         OYBC.Task(
             id: id, userId: userId, title: "Task \(id)", type: type,
@@ -63,7 +63,7 @@ final class BoardWizardMemberRulesTests: XCTestCase {
     }
 
     private func makeEvent(
-        _ id: String, taskId: String, delta: Int, at occurredAt: String, isDeleted: Bool = false
+        _ id: String, taskId: String, delta: CountValue, at occurredAt: String, isDeleted: Bool = false
     ) -> TaskEvent {
         TaskEvent(
             id: id, userId: userId, taskId: taskId, kind: .increment, delta: delta,
@@ -236,7 +236,7 @@ final class BoardWizardMemberRulesTests: XCTestCase {
         }
     }
 
-    private func monthlyPullTarget(wizardTimeframe: Timeframe) throws -> Int? {
+    private func monthlyPullTarget(wizardTimeframe: Timeframe) throws -> CountValue? {
         let database = try makeDb()
         try seedMonthlySourceBoard(database)
         let vm = makeVM(database)

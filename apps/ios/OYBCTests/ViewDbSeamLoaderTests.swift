@@ -66,7 +66,7 @@ final class ViewDbSeamLoaderTests: XCTestCase {
         return board
     }
 
-    private func seedTask(_ db: AppDatabase, id: String, title: String, isDeleted: Bool = false, currentCount: Int = 0) throws {
+    private func seedTask(_ db: AppDatabase, id: String, title: String, isDeleted: Bool = false, currentCount: CountValue = 0) throws {
         let task = OYBC.Task(
             id: id, userId: userId, title: title, description: nil, type: .counting,
             action: "Read", unit: "pages", maxCount: 35,

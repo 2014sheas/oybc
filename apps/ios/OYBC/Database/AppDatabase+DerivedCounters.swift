@@ -236,7 +236,7 @@ extension AppDatabase {
         // RB2 — the window boundary. `startDate` is a full local-ISO timestamp
         // on every board that has one; a date-less board opens now.
         let boundary = window.startDate ?? now
-        var baselineByRootId: [String: Int] = [:]
+        var baselineByRootId: [String: CountValue] = [:]
         for root in candidateRootIds(
             selectedIds: selectedIds,
             tasksById: tasksById,

@@ -68,27 +68,27 @@ final class MemberRuleVectorTests: XCTestCase {
 
     private struct AutoTargetVector: Decodable {
         let name: String
-        let goal: Int
+        let goal: CountValue
         let sourceDays: Int?
         let targetDays: Int?
-        let expected: Int
+        let expected: CountValue
     }
 
     private struct VaryRangeVector: Decodable {
         let name: String
-        let t: Int
+        let t: CountValue
         let level: Int
-        let goal: Int
-        let expected: [Int]
+        let goal: CountValue
+        let expected: [CountValue]
     }
 
     private struct RollTargetVector: Decodable {
         let name: String
-        let t: Int
+        let t: CountValue
         let level: Int
-        let goal: Int
+        let goal: CountValue
         let seed: UInt32?
-        let expected: Int
+        let expected: CountValue
     }
 
     private struct ApplyVector: Decodable {
@@ -110,7 +110,7 @@ final class MemberRuleVectorTests: XCTestCase {
         let title: String?
         let action: String?
         let unit: String?
-        let maxCount: Int?
+        let maxCount: CountValue?
         let sharedCounterId: String?
         let startDate: String?
         let operatorType: String?
@@ -139,8 +139,8 @@ final class MemberRuleVectorTests: XCTestCase {
         let root: String
         let sourceMember: String
         let replaces: String
-        let maxCount: Int
-        let baseline: Int
+        let maxCount: CountValue
+        let baseline: CountValue
         let title: String?
         let action: String?
         let unit: String?
@@ -196,7 +196,7 @@ final class MemberRuleVectorTests: XCTestCase {
         let tasks: [String: RawTask]
         let children: [String: [RawChild]]
         let sourceWindows: [String: String]
-        let baselines: [String: Int]
+        let baselines: [String: CountValue]
         let vectors: [PlanVector]
         let idPins: [String: String]
     }
@@ -232,7 +232,7 @@ final class MemberRuleVectorTests: XCTestCase {
     private struct RawBaselineEvent: Decodable {
         let taskId: String
         let kind: String
-        let delta: Int?
+        let delta: CountValue?
         let occurredAt: String
         let isDeleted: Bool
     }
@@ -264,11 +264,11 @@ final class MemberRuleVectorTests: XCTestCase {
         let root: String
         let boundary: String
         let events: [RawBaselineEvent]
-        let expected: Int
+        let expected: CountValue
     }
 
     private struct RawRoot: Decodable {
-        let currentCount: Int
+        let currentCount: CountValue
         let action: String?
         let unit: String?
     }
@@ -290,8 +290,8 @@ final class MemberRuleVectorTests: XCTestCase {
         let rootTaskId: String
         let sourceMemberId: String
         let replacesId: String
-        let maxCount: Int
-        let baseline: Int
+        let maxCount: CountValue
+        let baseline: CountValue
         let title: String
         let action: String
         let unit: String
@@ -358,22 +358,22 @@ final class MemberRuleVectorTests: XCTestCase {
 
     private struct EffectiveTargetVector: Decodable {
         let name: String
-        let goal: Int
-        let explicit: Int?
+        let goal: CountValue
+        let explicit: CountValue?
         let mode: String
         let fromBoard: Bool
         /// Bare timeframe string; the harness wraps it into a `BoardWindow`
         /// with nil dates (fixture note `windows`). Absent = no source window.
         let sourceWindow: String?
         let targetWindow: String
-        let expected: Int
+        let expected: CountValue
     }
 
     private struct VaryRangeLabelVector: Decodable {
         let name: String
-        let t: Int
+        let t: CountValue
         let level: Int
-        let goal: Int
+        let goal: CountValue
         let unit: String
         /// JSON `null` at vary level 0 — decodes straight to nil.
         let expected: String?
@@ -388,15 +388,15 @@ final class MemberRuleVectorTests: XCTestCase {
 
     private struct RemainingTargetVector: Decodable {
         let name: String
-        let goal: Int
-        let windowCount: Int
-        let expected: Int
+        let goal: CountValue
+        let windowCount: CountValue
+        let expected: CountValue
     }
 
     private struct PrefilledOneOffTargetVector: Decodable {
         let name: String
-        let goal: Int
-        let windowCount: Int
+        let goal: CountValue
+        let windowCount: CountValue
         /// Bare timeframe string; absent = no source window (fixture note
         /// `windows`). `sourceWindowDates` / `targetWindowDates` carry the
         /// `[start, end]` bounds a CUSTOM window needs — a one-element array
@@ -405,7 +405,7 @@ final class MemberRuleVectorTests: XCTestCase {
         let sourceWindowDates: [String]?
         let targetWindow: String
         let targetWindowDates: [String]?
-        let expected: Int
+        let expected: CountValue
     }
 
     private struct MemberRuleForVector: Decodable {
@@ -429,7 +429,7 @@ final class MemberRuleVectorTests: XCTestCase {
     /// inferred from an absent `clear` entry.
     private struct RawPatch: Decodable {
         struct RawSet: Decodable {
-            let target: Int?
+            let target: CountValue?
             let vary: Int?
             let split: Bool?
             let excluded: Bool?
@@ -468,9 +468,9 @@ final class MemberRuleVectorTests: XCTestCase {
 
     private struct CountingSummaryVector: Decodable {
         let name: String
-        let target: Int
+        let target: CountValue
         let level: Int
-        let goal: Int
+        let goal: CountValue
         let unit: String
         /// Nullable: a counting chip is SUPPRESSED when it would only
         /// restate the row's own auto-generated title. `CompoundSummaryVector`
@@ -492,19 +492,19 @@ final class MemberRuleVectorTests: XCTestCase {
     /// `tasks` map (TS twin: `Pick<Task, 'type' | 'maxCount'>`).
     private struct SeededTaskSpec: Decodable {
         let type: String
-        let maxCount: Int?
+        let maxCount: CountValue?
     }
 
     private struct SeededTargetsVector: Decodable {
         let name: String
         let supplyTaskIds: [String]
         let tasks: [String: SeededTaskSpec]
-        let windowCountByTaskId: [String: Int]
+        let windowCountByTaskId: [String: CountValue]
         /// Bare timeframe string; absent = no source window (fixture note
         /// `windows`) — the unknowable-span branch.
         let sourceWindow: String?
         let targetWindow: String
-        let expected: [String: Int]
+        let expected: [String: CountValue]
     }
 
     private struct DisplaySection: Decodable {

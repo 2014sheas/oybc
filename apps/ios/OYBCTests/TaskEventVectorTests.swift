@@ -40,14 +40,14 @@ final class TaskEventVectorTests: XCTestCase {
 
     private struct WindowEvent: Decodable {
         let kind: String
-        let delta: Int?
+        let delta: CountValue?
         let occurredAt: String
         let isDeleted: Bool
     }
 
     private struct WindowVector: Decodable {
-        struct MiniTask: Decodable { let type: String; let maxCount: Int? }
-        struct Expected: Decodable { let isCompleted: Bool; let count: Int }
+        struct MiniTask: Decodable { let type: String; let maxCount: CountValue? }
+        struct Expected: Decodable { let isCompleted: Bool; let count: CountValue }
         let name: String
         let task: MiniTask
         let windowStart: String?
@@ -73,7 +73,7 @@ final class TaskEventVectorTests: XCTestCase {
     private struct LateLogFixture: Decodable { let lateLogOccurredAt: [LateLogVector] }
 
     /// Build a minimal event-owning Task (type + maxCount) for windowed resolution.
-    private func makeTask(type: String, maxCount: Int?, sharedCounterId: String? = nil) -> Task {
+    private func makeTask(type: String, maxCount: CountValue?, sharedCounterId: String? = nil) -> Task {
         Task(
             id: "t", userId: "u", title: "t",
             type: TaskType(rawValue: type) ?? .normal,
@@ -166,16 +166,16 @@ final class TaskEventVectorTests: XCTestCase {
     private struct LinkedDisplayVector: Decodable {
         struct MiniTask: Decodable {
             let type: String
-            let maxCount: Int?
+            let maxCount: CountValue?
             let sharedCounterId: String?
             let startDate: String?
             let endDate: String?
             let createdInWizard: Bool?
-            let baseline: Int?
-            let currentCount: Int?
+            let baseline: CountValue?
+            let currentCount: CountValue?
             let isCompleted: Bool
         }
-        struct Expected: Decodable { let displayed: Int; let isCompleted: Bool }
+        struct Expected: Decodable { let displayed: CountValue; let isCompleted: Bool }
         let name: String
         let task: MiniTask
         let eventsByTaskId: [String: [WindowEvent]]?
@@ -241,7 +241,7 @@ final class TaskEventVectorTests: XCTestCase {
         let sharedCounterId: String?
         let isCompleted: Bool
         let completedAt: String?
-        let currentCount: Int?
+        let currentCount: CountValue?
         let updatedAt: String
         let isDeleted: Bool
     }
@@ -251,7 +251,7 @@ final class TaskEventVectorTests: XCTestCase {
         let userId: String
         let taskId: String
         let kind: String
-        let delta: Int?
+        let delta: CountValue?
         let occurredAt: String
         let createdAt: String
         let updatedAt: String
@@ -355,7 +355,7 @@ final class TaskEventVectorTests: XCTestCase {
         struct MiniTask: Decodable {
             let id: String
             let type: String
-            let maxCount: Int?
+            let maxCount: CountValue?
             let sharedCounterId: String?
             /// Compound tasks only (Task-4 breadth vectors).
             let `operator`: String?
@@ -378,7 +378,7 @@ final class TaskEventVectorTests: XCTestCase {
             let id: String
             let taskId: String
             let kind: String
-            let delta: Int?
+            let delta: CountValue?
             let occurredAt: String
             let isDeleted: Bool
         }

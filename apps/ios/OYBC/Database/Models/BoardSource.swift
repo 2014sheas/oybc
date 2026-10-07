@@ -23,14 +23,14 @@ enum VaryLevel: Int, Codable {
 /// part-exclusion and nothing else).
 struct BoardSourcePartRule: Codable, Equatable {
     /// Explicit per-part target, overriding the pro-rated auto target.
-    var target: Int?
+    var target: CountValue?
     /// Per-part dice; overrides the member-level `vary` when present.
     var vary: VaryLevel?
     /// Split-up only: leave this part off the board. The last-part guard
     /// means excluding EVERY part is treated as excluding none.
     var excluded: Bool?
 
-    init(target: Int? = nil, vary: VaryLevel? = nil, excluded: Bool? = nil) {
+    init(target: CountValue? = nil, vary: VaryLevel? = nil, excluded: Bool? = nil) {
         self.target = target
         self.vary = vary
         self.excluded = excluded
@@ -48,7 +48,7 @@ struct BoardSourcePartRule: Codable, Equatable {
 /// and its `parts` re-target its children in place.
 struct BoardSourceMemberRule: Codable, Equatable {
     /// Explicit target for a counting member; board sources only.
-    var target: Int?
+    var target: CountValue?
     /// Member-level dice. Deliberately IGNORED in split mode — a split
     /// part reads its own part rule instead.
     var vary: VaryLevel?
@@ -58,7 +58,7 @@ struct BoardSourceMemberRule: Codable, Equatable {
     var parts: [String: BoardSourcePartRule]?
 
     init(
-        target: Int? = nil,
+        target: CountValue? = nil,
         vary: VaryLevel? = nil,
         split: Bool? = nil,
         parts: [String: BoardSourcePartRule]? = nil

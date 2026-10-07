@@ -141,7 +141,7 @@ struct RisoPoolRowEditorView: View {
         let a = draft.action.trimmingCharacters(in: .whitespacesAndNewlines)
         let g = draft.goal.trimmingCharacters(in: .whitespacesAndNewlines)
         let u = draft.unit.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !a.isEmpty, !u.isEmpty, let goal = Int(g), goal > 0 else { return "" }
+        guard !a.isEmpty, !u.isEmpty, let goal = Int(g).map(CountValue.init), goal > 0 else { return "" }
         return TaskTitle.generateCounterTaskTitle(action: a, maxCount: goal, unit: u)
     }
 

@@ -429,7 +429,7 @@ struct RisoLibrarySheetView: View {
             if library.familyRootIds.contains(task.id) { return nil }
             guard let a = task.action, let u = task.unit, let m = task.maxCount,
                   !a.isEmpty, !u.isEmpty else { return nil }
-            return "\(a) · goal \(m) \(u)"
+            return "\(a) · goal \(formatCount(m, kind: resolveCountKind(task.countKind))) \(u)"
         case .compound:
             let n = effectiveChildrenByCompound[task.id]?.count ?? 0
             guard n > 0 else { return nil }

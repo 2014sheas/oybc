@@ -174,6 +174,26 @@ async function seedR1Fixture(taskId: string): Promise<void> {
   await sealBoard(MONTHLY, MONTHLY_SEALED_AT);
 }
 
+// ─── Counter kinds: fractional late logs ────────────────────────────────────
+
+describe('lateLogIncrement — 2dp amounts', () => {
+  it('records a 2dp delta on a continuous counter', async () => {
+    await seedCountingTask(TASK, 26.2, { countKind: 'continuous' });
+    await seedR1Fixture(TASK);
+
+    await lateLogIncrement(DAILY, TASK, 0.5, FRIDAY_NOW);
+
+    expect((await eventsFor(TASK)).map((e) => e.delta)).toContain(0.5);
+  });
+
+  it('rejects a 3dp delta', async () => {
+    await seedCountingTask(TASK, 26.2, { countKind: 'continuous' });
+    await seedR1Fixture(TASK);
+
+    await expect(lateLogIncrement(DAILY, TASK, 0.125, FRIDAY_NOW)).rejects.toThrow(/2dp/);
+  });
+});
+
 // ─── R1 end-to-end scenario ─────────────────────────────────────────────────
 
 describe('R1 scenario — late-logging a counting task on a closed Tuesday daily from Friday', () => {

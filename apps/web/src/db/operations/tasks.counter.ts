@@ -6,6 +6,7 @@ import {
   TaskType,
   deriveDisplayedCount,
   generateCounterTaskTitle,
+  isQuantizedCount,
   isWindowStampedDerived,
   type Task,
 } from '@oybc/shared';
@@ -40,10 +41,10 @@ import { softDeleteWindowStampedDerived } from './derivedCounters';
  *
  * @param userId - Owning user.
  * @param input - `action` + `unit` (both required, trimmed) and an optional
- *   non-negative integer `startingCount` (defaults to 0).
+ *   non-negative 2dp number `startingCount` (defaults to 0).
  * @returns The newly created counter Task.
  * @throws If `action`/`unit` are blank after trimming, or `startingCount`
- *   is not a non-negative integer.
+ *   is not a non-negative 2dp number.
  */
 export async function createCounterTask(
   userId: string,
@@ -53,8 +54,8 @@ export async function createCounterTask(
   const unit = input.unit.trim();
   const startingCount = input.startingCount ?? 0;
   if (!action || !unit) throw new Error('createCounterTask: action and unit are required');
-  if (!Number.isInteger(startingCount) || startingCount < 0) {
-    throw new Error('createCounterTask: startingCount must be a non-negative integer');
+  if (!isQuantizedCount(startingCount) || startingCount < 0) {
+    throw new Error('createCounterTask: startingCount must be a non-negative 2dp number');
   }
   const validated = CreateTaskInputSchema.parse({
     title: generateCounterTaskTitle(action, null, unit),

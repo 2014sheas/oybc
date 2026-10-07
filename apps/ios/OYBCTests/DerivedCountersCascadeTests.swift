@@ -45,7 +45,7 @@ final class DerivedCountersCascadeTests: XCTestCase {
         rootId: String? = nil,
         startDate: String? = nil,
         createdInWizard: Bool = true,
-        currentCount: Int = 0,
+        currentCount: CountValue = 0,
         isCompleted: Bool = false,
         version: Int = 1,
         isDeleted: Bool = false
@@ -852,9 +852,9 @@ final class DerivedCountersCascadeTests: XCTestCase {
     private func countingTask(
         id: String,
         sharedCounterId: String? = nil,
-        baseline: Int? = nil,
-        maxCount: Int?,
-        currentCount: Int,
+        baseline: CountValue? = nil,
+        maxCount: CountValue?,
+        currentCount: CountValue,
         isCompleted: Bool = false
     ) -> Task {
         Task(

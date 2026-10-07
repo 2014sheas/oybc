@@ -105,7 +105,7 @@ extension BoardPlayView {
             )
 
         case .counting:
-            let current: Int = {
+            let current: CountValue = {
                 guard task.sharedCounterId != nil else { return viewModel.windowedState(of: task).count }
                 return resolveLinkedCounterDisplay(
                     task: task, eventsByTaskId: viewModel.windowEventsByTaskId, sealedAt: board?.sealedAt,
@@ -176,7 +176,7 @@ extension BoardPlayView {
 
     /// Passes the TAPPED (placed) task — the VM hands the DB the placed id
     /// (F1: the pre-resolved root is never placed → `taskNotPlaced`).
-    private func runLateLogIncrement(task: Task, delta: Int) async {
+    private func runLateLogIncrement(task: Task, delta: CountValue) async {
         do {
             try await viewModel.commitLateLogIncrement(for: task, delta: delta)
             lateLogErrorMessage = nil

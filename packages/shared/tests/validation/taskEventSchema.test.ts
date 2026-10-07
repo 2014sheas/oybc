@@ -72,8 +72,8 @@ describe('TaskEventSchema', () => {
     expect(TaskEventSchema.safeParse(validIncrement({ delta: 0 })).success).toBe(false);
   });
 
-  it('rejects an increment event with a non-integer delta', () => {
-    expect(TaskEventSchema.safeParse(validIncrement({ delta: 1.5 })).success).toBe(false);
+  it('rejects an increment event with a delta beyond 2 decimal places', () => {
+    expect(TaskEventSchema.safeParse(validIncrement({ delta: 1.555 })).success).toBe(false);
   });
 
   it('rejects an unknown kind', () => {

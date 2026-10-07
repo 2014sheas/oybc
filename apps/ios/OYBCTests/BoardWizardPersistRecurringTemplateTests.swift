@@ -78,7 +78,7 @@ final class BoardWizardPersistRecurringTemplateTests: XCTestCase {
     }
 
     /// Seeds a Counting task (Action/Goal/Unit) for staged-edit tests.
-    private func seedCountingTask(_ id: String, userId: String, action: String, maxCount: Int, unit: String) throws {
+    private func seedCountingTask(_ id: String, userId: String, action: String, maxCount: CountValue, unit: String) throws {
         let now = AppDatabase.currentTimestamp()
         try db.saveTask(Task(
             id: id, userId: userId,

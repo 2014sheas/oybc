@@ -32,10 +32,10 @@ struct TaskEvent: Codable, FetchableRecord, PersistableRecord, Identifiable {
 
     // Occurrence
     var kind: TaskEventKind
-    /// Signed, non-zero integer delta. Present ONLY on `.increment` events;
+    /// Signed, non-zero delta (2dp-quantized `CountValue`; integer for discrete). Present ONLY on `.increment` events;
     /// nil on `.completion` events. Enforced by the shared `TaskEventSchema`
     /// on the pull boundary.
-    var delta: Int?
+    var delta: CountValue?
     /// ISO8601 — the semantic timestamp. Windows key on this. Set to `now` at
     /// write time; backfill rows derive it from the task snapshot.
     var occurredAt: String

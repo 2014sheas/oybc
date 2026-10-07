@@ -14,30 +14,30 @@ final class SharedCounterVectorTests: XCTestCase {
 
     private struct DeriveVector: Decodable {
         let name: String
-        let baseline: Int
-        let maxCount: Int
-        let currentCount: Int
-        let displayed: Int
+        let baseline: CountValue
+        let maxCount: CountValue
+        let currentCount: CountValue
+        let displayed: CountValue
         let isCompleted: Bool
     }
 
     private struct LinkedTaskVector: Decodable {
         let id: String
-        let baseline: Int?
-        let maxCount: Int?
+        let baseline: CountValue?
+        let maxCount: CountValue?
         let isCompleted: Bool
     }
 
     private struct ExpectedIncrement: Decodable {
         let taskId: String
-        let newCurrentCount: Int
+        let newCurrentCount: CountValue
         let newIsCompleted: Bool
-        let displayed: Int
+        let displayed: CountValue
     }
 
     private struct PropagateVector: Decodable {
         let name: String
-        let sourceAfterCurrentCount: Int
+        let sourceAfterCurrentCount: CountValue
         let linkedTasks: [LinkedTaskVector]
         let expected: [ExpectedIncrement]
     }

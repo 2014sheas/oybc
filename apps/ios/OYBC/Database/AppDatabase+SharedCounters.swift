@@ -28,7 +28,7 @@ extension AppDatabase {
         let affectedBoards: [AffectedBoard]
         /// Actual amount decremented. 0 when `source.currentCount` was already 0
         /// before the call (silent no-op per the spec's clamp rule).
-        let effectiveDelta: Int
+        let effectiveDelta: CountValue
     }
 
     // MARK: Private helper — shared-counter board cascade
@@ -242,7 +242,7 @@ extension AppDatabase {
     ///   count the log (live, active, not closed, not ended), for use in the P2 "credited" toast.
     func incrementSharedCounter(
         sourceTaskId: String,
-        by: Int = 1,
+        by: CountValue = 1,
         boardId: String? = nil,
         now: String = AppDatabase.currentTimestamp()
     ) throws -> SharedCounterCreditResult {
@@ -413,7 +413,7 @@ extension AppDatabase {
     ///   actual delta applied (0 on no-op).
     func decrementSharedCounter(
         sourceTaskId: String,
-        by: Int = 1,
+        by: CountValue = 1,
         boardId: String? = nil
     ) throws -> SharedCounterDecrementResult {
         guard by >= 1 else {
@@ -581,7 +581,7 @@ extension AppDatabase {
         /// Absolute amount reversed (the tombstoned event's `|delta|`), or
         /// `0` when there was nothing to undo (no live increment event on
         /// the source).
-        let undoneAmount: Int
+        let undoneAmount: CountValue
     }
 
     /// Reverses the most recent counter log on a source task (R2 Counters UX
@@ -812,7 +812,7 @@ extension AppDatabase {
     ///     linked/derived task — `defaultLogAmount` is only meaningful on
     ///     the accumulator.
     ///   - amount: A positive integer.
-    func setCounterDefaultLogAmount(sourceTaskId: String, amount: Int) throws {
+    func setCounterDefaultLogAmount(sourceTaskId: String, amount: CountValue) throws {
         guard amount >= 1 else {
             throw NSError(
                 domain: "AppDatabase.setCounterDefaultLogAmount",

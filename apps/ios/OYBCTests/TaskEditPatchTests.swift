@@ -11,7 +11,7 @@ final class TaskEditPatchTests: XCTestCase {
         title: String = "Task",
         action: String? = nil,
         unit: String? = nil,
-        maxCount: Int? = nil
+        maxCount: CountValue? = nil
     ) -> OYBC.Task {
         OYBC.Task(
             id: id, userId: "u1", title: title, description: nil, type: type,

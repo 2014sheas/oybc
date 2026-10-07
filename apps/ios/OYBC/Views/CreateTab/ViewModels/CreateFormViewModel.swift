@@ -129,7 +129,7 @@ final class CreateFormViewModel {
     // "Inherit total" mode was retired in R1): baseline = source.currentCount
     // at link time → displayed = source.currentCount − baseline (starts at 0).
     var countingSharedCounterId: String? = nil
-    var countingBaseline: Int? = nil
+    var countingBaseline: CountValue? = nil
 
     // UI state
     var isSubmitting: Bool = false
@@ -319,7 +319,7 @@ final class CreateFormViewModel {
         if resolvedType == .counting {
             let a = countingAction.trimmingCharacters(in: .whitespacesAndNewlines)
             let u = countingUnit.trimmingCharacters(in: .whitespacesAndNewlines)
-            let m = Int(countingMaxCount.trimmingCharacters(in: .whitespacesAndNewlines)) ?? 0
+            let m = Int(countingMaxCount.trimmingCharacters(in: .whitespacesAndNewlines)).map(CountValue.init) ?? 0
             resolvedTitle = TaskTitle.generateCounterTaskTitle(
                 action: a, maxCount: m, unit: u, providedTitle: trimmedTitle
             )
@@ -489,7 +489,7 @@ final class CreateFormViewModel {
         ///     counter's lifetime count at add time ("start fresh": the new
         ///     sub's own window begins at 0). Must be set when
         ///     `sharedCounterId` is set.
-        case newCounting(action: String, goal: Int, unit: String, sharedCounterId: String?, baseline: Int?)
+        case newCounting(action: String, goal: CountValue, unit: String, sharedCounterId: String?, baseline: CountValue?)
 
         /// Display title for the sub chip in the UI.
         var displayTitle: String {
@@ -780,7 +780,7 @@ final class CreateFormViewModel {
         case .counting:
             let a = countingAction.trimmingCharacters(in: .whitespacesAndNewlines)
             let u = countingUnit.trimmingCharacters(in: .whitespacesAndNewlines)
-            let m = Int(countingMaxCount.trimmingCharacters(in: .whitespacesAndNewlines)) ?? 0
+            let m = Int(countingMaxCount.trimmingCharacters(in: .whitespacesAndNewlines)).map(CountValue.init) ?? 0
             return Task(
                 id: id, userId: userId, title: title, description: desc,
                 type: .counting, action: a, unit: u, maxCount: m,
