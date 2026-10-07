@@ -73,4 +73,12 @@ test.describe('Counter kinds — logging (B1)', () => {
     await page.getByRole('button', { name: 'Log Run miles', exact: true }).click();
     await expect(page).toHaveURL(/\/profile\/counters\/f2000000-0000-0000-0000-000000000001/);
   });
+
+  test('Counter Detail: a Continuous counter logs 0.5', async ({ page }) => {
+    await seedTask(page, { id: 'f3000000-0000-0000-0000-000000000001', title: 'Run miles', type: 'counting', action: 'Run', unit: 'miles', isCounter: true, countKind: 'continuous', currentCount: 148.6 });
+    await page.goto('/profile/counters/f3000000-0000-0000-0000-000000000001?__oybc_test_bypass=1');
+    await page.getByRole('group', { name: 'Log amount' }).getByRole('button', { name: '0.5', exact: true }).click();
+    await page.getByRole('button', { name: 'Add 0.5 miles' }).click();
+    await expect(page.getByText('149.1', { exact: true })).toBeVisible();
+  });
 });

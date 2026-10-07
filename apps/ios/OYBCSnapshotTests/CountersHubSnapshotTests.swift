@@ -273,6 +273,27 @@ final class CountersHubSnapshotTests: XCTestCase {
         )
     }
 
+    // MARK: - Detail — Continuous / Duration (counter kinds, handoff `logCards[]` / `detailCards[]`)
+
+    func testDetailContinuousLight() {
+        let host = NavigationStack { CounterDetailContent(group: makeContinuousDurationGroups()[0], dailyTotals: makeDailyTotals()) }
+        assertSnapshot(of: host, as: .image(layout: .fixed(width: 393, height: 1000)), record: recordMode)
+    }
+
+    func testDetailContinuousDark() {
+        let host = NavigationStack { CounterDetailContent(group: makeContinuousDurationGroups()[0], dailyTotals: makeDailyTotals()) }
+        assertSnapshot(
+            of: host,
+            as: .image(layout: .fixed(width: 393, height: 1000), traits: .init(userInterfaceStyle: .dark)),
+            record: recordMode
+        )
+    }
+
+    func testDetailDurationLight() {
+        let host = NavigationStack { CounterDetailContent(group: makeContinuousDurationGroups()[1], dailyTotals: makeDailyTotals()) }
+        assertSnapshot(of: host, as: .image(layout: .fixed(width: 393, height: 900)), record: recordMode)
+    }
+
     // MARK: - Detail — amount-chip log card states (R2)
 
     /// Custom "#" chip active with a value that doesn't collide with any

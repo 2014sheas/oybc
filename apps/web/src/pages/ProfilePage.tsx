@@ -17,6 +17,7 @@ import {
   type CounterLoggedEvent,
 } from '../components/counters';
 import { formatCountTotal } from '@oybc/shared';
+import { memberValueParts } from '../components/counters/memberValueLabel';
 import { ledgerPill } from '../components/counters/ledgerPill';
 import { formatLastLoggedLabel, type ProfileHomeCounterRow } from './profileHome';
 import styles from './ProfilePage.module.css';
@@ -394,8 +395,8 @@ function ProfileCounterRow({
             <div className={styles.counterMemberTop}>
               <span className={styles.counterMemberLabel}>{member.boardName ?? group.name}</span>
               <span className={styles.counterMemberValue}>
-                {formatCountTotal(member.logged, group.countKind)}
-                <span className={styles.counterMemberGoal}>/{formatCountTotal(member.goal, group.countKind)}</span>
+                {memberValueParts(member.logged, member.goal, group.countKind).logged}
+                <span className={styles.counterMemberGoal}>/{memberValueParts(member.logged, member.goal, group.countKind).goal}</span>
               </span>
             </div>
             <div className={styles.counterMemberBarWrap}>

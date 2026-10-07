@@ -8,6 +8,7 @@ import {
   type SharedCounterMemberTask,
 } from '@oybc/shared';
 import { incrementSharedCounter } from '../../db/operations/tasks';
+import { memberValueParts } from './memberValueLabel';
 import { timeframeDotColor } from './timeframeDotColor';
 import { attemptCounterWrite } from './counterWriteFeedback';
 import { ledgerPill } from './ledgerPill';
@@ -166,6 +167,7 @@ function LedgerTaskRow({
 }): React.ReactElement {
   const pct = task.goal > 0 ? Math.min(100, (task.logged / task.goal) * 100) : 0;
   const dotColor = timeframeDotColor(task.timeframe);
+  const memberValue = memberValueParts(task.logged, task.goal, kind);
 
   return (
     <div className={styles.row} role="listitem">
@@ -186,8 +188,8 @@ function LedgerTaskRow({
 
       {/* logged/goal value (right) */}
       <div className={styles.rowVal} aria-label={`${formatCountWithUnit(task.logged, kind, unit)} of ${formatCountWithUnit(task.goal, kind, unit)}`}>
-        {formatCountTotal(task.logged, kind)}
-        <span className={styles.rowGoal}>/{formatCountTotal(task.goal, kind)}</span>
+        {memberValue.logged}
+        <span className={styles.rowGoal}>/{memberValue.goal}</span>
       </div>
 
       {/* Progress bar (spans full width below) */}

@@ -1,5 +1,7 @@
 import { useNavigate } from 'react-router-dom';
-import type { SharedCounterMemberTask } from '@oybc/shared';
+import { formatCountWithUnit, type CountKind, type SharedCounterMemberTask } from '@oybc/shared';
+import { buildTaskCardCaption } from './counterDetailCaption';
+import { memberValueParts } from './memberValueLabel';
 import { timeframeDotColor } from './timeframeDotColor';
 import styles from './CounterDetailTaskCard.module.css';
 
@@ -8,6 +10,8 @@ interface CounterDetailTaskCardProps {
   task: SharedCounterMemberTask;
   /** The counter's unit string (e.g. "reps") for caption copy. */
   unit: string | null;
+  /** The counter's kind (default Discrete). */
+  kind?: CountKind;
   /** Whether this task is inactive ("Not counting now" section). */
   inactive?: boolean;
 }
@@ -21,16 +25,14 @@ interface CounterDetailTaskCardProps {
  *     and a caption: "{window} · {remaining} to go" / "✓ Goal met" / "✓ Goal met · N over".
  *
  * Inactive cards (inactive=true, "Not counting now" section):
- *   - Greyed out, not clickable.
- *   - Shows "Starts counting when this board goes live." when the member
- *     is placed on a (not-yet-live) board, or "Not on any board yet — log
- *     from here anytime." (P5) when the member has no board placement at all.
+ *   - Greyed out, not clickable; name, Draft / Unplaced badge and board only.
  *
  * Matches the `cd-task` design from the shared-counters design handoff.
  */
 export function CounterDetailTaskCard({
   task,
   unit,
+  kind = 'discrete',
   inactive = false,
 }: CounterDetailTaskCardProps): React.ReactElement {
   const navigate = useNavigate();
@@ -39,7 +41,8 @@ export function CounterDetailTaskCard({
   const unitStr = unit ?? '';
 
   // Build caption copy
-  const caption = buildCaption(task, unitStr);
+  const caption = buildTaskCardCaption(task, unitStr, kind);
+  const value = memberValueParts(task.logged, task.goal, kind);
 
   const handleClick = () => {
     if (!inactive && task.boardId) {
@@ -66,11 +69,6 @@ export function CounterDetailTaskCard({
             <span>{task.boardName}</span>
           </div>
         )}
-        <div className={styles.caption}>
-          {task.boardId == null
-            ? 'Not on any board yet — log from here anytime.'
-            : 'Starts counting when this board goes live.'}
-        </div>
       </div>
     );
   }
@@ -81,14 +79,14 @@ export function CounterDetailTaskCard({
       className={styles.card}
       onClick={handleClick}
       disabled={!task.boardId}
-      aria-label={`${task.taskTitle}: ${task.logged} of ${task.goal} ${unitStr}. ${task.boardName ?? ''}. ${caption}`}
+      aria-label={`${task.taskTitle}: ${formatCountWithUnit(task.logged, kind, unitStr)} of ${formatCountWithUnit(task.goal, kind, unitStr)}. ${task.boardName ?? ''}. ${caption}`}
     >
       {/* Top row: task name (left) + logged/goal (right) */}
       <div className={styles.top}>
         <span className={styles.taskName}>{task.taskTitle}</span>
         <span className={styles.progressVal} aria-hidden="true">
-          {task.logged.toLocaleString()}
-          <span className={styles.progressGoal}>/{task.goal.toLocaleString()}</span>
+          {value.logged}
+          <span className={styles.progressGoal}>/{value.goal}</span>
         </span>
       </div>
 
@@ -118,24 +116,4 @@ export function CounterDetailTaskCard({
       </div>
     </button>
   );
-}
-
-/**
- * Derives the window caption from the task's progress state.
- * Priority: over-goal → met → in progress (with remaining count).
- *
- * R2 Counters UX refresh — design handoff §Counter Detail: captions read
- * "N to go · ends {window}" (remaining-first, window as a trailing "ends"
- * clause), replacing the P1 "{window} · N to go" ordering.
- */
-function buildCaption(task: SharedCounterMemberTask, unit: string): string {
-  if (task.met && task.over > 0) {
-    return `✓ Goal met · ${task.over.toLocaleString()} over`;
-  }
-  if (task.met) {
-    return '✓ Goal met this window';
-  }
-  const remaining = Math.max(0, task.goal - task.logged);
-  const base = `${remaining.toLocaleString()} ${unit} to go`;
-  return task.window ? `${base} · ends ${task.window}` : base;
 }
