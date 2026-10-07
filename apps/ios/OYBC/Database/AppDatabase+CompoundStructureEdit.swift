@@ -14,15 +14,20 @@ extension AppDatabase {
     ) -> Task {
         if step.isCounting {
             let action = step.action.trimmingCharacters(in: .whitespaces)
-            let unit = step.unit.trimmingCharacters(in: .whitespaces)
-            let goal = Int(step.goal.trimmingCharacters(in: .whitespaces)).map(CountValue.init) ?? 0
-            return Task(
+            let kind = step.countKind
+            let unit = countKindNeedsUnit(kind) ? step.unit.trimmingCharacters(in: .whitespaces) : ""
+            let goal = parseCountInput(step.goal, kind: kind) ?? 0
+            var child = Task(
                 id: id, userId: userId,
-                title: TaskTitle.generateCounterTaskTitle(action: action, maxCount: goal, unit: unit, providedTitle: title),
+                title: TaskTitle.generateCounterTaskTitle(
+                    action: action, maxCount: goal, unit: unit, providedTitle: title, countKind: kind
+                ),
                 type: .counting, action: action, unit: unit, maxCount: goal,
                 totalCompletions: 0, totalInstances: 0,
                 createdAt: now, updatedAt: now, version: 1, isDeleted: false
             )
+            child.countKind = kind == .discrete ? nil : kind
+            return child
         }
         return Task(
             id: id, userId: userId, title: title, type: .normal,
@@ -39,10 +44,14 @@ extension AppDatabase {
         var t = base
         if step.isCounting, base.type == .counting {
             let action = step.action.trimmingCharacters(in: .whitespaces)
-            let unit = step.unit.trimmingCharacters(in: .whitespaces)
-            let goal = Int(step.goal.trimmingCharacters(in: .whitespaces)).map(CountValue.init) ?? base.maxCount ?? 0
+            // An existing sub-task edits at its OWN kind (no picker).
+            let kind = resolveCountKind(base.countKind)
+            let unit = countKindNeedsUnit(kind) ? step.unit.trimmingCharacters(in: .whitespaces) : ""
+            let goal = parseCountInput(step.goal, kind: kind) ?? base.maxCount ?? 0
             t.action = action; t.unit = unit; t.maxCount = goal
-            t.title = TaskTitle.generateCounterTaskTitle(action: action, maxCount: goal, unit: unit, providedTitle: title)
+            t.title = TaskTitle.generateCounterTaskTitle(
+                action: action, maxCount: goal, unit: unit, providedTitle: title, countKind: kind
+            )
         } else {
             t.title = title
         }

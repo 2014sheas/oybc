@@ -1,5 +1,15 @@
 import { useEffect, useState } from 'react';
-import { TaskType, generateCounterTaskTitle, type CompoundChild, type Task } from '@oybc/shared';
+import {
+  TaskType,
+  countKindNeedsUnit,
+  formatCountForInput,
+  generateCounterTaskTitle,
+  kindPickerLock,
+  resolveCountKind,
+  type CompoundChild,
+  type CountKind,
+  type Task,
+} from '@oybc/shared';
 import {
   compoundLinkProblemForPatch,
   fetchCompoundChildren,
@@ -9,6 +19,11 @@ import type { TaskEditPatch } from '../../db/taskEditPatch';
 import { useModalA11y } from '../../hooks/useModalA11y';
 import { loadLibraryInputs } from '../../pages/tasks/loadLibraryInputs';
 import { TypeBadge } from '../TypeBadge';
+import { GoalEntry } from '../counters/GoalEntry';
+import { KindPicker } from '../counters/KindPicker';
+import { LinkedKindTag } from '../counters/LinkedKindTag';
+import { useKindSwitchRequest } from '../counters/useKindSwitchRequest';
+import { planKindSwitchPreview } from '../../db/operations/countKindSwitch';
 import { RisoSegmented } from '../riso';
 import { CompoundFields, type LibraryInputsState } from '../wizard/CompoundFields';
 import {
@@ -85,8 +100,9 @@ function typeLabel(type: TaskType | string): string {
  *      control (an in-place type switch applied at Save); a Compound shows its
  *      type fixed with the rule + sub-task editor always open; Achievement is
  *      title only.
- *
- * "Editing this task changes it everywhere it's used." hint is always visible.
+ *   3. A Counting task picks its kind (Discrete / Continuous / Duration); the
+ *      switch is STAGED with the override and applied inside the Save
+ *      transaction. A linked counter shows its kind as a tag.
  *
  * @param task - The task (with any caller-applied overrides pre-merged)
  * @param original - The task before any staged override
@@ -116,10 +132,40 @@ export function BoardEditTaskSheet({
 
   // Counting fields
   const [action, setAction] = useState(task.action ?? '');
+  // `task` carries any staged kind; the picker's locks follow it.
+  const storedKind = resolveCountKind(task);
+  const [countKind, setCountKind] = useState<CountKind>(storedKind);
   const [goalStr, setGoalStr] = useState(
-    task.maxCount !== undefined ? String(task.maxCount) : '',
+    task.maxCount !== undefined ? formatCountForInput(task.maxCount, storedKind) : '',
   );
   const [unit, setUnit] = useState(task.unit ?? '');
+
+  // The confirm previews the DRAFT (title / goal typed here, not yet staged).
+  const draftGoal = parseGoal(goalStr, countKind) ?? task.maxCount;
+  const draftSubject = {
+    ...task,
+    title: title.trim() || generateCounterTaskTitle(action.trim(), draftGoal, unit.trim(), undefined, countKind),
+    action,
+    unit,
+    countKind,
+    maxCount: draftGoal,
+  };
+  const { requestKind, dialog: kindDialog } = useKindSwitchRequest({
+    subject: draftSubject,
+    kind: countKind,
+    goalText: goalStr,
+    setKind: setCountKind,
+    onSwitched: (k, g) => {
+      // A typed custom title follows the switch only if it was the auto one;
+      // a blank title keeps re-deriving at the new kind.
+      if (title.trim()) {
+        const after = planKindSwitchPreview(draftSubject, k, 0)?.titleAfter;
+        if (after) setTitle(after);
+      }
+      setCountKind(k);
+      setGoalStr(g);
+    },
+  });
 
   // Compound editor. A staged compound is the seed on re-open; otherwise an
   // existing compound loads its sub-tasks, and a non-compound starts empty.
@@ -185,16 +231,17 @@ export function BoardEditTaskSheet({
 
   // ── Validation ───────────────────────────────────────────────────────────
 
-  const input = { original, selected, title, action, goalStr, unit, compoundDraft, compoundBaseline };
+  const input = { original, selected, title, action, goalStr, unit, countKind, compoundDraft, compoundBaseline };
   const problem = sheetValidationProblem(input);
   const canSave = problem === null && !checking;
-  const goalNum = parseGoal(goalStr);
+  const goalNum = parseGoal(goalStr, countKind);
+  const needsUnit = countKindNeedsUnit(countKind);
 
   // ── "Reads as" preview (Counting only) ──────────────────────────────────
 
   const readsAs: string | null =
-    selected === TaskType.COUNTING && goalNum !== null && unit.trim()
-      ? generateCounterTaskTitle(action.trim(), goalNum, unit.trim(), title.trim() || undefined)
+    selected === TaskType.COUNTING && goalNum !== null && (!needsUnit || unit.trim())
+      ? generateCounterTaskTitle(action.trim(), goalNum, needsUnit ? unit.trim() : '', title.trim() || undefined, countKind)
       : null;
 
   // ── Submit ───────────────────────────────────────────────────────────────
@@ -237,10 +284,6 @@ export function BoardEditTaskSheet({
         {/* Header */}
         <div className={styles.sheetHeader}>
           <h2 className={styles.sheetTitle}>Edit task</h2>
-          {/* Global-impact hint — always visible. */}
-          <p className={styles.globalHint} role="note">
-            Editing this task changes it everywhere it&rsquo;s used.
-          </p>
         </div>
 
         {/* Type: a switch for Simple/Counting, fixed for Compound/Achievement */}
@@ -258,8 +301,10 @@ export function BoardEditTaskSheet({
                   // Switching back to an originally-Counting task after a staged
                   // switch away: the merged task has no counting fields, so reseed.
                   if (next === TaskType.COUNTING && original.type === TaskType.COUNTING && !action && !goalStr && !unit) {
+                    const originalKind = resolveCountKind(original);
                     setAction(original.action ?? '');
-                    setGoalStr(original.maxCount !== undefined ? String(original.maxCount) : '');
+                    setCountKind(originalKind);
+                    setGoalStr(original.maxCount !== undefined ? formatCountForInput(original.maxCount, originalKind) : '');
                     setUnit(original.unit ?? '');
                   }
                   setSelected(next);
@@ -311,29 +356,36 @@ export function BoardEditTaskSheet({
               />
             </label>
 
+            <div className={styles.field}>
+              <span className={styles.fieldLabel}>Kind</span>
+              {task.sharedCounterId != null ? (
+                <LinkedKindTag task={task} />
+              ) : (
+                <KindPicker
+                  value={countKind}
+                  lock={kindPickerLock(original.type === TaskType.COUNTING ? 'edit' : 'create', storedKind)}
+                  onChange={requestKind}
+                />
+              )}
+            </div>
+
             <div className={styles.countRow}>
-              <label className={`${styles.field} ${styles.goalField}`}>
+              <label className={`${styles.field} ${needsUnit ? styles.goalField : styles.goalFieldFull}`}>
                 <span className={styles.fieldLabel}>Goal</span>
-                <input
-                  type="number"
-                  className={styles.fieldInput}
-                  min={1}
-                  step={1}
-                  value={goalStr}
-                  onChange={(e) => setGoalStr(e.target.value)}
-                  placeholder="e.g. 10"
-                />
+                <GoalEntry kind={countKind} value={goalStr} onChange={setGoalStr} aria-label="Goal" placeholder="e.g. 10" dense />
               </label>
-              <label className={`${styles.field} ${styles.unitField}`}>
-                <span className={styles.fieldLabel}>Unit</span>
-                <input
-                  type="text"
-                  className={styles.fieldInput}
-                  value={unit}
-                  onChange={(e) => setUnit(e.target.value)}
-                  placeholder="km, cups, pages…"
-                />
-              </label>
+              {needsUnit && (
+                <label className={`${styles.field} ${styles.unitField}`}>
+                  <span className={styles.fieldLabel}>Unit</span>
+                  <input
+                    type="text"
+                    className={styles.fieldInput}
+                    value={unit}
+                    onChange={(e) => setUnit(e.target.value)}
+                    placeholder="km, cups, pages…"
+                  />
+                </label>
+              )}
             </div>
 
             {/* Live "Reads as…" preview */}
@@ -342,6 +394,7 @@ export function BoardEditTaskSheet({
                 Reads as <strong>{readsAs}</strong>
               </p>
             )}
+            {kindDialog}
           </>
         )}
 

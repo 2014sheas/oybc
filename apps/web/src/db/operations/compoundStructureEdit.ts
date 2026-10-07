@@ -26,7 +26,9 @@ import {
   SyncOperationType,
   TaskType,
   compoundChildLinkProblem,
+  countKindNeedsUnit,
   type CompoundChild,
+  type CountKind,
   type Task,
 } from '@oybc/shared';
 import { db } from '../internal';
@@ -41,6 +43,7 @@ import {
 } from '../taskEditPatch';
 import { runBoardCascadeForTasks } from './orchestration';
 import { addToSyncQueue } from './syncQueue';
+import { applyKindSwitchThenGoalGuard } from './countKindSwitch';
 import { updateTaskAndCascade, type UpdateTaskPatch } from './tasks.crud';
 
 /**
@@ -342,7 +345,7 @@ export async function editCompoundStructure(
  * plus — for a compound whose structure the user edited — the structure
  * patch.
  */
-export type TaskEditSubmit = UpdateTaskPatch & { compound?: TaskEditPatch };
+export type TaskEditSubmit = UpdateTaskPatch & { compound?: TaskEditPatch; countKind?: CountKind };
 
 /**
  * Router used by both Task Detail edit call sites. A submit carrying
@@ -356,7 +359,7 @@ export type TaskEditSubmit = UpdateTaskPatch & { compound?: TaskEditPatch };
  *   otherwise whatever `updateTaskAndCascade` / `editCompoundStructure` throw.
  */
 export async function saveTaskEdit(taskId: string, submit: TaskEditSubmit): Promise<void> {
-  const { compound, ...basicPatch } = submit;
+  const { compound, countKind, ...basicPatch } = submit;
   if (compound) {
     // The sheet sends `description: undefined` to CLEAR a description (Dexie
     // deletes a key whose update value is `undefined`, which is how
@@ -367,7 +370,21 @@ export async function saveTaskEdit(taskId: string, submit: TaskEditSubmit): Prom
     await editCompoundStructure(taskId, compound, { description });
     return;
   }
-  await updateTaskAndCascade(taskId, basicPatch);
+  if (countKind === undefined) {
+    await updateTaskAndCascade(taskId, basicPatch);
+    return;
+  }
+  // Kind switch + field patch are one write: a goal the final kind refuses
+  // (KindGoalError) rolls the switch back with it. `updateTaskAndCascade`'s
+  // nested transactions join this one.
+  await db.transaction(
+    'rw',
+    [db.boards, db.boardTasks, db.tasks, db.compoundChildren, db.taskEvents, db.syncQueue],
+    async () => {
+      await applyKindSwitchThenGoalGuard(taskId, countKind, basicPatch.maxCount, new Date().toISOString());
+      await updateTaskAndCascade(taskId, basicPatch);
+    },
+  );
 }
 
 /** The Task fields that only a Counting task carries (cleared on any switch away). */
@@ -392,7 +409,11 @@ const COUNTING_ONLY_FIELDS = ['action', 'unit', 'maxCount', 'currentCount'] as c
  *      {@link applyCompoundStructureEditInTransaction} writes operator /
  *      threshold / title, the sub-task CRUD, the version bump + enqueue and
  *      the batched cascade.
- *   c. Anything else: today's `updateTaskAndCascade`.
+ *   c. Anything else: `updateTaskAndCascade`, preceded — for a Counting
+ *      ROOT — by `applyKindSwitchThenGoalGuard` (a staged `countKind` switch
+ *      plus the goal guard at the final kind; Review Focus 4). `countKind` is
+ *      never written raw and never cleared: only the switch, or (case a) a
+ *      conversion into Counting (always explicit), sets it.
  *
  * Any validation failure THROWS so the whole Save rolls back (Dexie aborts
  * the ambient transaction). Switching OUT of a compound, or to/from
@@ -417,6 +438,8 @@ export async function applyBoardEditTaskOverrideInTransaction(
   const { compound, ...fields } = override;
   const nextType = fields.type ?? existing.type;
   const typeChanged = nextType !== existing.type;
+  // The kind switch owns `countKind` (`updateTask` never writes it raw).
+  const { countKind: stagedKind, ...plainFields } = fields;
 
   // A linked / window-stamped derived counter keeps its type and has no
   // structure: reject (throw → the whole Save rolls back).
@@ -452,17 +475,25 @@ export async function applyBoardEditTaskOverrideInTransaction(
     }
     if (nextType === TaskType.COUNTING) {
       const goal = fields.maxCount ?? 0;
-      if (!(goal > 0) || !(fields.unit ?? '').trim()) {
+      const needsUnit = countKindNeedsUnit(stagedKind ?? 'discrete');
+      if (!(goal > 0) || (needsUnit && !(fields.unit ?? '').trim())) {
         throw new Error(`Task ${taskId}: a Counting task needs a goal and a unit`);
       }
     }
-    // Bypasses `updateTask`'s type guard on purpose (see doc above).
+    // Bypasses `updateTask`'s type guard on purpose (see doc above). A row
+    // converted INTO Counting always writes its kind explicitly — Discrete
+    // included — so a stale kind left on the row (and on other devices: sync
+    // merge-writes and `countKind` is not clearable) never survives. A switch
+    // to Simple leaves `countKind` untouched (ignored on non-counting types).
     const patch: Partial<Task> = {
-      ...(fields as Partial<Task>),
+      ...(plainFields as Partial<Task>),
+      ...(nextType === TaskType.COUNTING ? { countKind: stagedKind ?? 'discrete' } : {}),
       updatedAt: now,
       version: (existing.version ?? 0) + 1,
     };
-    if (nextType === TaskType.NORMAL) for (const k of ['action', 'unit', 'maxCount'] as const) patch[k] = undefined;
+    if (nextType === TaskType.NORMAL) {
+      for (const k of ['action', 'unit', 'maxCount'] as const) patch[k] = undefined;
+    }
     await db.tasks.update(taskId, patch);
     const updated = await db.tasks.get(taskId);
     if (updated) await addToSyncQueue('tasks', taskId, SyncOperationType.UPDATE, updated);
@@ -470,5 +501,11 @@ export async function applyBoardEditTaskOverrideInTransaction(
     return;
   }
 
-  await updateTaskAndCascade(taskId, fields);
+  // A counter ROOT switches kind first (rounding its goal + family), then the
+  // typed goal is guarded at the final kind; a refused goal throws and the
+  // whole Save rolls back. A linked / remapped placed copy never switches.
+  if (existing.type === TaskType.COUNTING) {
+    await applyKindSwitchThenGoalGuard(taskId, stagedKind, plainFields.maxCount, now);
+  }
+  await updateTaskAndCascade(taskId, plainFields);
 }

@@ -92,6 +92,14 @@ describe('findLinkableCounter (fixture-driven, tests/fixtures/linkableCounterVec
   }
 });
 
+describe('findLinkableCounter — kind', () => {
+  it('a suggestion carries the matched root kind', () => {
+    const root = { ...toTask({ id: 'r', action: 'Run', unit: 'miles' }), countKind: 'continuous' as const };
+    expect(findLinkableCounter({ action: 'run', unit: 'miles' }, [root])?.countKind).toBe('continuous');
+    expect(findLinkableCounter({ action: 'run', unit: 'miles' }, [{ ...root, countKind: undefined }])?.countKind).toBe('discrete');
+  });
+});
+
 describe('classifyCounterCreateMatch (P5 hub-create dedupe)', () => {
   it('classifies a linked source as established', () => {
     // Source "Push-ups" + one linker sharing the counter → memberCount 2, kind 'established'.

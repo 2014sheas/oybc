@@ -103,12 +103,12 @@ export function WizardSourceRows({
             availableCount={availableCountForSource(id)}
             isExpanded={expandedSourceIds.has(id)}
             taskById={taskById}
+            counterClashByTaskId={counterClashByTaskId}
             onToggleExpanded={() => onToggleExpanded(id)}
             onRemove={() => onRemove(source)}
             onSetFilter={(filter) => onSetFilter(id, filter)}
             onSetRange={(min, max) => onSetRange(id, min, max)}
             onToggleExclude={(taskId) => onToggleExclude(id, taskId)}
-            counterClashByTaskId={counterClashByTaskId}
             compoundChildrenByCompound={compoundChildrenByCompound}
             mode={mode}
             wizardWindow={wizardWindow}

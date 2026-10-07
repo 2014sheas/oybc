@@ -261,14 +261,16 @@ export const CreateTaskInputSchema = z.object({
   countKind: CountKindSchema.optional(),
 }).refine(
   (data) => {
-    // Counting tasks must have action, unit, and maxCount — except hub-born
-    // counters (isCounter), which are goal-less accumulators (P5).
+    // Counting tasks must have action, unit (not duration — its unit is
+    // time), and maxCount — except hub-born counters (isCounter), which are
+    // goal-less accumulators (P5).
     if (data.type === TaskType.COUNTING) {
-      return data.action && data.unit && (data.maxCount || data.isCounter === true);
+      const hasUnit = Boolean(data.unit) || data.countKind === 'duration';
+      return Boolean(data.action) && hasUnit && Boolean(data.maxCount || data.isCounter === true);
     }
     return true;
   },
-  { message: 'Counting tasks must have action, unit, and maxCount (unless isCounter)' }
+  { message: 'Counting tasks must have action, unit (unless duration), and maxCount (unless isCounter)' }
 ).refine(
   countFieldsMatchKind,
   { message: 'Whole-number kinds need whole goals' },
@@ -376,14 +378,18 @@ export const AutoCreateCompoundChildTaskSchema = z.object({
   // R1 counters refresh — auto-link (see AutoCreateCompoundChildTask doc).
   sharedCounterId: z.string().uuid().nullable().optional(),
   baseline: nonNegativeCount().nullable().optional(),
+  countKind: CountKindSchema.optional(),
 }).refine(
   (data) => {
     if (data.type === TaskType.COUNTING) {
-      return data.action !== undefined && data.unit !== undefined && data.maxCount !== undefined;
+      return data.action !== undefined && (data.unit !== undefined || data.countKind === 'duration') && data.maxCount !== undefined;
     }
     return true;
   },
   { message: 'Counting child tasks require action, unit, and maxCount' },
+).refine(
+  countFieldsMatchKind,
+  { message: 'Whole-number kinds need whole goals' },
 ).refine(
   (data) => (data.sharedCounterId != null) === (data.baseline != null),
   { message: 'sharedCounterId and baseline must both be set or both be absent' },

@@ -51,6 +51,16 @@ struct RisoSpecialTaskPanel: View {
     /// Submit-button copy — the wizard's "Add to board ✦" by default;
     /// pool context passes "Add to pool ✦".
     var submitLabel: String = "Add to board ✦"
+    /// Snapshot seam: opens the panel on Counting with these field values.
+    var countingSeed: CountingSeed? = nil
+
+    /// Pre-filled counting fields (snapshot tests).
+    struct CountingSeed {
+        var action = ""
+        var goal = ""
+        var unit = ""
+        var kind: CountKind = .discrete
+    }
 
     @State private var isExpanded: Bool = false
     @State private var selectedType: SpecialType = .counting
@@ -83,11 +93,25 @@ struct RisoSpecialTaskPanel: View {
     // MARK: - Body
 
     var body: some View {
-        if !isExpanded {
-            collapsedButton
-        } else {
-            expandedPanel
+        Group {
+            if !isExpanded {
+                collapsedButton
+            } else {
+                expandedPanel
+            }
         }
+        .onAppear { applyCountingSeed() }
+    }
+
+    private func applyCountingSeed() {
+        guard let s = countingSeed, !isExpanded else { return }
+        isExpanded = true
+        selectedType = .counting
+        countingActionText = s.action
+        countingGoalText = s.goal
+        countingUnitText = s.unit
+        countingKind = s.kind
+        link.pairChanged(action: s.action, unit: s.unit, kind: s.kind, tasks: suggestionPool ?? taskLibrary)
     }
 
     // MARK: - Collapsed button
@@ -199,37 +223,43 @@ struct RisoSpecialTaskPanel: View {
     @State private var countingActionText: String = ""
     @State private var countingGoalText: String = ""
     @State private var countingUnitText: String = ""
+    @State private var countingKind: CountKind = .discrete
 
-    // Counter-link suggestion state (R1 counters refresh — auto-link default
-    // ON). Updated whenever the (verb, noun) pair changes.
-    @State private var linkSuggestion: LinkableCounterSuggestion? = nil
-    /// True when the user tapped "Don't link" to opt out of the (default-on)
-    /// suggested link for this create. Reset to `false` whenever the typed
-    /// (verb, noun) pair changes — an edited pair re-offers linking by
-    /// default (web parity).
-    @State private var linkDisabled: Bool = false
+    // Counter-link state (R1 counters refresh — auto-link default ON, "Don't
+    // link" opts out). An edited (verb, noun) pair re-offers linking; a kind
+    // change keeps the opt-out (`CounterLinkState`).
+    @State private var link = CounterLinkState()
 
     /// R1: counting-fields title preview — "Title: {derived title}",
     /// matching web's `CountingStepFields` (Verb → Goal → Counting).
     private var countingTitle: String {
         let a = countingActionText.trimmingCharacters(in: .whitespacesAndNewlines)
-        let g = countingGoalText.trimmingCharacters(in: .whitespacesAndNewlines)
         let u = countingUnitText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !a.isEmpty, !u.isEmpty, let goal = Int(g).map(CountValue.init), goal > 0 else { return "" }
-        return TaskTitle.generateCounterTaskTitle(action: a, maxCount: goal, unit: u)
+        guard !a.isEmpty, let goal = countingGoal,
+              !countKindNeedsUnit(effectiveKind) || !u.isEmpty else { return "" }
+        return TaskTitle.generateCounterTaskTitle(
+            action: a, maxCount: goal, unit: countKindNeedsUnit(effectiveKind) ? u : "",
+            countKind: effectiveKind
+        )
     }
 
-    /// The typed goal as a positive Int, or nil when blank/invalid. Also
-    /// gates the counter-link hint (only shown once a valid goal exists —
-    /// mirrors web's `CounterLinkHint` doc contract).
+    /// The matched counter while the create auto-links (Duration never
+    /// matches — it has no unit); nil once the user opts out.
+    private var linkedSuggestion: LinkableCounterSuggestion? { link.linked }
+
+    /// The kind validation, preview and the saved row use: an auto-linking
+    /// create takes the root's kind (D5 / R19), otherwise the picker.
+    private var effectiveKind: CountKind { link.effectiveKind(picker: countingKind) }
+
+    /// The typed goal parsed at the effective kind, or nil when blank/invalid.
     private var countingGoal: CountValue? {
-        guard let g = Int(countingGoalText.trimmingCharacters(in: .whitespacesAndNewlines)), g > 0 else { return nil }
-        return CountValue(g)
+        parseCountInput(countingGoalText, kind: effectiveKind)
     }
 
     private var canSubmitCounting: Bool {
         !countingActionText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
-        !countingUnitText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
+        (!countKindNeedsUnit(effectiveKind) ||
+         !countingUnitText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty) &&
         countingGoal != nil
     }
 
@@ -240,15 +270,29 @@ struct RisoSpecialTaskPanel: View {
                 RisoTextField(placeholder: "Do", text: $countingActionText)
             }
 
-            // Goal + Counting (side by side)
-            HStack(spacing: 10) {
+            // Kind — a linked create shows the root's kind as a tag, never a picker.
+            fieldRow(label: "Kind") {
+                if let s = linkedSuggestion {
+                    KindTagView(kind: s.countKind, counterName: s.name, lifetime: s.lifetime)
+                } else {
+                    KindPickerView(selection: $countingKind, lock: .none)
+                }
+            }
+
+            // Goal + Counting (side by side); Duration hides Counting
+            HStack(alignment: .top, spacing: 10) {
                 VStack(alignment: .leading, spacing: 5) {
                     fieldLabel("Goal", required: true)
-                    RisoNumberField(placeholder: "100", text: $countingGoalText)
+                    GoalEntryView(
+                        kind: effectiveKind, text: $countingGoalText,
+                        placeholder: effectiveKind == .duration ? "0h 0m" : "100"
+                    )
                 }
-                VStack(alignment: .leading, spacing: 5) {
-                    fieldLabel("Counting", required: true)
-                    RisoTextField(placeholder: "push-ups", text: $countingUnitText)
+                if countKindNeedsUnit(effectiveKind) {
+                    VStack(alignment: .leading, spacing: 5) {
+                        fieldLabel("Counting", required: true)
+                        RisoTextField(placeholder: "push-ups", text: $countingUnitText)
+                    }
                 }
             }
 
@@ -262,8 +306,8 @@ struct RisoSpecialTaskPanel: View {
                     .foregroundStyle(Color.risoInk))
             }
 
-            // Counter-link hint (only when a match exists AND a valid goal
-            // is entered — R1: auto-link default ON, "Don't link" opts out).
+            // Counter-link hint (whenever a match exists — R1: auto-link
+            // default ON, "Don't link" opts out).
             counterLinkBanner
 
             // Add button
@@ -273,26 +317,21 @@ struct RisoSpecialTaskPanel: View {
             .opacity(canSubmitCounting ? 1 : 0.45)
             .allowsHitTesting(canSubmitCounting)
         }
-        .onChange(of: countingActionText) { _, _ in updateLinkSuggestion() }
-        .onChange(of: countingUnitText) { _, _ in updateLinkSuggestion() }
+        .onChange(of: countingActionText) { _, _ in
+            link.pairChanged(action: countingActionText, unit: countingUnitText, kind: countingKind, tasks: suggestionPool ?? taskLibrary)
+        }
+        .onChange(of: countingUnitText) { _, _ in
+            link.pairChanged(action: countingActionText, unit: countingUnitText, kind: countingKind, tasks: suggestionPool ?? taskLibrary)
+        }
+        .onChange(of: countingKind) { _, _ in
+            link.kindChanged(action: countingActionText, unit: countingUnitText, kind: countingKind, tasks: suggestionPool ?? taskLibrary)
+        }
     }
 
     // MARK: Counter-link suggestion banner
 
-    /// Recomputes the link suggestion whenever the (verb, noun) pair
-    /// changes. Resets the opt-out flag so an edited pair re-offers linking
-    /// by default (web parity).
-    private func updateLinkSuggestion() {
-        linkSuggestion = findLinkableCounter(
-            action: countingActionText,
-            unit: countingUnitText,
-            tasks: suggestionPool ?? taskLibrary
-        )
-        linkDisabled = false
-    }
-
-    /// Hint shown in the counting create panel when an existing counter
-    /// matches the typed (verb, noun) pair AND a valid goal is entered. R1
+    /// Hint shown in the counting create panel whenever an existing counter
+    /// matches the typed (verb, noun) pair — independent of the goal. R1
     /// counters refresh: linking is ON by default (no fuzzy matching, no
     /// confirm step) — the hint explains what will happen; the "Don't link"
     /// pill opts out for this create (tapping again re-enables). Baseline is
@@ -300,13 +339,11 @@ struct RisoSpecialTaskPanel: View {
     /// picker was retired.
     @ViewBuilder
     private var counterLinkBanner: some View {
-        if let suggestion = linkSuggestion, let goal = countingGoal {
+        if let suggestion = link.hint {
             RisoCounterLinkHintView(
                 counterName: suggestion.name,
-                lifetime: suggestion.lifetime,
-                goal: goal,
-                linked: !linkDisabled,
-                onToggle: { linkDisabled.toggle() }
+                linked: !link.linkDisabled,
+                onToggle: { link.linkDisabled.toggle() }
             )
         }
     }
@@ -315,7 +352,10 @@ struct RisoSpecialTaskPanel: View {
         guard canSubmitCounting else { return }
         form.taskType = .counting
         form.countingAction = countingActionText.trimmingCharacters(in: .whitespacesAndNewlines)
-        form.countingUnit = countingUnitText.trimmingCharacters(in: .whitespacesAndNewlines)
+        form.countingKind = countingKind
+        form.countingLinkedRootKind = linkedSuggestion?.countKind
+        form.countingUnit = countKindNeedsUnit(effectiveKind)
+            ? countingUnitText.trimmingCharacters(in: .whitespacesAndNewlines) : ""
         form.countingMaxCount = countingGoalText.trimmingCharacters(in: .whitespacesAndNewlines)
         form.title = ""
 
@@ -323,7 +363,7 @@ struct RisoSpecialTaskPanel: View {
         // via "Don't link". Baseline is always "start fresh": this task's
         // displayed count starts at 0 while the source's all-time keeps
         // climbing.
-        if let suggestion = linkSuggestion, !linkDisabled, countingGoal != nil {
+        if let suggestion = link.linked, countingGoal != nil {
             form.countingSharedCounterId = suggestion.counterId
             form.countingBaseline = suggestion.lifetime
         } else {
@@ -346,8 +386,8 @@ struct RisoSpecialTaskPanel: View {
         countingActionText = ""
         countingGoalText = ""
         countingUnitText = ""
-        linkSuggestion = nil
-        linkDisabled = false
+        countingKind = .discrete
+        link = CounterLinkState()
         form = CreateFormViewModel()
         collapse()
     }
@@ -579,9 +619,9 @@ struct RisoSpecialTaskPanel: View {
         countingActionText = ""
         countingGoalText = ""
         countingUnitText = ""
+        countingKind = .discrete
         // Counter-link suggestion
-        linkSuggestion = nil
-        linkDisabled = false
+        link = CounterLinkState()
         // Achievement
         achievementTitle = ""
         achievementBoardId = nil
@@ -634,50 +674,16 @@ struct RisoSpecialTaskPanel: View {
 
 // MARK: - Inline stepper
 
-/// `RisoInlineStepperView`'s two sizes.
-///
-/// - `.regular` (default): the shipped 44pt −/＋ pair around a read-only
-///   value — the achievement required-count field and the compound
-///   At-least-N threshold. Rendering is untouched.
-/// - `.compact`: the 32pt pill the wizard's member rows use
-///   (docs/BOARD_SOURCES.md §Member rules; handoff "Counting member") —
-///   1.5pt ink border, radius 999, 32pt − / typeable value / 32pt ＋.
-///   Web twin: `CounterStepper`'s `size="compact"`.
-enum RisoInlineStepperStyle {
-    case regular
-    case compact
-}
-
 /// Minimal inline stepper for the achievement required-count field and
-/// the compound At-least-N threshold — and, at `style: .compact`, the
-/// wizard member row's target editor.
+/// the compound At-least-N threshold: the 44pt −/＋ pair around a
+/// read-only value. (The wizard member rows' compact, kind-aware target
+/// pill is `RisoCountStepperView`.)
 struct RisoInlineStepperView: View {
     @Binding var value: Int
     let min: Int
     let max: Int
-    var style: RisoInlineStepperStyle = .regular
-    /// Static text rendered inside the COMPACT pill after the field — the
-    /// member row's goal ("/ 30 Miles"), folded in so the row needs no
-    /// separate caption (B3.1). Ignored by `.regular`. Web twin: the
-    /// `suffix` prop on `CounterStepper`.
-    var suffix: String? = nil
-
-    /// Uncommitted typing in the compact field; nil while not editing, so
-    /// an external value change (a Split-up recompute, an undo) shows
-    /// through immediately rather than being masked by a stale draft.
-    @State private var draft: String? = nil
-    @FocusState private var isFieldFocused: Bool
 
     var body: some View {
-        switch style {
-        case .regular: regularBody
-        case .compact: compactBody
-        }
-    }
-
-    // MARK: - Regular (unchanged)
-
-    private var regularBody: some View {
         HStack(spacing: 0) {
             Button { value = Swift.max(min, value - 1) } label: {
                 Text("−")
@@ -718,204 +724,5 @@ struct RisoInlineStepperView: View {
         .background(Color.risoPaper)
         .clipShape(Capsule())
         .overlay(Capsule().strokeBorder(Color.risoInk, lineWidth: Riso.Keyline.container))
-    }
-
-    // MARK: - Compact (B3 member rows)
-
-    /// 32pt pill: 32×32 −/＋ buttons (disabled at the bounds, mirroring
-    /// web) around a numeric text field. It was a 22pt pill with 22×22
-    /// buttons until the owner reported the member-row controls — "the
-    /// stepper inputs for counter task quantity" above all — as too small
-    /// to use comfortably (2026-09-22); the pill, its buttons and its
-    /// type all grew together so the row reads at the same rhythm. Typing is committed when the
-    /// field loses focus, or folded into a −/＋ tap (see
-    /// ``RisoCompactStepperMath``), and clamped to `min…max`; the step is
-    /// always 1 and there is no reset affordance (handoff §Interactions
-    /// "Counting targets"). There is deliberately no return-key commit:
-    /// `.numberPad` has no return key.
-    private var compactBody: some View {
-        HStack(spacing: 0) {
-            compactStepButton("−", label: "Decrease target", disabled: effectiveValue <= min) {
-                step(by: -1)
-            }
-            TextField("", text: compactText)
-                .font(.risoBody(13, .extraBold))
-                .foregroundStyle(Color.risoInk)
-                .multilineTextAlignment(.center)
-                .keyboardType(.numberPad)
-                .focused($isFieldFocused)
-                // Width follows the goal's digit count so a 4-digit goal
-                // isn't clipped (web sizes the input the same way).
-                .frame(width: CGFloat(Swift.max(2, String(max).count) + 1) * 8)
-                .accessibilityLabel("Target")
-                .onChange(of: isFieldFocused) { _, focused in
-                    if focused {
-                        draft = String(value)
-                        // Select-all on focus: the field IS the first
-                        // responder at this point, so a nil-target action
-                        // reaches exactly it (never a sibling field).
-                        DispatchQueue.main.async {
-                            UIApplication.shared.sendAction(
-                                #selector(UIResponder.selectAll(_:)),
-                                to: nil, from: nil, for: nil
-                            )
-                        }
-                    } else {
-                        commitDraft()
-                    }
-                }
-            if let suffix {
-                Text(suffix)
-                    .font(.risoBody(11, .semibold))
-                    .foregroundStyle(Color.risoMuted)
-                    .lineLimit(1)
-                    .fixedSize()
-                    .padding(.trailing, 2)
-                    // Hidden from VoiceOver because on its own it names
-                    // nothing: between the "Target" field and "Increase
-                    // target" it would be read as a stray "slash 30 miles"
-                    // — half a label. NOT because the goal is announced
-                    // elsewhere: the member row's summary chip is
-                    // suppressed exactly when `vary == 0 && target ==
-                    // goal` (`BoardSources.countingSummary`), the common
-                    // case, so the goal then reaches VoiceOver only
-                    // through the auto-generated counting title ("Run 30
-                    // miles"). A hand-renamed member at its goal genuinely
-                    // loses it — accepted, and identical on web
-                    // (`CounterStepper.tsx`). The fix, if ever wanted, is
-                    // a composed field label ("Target, of 30 miles"), not
-                    // unhiding this text (B3.1).
-                    .accessibilityHidden(true)
-            }
-            compactStepButton("＋", label: "Increase target", disabled: effectiveValue >= max) {
-                step(by: 1)
-            }
-        }
-        .frame(height: 32)
-        .background(Color.risoPaper2)
-        .clipShape(Capsule())
-        .overlay(Capsule().strokeBorder(Color.risoInk, lineWidth: Riso.Keyline.dense))
-    }
-
-    /// The field's text: the uncommitted draft while editing, the live
-    /// value otherwise.
-    private var compactText: Binding<String> {
-        Binding(
-            get: { draft ?? String(value) },
-            set: { draft = $0 }
-        )
-    }
-
-    /// The number the −/＋ buttons act on AND gate their disabled state by
-    /// — the uncommitted draft when it parses, else the live value. See
-    /// ``RisoCompactStepperMath/base(value:draft:min:max:)``.
-    private var effectiveValue: Int {
-        RisoCompactStepperMath.base(value: value, draft: draft, min: min, max: max)
-    }
-
-    /// Parse, clamp to `min…max` and write back; a non-numeric or empty
-    /// entry simply reverts (no error state — the stepper is never in a
-    /// bad state, only un-edited).
-    private func commitDraft() {
-        guard let draft else { return }
-        self.draft = nil
-        guard let committed = RisoCompactStepperMath.committed(draft: draft, min: min, max: max)
-        else { return }
-        if committed != value { value = committed }
-    }
-
-    /// Step by ±1 from the COMMITTED value. A SwiftUI `Button` tap does
-    /// not resign the field's first responder, so the commit is folded in
-    /// here; web gets the same ordering for free (a mousedown blurs the
-    /// input, `onBlur` commits, and only then does `onClick` step).
-    /// Without this, typing 20 and tapping ＋ stepped the OLD value and
-    /// the later blur then wrote 20 over the step.
-    private func step(by delta: Int) {
-        let next = RisoCompactStepperMath.stepped(
-            value: value, draft: draft, delta: delta, min: min, max: max
-        )
-        draft = nil
-        if next != value { value = next }
-    }
-
-    private func compactStepButton(
-        _ glyph: String,
-        label: String,
-        disabled: Bool,
-        action: @escaping () -> Void
-    ) -> some View {
-        Button(action: action) {
-            Text(glyph)
-                // 15, not the 12 the 22pt pill used: at 32pt the smaller
-                // glyph read thin against the 13pt value beside it
-                // (2026-09-22 review of the grown controls). Web's
-                // `.compactButton` carries the same 15px.
-                .font(.risoHead(15, .extraBold))
-                .foregroundStyle(Color.risoInk)
-                .frame(width: 32, height: 32)
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .opacity(disabled ? 0.4 : 1)
-        .disabled(disabled)
-        .accessibilityLabel(label)
-    }
-}
-
-/// The compact stepper's pure arithmetic, lifted out of the SwiftUI view
-/// so the ordering rule that bit us in review — **a −/＋ tap commits any
-/// uncommitted typing first** — is unit-testable without mounting a view
-/// with `@State`/`@FocusState`.
-///
-/// Web never needs this: a mousedown blurs the `<input>`, so `onBlur`
-/// commits and re-renders before `onClick` steps. A SwiftUI `Button` tap
-/// leaves the `TextField` first responder, so iOS has to fold the commit
-/// into the step itself.
-enum RisoCompactStepperMath {
-
-    /// The value an uncommitted draft resolves to, clamped to `min…max`,
-    /// or nil when it isn't a number (empty, "-", "abc") — in which case
-    /// the field simply reverts, exactly like web's `commit()` bail-out.
-    ///
-    /// - Parameters:
-    ///   - draft: The raw field text.
-    ///   - min: Lower bound (inclusive).
-    ///   - max: Upper bound (inclusive).
-    /// - Returns: The clamped value, or nil when `draft` isn't numeric.
-    static func committed(draft: String, min: Int, max: Int) -> Int? {
-        guard let parsed = Int(draft.trimmingCharacters(in: .whitespaces)) else { return nil }
-        return Swift.min(max, Swift.max(min, parsed))
-    }
-
-    /// The number the −/＋ buttons operate on (and gate their disabled
-    /// state by): the uncommitted draft when it parses, else the live
-    /// value.
-    ///
-    /// - Parameters:
-    ///   - value: The committed value.
-    ///   - draft: The uncommitted field text, or nil when not editing.
-    ///   - min: Lower bound (inclusive).
-    ///   - max: Upper bound (inclusive).
-    /// - Returns: The effective value.
-    static func base(value: Int, draft: String?, min: Int, max: Int) -> Int {
-        guard let draft, let committed = committed(draft: draft, min: min, max: max) else {
-            return value
-        }
-        return committed
-    }
-
-    /// The value a ±1 tap produces: one step off ``base(value:draft:min:max:)``,
-    /// clamped to `min…max`.
-    ///
-    /// - Parameters:
-    ///   - value: The committed value.
-    ///   - draft: The uncommitted field text, or nil when not editing.
-    ///   - delta: `-1` or `+1`.
-    ///   - min: Lower bound (inclusive).
-    ///   - max: Upper bound (inclusive).
-    /// - Returns: The stepped value.
-    static func stepped(value: Int, draft: String?, delta: Int, min: Int, max: Int) -> Int {
-        let from = base(value: value, draft: draft, min: min, max: max)
-        return Swift.min(max, Swift.max(min, from + delta))
     }
 }

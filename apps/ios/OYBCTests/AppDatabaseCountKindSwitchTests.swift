@@ -197,4 +197,87 @@ final class AppDatabaseCountKindSwitchTests: XCTestCase {
 
         XCTAssertEqual(try K.fetchTask(db, "linked")?.countKind, .continuous)
     }
+
+    // MARK: - PR 3 Task 8 — preview, switch-then-goal-guard, confirm copy
+
+    func test_preview_roundsLogged_keepsCustomTitle_countsLiveFamilyOnly() throws {
+        let db = try seedFamily(kind: .continuous, rootGoal: 26.2, deltas: [12.75])
+        let p = try XCTUnwrap(db.previewCounterKindSwitch(rootTaskId: "root", to: .discrete, now: now))
+        XCTAssertEqual(p, KindSwitchPreview(from: .continuous, to: .discrete, titleBefore: "root", titleAfter: "root",
+                                            loggedBefore: 12.75, loggedAfter: 13, linkedCount: 1))
+    }
+
+    func test_preview_autoTitleRegenerates_refusedAndLinkedPreviewNil() throws {
+        let db = try seedFamily(kind: .continuous, rootGoal: 26.2)
+        try db.write { conn in
+            var root = try XCTUnwrap(Task.fetchOne(conn, key: "root"))
+            root.title = "Run 26.2 miles"
+            try root.save(conn)
+        }
+        XCTAssertEqual(try db.previewCounterKindSwitch(rootTaskId: "root", to: .discrete, now: now)?.titleAfter, "Run 26 miles")
+        XCTAssertNil(try db.previewCounterKindSwitch(rootTaskId: "root", to: .duration, now: now))
+        XCTAssertNil(try db.previewCounterKindSwitch(rootTaskId: "live", to: .discrete, now: now))
+    }
+
+    func test_guard_switchesRootAndLiveFamily_thenAcceptsAWholeGoal() throws {
+        let db = try seedFamily(kind: .continuous, rootGoal: 26.2, liveTarget: 6.1)
+        let switched = try db.write {
+            try AppDatabase.applyKindSwitchThenGoalGuard(db: $0, taskId: "root", to: .discrete, maxCount: 30, now: now)
+        }
+        XCTAssertTrue(switched)
+        let root = try XCTUnwrap(K.fetchTask(db, "root"))
+        XCTAssertEqual(root.countKind, .discrete)
+        XCTAssertEqual(root.maxCount, 26)
+        XCTAssertEqual(try K.fetchTask(db, "live")?.countKind, .discrete)
+    }
+
+    func test_guard_fractionalGoalAtWholeKind_rollsTheSwitchBack() throws {
+        let db = try seedFamily(kind: .continuous, rootGoal: 26.2)
+        XCTAssertThrowsError(try db.write { conn in
+            try AppDatabase.applyKindSwitchThenGoalGuard(db: conn, taskId: "root", to: .discrete, maxCount: 26.5, now: now)
+        }) { XCTAssertEqual($0 as? CountKindSwitchError, .goalNotWhole) }
+        let root = try XCTUnwrap(K.fetchTask(db, "root"))
+        XCTAssertEqual(root.countKind, .continuous)
+        XCTAssertEqual(root.maxCount, 26.2)
+        XCTAssertEqual(root.version, 1)
+    }
+
+    func test_guard_neverSwitchesALinkedRow_andAnUnchangedKindWritesNothing() throws {
+        let db = try seedFamily(kind: .continuous, rootGoal: 26.2)
+        let a = try db.write { try AppDatabase.applyKindSwitchThenGoalGuard(db: $0, taskId: "live", to: .discrete, maxCount: nil, now: now) }
+        let b = try db.write { try AppDatabase.applyKindSwitchThenGoalGuard(db: $0, taskId: "root", to: .continuous, maxCount: 26.3, now: now) }
+        XCTAssertFalse(a); XCTAssertFalse(b)
+        XCTAssertEqual(try K.fetchTask(db, "root")?.version, 1)
+        XCTAssertEqual(try K.fetchTask(db, "live")?.countKind, .continuous)
+    }
+
+    /// Carried perf item: one board placing two switched rows is derived ONCE.
+    func test_switch_derivesASharedBoardOnce() throws {
+        let db = try seedFamily(kind: .continuous, rootGoal: 26.2)
+        try db.saveBoardTask(K.placement(id: "btRootOnLive", boardId: "bLive", taskId: "root", cell: 1, size: 2))
+        let before = try XCTUnwrap(db.fetchBoard(id: "bLive")).version
+        try db.switchCounterKind(rootTaskId: "root", to: .discrete, now: now)
+        XCTAssertEqual(try XCTUnwrap(db.fetchBoard(id: "bLive")).version, before + 1)
+    }
+
+    func test_confirmCopy_andGoalRounding() {
+        let p = KindSwitchPreview(from: .continuous, to: .discrete, titleBefore: "Run 26.2 miles", titleAfter: "Run 26 miles",
+                                  loggedBefore: 12.75, loggedAfter: 13, linkedCount: 2)
+        let lines = KindSwitchCopy.lines(p)
+        XCTAssertEqual(lines.title, "Switch to Discrete?")
+        XCTAssertEqual(lines.rows.map { "\($0.0)→\($0.1)" }, ["Run 26.2 miles→Run 26 miles", "12.75 logged→13 logged"])
+        XCTAssertEqual(lines.body, "Switching back restores the exact values. Follows on 2 linked squares.")
+        func body(linked: Int) -> String {
+            KindSwitchCopy.lines(KindSwitchPreview(from: .continuous, to: .discrete, titleBefore: "a", titleAfter: "a",
+                                                   loggedBefore: 0, loggedAfter: 0, linkedCount: linked)).body
+        }
+        XCTAssertEqual(body(linked: 1), "Switching back restores the exact values. Follows on 1 linked square.")
+        XCTAssertEqual(body(linked: 0), "Switching back restores the exact values.")
+        XCTAssertTrue(KindSwitchCopy.needsConfirm(from: .continuous, to: .discrete))
+        XCTAssertFalse(KindSwitchCopy.needsConfirm(from: .discrete, to: .continuous))
+        XCTAssertEqual(KindSwitchCopy.switchedGoalText("26.2", from: .continuous, to: .discrete), "26")
+        XCTAssertEqual(KindSwitchCopy.switchedGoalText("0.3", from: .continuous, to: .discrete), "1")
+        XCTAssertEqual(KindSwitchCopy.switchedGoalText("26", from: .discrete, to: .continuous), "26")
+        XCTAssertEqual(KindSwitchCopy.switchedGoalText("", from: .continuous, to: .discrete), "")
+    }
 }

@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import type { Task } from '@oybc/shared';
-import { TaskType, generateCounterTaskTitle, findLinkableCounter } from '@oybc/shared';
+import { TaskType, generateCounterTaskTitle } from '@oybc/shared';
 import { RisoTypeBadge, type RisoTaskType } from '../riso';
 import { CountingStepFields } from '../CountingStepFields';
 import { CounterLinkHint } from '../counters';
@@ -10,7 +10,9 @@ import {
   type ExistingSubtaskDraft,
   type InlineSubtaskDraft,
   type InlineSubtaskType,
+  effectiveInlineKind,
   evaluateSubtaskReadiness,
+  inlineLinkMatch,
   hasInlineDirtyFields,
   switchInlineType,
 } from './compoundSubtaskDraft';
@@ -169,8 +171,8 @@ function InlineCard({
   onRemove,
 }: InlineCardProps): React.ReactElement {
   const readiness = useMemo(
-    () => evaluateSubtaskReadiness(draft, new Set()),
-    [draft],
+    () => evaluateSubtaskReadiness(draft, new Set(), allTasks),
+    [draft, allTasks],
   );
 
   const cardClassName = [
@@ -253,6 +255,13 @@ function InlineFields({
     );
   }
 
+  // An auto-linking counting sub-task takes its root's kind: a tag replaces the picker.
+  const linkMatch = inlineLinkMatch(draft, allTasks);
+  const linkedTag =
+    linkMatch && !draft.linkDisabled
+      ? { counterName: linkMatch.name, lifetime: linkMatch.lifetime }
+      : undefined;
+
   const handleTypeClick = (nextType: InlineSubtaskType): void => {
     if (nextType === draft.inlineType) return;
     if (hasInlineDirtyFields(draft)) {
@@ -288,9 +297,6 @@ function InlineFields({
       <div className={styles.fieldGroup}>
         <label className={styles.label} htmlFor={`subtask-title-${draft.id}`}>
           Title
-          {draft.inlineType === 'counting' && (
-            <span className={styles.optionalHint}> (auto-generated from action + count + unit if blank)</span>
-          )}
         </label>
         <input
           id={`subtask-title-${draft.id}`}
@@ -314,6 +320,12 @@ function InlineFields({
             action={draft.action}
             maxCount={draft.maxCountStr}
             unit={draft.unit}
+            countKind={effectiveInlineKind(draft, allTasks)}
+            // A kind change never touches the "Don't link" opt-out: the
+            // picker only shows while unlinked, so resetting it here would
+            // silently re-link the sub-task to the root it opted out of.
+            onKindChange={(k) => onUpdate({ countKind: k } as Partial<InlineSubtaskDraft>)}
+            linkedTag={linkedTag}
             onChange={(field, value) => {
               // Verb/Counting changes reset the auto-link opt-out — a fresh
               // pair should always start linked (mirrors CountingTemplatePicker).
@@ -336,12 +348,11 @@ function InlineFields({
 
 /**
  * R1 counters refresh — auto-link hint for the compound builder's inline
- * counting subtask. Computes the (verb, noun) match against the library
- * (`allTasks`, already loaded by `CompoundTaskWizard`) and renders
- * `CounterLinkHint` once a match + a valid goal exist. `CompoundTaskWizard.
- * handleCreate` re-derives the same match at submit time (guarded by
- * `draft.linkDisabled`) to set `sharedCounterId`/`baseline` on the inline-
- * created child — see `AutoCreateCompoundChildTask`.
+ * counting subtask: the matched counter + the link toggle, whenever a (verb,
+ * noun) match exists — independent of the goal, so a goal that only parses at
+ * the other kind (e.g. "3.1" against a Discrete root) can still be unlinked.
+ * `inlineSubtaskToAutoCreate` re-derives the same match at submit time
+ * (guarded by `draft.linkDisabled`).
  */
 function InlineCounterLinkHint({
   draft,
@@ -352,27 +363,13 @@ function InlineCounterLinkHint({
   allTasks: Task[];
   onUpdate: (updates: Partial<SubtaskDraft>) => void;
 }): React.ReactElement | null {
-  const trimmedAction = draft.action.trim();
-  const trimmedUnit = draft.unit.trim();
-  const parsedGoal = parseInt(draft.maxCountStr, 10);
-  const goalValid = Number.isInteger(parsedGoal) && parsedGoal > 0;
-
-  const match = useMemo(
-    () =>
-      trimmedAction && trimmedUnit
-        ? findLinkableCounter({ action: trimmedAction, unit: trimmedUnit }, allTasks)
-        : null,
-    [trimmedAction, trimmedUnit, allTasks],
-  );
-
-  if (!match || !goalValid) return null;
+  const match = useMemo(() => inlineLinkMatch(draft, allTasks), [draft, allTasks]);
+  if (!match) return null;
 
   const linked = !draft.linkDisabled;
   return (
     <CounterLinkHint
       counterName={match.name}
-      lifetime={match.lifetime}
-      goal={parsedGoal}
       linked={linked}
       onToggle={() => onUpdate({ linkDisabled: linked } as Partial<InlineSubtaskDraft>)}
     />

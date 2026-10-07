@@ -51,15 +51,6 @@
   color: var(--riso-ink);
 }
 
-/* Global-impact hint — muted text below the title */
-.globalHint {
-  margin: 0;
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--riso-muted);
-  line-height: 1.4;
-}
-
 /* ─── Type row (switch, or the fixed indicator) ─── */
 .typeRow {
   display: flex;
@@ -150,6 +141,11 @@
 
 .goalField {
   flex: 0 0 110px;
+}
+
+/* Duration has no Unit — its hours + minutes fields take the whole row. */
+.goalFieldFull {
+  flex: 1;
 }
 
 .unitField {

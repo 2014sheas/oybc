@@ -23,8 +23,9 @@ import SwiftUI
 ///     a compound's type is fixed (no picker) and its editor is always open.
 ///     The commit path enforces the same rule
 ///     (`BoardPlayViewModel.boardEditAllowsTypeSwitch`).
-///   - The "everywhere" hint is always visible so the user understands they are
-///     editing the task globally, not cloning it per-square.
+///   - A Counting task picks its kind (a linked counter shows it as a tag);
+///     the switch is STAGED on the patch and applied inside the Save
+///     transaction (`BoardPlayViewModel.applyStagedOverrides`).
 ///
 /// Design language: Riso vocabulary (risoHead/risoBody fonts, risoCard sections,
 /// RisoTextField / RisoNumberField / RisoSegmented / RisoToolbarPill). Mirrors
@@ -56,6 +57,9 @@ struct SquareEditTaskSheet: View {
     /// Optional async loader the presenter supplies (reads through the
     /// injected database); results replace the props above on appear.
     var loadInputs: (() async -> CompoundInputs)? = nil
+    /// Read-only: how many linked squares a Continuous → Discrete switch
+    /// would also write (the confirm's "Follows on" line).
+    var database: AppDatabase = .shared
     let onDone: (Patch) -> Void
     let onCancel: () -> Void
 
@@ -88,6 +92,9 @@ struct SquareEditTaskSheet: View {
         /// a stored-invalid compound can still be renamed). Title is the
         /// sheet's Title field.
         var compound: TaskEditPatch? = nil
+        /// The kind chosen for a Counting task (nil for every other type).
+        /// Staged; a stored root switches inside the Save transaction.
+        var countKind: CountKind? = nil
     }
 
     // MARK: - Local state
@@ -97,6 +104,8 @@ struct SquareEditTaskSheet: View {
     @State private var action: String
     @State private var unit: String
     @State private var maxCountStr: String
+    @State private var countKind: CountKind
+    @State private var pendingSwitch: KindSwitchPreview?
     // Compound editor draft (rule + sub-tasks). nil only while an EXISTING
     // compound's sub-tasks are still loading. The draft's own `title` is
     // ignored — the Title field is the single source.
@@ -124,6 +133,7 @@ struct SquareEditTaskSheet: View {
         libraryInputsState: RisoCompoundEditFieldsView.LibraryInputsState = .loaded,
         loadInputs: (() async -> CompoundInputs)? = nil,
         startingType: TaskType? = nil,
+        database: AppDatabase = .shared,
         onDone: @escaping (Patch) -> Void,
         onCancel: @escaping () -> Void
     ) {
@@ -135,6 +145,7 @@ struct SquareEditTaskSheet: View {
         self.allLinks = allLinks
         self.libraryInputsState = libraryInputsState
         self.loadInputs = loadInputs
+        self.database = database
         self.onDone = onDone
         self.onCancel = onCancel
 
@@ -151,6 +162,7 @@ struct SquareEditTaskSheet: View {
         _action      = State(initialValue: countingSource.action ?? "")
         _unit        = State(initialValue: countingSource.unit ?? "")
         _maxCountStr = State(initialValue: countingSource.maxCount.map { formatCountForInput($0, kind: resolveCountKind(countingSource.countKind)) } ?? "")
+        _countKind   = State(initialValue: resolveCountKind(countingSource.countKind))
         _pickerLibraryTasks = State(initialValue: libraryTasks)
         _pickerLinks = State(initialValue: allLinks)
         _pickerInputsState = State(initialValue: libraryInputsState)
@@ -237,7 +249,8 @@ struct SquareEditTaskSheet: View {
     static func seededTitle(for task: Task) -> String {
         guard task.type == .counting else { return task.title }
         let isAuto = TaskTitle.isAutoCounterTitle(
-            title: task.title, action: task.action ?? "", maxCount: task.maxCount, unit: task.unit ?? ""
+            title: task.title, action: task.action ?? "", maxCount: task.maxCount, unit: task.unit ?? "",
+            countKind: resolveCountKind(task.countKind)
         )
         return isAuto ? "" : task.title
     }
@@ -267,15 +280,16 @@ struct SquareEditTaskSheet: View {
     ///   - title is non-empty (every type but Counting — a blank Counting
     ///     title is auto-generated from Action/Goal/Unit at Save, matching
     ///     `TaskEditPatch.validate` and the web sheet).
-    ///   - counting: goal is a positive integer AND unit is non-empty.
+    ///   - counting: goal parses at the sheet's kind AND (unless Duration)
+    ///     unit is non-empty.
     ///   - compound: the editor has loaded and, for a conversion (or an EDITED
     ///     existing compound), `TaskEditPatch.validate(type: .compound)` passes.
     ///     The link guard (self / duplicate / loop) runs at Save; the editor
     ///     only offers eligible library tasks.
     private var isValid: Bool {
         if type == .counting {
-            let goalOK = (Int(maxCountStr.trimmingCharacters(in: .whitespaces)) ?? 0) > 0
-            let unitOK = !unit.trimmingCharacters(in: .whitespaces).isEmpty
+            let goalOK = parseCountInput(maxCountStr, kind: countKind) != nil
+            let unitOK = !countKindNeedsUnit(countKind) || !unit.trimmingCharacters(in: .whitespaces).isEmpty
             return goalOK && unitOK
         }
         let trimTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -341,7 +355,7 @@ struct SquareEditTaskSheet: View {
         guard type == .counting else { return nil }
         let a = action.trimmingCharacters(in: .whitespaces)
         let g = maxCountStr.trimmingCharacters(in: .whitespaces)
-        let u = unit.trimmingCharacters(in: .whitespaces)
+        let u = countKindNeedsUnit(countKind) ? unit.trimmingCharacters(in: .whitespaces) : ""
         guard !a.isEmpty || !g.isEmpty || !u.isEmpty else { return nil }
         return "Reads as: \([a, g, u].filter { !$0.isEmpty }.joined(separator: " — "))"
     }
@@ -357,8 +371,6 @@ struct SquareEditTaskSheet: View {
                     if showsTypePicker { typeSection }
                     if type == .counting { countingSection }
                     if type == .compound { compoundSection }
-                    if type == .achievement { achievementSection }
-                    everywhereHint
                 }
                 .padding(16)
             }
@@ -431,16 +443,29 @@ struct SquareEditTaskSheet: View {
                 editFieldRow(label: "Action") {
                     RisoTextField(placeholder: "e.g. Run", text: $action)
                 }
+                editFieldRow(label: "Kind") {
+                    if task.sharedCounterId != nil {
+                        KindTagView(linkedTask: task, root: database.linkedCounterRoot(of: task))
+                    } else {
+                        KindPickerView(
+                            selection: $countKind,
+                            lock: kindPickerLock(mode: originalType == .counting ? .edit : .create, kind: stagedKind),
+                            onRequest: requestKind
+                        )
+                    }
+                }
                 HStack(alignment: .top, spacing: 10) {
                     VStack(alignment: .leading, spacing: 5) {
                         Text("Goal")
                             .risoSectionLabel()
-                        RisoNumberField(placeholder: "5", text: $maxCountStr)
+                        GoalEntryView(kind: countKind, text: $maxCountStr, placeholder: "5")
                     }
-                    VStack(alignment: .leading, spacing: 5) {
-                        Text("Unit")
-                            .risoSectionLabel()
-                        RisoTextField(placeholder: "e.g. miles", text: $unit)
+                    if countKindNeedsUnit(countKind) {
+                        VStack(alignment: .leading, spacing: 5) {
+                            Text("Unit")
+                                .risoSectionLabel()
+                            RisoTextField(placeholder: "e.g. miles", text: $unit)
+                        }
                     }
                 }
                 if let preview = countingPreview {
@@ -451,6 +476,54 @@ struct SquareEditTaskSheet: View {
                 }
             }
         }
+        .kindSwitchConfirm(pending: $pendingSwitch) { p in
+            applyConfirmedSwitch(p)
+        }
+    }
+
+    // MARK: - Kind
+
+    /// The kind the sheet opened with (stored, or a staged one merged into
+    /// `task`) — the picker's locks follow it.
+    private var stagedKind: CountKind {
+        resolveCountKind((task.type == .counting ? task : (original ?? task)).countKind)
+    }
+
+    /// Continuous → Discrete opens the confirm (previewing the DRAFT — title /
+    /// goal typed in this sheet); any other permitted change applies at once.
+    private func requestKind(_ next: CountKind) {
+        guard KindSwitchCopy.needsConfirm(from: countKind, to: next) else { countKind = next; return }
+        let linked = (try? database.previewCounterKindSwitch(rootTaskId: task.id, to: next))?.linkedCount ?? 0
+        pendingSwitch = KindSwitchPreview.planned(task: draftTask, to: next, linkedCount: linked)
+    }
+
+    /// The task overlaid with this sheet's unsaved counting fields; a blank
+    /// Title reads as the title it would generate.
+    private var draftTask: Task {
+        var t = task
+        t.type = .counting
+        t.action = action
+        t.unit = countKindNeedsUnit(countKind) ? unit : ""
+        t.countKind = countKind
+        if let goal = parseCountInput(maxCountStr, kind: countKind) { t.maxCount = goal }
+        let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        t.title = trimmed.isEmpty
+            ? TaskTitle.generateCounterTaskTitle(
+                action: action, maxCount: t.maxCount, unit: t.unit ?? "", countKind: countKind
+            )
+            : trimmed
+        return t
+    }
+
+    /// Applies a confirmed switch to the sheet's fields. A blank (auto) title
+    /// keeps re-deriving; a typed title that reads as the auto one follows.
+    private func applyConfirmedSwitch(_ p: KindSwitchPreview) {
+        if !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+           let titleAfter = KindSwitchPreview.planned(task: draftTask, to: p.to, linkedCount: 0)?.titleAfter {
+            title = titleAfter
+        }
+        maxCountStr = KindSwitchCopy.switchedGoalText(maxCountStr, from: p.from, to: p.to)
+        countKind = p.to
     }
 
     /// The compound structure editor — the shared `RisoCompoundEditFieldsView`
@@ -490,31 +563,6 @@ struct SquareEditTaskSheet: View {
         }
     }
 
-    /// Read-only notice for achievement tasks — the trigger and the
-    /// board/template it watches are edited from the task's detail page.
-    private var achievementSection: some View {
-        editSection(label: "Achievement") {
-            Text("What this achievement watches is edited from the task's detail page. The title can still be changed here.")
-                .font(.risoBody(13, .semibold))
-                .foregroundStyle(Color.risoMuted)
-                .frame(maxWidth: .infinity, alignment: .leading)
-        }
-    }
-
-    /// Subtle full-width hint reminding the user that this edits the task
-    /// globally (not a per-square clone).
-    private var everywhereHint: some View {
-        HStack(spacing: 6) {
-            Image(systemName: "globe")
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(Color.risoMuted)
-            Text("Editing this task changes it everywhere it's used.")
-                .font(.risoBody(12, .regular))
-                .foregroundStyle(Color.risoMuted)
-        }
-        .padding(.top, 4)
-    }
-
     // MARK: - Riso layout helpers
 
     @ViewBuilder
@@ -552,9 +600,10 @@ struct SquareEditTaskSheet: View {
                 title: title.trimmingCharacters(in: .whitespacesAndNewlines),
                 type: type,
                 action: action.trimmingCharacters(in: .whitespaces),
-                unit: unit.trimmingCharacters(in: .whitespaces),
-                maxCount: Int(maxCountStr.trimmingCharacters(in: .whitespaces)).map(CountValue.init),
-                compound: compoundSubmission
+                unit: countKindNeedsUnit(countKind) ? unit.trimmingCharacters(in: .whitespaces) : "",
+                maxCount: parseCountInput(maxCountStr, kind: countKind),
+                compound: compoundSubmission,
+                countKind: type == .counting ? countKind : nil
             )
         )
     }

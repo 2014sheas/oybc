@@ -2,16 +2,19 @@
    edit editor, stacked inside the create wizard's CountingStepFields. */
 .row {
   display: flex;
+  flex-wrap: wrap;
   align-items: flex-start;
   gap: 10px;
   min-width: 0;
 }
+/* Bases + min-width: 0 so the pair wraps at narrow widths (390px Task
+   Detail edit) instead of widening the dialog. */
 .goalGroup {
-  flex: 0 0 90px;
+  flex: 1 1 120px;
   min-width: 0;
 }
 .unitGroup {
-  flex: 1 1 auto;
+  flex: 1 1 120px;
   min-width: 0;
 }
 .stack {

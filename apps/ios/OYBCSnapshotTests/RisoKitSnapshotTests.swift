@@ -138,6 +138,41 @@ final class RisoKitSnapshotTests: XCTestCase {
             record: recordMode
         )
     }
+
+    // MARK: - Counter kinds (PR 3) — the four picker states of handoff §1
+
+    private func kindPickerStates() -> some View {
+        KindPickerStatesPreview()
+            .padding(16)
+            .background(Color.risoPaper)
+            .frame(width: 353, height: 230)
+    }
+
+    func testKindPickerStatesLight() {
+        assertSnapshot(of: kindPickerStates(), as: .image(layout: .fixed(width: 353, height: 230)), record: recordMode)
+    }
+
+    func testKindPickerStatesDark() {
+        assertSnapshot(
+            of: kindPickerStates(),
+            as: .image(layout: .fixed(width: 353, height: 230), traits: .init(userInterfaceStyle: .dark)),
+            record: recordMode
+        )
+    }
+
+    // MARK: - GoalEntry (PR 3 Task 4) — handoff §1 "Amount entry"
+
+    private func goalEntryKinds() -> some View {
+        GoalEntryKindsPreview().padding(16).background(Color.risoPaper).frame(width: 353, height: 300)
+    }
+
+    func testGoalEntryKindsLight() {
+        assertSnapshot(of: goalEntryKinds(), as: .image(layout: .fixed(width: 353, height: 300)), record: recordMode)
+    }
+
+    func testGoalEntryKindsDark() {
+        assertSnapshot(of: goalEntryKinds(), as: .image(layout: .fixed(width: 353, height: 300), traits: .init(userInterfaceStyle: .dark)), record: recordMode)
+    }
 }
 
 /// `@State` wrappers so the compact stepper + compact segmented render
@@ -145,7 +180,7 @@ final class RisoKitSnapshotTests: XCTestCase {
 /// `PillSegmentedPreview` above). The dice is stateless — all three
 /// levels render at once.
 private struct MemberRulePrimitivesPreview: View {
-    @State private var target: Int = 6
+    @State private var target: CountValue = 6
     @State private var isSplit: Bool = false
 
     var body: some View {
@@ -154,7 +189,7 @@ private struct MemberRulePrimitivesPreview: View {
                 RisoDiceButton(level: .off) { }
                 RisoDiceButton(level: .little) { }
                 RisoDiceButton(level: .lot) { }
-                RisoInlineStepperView(value: $target, min: 1, max: 35, style: .compact)
+                RisoCountStepperView(value: $target, kind: .discrete, max: 35)
                 Text("of 35 mi")
                     .font(.risoBody(10, .semibold))
                     .foregroundStyle(Color.risoMuted)
@@ -192,5 +227,35 @@ private struct PillSegmentedPreview: View {
             selection: $value,
             style: .pill
         )
+    }
+}
+
+/// New (all live) · existing Continuous (Duration locked out) · existing
+/// Duration (locked in) · linked tag — handoff `Counter Kinds.dc.html` §1.
+private struct KindPickerStatesPreview: View {
+    @State private var a: CountKind = .continuous
+    @State private var b: CountKind = .continuous
+    @State private var c: CountKind = .duration
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            KindPickerView(selection: $a, lock: .none)
+            KindPickerView(selection: $b, lock: .duration)
+            KindPickerView(selection: $c, lock: .all)
+            KindTagView(kind: .continuous, counterName: "Miles", lifetime: 148.6)
+        }
+    }
+}
+
+/// Discrete 300 · Continuous 26.2 · Duration 10h 30m with the wheel open — handoff §1 "Amount entry".
+private struct GoalEntryKindsPreview: View {
+    @State private var d = "300"
+    @State private var c = "26.2"
+    @State private var t = "10h 30m"
+    var body: some View {
+        VStack(spacing: 8) {
+            GoalEntryView(kind: .discrete, text: $d)
+            GoalEntryView(kind: .continuous, text: $c, suffix: "mi")
+            GoalEntryView(kind: .duration, text: $t, startsOpen: true)
+        }
     }
 }

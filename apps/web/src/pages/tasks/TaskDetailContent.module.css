@@ -449,11 +449,14 @@
   font-weight: 700;
   color: var(--riso-red);
 }
+/* min-width: 0 — a fieldset defaults to min-inline-size: min-content, which
+   let the sub-task rows widen the edit dialog past a 390px viewport. */
 .fieldset {
   border: 2px solid var(--riso-ink);
   border-radius: var(--riso-r-card);
   padding: 12px;
   margin: 0;
+  min-width: 0;
 }
 .fieldsetLegend {
   padding: 0 4px;

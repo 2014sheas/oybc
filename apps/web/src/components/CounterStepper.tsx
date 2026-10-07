@@ -1,5 +1,11 @@
 import { useState } from 'react';
-import { compactStepperBase } from './counterStepperMath';
+import {
+  formatCountForInput,
+  parseCountInput,
+  type CountKind,
+} from '@oybc/shared';
+import { compactStepperBase, compactStepperNext } from './counterStepperMath';
+import { goalEntryInputMode } from './counters/goalEntryModel';
 import styles from './CounterStepper.module.css';
 
 interface CounterStepperProps {
@@ -31,6 +37,12 @@ interface CounterStepperProps {
    * numeric field is. Ignored by the `default` size.
    */
   suffix?: string;
+  /**
+   * The counter's kind — compact only. Steps 1 (discrete), 0.1 (continuous)
+   * or 1 minute (duration); the field parses/prints at the kind. Default
+   * `'discrete'`.
+   */
+  kind?: CountKind;
 }
 
 /**
@@ -53,6 +65,7 @@ interface CounterStepperProps {
  * @param size - Visual variant (see above)
  * @param suffix - Static text inside the `compact` pill after the value
  *   (the member row's goal, "/ 30 Miles"); ignored by `default`.
+ * @param kind - Count kind for the `compact` variant (default discrete).
  * @returns The stepper control.
  */
 export function CounterStepper({
@@ -63,6 +76,7 @@ export function CounterStepper({
   label,
   size = 'default',
   suffix,
+  kind = 'discrete',
 }: CounterStepperProps): React.ReactElement {
   /** Uncommitted typing in the compact field; `null` while not editing. */
   const [draft, setDraft] = useState<string | null>(null);
@@ -70,13 +84,14 @@ export function CounterStepper({
   if (size === 'compact') {
     // The −/+ buttons gate on the UNCOMMITTED draft when there is one, so a
     // typed-but-unblurred `1` in a `min: 1` field disables `−` immediately
-    // (iOS `RisoCompactStepperMath.base`).
-    const gateValue = compactStepperBase(value, draft, min, max);
+    // (iOS `RisoCountStepperMath.base`).
+    const gateValue = compactStepperBase(value, draft, min, max, kind);
+    const text = (v: number): string => formatCountForInput(v, kind);
     const commit = (): void => {
       if (draft === null) return;
-      const parsed = Number.parseInt(draft.trim(), 10);
+      const parsed = parseCountInput(draft, kind, { allowZero: true });
       setDraft(null);
-      if (!Number.isFinite(parsed)) return;
+      if (parsed === null) return;
       const clamped = Math.min(max, Math.max(min, parsed));
       if (clamped !== value) onChange(clamped);
     };
@@ -85,7 +100,7 @@ export function CounterStepper({
         <button
           type="button"
           className={styles.compactButton}
-          onClick={() => onChange(Math.max(min, value - 1))}
+          onClick={() => onChange(compactStepperNext(value, null, -1, min, max, kind))}
           disabled={gateValue <= min}
           aria-label="Decrease target"
         >
@@ -93,14 +108,14 @@ export function CounterStepper({
         </button>
         <input
           type="text"
-          inputMode="numeric"
+          inputMode={goalEntryInputMode(kind)}
           className={styles.compactInput}
           aria-label={label ?? 'Target'}
           // Sized to the goal's digit count so a 4-digit goal isn't clipped.
-          style={{ width: `${Math.max(2, String(max).length) + 1}ch` }}
-          value={draft ?? String(value)}
+          style={{ width: `${Math.max(2, text(max).length) + 1}ch` }}
+          value={draft ?? text(value)}
           onFocus={(e) => {
-            setDraft(String(value));
+            setDraft(text(value));
             e.currentTarget.select();
           }}
           onChange={(e) => setDraft(e.currentTarget.value)}
@@ -122,7 +137,7 @@ export function CounterStepper({
           // so the goal then reaches AT only via the auto-generated
           // counting title ("Run 30 miles"). A hand-renamed member at its
           // goal genuinely loses it — accepted, and identical on iOS
-          // (`RisoInlineStepperView`). The fix, if it is ever wanted, is a
+          // (`RisoCountStepperView`). The fix, if it is ever wanted, is a
           // composed field label ("Target, of 30 miles"), not unhiding
           // this text (B3.1).
           <span className={styles.compactSuffix} data-testid="stepper-suffix" aria-hidden="true">
@@ -132,7 +147,7 @@ export function CounterStepper({
         <button
           type="button"
           className={styles.compactButton}
-          onClick={() => onChange(Math.min(max, value + 1))}
+          onClick={() => onChange(compactStepperNext(value, null, 1, min, max, kind))}
           disabled={gateValue >= max}
           aria-label="Increase target"
         >

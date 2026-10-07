@@ -658,6 +658,20 @@ final class BoardEditCompoundTests: XCTestCase {
         XCTAssertEqual(BoardPlayViewModel.applyingOverride(simple, to: makeTask("s")).title, "")
     }
 
+    /// M11 — a Simple → Counting conversion with no staged kind writes
+    /// Discrete explicitly, overwriting a stale kind left on the row (web
+    /// `compoundStructureEdit`: `stagedKind ?? 'discrete'`). A stored counting
+    /// row with no staged kind keeps its own.
+    func test_applyingOverride_conversionIntoCounting_defaultsKindToDiscrete() {
+        var simple = makeTask("s")
+        simple.countKind = .continuous
+        let override = StagedTaskOverride(title: "", type: .counting, action: "Run", unit: "km", maxCount: 5, compound: nil)
+        XCTAssertEqual(BoardPlayViewModel.applyingOverride(override, to: simple, writesKind: true).countKind, .discrete)
+        var counting = makeTask("c", type: .counting, title: "Run 5 km", action: "Run", unit: "km", maxCount: 5)
+        counting.countKind = .continuous
+        XCTAssertEqual(BoardPlayViewModel.applyingOverride(override, to: counting, writesKind: true).countKind, .continuous)
+    }
+
     func test_countingGoalOnlyEdit_autoTitle_isRegeneratedAtTheNewGoal() throws {
         let db = try makeDb()
         try seedUser(db)

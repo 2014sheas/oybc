@@ -101,6 +101,25 @@
   font-size: 11px;
 }
 
+/* ---- card, fullWidth + fitLabels ----
+   Labels never ellipsize: the type scales with the row (container units,
+   `--seg-count` set inline) between 9px and the size's own font size, per
+   the counter-kind handoff (13px / 12px compact, 4px side padding). The
+   divisor fits a ~10-character bold label ("Continuous") in its segment
+   after padding, border and gap. */
+.card.fullWidth.fitLabels {
+  container-type: inline-size;
+}
+.card.fullWidth.fitLabels .seg {
+  padding: 10px 4px;
+  font-size: clamp(9px, calc((100cqi / var(--seg-count) - 16px) / 5.6), 13px);
+  text-overflow: clip;
+}
+.card.fullWidth.compact.fitLabels .seg {
+  padding: 7px 4px;
+  font-size: clamp(9px, calc((100cqi / var(--seg-count) - 16px) / 5.6), 12px);
+}
+
 /* Keyboard focus ring for both pill and card segments. */
 .seg:focus-visible {
   outline: 3px solid var(--riso-blue);
@@ -129,3 +148,9 @@
 .pill.compact .seg + .seg {
   border-left: 1.5px solid var(--riso-ink);
 }
+
+/* ---- card, locked segment (counter-kind picker) ---- */
+.card .seg.locked { cursor: default; }
+.card .seg.locked:not(.on) { opacity: 0.45; }
+.card .seg.locked:hover:not(.on) { background: var(--riso-paper-2); }
+.lockGlyph { display: inline-grid; place-items: center; margin-left: 5px; vertical-align: -1px; }

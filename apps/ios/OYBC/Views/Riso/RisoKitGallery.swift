@@ -7,6 +7,7 @@ import SwiftUI
 /// wired into production navigation.
 struct RisoKitGallery: View {
     @State private var seg: String = "weekly"
+    @State private var sampleKind: CountKind = .continuous
     @State private var sampleText: String = "Run"
     @State private var sampleNum: String = "5"
     @State private var samplePass: String = "secret"
@@ -118,6 +119,9 @@ struct RisoKitGallery: View {
                             .risoHalftone()
                             .overlay(RoundedRectangle(cornerRadius: Riso.cellRadius).strokeBorder(Color.risoInk, lineWidth: 2))
                     }
+
+                    sectionLabel("Kind picker")
+                    KindPickerView(selection: $sampleKind, lock: .duration)
                 }
                 .padding(Riso.gutter)
             }

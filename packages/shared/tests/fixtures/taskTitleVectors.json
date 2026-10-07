@@ -60,7 +60,10 @@
       "unit": "pages",
       "providedTitle": null,
       "expected": "Read 300 pages"
-    }
+    },
+    {"name":"duration renders Xh Ym and drops the unit","action":"Practice","maxCount":630,"unit":"","countKind":"duration","expected":"Practice 10h 30m"},
+    {"name":"duration minutes only","action":"Meditate","maxCount":20,"unit":"","countKind":"duration","expected":"Meditate 20m"},
+    {"name":"continuous keeps decimals","action":"Save","maxCount":1250.5,"unit":"dollars","countKind":"continuous","expected":"Save 1250.5 dollars"}
   ],
   "isAutoCounterTitle": [
     {
@@ -174,7 +177,9 @@
       "maxCount": 26.2,
       "unit": "miles",
       "expected": true
-    }
+    },
+    {"name":"duration auto title is auto","title":"Practice 10h 30m","action":"Practice","maxCount":630,"unit":"","countKind":"duration","expected":true},
+    {"name":"duration legacy unit title is custom","title":"Meditate 600 minutes","action":"Meditate","maxCount":600,"unit":"minutes","countKind":"duration","expected":false}
   ],
   "counterCopyTitle": [
     {
@@ -275,6 +280,7 @@
       },
       "newMaxCount": 6.1,
       "expected": "Run 6.1 miles"
-    }
+    },
+    {"name":"duration legacy title carries verbatim","member":{"title":"Meditate 600 minutes","action":"Meditate","unit":"minutes","maxCount":600,"countKind":"duration"},"newMaxCount":120,"expected":"Meditate 600 minutes"}
   ]
 }

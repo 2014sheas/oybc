@@ -358,14 +358,11 @@ export function PoolEditorBody({
             editor={(task) =>
               editDraft && (
                 <PoolRowEditor
-                  surface="pool"
-                  taskId={task.id}
-                  taskType={task.type}
+                  task={task}
                   draft={editDraft}
                   onDraftChange={setEditDraft}
                   onSave={() => saveEdit(task.id)}
                   onDiscard={discardEdit}
-                  usedOnBoardCount={taskBoardCounts[task.id] ?? 0}
                   libraryTasks={pickerLibraryTasks}
                   allLinks={pickerLinks}
                 />

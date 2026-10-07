@@ -73,4 +73,29 @@ describe('RisoSegmented', () => {
         '</div>',
     );
   });
+
+  it('locks a segment: aria-disabled, no click handler, lock glyph only where asked', () => {
+    const html = stripHash(
+      render({
+        options: [
+          { value: 'discrete', label: 'Discrete' },
+          { value: 'duration', label: 'Duration' },
+        ],
+        value: 'discrete',
+        onChange: () => {},
+        lockedValues: ['duration'],
+        lockGlyphValues: ['duration'],
+        'aria-label': 'Kind',
+      }),
+    );
+    expect(html).toContain('<button type="button" class="seg locked" aria-pressed="false" aria-disabled="true">Duration');
+    expect(html).toContain('class="lockGlyph"');
+    expect(html.match(/lockGlyph/g)).toHaveLength(1);
+  });
+
+  it('renders unchanged when no lock props are passed', () => {
+    const html = stripHash(render({ options: OPTIONS, value: 'one', onChange: () => {}, 'aria-label': 'Squares' }));
+    expect(html).not.toContain('locked');
+    expect(html).not.toContain('aria-disabled');
+  });
 });

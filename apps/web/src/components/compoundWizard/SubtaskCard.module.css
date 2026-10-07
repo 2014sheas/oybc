@@ -94,15 +94,6 @@
   color: var(--riso-ink);
 }
 
-.optionalHint {
-  font-family: var(--riso-font-body);
-  font-weight: 400;
-  font-size: 0.78rem;
-  text-transform: none;
-  letter-spacing: 0;
-  color: var(--riso-muted);
-}
-
 /* Riso input */
 .titleInput {
   padding: 12px 14px;
@@ -400,4 +391,11 @@
 .addStepButton:focus-visible {
   outline: 3px solid var(--riso-blue);
   outline-offset: 2px;
+}
+
+/* Phone width — see BuildStep.module.css's matching rule. */
+@media (max-width: 480px) {
+  .card {
+    padding: 12px;
+  }
 }

@@ -6,7 +6,7 @@ import SwiftUI
 ///
 /// Replaces the old suggest-confirm suggestion card. When a counting task's
 /// typed (verb, noun) pair exactly matches an existing counter, linking is
-/// ON by default — this card explains what will happen and offers a
+/// ON by default — this card names the counter and offers a
 /// "Don't link" opt-out (toggling back to "Link" re-enables it). It's a
 /// single reusable component so the identical hint renders across every
 /// counting-task creation surface (`RisoSpecialTaskPanel`'s standalone
@@ -24,31 +24,19 @@ struct RisoCounterLinkHintView: View {
     /// The matched counter's pair-derived display name
     /// (`CounterName.formatCounterName`), e.g. "Push-ups" or "Run miles".
     let counterName: String
-    /// The matched counter's all-time lifetime total.
-    let lifetime: CountValue
-    /// The new task's own goal (`maxCount`) — shown in the "0–{goal} window"
-    /// sub-copy. Caller only renders this view once a valid positive goal
-    /// exists.
-    let goal: CountValue
     /// Whether this create currently links to the counter.
     let linked: Bool
     /// Toggles the link on/off for this create.
     let onToggle: () -> Void
 
     var body: some View {
-        HStack(alignment: .top, spacing: 8) {
-            VStack(alignment: .leading, spacing: 3) {
-                Text(linked ? "Counts toward your \(counterName) counter" : "Won't count toward \(counterName)")
-                    .font(.risoHead(13, .bold))
-                    .foregroundStyle(Color.risoPaper)
-                Text(
-                    linked
-                        ? "\(lifetime.formatted()) all-time · this task keeps its own 0–\(formatCount(goal, kind: .discrete)) window"
-                        : "Creates a separate, unlinked counter."
-                )
-                .font(.risoBody(11, .semibold))
-                .foregroundStyle(Color.risoPaper.opacity(0.85))
-            }
+        HStack(alignment: .center, spacing: 8) {
+            // The kind tag beside the Goal carries the family's total
+            // (#548 rows 77/78) — the card shows only the counter + toggle.
+            Text(counterName)
+                .font(.risoHead(13, .bold))
+                .foregroundStyle(Color.risoPaper)
+                .lineLimit(1)
             Spacer(minLength: 0)
             // Outlined pill (not a filled RisoButton) — transparent fill,
             // risoPaper ring + text, matching web's `.hintPill` treatment
@@ -62,6 +50,7 @@ struct RisoCounterLinkHintView: View {
                     .overlay(Capsule().strokeBorder(Color.risoPaper, lineWidth: Riso.Keyline.container))
             }
             .buttonStyle(.plain)
+            .accessibilityLabel(linked ? "Don't link to \(counterName)" : "Link to \(counterName)")
         }
         .padding(10)
         .background(Color.risoBlue)

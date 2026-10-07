@@ -7,21 +7,36 @@ import SwiftUI
 /// EDIT editor (`RisoCompoundEditFieldsView`, under the quick-add row whose
 /// text is the action). Web twin: `CountingSubConfigRow`.
 struct RisoCountingSubConfigRow: View {
-    /// The Goal field's text (the counting child's `maxCount`).
+    /// The Goal field's text (the counting child's `maxCount`), parsed at the shown kind.
     @Binding var goal: String
     /// The Counting field's text (the counted noun, stored as `unit`).
     @Binding var unit: String
+    /// The new sub-task's kind (picked). Ignored while `linked` is set.
+    @Binding var kind: CountKind
+    /// Set while the sub-task auto-links: the family's kind tag replaces the
+    /// picker and the Goal follows the root's kind (D5).
+    var linked: LinkableCounterSuggestion? = nil
+
+    private var shownKind: CountKind { linked?.countKind ?? kind }
 
     var body: some View {
-        HStack(spacing: 10) {
-            VStack(alignment: .leading, spacing: 5) {
-                requiredLabel("Goal")
-                RisoNumberField(placeholder: "100", text: $goal)
-                    .frame(width: 70)
+        VStack(alignment: .leading, spacing: 6) {
+            if let linked {
+                KindTagView(kind: linked.countKind, counterName: linked.name, lifetime: linked.lifetime)
+            } else {
+                KindPickerView(selection: $kind, lock: .none)
             }
-            VStack(alignment: .leading, spacing: 5) {
-                requiredLabel("Counting")
-                RisoTextField(placeholder: "push-ups", text: $unit)
+            HStack(alignment: .top, spacing: 10) {
+                VStack(alignment: .leading, spacing: 5) {
+                    requiredLabel("Goal")
+                    GoalEntryView(kind: shownKind, text: $goal, placeholder: shownKind == .duration ? "0h 0m" : "100")
+                }
+                if countKindNeedsUnit(shownKind) {
+                    VStack(alignment: .leading, spacing: 5) {
+                        requiredLabel("Counting")
+                        RisoTextField(placeholder: "push-ups", text: $unit)
+                    }
+                }
             }
         }
     }

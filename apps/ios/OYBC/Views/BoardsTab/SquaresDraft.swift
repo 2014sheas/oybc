@@ -77,6 +77,11 @@ struct StagedTaskOverride {
     /// Compound rule + sub-task edits (a conversion into Compound, or an
     /// edited existing compound) — applied at Save by `applyStagedOverrides`.
     var compound: TaskEditPatch?
+    /// The kind the sheet chose for a Counting task (nil = not counting /
+    /// unchanged). A stored ROOT switches through the guard inside the Save
+    /// transaction (`applyStagedOverrides`); a pending task or a Simple →
+    /// Counting conversion takes it directly (`applyingOverride`).
+    var countKind: CountKind? = nil
 }
 
 // MARK: - EditModeTaskTarget

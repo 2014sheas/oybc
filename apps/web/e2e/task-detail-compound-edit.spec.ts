@@ -136,7 +136,7 @@ test.describe('Task Detail — compound editing', () => {
     await expect(sheet.getByLabel('Sub-task 2 title')).toHaveValue('Squats');
 
     // Normal on: no config row.
-    const goal = sheet.getByRole('spinbutton', { name: 'Goal*', exact: true });
+    const goal = sheet.getByRole('textbox', { name: 'Goal', exact: true });
     const unit = sheet.getByRole('textbox', { name: 'Counting*', exact: true });
     await expect(goal).toHaveCount(0);
     await sheet.getByRole('button', { name: 'Counting', exact: true }).click();

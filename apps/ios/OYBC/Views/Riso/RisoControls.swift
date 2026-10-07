@@ -204,6 +204,10 @@ struct RisoSegmented<T: Hashable>: View {
     var selectedFill: (T) -> Color = { _ in .risoBlue }
     var style: RisoSegmentedStyle = .card
     var size: RisoSegmentedSize = .regular
+    /// `.card` only: values that ignore taps — 45% opacity, lock glyph per
+    /// `lockGlyphValues` (counter-kind picker, docs/COUNTER_KINDS.md §5).
+    var lockedValues: Set<T> = []
+    var lockGlyphValues: Set<T> = []
 
     var body: some View {
         switch style {
@@ -219,26 +223,37 @@ struct RisoSegmented<T: Hashable>: View {
     private var cardBody: some View {
         HStack(spacing: 6) {
             ForEach(options, id: \.value) { opt in
-                Button { selection = opt.value } label: {
-                    Text(opt.label)
-                        .font(.risoHead(13, .bold))
-                        // Only constrain in sizes-to-content mode; `nil` (the
-                        // default) leaves the equal-width path unchanged.
-                        .lineLimit(equalWidth ? nil : 1)
-                        .foregroundStyle(selection == opt.value ? Color.risoPaper : Color.risoInk)
-                        .frame(maxWidth: equalWidth ? .infinity : nil)
-                        .padding(.vertical, 10)
-                        .padding(.horizontal, equalWidth ? 0 : 14)
-                        .background(
-                            RoundedRectangle(cornerRadius: Riso.cardRadius)
-                                .fill(selection == opt.value ? selectedFill(opt.value) : Color.risoPaper2)
-                        )
-                        .overlay(
-                            RoundedRectangle(cornerRadius: Riso.cardRadius)
-                                .strokeBorder(Color.risoInk, lineWidth: Riso.Keyline.container)
-                        )
+                let locked = lockedValues.contains(opt.value)
+                Button { if !locked { selection = opt.value } } label: {
+                    HStack(spacing: 5) {
+                        Text(opt.label)
+                            .font(.risoHead(13, .bold))
+                            // Only constrain in sizes-to-content mode; `nil` (the
+                            // default) leaves the equal-width path unchanged.
+                            .lineLimit(equalWidth ? nil : 1)
+                        if lockGlyphValues.contains(opt.value) {
+                            Image(systemName: "lock.fill").font(.system(size: 10, weight: .bold))
+                        }
+                    }
+                    .foregroundStyle(selection == opt.value ? Color.risoPaper : Color.risoInk)
+                    .frame(maxWidth: equalWidth ? .infinity : nil)
+                    .padding(.vertical, 10)
+                    .padding(.horizontal, equalWidth ? 0 : 14)
+                    .background(
+                        RoundedRectangle(cornerRadius: Riso.cardRadius)
+                            .fill(selection == opt.value ? selectedFill(opt.value) : Color.risoPaper2)
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: Riso.cardRadius)
+                            .strokeBorder(Color.risoInk, lineWidth: Riso.Keyline.container)
+                    )
+                    .opacity(locked && selection != opt.value ? 0.45 : 1)
                 }
                 .buttonStyle(.plain)
+                .allowsHitTesting(!locked)
+                .accessibilityAddTraits(locked ? [.isStaticText] : [])
+                // A locked segment isn't actionable — don't announce it as a button.
+                .accessibilityRemoveTraits(locked ? [.isButton] : [])
             }
         }
     }
@@ -361,17 +376,22 @@ struct RisoTextField: View {
 }
 
 /// Riso-styled number-pad text field. Same visual as `RisoTextField`
-/// with `.numberPad` keyboard type.
+/// with `.numberPad` keyboard type (or the `keyboard` given).
 ///
 /// Matches the `risoNumberInput` private helper in `RisoSpecialTaskPanel`.
 struct RisoNumberField: View {
     let placeholder: String
     @Binding var text: String
+    /// `.numberPad` (default — every pre-kind caller) or `.decimalPad` for
+    /// Continuous (`GoalEntryModel.keyboard(for:)`).
+    var keyboard: UIKeyboardType = .numberPad
+    /// Red keyline for an unparseable entry (web `GoalEntry`'s `.invalid`).
+    var invalid: Bool = false
 
     var body: some View {
         TextField(placeholder, text: $text)
-            .keyboardType(.numberPad)
-            .fieldStyle()
+            .keyboardType(keyboard)
+            .fieldStyle(invalid: invalid)
     }
 }
 
@@ -396,8 +416,8 @@ struct RisoSecureField: View {
 
 private extension View {
     /// Shared padding/font/background/keyline used by `RisoTextField`
-    /// and `RisoNumberField`.
-    func fieldStyle() -> some View {
+    /// and `RisoNumberField`. `invalid` draws the keyline red.
+    func fieldStyle(invalid: Bool = false) -> some View {
         self
             .font(.risoHead(14, .bold))
             .foregroundStyle(Color.risoInk)
@@ -408,7 +428,7 @@ private extension View {
             .clipShape(RoundedRectangle(cornerRadius: Riso.cardRadius))
             .overlay(
                 RoundedRectangle(cornerRadius: Riso.cardRadius)
-                    .strokeBorder(Color.risoInk, lineWidth: Riso.Keyline.container)
+                    .strokeBorder(invalid ? Color.risoRed : Color.risoInk, lineWidth: Riso.Keyline.container)
             )
     }
 }

@@ -47,7 +47,20 @@ export function CountersHubPage(): React.ReactElement {
   const { user } = useAuth();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
-  const showExpired = searchParams.get('showExpired') === '1';
+  const urlShowExpired = searchParams.get('showExpired') === '1';
+  // The checkbox reads a LOCAL mirror of the URL value, set in the same event
+  // as the click. React Router 7 commits `setSearchParams` inside a
+  // `startTransition`, so a checkbox controlled straight off the URL snaps
+  // back unchecked for a frame or more after the click (React restores a
+  // controlled input synchronously; the transition lands later) — a visible
+  // flicker, and a flaky `check()` in e2e/member-rules.spec.ts. The mirror
+  // still follows the URL when it changes from elsewhere (Back, a link).
+  const [showExpired, setShowExpired] = useState(urlShowExpired);
+  const [mirroredUrlValue, setMirroredUrlValue] = useState(urlShowExpired);
+  if (urlShowExpired !== mirroredUrlValue) {
+    setMirroredUrlValue(urlShowExpired);
+    setShowExpired(urlShowExpired);
+  }
   const groups = useSharedCounterGroups(user?.id, { showExpired });
   const tasks = useTasks(user?.id) ?? [];
   const [sheetOpen, setSheetOpen] = useState(false);
@@ -60,6 +73,7 @@ export function CountersHubPage(): React.ReactElement {
   const [writeError, setWriteError] = useState<string | null>(null);
 
   function handleShowExpiredChange(next: boolean): void {
+    setShowExpired(next);
     const params = new URLSearchParams(searchParams);
     if (next) params.set('showExpired', '1');
     else params.delete('showExpired');

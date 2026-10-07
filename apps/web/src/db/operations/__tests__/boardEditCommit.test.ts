@@ -404,7 +404,7 @@ describe('commitSquareEdits — type switches and compound overrides', () => {
     // Done regenerates from the edited goal (the "Reads as" preview).
     const override = buildSheetOverride({
       original: stored, selected: TaskType.COUNTING, title: seedSheetTitle(stored),
-      action: 'Run', goalStr: '8', unit: 'km', compoundDraft: null,
+      action: 'Run', goalStr: '8', unit: 'km', countKind: 'discrete', compoundDraft: null,
     });
     await commitSquareEdits(
       baseInput({
@@ -422,7 +422,7 @@ describe('commitSquareEdits — type switches and compound overrides', () => {
     await seedPlaced(stored);
     const override = buildSheetOverride({
       original: stored, selected: TaskType.COUNTING, title: seedSheetTitle(stored),
-      action: 'Run', goalStr: '8', unit: 'km', compoundDraft: null,
+      action: 'Run', goalStr: '8', unit: 'km', countKind: 'discrete', compoundDraft: null,
     });
     await commitSquareEdits(
       baseInput({

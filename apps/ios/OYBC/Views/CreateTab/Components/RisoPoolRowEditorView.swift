@@ -12,9 +12,9 @@ import SwiftUI
 /// parent's `stagedEdits`).
 struct RisoPoolRowEditorView: View {
 
-    /// The task being edited (the compound link guard's `parentId`).
-    let taskId: String
-    let taskType: TaskType
+    /// The row's stored task (its id guards compound links; its kind / link drive the Kind row).
+    let task: Task
+    var database: AppDatabase = .shared
     @Binding var draft: TaskEditPatch
     /// Compound only — browsable library tasks the sub-task quick-add row matches against.
     let libraryTasks: [Task]
@@ -24,6 +24,10 @@ struct RisoPoolRowEditorView: View {
     let onDiscard: () -> Void
 
     @FocusState private var titleFocused: Bool
+    @State private var pendingSwitch: KindSwitchPreview?
+
+    private var taskId: String { task.id }
+    private var taskType: TaskType { task.type }
 
     private var validationMessage: String? { draft.validate(type: taskType) }
     private var isBlocked: Bool { validationMessage != nil }
@@ -101,15 +105,28 @@ struct RisoPoolRowEditorView: View {
 
     private var countingFields: some View {
         VStack(alignment: .leading, spacing: 7) {
+            labeledField("Kind", flex: true) {
+                if task.sharedCounterId != nil {
+                    KindTagView(linkedTask: task, root: database.linkedCounterRoot(of: task))
+                } else {
+                    KindPickerView(
+                        selection: $draft.countKind,
+                        lock: kindPickerLock(mode: .edit, kind: resolveCountKind(task.countKind)),
+                        onRequest: requestKind
+                    )
+                }
+            }
             HStack(alignment: .top, spacing: 8) {
                 labeledField("Action", flex: true) {
                     RisoTextField(placeholder: "e.g. Run", text: $draft.action)
                 }
-                labeledField("Goal", width: 64) {
-                    RisoNumberField(placeholder: "5", text: $draft.goal)
+                labeledField("Goal", width: 84) {
+                    GoalEntryView(kind: draft.countKind, text: $draft.goal, placeholder: "5")
                 }
-                labeledField("Unit", flex: true) {
-                    RisoTextField(placeholder: "km", text: $draft.unit)
+                if countKindNeedsUnit(draft.countKind) {
+                    labeledField("Unit", flex: true) {
+                        RisoTextField(placeholder: "km", text: $draft.unit)
+                    }
                 }
             }
             if let preview = draft.countingPreview {
@@ -131,18 +148,37 @@ struct RisoPoolRowEditorView: View {
                     .foregroundStyle(Color.risoInk))
             }
         }
+        .kindSwitchConfirm(pending: $pendingSwitch) { p in
+            draft.goal = KindSwitchCopy.switchedGoalText(draft.goal, from: p.from, to: p.to)
+            draft.countKind = p.to
+        }
+    }
+
+    /// Continuous → Discrete opens the confirm (previewing the DRAFT — title /
+    /// goal typed in this editor); any other permitted change applies at once.
+    private func requestKind(_ next: CountKind) {
+        guard KindSwitchCopy.needsConfirm(from: draft.countKind, to: next) else { draft.countKind = next; return }
+        var subject = task
+        subject.title = draft.title.isEmpty ? task.title : draft.title
+        subject.action = draft.action
+        subject.unit = draft.unit
+        subject.countKind = draft.countKind
+        if let goal = parseCountInput(draft.goal, kind: draft.countKind) { subject.maxCount = goal }
+        let linked = (try? database.previewCounterKindSwitch(rootTaskId: task.id, to: next))?.linkedCount ?? 0
+        pendingSwitch = KindSwitchPreview.planned(task: subject, to: next, linkedCount: linked)
     }
 
     /// Live "Title: {derived title}" preview for the counting editor —
-    /// blank until Action/Unit are non-empty and Goal is a valid positive
-    /// integer (mirrors `RisoSpecialTaskPanel.countingTitle` /
-    /// `RisoCompoundFieldsView.subCountingTitle`).
+    /// blank until Action (and Unit, where the kind has one) are non-empty and
+    /// Goal parses at the draft kind (mirrors `RisoSpecialTaskPanel.countingTitle`).
     private var countingDerivedTitle: String {
         let a = draft.action.trimmingCharacters(in: .whitespacesAndNewlines)
-        let g = draft.goal.trimmingCharacters(in: .whitespacesAndNewlines)
         let u = draft.unit.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !a.isEmpty, !u.isEmpty, let goal = Int(g).map(CountValue.init), goal > 0 else { return "" }
-        return TaskTitle.generateCounterTaskTitle(action: a, maxCount: goal, unit: u)
+        guard !a.isEmpty, !(countKindNeedsUnit(draft.countKind) && u.isEmpty),
+              let goal = parseCountInput(draft.goal, kind: draft.countKind), goal > 0 else { return "" }
+        return TaskTitle.generateCounterTaskTitle(
+            action: a, maxCount: goal, unit: countKindNeedsUnit(draft.countKind) ? u : "", countKind: draft.countKind
+        )
     }
 
     /// Kicker label above a field. `flex` fields expand; `width` pins a fixed

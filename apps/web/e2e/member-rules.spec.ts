@@ -211,6 +211,45 @@ test.describe('Wizard member rules — the expanded source panel', () => {
     await expect(memberRow.getByText('3–8 miles')).toBeVisible();
   });
 
+  test('a Continuous member steps its target in tenths and ranges at one decimal', async ({ page }) => {
+    // Replace the last filler square with a Continuous counter (same id → `put` overwrites).
+    const RUN_ID = '70000000-0000-0000-0000-000000000060';
+    await seedTask(page, {
+      id: RUN_ID,
+      title: 'Run 26.2 miles',
+      type: 'counting',
+      action: 'Run',
+      unit: 'miles',
+      maxCount: 26.2,
+      countKind: 'continuous',
+    });
+    await seedBoardTask(page, {
+      id: `${SOURCE_BOARD_ID}-bt-7`,
+      boardId: SOURCE_BOARD_ID,
+      taskId: RUN_ID,
+      row: 2,
+      col: 1,
+    });
+    await openTasksStep(page);
+    await pullSourceBoard(page);
+    await page.getByRole('button', { name: /^Last Week Board, 8 not done/ }).click();
+    const memberRow = page.getByTestId('member-row').filter({ hasText: 'Run 26.2 miles' });
+    await memberRow.getByTestId('member-disclosure').click();
+
+    // Weekly source → daily board: ceil(26.2 / 7, 0.1) = 3.8; the goal prints as 26.2.
+    const field = memberRow.getByRole('textbox', { name: 'Target', exact: true });
+    await expect(field).toHaveValue('3.8');
+    await expect(memberRow.getByTestId('stepper-suffix')).toHaveText('/ 26.2 miles');
+
+    // ＋ moves one tenth: 3.9.
+    await memberRow.getByRole('button', { name: 'Increase target' }).click();
+    await expect(field).toHaveValue('3.9');
+
+    // A little (±20 % of 3.9 → 3.12 / 4.68 → 3.1 / 4.7), both ends at one decimal.
+    await memberRow.getByRole('button', { name: /^Vary: / }).click();
+    await expect(memberRow.getByText('3.1–4.7 miles')).toBeVisible();
+  });
+
   test('a board source the prefill seeded removes with NO confirm — a seeded target is not configuration', async ({
     page,
   }) => {
@@ -688,6 +727,29 @@ test.describe('Counters hub — expired derived counters', () => {
     // The setting lives in the URL, so Detail opens with it rather than
     // silently resetting.
     await expect(page).toHaveURL(/showExpired=1/);
+
+    // The box holds its new state the moment it is clicked. React Router 7
+    // commits `setSearchParams` in a transition, so a checkbox controlled
+    // straight off the URL snapped back unchecked for a frame or more — the
+    // flaky `check()` above (4/10 red on dev 2764c8e5). Read `checked` one
+    // macrotask after each of several clicks, which is before that
+    // transition lands.
+    const states = await page.evaluate(async () => {
+      const input = document.querySelector<HTMLInputElement>(
+        'input[type="checkbox"]',
+      );
+      if (!input) return ['missing'];
+      const seen: string[] = [];
+      for (let i = 0; i < 6; i += 1) {
+        const want = !input.checked;
+        input.click();
+        await new Promise((r) => setTimeout(r, 0));
+        seen.push(input.checked === want ? 'ok' : `stale@${i}`);
+        await new Promise((r) => setTimeout(r, 400));
+      }
+      return seen;
+    });
+    expect(states).toEqual(['ok', 'ok', 'ok', 'ok', 'ok', 'ok']);
   });
 });
 

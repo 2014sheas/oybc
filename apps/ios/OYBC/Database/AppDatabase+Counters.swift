@@ -30,6 +30,7 @@ extension AppDatabase {
     ///   - action: Action verb (trimmed; must be non-blank after trimming).
     ///   - unit: Unit of measurement (trimmed; must be non-blank after trimming).
     ///   - startingCount: Optional non-negative starting count (defaults to 0).
+    ///   - countKind: The counter's kind, written explicitly (default `.discrete`); whole-number kinds refuse a fractional seed.
     ///   - now: ISO8601 write timestamp.
     /// - Returns: The newly created counter Task.
     /// - Throws: `AppDatabaseError.invalidCounterInput` if `action`/`unit`
@@ -40,6 +41,7 @@ extension AppDatabase {
         action: String,
         unit: String,
         startingCount: CountValue?,
+        countKind: CountKind = .discrete,
         now: String
     ) throws -> Task {
         let trimmedAction = action.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -50,9 +52,9 @@ extension AppDatabase {
                 "createCounterTask: action and unit are required"
             )
         }
-        guard count >= 0 else {
+        guard count >= 0, isQuantizedCount(count), !isWholeCountKind(countKind) || count.rounded() == count else {
             throw AppDatabaseError.invalidCounterInput(
-                "createCounterTask: startingCount must be a non-negative integer"
+                "createCounterTask: startingCount must be a non-negative count at the counter kind"
             )
         }
 
@@ -72,7 +74,8 @@ extension AppDatabase {
             updatedAt: now,
             version: 1,
             isDeleted: false,
-            isCounter: true
+            isCounter: true,
+            countKind: countKind
         )
 
         try write { db in

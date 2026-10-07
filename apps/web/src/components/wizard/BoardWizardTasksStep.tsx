@@ -489,9 +489,9 @@ export function BoardWizardTasksStep({
   // read yet — capacity is artificially 0 until they resolve.
   const isCountSatisfied = suppliesPending || capacity >= tasksRequired;
 
-  // Counter-family exclusivity (2026-09-08) — collisions visible in the
-  // wizard pool, for the "shares a counter with 'X' · one per board" row
-  // hints. Computed over the staged-overlaid task map so renames show.
+  // Counter-family exclusivity — collisions among the wizard pool's members,
+  // announced to assistive tech only (no visible caption, #548). Computed
+  // over the staged-overlaid task map so renames show.
   const counterClashByTaskId = useMemo<Map<string, string>>(() => {
     const famMap = buildCounterFamilyMap(Object.values(effectiveTaskMap));
     return computeCounterClashes(selectedTaskIds, famMap, effectiveTaskMap);
@@ -730,19 +730,16 @@ export function BoardWizardTasksStep({
         editor={(task) =>
           editDraft && (
             <PoolRowEditor
-              taskId={task.id}
-              taskType={task.type}
+              task={task}
               draft={editDraft}
               onDraftChange={setEditDraft}
               onSave={() => saveEdit(task.id)}
               onDiscard={() => discardEdit(task.id)}
-              usedOnBoardCount={taskBoardCounts[task.id] ?? 0}
               libraryTasks={pickerLibraryTasks}
               allLinks={pickerLinks}
             />
           )
         }
-        counterClashByTaskId={counterClashByTaskId}
         manualTaskVary={manualTaskVary}
         onSetManualVary={onSetManualVary}
         countOverride={capacity}

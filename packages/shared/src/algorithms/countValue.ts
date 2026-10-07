@@ -112,6 +112,55 @@ export function formatCountForInput(value: number, kind: CountKind): string {
 }
 
 /**
+ * A LIFETIME total (hub, Profile, Counter Detail hero, link hints): like
+ * {@link formatCount} but with thousands grouping (R7 — the pre-feature
+ * `toLocaleString()` / `.formatted()` sites grouped). Duration is unchanged.
+ *
+ * @param value - The total (minutes for duration).
+ * @param kind - The counter's kind.
+ * @param locale - Optional BCP 47 locale.
+ * @returns "1,240", "148.6", "112h 15m".
+ */
+export function formatCountTotal(value: number, kind: CountKind, locale?: string): string {
+  if (kind === 'duration') return formatCount(value, kind, locale);
+  const v = kind === 'continuous' ? quantizeCount(value) : Math.floor(quantizeCount(value) + 0.5);
+  return new Intl.NumberFormat(locale, {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: kind === 'continuous' ? 2 : 0,
+    useGrouping: true,
+    numberingSystem: 'latn',
+  }).format(v);
+}
+
+function fractionDigits(value: number): number {
+  const s = formatCountForInput(value, 'continuous');
+  const dot = s.indexOf('.');
+  return dot < 0 ? 0 : s.length - dot - 1;
+}
+
+/**
+ * An inclusive range "lo–hi" (en dash). Continuous renders both ends at the
+ * more precise end's precision ("21.0–31.4"); other kinds format each end.
+ *
+ * @param lo - Lower bound.
+ * @param hi - Upper bound.
+ * @param kind - The counter's kind.
+ * @param locale - Optional BCP 47 locale.
+ * @returns The range text.
+ */
+export function formatCountRange(lo: number, hi: number, kind: CountKind, locale?: string): string {
+  if (kind !== 'continuous') return `${formatCount(lo, kind, locale)}–${formatCount(hi, kind, locale)}`;
+  const digits = Math.max(fractionDigits(lo), fractionDigits(hi));
+  const fmt = new Intl.NumberFormat(locale, {
+    minimumFractionDigits: digits,
+    maximumFractionDigits: 2,
+    useGrouping: false,
+    numberingSystem: 'latn',
+  });
+  return `${fmt.format(quantizeCount(lo))}–${fmt.format(quantizeCount(hi))}`;
+}
+
+/**
  * Whether a counter may change kind (D4): discrete ⇄ continuous only.
  *
  * @param from - Current kind.

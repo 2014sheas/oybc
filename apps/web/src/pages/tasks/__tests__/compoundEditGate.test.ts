@@ -12,7 +12,7 @@ import { emptyPatch, newChildPatch, type ChildPatch, type TaskEditPatch } from '
  */
 
 function child(id: string, title: string): ChildPatch {
-  return { id, childTaskId: id, title, isCounting: false, childType: TaskType.NORMAL, action: '', goal: '', unit: '', markedDeleted: false };
+  return { id, childTaskId: id, title, isCounting: false, childType: TaskType.NORMAL, action: '', goal: '', unit: '', countKind: 'discrete', markedDeleted: false };
 }
 
 const ONE_CHILD: TaskEditPatch = {

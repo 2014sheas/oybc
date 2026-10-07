@@ -24,7 +24,9 @@ extension BoardPlayViewModel {
             guard let t = map[taskId] else { continue }
             // The SAME rule the Save commits (type switch only Simple ⇄
             // Counting), so the staged grid never shows what Save won't write.
-            map[taskId] = Self.applyingOverride(override, to: t)
+            // The staged kind shows too (Save applies it through the switch),
+            // so a reopened sheet seeds the staged kind, not the stored one.
+            map[taskId] = Self.applyingOverride(override, to: t, writesKind: true)
         }
         return map
     }

@@ -31,6 +31,7 @@ struct RisoCompoundFieldsView: View {
         var newSubType: NewSubType = .normal
         var subGoalText: String = ""
         var subUnitText: String = ""
+        var subKind: CountKind = .discrete
         /// Pre-seeds the counter-link hint state directly, bypassing the
         /// `.onChange` recompute (which doesn't fire from a seeded initial
         /// value) — lets snapshot tests render `RisoCounterLinkHintView` in
@@ -96,18 +97,18 @@ struct RisoCompoundFieldsView: View {
     @State private var newSubType: NewSubType
     @State private var subGoalText: String
     @State private var subUnitText: String
+    /// The new counting sub's picked kind (a linked sub follows its root's).
+    @State private var subKind: CountKind = .discrete
 
     /// Controls visibility of the smart-autocomplete dropdown below the sub input.
     @State private var subAutocompleteVisible: Bool = false
 
-    // Counter-link suggestion state for the new-counting-sub fields (R1
-    // counters refresh — auto-link default ON). Mirrors
-    // `RisoSpecialTaskPanel`'s `linkSuggestion` / `linkDisabled` so inline
-    // compound children are born linked exactly like standalone counting
-    // tasks. `subInputText` doubles as the sub's verb when `newSubType ==
-    // .counting`.
-    @State private var subLinkSuggestion: LinkableCounterSuggestion? = nil
-    @State private var subLinkDisabled: Bool = false
+    // Counter-link state for the new-counting-sub fields (R1 counters
+    // refresh — auto-link default ON). Same `CounterLinkState` as
+    // `RisoSpecialTaskPanel` so inline compound children are born linked
+    // exactly like standalone counting tasks. `subInputText` doubles as the
+    // sub's verb when `newSubType == .counting`.
+    @State private var subLink = CounterLinkState()
 
     /// Owned form VM — reset on each successful submit.
     @State private var form = CreateFormViewModel()
@@ -191,8 +192,9 @@ struct RisoCompoundFieldsView: View {
         _newSubType       = State(initialValue: seed.newSubType)
         _subGoalText      = State(initialValue: seed.subGoalText)
         _subUnitText      = State(initialValue: seed.subUnitText)
-        _subLinkSuggestion = State(initialValue: seed.subLinkSuggestion)
-        _subLinkDisabled  = State(initialValue: seed.subLinkDisabled)
+        _subKind          = State(initialValue: seed.subKind)
+        _subLink          = State(initialValue: CounterLinkState(
+            suggestion: seed.subLinkSuggestion, linkDisabled: seed.subLinkDisabled))
     }
 
     // MARK: - Derived properties
@@ -204,31 +206,40 @@ struct RisoCompoundFieldsView: View {
     /// fallback text.
     private var subCountingTitle: String {
         let a = subInputText.trimmingCharacters(in: .whitespacesAndNewlines)
-        let g = subGoalText.trimmingCharacters(in: .whitespacesAndNewlines)
         let u = subUnitText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !a.isEmpty, !u.isEmpty, let goal = Int(g).map(CountValue.init), goal > 0 else { return "" }
-        return TaskTitle.generateCounterTaskTitle(action: a, maxCount: goal, unit: u)
+        guard !a.isEmpty, !countKindNeedsUnit(subEffectiveKind) || !u.isEmpty,
+              let goal = subCountingGoal else { return "" }
+        return TaskTitle.generateCounterTaskTitle(
+            action: a, maxCount: goal, unit: countKindNeedsUnit(subEffectiveKind) ? u : "",
+            countKind: subEffectiveKind
+        )
     }
 
-    /// The typed sub goal as a positive Int, or nil when blank/invalid.
-    /// Gates `subCounterLinkBanner` — mirrors `RisoSpecialTaskPanel`'s
-    /// `countingGoal` (the hint only shows once a valid goal exists).
+    /// The matched counter while the new counting sub auto-links; nil once
+    /// the user opts out (Duration never matches).
+    private var linkedSubSuggestion: LinkableCounterSuggestion? { subLink.linked }
+
+    /// The kind the new sub is validated, previewed and saved at: an
+    /// auto-linking sub takes its root's kind (D5 / R19), otherwise the picker.
+    private var subEffectiveKind: CountKind { subLink.effectiveKind(picker: subKind) }
+
+    /// The typed sub goal parsed at the effective kind, or nil when
+    /// blank/invalid — mirrors `RisoSpecialTaskPanel`'s `countingGoal`.
     private var subCountingGoal: CountValue? {
-        guard let g = Int(subGoalText.trimmingCharacters(in: .whitespacesAndNewlines)), g > 0 else { return nil }
-        return CountValue(g)
+        parseCountInput(subGoalText, kind: subEffectiveKind)
     }
 
     /// Gates the sub "Add" button and `addNewSub()`. A Normal sub needs only
     /// its title; a Counting sub additionally needs a valid positive Goal and
-    /// a non-blank Counting noun — mirroring `RisoSpecialTaskPanel`'s
-    /// `canSubmitCounting` and web's `evaluateSubtaskReadiness`, so an
-    /// untouched Goal (blank since R1 removed the "5" pre-fill) can never
-    /// silently produce a `maxCount = 1` / "reps" child.
+    /// (unless Duration) a non-blank Counting noun — mirroring
+    /// `RisoSpecialTaskPanel`'s `canSubmitCounting` and web's
+    /// `evaluateSubtaskReadiness`.
     private var canAddSub: Bool {
         guard !subInputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return false }
         guard newSubType == .counting else { return true }
         return subCountingGoal != nil
-            && !subUnitText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && (!countKindNeedsUnit(subEffectiveKind)
+                || !subUnitText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
     }
 
     /// Gates the "Add to board ✦" button — title must be non-empty and at
@@ -367,8 +378,12 @@ struct RisoCompoundFieldsView: View {
             if newSubType == .counting {
                 VStack(alignment: .leading, spacing: 5) {
                     // Shared with the compound edit editor's new-sub config.
-                    RisoCountingSubConfigRow(goal: $subGoalText, unit: $subUnitText)
+                    RisoCountingSubConfigRow(goal: $subGoalText, unit: $subUnitText, kind: $subKind, linked: linkedSubSuggestion)
                         .onChange(of: subUnitText) { _, _ in updateSubLinkSuggestion() }
+                        .onChange(of: subKind) { _, _ in
+                            subLink.kindChanged(action: subInputText, unit: subUnitText, kind: subKind,
+                                                tasks: suggestionPool ?? taskLibrary)
+                        }
 
                     if !subCountingTitle.isEmpty {
                         (Text("Title: ")
@@ -533,38 +548,33 @@ struct RisoCompoundFieldsView: View {
 
     // MARK: - Counter-link hint (new counting sub)
 
-    /// Hint shown below the new-counting-sub fields when an existing
-    /// counter matches the typed (verb, noun) pair AND a valid goal is
-    /// entered. R1 counters refresh: linking is ON by default; "Don't
+    /// Hint shown below the new-counting-sub fields whenever an existing
+    /// counter matches the typed (verb, noun) pair — independent of the goal.
+    /// R1 counters refresh: linking is ON by default; "Don't
     /// link" opts out for this sub (mirrors `RisoSpecialTaskPanel`'s
     /// `counterLinkBanner`, factored into the shared `RisoCounterLinkHintView`).
     @ViewBuilder
     private var subCounterLinkBanner: some View {
-        if let suggestion = subLinkSuggestion, let goal = subCountingGoal {
+        if let suggestion = subLink.hint {
             RisoCounterLinkHintView(
                 counterName: suggestion.name,
-                lifetime: suggestion.lifetime,
-                goal: goal,
-                linked: !subLinkDisabled,
-                onToggle: { subLinkDisabled.toggle() }
+                linked: !subLink.linkDisabled,
+                onToggle: { subLink.linkDisabled.toggle() }
             )
         }
     }
 
     /// Recomputes the sub's link suggestion whenever the typed (verb, noun)
-    /// pair changes. Resets the opt-out flag so an edited pair re-offers
-    /// linking by default (web parity).
+    /// pair or the sub type changes. Resets the opt-out flag so an edited
+    /// pair re-offers linking by default (web parity); a kind change goes
+    /// through `subLink.kindChanged` instead, which keeps the opt-out.
     private func updateSubLinkSuggestion() {
         guard newSubType == .counting else {
-            subLinkSuggestion = nil
+            subLink = CounterLinkState()
             return
         }
-        subLinkSuggestion = findLinkableCounter(
-            action: subInputText,
-            unit: subUnitText,
-            tasks: suggestionPool ?? taskLibrary
-        )
-        subLinkDisabled = false
+        subLink.pairChanged(action: subInputText, unit: subUnitText, kind: subKind,
+                            tasks: suggestionPool ?? taskLibrary)
     }
 
     // MARK: - Sub-add action
@@ -583,16 +593,18 @@ struct RisoCompoundFieldsView: View {
             // `canAddSub` guarantees a valid positive goal and non-blank unit
             // for a counting sub — no silent `?? 1` / "reps" fallbacks.
             guard let goal = subCountingGoal else { return }
-            let unit = subUnitText.trimmingCharacters(in: .whitespacesAndNewlines)
+            let kind = subEffectiveKind
+            let unit = countKindNeedsUnit(kind) ? subUnitText.trimmingCharacters(in: .whitespacesAndNewlines) : ""
             // R1: auto-link default ON — apply the suggestion unless opted
             // out via "Don't link". Baseline is always "start fresh".
-            let linked = subLinkSuggestion != nil && !subLinkDisabled
+            let linked = subLink.linked
             sub = .newCounting(
                 action: text,
                 goal: goal,
                 unit: unit,
-                sharedCounterId: linked ? subLinkSuggestion?.counterId : nil,
-                baseline: linked ? subLinkSuggestion?.lifetime : nil
+                sharedCounterId: linked?.counterId,
+                baseline: linked?.lifetime,
+                countKind: kind
             )
         }
 
@@ -602,9 +614,9 @@ struct RisoCompoundFieldsView: View {
         // Reset counting sub fields after each add
         subGoalText = ""
         subUnitText = ""
+        subKind = .discrete
         newSubType = .normal
-        subLinkSuggestion = nil
-        subLinkDisabled = false
+        subLink = CounterLinkState()
     }
 
     // MARK: - Submit
@@ -655,9 +667,9 @@ struct RisoCompoundFieldsView: View {
         newSubType        = .normal
         subGoalText       = ""
         subUnitText       = ""
+        subKind           = .discrete
         subAutocompleteVisible = false
-        subLinkSuggestion = nil
-        subLinkDisabled   = false
+        subLink           = CounterLinkState()
     }
 
     // MARK: - Field helpers

@@ -26,7 +26,7 @@ import { TaskType } from '../constants/enums';
 import type { BoardSource, BoardSourceMemberRule, BoardSourcePartRule, VaryLevel } from '../types/boardSource';
 import type { Pool } from '../types/pool';
 import type { Task } from '../types/task';
-import { floorToCountStep, countTargetStep, formatCount, isWholeCountKind, quantizeCount, resolveCountKind } from './countValue';
+import { floorToCountStep, countTargetStep, formatCount, formatCountRange, isWholeCountKind, quantizeCount, resolveCountKind } from './countValue';
 import type { CountKind } from './countValue';
 import { autoTarget, nominalWindowDays, varyRange } from './memberRules';
 import type { BoardWindow, PlanMode } from './memberRules';
@@ -124,7 +124,7 @@ export function varyRangeLabel(
   const [lo, hi] = varyRange(t, level, goal, kind);
   const suffix = unit ? ` ${unit}` : '';
   const a = formatCount(lo, kind);
-  return lo === hi ? `${a}${suffix}` : `${a}–${formatCount(hi, kind)}${suffix}`;
+  return lo === hi ? `${a}${suffix}` : `${formatCountRange(lo, hi, kind)}${suffix}`;
 }
 
 /**

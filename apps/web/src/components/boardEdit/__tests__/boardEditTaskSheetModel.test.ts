@@ -28,7 +28,7 @@ function input(over: Partial<SheetInput> = {}): SheetInput {
   const original = over.original ?? task();
   return {
     original, selected: original.type, title: original.title,
-    action: '', goalStr: '', unit: '', compoundDraft: null,
+    action: '', goalStr: '', unit: '', countKind: 'discrete', compoundDraft: null,
     ...over,
   };
 }

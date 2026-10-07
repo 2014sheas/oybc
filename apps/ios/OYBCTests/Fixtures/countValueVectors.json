@@ -73,5 +73,20 @@
     { "name": "continuous exact tenth 6.2 stays", "x": 6.2, "kind": "continuous", "expected": 6.2 },
     { "name": "discrete 26.29 floors to 26", "x": 26.29, "kind": "discrete", "expected": 26 },
     { "name": "duration 140.9 floors to 140", "x": 140.9, "kind": "duration", "expected": 140 }
+  ],
+  "formatTotal": [
+    { "name": "discrete grouped", "value": 1240, "kind": "discrete", "locale": "en-US", "expected": "1,240" },
+    { "name": "continuous grouped", "value": 1250.5, "kind": "continuous", "locale": "en-US", "expected": "1,250.5" },
+    { "name": "continuous small", "value": 148.6, "kind": "continuous", "locale": "en-US", "expected": "148.6" },
+    { "name": "continuous de-DE", "value": 1250.5, "kind": "continuous", "locale": "de-DE", "expected": "1.250,5" },
+    { "name": "duration ungrouped", "value": 6735, "kind": "duration", "locale": "en-US", "expected": "112h 15m" }
+  ],
+  "formatRange": [
+    { "name": "continuous pads the coarser end", "lo": 21, "hi": 31.4, "kind": "continuous", "locale": "en-US", "expected": "21.0–31.4" },
+    { "name": "continuous two places wins", "lo": 4.9, "hi": 7.35, "kind": "continuous", "locale": "en-US", "expected": "4.90–7.35" },
+    { "name": "continuous whole ends", "lo": 8, "hi": 12, "kind": "continuous", "locale": "en-US", "expected": "8–12" },
+    { "name": "continuous comma locale", "lo": 21, "hi": 31.4, "kind": "continuous", "locale": "de-DE", "expected": "21,0–31,4" },
+    { "name": "duration whole minutes", "lo": 504, "hi": 756, "kind": "duration", "locale": "en-US", "expected": "8h 24m–12h 36m" },
+    { "name": "discrete", "lo": 24, "hi": 36, "kind": "discrete", "locale": "en-US", "expected": "24–36" }
   ]
 }

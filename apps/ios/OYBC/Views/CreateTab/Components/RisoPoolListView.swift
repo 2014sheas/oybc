@@ -68,10 +68,6 @@ struct RisoPoolListView: View {
     /// rows inside the same "On your board" section (the step passes a
     /// `ForEach` of `RisoSourceRowView`s). nil ⇒ task rows only.
     var leadingRows: AnyView? = nil
-    /// Counter-family exclusivity (2026-09-08) — task id → the OTHER
-    /// family member's title, for tasks whose shared-counter family has
-    /// ≥2 members in the pool ("one per board" hint).
-    var counterClashByTaskId: [String: String] = [:]
 
     /// §Member rules (B3) — dice level per HAND-ADDED counting task
     /// (`BoardWizardViewModel.manualTaskVary`). Absent ids are `.off`.
@@ -158,7 +154,8 @@ struct RisoPoolListView: View {
         let varyLevel = manualTaskVary[task.id] ?? .off
         let varyRange = showsDice
             ? BoardSources.varyRangeLabel(
-                t: goal, level: varyLevel, goal: goal, unit: task.unit ?? ""
+                t: goal, level: varyLevel, goal: goal, unit: task.unit ?? "",
+                kind: resolveCountKind(task.countKind)
             )
             : nil
 
@@ -285,6 +282,14 @@ struct RisoPoolListView: View {
 
     // MARK: - Helpers
 
+    /// Counting row detail — `{action} · goal {value}` at the task's kind (Duration: "1h 30m", no unit).
+    static func countingSubtitle(_ task: OYBC.Task) -> String? {
+        let kind = resolveCountKind(task.countKind)
+        guard let a = task.action, let m = task.maxCount, !a.isEmpty,
+              kind == .duration || !(task.unit ?? "").isEmpty else { return nil }
+        return "\(a) · goal \(formatCountWithUnit(m, kind: kind, unit: task.unit))"
+    }
+
     /// Detail subtitle. `isCenter` prefixes "Center square · ".
     private func typeDetailSubtitle(_ task: OYBC.Task, isCenter: Bool) -> String? {
         let base: String? = {
@@ -293,9 +298,7 @@ struct RisoPoolListView: View {
                 let shared = sharedCountByTaskId[task.id] ?? 0
                 return shared > 0 ? "On \(shared) other board\(shared == 1 ? "" : "s")" : nil
             case .counting:
-                guard let a = task.action, let m = task.maxCount, let u = task.unit,
-                      !a.isEmpty, !u.isEmpty else { return nil }
-                return "\(a) · goal \(formatCount(m, kind: resolveCountKind(task.countKind))) \(u)"
+                return Self.countingSubtitle(task)
             case .compound:
                 // `effectiveChildrenByCompound` / `task.operatorType` /
                 // `task.threshold` are all already staged-edit-aware (Inline
@@ -330,16 +333,10 @@ struct RisoPoolListView: View {
 
         // Board Sources P2 — provenance subtitles removed (docs/
         // BOARD_SOURCES.md §Removed: no "added by hand"/"from X" copy).
-        // Counter-family exclusivity — the "one per board" clash hint.
-        var detail = base
-        if let clashTitle = counterClashByTaskId[task.id] {
-            let hint = "shares a counter with \u{201C}\(clashTitle)\u{201D} · one per board"
-            detail = detail.map { "\($0) · \(hint)" } ?? hint
-        }
         if isCenter {
-            return detail.map { "Center square · \($0)" } ?? "Center square"
+            return base.map { "Center square · \($0)" } ?? "Center square"
         }
-        return detail
+        return base
     }
 
     private func risoKind(for type: TaskType) -> RisoTaskKind {

@@ -385,6 +385,8 @@ export interface SeedTask {
   unit?: string;
   /** Counting-task target count. */
   maxCount?: number;
+  /** Counter kind (absent = discrete). Duration `maxCount` is minutes. */
+  countKind?: 'discrete' | 'continuous' | 'duration';
   /** Counting-task current progress; used by the "in progress" status
    *  filter and the detail page's progress bar. */
   currentCount?: number;
@@ -619,6 +621,33 @@ export async function readTask(
       };
     });
   }, id);
+}
+
+/**
+ * Read the first non-deleted task row with this exact title from IndexedDB —
+ * for UI-created tasks whose id the test doesn't know.
+ */
+export async function readTaskByTitle(
+  page: Page,
+  title: string,
+): Promise<Record<string, unknown> | null> {
+  return await page.evaluate(async (wanted) => {
+    return new Promise<Record<string, unknown> | null>((resolve, reject) => {
+      const openReq = indexedDB.open('oybc');
+      openReq.onerror = () => reject(openReq.error);
+      openReq.onsuccess = () => {
+        const db = openReq.result;
+        const tx = db.transaction(['tasks'], 'readonly');
+        const req = tx.objectStore('tasks').getAll();
+        req.onsuccess = () => {
+          db.close();
+          const rows = req.result as Record<string, unknown>[];
+          resolve(rows.find((r) => r.title === wanted && r.isDeleted !== true) ?? null);
+        };
+        req.onerror = () => reject(req.error);
+      };
+    });
+  }, title);
 }
 
 // ─── Windowed Completion — TaskEvent seed helper ────────────────────────────

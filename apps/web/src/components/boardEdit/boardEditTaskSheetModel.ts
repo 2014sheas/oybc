@@ -1,8 +1,13 @@
 import {
   OperatorType,
   TaskType,
+  countKindNeedsUnit,
+  countTargetStep,
   generateCounterTaskTitle,
   isAutoCounterTitle,
+  parseCountInput,
+  resolveCountKind,
+  type CountKind,
   type Task,
 } from '@oybc/shared';
 import type { BoardEditTaskOverride } from '../../hooks/squaresEditReducer';
@@ -60,7 +65,10 @@ export function showsCompoundEditor(selected: TaskType): boolean {
  */
 export function seedSheetTitle(task: Task): string {
   const title = task.title ?? '';
-  if (task.type === TaskType.COUNTING && isAutoCounterTitle(title, task.action ?? '', task.maxCount, task.unit ?? '')) {
+  if (
+    task.type === TaskType.COUNTING &&
+    isAutoCounterTitle(title, task.action ?? '', task.maxCount, task.unit ?? '', resolveCountKind(task))
+  ) {
     return '';
   }
   return title;
@@ -98,6 +106,8 @@ export interface SheetInput {
   action: string;
   goalStr: string;
   unit: string;
+  /** The kind the picker shows — the Goal parses at it; Duration needs no unit. */
+  countKind: CountKind;
   /** `null` until the compound draft has loaded / been seeded. */
   compoundDraft: TaskEditPatch | null;
   /**
@@ -120,16 +130,21 @@ export function compoundStructureEdited(input: SheetInput): boolean {
   return compoundStructureChanged(input.compoundBaseline, input.compoundDraft);
 }
 
-/** A positive-integer goal, or `null`. */
-export function parseGoal(goalStr: string): number | null {
-  const n = parseFloat(goalStr);
-  return goalStr.trim() !== '' && Number.isInteger(n) && n > 0 ? n : null;
+/**
+ * The goal the Goal field holds at `kind` (a positive whole number for
+ * Discrete, up to 2 dp for Continuous, minutes for Duration), or `null`.
+ *
+ * @param goalStr - The Goal field's text.
+ * @param kind - The sheet's kind. Defaults to Discrete.
+ */
+export function parseGoal(goalStr: string, kind: CountKind = 'discrete'): number | null {
+  return parseCountInput(goalStr, kind);
 }
 
 /**
  * The blocking message for the current sheet state, or `null` when Done may
- * proceed. Simple needs a title; Counting needs a positive goal + a unit
- * (title optional); Compound = `validatePatch` (title, ≥1 sub-task, counting
+ * proceed. Simple needs a title; Counting needs a positive goal at the
+ * sheet's kind + a unit unless it is Duration (title optional); Compound = `validatePatch` (title, ≥1 sub-task, counting
  * sub-task goal/unit, M_OF_N threshold). The DB-backed link guard runs at
  * Done (`compoundLinkProblemForPatch`) and again at Save.
  *
@@ -139,8 +154,8 @@ export function sheetValidationProblem(input: SheetInput): string | null {
   const { selected, title } = input;
   switch (selected) {
     case TaskType.COUNTING:
-      if (parseGoal(input.goalStr) === null) return 'Set a goal above zero.';
-      if (input.unit.trim().length === 0) return 'Add a unit, like km or pages.';
+      if (parseGoal(input.goalStr, input.countKind) === null) return 'Set a goal above zero.';
+      if (countKindNeedsUnit(input.countKind) && input.unit.trim().length === 0) return 'Add a unit, like km or pages.';
       return null;
     case TaskType.COMPOUND:
       if (input.compoundDraft === null) return 'Loading sub-tasks…';
@@ -159,8 +174,10 @@ export function sheetValidationProblem(input: SheetInput): string | null {
  *
  * - Simple → `{ title }` (+ `type`/cleared counting fields when switching
  *   from Counting: `action`/`unit`/`maxCount` are explicit `undefined`).
- * - Counting → title/action/goal/unit (+ `type` when switching from Simple);
- *   a blank title auto-generates from the sheet's action/goal/unit.
+ * - Counting → title/action/goal/unit/countKind (+ `type` when switching
+ *   from Simple); a blank title auto-generates from the sheet's
+ *   action/goal/unit at its kind. `countKind` is applied at Save through the
+ *   kind switch (`applyBoardEditTaskOverrideInTransaction`).
  * - Compound → `{ title, type?, compound }` — `compound` carries the whole
  *   structure (a later stage REPLACES it wholesale).
  *
@@ -178,18 +195,19 @@ export function buildSheetOverride(input: SheetInput): BoardEditTaskOverride {
 
   switch (selected) {
     case TaskType.COUNTING: {
-      const goal = Math.max(1, parseGoal(input.goalStr) ?? 1);
+      const goal = parseGoal(input.goalStr, input.countKind) ?? countTargetStep(input.countKind);
       const action = input.action.trim();
-      const unit = input.unit.trim();
+      const unit = countKindNeedsUnit(input.countKind) ? input.unit.trim() : '';
       // Blank counting title = auto-generated from the sheet's CURRENT
       // action / goal / unit — exactly what the "Reads as" preview shows. The
       // field opens blank for an auto-titled task (`seedSheetTitle`), so a
       // goal-only edit regenerates the title instead of keeping the stored
       // one at the old goal.
-      patch.title = title || generateCounterTaskTitle(action, goal, unit);
+      patch.title = title || generateCounterTaskTitle(action, goal, unit, undefined, input.countKind);
       patch.action = action;
       patch.maxCount = goal;
       patch.unit = unit;
+      patch.countKind = input.countKind;
       break;
     }
     case TaskType.COMPOUND: {
@@ -203,6 +221,8 @@ export function buildSheetOverride(input: SheetInput): BoardEditTaskOverride {
         patch.action = undefined;
         patch.unit = undefined;
         patch.maxCount = undefined;
+        // `countKind` is never cleared (sync merge-writes; a clear would not
+        // reach other devices) — a non-counting type ignores it.
       }
     }
   }

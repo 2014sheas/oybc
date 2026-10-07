@@ -49,6 +49,7 @@ struct RisoCompoundEditFieldsView: View {
         var text = ""
         var goal = ""
         var unit = ""
+        var kind: CountKind = .discrete
     }
 
     /// The "New sub:" chip — whether Return / Add appends a Counting sub-task.
@@ -59,6 +60,7 @@ struct RisoCompoundEditFieldsView: View {
     /// The new Counting sub-task's Goal / Counting (unit) config.
     @State private var newSubGoal: String
     @State private var newSubUnit: String
+    @State private var newSubKind: CountKind = .discrete
     private let seedText: String
 
     /// - Parameters:
@@ -85,6 +87,7 @@ struct RisoCompoundEditFieldsView: View {
         _newSubText = State(initialValue: newSubSeed.text)
         _newSubGoal = State(initialValue: newSubSeed.goal)
         _newSubUnit = State(initialValue: newSubSeed.unit)
+        _newSubKind = State(initialValue: newSubSeed.kind)
         seedText = newSubSeed.text
     }
 
@@ -104,10 +107,9 @@ struct RisoCompoundEditFieldsView: View {
         draft.children.append(ChildPatch(from: task))
     }
 
-    /// The typed goal as a positive Int, or nil when blank/invalid.
-    private static func parsePositiveGoal(_ goal: String) -> Int? {
-        guard let g = Int(goal.trimmingCharacters(in: .whitespacesAndNewlines)), g > 0 else { return nil }
-        return g
+    /// The typed goal parsed at `kind` (positive), or nil when blank/invalid.
+    private static func parsePositiveGoal(_ goal: String, kind: CountKind) -> CountValue? {
+        parseCountInput(goal, kind: kind)
     }
 
     /// Whether the quick-add row may append a NEW Counting sub-task: the
@@ -120,11 +122,12 @@ struct RisoCompoundEditFieldsView: View {
     ///   - text: The row's text (the action).
     ///   - goal: The Goal field's text.
     ///   - unit: The Counting (unit) field's text.
-    /// - Returns: `true` when all three are valid.
-    static func canAppendCounting(text: String, goal: String, unit: String) -> Bool {
+    ///   - kind: The new sub-task's kind (Duration needs no unit).
+    /// - Returns: `true` when all required fields are valid.
+    static func canAppendCounting(text: String, goal: String, unit: String, kind: CountKind = .discrete) -> Bool {
         !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            && parsePositiveGoal(goal) != nil
-            && !unit.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && parsePositiveGoal(goal, kind: kind) != nil
+            && (!countKindNeedsUnit(kind) || !unit.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
     }
 
     /// Appends a NEW sub-task typed into the quick-add row (Return / Add). A
@@ -138,12 +141,14 @@ struct RisoCompoundEditFieldsView: View {
     ///   - isCounting: Whether the "Counting" chip is on.
     ///   - goal: The Goal field's text (Counting only).
     ///   - unit: The Counting (unit) field's text (Counting only).
+    ///   - kind: The new Counting sub-task's kind.
     ///   - draft: The compound structure being edited.
     static func appendTyped(
         _ text: String,
         isCounting: Bool,
         goal: String = "",
         unit: String = "",
+        kind: CountKind = .discrete,
         to draft: inout TaskEditPatch
     ) {
         guard isCounting else {
@@ -152,11 +157,11 @@ struct RisoCompoundEditFieldsView: View {
             )
             return
         }
-        let parsedGoal = parsePositiveGoal(goal)
-        let trimmedUnit = unit.trimmingCharacters(in: .whitespacesAndNewlines)
+        let parsedGoal = parsePositiveGoal(goal, kind: kind)
+        let trimmedUnit = countKindNeedsUnit(kind) ? unit.trimmingCharacters(in: .whitespacesAndNewlines) : ""
         let title: String
-        if let g = parsedGoal, !trimmedUnit.isEmpty {
-            title = TaskTitle.generateCounterTaskTitle(action: text, maxCount: CountValue(g), unit: trimmedUnit)
+        if let g = parsedGoal, !trimmedUnit.isEmpty || !countKindNeedsUnit(kind) {
+            title = TaskTitle.generateCounterTaskTitle(action: text, maxCount: g, unit: trimmedUnit, countKind: kind)
         } else {
             title = text
         }
@@ -167,8 +172,9 @@ struct RisoCompoundEditFieldsView: View {
                 title: title,
                 isCounting: true,
                 action: text,
-                goal: parsedGoal.map(String.init) ?? "",
-                unit: trimmedUnit
+                goal: parsedGoal.map { formatCountForInput($0, kind: kind) } ?? "",
+                unit: trimmedUnit,
+                countKind: kind
             )
         )
     }
@@ -222,10 +228,6 @@ struct RisoCompoundEditFieldsView: View {
                 subtaskCard($child)
             }
             subtaskQuickAdd
-            Text("A sub-task's type is fixed once added. Deleting a sub-task unlinks it — if it lives on another board it stays in your library.")
-                .font(.risoBody(10.5, .semibold))
-                .foregroundStyle(Color.risoMuted)
-                .fixedSize(horizontal: false, vertical: true)
         }
     }
 
@@ -263,8 +265,15 @@ struct RisoCompoundEditFieldsView: View {
                 VStack(alignment: .leading, spacing: 4) {
                     HStack(spacing: 6) {
                         RisoTextField(placeholder: "e.g. Run", text: child.action).frame(maxWidth: .infinity)
-                        RisoNumberField(placeholder: "5", text: child.goal).frame(width: 56)
-                        RisoTextField(placeholder: "km", text: child.unit).frame(maxWidth: .infinity)
+                        // An existing sub-task edits at its OWN kind (no picker).
+                        GoalEntryView(
+                            kind: child.wrappedValue.countKind, text: child.goal,
+                            placeholder: child.wrappedValue.countKind == .duration ? "0h 0m" : "5"
+                        )
+                        .frame(width: child.wrappedValue.countKind == .duration ? 120 : 76)
+                        if countKindNeedsUnit(child.wrappedValue.countKind) {
+                            RisoTextField(placeholder: "km", text: child.unit).frame(maxWidth: .infinity)
+                        }
                     }
                     if let preview = subtaskCountingPreview(child.wrappedValue) {
                         Text(preview)
@@ -302,8 +311,9 @@ struct RisoCompoundEditFieldsView: View {
     /// Normal and clears the Counting config for the next one, like the
     /// create panel (the row clears its own text).
     private func appendTyped(_ text: String) {
-        Self.appendTyped(text, isCounting: newSubCounting, goal: newSubGoal, unit: newSubUnit, to: &draft)
+        Self.appendTyped(text, isCounting: newSubCounting, goal: newSubGoal, unit: newSubUnit, kind: newSubKind, to: &draft)
         newSubCounting = false
+        newSubKind = .discrete
         newSubGoal = ""
         newSubUnit = ""
     }
@@ -333,7 +343,7 @@ struct RisoCompoundEditFieldsView: View {
                 onExistingTaskPicked: { task in Self.appendPicked(task, to: &draft) },
                 onSubmitText: { text in appendTyped(text) },
                 submitTextEnabled: !newSubCounting
-                    || Self.canAppendCounting(text: newSubText, goal: newSubGoal, unit: newSubUnit),
+                    || Self.canAppendCounting(text: newSubText, goal: newSubGoal, unit: newSubUnit, kind: newSubKind),
                 onTextChange: { newSubText = $0 },
                 placeholderOverride: newSubCounting ? "Do" : nil,
                 seedText: seedText
@@ -352,8 +362,8 @@ struct RisoCompoundEditFieldsView: View {
 
             if newSubCounting {
                 VStack(alignment: .leading, spacing: 5) {
-                    RisoCountingSubConfigRow(goal: $newSubGoal, unit: $newSubUnit)
-                    if let preview = risoReadsAsPreview(action: newSubText, goal: newSubGoal, unit: newSubUnit) {
+                    RisoCountingSubConfigRow(goal: $newSubGoal, unit: $newSubUnit, kind: $newSubKind)
+                    if let preview = risoReadsAsPreview(action: newSubText, goal: newSubGoal, unit: newSubUnit, kind: newSubKind) {
                         Text(preview)
                             .font(.risoBody(10.5, .extraBold))
                             .foregroundStyle(Color.risoBlue)
@@ -367,7 +377,7 @@ struct RisoCompoundEditFieldsView: View {
                     .font(.risoBody(11.5, .semibold))
                     .foregroundStyle(Color.risoMuted)
             case .failed:
-                Text("Couldn't load your tasks to link. New sub-tasks still work — close and reopen the editor to try again.")
+                Text("Couldn't load your tasks.")
                     .font(.risoBody(11.5, .semibold))
                     .foregroundStyle(Color.risoRed)
                     .fixedSize(horizontal: false, vertical: true)
@@ -378,6 +388,6 @@ struct RisoCompoundEditFieldsView: View {
     }
 
     private func subtaskCountingPreview(_ child: ChildPatch) -> String? {
-        risoReadsAsPreview(action: child.action, goal: child.goal, unit: child.unit)
+        risoReadsAsPreview(action: child.action, goal: child.goal, unit: child.unit, kind: child.countKind)
     }
 }

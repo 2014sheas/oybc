@@ -119,3 +119,41 @@ func floorToCountStep(_ x: CountValue, kind: CountKind) -> CountValue {
     if isWholeCountKind(kind) { return x.rounded(.down) }
     return quantizeCount((quantizeCount(x * 10) + 1e-9).rounded(.down) / 10)
 }
+
+// MARK: - Totals and ranges
+
+/// A LIFETIME total — `formatCount` with thousands grouping (R7); duration unchanged.
+func formatCountTotal(_ value: CountValue, kind: CountKind, locale: Locale = .current) -> String {
+    if kind == .duration { return formatCount(value, kind: kind, locale: locale) }
+    let f = NumberFormatter()
+    f.locale = Locale(identifier: locale.identifier.components(separatedBy: "@").first! + "@numbers=latn")
+    f.numberStyle = .decimal
+    f.usesGroupingSeparator = true
+    f.minimumFractionDigits = 0
+    f.maximumFractionDigits = kind == .continuous ? 2 : 0
+    f.roundingMode = .halfUp
+    let v = kind == .continuous ? quantizeCount(value) : (quantizeCount(value) + 0.5).rounded(.down)
+    return f.string(from: NSNumber(value: v)) ?? "\(v)"
+}
+
+/// "lo–hi"; continuous renders both ends at the more precise end's precision.
+func formatCountRange(_ lo: CountValue, _ hi: CountValue, kind: CountKind, locale: Locale = .current) -> String {
+    guard kind == .continuous else {
+        return "\(formatCount(lo, kind: kind, locale: locale))\u{2013}\(formatCount(hi, kind: kind, locale: locale))"
+    }
+    func digits(_ v: CountValue) -> Int {
+        let s = formatCountForInput(v, kind: .continuous)
+        guard let dot = s.firstIndex(of: ".") else { return 0 }
+        return s.distance(from: dot, to: s.endIndex) - 1
+    }
+    let f = NumberFormatter()
+    f.locale = Locale(identifier: locale.identifier.components(separatedBy: "@").first! + "@numbers=latn")
+    f.numberStyle = .decimal
+    f.usesGroupingSeparator = false
+    f.minimumFractionDigits = max(digits(lo), digits(hi))
+    f.maximumFractionDigits = 2
+    f.roundingMode = .halfUp
+    let a = f.string(from: NSNumber(value: quantizeCount(lo))) ?? "\(lo)"
+    let b = f.string(from: NSNumber(value: quantizeCount(hi))) ?? "\(hi)"
+    return "\(a)\u{2013}\(b)"
+}

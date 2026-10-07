@@ -70,6 +70,16 @@ extension AppDatabase {
                 try Self.saveTaskAndCascade(db: db, task: task)
             } else {
                 if skipSimpleIds.contains(taskId) { continue }
+                // The switch (rounding the root + its family) and the goal guard run first,
+                // inside the caller's write; a refused goal throws and rolls the whole save back.
+                if task.type == .counting,
+                   try Self.applyKindSwitchThenGoalGuard(
+                       db: db, taskId: taskId, to: patch.countKind,
+                       maxCount: parseCountInput(patch.goal, kind: patch.countKind),
+                       now: Self.parseISO8601(now) ?? Date()
+                   ) {
+                    task = try Task.fetchOne(db, key: taskId) ?? task
+                }
                 task = patch.applied(to: task)
                 task.version += 1
                 task.updatedAt = now

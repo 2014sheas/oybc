@@ -9,6 +9,7 @@ final class CountValueVectorTests: XCTestCase {
     private struct FinalizeVector: Decodable { let name: String; let sum: Double; let kind: CountKind; let expected: Double }
     private struct FormatVector: Decodable { let name: String; let value: Double; let kind: CountKind; let locale: String; let expected: String }
     private struct InputVector: Decodable { let name: String; let value: Double; let kind: CountKind; let expected: String }
+    private struct RangeVector: Decodable { let name: String; let lo: Double; let hi: Double; let kind: CountKind; let locale: String; let expected: String }
     private struct StepVector: Decodable { let name: String; let x: Double; let kind: CountKind; let expected: Double }
     private struct Fields: Decodable { let maxCount: Double?; let defaultLogAmount: Double? }
     private struct SwitchVector: Decodable { let name: String; let from: CountKind; let to: CountKind; let fields: Fields; let expected: Fields? }
@@ -22,6 +23,8 @@ final class CountValueVectorTests: XCTestCase {
         let ceilToStep: [StepVector]
         let roundToStep: [StepVector]
         let floorToStep: [StepVector]
+        let formatTotal: [FormatVector]
+        let formatRange: [RangeVector]
     }
 
     private func loadFixture() throws -> Fixture {
@@ -44,6 +47,16 @@ final class CountValueVectorTests: XCTestCase {
     func testFormat() throws {
         for v in try loadFixture().format {
             XCTAssertEqual(formatCount(v.value, kind: v.kind, locale: Locale(identifier: v.locale)), v.expected, v.name)
+        }
+    }
+    func testFormatTotal() throws {
+        for v in try loadFixture().formatTotal {
+            XCTAssertEqual(formatCountTotal(v.value, kind: v.kind, locale: Locale(identifier: v.locale)), v.expected, v.name)
+        }
+    }
+    func testFormatRange() throws {
+        for v in try loadFixture().formatRange {
+            XCTAssertEqual(formatCountRange(v.lo, v.hi, kind: v.kind, locale: Locale(identifier: v.locale)), v.expected, v.name)
         }
     }
     func testFormatForInput() throws {

@@ -45,7 +45,10 @@
   margin: 12px 0 6px;
 }
 
-.fieldLabel:first-of-type {
+/* The sheet's first label (Kind). Not `:first-of-type` — that also matched
+   the first <label> ("What are you counting?"), pinning it flush under the
+   Kind picker. */
+.fieldLabelFirst {
   margin-top: 0;
 }
 
@@ -70,14 +73,6 @@
 .fieldInput:focus-visible {
   outline: 3px solid var(--riso-blue);
   outline-offset: 2px;
-}
-
-/* Helper copy under each field. */
-.helperText {
-  margin-top: 4px;
-  font-family: var(--riso-font-body);
-  font-size: 12px;
-  color: var(--riso-muted);
 }
 
 /* ─── Live preview card (R1) ───
@@ -121,12 +116,6 @@
   align-items: baseline;
   justify-content: space-between;
   gap: 10px;
-}
-
-.previewSub {
-  font-family: var(--riso-font-body);
-  font-size: 0.78rem;
-  color: var(--riso-muted);
 }
 
 .previewAllTime {

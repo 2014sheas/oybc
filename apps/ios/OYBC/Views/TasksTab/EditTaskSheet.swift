@@ -60,6 +60,9 @@ struct EditTaskSheet: View {
         /// non-compound tasks and for callers that only edit basic fields.
         /// Defaulted so every existing memberwise `Patch(...)` call compiles.
         var compound: TaskEditPatch? = nil
+        /// The kind the editor chose for a counter ROOT — nil = unchanged
+        /// (linked rows and non-counting tasks never carry one).
+        var countKind: CountKind? = nil
 
         enum RefMode {
             case board, template
@@ -73,6 +76,8 @@ struct EditTaskSheet: View {
     @State private var action: String
     @State private var unit: String
     @State private var maxCountStr: String
+    @State private var countKind: CountKind
+    @State private var pendingSwitch: KindSwitchPreview?
     // Achievement
     @State private var trigger: AchievementTrigger
     @State private var requiredCountStr: String
@@ -113,6 +118,7 @@ struct EditTaskSheet: View {
         _description = State(initialValue: task.description ?? "")
         _action = State(initialValue: task.action ?? "")
         _unit = State(initialValue: task.unit ?? "")
+        _countKind = State(initialValue: resolveCountKind(task.countKind))
         _maxCountStr = State(initialValue: task.maxCount.map { formatCountForInput($0, kind: resolveCountKind(task.countKind)) } ?? "")
         // Achievement
         _trigger = State(initialValue: task.achievementTrigger ?? .greenlog)
@@ -223,11 +229,23 @@ struct EditTaskSheet: View {
                 fieldRow(label: "Action") {
                     RisoTextField(placeholder: "e.g. Run", text: $action)
                 }
-                HStack(alignment: .top, spacing: 10) {
-                    VStack(alignment: .leading, spacing: 5) {
-                        fieldLabel("Goal")
-                        RisoNumberField(placeholder: "5", text: $maxCountStr)
+                VStack(alignment: .leading, spacing: 5) {
+                    fieldLabel("Kind")
+                    if task.sharedCounterId != nil {
+                        KindTagView(linkedTask: task, root: database.linkedCounterRoot(of: task))
+                    } else {
+                        KindPickerView(
+                            selection: $countKind,
+                            lock: kindPickerLock(mode: .edit, kind: resolveCountKind(task.countKind)),
+                            onRequest: requestKind
+                        )
                     }
+                }
+                VStack(alignment: .leading, spacing: 5) {
+                    fieldLabel("Goal")
+                    GoalEntryView(kind: countKind, text: $maxCountStr, placeholder: "5")
+                }
+                if countKindNeedsUnit(countKind) {
                     VStack(alignment: .leading, spacing: 5) {
                         fieldLabel("Unit")
                         RisoTextField(placeholder: "e.g. miles", text: $unit)
@@ -235,6 +253,36 @@ struct EditTaskSheet: View {
                 }
             }
         }
+        .kindSwitchConfirm(pending: $pendingSwitch) { p in
+            applyConfirmedSwitch(p)
+        }
+    }
+
+    /// Continuous → Discrete opens the confirm (previewing the DRAFT — title /
+    /// goal typed in this sheet); any other permitted change applies at once.
+    private func requestKind(_ next: CountKind) {
+        guard KindSwitchCopy.needsConfirm(from: countKind, to: next) else { countKind = next; return }
+        let linked = (try? database.previewCounterKindSwitch(rootTaskId: task.id, to: next))?.linkedCount ?? 0
+        pendingSwitch = KindSwitchPreview.planned(task: draftTask, to: next, linkedCount: linked)
+    }
+
+    /// The stored task overlaid with this sheet's unsaved fields.
+    private var draftTask: Task {
+        var t = task
+        t.title = title
+        t.action = action
+        t.unit = unit
+        t.countKind = countKind
+        if let goal = parseCountInput(maxCountStr, kind: countKind) { t.maxCount = goal }
+        return t
+    }
+
+    private func applyConfirmedSwitch(_ p: KindSwitchPreview) {
+        if let titleAfter = KindSwitchPreview.planned(task: draftTask, to: p.to, linkedCount: 0)?.titleAfter {
+            title = titleAfter
+        }
+        maxCountStr = KindSwitchCopy.switchedGoalText(maxCountStr, from: p.from, to: p.to)
+        countKind = p.to
     }
 
     /// Achievement-specific fields: Trigger + Watches mode + picker + required count.
@@ -484,7 +532,8 @@ struct EditTaskSheet: View {
                 selectedTemplateId: selectedTemplateId,
                 compound: task.type == .compound
                     ? Self.compoundSubmission(baseline: compoundBaseline, draft: compoundDraft, title: title)
-                    : nil
+                    : nil,
+                countKind: task.type == .counting && task.sharedCounterId == nil ? countKind : nil
             )
         )
     }

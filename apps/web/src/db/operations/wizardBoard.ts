@@ -6,6 +6,8 @@ import {
   applyMemberRules,
   computeBoardStatsUpdate,
   isGoalLessCounter,
+  parseCountInput,
+  resolveCountKind,
   poolSourceSupplyById,
   withEffectiveMemberRules,
   availableSupplyIds,
@@ -31,7 +33,7 @@ import { buildWindowContext } from './windowContext';
 import { createBoardTask, deleteBoardTasksForBoard } from './boardTasks';
 import { runBoardCascadeForTask } from './orchestration';
 import { addToSyncQueue } from './syncQueue';
-import { withRootCountKind } from './countKindSwitch';
+import { applyKindSwitchThenGoalGuard, withRootCountKind } from './countKindSwitch';
 import {
   applyCompoundStructureEditInTransaction,
   compoundLinkProblemForPatch,
@@ -324,12 +326,12 @@ export async function applyStagedTaskEditsForWizardPersist(
   const strict = options.strict === true;
 
   for (const [taskId, patch] of stagedEdits) {
-    const task = await db.tasks.get(taskId);
+    let task = await db.tasks.get(taskId);
     if (!task) {
       if (strict) throw new StagedEditError('missing-task', taskId, 'A task you edited no longer exists');
       continue;
     }
-    const invalid = validatePatch(patch, task.type);
+    const invalid = validatePatch(patch, task.type, resolveCountKind(task));
     if (invalid !== null) {
       if (strict) throw new StagedEditError('invalid-patch', taskId, invalid);
       continue;
@@ -346,6 +348,13 @@ export async function applyStagedTaskEditsForWizardPersist(
       await applyCompoundStructureEditInTransaction(task, patch, {}, now);
     } else {
       if (skipIfPendingIds.has(taskId)) continue;
+      if (task.type === TaskType.COUNTING) {
+        // The switch (rounding the root + its family) and the goal guard run first,
+        // inside this transaction; a refused goal throws and rolls the whole save back.
+        const kind = patch.countKind ?? resolveCountKind(task);
+        await applyKindSwitchThenGoalGuard(taskId, patch.countKind, parseCountInput(patch.goal, kind), now);
+        task = (await db.tasks.get(taskId)) ?? task; // the switch bumped the version / rounded fields
+      }
       const updated = applyPatchToTask(patch, task);
       const saved: Task = { ...updated, version: (task.version ?? 1) + 1, updatedAt: now };
       await db.tasks.update(taskId, saved);

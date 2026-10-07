@@ -108,16 +108,22 @@ final class CountersHubSnapshotTests: XCTestCase {
         verb: String,
         unit: String,
         previewName: String,
-        match: CounterCreateMatch?
+        match: CounterCreateMatch?,
+        kind: CountKind = .discrete,
+        startText: String = "",
+        previewCount: CountValue = 0,
+        startFromInvalid: Bool = false
     ) -> some View {
         NavigationStack {
             ScrollView {
                 NewCounterSheetContentView(
                     verb: .constant(verb),
                     unit: .constant(unit),
-                    startingCountText: .constant(""),
+                    startingCountText: .constant(startText),
+                    countKind: .constant(kind),
+                    startFromInvalid: startFromInvalid,
                     previewName: previewName,
-                    previewCount: 0,
+                    previewCount: previewCount,
                     trimmedUnit: unit,
                     match: match
                 )
@@ -125,6 +131,40 @@ final class CountersHubSnapshotTests: XCTestCase {
             }
             .background(Color.risoPaper.ignoresSafeArea())
         }
+    }
+
+    func testNewCounterSheetContinuousLight() {
+        let host = sheetHost(verb: "Run", unit: "miles", previewName: "Run miles", match: nil,
+                             kind: .continuous, startText: "148.6", previewCount: 148.6)
+        assertSnapshot(of: host, as: .image(layout: .fixed(width: 393, height: 520)), record: recordMode)
+    }
+
+    func testNewCounterSheetContinuousDark() {
+        let host = sheetHost(verb: "Run", unit: "miles", previewName: "Run miles", match: nil,
+                             kind: .continuous, startText: "148.6", previewCount: 148.6)
+        assertSnapshot(
+            of: host,
+            as: .image(layout: .fixed(width: 393, height: 520), traits: .init(userInterfaceStyle: .dark)),
+            record: recordMode
+        )
+    }
+
+    /// I4 — an unparseable "Start from" (3 decimals on Continuous) draws the
+    /// field's invalid state (red keyline), like web `CreateCounterSheet`.
+    func testNewCounterSheetStartFromInvalidLight() {
+        let host = sheetHost(verb: "Run", unit: "miles", previewName: "Run miles", match: nil,
+                             kind: .continuous, startText: "3.125", startFromInvalid: true)
+        assertSnapshot(of: host, as: .image(layout: .fixed(width: 393, height: 520)), record: recordMode)
+    }
+
+    func testNewCounterSheetStartFromInvalidDark() {
+        let host = sheetHost(verb: "Run", unit: "miles", previewName: "Run miles", match: nil,
+                             kind: .continuous, startText: "3.125", startFromInvalid: true)
+        assertSnapshot(
+            of: host,
+            as: .image(layout: .fixed(width: 393, height: 520), traits: .init(userInterfaceStyle: .dark)),
+            record: recordMode
+        )
     }
 
     func testNewCounterSheetDefaultLight() {

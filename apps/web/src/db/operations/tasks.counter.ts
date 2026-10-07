@@ -7,7 +7,9 @@ import {
   deriveDisplayedCount,
   generateCounterTaskTitle,
   isQuantizedCount,
+  isWholeCountKind,
   isWindowStampedDerived,
+  type CountKind,
   type Task,
 } from '@oybc/shared';
 import { generateUUID, currentTimestamp } from '../utils';
@@ -41,21 +43,22 @@ import { softDeleteWindowStampedDerived } from './derivedCounters';
  *
  * @param userId - Owning user.
  * @param input - `action` + `unit` (both required, trimmed) and an optional
- *   non-negative 2dp number `startingCount` (defaults to 0).
+ *   non-negative `startingCount` (defaults to 0) and `countKind` (written explicitly, default 'discrete'; whole-number kinds refuse a fractional seed).
  * @returns The newly created counter Task.
  * @throws If `action`/`unit` are blank after trimming, or `startingCount`
  *   is not a non-negative 2dp number.
  */
 export async function createCounterTask(
   userId: string,
-  input: { action: string; unit: string; startingCount?: number },
+  input: { action: string; unit: string; startingCount?: number; countKind?: CountKind },
 ): Promise<Task> {
   const action = input.action.trim();
   const unit = input.unit.trim();
   const startingCount = input.startingCount ?? 0;
+  const countKind: CountKind = input.countKind ?? 'discrete';
   if (!action || !unit) throw new Error('createCounterTask: action and unit are required');
-  if (!isQuantizedCount(startingCount) || startingCount < 0) {
-    throw new Error('createCounterTask: startingCount must be a non-negative 2dp number');
+  if (!isQuantizedCount(startingCount) || startingCount < 0 || (isWholeCountKind(countKind) && !Number.isInteger(startingCount))) {
+    throw new Error('createCounterTask: startingCount must be a non-negative count at the counter kind');
   }
   const validated = CreateTaskInputSchema.parse({
     title: generateCounterTaskTitle(action, null, unit),
@@ -63,6 +66,7 @@ export async function createCounterTask(
     action,
     unit,
     isCounter: true,
+    countKind,
   });
   const now = currentTimestamp();
   const task: Task = {
@@ -73,6 +77,7 @@ export async function createCounterTask(
     action,
     unit,
     isCounter: true,
+    countKind,
     currentCount: startingCount,
     isCompleted: false,
     totalCompletions: 0,

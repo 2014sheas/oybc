@@ -21,7 +21,7 @@ const orEmpty = (s: string | null | undefined): string => s ?? '';
 describe('taskTitleVectors — generateCounterTaskTitle', () => {
   it.each(V.generateCounterTaskTitle as any[])('$name', (v: any) => {
     expect(
-      generateCounterTaskTitle(v.action, v.maxCount ?? null, v.unit, v.providedTitle ?? undefined)
+      generateCounterTaskTitle(v.action, v.maxCount ?? null, v.unit, v.providedTitle ?? undefined, v.countKind ?? undefined)
     ).toBe(v.expected);
   });
 });
@@ -33,7 +33,7 @@ describe('taskTitleVectors — isAutoCounterTitle', () => {
   });
 
   it.each(V.isAutoCounterTitle as any[])('$name', (v: any) => {
-    expect(isAutoCounterTitle(v.title, v.action, v.maxCount ?? null, v.unit)).toBe(v.expected);
+    expect(isAutoCounterTitle(v.title, v.action, v.maxCount ?? null, v.unit, v.countKind ?? undefined)).toBe(v.expected);
   });
 });
 
@@ -46,6 +46,7 @@ describe('taskTitleVectors — counterCopyTitle', () => {
           action: orEmpty(v.member.action) || undefined,
           unit: orEmpty(v.member.unit) || undefined,
           maxCount: v.member.maxCount ?? undefined,
+          countKind: v.member.countKind ?? undefined,
         },
         v.newMaxCount
       )

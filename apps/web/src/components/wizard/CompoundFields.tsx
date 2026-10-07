@@ -1,8 +1,9 @@
 import { useState } from 'react';
-import { OperatorType, TaskType, type CompoundChild, type Task } from '@oybc/shared';
+import { OperatorType, TaskType, countKindNeedsUnit, type CompoundChild, type CountKind, type Task } from '@oybc/shared';
 import { RisoChip, RisoSectionLabel } from '../riso';
 import { OperatorSelector } from '../OperatorSelector';
 import { CounterStepper } from '../CounterStepper';
+import { GoalEntry } from '../counters/GoalEntry';
 import {
   appendPickedChild,
   appendTypedChild,
@@ -78,6 +79,7 @@ export function CompoundFields({
   const [newSubText, setNewSubText] = useState('');
   const [newSubGoal, setNewSubGoal] = useState('');
   const [newSubUnit, setNewSubUnit] = useState('');
+  const [newSubKind, setNewSubKind] = useState<CountKind>('discrete');
   const subCount = liveChildren(draft).length;
   const operator = draft.operator ?? OperatorType.AND;
   const threshold = draft.threshold ?? 2;
@@ -108,14 +110,15 @@ export function CompoundFields({
   }
 
   const candidates = subtaskQuickAddCandidates(parentId, libraryTasks, allLinks, draft);
-  const newSubPreview = newSubCounting ? readsAsPreview(newSubText, newSubGoal, newSubUnit) : undefined;
+  const newSubPreview = newSubCounting ? readsAsPreview(newSubText, newSubGoal, newSubUnit, newSubKind) : undefined;
 
   function appendTyped(text: string): void {
-    onDraftChange(appendTypedChild(draft, text, newSubCounting, newSubGoal, newSubUnit));
+    onDraftChange(appendTypedChild(draft, text, newSubCounting, newSubGoal, newSubUnit, newSubKind));
     // Back to Normal for the next one, like the create panel.
     setNewSubCounting(false);
     setNewSubGoal('');
     setNewSubUnit('');
+    setNewSubKind('discrete');
   }
 
   return (
@@ -154,7 +157,7 @@ export function CompoundFields({
         onExistingTaskPicked={(task) => onDraftChange(appendPickedChild(draft, task))}
         onSubmitText={appendTyped}
         onTextChange={setNewSubText}
-        canSubmitText={!newSubCounting || canAppendCounting(newSubText, newSubGoal, newSubUnit)}
+        canSubmitText={!newSubCounting || canAppendCounting(newSubText, newSubGoal, newSubUnit, newSubKind)}
         placeholder={newSubCounting ? 'Do' : undefined}
       />
       <div className={styles.newSubTypeRow}>
@@ -172,6 +175,8 @@ export function CompoundFields({
             idPrefix={`new-sub-${parentId}`}
             goal={newSubGoal}
             unit={newSubUnit}
+            kind={newSubKind}
+            onKindChange={setNewSubKind}
             onGoalChange={setNewSubGoal}
             onUnitChange={setNewSubUnit}
           />
@@ -181,12 +186,9 @@ export function CompoundFields({
       {libraryInputsState === 'loading' && <p className={styles.subtaskNote}>Loading your tasks…</p>}
       {libraryInputsState === 'failed' && (
         <p className={styles.libraryError} role="alert">
-          Couldn&apos;t load your tasks to link. New sub-tasks still work — close and reopen the editor to try again.
+          Couldn&apos;t load your tasks.
         </p>
       )}
-      <span className={styles.subtaskNote}>
-        A sub-task&apos;s type is fixed once added. Deleting a sub-task unlinks it — if it lives on another board it stays in your library.
-      </span>
     </div>
   );
 }
@@ -226,26 +228,26 @@ function SubtaskCardRow({ index, child, onUpdate, onRemove }: SubtaskCardRowProp
             placeholder="e.g. Run"
             aria-label={`Sub-task ${index} action`}
           />
-          <input
-            className={styles.subtaskField}
-            style={{ flex: 0.6 }}
-            type="number"
-            min="1"
+          <GoalEntry
+            kind={child.countKind}
             value={child.goal}
-            onChange={(e) => onUpdate({ goal: e.target.value })}
-            placeholder="5"
+            onChange={(v) => onUpdate({ goal: v })}
+            placeholder={child.countKind === 'duration' ? '0h 0m' : '5'}
             aria-label={`Sub-task ${index} goal`}
+            dense
           />
-          <input
-            className={styles.subtaskField}
-            style={{ flex: 0.8 }}
-            value={child.unit}
-            onChange={(e) => onUpdate({ unit: e.target.value })}
-            placeholder="km"
-            aria-label={`Sub-task ${index} unit`}
-          />
-          {readsAsPreview(child.action, child.goal, child.unit) && (
-            <span className={styles.subtaskReadsAs}>{readsAsPreview(child.action, child.goal, child.unit)}</span>
+          {countKindNeedsUnit(child.countKind) && (
+            <input
+              className={styles.subtaskField}
+              style={{ flex: 0.8 }}
+              value={child.unit}
+              onChange={(e) => onUpdate({ unit: e.target.value })}
+              placeholder="km"
+              aria-label={`Sub-task ${index} unit`}
+            />
+          )}
+          {readsAsPreview(child.action, child.goal, child.unit, child.countKind) && (
+            <span className={styles.subtaskReadsAs}>{readsAsPreview(child.action, child.goal, child.unit, child.countKind)}</span>
           )}
         </div>
       )}

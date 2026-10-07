@@ -3,10 +3,15 @@ import Foundation
 /// Shared "Reads as: Action — Goal — Unit" live preview for counting task and
 /// compound counting sub-task editors. Returns nil when all three fields are
 /// blank; blanks render as an em dash.
-func risoReadsAsPreview(action: String, goal: String, unit: String) -> String? {
+func risoReadsAsPreview(action: String, goal: String, unit: String, kind: CountKind = .discrete) -> String? {
     let a = action.trimmingCharacters(in: .whitespaces)
     let g = goal.trimmingCharacters(in: .whitespaces)
     let u = unit.trimmingCharacters(in: .whitespaces)
+    // Duration has no counted noun — the unit segment is dropped.
+    if kind == .duration {
+        guard !a.isEmpty || !g.isEmpty else { return nil }
+        return "Reads as: \(a.isEmpty ? "—" : a) — \(g.isEmpty ? "—" : g)"
+    }
     guard !a.isEmpty || !g.isEmpty || !u.isEmpty else { return nil }
     return "Reads as: \(a.isEmpty ? "—" : a) — \(g.isEmpty ? "—" : g) — \(u.isEmpty ? "—" : u)"
 }
@@ -31,13 +36,17 @@ struct ChildPatch: Identifiable, Equatable {
     var action: String = ""
     var goal: String = ""
     var unit: String = ""
+    /// Counter kind (Counting only): picked for a NEW sub-task, the task's
+    /// own for an existing one (no picker — its goal edits at its own kind).
+    var countKind: CountKind = .discrete
     var markedDeleted: Bool = false
 
     var isNew: Bool { childTaskId == nil }
 
     /// - Parameter childType: Defaults to `.counting` / `.normal` per `isCounting`.
     init(id: String, childTaskId: String?, title: String, isCounting: Bool, childType: TaskType? = nil,
-         action: String = "", goal: String = "", unit: String = "", markedDeleted: Bool = false) {
+         action: String = "", goal: String = "", unit: String = "",
+         countKind: CountKind = .discrete, markedDeleted: Bool = false) {
         self.id = id
         self.childTaskId = childTaskId
         self.title = title
@@ -46,6 +55,7 @@ struct ChildPatch: Identifiable, Equatable {
         self.action = action
         self.goal = goal
         self.unit = unit
+        self.countKind = countKind
         self.markedDeleted = markedDeleted
     }
 
@@ -61,6 +71,7 @@ struct ChildPatch: Identifiable, Equatable {
         self.action = child.action ?? ""
         self.goal = child.maxCount.map { formatCountForInput($0, kind: resolveCountKind(child.countKind)) } ?? ""
         self.unit = child.unit ?? ""
+        self.countKind = resolveCountKind(child.countKind)
         self.markedDeleted = false
     }
 }
@@ -78,6 +89,8 @@ struct TaskEditPatch: Equatable {
     var action: String = ""
     var goal: String = ""
     var unit: String = ""
+    /// The task's own kind (seeded on open; the goal text is in this kind's grammar).
+    var countKind: CountKind = .discrete
     var children: [ChildPatch] = []
     /// Compound completion operator. Seeded from `Task.operatorType` on open;
     /// written back onto the Task row in `applied(to:)`. `nil` for non-
@@ -97,12 +110,13 @@ struct TaskEditPatch: Equatable {
         self.action = task.action ?? ""
         self.goal = task.maxCount.map { formatCountForInput($0, kind: resolveCountKind(task.countKind)) } ?? ""
         self.unit = task.unit ?? ""
+        self.countKind = resolveCountKind(task.countKind)
         self.operatorType = task.operatorType
         self.threshold = task.threshold
     }
 
     private var trimmedTitle: String { title.trimmingCharacters(in: .whitespacesAndNewlines) }
-    private var parsedGoal: CountValue? { Int(goal.trimmingCharacters(in: .whitespaces)).map(CountValue.init) }
+    private var parsedGoal: CountValue? { parseCountInput(goal, kind: countKind) }
 
     /// Kept sub-tasks — excludes deleted and blank-titled entries (dropped on
     /// save). Shared by validation, apply-at-create clamping, the inline
@@ -125,7 +139,7 @@ struct TaskEditPatch: Equatable {
     /// Live "Reads as: Action — Goal — Unit" preview for counting editors.
     /// nil when all three fields are blank.
     var countingPreview: String? {
-        risoReadsAsPreview(action: action, goal: goal, unit: unit)
+        risoReadsAsPreview(action: action, goal: goal, unit: unit, kind: countKind)
     }
 
     /// The blocking validation message, or nil when the patch is valid for the
@@ -136,7 +150,7 @@ struct TaskEditPatch: Equatable {
         case .counting:
             // Counting titles are optional (auto-generated), so no title check.
             guard let g = parsedGoal, g > 0 else { return "Set a goal above zero." }
-            if unit.trimmingCharacters(in: .whitespaces).isEmpty {
+            if countKindNeedsUnit(countKind), unit.trimmingCharacters(in: .whitespaces).isEmpty {
                 return "Add a unit, like km or pages."
             }
             return nil
@@ -148,9 +162,10 @@ struct TaskEditPatch: Equatable {
             // One sub-task is enough (2026-10-06, owner ask); zero stays blocked.
             if kept.count < 1 { return "A compound task needs a sub-task." }
             for child in kept where child.isCounting {
-                let g = Int(child.goal.trimmingCharacters(in: .whitespaces)) ?? 0
-                let u = child.unit.trimmingCharacters(in: .whitespaces)
-                if g <= 0 || u.isEmpty {
+                let goalOK = parseCountInput(child.goal, kind: child.countKind) != nil
+                let unitOK = !countKindNeedsUnit(child.countKind)
+                    || !child.unit.trimmingCharacters(in: .whitespaces).isEmpty
+                if !goalOK || !unitOK {
                     let name = child.title.trimmingCharacters(in: .whitespacesAndNewlines)
                     return "Counting sub-task \"\(name)\" needs a goal and a unit."
                 }
@@ -175,15 +190,20 @@ struct TaskEditPatch: Equatable {
         var t = base
         switch base.type {
         case .counting:
+            // A linked row never takes a kind from a patch.
+            let kind = base.sharedCounterId == nil ? countKind : resolveCountKind(base.countKind)
             let a = action.trimmingCharacters(in: .whitespaces)
-            let u = unit.trimmingCharacters(in: .whitespaces)
-            let g = parsedGoal ?? base.maxCount ?? 0
+            let u = countKindNeedsUnit(kind) ? unit.trimmingCharacters(in: .whitespaces) : ""
+            let g = parseCountInput(goal, kind: kind) ?? base.maxCount ?? 0
             t.action = a
             t.unit = u
             t.maxCount = g
+            // Written explicitly (incl. .discrete) when it changes — sync merge-writes and
+            // countKind is not a clearable field, so it is never set back to nil.
+            if kind != resolveCountKind(base.countKind) { t.countKind = kind }
             let typed = trimmedTitle
             t.title = typed.isEmpty
-                ? TaskTitle.generateCounterTaskTitle(action: a, maxCount: g, unit: u)
+                ? TaskTitle.generateCounterTaskTitle(action: a, maxCount: g, unit: u, countKind: kind)
                 : typed
         case .compound:
             // Parent-level fields only; child Task/link CRUD is applied by the
@@ -219,7 +239,8 @@ extension TaskEditPatch {
         var patch = TaskEditPatch(from: task)
         if task.type == .counting {
             let autoTitle = TaskTitle.generateCounterTaskTitle(
-                action: task.action ?? "", maxCount: task.maxCount, unit: task.unit ?? ""
+                action: task.action ?? "", maxCount: task.maxCount, unit: task.unit ?? "",
+                countKind: resolveCountKind(task.countKind)
             )
             if task.title == autoTitle {
                 patch.title = ""

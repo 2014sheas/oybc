@@ -125,7 +125,7 @@ extension BoardSources {
         let suffix = unit.isEmpty ? "" : " \(unit)"
         let lo = formatCount(range.lowerBound, kind: kind)
         guard range.lowerBound != range.upperBound else { return "\(lo)\(suffix)" }
-        return "\(lo)\u{2013}\(formatCount(range.upperBound, kind: kind))\(suffix)"
+        return "\(formatCountRange(range.lowerBound, range.upperBound, kind: kind))\(suffix)"
     }
 
     /// Human-readable "N squares" note for a Split-up compound member — how

@@ -43,9 +43,9 @@ async function dumpStore(page: Page, store: string): Promise<Row[]> {
 async function addCounter(page: Page): Promise<void> {
   await page.getByRole('button', { name: 'Add a counting, compound or achievement task' }).click();
   await page.getByRole('button', { name: 'Counting', exact: true }).click();
-  await page.getByRole('textbox', { name: 'Verb*' }).fill('Run');
-  await page.getByRole('spinbutton', { name: 'Goal*' }).fill('100');
-  await page.getByRole('textbox', { name: 'Counting*' }).fill('miles');
+  await page.getByRole('textbox', { name: 'Verb' }).fill('Run');
+  await page.getByRole('textbox', { name: 'Goal' }).fill('100');
+  await page.getByRole('textbox', { name: 'Counting' }).fill('miles');
   await page.getByRole('button', { name: 'Add to board ✦' }).click();
 }
 

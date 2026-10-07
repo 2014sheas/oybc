@@ -2,7 +2,13 @@ import { useEffect, useState } from 'react';
 import {
   AchievementTrigger,
   TaskType,
+  countKindNeedsUnit,
+  formatCountForInput,
+  kindPickerLock,
+  parseCountInput,
+  resolveCountKind,
   type CompoundChild,
+  type CountKind,
   type Task,
 } from '@oybc/shared';
 import type { Board, RecurringBoardTemplate } from '@oybc/shared';
@@ -21,6 +27,12 @@ import {
   validatePatch,
   type TaskEditPatch,
 } from '../../db/taskEditPatch';
+import { GoalEntry } from '../../components/counters/GoalEntry';
+import { KindPicker } from '../../components/counters/KindPicker';
+import { LinkedKindTag } from '../../components/counters/LinkedKindTag';
+import { useKindSwitchRequest } from '../../components/counters/useKindSwitchRequest';
+import { planKindSwitchPreview } from '../../db/operations/countKindSwitch';
+import { countingGoalError } from '../createPage/createFormCounting';
 import { CompoundFields, type LibraryInputsState } from '../../components/wizard/CompoundFields';
 import { loadLibraryInputs } from './loadLibraryInputs';
 import { compoundStructureChanged, compoundSubmitFor } from './compoundEditGate';
@@ -76,9 +88,32 @@ export function TaskEditSheet({
   // Counting fields
   const [action, setAction] = useState(task.action ?? '');
   const [unit, setUnit] = useState(task.unit ?? '');
+  const storedKind = resolveCountKind(task);
+  const [countKind, setCountKind] = useState<CountKind>(storedKind);
   const [maxCountStr, setMaxCountStr] = useState(
-    task.maxCount !== undefined ? String(task.maxCount) : '',
+    task.maxCount !== undefined ? formatCountForInput(task.maxCount, storedKind) : '',
   );
+  // The confirm previews the DRAFT (title / goal typed here), not the stored row.
+  const { requestKind, dialog: kindDialog } = useKindSwitchRequest({
+    subject: {
+      ...task,
+      title,
+      action,
+      unit,
+      maxCount: parseCountInput(maxCountStr, countKind) ?? task.maxCount,
+    },
+    kind: countKind,
+    goalText: maxCountStr,
+    setKind: setCountKind,
+    onSwitched: (k, g) => {
+      // An auto-generated title follows the rounding (the dialog's second row).
+      const draft = { ...task, title, action, unit, countKind, maxCount: parseCountInput(maxCountStr, countKind) ?? task.maxCount };
+      const after = planKindSwitchPreview(draft, k, 0)?.titleAfter;
+      if (after) setTitle(after);
+      setCountKind(k);
+      setMaxCountStr(g);
+    },
+  });
 
   // Achievement fields
   const [trigger, setTrigger] = useState<AchievementTrigger>(
@@ -207,15 +242,16 @@ export function TaskEditSheet({
 
     if (task.type === TaskType.COUNTING) {
       patch.action = action.trim();
-      patch.unit = unit.trim();
-      const result = parsePositiveInt(maxCountStr);
-      if (result === null) {
-        setValidationError('Goal must be a whole number greater than 0.');
-        return;
+      patch.unit = countKindNeedsUnit(countKind) ? unit.trim() : '';
+      if (maxCountStr.trim() !== '') {
+        const error = countingGoalError(maxCountStr, countKind);
+        if (error) {
+          setValidationError(error);
+          return;
+        }
+        patch.maxCount = parseCountInput(maxCountStr, countKind) as number;
       }
-      if (result !== 'empty') {
-        patch.maxCount = result;
-      }
+      if (!task.sharedCounterId) patch.countKind = countKind;
     }
 
     if (task.type === TaskType.ACHIEVEMENT) {
@@ -330,26 +366,30 @@ export function TaskEditSheet({
                 className={styles.fieldInput}
               />
             </label>
+            <div className={styles.field}>
+              <span className={styles.fieldLabel}>Kind</span>
+              {task.sharedCounterId ? (
+                <LinkedKindTag task={task} />
+              ) : (
+                <KindPicker value={countKind} lock={kindPickerLock('edit', storedKind)} onChange={requestKind} />
+              )}
+            </div>
             <label className={styles.field}>
               <span className={styles.fieldLabel}>Goal</span>
-              <input
-                type="number"
-                min={1}
-                step={1}
-                value={maxCountStr}
-                onChange={(e) => setMaxCountStr(e.target.value)}
-                className={styles.fieldInput}
-              />
+              <GoalEntry kind={countKind} value={maxCountStr} onChange={setMaxCountStr} aria-label="Goal" dense />
             </label>
-            <label className={styles.field}>
-              <span className={styles.fieldLabel}>Unit</span>
-              <input
-                type="text"
-                value={unit}
-                onChange={(e) => setUnit(e.target.value)}
-                className={styles.fieldInput}
-              />
-            </label>
+            {countKindNeedsUnit(countKind) && (
+              <label className={styles.field}>
+                <span className={styles.fieldLabel}>Unit</span>
+                <input
+                  type="text"
+                  value={unit}
+                  onChange={(e) => setUnit(e.target.value)}
+                  className={styles.fieldInput}
+                />
+              </label>
+            )}
+            {kindDialog}
           </>
         )}
 

@@ -82,6 +82,7 @@ describe('buildPoolEditorView', () => {
           action: '',
           goal: '',
           unit: '',
+          countKind: 'discrete',
           childTaskId: 'k1',
           childType: TaskType.NORMAL,
           markedDeleted: false,
