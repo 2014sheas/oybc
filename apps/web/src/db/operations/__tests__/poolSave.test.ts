@@ -41,6 +41,7 @@ function child(over: Partial<ChildPatch>): ChildPatch {
     action: '',
     goal: '',
     unit: '',
+    countKind: 'discrete',
     markedDeleted: false,
     childType: TaskType.NORMAL,
     ...over,

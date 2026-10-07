@@ -358,11 +358,9 @@ struct RisoSpecialTaskPanel: View {
     /// picker was retired.
     @ViewBuilder
     private var counterLinkBanner: some View {
-        if let suggestion = linkSuggestion, let goal = countingGoal {
+        if let suggestion = linkSuggestion, countingGoal != nil {
             RisoCounterLinkHintView(
                 counterName: suggestion.name,
-                lifetime: suggestion.lifetime,
-                goal: goal,
                 linked: !linkDisabled,
                 onToggle: { linkDisabled.toggle() }
             )

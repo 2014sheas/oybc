@@ -130,6 +130,33 @@ final class RisoCompoundPanelSnapshotTests: XCTestCase {
         )
     }
 
+    // MARK: - 4b. New-sub kind = Duration (picker row, no Counting field)
+
+    func testCompoundNewSubDurationLight() {
+        let view = makeHost(seed: .newSubDuration)
+            .padding(16)
+            .background(Color.risoPaper)
+        assertSnapshot(
+            of: view,
+            as: .image(layout: .fixed(width: 393, height: 480)),
+            record: recordMode
+        )
+    }
+
+    func testCompoundNewSubDurationDark() {
+        let view = makeHost(seed: .newSubDuration)
+            .padding(16)
+            .background(Color.risoPaper)
+        assertSnapshot(
+            of: view,
+            as: .image(
+                layout: .fixed(width: 393, height: 480),
+                traits: .init(userInterfaceStyle: .dark)
+            ),
+            record: recordMode
+        )
+    }
+
     // MARK: - 5. New-sub type = Counting, counter-link hint visible (R1
     // review fix: covers the `RisoCounterLinkHintView` on-blue token fix in
     // both the auto-link-default-ON state and the "Don't link" opted-out
@@ -213,6 +240,9 @@ fileprivate enum CompoundSeed {
     case withSubs
     /// New-sub type flipped to Counting, showing Goal/unit row + preview.
     case newSubCounting
+    /// New-sub type = Counting at Duration: picker shows Duration, Goal reads
+    /// "1h 30m", no Counting (unit) field.
+    case newSubDuration
     /// New-sub type = Counting, (verb, noun) pair matches an existing
     /// counter ("Run"/"km" → fixture's "cs-c1") — counter-link hint visible,
     /// auto-link default ON ("Don't link" pill).
@@ -283,6 +313,18 @@ fileprivate enum CompoundSeed {
                 newSubType: .counting,
                 subGoalText: "5",
                 subUnitText: "km"
+            )
+        case .newSubDuration:
+            return RisoCompoundFieldsView.Seed(
+                title: "Music week",
+                rule: .allOf,
+                threshold: 2,
+                subs: [.newNormal(title: "Warm up")],
+                subInputText: "Practice",
+                newSubType: .counting,
+                subGoalText: "1h 30m",
+                subUnitText: "",
+                subKind: .duration
             )
         case .newSubCountingLinked:
             return RisoCompoundFieldsView.Seed(

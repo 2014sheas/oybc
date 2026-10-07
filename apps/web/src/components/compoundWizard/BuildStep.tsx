@@ -110,11 +110,11 @@ export function BuildStep({
       // Existing-mode rows are ready by construction — they can only
       // exist when a concrete library id is attached. Inline-mode rows
       // still run the live readiness check.
-      const r = evaluateSubtaskReadiness(s, new Set());
+      const r = evaluateSubtaskReadiness(s, new Set(), allTasks);
       if (r.ready) ready++;
     }
     return { readyCount: ready };
-  }, [subtasks]);
+  }, [subtasks, allTasks]);
 
   // One sub-task is enough (2026-10-06, owner ask); zero stays blocked.
   const hasMinimum = subtasks.length >= 1;

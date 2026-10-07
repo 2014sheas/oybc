@@ -510,15 +510,18 @@ final class CreateFormViewModel {
         ///     counter's lifetime count at add time ("start fresh": the new
         ///     sub's own window begins at 0). Must be set when
         ///     `sharedCounterId` is set.
-        case newCounting(action: String, goal: CountValue, unit: String, sharedCounterId: String?, baseline: CountValue?)
+        ///   - countKind: The sub's kind (docs/COUNTER_KINDS.md). The caller passes
+        ///     the EFFECTIVE kind (an auto-linked sub carries its root's); Duration
+        ///     has no unit.
+        case newCounting(action: String, goal: CountValue, unit: String, sharedCounterId: String?, baseline: CountValue?, countKind: CountKind = .discrete)
 
         /// Display title for the sub chip in the UI.
         var displayTitle: String {
             switch self {
             case .existing(_, let t, _): return t
             case .newNormal(let t): return t
-            case .newCounting(let a, let g, let u, _, _):
-                return TaskTitle.generateCounterTaskTitle(action: a, maxCount: g, unit: u)
+            case .newCounting(let a, let g, let u, _, _, let k):
+                return TaskTitle.generateCounterTaskTitle(action: a, maxCount: g, unit: u, countKind: k)
             }
         }
 
@@ -666,17 +669,20 @@ final class CreateFormViewModel {
                 childTasks.append(newTask)
                 childTaskId = newId
 
-            case .newCounting(let action, let goal, let unit, let sharedCounterId, let baseline):
+            case .newCounting(let action, let goal, let unit, let sharedCounterId, let baseline, let countKind):
                 let newId = AppDatabase.generateUUID()
-                let autoTitle = TaskTitle.generateCounterTaskTitle(action: action, maxCount: goal, unit: unit)
-                let newTask = OYBC.Task(
+                let childUnit = countKindNeedsUnit(countKind) ? unit.trimmingCharacters(in: .whitespacesAndNewlines) : ""
+                let autoTitle = TaskTitle.generateCounterTaskTitle(
+                    action: action, maxCount: goal, unit: childUnit, countKind: countKind
+                )
+                var newTask = OYBC.Task(
                     id: newId,
                     userId: userId,
                     title: autoTitle,
                     description: nil,
                     type: .counting,
                     action: action.trimmingCharacters(in: .whitespacesAndNewlines),
-                    unit: unit.trimmingCharacters(in: .whitespacesAndNewlines),
+                    unit: childUnit,
                     maxCount: goal,
                     totalCompletions: 0,
                     totalInstances: 0,
@@ -689,6 +695,7 @@ final class CreateFormViewModel {
                     sharedCounterId: sharedCounterId,
                     baseline: baseline
                 )
+                newTask.countKind = countKind == .discrete ? nil : countKind
                 childTasks.append(newTask)
                 childTaskId = newId
             }

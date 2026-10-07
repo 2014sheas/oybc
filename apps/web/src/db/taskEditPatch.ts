@@ -3,6 +3,11 @@ import {
   TaskType,
   generateCounterTaskTitle,
   clampCompoundThreshold,
+  countKindNeedsUnit,
+  formatCountForInput,
+  parseCountInput,
+  resolveCountKind,
+  type CountKind,
   compoundChildPickerCandidates,
   type CompoundChild,
   type Task,
@@ -36,10 +41,18 @@ import { generateUUID, currentTimestamp } from './utils';
  * three fields are blank; blanks render as an em dash. Mirrors iOS
  * `risoReadsAsPreview`.
  */
-export function readsAsPreview(action: string, goal: string, unit: string): string | undefined {
+export function readsAsPreview(
+  action: string,
+  goal: string,
+  unit: string,
+  kind: CountKind = 'discrete',
+): string | undefined {
   const a = action.trim();
   const g = goal.trim();
   const u = unit.trim();
+  if (kind === 'duration') {
+    return !a && !g ? undefined : `Reads as: ${a || '—'} — ${g || '—'}`;
+  }
   if (!a && !g && !u) return undefined;
   return `Reads as: ${a || '—'} — ${g || '—'} — ${u || '—'}`;
 }
@@ -63,6 +76,9 @@ export interface ChildPatch {
   action: string;
   goal: string;
   unit: string;
+  /** Counter kind (Counting only): picked for a NEW sub-task, the task's
+   *  own for an existing one (no picker — goal edits at its own kind). */
+  countKind: CountKind;
   markedDeleted: boolean;
 }
 
@@ -85,6 +101,7 @@ export function newChildPatch(isCounting: boolean): ChildPatch {
     action: '',
     goal: '',
     unit: '',
+    countKind: 'discrete',
     markedDeleted: false,
   };
 }
@@ -93,6 +110,7 @@ export function newChildPatch(isCounting: boolean): ChildPatch {
  *  "counting" sub-task (Action/Goal/Unit); anything else is a Normal
  *  sub-task. Mirrors iOS `ChildPatch.init(from:)`. */
 export function childPatchFromTask(child: Task): ChildPatch {
+  const kind = resolveCountKind(child);
   return {
     id: child.id,
     childTaskId: child.id,
@@ -100,8 +118,9 @@ export function childPatchFromTask(child: Task): ChildPatch {
     isCounting: child.type === TaskType.COUNTING,
     childType: child.type,
     action: child.action ?? '',
-    goal: child.maxCount !== undefined ? String(child.maxCount) : '',
+    goal: child.maxCount !== undefined ? formatCountForInput(child.maxCount, kind) : '',
     unit: child.unit ?? '',
+    countKind: kind,
     markedDeleted: false,
   };
 }
@@ -214,14 +233,9 @@ export function appendPickedChild(draft: TaskEditPatch, task: Task): TaskEditPat
   return { ...draft, children: [...draft.children, childPatchFromTask(task)] };
 }
 
-/** The typed goal as a positive integer, or `undefined` when blank/invalid. */
-function parsePositiveGoal(goal: string): number | undefined {
-  // Whole digits only — `parseInt` would truncate "2.5" / "1e3" / "5x" and
-  // silently save a different goal than typed; iOS `Int(_:)` rejects them.
-  const trimmed = goal.trim();
-  if (!/^\d+$/.test(trimmed)) return undefined;
-  const parsed = Number(trimmed);
-  return parsed > 0 ? parsed : undefined;
+/** The typed goal parsed at `kind` (positive, grammar per kind), or `undefined` when blank/invalid. */
+function parsePositiveGoal(goal: string, kind: CountKind = 'discrete'): number | undefined {
+  return parseCountInput(goal, kind) ?? undefined;
 }
 
 /**
@@ -234,10 +248,20 @@ function parsePositiveGoal(goal: string): number | undefined {
  * @param text - The row's text (the action).
  * @param goal - The Goal field's text.
  * @param unit - The Counting (unit) field's text.
- * @returns `true` when all three are valid.
+ * @param kind - The new sub-task's kind (Duration needs no unit).
+ * @returns `true` when all required fields are valid.
  */
-export function canAppendCounting(text: string, goal: string, unit: string): boolean {
-  return text.trim().length > 0 && parsePositiveGoal(goal) !== undefined && unit.trim().length > 0;
+export function canAppendCounting(
+  text: string,
+  goal: string,
+  unit: string,
+  kind: CountKind = 'discrete',
+): boolean {
+  return (
+    text.trim().length > 0 &&
+    parsePositiveGoal(goal, kind) !== undefined &&
+    (!countKindNeedsUnit(kind) || unit.trim().length > 0)
+  );
 }
 
 /**
@@ -252,6 +276,7 @@ export function canAppendCounting(text: string, goal: string, unit: string): boo
  * @param isCounting - Whether the "Counting" chip is on.
  * @param goal - The Goal field's text (Counting only).
  * @param unit - The Counting (unit) field's text (Counting only).
+ * @param kind - The new Counting sub-task's kind.
  * @returns The next draft.
  */
 export function appendTypedChild(
@@ -260,21 +285,23 @@ export function appendTypedChild(
   isCounting: boolean,
   goal = '',
   unit = '',
+  kind: CountKind = 'discrete',
 ): TaskEditPatch {
   let child: ChildPatch;
   if (isCounting) {
-    const parsedGoal = parsePositiveGoal(goal);
-    const trimmedUnit = unit.trim();
+    const parsedGoal = parsePositiveGoal(goal, kind);
+    const trimmedUnit = countKindNeedsUnit(kind) ? unit.trim() : '';
     const title =
-      parsedGoal !== undefined && trimmedUnit.length > 0
-        ? generateCounterTaskTitle(text, parsedGoal, trimmedUnit)
+      parsedGoal !== undefined && (trimmedUnit.length > 0 || !countKindNeedsUnit(kind))
+        ? generateCounterTaskTitle(text, parsedGoal, trimmedUnit, undefined, kind)
         : text;
     child = {
       ...newChildPatch(true),
       title,
       action: text,
-      goal: parsedGoal !== undefined ? String(parsedGoal) : '',
+      goal: parsedGoal !== undefined ? formatCountForInput(parsedGoal, kind) : '',
       unit: trimmedUnit,
+      countKind: kind,
     };
   } else {
     child = { ...newChildPatch(false), title: text };
@@ -330,9 +357,10 @@ export function validatePatch(patch: TaskEditPatch, type: TaskType): string | nu
       if (kept.length < 1) return 'A compound task needs a sub-task.';
       for (const child of kept) {
         if (!child.isCounting) continue;
-        const g = parseInt(child.goal.trim(), 10);
-        const u = child.unit.trim();
-        if (!Number.isFinite(g) || g <= 0 || u.length === 0) {
+        const ok =
+          parsePositiveGoal(child.goal, child.countKind) !== undefined &&
+          (!countKindNeedsUnit(child.countKind) || child.unit.trim().length > 0);
+        if (!ok) {
           const name = child.title.trim();
           return `Counting sub-task "${name}" needs a goal and a unit.`;
         }
@@ -403,17 +431,18 @@ export function buildNewChildTask(
 ): Task {
   if (step.isCounting) {
     const action = step.action.trim();
-    const unit = step.unit.trim();
-    const parsedGoal = parseInt(step.goal.trim(), 10);
-    const goal = Number.isFinite(parsedGoal) ? parsedGoal : 0;
+    const kind = step.countKind;
+    const unit = countKindNeedsUnit(kind) ? step.unit.trim() : '';
+    const goal = parsePositiveGoal(step.goal, kind) ?? 0;
     return {
       id,
       userId,
-      title: generateCounterTaskTitle(action, goal, unit, title),
+      title: generateCounterTaskTitle(action, goal, unit, title, kind),
       type: TaskType.COUNTING,
       action,
       unit,
       maxCount: goal,
+      ...(kind !== 'discrete' ? { countKind: kind } : {}),
       isCompleted: false,
       totalCompletions: 0,
       totalInstances: 0,
@@ -447,10 +476,11 @@ export function buildNewChildTask(
 export function applyStepToChildTask(base: Task, step: ChildPatch, title: string): Task {
   if (step.isCounting && base.type === TaskType.COUNTING) {
     const action = step.action.trim();
-    const unit = step.unit.trim();
-    const parsedGoal = parseInt(step.goal.trim(), 10);
-    const goal = Number.isFinite(parsedGoal) ? parsedGoal : (base.maxCount ?? 0);
-    return { ...base, action, unit, maxCount: goal, title: generateCounterTaskTitle(action, goal, unit, title) };
+    // An existing sub-task edits at its OWN kind (no picker).
+    const kind = resolveCountKind(base);
+    const unit = countKindNeedsUnit(kind) ? step.unit.trim() : '';
+    const goal = parsePositiveGoal(step.goal, kind) ?? (base.maxCount ?? 0);
+    return { ...base, action, unit, maxCount: goal, title: generateCounterTaskTitle(action, goal, unit, title, kind) };
   }
   return { ...base, title };
 }
@@ -484,6 +514,7 @@ export function patchesEqual(a: TaskEditPatch, b: TaskEditPatch): boolean {
       x.action !== y.action ||
       x.goal !== y.goal ||
       x.unit !== y.unit ||
+      x.countKind !== y.countKind ||
       x.markedDeleted !== y.markedDeleted
     ) {
       return false;

@@ -1,4 +1,4 @@
-import { generateCounterTaskTitle } from '@oybc/shared';
+import { countKindNeedsUnit, generateCounterTaskTitle, parseCountInput, type CountKind } from '@oybc/shared';
 import { CountingSubConfigRow } from './wizard/CountingSubConfigRow';
 import styles from './CountingStepFields.module.css';
 
@@ -22,6 +22,11 @@ interface CountingStepFieldsProps {
   maxCount: string;
   unit: string;
   errors?: CountingStepFieldErrors;
+  /** The kind the goal is entered at (the root's when auto-linked). */
+  countKind: CountKind;
+  onKindChange: (kind: CountKind) => void;
+  /** Auto-linked: the family's kind tag replaces the picker. */
+  linkedTag?: { counterName: string; lifetime: number };
   /** Called when any field value changes */
   onChange: (field: 'action' | 'maxCount' | 'unit', value: string) => void;
 }
@@ -43,6 +48,9 @@ interface CountingStepFieldsProps {
  * @param maxCount - Current goal value (as string from input)
  * @param unit - Current counted-noun value (stored as `unit`)
  * @param errors - Optional field-level error messages
+ * @param countKind - The kind the goal is entered at
+ * @param onKindChange - Callback fired when a new sub-task's kind changes
+ * @param linkedTag - Set when auto-linked (tag instead of picker)
  * @param onChange - Callback fired when any field changes
  */
 export function CountingStepFields({
@@ -51,15 +59,23 @@ export function CountingStepFields({
   maxCount,
   unit,
   errors,
+  countKind,
+  onKindChange,
+  linkedTag,
   onChange,
 }: CountingStepFieldsProps): React.ReactElement {
   const trimmedAction = action.trim();
   const trimmedUnit = unit.trim();
-  const parsedMaxCount = parseInt(maxCount, 10);
-  const goalValid = Number.isInteger(parsedMaxCount) && parsedMaxCount > 0;
+  const parsedMaxCount = parseCountInput(maxCount, countKind);
   const titlePreview =
-    trimmedAction && trimmedUnit && goalValid
-      ? generateCounterTaskTitle(trimmedAction, parsedMaxCount, trimmedUnit)
+    trimmedAction && (trimmedUnit || !countKindNeedsUnit(countKind)) && parsedMaxCount !== null
+      ? generateCounterTaskTitle(
+          trimmedAction,
+          parsedMaxCount,
+          countKindNeedsUnit(countKind) ? trimmedUnit : '',
+          undefined,
+          countKind,
+        )
       : '';
 
   return (
@@ -90,6 +106,9 @@ export function CountingStepFields({
         idPrefix={idPrefix}
         goal={maxCount}
         unit={unit}
+        kind={countKind}
+        onKindChange={onKindChange}
+        linkedTag={linkedTag}
         onGoalChange={(value) => onChange('maxCount', value)}
         onUnitChange={(value) => onChange('unit', value)}
         goalError={errors?.maxCount}

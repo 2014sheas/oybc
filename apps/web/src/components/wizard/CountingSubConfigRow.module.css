@@ -7,8 +7,8 @@
   min-width: 0;
 }
 .goalGroup {
-  flex: 0 0 90px;
-  min-width: 0;
+  flex: 0 0 auto;
+  min-width: 90px;
 }
 .unitGroup {
   flex: 1 1 auto;

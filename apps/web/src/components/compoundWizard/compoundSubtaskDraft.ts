@@ -1,3 +1,14 @@
+import {
+  TaskType,
+  countKindNeedsUnit,
+  findLinkableCounter,
+  generateCounterTaskTitle,
+  parseCountInput,
+  type CountKind,
+  type CreateCompoundChildEntry,
+  type LinkableCounter,
+  type Task,
+} from '@oybc/shared';
 import type { SubtaskFormState } from '../subtaskDraftUtils';
 
 /** The inline task types a SubtaskCard can create. Nested compound-of-
@@ -41,6 +52,10 @@ export interface InlineSubtaskDraft {
    * `inlineType === 'counting'`.
    */
   linkDisabled?: boolean;
+  /** Counter kind of a NEW counting sub-task (absent = discrete). Only a
+   *  sub-task that does not auto-link shows the picker; a linked one follows
+   *  its root's kind (see {@link effectiveInlineKind}). */
+  countKind?: CountKind;
 }
 
 export type SubtaskDraft = ExistingSubtaskDraft | InlineSubtaskDraft;
@@ -61,6 +76,7 @@ export interface SubtaskReadiness {
 export function evaluateSubtaskReadiness(
   draft: SubtaskDraft,
   excludedIds: Set<string>,
+  allTasks: readonly Task[] = [],
 ): SubtaskReadiness {
   if (draft.mode === 'existing') {
     if (!draft.selectedId) {
@@ -79,10 +95,12 @@ export function evaluateSubtaskReadiness(
 
     case 'counting': {
       if (!draft.action.trim()) return { ready: false, message: 'Add an action (e.g. "Run").' };
-      if (!draft.unit.trim()) return { ready: false, message: 'Add a unit (e.g. "miles").' };
-      const count = parseInt(draft.maxCountStr, 10);
-      if (isNaN(count) || count < 1) {
-        return { ready: false, message: 'Add a goal of at least 1.' };
+      const kind = effectiveInlineKind(draft, allTasks);
+      if (countKindNeedsUnit(kind) && !draft.unit.trim()) {
+        return { ready: false, message: 'Add a unit (e.g. "miles").' };
+      }
+      if (parseCountInput(draft.maxCountStr, kind) === null) {
+        return { ready: false, message: 'Add a goal above zero.' };
       }
       return { ready: true, message: null };
     }
@@ -129,5 +147,77 @@ export function switchInlineType(
     maxCountStr: '',
     steps: [],
     pendingTypeSwitch: undefined,
+  };
+}
+
+/**
+ * The counter a NEW inline counting sub-task would auto-link to, ignoring the
+ * "Don't link" opt-out (the hint still shows so the user can re-link). Duration
+ * has no counted noun, so it never matches.
+ *
+ * @param draft - The inline sub-task draft.
+ * @param allTasks - The library pool.
+ * @returns The matched root counter, or null.
+ */
+export function inlineLinkMatch(
+  draft: InlineSubtaskDraft,
+  allTasks: readonly Task[],
+): LinkableCounter | null {
+  if (draft.inlineType !== 'counting' || (draft.countKind ?? 'discrete') === 'duration') return null;
+  const action = draft.action.trim();
+  const unit = draft.unit.trim();
+  return action && unit ? findLinkableCounter({ action, unit }, allTasks) : null;
+}
+
+/**
+ * The kind an inline counting sub-task is validated, previewed and saved at:
+ * its root's when it auto-links (the picker is replaced by a tag), else the
+ * picker's.
+ *
+ * @param draft - The inline sub-task draft.
+ * @param allTasks - The library pool.
+ * @returns The effective kind.
+ */
+export function effectiveInlineKind(draft: InlineSubtaskDraft, allTasks: readonly Task[]): CountKind {
+  const match = draft.linkDisabled ? null : inlineLinkMatch(draft, allTasks);
+  return match ? match.countKind : (draft.countKind ?? 'discrete');
+}
+
+/**
+ * An inline sub-task's `createCompound` entry. A blank-titled counting
+ * sub-task gets the generated "{Action} {Goal} {Unit}" / "{Action} {Xh Ym}"
+ * title; an auto-linked one is parsed and saved at its root's kind.
+ *
+ * @param subtask - The inline draft.
+ * @param allTasks - The library pool (auto-link match is re-derived here).
+ * @returns The entry.
+ */
+export function inlineSubtaskToAutoCreate(
+  subtask: InlineSubtaskDraft,
+  allTasks: readonly Task[],
+): CreateCompoundChildEntry {
+  if (subtask.inlineType !== 'counting') {
+    return { autoCreate: { type: TaskType.NORMAL, title: subtask.title.trim() } };
+  }
+  const match = subtask.linkDisabled ? null : inlineLinkMatch(subtask, allTasks);
+  const kind = effectiveInlineKind(subtask, allTasks);
+  const action = subtask.action.trim();
+  const unit = countKindNeedsUnit(kind) ? subtask.unit.trim() : '';
+  const maxCount = parseCountInput(subtask.maxCountStr, kind) ?? undefined;
+  const title =
+    subtask.title.trim() ||
+    (maxCount !== undefined ? generateCounterTaskTitle(action, maxCount, unit, undefined, kind) : action);
+  return {
+    autoCreate: {
+      type: TaskType.COUNTING,
+      title,
+      action: action || undefined,
+      unit: unit || undefined,
+      maxCount,
+      ...(kind !== 'discrete' ? { countKind: kind } : {}),
+      // "Start fresh" baseline — the source's lifetime at creation.
+      sharedCounterId: match ? match.counterId : undefined,
+      baseline: match ? match.lifetime : undefined,
+    },
   };
 }

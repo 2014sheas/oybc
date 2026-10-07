@@ -239,7 +239,7 @@ describe('persistWizardBoardRows — windowed derivation pass (item 2)', () => {
  * sub-task rename) all landing correctly in one atomic create.
  */
 function simpleChildPatch(over: Partial<ChildPatch>): ChildPatch {
-  return { id: 'x', childTaskId: null, title: '', isCounting: false, action: '', goal: '', unit: '', markedDeleted: false, ...over, childType: over.childType ?? (over.isCounting ? TaskType.COUNTING : TaskType.NORMAL) };
+  return { id: 'x', childTaskId: null, title: '', isCounting: false, action: '', goal: '', unit: '', countKind: 'discrete', markedDeleted: false, ...over, childType: over.childType ?? (over.isCounting ? TaskType.COUNTING : TaskType.NORMAL) };
 }
 
 describe('persistWizardBoardRows — staged inline edits (Inline Task Editing PR-2)', () => {

@@ -40,6 +40,7 @@ function child(id: string, title: string, over: Partial<ChildPatch> = {}): Child
     action: '',
     goal: '',
     unit: '',
+    countKind: 'discrete',
     markedDeleted: false,
     ...over,
     childType: over.childType ?? (over.isCounting ? TaskType.COUNTING : TaskType.NORMAL),

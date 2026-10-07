@@ -3,7 +3,6 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import {
   OperatorType,
   TaskType,
-  findLinkableCounter,
   type Task,
   type BoardTask,
   type CompoundChild,
@@ -29,6 +28,7 @@ import {
   type SubtaskDraft,
   type ExistingSubtaskDraft,
   type InlineSubtaskDraft,
+  inlineSubtaskToAutoCreate,
 } from './compoundSubtaskDraft';
 import styles from './CompoundTaskWizard.module.css';
 
@@ -253,40 +253,7 @@ export function CompoundTaskWizard({
         }
 
         // Inline-created subtask — map to autoCreate shape.
-        if (subtask.inlineType === 'counting') {
-          const maxCount = parseInt(subtask.maxCountStr, 10);
-          const trimmedAction = subtask.action.trim();
-          const trimmedUnit = subtask.unit.trim();
-          // R1 counters refresh — auto-link. Re-derive the match fresh at
-          // submit time (the library may have changed since the last
-          // keystroke); `linkDisabled` is the user's "Don't link" opt-out
-          // from the InlineCounterLinkHint shown under the fields.
-          const match =
-            !subtask.linkDisabled && trimmedAction && trimmedUnit
-              ? findLinkableCounter({ action: trimmedAction, unit: trimmedUnit }, allTasks)
-              : null;
-          return {
-            autoCreate: {
-              type: TaskType.COUNTING,
-              title: subtask.title.trim(),
-              action: trimmedAction || undefined,
-              unit: trimmedUnit || undefined,
-              maxCount: Number.isFinite(maxCount) ? maxCount : undefined,
-              // "Start fresh" baseline — the source's lifetime count at
-              // creation time, so the new child's own window begins at 0.
-              sharedCounterId: match ? match.counterId : undefined,
-              baseline: match ? match.lifetime : undefined,
-            },
-          };
-        }
-
-        // 'normal'
-        return {
-          autoCreate: {
-            type: TaskType.NORMAL,
-            title: subtask.title.trim(),
-          },
-        };
+        return inlineSubtaskToAutoCreate(subtask, allTasks);
       });
 
       const compound = await createCompound(resolvedUserId, {

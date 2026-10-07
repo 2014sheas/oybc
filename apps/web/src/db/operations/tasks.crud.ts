@@ -258,6 +258,7 @@ export async function createCompound(
           // linked to that counter with a "start fresh" baseline.
           sharedCounterId: entry.autoCreate.sharedCounterId ?? undefined,
           baseline: entry.autoCreate.baseline ?? undefined,
+          ...(entry.autoCreate.countKind ? { countKind: entry.autoCreate.countKind } : {}),
           isCompleted: false,
           totalCompletions: 0,
           totalInstances: 0,

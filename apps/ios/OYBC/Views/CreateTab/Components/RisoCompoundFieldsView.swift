@@ -31,6 +31,7 @@ struct RisoCompoundFieldsView: View {
         var newSubType: NewSubType = .normal
         var subGoalText: String = ""
         var subUnitText: String = ""
+        var subKind: CountKind = .discrete
         /// Pre-seeds the counter-link hint state directly, bypassing the
         /// `.onChange` recompute (which doesn't fire from a seeded initial
         /// value) — lets snapshot tests render `RisoCounterLinkHintView` in
@@ -96,6 +97,8 @@ struct RisoCompoundFieldsView: View {
     @State private var newSubType: NewSubType
     @State private var subGoalText: String
     @State private var subUnitText: String
+    /// The new counting sub's picked kind (a linked sub follows its root's).
+    @State private var subKind: CountKind = .discrete
 
     /// Controls visibility of the smart-autocomplete dropdown below the sub input.
     @State private var subAutocompleteVisible: Bool = false
@@ -191,6 +194,7 @@ struct RisoCompoundFieldsView: View {
         _newSubType       = State(initialValue: seed.newSubType)
         _subGoalText      = State(initialValue: seed.subGoalText)
         _subUnitText      = State(initialValue: seed.subUnitText)
+        _subKind          = State(initialValue: seed.subKind)
         _subLinkSuggestion = State(initialValue: seed.subLinkSuggestion)
         _subLinkDisabled  = State(initialValue: seed.subLinkDisabled)
     }
@@ -204,31 +208,41 @@ struct RisoCompoundFieldsView: View {
     /// fallback text.
     private var subCountingTitle: String {
         let a = subInputText.trimmingCharacters(in: .whitespacesAndNewlines)
-        let g = subGoalText.trimmingCharacters(in: .whitespacesAndNewlines)
         let u = subUnitText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !a.isEmpty, !u.isEmpty, let goal = Int(g).map(CountValue.init), goal > 0 else { return "" }
-        return TaskTitle.generateCounterTaskTitle(action: a, maxCount: goal, unit: u)
+        guard !a.isEmpty, !countKindNeedsUnit(subEffectiveKind) || !u.isEmpty,
+              let goal = subCountingGoal else { return "" }
+        return TaskTitle.generateCounterTaskTitle(
+            action: a, maxCount: goal, unit: countKindNeedsUnit(subEffectiveKind) ? u : "",
+            countKind: subEffectiveKind
+        )
     }
 
-    /// The typed sub goal as a positive Int, or nil when blank/invalid.
-    /// Gates `subCounterLinkBanner` — mirrors `RisoSpecialTaskPanel`'s
-    /// `countingGoal` (the hint only shows once a valid goal exists).
+    /// The matched counter while the new counting sub auto-links; nil once
+    /// the user opts out (Duration never matches).
+    private var linkedSubSuggestion: LinkableCounterSuggestion? { subLinkDisabled ? nil : subLinkSuggestion }
+
+    /// The kind the new sub is validated, previewed and saved at: an
+    /// auto-linking sub takes its root's kind (D5 / R19), otherwise the picker.
+    private var subEffectiveKind: CountKind { linkedSubSuggestion?.countKind ?? subKind }
+
+    /// The typed sub goal parsed at the effective kind, or nil when
+    /// blank/invalid. Gates `subCounterLinkBanner` — mirrors
+    /// `RisoSpecialTaskPanel`'s `countingGoal`.
     private var subCountingGoal: CountValue? {
-        guard let g = Int(subGoalText.trimmingCharacters(in: .whitespacesAndNewlines)), g > 0 else { return nil }
-        return CountValue(g)
+        parseCountInput(subGoalText, kind: subEffectiveKind)
     }
 
     /// Gates the sub "Add" button and `addNewSub()`. A Normal sub needs only
     /// its title; a Counting sub additionally needs a valid positive Goal and
-    /// a non-blank Counting noun — mirroring `RisoSpecialTaskPanel`'s
-    /// `canSubmitCounting` and web's `evaluateSubtaskReadiness`, so an
-    /// untouched Goal (blank since R1 removed the "5" pre-fill) can never
-    /// silently produce a `maxCount = 1` / "reps" child.
+    /// (unless Duration) a non-blank Counting noun — mirroring
+    /// `RisoSpecialTaskPanel`'s `canSubmitCounting` and web's
+    /// `evaluateSubtaskReadiness`.
     private var canAddSub: Bool {
         guard !subInputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return false }
         guard newSubType == .counting else { return true }
         return subCountingGoal != nil
-            && !subUnitText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && (!countKindNeedsUnit(subEffectiveKind)
+                || !subUnitText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
     }
 
     /// Gates the "Add to board ✦" button — title must be non-empty and at
@@ -367,8 +381,9 @@ struct RisoCompoundFieldsView: View {
             if newSubType == .counting {
                 VStack(alignment: .leading, spacing: 5) {
                     // Shared with the compound edit editor's new-sub config.
-                    RisoCountingSubConfigRow(goal: $subGoalText, unit: $subUnitText)
+                    RisoCountingSubConfigRow(goal: $subGoalText, unit: $subUnitText, kind: $subKind, linked: linkedSubSuggestion)
                         .onChange(of: subUnitText) { _, _ in updateSubLinkSuggestion() }
+                        .onChange(of: subKind) { _, _ in updateSubLinkSuggestion() }
 
                     if !subCountingTitle.isEmpty {
                         (Text("Title: ")
@@ -540,11 +555,9 @@ struct RisoCompoundFieldsView: View {
     /// `counterLinkBanner`, factored into the shared `RisoCounterLinkHintView`).
     @ViewBuilder
     private var subCounterLinkBanner: some View {
-        if let suggestion = subLinkSuggestion, let goal = subCountingGoal {
+        if let suggestion = subLinkSuggestion, subCountingGoal != nil {
             RisoCounterLinkHintView(
                 counterName: suggestion.name,
-                lifetime: suggestion.lifetime,
-                goal: goal,
                 linked: !subLinkDisabled,
                 onToggle: { subLinkDisabled.toggle() }
             )
@@ -555,8 +568,9 @@ struct RisoCompoundFieldsView: View {
     /// pair changes. Resets the opt-out flag so an edited pair re-offers
     /// linking by default (web parity).
     private func updateSubLinkSuggestion() {
-        guard newSubType == .counting else {
+        guard newSubType == .counting, subKind != .duration else {
             subLinkSuggestion = nil
+            subLinkDisabled = false
             return
         }
         subLinkSuggestion = findLinkableCounter(
@@ -583,7 +597,8 @@ struct RisoCompoundFieldsView: View {
             // `canAddSub` guarantees a valid positive goal and non-blank unit
             // for a counting sub — no silent `?? 1` / "reps" fallbacks.
             guard let goal = subCountingGoal else { return }
-            let unit = subUnitText.trimmingCharacters(in: .whitespacesAndNewlines)
+            let kind = subEffectiveKind
+            let unit = countKindNeedsUnit(kind) ? subUnitText.trimmingCharacters(in: .whitespacesAndNewlines) : ""
             // R1: auto-link default ON — apply the suggestion unless opted
             // out via "Don't link". Baseline is always "start fresh".
             let linked = subLinkSuggestion != nil && !subLinkDisabled
@@ -592,7 +607,8 @@ struct RisoCompoundFieldsView: View {
                 goal: goal,
                 unit: unit,
                 sharedCounterId: linked ? subLinkSuggestion?.counterId : nil,
-                baseline: linked ? subLinkSuggestion?.lifetime : nil
+                baseline: linked ? subLinkSuggestion?.lifetime : nil,
+                countKind: kind
             )
         }
 
@@ -602,6 +618,7 @@ struct RisoCompoundFieldsView: View {
         // Reset counting sub fields after each add
         subGoalText = ""
         subUnitText = ""
+        subKind = .discrete
         newSubType = .normal
         subLinkSuggestion = nil
         subLinkDisabled = false
@@ -655,6 +672,7 @@ struct RisoCompoundFieldsView: View {
         newSubType        = .normal
         subGoalText       = ""
         subUnitText       = ""
+        subKind           = .discrete
         subAutocompleteVisible = false
         subLinkSuggestion = nil
         subLinkDisabled   = false

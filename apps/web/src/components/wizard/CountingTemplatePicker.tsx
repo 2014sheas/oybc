@@ -112,8 +112,6 @@ export function CountingTemplatePicker({
       {linkHint && (
         <CounterLinkHint
           counterName={linkHint.match.name}
-          lifetime={linkHint.match.lifetime}
-          goal={linkHint.goal}
           linked={linkHint.linked}
           onToggle={linkHint.onToggle}
         />
