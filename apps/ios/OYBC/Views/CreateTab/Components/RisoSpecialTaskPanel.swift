@@ -111,6 +111,9 @@ struct RisoSpecialTaskPanel: View {
         countingGoalText = s.goal
         countingUnitText = s.unit
         countingKind = s.kind
+        if s.kind != .duration {
+            linkSuggestion = findLinkableCounter(action: s.action, unit: s.unit, tasks: suggestionPool ?? taskLibrary)
+        }
     }
 
     // MARK: - Collapsed button

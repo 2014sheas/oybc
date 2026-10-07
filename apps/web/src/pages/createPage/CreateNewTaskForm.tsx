@@ -166,10 +166,10 @@ export function CreateNewTaskForm({
   // the link (see `handleFormSubmit`), so the hint must stay hidden rather
   // than promise a linking behavior the caller didn't wire up.
   const linkHint =
-    counterMatch && goalValid && onCreateLinked
+    counterMatch && parsedGoal !== null && onCreateLinked
       ? {
           match: counterMatch,
-          goal: parsedGoal ?? 0,
+          goal: parsedGoal,
           linked: !linkDisabled,
           onToggle: () => setLinkDisabled((prev) => !prev),
         }
@@ -198,7 +198,7 @@ export function CreateNewTaskForm({
         // Match resolved from a stale snapshot (e.g. the source was deleted
         // between keystrokes) — fall back to a plain create rather than
         // silently dropping the submit.
-        void form.handleSubmit(e);
+        void form.handleSubmit(e, kind);
         return;
       }
       const input = buildLinkedCreateInput({
@@ -210,13 +210,15 @@ export function CreateNewTaskForm({
         baseline: counterMatch.lifetime,
       });
       if (!input) {
-        void form.handleSubmit(e);
+        void form.handleSubmit(e, kind);
         return;
       }
       onCreateLinked(input);
       return;
     }
-    void form.handleSubmit(e);
+    // The effective kind: when auto-linked (KindTag shown) an invalid goal
+    // is reported at the ROOT kind, never saved at the hidden picker kind.
+    void form.handleSubmit(e, kind);
   }
 
   return (
@@ -469,21 +471,21 @@ export function CreateNewTaskForm({
               </div>
 
               {countKindNeedsUnit(kind) && (
-              <div className={styles.fieldGroup}>
-                <label className={styles.label} htmlFor="create-task-unit">
-                  Counting<span className={styles.required}>*</span>
-                </label>
-                <input
-                  id="create-task-unit"
-                  type="text"
-                  className={`${styles.input} ${form.errors.unit ? styles.inputError : ''}`}
-                  value={form.unit}
-                  onChange={(e) => form.setUnit(e.target.value)}
-                  placeholder="push-ups"
-                  maxLength={UNIT_MAX_LENGTH}
-                />
-                {form.errors.unit && <span className={styles.fieldError}>{form.errors.unit}</span>}
-              </div>
+                <div className={styles.fieldGroup}>
+                  <label className={styles.label} htmlFor="create-task-unit">
+                    Counting<span className={styles.required}>*</span>
+                  </label>
+                  <input
+                    id="create-task-unit"
+                    type="text"
+                    className={`${styles.input} ${form.errors.unit ? styles.inputError : ''}`}
+                    value={form.unit}
+                    onChange={(e) => form.setUnit(e.target.value)}
+                    placeholder="push-ups"
+                    maxLength={UNIT_MAX_LENGTH}
+                  />
+                  {form.errors.unit && <span className={styles.fieldError}>{form.errors.unit}</span>}
+                </div>
               )}
 
               {titlePreview && (

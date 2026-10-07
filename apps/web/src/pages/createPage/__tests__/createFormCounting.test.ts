@@ -3,6 +3,7 @@ import { TaskType, type Task } from '@oybc/shared';
 import {
   buildLinkedCreateInput,
   countingGoalError,
+  countingSaveFields,
   countingTitlePreview,
   effectiveCountingKind,
 } from '../createFormCounting';
@@ -55,5 +56,30 @@ describe('validateForm — counter kinds', () => {
   });
   it('discrete is unchanged', () => {
     expect(v('Read', 'pages', '2.5', 'discrete').maxCount).toBe('Goal must be a positive integer');
+  });
+});
+
+describe('auto-linked submit uses the effective (root) kind', () => {
+  const v = (goal: string, kind: 'discrete' | 'continuous') =>
+    validateForm(TaskType.COUNTING, '', '', 'Run', 'miles', goal, undefined, undefined, undefined, kind);
+  it('picker Continuous + Discrete root: "2.55" is an error at the root kind, nothing to save', () => {
+    // The hidden picker kind would accept 2.55; the effective (root) kind must not.
+    expect(v('2.55', 'continuous').maxCount).toBeUndefined();
+    expect(v('2.55', 'discrete').maxCount).toBe('Goal must be a positive integer');
+    expect(countingGoalError('2.55', effectiveCountingKind('continuous', { linked: true, countKind: 'discrete' }))).toBe(
+      'Goal must be a positive integer',
+    );
+  });
+  it('the null-fallthrough plain create saves at the effective kind', () => {
+    const kind = effectiveCountingKind('discrete', { linked: true, countKind: 'continuous' });
+    expect(countingSaveFields(kind, 'Run', ' miles ', '6.2', '')).toEqual({
+      title: 'Run 6.2 miles', unit: 'miles', maxCount: 6.2, countKind: 'continuous',
+    });
+    expect(countingSaveFields('duration', 'Practice', 'ignored', '1h 30m', '')).toEqual({
+      title: 'Practice 1h 30m', unit: '', maxCount: 90, countKind: 'duration',
+    });
+    expect(countingSaveFields('discrete', 'Read', 'pages', '5', 'Mine')).toEqual({
+      title: 'Mine', unit: 'pages', maxCount: 5,
+    });
   });
 });

@@ -79,3 +79,27 @@ export function buildLinkedCreateInput(args: {
     generateCounterTaskTitle(args.action.trim(), maxCount, args.unit.trim(), undefined, kind);
   return { source: args.source, maxCount, title, baselineMode: 'startFromZero', baseline: args.baseline };
 }
+
+/**
+ * The stored fields of a plain (unlinked) counting create at a kind. The
+ * caller has already validated the goal at this kind.
+ *
+ * @returns The title, unit (empty for Duration), parsed goal and the kind to
+ *   persist (absent for Discrete).
+ */
+export function countingSaveFields(
+  kind: CountKind,
+  action: string,
+  unit: string,
+  goalText: string,
+  providedTitle: string,
+): { title: string; unit: string; maxCount: number; countKind?: CountKind } {
+  const maxCount = parseCountInput(goalText, kind) as number;
+  const savedUnit = countKindNeedsUnit(kind) ? unit.trim() : '';
+  return {
+    title: generateCounterTaskTitle(action.trim(), maxCount, savedUnit, providedTitle.trim() || undefined, kind),
+    unit: savedUnit,
+    maxCount,
+    ...(kind !== 'discrete' ? { countKind: kind } : {}),
+  };
+}

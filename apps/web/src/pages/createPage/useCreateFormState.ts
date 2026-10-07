@@ -3,15 +3,13 @@ import {
   AchievementTrigger,
   TaskType,
   countKindNeedsUnit,
-  generateCounterTaskTitle,
-  parseCountInput,
   type CountKind,
   type Task,
   type CompoundChild,
 } from '@oybc/shared';
 import { createTask } from '../../db/operations/tasks';
 import { generateUUID, currentTimestamp } from '../../db/utils';
-import { countingGoalError } from './createFormCounting';
+import { countingGoalError, countingSaveFields } from './createFormCounting';
 import { type SubtaskFormState, createEmptySubtask } from '../../components/subtaskDraftUtils';
 
 /**
@@ -260,7 +258,8 @@ export interface UseCreateFormState {
   removeStep: (stepId: string) => void;
 
   // Submission
-  handleSubmit: (e: React.FormEvent) => Promise<void>;
+  /** `kindOverride`: the kind to validate and save at (an auto-link's root kind); defaults to the picker's. */
+  handleSubmit: (e: React.FormEvent, kindOverride?: CountKind) => Promise<void>;
 }
 
 /**
@@ -466,8 +465,9 @@ export function useCreateFormState({
   }
 
   const handleSubmit = useCallback(
-    async (e: React.FormEvent): Promise<void> => {
+    async (e: React.FormEvent, kindOverride?: CountKind): Promise<void> => {
       e.preventDefault();
+      const kind = kindOverride ?? countKind;
 
       if (taskType === TaskType.COMPOUND || !userId) return;
 
@@ -481,7 +481,7 @@ export function useCreateFormState({
         achievementMode,
         achievementReferenceId,
         achievementRequiredCountStr,
-        countKind,
+        kind,
       );
       setErrors(validationErrors);
       if (Object.keys(validationErrors).length > 0) return;
@@ -522,24 +522,17 @@ export function useCreateFormState({
             onTaskCreated(newTask);
             onPendingCreated?.(payload);
           } else if (taskType === TaskType.COUNTING) {
-            const parsedMaxCount = parseCountInput(maxCountStr, countKind) as number;
-            const resolvedTitle = generateCounterTaskTitle(
-              action.trim(),
-              parsedMaxCount,
-              unit.trim(),
-              title.trim() || undefined,
-              countKind,
-            );
+            const fields = countingSaveFields(kind, action, unit, maxCountStr, title);
             newTask = {
               id: generateUUID(),
               userId,
-              title: resolvedTitle,
+              title: fields.title,
               description: description.trim() || undefined,
               type: TaskType.COUNTING,
               action: action.trim(),
-              unit: countKindNeedsUnit(countKind) ? unit.trim() : '',
-              maxCount: parsedMaxCount,
-              ...(countKind !== 'discrete' ? { countKind } : {}),
+              unit: fields.unit,
+              maxCount: fields.maxCount,
+              ...(fields.countKind ? { countKind: fields.countKind } : {}),
               currentCount: 0,
               isCompleted: false,
               totalCompletions: 0,
@@ -614,22 +607,15 @@ export function useCreateFormState({
             endDate: defaultEndDate,
           });
         } else if (taskType === TaskType.COUNTING) {
-          const parsedMaxCount = parseCountInput(maxCountStr, countKind) as number;
-          const resolvedTitle = generateCounterTaskTitle(
-            action.trim(),
-            parsedMaxCount,
-            unit.trim(),
-            title.trim() || undefined,
-            countKind,
-          );
+          const fields = countingSaveFields(kind, action, unit, maxCountStr, title);
           newTask = await createTask(userId, {
-            title: resolvedTitle,
+            title: fields.title,
             description: description.trim() || undefined,
             type: TaskType.COUNTING,
             action: action.trim(),
-            unit: countKindNeedsUnit(countKind) ? unit.trim() : '',
-            maxCount: parsedMaxCount,
-            ...(countKind !== 'discrete' ? { countKind } : {}),
+            unit: fields.unit,
+            maxCount: fields.maxCount,
+            ...(fields.countKind ? { countKind: fields.countKind } : {}),
             timeframe: defaultTimeframe,
             startDate: defaultStartDate,
             endDate: defaultEndDate,
