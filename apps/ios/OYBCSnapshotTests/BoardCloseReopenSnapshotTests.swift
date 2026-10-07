@@ -87,8 +87,32 @@ final class BoardCloseReopenSnapshotTests: XCTestCase {
 
     func testLateLogCounting() {
         assertSnapshot(
-            of: lateLog(.counting(current: 3, max: 5, unit: "mi"), isUndoable: true),
+            of: lateLog(.counting(current: 3, max: 5, unit: "mi", countKind: .discrete), isUndoable: true),
             as: .image(layout: .fixed(width: 393, height: 260)),
+            record: recordMode
+        )
+    }
+
+    func testLateLogContinuousLight() {
+        assertSnapshot(
+            of: lateLog(.counting(current: 21.3, max: 26.2, unit: "mi", countKind: .continuous)),
+            as: .image(layout: .fixed(width: 393, height: 300)),
+            record: recordMode
+        )
+    }
+
+    func testLateLogContinuousDark() {
+        assertSnapshot(
+            of: lateLog(.counting(current: 21.3, max: 26.2, unit: "mi", countKind: .continuous)),
+            as: .image(layout: .fixed(width: 393, height: 300), traits: .init(userInterfaceStyle: .dark)),
+            record: recordMode
+        )
+    }
+
+    func testLateLogDurationLight() {
+        assertSnapshot(
+            of: lateLog(.counting(current: 540, max: 630, unit: "", countKind: .duration)),
+            as: .image(layout: .fixed(width: 393, height: 300)),
             record: recordMode
         )
     }

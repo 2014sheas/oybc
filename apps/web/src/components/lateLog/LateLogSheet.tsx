@@ -3,7 +3,10 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import {
   TaskType,
   formatWindowLabel,
+  formatCount,
   isEventOwningTask,
+  resolveCountKind,
+  resolveFamilyCountKind,
   type Board,
   type CompoundChild,
   type Task,
@@ -16,12 +19,10 @@ import {
 } from '../../db/operations/lateLog';
 import { useLateLog } from '../../hooks/useLateLog';
 import { useModalA11y } from '../../hooks/useModalA11y';
-import { parseCustomLogAmount } from '../counters/amountChips';
+import { GoalEntry } from '../counters/GoalEntry';
 import { RisoButton, RisoChip } from '../riso';
+import { initialLateLogAmount, lateLogCountingModel } from './lateLogCountingModel';
 import styles from './LateLogSheet.module.css';
-
-/** Fixed late-log chip amounts (handoff frame p8c: "+1 +2 +5 Custom…"). */
-const LATE_LOG_CHIP_AMOUNTS = [1, 2, 5] as const;
 
 export interface LateLogSheetProps {
   /** The CLOSED board the log is made from. */
@@ -136,6 +137,7 @@ export function LateLogSheet({
           <CountingBody
             board={board}
             task={task}
+            taskMap={taskMap}
             busy={busy}
             setBusy={setBusy}
             commitIncrement={commitIncrement}
@@ -218,6 +220,7 @@ function NormalBody({
 function CountingBody({
   board,
   task,
+  taskMap,
   busy,
   setBusy,
   commitIncrement,
@@ -226,6 +229,7 @@ function CountingBody({
 }: {
   board: Board;
   task: Task;
+  taskMap: Record<string, Task>;
   busy: boolean;
   setBusy: (b: boolean) => void;
   commitIncrement: (taskId: string, delta: number) => Promise<void>;
@@ -233,7 +237,8 @@ function CountingBody({
   onClose: () => void;
 }): React.ReactElement {
   const state = useLiveQuery(() => readClosedBoardSquareState(board.id, task.id), [board.id, task.id]);
-  const [selected, setSelected] = useState<number>(1);
+  const kind = resolveFamilyCountKind(task, (id) => taskMap[id]);
+  const [selected, setSelected] = useState<number>(() => initialLateLogAmount(kind, task.maxCount ?? 0));
   const [customOpen, setCustomOpen] = useState(false);
   const [customDraft, setCustomDraft] = useState('');
 
@@ -265,32 +270,40 @@ function CountingBody({
     }
   };
 
-  const customAmount = parseCustomLogAmount(customDraft);
+  const m = lateLogCountingModel({
+    kind,
+    goal: max,
+    count: state.count,
+    unit: task.unit ?? '',
+    selected,
+    customOpen,
+    customDraft,
+  });
 
   return (
     <>
       <div className={styles.readout}>
         <div className={styles.count}>
-          {state.count}
-          {max > 0 && <span className={styles.countMax}>/{max}</span>}
+          {m.readout.count}
+          {max > 0 && <span className={styles.countMax}>/{m.readout.max}</span>}
         </div>
         <div className={styles.bar}>
           <div className={styles.barFill} style={{ width: `${pct}%` }} />
         </div>
-        {task.unit && <span className={styles.unit}>{task.unit}</span>}
+        {m.readout.unit && <span className={styles.unit}>{m.readout.unit}</span>}
       </div>
 
       <div className={styles.chipRow}>
-        {LATE_LOG_CHIP_AMOUNTS.map((amount) => (
+        {m.chips.map((c) => (
           <RisoChip
-            key={amount}
-            on={!customOpen && selected === amount}
+            key={c.amount}
+            on={!customOpen && selected === c.amount}
             onClick={() => {
               setCustomOpen(false);
-              setSelected(amount);
+              setSelected(c.amount);
             }}
           >
-            +{amount}
+            {c.label}
           </RisoChip>
         ))}
         <RisoChip on={customOpen} onClick={() => setCustomOpen(true)}>
@@ -300,14 +313,13 @@ function CountingBody({
 
       {customOpen && (
         <div className={styles.customRow}>
-          <input
-            className={styles.customInput}
-            type="text"
-            inputMode="numeric"
-            placeholder="Amount"
+          <GoalEntry
+            kind={kind}
             value={customDraft}
-            onChange={(e) => setCustomDraft(e.target.value)}
+            onChange={setCustomDraft}
             aria-label="Custom amount"
+            placeholder="Amount"
+            dense
           />
         </div>
       )}
@@ -315,17 +327,15 @@ function CountingBody({
       <RisoButton
         kind="blue"
         fullWidth
-        disabled={busy || (customOpen && customAmount == null)}
+        disabled={busy || !m.canLog}
         onClick={() => {
           // Read the amount to commit directly (never through `selected`
           // state) — `setSelected` inside this same handler wouldn't be
           // visible to a `handleLog` closed over the CURRENT render yet.
-          const amount = customOpen ? customAmount : selected;
-          if (amount == null) return;
-          void handleLog(amount);
+          if (m.amount !== null) void handleLog(m.amount);
         }}
       >
-        Log
+        {m.buttonLabel}
       </RisoButton>
 
       {hasLateLog && (
@@ -457,8 +467,11 @@ function CompoundBody({
               <span className={styles.partLabel}>{child.title}</span>
               {child.type === TaskType.COUNTING && isEventOwningTask(child) && (
                 <span className={styles.partMeta}>
-                  {childWindowSum(child, childEvents, board) + (stagedIncrement.has(link.childTaskId) ? 1 : 0)}/
-                  {child.maxCount ?? 0}
+                  {formatCount(
+                    childWindowSum(child, childEvents, board) + (stagedIncrement.has(link.childTaskId) ? 1 : 0),
+                    resolveCountKind(child),
+                  )}
+                  /{formatCount(child.maxCount ?? 0, resolveCountKind(child))}
                 </span>
               )}
             </button>

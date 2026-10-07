@@ -76,4 +76,26 @@ test.describe('Closed-board late log — COUNTING', () => {
     await expect(sheet3.getByText('9/5', { exact: true })).toBeVisible();
     await expect(sheet3.getByRole('button', { name: 'Undo late log' })).toBeVisible();
   });
+
+  test('Continuous late log: +6.6 → "Log +6.6 mi"', async ({ page }) => {
+    await seedTask(page, { id: TASK_ID, title: 'Run 26.2 mi', type: 'counting', action: 'Run', unit: 'mi', maxCount: 26.2, countKind: 'continuous' });
+    await page.goto(`/boards/${BOARD_ID}?__oybc_test_bypass=1`);
+    await page.getByText('Run 26.2 mi').click();
+    const sheet = page.getByRole('dialog', { name: /Run 26.2 mi/ });
+    await sheet.getByRole('button', { name: '+6.6', exact: true }).click();
+    await sheet.getByRole('button', { name: 'Log +6.6 mi' }).click();
+    await expect(sheet).toHaveCount(0);
+    const deltas = await page.evaluate(
+      () =>
+        new Promise<number[]>((resolve, reject) => {
+          const req = indexedDB.open('oybc');
+          req.onerror = () => reject(req.error);
+          req.onsuccess = () => {
+            const all = req.result.transaction(['taskEvents']).objectStore('taskEvents').getAll();
+            all.onsuccess = () => resolve((all.result as { kind: string; delta?: number }[]).filter((e) => e.kind === 'increment').map((e) => e.delta as number));
+          };
+        }),
+    );
+    expect(deltas).toEqual([6.6]);
+  });
 });
