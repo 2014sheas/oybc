@@ -1,5 +1,5 @@
 import { formatCounterName } from './counterName';
-import { quantizeCount } from './countValue';
+import { formatCount, quantizeCount, type CountKind } from './countValue';
 
 /**
  * Generates a display title for a COUNTING task.
@@ -17,7 +17,8 @@ export function generateCounterTaskTitle(
   action: string,
   maxCount: number | null | undefined,
   unit: string,
-  providedTitle?: string
+  providedTitle?: string,
+  countKind: CountKind = 'discrete'
 ): string {
   if (providedTitle && providedTitle.trim().length > 0) {
     return providedTitle.trim();
@@ -29,6 +30,11 @@ export function generateCounterTaskTitle(
   // renders "Run miles" — see `formatCounterName`.
   if (maxCount == null) {
     return formatCounterName(action, unit);
+  }
+  if (countKind === 'duration') {
+    // Duration's unit IS time: "Practice 10h 30m" (minutes are stored; the
+    // `Xh Ym` rendering is locale-independent, so stored titles stay stable).
+    return `${action.trim()} ${formatCount(maxCount, 'duration')}`;
   }
   return `${action.trim()} ${String(quantizeCount(maxCount))} ${unit.trim()}`;
 }
@@ -44,6 +50,7 @@ export interface CounterTitleFields {
   action?: string | null;
   unit?: string | null;
   maxCount?: number | null;
+  countKind?: CountKind | null;
 }
 
 /**
@@ -70,11 +77,12 @@ export function isAutoCounterTitle(
   title: string,
   action: string,
   maxCount: number | null | undefined,
-  unit: string
+  unit: string,
+  countKind: CountKind = 'discrete'
 ): boolean {
   const trimmed = title.trim();
   if (trimmed.length === 0) return true;
-  return trimmed === generateCounterTaskTitle(action, maxCount, unit).trim();
+  return trimmed === generateCounterTaskTitle(action, maxCount, unit, undefined, countKind).trim();
 }
 
 /**
@@ -95,8 +103,9 @@ export function isAutoCounterTitle(
 export function counterCopyTitle(member: CounterTitleFields, newMaxCount: number): string {
   const action = member.action ?? '';
   const unit = member.unit ?? '';
-  if (!isAutoCounterTitle(member.title, action, member.maxCount, unit)) {
+  const countKind = member.countKind ?? 'discrete';
+  if (!isAutoCounterTitle(member.title, action, member.maxCount, unit, countKind)) {
     return member.title.trim();
   }
-  return generateCounterTaskTitle(action, newMaxCount, unit);
+  return generateCounterTaskTitle(action, newMaxCount, unit, undefined, countKind);
 }

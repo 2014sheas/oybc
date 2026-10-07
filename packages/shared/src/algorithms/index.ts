@@ -17,6 +17,9 @@ export {
   isQuantizedCount,
   finalizeWindowCount,
   formatCount,
+  formatCountForInput,
+  formatCountTotal,
+  formatCountRange,
   canSwitchCountKind,
   planCountKindSwitch,
   countTargetStep,
@@ -25,6 +28,20 @@ export {
   floorToCountStep,
 } from './countValue';
 export type { CountKind } from './countValue';
+export {
+  COUNT_KIND_LABELS,
+  kindPickerLock,
+  isKindSegmentLocked,
+  kindSegmentShowsLock,
+  parseCountInput,
+  durationToFields,
+  durationFromFields,
+  countKindNeedsUnit,
+  countUnitSuffix,
+  formatCountWithUnit,
+  resolveFamilyCountKind,
+} from './countEntry';
+export type { KindPickerLock } from './countEntry';
 
 // ===== Pair-derived counter display names (R1 — counters refresh) =====
 export { formatCounterName } from './counterName';

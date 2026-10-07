@@ -369,6 +369,8 @@ export interface AutoCreateCompoundChildTask {
    * provided when `sharedCounterId` is set.
    */
   baseline?: number | null;
+  /** Counter kinds (docs/COUNTER_KINDS.md D1) — counting only; absent = discrete. A linked child still takes its root's kind at write time (`withRootCountKind`). */
+  countKind?: CountKind;
 }
 
 /**

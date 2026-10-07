@@ -1,0 +1,70 @@
+{
+  "_note": "Cross-platform vectors for countEntry.ts <-> CountEntry.swift (docs/COUNTER_KINDS.md §5). parse: discrete = ASCII digits only, > 0; continuous = digits with an optional '.' or ',' separator and at most 2 fraction digits (a trailing separator is allowed: '3.' = 3), quantized, > 0; duration = minutes from 'N' (bare = minutes), 'H:MM', 'Xh Ym' / 'Xh' / 'Ym' (spaces optional, case-insensitive), > 0. allowZero admits 0. Anything else (signs, exponents, non-ASCII digits, 3+ decimals, fractional hours) is null.",
+  "parse": [
+    { "name": "discrete whole", "raw": "300", "kind": "discrete", "expected": 300 },
+    { "name": "discrete trims", "raw": "  12 ", "kind": "discrete", "expected": 12 },
+    { "name": "discrete decimal refused", "raw": "2.5", "kind": "discrete", "expected": null },
+    { "name": "discrete zero refused", "raw": "0", "kind": "discrete", "expected": null },
+    { "name": "discrete zero allowed", "raw": "0", "kind": "discrete", "allowZero": true, "expected": 0 },
+    { "name": "discrete sign refused", "raw": "-3", "kind": "discrete", "expected": null },
+    { "name": "discrete exponent refused", "raw": "1e3", "kind": "discrete", "expected": null },
+    { "name": "discrete arabic-indic digits refused", "raw": "٣", "kind": "discrete", "expected": null },
+    { "name": "continuous one place", "raw": "26.2", "kind": "continuous", "expected": 26.2 },
+    { "name": "continuous two places", "raw": "12.75", "kind": "continuous", "expected": 12.75 },
+    { "name": "continuous comma decimal", "raw": "26,2", "kind": "continuous", "expected": 26.2 },
+    { "name": "continuous partial separator", "raw": "3.", "kind": "continuous", "expected": 3 },
+    { "name": "continuous partial comma", "raw": "3,", "kind": "continuous", "expected": 3 },
+    { "name": "continuous leading separator", "raw": ",5", "kind": "continuous", "expected": 0.5 },
+    { "name": "continuous whole", "raw": "5", "kind": "continuous", "expected": 5 },
+    { "name": "continuous three places refused", "raw": "3.125", "kind": "continuous", "expected": null },
+    { "name": "continuous lone separator refused", "raw": ".", "kind": "continuous", "expected": null },
+    { "name": "continuous zero refused", "raw": "0.0", "kind": "continuous", "expected": null },
+    { "name": "continuous zero allowed", "raw": "0", "kind": "continuous", "allowZero": true, "expected": 0 },
+    { "name": "continuous grouping refused", "raw": "1,250.5", "kind": "continuous", "expected": null },
+    { "name": "duration bare minutes", "raw": "90", "kind": "duration", "expected": 90 },
+    { "name": "duration colon", "raw": "1:30", "kind": "duration", "expected": 90 },
+    { "name": "duration h and m", "raw": "10h 30m", "kind": "duration", "expected": 630 },
+    { "name": "duration compact", "raw": "1h30m", "kind": "duration", "expected": 90 },
+    { "name": "duration hours only", "raw": "10h", "kind": "duration", "expected": 600 },
+    { "name": "duration minutes only", "raw": "45m", "kind": "duration", "expected": 45 },
+    { "name": "duration upper case", "raw": "2H 5M", "kind": "duration", "expected": 125 },
+    { "name": "duration minutes over 59 normalise", "raw": "1h 75m", "kind": "duration", "expected": 135 },
+    { "name": "duration fractional hours refused", "raw": "1.5h", "kind": "duration", "expected": null },
+    { "name": "duration zero refused", "raw": "0h 0m", "kind": "duration", "expected": null },
+    { "name": "duration zero allowed", "raw": "0m", "kind": "duration", "allowZero": true, "expected": 0 },
+    { "name": "duration junk refused", "raw": "abc", "kind": "duration", "expected": null },
+    { "name": "empty refused", "raw": "   ", "kind": "continuous", "expected": null }
+  ],
+  "durationToFields": [
+    { "name": "hours and minutes", "minutes": 630, "expected": { "hours": "10", "minutes": "30" } },
+    { "name": "minutes pad", "minutes": 65, "expected": { "hours": "1", "minutes": "05" } },
+    { "name": "under an hour", "minutes": 45, "expected": { "hours": "0", "minutes": "45" } },
+    { "name": "absent", "minutes": null, "expected": { "hours": "", "minutes": "" } }
+  ],
+  "durationFromFields": [
+    { "name": "both", "hours": "10", "minutes": "30", "expected": "10h 30m" },
+    { "name": "hours only", "hours": "2", "minutes": "", "expected": "2h 0m" },
+    { "name": "minutes only", "hours": "", "minutes": "45", "expected": "0h 45m" },
+    { "name": "both blank", "hours": " ", "minutes": "", "expected": "" }
+  ],
+  "unitSuffix": [
+    { "name": "discrete unit", "kind": "discrete", "unit": "pages", "expected": " pages" },
+    { "name": "continuous unit trims", "kind": "continuous", "unit": " mi ", "expected": " mi" },
+    { "name": "duration never shows a unit", "kind": "duration", "unit": "guitar", "expected": "" },
+    { "name": "blank unit", "kind": "continuous", "unit": "", "expected": "" }
+  ],
+  "pickerLock": [
+    { "name": "create", "mode": "create", "kind": "discrete", "expected": "none" },
+    { "name": "create duration", "mode": "create", "kind": "duration", "expected": "none" },
+    { "name": "edit discrete", "mode": "edit", "kind": "discrete", "expected": "duration" },
+    { "name": "edit continuous", "mode": "edit", "kind": "continuous", "expected": "duration" },
+    { "name": "edit duration", "mode": "edit", "kind": "duration", "expected": "all" }
+  ],
+  "segmentState": [
+    { "name": "none lock: nothing locked", "lock": "none", "segment": "duration", "selected": "discrete", "locked": false, "glyph": false },
+    { "name": "duration lock: duration locked + glyph", "lock": "duration", "segment": "duration", "selected": "continuous", "locked": true, "glyph": true },
+    { "name": "duration lock: discrete live", "lock": "duration", "segment": "discrete", "selected": "continuous", "locked": false, "glyph": false },
+    { "name": "all lock: selected glyph", "lock": "all", "segment": "duration", "selected": "duration", "locked": true, "glyph": true },
+    { "name": "all lock: unselected no glyph", "lock": "all", "segment": "discrete", "selected": "duration", "locked": true, "glyph": false }
+  ]
+}

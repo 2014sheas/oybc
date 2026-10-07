@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import {
-  quantizeCount, isQuantizedCount, finalizeWindowCount, formatCount, formatCountForInput,
+  quantizeCount, isQuantizedCount, finalizeWindowCount, formatCount, formatCountForInput, formatCountTotal, formatCountRange,
   planCountKindSwitch, canSwitchCountKind, resolveCountKind, isWholeCountKind,
   countTargetStep, ceilToCountStep, roundToCountStep, floorToCountStep, type CountKind,
 } from '../../src/algorithms/countValue';
@@ -11,6 +11,8 @@ interface CountValueFixture {
   isQuantized: Array<{ name: string; x: number; expected: boolean }>;
   finalize: Array<{ name: string; sum: number; kind: string; expected: number }>;
   format: Array<{ name: string; value: number; kind: string; locale: string; expected: string }>;
+  formatTotal: Array<{ name: string; value: number; kind: string; locale: string; expected: string }>;
+  formatRange: Array<{ name: string; lo: number; hi: number; kind: string; locale: string; expected: string }>;
   formatForInput: Array<{ name: string; value: number; kind: string; expected: string }>;
   switch: Array<{ name: string; from: string; to: string; fields: { maxCount?: number | null; defaultLogAmount?: number | null }; expected: { maxCount?: number; defaultLogAmount?: number } | null }>;
   ceilToStep: Array<{ name: string; x: number; kind: string; expected: number }>;
@@ -36,6 +38,12 @@ describe('countValue vectors', () => {
   });
   it.each(vectors.formatForInput)('formatForInput: $name', ({ value, kind, expected }) => {
     expect(formatCountForInput(value, kind as CountKind)).toBe(expected);
+  });
+  it.each(vectors.formatTotal)('formatTotal: $name', ({ value, kind, locale, expected }) => {
+    expect(formatCountTotal(value, kind as CountKind, locale)).toBe(expected);
+  });
+  it.each(vectors.formatRange)('formatRange: $name', ({ lo, hi, kind, locale, expected }) => {
+    expect(formatCountRange(lo, hi, kind as CountKind, locale)).toBe(expected);
   });
   it.each(vectors.switch)('switch: $name', ({ from, to, fields, expected }) => {
     expect(planCountKindSwitch(fields, from as CountKind, to as CountKind)).toEqual(expected);

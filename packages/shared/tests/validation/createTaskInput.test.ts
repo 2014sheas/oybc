@@ -295,7 +295,7 @@ describe('CreateTaskInputSchema — COUNTING type refinement', () => {
     if (!result.success) {
       const messages = result.error.errors.map((e) => e.message);
       expect(messages).toContain(
-        'Counting tasks must have action, unit, and maxCount (unless isCounter)'
+        'Counting tasks must have action, unit (unless duration), and maxCount (unless isCounter)'
       );
     }
   });
