@@ -73,7 +73,8 @@ export function finalizeWindowCount(sum: number, kind: CountKind): number {
 /**
  * Display text for a counting value. Whole kinds show whole numbers;
  * continuous trims trailing zeros; duration (minutes) renders `Xh Ym`.
- * No digit grouping (matches the pre-feature raw interpolation).
+ * No digit grouping and always Latin digits (matches the pre-feature raw
+ * interpolation); only the decimal separator follows the locale.
  *
  * @param value - The value (minutes for duration).
  * @param kind - The task's kind.
@@ -94,7 +95,20 @@ export function formatCount(value: number, kind: CountKind, locale?: string): st
     minimumFractionDigits: 0,
     maximumFractionDigits: digits,
     useGrouping: false,
+    numberingSystem: 'latn',
   }).format(v);
+}
+
+/**
+ * The string a text field is SEEDED with and later re-parsed from: locale
+ * fixed to en-US (ASCII digits, `.` separator), no grouping.
+ *
+ * @param value - The value (minutes for duration).
+ * @param kind - The task's kind.
+ * @returns The locale-independent formatted string.
+ */
+export function formatCountForInput(value: number, kind: CountKind): string {
+  return formatCount(value, kind, 'en-US');
 }
 
 /**

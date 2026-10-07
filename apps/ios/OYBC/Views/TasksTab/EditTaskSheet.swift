@@ -113,7 +113,7 @@ struct EditTaskSheet: View {
         _description = State(initialValue: task.description ?? "")
         _action = State(initialValue: task.action ?? "")
         _unit = State(initialValue: task.unit ?? "")
-        _maxCountStr = State(initialValue: task.maxCount.map { formatCount($0, kind: resolveCountKind(task.countKind)) } ?? "")
+        _maxCountStr = State(initialValue: task.maxCount.map { formatCountForInput($0, kind: resolveCountKind(task.countKind)) } ?? "")
         // Achievement
         _trigger = State(initialValue: task.achievementTrigger ?? .greenlog)
         _requiredCountStr = State(initialValue: task.requiredCount.map { String($0) } ?? "")

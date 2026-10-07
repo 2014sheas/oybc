@@ -32,10 +32,17 @@
     { "name": "continuous comma locale", "value": 3.1, "kind": "continuous", "locale": "de-DE", "expected": "3,1" },
     { "name": "discrete whole", "value": 300, "kind": "discrete", "locale": "en-US", "expected": "300" },
     { "name": "discrete rounds stray fraction", "value": 2.5, "kind": "discrete", "locale": "en-US", "expected": "3" },
+    { "name": "arabic locale keeps latin digits", "value": 26, "kind": "discrete", "locale": "ar-SA", "expected": "26" },
+    { "name": "arabic locale continuous keeps latin digits", "value": 26.2, "kind": "continuous", "locale": "ar-SA", "expected": "26.2" },
     { "name": "duration hours and minutes", "value": 270, "kind": "duration", "locale": "en-US", "expected": "4h 30m" },
     { "name": "duration whole hours", "value": 600, "kind": "duration", "locale": "en-US", "expected": "10h" },
     { "name": "duration minutes only", "value": 45, "kind": "duration", "locale": "en-US", "expected": "45m" },
     { "name": "duration zero", "value": 0, "kind": "duration", "locale": "en-US", "expected": "0m" }
+  ],
+  "formatForInput": [
+    { "name": "discrete whole", "value": 26, "kind": "discrete", "expected": "26" },
+    { "name": "continuous fraction", "value": 26.2, "kind": "continuous", "expected": "26.2" },
+    { "name": "continuous point separator", "value": 3.1, "kind": "continuous", "expected": "3.1" }
   ],
   "switch": [
     { "name": "discrete to continuous keeps values", "from": "discrete", "to": "continuous", "fields": { "maxCount": 26, "defaultLogAmount": 3 }, "expected": { "maxCount": 26, "defaultLogAmount": 3 } },

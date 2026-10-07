@@ -150,7 +150,7 @@ struct SquareEditTaskSheet: View {
         let countingSource = task.type == .counting ? task : (original ?? task)
         _action      = State(initialValue: countingSource.action ?? "")
         _unit        = State(initialValue: countingSource.unit ?? "")
-        _maxCountStr = State(initialValue: countingSource.maxCount.map { formatCount($0, kind: resolveCountKind(countingSource.countKind)) } ?? "")
+        _maxCountStr = State(initialValue: countingSource.maxCount.map { formatCountForInput($0, kind: resolveCountKind(countingSource.countKind)) } ?? "")
         _pickerLibraryTasks = State(initialValue: libraryTasks)
         _pickerLinks = State(initialValue: allLinks)
         _pickerInputsState = State(initialValue: libraryInputsState)

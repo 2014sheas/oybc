@@ -294,7 +294,7 @@ struct RisoCountingStepperSheet: View {
     }
 
     private func openCustomInput() {
-        customDraft = isCustomActive ? formatCount(selectedAmount, kind: .discrete) : ""
+        customDraft = isCustomActive ? formatCountForInput(selectedAmount, kind: .discrete) : ""
         customOpen = true
     }
 

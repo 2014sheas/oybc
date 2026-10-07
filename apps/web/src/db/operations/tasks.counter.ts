@@ -44,7 +44,7 @@ import { softDeleteWindowStampedDerived } from './derivedCounters';
  *   non-negative 2dp number `startingCount` (defaults to 0).
  * @returns The newly created counter Task.
  * @throws If `action`/`unit` are blank after trimming, or `startingCount`
- *   is not a non-negative integer.
+ *   is not a non-negative 2dp number.
  */
 export async function createCounterTask(
   userId: string,
@@ -55,7 +55,7 @@ export async function createCounterTask(
   const startingCount = input.startingCount ?? 0;
   if (!action || !unit) throw new Error('createCounterTask: action and unit are required');
   if (!isQuantizedCount(startingCount) || startingCount < 0) {
-    throw new Error('createCounterTask: startingCount must be a non-negative integer');
+    throw new Error('createCounterTask: startingCount must be a non-negative 2dp number');
   }
   const validated = CreateTaskInputSchema.parse({
     title: generateCounterTaskTitle(action, null, unit),

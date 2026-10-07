@@ -47,7 +47,9 @@ func formatCount(_ value: CountValue, kind: CountKind, locale: Locale = .current
         return m == 0 ? "\(h)h" : "\(h)h \(m)m"
     }
     let f = NumberFormatter()
-    f.locale = locale
+    // Latin digits always (matches pre-feature output); only the decimal
+    // separator follows the locale.
+    f.locale = Locale(identifier: locale.identifier.components(separatedBy: "@").first! + "@numbers=latn")
     f.numberStyle = .decimal
     f.usesGroupingSeparator = false
     f.minimumFractionDigits = 0
@@ -55,6 +57,12 @@ func formatCount(_ value: CountValue, kind: CountKind, locale: Locale = .current
     f.roundingMode = .halfUp
     let v = kind == .continuous ? quantizeCount(value) : (quantizeCount(value) + 0.5).rounded(.down)
     return f.string(from: NSNumber(value: v)) ?? "\(v)"
+}
+
+/// The string a text field is seeded with and later re-parsed from:
+/// `en_US_POSIX` (ASCII digits, `.` separator), no grouping.
+func formatCountForInput(_ value: CountValue, kind: CountKind) -> String {
+    formatCount(value, kind: kind, locale: Locale(identifier: "en_US_POSIX"))
 }
 
 /// Discrete ⇄ continuous only (D4).

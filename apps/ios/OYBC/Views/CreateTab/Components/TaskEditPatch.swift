@@ -59,7 +59,7 @@ struct ChildPatch: Identifiable, Equatable {
         self.isCounting = child.type == .counting
         self.childType = child.type
         self.action = child.action ?? ""
-        self.goal = child.maxCount.map { formatCount($0, kind: resolveCountKind(child.countKind)) } ?? ""
+        self.goal = child.maxCount.map { formatCountForInput($0, kind: resolveCountKind(child.countKind)) } ?? ""
         self.unit = child.unit ?? ""
         self.markedDeleted = false
     }
@@ -95,7 +95,7 @@ struct TaskEditPatch: Equatable {
     init(from task: OYBC.Task) {
         self.title = task.title
         self.action = task.action ?? ""
-        self.goal = task.maxCount.map { formatCount($0, kind: resolveCountKind(task.countKind)) } ?? ""
+        self.goal = task.maxCount.map { formatCountForInput($0, kind: resolveCountKind(task.countKind)) } ?? ""
         self.unit = task.unit ?? ""
         self.operatorType = task.operatorType
         self.threshold = task.threshold

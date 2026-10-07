@@ -141,7 +141,7 @@ struct BoardWizardPreviewStepView: View {
             let staged = controller.stagedEdits[id].map(Self.patchKey) ?? ""
             return [
                 id, task.type.rawValue, task.title,
-                task.maxCount.map { "\($0)" } ?? "", task.action ?? "", task.unit ?? "",
+                task.maxCount.map { formatCountForInput($0, kind: .continuous) } ?? "", task.action ?? "", task.unit ?? "",
                 staged,
             ].joined(separator: ":")
         }
@@ -150,9 +150,9 @@ struct BoardWizardPreviewStepView: View {
                 let rule = BoardSources.memberRule(for: taskId, in: source)
                 let parts = (rule.parts ?? [:]).keys.sorted().map { childId -> String in
                     let part = BoardSources.partRule(for: childId, in: rule)
-                    return "\(childId)=\(part.target.map { "\($0)" } ?? "")/\(part.vary?.rawValue ?? -1)/\(part.excluded == true)"
+                    return "\(childId)=\(part.target.map { formatCountForInput($0, kind: .continuous) } ?? "")/\(part.vary?.rawValue ?? -1)/\(part.excluded == true)"
                 }.joined(separator: ",")
-                return "\(taskId)=\(rule.target.map { "\($0)" } ?? "")/\(rule.vary?.rawValue ?? -1)/\(rule.split == true)/[\(parts)]"
+                return "\(taskId)=\(rule.target.map { formatCountForInput($0, kind: .continuous) } ?? "")/\(rule.vary?.rawValue ?? -1)/\(rule.split == true)/[\(parts)]"
             }.joined(separator: ",")
             return [
                 source.sourceId, source.kind.rawValue, String(source.min),

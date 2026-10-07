@@ -8,6 +8,7 @@ final class CountValueVectorTests: XCTestCase {
     private struct BoolVector: Decodable { let name: String; let x: Double; let expected: Bool }
     private struct FinalizeVector: Decodable { let name: String; let sum: Double; let kind: CountKind; let expected: Double }
     private struct FormatVector: Decodable { let name: String; let value: Double; let kind: CountKind; let locale: String; let expected: String }
+    private struct InputVector: Decodable { let name: String; let value: Double; let kind: CountKind; let expected: String }
     private struct Fields: Decodable { let maxCount: Double?; let defaultLogAmount: Double? }
     private struct SwitchVector: Decodable { let name: String; let from: CountKind; let to: CountKind; let fields: Fields; let expected: Fields? }
     private struct Fixture: Decodable {
@@ -15,6 +16,7 @@ final class CountValueVectorTests: XCTestCase {
         let isQuantized: [BoolVector]
         let finalize: [FinalizeVector]
         let format: [FormatVector]
+        let formatForInput: [InputVector]
         let `switch`: [SwitchVector]
     }
 
@@ -38,6 +40,11 @@ final class CountValueVectorTests: XCTestCase {
     func testFormat() throws {
         for v in try loadFixture().format {
             XCTAssertEqual(formatCount(v.value, kind: v.kind, locale: Locale(identifier: v.locale)), v.expected, v.name)
+        }
+    }
+    func testFormatForInput() throws {
+        for v in try loadFixture().formatForInput {
+            XCTAssertEqual(formatCountForInput(v.value, kind: v.kind), v.expected, v.name)
         }
     }
     func testSwitch() throws {
