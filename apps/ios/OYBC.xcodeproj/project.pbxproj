@@ -103,6 +103,7 @@
 		2B72E3B6BD5BBFE30D47FAD6 /* BoardWizardTasksStepView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 593980F6290AA1EFAC50F51F /* BoardWizardTasksStepView.swift */; };
 		2BBC0CEDF5705766474CE106 /* taskWindowStateVectors.json in Resources */ = {isa = PBXBuildFile; fileRef = A338E19F79F38E1957CF40FA /* taskWindowStateVectors.json */; };
 		2CDD6ACDE362626B75395297 /* CoreWindowRouteTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 443880999BDD8D778CEE8D13 /* CoreWindowRouteTests.swift */; };
+		2D4849D1F3986A3869A18FBA /* PoolListCountingSubtitleTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9F43342B0ED1243D0A59C430 /* PoolListCountingSubtitleTests.swift */; };
 		2D4B3C7083C895671D365D39 /* BoardPlayViewModelBoardActionsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5E847066D6FCF791162ED436 /* BoardPlayViewModelBoardActionsTests.swift */; };
 		2EF19E402C1B931693900274 /* GRDB in Frameworks */ = {isa = PBXBuildFile; productRef = FB60A2471061045431151B6B /* GRDB */; };
 		2F60032045DB2663A1B7BE54 /* BoardWizardViewModel+MemberRules.swift in Sources */ = {isa = PBXBuildFile; fileRef = AFEA92ED11485491D402AD23 /* BoardWizardViewModel+MemberRules.swift */; };
@@ -928,6 +929,7 @@
 		9D25C7373D16BBD73D9C5324 /* AppDatabase+Users.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AppDatabase+Users.swift"; sourceTree = "<group>"; };
 		9DD066751B79AB1548F057F3 /* PoolMix.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PoolMix.swift; sourceTree = "<group>"; };
 		9E20389AE3793DB4BEA85A26 /* CounterNameTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CounterNameTests.swift; sourceTree = "<group>"; };
+		9F43342B0ED1243D0A59C430 /* PoolListCountingSubtitleTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PoolListCountingSubtitleTests.swift; sourceTree = "<group>"; };
 		9F714DD146988F2C085D5EA4 /* CycleDetection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CycleDetection.swift; sourceTree = "<group>"; };
 		A02D1CB14DC867658D22F11A /* RisoDiceButtonTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RisoDiceButtonTests.swift; sourceTree = "<group>"; };
 		A06D816B26BA1EA95F704B62 /* AppDatabase+DefaultPoolsTestSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AppDatabase+DefaultPoolsTestSupport.swift"; sourceTree = "<group>"; };
@@ -1561,6 +1563,7 @@
 				EBFED9C2CDC0A4B6D0E652AC /* PoolEditorViewModelTests.swift */,
 				7DB1A083C892ABE4B8153F8B /* PoolHealthBatchTests.swift */,
 				34AA407C5E0BDA5DF02D73CE /* PoolHealthTests.swift */,
+				9F43342B0ED1243D0A59C430 /* PoolListCountingSubtitleTests.swift */,
 				B038D37E36B63028551A45B4 /* PoolMixTests.swift */,
 				96E5EE0906DD75CFE73E0B00 /* PoolsCoreBoardDefaultsMigrationTests.swift */,
 				D22AEF0A9AFDB48F968A7D2B /* ProfileHomeViewModelTests.swift */,
@@ -2579,6 +2582,7 @@
 				DC88BFB533FC2AB63A1E8B55 /* PoolEditorViewModelTests.swift in Sources */,
 				9ADF26334C16A263FE4B9633 /* PoolHealthBatchTests.swift in Sources */,
 				30277AD2D139DBB594619DF7 /* PoolHealthTests.swift in Sources */,
+				2D4849D1F3986A3869A18FBA /* PoolListCountingSubtitleTests.swift in Sources */,
 				542E073370FD24EBE0905B14 /* PoolMixTests.swift in Sources */,
 				827471798A1660C038CC919A /* PoolsCoreBoardDefaultsMigrationTests.swift in Sources */,
 				7E01133D9A734C7C23A1A11F /* ProfileHomeViewModelTests.swift in Sources */,

@@ -36,6 +36,18 @@ describe('applyStagedTaskEditsForWizardPersist — counter kinds', () => {
       .rejects.toThrow();
     expect((await db.tasks.get('r'))?.version).toBe(1);
   });
+  it('a valid switch on r rolls back when a LATER staged edit fails strict mode', async () => {
+    await seed({});
+    const edits = new Map([
+      ['r', { title: '', action: 'Run', goal: '26', unit: 'miles', children: [], countKind: 'discrete' as const }],
+      ['gone', { title: 'x', action: '', goal: '', unit: '', children: [] }],
+    ]);
+    await expect(
+      db.transaction('rw', TABLES(), () => applyStagedTaskEditsForWizardPersist(edits, new Set(), NOW_ISO, { strict: true })),
+    ).rejects.toThrow();
+    expect(await db.tasks.get('r')).toMatchObject({ countKind: 'continuous', maxCount: 26.2, version: 1 });
+    expect(await db.syncQueue.count()).toBe(0);
+  });
   it('a Continuous → Discrete switch rounds the stored row inside the same transaction', async () => {
     await seed({});
     await db.transaction('rw', TABLES(), () => applyStagedTaskEditsForWizardPersist(

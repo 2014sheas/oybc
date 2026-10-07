@@ -75,7 +75,8 @@ extension AppDatabase {
                 if task.type == .counting,
                    try Self.applyKindSwitchThenGoalGuard(
                        db: db, taskId: taskId, to: patch.countKind,
-                       maxCount: parseCountInput(patch.goal, kind: patch.countKind), now: Date()
+                       maxCount: parseCountInput(patch.goal, kind: patch.countKind),
+                       now: Self.parseISO8601(now) ?? Date()
                    ) {
                     task = try Task.fetchOne(db, key: taskId) ?? task
                 }

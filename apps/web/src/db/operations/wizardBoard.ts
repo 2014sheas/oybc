@@ -331,7 +331,7 @@ export async function applyStagedTaskEditsForWizardPersist(
       if (strict) throw new StagedEditError('missing-task', taskId, 'A task you edited no longer exists');
       continue;
     }
-    const invalid = validatePatch(patch, task.type);
+    const invalid = validatePatch(patch, task.type, resolveCountKind(task));
     if (invalid !== null) {
       if (strict) throw new StagedEditError('invalid-patch', taskId, invalid);
       continue;

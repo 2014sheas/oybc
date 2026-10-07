@@ -63,6 +63,6 @@ describe('TaskEditPatch countKind (pool rows)', () => {
   });
   it('an unchanged kind leaves a legacy row without a countKind', () => {
     const legacy = { ...run, countKind: undefined, maxCount: 26, title: 'Run 26 miles' } as Task;
-    expect('countKind' in applyPatchToTask({ ...seedPatchForEditor(legacy), goal: '30' }, legacy) && applyPatchToTask({ ...seedPatchForEditor(legacy), goal: '30' }, legacy).countKind).toBeFalsy();
+    expect(applyPatchToTask({ ...seedPatchForEditor(legacy), goal: '30' }, legacy).countKind).toBeUndefined();
   });
 });

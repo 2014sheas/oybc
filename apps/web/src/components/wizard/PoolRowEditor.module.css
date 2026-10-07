@@ -3,6 +3,8 @@
    the design handoff prototype (`Inline Task Editing Web.dc.html`). */
 
 .editor {
+  flex: 1;
+  min-width: 0;
   position: relative;
   background: var(--riso-paper-2);
   border-left: 4px solid var(--riso-blue);

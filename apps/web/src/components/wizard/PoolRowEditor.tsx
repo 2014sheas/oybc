@@ -83,7 +83,7 @@ export function PoolRowEditor({
     setKind: (k) => onDraftChange({ ...draft, countKind: k }),
     onSwitched: (k, g) => onDraftChange({ ...draft, countKind: k, goal: g }),
   });
-  const validationMessage = validatePatch(draft, taskType);
+  const validationMessage = validatePatch(draft, taskType, stored);
   const isBlocked = validationMessage !== null;
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLDivElement>): void {

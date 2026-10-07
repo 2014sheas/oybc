@@ -348,12 +348,16 @@ export function clampThreshold(threshold: number, subtaskCount: number): number 
  * isn't editable in the pool (returns `null`). Mirrors iOS
  * `TaskEditPatch.validate(type:)`.
  */
-export function validatePatch(patch: TaskEditPatch, type: TaskType): string | null {
+export function validatePatch(
+  patch: TaskEditPatch,
+  type: TaskType,
+  storedKind: CountKind = 'discrete',
+): string | null {
   const trimmedTitle = patch.title.trim();
   switch (type) {
     case TaskType.COUNTING: {
       // Counting titles are optional (auto-generated), so no title check.
-      const kind = patch.countKind ?? 'discrete';
+      const kind = patch.countKind ?? storedKind;
       if (parsePositiveGoal(patch.goal, kind) === undefined) return 'Set a goal above zero.';
       if (countKindNeedsUnit(kind) && patch.unit.trim().length === 0) return 'Add a unit, like km or pages.';
       return null;
