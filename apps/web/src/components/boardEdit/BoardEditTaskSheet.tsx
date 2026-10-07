@@ -141,13 +141,14 @@ export function BoardEditTaskSheet({
   const [unit, setUnit] = useState(task.unit ?? '');
 
   // The confirm previews the DRAFT (title / goal typed here, not yet staged).
+  const draftGoal = parseGoal(goalStr, countKind) ?? task.maxCount;
   const draftSubject = {
     ...task,
-    title: title.trim() || generateCounterTaskTitle(action.trim(), parseGoal(goalStr, countKind) ?? task.maxCount, unit.trim(), undefined, countKind),
+    title: title.trim() || generateCounterTaskTitle(action.trim(), draftGoal, unit.trim(), undefined, countKind),
     action,
     unit,
     countKind,
-    maxCount: parseGoal(goalStr, countKind) ?? task.maxCount,
+    maxCount: draftGoal,
   };
   const { requestKind, dialog: kindDialog } = useKindSwitchRequest({
     subject: draftSubject,

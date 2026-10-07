@@ -412,8 +412,8 @@ const COUNTING_ONLY_FIELDS = ['action', 'unit', 'maxCount', 'currentCount'] as c
  *   c. Anything else: `updateTaskAndCascade`, preceded — for a Counting
  *      ROOT — by `applyKindSwitchThenGoalGuard` (a staged `countKind` switch
  *      plus the goal guard at the final kind; Review Focus 4). `countKind` is
- *      never written raw: only the switch, or (case a) a new Counting row,
- *      sets it.
+ *      never written raw and never cleared: only the switch, or (case a) a
+ *      conversion into Counting (always explicit), sets it.
  *
  * Any validation failure THROWS so the whole Save rolls back (Dexie aborts
  * the ambient transaction). Switching OUT of a compound, or to/from
@@ -480,16 +480,19 @@ export async function applyBoardEditTaskOverrideInTransaction(
         throw new Error(`Task ${taskId}: a Counting task needs a goal and a unit`);
       }
     }
-    // Bypasses `updateTask`'s type guard on purpose (see doc above). A new
-    // Counting row takes the chosen kind directly (absent = Discrete).
+    // Bypasses `updateTask`'s type guard on purpose (see doc above). A row
+    // converted INTO Counting always writes its kind explicitly — Discrete
+    // included — so a stale kind left on the row (and on other devices: sync
+    // merge-writes and `countKind` is not clearable) never survives. A switch
+    // to Simple leaves `countKind` untouched (ignored on non-counting types).
     const patch: Partial<Task> = {
       ...(plainFields as Partial<Task>),
-      ...(nextType === TaskType.COUNTING && stagedKind && stagedKind !== 'discrete' ? { countKind: stagedKind } : {}),
+      ...(nextType === TaskType.COUNTING ? { countKind: stagedKind ?? 'discrete' } : {}),
       updatedAt: now,
       version: (existing.version ?? 0) + 1,
     };
     if (nextType === TaskType.NORMAL) {
-      for (const k of ['action', 'unit', 'maxCount', 'countKind'] as const) patch[k] = undefined;
+      for (const k of ['action', 'unit', 'maxCount'] as const) patch[k] = undefined;
     }
     await db.tasks.update(taskId, patch);
     const updated = await db.tasks.get(taskId);

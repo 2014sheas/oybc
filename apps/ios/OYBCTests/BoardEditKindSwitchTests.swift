@@ -66,7 +66,7 @@ final class BoardEditKindSwitchTests: XCTestCase {
         let vm = loadedVM(db)
         vm.handleEditTaskOverride(taskId: "root", patch: patch(goal: 30, kind: .discrete))
         let staged = try XCTUnwrap(vm.editDraftTaskMap["root"])
-        XCTAssertEqual(resolveCountKind(staged.countKind), .discrete, "the staged grid (and a reopened sheet) shows the staged kind")
+        XCTAssertEqual(staged.countKind, .discrete, "the staged grid (and a reopened sheet) shows the staged kind")
         XCTAssertEqual(try db.fetchTask(id: "root")?.countKind, .continuous, "nothing is written before Save")
         XCTAssertEqual(save(vm), .saved)
         let row = try XCTUnwrap(db.fetchTask(id: "root"))
@@ -122,8 +122,9 @@ final class BoardEditKindSwitchTests: XCTestCase {
         XCTAssertEqual(row.title, "Practice 1h 30m")
     }
 
-    /// A Counting square switched to Simple drops its kind with its other counting fields.
-    func testCountingSwitchedToSimpleDropsTheKind() throws {
+    /// A Counting square switched to Simple leaves `countKind` untouched — it
+    /// is never cleared (sync merge-writes; `countKind` is not clearable).
+    func testCountingSwitchedToSimpleLeavesTheKindUntouched() throws {
         let db = try makeDb()
         try db.saveTask(counting("root", kind: .continuous, maxCount: 26.2))
         try place(db, "root", col: 0)
@@ -134,6 +135,45 @@ final class BoardEditKindSwitchTests: XCTestCase {
         XCTAssertEqual(save(vm), .saved)
         let row = try XCTUnwrap(db.fetchTask(id: "root"))
         XCTAssertEqual(row.type, .normal)
-        XCTAssertNil(row.countKind)
+        XCTAssertEqual(row.countKind, .continuous)
+    }
+
+    /// A Simple row carrying a stale Continuous kind, converted to Counting
+    /// with Discrete chosen, stores Discrete EXPLICITLY (never absent).
+    func testStaleKindOnSimpleRowConvertedToDiscreteIsWrittenExplicitly() throws {
+        let db = try makeDb()
+        var simple = LinkedWindowKit.task("s", maxCount: nil, title: "Run")
+        simple.type = .normal
+        simple.action = nil
+        simple.unit = nil
+        simple.countKind = .continuous
+        try db.saveTask(simple)
+        try place(db, "s", col: 0)
+        let vm = loadedVM(db)
+        vm.handleEditTaskOverride(taskId: "s", patch: .init(
+            title: "", type: .counting, action: "Run", unit: "miles", maxCount: 30, compound: nil, countKind: .discrete
+        ))
+        XCTAssertEqual(save(vm), .saved)
+        let row = try XCTUnwrap(db.fetchTask(id: "s"))
+        XCTAssertEqual(row.type, .counting)
+        XCTAssertEqual(row.countKind, .discrete)
+        XCTAssertEqual(row.maxCount, 30)
+    }
+
+    /// Cancel: a staged kind switch is dropped when the edit session re-seeds,
+    /// and nothing reached the database.
+    func testCancelDiscardsAStagedKindSwitch() throws {
+        let db = try makeDb()
+        try db.saveTask(counting("root", kind: .continuous, maxCount: 26.2))
+        try place(db, "root", col: 0)
+        let vm = loadedVM(db)
+        vm.handleEditTaskOverride(taskId: "root", patch: patch(goal: 26, kind: .discrete))
+        XCTAssertEqual(vm.editTaskOverrides.count, 1)
+        vm.seedEditDraft(from: vm.board!)
+        XCTAssertTrue(vm.editTaskOverrides.isEmpty)
+        let row = try XCTUnwrap(db.fetchTask(id: "root"))
+        XCTAssertEqual(row.countKind, .continuous)
+        XCTAssertEqual(row.maxCount, 26.2)
+        XCTAssertEqual(row.version, 1)
     }
 }

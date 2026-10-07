@@ -5,7 +5,8 @@ import { db } from '../../internal';
 import { commitSquareEdits } from '../boardEditCommit';
 import { KindGoalError } from '../countKindSwitch';
 import type { SquareDraftCell } from '../../../hooks/squareEditCount';
-import type { BoardEditTaskOverride } from '../../../hooks/squaresEditReducer';
+import { seedDraft, stageTaskEdit, type BoardEditTaskOverride } from '../../../hooks/squaresEditReducer';
+import { CenterSquareType } from '@oybc/shared';
 import { ROOT, SEPT, boardRow, clearAll, placement, rootTask } from './linkedCounterFixtures';
 
 /**
@@ -24,7 +25,7 @@ async function seedBoardWithCounter(o: { type?: TaskType; maxCount?: number; cou
   await db.tasks.put(
     type === TaskType.COUNTING
       ? rootTask({ maxCount: o.maxCount ?? 100, countKind: o.countKind, title: `Run ${o.maxCount ?? 100} miles` })
-      : rootTask({ type, title: 'Practice', action: undefined, unit: undefined, maxCount: undefined, currentCount: undefined }),
+      : rootTask({ type, title: 'Practice', action: undefined, unit: undefined, maxCount: undefined, currentCount: undefined, countKind: o.countKind }),
   );
   await db.boardTasks.put(placement('bt-0', SEPT.id, ROOT));
   const cells: SquareDraftCell[] = [
@@ -69,11 +70,30 @@ describe('commitSquareEdits — staged kind switch', () => {
     expect(await db.tasks.get(rootId)).toMatchObject({ type: TaskType.COUNTING, countKind: 'duration', maxCount: 90 });
   });
 
-  it('a Counting square switched to Simple drops its kind', async () => {
+  it('a Counting square switched to Simple leaves its kind untouched (never cleared — sync merge-writes)', async () => {
     const { boardId, rootId, cells } = await seedBoardWithCounter({ maxCount: 26.2, countKind: 'continuous' });
-    await commit(boardId, cells, rootId, { type: TaskType.NORMAL, title: 'Run', action: undefined, unit: undefined, maxCount: undefined, countKind: undefined });
+    await commit(boardId, cells, rootId, { type: TaskType.NORMAL, title: 'Run', action: undefined, unit: undefined, maxCount: undefined });
+    expect(await db.tasks.get(rootId)).toMatchObject({ type: TaskType.NORMAL, countKind: 'continuous' });
+  });
+
+  it('a Simple row carrying a stale Continuous kind, converted to Counting as Discrete, writes Discrete explicitly', async () => {
+    const { boardId, rootId, cells } = await seedBoardWithCounter({ type: TaskType.NORMAL, countKind: 'continuous' });
+    await commit(boardId, cells, rootId, { type: TaskType.COUNTING, countKind: 'discrete', action: 'Run', unit: 'miles', maxCount: 30, title: 'Run 30 miles' });
     const row = await db.tasks.get(rootId);
-    expect(row).toMatchObject({ type: TaskType.NORMAL });
-    expect(row?.countKind).toBeUndefined();
+    expect(row).toMatchObject({ type: TaskType.COUNTING, countKind: 'discrete', maxCount: 30 });
+    const queued = (await db.syncQueue.toArray()).filter((i) => i.entityId === rootId);
+    expect(JSON.parse(queued[queued.length - 1]?.payload ?? '{}')).toMatchObject({ countKind: 'discrete' });
+  });
+
+  it('a staged kind switch discarded by Cancel (the draft re-seeds) writes nothing', async () => {
+    const { rootId } = await seedBoardWithCounter({ maxCount: 26.2, countKind: 'continuous' });
+    const placed = await db.boardTasks.toArray();
+    const staged = stageTaskEdit(seedDraft(placed, CenterSquareType.FREE, 3), rootId, { countKind: 'discrete', maxCount: 26 });
+    expect(staged.taskOverrides.size).toBe(1);
+    // Cancel → Discard drops the session; re-entering Edit re-seeds from the DB.
+    const reseeded = seedDraft(placed, CenterSquareType.FREE, 3);
+    expect(reseeded.taskOverrides.size).toBe(0);
+    expect(await db.tasks.get(rootId)).toMatchObject({ countKind: 'continuous', maxCount: 26.2, version: 1 });
+    expect(await db.syncQueue.count()).toBe(0);
   });
 });

@@ -599,10 +599,13 @@ extension BoardPlayViewModel {
                 // A PENDING task (no events yet) or a Simple → Counting
                 // conversion takes the chosen kind directly; a stored counting
                 // row's kind changes only through the guard in applyStagedOverrides.
-                if let m = updated.maxCount, let rounded = planCountKindSwitch(
+                // Always explicit (Discrete included): sync merge-writes and
+                // `countKind` is not clearable, so a stale kind on a converted
+                // Simple row must be overwritten, never left absent.
+                if task.type == .counting, let m = updated.maxCount, let rounded = planCountKindSwitch(
                     maxCount: m, defaultLogAmount: nil, from: resolveCountKind(task.countKind), to: kind
                 )?.maxCount { updated.maxCount = rounded }
-                updated.countKind = kind == .discrete ? nil : kind
+                updated.countKind = kind
             }
             if !countKindNeedsUnit(resolveCountKind(updated.countKind)) { updated.unit = "" }
             if override.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
@@ -616,7 +619,7 @@ extension BoardPlayViewModel {
                 updated.action   = nil
                 updated.unit     = nil
                 updated.maxCount = nil
-                updated.countKind = nil
+                // `countKind` stays (never cleared; ignored on non-counting types).
             }
         case .compound:
             if task.type != .compound {

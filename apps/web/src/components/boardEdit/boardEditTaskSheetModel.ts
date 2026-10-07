@@ -221,7 +221,8 @@ export function buildSheetOverride(input: SheetInput): BoardEditTaskOverride {
         patch.action = undefined;
         patch.unit = undefined;
         patch.maxCount = undefined;
-        patch.countKind = undefined;
+        // `countKind` is never cleared (sync merge-writes; a clear would not
+        // reach other devices) — a non-counting type ignores it.
       }
     }
   }

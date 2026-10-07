@@ -25,9 +25,9 @@ describe('Board Edit sheet — counter kinds', () => {
     const o = buildSheetOverride(input({ countKind: 'duration', action: 'Practice', goalStr: '1h 30m', unit: 'mi' }));
     expect(o).toMatchObject({ countKind: 'duration', maxCount: 90, unit: '', title: 'Practice 1h 30m' });
   });
-  it('switching a counting task to Simple clears its kind', () => {
+  it('switching a counting task to Simple leaves its kind alone (never cleared)', () => {
     const o = buildSheetOverride(input({ selected: TaskType.NORMAL, title: 'Run' }));
-    expect('countKind' in o && o.countKind === undefined).toBe(true);
+    expect('countKind' in o).toBe(false);
   });
   it('an auto Duration title seeds blank', () => {
     expect(seedSheetTitle({ ...original, title: 'Practice 1h 30m', action: 'Practice', unit: '', maxCount: 90, countKind: 'duration' })).toBe('');
