@@ -78,6 +78,24 @@ describe('countingLogModel', () => {
     q.onAdd();
     expect(c.onIncrementShared).toHaveBeenCalledWith('root', 3.1, true);
   });
+  it('an invalid field reads a plain "+", never "+ 0 mi"', () => {
+    const c = ctx(task({}));
+    const q = buildQuickAmount({ ...initialCountingLogState(c)!, amountText: '', isCustom: true }, c, () => {})!;
+    expect(q.addLabel).toBe('+');
+  });
+  it('tapping # alone clears the field without marking custom; only an edit makes it custom', () => {
+    const c = ctx(task({}));
+    const set = vi.fn();
+    buildQuickAmount(initialCountingLogState(c)!, c, set)!.onOpenCustom();
+    const next = set.mock.calls[0][0];
+    expect(next).toMatchObject({ amountText: '', isCustom: false });
+    const q = buildQuickAmount(next, c, set)!;
+    q.onAdd();
+    expect(c.onSetStandaloneCount).not.toHaveBeenCalled();
+    expect(c.onPersistDefault).not.toHaveBeenCalled();
+    q.onAmountTextChange('4');
+    expect(set).toHaveBeenLastCalledWith(expect.objectContaining({ amountText: '4', isCustom: true }));
+  });
   it('a sealed board logs nothing', () => {
     const c = ctx(task({}), { isSealed: true });
     const q = buildQuickAmount(initialCountingLogState(c)!, c, () => {})!;

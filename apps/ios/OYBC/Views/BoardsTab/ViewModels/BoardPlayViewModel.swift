@@ -465,7 +465,7 @@ final class BoardPlayViewModel: ObservableObject {
     /// it doesn't participate in any shared-counter group. R3: extracted out
     /// of `handleCountingTap`/`handleCountingDecrement` so `BoardPlayView`
     /// (chip visibility in `RisoCountingStepperSheet`, the context-menu
-    /// default amount, `sharedStepperHint`) shares the exact same detection
+    /// default amount, the shared-cell marker) shares the exact same detection
     /// instead of re-deriving it — three call sites were re-implementing
     /// this before R3.
     ///
@@ -540,7 +540,7 @@ final class BoardPlayViewModel: ObservableObject {
             intent: .setWindowedCount(quantizeCount(windowed.count + amount)),
             boardTask: boardTask
         )
-        if persistAsDefault { try? database.setCounterDefaultLogAmount(sourceTaskId: task.id, amount: amount) }
+        if persistAsDefault { do { try database.setCounterDefaultLogAmount(sourceTaskId: task.id, amount: amount) } catch { dlog("BoardPlayVM: persist default failed: \(error)") } }
     }
 
     /// Runs the shared-counter increment in a background task, then refreshes
@@ -859,7 +859,7 @@ final class BoardPlayViewModel: ObservableObject {
             intent: .setWindowedCount(max(quantizeCount(windowed.count - amount), 0)),
             boardTask: boardTask
         )
-        if persistAsDefault { try? database.setCounterDefaultLogAmount(sourceTaskId: task.id, amount: amount) }
+        if persistAsDefault { do { try database.setCounterDefaultLogAmount(sourceTaskId: task.id, amount: amount) } catch { dlog("BoardPlayVM: persist default failed: \(error)") } }
     }
 
     /// Toggles a compound child's WINDOWED completion on this board.

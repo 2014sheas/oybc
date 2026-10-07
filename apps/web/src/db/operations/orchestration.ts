@@ -8,6 +8,7 @@ import {
   computeBoardStatsUpdate,
   boardWindowEnd,
   lateLogOccurredAt,
+  quantizeCount,
   resolveTaskWindowState,
   resolvePlacements,
   type Board,
@@ -464,10 +465,12 @@ export async function handleTaskCompletion(
           windowStart,
           windowEnd,
         );
-        let delta = updates.currentCount - windowedCount;
+        // Quantized (2 dp): 16.2 − 13.1 is 3.0999999999999996 in binary,
+        // which the sync schema rejects (`isValidCountDelta`).
+        let delta = quantizeCount(updates.currentCount - windowedCount);
         // Gate a decrement so the window sum stays ≥ 0 (belt against a local
         // gesture poisoning the window with a dangling negative).
-        if (delta < 0) delta = Math.max(delta, -windowedCount);
+        if (delta < 0) delta = quantizeCount(Math.max(delta, -windowedCount));
         if (delta !== 0) {
           await appendIncrementEvent(targetTask.id, delta, boardId, now, occurredAt);
         }

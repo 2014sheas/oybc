@@ -104,10 +104,12 @@ extension AppDatabase {
                 let windowedCount = try Self.windowedState(
                     db: db, taskId: taskId, windowStart: windowStart, windowEnd: windowEnd
                 ).count
-                var delta = desired - windowedCount
+                // Quantized (2 dp): 16.2 − 13.1 is 3.0999999999999996 in binary,
+                // which the sync schema rejects (`isValidCountDelta`).
+                var delta = quantizeCount(desired - windowedCount)
                 // Gate a decrement so the window sum stays ≥ 0 (belt against a
                 // local gesture poisoning the window with a dangling negative).
-                if delta < 0 { delta = max(delta, -windowedCount) }
+                if delta < 0 { delta = quantizeCount(max(delta, -windowedCount)) }
                 if delta != 0 {
                     try Self.appendIncrementEvent(
                         db: db, taskId: taskId, delta: delta, boardId: board.id, now: now, occurredAt: occurredAt

@@ -574,7 +574,7 @@ export function DetailModal({
                   aria-label="Log amount"
                   suffix={quickAmount.unit || undefined}
                   placeholder="Amount"
-                  invalid={quickAmount.selected === null}
+                  invalid={quickAmount.selected === null && quickAmount.amountText.trim() !== ''}
                   dense
                 />
                 <div className={styles.quickAmountActions}>
@@ -583,7 +583,7 @@ export function DetailModal({
                     className={styles.counterButton}
                     onClick={quickAmount.onRemove}
                     disabled={quickAmount.busy || quickAmount.removeDisabled}
-                    aria-label={`Remove ${quickAmount.addLabel.slice(2)}`}
+                    aria-label={quickAmount.selected === null ? 'Remove' : `Remove ${quickAmount.addLabel.slice(2)}`}
                   >
                     −
                   </button>

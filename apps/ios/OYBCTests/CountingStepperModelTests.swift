@@ -44,5 +44,19 @@ final class CountingStepperModelTests: XCTestCase {
         m.setText("13,1")
         XCTAssertEqual(m.amount, 13.1)
         XCTAssertFalse(m.isCustom)
+        XCTAssertEqual(m.selectedChipIndex, 1)
+    }
+    /// Web twin — `#` alone never marks custom (nothing persists until the field is edited).
+    func testHashAloneIsNotCustomUntilTheFieldIsEdited() {
+        var m = CountingStepperModel.initial(kind: .continuous, goal: 26.2, defaultLogAmount: nil, isShared: false)
+        m.beginCustomEntry()
+        XCTAssertFalse(m.isCustom)
+        XCTAssertEqual(m.amountText, "")
+        XCTAssertNil(m.amount, "− / + disabled until an amount is typed")
+        XCTAssertNil(m.selectedChipIndex, "no chip highlights a blank field")
+        XCTAssertEqual(m.addLabel(unit: "mi"), "+")
+        m.setText("4")
+        XCTAssertTrue(m.isCustom)
+        XCTAssertEqual(m.selectedChipIndex, 3)
     }
 }

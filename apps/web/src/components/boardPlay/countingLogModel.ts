@@ -100,10 +100,13 @@ export function buildQuickAmount(
     amountText: state.amountText,
     busy: ctx.isSealed,
     removeDisabled: isLinked || ctx.currentCount <= 0 || selected === null,
-    addLabel: entry ? `+ ${formatCountWithUnit(selected ?? 0, kind, unit)}` : `+ ${formatCount(state.amount, kind)}`,
+    // An invalid field reads a plain "+" (iOS `addLabel(unit:)`), never "+ 0 mi".
+    addLabel: selected === null ? '+' : `+ ${entry ? formatCountWithUnit(selected, kind, unit) : formatCount(selected, kind)}`,
     onSelectChip: (v) => setState({ ...state, amount: v, isCustom: false, customOpen: false, amountText: formatCountForInput(v, kind) }),
+    // `#` alone clears the field for a typed amount; it becomes custom (and
+    // persists on log) only once the user edits the field.
     onOpenCustom: () => setState(entry
-      ? { ...state, isCustom: true }
+      ? { ...state, amountText: '', isCustom: false }
       : { ...state, customOpen: true, customDraft: state.isCustom ? formatCountForInput(state.amount, kind) : '' }),
     onCustomDraftChange: (raw) => setState({ ...state, customDraft: raw }),
     onConfirmCustom: () => {

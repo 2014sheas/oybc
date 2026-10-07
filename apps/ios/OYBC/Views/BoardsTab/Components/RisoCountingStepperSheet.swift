@@ -104,7 +104,7 @@ struct RisoCountingStepperSheet: View {
                         placeholder: "Amount",
                         suffix: unitText.isEmpty ? nil : unitText,
                         startsOpen: countKind == .duration,
-                        invalid: model.amount == nil
+                        invalid: model.amount == nil && !model.amountText.isEmpty
                     )
                 }
                 if let onOpenTask { taskDetailsRow(onOpenTask) }
@@ -234,11 +234,6 @@ struct RisoCountingStepperSheet: View {
 
     // MARK: - Amount chips
 
-    private var selectedChipIndex: Int? {
-        if model.isCustom { return model.chips.count - 1 }
-        return model.chips.firstIndex(where: { $0.value == model.selectedAmount })
-    }
-
     private func openCustomInput() {
         customDraft = model.isCustom ? formatCountForInput(model.selectedAmount, kind: .discrete) : ""
         customOpen = true
@@ -261,7 +256,7 @@ struct RisoCountingStepperSheet: View {
     private var chipRow: some View {
         HStack(spacing: 8) {
             ForEach(Array(model.chips.enumerated()), id: \.offset) { index, chip in
-                let isSelected = index == selectedChipIndex
+                let isSelected = index == model.selectedChipIndex
                 Button {
                     if let value = chip.value {
                         model.selectChip(value)
@@ -269,7 +264,7 @@ struct RisoCountingStepperSheet: View {
                     } else if countKind == .discrete {
                         openCustomInput()
                     } else {
-                        model.isCustom = true
+                        model.beginCustomEntry()
                     }
                 } label: {
                     Text(chipLabel(chip, isSelected: isSelected))

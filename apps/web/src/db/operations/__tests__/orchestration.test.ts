@@ -8,9 +8,12 @@ import {
   type BoardTask,
   type Task,
   type TaskEvent,
+  TaskEventSchema,
+  isQuantizedCount,
 } from '@oybc/shared';
 import { db } from '../../internal';
 import { handleTaskCompletion } from '../orchestration';
+import { insertIncrementEventRaw } from '../taskEvents';
 
 /**
  * Windowed Completion (docs/WINDOWED_COMPLETION.md §Semantics): a board square
@@ -244,5 +247,39 @@ describe('handleTaskCompletion — ACHIEVEMENT BoardTasks are read-only (board-i
     // No mutation should have happened — the board's stats stay untouched.
     const board = await db.boards.get('board-1');
     expect(board?.completedTasks).toBe(0);
+  });
+});
+
+describe('handleTaskCompletion — counting deltas are 2-dp quantized (counter kinds sync)', () => {
+  it('window 13.1 → setWindowedCount(16.2) stores delta 3.1 (not 3.0999999999999996), valid for sync', async () => {
+    await seedTask({ type: TaskType.COUNTING, action: 'Run', unit: 'mi', maxCount: 26.2, countKind: 'continuous', title: 'Run 26.2 mi' });
+    await seedBoard();
+    await seedBoardTask();
+    await db.taskEvents.add({
+      id: 'evt-seed', userId: 'user-1', taskId: 'task-1', kind: 'increment', delta: 13.1,
+      occurredAt: '2026-01-01T00:00:00.000Z', createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z',
+      version: 1, isDeleted: false,
+    });
+
+    await handleTaskCompletion('board-1', 'bt-1', { currentCount: 16.2 });
+
+    const added = (await db.taskEvents.toArray()).filter((e) => e.id !== 'evt-seed');
+    expect(added).toHaveLength(1);
+    expect(added[0].delta).toBe(3.1);
+    expect(isQuantizedCount(added[0].delta!)).toBe(true);
+    // Row shape as it syncs (fixture ids aren't UUIDs; the delta refinement is the point).
+    const UUID = '00000000-0000-4000-8000-000000000001';
+    expect(TaskEventSchema.safeParse({ ...added[0], taskId: UUID, boardId: UUID }).success).toBe(true);
+    expect(TaskEventSchema.safeParse({ ...added[0], taskId: UUID, boardId: UUID, delta: 16.2 - 13.1 }).success).toBe(false);
+  });
+});
+
+describe('insertIncrementEventRaw — quantizes every stored delta', () => {
+  it('a noisy delta is stored quantized; a delta that quantizes to 0 writes nothing', async () => {
+    await seedTask({ type: TaskType.COUNTING, action: 'Run', unit: 'mi', maxCount: 26.2, countKind: 'continuous' });
+    expect(await insertIncrementEventRaw('task-1', 16.2 - 13.1, undefined, '2026-01-02T00:00:00.000Z')).toBe(true);
+    expect(await insertIncrementEventRaw('task-1', 0.001, undefined, '2026-01-02T00:00:00.000Z')).toBe(false);
+    const events = await db.taskEvents.toArray();
+    expect(events.map((e) => e.delta)).toEqual([3.1]);
   });
 });

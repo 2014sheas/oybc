@@ -50,6 +50,21 @@ struct CountingStepperModel: Equatable {
         amountText = formatCountForInput(value, kind: kind)
     }
 
+    /// `#` on a Continuous / Duration square: clears the field for a typed
+    /// amount. Not custom until the user edits the field (nothing persists).
+    mutating func beginCustomEntry() {
+        amountText = ""
+        isCustom = false
+    }
+
+    /// The chip to highlight: `#` for a custom amount; otherwise the chip
+    /// matching the amount in effect (none while the field is blank / invalid).
+    var selectedChipIndex: Int? {
+        if isCustom { return chips.count - 1 }
+        guard let current = kind == .discrete ? selectedAmount : amount else { return nil }
+        return chips.firstIndex { $0.value == current }
+    }
+
     /// A field edit: custom unless it parses to a chip's amount.
     mutating func setText(_ raw: String) {
         amountText = raw
