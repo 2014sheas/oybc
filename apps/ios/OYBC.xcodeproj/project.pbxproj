@@ -267,6 +267,7 @@
 		77ECF9393AE5E2DCF988513F /* OnboardingNotifPrimingSnapshotTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D59D96AC280FB86015009DC4 /* OnboardingNotifPrimingSnapshotTests.swift */; };
 		7816C80736BD9C0D604AAB8F /* AppDatabaseCountKindSwitchTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 81976B37DBCF94FF8B57D20A /* AppDatabaseCountKindSwitchTests.swift */; };
 		78B71BCED92035C81336587C /* UITestSeed.swift in Sources */ = {isa = PBXBuildFile; fileRef = 571CFB2BC66824CAE0672A16 /* UITestSeed.swift */; };
+		78B952A09CF52DFDBD3B5A7D /* StagedTaskEditsKindTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 302EBDDBB348247111040A7B /* StagedTaskEditsKindTests.swift */; };
 		78D0AA7D432697BE05CBE0EC /* CalendarBoundariesVectorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = ED866481FDA2D69E4D7003A3 /* CalendarBoundariesVectorTests.swift */; };
 		790A8C925419EF55D5704E8A /* RecurringBoardTemplatesMixTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F8ECE2006B76266C5018FD05 /* RecurringBoardTemplatesMixTests.swift */; };
 		79AFC76C8AE9E5A02354E0A2 /* FirebaseAuth in Frameworks */ = {isa = PBXBuildFile; productRef = C75445B6764BE3BD13B11782 /* FirebaseAuth */; };
@@ -680,6 +681,7 @@
 		2DE69CF0825C0657176C53E9 /* Archivo-SemiBold.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Archivo-SemiBold.ttf"; sourceTree = "<group>"; };
 		2E8CF69F33C744D9C11BF648 /* BoardWizardPreviewDerivedTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BoardWizardPreviewDerivedTests.swift; sourceTree = "<group>"; };
 		2F691584B652D508557FDC99 /* RisoCoreChromeSnapshotTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RisoCoreChromeSnapshotTests.swift; sourceTree = "<group>"; };
+		302EBDDBB348247111040A7B /* StagedTaskEditsKindTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StagedTaskEditsKindTests.swift; sourceTree = "<group>"; };
 		305E4375AB55928634B9E76B /* AppDatabaseSharedCounterDecrementTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDatabaseSharedCounterDecrementTests.swift; sourceTree = "<group>"; };
 		31DA97614BEAFC5F7B3F76A3 /* BoardEditOptionsSnapshotTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BoardEditOptionsSnapshotTests.swift; sourceTree = "<group>"; };
 		327D582928CDFEDCD3AAD7FA /* RisoPoolListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RisoPoolListView.swift; sourceTree = "<group>"; };
@@ -1587,6 +1589,7 @@
 				BC491DEE8ABF2C8193A95057 /* SourceSheetBoardEntriesTests.swift */,
 				DFC485837E7FFEBDB8B0B688 /* SquarePickerCandidatesTests.swift */,
 				5A5674C8790AB6DC7CF7E3C9 /* SquaresEditDraftTests.swift */,
+				302EBDDBB348247111040A7B /* StagedTaskEditsKindTests.swift */,
 				4A828189482984A4CE4B9489 /* StreaksTests.swift */,
 				203AE5267A55ED4243F65F16 /* StreaksVectorTests.swift */,
 				C5CBC331A3281433A1E74792 /* SyncClearableFieldsTests.swift */,
@@ -2604,6 +2607,7 @@
 				1DA505C6223426215FFD8BD4 /* SourceSheetBoardEntriesTests.swift in Sources */,
 				70B78042EF2F56A95B2C7F3F /* SquarePickerCandidatesTests.swift in Sources */,
 				05647FCEE2419D78B29C6FF9 /* SquaresEditDraftTests.swift in Sources */,
+				78B952A09CF52DFDBD3B5A7D /* StagedTaskEditsKindTests.swift in Sources */,
 				10276E032C8F0AC8F0D1E1C0 /* StreaksTests.swift in Sources */,
 				E00E82BD31337C52DEC94356 /* StreaksVectorTests.swift in Sources */,
 				C4F62A4FC2133382EDA2279B /* SyncClearableFieldsTests.swift in Sources */,

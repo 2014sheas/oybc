@@ -139,7 +139,7 @@ struct TaskEditPatch: Equatable {
     /// Live "Reads as: Action — Goal — Unit" preview for counting editors.
     /// nil when all three fields are blank.
     var countingPreview: String? {
-        risoReadsAsPreview(action: action, goal: goal, unit: unit)
+        risoReadsAsPreview(action: action, goal: goal, unit: unit, kind: countKind)
     }
 
     /// The blocking validation message, or nil when the patch is valid for the
@@ -150,7 +150,7 @@ struct TaskEditPatch: Equatable {
         case .counting:
             // Counting titles are optional (auto-generated), so no title check.
             guard let g = parsedGoal, g > 0 else { return "Set a goal above zero." }
-            if unit.trimmingCharacters(in: .whitespaces).isEmpty {
+            if countKindNeedsUnit(countKind), unit.trimmingCharacters(in: .whitespaces).isEmpty {
                 return "Add a unit, like km or pages."
             }
             return nil
@@ -190,15 +190,20 @@ struct TaskEditPatch: Equatable {
         var t = base
         switch base.type {
         case .counting:
+            // A linked row never takes a kind from a patch.
+            let kind = base.sharedCounterId == nil ? countKind : resolveCountKind(base.countKind)
             let a = action.trimmingCharacters(in: .whitespaces)
-            let u = unit.trimmingCharacters(in: .whitespaces)
-            let g = parsedGoal ?? base.maxCount ?? 0
+            let u = countKindNeedsUnit(kind) ? unit.trimmingCharacters(in: .whitespaces) : ""
+            let g = parseCountInput(goal, kind: kind) ?? base.maxCount ?? 0
             t.action = a
             t.unit = u
             t.maxCount = g
+            // Written explicitly (incl. .discrete) when it changes — sync merge-writes and
+            // countKind is not a clearable field, so it is never set back to nil.
+            if kind != resolveCountKind(base.countKind) { t.countKind = kind }
             let typed = trimmedTitle
             t.title = typed.isEmpty
-                ? TaskTitle.generateCounterTaskTitle(action: a, maxCount: g, unit: u)
+                ? TaskTitle.generateCounterTaskTitle(action: a, maxCount: g, unit: u, countKind: kind)
                 : typed
         case .compound:
             // Parent-level fields only; child Task/link CRUD is applied by the
@@ -234,7 +239,8 @@ extension TaskEditPatch {
         var patch = TaskEditPatch(from: task)
         if task.type == .counting {
             let autoTitle = TaskTitle.generateCounterTaskTitle(
-                action: task.action ?? "", maxCount: task.maxCount, unit: task.unit ?? ""
+                action: task.action ?? "", maxCount: task.maxCount, unit: task.unit ?? "",
+                countKind: resolveCountKind(task.countKind)
             )
             if task.title == autoTitle {
                 patch.title = ""

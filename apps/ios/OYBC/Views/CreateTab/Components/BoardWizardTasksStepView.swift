@@ -489,8 +489,7 @@ struct BoardWizardTasksStepView: View {
                     editor: { task in
                         AnyView(
                             RisoPoolRowEditorView(
-                                taskId: task.id,
-                                taskType: task.type,
+                                task: task,
                                 draft: $editDraft,
                                 libraryTasks: pickerLibraryTasks,
                                 allLinks: effectiveChildrenByCompound.values.flatMap { $0 },

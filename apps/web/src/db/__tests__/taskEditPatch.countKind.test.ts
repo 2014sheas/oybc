@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { TaskType, type Task } from '@oybc/shared';
 import {
   appendTypedChild,
+  applyPatchToTask,
+  seedPatchForEditor,
   buildNewChildTask,
   canAppendCounting,
   childPatchFromTask,
@@ -42,5 +44,25 @@ describe('ChildPatch countKind', () => {
     const next = appendTypedChild(EMPTY, 'Practice', true, '1h 30m', 'ignored', 'duration');
     const task = buildNewChildTask('id', next.children[0], 'Practice 1h 30m', 'u', 'now');
     expect(task).toMatchObject({ maxCount: 90, unit: '', countKind: 'duration' });
+  });
+});
+
+describe('TaskEditPatch countKind (pool rows)', () => {
+  const run = { id: 'r', type: TaskType.COUNTING, title: 'Run 26.2 miles', action: 'Run', unit: 'miles', maxCount: 26.2, countKind: 'continuous' } as Task;
+  it('seeds the kind and the goal text at it; an auto title seeds blank', () => {
+    expect(seedPatchForEditor(run)).toMatchObject({ countKind: 'continuous', goal: '26.2', title: '' });
+  });
+  it('validates the goal at the patch kind; duration needs no unit', () => {
+    expect(validatePatch({ ...seedPatchForEditor(run), goal: '3.125' }, TaskType.COUNTING)).toBe('Set a goal above zero.');
+    expect(validatePatch({ ...seedPatchForEditor(run), countKind: 'duration', goal: '1h', unit: '' }, TaskType.COUNTING)).toBeNull();
+  });
+  it('applyPatchToTask writes the kind on a root, never on a linked row', () => {
+    expect(applyPatchToTask({ ...seedPatchForEditor(run), countKind: 'discrete', goal: '26' }, run)).toMatchObject({ countKind: 'discrete', maxCount: 26, title: 'Run 26 miles' });
+    const linked = { ...run, sharedCounterId: 'root' } as Task;
+    expect(applyPatchToTask({ ...seedPatchForEditor(linked), countKind: 'discrete', goal: '6' }, linked).countKind).toBe('continuous');
+  });
+  it('an unchanged kind leaves a legacy row without a countKind', () => {
+    const legacy = { ...run, countKind: undefined, maxCount: 26, title: 'Run 26 miles' } as Task;
+    expect('countKind' in applyPatchToTask({ ...seedPatchForEditor(legacy), goal: '30' }, legacy) && applyPatchToTask({ ...seedPatchForEditor(legacy), goal: '30' }, legacy).countKind).toBeFalsy();
   });
 });

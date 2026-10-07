@@ -110,8 +110,7 @@ struct PoolEditorBodyView: View {
                 editor: { task in
                     AnyView(
                         RisoPoolRowEditorView(
-                            taskId: task.id,
-                            taskType: task.type,
+                            task: task,
                             draft: $vm.editDraft,
                             libraryTasks: vm.pickerLibraryTasks,
                             allLinks: vm.allLinks,

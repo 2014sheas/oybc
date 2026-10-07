@@ -290,9 +290,10 @@ struct RisoPoolListView: View {
                 let shared = sharedCountByTaskId[task.id] ?? 0
                 return shared > 0 ? "On \(shared) other board\(shared == 1 ? "" : "s")" : nil
             case .counting:
-                guard let a = task.action, let m = task.maxCount, let u = task.unit,
-                      !a.isEmpty, !u.isEmpty else { return nil }
-                return "\(a) · goal \(formatCount(m, kind: resolveCountKind(task.countKind))) \(u)"
+                let kind = resolveCountKind(task.countKind)
+                guard let a = task.action, let m = task.maxCount, !a.isEmpty,
+                      kind == .duration || !(task.unit ?? "").isEmpty else { return nil }
+                return "\(a) · goal \(formatCountWithUnit(m, kind: kind, unit: task.unit))"
             case .compound:
                 // `effectiveChildrenByCompound` / `task.operatorType` /
                 // `task.threshold` are all already staged-edit-aware (Inline

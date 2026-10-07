@@ -140,6 +140,9 @@ export interface TaskEditPatch {
    *  `operator === OperatorType.M_OF_N`; `applyPatchToTask` clamps it into
    *  `[1, max(1, liveChildren.length)]` and clears it for AND/OR. */
   threshold?: number;
+  /** Counting kind chosen in the editor. Absent = the task's own kind (a
+   *  linked row never takes a kind from a patch). */
+  countKind?: CountKind;
 }
 
 /** A fresh patch with just a title — used by callers that build up the
@@ -155,11 +158,12 @@ export function patchFromTask(task: Task): TaskEditPatch {
   return {
     title: task.title,
     action: task.action ?? '',
-    goal: task.maxCount !== undefined ? String(task.maxCount) : '',
+    goal: task.maxCount !== undefined ? formatCountForInput(task.maxCount, resolveCountKind(task)) : '',
     unit: task.unit ?? '',
     children: [],
     operator: task.operator,
     threshold: task.threshold,
+    countKind: resolveCountKind(task),
   };
 }
 
@@ -176,7 +180,13 @@ export function patchFromTask(task: Task): TaskEditPatch {
 export function seedPatchForEditor(task: Task): TaskEditPatch {
   const patch = patchFromTask(task);
   if (task.type === TaskType.COUNTING) {
-    const autoTitle = generateCounterTaskTitle(task.action ?? '', task.maxCount, task.unit ?? '');
+    const autoTitle = generateCounterTaskTitle(
+      task.action ?? '',
+      task.maxCount,
+      task.unit ?? '',
+      undefined,
+      resolveCountKind(task),
+    );
     if (task.title === autoTitle) {
       return { ...patch, title: '' };
     }
@@ -320,8 +330,8 @@ export function liveChildren(patch: TaskEditPatch): ChildPatch[] {
 /** Live "Reads as: Action — Goal — Unit" preview for counting editors.
  *  `undefined` when all three fields are blank. Mirrors iOS
  *  `TaskEditPatch.countingPreview`. */
-export function countingPreview(patch: TaskEditPatch): string | undefined {
-  return readsAsPreview(patch.action, patch.goal, patch.unit);
+export function countingPreview(patch: TaskEditPatch, kind: CountKind = patch.countKind ?? 'discrete'): string | undefined {
+  return readsAsPreview(patch.action, patch.goal, patch.unit, kind);
 }
 
 /** Clamp an "at least N" threshold into `[1, max(1, count)]` — shared by
@@ -343,9 +353,9 @@ export function validatePatch(patch: TaskEditPatch, type: TaskType): string | nu
   switch (type) {
     case TaskType.COUNTING: {
       // Counting titles are optional (auto-generated), so no title check.
-      const g = parseInt(patch.goal.trim(), 10);
-      if (!Number.isFinite(g) || g <= 0) return 'Set a goal above zero.';
-      if (patch.unit.trim().length === 0) return 'Add a unit, like km or pages.';
+      const kind = patch.countKind ?? 'discrete';
+      if (parsePositiveGoal(patch.goal, kind) === undefined) return 'Set a goal above zero.';
+      if (countKindNeedsUnit(kind) && patch.unit.trim().length === 0) return 'Add a unit, like km or pages.';
       return null;
     }
     case TaskType.NORMAL:
@@ -391,12 +401,17 @@ export function applyPatchToTask(patch: TaskEditPatch, base: Task): Task {
   const trimmedTitle = patch.title.trim();
   switch (base.type) {
     case TaskType.COUNTING: {
+      const kind =
+        base.sharedCounterId == null ? (patch.countKind ?? resolveCountKind(base)) : resolveCountKind(base);
       const a = patch.action.trim();
-      const u = patch.unit.trim();
-      const parsedGoal = parseInt(patch.goal.trim(), 10);
-      const g = Number.isFinite(parsedGoal) ? parsedGoal : (base.maxCount ?? 0);
-      const title = trimmedTitle.length === 0 ? generateCounterTaskTitle(a, g, u) : trimmedTitle;
-      return { ...base, action: a, unit: u, maxCount: g, title };
+      const u = countKindNeedsUnit(kind) ? patch.unit.trim() : '';
+      const g = parsePositiveGoal(patch.goal, kind) ?? (base.maxCount ?? 0);
+      const title = trimmedTitle.length === 0 ? generateCounterTaskTitle(a, g, u, undefined, kind) : trimmedTitle;
+      const next: Task = { ...base, action: a, unit: u, maxCount: g, title };
+      // Written explicitly (incl. 'discrete') when it changes: sync merge-writes and
+      // countKind is not a clearable field, so it is never deleted from an existing row.
+      if (kind !== resolveCountKind(base)) next.countKind = kind;
+      return next;
     }
     case TaskType.COMPOUND: {
       // Parent-level fields only; child Task/link CRUD is applied by the

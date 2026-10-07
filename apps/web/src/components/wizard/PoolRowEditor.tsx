@@ -1,5 +1,17 @@
-import { TaskType, type CompoundChild, type Task } from '@oybc/shared';
-import { RisoButton, RisoIcon, RisoSectionLabel } from '../riso';
+import {
+  TaskType,
+  countKindNeedsUnit,
+  kindPickerLock,
+  parseCountInput,
+  resolveCountKind,
+  type CompoundChild,
+  type Task,
+} from '@oybc/shared';
+import { RisoButton, RisoSectionLabel } from '../riso';
+import { GoalEntry } from '../counters/GoalEntry';
+import { KindPicker } from '../counters/KindPicker';
+import { KindTag } from '../counters/KindTag';
+import { useKindSwitchRequest } from '../counters/useKindSwitchRequest';
 import { countingPreview, validatePatch, type TaskEditPatch } from '../../db/taskEditPatch';
 import { CompoundFields } from './CompoundFields';
 import { MiniTypeBadge, type MiniBadgeType } from './MiniTypeBadge';
@@ -13,22 +25,12 @@ const HEADER_LABEL: Record<TaskType, string> = {
 };
 
 export interface PoolRowEditorProps {
-  /** Board wizard (default) shows the footer staging line; the pool surface hides it. */
-  surface?: 'board' | 'pool';
-  /** The task being edited (the compound link guard's `parentId`). */
-  taskId: string;
-  taskType: TaskType;
+  /** The row's stored task (its id guards compound links; its kind / link drive the Kind row). */
+  task: Task;
   draft: TaskEditPatch;
   onDraftChange: (next: TaskEditPatch) => void;
   onSave: () => void;
   onDiscard: () => void;
-  /**
-   * Number of OTHER boards this task is currently placed on (library usage,
-   * BEFORE the board being created exists). Drives the footer staging
-   * line's "…and on N other boards" vs. "…applied everywhere this task is
-   * used" copy — mirrors the design handoff's `everywhereLine`.
-   */
-  usedOnBoardCount: number;
   /** Compound only — browsable library tasks the sub-task quick-add row matches against. */
   libraryTasks: Task[];
   /** Compound only — live links across all compounds (loop check). */
@@ -55,17 +57,32 @@ export interface PoolRowEditorProps {
  * own quick-add row to add a sub-task ("New sub: Normal / Counting").
  */
 export function PoolRowEditor({
-  surface = 'board',
-  taskId,
-  taskType,
+  task,
   draft,
   onDraftChange,
   onSave,
   onDiscard,
-  usedOnBoardCount,
   libraryTasks,
   allLinks,
 }: PoolRowEditorProps): React.ReactElement {
+  const taskId = task.id;
+  const taskType = task.type;
+  const stored = resolveCountKind(task);
+  const kind = draft.countKind ?? stored;
+  // The confirm previews the DRAFT (title / goal typed here), not the stored row.
+  const { requestKind, dialog } = useKindSwitchRequest({
+    subject: {
+      ...task,
+      title: draft.title || task.title,
+      action: draft.action,
+      unit: draft.unit,
+      maxCount: parseCountInput(draft.goal, kind) ?? task.maxCount,
+    },
+    kind,
+    goalText: draft.goal,
+    setKind: (k) => onDraftChange({ ...draft, countKind: k }),
+    onSwitched: (k, g) => onDraftChange({ ...draft, countKind: k, goal: g }),
+  });
   const validationMessage = validatePatch(draft, taskType);
   const isBlocked = validationMessage !== null;
 
@@ -81,19 +98,11 @@ export function PoolRowEditor({
     }
   }
 
-  // The pool surface shows no staging line (iOS has no twin; terse UI).
-  const stagedUntil = 'Staged until you create the board';
-  const everywhereLine =
-    usedOnBoardCount > 0
-      ? `${stagedUntil}. It then changes here and on ${usedOnBoardCount} other board${usedOnBoardCount === 1 ? '' : 's'}.`
-      : `${stagedUntil}, then applied everywhere this task is used.`;
-
   return (
     <div className={styles.editor} onKeyDown={handleKeyDown}>
       <div className={styles.header}>
         <MiniTypeBadge type={badgeTypeFor(taskType)} size="header" />
         <span className={styles.headerLabel}>Editing · {HEADER_LABEL[taskType].toUpperCase()}</span>
-        <span className={styles.headerHint}>Esc to discard · ⌘↵ to save</span>
       </div>
 
       <div className={styles.body}>
@@ -109,8 +118,18 @@ export function PoolRowEditor({
               aria-label="Task title"
             />
           </div>
+        </div>
 
-          {taskType === TaskType.COUNTING && (
+        {taskType === TaskType.COUNTING && (
+          <>
+            <div className={styles.kindRow}>
+              <RisoSectionLabel variant="kicker">Kind</RisoSectionLabel>
+              {task.sharedCounterId ? (
+                <KindTag kind={stored} />
+              ) : (
+                <KindPicker value={kind} lock={kindPickerLock('edit', stored)} onChange={requestKind} size="compact" />
+              )}
+            </div>
             <div className={styles.countingTrio}>
               <div className={styles.actionField}>
                 <RisoSectionLabel variant="kicker">Action</RisoSectionLabel>
@@ -124,32 +143,33 @@ export function PoolRowEditor({
               </div>
               <div className={styles.goalField}>
                 <RisoSectionLabel variant="kicker">Goal</RisoSectionLabel>
-                <input
-                  className={styles.field}
-                  type="number"
-                  min="1"
+                <GoalEntry
+                  kind={kind}
                   value={draft.goal}
-                  onChange={(e) => onDraftChange({ ...draft, goal: e.target.value })}
-                  placeholder="5"
+                  onChange={(g) => onDraftChange({ ...draft, goal: g })}
                   aria-label="Goal"
+                  dense
+                  placeholder="5"
                 />
               </div>
-              <div className={styles.unitField}>
-                <RisoSectionLabel variant="kicker">Unit</RisoSectionLabel>
-                <input
-                  className={styles.field}
-                  value={draft.unit}
-                  onChange={(e) => onDraftChange({ ...draft, unit: e.target.value })}
-                  placeholder="km"
-                  aria-label="Unit"
-                />
-              </div>
+              {countKindNeedsUnit(kind) && (
+                <div className={styles.unitField}>
+                  <RisoSectionLabel variant="kicker">Unit</RisoSectionLabel>
+                  <input
+                    className={styles.field}
+                    value={draft.unit}
+                    onChange={(e) => onDraftChange({ ...draft, unit: e.target.value })}
+                    placeholder="km"
+                    aria-label="Unit"
+                  />
+                </div>
+              )}
             </div>
-          )}
-        </div>
+          </>
+        )}
 
-        {taskType === TaskType.COUNTING && countingPreview(draft) && (
-          <div className={styles.readsAs}>{countingPreview(draft)}</div>
+        {taskType === TaskType.COUNTING && countingPreview(draft, kind) && (
+          <div className={styles.readsAs}>{countingPreview(draft, kind)}</div>
         )}
 
         {taskType === TaskType.COMPOUND && (
@@ -163,12 +183,6 @@ export function PoolRowEditor({
         )}
 
         <div className={styles.footer}>
-          {surface !== 'pool' && (
-            <span className={styles.stagingLine}>
-              <RisoIcon name="shield" size={14} />
-              {everywhereLine}
-            </span>
-          )}
           {isBlocked && <span className={styles.errorText}>{validationMessage}</span>}
           <div className={styles.actions}>
             <RisoButton kind="neutral" onClick={onDiscard}>
@@ -180,6 +194,7 @@ export function PoolRowEditor({
           </div>
         </div>
       </div>
+      {dialog}
     </div>
   );
 }

@@ -730,13 +730,11 @@ export function BoardWizardTasksStep({
         editor={(task) =>
           editDraft && (
             <PoolRowEditor
-              taskId={task.id}
-              taskType={task.type}
+              task={task}
               draft={editDraft}
               onDraftChange={setEditDraft}
               onSave={() => saveEdit(task.id)}
               onDiscard={() => discardEdit(task.id)}
-              usedOnBoardCount={taskBoardCounts[task.id] ?? 0}
               libraryTasks={pickerLibraryTasks}
               allLinks={pickerLinks}
             />

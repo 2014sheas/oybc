@@ -1,4 +1,4 @@
-import { test, expect, openTab, readTask, seedTask } from './_fixtures/bypass';
+import { test, expect, openTab, readTask, seedPool, seedTask } from './_fixtures/bypass';
 
 test.describe('Counter kinds — authoring (A1)', () => {
   test('Tasks tab: create a Continuous and a Duration counting task', async ({ page }) => {
@@ -64,6 +64,30 @@ test.describe('Counter kinds — authoring (A1)', () => {
     await confirm.getByRole('button', { name: 'Switch' }).click();
     await expect(page.getByLabel('Goal', { exact: true })).toHaveValue('26');
     await page.getByRole('button', { name: 'Save changes', exact: true }).click();
+    await expect.poll(async () => readTask(page, id)).toMatchObject({ countKind: 'discrete', maxCount: 26 });
+  });
+
+  test('Pool editor row: Kind row, Continuous → Discrete confirm, staged switch lands on Save', async ({ page }) => {
+    const id = 'e0000000-0000-0000-0000-000000000002';
+    const poolId = 'e0000000-0000-0000-0000-000000000003';
+    await openTab(page, 'Tasks');
+    await seedTask(page, { id, title: 'Run 26.2 miles', type: 'counting', action: 'Run', unit: 'miles', maxCount: 26.2, currentCount: 0, countKind: 'continuous' });
+    await seedPool(page, { id: poolId, name: 'Runs', taskIds: [id] });
+    await page.goto(`/tasks/pools/${poolId}?__oybc_test_bypass=1`);
+    await page.getByRole('button', { name: 'Edit Run 26.2 miles' }).click();
+    const kind = page.getByRole('group', { name: 'Kind' });
+    await expect(kind).toBeVisible();
+    await page.screenshot({ path: '.playwright-mcp/task12-a5-light.png' });
+    await page.emulateMedia({ colorScheme: 'dark' });
+    await page.screenshot({ path: '.playwright-mcp/task12-a5-dark.png' });
+    await page.emulateMedia({ colorScheme: 'light' });
+    await kind.getByRole('button', { name: 'Discrete' }).click();
+    const confirm = page.getByRole('alertdialog', { name: 'Switch to Discrete?' });
+    await expect(confirm.getByText('Run 26 miles')).toBeVisible();
+    await confirm.getByRole('button', { name: 'Switch' }).click();
+    await expect(page.getByLabel('Goal', { exact: true })).toHaveValue('26');
+    await page.getByRole('button', { name: 'Save task' }).click();
+    await page.getByRole('button', { name: 'Save', exact: true }).click();
     await expect.poll(async () => readTask(page, id)).toMatchObject({ countKind: 'discrete', maxCount: 26 });
   });
 });
