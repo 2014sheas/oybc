@@ -3,6 +3,7 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import {
   Timeframe,
   TaskType,
+  buildCounterFamilyMap,
   generateCounterTaskTitle,
   type BoardSource,
   type BoardWindow,
@@ -28,6 +29,7 @@ import { useParentBoardTasks } from '../../hooks';
 import type { PendingTaskPayload } from '../../pages/createPage/useCreateFormState';
 import { useBrowsableTasks, type TaskLibrary } from '../../pages/createPage/useTaskLibrary';
 import {
+  computeCounterClashes,
   type SupplyInfoMap,
 } from '../../pages/createHub/wizardSources';
 import { RisoSectionLabel } from '../riso';
@@ -487,6 +489,13 @@ export function BoardWizardTasksStep({
   // read yet — capacity is artificially 0 until they resolve.
   const isCountSatisfied = suppliesPending || capacity >= tasksRequired;
 
+  // Counter-family exclusivity — collisions among the wizard pool's members,
+  // announced to assistive tech only (no visible caption, #548). Computed
+  // over the staged-overlaid task map so renames show.
+  const counterClashByTaskId = useMemo<Map<string, string>>(() => {
+    const famMap = buildCounterFamilyMap(Object.values(effectiveTaskMap));
+    return computeCounterClashes(selectedTaskIds, famMap, effectiveTaskMap);
+  }, [effectiveTaskMap, selectedTaskIds]);
   const isCenterSatisfied =
     !centerTaskMode || (centerTaskId !== null && selectedTaskIds.has(centerTaskId));
   const canAdvance = isCountSatisfied && isCenterSatisfied;
@@ -744,6 +753,7 @@ export function BoardWizardTasksStep({
               availableCountForSource={availableCountForSource}
               expandedSourceIds={expandedSourceIds}
               taskById={effectiveTaskMap}
+              counterClashByTaskId={counterClashByTaskId}
               compoundChildrenByCompound={effectiveChildrenByCompound}
               mode={planMode}
               wizardWindow={wizardWindow}

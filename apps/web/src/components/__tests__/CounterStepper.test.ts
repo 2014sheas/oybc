@@ -96,7 +96,7 @@ describe('CounterStepper', () => {
  * Final review M3 — the compact −/＋ gate on the UNCOMMITTED draft when
  * there is one, so typing `1` into a `min: 1` field disables `−` right
  * away instead of at blur. Twin of iOS
- * `RisoCompactStepperMath.base(value:draft:min:max:)`; pinned here as a
+ * `RisoCountStepperMath.base(value:draft:kind:min:max:)`; pinned here as a
  * predicate because the server render never has a draft.
  */
 describe('compactStepperBase (the −/＋ disabled gate)', () => {

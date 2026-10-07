@@ -29,6 +29,9 @@ export interface SourceRowProps {
   onSetFilter: (filter: 'all' | 'todo') => void;
   onSetRange: (min: number, max: number | null) => void;
   onToggleExclude: (taskId: string) => void;
+  /** Counter-family exclusivity — member id → the OTHER family member's
+   *  title; announced to assistive tech only. */
+  counterClashByTaskId?: Map<string, string>;
   /** Children per compound — feeds the Split-up part lines. */
   compoundChildrenByCompound?: Record<string, CompoundChild[]>;
   // ── §Member rules (B3) — per-member rule editing. ──────────────────────
@@ -77,6 +80,7 @@ export function SourceRow({
   onSetFilter,
   onSetRange,
   onToggleExclude,
+  counterClashByTaskId,
   compoundChildrenByCompound,
   mode,
   wizardWindow,
@@ -199,6 +203,7 @@ export function SourceRow({
               <MemberRuleRow
                 key={taskId}
                 task={taskById[taskId]}
+                clashTitle={counterClashByTaskId?.get(taskId)}
                 taskById={taskById}
                 state={memberState(taskId)}
                 rule={effectiveRuleFor(taskId)}

@@ -84,7 +84,7 @@ export function CounterStepper({
   if (size === 'compact') {
     // The −/+ buttons gate on the UNCOMMITTED draft when there is one, so a
     // typed-but-unblurred `1` in a `min: 1` field disables `−` immediately
-    // (iOS `RisoCompactStepperMath.base`).
+    // (iOS `RisoCountStepperMath.base`).
     const gateValue = compactStepperBase(value, draft, min, max, kind);
     const text = (v: number): string => formatCountForInput(v, kind);
     const commit = (): void => {
@@ -137,7 +137,7 @@ export function CounterStepper({
           // so the goal then reaches AT only via the auto-generated
           // counting title ("Run 30 miles"). A hand-renamed member at its
           // goal genuinely loses it — accepted, and identical on iOS
-          // (`RisoInlineStepperView`). The fix, if it is ever wanted, is a
+          // (`RisoCountStepperView`). The fix, if it is ever wanted, is a
           // composed field label ("Target, of 30 miles"), not unhiding
           // this text (B3.1).
           <span className={styles.compactSuffix} data-testid="stepper-suffix" aria-hidden="true">

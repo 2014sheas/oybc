@@ -58,7 +58,7 @@
    reported the member-row controls — "the stepper inputs for counter
    task quantity" above all — as too small to use comfortably
    (2026-09-22); pill, buttons and type grew together, and the iOS twin
-   (`RisoInlineStepperView.compactBody`) moved by the same numbers. ── */
+   (`RisoCountStepperView`) moved by the same numbers. ── */
 .compactPill {
   flex: 0 0 auto;
   display: inline-flex;

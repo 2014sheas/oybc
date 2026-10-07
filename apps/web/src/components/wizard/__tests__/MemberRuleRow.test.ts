@@ -390,3 +390,14 @@ describe('MemberRuleRow — counter kinds (collapsed chip)', () => {
     expect(render({ task: RUN, rule: {} })).toContain('3.8 miles');
   });
 });
+
+describe('MemberRuleRow — counter-family clash (assistive text only)', () => {
+  it('exposes the clash as hidden text inside the row, never as a visible caption class', () => {
+    const html = render({ task: READING, clashTitle: 'Read 50 pages' });
+    expect(html).toContain('shares a counter with \u201CRead 50 pages\u201D \u00B7 one per board');
+    expect(html).toMatch(/class="[^"]*_srOnly_[^"]*"[^>]*>shares a counter/);
+  });
+  it('says nothing when the member does not clash', () => {
+    expect(render({ task: READING })).not.toContain('shares a counter');
+  });
+});

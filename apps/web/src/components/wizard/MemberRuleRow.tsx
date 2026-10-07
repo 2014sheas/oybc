@@ -32,6 +32,12 @@ function nextVary(level: VaryLevel): VaryLevel {
 }
 
 interface MemberRuleRowProps {
+  /**
+   * Counter-family exclusivity — the OTHER family member's title. Never
+   * drawn (#548); exposed to assistive tech only, as hidden text inside the
+   * row's accessible name (iOS twin: `RisoMemberRuleRowView.accessibilityTitle`).
+   */
+  clashTitle?: string;
   /** The member's task (staged-overlaid), or `undefined` mid-hydration. */
   task: Task | undefined;
   /** Title + type lookup, for compound part names. */
@@ -98,6 +104,7 @@ interface MemberRuleRowProps {
  * @returns The member row.
  */
 export function MemberRuleRow({
+  clashTitle,
   task,
   taskById,
   state,
@@ -223,6 +230,11 @@ export function MemberRuleRow({
         <span className={`${styles.title} ${state === 'excluded' ? styles.struck : ''}`}>
           {title}
         </span>
+        {clashTitle !== undefined && (
+          <span className={styles.srOnly}>
+            {`shares a counter with \u201C${clashTitle}\u201D \u00B7 one per board`}
+          </span>
+        )}
       </span>
       {summary !== null && !isExpanded && (
         <span className={`${styles.chip} ${summary.varying ? styles.chipVarying : ''}`}>
