@@ -250,6 +250,50 @@ describe('applyRemoteSubdoc — every SYNC_COLLECTIONS entry round-trips (C1 reg
   }
 });
 
+describe('applyRemoteSubdoc — counter kinds (fractional rows + countKind)', () => {
+  const countingDoc = (over: Partial<Task>): Task => ({
+    id: uuid(50),
+    userId: USER,
+    title: 'Run',
+    type: TaskType.COUNTING,
+    maxCount: 26.2,
+    currentCount: 3.1,
+    isCompleted: false,
+    totalCompletions: 0,
+    totalInstances: 0,
+    createdAt: NOW,
+    updatedAt: NOW,
+    version: 1,
+    isDeleted: false,
+    ...over,
+  });
+
+  it('applies a continuous task with fractional maxCount/currentCount', async () => {
+    const status = await applyRemoteSubdoc(
+      'tasks',
+      countingDoc({ countKind: 'continuous' }),
+      USER,
+    );
+    expect(status).toMatch(/^Pulled /);
+    const stored = await db.tasks.get(uuid(50));
+    expect(stored?.countKind).toBe('continuous');
+    expect(stored?.maxCount).toBe(26.2);
+    expect(stored?.currentCount).toBe(3.1);
+  });
+
+  it('applies a pre-feature task with no countKind as undefined (discrete)', async () => {
+    const status = await applyRemoteSubdoc(
+      'tasks',
+      countingDoc({ maxCount: 5, currentCount: 2 }),
+      USER,
+    );
+    expect(status).toMatch(/^Pulled /);
+    const stored = await db.tasks.get(uuid(50));
+    expect(stored?.countKind).toBeUndefined();
+    expect(stored?.maxCount).toBe(5);
+  });
+});
+
 /**
  * Item 1 (bingo-pipeline hardening) — sealed-board pull re-derive transport
  * convergence hole. `reDeriveSealedBoards(ForTasks)` previously fired only

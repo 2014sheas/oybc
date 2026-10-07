@@ -198,6 +198,38 @@ describe('applyTaskEventsBatch — batched pull recompute', () => {
     expect(after?.version).toBe(9);
   });
 
+  it('applies a remote fractional increment (delta 3.1) and recomputes the cache from it', async () => {
+    const counting: Task = {
+      id: TASK_A,
+      userId: USER,
+      title: 'Run',
+      type: TaskType.COUNTING,
+      countKind: 'continuous',
+      maxCount: 26.2,
+      currentCount: 0,
+      isCompleted: false,
+      totalCompletions: 0,
+      totalInstances: 1,
+      createdAt: START,
+      updatedAt: START,
+      version: 5,
+      isDeleted: false,
+    };
+    await db.tasks.add(counting);
+    const id = '30000000-0000-4000-8000-000000000006';
+
+    const res = await applyTaskEventsBatch(USER, [
+      { ...completionEvent(id, TASK_A), kind: 'increment', delta: 3.1 },
+    ]);
+
+    expect(res.pulled).toBe(1);
+    expect((await db.taskEvents.get(id))?.delta).toBe(3.1);
+    const after = await db.tasks.get(TASK_A);
+    expect(after?.currentCount).toBe(3.1);
+    expect(after?.countKind).toBe('continuous');
+    expect(after?.version).toBe(5);
+  });
+
   it('rejects a userId-mismatched event row', async () => {
     const res = await applyTaskEventsBatch(USER, [
       completionEvent('30000000-0000-4000-8000-000000000006', TASK_A, { userId: 'someone-else' }),
