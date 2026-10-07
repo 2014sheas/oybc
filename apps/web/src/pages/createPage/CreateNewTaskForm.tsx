@@ -2,8 +2,9 @@ import { useEffect, useMemo, useState } from 'react';
 import {
   AchievementTrigger,
   TaskType,
+  countKindNeedsUnit,
   findLinkableCounter,
-  generateCounterTaskTitle,
+  parseCountInput,
   type Board,
   type RecurringBoardTemplate,
   type Task,
@@ -14,8 +15,16 @@ import {
   CountingTemplatePicker,
   type LinkedCounterInput,
 } from '../../components/wizard/CountingTemplatePicker';
+import { GoalEntry } from '../../components/counters/GoalEntry';
+import { KindPicker } from '../../components/counters/KindPicker';
+import { KindTag } from '../../components/counters/KindTag';
 import { useBoards, useRecurringBoardTemplates, useTasks } from '../../hooks';
 import { getCharCountClass } from '../../components/playground/playgroundUtils';
+import {
+  buildLinkedCreateInput,
+  countingTitlePreview,
+  effectiveCountingKind,
+} from './createFormCounting';
 import {
   type UseCreateFormState,
   TITLE_MAX_LENGTH,
@@ -126,9 +135,6 @@ export function CreateNewTaskForm({
   const matchPool = suggestionPool ?? tasks;
   const trimmedAction = form.action.trim();
   const trimmedUnit = form.unit.trim();
-  const parsedMaxCount = parseInt(form.maxCountStr, 10);
-  const goalValid = Number.isInteger(parsedMaxCount) && parsedMaxCount > 0;
-
   // "Don't link" opt-out for the current (verb, noun) pair. Resets whenever
   // the pair changes so a fresh pair always starts linked (mirrors the
   // retired suggestion card's per-pair dismiss reset).
@@ -137,13 +143,24 @@ export function CreateNewTaskForm({
     setLinkDisabled(false);
   }, [trimmedAction, trimmedUnit]);
 
+  // Duration has no unit, so it can never match a (verb, noun) counter.
   const counterMatch = useMemo(
     () =>
-      form.taskType === TaskType.COUNTING && trimmedAction && trimmedUnit
+      form.taskType === TaskType.COUNTING && form.countKind !== 'duration' && trimmedAction && trimmedUnit
         ? findLinkableCounter({ action: trimmedAction, unit: trimmedUnit }, matchPool)
         : null,
-    [form.taskType, trimmedAction, trimmedUnit, matchPool],
+    [form.taskType, form.countKind, trimmedAction, trimmedUnit, matchPool],
   );
+  // An auto-linking create takes the root's kind (D5 / R19): validation,
+  // preview and the saved row all follow it, whatever the picker last showed.
+  const linked = Boolean(counterMatch && onCreateLinked && !linkDisabled);
+  const kind = effectiveCountingKind(
+    form.countKind,
+    counterMatch ? { linked, countKind: counterMatch.countKind } : null,
+  );
+  const parsedGoal = parseCountInput(form.maxCountStr, kind);
+  const goalValid = parsedGoal !== null;
+  const titlePreview = countingTitlePreview(form.action, form.maxCountStr, form.unit, kind);
 
   // Gate on `onCreateLinked` too — without it, submit can't actually honor
   // the link (see `handleFormSubmit`), so the hint must stay hidden rather
@@ -152,7 +169,7 @@ export function CreateNewTaskForm({
     counterMatch && goalValid && onCreateLinked
       ? {
           match: counterMatch,
-          goal: parsedMaxCount,
+          goal: parsedGoal ?? 0,
           linked: !linkDisabled,
           onToggle: () => setLinkDisabled((prev) => !prev),
         }
@@ -184,15 +201,19 @@ export function CreateNewTaskForm({
         void form.handleSubmit(e);
         return;
       }
-      const finalTitle =
-        form.title.trim() || generateCounterTaskTitle(trimmedAction, parsedMaxCount, trimmedUnit);
-      onCreateLinked({
+      const input = buildLinkedCreateInput({
         source: sourceTask,
-        maxCount: parsedMaxCount,
-        title: finalTitle,
-        baselineMode: 'startFromZero',
+        goalText: form.maxCountStr,
+        title: form.title,
+        action: trimmedAction,
+        unit: trimmedUnit,
         baseline: counterMatch.lifetime,
       });
+      if (!input) {
+        void form.handleSubmit(e);
+        return;
+      }
+      onCreateLinked(input);
       return;
     }
     void form.handleSubmit(e);
@@ -262,14 +283,6 @@ export function CreateNewTaskForm({
           {/* Achievement-task fields (Phase 6.3) */}
           {form.taskType === TaskType.ACHIEVEMENT && (
             <div className={styles.fieldGroup}>
-              {/* Explains what makes an Achievement square different: you place
-                  it on a board like any square, but it completes itself when the
-                  board/template it watches hits the trigger, not by check-off. */}
-              <span className={`${styles.helpText} ${styles.helpTextLead}`}>
-                An Achievement is an auto-completing square: place it on a board,
-                and it completes on its own when the board or repeating board you
-                pick below reaches the trigger — instead of you checking it off.
-              </span>
               <label className={styles.label}>
                 Watch
                 <span className={styles.required}>*</span>
@@ -370,11 +383,6 @@ export function CreateNewTaskForm({
                   Bingo
                 </label>
               </div>
-              <span className={styles.helpText}>
-                Greenlog — the whole board is completed. Bingo — any single line
-                (row, column, or diagonal).
-              </span>
-
               {/* Count input (template mode only). Specific-board mode
                   is implicitly count=1. */}
               {form.achievementMode === 'recurringTemplate' && (
@@ -436,21 +444,31 @@ export function CreateNewTaskForm({
               </div>
 
               <div className={styles.fieldGroup}>
+                <span className={styles.label}>Kind</span>
+                {linked && counterMatch ? (
+                  <KindTag kind={counterMatch.countKind} counterName={counterMatch.name} lifetime={counterMatch.lifetime} />
+                ) : (
+                  <KindPicker value={form.countKind} lock="none" onChange={form.setCountKind} />
+                )}
+              </div>
+
+              <div className={styles.fieldGroup}>
                 <label className={styles.label} htmlFor="create-task-maxcount">
                   Goal<span className={styles.required}>*</span>
                 </label>
-                <input
+                <GoalEntry
                   id="create-task-maxcount"
-                  type="number"
-                  className={`${styles.input} ${form.errors.maxCount ? styles.inputError : ''}`}
+                  aria-label="Goal"
+                  kind={kind}
                   value={form.maxCountStr}
-                  onChange={(e) => form.setMaxCountStr(e.target.value)}
-                  placeholder="100"
-                  min="1"
+                  onChange={form.setMaxCountStr}
+                  placeholder={kind === 'duration' ? '0h 0m' : '100'}
+                  invalid={Boolean(form.errors.maxCount)}
                 />
                 {form.errors.maxCount && <span className={styles.fieldError}>{form.errors.maxCount}</span>}
               </div>
 
+              {countKindNeedsUnit(kind) && (
               <div className={styles.fieldGroup}>
                 <label className={styles.label} htmlFor="create-task-unit">
                   Counting<span className={styles.required}>*</span>
@@ -466,11 +484,11 @@ export function CreateNewTaskForm({
                 />
                 {form.errors.unit && <span className={styles.fieldError}>{form.errors.unit}</span>}
               </div>
+              )}
 
-              {goalValid && trimmedAction && trimmedUnit && (
+              {titlePreview && (
                 <div className={styles.titlePreview}>
-                  Title:{' '}
-                  <strong>{generateCounterTaskTitle(trimmedAction, parsedMaxCount, trimmedUnit)}</strong>
+                  Title: <strong>{titlePreview}</strong>
                 </div>
               )}
             </div>

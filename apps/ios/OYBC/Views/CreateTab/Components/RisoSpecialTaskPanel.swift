@@ -51,6 +51,16 @@ struct RisoSpecialTaskPanel: View {
     /// Submit-button copy — the wizard's "Add to board ✦" by default;
     /// pool context passes "Add to pool ✦".
     var submitLabel: String = "Add to board ✦"
+    /// Snapshot seam: opens the panel on Counting with these field values.
+    var countingSeed: CountingSeed? = nil
+
+    /// Pre-filled counting fields (snapshot tests).
+    struct CountingSeed {
+        var action = ""
+        var goal = ""
+        var unit = ""
+        var kind: CountKind = .discrete
+    }
 
     @State private var isExpanded: Bool = false
     @State private var selectedType: SpecialType = .counting
@@ -83,11 +93,24 @@ struct RisoSpecialTaskPanel: View {
     // MARK: - Body
 
     var body: some View {
-        if !isExpanded {
-            collapsedButton
-        } else {
-            expandedPanel
+        Group {
+            if !isExpanded {
+                collapsedButton
+            } else {
+                expandedPanel
+            }
         }
+        .onAppear { applyCountingSeed() }
+    }
+
+    private func applyCountingSeed() {
+        guard let s = countingSeed, !isExpanded else { return }
+        isExpanded = true
+        selectedType = .counting
+        countingActionText = s.action
+        countingGoalText = s.goal
+        countingUnitText = s.unit
+        countingKind = s.kind
     }
 
     // MARK: - Collapsed button
@@ -199,6 +222,7 @@ struct RisoSpecialTaskPanel: View {
     @State private var countingActionText: String = ""
     @State private var countingGoalText: String = ""
     @State private var countingUnitText: String = ""
+    @State private var countingKind: CountKind = .discrete
 
     // Counter-link suggestion state (R1 counters refresh — auto-link default
     // ON). Updated whenever the (verb, noun) pair changes.
@@ -213,23 +237,34 @@ struct RisoSpecialTaskPanel: View {
     /// matching web's `CountingStepFields` (Verb → Goal → Counting).
     private var countingTitle: String {
         let a = countingActionText.trimmingCharacters(in: .whitespacesAndNewlines)
-        let g = countingGoalText.trimmingCharacters(in: .whitespacesAndNewlines)
         let u = countingUnitText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !a.isEmpty, !u.isEmpty, let goal = Int(g).map(CountValue.init), goal > 0 else { return "" }
-        return TaskTitle.generateCounterTaskTitle(action: a, maxCount: goal, unit: u)
+        guard !a.isEmpty, let goal = countingGoal,
+              !countKindNeedsUnit(effectiveKind) || !u.isEmpty else { return "" }
+        return TaskTitle.generateCounterTaskTitle(
+            action: a, maxCount: goal, unit: countKindNeedsUnit(effectiveKind) ? u : "",
+            countKind: effectiveKind
+        )
     }
 
-    /// The typed goal as a positive Int, or nil when blank/invalid. Also
-    /// gates the counter-link hint (only shown once a valid goal exists —
+    /// The matched counter while the create auto-links (Duration never
+    /// matches — it has no unit); nil once the user opts out.
+    private var linkedSuggestion: LinkableCounterSuggestion? { linkDisabled ? nil : linkSuggestion }
+
+    /// The kind validation, preview and the saved row use: an auto-linking
+    /// create takes the root's kind (D5 / R19), otherwise the picker.
+    private var effectiveKind: CountKind { linkedSuggestion?.countKind ?? countingKind }
+
+    /// The typed goal parsed at the effective kind, or nil when blank/invalid.
+    /// Also gates the counter-link hint (only shown once a valid goal exists —
     /// mirrors web's `CounterLinkHint` doc contract).
     private var countingGoal: CountValue? {
-        guard let g = Int(countingGoalText.trimmingCharacters(in: .whitespacesAndNewlines)), g > 0 else { return nil }
-        return CountValue(g)
+        parseCountInput(countingGoalText, kind: effectiveKind)
     }
 
     private var canSubmitCounting: Bool {
         !countingActionText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
-        !countingUnitText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
+        (!countKindNeedsUnit(effectiveKind) ||
+         !countingUnitText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty) &&
         countingGoal != nil
     }
 
@@ -240,15 +275,29 @@ struct RisoSpecialTaskPanel: View {
                 RisoTextField(placeholder: "Do", text: $countingActionText)
             }
 
-            // Goal + Counting (side by side)
-            HStack(spacing: 10) {
+            // Kind — a linked create shows the root's kind as a tag, never a picker.
+            fieldRow(label: "Kind") {
+                if let s = linkedSuggestion {
+                    KindTagView(kind: s.countKind, counterName: s.name, lifetime: s.lifetime)
+                } else {
+                    KindPickerView(selection: $countingKind, lock: .none)
+                }
+            }
+
+            // Goal + Counting (side by side); Duration hides Counting
+            HStack(alignment: .top, spacing: 10) {
                 VStack(alignment: .leading, spacing: 5) {
                     fieldLabel("Goal", required: true)
-                    RisoNumberField(placeholder: "100", text: $countingGoalText)
+                    GoalEntryView(
+                        kind: effectiveKind, text: $countingGoalText,
+                        placeholder: effectiveKind == .duration ? "0h 0m" : "100"
+                    )
                 }
-                VStack(alignment: .leading, spacing: 5) {
-                    fieldLabel("Counting", required: true)
-                    RisoTextField(placeholder: "push-ups", text: $countingUnitText)
+                if countKindNeedsUnit(effectiveKind) {
+                    VStack(alignment: .leading, spacing: 5) {
+                        fieldLabel("Counting", required: true)
+                        RisoTextField(placeholder: "push-ups", text: $countingUnitText)
+                    }
                 }
             }
 
@@ -275,6 +324,7 @@ struct RisoSpecialTaskPanel: View {
         }
         .onChange(of: countingActionText) { _, _ in updateLinkSuggestion() }
         .onChange(of: countingUnitText) { _, _ in updateLinkSuggestion() }
+        .onChange(of: countingKind) { _, _ in updateLinkSuggestion() }
     }
 
     // MARK: Counter-link suggestion banner
@@ -283,6 +333,11 @@ struct RisoSpecialTaskPanel: View {
     /// changes. Resets the opt-out flag so an edited pair re-offers linking
     /// by default (web parity).
     private func updateLinkSuggestion() {
+        guard countingKind != .duration else {
+            linkSuggestion = nil
+            linkDisabled = false
+            return
+        }
         linkSuggestion = findLinkableCounter(
             action: countingActionText,
             unit: countingUnitText,
@@ -315,7 +370,10 @@ struct RisoSpecialTaskPanel: View {
         guard canSubmitCounting else { return }
         form.taskType = .counting
         form.countingAction = countingActionText.trimmingCharacters(in: .whitespacesAndNewlines)
-        form.countingUnit = countingUnitText.trimmingCharacters(in: .whitespacesAndNewlines)
+        form.countingKind = countingKind
+        form.countingLinkedRootKind = linkedSuggestion?.countKind
+        form.countingUnit = countKindNeedsUnit(effectiveKind)
+            ? countingUnitText.trimmingCharacters(in: .whitespacesAndNewlines) : ""
         form.countingMaxCount = countingGoalText.trimmingCharacters(in: .whitespacesAndNewlines)
         form.title = ""
 
@@ -346,6 +404,7 @@ struct RisoSpecialTaskPanel: View {
         countingActionText = ""
         countingGoalText = ""
         countingUnitText = ""
+        countingKind = .discrete
         linkSuggestion = nil
         linkDisabled = false
         form = CreateFormViewModel()
@@ -579,6 +638,7 @@ struct RisoSpecialTaskPanel: View {
         countingActionText = ""
         countingGoalText = ""
         countingUnitText = ""
+        countingKind = .discrete
         // Counter-link suggestion
         linkSuggestion = nil
         linkDisabled = false

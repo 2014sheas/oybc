@@ -450,6 +450,8 @@
 		CF3D3564D0A439E1C8A100DE /* LateLogInFlightGuardTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB485872FBBB0218FA812F8D /* LateLogInFlightGuardTests.swift */; };
 		CF5266492AE4E5DE814F832F /* RisoSourceRowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 73E251DCBBC09D1AD007288E /* RisoSourceRowView.swift */; };
 		CF72D0ADF8622F72627A4D5D /* CountKindModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0D3A2D4D8D79E2C66EE28FA8 /* CountKindModelTests.swift */; };
+		D021032EDDDFCD9D114684B6 /* CreateFormViewModelCountKindTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5271BBFF5305A9CCA3A8FA6E /* CreateFormViewModelCountKindTests.swift */; };
+		D10AECB17CEB554EA16AF73B /* RisoSpecialPanelCountingSnapshotTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2CA83821EC052DD0EE5F2A15 /* RisoSpecialPanelCountingSnapshotTests.swift */; };
 		D13FC3BACA533D6A0D05489D /* AttemptLoggedWriteTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA2CC35EE1239842798704AA /* AttemptLoggedWriteTests.swift */; };
 		D1BCD8285F254891D6184330 /* AppDatabase+BoardTasks.swift in Sources */ = {isa = PBXBuildFile; fileRef = E90C151427BF0EF3B19EFE4C /* AppDatabase+BoardTasks.swift */; };
 		D2466E1A5762957C57034530 /* BoardEditPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B9B2902751B15B77ADB6E9C /* BoardEditPanel.swift */; };
@@ -668,6 +670,7 @@
 		2C63406B0FE873284095D270 /* RisoMemberRuleRowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RisoMemberRuleRowView.swift; sourceTree = "<group>"; };
 		2C781A106EEE50F8886C0DBE /* TaskLibraryViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskLibraryViewModel.swift; sourceTree = "<group>"; };
 		2C99738D9D24B8DB105F0391 /* LinkableCounterVectorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LinkableCounterVectorTests.swift; sourceTree = "<group>"; };
+		2CA83821EC052DD0EE5F2A15 /* RisoSpecialPanelCountingSnapshotTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RisoSpecialPanelCountingSnapshotTests.swift; sourceTree = "<group>"; };
 		2CE98FE8DA5998F25F01F6C0 /* NotificationDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationDelegate.swift; sourceTree = "<group>"; };
 		2DE69CF0825C0657176C53E9 /* Archivo-SemiBold.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Archivo-SemiBold.ttf"; sourceTree = "<group>"; };
 		2E8CF69F33C744D9C11BF648 /* BoardWizardPreviewDerivedTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BoardWizardPreviewDerivedTests.swift; sourceTree = "<group>"; };
@@ -753,6 +756,7 @@
 		51036F1A0CCDD926D01E608E /* DerivedCountersCascadeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DerivedCountersCascadeTests.swift; sourceTree = "<group>"; };
 		51DA7B631091FE5BE9AA7F78 /* RisoEndedBadge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RisoEndedBadge.swift; sourceTree = "<group>"; };
 		5245B5C7E07935259DEE614D /* RisoText.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RisoText.swift; sourceTree = "<group>"; };
+		5271BBFF5305A9CCA3A8FA6E /* CreateFormViewModelCountKindTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CreateFormViewModelCountKindTests.swift; sourceTree = "<group>"; };
 		5292953ADD53EE7BC3EE7557 /* BoardWizardPoolMixActionsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BoardWizardPoolMixActionsTests.swift; sourceTree = "<group>"; };
 		53AA42BA817C172E51153A53 /* KindPickerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KindPickerView.swift; sourceTree = "<group>"; };
 		542F39EF93A3299BD85C4A24 /* CreateHubViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CreateHubViewModel.swift; sourceTree = "<group>"; };
@@ -1502,6 +1506,7 @@
 				5A46C5E323B8BC86684D490B /* CounterOpsTests.swift */,
 				0D3A2D4D8D79E2C66EE28FA8 /* CountKindModelTests.swift */,
 				A64CA6668D643B87CA98F212 /* CountValueVectorTests.swift */,
+				5271BBFF5305A9CCA3A8FA6E /* CreateFormViewModelCountKindTests.swift */,
 				0EB4FF22AFFCA34D5F53426C /* CycleDetectionTests.swift */,
 				CFC8212667315B8E65232788 /* CycleDetectionVectorTests.swift */,
 				EEA091BEC9F9DE7F7EDCC979 /* DerivationPassTests.swift */,
@@ -1760,6 +1765,7 @@
 				256A0AF997716E40C0EC2392 /* RisoRangeSliderSnapshotTests.swift */,
 				870C6F69DAAAE82F88C36D2A /* RisoRecurringBadgeSnapshotTests.swift */,
 				AE259923948E699615329848 /* RisoSourceSnapshotTests.swift */,
+				2CA83821EC052DD0EE5F2A15 /* RisoSpecialPanelCountingSnapshotTests.swift */,
 				EB413B80CC1E7378AC5DC120 /* RisoTasksTabSnapshotTests.swift */,
 				5B4206293BC7E9CBE5865CC0 /* SettingsSnapshotTests.swift */,
 				C7F3B9707F156A472299226B /* ShareBoardSheetSnapshotTests.swift */,
@@ -2512,6 +2518,7 @@
 				8A50AFB2065146832C0D787E /* CounterMilestoneTests.swift in Sources */,
 				7DA28F156DAD7EE5D933FD0B /* CounterNameTests.swift in Sources */,
 				E08234095DF9E8966C89DAF3 /* CounterOpsTests.swift in Sources */,
+				D021032EDDDFCD9D114684B6 /* CreateFormViewModelCountKindTests.swift in Sources */,
 				EC4D7D74EF488E9483EC2FFC /* CycleDetectionTests.swift in Sources */,
 				50D6EF5AEC63ECA472FD8E4D /* CycleDetectionVectorTests.swift in Sources */,
 				C21D1CB5B562EFAD0E9AECB9 /* DerivationPassTests.swift in Sources */,
@@ -2660,6 +2667,7 @@
 				BF29F73C9B77F2CBAD44CA3D /* RisoRangeSliderSnapshotTests.swift in Sources */,
 				01397707BFD635BE3565E32A /* RisoRecurringBadgeSnapshotTests.swift in Sources */,
 				819D59AFCD43A7EFE2EAB35C /* RisoSourceSnapshotTests.swift in Sources */,
+				D10AECB17CEB554EA16AF73B /* RisoSpecialPanelCountingSnapshotTests.swift in Sources */,
 				03DF70174285CDA62B66861A /* RisoTasksTabSnapshotTests.swift in Sources */,
 				48E662305D84FE25A578BAF6 /* SettingsSnapshotTests.swift in Sources */,
 				B2247F8BA1A051D5985FF0C4 /* ShareBoardSheetSnapshotTests.swift in Sources */,

@@ -52,6 +52,16 @@ final class LinkableCounterTests: XCTestCase {
         )
     }
 
+    // MARK: - Kind
+
+    func testSuggestionCarriesRootKind() {
+        var root = task("r", action: "Run", unit: "miles")
+        root.countKind = .continuous
+        XCTAssertEqual(findLinkableCounter(action: "run", unit: "miles", tasks: [root])?.countKind, .continuous)
+        root.countKind = nil
+        XCTAssertEqual(findLinkableCounter(action: "run", unit: "miles", tasks: [root])?.countKind, .discrete)
+    }
+
     // MARK: - 1. Blank action or unit → nil
 
     func testReturnsNilWhenActionOrUnitIsBlank() {

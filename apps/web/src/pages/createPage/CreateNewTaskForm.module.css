@@ -120,18 +120,6 @@
   color: var(--riso-red);
 }
 
-/* inline explanatory copy */
-.helpText {
-  display: block;
-  font-size: 0.85rem;
-  font-weight: 500;
-  line-height: 1.4;
-  color: var(--riso-muted);
-}
-.helpText.helpTextLead {
-  margin-bottom: 8px;
-}
-
 /* counting fields cluster */
 .countingFields {
   display: flex;

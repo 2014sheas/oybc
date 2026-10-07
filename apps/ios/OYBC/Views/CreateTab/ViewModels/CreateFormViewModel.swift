@@ -108,6 +108,13 @@ final class CreateFormViewModel {
     var countingAction: String = ""
     var countingUnit: String = ""
     var countingMaxCount: String = ""
+    /// The kind the Kind picker shows (counter kinds, docs/COUNTER_KINDS.md §5).
+    var countingKind: CountKind = .discrete
+    /// Set by the panel while the typed (verb, noun) pair auto-links: the
+    /// matched root's kind, which overrides the picker (D5 / R19).
+    var countingLinkedRootKind: CountKind? = nil
+    /// The kind validation, parsing, the title and the stored row all use.
+    var effectiveCountingKind: CountKind { countingLinkedRootKind ?? countingKind }
 
     /// The counting Task currently used as a derivation template, or nil.
     /// When set, `countingAction` and `countingUnit` are pre-filled from
@@ -267,20 +274,27 @@ final class CreateFormViewModel {
                 errorMessage = "Verb must be \(CreateFormLimits.action) characters or less"
                 return
             }
-            guard !u.isEmpty else {
-                errorMessage = "Counting is required"
-                return
-            }
-            guard u.count <= CreateFormLimits.unit else {
-                errorMessage = "Counting must be \(CreateFormLimits.unit) characters or less"
-                return
+            let kind = effectiveCountingKind
+            if countKindNeedsUnit(kind) {
+                guard !u.isEmpty else {
+                    errorMessage = "Counting is required"
+                    return
+                }
+                guard u.count <= CreateFormLimits.unit else {
+                    errorMessage = "Counting must be \(CreateFormLimits.unit) characters or less"
+                    return
+                }
             }
             guard !m.isEmpty else {
                 errorMessage = "Goal is required"
                 return
             }
-            guard let v = Int(m), v > 0 else {
-                errorMessage = "Goal must be a positive integer"
+            guard parseCountInput(m, kind: kind) != nil else {
+                switch kind {
+                case .discrete: errorMessage = "Goal must be a positive integer"
+                case .continuous: errorMessage = "Goal must be a number above zero with up to 2 decimals"
+                case .duration: errorMessage = "Goal must be a duration above zero"
+                }
                 return
             }
 
@@ -319,9 +333,10 @@ final class CreateFormViewModel {
         if resolvedType == .counting {
             let a = countingAction.trimmingCharacters(in: .whitespacesAndNewlines)
             let u = countingUnit.trimmingCharacters(in: .whitespacesAndNewlines)
-            let m = Int(countingMaxCount.trimmingCharacters(in: .whitespacesAndNewlines)).map(CountValue.init) ?? 0
+            let m = parseCountInput(countingMaxCount, kind: effectiveCountingKind) ?? 0
             resolvedTitle = TaskTitle.generateCounterTaskTitle(
-                action: a, maxCount: m, unit: u, providedTitle: trimmedTitle
+                action: a, maxCount: m, unit: u, providedTitle: trimmedTitle,
+                countKind: effectiveCountingKind
             )
         } else {
             resolvedTitle = trimmedTitle
@@ -427,6 +442,8 @@ final class CreateFormViewModel {
         countingAction = ""
         countingUnit = ""
         countingMaxCount = ""
+        countingKind = .discrete
+        countingLinkedRootKind = nil
         countingDeriveFromTask = nil
         countingSharedCounterId = nil
         countingBaseline = nil
@@ -453,6 +470,8 @@ final class CreateFormViewModel {
         countingAction = source.action ?? ""
         countingUnit = source.unit ?? ""
         countingMaxCount = ""
+        countingKind = .discrete
+        countingLinkedRootKind = nil
         clearFeedback()
     }
 
@@ -463,6 +482,8 @@ final class CreateFormViewModel {
         countingAction = ""
         countingUnit = ""
         countingMaxCount = ""
+        countingKind = .discrete
+        countingLinkedRootKind = nil
         clearFeedback()
     }
 
@@ -780,16 +801,20 @@ final class CreateFormViewModel {
         case .counting:
             let a = countingAction.trimmingCharacters(in: .whitespacesAndNewlines)
             let u = countingUnit.trimmingCharacters(in: .whitespacesAndNewlines)
-            let m = Int(countingMaxCount.trimmingCharacters(in: .whitespacesAndNewlines)).map(CountValue.init) ?? 0
-            return Task(
+            let kind = effectiveCountingKind
+            let m = parseCountInput(countingMaxCount, kind: kind) ?? 0
+            var counting = Task(
                 id: id, userId: userId, title: title, description: desc,
-                type: .counting, action: a, unit: u, maxCount: m,
+                type: .counting, action: a,
+                unit: countKindNeedsUnit(kind) ? u : "", maxCount: m,
                 totalCompletions: 0, totalInstances: 0,
                 createdAt: now, updatedAt: now, version: 1, isDeleted: false,
                 timeframe: timeframe, startDate: startDate, endDate: endDate,
                 sharedCounterId: countingSharedCounterId,
                 baseline: countingBaseline
             )
+            counting.countKind = kind == .discrete ? nil : kind
+            return counting
         case .compound:
             // Unreachable — compound CreateTaskType returns nil from
             // selectedType; compounds route through handleCreateCompoundAndAddToPool.

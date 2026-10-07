@@ -43,6 +43,8 @@ struct LinkableCounterSuggestion {
     let lifetime: CountValue
     /// Tasks already sharing this counter (source + linkers) — for "N tasks".
     let memberCount: Int
+    /// The counter's kind (D5) — a linked create takes it.
+    let countKind: CountKind
 }
 
 // MARK: - Algorithm
@@ -115,7 +117,8 @@ func findLinkableCounter(
         counterId: best.id,
         name: name,
         lifetime: best.currentCount ?? 0,
-        memberCount: 1 + (linkerCountBySource[best.id] ?? 0)
+        memberCount: 1 + (linkerCountBySource[best.id] ?? 0),
+        countKind: resolveCountKind(best.countKind)
     )
 }
 

@@ -2,12 +2,16 @@ import { useCallback, useState } from 'react';
 import {
   AchievementTrigger,
   TaskType,
+  countKindNeedsUnit,
   generateCounterTaskTitle,
+  parseCountInput,
+  type CountKind,
   type Task,
   type CompoundChild,
 } from '@oybc/shared';
 import { createTask } from '../../db/operations/tasks';
 import { generateUUID, currentTimestamp } from '../../db/utils';
+import { countingGoalError } from './createFormCounting';
 import { type SubtaskFormState, createEmptySubtask } from '../../components/subtaskDraftUtils';
 
 /**
@@ -82,6 +86,7 @@ export function validateForm(
   achievementMode?: AchievementMode,
   achievementReferenceId?: string | null,
   achievementRequiredCountStr?: string,
+  countKind: CountKind = 'discrete',
 ): FormErrors {
   const errors: FormErrors = {};
 
@@ -106,20 +111,16 @@ export function validateForm(
       errors.action = `Verb must be ${ACTION_MAX_LENGTH} characters or less`;
     }
 
-    if (unit.trim().length === 0) {
-      errors.unit = 'Counting is required';
-    } else if (unit.trim().length > UNIT_MAX_LENGTH) {
-      errors.unit = `Counting must be ${UNIT_MAX_LENGTH} characters or less`;
-    }
-
-    if (maxCountStr.trim().length === 0) {
-      errors.maxCount = 'Goal is required';
-    } else {
-      const parsed = parseInt(maxCountStr, 10);
-      if (isNaN(parsed) || parsed <= 0) {
-        errors.maxCount = 'Goal must be a positive integer';
+    if (countKindNeedsUnit(countKind)) {
+      if (unit.trim().length === 0) {
+        errors.unit = 'Counting is required';
+      } else if (unit.trim().length > UNIT_MAX_LENGTH) {
+        errors.unit = `Counting must be ${UNIT_MAX_LENGTH} characters or less`;
       }
     }
+
+    const goalError = countingGoalError(maxCountStr, countKind);
+    if (goalError) errors.maxCount = goalError;
   }
 
   if (type === TaskType.ACHIEVEMENT) {
@@ -207,6 +208,8 @@ export interface UseCreateFormState {
   action: string;
   unit: string;
   maxCountStr: string;
+  /** The counting kind the Kind picker shows (an auto-link overrides it at submit time in the host). */
+  countKind: CountKind;
   steps: SubtaskFormState[];
   errors: FormErrors;
   isSubmitting: boolean;
@@ -235,6 +238,7 @@ export interface UseCreateFormState {
   setAction: (v: string) => void;
   setUnit: (v: string) => void;
   setMaxCountStr: (v: string) => void;
+  setCountKind: (kind: CountKind) => void;
   handleTypeChange: (v: TaskType) => void;
 
   /**
@@ -284,6 +288,7 @@ export function useCreateFormState({
   const [action, setAction] = useState('');
   const [unit, setUnit] = useState('');
   const [maxCountStr, setMaxCountStr] = useState('');
+  const [countKind, setCountKind] = useState<CountKind>('discrete');
   const [steps, setSteps] = useState<SubtaskFormState[]>([createEmptySubtask()]);
   const [errors, setErrors] = useState<FormErrors>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -346,6 +351,7 @@ export function useCreateFormState({
     setAction('');
     setUnit('');
     setMaxCountStr('');
+    setCountKind('discrete');
     // Phase 6.3 — reset the achievement-mode picker fully (mode + ref id
     // + trigger + count) so type-out-then-back-in doesn't surface stale
     // state. specificBoard + GREENLOG are the defaults.
@@ -449,6 +455,7 @@ export function useCreateFormState({
     setAction('');
     setUnit('');
     setMaxCountStr('');
+    setCountKind('discrete');
     setSteps([createEmptySubtask()]);
     setErrors({});
     setDeriveFromTask(null);
@@ -474,6 +481,7 @@ export function useCreateFormState({
         achievementMode,
         achievementReferenceId,
         achievementRequiredCountStr,
+        countKind,
       );
       setErrors(validationErrors);
       if (Object.keys(validationErrors).length > 0) return;
@@ -514,12 +522,13 @@ export function useCreateFormState({
             onTaskCreated(newTask);
             onPendingCreated?.(payload);
           } else if (taskType === TaskType.COUNTING) {
-            const parsedMaxCount = parseInt(maxCountStr, 10);
+            const parsedMaxCount = parseCountInput(maxCountStr, countKind) as number;
             const resolvedTitle = generateCounterTaskTitle(
               action.trim(),
               parsedMaxCount,
               unit.trim(),
-              title.trim() || undefined
+              title.trim() || undefined,
+              countKind,
             );
             newTask = {
               id: generateUUID(),
@@ -528,8 +537,9 @@ export function useCreateFormState({
               description: description.trim() || undefined,
               type: TaskType.COUNTING,
               action: action.trim(),
-              unit: unit.trim(),
+              unit: countKindNeedsUnit(countKind) ? unit.trim() : '',
               maxCount: parsedMaxCount,
+              ...(countKind !== 'discrete' ? { countKind } : {}),
               currentCount: 0,
               isCompleted: false,
               totalCompletions: 0,
@@ -604,20 +614,22 @@ export function useCreateFormState({
             endDate: defaultEndDate,
           });
         } else if (taskType === TaskType.COUNTING) {
-          const parsedMaxCount = parseInt(maxCountStr, 10);
+          const parsedMaxCount = parseCountInput(maxCountStr, countKind) as number;
           const resolvedTitle = generateCounterTaskTitle(
             action.trim(),
             parsedMaxCount,
             unit.trim(),
-            title.trim() || undefined
+            title.trim() || undefined,
+            countKind,
           );
           newTask = await createTask(userId, {
             title: resolvedTitle,
             description: description.trim() || undefined,
             type: TaskType.COUNTING,
             action: action.trim(),
-            unit: unit.trim(),
+            unit: countKindNeedsUnit(countKind) ? unit.trim() : '',
             maxCount: parsedMaxCount,
+            ...(countKind !== 'discrete' ? { countKind } : {}),
             timeframe: defaultTimeframe,
             startDate: defaultStartDate,
             endDate: defaultEndDate,
@@ -664,7 +676,7 @@ export function useCreateFormState({
         setIsSubmitting(false);
       }
     },
-    [taskType, title, description, action, unit, maxCountStr, userId, onTaskCreated, onPendingCreated, deferPersist, achievementMode, achievementReferenceId, achievementTrigger, achievementRequiredCountStr, defaultTimeframe, defaultStartDate, defaultEndDate]
+    [taskType, title, description, action, unit, maxCountStr, countKind, userId, onTaskCreated, onPendingCreated, deferPersist, achievementMode, achievementReferenceId, achievementTrigger, achievementRequiredCountStr, defaultTimeframe, defaultStartDate, defaultEndDate]
   );
 
   return {
@@ -674,6 +686,7 @@ export function useCreateFormState({
     action,
     unit,
     maxCountStr,
+    countKind,
     steps,
     errors,
     isSubmitting,
@@ -691,6 +704,7 @@ export function useCreateFormState({
     setAction: setActionClearingError,
     setUnit: setUnitClearingError,
     setMaxCountStr: setMaxCountStrClearingError,
+    setCountKind,
     handleTypeChange,
     applyTemplate,
     clearTemplate,

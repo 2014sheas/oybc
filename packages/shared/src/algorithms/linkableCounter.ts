@@ -23,6 +23,7 @@
 import type { Task } from '../types/task';
 import { TaskType } from '../constants/enums';
 import { formatCounterName } from './counterName';
+import { resolveCountKind, type CountKind } from './countValue';
 
 /** The existing counter a new task can join, plus display stats for the suggestion. */
 export interface LinkableCounter {
@@ -38,6 +39,8 @@ export interface LinkableCounter {
   lifetime: number;
   /** Tasks already sharing this counter (source + linkers) — for "N tasks". */
   memberCount: number;
+  /** The counter's kind (D5) — a linked create takes it. */
+  countKind: CountKind;
 }
 
 export interface FindLinkableCounterInput {
@@ -111,6 +114,7 @@ export function findLinkableCounter(
     name: formatCounterName(best.action, best.unit) || best.title,
     lifetime: best.currentCount ?? 0,
     memberCount: 1 + (linkerCountBySource.get(best.id) ?? 0),
+    countKind: resolveCountKind(best),
   };
 }
 
