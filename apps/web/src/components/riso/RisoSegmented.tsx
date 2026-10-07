@@ -36,6 +36,13 @@ export interface RisoSegmentedProps<T> {
    */
   fullWidth?: boolean;
   /**
+   * `card` + `fullWidth` only: labels never ellipsize — the type scales with
+   * the row's width (container units) between 9px and the size's own font
+   * size. For short fixed label sets in narrow rows (the counter-kind
+   * picker's "Continuous" in a nested compound sub-task at 390px).
+   */
+  fitLabels?: boolean;
+  /**
    * `card` only: values whose segment ignores taps — 45% opacity, not
    * hit-testable, `aria-disabled`. The counter-kind picker's locked states
    * (docs/COUNTER_KINDS.md §5). Omitted ⇒ unchanged markup.
@@ -64,6 +71,7 @@ export function RisoSegmented<T extends string | number>({
   variant = 'card',
   size = 'default',
   fullWidth = false,
+  fitLabels = false,
   lockedValues,
   lockGlyphValues,
   'aria-label': ariaLabel,
@@ -74,9 +82,15 @@ export function RisoSegmented<T extends string | number>({
         variant === 'pill' ? styles.pill : styles.card,
         size === 'compact' ? styles.compact : '',
         variant === 'card' && fullWidth ? styles.fullWidth : '',
+        variant === 'card' && fullWidth && fitLabels ? styles.fitLabels : '',
       ]
         .filter(Boolean)
         .join(' ')}
+      style={
+        variant === 'card' && fullWidth && fitLabels
+          ? ({ '--seg-count': options.length } as React.CSSProperties)
+          : undefined
+      }
       role="group"
       aria-label={ariaLabel}
     >

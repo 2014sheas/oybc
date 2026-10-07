@@ -169,7 +169,7 @@ export function CreateCounterSheet({
       <div className={styles.dialog} onClick={(e) => e.stopPropagation()}>
         <h3 className={styles.title}>New counter</h3>
 
-        <span className={styles.fieldLabel}>Kind</span>
+        <span className={`${styles.fieldLabel} ${styles.fieldLabelFirst}`}>Kind</span>
         <KindPicker value={countKind} lock="none" onChange={handleKindChange} />
 
         <label className={styles.fieldLabel} htmlFor="create-counter-noun">

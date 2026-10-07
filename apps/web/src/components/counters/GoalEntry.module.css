@@ -6,8 +6,10 @@
 .field:focus-within { outline: 3px solid var(--riso-blue); outline-offset: 1px; }
 .dense { padding: 11px 12px; }
 .invalid { border-color: var(--riso-red); }
+/* width: 0 — an <input>'s intrinsic ~20ch width would otherwise set the
+   field's min-content, so the h / m pair overflowed narrow rows (390px). */
 .input {
-  flex: 1; min-width: 0; border: 0; padding: 0; background: transparent; outline: none;
+  flex: 1; min-width: 0; width: 0; border: 0; padding: 0; background: transparent; outline: none;
   font-family: var(--riso-font-body); font-size: 15px; font-weight: 500; color: var(--riso-ink);
 }
 .suffix { font-size: 12px; font-weight: 600; color: var(--riso-muted); }

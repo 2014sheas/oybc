@@ -45,7 +45,10 @@
   margin: 12px 0 6px;
 }
 
-.fieldLabel:first-of-type {
+/* The sheet's first label (Kind). Not `:first-of-type` — that also matched
+   the first <label> ("What are you counting?"), pinning it flush under the
+   Kind picker. */
+.fieldLabelFirst {
   margin-top: 0;
 }
 

@@ -399,3 +399,11 @@
   outline: 3px solid var(--riso-blue);
   outline-offset: 2px;
 }
+
+/* Phone width: the build card nests the sub-task cards, so tighter padding
+   keeps the inline sub-task's Kind picker labels whole at 390px. */
+@media (max-width: 480px) {
+  .container {
+    padding: 14px;
+  }
+}

@@ -32,6 +32,7 @@ export function KindPicker({ value, lock, onChange, size = 'default' }: KindPick
       aria-label="Kind"
       variant="card"
       fullWidth
+      fitLabels
       size={size}
       options={COUNT_KINDS.map((k) => ({ value: k, label: COUNT_KIND_LABELS[k] }))}
       value={value}
