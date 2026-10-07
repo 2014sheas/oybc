@@ -60,7 +60,7 @@ struct GoalEntryView: View {
                     Image(systemName: "chevron.down")
                         .font(.system(size: 11, weight: .bold))
                         .foregroundStyle(Color.risoMuted)
-                        .rotationEffect(.degrees(isOpen ? 180 : 0))
+                        .rotationEffect(.degrees(wheelOpen ? 180 : 0))
                 }
                 .padding(.horizontal, 11)
                 .frame(minHeight: 40)
@@ -70,11 +70,10 @@ struct GoalEntryView: View {
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Duration, \(text.isEmpty ? "not set" : text)")
-            if isOpen { wheel }
+            if wheelOpen { wheel }
         }
+        .onAppear { if startsOpen { wheelOpen = true } }
     }
-
-    private var isOpen: Bool { wheelOpen || startsOpen }
 
     private var wheel: some View {
         let fields = GoalEntryModel.wheelFields(text)
@@ -94,7 +93,8 @@ struct GoalEntryView: View {
         }
         .pickerStyle(.wheel)
         .frame(height: 132)
-        .background(RoundedRectangle(cornerRadius: 12).fill(Color.risoPaper2))
+        .background(Color.risoPaper2)
+        .clipShape(RoundedRectangle(cornerRadius: 12))
         .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Color.risoInk.opacity(0.35), lineWidth: 1.5))
     }
 }
