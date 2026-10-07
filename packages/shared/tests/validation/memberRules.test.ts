@@ -19,7 +19,7 @@ describe('BoardSource.memberRules (Zod)', () => {
     expect(r.success).toBe(true);
   });
   it.each([
-    ['target 0', { target: 0 }], ['target negative', { target: -1 }], ['target fractional', { target: 1.5 }],
+    ['target 0', { target: 0 }], ['target negative', { target: -1 }], ['target beyond 2dp', { target: 1.555 }],
     ['vary 3', { vary: 3 }], ['vary -1', { vary: -1 }], ['part target 0', { parts: { [T(3)]: { target: 0 } } }],
   ])('rejects %s', (_label, rule) => {
     expect(BoardSourceSchema.safeParse({ ...base, memberRules: { [T(1)]: rule } }).success).toBe(false);

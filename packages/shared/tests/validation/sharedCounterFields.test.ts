@@ -112,11 +112,11 @@ describe('CreateTaskInputSchema — sharedCounterId + baseline refinement', () =
     expect(result.success).toBe(false);
   });
 
-  it('rejects when baseline is a non-integer float', () => {
+  it('rejects when baseline has more than 2 decimal places', () => {
     const result = CreateTaskInputSchema.safeParse(
-      validCounting({ sharedCounterId: UUID_A, baseline: 1.5 }),
+      validCounting({ sharedCounterId: UUID_A, baseline: 1.555 }),
     );
-    // Non-integer baseline fails the z.number().int() constraint.
+    // A 3dp baseline fails the 2dp-quantized constraint.
     expect(result.success).toBe(false);
   });
 

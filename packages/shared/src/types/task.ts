@@ -1,3 +1,4 @@
+import type { CountKind } from '../algorithms/countValue';
 import { AchievementTrigger, OperatorType, TaskType, Timeframe } from '../constants/enums';
 
 /**
@@ -35,7 +36,7 @@ export interface Task {
   // Counting task fields (only for type='counting')
   action?: string;               // Action verb (e.g., "Read", "Run")
   unit?: string;                 // Unit of measurement (e.g., "pages", "miles")
-  maxCount?: number;             // Target count (e.g., 100)
+  maxCount?: number;             // Target count (e.g., 100); up to 2dp for continuous kinds
 
   // Compound-specific fields (only meaningful when type === TaskType.COMPOUND)
   operator?: OperatorType;       // AND | OR | M_OF_N
@@ -97,7 +98,7 @@ export interface Task {
   //     is a bug.
   isCompleted: boolean;          // Default false
   completedAt?: string;          // ISO8601
-  currentCount?: number;         // For counting tasks (NOTE: moved here from BoardTask)
+  currentCount?: number;         // Lifetime cache, up to 2dp (NOTE: moved here from BoardTask)
 
   // Aggregate stats (denormalized for performance)
   totalCompletions: number;      // ⚠️ NOT currently derived from task_events — stuck at its creation-time
@@ -146,6 +147,12 @@ export interface Task {
    * Canonical design: docs/SHARED_COUNTERS.md §P5.
    */
   isCounter?: boolean;
+  /**
+   * Counter kinds (docs/COUNTER_KINDS.md). COUNTING only. Absent => 'discrete'
+   * (every pre-feature row). 'continuous' holds 2dp values; 'duration' holds
+   * whole minutes. Linked / minted copies carry the root's kind.
+   */
+  countKind?: CountKind;
 
   /**
    * Counters UX refresh (R2). The last amount the user logged against this
@@ -155,7 +162,7 @@ export interface Task {
    * or hub-born counter, i.e. `sharedCounterId == null`); derived (linked)
    * tasks never set it — logging always happens through the source.
    *
-   * Positive integer when present; absent means "no log yet" and callers
+   * Positive (2dp for continuous kinds, whole otherwise) when present; absent means "no log yet" and callers
    * fall back to `1`. Synced per-row LWW like every other Task field.
    * Canonical design: docs/SHARED_COUNTERS.md §Counters UX refresh →
    * Amount logging.
@@ -275,12 +282,24 @@ export interface CreateTaskInput {
    * documentation. Canonical design: docs/SHARED_COUNTERS.md §P5.
    */
   isCounter?: boolean;
+  /**
+   * Counter kinds (docs/COUNTER_KINDS.md). COUNTING only. Absent => 'discrete'
+   * (every pre-feature row). 'continuous' holds 2dp values; 'duration' holds
+   * whole minutes. Linked / minted copies carry the root's kind.
+   */
+  countKind?: CountKind;
 }
 
 /**
  * Task update input
  */
 export interface UpdateTaskInput {
+  /**
+   * Counter kinds (docs/COUNTER_KINDS.md). COUNTING only. Absent => 'discrete'
+   * (every pre-feature row). 'continuous' holds 2dp values; 'duration' holds
+   * whole minutes. Linked / minted copies carry the root's kind.
+   */
+  countKind?: CountKind;
   title?: string;
   description?: string;
   // Note: Can't change type after creation

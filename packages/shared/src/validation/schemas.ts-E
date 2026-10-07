@@ -242,7 +242,7 @@ export const CreateTaskInputSchema = z.object({
   referencedBoardId: z.string().uuid().optional(),
   referencedTemplateId: z.string().uuid().optional(),
   achievementTrigger: z.nativeEnum(AchievementTrigger).optional(),
-  requiredCount: z.number().int().positive().optional(),
+  requiredCount: positiveCount().optional(),
   // Phase 6.Y — Timeboxed Tasks. All optional; absent ⇒ indefinite.
   // No all-three-or-none refinement; callers (wizard-create + edit)
   // are responsible for keeping them consistent.
@@ -269,9 +269,6 @@ export const CreateTaskInputSchema = z.object({
     return true;
   },
   { message: 'Counting tasks must have action, unit, and maxCount (unless isCounter)' }
-).refine(
-  countFieldsMatchKind,
-  { message: 'Whole-number kinds need whole goals' },
 ).refine(
   referencedFieldsOnTaskMutuallyExclusive,
   { message: 'Task.referencedBoardId and referencedTemplateId are mutually exclusive — at most one may be set' },
@@ -302,7 +299,6 @@ export const CreateTaskInputSchema = z.object({
 // NORMAL / COUNTING / COMPOUND / ACHIEVEMENT — no Progress branch needed.
 
 export const UpdateTaskInputSchema = z.object({
-  countKind: CountKindSchema.optional(),
   title: z.string().min(1).max(200).optional(),
   description: z.string().max(1000).optional(),
   /**
@@ -401,7 +397,7 @@ export const CreateCompoundTaskInputSchema = z.object({
   title: z.string().min(1).max(200),
   description: z.string().max(1000).optional(),
   operator: z.nativeEnum(OperatorType),
-  threshold: z.number().int().positive().optional(),
+  threshold: positiveCount().optional(),
   // One sub-task is enough (2026-10-06, owner ask); zero stays blocked.
   children: z.array(CreateCompoundChildEntrySchema).min(1),
   // Phase 6.Y — Timeboxed Tasks. Optional; when set, the parent
@@ -438,7 +434,7 @@ export const TaskSchema = z.object({
   maxCount: positiveCount().optional(),
   // Compound task fields
   operator: z.nativeEnum(OperatorType).optional(),
-  threshold: z.number().int().positive().optional(),
+  threshold: positiveCount().optional(),
   // Phase 6.3 — Achievement-task cross-board references. Only meaningful
   // when `type === ACHIEVEMENT`. Mutually exclusive and required-XOR'd on
   // achievement tasks; forbidden on every other type. The refinements at
@@ -456,7 +452,7 @@ export const TaskSchema = z.object({
   // trigger. Required (positive integer) when `referencedTemplateId`
   // is set, forbidden otherwise. Enforced by the `requiredCountRulesOk`
   // refinement below.
-  requiredCount: z.number().int().positive().optional(),
+  requiredCount: positiveCount().optional(),
   totalCompletions: z.number().int().min(0),
   totalInstances: z.number().int().min(0),
   // LIFETIME-CACHE completion fields (live on Task, not BoardTask) — Windowed
@@ -543,9 +539,6 @@ export const TaskSchema = z.object({
 ).refine(
   requiredCountRulesOk,
   { message: "requiredCount must be a positive integer when referencedTemplateId is set, and must be unset otherwise" },
-).refine(
-  countFieldsMatchKind,
-  { message: 'Whole-number kinds need whole goals' },
 );
 
 // ===== TaskEvent Schema (Windowed Completion) =====
