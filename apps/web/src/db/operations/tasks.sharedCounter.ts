@@ -8,6 +8,8 @@ import {
   boardWindowEnd,
   isEventSealImmune,
   isFrozenDerivedRow,
+  isQuantizedCount,
+  quantizeCount,
   isFrozenRowReachedByEvent,
   propagateIncrement,
   resolveTaskWindowState,
@@ -175,7 +177,7 @@ export async function incrementSharedCounter(
   by = 1,
   boardId?: string,
 ): Promise<{ affectedBoards: AffectedBoard[] }> {
-  if (by <= 0 || !Number.isInteger(by)) throw new Error('incrementSharedCounter: `by` must be a positive integer');
+  if (by <= 0 || !isQuantizedCount(by)) throw new Error('incrementSharedCounter: `by` must be a positive 2dp number');
 
   return db.transaction(
     'rw',
@@ -206,7 +208,7 @@ export async function incrementSharedCounter(
       // 2. Compute new source count — NO high-end clamp (overshoot is intentional).
       // A goal-less source (P5 hub-born counter, `maxCount == null`) never
       // auto-completes — the one-way latch below only fires once a maxCount exists.
-      const newSourceCount = (source.currentCount ?? 0) + by;
+      const newSourceCount = quantizeCount((source.currentCount ?? 0) + by);
       const sourceMaxCount = source.maxCount;
 
       // isCompleted: one-way latch. Source uses a simpler logic than derived tasks:
@@ -285,7 +287,7 @@ export async function decrementSharedCounter(
   by = 1,
   boardId?: string,
 ): Promise<{ affectedBoards: AffectedBoard[]; effectiveDelta: number }> {
-  if (by <= 0 || !Number.isInteger(by)) throw new Error('decrementSharedCounter: `by` must be a positive integer');
+  if (by <= 0 || !isQuantizedCount(by)) throw new Error('decrementSharedCounter: `by` must be a positive 2dp number');
 
   return db.transaction(
     'rw',
@@ -335,7 +337,7 @@ export async function decrementSharedCounter(
 
       // A goal-less source (P5 hub-born counter, `maxCount == null`) never
       // auto-completes — the one-way latch below only fires once a maxCount exists.
-      const newSourceCount = currentCount - eff;
+      const newSourceCount = quantizeCount(currentCount - eff);
 
       // 3. ONE-WAY LATCH: decrement does NOT un-complete.
       const sourceWasCompleted = source.isCompleted;
@@ -496,7 +498,7 @@ export async function undoLastCounterLog(sourceTaskId: string): Promise<UndoCoun
       //    `?? 0` is a defensive fallback, never expected to fire.
       const entryDelta = entry.delta ?? 0;
       const currentCount = source.currentCount ?? 0;
-      const newSourceCount = Math.max(0, currentCount - entryDelta);
+      const newSourceCount = Math.max(0, quantizeCount(currentCount - entryDelta));
 
       // 5. ONE-WAY LATCH: undo does not un-complete (mirrors increment/decrement).
       const sourceWasCompleted = source.isCompleted;
@@ -573,8 +575,8 @@ export async function setCounterDefaultLogAmount(
   sourceTaskId: string,
   amount: number,
 ): Promise<void> {
-  if (!Number.isInteger(amount) || amount <= 0) {
-    throw new Error('setCounterDefaultLogAmount: amount must be a positive integer');
+  if (!isQuantizedCount(amount) || amount <= 0) {
+    throw new Error('setCounterDefaultLogAmount: amount must be a positive 2dp number');
   }
 
   return db.transaction('rw', [db.tasks, db.syncQueue], async () => {

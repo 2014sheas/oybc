@@ -1,4 +1,5 @@
 import { formatCounterName } from './counterName';
+import { quantizeCount } from './countValue';
 
 /**
  * Generates a display title for a COUNTING task.
@@ -7,7 +8,7 @@ import { formatCounterName } from './counterName';
  * Otherwise, generates a title from action, maxCount, and unit.
  *
  * @param action - Action verb (e.g., "Read")
- * @param maxCount - Target count (e.g., 100), formatted as integer, or null/undefined for a goal-less hub-born counter
+ * @param maxCount - Target count (e.g., 100), rendered as a trimmed 2dp number (locale-independent: titles are stored data), or null/undefined for a goal-less hub-born counter
  * @param unit - Unit of measurement (e.g., "pages")
  * @param providedTitle - Optional user-provided title
  * @returns The resolved task title string
@@ -29,7 +30,7 @@ export function generateCounterTaskTitle(
   if (maxCount == null) {
     return formatCounterName(action, unit);
   }
-  return `${action.trim()} ${Math.floor(maxCount)} ${unit.trim()}`;
+  return `${action.trim()} ${String(quantizeCount(maxCount))} ${unit.trim()}`;
 }
 
 /**

@@ -1,5 +1,5 @@
 {
-  "_note": "Cross-platform vectors for packages/shared/src/algorithms/taskTitle.ts <-> apps/ios/OYBC/Helpers/TaskTitle.swift. generateCounterTaskTitle: a null maxCount is the goal-less hub-born form (pair-derived name); a JSON null action/unit is passed as '' by both harnesses. isAutoCounterTitle (2026-10-06, custom-counter-title fix): a title is AUTO iff, after trimming, it is empty OR equal (case-SENSITIVE, trimmed) to generateCounterTaskTitle(own action, own maxCount, own unit). counterCopyTitle(member, newMaxCount): a custom title carries over verbatim (trimmed) regardless of the copy's target; an auto/empty one is regenerated from action / newMaxCount / unit. iOS maxCount is Int, so no fractional-goal vectors here (the TS floor is pinned by taskTitle.test.ts alone).",
+  "_note": "Cross-platform vectors for packages/shared/src/algorithms/taskTitle.ts <-> apps/ios/OYBC/Helpers/TaskTitle.swift. generateCounterTaskTitle: a null maxCount is the goal-less hub-born form (pair-derived name); a JSON null action/unit is passed as '' by both harnesses. isAutoCounterTitle (2026-10-06, custom-counter-title fix): a title is AUTO iff, after trimming, it is empty OR equal (case-SENSITIVE, trimmed) to generateCounterTaskTitle(own action, own maxCount, own unit). counterCopyTitle(member, newMaxCount): a custom title carries over verbatim (trimmed) regardless of the copy's target; an auto/empty one is regenerated from action / newMaxCount / unit. Fractional goals (2dp, trimmed, locale-free) render via String(quantizeCount(maxCount)).",
   "generateCounterTaskTitle": [
     {
       "name": "formula",
@@ -44,6 +44,22 @@
       "maxCount": null,
       "unit": "miles",
       "expected": "Run miles"
+    },
+    {
+      "name": "fractional goal",
+      "action": "Run",
+      "maxCount": 26.2,
+      "unit": "miles",
+      "providedTitle": null,
+      "expected": "Run 26.2 miles"
+    },
+    {
+      "name": "whole goal stays whole",
+      "action": "Read",
+      "maxCount": 300,
+      "unit": "pages",
+      "providedTitle": null,
+      "expected": "Read 300 pages"
     }
   ],
   "isAutoCounterTitle": [
@@ -150,6 +166,14 @@
       "maxCount": null,
       "unit": "push-ups",
       "expected": false
+    },
+    {
+      "name": "fractional auto title",
+      "title": "Run 26.2 miles",
+      "action": "Run",
+      "maxCount": 26.2,
+      "unit": "miles",
+      "expected": true
     }
   ],
   "counterCopyTitle": [
@@ -240,6 +264,17 @@
       },
       "newMaxCount": 4,
       "expected": "Run 4 miles"
+    },
+    {
+      "name": "auto title regenerates fractional target",
+      "member": {
+        "title": "Run 26.2 miles",
+        "action": "Run",
+        "unit": "miles",
+        "maxCount": 26.2
+      },
+      "newMaxCount": 6.1,
+      "expected": "Run 6.1 miles"
     }
   ]
 }
