@@ -147,7 +147,7 @@ extension AppDatabase {
         let propagation = propagateIncrement(
             sourceAfterCurrentCount: rootAfter.currentCount ?? 0,
             linkedTasks: linkedTasks.map {
-                PropagateIncrementLinkedTask(id: $0.id, baseline: $0.baseline, maxCount: $0.maxCount, isCompleted: $0.isCompleted)
+                PropagateIncrementLinkedTask(id: $0.id, baseline: $0.baseline, maxCount: $0.maxCount, isCompleted: $0.isCompleted, countKind: $0.countKind)
             }
         )
         for (result, var linked) in zip(propagation, linkedTasks) {
@@ -217,7 +217,7 @@ extension AppDatabase {
     /// - Throws: `LateLogError.boardNotClosed` / `.taskNotPlaced` /
     ///   `.wrongTaskType` / `.invalidDelta`.
     func lateLogIncrement(boardId: String, taskId: String, delta: CountValue, now: String = AppDatabase.currentTimestamp()) throws {
-        guard delta > 0 else { throw LateLogError.invalidDelta }
+        guard isQuantizedCount(delta) && delta > 0 else { throw LateLogError.invalidDelta }
         try write { db in
             let board = try Self.fetchClosedBoard(db: db, boardId: boardId)
             guard try Self.isTaskPlacedOnBoard(db: db, boardId: boardId, taskId: taskId) else {

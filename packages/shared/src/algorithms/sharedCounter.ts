@@ -36,6 +36,8 @@
  * on any math change to avoid cross-platform divergence.
  */
 
+import { finalizeWindowCount, quantizeCount, resolveCountKind, type CountKind } from './countValue';
+
 /**
  * Derives the displayed count and completion snapshot for a derived counting task.
  *
@@ -50,7 +52,7 @@
  *   the write happens in Phase 3 when `runBoardCascadeForTask` is extended.
  */
 export function deriveDisplayedCount(
-  derivedTask: { baseline?: number; maxCount?: number },
+  derivedTask: { baseline?: number; maxCount?: number; countKind?: CountKind | null },
   source: { currentCount?: number },
 ): { displayed: number; isCompleted: boolean } {
   const baseline = derivedTask.baseline ?? 0;
@@ -59,7 +61,7 @@ export function deriveDisplayedCount(
 
   // LOW-END CLAMP ONLY: displayed may never go below 0.
   // NO Math.min(...) — high-end overshoot is intentional and visible.
-  const displayed = Math.max(0, sourceCount - baseline);
+  const displayed = finalizeWindowCount(sourceCount - baseline, resolveCountKind(derivedTask));
 
   // isCompleted when the derived task's personal threshold is met.
   // maxCount === 0 means the task is immediately complete (you cannot
@@ -88,6 +90,8 @@ export interface PropagateIncrementLinkedTask {
   baseline?: number | null;
   /** This linked task's personal threshold. */
   maxCount?: number | null;
+  /** The linked task's kind (carries the ROOT's kind); absent = discrete. */
+  countKind?: CountKind | null;
   /**
    * The task's current persisted `isCompleted` value BEFORE this increment.
    * One-way latch: if already `true`, the result keeps it `true` even if the
@@ -150,7 +154,7 @@ export function propagateIncrement(
 ): LinkedTaskIncrementResult[] {
   return linkedTasks.map((linked) => {
     const { displayed, isCompleted: derivedCompleted } = deriveDisplayedCount(
-      { baseline: linked.baseline ?? 0, maxCount: linked.maxCount ?? 0 },
+      { baseline: linked.baseline ?? 0, maxCount: linked.maxCount ?? 0, countKind: linked.countKind },
       { currentCount: sourceAfter.currentCount },
     );
 
@@ -163,7 +167,7 @@ export function propagateIncrement(
       // same accumulator value. Cascade readers don't need to look up the
       // source; they can just read this task's currentCount and call
       // deriveDisplayedCount with the baseline.
-      newCurrentCount: sourceAfter.currentCount,
+      newCurrentCount: quantizeCount(sourceAfter.currentCount),
       newIsCompleted,
       displayed,
     };

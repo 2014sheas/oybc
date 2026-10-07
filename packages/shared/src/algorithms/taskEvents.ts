@@ -5,6 +5,7 @@ import { TaskType } from '../constants/enums';
 import { isWithinTimeframe } from './calendarBoundaries';
 import { isWindowStampedDerived } from './memberRules';
 import { deriveDisplayedCount } from './sharedCounter';
+import { finalizeWindowCount, resolveCountKind, type CountKind } from './countValue';
 
 /**
  * Windowed Completion — pure evaluation helpers
@@ -146,7 +147,8 @@ export function resolveTaskWindowState(
       sum += e.delta ?? 0;
     }
     // Low-end clamp only — overshoot invariant preserved (never high-clamped).
-    const count = Math.max(0, sum);
+    // Finalised by kind: quantized 2dp, whole kinds round the SUM (D4).
+    const count = finalizeWindowCount(sum, resolveCountKind(task));
     const isCompleted = task.maxCount != null && count >= task.maxCount;
     return { isCompleted, count };
   }
@@ -241,7 +243,12 @@ export function lateLogOccurredAt(
  * @returns `{ isCompleted, count }` where `count` is the clamped in-window sum.
  */
 export function resolveWindowStampedDerivedState(
-  task: { startDate?: string | null; endDate?: string | null; maxCount?: number | null },
+  task: {
+    startDate?: string | null;
+    endDate?: string | null;
+    maxCount?: number | null;
+    countKind?: CountKind | null;
+  },
   rootEvents: TaskEvent[],
 ): TaskWindowState {
   let sum = 0;
@@ -252,7 +259,7 @@ export function resolveWindowStampedDerivedState(
       sum += e.delta ?? 0;
     }
   }
-  const count = Math.max(0, sum);
+  const count = finalizeWindowCount(sum, resolveCountKind(task));
   return { isCompleted: count >= (task.maxCount ?? 0), count };
 }
 
@@ -317,7 +324,7 @@ export function resolveDerivedCounterWindowState(
   // over the CONTEXT window — the placing board's — never its lifetime latch.
   if (contextWindow?.windowStart == null) return null;
   return resolveWindowStampedDerivedState(
-    { startDate: contextWindow.windowStart, endDate: contextWindow.windowEnd, maxCount: task.maxCount },
+    { startDate: contextWindow.windowStart, endDate: contextWindow.windowEnd, maxCount: task.maxCount, countKind: task.countKind },
     rootEvents,
   );
 }
@@ -371,14 +378,14 @@ export function resolveLinkedCounterDisplay(
         rootEvents = rootEvents.filter((e) => new Date(e.occurredAt).getTime() <= sealedAtMs);
       }
       const { count, isCompleted } = resolveWindowStampedDerivedState(
-        stamped ? task : { startDate: window!.startDate, endDate: window!.endDate, maxCount: task.maxCount },
+        stamped ? task : { startDate: window!.startDate, endDate: window!.endDate, maxCount: task.maxCount, countKind: task.countKind },
         rootEvents,
       );
       return { displayed: count, isCompleted };
     }
   }
   const { displayed } = deriveDisplayedCount(
-    { baseline: task.baseline ?? 0, maxCount: task.maxCount ?? 0 },
+    { baseline: task.baseline ?? 0, maxCount: task.maxCount ?? 0, countKind: task.countKind },
     { currentCount: task.currentCount ?? 0 },
   );
   return { displayed, isCompleted: task.isCompleted };

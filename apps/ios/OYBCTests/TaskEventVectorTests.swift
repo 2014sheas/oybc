@@ -46,7 +46,7 @@ final class TaskEventVectorTests: XCTestCase {
     }
 
     private struct WindowVector: Decodable {
-        struct MiniTask: Decodable { let type: String; let maxCount: CountValue? }
+        struct MiniTask: Decodable { let type: String; let maxCount: CountValue?; let countKind: CountKind? }
         struct Expected: Decodable { let isCompleted: Bool; let count: CountValue }
         let name: String
         let task: MiniTask
@@ -73,7 +73,7 @@ final class TaskEventVectorTests: XCTestCase {
     private struct LateLogFixture: Decodable { let lateLogOccurredAt: [LateLogVector] }
 
     /// Build a minimal event-owning Task (type + maxCount) for windowed resolution.
-    private func makeTask(type: String, maxCount: CountValue?, sharedCounterId: String? = nil) -> Task {
+    private func makeTask(type: String, maxCount: CountValue?, sharedCounterId: String? = nil, countKind: CountKind? = nil) -> Task {
         Task(
             id: "t", userId: "u", title: "t",
             type: TaskType(rawValue: type) ?? .normal,
@@ -81,7 +81,8 @@ final class TaskEventVectorTests: XCTestCase {
             totalCompletions: 0, totalInstances: 0,
             isCompleted: false,
             createdAt: ts, updatedAt: ts, version: 1, isDeleted: false,
-            sharedCounterId: sharedCounterId
+            sharedCounterId: sharedCounterId,
+            countKind: countKind
         )
     }
 
@@ -99,7 +100,7 @@ final class TaskEventVectorTests: XCTestCase {
         let fixture = try loadFixture("taskWindowStateVectors", as: WindowFixture.self)
         XCTAssertFalse(fixture.vectors.isEmpty)
         for v in fixture.vectors {
-            let task = makeTask(type: v.task.type, maxCount: v.task.maxCount)
+            let task = makeTask(type: v.task.type, maxCount: v.task.maxCount, countKind: v.task.countKind)
             let events = v.events.map { makeEvent($0) }
             let result = resolveTaskWindowState(
                 task: task, events: events, windowStart: v.windowStart, windowEnd: v.windowEnd

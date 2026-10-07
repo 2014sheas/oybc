@@ -70,7 +70,7 @@ extension AppDatabase {
         if task.type == .counting {
             let state = resolveTaskWindowState(task: task, events: live, windowStart: nil) // lifetime sum
             let count = state.count
-            let isCompleted = task.maxCount != nil && count >= task.maxCount!
+            let isCompleted = task.maxCount.map { count >= $0 } ?? false
             var completedAt: String? = nil
             if isCompleted {
                 for e in live where e.kind == .increment {

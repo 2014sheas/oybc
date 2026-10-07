@@ -2,6 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { deriveDisplayedCount, propagateIncrement } from '../../src/algorithms/sharedCounter';
 import type { PropagateIncrementLinkedTask } from '../../src/algorithms/sharedCounter';
+import type { CountKind } from '../../src/algorithms/countValue';
 
 /**
  * Tests for deriveDisplayedCount / propagateIncrement — the Phase 1 / Phase 3
@@ -40,6 +41,7 @@ interface DeriveVector {
   name: string;
   baseline: number;
   maxCount: number;
+  countKind?: CountKind;
   currentCount: number;
   displayed: number;
   isCompleted: boolean;
@@ -67,7 +69,7 @@ describe('deriveDisplayedCount (fixture-driven, tests/fixtures/sharedCounterVect
   for (const v of fixture.deriveDisplayedCount) {
     it(v.name, () => {
       const result = deriveDisplayedCount(
-        { baseline: v.baseline, maxCount: v.maxCount },
+        { baseline: v.baseline, maxCount: v.maxCount, countKind: v.countKind },
         { currentCount: v.currentCount },
       );
       expect(result.displayed).toBe(v.displayed);

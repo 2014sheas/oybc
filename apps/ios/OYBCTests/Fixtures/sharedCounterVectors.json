@@ -80,6 +80,15 @@
       "currentCount": 10,
       "displayed": 7,
       "isCompleted": true
+    },
+    {
+      "name": "continuous-derived-fractional-completes",
+      "baseline": 1.5,
+      "maxCount": 6.1,
+      "countKind": "continuous",
+      "currentCount": 7.6,
+      "displayed": 6.1,
+      "isCompleted": true
     }
   ],
   "propagateIncrement": [

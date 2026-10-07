@@ -423,4 +423,21 @@ final class AppDatabaseCounterLogOpsTests: XCTestCase {
         try seedUser(db)
         XCTAssertNoThrow(try db.setCounterDefaultLogAmount(sourceTaskId: "missing", amount: 5))
     }
+
+    // MARK: - Counter kinds: 2dp quantisation (PR 2 Task 7)
+
+    func test_increment_continuousSumsQuantised_andRejectsThirdDecimal() throws {
+        let db = try makeDb()
+        try seedUser(db)
+        var task = makeSourceTask(id: "c1", currentCount: 0, maxCount: 5)
+        task.countKind = .continuous
+        try db.saveTask(task)
+
+        _ = try db.incrementSharedCounter(sourceTaskId: "c1", by: 0.1)
+        _ = try db.incrementSharedCounter(sourceTaskId: "c1", by: 0.2)
+        XCTAssertEqual(try db.fetchTask(id: "c1")?.currentCount, 0.3, "0.1 + 0.2 must store exactly 0.3")
+
+        XCTAssertThrowsError(try db.incrementSharedCounter(sourceTaskId: "c1", by: 0.125))
+        XCTAssertEqual(try db.fetchTask(id: "c1")?.currentCount, 0.3)
+    }
 }

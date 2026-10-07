@@ -16,6 +16,7 @@ final class SharedCounterVectorTests: XCTestCase {
         let name: String
         let baseline: CountValue
         let maxCount: CountValue
+        let countKind: CountKind?
         let currentCount: CountValue
         let displayed: CountValue
         let isCompleted: Bool
@@ -67,7 +68,8 @@ final class SharedCounterVectorTests: XCTestCase {
         XCTAssertFalse(fixture.deriveDisplayedCount.isEmpty)
         for v in fixture.deriveDisplayedCount {
             let result = deriveDisplayedCount(
-                derivedBaseline: v.baseline, derivedMaxCount: v.maxCount, sourceCurrentCount: v.currentCount
+                derivedBaseline: v.baseline, derivedMaxCount: v.maxCount, sourceCurrentCount: v.currentCount,
+                countKind: v.countKind
             )
             XCTAssertEqual(result.displayed, v.displayed, "Vector '\(v.name)' displayed mismatch")
             XCTAssertEqual(result.isCompleted, v.isCompleted, "Vector '\(v.name)' isCompleted mismatch")

@@ -149,9 +149,10 @@ func resolveTaskWindowState(
             guard inWindow(e) else { continue }
             sum += e.delta ?? 0
         }
-        // Low-end clamp only — overshoot invariant preserved (never high-clamped).
-        let count = max(0, sum)
-        let isCompleted = task.maxCount != nil && count >= task.maxCount!
+        // Finalised by kind: low-clamped, quantized 2dp, whole kinds round the
+        // SUM (D4). Overshoot preserved (never high-clamped).
+        let count = finalizeWindowCount(sum, kind: resolveCountKind(task.countKind))
+        let isCompleted = task.maxCount.map { count >= $0 } ?? false
         return TaskWindowState(isCompleted: isCompleted, count: count)
     }
 
@@ -239,7 +240,7 @@ func lateLogOccurredAt(board: Board, nowIso: String) -> String {
 func resolveWindowStampedDerivedState(task: Task, rootEvents: [TaskEvent]) -> TaskWindowState {
     windowStampedDerivedState(
         startDate: task.startDate, endDate: task.endDate, maxCount: task.maxCount,
-        rootEvents: rootEvents, sealedBound: nil
+        countKind: task.countKind, rootEvents: rootEvents, sealedBound: nil
     )
 }
 
@@ -278,6 +279,7 @@ private func windowStampedDerivedState(
     startDate: String?,
     endDate: String?,
     maxCount: CountValue?,
+    countKind: CountKind?,
     rootEvents: [TaskEvent],
     sealedBound: Date?
 ) -> TaskWindowState {
@@ -301,7 +303,7 @@ private func windowStampedDerivedState(
         }
         return sum
     }
-    let count = max(0, windowSum())
+    let count = finalizeWindowCount(windowSum(), kind: resolveCountKind(countKind))
     return TaskWindowState(isCompleted: count >= (maxCount ?? 0), count: count)
 }
 
@@ -351,7 +353,7 @@ func resolveDerivedCounterWindowState(
     guard let windowStart else { return nil }
     return windowStampedDerivedState(
         startDate: windowStart, endDate: windowEnd, maxCount: task.maxCount,
-        rootEvents: rootEvents, sealedBound: nil
+        countKind: task.countKind, rootEvents: rootEvents, sealedBound: nil
     )
 }
 
@@ -403,6 +405,7 @@ func resolveLinkedCounterDisplay(
             startDate: stamped ? task.startDate : window?.startDate,
             endDate: stamped ? task.endDate : window?.endDate,
             maxCount: task.maxCount,
+            countKind: task.countKind,
             rootEvents: eventsByTaskId[rootId] ?? [],
             sealedBound: sealedBound
         )
@@ -411,7 +414,8 @@ func resolveLinkedCounterDisplay(
     let shown = deriveDisplayedCount(
         derivedBaseline: task.baseline ?? 0,
         derivedMaxCount: task.maxCount ?? 0,
-        sourceCurrentCount: task.currentCount ?? 0
+        sourceCurrentCount: task.currentCount ?? 0,
+        countKind: task.countKind
     )
     return DeriveDisplayedCountResult(displayed: shown.displayed, isCompleted: task.isCompleted)
 }
