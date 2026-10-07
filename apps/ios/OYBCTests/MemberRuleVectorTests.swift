@@ -403,6 +403,7 @@ final class MemberRuleVectorTests: XCTestCase {
         let name: String
         let goal: CountValue
         let windowCount: CountValue
+        let countKind: CountKind?
         let expected: CountValue
     }
 
@@ -1582,7 +1583,9 @@ final class MemberRuleVectorTests: XCTestCase {
         XCTAssertFalse(section.remainingTarget.isEmpty)
         for v in section.remainingTarget {
             XCTAssertEqual(
-                BoardSources.remainingTarget(goal: v.goal, windowCount: v.windowCount),
+                BoardSources.remainingTarget(
+                    goal: v.goal, windowCount: v.windowCount, kind: v.countKind ?? .discrete
+                ),
                 v.expected,
                 v.name
             )

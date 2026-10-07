@@ -176,7 +176,9 @@ extension BoardSources {
     /// goal is a feature: `currentCount > maxCount` is valid in this product.
     /// (Fixed 2026-10-06 — the first implementation capped `hi` at the goal
     /// and only ever lowered.) "1" is the kind's step: continuous clamps and
-    /// rounds in tenths (6.1 on "a little" → `4.9...7.3`).
+    /// rounds in tenths (6.1 on "a little" → `4.9...7.3`). Only COMPUTED
+    /// bounds are stepped (R17): continuous dice off, or a collapsed range,
+    /// keeps `t` as-is (an off-step goal like 26.25 is never rewritten).
     ///
     /// Rounding is HALF-UP (`.rounded()` = `.toNearestOrAwayFromZero`),
     /// matching JS `Math.round` on the positive values this ever sees. Do
@@ -198,9 +200,14 @@ extension BoardSources {
         let hi = roundToCountStep(clamped * (1 + fraction), kind: kind)
         // `lo <= hi` holds for every `goal >= step` (the only reachable input —
         // `goalOf` filters the rest); the outer `max` only stops a malformed
-        // `goal < 1` from trapping on an inverted ClosedRange, where the TS
+        // `goal < step` from trapping on an inverted ClosedRange, where the TS
         // twin would merely return a nonsense tuple.
-        return lo...Swift.max(lo, hi)
+        let upper = Swift.max(lo, hi)
+        if !isWholeCountKind(kind), fraction == 0 || lo == upper {
+            let q = quantizeCount(clamped)
+            return q...q
+        }
+        return lo...upper
     }
 
     /// Uniform roll over the kind's steps inside ``varyRange(t:level:goal:kind:)``.
@@ -472,7 +479,7 @@ extension BoardSources {
             )
         }
         /// The pre-vary target: an explicit rule if there is one, else the
-        /// window-pro-rated ``autoTarget(goal:sourceDays:targetDays:)`` for a
+        /// window-pro-rated ``autoTarget(goal:sourceDays:targetDays:kind:)`` for a
         /// BOARD-sourced member, else the member's own goal. The gate is
         /// `fromBoard` alone — pool-sourced and hand-added members never
         /// auto-target (they offer vary / split / part-exclusion only), while
@@ -504,6 +511,8 @@ extension BoardSources {
             } else {
                 base = goal
             }
+            // R17: the goal itself is always a valid target as-is (26.25, 0.05).
+            if base >= goal { return goal }
             return Swift.min(Swift.max(countTargetStep(kind), floorToCountStep(base, kind: kind)), goal)
         }
         func mint(_ task: Task, replacesId: String, target: CountValue, vary: VaryLevel) -> DerivedTaskDraft {

@@ -83,6 +83,7 @@ export function effectiveMemberTarget(args: {
           kind
         )
       : goal);
+  if (base >= goal) return goal; // R17 — the goal itself is never re-stepped
   return Math.min(Math.max(countTargetStep(kind), floorToCountStep(base, kind)), goal);
 }
 
@@ -326,15 +327,17 @@ export function withPartRule(
 /**
  * How many more occurrences a counting member's goal needs this window,
  * given how many windows already ran — a simple countdown note for a
- * recurring-series preview. Floors at 1 so the note never reads "0 more";
- * quantized so a continuous goal can't surface float drift (26.2 − 3 = 23.2).
+ * recurring-series preview. Floors at the kind's step (1, or 0.1 for
+ * continuous) so the note never reads "0 more"; quantized so a continuous
+ * goal can't surface float drift (26.2 − 25.9 = 0.3).
  *
  * @param goal - The member's own `maxCount`.
- * @param windowCount - How many windows toward the goal have already run.
- * @returns The remaining target (≥ 1).
+ * @param windowCount - Progress (an amount) already made toward the goal.
+ * @param kind - The member's count kind (default `'discrete'`).
+ * @returns The remaining target (≥ one step).
  */
-export function remainingTarget(goal: number, windowCount: number): number {
-  return quantizeCount(Math.max(1, goal - windowCount));
+export function remainingTarget(goal: number, windowCount: number, kind: CountKind = 'discrete'): number {
+  return quantizeCount(Math.max(countTargetStep(kind), goal - windowCount));
 }
 
 /**
@@ -372,7 +375,7 @@ export function prefilledOneOffTarget(args: {
   kind?: CountKind;
 }): number {
   const { goal, windowCount, sourceWindow, targetWindow, kind = 'discrete' } = args;
-  const remaining = remainingTarget(isWholeCountKind(kind) ? Math.floor(goal) : goal, windowCount);
+  const remaining = remainingTarget(isWholeCountKind(kind) ? Math.floor(goal) : goal, windowCount, kind);
   return autoTarget(
     remaining,
     sourceWindow

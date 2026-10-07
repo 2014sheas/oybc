@@ -387,6 +387,8 @@ export function planDerivedTasks(args: PlanDerivedTasksArgs): PlanDerivedTasksRe
     const base =
       explicit ??
       (fromBoard ? autoTarget(goal, sourceDaysFor(taskIdForWindow), targetDays, kind) : goal);
+    // R17: the goal itself is always a valid target as-is (26.25, 0.05).
+    if (base >= goal) return goal;
     return Math.min(Math.max(countTargetStep(kind), floorToCountStep(base, kind)), goal);
   };
   const mint = (t: PlanTask, replacesId: string, target: number, vary: VaryLevel): DerivedTaskDraft => {

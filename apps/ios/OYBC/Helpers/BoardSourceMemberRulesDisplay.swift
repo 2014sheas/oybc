@@ -38,7 +38,7 @@ extension BoardSources {
     /// falls to `explicit ?? goal` (those offer vary / split /
     /// part-exclusion, never a target). This mirrors `resolveTarget`'s real
     /// gate inside `planDerivedTasks` exactly. When the gate is open the
-    /// target pro-rates via ``autoTarget(goal:sourceDays:targetDays:)`` over
+    /// target pro-rates via ``autoTarget(goal:sourceDays:targetDays:kind:)`` over
     /// the nominal day-lengths of the two windows; a missing `sourceWindow`
     /// behaves exactly like `autoTarget` with a nil source (falls back to
     /// `goal`), and a target window at least as long as the source's also
@@ -87,11 +87,12 @@ extension BoardSources {
         } else {
             base = goal
         }
+        if base >= goal { return goal } // R17 — the goal itself is never re-stepped
         return Swift.min(Swift.max(countTargetStep(kind), floorToCountStep(base, kind: kind)), goal)
     }
 
     /// Human-readable vary range for a rule-editing surface — the inclusive
-    /// `lo...hi` from ``varyRange(t:level:goal:)``, rendered as
+    /// `lo...hi` from ``varyRange(t:level:goal:kind:)``, rendered as
     /// `"lo–hi unit"` (EN DASH, U+2013; the unit omitted entirely when empty).
     ///
     /// **A COLLAPSED range renders as the single value** (owner ruling
@@ -148,16 +149,20 @@ extension BoardSources {
 
     /// How many more occurrences a counting member's goal needs this window,
     /// given how many windows already ran — the one-off wizard's "remaining"
-    /// prefill and a recurring-series countdown note. Floors at 1 so the note
-    /// never reads "0 more"; quantized so a continuous goal can't surface
-    /// float drift (26.2 − 3 = 23.2).
+    /// prefill and a recurring-series countdown note. Floors at the kind's
+    /// step (1, or 0.1 for continuous) so the note never reads "0 more";
+    /// quantized so a continuous goal can't surface float drift
+    /// (26.2 − 25.9 = 0.3).
     ///
     /// - Parameters:
     ///   - goal: The member's own `maxCount`.
-    ///   - windowCount: Progress toward the goal already made in the window.
-    /// - Returns: The remaining target (≥ 1).
-    static func remainingTarget(goal: CountValue, windowCount: CountValue) -> CountValue {
-        quantizeCount(Swift.max(1, goal - windowCount))
+    ///   - windowCount: Progress (an amount) already made toward the goal.
+    ///   - kind: The member's count kind.
+    /// - Returns: The remaining target (≥ one step).
+    static func remainingTarget(
+        goal: CountValue, windowCount: CountValue, kind: CountKind = .discrete
+    ) -> CountValue {
+        quantizeCount(Swift.max(countTargetStep(kind), goal - windowCount))
     }
 
     /// The explicit `target` a ONE-OFF wizard prefills for a counting member
@@ -165,7 +170,7 @@ extension BoardSources {
     /// source board's window, then pro-rated to the window being assembled.
     ///
     /// `autoTarget(remainingTarget(goal, windowCount), sourceDays, targetDays)`
-    /// — the same window arithmetic ``effectiveMemberTarget(goal:explicit:mode:fromBoard:sourceWindow:targetWindow:)``
+    /// — the same window arithmetic ``effectiveMemberTarget(goal:explicit:mode:fromBoard:sourceWindow:targetWindow:kind:)``
     /// previews and `planDerivedTasks` mints with, over the same
     /// ``nominalWindowDays(_:startDate:endDate:)`` inputs, so the prefilled
     /// number and the auto number can never disagree.
@@ -201,7 +206,8 @@ extension BoardSources {
         autoTarget(
             goal: remainingTarget(
                 goal: isWholeCountKind(kind) ? goal.rounded(.down) : goal,
-                windowCount: windowCount
+                windowCount: windowCount,
+                kind: kind
             ),
             sourceDays: sourceWindow.flatMap {
                 nominalWindowDays($0.timeframe, startDate: $0.startDate, endDate: $0.endDate)
@@ -231,7 +237,7 @@ extension BoardSources {
     /// Collapsed-row summary for a counting member: the vary range when the
     /// dice is lit, otherwise the plain target (with its unit, when it has
     /// one) — or NOTHING when the chip would only restate the row's own
-    /// title. Dispatches to ``varyRangeLabel(t:level:goal:unit:)`` so the chip
+    /// title. Dispatches to ``varyRangeLabel(t:level:goal:unit:kind:)`` so the chip
     /// and the expanded row's blue range line can never disagree —
     /// including on a COLLAPSED range (`lo == hi`, routine once pro-rating
     /// shrinks a target), which both inherit from that one function: it
@@ -271,7 +277,7 @@ extension BoardSources {
     /// member-level chip never reports varying; while One square the
     /// member's dice rolls for the whole square.
     ///
-    /// Unlike ``countingSummary(target:level:goal:unit:)`` this chip is
+    /// Unlike ``countingSummary(target:level:goal:unit:kind:)`` this chip is
     /// NEVER suppressed: "1 square" / "3 squares" is not implied by any
     /// title, so it always adds something.
     ///

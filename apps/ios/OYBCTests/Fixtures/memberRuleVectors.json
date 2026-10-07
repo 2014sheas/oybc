@@ -42,7 +42,10 @@
     { "name": "continuous t 10 lvl1 goal 26.2 then [8,12] (tenths that land on whole numbers)", "t": 10, "level": 1, "goal": 26.2, "countKind": "continuous", "expected": [8, 12] },
     { "name": "continuous t 6.1 lvl1 then [round(4.88)=4.9, round(7.32)=7.3] in 0.1 steps", "t": 6.1, "level": 1, "goal": 26.2, "countKind": "continuous", "expected": [4.9, 7.3] },
     { "name": "continuous t 6.1 lvl2 then [round(3.05)=3.1, round(9.15)=9.2] - the tenths count is quantized first so 9.149999 reads as 91.5 and rounds up", "t": 6.1, "level": 2, "goal": 26.2, "countKind": "continuous", "expected": [3.1, 9.2] },
-    { "name": "continuous lo clamps at the 0.1 step: t 0.1 lvl1 then [0.1, 0.1]", "t": 0.1, "level": 1, "goal": 26.2, "countKind": "continuous", "expected": [0.1, 0.1] }
+    { "name": "continuous lo clamps at the 0.1 step: t 0.1 lvl1 then [0.1, 0.1]", "t": 0.1, "level": 1, "goal": 26.2, "countKind": "continuous", "expected": [0.1, 0.1] },
+    { "name": "R17 continuous dice off keeps an off-step goal as-is: t 26.25 lvl0 goal 26.25 then [26.25, 26.25], never 26.3", "t": 26.25, "level": 0, "goal": 26.25, "countKind": "continuous", "expected": [26.25, 26.25] },
+    { "name": "R17 continuous dice off below the step: t 0.05 lvl0 goal 0.05 then [0.05, 0.05], never 0.1", "t": 0.05, "level": 0, "goal": 0.05, "countKind": "continuous", "expected": [0.05, 0.05] },
+    { "name": "R17 continuous COLLAPSED range keeps t as-is: t 0.12 lvl1 rounds both bounds to 0.1, so [0.12, 0.12]", "t": 0.12, "level": 1, "goal": 26.2, "countKind": "continuous", "expected": [0.12, 0.12] }
   ],
   "rollTarget": [
     { "name": "seed 42 first sample = 1083814273/2^32 = 0.25234...; [8,12] then 8+floor(0.2523x5)=9", "t": 10, "level": 1, "goal": 20, "seed": 42, "expected": 9 },
@@ -51,7 +54,8 @@
     { "name": "t above goal, level 0 then clamped goal", "t": 50, "level": 0, "goal": 20, "seed": null, "expected": 20 },
     { "name": "continuous seed 42, [4.9,7.3] = 25 tenths then 4.9 + floor(0.2523x25=6.31)x0.1 = 5.5 (TS output, Swift must equal it)", "t": 6.1, "level": 1, "goal": 26.2, "seed": 42, "countKind": "continuous", "expected": 5.5 },
     { "name": "continuous seed 42, [3.1,9.2] = 62 tenths then 3.1 + floor(0.2523x62=15.6)x0.1 = 4.6", "t": 6.1, "level": 2, "goal": 26.2, "seed": 42, "countKind": "continuous", "expected": 4.6 },
-    { "name": "continuous degenerate range [0.1,0.1] never calls rng (rng that throws)", "t": 0.1, "level": 1, "goal": 26.2, "seed": null, "countKind": "continuous", "expected": 0.1 }
+    { "name": "continuous degenerate range [0.1,0.1] never calls rng (rng that throws)", "t": 0.1, "level": 1, "goal": 26.2, "seed": null, "countKind": "continuous", "expected": 0.1 },
+    { "name": "R17 continuous level 0 returns the off-step goal 26.25 and never calls rng", "t": 26.25, "level": 0, "goal": 26.25, "seed": null, "countKind": "continuous", "expected": 26.25 }
   ],
   "applyMemberRules": {
     "tasks": { "A": "counting", "C": "compound", "c1": "counting", "c2": "normal", "c3": "counting", "D": "compound", "E": "compound", "F": "compound" },
@@ -89,10 +93,12 @@
       "h1": { "type": "counting", "title": "Morning pages", "action": "Read", "unit": "pages", "maxCount": 6, "sharedCounterId": "r1" },
       "r3": { "type": "counting", "title": "Big read", "action": "Read", "unit": "pages", "maxCount": 35 },
       "k1": { "type": "counting", "title": "Run 26.2 miles", "action": "Run", "unit": "miles", "maxCount": 26.2, "countKind": "continuous" },
-      "m1": { "type": "counting", "title": "Meditate 600 minutes", "action": "Meditate", "unit": "minutes", "maxCount": 600, "countKind": "duration" }
+      "m1": { "type": "counting", "title": "Meditate 600 minutes", "action": "Meditate", "unit": "minutes", "maxCount": 600, "countKind": "duration" },
+      "k2": { "type": "counting", "title": "Run 26.25 miles", "action": "Run", "unit": "miles", "maxCount": 26.25, "countKind": "continuous" },
+      "k3": { "type": "counting", "title": "Sip 0.05 liters", "action": "Sip", "unit": "liters", "maxCount": 0.05, "countKind": "continuous" }
     },
     "children": { "C": ["c1", "c2"], "C2": [{ "childTaskId": "c1", "childIndex": 1 }, { "childTaskId": "c3", "childIndex": 0 }], "C3": ["r2", "c4"] },
-    "sourceWindows": { "r1": "weekly", "r2": "monthly", "c1": "weekly", "c3": "weekly", "a1": "weekly", "c4": "monthly", "d1": "daily", "w1": "daily", "r3": "weekly", "k1": "monthly", "m1": "monthly" },
+    "sourceWindows": { "r1": "weekly", "r2": "monthly", "c1": "weekly", "c3": "weekly", "a1": "weekly", "c4": "monthly", "d1": "daily", "w1": "daily", "r3": "weekly", "k1": "monthly", "m1": "monthly", "k2": "weekly", "k3": "monthly" },
     "baselines": { "r1": 12, "r2": 3, "c1": 0, "c3": 0, "a1": 0, "d1": 4, "r3": 0 },
     "vectors": [
       { "name": "board counting auto (recurring): r1 35 weekly to daily gives 5; baseline 12", "mode": "recurring", "selected": ["r1"], "supplies": [{ "kind": "board", "supply": ["r1"], "memberRules": {} }], "manual": [], "manualTaskVary": {}, "seed": 42,
@@ -193,7 +199,9 @@
         "expected": { "placement": ["derived:r3"], "derived": [{ "root": "r3", "sourceMember": "r3", "replaces": "r3", "maxCount": 5, "baseline": 0, "title": "Big read", "action": "Read", "unit": "pages" }], "compounds": [] } },
       { "name": "CONTINUOUS board member: k1 (26.2 miles) monthly to a WEEKLY board then one draft maxCount 6.2, countKind continuous, title 'Run 6.2 miles'", "mode": "recurring", "window": { "timeframe": "weekly", "startDate": "2026-09-14T00:00:00", "endDate": "2026-09-20T00:00:00" }, "selected": ["k1"], "supplies": [{ "kind": "board", "supply": ["k1"], "memberRules": {} }], "manual": [], "manualTaskVary": {}, "seed": 42, "expectedRngCalls": 0, "note": "A vector may carry its own `window`, overriding the section's daily one (the harness then checks the drafts against it). autoTarget pro-rates in 0.1 steps: ceil(26.2x7/30 = 6.113) = 6.2.", "expected": { "placement": ["derived:k1"], "derived": [{ "root": "k1", "sourceMember": "k1", "replaces": "k1", "maxCount": 6.2, "countKind": "continuous", "baseline": 0, "title": "Run 6.2 miles", "action": "Run", "unit": "miles" }], "compounds": [] } },
       { "name": "CONTINUOUS board member with vary a little: target 6.2, range [round(4.96)=5, round(7.44)=7.4] = 25 tenths, seed 42 then 5 + floor(0.2523x25)x0.1 = 5.6 - exactly one rng sample", "mode": "recurring", "window": { "timeframe": "weekly", "startDate": "2026-09-14T00:00:00", "endDate": "2026-09-20T00:00:00" }, "selected": ["k1"], "supplies": [{ "kind": "board", "supply": ["k1"], "memberRules": { "k1": { "vary": 1 } } }], "manual": [], "manualTaskVary": {}, "seed": 42, "expectedRngCalls": 1, "expected": { "placement": ["derived:k1"], "derived": [{ "root": "k1", "sourceMember": "k1", "replaces": "k1", "maxCount": 5.6, "countKind": "continuous", "baseline": 0, "title": "Run 5.6 miles", "action": "Run", "unit": "miles" }], "compounds": [] } },
-      { "name": "DURATION board member rides the whole branch: m1 (600 minutes) monthly to a WEEKLY board then 600x7/30 = 140, countKind duration", "mode": "recurring", "window": { "timeframe": "weekly", "startDate": "2026-09-14T00:00:00", "endDate": "2026-09-20T00:00:00" }, "selected": ["m1"], "supplies": [{ "kind": "board", "supply": ["m1"], "memberRules": {} }], "manual": [], "manualTaskVary": {}, "seed": 42, "expectedRngCalls": 0, "expected": { "placement": ["derived:m1"], "derived": [{ "root": "m1", "sourceMember": "m1", "replaces": "m1", "maxCount": 140, "countKind": "duration", "baseline": 0, "title": "Meditate 140 minutes", "action": "Meditate", "unit": "minutes" }], "compounds": [] } }
+      { "name": "DURATION board member rides the whole branch: m1 (600 minutes) monthly to a WEEKLY board then 600x7/30 = 140, countKind duration", "mode": "recurring", "window": { "timeframe": "weekly", "startDate": "2026-09-14T00:00:00", "endDate": "2026-09-20T00:00:00" }, "selected": ["m1"], "supplies": [{ "kind": "board", "supply": ["m1"], "memberRules": {} }], "manual": [], "manualTaskVary": {}, "seed": 42, "expectedRngCalls": 0, "expected": { "placement": ["derived:m1"], "derived": [{ "root": "m1", "sourceMember": "m1", "replaces": "m1", "maxCount": 140, "countKind": "duration", "baseline": 0, "title": "Meditate 140 minutes", "action": "Meditate", "unit": "minutes" }], "compounds": [] } },
+      { "name": "R17 off-step continuous goal on a SAME-length board: k2 (26.25) weekly to weekly, dice off then the target is the goal 26.25 itself, so NO clone is minted - k2 is placed as the root", "mode": "recurring", "window": { "timeframe": "weekly", "startDate": "2026-09-14T00:00:00", "endDate": "2026-09-20T00:00:00" }, "selected": ["k2"], "supplies": [{ "kind": "board", "supply": ["k2"], "memberRules": {} }], "manual": [], "manualTaskVary": {}, "seed": 42, "expectedRngCalls": 0, "expected": { "placement": ["k2"], "derived": [], "compounds": [] } },
+      { "name": "R17 continuous goal below the step: k3 (0.05) monthly to weekly auto-targets min(0.05, ceil-to-0.1(0.0117)) = 0.05 = the goal, so k3 is placed as the root, never re-stepped to 0.1", "mode": "recurring", "window": { "timeframe": "weekly", "startDate": "2026-09-14T00:00:00", "endDate": "2026-09-20T00:00:00" }, "selected": ["k3"], "supplies": [{ "kind": "board", "supply": ["k3"], "memberRules": {} }], "manual": [], "manualTaskVary": {}, "seed": 42, "expectedRngCalls": 0, "expected": { "placement": ["k3"], "derived": [], "compounds": [] } }
     ],
     "idPinsNote": "Literal uuidv5 outputs, computed ONCE with the TS uuidv5 (default OYBC namespace). Swift must reproduce them independently. Names: 'sources:derived:<boardId>:<root>', 'sources:derived-compound:<boardId>:<compound>', 'sources:derived-link:<derivedCompoundId>:<childId>'. The link name's <childId> is the LITERAL child task id - a derived uuid for a derived child, the raw source id for an original one. idPins itself is a clean token -> uuid map with no stray keys.",
     "idPins": {
@@ -339,7 +347,10 @@
       { "name": "continuous, board-sourced: 26.2 monthly to weekly then 6.2 (the planner's number)", "goal": 26.2, "mode": "recurring", "fromBoard": true, "sourceWindow": "monthly", "targetWindow": "weekly", "countKind": "continuous", "expected": 6.2 },
       { "name": "continuous explicit 4.25 floors to the 0.1 step then 4.2", "goal": 26.2, "explicit": 4.25, "mode": "oneOff", "fromBoard": true, "sourceWindow": "monthly", "targetWindow": "weekly", "countKind": "continuous", "expected": 4.2 },
       { "name": "continuous explicit 0 clamps up to the 0.1 step", "goal": 26.2, "explicit": 0, "mode": "oneOff", "fromBoard": true, "targetWindow": "weekly", "countKind": "continuous", "expected": 0.1 },
-      { "name": "duration, board-sourced: 600 minutes monthly to weekly then 140", "goal": 600, "mode": "recurring", "fromBoard": true, "sourceWindow": "monthly", "targetWindow": "weekly", "countKind": "duration", "expected": 140 }
+      { "name": "duration, board-sourced: 600 minutes monthly to weekly then 140", "goal": 600, "mode": "recurring", "fromBoard": true, "sourceWindow": "monthly", "targetWindow": "weekly", "countKind": "duration", "expected": 140 },
+      { "name": "R17 continuous off-step goal 26.25 on a same-length board then 26.25 itself", "goal": 26.25, "mode": "recurring", "fromBoard": true, "sourceWindow": "weekly", "targetWindow": "weekly", "countKind": "continuous", "expected": 26.25 },
+      { "name": "R17 continuous goal 0.05 monthly to weekly then 0.05 (never 0.1)", "goal": 0.05, "mode": "recurring", "fromBoard": true, "sourceWindow": "monthly", "targetWindow": "weekly", "countKind": "continuous", "expected": 0.05 },
+      { "name": "discrete off-step explicit target 4.5 floors to 4", "goal": 35, "explicit": 4.5, "mode": "oneOff", "fromBoard": true, "sourceWindow": "weekly", "targetWindow": "daily", "expected": 4 }
     ],
     "varyRangeLabel": [
       { "name": "level 1 with a unit then an en-dash range plus the unit", "t": 10, "level": 1, "goal": 20, "unit": "mi", "expected": "8–12 mi" },
@@ -379,7 +390,10 @@
     "remainingTarget": [
       { "name": "35 goal minus 12 windows already run then 23", "goal": 35, "windowCount": 12, "expected": 23 },
       { "name": "35 goal minus 40 windows already run floors at 1", "goal": 35, "windowCount": 40, "expected": 1 },
-      { "name": "a continuous goal is quantized: 26.2 minus 3 then 23.2, never 23.199999999999999", "goal": 26.2, "windowCount": 3, "expected": 23.2 }
+      { "name": "a continuous goal is quantized: 26.2 minus 3 then 23.2, never 23.199999999999999", "goal": 26.2, "windowCount": 3, "expected": 23.2 },
+      { "name": "R18 continuous floors at the 0.1 step, not 1: 26.2 minus 25.9 logged then 0.3", "goal": 26.2, "windowCount": 25.9, "countKind": "continuous", "expected": 0.3 },
+      { "name": "R18 continuous goal 0.5 with nothing logged then 0.5, not 1", "goal": 0.5, "windowCount": 0, "countKind": "continuous", "expected": 0.5 },
+      { "name": "R18 continuous fully done floors at 0.1", "goal": 26.2, "windowCount": 30, "countKind": "continuous", "expected": 0.1 }
     ],
     "prefilledOneOffTarget": [
       { "name": "the owner's reported case: an untouched monthly 30 pulled onto a one-off DAILY board, remaining 30 then ceil(30x1/30)=1", "goal": 30, "windowCount": 0, "sourceWindow": "monthly", "targetWindow": "daily", "expected": 1 },
@@ -395,7 +409,8 @@
       { "name": "a CUSTOM 14-day source onto a CUSTOM 7-day board: remaining 14 then ceil(14x7/14)=7", "goal": 20, "windowCount": 6, "sourceWindow": "custom", "sourceWindowDates": ["2026-01-01", "2026-01-14"], "targetWindow": "custom", "targetWindowDates": ["2026-03-05", "2026-03-11"], "expected": 7 },
       { "name": "SAFETY: a CUSTOM source missing its end bound has unknowable days, so the 20 goal with 6 logged still seeds 14 on a daily board", "goal": 20, "windowCount": 6, "sourceWindow": "custom", "sourceWindowDates": ["2026-01-01"], "targetWindow": "daily", "expected": 14 },
       { "name": "continuous keeps the fractional goal: 26.2 with 3.4 logged then remaining 22.8, onto a WEEKLY board ceil(22.8x7/30 = 5.32) to 0.1 = 5.4", "goal": 26.2, "windowCount": 3.4, "sourceWindow": "monthly", "targetWindow": "weekly", "countKind": "continuous", "expected": 5.4 },
-      { "name": "discrete still floors a fractional goal first: 26.2 with 0 logged, same window then 26", "goal": 26.2, "windowCount": 0, "sourceWindow": "weekly", "targetWindow": "weekly", "expected": 26 }
+      { "name": "discrete still floors a fractional goal first: 26.2 with 0 logged, same window then 26", "goal": 26.2, "windowCount": 0, "sourceWindow": "weekly", "targetWindow": "weekly", "expected": 26 },
+      { "name": "R18 continuous goal 0.5 with nothing logged, same window, seeds 0.5 (the remaining amount floors at the 0.1 step, not 1)", "goal": 0.5, "windowCount": 0, "sourceWindow": "weekly", "targetWindow": "weekly", "countKind": "continuous", "expected": 0.5 }
     ],
     "seededTargetsForSource": [
       {"name": "same-timeframe weekly pull: each counting member seeds its remaining amount (10-3=7, 5-0=5)", "supplyTaskIds": ["t-count-a", "t-count-b"], "tasks": {"t-count-a": {"type": "counting", "maxCount": 10}, "t-count-b": {"type": "counting", "maxCount": 5}}, "windowCountByTaskId": {"t-count-a": 3}, "sourceWindow": "weekly", "targetWindow": "weekly", "expected": {"t-count-a": 7, "t-count-b": 5}},

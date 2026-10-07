@@ -134,7 +134,7 @@ describe('compoundSummary (vectors)', () => {
 
 describe('remainingTarget', () => {
   it.each(V.remainingTarget as any[])('$name', (v: any) => {
-    expect(remainingTarget(v.goal, v.windowCount)).toBe(v.expected);
+    expect(remainingTarget(v.goal, v.windowCount, v.countKind)).toBe(v.expected);
   });
 });
 

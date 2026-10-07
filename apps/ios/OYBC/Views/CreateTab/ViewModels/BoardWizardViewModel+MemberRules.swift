@@ -108,7 +108,7 @@ extension BoardWizardViewModel {
 
     /// §Member rules (B3, RC4) — seed one BOARD source's counting members
     /// with their remaining target for a ONE-OFF board, PRO-RATED to that
-    /// board's window: `prefilledOneOffTarget(goal:windowCount:sourceWindow:targetWindow:)`,
+    /// board's window: `prefilledOneOffTarget(goal:windowCount:sourceWindow:targetWindow:kind:)`,
     /// where `windowCount` is the progress that member already has in the
     /// SOURCE board's window. Pull a 3-of-10-done weekly counter onto a fresh
     /// one-off weekly board and the rule is seeded at 7; pull an untouched

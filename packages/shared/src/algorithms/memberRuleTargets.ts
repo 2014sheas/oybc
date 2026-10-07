@@ -14,7 +14,7 @@
 
 import { Timeframe } from '../constants/enums';
 import type { VaryLevel } from '../types/boardSource';
-import { ceilToCountStep, countTargetStep, quantizeCount, roundToCountStep } from './countValue';
+import { ceilToCountStep, countTargetStep, isWholeCountKind, quantizeCount, roundToCountStep } from './countValue';
 import type { CountKind } from './countValue';
 
 /**
@@ -107,7 +107,9 @@ const VARY_P: Record<VaryLevel, number> = { 0: 0, 1: 0.2, 2: 0.5 };
  * valid in this product. (Fixed 2026-10-06 — the first implementation capped
  * `hi` at the goal and only ever lowered.) "1" here is the kind's step: a
  * continuous member clamps and rounds in tenths (6.1 on "a little" →
- * `[4.9, 7.3]`).
+ * `[4.9, 7.3]`). Only COMPUTED bounds are stepped (R17): a continuous
+ * member's dice off — or a range that collapses — keeps `t` as-is, so an
+ * off-step goal like 26.25 or 0.05 is never rewritten.
  *
  * @param t - The pre-vary target.
  * @param level - Vary level (0 = off).
@@ -128,7 +130,9 @@ export function varyRange(
   // `lo <= hi` holds for every `goal >= step` (the only reachable input); the
   // `max` only keeps a malformed smaller goal from inverting the range, so
   // both twins then return a degenerate range and consume no rng.
-  return [lo, Math.max(lo, roundToCountStep(tc * (1 + p), kind))];
+  const hi = Math.max(lo, roundToCountStep(tc * (1 + p), kind));
+  if (!isWholeCountKind(kind) && (p === 0 || lo === hi)) return [quantizeCount(tc), quantizeCount(tc)];
+  return [lo, hi];
 }
 
 /**

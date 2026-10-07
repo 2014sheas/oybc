@@ -90,7 +90,7 @@ struct MemberRuleRowModel: Equatable {
     /// it shows nothing there: always nil for a non-expandable row, and
     /// also nil for a counting member whose chip would only restate its
     /// own auto-generated title (`vary off && target == goal`) — see
-    /// ``BoardSources/countingSummary(target:level:goal:unit:)``. A row
+    /// ``BoardSources/countingSummary(target:level:goal:unit:kind:)``. A row
     /// with no chip is still expandable: it has controls, it just has no
     /// answer worth repeating.
     let summary: BoardSources.MemberSummary?
