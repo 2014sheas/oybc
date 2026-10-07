@@ -116,7 +116,7 @@ export function CounterLedgerCard({
       {/* Top row: name + lifetime */}
       <div className={styles.top}>
         <span className={styles.name}>{group.name}</span>
-        <div className={styles.lifetimeBlock} aria-label={`${lifetimeStr} all-time ${group.unit ?? 'total'}`}>
+        <div className={styles.lifetimeBlock} aria-label={`${lifetimeStr} all-time${group.countKind === 'duration' ? '' : ` ${group.unit ?? 'total'}`}`}>
           <span className={styles.lifetimeNum}>{lifetimeStr}</span>
           <span className={styles.lifetimeLabel} aria-hidden="true">
             ALL-TIME

@@ -170,7 +170,7 @@ struct CounterDetailLogCard: View {
                 HStack(spacing: 6) {
                     if isLogging {
                         ProgressView()
-                            .tint(Color.risoInkStatic)
+                            .tint(Color.risoInk)
                             .scaleEffect(0.85)
                     }
                     Text(model.addLabel)
@@ -178,7 +178,9 @@ struct CounterDetailLogCard: View {
                         .lineLimit(1)
                         .minimumScaleFactor(0.7)
                 }
-                .foregroundStyle(Color.risoInkStatic)
+                // Adaptive fill (`risoPaper`) → adaptive content (`risoInk`).
+                // Static ink on the adaptive fill went ink-on-ink in dark mode.
+                .foregroundStyle(Color.risoInk)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 12)
                 .background(RoundedRectangle(cornerRadius: Riso.cardRadius).fill(Color.risoPaper))

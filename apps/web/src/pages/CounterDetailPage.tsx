@@ -1,6 +1,12 @@
 import { useCallback, useRef, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { counterMilestoneProgress, formatCountTotal, formatCountWithUnit, type CountKind } from '@oybc/shared';
+import {
+  counterMilestoneProgress,
+  countUnitSuffix,
+  formatCountTotal,
+  formatCountWithUnit,
+  type CountKind,
+} from '@oybc/shared';
 import { useAuth } from '../firebase/useAuth';
 import { useSharedCounterGroups } from '../hooks/useSharedCounterGroups';
 import { useCounterDailyTotals } from '../hooks/useCounterDailyTotals';
@@ -200,6 +206,8 @@ export function CounterDetailPage(): React.ReactElement {
   const kind = group.countKind;
   const lifetimeStr = formatCountTotal(group.lifetime, kind);
   const unitStr = group.unit ?? '';
+  // " mi" / "" — Duration never prints a unit (iOS twin uses countUnitSuffix too).
+  const heroUnit = countUnitSuffix(kind, group.unit);
 
   const progress = counterMilestoneProgress(group.lifetime, kind);
   const maxDaily = Math.max(1, ...dailyTotals.days.map((d) => d.total));
@@ -255,11 +263,15 @@ export function CounterDetailPage(): React.ReactElement {
         {/* Left rail (desktop) / top section (mobile) */}
         <div className={styles.leftRail}>
           {/* 1. Hero card */}
-          <div className={styles.heroCard} aria-label={`${group.name}: ${lifetimeStr} all-time ${unitStr}`}>
+          <div className={styles.heroCard} aria-label={`${group.name}: ${lifetimeStr} all-time${heroUnit}`}>
             <div className={styles.heroTop}>
               <div className={styles.heroLifeBlock}>
-                <span className={styles.lifetimeNum}>{lifetimeStr}</span>
-                <span className={styles.lifetimeLabel}>all-time {unitStr}</span>
+                <span
+                  className={`${styles.lifetimeNum} ${kind === 'duration' ? styles.lifetimeNumDuration : ''}`}
+                >
+                  {lifetimeStr}
+                </span>
+                <span className={styles.lifetimeLabel}>all-time{heroUnit}</span>
               </div>
 
               {/* 7-day sparkline — REAL data via useCounterDailyTotals. */}

@@ -453,7 +453,7 @@ struct CounterDetailContent: View {
                         .monospacedDigit()
                         .minimumScaleFactor(0.4)
                         .lineLimit(1)
-                    Text("all-time \(unitLabel)")
+                    Text("all-time\(countUnitSuffix(kind, unit: group.unit))")
                         .font(.risoHead(14, .bold))
                         .foregroundStyle(Color.risoMuted)
                 }
@@ -475,7 +475,7 @@ struct CounterDetailContent: View {
         .risoCard()
         .risoHardShadow(Riso.Shadow.small, radius: Riso.cardRadius)
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(group.name), \(formatCountTotal(group.lifetime, kind: kind)) all-time \(unitLabel)")
+        .accessibilityLabel("\(group.name), \(formatCountTotal(group.lifetime, kind: kind)) all-time\(countUnitSuffix(kind, unit: group.unit))")
     }
 
     /// 7-day sparkline (real data via `dailyTotals`) — 9px-wide bars, blue

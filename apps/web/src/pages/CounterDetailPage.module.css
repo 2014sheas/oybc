@@ -113,6 +113,13 @@
   line-height: 0.9;
   color: var(--riso-blue);
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* Duration totals ("201h 30m") are wider — the handoff's 34px hero, shrunk
+   further at phone width so the value always stays on one line. */
+.lifetimeNumDuration {
+  font-size: clamp(24px, 8vw, 34px);
 }
 
 .lifetimeLabel {

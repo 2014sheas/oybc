@@ -104,7 +104,7 @@ struct SharedCounterLedgerCard: View {
         .contentShape(Rectangle())
         .onTapGesture { onOpenDetail() }
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(group.name), \(formatCountTotal(group.lifetime, kind: group.countKind)) all-time \(unitLabel), \(group.taskCount) tasks on \(group.boardCount) boards")
+        .accessibilityLabel("\(group.name), \(formatCountTotal(group.lifetime, kind: group.countKind)) all-time\(countUnitSuffix(group.countKind, unit: group.unit)), \(group.taskCount) tasks on \(group.boardCount) boards")
         .accessibilityAddTraits(.isButton)
     }
 
@@ -193,7 +193,7 @@ struct SharedCounterLedgerCard: View {
         .contentShape(Rectangle())
         .onTapGesture { onOpenDetail() }
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(group.name), \(formatCountTotal(group.lifetime, kind: group.countKind)) all-time \(unitLabel), \(group.taskCount) tasks on \(group.boardCount) boards")
+        .accessibilityLabel("\(group.name), \(formatCountTotal(group.lifetime, kind: group.countKind)) all-time\(countUnitSuffix(group.countKind, unit: group.unit)), \(group.taskCount) tasks on \(group.boardCount) boards")
         .accessibilityAddTraits(.isButton)
     }
 
