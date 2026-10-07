@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { Task } from '@oybc/shared';
-import { OperatorType, TaskType, generateCounterTaskTitle, clampCompoundThreshold } from '@oybc/shared';
+import { OperatorType, TaskType, clampCompoundThreshold } from '@oybc/shared';
+import { counterRowSubtitle } from '../counters/counterRowTitle';
 import { CounterStepper } from '../CounterStepper';
 import { RisoChip, RisoTypeBadge } from '../riso';
 import { SubtaskCard } from './SubtaskCard';
@@ -360,10 +361,7 @@ export function BuildStep({
 
 function buildTaskSubtitle(task: Task): string {
   if (task.type === TaskType.COUNTING) {
-    const { action, maxCount, unit } = task;
-    if (!action || !unit || maxCount === undefined) return '';
-    const derived = generateCounterTaskTitle(action, maxCount, unit);
-    return derived.toLowerCase() === task.title.trim().toLowerCase() ? '' : derived;
+    return counterRowSubtitle(task);
   }
   // Compound-typed tasks never reach this helper — `allTasks` (the pool
   // this is called against) always excludes TaskType.COMPOUND rows, which

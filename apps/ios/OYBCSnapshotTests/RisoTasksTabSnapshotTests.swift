@@ -72,6 +72,42 @@ final class RisoTasksTabSnapshotTests: XCTestCase {
         )
     }
 
+    // MARK: - RisoTaskRowView — kinds (Counter Kinds C2)
+
+    func testRowContinuousLight() {
+        var task = SnapshotFixtures.makeTask(
+            id: "t-run", title: "Run 26.2 mi", type: .counting,
+            action: "Run", unit: "mi", maxCount: 26.2
+        )
+        task.countKind = .continuous
+        let view = wrap(
+            RisoTaskRowView(task: task, placementCount: 3, activePlacementCount: 2, childCount: 0),
+            width: 353, height: 80
+        )
+        assertSnapshot(
+            of: view,
+            as: .image(layout: .fixed(width: 353, height: 80), traits: lightTraits()),
+            record: recordMode
+        )
+    }
+
+    func testRowDurationLight() {
+        var task = SnapshotFixtures.makeTask(
+            id: "t-practice", title: "Practice 10h 30m", type: .counting,
+            action: "Practice", unit: "", maxCount: 630
+        )
+        task.countKind = .duration
+        let view = wrap(
+            RisoTaskRowView(task: task, placementCount: 3, activePlacementCount: 2, childCount: 0),
+            width: 353, height: 80
+        )
+        assertSnapshot(
+            of: view,
+            as: .image(layout: .fixed(width: 353, height: 80), traits: lightTraits()),
+            record: recordMode
+        )
+    }
+
     // MARK: - RisoTaskRowView — Counting
 
     func testRowCountingLight() {

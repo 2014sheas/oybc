@@ -284,10 +284,7 @@ struct RisoPoolListView: View {
 
     /// Counting row detail — `{action} · goal {value}` at the task's kind (Duration: "1h 30m", no unit).
     static func countingSubtitle(_ task: OYBC.Task) -> String? {
-        let kind = resolveCountKind(task.countKind)
-        guard let a = task.action, let m = task.maxCount, !a.isEmpty,
-              kind == .duration || !(task.unit ?? "").isEmpty else { return nil }
-        return "\(a) · goal \(formatCountWithUnit(m, kind: kind, unit: task.unit))"
+        TaskCountDisplay.goalSubtitle(for: task)
     }
 
     /// Detail subtitle. `isCenter` prefixes "Center square · ".

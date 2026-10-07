@@ -290,7 +290,7 @@ export function SquaresEditGrid({
               {!isHole && (
                 <>
                   {slot.model ? (
-                    <RisoBoardCell cell={slot.model} />
+                    <RisoBoardCell cell={slot.model} cellSize={90} />
                   ) : slot.isEmpty ? (
                     <div className={styles.emptyCell} />
                   ) : null}

@@ -421,14 +421,17 @@ extension AppDatabase {
         now: String,
         occurredAt: String? = nil
     ) throws -> Bool {
-        if delta == 0 { return false }
+        // Every stored delta is 2-dp quantized — float noise (3.0999999999999996)
+        // fails the sync schema's `isValidCountDelta` and would never reach peers.
+        let quantized = quantizeCount(delta)
+        if quantized == 0 { return false }
         guard let task = try Task.fetchOne(db, key: taskId), isEventOwningTask(task) else { return false }
         let event = TaskEvent(
             id: generateUUID(),
             userId: task.userId,
             taskId: taskId,
             kind: .increment,
-            delta: delta,
+            delta: quantized,
             occurredAt: occurredAt ?? now,
             boardId: boardId,
             createdAt: now,

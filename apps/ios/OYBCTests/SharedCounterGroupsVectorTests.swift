@@ -85,6 +85,7 @@ final class SharedCounterGroupsVectorTests: XCTestCase {
         let counterId: String
         let name: String
         let lifetime: CountValue
+        let countKind: CountKind?
         let taskCount: Int
         let boardCount: Int
         let activeTaskCount: Int
@@ -238,6 +239,7 @@ final class SharedCounterGroupsVectorTests: XCTestCase {
                 XCTAssertEqual(g.counterId, exp.counterId, "Vector '\(v.name)' group[\(i)].counterId")
                 XCTAssertEqual(g.name, exp.name, "Vector '\(v.name)' group[\(i)].name")
                 XCTAssertEqual(g.lifetime, exp.lifetime, "Vector '\(v.name)' group[\(i)].lifetime")
+                if let k = exp.countKind { XCTAssertEqual(g.countKind, k, "Vector '\(v.name)' group[\(i)].countKind") }
                 XCTAssertEqual(g.taskCount, exp.taskCount, "Vector '\(v.name)' group[\(i)].taskCount")
                 XCTAssertEqual(g.boardCount, exp.boardCount, "Vector '\(v.name)' group[\(i)].boardCount")
                 XCTAssertEqual(g.activeTaskCount, exp.activeTaskCount, "Vector '\(v.name)' group[\(i)].activeTaskCount")

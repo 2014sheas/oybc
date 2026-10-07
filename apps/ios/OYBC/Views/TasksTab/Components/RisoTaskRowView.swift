@@ -117,8 +117,7 @@ struct RisoTaskRowView: View {
             // in the Counters hub, one per window. Keep the word in lockstep
             // with the web twin (`TaskRow.tsx` `computeSubtitle`).
             if isFamilyRoot { return "Counter" }
-            guard let action = task.action, let unit = task.unit, let max = task.maxCount else { return nil }
-            return "\(action) · goal \(formatCount(max, kind: resolveCountKind(task.countKind))) \(unit)"
+            return TaskCountDisplay.goalSubtitle(for: task)
         case .compound:
             let n = childCount
             if n == 0 { return "No subtasks yet" }

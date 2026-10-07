@@ -121,11 +121,6 @@ test.describe('Profile home — Shared counters', () => {
     await page.goto('/profile?__oybc_test_bypass=1');
 
     await expect(page.getByText('One tally, many squares')).toBeVisible();
-    await expect(
-      page.getByText(
-        'A counter tracks one activity across every board that counts it. Log once, all of them move.',
-      ),
-    ).toBeVisible();
     await expect(page.getByRole('button', { name: 'New counter' })).toBeVisible();
     // No "All N ›" header link when there are zero counters.
     await expect(page.getByRole('link', { name: /^All \d/ })).toHaveCount(0);

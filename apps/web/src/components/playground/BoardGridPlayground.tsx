@@ -53,7 +53,7 @@ function sampleCells(size: Size, state: State): BoardCellModel[] {
       label: NAMES[i % NAMES.length],
       type: counting ? 'counting' : compound ? 'compound' : 'normal',
       done,
-      count: counting ? { cur: done ? 20 : 7, max: 20 } : undefined,
+      count: counting ? { cur: done ? 20 : 7, max: 20, kind: 'discrete' } : undefined,
       isFree: false,
       isLine: size === 3 && i < 3,
       locked: locked || undefined,

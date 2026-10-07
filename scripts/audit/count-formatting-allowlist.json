@@ -1,0 +1,4 @@
+{
+  "_comment": "Intentional discrete-only / non-count sites for scripts/audit/check-count-formatting.mjs (docs/COUNTER_KINDS.md §5). Entries are \"<repo-relative path>::<trimmed line>\". Shrink, never grow to dodge a fix.",
+  "entries": []
+}

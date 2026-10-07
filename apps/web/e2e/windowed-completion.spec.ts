@@ -202,8 +202,10 @@ test.describe('Windowed Completion (issue #317)', () => {
     await expect(counterSquare).toBeVisible();
     await expect(counterSquare).toContainText('0/10');
 
-    // Tap increments the window by 1 (the standalone-counter tap path).
+    // Tap opens the stepper modal (counter kinds §5 — web no longer logs +1 on tap).
     await counterSquare.click();
+    await page.getByRole('dialog').getByRole('button', { name: 'Increase' }).click();
+    await page.keyboard.press('Escape');
     await expect(counterSquare).toContainText('1/10');
 
     // Reload — the increment event persisted; window count survives.

@@ -148,16 +148,6 @@
   gap: 8px;
   align-items: center;
 }
-.customInput {
-  flex: 1;
-  min-width: 0;
-  padding: 8px 10px;
-  border: 1.5px solid var(--riso-ink);
-  border-radius: 8px;
-  background: var(--riso-paper);
-  color: var(--riso-ink);
-  font: inherit;
-}
 
 .partsList {
   border: 2px solid var(--riso-ink);

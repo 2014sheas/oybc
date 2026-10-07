@@ -9,6 +9,7 @@
  */
 export { CounterLedgerCard } from './CounterLedgerCard';
 export type { CounterLoggedEvent } from './CounterLedgerCard';
+export { CounterDetailLogCard } from './CounterDetailLogCard';
 export { CounterDetailTaskCard } from './CounterDetailTaskCard';
 export { CreateCounterSheet } from './CreateCounterSheet';
 export { CounterLinkHint } from './CounterLinkHint';

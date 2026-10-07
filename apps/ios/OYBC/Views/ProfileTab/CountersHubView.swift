@@ -73,6 +73,7 @@ struct CountersHubView: View {
                     amount: toast.amount,
                     unit: toast.unit,
                     verb: toast.verb,
+                    kind: toast.kind,
                     onUndo: { handleUndo(counterId: toast.counterId) },
                     onDone: { self.toast = nil }
                 )
@@ -139,7 +140,12 @@ struct CountersHubView: View {
     // MARK: - "+ Log" pill
 
     private func handleLog(group: SharedCounterGroup) {
+        if ProfileHomeViewModel.pillAction(for: group) == .openDetail {
+            navigateToCounterId = group.counterId
+            return
+        }
         guard !loggingCounterIds.contains(group.counterId) else { return }
+        let kind = group.countKind
         let amount = group.defaultLogAmount ?? 1
         let counterId = group.counterId
         let unit = group.unit ?? ""
@@ -158,7 +164,7 @@ struct CountersHubView: View {
                     return
                 }
                 toast = HubToastState(
-                    counterId: counterId, amount: amount, unit: unit,
+                    counterId: counterId, amount: amount, unit: unit, kind: kind,
                     verb: .logged, toastKey: UUID().uuidString
                 )
                 loadData()
@@ -184,6 +190,7 @@ private struct HubToastState {
     let counterId: String
     let amount: CountValue
     let unit: String
+    let kind: CountKind
     let verb: CounterLogToastView.Verb
     let toastKey: String
 }
@@ -231,13 +238,6 @@ struct CountersHubContent: View {
                     }
                     .padding(.top, 16)
                     .padding(.bottom, 20)
-
-                    // Intro (one line)
-                    Text("One tally per activity — every task counting it moves together.")
-                        .font(.risoBody(13, .regular))
-                        .foregroundStyle(Color.risoInk)
-                        .padding(.horizontal, Riso.gutter)
-                        .padding(.bottom, 20)
 
                     // §Member rules (B3, RC9) — hidden when there is nothing
                     // to filter: a "Show expired tasks" control sitting over
@@ -297,10 +297,6 @@ struct CountersHubContent: View {
             Text("No counters yet")
                 .font(.risoHead(18, .extraBold))
                 .foregroundStyle(Color.risoInk)
-            Text("Track one activity — push-ups, pages, miles — across every board it appears on.")
-                .font(.risoBody(12, .regular))
-                .foregroundStyle(Color.risoMuted)
-                .multilineTextAlignment(.center)
             RisoButton(title: "+ New counter", kind: .blue, small: true) {
                 onNewCounter()
             }

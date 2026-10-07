@@ -1,4 +1,11 @@
-import { TaskType, deriveDisplayedCount, type Task } from '@oybc/shared';
+import {
+  TaskType,
+  countUnitSuffix,
+  deriveDisplayedCount,
+  formatCount,
+  resolveCountKind,
+  type Task,
+} from '@oybc/shared';
 
 /**
  * taskCountDisplay.ts — how a Tasks-tab surface reads a counting task's
@@ -58,7 +65,26 @@ export function computeStatusLabel(task: CountDisplayTask): string {
   if (task.type === TaskType.COUNTING) {
     const current = displayedCountFor(task);
     const max = task.maxCount ?? 0;
-    if (current > 0 && max > 0) return `${current} / ${max}`;
+    const kind = resolveCountKind(task);
+    if (current > 0 && max > 0) return `${formatCount(current, kind)} / ${formatCount(max, kind)}`;
   }
   return '';
+}
+
+/**
+ * Task Detail's counting line — `"Run · 2 / 5 km"`, Continuous
+ * `"Hike · 3.1 / 26.2 mi"`, Duration `"Practice · 4h 30m / 10h 30m"` (no
+ * unit). Built from the DISPLAYED count, formatted per the task's kind.
+ * iOS twin: `TaskCountDisplay.countingSubtitle(for:)`.
+ *
+ * @param task - The counting task being rendered.
+ * @returns The line.
+ */
+export function countingDetailLine(
+  task: CountDisplayTask & Pick<Task, 'action' | 'unit'>,
+): string {
+  const kind = resolveCountKind(task);
+  const current = formatCount(displayedCountFor(task), kind);
+  const max = formatCount(task.maxCount ?? 0, kind);
+  return `${task.action ?? ''} · ${current} / ${max}${countUnitSuffix(kind, task.unit)}`;
 }

@@ -28,7 +28,8 @@ import {
   resolveSharedCounterDefaultAmount,
   resolveSharedCounterSourceId,
 } from './boardPlaySharedCounterUtils';
-import { buildBoardQuickAmountOptions, initialChipAmount, parseCustomLogAmount } from './counters/amountChips';
+import { setCounterDefaultLogAmount } from '../db/operations/tasks';
+import { useCountingLogModal } from './boardPlay/useCountingLogModal';
 import { recurringBadgeState } from './boards/recurringBadgeState';
 import { RecurringBadge } from './RecurringBadge';
 import { TaskDetailSheet } from './TaskDetailSheet';
@@ -43,7 +44,9 @@ import { BoardEditButton } from './boardActions/BoardEditButton';
 import { canEditSquares } from './boardActions/boardMenu';
 import { usePreferences } from '../hooks/usePreferences';
 import { useNavigate } from 'react-router-dom';
-import { compactStreakLabel, getHighlightedSquares } from '@oybc/shared';
+import {
+  boardSheetChips, compactStreakLabel, getHighlightedSquares, quantizeCount, quickLogAmount, resolveFamilyCountKind,
+} from '@oybc/shared';
 import { gatedStreak } from '../utils/gatedStreak';
 import { RisoIcon } from './riso';
 import { RisoBoardCell } from './board/RisoBoardCell';
@@ -143,7 +146,6 @@ export function BoardPlaySurface({
     cellStateByBoardTaskId,
     liveCompletedLineIds,
     sharedCounterSourceIds,
-    sharedCounterHintsByTaskId,
     sortedBoardTasks,
     gridSize,
     btByPosition,
@@ -196,19 +198,6 @@ export function BoardPlaySurface({
   // remount (resetting its timer) when consecutive logs fire quickly.
   // R3: amount-aware + Undo — shape matches `useBoardPlay`'s `CreditedToast`.
   const [creditedToast, setCreditedToast] = useState<CreditedToast | null>(null);
-
-  // R3 — quick-action amount state for the detail modal's chip picker.
-  // Seeded to the counter's current default whenever a NEW square's modal
-  // opens (keyed on `selectedSquareId`); cleared when the modal closes. Not
-  // reset by live-query updates so an in-progress custom-amount edit
-  // survives background writes.
-  const [modalQuickAmount, setModalQuickAmount] = useState<{
-    boardTaskId: string;
-    selected: number;
-    isCustomActive: boolean;
-    customOpen: boolean;
-    customDraft: string;
-  } | null>(null);
   // Board Edit redesign slice 3 — the squares-editor tap/picker/edit-task
   // overlay state. Owned here (not `useBoardPlay`) since it's pure transient
   // chrome, not draft data.
@@ -225,30 +214,6 @@ export function BoardPlaySurface({
   const [editTaskSheetId, setEditTaskSheetId] = useState<string | null>(null);
   // D9 — the squares grid's aria-live announcement (Alt+Arrow keyboard moves).
   const [keyboardAnnouncement, setKeyboardAnnouncement] = useState('');
-
-  // R3 — seed/reset the detail-modal quick-action amount whenever a
-  // DIFFERENT square's modal opens (or closes). Deliberately keyed only on
-  // `selectedSquareId` — a live-query update to boardTasks/taskMap while the
-  // SAME modal stays open must not clobber an in-progress custom-amount edit.
-  useEffect(() => {
-    if (!selectedSquareId) {
-      setModalQuickAmount(null);
-      return;
-    }
-    const bt = boardTasks.find((b) => b.id === selectedSquareId);
-    const task = bt ? taskMap[bt.taskId] : undefined;
-    if (!task || task.type !== TaskType.COUNTING) return;
-    const sourceId = resolveSharedCounterSourceId(task, sharedCounterSourceIds);
-    if (!sourceId) return; // Standalone counting square — no quick-action row.
-    setModalQuickAmount({
-      boardTaskId: selectedSquareId,
-      selected: initialChipAmount(taskMap[sourceId]?.defaultLogAmount),
-      isCustomActive: false,
-      customOpen: false,
-      customDraft: '',
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedSquareId]);
 
   // The squares-editor staged draft (cells / task overrides / center type /
   // Shuffle / keyboard moves) lives in `useSquaresEditDraft.ts`, composed by
@@ -319,7 +284,7 @@ export function BoardPlaySurface({
 
   // ── Derived data ───────────────────────────────────────────────────────
   // achievementBadgesByBoardTaskId, sharedCounterSourceIds,
-  // sharedCounterHintsByTaskId, sortedBoardTasks, gridSize, and btByPosition
+  // sortedBoardTasks, gridSize, and btByPosition
   // all come from useBoardPlayData above (isEnded/isSealed replaced its
   // isExpired, D12). The edit-mode draft comes from useBoardPlay below.
 
@@ -391,6 +356,24 @@ export function BoardPlaySurface({
     onFlash: showFlash,
     onCreditedToast: setCreditedToast,
     setContextMenu,
+  });
+
+  // Counter kinds §5 — the detail modal's log-amount controls (chips + amount
+  // field), in `useCountingLogModal`; the count is the modal's windowed value.
+  const quickAmount = useCountingLogModal(selectedSquareId, (btId) => {
+    const bt = boardTasks.find((b) => b.id === btId);
+    const task = bt ? taskMap[bt.taskId] : undefined;
+    if (!bt || !task || task.type !== TaskType.COUNTING) return null;
+    const children = compoundChildrenByCompound[task.id] ?? [];
+    return {
+      boardTaskId: btId, task, taskMap, isSealed,
+      sourceId: resolveSharedCounterSourceId(task, sharedCounterSourceIds),
+      currentCount: taskToSquareState(task, children, taskMap, compoundChildrenByCompound, squareWindowContext, cellStateByBoardTaskId[btId]).currentCount,
+      onIncrementShared: (s, a, p) => void handleSharedCounterIncrement(s, a, p),
+      onDecrementShared: (s, a, p) => void handleSharedCounterDecrement(s, a, p),
+      onSetStandaloneCount: (b, next) => void handleComplete(b, { currentCount: next }),
+      onPersistDefault: (id, a) => void setCounterDefaultLogAmount(id, a).catch((err) => console.error('Persist default log amount failed:', err)),
+    };
   });
 
   // ── Passive completion (Shared Counters P3) ─────────────────────────────
@@ -614,22 +597,6 @@ export function BoardPlaySurface({
               </div>
             </div>
           </div>
-
-          <div className={play.hint}>
-            {board.completedTasks === 0 ? (
-              <>
-                Resting paper. <b>Complete a square</b> to slap ink on it — fill a line for a bingo.
-              </>
-            ) : board.linesCompleted > 0 ? (
-              <>
-                Nice work — keep filling. <b>Clear the board</b> for a GREENLOG.
-              </>
-            ) : (
-              <>
-                Keep going — line up a row, column, or diagonal for a <b>bingo.</b>
-              </>
-            )}
-          </div>
         </aside>
       )}
 
@@ -781,6 +748,7 @@ export function BoardPlaySurface({
                   // Phase 3 — pulse squares that just filled in from an elsewhere log.
                   isArrived: resolvedTaskId != null && arrivedTaskIds.has(resolvedTaskId),
                   locked: effectiveLocked,
+                  countKind: resolveFamilyCountKind(task, (id) => taskMap[id]),
                 });
 
                 // ── Click handler (play mode) ────────────────────────────
@@ -799,29 +767,10 @@ export function BoardPlaySurface({
                       if (squareData.type === 'achievement') {
                         return;
                       }
-                      if (squareData.type === 'compound') {
+                      // Counter kinds §5 — every counting tap opens the modal
+                      // (web Discrete no longer logs +1 on tap).
+                      if (squareData.type === 'compound' || squareData.type === 'counting') {
                         setSelectedSquareId(boardTaskId);
-                      } else if (squareData.type === 'counting') {
-                        // Phase 3 — Shared Counters routing:
-                        //  (a) Linked derived counter (task.sharedCounterId != null):
-                        //      tap increments the source task, propagates to all siblings.
-                        //  (b) Source counter (task.id in sharedCounterSourceIds):
-                        //      tap increments source + propagates to all linked tasks.
-                        //  (c) Standalone counter (no shared link at all):
-                        //      falls through to the legacy handleComplete path.
-                        // All shared-counter paths forbid the old high-end clamp (overshoot allowed).
-                        // R3 — a plain tap on a shared counting square logs the
-                        // counter's default amount (was hardcoded 1); the
-                        // one-tap path never persists a new default.
-                        const sourceId = resolveSharedCounterSourceId(task, sharedCounterSourceIds);
-                        if (sourceId) {
-                          const amount = resolveSharedCounterDefaultAmount(taskMap[sourceId]);
-                          void handleSharedCounterIncrement(sourceId, amount, false);
-                        } else {
-                          // Standalone (unlinked) counting task — no propagation needed.
-                          const next = taskCurrentCount + 1;
-                          void handleComplete(boardTaskId, { currentCount: next });
-                        }
                       } else {
                         void handleComplete(boardTaskId, {
                           isCompleted: !taskIsCompleted,
@@ -841,6 +790,7 @@ export function BoardPlaySurface({
                   <RisoBoardCell
                     key={boardTaskId}
                     cell={cellModel}
+                    cellSize={90}
                     badge={
                       achievementBadgesByBoardTaskId[boardTaskId] ? (
                         <span className={play.achvBadge} title="Achievement">
@@ -1000,86 +950,6 @@ export function BoardPlaySurface({
         // counters the two values are identical; for linked derived counters
         // taskToSquareState has already applied deriveDisplayedCount.
         const modalCurrentCount = squareState.currentCount;
-        // Linked derived counters are read-only: their value is driven by the
-        // source task. Decrement and reset must be disabled for them.
-        const isLinkedCounter = squareData.sharedCounterId != null;
-
-        // Phase 2 — resolve the shared-counter hint for this task.
-        const modalSharedHint = sharedCounterHintsByTaskId.get(task.id);
-
-        // R3 — quick-action amount picker (shared counting squares only).
-        const modalSourceId = resolveSharedCounterSourceId(task, sharedCounterSourceIds);
-        const activeQuickAmount =
-          modalQuickAmount && modalQuickAmount.boardTaskId === bt.id ? modalQuickAmount : null;
-        // Initial highlighted chip for the amount picker — a preset (or 1),
-        // NOT the raw remembered default (fixed rows have no off-preset chip).
-        // The remembered default still drives the plain grid tap + Hub pill.
-        const modalDefaultAmount = initialChipAmount(
-          modalSourceId ? taskMap[modalSourceId]?.defaultLogAmount : undefined,
-        );
-        const quickSelected = activeQuickAmount?.selected ?? modalDefaultAmount;
-        const quickAmount =
-          squareData.type === 'counting' && modalSourceId
-            ? {
-                options: buildBoardQuickAmountOptions(),
-                selected: quickSelected,
-                isCustomActive: activeQuickAmount?.isCustomActive ?? false,
-                customOpen: activeQuickAmount?.customOpen ?? false,
-                customDraft: activeQuickAmount?.customDraft ?? '',
-                unit: task.unit ?? '',
-                busy: isSealed,
-                onSelectChip: (value: number) =>
-                  setModalQuickAmount({
-                    boardTaskId: bt.id,
-                    selected: value,
-                    isCustomActive: false,
-                    customOpen: false,
-                    customDraft: '',
-                  }),
-                onOpenCustom: () =>
-                  setModalQuickAmount((prev) => ({
-                    boardTaskId: bt.id,
-                    selected: prev?.selected ?? modalDefaultAmount,
-                    isCustomActive: prev?.isCustomActive ?? false,
-                    customOpen: true,
-                    customDraft: prev?.isCustomActive ? String(prev.selected) : '',
-                  })),
-                onCustomDraftChange: (raw: string) =>
-                  setModalQuickAmount((prev) => (prev ? { ...prev, customDraft: raw } : prev)),
-                onConfirmCustom: () => {
-                  const parsed = parseCustomLogAmount(activeQuickAmount?.customDraft ?? '');
-                  if (parsed == null) return;
-                  setModalQuickAmount({
-                    boardTaskId: bt.id,
-                    selected: parsed,
-                    isCustomActive: true,
-                    customOpen: false,
-                    customDraft: '',
-                  });
-                },
-                onAdd: () => {
-                  if (isSealed) return;
-                  // R3 — an explicit custom "#" amount persists as the new
-                  // default; the 1/{default} chips are a quick nudge, not a
-                  // preference change (Global Constraints asymmetry vs R2).
-                  void handleSharedCounterIncrement(
-                    modalSourceId,
-                    quickSelected,
-                    activeQuickAmount?.isCustomActive ?? false,
-                  );
-                },
-                onRemove: () => {
-                  if (isSealed || isLinkedCounter) return;
-                  void handleSharedCounterDecrement(
-                    modalSourceId,
-                    quickSelected,
-                    activeQuickAmount?.isCustomActive ?? false,
-                  );
-                },
-                removeDisabled: isLinkedCounter || modalCurrentCount <= 0,
-                removeTitle: isLinkedCounter ? 'Linked counters cannot be decremented directly' : undefined,
-              }
-            : undefined;
 
         return (
           <DetailModal
@@ -1095,14 +965,14 @@ export function BoardPlaySurface({
               void handleComplete(bt.id, { isCompleted: !squareState.isCompleted });
             }}
             onIncrementCount={() => {
-              // Standalone (non-shared) counting squares only — shared squares
-              // route through `quickAmount.onAdd` above.
+              // Standalone Discrete squares only — every other counting square
+              // routes through `quickAmount.onAdd`.
               if (isSealed) return;
               void handleComplete(bt.id, { currentCount: modalCurrentCount + 1 });
             }}
             onDecrementCount={() => {
-              // Standalone (non-shared) counting squares only — shared squares
-              // route through `quickAmount.onRemove` above.
+              // Standalone Discrete squares only — every other counting square
+              // routes through `quickAmount.onRemove`.
               if (isSealed) return;
               if (modalCurrentCount > 0) void handleComplete(bt.id, { currentCount: modalCurrentCount - 1 });
             }}
@@ -1110,7 +980,6 @@ export function BoardPlaySurface({
               squareData.type === 'compound' ? handleCompoundChildToggle : undefined
             }
             onOpenInLibrary={(taskId) => { setSelectedSquareId(null); setOpenedTaskInLibrary(taskId); }}
-            sharedHint={modalSharedHint}
             quickAmount={quickAmount}
             achievementBadge={achievementBadgesByBoardTaskId[bt.id]}
           />
@@ -1145,16 +1014,32 @@ export function BoardPlaySurface({
         // Linked derived counters are read-only — decrement/reset must be gated.
         const isLinkedCounter = squareData.sharedCounterId != null;
 
-        // Phase 2 — resolve the shared-counter hint for this task.
-        const menuSharedHint = sharedCounterHintsByTaskId.get(task.id);
-
         // R3 — quick-action amount options (shared counting squares only).
         // The "# Custom amount…" item opens the detail modal (which owns
         // the full picker) rather than an inline input — see the prop's
         // docstring on `FloatingContextMenu` for why.
         const menuSourceId = resolveSharedCounterSourceId(task, sharedCounterSourceIds);
+        const menuKind = resolveFamilyCountKind(task, (id) => taskMap[id]);
+        const amountActions = squareData.type === 'counting' && menuKind !== 'discrete'
+          ? {
+              kind: menuKind,
+              amount: quickLogAmount(
+                menuKind, boardSheetChips(menuKind, task.maxCount ?? 0),
+                (menuSourceId ? taskMap[menuSourceId] : task)?.defaultLogAmount,
+              ),
+              unit: task.unit ?? '',
+              onAdd: (a: number) => (menuSourceId
+                ? void handleSharedCounterIncrement(menuSourceId, a, false)
+                : void handleComplete(bt.id, { currentCount: quantizeCount(menuCurrentCount + a) })),
+              onRemove: (a: number) => (menuSourceId
+                ? void handleSharedCounterDecrement(menuSourceId, a, false)
+                : void handleComplete(bt.id, { currentCount: Math.max(0, quantizeCount(menuCurrentCount - a)) })),
+              onOpenCustom: () => setSelectedSquareId(bt.id),
+              removeDisabled: isLinkedCounter || menuCurrentCount <= 0,
+            }
+          : undefined;
         const sharedAmountActions =
-          squareData.type === 'counting' && menuSourceId
+          squareData.type === 'counting' && menuSourceId && menuKind === 'discrete'
             ? {
                 unit: task.unit ?? '',
                 defaultAmount: resolveSharedCounterDefaultAmount(taskMap[menuSourceId]),
@@ -1210,8 +1095,8 @@ export function BoardPlaySurface({
               setOpenedTaskInLibrary(taskId);
               setContextMenu(null);
             }}
-            sharedHint={menuSharedHint}
             sharedAmountActions={sharedAmountActions}
+            amountActions={amountActions}
           />
         );
       })()}

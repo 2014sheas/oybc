@@ -1,6 +1,12 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { counterMilestoneProgress } from '@oybc/shared';
+import {
+  counterMilestoneProgress,
+  countUnitSuffix,
+  formatCountTotal,
+  formatCountWithUnit,
+  type CountKind,
+} from '@oybc/shared';
 import { useAuth } from '../firebase/useAuth';
 import { useSharedCounterGroups } from '../hooks/useSharedCounterGroups';
 import { useCounterDailyTotals } from '../hooks/useCounterDailyTotals';
@@ -16,13 +22,13 @@ import {
 import { generateUUID } from '../db/utils';
 import {
   CounterDeleteConfirmDialog,
+  CounterDetailLogCard,
   CounterDetailTaskCard,
   CounterLogToast,
   CounterWriteError,
   attemptCounterWrite,
   COUNTER_NOT_UPDATED_MESSAGE,
 } from '../components/counters';
-import { buildAmountChipOptions, initialChipAmount, parseCustomLogAmount } from '../components/counters/amountChips';
 import { RowContextMenu } from '../components/wizard/RowContextMenu';
 import { RisoSectionLabel } from '../components/riso';
 import profileStyles from './ProfilePage.module.css';
@@ -42,11 +48,10 @@ import styles from './CounterDetailPage.module.css';
  *      7-day sparkline (`useCounterDailyTotals`), and the milestone bar
  *      (`counterMilestoneProgress` from `@oybc/shared`).
  *   3. Stat strip — Today (REAL) / Streak (STUB) / Best week (STUB).
- *   4. Log card (blue fill) — amount chips (1 / default / 25 / #) + −/+Add N.
- *      Logging updates the counter's `defaultLogAmount` to the amount just
- *      used and shows the reusable `CounterLogToast` ("Logged +N · Undo").
- *   5. Explainer line.
- *   6. "Counting on N tasks" — active member cards.
+ *   4. Log card (blue fill) — `CounterDetailLogCard`: fixed chips per kind +
+ *      −/+Add. Logging updates the counter's `defaultLogAmount` to the amount
+ *      just used and shows the reusable `CounterLogToast` ("Logged +N · Undo").
+ *   5. "Counting on N tasks" — active member cards.
  *   7. "Recent weeks" — STUB history card.
  *   8. "Not counting now" — inactive/draft/unplaced members (kept from P1;
  *      not in the mock's example state because its sample counter has none).
@@ -72,12 +77,8 @@ export function CounterDetailPage(): React.ReactElement {
   const dailyTotals = useCounterDailyTotals(counterId);
 
   const [isLogging, setIsLogging] = useState(false);
-  const [selectedAmount, setSelectedAmount] = useState(1);
-  const [isCustomActive, setIsCustomActive] = useState(false);
-  const [customOpen, setCustomOpen] = useState(false);
-  const [customDraft, setCustomDraft] = useState('');
   const [toast, setToast] = useState<
-    { amount: number; unit: string; verb: 'logged' | 'removed'; toastKey: string } | null
+    { amount: number; unit: string; kind: CountKind; verb: 'logged' | 'removed'; toastKey: string } | null
   >(null);
 
   const overflowBtnRef = useRef<HTMLButtonElement>(null);
@@ -94,24 +95,8 @@ export function CounterDetailPage(): React.ReactElement {
 
   const group = groups.find((g) => g.counterId === counterId);
 
-  // Sync the selected chip amount to the counter's current default exactly
-  // once per counter (on first load / on navigating to a different counter)
-  // — NOT on every live update, or a background defaultLogAmount write from
-  // this very session's own log would clobber the user's in-progress chip
-  // selection.
-  const initializedForRef = useRef<string | undefined>(undefined);
-  useEffect(() => {
-    if (!group || !counterId) return;
-    if (initializedForRef.current === counterId) return;
-    initializedForRef.current = counterId;
-    setSelectedAmount(initialChipAmount(group.defaultLogAmount));
-    setIsCustomActive(false);
-    setCustomOpen(false);
-    setCustomDraft('');
-  }, [group, counterId]);
-
   const handleLog = useCallback(
-    async (direction: 'add' | 'remove') => {
+    async (direction: 'add' | 'remove', selectedAmount: number) => {
       if (!counterId || isLogging || selectedAmount <= 0) return;
       setIsLogging(true);
       try {
@@ -135,6 +120,7 @@ export function CounterDetailPage(): React.ReactElement {
         setToast({
           amount: selectedAmount,
           unit: group?.unit ?? '',
+          kind: group?.countKind ?? 'discrete',
           verb: direction === 'add' ? 'logged' : 'removed',
           toastKey: generateUUID(),
         });
@@ -142,7 +128,7 @@ export function CounterDetailPage(): React.ReactElement {
         setIsLogging(false);
       }
     },
-    [counterId, isLogging, selectedAmount, group?.unit],
+    [counterId, isLogging, group?.unit, group?.countKind],
   );
 
   const handleUndo = useCallback(async () => {
@@ -152,25 +138,6 @@ export function CounterDetailPage(): React.ReactElement {
     setToast(null);
     setLogError(ok ? null : COUNTER_NOT_UPDATED_MESSAGE);
   }, [counterId]);
-
-  function selectChip(value: number): void {
-    setSelectedAmount(value);
-    setIsCustomActive(false);
-    setCustomOpen(false);
-  }
-
-  function openCustomInput(): void {
-    setCustomDraft(isCustomActive ? String(selectedAmount) : '');
-    setCustomOpen(true);
-  }
-
-  function confirmCustomInput(): void {
-    const parsed = parseCustomLogAmount(customDraft);
-    if (parsed == null) return;
-    setSelectedAmount(parsed);
-    setIsCustomActive(true);
-    setCustomOpen(false);
-  }
 
   function openOverflowMenu(): void {
     const rect = overflowBtnRef.current?.getBoundingClientRect();
@@ -236,12 +203,13 @@ export function CounterDetailPage(): React.ReactElement {
 
   const activeTasks = group.tasks.filter((t) => t.isActive);
   const inactiveTasks = group.tasks.filter((t) => !t.isActive);
-  const lifetimeStr = group.lifetime.toLocaleString();
+  const kind = group.countKind;
+  const lifetimeStr = formatCountTotal(group.lifetime, kind);
   const unitStr = group.unit ?? '';
-  const chips = buildAmountChipOptions();
-  const selectedChipIndex = isCustomActive ? chips.length - 1 : chips.findIndex((c) => c.value === selectedAmount);
+  // " mi" / "" — Duration never prints a unit (iOS twin uses countUnitSuffix too).
+  const heroUnit = countUnitSuffix(kind, group.unit);
 
-  const progress = counterMilestoneProgress(group.lifetime);
+  const progress = counterMilestoneProgress(group.lifetime, kind);
   const maxDaily = Math.max(1, ...dailyTotals.days.map((d) => d.total));
 
   // ─── Render ───────────────────────────────────────────────────────────────
@@ -295,11 +263,15 @@ export function CounterDetailPage(): React.ReactElement {
         {/* Left rail (desktop) / top section (mobile) */}
         <div className={styles.leftRail}>
           {/* 1. Hero card */}
-          <div className={styles.heroCard} aria-label={`${group.name}: ${lifetimeStr} all-time ${unitStr}`}>
+          <div className={styles.heroCard} aria-label={`${group.name}: ${lifetimeStr} all-time${heroUnit}`}>
             <div className={styles.heroTop}>
               <div className={styles.heroLifeBlock}>
-                <span className={styles.lifetimeNum}>{lifetimeStr}</span>
-                <span className={styles.lifetimeLabel}>all-time {unitStr}</span>
+                <span
+                  className={`${styles.lifetimeNum} ${kind === 'duration' ? styles.lifetimeNumDuration : ''}`}
+                >
+                  {lifetimeStr}
+                </span>
+                <span className={styles.lifetimeLabel}>all-time{heroUnit}</span>
               </div>
 
               {/* 7-day sparkline — REAL data via useCounterDailyTotals. */}
@@ -307,7 +279,7 @@ export function CounterDetailPage(): React.ReactElement {
                 <div
                   className={styles.sparkline}
                   role="img"
-                  aria-label={`7-day activity — today ${dailyTotals.todayTotal.toLocaleString()} ${unitStr}`}
+                  aria-label={`7-day activity — today ${formatCountWithUnit(dailyTotals.todayTotal, kind, unitStr)}`}
                 >
                   {dailyTotals.days.map((d, i) => {
                     const isToday = i === dailyTotals.days.length - 1;
@@ -331,15 +303,15 @@ export function CounterDetailPage(): React.ReactElement {
                 <div className={styles.milestoneFill} style={{ width: `${progress.fraction * 100}%` }} />
               </div>
               <p className={styles.milestoneLabel}>
-                {progress.remaining.toLocaleString()} to{' '}
-                <strong>{progress.next.toLocaleString()}</strong> milestone
+                {formatCountTotal(progress.remaining, kind)} to{' '}
+                <strong>{formatCountTotal(progress.next, kind)}</strong> milestone
               </p>
             </div>
           </div>
 
           {/* 2. Stat strip — Today (real) / Streak / Best week (P4 stubs) */}
           <div className={styles.statStrip}>
-            <StatCard label="TODAY" value={dailyTotals.todayTotal.toLocaleString()} />
+            <StatCard label="TODAY" value={formatCountTotal(dailyTotals.todayTotal, kind)} />
             {/* P4 — build-now-feed-P4: needs a real streak rollup (window-goal
                 history); UI shipped now, wired to real data in P4. */}
             <StatCard label="STREAK" value="—" />
@@ -348,89 +320,18 @@ export function CounterDetailPage(): React.ReactElement {
           </div>
 
           {/* 3. Log control — blue filled card */}
-          <div className={styles.logCard} aria-label={`Log ${unitStr}`}>
-            <div className={styles.logHeader}>
-              <span className={styles.logTitle}>Log {unitStr}</span>
-              <span className={styles.logSub}>
-                counts toward {activeTasks.length} active task{activeTasks.length !== 1 ? 's' : ''}
-              </span>
-            </div>
-
-            <div className={styles.chipRow} role="group" aria-label="Log amount">
-              {chips.map((chip, i) => {
-                const selected = i === selectedChipIndex;
-                const isCustomChip = chip.value === null;
-                return (
-                  <button
-                    key={isCustomChip ? 'custom' : `${i}-${chip.value}`}
-                    type="button"
-                    className={`${styles.chip} ${selected ? styles.chipSelected : ''}`}
-                    aria-pressed={selected}
-                    onClick={() => (isCustomChip ? openCustomInput() : selectChip(chip.value as number))}
-                  >
-                    {isCustomChip && selected ? selectedAmount : chip.label}
-                  </button>
-                );
-              })}
-            </div>
-
-            {customOpen && (
-              <div className={styles.customInputRow}>
-                <input
-                  type="number"
-                  inputMode="numeric"
-                  min={1}
-                  step={1}
-                  autoFocus
-                  value={customDraft}
-                  onChange={(e) => setCustomDraft(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') confirmCustomInput();
-                    if (e.key === 'Escape') setCustomOpen(false);
-                  }}
-                  className={styles.customInput}
-                  placeholder="Amount"
-                  aria-label="Custom log amount"
-                />
-                <button
-                  type="button"
-                  className={styles.customConfirm}
-                  onClick={confirmCustomInput}
-                  disabled={parseCustomLogAmount(customDraft) == null}
-                >
-                  OK
-                </button>
-              </div>
-            )}
-
-            <div className={styles.logActionsRow}>
-              <button
-                type="button"
-                className={styles.minusBtn}
-                onClick={() => void handleLog('remove')}
-                disabled={isLogging || group.lifetime === 0}
-                aria-label={`Remove ${selectedAmount} ${unitStr}`}
-              >
-                −
-              </button>
-              <button
-                type="button"
-                className={styles.addBtn}
-                onClick={() => void handleLog('add')}
-                disabled={isLogging}
-                aria-label={`Add ${selectedAmount} ${unitStr}`}
-              >
-                ＋ Add {selectedAmount}
-              </button>
-            </div>
-          </div>
+          <CounterDetailLogCard
+            key={`${group.counterId}-${kind}`}
+            kind={kind}
+            unit={group.unit}
+            defaultLogAmount={group.defaultLogAmount}
+            lifetime={group.lifetime}
+            activeCount={activeTasks.length}
+            isLogging={isLogging}
+            onLog={(direction, amount) => void handleLog(direction, amount)}
+          />
 
           <CounterWriteError message={logError} />
-
-          {/* 4. Explainer copy */}
-          <p className={styles.explainer}>
-            Logged {unitStr} count toward every active task and your all-time total.
-          </p>
         </div>
 
         {/* Right column (desktop) / bottom section (mobile) */}
@@ -444,7 +345,7 @@ export function CounterDetailPage(): React.ReactElement {
               <div className={styles.taskCardsGrid} role="list" aria-label="Active tasks sharing this counter">
                 {activeTasks.map((task) => (
                   <div key={task.taskId} role="listitem">
-                    <CounterDetailTaskCard task={task} unit={group.unit} />
+                    <CounterDetailTaskCard task={task} unit={group.unit} kind={kind} />
                   </div>
                 ))}
               </div>
@@ -468,7 +369,7 @@ export function CounterDetailPage(): React.ReactElement {
               <div role="list" aria-label="Inactive tasks not currently counting">
                 {inactiveTasks.map((task) => (
                   <div key={task.taskId} role="listitem">
-                    <CounterDetailTaskCard task={task} unit={group.unit} inactive />
+                    <CounterDetailTaskCard task={task} unit={group.unit} kind={kind} inactive />
                   </div>
                 ))}
               </div>
@@ -507,6 +408,7 @@ export function CounterDetailPage(): React.ReactElement {
           key={toast.toastKey}
           amount={toast.amount}
           unit={toast.unit}
+          kind={toast.kind}
           verb={toast.verb}
           onUndo={() => void handleUndo()}
           onDone={() => setToast(null)}

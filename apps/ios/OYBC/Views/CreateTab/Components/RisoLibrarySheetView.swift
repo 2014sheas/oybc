@@ -427,9 +427,7 @@ struct RisoLibrarySheetView: View {
         case .counting:
             // A family root's row carries no goal — see `displayTitle`.
             if library.familyRootIds.contains(task.id) { return nil }
-            guard let a = task.action, let u = task.unit, let m = task.maxCount,
-                  !a.isEmpty, !u.isEmpty else { return nil }
-            return "\(a) · goal \(formatCount(m, kind: resolveCountKind(task.countKind))) \(u)"
+            return TaskCountDisplay.goalSubtitle(for: task)
         case .compound:
             let n = effectiveChildrenByCompound[task.id]?.count ?? 0
             guard n > 0 else { return nil }

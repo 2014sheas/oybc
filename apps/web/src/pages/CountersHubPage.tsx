@@ -124,11 +124,6 @@ export function CountersHubPage(): React.ReactElement {
         )}
       </div>
 
-      {/* Intro (one line) */}
-      <p className={profileStyles.subPageIntro}>
-        One tally per activity — every task counting it moves together.
-      </p>
-
       {/* §Member rules (B3, RC9) — expired-member visibility. Hidden when
           there is nothing to filter: a "Show expired tasks" control sitting
           over "No counters yet" is noise. Stays up while the toggle is ON
@@ -174,6 +169,7 @@ export function CountersHubPage(): React.ReactElement {
           key={toast.toastKey}
           amount={toast.amount}
           unit={toast.unit}
+          kind={toast.kind}
           verb="logged"
           onUndo={() => void handleUndo()}
           onDone={() => setToast(null)}
@@ -188,9 +184,6 @@ function EmptyState({ onNewCounter }: { onNewCounter: () => void }): React.React
     <div className={styles.emptyState} role="status" aria-live="polite">
       <span className={styles.emptyIcon} aria-hidden="true">↔</span>
       <p className={styles.emptyPrimary}>No counters yet</p>
-      <p className={styles.emptySub}>
-        Track one activity — push-ups, pages, miles — across every board it appears on.
-      </p>
       <RisoButton kind="blue" size="small" onClick={onNewCounter}>
         + New counter
       </RisoButton>

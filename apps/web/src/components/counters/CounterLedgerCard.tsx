@@ -1,15 +1,24 @@
 import { useNavigate } from 'react-router-dom';
 import { useState } from 'react';
-import type { SharedCounterGroup, SharedCounterMemberTask } from '@oybc/shared';
+import {
+  formatCountTotal,
+  formatCountWithUnit,
+  type CountKind,
+  type SharedCounterGroup,
+  type SharedCounterMemberTask,
+} from '@oybc/shared';
 import { incrementSharedCounter } from '../../db/operations/tasks';
+import { memberValueParts } from './memberValueLabel';
 import { timeframeDotColor } from './timeframeDotColor';
 import { attemptCounterWrite } from './counterWriteFeedback';
+import { ledgerPill } from './ledgerPill';
 import styles from './CounterLedgerCard.module.css';
 
 export interface CounterLoggedEvent {
   counterId: string;
   amount: number;
   unit: string;
+  kind: CountKind;
 }
 
 interface CounterLedgerCardProps {
@@ -62,10 +71,10 @@ export function CounterLedgerCard({
   const navigate = useNavigate();
   const [isLogging, setIsLogging] = useState(false);
   const activeTasks = group.tasks.filter((t) => t.isActive);
-  const lifetimeStr = group.lifetime.toLocaleString();
+  const lifetimeStr = formatCountTotal(group.lifetime, group.countKind);
   const taskCountStr = `${group.activeTaskCount} task${group.activeTaskCount !== 1 ? 's' : ''}`;
   const boardCountStr = `${group.boardCount} board${group.boardCount !== 1 ? 's' : ''}`;
-  const logAmount = group.defaultLogAmount ?? 1;
+  const pill = ledgerPill(group);
 
   function openDetail(): void {
     navigate(`/profile/counters/${group.counterId}${showExpired ? '?showExpired=1' : ''}`);
@@ -76,10 +85,15 @@ export function CounterLedgerCard({
     setIsLogging(true);
     try {
       const ok = await attemptCounterWrite('hub log', () =>
-        incrementSharedCounter(group.counterId, logAmount)
+        incrementSharedCounter(group.counterId, pill.amount)
       );
       if (ok) {
-        onLogged({ counterId: group.counterId, amount: logAmount, unit: group.unit ?? '' });
+        onLogged({
+          counterId: group.counterId,
+          amount: pill.amount,
+          unit: group.unit ?? '',
+          kind: group.countKind,
+        });
       } else {
         onLogFailed();
       }
@@ -102,7 +116,7 @@ export function CounterLedgerCard({
       {/* Top row: name + lifetime */}
       <div className={styles.top}>
         <span className={styles.name}>{group.name}</span>
-        <div className={styles.lifetimeBlock} aria-label={`${lifetimeStr} all-time ${group.unit ?? 'total'}`}>
+        <div className={styles.lifetimeBlock} aria-label={`${lifetimeStr} all-time${group.countKind === 'duration' ? '' : ` ${group.unit ?? 'total'}`}`}>
           <span className={styles.lifetimeNum}>{lifetimeStr}</span>
           <span className={styles.lifetimeLabel} aria-hidden="true">
             ALL-TIME
@@ -114,7 +128,7 @@ export function CounterLedgerCard({
       {activeTasks.length > 0 && (
         <div className={styles.rows} role="list" aria-label={`Tasks sharing ${group.name}`}>
           {activeTasks.map((task) => (
-            <LedgerTaskRow key={task.taskId} task={task} unit={group.unit} />
+            <LedgerTaskRow key={task.taskId} task={task} unit={group.unit} kind={group.countKind} />
           ))}
         </div>
       )}
@@ -127,11 +141,11 @@ export function CounterLedgerCard({
         <button
           type="button"
           className={styles.logPill}
-          onClick={() => void handleLog()}
+          onClick={() => (pill.opensDetail ? openDetail() : void handleLog())}
           disabled={isLogging}
-          aria-label={`Log ${logAmount} ${group.unit ?? ''} for ${group.name}`}
+          aria-label={pill.ariaLabel}
         >
-          + Log
+          {pill.label}
         </button>
         <span className={styles.chevron} aria-hidden="true">
           ›
@@ -145,12 +159,15 @@ export function CounterLedgerCard({
 function LedgerTaskRow({
   task,
   unit,
+  kind,
 }: {
   task: SharedCounterMemberTask;
   unit: string | null;
+  kind: CountKind;
 }): React.ReactElement {
   const pct = task.goal > 0 ? Math.min(100, (task.logged / task.goal) * 100) : 0;
   const dotColor = timeframeDotColor(task.timeframe);
+  const memberValue = memberValueParts(task.logged, task.goal, kind);
 
   return (
     <div className={styles.row} role="listitem">
@@ -170,9 +187,9 @@ function LedgerTaskRow({
       </div>
 
       {/* logged/goal value (right) */}
-      <div className={styles.rowVal} aria-label={`${task.logged} of ${task.goal} ${unit ?? ''}`}>
-        {task.logged.toLocaleString()}
-        <span className={styles.rowGoal}>/{task.goal.toLocaleString()}</span>
+      <div className={styles.rowVal} aria-label={`${formatCountWithUnit(task.logged, kind, unit)} of ${formatCountWithUnit(task.goal, kind, unit)}`}>
+        {memberValue.logged}
+        <span className={styles.rowGoal}>/{memberValue.goal}</span>
       </div>
 
       {/* Progress bar (spans full width below) */}
@@ -184,7 +201,7 @@ function LedgerTaskRow({
           aria-valuenow={Math.round(pct)}
           aria-valuemin={0}
           aria-valuemax={100}
-          aria-valuetext={`${task.logged} of ${task.goal}${unit ? ` ${unit}` : ''}`}
+          aria-valuetext={`${formatCountWithUnit(task.logged, kind, unit)} of ${formatCountWithUnit(task.goal, kind, unit)}`}
         />
       </div>
     </div>

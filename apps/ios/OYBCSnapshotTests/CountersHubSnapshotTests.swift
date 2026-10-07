@@ -85,6 +85,44 @@ final class CountersHubSnapshotTests: XCTestCase {
         )
     }
 
+    private func makeContinuousDurationGroups() -> [SharedCounterGroup] {
+        func member(_ id: String, _ board: String, _ window: String, _ tf: Timeframe, _ goal: CountValue, _ logged: CountValue) -> SharedCounterMemberTask {
+            SharedCounterMemberTask(
+                taskId: id, taskTitle: board, isSource: false, boardId: id, boardName: board,
+                timeframe: tf, window: window, goal: goal, logged: logged,
+                met: logged >= goal, over: max(0, logged - goal), isActive: true
+            )
+        }
+        let miles = SharedCounterGroup(
+            counterId: "miles", name: "Miles", action: "Run", unit: "mi",
+            lifetime: 148.6, defaultLogAmount: 3.1,
+            tasks: [member("m1", "Spring marathon", "Apr", .monthly, 26.2, 12.4),
+                    member("m2", "Daily grind", "Wk 14", .weekly, 26.2, 28.4)],
+            taskCount: 2, boardCount: 2, activeTaskCount: 2, countKind: .continuous
+        )
+        let practice = SharedCounterGroup(
+            counterId: "practice", name: "Practice", action: "Practice", unit: "guitar",
+            lifetime: 6735, defaultLogAmount: 30,
+            tasks: [member("p1", "Music week", "Wk 14", .weekly, 630, 270)],
+            taskCount: 1, boardCount: 1, activeTaskCount: 1, countKind: .duration
+        )
+        return [miles, practice]
+    }
+
+    func testHubContinuousDurationLight() {
+        let host = NavigationStack { CountersHubContent(groups: makeContinuousDurationGroups()) }
+        assertSnapshot(of: host, as: .image(layout: .fixed(width: 393, height: 640)), record: recordMode)
+    }
+
+    func testHubContinuousDurationDark() {
+        let host = NavigationStack { CountersHubContent(groups: makeContinuousDurationGroups()) }
+        assertSnapshot(
+            of: host,
+            as: .image(layout: .fixed(width: 393, height: 640), traits: .init(userInterfaceStyle: .dark)),
+            record: recordMode
+        )
+    }
+
     // MARK: - Hub — empty (W3 empty-state copy + CTA; "New counter" header button hidden)
 
     func testHubEmptyLight() {
@@ -233,6 +271,27 @@ final class CountersHubSnapshotTests: XCTestCase {
             as: .image(layout: .fixed(width: 393, height: 1180), traits: .init(userInterfaceStyle: .dark)),
             record: recordMode
         )
+    }
+
+    // MARK: - Detail — Continuous / Duration (counter kinds, handoff `logCards[]` / `detailCards[]`)
+
+    func testDetailContinuousLight() {
+        let host = NavigationStack { CounterDetailContent(group: makeContinuousDurationGroups()[0], dailyTotals: makeDailyTotals()) }
+        assertSnapshot(of: host, as: .image(layout: .fixed(width: 393, height: 1000)), record: recordMode)
+    }
+
+    func testDetailContinuousDark() {
+        let host = NavigationStack { CounterDetailContent(group: makeContinuousDurationGroups()[0], dailyTotals: makeDailyTotals()) }
+        assertSnapshot(
+            of: host,
+            as: .image(layout: .fixed(width: 393, height: 1000), traits: .init(userInterfaceStyle: .dark)),
+            record: recordMode
+        )
+    }
+
+    func testDetailDurationLight() {
+        let host = NavigationStack { CounterDetailContent(group: makeContinuousDurationGroups()[1], dailyTotals: makeDailyTotals()) }
+        assertSnapshot(of: host, as: .image(layout: .fixed(width: 393, height: 900)), record: recordMode)
     }
 
     // MARK: - Detail — amount-chip log card states (R2)

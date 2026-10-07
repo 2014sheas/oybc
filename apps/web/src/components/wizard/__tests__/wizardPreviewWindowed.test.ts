@@ -71,7 +71,7 @@ describe('wizard preview — windowed completion', () => {
     ];
     const model = taskToModel(task, { [task.id]: task }, {}, ctx(events));
     expect(model.done).toBe(false);
-    expect(model.count).toEqual({ cur: 2, max: 5 });
+    expect(model.count).toEqual({ cur: 2, max: 5, kind: 'discrete' });
   });
 
   it('linked (shared-counter) counting resolves from the root\'s window events, not its latch (owner rule 2026-10-01)', () => {
@@ -92,6 +92,25 @@ describe('wizard preview — windowed completion', () => {
       ctx([makeEvent('src-1', 'increment', IN_WINDOW, 10)]),
     );
     expect(met.done).toBe(true);
+  });
+
+  it('R19: a linked task previews in its ROOT\'s kind (root Continuous → count.kind continuous)', () => {
+    const root = makeTask({ id: 'root-1', type: TaskType.COUNTING, maxCount: 26.2, countKind: 'continuous' });
+    // The linked row carries no countKind of its own — it must follow the root.
+    const linked = makeTask({
+      id: 'linked-1',
+      type: TaskType.COUNTING,
+      maxCount: 13.1,
+      sharedCounterId: root.id,
+      baseline: 0,
+    });
+    const model = taskToModel(
+      linked,
+      { [root.id]: root, [linked.id]: linked },
+      {},
+      ctx([makeEvent(root.id, 'increment', IN_WINDOW, 3.1)]),
+    );
+    expect(model.count?.kind).toBe('continuous');
   });
 
   it('compound: evaluates windowed through its children, not the lifetime cache', () => {

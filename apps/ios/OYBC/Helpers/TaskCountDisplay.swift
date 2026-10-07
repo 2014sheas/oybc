@@ -60,10 +60,25 @@ enum TaskCountDisplay {
     /// - Parameter task: The task being rendered.
     /// - Returns: The subtitle, or `nil` when the task can't form one.
     static func countingSubtitle(for task: Task) -> String? {
-        guard let action = task.action, let unit = task.unit, let max = task.maxCount else {
+        let kind = resolveCountKind(task.countKind)
+        guard let action = task.action, let max = task.maxCount,
+              task.unit != nil || kind == .duration else {
             return nil
         }
+        return "\(action) · \(formatCount(displayedCount(for: task), kind: kind)) / \(formatCount(max, kind: kind))\(countUnitSuffix(kind, unit: task.unit))"
+    }
+
+    /// The library / pool / Tasks-row counting detail line — `"Run · goal 26.2 mi"`,
+    /// Duration `"Practice · goal 10h 30m"` (no unit). The one shared builder for
+    /// `RisoPoolListView`, `RisoTaskRowView` and `RisoLibrarySheetView`; web twin
+    /// `buildPoolRowSubtitle`.
+    ///
+    /// - Parameter task: A counting task.
+    /// - Returns: The line, or `nil` when action, goal or a needed unit is missing.
+    static func goalSubtitle(for task: Task) -> String? {
         let kind = resolveCountKind(task.countKind)
-        return "\(action) · \(formatCount(displayedCount(for: task), kind: kind)) / \(formatCount(max, kind: kind)) \(unit)"
+        guard let action = task.action, !action.isEmpty, let max = task.maxCount,
+              !countKindNeedsUnit(kind) || !(task.unit ?? "").isEmpty else { return nil }
+        return "\(action) · goal \(formatCountWithUnit(max, kind: kind, unit: task.unit))"
     }
 }

@@ -16,6 +16,9 @@ import {
   COUNTER_NOT_UPDATED_MESSAGE,
   type CounterLoggedEvent,
 } from '../components/counters';
+import { formatCountTotal } from '@oybc/shared';
+import { memberValueParts } from '../components/counters/memberValueLabel';
+import { ledgerPill } from '../components/counters/ledgerPill';
 import { formatLastLoggedLabel, type ProfileHomeCounterRow } from './profileHome';
 import styles from './ProfilePage.module.css';
 
@@ -287,10 +290,6 @@ export function ProfilePage(): React.ReactElement {
             <span className={styles.emptySquarePaper} />
           </div>
           <h2 className={styles.countersEmptyTitle}>One tally, many squares</h2>
-          <p className={styles.countersEmptyBody}>
-            A counter tracks one activity across every board that counts it. Log once, all of them
-            move.
-          </p>
           <RisoButton kind="blue" size="small" onClick={() => setCreateSheetOpen(true)}>
             New counter
           </RisoButton>
@@ -324,6 +323,7 @@ export function ProfilePage(): React.ReactElement {
           key={toast.toastKey}
           amount={toast.amount}
           unit={toast.unit}
+          kind={toast.kind}
           verb="logged"
           onUndo={() => void handleUndo()}
           onDone={() => setToast(null)}
@@ -352,17 +352,23 @@ function ProfileCounterRow({
 }): React.ReactElement {
   const { group, member } = row;
   const [isLogging, setIsLogging] = useState(false);
-  const logAmount = group.defaultLogAmount ?? 1;
+  const pill = ledgerPill(group);
+  const navigate = useNavigate();
 
   async function handleLog(): Promise<void> {
     if (isLogging) return;
     setIsLogging(true);
     try {
       const ok = await attemptCounterWrite('profile home log', () =>
-        incrementSharedCounter(group.counterId, logAmount),
+        incrementSharedCounter(group.counterId, pill.amount),
       );
       if (ok) {
-        onLogged({ counterId: group.counterId, amount: logAmount, unit: group.unit ?? '' });
+        onLogged({
+          counterId: group.counterId,
+          amount: pill.amount,
+          unit: group.unit ?? '',
+          kind: group.countKind,
+        });
       } else {
         onLogFailed();
       }
@@ -371,6 +377,7 @@ function ProfileCounterRow({
     }
   }
 
+  const memberValue = member ? memberValueParts(member.logged, member.goal, group.countKind) : null;
   const pct = member && member.goal > 0 ? Math.min(100, (member.logged / member.goal) * 100) : 0;
 
   return (
@@ -389,8 +396,8 @@ function ProfileCounterRow({
             <div className={styles.counterMemberTop}>
               <span className={styles.counterMemberLabel}>{member.boardName ?? group.name}</span>
               <span className={styles.counterMemberValue}>
-                {member.logged.toLocaleString()}
-                <span className={styles.counterMemberGoal}>/{member.goal.toLocaleString()}</span>
+                {memberValue?.logged}
+                <span className={styles.counterMemberGoal}>/{memberValue?.goal}</span>
               </span>
             </div>
             <div className={styles.counterMemberBarWrap}>
@@ -401,18 +408,22 @@ function ProfileCounterRow({
       </div>
 
       <div className={styles.counterRowTotal}>
-        <span className={styles.counterTotalNum}>{group.lifetime.toLocaleString()}</span>
+        <span className={styles.counterTotalNum}>{formatCountTotal(group.lifetime, group.countKind)}</span>
         <span className={styles.counterTotalLabel}>ALL-TIME</span>
       </div>
 
       <RisoButton
         kind="blue"
         size="small"
-        onClick={() => void handleLog()}
+        onClick={() =>
+          pill.opensDetail
+            ? navigate(`/profile/counters/${group.counterId}`)
+            : void handleLog()
+        }
         disabled={isLogging}
-        aria-label={`Log ${logAmount} ${group.unit ?? ''} for ${group.name}`}
+        aria-label={pill.ariaLabel}
       >
-        + Log
+        {pill.label}
       </RisoButton>
     </div>
   );

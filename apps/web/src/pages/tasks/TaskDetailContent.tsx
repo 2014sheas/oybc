@@ -36,7 +36,7 @@ import { formatRelativeTime } from '../../utils/relativeTime';
 import { LinkedCounterCaptionView } from './LinkedCounterCaptionView';
 import { TaskEditSheet } from './TaskEditSheet';
 import { TaskConfirmDeleteDialog } from './TaskConfirmDeleteDialog';
-import { displayedCountFor } from './taskCountDisplay';
+import { countingDetailLine, displayedCountFor } from './taskCountDisplay';
 import styles from './TaskDetailContent.module.css';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -62,7 +62,7 @@ export interface TaskDetailContentProps {
    */
   onOpenTask?: (taskId: string) => void;
   /**
-   * Called when the "Linked to {root}" row on a linked counting task is
+   * Called when the counter-root row on a linked counting task is
    * tapped. Receives the task's `sharedCounterId`.
    */
   onOpenCounter?: (sharedCounterId: string) => void;
@@ -234,7 +234,7 @@ function TypeSpecificFacts({
       <section className={styles.section}>
         <h2 className={styles.sectionHeading}>Counting</h2>
         <p className={styles.metaLine}>
-          {task.action} · {current} / {max} {task.unit}
+          {countingDetailLine(task)}
         </p>
         {max > 0 && (
           <div className={styles.progressBar} aria-label={`Progress ${pct}%`}>

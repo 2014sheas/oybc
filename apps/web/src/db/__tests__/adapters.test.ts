@@ -300,3 +300,20 @@ describe('resolveClosedBoardCounterDisplay (Board Edit redesign slice 4, D16)', 
     expect(resolveClosedBoardCounterDisplay(task, afterSeal, board).displayed).toBe(0);
   });
 });
+
+describe('taskToSquareData — counter kinds (docs/COUNTER_KINDS.md D5)', () => {
+  const counting = (over: Partial<Task>): Task => ({
+    id: 't', userId: 'user-1', title: 'Run 26.2 mi', type: TaskType.COUNTING, action: 'Run', unit: 'mi', maxCount: 26.2,
+    isCompleted: false, totalCompletions: 0, totalInstances: 0, createdAt: WINDOW_START, updatedAt: WINDOW_START,
+    version: 1, isDeleted: false, ...over,
+  });
+
+  it('carries the row kind, and a linked row takes its root kind', () => {
+    const root = counting({ id: 'root', countKind: 'continuous' });
+    const linked = counting({ id: 'lk', sharedCounterId: 'root' });
+    expect(taskToSquareData(root).countKind).toBe('continuous');
+    expect(taskToSquareData(linked, undefined, { root, lk: linked }).countKind).toBe('continuous');
+    expect(taskToSquareData(counting({ id: 'plain' })).countKind).toBe('discrete');
+    expect(taskToSquareData(makeLifetimeCompleteTask('n')).countKind).toBeUndefined();
+  });
+});

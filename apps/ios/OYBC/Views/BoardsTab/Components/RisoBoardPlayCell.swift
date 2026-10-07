@@ -36,6 +36,9 @@ struct RisoBoardPlayCell: View {
     // Counting cells
     var currentCount: CountValue = 0
     var maxCount: CountValue = 0
+    /// The counter FAMILY's kind (`resolveFamilyCountKind` — a linked row
+    /// follows its root, R19): formats the ×goal tag, the bar and VoiceOver.
+    var countKind: CountKind = .discrete
     /// True when this counting square belongs to a shared-counter group (source or linked).
     /// Renders the ↔ shared marker (two stacked dots) on not-yet-completed counting cells.
     var isSharedCounter: Bool = false
@@ -125,7 +128,7 @@ struct RisoBoardPlayCell: View {
         // Corner chips overhang the cell edge, so a chipped cell sits above
         // its neighbours (below a bingo ring, which overhangs further).
         .overlay(alignment: .topTrailing) { cornerChips }
-        .zIndex(isBingoLine ? 3 : (showsLockChip || showsDirtyChip) ? 2 : isCompleted ? 1 : 0)
+        .zIndex(cellZIndex)
         .contentShape(Rectangle())
         .onTapGesture {
             guard !isInteractionLocked, !isCenter else { return }
@@ -137,8 +140,22 @@ struct RisoBoardPlayCell: View {
         // actionable element).
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(accessibilityLabel)
-        .accessibilityAddTraits((isCenter || isInteractionLocked) ? [] : .isButton)
-        .accessibilityAddTraits(isCompleted ? .isSelected : [])
+        .accessibilityAddTraits(buttonTraits)
+        .accessibilityAddTraits(selectedTraits)
+    }
+
+    private var cellZIndex: Double {
+        if isBingoLine { return 3 }
+        if showsLockChip || showsDirtyChip { return 2 }
+        return isCompleted ? 1 : 0
+    }
+
+    private var buttonTraits: AccessibilityTraits {
+        (isCenter || isInteractionLocked) ? [] : .isButton
+    }
+
+    private var selectedTraits: AccessibilityTraits {
+        isCompleted ? .isSelected : []
     }
 
     /// VoiceOver label: task name + type-appropriate progress/state, plus the
@@ -155,7 +172,7 @@ struct RisoBoardPlayCell: View {
         switch taskType {
         case .counting:
             let sharedSuffix = isSharedCounter ? ", shared counter" : ""
-            return "\(title), counting, \(formatCount(currentCount, kind: .discrete)) of \(formatCount(maxCount, kind: .discrete))\(sharedSuffix)"
+            return "\(title), counting, \(formatCount(currentCount, kind: countKind)) of \(formatCount(maxCount, kind: countKind))\(sharedSuffix)"
         case .compound:
             // Same operator-aware target as the visual bar, so VoiceOver
             // never contradicts it (e.g. "1 of 4" on a complete Any-of cell).
@@ -248,7 +265,7 @@ struct RisoBoardPlayCell: View {
 
             // Type tag — top-left (counting or compound; hidden on done counting → blue bg)
             if taskType == .counting {
-                Text("×\(formatCount(maxCount, kind: .discrete))")
+                Text("×\(formatCount(maxCount, kind: countKind))")
                     .font(.risoHead(7, .extraBold))
                     .foregroundStyle(Color.risoPaper)
                     .padding(.horizontal, 4)
@@ -338,7 +355,8 @@ struct RisoBoardPlayCell: View {
         let (cur, max, color): (CountValue, CountValue, Color) = {
             switch taskType {
             case .counting:
-                return (currentCount, maxCount, Color.risoBlue)
+                // Overshoot keeps its real value (never clamped) on a GOLD fill.
+                return (currentCount, maxCount, isOvershoot ? Color.risoGold : Color.risoBlue)
             case .compound:
                 // Denominator = the operator's completion target, so an
                 // "Any of" square reads 1/1 (not 1/4) once any child is done.
@@ -361,19 +379,17 @@ struct RisoBoardPlayCell: View {
                 }
             }
             // The count rides at the cell's own text step (the 9pt title /
-            // FREE label), never below it: the old 6pt system-font count was
-            // illegible. When the bar is too narrow (or Dynamic Type grows
-            // the text past it) the count is HIDDEN rather than shrunk —
-            // the fill still reads, and VoiceOver's cell label always
-            // carries "n of m".
+            // FREE label), never below it. Tiers (docs/COUNTER_KINDS.md §5):
+            // `cur/max`, else `cur` (the ×tag already carries the goal), else
+            // fill only — never shrunk; VoiceOver always carries "n of m".
             ViewThatFits(in: [.horizontal, .vertical]) {
-                Text("\(formatCount(cur, kind: .discrete))/\(formatCount(max, kind: .discrete))")
-                    .font(.risoHead(9, .extraBold))
-                    .foregroundStyle(Color.risoInk)
-                    .lineLimit(1)
-                    .fixedSize()
+                barText("\(formatCount(cur, kind: barKind))/\(formatCount(max, kind: barKind))")
+                barText(formatCount(cur, kind: barKind))
                 Color.clear.frame(width: 0, height: 0)
             }
+            // A tier fits only inside the keyline + a 3pt inset per side
+            // (handoff C1 `barInner`), never under the capsule's round ends.
+            .padding(.horizontal, 1.5 + 3)
             .frame(maxWidth: .infinity)
         }
         .clipShape(Capsule())
@@ -383,7 +399,26 @@ struct RisoBoardPlayCell: View {
         .frame(height: 13)
     }
 
+    /// One bar-text tier. On the gold overshoot fill the ink is static —
+    /// adaptive `risoInk` turns cream in dark mode and vanishes on gold.
+    private func barText(_ text: String) -> some View {
+        Text(text)
+            .font(.risoHead(9, .extraBold))
+            .foregroundStyle(isOvershoot ? Color.risoInkStatic : Color.risoInk)
+            .lineLimit(1)
+            .fixedSize()
+    }
+
     // MARK: - Computed style helpers
+
+    /// The bar's format kind: the family kind for counting, plain integers
+    /// for a compound's child tally.
+    private var barKind: CountKind { taskType == .counting ? countKind : .discrete }
+
+    /// A counting square logged past its goal.
+    private var isOvershoot: Bool {
+        taskType == .counting && maxCount > 0 && currentCount > maxCount
+    }
 
     private var cellFill: Color {
         // Non-inverting ink: the center cell's content is gold (star + "FREE"),

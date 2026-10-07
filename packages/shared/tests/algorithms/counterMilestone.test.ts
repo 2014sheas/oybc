@@ -70,3 +70,22 @@ describe('counterMilestoneProgress (fractional lifetimes)', () => {
     expect(counterMilestoneProgress(0.1 + 0.2).remaining).toBe(99.7);
   });
 });
+
+describe('counterMilestoneProgress — Duration (hours ladder)', () => {
+  it('112h 15m climbs to 250h', () => {
+    const r = counterMilestoneProgress(6735, 'duration');
+    expect(r.next).toBe(15_000);
+    expect(r.remaining).toBe(8265);
+    expect(r.fraction).toBeCloseTo(6735 / 15_000, 6);
+  });
+  it('exactly 100h moves to the next rung (250h)', () => {
+    expect(counterMilestoneProgress(6000, 'duration').next).toBe(15_000);
+  });
+  it('0m starts at 100h', () => {
+    expect(counterMilestoneProgress(0, 'duration').next).toBe(6000);
+  });
+  it('Continuous and Discrete share the ladder', () => {
+    expect(counterMilestoneProgress(148.6, 'continuous').next).toBe(250);
+    expect(counterMilestoneProgress(148.6).next).toBe(250);
+  });
+});

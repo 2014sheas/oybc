@@ -82,6 +82,9 @@ struct SharedCounterGroup: Identifiable {
     let boardCount: Int
     /// Member tasks that are counting now (active board).
     let activeTaskCount: Int
+    /// The family's kind (the source's — D5). Declared last, defaulted, so
+    /// existing memberwise call sites compile unchanged.
+    var countKind: CountKind = .discrete
 }
 
 // MARK: - Member visibility (B3, RC9)
@@ -355,7 +358,8 @@ func buildSharedCounterGroups(
             tasks: memberViews,
             taskCount: memberViews.count,
             boardCount: boardIdSet.count,
-            activeTaskCount: activeCount
+            activeTaskCount: activeCount,
+            countKind: resolveCountKind(source.countKind)
         ))
     }
 

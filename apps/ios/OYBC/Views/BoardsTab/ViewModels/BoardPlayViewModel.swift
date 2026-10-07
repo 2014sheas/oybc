@@ -352,7 +352,9 @@ final class BoardPlayViewModel: ObservableObject {
     /// mid-sequence could hand this reload a torn snapshot (e.g. a board
     /// whose `completedLineIds` reflects a just-pulled rearrange but whose
     /// `boardTasks` still reflect the pre-pull placements).
-    func reload() {
+    /// - Parameter done: Runs on the main queue once this reload has applied (or been superseded) —
+    ///   orchestrations clear `isProcessing` here, so a next tap never reads pre-write state.
+    func reload(then done: (() -> Void)? = nil) {
         reloadToken += 1
         let token = reloadToken
         let boardId = self.boardId
@@ -363,6 +365,7 @@ final class BoardPlayViewModel: ObservableObject {
             guard let self = self else { return }
             let snapshot = Self.fetchSnapshot(boardId: boardId, userId: userId, database: database)
             DispatchQueue.main.async {
+                defer { done?() }
                 guard token == self.reloadToken else { return }
                 self.board = snapshot.board
                 self.apply(snapshot.payload)
@@ -465,7 +468,7 @@ final class BoardPlayViewModel: ObservableObject {
     /// it doesn't participate in any shared-counter group. R3: extracted out
     /// of `handleCountingTap`/`handleCountingDecrement` so `BoardPlayView`
     /// (chip visibility in `RisoCountingStepperSheet`, the context-menu
-    /// default amount, `sharedStepperHint`) shares the exact same detection
+    /// default amount, the shared-cell marker) shares the exact same detection
     /// instead of re-deriving it — three call sites were re-implementing
     /// this before R3.
     ///
@@ -496,10 +499,10 @@ final class BoardPlayViewModel: ObservableObject {
     ///      high-end clamp) and one-way-latch invariants inside a single
     ///      GRDB write transaction.
     ///  (c) Standalone counter (no shared link): falls through to the legacy
-    ///      `runOrchestration` path, `amount`-aware since R3 too (still
-    ///      always 1 from every current standalone call site — the R3
-    ///      amount-chip UI is shared-counter-squares-only per the copy
-    ///      contract).
+    ///      `runOrchestration` path, `amount`-aware (a Continuous / Duration
+    ///      square logs its sheet amount; a custom one becomes the task's
+    ///      own `defaultLogAmount` — counter kinds §5; Discrete standalone
+    ///      squares always pass 1).
     ///
     /// - Parameters:
     ///   - boardTask: The counting task's `BoardTask` record.
@@ -521,7 +524,7 @@ final class BoardPlayViewModel: ObservableObject {
             runSharedCounterIncrement(
                 sourceTaskId: sourceId,
                 counterName: counterName,
-                unit: unit,
+                unit: unit, kind: resolveCountKind(sourceTask?.countKind),
                 amount: amount,
                 persistAsDefault: persistAsDefault
             )
@@ -537,8 +540,8 @@ final class BoardPlayViewModel: ObservableObject {
         let windowed = windowedState(forTaskId: boardTask.taskId)
         runOrchestration(
             taskId: boardTask.taskId,
-            intent: .setWindowedCount(windowed.count + amount),
-            boardTask: boardTask
+            intent: .setWindowedCount(quantizeCount(windowed.count + amount)),
+            boardTask: boardTask, persistDefault: persistAsDefault ? amount : nil
         )
     }
 
@@ -561,7 +564,7 @@ final class BoardPlayViewModel: ObservableObject {
     private func runSharedCounterIncrement(
         sourceTaskId: String,
         counterName: String = "",
-        unit: String = "",
+        unit: String = "", kind: CountKind = .discrete,
         amount: CountValue = 1,
         persistAsDefault: Bool = false
     ) {
@@ -626,14 +629,13 @@ final class BoardPlayViewModel: ObservableObject {
                         amount: amount,
                         unit: unit,
                         isIncrement: true,
-                        message: self.sharedCreditToastText(
-                            counterName: counterName, amount: amount, otherBoards: otherBoards, isIncrement: true
+                        message: Self.sharedCreditToastText(
+                            counterName: counterName, amount: amount, kind: kind, otherBoards: otherBoards, isIncrement: true
                         )
                     )
 
                 await MainActor.run {
-                    self.isProcessing = false
-                    self.reload()
+                    self.reload { self.isProcessing = false }
                     if let msg = newBingoMsg {
                         self.bingoMessage = msg
                         self.scheduleBingoMessageDismiss(msg)
@@ -669,7 +671,7 @@ final class BoardPlayViewModel: ObservableObject {
     private func runSharedCounterDecrement(
         sourceTaskId: String,
         counterName: String = "",
-        unit: String = "",
+        unit: String = "", kind: CountKind = .discrete,
         amount: CountValue = 1,
         persistAsDefault: Bool = false
     ) {
@@ -734,17 +736,16 @@ final class BoardPlayViewModel: ObservableObject {
                         amount: decrementResult.effectiveDelta,
                         unit: unit,
                         isIncrement: false,
-                        message: self.sharedCreditToastText(
+                        message: Self.sharedCreditToastText(
                             counterName: counterName,
-                            amount: decrementResult.effectiveDelta,
+                            amount: decrementResult.effectiveDelta, kind: kind,
                             otherBoards: otherBoards,
                             isIncrement: false
                         )
                     )
 
                 await MainActor.run {
-                    self.isProcessing = false
-                    self.reload()
+                    self.reload { self.isProcessing = false }
                     if let msg = newBingoMsg {
                         self.bingoMessage = msg
                         self.scheduleBingoMessageDismiss(msg)
@@ -839,7 +840,7 @@ final class BoardPlayViewModel: ObservableObject {
             runSharedCounterDecrement(
                 sourceTaskId: sourceId,
                 counterName: counterName,
-                unit: unit,
+                unit: unit, kind: resolveCountKind(sourceTask?.countKind),
                 amount: amount,
                 persistAsDefault: persistAsDefault
             )
@@ -855,8 +856,8 @@ final class BoardPlayViewModel: ObservableObject {
         let windowed = windowedState(forTaskId: boardTask.taskId)
         runOrchestration(
             taskId: boardTask.taskId,
-            intent: .setWindowedCount(max(windowed.count - amount, 0)),
-            boardTask: boardTask
+            intent: .setWindowedCount(max(quantizeCount(windowed.count - amount), 0)),
+            boardTask: boardTask, persistDefault: persistAsDefault ? amount : nil
         )
     }
 
@@ -927,8 +928,7 @@ final class BoardPlayViewModel: ObservableObject {
                     }
                 }
                 await MainActor.run {
-                    self.isProcessing = false
-                    self.reload()
+                    self.reload { self.isProcessing = false }
                     if let msg = newBingoMsg {
                         self.bingoMessage = msg
                         self.scheduleBingoMessageDismiss(msg)
@@ -970,10 +970,11 @@ final class BoardPlayViewModel: ObservableObject {
     ///   - updatedTask: The already-mutated `Task` carrying new completion state.
     ///   - boardTask: The `BoardTask` placement record on the current board
     ///     (updatedAt/version will be bumped + sync-queued).
+    ///   - persistDefault: R3 — an explicit custom amount to save as the task's default, off the main actor.
     private func runOrchestration(
         taskId: String,
         intent: AppDatabase.CompletionIntent,
-        boardTask: BoardTask
+        boardTask: BoardTask, persistDefault: CountValue? = nil
     ) {
         guard let board = board else { return }
         isProcessing = true
@@ -999,6 +1000,7 @@ final class BoardPlayViewModel: ObservableObject {
                     boardTask: boardTask,
                     now: now
                 )
+                if let amount = persistDefault { do { try database.setCounterDefaultLogAmount(sourceTaskId: taskId, amount: amount) } catch { dlog("BoardPlayVM: persist default failed: \(error)") } }
 
                 // Surface a flash message for the *current* board only.
                 // Other affected boards still updated stats — they just
@@ -1019,12 +1021,11 @@ final class BoardPlayViewModel: ObservableObject {
 
                 // Refresh UI on main thread.
                 await MainActor.run {
-                    self.isProcessing = false
                     // Full reload: board + placements + workspace task data. The
                     // task-data refresh keeps the compound detail sheet (rendered
                     // from taskMap + compoundChildrenByCompound) in sync with the
                     // latest child-toggle state without a dismiss-and-reopen.
-                    self.reload()
+                    self.reload { self.isProcessing = false }
                     if let msg = newBingoMsg {
                         self.bingoMessage = msg
                         self.scheduleBingoMessageDismiss(msg)
@@ -1063,18 +1064,15 @@ final class BoardPlayViewModel: ObservableObject {
     ///   - amount: The amount just logged/removed (matches what Undo will reverse).
     ///   - otherBoards: Boards OTHER than the current board that were credited.
     ///   - isIncrement: `true` for increment, `false` for decrement.
-    private nonisolated func sharedCreditToastText(
+    nonisolated static func sharedCreditToastText(
         counterName: String,
-        amount: CountValue,
+        amount: CountValue, kind: CountKind,
         otherBoards: [AppDatabase.AffectedBoard],
         isIncrement: Bool
     ) -> String {
-        let boardNames = otherBoards.map { $0.boardName }.joined(separator: ", "), amountText = formatCount(amount, kind: .discrete)
-        if isIncrement {
-            return "+\(amountText) \(counterName) — also counted on \(boardNames)."
-        } else {
-            return "−\(amountText) \(counterName) — also removed from \(boardNames)."
-        }
+        let boardNames = otherBoards.map { $0.boardName }.joined(separator: ", ")
+        let (sign, phrase) = isIncrement ? ("+", "also counted on") : ("−", "also removed from")
+        return "\(sign)\(formatCount(amount, kind: kind)) \(counterName) — \(phrase) \(boardNames)."
     }
 
     /// Publishes a one-shot `flashEvent` the view observes to fire its

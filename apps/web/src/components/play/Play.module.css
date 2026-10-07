@@ -165,21 +165,6 @@
   clip-path: polygon(50% 0, 61% 35%, 98% 35%, 68% 57%, 79% 91%, 50% 70%, 21% 91%, 32% 57%, 2% 35%, 39% 35%);
 }
 
-.hint {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--riso-muted);
-  line-height: 1.5;
-  border: 2px dashed var(--riso-ink);
-  border-radius: var(--riso-r-card);
-  padding: 12px 14px;
-  text-wrap: pretty;
-}
-.hint b {
-  color: var(--riso-ink);
-  font-family: var(--riso-font-head);
-}
-
 .boardWrap {
   position: relative;
 }
@@ -432,7 +417,7 @@
 .savedToast {
   position: fixed;
   left: 50%;
-  bottom: 34px;
+  bottom: calc(34px + var(--app-bottom-nav-h, 0px));
   transform: translateX(-50%);
   z-index: 120;
   display: flex;

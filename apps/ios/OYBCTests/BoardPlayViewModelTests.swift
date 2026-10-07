@@ -484,6 +484,75 @@ final class BoardPlayViewModelTests: XCTestCase {
         XCTAssertFalse(c1.isCompleted, "1 of 3 is not complete")
     }
 
+    /// Counter kinds §5 — a standalone Continuous square remembers an explicit
+    /// custom amount as its own `defaultLogAmount`; a chip amount never does.
+    func test_handleCountingTap_standaloneContinuous_persistsOnlyACustomAmount() throws {
+        let db = try makeDb()
+        try seedUser(db)
+        try db.saveBoard(makeBoard(id: "b1"))
+        var c1 = makeCountingTask("c1", maxCount: 26.2, currentCount: 0)
+        c1.countKind = .continuous
+        try db.saveTask(c1)
+        try db.saveBoardTask(makeBoardTask(id: "bt-c1", boardId: "b1", taskId: "c1", row: 0, col: 0))
+
+        let vm = loadedVM(db, boardId: "b1")
+        let bt = try XCTUnwrap(vm.boardTasks.first { $0.taskId == "c1" })
+        let task = try XCTUnwrap(vm.taskMap["c1"])
+
+        vm.handleCountingTap(boardTask: bt, task: task, amount: 3.1, persistAsDefault: true)
+        XCTAssertTrue(waitUntil { self.dbTask(db, "c1")?.defaultLogAmount == 3.1 && !vm.isProcessing })
+        vm.handleCountingTap(boardTask: bt, task: task, amount: 6.6, persistAsDefault: false)
+        XCTAssertTrue(waitUntil { abs((self.dbTask(db, "c1")?.currentCount ?? 0) - 9.7) < 0.001 && !vm.isProcessing })
+        XCTAssertEqual(dbTask(db, "c1")?.defaultLogAmount, 3.1, "a chip amount never overwrites the default")
+    }
+
+    /// Sync safety — window 13.1 → setWindowedCount(16.2) must store delta 3.1,
+    /// not 3.0999999999999996 (which the pull schema's `isValidCountDelta` drops).
+    func test_setWindowedCount_storesAQuantizedDelta() throws {
+        let db = try makeDb()
+        try seedUser(db)
+        let board = makeBoard(id: "b1")
+        try db.saveBoard(board)
+        var c1 = makeCountingTask("c1", maxCount: 26.2, currentCount: 13.1)
+        c1.countKind = .continuous
+        try db.saveTask(c1)
+        let bt = makeBoardTask(id: "bt-c1", boardId: "b1", taskId: "c1", row: 0, col: 0)
+        try db.saveBoardTask(bt)
+        try db.write { db in
+            try TaskEvent(
+                id: "seed-c1", userId: "u1", taskId: "c1", kind: .increment, delta: 13.1,
+                occurredAt: "2026-06-25T00:00:00.000", boardId: nil,
+                createdAt: "2026-06-25T00:00:00.000", updatedAt: "2026-06-25T00:00:00.000",
+                lastSyncedAt: nil, version: 1, isDeleted: false, deletedAt: nil
+            ).save(db)
+        }
+
+        _ = try db.completeTaskOrchestrated(
+            board: board, taskId: "c1", intent: .setWindowedCount(16.2), boardTask: bt, now: "2026-06-26T00:00:00.000"
+        )
+
+        let added = try db.read { db in try TaskEvent.fetchAll(db) }.filter { $0.id != "seed-c1" }
+        XCTAssertEqual(added.count, 1)
+        XCTAssertEqual(added.first?.delta, 3.1)
+        XCTAssertTrue(isQuantizedCount(try XCTUnwrap(added.first?.delta)))
+    }
+
+    /// The low-level insert quantizes every delta, so no caller can write noise.
+    func test_insertIncrementEventRaw_quantizesTheDelta() throws {
+        let db = try makeDb()
+        try seedUser(db)
+        try db.saveTask(makeCountingTask("c1", maxCount: 26.2))
+        let wrote = try db.write { db in
+            try AppDatabase.insertIncrementEventRaw(db: db, taskId: "c1", delta: 16.2 - 13.1, boardId: nil, now: "2026-06-26T00:00:00.000")
+        }
+        let wroteZero = try db.write { db in
+            try AppDatabase.insertIncrementEventRaw(db: db, taskId: "c1", delta: 0.001, boardId: nil, now: "2026-06-26T00:00:00.000")
+        }
+        XCTAssertTrue(wrote)
+        XCTAssertFalse(wroteZero, "a delta that quantizes to 0 writes nothing")
+        XCTAssertEqual(try db.read { db in try TaskEvent.fetchAll(db) }.map(\.delta), [3.1])
+    }
+
     func test_handleCountingTap_standalone_completesAtGoal_thenDecrementUncompletes() throws {
         let db = try makeDb()
         try seedUser(db)

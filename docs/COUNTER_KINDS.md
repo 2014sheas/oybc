@@ -1,8 +1,10 @@
 # Counter kinds — Discrete · Continuous · Duration
 
-**Status:** PR 1 #551 and PR 2 #552 shipped (data + logic). Interface decided (Claude Design handoff
-`design_handoff_counter_kinds/`, gitignored; brief: [`docs/design/counter-kinds/BRIEF.md`](design/counter-kinds/BRIEF.md)) —
-PR 3 (authoring) and PR 4 (logging + display) are planned in [`docs/COUNTER_KINDS_UI_PLAN.md`](COUNTER_KINDS_UI_PLAN.md).
+**Status:** PR 1 #551, PR 2 #552, PR 3 #554, PR 4 #555 shipped — feature complete.
+Interface per the Claude Design handoff (`design_handoff_counter_kinds/`, gitignored; brief:
+[`docs/design/counter-kinds/BRIEF.md`](design/counter-kinds/BRIEF.md)); the UI train's plan is
+[`docs/COUNTER_KINDS_UI_PLAN.md`](COUNTER_KINDS_UI_PLAN.md). Kind-blind count formatting is held out by the
+`check-count-formatting` drift guard (CLAUDE.md §Drift guardrails).
 **Ships:** pre-launch, whole feature (owner decision 2026-10-06). Every PR lands
 web + iOS together (CLAUDE.md rule 6).
 
@@ -150,7 +152,12 @@ staged surfaces apply it inside their Save transaction.
 
 **Display (PR 4).** Every count goes through `formatCount` (2 dp max, trailing
 zeros trimmed, locale separator, Duration `Xh Ym` with zero parts dropped);
-lifetime totals use the grouped `formatCountTotal`. Board cells fit the bar
+lifetime totals use the grouped `formatCountTotal` — including Task Detail's
+counter-root row on a linked task (`{root title} · {lifetime} · ›`, no "Linked
+to" caption; nothing while loading or when the root is gone). The
+`check-count-formatting` drift guard (`scripts/audit/`) fails CI on a new
+hard-coded discrete kind or a raw `.formatted()` / `.toLocaleString()` on a
+counting value. Board cells fit the bar
 text in tiers — `cur/max` → `cur` → fill only; the `×goal` tag always carries
 the goal. Overshoot shows the real value with a **gold** bar fill (never
 clamped) — on board cells and on the web DetailModal's bar, where the handoff
@@ -170,16 +177,16 @@ draws it; hub / Counter Detail rows keep the green "met" fill. Vary ranges rende
 
 - ~~Interface details in the brief §3B~~ — decided in §5 (handoff + owner overrides, 2026-10-07).
 
-Carried to PR 3/4 (each closed by the named task in `docs/COUNTER_KINDS_UI_PLAN.md`):
+Carried to PR 3/4 — all closed (each by the named task in `docs/COUNTER_KINDS_UI_PLAN.md`):
 
-- Member-row steppers are `Int` (R8); UI callers do not pass the kind (R16). → **Task 5**
-- Kind-blind views format as discrete (R9). → **Tasks 13–20** (each surface's own task) + **Task 21** (sweep + `check-count-formatting` drift guard)
-- `.formatted()` grouping at 5 lifetime sites (R7). → **Task 1** (`formatCountTotal`) + **Tasks 7, 11, 17, 18, 21**
-- `AutoCreateCompoundChild` lacks `countKind`. → **Task 1** (type + schema) + **Task 7** (both create paths)
-- Previews of links to a continuous root must resolve the root's kind (R19). → **Task 6** (linked creates parse and stamp the root kind) + **Task 19** (`resolveFamilyCountKind` in every cell model, incl. the wizard preview)
-- `varyRangeLabel` / `countingSummary` duration copy. → **Task 1** (`formatCountRange`) + **Task 5**
-- iOS `switchCounterKind` cascades per row (perf). → **Task 8** (`runBoardCascadeForTasks`: each affected board derived once)
-- Digit/locale decision: counts use Latin digits (R10). → **Task 1** (parsers accept ASCII digits only; formatters stay `latn`)
+- ~~Member-row steppers are `Int` (R8); UI callers do not pass the kind (R16).~~ Closed by **Task 5**.
+- ~~Kind-blind views format as discrete (R9).~~ Closed by **Tasks 13–20** (each surface's own task) + **Task 21** (sweep + the `check-count-formatting` drift guard, so it stays fixed).
+- ~~`.formatted()` grouping at 5 lifetime sites (R7).~~ Closed by **Task 1** (`formatCountTotal`) + **Tasks 7, 11, 17, 18, 21** (Task 21 took the last site, the Task Detail counter-root row).
+- ~~`AutoCreateCompoundChild` lacks `countKind`.~~ Closed by **Task 1** (type + schema) + **Task 7** (both create paths).
+- ~~Previews of links to a continuous root must resolve the root's kind (R19).~~ Closed by **Task 6** (linked creates parse and stamp the root kind) + **Task 19** (`resolveFamilyCountKind` in every cell model, incl. the wizard preview).
+- ~~`varyRangeLabel` / `countingSummary` duration copy.~~ Closed by **Task 1** (`formatCountRange`) + **Task 5**.
+- ~~iOS `switchCounterKind` cascades per row (perf).~~ Closed by **Task 8** (`runBoardCascadeForTasks`: each affected board derived once).
+- ~~Digit/locale decision: counts use Latin digits (R10).~~ Closed by **Task 1** (parsers accept ASCII digits only; formatters stay `latn`).
 
 ## 8. Testing
 

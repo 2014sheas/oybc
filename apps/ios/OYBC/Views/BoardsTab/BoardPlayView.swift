@@ -155,7 +155,6 @@ struct BoardPlayView: View {
     // so the sheet always sees up-to-date data when opened.
     private var allBoardsInWorkspace: [Board] { viewModel.allBoardsInWorkspace }
     private var allTemplatesInWorkspace: [RecurringBoardTemplate] { viewModel.allTemplatesInWorkspace }
-    private var allBoardTasksInWorkspace: [BoardTask] { viewModel.allBoardTasksInWorkspace }
     // (The former `allPoolsInWorkspace` shim fed the spawn-provenance
     // note's `poolsById` lookup — that recompute moved into the VM's
     // `recomputeEditSpawnNote` with the repeat-in-edit rework.)
@@ -1075,58 +1074,6 @@ struct BoardPlayView: View {
         dismissArrivalBanner()
     }
 
-    /// Computes the "↔ Shared · also counts on …" hint shown in the stepper sheet
-    /// for a shared-counter task. Returns `nil` when the task is not in a shared group
-    /// or has no OTHER active boards to mention.
-    ///
-    /// - Parameter task: The `Task` backing the tapped counting square.
-    func sharedStepperHint(for task: Task) -> String? {
-        // R3: source detection extracted to `viewModel.sharedCounterSourceId(for:)`
-        // — shares the exact same rule as the tap-routing handlers and the
-        // chip-visibility gate below, instead of re-deriving it a third time.
-        guard task.type == .counting, let sourceId = viewModel.sharedCounterSourceId(for: task) else {
-            return nil
-        }
-
-        // Collect all member task ids (source + linked).
-        let memberIds: Set<String> = {
-            var ids = Set<String>([sourceId])
-            for t in allTasks where t.sharedCounterId == sourceId && !t.isDeleted {
-                ids.insert(t.id)
-            }
-            return ids
-        }()
-
-        // Find ACTIVE boards (other than the current board) where any member is placed.
-        let currentBid = board?.id
-        var seenBoardIds = Set<String>()
-        if let cid = currentBid { seenBoardIds.insert(cid) }
-        var otherBoardNames: [String] = []
-        for bt in allBoardTasksInWorkspace {
-            guard memberIds.contains(bt.taskId),
-                  !seenBoardIds.contains(bt.boardId)
-            else { continue }
-            // Only boards a log can still change, via a row live for its window.
-            let nowIso = AppDatabase.currentTimestamp()
-            if let b = allBoardsInWorkspace.first(where: { $0.id == bt.boardId }),
-               AppDatabase.boardCanStillCountLogs(b, now: nowIso),
-               !(allTasks.first(where: { $0.id == bt.taskId }).map { BoardSources.isFrozenDerivedRow($0, now: nowIso) } ?? false) {
-                seenBoardIds.insert(b.id)
-                otherBoardNames.append(b.displayName)
-            }
-        }
-        guard !otherBoardNames.isEmpty else { return nil }
-        otherBoardNames.sort()  // stable order
-
-        if otherBoardNames.count == 1 {
-            return "↔ Shared · also counts on \(otherBoardNames[0])"
-        } else {
-            let first = otherBoardNames[0]
-            let more = otherBoardNames.count - 1
-            return "↔ Shared · also counts on \(first) + \(more) more"
-        }
-    }
-
     /// Computes the greenlog streak for the current board (core boards only) and
     /// stores a compact label in `greenlogStreakValue` for the overlay + poster.
     /// Non-core boards → nil (the STREAK card hides). Reads boards off-main.
@@ -1155,43 +1102,42 @@ struct BoardPlayView: View {
     @ViewBuilder
     private var risoGridSection: some View {
         let highlighted = highlightedSquareIndices
-
-        // Slice 1 — the shared grid layout (same as the edit panel's grid).
         RisoBoardGrid(gridSize: gridSize) { row, col, index in
-            let isCenter = gridSize % 2 == 1
-                && row == gridSize / 2
-                && col == gridSize / 2
-
-            if let bt = btByPosition["\(row)-\(col)"] {
-                risoPlaySquare(boardTask: bt, index: index, highlighted: highlighted)
-            } else if isCenter,
-                      let b = board,
-                      CenterSquare.effectiveCenter(b.centerSquareType) == .free {
-                // FREE center cell — gold label, not interactive in play mode.
-                // Deliberately NOT getCenterDisplayText, which returns
-                // "FREE SPACE" — this cell matches the edit grid's FREE
-                // face, which uses the shorter "FREE".
-                RisoBoardPlayCell(
-                    title: "FREE",
-                    taskType: .normal,
-                    isCompleted: false,
-                    isBingoLine: highlighted.contains(index),
-                    isCenter: true
-                )
-            } else {
-                // Board Edit redesign slice 3 (D17) — the play-mode "+" is
-                // retired. Every empty square (center included, once its
-                // type is `.none`) renders as a plain dashed square; adding
-                // a task is staged in the squares editor now.
-                RoundedRectangle(cornerRadius: Riso.cellRadius)
-                    .strokeBorder(
-                        Color.risoInk.opacity(0.35),
-                        style: StrokeStyle(lineWidth: 1.5, dash: [6, 4])
-                    )
-                    .aspectRatio(1, contentMode: .fit)
-            }
+            risoGridCell(row: row, col: col, index: index, highlighted: highlighted)
         }
         .padding(.bottom, 8)
+    }
+
+    /// One play-grid cell (extracted from the closure for type-check speed).
+    @ViewBuilder
+    private func risoGridCell(row: Int, col: Int, index: Int, highlighted: Set<Int>) -> some View {
+        let mid: Int = gridSize / 2
+        let isCenter: Bool = gridSize % 2 == 1 && row == mid && col == mid
+
+        if let bt = btByPosition["\(row)-\(col)"] {
+            risoPlaySquare(boardTask: bt, index: index, highlighted: highlighted)
+        } else if isCenter,
+                  let b = board,
+                  CenterSquare.effectiveCenter(b.centerSquareType) == .free {
+            // FREE center — gold, inert. Not getCenterDisplayText ("FREE SPACE"):
+            // matches the edit grid's shorter "FREE" face.
+            RisoBoardPlayCell(
+                title: "FREE",
+                taskType: .normal,
+                isCompleted: false,
+                isBingoLine: highlighted.contains(index),
+                isCenter: true
+            )
+        } else {
+            // D17 — no play-mode "+": every empty square (center too, once
+            // `.none`) is a plain dashed square; adding is staged in Edit.
+            RoundedRectangle(cornerRadius: Riso.cellRadius)
+                .strokeBorder(
+                    Color.risoInk.opacity(0.35),
+                    style: StrokeStyle(lineWidth: 1.5, dash: [6, 4])
+                )
+                .aspectRatio(1, contentMode: .fit)
+        }
     }
 
     // MARK: - Riso Play Square
@@ -1254,7 +1200,7 @@ struct BoardPlayView: View {
         // for a promoted zero-link counter (`isCounter == true`) — mirrors web
         // `useBoardPlayData.ts`'s `sharedCounterSourceIds` set exactly. R3:
         // routed through `viewModel.sharedCounterSourceId(for:)` (single
-        // source of truth for this detection, shared with `sharedStepperHint`
+        // source of truth for this detection, shared with the stepper sheet
         // and the tap-routing handlers).
         let isSharedCounterCell: Bool = {
             guard let t = task, t.type == .counting else { return false }
@@ -1328,6 +1274,7 @@ struct BoardPlayView: View {
             showsLockChip: effectiveLockChip,
             currentCount: current,
             maxCount: maxVal,
+            countKind: task.map { resolveFamilyCountKind($0, lookup: { taskMap[$0] }) } ?? .discrete,
             isSharedCounter: isSharedCounterCell,
             compoundDoneCount: compoundDoneCount,
             compoundChildCount: compoundLinks.count,
@@ -1396,22 +1343,24 @@ struct BoardPlayView: View {
 
         case .counting:
             if let t = task {
-                let actionLabel = t.action ?? "item"
-                // R3: shared counting squares use the counter's persisted
-                // default amount for this quick single-tap action (was
-                // hardcoded +1/-1) — the "#" custom entry still lives in the
-                // stepper sheet's chip row; this menu quick-action never
-                // persists a new default (mirrors the sheet's plain-tap rule).
-                let quickAmount = viewModel.sharedCounterSourceId(for: t).flatMap { taskMap[$0]?.defaultLogAmount } ?? 1
-                let quickAmountText = formatCount(quickAmount, kind: resolveCountKind(t.countKind))
-                Button("+ Add \(quickAmountText) \(actionLabel)", systemImage: "plus") {
+                let kind = resolveFamilyCountKind(t, lookup: { taskMap[$0] })
+                let source = viewModel.sharedCounterSourceId(for: t).flatMap { taskMap[$0] }
+                // Discrete keeps the shared source's default (else 1); the
+                // new kinds remember per task. Never persists a new default.
+                let remembered = kind == .discrete ? source?.defaultLogAmount : (source ?? t).defaultLogAmount
+                let chips = CounterLogAmount.boardSheetChips(kind: kind, goal: t.maxCount ?? 0)
+                let quickAmount = CounterLogAmount.quickAmount(kind: kind, chips: chips, defaultLogAmount: remembered)
+                Button(CountingMenuLabels.add(amount: quickAmount, kind: kind, unit: t.unit ?? "", action: t.action ?? "item"), systemImage: "plus") {
                     guard !isBoardLocked else { return }
                     viewModel.handleCountingTap(boardTask: boardTask, task: t, amount: quickAmount)
                 }
-                // No maxVal gate — overshoot is a feature (never clamp);
-                // matches the cell-tap stepper + detail-sheet stepper.
+                // No maxVal gate — overshoot is a feature (never clamp).
                 .disabled(isProcessing || isBoardLocked)
-                Button("− Remove \(quickAmountText) \(actionLabel)", systemImage: "minus") {
+                if kind != .discrete {
+                    Button(CountingMenuLabels.customAmount, systemImage: "number") { countingStepperBoardTaskId = boardTask.id }
+                        .disabled(isBoardLocked)
+                }
+                Button(CountingMenuLabels.remove(amount: quickAmount, kind: kind, unit: t.unit ?? "", action: t.action ?? "item"), systemImage: "minus") {
                     guard !isBoardLocked else { return }
                     viewModel.handleCountingDecrement(boardTask: boardTask, task: t, amount: quickAmount)
                 }
@@ -1777,12 +1726,6 @@ struct BoardPlayView: View {
                 }
             }
         }
-
-        Text("Completion applies to all boards where this task appears.")
-            .font(.risoBody(12, .regular))
-            .foregroundStyle(Color.risoMuted)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, 4)
     }
 
     /// Phase 6.3 — detail content for an ACHIEVEMENT-typed Task.
@@ -1880,12 +1823,6 @@ struct BoardPlayView: View {
                     .foregroundStyle(Color.risoMuted)
             }
         }
-
-        Text("Derived from the watched target; the cell cannot be toggled directly.")
-            .font(.risoBody(12, .regular))
-            .foregroundStyle(Color.risoMuted)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, 4)
     }
 
     // MARK: - Interaction handlers moved to BoardPlayViewModel (B2-I2)

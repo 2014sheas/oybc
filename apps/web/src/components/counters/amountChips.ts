@@ -1,3 +1,5 @@
+import { boardSheetChips, hubChips, parseCountInput, type CountKind } from '@oybc/shared';
+
 /**
  * amountChips.ts — pure helpers backing the Counter Detail Log card's
  * amount-chip row (R2 Counters UX refresh — design handoff §Counter Detail,
@@ -18,70 +20,38 @@ export interface AmountChipOption {
 }
 
 /**
- * Builds the fixed four-chip row: `1`, the counter's current default
- * amount, `25`, and the custom "#" chip.
+ * The Counter Detail Log card's chip row — thin wrapper over the shared
+ * `hubChips` (`logAmounts.ts`). Discrete: `1 · 10 · 25 · #`.
  *
- * `defaultAmount` is rendered verbatim even when it collides with `1` or
- * `25` (e.g. a fresh counter defaults to `1`) — the design's chip set is a
- * fixed four positions, not a deduped set; a collision just means two
- * chips show the same number, which is harmless (both log the same
- * amount).
- *
- * @param defaultAmount The counter's current default log amount (positive
- *   integer; callers pass `group.defaultLogAmount ?? 1`).
+ * @param kind - The counter's kind (default Discrete).
+ * @returns The chips, ending in the custom `#`.
  */
-export function buildAmountChipOptions(): AmountChipOption[] {
-  // FIXED presets (owner decision, 2026-07-21): no dynamic "{default}" chip —
-  // it collided with the fixed values (a fresh counter's default is 1) and
-  // read as a bug on device. The per-counter default still drives the plain
-  // board tap, the Hub "+ Log" pill, and what "#" persists; it just doesn't
-  // get its own chip. Matches the handoff mock's literal "1 / 10 / 25 / #".
-  return [
-    { value: 1, label: '1' },
-    { value: 10, label: '10' },
-    { value: 25, label: '25' },
-    { value: null, label: '#' },
-  ];
+export function buildAmountChipOptions(kind: CountKind = 'discrete'): AmountChipOption[] {
+  return hubChips(kind);
 }
-
 
 /**
- * Builds the board-play square quick-action chip row (R3 — Counters Refresh
- * board-play touchpoints): `1`, the counter's current default amount, and
- * the custom "#" chip.
+ * The board-play square's chip row — thin wrapper over the shared
+ * `boardSheetChips`. Discrete: `+1 · +10 · #`; otherwise ¼ · ½ · goal · #.
  *
- * Deliberately a 3-position row, unlike `buildAmountChipOptions`'s 4 (no
- * fixed `25` chip) — the handoff spec's board-square mock shows only
- * `1 / {default} / #` for the in-context quick actions on a shared counting
- * square's detail modal / context menu; the full `1 / {default} / 25 / #`
- * row stays exclusive to Counter Detail's Log card.
- *
- * @param defaultAmount The counter's current default log amount (positive
- *   integer; callers pass the source task's `defaultLogAmount ?? 1`).
+ * @param kind - The counter's kind (default Discrete).
+ * @param goal - The square's goal (ignored for Discrete).
+ * @returns The chips, ending in the custom `#`.
  */
-export function buildBoardQuickAmountOptions(): AmountChipOption[] {
-  // FIXED signed presets (owner decision, 2026-07-21) — see
-  // buildAmountChipOptions; board row stays 3-position (no 25).
-  return [
-    { value: 1, label: '+1' },
-    { value: 10, label: '+10' },
-    { value: null, label: '#' },
-  ];
+export function buildBoardQuickAmountOptions(kind: CountKind = 'discrete', goal = 0): AmountChipOption[] {
+  return boardSheetChips(kind, goal);
 }
 
-/** The fixed preset amounts backing both chip rows (excludes the custom "#"). */
+/** The fixed Discrete preset amounts (excludes the custom "#"). */
 export const PRESET_LOG_AMOUNTS = [1, 10, 25] as const;
 
 /**
- * The chip to pre-select when a picker opens: the counter's remembered
- * `defaultLogAmount` when it happens to be a preset (so a habitual amount is
- * one tap away), otherwise `1` — the fixed rows have no dynamic chip to
- * carry an off-preset default, and a non-preset initial value would leave no
- * chip highlighted. `1` is the fallback because it matches the one-tap
- * board paths (plain tap, Hub "+ Log" pill), which log `defaultLogAmount ?? 1`;
- * a fresh counter must not open on `+10` when everything else about it
- * steps by one. (The remembered default still drives those one-tap paths
- * independent of this.)
+ * The Discrete chip to pre-select when a picker opens: the remembered
+ * `defaultLogAmount` when it is a preset, otherwise `1`. (Continuous /
+ * Duration use the shared `initialLogSelection`.)
+ *
+ * @param defaultLogAmount - The counter's remembered default.
+ * @returns The amount to pre-select.
  */
 export function initialChipAmount(defaultLogAmount: number | null | undefined): number {
   return defaultLogAmount != null && (PRESET_LOG_AMOUNTS as readonly number[]).includes(defaultLogAmount)
@@ -90,19 +60,14 @@ export function initialChipAmount(defaultLogAmount: number | null | undefined): 
 }
 
 /**
- * Validates a raw custom-amount input string into a positive integer, or
- * `null` when the input isn't one (empty, non-numeric, zero, negative,
- * fractional, or leading/trailing junk).
+ * Parses a raw custom-amount string at the kind (Discrete: a positive
+ * integer; Continuous: up to 2 dp with `.` or `,`; Duration: minutes or
+ * `1h 30m`). Delegates to the shared `parseCountInput`.
  *
- * Intentionally strict (`^\d+$` on the trimmed string) — no leading `+`/`-`,
- * no decimal point, no scientific notation, no whitespace mid-string.
- *
- * @param raw The custom-input field's current text value.
+ * @param raw - The custom-input field's text.
+ * @param kind - The counter's kind (default Discrete).
+ * @returns The positive amount, or `null`.
  */
-export function parseCustomLogAmount(raw: string): number | null {
-  const trimmed = raw.trim();
-  if (!/^\d+$/.test(trimmed)) return null;
-  const n = Number(trimmed);
-  if (!Number.isInteger(n) || n <= 0) return null;
-  return n;
+export function parseCustomLogAmount(raw: string, kind: CountKind = 'discrete'): number | null {
+  return parseCountInput(raw, kind);
 }

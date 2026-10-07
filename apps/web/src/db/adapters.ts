@@ -4,6 +4,7 @@ import {
   isEventOwningTask,
   isWindowStampedDerived,
   resolveDerivedCounterWindowState,
+  resolveFamilyCountKind,
   resolveLinkedCounterDisplay,
   resolveTaskWindowState,
   resolveWindowStampedDerivedState,
@@ -217,6 +218,8 @@ export function taskToSquareData(
     action: task.action ?? undefined,
     maxCount: task.maxCount ?? undefined,
     unit: task.unit ?? undefined,
+    // Counter kinds — a linked row follows its root's kind (D5).
+    ...(type === 'counting' ? { countKind: resolveFamilyCountKind(task, (id) => taskMap?.[id]) } : {}),
     // Phase 3 — Shared Counters: map link fields so the render layer can
     // (a) derive the displayed count via `resolveLinkedCounterDisplay`,
     // and (b) gate decrement/reset actions for linked derived counters.

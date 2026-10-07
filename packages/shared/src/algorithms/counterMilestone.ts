@@ -12,7 +12,7 @@
  * Pure, deterministic: a function of `lifetime` alone.
  */
 
-import { quantizeCount } from './countValue';
+import { quantizeCount, type CountKind } from './countValue';
 
 /**
  * Fixed round-number steps a counter climbs through on its way up. Beyond
@@ -57,13 +57,16 @@ export interface CounterMilestoneProgress {
 /**
  * Derives the next milestone plus remaining/fraction for a progress bar.
  *
- * @param lifetime Non-negative lifetime total.
+ * @param lifetime Non-negative lifetime total (minutes for Duration).
+ * @param kind The counter's kind (default Discrete).
  * @returns `{ next, remaining, fraction }`. `fraction` is
  *   `min(1, lifetime / next)`; `remaining` is `next - lifetime`.
  */
-export function counterMilestoneProgress(lifetime: number): CounterMilestoneProgress {
+export function counterMilestoneProgress(lifetime: number, kind: CountKind = 'discrete'): CounterMilestoneProgress {
   const total = quantizeCount(lifetime);
-  const next = nextCounterMilestone(total);
+  // Duration climbs the ladder on whole HOURS (lifetime is minutes), so
+  // milestones read "250h", not "10,000m" (ruling U20). Continuous = Discrete.
+  const next = kind === 'duration' ? nextCounterMilestone(total / 60) * 60 : nextCounterMilestone(total);
   const remaining = quantizeCount(next - total);
   const fraction = Math.min(1, total / next);
   return { next, remaining, fraction };

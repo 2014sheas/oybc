@@ -52,7 +52,7 @@ export function RisoBoard({ board, cellSize, gap = 8 }: RisoBoardProps): React.R
   return (
     <RisoBoardGrid size={size} cellSize={cellSize} gap={gap}>
       {cells.map((cell) => (
-        <RisoBoardCell key={cell.key} cell={cell} />
+        <RisoBoardCell key={cell.key} cell={cell} cellSize={cellSize} />
       ))}
     </RisoBoardGrid>
   );

@@ -18,6 +18,8 @@ export interface GoalEntryProps {
   autoFocus?: boolean;
   /** Enter key — the custom-amount rows commit on it. */
   onEnter?: () => void;
+  /** Escape key — the custom-amount rows close on it. */
+  onEscape?: () => void;
 }
 
 /**
@@ -30,11 +32,12 @@ export interface GoalEntryProps {
  * @returns The field.
  */
 export function GoalEntry(props: GoalEntryProps): React.ReactElement {
-  const { kind, value, onChange, id, placeholder, suffix, dense, invalid, autoFocus, onEnter } = props;
+  const { kind, value, onChange, id, placeholder, suffix, dense, invalid, autoFocus, onEnter, onEscape } = props;
   const label = props['aria-label'];
   const fieldClass = [styles.field, dense ? styles.dense : '', invalid ? styles.invalid : ''].filter(Boolean).join(' ');
   const onKeyDown = (e: React.KeyboardEvent<HTMLInputElement>): void => {
     if (e.key === 'Enter' && onEnter) { e.preventDefault(); onEnter(); }
+    if (e.key === 'Escape' && onEscape) { e.preventDefault(); onEscape(); }
   };
   if (kind === 'duration') {
     return <DurationFields {...{ value, onChange, id, label, fieldClass, autoFocus, onKeyDown }} />;

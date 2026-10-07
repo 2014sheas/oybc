@@ -16,14 +16,13 @@ import SwiftUI
 ///      (`AppDatabase.fetchCounterDailyTotals`) + milestone bar
 ///      (`counterMilestoneProgress`, `Helpers/CounterMilestone.swift`).
 ///   3. Stat strip — Today (REAL) / Streak (STUB) / Best week (STUB).
-///   4. Log card (blue fill) — amount chips (1 / default / 25 / #) + −/+Add N.
-///      Logging updates the counter's `defaultLogAmount` to the amount just
-///      used and shows the reusable `CounterLogToastView` ("Logged +N · Undo").
-///   5. Explainer line.
-///   6. "Counting on N tasks" — active member cards.
-///   7. "Recent weeks" — STUB history card.
-///   8. "Not counting now" — inactive members greyed.
-///   9. Delete — quiet red text link (was a filled `RisoButton`).
+///   4. Log card (blue fill) — `CounterDetailLogCard`: fixed chips per kind +
+///      −/+Add. Logging updates the counter's `defaultLogAmount` to the amount
+///      just used and shows the reusable `CounterLogToastView` ("Logged +N · Undo").
+///   5. "Counting on N tasks" — active member cards.
+///   6. "Recent weeks" — STUB history card.
+///   7. "Not counting now" — inactive members greyed.
+///   8. Delete — quiet red text link (was a filled `RisoButton`).
 struct CounterDetailView: View {
 
     let counterId: String
@@ -84,6 +83,7 @@ struct CounterDetailView: View {
                     amount: toast.amount,
                     unit: toast.unit,
                     verb: toast.verb,
+                    kind: toast.kind,
                     onUndo: handleUndo,
                     onDone: { self.toast = nil }
                 )
@@ -153,6 +153,7 @@ struct CounterDetailView: View {
         logError = nil
         let id = counterId
         let unit = group.unit ?? ""
+        let kindForToast = group.countKind
         _Concurrency.Task.detached(priority: .userInitiated) {
             let ok = attemptLoggedWrite("CounterDetailView.handleLog(\(id))") {
                 switch direction {
@@ -169,7 +170,7 @@ struct CounterDetailView: View {
                 isLogging = false
                 if ok {
                     toast = DetailToastState(
-                        amount: amount, unit: unit,
+                        amount: amount, unit: unit, kind: kindForToast,
                         verb: direction == .add ? .logged : .removed,
                         toastKey: UUID().uuidString
                     )
@@ -268,6 +269,7 @@ enum CounterLogDirection {
 private struct DetailToastState {
     let amount: CountValue
     let unit: String
+    let kind: CountKind
     let verb: CounterLogToastView.Verb
     let toastKey: String
 }
@@ -275,13 +277,8 @@ private struct DetailToastState {
 // MARK: - CounterDetailContent (pure-props leaf, snapshot-testable)
 
 /// Pure presentational leaf for the Counter Detail page.
-/// No environment, no DB, no Firebase — receives plain values. Owns its own
-/// amount-chip selection UI state (not tied to the DB), seeded once from
-/// `group.defaultLogAmount` on first appearance — mirrors web's
-/// `initializedForRef` guard (sync the chip selection to the counter's
-/// current default exactly once per counter, NOT on every live reload, so a
-/// background `defaultLogAmount` write from this very session's own log
-/// doesn't clobber the user's in-progress chip selection).
+/// No environment, no DB, no Firebase — receives plain values. The Log card
+/// (`CounterDetailLogCard`) owns the amount-chip selection state.
 struct CounterDetailContent: View {
 
     let group: SharedCounterGroup
@@ -300,10 +297,9 @@ struct CounterDetailContent: View {
     /// Member-card tap → open that board (host-routed; core → pager).
     var onOpenBoard: (String) -> Void
 
-    @State private var selectedAmount: CountValue
-    @State private var isCustomActive = false
-    @State private var customOpen = false
-    @State private var customDraft = ""
+    /// Snapshot-testability seams forwarded to the Log card.
+    private let initialSelectedAmount: CountValue?
+    private let initialCustomActive: Bool
 
     init(
         group: SharedCounterGroup,
@@ -328,13 +324,16 @@ struct CounterDetailContent: View {
         self.onLog = onLog
         self.onDeleteTap = onDeleteTap
         self.onOpenBoard = onOpenBoard
-        _selectedAmount = State(initialValue: initialSelectedAmount ?? CounterLogAmount.initialChip(group.defaultLogAmount))
-        _isCustomActive = State(initialValue: initialCustomActive)
+        self.initialSelectedAmount = initialSelectedAmount
+        self.initialCustomActive = initialCustomActive
     }
 
     // MARK: - Derived
 
     private var unitLabel: String { group.unit ?? "" }
+
+    /// The family kind (D5) — every value on the page formats at it.
+    private var kind: CountKind { group.countKind }
 
     private var activeMembers: [SharedCounterMemberTask] {
         group.tasks.filter { $0.isActive }
@@ -345,52 +344,7 @@ struct CounterDetailContent: View {
     }
 
     private var milestoneProgress: CounterMilestoneProgress {
-        counterMilestoneProgress(group.lifetime)
-    }
-
-    private struct AmountChipOption {
-        /// `nil` marks the trailing custom "#" chip.
-        let value: CountValue?
-        let label: String
-
-    }
-
-    private var chips: [AmountChipOption] {
-        // FIXED presets (owner decision, 2026-07-21) — matches the handoff
-        // mock's literal "1 / 10 / 25 / #"; no dynamic "{default}" chip.
-        return [
-            AmountChipOption(value: 1, label: "1"),
-            AmountChipOption(value: 10, label: "10"),
-            AmountChipOption(value: 25, label: "25"),
-            AmountChipOption(value: nil, label: "#"),
-        ]
-    }
-
-    private var selectedChipIndex: Int? {
-        if isCustomActive { return chips.count - 1 }
-        return chips.firstIndex(where: { $0.value == selectedAmount })
-    }
-
-    // MARK: - Chip actions
-
-    private func selectChip(_ value: CountValue) {
-        selectedAmount = value
-        isCustomActive = false
-        customOpen = false
-    }
-
-    private func openCustomInput() {
-        customDraft = isCustomActive ? formatCountForInput(selectedAmount, kind: .discrete) : ""
-        customOpen = true
-    }
-
-    private func confirmCustomInput() {
-        // R3: validation extracted to `CounterLogAmount.parseCustom` so
-        // `RisoCountingStepperSheet`'s board-play "#" chip shares the same rule.
-        guard let parsed = CounterLogAmount.parseCustom(customDraft) else { return }
-        selectedAmount = parsed
-        isCustomActive = true
-        customOpen = false
+        counterMilestoneProgress(group.lifetime, kind: kind)
     }
 
     // MARK: - Body
@@ -418,17 +372,16 @@ struct CounterDetailContent: View {
                     .padding(.horizontal, Riso.gutter)
                     .padding(.bottom, 14)
 
-                // 3. Log card (amount chips + −/+Add N)
-                logCard
-                    .padding(.horizontal, Riso.gutter)
-                    .padding(.bottom, 10)
-
-                // 4. Explainer
-                Text("Logged \(unitLabel) count toward every active task and your all-time total.")
-                    .font(.risoBody(11, .regular))
-                    .foregroundStyle(Color.risoMuted)
-                    .padding(.horizontal, Riso.gutter)
-                    .padding(.bottom, 18)
+                // 3. Log card (chips per kind + −/+Add)
+                CounterDetailLogCard(
+                    group: group, activeMemberCount: activeMembers.count,
+                    isLogging: isLogging, logError: logError,
+                    initialSelectedAmount: initialSelectedAmount, initialCustomActive: initialCustomActive,
+                    onLog: onLog
+                )
+                .id("\(group.counterId)-\(group.countKind.rawValue)")
+                .padding(.horizontal, Riso.gutter)
+                .padding(.bottom, 18)
 
                 // 5. "Counting on N tasks" (active members)
                 if !activeMembers.isEmpty {
@@ -494,13 +447,13 @@ struct CounterDetailContent: View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(alignment: .top, spacing: 12) {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(group.lifetime.formatted())
+                    Text(formatCountTotal(group.lifetime, kind: kind))
                         .font(.risoHead(46, .extraBold))
                         .foregroundStyle(Color.risoBlue)
                         .monospacedDigit()
                         .minimumScaleFactor(0.4)
                         .lineLimit(1)
-                    Text("all-time \(unitLabel)")
+                    Text("all-time\(countUnitSuffix(kind, unit: group.unit))")
                         .font(.risoHead(14, .bold))
                         .foregroundStyle(Color.risoMuted)
                 }
@@ -522,7 +475,7 @@ struct CounterDetailContent: View {
         .risoCard()
         .risoHardShadow(Riso.Shadow.small, radius: Riso.cardRadius)
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(group.name), \(formatCount(group.lifetime, kind: .discrete)) all-time \(unitLabel)")
+        .accessibilityLabel("\(group.name), \(formatCountTotal(group.lifetime, kind: kind)) all-time\(countUnitSuffix(kind, unit: group.unit))")
     }
 
     /// 7-day sparkline (real data via `dailyTotals`) — 9px-wide bars, blue
@@ -545,17 +498,17 @@ struct CounterDetailContent: View {
             }
         }
         .frame(height: 40, alignment: .bottom)
-        .accessibilityLabel("7-day activity — today \(dailyTotals.todayTotal.formatted()) \(unitLabel)")
+        .accessibilityLabel("7-day activity — today \(formatCountWithUnit(dailyTotals.todayTotal, kind: kind, unit: unitLabel))")
     }
 
     private var milestoneBar: some View {
         VStack(alignment: .leading, spacing: 4) {
             RisoProgressBar(value: milestoneProgress.fraction, color: .risoBlue, height: 8)
             (
-                Text("\(milestoneProgress.remaining.formatted()) to ")
+                Text("\(formatCountTotal(milestoneProgress.remaining, kind: kind)) to ")
                     .font(.risoBody(10, .regular))
                     .foregroundStyle(Color.risoMuted)
-                + Text(milestoneProgress.next.formatted())
+                + Text(formatCountTotal(milestoneProgress.next, kind: kind))
                     .font(.risoBody(10, .bold))
                     .foregroundStyle(Color.risoMuted)
                 + Text(" milestone")
@@ -569,7 +522,7 @@ struct CounterDetailContent: View {
 
     private var statStrip: some View {
         HStack(spacing: 10) {
-            statCard(label: "TODAY", value: dailyTotals.todayTotal.formatted())
+            statCard(label: "TODAY", value: formatCountTotal(dailyTotals.todayTotal, kind: kind))
             // P4 — build-now-feed-P4: needs a real streak rollup (window-goal
             // history); UI shipped now, wired to real data in P4.
             statCard(label: "STREAK", value: "—")
@@ -592,140 +545,6 @@ struct CounterDetailContent: View {
         .padding(.vertical, 12)
         .risoCard()
         .risoHardShadow(Riso.Shadow.small, radius: Riso.cardRadius)
-    }
-
-    // MARK: - Log card
-
-    private var logCard: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Log \(unitLabel)")
-                    .font(.risoHead(15, .extraBold))
-                    .foregroundStyle(Color.risoPaper)
-                Text("counts toward \(activeMembers.count) active task\(activeMembers.count == 1 ? "" : "s")")
-                    .font(.risoBody(11, .regular))
-                    .foregroundStyle(Color.risoPaper.opacity(0.85))
-            }
-
-            chipRow
-
-            if customOpen {
-                customInputRow
-            }
-
-            logActionsRow
-
-            if let logError {
-                Text(logError)
-                    .font(.risoBody(11, .regular))
-                    .foregroundStyle(Color.risoPaper.opacity(0.9))
-                    .frame(maxWidth: .infinity)
-                    .multilineTextAlignment(.center)
-            }
-        }
-        .padding(Riso.cardPadding)
-        .background(RoundedRectangle(cornerRadius: Riso.cardRadius).fill(Color.risoBlue))
-        .clipShape(RoundedRectangle(cornerRadius: Riso.cardRadius))
-        .overlay(
-            RoundedRectangle(cornerRadius: Riso.cardRadius)
-                .strokeBorder(Color.risoInk, lineWidth: Riso.Keyline.container)
-        )
-        .risoHardShadow(Riso.Shadow.card, radius: Riso.cardRadius)
-    }
-
-    /// Amount chip row: 1 / {default} / 25 / # — selected = gold fill +
-    /// `risoInkStatic` (dark-mode-safe content on gold); idle = transparent
-    /// with an on-color (`risoPaper`) border/text (content-on-blue-fill
-    /// contract).
-    private var chipRow: some View {
-        HStack(spacing: 8) {
-            ForEach(Array(chips.enumerated()), id: \.offset) { index, chip in
-                let isSelected = index == selectedChipIndex
-                Button {
-                    if let value = chip.value {
-                        selectChip(value)
-                    } else {
-                        openCustomInput()
-                    }
-                } label: {
-                    Text(chip.value == nil && isSelected ? formatCount(selectedAmount, kind: .discrete) : chip.label)
-                        .font(.risoHead(13, .extraBold))
-                        .foregroundStyle(isSelected ? Color.risoInkStatic : Color.risoPaper)
-                        .frame(minWidth: 40)
-                        .padding(.vertical, 8)
-                        .padding(.horizontal, 10)
-                        .background(Capsule().fill(isSelected ? Color.risoGold : Color.clear)).contentShape(Capsule()) // whole pill tappable (unselected fill is clear)
-                        .overlay(
-                            Capsule().strokeBorder(
-                                isSelected ? Color.risoInk : Color.risoPaper.opacity(0.6),
-                                lineWidth: Riso.Keyline.dense
-                            )
-                        )
-                }
-                .buttonStyle(.plain)
-                .accessibilityAddTraits(isSelected ? [.isSelected] : [])
-            }
-        }
-    }
-
-    private var customInputRow: some View {
-        HStack(spacing: 8) {
-            RisoNumberField(placeholder: "Amount", text: $customDraft)
-            Button("OK", action: confirmCustomInput)
-                .font(.risoHead(13, .extraBold))
-                .foregroundStyle(Color.risoInkStatic)
-                .padding(.vertical, 9)
-                .padding(.horizontal, 14)
-                .background(Capsule().fill(Color.risoGold))
-                .overlay(Capsule().strokeBorder(Color.risoInk, lineWidth: Riso.Keyline.dense))
-                .disabled(CounterLogAmount.parseCustom(customDraft) == nil)
-                .opacity(CounterLogAmount.parseCustom(customDraft) == nil ? 0.5 : 1)
-        }
-    }
-
-    private var logActionsRow: some View {
-        HStack(spacing: 12) {
-            Button {
-                onLog(selectedAmount, .remove)
-            } label: {
-                Image(systemName: "minus")
-                    .font(.system(size: 16, weight: .bold))
-                    .foregroundStyle(Color.risoPaper)
-                    .frame(width: 52, height: 44).contentShape(Rectangle()) // whole 52×44 frame is the tap target
-                    .overlay(
-                        RoundedRectangle(cornerRadius: Riso.cardRadius)
-                            .strokeBorder(Color.risoPaper.opacity(0.7), lineWidth: Riso.Keyline.dense)
-                    )
-            }
-            .buttonStyle(.plain)
-            .disabled(isLogging || group.lifetime == 0)
-            .accessibilityLabel("Remove \(formatCount(selectedAmount, kind: .discrete)) \(unitLabel)")
-
-            Button {
-                onLog(selectedAmount, .add)
-            } label: {
-                HStack(spacing: 6) {
-                    if isLogging {
-                        ProgressView()
-                            .tint(Color.risoInkStatic)
-                            .scaleEffect(0.85)
-                    }
-                    Text("＋ Add \(formatCount(selectedAmount, kind: .discrete))")
-                        .font(.risoHead(15, .extraBold))
-                }
-                .foregroundStyle(Color.risoInkStatic)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 12)
-                .background(RoundedRectangle(cornerRadius: Riso.cardRadius).fill(Color.risoPaper))
-                .overlay(
-                    RoundedRectangle(cornerRadius: Riso.cardRadius)
-                        .strokeBorder(Color.risoInk, lineWidth: Riso.Keyline.dense)
-                )
-            }
-            .buttonStyle(RisoButtonStyle(offset: Riso.Shadow.small))
-            .disabled(isLogging)
-            .accessibilityLabel("Add \(formatCount(selectedAmount, kind: .discrete)) \(unitLabel)")
-        }
     }
 
     // MARK: - Active members section
@@ -776,7 +595,7 @@ struct CounterDetailContent: View {
                     Spacer()
 
                     HStack(spacing: 6) {
-                        Text("\(member.logged.formatted())/\(member.goal.formatted())")
+                        Text(SharedCounterMemberRow.loggedLabel(logged: member.logged, goal: member.goal, kind: kind))
                             .font(.risoHead(14, .bold))
                             .foregroundStyle(member.met ? Color.risoGreen : Color.risoInk)
                         Image(systemName: "chevron.right")
@@ -803,7 +622,7 @@ struct CounterDetailContent: View {
         .disabled(member.boardId == nil)
         .accessibilityElement(children: .combine)
         .accessibilityLabel(
-            "\(member.taskTitle) on \(member.boardName ?? "no board"), \(formatCount(member.logged, kind: .discrete)) of \(formatCount(member.goal, kind: .discrete)) \(unitLabel), \(caption(for: member))"
+            "\(member.taskTitle) on \(member.boardName ?? "no board"), \(formatCountWithUnit(member.logged, kind: kind, unit: unitLabel)) of \(formatCountWithUnit(member.goal, kind: kind, unit: unitLabel)), \(caption(for: member))"
         )
     }
 
@@ -816,13 +635,13 @@ struct CounterDetailContent: View {
     /// is invented here (that's a P4 follow-up).
     private func caption(for member: SharedCounterMemberTask) -> String {
         if member.met, member.over > 0 {
-            return "✓ Goal met · \(member.over.formatted()) over"
+            return "✓ Goal met · \(formatCount(member.over, kind: kind)) over"
         }
         if member.met {
             return "✓ Goal met this window"
         }
         let remaining = max(0, member.goal - member.logged)
-        let base = "\(remaining.formatted()) \(unitLabel) to go"
+        let base = "\(formatCountWithUnit(remaining, kind: kind, unit: unitLabel)) to go"
         guard let window = member.window else { return base }
         return "\(base) · ends \(window)"
     }
@@ -871,17 +690,11 @@ struct CounterDetailContent: View {
                     .font(.risoBody(13, .semibold))
                     .foregroundStyle(Color.risoMuted)
                     .lineLimit(1)
-                Text(member.boardId == nil
-                     ? "Not on any board yet — log from here anytime."
-                     : "Starts counting when this board goes live.")
-                    .font(.risoBody(10, .regular))
-                    .foregroundStyle(Color.risoMuted.opacity(0.7))
-                    .lineLimit(1)
             }
 
             Spacer()
 
-            Text("\(member.logged.formatted())/\(member.goal.formatted())")
+            Text(SharedCounterMemberRow.loggedLabel(logged: member.logged, goal: member.goal, kind: kind))
                 .font(.risoBody(12, .regular))
                 .foregroundStyle(Color.risoMuted)
         }

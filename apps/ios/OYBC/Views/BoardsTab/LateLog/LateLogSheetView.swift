@@ -39,7 +39,7 @@ struct LateLogSheetView: View {
 
     enum Kind {
         case normal
-        case counting(current: CountValue, max: CountValue, unit: String)
+        case counting(current: CountValue, max: CountValue, unit: String, countKind: CountKind)
         case compound(parts: [LateLogCompoundPart])
     }
     let kind: Kind
@@ -60,8 +60,10 @@ struct LateLogSheetView: View {
     var errorMessage: String?
 
     @State private var stagedChildIds: Set<String> = []
-    @State private var customAmountDraft = ""
-    @State private var customOpen = false
+    /// Internal (not private) only so snapshot tests can seed an open custom
+    /// row; production callers never pass these.
+    @State var customAmountDraft = ""
+    @State var customOpen = false
     /// True while an action's write is in flight — every action button is
     /// disabled (twin of web `LateLogSheet`'s `busy`), so a rapid double-tap
     /// can't submit twice. Set synchronously in `perform` BEFORE the Task
@@ -87,8 +89,8 @@ struct LateLogSheetView: View {
                 switch kind {
                 case .normal:
                     normalBody
-                case let .counting(current, max, unit):
-                    countingBody(current: current, max: max, unit: unit)
+                case let .counting(current, max, unit, countKind):
+                    countingBody(current: current, max: max, unit: unit, countKind: countKind)
                 case let .compound(parts):
                     compoundBody(parts: parts)
                 }
@@ -111,7 +113,12 @@ struct LateLogSheetView: View {
     private var sheetHeight: CGFloat {
         switch kind {
         case .normal: return 190
-        case .counting: return 260
+        case let .counting(_, _, _, countKind):
+            switch countKind {
+            case .discrete: return 260
+            case .continuous: return 280
+            case .duration: return customOpen ? 470 : 280
+            }
         case let .compound(parts): return CGFloat(190 + parts.count * 44)
         }
     }
@@ -155,15 +162,15 @@ struct LateLogSheetView: View {
     // MARK: - Counting
 
     @ViewBuilder
-    private func countingBody(current: CountValue, max: CountValue, unit: String) -> some View {
-        Text("\(formatCount(current, kind: .discrete))/\(formatCount(max, kind: .discrete))\(unit.isEmpty ? "" : " \(unit)")")
+    private func countingBody(current: CountValue, max: CountValue, unit: String, countKind: CountKind) -> some View {
+        Text(LateLogCountingCopy.readout(current: current, max: max, unit: unit, kind: countKind))
             .font(.risoHead(20, .extraBold))
             .foregroundStyle(Color.risoInk)
             .monospacedDigit()
 
         HStack(spacing: 8) {
-            ForEach([1, 2, 5] as [CountValue], id: \.self) { amount in
-                RisoButton(title: "+\(formatCount(amount, kind: .discrete))", kind: .neutral, small: true) {
+            ForEach(LateLogCountingCopy.chips(kind: countKind, goal: max), id: \.self) { amount in
+                RisoButton(title: LateLogCountingCopy.chipLabel(amount, kind: countKind), kind: .neutral, small: true) {
                     perform { await onLogAmount(amount) }
                 }
             }
@@ -173,16 +180,17 @@ struct LateLogSheetView: View {
         }
         .disabled(isBusy)
         if customOpen {
+            let parsed = CounterLogAmount.parseCustom(customAmountDraft, kind: countKind)
             HStack(spacing: 8) {
-                RisoNumberField(placeholder: "Amount", text: $customAmountDraft)
+                GoalEntryView(kind: countKind, text: $customAmountDraft, placeholder: "Amount", startsOpen: countKind == .duration)
                 RisoButton(title: "Log", kind: .primary, small: true) {
-                    if let amount = CounterLogAmount.parseCustom(customAmountDraft) {
+                    if let amount = parsed {
                         perform { await onLogAmount(amount) }
                         customOpen = false
                         customAmountDraft = ""
                     }
                 }
-                .disabled(isBusy || CounterLogAmount.parseCustom(customAmountDraft) == nil)
+                .disabled(isBusy || parsed == nil)
             }
         }
         if isUndoable {
@@ -230,5 +238,26 @@ struct LateLogSheetView: View {
         }
         .disabled(!canCommit)
         .opacity(canCommit ? 1 : 0.45)
+    }
+}
+
+// MARK: - LateLogCountingCopy
+
+/// Pure copy for the closed-board counting body. Web twin:
+/// `lateLogCountingModel.ts` (docs/COUNTER_KINDS.md §5 B3).
+enum LateLogCountingCopy {
+    /// The preset amounts: Discrete `1 · 2 · 5`, else ¼ · ½ · goal.
+    static func chips(kind: CountKind, goal: CountValue) -> [CountValue] {
+        CounterLogAmount.lateLogChipAmounts(kind: kind, goal: goal)
+    }
+
+    /// `+6.6`, `+2h 38m`.
+    static func chipLabel(_ amount: CountValue, kind: CountKind) -> String {
+        "+\(formatCount(amount, kind: kind))"
+    }
+
+    /// `21.3/26.2 mi`, `9h/10h 30m` (no unit for Duration).
+    static func readout(current: CountValue, max: CountValue, unit: String, kind: CountKind) -> String {
+        "\(formatCount(current, kind: kind))/\(formatCount(max, kind: kind))\(countUnitSuffix(kind, unit: unit))"
     }
 }

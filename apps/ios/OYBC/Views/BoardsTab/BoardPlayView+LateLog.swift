@@ -115,7 +115,7 @@ extension BoardPlayView {
             LateLogSheetView(
                 windowLabel: closedBoardWindowLabel,
                 taskTitle: task.title,
-                kind: .counting(current: current, max: task.maxCount ?? 0, unit: task.unit ?? ""),
+                kind: .counting(current: current, max: task.maxCount ?? 0, unit: task.unit ?? "", countKind: resolveFamilyCountKind(task, lookup: { viewModel.taskMap[$0] })),
                 isUndoable: viewModel.hasClosedBoardLateLog(for: task),
                 onUndo: { await runLateLogUndo(task: task) },
                 onLogAmount: { amount in await runLateLogIncrement(task: task, delta: amount) },

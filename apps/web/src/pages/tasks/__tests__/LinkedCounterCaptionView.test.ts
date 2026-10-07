@@ -13,7 +13,7 @@ const root = {
 } as Task;
 
 describe('LinkedCounterCaptionView', () => {
-  it('found: renders a button with title, total and aria-label', () => {
+  it('found: renders a button with title, total and aria-label, no "Linked to" caption', () => {
     const html = renderToStaticMarkup(
       React.createElement(LinkedCounterCaptionView, {
         sharedCounterId: 'root-1', isLoading: false, sourceTask: root, onOpenCounter: () => {},
@@ -23,6 +23,31 @@ describe('LinkedCounterCaptionView', () => {
     expect(html).toContain('aria-label="Open Push-ups counter"');
     expect(html).toContain('Push-ups');
     expect(html).toContain('512 reps');
+    expect(html).not.toContain('Linked to');
+  });
+
+  it('found: a continuous root shows its grouped decimal total in the root kind', () => {
+    const run = {
+      ...root, title: 'Run', unit: 'miles', countKind: 'continuous', currentCount: 1250.5,
+    } as Task;
+    const html = renderToStaticMarkup(
+      React.createElement(LinkedCounterCaptionView, {
+        sharedCounterId: 'root-1', isLoading: false, sourceTask: run, onOpenCounter: () => {},
+      }),
+    );
+    expect(html).toContain('1,250.5 miles');
+  });
+
+  it('found: a duration root shows h/m with no unit', () => {
+    const practice = {
+      ...root, title: 'Practice', unit: '', countKind: 'duration', currentCount: 6735,
+    } as Task;
+    const html = renderToStaticMarkup(
+      React.createElement(LinkedCounterCaptionView, {
+        sharedCounterId: 'root-1', isLoading: false, sourceTask: practice, onOpenCounter: () => {},
+      }),
+    );
+    expect(html).toContain('112h 15m<');
   });
 
   it('found: click calls onOpenCounter with the sharedCounterId', () => {
@@ -34,23 +59,21 @@ describe('LinkedCounterCaptionView', () => {
     expect(onOpenCounter).toHaveBeenCalledWith('root-1');
   });
 
-  it('not found: non-interactive caption, no button', () => {
+  it('not found: renders nothing', () => {
     const html = renderToStaticMarkup(
       React.createElement(LinkedCounterCaptionView, {
         sharedCounterId: 'root-1', isLoading: false, sourceTask: null, onOpenCounter: () => {},
       }),
     );
-    expect(html).not.toContain('<button');
-    expect(html).toContain('deleted or not found');
+    expect(html).toBe('');
   });
 
-  it('loading: non-interactive caption', () => {
+  it('loading: renders nothing', () => {
     const html = renderToStaticMarkup(
       React.createElement(LinkedCounterCaptionView, {
         sharedCounterId: 'root-1', isLoading: true, sourceTask: null, onOpenCounter: () => {},
       }),
     );
-    expect(html).not.toContain('<button');
-    expect(html).toContain('loading…');
+    expect(html).toBe('');
   });
 });

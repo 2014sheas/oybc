@@ -348,7 +348,8 @@ struct RearrangeGrid: View {
             showsLockChip: cell.isLocked,
             showsDirtyChip: isDirty,
             currentCount: task.map(windowedCount) ?? 0,
-            maxCount: task?.maxCount ?? 0
+            maxCount: task?.maxCount ?? 0,
+            countKind: task.map { resolveFamilyCountKind($0, lookup: { taskMap[$0] }) } ?? .discrete
         )
     }
 

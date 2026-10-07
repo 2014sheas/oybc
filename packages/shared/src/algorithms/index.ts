@@ -42,6 +42,19 @@ export {
   resolveFamilyCountKind,
 } from './countEntry';
 export type { KindPickerLock } from './countEntry';
+export {
+  fixedLogChipAmounts,
+  goalChipAmounts,
+  boardSheetChips,
+  hubChips,
+  lateLogChipAmounts,
+  initialLogSelection,
+  quickLogAmount,
+  customChipLabel,
+  logPillLabel,
+  logPillOpensDetail,
+} from './logAmounts';
+export type { LogChip } from './logAmounts';
 
 // ===== Pair-derived counter display names (R1 — counters refresh) =====
 export { formatCounterName } from './counterName';

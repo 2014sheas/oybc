@@ -103,20 +103,8 @@
   background: var(--riso-blue);
   transition: width 0.2s;
 }
-.linkedCounterCaption {
-  margin: 0.4rem 0 0;
-  font-size: 0.82rem;
-  font-weight: 500;
-  color: var(--riso-muted);
-}
-
 .linkedCounterRow {
   margin-top: 10px;
-}
-.linkedCounterLabel {
-  font-size: 0.82rem;
-  font-weight: 500;
-  color: var(--riso-muted);
 }
 .linkedCounterTitle {
   flex: 1;

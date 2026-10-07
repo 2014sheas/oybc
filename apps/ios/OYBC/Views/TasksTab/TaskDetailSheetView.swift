@@ -107,7 +107,7 @@ struct TaskDetailSheetView: View {
                 CounterDetailView(counterId: counterId, showExpired: false, onOpenBoard: onOpenBoard)
             }
             // Counter detail can delete/unlink the counter; refresh the task
-            // (and its "Linked to" row) when it pops back here.
+            // (and its counter-root row) when it pops back here.
             .onChange(of: openedCounterId) { _, newValue in
                 if newValue == nil { _Concurrency.Task { await reload() } }
             }

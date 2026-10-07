@@ -7,6 +7,7 @@ import {
   isLegacyChosenCenterLocked,
   getCenterDisplayText,
   resolvePlacements,
+  resolveFamilyCountKind,
   type Board,
   type BoardTask,
   type CellState,
@@ -98,6 +99,7 @@ export function buildRisoBoardCells(
         task,
         done,
         currentCount: type === 'counting' ? cur : undefined,
+        countKind: resolveFamilyCountKind(task, (id) => taskMap[id]),
         // Board Edit redesign slice 3 (D1) — the EFFECTIVE lock, matching
         // BoardPlaySurface: a stored lock, or a legacy-CHOSEN board's
         // positional center (not yet normalized on disk).

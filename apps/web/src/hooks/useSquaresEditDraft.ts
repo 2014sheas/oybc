@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   CenterSquareType,
+  resolveFamilyCountKind,
   type Board,
   type BoardSize,
   type BoardTask,
@@ -253,6 +254,7 @@ export function useSquaresEditDraft(
               currentCount: squareData.type === 'counting' ? squareState.currentCount : undefined,
               locked: draftCell.isLocked,
               dirty: isSquareDirty(draftCell, state.taskOverrides),
+              countKind: resolveFamilyCountKind(task, resolveTask),
             });
           }
           result.push({

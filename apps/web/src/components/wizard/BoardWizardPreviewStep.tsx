@@ -6,8 +6,10 @@ import {
   formatRecurringCadence,
   formatTimeframeLabel,
   getTimeframeBoundaries,
+  resolveFamilyCountKind,
+  type CompoundChild,
+  type Task,
 } from '@oybc/shared';
-import type { CompoundChild, Task } from '@oybc/shared';
 import type { BoardWizardController } from '../../pages/createHub/useBoardWizard';
 import { computeCoreFloorGate } from '../../pages/createHub/poolPullLogic';
 import type { TaskLibrary } from '../../pages/createPage/useTaskLibrary';
@@ -103,6 +105,8 @@ export function taskToModel(
     task,
     done: state.isCompleted,
     currentCount: task.type === TaskType.COUNTING ? state.currentCount : undefined,
+    // R19 — a pending linked task resolves its root through the preview's map.
+    countKind: resolveFamilyCountKind(task, (id) => taskMap[id]),
   });
 }
 

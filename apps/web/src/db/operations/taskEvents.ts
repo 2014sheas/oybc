@@ -5,6 +5,7 @@ import {
   TaskType,
   isEventOwningTask,
   lateLogOccurredAt,
+  quantizeCount,
   resolveTaskWindowState,
   findTransitiveParentCompounds,
   findAffectedBoardIds,
@@ -391,7 +392,10 @@ export async function insertIncrementEventRaw(
   now: string,
   occurredAt: string = now,
 ): Promise<boolean> {
-  if (delta === 0) return false;
+  // Every stored delta is 2-dp quantized — float noise (3.0999999999999996)
+  // fails the sync schema's `isValidCountDelta` and would never reach peers.
+  const quantized = quantizeCount(delta);
+  if (quantized === 0) return false;
   const task = await db.tasks.get(taskId);
   if (!task || !isEventOwningTask(task)) return false;
   const event: TaskEvent = {
@@ -399,7 +403,7 @@ export async function insertIncrementEventRaw(
     userId: task.userId,
     taskId,
     kind: 'increment',
-    delta,
+    delta: quantized,
     occurredAt,
     boardId,
     createdAt: now,

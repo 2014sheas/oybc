@@ -707,15 +707,16 @@ GitHub Actions workflows run on PRs to `dev` and on merge:
 
 Output of the 2026-08 deep-dive audit: the findings that a machine can check are enforced every PR so they can't recur; the judgment-level sweep is a repeatable skill + a monthly reminder. Two layers:
 
-**Mechanical (CI, enforced per-PR)** — three pure-Node checks (no build/deps except knip), each with a *freeze-and-shrink* baseline so it fails only on NEW drift and documents existing debt as a shrinkable backlog:
+**Mechanical (CI, enforced per-PR)** — four pure-Node checks (no build/deps except knip), each with a *freeze-and-shrink* baseline so it fails only on NEW drift and documents existing debt as a shrinkable backlog:
 
 | Check | Script | Baseline | Catches |
 | --- | --- | --- | --- |
 | Dead code | `scripts/check-knip.mjs` (knip; `apps/web/knip.json`; runs in `web.yml`) | `scripts/audit/knip-baseline.json` (empty since the 2026-09 audit — keep it that way; never `import.meta.glob` a broad source glob in a test — knip reads it as importing every match and stops reporting unused files) | new unused web exports/types; any unused file/dependency (never baselined) |
 | God-file regrowth | `scripts/check-file-sizes.mjs` (in `drift-guardrails.yml`) | `scripts/audit/file-size-allowlist.json` (its entries are the frozen offenders = ROADMAP B6 roster) | any source file >1000 lines; any allowlisted file growing past its frozen count |
 | Sync-contract ↔ rules | `scripts/check-sync-contract-rules.mjs` (in `drift-guardrails.yml`) | none (must be exactly equal) | `SYNC_COLLECTIONS`/`USER_SCOPED_SYNC_COLLECTIONS` (shared) diverging from `isKnownCollection()`/`requiresUserIdField()` (`firestore.rules`) |
+| Count formatting | `scripts/audit/check-count-formatting.mjs` (+ `--self-test`; in `drift-guardrails.yml`) | `scripts/audit/count-formatting-allowlist.json` (`"path::trimmed line"` entries; empty at ship — keep it that way) | a hard-coded discrete kind passed to a `formatCount*` helper (Swift `kind: .discrete`, TS `'discrete'`) or a raw `.formatted()` / `.toLocaleString()` on a counting value (`docs/COUNTER_KINDS.md` §5 — counts render with the task's real kind) |
 
-Rule for all three: **shrink the baseline as you clean up (the scripts emit a note when an entry is stale); never grow it to dodge a fix.** Bumping a file-size cap or adding a knip-baseline entry is a deliberate, reviewed act.
+Rule for all four: **shrink the baseline as you clean up (the scripts emit a note when an entry is stale); never grow it to dodge a fix.** Bumping a file-size cap or adding a knip-baseline entry is a deliberate, reviewed act.
 
 **Judgment (on demand + scheduled)** — the `/audit` skill (`.claude/skills/audit/SKILL.md`) re-runs the four-dimension parallel-agent sweep (code quality / architecture / iOS-guidelines+x-platform / security), consolidates one prioritized report, and stops for you to pick fixes (diagnosis-first). It carries the audit's verified-safe baseline so re-runs focus on new drift, and it assumes the mechanical guardrails hold (don't re-derive them by hand). The `audit-reminder.yml` workflow files a monthly `drift-audit` issue nudging a run (a session-only assistant cron can't do this durably). Canonical record of the founding sweep: memory `project_deep_dive_audit_2026_08`.
 

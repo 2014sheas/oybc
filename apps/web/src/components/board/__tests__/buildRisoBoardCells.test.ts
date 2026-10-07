@@ -160,7 +160,7 @@ describe('buildRisoBoardCells — sealed vs live (issue #376)', () => {
       { id: 'inc', userId: 'u1', taskId: 't0', kind: 'increment', delta: 3, occurredAt: '2026-08-05T00:00:00.000Z', createdAt: '2026-08-05T00:00:00.000Z', updatedAt: '2026-08-05T00:00:00.000Z', version: 1, isDeleted: false } as TaskEvent,
     ];
     const cells = buildRisoBoardCells(sealed, placements, map, {}, ctx(events));
-    expect(cells[0].count).toEqual({ cur: 5, max: 5 });
+    expect(cells[0].count).toEqual({ cur: 5, max: 5, kind: 'discrete' });
 
     const sealedIncomplete = makeBoard({
       sealedAt: '2026-08-01T02:00:00.000Z',
@@ -168,7 +168,7 @@ describe('buildRisoBoardCells — sealed vs live (issue #376)', () => {
       completedLineIds: [],
     });
     const cells2 = buildRisoBoardCells(sealedIncomplete, placements, map, {}, ctx(events));
-    expect(cells2[0].count).toEqual({ cur: 0, max: 5 });
+    expect(cells2[0].count).toEqual({ cur: 0, max: 5, kind: 'discrete' });
   });
 
   it('sealed-but-ACTIVE board (the Home leak shape) still reads the snapshot', () => {

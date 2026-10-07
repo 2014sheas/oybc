@@ -1,6 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
-  BoardStatus,
   Timeframe,
   boardWindowEnd,
   derivedTaskId,
@@ -11,7 +10,6 @@ import { db } from '../../internal';
 import { healLinkedCounterWindows } from '../linkedCounterWindowHeal';
 import { incrementSharedCounter } from '../tasks.sharedCounter';
 import { buildSquareWindowContext, taskToSquareState } from '../../adapters';
-import { buildSharedCounterHints } from '../../../utils/sharedCounterHints';
 import {
   JUNE,
   ROOT,
@@ -122,46 +120,6 @@ describe('a late log on an ended September board never moves the closed June boa
 
     // Credit toast: the closed June board is never named.
     expect(affectedBoards.map((b) => b.boardId)).not.toContain(JUNE.id);
-  });
-
-  it('the stepper / menu hint never names a sealed or ended board', async () => {
-    await healLinkedCounterWindows('user-1');
-    const tasks = await db.tasks.toArray();
-    const hints = buildSharedCounterHints({
-      taskMap: Object.fromEntries(tasks.map((t) => [t.id, t])),
-      sharedCounterSourceIds: new Set([ROOT]),
-      allBoardTasks: await db.boardTasks.toArray(),
-      allBoards: await db.boards.toArray(),
-      boardId: SEPT.id,
-      now: new Date(NOW),
-    });
-    expect([...hints.values()].join('|')).not.toContain(JUNE.id);
-    expect(hints.size).toBe(0);
-  });
-
-  it('control: a live ACTIVE board with a live member row IS named in the hint', async () => {
-    const OCT = { id: 'board-oct', startDate: '2026-10-01T00:00:00.000Z', endDate: '2026-10-31T23:59:59.999Z' };
-    const octRow = derivedTaskId(OCT.id, ROOT);
-    await db.tasks.put(
-      hubLinked(octRow, {
-        createdInWizard: true,
-        timeframe: Timeframe.MONTHLY,
-        startDate: OCT.startDate,
-        endDate: OCT.endDate,
-      }),
-    );
-    await db.boards.put(boardRow(OCT, { status: BoardStatus.ACTIVE }));
-    await db.boardTasks.put(placement('bt-oct', OCT.id, octRow));
-    const tasks = await db.tasks.toArray();
-    const hints = buildSharedCounterHints({
-      taskMap: Object.fromEntries(tasks.map((t) => [t.id, t])),
-      sharedCounterSourceIds: new Set([ROOT]),
-      allBoardTasks: await db.boardTasks.toArray(),
-      allBoards: await db.boards.toArray(),
-      boardId: SEPT.id,
-      now: new Date(NOW),
-    });
-    expect(hints.get(octRow)).toBe(`↔ Shared · also counts on ${OCT.id}`);
   });
 
   it('credit set excludes a sealed (Closed) board even when its row is not frozen', async () => {

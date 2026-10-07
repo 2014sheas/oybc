@@ -1,0 +1,57 @@
+{
+  "_note": "Cross-platform vectors for logAmounts.ts <-> CounterLogAmount.swift (docs/COUNTER_KINDS.md §5). Goal chips: [goal/4, goal/2] rounded to the kind's step (0.1 continuous, 1 minute duration — owner rule) and floored at one step, then the goal itself, de-duplicated; a goal <= 0 uses the fixed set.",
+  "goalChips": [
+    { "name": "continuous marathon", "goal": 26.2, "kind": "continuous", "expected": [6.6, 13.1, 26.2] },
+    { "name": "duration 10h 30m quarters to the minute", "goal": 630, "kind": "duration", "expected": [158, 315, 630] },
+    { "name": "duration 45m", "goal": 45, "kind": "duration", "expected": [11, 23, 45] },
+    { "name": "continuous tiny goal de-duplicates", "goal": 0.1, "kind": "continuous", "expected": [0.1] },
+    { "name": "continuous off-step goal kept as-is", "goal": 26.25, "kind": "continuous", "expected": [6.6, 13.1, 26.25] },
+    { "name": "goal-less falls back to fixed", "goal": 0, "kind": "duration", "expected": [15, 30, 60] }
+  ],
+  "boardSheetChipLabels": [
+    { "name": "discrete keeps +1 +10 #", "goal": 200, "kind": "discrete", "expected": ["+1", "+10", "#"] },
+    { "name": "continuous goal chips", "goal": 26.2, "kind": "continuous", "expected": ["6.6", "13.1", "26.2", "#"] },
+    { "name": "duration goal chips", "goal": 630, "kind": "duration", "expected": ["2h 38m", "5h 15m", "10h 30m", "#"] }
+  ],
+  "hubChipLabels": [
+    { "name": "discrete", "kind": "discrete", "expected": ["1", "10", "25", "#"] },
+    { "name": "continuous", "kind": "continuous", "expected": ["0.5", "1", "5", "#"] },
+    { "name": "duration", "kind": "duration", "expected": ["15m", "30m", "1h", "#"] }
+  ],
+  "lateLogChips": [
+    { "name": "discrete unchanged", "goal": 5, "kind": "discrete", "expected": [1, 2, 5] },
+    { "name": "continuous", "goal": 26.2, "kind": "continuous", "expected": [6.6, 13.1, 26.2] }
+  ],
+  "initialSelection": [
+    { "name": "discrete preset default", "kind": "discrete", "goal": 200, "default": 10, "expected": { "amount": 10, "isCustom": false } },
+    { "name": "discrete off-preset falls back to 1", "kind": "discrete", "goal": 200, "default": 7, "expected": { "amount": 1, "isCustom": false } },
+    { "name": "discrete keeps initialChipAmount's 25 even without a 25 chip", "kind": "discrete", "goal": 200, "default": 25, "expected": { "amount": 25, "isCustom": false } },
+    { "name": "continuous custom default shows on #", "kind": "continuous", "goal": 26.2, "default": 3.1, "expected": { "amount": 3.1, "isCustom": true } },
+    { "name": "continuous default matching a chip", "kind": "continuous", "goal": 26.2, "default": 13.1, "expected": { "amount": 13.1, "isCustom": false } },
+    { "name": "duration no default picks the quarter", "kind": "duration", "goal": 630, "default": null, "expected": { "amount": 158, "isCustom": false } }
+  ],
+  "quickAmount": [
+    { "name": "discrete default", "kind": "discrete", "goal": 200, "default": null, "expected": 1 },
+    { "name": "continuous default", "kind": "continuous", "goal": 26.2, "default": 3.1, "expected": 3.1 },
+    { "name": "duration first chip", "kind": "duration", "goal": 630, "default": null, "expected": 158 }
+  ],
+  "pill": [
+    { "name": "discrete", "kind": "discrete", "default": 10, "label": "+ Log", "opensDetail": false },
+    { "name": "continuous with default", "kind": "continuous", "default": 3.1, "label": "+ Log 3.1", "opensDetail": false },
+    { "name": "duration with default", "kind": "duration", "default": 30, "label": "+ Log 30m", "opensDetail": false },
+    { "name": "continuous never logged", "kind": "continuous", "default": null, "label": "+ Log", "opensDetail": true }
+  ],
+  "toast": [
+    { "name": "continuous logged", "amount": 3.1, "unit": "mi", "verb": "logged", "kind": "continuous", "expected": "Logged +3.1 mi" },
+    { "name": "duration logged has no unit", "amount": 90, "unit": "guitar", "verb": "logged", "kind": "duration", "expected": "Logged +1h 30m" },
+    { "name": "duration removed", "amount": 30, "unit": "", "verb": "removed", "kind": "duration", "expected": "Removed 30m" },
+    { "name": "continuous credited", "amount": 3.1, "unit": "mi", "verb": "logged", "kind": "continuous", "counterName": "Miles", "boardNames": ["Daily grind"], "expected": "+3.1 Miles — also counted on Daily grind." },
+    { "name": "duration credited removed", "amount": 30, "unit": "", "verb": "removed", "kind": "duration", "counterName": "Guitar", "boardNames": ["Daily grind", "October"], "expected": "−30m Guitar — also removed from Daily grind, October." },
+    { "name": "discrete unchanged", "amount": 5, "unit": "pages", "verb": "logged", "kind": "discrete", "expected": "Logged +5 pages" }
+  ],
+  "customChipLabel": [
+    { "name": "continuous", "amount": 3.1, "kind": "continuous", "expected": "#3.1" },
+    { "name": "duration", "amount": 90, "kind": "duration", "expected": "#1h 30m" },
+    { "name": "discrete", "amount": 7, "kind": "discrete", "expected": "#7" }
+  ]
+}
