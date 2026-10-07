@@ -374,16 +374,19 @@ struct RisoTextField: View {
 }
 
 /// Riso-styled number-pad text field. Same visual as `RisoTextField`
-/// with `.numberPad` keyboard type.
+/// with `.numberPad` keyboard type (or the `keyboard` given).
 ///
 /// Matches the `risoNumberInput` private helper in `RisoSpecialTaskPanel`.
 struct RisoNumberField: View {
     let placeholder: String
     @Binding var text: String
+    /// `.numberPad` (default — every pre-kind caller) or `.decimalPad` for
+    /// Continuous (`GoalEntryModel.keyboard(for:)`).
+    var keyboard: UIKeyboardType = .numberPad
 
     var body: some View {
         TextField(placeholder, text: $text)
-            .keyboardType(.numberPad)
+            .keyboardType(keyboard)
             .fieldStyle()
     }
 }

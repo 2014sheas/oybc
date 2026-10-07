@@ -160,6 +160,19 @@ final class RisoKitSnapshotTests: XCTestCase {
         )
     }
 
+    // MARK: - GoalEntry (PR 3 Task 4) — handoff §1 "Amount entry"
+
+    private func goalEntryKinds() -> some View {
+        GoalEntryKindsPreview().padding(16).background(Color.risoPaper).frame(width: 353, height: 300)
+    }
+
+    func testGoalEntryKindsLight() {
+        assertSnapshot(of: goalEntryKinds(), as: .image(layout: .fixed(width: 353, height: 300)), record: recordMode)
+    }
+
+    func testGoalEntryKindsDark() {
+        assertSnapshot(of: goalEntryKinds(), as: .image(layout: .fixed(width: 353, height: 300), traits: .init(userInterfaceStyle: .dark)), record: recordMode)
+    }
 }
 
 /// `@State` wrappers so the compact stepper + compact segmented render
@@ -229,6 +242,20 @@ private struct KindPickerStatesPreview: View {
             KindPickerView(selection: $b, lock: .duration)
             KindPickerView(selection: $c, lock: .all)
             KindTagView(kind: .continuous, counterName: "Miles", lifetime: 148.6)
+        }
+    }
+}
+
+/// Discrete 300 · Continuous 26.2 · Duration 10h 30m with the wheel open — handoff §1 "Amount entry".
+private struct GoalEntryKindsPreview: View {
+    @State private var d = "300"
+    @State private var c = "26.2"
+    @State private var t = "10h 30m"
+    var body: some View {
+        VStack(spacing: 8) {
+            GoalEntryView(kind: .discrete, text: $d)
+            GoalEntryView(kind: .continuous, text: $c, suffix: "mi")
+            GoalEntryView(kind: .duration, text: $t, startsOpen: true)
         }
     }
 }
