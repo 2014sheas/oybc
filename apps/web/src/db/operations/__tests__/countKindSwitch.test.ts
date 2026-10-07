@@ -193,6 +193,17 @@ describe('switchCounterKind', () => {
     expect(await db.tasks.get(LIVE)).toMatchObject({ countKind: 'continuous', maxCount: 6 });
   });
 
+  it('restamps the lifetime caches from events at the goal line, both directions', async () => {
+    await seedFamily({ countKind: 'continuous', rootGoal: 26.2, liveTarget: 6.1, deltas: [25.6] });
+
+    await switchCounterKind(ROOT, 'discrete', NOW);
+    // 25.6 rounds to 26 against the rounded goal 26 → complete.
+    expect(await db.tasks.get(ROOT)).toMatchObject({ maxCount: 26, isCompleted: true, currentCount: 26 });
+
+    await switchCounterKind(ROOT, 'continuous', NOW);
+    expect(await db.tasks.get(ROOT)).toMatchObject({ maxCount: 26, isCompleted: false, currentCount: 25.6 });
+  });
+
   it('refuses duration in either direction, a no-op switch, linked rows and non-counters — writing nothing', async () => {
     await seedFamily({ countKind: 'discrete', rootGoal: 30 });
     await db.tasks.add(counting('normal-1', { type: TaskType.NORMAL }));

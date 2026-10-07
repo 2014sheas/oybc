@@ -3,6 +3,7 @@ import {
   TaskType,
   isFrozenDerivedRow,
   planCountKindSwitch,
+  propagateIncrement,
   resolveCountKind,
   type CountKind,
   type Task,
@@ -10,6 +11,7 @@ import {
 import { db } from '../internal';
 import { addToSyncQueue } from './syncQueue';
 import { runBoardCascadeForTasks } from './orchestration';
+import { computeTaskCachesFromEvents } from './taskEvents';
 
 /**
  * countKindSwitch.ts — counter kinds, web half of the family-wide kind rules
@@ -51,7 +53,12 @@ export class CountKindSwitchError extends Error {
  * (`isFrozenDerivedRow`) is a permanent record and keeps its kind and goal.
  * Then the board cascade re-derives every board placing a written row.
  * `taskEvents` are never touched: a whole kind rounds the window SUM at read
- * time, so switching back restores the exact fractional count.
+ * time, so switching back restores the exact fractional count. The lifetime
+ * caches (`isCompleted` / `currentCount` / `completedAt`) are recomputed from
+ * events in the same write — the root via `computeTaskCachesFromEvents`, each
+ * linked row via `propagateIncrement` from the root's new count (the same
+ * rules the event-append path uses) — so the library / Task Detail / hub
+ * agree with the board grids on the new kind.
  *
  * @param rootTaskId - The counter root (a COUNTING task with no `sharedCounterId`).
  * @param to - The requested kind.
@@ -85,7 +92,9 @@ export async function switchCounterKind(
           `switchCounterKind: ${resolveCountKind(root)} → ${to} is not a permitted switch`,
         );
       }
-      await writeKindSwitch(root, to, rootPatch, nowIso);
+      const rootEvents = await db.taskEvents.where('taskId').equals(root.id).toArray();
+      const rootCaches = computeTaskCachesFromEvents({ ...root, ...rootPatch, countKind: to }, rootEvents);
+      await writeKindSwitch(root, to, { ...rootPatch, ...rootCaches }, nowIso);
       const writtenIds = [root.id];
 
       const family = await db.tasks
@@ -97,7 +106,26 @@ export async function switchCounterKind(
         if (isFrozenDerivedRow(row, nowIso)) continue;
         const rowPatch = planCountKindSwitch(row, resolveCountKind(row), to);
         if (!rowPatch) continue; // already `to` (or a kind that never switches)
-        await writeKindSwitch(row, to, rowPatch, nowIso);
+        const [derived] = propagateIncrement({ currentCount: rootCaches.currentCount ?? 0 }, [
+          {
+            id: row.id,
+            baseline: row.baseline,
+            maxCount: rowPatch.maxCount ?? row.maxCount,
+            isCompleted: row.isCompleted,
+            countKind: to,
+          },
+        ]);
+        await writeKindSwitch(
+          row,
+          to,
+          {
+            ...rowPatch,
+            currentCount: derived.newCurrentCount,
+            isCompleted: derived.newIsCompleted,
+            completedAt: !row.isCompleted && derived.newIsCompleted ? nowIso : row.completedAt,
+          },
+          nowIso,
+        );
         writtenIds.push(row.id);
       }
 
@@ -118,7 +146,7 @@ export async function switchCounterKind(
 async function writeKindSwitch(
   task: Task,
   to: CountKind,
-  patch: { maxCount?: number; defaultLogAmount?: number },
+  patch: Partial<Task>,
   nowIso: string,
 ): Promise<void> {
   await db.tasks.update(task.id, {

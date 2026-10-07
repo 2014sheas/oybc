@@ -1095,4 +1095,6 @@ it('enqueues one sync item per written task', async () => { /* assert syncQueue 
 
 ## After PR 2
 
+PR 1 #551 and PR 2 #552 shipped (data + logic).
+
 PRs 3 (authoring UI) and 4 (logging + display UI) are planned separately once the Claude Design handoff for `docs/design/counter-kinds/BRIEF.md` is approved. They consume: `formatCount`, `switchCounterKind`, `canSwitchCountKind`, `COUNT_KINDS`, and replace the integer-only parsers (`parseCustomLogAmount`, `CounterLogAmount.parseCustom`, `RisoNumberField` `.numberPad`, `parsePositiveGoal`, the `parseInt` Goal parsers) with kind-aware ones.

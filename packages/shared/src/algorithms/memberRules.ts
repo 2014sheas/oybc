@@ -391,6 +391,8 @@ export function planDerivedTasks(args: PlanDerivedTasksArgs): PlanDerivedTasksRe
     if (base >= goal) return goal;
     return Math.min(Math.max(countTargetStep(kind), floorToCountStep(base, kind)), goal);
   };
+  // A whole kind's baseline cache is floored (the heal path's rule); continuous quantizes.
+  const wholeBaseline = (x: number, kind: CountKind): number => (isWholeCountKind(kind) ? Math.floor(x) : quantizeCount(x));
   const mint = (t: PlanTask, replacesId: string, target: number, vary: VaryLevel): DerivedTaskDraft => {
     const goal = goalOf(t)!;
     const root = t.sharedCounterId ?? t.id;
@@ -410,7 +412,7 @@ export function planDerivedTasks(args: PlanDerivedTasksArgs): PlanDerivedTasksRe
       replacesId,
       maxCount,
       countKind,
-      baseline: baselineByRootId[root] ?? 0,
+      baseline: wholeBaseline(baselineByRootId[root] ?? 0, countKind),
       title: counterCopyTitle(t, maxCount),
       action,
       unit,

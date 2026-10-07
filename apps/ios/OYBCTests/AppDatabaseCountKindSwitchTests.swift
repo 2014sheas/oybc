@@ -105,6 +105,22 @@ final class AppDatabaseCountKindSwitchTests: XCTestCase {
         XCTAssertEqual(try K.fetchTask(db, "live")?.countKind, .continuous)
     }
 
+    func test_restampsLifetimeCaches_atTheGoalLine_bothDirections() throws {
+        let db = try seedFamily(kind: .continuous, rootGoal: 26.2, liveTarget: 6.1, deltas: [25.6])
+
+        try db.switchCounterKind(rootTaskId: "root", to: .discrete, now: now)
+        var root = try XCTUnwrap(K.fetchTask(db, "root"))
+        XCTAssertEqual(root.maxCount, 26)
+        XCTAssertTrue(root.isCompleted)
+        XCTAssertEqual(root.currentCount, 26)
+
+        try db.switchCounterKind(rootTaskId: "root", to: .continuous, now: now)
+        root = try XCTUnwrap(K.fetchTask(db, "root"))
+        XCTAssertEqual(root.maxCount, 26)
+        XCTAssertFalse(root.isCompleted)
+        XCTAssertEqual(root.currentCount, 25.6)
+    }
+
     func test_refusesDurationNoOpLinkedRowsAndNonCounters_writingNothing() throws {
         let db = try seedFamily(kind: .discrete, rootGoal: 30)
         var normal = K.task("normal", maxCount: nil)

@@ -32,7 +32,9 @@ extension AppDatabase {
     /// permanent record and keeps its kind and goal. Then the board cascade
     /// re-derives every board placing a written row. `task_events` are never
     /// touched: a whole kind rounds the window SUM at read time, so switching
-    /// back restores the exact fractional count.
+    /// back restores the exact fractional count. Lifetime caches
+    /// (`isCompleted` / `currentCount` / `completedAt`) are restamped from
+    /// events in the same write.
     ///
     /// - Parameters:
     ///   - rootTaskId: The counter root (a COUNTING task with no `sharedCounterId`).
@@ -56,7 +58,18 @@ extension AppDatabase {
             ) else {
                 throw CountKindSwitchError.refused
             }
-            try Self.writeKindSwitch(db: db, task: root, to: to, patch: rootPatch, now: nowIso)
+            // Lifetime caches recomputed from events in the same write (the root
+            // via computeTaskCachesFromEvents, linked rows via propagateIncrement
+            // from the root's new count — the event-append path's rules).
+            var patchedRoot = root
+            if let maxCount = rootPatch.maxCount { patchedRoot.maxCount = maxCount }
+            patchedRoot.countKind = to
+            let rootEvents = try TaskEvent.filter(Column("taskId") == root.id).fetchAll(db)
+            let rootCaches = Self.computeTaskCachesFromEvents(task: patchedRoot, events: rootEvents)
+            try Self.writeKindSwitch(
+                db: db, task: root, to: to, patch: rootPatch, now: nowIso,
+                caches: (rootCaches.isCompleted, rootCaches.currentCount, rootCaches.completedAt)
+            )
             var writtenIds = [root.id]
 
             let family = try Task
@@ -70,7 +83,19 @@ extension AppDatabase {
                     from: resolveCountKind(row.countKind),
                     to: to
                 ) else { continue } // already `to` (or a kind that never switches)
-                try Self.writeKindSwitch(db: db, task: row, to: to, patch: rowPatch, now: nowIso)
+                let derived = propagateIncrement(
+                    sourceAfterCurrentCount: rootCaches.currentCount ?? 0,
+                    linkedTasks: [PropagateIncrementLinkedTask(
+                        id: row.id, baseline: row.baseline,
+                        maxCount: rowPatch.maxCount ?? row.maxCount,
+                        isCompleted: row.isCompleted, countKind: to
+                    )]
+                )[0]
+                let completedAt = !row.isCompleted && derived.newIsCompleted ? nowIso : row.completedAt
+                try Self.writeKindSwitch(
+                    db: db, task: row, to: to, patch: rowPatch, now: nowIso,
+                    caches: (derived.newIsCompleted, derived.newCurrentCount, completedAt)
+                )
                 writtenIds.append(row.id)
             }
 
@@ -83,9 +108,13 @@ extension AppDatabase {
     /// One authored kind-switch write: kind + rounded fields, version bump,
     /// `.update` enqueue. Runs inside the caller's write transaction.
     private static func writeKindSwitch(
-        db: Database, task: Task, to: CountKind, patch: CountKindSwitchPatch, now: String
+        db: Database, task: Task, to: CountKind, patch: CountKindSwitchPatch, now: String,
+        caches: (isCompleted: Bool, currentCount: CountValue?, completedAt: String?)
     ) throws {
         var updated = task
+        updated.isCompleted = caches.isCompleted
+        updated.currentCount = caches.currentCount
+        updated.completedAt = caches.completedAt
         if let maxCount = patch.maxCount { updated.maxCount = maxCount }
         if let amount = patch.defaultLogAmount { updated.defaultLogAmount = amount }
         updated.countKind = to

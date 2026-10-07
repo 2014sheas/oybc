@@ -534,7 +534,7 @@ extension BoardSources {
                 replacesId: replacesId,
                 maxCount: maxCount,
                 countKind: countKind,
-                baseline: baselineByRootId[root] ?? 0,
+                baseline: isWholeCountKind(countKind) ? (baselineByRootId[root] ?? 0).rounded(.down) : quantizeCount(baselineByRootId[root] ?? 0),
                 title: TaskTitle.counterCopyTitle(member: task, newMaxCount: maxCount),
                 action: action,
                 unit: unit,
