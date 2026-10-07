@@ -1343,22 +1343,24 @@ struct BoardPlayView: View {
 
         case .counting:
             if let t = task {
-                let actionLabel = t.action ?? "item"
-                // R3: shared counting squares use the counter's persisted
-                // default amount for this quick single-tap action (was
-                // hardcoded +1/-1) — the "#" custom entry still lives in the
-                // stepper sheet's chip row; this menu quick-action never
-                // persists a new default (mirrors the sheet's plain-tap rule).
-                let quickAmount = viewModel.sharedCounterSourceId(for: t).flatMap { taskMap[$0]?.defaultLogAmount } ?? 1
-                let quickAmountText = formatCount(quickAmount, kind: resolveCountKind(t.countKind))
-                Button("+ Add \(quickAmountText) \(actionLabel)", systemImage: "plus") {
+                let kind = resolveFamilyCountKind(t, lookup: { taskMap[$0] })
+                let source = viewModel.sharedCounterSourceId(for: t).flatMap { taskMap[$0] }
+                // Discrete keeps the shared source's default (else 1); the
+                // new kinds remember per task. Never persists a new default.
+                let remembered = kind == .discrete ? source?.defaultLogAmount : (source ?? t).defaultLogAmount
+                let chips = CounterLogAmount.boardSheetChips(kind: kind, goal: t.maxCount ?? 0)
+                let quickAmount = CounterLogAmount.quickAmount(kind: kind, chips: chips, defaultLogAmount: remembered)
+                Button(CountingMenuLabels.add(amount: quickAmount, kind: kind, unit: t.unit ?? "", action: t.action ?? "item"), systemImage: "plus") {
                     guard !isBoardLocked else { return }
                     viewModel.handleCountingTap(boardTask: boardTask, task: t, amount: quickAmount)
                 }
-                // No maxVal gate — overshoot is a feature (never clamp);
-                // matches the cell-tap stepper + detail-sheet stepper.
+                // No maxVal gate — overshoot is a feature (never clamp).
                 .disabled(isProcessing || isBoardLocked)
-                Button("− Remove \(quickAmountText) \(actionLabel)", systemImage: "minus") {
+                if kind != .discrete {
+                    Button("Custom amount…", systemImage: "number") { countingStepperBoardTaskId = boardTask.id }
+                        .disabled(isBoardLocked)
+                }
+                Button(CountingMenuLabels.remove(amount: quickAmount, kind: kind, unit: t.unit ?? "", action: t.action ?? "item"), systemImage: "minus") {
                     guard !isBoardLocked else { return }
                     viewModel.handleCountingDecrement(boardTask: boardTask, task: t, amount: quickAmount)
                 }

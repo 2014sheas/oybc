@@ -59,4 +59,11 @@ test.describe('Counter kinds — logging (B1)', () => {
     await page.keyboard.press('Escape');
     await expect.poll(async () => (await readTask(page, PRACTICE))?.defaultLogAmount).toBe(90);
   });
+
+  test('right-click: + Add {last} unit', async ({ page }) => {
+    const run = page.getByRole('button', { name: 'Run 26.2 mi' });
+    await run.click({ button: 'right' });
+    await page.getByRole('button', { name: '+ Add 6.6 mi' }).click();
+    await expect(run).toContainText('6.6/26.2');
+  });
 });

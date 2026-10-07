@@ -44,7 +44,9 @@ import { BoardEditButton } from './boardActions/BoardEditButton';
 import { canEditSquares } from './boardActions/boardMenu';
 import { usePreferences } from '../hooks/usePreferences';
 import { useNavigate } from 'react-router-dom';
-import { compactStreakLabel, getHighlightedSquares } from '@oybc/shared';
+import {
+  boardSheetChips, compactStreakLabel, getHighlightedSquares, quantizeCount, quickLogAmount, resolveFamilyCountKind,
+} from '@oybc/shared';
 import { gatedStreak } from '../utils/gatedStreak';
 import { RisoIcon } from './riso';
 import { RisoBoardCell } from './board/RisoBoardCell';
@@ -1015,8 +1017,27 @@ export function BoardPlaySurface({
         // the full picker) rather than an inline input — see the prop's
         // docstring on `FloatingContextMenu` for why.
         const menuSourceId = resolveSharedCounterSourceId(task, sharedCounterSourceIds);
+        const menuKind = resolveFamilyCountKind(task, (id) => taskMap[id]);
+        const amountActions = squareData.type === 'counting' && menuKind !== 'discrete'
+          ? {
+              kind: menuKind,
+              amount: quickLogAmount(
+                menuKind, boardSheetChips(menuKind, task.maxCount ?? 0),
+                (menuSourceId ? taskMap[menuSourceId] : task)?.defaultLogAmount,
+              ),
+              unit: task.unit ?? '',
+              onAdd: (a: number) => (menuSourceId
+                ? void handleSharedCounterIncrement(menuSourceId, a, false)
+                : void handleComplete(bt.id, { currentCount: quantizeCount(menuCurrentCount + a) })),
+              onRemove: (a: number) => (menuSourceId
+                ? void handleSharedCounterDecrement(menuSourceId, a, false)
+                : void handleComplete(bt.id, { currentCount: Math.max(0, quantizeCount(menuCurrentCount - a)) })),
+              onOpenCustom: () => setSelectedSquareId(bt.id),
+              removeDisabled: isLinkedCounter || menuCurrentCount <= 0,
+            }
+          : undefined;
         const sharedAmountActions =
-          squareData.type === 'counting' && menuSourceId
+          squareData.type === 'counting' && menuSourceId && menuKind === 'discrete'
             ? {
                 unit: task.unit ?? '',
                 defaultAmount: resolveSharedCounterDefaultAmount(taskMap[menuSourceId]),
@@ -1073,6 +1094,7 @@ export function BoardPlaySurface({
               setContextMenu(null);
             }}
             sharedAmountActions={sharedAmountActions}
+            amountActions={amountActions}
           />
         );
       })()}
