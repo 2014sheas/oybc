@@ -206,16 +206,16 @@ struct RisoCompoundFieldsView: View {
         let a = subInputText.trimmingCharacters(in: .whitespacesAndNewlines)
         let g = subGoalText.trimmingCharacters(in: .whitespacesAndNewlines)
         let u = subUnitText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !a.isEmpty, !u.isEmpty, let goal = Int(g), goal > 0 else { return "" }
+        guard !a.isEmpty, !u.isEmpty, let goal = Int(g).map(CountValue.init), goal > 0 else { return "" }
         return TaskTitle.generateCounterTaskTitle(action: a, maxCount: goal, unit: u)
     }
 
     /// The typed sub goal as a positive Int, or nil when blank/invalid.
     /// Gates `subCounterLinkBanner` — mirrors `RisoSpecialTaskPanel`'s
     /// `countingGoal` (the hint only shows once a valid goal exists).
-    private var subCountingGoal: Int? {
+    private var subCountingGoal: CountValue? {
         guard let g = Int(subGoalText.trimmingCharacters(in: .whitespacesAndNewlines)), g > 0 else { return nil }
-        return g
+        return CountValue(g)
     }
 
     /// Gates the sub "Add" button and `addNewSub()`. A Normal sub needs only
@@ -480,7 +480,7 @@ struct RisoCompoundFieldsView: View {
                             .foregroundStyle(Color.risoInk)
                             .lineLimit(1)
                         if task.type == .counting, let max = task.maxCount, let unit = task.unit {
-                            Text("\(max) \(unit)")
+                            Text("\(formatCount(max, kind: resolveCountKind(task.countKind))) \(unit)")
                                 .font(.risoBody(11, .semibold))
                                 .foregroundStyle(Color.risoMuted)
                         }

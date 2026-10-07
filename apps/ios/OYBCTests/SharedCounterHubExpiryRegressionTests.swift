@@ -94,7 +94,7 @@ final class SharedCounterHubExpiryRegressionTests: XCTestCase {
 
     /// A weekly board that pulls the monthly via the Sources sheet, with an
     /// explicit target on the counter member.
-    private func configureWeekly(_ vm: BoardWizardViewModel, monthlyId: String, target: Int) {
+    private func configureWeekly(_ vm: BoardWizardViewModel, monthlyId: String, target: CountValue) {
         vm.name = "This week"
         if !vm.isCore { vm.updateTimeframe(.weekly) }
         vm.updateSize(3)

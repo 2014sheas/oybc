@@ -510,7 +510,7 @@ final class BoardPlayViewModel: ObservableObject {
     ///     Detail). Only an explicit custom "#" entry passes `true` — one-tap
     ///     chips (+1 / +default) and every pre-R3 call site pass `false` so a
     ///     quick nudge never silently overwrites the user's preference.
-    func handleCountingTap(boardTask: BoardTask, task: Task, amount: Int = 1, persistAsDefault: Bool = false) {
+    func handleCountingTap(boardTask: BoardTask, task: Task, amount: CountValue = 1, persistAsDefault: Bool = false) {
         guard !isProcessing else { return }
 
         if let sourceId = sharedCounterSourceId(for: task) {
@@ -562,7 +562,7 @@ final class BoardPlayViewModel: ObservableObject {
         sourceTaskId: String,
         counterName: String = "",
         unit: String = "",
-        amount: Int = 1,
+        amount: CountValue = 1,
         persistAsDefault: Bool = false
     ) {
         guard !isProcessing else { return }
@@ -670,7 +670,7 @@ final class BoardPlayViewModel: ObservableObject {
         sourceTaskId: String,
         counterName: String = "",
         unit: String = "",
-        amount: Int = 1,
+        amount: CountValue = 1,
         persistAsDefault: Bool = false
     ) {
         guard !isProcessing else { return }
@@ -828,7 +828,7 @@ final class BoardPlayViewModel: ObservableObject {
     ///   - task: The `Task` providing current state.
     ///   - amount: Amount to remove. Default 1 preserves prior behavior.
     ///   - persistAsDefault: R3 — see `handleCountingTap`.
-    func handleCountingDecrement(boardTask: BoardTask, task: Task, amount: Int = 1, persistAsDefault: Bool = false) {
+    func handleCountingDecrement(boardTask: BoardTask, task: Task, amount: CountValue = 1, persistAsDefault: Bool = false) {
         guard !isProcessing else { return }
 
         if let sourceId = sharedCounterSourceId(for: task) {
@@ -1065,15 +1065,15 @@ final class BoardPlayViewModel: ObservableObject {
     ///   - isIncrement: `true` for increment, `false` for decrement.
     private nonisolated func sharedCreditToastText(
         counterName: String,
-        amount: Int,
+        amount: CountValue,
         otherBoards: [AppDatabase.AffectedBoard],
         isIncrement: Bool
     ) -> String {
-        let boardNames = otherBoards.map { $0.boardName }.joined(separator: ", ")
+        let boardNames = otherBoards.map { $0.boardName }.joined(separator: ", "), amountText = formatCount(amount, kind: .discrete)
         if isIncrement {
-            return "+\(amount) \(counterName) — also counted on \(boardNames)."
+            return "+\(amountText) \(counterName) — also counted on \(boardNames)."
         } else {
-            return "−\(amount) \(counterName) — also removed from \(boardNames)."
+            return "−\(amountText) \(counterName) — also removed from \(boardNames)."
         }
     }
 
@@ -1339,7 +1339,7 @@ final class BoardPlayViewModel: ObservableObject {
                 continue  // Not part of a shared-counter group.
             }
 
-            let displayed: Int
+            let displayed: CountValue
             if task.sharedCounterId != nil {
                 displayed = resolveLinkedCounterDisplay(task: task, eventsByTaskId: windowEventsByTaskId, sealedAt: board?.sealedAt, window: board.map(LinkedCounterWindow.init(board:))).displayed
             } else {
@@ -1460,7 +1460,7 @@ struct SharedCounterCreditToastPayload: Equatable {
     let sourceTaskId: String
     /// The amount just logged/removed — matches what Undo will reverse
     /// (decrement uses the CLAMPED `effectiveDelta`, not the requested amount).
-    let amount: Int
+    let amount: CountValue
     let unit: String
     let isIncrement: Bool
     /// Full pinned copy contract string — see `sharedCreditToastText`.

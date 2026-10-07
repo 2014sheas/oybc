@@ -16,7 +16,7 @@ final class LastCounterLogEntryTests: XCTestCase {
         occurredAt: String = "2026-07-20T09:00:00.000",
         createdAt: String? = nil,
         kind: TaskEventKind = .increment,
-        delta: Int? = 1,
+        delta: CountValue? = 1,
         isDeleted: Bool = false
     ) -> TaskEvent {
         TaskEvent(

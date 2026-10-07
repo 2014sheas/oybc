@@ -20,7 +20,7 @@ final class LateLogUndoTests: XCTestCase {
         ))
     }
 
-    private func makeTask(_ id: String, type: TaskType = .normal, maxCount: Int? = nil) -> Task {
+    private func makeTask(_ id: String, type: TaskType = .normal, maxCount: CountValue? = nil) -> Task {
         let now = AppDatabase.currentTimestamp()
         return Task(
             id: id, userId: userId, title: id, description: nil, type: type,

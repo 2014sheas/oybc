@@ -347,8 +347,8 @@ final class BoardPlayViewModelTests: XCTestCase {
     private func makeCountingTask(
         _ id: String,
         userId: String = "u1",
-        maxCount: Int = 3,
-        currentCount: Int? = nil,
+        maxCount: CountValue = 3,
+        currentCount: CountValue? = nil,
         sharedCounterId: String? = nil,
         isCounter: Bool = false
     ) -> Task {
@@ -1528,7 +1528,7 @@ final class BoardPlayViewModelTests: XCTestCase {
     /// increment event AND stamps the caches. Issue #377 made arrival
     /// detection resolve SOURCE counts windowed (from events), so a raw
     /// `currentCount` write no longer models an elsewhere log.
-    private func bumpSourceCount(_ db: AppDatabase, by delta: Int, taskId: String = "c-src") throws {
+    private func bumpSourceCount(_ db: AppDatabase, by delta: CountValue, taskId: String = "c-src") throws {
         _ = try db.incrementSharedCounter(sourceTaskId: taskId, by: delta)
     }
 
@@ -2429,7 +2429,7 @@ final class BoardPlayViewModelTests: XCTestCase {
                                     ("e-in", 5, "2026-06-25T00:00:00.000")] {
                 try TaskEvent(
                     id: id, userId: "u1", taskId: "src", kind: .increment,
-                    delta: delta, occurredAt: at, boardId: nil,
+                    delta: CountValue(delta), occurredAt: at, boardId: nil,
                     createdAt: now, updatedAt: now, lastSyncedAt: nil,
                     version: 1, isDeleted: false, deletedAt: nil
                 ).save(database)
@@ -2461,7 +2461,7 @@ final class BoardPlayViewModelTests: XCTestCase {
         try db.write { db in
             for (id, delta, at) in [("in", 3, "2026-06-25T00:00:00.000"), ("after", 2, "2026-07-05T00:00:00.000")] {
                 try TaskEvent(
-                    id: id, userId: "u1", taskId: "c1", kind: .increment, delta: delta,
+                    id: id, userId: "u1", taskId: "c1", kind: .increment, delta: CountValue(delta),
                     occurredAt: at, boardId: nil, createdAt: at, updatedAt: at,
                     lastSyncedAt: nil, version: 1, isDeleted: false, deletedAt: nil
                 ).save(db)

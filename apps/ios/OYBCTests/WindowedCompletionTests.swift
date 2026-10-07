@@ -29,8 +29,8 @@ final class WindowedCompletionTests: XCTestCase {
 
     private func makeTask(
         _ id: String, type: TaskType = .normal, title: String = "Task",
-        maxCount: Int? = nil, isCompleted: Bool = false, completedAt: String? = nil,
-        currentCount: Int? = nil, sharedCounterId: String? = nil, baseline: Int? = nil,
+        maxCount: CountValue? = nil, isCompleted: Bool = false, completedAt: String? = nil,
+        currentCount: CountValue? = nil, sharedCounterId: String? = nil, baseline: CountValue? = nil,
         version: Int = 1
     ) -> Task {
         let now = AppDatabase.currentTimestamp()
@@ -76,7 +76,7 @@ final class WindowedCompletionTests: XCTestCase {
     }
 
     private func makeEvent(_ id: String, taskId: String, kind: TaskEventKind,
-                           delta: Int? = nil, occurredAt: String, isDeleted: Bool = false) -> TaskEvent {
+                           delta: CountValue? = nil, occurredAt: String, isDeleted: Bool = false) -> TaskEvent {
         let now = AppDatabase.currentTimestamp()
         return TaskEvent(
             id: id, userId: userId, taskId: taskId, kind: kind, delta: delta,
@@ -639,7 +639,7 @@ final class WindowedCompletionTests: XCTestCase {
         DateFormatting.utcISOString(DateFormatting.parseISO(localIso)!)
     }
 
-    private func makeEvent(_ id: String, taskId: String, kind: TaskEventKind, delta: Int? = nil,
+    private func makeEvent(_ id: String, taskId: String, kind: TaskEventKind, delta: CountValue? = nil,
                            occurredAt: String, boardId: String?) -> TaskEvent {
         var e = makeEvent(id, taskId: taskId, kind: kind, delta: delta, occurredAt: occurredAt)
         e.boardId = boardId

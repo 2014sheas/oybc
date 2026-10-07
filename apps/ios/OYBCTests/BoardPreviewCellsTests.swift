@@ -53,8 +53,8 @@ final class BoardPreviewCellsTests: XCTestCase {
     }
 
     private func makeCountingTask(
-        _ id: String, isCompleted: Bool = false, currentCount: Int? = 0,
-        sharedCounterId: String? = nil, baseline: Int? = nil
+        _ id: String, isCompleted: Bool = false, currentCount: CountValue? = 0,
+        sharedCounterId: String? = nil, baseline: CountValue? = nil
     ) -> Task {
         Task(
             id: id, userId: userId, title: "Counter \(id)", type: .counting,

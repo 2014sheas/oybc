@@ -66,10 +66,10 @@ final class DerivedCounterCrossWindowCompletionTests: XCTestCase {
     }
 
     /// Root counter with goal `goal`; `history` increments logged two weeks ago.
-    private func seedRoot(_ database: AppDatabase, goal: Int, history: Int) throws {
+    private func seedRoot(_ database: AppDatabase, goal: CountValue, history: CountValue) throws {
         try database.write { db in
             try Task(
-                id: self.rootId, userId: self.userId, title: "Read \(goal) pages", type: .counting,
+                id: self.rootId, userId: self.userId, title: "Read \(formatCount(goal, kind: .discrete)) pages", type: .counting,
                 action: "Read", unit: "pages", maxCount: goal,
                 totalCompletions: 0, totalInstances: 0,
                 isCompleted: history >= goal, currentCount: history,
@@ -156,7 +156,7 @@ final class DerivedCounterCrossWindowCompletionTests: XCTestCase {
         XCTAssertEqual(w.board.completedTasks, 0)
     }
 
-    private func variantB(history: Int) throws {
+    private func variantB(history: CountValue) throws {
         let database = try makeDb()
         try seedRoot(database, goal: 80, history: history)
         let monthly = try board(

@@ -55,7 +55,7 @@ final class SquaresEditSnapshotTests: XCTestCase {
         draft: [String: SquaresDraftCell],
         centerType: CenterSquareType,
         taskMap: [String: Task],
-        windowedCount: @escaping (Task) -> Int = { $0.currentCount ?? 0 }
+        windowedCount: @escaping (Task) -> CountValue = { $0.currentCount ?? 0 }
     ) -> some View {
         let cells = buildSquaresEditCells(draft: draft, gridSize: 3, centerType: centerType)
         return SquaresEditGrid(

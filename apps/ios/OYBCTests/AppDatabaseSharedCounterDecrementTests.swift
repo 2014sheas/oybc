@@ -40,8 +40,8 @@ final class AppDatabaseSharedCounterDecrementTests: XCTestCase {
     private func makeSourceTask(
         id: String,
         userId: String = "u1",
-        currentCount: Int = 10,
-        maxCount: Int = 20,
+        currentCount: CountValue = 10,
+        maxCount: CountValue = 20,
         isCompleted: Bool = false,
         completedAt: String? = nil
     ) -> Task {
@@ -87,8 +87,8 @@ final class AppDatabaseSharedCounterDecrementTests: XCTestCase {
         id: String,
         sourceId: String,
         userId: String = "u1",
-        baseline: Int = 0,
-        maxCount: Int = 10,
+        baseline: CountValue = 0,
+        maxCount: CountValue = 10,
         isCompleted: Bool = false
     ) -> Task {
         let now = AppDatabase.currentTimestamp()

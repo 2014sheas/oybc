@@ -22,7 +22,7 @@ extension AppDatabase {
         /// Counting square — desired NEW windowed count (the grid derives the
         /// current windowed count from `resolveTaskWindowState`, so the DB layer
         /// appends `desired − currentWindowedCount` as the event delta).
-        case setWindowedCount(Int)
+        case setWindowedCount(CountValue)
     }
 
     /// Runs the full task-completion orchestration in a single DB write

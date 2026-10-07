@@ -49,7 +49,7 @@ final class CounterOpsTests: XCTestCase {
     private func makeSourceTask(
         id: String,
         userId: String = "u1",
-        currentCount: Int = 40,
+        currentCount: CountValue = 40,
         isCounter: Bool = true,
         isDeleted: Bool = false
     ) -> Task {
@@ -76,8 +76,8 @@ final class CounterOpsTests: XCTestCase {
     private func makeMemberTask(
         id: String = "member1",
         sourceId: String,
-        baseline: Int = 10,
-        maxCount: Int = 50,
+        baseline: CountValue = 10,
+        maxCount: CountValue = 50,
         userId: String = "u1"
     ) -> Task {
         Task(
@@ -424,8 +424,8 @@ final class CounterOpsTests: XCTestCase {
     private func makeWindowStampedDerived(
         id: String = "derived-1",
         sourceId: String,
-        maxCount: Int = 3,
-        baseline: Int = 0
+        maxCount: CountValue = 3,
+        baseline: CountValue = 0
     ) -> Task {
         Task(
             id: id, userId: "u1", title: "Push-ups goal", type: .counting,

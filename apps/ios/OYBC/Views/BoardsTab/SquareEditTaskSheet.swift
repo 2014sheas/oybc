@@ -82,7 +82,7 @@ struct SquareEditTaskSheet: View {
         var action: String
         var unit: String
         /// nil = no valid goal entered (non-counting or blank).
-        var maxCount: Int?
+        var maxCount: CountValue?
         /// Compound rule + sub-tasks — non-nil for a conversion INTO Compound
         /// and for an EDITED existing compound (an untouched one stays nil so
         /// a stored-invalid compound can still be renamed). Title is the
@@ -150,7 +150,7 @@ struct SquareEditTaskSheet: View {
         let countingSource = task.type == .counting ? task : (original ?? task)
         _action      = State(initialValue: countingSource.action ?? "")
         _unit        = State(initialValue: countingSource.unit ?? "")
-        _maxCountStr = State(initialValue: countingSource.maxCount.map { String($0) } ?? "")
+        _maxCountStr = State(initialValue: countingSource.maxCount.map { formatCount($0, kind: resolveCountKind(countingSource.countKind)) } ?? "")
         _pickerLibraryTasks = State(initialValue: libraryTasks)
         _pickerLinks = State(initialValue: allLinks)
         _pickerInputsState = State(initialValue: libraryInputsState)
@@ -553,7 +553,7 @@ struct SquareEditTaskSheet: View {
                 type: type,
                 action: action.trimmingCharacters(in: .whitespaces),
                 unit: unit.trimmingCharacters(in: .whitespaces),
-                maxCount: Int(maxCountStr.trimmingCharacters(in: .whitespaces)),
+                maxCount: Int(maxCountStr.trimmingCharacters(in: .whitespaces)).map(CountValue.init),
                 compound: compoundSubmission
             )
         )

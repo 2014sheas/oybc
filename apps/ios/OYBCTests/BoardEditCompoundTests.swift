@@ -41,7 +41,7 @@ final class BoardEditCompoundTests: XCTestCase {
 
     private func makeTask(
         _ id: String, type: TaskType = .normal, title: String? = nil,
-        action: String? = nil, unit: String? = nil, maxCount: Int? = nil
+        action: String? = nil, unit: String? = nil, maxCount: CountValue? = nil
     ) -> Task {
         let now = AppDatabase.currentTimestamp()
         return Task(
@@ -98,7 +98,7 @@ final class BoardEditCompoundTests: XCTestCase {
 
     private func patch(
         _ title: String, _ type: TaskType, compound: TaskEditPatch? = nil,
-        action: String = "", unit: String = "", maxCount: Int? = nil
+        action: String = "", unit: String = "", maxCount: CountValue? = nil
     ) -> SquareEditTaskSheet.Patch {
         .init(title: title, type: type, action: action, unit: unit, maxCount: maxCount, compound: compound)
     }

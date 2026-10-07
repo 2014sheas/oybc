@@ -117,7 +117,7 @@ final class ProfileHomeViewModel: ObservableObject {
     /// auto-dismiss timer restarts on back-to-back logs).
     struct LogToast: Equatable {
         let counterId: String
-        let amount: Int
+        let amount: CountValue
         let unit: String
         let verb: CounterLogToastView.Verb
         let toastKey: String

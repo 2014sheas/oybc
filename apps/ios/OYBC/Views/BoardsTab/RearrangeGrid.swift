@@ -123,7 +123,7 @@ struct RearrangeGrid: View {
     var windowedIsCompleted: (Task) -> Bool = { $0.isCompleted }
     /// Windowed count twin for counting squares (the wizard preview injects
     /// `previewCount`, windowed against the prospective board).
-    var windowedCount: (Task) -> Int = { $0.currentCount ?? 0 }
+    var windowedCount: (Task) -> CountValue = { $0.currentCount ?? 0 }
 
     /// Cell ids (boardTaskIds) with a staged, unsaved edit other than a move
     /// (replace / task override / lock change) — drawn with the pencil chip.

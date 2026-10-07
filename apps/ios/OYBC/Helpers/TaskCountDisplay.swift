@@ -32,7 +32,7 @@ enum TaskCountDisplay {
     ///
     /// - Parameter task: The task being rendered.
     /// - Returns: The displayed count (0 when the task has none).
-    static func displayedCount(for task: Task) -> Int {
+    static func displayedCount(for task: Task) -> CountValue {
         guard let sharedCounterId = task.sharedCounterId, !sharedCounterId.isEmpty else {
             return task.currentCount ?? 0
         }
@@ -62,6 +62,7 @@ enum TaskCountDisplay {
         guard let action = task.action, let unit = task.unit, let max = task.maxCount else {
             return nil
         }
-        return "\(action) · \(displayedCount(for: task)) / \(max) \(unit)"
+        let kind = resolveCountKind(task.countKind)
+        return "\(action) · \(formatCount(displayedCount(for: task), kind: kind)) / \(formatCount(max, kind: kind)) \(unit)"
     }
 }

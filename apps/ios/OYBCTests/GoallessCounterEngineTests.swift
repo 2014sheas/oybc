@@ -44,7 +44,7 @@ final class GoallessCounterEngineTests: XCTestCase {
     private func makeGoallessSourceTask(
         id: String,
         userId: String = "u1",
-        currentCount: Int = 0,
+        currentCount: CountValue = 0,
         isCompleted: Bool = false,
         completedAt: String? = nil
     ) -> Task {
@@ -90,8 +90,8 @@ final class GoallessCounterEngineTests: XCTestCase {
     private func makeGoaledSourceTask(
         id: String,
         userId: String = "u1",
-        currentCount: Int = 0,
-        maxCount: Int = 5,
+        currentCount: CountValue = 0,
+        maxCount: CountValue = 5,
         isCompleted: Bool = false
     ) -> Task {
         let now = AppDatabase.currentTimestamp()

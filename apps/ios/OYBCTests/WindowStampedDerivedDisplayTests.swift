@@ -25,8 +25,8 @@ final class WindowStampedDerivedDisplayTests: XCTestCase {
     // MARK: - Fixtures
 
     private func makeTask(
-        _ id: String, maxCount: Int, currentCount: Int, isCompleted: Bool,
-        windowStamped: Bool = true, baseline: Int = 0, sharedCounterId: String? = "root"
+        _ id: String, maxCount: CountValue, currentCount: CountValue, isCompleted: Bool,
+        windowStamped: Bool = true, baseline: CountValue = 0, sharedCounterId: String? = "root"
     ) -> Task {
         Task(
             id: id, userId: "u1", title: id, type: .counting,
@@ -49,7 +49,7 @@ final class WindowStampedDerivedDisplayTests: XCTestCase {
     /// Latch says false, but 3 >= 3 in-window — the kernel says complete.
     private var met: Task { makeTask("met", maxCount: 3, currentCount: 0, isCompleted: false) }
 
-    private func inc(_ id: String, _ delta: Int, _ at: String) -> TaskEvent {
+    private func inc(_ id: String, _ delta: CountValue, _ at: String) -> TaskEvent {
         TaskEvent(
             id: id, userId: "u1", taskId: rootId, kind: .increment, delta: delta,
             occurredAt: at, boardId: nil, createdAt: at, updatedAt: at, lastSyncedAt: nil,

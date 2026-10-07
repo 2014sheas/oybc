@@ -13,7 +13,7 @@ struct DeriveDisplayedCountResult {
     /// Count relative to the derived task's baseline, clamped to a minimum
     /// of 0. May exceed `derivedMaxCount` — NO high-end clamp per Phase 0
     /// Decision 2 + the counter-overshoot-invariant section.
-    let displayed: Int
+    let displayed: CountValue
     /// True when `displayed >= derivedMaxCount`.
     let isCompleted: Bool
 }
@@ -36,9 +36,9 @@ struct DeriveDisplayedCountResult {
 ///   - sourceCurrentCount: The live running total on the source task.
 /// - Returns: `DeriveDisplayedCountResult` with `displayed` and `isCompleted`.
 func deriveDisplayedCount(
-    derivedBaseline: Int,
-    derivedMaxCount: Int,
-    sourceCurrentCount: Int
+    derivedBaseline: CountValue,
+    derivedMaxCount: CountValue,
+    sourceCurrentCount: CountValue
 ) -> DeriveDisplayedCountResult {
     // LOW-END CLAMP ONLY — no high-end clamp (see invariants above).
     let displayed = max(0, sourceCurrentCount - derivedBaseline)
@@ -61,9 +61,9 @@ func deriveDisplayedCount(
 struct PropagateIncrementLinkedTask {
     let id: String
     /// The baseline offset for this linked task (0 = inherit; nil → 0).
-    let baseline: Int?
+    let baseline: CountValue?
     /// This linked task's personal threshold (nil → 0).
-    let maxCount: Int?
+    let maxCount: CountValue?
     /// The task's persisted `isCompleted` value BEFORE this increment.
     /// One-way latch: if already `true`, the result keeps it `true`.
     let isCompleted: Bool
@@ -75,14 +75,14 @@ struct LinkedTaskIncrementResult {
     let taskId: String
     /// New `currentCount` to store on the linked task (mirrors source's new
     /// count so cascade readers see the same number without re-deriving).
-    let newCurrentCount: Int
+    let newCurrentCount: CountValue
     /// New `isCompleted` to store. One-way latch — never transitions from
     /// `true` to `false`; may transition `false` → `true` when the derived
     /// displayed value first reaches or exceeds `maxCount`.
     let newIsCompleted: Bool
     /// The derived display value (= `sourceAfterCurrentCount - baseline`,
     /// clamped to 0). Callers should render this, NOT `newCurrentCount`.
-    let displayed: Int
+    let displayed: CountValue
 }
 
 /// Pure propagation helper for Phase 3's increment hot-path.
@@ -109,7 +109,7 @@ struct LinkedTaskIncrementResult {
 /// - Returns: One `LinkedTaskIncrementResult` per entry in `linkedTasks`, in
 ///   the same order.
 func propagateIncrement(
-    sourceAfterCurrentCount: Int,
+    sourceAfterCurrentCount: CountValue,
     linkedTasks: [PropagateIncrementLinkedTask]
 ) -> [LinkedTaskIncrementResult] {
     return linkedTasks.map { linked in

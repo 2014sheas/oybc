@@ -39,7 +39,7 @@ extension AppDatabase {
         userId: String,
         action: String,
         unit: String,
-        startingCount: Int?,
+        startingCount: CountValue?,
         now: String
     ) throws -> Task {
         let trimmedAction = action.trimmingCharacters(in: .whitespacesAndNewlines)

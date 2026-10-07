@@ -36,10 +36,10 @@ final class SharedCounterGroupsTests: XCTestCase {
     private func counter(
         _ id: String,
         title: String? = nil,
-        currentCount: Int = 0,
-        maxCount: Int? = nil,
+        currentCount: CountValue = 0,
+        maxCount: CountValue? = nil,
         sharedCounterId: String? = nil,
-        baseline: Int? = nil,
+        baseline: CountValue? = nil,
         timeframe: Timeframe? = nil,
         startDate: String? = nil,
         /// B3 RC9 — a window-stamped derived member carries its board

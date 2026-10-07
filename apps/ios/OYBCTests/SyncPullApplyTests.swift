@@ -57,7 +57,7 @@ final class SyncPullApplyTests: XCTestCase {
     private func makeTask(
         _ id: String, type: TaskType = .normal, title: String = "Task",
         version: Int = 1, isCompleted: Bool = false,
-        currentCount: Int? = nil, lastSyncedCount: Int? = nil,
+        currentCount: CountValue? = nil, lastSyncedCount: CountValue? = nil,
         sharedCounterId: String? = nil
     ) -> Task {
         let now = AppDatabase.currentTimestamp()
@@ -637,7 +637,7 @@ final class SyncPullApplyTests: XCTestCase {
     private func makeDerivedRow(
         id: String = "derived-1",
         root: String,
-        baseline: Int,
+        baseline: CountValue,
         version: Int = 3,
         updatedAt: String = "2026-09-18T00:00:00.000Z"
     ) -> Task {
@@ -722,7 +722,7 @@ final class SyncPullApplyTests: XCTestCase {
     /// ordinary LWW. On a device whose event union is complete the ROOT's
     /// count is NOT short, so the member would read inflated by exactly the
     /// missing delta until someone incremented that root locally.
-    private func seedRootWithPreWindowEvents(_ db: AppDatabase, total: Int) throws {
+    private func seedRootWithPreWindowEvents(_ db: AppDatabase, total: CountValue) throws {
         var root = makeTask(fi1RootId, type: .counting, currentCount: total)
         root.updatedAt = "2026-09-17T08:00:00.000Z"
         try db.write { grdb in
@@ -730,7 +730,7 @@ final class SyncPullApplyTests: XCTestCase {
             for (index, delta) in [total - 4, 4].enumerated() {
                 let event = TaskEvent(
                     id: "ev-\(index)", userId: self.userId, taskId: fi1RootId,
-                    kind: .increment, delta: delta,
+                    kind: .increment, delta: CountValue(delta),
                     occurredAt: "2026-09-17T08:00:00.000Z", boardId: nil,
                     createdAt: "2026-09-17T08:00:00.000Z",
                     updatedAt: "2026-09-17T08:00:00.000Z",
@@ -741,7 +741,7 @@ final class SyncPullApplyTests: XCTestCase {
         }
     }
 
-    private func derivedRemoteDoc(baseline: Int, startDate: String) -> [String: Any] {
+    private func derivedRemoteDoc(baseline: CountValue, startDate: String) -> [String: Any] {
         [
             "id": fi1DerivedId, "userId": userId, "title": "Read 4 pages",
             "type": "counting", "action": "Read", "unit": "pages", "maxCount": 4,
@@ -845,7 +845,7 @@ final class SyncPullApplyTests: XCTestCase {
             timeframe: .weekly, startDate: ws, endDate: we,
             sharedCounterId: "root-s", baseline: 0, createdInWizard: true
         )
-        func inc(_ delta: Int, _ at: String) -> [String: Any] {
+        func inc(_ delta: CountValue, _ at: String) -> [String: Any] {
             [
                 "id": AppDatabase.generateUUID(), "userId": userId, "taskId": "root-s",
                 "kind": "increment", "delta": delta, "occurredAt": at,
@@ -866,7 +866,7 @@ final class SyncPullApplyTests: XCTestCase {
             try localBoard.save(grdb)
             try self.makeBoardTask(id: self.newId(), boardId: bid, taskId: "derived-s").save(grdb) // cell 0
             // In-window +2 (< 3); post-window, pre-seal overtime +20 (outside the row's window).
-            for (delta, at) in [(2, "2026-09-16T18:00:00.000Z"), (20, "2026-09-21T09:00:00.000Z")] {
+            for (delta, at) in [(2, "2026-09-16T18:00:00.000Z"), (20, "2026-09-21T09:00:00.000Z")] as [(CountValue, String)] {
                 try TaskEvent(
                     id: AppDatabase.generateUUID(), userId: self.userId, taskId: "root-s",
                     kind: .increment, delta: delta, occurredAt: at, boardId: nil,

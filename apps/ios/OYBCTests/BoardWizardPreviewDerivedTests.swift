@@ -35,7 +35,7 @@ final class BoardWizardPreviewDerivedTests: XCTestCase {
 
     /// The counting member's own goal — big enough that a `.lot` roll has a
     /// 51-wide range to land in, so "two seeds differ" is not a coin flip.
-    private let countingGoal = 100
+    private let countingGoal: CountValue = 100
 
     private func makeDb() throws -> AppDatabase {
         let database = try AppDatabase.makeTestInstance()
@@ -52,7 +52,7 @@ final class BoardWizardPreviewDerivedTests: XCTestCase {
     private func makeTask(
         _ id: String,
         type: TaskType = .normal,
-        maxCount: Int? = nil,
+        maxCount: CountValue? = nil,
         title: String? = nil
     ) -> OYBC.Task {
         OYBC.Task(
@@ -151,7 +151,7 @@ final class BoardWizardPreviewDerivedTests: XCTestCase {
     private func shape(_ placement: WizardPlacement) -> [String] {
         placement.map { cell in
             guard let cell else { return "·" }
-            return "\(cell.id)/\(cell.title)/\(cell.maxCount.map(String.init) ?? "-")"
+            return "\(cell.id)/\(cell.title)/\(cell.maxCount.map { formatCount($0, kind: .discrete) } ?? "-")"
         }
     }
 
@@ -188,7 +188,7 @@ final class BoardWizardPreviewDerivedTests: XCTestCase {
         let vm = pulledVM(database)
         let library = try makeLibrary(database)
 
-        var rolled = Set<Int>()
+        var rolled = Set<CountValue>()
         for seed in UInt32(0)..<UInt32(12) {
             let placement = buildWizardPlacement(
                 controller: vm, library: library, previewRules: PreviewRulesOptions(seed: seed)
@@ -253,7 +253,7 @@ final class BoardWizardPreviewDerivedTests: XCTestCase {
         let standIn = try XCTUnwrap(cells(placement)["cnt"])
         let rolled = try XCTUnwrap(standIn.maxCount)
 
-        XCTAssertNotEqual(standIn.title, "Run \(countingGoal) miles",
+        XCTAssertNotEqual(standIn.title, "Run \(formatCount(countingGoal, kind: .discrete)) miles",
                           "the cell must show the regenerated counter title, not the library one")
         XCTAssertEqual(
             standIn.title,

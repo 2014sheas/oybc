@@ -12,7 +12,7 @@ struct WizardSourceSupply: Equatable {
     /// §Member rules (B3, RC4) — board sources only: each event-owning
     /// COUNTING member's windowed count in the SOURCE board's window. Always
     /// empty for pools (a pool has no window of its own).
-    var windowCountByTaskId: [String: Int] = [:]
+    var windowCountByTaskId: [String: CountValue] = [:]
     /// §Member rules (B3, RC5) — board sources only: the source board's own
     /// window, for pro-rating an auto target against the board being built.
     var sourceWindow: BoardSources.BoardWindow? = nil

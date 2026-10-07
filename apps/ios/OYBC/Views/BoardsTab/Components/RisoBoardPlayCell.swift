@@ -34,8 +34,8 @@ struct RisoBoardPlayCell: View {
     var showsDirtyChip: Bool = false
 
     // Counting cells
-    var currentCount: Int = 0
-    var maxCount: Int = 0
+    var currentCount: CountValue = 0
+    var maxCount: CountValue = 0
     /// True when this counting square belongs to a shared-counter group (source or linked).
     /// Renders the ↔ shared marker (two stacked dots) on not-yet-completed counting cells.
     var isSharedCounter: Bool = false
@@ -155,7 +155,7 @@ struct RisoBoardPlayCell: View {
         switch taskType {
         case .counting:
             let sharedSuffix = isSharedCounter ? ", shared counter" : ""
-            return "\(title), counting, \(currentCount) of \(maxCount)\(sharedSuffix)"
+            return "\(title), counting, \(formatCount(currentCount, kind: .discrete)) of \(formatCount(maxCount, kind: .discrete))\(sharedSuffix)"
         case .compound:
             // Same operator-aware target as the visual bar, so VoiceOver
             // never contradicts it (e.g. "1 of 4" on a complete Any-of cell).
@@ -248,7 +248,7 @@ struct RisoBoardPlayCell: View {
 
             // Type tag — top-left (counting or compound; hidden on done counting → blue bg)
             if taskType == .counting {
-                Text("×\(maxCount)")
+                Text("×\(formatCount(maxCount, kind: .discrete))")
                     .font(.risoHead(7, .extraBold))
                     .foregroundStyle(Color.risoPaper)
                     .padding(.horizontal, 4)
@@ -335,7 +335,7 @@ struct RisoBoardPlayCell: View {
 
     @ViewBuilder
     private var bottomProgressBar: some View {
-        let (cur, max, color): (Int, Int, Color) = {
+        let (cur, max, color): (CountValue, CountValue, Color) = {
             switch taskType {
             case .counting:
                 return (currentCount, maxCount, Color.risoBlue)
@@ -343,12 +343,12 @@ struct RisoBoardPlayCell: View {
                 // Denominator = the operator's completion target, so an
                 // "Any of" square reads 1/1 (not 1/4) once any child is done.
                 let required = compoundRequiredCount ?? compoundChildCount
-                return (min(compoundDoneCount, required), required, Color.risoTeal)
+                return (CountValue(min(compoundDoneCount, required)), CountValue(required), Color.risoTeal)
             default:
                 return (0, 1, Color.risoBlue)
             }
         }()
-        let fraction = max > 0 ? Double(min(cur, max)) / Double(max) : 0
+        let fraction = max > 0 ? min(cur, max) / max : 0
 
         ZStack(alignment: .leading) {
             Capsule()
@@ -367,7 +367,7 @@ struct RisoBoardPlayCell: View {
             // the fill still reads, and VoiceOver's cell label always
             // carries "n of m".
             ViewThatFits(in: [.horizontal, .vertical]) {
-                Text("\(cur)/\(max)")
+                Text("\(formatCount(cur, kind: .discrete))/\(formatCount(max, kind: .discrete))")
                     .font(.risoHead(9, .extraBold))
                     .foregroundStyle(Color.risoInk)
                     .lineLimit(1)

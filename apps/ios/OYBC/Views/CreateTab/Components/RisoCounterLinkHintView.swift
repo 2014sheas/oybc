@@ -25,11 +25,11 @@ struct RisoCounterLinkHintView: View {
     /// (`CounterName.formatCounterName`), e.g. "Push-ups" or "Run miles".
     let counterName: String
     /// The matched counter's all-time lifetime total.
-    let lifetime: Int
+    let lifetime: CountValue
     /// The new task's own goal (`maxCount`) — shown in the "0–{goal} window"
     /// sub-copy. Caller only renders this view once a valid positive goal
     /// exists.
-    let goal: Int
+    let goal: CountValue
     /// Whether this create currently links to the counter.
     let linked: Bool
     /// Toggles the link on/off for this create.
@@ -43,7 +43,7 @@ struct RisoCounterLinkHintView: View {
                     .foregroundStyle(Color.risoPaper)
                 Text(
                     linked
-                        ? "\(lifetime.formatted()) all-time · this task keeps its own 0–\(goal) window"
+                        ? "\(lifetime.formatted()) all-time · this task keeps its own 0–\(formatCount(goal, kind: .discrete)) window"
                         : "Creates a separate, unlinked counter."
                 )
                 .font(.risoBody(11, .semibold))

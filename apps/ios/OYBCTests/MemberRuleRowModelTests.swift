@@ -20,7 +20,7 @@ final class MemberRuleRowModelTests: XCTestCase {
         _ id: String,
         type: TaskType = .normal,
         title: String? = nil,
-        maxCount: Int? = nil,
+        maxCount: CountValue? = nil,
         unit: String? = nil
     ) -> Task {
         Task(

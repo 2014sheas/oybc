@@ -18,9 +18,9 @@ enum LinkedWindowKit {
     }
 
     static func task(
-        _ id: String, maxCount: Int? = 10, sharedCounterId: String? = nil,
+        _ id: String, maxCount: CountValue? = 10, sharedCounterId: String? = nil,
         startDate: String? = nil, endDate: String? = nil, createdInWizard: Bool = false,
-        baseline: Int? = nil, currentCount: Int? = nil, isCompleted: Bool = false,
+        baseline: CountValue? = nil, currentCount: CountValue? = nil, isCompleted: Bool = false,
         title: String? = nil
     ) -> Task {
         let now = "2026-05-01T00:00:00.000Z"
@@ -63,7 +63,7 @@ enum LinkedWindowKit {
     }
 
     /// A raw `+delta` increment event on `taskId` at `occurredAt`.
-    static func addIncrement(_ db: AppDatabase, taskId: String, delta: Int, occurredAt: String) throws {
+    static func addIncrement(_ db: AppDatabase, taskId: String, delta: CountValue, occurredAt: String) throws {
         try db.write { d in
             try TaskEvent(
                 id: UUID().uuidString, userId: userId, taskId: taskId, kind: .increment, delta: delta,

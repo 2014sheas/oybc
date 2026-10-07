@@ -11,15 +11,15 @@ import Foundation
 /// (`apps/web/src/components/counters/amountChips.ts`) — keep both in sync
 /// if the rule ever changes.
 enum CounterLogAmount {
-    static func parseCustom(_ raw: String) -> Int? {
+    static func parseCustom(_ raw: String) -> CountValue? {
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, trimmed.allSatisfy({ $0.isASCII && $0.isNumber }) else { return nil }
         guard let n = Int(trimmed), n > 0 else { return nil }
-        return n
+        return CountValue(n)
     }
 
     /// The fixed preset amounts backing both chip rows (excludes custom "#").
-    static let presets = [1, 10, 25]
+    static let presets: [CountValue] = [1, 10, 25]
 
     /// The chip to pre-select when a picker opens: the counter's remembered
     /// `defaultLogAmount` when it's a preset (so a habitual amount is one tap
@@ -29,7 +29,7 @@ enum CounterLogAmount {
     /// (plain cell tap, Hub "+ Log" pill), which log `defaultLogAmount ?? 1`;
     /// a fresh counter must not open on `+10` when everything else about it
     /// steps by one. Swift twin of web's `initialChipAmount`.
-    static func initialChip(_ defaultLogAmount: Int?) -> Int {
+    static func initialChip(_ defaultLogAmount: CountValue?) -> CountValue {
         if let d = defaultLogAmount, presets.contains(d) { return d }
         return 1
     }

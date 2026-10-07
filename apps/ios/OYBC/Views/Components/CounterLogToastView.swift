@@ -33,7 +33,7 @@ struct CounterLogToastView: View {
 
     /// Amount just logged (always positive — see `verb`). Unused for body
     /// text when `message` is set, but still carried for callers/tests.
-    let amount: Int
+    let amount: CountValue
     /// The counter's unit noun, e.g. "push-ups". Unused for body text when
     /// `message` is set.
     let unit: String
@@ -57,8 +57,8 @@ struct CounterLogToastView: View {
 
     private var verbLabel: String {
         switch verb {
-        case .logged: return "Logged +\(amount)"
-        case .removed: return "Removed \(amount)"
+        case .logged: return "Logged +\(formatCount(amount, kind: .discrete))"
+        case .removed: return "Removed \(formatCount(amount, kind: .discrete))"
         }
     }
 

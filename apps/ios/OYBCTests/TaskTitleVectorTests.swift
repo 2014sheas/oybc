@@ -13,7 +13,7 @@ final class TaskTitleVectorTests: XCTestCase {
     private struct GenerateVector: Decodable {
         let name: String
         let action: String
-        let maxCount: Int?
+        let maxCount: Double?
         let unit: String
         let providedTitle: String?
         let expected: String
@@ -23,7 +23,7 @@ final class TaskTitleVectorTests: XCTestCase {
         let name: String
         let title: String
         let action: String
-        let maxCount: Int?
+        let maxCount: Double?
         let unit: String
         let expected: Bool
     }
@@ -32,13 +32,13 @@ final class TaskTitleVectorTests: XCTestCase {
         let title: String
         let action: String?
         let unit: String?
-        let maxCount: Int?
+        let maxCount: Double?
     }
 
     private struct CopyVector: Decodable {
         let name: String
         let member: MemberFields
-        let newMaxCount: Int
+        let newMaxCount: Double
         let expected: String
     }
 

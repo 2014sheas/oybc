@@ -58,8 +58,8 @@ final class DerivationPassVectorTests: XCTestCase {
         // carry these so a shared-counter-derived task can hit the
         // lifetime-cache carve-out, and a plain counting task can accumulate
         // in-window increment events toward its goal.
-        let maxCount: Int?
-        let currentCount: Int?
+        let maxCount: CountValue?
+        let currentCount: CountValue?
         let sharedCounterId: String?
         // 2026-09-23 amendment: window-stamped derived counters carry their own
         // window + the wizard-born mark (absent = nil / nil / false).
@@ -81,7 +81,7 @@ final class DerivationPassVectorTests: XCTestCase {
     private struct MiniWindowEvent: Decodable {
         let kind: String
         let occurredAt: String
-        let delta: Int?
+        let delta: CountValue?
         let isDeleted: Bool?
     }
 

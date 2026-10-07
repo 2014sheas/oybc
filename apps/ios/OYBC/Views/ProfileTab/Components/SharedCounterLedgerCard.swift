@@ -48,7 +48,7 @@ struct SharedCounterLedgerCard: View {
     }
 
     private var unitLabel: String { group.unit ?? "" }
-    private var logAmount: Int { group.defaultLogAmount ?? 1 }
+    private var logAmount: CountValue { group.defaultLogAmount ?? 1 }
 
     // MARK: - Body
 
@@ -97,7 +97,7 @@ struct SharedCounterLedgerCard: View {
         .contentShape(Rectangle())
         .onTapGesture { onOpenDetail() }
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(group.name), \(group.lifetime) all-time \(unitLabel), \(group.taskCount) tasks on \(group.boardCount) boards")
+        .accessibilityLabel("\(group.name), \(formatCount(group.lifetime, kind: .discrete)) all-time \(unitLabel), \(group.taskCount) tasks on \(group.boardCount) boards")
         .accessibilityAddTraits(.isButton)
     }
 
@@ -115,7 +115,7 @@ struct SharedCounterLedgerCard: View {
         }
         .buttonStyle(RisoButtonStyle(offset: Riso.Shadow.small, radius: 999))
         .disabled(isLogging)
-        .accessibilityLabel("Log \(logAmount) \(unitLabel) for \(group.name)")
+        .accessibilityLabel("Log \(formatCount(logAmount, kind: .discrete)) \(unitLabel) for \(group.name)")
     }
 
     // MARK: - Full card (Counters Hub)
@@ -186,7 +186,7 @@ struct SharedCounterLedgerCard: View {
         .contentShape(Rectangle())
         .onTapGesture { onOpenDetail() }
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(group.name), \(group.lifetime) all-time \(unitLabel), \(group.taskCount) tasks on \(group.boardCount) boards")
+        .accessibilityLabel("\(group.name), \(formatCount(group.lifetime, kind: .discrete)) all-time \(unitLabel), \(group.taskCount) tasks on \(group.boardCount) boards")
         .accessibilityAddTraits(.isButton)
     }
 
@@ -267,7 +267,7 @@ struct SharedCounterMemberRow: View {
         .padding(.vertical, 8)
         .accessibilityElement(children: .combine)
         .accessibilityLabel(
-            "\(member.boardName ?? "no board"), \(member.logged) of \(member.goal) \(unit)\(member.met ? ", goal met" : "")"
+            "\(member.boardName ?? "no board"), \(formatCount(member.logged, kind: .discrete)) of \(formatCount(member.goal, kind: .discrete)) \(unit)\(member.met ? ", goal met" : "")"
         )
     }
 }

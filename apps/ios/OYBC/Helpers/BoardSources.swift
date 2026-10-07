@@ -603,7 +603,7 @@ enum BoardSources {
     /// passed no map) is hand-set by definition and counts.
     private static func isAuthoredMemberRule(
         _ rule: BoardSourceMemberRule,
-        seededTarget: Int?
+        seededTarget: CountValue?
     ) -> Bool {
         if rule.vary != nil || rule.split != nil { return true }
         if let parts = rule.parts, !parts.isEmpty { return true }
@@ -639,7 +639,7 @@ enum BoardSources {
     static func sourceConfiguration(
         _ source: BoardSource,
         defaultFilter: BoardSource.Filter,
-        seededTargetByTaskId: [String: Int] = [:]
+        seededTargetByTaskId: [String: CountValue] = [:]
     ) -> ConfigurationDetail {
         var memberRuleCount = 0
         for (taskId, rule) in source.memberRules ?? [:]
@@ -667,7 +667,7 @@ enum BoardSources {
     static func sourceHasConfiguration(
         _ source: BoardSource,
         defaultFilter: BoardSource.Filter,
-        seededTargetByTaskId: [String: Int] = [:]
+        seededTargetByTaskId: [String: CountValue] = [:]
     ) -> Bool {
         let detail = sourceConfiguration(
             source,

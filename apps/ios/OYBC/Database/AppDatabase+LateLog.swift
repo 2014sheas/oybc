@@ -216,7 +216,7 @@ extension AppDatabase {
     ///
     /// - Throws: `LateLogError.boardNotClosed` / `.taskNotPlaced` /
     ///   `.wrongTaskType` / `.invalidDelta`.
-    func lateLogIncrement(boardId: String, taskId: String, delta: Int, now: String = AppDatabase.currentTimestamp()) throws {
+    func lateLogIncrement(boardId: String, taskId: String, delta: CountValue, now: String = AppDatabase.currentTimestamp()) throws {
         guard delta > 0 else { throw LateLogError.invalidDelta }
         try write { db in
             let board = try Self.fetchClosedBoard(db: db, boardId: boardId)

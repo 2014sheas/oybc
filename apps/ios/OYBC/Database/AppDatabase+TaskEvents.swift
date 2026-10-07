@@ -42,7 +42,7 @@ extension AppDatabase {
     /// TS `TaskCacheFields` interface.
     struct TaskCacheFields {
         let isCompleted: Bool
-        let currentCount: Int?
+        let currentCount: CountValue?
         let completedAt: String?
     }
 
@@ -386,7 +386,7 @@ extension AppDatabase {
     static func appendIncrementEvent(
         db: Database,
         taskId: String,
-        delta: Int,
+        delta: CountValue,
         boardId: String?,
         now: String,
         occurredAt: String? = nil
@@ -416,7 +416,7 @@ extension AppDatabase {
     static func insertIncrementEventRaw(
         db: Database,
         taskId: String,
-        delta: Int,
+        delta: CountValue,
         boardId: String?,
         now: String,
         occurredAt: String? = nil

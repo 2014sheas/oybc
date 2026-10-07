@@ -236,7 +236,7 @@ final class CountersHubSnapshotTests: XCTestCase {
 
     // MARK: - Log toast (R2 — reusable "Logged +N · Undo" / "Removed N · Undo")
 
-    private func toastHost(amount: Int, unit: String, verb: CounterLogToastView.Verb) -> some View {
+    private func toastHost(amount: CountValue, unit: String, verb: CounterLogToastView.Verb) -> some View {
         ZStack {
             RisoPaperBackground()
             VStack {

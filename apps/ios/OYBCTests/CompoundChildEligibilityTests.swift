@@ -9,7 +9,7 @@ final class CompoundChildEligibilityTests: XCTestCase {
 
     private func task(
         _ id: String, type: TaskType = .normal, isDeleted: Bool = false,
-        isCounter: Bool = false, maxCount: Int? = nil
+        isCounter: Bool = false, maxCount: CountValue? = nil
     ) -> Task {
         var t = Task(
             id: id, userId: "u1", title: "Task \(id)", type: type,
@@ -153,7 +153,7 @@ final class CompoundChildEligibilityTests: XCTestCase {
 
     private func row(
         _ id: String, _ title: String, type: TaskType = .normal, isDeleted: Bool = false,
-        isCounter: Bool = false, maxCount: Int? = nil, unit: String? = nil
+        isCounter: Bool = false, maxCount: CountValue? = nil, unit: String? = nil
     ) -> Task {
         var t = task(id, type: type, isDeleted: isDeleted, isCounter: isCounter, maxCount: maxCount)
         t.title = title

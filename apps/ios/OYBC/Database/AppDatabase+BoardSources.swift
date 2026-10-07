@@ -36,7 +36,7 @@ struct BoardSourceSupplyInfo: Equatable {
     /// Feeds the one-off wizard's "remaining" target prefill: pull a
     /// 3-of-10-done counter onto a fresh one-off board and its member rule is
     /// seeded with `remainingTarget(goal: 10, windowCount: 3) == 7`.
-    let windowCountByTaskId: [String: Int]
+    let windowCountByTaskId: [String: CountValue]
     /// §Member rules (B3, RC5) — the source board's OWN window, so a caller
     /// can pro-rate an auto target (`effectiveMemberTarget`) without a second
     /// board read.
@@ -279,7 +279,7 @@ extension AppDatabase {
         var seen = Set<String>()
         var supply: [String] = []
         var done = Set<String>()
-        var windowCountByTaskId: [String: Int] = [:]
+        var windowCountByTaskId: [String: CountValue] = [:]
         for id in placedIds {
             // `isSourceSupplyTask`: achievements never enter source supply —
             // hand-placed watchers on the pulled board stay on that board only.

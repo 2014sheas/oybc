@@ -27,8 +27,8 @@ struct RisoCountingStepperSheet: View {
     // MARK: - Data
 
     let taskTitle: String
-    let currentCount: Int
-    let maxCount: Int
+    let currentCount: CountValue
+    let maxCount: CountValue
     let unitText: String
     /// True when this task has `sharedCounterId != nil` (a linked derived counter).
     /// Kept for BoardPlayView routing but no longer disables the `−` button (P2).
@@ -48,7 +48,7 @@ struct RisoCountingStepperSheet: View {
     /// initial selected amount (a plain tap of `+`/`-` therefore logs the
     /// default, matching the copy contract). `nil` → default chip shows "1"
     /// too (harmless — mirrors Counter Detail's `defaultLogAmount ?? 1`).
-    var defaultLogAmount: Int? = nil
+    var defaultLogAmount: CountValue? = nil
     /// When non-nil, a full-width "Task details ›" row is appended; the tap
     /// handler opens this square's task detail.
     var onOpenTask: (() -> Void)? = nil
@@ -59,28 +59,28 @@ struct RisoCountingStepperSheet: View {
     /// the amount just used came from an explicit custom "#" entry (Global
     /// Constraints: one-tap chips never overwrite the counter's default).
     /// For standalone (non-shared) squares, always `(1, false)`.
-    var onIncrement: (Int, Bool) -> Void = { _, _ in }
-    var onDecrement: (Int, Bool) -> Void = { _, _ in }
+    var onIncrement: (CountValue, Bool) -> Void = { _, _ in }
+    var onDecrement: (CountValue, Bool) -> Void = { _, _ in }
 
     // MARK: - Chip state (shared counters only)
 
-    @State private var selectedAmount: Int
+    @State private var selectedAmount: CountValue
     @State private var isCustomActive = false
     @State private var customOpen = false
     @State private var customDraft = ""
 
     init(
         taskTitle: String,
-        currentCount: Int,
-        maxCount: Int,
+        currentCount: CountValue,
+        maxCount: CountValue,
         unitText: String,
         isLinkedCounter: Bool,
         sharedHint: String? = nil,
         isSharedCounter: Bool = false,
-        defaultLogAmount: Int? = nil,
+        defaultLogAmount: CountValue? = nil,
         onOpenTask: (() -> Void)? = nil,
-        onIncrement: @escaping (Int, Bool) -> Void = { _, _ in },
-        onDecrement: @escaping (Int, Bool) -> Void = { _, _ in }
+        onIncrement: @escaping (CountValue, Bool) -> Void = { _, _ in },
+        onDecrement: @escaping (CountValue, Bool) -> Void = { _, _ in }
     ) {
         self.onOpenTask = onOpenTask
         self.taskTitle = taskTitle
@@ -177,7 +177,7 @@ struct RisoCountingStepperSheet: View {
     // MARK: - Label pill
 
     private var labelPill: some View {
-        Text("\(taskTitle) · \(currentCount)/\(maxCount)\(unitText.isEmpty ? "" : " \(unitText)")")
+        Text("\(taskTitle) · \(formatCount(currentCount, kind: .discrete))/\(formatCount(maxCount, kind: .discrete))\(unitText.isEmpty ? "" : " \(unitText)")")
             .font(.risoHead(13, .bold))
             .foregroundStyle(Color.risoPaper)
             .padding(.horizontal, 14)
@@ -191,7 +191,7 @@ struct RisoCountingStepperSheet: View {
 
     /// The amount both `+`/`-` act on: the selected chip for shared
     /// counters, always 1 for standalone counters (no chip UI to select from).
-    private var effectiveAmount: Int {
+    private var effectiveAmount: CountValue {
         isSharedCounter ? selectedAmount : 1
     }
 
@@ -217,7 +217,7 @@ struct RisoCountingStepperSheet: View {
             .disabled(currentCount == 0)
 
             // Value display
-            Text("\(currentCount)/\(maxCount)")
+            Text("\(formatCount(currentCount, kind: .discrete))/\(formatCount(maxCount, kind: .discrete))")
                 .font(.risoHead(15, .extraBold))
                 .foregroundStyle(Color.risoInk)
                 .frame(minWidth: 70)
@@ -262,7 +262,7 @@ struct RisoCountingStepperSheet: View {
 
     private struct AmountChipOption {
         /// `nil` marks the trailing custom "#" chip.
-        let value: Int?
+        let value: CountValue?
         let label: String
 
     }
@@ -287,14 +287,14 @@ struct RisoCountingStepperSheet: View {
         return chips.firstIndex(where: { $0.value == selectedAmount })
     }
 
-    private func selectChip(_ value: Int) {
+    private func selectChip(_ value: CountValue) {
         selectedAmount = value
         isCustomActive = false
         customOpen = false
     }
 
     private func openCustomInput() {
-        customDraft = isCustomActive ? "\(selectedAmount)" : ""
+        customDraft = isCustomActive ? formatCount(selectedAmount, kind: .discrete) : ""
         customOpen = true
     }
 
@@ -320,7 +320,7 @@ struct RisoCountingStepperSheet: View {
                         openCustomInput()
                     }
                 } label: {
-                    Text(chip.value == nil && isSelected ? "#\(selectedAmount)" : chip.label)
+                    Text(chip.value == nil && isSelected ? "#\(formatCount(selectedAmount, kind: .discrete))" : chip.label)
                         .font(.risoHead(13, .extraBold))
                         .foregroundStyle(isSelected ? Color.risoInkStatic : Color.risoInk)
                         .frame(minWidth: 40)

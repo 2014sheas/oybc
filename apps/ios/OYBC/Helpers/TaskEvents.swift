@@ -20,7 +20,7 @@ import Foundation
 /// `TaskWindowState` interface.
 struct TaskWindowState: Equatable {
     let isCompleted: Bool
-    let count: Int
+    let count: CountValue
 }
 
 /// Context threaded through windowed compound evaluation (docs §Semantics —
@@ -144,7 +144,7 @@ func resolveTaskWindowState(
     }
 
     if task.type == .counting {
-        var sum = 0
+        var sum: CountValue = 0
         for e in events where e.kind == .increment {
             guard inWindow(e) else { continue }
             sum += e.delta ?? 0
@@ -162,7 +162,7 @@ func resolveTaskWindowState(
         guard inWindow(e) else { continue }
         completions += 1
     }
-    return TaskWindowState(isCompleted: completions > 0, count: completions)
+    return TaskWindowState(isCompleted: completions > 0, count: CountValue(completions))
 }
 
 // MARK: - Board window end + late-log stamp (2026-09-24 amendment)
@@ -277,12 +277,12 @@ struct LinkedCounterWindow: Equatable {
 private func windowStampedDerivedState(
     startDate: String?,
     endDate: String?,
-    maxCount: Int?,
+    maxCount: CountValue?,
     rootEvents: [TaskEvent],
     sealedBound: Date?
 ) -> TaskWindowState {
     /// Clamped-below in-window sum; 0 when the bounds don't parse.
-    func windowSum() -> Int {
+    func windowSum() -> CountValue {
         guard let startDate, !startDate.isEmpty,
               let lower = DateFormatting.parseISO(startDate) else { return 0 }
         var upper: Date?
@@ -291,7 +291,7 @@ private func windowStampedDerivedState(
             guard let parsed = DateFormatting.parseISO(endDate) else { return 0 }
             upper = parsed
         }
-        var sum = 0
+        var sum: CountValue = 0
         for e in rootEvents where !e.isDeleted && e.kind == .increment {
             guard let occurred = DateFormatting.parseISO(e.occurredAt),
                   occurred >= lower else { continue }

@@ -274,7 +274,7 @@ final class AppDatabasePoolsTests: XCTestCase {
     // MARK: - savePoolWithStagedEdits (pool editor Save — one transaction)
 
     private func makeTask(_ id: String, title: String, type: TaskType = .normal,
-                          action: String? = nil, unit: String? = nil, maxCount: Int? = nil) -> Task {
+                          action: String? = nil, unit: String? = nil, maxCount: CountValue? = nil) -> Task {
         let now = AppDatabase.currentTimestamp()
         return Task(
             id: id, userId: userId, title: title, description: nil, type: type,

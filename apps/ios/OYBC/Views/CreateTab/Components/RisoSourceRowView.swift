@@ -51,11 +51,11 @@ struct RisoSourceRowView: View {
     var mode: BoardSources.PlanMode = .oneOff
     /// The window of the board being assembled (the pro-rating target).
     var wizardWindow: BoardSources.BoardWindow = .init(timeframe: .daily)
-    var onSetMemberTarget: (_ taskId: String, _ target: Int?) -> Void = { _, _ in }
+    var onSetMemberTarget: (_ taskId: String, _ target: CountValue?) -> Void = { _, _ in }
     var onSetMemberVary: (_ taskId: String, _ level: VaryLevel) -> Void = { _, _ in }
     var onSetMemberSplit: (_ taskId: String, _ split: Bool) -> Void = { _, _ in }
     var onSetPartExcluded: (_ taskId: String, _ childId: String, _ excluded: Bool) -> Void = { _, _, _ in }
-    var onSetPartTarget: (_ taskId: String, _ childId: String, _ target: Int?) -> Void = { _, _, _ in }
+    var onSetPartTarget: (_ taskId: String, _ childId: String, _ target: CountValue?) -> Void = { _, _, _ in }
     var onSetPartVary: (_ taskId: String, _ childId: String, _ level: VaryLevel) -> Void = { _, _, _ in }
 
     private var isDefaultRange: Bool { source.min == 0 && source.max == nil }

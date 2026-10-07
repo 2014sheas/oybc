@@ -59,7 +59,7 @@ struct ChildPatch: Identifiable, Equatable {
         self.isCounting = child.type == .counting
         self.childType = child.type
         self.action = child.action ?? ""
-        self.goal = child.maxCount.map(String.init) ?? ""
+        self.goal = child.maxCount.map { formatCount($0, kind: resolveCountKind(child.countKind)) } ?? ""
         self.unit = child.unit ?? ""
         self.markedDeleted = false
     }
@@ -95,14 +95,14 @@ struct TaskEditPatch: Equatable {
     init(from task: OYBC.Task) {
         self.title = task.title
         self.action = task.action ?? ""
-        self.goal = task.maxCount.map(String.init) ?? ""
+        self.goal = task.maxCount.map { formatCount($0, kind: resolveCountKind(task.countKind)) } ?? ""
         self.unit = task.unit ?? ""
         self.operatorType = task.operatorType
         self.threshold = task.threshold
     }
 
     private var trimmedTitle: String { title.trimmingCharacters(in: .whitespacesAndNewlines) }
-    private var parsedGoal: Int? { Int(goal.trimmingCharacters(in: .whitespaces)) }
+    private var parsedGoal: CountValue? { Int(goal.trimmingCharacters(in: .whitespaces)).map(CountValue.init) }
 
     /// Kept sub-tasks — excludes deleted and blank-titled entries (dropped on
     /// save). Shared by validation, apply-at-create clamping, the inline

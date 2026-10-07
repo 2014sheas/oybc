@@ -295,7 +295,7 @@ struct RisoPoolListView: View {
             case .counting:
                 guard let a = task.action, let m = task.maxCount, let u = task.unit,
                       !a.isEmpty, !u.isEmpty else { return nil }
-                return "\(a) · goal \(m) \(u)"
+                return "\(a) · goal \(formatCount(m, kind: resolveCountKind(task.countKind))) \(u)"
             case .compound:
                 // `effectiveChildrenByCompound` / `task.operatorType` /
                 // `task.threshold` are all already staged-edit-aware (Inline

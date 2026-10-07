@@ -12,7 +12,7 @@ final class DeriveCounterLinkTests: XCTestCase {
     private func counterTask(
         id: String = "src1",
         sharedCounterId: String? = nil,
-        currentCount: Int? = 120
+        currentCount: CountValue? = 120
     ) -> OYBC.Task {
         OYBC.Task(
             id: id,

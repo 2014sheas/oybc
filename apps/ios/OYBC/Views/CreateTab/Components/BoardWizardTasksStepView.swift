@@ -172,11 +172,11 @@ struct BoardWizardTasksStepView: View {
     /// Sets a hand-added counting task's dice level. nil ⇒ no dice on the
     /// hand-added rows (a read-only mount).
     var onSetManualVary: ((_ taskId: String, _ level: VaryLevel) -> Void)? = nil
-    var onSetMemberTarget: (_ sourceId: String, _ taskId: String, _ target: Int?) -> Void = { _, _, _ in }
+    var onSetMemberTarget: (_ sourceId: String, _ taskId: String, _ target: CountValue?) -> Void = { _, _, _ in }
     var onSetMemberVary: (_ sourceId: String, _ taskId: String, _ level: VaryLevel) -> Void = { _, _, _ in }
     var onSetMemberSplit: (_ sourceId: String, _ taskId: String, _ split: Bool) -> Void = { _, _, _ in }
     var onSetPartExcluded: (_ sourceId: String, _ taskId: String, _ childId: String, _ excluded: Bool) -> Void = { _, _, _, _ in }
-    var onSetPartTarget: (_ sourceId: String, _ taskId: String, _ childId: String, _ target: Int?) -> Void = { _, _, _, _ in }
+    var onSetPartTarget: (_ sourceId: String, _ taskId: String, _ childId: String, _ target: CountValue?) -> Void = { _, _, _, _ in }
     var onSetPartVary: (_ sourceId: String, _ taskId: String, _ childId: String, _ level: VaryLevel) -> Void = { _, _, _, _ in }
 
     // MARK: - Internal state
@@ -656,7 +656,7 @@ struct BoardWizardTasksStepView: View {
     /// "1 member rule" would be false.
     ///
     /// Web twin: `seededTargetsForRemoval` in `wizardSourcesLogic.ts`.
-    private func seededTargets(for source: BoardSource) -> [String: Int] {
+    private func seededTargets(for source: BoardSource) -> [String: CountValue] {
         guard !isRecurring, editingTemplateId == nil, source.kind == .board,
               let supply = supplyInfoBySourceId[source.sourceId] else { return [:] }
         var byId: [String: OYBC.Task] = [:]

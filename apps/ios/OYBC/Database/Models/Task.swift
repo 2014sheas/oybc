@@ -33,7 +33,7 @@ struct Task: Codable, FetchableRecord, PersistableRecord, Identifiable {
     // Counting task fields
     var action: String?
     var unit: String?
-    var maxCount: Int?
+    var maxCount: CountValue?
 
     // Compound-specific (when type=.compound)
     var operatorType: OperatorType?
@@ -67,7 +67,7 @@ struct Task: Codable, FetchableRecord, PersistableRecord, Identifiable {
     // Global completion state
     var isCompleted: Bool
     var completedAt: String? // ISO8601
-    var currentCount: Int?
+    var currentCount: CountValue?
 
     // Timestamps
     var createdAt: String // ISO8601
@@ -102,7 +102,7 @@ struct Task: Codable, FetchableRecord, PersistableRecord, Identifiable {
     //   - "Inherit" mode: baseline = 0 → displayed = source.currentCount.
     //   - "Start from zero" mode: baseline = source.currentCount_at_link_time
     //     → displayed = source.currentCount − baseline.
-    var baseline: Int?
+    var baseline: CountValue?
 
     // RETIRED (Windowed Completion). Phase 4's shared-counter additive-merge
     // common-ancestor baseline. The additive-merge resolver it fed was retired —
@@ -112,7 +112,7 @@ struct Task: Codable, FetchableRecord, PersistableRecord, Identifiable {
     // WC PR D deleted the merge machinery). Kept on the model + as the GRDB v16
     // column for decode compatibility with old rows / pre-WC clients — dropping
     // it would break decode. Inert residue; do not re-wire it.
-    var lastSyncedCount: Int?
+    var lastSyncedCount: CountValue?
 
     /// Draft-board provenance. `true` when the task was created inside the
     /// board wizard via the deferred-persist path (Bug #85) — "born from a
@@ -139,7 +139,13 @@ struct Task: Codable, FetchableRecord, PersistableRecord, Identifiable {
     /// and `sharedCounterId == nil` (the source, not a linked/derived task).
     /// Additive optional, forward-compat like `isCounter`; stored as
     /// nullable INTEGER (GRDB v26).
-    var defaultLogAmount: Int?
+    var defaultLogAmount: CountValue?
+
+    /// Counter kinds (docs/COUNTER_KINDS.md §3) — how a counting task's
+    /// values are measured. `nil` (every pre-v39 row and pre-feature sync
+    /// payload) resolves to `.discrete` via `resolveCountKind`. Additive
+    /// optional; stored as nullable TEXT (GRDB v39).
+    var countKind: CountKind?
 
     // MARK: - Database Configuration
 
@@ -158,7 +164,7 @@ struct Task: Codable, FetchableRecord, PersistableRecord, Identifiable {
         type: TaskType,
         action: String? = nil,
         unit: String? = nil,
-        maxCount: Int? = nil,
+        maxCount: CountValue? = nil,
         operatorType: OperatorType? = nil,
         threshold: Int? = nil,
         referencedBoardId: String? = nil,
@@ -169,7 +175,7 @@ struct Task: Codable, FetchableRecord, PersistableRecord, Identifiable {
         totalInstances: Int,
         isCompleted: Bool = false,
         completedAt: String? = nil,
-        currentCount: Int? = nil,
+        currentCount: CountValue? = nil,
         createdAt: String,
         updatedAt: String,
         lastSyncedAt: String? = nil,
@@ -180,11 +186,12 @@ struct Task: Codable, FetchableRecord, PersistableRecord, Identifiable {
         startDate: String? = nil,
         endDate: String? = nil,
         sharedCounterId: String? = nil,
-        baseline: Int? = nil,
-        lastSyncedCount: Int? = nil,
+        baseline: CountValue? = nil,
+        lastSyncedCount: CountValue? = nil,
         createdInWizard: Bool = false,
         isCounter: Bool = false,
-        defaultLogAmount: Int? = nil
+        defaultLogAmount: CountValue? = nil,
+        countKind: CountKind? = nil
     ) {
         self.id = id
         self.userId = userId
@@ -220,6 +227,7 @@ struct Task: Codable, FetchableRecord, PersistableRecord, Identifiable {
         self.createdInWizard = createdInWizard
         self.isCounter = isCounter
         self.defaultLogAmount = defaultLogAmount
+        self.countKind = countKind
     }
 
     // MARK: - Codable
@@ -247,6 +255,8 @@ struct Task: Codable, FetchableRecord, PersistableRecord, Identifiable {
         case isCounter
         // R2 Counters UX refresh — default log amount (GRDB v26)
         case defaultLogAmount
+        // Counter kinds (GRDB v39)
+        case countKind
     }
 
     init(from decoder: Decoder) throws {
@@ -259,7 +269,7 @@ struct Task: Codable, FetchableRecord, PersistableRecord, Identifiable {
         type = try container.decode(TaskType.self, forKey: .type)
         action = try container.decodeIfPresent(String.self, forKey: .action)
         unit = try container.decodeIfPresent(String.self, forKey: .unit)
-        maxCount = try container.decodeIfPresent(Int.self, forKey: .maxCount)
+        maxCount = try container.decodeIfPresent(CountValue.self, forKey: .maxCount)
         operatorType = try container.decodeIfPresent(OperatorType.self, forKey: .operatorType)
         threshold = try container.decodeIfPresent(Int.self, forKey: .threshold)
         referencedBoardId = try container.decodeIfPresent(String.self, forKey: .referencedBoardId)
@@ -270,7 +280,7 @@ struct Task: Codable, FetchableRecord, PersistableRecord, Identifiable {
         totalInstances = try container.decode(Int.self, forKey: .totalInstances)
         isCompleted = try container.decodeIfPresent(Bool.self, forKey: .isCompleted) ?? false
         completedAt = try container.decodeIfPresent(String.self, forKey: .completedAt)
-        currentCount = try container.decodeIfPresent(Int.self, forKey: .currentCount)
+        currentCount = try container.decodeIfPresent(CountValue.self, forKey: .currentCount)
         createdAt = try container.decode(String.self, forKey: .createdAt)
         updatedAt = try container.decode(String.self, forKey: .updatedAt)
         lastSyncedAt = try container.decodeIfPresent(String.self, forKey: .lastSyncedAt)
@@ -284,9 +294,9 @@ struct Task: Codable, FetchableRecord, PersistableRecord, Identifiable {
         endDate = try container.decodeIfPresent(String.self, forKey: .endDate)
         // Phase 2 — Shared Counters. Forward-compat: pre-v15 rows decode as nil.
         sharedCounterId = try container.decodeIfPresent(String.self, forKey: .sharedCounterId)
-        baseline = try container.decodeIfPresent(Int.self, forKey: .baseline)
+        baseline = try container.decodeIfPresent(CountValue.self, forKey: .baseline)
         // Phase 4 — Shared Counter Sync. Forward-compat: pre-v16 rows decode as nil.
-        lastSyncedCount = try container.decodeIfPresent(Int.self, forKey: .lastSyncedCount)
+        lastSyncedCount = try container.decodeIfPresent(CountValue.self, forKey: .lastSyncedCount)
         // Draft-board provenance. Forward-compat: pre-v17 local rows + pre-feature
         // sync payloads (and all standalone/copied tasks) decode as false.
         createdInWizard = try container.decodeIfPresent(Bool.self, forKey: .createdInWizard) ?? false
@@ -295,7 +305,9 @@ struct Task: Codable, FetchableRecord, PersistableRecord, Identifiable {
         isCounter = try container.decodeIfPresent(Bool.self, forKey: .isCounter) ?? false
         // R2 Counters UX refresh — default log amount. Forward-compat:
         // pre-v26 local rows + pre-feature sync payloads decode as nil.
-        defaultLogAmount = try container.decodeIfPresent(Int.self, forKey: .defaultLogAmount)
+        defaultLogAmount = try container.decodeIfPresent(CountValue.self, forKey: .defaultLogAmount)
+        // Counter kinds. Forward-compat: pre-v39 rows + pre-feature payloads decode as nil.
+        countKind = try container.decodeIfPresent(CountKind.self, forKey: .countKind)
     }
 
     func encode(to encoder: Encoder) throws {
@@ -341,6 +353,8 @@ struct Task: Codable, FetchableRecord, PersistableRecord, Identifiable {
         try container.encode(isCounter, forKey: .isCounter)
         // R2 Counters UX refresh — default log amount (additive optional).
         try container.encodeIfPresent(defaultLogAmount, forKey: .defaultLogAmount)
+        // Counter kinds (additive optional).
+        try container.encodeIfPresent(countKind, forKey: .countKind)
     }
 }
 
@@ -369,3 +383,7 @@ enum AchievementTrigger: String, Codable, DatabaseValueConvertible {
     case bingo
     case greenlog
 }
+
+/// Counter kinds — stored as the raw string (`"discrete"` / `"continuous"` /
+/// `"duration"`), matching the wire format.
+extension CountKind: DatabaseValueConvertible {}

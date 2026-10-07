@@ -18,7 +18,7 @@ final class BrowsableTasksTests: XCTestCase {
         _ id: String,
         createdInWizard: Bool,
         type: TaskType = .normal,
-        maxCount: Int? = nil,
+        maxCount: CountValue? = nil,
         isCounter: Bool = false,
         sharedCounterId: String? = nil,
         startDate: String? = nil

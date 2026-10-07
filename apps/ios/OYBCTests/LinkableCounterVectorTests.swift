@@ -17,7 +17,7 @@ final class LinkableCounterVectorTests: XCTestCase {
         let id: String
         let action: String?
         let unit: String?
-        let currentCount: Int?
+        let currentCount: CountValue?
         let sharedCounterId: String?
         let isDeleted: Bool?
         let type: String?
@@ -26,7 +26,7 @@ final class LinkableCounterVectorTests: XCTestCase {
     private struct ExpectedCounter: Decodable {
         let counterId: String
         let name: String
-        let lifetime: Int
+        let lifetime: CountValue
         let memberCount: Int
     }
 

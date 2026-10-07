@@ -235,7 +235,7 @@ extension AppDatabase {
         if task.type == .counting {
             if !patch.action.isEmpty { task.action = patch.action }
             if !patch.unit.isEmpty { task.unit = patch.unit }
-            if let max = Int(patch.maxCountStr), max > 0 { task.maxCount = max }
+            if let max = Int(patch.maxCountStr).map(CountValue.init), max > 0 { task.maxCount = max }
         }
     }
 

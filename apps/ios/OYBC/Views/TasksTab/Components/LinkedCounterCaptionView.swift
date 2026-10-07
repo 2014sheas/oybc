@@ -77,7 +77,7 @@ struct LinkedCounterCaptionView: View {
 struct LinkedCounterSource: Equatable {
     let title: String
     /// The root's lifetime count (`Task.currentCount`).
-    let lifetime: Int
+    let lifetime: CountValue
     let unit: String
 }
 

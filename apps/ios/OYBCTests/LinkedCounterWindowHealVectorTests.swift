@@ -47,7 +47,7 @@ final class LinkedCounterWindowHealVectorTests: XCTestCase {
         let timeframe: String?
         let createdInWizard: Bool
         let isDeleted: Bool
-        let maxCount: Int?
+        let maxCount: CountValue?
     }
 
     private struct FixBoard: Decodable {
@@ -115,8 +115,8 @@ final class LinkedCounterWindowHealVectorTests: XCTestCase {
         let rootTaskId: String
         let sourceMemberId: String
         let replacesId: String
-        let maxCount: Int
-        let baseline: Int
+        let maxCount: CountValue
+        let baseline: CountValue
         let title: String
         let action: String
         let unit: String
@@ -130,12 +130,12 @@ final class LinkedCounterWindowHealVectorTests: XCTestCase {
             let title: String
             let action: String?
             let unit: String?
-            let maxCount: Int?
+            let maxCount: CountValue?
         }
         let name: String
         let copy: FixCopy
         let sourceTask: MiniSource
-        let baseline: Int
+        let baseline: CountValue
         /// `null` in the fixture = the builder refuses (goal-less source).
         let expected: FixDraft?
     }

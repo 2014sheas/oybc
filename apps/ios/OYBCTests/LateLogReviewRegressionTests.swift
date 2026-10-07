@@ -26,9 +26,9 @@ final class LateLogReviewRegressionTests: XCTestCase {
     }
 
     private func makeTask(
-        _ id: String, type: TaskType = .normal, maxCount: Int? = nil,
+        _ id: String, type: TaskType = .normal, maxCount: CountValue? = nil,
         sharedCounterId: String? = nil, startDate: String? = nil, endDate: String? = nil,
-        createdInWizard: Bool = false, baseline: Int? = nil, currentCount: Int? = nil,
+        createdInWizard: Bool = false, baseline: CountValue? = nil, currentCount: CountValue? = nil,
         isCompleted: Bool = false, operatorType: OperatorType? = nil, threshold: Int? = nil
     ) -> Task {
         let now = AppDatabase.currentTimestamp()
@@ -216,7 +216,7 @@ final class LateLogReviewRegressionTests: XCTestCase {
             try CompoundChild(id: "l2", compoundTaskId: "c1", childTaskId: "k1", childIndex: 1,
                               createdAt: now, updatedAt: now, lastSyncedAt: nil, version: 1, isDeleted: false, deletedAt: nil).save(db)
             // k1 at 2/3 inside the window, plus 5 from a PREVIOUS window (ignored).
-            for (id, delta, at) in [("in", 2, "2026-07-07T09:00:00.000Z"), ("prev", 5, "2026-07-06T09:00:00.000Z")] {
+            for (id, delta, at) in [("in", 2, "2026-07-07T09:00:00.000Z"), ("prev", 5, "2026-07-06T09:00:00.000Z")] as [(String, CountValue, String)] {
                 try TaskEvent(id: id, userId: self.userId, taskId: "k1", kind: .increment, delta: delta,
                               occurredAt: at, boardId: nil, createdAt: at, updatedAt: at,
                               lastSyncedAt: nil, version: 1, isDeleted: false, deletedAt: nil).save(db)

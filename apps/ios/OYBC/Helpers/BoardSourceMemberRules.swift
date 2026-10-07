@@ -147,13 +147,12 @@ extension BoardSources {
     ///   - sourceDays: Nominal days of the source board's window, or `nil`.
     ///   - targetDays: Nominal days of the board being assembled, or `nil`.
     /// - Returns: The auto target (integer ≥ 1, ≤ `goal`).
-    static func autoTarget(goal: Int, sourceDays: Int?, targetDays: Int?) -> Int {
+    static func autoTarget(goal: CountValue, sourceDays: Int?, targetDays: Int?) -> CountValue {
         guard let sourceDays else { return goal }
         guard let targetDays else { return goal }
         if targetDays >= sourceDays { return goal }
-        // Double math throughout — an `Int` multiply would trap on overflow
-        // where JS silently promotes to a float. Bit-identical in range.
-        let prorated = Int((Double(goal) * Double(targetDays) / Double(sourceDays)).rounded(.up))
+        // Double math throughout, as in the TS twin. Bit-identical in range.
+        let prorated = (goal * Double(targetDays) / Double(sourceDays)).rounded(.up)
         return Swift.min(goal, prorated)
     }
 
@@ -185,11 +184,11 @@ extension BoardSources {
     ///   - level: Vary level (`.off` = no spread).
     ///   - goal: The member's own `maxCount`; clamps `t`, never `hi`.
     /// - Returns: The inclusive range.
-    static func varyRange(t: Int, level: VaryLevel, goal: Int) -> ClosedRange<Int> {
+    static func varyRange(t: CountValue, level: VaryLevel, goal: CountValue) -> ClosedRange<CountValue> {
         let clamped = Swift.min(Swift.max(1, t), goal)
         let fraction = varyFraction(level)
-        let lo = Swift.max(1, Int((Double(clamped) * (1 - fraction)).rounded()))
-        let hi = Int((Double(clamped) * (1 + fraction)).rounded())
+        let lo = Swift.max(1, (clamped * (1 - fraction)).rounded())
+        let hi = (clamped * (1 + fraction)).rounded()
         // `lo <= hi` holds for every `goal >= 1` (the only reachable input —
         // `goalOf` filters the rest); the outer `max` only stops a malformed
         // `goal < 1` from trapping on an inverted ClosedRange, where the TS
@@ -208,11 +207,11 @@ extension BoardSources {
     ///   - goal: The member's own `maxCount`; clamps `t` (see ``varyRange(t:level:goal:)``).
     ///   - rng: Uniform `[0, 1)` source; consumed at most once.
     /// - Returns: The rolled target (integer inside the range).
-    static func rollTarget(t: Int, level: VaryLevel, goal: Int, rng: () -> Double) -> Int {
+    static func rollTarget(t: CountValue, level: VaryLevel, goal: CountValue, rng: () -> Double) -> CountValue {
         let range = varyRange(t: t, level: level, goal: goal)
         if level == .off || range.lowerBound == range.upperBound { return range.lowerBound }
         let span = range.upperBound - range.lowerBound + 1
-        return range.lowerBound + Int((rng() * Double(span)).rounded(.down))
+        return range.lowerBound + (rng() * span).rounded(.down)
     }
 
     // MARK: - Supply expansion
@@ -310,9 +309,9 @@ extension BoardSources {
         let sourceMemberId: String
         /// The selected id this draft stands in for on the board.
         let replacesId: String
-        let maxCount: Int
+        let maxCount: CountValue
         /// Event-derived lifetime count at mint time — a cache, never authored.
-        let baseline: Int
+        let baseline: CountValue
         let title: String
         let action: String
         let unit: String
@@ -376,7 +375,7 @@ extension BoardSources {
 
     /// A counting task's own goal, or `nil` when it is goal-less (an
     /// accumulator, which has no target to pro-rate or vary).
-    private static func goalOf(_ task: Task) -> Int? {
+    private static func goalOf(_ task: Task) -> CountValue? {
         guard let maxCount = task.maxCount, maxCount >= 1 else { return nil }
         return maxCount
     }
@@ -386,7 +385,7 @@ extension BoardSources {
         let link: CompoundChild
         let child: Task?
         let derive: Bool
-        let target: Int
+        let target: CountValue
         let vary: VaryLevel
     }
 
@@ -428,7 +427,7 @@ extension BoardSources {
         tasksById: [String: Task],
         childrenByCompoundId: [String: [CompoundChild]],
         sourceWindowByTaskId: [String: BoardWindow],
-        baselineByRootId: [String: Int],
+        baselineByRootId: [String: CountValue],
         rng: () -> Double
     ) -> PlanDerivedTasksResult {
         let manual = Set(manualTaskIds)
@@ -467,26 +466,26 @@ extension BoardSources {
         /// target, which Zod already forbids — kept verbatim so the two
         /// platforms can never disagree about a malformed stored rule.
         func resolveTarget(
-            goal: Int,
-            explicit: Int?,
+            goal: CountValue,
+            explicit: CountValue?,
             fromBoard: Bool,
             taskIdForWindow: String
-        ) -> Int {
-            let base: Double
+        ) -> CountValue {
+            let base: CountValue
             if let explicit {
-                base = Double(explicit)
+                base = explicit
             } else if fromBoard {
-                base = Double(autoTarget(
+                base = autoTarget(
                     goal: goal,
                     sourceDays: sourceDaysFor(taskIdForWindow),
                     targetDays: targetDays
-                ))
+                )
             } else {
-                base = Double(goal)
+                base = goal
             }
-            return Swift.min(Swift.max(1, Int(base.rounded(.down))), goal)
+            return Swift.min(Swift.max(1, base.rounded(.down)), goal)
         }
-        func mint(_ task: Task, replacesId: String, target: Int, vary: VaryLevel) -> DerivedTaskDraft {
+        func mint(_ task: Task, replacesId: String, target: CountValue, vary: VaryLevel) -> DerivedTaskDraft {
             // `goalOf` is non-nil at every call site (each branch checks first).
             let goal = goalOf(task) ?? 1
             let root = task.sharedCounterId ?? task.id
@@ -754,14 +753,14 @@ extension BoardSources {
     ///   - rootTaskId: The shared-counter root whose events are summed.
     ///   - events: Candidate events; any task's, any kind, live or tombstoned.
     ///   - boundary: ISO8601 instant the window opens at.
-    /// - Returns: The baseline count (integer ≥ 0).
+    /// - Returns: The baseline count (≥ 0).
     static func computeWindowBaseline(
         rootTaskId: String,
         events: [TaskEvent],
         boundary: String
-    ) -> Int {
+    ) -> CountValue {
         guard let boundaryDate = DateFormatting.parseISO(boundary) else { return 0 }
-        var sum = 0
+        var sum: CountValue = 0
         for event in events {
             guard !event.isDeleted,
                   event.taskId == rootTaskId,

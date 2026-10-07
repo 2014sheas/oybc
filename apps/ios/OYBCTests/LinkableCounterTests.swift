@@ -27,7 +27,7 @@ final class LinkableCounterTests: XCTestCase {
         _ id: String,
         action: String? = nil,
         unit: String? = nil,
-        currentCount: Int? = nil,
+        currentCount: CountValue? = nil,
         sharedCounterId: String? = nil,
         isDeleted: Bool = false,
         type: TaskType = .counting,

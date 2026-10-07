@@ -49,7 +49,7 @@ final class SealingTests: XCTestCase {
 
     /// A plain (non-shared) COUNTING task — M-3: slice 1's SealingTests only
     /// covered NORMAL; these tests cover the delta/increment-event path.
-    private func makeCountingTask(_ id: String, maxCount: Int, currentCount: Int? = nil) -> Task {
+    private func makeCountingTask(_ id: String, maxCount: CountValue, currentCount: CountValue? = nil) -> Task {
         let now = AppDatabase.currentTimestamp()
         return Task(
             id: id, userId: userId, title: "C", description: nil, type: .counting,
@@ -64,7 +64,7 @@ final class SealingTests: XCTestCase {
         )
     }
 
-    private func makeIncrementEvent(_ id: String, taskId: String, occurredAt: String, delta: Int, isDeleted: Bool = false) -> TaskEvent {
+    private func makeIncrementEvent(_ id: String, taskId: String, occurredAt: String, delta: CountValue, isDeleted: Bool = false) -> TaskEvent {
         let now = AppDatabase.currentTimestamp()
         return TaskEvent(
             id: id, userId: userId, taskId: taskId, kind: .increment, delta: delta,

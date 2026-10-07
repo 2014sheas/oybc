@@ -31,7 +31,7 @@ struct CounterDailyTotal: Equatable {
     /// ISO `YYYY-MM-DD` form) without implying a time-of-day component.
     let dateISO: String
     /// Sum of `delta` for increment events whose `occurredAt` falls on this day.
-    let total: Int
+    let total: CountValue
 }
 
 /// Result of `deriveCounterDailyTotals`.
@@ -40,7 +40,7 @@ struct CounterDailyTotalsResult: Equatable {
     /// zero-filled for any day with no activity.
     let days: [CounterDailyTotal]
     /// Convenience: `days.last?.total` (today's bucket), 0 when `days` is empty.
-    let todayTotal: Int
+    let todayTotal: CountValue
 }
 
 /// Thrown by `deriveCounterDailyTotals` for an invalid `days` window.
@@ -115,7 +115,7 @@ func deriveCounterDailyTotals(
     }
     let todayKey = dayKeys.last ?? localDayKey(startOfToday)
 
-    var totalsByDay: [String: Int] = Dictionary(uniqueKeysWithValues: dayKeys.map { ($0, 0) })
+    var totalsByDay: [String: CountValue] = Dictionary(uniqueKeysWithValues: dayKeys.map { ($0, 0) })
 
     for event in events {
         guard event.taskId == sourceTaskId else { continue }

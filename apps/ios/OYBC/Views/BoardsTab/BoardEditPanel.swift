@@ -65,7 +65,7 @@ struct BoardEditPanel: View {
     /// docs/WINDOWED_COMPLETION.md §Task caches).
     var windowedIsCompleted: (Task) -> Bool = { $0.isCompleted }
     /// Windowed count twin of `windowedIsCompleted` for counting squares.
-    var windowedCount: (Task) -> Int = { $0.currentCount ?? 0 }
+    var windowedCount: (Task) -> CountValue = { $0.currentCount ?? 0 }
 
     // MARK: - Saving indicator
 

@@ -43,7 +43,7 @@ private struct BoardPlayTitleChrome: ViewModifier {
 private struct CreditToastState {
     /// The shared counter's SOURCE task id — what `Undo` reverses.
     let sourceTaskId: String
-    let amount: Int
+    let amount: CountValue
     let unit: String
     let verb: CounterLogToastView.Verb
     let message: String
@@ -343,7 +343,7 @@ struct BoardPlayView: View {
     /// Windowed count of a counting square: event-owning (source / plain) via
     /// its own events; a linked counter via `resolveLinkedCounterDisplay`
     /// (window-stamped: root sum in its window; hub-linked: count − baseline).
-    func windowedCount(_ task: Task) -> Int {
+    func windowedCount(_ task: Task) -> CountValue {
         if task.sharedCounterId != nil {
             return resolveLinkedCounterDisplay(
                 task: task, eventsByTaskId: windowEventsByTaskId, sealedAt: board?.sealedAt,
@@ -1243,7 +1243,7 @@ struct BoardPlayView: View {
         let maxVal = task?.maxCount ?? 0
         let isLinkedCounter = task?.sharedCounterId != nil
         // D16 — CLOSED shows the window count, not the old max/0 snapshot.
-        let current: Int = {
+        let current: CountValue = {
             guard let t = task else { return 0 }
             if t.type == .counting { return windowedCount(t) }
             return rawCount
@@ -1372,8 +1372,8 @@ struct BoardPlayView: View {
         task: Task?,
         isCompleted: Bool,
         taskType: TaskType,
-        current: Int,
-        maxVal: Int,
+        current: CountValue,
+        maxVal: CountValue,
         isLinkedCounter: Bool
     ) -> some View {
         switch taskType {
@@ -1403,14 +1403,15 @@ struct BoardPlayView: View {
                 // stepper sheet's chip row; this menu quick-action never
                 // persists a new default (mirrors the sheet's plain-tap rule).
                 let quickAmount = viewModel.sharedCounterSourceId(for: t).flatMap { taskMap[$0]?.defaultLogAmount } ?? 1
-                Button("+ Add \(quickAmount) \(actionLabel)", systemImage: "plus") {
+                let quickAmountText = formatCount(quickAmount, kind: resolveCountKind(t.countKind))
+                Button("+ Add \(quickAmountText) \(actionLabel)", systemImage: "plus") {
                     guard !isBoardLocked else { return }
                     viewModel.handleCountingTap(boardTask: boardTask, task: t, amount: quickAmount)
                 }
                 // No maxVal gate — overshoot is a feature (never clamp);
                 // matches the cell-tap stepper + detail-sheet stepper.
                 .disabled(isProcessing || isBoardLocked)
-                Button("− Remove \(quickAmount) \(actionLabel)", systemImage: "minus") {
+                Button("− Remove \(quickAmountText) \(actionLabel)", systemImage: "minus") {
                     guard !isBoardLocked else { return }
                     viewModel.handleCountingDecrement(boardTask: boardTask, task: t, amount: quickAmount)
                 }
@@ -1654,15 +1655,16 @@ struct BoardPlayView: View {
         // context-menu quick actions; the "#" custom entry lives in the
         // stepper sheet's chip row, not this modal.
         let quickAmount = viewModel.sharedCounterSourceId(for: task).flatMap { taskMap[$0]?.defaultLogAmount } ?? 1
+        let kind = resolveCountKind(task.countKind)
 
         detailSection("Progress") {
             VStack(alignment: .leading, spacing: 12) {
                 RisoProgressBar(
-                    value: maxVal > 0 ? Double(min(current, maxVal)) / Double(maxVal) : 0,
+                    value: maxVal > 0 ? min(current, maxVal) / maxVal : 0,
                     color: current >= maxVal ? .risoGreen : .risoBlue
                 )
 
-                Text("\(current) / \(maxVal)\(unitText.isEmpty ? "" : " \(unitText)")")
+                Text("\(formatCount(current, kind: kind)) / \(formatCount(maxVal, kind: kind))\(unitText.isEmpty ? "" : " \(unitText)")")
                     .font(.risoBody(13, .semibold))
                     .foregroundStyle(Color.risoMuted)
 
@@ -1677,7 +1679,7 @@ struct BoardPlayView: View {
 
                     Spacer()
 
-                    Text("\(current)")
+                    Text(formatCount(current, kind: kind))
                         .font(.risoHead(26, .extraBold))
                         .monospacedDigit()
                         .foregroundStyle(Color.risoInk)
@@ -1699,7 +1701,7 @@ struct BoardPlayView: View {
                 // so; bare ± glyphs silently logging 10 broke the contract
                 // (#342 final review I1).
                 if quickAmount != 1 {
-                    Text("Steps by \(quickAmount)\(unitText.isEmpty ? "" : " \(unitText)")")
+                    Text("Steps by \(formatCount(quickAmount, kind: kind))\(unitText.isEmpty ? "" : " \(unitText)")")
                         .font(.risoBody(11, .semibold))
                         .foregroundStyle(Color.risoMuted)
                         .frame(maxWidth: .infinity, alignment: .center)
