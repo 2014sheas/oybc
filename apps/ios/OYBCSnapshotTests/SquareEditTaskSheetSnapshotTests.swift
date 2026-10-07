@@ -127,12 +127,25 @@ final class SquareEditTaskSheetSnapshotTests: XCTestCase {
     }
 
     /// A linked counter: type fixed (no picker), title + counting fields
-    /// only; its kind shows as a tag (never a picker).
-    func testLinkedCounterFixedTypeLight() {
+    /// only; its kind shows as a tag (never a picker) with the family's
+    /// name and all-time (spec §5): "Run km · 1,240 all-time".
+    func testLinkedCounterFixedTypeLight() throws {
         var task = countingTask()
         task.sharedCounterId = "sett-shared"
+        let db = try AppDatabase.makeTestInstance()
+        try db.saveUser(User(
+            id: SnapshotFixtures.userId, email: "s@e.com", displayName: "S", photoURL: nil,
+            preferences: User.encodePreferences(.defaults),
+            createdAt: SnapshotFixtures.fixedTimestamp, updatedAt: SnapshotFixtures.fixedTimestamp,
+            lastSyncedAt: nil, version: 1
+        ))
+        var root = SnapshotFixtures.makeTask(
+            id: "sett-shared", title: "Run 10 km", type: .counting, action: "Run", unit: "km", maxCount: 10
+        )
+        root.currentCount = 1240
+        try db.saveTask(root)
         assertSnapshot(
-            of: makeSheet(task: task),
+            of: SquareEditTaskSheet(task: task, database: db, onDone: { _ in }, onCancel: {}),
             as: .image(layout: .fixed(width: 393, height: 780)),
             record: recordMode
         )

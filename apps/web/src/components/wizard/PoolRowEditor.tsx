@@ -10,7 +10,7 @@ import {
 import { RisoButton, RisoSectionLabel } from '../riso';
 import { GoalEntry } from '../counters/GoalEntry';
 import { KindPicker } from '../counters/KindPicker';
-import { KindTag } from '../counters/KindTag';
+import { LinkedKindTag } from '../counters/LinkedKindTag';
 import { useKindSwitchRequest } from '../counters/useKindSwitchRequest';
 import { countingPreview, validatePatch, type TaskEditPatch } from '../../db/taskEditPatch';
 import { CompoundFields } from './CompoundFields';
@@ -125,7 +125,7 @@ export function PoolRowEditor({
             <div className={styles.kindRow}>
               <RisoSectionLabel variant="kicker">Kind</RisoSectionLabel>
               {task.sharedCounterId ? (
-                <KindTag kind={stored} />
+                <LinkedKindTag task={task} />
               ) : (
                 <KindPicker value={kind} lock={kindPickerLock('edit', stored)} onChange={requestKind} size="compact" />
               )}

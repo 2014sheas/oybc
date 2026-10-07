@@ -29,7 +29,7 @@ import {
 } from '../../db/taskEditPatch';
 import { GoalEntry } from '../../components/counters/GoalEntry';
 import { KindPicker } from '../../components/counters/KindPicker';
-import { KindTag } from '../../components/counters/KindTag';
+import { LinkedKindTag } from '../../components/counters/LinkedKindTag';
 import { useKindSwitchRequest } from '../../components/counters/useKindSwitchRequest';
 import { planKindSwitchPreview } from '../../db/operations/countKindSwitch';
 import { countingGoalError } from '../createPage/createFormCounting';
@@ -369,7 +369,7 @@ export function TaskEditSheet({
             <div className={styles.field}>
               <span className={styles.fieldLabel}>Kind</span>
               {task.sharedCounterId ? (
-                <KindTag kind={storedKind} />
+                <LinkedKindTag task={task} />
               ) : (
                 <KindPicker value={countKind} lock={kindPickerLock('edit', storedKind)} onChange={requestKind} />
               )}

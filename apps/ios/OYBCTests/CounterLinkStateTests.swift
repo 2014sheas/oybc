@@ -125,3 +125,35 @@ final class CounterLinkStateTests: XCTestCase {
     }
 }
 
+/// I3 (PR 3 final fix) — an existing linked row's Kind tag on Board Edit's
+/// square sheet, Task Detail's edit sheet and the pool row editor names the
+/// family and its all-time (spec §5), not a bare kind chip.
+@MainActor
+final class LinkedKindTagViewTests: XCTestCase {
+    private typealias K = LinkedWindowKit
+
+    func testLinkedRowNamesTheRootAndItsGroupedAllTime() throws {
+        let db = try AppDatabase.makeTestInstance(); try K.seedUser(db)
+        var root = K.task("root", maxCount: 26.2, currentCount: 1240.5, title: "Run 26.2 miles")
+        root.countKind = .continuous
+        try db.saveTask(root)
+        var row = K.task("row", maxCount: 3, sharedCounterId: "root")
+        row.countKind = .continuous
+
+        let tag = KindTagView(linkedTask: row, root: db.linkedCounterRoot(of: row))
+        XCTAssertEqual(tag.kind, .continuous)
+        XCTAssertEqual(tag.counterName, "Run miles")
+        XCTAssertEqual(tag.lifetime, 1240.5)
+        XCTAssertEqual(formatCountTotal(try XCTUnwrap(tag.lifetime), kind: tag.kind), "1,240.5")
+    }
+
+    func testMissingRootFallsBackToTheRowKindWithoutMeta() throws {
+        let db = try AppDatabase.makeTestInstance(); try K.seedUser(db)
+        var row = K.task("row", sharedCounterId: "gone"); row.countKind = .continuous
+        XCTAssertNil(db.linkedCounterRoot(of: row))
+        let tag = KindTagView(linkedTask: row, root: nil)
+        XCTAssertEqual(tag.kind, .continuous)
+        XCTAssertNil(tag.counterName)
+        XCTAssertNil(tag.lifetime)
+    }
+}

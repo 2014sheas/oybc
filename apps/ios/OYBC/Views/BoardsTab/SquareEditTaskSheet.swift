@@ -445,7 +445,7 @@ struct SquareEditTaskSheet: View {
                 }
                 editFieldRow(label: "Kind") {
                     if task.sharedCounterId != nil {
-                        KindTagView(kind: stagedKind)
+                        KindTagView(linkedTask: task, root: database.linkedCounterRoot(of: task))
                     } else {
                         KindPickerView(
                             selection: $countKind,

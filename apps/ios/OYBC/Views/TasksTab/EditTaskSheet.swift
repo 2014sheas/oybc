@@ -232,7 +232,7 @@ struct EditTaskSheet: View {
                 VStack(alignment: .leading, spacing: 5) {
                     fieldLabel("Kind")
                     if task.sharedCounterId != nil {
-                        KindTagView(kind: resolveCountKind(task.countKind))
+                        KindTagView(linkedTask: task, root: database.linkedCounterRoot(of: task))
                     } else {
                         KindPickerView(
                             selection: $countKind,

@@ -21,7 +21,7 @@ import { loadLibraryInputs } from '../../pages/tasks/loadLibraryInputs';
 import { TypeBadge } from '../TypeBadge';
 import { GoalEntry } from '../counters/GoalEntry';
 import { KindPicker } from '../counters/KindPicker';
-import { KindTag } from '../counters/KindTag';
+import { LinkedKindTag } from '../counters/LinkedKindTag';
 import { useKindSwitchRequest } from '../counters/useKindSwitchRequest';
 import { planKindSwitchPreview } from '../../db/operations/countKindSwitch';
 import { RisoSegmented } from '../riso';
@@ -359,7 +359,7 @@ export function BoardEditTaskSheet({
             <div className={styles.field}>
               <span className={styles.fieldLabel}>Kind</span>
               {task.sharedCounterId != null ? (
-                <KindTag kind={storedKind} />
+                <LinkedKindTag task={task} />
               ) : (
                 <KindPicker
                   value={countKind}

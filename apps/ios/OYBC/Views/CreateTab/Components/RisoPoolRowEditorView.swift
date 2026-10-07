@@ -107,7 +107,7 @@ struct RisoPoolRowEditorView: View {
         VStack(alignment: .leading, spacing: 7) {
             labeledField("Kind", flex: true) {
                 if task.sharedCounterId != nil {
-                    KindTagView(kind: resolveCountKind(task.countKind))
+                    KindTagView(linkedTask: task, root: database.linkedCounterRoot(of: task))
                 } else {
                     KindPickerView(
                         selection: $draft.countKind,

@@ -61,3 +61,36 @@ struct KindTagView: View {
         .frame(minHeight: 38, alignment: .leading)
     }
 }
+
+extension KindTagView {
+    /// An existing linked row's tag (spec §5): the family root's kind,
+    /// pair-derived counter name (title fallback) and all-time total — the
+    /// same name / lifetime the create forms' auto-link hint shows
+    /// (`findLinkableCounter`). Without a root, the row's own kind only.
+    /// Web twin: `linkedKindTagProps` (`LinkedKindTag.tsx`).
+    ///
+    /// - Parameters:
+    ///   - task: The linked row (`sharedCounterId` set).
+    ///   - root: The family root, or nil while it can't be read.
+    init(linkedTask task: Task, root: Task?) {
+        guard let root else {
+            self.init(kind: resolveCountKind(task.countKind))
+            return
+        }
+        let name = CounterName.formatCounterName(action: root.action, unit: root.unit)
+        self.init(
+            kind: resolveCountKind(root.countKind),
+            counterName: name.isEmpty ? root.title : name,
+            lifetime: root.currentCount ?? 0
+        )
+    }
+}
+
+extension AppDatabase {
+    /// The family root of a linked row, or nil (unlinked, missing, or a read
+    /// error) — feeds `KindTagView(linkedTask:root:)`.
+    func linkedCounterRoot(of task: Task) -> Task? {
+        guard let rootId = task.sharedCounterId else { return nil }
+        return try? fetchTask(id: rootId)
+    }
+}
