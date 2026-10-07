@@ -46,6 +46,7 @@ describe('taskTitleVectors — counterCopyTitle', () => {
           action: orEmpty(v.member.action) || undefined,
           unit: orEmpty(v.member.unit) || undefined,
           maxCount: v.member.maxCount ?? undefined,
+          countKind: v.member.countKind ?? undefined,
         },
         v.newMaxCount
       )

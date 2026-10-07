@@ -33,6 +33,13 @@
     { "name": "duration zero refused", "raw": "0h 0m", "kind": "duration", "expected": null },
     { "name": "duration zero allowed", "raw": "0m", "kind": "duration", "allowZero": true, "expected": 0 },
     { "name": "duration junk refused", "raw": "abc", "kind": "duration", "expected": null },
+    { "name": "duration colon minutes over 59 refused", "raw": "1:75", "kind": "duration", "expected": null },
+    { "name": "duration colon minutes 59", "raw": "1:59", "kind": "duration", "expected": 119 },
+    { "name": "discrete overflow refused", "raw": "99999999999999999999", "kind": "discrete", "expected": null },
+    { "name": "continuous overflow refused", "raw": "99999999999999999999.5", "kind": "continuous", "expected": null },
+    { "name": "duration overflow refused", "raw": "99999999999999999999", "kind": "duration", "expected": null },
+    { "name": "duration overflow hours refused", "raw": "99999999999999999999h", "kind": "duration", "expected": null },
+    { "name": "duration overflow colon refused", "raw": "99999999999999999999:30", "kind": "duration", "expected": null },
     { "name": "empty refused", "raw": "   ", "kind": "continuous", "expected": null }
   ],
   "durationToFields": [

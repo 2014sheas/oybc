@@ -26,7 +26,8 @@ enum TaskTitle {
         action: String,
         maxCount: CountValue?,
         unit: String,
-        providedTitle: String? = nil
+        providedTitle: String? = nil,
+        countKind: CountKind = .discrete
     ) -> String {
         if let providedTitle {
             let trimmed = providedTitle.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -42,6 +43,11 @@ enum TaskTitle {
         // see `CounterName.formatCounterName`.
         guard let maxCount else {
             return CounterName.formatCounterName(action: action, unit: unit)
+        }
+        // Duration's unit IS time: "Practice 10h 30m" (minutes stored; the
+        // `Xh Ym` rendering is locale-independent).
+        if countKind == .duration {
+            return "\(trimmedAction) \(formatCount(maxCount, kind: .duration, locale: Locale(identifier: "en_US_POSIX")))"
         }
         // Titles are STORED, so the goal renders locale-independently
         // (2dp, trimmed, `.` separator) — never the device locale.
@@ -75,11 +81,12 @@ extension TaskTitle {
         title: String,
         action: String,
         maxCount: CountValue?,
-        unit: String
+        unit: String,
+        countKind: CountKind = .discrete
     ) -> Bool {
         let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
         if trimmed.isEmpty { return true }
-        let auto = generateCounterTaskTitle(action: action, maxCount: maxCount, unit: unit)
+        let auto = generateCounterTaskTitle(action: action, maxCount: maxCount, unit: unit, countKind: countKind)
             .trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed == auto
     }
@@ -103,9 +110,10 @@ extension TaskTitle {
     static func counterCopyTitle(member: Task, newMaxCount: CountValue) -> String {
         let action = member.action ?? ""
         let unit = member.unit ?? ""
-        if !isAutoCounterTitle(title: member.title, action: action, maxCount: member.maxCount, unit: unit) {
+        let countKind = resolveCountKind(member.countKind)
+        if !isAutoCounterTitle(title: member.title, action: action, maxCount: member.maxCount, unit: unit, countKind: countKind) {
             return member.title.trimmingCharacters(in: .whitespacesAndNewlines)
         }
-        return generateCounterTaskTitle(action: action, maxCount: newMaxCount, unit: unit)
+        return generateCounterTaskTitle(action: action, maxCount: newMaxCount, unit: unit, countKind: countKind)
     }
 }

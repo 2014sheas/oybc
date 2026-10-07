@@ -54,7 +54,9 @@ export function kindSegmentShowsLock(lock: KindPickerLock, segment: CountKind, s
 
 const DIGITS = /^[0-9]+$/;
 const CONTINUOUS = /^([0-9]+)?(?:[.,]([0-9]{0,2}))?$/;
-const DURATION_COLON = /^([0-9]+):([0-9]{1,2})$/;
+const DURATION_COLON = /^([0-9]+):([0-5]?[0-9])$/;
+/** Any entry above this is refused (an overflow digit string reads as invalid, never as a huge goal). */
+const MAX_COUNT_INPUT = 1_000_000_000;
 const DURATION_HM = /^(?:([0-9]+)\s*h)?\s*(?:([0-9]+)\s*m)?$/i;
 
 function parseDurationMinutes(s: string): number | null {
@@ -94,7 +96,7 @@ export function parseCountInput(
   } else {
     value = parseDurationMinutes(s);
   }
-  if (value === null || !Number.isFinite(value) || value < 0) return null;
+  if (value === null || !Number.isFinite(value) || value < 0 || value > MAX_COUNT_INPUT) return null;
   if (value === 0 && options.allowZero !== true) return null;
   return value;
 }

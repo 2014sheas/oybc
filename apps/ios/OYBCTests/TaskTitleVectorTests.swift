@@ -16,6 +16,7 @@ final class TaskTitleVectorTests: XCTestCase {
         let maxCount: Double?
         let unit: String
         let providedTitle: String?
+        let countKind: CountKind?
         let expected: String
     }
 
@@ -25,6 +26,7 @@ final class TaskTitleVectorTests: XCTestCase {
         let action: String
         let maxCount: Double?
         let unit: String
+        let countKind: CountKind?
         let expected: Bool
     }
 
@@ -33,6 +35,7 @@ final class TaskTitleVectorTests: XCTestCase {
         let action: String?
         let unit: String?
         let maxCount: Double?
+        let countKind: CountKind?
     }
 
     private struct CopyVector: Decodable {
@@ -69,7 +72,8 @@ final class TaskTitleVectorTests: XCTestCase {
             id: "m", userId: "u1", title: m.title, type: .counting,
             action: m.action, unit: m.unit, maxCount: m.maxCount,
             totalCompletions: 0, totalInstances: 0,
-            createdAt: Self.isoStamp, updatedAt: Self.isoStamp, version: 1, isDeleted: false
+            createdAt: Self.isoStamp, updatedAt: Self.isoStamp, version: 1, isDeleted: false,
+            countKind: m.countKind
         )
     }
 
@@ -79,7 +83,8 @@ final class TaskTitleVectorTests: XCTestCase {
         for v in fixture.generateCounterTaskTitle {
             XCTAssertEqual(
                 TaskTitle.generateCounterTaskTitle(
-                    action: v.action, maxCount: v.maxCount, unit: v.unit, providedTitle: v.providedTitle
+                    action: v.action, maxCount: v.maxCount, unit: v.unit, providedTitle: v.providedTitle,
+                    countKind: v.countKind ?? .discrete
                 ),
                 v.expected,
                 v.name
@@ -92,7 +97,8 @@ final class TaskTitleVectorTests: XCTestCase {
         XCTAssertEqual(Set(fixture.isAutoCounterTitle.map(\.expected)), [true, false], "pins both outcomes")
         for v in fixture.isAutoCounterTitle {
             XCTAssertEqual(
-                TaskTitle.isAutoCounterTitle(title: v.title, action: v.action, maxCount: v.maxCount, unit: v.unit),
+                TaskTitle.isAutoCounterTitle(title: v.title, action: v.action, maxCount: v.maxCount, unit: v.unit,
+                    countKind: v.countKind ?? .discrete),
                 v.expected,
                 v.name
             )
