@@ -94,6 +94,25 @@ describe('wizard preview — windowed completion', () => {
     expect(met.done).toBe(true);
   });
 
+  it('R19: a linked task previews in its ROOT\'s kind (root Continuous → count.kind continuous)', () => {
+    const root = makeTask({ id: 'root-1', type: TaskType.COUNTING, maxCount: 26.2, countKind: 'continuous' });
+    // The linked row carries no countKind of its own — it must follow the root.
+    const linked = makeTask({
+      id: 'linked-1',
+      type: TaskType.COUNTING,
+      maxCount: 13.1,
+      sharedCounterId: root.id,
+      baseline: 0,
+    });
+    const model = taskToModel(
+      linked,
+      { [root.id]: root, [linked.id]: linked },
+      {},
+      ctx([makeEvent(root.id, 'increment', IN_WINDOW, 3.1)]),
+    );
+    expect(model.count?.kind).toBe('continuous');
+  });
+
   it('compound: evaluates windowed through its children, not the lifetime cache', () => {
     const child = makeTask({ id: 'child-1', isCompleted: true, totalCompletions: 1 });
     const compound = makeTask({

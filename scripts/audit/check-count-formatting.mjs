@@ -16,6 +16,15 @@
  * a moved line still matches, an edited line re-flags. Shrink it, never grow
  * it to dodge a fix.
  *
+ * LIMITS — this is a single-line, name-keyed heuristic, not proof of
+ * kind-awareness. It reads one line at a time and only the identifiers in
+ * COUNT_NAMES, so it misses: a call split across lines, a kind smuggled in
+ * as `'discrete' as CountKind` (or any variable holding 'discrete'), a value
+ * named outside COUNT_NAMES, and raw JSX / template-literal interpolation of
+ * a count (`{current} / {max}`, `${count}`) that never calls a formatter at
+ * all. A green run means "no NEW line matches these patterns" — review still
+ * owns the rest.
+ *
  * Exit 0 clean (stale allow-list entries print a note), 1 on a new offender.
  * No dependencies. Node >= 20.
  * Run: node scripts/audit/check-count-formatting.mjs [--self-test]
