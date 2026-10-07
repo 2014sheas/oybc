@@ -203,6 +203,58 @@
         { "kind": "increment", "delta": 1, "occurredAt": "2026-07-08T00:00:00.000Z", "isDeleted": false }
       ],
       "expected": { "isCompleted": false, "count": 2 }
+    },
+    {
+      "name": "continuous-drift-completes",
+      "task": { "type": "counting", "maxCount": 0.3, "countKind": "continuous" },
+      "windowStart": "2026-07-01T00:00:00.000Z",
+      "events": [
+        { "kind": "increment", "delta": 0.1, "occurredAt": "2026-07-02T12:00:00.000Z", "isDeleted": false },
+        { "kind": "increment", "delta": 0.2, "occurredAt": "2026-07-03T12:00:00.000Z", "isDeleted": false }
+      ],
+      "expected": { "isCompleted": true, "count": 0.3 }
+    },
+    {
+      "name": "continuous-fractional-sum",
+      "task": { "type": "counting", "maxCount": 26.2, "countKind": "continuous" },
+      "windowStart": "2026-07-01T00:00:00.000Z",
+      "events": [
+        { "kind": "increment", "delta": 3.1, "occurredAt": "2026-07-02T12:00:00.000Z", "isDeleted": false },
+        { "kind": "increment", "delta": 5, "occurredAt": "2026-07-03T12:00:00.000Z", "isDeleted": false },
+        { "kind": "increment", "delta": 0.25, "occurredAt": "2026-07-04T12:00:00.000Z", "isDeleted": false }
+      ],
+      "expected": { "isCompleted": false, "count": 8.35 }
+    },
+    {
+      "name": "discrete-fractional-history-rounds",
+      "task": { "type": "counting", "maxCount": 1 },
+      "windowStart": "2026-07-01T00:00:00.000Z",
+      "events": [
+        { "kind": "increment", "delta": 0.4, "occurredAt": "2026-07-02T12:00:00.000Z", "isDeleted": false },
+        { "kind": "increment", "delta": 0.4, "occurredAt": "2026-07-03T12:00:00.000Z", "isDeleted": false },
+        { "kind": "increment", "delta": 0.4, "occurredAt": "2026-07-04T12:00:00.000Z", "isDeleted": false }
+      ],
+      "expected": { "isCompleted": true, "count": 1 }
+    },
+    {
+      "name": "continuous-same-history-exact",
+      "task": { "type": "counting", "maxCount": 1, "countKind": "continuous" },
+      "windowStart": "2026-07-01T00:00:00.000Z",
+      "events": [
+        { "kind": "increment", "delta": 0.4, "occurredAt": "2026-07-02T12:00:00.000Z", "isDeleted": false },
+        { "kind": "increment", "delta": 0.4, "occurredAt": "2026-07-03T12:00:00.000Z", "isDeleted": false },
+        { "kind": "increment", "delta": 0.4, "occurredAt": "2026-07-04T12:00:00.000Z", "isDeleted": false }
+      ],
+      "expected": { "isCompleted": true, "count": 1.2 }
+    },
+    {
+      "name": "continuous-overshoot-preserved",
+      "task": { "type": "counting", "maxCount": 26.2, "countKind": "continuous" },
+      "windowStart": "2026-07-01T00:00:00.000Z",
+      "events": [
+        { "kind": "increment", "delta": 28.4, "occurredAt": "2026-07-02T12:00:00.000Z", "isDeleted": false }
+      ],
+      "expected": { "isCompleted": true, "count": 28.4 }
     }
   ],
   "_linkedCounterDisplayNote": "resolveLinkedCounterDisplay (taskEvents.ts) <-> Swift resolveLinkedCounterDisplay (Helpers/TaskEvents.swift): what a LINKED counting square/row shows. Window-stamped rows (sharedCounterId + startDate + createdInWizard, COUNTING) with an event map = the ROOT's in-window increment sum ([startDate, endDate] inclusive, optional sealedAt bound) for BOTH count and completion; any other linked row WITH an event map AND a `window` (the placing board's { startDate, endDate }, 4th argument - owner rule 2026-10-01) = the ROOT's increment sum inside THAT window (optional sealedAt bound), the row's own non-wizard-born stamp ignored; no event map, or no window for a non-window-stamped row = currentCount - baseline (low-clamped) + the latch. eventsByTaskId null = no map; `window` absent or null = no window. Consumed by packages/shared/tests/algorithms/taskEvents.test.ts and apps/ios/OYBCTests/TaskEventVectorTests.swift.",

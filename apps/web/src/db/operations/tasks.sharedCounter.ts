@@ -92,6 +92,7 @@ export async function propagateToLinkedRows(
       baseline: t.baseline,
       maxCount: t.maxCount,
       isCompleted: t.isCompleted,
+      countKind: t.countKind,
     })),
   );
 
@@ -165,7 +166,7 @@ export async function propagateToLinkedRows(
  *
  * @param sourceTaskId - The id of the source (template) task whose `currentCount`
  *   is the shared accumulator.
- * @param by - Amount to increment (default 1). Must be a positive integer.
+ * @param by - Amount to increment (default 1). Must be a positive 2dp number.
  * @param boardId - The board whose OWN play surface made the log, if any. When
  *   that board's window has ended, the event is stamped at its `endDate`
  *   (see `lateLogStampForBoard`); omitted (hub / counter detail /
@@ -271,13 +272,13 @@ export async function incrementSharedCounter(
  *     increment engine.
  *
  * Returns the DISTINCT live ACTIVE boards containing any member task of the group,
- * and the `effectiveDelta` (positive integer = actual units removed, 0 on no-op).
+ * and the `effectiveDelta` (positive 2dp number = actual units removed, 0 on no-op).
  *
  * Callers must pass the SOURCE task's id (same rule as `incrementSharedCounter`).
  *
  * @param sourceTaskId - The id of the source (template) task whose `currentCount`
  *   is the shared accumulator.
- * @param by - Amount to decrement (default 1). Must be a positive integer.
+ * @param by - Amount to decrement (default 1). Must be a positive 2dp number.
  * @param boardId - The board whose OWN play surface made the log, if any — the
  *   same late-log stamp and sealed no-op as {@link incrementSharedCounter},
  *   plus the window-count clamp above.
@@ -569,7 +570,7 @@ export async function undoLastCounterLog(sourceTaskId: string): Promise<UndoCoun
  * @param sourceTaskId The counter's source task id. Must NOT be a
  *   linked/derived task — `defaultLogAmount` is only meaningful on the
  *   accumulator.
- * @param amount A positive integer.
+ * @param amount A positive 2dp number.
  */
 export async function setCounterDefaultLogAmount(
   sourceTaskId: string,

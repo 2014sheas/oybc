@@ -212,7 +212,8 @@ extension AppDatabase {
                 let derived = deriveDisplayedCount(
                     derivedBaseline: member.baseline ?? 0,
                     derivedMaxCount: member.maxCount ?? 0,
-                    sourceCurrentCount: source.currentCount ?? 0
+                    sourceCurrentCount: source.currentCount ?? 0,
+                    countKind: member.countKind
                 )
                 member.sharedCounterId = nil
                 member.baseline = nil

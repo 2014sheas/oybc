@@ -279,6 +279,52 @@
         ],
         "totalArrivedSquares": 3
       }
+    },
+    {
+      "name": "fractional-increase-arrives",
+      "lastSeen": {
+        "t1": 0.3
+      },
+      "squares": [
+        {
+          "taskId": "t1",
+          "counterId": "c1",
+          "counterName": "Run",
+          "displayed": 0.45
+        }
+      ],
+      "expected": {
+        "arrivedTaskIds": [
+          "t1"
+        ],
+        "arrivedCounters": [
+          {
+            "counterId": "c1",
+            "counterName": "Run",
+            "squareCount": 1
+          }
+        ],
+        "totalArrivedSquares": 1
+      }
+    },
+    {
+      "name": "float-noise-is-not-an-arrival",
+      "lastSeen": {
+        "t1": 0.3
+      },
+      "squares": [
+        {
+          "taskId": "t1",
+          "counterId": "c1",
+          "counterName": "Run",
+          "displayed": 0.30000000000000004
+        }
+      ],
+      "expected": {
+        "arrivedTaskIds": [],
+        "arrivedCounters": [],
+        "totalArrivedSquares": 0
+      }
     }
   ]
 }

@@ -249,6 +249,7 @@ func applyPreviewDerivedCells(
         // window-stamped carries its SOURCE board's window) and never a
         // root's lifetime. The mirror columns are zeroed: they are not read
         // for a window-stamped row and must not leak into a lifetime reader.
+        standIn.countKind = counter.countKind
         standIn.sharedCounterId = counter.rootTaskId
         standIn.startDate = counter.startDate
         standIn.endDate = counter.endDate

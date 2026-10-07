@@ -182,7 +182,7 @@ export async function deleteCounterWithUnlink(sourceId: string): Promise<void> {
       await softDeleteWindowStampedDerived(retiredIds, now);
       for (const m of members.filter((t) => !isWindowStampedDerived(t))) {
         const { displayed } = deriveDisplayedCount(
-          { baseline: m.baseline ?? 0, maxCount: m.maxCount ?? 0 },
+          { baseline: m.baseline ?? 0, maxCount: m.maxCount ?? 0, countKind: m.countKind },
           { currentCount: source.currentCount ?? 0 },
         );
         const unlinked: Task = {

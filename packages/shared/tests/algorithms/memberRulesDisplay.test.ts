@@ -96,6 +96,7 @@ describe('effectiveMemberTarget', () => {
         fromBoard: v.fromBoard,
         sourceWindow: v.sourceWindow ? win(v.sourceWindow) : undefined,
         targetWindow: win(v.targetWindow),
+        kind: v.countKind,
       })
     ).toBe(v.expected);
   });
@@ -103,7 +104,7 @@ describe('effectiveMemberTarget', () => {
 
 describe('varyRangeLabel', () => {
   it.each(V.varyRangeLabel as any[])('$name', (v: any) => {
-    expect(varyRangeLabel(v.t, v.level as VaryLevel, v.goal, v.unit)).toBe(v.expected);
+    expect(varyRangeLabel(v.t, v.level as VaryLevel, v.goal, v.unit, v.countKind)).toBe(v.expected);
   });
 });
 
@@ -117,7 +118,7 @@ describe('countingSummary (vectors)', () => {
   // `toStrictEqual`, not `toEqual`: a vector whose `expected` is null must
   // not be satisfied by an `undefined` return.
   it.each(V.countingSummary as any[])('$name', (v: any) => {
-    expect(countingSummary(v.target, v.level as VaryLevel, v.goal, v.unit)).toStrictEqual(
+    expect(countingSummary(v.target, v.level as VaryLevel, v.goal, v.unit, v.countKind)).toStrictEqual(
       v.expected
     );
   });
@@ -133,7 +134,7 @@ describe('compoundSummary (vectors)', () => {
 
 describe('remainingTarget', () => {
   it.each(V.remainingTarget as any[])('$name', (v: any) => {
-    expect(remainingTarget(v.goal, v.windowCount)).toBe(v.expected);
+    expect(remainingTarget(v.goal, v.windowCount, v.countKind)).toBe(v.expected);
   });
 });
 
@@ -145,6 +146,7 @@ describe('prefilledOneOffTarget', () => {
         windowCount: v.windowCount,
         sourceWindow: v.sourceWindow ? winWithDates(v.sourceWindow, v.sourceWindowDates) : undefined,
         targetWindow: winWithDates(v.targetWindow, v.targetWindowDates),
+        kind: v.countKind,
       })
     ).toBe(v.expected);
   });

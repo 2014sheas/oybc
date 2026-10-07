@@ -423,4 +423,39 @@ final class AppDatabaseCounterLogOpsTests: XCTestCase {
         try seedUser(db)
         XCTAssertNoThrow(try db.setCounterDefaultLogAmount(sourceTaskId: "missing", amount: 5))
     }
+
+    // MARK: - Counter kinds: 2dp quantisation (PR 2 Task 7)
+
+    func test_increment_continuousSumsQuantised_andRejectsThirdDecimal() throws {
+        let db = try makeDb()
+        try seedUser(db)
+        var task = makeSourceTask(id: "c1", currentCount: 0, maxCount: 5)
+        task.countKind = .continuous
+        try db.saveTask(task)
+
+        _ = try db.incrementSharedCounter(sourceTaskId: "c1", by: 0.1)
+        _ = try db.incrementSharedCounter(sourceTaskId: "c1", by: 0.2)
+        XCTAssertEqual(try db.fetchTask(id: "c1")?.currentCount, 0.3, "0.1 + 0.2 must store exactly 0.3")
+
+        XCTAssertThrowsError(try db.incrementSharedCounter(sourceTaskId: "c1", by: 0.125))
+        XCTAssertEqual(try db.fetchTask(id: "c1")?.currentCount, 0.3)
+    }
+
+    func test_propagation_keepsContinuousLinkedFraction() throws {
+        let db = try makeDb()
+        try seedUser(db)
+        var root = makeSourceTask(id: "r1", currentCount: 0, maxCount: 10)
+        root.countKind = .continuous
+        try db.saveTask(root)
+        var linked = makeLinkedTask(id: "l1", sourceId: "r1", baseline: 0, maxCount: 1)
+        linked.countKind = .continuous
+        try db.saveTask(linked)
+
+        _ = try db.incrementSharedCounter(sourceTaskId: "r1", by: 0.5)
+
+        let after = try XCTUnwrap(try db.fetchTask(id: "l1"))
+        XCTAssertEqual(after.currentCount, 0.5)
+        XCTAssertFalse(after.isCompleted, "0.5 of 1 must not round up to complete")
+        XCTAssertEqual(TaskCountDisplay.displayedCount(for: after), 0.5)
+    }
 }

@@ -10,6 +10,7 @@ import {
 } from '../../src/algorithms/taskEvents';
 import type { Task, TaskEvent, TaskEventKind } from '../../src/types';
 import { TaskType } from '../../src/constants/enums';
+import type { CountKind } from '../../src/algorithms/countValue';
 
 /**
  * taskEvents.test.ts — Windowed Completion PR A pure evaluators
@@ -63,7 +64,7 @@ interface VectorEvent {
 }
 interface Vector {
   name: string;
-  task: { type: string; maxCount: number | null };
+  task: { type: string; maxCount: number | null; countKind?: CountKind };
   windowStart: string | null;
   /** Optional inclusive upper bound (2026-09-24 amendment); absent = none. */
   windowEnd?: string | null;
@@ -151,6 +152,7 @@ describe('resolveTaskWindowState (fixture-driven, tests/fixtures/taskWindowState
       const task = makeTask({
         type: v.task.type as TaskType,
         maxCount: v.task.maxCount ?? undefined,
+        countKind: v.task.countKind,
       });
       const events = v.events.map((e) =>
         makeEvent({

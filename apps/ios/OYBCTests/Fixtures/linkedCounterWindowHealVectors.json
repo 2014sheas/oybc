@@ -1,5 +1,5 @@
 {
-  "_note": "Hand-authored vectors for linkedCounterWindowHeal.ts ↔ Helpers/LinkedCounterWindowHeal.swift (owner rule 2026-10-01: a counting square on a board accounts only for the counter's logs inside that board's window). Every expectation was hand-computed; the copy ids are literal uuidv5 outputs (name \"sources:derived:<boardId>:<root>\", computed ONCE with the TS uuidv5) that Swift must reproduce independently. `planLinkedCounterWindowHeal` vectors share the `boards` roster below unless a vector carries its own `boards`. Task rows carry every field the planner reads; `null` = absent. Stamping is all-or-nothing (PR #537 review): an unstamped row is stamped only when every further placing board is a direct placement (and the row has a goal when there is more than one board); a window-stamped row placed on a board it is not stamped for gets a copy for that board.",
+  "_note": "Hand-authored vectors for linkedCounterWindowHeal.ts \u2194 Helpers/LinkedCounterWindowHeal.swift (owner rule 2026-10-01: a counting square on a board accounts only for the counter's logs inside that board's window). Every expectation was hand-computed; the copy ids are literal uuidv5 outputs (name \"sources:derived:<boardId>:<root>\", computed ONCE with the TS uuidv5) that Swift must reproduce independently. `planLinkedCounterWindowHeal` vectors share the `boards` roster below unless a vector carries its own `boards`. Task rows carry every field the planner reads; `null` = absent. Stamping is all-or-nothing (PR #537 review): an unstamped row is stamped only when every further placing board is a direct placement (and the row has a goal when there is more than one board); a window-stamped row placed on a board it is not stamped for gets a copy for that board.",
   "sameWindowStart": [
     {
       "name": "identical strings",
@@ -38,13 +38,13 @@
       "expected": false
     },
     {
-      "name": "both unparseable and equal → literal match",
+      "name": "both unparseable and equal \u2192 literal match",
       "a": "not-a-date",
       "b": "not-a-date",
       "expected": true
     },
     {
-      "name": "unparseable vs parseable → no match",
+      "name": "unparseable vs parseable \u2192 no match",
       "a": "not-a-date",
       "b": "2026-09-18T00:00:00.000Z",
       "expected": false
@@ -171,7 +171,7 @@
     ],
     "vectors": [
       {
-        "name": "single direct placement → stamp in place, no copy",
+        "name": "single direct placement \u2192 stamp in place, no copy",
         "note": "One live placement: the row takes that board's window.",
         "tasks": [
           {
@@ -220,7 +220,7 @@
         }
       },
       {
-        "name": "two direct placements → the EARLIEST board (by startDate) stamps, the later one gets a copy; placement listing order is irrelevant",
+        "name": "two direct placements \u2192 the EARLIEST board (by startDate) stamps, the later one gets a copy; placement listing order is irrelevant",
         "note": "boardTasks list March first; February still wins the stamp.",
         "tasks": [
           {
@@ -286,7 +286,7 @@
         }
       },
       {
-        "name": "direct + reached via a compound → the reached (earlier) board stamps, the later direct placement is copied",
+        "name": "direct + reached via a compound \u2192 the reached (earlier) board stamps, the later direct placement is copied",
         "note": "compA on February holds hub1 as a child; hub1 is placed directly on March. The FIRST board may be reached (the stamped row is what the compound reads); only FURTHER boards must be direct.",
         "tasks": [
           {
@@ -369,8 +369,8 @@
         }
       },
       {
-        "name": "a further board reached only through a compound → NOTHING (the row stays unstamped, no copies)",
-        "note": "hub1 direct on January; compA places it on February and March only through the compound. A child link cannot be repointed per board, and a stamped row would read January's window on every board — so no stamp either: the kernel's context-window fallback renders all three boards correctly as long as the row stays unstamped.",
+        "name": "a further board reached only through a compound \u2192 NOTHING (the row stays unstamped, no copies)",
+        "note": "hub1 direct on January; compA places it on February and March only through the compound. A child link cannot be repointed per board, and a stamped row would read January's window on every board \u2014 so no stamp either: the kernel's context-window fallback renders all three boards correctly as long as the row stays unstamped.",
         "tasks": [
           {
             "id": "hub1",
@@ -439,7 +439,7 @@
         }
       },
       {
-        "name": "reached-only single board → stamp (direct or reached alike)",
+        "name": "reached-only single board \u2192 stamp (direct or reached alike)",
         "note": "No direct placement at all; the first (only) board is reached through compA.",
         "tasks": [
           {
@@ -505,7 +505,7 @@
         }
       },
       {
-        "name": "unplaced candidate → nothing",
+        "name": "unplaced candidate \u2192 nothing",
         "note": "A library-only hub-linked row keeps its lifetime display.",
         "tasks": [
           {
@@ -539,7 +539,7 @@
         }
       },
       {
-        "name": "window-stamped for February placed on February AND March → one copy for March only, no stamp",
+        "name": "window-stamped for February placed on February AND March \u2192 one copy for March only, no stamp",
         "note": "A stamped row is never re-stamped; the February placement is its own (isWindowStampedForBoard) and stays; the March placement is mis-placed and gets March's deterministic row.",
         "tasks": [
           {
@@ -658,7 +658,7 @@
         }
       },
       {
-        "name": "endDate-null (indefinite) board → the stamp carries endDate null",
+        "name": "endDate-null (indefinite) board \u2192 the stamp carries endDate null",
         "note": "",
         "tasks": [
           {
@@ -789,7 +789,7 @@
         }
       },
       {
-        "name": "goal-less linked row on two boards → NOTHING (no target to copy, so no stamp either)",
+        "name": "goal-less linked row on two boards \u2192 NOTHING (no target to copy, so no stamp either)",
         "note": "No maxCount means no per-window target for a March copy; stamping February alone would freeze March out once February ends, so the row stays unstamped.",
         "tasks": [
           {
@@ -909,7 +909,7 @@
       },
       {
         "name": "tombstoned link, deleted compound parent and a non-counting linked row are all ignored",
-        "note": "compA→hub1 link is tombstoned (February not reached); compDel is deleted (March not reached); normalLinked has a sharedCounterId but is NORMAL (not a candidate).",
+        "note": "compA\u2192hub1 link is tombstoned (February not reached); compDel is deleted (March not reached); normalLinked has a sharedCounterId but is NORMAL (not a candidate).",
         "tasks": [
           {
             "id": "hub1",
@@ -1019,7 +1019,7 @@
         }
       },
       {
-        "name": "two candidates → stamps and copies sorted by taskId then boardId",
+        "name": "two candidates \u2192 stamps and copies sorted by taskId then boardId",
         "note": "hub2 is listed before hub1 in tasks; output is still hub1 first.",
         "tasks": [
           {
@@ -1194,7 +1194,7 @@
         }
       },
       {
-        "name": "two live placements of one task on one board (malformed) → the smallest boardTask id is repointed",
+        "name": "two live placements of one task on one board (malformed) \u2192 the smallest boardTask id is repointed",
         "note": "Defensive determinism: bt-y < bt-z.",
         "tasks": [
           {
@@ -1348,7 +1348,7 @@
         }
       },
       {
-        "name": "goal-less linked row on a single board → stamp",
+        "name": "goal-less linked row on a single board \u2192 stamp",
         "note": "With one placing board there is nothing to copy, so the missing goal does not block the stamp.",
         "tasks": [
           {
@@ -1397,8 +1397,8 @@
         }
       },
       {
-        "name": "direct on the first and third boards, reached only on the second → NOTHING (all-or-nothing)",
-        "note": "hub1 direct on January and March; compA places it on February. One further board that cannot be repointed vetoes the whole plan for the row — March is not copied either.",
+        "name": "direct on the first and third boards, reached only on the second \u2192 NOTHING (all-or-nothing)",
+        "note": "hub1 direct on January and March; compA places it on February. One further board that cannot be repointed vetoes the whole plan for the row \u2014 March is not copied either.",
         "tasks": [
           {
             "id": "hub1",
@@ -1467,7 +1467,7 @@
         }
       },
       {
-        "name": "window-stamped for February placed on March only → one copy for March, no stamp",
+        "name": "window-stamped for February placed on March only \u2192 one copy for March, no stamp",
         "note": "A row stamped for board X placed on board Y (an old-app device placing it, or a wrong \"first board\" from a partial graph): Y gets derivedTaskId(Y, root); the row keeps its own window.",
         "tasks": [
           {
@@ -1519,7 +1519,7 @@
         }
       },
       {
-        "name": "window-stamped for February placed on February only → nothing",
+        "name": "window-stamped for February placed on February only \u2192 nothing",
         "note": "Its own board: isWindowStampedForBoard holds, nothing to plan.",
         "tasks": [
           {
@@ -1560,7 +1560,7 @@
         }
       },
       {
-        "name": "window-stamped for February in the other startDate encoding, placed on February → nothing",
+        "name": "window-stamped for February in the other startDate encoding, placed on February \u2192 nothing",
         "note": "The stamp compares instants (sameWindowStart), so a sync re-encoding of startDate is not a mis-placement.",
         "tasks": [
           {
@@ -1601,7 +1601,7 @@
         }
       },
       {
-        "name": "goal-less window-stamped row placed on another board → nothing",
+        "name": "goal-less window-stamped row placed on another board \u2192 nothing",
         "note": "No maxCount means no target to copy; the row is left as it is (the kernel reads its stamped window).",
         "tasks": [
           {
@@ -1642,7 +1642,7 @@
         }
       },
       {
-        "name": "a board's own deterministic row stamped for another window → nothing (the Board Edit date path owns its dates)",
+        "name": "a board's own deterministic row stamped for another window \u2192 nothing (the Board Edit date path owns its dates)",
         "note": "The task id IS derivedTaskId(b-mar, root-1) but its stamp says February: a copy would repoint the placement at itself every run, so the planner leaves it alone.",
         "tasks": [
           {
@@ -1738,7 +1738,7 @@
   },
   "windowStampedCopyDraft": [
     {
-      "name": "full source → draft carries the source's own target/title/action/unit and the copy's window",
+      "name": "full source \u2192 draft carries the source's own target/title/action/unit and the copy's window",
       "copy": {
         "id": "41684bc5-903a-5edd-be8d-5248ce41959c",
         "boardId": "b-mar",
@@ -1768,7 +1768,8 @@
         "unit": "miles",
         "timeframe": "monthly",
         "startDate": "2026-03-01T00:00:00.000Z",
-        "endDate": "2026-03-31T23:59:59.999Z"
+        "endDate": "2026-03-31T23:59:59.999Z",
+        "countKind": "discrete"
       }
     },
     {
@@ -1802,7 +1803,8 @@
         "unit": "",
         "timeframe": "indefinite",
         "startDate": "2026-02-15T00:00:00.000Z",
-        "endDate": null
+        "endDate": null,
+        "countKind": "discrete"
       }
     },
     {
@@ -1836,11 +1838,12 @@
         "unit": "pages",
         "timeframe": "monthly",
         "startDate": "2026-02-01T00:00:00.000Z",
-        "endDate": "2026-02-28T23:59:59.999Z"
+        "endDate": "2026-02-28T23:59:59.999Z",
+        "countKind": "discrete"
       }
     },
     {
-      "name": "goal-less source → null",
+      "name": "goal-less source \u2192 null",
       "copy": {
         "id": "41684bc5-903a-5edd-be8d-5248ce41959c",
         "boardId": "b-mar",
@@ -1861,7 +1864,7 @@
       "expected": null
     },
     {
-      "name": "zero goal → null",
+      "name": "zero goal \u2192 null",
       "copy": {
         "id": "41684bc5-903a-5edd-be8d-5248ce41959c",
         "boardId": "b-mar",
@@ -1912,7 +1915,8 @@
         "unit": "pages",
         "timeframe": "monthly",
         "startDate": "2026-03-01T00:00:00.000Z",
-        "endDate": "2026-03-31T23:59:59.999Z"
+        "endDate": "2026-03-31T23:59:59.999Z",
+        "countKind": "discrete"
       }
     },
     {
@@ -1946,7 +1950,8 @@
         "unit": "pages",
         "timeframe": "monthly",
         "startDate": "2026-03-01T00:00:00.000Z",
-        "endDate": "2026-03-31T23:59:59.999Z"
+        "endDate": "2026-03-31T23:59:59.999Z",
+        "countKind": "discrete"
       }
     },
     {
@@ -1980,7 +1985,8 @@
         "unit": "pages",
         "timeframe": "monthly",
         "startDate": "2026-03-01T00:00:00.000Z",
-        "endDate": "2026-03-31T23:59:59.999Z"
+        "endDate": "2026-03-31T23:59:59.999Z",
+        "countKind": "discrete"
       }
     },
     {
@@ -2014,8 +2020,137 @@
         "unit": "pages",
         "timeframe": "monthly",
         "startDate": "2026-03-01T00:00:00.000Z",
+        "endDate": "2026-03-31T23:59:59.999Z",
+        "countKind": "discrete"
+      }
+    },
+    {
+      "name": "continuous source keeps its fractional goal and baseline",
+      "copy": {
+        "id": "41684bc5-903a-5edd-be8d-5248ce41959c",
+        "boardId": "b-mar",
+        "boardTaskId": "bt-mar",
+        "sourceTaskId": "hub1",
+        "rootTaskId": "root-1",
+        "timeframe": "monthly",
+        "startDate": "2026-03-01T00:00:00.000Z",
+        "endDate": "2026-03-31T23:59:59.999Z"
+      },
+      "sourceTask": {
+        "title": "Run 26.2 miles",
+        "action": "Run",
+        "unit": "miles",
+        "maxCount": 26.2,
+        "countKind": "continuous"
+      },
+      "baseline": 3.1,
+      "expected": {
+        "id": "41684bc5-903a-5edd-be8d-5248ce41959c",
+        "rootTaskId": "root-1",
+        "sourceMemberId": "hub1",
+        "replacesId": "hub1",
+        "maxCount": 26.2,
+        "countKind": "continuous",
+        "baseline": 3.1,
+        "title": "Run 26.2 miles",
+        "action": "Run",
+        "unit": "miles",
+        "timeframe": "monthly",
+        "startDate": "2026-03-01T00:00:00.000Z",
         "endDate": "2026-03-31T23:59:59.999Z"
       }
+    },
+    {
+      "name": "discrete source floors a fractional goal and baseline (legacy)",
+      "copy": {
+        "id": "41684bc5-903a-5edd-be8d-5248ce41959c",
+        "boardId": "b-mar",
+        "boardTaskId": "bt-mar",
+        "sourceTaskId": "hub1",
+        "rootTaskId": "root-1",
+        "timeframe": "monthly",
+        "startDate": "2026-03-01T00:00:00.000Z",
+        "endDate": "2026-03-31T23:59:59.999Z"
+      },
+      "sourceTask": {
+        "title": "Run 26.2 miles",
+        "action": "Run",
+        "unit": "miles",
+        "maxCount": 26.2
+      },
+      "baseline": 3.9,
+      "expected": {
+        "id": "41684bc5-903a-5edd-be8d-5248ce41959c",
+        "rootTaskId": "root-1",
+        "sourceMemberId": "hub1",
+        "replacesId": "hub1",
+        "maxCount": 26,
+        "countKind": "discrete",
+        "baseline": 3,
+        "title": "Run 26 miles",
+        "action": "Run",
+        "unit": "miles",
+        "timeframe": "monthly",
+        "startDate": "2026-03-01T00:00:00.000Z",
+        "endDate": "2026-03-31T23:59:59.999Z"
+      }
+    },
+    {
+      "name": "continuous source with a sub-1 goal still gets a copy (R15)",
+      "copy": {
+        "id": "41684bc5-903a-5edd-be8d-5248ce41959c",
+        "boardId": "b-mar",
+        "boardTaskId": "bt-mar",
+        "sourceTaskId": "hub1",
+        "rootTaskId": "root-1",
+        "timeframe": "monthly",
+        "startDate": "2026-03-01T00:00:00.000Z",
+        "endDate": "2026-03-31T23:59:59.999Z"
+      },
+      "sourceTask": {
+        "title": "Run 0.5 miles",
+        "action": "Run",
+        "unit": "miles",
+        "maxCount": 0.5,
+        "countKind": "continuous"
+      },
+      "baseline": 0,
+      "expected": {
+        "id": "41684bc5-903a-5edd-be8d-5248ce41959c",
+        "rootTaskId": "root-1",
+        "sourceMemberId": "hub1",
+        "replacesId": "hub1",
+        "maxCount": 0.5,
+        "countKind": "continuous",
+        "baseline": 0,
+        "title": "Run 0.5 miles",
+        "action": "Run",
+        "unit": "miles",
+        "timeframe": "monthly",
+        "startDate": "2026-03-01T00:00:00.000Z",
+        "endDate": "2026-03-31T23:59:59.999Z"
+      }
+    },
+    {
+      "name": "discrete source with a sub-1 goal (malformed) is refused",
+      "copy": {
+        "id": "41684bc5-903a-5edd-be8d-5248ce41959c",
+        "boardId": "b-mar",
+        "boardTaskId": "bt-mar",
+        "sourceTaskId": "hub1",
+        "rootTaskId": "root-1",
+        "timeframe": "monthly",
+        "startDate": "2026-03-01T00:00:00.000Z",
+        "endDate": "2026-03-31T23:59:59.999Z"
+      },
+      "sourceTask": {
+        "title": "Run 0.5 miles",
+        "action": "Run",
+        "unit": "miles",
+        "maxCount": 0.5
+      },
+      "baseline": 0,
+      "expected": null
     }
   ]
 }

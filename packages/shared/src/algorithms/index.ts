@@ -20,6 +20,9 @@ export {
   canSwitchCountKind,
   planCountKindSwitch,
   countTargetStep,
+  ceilToCountStep,
+  roundToCountStep,
+  floorToCountStep,
 } from './countValue';
 export type { CountKind } from './countValue';
 

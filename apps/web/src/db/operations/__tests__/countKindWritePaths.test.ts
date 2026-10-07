@@ -2,6 +2,7 @@ import 'fake-indexeddb/auto';
 import { afterEach, describe, expect, it } from 'vitest';
 import { TaskType, type Task } from '@oybc/shared';
 import { db } from '../../internal';
+import { displayedCountFor } from '../../../pages/tasks/taskCountDisplay';
 import { incrementSharedCounter, setCounterDefaultLogAmount } from '../tasks.sharedCounter';
 
 const NOW = '2026-07-20T10:00:00.000Z';
@@ -59,5 +60,21 @@ describe('counter kinds — web write-path guards', () => {
     const root = await seedCounter({ countKind: 'continuous', maxCount: 26.2 });
     await setCounterDefaultLogAmount(root.id, 3.1);
     expect((await db.tasks.get(root.id))!.defaultLogAmount).toBe(3.1);
+  });
+
+  it('propagation keeps a continuous linked row\'s fraction (0.5 is not rounded to 1)', async () => {
+    const root = await seedCounter({ countKind: 'continuous', maxCount: 10 });
+    const linked = await seedCounter({
+      countKind: 'continuous',
+      sharedCounterId: root.id,
+      baseline: 0,
+      maxCount: 1,
+      currentCount: undefined,
+    });
+    await incrementSharedCounter(root.id, 0.5);
+    const after = (await db.tasks.get(linked.id))!;
+    expect(after.currentCount).toBe(0.5);
+    expect(after.isCompleted).toBe(false);
+    expect(displayedCountFor(after)).toBe(0.5);
   });
 });

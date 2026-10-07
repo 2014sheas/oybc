@@ -185,6 +185,7 @@ describe('windowStampedCopyDraft', () => {
         action: orUndef(v.sourceTask.action),
         unit: orUndef(v.sourceTask.unit),
         maxCount: orUndef(v.sourceTask.maxCount),
+        countKind: orUndef(v.sourceTask.countKind),
       },
       v.baseline
     );

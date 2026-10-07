@@ -919,6 +919,9 @@ git commit -m "feat(ios): CountValue counting fields, Task.countKind, GRDB v39 (
 - Modify: `packages/shared/src/algorithms/sharedCounter.ts:52-67` (`deriveDisplayedCount`), `:147` (`propagateIncrement`)
 - Modify: `apps/ios/OYBC/Helpers/TaskEvents.swift` (twins), `apps/ios/OYBC/Helpers/SharedCounter.swift`, `apps/ios/OYBC/Database/AppDatabase+TaskEvents.swift:45,73` (completion checks)
 - Modify: `packages/shared/tests/fixtures/taskWindowStateVectors.json`, `sharedCounterVectors.json`; their TS tests + `TaskEventVectorTests.swift`, `SharedCounterVectorTests.swift` (decode a new optional `countKind` on the task shape)
+- Modify (added after PR 1's final review, ruling R12): `apps/ios/OYBC/Database/AppDatabase+SharedCounters.swift` (increment / decrement / undo cache sums ~:294, :488, :688; `setCounterDefaultLogAmount` guard) and `apps/ios/OYBC/Database/AppDatabase+LateLog.swift` (~:219 guard, ~:385 sum) — the iOS twins of web's PR 1 write-path changes: every guard becomes `isQuantizedCount(x) && x > 0` (throw/return exactly as the existing guard does), every cache sum/difference is wrapped in `quantizeCount`
+- Test (R12): an iOS test against `AppDatabase.makeTestInstance()` beside `AppDatabaseCounterLogOpsTests.swift` — incrementing a continuous counter by 0.1 then 0.2 stores `currentCount == 0.3` exactly, and an increment of 0.125 is rejected
+- Modify: `scripts/audit/file-size-allowlist.json` — lower `BoardPlayView.swift`'s cap to its current line count (it shrank in PR 1; the guardrail prints the stale note)
 
 **Interfaces:**
 - Consumes: `finalizeWindowCount`, `resolveCountKind` (Tasks 1/2).
@@ -1091,5 +1094,7 @@ it('enqueues one sync item per written task', async () => { /* assert syncQueue 
 ---
 
 ## After PR 2
+
+PR 1 #551 and PR 2 #552 shipped (data + logic).
 
 PRs 3 (authoring UI) and 4 (logging + display UI) are planned separately once the Claude Design handoff for `docs/design/counter-kinds/BRIEF.md` is approved. They consume: `formatCount`, `switchCounterKind`, `canSwitchCountKind`, `COUNT_KINDS`, and replace the integer-only parsers (`parseCustomLogAmount`, `CounterLogAmount.parseCustom`, `RisoNumberField` `.numberPad`, `parsePositiveGoal`, the `parseInt` Goal parsers) with kind-aware ones.

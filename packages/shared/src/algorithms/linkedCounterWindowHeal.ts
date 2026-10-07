@@ -34,6 +34,8 @@ import type { Board } from '../types/board';
 import type { BoardTask } from '../types/boardTask';
 import type { CompoundChild } from '../types/compoundChild';
 import type { Task } from '../types/task';
+import type { CountKind } from './countValue';
+import { isWholeCountKind, quantizeCount, resolveCountKind } from './countValue';
 import { derivedTaskId, isWindowStampedDerived } from './memberRules';
 import type { DerivedTaskDraft } from './memberRules';
 import { counterCopyTitle } from './taskTitle';
@@ -88,11 +90,20 @@ export function isWindowStampedForBoard(
   return isWindowStampedDerived(task) && sameWindowStart(task.startDate, board.startDate);
 }
 
+/**
+ * Whether a goal can seed a per-window copy: whole kinds need `>= 1`, a
+ * continuous goal any positive value (a 0.5-mile goal is legitimate).
+ */
+function hasCopyGoal(maxCount: number | null | undefined, kind: CountKind): boolean {
+  if (typeof maxCount !== 'number') return false;
+  return isWholeCountKind(kind) ? maxCount >= 1 : maxCount > 0;
+}
+
 /** The slices of the task graph {@link planLinkedCounterWindowHeal} reads. */
 export interface LinkedCounterWindowHealInput {
   tasks: readonly Pick<
     Task,
-    'id' | 'type' | 'sharedCounterId' | 'startDate' | 'endDate' | 'timeframe' | 'createdInWizard' | 'isDeleted' | 'maxCount'
+    'id' | 'type' | 'sharedCounterId' | 'startDate' | 'endDate' | 'timeframe' | 'createdInWizard' | 'isDeleted' | 'maxCount' | 'countKind'
   >[];
   boardTasks: readonly Pick<BoardTask, 'id' | 'boardId' | 'taskId' | 'isDeleted'>[];
   boards: readonly Pick<Board, 'id' | 'timeframe' | 'startDate' | 'endDate' | 'isDeleted'>[];
@@ -289,7 +300,7 @@ export function planLinkedCounterWindowHeal(input: LinkedCounterWindowHealInput)
   for (const t of tasksById.values()) {
     if (t.type !== TaskType.COUNTING || !t.sharedCounterId) continue;
     const direct = placementsByTaskId.get(t.id) ?? new Map<string, string>();
-    const hasGoal = typeof t.maxCount === 'number' && t.maxCount >= 1;
+    const hasGoal = hasCopyGoal(t.maxCount, resolveCountKind(t));
 
     if (isWindowStampedDerived(t)) {
       // 2. Mis-placed window-stamped rows: a copy per direct placement on a
@@ -361,11 +372,13 @@ export function planLinkedCounterWindowHeal(input: LinkedCounterWindowHealInput)
  */
 export function windowStampedCopyDraft(
   copy: LinkedCounterWindowCopy,
-  sourceTask: Pick<Task, 'title' | 'action' | 'unit' | 'maxCount'>,
+  sourceTask: Pick<Task, 'title' | 'action' | 'unit' | 'maxCount' | 'countKind'>,
   baseline: number
 ): DerivedTaskDraft | null {
-  if (typeof sourceTask.maxCount !== 'number' || sourceTask.maxCount < 1) return null;
-  const maxCount = Math.floor(sourceTask.maxCount);
+  const countKind = resolveCountKind(sourceTask);
+  if (!hasCopyGoal(sourceTask.maxCount, countKind)) return null;
+  const whole = (x: number): number => (isWholeCountKind(countKind) ? Math.floor(x) : quantizeCount(x));
+  const maxCount = whole(sourceTask.maxCount!);
   const action = sourceTask.action ?? '';
   const unit = sourceTask.unit ?? '';
   return {
@@ -374,7 +387,8 @@ export function windowStampedCopyDraft(
     sourceMemberId: copy.sourceTaskId,
     replacesId: copy.sourceTaskId,
     maxCount,
-    baseline: Math.max(0, Math.floor(baseline)),
+    countKind,
+    baseline: Math.max(0, whole(baseline)),
     title: counterCopyTitle(sourceTask, maxCount),
     action,
     unit,

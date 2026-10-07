@@ -71,13 +71,13 @@ describe('nominalWindowDays', () => {
 
 describe('autoTarget', () => {
   it.each(V.autoTarget as any[])('$name', (v: any) => {
-    expect(autoTarget(v.goal, v.sourceDays, v.targetDays)).toBe(v.expected);
+    expect(autoTarget(v.goal, v.sourceDays, v.targetDays, v.countKind ?? 'discrete')).toBe(v.expected);
   });
 });
 
 describe('varyRange', () => {
   it.each(V.varyRange as any[])('$name', (v: any) => {
-    expect(varyRange(v.t, v.level as VaryLevel, v.goal)).toEqual(v.expected);
+    expect(varyRange(v.t, v.level as VaryLevel, v.goal, v.countKind ?? 'discrete')).toEqual(v.expected);
   });
 });
 
@@ -89,7 +89,16 @@ describe('rollTarget', () => {
             throw new Error('rng must not be called');
           }
         : makeSeededRng(v.seed);
-    expect(rollTarget(v.t, v.level as VaryLevel, v.goal, rng)).toBe(v.expected);
+    let calls = 0;
+    const counted = () => {
+      calls += 1;
+      return rng();
+    };
+    expect(rollTarget(v.t, v.level as VaryLevel, v.goal, counted, v.countKind ?? 'discrete')).toBe(
+      v.expected
+    );
+    // Exactly one sample on a real roll, none on level 0 / a degenerate range.
+    expect(calls).toBe(v.seed === null ? 0 : 1);
   });
 });
 
@@ -178,7 +187,7 @@ describe('planDerivedTasks', () => {
       manualTaskIds: v.manual,
       manualTaskVary: v.manualTaskVary,
       boardId: P.boardId,
-      window: P.window,
+      window: v.window ?? P.window,
       mode: v.mode,
       tasksById,
       childrenByCompoundId,
@@ -195,6 +204,7 @@ describe('planDerivedTasks', () => {
         sourceMember: d.sourceMemberId,
         replaces: d.replacesId,
         maxCount: d.maxCount,
+        countKind: d.countKind,
         baseline: d.baseline,
       }))
     ).toEqual(
@@ -203,14 +213,16 @@ describe('planDerivedTasks', () => {
         sourceMember: d.sourceMember,
         replaces: d.replaces,
         maxCount: d.maxCount,
+        countKind: d.countKind ?? 'discrete',
         baseline: d.baseline,
       }))
     );
+    const window = v.window ?? P.window;
     for (const d of out.derivedTasks) {
       expect(d.id).toBe(P.idPins[`derived:${d.rootTaskId}`]);
-      expect(d.timeframe).toBe(P.window.timeframe);
-      expect(d.startDate).toBe(P.window.startDate);
-      expect(d.endDate).toBe(P.window.endDate);
+      expect(d.timeframe).toBe(window.timeframe);
+      expect(d.startDate).toBe(window.startDate);
+      expect(d.endDate).toBe(window.endDate);
     }
     for (const titled of v.expected.derived.filter((d: any) => d.title !== undefined)) {
       const d = out.derivedTasks.find((x) => x.rootTaskId === titled.root);
@@ -324,6 +336,32 @@ describe('isFrozenRowReachedByEvent', () => {
       createdInWizard: v.task.createdInWizard,
     };
     expect(isFrozenRowReachedByEvent(task, v.occurredAt, v.now)).toBe(v.expected);
+  });
+});
+
+describe('buildDerivedRows — countKind (R14)', () => {
+  const draft = (countKind: 'continuous' | 'discrete') => ({
+    derivedTasks: [
+      {
+        id: 'd1', rootTaskId: 'r1', sourceMemberId: 'r1', replacesId: 'r1',
+        maxCount: 0.4, countKind, baseline: 0, title: 'Run 0.4 miles', action: 'Run', unit: 'miles',
+        timeframe: Timeframe.WEEKLY, startDate: '2026-09-14T00:00:00.000', endDate: '2026-09-20T23:59:59.999',
+      },
+    ],
+    derivedCompounds: [],
+    placementIds: ['d1'],
+  });
+  const roots = { r1: { id: 'r1', currentCount: 0.4 } as Task };
+
+  it('a continuous draft is born complete at 0.4 of 0.4 and stores its kind', () => {
+    const out = buildDerivedRows({ drafts: draft('continuous') as any, userId: 'u1', now: '2026-09-14T00:00:00.000Z', rootsById: roots, compoundsById: {} });
+    expect(out.tasks[0].countKind).toBe('continuous');
+    expect(out.tasks[0].isCompleted).toBe(true);
+  });
+
+  it('the same numbers as a discrete draft round the 0.4 away and stay incomplete', () => {
+    const out = buildDerivedRows({ drafts: draft('discrete') as any, userId: 'u1', now: '2026-09-14T00:00:00.000Z', rootsById: roots, compoundsById: {} });
+    expect(out.tasks[0].isCompleted).toBe(false);
   });
 });
 

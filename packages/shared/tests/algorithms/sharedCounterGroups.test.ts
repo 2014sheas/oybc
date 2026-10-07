@@ -39,6 +39,7 @@ interface MiniTask {
   startDate?: string | null;
   endDate?: string | null;
   createdInWizard?: boolean;
+  countKind?: 'discrete' | 'continuous' | 'duration';
 }
 
 interface MiniBoard {
@@ -124,6 +125,7 @@ function toTask(m: MiniTask): Task {
     startDate: m.startDate ?? undefined,
     endDate: m.endDate ?? undefined,
     createdInWizard: m.createdInWizard,
+    countKind: m.countKind,
   };
 }
 

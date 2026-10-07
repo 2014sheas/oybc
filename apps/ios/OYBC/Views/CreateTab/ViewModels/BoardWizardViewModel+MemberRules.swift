@@ -108,7 +108,7 @@ extension BoardWizardViewModel {
 
     /// §Member rules (B3, RC4) — seed one BOARD source's counting members
     /// with their remaining target for a ONE-OFF board, PRO-RATED to that
-    /// board's window: `prefilledOneOffTarget(goal:windowCount:sourceWindow:targetWindow:)`,
+    /// board's window: `prefilledOneOffTarget(goal:windowCount:sourceWindow:targetWindow:kind:)`,
     /// where `windowCount` is the progress that member already has in the
     /// SOURCE board's window. Pull a 3-of-10-done weekly counter onto a fresh
     /// one-off weekly board and the rule is seeded at 7; pull an untouched
@@ -145,7 +145,8 @@ extension BoardWizardViewModel {
         var source = sources[index]
         for id in info.supplyTaskIds {
             guard let task = tasksById[id], task.type == .counting else { continue }
-            guard let goal = task.maxCount, goal >= 1 else { continue }
+            let kind = resolveCountKind(task.countKind)
+            guard let goal = task.maxCount, isWholeCountKind(kind) ? goal >= 1 : goal > 0 else { continue }
             guard BoardSources.memberRule(for: id, in: source).target == nil else { continue }
             source = BoardSources.withMemberRule(
                 source,
@@ -155,7 +156,8 @@ extension BoardWizardViewModel {
                         goal: goal,
                         windowCount: info.windowCountByTaskId[id] ?? 0,
                         sourceWindow: info.sourceWindow,
-                        targetWindow: prefillTargetWindow
+                        targetWindow: prefillTargetWindow,
+                        kind: kind
                     ))
                 )
             )

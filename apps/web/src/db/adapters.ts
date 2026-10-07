@@ -388,7 +388,7 @@ export function resolveClosedBoardCounterDisplay(
     // Owner rule 2026-10-01: a linked row that is not window-stamped is the
     // root's sealed-bounded sum over THIS board's window — never the latch.
     const state = resolveWindowStampedDerivedState(
-      { startDate: board.startDate, endDate: board.endDate ?? null, maxCount: task.maxCount },
+      { startDate: board.startDate, endDate: board.endDate ?? null, maxCount: task.maxCount, countKind: task.countKind },
       bounded,
     );
     return { displayed: state.count, isCompleted: state.isCompleted };

@@ -197,7 +197,7 @@ extension BoardSources {
         for task in tasksById.values {
             guard task.type == .counting, let root = task.sharedCounterId, !root.isEmpty else { continue }
             let direct = placementsByTaskId[task.id] ?? [:]
-            let hasGoal = (task.maxCount ?? 0) >= 1
+            let hasGoal = hasCopyGoal(task.maxCount, kind: resolveCountKind(task.countKind))
 
             if isWindowStampedDerived(task) {
                 // 2. Mis-placed window-stamped rows: a copy per direct placement
@@ -248,6 +248,13 @@ extension BoardSources {
         return LinkedCounterWindowHealPlan(stamps: stamps, copies: copies)
     }
 
+    /// Whether a goal can seed a per-window copy: whole kinds need `>= 1`, a
+    /// continuous goal any positive value. Mirrors the TS `hasCopyGoal`.
+    static func hasCopyGoal(_ maxCount: CountValue?, kind: CountKind) -> Bool {
+        guard let maxCount else { return false }
+        return isWholeCountKind(kind) ? maxCount >= 1 : maxCount > 0
+    }
+
     /// The ``DerivedTaskDraft`` for one heal ``LinkedCounterWindowCopy``, so
     /// the data layer materialises it through the existing
     /// ``buildDerivedRows(drafts:userId:now:rootsById:compoundsById:)`` (which
@@ -274,7 +281,12 @@ extension BoardSources {
         sourceTask: Task,
         baseline: CountValue
     ) -> DerivedTaskDraft? {
-        guard let maxCount = sourceTask.maxCount, maxCount >= 1 else { return nil }
+        let countKind = resolveCountKind(sourceTask.countKind)
+        guard let goal = sourceTask.maxCount, hasCopyGoal(goal, kind: countKind) else { return nil }
+        func whole(_ x: CountValue) -> CountValue {
+            isWholeCountKind(countKind) ? x.rounded(.down) : quantizeCount(x)
+        }
+        let maxCount = whole(goal)
         let action = sourceTask.action ?? ""
         let unit = sourceTask.unit ?? ""
         return DerivedTaskDraft(
@@ -283,7 +295,8 @@ extension BoardSources {
             sourceMemberId: copy.sourceTaskId,
             replacesId: copy.sourceTaskId,
             maxCount: maxCount,
-            baseline: Swift.max(0, baseline),
+            countKind: countKind,
+            baseline: Swift.max(0, whole(baseline)),
             title: TaskTitle.counterCopyTitle(member: sourceTask, newMaxCount: maxCount),
             action: action,
             unit: unit,

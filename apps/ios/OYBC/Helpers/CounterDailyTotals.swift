@@ -129,6 +129,6 @@ func deriveCounterDailyTotals(
         totalsByDay[key, default: 0] += (event.delta ?? 0)
     }
 
-    let daysResult = dayKeys.map { CounterDailyTotal(dateISO: $0, total: totalsByDay[$0] ?? 0) }
-    return CounterDailyTotalsResult(days: daysResult, todayTotal: totalsByDay[todayKey] ?? 0)
+    let daysResult = dayKeys.map { CounterDailyTotal(dateISO: $0, total: quantizeCount(totalsByDay[$0] ?? 0)) }
+    return CounterDailyTotalsResult(days: daysResult, todayTotal: quantizeCount(totalsByDay[todayKey] ?? 0))
 }

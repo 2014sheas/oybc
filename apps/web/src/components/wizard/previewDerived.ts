@@ -215,6 +215,7 @@ export function applyPreviewDerivedCells(
       ...task,
       title: counter.title,
       maxCount: counter.maxCount,
+      countKind: counter.countKind,
       action: counter.action || undefined,
       unit: counter.unit || undefined,
       // The stand-in IS the counter the persist path will mint: a

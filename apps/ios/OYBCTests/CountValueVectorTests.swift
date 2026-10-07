@@ -9,6 +9,7 @@ final class CountValueVectorTests: XCTestCase {
     private struct FinalizeVector: Decodable { let name: String; let sum: Double; let kind: CountKind; let expected: Double }
     private struct FormatVector: Decodable { let name: String; let value: Double; let kind: CountKind; let locale: String; let expected: String }
     private struct InputVector: Decodable { let name: String; let value: Double; let kind: CountKind; let expected: String }
+    private struct StepVector: Decodable { let name: String; let x: Double; let kind: CountKind; let expected: Double }
     private struct Fields: Decodable { let maxCount: Double?; let defaultLogAmount: Double? }
     private struct SwitchVector: Decodable { let name: String; let from: CountKind; let to: CountKind; let fields: Fields; let expected: Fields? }
     private struct Fixture: Decodable {
@@ -18,6 +19,9 @@ final class CountValueVectorTests: XCTestCase {
         let format: [FormatVector]
         let formatForInput: [InputVector]
         let `switch`: [SwitchVector]
+        let ceilToStep: [StepVector]
+        let roundToStep: [StepVector]
+        let floorToStep: [StepVector]
     }
 
     private func loadFixture() throws -> Fixture {
@@ -56,6 +60,12 @@ final class CountValueVectorTests: XCTestCase {
                 XCTAssertNil(got, v.name)
             }
         }
+    }
+    func testStepRounding() throws {
+        let f = try loadFixture()
+        for v in f.ceilToStep { XCTAssertEqual(ceilToCountStep(v.x, kind: v.kind), v.expected, v.name) }
+        for v in f.roundToStep { XCTAssertEqual(roundToCountStep(v.x, kind: v.kind), v.expected, v.name) }
+        for v in f.floorToStep { XCTAssertEqual(floorToCountStep(v.x, kind: v.kind), v.expected, v.name) }
     }
     func testKindDecodesAndDefaults() throws {
         XCTAssertEqual(resolveCountKind(nil), .discrete)

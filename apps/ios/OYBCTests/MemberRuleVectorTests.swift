@@ -71,6 +71,8 @@ final class MemberRuleVectorTests: XCTestCase {
         let goal: CountValue
         let sourceDays: Int?
         let targetDays: Int?
+        /// Absent = discrete (every pre-counter-kinds vector).
+        let countKind: CountKind?
         let expected: CountValue
     }
 
@@ -79,6 +81,7 @@ final class MemberRuleVectorTests: XCTestCase {
         let t: CountValue
         let level: Int
         let goal: CountValue
+        let countKind: CountKind?
         let expected: [CountValue]
     }
 
@@ -88,6 +91,7 @@ final class MemberRuleVectorTests: XCTestCase {
         let level: Int
         let goal: CountValue
         let seed: UInt32?
+        let countKind: CountKind?
         let expected: CountValue
     }
 
@@ -115,9 +119,10 @@ final class MemberRuleVectorTests: XCTestCase {
         let startDate: String?
         let operatorType: String?
         let threshold: Int?
+        let countKind: CountKind?
 
         private enum CodingKeys: String, CodingKey {
-            case type, title, action, unit, maxCount, sharedCounterId, startDate, threshold
+            case type, title, action, unit, maxCount, sharedCounterId, startDate, threshold, countKind
             case operatorType = "operator"
         }
     }
@@ -140,6 +145,8 @@ final class MemberRuleVectorTests: XCTestCase {
         let sourceMember: String
         let replaces: String
         let maxCount: CountValue
+        /// Absent = discrete.
+        let countKind: CountKind?
         let baseline: CountValue
         let title: String?
         let action: String?
@@ -187,6 +194,8 @@ final class MemberRuleVectorTests: XCTestCase {
         let manualTaskVary: [String: VaryLevel]
         let seed: UInt32
         let expectedRngCalls: Int?
+        /// Overrides the section's board window when present.
+        let window: RawWindow?
         let expected: ExpectedPlan
     }
 
@@ -291,6 +300,8 @@ final class MemberRuleVectorTests: XCTestCase {
         let sourceMemberId: String
         let replacesId: String
         let maxCount: CountValue
+        /// Absent = discrete.
+        let countKind: CountKind?
         let baseline: CountValue
         let title: String
         let action: String
@@ -366,6 +377,7 @@ final class MemberRuleVectorTests: XCTestCase {
         /// with nil dates (fixture note `windows`). Absent = no source window.
         let sourceWindow: String?
         let targetWindow: String
+        let countKind: CountKind?
         let expected: CountValue
     }
 
@@ -375,6 +387,7 @@ final class MemberRuleVectorTests: XCTestCase {
         let level: Int
         let goal: CountValue
         let unit: String
+        let countKind: CountKind?
         /// JSON `null` at vary level 0 — decodes straight to nil.
         let expected: String?
     }
@@ -390,6 +403,7 @@ final class MemberRuleVectorTests: XCTestCase {
         let name: String
         let goal: CountValue
         let windowCount: CountValue
+        let countKind: CountKind?
         let expected: CountValue
     }
 
@@ -405,6 +419,7 @@ final class MemberRuleVectorTests: XCTestCase {
         let sourceWindowDates: [String]?
         let targetWindow: String
         let targetWindowDates: [String]?
+        let countKind: CountKind?
         let expected: CountValue
     }
 
@@ -472,6 +487,7 @@ final class MemberRuleVectorTests: XCTestCase {
         let level: Int
         let goal: CountValue
         let unit: String
+        let countKind: CountKind?
         /// Nullable: a counting chip is SUPPRESSED when it would only
         /// restate the row's own auto-generated title. `CompoundSummaryVector`
         /// keeps a non-optional `expected` on purpose — a compound chip is
@@ -493,6 +509,7 @@ final class MemberRuleVectorTests: XCTestCase {
     private struct SeededTaskSpec: Decodable {
         let type: String
         let maxCount: CountValue?
+        let countKind: CountKind?
     }
 
     private struct SeededTargetsVector: Decodable {
@@ -640,7 +657,8 @@ final class MemberRuleVectorTests: XCTestCase {
             version: 1,
             isDeleted: false,
             startDate: raw.startDate,
-            sharedCounterId: raw.sharedCounterId
+            sharedCounterId: raw.sharedCounterId,
+            countKind: raw.countKind
         )
     }
 
@@ -699,7 +717,10 @@ final class MemberRuleVectorTests: XCTestCase {
         XCTAssertFalse(fixture.autoTarget.isEmpty)
         for v in fixture.autoTarget {
             XCTAssertEqual(
-                BoardSources.autoTarget(goal: v.goal, sourceDays: v.sourceDays, targetDays: v.targetDays),
+                BoardSources.autoTarget(
+                    goal: v.goal, sourceDays: v.sourceDays, targetDays: v.targetDays,
+                    kind: v.countKind ?? .discrete
+                ),
                 v.expected,
                 v.name
             )
@@ -710,7 +731,9 @@ final class MemberRuleVectorTests: XCTestCase {
         let fixture = try loadFixture()
         XCTAssertFalse(fixture.varyRange.isEmpty)
         for v in fixture.varyRange {
-            let range = BoardSources.varyRange(t: v.t, level: try varyLevel(v.level), goal: v.goal)
+            let range = BoardSources.varyRange(
+                t: v.t, level: try varyLevel(v.level), goal: v.goal, kind: v.countKind ?? .discrete
+            )
             XCTAssertEqual([range.lowerBound, range.upperBound], v.expected, v.name)
         }
     }
@@ -720,8 +743,10 @@ final class MemberRuleVectorTests: XCTestCase {
         XCTAssertFalse(fixture.rollTarget.isEmpty)
         for v in fixture.rollTarget {
             let rng: () -> Double
+            var seededRng: SeededRng?
             if let seed = v.seed {
                 let seeded = SeededRng(seed: seed)
+                seededRng = seeded
                 rng = { seeded.next() }
             } else {
                 rng = {
@@ -730,10 +755,15 @@ final class MemberRuleVectorTests: XCTestCase {
                 }
             }
             XCTAssertEqual(
-                BoardSources.rollTarget(t: v.t, level: try varyLevel(v.level), goal: v.goal, rng: rng),
+                BoardSources.rollTarget(
+                    t: v.t, level: try varyLevel(v.level), goal: v.goal, rng: rng,
+                    kind: v.countKind ?? .discrete
+                ),
                 v.expected,
                 v.name
             )
+            // Exactly one sample on a real roll (TS twin asserts the same).
+            if let seededRng { XCTAssertEqual(seededRng.calls, 1, "\(v.name): rng sample count") }
         }
     }
 
@@ -863,6 +893,11 @@ final class MemberRuleVectorTests: XCTestCase {
         for (token, id) in plan.idPins { tokenOfId[id] = token }
 
         for v in plan.vectors {
+            let boardWindow = try v.window.map {
+                BoardSources.BoardWindow(
+                    timeframe: try timeframe($0.timeframe), startDate: $0.startDate, endDate: $0.endDate
+                )
+            } ?? window
             let supplies = try v.supplies.enumerated().map { index, raw in
                 BoardSources.ExpandedSupply(
                     source: try makeSource(
@@ -881,7 +916,7 @@ final class MemberRuleVectorTests: XCTestCase {
                 manualTaskIds: v.manual,
                 manualTaskVary: v.manualTaskVary,
                 boardId: plan.boardId,
-                window: window,
+                window: boardWindow,
                 mode: v.mode == "recurring" ? .recurring : .oneOff,
                 tasksById: tasksById,
                 childrenByCompoundId: childrenByCompoundId,
@@ -906,15 +941,20 @@ final class MemberRuleVectorTests: XCTestCase {
                 v.expected.derived.map { [$0.maxCount, $0.baseline] },
                 "\(v.name): derived (maxCount, baseline)"
             )
+            XCTAssertEqual(
+                out.derivedTasks.map(\.countKind),
+                v.expected.derived.map { $0.countKind ?? .discrete },
+                "\(v.name): derived countKind"
+            )
             for derived in out.derivedTasks {
                 XCTAssertEqual(
                     derived.id,
                     plan.idPins["derived:\(derived.rootTaskId)"],
                     "\(v.name): derived id for root \(derived.rootTaskId)"
                 )
-                XCTAssertEqual(derived.timeframe, window.timeframe, v.name)
-                XCTAssertEqual(derived.startDate, window.startDate, v.name)
-                XCTAssertEqual(derived.endDate, window.endDate, v.name)
+                XCTAssertEqual(derived.timeframe, boardWindow.timeframe, v.name)
+                XCTAssertEqual(derived.startDate, boardWindow.startDate, v.name)
+                XCTAssertEqual(derived.endDate, boardWindow.endDate, v.name)
             }
             for titled in v.expected.derived where titled.title != nil {
                 let derived = try XCTUnwrap(
@@ -1216,6 +1256,7 @@ final class MemberRuleVectorTests: XCTestCase {
                         sourceMemberId: id(raw.sourceMemberId),
                         replacesId: id(raw.replacesId),
                         maxCount: raw.maxCount,
+                        countKind: raw.countKind ?? .discrete,
                         baseline: raw.baseline,
                         title: raw.title,
                         action: raw.action,
@@ -1467,7 +1508,8 @@ final class MemberRuleVectorTests: XCTestCase {
                     mode: try planMode(v.mode),
                     fromBoard: v.fromBoard,
                     sourceWindow: try v.sourceWindow.map { try window($0) },
-                    targetWindow: try window(v.targetWindow)
+                    targetWindow: try window(v.targetWindow),
+                    kind: v.countKind ?? .discrete
                 ),
                 v.expected,
                 v.name
@@ -1481,7 +1523,8 @@ final class MemberRuleVectorTests: XCTestCase {
         for v in section.varyRangeLabel {
             XCTAssertEqual(
                 BoardSources.varyRangeLabel(
-                    t: v.t, level: try varyLevel(v.level), goal: v.goal, unit: v.unit
+                    t: v.t, level: try varyLevel(v.level), goal: v.goal, unit: v.unit,
+                    kind: v.countKind ?? .discrete
                 ),
                 v.expected,
                 v.name
@@ -1508,7 +1551,8 @@ final class MemberRuleVectorTests: XCTestCase {
         XCTAssertFalse(section.countingSummary.isEmpty)
         for v in section.countingSummary {
             let summary = BoardSources.countingSummary(
-                target: v.target, level: try varyLevel(v.level), goal: v.goal, unit: v.unit
+                target: v.target, level: try varyLevel(v.level), goal: v.goal, unit: v.unit,
+                kind: v.countKind ?? .discrete
             )
             guard let expected = v.expected else {
                 XCTAssertNil(summary, v.name)
@@ -1539,7 +1583,9 @@ final class MemberRuleVectorTests: XCTestCase {
         XCTAssertFalse(section.remainingTarget.isEmpty)
         for v in section.remainingTarget {
             XCTAssertEqual(
-                BoardSources.remainingTarget(goal: v.goal, windowCount: v.windowCount),
+                BoardSources.remainingTarget(
+                    goal: v.goal, windowCount: v.windowCount, kind: v.countKind ?? .discrete
+                ),
                 v.expected,
                 v.name
             )
@@ -1555,7 +1601,8 @@ final class MemberRuleVectorTests: XCTestCase {
                     goal: v.goal,
                     windowCount: v.windowCount,
                     sourceWindow: try v.sourceWindow.map { try window($0, v.sourceWindowDates) },
-                    targetWindow: try window(v.targetWindow, v.targetWindowDates)
+                    targetWindow: try window(v.targetWindow, v.targetWindowDates),
+                    kind: v.countKind ?? .discrete
                 ),
                 v.expected,
                 v.name
@@ -1593,7 +1640,9 @@ final class MemberRuleVectorTests: XCTestCase {
             var tasksById: [String: BoardSources.SeededTargetTask] = [:]
             for (id, spec) in v.tasks {
                 let type = try XCTUnwrap(TaskType(rawValue: spec.type), v.name)
-                tasksById[id] = BoardSources.SeededTargetTask(type: type, maxCount: spec.maxCount)
+                tasksById[id] = BoardSources.SeededTargetTask(
+                    type: type, maxCount: spec.maxCount, countKind: spec.countKind ?? .discrete
+                )
             }
             XCTAssertEqual(
                 BoardSources.seededTargetsForSource(

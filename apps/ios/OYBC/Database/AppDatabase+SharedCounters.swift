@@ -229,7 +229,7 @@ extension AppDatabase {
     ///
     /// - Parameters:
     ///   - sourceTaskId: The id of the source (template) counting task.
-    ///   - by: Amount to increment. Must be >= 1.
+    ///   - by: Amount to increment. Must be a positive 2dp number.
     ///   - boardId: The board whose OWN play surface made the log, if any.
     ///     When given, the event is stamped with that board's late-log stamp
     ///     (`lateLogStampForBoard` — its `endDate` once its window has ended,
@@ -246,12 +246,12 @@ extension AppDatabase {
         boardId: String? = nil,
         now: String = AppDatabase.currentTimestamp()
     ) throws -> SharedCounterCreditResult {
-        guard by >= 1 else {
+        guard isQuantizedCount(by) && by > 0 else {
             throw NSError(
                 domain: "AppDatabase.incrementSharedCounter",
                 code: 1,
                 userInfo: [NSLocalizedDescriptionKey:
-                    "incrementSharedCounter: `by` must be >= 1"]
+                    "incrementSharedCounter: `by` must be a positive 2dp number"]
             )
         }
 
@@ -291,7 +291,7 @@ extension AppDatabase {
             // auto-complete (there is nothing to reach).
             let sourceMaxCount = source.maxCount
             let prevSourceCount = source.currentCount ?? 0
-            let newSourceCount = prevSourceCount + by
+            let newSourceCount = quantizeCount(prevSourceCount + by)
 
             // ONE-WAY LATCH on source completion. Goal-less sources
             // (sourceMaxCount == nil) never latch complete.
@@ -354,7 +354,8 @@ extension AppDatabase {
                         id: $0.id,
                         baseline: $0.baseline,
                         maxCount: $0.maxCount,
-                        isCompleted: $0.isCompleted
+                        isCompleted: $0.isCompleted,
+                        countKind: $0.countKind
                     )
                 }
             )
@@ -403,7 +404,7 @@ extension AppDatabase {
     ///
     /// - Parameters:
     ///   - sourceTaskId: The id of the source (template) counting task.
-    ///   - by: Amount to decrement. Must be >= 1.
+    ///   - by: Amount to decrement. Must be a positive 2dp number.
     ///   - boardId: The board whose OWN play surface made the log, if any —
     ///     the event is stamped with its late-log stamp (see
     ///     `incrementSharedCounter`); omitted → `now`. A SEALED board is a
@@ -416,12 +417,12 @@ extension AppDatabase {
         by: CountValue = 1,
         boardId: String? = nil
     ) throws -> SharedCounterDecrementResult {
-        guard by >= 1 else {
+        guard isQuantizedCount(by) && by > 0 else {
             throw NSError(
                 domain: "AppDatabase.decrementSharedCounter",
                 code: 1,
                 userInfo: [NSLocalizedDescriptionKey:
-                    "decrementSharedCounter: `by` must be >= 1"]
+                    "decrementSharedCounter: `by` must be a positive 2dp number"]
             )
         }
 
@@ -485,7 +486,7 @@ extension AppDatabase {
             guard eff > 0 else {
                 return SharedCounterDecrementResult(affectedBoards: [], effectiveDelta: 0)
             }
-            let newSourceCount = sourceCurrentCount - eff
+            let newSourceCount = quantizeCount(sourceCurrentCount - eff)
 
             // ONE-WAY LATCH: decrement NEVER un-completes the source.
             source.currentCount = newSourceCount
@@ -533,7 +534,8 @@ extension AppDatabase {
                         id: $0.id,
                         baseline: $0.baseline,
                         maxCount: $0.maxCount,
-                        isCompleted: $0.isCompleted
+                        isCompleted: $0.isCompleted,
+                        countKind: $0.countKind
                     )
                 }
             )
@@ -685,7 +687,7 @@ extension AppDatabase {
             //    restamp — see docstring above).
             let entryDelta = entry.delta ?? 0
             let currentCount = source.currentCount ?? 0
-            let newSourceCount = max(0, currentCount - entryDelta)
+            let newSourceCount = max(0, quantizeCount(currentCount - entryDelta))
 
             // 5. ONE-WAY LATCH: undo does not un-complete (mirrors increment/decrement).
             let sourceWasCompleted = source.isCompleted
@@ -744,7 +746,8 @@ extension AppDatabase {
                         id: $0.id,
                         baseline: $0.baseline,
                         maxCount: $0.maxCount,
-                        isCompleted: $0.isCompleted
+                        isCompleted: $0.isCompleted,
+                        countKind: $0.countKind
                     )
                 }
             )
@@ -811,14 +814,14 @@ extension AppDatabase {
     ///   - sourceTaskId: The counter's source task id. Must NOT be a
     ///     linked/derived task — `defaultLogAmount` is only meaningful on
     ///     the accumulator.
-    ///   - amount: A positive integer.
+    ///   - amount: A positive 2dp number.
     func setCounterDefaultLogAmount(sourceTaskId: String, amount: CountValue) throws {
-        guard amount >= 1 else {
+        guard isQuantizedCount(amount) && amount > 0 else {
             throw NSError(
                 domain: "AppDatabase.setCounterDefaultLogAmount",
                 code: 1,
                 userInfo: [NSLocalizedDescriptionKey:
-                    "setCounterDefaultLogAmount: amount must be a positive integer"]
+                    "setCounterDefaultLogAmount: amount must be a positive 2dp number"]
             )
         }
 

@@ -1086,6 +1086,43 @@ final class BoardPlayViewModelTests: XCTestCase {
         XCTAssertTrue(sync.contains { $0.entityType == "tasks" && $0.entityId == "pending-1" && $0.operationType == .create })
     }
 
+    /// Counter kinds (D5) — a picker quick-add row linked to a continuous
+    /// root is stored with the root's kind at Save (the VM-built row carries
+    /// none of its own).
+    func test_handleEditSave_pendingLinkedRow_carriesRootCountKind() throws {
+        let db = try makeDb()
+        try seedWorkspace(db)
+        let now = AppDatabase.currentTimestamp()
+        var root = Task(
+            id: "root-amt", userId: "u1", title: "Run", type: .counting, action: "Run", unit: "km",
+            maxCount: 26.2, totalCompletions: 0, totalInstances: 0, createdAt: now, updatedAt: now,
+            version: 1, isDeleted: false
+        )
+        root.countKind = .continuous
+        try db.saveTask(root)
+        let vm = loadedVM(db, boardId: "b1")
+        vm.seedEditDraft(from: try XCTUnwrap(vm.board))
+
+        let linked = Task(
+            id: "pending-linked", userId: "u1", title: "Run 5 km", type: .counting, action: "Run", unit: "km",
+            maxCount: 5, totalCompletions: 0, totalInstances: 0, createdAt: now, updatedAt: now,
+            version: 1, isDeleted: false, sharedCounterId: "root-amt", baseline: 0
+        )
+        XCTAssertNil(linked.countKind)
+        vm.handleEditAdd(cellKey: "2-2", taskId: "pending-linked",
+                         pending: PendingTaskPayload(task: linked, childTasks: [], childLinks: []))
+
+        XCTAssertTrue(vm.handleEditSave())
+        XCTAssertTrue(waitUntil { vm.editEvent?.outcome == .saved })
+
+        XCTAssertEqual(dbTask(db, "pending-linked")?.countKind, .continuous)
+        let created = try db.fetchPendingSyncItems().filter {
+            $0.entityType == "tasks" && $0.entityId == "pending-linked" && $0.operationType == .create
+        }
+        let payload = try JSONDecoder().decode(Task.self, from: Data(try XCTUnwrap(created.first).payload.utf8))
+        XCTAssertEqual(payload.countKind, .continuous, "the CREATE payload carries the kind too")
+    }
+
     /// D15 — removals run BEFORE adds so a freed position is never mistaken
     /// for occupied.
     func test_handleEditSave_removeThenAddSamePosition() throws {

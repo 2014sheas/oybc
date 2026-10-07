@@ -11,6 +11,7 @@ import { AchievementTrigger, SyncOperationType, TaskType, OperatorType, boardDis
 import { generateUUID, currentTimestamp } from '../utils';
 import { addToSyncQueue } from './syncQueue';
 import { runBoardCascadeForTask } from './orchestration';
+import { withRootCountKind } from './countKindSwitch';
 import {
   appendCompletionEvent,
   lateLogStampForBoard,
@@ -109,7 +110,7 @@ export async function createTask(
     }
   }
 
-  const task: Task = {
+  let task: Task = {
     id: generateUUID(),
     userId,
     title: input.title,
@@ -146,6 +147,9 @@ export async function createTask(
     // silently writing an inconsistent row.
     sharedCounterId: input.sharedCounterId || null,
     baseline: input.sharedCounterId ? (input.baseline ?? null) : null,
+    // Counter kinds (docs/COUNTER_KINDS.md D5): a linked row's kind is
+    // overwritten with its root's below (`withRootCountKind`).
+    ...(input.type === TaskType.COUNTING && input.countKind ? { countKind: input.countKind } : {}),
     isCompleted: false,
     totalCompletions: 0,
     totalInstances: 0,
@@ -168,6 +172,7 @@ export async function createTask(
   }
 
   await db.transaction('rw', [db.tasks], async () => {
+    task = await withRootCountKind(task);
     await db.tasks.add(task);
   });
 
@@ -265,6 +270,8 @@ export async function createCompound(
           startDate: input.startDate,
           endDate: input.endDate,
         };
+        // Counter kinds (D5): an auto-linked child carries its root's kind.
+        inlineCreatedTask = await withRootCountKind(inlineCreatedTask);
         await db.tasks.add(inlineCreatedTask);
         childTaskId = inlineCreatedTask.id;
       }

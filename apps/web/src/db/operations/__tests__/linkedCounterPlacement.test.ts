@@ -55,6 +55,16 @@ describe('addBoardTaskToBoard — linked counters', () => {
     expect((await db.tasks.get('H'))!.startDate).toBeUndefined();
   });
 
+  it('a placement copy of a continuous hub-linked row keeps its kind and fractional goal', async () => {
+    await db.tasks.put(hubLinked('H', { countKind: 'continuous', maxCount: 2.5 }));
+
+    await addBoardTaskToBoard(SEPT.id, 'H', 0, 0);
+
+    const row = (await db.tasks.get(SEPT_ROW))!;
+    expect(row.countKind).toBe('continuous');
+    expect(row.maxCount).toBe(2.5);
+  });
+
   it('places an already-stamped-for-this-board row as-is', async () => {
     await db.tasks.put(
       hubLinked('S', { createdInWizard: true, timeframe: SEPT_TF, startDate: SEPT.startDate, endDate: SEPT.endDate }),

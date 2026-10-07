@@ -38,10 +38,12 @@ struct DeriveDisplayedCountResult {
 func deriveDisplayedCount(
     derivedBaseline: CountValue,
     derivedMaxCount: CountValue,
-    sourceCurrentCount: CountValue
+    sourceCurrentCount: CountValue,
+    countKind: CountKind? = nil
 ) -> DeriveDisplayedCountResult {
-    // LOW-END CLAMP ONLY — no high-end clamp (see invariants above).
-    let displayed = max(0, sourceCurrentCount - derivedBaseline)
+    // LOW-END CLAMP ONLY — no high-end clamp (see invariants above). Finalised
+    // by kind: quantized 2dp, whole kinds round the difference.
+    let displayed = finalizeWindowCount(sourceCurrentCount - derivedBaseline, kind: resolveCountKind(countKind))
 
     // maxCount == 0 → immediately complete (cannot be below zero progress).
     let isCompleted = displayed >= derivedMaxCount
@@ -67,6 +69,8 @@ struct PropagateIncrementLinkedTask {
     /// The task's persisted `isCompleted` value BEFORE this increment.
     /// One-way latch: if already `true`, the result keeps it `true`.
     let isCompleted: Bool
+    /// The linked task's kind (carries the ROOT's kind); nil = discrete.
+    var countKind: CountKind? = nil
 }
 
 /// The new state to write for one linked task after a source increment.
@@ -116,7 +120,8 @@ func propagateIncrement(
         let derived = deriveDisplayedCount(
             derivedBaseline: linked.baseline ?? 0,
             derivedMaxCount: linked.maxCount ?? 0,
-            sourceCurrentCount: sourceAfterCurrentCount
+            sourceCurrentCount: sourceAfterCurrentCount,
+            countKind: linked.countKind
         )
 
         // ONE-WAY LATCH: once true, always true.
@@ -127,7 +132,7 @@ func propagateIncrement(
             // Mirror the source's current count so the linked task row carries
             // the same accumulator value. Cascade readers read this
             // currentCount and re-derive with the baseline.
-            newCurrentCount: sourceAfterCurrentCount,
+            newCurrentCount: quantizeCount(sourceAfterCurrentCount),
             newIsCompleted: newIsCompleted,
             displayed: derived.displayed
         )

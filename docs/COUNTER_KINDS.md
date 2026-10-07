@@ -1,7 +1,7 @@
 # Counter kinds — Count · Amount · Time
 
-**Status:** DESIGN (2026-10-06). Data + logic decided (§2–§4); interface pending
-Claude Design (brief: [`docs/design/counter-kinds/BRIEF.md`](design/counter-kinds/BRIEF.md)).
+**Status:** PR 1 #551 and PR 2 #552 shipped (data + logic); interface pending the Claude Design handoff.
+(brief: [`docs/design/counter-kinds/BRIEF.md`](design/counter-kinds/BRIEF.md)).
 **Ships:** pre-launch, whole feature (owner decision 2026-10-06). Every PR lands
 web + iOS together (CLAUDE.md rule 6).
 
@@ -92,6 +92,17 @@ cell display at 3×3–5×5. Sections written after the handoff is approved.
 ## 7. Open items
 
 - Interface details in the brief §3B (deliberated in Claude Design).
+
+Carried to PR 3/4:
+
+- Member-row steppers are `Int` (R8); UI callers do not pass the kind (R16).
+- Kind-blind views format as discrete (R9).
+- `.formatted()` grouping at 5 lifetime sites (R7).
+- `AutoCreateCompoundChild` lacks `countKind`.
+- Previews of links to a continuous root must resolve the root's kind (R19).
+- `varyRangeLabel` / `countingSummary` duration copy.
+- iOS `switchCounterKind` cascades per row (perf).
+- Digit/locale decision: counts use Latin digits (R10).
 
 ## 8. Testing
 

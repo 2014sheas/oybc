@@ -116,6 +116,7 @@ final class LinkedCounterWindowHealVectorTests: XCTestCase {
         let sourceMemberId: String
         let replacesId: String
         let maxCount: CountValue
+        let countKind: CountKind
         let baseline: CountValue
         let title: String
         let action: String
@@ -131,6 +132,7 @@ final class LinkedCounterWindowHealVectorTests: XCTestCase {
             let action: String?
             let unit: String?
             let maxCount: CountValue?
+            let countKind: CountKind?
         }
         let name: String
         let copy: FixCopy
@@ -348,7 +350,8 @@ final class LinkedCounterWindowHealVectorTests: XCTestCase {
                 action: v.sourceTask.action, unit: v.sourceTask.unit, maxCount: v.sourceTask.maxCount,
                 totalCompletions: 0, totalInstances: 0,
                 createdAt: Self.isoStamp, updatedAt: Self.isoStamp, version: 1, isDeleted: false,
-                sharedCounterId: v.copy.rootTaskId
+                sharedCounterId: v.copy.rootTaskId,
+                countKind: v.sourceTask.countKind
             )
             let draft = BoardSources.windowStampedCopyDraft(
                 copy: try makeCopy(v.copy), sourceTask: source, baseline: v.baseline
@@ -364,6 +367,7 @@ final class LinkedCounterWindowHealVectorTests: XCTestCase {
                 sourceMemberId: expected.sourceMemberId,
                 replacesId: expected.replacesId,
                 maxCount: expected.maxCount,
+                countKind: expected.countKind,
                 baseline: expected.baseline,
                 title: expected.title,
                 action: expected.action,

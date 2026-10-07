@@ -39,7 +39,8 @@ enum TaskCountDisplay {
         return deriveDisplayedCount(
             derivedBaseline: task.baseline ?? 0,
             derivedMaxCount: task.maxCount ?? 0,
-            sourceCurrentCount: task.currentCount ?? 0
+            sourceCurrentCount: task.currentCount ?? 0,
+            countKind: task.countKind
         ).displayed
     }
 

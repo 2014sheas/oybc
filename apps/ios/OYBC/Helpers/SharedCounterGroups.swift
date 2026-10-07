@@ -258,7 +258,7 @@ func buildSharedCounterGroups(
               source.type == .counting
         else { continue }
 
-        let lifetime = source.currentCount ?? 0
+        let lifetime = quantizeCount(source.currentCount ?? 0)
         let members: [Task] = [source] + linked
 
         var boardIdSet = Set<String>()
@@ -295,7 +295,8 @@ func buildSharedCounterGroups(
                 displayed = deriveDisplayedCount(
                     derivedBaseline: baseline,
                     derivedMaxCount: goal,
-                    sourceCurrentCount: lifetime
+                    sourceCurrentCount: lifetime,
+                    countKind: m.countKind
                 ).displayed
             }
             if let b = board { boardIdSet.insert(b.id) }
@@ -324,7 +325,7 @@ func buildSharedCounterGroups(
                 goal: goal,
                 logged: displayed,
                 met: met,
-                over: met ? displayed - goal : 0,
+                over: met ? quantizeCount(displayed - goal) : 0,
                 isActive: isActive
             )
         }

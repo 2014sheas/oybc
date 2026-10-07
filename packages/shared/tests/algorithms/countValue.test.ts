@@ -3,7 +3,7 @@ import * as path from 'path';
 import {
   quantizeCount, isQuantizedCount, finalizeWindowCount, formatCount, formatCountForInput,
   planCountKindSwitch, canSwitchCountKind, resolveCountKind, isWholeCountKind,
-  countTargetStep, type CountKind,
+  countTargetStep, ceilToCountStep, roundToCountStep, floorToCountStep, type CountKind,
 } from '../../src/algorithms/countValue';
 
 interface CountValueFixture {
@@ -13,6 +13,9 @@ interface CountValueFixture {
   format: Array<{ name: string; value: number; kind: string; locale: string; expected: string }>;
   formatForInput: Array<{ name: string; value: number; kind: string; expected: string }>;
   switch: Array<{ name: string; from: string; to: string; fields: { maxCount?: number | null; defaultLogAmount?: number | null }; expected: { maxCount?: number; defaultLogAmount?: number } | null }>;
+  ceilToStep: Array<{ name: string; x: number; kind: string; expected: number }>;
+  roundToStep: Array<{ name: string; x: number; kind: string; expected: number }>;
+  floorToStep: Array<{ name: string; x: number; kind: string; expected: number }>;
 }
 
 const FIXTURE_PATH = path.join(__dirname, '../fixtures/countValueVectors.json');
@@ -36,6 +39,15 @@ describe('countValue vectors', () => {
   });
   it.each(vectors.switch)('switch: $name', ({ from, to, fields, expected }) => {
     expect(planCountKindSwitch(fields, from as CountKind, to as CountKind)).toEqual(expected);
+  });
+  it.each(vectors.ceilToStep)('ceilToStep: $name', ({ x, kind, expected }) => {
+    expect(ceilToCountStep(x, kind as CountKind)).toBe(expected);
+  });
+  it.each(vectors.roundToStep)('roundToStep: $name', ({ x, kind, expected }) => {
+    expect(roundToCountStep(x, kind as CountKind)).toBe(expected);
+  });
+  it.each(vectors.floorToStep)('floorToStep: $name', ({ x, kind, expected }) => {
+    expect(floorToCountStep(x, kind as CountKind)).toBe(expected);
   });
 });
 

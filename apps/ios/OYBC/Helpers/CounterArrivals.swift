@@ -79,7 +79,7 @@ func detectCounterArrivals(
     for sq in squares {
         // First view (no baseline) is never an arrival — it seeds the baseline.
         guard let seen = lastSeen[sq.taskId] else { continue }
-        if sq.displayed > seen {
+        if quantizeCount(sq.displayed) > quantizeCount(seen) {
             arrivedTaskIds.append(sq.taskId)
             if var existing = byCounter[sq.counterId] {
                 existing.squareCount += 1

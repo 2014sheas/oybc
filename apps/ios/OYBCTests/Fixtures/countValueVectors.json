@@ -52,5 +52,26 @@
     { "name": "into duration refused", "from": "discrete", "to": "duration", "fields": { "maxCount": 30 }, "expected": null },
     { "name": "out of duration refused", "from": "duration", "to": "continuous", "fields": { "maxCount": 30 }, "expected": null },
     { "name": "same kind refused", "from": "continuous", "to": "continuous", "fields": { "maxCount": 3 }, "expected": null }
+  ],
+  "ceilToStep": [
+    { "name": "continuous 6.04 ceils to 6.1", "x": 6.04, "kind": "continuous", "expected": 6.1 },
+    { "name": "continuous exact tenth 6.1 stays (6.1x10 = 60.999...)", "x": 6.1, "kind": "continuous", "expected": 6.1 },
+    { "name": "continuous 26.2x7/30 = 6.1133 ceils to 6.2", "x": 6.113333333333333, "kind": "continuous", "expected": 6.2 },
+    { "name": "discrete 6.04 ceils to 7", "x": 6.04, "kind": "discrete", "expected": 7 },
+    { "name": "discrete 1/366 still ceils to 1 (no quantize first)", "x": 0.00273224043715847, "kind": "discrete", "expected": 1 },
+    { "name": "duration 140 exact stays", "x": 140, "kind": "duration", "expected": 140 }
+  ],
+  "roundToStep": [
+    { "name": "continuous 4.25 rounds half-up to 4.3", "x": 4.25, "kind": "continuous", "expected": 4.3 },
+    { "name": "continuous 4.24 rounds to 4.2", "x": 4.24, "kind": "continuous", "expected": 4.2 },
+    { "name": "continuous 6.1x0.8 = 4.88 rounds to 4.9", "x": 4.88, "kind": "continuous", "expected": 4.9 },
+    { "name": "discrete 4.5 rounds half-up to 5", "x": 4.5, "kind": "discrete", "expected": 5 },
+    { "name": "discrete 4.25 rounds to 4", "x": 4.25, "kind": "discrete", "expected": 4 }
+  ],
+  "floorToStep": [
+    { "name": "continuous 26.29 floors to 26.2", "x": 26.29, "kind": "continuous", "expected": 26.2 },
+    { "name": "continuous exact tenth 6.2 stays", "x": 6.2, "kind": "continuous", "expected": 6.2 },
+    { "name": "discrete 26.29 floors to 26", "x": 26.29, "kind": "discrete", "expected": 26 },
+    { "name": "duration 140.9 floors to 140", "x": 140.9, "kind": "duration", "expected": 140 }
   ]
 }
