@@ -1,34 +1,26 @@
 import { test, expect } from './_fixtures/bypass';
 
 /**
- * E2E for the Windowed Completion one-time upgrade note
- * (docs/WINDOWED_COMPLETION.md §What changes visibly at upgrade). The note is a
- * dismissible Boards-tab banner shown exactly once, remembered via localStorage.
- * This is the pragmatic user-visible-flip spec; the unit matrix carries the
- * event/derivation weight.
+ * E2E guard for the RETIRED Windowed Completion one-time upgrade note.
+ *
+ * The dismissible "What's new" Boards-tab banner (added in WC PR B, #318) was
+ * deliberately removed from BOTH platforms in #447 — a one-time upgrade note is
+ * meaningless pre-launch — along with its localStorage key. There is no
+ * replacement surface, so this spec pins the removal: even a browser that never
+ * dismissed the note (fresh localStorage, including the legacy key cleared)
+ * must not see it on the Boards tab.
  */
-test.describe('Windowed Completion upgrade note', () => {
-  test('appears on the Boards tab, then stays dismissed after "Got it"', async ({ page }) => {
-    // Fresh localStorage: the note has never been dismissed.
+test.describe('Windowed Completion upgrade note (retired in #447)', () => {
+  test('never appears on the Boards tab, even with a never-dismissed localStorage', async ({
+    page,
+  }) => {
     await page.goto('/boards?__oybc_test_bypass=1');
     await page.evaluate(() => localStorage.removeItem('oybc.windowedCompletionNoteDismissed.v1'));
     await page.reload();
 
-    const note = page.getByRole('region', { name: "What's new" });
-    await expect(note).toBeVisible();
-    await expect(note).toContainText('each window');
-
-    // Dismiss — the note disappears and the flag persists.
-    await page.getByRole('button', { name: "Dismiss what's-new note" }).click();
-    await expect(note).toBeHidden();
-
-    const dismissed = await page.evaluate(() =>
-      localStorage.getItem('oybc.windowedCompletionNoteDismissed.v1'),
-    );
-    expect(dismissed).toBe('1');
-
-    // A reload does NOT bring it back (shown once).
-    await page.reload();
-    await expect(page.getByRole('region', { name: "What's new" })).toBeHidden();
+    // The Boards tab has rendered before we assert the absence.
+    await expect(page.getByRole('heading', { name: 'Boards', level: 1 })).toBeVisible();
+    await expect(page.getByRole('region', { name: "What's new" })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: "Dismiss what's-new note" })).toHaveCount(0);
   });
 });
