@@ -521,7 +521,7 @@ final class BoardPlayViewModel: ObservableObject {
             runSharedCounterIncrement(
                 sourceTaskId: sourceId,
                 counterName: counterName,
-                unit: unit,
+                unit: unit, kind: resolveCountKind(sourceTask?.countKind),
                 amount: amount,
                 persistAsDefault: persistAsDefault
             )
@@ -561,7 +561,7 @@ final class BoardPlayViewModel: ObservableObject {
     private func runSharedCounterIncrement(
         sourceTaskId: String,
         counterName: String = "",
-        unit: String = "",
+        unit: String = "", kind: CountKind = .discrete,
         amount: CountValue = 1,
         persistAsDefault: Bool = false
     ) {
@@ -627,7 +627,7 @@ final class BoardPlayViewModel: ObservableObject {
                         unit: unit,
                         isIncrement: true,
                         message: self.sharedCreditToastText(
-                            counterName: counterName, amount: amount, otherBoards: otherBoards, isIncrement: true
+                            counterName: counterName, amount: amount, kind: kind, otherBoards: otherBoards, isIncrement: true
                         )
                     )
 
@@ -669,7 +669,7 @@ final class BoardPlayViewModel: ObservableObject {
     private func runSharedCounterDecrement(
         sourceTaskId: String,
         counterName: String = "",
-        unit: String = "",
+        unit: String = "", kind: CountKind = .discrete,
         amount: CountValue = 1,
         persistAsDefault: Bool = false
     ) {
@@ -736,7 +736,7 @@ final class BoardPlayViewModel: ObservableObject {
                         isIncrement: false,
                         message: self.sharedCreditToastText(
                             counterName: counterName,
-                            amount: decrementResult.effectiveDelta,
+                            amount: decrementResult.effectiveDelta, kind: kind,
                             otherBoards: otherBoards,
                             isIncrement: false
                         )
@@ -839,7 +839,7 @@ final class BoardPlayViewModel: ObservableObject {
             runSharedCounterDecrement(
                 sourceTaskId: sourceId,
                 counterName: counterName,
-                unit: unit,
+                unit: unit, kind: resolveCountKind(sourceTask?.countKind),
                 amount: amount,
                 persistAsDefault: persistAsDefault
             )
@@ -1065,16 +1065,13 @@ final class BoardPlayViewModel: ObservableObject {
     ///   - isIncrement: `true` for increment, `false` for decrement.
     private nonisolated func sharedCreditToastText(
         counterName: String,
-        amount: CountValue,
+        amount: CountValue, kind: CountKind,
         otherBoards: [AppDatabase.AffectedBoard],
         isIncrement: Bool
     ) -> String {
-        let boardNames = otherBoards.map { $0.boardName }.joined(separator: ", "), amountText = formatCount(amount, kind: .discrete)
-        if isIncrement {
-            return "+\(amountText) \(counterName) — also counted on \(boardNames)."
-        } else {
-            return "−\(amountText) \(counterName) — also removed from \(boardNames)."
-        }
+        let boardNames = otherBoards.map { $0.boardName }.joined(separator: ", ")
+        let (sign, phrase) = isIncrement ? ("+", "also counted on") : ("−", "also removed from")
+        return "\(sign)\(formatCount(amount, kind: kind)) \(counterName) — \(phrase) \(boardNames)."
     }
 
     /// Publishes a one-shot `flashEvent` the view observes to fire its

@@ -95,7 +95,8 @@
               "over": 482,
               "isActive": true
             }
-          ]
+          ],
+          "countKind": "discrete"
         }
       ]
     },
@@ -1194,7 +1195,8 @@
               "over": 0,
               "isActive": true
             }
-          ]
+          ],
+          "countKind": "continuous"
         }
       ]
     }

@@ -31,7 +31,7 @@ import type { Board } from '../types/board';
 import type { BoardTask } from '../types/boardTask';
 import type { TaskEvent } from '../types/taskEvent';
 import { BoardStatus, TaskType, Timeframe } from '../constants/enums';
-import { quantizeCount } from './countValue';
+import { quantizeCount, resolveCountKind, type CountKind } from './countValue';
 import { deriveDisplayedCount } from './sharedCounter';
 import { formatTimeframeLabel } from './calendarBoundaries';
 import { formatCounterName } from './counterName';
@@ -90,6 +90,8 @@ export interface SharedCounterGroup {
   /** Action verb (e.g. "Do") + unit (e.g. "reps") from the source task. */
   action: string | null;
   unit: string | null;
+  /** The family's kind (the source's — D5). */
+  countKind: CountKind;
   /** All-time running total = the source task's `currentCount`. Never null. */
   lifetime: number;
   /**
@@ -364,6 +366,7 @@ export function buildSharedCounterGroups(
       name: formatCounterName(source.action, source.unit) || source.title,
       action: source.action ?? null,
       unit: source.unit ?? null,
+      countKind: resolveCountKind(source),
       lifetime,
       defaultLogAmount: source.defaultLogAmount ?? null,
       tasks: memberViews,

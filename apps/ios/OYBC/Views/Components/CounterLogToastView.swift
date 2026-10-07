@@ -38,6 +38,8 @@ struct CounterLogToastView: View {
     /// `message` is set.
     let unit: String
     let verb: Verb
+    /// The counter's kind — formats the amount; Duration carries no unit.
+    var kind: CountKind = .discrete
     /// R3: a fully composed message that REPLACES the amount+unit+verb-
     /// derived copy — the board-play credited toast's contract
     /// ("+{N} {counterName} — also counted on {board list}.") isn't
@@ -55,16 +57,12 @@ struct CounterLogToastView: View {
     /// Auto-dismiss duration (design handoff §Interactions — "auto-dismiss ~4s").
     private static let dismissDelay: TimeInterval = 4
 
-    private var verbLabel: String {
-        switch verb {
-        case .logged: return "Logged +\(formatCount(amount, kind: .discrete))"
-        case .removed: return "Removed \(formatCount(amount, kind: .discrete))"
-        }
+    static func text(amount: CountValue, unit: String, verb: Verb, kind: CountKind) -> String {
+        let a = formatCountWithUnit(amount, kind: kind, unit: unit)
+        return verb == .logged ? "Logged +\(a)" : "Removed \(a)"
     }
 
-    private var bodyText: String {
-        message ?? "\(verbLabel) \(unit)"
-    }
+    private var bodyText: String { message ?? Self.text(amount: amount, unit: unit, verb: verb, kind: kind) }
 
     var body: some View {
         HStack(spacing: 10) {

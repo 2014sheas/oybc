@@ -5,6 +5,8 @@
  * `environment: 'node'`, `*.test.ts` only — see `apps/web/vitest.config.ts`).
  */
 
+import { countUnitSuffix, formatCount, type CountKind } from '@oybc/shared';
+
 export interface CounterLogToastTextInput {
   /** Amount just logged (always positive — see `verb`). */
   amount: number;
@@ -16,6 +18,8 @@ export interface CounterLogToastTextInput {
   counterName?: string;
   /** Other boards this log also applied to — drives the credited copy when non-empty. */
   boardNames?: string[];
+  /** The counter's kind (default Discrete) — formats the amount; Duration carries no unit. */
+  kind?: CountKind;
 }
 
 /**
@@ -32,13 +36,14 @@ export interface CounterLogToastTextInput {
  * existing contract, untouched by R3.
  */
 export function formatCounterLogToastText(input: CounterLogToastTextInput): string {
-  const { amount, unit, verb, counterName, boardNames } = input;
-  const hasCredit = boardNames != null && boardNames.length > 0;
+  const { amount, unit, verb, counterName, boardNames, kind = 'discrete' } = input;
+  const amountText = formatCount(amount, kind);
 
-  if (hasCredit) {
+  if (boardNames != null && boardNames.length > 0) {
     const sign = verb === 'logged' ? '+' : '−';
     const verbPhrase = verb === 'logged' ? 'also counted on' : 'also removed from';
-    return `${sign}${amount} ${counterName ?? ''} — ${verbPhrase} ${(boardNames as string[]).join(', ')}.`;
+    return `${sign}${amountText} ${counterName ?? ''} — ${verbPhrase} ${boardNames.join(', ')}.`;
   }
-  return verb === 'logged' ? `Logged +${amount} ${unit}` : `Removed ${amount} ${unit}`;
+  const withUnit = `${amountText}${countUnitSuffix(kind, unit)}`;
+  return verb === 'logged' ? `Logged +${withUnit}` : `Removed ${withUnit}`;
 }

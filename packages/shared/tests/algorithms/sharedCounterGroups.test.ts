@@ -73,6 +73,8 @@ interface MiniGroup {
   counterId: string;
   name: string;
   lifetime: number;
+  /** Optional — absent on vectors that predate the family kind. */
+  countKind?: 'discrete' | 'continuous' | 'duration';
   taskCount: number;
   boardCount: number;
   activeTaskCount: number;
@@ -541,6 +543,7 @@ describe('buildSharedCounterGroups (fixture-driven, tests/fixtures/sharedCounter
         expect(g.counterId).toBe(exp.counterId);
         expect(g.name).toBe(exp.name);
         expect(g.lifetime).toBe(exp.lifetime);
+        if (exp.countKind) expect(g.countKind).toBe(exp.countKind);
         expect(g.taskCount).toBe(exp.taskCount);
         expect(g.boardCount).toBe(exp.boardCount);
         expect(g.activeTaskCount).toBe(exp.activeTaskCount);

@@ -469,6 +469,7 @@
 		D5BDDF8EB3BA29CC5ECD4337 /* ProviderState.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC4A22E2E4D5599195C9B9D1 /* ProviderState.swift */; };
 		D5F72D6D260665B27E1CFB5D /* CounterLinkStateTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CF8D479E2C29580E748168CE /* CounterLinkStateTests.swift */; };
 		D78AB3F27946A021FCAC93BE /* CountEntry.swift in Sources */ = {isa = PBXBuildFile; fileRef = C5FE91D3FE0E45739C673EB1 /* CountEntry.swift */; };
+		D806FF015D9B66B0F458F9C4 /* logAmountVectors.json in Resources */ = {isa = PBXBuildFile; fileRef = 15D2980AD01DC1AF1A73532E /* logAmountVectors.json */; };
 		D81C51150657F5F43CEE4436 /* RisoBoardWizardStepperView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A485098013BB2A456DE1A55D /* RisoBoardWizardStepperView.swift */; };
 		D8D7B0CA5B3E79F9497B2324 /* TaskCountDisplay.swift in Sources */ = {isa = PBXBuildFile; fileRef = 675E4963F37508FF2F28573A /* TaskCountDisplay.swift */; };
 		D954ADDD28A3C6EAD80D6309 /* DeriveCounterLinkTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0D4F7D448EFB75E5BD0AA686 /* DeriveCounterLinkTests.swift */; };
@@ -635,6 +636,7 @@
 		1571DB4C8501518B654B701A /* CountEntryVectorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CountEntryVectorTests.swift; sourceTree = "<group>"; };
 		15879B7B69D2EAA3652A1B67 /* compoundEvaluationVectors.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = compoundEvaluationVectors.json; sourceTree = "<group>"; };
 		15906C61ACC606E4CA7B3A77 /* WizardPreviewCompletionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WizardPreviewCompletionTests.swift; sourceTree = "<group>"; };
+		15D2980AD01DC1AF1A73532E /* logAmountVectors.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = logAmountVectors.json; sourceTree = "<group>"; };
 		16B24FB7FF9CEDD9A319B968 /* OYBCTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = OYBCTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		1754F6A314801932ADF62174 /* BoardRenewalsPreferencesTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BoardRenewalsPreferencesTests.swift; sourceTree = "<group>"; };
 		18BF4EAEA2FF266D273ECEC7 /* NotificationPreferencesSnapshotTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationPreferencesSnapshotTests.swift; sourceTree = "<group>"; };
@@ -1932,6 +1934,7 @@
 				B2DAB2859041DF985D745F7D /* derivationPassVectors.json */,
 				D1E19952808D89ADF5D4E7BB /* linkableCounterVectors.json */,
 				83FCD1A6ABC3B2832F48CFDF /* linkedCounterWindowHealVectors.json */,
+				15D2980AD01DC1AF1A73532E /* logAmountVectors.json */,
 				0C2A995EBED205956CD51C82 /* lwwVectors.json */,
 				4827435B84C41EDBDCE3BD67 /* memberRuleVectors.json */,
 				422944BA2ACB6754EA434ACE /* placementResolutionVectors.json */,
@@ -2131,6 +2134,7 @@
 				A636187392E37B72D6241E29 /* derivationPassVectors.json in Resources */,
 				10A591CACC3171124CA43F12 /* linkableCounterVectors.json in Resources */,
 				98CDDE882A05EDC7ED85B529 /* linkedCounterWindowHealVectors.json in Resources */,
+				D806FF015D9B66B0F458F9C4 /* logAmountVectors.json in Resources */,
 				3BED634E51A00A3AB1B405FF /* lwwVectors.json in Resources */,
 				339213243E1C237ACBD7324B /* memberRuleVectors.json in Resources */,
 				60704647070E07C5DE79A190 /* placementResolutionVectors.json in Resources */,

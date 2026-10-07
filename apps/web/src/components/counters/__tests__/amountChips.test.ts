@@ -56,3 +56,17 @@ describe('parseCustomLogAmount', () => {
     expect(parseCustomLogAmount('+5')).toBeNull();
   });
 });
+
+describe('amountChips wrappers — counter kinds', () => {
+  it('hub chips per kind; board chips per kind; discrete defaults unchanged', () => {
+    expect(buildAmountChipOptions().map((c) => c.label)).toEqual(['1', '10', '25', '#']);
+    expect(buildAmountChipOptions('duration').map((c) => c.label)).toEqual(['15m', '30m', '1h', '#']);
+    expect(buildBoardQuickAmountOptions().map((c) => c.label)).toEqual(['+1', '+10', '#']);
+    expect(buildBoardQuickAmountOptions('continuous', 26.2).map((c) => c.label)).toEqual(['6.6', '13.1', '26.2', '#']);
+  });
+  it('parseCustomLogAmount parses at the kind', () => {
+    expect(parseCustomLogAmount('3,1', 'continuous')).toBe(3.1);
+    expect(parseCustomLogAmount('3.1')).toBeNull();
+    expect(parseCustomLogAmount('1h 30m', 'duration')).toBe(90);
+  });
+});

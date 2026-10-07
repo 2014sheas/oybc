@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import type { CountKind } from '@oybc/shared';
 import { formatCounterLogToastText } from './counterLogToastText';
 import styles from './CounterLogToast.module.css';
 
@@ -33,6 +34,8 @@ export interface CounterLogToastProps {
    * trigger condition, preserved from the retired `RisoCreditedToast`).
    */
   boardNames?: string[];
+  /** The counter's kind (default Discrete). */
+  kind?: CountKind;
   /** Reverses the log entry (`undoLastCounterLog`). Disabled while pending. */
   onUndo: () => void;
   /** Called once after the auto-dismiss timer expires OR after Undo resolves. */
@@ -67,6 +70,7 @@ export function CounterLogToast({
   verb,
   counterName,
   boardNames,
+  kind,
   onUndo,
   onDone,
 }: CounterLogToastProps): React.ReactElement {
@@ -78,7 +82,7 @@ export function CounterLogToast({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const text = formatCounterLogToastText({ amount, unit, verb, counterName, boardNames });
+  const text = formatCounterLogToastText({ amount, unit, verb, counterName, boardNames, kind });
 
   return (
     <div className={styles.toast} role="status" aria-live="polite" aria-atomic="true">

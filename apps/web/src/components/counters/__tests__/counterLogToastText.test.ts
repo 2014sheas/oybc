@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'vitest';
+import { readFileSync } from 'fs';
+import type { CountKind } from '@oybc/shared';
 import { formatCounterLogToastText } from '../counterLogToastText';
 
 describe('formatCounterLogToastText', () => {
@@ -57,5 +59,23 @@ describe('formatCounterLogToastText', () => {
         boardNames: [],
       }),
     ).toBe('Logged +5 pages');
+  });
+});
+
+interface ToastVector {
+  name: string;
+  amount: number;
+  unit: string;
+  verb: 'logged' | 'removed';
+  kind: CountKind;
+  counterName?: string;
+  boardNames?: string[];
+  expected: string;
+}
+const LOG: { toast: ToastVector[] } = JSON.parse(readFileSync(new URL('../../../../../../packages/shared/tests/fixtures/logAmountVectors.json', import.meta.url), 'utf8'));
+
+describe('formatCounterLogToastText — counter kinds (shared vectors)', () => {
+  it.each(LOG.toast)('$name', (v) => {
+    expect(formatCounterLogToastText({ amount: v.amount, unit: v.unit, verb: v.verb, kind: v.kind, counterName: v.counterName, boardNames: v.boardNames })).toBe(v.expected);
   });
 });

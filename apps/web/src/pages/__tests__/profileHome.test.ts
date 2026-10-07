@@ -111,6 +111,7 @@ function makeGroup(over: Partial<SharedCounterGroup> = {}): SharedCounterGroup {
     name: 'Push-ups',
     action: 'Do',
     unit: 'push-ups',
+    countKind: 'discrete',
     lifetime: 500,
     defaultLogAmount: 10,
     tasks: [makeMember({ taskId: 'source-1', isSource: true, boardId: null, boardName: null })],
