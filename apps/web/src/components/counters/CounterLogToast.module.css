@@ -12,7 +12,9 @@
 .toast {
   position: fixed;
   right: 40px;
-  bottom: 40px;
+  /* Clear the mobile bottom nav (0 on desktop) — the shell's <main> is its
+     own stacking context, so z-index alone can't lift a toast above it. */
+  bottom: calc(40px + var(--app-bottom-nav-h, 0px));
   z-index: 120;
   display: flex;
   align-items: center;
@@ -37,7 +39,7 @@
   .toast {
     left: 16px;
     right: 16px;
-    bottom: 16px;
+    bottom: calc(16px + var(--app-bottom-nav-h, 0px));
     max-width: none;
   }
 }

@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
 import {
   TaskType,
@@ -100,7 +101,11 @@ export function LateLogSheet({
 
   const windowLabel = formatWindowLabel(board.timeframe, board.startDate);
 
-  return (
+  // Portalled to <body>: the app shell's <main> is its own stacking context
+  // (z-index 1), so a fixed sheet rendered inside it can never rise above the
+  // mobile bottom nav (z-index 60) — at phone width the nav covered the Log
+  // button. Theme tokens live on <html>, so the portal keeps them.
+  return createPortal(
     <div className={styles.backdrop} onClick={onClose} role="presentation">
       <div
         ref={modalRef}
@@ -163,7 +168,8 @@ export function LateLogSheet({
           <p className={styles.noop}>This square can&rsquo;t be logged directly.</p>
         )}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 

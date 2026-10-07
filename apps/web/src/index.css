@@ -4,6 +4,19 @@
   box-sizing: border-box;
 }
 
+/* Height of the fixed mobile bottom tab bar (components/appShell/
+   AppBottomNav.module.css: 2px border + 7px + 52px tab + 7px padding + the
+   home-indicator inset). 0 on desktop, where the bar is hidden. Fixed-bottom
+   UI inside the shell (toasts) offsets by it so the nav never covers it. */
+:root {
+  --app-bottom-nav-h: 0px;
+}
+@media (max-width: 760px) {
+  :root {
+    --app-bottom-nav-h: calc(68px + env(safe-area-inset-bottom, 0px));
+  }
+}
+
 /* Light theme (default) */
 :root {
   --bg-primary: #ffffff;
