@@ -538,9 +538,8 @@ final class BoardPlayViewModel: ObservableObject {
         runOrchestration(
             taskId: boardTask.taskId,
             intent: .setWindowedCount(quantizeCount(windowed.count + amount)),
-            boardTask: boardTask
+            boardTask: boardTask, persistDefault: persistAsDefault ? amount : nil
         )
-        if persistAsDefault { do { try database.setCounterDefaultLogAmount(sourceTaskId: task.id, amount: amount) } catch { dlog("BoardPlayVM: persist default failed: \(error)") } }
     }
 
     /// Runs the shared-counter increment in a background task, then refreshes
@@ -857,9 +856,8 @@ final class BoardPlayViewModel: ObservableObject {
         runOrchestration(
             taskId: boardTask.taskId,
             intent: .setWindowedCount(max(quantizeCount(windowed.count - amount), 0)),
-            boardTask: boardTask
+            boardTask: boardTask, persistDefault: persistAsDefault ? amount : nil
         )
-        if persistAsDefault { do { try database.setCounterDefaultLogAmount(sourceTaskId: task.id, amount: amount) } catch { dlog("BoardPlayVM: persist default failed: \(error)") } }
     }
 
     /// Toggles a compound child's WINDOWED completion on this board.
@@ -972,10 +970,11 @@ final class BoardPlayViewModel: ObservableObject {
     ///   - updatedTask: The already-mutated `Task` carrying new completion state.
     ///   - boardTask: The `BoardTask` placement record on the current board
     ///     (updatedAt/version will be bumped + sync-queued).
+    ///   - persistDefault: R3 — an explicit custom amount to save as the task's default, off the main actor.
     private func runOrchestration(
         taskId: String,
         intent: AppDatabase.CompletionIntent,
-        boardTask: BoardTask
+        boardTask: BoardTask, persistDefault: CountValue? = nil
     ) {
         guard let board = board else { return }
         isProcessing = true
@@ -1001,6 +1000,7 @@ final class BoardPlayViewModel: ObservableObject {
                     boardTask: boardTask,
                     now: now
                 )
+                if let amount = persistDefault { do { try database.setCounterDefaultLogAmount(sourceTaskId: taskId, amount: amount) } catch { dlog("BoardPlayVM: persist default failed: \(error)") } }
 
                 // Surface a flash message for the *current* board only.
                 // Other affected boards still updated stats — they just

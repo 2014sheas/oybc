@@ -117,6 +117,20 @@ final class BoardCloseReopenSnapshotTests: XCTestCase {
         )
     }
 
+    /// The tallest Continuous state — custom row open (typed "3.1") AND the
+    /// undo button — rendered at the sheet's real 280pt detent: nothing clips.
+    func testLateLogContinuousCustomUndoFitsSheet() {
+        let view = LateLogSheetView(
+            windowLabel: "Sep 1 – 30",
+            taskTitle: "Morning run",
+            kind: .counting(current: 21.3, max: 26.2, unit: "mi", countKind: .continuous),
+            isUndoable: true,
+            customAmountDraft: "3.1",
+            customOpen: true
+        )
+        assertSnapshot(of: view, as: .image(layout: .fixed(width: 393, height: 280)), record: recordMode)
+    }
+
     func testLateLogCompoundRuleUnmet() {
         let parts = [
             LateLogCompoundPart(id: "a", title: "Stretch", isStageable: true, alreadyDone: true),

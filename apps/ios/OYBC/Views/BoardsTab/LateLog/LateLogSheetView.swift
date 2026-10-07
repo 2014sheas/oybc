@@ -60,8 +60,10 @@ struct LateLogSheetView: View {
     var errorMessage: String?
 
     @State private var stagedChildIds: Set<String> = []
-    @State private var customAmountDraft = ""
-    @State private var customOpen = false
+    /// Internal (not private) only so snapshot tests can seed an open custom
+    /// row; production callers never pass these.
+    @State var customAmountDraft = ""
+    @State var customOpen = false
     /// True while an action's write is in flight — every action button is
     /// disabled (twin of web `LateLogSheet`'s `busy`), so a rapid double-tap
     /// can't submit twice. Set synchronously in `perform` BEFORE the Task
@@ -111,7 +113,12 @@ struct LateLogSheetView: View {
     private var sheetHeight: CGFloat {
         switch kind {
         case .normal: return 190
-        case let .counting(_, _, _, countKind): return countKind == .duration && customOpen ? 470 : 280
+        case let .counting(_, _, _, countKind):
+            switch countKind {
+            case .discrete: return 260
+            case .continuous: return 280
+            case .duration: return customOpen ? 470 : 280
+            }
         case let .compound(parts): return CGFloat(190 + parts.count * 44)
         }
     }

@@ -631,7 +631,11 @@ export function DetailModal({
                     className={styles.counterButton}
                     onClick={quickAmount.onRemove}
                     disabled={quickAmount.busy || quickAmount.removeDisabled}
-                    aria-label={quickAmount.selected === null ? 'Remove' : `Remove ${quickAmount.addLabel.slice(2)}`}
+                    aria-label={
+                      quickAmount.selected === null
+                        ? 'Remove'
+                        : `Remove ${formatCountWithUnit(quickAmount.selected, quickAmount.kind, quickAmount.unit)}`
+                    }
                   >
                     −
                   </button>

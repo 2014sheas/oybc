@@ -8,4 +8,8 @@ final class CountingMenuLabelsTests: XCTestCase {
         XCTAssertEqual(CountingMenuLabels.add(amount: 1, kind: .discrete, unit: "reps", action: "Do"), "+ Add 1 Do", "discrete keeps today's iOS string")
         XCTAssertEqual(CountingMenuLabels.remove(amount: 10, kind: .discrete, unit: "reps", action: "Do"), "− Remove 10 Do")
     }
+
+    func testCustomAmountLabelMatchesWeb() {
+        XCTAssertEqual(CountingMenuLabels.customAmount, "# Custom amount…")
+    }
 }

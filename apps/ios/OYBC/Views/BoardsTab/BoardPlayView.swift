@@ -1358,7 +1358,7 @@ struct BoardPlayView: View {
                 // No maxVal gate — overshoot is a feature (never clamp).
                 .disabled(isProcessing || isBoardLocked)
                 if kind != .discrete {
-                    Button("Custom amount…", systemImage: "number") { countingStepperBoardTaskId = boardTask.id }
+                    Button(CountingMenuLabels.customAmount, systemImage: "number") { countingStepperBoardTaskId = boardTask.id }
                         .disabled(isBoardLocked)
                 }
                 Button(CountingMenuLabels.remove(amount: quickAmount, kind: kind, unit: t.unit ?? "", action: t.action ?? "item"), systemImage: "minus") {

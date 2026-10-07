@@ -154,6 +154,7 @@
   font-size: 9.5px;
   font-weight: 800;
   color: var(--riso-ink);
+  white-space: nowrap;
   z-index: 1;
 }
 .done .cbar {
