@@ -36,6 +36,8 @@ import type { Task } from '../types/task';
 import type { TaskEvent } from '../types/taskEvent';
 import type { BoardSourceSupply } from './boardSources';
 import { isTimeframeExpired, isWithinTimeframe } from './calendarBoundaries';
+import { quantizeCount, resolveCountKind } from './countValue';
+import type { CountKind } from './countValue';
 import { deriveDisplayedCount } from './sharedCounter';
 import { counterCopyTitle } from './taskTitle';
 import { uuidv5 } from './uuidv5';
@@ -269,7 +271,7 @@ export interface BoardWindow {
 /** The slice of `Task` {@link planDerivedTasks} reads. */
 export type PlanTask = Pick<
   Task,
-  'id' | 'type' | 'title' | 'action' | 'unit' | 'maxCount' | 'sharedCounterId' | 'startDate' | 'operator' | 'threshold'
+  'id' | 'type' | 'title' | 'action' | 'unit' | 'maxCount' | 'sharedCounterId' | 'startDate' | 'operator' | 'threshold' | 'countKind'
 >;
 
 /** An in-memory window-stamped derived counter, before B2 persists it. */
@@ -282,6 +284,8 @@ export interface DerivedTaskDraft {
   /** The selected id this draft stands in for on the board. */
   replacesId: string;
   maxCount: number;
+  /** The kind the copy counts in — the root's (D5). */
+  countKind: CountKind;
   /** Event-derived lifetime count at mint time — a cache, never authored. */
   baseline: number;
   title: string;
@@ -507,6 +511,7 @@ export function planDerivedTasks(args: PlanDerivedTasksArgs): PlanDerivedTasksRe
       sourceMemberId: t.id,
       replacesId,
       maxCount,
+      countKind: resolveCountKind(t),
       baseline: baselineByRootId[root] ?? 0,
       title: counterCopyTitle(t, maxCount),
       action,
@@ -740,7 +745,7 @@ export function computeWindowBaseline(
     if (Number.isNaN(t) || !(t < b)) continue;
     sum += e.delta;
   }
-  return Math.max(0, sum);
+  return Math.max(0, quantizeCount(sum));
 }
 
 /**
@@ -890,7 +895,7 @@ export function buildDerivedRows({
   for (const d of drafts.derivedTasks) {
     const mirror = rootsById[d.rootTaskId]?.currentCount ?? 0;
     const shown = deriveDisplayedCount(
-      { baseline: d.baseline, maxCount: d.maxCount },
+      { baseline: d.baseline, maxCount: d.maxCount, countKind: d.countKind },
       { currentCount: mirror }
     );
     const row: Task = {
@@ -903,6 +908,7 @@ export function buildDerivedRows({
       action: d.action || undefined,
       unit: d.unit || undefined,
       maxCount: d.maxCount,
+      countKind: d.countKind,
       sharedCounterId: d.rootTaskId,
       baseline: d.baseline,
       currentCount: mirror,

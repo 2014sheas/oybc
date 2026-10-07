@@ -207,6 +207,16 @@ describe('planAndMintDerivedRows — mint (RB2/RB3)', () => {
     );
   });
 
+  it('a minted copy of a continuous member stores countKind continuous', async () => {
+    const root = countingTask(ROOT, { currentCount: 0, countKind: 'continuous' });
+    await db.tasks.add(root);
+
+    await mint(mintArgs([ROOT], boardSource(retargeted()), [root], [], []));
+
+    const derived = await db.tasks.get(derivedTaskId(BOARD, ROOT));
+    expect(derived?.countKind).toBe('continuous');
+  });
+
   it('re-minting the same window is a true no-op — no rewrite, no second sync item', async () => {
     const root = countingTask(ROOT, { currentCount: 30 });
     await db.tasks.add(root);

@@ -31,10 +31,11 @@ final class SharedCounterGroupsVectorTests: XCTestCase {
         let startDate: String?
         let endDate: String?
         let createdInWizard: Bool
+        let countKind: CountKind?
 
         private enum CodingKeys: String, CodingKey {
             case id, title, currentCount, maxCount, sharedCounterId, baseline, isDeleted, isCounter
-            case startDate, endDate, createdInWizard
+            case startDate, endDate, createdInWizard, countKind
         }
 
         init(from decoder: Decoder) throws {
@@ -50,6 +51,7 @@ final class SharedCounterGroupsVectorTests: XCTestCase {
             startDate = try container.decodeIfPresent(String.self, forKey: .startDate)
             endDate = try container.decodeIfPresent(String.self, forKey: .endDate)
             createdInWizard = try container.decodeIfPresent(Bool.self, forKey: .createdInWizard) ?? false
+            countKind = try container.decodeIfPresent(CountKind.self, forKey: .countKind)
         }
     }
 
@@ -175,7 +177,8 @@ final class SharedCounterGroupsVectorTests: XCTestCase {
             sharedCounterId: m.sharedCounterId,
             baseline: m.baseline,
             createdInWizard: m.createdInWizard,
-            isCounter: m.isCounter
+            isCounter: m.isCounter,
+            countKind: m.countKind
         )
     }
 

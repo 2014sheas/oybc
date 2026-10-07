@@ -310,6 +310,8 @@ extension BoardSources {
         /// The selected id this draft stands in for on the board.
         let replacesId: String
         let maxCount: CountValue
+        /// The kind the copy counts in — the root's (D5).
+        let countKind: CountKind
         /// Event-derived lifetime count at mint time — a cache, never authored.
         let baseline: CountValue
         let title: String
@@ -502,6 +504,7 @@ extension BoardSources {
                 sourceMemberId: task.id,
                 replacesId: replacesId,
                 maxCount: maxCount,
+                countKind: resolveCountKind(task.countKind),
                 baseline: baselineByRootId[root] ?? 0,
                 title: TaskTitle.counterCopyTitle(member: task, newMaxCount: maxCount),
                 action: action,
@@ -773,7 +776,7 @@ extension BoardSources {
             else { continue }
             sum += delta
         }
-        return Swift.max(0, sum)
+        return Swift.max(0, quantizeCount(sum))
     }
 
     /// Is this STORED task row one of our per-window derived counters?
@@ -874,7 +877,8 @@ extension BoardSources {
             let shown = deriveDisplayedCount(
                 derivedBaseline: draft.baseline,
                 derivedMaxCount: draft.maxCount,
-                sourceCurrentCount: mirror
+                sourceCurrentCount: mirror,
+                countKind: draft.countKind
             )
             tasks.append(Task(
                 id: draft.id,
@@ -904,7 +908,8 @@ extension BoardSources {
                 endDate: draft.endDate,
                 sharedCounterId: draft.rootTaskId,
                 baseline: draft.baseline,
-                createdInWizard: true
+                createdInWizard: true,
+                countKind: draft.countKind
             ))
         }
 

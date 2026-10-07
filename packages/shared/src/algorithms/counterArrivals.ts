@@ -17,6 +17,8 @@
  * Same math on both platforms — the iOS `CounterArrivals.swift` port mirrors it.
  */
 
+import { quantizeCount } from './countValue';
+
 /** One shared-counting square on the board being opened. */
 export interface ArrivalSquare {
   /** The square's task id (a board_task's taskId). Keys the last-seen snapshot. */
@@ -72,7 +74,7 @@ export function detectCounterArrivals(
     const seen = input.lastSeen[sq.taskId];
     // First view (no baseline) is never an arrival — it seeds the baseline.
     if (seen === undefined) continue;
-    if (sq.displayed > seen) {
+    if (quantizeCount(sq.displayed) > quantizeCount(seen)) {
       arrivedTaskIds.push(sq.taskId);
       const existing = byCounter.get(sq.counterId);
       if (existing) {

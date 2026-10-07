@@ -29,7 +29,8 @@ private let counterMilestoneSteps: [Int] = [
 ///   task's own `maxCount` is fine — this helper only cares about the raw
 ///   number).
 /// - Returns: The next milestone, always strictly greater than `lifetime`.
-func nextCounterMilestone(_ lifetime: CountValue) -> CountValue {
+func nextCounterMilestone(_ rawLifetime: CountValue) -> CountValue {
+    let lifetime = quantizeCount(rawLifetime)
     if let fixedStep = counterMilestoneSteps.first(where: { CountValue($0) > lifetime }) {
         return CountValue(fixedStep)
     }
@@ -52,8 +53,9 @@ struct CounterMilestoneProgress: Equatable {
 /// - Returns: `{ next, remaining, fraction }`. `fraction` is
 ///   `min(1, lifetime / next)`; `remaining` is `next - lifetime`.
 func counterMilestoneProgress(_ lifetime: CountValue) -> CounterMilestoneProgress {
-    let next = nextCounterMilestone(lifetime)
-    let remaining = next - lifetime
-    let fraction = min(1.0, lifetime / next)
+    let total = quantizeCount(lifetime)
+    let next = nextCounterMilestone(total)
+    let remaining = quantizeCount(next - total)
+    let fraction = min(1.0, total / next)
     return CounterMilestoneProgress(next: next, remaining: remaining, fraction: fraction)
 }

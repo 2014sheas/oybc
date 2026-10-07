@@ -34,6 +34,7 @@ import type { Board } from '../types/board';
 import type { BoardTask } from '../types/boardTask';
 import type { CompoundChild } from '../types/compoundChild';
 import type { Task } from '../types/task';
+import { isWholeCountKind, quantizeCount, resolveCountKind } from './countValue';
 import { derivedTaskId, isWindowStampedDerived } from './memberRules';
 import type { DerivedTaskDraft } from './memberRules';
 import { counterCopyTitle } from './taskTitle';
@@ -361,11 +362,13 @@ export function planLinkedCounterWindowHeal(input: LinkedCounterWindowHealInput)
  */
 export function windowStampedCopyDraft(
   copy: LinkedCounterWindowCopy,
-  sourceTask: Pick<Task, 'title' | 'action' | 'unit' | 'maxCount'>,
+  sourceTask: Pick<Task, 'title' | 'action' | 'unit' | 'maxCount' | 'countKind'>,
   baseline: number
 ): DerivedTaskDraft | null {
   if (typeof sourceTask.maxCount !== 'number' || sourceTask.maxCount < 1) return null;
-  const maxCount = Math.floor(sourceTask.maxCount);
+  const countKind = resolveCountKind(sourceTask);
+  const whole = (x: number): number => (isWholeCountKind(countKind) ? Math.floor(x) : quantizeCount(x));
+  const maxCount = whole(sourceTask.maxCount);
   const action = sourceTask.action ?? '';
   const unit = sourceTask.unit ?? '';
   return {
@@ -374,7 +377,8 @@ export function windowStampedCopyDraft(
     sourceMemberId: copy.sourceTaskId,
     replacesId: copy.sourceTaskId,
     maxCount,
-    baseline: Math.max(0, Math.floor(baseline)),
+    countKind,
+    baseline: Math.max(0, whole(baseline)),
     title: counterCopyTitle(sourceTask, maxCount),
     action,
     unit,

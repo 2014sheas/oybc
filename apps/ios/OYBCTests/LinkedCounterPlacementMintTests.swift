@@ -37,6 +37,18 @@ final class LinkedCounterPlacementMintTests: XCTestCase {
         XCTAssertEqual(try K.fetchTask(db, "hub")?.version, 1, "the library row is untouched")
     }
 
+    func test_add_continuousHubLinkedTask_copyKeepsKindAndFractionalGoal() throws {
+        let db = try makeDb()
+        var hub = K.task("hub", maxCount: 2.5, sharedCounterId: "root")
+        hub.countKind = .continuous
+        try db.saveTask(hub)
+
+        _ = try db.addBoardTaskToBoard("b1", taskId: "hub", position: (row: 0, col: 0))
+        let row = try XCTUnwrap(K.fetchTask(db, derived("b1")))
+        XCTAssertEqual(row.countKind, .continuous)
+        XCTAssertEqual(row.maxCount, 2.5)
+    }
+
     func test_add_taskAlreadyStampedForThisBoard_isPlacedAsIs() throws {
         let db = try makeDb()
         try db.saveTask(K.task("mine", sharedCounterId: "root", startDate: septStart, endDate: septEnd, createdInWizard: true))

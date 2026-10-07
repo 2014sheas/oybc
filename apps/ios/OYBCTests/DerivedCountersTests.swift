@@ -180,6 +180,18 @@ final class DerivedCountersTests: XCTestCase {
         XCTAssertEqual(queued.first?.operationType, .create)
     }
 
+    func test_mint_continuousMemberStoresContinuousKind() throws {
+        let database = try makeDb()
+        var root = makeCountingTask(id: rootId, maxCount: 10, currentCount: 0)
+        root.countKind = .continuous
+        try database.write { db in try root.save(db) }
+
+        try mintOneCounter(database, at: now, tasksById: [rootId: root])
+        let derivedId = BoardSources.derivedTaskId(boardId: boardId, rootTaskId: rootId)
+        let stored = try XCTUnwrap(try database.read { try Task.fetchOne($0, key: derivedId) })
+        XCTAssertEqual(stored.countKind, .continuous)
+    }
+
     func test_mint_bornCompleteWhenTheRootHasAlreadyPassedTheTarget() throws {
         let database = try makeDb()
         // Everything logged INSIDE the window: baseline 0, displayed 12 ≥ 4.

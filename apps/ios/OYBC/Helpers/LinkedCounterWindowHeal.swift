@@ -274,7 +274,12 @@ extension BoardSources {
         sourceTask: Task,
         baseline: CountValue
     ) -> DerivedTaskDraft? {
-        guard let maxCount = sourceTask.maxCount, maxCount >= 1 else { return nil }
+        guard let goal = sourceTask.maxCount, goal >= 1 else { return nil }
+        let countKind = resolveCountKind(sourceTask.countKind)
+        func whole(_ x: CountValue) -> CountValue {
+            isWholeCountKind(countKind) ? x.rounded(.down) : quantizeCount(x)
+        }
+        let maxCount = whole(goal)
         let action = sourceTask.action ?? ""
         let unit = sourceTask.unit ?? ""
         return DerivedTaskDraft(
@@ -283,7 +288,8 @@ extension BoardSources {
             sourceMemberId: copy.sourceTaskId,
             replacesId: copy.sourceTaskId,
             maxCount: maxCount,
-            baseline: Swift.max(0, baseline),
+            countKind: countKind,
+            baseline: Swift.max(0, whole(baseline)),
             title: TaskTitle.counterCopyTitle(member: sourceTask, newMaxCount: maxCount),
             action: action,
             unit: unit,

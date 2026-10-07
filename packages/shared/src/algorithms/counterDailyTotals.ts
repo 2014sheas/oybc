@@ -1,4 +1,5 @@
 import type { TaskEvent } from '../types/taskEvent';
+import { quantizeCount } from './countValue';
 
 /**
  * counterDailyTotals.ts — derives a counter's trailing daily totals (the
@@ -133,8 +134,8 @@ export function deriveCounterDailyTotals(
 
   const daysResult: CounterDailyTotal[] = dayKeys.map((key) => ({
     dateISO: key,
-    total: totalsByDay.get(key) ?? 0,
+    total: quantizeCount(totalsByDay.get(key) ?? 0),
   }));
 
-  return { days: daysResult, todayTotal: totalsByDay.get(todayKey) ?? 0 };
+  return { days: daysResult, todayTotal: quantizeCount(totalsByDay.get(todayKey) ?? 0) };
 }

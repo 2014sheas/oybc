@@ -59,3 +59,14 @@ describe('counterMilestoneProgress', () => {
     expect(counterMilestoneProgress(100_000)).toEqual({ next: 110_000, remaining: 10_000, fraction: 100_000 / 110_000 });
   });
 });
+
+describe('counterMilestoneProgress (fractional lifetimes)', () => {
+  it('quantizes float drift before comparing and subtracting', () => {
+    const p = counterMilestoneProgress(99.9);
+    expect(p.next).toBe(100);
+    expect(p.remaining).toBe(0.1);
+    expect(p.fraction).toBeCloseTo(0.999);
+    expect(nextCounterMilestone(99.99999999)).toBe(250);
+    expect(counterMilestoneProgress(0.1 + 0.2).remaining).toBe(99.7);
+  });
+});

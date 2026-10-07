@@ -12,6 +12,8 @@
  * Pure, deterministic: a function of `lifetime` alone.
  */
 
+import { quantizeCount } from './countValue';
+
 /**
  * Fixed round-number steps a counter climbs through on its way up. Beyond
  * the top step (100,000), {@link nextCounterMilestone} falls back to the
@@ -34,6 +36,7 @@ const MILESTONE_STEPS: readonly number[] = [
  * @returns The next milestone, always strictly greater than `lifetime`.
  */
 export function nextCounterMilestone(lifetime: number): number {
+  lifetime = quantizeCount(lifetime);
   const fixedStep = MILESTONE_STEPS.find((step) => step > lifetime);
   if (fixedStep !== undefined) return fixedStep;
   return Math.ceil((lifetime + 1) / 10_000) * 10_000;
@@ -59,8 +62,9 @@ export interface CounterMilestoneProgress {
  *   `min(1, lifetime / next)`; `remaining` is `next - lifetime`.
  */
 export function counterMilestoneProgress(lifetime: number): CounterMilestoneProgress {
-  const next = nextCounterMilestone(lifetime);
-  const remaining = next - lifetime;
-  const fraction = Math.min(1, lifetime / next);
+  const total = quantizeCount(lifetime);
+  const next = nextCounterMilestone(total);
+  const remaining = quantizeCount(next - total);
+  const fraction = Math.min(1, total / next);
   return { next, remaining, fraction };
 }

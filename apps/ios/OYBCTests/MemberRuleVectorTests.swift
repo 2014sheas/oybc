@@ -1216,6 +1216,7 @@ final class MemberRuleVectorTests: XCTestCase {
                         sourceMemberId: id(raw.sourceMemberId),
                         replacesId: id(raw.replacesId),
                         maxCount: raw.maxCount,
+                        countKind: .discrete,
                         baseline: raw.baseline,
                         title: raw.title,
                         action: raw.action,

@@ -153,4 +153,14 @@ describe('deriveCounterDailyTotals', () => {
   it('throws for a non-integer days value', () => {
     expect(() => deriveCounterDailyTotals([], { sourceTaskId: SOURCE, now: NOW, days: 2.5, seedSentinel: SEED_SENTINEL })).toThrow();
   });
+
+  it('quantizes fractional daily sums (0.1 + 0.2 is 0.3, not 0.30000000000000004)', () => {
+    const events = [
+      ev({ occurredAt: '2026-07-20T09:00:00.000', delta: 0.1 }),
+      ev({ occurredAt: '2026-07-20T10:00:00.000', delta: 0.2 }),
+    ];
+    const result = deriveCounterDailyTotals(events, { sourceTaskId: SOURCE, now: NOW, days: 7, seedSentinel: SEED_SENTINEL });
+    expect(result.todayTotal).toBe(0.3);
+    expect(result.days[6].total).toBe(0.3);
+  });
 });
