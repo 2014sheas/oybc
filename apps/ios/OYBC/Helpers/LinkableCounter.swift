@@ -87,11 +87,11 @@ func findLinkableCounter(
     // Candidates: live COUNTING sources / standalones (not derived) whose
     // normalised action+unit match the new task's. Never suggest derived tasks
     // as link targets — always the source they already point at.
-    let candidates = live.filter { t in
-        t.id != excludeTaskId &&
-        t.sharedCounterId == nil &&
-        (t.action ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == a &&
-        (t.unit ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == u
+    let candidates: [Task] = live.filter { (t: Task) -> Bool in
+        guard t.id != excludeTaskId, t.sharedCounterId == nil else { return false }
+        let ta: String = (t.action ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let tu: String = (t.unit ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return ta == a && tu == u
     }
     guard !candidates.isEmpty else { return nil }
 

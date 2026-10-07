@@ -1102,43 +1102,42 @@ struct BoardPlayView: View {
     @ViewBuilder
     private var risoGridSection: some View {
         let highlighted = highlightedSquareIndices
-
-        // Slice 1 — the shared grid layout (same as the edit panel's grid).
         RisoBoardGrid(gridSize: gridSize) { row, col, index in
-            let isCenter = gridSize % 2 == 1
-                && row == gridSize / 2
-                && col == gridSize / 2
-
-            if let bt = btByPosition["\(row)-\(col)"] {
-                risoPlaySquare(boardTask: bt, index: index, highlighted: highlighted)
-            } else if isCenter,
-                      let b = board,
-                      CenterSquare.effectiveCenter(b.centerSquareType) == .free {
-                // FREE center cell — gold label, not interactive in play mode.
-                // Deliberately NOT getCenterDisplayText, which returns
-                // "FREE SPACE" — this cell matches the edit grid's FREE
-                // face, which uses the shorter "FREE".
-                RisoBoardPlayCell(
-                    title: "FREE",
-                    taskType: .normal,
-                    isCompleted: false,
-                    isBingoLine: highlighted.contains(index),
-                    isCenter: true
-                )
-            } else {
-                // Board Edit redesign slice 3 (D17) — the play-mode "+" is
-                // retired. Every empty square (center included, once its
-                // type is `.none`) renders as a plain dashed square; adding
-                // a task is staged in the squares editor now.
-                RoundedRectangle(cornerRadius: Riso.cellRadius)
-                    .strokeBorder(
-                        Color.risoInk.opacity(0.35),
-                        style: StrokeStyle(lineWidth: 1.5, dash: [6, 4])
-                    )
-                    .aspectRatio(1, contentMode: .fit)
-            }
+            risoGridCell(row: row, col: col, index: index, highlighted: highlighted)
         }
         .padding(.bottom, 8)
+    }
+
+    /// One play-grid cell (extracted from the closure for type-check speed).
+    @ViewBuilder
+    private func risoGridCell(row: Int, col: Int, index: Int, highlighted: Set<Int>) -> some View {
+        let mid: Int = gridSize / 2
+        let isCenter: Bool = gridSize % 2 == 1 && row == mid && col == mid
+
+        if let bt = btByPosition["\(row)-\(col)"] {
+            risoPlaySquare(boardTask: bt, index: index, highlighted: highlighted)
+        } else if isCenter,
+                  let b = board,
+                  CenterSquare.effectiveCenter(b.centerSquareType) == .free {
+            // FREE center — gold, inert. Not getCenterDisplayText ("FREE SPACE"):
+            // matches the edit grid's shorter "FREE" face.
+            RisoBoardPlayCell(
+                title: "FREE",
+                taskType: .normal,
+                isCompleted: false,
+                isBingoLine: highlighted.contains(index),
+                isCenter: true
+            )
+        } else {
+            // D17 — no play-mode "+": every empty square (center too, once
+            // `.none`) is a plain dashed square; adding is staged in Edit.
+            RoundedRectangle(cornerRadius: Riso.cellRadius)
+                .strokeBorder(
+                    Color.risoInk.opacity(0.35),
+                    style: StrokeStyle(lineWidth: 1.5, dash: [6, 4])
+                )
+                .aspectRatio(1, contentMode: .fit)
+        }
     }
 
     // MARK: - Riso Play Square

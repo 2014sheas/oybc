@@ -118,8 +118,13 @@ struct RisoCountingStepperSheet: View {
     }
 
     private var sheetHeight: CGFloat {
-        140 + (model.showsChips ? 56 : 0) + (countKind == .continuous ? 52 : 0) + (countKind == .duration ? 190 : 0)
-            + (countKind == .discrete && isSharedCounter && customOpen ? 44 : 0) + (onOpenTask != nil ? 56 : 0)
+        var height: CGFloat = 140
+        if model.showsChips { height += 56 }
+        if countKind == .continuous { height += 52 }
+        if countKind == .duration { height += 190 }
+        if countKind == .discrete && isSharedCounter && customOpen { height += 44 }
+        if onOpenTask != nil { height += 56 }
+        return height
     }
 
     /// "Task details ›" row — same chrome as `RisoTaskRowView`.

@@ -128,7 +128,7 @@ struct RisoBoardPlayCell: View {
         // Corner chips overhang the cell edge, so a chipped cell sits above
         // its neighbours (below a bingo ring, which overhangs further).
         .overlay(alignment: .topTrailing) { cornerChips }
-        .zIndex(isBingoLine ? 3 : (showsLockChip || showsDirtyChip) ? 2 : isCompleted ? 1 : 0)
+        .zIndex(cellZIndex)
         .contentShape(Rectangle())
         .onTapGesture {
             guard !isInteractionLocked, !isCenter else { return }
@@ -140,8 +140,22 @@ struct RisoBoardPlayCell: View {
         // actionable element).
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(accessibilityLabel)
-        .accessibilityAddTraits((isCenter || isInteractionLocked) ? [] : .isButton)
-        .accessibilityAddTraits(isCompleted ? .isSelected : [])
+        .accessibilityAddTraits(buttonTraits)
+        .accessibilityAddTraits(selectedTraits)
+    }
+
+    private var cellZIndex: Double {
+        if isBingoLine { return 3 }
+        if showsLockChip || showsDirtyChip { return 2 }
+        return isCompleted ? 1 : 0
+    }
+
+    private var buttonTraits: AccessibilityTraits {
+        (isCenter || isInteractionLocked) ? [] : .isButton
+    }
+
+    private var selectedTraits: AccessibilityTraits {
+        isCompleted ? .isSelected : []
     }
 
     /// VoiceOver label: task name + type-appropriate progress/state, plus the
