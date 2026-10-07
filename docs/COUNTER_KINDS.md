@@ -25,9 +25,10 @@ rollout. Before launch the only clients are owner TestFlight builds.
 | D1 | A per-task **kind**: `discrete` (Count, today's behaviour), `continuous` (Amount), `duration` (Time — designed now, build decided after design review). |
 | D2 | **Representation:** counts are real numbers quantized to **2 decimal places** at every write (not fixed-point integers, not parallel fields). Integers are exact doubles, so discrete counters are bit-identical to today. |
 | D3 | **Precision fixed at 2dp** for `continuous`; display trims trailing zeros. |
-| D4 | **Kind switches both ways.** Events are never rewritten; a discrete task's window sum rounds half-up at read; switching to discrete rounds `maxCount` (min 1) as an ordinary authored edit; switching back restores exact values. |
+| D4 | **Count ⇄ Amount switches both ways; Time never switches** (no switch into or out of `duration` — a raw number has no unit, so "5 hours" would read as 5 minutes). Events are never rewritten; a discrete task's window sum rounds half-up at read; switching to discrete rounds `maxCount` (min 1) as an ordinary authored edit; switching back restores exact values. |
 | D5 | A shared-counter **family shares its root's kind**; linked/minted copies inherit it and follow a root switch (same cascade as a Goal edit). |
-| D6 | `duration` is stored as **integer minutes** — it reuses the discrete logic branch exactly; only input + display differ. Live start/stop timers are out of scope. |
+| D6 | `duration` is stored as **integer minutes** — it reuses the discrete logic branch exactly (all steps snap to 1 minute); only input + display differ. Live start/stop timers are out of scope. |
+| D7 | The UI extends the **existing** counter interactions (tap/stepper sheet, chips, last-used amount, custom entry, late log, toast) per kind rather than inventing new ones; Claude Design adapts them. |
 
 ## 3. Data model + sync (PR 1 — inert)
 
@@ -56,7 +57,7 @@ rollout. Before launch the only clients are owner TestFlight builds.
   resolution, `windowSum`, shared-counter display): sum deltas → `quantizeCount`
   → if discrete/duration, round half-up → clamp ≥ 0 → complete on `count >= maxCount`.
   One rule gives D4 and kills float drift (`0.1+0.2`).
-- **Kind switch**: `updateTaskAndCascade` / `applyTaskEditPatch` path, cascaded
+- **Kind switch** (Count ⇄ Amount only; the kind picker locks Time once a task exists, and locks every kind out of Time): `updateTaskAndCascade` / `applyTaskEditPatch` path, cascaded
   across the family (D5); to-discrete rounds `maxCount` (min 1) and
   `defaultLogAmount`.
 - **Member rules** (`memberRules.ts` ↔ `BoardSourceMemberRules.swift`), branch
@@ -64,7 +65,7 @@ rollout. Before launch the only clients are owner TestFlight builds.
   - `continuous`: `autoTarget` = ceil to 0.1; `varyRange` bounds round to 0.1,
     floor 0.1; `rollTarget` uniform over the range in 0.1 steps (still ± around
     target, #545); `goalOf` no floor.
-  - `duration`: discrete maths in minutes, steps snapped to 5 min (open — §7).
+  - `duration`: discrete maths in minutes (1-minute steps).
 - Add fractional cases to `taskWindowStateVectors`, `sharedCounterVectors`,
   `memberRuleVectors`, `taskTitleVectors` (remove its "iOS maxCount is Int" note);
   re-run `scripts/sync-fixtures-to-ios.js`.
@@ -90,12 +91,7 @@ cell display at 3×3–5×5. Sections written after the handoff is approved.
 
 ## 7. Open items
 
-- Time ↔ other kinds: values are raw numbers, so Count "300 minutes" → Time
-  reads as 5h, but Amount "5 hours" → Time reads as 5 minutes. Options: block
-  switching into/out of Time, or convert on switch by unit. Decide with the Time
-  build decision.
-- Duration member-rule step (1 vs 5 min).
-- Interface items listed in the brief §3B.
+- Interface details in the brief §3B (deliberated in Claude Design).
 
 ## 8. Testing
 

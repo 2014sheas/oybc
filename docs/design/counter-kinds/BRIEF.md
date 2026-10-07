@@ -47,10 +47,13 @@ decides after review whether it ships with Amount or right after.
 3. **Overshoot is valid.** 28.4/26.2 is a real, celebrated state — never clamp.
 4. **Same job, same interface.** The kind picker and the amount-entry control
    must be ONE component reused on every surface below, not a per-screen variant.
-5. **Kinds can be switched both ways** on an existing counter. Amount/Time → Count
+5. **Count ⇄ Amount switch both ways** on an existing counter. Amount → Count
    rounds the goal to a whole number (26.2 → 26) and the board's totals display
    rounded; nothing is lost (switching back restores exact values). Design the
    switch moment (a confirm dialog with a consequence body is allowed).
+   **Time never switches** — once created, a Time counter stays Time, and a
+   Count/Amount counter can't become Time. Show that as a locked state of the
+   picker, not a sentence.
 6. **A shared counter's kind belongs to the whole family** — every linked square
    follows the source. Linked squares never offer a kind choice.
 
@@ -71,8 +74,8 @@ Today each shows Action → Goal → Unit with a whole-number Goal field
 6. **Counters hub → New counter** (name, "Start from").
 
 Design: the kind picker (placement relative to Action/Goal/Unit), the Goal field
-per kind (decimal keypad on iOS for Amount; h:m entry for Time), and the switch
-confirm (constraint 5).
+per kind (decimal keypad on iOS for Amount; h:m entry for Time), the switch
+confirm and Time's locked state (constraint 5).
 
 ### B. Logging — the hard part
 
@@ -86,7 +89,10 @@ Today:
 - **Counters hub "+ Log" pill** and **Profile counter "+ Log"** — one tap logs the last amount.
 - **Toast**: "Logged +N unit · Undo".
 
-Open questions we want your answer to:
+**Start from these existing interactions** — the answer for Amount and Time
+is mostly "the same pattern, adapted per kind", not a new flow. Note the current
+web/iOS divergence on square tap (web logs, iOS opens the sheet) and resolve it
+if a kind needs one behaviour on both. Open questions:
 - What does **tapping an Amount square** do? +1 mile is rarely right; a tap
   that always opens entry adds friction for a one-tap habit app. Options we see:
   tap logs last amount (with Undo), tap opens entry, or tap = last amount with an
