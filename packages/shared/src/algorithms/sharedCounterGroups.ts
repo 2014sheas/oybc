@@ -317,7 +317,7 @@ export function buildSharedCounterGroups(
               board?.sealedAt ?? null,
               memberWindow,
             ).displayed
-          : deriveDisplayedCount({ baseline, maxCount: goal }, { currentCount: lifetime }).displayed;
+          : deriveDisplayedCount({ baseline, maxCount: goal, countKind: m.countKind }, { currentCount: lifetime }).displayed;
 
       if (board) boardIds.add(board.id);
       const isActive = board?.status === BoardStatus.ACTIVE;

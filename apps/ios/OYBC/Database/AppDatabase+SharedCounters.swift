@@ -229,7 +229,7 @@ extension AppDatabase {
     ///
     /// - Parameters:
     ///   - sourceTaskId: The id of the source (template) counting task.
-    ///   - by: Amount to increment. Must be >= 1.
+    ///   - by: Amount to increment. Must be a positive 2dp number.
     ///   - boardId: The board whose OWN play surface made the log, if any.
     ///     When given, the event is stamped with that board's late-log stamp
     ///     (`lateLogStampForBoard` — its `endDate` once its window has ended,
@@ -404,7 +404,7 @@ extension AppDatabase {
     ///
     /// - Parameters:
     ///   - sourceTaskId: The id of the source (template) counting task.
-    ///   - by: Amount to decrement. Must be >= 1.
+    ///   - by: Amount to decrement. Must be a positive 2dp number.
     ///   - boardId: The board whose OWN play surface made the log, if any —
     ///     the event is stamped with its late-log stamp (see
     ///     `incrementSharedCounter`); omitted → `now`. A SEALED board is a
@@ -814,7 +814,7 @@ extension AppDatabase {
     ///   - sourceTaskId: The counter's source task id. Must NOT be a
     ///     linked/derived task — `defaultLogAmount` is only meaningful on
     ///     the accumulator.
-    ///   - amount: A positive integer.
+    ///   - amount: A positive 2dp number.
     func setCounterDefaultLogAmount(sourceTaskId: String, amount: CountValue) throws {
         guard isQuantizedCount(amount) && amount > 0 else {
             throw NSError(

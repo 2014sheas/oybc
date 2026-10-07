@@ -18,7 +18,7 @@ import { TaskType, deriveDisplayedCount, type Task } from '@oybc/shared';
 /** The slice of a task these readers need. */
 export type CountDisplayTask = Pick<
   Task,
-  'type' | 'sharedCounterId' | 'baseline' | 'maxCount' | 'currentCount' | 'isCompleted'
+  'type' | 'sharedCounterId' | 'baseline' | 'maxCount' | 'currentCount' | 'isCompleted' | 'countKind'
 >;
 
 /**
@@ -42,7 +42,7 @@ export type CountDisplayTask = Pick<
 export function displayedCountFor(task: CountDisplayTask): number {
   if (task.sharedCounterId == null) return task.currentCount ?? 0;
   return deriveDisplayedCount(
-    { baseline: task.baseline ?? 0, maxCount: task.maxCount ?? 0 },
+    { baseline: task.baseline ?? 0, maxCount: task.maxCount ?? 0, countKind: task.countKind },
     { currentCount: task.currentCount ?? 0 },
   ).displayed;
 }

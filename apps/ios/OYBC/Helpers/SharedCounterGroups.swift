@@ -295,7 +295,8 @@ func buildSharedCounterGroups(
                 displayed = deriveDisplayedCount(
                     derivedBaseline: baseline,
                     derivedMaxCount: goal,
-                    sourceCurrentCount: lifetime
+                    sourceCurrentCount: lifetime,
+                    countKind: m.countKind
                 ).displayed
             }
             if let b = board { boardIdSet.insert(b.id) }

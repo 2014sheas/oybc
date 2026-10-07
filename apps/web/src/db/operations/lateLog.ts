@@ -184,7 +184,7 @@ export async function lateLogCompletion(
  *
  * @param boardId The closed board the log is made from.
  * @param taskId  The COUNTING task (or window-stamped derived row) tapped.
- * @param delta   A positive integer amount to log.
+ * @param delta   A positive 2dp amount to log.
  * @param now     Write timestamp; the event is stamped at the board's
  *   `endDate`.
  */
@@ -244,7 +244,7 @@ export interface LateLogCompoundAction {
   childTaskId: string;
   /** `'completion'` for a NORMAL child; `'increment'` for a plain COUNTING child. */
   kind: 'completion' | 'increment';
-  /** Required when `kind === 'increment'`; a positive integer. */
+  /** Required when `kind === 'increment'`; a positive 2dp number. */
   delta?: number;
 }
 
@@ -307,7 +307,7 @@ export async function lateLogCompoundParts(
  * Structural re-validation of a compound late-log request: keeps only
  * actions on a real, non-deleted, event-owning DIRECT child of the right type
  * (NORMAL → completion not already in the sealed window; plain COUNTING →
- * positive integer increment). Everything else is silently dropped.
+ * positive 2dp increment). Everything else is silently dropped.
  */
 async function planCompoundActions(
   board: Board,

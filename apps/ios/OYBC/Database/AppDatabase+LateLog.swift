@@ -42,7 +42,7 @@ enum LateLogError: Error, Equatable {
     /// `lateLogCompoundParts`: the staged child completions don't satisfy the
     /// compound's operator rule yet — nothing was written.
     case ruleNotMet
-    /// `lateLogIncrement`: `delta` must be a positive integer.
+    /// `lateLogIncrement`: `delta` must be a positive 2dp number.
     case invalidDelta
 }
 

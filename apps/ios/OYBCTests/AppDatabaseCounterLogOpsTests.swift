@@ -440,4 +440,22 @@ final class AppDatabaseCounterLogOpsTests: XCTestCase {
         XCTAssertThrowsError(try db.incrementSharedCounter(sourceTaskId: "c1", by: 0.125))
         XCTAssertEqual(try db.fetchTask(id: "c1")?.currentCount, 0.3)
     }
+
+    func test_propagation_keepsContinuousLinkedFraction() throws {
+        let db = try makeDb()
+        try seedUser(db)
+        var root = makeSourceTask(id: "r1", currentCount: 0, maxCount: 10)
+        root.countKind = .continuous
+        try db.saveTask(root)
+        var linked = makeLinkedTask(id: "l1", sourceId: "r1", baseline: 0, maxCount: 1)
+        linked.countKind = .continuous
+        try db.saveTask(linked)
+
+        _ = try db.incrementSharedCounter(sourceTaskId: "r1", by: 0.5)
+
+        let after = try XCTUnwrap(try db.fetchTask(id: "l1"))
+        XCTAssertEqual(after.currentCount, 0.5)
+        XCTAssertFalse(after.isCompleted, "0.5 of 1 must not round up to complete")
+        XCTAssertEqual(TaskCountDisplay.displayedCount(for: after), 0.5)
+    }
 }
