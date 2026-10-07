@@ -188,6 +188,7 @@
 		538D823FF84492B399D4F383 /* DerivationPassVectorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A1C4EA5947CE3A7D17BBFDF /* DerivationPassVectorTests.swift */; };
 		53B11AAD99BD40E02D443471 /* PoolEditorViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 90C449352BD3981F5F43EE06 /* PoolEditorViewModel.swift */; };
 		542E073370FD24EBE0905B14 /* PoolMixTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B038D37E36B63028551A45B4 /* PoolMixTests.swift */; };
+		54807308DBC500D7F487DD63 /* KindSwitchConfirmView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7F0890EDAD1903D6917B3F06 /* KindSwitchConfirmView.swift */; };
 		568C2AC5CE7F2B9D13B9340B /* RisoCompoundPanelSnapshotTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9B3105D4EA5550DB813921E7 /* RisoCompoundPanelSnapshotTests.swift */; };
 		56E8D57D5F1AC5D63523A6A8 /* BricolageGrotesque-Bold.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 044FDF36A80ACC33BAC0686C /* BricolageGrotesque-Bold.ttf */; };
 		57864AC80E9ED938ED8C03CC /* SquareEditTaskSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 37CAB0C80A4529A0BC0F65F3 /* SquareEditTaskSheet.swift */; };
@@ -330,6 +331,7 @@
 		954145DABD1091A49880E115 /* CreateHubBoardCTAView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F9A279CE019AF205A34B7CE /* CreateHubBoardCTAView.swift */; };
 		955A555550D76FE34F510E45 /* SyncQueueMaintenanceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6FD904B6FD6BEEB84E59BB51 /* SyncQueueMaintenanceTests.swift */; };
 		95AC995BE14D155C696CF2F4 /* BoardPlayView+BoardActions.swift in Sources */ = {isa = PBXBuildFile; fileRef = 09F4517D4759C15D4770DD3A /* BoardPlayView+BoardActions.swift */; };
+		9710E5DD1CDD25A60E3332EA /* KindSwitchConfirmSnapshotTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6323E81DE483C908D436F170 /* KindSwitchConfirmSnapshotTests.swift */; };
 		97F86A1544D6BE6B1AFFFD93 /* RisoQuickAddRowSnapshotTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7F2E91C0A815CFD1C1C10F29 /* RisoQuickAddRowSnapshotTests.swift */; };
 		982D33445D5B612C04045115 /* CounterArrivals.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2105A8784F87D62C29C28B7A /* CounterArrivals.swift */; };
 		98CDDE882A05EDC7ED85B529 /* linkedCounterWindowHealVectors.json in Resources */ = {isa = PBXBuildFile; fileRef = 83FCD1A6ABC3B2832F48CFDF /* linkedCounterWindowHealVectors.json */; };
@@ -803,6 +805,7 @@
 		60EEE700E1BC8977C317A770 /* SharedCounterWindowRegressionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SharedCounterWindowRegressionTests.swift; sourceTree = "<group>"; };
 		616264F26C09F071893F1C55 /* OYBCSnapshotTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = OYBCSnapshotTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		62AE569E94DFF166FBF22ADF /* CompletionToggleView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompletionToggleView.swift; sourceTree = "<group>"; };
+		6323E81DE483C908D436F170 /* KindSwitchConfirmSnapshotTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KindSwitchConfirmSnapshotTests.swift; sourceTree = "<group>"; };
 		63C3B3ADF9D1C1AF84611D55 /* DefaultPool.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DefaultPool.swift; sourceTree = "<group>"; };
 		63E45DEC3A27D3A0AB8BF5C6 /* ProfileHomeViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileHomeViewModel.swift; sourceTree = "<group>"; };
 		6471911226A1A2B5B85C9C00 /* MigrationV25Helpers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MigrationV25Helpers.swift; sourceTree = "<group>"; };
@@ -862,6 +865,7 @@
 		7DB1A083C892ABE4B8153F8B /* PoolHealthBatchTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PoolHealthBatchTests.swift; sourceTree = "<group>"; };
 		7DD7042B9974AB5AA3D5F733 /* RisoPlayBoardSnapshotTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RisoPlayBoardSnapshotTests.swift; sourceTree = "<group>"; };
 		7EC19B0424570FE4922F8968 /* RecurringTemplateCardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecurringTemplateCardView.swift; sourceTree = "<group>"; };
+		7F0890EDAD1903D6917B3F06 /* KindSwitchConfirmView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KindSwitchConfirmView.swift; sourceTree = "<group>"; };
 		7F2E91C0A815CFD1C1C10F29 /* RisoQuickAddRowSnapshotTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RisoQuickAddRowSnapshotTests.swift; sourceTree = "<group>"; };
 		7F33682E11B8F4A454CA32F7 /* LateLogReviewRegressionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LateLogReviewRegressionTests.swift; sourceTree = "<group>"; };
 		7F4EA2247D817ACC6CF8F298 /* BoardPlayViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BoardPlayViewModel.swift; sourceTree = "<group>"; };
@@ -1188,6 +1192,7 @@
 			children = (
 				BEE590743FB84D4774C6036E /* AchievementSquareBadgeData.swift */,
 				5F1723A942118A8CFA1692DF /* CounterLogToastView.swift */,
+				7F0890EDAD1903D6917B3F06 /* KindSwitchConfirmView.swift */,
 				BA16533FF3233DF0CDE0769C /* PendingCoreBoardsSectionView.swift */,
 				76A1B524639196880C1BEB8F /* PoolPickerSheetView.swift */,
 				7EC19B0424570FE4922F8968 /* RecurringTemplateCardView.swift */,
@@ -1739,6 +1744,7 @@
 				CEBFFC64669C54DF01A411E8 /* CreateHubSnapshotTests.swift */,
 				066AB67E8F7152A97B4D4020 /* DraftStatesSnapshotTests.swift */,
 				D45228BC98E78D745F859D13 /* HelpSnapshotTests.swift */,
+				6323E81DE483C908D436F170 /* KindSwitchConfirmSnapshotTests.swift */,
 				0DE70E0CAF6FFA077B935275 /* LinkedCounterCaptionSnapshotTests.swift */,
 				18BF4EAEA2FF266D273ECEC7 /* NotificationPreferencesSnapshotTests.swift */,
 				D59D96AC280FB86015009DC4 /* OnboardingNotifPrimingSnapshotTests.swift */,
@@ -2303,6 +2309,7 @@
 				A1F741B4E3A43D9DFACEB2CC /* GuestCollisionSwitch.swift in Sources */,
 				5218A1B5CCDA64BCF64447A6 /* HelpView.swift in Sources */,
 				C9D1CD3619A670D716D31CE6 /* KindPickerView.swift in Sources */,
+				54807308DBC500D7F487DD63 /* KindSwitchConfirmView.swift in Sources */,
 				6B6DC777BDEA1792FF5E1D88 /* LastCounterLogEntry.swift in Sources */,
 				C5728B6897C0D520D6528243 /* LateLogSheetView.swift in Sources */,
 				B1531F92BC754E79E50CF4EC /* LinkableCounter.swift in Sources */,
@@ -2642,6 +2649,7 @@
 				696C0270DF259F921664659B /* CreateHubSnapshotTests.swift in Sources */,
 				3881E3C541A6AE2F2E6D7564 /* DraftStatesSnapshotTests.swift in Sources */,
 				8E702A09CB7A29B25DD75E79 /* HelpSnapshotTests.swift in Sources */,
+				9710E5DD1CDD25A60E3332EA /* KindSwitchConfirmSnapshotTests.swift in Sources */,
 				7F50CB25CAC27642E1563E88 /* LinkedCounterCaptionSnapshotTests.swift in Sources */,
 				BD9584938AF23B46A075C37D /* NotificationPreferencesSnapshotTests.swift in Sources */,
 				77ECF9393AE5E2DCF988513F /* OnboardingNotifPrimingSnapshotTests.swift in Sources */,

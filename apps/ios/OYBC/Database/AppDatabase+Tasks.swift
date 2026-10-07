@@ -77,12 +77,59 @@ extension AppDatabase {
         changedTaskId: String,
         now: String
     ) throws {
+        try runBoardCascadeForTasks(db: db, changedTaskIds: [changedTaskId], now: now)
+    }
+
+    /// `runBoardCascadeForTask` for several changed tasks, deriving each
+    /// affected board ONCE from one snapshot (kind switches write a root and
+    /// its family together — counter kinds carried perf item).
+    ///
+    /// - Parameters:
+    ///   - db: GRDB database handle (must be inside a write transaction).
+    ///   - changedTaskIds: The tasks whose state just changed.
+    ///   - now: ISO8601 timestamp for stamping updated board rows.
+    static func runBoardCascadeForTasks(
+        db: Database,
+        changedTaskIds: [String],
+        now: String
+    ) throws {
         let allChildren: [CompoundChild] = try CompoundChild
             .filter(Column("isDeleted") == false)
             .fetchAll(db)
         let allBoardTasks: [BoardTask] = try BoardTask
             .filter(Column("isDeleted") == false)
             .fetchAll(db)
+        var affectedBoardIds: [String] = []
+        for id in changedTaskIds {
+            let parentCompounds = DerivationPass.findTransitiveParentCompounds(
+                changedTaskId: id,
+                children: allChildren
+            )
+            for boardId in DerivationPass.findAffectedBoardIds(
+                changedTaskId: id,
+                parentCompounds: parentCompounds,
+                boardTasks: allBoardTasks
+            ) where !affectedBoardIds.contains(boardId) {
+                affectedBoardIds.append(boardId)
+            }
+        }
+        try deriveBoards(
+            db: db, boardIds: affectedBoardIds, allChildren: allChildren,
+            allBoardTasks: allBoardTasks, now: now
+        )
+    }
+
+    /// Re-derive and persist (version bump + `.update` enqueue) each live,
+    /// unsealed board in `boardIds` from one snapshot of tasks / boards /
+    /// events.
+    private static func deriveBoards(
+        db: Database,
+        boardIds affectedBoardIds: [String],
+        allChildren: [CompoundChild],
+        allBoardTasks: [BoardTask],
+        now: String
+    ) throws {
+        guard !affectedBoardIds.isEmpty else { return }
         let allTasks: [Task] = try Task.fetchAll(db)
         let allBoards: [Board] = try Board.fetchAll(db)
         // Windowed Completion — group events once so every board evaluates
@@ -95,16 +142,6 @@ extension AppDatabase {
         for c in allChildren {
             childrenByCompound[c.compoundTaskId, default: []].append(c)
         }
-
-        let parentCompounds = DerivationPass.findTransitiveParentCompounds(
-            changedTaskId: changedTaskId,
-            children: allChildren
-        )
-        let affectedBoardIds = DerivationPass.findAffectedBoardIds(
-            changedTaskId: changedTaskId,
-            parentCompounds: parentCompounds,
-            boardTasks: allBoardTasks
-        )
 
         for boardId in affectedBoardIds {
             guard var board = try Board.fetchOne(db, key: boardId), !board.isDeleted, board.sealedAt == nil else { continue }

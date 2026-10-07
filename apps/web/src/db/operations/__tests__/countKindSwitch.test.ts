@@ -13,7 +13,12 @@ import {
   type TaskEvent,
 } from '@oybc/shared';
 import { db } from '../../internal';
-import { switchCounterKind } from '../countKindSwitch';
+import {
+  KindGoalError,
+  applyKindSwitchThenGoalGuard,
+  previewCounterKindSwitch,
+  switchCounterKind,
+} from '../countKindSwitch';
 import { createTask } from '../tasks.crud';
 
 /**
@@ -256,5 +261,50 @@ describe('linked rows carry the root kind (D5)', () => {
 
     expect((await db.tasks.get(linked.id))!.countKind).toBe('continuous');
     expect(linked.countKind).toBe('continuous');
+  });
+});
+
+describe('previewCounterKindSwitch', () => {
+  it('continuous → discrete: rounded logged, custom title kept, live linked count only', async () => {
+    await seedFamily({ countKind: 'continuous', rootGoal: 26.2, deltas: [12.75] });
+    expect(await previewCounterKindSwitch(ROOT, 'discrete', NOW)).toEqual({
+      from: 'continuous', to: 'discrete', titleBefore: 'Run', titleAfter: 'Run',
+      loggedBefore: 12.75, loggedAfter: 13, linkedCount: 1, // LIVE counts, ENDED is frozen
+    });
+  });
+  it('an auto title regenerates at the rounded goal', async () => {
+    await seedFamily({ countKind: 'continuous', rootGoal: 26.2, deltas: [] });
+    await db.tasks.update(ROOT, { title: 'Run 26.2 km' });
+    expect((await previewCounterKindSwitch(ROOT, 'discrete', NOW))?.titleAfter).toBe('Run 26 km');
+  });
+  it('refused switches and linked rows preview null', async () => {
+    await seedFamily({ countKind: 'continuous', rootGoal: 26.2 });
+    expect(await previewCounterKindSwitch(ROOT, 'duration', NOW)).toBeNull();
+    expect(await previewCounterKindSwitch(LIVE, 'discrete', NOW)).toBeNull();
+  });
+});
+
+describe('applyKindSwitchThenGoalGuard', () => {
+  const TABLES = () => [db.boards, db.boardTasks, db.tasks, db.compoundChildren, db.taskEvents, db.syncQueue];
+  it('switches the root and the live family, then accepts a whole goal', async () => {
+    await seedFamily({ countKind: 'continuous', rootGoal: 26.2, liveTarget: 6.1 });
+    const switched = await db.transaction('rw', TABLES(), () => applyKindSwitchThenGoalGuard(ROOT, 'discrete', 30, NOW.toISOString()));
+    expect(switched).toBe(true);
+    expect(await db.tasks.get(ROOT)).toMatchObject({ countKind: 'discrete', maxCount: 26 });
+    expect((await db.tasks.get(LIVE))?.countKind).toBe('discrete');
+  });
+  it('a fractional goal at the new whole kind throws AFTER the switch and rolls the switch back', async () => {
+    await seedFamily({ countKind: 'continuous', rootGoal: 26.2 });
+    await expect(
+      db.transaction('rw', TABLES(), () => applyKindSwitchThenGoalGuard(ROOT, 'discrete', 26.5, NOW.toISOString())),
+    ).rejects.toBeInstanceOf(KindGoalError);
+    expect(await db.tasks.get(ROOT)).toMatchObject({ countKind: 'continuous', maxCount: 26.2, version: 1 });
+  });
+  it('never switches a linked row; an unchanged kind writes nothing', async () => {
+    await seedFamily({ countKind: 'continuous', rootGoal: 26.2 });
+    expect(await db.transaction('rw', TABLES(), () => applyKindSwitchThenGoalGuard(LIVE, 'discrete', undefined, NOW.toISOString()))).toBe(false);
+    expect(await db.transaction('rw', TABLES(), () => applyKindSwitchThenGoalGuard(ROOT, 'continuous', 26.3, NOW.toISOString()))).toBe(false);
+    expect((await db.tasks.get(ROOT))?.version).toBe(1);
+    expect((await db.tasks.get(LIVE))?.countKind).toBe('continuous');
   });
 });
