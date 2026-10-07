@@ -133,16 +133,20 @@ test.describe('Shared Counters P3 — arrival banner', () => {
     // `incrementSharedCounter` engine, fanning the count out to board B's square.
     await page.getByRole('button', { name: /add 1 reps/i }).click();
     // Wait for the lifetime hero to reflect the log (aria-label "{name}: {n} all-time {unit}").
-    await expect(page.getByLabel('Push-ups: 1 all-time reps')).toBeVisible();
+    // The counter name is pair-derived from (action, unit) — `formatCounterName`
+    // (#332) — so action "Push-ups" + unit "reps" reads "Push-ups reps".
+    await expect(page.getByLabel('Push-ups reps: 1 all-time reps')).toBeVisible();
 
     // ── 3. Return to board B — the gold arrival banner fires. ──
     await page.goto(`/boards/${TARGET_BOARD_ID}?__oybc_test_bypass=1`);
     const banner = page.getByRole('status').filter({ hasText: /filled in/i });
     await expect(banner).toBeVisible();
-    // Copy contract (docs/SHARED_COUNTERS.md §P3, single-square variant): match
-    // loosely on the stable substring + the counter name.
-    await expect(banner).toContainText(/filled in here from your/i);
-    await expect(banner).toContainText('Push-ups');
+    // Copy contract (single-square variant, `RisoArrivalBanner` since the
+    // counters-refresh R3 copy pass #342): "{task} filled in — you logged
+    // {counter} elsewhere." Match the stable substring + both names.
+    await expect(banner).toContainText(/filled in — you logged/i);
+    await expect(banner).toContainText(LINKED_TASK_TITLE);
+    await expect(banner).toContainText('Push-ups reps');
 
     // Guard against the occlusion regression this PR fixed: the banner is a
     // `position: fixed` overlay whose `z-index` was trapped inside `AppShell
