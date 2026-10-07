@@ -120,7 +120,8 @@ extension BoardPlayViewModel {
             action: patch.action.isEmpty ? nil : patch.action,
             unit: patch.unit.isEmpty ? nil : patch.unit,
             maxCount: patch.maxCount,
-            compound: patch.compound
+            compound: patch.compound,
+            countKind: patch.countKind
         )
     }
 
@@ -178,7 +179,7 @@ extension BoardPlayViewModel {
             guard let payload = cell.pending else { return nil }
             guard let override = overridesSnapshot[payload.task.id] else { return payload }
             return PendingTaskPayload(
-                task: Self.applyingOverride(override, to: payload.task),
+                task: Self.applyingOverride(override, to: payload.task, writesKind: true),
                 childTasks: payload.childTasks,
                 childLinks: payload.childLinks
             )
@@ -458,12 +459,28 @@ extension BoardPlayViewModel {
                 // needs the inserted row (child CRUD + rule).
                 var row: Task? = target == input.stagedId ? input.mapTask : try Task.fetchOne(db, key: target)
                 if row == nil && input.override.compound != nil { row = try Task.fetchOne(db, key: target) }
-                guard let base = row else { continue }
+                guard var base = row else { continue }
                 // A linked counter is never converted or given sub-tasks.
                 if base.sharedCounterId != nil, input.override.type != base.type || input.override.compound != nil {
                     throw AppDatabase.TaskEditError.invalid(message: Self.linkedCounterTypeMessage)
                 }
-                var updated = Self.applyingOverride(input.override, to: base)
+                // A stored counter ROOT switches kind first (inside this Save),
+                // then the typed goal is guarded at the final kind — a refused
+                // goal throws `goalNotWhole` and the whole Save rolls back. A
+                // remapped placed copy (target ≠ staged id) is never switched.
+                if target == input.stagedId, base.type == .counting, input.override.type == .counting,
+                   base.sharedCounterId == nil {
+                    if try AppDatabase.applyKindSwitchThenGoalGuard(
+                        db: db, taskId: target, to: input.override.countKind,
+                        maxCount: input.override.maxCount, now: Date()
+                    ) {
+                        guard let refreshed = try Task.fetchOne(db, key: target) else { continue }
+                        base = refreshed
+                    }
+                }
+                var updated = Self.applyingOverride(
+                    input.override, to: base, writesKind: input.override.type != base.type
+                )
                 if let structure = input.override.compound {
                     // Mirrors `applyTaskEditPatch`'s compound branch, minus
                     // its `type == .compound` gate (a conversion's row is
@@ -555,7 +572,17 @@ extension BoardPlayViewModel {
     /// opens an auto-titled counter blank — `SquareEditTaskSheet.seededTitle`
     /// — so a goal-only edit re-derives the title instead of keeping the
     /// stored one at the old goal), mirroring `TaskEditPatch.applied(to:)`.
-    nonisolated static func applyingOverride(_ override: StagedTaskOverride, to task: Task) -> Task {
+    ///
+    /// - Parameters:
+    ///   - override: The staged override.
+    ///   - task: The stored / pending task it lays over.
+    ///   - writesKind: True ⇒ the override's `countKind` is set directly (a
+    ///     PENDING task, a Simple → Counting conversion, or the staged grid);
+    ///     false ⇒ a stored counting row's kind is left to the switch guard in
+    ///     `applyStagedOverrides`. A linked row's kind never changes here.
+    nonisolated static func applyingOverride(
+        _ override: StagedTaskOverride, to task: Task, writesKind: Bool = false
+    ) -> Task {
         var updated = task
         updated.title = override.title
         if task.sharedCounterId == nil,
@@ -568,9 +595,20 @@ extension BoardPlayViewModel {
             updated.action = override.action
             if let u = override.unit   { updated.unit   = u }
             if let m = override.maxCount { updated.maxCount = m }
+            if writesKind, task.sharedCounterId == nil, let kind = override.countKind {
+                // A PENDING task (no events yet) or a Simple → Counting
+                // conversion takes the chosen kind directly; a stored counting
+                // row's kind changes only through the guard in applyStagedOverrides.
+                if let m = updated.maxCount, let rounded = planCountKindSwitch(
+                    maxCount: m, defaultLogAmount: nil, from: resolveCountKind(task.countKind), to: kind
+                )?.maxCount { updated.maxCount = rounded }
+                updated.countKind = kind == .discrete ? nil : kind
+            }
+            if !countKindNeedsUnit(resolveCountKind(updated.countKind)) { updated.unit = "" }
             if override.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 updated.title = TaskTitle.generateCounterTaskTitle(
-                    action: updated.action ?? "", maxCount: updated.maxCount, unit: updated.unit ?? ""
+                    action: updated.action ?? "", maxCount: updated.maxCount, unit: updated.unit ?? "",
+                    countKind: resolveCountKind(updated.countKind)
                 )
             }
         case .normal:
@@ -578,6 +616,7 @@ extension BoardPlayViewModel {
                 updated.action   = nil
                 updated.unit     = nil
                 updated.maxCount = nil
+                updated.countKind = nil
             }
         case .compound:
             if task.type != .compound {

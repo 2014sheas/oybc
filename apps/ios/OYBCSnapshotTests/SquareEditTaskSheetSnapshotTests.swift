@@ -111,7 +111,23 @@ final class SquareEditTaskSheetSnapshotTests: XCTestCase {
         )
     }
 
-    /// A linked counter: type fixed (no picker), title + counting fields only.
+    /// An existing Continuous counter (handoff A3): the Kind picker offers
+    /// Discrete / Continuous with Duration locked out; the goal keeps its decimal.
+    func testCountingContinuousLight() {
+        var task = SnapshotFixtures.makeTask(
+            id: "sett-continuous", title: "Run 26.2 miles", type: .counting,
+            action: "Run", unit: "miles", maxCount: 26.2
+        )
+        task.countKind = .continuous
+        assertSnapshot(
+            of: makeSheet(task: task),
+            as: .image(layout: .fixed(width: 393, height: 780)),
+            record: recordMode
+        )
+    }
+
+    /// A linked counter: type fixed (no picker), title + counting fields
+    /// only; its kind shows as a tag (never a picker).
     func testLinkedCounterFixedTypeLight() {
         var task = countingTask()
         task.sharedCounterId = "sett-shared"
@@ -125,7 +141,7 @@ final class SquareEditTaskSheetSnapshotTests: XCTestCase {
     // MARK: - Achievement task
 
     /// P0 regression: an achievement opens with its real type badge, no
-    /// Simple / Counting picker, and the read-only achievement notice.
+    /// Simple / Counting picker — the Title field only.
     func testAchievementLight() {
         assertSnapshot(
             of: makeSheet(task: achievementTask()),

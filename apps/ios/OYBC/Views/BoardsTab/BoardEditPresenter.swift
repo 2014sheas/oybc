@@ -105,6 +105,7 @@ struct BoardEditPresenter: ViewModifier {
                     compoundChildren: staged == nil ? pendingCompoundChildren(for: original) : nil,
                     libraryInputsState: .loading,
                     loadInputs: compoundInputsLoader(for: original, hasStagedCompound: staged != nil),
+                    database: viewModel.database,
                     onDone: { patch in
                         taskEditTarget = nil
                         viewModel.handleEditTaskOverride(taskId: target.task.id, patch: patch)

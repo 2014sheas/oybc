@@ -1,5 +1,5 @@
 import type { Page } from '@playwright/test';
-import { test, expect, seedBoard, seedTask, seedBoardTask, readBoard } from './_fixtures/bypass';
+import { test, expect, seedBoard, seedTask, seedBoardTask, readBoard, readTask } from './_fixtures/bypass';
 
 /** Read a single `boardTasks` row by id via raw IndexedDB (no such helper is
  *  exported by `_fixtures/bypass.ts` yet — mirrors its `readBoard` pattern). */
@@ -506,5 +506,43 @@ test.describe('Squares editor (l) — Edit task… turns a plain square into a c
     await page.reload();
     await expect(page.getByText('≡')).toHaveCount(0);
     await expect(page.getByRole('button', { name: /Morning routine/ })).toBeVisible();
+  });
+});
+
+test.describe('Squares editor (m) — Edit task… stages a counter kind switch (A3)', () => {
+  const BOARD_ID = 'cccccccc-sqed-0013-0000-000000000000';
+  const TASK_A = 'cccccccc-sqed-0013-task-000000000001';
+
+  test.beforeEach(async ({ page }) => {
+    await seedBoard(page, {
+      id: BOARD_ID, name: 'Editor board M', boardSize: 3, timeframe: 'monthly', status: 'active',
+      startDate: START, endDate: END, centerSquareType: 'free',
+    });
+    await seedTask(page, {
+      id: TASK_A, title: 'Run 26.2 miles', type: 'counting', action: 'Run', unit: 'miles',
+      maxCount: 26.2, currentCount: 0, countKind: 'continuous',
+    });
+    await seedBoardTask(page, { id: 'cccccccc-sqed-0013-bt-000000000001', boardId: BOARD_ID, taskId: TASK_A, row: 0, col: 0 });
+  });
+
+  test('Continuous → Discrete confirms in the sheet, rounds the goal, and is written only at Save', async ({ page }) => {
+    await page.goto(`/boards/${BOARD_ID}?__oybc_test_bypass=1`);
+    await page.getByRole('button', { name: 'Edit board' }).click();
+    await page.getByRole('button', { name: /Run 26\.2 miles/ }).first().click();
+    await page.getByRole('button', { name: 'Edit task…' }).click();
+
+    const sheet = page.getByRole('dialog', { name: 'Edit task' });
+    await sheet.getByRole('group', { name: 'Kind' }).getByRole('button', { name: 'Discrete' }).click();
+    const confirm = page.getByRole('alertdialog', { name: 'Switch to Discrete?' });
+    await expect(confirm.getByText('Run 26 miles')).toBeVisible();
+    await confirm.getByRole('button', { name: 'Switch' }).click();
+    await expect(sheet.getByLabel('Goal', { exact: true })).toHaveValue('26');
+    await sheet.getByRole('button', { name: 'Done' }).click();
+
+    // Staged only — nothing written before Save.
+    expect(await readTask(page, TASK_A)).toMatchObject({ countKind: 'continuous', maxCount: 26.2 });
+    await page.getByRole('button', { name: 'Save changes' }).click();
+    await expect(page.getByText('Board saved')).toBeVisible();
+    await expect.poll(async () => readTask(page, TASK_A)).toMatchObject({ countKind: 'discrete', maxCount: 26 });
   });
 });
