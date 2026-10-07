@@ -1,4 +1,5 @@
-import { formatCounterName, generateCounterTaskTitle, TaskType, type Task } from '@oybc/shared';
+import { formatCounterName, TaskType, type Task } from '@oybc/shared';
+import { counterRowTitle } from '../../components/counters/counterRowTitle';
 import { RisoTypeBadge } from '../../components/riso';
 import { computeStatusLabel } from './taskCountDisplay';
 import { formatRelativeTime } from '../../utils/relativeTime';
@@ -176,9 +177,8 @@ function computeSubtitle(task: Task, childCount: number, isFamilyRoot: boolean):
     if (isFamilyRoot) return 'Counter';
     // Reuse the canonical title generator so the subtitle matches what
     // the wizard / quick-add show on creation.
-    if (task.action && task.unit && task.maxCount !== undefined) {
-      return generateCounterTaskTitle(task.action, task.maxCount, task.unit);
-    }
+    const title = counterRowTitle(task);
+    if (title) return title;
   }
   if (task.type === TaskType.COMPOUND) {
     if (childCount > 0) {

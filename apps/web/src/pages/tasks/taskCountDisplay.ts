@@ -1,4 +1,4 @@
-import { TaskType, deriveDisplayedCount, type Task } from '@oybc/shared';
+import { TaskType, deriveDisplayedCount, formatCount, resolveCountKind, type Task } from '@oybc/shared';
 
 /**
  * taskCountDisplay.ts — how a Tasks-tab surface reads a counting task's
@@ -58,7 +58,8 @@ export function computeStatusLabel(task: CountDisplayTask): string {
   if (task.type === TaskType.COUNTING) {
     const current = displayedCountFor(task);
     const max = task.maxCount ?? 0;
-    if (current > 0 && max > 0) return `${current} / ${max}`;
+    const kind = resolveCountKind(task);
+    if (current > 0 && max > 0) return `${formatCount(current, kind)} / ${formatCount(max, kind)}`;
   }
   return '';
 }

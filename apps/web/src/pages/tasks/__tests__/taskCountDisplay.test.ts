@@ -100,3 +100,12 @@ describe('isInProgress (status filter)', () => {
     expect(isInProgress(ROOT, EMPTY_LIBRARY)).toBe(true);
   });
 });
+
+describe('computeStatusLabel per kind', () => {
+  it('status labels format per kind', () => {
+    const base = { type: TaskType.COUNTING, sharedCounterId: null, baseline: null, isCompleted: false } as const;
+    expect(computeStatusLabel({ ...base, currentCount: 12.4, maxCount: 26.2, countKind: 'continuous' })).toBe('12.4 / 26.2');
+    expect(computeStatusLabel({ ...base, currentCount: 270, maxCount: 630, countKind: 'duration' })).toBe('4h 30m / 10h 30m');
+    expect(computeStatusLabel({ ...base, currentCount: 6, maxCount: 10 })).toBe('6 / 10');
+  });
+});
