@@ -727,6 +727,29 @@ test.describe('Counters hub — expired derived counters', () => {
     // The setting lives in the URL, so Detail opens with it rather than
     // silently resetting.
     await expect(page).toHaveURL(/showExpired=1/);
+
+    // The box holds its new state the moment it is clicked. React Router 7
+    // commits `setSearchParams` in a transition, so a checkbox controlled
+    // straight off the URL snapped back unchecked for a frame or more — the
+    // flaky `check()` above (4/10 red on dev 2764c8e5). Read `checked` one
+    // macrotask after each of several clicks, which is before that
+    // transition lands.
+    const states = await page.evaluate(async () => {
+      const input = document.querySelector<HTMLInputElement>(
+        'input[type="checkbox"]',
+      );
+      if (!input) return ['missing'];
+      const seen: string[] = [];
+      for (let i = 0; i < 6; i += 1) {
+        const want = !input.checked;
+        input.click();
+        await new Promise((r) => setTimeout(r, 0));
+        seen.push(input.checked === want ? 'ok' : `stale@${i}`);
+        await new Promise((r) => setTimeout(r, 400));
+      }
+      return seen;
+    });
+    expect(states).toEqual(['ok', 'ok', 'ok', 'ok', 'ok', 'ok']);
   });
 });
 
