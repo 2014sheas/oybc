@@ -6,13 +6,13 @@ import Foundation
 enum CountingMenuLabels {
     static func add(amount: CountValue, kind: CountKind, unit: String, action: String) -> String {
         kind == .discrete
-            ? "+ Add \(formatCount(amount, kind: .discrete)) \(action)"
+            ? "+ Add \(formatCount(amount, kind: kind)) \(action)"
             : "+ Add \(formatCountWithUnit(amount, kind: kind, unit: unit))"
     }
 
     static func remove(amount: CountValue, kind: CountKind, unit: String, action: String) -> String {
         kind == .discrete
-            ? "− Remove \(formatCount(amount, kind: .discrete)) \(action)"
+            ? "− Remove \(formatCount(amount, kind: kind)) \(action)"
             : "− Remove \(formatCountWithUnit(amount, kind: kind, unit: unit))"
     }
 }

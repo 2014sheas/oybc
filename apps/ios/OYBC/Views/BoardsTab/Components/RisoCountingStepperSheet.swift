@@ -235,7 +235,7 @@ struct RisoCountingStepperSheet: View {
     // MARK: - Amount chips
 
     private func openCustomInput() {
-        customDraft = model.isCustom ? formatCountForInput(model.selectedAmount, kind: .discrete) : ""
+        customDraft = model.isCustom ? formatCountForInput(model.selectedAmount, kind: countKind) : ""
         customOpen = true
     }
 

@@ -1,8 +1,11 @@
 import GRDB
 import SwiftUI
 
-/// Small "Linked to <source title>" caption rendered below the counting
-/// progress in the task detail surface (Phase 2 — Shared Counters).
+/// The linked counting task's row to its counter root, rendered below the
+/// counting progress in the task detail surface (Phase 2 — Shared Counters).
+/// Shows the root's title + all-time total in the root's kind + chevron; no
+/// "Linked to" caption (#548 rows 91/92), and nothing while loading or when
+/// the root is gone.
 /// Detail-only — no list/cell badge (Decision 3 from Phase 0 design).
 /// Loads the source title itself (via the injected `database`) so the parent
 /// detail view stays a pure prop view; the pixels live in
@@ -55,9 +58,9 @@ struct LinkedCounterCaptionView: View {
         loading = false
     }
 
-    /// The live source task's title, lifetime count and unit, or nil when
-    /// the source is missing or soft-deleted (the caption then reads
-    /// "deleted or not found"). One primary-key read.
+    /// The live source task's title, lifetime count, unit and kind, or nil
+    /// when the source is missing or soft-deleted (the row then renders
+    /// nothing). One primary-key read.
     ///
     /// - Parameters:
     ///   - database: The database to read from.
@@ -69,7 +72,12 @@ struct LinkedCounterCaptionView: View {
             try OYBC.Task.fetchOne(db, key: sharedCounterId)
         }
         guard let task, !task.isDeleted else { return nil }
-        return LinkedCounterSource(title: task.title, lifetime: task.currentCount ?? 0, unit: task.unit ?? "")
+        return LinkedCounterSource(
+            title: task.title,
+            lifetime: task.currentCount ?? 0,
+            unit: task.unit ?? "",
+            kind: resolveCountKind(task.countKind)
+        )
     }
 }
 
@@ -79,11 +87,13 @@ struct LinkedCounterSource: Equatable {
     /// The root's lifetime count (`Task.currentCount`).
     let lifetime: CountValue
     let unit: String
+    /// The family's kind — the root's `countKind` (absent ⇒ discrete).
+    let kind: CountKind
 }
 
-/// The caption's pixels — a tappable "Linked to" row (title + lifetime +
-/// chevron), or the non-interactive not-found line when `source` is nil. A
-/// pure prop view (snapshotted by `LinkedCounterCaptionSnapshotTests`).
+/// The row's pixels — a tappable row (root title + lifetime in the root's
+/// kind + chevron), or nothing when `source` is nil. A pure prop view
+/// (snapshotted by `LinkedCounterCaptionSnapshotTests`).
 struct LinkedCounterCaptionLabel: View {
 
     let source: LinkedCounterSource?
@@ -93,15 +103,12 @@ struct LinkedCounterCaptionLabel: View {
         if let source {
             Button(action: onOpen) {
                 HStack(alignment: .center, spacing: 10) {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Linked to")
-                            .risoSectionLabel()
-                        Text(source.title)
-                            .font(.risoBody(14, .medium))
-                            .foregroundStyle(Color.risoInk)
-                    }
+                    Text(source.title)
+                        .font(.risoBody(14, .medium))
+                        .foregroundStyle(Color.risoInk)
+                        .lineLimit(1)
                     Spacer(minLength: 0)
-                    Text("\(source.lifetime.formatted()) \(source.unit)")
+                    Text("\(formatCountTotal(source.lifetime, kind: source.kind))\(countUnitSuffix(source.kind, unit: source.unit))")
                         .font(.risoHead(14, .bold))
                         .foregroundStyle(Color.risoBlue)
                     Image(systemName: "chevron.right")
@@ -117,11 +124,7 @@ struct LinkedCounterCaptionLabel: View {
             .buttonStyle(.plain)
             .accessibilityLabel("Open the \(source.title) counter")
         } else {
-            // No `.italic()`: the bundled Archivo has no italic face, so the
-            // old system-font italic can't carry over — muted ink marks it.
-            Text("Linked to source task (deleted or not found)")
-                .font(.risoBody(12, .regular))
-                .foregroundStyle(Color.risoMuted)
+            EmptyView()
         }
     }
 }

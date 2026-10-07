@@ -221,13 +221,13 @@ extension CounterDetailLogCard {
         func chipLabel(at i: Int) -> String {
             guard chips[i].value == nil, i == selectedChipIndex else { return chips[i].label }
             return kind == .discrete
-                ? formatCount(selectedAmount, kind: .discrete)
+                ? formatCount(selectedAmount, kind: kind)
                 : CounterLogAmount.customChipLabel(selectedAmount, kind: kind)
         }
 
         var addLabel: String {
             kind == .discrete
-                ? "＋ Add \(formatCount(selectedAmount, kind: .discrete))"
+                ? "＋ Add \(formatCount(selectedAmount, kind: kind))"
                 : "＋ Add \(formatCountWithUnit(selectedAmount, kind: kind, unit: unit))"
         }
 

@@ -76,6 +76,6 @@ struct CountingStepperModel: Equatable {
     /// "+ 3.1 mi" / "+ 2h 38m" / "+ 10"; "+" when the field is invalid.
     func addLabel(unit: String) -> String {
         guard let a = amount else { return "+" }
-        return kind == .discrete ? "+ \(formatCount(a, kind: .discrete))" : "+ \(formatCountWithUnit(a, kind: kind, unit: unit))"
+        return kind == .discrete ? "+ \(formatCount(a, kind: kind))" : "+ \(formatCountWithUnit(a, kind: kind, unit: unit))"
     }
 }

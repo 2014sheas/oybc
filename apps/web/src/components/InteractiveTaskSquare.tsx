@@ -721,7 +721,7 @@ export function DetailModal({
                     −
                   </button>
                   <span className={styles.counterValue}>
-                    {state.currentCount} / {sq.maxCount}
+                    {formatCount(state.currentCount, countKind)} / {formatCount(sq.maxCount ?? 0, countKind)}
                   </span>
                   <button
                     type="button"
@@ -745,7 +745,7 @@ export function DetailModal({
                   −
                 </button>
                 <span className={styles.counterValue}>
-                  {state.currentCount} / {sq.maxCount}
+                  {formatCount(state.currentCount, countKind)} / {formatCount(sq.maxCount ?? 0, countKind)}
                 </span>
                 <button
                   className={styles.counterButton}

@@ -2,7 +2,7 @@ import { test, expect, seedBoard, seedTask, seedBoardTask } from './_fixtures/by
 
 /**
  * Task → Shared counter navigation: a linked member's Task detail shows a
- * tappable "Linked to {root}" row that opens Counter detail; the board-square
+ * tappable counter-root row ({root} · total · ›) that opens Counter detail; the board-square
  * popup of a counting square has a "Task details" row that opens Task detail.
  */
 

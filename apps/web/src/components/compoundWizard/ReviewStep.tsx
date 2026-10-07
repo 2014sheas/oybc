@@ -1,5 +1,11 @@
-import { OperatorType, type Task } from '@oybc/shared';
-import type { SubtaskDraft } from './compoundSubtaskDraft';
+import {
+  OperatorType,
+  countKindNeedsUnit,
+  formatCountWithUnit,
+  parseCountInput,
+  type Task,
+} from '@oybc/shared';
+import { effectiveInlineKind, inlineSubtaskToAutoCreate, type SubtaskDraft } from './compoundSubtaskDraft';
 import styles from './ReviewStep.module.css';
 
 export interface ReviewStepProps {
@@ -177,13 +183,14 @@ function SubtaskReviewChip({
   let title: string;
   let meta: string | null = null;
   if (draft.inlineType === 'counting') {
-    title =
-      draft.title.trim() ||
-      `${draft.action.trim()} ${draft.maxCountStr.trim()} ${draft.unit.trim()}`.trim() ||
-      '(untitled)';
-    const count = parseInt(draft.maxCountStr, 10);
-    if (!isNaN(count) && draft.action.trim() && draft.unit.trim()) {
-      meta = `${count} ${draft.unit.trim()}`;
+    // The title and goal the save will write — parsed at the effective kind
+    // (the root's when the sub-task auto-links), never a raw parseInt.
+    const kind = effectiveInlineKind(draft, allTasks);
+    title = inlineSubtaskToAutoCreate(draft, allTasks).autoCreate?.title || '(untitled)';
+    const goal = parseCountInput(draft.maxCountStr, kind);
+    const unit = draft.unit.trim();
+    if (goal !== null && draft.action.trim() && (unit || !countKindNeedsUnit(kind))) {
+      meta = formatCountWithUnit(goal, kind, unit);
     }
   } else {
     title = draft.title.trim() || '(untitled)';

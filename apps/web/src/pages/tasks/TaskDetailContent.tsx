@@ -62,7 +62,7 @@ export interface TaskDetailContentProps {
    */
   onOpenTask?: (taskId: string) => void;
   /**
-   * Called when the "Linked to {root}" row on a linked counting task is
+   * Called when the counter-root row on a linked counting task is
    * tapped. Receives the task's `sharedCounterId`.
    */
   onOpenCounter?: (sharedCounterId: string) => void;

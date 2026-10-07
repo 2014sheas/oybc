@@ -66,8 +66,8 @@ final class ViewDbSeamLoaderTests: XCTestCase {
         return board
     }
 
-    private func seedTask(_ db: AppDatabase, id: String, title: String, isDeleted: Bool = false, currentCount: CountValue = 0) throws {
-        let task = OYBC.Task(
+    private func seedTask(_ db: AppDatabase, id: String, title: String, isDeleted: Bool = false, currentCount: CountValue = 0, countKind: CountKind? = nil) throws {
+        var task = OYBC.Task(
             id: id, userId: userId, title: title, description: nil, type: .counting,
             action: "Read", unit: "pages", maxCount: 35,
             operatorType: nil, threshold: nil,
@@ -76,6 +76,7 @@ final class ViewDbSeamLoaderTests: XCTestCase {
             createdAt: Self.ts, updatedAt: Self.ts,
             lastSyncedAt: nil, version: 1, isDeleted: isDeleted, deletedAt: nil
         )
+        task.countKind = countKind
         try db.write { grdb in try task.insert(grdb) }
     }
 
@@ -158,7 +159,17 @@ final class ViewDbSeamLoaderTests: XCTestCase {
 
         XCTAssertEqual(
             try LinkedCounterCaptionView.resolveSource(database: db, sharedCounterId: "root"),
-            LinkedCounterSource(title: "Read 35 pages", lifetime: 512, unit: "pages")
+            LinkedCounterSource(title: "Read 35 pages", lifetime: 512, unit: "pages", kind: .discrete)
+        )
+    }
+
+    func test_captionSource_carriesTheRootKind() throws {
+        let db = try makeDb()
+        try seedTask(db, id: "root", title: "Run", currentCount: 1250.5, countKind: .continuous)
+
+        XCTAssertEqual(
+            try LinkedCounterCaptionView.resolveSource(database: db, sharedCounterId: "root")?.kind,
+            .continuous
         )
     }
 
