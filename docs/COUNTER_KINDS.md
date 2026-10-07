@@ -1,6 +1,6 @@
 # Counter kinds — Discrete · Continuous · Duration
 
-**Status:** PR 1 #551, PR 2 #552, PR 3 #554, PR 4 (feature/counter-kinds-logging) shipped — feature complete.
+**Status:** PR 1 #551, PR 2 #552, PR 3 #554, PR 4 #555 shipped — feature complete.
 Interface per the Claude Design handoff (`design_handoff_counter_kinds/`, gitignored; brief:
 [`docs/design/counter-kinds/BRIEF.md`](design/counter-kinds/BRIEF.md)); the UI train's plan is
 [`docs/COUNTER_KINDS_UI_PLAN.md`](COUNTER_KINDS_UI_PLAN.md). Kind-blind count formatting is held out by the
