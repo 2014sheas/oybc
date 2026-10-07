@@ -117,15 +117,6 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.clashHint {
-  font-family: var(--riso-font-body);
-  font-size: 10.5px;
-  font-weight: 600;
-  color: var(--riso-muted);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
 .struck {
   text-decoration: line-through;
 }

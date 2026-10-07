@@ -180,7 +180,7 @@ final class RisoKitSnapshotTests: XCTestCase {
 /// `PillSegmentedPreview` above). The dice is stateless — all three
 /// levels render at once.
 private struct MemberRulePrimitivesPreview: View {
-    @State private var target: Int = 6
+    @State private var target: CountValue = 6
     @State private var isSplit: Bool = false
 
     var body: some View {
@@ -189,7 +189,7 @@ private struct MemberRulePrimitivesPreview: View {
                 RisoDiceButton(level: .off) { }
                 RisoDiceButton(level: .little) { }
                 RisoDiceButton(level: .lot) { }
-                RisoInlineStepperView(value: $target, min: 1, max: 35, style: .compact)
+                RisoCountStepperView(value: $target, kind: .discrete, max: 35)
                 Text("of 35 mi")
                     .font(.risoBody(10, .semibold))
                     .foregroundStyle(Color.risoMuted)

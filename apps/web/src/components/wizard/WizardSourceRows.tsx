@@ -25,7 +25,6 @@ export interface WizardSourceRowsProps {
   expandedSourceIds: Set<string>;
   /** Staged-edit-overlaid task map, so inline renames show through. */
   taskById: Record<string, Task>;
-  counterClashByTaskId?: Map<string, string>;
   compoundChildrenByCompound: Record<string, CompoundChild[]>;
   /** One-off or repeating — drives the member rows' target wording. */
   mode: PlanMode;
@@ -75,7 +74,6 @@ export function WizardSourceRows({
   availableCountForSource,
   expandedSourceIds,
   taskById,
-  counterClashByTaskId,
   compoundChildrenByCompound,
   mode,
   wizardWindow,
@@ -108,7 +106,6 @@ export function WizardSourceRows({
             onSetFilter={(filter) => onSetFilter(id, filter)}
             onSetRange={(min, max) => onSetRange(id, min, max)}
             onToggleExclude={(taskId) => onToggleExclude(id, taskId)}
-            counterClashByTaskId={counterClashByTaskId}
             compoundChildrenByCompound={compoundChildrenByCompound}
             mode={mode}
             wizardWindow={wizardWindow}

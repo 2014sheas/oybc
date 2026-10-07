@@ -117,3 +117,33 @@ describe('compactStepperBase (the −/＋ disabled gate)', () => {
     expect(compactStepperBase(5, '-', 1, 35)).toBe(5);
   });
 });
+
+import { compactStepperNext } from '../counterStepperMath';
+
+describe('compact stepper — counter kinds', () => {
+  it('continuous steps 0.1 and never drifts', () => {
+    expect(compactStepperNext(6.1, null, 1, 0.1, 26.2, 'continuous')).toBe(6.2);
+    expect(compactStepperNext(0.2, null, -1, 0.1, 26.2, 'continuous')).toBe(0.1);
+    expect(compactStepperNext(0.1, null, -1, 0.1, 26.2, 'continuous')).toBe(0.1);
+  });
+  it('duration steps one minute', () => {
+    expect(compactStepperNext(630, null, 1, 1, 630, 'duration')).toBe(630);
+    expect(compactStepperNext(630, null, -1, 1, 630, 'duration')).toBe(629);
+  });
+  it('a typed draft parses at the kind before stepping', () => {
+    expect(compactStepperBase(5, '10h 30m', 1, 700, 'duration')).toBe(630);
+    expect(compactStepperBase(5, '6,15', 0.1, 26.2, 'continuous')).toBe(6.15);
+    expect(compactStepperNext(5, '6,15', 1, 0.1, 26.2, 'continuous')).toBe(6.25);
+  });
+  it('discrete behaviour is unchanged', () => {
+    expect(compactStepperBase(6, '1.5', 1, 35)).toBe(6);
+    expect(compactStepperNext(6, null, 1, 1, 35)).toBe(7);
+  });
+  it('renders continuous / duration values at the kind', () => {
+    const c = render({ value: 3.8, min: 0.1, max: 26.2, onChange: () => {}, size: 'compact', kind: 'continuous' });
+    expect(c).toContain('inputMode="decimal"');
+    expect(c).toContain('value="3.8"');
+    const d = render({ value: 630, min: 1, max: 630, onChange: () => {}, size: 'compact', kind: 'duration' });
+    expect(d).toContain('value="10h 30m"');
+  });
+});

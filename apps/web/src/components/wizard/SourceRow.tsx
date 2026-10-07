@@ -29,9 +29,6 @@ export interface SourceRowProps {
   onSetFilter: (filter: 'all' | 'todo') => void;
   onSetRange: (min: number, max: number | null) => void;
   onToggleExclude: (taskId: string) => void;
-  /** Counter-family exclusivity — member id → the OTHER family member's
-   *  title, when both are visible in the pool ("one per board" hint). */
-  counterClashByTaskId?: Map<string, string>;
   /** Children per compound — feeds the Split-up part lines. */
   compoundChildrenByCompound?: Record<string, CompoundChild[]>;
   // ── §Member rules (B3) — per-member rule editing. ──────────────────────
@@ -80,7 +77,6 @@ export function SourceRow({
   onSetFilter,
   onSetRange,
   onToggleExclude,
-  counterClashByTaskId,
   compoundChildrenByCompound,
   mode,
   wizardWindow,
@@ -205,7 +201,6 @@ export function SourceRow({
                 task={taskById[taskId]}
                 taskById={taskById}
                 state={memberState(taskId)}
-                clashTitle={counterClashByTaskId?.get(taskId)}
                 rule={effectiveRuleFor(taskId)}
                 parts={compoundChildrenByCompound?.[taskId] ?? []}
                 fromBoard={source.kind === 'board'}

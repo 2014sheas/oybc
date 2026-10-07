@@ -41,6 +41,8 @@ struct MemberRuleRowModel: Equatable {
         /// The part's own dice level: its own in split mode, the parent's
         /// while One square (where the parent rolls for the whole square).
         let level: VaryLevel
+        /// The part's count kind — drives its stepper's step and field format.
+        let kind: CountKind
         let showsStepper: Bool
         /// "of 210" — present exactly when the stepper is.
         let caption: String?
@@ -61,6 +63,8 @@ struct MemberRuleRowModel: Equatable {
     let memberVary: VaryLevel
     /// The member's `maxCount` when counting, else 0.
     let goal: CountValue
+    /// The member's count kind (`.discrete` when absent or not counting).
+    let kind: CountKind
     /// Pro-rated (or explicit) target — meaningful only with a stepper.
     let target: CountValue
     /// Board sources only: a pool member has no window to pro-rate
@@ -128,6 +132,8 @@ struct MemberRuleRowModel: Equatable {
         self.goal = goal
         let isCounting = goal > 0
         let unit = task?.unit ?? ""
+        let kind = task.map { resolveCountKind($0.countKind) } ?? .discrete
+        self.kind = kind
         let target = isCounting
             ? BoardSources.effectiveMemberTarget(
                 goal: goal,
@@ -135,18 +141,19 @@ struct MemberRuleRowModel: Equatable {
                 mode: mode,
                 fromBoard: fromBoard,
                 sourceWindow: sourceWindow,
-                targetWindow: wizardWindow
+                targetWindow: wizardWindow,
+                kind: kind
             )
             : 0
         self.target = target
         let showsStepper = isOn && isCounting && fromBoard
         self.showsStepper = showsStepper
         self.targetSuffix = showsStepper
-            ? "/ \(formatCount(goal, kind: .discrete))\(unit.isEmpty ? "" : " \(unit)")"
+            ? "/ \(formatCount(goal, kind: kind))\(countUnitSuffix(kind, unit: unit))"
             : nil
         self.showsDice = isOn && isCounting
         self.rangeLabel = (isOn && isCounting)
-            ? BoardSources.varyRangeLabel(t: target, level: memberVary, goal: goal, unit: unit)
+            ? BoardSources.varyRangeLabel(t: target, level: memberVary, goal: goal, unit: unit, kind: kind)
             : nil
 
         // `childIndex` order — the same order `applyMemberRules` expands a
@@ -183,7 +190,7 @@ struct MemberRuleRowModel: Equatable {
                     level: memberVary
                 )
                 : BoardSources.countingSummary(
-                    target: target, level: memberVary, goal: goal, unit: unit
+                    target: target, level: memberVary, goal: goal, unit: unit, kind: kind
                 )
 
         guard isOn, isCompound else {
@@ -196,6 +203,7 @@ struct MemberRuleRowModel: Equatable {
             let childId = link.childTaskId
             let partRule = BoardSources.partRule(for: childId, in: rule)
             let childTask = taskById[childId]
+            let partKind = childTask.map { resolveCountKind($0.countKind) } ?? .discrete
             let partGoal = childTask?.type == .counting ? (childTask?.maxCount ?? 0) : 0
             let partIsCounting = partGoal > 0
             let level: VaryLevel = isSplit ? (partRule.vary ?? .off) : memberVary
@@ -206,7 +214,8 @@ struct MemberRuleRowModel: Equatable {
                     mode: mode,
                     fromBoard: fromBoard,
                     sourceWindow: sourceWindow,
-                    targetWindow: wizardWindow
+                    targetWindow: wizardWindow,
+                    kind: partKind
                 )
                 : 0
             let showsStepper = partIsCounting && fromBoard
@@ -217,13 +226,14 @@ struct MemberRuleRowModel: Equatable {
                 goal: partGoal,
                 target: partTarget,
                 level: level,
+                kind: partKind,
                 showsStepper: showsStepper,
-                caption: showsStepper ? "of \(formatCount(partGoal, kind: .discrete))" : nil,
+                caption: showsStepper ? "of \(formatCount(partGoal, kind: partKind))" : nil,
                 showsDice: partIsCounting && isSplit,
                 showsExclude: isSplit && canExcludeAny,
                 rangeLabel: partIsCounting
                     ? BoardSources.varyRangeLabel(
-                        t: partTarget, level: level, goal: partGoal, unit: ""
+                        t: partTarget, level: level, goal: partGoal, unit: "", kind: partKind
                     )
                     : nil
             )
@@ -313,13 +323,8 @@ struct RisoMemberRuleRowView: View {
     /// The disclosure's spoken label: the title, plus the counter-clash
     /// warning when there is one.
     ///
-    /// Under `.accessibilityElement(children: .contain)` the children stay
-    /// reachable as their own elements, so folding the warning in is a
-    /// choice, not a rescue — the row states its own warning as part of
-    /// itself instead of only on a separate swipe. Because the child is
-    /// still there, `mainLine` hides the clash `Text` from VoiceOver on
-    /// exactly the rows that fold it in, so it is announced once rather
-    /// than twice.
+    /// The visible caption was removed (#548 row 48); the warning survives
+    /// for VoiceOver only, folded into the row's own label.
     ///
     /// - Returns: The title, plus the clash sentence when there is one.
     private var accessibilityTitle: String {
@@ -450,19 +455,6 @@ struct RisoMemberRuleRowView: View {
                     .foregroundStyle(Color.risoInk)
                     .strikethrough(state == .excluded)
                     .lineLimit(1)
-                if let clashTitle {
-                    Text("shares a counter with \u{201C}\(clashTitle)\u{201D} · one per board")
-                        .font(.risoBody(10.5, .semibold))
-                        .foregroundStyle(Color.risoMuted)
-                        .lineLimit(1)
-                        // Announced once. An expandable row folds this
-                        // sentence into `accessibilityTitle`, and `.contain`
-                        // would otherwise leave the child readable too. A
-                        // NON-expandable row has no container label — an
-                        // excluded counting member can still clash — so
-                        // there the child stays the only announcement.
-                        .accessibilityHidden(model.isExpandable)
-                }
             }
             Spacer(minLength: 6)
             // The row's current answer, never a second control: the vary
@@ -558,12 +550,10 @@ struct RisoMemberRuleRowView: View {
                 }
             } else {
                 if model.showsStepper {
-                    RisoInlineStepperView(
-                        // PR 1 is integer-only: the stepper stays Int-based.
-                        value: Binding(get: { Int(model.target) }, set: { onSetTarget(CountValue($0)) }),
-                        min: 1,
-                        max: Int(model.goal),
-                        style: .compact,
+                    RisoCountStepperView(
+                        value: Binding(get: { model.target }, set: { onSetTarget($0) }),
+                        kind: model.kind,
+                        max: model.goal,
                         suffix: model.targetSuffix
                     )
                 }
@@ -625,14 +615,13 @@ struct RisoMemberRuleRowView: View {
                         .lineLimit(1)
                         .frame(maxWidth: .infinity, alignment: .leading)
                     if part.showsStepper {
-                        RisoInlineStepperView(
+                        RisoCountStepperView(
                             value: Binding(
-                                get: { Int(part.target) },
-                                set: { onSetPartTarget(part.childId, CountValue($0)) }
+                                get: { part.target },
+                                set: { onSetPartTarget(part.childId, $0) }
                             ),
-                            min: 1,
-                            max: Swift.max(1, Int(part.goal)),
-                            style: .compact
+                            kind: part.kind,
+                            max: Swift.max(countTargetStep(part.kind), part.goal)
                         )
                     }
                     if let caption = part.caption {

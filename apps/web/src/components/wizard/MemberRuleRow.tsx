@@ -2,8 +2,12 @@ import { useEffect, useState } from 'react';
 import {
   TaskType,
   compoundSummary,
+  countTargetStep,
+  countUnitSuffix,
   countingSummary,
   effectiveMemberTarget,
+  formatCount,
+  resolveCountKind,
   partRuleFor,
   splitSquaresNote,
   varyRangeLabel,
@@ -34,8 +38,6 @@ interface MemberRuleRowProps {
   taskById: Record<string, Task>;
   /** Whether the member is on the board, excluded, or filtered out as done. */
   state: MemberState;
-  /** Counter-family exclusivity hint ("shares a counter with …"). */
-  clashTitle?: string;
   /** This member's stored rule (`memberRuleFor`) — `{}` when it has none. */
   rule: BoardSourceMemberRule;
   /** The member's `compound_children`, `childIndex`-ordered. Empty = plain member. */
@@ -99,7 +101,6 @@ export function MemberRuleRow({
   task,
   taskById,
   state,
-  clashTitle,
   rule,
   parts,
   fromBoard,
@@ -130,6 +131,7 @@ export function MemberRuleRow({
   const goal = task?.type === TaskType.COUNTING ? (task.maxCount ?? 0) : 0;
   const isCounting = goal > 0;
   const unit = task?.unit ?? '';
+  const kind = task ? resolveCountKind(task) : 'discrete';
   const target = isCounting
     ? effectiveMemberTarget({
         goal,
@@ -138,9 +140,10 @@ export function MemberRuleRow({
         fromBoard,
         sourceWindow,
         targetWindow: wizardWindow,
+        kind,
       })
     : 0;
-  const memberRange = isCounting ? varyRangeLabel(target, memberVary, goal, unit) : null;
+  const memberRange = isCounting ? varyRangeLabel(target, memberVary, goal, unit, kind) : null;
 
   const isCompound = task?.type === TaskType.COMPOUND && parts.length > 0;
   const split = rule.split === true;
@@ -160,7 +163,7 @@ export function MemberRuleRow({
     ? null
     : isCompound
       ? compoundSummary(split, partIds, excludedPartIds, memberVary)
-      : countingSummary(target, memberVary, goal, unit);
+      : countingSummary(target, memberVary, goal, unit, kind);
 
   const [isExpanded, setIsExpanded] = useState(false);
   // "Always collapsed on open" is a rule about the row's whole lifecycle,
@@ -220,11 +223,6 @@ export function MemberRuleRow({
         <span className={`${styles.title} ${state === 'excluded' ? styles.struck : ''}`}>
           {title}
         </span>
-        {clashTitle !== undefined && (
-          <span className={styles.clashHint}>
-            shares a counter with &ldquo;{clashTitle}&rdquo; &middot; one per board
-          </span>
-        )}
       </span>
       {summary !== null && !isExpanded && (
         <span className={`${styles.chip} ${summary.varying ? styles.chipVarying : ''}`}>
@@ -319,13 +317,14 @@ export function MemberRuleRow({
                   <CounterStepper
                     size="compact"
                     value={target}
-                    min={1}
+                    kind={kind}
+                    min={countTargetStep(kind)}
                     max={goal}
                     onChange={(next) => onSetTarget(next)}
                     // The goal rides INSIDE the pill now — B3's separate
                     // "of 35 pages" caption restated what an auto-generated
                     // counting title already says, twice over.
-                    suffix={`/ ${goal}${unit ? ` ${unit}` : ''}`}
+                    suffix={`/ ${formatCount(goal, kind)}${countUnitSuffix(kind, unit)}`}
                   />
                 )}
                 <DiceButton level={memberVary} onCycle={() => onSetVary(nextVary(memberVary))} />
@@ -418,6 +417,7 @@ function PartLine({
   const name = task?.title || '(untitled task)';
   const goal = task?.type === TaskType.COUNTING ? (task.maxCount ?? 0) : 0;
   const isCounting = goal > 0;
+  const kind = task ? resolveCountKind(task) : 'discrete';
   const level: VaryLevel = split ? (partRule.vary ?? 0) : memberVary;
   const target = isCounting
     ? effectiveMemberTarget({
@@ -427,9 +427,10 @@ function PartLine({
         fromBoard,
         sourceWindow,
         targetWindow: wizardWindow,
+        kind,
       })
     : 0;
-  const range = isCounting ? varyRangeLabel(target, level, goal, '') : null;
+  const range = isCounting ? varyRangeLabel(target, level, goal, '', kind) : null;
 
   if (excluded) {
     return (
@@ -462,11 +463,12 @@ function PartLine({
             <CounterStepper
               size="compact"
               value={target}
-              min={1}
+              kind={kind}
+              min={countTargetStep(kind)}
               max={goal}
               onChange={(next) => onSetPartTarget(childId, next)}
             />
-            <span className={styles.caption}>of {goal}</span>
+            <span className={styles.caption}>of {formatCount(goal, kind)}</span>
           </>
         )}
         {isCounting && split && (

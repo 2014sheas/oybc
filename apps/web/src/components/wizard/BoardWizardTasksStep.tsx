@@ -3,7 +3,6 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import {
   Timeframe,
   TaskType,
-  buildCounterFamilyMap,
   generateCounterTaskTitle,
   type BoardSource,
   type BoardWindow,
@@ -29,7 +28,6 @@ import { useParentBoardTasks } from '../../hooks';
 import type { PendingTaskPayload } from '../../pages/createPage/useCreateFormState';
 import { useBrowsableTasks, type TaskLibrary } from '../../pages/createPage/useTaskLibrary';
 import {
-  computeCounterClashes,
   type SupplyInfoMap,
 } from '../../pages/createHub/wizardSources';
 import { RisoSectionLabel } from '../riso';
@@ -489,13 +487,6 @@ export function BoardWizardTasksStep({
   // read yet — capacity is artificially 0 until they resolve.
   const isCountSatisfied = suppliesPending || capacity >= tasksRequired;
 
-  // Counter-family exclusivity (2026-09-08) — collisions visible in the
-  // wizard pool, for the "shares a counter with 'X' · one per board" row
-  // hints. Computed over the staged-overlaid task map so renames show.
-  const counterClashByTaskId = useMemo<Map<string, string>>(() => {
-    const famMap = buildCounterFamilyMap(Object.values(effectiveTaskMap));
-    return computeCounterClashes(selectedTaskIds, famMap, effectiveTaskMap);
-  }, [effectiveTaskMap, selectedTaskIds]);
   const isCenterSatisfied =
     !centerTaskMode || (centerTaskId !== null && selectedTaskIds.has(centerTaskId));
   const canAdvance = isCountSatisfied && isCenterSatisfied;
@@ -742,7 +733,6 @@ export function BoardWizardTasksStep({
             />
           )
         }
-        counterClashByTaskId={counterClashByTaskId}
         manualTaskVary={manualTaskVary}
         onSetManualVary={onSetManualVary}
         countOverride={capacity}
@@ -754,7 +744,6 @@ export function BoardWizardTasksStep({
               availableCountForSource={availableCountForSource}
               expandedSourceIds={expandedSourceIds}
               taskById={effectiveTaskMap}
-              counterClashByTaskId={counterClashByTaskId}
               compoundChildrenByCompound={effectiveChildrenByCompound}
               mode={planMode}
               wizardWindow={wizardWindow}

@@ -385,6 +385,8 @@ export interface SeedTask {
   unit?: string;
   /** Counting-task target count. */
   maxCount?: number;
+  /** Counter kind (absent = discrete). Duration `maxCount` is minutes. */
+  countKind?: 'discrete' | 'continuous' | 'duration';
   /** Counting-task current progress; used by the "in progress" status
    *  filter and the detail page's progress bar. */
   currentCount?: number;

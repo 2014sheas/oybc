@@ -501,7 +501,6 @@ struct BoardWizardTasksStepView: View {
                     },
                     countOverride: capacity,
                     leadingRows: sourceRowsList,
-                    counterClashByTaskId: counterClashByTaskId,
                     manualTaskVary: manualTaskVary,
                     onSetManualVary: onSetManualVary
                 )

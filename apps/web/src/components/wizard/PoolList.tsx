@@ -3,6 +3,7 @@ import {
   AchievementTrigger,
   OperatorType,
   TaskType,
+  resolveCountKind,
   varyRangeLabel,
   type CompoundChild,
   type Task,
@@ -74,12 +75,6 @@ export interface PoolListProps {
    * before the hand-added task rows. Mirrors iOS `leadingRows`.
    */
   leadingRows?: React.ReactNode;
-  /**
-   * Counter-family exclusivity — task id → the OTHER family member's
-   * title, for tasks whose shared-counter family has ≥2 members in the
-   * pool. Renders the "shares a counter with 'X' · one per board" hint.
-   */
-  counterClashByTaskId?: Map<string, string>;
 
   /**
    * §Member rules (B3) — dice level per HAND-ADDED counting task
@@ -121,7 +116,6 @@ export function PoolList({
   editor,
   countOverride,
   leadingRows,
-  counterClashByTaskId,
   manualTaskVary,
   onSetManualVary,
 }: PoolListProps): React.ReactElement {
@@ -155,11 +149,9 @@ export function PoolList({
             const isCompound = task.type === TaskType.COMPOUND;
             const isCenter = centerTaskMode && centerTaskId === task.id;
             const isExpanded = expandedId === task.id;
-            const clashTitle = counterClashByTaskId?.get(task.id);
             const subtitle = buildPoolRowSubtitle(
               task,
               effectiveChildrenByCompound[task.id] ?? [],
-              clashTitle,
             );
             const goal = countingGoal(task);
             const varyLevel: VaryLevel = manualTaskVary?.[task.id] ?? 0;
@@ -168,7 +160,9 @@ export function PoolList({
             // Gated on the dice COLUMN too: an unactionable blue range with
             // no control to change it would be a dead end.
             const varyRange =
-              showVaryColumn && goal > 0 ? varyRangeLabel(goal, varyLevel, goal, task.unit ?? '') : null;
+              showVaryColumn && goal > 0
+                ? varyRangeLabel(goal, varyLevel, goal, task.unit ?? '', resolveCountKind(task))
+                : null;
             const boardCount = taskBoardCounts[task.id] ?? 0;
             const usageHint = isCompound
               ? `${effectiveChildrenByCompound[task.id]?.length ?? 0} subtask${
@@ -305,12 +299,11 @@ export function PoolList({
 
 /** Type-specific detail line — mirrors iOS
  *  `RisoPoolListView.typeDetailSubtitle`. (Board Sources P4 dropped the
- *  provenance suffix — the design's copy rule bans provenance subtitles.
- *  `clashTitle` appends the counter-family "one per board" hint.) */
+ *  provenance suffix — the design's copy rule bans provenance subtitles;
+ *  the counter-family "shares a counter" hint was dropped under #548.) */
 function buildPoolRowSubtitle(
   task: Task,
   children: CompoundChild[],
-  clashTitle?: string,
 ): string | undefined {
   let base: string | undefined;
   switch (task.type) {
@@ -343,10 +336,6 @@ function buildPoolRowSubtitle(
     }
     default:
       base = undefined;
-  }
-  if (clashTitle !== undefined) {
-    const hint = `shares a counter with “${clashTitle}” · one per board`;
-    return base !== undefined ? `${base} · ${hint}` : hint;
   }
   return base;
 }

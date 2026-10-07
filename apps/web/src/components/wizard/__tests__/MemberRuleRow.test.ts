@@ -361,3 +361,32 @@ describe('MemberRuleRow — compound member', () => {
     expect(html).not.toContain('One square');
   });
 });
+
+describe('MemberRuleRow — counter kinds (collapsed chip)', () => {
+  const RUN = makeTask('t-run', {
+    title: 'Run 26.2 miles',
+    type: TaskType.COUNTING,
+    action: 'Run',
+    unit: 'miles',
+    maxCount: 26.2,
+    countKind: 'continuous',
+  });
+  const PRACTICE = makeTask('t-prac', {
+    title: 'Practice 10h 30m',
+    type: TaskType.COUNTING,
+    action: 'Practice',
+    unit: '',
+    maxCount: 630,
+    countKind: 'duration',
+  });
+
+  it('a continuous pool member at a little vary shows the precision-matched range', () => {
+    expect(render({ task: RUN, fromBoard: false, rule: { vary: 1 } })).toContain('21.0–31.4 miles');
+  });
+  it('a duration pool member at a little vary shows whole-minute bounds', () => {
+    expect(render({ task: PRACTICE, fromBoard: false, rule: { vary: 1 } })).toContain('8h 24m–12h 36m');
+  });
+  it('a continuous board member pro-rates in tenths (weekly 26.2 → daily 3.8)', () => {
+    expect(render({ task: RUN, rule: {} })).toContain('3.8 miles');
+  });
+});

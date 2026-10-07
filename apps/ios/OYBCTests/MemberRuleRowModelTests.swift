@@ -456,4 +456,22 @@ final class MemberRuleRowModelTests: XCTestCase {
         XCTAssertEqual(VaryLevel.little.next, .lot)
         XCTAssertEqual(VaryLevel.lot.next, .off)
     }
+
+    // MARK: - Counter kinds
+
+    func testContinuousMemberSuffixAndRangeUseTheKind() {
+        var t = task("c", type: .counting, maxCount: 26.2, unit: "miles"); t.countKind = .continuous
+        let m = model(task: t, rule: BoardSourceMemberRule(vary: .little), fromBoard: false)
+        XCTAssertEqual(m.kind, .continuous)
+        XCTAssertEqual(m.rangeLabel, "21.0\u{2013}31.4 miles")
+        let board = model(task: t, rule: BoardSourceMemberRule(vary: .off))
+        XCTAssertEqual(board.targetSuffix, "/ 26.2 miles")
+    }
+
+    func testDurationMemberSuffixAndRangeAreWholeMinutes() {
+        var t = task("d", type: .counting, maxCount: 630, unit: ""); t.countKind = .duration
+        let m = model(task: t, rule: BoardSourceMemberRule(vary: .little), fromBoard: false)
+        XCTAssertEqual(m.rangeLabel, "8h 24m\u{2013}12h 36m")
+        XCTAssertEqual(model(task: t).targetSuffix, "/ 10h 30m")
+    }
 }
