@@ -344,7 +344,7 @@ struct CounterDetailContent: View {
     }
 
     private var milestoneProgress: CounterMilestoneProgress {
-        counterMilestoneProgress(group.lifetime)
+        counterMilestoneProgress(group.lifetime, kind: kind)
     }
 
     // MARK: - Body
@@ -379,6 +379,7 @@ struct CounterDetailContent: View {
                     initialSelectedAmount: initialSelectedAmount, initialCustomActive: initialCustomActive,
                     onLog: onLog
                 )
+                .id("\(group.counterId)-\(group.countKind.rawValue)")
                 .padding(.horizontal, Riso.gutter)
                 .padding(.bottom, 18)
 

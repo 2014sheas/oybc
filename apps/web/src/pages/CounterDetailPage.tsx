@@ -201,7 +201,7 @@ export function CounterDetailPage(): React.ReactElement {
   const lifetimeStr = formatCountTotal(group.lifetime, kind);
   const unitStr = group.unit ?? '';
 
-  const progress = counterMilestoneProgress(group.lifetime);
+  const progress = counterMilestoneProgress(group.lifetime, kind);
   const maxDaily = Math.max(1, ...dailyTotals.days.map((d) => d.total));
 
   // ─── Render ───────────────────────────────────────────────────────────────
@@ -309,7 +309,7 @@ export function CounterDetailPage(): React.ReactElement {
 
           {/* 3. Log control — blue filled card */}
           <CounterDetailLogCard
-            key={group.counterId}
+            key={`${group.counterId}-${kind}`}
             kind={kind}
             unit={group.unit}
             defaultLogAmount={group.defaultLogAmount}

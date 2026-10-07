@@ -77,4 +77,14 @@ final class CounterMilestoneTests: XCTestCase {
         XCTAssertEqual(result.remaining, 10_000)
         XCTAssertEqual(result.fraction, 100_000.0 / 110_000.0, accuracy: 0.0001)
     }
+
+    func test_durationClimbsTheHoursLadder() {
+        let r = counterMilestoneProgress(6735, kind: .duration)
+        XCTAssertEqual(r.next, 15_000)
+        XCTAssertEqual(r.remaining, 8265)
+        XCTAssertEqual(r.fraction, 6735.0 / 15_000.0, accuracy: 0.0001)
+        XCTAssertEqual(counterMilestoneProgress(6000, kind: .duration).next, 15_000)
+        XCTAssertEqual(counterMilestoneProgress(0, kind: .duration).next, 6000)
+        XCTAssertEqual(counterMilestoneProgress(148.6, kind: .continuous).next, 250)
+    }
 }

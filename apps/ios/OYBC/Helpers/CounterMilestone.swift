@@ -52,9 +52,10 @@ struct CounterMilestoneProgress: Equatable {
 /// - Parameter lifetime: Non-negative lifetime total.
 /// - Returns: `{ next, remaining, fraction }`. `fraction` is
 ///   `min(1, lifetime / next)`; `remaining` is `next - lifetime`.
-func counterMilestoneProgress(_ lifetime: CountValue) -> CounterMilestoneProgress {
+func counterMilestoneProgress(_ lifetime: CountValue, kind: CountKind = .discrete) -> CounterMilestoneProgress {
     let total = quantizeCount(lifetime)
-    let next = nextCounterMilestone(total)
+    // Duration climbs the ladder on whole HOURS (lifetime is minutes) — ruling U20.
+    let next = kind == .duration ? nextCounterMilestone(total / 60) * 60 : nextCounterMilestone(total)
     let remaining = quantizeCount(next - total)
     let fraction = min(1.0, total / next)
     return CounterMilestoneProgress(next: next, remaining: remaining, fraction: fraction)

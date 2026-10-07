@@ -377,6 +377,7 @@ function ProfileCounterRow({
     }
   }
 
+  const memberValue = member ? memberValueParts(member.logged, member.goal, group.countKind) : null;
   const pct = member && member.goal > 0 ? Math.min(100, (member.logged / member.goal) * 100) : 0;
 
   return (
@@ -395,8 +396,8 @@ function ProfileCounterRow({
             <div className={styles.counterMemberTop}>
               <span className={styles.counterMemberLabel}>{member.boardName ?? group.name}</span>
               <span className={styles.counterMemberValue}>
-                {memberValueParts(member.logged, member.goal, group.countKind).logged}
-                <span className={styles.counterMemberGoal}>/{memberValueParts(member.logged, member.goal, group.countKind).goal}</span>
+                {memberValue?.logged}
+                <span className={styles.counterMemberGoal}>/{memberValue?.goal}</span>
               </span>
             </div>
             <div className={styles.counterMemberBarWrap}>

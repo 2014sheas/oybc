@@ -110,6 +110,7 @@ export function CounterDetailLogCard(props: CounterDetailLogCardProps): React.Re
               dense
               autoFocus
               onEnter={confirmCustomInput}
+              onEscape={() => setCustomOpen(false)}
             />
           </div>
           <button type="button" className={styles.customConfirm} onClick={confirmCustomInput} disabled={parsedDraft == null}>
