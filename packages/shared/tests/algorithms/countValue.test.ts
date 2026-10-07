@@ -1,9 +1,21 @@
-import vectors from '../fixtures/countValueVectors.json';
+import * as fs from 'fs';
+import * as path from 'path';
 import {
   quantizeCount, isQuantizedCount, finalizeWindowCount, formatCount,
   planCountKindSwitch, canSwitchCountKind, resolveCountKind, isWholeCountKind,
   countTargetStep, type CountKind,
 } from '../../src/algorithms/countValue';
+
+interface CountValueFixture {
+  quantize: Array<{ name: string; x: number; expected: number }>;
+  isQuantized: Array<{ name: string; x: number; expected: boolean }>;
+  finalize: Array<{ name: string; sum: number; kind: string; expected: number }>;
+  format: Array<{ name: string; value: number; kind: string; locale: string; expected: string }>;
+  switch: Array<{ name: string; from: string; to: string; fields: { maxCount?: number | null; defaultLogAmount?: number | null }; expected: { maxCount?: number; defaultLogAmount?: number } | null }>;
+}
+
+const FIXTURE_PATH = path.join(__dirname, '../fixtures/countValueVectors.json');
+const vectors: CountValueFixture = JSON.parse(fs.readFileSync(FIXTURE_PATH, 'utf8'));
 
 describe('countValue vectors', () => {
   it.each(vectors.quantize)('quantize: $name', ({ x, expected }) => {
