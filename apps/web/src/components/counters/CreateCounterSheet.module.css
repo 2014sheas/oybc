@@ -72,14 +72,6 @@
   outline-offset: 2px;
 }
 
-/* Helper copy under each field. */
-.helperText {
-  margin-top: 4px;
-  font-family: var(--riso-font-body);
-  font-size: 12px;
-  color: var(--riso-muted);
-}
-
 /* ─── Live preview card (R1) ───
    Paper-2 card with the derived counter name + right-aligned start count +
    "All-time" label + a sub line, matching screenshots 03/04's preview. */
@@ -121,12 +113,6 @@
   align-items: baseline;
   justify-content: space-between;
   gap: 10px;
-}
-
-.previewSub {
-  font-family: var(--riso-font-body);
-  font-size: 0.78rem;
-  color: var(--riso-muted);
 }
 
 .previewAllTime {

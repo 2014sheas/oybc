@@ -45,6 +45,7 @@ struct NewCounterSheetView: View {
     @State private var verb: String = ""
     @State private var unit: String = ""
     @State private var startingCountText: String = ""
+    @State private var countKind: CountKind = .discrete
     @State private var error: String? = nil
     @State private var busy: Bool = false
 
@@ -65,10 +66,16 @@ struct NewCounterSheetView: View {
         return CounterName.formatCounterName(action: effectiveVerb, unit: trimmedUnit)
     }
 
-    private var previewCount: CountValue {
-        let parsed = Int(startingCountText.trimmingCharacters(in: .whitespacesAndNewlines)).map(CountValue.init) ?? 0
-        return parsed > 0 ? parsed : 0
+    private var startFromEmpty: Bool {
+        startingCountText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
+    /// The parsed seed at the selected kind — the one value preview, validation and save all use.
+    private var startFromValue: CountValue? {
+        parseCountInput(startingCountText, kind: countKind, allowZero: true)
+    }
+    private var startFromInvalid: Bool { !startFromEmpty && startFromValue == nil }
+
+    private var previewCount: CountValue { startFromValue ?? 0 }
 
     private var match: CounterCreateMatch? {
         guard !trimmedUnit.isEmpty else { return nil }
@@ -78,7 +85,7 @@ struct NewCounterSheetView: View {
     /// R1: the promote/standalone card was removed — a `standalone` match no
     /// longer blocks or offers anything; only `established` blocks create.
     private var canCreate: Bool {
-        !trimmedUnit.isEmpty && match?.kind != .established && !busy
+        !trimmedUnit.isEmpty && match?.kind != .established && !startFromInvalid && !busy
     }
 
     // MARK: - Body
@@ -90,6 +97,8 @@ struct NewCounterSheetView: View {
                     verb: $verb,
                     unit: $unit,
                     startingCountText: $startingCountText,
+                    countKind: $countKind,
+                    startFromInvalid: startFromInvalid,
                     error: error,
                     busy: busy,
                     previewName: previewName,
@@ -124,6 +133,8 @@ struct NewCounterSheetView: View {
         // sheet's private `busy` state, so the dismiss guard lives here,
         // keyed on this view's own `busy`.
         .interactiveDismissDisabled(busy)
+        // The seed grammar differs per kind (decimal / h:m) — a stale entry would mis-parse.
+        .onChange(of: countKind) { startingCountText = "" }
     }
 
     // MARK: - Actions
@@ -132,7 +143,8 @@ struct NewCounterSheetView: View {
         guard canCreate else { return }
         let capturedVerb = effectiveVerb
         let capturedUnit = trimmedUnit
-        let parsedStarting = Int(startingCountText.trimmingCharacters(in: .whitespacesAndNewlines)).map(CountValue.init)
+        let parsedStarting = startFromValue
+        let capturedKind = countKind
         error = nil
         busy = true
         _Concurrency.Task.detached(priority: .userInitiated) {
@@ -143,6 +155,7 @@ struct NewCounterSheetView: View {
                     action: capturedVerb,
                     unit: capturedUnit,
                     startingCount: parsedStarting,
+                    countKind: capturedKind,
                     now: now
                 )
                 await MainActor.run {
@@ -171,6 +184,8 @@ struct NewCounterSheetContentView: View {
     @Binding var verb: String
     @Binding var unit: String
     @Binding var startingCountText: String
+    @Binding var countKind: CountKind
+    var startFromInvalid: Bool = false
     var error: String? = nil
     var busy: Bool = false
     var previewName: String = ""
@@ -182,29 +197,20 @@ struct NewCounterSheetContentView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
 
+            fieldBlock(label: "Kind") {
+                KindPickerView(selection: $countKind, lock: .none)
+            }
+
             fieldBlock(label: "What are you counting?") {
                 RisoTextField(placeholder: "push-ups", text: $unit)
             }
-            Text("A plural noun — push-ups, pages, miles.")
-                .font(.risoBody(11, .regular))
-                .foregroundStyle(Color.risoMuted)
 
             fieldBlock(label: "Task verb (optional)") {
                 RisoTextField(placeholder: "Do", text: $verb)
             }
-            // Straight quotes (matches web's `&quot;` entity — verbatim
-            // copy parity, not typographic curly quotes).
-            Text("Used in task titles — \"Do 100 push-ups\". Try \"Read\" for pages, \"Run\" for miles.")
-                .font(.risoBody(11, .regular))
-                .foregroundStyle(Color.risoMuted)
 
-            VStack(alignment: .leading, spacing: 5) {
-                fieldBlock(label: "Start from (optional)") {
-                    RisoNumberField(placeholder: "0", text: $startingCountText)
-                }
-                Text("Already partway? Seed the lifetime total.")
-                    .font(.risoBody(11, .regular))
-                    .foregroundStyle(Color.risoMuted)
+            fieldBlock(label: "Start from (optional)") {
+                GoalEntryView(kind: countKind, text: $startingCountText, placeholder: "0")
             }
 
             if !previewName.isEmpty {
@@ -242,14 +248,11 @@ struct NewCounterSheetContentView: View {
                     .font(.risoHead(15, .extraBold))
                     .foregroundStyle(Color.risoInk)
                 Spacer(minLength: 8)
-                Text(previewCount.formatted())
+                Text(formatCountTotal(previewCount, kind: countKind))
                     .font(.risoHead(15, .extraBold))
                     .foregroundStyle(Color.risoInk)
             }
             HStack {
-                Text("Tasks that count \(trimmedUnit) link up automatically.")
-                    .font(.risoBody(11, .regular))
-                    .foregroundStyle(Color.risoMuted)
                 Spacer(minLength: 8)
                 Text("All-time")
                     .font(.risoBody(10, .bold))
@@ -280,7 +283,7 @@ struct NewCounterSheetContentView: View {
                 Text("You're already counting \(trimmedUnit)")
                     .font(.risoHead(13, .bold))
                     .foregroundStyle(Color.risoInkStatic)
-                Text("\(match.lifetime.formatted()) all-time · counting on \(match.memberCount) task\(match.memberCount == 1 ? "" : "s")")
+                Text("\(formatCountTotal(match.lifetime, kind: resolveCountKind(match.task.countKind))) all-time · counting on \(match.memberCount) task\(match.memberCount == 1 ? "" : "s")")
                     .font(.risoBody(11, .semibold))
                     .foregroundStyle(Color.risoInkStatic.opacity(0.82))
                 RisoButton(title: "Open \(counterName)", kind: .neutral, small: true) {
@@ -314,6 +317,7 @@ struct NewCounterSheetContentView: View {
                 verb: .constant(""),
                 unit: .constant("push-ups"),
                 startingCountText: .constant(""),
+                countKind: .constant(.discrete),
                 previewName: "Push-ups",
                 previewCount: 0,
                 trimmedUnit: "push-ups",

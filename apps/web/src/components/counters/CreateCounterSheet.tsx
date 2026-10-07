@@ -1,9 +1,19 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { classifyCounterCreateMatch, formatCounterName, type Task } from '@oybc/shared';
+import {
+  classifyCounterCreateMatch,
+  formatCounterName,
+  formatCountTotal,
+  parseCountInput,
+  resolveCountKind,
+  type CountKind,
+  type Task,
+} from '@oybc/shared';
 import { createCounterTask } from '../../db/operations/tasks';
 import { useModalA11y } from '../../hooks/useModalA11y';
 import { RisoButton } from '../riso';
+import { GoalEntry } from './GoalEntry';
+import { KindPicker } from './KindPicker';
 import styles from './CreateCounterSheet.module.css';
 
 export interface CreateCounterSheetProps {
@@ -61,6 +71,7 @@ export function CreateCounterSheet({
   const genRef = useRef(0);
   const [verb, setVerb] = useState('');
   const [noun, setNoun] = useState('');
+  const [countKind, setCountKind] = useState<CountKind>('discrete');
   const [startingCountStr, setStartingCountStr] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -83,6 +94,7 @@ export function CreateCounterSheet({
       setVerb('');
       setNoun('');
       setStartingCountStr('');
+      setCountKind('discrete');
       setError(null);
       setBusy(false);
     }
@@ -92,8 +104,16 @@ export function CreateCounterSheet({
   const trimmedNoun = noun.trim();
   const effectiveVerb = trimmedVerb || DEFAULT_VERB;
   const previewName = trimmedNoun ? formatCounterName(effectiveVerb, trimmedNoun) : '';
-  const startFromNum = parseInt(startingCountStr, 10);
-  const previewCount = Number.isFinite(startFromNum) && startFromNum > 0 ? startFromNum : 0;
+  const startFromEmpty = startingCountStr.trim() === '';
+  const startFromNum = parseCountInput(startingCountStr, countKind, { allowZero: true });
+  const startFromInvalid = !startFromEmpty && startFromNum === null;
+  const previewCount = startFromNum ?? 0;
+
+  function handleKindChange(next: CountKind): void {
+    // The field grammar differs per kind (decimal / h:m) — a stale entry would mis-parse.
+    if (next !== countKind) setStartingCountStr('');
+    setCountKind(next);
+  }
 
   // Recompute per keystroke, like CountingTemplatePicker's `suggestion` memo.
   const match = useMemo(
@@ -108,7 +128,7 @@ export function CreateCounterSheet({
 
   // R1: the promote/standalone card was removed — a `standalone` match no
   // longer blocks or offers anything; only `established` blocks create.
-  const canCreate = trimmedNoun !== '' && match?.kind !== 'established' && !busy;
+  const canCreate = trimmedNoun !== '' && match?.kind !== 'established' && !startFromInvalid && !busy;
 
   async function handleCreate(): Promise<void> {
     if (!canCreate) return;
@@ -117,11 +137,11 @@ export function CreateCounterSheet({
     setError(null);
     setBusy(true);
     try {
-      const parsed = parseInt(startingCountStr, 10);
       const t = await createCounterTask(userId, {
         action: effectiveVerb,
         unit: trimmedNoun,
-        startingCount: parsed || undefined,
+        startingCount: startFromNum ?? undefined,
+        countKind,
       });
       if (genRef.current !== gen) return;
       onCreated(t.id);
@@ -149,6 +169,9 @@ export function CreateCounterSheet({
       <div className={styles.dialog} onClick={(e) => e.stopPropagation()}>
         <h3 className={styles.title}>New counter</h3>
 
+        <span className={styles.fieldLabel}>Kind</span>
+        <KindPicker value={countKind} lock="none" onChange={handleKindChange} />
+
         <label className={styles.fieldLabel} htmlFor="create-counter-noun">
           What are you counting?
         </label>
@@ -161,7 +184,6 @@ export function CreateCounterSheet({
           placeholder="push-ups"
           className={styles.fieldInput}
         />
-        <div className={styles.helperText}>A plural noun — push-ups, pages, miles.</div>
 
         <label className={styles.fieldLabel} htmlFor="create-counter-verb">
           Task verb (optional)
@@ -174,35 +196,28 @@ export function CreateCounterSheet({
           placeholder="Do"
           className={styles.fieldInput}
         />
-        <div className={styles.helperText}>
-          Used in task titles — &quot;Do 100 push-ups&quot;. Try &quot;Read&quot; for pages, &quot;Run&quot; for miles.
-        </div>
 
         <label className={styles.fieldLabel} htmlFor="create-counter-starting-count">
           Start from (optional)
         </label>
-        <input
+        <GoalEntry
+          kind={countKind}
           id="create-counter-starting-count"
-          type="number"
-          inputMode="numeric"
-          min={0}
+          aria-label="Start from"
           value={startingCountStr}
-          onChange={(e) => setStartingCountStr(e.target.value)}
+          onChange={setStartingCountStr}
           placeholder="0"
-          className={styles.fieldInput}
+          invalid={startFromInvalid}
+          dense
         />
-        <div className={styles.helperText}>Already partway? Seed the lifetime total.</div>
 
         {previewName && (
           <div className={styles.previewCard}>
             <div className={styles.previewRow}>
               <span className={styles.previewName}>{previewName}</span>
-              <span className={styles.previewCount}>{previewCount.toLocaleString()}</span>
+              <span className={styles.previewCount}>{formatCountTotal(previewCount, countKind)}</span>
             </div>
             <div className={styles.previewFooter}>
-              <span className={styles.previewSub}>
-                Tasks that count {trimmedNoun} link up automatically.
-              </span>
               <span className={styles.previewAllTime}>All-time</span>
             </div>
           </div>
@@ -212,7 +227,7 @@ export function CreateCounterSheet({
           <div className={styles.matchCardEstablished}>
             <p className={styles.matchTitle}>You&apos;re already counting {trimmedNoun}</p>
             <p className={styles.matchSub}>
-              {match.lifetime.toLocaleString()} all-time · counting on {match.memberCount} task
+              {formatCountTotal(match.lifetime, resolveCountKind(match.task))} all-time · counting on {match.memberCount} task
               {match.memberCount !== 1 ? 's' : ''}
             </p>
             <button
