@@ -327,6 +327,32 @@ describe('isFrozenRowReachedByEvent', () => {
   });
 });
 
+describe('buildDerivedRows — countKind (R14)', () => {
+  const draft = (countKind: 'continuous' | 'discrete') => ({
+    derivedTasks: [
+      {
+        id: 'd1', rootTaskId: 'r1', sourceMemberId: 'r1', replacesId: 'r1',
+        maxCount: 0.4, countKind, baseline: 0, title: 'Run 0.4 miles', action: 'Run', unit: 'miles',
+        timeframe: Timeframe.WEEKLY, startDate: '2026-09-14T00:00:00.000', endDate: '2026-09-20T23:59:59.999',
+      },
+    ],
+    derivedCompounds: [],
+    placementIds: ['d1'],
+  });
+  const roots = { r1: { id: 'r1', currentCount: 0.4 } as Task };
+
+  it('a continuous draft is born complete at 0.4 of 0.4 and stores its kind', () => {
+    const out = buildDerivedRows({ drafts: draft('continuous') as any, userId: 'u1', now: '2026-09-14T00:00:00.000Z', rootsById: roots, compoundsById: {} });
+    expect(out.tasks[0].countKind).toBe('continuous');
+    expect(out.tasks[0].isCompleted).toBe(true);
+  });
+
+  it('the same numbers as a discrete draft round the 0.4 away and stay incomplete', () => {
+    const out = buildDerivedRows({ drafts: draft('discrete') as any, userId: 'u1', now: '2026-09-14T00:00:00.000Z', rootsById: roots, compoundsById: {} });
+    expect(out.tasks[0].isCompleted).toBe(false);
+  });
+});
+
 describe('buildDerivedRows', () => {
   const D = V.derivedRows;
   /** Fixture id token to its uuid; anything not a token passes through. */

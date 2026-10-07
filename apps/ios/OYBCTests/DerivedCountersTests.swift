@@ -192,6 +192,26 @@ final class DerivedCountersTests: XCTestCase {
         XCTAssertEqual(stored.countKind, .continuous)
     }
 
+    func test_buildDerivedRows_continuousDraftIsBornCompleteAtItsFractionalGoal() {
+        func rows(_ kind: CountKind) -> Task {
+            let draft = BoardSources.DerivedTaskDraft(
+                id: "d1", rootTaskId: "r1", sourceMemberId: "r1", replacesId: "r1",
+                maxCount: 0.4, countKind: kind, baseline: 0, title: "Run 0.4 miles",
+                action: "Run", unit: "miles", timeframe: .weekly,
+                startDate: windowStart, endDate: windowEnd
+            )
+            var root = makeCountingTask(id: "r1", maxCount: 5, currentCount: 0.4)
+            root.countKind = .continuous
+            return BoardSources.buildDerivedRows(
+                drafts: BoardSources.PlanDerivedTasksResult(placementIds: ["d1"], derivedTasks: [draft], derivedCompounds: []),
+                userId: userId, now: now, rootsById: ["r1": root], compoundsById: [:]
+            ).tasks[0]
+        }
+        XCTAssertTrue(rows(.continuous).isCompleted)
+        XCTAssertEqual(rows(.continuous).countKind, .continuous)
+        XCTAssertFalse(rows(.discrete).isCompleted, "dropping the kind would round 0.4 to 0")
+    }
+
     func test_mint_bornCompleteWhenTheRootHasAlreadyPassedTheTarget() throws {
         let database = try makeDb()
         // Everything logged INSIDE the window: baseline 0, displayed 12 ≥ 4.

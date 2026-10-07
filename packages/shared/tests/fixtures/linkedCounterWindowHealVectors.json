@@ -2094,6 +2094,63 @@
         "startDate": "2026-03-01T00:00:00.000Z",
         "endDate": "2026-03-31T23:59:59.999Z"
       }
+    },
+    {
+      "name": "continuous source with a sub-1 goal still gets a copy (R15)",
+      "copy": {
+        "id": "41684bc5-903a-5edd-be8d-5248ce41959c",
+        "boardId": "b-mar",
+        "boardTaskId": "bt-mar",
+        "sourceTaskId": "hub1",
+        "rootTaskId": "root-1",
+        "timeframe": "monthly",
+        "startDate": "2026-03-01T00:00:00.000Z",
+        "endDate": "2026-03-31T23:59:59.999Z"
+      },
+      "sourceTask": {
+        "title": "Run 0.5 miles",
+        "action": "Run",
+        "unit": "miles",
+        "maxCount": 0.5,
+        "countKind": "continuous"
+      },
+      "baseline": 0,
+      "expected": {
+        "id": "41684bc5-903a-5edd-be8d-5248ce41959c",
+        "rootTaskId": "root-1",
+        "sourceMemberId": "hub1",
+        "replacesId": "hub1",
+        "maxCount": 0.5,
+        "countKind": "continuous",
+        "baseline": 0,
+        "title": "Run 0.5 miles",
+        "action": "Run",
+        "unit": "miles",
+        "timeframe": "monthly",
+        "startDate": "2026-03-01T00:00:00.000Z",
+        "endDate": "2026-03-31T23:59:59.999Z"
+      }
+    },
+    {
+      "name": "discrete source with a sub-1 goal (malformed) is refused",
+      "copy": {
+        "id": "41684bc5-903a-5edd-be8d-5248ce41959c",
+        "boardId": "b-mar",
+        "boardTaskId": "bt-mar",
+        "sourceTaskId": "hub1",
+        "rootTaskId": "root-1",
+        "timeframe": "monthly",
+        "startDate": "2026-03-01T00:00:00.000Z",
+        "endDate": "2026-03-31T23:59:59.999Z"
+      },
+      "sourceTask": {
+        "title": "Run 0.5 miles",
+        "action": "Run",
+        "unit": "miles",
+        "maxCount": 0.5
+      },
+      "baseline": 0,
+      "expected": null
     }
   ]
 }
