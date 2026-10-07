@@ -92,3 +92,34 @@ describe('RisoBoardCell — lock + dirty chips (Board Edit redesign slice 3, D12
     expect(html).not.toContain(styles.chipRow);
   });
 });
+
+describe('RisoBoardCell — counter kinds (C1: fit tiers, ×goal tag, gold overshoot)', () => {
+  const renderCell = (over: Partial<BoardCellModel>, cellSize: number) =>
+    renderToStaticMarkup(React.createElement(RisoBoardCell, { cell: makeCell({ type: 'counting', ...over }), cellSize }));
+
+  it('an overshoot continuous cell keeps its real value, a gold bar and the ×goal tag', () => {
+    const html = renderCell({ label: 'Run 26.2 mi', done: true, count: { cur: 28.4, max: 26.2, kind: 'continuous' } }, 90);
+    expect(html).toContain('28.4/26.2');
+    expect(html).toContain(`class="${styles.cbar} ${styles.over}"`);
+    expect(html).toContain('×26.2');
+  });
+
+  it('a duration tag and the cur tier at 90px', () => {
+    const html = renderCell({ label: 'Code 500h', count: { cur: 6735, max: 30000, kind: 'duration' } }, 90);
+    expect(html).toContain('×500h');
+    expect(html).toContain('>112h 15m<');
+    expect(html).not.toContain('112h 15m/500h');
+  });
+
+  it('fill only when even cur does not fit', () => {
+    const html = renderCell({ label: 'Code 500h', count: { cur: 6735, max: 30000, kind: 'duration' } }, 58);
+    expect(html).not.toContain('112h');
+  });
+
+  it('a discrete cell under its goal keeps the plain blue bar', () => {
+    const html = renderCell({ label: 'Read 5 pages', count: { cur: 3, max: 5, kind: 'discrete' } }, 90);
+    expect(html).toContain(`class="${styles.cbar}"`);
+    expect(html).toContain('>3/5<');
+    expect(html).toContain('×5');
+  });
+});

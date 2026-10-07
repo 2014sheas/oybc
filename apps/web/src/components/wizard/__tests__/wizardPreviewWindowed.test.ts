@@ -71,7 +71,7 @@ describe('wizard preview — windowed completion', () => {
     ];
     const model = taskToModel(task, { [task.id]: task }, {}, ctx(events));
     expect(model.done).toBe(false);
-    expect(model.count).toEqual({ cur: 2, max: 5 });
+    expect(model.count).toEqual({ cur: 2, max: 5, kind: 'discrete' });
   });
 
   it('linked (shared-counter) counting resolves from the root\'s window events, not its latch (owner rule 2026-10-01)', () => {

@@ -1,4 +1,6 @@
+import { formatCount, type CountKind } from '@oybc/shared';
 import { RisoIcon } from '../riso';
+import { cellCountFit } from './cellModel';
 import styles from './RisoBoard.module.css';
 
 /** Visual type of a board cell. */
@@ -12,8 +14,8 @@ export interface BoardCellModel {
   label: string;
   type: CellType;
   done: boolean;
-  /** Counting progress, when `type === 'counting'`. */
-  count?: { cur: number; max: number };
+  /** Counting progress, when `type === 'counting'` — `kind` is the counter family's. */
+  count?: { cur: number; max: number; kind: CountKind };
   /** FREE/auto center square (inked, gold star, not a real task). */
   isFree: boolean;
   /** Part of a completed bingo line (gold ring). */
@@ -52,6 +54,8 @@ export interface RisoBoardCellProps {
   onContextMenu?: (e: React.MouseEvent) => void;
   /** Optional corner badge (e.g. an ACHIEVEMENT-watch indicator). */
   badge?: React.ReactNode;
+  /** The cell's edge in px — picks the counting bar's text tier. Defaults to 88. */
+  cellSize?: number;
 }
 
 /**
@@ -61,7 +65,7 @@ export interface RisoBoardCellProps {
  * `onContextMenu` wires the play board's context menu, and `badge` renders a
  * corner indicator (achievement watch).
  */
-export function RisoBoardCell({ cell, onClick, onContextMenu, badge }: RisoBoardCellProps): React.ReactElement {
+export function RisoBoardCell({ cell, onClick, onContextMenu, badge, cellSize = 88 }: RisoBoardCellProps): React.ReactElement {
   const tagClass = cell.type === 'counting' ? styles.counting : cell.type === 'compound' ? styles.compound : '';
   const className = [
     styles.cell,
@@ -111,22 +115,11 @@ export function RisoBoardCell({ cell, onClick, onContextMenu, badge }: RisoBoard
       )}
       {(cell.type === 'counting' || cell.type === 'compound') && (
         <span className={`${styles.tag} ${cell.type === 'counting' ? styles.counting : styles.compound}`}>
-          {cell.type === 'counting' && cell.count ? `×${cell.count.max}` : '≡'}
+          {cell.type === 'counting' && cell.count ? `×${formatCount(cell.count.max, cell.count.kind)}` : '≡'}
         </span>
       )}
       <span className={styles.cellText}>{cell.label}</span>
-      {cell.type === 'counting' && cell.count && (
-        <span className={styles.cbar}>
-          <i
-            style={{
-              width: `${cell.count.max > 0 ? Math.min(100, Math.round((cell.count.cur / cell.count.max) * 100)) : 0}%`,
-            }}
-          />
-          <span>
-            {cell.count.cur}/{cell.count.max}
-          </span>
-        </span>
-      )}
+      {cell.type === 'counting' && cell.count && <CountBar count={cell.count} cellSize={cellSize} />}
       {cell.done && (
         <span className={styles.check}>
           <RisoIcon name="check" />
@@ -149,4 +142,20 @@ export function RisoBoardCell({ cell, onClick, onContextMenu, badge }: RisoBoard
     );
   }
   return <div className={className}>{inner}</div>;
+}
+
+/**
+ * The counting bar: fill + the tiered `cur/max` → `cur` → nothing text. An
+ * overshoot keeps its real value (never clamped) on a full GOLD fill.
+ */
+function CountBar({ count, cellSize }: { count: NonNullable<BoardCellModel['count']>; cellSize: number }): React.ReactElement {
+  const over = count.max > 0 && count.cur > count.max;
+  const fit = cellCountFit(count.cur, count.max, count.kind, cellSize);
+  const pct = count.max > 0 ? Math.min(100, Math.round((count.cur / count.max) * 100)) : 0;
+  return (
+    <span className={over ? `${styles.cbar} ${styles.over}` : styles.cbar}>
+      <i style={{ width: `${pct}%` }} />
+      {fit.tier !== 'none' && <span>{fit.text}</span>}
+    </span>
+  );
 }

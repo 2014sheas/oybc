@@ -254,6 +254,7 @@
 		70B78042EF2F56A95B2C7F3F /* SquarePickerCandidatesTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DFC485837E7FFEBDB8B0B688 /* SquarePickerCandidatesTests.swift */; };
 		7102BA86D9DA632AE8E466BC /* RisoCoreDefaultChipStripView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 23F0BED637A1F78E8F63B8E8 /* RisoCoreDefaultChipStripView.swift */; };
 		712367E8197F91180951A84B /* CompoundChildEligibility.swift in Sources */ = {isa = PBXBuildFile; fileRef = F81CA8472D1840765E6210A9 /* CompoundChildEligibility.swift */; };
+		713B5B55D4F5F5957C7C05C8 /* RisoBoardCellKindsSnapshotTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8531728747E1267C4363D42D /* RisoBoardCellKindsSnapshotTests.swift */; };
 		722204F9CFD352A277A4BAAC /* BoardMenuItems.swift in Sources */ = {isa = PBXBuildFile; fileRef = 37235A5F3CF0D4D1B423B81C /* BoardMenuItems.swift */; };
 		72B17BF3817EE6738B076EA1 /* CenterSquareTypeDecodeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF4685A959F0EDDAB5623837 /* CenterSquareTypeDecodeTests.swift */; };
 		72D3E079C97AD509EE1BC5F3 /* BoardWizardPoolOrderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5DD55457A8953DCE642000CC /* BoardWizardPoolOrderTests.swift */; };
@@ -902,6 +903,7 @@
 		838CDB33DF9CBB9C230865E5 /* NotificationPreferencesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationPreferencesView.swift; sourceTree = "<group>"; };
 		83E38D1620CA8E2178AB295A /* DebugLog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DebugLog.swift; sourceTree = "<group>"; };
 		83FCD1A6ABC3B2832F48CFDF /* linkedCounterWindowHealVectors.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = linkedCounterWindowHealVectors.json; sourceTree = "<group>"; };
+		8531728747E1267C4363D42D /* RisoBoardCellKindsSnapshotTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RisoBoardCellKindsSnapshotTests.swift; sourceTree = "<group>"; };
 		854FEF8734BD37239F0A8462 /* BoardTask.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BoardTask.swift; sourceTree = "<group>"; };
 		85C4A3440703485206138804 /* AppDatabase+DerivedCounters.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AppDatabase+DerivedCounters.swift"; sourceTree = "<group>"; };
 		85EB674C8E417B2C51F85069 /* RisoCountStepperView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RisoCountStepperView.swift; sourceTree = "<group>"; };
@@ -1793,6 +1795,7 @@
 				56F7E900ABE30003B057CD43 /* RearrangeGridSnapshotTests.swift */,
 				ED723FA5355D6C5E4952B79D /* RecurringBoardsSnapshotTests.swift */,
 				3A019CE553E070DCF2C4D253 /* RisoArrivalBannerSnapshotTests.swift */,
+				8531728747E1267C4363D42D /* RisoBoardCellKindsSnapshotTests.swift */,
 				A330661B3DEB765E23478586 /* RisoBoardGridSnapshotTests.swift */,
 				F6D35D62C9AA4E9927899346 /* RisoBoardsHomeSnapshotTests.swift */,
 				9B3105D4EA5550DB813921E7 /* RisoCompoundPanelSnapshotTests.swift */,
@@ -2713,6 +2716,7 @@
 				8635EC45C1D3C87CF03B2DB6 /* RearrangeGridSnapshotTests.swift in Sources */,
 				FA3834B42E87C76E647113FF /* RecurringBoardsSnapshotTests.swift in Sources */,
 				AD2F0A35C68CEAD826349B0E /* RisoArrivalBannerSnapshotTests.swift in Sources */,
+				713B5B55D4F5F5957C7C05C8 /* RisoBoardCellKindsSnapshotTests.swift in Sources */,
 				9F6D62BA89A31F9862C36E4F /* RisoBoardGridSnapshotTests.swift in Sources */,
 				1164F8933026E32048D862BB /* RisoBoardsHomeSnapshotTests.swift in Sources */,
 				568C2AC5CE7F2B9D13B9340B /* RisoCompoundPanelSnapshotTests.swift in Sources */,

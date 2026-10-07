@@ -156,8 +156,8 @@ describe('window-stamped derived cells render what the kernel resolves (items 4 
     const b = board();
     const cells = buildRisoBoardCells(b, placements, taskMap, {}, ctx(EVENTS));
     expect(cells.slice(0, 2).map((c) => ({ done: c.done, count: c.count }))).toEqual([
-      { done: false, count: { cur: 3, max: 20 } },
-      { done: true, count: { cur: 3, max: 3 } },
+      { done: false, count: { cur: 3, max: 20, kind: 'discrete' } },
+      { done: true, count: { cur: 3, max: 3, kind: 'discrete' } },
     ]);
 
     const kernel = computeBoardGrid(b, placements, {}, taskMap, [b], { eventsByTaskId: ctx(EVENTS).eventsByTaskId });

@@ -748,6 +748,7 @@ export function BoardPlaySurface({
                   // Phase 3 — pulse squares that just filled in from an elsewhere log.
                   isArrived: resolvedTaskId != null && arrivedTaskIds.has(resolvedTaskId),
                   locked: effectiveLocked,
+                  countKind: resolveFamilyCountKind(task, (id) => taskMap[id]),
                 });
 
                 // ── Click handler (play mode) ────────────────────────────
@@ -789,6 +790,7 @@ export function BoardPlaySurface({
                   <RisoBoardCell
                     key={boardTaskId}
                     cell={cellModel}
+                    cellSize={90}
                     badge={
                       achievementBadgesByBoardTaskId[boardTaskId] ? (
                         <span className={play.achvBadge} title="Achievement">

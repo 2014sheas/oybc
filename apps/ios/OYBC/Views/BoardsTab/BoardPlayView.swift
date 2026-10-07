@@ -1275,6 +1275,7 @@ struct BoardPlayView: View {
             showsLockChip: effectiveLockChip,
             currentCount: current,
             maxCount: maxVal,
+            countKind: task.map { resolveFamilyCountKind($0, lookup: { taskMap[$0] }) } ?? .discrete,
             isSharedCounter: isSharedCounterCell,
             compoundDoneCount: compoundDoneCount,
             compoundChildCount: compoundLinks.count,

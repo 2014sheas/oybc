@@ -421,7 +421,7 @@ export function ArrangeGrid({
                 <>
                   {slot.model ? (
                     // No onClick/onContextMenu: ArrangeGrid owns all pointer interactions.
-                    <RisoBoardCell cell={slot.model} />
+                    <RisoBoardCell cell={slot.model} cellSize={90} />
                   ) : slot.isEmpty ? (
                     <div className={styles.emptyCell} />
                   ) : null}

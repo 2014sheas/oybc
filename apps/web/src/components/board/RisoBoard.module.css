@@ -159,6 +159,14 @@
 .done .cbar {
   background: rgba(255, 255, 255, 0.3);
 }
+/* Overshoot: the bar is full and GOLD; its text is static ink — adaptive
+   --riso-ink turns cream in dark mode and vanishes on gold. */
+.cbar.over > i {
+  background: var(--riso-gold);
+}
+.cbar.over > span {
+  color: var(--riso-ink-static);
+}
 
 /* FREE / center */
 .free {
