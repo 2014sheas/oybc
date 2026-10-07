@@ -119,8 +119,15 @@ final class ProfileHomeViewModel: ObservableObject {
         let counterId: String
         let amount: CountValue
         let unit: String
+        let kind: CountKind
         let verb: CounterLogToastView.Verb
         let toastKey: String
+    }
+
+    /// The "+ Log" pill's action (docs/COUNTER_KINDS.md §5) — shared by the hub.
+    static func pillAction(for group: SharedCounterGroup) -> CounterPillAction {
+        CounterLogAmount.pillOpensDetail(kind: group.countKind, defaultLogAmount: group.defaultLogAmount)
+            ? .openDetail : .log(group.defaultLogAmount ?? 1)
     }
 
     /// Dismisses the toast without undoing (auto-dismiss / `onDone`).
@@ -150,6 +157,7 @@ final class ProfileHomeViewModel: ObservableObject {
         let amount = group.defaultLogAmount ?? 1
         let counterId = group.counterId
         let unit = group.unit ?? ""
+        let kind = group.countKind
         let db = self.db
         loggingCounterIds.insert(counterId)
         _Concurrency.Task.detached(priority: .userInitiated) {
@@ -163,7 +171,7 @@ final class ProfileHomeViewModel: ObservableObject {
                     return
                 }
                 self.toast = LogToast(
-                    counterId: counterId, amount: amount, unit: unit,
+                    counterId: counterId, amount: amount, unit: unit, kind: kind,
                     verb: .logged, toastKey: UUID().uuidString
                 )
                 self.load(userId: userId, weekStartDay: weekStartDay)

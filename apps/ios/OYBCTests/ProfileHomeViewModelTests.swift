@@ -319,4 +319,14 @@ final class ProfileHomeViewModelTests: XCTestCase {
         }
         return condition()
     }
+
+    func testPillActionPerKind() {
+        func group(_ kind: CountKind, _ d: CountValue?) -> SharedCounterGroup {
+            SharedCounterGroup(counterId: "c", name: "Miles", action: "Run", unit: "mi", lifetime: 148.6, defaultLogAmount: d,
+                               tasks: [], taskCount: 0, boardCount: 0, activeTaskCount: 0, countKind: kind)
+        }
+        XCTAssertEqual(ProfileHomeViewModel.pillAction(for: group(.continuous, nil)), .openDetail)
+        XCTAssertEqual(ProfileHomeViewModel.pillAction(for: group(.duration, 30)), .log(30))
+        XCTAssertEqual(ProfileHomeViewModel.pillAction(for: group(.discrete, nil)), .log(1))
+    }
 }

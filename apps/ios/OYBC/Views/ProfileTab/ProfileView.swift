@@ -128,7 +128,13 @@ struct ProfileView: View {
                         onOpenHub: { showCountersHub = true },
                         onOpenDetail: { counterId in navigateToCounterId = counterId },
                         onNewCounter: { showNewCounterSheet = true },
-                        onLog: { group in handleLog(group) }
+                        onLog: { group in
+                            if ProfileHomeViewModel.pillAction(for: group) == .openDetail {
+                                navigateToCounterId = group.counterId
+                            } else {
+                                handleLog(group)
+                            }
+                        }
                     )
                     .padding(.bottom, 32)
                 }
@@ -142,6 +148,7 @@ struct ProfileView: View {
                     amount: toast.amount,
                     unit: toast.unit,
                     verb: toast.verb,
+                    kind: toast.kind,
                     onUndo: { handleUndo(counterId: toast.counterId) },
                     onDone: { vm.dismissToast() }
                 )

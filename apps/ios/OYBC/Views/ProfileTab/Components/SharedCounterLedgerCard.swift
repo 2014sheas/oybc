@@ -50,6 +50,13 @@ struct SharedCounterLedgerCard: View {
     private var unitLabel: String { group.unit ?? "" }
     private var logAmount: CountValue { group.defaultLogAmount ?? 1 }
 
+    private var logPillAccessibilityLabel: String {
+        if CounterLogAmount.pillOpensDetail(kind: group.countKind, defaultLogAmount: group.defaultLogAmount) {
+            return "Log \(group.name)"
+        }
+        return "Log \(formatCountWithUnit(logAmount, kind: group.countKind, unit: group.unit)) for \(group.name)"
+    }
+
     // MARK: - Body
 
     var body: some View {
@@ -78,7 +85,7 @@ struct SharedCounterLedgerCard: View {
             Spacer(minLength: 8)
 
             VStack(alignment: .trailing, spacing: 2) {
-                Text(group.lifetime.formatted())
+                Text(formatCountTotal(group.lifetime, kind: group.countKind))
                     .font(.risoHead(20, .extraBold))
                     .foregroundStyle(Color.risoBlue)
                     .monospacedDigit()
@@ -97,7 +104,7 @@ struct SharedCounterLedgerCard: View {
         .contentShape(Rectangle())
         .onTapGesture { onOpenDetail() }
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(group.name), \(formatCount(group.lifetime, kind: .discrete)) all-time \(unitLabel), \(group.taskCount) tasks on \(group.boardCount) boards")
+        .accessibilityLabel("\(group.name), \(formatCountTotal(group.lifetime, kind: group.countKind)) all-time \(unitLabel), \(group.taskCount) tasks on \(group.boardCount) boards")
         .accessibilityAddTraits(.isButton)
     }
 
@@ -105,7 +112,7 @@ struct SharedCounterLedgerCard: View {
 
     private var logPillButton: some View {
         Button(action: onLog) {
-            Text("+ Log")
+            Text(CounterLogAmount.pillLabel(kind: group.countKind, defaultLogAmount: group.defaultLogAmount))
                 .font(.risoHead(12, .extraBold))
                 .foregroundStyle(Color.risoPaper)
                 .padding(.vertical, 7)
@@ -115,7 +122,7 @@ struct SharedCounterLedgerCard: View {
         }
         .buttonStyle(RisoButtonStyle(offset: Riso.Shadow.small, radius: 999))
         .disabled(isLogging)
-        .accessibilityLabel("Log \(formatCount(logAmount, kind: .discrete)) \(unitLabel) for \(group.name)")
+        .accessibilityLabel(logPillAccessibilityLabel)
     }
 
     // MARK: - Full card (Counters Hub)
@@ -133,7 +140,7 @@ struct SharedCounterLedgerCard: View {
                 Spacer(minLength: 8)
 
                 VStack(alignment: .trailing, spacing: 2) {
-                    Text(group.lifetime.formatted())
+                    Text(formatCountTotal(group.lifetime, kind: group.countKind))
                         .font(.risoHead(26, .extraBold))
                         .foregroundStyle(Color.risoBlue)
                         .monospacedDigit()
@@ -152,7 +159,7 @@ struct SharedCounterLedgerCard: View {
             if !activeMembers.isEmpty {
                 VStack(spacing: 0) {
                     ForEach(activeMembers) { member in
-                        SharedCounterMemberRow(member: member, unit: unitLabel)
+                        SharedCounterMemberRow(member: member, unit: unitLabel, kind: group.countKind)
                     }
                 }
                 .padding(.top, 10)
@@ -186,7 +193,7 @@ struct SharedCounterLedgerCard: View {
         .contentShape(Rectangle())
         .onTapGesture { onOpenDetail() }
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(group.name), \(formatCount(group.lifetime, kind: .discrete)) all-time \(unitLabel), \(group.taskCount) tasks on \(group.boardCount) boards")
+        .accessibilityLabel("\(group.name), \(formatCountTotal(group.lifetime, kind: group.countKind)) all-time \(unitLabel), \(group.taskCount) tasks on \(group.boardCount) boards")
         .accessibilityAddTraits(.isButton)
     }
 
@@ -220,6 +227,7 @@ struct SharedCounterLedgerCard: View {
 struct SharedCounterMemberRow: View {
     let member: SharedCounterMemberTask
     let unit: String
+    var kind: CountKind = .discrete
 
     // MARK: - Derived
 
@@ -233,7 +241,7 @@ struct SharedCounterMemberRow: View {
     }
 
     private var loggedLabel: String {
-        "\(member.logged.formatted())/\(member.goal.formatted())"
+        "\(formatCount(member.logged, kind: kind))/\(formatCount(member.goal, kind: kind))"
     }
 
     // MARK: - Body
@@ -267,7 +275,7 @@ struct SharedCounterMemberRow: View {
         .padding(.vertical, 8)
         .accessibilityElement(children: .combine)
         .accessibilityLabel(
-            "\(member.boardName ?? "no board"), \(formatCount(member.logged, kind: .discrete)) of \(formatCount(member.goal, kind: .discrete)) \(unit)\(member.met ? ", goal met" : "")"
+            "\(member.boardName ?? "no board"), \(formatCountWithUnit(member.logged, kind: kind, unit: unit)) of \(formatCountWithUnit(member.goal, kind: kind, unit: unit))\(member.met ? ", goal met" : "")"
         )
     }
 }

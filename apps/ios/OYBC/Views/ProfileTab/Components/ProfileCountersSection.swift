@@ -105,11 +105,6 @@ struct ProfileCountersSection: View {
                 .font(.risoHead(15, .extraBold))
                 .foregroundStyle(Color.risoInk)
 
-            Text("A counter tracks one activity across every board that counts it. Log once, all of them move.")
-                .font(.risoBody(12, .regular))
-                .foregroundStyle(Color.risoMuted)
-                .multilineTextAlignment(.center)
-
             RisoButton(title: "New counter", kind: .blue, small: true) {
                 onNewCounter()
             }

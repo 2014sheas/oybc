@@ -19,6 +19,12 @@ struct LogChip: Equatable {
 /// UIs don't duplicate the rule. Swift twin of web's `parseCustomLogAmount`
 /// (`apps/web/src/components/counters/amountChips.ts`) — keep both in sync
 /// if the rule ever changes.
+/// The "+ Log" pill's action (docs/COUNTER_KINDS.md §5) — shared by the hub and Profile.
+enum CounterPillAction: Equatable {
+    case log(CountValue)
+    case openDetail
+}
+
 enum CounterLogAmount {
     static func parseCustom(_ raw: String, kind: CountKind = .discrete) -> CountValue? {
         parseCountInput(raw, kind: kind)

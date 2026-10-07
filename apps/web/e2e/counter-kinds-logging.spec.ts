@@ -66,4 +66,11 @@ test.describe('Counter kinds — logging (B1)', () => {
     await page.getByRole('button', { name: '+ Add 6.6 mi' }).click();
     await expect(run).toContainText('6.6/26.2');
   });
+
+  test('hub: a never-logged Continuous counter pill opens Counter Detail', async ({ page }) => {
+    await seedTask(page, { id: 'f2000000-0000-0000-0000-000000000001', title: 'Run miles', type: 'counting', action: 'Run', unit: 'miles', isCounter: true, countKind: 'continuous', currentCount: 148.6 });
+    await page.goto('/profile/counters?__oybc_test_bypass=1');
+    await page.getByRole('button', { name: 'Log Run miles', exact: true }).click();
+    await expect(page).toHaveURL(/\/profile\/counters\/f2000000-0000-0000-0000-000000000001/);
+  });
 });
