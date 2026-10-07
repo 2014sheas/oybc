@@ -352,7 +352,9 @@ final class BoardPlayViewModel: ObservableObject {
     /// mid-sequence could hand this reload a torn snapshot (e.g. a board
     /// whose `completedLineIds` reflects a just-pulled rearrange but whose
     /// `boardTasks` still reflect the pre-pull placements).
-    func reload() {
+    /// - Parameter done: Runs on the main queue once this reload has applied (or been superseded) —
+    ///   orchestrations clear `isProcessing` here, so a next tap never reads pre-write state.
+    func reload(then done: (() -> Void)? = nil) {
         reloadToken += 1
         let token = reloadToken
         let boardId = self.boardId
@@ -363,6 +365,7 @@ final class BoardPlayViewModel: ObservableObject {
             guard let self = self else { return }
             let snapshot = Self.fetchSnapshot(boardId: boardId, userId: userId, database: database)
             DispatchQueue.main.async {
+                defer { done?() }
                 guard token == self.reloadToken else { return }
                 self.board = snapshot.board
                 self.apply(snapshot.payload)
@@ -632,8 +635,7 @@ final class BoardPlayViewModel: ObservableObject {
                     )
 
                 await MainActor.run {
-                    self.isProcessing = false
-                    self.reload()
+                    self.reload { self.isProcessing = false }
                     if let msg = newBingoMsg {
                         self.bingoMessage = msg
                         self.scheduleBingoMessageDismiss(msg)
@@ -743,8 +745,7 @@ final class BoardPlayViewModel: ObservableObject {
                     )
 
                 await MainActor.run {
-                    self.isProcessing = false
-                    self.reload()
+                    self.reload { self.isProcessing = false }
                     if let msg = newBingoMsg {
                         self.bingoMessage = msg
                         self.scheduleBingoMessageDismiss(msg)
@@ -927,8 +928,7 @@ final class BoardPlayViewModel: ObservableObject {
                     }
                 }
                 await MainActor.run {
-                    self.isProcessing = false
-                    self.reload()
+                    self.reload { self.isProcessing = false }
                     if let msg = newBingoMsg {
                         self.bingoMessage = msg
                         self.scheduleBingoMessageDismiss(msg)
@@ -1021,12 +1021,11 @@ final class BoardPlayViewModel: ObservableObject {
 
                 // Refresh UI on main thread.
                 await MainActor.run {
-                    self.isProcessing = false
                     // Full reload: board + placements + workspace task data. The
                     // task-data refresh keeps the compound detail sheet (rendered
                     // from taskMap + compoundChildrenByCompound) in sync with the
                     // latest child-toggle state without a dismiss-and-reopen.
-                    self.reload()
+                    self.reload { self.isProcessing = false }
                     if let msg = newBingoMsg {
                         self.bingoMessage = msg
                         self.scheduleBingoMessageDismiss(msg)
