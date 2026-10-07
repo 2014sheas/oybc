@@ -7,6 +7,12 @@ struct LogChip: Equatable {
     let label: String
 }
 
+/// The "+ Log" pill's action (docs/COUNTER_KINDS.md §5) — shared by the hub and Profile.
+enum CounterPillAction: Equatable {
+    case log(CountValue)
+    case openDetail
+}
+
 /// Log-amount choices (docs/COUNTER_KINDS.md §5): chip sets per surface, the
 /// pre-selected amount, the one-tap amount and the "+ Log" pill label.
 /// Swift twin of `logAmounts.ts`, pinned by `logAmountVectors.json`.
@@ -19,12 +25,6 @@ struct LogChip: Equatable {
 /// UIs don't duplicate the rule. Swift twin of web's `parseCustomLogAmount`
 /// (`apps/web/src/components/counters/amountChips.ts`) — keep both in sync
 /// if the rule ever changes.
-/// The "+ Log" pill's action (docs/COUNTER_KINDS.md §5) — shared by the hub and Profile.
-enum CounterPillAction: Equatable {
-    case log(CountValue)
-    case openDetail
-}
-
 enum CounterLogAmount {
     static func parseCustom(_ raw: String, kind: CountKind = .discrete) -> CountValue? {
         parseCountInput(raw, kind: kind)

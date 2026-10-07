@@ -1,7 +1,6 @@
 import { useNavigate } from 'react-router-dom';
 import { useState } from 'react';
 import {
-  formatCount,
   formatCountTotal,
   formatCountWithUnit,
   type CountKind,
@@ -187,8 +186,8 @@ function LedgerTaskRow({
 
       {/* logged/goal value (right) */}
       <div className={styles.rowVal} aria-label={`${formatCountWithUnit(task.logged, kind, unit)} of ${formatCountWithUnit(task.goal, kind, unit)}`}>
-        {formatCount(task.logged, kind)}
-        <span className={styles.rowGoal}>/{formatCount(task.goal, kind)}</span>
+        {formatCountTotal(task.logged, kind)}
+        <span className={styles.rowGoal}>/{formatCountTotal(task.goal, kind)}</span>
       </div>
 
       {/* Progress bar (spans full width below) */}

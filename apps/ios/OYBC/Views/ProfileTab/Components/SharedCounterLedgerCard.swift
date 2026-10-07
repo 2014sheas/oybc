@@ -240,8 +240,13 @@ struct SharedCounterMemberRow: View {
         member.met ? .risoGreen : .risoBlue
     }
 
+    /// "512/1,000" — grouped, like the lifetime total.
+    static func loggedLabel(logged: CountValue, goal: CountValue, kind: CountKind) -> String {
+        "\(formatCountTotal(logged, kind: kind))/\(formatCountTotal(goal, kind: kind))"
+    }
+
     private var loggedLabel: String {
-        "\(formatCount(member.logged, kind: kind))/\(formatCount(member.goal, kind: kind))"
+        Self.loggedLabel(logged: member.logged, goal: member.goal, kind: kind)
     }
 
     // MARK: - Body

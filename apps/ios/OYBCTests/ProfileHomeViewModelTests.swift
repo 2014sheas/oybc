@@ -329,4 +329,12 @@ final class ProfileHomeViewModelTests: XCTestCase {
         XCTAssertEqual(ProfileHomeViewModel.pillAction(for: group(.duration, 30)), .log(30))
         XCTAssertEqual(ProfileHomeViewModel.pillAction(for: group(.discrete, nil)), .log(1))
     }
+
+    func testMemberLoggedLabelStaysGrouped() {
+        XCTAssertEqual(
+            SharedCounterMemberRow.loggedLabel(logged: 512, goal: 1000, kind: .discrete)
+                .replacingOccurrences(of: "\u{202F}", with: ","),
+            "512/1,000"
+        )
+    }
 }

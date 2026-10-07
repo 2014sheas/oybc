@@ -239,7 +239,6 @@ struct CountersHubContent: View {
                     .padding(.top, 16)
                     .padding(.bottom, 20)
 
-
                     // §Member rules (B3, RC9) — hidden when there is nothing
                     // to filter: a "Show expired tasks" control sitting over
                     // "No counters yet" is noise. Stays up while the toggle is

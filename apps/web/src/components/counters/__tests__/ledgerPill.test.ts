@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { formatCountTotal } from '@oybc/shared';
 import { ledgerPill } from '../ledgerPill';
 
 describe('ledgerPill', () => {
@@ -17,5 +18,11 @@ describe('ledgerPill', () => {
   it('discrete is unchanged', () => {
     expect(ledgerPill({ name: 'Push-ups', unit: 'push-ups', countKind: 'discrete', defaultLogAmount: null }))
       .toEqual({ label: '+ Log', ariaLabel: 'Log 1 push-ups for Push-ups', opensDetail: false, amount: 1 });
+  });
+});
+
+describe('member logged/goal values', () => {
+  it('keeps discrete values grouped', () => {
+    expect(`${formatCountTotal(512, 'discrete')}/${formatCountTotal(1000, 'discrete')}`).toBe('512/1,000');
   });
 });
