@@ -1,4 +1,4 @@
-# Design brief — Counter kinds (Count · Amount · Time)
+# Design brief — Counter kinds (Discrete · Continuous · Duration)
 
 **For:** Claude Design (claude.ai/design). Build on the OYBC Riso design-system
 project `868cbd0e-dc0f-49ef-b0e2-f09eaf04b24c` (real Riso components + tokens).
@@ -19,18 +19,20 @@ money, or time — a 3.1-mile run can't be logged honestly.
 
 We're adding a **kind** to every counter:
 
-| Kind (working label) | Logs | Example | Goal entry | Display |
+| Kind | Logs | Example | Goal entry | Display |
 |---|---|---|---|---|
-| **Count** (today) | whole numbers | Read 300 pages | integer | `120/300` |
-| **Amount** | decimals, up to 2 places | Run 26.2 miles | decimal | `12.4/26.2` |
-| **Time** | hours + minutes | Practice 10 h guitar | h : m | `4h 30m/10h` |
+| **Discrete** (today) | whole numbers | Read 300 pages | integer | `120/300` |
+| **Continuous** | decimals, up to 2 places | Run 26.2 miles | decimal | `12.4/26.2` |
+| **Duration** | hours + minutes | Practice 10 h guitar | h : m | `4h 30m/10h` |
 
-Labels are working names — propose better ones if you have them. Time has no
-user-entered unit (the unit *is* time). Count and Amount keep Action → Goal → Unit.
+These are the kind names (they match the code). The on-screen labels are yours
+to propose — but not "Amount", which is already the custom log-amount field's
+placeholder. Duration has no user-entered unit (the unit *is* time). Discrete and
+Continuous keep Action → Goal → Unit.
 
-**Time is a sketched third option.** Design it fully enough that the kind picker
+**Duration is a sketched third option.** Design it fully enough that the kind picker
 is genuinely three-way and we can see the h:m entry/chips/display; engineering
-decides after review whether it ships with Amount or right after.
+decides after review whether it ships with Continuous or right after.
 
 ---
 
@@ -47,12 +49,12 @@ decides after review whether it ships with Amount or right after.
 3. **Overshoot is valid.** 28.4/26.2 is a real, celebrated state — never clamp.
 4. **Same job, same interface.** The kind picker and the amount-entry control
    must be ONE component reused on every surface below, not a per-screen variant.
-5. **Count ⇄ Amount switch both ways** on an existing counter. Amount → Count
+5. **Discrete ⇄ Continuous switch both ways** on an existing counter. Continuous → Discrete
    rounds the goal to a whole number (26.2 → 26) and the board's totals display
    rounded; nothing is lost (switching back restores exact values). Design the
    switch moment (a confirm dialog with a consequence body is allowed).
-   **Time never switches** — once created, a Time counter stays Time, and a
-   Count/Amount counter can't become Time. Show that as a locked state of the
+   **Duration never switches** — once created, a Duration counter stays Duration,
+   and a Discrete/Continuous counter can't become Duration. Show that as a locked state of the
    picker, not a sentence.
 6. **A shared counter's kind belongs to the whole family** — every linked square
    follows the source. Linked squares never offer a kind choice.
@@ -74,8 +76,8 @@ Today each shows Action → Goal → Unit with a whole-number Goal field
 6. **Counters hub → New counter** (name, "Start from").
 
 Design: the kind picker (placement relative to Action/Goal/Unit), the Goal field
-per kind (decimal keypad on iOS for Amount; h:m entry for Time), the switch
-confirm and Time's locked state (constraint 5).
+per kind (decimal keypad on iOS for Continuous; h:m entry for Duration), the switch
+confirm and Duration's locked state (constraint 5).
 
 ### B. Logging — the hard part
 
@@ -83,23 +85,23 @@ Today:
 - **Board square tap**: web = +1 (or the counter's last-used amount for shared
   counters); iOS = opens a stepper sheet (− / + by a chosen amount, chips, custom).
 - **Long-press / context menu**: "+ Add 1", "+ Add {last}", "# Custom amount…", "− Remove".
-- **Amount chips**: hub/detail `1 · 10 · 25 · #`; board `+1 · +10 · #`;
+- **Log-amount chips**: hub/detail `1 · 10 · 25 · #`; board `+1 · +10 · #`;
   closed-board late log `+1 · +2 · +5 · Custom…`. The last amount used becomes the
   pre-selected chip.
 - **Counters hub "+ Log" pill** and **Profile counter "+ Log"** — one tap logs the last amount.
 - **Toast**: "Logged +N unit · Undo".
 
-**Start from these existing interactions** — the answer for Amount and Time
+**Start from these existing interactions** — the answer for Continuous and Duration
 is mostly "the same pattern, adapted per kind", not a new flow. Note the current
 web/iOS divergence on square tap (web logs, iOS opens the sheet) and resolve it
 if a kind needs one behaviour on both. Open questions:
-- What does **tapping an Amount square** do? +1 mile is rarely right; a tap
+- What does **tapping a Continuous square** do? +1 mile is rarely right; a tap
   that always opens entry adds friction for a one-tap habit app. Options we see:
   tap logs last amount (with Undo), tap opens entry, or tap = last amount with an
   inline edit affordance. Pick and show it.
-- **Chip presets per kind** (e.g. Amount `0.5 · 1 · 5 · #`? Time `+15m · +30m · +1h · #`?)
+- **Chip presets per kind** (e.g. Continuous `0.5 · 1 · 5 · #`? Duration `+15m · +30m · +1h · #`?)
   — or derived from the goal.
-- **The custom-amount entry** for Amount (decimal) and Time (h:m) — one sheet on
+- **The custom-amount entry** for Continuous (decimal) and Duration (h:m) — one sheet on
   iOS, one popover/modal on web, reused by board, hub, detail and late log.
 - **Removing / correcting** a mistaken 31 instead of 3.1.
 
@@ -113,10 +115,10 @@ if a kind needs one behaviour on both. Open questions:
 - **Task titles** auto-generate from Action + Goal + Unit ("Run 26.2 miles",
   "Practice 10 hours"?).
 - **Board-wizard member rows** show targets with a ± "vary" dice range
-  ("24.0–28.4 mi") and a target stepper — show the stepper for Amount and Time.
+  ("24.0–28.4 mi") and a target stepper — show the stepper for Continuous and Duration.
 
 Number formatting: trim trailing zeros (`3.1`, `26.2`, `5`), locale decimal
-separator; Time as `Xh Ym` (drop zero parts).
+separator; Duration as `Xh Ym` (drop zero parts).
 
 ---
 

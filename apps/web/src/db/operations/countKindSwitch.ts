@@ -17,8 +17,8 @@ import { computeTaskCachesFromEvents } from './taskEvents';
  * countKindSwitch.ts — counter kinds, web half of the family-wide kind rules
  * (docs/COUNTER_KINDS.md D4/D5). Swift twin: `AppDatabase+CountKindSwitch.swift`.
  *
- *  - {@link switchCounterKind} — switch a counter ROOT between Count and
- *    Amount (`discrete ⇄ continuous`), cascading to its live family.
+ *  - {@link switchCounterKind} — switch a counter ROOT between `discrete`
+ *    and `continuous`, cascading to its live family.
  *  - {@link withRootCountKind} — the write-time rule that a new linked row
  *    carries its root's kind.
  */
