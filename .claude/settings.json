@@ -1,16 +1,1 @@
-{
-  "hooks": {
-    "PreToolUse": [
-      {
-        "matcher": "Bash",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "jq -r '.tool_input.command // \"\"' | grep -Eq 'git[[:space:]].*push.*release/testflight' && echo '{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"ask\",\"permissionDecisionReason\":\"TestFlight lane push = one Xcode Cloud build + one App Store Connect upload (daily cap ITMS-90382). Proceed only if the owner asked for this build and will test it.\"}}' || true",
-            "statusMessage": "Checking for TestFlight lane push"
-          }
-        ]
-      }
-    ]
-  }
-}
+{}
