@@ -40,7 +40,7 @@ extension SyncService {
     ///
     /// - Parameter collection: A Firestore subcollection name (e.g. `"boards"`).
     /// - Returns: The field names whose absence must sync as a delete/NULL.
-    static func clearableFields(for collection: String) -> [String] {
+    nonisolated static func clearableFields(for collection: String) -> [String] {
         clearableFieldsByCollection[collection] ?? []
     }
 
@@ -52,7 +52,7 @@ extension SyncService {
     /// - Parameters:
     ///   - collection: The doc's collection name.
     ///   - cleaned: The push payload being assembled, mutated in place.
-    static func applyClearableFieldDeletes(collection: String, cleaned: inout [String: Any]) {
+    nonisolated static func applyClearableFieldDeletes(collection: String, cleaned: inout [String: Any]) {
         for field in clearableFields(for: collection) where cleaned[field] == nil {
             cleaned[field] = FieldValue.delete()
         }
@@ -66,7 +66,8 @@ extension SyncService {
     /// for a table with no clearable fields or a doc missing `id`.
     ///
     /// MUST run inside the caller's write transaction, immediately after the
-    /// generic upsert for the same row.
+    /// generic upsert for the same row. `nonisolated`: the pull applies on
+    /// GRDB's writer queue, off the main actor (`AppDatabase+PullApply.swift`).
     ///
     /// - Parameters:
     ///   - db: The active GRDB write transaction.
@@ -74,7 +75,7 @@ extension SyncService {
     ///     `syncableCollections`).
     ///   - cleaned: The remote doc's cleaned field dictionary (metadata keys
     ///     like `_syncedAt` already stripped by the caller).
-    static func applyClearableFieldNulls(db: Database, grdbTable: String, cleaned: [String: Any]) throws {
+    nonisolated static func applyClearableFieldNulls(db: Database, grdbTable: String, cleaned: [String: Any]) throws {
         guard let collection = syncableCollections.first(where: { $0.grdbTable == grdbTable })?.firestoreName,
               let rowId = cleaned["id"] as? String else { return }
         for field in clearableFields(for: collection) where cleaned[field] == nil {

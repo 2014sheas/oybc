@@ -153,5 +153,25 @@ extension AppDatabase {
         migrator.registerMigration("v39") { db in
             try db.execute(sql: "ALTER TABLE tasks ADD COLUMN countKind TEXT")
         }
+
+        // v40: per-collection pull checkpoints (2026-10-07, the launch-watchdog
+        // fix — `AppDatabase+PullApply.swift`). LOCAL-ONLY: never synced, not
+        // a sync collection. One row per (user, collection) holding the highest
+        // server `_syncedAt` applied, written in the same transaction as the
+        // batch it covers, so a pull killed part-way resumes where it stopped.
+        // Exact seconds + nanoseconds (a Firestore `Timestamp`). A missing row
+        // falls back to `users.lastSyncedAt`. Cleared by `wipeLocalDatabase`.
+        // Web twin: the Dexie `syncWatermarks` store (v19).
+        migrator.registerMigration("v40") { db in
+            try db.execute(sql: """
+                CREATE TABLE sync_watermarks (
+                    userId TEXT NOT NULL,
+                    collection TEXT NOT NULL,
+                    seconds INTEGER NOT NULL,
+                    nanoseconds INTEGER NOT NULL,
+                    PRIMARY KEY (userId, collection)
+                )
+                """)
+        }
     }
 }

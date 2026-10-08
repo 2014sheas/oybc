@@ -53,9 +53,6 @@ let syncableCollections: [(firestoreName: String, grdbTable: String)] = [
     ("users", "users"),
 ]
 
-/// Whitelist of allowed GRDB table names — used to prevent SQL injection.
-private let allowedGRDBTables: Set<String> = Set(syncableCollections.map(\.grdbTable))
-
 /// Firestore subcollections whose documents carry a `userId` field.
 /// The pull path rejects any document whose `userId` doesn't match the
 /// authenticated user for these collections — defense-in-depth against
@@ -94,79 +91,6 @@ let userScopedCollections: Set<String> = [
 let legacyPullSkipCollections: Set<String> = [
     "defaultPools",
 ]
-
-/// Validates the baseline sync-safety invariants that every pulled
-/// document must satisfy before reaching GRDB. This helper enforces
-/// the narrow subset it actually checks: a UUID `id`, `version >= 1`,
-/// and (for user-scoped collections) `userId` equality. It does NOT
-/// attempt to fully mirror the web Zod entity schemas — that would
-/// require per-collection Codable decoding of every field; future
-/// work if divergence becomes a problem.
-///
-/// - Parameters:
-///   - collection: The Firestore subcollection name.
-///   - data: The raw document data from Firestore.
-///   - authenticatedUserId: The current user's uid.
-/// - Returns: An error string if the document is invalid, or `nil` to
-///   proceed with upsert. A returned string is logged and the document
-///   is skipped.
-private func validateRemotePullDocument(
-    collection: String,
-    data: [String: Any],
-    authenticatedUserId: String
-) -> String? {
-    // Require an id string.
-    guard let id = data["id"] as? String, !id.isEmpty else {
-        return "missing or empty id"
-    }
-
-    // Require a UUID-format id to match the shared schemas. Prevents a
-    // malformed identifier from entering GRDB as a string primary key
-    // that later joins/queries against UUID-shaped ids won't match.
-    guard UUID(uuidString: id) != nil else {
-        return "invalid id format for \(collection)/\(id)"
-    }
-
-    // Require a positive integer version — a zero/negative version would
-    // always lose LWW, but a non-numeric one could crash the resolver.
-    // Reason strings omit the raw version value to stay consistent with
-    // the userId-redaction rule below; collection + doc id is enough to
-    // triage, and the raw value is one Firestore lookup away if needed.
-    let version = toInt(data["version"])
-    guard version >= 1 else {
-        return "invalid version for \(collection)/\(id)"
-    }
-
-    // On user-scoped collections, the userId field must match the
-    // authenticated user. Rejecting mismatches keeps a spoofed peer
-    // write from corrupting our local row. Reason strings don't include
-    // either uid — these messages flow into `syncEvents` (displayed in
-    // the playground dashboard) and `log()` (printed to Xcode console),
-    // so interpolating the authenticated uid here would leak a stable
-    // identifier through any log-collection path.
-    if userScopedCollections.contains(collection) {
-        let userId = data["userId"] as? String ?? ""
-        guard userId == authenticatedUserId else {
-            return "userId mismatch for \(collection)/\(id)"
-        }
-    }
-
-    // Board-integrity PR-2 (Part 3): mirror the shared `BoardTaskSchema`
-    // row/col upper bound (0..24 — max grid is 5×5, so 24 is the highest
-    // valid 0-based index). A malformed/out-of-range placement from a peer
-    // must never reach GRDB — `PlacementIntegrity.resolvePlacements`'s
-    // bounds-drop is defense-in-depth at READ time, but rejecting here
-    // keeps corrupt rows out of local storage entirely.
-    if collection == "boardTasks" {
-        let row = toInt(data["row"])
-        let col = toInt(data["col"])
-        guard (0...24).contains(row), (0...24).contains(col) else {
-            return "row/col out of bounds for \(collection)/\(id)"
-        }
-    }
-
-    return nil
-}
 
 // MARK: - Conflict Resolution
 
@@ -224,14 +148,6 @@ func resolveConflict(
 
     // Tie or remote is newer — remote wins (server authority).
     return "remote"
-}
-
-/// Safely extracts an integer from Any — handles Int, Int64, NSNumber.
-private func toInt(_ value: Any?) -> Int {
-    if let i = value as? Int { return i }
-    if let i64 = value as? Int64 { return Int(i64) }
-    if let n = value as? NSNumber { return n.intValue }
-    return 0
 }
 
 // MARK: - SyncService
@@ -302,15 +218,6 @@ final class SyncService: ObservableObject {
 
     // MARK: - Private
 
-    /// Firestore handle. `lazy` so merely *constructing* a `SyncService`
-    /// doesn't touch Firebase — this lets the logic-test bundle (no
-    /// `FirebaseApp.configure()` host) instantiate the service to exercise
-    /// the GRDB-only pull-apply seam (`applyRemoteSubdoc`). Access stays
-    /// serialized on `@MainActor`, so the non-thread-safe `lazy` is safe;
-    /// production behaviour is unchanged (the handle is still created on
-    /// first network use, before any real sync).
-    private lazy var db = Firestore.firestore()
-
     /// Local database the push path and pull-apply seam use. Injected
     /// (defaulting to `.shared`) so tests can point them at an in-memory
     /// `AppDatabase.makeTestInstance()`; both `SyncService()` call sites keep
@@ -320,26 +227,26 @@ final class SyncService: ObservableObject {
     /// Remote store the push path reads/writes through (see FirestoreDocStore.swift).
     private let docStore: FirestoreDocStore
 
+    /// Remote reads the pull path + listeners go through (PullDocumentSource.swift).
+    private let pullSource: PullDocumentSource
+
     /// - Parameters:
-    ///   - database: Local DB for the push path + pull-apply seam. Defaults
-    ///     to `.shared`; overridden only in tests.
+    ///   - database: Local DB for push, pull and listeners. Defaults to
+    ///     `.shared`; overridden only in tests.
     ///   - currentAuthUid: Returns the signed-in Firebase uid (or nil). Read
     ///     by the push-path uid guard; defaults to `Auth.auth()`.
     ///   - docStore: Remote store for the push path; defaults to Firestore.
-    ///
-    /// SCOPE CAVEAT (E3): the push path (`pushSyncCore` → `processPushItem`),
-    /// the users-doc helpers, `applyRemoteSubdoc` and `applyPulledDocument` read `database`;
-    /// fullSync's collection pull, the listeners and the safety net still use
-    /// `AppDatabase.shared` / Firestore directly — widening is a deliberate
-    /// future step, not an oversight.
+    ///   - pullSource: Remote reads for the pull + listeners; defaults to Firestore.
     init(
         database: AppDatabase = .shared,
         currentAuthUid: @escaping () -> String? = { Auth.auth().currentUser?.uid },
-        docStore: FirestoreDocStore = LiveFirestoreDocStore()
+        docStore: FirestoreDocStore = LiveFirestoreDocStore(),
+        pullSource: PullDocumentSource = LiveFirestorePullSource()
     ) {
         self.database = database
         self.currentAuthUid = currentAuthUid
         self.docStore = docStore
+        self.pullSource = pullSource
     }
 
     /// Reads the signed-in Firebase uid at call time. Injected (defaulting to
@@ -352,11 +259,11 @@ final class SyncService: ObservableObject {
     /// fire occasionally to retry FAILED items, recover stale IN_PROGRESS
     /// rows from a force-quit, and back-stop missed snapshot deliveries.
     ///
-    /// DO NOT REMOVE this timer as an "optimization": the pull watermark is
-    /// a LOCAL-clock ISO string compared against server `_syncedAt`, so a
-    /// clock-skew window exists by design — a doc written during the skew
-    /// can slip past the watermark, and this periodic re-pull is the only
-    /// mechanism that recovers it. Web twin: `SYNC_SAFETY_NET_MS` in
+    /// DO NOT REMOVE this timer as an "optimization": the pull checkpoints
+    /// are server `_syncedAt` instants, but their bootstrap fallback
+    /// (`users.lastSyncedAt`) is a LOCAL-clock ISO string, so a clock-skew
+    /// window remains for a device without checkpoints, and this periodic
+    /// re-pull is also what recovers a skipped (missing-parent) row. Web twin: `SYNC_SAFETY_NET_MS` in
     /// syncService.ts. See docs/SYNC_STRATEGY.md.
     static let safetyNetInterval: TimeInterval = 5 * 60
 
@@ -370,7 +277,7 @@ final class SyncService: ObservableObject {
 
     /// Active Firestore listener registrations — one per syncable
     /// subcollection plus the parent user doc. Detached on `stop()`.
-    private var listenerRegistrations: [ListenerRegistration] = []
+    private var listenerRegistrations: [PullListener] = []
 
     /// Repeating safety-net timer.
     private var safetyNetTask: _Concurrency.Task<Void, Never>?
@@ -521,72 +428,84 @@ final class SyncService: ObservableObject {
         return result
     }
 
-    /// Pulls remote changes from Firestore that are newer than `lastSyncedAt`.
+    /// Pulls remote changes, collection by collection in `pullApplyOrder`
+    /// (dependency order), each resuming from its own checkpoint (or
+    /// `lastSyncedAt` when it has none). Every collection applies in batches
+    /// OFF the main actor (`AppDatabase.applyPullBatch`): one transaction +
+    /// one cascade + one checkpoint per batch, so a killed pull resumes where
+    /// it stopped instead of re-applying everything. The main actor only
+    /// publishes each batch's outcome.
     ///
-    /// For each syncable collection:
-    /// 1. Queries Firestore for documents updated after `lastSyncedAt` (all docs on first sync).
-    /// 2. Compares each remote document with the local version.
-    /// 3. Applies LWW conflict resolution.
-    /// 4. Writes the winning document to the local GRDB table.
-    ///
-    /// Updates the user's `lastSyncedAt` in the local DB after all collections
-    /// have been processed.
+    /// The heal sweeps + the `users.lastSyncedAt` stamp run only when every
+    /// collection applied cleanly in THIS pull.
     ///
     /// - Parameters:
     ///   - userId: The authenticated user's Firestore UID.
-    ///   - lastSyncedAt: ISO8601 timestamp of the last successful sync, or `nil` for first sync.
+    ///   - lastSyncedAt: ISO8601 fallback watermark for collections with no
+    ///     checkpoint yet, or `nil` for a first sync.
     /// - Returns: Pull result summary.
     func pullSync(userId: String, lastSyncedAt: String?) async -> PullResult {
         var result = PullResult()
 
-        // Pull the parent user doc (`users/{userId}`) so synced profile fields
-        // like `preferences` replicate back to this device. Handled outside
-        // the subcollection loop because it lives at a different path.
+        // The parent user doc (`users/{userId}`) — synced profile fields like
+        // `preferences` replicate back through it.
         await processPullUserDocument(userId: userId, result: &result)
 
-        for collection in syncableCollections where collection.firestoreName != "users"
-            && !legacyPullSkipCollections.contains(collection.firestoreName) {
+        let fallback = lastSyncedAt.flatMap(DateFormatting.parseISO).map(PullWatermark.init(date:))
+        let checkpoints = (try? await database.readAsync { db in
+            try AppDatabase.fetchSyncWatermarks(db: db, userId: userId)
+        }) ?? [:]
+        for collection in pullApplyCollections {
             await processPullCollection(
-                collection: collection,
-                userId: userId,
-                lastSyncedAt: lastSyncedAt,
-                result: &result
+                collection: collection, userId: userId,
+                since: checkpoints[collection.firestoreName] ?? fallback, result: &result
             )
         }
 
-        // Only advance watermark if no pull errors occurred
-        let hadErrors = result.details.contains { $0.contains("Pull failed") }
-        if !hadErrors {
-            // Heal-on-pull (docs/WINDOWED_COMPLETION.md §Heal-on-pull) + the
-            // windowed-linked-counter sweep: clean pulls only, idempotent,
-            // before the watermark advances; counts toward `result.pulled`.
-            let healed = healMissingCompletionEvents(userId: userId)
-            if healed > 0 { result.pulled += healed; result.details.append("Healed \(healed) missing completion event(s)") }
-            let windowed = database.healLinkedCounterWindowsSweep(userId: userId)
-            if windowed > 0 { result.pulled += windowed; result.details.append("Windowed \(windowed) linked counter(s)") }
-
-            let now = AppDatabase.currentTimestamp()
-            do {
-                if var user = try AppDatabase.shared.fetchUser(id: userId) {
-                    user.lastSyncedAt = now
-                    user.updatedAt = now
-                    try AppDatabase.shared.saveUser(user)
-                }
-            } catch {
-                log("Warning: could not update lastSyncedAt for user \(userId): \(error.localizedDescription)")
-            }
+        if !result.details.contains(where: { $0.contains("Pull failed") }) {
+            await finishCleanPull(userId: userId, result: &result)
         }
 
-        // Board-integrity PR-4 (Item 5): one signal per PULL BATCH (this
-        // whole `pullSync` call, covering the user doc + every subcollection),
-        // not per row — `result.pulled` already aggregates every applied
-        // write across both, including the batched `taskEvents` path.
+        // Board-integrity PR-4 (Item 5): one signal per PULL, not per row.
         if result.pulled > 0 {
             postSyncDidApplyChanges()
         }
 
         hasCompletedFirstPull = true
         return result
+    }
+
+    /// Clean-pull tail: heal-on-pull (docs/WINDOWED_COMPLETION.md
+    /// §Heal-on-pull) + the windowed-linked-counter sweep — idempotent, each
+    /// in its own async write — then the `users.lastSyncedAt` stamp (the
+    /// checkpoint fallback + web parity). Heals never fail the pull.
+    private func finishCleanPull(userId: String, result: inout PullResult) async {
+        do {
+            let healed = try await database.writeAsync { db in try AppDatabase.healMissingCompletionEventsTx(db: db, userId: userId) }
+            if healed > 0 { result.pulled += healed; recordBatch(pulled: healed); result.details.append("Healed \(healed) missing completion event(s)") }
+        } catch {
+            log("Heal-on-pull skipped: \(error.localizedDescription)")
+        }
+        do {
+            let windowed = try await database.writeAsync { db in
+                try AppDatabase.healLinkedCounterWindowsTx(db: db, userId: userId, now: AppDatabase.currentTimestamp())
+            }
+            let total = windowed.stamped + windowed.copied
+            if total > 0 { result.pulled += total; result.details.append("Windowed \(total) linked counter(s)") }
+        } catch {
+            log("Linked-counter window heal skipped: \(error.localizedDescription)")
+        }
+        do {
+            let now = AppDatabase.currentTimestamp()
+            try await database.writeAsync { db in
+                guard var user = try User.fetchOne(db, key: userId) else { return }
+                user.lastSyncedAt = now
+                user.updatedAt = now
+                try user.save(db)
+            }
+        } catch {
+            log("Warning: could not update lastSyncedAt for user \(userId): \(error.localizedDescription)")
+        }
     }
 
     // MARK: - Push Helpers
@@ -719,161 +638,9 @@ final class SyncService: ObservableObject {
     }
 
     // MARK: - Local-wins re-assert (Board-integrity PR-4, Item 1)
-
-    /// Push does getDoc → (later) setDoc, never a Firestore transaction — two
-    /// devices racing the same doc can let a stale write land AFTER a fresher
-    /// one. Historically, the next pull's LOCAL-wins resolution was a silent
-    /// no-op: nothing ever re-asserted the fresher local version, so the
-    /// devices + remote stayed divergent until some UNRELATED edit happened to
-    /// bump the row's version again.
-    ///
-    /// Fix: whenever a pull resolves local-wins, enqueue an UPDATE push for the
-    /// local row (the existing `SyncQueueBuilder` coalescer dedupes repeat
-    /// enqueues into one PENDING row, so this is idempotent and cheap even on
-    /// every 5-minute safety-net pull). This makes divergence self-healing
-    /// regardless of push races, for every syncable collection (`taskEvents` is
-    /// exempt — see below).
-    ///
-    /// Deliberately NOT doing: `runTransaction` on the push path — the
-    /// offline-first queue + LWW + this re-assert makes a Firestore transaction
-    /// redundant, and a transaction would serialize the push loop.
-    ///
-    /// Not applied to `taskEvents`: that collection's pull path
-    /// (`applyTaskEventsBatch`) has its own append-only union-by-id semantics
-    /// (docs/WINDOWED_COMPLETION.md §Sync) where a "local wins" outcome for one
-    /// event id means this device's copy (create OR tombstone) is already the
-    /// converged truth for that id — a stale delivery from before the
-    /// tombstone, not a race this needs to correct. Scoped here to the generic
-    /// per-collection pull path (`processPullCollection` / `applyRemoteSubdoc`)
-    /// and the `users` parent-doc pull path (`processPullUserDocument` /
-    /// `applyRemoteUserDoc`), mirroring web's `pullApply.ts` local-wins branch.
-    ///
-    /// - Parameters:
-    ///   - db: GRDB transaction to enqueue into (caller's ongoing write block).
-    ///   - entityType: The Firestore subcollection name (or `"users"`).
-    ///   - entityId: The document/row id.
-    ///   - localData: The LOCAL row that won the conflict (becomes the payload).
-    ///   - remoteData: The remote row that lost, used only for the diff guard.
-    ///   - ownerUid: The uid this pull runs for — stamped on the re-enqueue
-    ///     instead of the live auth uid (docs/GUEST_MODE.md §Collision).
-    private func reassertLocalWinIfNeeded(
-        db: Database,
-        entityType: String,
-        entityId: String,
-        localData: [String: Any],
-        remoteData: [String: Any], ownerUid: String
-    ) throws {
-        // Loop guard: a local-win under `resolveConflict`'s rules already
-        // implies version or updatedAt genuinely differs (a byte-identical
-        // row can only tie, which resolves to "remote"). This check is
-        // defense-in-depth kept explicit so a future change to
-        // `resolveConflict` can't silently reintroduce a re-enqueue loop —
-        // it is also what the "no enqueue when rows are identical" test
-        // pins.
-        guard rowsGenuinelyDiffer(local: localData, remote: remoteData) else { return }
-
-        // Build the payload from the TYPED model via the same
-        // `SyncQueueBuilder.encodePayload` path every other enqueue uses —
-        // NEVER from the raw GRDB row dict. GRDB's `DatabaseValue.storage`
-        // has no `.bool` case, so a raw-dict payload serialises booleans as
-        // 0/1 integers and leaves JSON-array columns as their stringified
-        // column values; web's strict Zod (`z.boolean()`, `z.array`) then
-        // rejects the whole doc — silently defeating the reassert (PR-4
-        // review Critical C1). The models' custom `encode(to:)` produce
-        // wire-correct types.
-        guard let payloadStr = try Self.encodedLocalPayload(
-            db: db, entityType: entityType, entityId: entityId
-        ) else {
-            // Drain-only legacy tables (e.g. defaultPools) have no live
-            // model path and never need a reassert.
-            log("No typed re-assert payload for \(entityType)/\(entityId) — skipped")
-            return
-        }
-
-        // Always `.update`, even when the local winner is itself a tombstone
-        // racing an older live remote: the push transport writes the FULL
-        // payload (which carries isDeleted) regardless of the op-type label,
-        // and the coalescer treats CREATE/UPDATE distinctions as cosmetic —
-        // so a pending .delete coalescing to .update here is label-only, not
-        // a resurrection (PR-4 review M2).
-        let item = SyncQueueItem(
-            id: AppDatabase.generateUUID(),
-            entityType: entityType,
-            entityId: entityId,
-            operationType: .update,
-            payload: payloadStr,
-            status: .pending,
-            retryCount: 0,
-            lastError: nil,
-            createdAt: AppDatabase.currentTimestamp(),
-            lastAttemptAt: nil,
-            completedAt: nil,
-            priority: 1, ownerUid: ownerUid // the pull's uid, not the live one (GUEST_MODE §Collision)
-        )
-        try item.enqueue(db)
-    }
-
-    /// Fetch the local row AS ITS TYPED MODEL and encode it with
-    /// `SyncQueueBuilder.encodePayload` — the wire-correct JSON every other
-    /// enqueue site produces. Returns nil for tables with no live model
-    /// (legacy drain-only collections).
-    private static func encodedLocalPayload(
-        db: Database,
-        entityType: String,
-        entityId: String
-    ) throws -> String? {
-        switch entityType {
-        case "boards":
-            return try Board.fetchOne(db, key: entityId).map(SyncQueueBuilder.encodePayload)
-        case "tasks":
-            return try Task.fetchOne(db, key: entityId).map(SyncQueueBuilder.encodePayload)
-        case "boardTasks":
-            return try BoardTask.fetchOne(db, key: entityId).map(SyncQueueBuilder.encodePayload)
-        case "compoundChildren":
-            return try CompoundChild.fetchOne(db, key: entityId).map(SyncQueueBuilder.encodePayload)
-        case "recurringBoardTemplates":
-            return try RecurringBoardTemplate.fetchOne(db, key: entityId).map(SyncQueueBuilder.encodePayload)
-        case "pools":
-            return try Pool.fetchOne(db, key: entityId).map(SyncQueueBuilder.encodePayload)
-        case "coreBoardDefaults":
-            return try CoreBoardDefault.fetchOne(db, key: entityId).map(SyncQueueBuilder.encodePayload)
-        case "users":
-            return try User.fetchOne(db, key: entityId).map(SyncQueueBuilder.encodePayload)
-        default:
-            return nil
-        }
-    }
-
-    /// Non-transactional wrapper for the two `users` pull paths, which don't
-    /// already hold an open `db: Database` (unlike the generic subcollection
-    /// paths, which run their whole apply inside one `write { db in }` block).
-    /// Opens its own small write — just a `sync_queue` insert/coalesce, no
-    /// cascade dependency, so a separate transaction is safe here.
-    private func reassertLocalWinIfNeeded(
-        entityType: String,
-        entityId: String,
-        localData: [String: Any],
-        remoteData: [String: Any], ownerUid: String
-    ) throws {
-        try AppDatabase.shared.write { db in
-            try reassertLocalWinIfNeeded(
-                db: db, entityType: entityType, entityId: entityId,
-                localData: localData, remoteData: remoteData, ownerUid: ownerUid
-            )
-        }
-    }
-
-    /// True when `local`/`remote` differ in `version` or `updatedAt` — the
-    /// only two fields `resolveConflict` actually compares. See
-    /// `reassertLocalWinIfNeeded`'s loop-guard comment for why a local-win
-    /// already implies this is true; kept as an explicit, independently
-    /// testable check rather than relying on that invariant implicitly.
-    private func rowsGenuinelyDiffer(local: [String: Any], remote: [String: Any]) -> Bool {
-        if toInt(local["version"]) != toInt(remote["version"]) { return true }
-        let localUpdatedAt = local["updatedAt"] as? String ?? ""
-        let remoteUpdatedAt = remote["updatedAt"] as? String ?? ""
-        return localUpdatedAt != remoteUpdatedAt
-    }
+    //
+    // A pull that resolves LOCAL-wins re-enqueues the local row so a push race
+    // can't strand it — `AppDatabase.reassertPullLocalWin` (PullApply.swift).
 
     // MARK: - Sync-applied live-update signal (Board-integrity PR-4, Item 5)
 
@@ -887,67 +654,18 @@ final class SyncService: ObservableObject {
 
     // MARK: - Pull Helpers
 
-    /// Pulls the parent user document at `users/{userId}` and merges any
-    /// remote-wins changes back into the local `users` row. This is the
-    /// replication path for synced profile fields such as `preferences`.
-    private func processPullUserDocument(
-        userId: String,
-        result: inout PullResult
-    ) async {
+    /// Pulls the parent user document at `users/{userId}` and LWW-merges it
+    /// into the local `users` row (preserving the local `lastSyncedAt`).
+    private func processPullUserDocument(userId: String, result: inout PullResult) async {
         do {
-            let docRef = db.collection("users").document(userId)
-            let snapshot = try await docRef.getDocument()
-            guard snapshot.exists, let remoteData = snapshot.data() else { return }
-
-            let localData = try fetchLocalRecord(grdbTable: "users", id: userId)
-
-            if localData == nil {
-                try upsertLocalRecord(grdbTable: "users", data: remoteData)
-                result.pulled += 1
-                recordEvent(.pulled)
-                let msg = "Pulled users/\(userId) (new)"
-                result.details.append(msg)
-                log(msg)
-                return
+            guard let remoteData = try await pullSource.fetchUserDoc(userId: userId) else { return }
+            let remote = PullDocs(docs: [remoteData])
+            let outcome = try await database.writeAsync { db in
+                try AppDatabase.applyPulledUserDocTx(db: db, userId: userId, remoteData: remote.docs[0])
             }
-
-            let winner = resolveConflict(local: localData!, remote: remoteData)
-            if winner == "remote" {
-                // Preserve the local `lastSyncedAt` watermark through a pull —
-                // it's managed at the end of `pullSync` and shouldn't be
-                // clobbered by a stale remote value.
-                var merged = remoteData
-                if let preservedWatermark = localData!["lastSyncedAt"] {
-                    merged["lastSyncedAt"] = preservedWatermark
-                }
-                try upsertLocalRecord(grdbTable: "users", data: merged)
-                result.pulled += 1
-                recordEvent(.pulled)
-                let remoteV = remoteData["version"] as? Int ?? 0
-                let localV = localData!["version"] as? Int ?? 0
-                let msg = "Pulled users/\(userId) (remote v\(remoteV) > local v\(localV))"
-                result.details.append(msg)
-                log(msg)
-            } else {
-                // Local-wins pull: no remote data was applied, so don't
-                // record an observability event. `result.conflicts` still
-                // tracks the for-the-cycle-summary count for log parity
-                // with the web side; the cumulative counter only ticks
-                // when a remote write actually lands.
-                result.conflicts += 1
-                let localV = localData!["version"] as? Int ?? 0
-                let remoteV = remoteData["version"] as? Int ?? 0
-                let msg = "Kept local users/\(userId) (local v\(localV) >= remote v\(remoteV))"
-                result.details.append(msg)
-                log(msg)
-                // Board-integrity PR-4 (Item 1): re-assert the fresher local
-                // row so a push race that let a stale remote write land
-                // can't strand this device's newer data forever.
-                try reassertLocalWinIfNeeded(
-                    entityType: "users", entityId: userId,
-                    localData: localData!, remoteData: remoteData, ownerUid: userId
-                )
-            }
+            if outcome.applied { result.pulled += 1; recordBatch(pulled: 1) } else { result.conflicts += 1 }
+            result.details.append(outcome.detail)
+            log(outcome.detail)
         } catch {
             let msg = "Pull failed for users/\(userId): \(error.localizedDescription)"
             result.details.append(msg)
@@ -955,62 +673,27 @@ final class SyncService: ObservableObject {
         }
     }
 
-    /// Processes all documents in a single Firestore collection during pull.
-    ///
-    /// - Parameters:
-    ///   - collection: The collection name pair (Firestore name + GRDB table name).
-    ///   - userId: The authenticated user's Firestore UID.
-    ///   - lastSyncedAt: ISO8601 timestamp for incremental pulls, or `nil` for first sync.
-    ///   - result: The `PullResult` to mutate with this collection's outcomes.
+    /// Pulls one collection from its checkpoint and applies it in
+    /// `_syncedAt`-ordered chunks, each its own off-main batch transaction
+    /// with its own checkpoint. A throw stops the collection ("Pull failed")
+    /// with every earlier chunk committed + checkpointed; the next pull
+    /// resumes from there.
     private func processPullCollection(
-        collection: (firestoreName: String, grdbTable: String),
-        userId: String,
-        lastSyncedAt: String?,
-        result: inout PullResult
+        collection: PullCollection, userId: String, since: PullWatermark?, result: inout PullResult
     ) async {
         do {
-            let colRef = db.collection("users")
-                .document(userId)
-                .collection(collection.firestoreName)
-
-            let query: Query
-            if let lastSyncedAt {
-                // `_syncedAt` is written via `FieldValue.serverTimestamp()`
-                // so it lives in Firestore as a `Timestamp`. The local
-                // `lastSyncedAt` watermark is an ISO8601 String. Firestore
-                // range queries require type-matched operands — comparing
-                // Timestamp > String never matches because String ranks
-                // above Timestamp in Firestore's canonical type ordering.
-                // Convert to `Timestamp` here (and in the listener attach
-                // below). Clock-skew between the local clock at watermark
-                // write time and the server clock at doc write time is
-                // bounded; the safety-net pull picks up anything missed.
-                let formatter = ISO8601DateFormatter()
-                let watermarkDate = formatter.date(from: lastSyncedAt) ?? Date(timeIntervalSince1970: 0)
-                query = colRef.whereField("_syncedAt", isGreaterThan: Timestamp(date: watermarkDate))
-            } else {
-                query = colRef // First sync — pull everything.
-            }
-
-            let snapshot = try await query.getDocuments()
-            guard !snapshot.isEmpty else { return }
-
-            // Windowed Completion (docs §Sync): task events pull in a BATCH —
-            // apply all rows, then one recompute per task + one cascade per board.
-            if collection.firestoreName == "taskEvents" {
-                let batch = applyTaskEventsBatch(
-                    userId: userId,
-                    rawDocs: snapshot.documents.map { $0.data() }
-                )
-                result.pulled += batch.pulled
-                result.details.append(contentsOf: batch.details)
-                for msg in batch.details { log(msg) }
-                return
-            }
-
-            for docSnap in snapshot.documents {
-                let remoteData = docSnap.data()
-                try applyPulledDocument(collection: collection, remoteData: remoteData, userId: userId, result: &result)
+            let fetched = try await pullSource.fetchCollection(userId: userId, collection: collection.firestoreName, since: since)
+            for chunk in await Self.checkpointChunks(fetched) {
+                // An account switch (`stop()`/`start()`) can land mid-pull now
+                // that batches commit after an await — drop the rest.
+                guard runningForUserId == nil || runningForUserId == userId else {
+                    throw SyncError.invalidPayload("sync stopped for this user")
+                }
+                let outcome = try await database.applyPullBatch(collection: collection, docs: chunk, userId: userId, checkpoint: true)
+                publish(outcome, collection: collection.firestoreName)
+                result.pulled += outcome.pulled
+                result.conflicts += outcome.conflicts
+                result.details.append(contentsOf: outcome.details)
             }
         } catch {
             let msg = "Pull failed for \(collection.firestoreName): \(error.localizedDescription)"
@@ -1019,143 +702,30 @@ final class SyncService: ObservableObject {
         }
     }
 
-    /// One document of the batch full-sync pull (`processPullCollection`):
-    /// validate, LWW-apply and cascade inside ONE write on the injected
-    /// `database`. Internal so tests can drive it without Firestore.
-    func applyPulledDocument(
-        collection: (firestoreName: String, grdbTable: String),
-        remoteData: [String: Any],
-        userId: String,
-        result: inout PullResult
-    ) throws {
-        // Validate before touching GRDB. A malformed payload (bad
-        // version, mismatched userId, missing id) is logged and
-        // skipped — the safety-net pull retries next cycle.
-        if let reason = validateRemotePullDocument(
-            collection: collection.firestoreName,
-            data: remoteData,
-            authenticatedUserId: userId
-        ) {
-            let msg = "Skipped \(collection.firestoreName): \(reason)"
-            result.details.append(msg)
-            log(msg)
-            return
+    /// Sorts docs by `_syncedAt` (docs without one first) and splits them into
+    /// `AppDatabase.pullChunkSize` batches, so each batch's max `_syncedAt` is
+    /// a safe resume point: every older doc is in an earlier batch. Runs off
+    /// the main actor (`nonisolated async`).
+    nonisolated static func checkpointChunks(_ fetched: PullDocs) async -> [PullDocs] {
+        let keyed = fetched.docs.map { (mark: PullWatermark(syncedAtValue: $0["_syncedAt"]), doc: $0) }
+        let sorted = keyed.sorted { a, b in
+            switch (a.mark, b.mark) {
+            case (nil, .some): return true
+            case let (.some(x), .some(y)): return x < y
+            default: return false
+            }
+        }.map(\.doc)
+        return stride(from: 0, to: sorted.count, by: AppDatabase.pullChunkSize).map {
+            PullDocs(docs: Array(sorted[$0..<min($0 + AppDatabase.pullChunkSize, sorted.count)]))
         }
+    }
 
-        guard let remoteId = remoteData["id"] as? String else { return }
-
-        // Wrap fetch + upsert + cascade in one transaction so a cascade
-        // failure rolls back the upsert. Mirrors the listener-path
-        // applyRemoteSubdoc structure.
-        var pullOutcome: (didWrite: Bool, kind: String)? = nil
-        var skipReason: String? = nil
-        try database.write { db in
-            // CompoundChild parent-userId check (mirrors web + listener).
-            if collection.firestoreName == "compoundChildren" {
-                guard let compoundTaskId = remoteData["compoundTaskId"] as? String, !compoundTaskId.isEmpty else {
-                    skipReason = "missing compoundTaskId"
-                    return
-                }
-                let parentRow = try Row.fetchOne(
-                    db,
-                    sql: "SELECT userId FROM tasks WHERE id = ?",
-                    arguments: [compoundTaskId]
-                )
-                guard let parentRow = parentRow else {
-                    skipReason = "parent compound not yet present locally"
-                    return
-                }
-                let parentUserId: String? = parentRow["userId"]
-                guard parentUserId == userId else {
-                    skipReason = "parent userId mismatch"
-                    return
-                }
-            }
-
-            let localData = try fetchLocalRecord(db: db, grdbTable: collection.grdbTable, id: remoteId)
-
-            var didWrite = false
-            if let localData, !rowsGenuinelyDiffer(local: localData, remote: remoteData) {
-                // Echo guard (sync-churn fix): same version + updatedAt =
-                // the same authored write (usually our own push coming
-                // back). Nothing changed — no upsert, no cascade.
-                return
-            } else if localData == nil {
-                try upsertLocalRecord(db: db, grdbTable: collection.grdbTable, data: remoteData)
-                didWrite = true
-                pullOutcome = (true, "new")
-            } else {
-                // Windowed Completion (docs §Shared counters interaction):
-                // counting-task conflicts resolve by union-of-events (the
-                // batched taskEvents pull recompute), so a pulled Task just
-                // LWW-upserts like any other row. The Phase-4 additive-merge
-                // branch for shared-counter sources was retired (dead code
-                // deleted in WC PR D); `lastSyncedCount` is inert.
-                let winner = resolveConflict(local: localData!, remote: remoteData)
-                if winner == "remote" {
-                    try upsertLocalRecord(db: db, grdbTable: collection.grdbTable, data: remoteData)
-                    didWrite = true
-                    let remoteV = remoteData["version"] as? Int ?? 0
-                    let localV = localData!["version"] as? Int ?? 0
-                    pullOutcome = (true, "remote v\(remoteV) > local v\(localV)")
-                } else {
-                    let localV = localData!["version"] as? Int ?? 0
-                    let remoteV = remoteData["version"] as? Int ?? 0
-                    pullOutcome = (false, "local v\(localV) >= remote v\(remoteV)")
-                    // Board-integrity PR-4 (Item 1): re-assert the
-                    // fresher local row so a push race that let a
-                    // stale remote write land can't strand this
-                    // device's newer data forever. Same transaction
-                    // as the (skipped) upsert.
-                    try reassertLocalWinIfNeeded(
-                        db: db, entityType: collection.firestoreName, entityId: remoteId,
-                        localData: localData!, remoteData: remoteData, ownerUid: userId
-                    )
-                }
-            }
-
-            // Pull cascade — same transaction as the upsert so a
-            // cascade error rolls back the upsert.
-            if didWrite {
-                if collection.firestoreName == "tasks" {
-                    try AppDatabase.runPullCascade(db: db, changedTaskId: remoteId, ownerUid: userId)
-                }
-                if collection.firestoreName == "compoundChildren",
-                   let compoundTaskId = remoteData["compoundTaskId"] as? String {
-                    try AppDatabase.runPullCascade(db: db, changedTaskId: compoundTaskId, ownerUid: userId)
-                }
-                // Board-integrity PR-1 (docs/BOARD_INTEGRITY.md): a pulled
-                // placement (live OR tombstone) re-derives its board, same txn.
-                if collection.firestoreName == "boardTasks",
-                   let boardId = remoteData["boardId"] as? String {
-                    try AppDatabase.runPullCascadeForBoardTask(db: db, boardId: boardId, ownerUid: userId)
-                }
-                // Pulled board: sealed-transport convergence / a pulled Reopen's
-                // live re-derive / watcher refresh — all local-only, this txn.
-                if collection.firestoreName == "boards" {
-                    try AppDatabase.applyPulledBoardSideEffects(db: db, boardId: remoteId, remoteData: remoteData, localData: localData)
-                }
-            }
-        }
-
-        if let skip = skipReason {
-            let msg = "Skipped \(collection.firestoreName)/\(remoteId): \(skip)"
-            result.details.append(msg)
-            log(msg)
-        } else if let outcome = pullOutcome {
-            if outcome.didWrite {
-                result.pulled += 1
-                recordEvent(.pulled)
-                let msg = "Pulled \(collection.firestoreName)/\(remoteId) (\(outcome.kind))"
-                result.details.append(msg)
-                log(msg)
-            } else {
-                result.conflicts += 1
-                let msg = "Kept local \(collection.firestoreName)/\(remoteId) (\(outcome.kind))"
-                result.details.append(msg)
-                log(msg)
-            }
-        }
+    /// Publishes one batch on the main actor: ONE counter mutation + log lines
+    /// for skips / kept-local rows and a per-batch summary (no per-doc events).
+    private func publish(_ outcome: PullBatchOutcome, collection: String) {
+        recordBatch(pulled: outcome.pulled)
+        for detail in outcome.details where !detail.hasPrefix("Pulled ") { log(detail) }
+        if outcome.pulled > 0 { log("Pulled \(outcome.pulled) \(collection)") }
     }
 
     // MARK: - Firestore Write
@@ -1193,185 +763,13 @@ final class SyncService: ObservableObject {
 
     // MARK: - Local DB Helpers
 
-    /// Fetches the local GRDB record for the given table and primary key,
-    /// returning it as a `[String: Any]` dictionary suitable for conflict comparison.
-    ///
-    /// - Parameters:
-    ///   - grdbTable: The GRDB table name (e.g. `"boards"`).
-    ///   - id: The primary key of the record.
-    /// - Returns: The record as a dictionary, or `nil` if not found.
-    private func fetchLocalRecord(grdbTable: String, id: String) throws -> [String: Any]? {
-        return try database.read { db in
-            try fetchLocalRecord(db: db, grdbTable: grdbTable, id: id)
-        }
-    }
-
-    /// Reads against an existing GRDB transaction so callers can compose a
-    /// fetch with subsequent writes (e.g. pull-path upsert + cascade) inside
-    /// a single atomic block.
-    private func fetchLocalRecord(db: Database, grdbTable: String, id: String) throws -> [String: Any]? {
-        guard allowedGRDBTables.contains(grdbTable) else {
-            throw SyncError.invalidPayload("Unknown table: \(grdbTable)")
-        }
-        guard let row = try Row.fetchOne(db, sql: "SELECT * FROM \"\(grdbTable)\" WHERE id = ?", arguments: [id]) else {
-            return nil
-        }
-        var dict: [String: Any] = [:]
-        for (column, dbValue) in zip(row.columnNames, row.databaseValues) {
-            switch dbValue.storage {
-            case .null:             dict[column] = NSNull()
-            case .int64(let i):     dict[column] = i
-            case .double(let d):    dict[column] = d
-            case .string(let s):    dict[column] = s
-            case .blob(let b):      dict[column] = b.base64EncodedString()
-            }
-        }
-        return dict
-    }
-
-    /// Upserts a remote Firestore document into a local GRDB table.
-    ///
-    /// Converts the `[String: Any]` dictionary to JSON data, then uses
-    /// `JSONSerialization` to round-trip through the generic SQL upsert
-    /// path.  All columns present in `data` are written; missing columns
-    /// retain their existing values.
-    ///
-    /// - Parameters:
-    ///   - grdbTable: The GRDB table name (e.g. `"tasks"`).
-    ///   - data: The Firestore document dictionary.
+    /// Push-path remote-wins write-back: upserts a remote doc into `grdbTable`
+    /// (no cascade — the push path never cascaded). The helper is shared with
+    /// the pull engine (`AppDatabase.upsertPulledRecord`).
     private func upsertLocalRecord(grdbTable: String, data: [String: Any]) throws {
         try database.write { db in
-            try upsertLocalRecord(db: db, grdbTable: grdbTable, data: data)
+            try AppDatabase.upsertPulledRecord(db: db, grdbTable: grdbTable, data: data)
         }
-    }
-
-    /// Performs the upsert against an existing GRDB write transaction. Lets
-    /// callers compose multiple writes (e.g. upsert + pull cascade) into a
-    /// single atomic block so a downstream failure rolls back everything.
-    private func upsertLocalRecord(db: Database, grdbTable: String, data: [String: Any]) throws {
-        guard allowedGRDBTables.contains(grdbTable) else {
-            throw SyncError.invalidPayload("Unknown table: \(grdbTable)")
-        }
-        // Filter out Firestore metadata fields that don't exist in GRDB.
-        var cleaned = data
-        cleaned.removeValue(forKey: "_syncedAt")
-
-        guard !cleaned.isEmpty else { return }
-        guard cleaned["id"] is String else {
-            throw SyncError.invalidPayload("Document missing 'id' field for \(grdbTable) upsert")
-        }
-
-        // Validate all keys are safe SQL identifiers to prevent injection
-        var keys = Array(cleaned.keys).filter { key in
-            key.range(of: "^[a-zA-Z_][a-zA-Z0-9_]*$", options: .regularExpression) != nil
-        }
-        guard !keys.isEmpty else {
-            throw SyncError.invalidPayload("No valid column names for \(grdbTable) upsert")
-        }
-
-        // Drop columns the local schema doesn't have. Firestore stores
-        // documents as the schema was when they were written, so a
-        // pre-Compound-Tasks-Unification BoardTask doc still carries
-        // `isCompleted` / `completedAt` / `currentCount` even though
-        // those columns were dropped from `board_tasks` in v7. A raw
-        // INSERT against those columns crashes with "table X has no
-        // column named Y". Web is unaffected because Zod's `safeParse`
-        // strips unknown keys by default; iOS bypasses validation and
-        // INSERTs raw, so we strip here for parity.
-        let validColumns = try Self.columnNames(for: grdbTable, in: db)
-        keys = keys.filter { validColumns.contains($0) }
-        guard !keys.isEmpty else {
-            throw SyncError.invalidPayload(
-                "No columns match the local schema for \(grdbTable) upsert"
-            )
-        }
-
-        let columns = keys.map { "\"\($0)\"" }.joined(separator: ", ")
-        let placeholders = keys.map { _ in "?" }.joined(separator: ", ")
-        let updateClause = keys.map { "\"\($0)\" = excluded.\"\($0)\"" }.joined(separator: ", ")
-
-        let sql = """
-            INSERT INTO "\(grdbTable)" (\(columns))
-            VALUES (\(placeholders))
-            ON CONFLICT (id) DO UPDATE SET \(updateClause)
-            """
-
-        // Convert values to GRDB-compatible DatabaseValue types.
-        // Arrays and dictionaries are JSON-encoded (GRDB stores them as TEXT).
-        // Firestore Timestamps are converted to ISO8601 strings.
-        let values: [DatabaseValueConvertible?] = keys.map { key in
-            let val = cleaned[key]
-            if val == nil || val is NSNull { return nil }
-            if let s = val as? String { return s }
-            if let i = val as? Int { return i }
-            if let d = val as? Double { return d }
-            if let b = val as? Bool { return b }
-            if let ts = val as? Timestamp {
-                let formatter = ISO8601DateFormatter()
-                formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-                return formatter.string(from: ts.dateValue())
-            }
-            // Arrays and dictionaries → JSON string
-            if let arr = val as? [Any] {
-                if let jsonData = try? JSONSerialization.data(withJSONObject: arr),
-                   let jsonStr = String(data: jsonData, encoding: .utf8) {
-                    return jsonStr
-                }
-                return nil
-            }
-            if let dict = val as? [String: Any] {
-                if let jsonData = try? JSONSerialization.data(withJSONObject: dict),
-                   let jsonStr = String(data: jsonData, encoding: .utf8) {
-                    return jsonStr
-                }
-                return nil
-            }
-            // Fallback: try String description
-            return "\(val!)"
-        }
-
-        try db.execute(sql: sql, arguments: StatementArguments(values))
-
-        // Pull is a full-entity replace: the remote doc is the source of
-        // truth. The upsert above only SETs columns PRESENT in the remote
-        // doc, so a field FieldValue.delete()-ed on the authoring device
-        // (e.g. an indefinite board's `endDate`, a Reopen's cleared
-        // `sealedAt` / `sealedCompletedCells`, or a core default's cleared
-        // size / centre) would leave a STALE local value. Board Edit slice 4
-        // (D2): NULL every clearable field of this table's collection absent
-        // from the doc (`SyncService+ClearableFields.swift`); no-op if unset.
-        try Self.applyClearableFieldNulls(db: db, grdbTable: grdbTable, cleaned: cleaned)
-    }
-
-    /// Cached per-table column names. Populated lazily on first lookup
-    /// per table via `PRAGMA table_info`. Reads happen frequently
-    /// (every pull / listener apply) so caching avoids hitting SQLite
-    /// for the metadata over and over. Migrations don't run at runtime
-    /// in production, so cache invalidation isn't needed; if a future
-    /// dev flow ever mutates the schema mid-session, restart the app.
-    private static let columnNameCache = NSCache<NSString, NSSet>()
-
-    /// Returns the set of column names for `table` in the given GRDB
-    /// `db`. Uses `PRAGMA table_info` so the result automatically
-    /// tracks schema migrations — no hardcoded duplicate of the column
-    /// list to keep in sync as columns are added or dropped.
-    private static func columnNames(for table: String, in db: Database) throws -> Set<String> {
-        let key = NSString(string: table)
-        if let cached = columnNameCache.object(forKey: key) as? Set<String> {
-            return cached
-        }
-        // PRAGMA table_info("name") returns one row per column.
-        // Bind via the SQL string because PRAGMA doesn't accept ? bind
-        // parameters for the table name. `table` is sourced from
-        // `syncableCollections` (allowedGRDBTables) which is a closed
-        // set of compile-time-known names — no injection risk.
-        let rows = try Row.fetchAll(
-            db,
-            sql: "PRAGMA table_info(\"\(table)\")"
-        )
-        let names = Set(rows.compactMap { $0["name"] as String? })
-        columnNameCache.setObject(NSSet(set: names), forKey: key)
-        return names
     }
 
     // MARK: - Sync Queue Helpers
@@ -1394,7 +792,7 @@ final class SyncService: ObservableObject {
     /// - Returns: The ISO8601 timestamp string, or `nil` if never synced.
     private func fetchLastSyncedAt(userId: String) async -> String? {
         do {
-            return try AppDatabase.shared.fetchUser(id: userId)?.lastSyncedAt
+            return try await database.readAsync { db in try User.fetchOne(db, key: userId)?.lastSyncedAt }
         } catch {
             log("Warning: could not fetch user for lastSyncedAt: \(error.localizedDescription)")
             return nil
@@ -1451,10 +849,12 @@ extension SyncService {
     /// On start:
     /// - A GRDB `ValueObservation` watches the count of PENDING sync queue
     ///   items and schedules a debounced push whenever it grows.
-    /// - A Firestore snapshot listener is opened on the parent
-    ///   `users/{userId}` doc and on each syncable subcollection. Each
-    ///   listener feeds remote changes through the same apply helpers
-    ///   that `pullSync` uses, so all incoming-write logic is unified.
+    /// - After the initial catch-up pull completes, a Firestore snapshot
+    ///   listener is opened on the parent `users/{userId}` doc and on each
+    ///   pulled subcollection, from that collection's fresh checkpoint — not
+    ///   before, or the first snapshot would re-deliver the very delta the
+    ///   pull is applying (the launch double-apply). Listener snapshots go
+    ///   through the same batch engine as the pull.
     /// - A safety-net timer fires `fullSync` every 5 minutes to recover
     ///   stuck queue items and back-stop any missed snapshot delivery.
     /// - An immediate `fullSync` runs once to handle anything queued
@@ -1465,18 +865,18 @@ extension SyncService {
         runningForUserId = userId
 
         startQueueObservation(userId: userId)
-        attachPullListeners(userId: userId)
         startSafetyNetTimer(userId: userId)
 
-        // Initial sync covers anything that was queued before start was
-        // called, plus first-attach delivery from the listeners. Tracked
-        // and gated on `runningForUserId == userId` so a rapid sign-out
-        // can both cancel and short-circuit it before it touches Firestore
-        // for the wrong user.
+        // Initial sync covers anything queued before start, then attaches the
+        // listeners (even when the pull failed — e.g. offline — so real-time
+        // still works). Tracked and gated on `runningForUserId == userId` so a
+        // rapid sign-out can cancel and short-circuit it.
         initialSyncTask?.cancel()
         initialSyncTask = _Concurrency.Task { [weak self] in
             guard let self, self.runningForUserId == userId else { return }
             _ = await self.fullSync(userId: userId)
+            guard !_Concurrency.Task.isCancelled, self.runningForUserId == userId else { return }
+            await self.attachPullListeners(userId: userId)
         }
     }
 
@@ -1529,6 +929,16 @@ extension SyncService {
             lastEventAt = at
             lastError = nil
         }
+    }
+
+    /// Record one applied pull/listener BATCH: a single mutation of the
+    /// published counters per batch (each mutation invalidates every view
+    /// observing `SyncService`), never one per doc.
+    fileprivate func recordBatch(pulled: Int, at: Date = Date()) {
+        guard pulled > 0 else { return }
+        totalPulled += pulled
+        lastEventAt = at
+        lastError = nil
     }
 
     /// Record an error message + timestamp. Doesn't increment any
@@ -1590,7 +1000,7 @@ extension SyncService {
                 .fetchCount(db)
         }
         pendingObservation = observation.start(
-            in: AppDatabase.shared.dbQueue,
+            in: database.dbQueue,
             onError: { [weak self] error in
                 _Concurrency.Task { @MainActor in
                     self?.log("Queue observation error: \(error.localizedDescription)")
@@ -1619,468 +1029,122 @@ extension SyncService {
 
     // MARK: - Pull listeners
 
-    private func attachPullListeners(userId: String) {
-        // Parent user doc — single document, no watermark filter.
-        let userRef = db.collection("users").document(userId)
-        let userListener = userRef.addSnapshotListener { [weak self] snapshot, error in
-            guard let self else { return }
-            if let error {
-                _Concurrency.Task { @MainActor in
-                    self.log("users/\(userId) listener error: \(error.localizedDescription)")
-                }
-                return
-            }
-            guard let snapshot, snapshot.exists, let data = snapshot.data() else { return }
-            _Concurrency.Task { @MainActor in
-                let applied = self.applyRemoteUserDoc(userId: userId, remoteData: data)
-                // Board-integrity PR-4 (Item 5): only a real local write is
-                // "applied" — a local-win re-assert enqueues a push but
-                // changes nothing in local GRDB, so it shouldn't wake up a
-                // reload with no new data to show.
-                if applied { self.postSyncDidApplyChanges() }
-            }
+    /// Attaches the user-doc listener + one listener per pulled collection,
+    /// each from its checkpoint (fallback `users.lastSyncedAt`, else epoch).
+    /// Called only after the initial pull, so the first snapshot is just the
+    /// boundary docs (`>=`), which the echo guard skips.
+    private func attachPullListeners(userId: String) async {
+        let marks = try? await database.readAsync { db in
+            (try AppDatabase.fetchSyncWatermarks(db: db, userId: userId), try User.fetchOne(db, key: userId)?.lastSyncedAt)
         }
-        listenerRegistrations.append(userListener)
+        guard runningForUserId == userId, listenerRegistrations.isEmpty else { return }
+        let fallback = marks?.1.flatMap(DateFormatting.parseISO).map(PullWatermark.init(date:))
+            ?? PullWatermark(seconds: 0, nanoseconds: 0)
 
-        // One listener per subcollection. Filter by `_syncedAt` so the
-        // initial attach is bounded to deltas since the last safety-net
-        // watermark advance. (Web mirror normalised on `_syncedAt`; iOS
-        // historically used `updatedAt` — unifying here.)
-        //
-        // `_syncedAt` is a Firestore `Timestamp`; the local watermark is
-        // an ISO8601 String. Comparing them directly in a range query
-        // never matches (canonical type ordering). Convert to Timestamp.
-        let formatter = ISO8601DateFormatter()
-        let watermarkString = (try? AppDatabase.shared.fetchUser(id: userId)?.lastSyncedAt) ?? ""
-        let watermarkDate = formatter.date(from: watermarkString) ?? Date(timeIntervalSince1970: 0)
-        let watermarkTs = Timestamp(date: watermarkDate)
-
-        for collection in syncableCollections where collection.firestoreName != "users"
-            && !legacyPullSkipCollections.contains(collection.firestoreName) {
-            let colRef = db.collection("users").document(userId).collection(collection.firestoreName)
-            let q = colRef.whereField("_syncedAt", isGreaterThan: watermarkTs)
-            let listener = q.addSnapshotListener { [weak self] snapshot, error in
+        listenerRegistrations.append(pullSource.listenUserDoc(userId: userId) { [weak self] data in
+            guard let self else { return }
+            let doc = PullDocs(docs: [data])
+            _Concurrency.Task { @MainActor in await self.applyListenerUserDoc(userId: userId, doc: doc) }
+        })
+        for collection in pullApplyCollections {
+            let since = marks?.0[collection.firestoreName] ?? fallback
+            listenerRegistrations.append(pullSource.listenCollection(
+                userId: userId, collection: collection.firestoreName, since: since
+            ) { [weak self] docs in
                 guard let self else { return }
-                if let error {
-                    _Concurrency.Task { @MainActor in
-                        self.log("\(collection.firestoreName) listener error: \(error.localizedDescription)")
-                    }
-                    return
-                }
-                guard let snapshot else { return }
-                // Windowed Completion (docs §Sync): batch task-event deliveries
-                // so the recompute + cascade runs once per snapshot, not once per
-                // event row (and out-of-order events-before-task are skipped +
-                // deferred to the safety-net pull).
-                if collection.firestoreName == "taskEvents" {
-                    let rows = snapshot.documentChanges
-                        .filter { $0.type != .removed }
-                        .map { $0.document.data() }
-                    if !rows.isEmpty {
-                        _Concurrency.Task { @MainActor in
-                            let batch = self.applyTaskEventsBatch(userId: userId, rawDocs: rows)
-                            for msg in batch.details { self.log(msg) }
-                            // Board-integrity PR-4 (Item 5): one signal per
-                            // batched delivery, not per event row.
-                            if batch.pulled > 0 { self.postSyncDidApplyChanges() }
-                        }
-                    }
-                    return
-                }
-                // Board-integrity PR-4 (Item 5): apply every changed doc in
-                // THIS delivery inside one Task, then post at most once for
-                // the whole batch — previously each changed doc spawned its
-                // own independent `Task`, which would have meant one
-                // notification per row instead of per snapshot.
-                let changedDocs = snapshot.documentChanges
-                    .filter { $0.type != .removed }
-                    .map { $0.document.data() }
-                guard !changedDocs.isEmpty else { return }
-                _Concurrency.Task { @MainActor in
-                    var appliedAny = false
-                    for data in changedDocs {
-                        let applied = self.applyRemoteSubdoc(
-                            collection: collection,
-                            remoteData: data,
-                            authenticatedUserId: userId
-                        )
-                        if applied { appliedAny = true }
-                    }
-                    if appliedAny { self.postSyncDidApplyChanges() }
-                }
-            }
-            listenerRegistrations.append(listener)
+                _Concurrency.Task { @MainActor in await self.applyListenerBatch(collection: collection, docs: docs, userId: userId) }
+            })
         }
     }
 
-    /// Apply a remote `users/{userId}` payload to the local row, running
-    /// the same LWW resolution as `processPullUserDocument` but invoked
-    /// from a real-time snapshot rather than a scheduled poll.
-    ///
-    /// - Returns: `true` if a remote value was written to local GRDB (new or
-    ///   remote-wins) — the signal callers use to decide whether to post
-    ///   `.oybcSyncDidApplyChanges` (Board-integrity PR-4, Item 5). A
-    ///   local-win re-assert enqueues a push but returns `false`: nothing in
-    ///   local GRDB changed, so there is nothing new for a screen to reload.
-    @discardableResult
-    private func applyRemoteUserDoc(userId: String, remoteData: [String: Any]) -> Bool {
+    /// One listener snapshot = batches through the pull engine (no checkpoint
+    /// — a change set isn't a `_syncedAt`-ordered prefix), then at most ONE
+    /// `.oybcSyncDidApplyChanges` for the snapshot (Board-integrity PR-4 Item 5).
+    private func applyListenerBatch(collection: PullCollection, docs: PullDocs, userId: String) async {
+        var pulled = 0
+        for chunk in await Self.checkpointChunks(docs) {
+            guard runningForUserId == userId else { return }
+            do {
+                let outcome = try await database.applyPullBatch(collection: collection, docs: chunk, userId: userId, checkpoint: false)
+                publish(outcome, collection: collection.firestoreName)
+                pulled += outcome.pulled
+            } catch {
+                log("Listener apply failed for \(collection.firestoreName): \(error.localizedDescription)")
+            }
+        }
+        if pulled > 0 { postSyncDidApplyChanges() }
+    }
+
+    /// The user-doc listener: same LWW as the pull. Only a real local write
+    /// posts `.oybcSyncDidApplyChanges` (a local-win re-assert changes nothing).
+    private func applyListenerUserDoc(userId: String, doc: PullDocs) async {
+        guard runningForUserId == userId else { return }
         do {
-            let localData = try fetchLocalRecord(grdbTable: "users", id: userId)
-            if localData == nil {
-                try upsertLocalRecord(grdbTable: "users", data: remoteData)
-                recordEvent(.pulled)
-                log("Pulled users/\(userId) (new, listener)")
-                return true
+            let outcome = try await database.writeAsync { db in
+                try AppDatabase.applyPulledUserDocTx(db: db, userId: userId, remoteData: doc.docs[0])
             }
-            let winner = resolveConflict(local: localData!, remote: remoteData)
-            if winner == "remote" {
-                var merged = remoteData
-                if let preservedWatermark = localData!["lastSyncedAt"] {
-                    merged["lastSyncedAt"] = preservedWatermark
-                }
-                try upsertLocalRecord(grdbTable: "users", data: merged)
-                recordEvent(.pulled)
-                let remoteV = remoteData["version"] as? Int ?? 0
-                let localV = localData!["version"] as? Int ?? 0
-                log("Pulled users/\(userId) (remote v\(remoteV) > local v\(localV), listener)")
-                return true
-            }
-            // local-wins is a silent no-op for listener traffic — would
-            // otherwise spam the event log on every echo. Board-integrity
-            // PR-4 (Item 1): still re-assert the fresher local row so a push
-            // race can't strand it.
-            try reassertLocalWinIfNeeded(
-                entityType: "users", entityId: userId,
-                localData: localData!, remoteData: remoteData, ownerUid: userId
-            )
-            return false
+            guard outcome.applied else { return }
+            recordBatch(pulled: 1)
+            log("\(outcome.detail), listener")
+            postSyncDidApplyChanges()
         } catch {
             log("Listener apply failed for users/\(userId): \(error.localizedDescription)")
-            return false
         }
     }
 
-    /// Not `private` so `OYBCTests/SyncPullApplyTests.swift` can drive the
-    /// pull-apply seam directly with crafted remote dicts (C4 widening
-    /// precedent). Writes into the injected `database`.
+    // MARK: - Synchronous test seams (same engine as the pull)
+
+    /// Applies ONE remote doc through the batch engine synchronously on the
+    /// injected `database` — the seam `SyncPullApplyTests` & co. drive. Not
+    /// used by production (the pull + listeners use `applyPullBatch`).
     ///
-    /// - Returns: `true` if a remote value was written to local GRDB (new or
-    ///   remote-wins) — the signal callers use to decide whether to post
-    ///   `.oybcSyncDidApplyChanges` (Board-integrity PR-4, Item 5). A
-    ///   local-win re-assert enqueues a push but returns `false`: nothing in
-    ///   local GRDB changed, so there is nothing new for a screen to reload.
+    /// - Returns: `true` if a remote value was written to local GRDB.
     @discardableResult
     func applyRemoteSubdoc(
         collection: (firestoreName: String, grdbTable: String),
         remoteData: [String: Any],
         authenticatedUserId: String
     ) -> Bool {
-        // Validate before touching GRDB. A malformed payload (bad version,
-        // mismatched userId, missing id) is logged and dropped — the
-        // safety-net pull will retry from Firestore on the next cycle.
-        if let reason = validateRemotePullDocument(
-            collection: collection.firestoreName,
-            data: remoteData,
-            authenticatedUserId: authenticatedUserId
-        ) {
-            log("Listener skipped \(collection.firestoreName): \(reason)")
-            return false
-        }
-
-        guard let remoteId = remoteData["id"] as? String else { return false }
         do {
-            // Wrap fetch + upsert + cascade in one transaction so a cascade
-            // failure rolls back the upsert. Previously the cascade ran in a
-            // separate write tx and its catch swallowed errors — leaving the
-            // task applied locally but board stats stale forever, with no
-            // safety net to reconcile.
-            return try database.write { db -> Bool in
-                // CompoundChild has no userId column — children scope through
-                // their parent compound's userId. A crafted Firestore doc with
-                // a compoundTaskId pointing at another user's compound would
-                // land locally with no direct check. Resolve the parent and
-                // skip on mismatch (mirrors web).
-                if collection.firestoreName == "compoundChildren" {
-                    guard let compoundTaskId = remoteData["compoundTaskId"] as? String, !compoundTaskId.isEmpty else {
-                        log("Listener skipped compoundChildren/\(remoteId): missing compoundTaskId")
-                        return false
-                    }
-                    let parentRow = try Row.fetchOne(
-                        db,
-                        sql: "SELECT userId FROM tasks WHERE id = ?",
-                        arguments: [compoundTaskId]
-                    )
-                    guard let parentRow = parentRow else {
-                        // No local parent yet — could be a cross-device race.
-                        // Defer; safety-net pull retries.
-                        log("Listener skipped compoundChildren/\(remoteId): parent compound not yet present locally")
-                        return false
-                    }
-                    let parentUserId: String? = parentRow["userId"]
-                    guard parentUserId == authenticatedUserId else {
-                        log("Listener skipped compoundChildren/\(remoteId): parent userId mismatch")
-                        return false
-                    }
-                }
-
-                let localData = try fetchLocalRecord(db: db, grdbTable: collection.grdbTable, id: remoteId)
-                var didWrite = false
-                if let localData, !rowsGenuinelyDiffer(local: localData, remote: remoteData) {
-                    // Echo guard (sync-churn fix) — see `applyPulledDocument`.
-                    return false
-                } else if localData == nil {
-                    try upsertLocalRecord(db: db, grdbTable: collection.grdbTable, data: remoteData)
-                    didWrite = true
-                    log("Pulled \(collection.firestoreName)/\(remoteId) (new, listener)")
-                } else {
-                    // Windowed Completion (docs §Shared counters interaction):
-                    // counting-task conflicts resolve by union-of-events, so a
-                    // pulled Task just LWW-upserts. The Phase-4 additive-merge
-                    // branch was retired (dead code deleted in WC PR D);
-                    // `lastSyncedCount` is inert.
-                    let winner = resolveConflict(local: localData!, remote: remoteData)
-                    if winner == "remote" {
-                        try upsertLocalRecord(db: db, grdbTable: collection.grdbTable, data: remoteData)
-                        didWrite = true
-                        let remoteV = remoteData["version"] as? Int ?? 0
-                        let localV = localData!["version"] as? Int ?? 0
-                        log("Pulled \(collection.firestoreName)/\(remoteId) (remote v\(remoteV) > local v\(localV), listener)")
-                    } else {
-                        // Board-integrity PR-4 (Item 1): re-assert the
-                        // fresher local row so a push race that let a stale
-                        // remote write land can't strand this device's newer
-                        // data forever. Same transaction as the (skipped)
-                        // upsert.
-                        try reassertLocalWinIfNeeded(
-                            db: db, entityType: collection.firestoreName, entityId: remoteId,
-                            localData: localData!, remoteData: remoteData, ownerUid: authenticatedUserId
-                        )
-                    }
-                }
-                // Pull cascade — runs in the same transaction as the upsert so
-                // a cascade error rolls back the upsert. Task.version is NOT
-                // bumped — the pulled value is authoritative (except additive merge
-                // which writes a new local version above).
-                if didWrite {
-                    if collection.firestoreName == "tasks" {
-                        try AppDatabase.runPullCascade(db: db, changedTaskId: remoteId, ownerUid: authenticatedUserId)
-                    }
-                    if collection.firestoreName == "compoundChildren",
-                       let compoundTaskId = remoteData["compoundTaskId"] as? String {
-                        try AppDatabase.runPullCascade(db: db, changedTaskId: compoundTaskId, ownerUid: authenticatedUserId)
-                    }
-                    // Board-integrity PR-1 (tombstones) — see the batch pull
-                    // path (`processPullCollection`) for rationale. Same
-                    // deterministic, same-transaction semantics.
-                    if collection.firestoreName == "boardTasks",
-                       let boardId = remoteData["boardId"] as? String {
-                        try AppDatabase.runPullCascadeForBoardTask(db: db, boardId: boardId, ownerUid: authenticatedUserId)
-                    }
-                    // Pulled board — see `AppDatabase.applyPulledBoardSideEffects`.
-                    if collection.firestoreName == "boards" {
-                        try AppDatabase.applyPulledBoardSideEffects(db: db, boardId: remoteId, remoteData: remoteData, localData: localData)
-                    }
-                    recordEvent(.pulled)
-                }
-                return didWrite
+            let outcome = try database.write { db in
+                try AppDatabase.applyPullBatchTx(db: db, collection: collection, docs: [remoteData], userId: authenticatedUserId)
             }
+            publish(outcome, collection: collection.firestoreName)
+            return outcome.pulled > 0
         } catch {
-            log("Listener apply failed for \(collection.firestoreName)/\(remoteId): \(error.localizedDescription)")
+            log("Listener apply failed for \(collection.firestoreName): \(error.localizedDescription)")
             return false
         }
     }
 
-    // MARK: - Pull Cascade — see `AppDatabase+PullCascade.swift`.
-
-    /// Batched pull-path handler for the `taskEvents` collection (Windowed
-    /// Completion, docs §Sync — "Batched pull-path recompute"). Twin of web's
-    /// `applyTaskEventsBatch`: apply ALL pulled event rows first, then recompute
-    /// each affected event-owning task's caches ONCE and run ONE derivation pass
-    /// per affected board — all inside a single transaction (the atomic pull-path
-    /// invariant).
+    /// Batched `taskEvents` apply (`AppDatabase.applyTaskEventsBatchTx`),
+    /// synchronous on the injected `database` — test seam.
     ///
-    /// Pull ordering (docs §Sync): a `taskEvent` can arrive before its `Task`
-    /// row. Such events are still upserted as rows but SKIPPED by the recompute
-    /// (events-before-task) — the safety-net pull picks them up once the Task
-    /// lands.
-    ///
-    /// - Parameters:
-    ///   - userId: The authenticated user's uid (for the userId scope check).
-    ///   - rawDocs: The untrusted raw event documents from Firestore.
-    /// - Returns: Pulled-row count + per-row skip/status details.
+    /// - Returns: Pulled-row count + per-row skip details.
     @discardableResult
     func applyTaskEventsBatch(userId: String, rawDocs: [[String: Any]]) -> (pulled: Int, details: [String]) {
-        var details: [String] = []
-
-        // 1. Validate + userId-scope every incoming row (no DB access yet).
-        var valid: [[String: Any]] = []
-        for raw in rawDocs {
-            if let reason = validateRemotePullDocument(
-                collection: "taskEvents", data: raw, authenticatedUserId: userId
-            ) {
-                let id = (raw["id"] as? String) ?? "?"
-                details.append("Skipped taskEvents/\(id): \(reason)")
-                continue
-            }
-            valid.append(raw)
-        }
-        if valid.isEmpty { return (0, details) }
-
-        var pulled = 0
         do {
-            try database.write { db in
-                // 2. LWW-upsert each event row (union by id; tombstone = undo).
-                var affectedTaskIds = Set<String>()
-                for raw in valid {
-                    guard let id = raw["id"] as? String else { continue }
-                    let local = try fetchLocalRecord(db: db, grdbTable: "task_events", id: id)
-                    // Echo guard (sync-churn fix): an identical row changes
-                    // nothing, so it must not re-run the recompute + cascade.
-                    if let local, !rowsGenuinelyDiffer(local: local, remote: raw) { continue }
-                    let remoteWins = local == nil || resolveConflict(local: local!, remote: raw) == "remote"
-                    if !remoteWins { continue }
-                    try upsertLocalRecord(db: db, grdbTable: "task_events", data: raw)
-                    if let taskId = raw["taskId"] as? String { affectedTaskIds.insert(taskId) }
-                    pulled += 1
-                }
-
-                // 3. Recompute caches ONCE per affected event-owning task that
-                //    exists locally, then refresh the window-stamped derived
-                //    counters that key off it (B2) — both non-authored writes
-                //    (no version bump, no enqueue). Events whose task isn't
-                //    local yet are skipped-and-deferred (safety-net retry).
-                let cascadeTaskIds = try AppDatabase.recomputeTaskCachesAndRefreshDerived(
-                    db: db, taskIds: affectedTaskIds
-                )
-
-                // 4. ONE batched derivation pass per affected LIVE board (sealed
-                //    excluded); roots expand to their window-stamped derived rows.
-                if !cascadeTaskIds.isEmpty {
-                    try AppDatabase.runPullCascadeForTasks(db: db, changedTaskIds: AppDatabase.withWindowStampedDerived(db: db, taskIds: cascadeTaskIds), ownerUid: userId)
-                }
-
-                // 5. Seal re-derivation (docs §Seal snapshots re-derive from the
-                //    event union): late pre-seal events for a placed task
-                //    deterministically re-derive any affected SEALED board's
-                //    frozen snapshot — the only sanctioned mutation of a sealed
-                //    record. Uses `affectedTaskIds` (not `cascadeTaskIds`) so a
-                //    sealed board placing a task whose row isn't local yet still
-                //    re-derives. Local-only, inside this txn. Then (6) refresh the
-                //    achievement watchers of every board reached — non-authored.
-                if !affectedTaskIds.isEmpty {
-                    try AppDatabase.reDeriveSealedBoards(db: db, changedTaskIds: affectedTaskIds)
-                    try AppDatabase.refreshWatchersAfterPull(db: db, boardIds: AppDatabase.boardIdsReachedByTasks(db: db, taskIds: affectedTaskIds))
-                }
-            }
+            let batch = try database.write { db in try AppDatabase.applyTaskEventsBatchTx(db: db, userId: userId, rawDocs: rawDocs) }
+            recordBatch(pulled: batch.pulled)
+            return batch
         } catch {
-            details.append("Pull failed for taskEvents: \(error.localizedDescription)")
-            return (0, details)
+            return (0, ["Pull failed for taskEvents: \(error.localizedDescription)"])
         }
-
-        for _ in 0..<pulled { recordEvent(.pulled) }
-        return (pulled, details)
     }
 
-    /// Heal-on-pull (docs/WINDOWED_COMPLETION.md §Heal-on-pull). Repairs the
-    /// fresh-install backfill gap: the v20 event backfill runs as a GRDB
-    /// migration, so on a fresh DB it fires on empty data and mints nothing; the
-    /// sync pull then brings tasks whose `isCompleted` is true but whose backing
-    /// `task_event` isn't in Firestore. Those completions render incomplete on
-    /// every windowed surface (the derivation never falls back to the lifetime
-    /// cache when a window is present). `recomputeTaskCachesFromPull` only touches
-    /// tasks whose *events* were in a pull, so a zero-event task KEEPS its pulled
-    /// `isCompleted` cache — exactly the signal this sweep heals from.
+    /// Heal-on-pull (`AppDatabase.healMissingCompletionEventsTx`),
+    /// synchronous on the injected `database` — test seam.
     ///
-    /// For every event-owning task (NORMAL / plain COUNTING) that is
-    /// lifetime-complete (`isCompleted` or `currentCount > 0`) but has NO live
-    /// event, it mints the event via the shared `buildBackfillTaskEvent`
-    /// (deterministic id → converges with the migration + web + peers;
-    /// idempotent), ENQUEUES a CREATE (so the repair propagates), then runs the
-    /// same recompute + board cascade + sealed re-derive the event-pull path uses.
-    /// Idempotent + self-limiting: once healed, a task HAS a live event and is
-    /// skipped forever after. Swift twin of `healMissingCompletionEvents` in
-    /// `apps/web/src/db/operations/taskEventPull.ts`.
-    ///
-    /// - Parameter userId: The authenticated user's uid (scope guard).
-    /// - Returns: The number of completion/increment events minted this pass.
+    /// - Returns: The number of events minted (0 on failure).
     func healMissingCompletionEvents(userId: String) -> Int {
-        var minted = 0
         do {
-            try database.write { db in
-                let tasks = try Task.fetchAll(db)
-                let allEvents = try TaskEvent.fetchAll(db)
-                var hasLiveEvent = Set<String>()
-                for e in allEvents where !e.isDeleted { hasLiveEvent.insert(e.taskId) }
-
-                var toMint: [TaskEvent] = []
-                for task in tasks {
-                    if task.userId != userId { continue }
-                    if task.isDeleted || !isEventOwningTask(task) { continue }
-                    if hasLiveEvent.contains(task.id) { continue } // events are authoritative
-                    let complete = task.isCompleted || (task.currentCount ?? 0) > 0
-                    if !complete { continue }
-                    if let ev = buildBackfillTaskEvent(task: task) { toMint.append(ev) }
-                }
-                if toMint.isEmpty { return }
-
-                let now = AppDatabase.currentTimestamp()
-                var healedTaskIds = Set<String>()
-                for ev in toMint {
-                    // Respect LWW against any existing local row with this
-                    // deterministic id — in particular a TOMBSTONE from an explicit
-                    // undo (not in `hasLiveEvent` because it's soft-deleted). Blind-
-                    // overwriting it would resurrect undone state AND drive a wrong
-                    // board cascade before self-correcting. Treat the mint as
-                    // "remote" (same as applyTaskEventsBatch): skip unless it wins.
-                    // Typed mirror of `resolveConflict` (lwwResolve.ts): higher
-                    // version wins; equal version → strictly-newer updatedAt, tie /
-                    // unparseable → remote(mint) wins.
-                    if let existing = try TaskEvent.fetchOne(db, key: ev.id) {
-                        let mintWins: Bool
-                        if ev.version != existing.version {
-                            mintWins = ev.version > existing.version
-                        } else if let existingDate = DateFormatting.parseISO(existing.updatedAt),
-                                  let mintDate = DateFormatting.parseISO(ev.updatedAt) {
-                            mintWins = mintDate >= existingDate
-                        } else {
-                            mintWins = true // unparseable → remote authority (canon #263)
-                        }
-                        if !mintWins { continue }
-                    }
-
-                    // Deterministic id → save is an upsert; a concurrent real event
-                    // with the same id just wins by LWW. Enqueue CREATE so the
-                    // repair reaches Firestore and every peer converges.
-                    try ev.save(db)
-                    try SyncQueueBuilder.makeItem(
-                        entityType: "taskEvents",
-                        entityId: ev.id,
-                        operationType: .create,
-                        payload: ev,
-                        now: now, ownerUid: userId // the heal's uid, not the live one
-                    ).enqueue(db)
-                    healedTaskIds.insert(ev.taskId)
-                    minted += 1
-                }
-                // Recompute caches from the now-present events (plus the B2
-                // derived-baseline refresh), then one board cascade + sealed
-                // re-derive over the healed set — same shape as
-                // applyTaskEventsBatch.
-                _ = try AppDatabase.recomputeTaskCachesAndRefreshDerived(
-                    db: db, taskIds: healedTaskIds
-                )
-                if !healedTaskIds.isEmpty {
-                    try AppDatabase.runPullCascadeForTasks(db: db, changedTaskIds: AppDatabase.withWindowStampedDerived(db: db, taskIds: healedTaskIds), ownerUid: userId)
-                    try AppDatabase.reDeriveSealedBoards(db: db, changedTaskIds: healedTaskIds)
-                }
-            }
+            let minted = try database.write { db in try AppDatabase.healMissingCompletionEventsTx(db: db, userId: userId) }
+            recordBatch(pulled: minted)
+            return minted
         } catch {
-            // Never let the heal fail the pull — it retries next cycle.
             log("Heal-on-pull skipped: \(error.localizedDescription)")
             return 0
         }
-        for _ in 0..<minted { recordEvent(.pulled) }
-        return minted
     }
 
     // MARK: - Safety-net timer
@@ -2092,18 +1156,6 @@ extension SyncService {
                 guard !_Concurrency.Task.isCancelled, let self else { return }
                 _ = await self.fullSync(userId: userId)
             }
-        }
-    }
-}
-
-// MARK: - Errors
-
-private enum SyncError: LocalizedError {
-    case invalidPayload(String)
-
-    var errorDescription: String? {
-        switch self {
-        case .invalidPayload(let msg): return msg
         }
     }
 }

@@ -27,6 +27,7 @@ final class SyncContractTests: XCTestCase {
         let legacyPullSkipCollections: [String]
         let clearableBoardFields: [String]
         let clearableFieldsByCollection: [String: [String]]
+        let pullApplyOrder: [String]
     }
 
     private func loadFixture() throws -> SyncContractFixture {
@@ -85,6 +86,19 @@ final class SyncContractTests: XCTestCase {
     /// Sanity check on the fixture itself, independent of the live Swift
     /// lists — guards against a corrupted/empty fixture silently passing
     /// the set-equality checks above via two empty sets.
+    /// Dependency-ordered pull (2026-10-07) — ORDER matters, so this is an
+    /// array compare, not a set compare.
+    func testPullApplyOrderMatchesFixtureExactly() throws {
+        let fixture = try loadFixture()
+        XCTAssertEqual(pullApplyOrder, fixture.pullApplyOrder)
+        XCTAssertEqual(pullApplyCollections.map(\.firestoreName), pullApplyOrder, "every pulled name maps to a syncable collection")
+        XCTAssertEqual(
+            Set(pullApplyOrder),
+            iosSyncCollectionNames.subtracting(legacyPullSkipCollections),
+            "the pull covers exactly the non-legacy collections"
+        )
+    }
+
     func testFixtureIsNonEmpty() throws {
         let fixture = try loadFixture()
         XCTAssertFalse(fixture.syncCollections.isEmpty)

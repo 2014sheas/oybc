@@ -230,28 +230,6 @@ extension AppDatabase {
     }
 }
 
-extension AppDatabase {
-    /// Post-pull sweep entry (`SyncService.pullSync`, right after
-    /// `healMissingCompletionEvents`): runs ``healLinkedCounterWindows(userId:)``
-    /// and never lets a failure break the pull — it retries next cycle.
-    ///
-    /// - Parameter userId: The authenticated user's uid.
-    /// - Returns: Rows stamped + copied this pass (0 when nothing to heal).
-    func healLinkedCounterWindowsSweep(userId: String) -> Int {
-        do {
-            let result = try healLinkedCounterWindows(userId: userId)
-            let total = result.stamped + result.copied
-            if total > 0 {
-                dlog("[SyncService] Windowed linked counters: stamped \(result.stamped), copied \(result.copied)")
-            }
-            return total
-        } catch {
-            dlog("[SyncService] Linked-counter window heal skipped: \(error.localizedDescription)")
-            return 0
-        }
-    }
-}
-
 extension LinkedCounterWindow {
     /// The window a linked counting square on `board` is evaluated against:
     /// the board's own `[startDate, endDate]` (owner rule 2026-10-01). Sealing
