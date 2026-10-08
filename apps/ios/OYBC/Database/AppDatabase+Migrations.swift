@@ -1,3 +1,4 @@
+import Foundation
 import GRDB
 
 /// Board Sources schema migrations (docs/BOARD_SOURCES.md), split out of
@@ -152,6 +153,98 @@ extension AppDatabase {
         // Web: no Dexie bump (unindexed).
         migrator.registerMigration("v39") { db in
             try db.execute(sql: "ALTER TABLE tasks ADD COLUMN countKind TEXT")
+        }
+
+        // v40: per-collection pull checkpoints (2026-10-07, the launch-watchdog
+        // fix — `AppDatabase+PullApply.swift`). LOCAL-ONLY: never synced, not
+        // a sync collection. One row per (user, collection) holding the highest
+        // server `_syncedAt` applied, written in the same transaction as the
+        // batch it covers, so a pull killed part-way resumes where it stopped.
+        // Exact seconds + nanoseconds (a Firestore `Timestamp`). A missing row
+        // falls back to `users.lastSyncedAt`. Cleared by `wipeLocalDatabase`.
+        // Web twin: the Dexie `syncWatermarks` store (v19).
+        //
+        // Same migration: `boards.centerTaskId` loses its `REFERENCES tasks(id)`
+        // (see `dropBoardsCenterTaskForeignKey`).
+        migrator.registerMigration("v40") { db in
+            try db.execute(sql: """
+                CREATE TABLE sync_watermarks (
+                    userId TEXT NOT NULL,
+                    collection TEXT NOT NULL,
+                    seconds INTEGER NOT NULL,
+                    nanoseconds INTEGER NOT NULL,
+                    PRIMARY KEY (userId, collection)
+                )
+                """)
+            try AppDatabase.dropBoardsCenterTaskForeignKey(db)
+        }
+    }
+}
+
+extension AppDatabase {
+    /// v40: rebuild `boards` WITHOUT the `centerTaskId REFERENCES tasks(id)`
+    /// foreign key (the same deliberate no-FK choice as `task_events`). The
+    /// pull applies `boards` before `tasks` (`pullApplyOrder`), so a board
+    /// whose chosen centre task isn't local yet (a wizard draft, a legacy
+    /// chosen-centre board) made the upsert throw, rolling back its whole
+    /// batch and marking the pull failed — no heals, no `lastSyncedAt` stamp.
+    /// Dev's old boards-first pull had the same trap. `centerTaskId` stays an
+    /// id its readers look up (wizard resume, capacity), and a missing task is
+    /// already tolerated there.
+    ///
+    /// Generic rebuild driven by `sqlite_master` (so every column added by a
+    /// later ALTER is kept verbatim): create a twin from the stored CREATE with
+    /// only the FK clause removed, copy every row, drop, rename, recreate every
+    /// index + trigger. Runs under the migrator's `.deferred` FK mode, so
+    /// dropping `boards` doesn't cascade into `board_tasks` (v18 recipe).
+    ///
+    /// Best-effort on shape: if the stored CREATE doesn't carry the clause in
+    /// the expected form, it logs and leaves the table alone (a migration throw
+    /// would brick database open) — the pull then behaves as before.
+    ///
+    /// - Throws: a `DatabaseError` if foreign keys are ON (not inside the
+    ///   migrator) or the row / index counts differ after the copy.
+    static func dropBoardsCenterTaskForeignKey(_ db: Database) throws {
+        // Outside the migrator (FKs on), `DROP TABLE boards` would
+        // cascade-delete every `board_tasks` row — refuse.
+        guard try Int.fetchOne(db, sql: "PRAGMA foreign_keys") == 0 else {
+            throw DatabaseError(message: "v40 boards rebuild must run with foreign keys OFF (inside the migrator)")
+        }
+        let hasFK = try Row.fetchAll(db, sql: "PRAGMA foreign_key_list(boards)")
+            .contains { ($0["from"] as String?) == "centerTaskId" }
+        guard hasFK else { return }
+        guard let create = try String.fetchOne(db, sql: "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'boards'"),
+              let open = create.firstIndex(of: "("),
+              let fkPattern = try? NSRegularExpression(
+                pattern: #"centerTaskId\s+TEXT\s+REFERENCES\s+"?tasks"?\s*\(\s*"?id"?\s*\)"#, options: [.caseInsensitive]
+              ) else { return }
+        let body = String(create[open...])
+        let range = NSRange(body.startIndex..., in: body)
+        guard fkPattern.numberOfMatches(in: body, range: range) == 1 else {
+            dlog("[Migration v40] boards centerTaskId FK not in the expected shape — left in place")
+            return
+        }
+        let twin = "CREATE TABLE boards_v40 " + fkPattern.stringByReplacingMatches(in: body, range: range, withTemplate: "centerTaskId TEXT")
+        let extras = try String.fetchAll(db, sql: """
+            SELECT sql FROM sqlite_master
+            WHERE tbl_name = 'boards' AND type IN ('index', 'trigger') AND sql IS NOT NULL
+            """)
+        let before = try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM boards") ?? 0
+
+        try db.execute(sql: twin)
+        try db.execute(sql: "INSERT INTO boards_v40 SELECT * FROM boards")
+        let copied = try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM boards_v40") ?? -1
+        guard copied == before else {
+            throw DatabaseError(message: "v40 boards rebuild row-count mismatch: \(before) boards but \(copied) copied")
+        }
+        try db.execute(sql: "DROP TABLE boards")
+        try db.execute(sql: "ALTER TABLE boards_v40 RENAME TO boards")
+        for sql in extras { try db.execute(sql: sql) }
+        let recreated = try Int.fetchOne(db, sql: """
+            SELECT COUNT(*) FROM sqlite_master WHERE tbl_name = 'boards' AND type IN ('index', 'trigger') AND sql IS NOT NULL
+            """) ?? -1
+        guard recreated == extras.count else {
+            throw DatabaseError(message: "v40 boards rebuild recreated \(recreated) of \(extras.count) indexes/triggers")
         }
     }
 }

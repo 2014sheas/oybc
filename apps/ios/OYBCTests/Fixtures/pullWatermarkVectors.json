@@ -1,0 +1,53 @@
+{
+  "_note": "Cross-platform vectors for pullWatermark.ts <-> PullWatermark.swift (pull checkpoint, 2026-10-07). A watermark is a Firestore server `_syncedAt` instant as { seconds, nanoseconds } (exact - no float rounding). nextPullWatermark(prev, syncedAts) is the max of prev and every non-null syncedAt in the batch; null/absent entries (a doc with no _syncedAt yet, e.g. a pending server timestamp) never move it; an all-null batch with no prev stays null. The checkpoint never moves backwards. Resume queries use >= the stored value, so same-instant siblings of the last applied doc are re-read (the echo guard makes them free).",
+  "cases": [
+    {
+      "name": "empty batch keeps prev",
+      "prev": { "seconds": 100, "nanoseconds": 5 },
+      "syncedAts": [],
+      "expected": { "seconds": 100, "nanoseconds": 5 }
+    },
+    {
+      "name": "empty batch with no prev stays null",
+      "prev": null,
+      "syncedAts": [],
+      "expected": null
+    },
+    {
+      "name": "all-null batch with no prev stays null",
+      "prev": null,
+      "syncedAts": [null, null],
+      "expected": null
+    },
+    {
+      "name": "first checkpoint is the batch max",
+      "prev": null,
+      "syncedAts": [{ "seconds": 10, "nanoseconds": 0 }, { "seconds": 30, "nanoseconds": 1 }, { "seconds": 20, "nanoseconds": 999 }],
+      "expected": { "seconds": 30, "nanoseconds": 1 }
+    },
+    {
+      "name": "nanoseconds break a seconds tie",
+      "prev": { "seconds": 50, "nanoseconds": 100 },
+      "syncedAts": [{ "seconds": 50, "nanoseconds": 99 }, { "seconds": 50, "nanoseconds": 101 }],
+      "expected": { "seconds": 50, "nanoseconds": 101 }
+    },
+    {
+      "name": "never moves backwards",
+      "prev": { "seconds": 500, "nanoseconds": 0 },
+      "syncedAts": [{ "seconds": 400, "nanoseconds": 0 }, { "seconds": 499, "nanoseconds": 999999999 }],
+      "expected": { "seconds": 500, "nanoseconds": 0 }
+    },
+    {
+      "name": "null entries are ignored",
+      "prev": { "seconds": 1, "nanoseconds": 0 },
+      "syncedAts": [null, { "seconds": 2, "nanoseconds": 0 }, null],
+      "expected": { "seconds": 2, "nanoseconds": 0 }
+    },
+    {
+      "name": "equal to prev keeps prev",
+      "prev": { "seconds": 7, "nanoseconds": 7 },
+      "syncedAts": [{ "seconds": 7, "nanoseconds": 7 }],
+      "expected": { "seconds": 7, "nanoseconds": 7 }
+    }
+  ]
+}

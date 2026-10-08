@@ -101,7 +101,7 @@ final class AppDatabase {
 
     // MARK: - Migrations
 
-    private var migrator: DatabaseMigrator {
+    var migrator: DatabaseMigrator { // internal (not private): the v39→v40 migration tests run it `upTo:`
         var migrator = DatabaseMigrator()
 
         // v1: Initial schema

@@ -28,7 +28,17 @@ extension AppDatabase {
         let windowContext: WindowEvaluationContext
     }
 
+    #if DEBUG
+    /// Test counter: how many times a pull cascade built its lookups (each
+    /// build = five whole-table loads). The batched pull must do this once per
+    /// batch, not once per doc.
+    static var pullCascadeLookupLoads = 0
+    #endif
+
     private static func loadPullCascadeLookups(db: Database) throws -> PullCascadeLookups {
+        #if DEBUG
+        pullCascadeLookupLoads += 1
+        #endif
         let allChildren = try CompoundChild.filter(Column("isDeleted") == false).fetchAll(db)
         let allBoardTasks = try BoardTask.filter(Column("isDeleted") == false).fetchAll(db)
         var taskById: [String: Task] = [:]
@@ -87,24 +97,73 @@ extension AppDatabase {
         }
     }
 
-    /// Board-integrity PR-1 (tombstones) — the `boardTasks`-pull cascade. A
-    /// pulled placement (live OR tombstone) changes ONE board's geometry
-    /// directly, so that board re-derives (a sealed board takes the sealed
-    /// re-derive instead), then its achievement watchers refresh.
+    /// Board-integrity PR-1 (tombstones) — the `boardTasks`-pull cascade for
+    /// one board. Thin wrapper over ``runPullCascadeForBoards(db:boardIds:ownerUid:)``.
     ///
     /// - Parameters:
     ///   - db: The pull's write transaction.
     ///   - boardId: The `boardId` of the pulled `BoardTask` row.
     ///   - ownerUid: The uid the pull runs for (owns the enqueues).
     static func runPullCascadeForBoardTask(db: Database, boardId: String, ownerUid: String) throws {
-        guard let board = try Board.fetchOne(db, key: boardId), !board.isDeleted else { return }
-        if board.sealedAt != nil {
-            try reDeriveSealedBoardSnapshots(db: db, boardIds: [boardId])
-            return try refreshWatchersAfterPull(db: db, boardIds: [boardId])
+        try runPullCascadeForBoards(db: db, boardIds: [boardId], ownerUid: ownerUid)
+    }
+
+    /// The `boardTasks`-pull cascade for a batch: a pulled placement (live OR
+    /// tombstone) changes its board's geometry directly, so each affected board
+    /// re-derives ONCE — sealed boards through one sealed re-derive, live ones
+    /// against ONE lookup load — then every reached board's achievement
+    /// watchers refresh once. Missing / deleted boards are skipped.
+    ///
+    /// - Parameters:
+    ///   - db: The pull's write transaction.
+    ///   - boardIds: The `boardId`s of the pulled `BoardTask` rows.
+    ///   - ownerUid: The uid the pull runs for (owns the enqueues).
+    static func runPullCascadeForBoards(db: Database, boardIds: Set<String>, ownerUid: String) throws {
+        var sealedIds = Set<String>()
+        var live: [Board] = []
+        for boardId in boardIds {
+            guard let board = try Board.fetchOne(db, key: boardId), !board.isDeleted else { continue }
+            if board.sealedAt != nil { sealedIds.insert(boardId) } else { live.append(board) }
         }
-        let lookups = try loadPullCascadeLookups(db: db)
-        try writePullCascadeBoardStats(db: db, board: board, lookups: lookups, now: currentTimestamp(), ownerUid: ownerUid)
-        try refreshWatchersAfterPull(db: db, boardIds: [boardId])
+        try reDeriveSealedBoardSnapshots(db: db, boardIds: sealedIds)
+        if !live.isEmpty {
+            let lookups = try loadPullCascadeLookups(db: db)
+            let now = currentTimestamp()
+            for board in live {
+                try writePullCascadeBoardStats(db: db, board: board, lookups: lookups, now: now, ownerUid: ownerUid)
+            }
+        }
+        let reached = sealedIds.union(live.map(\.id))
+        if !reached.isEmpty { try refreshWatchersAfterPull(db: db, boardIds: reached) }
+    }
+
+    /// An LWW-applied pulled `boards` row, as the batch side-effect pass needs it.
+    struct PulledBoard {
+        let id: String
+        let remote: [String: Any]
+        let local: [String: Any]?
+    }
+
+    /// Batch form of ``applyPulledBoardSideEffects(db:boardId:remoteData:localData:)``:
+    /// every pulled SEALED board re-derives its snapshot in ONE sealed
+    /// re-derive (one lookup load), each pulled REOPEN re-derives live
+    /// (non-authored), then the watchers of every pulled board refresh once.
+    ///
+    /// - Parameters:
+    ///   - db: The pull's write transaction.
+    ///   - pulled: The boards the batch upserted.
+    static func applyPulledBoardsSideEffects(db: Database, pulled: [PulledBoard]) throws {
+        guard !pulled.isEmpty else { return }
+        var sealedIds = Set<String>()
+        for board in pulled {
+            if board.remote["sealedAt"] is String {
+                sealedIds.insert(board.id)
+            } else if board.local?["sealedAt"] is String {
+                try reDeriveLiveBoardTx(db: db, boardId: board.id, now: currentTimestamp(), authored: false)
+            }
+        }
+        try reDeriveSealedBoardSnapshots(db: db, boardIds: sealedIds)
+        try refreshWatchersAfterPull(db: db, boardIds: Set(pulled.map(\.id)))
     }
 
     /// Re-derive one live board and persist its stats — only when they changed.

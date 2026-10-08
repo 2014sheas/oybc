@@ -170,23 +170,24 @@ final class BoardDerivationChurnTests: XCTestCase {
         XCTAssertTrue(sut.applyRemoteSubdoc(collection: boardsCol, remoteData: newerBoard, authenticatedUserId: userId))
     }
 
-    /// The batch full-sync pull (`processPullCollection` → `applyPulledDocument`)
+    /// The batch full-sync pull (`processPullCollection` → `applyPullBatch`)
     /// — the path the owner's re-pull replay went through.
-    func test_batchPullPath_skipsEchoes_andAppliesANewerRow() throws {
+    func test_batchPullPath_skipsEchoes_andAppliesANewerRow() async throws {
         let db = try makeDb()
         try seedConvergedBoard(db, completed: 3)
         let before = try board(db)
-        let sut = SyncService(database: db)
         let task = try XCTUnwrap(try db.fetchTask(id: taskId(0)))
         let bt = try XCTUnwrap(try db.read { try BoardTask.fetchOne($0, key: self.placementId(self.boardId, 0)) })
 
-        var result = PullResult()
-        try sut.applyPulledDocument(collection: tasksCol, remoteData: try wireDict(task), userId: userId, result: &result)
-        try sut.applyPulledDocument(collection: boardTasksCol, remoteData: try wireDict(bt), userId: userId, result: &result)
-        try sut.applyPulledDocument(collection: boardsCol, remoteData: try wireDict(before), userId: userId, result: &result)
+        var pulled = 0, conflicts = 0
+        for (col, doc) in [(tasksCol, try wireDict(task)), (boardTasksCol, try wireDict(bt)), (boardsCol, try wireDict(before))] {
+            let outcome = try await db.applyPullBatch(collection: col, docs: PullDocs(docs: [doc]), userId: userId, checkpoint: true)
+            pulled += outcome.pulled
+            conflicts += outcome.conflicts
+        }
 
-        XCTAssertEqual(result.pulled, 0)
-        XCTAssertEqual(result.conflicts, 0)
+        XCTAssertEqual(pulled, 0)
+        XCTAssertEqual(conflicts, 0)
         let after = try board(db)
         XCTAssertEqual(after.version, before.version)
         XCTAssertEqual(after.updatedAt, before.updatedAt)
@@ -197,8 +198,8 @@ final class BoardDerivationChurnTests: XCTestCase {
         newer["title"] = "Renamed elsewhere"
         newer["version"] = 2
         newer["updatedAt"] = inWindow
-        try sut.applyPulledDocument(collection: tasksCol, remoteData: newer, userId: userId, result: &result)
-        XCTAssertEqual(result.pulled, 1)
+        let applied = try await db.applyPullBatch(collection: tasksCol, docs: PullDocs(docs: [newer]), userId: userId, checkpoint: true)
+        XCTAssertEqual(applied.pulled, 1)
         XCTAssertEqual(try db.fetchTask(id: taskId(0))?.title, "Renamed elsewhere")
         XCTAssertEqual(try board(db).version, before.version, "stats unchanged → still no board bump")
     }

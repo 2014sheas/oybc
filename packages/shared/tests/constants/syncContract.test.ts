@@ -7,6 +7,7 @@ import {
   CLEARABLE_BOARD_FIELDS,
   CLEARABLE_FIELDS_BY_COLLECTION,
   clearableFieldsFor,
+  PULL_APPLY_ORDER,
 } from '../../src/constants';
 
 /**
@@ -48,6 +49,7 @@ describe('syncContract fixture', () => {
     legacyPullSkipCollections?: string[];
     clearableBoardFields?: string[];
     clearableFieldsByCollection?: Record<string, string[]>;
+    pullApplyOrder?: string[];
   };
 
   it(`syncCollections matches SYNC_COLLECTIONS (${REGENERATE_HINT})`, () => {
@@ -102,6 +104,31 @@ describe('syncContract fixture', () => {
     for (const name of Object.keys(CLEARABLE_FIELDS_BY_COLLECTION)) {
       expect([...SYNC_COLLECTIONS]).toContain(name);
     }
+  });
+
+  it(`pullApplyOrder matches PULL_APPLY_ORDER, order included (${REGENERATE_HINT})`, () => {
+    expect(fixture.pullApplyOrder).toEqual([...PULL_APPLY_ORDER]);
+  });
+
+  it('PULL_APPLY_ORDER is exactly the pulled collections (SYNC_COLLECTIONS minus legacy skips), each once', () => {
+    const pulled = SYNC_COLLECTIONS.filter(
+      (c) => !(LEGACY_PULL_SKIP_COLLECTIONS as readonly string[]).includes(c),
+    );
+    expect(new Set(PULL_APPLY_ORDER).size).toBe(PULL_APPLY_ORDER.length);
+    expect([...PULL_APPLY_ORDER].sort()).toEqual([...pulled].sort());
+  });
+
+  it('PULL_APPLY_ORDER: boards first, then every dependency before its dependents', () => {
+    const at = (c: (typeof PULL_APPLY_ORDER)[number]) => PULL_APPLY_ORDER.indexOf(c);
+    // Boards first: a task/event cascade must never re-derive (and author a
+    // bump on) a stale local board row the same pull is about to replace.
+    expect(PULL_APPLY_ORDER[0]).toBe('boards');
+    // Events before task rows: a pulled completion's Task row must derive
+    // against the event it was authored with.
+    expect(at('taskEvents')).toBeLessThan(at('tasks'));
+    // The compound-link scope check needs the parent task local.
+    expect(at('tasks')).toBeLessThan(at('compoundChildren'));
+    expect(at('compoundChildren')).toBeLessThan(at('boardTasks'));
   });
 
   it('clearableFieldsFor returns the map entry, and [] for a collection with none', () => {

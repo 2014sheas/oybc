@@ -40,15 +40,16 @@ import {
   SyncStatus,
   UserSchema,
   mergeUserPreferences,
-  SYNC_COLLECTIONS,
-  LEGACY_PULL_SKIP_COLLECTIONS as SHARED_LEGACY_PULL_SKIP_COLLECTIONS,
+  PULL_APPLY_ORDER,
   clearableFieldsFor,
   type User,
   type SyncCollection,
+  type PullWatermark,
 } from '@oybc/shared';
 import { applyTaskEventsBatch, healMissingCompletionEvents } from '../db/operations/taskEventPull';
 import { healLinkedCounterWindows } from '../db/operations/linkedCounterWindowHeal';
 import { applyRemoteSubdoc, rowsGenuinelyDiffer } from '../db/operations/pullApply';
+import { advancePullWatermark, fetchPullWatermarks } from '../db/operations/syncWatermarks';
 
 // Stamp every enqueue with the LIVE signed-in uid (docs/GUEST_MODE.md
 // §Collision) — `pushSync` drops rows owned by any other uid.
@@ -57,28 +58,12 @@ setSyncQueueOwnerProvider(() => auth.currentUser?.uid ?? null);
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 /**
- * Entity types that can be synced, mapped to their Dexie table names
- * and Firestore subcollection paths under `users/{userId}/`.
- *
- * Sourced from `@oybc/shared`'s `SYNC_COLLECTIONS` (workstream C4 / issue
- * #261) — this used to be a hand-maintained literal array here, mirrored
- * by hand in iOS's `SyncService.swift`. It's now the single source of
- * truth; see that constant's doc comment for the full contract (legacy
- * push-drain entries, iOS mirroring story, etc.).
+ * The pull (full pull loop + listener attach) walks `PULL_APPLY_ORDER` from
+ * `@oybc/shared` — dependency order, exactly `SYNC_COLLECTIONS` minus the
+ * legacy pull-skip collections (whose docs would resurrect retired rows). The
+ * push path drains every `SYNC_COLLECTIONS` entity type it finds queued. iOS
+ * twin: `pullApplyOrder` in `PullWatermark.swift`.
  */
-const SYNCABLE_COLLECTIONS = SYNC_COLLECTIONS;
-
-/**
- * Legacy collections kept in SYNCABLE_COLLECTIONS so the push path can drain
- * DELETE ops produced by the migration-v4 cleanup. The pull path skips them
- * because their Firestore subcollections are either empty or being actively
- * retired — pulling their docs would resurrect legacy rows in local Dexie.
- *
- * Sourced from `@oybc/shared`'s `LEGACY_PULL_SKIP_COLLECTIONS`.
- */
-const LEGACY_PULL_SKIP_COLLECTIONS: ReadonlySet<SyncCollection> = new Set(
-  SHARED_LEGACY_PULL_SKIP_COLLECTIONS,
-);
 
 export interface PushResult {
   pushed: number;
@@ -447,6 +432,11 @@ export async function pullSync(
   assertSyncUserMatches(userId);
   const result: PullResult = { pulled: 0, conflicts: 0, details: [] };
   let hadPullError = false;
+  // Stamped as `lastSyncedAt` on a clean pull — the START, not the end: it is
+  // the fallback watermark for collections with no checkpoint (and the
+  // listeners' start), so a doc written remotely DURING this pull must still
+  // be >= it. `>=` + the echo guard make the re-read free. iOS twin: same.
+  const pullStartedAt = new Date().toISOString();
 
   // Pull the user doc (lives at `users/{userId}`, not a subcollection) so
   // synced profile fields like `preferences` replicate back to this device.
@@ -472,40 +462,36 @@ export async function pullSync(
     hadPullError = true;
   }
 
-  for (const collectionName of SYNCABLE_COLLECTIONS) {
-    // Legacy collections are kept in SYNCABLE_COLLECTIONS so push can drain
-    // their DELETE ops, but we must NOT pull from them — doing so would
-    // resurrect retired rows in local Dexie.
-    if (LEGACY_PULL_SKIP_COLLECTIONS.has(collectionName)) continue;
-
+  // Each collection resumes from its own checkpoint (the highest server
+  // `_syncedAt` it applied — `db/operations/syncWatermarks.ts`), else from
+  // `lastSyncedAt`; a pull interrupted after collection N resumes at N+1.
+  // `>=`: same-instant siblings of the last applied doc are re-read and the
+  // echo guard skips them. A Timestamp operand — `_syncedAt` is a server
+  // Timestamp and Firestore range queries need a type-matched value.
+  const fallback = lastSyncedAt ? Timestamp.fromDate(new Date(lastSyncedAt)) : null;
+  const checkpoints = await fetchPullWatermarks(userId);
+  for (const collectionName of PULL_APPLY_ORDER) {
     try {
       const colRef = collection(firestore, 'users', userId, collectionName);
-
-      // Query for documents updated since last sync. `_syncedAt` is a
-      // Firestore `Timestamp`; the local watermark is an ISO string.
-      // Convert before querying — see `attachPullListeners` for the
-      // type-mismatch story.
-      const q = lastSyncedAt
-        ? query(colRef, where('_syncedAt', '>', Timestamp.fromDate(new Date(lastSyncedAt))))
-        : query(colRef); // First sync — pull everything
+      const mark = checkpoints[collectionName];
+      const since = mark ? new Timestamp(mark.seconds, mark.nanoseconds) : fallback;
+      const q = since ? query(colRef, where('_syncedAt', '>=', since)) : query(colRef); // nil → first sync: everything
 
       const snapshot = await getDocs(q);
       if (snapshot.empty) continue;
+      const docs = snapshot.docs.map((d) => d.data());
 
       // Windowed Completion (docs §Sync): task events pull in a BATCH — apply
       // all rows, then one recompute per task + one cascade per board.
       if (collectionName === 'taskEvents') {
-        const batch = await applyTaskEventsBatch(
-          userId,
-          snapshot.docs.map((d) => d.data()),
-        );
+        const batch = await applyTaskEventsBatch(userId, docs);
         result.pulled += batch.pulled;
         result.details.push(...batch.details);
+        await advancePullWatermark(userId, collectionName, docs); // a DB failure throws → no checkpoint
         continue;
       }
 
-      for (const docSnap of snapshot.docs) {
-        const remoteData = docSnap.data();
+      for (const remoteData of docs) {
         const status = await applyRemoteSubdoc(collectionName, remoteData, userId);
         if (status) {
           if (status.startsWith('Pulled')) result.pulled++;
@@ -523,6 +509,8 @@ export async function pullSync(
           );
         }
       }
+      // Every doc applied — only now may the checkpoint cover them.
+      await advancePullWatermark(userId, collectionName, docs);
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : String(err);
       result.details.push(`Pull failed for ${collectionName}: ${errorMsg}`);
@@ -565,10 +553,9 @@ export async function pullSync(
       );
     }
 
-    const now = new Date().toISOString();
     const user = await db.users.get(userId);
     if (user) {
-      await db.users.update(userId, { lastSyncedAt: now });
+      await db.users.update(userId, { lastSyncedAt: pullStartedAt });
     }
   }
 
@@ -583,20 +570,23 @@ export async function pullSync(
  * that the safety-net `pullSync` uses, so all incoming-write logic is
  * unified.
  *
- * Each per-collection listener is filtered by `_syncedAt > lastSyncedAt`
- * so the initial attach only delivers post-watermark documents (avoids
- * a full collection scan on every reload). The user-doc listener has no
- * filter — it's a single document.
+ * Attached by the sync loop only AFTER its first pull (iOS parity, the
+ * 2026-10-07 launch-watchdog fix): each per-collection listener starts from
+ * that collection's fresh checkpoint (`_syncedAt >=`), else `lastSyncedAt`,
+ * else epoch — so its first snapshot is the boundary docs (echo-skipped), not
+ * the delta the pull just applied. The user-doc listener has no filter.
+ * Listeners never checkpoint (a change set isn't a `_syncedAt`-ordered prefix).
  *
  * Returns an unsubscribe function that detaches all listeners.
  *
  * @param userId - The authenticated user's ID
- * @param lastSyncedAt - ISO8601 watermark; `undefined` triggers a full
- *   first-sync delivery on attach (matches existing pull semantics)
+ * @param lastSyncedAt - ISO8601 fallback for a collection without a checkpoint
+ * @param checkpoints - collection → checkpoint (`fetchPullWatermarks`)
  */
 export function attachPullListeners(
   userId: string,
-  lastSyncedAt: string | undefined
+  lastSyncedAt: string | undefined,
+  checkpoints: Record<string, PullWatermark> = {},
 ): () => void {
   const unsubs: FirestoreUnsubscribe[] = [];
 
@@ -622,31 +612,14 @@ export function attachPullListeners(
   );
   unsubs.push(userUnsub);
 
-  // One listener per subcollection, filtered to deltas since the last
-  // safety-net watermark so initial attach is bounded.
-  //
-  // `_syncedAt` is written via `serverTimestamp()` and stored as a
-  // Firestore `Timestamp`. `lastSyncedAt` on the local user row is an
-  // ISO8601 string (set from the local clock at the end of `pullSync`).
-  // Firestore range queries require both sides of the comparison to be
-  // the same type — comparing Timestamp > String never matches because
-  // Firestore's canonical type ordering puts every Timestamp below every
-  // String. Convert the watermark to a Timestamp here.
-  //
-  // A small clock-skew window (local clock vs server clock at write
-  // time) can leak past the watermark; the safety-net `pullSync` will
-  // pick up anything missed.
-  const watermarkDate = lastSyncedAt
-    ? new Date(lastSyncedAt)
-    : new Date(0); // Unix epoch — first-sync delivery
-  const watermarkTs = Timestamp.fromDate(watermarkDate);
-  for (const collectionName of SYNCABLE_COLLECTIONS) {
-    // Legacy collections are kept in SYNCABLE_COLLECTIONS so push can drain
-    // their DELETE ops, but we must NOT attach real-time listeners to them.
-    if (LEGACY_PULL_SKIP_COLLECTIONS.has(collectionName)) continue;
-
+  // One listener per pulled subcollection. `_syncedAt` is a server Timestamp,
+  // so the operand must be a Timestamp too (a String never matches).
+  const fallback = Timestamp.fromDate(lastSyncedAt ? new Date(lastSyncedAt) : new Date(0));
+  for (const collectionName of PULL_APPLY_ORDER) {
+    const mark = checkpoints[collectionName];
     const colRef = collection(firestore, 'users', userId, collectionName);
-    const q = query(colRef, where('_syncedAt', '>', watermarkTs));
+    const since = mark ? new Timestamp(mark.seconds, mark.nanoseconds) : fallback;
+    const q = query(colRef, where('_syncedAt', '>=', since));
     const unsub = onSnapshot(
       q,
       async (snapshot) => {
@@ -852,11 +825,11 @@ export function startSyncLoop(
   });
 
   // Real-time pull: open Firestore listeners for the parent user doc and
-  // every syncable subcollection. Initial attach delivers everything
-  // newer than the last persisted watermark, then real-time changes flow
-  // in continuously. Detached on cleanup.
+  // every pulled subcollection — only AFTER the initial sync's pull, from
+  // its fresh checkpoints (attaching first made the first snapshots re-deliver
+  // the delta the pull was applying). Attached even when that pull failed or
+  // was skipped offline, so real-time still works. Detached on cleanup.
   //
-  // The watermark fetch is async, so attach happens on the next tick.
   // Track teardown state with a flag so a cleanup that fires before the
   // async attach resolves still tears the listeners down — otherwise an
   // account switch could leak listeners that hold Firestore subscriptions
@@ -865,9 +838,13 @@ export function startSyncLoop(
   let cleanedUp = false;
   void (async () => {
     try {
-      const initialUser = await db.users.get(userId);
+      // The initial sync (covers first sign-in + reload).
+      await fullTick();
       if (cleanedUp) return;
-      detachListeners = attachPullListeners(userId, initialUser?.lastSyncedAt);
+      const initialUser = await db.users.get(userId);
+      const checkpoints = await fetchPullWatermarks(userId);
+      if (cleanedUp) return;
+      detachListeners = attachPullListeners(userId, initialUser?.lastSyncedAt, checkpoints);
       if (cleanedUp) {
         // Cleanup raced in between the await and the assignment. Detach
         // immediately so the listeners we just created don't leak.
@@ -904,10 +881,6 @@ export function startSyncLoop(
     })();
   }
   window.addEventListener('online', handleOnline);
-
-  // Run an initial sync immediately (covers first sign-in + reload while
-  // the listeners warm up).
-  void fullTick();
 
   // Teardown (idempotent: `stopSyncLoop` and the returned cleanup can both
   // reach it).

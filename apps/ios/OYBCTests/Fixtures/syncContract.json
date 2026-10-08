@@ -43,5 +43,15 @@
       "defaultBoardSize",
       "defaultCenterType"
     ]
-  }
+  },
+  "pullApplyOrder": [
+    "boards",
+    "taskEvents",
+    "tasks",
+    "compoundChildren",
+    "boardTasks",
+    "recurringBoardTemplates",
+    "pools",
+    "coreBoardDefaults"
+  ]
 }

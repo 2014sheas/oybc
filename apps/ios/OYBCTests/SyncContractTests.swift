@@ -27,6 +27,7 @@ final class SyncContractTests: XCTestCase {
         let legacyPullSkipCollections: [String]
         let clearableBoardFields: [String]
         let clearableFieldsByCollection: [String: [String]]
+        let pullApplyOrder: [String]
     }
 
     private func loadFixture() throws -> SyncContractFixture {
@@ -79,6 +80,19 @@ final class SyncContractTests: XCTestCase {
             legacyPullSkipCollections,
             Set(fixture.legacyPullSkipCollections),
             "iOS legacyPullSkipCollections must set-match @oybc/shared's LEGACY_PULL_SKIP_COLLECTIONS."
+        )
+    }
+
+    /// Pull order (2026-10-07, boards first) — ORDER matters, so this is an
+    /// array compare, not a set compare.
+    func testPullApplyOrderMatchesFixtureExactly() throws {
+        let fixture = try loadFixture()
+        XCTAssertEqual(pullApplyOrder, fixture.pullApplyOrder)
+        XCTAssertEqual(pullApplyCollections.map(\.firestoreName), pullApplyOrder, "every pulled name maps to a syncable collection")
+        XCTAssertEqual(
+            Set(pullApplyOrder),
+            iosSyncCollectionNames.subtracting(legacyPullSkipCollections),
+            "the pull covers exactly the non-legacy collections"
         )
     }
 

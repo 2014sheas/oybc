@@ -31,6 +31,8 @@ export class AppDatabase extends Dexie {
   taskEvents!: Table<TaskEvent, string>;
   pools!: Table<Pool, string>;
   coreBoardDefaults!: Table<CoreBoardDefault, string>;
+  /** Local-only per-collection pull checkpoints (v19) — never synced. */
+  syncWatermarks!: Table<SyncWatermark, [string, string]>;
 
   constructor() {
     super('oybc');
@@ -428,6 +430,15 @@ export class AppDatabase extends Dexie {
       // Dynamic import avoids a top-of-file cycle (migrationV18 imports `db`).
       return import('./operations/migrationV18').then((mod) => mod.runMigrationV18(tx));
     });
+
+    // v19: per-collection pull checkpoints (2026-10-07, iOS launch-watchdog
+    // fix, web parity — iOS GRDB v40 `sync_watermarks`). LOCAL-ONLY: never
+    // synced, not a sync collection. One row per (user, collection): the
+    // highest server `_syncedAt` the pull applied, so an interrupted pull
+    // resumes where it stopped. Cleared by the generic `db.tables` wipe.
+    this.version(19).stores({
+      syncWatermarks: '[userId+collection]',
+    });
   }
 }
 
@@ -435,6 +446,14 @@ export class AppDatabase extends Dexie {
 // #284). This module only defines the `AppDatabase` class + schema so the
 // raw Dexie instance has a single, boundary-enforced import site. See
 // `db/internal.ts`.
+
+/** A per-collection pull checkpoint row (v19). See `operations/syncWatermarks.ts`. */
+export interface SyncWatermark {
+  userId: string;
+  collection: string;
+  seconds: number;
+  nanoseconds: number;
+}
 
 // Export types for convenience
 export type {

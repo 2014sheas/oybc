@@ -546,8 +546,9 @@ The current design is event-driven on both sides, with the polling loop kept as 
 ### Pull side — Firestore `onSnapshot` listeners
 
 - One listener on the parent `users/{userId}` doc (no filter, single document).
-- One listener per syncable subcollection at `users/{userId}/<collection>`, filtered by `where('_syncedAt', '>', lastSyncedAt)` so initial attach only delivers deltas since the last safety-net watermark advance.
-- Each handler routes incoming docs through the same `applyRemoteUserDoc` / `applyRemoteSubdoc` helpers that the safety-net `pullSync` uses — all incoming-write logic is unified.
+- One listener per pulled subcollection (`PULL_APPLY_ORDER`) at `users/{userId}/<collection>`, filtered by `where('_syncedAt', '>=', <that collection's checkpoint>)` (fallback `lastSyncedAt`, else epoch).
+- **Listeners attach only after the loop's initial pull** (2026-10-07, both platforms). Attaching first made the first snapshots re-deliver the very delta the initial pull was applying — the whole dataset applied twice at launch. They attach even when that pull failed (offline) so real-time still works.
+- Each handler routes incoming docs through the same apply engine the pull uses (iOS: `AppDatabase.applyPullBatch`, one batch per snapshot; web: `applyRemoteUserDoc` / `applyRemoteSubdoc`). Listener batches never checkpoint — a change set is not a `_syncedAt`-ordered prefix.
 - Echo behaviour: the device that pushed a write also receives the snapshot back. The LWW resolver picks "remote" by `updatedAt` tiebreaker but the local upsert is idempotent (same data, no real change). Listener handlers skip the log line when local-wins so the event log doesn't fill with echoes.
 
 ### Safety-net interval
@@ -718,10 +719,11 @@ This section documents what was actually implemented for the sync layer (Phase 3
 
 ### Pull Sync
 
-- Query Firestore by `_syncedAt > lastSyncedAt` watermark
-- For each remote document, compare against local using the resolution rules
-- Upsert into local DB if remote wins
-- `lastSyncedAt` watermark is only advanced after an error-free pull cycle
+- Collections pull in `PULL_APPLY_ORDER` (`@oybc/shared`; iOS `pullApplyOrder`, pinned by `syncContract.json`): `boards → taskEvents → tasks → compoundChildren → boardTasks → recurringBoardTemplates → pools → coreBoardDefaults`. **Boards first**: a task / event batch's cascade re-derives every board placing the changed task; against a stale local board row a stats change would AUTHOR a bump that out-ranks the pulled board under LWW and pushes the stale row (a remote rename included) back. With the row current, the cascade derives the stats the board already carries and writes nothing. The boards batch itself only runs non-authored re-derives (sealed snapshot, pulled Reopen, watchers). **Events before task rows**: a peer's completion is an event + an authored Task row + new board stats — a task batch first would derive without the event and bump twice. Compound links follow tasks (their scope check needs the parent), placements come last. iOS: `boards.centerTaskId` carries no foreign key (dropped in GRDB v40, like `task_events`), so a board whose chosen centre task arrives later in the same pull applies cleanly; web has no FKs.
+- **Per-collection checkpoints** (2026-10-07): each collection resumes from its own watermark — the highest server `_syncedAt` it has applied (`nextPullWatermark`, exact `{seconds, nanoseconds}`, vector-pinned), stored LOCAL-ONLY (iOS `sync_watermarks`, GRDB v40; web Dexie `syncWatermarks`, v19; both cleared by the wipe). Query `_syncedAt >= checkpoint` (same-instant siblings are re-read; the echo guard skips them); no checkpoint → fall back to `users.lastSyncedAt`, else read everything. A pull interrupted after collection N resumes at N+1 instead of re-applying everything — which is what turned a watchdog-killed iOS launch pull into a launch loop.
+- For each remote document, compare against local using the resolution rules; upsert if remote wins.
+- **iOS applies off the main actor in batches**: ≤250 docs per GRDB write on the writer queue (`AppDatabase+PullApply.swift`) — LWW per doc, then ONE cascade per batch, then that collection's checkpoint, all in one transaction (a throw rolls back rows AND checkpoint). Docs are sorted by `_syncedAt` before chunking so every batch's max is a safe resume point. The main actor only publishes one counter update per batch. Web applies per doc (IndexedDB is async) and checkpoints once a collection fully applied.
+- The heal sweeps and the `users.lastSyncedAt` stamp still run only after an error-free pull cycle. `lastSyncedAt` is stamped with the pull's **start** time (both platforms): it is the fallback for collections without a checkpoint and the listeners' start, so a doc written remotely during the pull stays `>=` it.
 
 ### Known Limitations
 

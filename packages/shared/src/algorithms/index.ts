@@ -449,3 +449,8 @@ export type {
   LinkedCounterWindowCopy,
   LinkedCounterWindowHealPlan,
 } from './linkedCounterWindowHeal';
+
+// ===== Pull checkpoint — per-collection server `_syncedAt` watermark (2026-10-07) =====
+export { comparePullWatermarks, nextPullWatermark } from './pullWatermark';
+
+export type { PullWatermark } from './pullWatermark';
