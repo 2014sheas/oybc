@@ -27,7 +27,12 @@ async function handAddFromLibrary(page: Page, titles: string[]): Promise<void> {
       .first();
     await expect(match).toBeVisible();
     await match.click();
-    await expect(page.getByRole('listitem').filter({ hasText: title }).first()).toBeVisible();
+    // Prove the task landed on the board, not just that the dropdown's own
+    // <li> still shows it: the dropdown closes, the input clears, and the
+    // pool row's per-row Remove control (PoolList-only) exists.
+    await expect(page.getByRole('list', { name: 'Matching library tasks' })).toBeHidden();
+    await expect(quickAdd).toHaveValue('');
+    await expect(page.getByRole('button', { name: `Remove ${title} from board` })).toBeVisible();
   }
 }
 
