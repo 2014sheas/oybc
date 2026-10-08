@@ -213,6 +213,10 @@ extension AppDatabase {
             // non-authored cache refreshed per task before the derivation.
             for taskId in changedTaskIds { _ = try refreshPulledDerivedBaseline(db: db, taskId: taskId) }
             try runPullCascadeForTasks(db: db, changedTaskIds: changedTaskIds, ownerUid: userId)
+            // A new / changed sub-task link changes a compound's result on
+            // SEALED boards too (the live cascade skips them): re-derive their
+            // snapshots from the link set (non-authored, the sanctioned path).
+            if name == "compoundChildren" { try reDeriveSealedBoards(db: db, changedTaskIds: changedTaskIds) }
         }
         try runPullCascadeForBoards(db: db, boardIds: changedBoardIds, ownerUid: userId)
         try applyPulledBoardsSideEffects(db: db, pulled: pulledBoards)
@@ -235,8 +239,10 @@ extension AppDatabase {
     /// Apply ALL pulled event rows (LWW, union by id; tombstone = undo), then
     /// recompute each affected event-owning task's caches ONCE and run ONE
     /// derivation pass per affected board — inside the caller's transaction.
-    /// An event whose Task isn't local yet is upserted but skipped by the
-    /// recompute (events-before-task; the next pull picks it up).
+    /// An event whose Task isn't local yet is upserted (shape only) and skipped
+    /// by the recompute: `pullApplyOrder` pulls events before task rows, so the
+    /// SAME pull's tasks batch brings that row (with its author's caches) and
+    /// its cascade + derived-baseline refresh read these events.
     ///
     /// - Returns: Pulled-row count + per-row skip details.
     static func applyTaskEventsBatchTx(db: Database, userId: String, rawDocs: [[String: Any]]) throws -> (pulled: Int, details: [String]) {

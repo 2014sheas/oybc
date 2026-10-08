@@ -613,8 +613,10 @@ extension AppDatabase {
     ) throws -> Set<String> {
         var touched = Set<String>()
         for taskId in taskIds {
-            // A task whose row isn't local yet is skipped-and-deferred (the
-            // safety-net retry picks it up); a non-event-owning one never had
+            // A task whose row isn't local yet is skipped: the pull applies
+            // events before task rows, so the same pull's tasks batch brings it
+            // (author's caches) and its cascade reads these events. A
+            // non-event-owning one never had
             // caches to restamp and can't be a shared-counter root either.
             guard let task = try Task.fetchOne(db, key: taskId), isEventOwningTask(task) else { continue }
             try recomputeTaskCachesFromPull(db: db, taskId: taskId)

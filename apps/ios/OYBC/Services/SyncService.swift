@@ -862,11 +862,11 @@ extension SyncService {
         initialSyncTask?.cancel()
         initialSyncTask = _Concurrency.Task { [weak self] in
             guard let self, self.runningForUserId == userId else { return }
-            // A debounced push holding `isSyncing` makes `fullSync` return
-            // "already in progress" without pulling — wait it out and retry
-            // once, so the listeners attach after a pull that actually ran.
+            // A push holding `isSyncing` makes `fullSync` skip the pull: wait
+            // (≤ 30 s) and retry once, so listeners attach after a real pull.
             for _ in 0..<2 where !self.hasCompletedFirstPull {
-                while self.isSyncing, !_Concurrency.Task.isCancelled {
+                let deadline = Date().addingTimeInterval(30) // never wait forever on a stuck push
+                while self.isSyncing, !_Concurrency.Task.isCancelled, Date() < deadline {
                     try? await _Concurrency.Task.sleep(nanoseconds: 50_000_000)
                 }
                 guard !_Concurrency.Task.isCancelled, self.runningForUserId == userId else { return }

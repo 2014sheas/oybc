@@ -249,6 +249,93 @@ final class SyncPullBatchTests: XCTestCase {
         XCTAssertEqual(try count(db, "sync_queue"), 0, "the pull must push nothing back")
     }
 
+    // MARK: - boards.centerTaskId has no FK (v40)
+
+    func test_v40_boardsHasNoCenterTaskForeignKey_andKeepsEveryIndex() throws {
+        let db = try makeDb()
+        try db.read { conn in
+            let fks = try Row.fetchAll(conn, sql: "PRAGMA foreign_key_list(boards)")
+            XCTAssertFalse(fks.contains { ($0["from"] as String?) == "centerTaskId" }, "centerTaskId must not reference tasks")
+            XCTAssertTrue(fks.contains { ($0["table"] as String?) == "users" }, "the userId FK is kept")
+            let indexes = try String.fetchAll(conn, sql: "SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'boards' AND sql IS NOT NULL")
+            XCTAssertEqual(Set(indexes), [
+                "idx_boards_user_deleted", "idx_boards_user_timeframe_status",
+                "idx_boards_user_timeframe_lines", "idx_boards_updated", "idx_boards_status",
+            ])
+            // board_tasks still cascades from boards.
+            let btFks = try Row.fetchAll(conn, sql: "PRAGMA foreign_key_list(board_tasks)")
+            XCTAssertTrue(btFks.contains { ($0["table"] as String?) == "boards" })
+        }
+    }
+
+    /// Boards pull before tasks: a board whose chosen centre task arrives later
+    /// in the same pull must not fail the boards batch (it used to, via the FK).
+    func test_freshPull_boardWithCentreTaskArrivingLater_succeeds() async throws {
+        let db = try makeDb()
+        var fixture = PullFixture(boards: 1).docs
+        let centreId = fixture["tasks"]![4]["id"] as! String // cell 4 = the centre of a 3×3
+        fixture["boards"]![0]["centerSquareType"] = CenterSquareType.chosen.rawValue
+        fixture["boards"]![0]["centerTaskId"] = centreId
+        fixture["boardTasks"] = fixture["boardTasks"]!.map {
+            var bt = $0
+            if bt["taskId"] as? String == centreId { bt["isCenter"] = true }
+            return bt
+        }
+
+        let result = await makeSut(db, source: FakePullSource(docsByCollection: fixture)).pullSync(userId: userId, lastSyncedAt: nil)
+
+        XCTAssertFalse(result.details.contains { $0.contains("Pull failed") }, result.details.filter { $0.contains("failed") }.joined(separator: "\n"))
+        let board = try XCTUnwrap(try db.fetchBoard(id: PullFixture.uuid(1, 0)))
+        XCTAssertEqual(board.centerTaskId, centreId)
+        XCTAssertNotNil(try db.fetchTask(id: centreId), "the centre task resolves once the tasks batch lands")
+        XCTAssertNotNil(try db.fetchUser(id: userId)?.lastSyncedAt, "a clean pull — heals ran, lastSyncedAt stamped")
+    }
+
+    // MARK: - compoundChildren batch re-derives sealed boards
+
+    /// A sealed board placing an AND compound: the compound is complete over
+    /// its one local link. A newly pulled link to an incomplete sub-task makes
+    /// it incomplete — the sealed snapshot must re-derive from that link.
+    func test_pulledCompoundLink_reDerivesSealedBoardSnapshot() async throws {
+        let db = try makeDb()
+        let start = "2026-07-01T00:00:00.000Z"
+        let (boardId, parentId, aId, bId) = (PullFixture.uuid(1, 77), PullFixture.uuid(2, 770), PullFixture.uuid(2, 771), PullFixture.uuid(2, 772))
+        func task(_ id: String, _ type: String, _ extra: [String: Any] = [:]) -> [String: Any] {
+            var t: [String: Any] = ["id": id, "userId": userId, "title": id, "type": type, "isCompleted": false,
+                                    "totalCompletions": 0, "totalInstances": 0, "createdAt": start, "updatedAt": start,
+                                    "version": 1, "isDeleted": false]
+            for (k, v) in extra { t[k] = v }
+            return t
+        }
+        func link(_ n: Int, _ child: String) -> [String: Any] {
+            ["id": PullFixture.uuid(5, n), "compoundTaskId": parentId, "childTaskId": child, "childIndex": n,
+             "createdAt": start, "updatedAt": start, "version": 1, "isDeleted": false]
+        }
+        let seed: [(String, [[String: Any]])] = [
+            ("boards", [["id": boardId, "userId": userId, "name": "Sealed", "status": "active", "boardSize": 3,
+                         "timeframe": Timeframe.daily.rawValue, "startDate": start, "endDate": "2026-07-05T23:59:59.999Z",
+                         "sealedAt": "2026-07-06T00:00:00.000Z", "centerSquareType": CenterSquareType.none.rawValue,
+                         "isRandomized": false, "totalTasks": 1, "completedTasks": 0, "linesCompleted": 0,
+                         "createdAt": start, "updatedAt": start, "version": 1, "isDeleted": false]]),
+            ("tasks", [task(parentId, "compound", ["operator": "AND"]), task(aId, "normal"), task(bId, "normal")]),
+            ("compoundChildren", [link(0, aId)]),
+            ("taskEvents", [["id": PullFixture.uuid(4, 770), "userId": userId, "taskId": aId, "kind": "completion",
+                             "occurredAt": "2026-07-02T12:00:00.000Z", "createdAt": start, "updatedAt": start,
+                             "version": 1, "isDeleted": false]]),
+            ("boardTasks", [["id": PullFixture.uuid(3, 770), "boardId": boardId, "taskId": parentId, "row": 0, "col": 0,
+                             "isCenter": false, "createdAt": start, "updatedAt": start, "version": 1, "isDeleted": false]]),
+        ]
+        for (name, docs) in seed {
+            _ = try await db.applyPullBatch(collection: (name, syncableCollections.first { $0.firestoreName == name }!.grdbTable),
+                                            docs: PullDocs(docs: docs), userId: userId, checkpoint: false)
+        }
+        XCTAssertEqual(try db.fetchBoard(id: boardId)?.completedTasks, 1, "precondition: AND over [A done] is complete")
+
+        _ = try await db.applyPullBatch(collection: ("compoundChildren", "compound_children"),
+                                        docs: PullDocs(docs: [link(1, bId)]), userId: userId, checkpoint: false)
+        XCTAssertEqual(try db.fetchBoard(id: boardId)?.completedTasks, 0, "the sealed snapshot must re-derive from the new link")
+    }
+
     // MARK: - lastSyncedAt = pull START (review I1)
 
     /// A remote write landing DURING a pull, in a collection without a
