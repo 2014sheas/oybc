@@ -127,12 +127,6 @@
   min-width: 0;
 }
 
-.librarySubheading {
-  margin: 0;
-  font-size: 0.85rem;
-  font-weight: 500;
-  color: var(--riso-muted);
-}
 
 /* "+ New task" — neutral Riso press-into-paper button */
 .newTaskButton {

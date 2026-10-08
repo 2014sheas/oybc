@@ -45,25 +45,6 @@
   gap: 12px;
 }
 
-/* ---- Rearrange mode hint (static; ArrangeGrid's hintBar covers tap-swap) ---- */
-.rearrangeHint {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--riso-muted);
-  line-height: 1.45;
-  margin: -8px 0 0; /* pull up slightly — container gap already provides top space */
-  padding: 8px 12px;
-  border: 2px solid var(--riso-blue);
-  border-radius: var(--riso-r-card);
-  background: var(--riso-paper);
-  box-shadow: 2px 2px 0 var(--riso-shadow-ink);
-}
-.rearrangeHint b {
-  font-family: var(--riso-font-head);
-  color: var(--riso-blue);
-  font-weight: 800;
-}
-
 /* ---- Board area: center the ArrangeGrid ---- */
 .previewWrapper {
   display: flex;

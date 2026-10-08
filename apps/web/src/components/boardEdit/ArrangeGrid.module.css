@@ -184,26 +184,6 @@
   }
 }
 
-/* ---- Dynamic hint line (tap-to-swap in progress) ---- */
-/* Shown above the grid when a tile is picked (moveSrc != null). */
-.hintBar {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--riso-ink);
-  line-height: 1.45;
-  margin: 0 0 8px;
-  padding: 8px 12px;
-  border: 2px solid var(--riso-blue);
-  border-radius: var(--riso-r-card);
-  background: var(--riso-paper-2);
-  box-shadow: 2px 2px 0 var(--riso-shadow-ink);
-}
-.hintBar b {
-  font-family: var(--riso-font-head);
-  color: var(--riso-blue);
-  font-weight: 800;
-}
-
 /* ---- Mobile: narrower ghost ---- */
 @media (max-width: 880px) {
   .ghost {

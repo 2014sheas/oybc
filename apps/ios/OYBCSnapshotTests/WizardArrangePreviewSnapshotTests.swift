@@ -121,13 +121,6 @@ final class WizardArrangePreviewSnapshotTests: XCTestCase {
                 }
                 .padding(.horizontal, Riso.gutter)
 
-                // Rearrange hint line
-                Text("Drag to rearrange · tap two squares to swap")
-                    .font(.risoBody(12, .regular))
-                    .foregroundStyle(Color.risoMuted)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, Riso.gutter)
-
                 // Grid — sideLength hardcoded to snapshot width (393pt) minus gutters.
                 let side = CGFloat(393) - 2 * Riso.gutter
                 // Grid

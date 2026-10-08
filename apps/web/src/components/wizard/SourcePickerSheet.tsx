@@ -144,9 +144,6 @@ export function SourcePickerSheet({
                     ))}
                   </div>
                   <p className={styles.emptyTitle}>Nothing to pull from yet</p>
-                  <p className={styles.emptySubtitle}>
-                    Boards you make and pools you save will show up here.
-                  </p>
                 </div>
               ) : matchingPools.length === 0 && matchingBoards.length === 0 ? (
                 <div className={styles.noMatches}>

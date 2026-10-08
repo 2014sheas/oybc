@@ -73,12 +73,6 @@
   color: var(--riso-red);
 }
 
-.operatorHint {
-  font-size: 0.85rem;
-  font-weight: 500;
-  color: var(--riso-muted);
-  margin-top: 4px;
-}
 
 /* Footer */
 .footer {

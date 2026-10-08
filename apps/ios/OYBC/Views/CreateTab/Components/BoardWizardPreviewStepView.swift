@@ -499,14 +499,6 @@ struct BoardWizardPreviewStepView: View {
                         // Preview ⇄ Rearrange toggle + optional Shuffle button
                         arrangeControlBar
 
-                        // Rearrange hint — visible only in Rearrange mode
-                        if arrangeSubMode == .rearrange {
-                            Text("Drag to rearrange · tap two squares to swap")
-                                .font(.risoBody(12, .regular))
-                                .foregroundStyle(Color.risoMuted)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                        }
-
                         // Arrangeable board grid — display-only in Preview mode,
                         // drag+tap interactive in Rearrange mode.
                         // sideLength is passed explicitly: GeometryReader inside RearrangeGrid

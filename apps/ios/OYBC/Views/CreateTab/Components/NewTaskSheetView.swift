@@ -9,7 +9,6 @@ import SwiftUI
 ///   - "NEW TASK" section label + Done button
 ///   - Quick-add composer (`RisoQuickAddRowView`) — fast Normal tasks
 ///   - Special-type panel (`RisoSpecialTaskPanel`) — Counting / Compound / Achievement
-///   - Muted caption: "Tasks land in your library — add them to a board in Create."
 ///
 /// Creation mode: **immediate-persist, library-only** (non-deferred).
 /// Passes `onPendingCreated: nil` so writes go straight to GRDB.
@@ -135,13 +134,8 @@ struct NewTaskSheetContentView: View {
                     onLibraryReloadRequested: onLibraryReloadRequested
                 )
             }
-
-            // Contextual note
-            Text("Tasks land in your library — add them to a board in Create.")
-                .font(.risoBody(12, .semibold))
-                .foregroundStyle(Color.risoMuted)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.top, 4)
         }
+        // The removed trailing caption carried the only full-width frame.
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }

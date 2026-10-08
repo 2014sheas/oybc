@@ -246,10 +246,6 @@ struct RisoSourcePickerSheetView: View {
             Text("Nothing to pull from yet")
                 .font(.risoHead(16, .extraBold))
                 .foregroundStyle(Color.risoInk)
-            Text("Boards you make and pools you save will show up here.")
-                .font(.risoBody(12, .semibold))
-                .foregroundStyle(Color.risoMuted)
-                .multilineTextAlignment(.center)
         }
         .frame(maxWidth: .infinity)
         .padding(.top, 24)

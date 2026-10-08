@@ -221,9 +221,6 @@ test.describe('Wizard Tasks step — sources (Board Sources P4)', () => {
     await page.getByRole('button', { name: 'Add from a pool or board' }).click();
     const sourceSheet = page.getByRole('dialog', { name: 'Add from a pool or board' });
     await expect(sourceSheet.getByText('Nothing to pull from yet')).toBeVisible();
-    await expect(
-      sourceSheet.getByText('Boards you make and pools you save will show up here.'),
-    ).toBeVisible();
   });
   test('the source row ✕ removes the row from the keyboard — Enter and Space — without expanding it', async ({
     page,

@@ -610,15 +610,6 @@ export function BoardWizardPreviewStep({
             )}
           </div>
 
-          {/* Static rearrange-mode hint. ArrangeGrid supplies its own
-              in-progress tap-swap hint (hintBar) when a tile is picked. */}
-          {subMode === 'rearrange' && (
-            <p className={styles.rearrangeHint}>
-              <b>Drag a square</b> to drop it in — the rest shift to make room.
-              Or <b>tap two squares</b> to swap them.
-            </p>
-          )}
-
           {/* ArrangeGrid — display-only in Preview, interactive in Rearrange */}
           <div className={styles.previewWrapper}>
             <ArrangeGrid

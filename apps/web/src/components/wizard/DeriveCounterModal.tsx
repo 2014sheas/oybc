@@ -67,7 +67,7 @@ export function DeriveCounterModal({
       >
         <h3 className={styles.title}>Smaller version</h3>
         <div className={styles.sourceHint}>
-          From <strong>{source.title}</strong> — same counter, lower goal.
+          <strong>{source.title}</strong>
         </div>
         <label className={styles.fieldLabel}>
           New goal

@@ -299,7 +299,7 @@ export function LibrarySheet({
                     ? `No tasks match "${searchQuery}".`
                     : activeFilter === 'from-parents'
                       ? 'No parent boards. Create a weekly/monthly/yearly board first.'
-                      : 'Your library is empty. Add a task above to get started.'}
+                      : 'No tasks yet.'}
                 </div>
               ) : (
                 <ul className={stepStyles.list}>
@@ -393,11 +393,6 @@ export function LibrarySheet({
 
                         {isExpanded && (
                           <ul className={stepStyles.leafList}>
-                            {leaves.length === 0 && (
-                              <li className={stepStyles.leafEmpty}>
-                                Sub-tasks are real tasks — add one on its own.
-                              </li>
-                            )}
                             {leaves.map((leafTask) => {
                               const leafIsSelected = selectedTaskIds.has(leafTask.id);
                               const leafIsCenter = centerTaskId === leafTask.id;

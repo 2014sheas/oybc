@@ -355,12 +355,7 @@ struct RisoLibrarySheetView: View {
                     }
                     .padding(.horizontal, 13)
                 }
-
-                Text("Sub-tasks are real tasks — add one on its own.")
-                    .font(.risoBody(9.5, .semibold))
-                    .foregroundStyle(Color.risoMuted)
-                    .padding(.horizontal, 13)
-                    .padding(.bottom, 8)
+                .padding(.bottom, 8)
             }
         }
         .padding(.top, 6)
@@ -385,13 +380,9 @@ struct RisoLibrarySheetView: View {
                     .font(.risoBody(12, .semibold))
                     .foregroundStyle(Color.risoMuted)
             } else {
-                Text("Your library is empty.")
+                Text("No tasks yet.")
                     .font(.risoBody(12, .semibold))
                     .foregroundStyle(Color.risoMuted)
-                Text("Create tasks from the special-type panel above to build your library.")
-                    .font(.risoBody(11, .semibold))
-                    .foregroundStyle(Color.risoMuted)
-                    .multilineTextAlignment(.center)
             }
         }
         .frame(maxWidth: .infinity)
