@@ -72,7 +72,7 @@ final class BoardPlayViewModel: ObservableObject {
 
     /// True while an interaction write (tap / stepper / swap / add / remove) is in
     /// flight. The view reads this to disable controls; only the moved handlers mutate it.
-    @Published private(set) var isProcessing = false
+    @Published var isProcessing = false // internal for the +BoardActions undo split
     /// True while a closed-board late-log write is in flight — `+LateLog.swift`'s
     /// writes no-op on re-entry (a double-tap never authors twice). Set only there.
     @Published var isLateLogInFlight = false
@@ -252,6 +252,10 @@ final class BoardPlayViewModel: ObservableObject {
     /// `CoreBoardWindowViewModel`.
     private var reloadToken: Int = 0
 
+    /// `reload(then:)` completions parked until a reload actually APPLIES: a superseded
+    /// reload hands its completion to the winner, so each runs once, after the final snapshot.
+    private var pendingReloadCompletions: [() -> Void] = []
+
     // MARK: - Init
 
     /// - Parameters:
@@ -352,9 +356,11 @@ final class BoardPlayViewModel: ObservableObject {
     /// mid-sequence could hand this reload a torn snapshot (e.g. a board
     /// whose `completedLineIds` reflects a just-pulled rearrange but whose
     /// `boardTasks` still reflect the pre-pull placements).
-    /// - Parameter done: Runs on the main queue once this reload has applied (or been superseded) —
-    ///   orchestrations clear `isProcessing` here, so a next tap never reads pre-write state.
+    /// - Parameter done: Runs once on the main queue after the winning reload (this one, or a
+    ///   newer one that superseded it) has applied — orchestrations clear `isProcessing` here,
+    ///   so a next tap never reads pre-write state.
     func reload(then done: (() -> Void)? = nil) {
+        if let done { pendingReloadCompletions.append(done) }
         reloadToken += 1
         let token = reloadToken
         let boardId = self.boardId
@@ -365,10 +371,10 @@ final class BoardPlayViewModel: ObservableObject {
             guard let self = self else { return }
             let snapshot = Self.fetchSnapshot(boardId: boardId, userId: userId, database: database)
             DispatchQueue.main.async {
-                defer { done?() }
                 guard token == self.reloadToken else { return }
                 self.board = snapshot.board
                 self.apply(snapshot.payload)
+                self.drainReloadCompletions()
             }
         }
     }
@@ -391,8 +397,15 @@ final class BoardPlayViewModel: ObservableObject {
             DispatchQueue.main.async {
                 guard token == self.reloadToken else { return }
                 self.apply(payload)
+                self.drainReloadCompletions()
             }
         }
+    }
+
+    private func drainReloadCompletions() {
+        let parked = pendingReloadCompletions
+        pendingReloadCompletions = []
+        parked.forEach { $0() }
     }
 
     /// Point the view model at a new board and reload. Used by the view's
@@ -761,64 +774,6 @@ final class BoardPlayViewModel: ObservableObject {
         }
     }
 
-    /// Reverses the SOURCE counter's last log entry (`undoLastCounterLog`) —
-    /// wired to the credited toast's Undo pill (R3 board-play touchpoints).
-    /// Mirrors `CounterDetailView.handleUndo`: runs the write off-main, then
-    /// reloads on the main actor. Reverses the counter's LATEST live entry
-    /// at tap time — if a second log landed elsewhere during the toast
-    /// window, THAT entry is reversed (not a no-op, and not necessarily the
-    /// displayed one); accepted single-user race, same semantics as R2's
-    /// Hub/Detail Undo (docs/SHARED_COUNTERS.md §R3) — matches
-    /// `undoLastCounterLog`'s own no-op contract.
-    ///
-    /// - Parameter sourceTaskId: The counter's source task id (the toast's
-    ///   `CreditToastState.sourceTaskId` on the view side).
-    func undoSharedCounterLog(sourceTaskId: String) {
-        let database = self.database
-        let currentBoardId = board?.id
-        _Concurrency.Task.detached(priority: .userInitiated) { [weak self] in
-            guard let self = self else { return }
-            // Capture pre-undo board stats for the board-transition flash (F1).
-            let boardBefore: Board? = currentBoardId.flatMap { id in
-                try? database.read { db in try Board.fetchOne(db, key: id) }
-            }
-            let result = try? database.undoLastCounterLog(sourceTaskId: sourceTaskId)
-
-            // Board-transition flash (F1): reversing a log runs the same board
-            // derivation cascade as a decrement, so it can drop a completed
-            // square below its goal on this window and flip the board
-            // COMPLETED → ACTIVE, dropping bingo lines. Mirror the decrement
-            // path so the Undo pill surfaces the same feedback (only the
-            // reactivated / lost-bingo rungs can fire). No-op when nothing was
-            // reversed (`undoneAmount == 0`).
-            var newBingoMsg: String? = nil
-            if let result = result, result.undoneAmount > 0 {
-                let boardAfter: Board? = currentBoardId.flatMap { id in
-                    try? database.read { db in try Board.fetchOne(db, key: id) }
-                }
-                if let before = boardBefore, let after = boardAfter {
-                    let prevBingos = Set(before.completedLineIds ?? [])
-                    let nextBingos = Set(after.completedLineIds ?? [])
-                    let lost = prevBingos.subtracting(nextBingos).sorted()
-                    if before.status == .completed && after.status == .active {
-                        newBingoMsg = "Board reactivated — no longer complete"
-                    } else if !lost.isEmpty {
-                        newBingoMsg = "Bingo lost: \(lost.joined(separator: ", "))"
-                    }
-                }
-            }
-
-            await MainActor.run {
-                self.reload()
-                if let msg = newBingoMsg {
-                    self.bingoMessage = msg
-                    self.scheduleBingoMessageDismiss(msg)
-                    self.emitFlash(risoNotification: msg, creditToast: nil)
-                }
-            }
-        }
-    }
-
     /// Decrements a counting task by `amount` (default 1, preserving the
     /// pre-R3 tap-equals-−1 behavior for every existing call site).
     /// Routes shared-counter tasks (source or linked) through
@@ -1078,7 +1033,7 @@ final class BoardPlayViewModel: ObservableObject {
     /// Publishes a one-shot `flashEvent` the view observes to fire its
     /// `triggerRisoNotification(from:)` / `triggerCreditToast(payload:)`
     /// animations. No-op when both payloads are nil.
-    private func emitFlash(risoNotification: String?, creditToast: SharedCounterCreditToastPayload?) {
+    func emitFlash(risoNotification: String?, creditToast: SharedCounterCreditToastPayload?) {
         guard risoNotification != nil || creditToast != nil else { return }
         flashEventCounter += 1
         flashEvent = BoardPlayFlashEvent(
@@ -1091,7 +1046,7 @@ final class BoardPlayViewModel: ObservableObject {
     /// Auto-dismisses the transient `bingoMessage` after ~3s, but only if a
     /// newer message hasn't replaced it (mirrors the pre-move dedup guard).
     /// Uses `DispatchQueue.main.asyncAfter` per this view model's style.
-    private func scheduleBingoMessageDismiss(_ message: String) {
+    func scheduleBingoMessageDismiss(_ message: String) {
         DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) { [weak self] in
             guard let self = self else { return }
             if self.bingoMessage == message { self.bingoMessage = nil }

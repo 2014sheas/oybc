@@ -138,4 +138,64 @@ extension BoardPlayViewModel {
             )
         }.value
     }
+
+    /// Reverses the SOURCE counter's last log entry (`undoLastCounterLog`) —
+    /// wired to the credited toast's Undo pill (R3 board-play touchpoints).
+    /// Mirrors `CounterDetailView.handleUndo`: runs the write off-main, then
+    /// reloads on the main actor. Reverses the counter's LATEST live entry
+    /// at tap time — if a second log landed elsewhere during the toast
+    /// window, THAT entry is reversed (not a no-op, and not necessarily the
+    /// displayed one); accepted single-user race, same semantics as R2's
+    /// Hub/Detail Undo (docs/SHARED_COUNTERS.md §R3) — matches
+    /// `undoLastCounterLog`'s own no-op contract.
+    ///
+    /// - Parameter sourceTaskId: The counter's source task id (the toast's
+    ///   `CreditToastState.sourceTaskId` on the view side).
+    func undoSharedCounterLog(sourceTaskId: String) {
+        guard !isProcessing else { return }
+        isProcessing = true
+        let database = self.database
+        let currentBoardId = board?.id
+        _Concurrency.Task.detached(priority: .userInitiated) { [weak self] in
+            guard let self = self else { return }
+            // Capture pre-undo board stats for the board-transition flash (F1).
+            let boardBefore: Board? = currentBoardId.flatMap { id in
+                try? database.read { db in try Board.fetchOne(db, key: id) }
+            }
+            let result = try? database.undoLastCounterLog(sourceTaskId: sourceTaskId)
+
+            // Board-transition flash (F1): reversing a log runs the same board
+            // derivation cascade as a decrement, so it can drop a completed
+            // square below its goal on this window and flip the board
+            // COMPLETED → ACTIVE, dropping bingo lines. Mirror the decrement
+            // path so the Undo pill surfaces the same feedback (only the
+            // reactivated / lost-bingo rungs can fire). No-op when nothing was
+            // reversed (`undoneAmount == 0`).
+            var newBingoMsg: String? = nil
+            if let result = result, result.undoneAmount > 0 {
+                let boardAfter: Board? = currentBoardId.flatMap { id in
+                    try? database.read { db in try Board.fetchOne(db, key: id) }
+                }
+                if let before = boardBefore, let after = boardAfter {
+                    let prevBingos = Set(before.completedLineIds ?? [])
+                    let nextBingos = Set(after.completedLineIds ?? [])
+                    let lost = prevBingos.subtracting(nextBingos).sorted()
+                    if before.status == .completed && after.status == .active {
+                        newBingoMsg = "Board reactivated — no longer complete"
+                    } else if !lost.isEmpty {
+                        newBingoMsg = "Bingo lost: \(lost.joined(separator: ", "))"
+                    }
+                }
+            }
+
+            await MainActor.run {
+                self.reload { self.isProcessing = false }
+                if let msg = newBingoMsg {
+                    self.bingoMessage = msg
+                    self.scheduleBingoMessageDismiss(msg)
+                    self.emitFlash(risoNotification: msg, creditToast: nil)
+                }
+            }
+        }
+    }
 }

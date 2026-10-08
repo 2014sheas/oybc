@@ -764,6 +764,43 @@ final class BoardPlayViewModelTests: XCTestCase {
                       "Undo's reload never refreshed the published task map")
     }
 
+    /// Undo gates taps like every other orchestration: until its reload lands,
+    /// a +/− tap is rejected instead of computing from pre-undo windowed state.
+    func test_undoSharedCounterLog_gatesTapsUntilItsReloadLands() throws {
+        let db = try makeDb()
+        try seedUser(db)
+        try db.saveBoard(makeBoard(id: "b1"))
+        try db.saveTask(makeCountingTask("c-src", maxCount: 100, currentCount: 0, isCounter: true))
+        try db.saveBoardTask(makeBoardTask(id: "bt-src", boardId: "b1", taskId: "c-src", row: 0, col: 0))
+        let vm = loadedVM(db, boardId: "b1")
+        let bt = try XCTUnwrap(vm.boardTasks.first { $0.taskId == "c-src" })
+        vm.handleCountingTap(boardTask: bt, task: try XCTUnwrap(vm.taskMap["c-src"]), amount: 10)
+        XCTAssertTrue(waitUntil { self.dbTask(db, "c-src")?.currentCount == 10 && !vm.isProcessing })
+
+        vm.undoSharedCounterLog(sourceTaskId: "c-src")
+        XCTAssertTrue(vm.isProcessing, "Undo must hold isProcessing while its write + reload are in flight")
+        vm.handleCountingTap(boardTask: bt, task: try XCTUnwrap(vm.taskMap["c-src"]), amount: 5)
+
+        XCTAssertTrue(waitUntil { vm.taskMap["c-src"]?.currentCount == 0 && !vm.isProcessing })
+        XCTAssertEqual(dbTask(db, "c-src")?.currentCount, 0, "a tap during Undo must be rejected, not applied")
+    }
+
+    /// A superseded reload hands its completion to the winner: it fires exactly
+    /// once, only after the final snapshot has applied.
+    func test_reloadCompletion_supersededReload_firesOnceAfterWinnerApplies() throws {
+        let db = try makeDb()
+        try seedWorkspace(db)
+        let vm = BoardPlayViewModel(boardId: "b1", userId: "u1", database: db)
+        var fired = 0
+        var placementsAtFire = -1
+        vm.reload { fired += 1; placementsAtFire = vm.boardTasks.count }
+        vm.reloadBoardTasksAndTaskData() // supersedes the reload above
+        XCTAssertTrue(waitUntil { fired > 0 }, "completion never ran")
+        XCTAssertGreaterThan(placementsAtFire, 0, "completion ran before the winning snapshot applied")
+        _ = waitUntil(timeout: 0.5) { false }
+        XCTAssertEqual(fired, 1, "completion must run exactly once")
+    }
+
     // MARK: - 8a. P5 zero-link `isCounter` tap-routing (review fix — no direct
     // test existed for the `|| task.isCounter == true` disjunct added to
     // `handleCountingTap` / `handleCountingDecrement`'s source detection).
