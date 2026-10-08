@@ -573,7 +573,7 @@ oybc/
 
 ### Type System
 
-**`packages/shared`** is the single source of truth for types: `Board`, `Task`, `CompoundChild`, `BoardTask`, `User`, `SyncQueueItem`. Includes Zod schemas and enums (`BoardStatus`, `TaskType` = `NORMAL` / `COUNTING` / `COMPOUND` / `ACHIEVEMENT`, `Timeframe`, `CenterSquareType`). The legacy `TaskStep` / `CompositeTask` / `CompositeNode` / `ProgressCounter` types were **removed in Wave 2 (PRs #411–#414)**.
+**`packages/shared`** is the single source of truth for types: `Board`, `Task`, `CompoundChild`, `BoardTask`, `User`, `SyncQueueItem`. Includes Zod schemas and enums (`BoardStatus`, `TaskType` = `NORMAL` / `COUNTING` / `COMPOUND` / `ACHIEVEMENT`, `Timeframe`, `CenterSquareType`). `Task.forkedFromTaskId` (GRDB v41, unindexed on Dexie) marks a board-scoped fork — the per-board copy a Board Edit edit mints when the task is placed elsewhere; forks are never browsable or source supply ([`docs/BOARD_SCOPED_TASK_EDITS.md`](docs/BOARD_SCOPED_TASK_EDITS.md)). The legacy `TaskStep` / `CompositeTask` / `CompositeNode` / `ProgressCounter` types were **removed in Wave 2 (PRs #411–#414)**.
 
 - **iOS**: Swift models mirror TypeScript types using GRDB's `Codable`/`FetchableRecord`/`PersistableRecord`. JSON arrays stored as strings in SQLite.
 - **Web**: Dexie uses TypeScript types directly from `@oybc/shared`. Compound indexes match iOS GRDB indexes.

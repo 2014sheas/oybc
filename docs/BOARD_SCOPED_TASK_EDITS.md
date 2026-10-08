@@ -205,10 +205,30 @@ Nothing new on the grid. In the Board Edit square sheet:
 
 | PR | Scope |
 | --- | --- |
-| 1 — foundation (inert) | `Task.forkedFromTaskId` (shared type + Zod, iOS GRDB v41 nullable column + `Codable`, Dexie v20), `FORK_NS` + `forkTaskId` / `forkedEventId` helpers (shared TS + Swift twin, vector-pinned), `planBoardScopedFork(task, board, placements, events)` pure planner returning `{ mode: 'inPlace' | 'fork', fork?, eventCopies?, repoint? }` with vectors for the D1/D2 test and the type-change event filter, browse-filter extension, deletion-cascade guard. No UI change. |
+| 1 — foundation (inert) — **shipped (#PR1)** | `Task.forkedFromTaskId` (shared type + Zod, iOS GRDB v41 nullable column + `Codable`, Dexie v20), `FORK_NS` + `forkTaskId` / `forkedEventId` helpers (shared TS + Swift twin, vector-pinned), `planBoardScopedFork(task, board, placements, events)` pure planner returning `{ mode: 'inPlace' | 'fork', fork?, eventCopies?, repoint? }` with vectors for the D1/D2 test and the type-change event filter, browse-filter extension, deletion-cascade guard. No UI change. |
 | 2 — Board Edit + wizard commit | `boardEditCommit.ts` ↔ `+EditCommit.swift` and `applyStagedTaskEditsForWizardPersist` ↔ `applyStagedTaskEdits` consume the planner inside the existing transaction; cascades for both tasks; sheet button label + first-fork confirm; e2e + XCTest (fork, in-place, compound parent-only, event migration keeps completion, type-change filter, sealed gate, idempotent replay). |
 | 3 — root → copy propagation | Task Detail edit of a hub root propagates title/action/unit to live copies (shared `planRootFieldPropagation`, both platforms); fix `COUNTER_KINDS.md` D5 wording. |
 | 4 — docs | `TASK_SYSTEM.md` §Editing a task rewritten around the scope table; `BOARD_EDIT_REDESIGN.md:31` ("changes it everywhere") corrected; CLAUDE.md one-paragraph summary. |
+
+**PR 1 implementation notes** (where the shipped code refines the sketches above):
+
+- Ids are `uuidv5` under `OYBC_NAMESPACE` with `fork:*` name prefixes — the
+  `derivedTaskId` seam: `forkTaskId(boardId, taskId)` = `fork:task:<board>:<task>`,
+  `forkLinkId(forkId, childId)` = `fork:link:<fork>:<child>`, and
+  `forkedEventId(forkId, eventId)` = `fork:event:<fork>:<event>` — keyed on the
+  fork as well as the event, because one event can lie in two overlapping
+  windows (a daily inside its monthly) and be migrated onto two forks.
+- `planBoardScopedFork({ task, board, editedType, placements, boards,
+  compoundChildren, events, now })` (shared `boardScopedFork.ts` ↔
+  `Helpers/BoardScopedFork.swift`, pinned by `boardScopedForkVectors.json`).
+  "Other placement" also counts a placement of any transitive parent
+  compound (a child shown on another board inside a compound is placed
+  there); a board absent from `boards` is not live. The fork's lifetime
+  caches are RESET (they depend on the post-edit task) — PR 2 stamps them
+  from the fork's events after applying the edit. `isCounter` is cleared on
+  the fork. `repoint` is `null` when the task is on this board only through
+  a compound. Compounds return `childLinksToCopy` (children stay shared).
+- No Dexie version bump: the field is unindexed (the v38 / v39 precedent).
 
 Estimated size: PR 1 small, PR 2 medium (the commit paths are already staged and
 transactional — most of the work is the planner + tests), PR 3 small, PR 4 docs.
