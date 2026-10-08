@@ -4,7 +4,6 @@
  *
  * Dark-contract audit (see docs/RISO_WEB.md):
  *   .name / .heading  → var(--riso-ink) on paper fill  — safe adaptive pair.
- *   .body             → var(--riso-muted) on paper fill — safe.
  *   No colored fills in this component; no --riso-ink-static / --riso-on-color
  *   overrides needed.
  */
@@ -43,11 +42,3 @@
   margin: 0;
 }
 
-.body {
-  font-size: 0.9rem;
-  font-weight: 500;
-  color: var(--riso-muted);
-  line-height: 1.5;
-  max-width: 320px;
-  margin: 0;
-}

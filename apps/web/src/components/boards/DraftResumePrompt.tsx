@@ -31,10 +31,6 @@ export function DraftResumePrompt({ boardId, boardName }: DraftResumePromptProps
         <RisoBadge kind="draft">Draft</RisoBadge>
       </div>
       <p className={styles.heading}>This board is still a draft.</p>
-      <p className={styles.body}>
-        Finish setting it up in the wizard — drafts aren&apos;t playable until
-        you complete them.
-      </p>
       <RisoButton
         kind="primary"
         icon={<RisoIcon name="edit" size={16} />}

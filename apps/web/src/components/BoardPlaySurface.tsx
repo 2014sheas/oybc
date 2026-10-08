@@ -403,7 +403,7 @@ export function BoardPlaySurface({
     }
   }, [arrival, dismissArrival, navigate]);
 
-  // Single-square copy needs the arrived square's task name + its counter name.
+  // Single-square copy needs the arrived square's task name.
   // Resolve the display label (title, or the auto-generated "Action N unit" for
   // a titleless counting task) so a blank-titled counter still reads as "single".
   const arrivalSingle = (() => {
@@ -411,8 +411,7 @@ export function BoardPlaySurface({
     const taskId = [...arrival.arrivedTaskIds][0];
     const t = taskId ? taskMap[taskId] : undefined;
     const taskName = t ? taskCellLabel(t) : '';
-    const counterName = arrival.arrivedCounters[0]?.counterName ?? '';
-    return { taskName, counterName };
+    return { taskName };
   })();
 
   // ── Render ─────────────────────────────────────────────────────────────
@@ -467,7 +466,6 @@ export function BoardPlaySurface({
           key={arrival.key}
           squareCount={arrival.totalArrivedSquares}
           taskName={arrivalSingle?.taskName}
-          counterName={arrivalSingle?.counterName}
           onOpen={arrivalNav}
           onDismiss={dismissArrival}
         />

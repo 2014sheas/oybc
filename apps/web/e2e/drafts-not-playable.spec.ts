@@ -109,9 +109,6 @@ test.describe('Drafts are never playable (web parity A1b, issue #313)', () => {
     // The guard's copy — verbatim parity with iOS `draftResumeSection`.
     await expect(page.getByRole('heading', { name: DRAFT_BOARD_NAME })).toBeVisible();
     await expect(page.getByText('This board is still a draft.')).toBeVisible();
-    await expect(
-      page.getByText(/drafts aren.t playable until you complete them/i),
-    ).toBeVisible();
 
     // Never the playable grid: no cell-edit affordances from BoardPlaySurface.
     await expect(page.getByLabel('Add task to this cell')).toHaveCount(0);
