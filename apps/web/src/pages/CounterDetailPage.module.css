@@ -243,24 +243,6 @@
   }
 }
 
-/* ─── "Recent weeks" — P4 stub card ─── */
-.historyCard {
-  background: var(--riso-paper-2);
-  border: 2px solid var(--riso-ink);
-  border-radius: var(--riso-r-card);
-  box-shadow: 2px 2px 0 var(--riso-shadow-ink);
-  padding: 14px;
-  margin-bottom: 16px;
-}
-
-.historyStub {
-  font-size: 12.5px;
-  font-weight: 600;
-  color: var(--riso-muted);
-  line-height: 1.45;
-  margin: 0;
-}
-
 /* ─── Delete-counter footer action ─── */
 .deleteAction {
   margin-top: 16px;

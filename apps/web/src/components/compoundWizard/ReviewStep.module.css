@@ -192,25 +192,6 @@ button.chipLibrary:focus-visible {
   font-size: 0.8rem;
 }
 
-/* ── Library callout ── */
-
-.libraryCallout {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 10px 14px;
-  background: var(--riso-paper);
-  border: 2px dashed var(--riso-ink);
-  border-radius: var(--riso-r-card);
-  color: var(--riso-ink);
-  font-family: var(--riso-font-body);
-  font-size: 0.88rem;
-}
-
-.libraryCalloutIcon {
-  font-size: 1rem;
-}
-
 /* ── Error banner + retry ── */
 
 .errorBanner {

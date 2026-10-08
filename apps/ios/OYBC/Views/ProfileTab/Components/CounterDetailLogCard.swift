@@ -8,7 +8,6 @@ import SwiftUI
 struct CounterDetailLogCard: View {
 
     let group: SharedCounterGroup
-    let activeMemberCount: Int
     var isLogging: Bool
     var logError: String?
     var onLog: (CountValue, CounterLogDirection) -> Void
@@ -19,7 +18,6 @@ struct CounterDetailLogCard: View {
 
     init(
         group: SharedCounterGroup,
-        activeMemberCount: Int,
         isLogging: Bool = false,
         logError: String? = nil,
         /// Snapshot-testability seams: force the selected amount / the "#"
@@ -29,7 +27,6 @@ struct CounterDetailLogCard: View {
         onLog: @escaping (CountValue, CounterLogDirection) -> Void = { _, _ in }
     ) {
         self.group = group
-        self.activeMemberCount = activeMemberCount
         self.isLogging = isLogging
         self.logError = logError
         self.onLog = onLog
@@ -52,9 +49,6 @@ struct CounterDetailLogCard: View {
                 Text(Self.headerTitle(kind: group.countKind, unit: group.unit))
                     .font(.risoHead(15, .extraBold))
                     .foregroundStyle(Color.risoPaper)
-                Text("counts toward \(activeMemberCount) active task\(activeMemberCount == 1 ? "" : "s")")
-                    .font(.risoBody(11, .regular))
-                    .foregroundStyle(Color.risoPaper.opacity(0.85))
             }
 
             chipRow

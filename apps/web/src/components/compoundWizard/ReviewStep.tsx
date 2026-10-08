@@ -29,8 +29,7 @@ export interface ReviewStepProps {
 /**
  * Step 3 — final review + commit. Shows a summary of what will be
  * written, a chip list of every subtask (so the user catches mistakes
- * before they land in the DB), and an explicit "these inline tasks
- * will also appear in your library" callout.
+ * before they land in the DB).
  *
  * Errors surface inline with a Try again affordance that re-runs the
  * transaction rather than forcing a full round-trip through Back.
@@ -48,7 +47,6 @@ export function ReviewStep({
   onCreate,
   onOpenTask,
 }: ReviewStepProps): React.ReactElement {
-  const inlineCount = subtasks.filter((s) => s.mode === 'inline').length;
 
   const operatorLabel =
     operator === OperatorType.AND
@@ -91,15 +89,6 @@ export function ReviewStep({
           ))}
         </ul>
       </div>
-
-      {inlineCount > 0 && (
-        <div className={styles.libraryCallout}>
-          <span className={styles.libraryCalloutIcon} aria-hidden="true">📎</span>
-          <span>
-            {inlineCount} inline task{inlineCount === 1 ? '' : 's'} will also be saved to your library.
-          </span>
-        </div>
-      )}
 
       {errorMessage !== null && (
         <div className={styles.errorBanner} role="alert">
