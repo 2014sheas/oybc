@@ -21,6 +21,9 @@ enum SnapshotFixtures {
     /// Stable timestamp used everywhere — keeps snapshot output identical
     /// across machines + days.
     static let fixedTimestamp = "2026-04-01T12:00:00Z"
+    /// The clock snapshot tests inject into views that render relative ages
+    /// (same instant as `fixedTimestamp`) — never the live `Date()`.
+    static let fixedNow = Date(timeIntervalSince1970: 1_775_044_800) // 2026-04-01T12:00:00Z
 
     /// User id used by every fixture builder — matches the playground user
     /// so seeded data stays distinguishable from real-account data.

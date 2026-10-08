@@ -27,6 +27,10 @@ final class RisoEditBoardSnapshotTests: XCTestCase {
 
     // Fixed pinned dates used throughout — 2025-04-01 and 2025-05-01.
     private static let fixedStart = Date(timeIntervalSince1970: 1_743_465_600) // 2025-04-01 00:00 UTC
+    private static let fixedMonthStart = Date(timeIntervalSince1970: 1_743_508_800) // 2025-04-01 12:00 UTC
+    private static let fixedMonthEnd   = Date(timeIntervalSince1970: 1_746_014_400) // 2025-04-30 12:00 UTC
+    private static let fixedWeekStart = Date(timeIntervalSince1970: 1_744_027_200) // 2025-04-07 12:00 UTC (Mon) — noon so every timezone shows the same day
+    private static let fixedWeekEnd   = Date(timeIntervalSince1970: 1_744_545_600) // 2025-04-13 12:00 UTC
     private static let fixedEnd   = Date(timeIntervalSince1970: 1_746_057_600) // 2025-05-01 00:00 UTC
 
     // MARK: - Form: monthly timeframe, free center (light)
@@ -100,7 +104,13 @@ final class RisoEditBoardSnapshotTests: XCTestCase {
                     timeframe: .constant(timeframe),
                     customStartDate: .constant(Self.fixedStart),
                     customEndDate: .constant(Self.fixedEnd),
-                    weekStartDay: "monday"
+                    weekStartDay: "monday",
+                    // Pin the calendar-window note: without a stored window the
+                    // form derives the CURRENT week/month from Date() and goes
+                    // red at every rollover.
+                    storedWindow: timeframe == .weekly
+                        ? (start: Self.fixedWeekStart, end: Self.fixedWeekEnd)
+                        : (start: Self.fixedMonthStart, end: Self.fixedMonthEnd)
                 )
             }
             .padding(16)

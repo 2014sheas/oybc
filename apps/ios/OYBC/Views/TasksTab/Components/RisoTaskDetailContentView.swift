@@ -23,6 +23,8 @@ struct RisoTaskDetailContentView: View {
     /// Injected database (ROADMAP B3 seam) — only the linked-counter caption
     /// reads it; defaults to the app singleton.
     var database: AppDatabase = .shared
+    /// Clock for the relative "Updated" / "Last completed" ages (snapshot tests pin it).
+    var now: Date = Date()
     var saveError: String? = nil
     var allBoardsForPicker: [Board] = []
     var allTemplatesForPicker: [RecurringBoardTemplate] = []
@@ -301,7 +303,7 @@ struct RisoTaskDetailContentView: View {
             Text("ACTIVITY")
                 .risoSectionLabel()
             if let completedAt = task.completedAt,
-               let rel = RelativeTime.formatRelativeTime(completedAt) {
+               let rel = RelativeTime.formatRelativeTime(completedAt, now: now) {
                 Text("Last completed: \(rel)")
                     .font(.risoBody(13, .medium))
                     .foregroundStyle(Color.risoInk)
@@ -309,7 +311,7 @@ struct RisoTaskDetailContentView: View {
             Text("Created: \(formatDate(task.createdAt))")
                 .font(.risoBody(12, .regular))
                 .foregroundStyle(Color.risoMuted)
-            if let rel = RelativeTime.formatRelativeTime(task.updatedAt) {
+            if let rel = RelativeTime.formatRelativeTime(task.updatedAt, now: now) {
                 Text("Updated: \(rel)")
                     .font(.risoBody(12, .regular))
                     .foregroundStyle(Color.risoMuted)
