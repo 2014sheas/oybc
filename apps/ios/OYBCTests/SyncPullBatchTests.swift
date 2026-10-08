@@ -289,6 +289,7 @@ final class SyncPullBatchTests: XCTestCase {
         let result = await sut.pullSync(userId: uid, lastSyncedAt: nil)
         let elapsed = Date().timeIntervalSince(started)
         await heartbeat.stop()
+        let newLoads = AppDatabase.pullCascadeLookupLoads
         XCTAssertFalse(result.details.contains { $0.contains("Pull failed") }, result.details.filter { $0.contains("failed") }.joined(separator: "\n"))
 
         // Pre-fix shape, for comparison: per-doc writes on the main thread.
@@ -304,7 +305,7 @@ final class SyncPullBatchTests: XCTestCase {
         legacy.applyTaskEventsBatch(userId: uid, rawDocs: docs["taskEvents"] ?? [])
         let legacyElapsed = Date().timeIntervalSince(legacyStarted)
 
-        print("[pull-probe] owner dump: \(total) docs. NEW: \(elapsed)s total, longest main stall \(heartbeat.maxGap)s, \(AppDatabase.pullCascadeLookupLoads) lookup loads. PER-DOC ON MAIN (pre-fix shape): \(legacyElapsed)s, all of it on the main thread")
+        print("[pull-probe] owner dump: \(total) docs, legacy per-doc lookup loads \(AppDatabase.pullCascadeLookupLoads - newLoads). NEW: \(elapsed)s total, longest main stall \(heartbeat.maxGap)s, \(newLoads) lookup loads. PER-DOC ON MAIN (pre-fix shape): \(legacyElapsed)s, all of it on the main thread")
         XCTAssertLessThan(heartbeat.maxGap, 1.0, "the main thread stalled for \(heartbeat.maxGap)s")
     }
 
