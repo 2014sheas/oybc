@@ -108,7 +108,8 @@ describe('discard guest data (deleteAccount) wipes every local store', () => {
   it('leaves no row in any object store', async () => {
     const idbStores = Array.from(db.backendDB().objectStoreNames);
     for (const name of idbStores) {
-      await db.table(name).put({ id: `seed-${name}`, userId: ANON_UID });
+      // `collection` completes `syncWatermarks`' compound key ([userId+collection]).
+      await db.table(name).put({ id: `seed-${name}`, userId: ANON_UID, collection: 'seed' });
     }
     for (const name of idbStores) {
       expect(await db.table(name).count(), `seeded ${name}`).toBe(1);
