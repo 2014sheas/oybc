@@ -80,15 +80,6 @@
   color: var(--riso-ink);
   margin: 0 0 8px;
 }
-.emptyBody {
-  font-size: 14px;
-  color: var(--riso-muted);
-  font-weight: 500;
-  margin: 0;
-  max-width: 360px;
-  line-height: 1.5;
-}
-
 .error {
   margin: 12px 0 0;
   padding: 10px 14px;

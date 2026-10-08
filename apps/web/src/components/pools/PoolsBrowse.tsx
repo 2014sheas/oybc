@@ -83,8 +83,6 @@ export function PoolsBrowse({
 
   return (
     <div className={styles.shell}>
-      <p className={styles.intro}>Keep like tasks together. Any board can draw from a pool.</p>
-
       {pools.length > 0 && !healthResolved && (
         <p className={styles.loading} role="status" data-testid="pools-browse-loading">
           Loading pools…
