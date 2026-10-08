@@ -155,14 +155,11 @@ jobs:
 
       - name: Run Playwright e2e
         id: e2e
-        # Non-blocking (issue #309; see docs/ROADMAP.md Track E7): 10 specs
-        # fail on `dev` today (pre-existing, found 2026-09-23), so a green
-        # check here carries no e2e signal — read the uploaded artifact.
-        # `continue-on-error` sits on THIS step (not the job) so a red run still
-        # records `outcome == 'failure'` for the upload step below while keeping
-        # the workflow green — the same graduation path the iOS snapshot suite
-        # took. To flip it strict once stable: delete this `continue-on-error`.
-        continue-on-error: true
+        # Blocking since 2026-10-08 (ROADMAP E7 closed by #556 / #557): `dev`'s
+        # suite is green on CI (160 → 164 passing, 0 failing). A red run fails
+        # the job — fix the flake or the regression; never re-add
+        # `continue-on-error` to hide it (the 2026-09 advisory period let 10
+        # broken specs merge green for weeks).
         # Vite aliases `@oybc/shared` + `@oybc/bingo-core` to their `src/`, so the
         # config's `webServer` (`pnpm dev`) needs no prior package build. CI mode
         # (`process.env.CI`) runs serial + retry-once + boots its own dev server.
@@ -184,11 +181,11 @@ jobs:
         run: pnpm --filter @oybc/web test:e2e
 
       - name: Upload Playwright report on failure
-        # Gated on the e2e step's outcome (not job-level `failure()`) because the
-        # step is `continue-on-error` — that keeps the job green, so `success()`
-        # stays true here and the explicit outcome check is what fires the upload.
-        # Mirrors ios.yml's xcresult-on-failure artifact (7-day retention).
-        if: steps.e2e.outcome == 'failure'
+        # Gated on the e2e step's own outcome so the report uploads on a red
+        # run even though the step now fails the job (`failure()` alone would
+        # also work; the step-scoped check keeps this independent of later
+        # steps). Mirrors ios.yml's xcresult-on-failure artifact (7-day retention).
+        if: failure() && steps.e2e.outcome == 'failure'
         uses: actions/upload-artifact@v7
         with:
           name: playwright-report

@@ -689,7 +689,7 @@ GitHub Actions workflows run on PRs to `dev` and on merge:
 | **Drift guardrails** | `.github/workflows/drift-guardrails.yml` | Every PR/push to `dev` (no path filter — cross-cutting; see below) |
 | **Monthly audit reminder** | `.github/workflows/audit-reminder.yml` | `schedule` (1st of month) + `workflow_dispatch`; files a `drift-audit` reminder issue |
 
-**Web e2e is advisory**: `web.yml` runs the Playwright step under `continue-on-error: true`, and 10 specs fail on `dev` today (ROADMAP E7) — a green Web check says nothing about e2e; read the uploaded artifact.
+**Web e2e is blocking** (since 2026-10-08, ROADMAP E7 closed): the Playwright step fails the Web job on any red spec; the suite is green on `dev` (164 specs). A flake is a bug to fix, never a reason to re-add `continue-on-error`; the Playwright report still uploads as an artifact on failure.
 
 **Dependabot** (`.github/dependabot.yml`): npm weekly (minor/patch grouped, majors separate), GitHub Actions monthly. SPM not supported — iOS deps bumped manually.
 
