@@ -15,6 +15,7 @@ import { addToSyncQueue, stampTransactionSyncOwner } from './syncQueue';
 import { reDeriveSealedBoardsForTasks } from './sealing';
 import { refreshWatchersForBoards, resolveAffectedBoardIds } from './boardLifecycle';
 import { recordSyncEvent } from '../../firebase/syncStatus';
+import { rowsGenuinelyDiffer } from './pullApply';
 
 /**
  * Batched pull-path handler for the `taskEvents` collection
@@ -82,6 +83,10 @@ export async function applyTaskEventsBatch(
       const affectedTaskIds = new Set<string>();
       for (const ev of valid) {
         const local = (await db.taskEvents.get(ev.id)) as SyncableEntity | undefined;
+        // Echo guard (sync-churn fix): an identical row (same version +
+        // updatedAt — our own push coming back) changes nothing, so it must
+        // not re-run the recompute + board cascade below.
+        if (local && !rowsGenuinelyDiffer(local, ev as unknown as SyncableEntity)) continue;
         const remoteWins =
           !local || resolveConflict(local, ev as unknown as SyncableEntity).winner === 'remote';
         if (!remoteWins) continue;

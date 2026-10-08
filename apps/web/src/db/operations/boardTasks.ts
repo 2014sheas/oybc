@@ -6,17 +6,16 @@ import {
   findAffectedBoardIds,
   computeBoardStatsUpdate,
   resolvePlacements,
-  BoardStatus,
   CenterSquareType,
   getCenterSquareIndex,
   isLegacyChosen,
-  type Board,
   type Task,
   type CompoundChild,
   type BoardStatsUpdate,
 } from '@oybc/shared';
 import { generateUUID, currentTimestamp } from '../utils';
 import { addToSyncQueue } from './syncQueue';
+import { writeBoardDerivedStats } from './boardDerivedWrite';
 import { fetchAllCompoundChildren } from './compoundChildren';
 import { buildWindowContext } from './windowContext';
 import { resolveBoardPlacementTaskId } from './linkedCounterPlacement';
@@ -312,31 +311,8 @@ export async function removeBoardTaskFromBoard(boardTaskId: string): Promise<voi
           windowContext,
         );
 
-        const totalSquares = affectedBoard.boardSize * affectedBoard.boardSize;
-        const isGreenlog = stats.completedTasks >= totalSquares;
-
-        const boardUpdate: Partial<Board> = {
-          completedTasks: stats.completedTasks,
-          linesCompleted: stats.linesCompleted,
-          completedLineIds: stats.completedLineIds,
-          updatedAt: now,
-          version: (affectedBoard.version ?? 1) + 1,
-        };
-
-        if (isGreenlog && affectedBoard.status === BoardStatus.ACTIVE) {
-          boardUpdate.status = BoardStatus.COMPLETED;
-          boardUpdate.completedAt = now;
-        } else if (!isGreenlog && affectedBoard.status === BoardStatus.COMPLETED) {
-          boardUpdate.status = BoardStatus.ACTIVE;
-          boardUpdate.completedAt = undefined;
-        }
-
-        await db.boards.update(affectedBoardId, boardUpdate);
-
-        const updatedBoard = await db.boards.get(affectedBoardId);
-        if (updatedBoard) {
-          await addToSyncQueue('boards', affectedBoardId, SyncOperationType.UPDATE, updatedBoard, 0);
-        }
+        // Compare-before-write (sync-churn fix) — a no-op derivation never bumps or re-pushes.
+        await writeBoardDerivedStats(affectedBoard, stats, now);
       }
     },
   );
@@ -507,31 +483,8 @@ export async function addBoardTaskToBoard(
           windowContext,
         );
 
-        const totalSquares = affectedBoard.boardSize * affectedBoard.boardSize;
-        const isGreenlog = stats.completedTasks >= totalSquares;
-
-        const boardUpdate: Partial<Board> = {
-          completedTasks: stats.completedTasks,
-          linesCompleted: stats.linesCompleted,
-          completedLineIds: stats.completedLineIds,
-          updatedAt: now,
-          version: (affectedBoard.version ?? 1) + 1,
-        };
-
-        if (isGreenlog && affectedBoard.status === BoardStatus.ACTIVE) {
-          boardUpdate.status = BoardStatus.COMPLETED;
-          boardUpdate.completedAt = now;
-        } else if (!isGreenlog && affectedBoard.status === BoardStatus.COMPLETED) {
-          boardUpdate.status = BoardStatus.ACTIVE;
-          boardUpdate.completedAt = undefined;
-        }
-
-        await db.boards.update(affectedBoardId, boardUpdate);
-
-        const updatedBoard = await db.boards.get(affectedBoardId);
-        if (updatedBoard) {
-          await addToSyncQueue('boards', affectedBoardId, SyncOperationType.UPDATE, updatedBoard, 0);
-        }
+        // Compare-before-write (sync-churn fix) — a no-op derivation never bumps or re-pushes.
+        await writeBoardDerivedStats(affectedBoard, stats, now);
       }
     },
   );
@@ -679,31 +632,8 @@ export async function reorderBoardTasks(
         windowContext,
       );
 
-      const totalSquares = board.boardSize * board.boardSize;
-      const isGreenlog = stats.completedTasks >= totalSquares;
-
-      const boardUpdate: Partial<Board> = {
-        completedTasks: stats.completedTasks,
-        linesCompleted: stats.linesCompleted,
-        completedLineIds: stats.completedLineIds,
-        updatedAt: now,
-        version: (board.version ?? 1) + 1,
-      };
-
-      if (isGreenlog && board.status === BoardStatus.ACTIVE) {
-        boardUpdate.status = BoardStatus.COMPLETED;
-        boardUpdate.completedAt = now;
-      } else if (!isGreenlog && board.status === BoardStatus.COMPLETED) {
-        boardUpdate.status = BoardStatus.ACTIVE;
-        boardUpdate.completedAt = undefined;
-      }
-
-      await db.boards.update(boardId, boardUpdate);
-
-      const updatedBoard = await db.boards.get(boardId);
-      if (updatedBoard) {
-        await addToSyncQueue('boards', boardId, SyncOperationType.UPDATE, updatedBoard, 0);
-      }
+      // Compare-before-write (sync-churn fix) — a no-op derivation never bumps or re-pushes.
+      await writeBoardDerivedStats(board, stats, now);
     },
   );
 }
@@ -945,31 +875,8 @@ export async function updateBoardTaskAndCascade(
           windowContext,
         );
 
-        const totalSquares = affectedBoard.boardSize * affectedBoard.boardSize;
-        const isGreenlog = stats.completedTasks >= totalSquares;
-
-        const boardUpdate: Partial<Board> = {
-          completedTasks: stats.completedTasks,
-          linesCompleted: stats.linesCompleted,
-          completedLineIds: stats.completedLineIds,
-          updatedAt: now,
-          version: (affectedBoard.version ?? 1) + 1,
-        };
-
-        if (isGreenlog && affectedBoard.status === BoardStatus.ACTIVE) {
-          boardUpdate.status = BoardStatus.COMPLETED;
-          boardUpdate.completedAt = now;
-        } else if (!isGreenlog && affectedBoard.status === BoardStatus.COMPLETED) {
-          boardUpdate.status = BoardStatus.ACTIVE;
-          boardUpdate.completedAt = undefined;
-        }
-
-        await db.boards.update(affectedBoardId, boardUpdate);
-
-        const updatedBoard = await db.boards.get(affectedBoardId);
-        if (updatedBoard) {
-          await addToSyncQueue('boards', affectedBoardId, SyncOperationType.UPDATE, updatedBoard, 0);
-        }
+        // Compare-before-write (sync-churn fix) — a no-op derivation never bumps or re-pushes.
+        await writeBoardDerivedStats(affectedBoard, stats, now);
       }
     },
   );

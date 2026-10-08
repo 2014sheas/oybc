@@ -5,6 +5,7 @@ import {
   TaskType,
   applyMemberRules,
   computeBoardStatsUpdate,
+  boardDerivedStateChanged,
   isGoalLessCounter,
   parseCountInput,
   resolveCountKind,
@@ -786,11 +787,15 @@ export async function persistWizardBoardRows({
         // D3 coalescer folds it into the pending CREATE/UPDATE for this board
         // with the refreshed (derived) payload, so the row that reaches
         // Firestore carries derivation output from the very first push.
-        await updateBoard(boardId, {
+        // Compare-before-write (sync-churn fix): an all-zero fresh board skips it.
+        const derived = {
           completedTasks: stats.completedTasks,
           linesCompleted: stats.linesCompleted,
           completedLineIds: stats.completedLineIds,
-        });
+        };
+        if (boardDerivedStateChanged(freshBoard, { ...freshBoard, ...derived })) {
+          await updateBoard(boardId, derived);
+        }
       }
     },
   );

@@ -3,6 +3,7 @@ import {
   BoardStatus,
   SyncOperationType,
   boundWindowContextAtSeal,
+  boardDerivedStateChanged,
   computeBoardStatsUpdate,
   computeSealedCompletedCells,
   findAffectedBoardIds,
@@ -236,14 +237,6 @@ export async function runBackstopAutoSeal(
   return sealedIds;
 }
 
-/** Order-independent string-array equality (for comparing completedLineIds). */
-function sameStringSet(a: string[], b: string[]): boolean {
-  if (a.length !== b.length) return false;
-  const sa = new Set(a);
-  for (const x of b) if (!sa.has(x)) return false;
-  return true;
-}
-
 /**
  * Windowed Completion — one-shot self-heal for existing boards (app-open, lazy).
  *
@@ -337,22 +330,16 @@ export async function reDeriveActiveBoards(
         nextCompletedAt = undefined;
       }
 
-      const changed =
-        !sameStringSet(board.completedLineIds ?? [], stats.completedLineIds) ||
-        (board.completedTasks ?? 0) !== stats.completedTasks ||
-        (board.linesCompleted ?? 0) !== stats.linesCompleted ||
-        board.status !== nextStatus;
-      if (!changed) continue;
-
-      const update: Partial<Board> = {
+      const derived: Partial<Board> = {
         completedTasks: stats.completedTasks,
         linesCompleted: stats.linesCompleted,
         completedLineIds: stats.completedLineIds,
         status: nextStatus,
         completedAt: nextCompletedAt,
-        updatedAt: now,
-        version: (board.version ?? 1) + 1,
       };
+      if (!boardDerivedStateChanged(board, { ...board, ...derived })) continue;
+
+      const update: Partial<Board> = { ...derived, updatedAt: now, version: (board.version ?? 1) + 1 };
       await db.boards.update(board.id, update);
       const updated = await db.boards.get(board.id);
       if (updated) await addToSyncQueue('boards', board.id, SyncOperationType.UPDATE, updated, 0);
@@ -461,6 +448,8 @@ async function reDeriveSealedBoards(
       completedLineIds: snapshot.completedLineIds,
     };
     applySealedStatus(board, snapshot, update, board.sealedAt);
+    // Converged already (the common case on every pull) → no write at all.
+    if (!boardDerivedStateChanged(board, { ...board, ...update })) continue;
     await db.boards.update(boardId, update);
   }
 }

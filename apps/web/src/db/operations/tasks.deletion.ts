@@ -6,7 +6,6 @@ import type {
   Task,
 } from '@oybc/shared';
 import {
-  BoardStatus,
   SyncOperationType,
   computeBoardStatsUpdate,
   findAffectedBoardIds,
@@ -16,6 +15,7 @@ import {
 } from '@oybc/shared';
 import { currentTimestamp } from '../utils';
 import { addToSyncQueue } from './syncQueue';
+import { writeBoardDerivedStats } from './boardDerivedWrite';
 import { buildWindowContext } from './windowContext';
 import { buildBoardTaskTombstone } from './boardTasks';
 import {
@@ -312,31 +312,8 @@ export async function deleteTaskWithCascadeInTxn(
         windowContext,
       );
 
-      const totalSquares = affectedBoard.boardSize * affectedBoard.boardSize;
-      const isGreenlog = stats.completedTasks >= totalSquares;
-
-      const boardUpdate: Partial<Board> = {
-        completedTasks: stats.completedTasks,
-        linesCompleted: stats.linesCompleted,
-        completedLineIds: stats.completedLineIds,
-        updatedAt: now,
-        version: (affectedBoard.version ?? 1) + 1,
-      };
-
-      if (isGreenlog && affectedBoard.status === BoardStatus.ACTIVE) {
-        boardUpdate.status = BoardStatus.COMPLETED;
-        boardUpdate.completedAt = now;
-      } else if (!isGreenlog && affectedBoard.status === BoardStatus.COMPLETED) {
-        boardUpdate.status = BoardStatus.ACTIVE;
-        boardUpdate.completedAt = undefined;
-      }
-
-      await db.boards.update(affectedBoardId, boardUpdate);
-
-      const updatedBoard = await db.boards.get(affectedBoardId);
-      if (updatedBoard) {
-        await addToSyncQueue('boards', affectedBoardId, SyncOperationType.UPDATE, updatedBoard, 0);
-      }
+      // Compare-before-write (sync-churn fix) — a no-op derivation never bumps or re-pushes.
+      await writeBoardDerivedStats(affectedBoard, stats, now);
     }
   }
 }

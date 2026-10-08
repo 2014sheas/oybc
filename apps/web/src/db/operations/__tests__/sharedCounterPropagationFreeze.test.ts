@@ -185,6 +185,23 @@ afterEach(async () => {
 
 describe('shared-counter propagation freeze', () => {
   it('increment writes + enqueues the in-window and hub-linked rows, skips the ended row', async () => {
+    // Two in-window root increments already logged, so this +1 makes the LIVE
+    // square's windowed count reach its goal of 3 — a genuine derived change,
+    // which is the only case a cascade now writes (sync-churn fix).
+    for (const n of [1, 2]) {
+      await db.taskEvents.add({
+        id: `ev-root-${n}`,
+        userId: USER,
+        taskId: ROOT,
+        kind: 'increment',
+        delta: 1,
+        occurredAt: '2026-09-22T08:00:00.000Z',
+        createdAt: '2026-09-22T08:00:00.000Z',
+        updatedAt: '2026-09-22T08:00:00.000Z',
+        version: 1,
+        isDeleted: false,
+      });
+    }
     const { affectedBoards } = await incrementSharedCounter(ROOT, 1);
 
     const live = await db.tasks.get(LIVE);
@@ -203,7 +220,8 @@ describe('shared-counter propagation freeze', () => {
 
     // Credit comes from the unfrozen set only.
     expect(affectedBoards.map((b) => b.boardId)).toEqual([BOARD_LIVE]);
-    // The live board was cascaded (stats recomputed + enqueued).
+    // The live board was cascaded (its square went green → recomputed + enqueued).
+    expect((await db.boards.get(BOARD_LIVE))!.completedTasks).toBe(1);
     expect((await db.boards.get(BOARD_LIVE))!.version).toBe(2);
     expect(await queuedIds('boards')).toContain(BOARD_LIVE);
   });
