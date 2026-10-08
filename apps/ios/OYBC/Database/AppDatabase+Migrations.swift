@@ -202,9 +202,14 @@ extension AppDatabase {
     /// the expected form, it logs and leaves the table alone (a migration throw
     /// would brick database open) — the pull then behaves as before.
     ///
-    /// - Throws: a `DatabaseError` if the row / index counts differ after the
-    ///   copy (the transaction rolls back).
+    /// - Throws: a `DatabaseError` if foreign keys are ON (not inside the
+    ///   migrator) or the row / index counts differ after the copy.
     static func dropBoardsCenterTaskForeignKey(_ db: Database) throws {
+        // Outside the migrator (FKs on), `DROP TABLE boards` would
+        // cascade-delete every `board_tasks` row — refuse.
+        guard try Int.fetchOne(db, sql: "PRAGMA foreign_keys") == 0 else {
+            throw DatabaseError(message: "v40 boards rebuild must run with foreign keys OFF (inside the migrator)")
+        }
         let hasFK = try Row.fetchAll(db, sql: "PRAGMA foreign_key_list(boards)")
             .contains { ($0["from"] as String?) == "centerTaskId" }
         guard hasFK else { return }
