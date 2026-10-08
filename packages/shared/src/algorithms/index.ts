@@ -177,7 +177,6 @@ export {
   findPendingRecurringBoards,
   getCoreBoardSlots,
   getParentBoards,
-  isFreshlyDealtBoard,
   uncreatedCoreBoardSlots,
 } from './recurringBoards';
 
@@ -219,11 +218,9 @@ export {
   resolveMix,
   clampMintedPoolName,
   resolvePoolPullAdditions,
-  summarizeSpawnProvenanceFromSupplies,
-  formatSpawnProvenanceNote,
 } from './poolMix';
 
-export type { PoolMixSource, ResolveMixResult, SpawnProvenanceSummary } from './poolMix';
+export type { PoolMixSource, ResolveMixResult } from './poolMix';
 
 // ===== Task Pools + Recurring Boards Rework (P2) — pool health =====
 export { computePoolHealth, formatPoolShortSummary, templateConsumesPool } from './poolHealth';

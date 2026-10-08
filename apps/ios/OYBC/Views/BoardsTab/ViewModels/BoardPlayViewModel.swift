@@ -47,9 +47,6 @@ final class BoardPlayViewModel: ObservableObject {
     @Published private(set) var allBoardsInWorkspace: [Board] = []
     @Published private(set) var allTemplatesInWorkspace: [RecurringBoardTemplate] = []
     @Published private(set) var allBoardTasksInWorkspace: [BoardTask] = []
-    /// P6 — workspace-wide pools: the spawn-provenance note resolves a template's
-    /// `poolIds` through them (`PoolMix.summarizeSpawnProvenance`). Refreshed with the task data.
-    @Published private(set) var allPoolsInWorkspace: [Pool] = []
 
     /// Windowed Completion (docs/WINDOWED_COMPLETION.md §The model): the
     /// workspace's non-deleted TaskEvents grouped by `taskId`. The board grid +
@@ -1119,7 +1116,6 @@ final class BoardPlayViewModel: ObservableObject {
             allBoardsInWorkspace: [],
             allTemplatesInWorkspace: [],
             allBoardTasksInWorkspace: [],
-            allPoolsInWorkspace: [],
             windowEventsByTaskId: [:]
         )
     }
@@ -1181,17 +1177,6 @@ final class BoardPlayViewModel: ObservableObject {
             .filter(Column("isDeleted") == false)
             .fetchAll(db)
 
-        // P6 — pools feed the spawn-provenance note's `poolsById` lookup
-        // (`PoolMix.summarizeSpawnProvenance`).
-        let workspacePools: [Pool]
-        if let userId {
-            workspacePools = try Pool
-                .filter(Column("userId") == userId && Column("isDeleted") == false)
-                .fetchAll(db)
-        } else {
-            workspacePools = []
-        }
-
         // Windowed Completion — group non-deleted events by taskId so the grid
         // + tap handlers resolve each event-owning square windowed.
         let events: [TaskEvent]
@@ -1212,7 +1197,6 @@ final class BoardPlayViewModel: ObservableObject {
             allBoardsInWorkspace: workspaceBoards,
             allTemplatesInWorkspace: workspaceTemplates,
             allBoardTasksInWorkspace: workspaceBoardTasks,
-            allPoolsInWorkspace: workspacePools,
             windowEventsByTaskId: eventsByTaskId
         )
     }
@@ -1247,7 +1231,6 @@ final class BoardPlayViewModel: ObservableObject {
         allBoardsInWorkspace = payload.allBoardsInWorkspace
         allTemplatesInWorkspace = payload.allTemplatesInWorkspace
         allBoardTasksInWorkspace = payload.allBoardTasksInWorkspace
-        allPoolsInWorkspace = payload.allPoolsInWorkspace
         windowEventsByTaskId = payload.windowEventsByTaskId
         rebuildKernelCellStates()
 
@@ -1400,8 +1383,6 @@ final class BoardPlayViewModel: ObservableObject {
         let allBoardsInWorkspace: [Board]
         let allTemplatesInWorkspace: [RecurringBoardTemplate]
         let allBoardTasksInWorkspace: [BoardTask]
-        /// P6 — workspace-wide pools (see `allPoolsInWorkspace` doc).
-        let allPoolsInWorkspace: [Pool]
         /// Windowed Completion — non-deleted TaskEvents grouped by taskId.
         let windowEventsByTaskId: [String: [TaskEvent]]
     }

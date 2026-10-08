@@ -64,12 +64,10 @@ final class BoardEditOptionsUITests: XCTestCase {
         XCTAssertTrue(edit.waitForExistence(timeout: 10), "Edit should still be offered on a closed board (D2)")
         edit.tap()
 
-        // D4 — no grid, the muted reason line instead.
+        // D4 — no grid on a closed board.
         let firstCell = app.descendants(matching: .any)["squaresEditCell.0"]
         XCTAssertFalse(firstCell.waitForExistence(timeout: 3), "squares grid must be hidden on a closed board")
-        XCTAssertTrue(
-            app.staticTexts["This board has ended, so its squares can't change."].waitForExistence(timeout: 5)
-        )
+        XCTAssertTrue(app.buttons["Reopen board"].waitForExistence(timeout: 5))
         XCTAssertFalse(app.staticTexts["No changes"].exists, "no save bar on the squares-locked variant")
         XCTAssertTrue(app.buttons["Done editing"].exists, "top-left control should read Done, not Cancel")
 

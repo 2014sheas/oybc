@@ -155,9 +155,6 @@ struct BoardPlayView: View {
     // so the sheet always sees up-to-date data when opened.
     private var allBoardsInWorkspace: [Board] { viewModel.allBoardsInWorkspace }
     private var allTemplatesInWorkspace: [RecurringBoardTemplate] { viewModel.allTemplatesInWorkspace }
-    // (The former `allPoolsInWorkspace` shim fed the spawn-provenance
-    // note's `poolsById` lookup — that recompute moved into the VM's
-    // `recomputeEditSpawnNote` with the repeat-in-edit rework.)
 
     // Interaction write-state now lives on the view model (B2-I2). Read-only
     // shim so the many render sites that gate on `isProcessing` are untouched;
@@ -166,10 +163,6 @@ struct BoardPlayView: View {
     // MARK: Riso visual layer state
     /// Whether to show the GREENLOG full-bleed celebration overlay.
     @State private var showGreenlogOverlay: Bool = false
-    // Repeat-in-edit rework — the spawn-provenance note state/recompute
-    // moved to `BoardPlayViewModel.loadSpawnNote()` (Board Edit redesign
-    // slice 2, T2/T3 — resolved only while `BoardRepeatSheetView` is open);
-    // this view no longer owns it.
     /// Compact greenlog-streak value (e.g. "3d"/"2w") for the celebration overlay
     /// + share poster. Non-nil only for core boards with a streak ≥ 1; nil hides
     /// the STREAK card. Computed when the GREENLOG overlay is triggered.

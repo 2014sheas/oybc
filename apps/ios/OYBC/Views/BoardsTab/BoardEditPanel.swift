@@ -18,8 +18,7 @@ import SwiftUI
 ///
 /// Edit consolidation (D3/D4/D6): `squaresEditable` (frozen by the caller at
 /// Edit entry) gates the SQUARES section — when true it's the grid exactly
-/// as before; when false the grid is replaced by one muted
-/// `squaresLockedReason` line, the top-left control reads "Done" instead of
+/// as before; when false the grid is omitted, the top-left control reads "Done" instead of
 /// "Cancel", and the save bar doesn't render (nothing can be dirty). Either
 /// way, a `BoardOptionsSectionView` (D6's BOARD section) renders below.
 ///
@@ -219,6 +218,7 @@ struct BoardEditPanel: View {
                 windowedCount: windowedCount
             )
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     // MARK: - Sticky save bar
