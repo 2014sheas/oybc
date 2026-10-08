@@ -26,6 +26,7 @@ import { OperatorType, TaskType } from '../../src/constants/enums';
 
 interface FixBoard {
   id: string;
+  status?: string;
   startDate: string;
   endDate: string | null;
   sealedAt: string | null;
@@ -56,6 +57,7 @@ interface FixExpectedFork {
   mode: 'fork';
   forkId: string;
   repoint: { boardTaskId: string; newTaskId: string } | null;
+  onBoardHolderCompoundIds: string[];
   eventCopies: Array<{ id: string; sourceEventId: string; kind: string; occurredAt: string; delta?: number; boardId?: string }>;
   childLinksToCopy: Array<{ id: string; childTaskId: string; childIndex: number }>;
 }
@@ -155,7 +157,7 @@ describe('fork id namespaces', () => {
 describe('planBoardScopedFork — vectors', () => {
   const { now, boards: rawBoards, vectors } = fixture.planBoardScopedFork;
   const boards = rawBoards.map(
-    (b) => ({ ...b, endDate: b.endDate ?? undefined, sealedAt: b.sealedAt ?? undefined }) as unknown as Board,
+    (b) => ({ status: 'active', ...b, endDate: b.endDate ?? undefined, sealedAt: b.sealedAt ?? undefined }) as unknown as Board,
   );
 
   it.each(vectors.map((v) => [v.name, v] as const))('%s', (_name, v) => {
@@ -202,6 +204,7 @@ describe('planBoardScopedFork — vectors', () => {
     expect(f.userId).toBe('u1');
 
     expect(plan.repoint).toEqual(exp.repoint);
+    expect(plan.onBoardHolderCompoundIds).toEqual(exp.onBoardHolderCompoundIds);
 
     // Event copies (order is pinned: occurredAt instant asc, then source id).
     expect(

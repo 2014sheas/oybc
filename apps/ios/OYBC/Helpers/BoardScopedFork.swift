@@ -70,7 +70,18 @@ enum BoardScopedFork {
         case inPlace
         /// Insert `fork`, the event copies and the link copies, then repoint
         /// (`nil` when the task is on this board only through a compound).
-        case fork(fork: Task, eventCopies: [TaskEvent], childLinksToCopy: [CompoundChild], repoint: Repoint?)
+        /// `onBoardHolderCompoundIds` = the compounds with a live placement on
+        /// THIS board that contain the task directly or transitively (over
+        /// live links), sorted by id: PR 2 repoints the task's link within
+        /// each holder's subtree, forking a holder that is itself placed
+        /// elsewhere first. Mirrors the TS field of the same name.
+        case fork(
+            fork: Task,
+            eventCopies: [TaskEvent],
+            childLinksToCopy: [CompoundChild],
+            repoint: Repoint?,
+            onBoardHolderCompoundIds: [String]
+        )
     }
 
     /// The event kind a task type owns, or `nil` for a type that owns none.
@@ -111,7 +122,8 @@ enum BoardScopedFork {
     ///   (`[startDate, min(endDate, sealedAt)]`, inclusive, instant compare)
     ///   of the kind the EDITED type owns, copied; the compound's live child
     ///   links re-parented (children stay shared); the smallest-id direct
-    ///   placement on this board repointed.
+    ///   placement on this board repointed; the placed compounds on this
+    ///   board that contain the task reported as `onBoardHolderCompoundIds`.
     ///
     /// - Parameters:
     ///   - task: The task being edited (pre-edit row).
@@ -145,10 +157,13 @@ enum BoardScopedFork {
 
         var elsewhere = false
         var repointId: String?
+        var onBoardHolders = Set<String>()
         for p in placements where !p.isDeleted && holders.contains(p.taskId) && liveBoardIds.contains(p.boardId) {
             if p.boardId != board.id {
                 elsewhere = true
-            } else if p.taskId == task.id, repointId.map({ precedes(p.id, $0) }) ?? true {
+            } else if p.taskId != task.id {
+                onBoardHolders.insert(p.taskId)
+            } else if repointId.map({ precedes(p.id, $0) }) ?? true {
                 repointId = p.id
             }
         }
@@ -227,7 +242,8 @@ enum BoardScopedFork {
             fork: fork,
             eventCopies: eventCopies,
             childLinksToCopy: childLinksToCopy,
-            repoint: repointId.map { Repoint(boardTaskId: $0, newTaskId: forkId) }
+            repoint: repointId.map { Repoint(boardTaskId: $0, newTaskId: forkId) },
+            onBoardHolderCompoundIds: onBoardHolders.sorted(by: precedes)
         )
     }
 }

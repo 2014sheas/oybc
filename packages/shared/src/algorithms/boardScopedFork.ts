@@ -130,6 +130,15 @@ export type BoardScopedForkPlan =
        * (PR 2 repoints that compound's link instead).
        */
       repoint: BoardScopedForkRepoint | null;
+      /**
+       * The compounds with a live placement on THIS board that contain the
+       * task directly or transitively (over live links), sorted by id. The
+       * fork must replace the task inside each of them too: PR 2 repoints the
+       * task's link within each holder's subtree — and forks a holder that is
+       * itself placed elsewhere before repointing the copied link. Empty when
+       * the task is on this board only as a direct placement.
+       */
+      onBoardHolderCompoundIds: string[];
     };
 
 /** The event kind a task type owns, or `null` for a type that owns none (§4). */
@@ -186,7 +195,8 @@ function ms(iso: string): number {
  *     NOT forked here — a child edited from the board goes through its own
  *     plan (PR 2).
  *   - `repoint` = the smallest-id live placement of the task on this board,
- *     or `null` (see {@link BoardScopedForkPlan}).
+ *     or `null`; `onBoardHolderCompoundIds` = the placed compounds on this
+ *     board that contain the task (see {@link BoardScopedForkPlan}).
  *
  * Pure and deterministic: no clock (the caller passes `now`), no rng, every
  * tie broken by id; inputs are not mutated.
@@ -204,10 +214,12 @@ export function planBoardScopedFork(input: BoardScopedForkInput): BoardScopedFor
 
   let elsewhere = false;
   let repointId: string | null = null;
+  const onBoardHolders = new Set<string>();
   for (const p of input.placements) {
     if (p.isDeleted || !holders.has(p.taskId) || !liveBoardIds.has(p.boardId)) continue;
     if (p.boardId !== board.id) elsewhere = true;
-    else if (p.taskId === task.id && (repointId === null || p.id < repointId)) repointId = p.id;
+    else if (p.taskId !== task.id) onBoardHolders.add(p.taskId);
+    else if (repointId === null || p.id < repointId) repointId = p.id;
   }
   if (!elsewhere) return { mode: 'inPlace' };
 
@@ -280,5 +292,6 @@ export function planBoardScopedFork(input: BoardScopedForkInput): BoardScopedFor
     eventCopies,
     childLinksToCopy,
     repoint: repointId === null ? null : { boardTaskId: repointId, newTaskId: forkId },
+    onBoardHolderCompoundIds: [...onBoardHolders].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0)),
   };
 }

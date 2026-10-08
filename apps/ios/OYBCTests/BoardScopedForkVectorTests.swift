@@ -17,6 +17,8 @@ final class BoardScopedForkVectorTests: XCTestCase {
 
     private struct FixBoard: Decodable {
         let id: String
+        /// Absent = active (fixture note `boards`).
+        let status: String?
         let startDate: String
         let endDate: String?
         let sealedAt: String?
@@ -85,6 +87,7 @@ final class BoardScopedForkVectorTests: XCTestCase {
         let mode: String
         let forkId: String?
         let repoint: FixRepoint?
+        let onBoardHolderCompoundIds: [String]?
         let eventCopies: [FixEventCopy]?
         let childLinksToCopy: [FixLinkCopy]?
     }
@@ -183,7 +186,7 @@ final class BoardScopedForkVectorTests: XCTestCase {
 
     private func makeBoard(_ raw: FixBoard) throws -> Board {
         var dict: [String: Any] = [
-            "id": raw.id, "userId": "u1", "name": raw.id, "status": "active", "boardSize": 3,
+            "id": raw.id, "userId": "u1", "name": raw.id, "status": raw.status ?? "active", "boardSize": 3,
             "timeframe": "weekly", "startDate": raw.startDate, "centerSquareType": "none",
             "isRandomized": false, "totalTasks": 9, "completedTasks": 0, "linesCompleted": 0,
             "createdAt": Self.old, "updatedAt": Self.old, "version": 1, "isDeleted": raw.isDeleted,
@@ -232,7 +235,7 @@ final class BoardScopedForkVectorTests: XCTestCase {
 
     func testPlanVectors() throws {
         let section = try loadFixture().planBoardScopedFork
-        XCTAssertEqual(section.vectors.count, 26)
+        XCTAssertEqual(section.vectors.count, 30)
         let boards = try section.boards.map(makeBoard)
         let now = section.now
 
@@ -250,7 +253,7 @@ final class BoardScopedForkVectorTests: XCTestCase {
                 now: now
             )
 
-            guard case let .fork(fork, eventCopies, childLinksToCopy, repoint) = plan else {
+            guard case let .fork(fork, eventCopies, childLinksToCopy, repoint, onBoardHolderCompoundIds) = plan else {
                 XCTAssertEqual(v.expected.mode, "inPlace", "\(v.name): planned in place, expected fork")
                 continue
             }
@@ -280,6 +283,8 @@ final class BoardScopedForkVectorTests: XCTestCase {
                 v.expected.repoint,
                 v.name
             )
+
+            XCTAssertEqual(onBoardHolderCompoundIds, try XCTUnwrap(v.expected.onBoardHolderCompoundIds, v.name), v.name)
 
             let expEvents = v.expected.eventCopies ?? []
             XCTAssertEqual(eventCopies.map(\.id), expEvents.map(\.id), v.name)

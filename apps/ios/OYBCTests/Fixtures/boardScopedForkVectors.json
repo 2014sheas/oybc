@@ -5,6 +5,8 @@
     "tasks": "Each vector task is expanded by the harness with lifetime caches that a fork must reset: isCompleted true, completedAt set, currentCount 5 (counting only), totalCompletions 3, totalInstances 2, version 7, createdAt/updatedAt 2026-01-01T00:00:00.000Z, isCounter true.",
     "events": "Each event is expanded with userId \"u1\", version 3, createdAt/updatedAt 2026-01-01T00:00:00.000Z, isDeleted false unless set.",
     "fork": "Every fork must have id=forkId, forkedFromTaskId=task.id, createdInWizard true, isCounter false, version 1, createdAt=updatedAt=now, isDeleted false, isCompleted false, no completedAt, currentCount 0 for counting (absent otherwise), totalCompletions 0, totalInstances 1, title/type unchanged. Every event copy: taskId=forkId, createdAt=updatedAt=now, version 1, userId preserved, isDeleted false. Every link copy: compoundTaskId=forkId, version 1, createdAt=updatedAt=now, isDeleted false.",
+    "holders": "onBoardHolderCompoundIds = the compounds with a live placement on THIS board that contain the task directly or transitively (over live links), sorted by id. PR 2 repoints the task’s link inside each holder’s subtree (forking a holder that is itself placed elsewhere first).",
+    "boards": "A board without a status is active; status only documents D1 (the planner ignores it).",
     "windows": "Window = [startDate, min(endDate, sealedAt)], inclusive both ends, parsed-instant compare; endDate null = open-ended. All instants are Z-suffixed so the vectors are timezone-independent."
   },
   "ids": {
@@ -80,6 +82,14 @@
         "id": "BOPEN",
         "startDate": "2026-10-05T00:00:00.000Z",
         "endDate": null,
+        "sealedAt": null,
+        "isDeleted": false
+      },
+      {
+        "id": "BA",
+        "status": "archived",
+        "startDate": "2026-08-01T00:00:00.000Z",
+        "endDate": "2026-08-31T23:59:59.999Z",
         "sealedAt": null,
         "isDeleted": false
       },
@@ -184,6 +194,7 @@
             "boardTaskId": "bt1",
             "newTaskId": "bea9618c-f778-5782-a484-ee776d5704b8"
           },
+          "onBoardHolderCompoundIds": [],
           "eventCopies": [],
           "childLinksToCopy": []
         }
@@ -218,6 +229,42 @@
             "boardTaskId": "bt1",
             "newTaskId": "bea9618c-f778-5782-a484-ee776d5704b8"
           },
+          "onBoardHolderCompoundIds": [],
+          "eventCopies": [],
+          "childLinksToCopy": []
+        }
+      },
+      {
+        "name": "D1: other placement only on an ARCHIVED board → fork",
+        "task": {
+          "id": "T",
+          "type": "normal",
+          "title": "Read a book"
+        },
+        "boardId": "B1",
+        "editedType": "normal",
+        "placements": [
+          {
+            "id": "bt1",
+            "boardId": "B1",
+            "taskId": "T",
+            "isDeleted": false
+          },
+          {
+            "id": "bt-a",
+            "boardId": "BA",
+            "taskId": "T",
+            "isDeleted": false
+          }
+        ],
+        "expected": {
+          "mode": "fork",
+          "forkId": "bea9618c-f778-5782-a484-ee776d5704b8",
+          "repoint": {
+            "boardTaskId": "bt1",
+            "newTaskId": "bea9618c-f778-5782-a484-ee776d5704b8"
+          },
+          "onBoardHolderCompoundIds": [],
           "eventCopies": [],
           "childLinksToCopy": []
         }
@@ -429,6 +476,7 @@
             "boardTaskId": "bt1",
             "newTaskId": "bea9618c-f778-5782-a484-ee776d5704b8"
           },
+          "onBoardHolderCompoundIds": [],
           "eventCopies": [],
           "childLinksToCopy": []
         }
@@ -479,6 +527,7 @@
             "boardTaskId": "bt1",
             "newTaskId": "bea9618c-f778-5782-a484-ee776d5704b8"
           },
+          "onBoardHolderCompoundIds": [],
           "eventCopies": [],
           "childLinksToCopy": []
         }
@@ -585,6 +634,177 @@
           "mode": "fork",
           "forkId": "bea9618c-f778-5782-a484-ee776d5704b8",
           "repoint": null,
+          "onBoardHolderCompoundIds": [
+            "P"
+          ],
+          "eventCopies": [],
+          "childLinksToCopy": []
+        }
+      },
+      {
+        "name": "placed directly AND nested in a compound on this board → repoint + holder reported",
+        "task": {
+          "id": "T",
+          "type": "normal",
+          "title": "Read a book"
+        },
+        "boardId": "B1",
+        "editedType": "normal",
+        "placements": [
+          {
+            "id": "bt1",
+            "boardId": "B1",
+            "taskId": "T",
+            "isDeleted": false
+          },
+          {
+            "id": "bt-p",
+            "boardId": "B1",
+            "taskId": "P",
+            "isDeleted": false
+          },
+          {
+            "id": "bt2",
+            "boardId": "B2",
+            "taskId": "T",
+            "isDeleted": false
+          }
+        ],
+        "compoundChildren": [
+          {
+            "id": "lp",
+            "compoundTaskId": "P",
+            "childTaskId": "T",
+            "childIndex": 0,
+            "isDeleted": false
+          }
+        ],
+        "expected": {
+          "mode": "fork",
+          "forkId": "bea9618c-f778-5782-a484-ee776d5704b8",
+          "repoint": {
+            "boardTaskId": "bt1",
+            "newTaskId": "bea9618c-f778-5782-a484-ee776d5704b8"
+          },
+          "onBoardHolderCompoundIds": [
+            "P"
+          ],
+          "eventCopies": [],
+          "childLinksToCopy": []
+        }
+      },
+      {
+        "name": "holder compound on this board is itself placed on another board → fork, holder reported",
+        "task": {
+          "id": "T",
+          "type": "normal",
+          "title": "Read a book"
+        },
+        "boardId": "B1",
+        "editedType": "normal",
+        "placements": [
+          {
+            "id": "bt1",
+            "boardId": "B1",
+            "taskId": "T",
+            "isDeleted": false
+          },
+          {
+            "id": "bt-p1",
+            "boardId": "B1",
+            "taskId": "P",
+            "isDeleted": false
+          },
+          {
+            "id": "bt-p2",
+            "boardId": "B2",
+            "taskId": "P",
+            "isDeleted": false
+          }
+        ],
+        "compoundChildren": [
+          {
+            "id": "lp",
+            "compoundTaskId": "P",
+            "childTaskId": "T",
+            "childIndex": 0,
+            "isDeleted": false
+          }
+        ],
+        "expected": {
+          "mode": "fork",
+          "forkId": "bea9618c-f778-5782-a484-ee776d5704b8",
+          "repoint": {
+            "boardTaskId": "bt1",
+            "newTaskId": "bea9618c-f778-5782-a484-ee776d5704b8"
+          },
+          "onBoardHolderCompoundIds": [
+            "P"
+          ],
+          "eventCopies": [],
+          "childLinksToCopy": []
+        }
+      },
+      {
+        "name": "holders are transitive: a placed grandparent is reported, its unplaced middle is not",
+        "task": {
+          "id": "T",
+          "type": "normal",
+          "title": "Read a book"
+        },
+        "boardId": "B1",
+        "editedType": "normal",
+        "placements": [
+          {
+            "id": "bt-g",
+            "boardId": "B1",
+            "taskId": "G",
+            "isDeleted": false
+          },
+          {
+            "id": "bt-z",
+            "boardId": "B1",
+            "taskId": "Z",
+            "isDeleted": false
+          },
+          {
+            "id": "bt2",
+            "boardId": "B2",
+            "taskId": "T",
+            "isDeleted": false
+          }
+        ],
+        "compoundChildren": [
+          {
+            "id": "lp",
+            "compoundTaskId": "P",
+            "childTaskId": "T",
+            "childIndex": 0,
+            "isDeleted": false
+          },
+          {
+            "id": "lg",
+            "compoundTaskId": "G",
+            "childTaskId": "P",
+            "childIndex": 0,
+            "isDeleted": false
+          },
+          {
+            "id": "lz",
+            "compoundTaskId": "Z",
+            "childTaskId": "T",
+            "childIndex": 1,
+            "isDeleted": false
+          }
+        ],
+        "expected": {
+          "mode": "fork",
+          "forkId": "bea9618c-f778-5782-a484-ee776d5704b8",
+          "repoint": null,
+          "onBoardHolderCompoundIds": [
+            "G",
+            "Z"
+          ],
           "eventCopies": [],
           "childLinksToCopy": []
         }
@@ -631,6 +851,7 @@
             "boardTaskId": "bt3",
             "newTaskId": "bea9618c-f778-5782-a484-ee776d5704b8"
           },
+          "onBoardHolderCompoundIds": [],
           "eventCopies": [],
           "childLinksToCopy": []
         }
@@ -712,6 +933,7 @@
             "boardTaskId": "bt1",
             "newTaskId": "bea9618c-f778-5782-a484-ee776d5704b8"
           },
+          "onBoardHolderCompoundIds": [],
           "eventCopies": [
             {
               "id": "cd7fcb8d-fd4e-5df3-ac44-d3f010ccc0a8",
@@ -781,6 +1003,7 @@
             "boardTaskId": "bt-open",
             "newTaskId": "95572862-46b8-5d47-a6d2-dd49873cc81e"
           },
+          "onBoardHolderCompoundIds": [],
           "eventCopies": [
             {
               "id": "7a51fcee-69ed-554a-a461-ddc12fa0a432",
@@ -842,6 +1065,7 @@
             "boardTaskId": "bt-seal",
             "newTaskId": "c2907908-262d-53bc-be0f-6cd1a7186d31"
           },
+          "onBoardHolderCompoundIds": [],
           "eventCopies": [
             {
               "id": "410e6bf8-7034-5b39-8397-b0e2eaf5d938",
@@ -914,6 +1138,7 @@
             "boardTaskId": "bt1",
             "newTaskId": "78532aee-da03-5abd-b82d-5ef5f3489847"
           },
+          "onBoardHolderCompoundIds": [],
           "eventCopies": [
             {
               "id": "f2694f0f-fae3-5c34-b9b6-3f275e25378c",
@@ -988,6 +1213,7 @@
             "boardTaskId": "bt1",
             "newTaskId": "78532aee-da03-5abd-b82d-5ef5f3489847"
           },
+          "onBoardHolderCompoundIds": [],
           "eventCopies": [
             {
               "id": "0b1b5931-b45a-5bc6-ac8d-b06d87ac3408",
@@ -1076,6 +1302,7 @@
             "boardTaskId": "bt1",
             "newTaskId": "bea9618c-f778-5782-a484-ee776d5704b8"
           },
+          "onBoardHolderCompoundIds": [],
           "eventCopies": [],
           "childLinksToCopy": []
         }
@@ -1135,6 +1362,7 @@
             "boardTaskId": "bt1",
             "newTaskId": "78532aee-da03-5abd-b82d-5ef5f3489847"
           },
+          "onBoardHolderCompoundIds": [],
           "eventCopies": [],
           "childLinksToCopy": []
         }
@@ -1200,6 +1428,7 @@
             "boardTaskId": "bt-c1",
             "newTaskId": "67c7e18b-b24e-529e-9ac1-b4435773016e"
           },
+          "onBoardHolderCompoundIds": [],
           "eventCopies": [],
           "childLinksToCopy": [
             {
@@ -1261,6 +1490,7 @@
             "boardTaskId": "bt2",
             "newTaskId": "1547149d-1d8d-590e-814d-e3e569f46523"
           },
+          "onBoardHolderCompoundIds": [],
           "eventCopies": [
             {
               "id": "4ac75379-38c7-5dc5-9f72-6ce3e300dd59",
