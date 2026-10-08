@@ -5,13 +5,13 @@ import SwiftUI
 /// closed yet — still logging until the user closes it or it auto-closes at
 /// the next window's end. Red keyline card, replaces the old web-only
 /// `expiredBanner` copy ("Board expired on…") on iOS with the new verbatim
-/// text.
+/// value text ("Ended {date}", no explanatory sentence — #548).
 struct RisoEndedBannerView: View {
     /// Formatted end date, e.g. "Sep 30".
     let date: String
 
     var body: some View {
-        Text("Board ended on \(date). Still logging until you close it.")
+        Text("Ended \(date)")
             .font(.risoBody(12, .semibold))
             .foregroundStyle(Color.risoRed)
             .padding(.horizontal, 12)

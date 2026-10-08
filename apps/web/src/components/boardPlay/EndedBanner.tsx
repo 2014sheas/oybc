@@ -21,15 +21,14 @@ function formatBannerDate(iso: string): string {
  * `!isSealed`; a CLOSED board shows no banner — its pill + stat card say
  * enough).
  *
- * Verbatim copy (handoff README, decisions §2): "Board ended on {date}.
- * Still logging until you close it." `{date}` matches the stat card's
- * format ("Sep 30").
+ * Copy: "Ended {date}" — a value, no explanation (#548). `{date}` matches the
+ * stat card's format ("Sep 30").
  */
 export function EndedBanner({ endDate }: EndedBannerProps): React.ReactElement {
   const date = endDate ? formatBannerDate(endDate) : 'unknown date';
   return (
     <div className={styles.expiredBanner}>
-      Board ended on {date}. Still logging until you close it.
+      Ended {date}
     </div>
   );
 }

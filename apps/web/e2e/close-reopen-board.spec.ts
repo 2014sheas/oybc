@@ -50,7 +50,7 @@ test.describe('Close / Reopen a board (Board Edit redesign slice 4)', () => {
     // "Ended" appears twice (the pill, and the LEFT stat card's value) — the
     // pill renders first in DOM order.
     await expect(page.getByText('Ended', { exact: true }).first()).toBeVisible();
-    await expect(page.getByText(/Board ended on .+\. Still logging until you close it\./)).toBeVisible();
+    await expect(page.getByText(/Ended .+/)).toBeVisible();
     await expect(page.getByText('Left', { exact: true })).toBeVisible();
     await expect(page.getByText(/· still logging/)).toBeVisible();
     // Edit consolidation (D2) — `Edit board` is now VISIBLE on an ended

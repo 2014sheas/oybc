@@ -39,7 +39,7 @@ struct CompletionToggleView: View {
             .disabled(disabled || sealBlocked)
 
             if sealBlocked {
-                Text("Completed in a closed window")
+                Text("Closed window")
                     .font(.risoBody(11.5, .semibold))
                     .foregroundStyle(Color.risoMuted)
             }

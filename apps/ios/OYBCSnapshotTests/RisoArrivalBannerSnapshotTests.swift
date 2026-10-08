@@ -29,7 +29,6 @@ final class RisoArrivalBannerSnapshotTests: XCTestCase {
         container(RisoArrivalBanner(
             squareCount: 1,
             taskName: "50 push-ups",
-            counterName: "Push-ups",
             onOpen: {},
             onDismiss: {}
         ))
@@ -39,7 +38,6 @@ final class RisoArrivalBannerSnapshotTests: XCTestCase {
         container(RisoArrivalBanner(
             squareCount: 3,
             taskName: nil,
-            counterName: nil,
             onOpen: {},
             onDismiss: {}
         ))

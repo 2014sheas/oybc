@@ -4,14 +4,9 @@ import SwiftUI
 /// Counters P3). Shown on board-open when ≥1 shared-counter square filled in
 /// from a log made elsewhere (Counter Detail / another board).
 ///
-/// Copy contract (R3 board-play touchpoints — pinned byte-identical to web):
-///   single:   "{taskTitle} filled in — you logged {counterName} elsewhere.
-///              See every board ›"
-///   multiple: "{K} squares filled in from your counters. Open counters ›"
-///
-/// `taskName` still names the SQUARE/task (e.g. "Do 200 push-ups"); only the
-/// counter reference (`counterName`) switched to the pair-derived name — see
-/// `BoardPlayViewModel.counterDisplayName`.
+/// Copy (pinned byte-identical to web; no provenance clause — #548):
+///   single:   "{taskTitle} filled in · See every board ›"
+///   multiple: "{K} squares filled in · Open counters ›"
 ///
 /// Riso gold surface with `Color.risoInkStatic` content — plain `risoInk`
 /// flips to cream in dark mode and would vanish on the light gold fill
@@ -22,8 +17,6 @@ struct RisoArrivalBanner: View {
     let squareCount: Int
     /// The arrived square's task name (single-square variant only).
     let taskName: String?
-    /// The arrived counter's display name (single-square variant only).
-    let counterName: String?
     /// Tap the banner body → open Counter Detail (single counter) / the Hub.
     let onOpen: () -> Void
     /// ✕ dismiss.
@@ -32,17 +25,16 @@ struct RisoArrivalBanner: View {
     private var isSingle: Bool {
         squareCount == 1
             && !(taskName ?? "").isEmpty
-            && !(counterName ?? "").isEmpty
     }
 
     private var bannerText: Text {
-        if isSingle, let taskName = taskName, let counterName = counterName {
+        if isSingle, let taskName = taskName {
             return Text(taskName).italic().fontWeight(.bold)
-                + Text(" filled in — you logged \(counterName) elsewhere. ")
+                + Text(" filled in · ")
                 + Text("See every board ›").fontWeight(.bold)
         }
         return Text("\(squareCount) squares").fontWeight(.bold)
-            + Text(" filled in from your counters. ")
+            + Text(" filled in · ")
             + Text("Open counters ›").fontWeight(.bold)
     }
 

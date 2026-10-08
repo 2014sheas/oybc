@@ -141,12 +141,9 @@ test.describe('Shared Counters P3 — arrival banner', () => {
     await page.goto(`/boards/${TARGET_BOARD_ID}?__oybc_test_bypass=1`);
     const banner = page.getByRole('status').filter({ hasText: /filled in/i });
     await expect(banner).toBeVisible();
-    // Copy contract (single-square variant, `RisoArrivalBanner` since the
-    // counters-refresh R3 copy pass #342): "{task} filled in — you logged
-    // {counter} elsewhere." Match the stable substring + both names.
-    await expect(banner).toContainText(/filled in — you logged/i);
+    // Single-square variant of `RisoArrivalBanner`: "{task} filled in".
+    await expect(banner).toContainText(/filled in/i);
     await expect(banner).toContainText(LINKED_TASK_TITLE);
-    await expect(banner).toContainText('Push-ups reps');
 
     // Guard against the occlusion regression this PR fixed: the banner is a
     // `position: fixed` overlay whose `z-index` was trapped inside `AppShell

@@ -58,8 +58,6 @@ private struct ArrivalBannerData {
     let squareCount: Int
     /// The arrived square's task name (single-square variant only).
     let taskName: String?
-    /// The arrived counter's display name (single-square variant only).
-    let counterName: String?
     /// The distinct arrived counters — resolves the tap target.
     let arrivedCounters: [ArrivedCounter]
 }
@@ -518,7 +516,6 @@ struct BoardPlayView: View {
                 RisoArrivalBanner(
                     squareCount: banner.squareCount,
                     taskName: banner.taskName,
-                    counterName: banner.counterName,
                     onOpen: { openArrivalTarget(banner) },
                     onDismiss: dismissArrivalBanner
                 )
@@ -926,11 +923,6 @@ struct BoardPlayView: View {
                 .risoH2()
                 .multilineTextAlignment(.center)
 
-            Text("Finish setting it up in the wizard — drafts aren't playable until you complete them.")
-                .risoSub()
-                .multilineTextAlignment(.center)
-                .padding(.horizontal, 16)
-
             if let onResumeDraft {
                 RisoButton(
                     title: "Resume draft",
@@ -1024,11 +1016,9 @@ struct BoardPlayView: View {
     ///
     /// - Parameter event: The VM's published arrival payload.
     private func triggerArrivalBanner(from event: CounterArrivalEvent) {
-        let counterName = event.arrivedCounters.first?.counterName
         arrivalBanner = ArrivalBannerData(
             squareCount: event.totalArrivedSquares,
             taskName: event.singleTaskName,
-            counterName: event.totalArrivedSquares == 1 ? counterName : nil,
             arrivedCounters: event.arrivedCounters
         )
         arrivedTaskIds = event.arrivedTaskIds
@@ -1706,7 +1696,7 @@ struct BoardPlayView: View {
                                 .accessibilityLabel("Open \(childTask?.title ?? "task") in library")
                             }
                             if sealBlocked {
-                                Text("Completed in a closed window")
+                                Text("Closed window")
                                     .font(.risoBody(11, .semibold))
                                     .foregroundStyle(Color.risoMuted)
                                     .padding(.leading, 24)

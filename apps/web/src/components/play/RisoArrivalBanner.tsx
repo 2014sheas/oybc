@@ -5,8 +5,6 @@ export interface RisoArrivalBannerProps {
   squareCount: number;
   /** The arrived square's task name (single-square variant only). */
   taskName?: string;
-  /** The arrived counter's display name (single-square variant only). */
-  counterName?: string;
   /** Tap the banner body → open Counter Detail (single counter) / the Hub. */
   onOpen: () => void;
   /** ✕ dismiss. */
@@ -21,14 +19,11 @@ export interface RisoArrivalBannerProps {
  * made elsewhere (Counter Detail / another board).
  *
  * Copy contract (pinned byte-exact, R3 board-play touchpoints):
- *   single:   "{task name} filled in — you logged {counter name} elsewhere.
- *              See every board ›"
- *   multiple: "{N} squares filled in from your counters. Open counters ›"
+ *   single:   "{task name} filled in · See every board ›"
+ *   multiple: "{N} squares filled in · Open counters ›"
  *
- * `taskName` is the SQUARE/task's own name (stays title-first — unaffected
- * by R3); `counterName` is pair-derived (`formatCounterName`, stored-title
- * fallback) per the R3 copy contract's counter-name rule — resolved by the
- * caller (`useCounterArrivals`'s `counterDisplayName`).
+ * `taskName` is the SQUARE/task's own name (stays title-first). No
+ * provenance clause ("you logged X elsewhere") — #548.
  *
  * Riso gold surface with `--riso-ink-static` content (adaptive `--riso-ink`
  * would vanish on the light gold fill in dark mode — see
@@ -37,11 +32,10 @@ export interface RisoArrivalBannerProps {
 export function RisoArrivalBanner({
   squareCount,
   taskName,
-  counterName,
   onOpen,
   onDismiss,
 }: RisoArrivalBannerProps): React.ReactElement {
-  const isSingle = squareCount === 1 && !!taskName && !!counterName;
+  const isSingle = squareCount === 1 && !!taskName;
 
   return (
     <div className={styles.arrival} role="status" aria-live="polite">
@@ -49,12 +43,12 @@ export function RisoArrivalBanner({
       <button type="button" className={styles.arrivalBody} onClick={onOpen}>
         {isSingle ? (
           <>
-            <em>{taskName}</em> filled in — you logged {counterName} elsewhere.{' '}
+            <em>{taskName}</em> filled in ·{' '}
             <span className={styles.arrivalCta}>See every board ›</span>
           </>
         ) : (
           <>
-            <strong>{squareCount} squares</strong> filled in from your counters.{' '}
+            <strong>{squareCount} squares</strong> filled in ·{' '}
             <span className={styles.arrivalCta}>Open counters ›</span>
           </>
         )}
