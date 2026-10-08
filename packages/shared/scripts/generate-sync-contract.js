@@ -84,6 +84,7 @@ function main() {
     LEGACY_PULL_SKIP_COLLECTIONS,
     CLEARABLE_BOARD_FIELDS,
     CLEARABLE_FIELDS_BY_COLLECTION,
+    PULL_APPLY_ORDER,
   } = loadConstants();
 
   if (!Array.isArray(SYNC_COLLECTIONS) || SYNC_COLLECTIONS.length === 0) {
@@ -102,6 +103,8 @@ function main() {
     // Per-collection map (2026-09-29) — `clearableBoardFields` above is its
     // `boards` entry, kept for the docs/tests that name it.
     clearableFieldsByCollection: CLEARABLE_FIELDS_BY_COLLECTION,
+    // Dependency-ordered pull (2026-10-07) — iOS compares it order-sensitively.
+    pullApplyOrder: PULL_APPLY_ORDER,
   };
 
   const json = JSON.stringify(fixture, null, 2) + '\n';

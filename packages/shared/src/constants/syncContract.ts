@@ -111,6 +111,35 @@ export const LEGACY_PULL_SKIP_COLLECTIONS = [
 ] as const satisfies readonly SyncCollection[];
 
 /**
+ * The order the **pull** applies collections in (both platforms' full pull
+ * loop and listener attach), 2026-10-07. Dependency order: every collection's
+ * pull cascade then sees all the inputs it reads — tasks before the compound
+ * links and events that hang off them, events before any board derivation,
+ * boards before their placements. With per-collection checkpoints
+ * (`nextPullWatermark`) a pull interrupted after collection N resumes at N+1,
+ * whose cascades re-derive everything they touch, so it converges to the same
+ * state as an uninterrupted pull, and no intermediate board-stat write is
+ * derived from a partial event union.
+ *
+ * Exactly `SYNC_COLLECTIONS` minus `LEGACY_PULL_SKIP_COLLECTIONS` as a set
+ * (asserted by `tests/constants/syncContract.test.ts`). The push path keeps
+ * `SYNC_COLLECTIONS` order. iOS asserts its `pullApplyOrder` against
+ * `syncContract.json` (`pullApplyOrder`, order-sensitive).
+ *
+ * Not consulted by `scripts/check-sync-contract-rules.mjs`.
+ */
+export const PULL_APPLY_ORDER = [
+  'tasks',
+  'compoundChildren',
+  'taskEvents',
+  'boards',
+  'boardTasks',
+  'recurringBoardTemplates',
+  'pools',
+  'coreBoardDefaults',
+] as const satisfies readonly SyncCollection[];
+
+/**
  * Per-collection fields whose **absence** on a pushed/pulled row means
  * "cleared", so the sync layer must propagate the clear explicitly (Board
  * Edit redesign slice 4 — D2, generalised for the per-timeframe core-board
