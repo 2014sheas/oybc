@@ -758,37 +758,35 @@ Rule for all four: **shrink the baseline as you clean up (the scripts emit a not
 - Dependabot PRs: review CI results, resolve lockfile conflicts via `git checkout --theirs pnpm-lock.yaml && pnpm install`, merge in dependency order (Actions bumps first, then lockfile-touching bumps sequentially).
 - When pushing to a dependabot branch, dependabot refuses auto-rebase ("edited by someone other than Dependabot") — manual rebase required for subsequent merges.
 
-### TestFlight lane (feature-branch device testing)
+### TestFlight (Xcode Cloud builds every `dev` commit)
 
-Xcode Cloud builds whatever lands on **`release/testflight`** and delivers it to
-the internal TestFlight Dev group (config facts + traps: memory
-`reference_xcode_cloud_setup`; workflows are edited in App Store Connect, not
-Xcode). **Every push to the lane = one Xcode Cloud build = one App Store Connect
-upload**, and ASC caps uploads per app per day (**ITMS-90382 "Upload limit reached —
-wait 1 day"**, hit 2026-09-27 at build 151 after ~14 lane pushes in <24h, mostly
-while the owner slept). Rules:
+**Owner-confirmed 2026-10-08:** the Xcode Cloud workflow's start condition is
+**`dev`** — every merge to `dev` = one Xcode Cloud build = one App Store Connect
+upload to the internal TestFlight Dev group. This is the intended cadence; the
+owner device-tests from TestFlight continuously (his bug reports are the testing).
+Config facts + traps: memory `reference_xcode_cloud_setup`; workflows are edited
+in App Store Connect, not Xcode.
 
-- **Cut only when the owner asks for a build he will test** (typically away from
-  his Mac). Never cut for work that will merge before he can test it (overnight /
-  unattended trains). At his Mac, device-test by building the worktree's
-  `apps/ios/OYBC.xcodeproj` in Xcode (⌘R) — free.
-- **Soft guard, not a hard block** (owner, 2026-09-28: "There should not be a HARD
-  guard against that action"). `.claude/settings.json` has a PreToolUse hook that
-  returns `ask` (with the upload-cap reason) for any Bash command matching a git
-  push to the lane; when the owner has asked for the build, Claude pushes it itself.
-  The written rule above is the real guard — never cut a build nobody asked for.
-- **Never "restore the lane to dev" after a merge** — a squash-merge rebuilds
-  identical code. Leave the lane where it is; the next cut replaces it with a
-  lease-guarded force push
-  (`--force-with-lease=release/testflight:<current-lane-sha> origin <ref>:release/testflight`).
-- Cut refs: `origin/dev` (mainline) or `origin/<branch>` (feature; one lane = one
-  branch at a time).
-- Preconditions per cut: `apps/ios/OYBC.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved`
+- **The old `release/testflight` lane is retired.** It stopped at `a75706ca`
+  (2026-09-30) while TestFlight kept tracking `dev`; nothing reads it. Do not push
+  it, do not "protect" it, and do not write "the lane is stale" in a status
+  report — look at `dev` instead. (The PreToolUse push-guard hook was removed
+  with this note.) Feature-branch device builds, if ever needed again, mean a
+  second ASC workflow on a branch pattern — not set up.
+- **Cost of a merge:** ASC caps uploads per app per day (**ITMS-90382 "Upload limit
+  reached — wait 1 day"**, hit 2026-09-27 after ~14 uploads in <24h) and Xcode
+  Cloud compute is ~30 min/build against 25 free h/mo. An unattended train of
+  many small PRs burns both — batch merges where it costs nothing to wait, and
+  prefer one PR per feature over a PR per fix round. A docs-only commit to `dev`
+  still triggers a build unless the workflow gains a files-and-folders start
+  condition (ASC → workflow → Start Conditions → "Files and Folders": e.g.
+  `apps/ios/**`, `packages/**`) — recommended, not yet configured.
+- Preconditions per build: `apps/ios/OYBC.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved`
   is committed + current (Xcode Cloud hard-fails without it).
-- Owner-side backstop: enable **Auto-cancel Builds** on the ASC Xcode Cloud
-  workflow so a newer push cancels an in-flight build before it uploads.
-  Parallel lanes would need a second ASC workflow on a `testflight/*` branch
-  pattern (not set up).
+- Owner-side backstop: **Auto-cancel Builds** on the ASC workflow so a newer
+  merge cancels an in-flight build before it uploads.
+- When a crash report mentions a build number, map it to a `dev` commit through
+  Xcode Cloud's build list in ASC — not through `release/testflight`.
 
 **CI trap discovered the same day**: a PR whose merge state is conflicted
 (`gh pr view N --json mergeStateStatus` → `DIRTY`) gets ALL of its
