@@ -777,12 +777,19 @@ final class BoardPlayViewModelTests: XCTestCase {
         vm.handleCountingTap(boardTask: bt, task: try XCTUnwrap(vm.taskMap["c-src"]), amount: 10)
         XCTAssertTrue(waitUntil { self.dbTask(db, "c-src")?.currentCount == 10 && !vm.isProcessing })
 
+        vm.snapshotDelay = 0.4 // widen the write-done / reload-pending window
         vm.undoSharedCounterLog(sourceTaskId: "c-src")
-        XCTAssertTrue(vm.isProcessing, "Undo must hold isProcessing while its write + reload are in flight")
+        XCTAssertTrue(waitUntil { self.dbTask(db, "c-src")?.currentCount == 0 }, "Undo write never landed")
+        XCTAssertTrue(vm.isProcessing, "isProcessing must stay true after the write until the reload applies")
+        XCTAssertEqual(vm.taskMap["c-src"]?.currentCount, 10, "published state is still pre-undo here")
         vm.handleCountingTap(boardTask: bt, task: try XCTUnwrap(vm.taskMap["c-src"]), amount: 5)
+        _ = waitUntil(timeout: 0.1) { false }
+        XCTAssertEqual(dbTask(db, "c-src")?.currentCount, 0, "a tap before the reload lands must be rejected")
 
         XCTAssertTrue(waitUntil { vm.taskMap["c-src"]?.currentCount == 0 && !vm.isProcessing })
-        XCTAssertEqual(dbTask(db, "c-src")?.currentCount, 0, "a tap during Undo must be rejected, not applied")
+        vm.snapshotDelay = 0
+        vm.handleCountingTap(boardTask: bt, task: try XCTUnwrap(vm.taskMap["c-src"]), amount: 5)
+        XCTAssertTrue(waitUntil { self.dbTask(db, "c-src")?.currentCount == 5 && !vm.isProcessing }, "tap after the reload must apply")
     }
 
     /// A superseded reload hands its completion to the winner: it fires exactly

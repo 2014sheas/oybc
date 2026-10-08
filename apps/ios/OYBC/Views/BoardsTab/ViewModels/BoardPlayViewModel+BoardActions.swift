@@ -153,7 +153,7 @@ extension BoardPlayViewModel {
     ///   `CreditToastState.sourceTaskId` on the view side).
     func undoSharedCounterLog(sourceTaskId: String) {
         guard !isProcessing else { return }
-        isProcessing = true
+        setProcessing(true)
         let database = self.database
         let currentBoardId = board?.id
         _Concurrency.Task.detached(priority: .userInitiated) { [weak self] in
@@ -189,7 +189,7 @@ extension BoardPlayViewModel {
             }
 
             await MainActor.run {
-                self.reload { self.isProcessing = false }
+                self.reload { self.setProcessing(false) }
                 if let msg = newBingoMsg {
                     self.bingoMessage = msg
                     self.scheduleBingoMessageDismiss(msg)

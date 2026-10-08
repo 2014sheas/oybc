@@ -72,7 +72,11 @@ final class BoardPlayViewModel: ObservableObject {
 
     /// True while an interaction write (tap / stepper / swap / add / remove) is in
     /// flight. The view reads this to disable controls; only the moved handlers mutate it.
-    @Published var isProcessing = false // internal for the +BoardActions undo split
+    @Published private(set) var isProcessing = false
+    /// +BoardActions' write seam for `isProcessing` (the setter stays private to the VM file).
+    func setProcessing(_ value: Bool) { isProcessing = value }
+    /// Test hook: seconds `reload` waits before fetching, to widen the write-done / reload-pending window. Always 0 in production.
+    var snapshotDelay: TimeInterval = 0
     /// True while a closed-board late-log write is in flight — `+LateLog.swift`'s
     /// writes no-op on re-entry (a double-tap never authors twice). Set only there.
     @Published var isLateLogInFlight = false
@@ -366,9 +370,11 @@ final class BoardPlayViewModel: ObservableObject {
         let boardId = self.boardId
         let userId = self.userId
         let database = self.database
+        let delay = snapshotDelay
 
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             guard let self = self else { return }
+            if delay > 0 { Thread.sleep(forTimeInterval: delay) }
             let snapshot = Self.fetchSnapshot(boardId: boardId, userId: userId, database: database)
             DispatchQueue.main.async {
                 guard token == self.reloadToken else { return }
@@ -397,6 +403,7 @@ final class BoardPlayViewModel: ObservableObject {
             DispatchQueue.main.async {
                 guard token == self.reloadToken else { return }
                 self.apply(payload)
+                // Intentional: a partial reload that wins also drains reload(then:) completions (they only clear isProcessing).
                 self.drainReloadCompletions()
             }
         }
