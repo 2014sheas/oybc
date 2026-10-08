@@ -62,9 +62,11 @@ final class WizardRearrangeUITests: XCTestCase {
     }
 
     private func enterRearrange() {
+        // The segment carries no selected trait and the grid exists in both
+        // modes, so the mode flip is verified by the behaviour each test
+        // asserts next (swap / drag only work in Rearrange).
         selectMode("Rearrange")
-        XCTAssertTrue(app.staticTexts["Drag to rearrange · tap two squares to swap"]
-            .waitForExistence(timeout: 5), "Rearrange hint never appeared")
+        XCTAssertTrue(cell(0).waitForExistence(timeout: 5), "grid missing after entering Rearrange")
     }
 
     private func waitForTitle(_ slot: Int, _ expected: String,
@@ -153,8 +155,6 @@ final class WizardRearrangeUITests: XCTestCase {
     /// taps there never swap.
     func testPreviewRearrangeToggle() {
         let before = order()
-        let hint = app.staticTexts["Drag to rearrange · tap two squares to swap"]
-        XCTAssertFalse(hint.exists, "hint must be hidden in Preview")
 
         // Preview is display-only.
         center(of: cell(0)).tap()
@@ -163,11 +163,10 @@ final class WizardRearrangeUITests: XCTestCase {
 
         enterRearrange()
         selectMode("Preview")
-        let gone = XCTWaiter().wait(
-            for: [XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: hint)],
-            timeout: 5
-        )
-        XCTAssertEqual(gone, .completed, "hint must hide again after returning to Preview")
+        // Back in Preview the grid is inert again.
+        center(of: cell(0)).tap()
+        center(of: cell(2)).tap()
+        XCTAssertEqual(order(), before, "Preview must not rearrange after returning from Rearrange")
 
         // Back into Rearrange: the grid is live again.
         enterRearrange()
