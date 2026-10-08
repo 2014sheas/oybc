@@ -94,7 +94,9 @@ enum CompoundChildEligibility {
     ) -> [Task] {
         browsable
             .filter {
-                !isIncompleteCountingChild($0)
+                // A fork is board-bound (docs/BOARD_SCOPED_TASK_EDITS.md §3).
+                $0.forkedFromTaskId == nil
+                    && !isIncompleteCountingChild($0)
                     && linkProblem(parentId: parentId, candidate: $0, allLinks: allLinks, currentChildIds: currentChildIds) == nil
             }
             .sorted { a, b in

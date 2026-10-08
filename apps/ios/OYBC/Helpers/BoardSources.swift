@@ -376,9 +376,10 @@ enum BoardSources {
     /// pickers) so legacy pool members and synced data are excluded
     /// uniformly. Mirrors web `isSourceSupplyTask` in
     /// `packages/shared/src/algorithms/boardSources.ts` — keep in
-    /// lockstep.
+    /// lockstep. A fork (`forkedFromTaskId` set —
+    /// docs/BOARD_SCOPED_TASK_EDITS.md §6) is board-bound and never supply.
     static func isSourceSupplyTask(_ task: Task) -> Bool {
-        task.type != .achievement
+        task.type != .achievement && task.forkedFromTaskId == nil
     }
 
     /// Raw supply for a pool-kind source: the pool's own `taskIds`,

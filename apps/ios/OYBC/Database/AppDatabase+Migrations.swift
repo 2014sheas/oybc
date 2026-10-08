@@ -178,6 +178,15 @@ extension AppDatabase {
                 """)
             try AppDatabase.dropBoardsCenterTaskForeignKey(db)
         }
+
+        // v41: board-scoped task edits (docs/BOARD_SCOPED_TASK_EDITS.md §3) —
+        // `tasks.forkedFromTaskId`, the original's id on a per-board fork.
+        // Nullable TEXT: every pre-v41 row stays NULL and `Task.init(from:)`
+        // decodes it to nil (not a fork). No index (nothing queries by it in
+        // PR 1). Web: no Dexie bump (unindexed — the v38/v39 precedent).
+        migrator.registerMigration("v41") { db in
+            try db.execute(sql: "ALTER TABLE tasks ADD COLUMN forkedFromTaskId TEXT")
+        }
     }
 }
 
