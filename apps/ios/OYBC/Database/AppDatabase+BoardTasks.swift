@@ -202,24 +202,12 @@ extension AppDatabase {
                     windowContext: windowContext
                 )
 
-                let totalSquares = affectedBoard.boardSize * affectedBoard.boardSize
-                let isGreenlogNow = update.completedTasks >= totalSquares
-
-                affectedBoard.completedTasks = update.completedTasks
-                affectedBoard.totalTasks = totalSquares
-                affectedBoard.linesCompleted = update.linesCompleted
-                affectedBoard.completedLineIds = update.completedLineIds.isEmpty ? nil : update.completedLineIds
+                // Compare-before-write (sync-churn fix): a no-op derivation never bumps or re-pushes.
+                let storedBoard = affectedBoard
+                affectedBoard.applyDerivedStats(update, now: now)
+                guard affectedBoard.derivedStateDiffers(from: storedBoard) else { continue }
                 affectedBoard.updatedAt = now
                 affectedBoard.version += 1
-
-                if isGreenlogNow, affectedBoard.status == .active {
-                    affectedBoard.status = .completed
-                    affectedBoard.completedAt = now
-                } else if !isGreenlogNow, affectedBoard.status == .completed {
-                    affectedBoard.status = .active
-                    affectedBoard.completedAt = nil
-                }
-
                 try affectedBoard.save(db)
                 try SyncQueueBuilder.makeItem(
                     entityType: "boards",
@@ -456,11 +444,14 @@ extension AppDatabase {
             // Rearranging cannot change which tasks are completed, so
             // `completedTasks` is stable. The line-detection geometry changes
             // (a completed task may now be in a different row/col), so update
-            // the positional bingo fields unconditionally.
+            // the positional bingo fields — but only when they actually moved
+            // (sync-churn fix: a no-op rearrange never bumps or re-pushes).
+            let storedBoard = board
             board.linesCompleted = update.linesCompleted
             board.completedLineIds = update.completedLineIds.isEmpty
                 ? nil
                 : update.completedLineIds
+            guard board.derivedStateDiffers(from: storedBoard) else { return }
             board.updatedAt = now
             board.version += 1
 
@@ -605,24 +596,12 @@ extension AppDatabase {
                     windowContext: windowContext
                 )
 
-                let totalSquares = board.boardSize * board.boardSize
-                let isGreenlogNow = update.completedTasks >= totalSquares
-
-                board.completedTasks = update.completedTasks
-                board.totalTasks = totalSquares
-                board.linesCompleted = update.linesCompleted
-                board.completedLineIds = update.completedLineIds.isEmpty ? nil : update.completedLineIds
+                // Compare-before-write (sync-churn fix): a no-op derivation never bumps or re-pushes.
+                let storedBoard = board
+                board.applyDerivedStats(update, now: now)
+                guard board.derivedStateDiffers(from: storedBoard) else { continue }
                 board.updatedAt = now
                 board.version += 1
-
-                if isGreenlogNow, board.status == .active {
-                    board.status = .completed
-                    board.completedAt = now
-                } else if !isGreenlogNow, board.status == .completed {
-                    board.status = .active
-                    board.completedAt = nil
-                }
-
                 try board.save(db)
                 try SyncQueueBuilder.makeItem(
                     entityType: "boards",
@@ -807,24 +786,12 @@ extension AppDatabase {
                 windowContext: windowContext
             )
 
-            let totalSquares = board.boardSize * board.boardSize
-            let isGreenlogNow = update.completedTasks >= totalSquares
-
-            board.completedTasks = update.completedTasks
-            board.totalTasks = totalSquares
-            board.linesCompleted = update.linesCompleted
-            board.completedLineIds = update.completedLineIds.isEmpty ? nil : update.completedLineIds
+            // Compare-before-write (sync-churn fix): a no-op derivation never bumps or re-pushes.
+            let storedBoard = board
+            board.applyDerivedStats(update, now: now)
+            guard board.derivedStateDiffers(from: storedBoard) else { continue }
             board.updatedAt = now
             board.version += 1
-
-            if isGreenlogNow, board.status == .active {
-                board.status = .completed
-                board.completedAt = now
-            } else if !isGreenlogNow, board.status == .completed {
-                board.status = .active
-                board.completedAt = nil
-            }
-
             try board.save(db)
             try SyncQueueBuilder.makeItem(
                 entityType: "boards",

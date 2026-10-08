@@ -168,18 +168,14 @@ extension AppDatabase {
             newCompletedAt = nil
         }
 
-        let newCompletedLineIds = update.completedLineIds.isEmpty ? nil : update.completedLineIds
-        let changed = board.completedTasks != update.completedTasks
-            || board.linesCompleted != update.linesCompleted
-            || Set(board.completedLineIds ?? []) != Set(newCompletedLineIds ?? [])
-            || board.status != newStatus
-        guard changed else { return }
-
+        let storedBoard = board
         board.completedTasks = update.completedTasks
         board.linesCompleted = update.linesCompleted
-        board.completedLineIds = newCompletedLineIds
+        board.completedLineIds = update.completedLineIds.isEmpty ? nil : update.completedLineIds
         board.status = newStatus
         board.completedAt = newCompletedAt
+        // Compare-before-write via the shared predicate (sync-churn fix).
+        guard board.derivedStateDiffers(from: storedBoard) else { return }
         guard authored else { return try board.save(db) }
         board.updatedAt = now
         board.version += 1

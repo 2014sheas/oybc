@@ -1460,7 +1460,10 @@ final class BoardPlayViewModelTests: XCTestCase {
         let final = try XCTUnwrap(db.fetchBoard(id: "b1"))
         XCTAssertEqual(final.name, "Renamed via Details", "the Details name survives the squares save")
         XCTAssertEqual(final.startDate, "2026-05-01T00:00:00.000", "the Details window survives the squares save")
-        XCTAssertGreaterThan(final.version, afterDetails.version, "squares save bumps version again")
+        // Swapping one incomplete square for another leaves the derived stats
+        // unchanged, so the board row itself is not re-bumped (sync-churn fix);
+        // the committed placement below is the proof the squares save landed.
+        XCTAssertGreaterThanOrEqual(final.version, afterDetails.version, "squares save never regresses the version")
 
         let bt = try XCTUnwrap(db.fetchBoardTasks(boardId: "b1").first { $0.id == "bt1" })
         XCTAssertEqual(bt.taskId, "t2", "the staged square replacement committed")

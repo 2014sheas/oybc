@@ -370,6 +370,15 @@ extension AppDatabase {
             // instant — so a board sealed while active whose final completing
             // event lands post-seal converges to completed on every device.
             let resolvedStatus = AppDatabase.resolveSealedStatus(board: board, snapshot: snapshot, completedAtTs: sealedAt)
+            // Converged already (the common case on every pull) → no write.
+            var rederived = board
+            rederived.sealedCompletedCells = snapshot.sealedCompletedCells
+            rederived.completedTasks = snapshot.completedTasks
+            rederived.linesCompleted = snapshot.linesCompleted
+            rederived.completedLineIds = snapshot.completedLineIds
+            rederived.status = resolvedStatus.status
+            rederived.completedAt = resolvedStatus.completedAt
+            guard rederived.derivedStateDiffers(from: board) else { continue }
             let cellsJson: String? = {
                 guard let data = try? JSONEncoder().encode(snapshot.sealedCompletedCells) else { return nil }
                 return String(data: data, encoding: .utf8)
@@ -574,19 +583,14 @@ extension AppDatabase {
                     newCompletedAt = nil
                 }
 
-                // Idempotent: only write when the windowed derivation actually
-                // differs from what's stored.
-                let changed = board.completedTasks != update.completedTasks
-                    || board.linesCompleted != update.linesCompleted
-                    || Set(board.completedLineIds ?? []) != Set(newCompletedLineIds ?? [])
-                    || board.status != newStatus
-                guard changed else { continue }
-
                 updated.completedTasks = update.completedTasks
                 updated.linesCompleted = update.linesCompleted
                 updated.completedLineIds = newCompletedLineIds
                 updated.status = newStatus
                 updated.completedAt = newCompletedAt
+                // Idempotent: only write when the windowed derivation actually
+                // differs from what's stored (shared predicate).
+                guard updated.derivedStateDiffers(from: board) else { continue }
                 updated.updatedAt = now
                 updated.version += 1
 
