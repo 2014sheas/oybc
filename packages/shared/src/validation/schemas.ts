@@ -516,6 +516,12 @@ export const TaskSchema = z.object({
   // invariant documentation. Positive integer when present; forward-compat
   // (unknown-drop safe like `isCounter`).
   defaultLogAmount: positiveCount().optional(),
+  // Board-scoped task edits (docs/BOARD_SCOPED_TASK_EDITS.md §3) — set on a
+  // FORK: the per-board copy a Board Edit edit mints when the task is placed
+  // anywhere else. Informational provenance (the original's id); never
+  // cleared, not in CLEARABLE_FIELDS_BY_COLLECTION. Optional + nullable so
+  // pre-feature payloads and old clients decode unchanged.
+  forkedFromTaskId: z.string().uuid().nullable().optional(),
 }).refine(
   (data) => {
     // Compound tasks must have an operator.
