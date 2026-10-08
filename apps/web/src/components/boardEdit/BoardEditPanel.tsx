@@ -235,15 +235,6 @@ export function BoardEditPanel({
                   {saving ? 'Saving…' : 'Save changes'}
                 </RisoButton>
               </div>
-
-              {/* D18 — responsive hint: desktop explains Shuffle's mechanics,
-                  phone keeps it to the tap/hold gesture. */}
-              <p className={`${styles.hint} ${styles.hintDesktop}`}>
-                Shuffle rearranges every square except locked ones. Nothing is written until you save.
-              </p>
-              <p className={`${styles.hint} ${styles.hintPhone}`}>
-                Tap a square for options. Hold to move it.
-              </p>
             </>
           )}
         </>

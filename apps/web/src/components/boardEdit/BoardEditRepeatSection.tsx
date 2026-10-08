@@ -1,18 +1,9 @@
-import { useMemo } from 'react';
 import {
   Timeframe,
-  formatCadenceAdverb,
-  formatSpawnProvenanceNote,
-  isFreshlyDealtBoard,
-  summarizeSpawnProvenanceFromSupplies,
   type Board,
   type RecurringBoardTemplate,
-  type Pool,
-  type Task,
 } from '@oybc/shared';
 import { RisoSectionLabel, RisoSegmented, type RisoSegmentedOption } from '../riso';
-import { usePools } from '../../hooks/usePools';
-import { useSpawnNoteSupplies } from '../../hooks/useSpawnNoteSupplies';
 import styles from './BoardEditPanel.module.css';
 
 // ─── Staged repeat draft types ────────────────────────────────────────────────
@@ -109,12 +100,6 @@ export interface BoardEditRepeatSectionProps {
   /** Effective staged Active value for the repeating variant. */
   stagedActive: boolean;
   onStagedActiveChange: (active: boolean) => void;
-  /** Library tasks — feeds the spawn-provenance note's supply resolution. */
-  taskMap: Record<string, Task>;
-  /** Task ids currently dealt onto the board (grid order). */
-  dealtTaskIds: string[];
-  /** `buildCounterFamilyMap` over the library (computed by the surface). */
-  counterFamilyByTaskId: Record<string, string>;
 }
 
 /**
@@ -127,11 +112,8 @@ export interface BoardEditRepeatSectionProps {
  *    Off · Daily · Weekly · Monthly · Yearly cadence segmented. On Save
  *    with cadence ≠ Off the panel runs `repeatBoardAsRecurring` AFTER the
  *    board save commits.
- *  - Repeating board with a resolved source record: the
- *    "↻ Repeats {cadence} · from …" line + a staged Repeating/Paused
- *    toggle, plus the read-only spawn-provenance note while the board is
- *    still freshly dealt (moved here from the play surface — the supplies
- *    resolve only while the panel is open).
+ *  - Repeating board with a resolved source record: a staged
+ *    Repeating/Paused toggle.
  *
  * Presentational only — the staged values live on `BoardEditPanel`, which
  * also owns the Save-time mutations (via `buildRepeatSavePlan`).
@@ -144,25 +126,7 @@ export function BoardEditRepeatSection({
   onStagedCadenceChange,
   stagedActive,
   onStagedActiveChange,
-  taskMap,
-  dealtTaskIds,
-  counterFamilyByTaskId,
 }: BoardEditRepeatSectionProps): React.ReactElement | null {
-  // Spawn-provenance note inputs (hooks must run unconditionally). Pools
-  // are fetched here — only this note needs them (moved from the play
-  // surface, which no longer resolves spawn-note supplies at all).
-  const pools = usePools(userId);
-  const poolsById = useMemo<Record<string, Pool>>(() => {
-    const map: Record<string, Pool> = {};
-    for (const p of pools) map[p.id] = p;
-    return map;
-  }, [pools]);
-  const noteTemplate =
-    board.spawnedFromTemplateId != null && sourceTemplate && isFreshlyDealtBoard(board)
-      ? sourceTemplate
-      : undefined;
-  const spawnNoteSupplies = useSpawnNoteSupplies(noteTemplate, poolsById, taskMap);
-
   if (board.spawnedFromTemplateId != null) {
     // A soft-deleted / unresolved source record hides the section entirely
     // (same rule as the retired play-surface manage row).
@@ -170,10 +134,6 @@ export function BoardEditRepeatSection({
     return (
       <div className={styles.repeatsSection}>
         <RisoSectionLabel>Repeats</RisoSectionLabel>
-        <p className={styles.repeatRow}>
-          ↻ Repeats {formatCadenceAdverb(sourceTemplate.timeframe)} · from &quot;
-          {sourceTemplate.name}&quot;
-        </p>
         <RisoSegmented
           aria-label="Repeating status"
           options={ACTIVE_OPTIONS}
@@ -181,19 +141,6 @@ export function BoardEditRepeatSection({
           onChange={(choice) => onStagedActiveChange(choice === 'repeating')}
           variant="pill"
         />
-        {noteTemplate && spawnNoteSupplies !== null && (
-          <p className={styles.repeatNote}>
-            {formatSpawnProvenanceNote(
-              summarizeSpawnProvenanceFromSupplies(
-                spawnNoteSupplies.supplies,
-                noteTemplate.manualTaskIds ?? [],
-                counterFamilyByTaskId,
-                dealtTaskIds,
-                spawnNoteSupplies.noBoardForWindowCount,
-              ),
-            )}
-          </p>
-        )}
       </div>
     );
   }
@@ -211,11 +158,6 @@ export function BoardEditRepeatSection({
         value={stagedCadence}
         onChange={onStagedCadenceChange}
       />
-      {stagedCadence !== 'off' && (
-        <p className={styles.repeatHint}>
-          This becomes a repeating board when you save.
-        </p>
-      )}
     </div>
   );
 }

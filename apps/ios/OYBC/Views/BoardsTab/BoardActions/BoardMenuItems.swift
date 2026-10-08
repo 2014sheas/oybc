@@ -91,25 +91,6 @@ enum BoardMenuItems {
         board.status == .active && board.sealedAt == nil && !isBoardEnded(board, nowMs: now)
     }
 
-    /// Board Edit consolidation (D4) — the muted explanation line shown in
-    /// place of the SQUARES grid when `canEditSquares` is false. Copy
-    /// verbatim from the design decision; `nil` when squares ARE editable.
-    ///
-    /// - Parameters:
-    ///   - board: The board to test.
-    ///   - now: Current time (epoch ms).
-    /// - Returns: The reason line, or `nil` when squares are editable.
-    static func squaresLockedReason(board: Board, now: Double) -> String? {
-        if canEditSquares(board: board, now: now) { return nil }
-        if board.status == .archived {
-            return "This board is archived, so its squares can't change."
-        }
-        if isBoardEnded(board, nowMs: now) || isBoardClosed(board) {
-            return "This board has ended, so its squares can't change."
-        }
-        return "This board is complete, so its squares can't change."
-    }
-
     /// Board Edit consolidation (D8) — the dirty-squares-draft policy for a
     /// given BOARD-section row kind. Pure lookup, not board-instance-aware.
     ///

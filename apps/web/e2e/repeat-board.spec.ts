@@ -22,7 +22,7 @@ import {
  *    (also offered for a legacy CHOSEN-center board — Board Edit slice 3,
  *    D5, flipped from the earlier "hidden" expectation); picking a cadence
  *    writes a new spawn record, back-stamps the board, and swaps the CTA
- *    for the manage row + the spawn-provenance note.
+ *    for the manage row.
  *
  * The underlying write correctness (window-key alignment, mix
  * resolution, provenance-note counting) is exhaustively unit-tested in
@@ -126,12 +126,12 @@ test.describe('P6 — Repeat sheet (repeating board)', () => {
     });
   });
 
-  test('shows the cadence + source name; the Repeating/Paused toggle round-trips through Dexie', async ({ page }) => {
+  test('shows the Repeating/Paused toggle round-trips through Dexie', async ({ page }) => {
     await page.goto(`/boards/${REPEATING_BOARD_ID}?__oybc_test_bypass=1`);
     await expect(page.getByText('This Week')).toBeVisible();
 
     await openBoardOption(page, 'Repeat this board…');
-    await expect(page.getByText(/Repeats weekly.*Evening Wind-down/)).toBeVisible();
+    await expect(page.getByRole('group', { name: 'Repeating status' })).toBeVisible();
 
     const toggleGroup = page.getByRole('group', { name: 'Repeating status' });
     await toggleGroup.getByRole('button', { name: 'Paused' }).click();
@@ -206,7 +206,7 @@ test.describe('P6 — "Repeat this board…" menu item', () => {
     ).toBeVisible();
   });
 
-  test('appears for a one-off board; picking a cadence writes the spawn record and swaps in Repeating/Paused + provenance note', async ({ page }) => {
+  test('appears for a one-off board; picking a cadence writes the spawn record and swaps in Repeating/Paused', async ({ page }) => {
     await page.goto(`/boards/${ONE_OFF_BOARD_ID}?__oybc_test_bypass=1`);
     await expect(page.getByText('One-off Daily')).toBeVisible();
 
@@ -223,13 +223,11 @@ test.describe('P6 — "Repeat this board…" menu item', () => {
       .getByRole('button', { name: 'Save' })
       .click();
 
-    // D9 — stays in Edit; the row now opens the repeating variant +
-    // provenance note directly (no re-click of "Edit board" needed).
+    // D9 — stays in Edit; the row now opens the repeating variant
+    // directly (no re-click of "Edit board" needed).
     await expect(page.getByText('Board saved')).toBeVisible();
     await page.getByRole('group', { name: 'Board options' }).getByRole('button', { name: 'Repeat this board…', exact: true }).click();
-    await expect(page.getByText(/Repeats weekly.*One-off Daily/)).toBeVisible();
-    // Spawn-provenance note — 100% manual (no pools involved).
-    await expect(page.getByText(/Picked 2 of 2 — 2 added today/)).toBeVisible();
+    await expect(page.getByRole('group', { name: 'Repeating status' })).toBeVisible();
 
     // Back-stamp landed in Dexie.
     const board = await readBoard(page, ONE_OFF_BOARD_ID);

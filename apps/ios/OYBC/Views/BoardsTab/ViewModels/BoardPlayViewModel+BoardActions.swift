@@ -4,8 +4,7 @@ import GRDB
 // MARK: - BoardPlayViewModel + Board actions (Board Edit redesign slice 2)
 
 /// The Edit screen's BOARD-section write paths — Board details / Repeat / Archive /
-/// Delete — plus the small async read the Repeat sheet needs
-/// (`loadSpawnNote`). Split out of
+/// Delete. Split out of
 /// `BoardPlayViewModel.swift` (which is at its frozen size cap) alongside
 /// `+EditCommit.swift`'s squares-editor commit, docs/BOARD_EDIT_REDESIGN.md.
 ///
@@ -108,34 +107,6 @@ extension BoardPlayViewModel {
         let db = database
         try await _Concurrency.Task.detached(priority: .userInitiated) {
             try db.deleteBoard(id: bid)
-        }.value
-    }
-
-    /// Read-only spawn-provenance note for the Repeat sheet's
-    /// repeating-board variant, resolved off-main only while that sheet is
-    /// open (moved out of `seedEditDraft`, which no longer seeds a
-    /// metadata/repeat draft — the squares editor doesn't show this note).
-    /// Nil for a one-off board, an unresolved source record, or a board
-    /// that is no longer freshly dealt.
-    func loadSpawnNote() async -> String? {
-        guard let b = board, let template = editSourceTemplate,
-              isFreshlyDealtBoard(
-                  completedTasks: b.completedTasks,
-                  boardSize: b.boardSize,
-                  centerSquareType: b.centerSquareType
-              )
-        else { return nil }
-        let poolsById = Dictionary(uniqueKeysWithValues: allPoolsInWorkspace.map { ($0.id, $0) })
-        let tasksById = taskMap
-        let dealt = boardTasks.map { $0.taskId }
-        let db = database
-        return await _Concurrency.Task.detached(priority: .utility) {
-            db.spawnProvenanceNote(
-                template: template,
-                poolsById: poolsById,
-                tasksById: tasksById,
-                dealtTaskIds: dealt
-            )
         }.value
     }
 

@@ -135,18 +135,3 @@
   font-size: 15px;
 }
 
-/* ─── Board Edit redesign slice 3 — above-grid hint (D7) ────────────────────── */
-
-.editHint {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--riso-muted);
-  line-height: 1.45;
-  margin: 0 0 10px;
-}
-.editHint b {
-  font-family: var(--riso-font-head);
-  color: var(--riso-ink);
-  font-weight: 800;
-}
-

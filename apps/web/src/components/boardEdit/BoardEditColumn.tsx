@@ -1,18 +1,15 @@
-import { useMemo } from 'react';
-import type { Board, BoardSize, RecurringBoardTemplate, Task, WeekStartDay } from '@oybc/shared';
-import { squaresLockedReason } from '../boardActions/boardMenu';
+import type { Board, BoardSize, RecurringBoardTemplate, WeekStartDay } from '@oybc/shared';
 import { BoardOptionsSection } from '../boardActions/BoardOptionsSection';
 import { SquaresEditGrid, type KeyboardMoveDir } from './SquaresEditGrid';
 import type { EditSlot, UseSquaresEditDraftResult } from '../../hooks/useSquaresEditDraft';
 import { taskCellLabel } from '../board/cellModel';
-import pageStyles from '../../pages/BoardPlayPage.module.css';
 import styles from './BoardEditColumn.module.css';
 
 export interface BoardEditColumnProps {
   board: Board;
   /** Edit consolidation (plan D3/D4) — captured once at Edit entry
    *  (`canEditSquares`, frozen for the session). When false the squares
-   *  editor is replaced by `squaresLockedReason`'s muted line. */
+   *  editor is omitted. */
   squaresEditable: boolean;
   editDraft: UseSquaresEditDraftResult;
   gridSize: BoardSize;
@@ -29,9 +26,6 @@ export interface BoardEditColumnProps {
   sourceTemplate: RecurringBoardTemplate | null | undefined;
   templatesLoaded: boolean;
   weekStartDay: WeekStartDay;
-  taskMap: Record<string, Task>;
-  dealtTaskIds: string[];
-  counterFamilyByTaskId: Record<string, string>;
   onDetailsSaved: () => void;
   onExitEdit: () => void;
   onRemoved: () => void;
@@ -39,8 +33,7 @@ export interface BoardEditColumnProps {
 
 /**
  * BoardEditColumn — the edit-mode board column (Edit consolidation, plan
- * W2): the squares editor (or, when `!squaresEditable`, the D4 muted reason
- * line) plus the `BoardOptionsSection` BOARD card below it. Moved out of
+ * W2): the squares editor (absent when `!squaresEditable`) plus the `BoardOptionsSection` BOARD card below it. Moved out of
  * `BoardPlaySurface` so its size stays under the D11 file-size cap; the
  * `onTapSlot` routing logic (plain-empty-square → Add picker, everything
  * else → the tap menu) and the `onKeyboardMove` announcement logic move
@@ -60,31 +53,17 @@ export function BoardEditColumn({
   sourceTemplate,
   templatesLoaded,
   weekStartDay,
-  taskMap,
-  dealtTaskIds,
-  counterFamilyByTaskId,
   onDetailsSaved,
   onExitEdit,
   onRemoved,
 }: BoardEditColumnProps): React.ReactElement {
-  // Pinned per-render instant (react-hooks/purity — `Date.now()` itself is
-  // flagged as an impure call by the react-compiler lint rule; mirrors
-  // `BoardOptionsSection`'s `nowPinned`). This component only mounts for an
-  // Edit session, so the pin is effectively "at Edit entry" too.
-  const nowPinned = useMemo(() => new Date(), []);
-  const reason = squaresLockedReason(board, nowPinned.getTime());
-
   return (
     <div className={styles.wrap}>
-      {squaresEditable ? (
+      {squaresEditable && (
         <div>
           {/* D7 — the ONE squares-editor grid: tap routes to the square menu
               / add picker; press-and-hold moves a square; Shuffle and moves
               skip locked squares. */}
-          <p className={pageStyles.editHint}>
-            <b>Tap a square</b> to replace, edit, lock or remove it. Press and hold to move it.
-            Shuffle and moves skip locked squares.
-          </p>
           <SquaresEditGrid
             slots={editDraft.slots}
             gridSize={gridSize}
@@ -118,10 +97,6 @@ export function BoardEditColumn({
             }}
           />
         </div>
-      ) : (
-        // D4 — SQUARES hidden: one muted line explaining why, no grid, no
-        // save bar (the panel drops its 76pt clearance too — see BoardEditPanel).
-        <p className={pageStyles.editHint}>{reason}</p>
       )}
 
       <BoardOptionsSection
@@ -130,9 +105,6 @@ export function BoardEditColumn({
         sourceTemplate={sourceTemplate}
         templatesLoaded={templatesLoaded}
         weekStartDay={weekStartDay}
-        taskMap={taskMap}
-        dealtTaskIds={dealtTaskIds}
-        counterFamilyByTaskId={counterFamilyByTaskId}
         squaresDirty={squaresEditable && editDraft.editCount > 0}
         onDetailsSaved={onDetailsSaved}
         onExitEdit={onExitEdit}

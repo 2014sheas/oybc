@@ -85,13 +85,10 @@ struct BoardEditPanel: View {
 
     /// Whether the SQUARES section is editable — frozen by the caller at
     /// Edit entry (`BoardMenuItems.canEditSquares`). `true` preserves every
-    /// pre-consolidation behavior; `false` swaps the grid for
-    /// `squaresLockedReason`, drops the save bar, and reads "Done" instead
+    /// pre-consolidation behavior; `false` hides the grid,
+    /// drops the save bar, and reads "Done" instead
     /// of "Cancel".
     var squaresEditable: Bool = true
-    /// D4 — the muted line shown in place of the grid when
-    /// `!squaresEditable` (`BoardMenuItems.squaresLockedReason`).
-    var squaresLockedReason: String? = nil
     /// D6 — the BOARD section's rows, in display order.
     var boardItems: [BoardMenuItem] = []
     /// Called with a tapped BOARD-section row.
@@ -137,8 +134,6 @@ struct BoardEditPanel: View {
                 topBar
                 if squaresEditable {
                     squaresSection
-                } else {
-                    lockedReasonLine
                 }
                 BoardOptionsSectionView(items: boardItems, onSelect: onBoardItem)
                 if squaresEditable {
@@ -211,12 +206,6 @@ struct BoardEditPanel: View {
             Text("SQUARES")
                 .risoSectionLabel()
 
-            // D7 — one hint, verbatim per platform (i2).
-            Text("Tap a square to replace, edit, lock or remove it. Hold to move it. Shuffle skips locked squares.")
-                .font(.risoBody(12, .regular))
-                .foregroundStyle(Color.risoMuted)
-                .frame(maxWidth: .infinity, alignment: .leading)
-
             SquaresEditGrid(
                 cells: cells,
                 gridSize: board.boardSize,
@@ -230,14 +219,6 @@ struct BoardEditPanel: View {
                 windowedCount: windowedCount
             )
         }
-    }
-
-    /// D4 — replaces `squaresSection` when `!squaresEditable`.
-    private var lockedReasonLine: some View {
-        Text(squaresLockedReason ?? "")
-            .font(.risoBody(12, .regular))
-            .foregroundStyle(Color.risoMuted)
-            .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     // MARK: - Sticky save bar

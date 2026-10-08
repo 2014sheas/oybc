@@ -146,7 +146,6 @@ struct BoardActionsPresenter: ViewModifier {
                     BoardRepeatSheetView(
                         board: board,
                         sourceTemplate: sourceTemplate,
-                        spawnNoteProvider: { await viewModel.loadSpawnNote() },
                         onSave: { intent in
                             do {
                                 try await viewModel.saveRepeat(intent, weekStartDay: weekStartDay)

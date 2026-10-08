@@ -476,7 +476,6 @@ test.describe('Board options — Edit consolidation (new cases)', () => {
     await page.goto(`/boards/${CLOSED_ADHOC_ID}?__oybc_test_bypass=1`);
     await page.getByRole('button', { name: 'Edit board' }).click();
 
-    await expect(page.getByText("This board has ended, so its squares can't change.")).toBeVisible();
     await expect(page.getByRole('button', { name: 'Shuffle' })).toHaveCount(0);
     await expect(page.getByRole('button', { name: 'Save changes' })).toHaveCount(0);
     const doneBtn = page.getByRole('button', { name: 'Done editing' });
@@ -511,7 +510,6 @@ test.describe('Board options — Edit consolidation (new cases)', () => {
     await expect(editBtn).toBeVisible();
     await editBtn.click();
 
-    await expect(page.getByText("This board is archived, so its squares can't change.")).toBeVisible();
     const group = page.getByRole('group', { name: 'Board options' });
     await expect(group.getByRole('button', { name: 'Delete', exact: true })).toBeVisible();
     await expect(group.locator('button')).toHaveCount(1);

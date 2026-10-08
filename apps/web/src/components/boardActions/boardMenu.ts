@@ -175,31 +175,6 @@ export function canEditSquares(board: Board, now: number): boolean {
   return board.status === BoardStatus.ACTIVE && board.sealedAt == null && !isBoardEnded(board, now);
 }
 
-/**
- * Edit consolidation (plan D4) — the muted line replacing the SQUARES
- * section on a board whose squares can't be edited. Copy is verbatim per
- * D4; precedence is archived, then ended/closed, then completed (an
- * archived-and-ended board reads as archived, matching `buildBoardMenuItems`
- * — OQ5).
- *
- * @param board - The board to test.
- * @param now - Current time as epoch ms.
- * @returns The reason line, or `null` when `canEditSquares` is true.
- */
-export function squaresLockedReason(board: Board, now: number): string | null {
-  if (canEditSquares(board, now)) return null;
-  if (board.status === BoardStatus.ARCHIVED) {
-    return "This board is archived, so its squares can't change.";
-  }
-  if (isBoardEnded(board, now) || isBoardClosed(board)) {
-    return "This board has ended, so its squares can't change.";
-  }
-  if (board.status === BoardStatus.COMPLETED) {
-    return "This board is complete, so its squares can't change.";
-  }
-  return null;
-}
-
 /** How a BOARD-section row treats a dirty squares draft on selection
  *  (plan D8). `keep` — the sheet opens over Edit, the draft is untouched.
  *  `discardInConfirm` — the row's own confirm gets `DISCARD_SQUARES_SUFFIX`

@@ -665,11 +665,8 @@ struct BoardPlayView: View {
                     onCancelConfirmed: {
                         withAnimation(.easeInOut(duration: 0.22)) { editMode = false }
                     },
-                    // D3/D4/D6 — squares gate + locked reason + BOARD rows (live `now`).
+                    // D3/D6 — squares gate + BOARD rows (live `now`).
                     squaresEditable: editSquaresEditable,
-                    squaresLockedReason: BoardMenuItems.squaresLockedReason(
-                        board: b, now: Date().timeIntervalSince1970 * 1000
-                    ),
                     boardItems: BoardMenuItems.items(
                         board: b, sourceTemplate: viewModel.editSourceTemplate,
                         now: Date().timeIntervalSince1970 * 1000
