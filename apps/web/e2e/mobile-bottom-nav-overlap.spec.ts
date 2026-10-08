@@ -108,9 +108,12 @@ test.describe('Mobile bottom nav never covers sheets / toasts (390)', () => {
     const sheet = page.getByRole('dialog', { name: /Add square/ });
     await expect(sheet).toBeVisible();
     await expectSheetOverNav(sheet);
+    // The bottom-anchored dashed row is tappable and acts (opens the special-type panel).
+    await sheet.getByRole('button', { name: /Add a counting, compound or achievement task/ }).click();
+    await expect(sheet.getByRole('button', { name: 'Counting', exact: true })).toBeVisible();
   });
 
-  test('D4: board cell "Open in library" sheet paints over the nav and Done works', async ({ page }) => {
+  test('D4: board cell "Open in library" sheet — bottom Edit action is clickable', async ({ page }) => {
     await page.goto('/boards?__oybc_test_bypass=1');
     await seedActiveBoard(page);
     await page.goto(`/boards/${ACTIVE}?__oybc_test_bypass=1`);
@@ -119,13 +122,17 @@ test.describe('Mobile bottom nav never covers sheets / toasts (390)', () => {
     const sheet = page.getByRole('dialog').last();
     await expect(sheet).toBeVisible();
     await expectSheetOverNav(sheet);
-    const done = sheet.getByRole('button', { name: /^Done/ });
-    await done.click();
+    // The sheet's bottom action (Edit, at the sheet's foot) is tappable and acts.
+    await sheet.getByRole('button', { name: 'Edit', exact: true }).click();
+    await expect(sheet.getByRole('button', { name: 'Save changes' })).toBeVisible();
+    await sheet.getByRole('button', { name: 'Cancel' }).click();
+    await sheet.getByRole('button', { name: /^Done/ }).click();
     await expect(sheet).toHaveCount(0);
   });
 
   test('D5: wizard source sheet paints over the nav', async ({ page }) => {
     await page.goto('/boards?__oybc_test_bypass=1');
+    await seedActiveBoard(page);
     await openCreateHub(page);
     await startOneOffWizard(page);
     await page.getByLabel(/board name/i).fill('Phone wizard');
@@ -136,13 +143,35 @@ test.describe('Mobile bottom nav never covers sheets / toasts (390)', () => {
     const src = page.getByRole('dialog', { name: 'Add from a pool or board' });
     await expect(src).toBeVisible();
     await expectSheetOverNav(src);
+    // The last row is tappable and acts (selects the board source).
+    await src.getByRole('button', { name: /^.*1 square/ }).first().click();
+    await expect(src.getByText('✓')).toBeVisible();
   });
 
-  test('D6: New counter sheet bottom control stays clickable', async ({ page }) => {
-    await page.goto('/profile/counters?__oybc_test_bypass=1');
-    await page.getByRole('button', { name: /New counter/ }).first().click();
-    const sheet = page.getByRole('dialog', { name: 'New counter' });
-    await expect(sheet).toBeVisible();
-    await expectOnTop(sheet.getByRole('button').last());
+  test('D6: wizard Removed toast sits above the bottom nav and Undo works', async ({ page }) => {
+    await page.goto('/boards?__oybc_test_bypass=1');
+    await openCreateHub(page);
+    await startOneOffWizard(page);
+    await page.getByLabel(/board name/i).fill('Phone toast');
+    await page.getByRole('button', { name: '3×3', exact: true }).click();
+    await page.getByRole('group', { name: 'Timeframe' }).getByRole('button', { name: 'Daily', exact: true }).click();
+    await page.getByRole('button', { name: /^Next/ }).click();
+    await page.getByPlaceholder('e.g. Meditate 10 min').fill('Toast me');
+    await page.getByRole('button', { name: 'Add task' }).click();
+    await page.getByRole('button', { name: /Remove Toast me from board/ }).click();
+    const toast = page.getByRole('status').filter({ hasText: 'Removed "Toast me"' });
+    await expect(toast).toBeVisible();
+    const clear = await toast.evaluate((el) => {
+      const bars = [...document.querySelectorAll('div, nav')].filter((n) => {
+        const cs = getComputedStyle(n);
+        return cs.position === 'fixed' && cs.bottom === '0px' && n.querySelectorAll('button').length >= 3;
+      });
+      const navTop = Math.min(...bars.map((b) => b.getBoundingClientRect().top));
+      return { bottom: el.getBoundingClientRect().bottom, navTop, bars: bars.length };
+    });
+    expect(clear.bars).toBeGreaterThan(0);
+    expect(clear.bottom).toBeLessThanOrEqual(clear.navTop);
+    await toast.getByRole('button', { name: 'UNDO' }).click();
+    await expect(page.getByRole('button', { name: /Remove Toast me from board/ })).toBeVisible();
   });
 });
