@@ -53,11 +53,6 @@ struct UpgradeAccountSheet: View {
                 VStack(alignment: .leading, spacing: 18) {
                     header
 
-                    Text("Link a sign-in method so your boards, tasks, and streaks are backed up and available on your other devices.")
-                        .font(.risoBody(13, .regular))
-                        .foregroundStyle(Color.risoMuted)
-                        .fixedSize(horizontal: false, vertical: true)
-
                     if let errorMessage {
                         banner(errorMessage)
                     }

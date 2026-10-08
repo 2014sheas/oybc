@@ -3,8 +3,7 @@ import AuthenticationServices
 import GoogleSignIn
 
 /// AccountSecurityView — Riso-styled Profile sub-page for Firebase account
-/// identity (handoff §5c, screenshot 24). The destination of the Edit-profile
-/// sheet's "Change your email from Account security." hint.
+/// identity (handoff §5c, screenshot 24).
 ///
 /// Sections (the handoff's decorative 2FA + Active-sessions rows are omitted —
 /// Firebase has no client API to back them, and shipping fake toggles is
@@ -277,29 +276,17 @@ struct AccountSecurityContent: View {
                     if let errorMessage { banner(errorMessage, color: .risoRed) }
 
                     sectionLabel("Sign in")
-                    signInCard.padding(.horizontal, Riso.gutter).padding(.bottom, 6)
-                    caption(signInCaption)
+                    signInCard.padding(.horizontal, Riso.gutter).padding(.bottom, 18)
 
                     sectionLabel("Connected accounts")
-                    connectedCard.padding(.horizontal, Riso.gutter).padding(.bottom, 6)
-                    caption("Keep at least one way to sign in. You can't remove your only method.")
+                    connectedCard.padding(.horizontal, Riso.gutter).padding(.bottom, 18)
 
                     sectionLabel("Danger zone")
                     dangerCard
-
-                    Text("Deleting your account removes all of your data from this device and our servers. It can't be undone.")
-                        .font(.risoBody(12, .regular)).foregroundStyle(Color.risoMuted)
-                        .multilineTextAlignment(.center).frame(maxWidth: .infinity)
-                        .padding(.horizontal, Riso.gutter).padding(.bottom, 24)
+                        .padding(.bottom, 6)
                 }
             }
         }
-    }
-
-    private var signInCaption: String {
-        providerState.hasPassword
-            ? "Changing your email sends a verification link to the new address; it finishes once you tap it."
-            : "You sign in with Apple or Google. Add a password to also sign in with email."
     }
 
     // MARK: - Sign in card
@@ -438,13 +425,6 @@ struct AccountSecurityContent: View {
             .padding(.horizontal, Riso.gutter).padding(.bottom, 8)
     }
 
-    private func caption(_ text: String) -> some View {
-        Text(text)
-            .font(.risoBody(12, .regular)).foregroundStyle(Color.risoMuted)
-            .fixedSize(horizontal: false, vertical: true)
-            .padding(.horizontal, Riso.gutter).padding(.bottom, 18)
-    }
-
     private func banner(_ text: String, color: Color) -> some View {
         Text(text)
             .font(.risoBody(13, .semibold)).foregroundStyle(color)
@@ -559,10 +539,6 @@ private struct ChangeEmailSheet: View {
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
 
-                Text("We'll send a verification link to the new address. The change finishes once you tap it.")
-                    .font(.risoBody(12, .regular)).foregroundStyle(Color.risoMuted)
-                    .fixedSize(horizontal: false, vertical: true)
-
                 RisoButton(title: "Send verification", kind: .primary, fullWidth: true) {
                     onSubmit(newEmail.trimmingCharacters(in: .whitespacesAndNewlines))
                 }
@@ -591,10 +567,6 @@ private struct AddPasswordSheet: View {
     var body: some View {
         AccountSheetScaffold(title: "Add a password", onCancel: onCancel) {
             VStack(alignment: .leading, spacing: 12) {
-                Text("Add an email + password so you can sign in without Apple or Google.")
-                    .font(.risoBody(12, .regular)).foregroundStyle(Color.risoMuted)
-                    .fixedSize(horizontal: false, vertical: true)
-
                 RisoTextField(placeholder: "Email", text: $email)
                     .keyboardType(.emailAddress)
                     .textContentType(.emailAddress)

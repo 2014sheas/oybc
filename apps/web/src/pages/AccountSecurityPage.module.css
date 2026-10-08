@@ -44,13 +44,6 @@
   line-height: 0.94;
   color: var(--riso-ink);
 }
-.intro {
-  font-size: 14px;
-  font-weight: 500;
-  color: var(--riso-muted);
-  margin: 0 0 18px;
-  line-height: 1.5;
-}
 
 .sectionLabel {
   font-family: var(--riso-font-head);

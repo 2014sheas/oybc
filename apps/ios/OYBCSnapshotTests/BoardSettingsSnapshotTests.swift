@@ -212,8 +212,7 @@ final class BoardSettingsSnapshotTests: XCTestCase {
         assertSnapshot(of: fullScreen(), as: .image(layout: .fixed(width: 393, height: 960), traits: darkTraits()), record: recordMode)
     }
 
-    /// Empty-roster state — keeps today's copy ("No repeating boards yet —
-    /// turn one on from a board's \"Repeats\" setting…").
+    /// Empty-roster state — terse one-line empty state ("No repeating boards yet.").
     private func emptyRoster() -> some View {
         BoardSettingsContent(
             preferences: .defaults,

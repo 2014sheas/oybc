@@ -166,18 +166,12 @@ final class SettingsSnapshotTests: XCTestCase {
     // sign-out reference — same shape, guest copy)
 
     private var guestUpgradeCard: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("You're using OYBC as a guest. Save your account so your boards, tasks, and streaks are backed up and available on your other devices.")
-                .font(.risoBody(12, .regular))
-                .foregroundStyle(Color.risoMuted)
-                .fixedSize(horizontal: false, vertical: true)
-            Text("Save your account")
-                .font(.risoHead(17, .bold))
-                .foregroundStyle(Color.risoPaper)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 16)
-                .risoCard(fill: .risoRed)
-        }
+        Text("Save your account")
+            .font(.risoHead(17, .bold))
+            .foregroundStyle(Color.risoPaper)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 16)
+            .risoCard(fill: .risoRed)
         .padding(Riso.cardPadding)
         .risoCard()
         .risoHardShadow(Riso.Shadow.small, radius: Riso.cardRadius)

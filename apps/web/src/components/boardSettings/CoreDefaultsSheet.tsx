@@ -260,11 +260,6 @@ export function CoreDefaultsSheet({
           </div>
 
           <div className={styles.body}>
-            <p className={styles.intro}>
-              Pre-fill every new {TIMEFRAME_LABEL[timeframe].toLowerCase()} board's setup with
-              these pools and tasks. You can still add or remove tasks before saving each board.
-            </p>
-
             <RisoSectionLabel>BOARD</RisoSectionLabel>
             <div className={styles.boardSection}>
               <div className={styles.fieldGroup}>
@@ -304,7 +299,7 @@ export function CoreDefaultsSheet({
                   section while nothing is explicit; once either field is, the
                   clear link replaces it and clears BOTH back to inherit. */}
               {explicitSize === null && explicitCenter === null ? (
-                <p className={styles.inheritNote}>Using your new-board default</p>
+                <p className={styles.inheritNote}>Default</p>
               ) : (
                 <button type="button" className={styles.linkButton} onClick={clearToInherit} disabled={busy}>
                   Use new-board default

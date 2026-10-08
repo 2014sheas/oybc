@@ -41,10 +41,3 @@
   border-bottom: 1.5px solid var(--riso-hair);
 }
 
-.helper {
-  margin: 0;
-  padding: 0 0 13px;
-  font-size: 0.8rem;
-  font-weight: 500;
-  color: var(--riso-muted);
-}

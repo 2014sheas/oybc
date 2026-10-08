@@ -163,10 +163,6 @@ export function SettingsPage(): React.ReactElement {
             a guest has no linked providers to manage yet. */}
         {isAnonymous ? (
           <div className={profileStyles.saveAccountRow}>
-            <p className={profileStyles.saveAccountCopy}>
-              You’re using OYBC as a guest. Add a sign-in method to keep your boards, streaks, and
-              GREENLOG history — and sync them across every device.
-            </p>
             <RisoButton kind="primary" fullWidth onClick={() => setShowUpgradeModal(true)}>
               Save your account
             </RisoButton>
@@ -199,10 +195,6 @@ export function SettingsPage(): React.ReactElement {
           Web has no Notifications page, so this "prompt me" group lives here
           instead of iOS's Notifications sub-page. */}
       <div className={profileStyles.sectionLabel}>Board renewals</div>
-      <p className={profileStyles.subPageIntro}>
-        When on, the Boards tab prompts you to set up the next daily, weekly, monthly or yearly
-        board. Checked when you open the app; never a push.
-      </p>
       <div className={profileStyles.card}>
         {RENEWAL_TOGGLES.map(({ key, label }) => (
           <div className={profileStyles.settingsRow} key={key}>
