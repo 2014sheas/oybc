@@ -20,7 +20,6 @@ import SwiftUI
 ///      −/+Add. Logging updates the counter's `defaultLogAmount` to the amount
 ///      just used and shows the reusable `CounterLogToastView` ("Logged +N · Undo").
 ///   5. "Counting on N tasks" — active member cards.
-///   6. "Recent weeks" — STUB history card.
 ///   7. "Not counting now" — inactive members greyed.
 ///   8. Delete — quiet red text link (was a filled `RisoButton`).
 struct CounterDetailView: View {
@@ -374,7 +373,7 @@ struct CounterDetailContent: View {
 
                 // 3. Log card (chips per kind + −/+Add)
                 CounterDetailLogCard(
-                    group: group, activeMemberCount: activeMembers.count,
+                    group: group,
                     isLogging: isLogging, logError: logError,
                     initialSelectedAmount: initialSelectedAmount, initialCustomActive: initialCustomActive,
                     onLog: onLog
@@ -389,12 +388,6 @@ struct CounterDetailContent: View {
                     activeMembersSection
                         .padding(.bottom, 14)
                 }
-
-                // 6. "Recent weeks" — P4 stub
-                sectionLabel("Recent weeks")
-                recentWeeksCard
-                    .padding(.horizontal, Riso.gutter)
-                    .padding(.bottom, 14)
 
                 // 7. "Not counting now" (inactive members)
                 if !inactiveMembers.isEmpty {
@@ -644,20 +637,6 @@ struct CounterDetailContent: View {
         let base = "\(formatCountWithUnit(remaining, kind: kind, unit: unitLabel)) to go"
         guard let window = member.window else { return base }
         return "\(base) · ends \(window)"
-    }
-
-    // MARK: - Recent weeks (P4 stub)
-
-    private var recentWeeksCard: some View {
-        // P4 — build-now-feed-P4: needs closed-window history storage; UI
-        // shipped now (this card), real rows land in P4.
-        Text("Weekly history will appear here once you've logged for a few weeks.")
-            .font(.risoBody(12, .regular))
-            .foregroundStyle(Color.risoMuted)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(Riso.cardPadding)
-            .risoCard()
-            .risoHardShadow(Riso.Shadow.small, radius: Riso.cardRadius)
     }
 
     // MARK: - Inactive members section

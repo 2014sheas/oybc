@@ -22,7 +22,6 @@ export interface CounterDetailLogCardProps {
   /** Lifetime total — "−" is disabled at 0. */
   lifetime: number;
   /** Tasks currently counting this counter. */
-  activeCount: number;
   isLogging: boolean;
   /** Logs (or removes) the selected amount. */
   onLog: (direction: 'add' | 'remove', amount: number) => void;
@@ -37,7 +36,7 @@ export interface CounterDetailLogCardProps {
  * @returns The card.
  */
 export function CounterDetailLogCard(props: CounterDetailLogCardProps): React.ReactElement {
-  const { kind, unit, defaultLogAmount, lifetime, activeCount, isLogging, onLog } = props;
+  const { kind, unit, defaultLogAmount, lifetime, isLogging, onLog } = props;
   const unitStr = unit ?? '';
   const logTitle = `Log${countUnitSuffix(kind, unitStr)}`;
   const chips = hubChips(kind);
@@ -73,9 +72,6 @@ export function CounterDetailLogCard(props: CounterDetailLogCardProps): React.Re
     <div className={styles.logCard} aria-label={logTitle}>
       <div className={styles.logHeader}>
         <span className={styles.logTitle}>{logTitle}</span>
-        <span className={styles.logSub}>
-          counts toward {activeCount} active task{activeCount !== 1 ? 's' : ''}
-        </span>
       </div>
 
       <div className={styles.chipRow} role="group" aria-label="Log amount">

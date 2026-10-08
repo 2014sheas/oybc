@@ -52,7 +52,6 @@ import styles from './CounterDetailPage.module.css';
  *      −/+Add. Logging updates the counter's `defaultLogAmount` to the amount
  *      just used and shows the reusable `CounterLogToast` ("Logged +N · Undo").
  *   5. "Counting on N tasks" — active member cards.
- *   7. "Recent weeks" — STUB history card.
  *   8. "Not counting now" — inactive/draft/unplaced members (kept from P1;
  *      not in the mock's example state because its sample counter has none).
  *   9. Delete — quiet red text link (was a filled RisoButton).
@@ -326,7 +325,6 @@ export function CounterDetailPage(): React.ReactElement {
             unit={group.unit}
             defaultLogAmount={group.defaultLogAmount}
             lifetime={group.lifetime}
-            activeCount={activeTasks.length}
             isLogging={isLogging}
             onLog={(direction, amount) => void handleLog(direction, amount)}
           />
@@ -351,16 +349,6 @@ export function CounterDetailPage(): React.ReactElement {
               </div>
             </>
           )}
-
-          {/* 6. "Recent weeks" — P4 stub */}
-          <RisoSectionLabel>Recent weeks</RisoSectionLabel>
-          <div className={styles.historyCard}>
-            {/* P4 — build-now-feed-P4: needs closed-window history storage;
-                UI shipped now (this card), real rows land in P4. */}
-            <p className={styles.historyStub}>
-              Weekly history will appear here once you&apos;ve logged for a few weeks.
-            </p>
-          </div>
 
           {/* 7. "Not counting now" — inactive / draft / unplaced tasks */}
           {inactiveTasks.length > 0 && (

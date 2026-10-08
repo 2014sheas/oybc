@@ -14,7 +14,7 @@ const EMPTY: CounterDailyTotalsResult = { days: [], todayTotal: 0 };
  * Live query hook: a counter's trailing 7-day daily totals + today's total,
  * derived from its source task's raw `task_events` (R2 Counters UX refresh
  * — the Counter Detail sparkline + "Today" stat, fed for REAL; Streak /
- * Best week / Recent weeks stay stubbed pending genuine P4 rollup storage).
+ * Best week stay stubbed pending genuine P4 rollup storage).
  *
  * Reads only `kind:'increment'` events on the counter's source task —
  * linked/derived tasks are carved out and own no events, so there's nothing

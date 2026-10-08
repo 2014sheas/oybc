@@ -145,10 +145,6 @@ export function TasksPage({ userId }: TasksPageProps): React.ReactElement {
         <div>
           <div className={styles.kicker}>Reusable tasks</div>
           <h1 className={styles.title}>Task library</h1>
-          <p className={styles.sub}>
-            Every task you’ve written, ready to drop onto any board. Reuse keeps your streak history
-            intact.
-          </p>
         </div>
         <RisoButton
           kind="primary"

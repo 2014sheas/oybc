@@ -175,3 +175,43 @@ test.describe('Mobile bottom nav never covers sheets / toasts (390)', () => {
     await expect(page.getByRole('button', { name: /Remove Toast me from board/ })).toBeVisible();
   });
 });
+
+test.describe('Board grid fits the phone viewport', () => {
+  const GRID_BOARD = 'f9000000-0000-0000-0000-0000000000b1';
+  const GRID_TASK = 'f9000000-0000-0000-0000-0000000000b2';
+
+  for (const width of [390, 430]) {
+    test(`a 5×5 board has no horizontal overflow at ${width}px`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 844 });
+      await page.goto('/boards?__oybc_test_bypass=1');
+      const p = (n: number): string => String(n).padStart(2, '0');
+      const d = `${now.getFullYear()}-${p(now.getMonth() + 1)}-${p(now.getDate())}`;
+      await seedBoard(page, {
+        id: GRID_BOARD, name: 'Big board', boardSize: 5, timeframe: 'monthly', status: 'active',
+        startDate: `${d}T00:00:00.000`, endDate: `${d}T23:59:59.999`, centerSquareType: 'none',
+      });
+      await seedTask(page, { id: GRID_TASK, title: 'Morning workout routine', type: 'normal' });
+      for (let i = 0; i < 25; i++) {
+        await seedBoardTask(page, {
+          id: `f9000000-bt00-0000-0000-0000000001${p(i)}`, boardId: GRID_BOARD, taskId: GRID_TASK,
+          row: Math.floor(i / 5), col: i % 5,
+        });
+      }
+      await page.goto(`/boards/${GRID_BOARD}?__oybc_test_bypass=1`);
+      await expect(page.getByText('Morning workout routine').first()).toBeVisible();
+
+      const m = await page.evaluate(() => {
+        const cells = Array.from(document.querySelectorAll('main [role="grid"] *, main [class*="grid" i]'));
+        let maxRight = 0;
+        for (const el of cells) maxRight = Math.max(maxRight, el.getBoundingClientRect().right);
+        return {
+          scrollW: document.documentElement.scrollWidth,
+          clientW: document.documentElement.clientWidth,
+          maxRight,
+        };
+      });
+      expect(m.scrollW).toBeLessThanOrEqual(m.clientW);
+      expect(m.maxRight).toBeLessThanOrEqual(m.clientW - 16 + 1);
+    });
+  }
+});
