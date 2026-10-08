@@ -16,6 +16,16 @@
   position: relative;
   z-index: 1;
 }
+@media (max-width: 760px) {
+  /* Phone width: drop main's stacking context so every fixed sheet/dialog/toast
+     inside it (z-index 100+) competes in the shell's context and paints ABOVE
+     the fixed bottom tab bar (z-index 60). With the context, a bottom-anchored
+     sheet's lower ~68px sat under the bar. Desktop keeps z-index 1 (it still
+     sits above the grain layer; positioned + later in tree order does too). */
+  .main {
+    z-index: auto;
+  }
+}
 .canvas {
   max-width: 1180px;
   margin: 0 auto;

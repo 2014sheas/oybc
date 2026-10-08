@@ -1,4 +1,4 @@
-import { test, expect, seedBoard, seedBoardTask, seedTask } from './_fixtures/bypass';
+import { test, expect, openCreateHub, seedBoard, seedBoardTask, seedTask, startOneOffWizard } from './_fixtures/bypass';
 import type { Locator } from '@playwright/test';
 
 /**
@@ -22,6 +22,16 @@ async function expectOnTop(target: Locator): Promise<void> {
     return hit !== null && (hit === el || el.contains(hit));
   });
   expect(onTop).toBe(true);
+}
+
+/** A bottom-anchored sheet paints over the nav strip: the element at the
+ *  nav's centre is inside the sheet (not the nav's tab bar). */
+async function expectSheetOverNav(sheet: Locator): Promise<void> {
+  const over = await sheet.evaluate((el) => {
+    const hit = document.elementFromPoint(window.innerWidth / 2, window.innerHeight - 20);
+    return hit !== null && el.contains(hit);
+  });
+  expect(over).toBe(true);
 }
 
 test.describe('Mobile bottom nav never covers sheets / toasts (390)', () => {
@@ -69,5 +79,70 @@ test.describe('Mobile bottom nav never covers sheets / toasts (390)', () => {
     await expectOnTop(undo);
     await undo.click();
     await expect(page.getByText('148.6', { exact: true })).toBeVisible();
+  });
+
+  // ── Every other fixed sheet/dialog under <main> (one root cause: the shell's
+  //    <main> stacking context). Each asserts the sheet's bottom-most control is
+  //    on top of the nav and that clicking it acts.
+
+  const ACTIVE = 'f9000000-0000-0000-0000-0000000000a1';
+  const LIB_TASK = 'f9000000-0000-0000-0000-0000000000a2';
+
+  async function seedActiveBoard(page: import('@playwright/test').Page): Promise<void> {
+    const p = (n: number): string => String(n).padStart(2, '0');
+    const d = `${now.getFullYear()}-${p(now.getMonth() + 1)}-${p(now.getDate())}`;
+    await seedBoard(page, {
+      id: ACTIVE, name: 'Phone board', boardSize: 3, timeframe: 'monthly', status: 'active',
+      startDate: `${d}T00:00:00.000`, endDate: `${d}T23:59:59.999`, centerSquareType: 'free',
+    });
+    await seedTask(page, { id: LIB_TASK, title: 'Morning workout', type: 'normal' });
+    await seedBoardTask(page, { id: 'f9000000-bt00-0000-0000-0000000000a1', boardId: ACTIVE, taskId: LIB_TASK, row: 0, col: 0 });
+  }
+
+  test('D3: Board Edit square picker sheet paints over the nav', async ({ page }) => {
+    await page.goto('/boards?__oybc_test_bypass=1');
+    await seedActiveBoard(page);
+    await page.goto(`/boards/${ACTIVE}?__oybc_test_bypass=1`);
+    await page.getByRole('button', { name: 'Edit board' }).click();
+    await page.getByRole('button', { name: /^Empty square, row 3, column 2$/ }).click();
+    const sheet = page.getByRole('dialog', { name: /Add square/ });
+    await expect(sheet).toBeVisible();
+    await expectSheetOverNav(sheet);
+  });
+
+  test('D4: board cell "Open in library" sheet paints over the nav and Done works', async ({ page }) => {
+    await page.goto('/boards?__oybc_test_bypass=1');
+    await seedActiveBoard(page);
+    await page.goto(`/boards/${ACTIVE}?__oybc_test_bypass=1`);
+    await page.getByText('Morning workout').first().click({ button: 'right' });
+    await page.getByText('Open in library').click();
+    const sheet = page.getByRole('dialog').last();
+    await expect(sheet).toBeVisible();
+    await expectSheetOverNav(sheet);
+    const done = sheet.getByRole('button', { name: /^Done/ });
+    await done.click();
+    await expect(sheet).toHaveCount(0);
+  });
+
+  test('D5: wizard source sheet paints over the nav', async ({ page }) => {
+    await page.goto('/boards?__oybc_test_bypass=1');
+    await openCreateHub(page);
+    await startOneOffWizard(page);
+    await page.getByLabel(/board name/i).fill('Phone wizard');
+    await page.getByRole('button', { name: '3×3', exact: true }).click();
+    await page.getByRole('group', { name: 'Timeframe' }).getByRole('button', { name: 'Daily', exact: true }).click();
+    await page.getByRole('button', { name: /^Next/ }).click();
+    await page.getByRole('button', { name: 'Add from a pool or board' }).click();
+    const src = page.getByRole('dialog', { name: 'Add from a pool or board' });
+    await expect(src).toBeVisible();
+    await expectSheetOverNav(src);
+  });
+
+  test('D6: New counter sheet bottom control stays clickable', async ({ page }) => {
+    await page.goto('/profile/counters?__oybc_test_bypass=1');
+    await page.getByRole('button', { name: /New counter/ }).first().click();
+    const sheet = page.getByRole('dialog', { name: 'New counter' });
+    await expect(sheet).toBeVisible();
+    await expectOnTop(sheet.getByRole('button').last());
   });
 });
