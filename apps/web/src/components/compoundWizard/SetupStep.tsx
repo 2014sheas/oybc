@@ -62,11 +62,6 @@ export function SetupStep({
         <span className={styles.label}>Completion rule</span>
 
         <OperatorSelector selectedOperator={operator} onOperatorChange={onOperatorChange} />
-        {operator === OperatorType.M_OF_N && (
-          <span className={styles.operatorHint}>
-            You'll set the required count with your subtasks.
-          </span>
-        )}
       </div>
 
       <div className={styles.footer}>

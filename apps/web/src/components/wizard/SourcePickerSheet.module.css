@@ -300,13 +300,6 @@
   font-weight: 800;
   color: var(--riso-ink);
 }
-.emptySubtitle {
-  margin: 0;
-  font-family: var(--riso-font-body);
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--riso-muted);
-}
 
 .noMatches {
   padding-top: 32px;

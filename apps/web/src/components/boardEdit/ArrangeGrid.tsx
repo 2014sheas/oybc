@@ -171,7 +171,6 @@ export function ArrangeGrid({
   // ── Derived display ───────────────────────────────────────────────────────
   // Use the live-preview array when dragging, otherwise the canonical slots.
   const displayed = preview ?? slots;
-  const movingSlot = moveSrc !== null ? displayed[moveSrc] : null;
   const ghostSlot = dragCid != null ? displayed.find((s) => s.cid === dragCid) : null;
 
   // ── FLIP animation ────────────────────────────────────────────────────────
@@ -360,13 +359,6 @@ export function ArrangeGrid({
 
   return (
     <div className={styles.wrap}>
-      {/* Tap-to-swap in-progress hint */}
-      {rearrange && isPicked && movingSlot && (
-        <p className={styles.hintBar}>
-          <b>Tap a square</b> to swap with "{movingSlot.model?.label ?? ''}".
-        </p>
-      )}
-
       <div
         ref={gridRef}
         className={gridClassName}

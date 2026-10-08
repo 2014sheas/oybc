@@ -255,9 +255,6 @@ export function BuildStep({
         <div className={styles.libraryHeaderRow}>
           <div className={styles.libraryHeader}>
             <h3 className={styles.sectionHeading}>Pick from your library</h3>
-            <p className={styles.librarySubheading}>
-              Tap a task to add or remove it.
-            </p>
           </div>
           <button
             type="button"
