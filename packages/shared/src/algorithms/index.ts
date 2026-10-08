@@ -76,6 +76,10 @@ export {
 
 export type { BoardStatsUpdate, CellState, AchievementCellBadge } from './derivationPass';
 
+// Sync-churn fix — board derivation writes only when derived state changed.
+export { boardDerivedStateChanged } from './boardDerivedState';
+export type { BoardDerivedState } from './boardDerivedState';
+
 // ===== Windowed Completion — task events + windowed evaluation (PR A) =====
 export {
   isEventOwningTask,

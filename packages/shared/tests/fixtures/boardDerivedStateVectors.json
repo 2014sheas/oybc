@@ -1,0 +1,95 @@
+{
+  "_note": "Cross-platform vectors for boardDerivedState.ts <-> BoardDerivedState.swift (sync-churn fix). boardDerivedStateChanged(before, after) is true iff a board derivation write would change a DERIVED field: completedTasks / totalTasks / linesCompleted (absent = 0), completedLineIds (a set; absent = empty), status, completedAt (absent/null/'' = none), sealedCompletedCells (a set; absent/null is distinct from [] - a sealed snapshot always stores an array). Sync metadata (version, updatedAt) is never compared. When false the caller skips the write, the version bump and the sync enqueue.",
+  "cases": [
+    {
+      "name": "identical stats",
+      "before": { "completedTasks": 3, "totalTasks": 9, "linesCompleted": 1, "completedLineIds": ["row_0"], "status": "active" },
+      "after": { "completedTasks": 3, "totalTasks": 9, "linesCompleted": 1, "completedLineIds": ["row_0"], "status": "active" },
+      "expected": false
+    },
+    {
+      "name": "line ids in a different order",
+      "before": { "completedTasks": 6, "totalTasks": 9, "linesCompleted": 2, "completedLineIds": ["row_0", "col_1"], "status": "active" },
+      "after": { "completedTasks": 6, "totalTasks": 9, "linesCompleted": 2, "completedLineIds": ["col_1", "row_0"], "status": "active" },
+      "expected": false
+    },
+    {
+      "name": "absent line ids equal empty",
+      "before": { "completedTasks": 0, "totalTasks": 9, "linesCompleted": 0, "status": "draft" },
+      "after": { "completedTasks": 0, "totalTasks": 9, "linesCompleted": 0, "completedLineIds": [], "status": "draft" },
+      "expected": false
+    },
+    {
+      "name": "absent counts equal zero",
+      "before": { "status": "draft" },
+      "after": { "completedTasks": 0, "totalTasks": 0, "linesCompleted": 0, "completedLineIds": [], "status": "draft" },
+      "expected": false
+    },
+    {
+      "name": "null and empty completedAt are both none",
+      "before": { "completedTasks": 1, "totalTasks": 9, "linesCompleted": 0, "status": "active", "completedAt": null },
+      "after": { "completedTasks": 1, "totalTasks": 9, "linesCompleted": 0, "status": "active", "completedAt": "" },
+      "expected": false
+    },
+    {
+      "name": "completedTasks differs",
+      "before": { "completedTasks": 3, "totalTasks": 9, "linesCompleted": 1, "completedLineIds": ["row_0"], "status": "active" },
+      "after": { "completedTasks": 4, "totalTasks": 9, "linesCompleted": 1, "completedLineIds": ["row_0"], "status": "active" },
+      "expected": true
+    },
+    {
+      "name": "totalTasks differs",
+      "before": { "completedTasks": 3, "totalTasks": 0, "linesCompleted": 0, "status": "active" },
+      "after": { "completedTasks": 3, "totalTasks": 9, "linesCompleted": 0, "status": "active" },
+      "expected": true
+    },
+    {
+      "name": "linesCompleted differs",
+      "before": { "completedTasks": 3, "totalTasks": 9, "linesCompleted": 0, "completedLineIds": ["row_0"], "status": "active" },
+      "after": { "completedTasks": 3, "totalTasks": 9, "linesCompleted": 1, "completedLineIds": ["row_0"], "status": "active" },
+      "expected": true
+    },
+    {
+      "name": "same line count, different line",
+      "before": { "completedTasks": 3, "totalTasks": 9, "linesCompleted": 1, "completedLineIds": ["row_0"], "status": "active" },
+      "after": { "completedTasks": 3, "totalTasks": 9, "linesCompleted": 1, "completedLineIds": ["col_0"], "status": "active" },
+      "expected": true
+    },
+    {
+      "name": "a line added",
+      "before": { "completedTasks": 5, "totalTasks": 9, "linesCompleted": 1, "completedLineIds": ["row_0"], "status": "active" },
+      "after": { "completedTasks": 5, "totalTasks": 9, "linesCompleted": 1, "completedLineIds": ["row_0", "col_0"], "status": "active" },
+      "expected": true
+    },
+    {
+      "name": "greenlog status flip",
+      "before": { "completedTasks": 9, "totalTasks": 9, "linesCompleted": 8, "status": "active" },
+      "after": { "completedTasks": 9, "totalTasks": 9, "linesCompleted": 8, "status": "completed", "completedAt": "2026-10-07T12:00:00.000Z" },
+      "expected": true
+    },
+    {
+      "name": "completedAt cleared",
+      "before": { "completedTasks": 8, "totalTasks": 9, "linesCompleted": 6, "status": "active", "completedAt": "2026-10-07T12:00:00.000Z" },
+      "after": { "completedTasks": 8, "totalTasks": 9, "linesCompleted": 6, "status": "active" },
+      "expected": true
+    },
+    {
+      "name": "sealed cells identical in a different order",
+      "before": { "completedTasks": 2, "totalTasks": 9, "linesCompleted": 0, "status": "active", "sealedCompletedCells": [4, 0] },
+      "after": { "completedTasks": 2, "totalTasks": 9, "linesCompleted": 0, "status": "active", "sealedCompletedCells": [0, 4] },
+      "expected": false
+    },
+    {
+      "name": "sealed cells differ",
+      "before": { "completedTasks": 2, "totalTasks": 9, "linesCompleted": 0, "status": "active", "sealedCompletedCells": [0, 4] },
+      "after": { "completedTasks": 2, "totalTasks": 9, "linesCompleted": 0, "status": "active", "sealedCompletedCells": [0, 5] },
+      "expected": true
+    },
+    {
+      "name": "sealed cells absent vs empty",
+      "before": { "completedTasks": 0, "totalTasks": 9, "linesCompleted": 0, "status": "active" },
+      "after": { "completedTasks": 0, "totalTasks": 9, "linesCompleted": 0, "status": "active", "sealedCompletedCells": [] },
+      "expected": true
+    }
+  ]
+}
