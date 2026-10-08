@@ -127,9 +127,6 @@ struct BoardDetailsSheetView: View {
             .padding(.horizontal, 14)
             .padding(.vertical, 12)
             .risoCard(fill: .risoPaper2)
-            Text("Board size cannot be changed on an active board.")
-                .font(.risoBody(11, .semibold))
-                .foregroundStyle(Color.risoMuted)
         }
     }
 

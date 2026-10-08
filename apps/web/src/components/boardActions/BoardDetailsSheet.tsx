@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Timeframe, type Board, type WeekStartDay } from '@oybc/shared';
+import { type Board, type WeekStartDay } from '@oybc/shared';
 import { BoardSetupForm } from '../wizard/BoardSetupForm';
 import { RisoButton } from '../riso';
 import { useModalA11y } from '../../hooks/useModalA11y';
@@ -162,12 +162,6 @@ export function BoardDetailsSheet({
                 board.endDate ? { startDate: board.startDate, endDate: board.endDate } : undefined
               }
             />
-
-            {(draft.timeframe === Timeframe.CUSTOM || draft.timeframe === Timeframe.INDEFINITE) && (
-              <p className={styles.hint}>
-                End date offers “None — no end date” for an ongoing board.
-              </p>
-            )}
 
             <div className={styles.footer}>
               <RisoButton kind="neutral" onClick={requestClose} disabled={saving}>

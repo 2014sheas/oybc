@@ -8,7 +8,7 @@ import SwiftUI
 ///
 /// Two variants, matching the old panel section exactly:
 ///   - `sourceTemplate != nil` (a REPEATING board with a resolved source
-///     record): the cadence-adverb note + Repeating/Paused toggle.
+///     record): the Repeating/Paused toggle.
 ///   - `sourceTemplate == nil` (a one-off board): the Off/Daily/Weekly/
 ///     Monthly/Yearly cadence picker. `BoardMenuItems.isRepeatEligible`
 ///     already hid the menu item for a CHOSEN-center one-off or an
@@ -19,10 +19,6 @@ struct BoardRepeatSheetView: View {
     /// The board's resolved source repeating record, or nil for a one-off
     /// board. See `BoardPlayViewModel.editSourceTemplate`.
     let sourceTemplate: RecurringBoardTemplate?
-    /// Read-only spawn-provenance note for the repeating-board variant,
-    /// resolved off-main only while this sheet is open
-    /// (`BoardPlayViewModel.loadSpawnNote()`). Nil hides the line.
-    var spawnNoteProvider: () async -> String? = { nil }
     /// Commits the staged intent. Throws `BoardEditError.boardNotEditable`
     /// for a board sealed/deleted since the sheet opened.
     let onSave: (BoardPlayViewModel.EditRepeatIntent) async throws -> Void
@@ -30,14 +26,12 @@ struct BoardRepeatSheetView: View {
 
     @State private var repeatActive: Bool
     @State private var repeatCadence: Timeframe?
-    @State private var spawnNoteText: String?
     @State private var isSaving = false
     @State private var errorMessage: String?
 
     init(
         board: Board,
         sourceTemplate: RecurringBoardTemplate?,
-        spawnNoteProvider: @escaping () async -> String? = { nil },
         onSave: @escaping (BoardPlayViewModel.EditRepeatIntent) async throws -> Void,
         onDismiss: @escaping () -> Void,
         // Snapshot-test-only seeds for a STAGED (not clean) initial render —
@@ -48,7 +42,6 @@ struct BoardRepeatSheetView: View {
     ) {
         self.board = board
         self.sourceTemplate = sourceTemplate
-        self.spawnNoteProvider = spawnNoteProvider
         self.onSave = onSave
         self.onDismiss = onDismiss
         _repeatActive = State(initialValue: initialRepeatActive ?? sourceTemplate?.isActive ?? true)
@@ -106,39 +99,20 @@ struct BoardRepeatSheetView: View {
                 }
             }
         }
-        .task {
-            spawnNoteText = await spawnNoteProvider()
-        }
     }
 
     @ViewBuilder
     private var content: some View {
         if let template = sourceTemplate {
-            Text("↻ Repeats \(formatCadenceAdverb(template.timeframe)) · from \"\(template.name)\"")
-                .font(.risoBody(12.5, .semibold))
-                .foregroundStyle(Color.risoInk)
-                .fixedSize(horizontal: false, vertical: true)
             RisoSegmented(
                 options: [(true, "Repeating"), (false, "Paused")],
                 selection: $repeatActive
             )
-            if let spawnNoteText {
-                Text(spawnNoteText)
-                    .font(.risoBody(11.5, .semibold))
-                    .foregroundStyle(Color.risoMuted)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
         } else {
             RisoSegmented(
                 options: Self.repeatCadenceOptions,
                 selection: $repeatCadence
             )
-            if repeatCadence != nil {
-                Text("This becomes a repeating board when you save.")
-                    .font(.risoBody(12, .regular))
-                    .foregroundStyle(Color.risoMuted)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
         }
     }
 

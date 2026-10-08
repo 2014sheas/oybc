@@ -168,7 +168,7 @@ final class BoardEditOptionsSnapshotTests: XCTestCase {
         )
     }
 
-    /// The squares-hidden variant (D4) — no grid, the locked-reason line,
+    /// The squares-hidden variant (D4) — no grid,
     /// then the BOARD section computed live from `BoardMenuItems`.
     private func lockedPanel(board: Board, now: Double) -> some View {
         BoardEditPanel(
@@ -181,7 +181,6 @@ final class BoardEditOptionsSnapshotTests: XCTestCase {
             onSave: {},
             onCancelConfirmed: {},
             squaresEditable: false,
-            squaresLockedReason: BoardMenuItems.squaresLockedReason(board: board, now: now),
             boardItems: BoardMenuItems.items(board: board, sourceTemplate: nil, now: now),
             onBoardItem: { _ in }
         )

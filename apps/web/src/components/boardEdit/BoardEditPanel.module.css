@@ -119,19 +119,6 @@
   flex: 1;
 }
 
-.hint {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--riso-muted);
-  line-height: 1.45;
-  margin: 0;
-}
-.hint b {
-  font-family: var(--riso-font-head);
-  color: var(--riso-ink);
-  font-weight: 800;
-}
-
 /* ---- Save row (edit counter + Shuffle + Save button, D18) ---- */
 .saveRow {
   display: flex;
@@ -140,20 +127,6 @@
   flex-wrap: wrap;
 }
 
-/* D18 — responsive save-bar hint: desktop explains Shuffle's mechanics,
-   phone keeps the tap/hold gesture line. Breakpoint matches AppTopNav's
-   760px mobile collapse (RISO_WEB.md). */
-.hintPhone {
-  display: none;
-}
-@media (max-width: 760px) {
-  .hintDesktop {
-    display: none;
-  }
-  .hintPhone {
-    display: block;
-  }
-}
 .editCounter {
   flex: 0 0 auto;
   text-align: center;
@@ -213,31 +186,4 @@
   display: flex;
   flex-direction: column;
   gap: 10px;
-}
-
-/* "↻ Repeats {cadence} · from …" line for a repeating board. */
-.repeatRow {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--riso-ink);
-  line-height: 1.45;
-  margin: 0;
-}
-
-/* Spawn-success provenance note — quiet, informational, not a call to
-   action (moved from the play rail). */
-.repeatNote {
-  font-size: 0.78rem;
-  font-weight: 600;
-  color: var(--riso-muted);
-  margin: 0;
-}
-
-/* One-off variant: what picking a cadence does on Save. */
-.repeatHint {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--riso-muted);
-  line-height: 1.45;
-  margin: 0;
 }

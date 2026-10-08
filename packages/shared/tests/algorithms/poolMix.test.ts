@@ -2,14 +2,7 @@ import {
   resolveMix,
   clampMintedPoolName,
   resolvePoolPullAdditions,
-  summarizeSpawnProvenanceFromSupplies,
-  formatSpawnProvenanceNote,
 } from '../../src/algorithms/poolMix';
-import {
-  NO_BOARD_FOR_WINDOW_NOTE,
-  type BoardSourceSupply,
-} from '../../src/algorithms/boardSources';
-import type { BoardSource } from '../../src/types/boardSource';
 import { TaskType } from '../../src/constants/enums';
 import type { Task } from '../../src/types/task';
 import type { Pool } from '../../src/types/pool';
@@ -382,111 +375,5 @@ describe('clampMintedPoolName', () => {
     expect(clamped.length).toBeLessThanOrEqual(120);
     // No lone surrogate: round-trips through UTF-16 unchanged.
     expect([...clamped].every((cp) => cp.codePointAt(0)! <= 0x10ffff)).toBe(true);
-  });
-});
-
-// ─── summarizeSpawnProvenanceFromSupplies + formatSpawnProvenanceNote (P6) ────
-//
-// docs/POOLS_RECURRING.md §Surfaces item 7 — the board-screen spawn-success
-// provenance note, e.g. "Picked 8 of 10 — 7 from the pool, 1 added today".
-// Locked decision C: generic "pulled in" wording (not the doc's
-// "defaults"-specific example text), since this note also covers a
-// "repeat this board" spawn with zero pool involvement. Same vectors the
-// retired pool-trio overload used, now fed as resolved source supplies.
-
-function poolSupply(sourceId: string, supplyTaskIds: string[]): BoardSourceSupply {
-  const source: BoardSource = {
-    sourceId,
-    kind: 'pool',
-    min: 0,
-    max: null,
-    excludedTaskIds: [],
-    filter: 'all',
-  };
-  return { source, supplyTaskIds };
-}
-
-describe('summarizeSpawnProvenanceFromSupplies + formatSpawnProvenanceNote', () => {
-  it('pure-pool spawn: manualSourcedCount is 0, note reads "N pulled in" only', () => {
-    const supply = poolSupply('pool-a', ['t1', 't2', 't3', 't4', 't5', 't6', 't7', 't8', 't9', 't10']);
-    // Board only fit 8 of the 10-task mix (loose-fit overfill).
-    const dealtTaskIds = ['t1', 't2', 't3', 't4', 't5', 't6', 't7', 't8'];
-
-    const summary = summarizeSpawnProvenanceFromSupplies([supply], [], {}, dealtTaskIds);
-    expect(summary).toEqual({
-      dealt: 8,
-      mixSize: 10,
-      poolSourcedCount: 8,
-      manualSourcedCount: 0,
-    });
-    expect(formatSpawnProvenanceNote(summary)).toBe('Picked 8 of 10 — 8 pulled in');
-  });
-
-  it('pure-manual spawn (e.g. "repeat this board", zero pools): poolSourcedCount is 0, note reads "N added today" only', () => {
-    const manual = ['m1', 'm2', 'm3', 'm4', 'm5'];
-
-    const summary = summarizeSpawnProvenanceFromSupplies([], manual, {}, manual);
-    expect(summary).toEqual({
-      dealt: 5,
-      mixSize: 5,
-      poolSourcedCount: 0,
-      manualSourcedCount: 5,
-    });
-    expect(formatSpawnProvenanceNote(summary)).toBe('Picked 5 of 5 — 5 added today');
-  });
-
-  it("mixed spawn: pool + manual both present, counts match the doc's numeric structure", () => {
-    const poolTaskIds = ['p1', 'p2', 'p3', 'p4', 'p5', 'p6', 'p7'];
-    // Mix size = 7 pool + 1 manual = 8; board dealt all 8 (exact fit).
-    const dealtTaskIds = [...poolTaskIds, 'm1'];
-
-    const summary = summarizeSpawnProvenanceFromSupplies(
-      [poolSupply('pool-a', poolTaskIds)],
-      ['m1'],
-      {},
-      dealtTaskIds,
-    );
-    expect(summary).toEqual({
-      dealt: 8,
-      mixSize: 8,
-      poolSourcedCount: 7,
-      manualSourcedCount: 1,
-    });
-    expect(formatSpawnProvenanceNote(summary)).toBe('Picked 8 of 8 — 7 pulled in, 1 added today');
-  });
-
-  it('zero-dealt edge case: note reads "Picked 0 of N" with no breakdown clause', () => {
-    const summary = summarizeSpawnProvenanceFromSupplies([], [], {}, []);
-    expect(summary).toEqual({ dealt: 0, mixSize: 0, poolSourcedCount: 0, manualSourcedCount: 0 });
-    expect(formatSpawnProvenanceNote(summary)).toBe('Picked 0 of 0');
-  });
-
-  // Owner ruling 2026-09-24 — a board source with no board for the spawned
-  // window (a series whose instance doesn't exist yet, an ended one-off)
-  // deals nothing; the provenance note says so.
-  it('a board source with no board for this window appends the note', () => {
-    const summary = summarizeSpawnProvenanceFromSupplies(
-      [poolSupply('pool-a', ['p1', 'p2'])],
-      ['m1'],
-      {},
-      ['p1', 'p2', 'm1'],
-      1,
-    );
-    expect(summary).toEqual({
-      dealt: 3,
-      mixSize: 3,
-      poolSourcedCount: 2,
-      manualSourcedCount: 1,
-      noBoardForWindowCount: 1,
-    });
-    expect(formatSpawnProvenanceNote(summary)).toBe(
-      `Picked 3 of 3 — 2 pulled in, 1 added today · ${NO_BOARD_FOR_WINDOW_NOTE}`,
-    );
-  });
-
-  it('a zero windowless count leaves the summary and the note unchanged', () => {
-    const summary = summarizeSpawnProvenanceFromSupplies([], ['m1'], {}, ['m1'], 0);
-    expect(summary).toEqual({ dealt: 1, mixSize: 1, poolSourcedCount: 0, manualSourcedCount: 1 });
-    expect(formatSpawnProvenanceNote(summary)).toBe('Picked 1 of 1 — 1 added today');
   });
 });

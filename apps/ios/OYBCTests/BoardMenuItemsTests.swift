@@ -153,7 +153,7 @@ final class BoardMenuItemsTests: XCTestCase {
         XCTAssertFalse(BoardMenuItem.archive.isDestructive)
     }
 
-    // MARK: - Edit consolidation (I1) — canEditSquares / squaresLockedReason /
+    // MARK: - Edit consolidation (I1) — canEditSquares /
     // showsEditButton / draftPolicy. Case table mirrored line-for-line with
     // web `boardMenu.test.ts`.
 
@@ -193,49 +193,6 @@ final class BoardMenuItemsTests: XCTestCase {
 
     func test_canEditSquares_draft_false() {
         XCTAssertFalse(BoardMenuItems.canEditSquares(board: makeBoard(status: .draft), now: liveNowMs))
-    }
-
-    func test_squaresLockedReason_editable_nil() {
-        XCTAssertNil(BoardMenuItems.squaresLockedReason(board: makeBoard(), now: liveNowMs))
-    }
-
-    func test_squaresLockedReason_endedUnsealed() {
-        let board = makeBoard(endDate: "2020-01-31T23:59:59.999")
-        XCTAssertEqual(
-            BoardMenuItems.squaresLockedReason(board: board, now: endedNowMs),
-            "This board has ended, so its squares can't change."
-        )
-    }
-
-    func test_squaresLockedReason_closed() {
-        let board = makeBoard(sealedAt: "2026-10-01T06:00:00.000Z")
-        XCTAssertEqual(
-            BoardMenuItems.squaresLockedReason(board: board, now: liveNowMs),
-            "This board has ended, so its squares can't change."
-        )
-    }
-
-    func test_squaresLockedReason_archived() {
-        XCTAssertEqual(
-            BoardMenuItems.squaresLockedReason(board: makeBoard(status: .archived), now: liveNowMs),
-            "This board is archived, so its squares can't change."
-        )
-    }
-
-    /// Archived wins over ended/closed copy even when both are true.
-    func test_squaresLockedReason_archivedSealed_isArchivedCopy() {
-        let board = makeBoard(status: .archived, sealedAt: "2026-10-01T06:00:00.000Z")
-        XCTAssertEqual(
-            BoardMenuItems.squaresLockedReason(board: board, now: liveNowMs),
-            "This board is archived, so its squares can't change."
-        )
-    }
-
-    func test_squaresLockedReason_completedUnsealed() {
-        XCTAssertEqual(
-            BoardMenuItems.squaresLockedReason(board: makeBoard(status: .completed), now: liveNowMs),
-            "This board is complete, so its squares can't change."
-        )
     }
 
     func test_showsEditButton_falseOnlyForDraft() {

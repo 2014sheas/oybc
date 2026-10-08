@@ -147,7 +147,6 @@ final class BoardActionsSnapshotTests: XCTestCase {
             of: BoardRepeatSheetView(
                 board: board,
                 sourceTemplate: template,
-                spawnNoteProvider: { "Picked 8 of 12 — 6 pulled in, 2 added today" },
                 onSave: { _ in },
                 onDismiss: {},
                 initialRepeatActive: false

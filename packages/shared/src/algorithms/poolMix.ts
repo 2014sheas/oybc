@@ -32,12 +32,7 @@
 
 import type { Pool } from '../types/pool';
 import type { Task } from '../types/task';
-import {
-  computeAchievablePoolSize,
-  isSourceSupplyTask,
-  NO_BOARD_FOR_WINDOW_NOTE,
-  type BoardSourceSupply,
-} from './boardSources';
+import { isSourceSupplyTask } from './boardSources';
 
 /**
  * The subset of a spawn record's fields `resolveMix` needs. Matches
@@ -181,102 +176,6 @@ export function resolveMix(
   }
 
   return { taskIds, suppliedByPool };
-}
-
-/**
- * Result of `summarizeSpawnProvenanceFromSupplies` — the raw counts behind the
- * spawn-success provenance note (docs/POOLS_RECURRING.md §Surfaces item 7,
- * e.g. "Picked 8 of 10 — 7 from the pool, 1 added today").
- */
-export interface SpawnProvenanceSummary {
-  /** Cells actually filled on the spawned board. */
-  dealt: number;
-  /** Size of the pool the spawn drew from (`computeAchievablePoolSize(...).size`). */
-  mixSize: number;
-  /** Of the dealt cells, how many came from a pool (mix minus manual-sourced). */
-  poolSourcedCount: number;
-  /** Of the dealt cells, how many came from the manual layer. */
-  manualSourcedCount: number;
-  /**
-   * Board-kind sources that resolved to NO board for the spawned window
-   * (owner ruling 2026-09-24 — a series with no instance for the window, or
-   * an ended/sealed one-off) and so dealt nothing. Present only when > 0.
-   */
-  noBoardForWindowCount?: number;
-}
-
-/**
- * Sources-native spawn-provenance summary (loose-ends sweep 2026-09-09) —
- * handles records that carry board-kind sources or ranges: `mixSize` is the
- * honest achievable pool size (`computeAchievablePoolSize` — caps, cap
- * overlap, counter-family rule), and the pulled/manual split classifies
- * each dealt square by the manual layer. (The legacy pool-trio overload was
- * deleted in the 2026-09 audit — it had no production caller.)
- *
- * @param supplies - The record's resolved source supplies (the SAME
- *   platform resolution the spawn used — pool + board kinds).
- * @param manualTaskIds - The record's hand-added layer.
- * @param counterFamilyByTaskId - `buildCounterFamilyMap` over the task
- *   universe (so `mixSize` counts a shared-counter family once).
- * @param dealtTaskIds - Task ids actually placed on the spawned board.
- * @param noBoardForWindowCount - How many board-kind sources resolved to no
- *   board for the spawned board's window (they supplied nothing). Defaults
- *   to 0, which leaves the summary shape unchanged.
- * @returns The provenance counts behind {@link formatSpawnProvenanceNote}.
- */
-export function summarizeSpawnProvenanceFromSupplies(
-  supplies: BoardSourceSupply[],
-  manualTaskIds: string[],
-  counterFamilyByTaskId: Record<string, string>,
-  dealtTaskIds: string[],
-  noBoardForWindowCount = 0,
-): SpawnProvenanceSummary {
-  const manualSet = new Set(manualTaskIds);
-  const manualSourcedCount = dealtTaskIds.filter((id) => manualSet.has(id)).length;
-  const summary: SpawnProvenanceSummary = {
-    dealt: dealtTaskIds.length,
-    mixSize: computeAchievablePoolSize({
-      supplies,
-      manualTaskIds,
-      counterFamilyByTaskId,
-    }).size,
-    poolSourcedCount: dealtTaskIds.length - manualSourcedCount,
-    manualSourcedCount,
-  };
-  if (noBoardForWindowCount > 0) summary.noBoardForWindowCount = noBoardForWindowCount;
-  return summary;
-}
-
-/**
- * Formats the spawn-success provenance note copy, e.g.
- * `"Picked 8 of 10 — 7 from the pool, 1 added today"`.
- *
- * Deliberate deviation from docs/POOLS_RECURRING.md's illustrative example
- * ("9 from defaults") — that wording is specific to the P5 CoreBoardDefault
- * feature. This note is generic to ANY freshly-spawned board, including a
- * "repeat this board" spawn that has no pool involvement at all (100%
- * manual) — "from defaults" would be nonsensical there, so this uses the
- * generic "from the pool" wording instead. "added today" is kept verbatim
- * (that phrasing is accurate generically).
- *
- * When any board source had no board for the spawned window
- * (`noBoardForWindowCount > 0`), the note ends with
- * `" · No board for this window yet"` ({@link NO_BOARD_FOR_WINDOW_NOTE}).
- * Swift twin: `PoolMix.formatSpawnProvenanceNote`.
- *
- * @param summary - From `summarizeSpawnProvenanceFromSupplies`.
- * @returns The note copy.
- */
-export function formatSpawnProvenanceNote(summary: SpawnProvenanceSummary): string {
-  const parts: string[] = [];
-  // "pulled in" (not "from the pool") — squares can come from pulled
-  // BOARDS too since Board Sources; the wizard's own verb is "pull".
-  if (summary.poolSourcedCount > 0) parts.push(`${summary.poolSourcedCount} pulled in`);
-  if (summary.manualSourcedCount > 0) parts.push(`${summary.manualSourcedCount} added today`);
-  const breakdown = parts.length > 0 ? ` — ${parts.join(', ')}` : '';
-  const windowless =
-    (summary.noBoardForWindowCount ?? 0) > 0 ? ` · ${NO_BOARD_FOR_WINDOW_NOTE}` : '';
-  return `Picked ${summary.dealt} of ${summary.mixSize}${breakdown}${windowless}`;
 }
 
 /**

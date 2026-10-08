@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import type { Board, RecurringBoardTemplate, Task, WeekStartDay } from '@oybc/shared';
+import type { Board, RecurringBoardTemplate, WeekStartDay } from '@oybc/shared';
 import { RisoButton } from '../riso';
 import { useModalA11y } from '../../hooks/useModalA11y';
 import { fetchBoard, BoardNotEditableError } from '../../db/operations/boards';
@@ -18,9 +18,6 @@ export interface BoardRepeatSheetProps {
   sourceTemplate: RecurringBoardTemplate | null | undefined;
   userId: string | undefined;
   weekStartDay: WeekStartDay;
-  taskMap: Record<string, Task>;
-  dealtTaskIds: string[];
-  counterFamilyByTaskId: Record<string, string>;
   onClose: () => void;
   /** D11 — the save found the board sealed / deleted; the caller closes the
    *  sheet and shows the "Board closed" notice. */
@@ -40,9 +37,6 @@ export function BoardRepeatSheet({
   sourceTemplate,
   userId,
   weekStartDay,
-  taskMap,
-  dealtTaskIds,
-  counterFamilyByTaskId,
   onClose,
   onBoardClosed,
   onSaved,
@@ -117,9 +111,6 @@ export function BoardRepeatSheet({
           onStagedCadenceChange={setRepeatCadence}
           stagedActive={repeatActiveDraft ?? sourceTemplate?.isActive ?? true}
           onStagedActiveChange={setRepeatActiveDraft}
-          taskMap={taskMap}
-          dealtTaskIds={dealtTaskIds}
-          counterFamilyByTaskId={counterFamilyByTaskId}
         />
 
         <div className={styles.footer}>

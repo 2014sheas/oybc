@@ -300,15 +300,6 @@ final class SourceBoardOpenNowTests: XCTestCase {
         XCTAssertEqual(dealt.count, capacity)
         for id in f.series { XCTAssertFalse(dealt.contains(id), id) }
         XCTAssertEqual(windowless, ["wk-last"])
-
-        // The spawn note records the windowless source.
-        let note = db.spawnProvenanceNote(
-            template: t,
-            poolsById: ["pool-1": try XCTUnwrap(db.fetchPools(ids: ["pool-1"]).first)],
-            tasksById: Dictionary(uniqueKeysWithValues: try db.fetchTasks(ids: f.pool).map { ($0.id, $0) }),
-            dealtTaskIds: dealt
-        )
-        XCTAssertTrue(note.hasSuffix(" · No board for this window yet"), note)
     }
 
     /// The amended ruling's headline case: a MONTHLY repeating board pulling

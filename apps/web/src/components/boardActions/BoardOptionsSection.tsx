@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Timeframe, type Board, type RecurringBoardTemplate, type Task, type WeekStartDay } from '@oybc/shared';
+import { Timeframe, type Board, type RecurringBoardTemplate, type WeekStartDay } from '@oybc/shared';
 import { RisoCard, RisoIcon, RisoSectionLabel } from '../riso';
 import { archiveBoard, deleteBoard } from '../../db/operations/boards';
 import { closeBoard, reopenBoard } from '../../db/operations/boardLifecycle';
@@ -39,9 +39,6 @@ export interface BoardOptionsSectionProps {
   sourceTemplate: RecurringBoardTemplate | null | undefined;
   templatesLoaded: boolean;
   weekStartDay: WeekStartDay;
-  taskMap: Record<string, Task>;
-  dealtTaskIds: string[];
-  counterFamilyByTaskId: Record<string, string>;
   /** Whether the squares-editor draft has unsaved edits (plan D8) — drives
    *  the discard suffix/confirm on Archive/Delete/Close/Reopen. */
   squaresDirty: boolean;
@@ -62,7 +59,7 @@ export interface BoardOptionsSectionProps {
  * the title-row "…" `BoardActionsMenu` trigger entirely — this is now the
  * ONLY entry point to Board details / Repeat / Core defaults / Close /
  * Reopen / Archive / Delete. Rendered by `BoardEditColumn`, below the
- * squares editor (or its `squaresLockedReason` line).
+ * squares editor.
  */
 export function BoardOptionsSection({
   board,
@@ -70,9 +67,6 @@ export function BoardOptionsSection({
   sourceTemplate,
   templatesLoaded,
   weekStartDay,
-  taskMap,
-  dealtTaskIds,
-  counterFamilyByTaskId,
   squaresDirty,
   onDetailsSaved,
   onExitEdit,
@@ -265,9 +259,6 @@ export function BoardOptionsSection({
                 sourceTemplate={sourceTemplate}
                 userId={userId}
                 weekStartDay={weekStartDay}
-                taskMap={taskMap}
-                dealtTaskIds={dealtTaskIds}
-                counterFamilyByTaskId={counterFamilyByTaskId}
                 onClose={() => setAction(null)}
                 onBoardClosed={handleBoardClosed}
                 onSaved={() => {

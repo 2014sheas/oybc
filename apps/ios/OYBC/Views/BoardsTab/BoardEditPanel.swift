@@ -18,8 +18,7 @@ import SwiftUI
 ///
 /// Edit consolidation (D3/D4/D6): `squaresEditable` (frozen by the caller at
 /// Edit entry) gates the SQUARES section — when true it's the grid exactly
-/// as before; when false the grid is replaced by one muted
-/// `squaresLockedReason` line, the top-left control reads "Done" instead of
+/// as before; when false the grid is omitted, the top-left control reads "Done" instead of
 /// "Cancel", and the save bar doesn't render (nothing can be dirty). Either
 /// way, a `BoardOptionsSectionView` (D6's BOARD section) renders below.
 ///
@@ -85,13 +84,10 @@ struct BoardEditPanel: View {
 
     /// Whether the SQUARES section is editable — frozen by the caller at
     /// Edit entry (`BoardMenuItems.canEditSquares`). `true` preserves every
-    /// pre-consolidation behavior; `false` swaps the grid for
-    /// `squaresLockedReason`, drops the save bar, and reads "Done" instead
+    /// pre-consolidation behavior; `false` hides the grid,
+    /// drops the save bar, and reads "Done" instead
     /// of "Cancel".
     var squaresEditable: Bool = true
-    /// D4 — the muted line shown in place of the grid when
-    /// `!squaresEditable` (`BoardMenuItems.squaresLockedReason`).
-    var squaresLockedReason: String? = nil
     /// D6 — the BOARD section's rows, in display order.
     var boardItems: [BoardMenuItem] = []
     /// Called with a tapped BOARD-section row.
@@ -137,8 +133,6 @@ struct BoardEditPanel: View {
                 topBar
                 if squaresEditable {
                     squaresSection
-                } else {
-                    lockedReasonLine
                 }
                 BoardOptionsSectionView(items: boardItems, onSelect: onBoardItem)
                 if squaresEditable {
@@ -211,12 +205,6 @@ struct BoardEditPanel: View {
             Text("SQUARES")
                 .risoSectionLabel()
 
-            // D7 — one hint, verbatim per platform (i2).
-            Text("Tap a square to replace, edit, lock or remove it. Hold to move it. Shuffle skips locked squares.")
-                .font(.risoBody(12, .regular))
-                .foregroundStyle(Color.risoMuted)
-                .frame(maxWidth: .infinity, alignment: .leading)
-
             SquaresEditGrid(
                 cells: cells,
                 gridSize: board.boardSize,
@@ -230,14 +218,7 @@ struct BoardEditPanel: View {
                 windowedCount: windowedCount
             )
         }
-    }
-
-    /// D4 — replaces `squaresSection` when `!squaresEditable`.
-    private var lockedReasonLine: some View {
-        Text(squaresLockedReason ?? "")
-            .font(.risoBody(12, .regular))
-            .foregroundStyle(Color.risoMuted)
-            .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     // MARK: - Sticky save bar

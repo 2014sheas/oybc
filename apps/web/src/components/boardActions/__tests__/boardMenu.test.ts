@@ -13,7 +13,6 @@ import {
   DISCARD_SQUARES_SUFFIX,
   isRepeatEligible,
   showsEditButton,
-  squaresLockedReason,
   type BoardItemDraftPolicy,
   type BoardMenuItemKind,
 } from '../boardMenu';
@@ -206,7 +205,7 @@ describe('isRepeatEligible', () => {
  * tables mirrored line-for-line with iOS `BoardMenuItemsTests`.
  */
 
-// Board-state table shared by canEditSquares / squaresLockedReason /
+// Board-state table shared by canEditSquares /
 // showsEditButton / the invariant below.
 const STATES: Record<string, Board> = {
   'active-live': makeBoard(),
@@ -229,37 +228,6 @@ describe('canEditSquares', () => {
     expect(canEditSquares(STATES['archived-sealed'], NOW)).toBe(false);
     expect(canEditSquares(STATES['completed-unsealed'], NOW)).toBe(false);
     expect(canEditSquares(STATES.draft, NOW)).toBe(false);
-  });
-});
-
-describe('squaresLockedReason', () => {
-  it('null exactly when canEditSquares is true', () => {
-    expect(squaresLockedReason(STATES['active-live'], NOW)).toBeNull();
-    expect(squaresLockedReason(STATES['active-not-yet-ended'], NOW)).toBeNull();
-  });
-
-  it("ended or closed (not archived): \"This board has ended, so its squares can't change.\"", () => {
-    expect(squaresLockedReason(STATES['ended-unsealed'], NOW)).toBe(
-      "This board has ended, so its squares can't change.",
-    );
-    expect(squaresLockedReason(STATES.closed, NOW)).toBe(
-      "This board has ended, so its squares can't change.",
-    );
-  });
-
-  it("archived: \"This board is archived, so its squares can't change.\" — even when also ended/sealed", () => {
-    expect(squaresLockedReason(STATES.archived, NOW)).toBe(
-      "This board is archived, so its squares can't change.",
-    );
-    expect(squaresLockedReason(STATES['archived-sealed'], NOW)).toBe(
-      "This board is archived, so its squares can't change.",
-    );
-  });
-
-  it("completed (in window, unsealed): \"This board is complete, so its squares can't change.\"", () => {
-    expect(squaresLockedReason(STATES['completed-unsealed'], NOW)).toBe(
-      "This board is complete, so its squares can't change.",
-    );
   });
 });
 

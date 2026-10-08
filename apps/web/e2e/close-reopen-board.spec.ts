@@ -60,7 +60,6 @@ test.describe('Close / Reopen a board (Board Edit redesign slice 4)', () => {
     const editBtn = page.getByRole('button', { name: 'Edit board' });
     await expect(editBtn).toBeVisible();
     await editBtn.click();
-    await expect(page.getByText("This board has ended, so its squares can't change.")).toBeVisible();
     await expect(page.getByRole('button', { name: 'Save changes' })).toHaveCount(0);
     await expect(page.getByRole('button', { name: 'Shuffle' })).toHaveCount(0);
 

@@ -146,7 +146,6 @@ export function BoardPlaySurface({
     cellStateByBoardTaskId,
     liveCompletedLineIds,
     sharedCounterSourceIds,
-    sortedBoardTasks,
     gridSize,
     btByPosition,
     squareWindowContext,
@@ -622,9 +621,6 @@ export function BoardPlaySurface({
           sourceTemplate={sourceTemplate}
           templatesLoaded={templatesLoaded}
           weekStartDay={prefs.weekStartDay}
-          taskMap={taskMap}
-          dealtTaskIds={sortedBoardTasks.map((bt) => bt.taskId)}
-          counterFamilyByTaskId={counterFamilyByTaskId}
           onDetailsSaved={triggerBoardSavedToast}
           onExitEdit={() => setEditSession(null)}
           onRemoved={() => {
