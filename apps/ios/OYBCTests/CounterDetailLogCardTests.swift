@@ -10,6 +10,11 @@ final class CounterDetailLogCardTests: XCTestCase {
         XCTAssertEqual(m.chipLabel(at: 3), "#3.1")
         XCTAssertEqual(m.addLabel, "＋ Add 3.1 mi")
     }
+    func testHeaderTitleDropsTheUnitNounForDuration() {
+        XCTAssertEqual(CounterDetailLogCard.headerTitle(kind: .duration, unit: "guitar"), "Log")
+        XCTAssertEqual(CounterDetailLogCard.headerTitle(kind: .discrete, unit: "pages"), "Log pages")
+        XCTAssertEqual(CounterDetailLogCard.headerTitle(kind: .continuous, unit: nil), "Log")
+    }
     func testDurationPresetDefault() {
         let m = CounterDetailLogCard.Model(kind: .duration, unit: "guitar", defaultLogAmount: 30)
         XCTAssertEqual(m.chips.map(\.label), ["15m", "30m", "1h", "#"])

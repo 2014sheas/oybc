@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import {
+  countUnitSuffix,
   customChipLabel,
   formatCount,
   formatCountForInput,
@@ -38,6 +39,7 @@ export interface CounterDetailLogCardProps {
 export function CounterDetailLogCard(props: CounterDetailLogCardProps): React.ReactElement {
   const { kind, unit, defaultLogAmount, lifetime, activeCount, isLogging, onLog } = props;
   const unitStr = unit ?? '';
+  const logTitle = `Log${countUnitSuffix(kind, unitStr)}`;
   const chips = hubChips(kind);
   const [seed] = useState(() => initialLogSelection(kind, chips, defaultLogAmount));
   const [selectedAmount, setSelectedAmount] = useState(seed.amount);
@@ -68,9 +70,9 @@ export function CounterDetailLogCard(props: CounterDetailLogCardProps): React.Re
   }
 
   return (
-    <div className={styles.logCard} aria-label={`Log ${unitStr}`}>
+    <div className={styles.logCard} aria-label={logTitle}>
       <div className={styles.logHeader}>
-        <span className={styles.logTitle}>Log {unitStr}</span>
+        <span className={styles.logTitle}>{logTitle}</span>
         <span className={styles.logSub}>
           counts toward {activeCount} active task{activeCount !== 1 ? 's' : ''}
         </span>

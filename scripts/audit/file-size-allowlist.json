@@ -3,7 +3,7 @@
   "limits": {
     "apps/ios/OYBC/Views/BoardsTab/BoardPlayView.swift": 1934,
     "apps/ios/OYBC/Services/SyncService.swift": 2109,
-    "apps/ios/OYBC/Views/BoardsTab/ViewModels/BoardPlayViewModel.swift": 1516,
+    "apps/ios/OYBC/Views/BoardsTab/ViewModels/BoardPlayViewModel.swift": 1478,
     "apps/web/src/components/BoardPlaySurface.tsx": 1126,
     "apps/ios/OYBC/Database/AppDatabase.swift": 1005
   }

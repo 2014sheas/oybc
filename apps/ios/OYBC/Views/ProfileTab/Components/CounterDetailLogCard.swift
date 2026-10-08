@@ -39,14 +39,17 @@ struct CounterDetailLogCard: View {
         ))
     }
 
-    private var unitLabel: String { group.unit ?? "" }
+    /// "Log guitar"; a Duration counter has no unit noun ("Log"). Unit-tested.
+    static func headerTitle(kind: CountKind, unit: String?) -> String {
+        "Log" + countUnitSuffix(kind, unit: unit)
+    }
 
     // MARK: - Body
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             VStack(alignment: .leading, spacing: 2) {
-                Text("Log \(unitLabel)")
+                Text(Self.headerTitle(kind: group.countKind, unit: group.unit))
                     .font(.risoHead(15, .extraBold))
                     .foregroundStyle(Color.risoPaper)
                 Text("counts toward \(activeMemberCount) active task\(activeMemberCount == 1 ? "" : "s")")
