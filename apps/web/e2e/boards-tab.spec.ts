@@ -73,16 +73,30 @@ test.describe('Boards tab', () => {
     await page.goto('/boards?__oybc_test_bypass=1');
     await expect(page.getByRole('heading', { name: 'Boards', level: 1 })).toBeVisible();
 
+    // Board-list rows are buttons whose accessible name starts with the
+    // board name. Assert on those rather than bare text: an ended-but-
+    // unsealed board is ALSO named by the "Boards ready to close out"
+    // banner (Windowed Completion PR C, #326), which is intentional.
+    const row = (name: string) =>
+      page.getByRole('button', { name: new RegExp(`^${name}`) });
+
     // Active Live shows; Active Expired (past endDate) does not; Draft does not.
-    await expect(page.getByText('Active Live')).toBeVisible();
-    await expect(page.getByText('Active Expired')).not.toBeVisible();
-    await expect(page.getByText('Draft Board')).not.toBeVisible();
+    await expect(row('Active Live')).toBeVisible();
+    await expect(row('Active Expired')).not.toBeVisible();
+    await expect(row('Draft Board')).not.toBeVisible();
+
+    // The expired board surfaces in the close-out banner instead.
+    await expect(
+      page
+        .getByRole('region', { name: 'Boards ready to close out' })
+        .getByText('Active Expired'),
+    ).toBeVisible();
 
     // Switching to All reveals all three.
     await page.getByRole('button', { name: 'All', exact: true }).click();
-    await expect(page.getByText('Active Live')).toBeVisible();
-    await expect(page.getByText('Active Expired')).toBeVisible();
-    await expect(page.getByText('Draft Board')).toBeVisible();
+    await expect(row('Active Live')).toBeVisible();
+    await expect(row('Active Expired')).toBeVisible();
+    await expect(row('Draft Board')).toBeVisible();
   });
 
   test('per-row delete: ✕ → confirm → row disappears + Dexie isDeleted', async ({ page }) => {

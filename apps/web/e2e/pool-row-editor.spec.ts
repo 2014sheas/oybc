@@ -8,21 +8,32 @@ import {
 } from './_fixtures/bypass';
 import type { Page } from '@playwright/test';
 
-/** Board Sources P4 — hand-add existing library tasks via the "Add from
- *  your library" sheet (source-pulled tasks live inside their source
- *  row's member panel now, without edit pencils — only hand-added rows
- *  are inline-editable). */
+/** Hand-add existing library tasks via the Tasks step's quick-add row:
+ *  typing a title polls the library and a "Matching library tasks" dropdown
+ *  offers the existing task (the wizard's canonical hand-add path since the
+ *  dashed "Add from your library" entry row was hidden by the owner on
+ *  2026-09-17 — `LIBRARY_ENTRY_ENABLED` in BoardWizardTasksStep). Source-
+ *  pulled tasks live inside their source row's member panel without edit
+ *  pencils — only hand-added rows are inline-editable. */
 async function handAddFromLibrary(page: Page, titles: string[]): Promise<void> {
-  await page.getByRole('button', { name: /^Add from your library/ }).click();
-  const sheet = page.getByRole('dialog', { name: 'Your library' });
-  await expect(sheet).toBeVisible();
+  const quickAdd = page.getByLabel('New normal task title');
   for (const title of titles) {
+    await quickAdd.fill(title);
     // Row buttons carry subtitle/usage text in their accessible name —
     // match on the title substring (titles are unique per test).
-    await sheet.getByRole('button', { name: title }).first().click();
+    const match = page
+      .getByRole('list', { name: 'Matching library tasks' })
+      .getByRole('button', { name: title })
+      .first();
+    await expect(match).toBeVisible();
+    await match.click();
+    // Prove the task landed on the board, not just that the dropdown's own
+    // <li> still shows it: the dropdown closes, the input clears, and the
+    // pool row's per-row Remove control (PoolList-only) exists.
+    await expect(page.getByRole('list', { name: 'Matching library tasks' })).toBeHidden();
+    await expect(quickAdd).toHaveValue('');
+    await expect(page.getByRole('button', { name: `Remove ${title} from board` })).toBeVisible();
   }
-  await sheet.getByRole('button', { name: /^Done/ }).click();
-  await expect(sheet).toBeHidden();
 }
 
 /**
@@ -35,9 +46,9 @@ async function handAddFromLibrary(page: Page, titles: string[]): Promise<void> {
  *
  * Uses the one-off ("Start a one-off board") entry point, 3×3 FREE-center
  * (fillableCellCount = 8) so 8 hand-added tasks exactly satisfy the floor.
- * Board Sources P4: the tasks are HAND-ADDED via the library sheet —
- * source-pulled tasks render inside their source row's member panel and
- * are not inline-editable there.
+ * Board Sources P4: the tasks are HAND-ADDED via the quick-add row's
+ * library matches — source-pulled tasks render inside their source row's
+ * member panel and are not inline-editable there.
  */
 
 test.describe('Wizard Tasks step — inline PoolRowEditor (Inline Task Editing PR-2)', () => {
@@ -77,7 +88,7 @@ test.describe('Wizard Tasks step — inline PoolRowEditor (Inline Task Editing P
       .click();
     await page.getByRole('button', { name: /^Next/ }).click();
 
-    // Hand-add all 8 via the library sheet — satisfies the 3×3 FREE floor.
+    // Hand-add all 8 from the library — satisfies the 3×3 FREE floor.
     await handAddFromLibrary(page, [
       'Run 5 km',
       'Morning routine',

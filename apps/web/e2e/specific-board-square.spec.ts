@@ -79,9 +79,11 @@ test.describe('Phase 6.3 achievement task creator', () => {
     await expect(newTaskSheet).toBeVisible();
     await newTaskSheet.getByRole('button', { name: /^Achievement$/ }).click();
 
-    // Watch-mode radios appear after the type switch.
+    // Watch-mode radios appear after the type switch. The template mode is
+    // labelled "Repeating board" (no "template" vocabulary in the UI since
+    // the board-creation split).
     await expect(page.getByRole('radio', { name: /^Board$/i })).toBeVisible();
-    await expect(page.getByRole('radio', { name: /^Template$/i })).toBeVisible();
+    await expect(page.getByRole('radio', { name: /^Repeating board$/i })).toBeVisible();
 
     // Default mode is `specificBoard` — the board <select> should be visible.
     const boardSelect = page.locator('#create-task-ach-board');
@@ -99,7 +101,7 @@ test.describe('Phase 6.3 achievement task creator', () => {
     const newTaskSheet = page.getByRole('dialog', { name: 'New task' });
     await expect(newTaskSheet).toBeVisible();
     await newTaskSheet.getByRole('button', { name: /^Achievement$/ }).click();
-    await page.getByRole('radio', { name: /^Template$/i }).check();
+    await page.getByRole('radio', { name: /^Repeating board$/i }).check();
 
     // The board <select> goes away, the template <select> appears.
     await expect(page.locator('#create-task-ach-board')).toBeHidden();
@@ -206,7 +208,7 @@ test.describe('Phase 6.3 achievement task creator', () => {
     const newTaskSheet = page.getByRole('dialog', { name: 'New task' });
     await expect(newTaskSheet).toBeVisible();
     await newTaskSheet.getByRole('button', { name: /^Achievement$/ }).click();
-    await page.getByRole('radio', { name: /^Template$/i }).check();
+    await page.getByRole('radio', { name: /^Repeating board$/i }).check();
     await page.getByPlaceholder(/enter task title/i).fill('3 Leg Days a month');
     await page.locator('#create-task-ach-template').selectOption(TEMPLATE_ID);
     // Flip the trigger to BINGO to verify the form serializes it.
