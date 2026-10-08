@@ -28,6 +28,15 @@ final class FakePullSource: PullDocumentSource, @unchecked Sendable {
     var fetches: [FetchCall] { lock.withLock { _fetches } }
     var listenSince: [String: PullWatermark] { lock.withLock { _listenSince } }
 
+    /// Runs at the start of every `fetchCollection` (outside the lock) — lets a
+    /// test simulate a remote write landing mid-pull.
+    var onFetch: ((String) async -> Void)?
+
+    /// Adds a doc to `collection` (a remote write).
+    func add(_ doc: [String: Any], to collection: String) {
+        lock.withLock { docsByCollection[collection, default: []].append(doc) }
+    }
+
     /// Delivers a snapshot to `collection`'s listener (if attached).
     func deliver(_ docs: [[String: Any]], to collection: String) {
         let onChange = lock.withLock { _listeners[collection] }
@@ -39,7 +48,8 @@ final class FakePullSource: PullDocumentSource, @unchecked Sendable {
     }
 
     func fetchCollection(userId: String, collection: String, since: PullWatermark?) async throws -> PullDocs {
-        try lock.withLock {
+        await onFetch?(collection)
+        return try lock.withLock {
             _events.append("fetch:\(collection)")
             _fetches.append(FetchCall(collection: collection, since: since))
             if collection == failCollection { throw URLError(.notConnectedToInternet) }

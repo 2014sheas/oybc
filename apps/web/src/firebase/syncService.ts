@@ -432,6 +432,11 @@ export async function pullSync(
   assertSyncUserMatches(userId);
   const result: PullResult = { pulled: 0, conflicts: 0, details: [] };
   let hadPullError = false;
+  // Stamped as `lastSyncedAt` on a clean pull — the START, not the end: it is
+  // the fallback watermark for collections with no checkpoint (and the
+  // listeners' start), so a doc written remotely DURING this pull must still
+  // be >= it. `>=` + the echo guard make the re-read free. iOS twin: same.
+  const pullStartedAt = new Date().toISOString();
 
   // Pull the user doc (lives at `users/{userId}`, not a subcollection) so
   // synced profile fields like `preferences` replicate back to this device.
@@ -548,10 +553,9 @@ export async function pullSync(
       );
     }
 
-    const now = new Date().toISOString();
     const user = await db.users.get(userId);
     if (user) {
-      await db.users.update(userId, { lastSyncedAt: now });
+      await db.users.update(userId, { lastSyncedAt: pullStartedAt });
     }
   }
 

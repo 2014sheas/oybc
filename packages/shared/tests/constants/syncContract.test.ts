@@ -118,12 +118,17 @@ describe('syncContract fixture', () => {
     expect([...PULL_APPLY_ORDER].sort()).toEqual([...pulled].sort());
   });
 
-  it('PULL_APPLY_ORDER puts every dependency before its dependents', () => {
+  it('PULL_APPLY_ORDER: boards first, then every dependency before its dependents', () => {
     const at = (c: (typeof PULL_APPLY_ORDER)[number]) => PULL_APPLY_ORDER.indexOf(c);
+    // Boards first: a task/event cascade must never re-derive (and author a
+    // bump on) a stale local board row the same pull is about to replace.
+    expect(PULL_APPLY_ORDER[0]).toBe('boards');
+    // Events before task rows: a pulled completion's Task row must derive
+    // against the event it was authored with.
+    expect(at('taskEvents')).toBeLessThan(at('tasks'));
+    // The compound-link scope check needs the parent task local.
     expect(at('tasks')).toBeLessThan(at('compoundChildren'));
-    expect(at('tasks')).toBeLessThan(at('taskEvents'));
-    expect(at('taskEvents')).toBeLessThan(at('boards'));
-    expect(at('boards')).toBeLessThan(at('boardTasks'));
+    expect(at('compoundChildren')).toBeLessThan(at('boardTasks'));
   });
 
   it('clearableFieldsFor returns the map entry, and [] for a collection with none', () => {

@@ -102,6 +102,23 @@ extension AppDatabase {
 
     // MARK: - Batch apply
 
+    /// Sorts docs by `_syncedAt` (docs without one first) and splits them into
+    /// `pullChunkSize` batches, so each batch's max `_syncedAt` is
+    /// a safe resume point: every older doc is in an earlier batch.
+    static func pullChunks(_ fetched: PullDocs) -> [PullDocs] {
+        let keyed = fetched.docs.map { (mark: PullWatermark(syncedAtValue: $0["_syncedAt"]), doc: $0) }
+        let sorted = keyed.sorted { a, b in
+            switch (a.mark, b.mark) {
+            case (nil, .some): return true
+            case let (.some(x), .some(y)): return x < y
+            default: return false
+            }
+        }.map(\.doc)
+        return stride(from: 0, to: sorted.count, by: pullChunkSize).map {
+            PullDocs(docs: Array(sorted[$0..<min($0 + pullChunkSize, sorted.count)]))
+        }
+    }
+
     /// Applies one batch of one collection's remote docs in ONE write
     /// transaction off the calling actor, with one cascade, and (when
     /// `checkpoint`) advances that collection's watermark in the same

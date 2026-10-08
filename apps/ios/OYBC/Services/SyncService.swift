@@ -446,6 +446,11 @@ final class SyncService: ObservableObject {
     /// - Returns: Pull result summary.
     func pullSync(userId: String, lastSyncedAt: String?) async -> PullResult {
         var result = PullResult()
+        // Stamped as `lastSyncedAt` on a clean pull — the START, not the end:
+        // it is the fallback watermark for collections with no checkpoint (and
+        // the listeners' start), so a doc written remotely DURING this pull
+        // must still be >= it. `>=` + the echo guard make the re-read free.
+        let pullStartedAt = AppDatabase.currentTimestamp()
 
         // The parent user doc (`users/{userId}`) — synced profile fields like
         // `preferences` replicate back through it.
@@ -463,7 +468,7 @@ final class SyncService: ObservableObject {
         }
 
         if !result.details.contains(where: { $0.contains("Pull failed") }) {
-            await finishCleanPull(userId: userId, result: &result)
+            await finishCleanPull(userId: userId, pullStartedAt: pullStartedAt, result: &result)
         }
 
         // Board-integrity PR-4 (Item 5): one signal per PULL, not per row.
@@ -478,8 +483,9 @@ final class SyncService: ObservableObject {
     /// Clean-pull tail: heal-on-pull (docs/WINDOWED_COMPLETION.md
     /// §Heal-on-pull) + the windowed-linked-counter sweep — idempotent, each
     /// in its own async write — then the `users.lastSyncedAt` stamp (the
-    /// checkpoint fallback + web parity). Heals never fail the pull.
-    private func finishCleanPull(userId: String, result: inout PullResult) async {
+    /// checkpoint fallback + web parity), stamped with the pull's START time.
+    /// Heals never fail the pull.
+    private func finishCleanPull(userId: String, pullStartedAt: String, result: inout PullResult) async {
         do {
             let healed = try await database.writeAsync { db in try AppDatabase.healMissingCompletionEventsTx(db: db, userId: userId) }
             if healed > 0 { result.pulled += healed; recordBatch(pulled: healed); result.details.append("Healed \(healed) missing completion event(s)") }
@@ -499,7 +505,7 @@ final class SyncService: ObservableObject {
             let now = AppDatabase.currentTimestamp()
             try await database.writeAsync { db in
                 guard var user = try User.fetchOne(db, key: userId) else { return }
-                user.lastSyncedAt = now
+                user.lastSyncedAt = pullStartedAt
                 user.updatedAt = now
                 try user.save(db)
             }
@@ -637,11 +643,6 @@ final class SyncService: ObservableObject {
         }
     }
 
-    // MARK: - Local-wins re-assert (Board-integrity PR-4, Item 1)
-    //
-    // A pull that resolves LOCAL-wins re-enqueues the local row so a push race
-    // can't strand it — `AppDatabase.reassertPullLocalWin` (PullApply.swift).
-
     // MARK: - Sync-applied live-update signal (Board-integrity PR-4, Item 5)
 
     /// Posts `.oybcSyncDidApplyChanges` once. `SyncService` is `@MainActor`, so
@@ -702,22 +703,9 @@ final class SyncService: ObservableObject {
         }
     }
 
-    /// Sorts docs by `_syncedAt` (docs without one first) and splits them into
-    /// `AppDatabase.pullChunkSize` batches, so each batch's max `_syncedAt` is
-    /// a safe resume point: every older doc is in an earlier batch. Runs off
-    /// the main actor (`nonisolated async`).
+    /// `AppDatabase.pullChunks`, run off the main actor (`nonisolated async`).
     nonisolated static func checkpointChunks(_ fetched: PullDocs) async -> [PullDocs] {
-        let keyed = fetched.docs.map { (mark: PullWatermark(syncedAtValue: $0["_syncedAt"]), doc: $0) }
-        let sorted = keyed.sorted { a, b in
-            switch (a.mark, b.mark) {
-            case (nil, .some): return true
-            case let (.some(x), .some(y)): return x < y
-            default: return false
-            }
-        }.map(\.doc)
-        return stride(from: 0, to: sorted.count, by: AppDatabase.pullChunkSize).map {
-            PullDocs(docs: Array(sorted[$0..<min($0 + AppDatabase.pullChunkSize, sorted.count)]))
-        }
+        AppDatabase.pullChunks(fetched)
     }
 
     /// Publishes one batch on the main actor: ONE counter mutation + log lines
@@ -874,7 +862,16 @@ extension SyncService {
         initialSyncTask?.cancel()
         initialSyncTask = _Concurrency.Task { [weak self] in
             guard let self, self.runningForUserId == userId else { return }
-            _ = await self.fullSync(userId: userId)
+            // A debounced push holding `isSyncing` makes `fullSync` return
+            // "already in progress" without pulling — wait it out and retry
+            // once, so the listeners attach after a pull that actually ran.
+            for _ in 0..<2 where !self.hasCompletedFirstPull {
+                while self.isSyncing, !_Concurrency.Task.isCancelled {
+                    try? await _Concurrency.Task.sleep(nanoseconds: 50_000_000)
+                }
+                guard !_Concurrency.Task.isCancelled, self.runningForUserId == userId else { return }
+                _ = await self.fullSync(userId: userId)
+            }
             guard !_Concurrency.Task.isCancelled, self.runningForUserId == userId else { return }
             await self.attachPullListeners(userId: userId)
         }

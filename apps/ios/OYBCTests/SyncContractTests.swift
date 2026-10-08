@@ -83,10 +83,7 @@ final class SyncContractTests: XCTestCase {
         )
     }
 
-    /// Sanity check on the fixture itself, independent of the live Swift
-    /// lists — guards against a corrupted/empty fixture silently passing
-    /// the set-equality checks above via two empty sets.
-    /// Dependency-ordered pull (2026-10-07) — ORDER matters, so this is an
+    /// Pull order (2026-10-07, boards first) — ORDER matters, so this is an
     /// array compare, not a set compare.
     func testPullApplyOrderMatchesFixtureExactly() throws {
         let fixture = try loadFixture()
@@ -99,6 +96,9 @@ final class SyncContractTests: XCTestCase {
         )
     }
 
+    /// Sanity check on the fixture itself, independent of the live Swift
+    /// lists — guards against a corrupted/empty fixture silently passing
+    /// the set-equality checks above via two empty sets.
     func testFixtureIsNonEmpty() throws {
         let fixture = try loadFixture()
         XCTAssertFalse(fixture.syncCollections.isEmpty)

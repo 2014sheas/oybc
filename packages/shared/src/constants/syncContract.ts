@@ -112,14 +112,32 @@ export const LEGACY_PULL_SKIP_COLLECTIONS = [
 
 /**
  * The order the **pull** applies collections in (both platforms' full pull
- * loop and listener attach), 2026-10-07. Dependency order: every collection's
- * pull cascade then sees all the inputs it reads — tasks before the compound
- * links and events that hang off them, events before any board derivation,
- * boards before their placements. With per-collection checkpoints
- * (`nextPullWatermark`) a pull interrupted after collection N resumes at N+1,
- * whose cascades re-derive everything they touch, so it converges to the same
- * state as an uninterrupted pull, and no intermediate board-stat write is
- * derived from a partial event union.
+ * loop and listener attach), 2026-10-07. **Boards first.** A task / link /
+ * event batch's cascade re-derives every board that places the changed task;
+ * if the board row were still the stale local one, a stats change would AUTHOR
+ * a bump (version + 1, local `updatedAt`, enqueue) that then out-ranks the
+ * pulled board under LWW — pushing the stale row (a remote rename included)
+ * back to its author. With the board row already current, the cascade derives
+ * the stats the board already carries and writes nothing (the
+ * `boardDerivedStateChanged` compare). The boards batch itself only runs
+ * NON-authored re-derives (sealed snapshot, a pulled Reopen, watchers); sealed
+ * snapshots re-converge in the event batch (`reDeriveSealedBoards`) and the
+ * placement batch.
+ *
+ * **Events before task rows.** A peer's completion arrives as an event + an
+ * authored Task row (its lifetime caches) + the board's new stats. If the task
+ * batch ran first, its cascade would derive WITHOUT the new event, author a
+ * bump that reverts the stats, and the event batch would author a second one —
+ * two spurious board versions pushed back per remote completion. Events first,
+ * both batches derive the stats the pulled board already carries. An event
+ * whose task isn't local yet (a fresh install) is still upserted; its task row
+ * arrives next with the author's caches, and the task batch's own cascade +
+ * derived-baseline refresh read the now-present events. Then the compound
+ * links (their scope check needs the parent task local) and placements last.
+ *
+ * With per-collection checkpoints (`nextPullWatermark`) a pull interrupted
+ * after collection N resumes at N+1, whose cascades re-derive everything they
+ * touch, so it converges to the uninterrupted result.
  *
  * Exactly `SYNC_COLLECTIONS` minus `LEGACY_PULL_SKIP_COLLECTIONS` as a set
  * (asserted by `tests/constants/syncContract.test.ts`). The push path keeps
@@ -129,10 +147,10 @@ export const LEGACY_PULL_SKIP_COLLECTIONS = [
  * Not consulted by `scripts/check-sync-contract-rules.mjs`.
  */
 export const PULL_APPLY_ORDER = [
+  'boards',
+  'taskEvents',
   'tasks',
   'compoundChildren',
-  'taskEvents',
-  'boards',
   'boardTasks',
   'recurringBoardTemplates',
   'pools',

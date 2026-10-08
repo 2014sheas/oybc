@@ -127,8 +127,8 @@ final class SyncPullBatchTests: XCTestCase {
         let db = try makeDb()
         let fixture = PullFixture(boards: 4)
 
-        // Run 1: `boards` fails (offline mid-pull). Dependency order is
-        // tasks → compoundChildren → taskEvents → boards → …
+        // Run 1: `boards` fails (offline mid-pull). Order is boards →
+        // taskEvents → tasks → compoundChildren → boardTasks → …
         let failing = FakePullSource(docsByCollection: fixture.docs, failCollection: "boards")
         let first = await makeSut(db, source: failing).pullSync(userId: userId, lastSyncedAt: nil)
         XCTAssertTrue(first.details.contains { $0.contains("Pull failed for boards") })
@@ -204,6 +204,79 @@ final class SyncPullBatchTests: XCTestCase {
         XCTAssertEqual(marks, marks.sorted())
     }
 
+    // MARK: - Boards first, events before task rows (review C1)
+
+    /// A peer completed a square AND renamed the board: the pull brings the
+    /// completion event, the authored Task row (caches) and board v2 with the
+    /// new name + new stats. Applying the event or task batch against the stale
+    /// local board v1 would author a bump that out-ranks v2 under LWW (stale
+    /// name pushed back), or bump twice. Boards → events → tasks: nothing is
+    /// authored, the remote board wins verbatim.
+    func test_remoteCompletionPlusRename_appliesTheRemoteBoard_andAuthorsNothing() async throws {
+        let db = try makeDb()
+        var fixture = PullFixture(boards: 1).docs
+        fixture["tasks"] = fixture["tasks"]!.map { var t = $0; t["isCompleted"] = false; return t }
+        for name in ["boards", "tasks", "boardTasks"] {
+            _ = try await db.applyPullBatch(collection: (name, syncableCollections.first { $0.firestoreName == name }!.grdbTable),
+                                            docs: PullDocs(docs: fixture[name]!), userId: userId, checkpoint: false)
+        }
+        try db.write { try $0.execute(sql: "DELETE FROM sync_queue") }
+        let boardId = PullFixture.uuid(1, 0)
+        XCTAssertEqual(try db.fetchBoard(id: boardId)?.version, 1)
+
+        let later = Date(timeIntervalSince1970: 1_995_000_000)
+        var board = fixture["boards"]![0]
+        board["name"] = "Renamed elsewhere"
+        board["version"] = 2
+        board["completedTasks"] = 1
+        board["updatedAt"] = "2026-07-02T12:00:01.000Z" // OLDER than any local clock stamp
+        board["_syncedAt"] = later
+        var event = fixture["taskEvents"]![0] // cell 0
+        event["_syncedAt"] = later
+        var task = fixture["tasks"]![0]
+        task["version"] = 2
+        task["isCompleted"] = true
+        task["updatedAt"] = PullFixture.inWindow
+        task["_syncedAt"] = later
+
+        let source = FakePullSource(docsByCollection: ["boards": [board], "taskEvents": [event], "tasks": [task]])
+        _ = await makeSut(db, source: source).pullSync(userId: userId, lastSyncedAt: nil)
+
+        let after = try XCTUnwrap(try db.fetchBoard(id: boardId))
+        XCTAssertEqual(after.name, "Renamed elsewhere", "the remote rename must survive")
+        XCTAssertEqual(after.version, 2, "no locally authored bump")
+        XCTAssertEqual(after.completedTasks, 1)
+        XCTAssertEqual(try count(db, "sync_queue"), 0, "the pull must push nothing back")
+    }
+
+    // MARK: - lastSyncedAt = pull START (review I1)
+
+    /// A remote write landing DURING a pull, in a collection without a
+    /// checkpoint, must be picked up by the next pull (fallback = lastSyncedAt).
+    func test_docWrittenDuringThePull_isPickedUpNextRound() async throws {
+        let db = try makeDb()
+        let lateTask = PullFixture(boards: 1).docs["tasks"]![0]
+        let source = FakePullSource(docsByCollection: [:])
+        source.onFetch = { collection in
+            guard collection == "coreBoardDefaults" else { return }
+            var doc = lateTask
+            doc["_syncedAt"] = Date() // written while the pull is past `tasks`
+            source.onFetch = nil
+            source.add(doc, to: "tasks")
+            // Push the end of the pull ≥ 1 s past the write, so an end-of-pull
+            // stamp (floored to the second) would land after it.
+            try? await _Concurrency.Task.sleep(nanoseconds: 1_100_000_000)
+        }
+        let sut = makeSut(db, source: source)
+        _ = await sut.pullSync(userId: userId, lastSyncedAt: nil)
+        XCTAssertNil(try db.fetchTask(id: lateTask["id"] as! String), "precondition: missed by round 1")
+        XCTAssertNil(try watermarks(db)["tasks"], "precondition: tasks has no checkpoint")
+
+        let stamp = try XCTUnwrap(try db.fetchUser(id: userId)?.lastSyncedAt)
+        _ = await sut.pullSync(userId: userId, lastSyncedAt: stamp)
+        XCTAssertNotNil(try db.fetchTask(id: lateTask["id"] as! String), "a mid-pull write was skipped forever")
+    }
+
     // MARK: - (d) listeners attach only after the first pull
 
     func test_listenersAttachOnlyAfterTheFirstPullCompletes_fromTheFreshCheckpoints() async throws {
@@ -232,6 +305,20 @@ final class SyncPullBatchTests: XCTestCase {
         source.deliver([newTask], to: "tasks")
         try await waitUntil { (try? db.fetchTask(id: PullFixture.uuid(2, 999))) != nil }
         XCTAssertEqual(try watermarks(db), before)
+    }
+
+    /// Review I2: an offline / failing first pull still attaches the
+    /// listeners, so real-time works once the connection returns.
+    func test_listenersStillAttachWhenTheFirstPullFails() async throws {
+        let db = try makeDb()
+        let source = FakePullSource(docsByCollection: PullFixture(boards: 1).docs, failCollection: "tasks")
+        let sut = makeSut(db, source: source)
+
+        sut.start(userId: userId)
+        defer { sut.stop() }
+        try await waitUntil { source.events.filter { $0.hasPrefix("listen:") }.count == pullApplyOrder.count + 1 }
+        XCTAssertTrue(sut.hasCompletedFirstPull)
+        XCTAssertTrue(source.events.contains("fetch:tasks"), "the pull ran (and failed) first")
     }
 
     private func waitUntil(timeout: TimeInterval = 10, _ condition: () -> Bool) async throws {

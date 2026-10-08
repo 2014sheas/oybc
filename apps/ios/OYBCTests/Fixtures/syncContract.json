@@ -45,10 +45,10 @@
     ]
   },
   "pullApplyOrder": [
+    "boards",
+    "taskEvents",
     "tasks",
     "compoundChildren",
-    "taskEvents",
-    "boards",
     "boardTasks",
     "recurringBoardTemplates",
     "pools",

@@ -71,15 +71,18 @@ func nextPullWatermark(_ prev: PullWatermark?, _ syncedAts: [PullWatermark?]) ->
 }
 
 /// The order the pull applies collections in (full pull loop + listener
-/// attach) — dependency order, so each collection's cascade sees every input
-/// it reads. Must equal `@oybc/shared`'s `PULL_APPLY_ORDER` (order-sensitive),
+/// attach). Boards FIRST, so a task / event batch's cascade derives against
+/// the current board row and writes nothing when the pulled stats already
+/// match — never an authored bump on a stale row that would then out-rank the
+/// pulled board under LWW; events before task rows so a pulled completion's
+/// task batch derives with its event (see `PULL_APPLY_ORDER`). Must equal `@oybc/shared`'s `PULL_APPLY_ORDER` (order-sensitive),
 /// enforced by `SyncContractTests` against `syncContract.json`. The push path
 /// keeps `syncableCollections` order.
 let pullApplyOrder: [String] = [
+    "boards",
+    "taskEvents",
     "tasks",
     "compoundChildren",
-    "taskEvents",
-    "boards",
     "boardTasks",
     "recurringBoardTemplates",
     "pools",
