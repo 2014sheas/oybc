@@ -7,15 +7,6 @@
   margin-top: 18px;
 }
 
-.intro {
-  margin: 0;
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--riso-muted);
-  max-width: 520px;
-  line-height: 1.5;
-}
-
 .loading {
   margin: 0;
   font-size: 13px;

@@ -331,23 +331,7 @@ function EmptyState({
 }): React.ReactElement {
   return (
     <section className={styles.empty}>
-      {hasAnyTasks ? (
-        <>
-          <p className={styles.emptyTitle}>No tasks match your filters.</p>
-          <p className={styles.emptyBody}>
-            Try clearing the search, switching the type chip back to “All”, or
-            resetting Status / Usage to “Any”.
-          </p>
-        </>
-      ) : (
-        <>
-          <p className={styles.emptyTitle}>No tasks yet.</p>
-          <p className={styles.emptyBody}>
-            Tap “+ New task” to add one, or build a board on the Create tab —
-            tasks you make there appear here too.
-          </p>
-        </>
-      )}
+      <p className={styles.emptyTitle}>{hasAnyTasks ? 'No tasks match your filters.' : 'No tasks yet.'}</p>
     </section>
   );
 }

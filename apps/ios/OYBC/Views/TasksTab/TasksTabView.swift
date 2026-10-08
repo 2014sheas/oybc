@@ -561,23 +561,9 @@ struct TasksTabView: View {
     @ViewBuilder
     private func emptyState(hasAnyTasks: Bool) -> some View {
         VStack(alignment: .center, spacing: 10) {
-            if hasAnyTasks {
-                Text("No tasks match your filters.")
-                    .font(.risoBody(15, .semibold))
-                    .foregroundStyle(Color.risoInk)
-                Text("Try clearing the search, switching the type chip to All, or resetting Status / Usage.")
-                    .font(.risoBody(13, .regular))
-                    .foregroundStyle(Color.risoMuted)
-                    .multilineTextAlignment(.center)
-            } else {
-                Text("No tasks yet.")
-                    .font(.risoBody(15, .semibold))
-                    .foregroundStyle(Color.risoInk)
-                Text("Tap + to add one, or build a board on the Create tab — tasks you make there appear here too.")
-                    .font(.risoBody(13, .regular))
-                    .foregroundStyle(Color.risoMuted)
-                    .multilineTextAlignment(.center)
-            }
+            Text(hasAnyTasks ? "No tasks match your filters." : "No tasks yet.")
+                .font(.risoBody(15, .semibold))
+                .foregroundStyle(Color.risoInk)
         }
         .padding(16)
         .frame(maxWidth: .infinity)

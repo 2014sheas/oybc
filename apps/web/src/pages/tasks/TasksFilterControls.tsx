@@ -159,11 +159,7 @@ export function TasksFilterControls({
           className={`${styles.groupChip} ${groupByCompound ? styles.groupChipActive : ''}`}
           onClick={() => onGroupByCompoundChange(!groupByCompound)}
           aria-pressed={groupByCompound}
-          title={
-            groupByCompound
-              ? 'Grouping ON — subtasks nested under parent. Tap to show flat list.'
-              : 'Grouping OFF — all tasks at top level. Tap to group subtasks under parents.'
-          }
+          title={groupByCompound ? 'Grouped' : 'Flat'}
         >
           {groupByCompound ? 'Group subtasks ✓' : 'Group subtasks'}
         </button>

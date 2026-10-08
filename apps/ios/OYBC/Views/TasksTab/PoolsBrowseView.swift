@@ -33,10 +33,6 @@ struct PoolsBrowseView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("Keep like tasks together. Any board can draw from a pool.")
-                .font(.risoBody(14, .semibold))
-                .foregroundStyle(Color.risoMuted)
-
             if !pools.isEmpty {
                 VStack(spacing: 14) {
                     ForEach(pools, id: \.id) { pool in
