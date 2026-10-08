@@ -16,14 +16,6 @@ export interface RemoveSourceConfirmDialogProps {
    * never empty.
    */
   lossSentence: string;
-  /**
-   * True while the wizard is editing an existing REPEATING board
-   * (`useBoardWizard.editingTemplateId !== null`) — appends the same
-   * "Changes apply from the next board." line `WizardEditModeNote` uses, so
-   * the confirm can't read as if it were touching the board already on the
-   * Boards tab.
-   */
-  editingRepeatingBoard: boolean;
   /** Remove the source. */
   onConfirm: () => void;
   /** Cancel / dismiss (backdrop click, Escape, the Cancel button). */
@@ -53,7 +45,6 @@ export interface RemoveSourceConfirmDialogProps {
 export function RemoveSourceConfirmDialog({
   displayName,
   lossSentence,
-  editingRepeatingBoard,
   onConfirm,
   onCancel,
 }: RemoveSourceConfirmDialogProps): React.ReactElement {
@@ -76,9 +67,6 @@ export function RemoveSourceConfirmDialog({
       >
         <h2 className={styles.sheetHeading}>Remove &quot;{displayName}&quot;?</h2>
         <p className={styles.confirmBody}>{lossSentence}</p>
-        {editingRepeatingBoard && (
-          <p className={styles.derivedNote}>Changes apply from the next board.</p>
-        )}
 
         <div className={styles.sheetActions}>
           <button

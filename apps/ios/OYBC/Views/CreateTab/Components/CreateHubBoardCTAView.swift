@@ -35,13 +35,6 @@ struct CreateHubBoardCTAView: View {
         }
     }
 
-    private var subtitle: String {
-        switch kind {
-        case .oneOff: return "Pick a timeframe, fill the grid, play it once."
-        case .recurring: return "A fresh board every day, week, month, or year."
-        }
-    }
-
     private var systemImageName: String {
         switch kind {
         case .oneOff: return "square.grid.3x3.fill"
@@ -69,17 +62,14 @@ struct CreateHubBoardCTAView: View {
                     .frame(width: 44, height: 44)
                     .risoCard(fill: Color.risoGold)
 
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(title)
-                        .font(.risoHead(16, .extraBold))
-                        .foregroundStyle(Color.risoPaper)
-                        .lineLimit(1)
-                    Text(subtitle)
-                        .font(.risoBody(12, .medium))
-                        .foregroundStyle(Color.risoPaper.opacity(0.85))
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
+                // Title only (#548: the subtitle sentence was removed); the
+                // wrapper VStack's full-width constraint moves onto the Text
+                // so the chevron stays pinned trailing.
+                Text(title)
+                    .font(.risoHead(16, .extraBold))
+                    .foregroundStyle(Color.risoPaper)
+                    .lineLimit(1)
+                    .frame(maxWidth: .infinity, alignment: .leading)
 
                 Image(systemName: "chevron.right")
                     .font(.system(size: 13, weight: .bold))

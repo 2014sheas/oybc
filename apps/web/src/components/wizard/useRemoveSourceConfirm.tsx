@@ -27,9 +27,6 @@ export interface UseRemoveSourceConfirmArgs {
   /** True on a repeating-board session — the prefill never runs there, so
    *  every stored target is hand-set by definition. */
   isRecurring: boolean;
-  /** The repeating board under edit, or `null` — appends the
-   *  `WizardEditModeNote` line to the confirm. */
-  editingTemplateId: string | null;
   /** The actual removal (`useBoardWizard.removeSource`). */
   onRemoveSource: (sourceId: string) => void;
 }
@@ -75,7 +72,6 @@ export function useRemoveSourceConfirm({
   taskById,
   wizardWindow,
   isRecurring,
-  editingTemplateId,
   onRemoveSource,
 }: UseRemoveSourceConfirmArgs): RemoveSourceConfirm {
   const [pendingId, setPendingId] = useState<string | null>(null);
@@ -104,7 +100,6 @@ export function useRemoveSourceConfirm({
       <RemoveSourceConfirmDialog
         displayName={supplyInfoBySourceId[pending.sourceId]?.displayName ?? 'this source'}
         lossSentence={sourceRemovalLossSentence(pending, seeded(pending)) ?? ''}
-        editingRepeatingBoard={editingTemplateId !== null}
         onCancel={() => setPendingId(null)}
         onConfirm={() => {
           onRemoveSource(pending.sourceId);

@@ -189,13 +189,6 @@ export function SourceRow({
               maxValue={source.max}
               onChange={onSetRange}
             />
-            {!isDefaultRange && (
-              <p className={styles.rangeNote}>
-                {source.min === effectiveMax
-                  ? `${source.min} of these will be on the board.`
-                  : `Between ${source.min} and ${effectiveMax} of these will be on the board.`}
-              </p>
-            )}
           </div>
 
           <ul className={styles.memberList}>

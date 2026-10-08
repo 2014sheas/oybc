@@ -171,13 +171,6 @@ export interface BoardWizardTasksStepProps {
   onToggleSourceExclude: (sourceId: string, taskId: string) => void;
   onPullPoolSource: (poolId: string) => void;
   onPullBoardSource: (boardId: string) => void;
-  /**
-   * The repeating board under edit (`useBoardWizard.editingTemplateId`), or
-   * `null` for every other session. Only used to append the
-   * `WizardEditModeNote` line to the remove-source confirm, so the dialog
-   * can't read as if it were changing the board already on the Boards tab.
-   */
-  editingTemplateId?: string | null;
 
   // ── §Member rules (B3) — per-member rule editing on pulled sources, plus
   // the dice for hand-added counters. All optional so a read-only mount
@@ -286,7 +279,6 @@ export function BoardWizardTasksStep({
   onToggleSourceExclude,
   onPullPoolSource,
   onPullBoardSource,
-  editingTemplateId = null,
   manualTaskVary,
   onSetManualVary,
   onSetMemberTarget = NO_RULE_ACTION,
@@ -410,7 +402,6 @@ export function BoardWizardTasksStep({
     taskById: library.taskMap,
     wizardWindow,
     isRecurring,
-    editingTemplateId,
     onRemoveSource,
   });
 

@@ -29,10 +29,6 @@ struct CoreBoardsSectionView: View {
     /// Invoked when the user taps anywhere on a row.
     let onSelect: (CoreBoardSlot) -> Void
 
-    /// Issue #321 — one-line muted subtitle under the section heading
-    /// (`nil` renders no subtitle; the Create hub passes its copy).
-    var subtitle: String? = nil
-
     // MARK: - Body
 
     var body: some View {
@@ -40,15 +36,8 @@ struct CoreBoardsSectionView: View {
             EmptyView()
         } else {
             VStack(alignment: .leading, spacing: 10) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Core boards")
-                        .risoSectionLabel()
-                    if let subtitle {
-                        Text(subtitle)
-                            .font(.risoBody(12, .regular))
-                            .foregroundStyle(Color.risoMuted)
-                    }
-                }
+                Text("Core boards")
+                    .risoSectionLabel()
 
                 VStack(spacing: 10) {
                     ForEach(slots) { slot in

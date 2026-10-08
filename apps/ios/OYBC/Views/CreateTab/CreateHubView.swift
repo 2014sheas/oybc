@@ -205,8 +205,7 @@ struct CreateHubView: View {
                             // To browse past/future windows the user goes to
                             // the Boards tab.
                             vm.enterCoreBoardWizard(timeframe: slot.timeframe)
-                        },
-                        subtitle: "Your standard board for each time period."
+                        }
                     )
 
                     // Board Creation Split (iOS PR A) — two stacked

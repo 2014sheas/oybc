@@ -10,8 +10,8 @@ import {
 /**
  * E2E coverage for the recurring-UX pass (#321):
  *  - Step 1 (Setup) shows the live task-count requirement line, updating
- *    with size + center selection ("A 5×5 board needs 24 tasks."), with
- *    "at least" phrasing in recurring mode.
+ *    with size + center selection ("24 tasks"; "24+ tasks" in recurring
+ *    mode).
  *  - Boards spawned from a template (spawnedFromTemplateId set) carry a
  *    RECURRING badge on the Boards-list card and the play header.
  *
@@ -37,18 +37,18 @@ test.describe('Recurring UX pass', () => {
     // Pin a known geometry: 5×5 + Free Space center → 24 tasks.
     await page.getByRole('button', { name: '5×5' }).click();
     await page.getByLabel(/center square/i).selectOption('free');
-    await expect(page.getByText('A 5×5 board needs 24 tasks.')).toBeVisible();
+    await expect(page.getByText('24 tasks', { exact: true })).toBeVisible();
 
     // Size change updates the line immediately: 3×3 + FREE → 8.
     await page.getByRole('button', { name: '3×3' }).click();
-    await expect(page.getByText('A 3×3 board needs 8 tasks.')).toBeVisible();
+    await expect(page.getByText('8 tasks', { exact: true })).toBeVisible();
 
     // Center change updates it too: 3×3 + None → 9 (no reserved center).
     await page.getByLabel(/center square/i).selectOption('none');
-    await expect(page.getByText('A 3×3 board needs 9 tasks.')).toBeVisible();
+    await expect(page.getByText('9 tasks', { exact: true })).toBeVisible();
   });
 
-  test('recurring wizard requirement line drops the "A n×n board" framing (pool may overfill)', async ({ page }) => {
+  test('recurring wizard requirement value reads "n+ tasks" (pool may overfill)', async ({ page }) => {
     // Board Creation Split (web PR C) — recurring mode is chosen at the
     // Create-hub CTA, not a mid-wizard "Repeats" segmented.
     await openCreateHub(page);
@@ -57,9 +57,7 @@ test.describe('Recurring UX pass', () => {
 
     await page.getByRole('button', { name: '5×5' }).click();
     await page.getByLabel(/center square/i).selectOption('free');
-    await expect(
-      page.getByText('Needs at least 24 tasks — extras rotate in.'),
-    ).toBeVisible();
+    await expect(page.getByText('24+ tasks', { exact: true })).toBeVisible();
   });
 
   test.describe('recurring badge on spawned boards', () => {

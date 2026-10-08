@@ -16,15 +16,13 @@ export interface CreateHubBoardCTAProps {
   onClick: () => void;
 }
 
-const COPY: Record<CreateHubBoardCTAKind, { title: string; subtitle: string; icon: RisoIconName }> = {
+const COPY: Record<CreateHubBoardCTAKind, { title: string; icon: RisoIconName }> = {
   oneOff: {
     title: 'Start a one-off board',
-    subtitle: 'Pick a timeframe, fill the grid, play it once.',
     icon: 'grid',
   },
   recurring: {
     title: 'Start a recurring board',
-    subtitle: 'A fresh board every day, week, month, or year.',
     icon: 'repeat',
   },
 };
@@ -44,7 +42,7 @@ const COPY: Record<CreateHubBoardCTAKind, { title: string; subtitle: string; ico
  * changes prominence, never the cards themselves.
  */
 export function CreateHubBoardCTA({ kind, onClick }: CreateHubBoardCTAProps): React.ReactElement {
-  const { title, subtitle, icon } = COPY[kind];
+  const { title, icon } = COPY[kind];
   return (
     <button
       type="button"
@@ -56,7 +54,6 @@ export function CreateHubBoardCTA({ kind, onClick }: CreateHubBoardCTAProps): Re
       </div>
       <div className={styles.text}>
         <span className={styles.title}>{title}</span>
-        <span className={styles.subtitle}>{subtitle}</span>
       </div>
       <div className={styles.chevron} aria-hidden="true">
         <RisoIcon name="chevron" size={18} />

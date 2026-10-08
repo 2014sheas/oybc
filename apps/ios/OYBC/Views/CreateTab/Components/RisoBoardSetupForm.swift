@@ -227,19 +227,13 @@ struct RisoBoardSetupForm: View {
         ]
     }
 
-    /// Canonical copy (README §Copy strings): "A fresh board every {day|
-    /// week|month|year} · starts {window}". Editing an EXISTING repeating
-    /// board (README §5 "Edit re-entry", frame 2e) swaps this for
-    /// "Changes apply from the next board · current board keeps playing" —
-    /// a cadence change here never retroactively edits the board already
-    /// in play, so the note says so instead of restating the (unchanged)
-    /// window.
+    /// Terse schedule meta: "Every {day|week|month|year} · starts {window}"
+    /// (#548 — the sentence form and the edit-mode "Changes apply…" swap
+    /// were removed; web twin renders the same value line).
     @ViewBuilder
     private var recurringScheduleNote: some View {
-        if controller.editingTemplateId != nil {
-            scheduleNoteCard(icon: "repeat", text: "Changes apply from the next board · current board keeps playing")
-        } else if let label = controller.timeframeDisplayLabel {
-            scheduleNoteCard(icon: "repeat", text: "A fresh board every \(recurringCadenceNoun) · starts \(label)")
+        if let label = controller.timeframeDisplayLabel {
+            scheduleNoteCard(icon: "repeat", text: "Every \(recurringCadenceNoun) · starts \(label)")
         }
     }
 
@@ -390,29 +384,23 @@ struct RisoBoardSetupForm: View {
                 controller.updateSize(n)
             }
 
-            Text(tasksRequiredCaption)
+            Text(tasksRequiredValue)
                 .font(.risoBody(12, .regular))
                 .foregroundStyle(Color.risoMuted)
         }
     }
 
-    /// Live requirement line, recomputed from `size` + `centerType` via the
+    /// Live task-count value, recomputed from `size` + `centerType` via the
     /// shared `tasksNeededForBoard` helper (never hardcoded). Renders under
     /// the size selector in both the standard and core-board layouts (both
     /// call `sizeSection`) — this is what pre-empts the Tasks-step's
-    /// dead-Next problem, so `RisoTasksPoolHeaderView` is left untouched
-    /// (issue #321).
+    /// dead-Next problem (issue #321).
     ///
-    /// Board Creation Split (iOS PR A) — copy diverges per mode (README
-    /// §Copy strings): one-off states the exact requirement against the
-    /// board's own geometry; recurring drops the "A n×n board" framing
-    /// entirely since overfill is the intended variety mechanism there.
-    private var tasksRequiredCaption: String {
-        let n = controller.size
-        let count = controller.tasksRequired
-        return controller.isRecurring
-            ? "Needs at least \(count) tasks — extras rotate in."
-            : "A \(n)×\(n) board needs \(count) tasks."
+    /// Terse value, no sentence (#548): `24 tasks`; recurring boards take
+    /// MORE than the count (overfill is the variety mechanism) so they read
+    /// `24+ tasks`.
+    private var tasksRequiredValue: String {
+        "\(controller.tasksRequired)\(controller.isRecurring ? "+" : "") tasks"
     }
 
     // MARK: - Section: Center square
@@ -430,13 +418,6 @@ struct RisoBoardSetupForm: View {
                     set: { controller.updateCenterType($0) }
                 )
             )
-
-            // Extra affordances depending on selection.
-            if controller.centerType == .chosen {
-                Text("You'll pick the center task in the next step.")
-                    .font(.risoBody(12, .semibold))
-                    .foregroundStyle(Color.risoMuted)
-            }
 
         }
     }

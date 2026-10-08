@@ -154,7 +154,6 @@ const CASES: DialogCase[] = [
       React.createElement(RemoveSourceConfirmDialog, {
         displayName: 'Morning Kickstart',
         lossSentence: "You'll lose 1 exclusion.",
-        editingRepeatingBoard: false,
         onConfirm: noop,
         onCancel: noop,
       }),
