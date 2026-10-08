@@ -98,14 +98,10 @@ export function AccountSecurityPage(): React.ReactElement {
         </Link>
         <h1 className={styles.title}>Account &amp; security</h1>
       </div>
-      <p className={styles.intro}>
-        Manage how you sign in to On Your Bingo Card.
-      </p>
 
       {pendingEmail && (
         <p className={styles.pendingBanner}>
           Check <b>{pendingEmail}</b> for a verification link to finish changing your email.
-          Your address updates here once you confirm it.
         </p>
       )}
 
@@ -356,9 +352,6 @@ function ChangeEmailSheet({
 
   return (
     <Sheet title="Change email" onClose={onClose} busy={busy}>
-      <p className={styles.sheetBody}>
-        We’ll email a verification link to the new address. Your email changes once you click it.
-      </p>
       <Field label="Current password" type="password" value={current} onChange={setCurrent} autoFocus />
       <Field label="New email" type="email" value={nextEmail} onChange={setNextEmail} />
       {error && <p className={styles.sheetError}>{error}</p>}
@@ -400,10 +393,6 @@ function AddPasswordSheet({
 
   return (
     <Sheet title="Add a password" onClose={onClose} busy={busy}>
-      <p className={styles.sheetBody}>
-        Add a password to <b>{email || 'your account'}</b> so you can also sign in with email — and
-        change your email or password later.
-      </p>
       <Field label="New password" type="password" value={next} onChange={setNext} autoFocus />
       {error && <p className={styles.sheetError}>{error}</p>}
       <SheetActions onClose={onClose} onSubmit={() => void submit()} busy={busy} disabled={next.length < 6} submitLabel="Add password" />

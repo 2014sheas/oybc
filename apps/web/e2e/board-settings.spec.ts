@@ -31,7 +31,6 @@ test.describe('Board settings page', () => {
     await expect(page.getByRole('group', { name: 'Default timeframe' })).toBeVisible();
     await expect(page.getByRole('group', { name: 'Default center square' })).toBeVisible();
     await expect(page.getByRole('group', { name: 'Week starts on' })).toBeVisible();
-    await expect(page.getByText('Sets when weekly boards reset and renew.')).toBeVisible();
 
     await expect(page.getByText('Pre-filled tasks by timeframe')).toBeVisible();
     const prefilledTasksGroup = page.getByRole('group', { name: 'Pre-filled tasks by timeframe' });
@@ -44,13 +43,6 @@ test.describe('Board settings page', () => {
     // renders (never a hang on a missing route).
     await expect(page.getByText('Repeating boards', { exact: true })).toBeVisible();
     await expect(page.getByText(/no repeating boards yet/i)).toBeVisible();
-
-    // Footer helper — web diverges one word from the iOS copy (no
-    // Notifications sub-page on web; renewal toggles live on Settings
-    // directly).
-    await expect(
-      page.getByText('Tap a board to edit its pool and cadence. Renewal reminders are under Settings.'),
-    ).toBeVisible();
   });
 
   test('Every new board: Size segmented writes UserPreferences', async ({ page }) => {

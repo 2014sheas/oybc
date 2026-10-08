@@ -180,10 +180,6 @@ struct EditProfileSheet: View {
                     RoundedRectangle(cornerRadius: Riso.cardRadius)
                         .strokeBorder(Color.risoInk.opacity(0.35), lineWidth: Riso.Keyline.container)
                 )
-
-            Text("Change your email from Account security.")
-                .font(.risoBody(11, .regular))
-                .foregroundStyle(Color.risoMuted)
         }
     }
 

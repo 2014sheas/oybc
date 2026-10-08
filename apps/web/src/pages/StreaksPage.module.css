@@ -75,7 +75,7 @@
 .weekStrip {
   display: flex;
   gap: 6px;
-  padding: 12px 16px 8px;
+  padding: 12px 16px 16px;
 }
 
 .weekDot {
@@ -111,16 +111,6 @@
   stroke-width: 2.5;
   stroke-linecap: round;
   stroke-linejoin: round;
-}
-
-/* ── Keep-alive note ── */
-.keepNote {
-  font-family: var(--riso-font-body);
-  font-size: 12px;
-  font-weight: 500;
-  color: rgba(24, 18, 11, 0.65); /* ink-static at 65% */
-  padding: 0 16px 16px;
-  line-height: 1.4;
 }
 
 /* ── Stat trio ── */
@@ -291,12 +281,3 @@
 }
 
 /* ── Footer hint ── */
-.footerHint {
-  font-family: var(--riso-font-body);
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--riso-muted);
-  text-align: center;
-  padding-bottom: 32px;
-  line-height: 1.4;
-}

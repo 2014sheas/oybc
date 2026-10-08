@@ -211,15 +211,6 @@ struct StreaksContent: View {
 
                     historySection
                         .padding(.horizontal, Riso.gutter)
-                        .padding(.bottom, 18)
-
-                    // Footer hint
-                    Text("Every cleared board lands here. Keep the chain going.")
-                        .font(.risoBody(12, .regular))
-                        .foregroundStyle(Color.risoMuted)
-                        .multilineTextAlignment(.center)
-                        .frame(maxWidth: .infinity)
-                        .padding(.horizontal, Riso.gutter)
                         .padding(.bottom, 32)
                 }
             }
@@ -276,26 +267,12 @@ struct StreaksContent: View {
             weekStrip
                 .padding(.horizontal, Riso.cardPadding)
                 .padding(.top, 12)
-
-            // "Keep it alive" note
-            Text(keepItAliveNote)
-                .font(.risoBody(12, .regular))
-                .foregroundStyle(Color.risoInkStatic.opacity(0.65))
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, Riso.cardPadding)
-                .padding(.top, 8)
                 .padding(.bottom, Riso.cardPadding)
         }
         .risoCard(fill: .risoGold)
         .risoHardShadow(Riso.Shadow.small, radius: Riso.cardRadius)
         .accessibilityElement(children: .combine)
         .accessibilityLabel("Daily streak: \(currentStreak) day\(currentStreak == 1 ? "" : "s")")
-    }
-
-    private var keepItAliveNote: String {
-        if currentStreak == 0 { return "Complete a daily board to start your streak." }
-        if currentStreak == 1 { return "Off to a great start — come back tomorrow!" }
-        return "Great work! Complete today's board to keep the chain going."
     }
 
     // MARK: - Week strip

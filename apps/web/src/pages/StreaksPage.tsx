@@ -159,12 +159,6 @@ function timeframeLabel(tf: Timeframe): string {
   }
 }
 
-function keepItAliveNote(currentStreak: number): string {
-  if (currentStreak === 0) return 'Complete a daily board to start your streak.';
-  if (currentStreak === 1) return 'Off to a great start — come back tomorrow!';
-  return 'Great work! Complete today\'s board to keep the chain going.';
-}
-
 // ─── Inline SVG helpers (no dep on RisoIcon for filled-style shapes) ──────────
 
 function CheckmarkSvg(): React.ReactElement {
@@ -280,9 +274,6 @@ export function StreaksPage(): React.ReactElement {
             );
           })}
         </div>
-
-        {/* Keep-alive note */}
-        <p className={styles.keepNote}>{keepItAliveNote(currentStreak)}</p>
       </div>
 
       {/* 2. Stat trio — Current / Longest / GREENLOGs */}
@@ -350,11 +341,6 @@ export function StreaksPage(): React.ReactElement {
           ))}
         </div>
       )}
-
-      {/* Footer hint */}
-      <p className={styles.footerHint}>
-        Every cleared board lands here. Keep the chain going.
-      </p>
     </div>
   );
 }

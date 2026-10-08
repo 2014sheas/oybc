@@ -71,12 +71,6 @@ struct BoardSettingsContent: View {
                         .padding(.bottom, 8)
                     rosterCard
                         .padding(.horizontal, Riso.gutter)
-                        .padding(.bottom, 10)
-
-                    Text("Tap a board to edit its pool and cadence. Renewal reminders are under Settings › Notifications.")
-                        .font(.risoBody(12, .regular))
-                        .foregroundStyle(Color.risoMuted)
-                        .padding(.horizontal, Riso.gutter)
                         .padding(.bottom, 20)
 
                     if let loadError {
@@ -121,15 +115,10 @@ struct BoardSettingsContent: View {
                              (DefaultCenterSquareType.none, "None")],
                    selection: Binding(get: { preferences.defaultCenterType }, set: onSetCenterType))
             rowDivider
-            VStack(alignment: .leading, spacing: 4) {
-                segRow(label: "Week starts",
-                       options: [(WeekStartDay.monday, "Mon"),
-                                 (WeekStartDay.sunday, "Sun")],
-                       selection: Binding(get: { preferences.weekStartDay }, set: onSetWeekStart))
-                Text("Sets when weekly boards reset and renew.")
-                    .font(.risoBody(12, .regular)).foregroundStyle(Color.risoMuted)
-                    .padding(.horizontal, Riso.cardPadding).padding(.bottom, 10)
-            }
+            segRow(label: "Week starts",
+                   options: [(WeekStartDay.monday, "Mon"),
+                             (WeekStartDay.sunday, "Sun")],
+                   selection: Binding(get: { preferences.weekStartDay }, set: onSetWeekStart))
         }
         .risoCard()
         .risoHardShadow(Riso.Shadow.small, radius: Riso.cardRadius)
@@ -260,9 +249,10 @@ struct BoardSettingsContent: View {
     @ViewBuilder
     private var rosterCard: some View {
         if templates.isEmpty {
-            Text("No repeating boards yet — turn one on from a board's \"Repeats\" setting when you create it, or \"Repeat this board…\" from an existing one.")
+            Text("No repeating boards yet.")
                 .font(.risoBody(12.5, .regular))
                 .foregroundStyle(Color.risoMuted)
+                .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(Riso.cardPadding)
                 .risoCard()
                 .risoHardShadow(Riso.Shadow.small, radius: Riso.cardRadius)

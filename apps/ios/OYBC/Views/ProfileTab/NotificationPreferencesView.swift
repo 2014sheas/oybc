@@ -196,21 +196,12 @@ struct NotificationPreferencesContent: View {
                         remindersCard.padding(.horizontal, Riso.gutter).padding(.bottom, 16)
                     }
 
-                    Text("Reminders are scheduled on this device from your boards — no account messages, no marketing.")
-                        .font(.risoBody(12, .regular)).foregroundStyle(Color.risoMuted)
-                        .multilineTextAlignment(.center).frame(maxWidth: .infinity)
-                        .padding(.horizontal, Riso.gutter).padding(.bottom, 16)
-
                     // Profile reorg PR3 — moved from Board settings. These
                     // gate the Boards-tab "set up the next window" banner
                     // (lazy, checked on app-open), not an OS notification —
                     // independent of the master toggle above, so always shown.
                     sectionLabel("Board renewals")
-                    boardRenewalsCard.padding(.horizontal, Riso.gutter).padding(.bottom, 16)
-
-                    Text("When on, the Boards tab prompts you to set up the next daily, weekly, monthly or yearly board. Checked when you open the app; never a push.")
-                        .font(.risoBody(12, .regular)).foregroundStyle(Color.risoMuted)
-                        .padding(.horizontal, Riso.gutter).padding(.bottom, 24)
+                    boardRenewalsCard.padding(.horizontal, Riso.gutter).padding(.bottom, 24)
                 }
             }
         }
@@ -246,19 +237,16 @@ struct NotificationPreferencesContent: View {
 
     private var remindersCard: some View {
         VStack(spacing: 0) {
-            captionedToggle(
+            toggleRow(
                 icon: "exclamationmark.circle", label: "Board expiring soon",
-                caption: "A reminder the morning before a board's deadline.",
                 value: preferences.expiringReminders, onChange: onSetExpiring)
             rowDivider
-            captionedToggle(
+            toggleRow(
                 icon: "arrow.triangle.2.circlepath", label: "New recurring window",
-                caption: "When a new weekly, monthly, or yearly board is ready to set up.",
                 value: preferences.recurringWindowReminders, onChange: onSetRecurringWindow)
             rowDivider
-            captionedToggle(
+            toggleRow(
                 icon: "clock", label: "Daily play reminder",
-                caption: "A daily nudge to make progress on your boards.",
                 value: preferences.dailyPlayReminderEnabled, onChange: onSetDailyEnabled)
             if preferences.dailyPlayReminderEnabled {
                 rowDivider
@@ -346,19 +334,6 @@ struct NotificationPreferencesContent: View {
             RisoPillSwitch(isOn: Binding(get: { value }, set: { onChange($0) }))
         }
         .padding(.horizontal, Riso.cardPadding).padding(.vertical, 12)
-    }
-
-    private func captionedToggle(
-        icon: String, label: String, caption: String,
-        value: Bool, onChange: @escaping (Bool) -> Void
-    ) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            toggleRow(icon: icon, label: label, value: value, onChange: onChange)
-            Text(caption)
-                .font(.risoBody(12, .regular)).foregroundStyle(Color.risoMuted)
-                .fixedSize(horizontal: false, vertical: true)
-                .padding(.horizontal, Riso.cardPadding).padding(.bottom, 8)
-        }
     }
 
     private var rowDivider: some View {

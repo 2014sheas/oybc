@@ -52,13 +52,6 @@
   gap: 6px;
 }
 
-.intro {
-  margin: 0 0 8px;
-  font-family: var(--riso-font-body);
-  font-size: 13px;
-  color: var(--riso-muted);
-  line-height: 1.45;
-}
 
 .kicker {
   display: block;

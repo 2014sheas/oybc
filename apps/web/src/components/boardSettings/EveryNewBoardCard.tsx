@@ -97,7 +97,6 @@ export function EveryNewBoardCard({ preferences, onChange }: EveryNewBoardCardPr
           size="compact"
         />
       </div>
-      <p className={styles.helper}>Sets when weekly boards reset and renew.</p>
     </div>
   );
 }

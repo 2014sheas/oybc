@@ -294,15 +294,8 @@ struct SettingsView: View {
     /// Primary CTA replacing the hidden "Account & security" row + the Sign
     /// Out card for a guest — the single most important thing a guest can do.
     private var guestUpgradeCard: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("You're using OYBC as a guest. Save your account so your boards, tasks, and streaks are backed up and available on your other devices.")
-                .font(.risoBody(12, .regular))
-                .foregroundStyle(Color.risoMuted)
-                .fixedSize(horizontal: false, vertical: true)
-
-            RisoButton(title: "Save your account", kind: .primary, fullWidth: true, large: true) {
-                showUpgradeSheet = true
-            }
+        RisoButton(title: "Save your account", kind: .primary, fullWidth: true, large: true) {
+            showUpgradeSheet = true
         }
         .padding(Riso.cardPadding)
         .risoCard()

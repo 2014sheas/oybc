@@ -52,9 +52,9 @@ test.describe('Per-timeframe core-board default size + centre', () => {
       'aria-pressed',
       'true',
     );
-    // ONE caption for the whole BOARD section (iOS parity) — shown only while
+    // ONE 'Default' badge for the whole BOARD section (iOS parity) — shown only while
     // neither size nor centre is explicit.
-    await expect(sheet.getByText('Using your new-board default')).toHaveCount(1);
+    await expect(sheet.getByText('Default', { exact: true })).toHaveCount(1);
 
     // Pick 3×3, then turn OFF the inherited Free space (odd board, so the
     // toggle is visible and starts checked — the global default is FREE).
@@ -71,7 +71,7 @@ test.describe('Per-timeframe core-board default size + centre', () => {
 
     // Both fields are now explicit — the inherit notes are gone and the
     // "Use new-board default" clear link appears.
-    await expect(sheet.getByText('Using your new-board default')).toHaveCount(0);
+    await expect(sheet.getByText('Default', { exact: true })).toHaveCount(0);
     const clearLink = sheet.getByRole('button', { name: 'Use new-board default', exact: true });
     await expect(clearLink).toBeVisible();
 
@@ -106,7 +106,7 @@ test.describe('Per-timeframe core-board default size + centre', () => {
       sheet2.getByRole('group', { name: 'Board size' }).getByRole('button', { name: '3×3', exact: true }),
     ).toHaveAttribute('aria-pressed', 'true');
     await sheet2.getByRole('button', { name: 'Use new-board default', exact: true }).click();
-    await expect(sheet2.getByText('Using your new-board default')).toHaveCount(1);
+    await expect(sheet2.getByText('Default', { exact: true })).toHaveCount(1);
     await sheet2.getByRole('button', { name: 'Save', exact: true }).click();
     await expect(sheet2).toBeHidden();
 

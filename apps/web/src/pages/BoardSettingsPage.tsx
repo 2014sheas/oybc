@@ -224,9 +224,6 @@ export function BoardSettingsPage(): React.ReactElement {
           ))}
         </div>
       )}
-      <p className={styles.footerHelper}>
-        Tap a board to edit its pool and cadence. Renewal reminders are under Settings.
-      </p>
 
       {userId && defaultsSheetTimeframe !== null && (
         <CoreDefaultsSheet

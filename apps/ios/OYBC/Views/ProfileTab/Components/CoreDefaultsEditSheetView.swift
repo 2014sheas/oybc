@@ -242,7 +242,7 @@ struct CoreDefaultsEditSheetView: View {
                 }
                 .buttonStyle(.plain)
             } else {
-                Text("Using your new-board default")
+                Text("Default")
                     .font(.risoBody(12, .regular)).foregroundStyle(Color.risoMuted)
             }
         }

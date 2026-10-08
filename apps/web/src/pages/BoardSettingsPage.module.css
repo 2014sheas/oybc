@@ -172,11 +172,4 @@
    SettingsPage.module.css (Profile reorg PR1, owner decision 3) — that
    group no longer renders on this page either. */
 
-.footerHelper {
-  margin: 10px 2px 0;
-  font-size: 0.8rem;
-  font-weight: 500;
-  line-height: 1.5;
-  color: var(--riso-muted);
-}
 
