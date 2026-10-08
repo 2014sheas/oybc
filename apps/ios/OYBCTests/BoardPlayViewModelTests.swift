@@ -1463,7 +1463,7 @@ final class BoardPlayViewModelTests: XCTestCase {
         // Swapping one incomplete square for another leaves the derived stats
         // unchanged, so the board row itself is not re-bumped (sync-churn fix);
         // the committed placement below is the proof the squares save landed.
-        XCTAssertGreaterThanOrEqual(final.version, afterDetails.version, "squares save never regresses the version")
+        XCTAssertEqual(final.version, afterDetails.version, "an unchanged-stats squares save does not re-bump the board")
 
         let bt = try XCTUnwrap(db.fetchBoardTasks(boardId: "b1").first { $0.id == "bt1" })
         XCTAssertEqual(bt.taskId, "t2", "the staged square replacement committed")

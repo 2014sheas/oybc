@@ -170,6 +170,39 @@ final class BoardDerivationChurnTests: XCTestCase {
         XCTAssertTrue(sut.applyRemoteSubdoc(collection: boardsCol, remoteData: newerBoard, authenticatedUserId: userId))
     }
 
+    /// The batch full-sync pull (`processPullCollection` → `applyPulledDocument`)
+    /// — the path the owner's re-pull replay went through.
+    func test_batchPullPath_skipsEchoes_andAppliesANewerRow() throws {
+        let db = try makeDb()
+        try seedConvergedBoard(db, completed: 3)
+        let before = try board(db)
+        let sut = SyncService(database: db)
+        let task = try XCTUnwrap(try db.fetchTask(id: taskId(0)))
+        let bt = try XCTUnwrap(try db.read { try BoardTask.fetchOne($0, key: self.placementId(self.boardId, 0)) })
+
+        var result = PullResult()
+        try sut.applyPulledDocument(collection: tasksCol, remoteData: try wireDict(task), userId: userId, result: &result)
+        try sut.applyPulledDocument(collection: boardTasksCol, remoteData: try wireDict(bt), userId: userId, result: &result)
+        try sut.applyPulledDocument(collection: boardsCol, remoteData: try wireDict(before), userId: userId, result: &result)
+
+        XCTAssertEqual(result.pulled, 0)
+        XCTAssertEqual(result.conflicts, 0)
+        let after = try board(db)
+        XCTAssertEqual(after.version, before.version)
+        XCTAssertEqual(after.updatedAt, before.updatedAt)
+        XCTAssertEqual(try queueCount(db), 0)
+
+        // Positive control: a genuinely newer row through the same path applies.
+        var newer = try wireDict(task)
+        newer["title"] = "Renamed elsewhere"
+        newer["version"] = 2
+        newer["updatedAt"] = inWindow
+        try sut.applyPulledDocument(collection: tasksCol, remoteData: newer, userId: userId, result: &result)
+        XCTAssertEqual(result.pulled, 1)
+        XCTAssertEqual(try db.fetchTask(id: taskId(0))?.title, "Renamed elsewhere")
+        XCTAssertEqual(try board(db).version, before.version, "stats unchanged → still no board bump")
+    }
+
     func test_echoedEventBatch_appliesNothingAndPushesNothing() throws {
         let db = try makeDb()
         try seedConvergedBoard(db, completed: 3)
