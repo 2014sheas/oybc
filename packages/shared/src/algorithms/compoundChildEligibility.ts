@@ -25,7 +25,7 @@ import { findTransitiveParentCompounds } from './derivationPass';
 /** The fields of a candidate task the guard reads. */
 export type CompoundChildCandidate = Pick<
   Task,
-  'id' | 'type' | 'isDeleted' | 'createdInWizard' | 'isCounter' | 'maxCount'
+  'id' | 'type' | 'isDeleted' | 'createdInWizard' | 'isCounter' | 'maxCount' | 'forkedFromTaskId'
 >;
 
 /** The six user-facing refusal messages (byte-identical on iOS). */
@@ -93,7 +93,9 @@ export function isIncompleteCountingChild(
  * (pass `computeBrowsableTasks` output — it already hides wizard drafts and
  * deleted rows) narrowed to tasks that can be linked under `parentId` right
  * now (`compoundChildLinkProblem === null`) and that would survive the save's
- * validation (not {@link isIncompleteCountingChild}), ordered by title.
+ * validation (not {@link isIncompleteCountingChild}), ordered by title. A
+ * fork (`forkedFromTaskId` set — docs/BOARD_SCOPED_TASK_EDITS.md §3) is
+ * board-bound and never offered, even if a caller passes one in.
  *
  * Swift twin: `CompoundChildEligibility.pickerCandidates`.
  *
@@ -113,6 +115,7 @@ export function compoundChildPickerCandidates<T extends CompoundChildCandidate &
   return browsable
     .filter(
       (t) =>
+        t.forkedFromTaskId == null &&
         !isIncompleteCountingChild(t) &&
         compoundChildLinkProblem(parentId, t, allLinks, currentChildIds) === null,
     )
