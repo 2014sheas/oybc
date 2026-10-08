@@ -19,15 +19,28 @@ export interface RisoBoardGridProps {
  * Home poster (`RisoBoard`), the play surface, and the Playground. Cell
  * text scales with `--cell-size`.
  */
+/** Frame padding (2 × 12) + border (2 × 2.5), in px. */
+const FRAME_CHROME_PX = 29;
+
 export function RisoBoardGrid({ size, cellSize, gap = 8, className, children }: RisoBoardGridProps): React.ReactElement {
   return (
     <div
       className={className ? `${styles.board} ${className}` : styles.board}
-      style={{
-        gridTemplateColumns: `repeat(${size}, ${cellSize != null ? `${cellSize}px` : '1fr'})`,
-        gap,
-        ...(cellSize != null ? { ['--cell-size' as string]: `${cellSize}px` } : {}),
-      }}
+      style={
+        cellSize != null
+          ? {
+              // Cells cap at `cellSize` but shrink with the frame (`minmax(0, …)`
+              // + `width: min(100%, …)`), so a 5×5 never outgrows a phone
+              // viewport. `--cell-size` follows the actual cell edge (the
+              // frame is a size container, so `cqw` is its content width).
+              gridTemplateColumns: `repeat(${size}, minmax(0, ${cellSize}px))`,
+              width: `min(100%, ${size * cellSize + (size - 1) * gap + FRAME_CHROME_PX}px)`,
+              containerType: 'inline-size',
+              gap,
+              ['--cell-size' as string]: `min(${cellSize}px, calc((100cqw - ${(size - 1) * gap}px) / ${size}))`,
+            }
+          : { gridTemplateColumns: `repeat(${size}, 1fr)`, gap }
+      }
     >
       {children}
     </div>
