@@ -450,6 +450,23 @@ export type {
   LinkedCounterWindowHealPlan,
 } from './linkedCounterWindowHeal';
 
+// ===== Board-scoped task edits — fork ids + planner (docs/BOARD_SCOPED_TASK_EDITS.md, PR 1) =====
+export {
+  FORK_TASK_NS,
+  FORK_EVENT_NS,
+  FORK_LINK_NS,
+  forkTaskId,
+  forkedEventId,
+  forkLinkId,
+  planBoardScopedFork,
+} from './boardScopedFork';
+
+export type {
+  BoardScopedForkInput,
+  BoardScopedForkPlan,
+  BoardScopedForkRepoint,
+} from './boardScopedFork';
+
 // ===== Pull checkpoint — per-collection server `_syncedAt` watermark (2026-10-07) =====
 export { comparePullWatermarks, nextPullWatermark } from './pullWatermark';
 
