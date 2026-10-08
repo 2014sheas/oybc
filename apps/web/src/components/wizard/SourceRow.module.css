@@ -194,14 +194,6 @@
   border-radius: 6px;
 }
 
-.rangeNote {
-  margin: 0;
-  padding-bottom: 4px;
-  font-family: var(--riso-font-body);
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--riso-ink);
-}
 
 /* Member rows live in `MemberRuleRow.module.css` — the row owns its own
    rule controls (§Member rules, B3). */

@@ -21,7 +21,6 @@ function render(over: Partial<RemoveSourceConfirmDialogProps> = {}): string {
   const props: RemoveSourceConfirmDialogProps = {
     displayName: 'Morning Kickstart',
     lossSentence: "You'll lose 1 exclusion.",
-    editingRepeatingBoard: false,
     onConfirm: () => {},
     onCancel: () => {},
     ...over,
@@ -59,13 +58,7 @@ describe('RemoveSourceConfirmDialog', () => {
     expect(html).toContain('data-testid="remove-source-confirm"');
   });
 
-  it('stays silent about the next board for a one-off wizard', () => {
-    expect(render()).not.toContain('Changes apply from the next board.');
-  });
-
-  it('appends the edit-mode line while a repeating board is under edit', () => {
-    expect(render({ editingRepeatingBoard: true })).toContain(
-      'Changes apply from the next board.',
-    );
+  it('never appends a "changes apply" note — the body is the loss sentence only', () => {
+    expect(render()).not.toContain('Changes apply');
   });
 });

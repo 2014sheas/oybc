@@ -53,7 +53,6 @@ export function CoreBoardsSection({
       aria-label="Core recurring boards"
     >
       <h2 className={styles.heading}>Core boards</h2>
-      <p className={styles.subtitle}>Your standard board for each time period.</p>
       <div className={styles.cards}>
         {slots.map((slot) => {
           const display = TIMEFRAME_DISPLAY[slot.timeframe];

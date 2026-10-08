@@ -25,7 +25,7 @@ import {
  *     be excluded (struck + UNDO) and the last one can't.
  *  3. The Preview grid — a varied member previews its ROLLED target, and
  *     Shuffle re-rolls it (the roll is seeded per nonce).
- *  4. Editing a repeating board shows the frame-5a note, and the Counters
+ *  4. Editing a repeating board shows NO standing note (#548), and the Counters
  *     hub hides expired per-window derived counters until asked.
  *
  * The arithmetic itself (pro-rating, vary ranges, the plan/mint pipeline)
@@ -619,8 +619,8 @@ test.describe('Wizard member rules — the expanded source panel', () => {
   });
 });
 
-test.describe('Wizard edit mode — the frame-5a note', () => {
-  test('editing a repeating board says changes apply from the next board', async ({
+test.describe('Wizard edit mode — no standing note', () => {
+  test('editing a repeating board shows no "changes apply" note', async ({
     page,
   }) => {
     await seedTemplate(page, {
@@ -640,8 +640,8 @@ test.describe('Wizard edit mode — the frame-5a note', () => {
     await page.getByRole('button', { name: /Morning Kickstart/ }).click();
     await expect(page.getByText('EDIT RECURRING BOARD')).toBeVisible();
 
-    // The note sits under the stepper and stays there for every step.
-    await expect(page.getByText('Changes apply from the next board.')).toBeVisible();
+    // No standing "changes apply" note under the stepper (#548).
+    await expect(page.getByText('Changes apply from the next board.')).toHaveCount(0);
   });
 });
 

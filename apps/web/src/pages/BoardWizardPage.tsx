@@ -14,7 +14,6 @@ import {
 import { useTaskLibrary } from './createPage/useTaskLibrary';
 import { useBoardWizard, type BoardWizardDraft, type WizardStep } from './createHub/useBoardWizard';
 import { BoardWizardStepper } from '../components/wizard/BoardWizardStepper';
-import { WizardEditModeNote } from '../components/wizard/WizardEditModeNote';
 import { BoardWizardSetupStep } from '../components/wizard/BoardWizardSetupStep';
 import { BoardWizardTasksStep } from '../components/wizard/BoardWizardTasksStep';
 import { BoardWizardPreviewStep } from '../components/wizard/BoardWizardPreviewStep';
@@ -339,11 +338,6 @@ export function BoardWizardPage({
         onStepClick={wizard.goToStep}
       />
 
-      {/* Board Sources P4 (locked decision, frame 5a) — editing an
-          existing repeating board IS the "Sources" surface; the note
-          renders under the stepper, mirroring iOS `BoardWizardView`. */}
-      <WizardEditModeNote editingTemplateId={wizard.editingTemplateId} />
-
       <div className={styles.stepContainer}>
         {wizard.currentStep === 1 && (
           <BoardWizardSetupStep
@@ -398,7 +392,6 @@ export function BoardWizardPage({
             onToggleSourceExclude={wizard.toggleSourceExclude}
             onPullPoolSource={wizard.pullPool}
             onPullBoardSource={wizard.pullBoard}
-            editingTemplateId={wizard.editingTemplateId}
             manualTaskVary={wizard.manualTaskVary}
             onSetManualVary={wizard.setManualVary}
             onSetMemberTarget={wizard.setMemberTarget}

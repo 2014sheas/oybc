@@ -25,13 +25,14 @@ export interface TasksPoolHeaderProps {
  * inline-editing port PR-1, porting iOS `RisoTasksPoolHeaderView`).
  *
  * "YOUR TASK POOL" kicker + N/required count, a blue→green progress bar,
- * pool-model copy (short / exact / over), and — when `centerTaskMode` is
+ * an optional caller note, and — when `centerTaskMode` is
  * on — a center-task indicator line.
  *
  * Board Sources P4 (docs/BOARD_SOURCES.md §Surfaces item 1): the count is
- * the CAPACITY and the copy is the design's: short → "N more to fill the
- * board. Widen a pool's range or add tasks."; filled → "✓ Fills your
- * board · N extras rotate in". No "min" suffix anymore.
+ * the CAPACITY (`n/required`, green once satisfied). The advice sentences
+ * ("N more to fill the board…", "✓ Fills your board…") were removed under
+ * #548 — the count + bar carry the state; only a caller-supplied `note`
+ * (the pool editor's deck preview) renders a line.
  *
  * Deliberate divergence from iOS (recorded in the handoff, §1): iOS colors
  * the whole satisfied center-task line gold, which is 1.33:1 contrast on
@@ -48,8 +49,6 @@ export function TasksPoolHeader({
   centerSatisfied,
   note,
 }: TasksPoolHeaderProps): React.ReactElement {
-  const remaining = Math.max(0, tasksRequired - capacity);
-  const extra = Math.max(0, capacity - tasksRequired);
   const isSatisfied = capacity >= tasksRequired;
   const progress = tasksRequired > 0 ? Math.min(1, capacity / tasksRequired) : 0;
 
@@ -80,25 +79,11 @@ export function TasksPoolHeader({
         />
       </div>
 
-      <p className={styles.note}>
-        {note !== undefined ? (
+      {note !== undefined && (
+        <p className={styles.note}>
           <span className={isSatisfied ? styles.noteOk : styles.noteShort}>{note}</span>
-        ) : isSatisfied ? (
-          extra > 0 ? (
-            <span className={styles.noteOk}>
-              ✓ Fills your board · <strong>{extra} extra{extra === 1 ? '' : 's'}</strong> rotate
-              in
-            </span>
-          ) : (
-            <span className={styles.noteOk}>✓ Fills your board exactly</span>
-          )
-        ) : (
-          <span className={styles.noteShort}>
-            <strong>{remaining} more</strong> to fill the board. Widen a pool&apos;s range or add
-            tasks.
-          </span>
-        )}
-      </p>
+        </p>
+      )}
 
       {centerTaskMode && (
         <div className={styles.centerLine}>

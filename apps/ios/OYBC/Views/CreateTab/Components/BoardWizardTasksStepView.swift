@@ -159,9 +159,7 @@ struct BoardWizardTasksStepView: View {
     var onPullPoolSource: (_ pool: Pool) -> Void = { _ in }
     var onPullBoardSource: (_ boardId: String) -> Void = { _ in }
     /// The repeating board under edit (`BoardWizardViewModel.editingTemplateId`),
-    /// or nil for every other session. Only used to append the
-    /// `WizardEditModeNote` line to the remove-source confirm, so the dialog
-    /// can't read as if it were changing the board already on the Boards tab.
+    /// or nil for every other session (gates the board-source pull semantics).
     var editingTemplateId: String? = nil
 
     // MARK: - Member rules (B3, docs/BOARD_SOURCES.md §Member rules)
@@ -678,21 +676,15 @@ struct BoardWizardTasksStepView: View {
     }
 
     /// The confirm's body: what the removal costs, worded by the SHARED
-    /// sentence builder so web and iOS can't drift, plus the edit-mode line
-    /// while a repeating board is under edit (the same sentence
-    /// `WizardEditModeNote` uses).
+    /// sentence builder so web and iOS can't drift.
     private func removeSourceMessage(for source: BoardSource) -> String {
-        let loss = BoardSources.removeSourceLossSentence(
+        return BoardSources.removeSourceLossSentence(
             BoardSources.sourceConfiguration(
                 source,
                 defaultFilter: BoardWizardViewModel.newSourceFilter(for: source.kind),
                 seededTargetByTaskId: seededTargets(for: source)
             )
         ) ?? ""
-        guard editingTemplateId != nil else { return loss }
-        return loss.isEmpty
-            ? "Changes apply from the next board."
-            : loss + " Changes apply from the next board."
     }
 
     /// Dashed "Add from a pool or board" entry row — styled like the library

@@ -236,23 +236,11 @@ struct RisoSourceRowView: View {
                 maxValue: source.max,
                 onChange: onSetRange
             )
-            if !isDefaultRange {
-                Text(rangeNote)
-                    .font(.risoBody(11, .semibold))
-                    .foregroundStyle(Color.risoInk)
-                    .padding(.bottom, 4)
-            }
         }
         .padding(.top, 10)
         .padding(.horizontal, 16)
         .padding(.bottom, 8)
         .overlay(alignment: .bottom) { hairline }
-    }
-
-    private var rangeNote: String {
-        source.min == effectiveMax
-            ? "\(source.min) of these will be on the board."
-            : "Between \(source.min) and \(effectiveMax) of these will be on the board."
     }
 
     // MARK: - Member rows

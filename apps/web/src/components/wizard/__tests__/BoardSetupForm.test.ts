@@ -68,9 +68,10 @@ describe('BoardSetupForm — mode-locked schedule field (Board Creation Split, w
     expect(html).not.toContain('>Custom<');
   });
 
-  it('recurring: shows the dashed "A fresh board every {cadence} · starts {window}" note', () => {
+  it('recurring: shows the terse "Every {cadence} · starts {window}" meta, not the sentence form', () => {
     const html = render({ isRecurring: true, timeframe: Timeframe.WEEKLY });
-    expect(html).toContain('A fresh board every week');
+    expect(html).toContain('Every week');
+    expect(html).not.toContain('A fresh board every');
   });
 
   it('coerces the CHOSEN center option away in recurring mode (matches the long-standing recurring exclusion)', () => {
@@ -82,14 +83,21 @@ describe('BoardSetupForm — mode-locked schedule field (Board Creation Split, w
     expect(html).not.toContain('Pick one of my board tasks');
   });
 
-  it('one-off board-size caption states the exact requirement', () => {
+  it('one-off board-size value is the exact task count', () => {
     const html = render({ isRecurring: false, size: 5, centerType: CenterSquareType.FREE });
-    expect(html).toContain('A 5×5 board needs 24 tasks.');
+    expect(html).toContain('>24 tasks<');
+    expect(html).not.toContain('needs 24 tasks');
   });
 
-  it('recurring board-size caption drops the "A n×n board" framing (overfill is the variety mechanism)', () => {
+  it('recurring board-size value is "n+ tasks" (overfill is the variety mechanism)', () => {
     const html = render({ isRecurring: true, size: 5, centerType: CenterSquareType.FREE });
-    expect(html).toContain('Needs at least 24 tasks — extras rotate in.');
+    expect(html).toContain('>24+ tasks<');
+    expect(html).not.toContain('extras rotate in');
+  });
+
+  it('CHOSEN center shows no "pick the center in the next step" caption', () => {
+    const html = render({ isRecurring: false, centerType: CenterSquareType.CHOSEN });
+    expect(html).not.toContain('pick the center');
   });
 
   it('hides both schedule fields entirely in edit-active mode', () => {

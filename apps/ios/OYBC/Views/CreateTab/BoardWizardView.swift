@@ -342,17 +342,6 @@ struct BoardWizardView: View {
                     )
                     .padding(.horizontal, Riso.gutter)
                     .padding(.bottom, 8)
-
-                    // Board Sources P2 (locked decision) — editing an
-                    // existing repeating board IS the "Sources" surface;
-                    // the design's frame-5a note renders here.
-                    if wizard.editingTemplateId != nil {
-                        Text("Changes apply from the next board.")
-                            .font(.risoBody(11, .semibold))
-                            .foregroundStyle(Color.risoMuted)
-                            .padding(.horizontal, Riso.gutter)
-                            .padding(.bottom, 6)
-                    }
                 }
 
                 // ── Step content ────────────────────────────────────────

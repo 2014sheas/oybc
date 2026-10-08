@@ -228,11 +228,6 @@ export function BoardSetupForm({
               </option>
             ))}
           </select>
-          {centerType === CenterSquareType.CHOSEN && (
-            <p className={styles.hint}>
-              You'll pick the center in the next step.
-            </p>
-          )}
         </div>
       )}
     </>
@@ -249,17 +244,13 @@ export function BoardSetupForm({
     <div className={styles.fieldGroup}>
       <span className={styles.label}>Board size</span>
       <BoardSizeCards selectedSize={size} onSelect={onSizeChange} />
-      {/* Upfront requirement line — surfaces the task-count cost live with
-          the size + center selection so the user isn't blindsided by a
-          disabled Next later. Count is the shared `fillableCellCount`
-          (odd + FREE center reserves one cell). Copy diverges per mode
-          (README §Copy strings): one-off states the exact requirement;
-          recurring drops the "A n×n board" framing since overfill is the
-          intended variety mechanism there. */}
+      {/* Task-count requirement as a terse value under the size control, so
+          the user isn't blindsided by a disabled Next later. Count is the
+          shared `fillableCellCount` (odd + FREE center reserves one cell).
+          Recurring boards take MORE than the count (overfill is the
+          variety mechanism), so they read `n+ tasks`. */}
       <p className={styles.requirementNote}>
-        {isRecurring
-          ? `Needs at least ${fillableCellCount(size, centerType)} tasks — extras rotate in.`
-          : `A ${size}×${size} board needs ${fillableCellCount(size, centerType)} tasks.`}
+        {`${fillableCellCount(size, centerType)}${isRecurring ? '+' : ''} tasks`}
       </p>
     </div>
   ) : null;
@@ -376,7 +367,7 @@ export function BoardSetupForm({
           {timeframeLabel && (
             <p className={styles.hint}>
               <RisoIcon name="repeat" size={14} />
-              {`A fresh board every ${recurringCadenceNoun(timeframe)} · starts ${timeframeLabel}`}
+              {`Every ${recurringCadenceNoun(timeframe)} · starts ${timeframeLabel}`}
             </p>
           )}
         </div>
