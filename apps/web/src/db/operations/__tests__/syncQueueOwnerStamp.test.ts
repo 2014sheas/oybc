@@ -128,6 +128,9 @@ describe('sync-internal enqueues are owned by the pull uid, not the live uid', (
   it('a remote-win pulled task for ANON reaching the board cascade, while live auth is REAL, leaves only ANON-owned rows', async () => {
     await db.tasks.add(task());
     await seedBoardPlacing(TASK);
+    // Stale stored stats, so the cascade's re-derive genuinely changes the
+    // board (a converged board is no longer rewritten — sync-churn fix).
+    await db.boards.update(BOARD, { completedTasks: 5 });
     await db.syncQueue.clear(); // only the pull's enqueues are asserted
 
     // Remote completes the task at a higher version → remote wins → cascade.

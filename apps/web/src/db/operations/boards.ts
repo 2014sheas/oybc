@@ -12,6 +12,7 @@ import {
 } from '@oybc/shared';
 import { generateUUID, currentTimestamp } from '../utils';
 import { addToSyncQueue } from './syncQueue';
+import { writeBoardDerivedStats } from './boardDerivedWrite';
 import { fetchAllCompoundChildren } from './compoundChildren';
 import { fetchAllBoardTasks, buildBoardTaskTombstone } from './boardTasks';
 import { buildWindowContext } from './windowContext';
@@ -280,31 +281,8 @@ export async function updateBoardAndCascade(
           windowContext,
         );
 
-        const isGreenlog = stats.completedTasks >= freshBoard.boardSize * freshBoard.boardSize;
-
-        const boardUpdate: Partial<Board> = {
-          completedTasks: stats.completedTasks,
-          linesCompleted: stats.linesCompleted,
-          completedLineIds: stats.completedLineIds,
-          updatedAt: now,
-          version: (freshBoard.version ?? 1) + 1,
-        };
-
-        if (isGreenlog && freshBoard.status === BoardStatus.ACTIVE) {
-          boardUpdate.status = BoardStatus.COMPLETED;
-          boardUpdate.completedAt = now;
-        }
-        if (!isGreenlog && freshBoard.status === BoardStatus.COMPLETED) {
-          boardUpdate.status = BoardStatus.ACTIVE;
-          boardUpdate.completedAt = undefined;
-        }
-
-        await db.boards.update(affectedBoardId, boardUpdate);
-
-        const updatedBoard = await db.boards.get(affectedBoardId);
-        if (updatedBoard) {
-          await addToSyncQueue('boards', affectedBoardId, SyncOperationType.UPDATE, updatedBoard, 0);
-        }
+        // Compare-before-write (sync-churn fix) — a no-op derivation never bumps or re-pushes.
+        await writeBoardDerivedStats(freshBoard, stats, now);
       }
     },
   );

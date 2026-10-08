@@ -118,9 +118,10 @@ describe('commitSquareEdits', () => {
     expect(placements[0]).toMatchObject({ taskId: 'task-new', row: 0, col: 0 });
 
     const queued = await db.syncQueue.toArray();
-    // 'boards' is enqueued too — `addBoardTaskToBoard`'s cascade always
-    // re-derives + enqueues the board the new placement lands on.
-    expect(queued.map((q) => q.entityType).sort()).toEqual(['boardTasks', 'boards', 'tasks']);
+    // No 'boards' entry: `addBoardTaskToBoard`'s cascade re-derives the board,
+    // but an incomplete new square leaves its derived stats unchanged, so the
+    // board is neither rewritten nor re-pushed (sync-churn fix).
+    expect(queued.map((q) => q.entityType).sort()).toEqual(['boardTasks', 'tasks']);
   });
 
   it('adds an existing task to a just-removed cell position, in the same save (ordering)', async () => {

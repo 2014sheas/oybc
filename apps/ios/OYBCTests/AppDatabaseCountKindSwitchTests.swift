@@ -257,7 +257,9 @@ final class AppDatabaseCountKindSwitchTests: XCTestCase {
         try db.saveBoardTask(K.placement(id: "btRootOnLive", boardId: "bLive", taskId: "root", cell: 1, size: 2))
         let before = try XCTUnwrap(db.fetchBoard(id: "bLive")).version
         try db.switchCounterKind(rootTaskId: "root", to: .discrete, now: now)
-        XCTAssertEqual(try XCTUnwrap(db.fetchBoard(id: "bLive")).version, before + 1)
+        // The switch leaves this board's derived stats unchanged, so (sync-churn
+        // fix) the single derivation pass writes nothing: no bump at all.
+        XCTAssertEqual(try XCTUnwrap(db.fetchBoard(id: "bLive")).version, before)
     }
 
     func test_confirmCopy_andGoalRounding() {

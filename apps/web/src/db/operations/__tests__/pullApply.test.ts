@@ -545,11 +545,11 @@ describe('applyRemoteSubdoc — local-wins re-enqueue (item 1)', () => {
     await db.tasks.add(local);
     const identicalRemote: Task = { ...local };
 
-    // Sanity: resolveConflict on an identical pair resolves remote-wins
-    // (exact tie → server authority), so this exercises the remote-wins
-    // branch, not local-wins — confirming no enqueue happens either way.
+    // An identical row (same version + updatedAt — an echo of our own push)
+    // is skipped before LWW runs: nothing is written, cascaded or enqueued
+    // (sync-churn fix).
     const status = await applyRemoteSubdoc('tasks', identicalRemote, USER);
-    expect(status).toMatch(/^Pulled /);
+    expect(status).toMatch(/^Unchanged /);
 
     const entries = (await db.syncQueue.toArray()).filter(
       (i) => i.entityType === 'tasks' && i.entityId === TASK,

@@ -45,7 +45,8 @@ import { refreshWatchersForBoards } from './boardLifecycle';
  * @param remoteData The raw document data from Firestore (untrusted).
  * @param authenticatedUserId The current user's uid, for userId scope
  *   checks on user-scoped collections.
- * @returns A short status string for logging; `null` if local-wins.
+ * @returns A short status string for logging (`Unchanged …` for an identical
+ *   echo, which writes nothing); `null` if local-wins.
  */
 /**
  * Loop-guard predicate for the pull-path local-wins re-enqueue (board-integrity
@@ -127,6 +128,18 @@ export async function applyRemoteSubdoc(
 
   const table = db.table(collectionName);
   const localData = (await table.get(validated.id)) as SyncableEntity | undefined;
+
+  // Echo guard (sync-churn fix): a row with the same version AND updatedAt as
+  // the stored one is the same authored write — almost always this device's
+  // own push coming back (`fullSync` reads its watermark before pushing; the
+  // snapshot listener echoes own writes). LWW would let it "win" the exact
+  // tie, re-put it and re-run the authored cascade, which used to bump and
+  // re-push every containing board on every cycle. Nothing changed: skip the
+  // put and the cascade. LWW itself is untouched — a genuinely different row
+  // still resolves through `resolveConflict` below.
+  if (localData && !rowsGenuinelyDiffer(localData, validated)) {
+    return `Unchanged ${collectionName}/${validated.id} (identical to local)`;
+  }
 
   const isNew = !localData;
   const remoteWins = isNew || resolveConflict(localData!, validated).winner === 'remote';

@@ -328,7 +328,7 @@ final class SyncService: ObservableObject {
     ///   - docStore: Remote store for the push path; defaults to Firestore.
     ///
     /// SCOPE CAVEAT (E3): the push path (`pushSyncCore` → `processPushItem`),
-    /// the users-doc helpers and `applyRemoteSubdoc` read `database`;
+    /// the users-doc helpers, `applyRemoteSubdoc` and `applyPulledDocument` read `database`;
     /// fullSync's collection pull, the listeners and the safety net still use
     /// `AppDatabase.shared` / Firestore directly — widening is a deliberate
     /// future step, not an oversight.
@@ -1010,142 +1010,151 @@ final class SyncService: ObservableObject {
 
             for docSnap in snapshot.documents {
                 let remoteData = docSnap.data()
-
-                // Validate before touching GRDB. A malformed payload (bad
-                // version, mismatched userId, missing id) is logged and
-                // skipped — the safety-net pull retries next cycle.
-                if let reason = validateRemotePullDocument(
-                    collection: collection.firestoreName,
-                    data: remoteData,
-                    authenticatedUserId: userId
-                ) {
-                    let msg = "Skipped \(collection.firestoreName): \(reason)"
-                    result.details.append(msg)
-                    log(msg)
-                    continue
-                }
-
-                guard let remoteId = remoteData["id"] as? String else { continue }
-
-                // Wrap fetch + upsert + cascade in one transaction so a cascade
-                // failure rolls back the upsert. Mirrors the listener-path
-                // applyRemoteSubdoc structure.
-                var pullOutcome: (didWrite: Bool, kind: String)? = nil
-                var skipReason: String? = nil
-                try AppDatabase.shared.write { db in
-                    // CompoundChild parent-userId check (mirrors web + listener).
-                    if collection.firestoreName == "compoundChildren" {
-                        guard let compoundTaskId = remoteData["compoundTaskId"] as? String, !compoundTaskId.isEmpty else {
-                            skipReason = "missing compoundTaskId"
-                            return
-                        }
-                        let parentRow = try Row.fetchOne(
-                            db,
-                            sql: "SELECT userId FROM tasks WHERE id = ?",
-                            arguments: [compoundTaskId]
-                        )
-                        guard let parentRow = parentRow else {
-                            skipReason = "parent compound not yet present locally"
-                            return
-                        }
-                        let parentUserId: String? = parentRow["userId"]
-                        guard parentUserId == userId else {
-                            skipReason = "parent userId mismatch"
-                            return
-                        }
-                    }
-
-                    let localData = try fetchLocalRecord(db: db, grdbTable: collection.grdbTable, id: remoteId)
-
-                    var didWrite = false
-                    if localData == nil {
-                        try upsertLocalRecord(db: db, grdbTable: collection.grdbTable, data: remoteData)
-                        didWrite = true
-                        pullOutcome = (true, "new")
-                    } else {
-                        // Windowed Completion (docs §Shared counters interaction):
-                        // counting-task conflicts resolve by union-of-events (the
-                        // batched taskEvents pull recompute), so a pulled Task just
-                        // LWW-upserts like any other row. The Phase-4 additive-merge
-                        // branch for shared-counter sources was retired (dead code
-                        // deleted in WC PR D); `lastSyncedCount` is inert.
-                        let winner = resolveConflict(local: localData!, remote: remoteData)
-                        if winner == "remote" {
-                            try upsertLocalRecord(db: db, grdbTable: collection.grdbTable, data: remoteData)
-                            didWrite = true
-                            let remoteV = remoteData["version"] as? Int ?? 0
-                            let localV = localData!["version"] as? Int ?? 0
-                            pullOutcome = (true, "remote v\(remoteV) > local v\(localV)")
-                        } else {
-                            let localV = localData!["version"] as? Int ?? 0
-                            let remoteV = remoteData["version"] as? Int ?? 0
-                            pullOutcome = (false, "local v\(localV) >= remote v\(remoteV)")
-                            // Board-integrity PR-4 (Item 1): re-assert the
-                            // fresher local row so a push race that let a
-                            // stale remote write land can't strand this
-                            // device's newer data forever. Same transaction
-                            // as the (skipped) upsert.
-                            try reassertLocalWinIfNeeded(
-                                db: db, entityType: collection.firestoreName, entityId: remoteId,
-                                localData: localData!, remoteData: remoteData, ownerUid: userId
-                            )
-                        }
-                    }
-
-                    // Pull cascade — same transaction as the upsert so a
-                    // cascade error rolls back the upsert.
-                    if didWrite {
-                        if collection.firestoreName == "tasks" {
-                            try runPullCascade(db: db, changedTaskId: remoteId, ownerUid: userId)
-                        }
-                        if collection.firestoreName == "compoundChildren",
-                           let compoundTaskId = remoteData["compoundTaskId"] as? String {
-                            try runPullCascade(db: db, changedTaskId: compoundTaskId, ownerUid: userId)
-                        }
-                        // Board-integrity PR-1 (tombstones, docs/BOARD_INTEGRITY.md):
-                        // a pulled `boardTasks` row — live re-placement OR
-                        // tombstone — changes the affected board's grid
-                        // geometry, so its stats must re-derive in the same
-                        // transaction as the upsert. Without this, a pulled
-                        // placement change left `completedTasks` /
-                        // `completedLineIds` stale on the receiving device
-                        // until the next unrelated cascade happened to touch
-                        // that board.
-                        if collection.firestoreName == "boardTasks",
-                           let boardId = remoteData["boardId"] as? String {
-                            try runPullCascadeForBoardTask(db: db, boardId: boardId, ownerUid: userId)
-                        }
-                        // Pulled board: sealed-transport convergence / a pulled Reopen's
-                        // live re-derive / watcher refresh — all local-only, this txn.
-                        if collection.firestoreName == "boards" {
-                            try AppDatabase.applyPulledBoardSideEffects(db: db, boardId: remoteId, remoteData: remoteData, localData: localData)
-                        }
-                    }
-                }
-
-                if let skip = skipReason {
-                    let msg = "Skipped \(collection.firestoreName)/\(remoteId): \(skip)"
-                    result.details.append(msg)
-                    log(msg)
-                } else if let outcome = pullOutcome {
-                    if outcome.didWrite {
-                        result.pulled += 1
-                        recordEvent(.pulled)
-                        let msg = "Pulled \(collection.firestoreName)/\(remoteId) (\(outcome.kind))"
-                        result.details.append(msg)
-                        log(msg)
-                    } else {
-                        result.conflicts += 1
-                        let msg = "Kept local \(collection.firestoreName)/\(remoteId) (\(outcome.kind))"
-                        result.details.append(msg)
-                        log(msg)
-                    }
-                }
+                try applyPulledDocument(collection: collection, remoteData: remoteData, userId: userId, result: &result)
             }
         } catch {
             let msg = "Pull failed for \(collection.firestoreName): \(error.localizedDescription)"
             result.details.append(msg)
             log(msg)
+        }
+    }
+
+    /// One document of the batch full-sync pull (`processPullCollection`):
+    /// validate, LWW-apply and cascade inside ONE write on the injected
+    /// `database`. Internal so tests can drive it without Firestore.
+    func applyPulledDocument(
+        collection: (firestoreName: String, grdbTable: String),
+        remoteData: [String: Any],
+        userId: String,
+        result: inout PullResult
+    ) throws {
+        // Validate before touching GRDB. A malformed payload (bad
+        // version, mismatched userId, missing id) is logged and
+        // skipped — the safety-net pull retries next cycle.
+        if let reason = validateRemotePullDocument(
+            collection: collection.firestoreName,
+            data: remoteData,
+            authenticatedUserId: userId
+        ) {
+            let msg = "Skipped \(collection.firestoreName): \(reason)"
+            result.details.append(msg)
+            log(msg)
+            return
+        }
+
+        guard let remoteId = remoteData["id"] as? String else { return }
+
+        // Wrap fetch + upsert + cascade in one transaction so a cascade
+        // failure rolls back the upsert. Mirrors the listener-path
+        // applyRemoteSubdoc structure.
+        var pullOutcome: (didWrite: Bool, kind: String)? = nil
+        var skipReason: String? = nil
+        try database.write { db in
+            // CompoundChild parent-userId check (mirrors web + listener).
+            if collection.firestoreName == "compoundChildren" {
+                guard let compoundTaskId = remoteData["compoundTaskId"] as? String, !compoundTaskId.isEmpty else {
+                    skipReason = "missing compoundTaskId"
+                    return
+                }
+                let parentRow = try Row.fetchOne(
+                    db,
+                    sql: "SELECT userId FROM tasks WHERE id = ?",
+                    arguments: [compoundTaskId]
+                )
+                guard let parentRow = parentRow else {
+                    skipReason = "parent compound not yet present locally"
+                    return
+                }
+                let parentUserId: String? = parentRow["userId"]
+                guard parentUserId == userId else {
+                    skipReason = "parent userId mismatch"
+                    return
+                }
+            }
+
+            let localData = try fetchLocalRecord(db: db, grdbTable: collection.grdbTable, id: remoteId)
+
+            var didWrite = false
+            if let localData, !rowsGenuinelyDiffer(local: localData, remote: remoteData) {
+                // Echo guard (sync-churn fix): same version + updatedAt =
+                // the same authored write (usually our own push coming
+                // back). Nothing changed — no upsert, no cascade.
+                return
+            } else if localData == nil {
+                try upsertLocalRecord(db: db, grdbTable: collection.grdbTable, data: remoteData)
+                didWrite = true
+                pullOutcome = (true, "new")
+            } else {
+                // Windowed Completion (docs §Shared counters interaction):
+                // counting-task conflicts resolve by union-of-events (the
+                // batched taskEvents pull recompute), so a pulled Task just
+                // LWW-upserts like any other row. The Phase-4 additive-merge
+                // branch for shared-counter sources was retired (dead code
+                // deleted in WC PR D); `lastSyncedCount` is inert.
+                let winner = resolveConflict(local: localData!, remote: remoteData)
+                if winner == "remote" {
+                    try upsertLocalRecord(db: db, grdbTable: collection.grdbTable, data: remoteData)
+                    didWrite = true
+                    let remoteV = remoteData["version"] as? Int ?? 0
+                    let localV = localData!["version"] as? Int ?? 0
+                    pullOutcome = (true, "remote v\(remoteV) > local v\(localV)")
+                } else {
+                    let localV = localData!["version"] as? Int ?? 0
+                    let remoteV = remoteData["version"] as? Int ?? 0
+                    pullOutcome = (false, "local v\(localV) >= remote v\(remoteV)")
+                    // Board-integrity PR-4 (Item 1): re-assert the
+                    // fresher local row so a push race that let a
+                    // stale remote write land can't strand this
+                    // device's newer data forever. Same transaction
+                    // as the (skipped) upsert.
+                    try reassertLocalWinIfNeeded(
+                        db: db, entityType: collection.firestoreName, entityId: remoteId,
+                        localData: localData!, remoteData: remoteData, ownerUid: userId
+                    )
+                }
+            }
+
+            // Pull cascade — same transaction as the upsert so a
+            // cascade error rolls back the upsert.
+            if didWrite {
+                if collection.firestoreName == "tasks" {
+                    try AppDatabase.runPullCascade(db: db, changedTaskId: remoteId, ownerUid: userId)
+                }
+                if collection.firestoreName == "compoundChildren",
+                   let compoundTaskId = remoteData["compoundTaskId"] as? String {
+                    try AppDatabase.runPullCascade(db: db, changedTaskId: compoundTaskId, ownerUid: userId)
+                }
+                // Board-integrity PR-1 (docs/BOARD_INTEGRITY.md): a pulled
+                // placement (live OR tombstone) re-derives its board, same txn.
+                if collection.firestoreName == "boardTasks",
+                   let boardId = remoteData["boardId"] as? String {
+                    try AppDatabase.runPullCascadeForBoardTask(db: db, boardId: boardId, ownerUid: userId)
+                }
+                // Pulled board: sealed-transport convergence / a pulled Reopen's
+                // live re-derive / watcher refresh — all local-only, this txn.
+                if collection.firestoreName == "boards" {
+                    try AppDatabase.applyPulledBoardSideEffects(db: db, boardId: remoteId, remoteData: remoteData, localData: localData)
+                }
+            }
+        }
+
+        if let skip = skipReason {
+            let msg = "Skipped \(collection.firestoreName)/\(remoteId): \(skip)"
+            result.details.append(msg)
+            log(msg)
+        } else if let outcome = pullOutcome {
+            if outcome.didWrite {
+                result.pulled += 1
+                recordEvent(.pulled)
+                let msg = "Pulled \(collection.firestoreName)/\(remoteId) (\(outcome.kind))"
+                result.details.append(msg)
+                log(msg)
+            } else {
+                result.conflicts += 1
+                let msg = "Kept local \(collection.firestoreName)/\(remoteId) (\(outcome.kind))"
+                result.details.append(msg)
+                log(msg)
+            }
         }
     }
 
@@ -1816,7 +1825,10 @@ extension SyncService {
 
                 let localData = try fetchLocalRecord(db: db, grdbTable: collection.grdbTable, id: remoteId)
                 var didWrite = false
-                if localData == nil {
+                if let localData, !rowsGenuinelyDiffer(local: localData, remote: remoteData) {
+                    // Echo guard (sync-churn fix) — see `applyPulledDocument`.
+                    return false
+                } else if localData == nil {
                     try upsertLocalRecord(db: db, grdbTable: collection.grdbTable, data: remoteData)
                     didWrite = true
                     log("Pulled \(collection.firestoreName)/\(remoteId) (new, listener)")
@@ -1851,18 +1863,18 @@ extension SyncService {
                 // which writes a new local version above).
                 if didWrite {
                     if collection.firestoreName == "tasks" {
-                        try runPullCascade(db: db, changedTaskId: remoteId, ownerUid: authenticatedUserId)
+                        try AppDatabase.runPullCascade(db: db, changedTaskId: remoteId, ownerUid: authenticatedUserId)
                     }
                     if collection.firestoreName == "compoundChildren",
                        let compoundTaskId = remoteData["compoundTaskId"] as? String {
-                        try runPullCascade(db: db, changedTaskId: compoundTaskId, ownerUid: authenticatedUserId)
+                        try AppDatabase.runPullCascade(db: db, changedTaskId: compoundTaskId, ownerUid: authenticatedUserId)
                     }
                     // Board-integrity PR-1 (tombstones) — see the batch pull
                     // path (`processPullCollection`) for rationale. Same
                     // deterministic, same-transaction semantics.
                     if collection.firestoreName == "boardTasks",
                        let boardId = remoteData["boardId"] as? String {
-                        try runPullCascadeForBoardTask(db: db, boardId: boardId, ownerUid: authenticatedUserId)
+                        try AppDatabase.runPullCascadeForBoardTask(db: db, boardId: boardId, ownerUid: authenticatedUserId)
                     }
                     // Pulled board — see `AppDatabase.applyPulledBoardSideEffects`.
                     if collection.firestoreName == "boards" {
@@ -1878,252 +1890,7 @@ extension SyncService {
         }
     }
 
-    // MARK: - Pull Cascade
-
-    /// Run the derivation pass for a Task whose state just changed via pull.
-    ///
-    /// Recomputes board stats + enqueues board sync for every board affected
-    /// by this task (directly or via a compound). Does NOT bump Task.version —
-    /// the pulled value is authoritative.
-    ///
-    /// **Throws** on any cascade failure so the caller's enclosing transaction
-    /// rolls back the upserted row. Without this, a cascade failure would leave
-    /// the task applied locally but board stats stale forever — a silent
-    /// divergence with no safety net.
-    ///
-    /// - Parameters:
-    ///   - db: GRDB transaction in which to perform the cascade. Caller is
-    ///         responsible for the enclosing `write { db in ... }` block.
-    ///   - changedTaskId: The id of the Task that was just upserted.
-    private func runPullCascade(db: Database, changedTaskId: String, ownerUid: String) throws {
-        // B2 final-review FI1 (non-authored: baseline only), then the DerivationPass lookups.
-        try AppDatabase.refreshPulledDerivedBaseline(db: db, taskId: changedTaskId)
-        let allChildren: [CompoundChild] = try CompoundChild
-            .filter(Column("isDeleted") == false)
-            .fetchAll(db)
-        let allBoardTasks: [BoardTask] = try BoardTask
-            .filter(Column("isDeleted") == false)
-            .fetchAll(db)
-        let allTasks: [Task] = try Task.fetchAll(db)
-        // Phase 6.3 — same rationale as runBoardCascadeForTaskWithResults
-        // (AppDatabase+Tasks): feed the workspace's boards into the
-        // derivation pass so the specific-board / recurring-template
-        // achievement branches evaluate against real cross-board state
-        // rather than degrading to "incomplete".
-        let allBoards: [Board] = try Board.fetchAll(db)
-        // Windowed Completion — group events once so every board evaluates
-        // windowed on the pull path too (docs §Sync).
-        let windowContext = try AppDatabase.buildWindowContext(db: db)
-
-        var taskById: [String: Task] = [:]
-        for t in allTasks { taskById[t.id] = t }
-        var childrenByCompound: [String: [CompoundChild]] = [:]
-        for c in allChildren { childrenByCompound[c.compoundTaskId, default: []].append(c) }
-
-        let parentCompounds = DerivationPass.findTransitiveParentCompounds(
-            changedTaskId: changedTaskId,
-            children: allChildren
-        )
-        let affectedBoardIds = DerivationPass.findAffectedBoardIds(
-            changedTaskId: changedTaskId,
-            parentCompounds: parentCompounds,
-            boardTasks: allBoardTasks
-        )
-
-        for boardId in affectedBoardIds {
-            guard let board = try Board.fetchOne(db, key: boardId), !board.isDeleted, board.sealedAt == nil else { continue }
-            // Board-integrity PR-2 (issue #375): resolve collisions/OOB before
-            // deriving, so persisted stats can never disagree with the render.
-            let boardTasksOnBoard = PlacementIntegrity.resolvedRows(
-                boardId: boardId, in: allBoardTasks, boardSize: board.boardSize
-            )
-            let update = DerivationPass.computeBoardStatsUpdate(
-                board: board,
-                boardTasksOnBoard: boardTasksOnBoard,
-                childrenByCompound: childrenByCompound,
-                taskById: taskById,
-                allBoards: allBoards,
-                windowContext: windowContext
-            )
-
-            // Write board stats. Bump board.version (local write), NOT Task.version.
-            let now = AppDatabase.currentTimestamp()
-            let completedLineIdsJson = encodePullCascadeJSONArray(update.completedLineIds)
-            try db.execute(sql: """
-                UPDATE boards
-                SET completedTasks = ?, linesCompleted = ?, completedLineIds = ?,
-                    updatedAt = ?, version = version + 1
-                WHERE id = ?
-                """, arguments: [
-                    update.completedTasks,
-                    update.linesCompleted,
-                    completedLineIdsJson,
-                    now,
-                    boardId
-                ])
-
-            // Enqueue board sync so the updated stats reach Firestore.
-            if let updatedBoard = try Board.fetchOne(db, key: boardId) {
-                let payload = try JSONEncoder().encode(updatedBoard)
-                let payloadStr = String(data: payload, encoding: .utf8) ?? "{}"
-                try Self.insertPullCascadeBoardSync(db: db, boardId: boardId, payload: payloadStr, now: now, ownerUid: ownerUid)
-            }
-        }
-    }
-
-    /// Board-integrity PR-1 (tombstones, docs/BOARD_INTEGRITY.md) — the
-    /// `boardTasks`-pull cascade. A pulled `board_tasks` row — a LIVE
-    /// re-placement or a tombstone — changes ONE board's grid geometry
-    /// directly (unlike a `tasks` pull, which fans out via
-    /// `findAffectedBoardIds`). Recomputes that board's stats + enqueues its
-    /// sync, mirroring `runPullCascade`'s write shape exactly (same raw-SQL
-    /// UPDATE + sync_queue INSERT, no GREENLOG status transition — the pull
-    /// cascades never flip board status, consistent with `runPullCascade`/
-    /// `runPullCascadeForTasks`).
-    ///
-    /// Sealed boards: `computeBoardStatsUpdate`'s live path is for ACTIVE
-    /// boards only, so a sealed board takes the SAME sealed-transport-
-    /// convergence branch the `boards`-collection pull uses
-    /// (`reDeriveSealedBoardSnapshots`) instead of the live write below —
-    /// keeping a sealed snapshot coherent when a late/offline placement
-    /// change for a placed task arrives after the seal.
-    ///
-    /// **Throws** on any cascade failure so the caller's enclosing
-    /// transaction rolls back the upserted row (same contract as
-    /// `runPullCascade`).
-    ///
-    /// - Parameters:
-    ///   - db: GRDB transaction in which to perform the cascade. Caller is
-    ///         responsible for the enclosing `write { db in ... }` block.
-    ///   - boardId: The `boardId` of the `BoardTask` row that was just upserted.
-    private func runPullCascadeForBoardTask(db: Database, boardId: String, ownerUid: String) throws {
-        guard let board = try Board.fetchOne(db, key: boardId), !board.isDeleted else { return }
-
-        if board.sealedAt != nil {
-            try AppDatabase.reDeriveSealedBoardSnapshots(db: db, boardIds: [boardId])
-            return try AppDatabase.refreshWatchersAfterPull(db: db, boardIds: [boardId])
-        }
-
-        let allChildren: [CompoundChild] = try CompoundChild
-            .filter(Column("isDeleted") == false)
-            .fetchAll(db)
-        let allBoardTasks: [BoardTask] = try BoardTask
-            .filter(Column("isDeleted") == false)
-            .fetchAll(db)
-        let allTasks: [Task] = try Task.fetchAll(db)
-        let allBoards: [Board] = try Board.fetchAll(db)
-        let windowContext = try AppDatabase.buildWindowContext(db: db)
-
-        var taskById: [String: Task] = [:]
-        for t in allTasks { taskById[t.id] = t }
-        var childrenByCompound: [String: [CompoundChild]] = [:]
-        for c in allChildren {
-            childrenByCompound[c.compoundTaskId, default: []].append(c)
-        }
-
-        // Board-integrity PR-2 (issue #375): resolve collisions/OOB before
-        // deriving, so persisted stats can never disagree with the render.
-        let boardTasksOnBoard = PlacementIntegrity.resolvedRows(
-            boardId: boardId, in: allBoardTasks, boardSize: board.boardSize
-        )
-        let update = DerivationPass.computeBoardStatsUpdate(
-            board: board,
-            boardTasksOnBoard: boardTasksOnBoard,
-            childrenByCompound: childrenByCompound,
-            taskById: taskById,
-            allBoards: allBoards,
-            windowContext: windowContext
-        )
-
-        let now = AppDatabase.currentTimestamp()
-        let completedLineIdsJson = encodePullCascadeJSONArray(update.completedLineIds)
-        try db.execute(sql: """
-            UPDATE boards
-            SET completedTasks = ?, linesCompleted = ?, completedLineIds = ?,
-                updatedAt = ?, version = version + 1
-            WHERE id = ?
-            """, arguments: [
-                update.completedTasks,
-                update.linesCompleted,
-                completedLineIdsJson,
-                now,
-                boardId
-            ])
-
-        if let updatedBoard = try Board.fetchOne(db, key: boardId) {
-            let payload = try JSONEncoder().encode(updatedBoard)
-            let payloadStr = String(data: payload, encoding: .utf8) ?? "{}"
-            try Self.insertPullCascadeBoardSync(db: db, boardId: boardId, payload: payloadStr, now: now, ownerUid: ownerUid)
-        }
-        try AppDatabase.refreshWatchersAfterPull(db: db, boardIds: [boardId])
-    }
-
-    /// Batched multi-task pull cascade (Windowed Completion, docs §Sync —
-    /// "recompute each affected task's caches once, then run ONE derivation pass
-    /// per affected live board"). Unions the boards affected across every changed
-    /// task and recomputes each exactly once, with the windowed event context
-    /// built once. Same transaction contract + write shape as `runPullCascade`.
-    ///
-    /// - Parameters:
-    ///   - db: GRDB write transaction.
-    ///   - changedTaskIds: The tasks whose state changed (deduped internally).
-    private func runPullCascadeForTasks(db: Database, changedTaskIds: Set<String>, ownerUid: String) throws {
-        let allChildren: [CompoundChild] = try CompoundChild
-            .filter(Column("isDeleted") == false)
-            .fetchAll(db)
-        let allBoardTasks: [BoardTask] = try BoardTask
-            .filter(Column("isDeleted") == false)
-            .fetchAll(db)
-        let allTasks: [Task] = try Task.fetchAll(db)
-        let allBoards: [Board] = try Board.fetchAll(db)
-        let windowContext = try AppDatabase.buildWindowContext(db: db)
-
-        var taskById: [String: Task] = [:]
-        for t in allTasks { taskById[t.id] = t }
-        var childrenByCompound: [String: [CompoundChild]] = [:]
-        for c in allChildren { childrenByCompound[c.compoundTaskId, default: []].append(c) }
-
-        // Union of affected boards across every changed task.
-        var affectedBoardIds = Set<String>()
-        for changedTaskId in changedTaskIds {
-            let parentCompounds = DerivationPass.findTransitiveParentCompounds(
-                changedTaskId: changedTaskId, children: allChildren
-            )
-            affectedBoardIds.formUnion(DerivationPass.findAffectedBoardIds(
-                changedTaskId: changedTaskId, parentCompounds: parentCompounds, boardTasks: allBoardTasks
-            ))
-        }
-
-        let now = AppDatabase.currentTimestamp()
-        for boardId in affectedBoardIds {
-            guard let board = try Board.fetchOne(db, key: boardId), !board.isDeleted, board.sealedAt == nil else { continue }
-            // Board-integrity PR-2 (issue #375): resolve collisions/OOB before
-            // deriving, so persisted stats can never disagree with the render.
-            let boardTasksOnBoard = PlacementIntegrity.resolvedRows(
-                boardId: boardId, in: allBoardTasks, boardSize: board.boardSize
-            )
-            let update = DerivationPass.computeBoardStatsUpdate(
-                board: board,
-                boardTasksOnBoard: boardTasksOnBoard,
-                childrenByCompound: childrenByCompound,
-                taskById: taskById,
-                allBoards: allBoards,
-                windowContext: windowContext
-            )
-            let completedLineIdsJson = encodePullCascadeJSONArray(update.completedLineIds)
-            try db.execute(sql: """
-                UPDATE boards
-                SET completedTasks = ?, linesCompleted = ?, completedLineIds = ?,
-                    updatedAt = ?, version = version + 1
-                WHERE id = ?
-                """, arguments: [update.completedTasks, update.linesCompleted, completedLineIdsJson, now, boardId])
-            if let updatedBoard = try Board.fetchOne(db, key: boardId) {
-                let payload = try JSONEncoder().encode(updatedBoard)
-                let payloadStr = String(data: payload, encoding: .utf8) ?? "{}"
-                try Self.insertPullCascadeBoardSync(db: db, boardId: boardId, payload: payloadStr, now: now, ownerUid: ownerUid)
-            }
-        }
-    }
+    // MARK: - Pull Cascade — see `AppDatabase+PullCascade.swift`.
 
     /// Batched pull-path handler for the `taskEvents` collection (Windowed
     /// Completion, docs §Sync — "Batched pull-path recompute"). Twin of web's
@@ -2167,6 +1934,9 @@ extension SyncService {
                 for raw in valid {
                     guard let id = raw["id"] as? String else { continue }
                     let local = try fetchLocalRecord(db: db, grdbTable: "task_events", id: id)
+                    // Echo guard (sync-churn fix): an identical row changes
+                    // nothing, so it must not re-run the recompute + cascade.
+                    if let local, !rowsGenuinelyDiffer(local: local, remote: raw) { continue }
                     let remoteWins = local == nil || resolveConflict(local: local!, remote: raw) == "remote"
                     if !remoteWins { continue }
                     try upsertLocalRecord(db: db, grdbTable: "task_events", data: raw)
@@ -2186,7 +1956,7 @@ extension SyncService {
                 // 4. ONE batched derivation pass per affected LIVE board (sealed
                 //    excluded); roots expand to their window-stamped derived rows.
                 if !cascadeTaskIds.isEmpty {
-                    try runPullCascadeForTasks(db: db, changedTaskIds: AppDatabase.withWindowStampedDerived(db: db, taskIds: cascadeTaskIds), ownerUid: userId)
+                    try AppDatabase.runPullCascadeForTasks(db: db, changedTaskIds: AppDatabase.withWindowStampedDerived(db: db, taskIds: cascadeTaskIds), ownerUid: userId)
                 }
 
                 // 5. Seal re-derivation (docs §Seal snapshots re-derive from the
@@ -2300,7 +2070,7 @@ extension SyncService {
                     db: db, taskIds: healedTaskIds
                 )
                 if !healedTaskIds.isEmpty {
-                    try runPullCascadeForTasks(db: db, changedTaskIds: AppDatabase.withWindowStampedDerived(db: db, taskIds: healedTaskIds), ownerUid: userId)
+                    try AppDatabase.runPullCascadeForTasks(db: db, changedTaskIds: AppDatabase.withWindowStampedDerived(db: db, taskIds: healedTaskIds), ownerUid: userId)
                     try AppDatabase.reDeriveSealedBoards(db: db, changedTaskIds: healedTaskIds)
                 }
             }
@@ -2311,14 +2081,6 @@ extension SyncService {
         }
         for _ in 0..<minted { recordEvent(.pulled) }
         return minted
-    }
-
-    /// JSON-encode a `[String]` array to a compact JSON string.
-    /// Used exclusively by `runPullCascade` to serialise `completedLineIds`.
-    private func encodePullCascadeJSONArray(_ arr: [String]) -> String {
-        guard let data = try? JSONEncoder().encode(arr),
-              let s = String(data: data, encoding: .utf8) else { return "[]" }
-        return s
     }
 
     // MARK: - Safety-net timer

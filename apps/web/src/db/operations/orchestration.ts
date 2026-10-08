@@ -2,7 +2,6 @@ import { db } from '../internal';
 import {
   BoardStatus,
   TaskType,
-  SyncOperationType,
   findTransitiveParentCompounds,
   findAffectedBoardIds,
   computeBoardStatsUpdate,
@@ -11,13 +10,12 @@ import {
   quantizeCount,
   resolveTaskWindowState,
   resolvePlacements,
-  type Board,
   type Task,
   type CompoundChild,
   type BoardStatsUpdate,
 } from '@oybc/shared';
 import { currentTimestamp } from '../utils';
-import { addToSyncQueue } from './syncQueue';
+import { writeBoardDerivedStats } from './boardDerivedWrite';
 import { fetchAllCompoundChildren } from './compoundChildren';
 import { fetchAllBoardTasks } from './boardTasks';
 import { buildWindowContext } from './windowContext';
@@ -74,11 +72,6 @@ export interface BoardCascadeEntry extends BoardStatsUpdate {
  */
 interface CascadeOptions {
   authored?: boolean;
-}
-
-/** `updatedAt` + `version` bump for an authored cascade write; nothing otherwise. */
-function authorStamp(board: Board, now: string, authored: boolean): Partial<Board> {
-  return authored ? { updatedAt: now, version: (board.version ?? 1) + 1 } : {};
 }
 
 /**
@@ -183,45 +176,15 @@ export async function runBoardCascadeForTasks(
       windowContext,
     );
 
-    const totalSquares = affectedBoard.boardSize * affectedBoard.boardSize;
-    const isGreenlog = stats.completedTasks >= totalSquares;
-
-    let boardCompleted = false;
-    let boardReactivated = false;
-
-    // Typed as `Partial<Board>` (not `Record<string, unknown>`) so Dexie
-    // 4's stricter `UpdateSpec<T>` accepts it. Dexie 4 narrowed the
-    // `Table.update` signature to require key-mapped types — the old
-    // permissive `Record<string, unknown>` was rejected.
-    const boardUpdate: Partial<Board> = {
-      completedTasks: stats.completedTasks,
-      linesCompleted: stats.linesCompleted,
-      completedLineIds: stats.completedLineIds,
-      ...authorStamp(affectedBoard, now, authored),
-    };
-
-    // Auto-complete board on greenlog.
-    if (isGreenlog && affectedBoard.status === BoardStatus.ACTIVE) {
-      boardUpdate.status = BoardStatus.COMPLETED;
-      boardUpdate.completedAt = now;
-      boardCompleted = true;
-    }
-
-    // Revert COMPLETED → ACTIVE if board is no longer fully complete.
-    if (!isGreenlog && affectedBoard.status === BoardStatus.COMPLETED) {
-      boardUpdate.status = BoardStatus.ACTIVE;
-      boardUpdate.completedAt = undefined;
-      boardReactivated = true;
-    }
-
-    await db.boards.update(affectedBoardId, boardUpdate);
-
-    // Enqueue sync for this board (inside the transaction for all-or-nothing
-    // semantics) — authored writes only; a non-authored refresh stays local.
-    const updatedBoard = authored ? await db.boards.get(affectedBoardId) : undefined;
-    if (updatedBoard) {
-      await addToSyncQueue('boards', affectedBoardId, SyncOperationType.UPDATE, updatedBoard, 0);
-    }
+    // Compare-before-write (sync-churn fix): an unchanged board is not
+    // rewritten, version-bumped or enqueued, but still lands in the result
+    // map so callers' bingo / greenlog diffs see it.
+    const { boardCompleted, boardReactivated } = await writeBoardDerivedStats(
+      affectedBoard,
+      stats,
+      now,
+      { authored },
+    );
 
     resultMap.set(affectedBoardId, {
       ...stats,
@@ -299,29 +262,7 @@ export async function runBoardCascadeForBoardId(
     windowContext,
   );
 
-  const totalSquares = board.boardSize * board.boardSize;
-  const isGreenlog = stats.completedTasks >= totalSquares;
-
-  const boardUpdate: Partial<Board> = {
-    completedTasks: stats.completedTasks,
-    linesCompleted: stats.linesCompleted,
-    completedLineIds: stats.completedLineIds,
-    ...authorStamp(board, now, authored),
-  };
-
-  if (isGreenlog && board.status === BoardStatus.ACTIVE) {
-    boardUpdate.status = BoardStatus.COMPLETED;
-    boardUpdate.completedAt = now;
-  } else if (!isGreenlog && board.status === BoardStatus.COMPLETED) {
-    boardUpdate.status = BoardStatus.ACTIVE;
-    boardUpdate.completedAt = undefined;
-  }
-
-  await db.boards.update(boardId, boardUpdate);
-  const updatedBoard = authored ? await db.boards.get(boardId) : undefined;
-  if (updatedBoard) {
-    await addToSyncQueue('boards', boardId, SyncOperationType.UPDATE, updatedBoard, 0);
-  }
+  await writeBoardDerivedStats(board, stats, now, { authored });
 }
 
 // ─── Orchestration ───────────────────────────────────────────────────────────

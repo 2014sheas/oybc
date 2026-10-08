@@ -445,24 +445,12 @@ extension AppDatabase {
                     windowContext: windowContext
                 )
 
-                let totalSquares = affectedBoard.boardSize * affectedBoard.boardSize
-                let isGreenlogNow = update.completedTasks >= totalSquares
-
-                affectedBoard.completedTasks = update.completedTasks
-                affectedBoard.totalTasks = totalSquares
-                affectedBoard.linesCompleted = update.linesCompleted
-                affectedBoard.completedLineIds = update.completedLineIds.isEmpty ? nil : update.completedLineIds
+                // Compare-before-write (sync-churn fix): a no-op derivation never bumps or re-pushes.
+                let storedBoard = affectedBoard
+                affectedBoard.applyDerivedStats(update, now: now)
+                guard affectedBoard.derivedStateDiffers(from: storedBoard) else { continue }
                 affectedBoard.updatedAt = now
                 affectedBoard.version += 1
-
-                if isGreenlogNow, affectedBoard.status == .active {
-                    affectedBoard.status = .completed
-                    affectedBoard.completedAt = now
-                } else if !isGreenlogNow, affectedBoard.status == .completed {
-                    affectedBoard.status = .active
-                    affectedBoard.completedAt = nil
-                }
-
                 try affectedBoard.save(db)
                 try SyncQueueBuilder.makeItem(
                     entityType: "boards",
