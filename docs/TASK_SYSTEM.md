@@ -390,7 +390,7 @@ Inline-created children (a child whose definition is authored alongside the pare
 
 ### Editing a task
 
-> **Scope rule under design (2026-10-08, owner ruling):** edits made from a
+> **Scope rule (locked 2026-10-08, owner ruling; train in flight):** edits made from a
 > **board** (Board Edit square sheet, wizard Tasks-step inline edit) will apply
 > to **that board only** — forking the task when it is placed anywhere else —
 > while edits from **Task Detail / the Tasks tab / the pool editor** stay

@@ -1,7 +1,8 @@
 # Board-scoped task edits (copy-on-write from Board Edit)
 
-**Status:** DESIGN — awaiting owner rulings on the decision points marked **[D1]–[D6]**.
-Nothing here is built. Design opened 2026-10-08 after the owner's ruling:
+**Status:** LOCKED 2026-10-08 — the owner accepted every recommendation in the
+decision table (D1–D6); the PR train in §9 is authorised. Design opened
+2026-10-08 after the owner's ruling:
 
 > "Edits at board level (via Edit board etc.) should ONLY affect the task in the
 > scope of that board, even if this means creating a new task upon the edit.
@@ -40,7 +41,7 @@ A Board Edit edit of task `T` on board `B`:
 1. **Edit in place** when `T` has no live placement other than on `B`. A placement
    counts if its `BoardTask` is not deleted and its board is not deleted — **sealed
    and archived boards count** (an in-place edit would rewrite the titles a closed
-   board's snapshot shows) **[D1]**.
+   board's snapshot shows) **[D1 — ruled yes]**.
 2. **Fork** otherwise: mint `T'`, repoint `B`'s placement at `T'`, and apply the
    edit to `T'`. `T` is not written at all.
 
@@ -49,11 +50,11 @@ pointing at `T`, so the next spawn / pull still supplies the unedited task. That
 is the behaviour the ruling asks for (a board edit must not leak into future
 boards).
 
-**[D1] Ruling needed:** confirm that any other placement — sealed boards
+**[D1] RULED (recommendation accepted):** confirm that any other placement — sealed boards
 included — triggers a fork. Alternative: ignore sealed/archived placements and
 edit in place (cheaper, but rewrites history on closed boards).
 
-**[D2] Ruling needed:** should a task that is a **pool member** (but placed
+**[D2] RULED (recommendation accepted):** should a task that is a **pool member** (but placed
 nowhere else) still be edited in place? Recommendation: **yes** — the test is
 placements only; the pool keeps the row, and the next pull from that pool gets
 the edited task, which matches "the task I edited is the task in the pool".
@@ -79,7 +80,7 @@ board_tasks[B, slot].taskId = T'.id      // version bump + enqueue, like Replace
   `compoundChildPickerCandidates`). It is reachable from its square (tap → Task
   Detail), where its Usage row shows exactly one board and a `Forked from
   {T.title}` is **not** shown (no provenance captions — #548); the original is
-  one tap away only if the owner wants a chevron there **[D3]**.
+  not linked from there **[D3 — ruled no]**.
 - **Later edits to `T'`** from Task Detail are "global" for `T'` — which is this
   one board. From Board Edit they are in place (no other placements). A fork is
   never re-forked.
@@ -114,7 +115,7 @@ rename it. Two options:
   on every render; and a later edit of `T`'s history (undo) would silently move
   `T'`'s state.
 
-**[D4] Ruling needed:** (a) or (b). Recommendation **(a)**.
+**[D4] RULED (recommendation accepted):** (a) or (b). Recommendation **(a)**.
 
 Edge cases under (a):
 - **Type changes.** Simple → Counting keeps completion events only if the new
@@ -139,14 +140,14 @@ keeps `T`, and the daily's future completions no longer reach the monthly.
 That is exactly what "scope of that board" means, and the in-window event
 migration keeps *past* state consistent on both. It is still worth saying once:
 
-**[D5] Ruling needed:** accept this consequence for derived daily/monthly tasks,
+**[D5] RULED (recommendation accepted):** accept this consequence for derived daily/monthly tasks,
 and surface it only through the one confirm line in §8 (shown the first time a
 fork would happen on a board), never as a standing caption.
 
 The user who *wants* the global change still has it: square → Task Detail →
 edit (global). The square menu already offers "Open task"; nothing new is
 needed, but the Board Edit sheet's Done button label could read **"Save for this
-board"** **[D6]** so the scope is visible as a control label, not a sentence.
+board"** **[D6 — ruled yes]** so the scope is visible as a control label, not a sentence.
 
 ## 6. Interactions with existing per-board machinery
 
@@ -193,7 +194,7 @@ board"** **[D6]** so the scope is visible as a control label, not a sentence.
 Nothing new on the grid. In the Board Edit square sheet:
 
 - Done button → **"Save for this board"** when the sheet's task would fork
-  (other placements exist), plain **Done** otherwise **[D6]**.
+  (other placements exist), plain **Done** otherwise **[D6 — ruled yes]**.
 - The first time a fork would happen on a given board, a confirm with the body
   *"Applies to this board only. Other boards keep the original."* (confirm-dialog
   consequence bodies are an allowed copy category). Remembered per board for the
@@ -220,9 +221,9 @@ transactional — most of the work is the planner + tests), PR 3 small, PR 4 doc
 - Pool editor and Tasks-tab edits stay global; no per-pool task copies.
 - Linked-counter copy shape, the window heal, member rules.
 
-## Decision summary
+## Decision summary — all RULED 2026-10-08 ("roll with your recommendations")
 
-| # | Question | Recommendation |
+| # | Question | Ruling |
 | --- | --- | --- |
 | D1 | Do sealed/archived placements trigger a fork? | Yes — never rewrite closed-board history. |
 | D2 | Does pool membership alone trigger a fork? | No — placements only. |
