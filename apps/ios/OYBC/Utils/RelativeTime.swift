@@ -19,10 +19,12 @@ enum RelativeTime {
     /// Returns a human-readable relative string for the given ISO 8601 date
     /// string, or `nil` when the input is `nil` or unparseable.
     ///
-    /// - Parameter iso: Optional ISO 8601 timestamp string.
+    /// - Parameters:
+    ///   - iso: Optional ISO 8601 timestamp string.
+    ///   - now: Reference clock (defaults to the live clock; snapshot tests pin it).
     /// - Returns: A string like "just now", "5m ago", "3d ago", or `nil`.
-    static func formatRelativeTime(_ iso: String?) -> String? {
+    static func formatRelativeTime(_ iso: String?, now: Date = Date()) -> String? {
         guard let iso, let date = isoParser.date(from: iso) else { return nil }
-        return formatter.localizedString(for: date, relativeTo: Date())
+        return formatter.localizedString(for: date, relativeTo: now)
     }
 }
