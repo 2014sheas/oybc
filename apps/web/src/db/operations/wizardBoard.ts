@@ -39,6 +39,7 @@ import {
   applyCompoundStructureEditInTransaction,
   compoundLinkProblemForPatch,
 } from './compoundStructureEdit';
+import { ensureBoardScopedTask, stampForkCaches } from './boardScopedEdit';
 
 /**
  * One not-yet-persisted task created inside the wizard's New Task sheet
@@ -315,18 +316,28 @@ export class StagedEditError extends Error {
  *   for a missing task, an invalid patch, or a failed compound link guard
  *   instead of skipping, so the surrounding transaction rolls back and a Save
  *   never silently drops the user's edit. Default false (wizard persist).
+ *   `boardId` (the one-off board wizard) makes every edit BOARD-SCOPED
+ *   (docs/BOARD_SCOPED_TASK_EDITS.md): a task placed on any other board is
+ *   forked for that board first and the edit lands on the fork; a task
+ *   placed nowhere else — including one created in this wizard session —
+ *   is edited in place. Absent (pool editor, repeating-board pool) = global.
+ * @returns Original id → fork id for every forked task, so the caller places
+ *   the fork instead of the original.
  * @throws StagedEditError in strict mode only.
  */
 export async function applyStagedTaskEditsForWizardPersist(
   stagedEdits: Map<string, TaskEditPatch>,
   skipIfPendingIds: ReadonlySet<string>,
   now: string,
-  options: { strict?: boolean } = {},
-): Promise<void> {
-  if (stagedEdits.size === 0) return;
+  options: { strict?: boolean; boardId?: string } = {},
+): Promise<Map<string, string>> {
+  const forks = new Map<string, string>();
+  if (stagedEdits.size === 0) return forks;
   const strict = options.strict === true;
+  const scope = options.boardId !== undefined ? { boardId: options.boardId } : undefined;
 
-  for (const [taskId, patch] of stagedEdits) {
+  for (const [stagedId, patch] of stagedEdits) {
+    let taskId = stagedId;
     let task = await db.tasks.get(taskId);
     if (!task) {
       if (strict) throw new StagedEditError('missing-task', taskId, 'A task you edited no longer exists');
@@ -338,6 +349,16 @@ export async function applyStagedTaskEditsForWizardPersist(
       continue;
     }
 
+    if (task.type !== TaskType.COMPOUND && skipIfPendingIds.has(taskId)) continue;
+    const scoped = scope
+      ? await ensureBoardScopedTask(taskId, scope.boardId, task.type, now)
+      : { targetId: taskId, forked: false };
+    if (scoped.forked) {
+      forks.set(stagedId, scoped.targetId);
+      taskId = scoped.targetId;
+      task = (await db.tasks.get(taskId)) ?? task;
+    }
+
     if (task.type === TaskType.COMPOUND) {
       // An ineligible newly linked existing task skips the whole edit
       // (never half-applied), exactly like an invalid patch.
@@ -346,9 +367,8 @@ export async function applyStagedTaskEditsForWizardPersist(
         if (strict) throw new StagedEditError('link-guard', taskId, linkProblem);
         continue;
       }
-      await applyCompoundStructureEditInTransaction(task, patch, {}, now);
+      await applyCompoundStructureEditInTransaction(task, patch, {}, now, scope);
     } else {
-      if (skipIfPendingIds.has(taskId)) continue;
       if (task.type === TaskType.COUNTING) {
         // The switch (rounding the root + its family) and the goal guard run first,
         // inside this transaction; a refused goal throws and rolls the whole save back.
@@ -362,7 +382,9 @@ export async function applyStagedTaskEditsForWizardPersist(
       await addToSyncQueue('tasks', taskId, SyncOperationType.UPDATE, saved);
       await runBoardCascadeForTask(taskId);
     }
+    await stampForkCaches(scoped, now);
   }
+  return forks;
 }
 
 /**
@@ -570,16 +592,20 @@ export async function persistWizardBoardRows({
   recurringDraftMix,
   status,
   boardFields,
-  placement,
+  placement: initialPlacement,
   size,
   centerType,
   pendingTasks,
   stagedEdits,
   sources,
-  manualTaskIds,
-  manualTaskVary,
+  manualTaskIds: initialManualTaskIds,
+  manualTaskVary: initialManualTaskVary,
   rng,
 }: PersistWizardBoardRowsInput): Promise<string> {
+  // Rebound by a board-scoped staged edit that forks a placed task.
+  let placement = initialPlacement;
+  let manualTaskIds = initialManualTaskIds;
+  let manualTaskVary = initialManualTaskVary;
   const isOddBoard = size % 2 !== 0;
   const centerRow = Math.floor(size / 2);
   const centerCol = Math.floor(size / 2);
@@ -624,16 +650,6 @@ export async function persistWizardBoardRows({
       );
       await persistWizardPendingTasks(pendingTasks, placedTaskIds);
 
-      // ── Staged inline edits (Inline Task Editing, web PR-2) ─────────────
-      // ONLY on an active board create — a draft must never carry a task
-      // edit (mirrors iOS `saveWizardBoard`'s exact gate). Runs BEFORE the
-      // derivation pass below so a changed counting goal (or a compound's
-      // sub-task edits) feed into the freshly-computed stored stats.
-      if (status === 'active' && stagedEdits && stagedEdits.size > 0) {
-        const pendingTaskIds = new Set(pendingTasks.map((p) => p.task.id));
-        await applyStagedTaskEditsForWizardPersist(stagedEdits, pendingTaskIds, currentTimestamp());
-      }
-
       // ── Board + BoardTask rows ──────────────────────────────────────────
       if (draftBoardId !== null) {
         boardId = draftBoardId;
@@ -658,6 +674,28 @@ export async function persistWizardBoardRows({
           recurringDraftMix,
         });
         boardId = board.id;
+      }
+
+      // ── Staged inline edits (Inline Task Editing, web PR-2) ─────────────
+      // ONLY on an active board create — a draft must never carry a task
+      // edit (mirrors iOS `saveWizardBoard`'s exact gate). BOARD-SCOPED
+      // (docs/BOARD_SCOPED_TASK_EDITS.md): runs once the board row exists —
+      // its id + window feed the fork plan — and BEFORE the snapshot, the
+      // member-rule mint and the placements, so a forked task is placed (and
+      // minted from) as its fork, and a changed counting goal (or a
+      // compound's sub-task edits) feeds the derivation pass below.
+      if (status === 'active' && stagedEdits && stagedEdits.size > 0) {
+        const pendingTaskIds = new Set(pendingTasks.map((p) => p.task.id));
+        const forks = await applyStagedTaskEditsForWizardPersist(stagedEdits, pendingTaskIds, currentTimestamp(), {
+          boardId,
+        });
+        if (forks.size > 0) {
+          placement = placement.map((t) => (t && forks.has(t.id) ? { ...t, id: forks.get(t.id)! } : t));
+          manualTaskIds = manualTaskIds?.map((id) => forks.get(id) ?? id);
+          manualTaskVary = Object.fromEntries(
+            Object.entries(manualTaskVary ?? {}).map(([id, v]) => [forks.get(id) ?? id, v]),
+          );
+        }
       }
 
       // ONE `tasks` snapshot for both the member-rule mint and the derivation

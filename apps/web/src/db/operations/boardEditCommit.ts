@@ -1,5 +1,5 @@
 import { db } from '../internal';
-import { CenterSquareType } from '@oybc/shared';
+import { CenterSquareType, TaskType } from '@oybc/shared';
 import { assertBoardEditable, updateBoardAndCascade } from './boards';
 import {
   addBoardTaskToBoard,
@@ -10,6 +10,7 @@ import {
   updateBoardTaskAndCascade,
 } from './boardTasks';
 import { applyBoardEditTaskOverrideInTransaction } from './compoundStructureEdit';
+import { ensureBoardScopedTask, stampForkCaches } from './boardScopedEdit';
 import { persistWizardPendingTasks } from './wizardBoard';
 import type { SquareDraftCell } from '../../hooks/squareEditCount';
 import type { BoardEditTaskOverride } from '../../hooks/squaresEditReducer';
@@ -68,7 +69,9 @@ export interface CommitSquareEditsInput {
  *       Simple⇄Counting type switch, or a compound edit / conversion that
  *       THROWS on invalid input so the whole Save rolls back), remapped from the staged
  *      id to the id actually placed (the per-board copy of a linked counter);
- *      the library source is never patched by a remapped override.
+ *      the library source is never patched by a remapped override. Each
+ *      override is BOARD-SCOPED: a task placed on any other board is forked
+ *      first (`ensureBoardScopedTask`) and the edit lands on the fork.
  *   8. LOCKS on pre-existing cells (`setBoardTaskLocked(true)`) — AFTER
  *      moves, so "move → Lock in place" lands the row at its new slot first.
  *      A NEW cell's lock was already written by step 7.
@@ -181,7 +184,14 @@ export async function commitSquareEdits(input: CommitSquareEditsInput): Promise<
         const targetId = placedIdByStagedId.get(stagedId) ?? stagedId;
         if (patched.has(targetId)) continue;
         patched.add(targetId);
-        await applyBoardEditTaskOverrideInTransaction(targetId, patch, now);
+        // Board-scoped (docs/BOARD_SCOPED_TASK_EDITS.md): a task placed on any
+        // other board is forked first and the edit lands on the fork.
+        const stored = await db.tasks.get(targetId);
+        if (!stored || stored.isDeleted) continue;
+        const editedType = patch.compound ? TaskType.COMPOUND : (patch.type ?? stored.type);
+        const scoped = await ensureBoardScopedTask(targetId, boardId, editedType, now);
+        await applyBoardEditTaskOverrideInTransaction(scoped.targetId, patch, now, { boardId });
+        await stampForkCaches(scoped, now);
       }
 
       // 8. Locks on pre-existing cells — after moves (see doc above).
