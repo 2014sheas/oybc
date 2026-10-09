@@ -11,20 +11,22 @@ import {
   type Task,
 } from '@oybc/shared';
 import {
+  SHARED_COUNTER_TYPE_MESSAGE,
   compoundLinkProblemForPatch,
   fetchCompoundChildren,
   fetchTasksByIds,
+  hasLiveLinkedCopies,
 } from '../../db/operations';
 import type { TaskEditPatch } from '../../db/taskEditPatch';
 import { useModalA11y } from '../../hooks/useModalA11y';
 import { loadLibraryInputs } from '../../pages/tasks/loadLibraryInputs';
-import { TypeBadge } from '../TypeBadge';
 import { GoalEntry } from '../counters/GoalEntry';
 import { KindPicker } from '../counters/KindPicker';
 import { LinkedKindTag } from '../counters/LinkedKindTag';
 import { useKindSwitchRequest } from '../counters/useKindSwitchRequest';
 import { planKindSwitchPreview } from '../../db/operations/countKindSwitch';
-import { RisoSegmented } from '../riso';
+import { TaskTypeControl } from '../taskEdit/TaskTypeControl';
+import { typeControlMode } from '../taskEdit/taskTypeRules';
 import { CompoundFields, type LibraryInputsState } from '../wizard/CompoundFields';
 import {
   buildSheetOverride,
@@ -33,7 +35,6 @@ import {
   seedSheetTitle,
   sheetValidationProblem,
   showsCompoundEditor,
-  typeControlMode,
   type BoardEditTaskOverride,
 } from './boardEditTaskSheetModel';
 import { BoardActionConfirmDialog } from '../boardActions/BoardActionConfirmDialog';
@@ -85,26 +86,6 @@ export interface BoardEditTaskSheetProps {
   forkConfirmed?: boolean;
   /** Records the first-fork confirm for the rest of the edit session. */
   onForkConfirmed?: () => void;
-}
-
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
-/** Type labels shared with iOS. */
-const TYPE_OPTIONS = [
-  { value: TaskType.NORMAL, label: 'Simple' },
-  { value: TaskType.COUNTING, label: 'Counting' },
-  { value: TaskType.COMPOUND, label: 'Compound' },
-];
-
-/** Human-readable type label for the fixed type indicator. */
-function typeLabel(type: TaskType | string): string {
-  switch (type) {
-    case TaskType.NORMAL:      return 'Simple';
-    case TaskType.COUNTING:    return 'Counting';
-    case TaskType.COMPOUND:    return 'Compound';
-    case TaskType.ACHIEVEMENT: return 'Achievement';
-    default:                   return String(type);
-  }
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
@@ -283,6 +264,18 @@ export function BoardEditTaskSheet({
     }
     setDoneError(null);
     const patch = buildSheetOverride(input);
+    if (patch.type !== original.type && original.type === TaskType.COUNTING && task.sharedCounterId == null) {
+      // A hub counter / root with live copies keeps its type (Save refuses it too).
+      setChecking(true);
+      try {
+        if (await hasLiveLinkedCopies(task.id)) {
+          setDoneError(SHARED_COUNTER_TYPE_MESSAGE);
+          return;
+        }
+      } finally {
+        setChecking(false);
+      }
+    }
     if (patch.compound) {
       // Link eligibility (loop / achievement / goal-less counter): needs the
       // DB, so it runs here; Save re-checks inside its transaction.
@@ -300,7 +293,7 @@ export function BoardEditTaskSheet({
     onDone(task.id, patch);
   };
 
-  const mode = typeControlMode(original.type, task.sharedCounterId != null);
+  const mode = typeControlMode(original.type, task.sharedCounterId != null || original.isCounter === true);
 
   // ── Render ───────────────────────────────────────────────────────────────
 
@@ -319,48 +312,9 @@ export function BoardEditTaskSheet({
           <h2 className={styles.sheetTitle}>Edit task</h2>
         </div>
 
-        {/* Type: a switch for Simple/Counting, fixed for Compound/Achievement */}
-        <div className={styles.typeRow}>
-          <span className={styles.typeLabel}>Type</span>
-          {mode === 'switch' ? (
-            <div className={styles.typeSwitch}>
-              <RisoSegmented
-                aria-label="Task type"
-                size="compact"
-                fullWidth
-                options={TYPE_OPTIONS}
-                value={selected}
-                onChange={(next) => {
-                  // Switching back to an originally-Counting task after a staged
-                  // switch away: the merged task has no counting fields, so reseed.
-                  if (next === TaskType.COUNTING && original.type === TaskType.COUNTING && !action && !goalStr && !unit) {
-                    const originalKind = resolveCountKind(original);
-                    setAction(original.action ?? '');
-                    setCountKind(originalKind);
-                    setGoalStr(original.maxCount !== undefined ? formatCountForInput(original.maxCount, originalKind) : '');
-                    setUnit(original.unit ?? '');
-                  }
-                  setSelected(next);
-                  setDoneError(null);
-                }}
-              />
-            </div>
-          ) : (
-            <div className={styles.typeBadgeWrap}>
-              <TypeBadge type={task.type} size="small" />
-              <span className={styles.typeReadOnly}>{typeLabel(task.type)}</span>
-            </div>
-          )}
-        </div>
-
-        {/* Task name */}
+        {/* Title */}
         <label className={styles.field}>
-          <span className={styles.fieldLabel}>
-            Task name
-            {selected === TaskType.COUNTING && (
-              <span className={styles.optional}> (optional)</span>
-            )}
-          </span>
+          <span className={styles.fieldLabel}>Title</span>
           <input
             type="text"
             className={styles.fieldInput}
@@ -374,6 +328,26 @@ export function BoardEditTaskSheet({
             }
           />
         </label>
+
+        {/* Type: a switch for Simple/Counting, fixed for Compound / a linked counter */}
+        <TaskTypeControl
+          mode={mode}
+          selected={selected}
+          storedType={task.type}
+          onChange={(next) => {
+            // Switching back to an originally-Counting task after a staged
+            // switch away: the merged task has no counting fields, so reseed.
+            if (next === TaskType.COUNTING && original.type === TaskType.COUNTING && !action && !goalStr && !unit) {
+              const originalKind = resolveCountKind(original);
+              setAction(original.action ?? '');
+              setCountKind(originalKind);
+              setGoalStr(original.maxCount !== undefined ? formatCountForInput(original.maxCount, originalKind) : '');
+              setUnit(original.unit ?? '');
+            }
+            setSelected(next);
+            setDoneError(null);
+          }}
+        />
 
         {/* Counting-specific fields */}
         {selected === TaskType.COUNTING && (

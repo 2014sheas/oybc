@@ -87,6 +87,11 @@ extension AppDatabase {
     /// this `write`, so there is no stale-read window. A nil `compound` keeps
     /// the basic-fields-only behaviour.
     ///
+    /// Type switch: a `patch.type` that differs from the stored type goes
+    /// through the shared `saveTypeSwitchedTask` (the helper Board Edit's
+    /// commit uses) with no board scope — global and retroactive on every
+    /// board placing the task.
+    ///
     /// Counter roots: a root's title / action / unit edit propagates to its
     /// live per-board copies in this same write (`propagateRootFields`,
     /// docs/BOARD_SCOPED_TASK_EDITS.md §6); the goal stays per-board.
@@ -107,6 +112,16 @@ extension AppDatabase {
         try write { db in
             guard var task = try Task.fetchOne(db, key: taskId), !task.isDeleted else {
                 throw TaskEditError.taskNotFound
+            }
+            // Type switch (Simple ⇄ Counting, Simple / Counting → Compound):
+            // GLOBAL — no board scope — and retroactive on every board.
+            if let next = patch.type, next != task.type {
+                var switched = TaskTypeSwitch.converting(task, to: next)
+                if next == .counting { switched.countKind = patch.countKind ?? .discrete }
+                try Self.applyBasicFields(of: patch, to: &switched)
+                return try Self.saveTypeSwitchedTask(
+                    db: db, original: task, switched: switched, structure: patch.compound, now: now
+                )
             }
             // A counter root's live copies, read before any write of this save.
             let propagation = try Self.readRootPropagationSnapshot(db: db, taskId: taskId)

@@ -723,4 +723,13 @@ final class BoardEditCompoundTests: XCTestCase {
         XCTAssertFalse(VM.boardEditAllowsTypeSwitch(from: .normal, to: .achievement))
         XCTAssertFalse(VM.boardEditAllowsTypeSwitch(from: .achievement, to: .compound))
     }
+
+    /// "Reads as {title}" — one format on both platforms (web `BoardEditTaskSheet`).
+    func test_countingPreviewTitle_readsAsGeneratedOrTypedTitle() {
+        typealias S = SquareEditTaskSheet
+        XCTAssertEqual(S.countingPreviewTitle(title: "", action: "Run", goalText: "5", unit: "km", kind: .discrete), "Run 5 km")
+        XCTAssertEqual(S.countingPreviewTitle(title: "Morning run", action: "Run", goalText: "5", unit: "km", kind: .discrete), "Morning run")
+        XCTAssertNil(S.countingPreviewTitle(title: "", action: "Run", goalText: "", unit: "km", kind: .discrete))
+        XCTAssertNil(S.countingPreviewTitle(title: "", action: "Run", goalText: "5", unit: "", kind: .discrete))
+    }
 }

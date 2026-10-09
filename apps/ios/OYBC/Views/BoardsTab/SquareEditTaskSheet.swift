@@ -165,6 +165,8 @@ struct SquareEditTaskSheet: View {
     @State private var pickerLinks: [CompoundChild]
     @State private var pickerInputsState: RisoCompoundEditFieldsView.LibraryInputsState
     @State private var confirmingFork = false
+    /// A Done-time refusal of the type change (a counter root with live copies).
+    @State private var typeError: String?
 
     // MARK: - Init
 
@@ -277,8 +279,7 @@ struct SquareEditTaskSheet: View {
     /// that may still switch type (never a compound, an achievement or a
     /// linked counter).
     static func showsTypePicker(task: Task, original: Task?) -> Bool {
-        let t = (original ?? task).type
-        return (t == .normal || t == .counting) && task.sharedCounterId == nil
+        TaskTypeSwitch.showsPicker(task: task, original: original)
     }
 
     /// The empty compound structure a Simple / Counting task starts from when
@@ -403,14 +404,27 @@ struct SquareEditTaskSheet: View {
 
     // MARK: - Counting preview
 
-    /// "Reads as: Run — 5 — km" — shown under the counting fields.
+    /// The title the task reads as — "Reads as {title}" under the counting
+    /// fields, the typed title or the one generated from Action / Goal / Unit
+    /// (web `BoardEditTaskSheet`'s preview, same rule). nil until the goal
+    /// (and, unless Duration, the unit) is valid.
+    static func countingPreviewTitle(
+        title: String, action: String, goalText: String, unit: String, kind: CountKind
+    ) -> String? {
+        guard let goal = parseCountInput(goalText, kind: kind) else { return nil }
+        let needsUnit = countKindNeedsUnit(kind)
+        let u = needsUnit ? unit.trimmingCharacters(in: .whitespaces) : ""
+        if needsUnit && u.isEmpty { return nil }
+        return TaskTitle.generateCounterTaskTitle(
+            action: action, maxCount: goal, unit: u, providedTitle: title, countKind: kind
+        )
+    }
+
     private var countingPreview: String? {
         guard type == .counting else { return nil }
-        let a = action.trimmingCharacters(in: .whitespaces)
-        let g = maxCountStr.trimmingCharacters(in: .whitespaces)
-        let u = countKindNeedsUnit(countKind) ? unit.trimmingCharacters(in: .whitespaces) : ""
-        guard !a.isEmpty || !g.isEmpty || !u.isEmpty else { return nil }
-        return "Reads as: \([a, g, u].filter { !$0.isEmpty }.joined(separator: " — "))"
+        return Self.countingPreviewTitle(
+            title: title, action: action, goalText: maxCountStr, unit: unit, kind: countKind
+        )
     }
 
     // MARK: - Body
@@ -488,14 +502,15 @@ struct SquareEditTaskSheet: View {
 
     private var typeSection: some View {
         editSection(label: "Type") {
-            RisoSegmented(
-                options: [
-                    (.normal,   "Simple"),
-                    (.counting, "Counting"),
-                    (.compound, "Compound"),
-                ],
-                selection: $type
-            )
+            VStack(alignment: .leading, spacing: 8) {
+                TaskTypePickerView(selection: $type)
+                if let error = typeError {
+                    Text(error)
+                        .font(.risoBody(11.5, .extraBold))
+                        .foregroundStyle(Color.risoRed)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
         }
     }
 
@@ -531,7 +546,7 @@ struct SquareEditTaskSheet: View {
                     }
                 }
                 if let preview = countingPreview {
-                    Text(preview)
+                    (Text("Reads as ") + Text(preview).bold())
                         .font(.risoBody(12, .semibold))
                         .foregroundStyle(Color.risoBlue)
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -658,6 +673,13 @@ struct SquareEditTaskSheet: View {
 
     /// Done: asks once per edit session before the first fork, else submits.
     private func requestSubmit() {
+        typeError = nil
+        // A counter root with live copies keeps its type (Save refuses it too).
+        if type != originalType, originalType == .counting, task.sharedCounterId == nil,
+           (try? database.hasLiveLinkedCopies(taskId: task.id)) == true {
+            typeError = TaskTypeSwitch.sharedCounterMessage
+            return
+        }
         if Self.needsForkConfirm(wouldFork: wouldFork, confirmed: forkConfirmed) {
             confirmingFork = true
         } else {

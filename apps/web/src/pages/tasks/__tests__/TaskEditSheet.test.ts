@@ -72,3 +72,25 @@ describe('TaskEditSheet — compound mode', () => {
     expect(btn).not.toContain('disabled');
   });
 });
+
+describe('TaskEditSheet — type switch', () => {
+  const hasSwitch = (html: string) => html.includes('aria-label="Task type"');
+
+  it('offers the Simple / Counting / Compound switch for a Simple task', () => {
+    const html = render(makeTask({ title: 'Read' }));
+    expect(hasSwitch(html)).toBe(true);
+    expect(html).toContain('Compound');
+  });
+
+  it('offers the switch for a plain Counting task', () => {
+    const html = render(makeTask({ type: TaskType.COUNTING, action: 'Run', unit: 'km', maxCount: 5 }));
+    expect(hasSwitch(html)).toBe(true);
+  });
+
+  it('shows no switch for a compound, a linked counter or an achievement', () => {
+    expect(hasSwitch(render(makeTask({ type: TaskType.COMPOUND, operator: OperatorType.AND })))).toBe(false);
+    expect(hasSwitch(render(makeTask({ type: TaskType.COUNTING, maxCount: 5, sharedCounterId: 'root' })))).toBe(false);
+    expect(hasSwitch(render(makeTask({ type: TaskType.ACHIEVEMENT })))).toBe(false);
+    expect(hasSwitch(render(makeTask({ type: TaskType.COUNTING, maxCount: 5, isCounter: true })))).toBe(false);
+  });
+});

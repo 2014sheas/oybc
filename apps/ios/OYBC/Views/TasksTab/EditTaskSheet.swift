@@ -15,6 +15,12 @@ import SwiftUI
 ///     template) + picker. Cycle detection runs in the caller's save handler
 ///     before the DB write.
 ///
+/// Type: a Simple / Counting task gets the shared Simple / Counting /
+/// Compound picker (`TaskTypePickerView`); the save is GLOBAL and retroactive
+/// on every board placing the task (`applyTaskEditPatch` →
+/// `AppDatabase.saveTypeSwitchedTask`). A compound, a linked counter and an
+/// achievement keep their type.
+///
 /// Compound sub-tasks and the completion rule are edited here (Sub-tasks &
 /// rule section) and saved through AppDatabase.applyTaskEditPatch. The
 /// structure is attached to the `Patch` only when it was actually edited, so
@@ -63,6 +69,9 @@ struct EditTaskSheet: View {
         /// The kind the editor chose for a counter ROOT — nil = unchanged
         /// (linked rows and non-counting tasks never carry one).
         var countKind: CountKind? = nil
+        /// The type the editor switched to — nil = unchanged (Simple ⇄
+        /// Counting, or Simple / Counting → Compound with `compound`).
+        var type: TaskType? = nil
 
         enum RefMode {
             case board, template
@@ -73,6 +82,8 @@ struct EditTaskSheet: View {
 
     @State private var title: String
     @State private var description: String
+    /// The type the picker selects (starts at the stored type).
+    @State private var selectedType: TaskType
     @State private var action: String
     @State private var unit: String
     @State private var maxCountStr: String
@@ -115,6 +126,7 @@ struct EditTaskSheet: View {
         self.onSubmit = onSubmit
         self.onCancel = onCancel
         _title = State(initialValue: task.title)
+        _selectedType = State(initialValue: task.type)
         _description = State(initialValue: task.description ?? "")
         _action = State(initialValue: task.action ?? "")
         _unit = State(initialValue: task.unit ?? "")
@@ -147,8 +159,27 @@ struct EditTaskSheet: View {
                     // ── Common fields ───────────────────────────────────────
                     commonSection
 
+                    // ── Type (Simple / Counting / Compound) ─────────────────
+                    // A compound / linked copy / hub counter shows its type
+                    // fixed (web `TaskTypeControl` 'fixed'); achievement none.
+                    if TaskTypeSwitch.showsPicker(task: task, original: nil) {
+                        risoSection(label: "Type") {
+                            TaskTypePickerView(selection: $selectedType)
+                        }
+                    } else if task.type != .achievement {
+                        risoSection(label: "Type") {
+                            HStack(spacing: 8) {
+                                RisoTypeBadge(kind: task.type.risoKind, style: .pill)
+                                Text(TaskTypePickerView.label(for: task.type))
+                                    .font(.risoHead(14, .bold))
+                                    .foregroundStyle(Color.risoInk)
+                                Spacer(minLength: 0)
+                            }
+                        }
+                    }
+
                     // ── Counting ────────────────────────────────────────────
-                    if task.type == .counting {
+                    if selectedType == .counting {
                         countingSection
                     }
 
@@ -158,14 +189,14 @@ struct EditTaskSheet: View {
                     }
 
                     // ── Compound sub-tasks & rule ───────────────────────────
-                    if task.type == .compound {
+                    if selectedType == .compound {
                         compoundSection
                     }
                 }
                 .padding(16)
             }
             .background(Color.risoPaper.ignoresSafeArea())
-            .task(id: task.id) { await loadCompoundChildrenIfNeeded() }
+            .task(id: "\(task.id)|\(selectedType == .compound)") { await loadCompoundChildrenIfNeeded() }
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .principal) {
@@ -236,7 +267,9 @@ struct EditTaskSheet: View {
                     } else {
                         KindPickerView(
                             selection: $countKind,
-                            lock: kindPickerLock(mode: .edit, kind: resolveCountKind(task.countKind)),
+                            lock: kindPickerLock(
+                                mode: task.type == .counting ? .edit : .create, kind: resolveCountKind(task.countKind)
+                            ),
                             onRequest: requestKind
                         )
                     }
@@ -377,7 +410,7 @@ struct EditTaskSheet: View {
 
     /// Validation of the edited structure titled from the Title field, or nil.
     private var compoundValidation: String? {
-        guard task.type == .compound, var draft = compoundDraft else { return nil }
+        guard selectedType == .compound, var draft = compoundDraft else { return nil }
         draft.title = title
         return draft.validate(type: .compound)
     }
@@ -388,10 +421,15 @@ struct EditTaskSheet: View {
     /// still saves through the basic route).
     private var isSaveBlocked: Bool {
         if title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return true }
-        guard task.type == .compound else { return false }
+        guard selectedType == .compound else { return false }
         guard compoundDraft != nil else { return true }
-        return Self.compoundStructureChanged(baseline: compoundBaseline, draft: compoundDraft)
+        return (isConverting || Self.compoundStructureChanged(baseline: compoundBaseline, draft: compoundDraft))
             && compoundValidation != nil
+    }
+
+    /// Picked Compound on a Simple / Counting task: the structure always submits.
+    private var isConverting: Bool {
+        selectedType == .compound && task.type != .compound
     }
 
     /// Load the compound's live sub-tasks (childIndex order) and the
@@ -402,11 +440,14 @@ struct EditTaskSheet: View {
     /// (it surfaces as `libraryInputsState == .failed`). No-op for
     /// non-compounds.
     private func loadCompoundChildrenIfNeeded() async {
-        guard task.type == .compound else { return }
+        guard selectedType == .compound else { return }
         let db = database
         let parentId = task.id
         let userId = task.userId
-        if compoundDraft == nil {
+        if isConverting {
+            // A conversion starts from the default empty "all" rule.
+            if compoundDraft == nil { compoundDraft = SquareEditTaskSheet.newCompoundDraft(for: task) }
+        } else if compoundDraft == nil {
             do {
                 let kids = try await _Concurrency.Task.detached(priority: .userInitiated) {
                     try db.fetchCompoundChildrenTasks(parentTaskId: parentId)
@@ -517,6 +558,18 @@ struct EditTaskSheet: View {
 
     // MARK: - Submit
 
+    /// The structure to submit: always the draft for a conversion into
+    /// Compound; for an existing compound only an edited structure.
+    private var compoundPatch: TaskEditPatch? {
+        guard selectedType == .compound else { return nil }
+        if isConverting {
+            guard var d = compoundDraft else { return nil }
+            d.title = title.trimmingCharacters(in: .whitespacesAndNewlines)
+            return d
+        }
+        return Self.compoundSubmission(baseline: compoundBaseline, draft: compoundDraft, title: title)
+    }
+
     private func submit() {
         onSubmit(
             Patch(
@@ -530,10 +583,9 @@ struct EditTaskSheet: View {
                 refMode: refMode,
                 selectedBoardId: selectedBoardId,
                 selectedTemplateId: selectedTemplateId,
-                compound: task.type == .compound
-                    ? Self.compoundSubmission(baseline: compoundBaseline, draft: compoundDraft, title: title)
-                    : nil,
-                countKind: task.type == .counting && task.sharedCounterId == nil ? countKind : nil
+                compound: compoundPatch,
+                countKind: selectedType == .counting && task.sharedCounterId == nil ? countKind : nil,
+                type: selectedType != task.type ? selectedType : nil
             )
         )
     }

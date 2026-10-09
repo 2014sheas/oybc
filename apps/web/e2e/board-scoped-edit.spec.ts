@@ -45,7 +45,7 @@ test.describe('Board-scoped edit — rename a task placed on two boards', () => 
     await page.getByRole('button', { name: /^Read a book$/ }).click();
     await page.getByRole('button', { name: 'Edit task…' }).click();
     const sheet = page.getByRole('dialog', { name: 'Edit task' });
-    await sheet.getByLabel('Task name').fill('Read a chapter');
+    await sheet.getByLabel('Title', { exact: true }).fill('Read a chapter');
     await sheet.getByRole('button', { name: 'Save for this board' }).click();
 
     const confirm = page.getByRole('alertdialog', { name: 'Save for this board?' });

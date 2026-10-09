@@ -28,25 +28,6 @@ import {
 
 export type { BoardEditTaskOverride };
 
-/** How the sheet presents the task's type. */
-export type TypeControlMode = 'switch' | 'fixed' | 'none';
-
-/**
- * Which type control the sheet shows: a Simple/Counting task gets the
- * three-way switch; a Compound shows its type fixed (switching OUT of a
- * compound is out of scope); Achievement shows none (title only).
- *
- * @param type - The task's ORIGINAL (stored / pending) type, not an override-merged one.
- * @param linkedCounter - `task.sharedCounterId != null`: type is fixed.
- */
-export function typeControlMode(type: TaskType, linkedCounter = false): TypeControlMode {
-  // A linked / window-stamped derived counter is never convertible.
-  if (linkedCounter) return type === TaskType.ACHIEVEMENT ? 'none' : 'fixed';
-  if (type === TaskType.NORMAL || type === TaskType.COUNTING) return 'switch';
-  if (type === TaskType.COMPOUND) return 'fixed';
-  return 'none';
-}
-
 /** Whether the compound editor is open for the chosen type. */
 export function showsCompoundEditor(selected: TaskType): boolean {
   return selected === TaskType.COMPOUND;

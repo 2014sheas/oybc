@@ -51,42 +51,6 @@
   color: var(--riso-ink);
 }
 
-/* ─── Type row (switch, or the fixed indicator) ─── */
-.typeRow {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 10px;
-}
-
-.typeLabel {
-  font-family: var(--riso-font-head);
-  font-size: 0.8rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--riso-muted);
-  flex: 0 0 auto;
-}
-
-.typeSwitch {
-  flex: 1 1 200px;
-  min-width: 0;
-}
-
-.typeBadgeWrap {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.typeReadOnly {
-  font-family: var(--riso-font-head);
-  font-size: 13px;
-  font-weight: 700;
-  color: var(--riso-ink);
-}
-
 /* ─── Fields ─── */
 .field {
   display: flex;
@@ -101,12 +65,6 @@
   text-transform: uppercase;
   letter-spacing: 0.06em;
   color: var(--riso-muted);
-}
-
-.optional {
-  font-weight: 500;
-  text-transform: none;
-  letter-spacing: 0;
 }
 
 .fieldInput {
