@@ -11,7 +11,8 @@ import SwiftUI
 ///
 /// Sections (R2 Counters UX refresh — design handoff §Counter Detail):
 ///   1. Header — back circle · blue "SHARED COUNTER" kicker · counter name ·
-///      "⋯" overflow (Delete counter…).
+///      "⋯" overflow (Edit counter… — the global `EditTaskSheet` on the root
+///      task, saved through `applyTaskEditPatch` — and Delete counter…).
 ///   2. Hero card — all-time total + REAL 7-day sparkline
 ///      (`AppDatabase.fetchCounterDailyTotals`) + milestone bar
 ///      (`counterMilestoneProgress`, `Helpers/CounterMilestone.swift`).
@@ -32,6 +33,8 @@ struct CounterDetailView: View {
     /// Member-card tap → the host opens that board (cross-tab via
     /// `MainTabView.openBoard`, so a core board lands in its pager window).
     let onOpenBoard: (String) -> Void
+    /// Injected database (ROADMAP B3 seam); defaults to the app singleton.
+    var database: AppDatabase = .shared
 
     @EnvironmentObject var authService: AuthService
     @Environment(\.dismiss) private var dismiss
@@ -44,6 +47,11 @@ struct CounterDetailView: View {
     @State private var isLogging = false
     @State private var logError: String?
     @State private var toast: DetailToastState?
+    /// The counter's live ROOT task (`counterId` is its id) — nil hides
+    /// "Edit counter…".
+    @State private var root: Task?
+    @State private var editingRoot: Task?
+    @State private var editError: String?
 
     // Delete-counter (P5 decision 8: deleteCounterWithUnlink) UI state.
     @State private var deleteImpact: AppDatabase.TaskDeletionImpact?
@@ -51,7 +59,7 @@ struct CounterDetailView: View {
     @State private var deleteError: String?
 
     /// Trailing window for the sparkline + "Today" stat.
-    private static let sparklineDays = 7
+    private nonisolated static let sparklineDays = 7
 
     // MARK: - Body
 
@@ -66,7 +74,9 @@ struct CounterDetailView: View {
                     isLogging: isLogging,
                     logError: logError,
                     deleteError: deleteError,
+                    editError: editError,
                     onLog: { amount, direction in handleLog(amount: amount, direction: direction) },
+                    onEditTap: root.map { r in { editError = nil; editingRoot = r } },
                     onDeleteTap: handleDeleteTap,
                     onOpenBoard: onOpenBoard
                 )
@@ -116,28 +126,89 @@ struct CounterDetailView: View {
                 .interactiveDismissDisabled(isDeleting)
             }
         }
+        // Edit counter… — the canonical global editor on the root (Type is
+        // fixed for a hub counter; kind / title / action / unit propagate
+        // per D5 + #575 inside `applyTaskEditPatch`).
+        .sheet(item: $editingRoot) { task in
+            EditTaskSheet(
+                task: task,
+                database: database,
+                onSubmit: { patch in
+                    _Concurrency.Task { await saveRootEdit(taskId: task.id, patch: patch) }
+                },
+                onCancel: { editingRoot = nil }
+            )
+        }
     }
 
     // MARK: - Data loading
+
+    /// What one page load reads: the counter's group, its trailing daily
+    /// totals, and its live root task (nil when missing / deleted).
+    struct Snapshot {
+        let group: SharedCounterGroup?
+        let dailyTotals: CounterDailyTotalsResult
+        let root: Task?
+    }
+
+    /// One page load (DB-injected, so tests drive it). RC9 — the kernel drops
+    /// expired members after the root walk (as the hub).
+    ///
+    /// - Parameters:
+    ///   - database: The database to read.
+    ///   - userId: The signed-in user.
+    ///   - counterId: The counter id = its root task's id.
+    ///   - showExpired: The hub's expired-member setting.
+    ///   - now: Reference timestamp for the daily totals.
+    /// - Returns: The page's data.
+    nonisolated static func loadSnapshot(
+        database: AppDatabase, userId: String, counterId: String, showExpired: Bool, now: String
+    ) -> Snapshot {
+        let groups = database.fetchSharedCounterGroups(userId: userId, showExpired: showExpired).groups
+        let totals = (try? database.fetchCounterDailyTotals(
+            sourceTaskId: counterId, days: sparklineDays, now: now
+        )) ?? CounterDailyTotalsResult(days: [], todayTotal: 0)
+        let root = (try? database.fetchTask(id: counterId)).flatMap { $0.isDeleted ? nil : $0 }
+        return Snapshot(group: groups.first { $0.counterId == counterId }, dailyTotals: totals, root: root)
+    }
 
     private func loadData() {
         guard let userId = authService.currentUser?.id else { return }
         let id = counterId
         let visibility = showExpired
+        let db = database
         _Concurrency.Task.detached(priority: .userInitiated) {
-            // RC9 — the kernel drops expired members after the root walk (as the hub).
-            let groups = AppDatabase.shared.fetchSharedCounterGroups(
-                userId: userId, showExpired: visibility
-            ).groups
-            let found = groups.first { $0.counterId == id }
-            let totals = (try? AppDatabase.shared.fetchCounterDailyTotals(
-                sourceTaskId: id, days: Self.sparklineDays, now: AppDatabase.currentTimestamp()
-            )) ?? CounterDailyTotalsResult(days: [], todayTotal: 0)
+            let snap = Self.loadSnapshot(
+                database: db, userId: userId, counterId: id, showExpired: visibility,
+                now: AppDatabase.currentTimestamp()
+            )
             await MainActor.run {
-                group = found
-                dailyTotals = totals
+                group = snap.group
+                dailyTotals = snap.dailyTotals
+                root = snap.root
                 isLoaded = true
             }
+        }
+    }
+
+    // MARK: - Edit counter (global editor on the root)
+
+    /// Saves the editor's patch on the root (`applyTaskEditPatch` — the same
+    /// write Task Detail uses), closes the sheet and reloads the page.
+    private func saveRootEdit(taskId: String, patch: EditTaskSheet.Patch) async {
+        let db = database
+        do {
+            _ = try await _Concurrency.Task.detached(priority: .userInitiated) {
+                try db.applyTaskEditPatch(taskId: taskId, patch: patch)
+            }.value
+            await MainActor.run {
+                editingRoot = nil
+                editError = nil
+                loadData()
+            }
+        } catch {
+            let message = AppDatabase.taskEditErrorMessage(error)
+            await MainActor.run { editError = message }
         }
     }
 
@@ -288,7 +359,12 @@ struct CounterDetailContent: View {
     /// closed by the time this is shown (mirrors web's close-dialog-on-error
     /// pattern), so it renders on this page itself.
     var deleteError: String?
+    /// Surfaced when an Edit counter… save fails.
+    var editError: String?
     var onLog: (CountValue, CounterLogDirection) -> Void
+    /// "⋯" → Edit counter… (opens the global editor on the root). Nil hides
+    /// the item (root missing / deleted).
+    var onEditTap: (() -> Void)?
     /// Fired by the "⋯" overflow menu's "Delete counter…" item AND the
     /// footer's red text link — the container computes the deletion impact
     /// and shows the confirm sheet.
@@ -306,12 +382,14 @@ struct CounterDetailContent: View {
         isLogging: Bool = false,
         logError: String? = nil,
         deleteError: String? = nil,
+        editError: String? = nil,
         initialSelectedAmount: CountValue? = nil,
         /// Snapshot-testability seam: forces the "#" custom chip into its
         /// selected (gold, showing the live amount) state without requiring
         /// a real tap sequence. Production call sites never pass this.
         initialCustomActive: Bool = false,
         onLog: @escaping (CountValue, CounterLogDirection) -> Void = { _, _ in },
+        onEditTap: (() -> Void)? = nil,
         onDeleteTap: @escaping () -> Void = {},
         onOpenBoard: @escaping (String) -> Void = { _ in }
     ) {
@@ -320,7 +398,9 @@ struct CounterDetailContent: View {
         self.isLogging = isLogging
         self.logError = logError
         self.deleteError = deleteError
+        self.editError = editError
         self.onLog = onLog
+        self.onEditTap = onEditTap
         self.onDeleteTap = onDeleteTap
         self.onOpenBoard = onOpenBoard
         self.initialSelectedAmount = initialSelectedAmount
@@ -397,6 +477,13 @@ struct CounterDetailContent: View {
                 }
 
                 // 8. Delete-counter action — quiet red text link.
+                if let editError {
+                    Text(editError)
+                        .font(.risoBody(12, .semibold))
+                        .foregroundStyle(Color.risoRed)
+                        .padding(.horizontal, Riso.gutter)
+                        .padding(.bottom, 8)
+                }
                 if let deleteError {
                     Text(deleteError)
                         .font(.risoBody(12, .semibold))
@@ -418,10 +505,35 @@ struct CounterDetailContent: View {
 
     // MARK: - Overflow menu
 
+    /// One "⋯" overflow item. Web twin: `counterDetailMenuItems`.
+    enum OverflowItem: Equatable {
+        case edit, delete
+
+        var label: String {
+            switch self {
+            case .edit: return "Edit counter…"
+            case .delete: return "Delete counter…"
+            }
+        }
+    }
+
+    /// The overflow's items in display order: Edit (only with a live root)
+    /// above Delete.
+    static func overflowItems(canEdit: Bool) -> [OverflowItem] {
+        canEdit ? [.edit, .delete] : [.delete]
+    }
+
     private var overflowMenu: some View {
         Menu {
-            Button(role: .destructive, action: onDeleteTap) {
-                Label("Delete counter…", systemImage: "trash")
+            ForEach(Self.overflowItems(canEdit: onEditTap != nil), id: \.label) { item in
+                switch item {
+                case .edit:
+                    Button { onEditTap?() } label: { Label(item.label, systemImage: "pencil") }
+                case .delete:
+                    Button(role: .destructive, action: onDeleteTap) {
+                        Label(item.label, systemImage: "trash")
+                    }
+                }
             }
         } label: {
             Text("⋯")
