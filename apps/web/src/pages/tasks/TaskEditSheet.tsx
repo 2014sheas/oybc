@@ -37,7 +37,8 @@ import { CompoundFields, type LibraryInputsState } from '../../components/wizard
 import { loadLibraryInputs } from './loadLibraryInputs';
 import { compoundStructureChanged, compoundSubmitFor } from './compoundEditGate';
 import { TaskTypeControl } from '../../components/taskEdit/TaskTypeControl';
-import { typeControlMode } from '../../components/taskEdit/taskTypeRules';
+import { typeControlMode, typeLockedForEdit } from '../../components/taskEdit/taskTypeRules';
+import { useHasLiveLinkedCopies } from '../../hooks/useHasLiveLinkedCopies';
 import { seedCompoundDraft } from '../../components/boardEdit/boardEditTaskSheetModel';
 import { useModalA11y } from '../../hooks/useModalA11y';
 import styles from './TaskDetailContent.module.css';
@@ -93,8 +94,8 @@ export function TaskEditSheet({
   });
   const [title, setTitle] = useState(task.title);
   const [selected, setSelected] = useState<TaskType>(task.type);
-  // A linked copy or a hub counter keeps its type (shown fixed).
-  const typeMode = typeControlMode(task.type, task.sharedCounterId != null || task.isCounter === true);
+  // Any shared counter (linked copy, hub counter, root other rows link to) keeps its type.
+  const typeMode = typeControlMode(task.type, typeLockedForEdit(task, useHasLiveLinkedCopies(task.id)));
   const [description, setDescription] = useState(task.description ?? '');
 
   // Counting fields
@@ -264,7 +265,8 @@ export function TaskEditSheet({
 
     if (selected === TaskType.COUNTING) {
       patch.action = action.trim();
-      patch.unit = countKindNeedsUnit(countKind) ? unit.trim() : '';
+      // Duration hides Unit but keeps the row's own (a hub counter's noun names it).
+      patch.unit = unit.trim();
       if (task.type !== TaskType.COUNTING && countKindNeedsUnit(countKind) && !patch.unit) {
         setValidationError('Add a unit, like km or pages.');
         return;

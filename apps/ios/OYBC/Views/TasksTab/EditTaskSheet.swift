@@ -89,6 +89,9 @@ struct EditTaskSheet: View {
     @State private var maxCountStr: String
     @State private var countKind: CountKind
     @State private var pendingSwitch: KindSwitchPreview?
+    /// A board-born root other boards link to is a shared counter (type fixed);
+    /// read synchronously in `init` so the FIRST frame is already right.
+    @State private var hasLinkedCopies: Bool
     // Achievement
     @State private var trigger: AchievementTrigger
     @State private var requiredCountStr: String
@@ -125,6 +128,7 @@ struct EditTaskSheet: View {
         self.database = database
         self.onSubmit = onSubmit
         self.onCancel = onCancel
+        _hasLinkedCopies = State(initialValue: TaskTypeSwitch.initialHasLinkedCopies(task: task, database: database))
         _title = State(initialValue: task.title)
         _selectedType = State(initialValue: task.type)
         _description = State(initialValue: task.description ?? "")
@@ -160,9 +164,9 @@ struct EditTaskSheet: View {
                     commonSection
 
                     // ── Type (Simple / Counting / Compound) ─────────────────
-                    // A compound / linked copy / hub counter shows its type
-                    // fixed (web `TaskTypeControl` 'fixed'); achievement none.
-                    if TaskTypeSwitch.showsPicker(task: task, original: nil) {
+                    // A compound / any shared counter shows its type fixed
+                    // (web `TaskTypeControl` 'fixed'); achievement none.
+                    if TaskTypeSwitch.showsPicker(task: task, original: nil, hasLinkedCopies: hasLinkedCopies) {
                         risoSection(label: "Type") {
                             TaskTypePickerView(selection: $selectedType)
                         }

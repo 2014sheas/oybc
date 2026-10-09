@@ -1,4 +1,4 @@
-import { TaskType } from '@oybc/shared';
+import { TaskType, type Task } from '@oybc/shared';
 
 /**
  * The one type-control rule shared by every editor that edits a task row —
@@ -18,9 +18,7 @@ export type TypeControlMode = 'switch' | 'fixed' | 'none';
  * compound is not offered); Achievement shows none.
  *
  * @param type - The task's ORIGINAL (stored / pending) type, not an override-merged one.
- * @param locked - True for a linked counter (`sharedCounterId != null`) or a
- *   hub counter (`isCounter`): its type is fixed. (A counter ROOT with live copies is refused at Done / Save
- *   with `SHARED_COUNTER_TYPE_MESSAGE` — a DB fact, not shown by the control.)
+ * @param locked - {@link typeLockedForEdit}: true for any shared counter — its type is fixed.
  */
 export function typeControlMode(type: TaskType, locked = false): TypeControlMode {
   if (type === TaskType.ACHIEVEMENT) return 'none';
@@ -28,6 +26,32 @@ export function typeControlMode(type: TaskType, locked = false): TypeControlMode
   if (type === TaskType.NORMAL || type === TaskType.COUNTING) return 'switch';
   if (type === TaskType.COMPOUND) return 'fixed';
   return 'none';
+}
+
+/**
+ * Whether a task's type is fixed because it is a SHARED COUNTER (owner rule
+ * 2026-10-09: a shared counter's type is never changeable): a linked copy
+ * (`sharedCounterId` set), a hub counter (`isCounter`), or a counting task
+ * that other rows link to (a board-born root — `hasLinkedCopies`, resolved by
+ * `useHasLiveLinkedCopies`). The save refuses it too
+ * (`SHARED_COUNTER_TYPE_MESSAGE`) — that stays as the backstop.
+ * iOS twin: `TaskTypeSwitch.showsPicker(task:original:hasLinkedCopies:)`.
+ *
+ * @param task - The task's stored (original) row.
+ * @param hasLinkedCopies - Whether any live row links to it as its root;
+ *   `undefined` = not resolved yet, which LOCKS a Counting task (render fixed
+ *   until known, never a picker that then flips to fixed).
+ * @returns True when the editor shows the type fixed.
+ */
+export function typeLockedForEdit(
+  task: Pick<Task, 'type' | 'sharedCounterId' | 'isCounter'>,
+  hasLinkedCopies: boolean | undefined,
+): boolean {
+  return (
+    task.sharedCounterId != null ||
+    task.isCounter === true ||
+    (task.type === TaskType.COUNTING && hasLinkedCopies !== false)
+  );
 }
 
 /** The switch's segments (labels shared with iOS). */

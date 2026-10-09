@@ -114,7 +114,12 @@ an existing sub-task keeps its kind) · A3 Board Edit square sheet (staged,
 applied at Save) · A4 Task Detail edit · A5 pool row editor (staged) · A6
 Counters hub New counter ("Start from" uses Goal entry; the hub keeps its noun
 field for every kind — it names the counter — so a Duration task, which has no
-unit, never auto-links by name). Duration titles
+unit, never auto-links by name) · A7 Counter Detail *Edit counter…* — the same
+counter sheet in edit mode (no "Start from"; the edit locks + the confirm
+below; saved through the Task Detail write, so the family follows per D5). A
+Duration task keeps whatever unit it has: every editor (Task Detail, Board
+Edit, the counter sheet) hides Unit and sends the row's own back (a hub
+counter's noun names it). Duration titles
 generate as "Practice 10h 30m" (no unit).
 
 **Switching (D4).** Only **Continuous → Discrete** confirms: title "Switch to

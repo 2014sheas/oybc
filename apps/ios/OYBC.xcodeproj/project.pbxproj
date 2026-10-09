@@ -54,6 +54,7 @@
 		119B315E2EE0FA73649C1E10 /* LinkableCounterVectorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2C99738D9D24B8DB105F0391 /* LinkableCounterVectorTests.swift */; };
 		11A3337D3A3B0B9FA6811AD9 /* SyncPushOrchestrationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 602D21A7B74BDBF7DA3B5D38 /* SyncPushOrchestrationTests.swift */; };
 		1227E21241C4AAB4BC78CA64 /* CompletionToggleView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 62AE569E94DFF166FBF22ADF /* CompletionToggleView.swift */; };
+		12960949D5258D156CE80F42 /* CounterEditSheetTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E48A28993C7D714CD85179C9 /* CounterEditSheetTests.swift */; };
 		131870A9A94EF1A5782C9E7B /* RisoCountStepperView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 85EB674C8E417B2C51F85069 /* RisoCountStepperView.swift */; };
 		1413358F9FA53691BB3F3960 /* TaskIdItem.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB54CA8DAE5996104CB72DA8 /* TaskIdItem.swift */; };
 		1548817C8C74961FDAD6439C /* CoreWindowPositionCaption.swift in Sources */ = {isa = PBXBuildFile; fileRef = E01B8BA23A9E309088B02D9A /* CoreWindowPositionCaption.swift */; };
@@ -189,6 +190,7 @@
 		4DD73B7732A63F289352893A /* streaksVectors.json in Resources */ = {isa = PBXBuildFile; fileRef = 9587FD8144B8208EB40943A1 /* streaksVectors.json */; };
 		4EC4F470032BEAEBB635FAB5 /* RisoArrivalBanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = E65CDC87B096E98C5B837AA4 /* RisoArrivalBanner.swift */; };
 		4F62996168AEF5748686A5C9 /* CompoundSubKindTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5159C9544927A8491D571FA2 /* CompoundSubKindTests.swift */; };
+		4F750D1E6C52C2DAED08B4DB /* CounterEditModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 72ACD836E3999F9092706EFF /* CounterEditModel.swift */; };
 		4F88BB1744F35331B8C67A63 /* AppDatabase+Sealing.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F5E1477A50B66E23FBD143C /* AppDatabase+Sealing.swift */; };
 		50814C3BD70E25A6F8185419 /* RecurringTemplateCardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7EC19B0424570FE4922F8968 /* RecurringTemplateCardView.swift */; };
 		50D6EF5AEC63ECA472FD8E4D /* CycleDetectionVectorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CFC8212667315B8E65232788 /* CycleDetectionVectorTests.swift */; };
@@ -900,6 +902,7 @@
 		71C0B6740B63F6F5E7AC456F /* backfillEventVectors.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = backfillEventVectors.json; sourceTree = "<group>"; };
 		7254F5B6BC87E8E94EA7AF93 /* StreaksSnapshotTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StreaksSnapshotTests.swift; sourceTree = "<group>"; };
 		7298D1E5D6AE4E9CEA3EEF5C /* CascadeDeleteTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CascadeDeleteTests.swift; sourceTree = "<group>"; };
+		72ACD836E3999F9092706EFF /* CounterEditModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CounterEditModel.swift; sourceTree = "<group>"; };
 		731688D67F0B78AF3048EFC4 /* SquaresEditGridUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SquaresEditGridUITests.swift; sourceTree = "<group>"; };
 		73CA937718742A6A40B54719 /* LinkedCounterWindowHealTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LinkedCounterWindowHealTests.swift; sourceTree = "<group>"; };
 		73E251DCBBC09D1AD007288E /* RisoSourceRowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RisoSourceRowView.swift; sourceTree = "<group>"; };
@@ -1153,6 +1156,7 @@
 		E2CF3253817A74C5644618E0 /* TimeframeBoundaries.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimeframeBoundaries.swift; sourceTree = "<group>"; };
 		E2F651430D44539B65EBD458 /* BoardDisplayNameTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BoardDisplayNameTests.swift; sourceTree = "<group>"; };
 		E3C011FB7D4E947336D4E833 /* BoardDerivedState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BoardDerivedState.swift; sourceTree = "<group>"; };
+		E48A28993C7D714CD85179C9 /* CounterEditSheetTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CounterEditSheetTests.swift; sourceTree = "<group>"; };
 		E4B4811058F593EE66DB4529 /* CounterDetailLogCardTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CounterDetailLogCardTests.swift; sourceTree = "<group>"; };
 		E4EDAA6C4C2CCF6C15150F5D /* RisoCoreBoardsSectionSnapshotTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RisoCoreBoardsSectionSnapshotTests.swift; sourceTree = "<group>"; };
 		E55D0B8B8382484351090C5B /* SyncPushUidGuardTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncPushUidGuardTests.swift; sourceTree = "<group>"; };
@@ -1618,6 +1622,7 @@
 				9A12C44510C70EEC8BAD14BE /* CounterDailyTotalsTests.swift */,
 				D59BE0C394777C58856351B4 /* CounterDetailEditTests.swift */,
 				E4B4811058F593EE66DB4529 /* CounterDetailLogCardTests.swift */,
+				E48A28993C7D714CD85179C9 /* CounterEditSheetTests.swift */,
 				CF8D479E2C29580E748168CE /* CounterLinkStateTests.swift */,
 				4023D1D12EA69C3CBAA308CF /* CounterLogAmountTests.swift */,
 				BBA66CCEE20F4E9FCEF7D067 /* CounterMilestoneTests.swift */,
@@ -1822,6 +1827,7 @@
 				C5FE91D3FE0E45739C673EB1 /* CountEntry.swift */,
 				2105A8784F87D62C29C28B7A /* CounterArrivals.swift */,
 				B3712CFA267080BC78DF53F4 /* CounterDailyTotals.swift */,
+				72ACD836E3999F9092706EFF /* CounterEditModel.swift */,
 				3718CE6933B7906257063439 /* CounterLogAmount.swift */,
 				5DA8A1C3733036A8098F453B /* CounterMilestone.swift */,
 				3B422216A7454DCF1674C7DE /* CounterName.swift */,
@@ -2430,6 +2436,7 @@
 				7E2113E154BC6C65E923E19A /* CounterDeleteConfirmView.swift in Sources */,
 				10A0AC1981A1D9C0C994D4E8 /* CounterDetailLogCard.swift in Sources */,
 				9E6B3916C4CCBDB5F9186BAD /* CounterDetailView.swift in Sources */,
+				4F750D1E6C52C2DAED08B4DB /* CounterEditModel.swift in Sources */,
 				89836243839EF841C294BCB3 /* CounterLogAmount.swift in Sources */,
 				A8AF4B08A2BBC9B6848C87DB /* CounterLogToastView.swift in Sources */,
 				73483333626E98C1924C6D0E /* CounterMilestone.swift in Sources */,
@@ -2687,6 +2694,7 @@
 				CA69A3740072FC36D7BDE9CA /* CounterDailyTotalsTests.swift in Sources */,
 				DB83FD1CD2723F53A0AC5BCE /* CounterDetailEditTests.swift in Sources */,
 				C7EB2325004AC99BABC87247 /* CounterDetailLogCardTests.swift in Sources */,
+				12960949D5258D156CE80F42 /* CounterEditSheetTests.swift in Sources */,
 				D5F72D6D260665B27E1CFB5D /* CounterLinkStateTests.swift in Sources */,
 				609153F9370B3CE10C6C6255 /* CounterLogAmountTests.swift in Sources */,
 				8A50AFB2065146832C0D787E /* CounterMilestoneTests.swift in Sources */,

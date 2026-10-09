@@ -274,7 +274,13 @@ extension AppDatabase {
         if task.type == .counting {
             let kind = resolveCountKind(task.countKind)
             if !patch.action.isEmpty { task.action = patch.action }
-            if countKindNeedsUnit(kind) { if !patch.unit.isEmpty { task.unit = patch.unit } } else { task.unit = "" }
+            // Duration hides Unit but keeps the row's own (a hub counter's noun
+            // names it — docs/COUNTER_KINDS.md §UI); the editor sends it back.
+            if countKindNeedsUnit(kind) {
+                if !patch.unit.isEmpty { task.unit = patch.unit }
+            } else {
+                task.unit = patch.unit.trimmingCharacters(in: .whitespacesAndNewlines)
+            }
             let goal = patch.maxCountStr.trimmingCharacters(in: .whitespaces)
             if !goal.isEmpty {
                 guard let max = parseCountInput(goal, kind: kind) else {

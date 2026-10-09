@@ -3,17 +3,28 @@ import { useNavigate } from 'react-router-dom';
 import {
   classifyCounterCreateMatch,
   formatCounterName,
+  countKindNeedsUnit,
+  formatCountForInput,
   formatCountTotal,
+  kindPickerLock,
   parseCountInput,
   resolveCountKind,
   type CountKind,
   type Task,
 } from '@oybc/shared';
+import { CompoundEditValidationError, saveTaskEdit } from '../../db/operations';
 import { createCounterTask } from '../../db/operations/tasks';
 import { useModalA11y } from '../../hooks/useModalA11y';
 import { RisoButton } from '../riso';
 import { GoalEntry } from './GoalEntry';
 import { KindPicker } from './KindPicker';
+import {
+  counterEditDedupePool,
+  counterEditIdentityChanged,
+  counterEditSubmit,
+  seedCounterEditDraft,
+} from './counterEditModel';
+import { useKindSwitchRequest } from './useKindSwitchRequest';
 import styles from './CreateCounterSheet.module.css';
 
 export interface CreateCounterSheetProps {
@@ -26,7 +37,15 @@ export interface CreateCounterSheetProps {
   /** Authenticated user id — owner of the new counter task. */
   userId: string;
   /** Called with the resulting task id after a create succeeds. */
-  onCreated: (counterId: string) => void;
+  onCreated?: (counterId: string) => void;
+  /**
+   * EDIT mode: the counter's ROOT task. The sheet opens as "Edit counter"
+   * prefilled from it (no "Start from"), and Save writes through
+   * `saveTaskEdit` — the Task Detail write.
+   */
+  root?: Task | null;
+  /** Called after an edit-mode save succeeds. */
+  onSaved?: () => void;
 }
 
 /** Fallback verb when the "TASK VERB" field is left blank — per the
@@ -59,6 +78,13 @@ const DEFAULT_VERB = 'Do';
  * (`CountersHubPage`) only supplies `tasks`/`userId` and reacts to
  * `onCreated` (closing the sheet + navigating to the new counter's detail
  * page belongs to the caller per the W3 task contract).
+ *
+ * EDIT mode (`root` set — Counter Detail "Edit counter…"): a counter is
+ * edited through THIS sheet, never the task editor. Same fields, prefilled
+ * (`counterEditModel`); the kind picker carries the edit locks and the
+ * shared Continuous → Discrete confirm (`useKindSwitchRequest`); a rename
+ * checks the dedupe pool minus the counter's own family; Save →
+ * `saveTaskEdit(root.id, counterEditSubmit(…))`.
  */
 export function CreateCounterSheet({
   open,
@@ -66,12 +92,15 @@ export function CreateCounterSheet({
   tasks,
   userId,
   onCreated,
+  root = null,
+  onSaved,
 }: CreateCounterSheetProps): React.ReactElement | null {
   const navigate = useNavigate();
   const genRef = useRef(0);
-  const [verb, setVerb] = useState('');
-  const [noun, setNoun] = useState('');
-  const [countKind, setCountKind] = useState<CountKind>('discrete');
+  const seed = root ? seedCounterEditDraft(root) : null;
+  const [verb, setVerb] = useState(seed?.verb ?? '');
+  const [noun, setNoun] = useState(seed?.noun ?? '');
+  const [countKind, setCountKind] = useState<CountKind>(seed?.kind ?? 'discrete');
   const [startingCountStr, setStartingCountStr] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -91,14 +120,18 @@ export function CreateCounterSheet({
   useEffect(() => {
     if (open) {
       genRef.current += 1;
-      setVerb('');
-      setNoun('');
+      const fresh = root ? seedCounterEditDraft(root) : null;
+      setVerb(fresh?.verb ?? '');
+      setNoun(fresh?.noun ?? '');
       setStartingCountStr('');
-      setCountKind('discrete');
+      setCountKind(fresh?.kind ?? 'discrete');
       setError(null);
       setBusy(false);
     }
-  }, [open]);
+    // Re-seed per open / per root identity only — a live refresh of the root
+    // while the sheet is open must not clobber the user's typing.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, root?.id]);
 
   const trimmedVerb = verb.trim();
   const trimmedNoun = noun.trim();
@@ -109,6 +142,15 @@ export function CreateCounterSheet({
   const startFromInvalid = !startFromEmpty && startFromNum === null;
   const previewCount = startFromNum ?? 0;
 
+  // Edit mode: the shared confirm seam (Continuous → Discrete previews the draft).
+  const { requestKind, dialog: kindDialog } = useKindSwitchRequest({
+    subject: { ...(root ?? ({} as Task)), action: verb, unit: noun, countKind },
+    kind: countKind,
+    goalText: root?.maxCount != null ? formatCountForInput(root.maxCount, countKind) : '',
+    setKind: setCountKind,
+    onSwitched: (k) => setCountKind(k),
+  });
+
   function handleKindChange(next: CountKind): void {
     // The field grammar differs per kind (decimal / h:m) — a stale entry would mis-parse.
     if (next !== countKind) setStartingCountStr('');
@@ -116,12 +158,17 @@ export function CreateCounterSheet({
   }
 
   // Recompute per keystroke, like CountingTemplatePicker's `suggestion` memo.
+  // Edit mode checks only a rename, against everything but the counter's family.
+  const renamed = root ? counterEditIdentityChanged(root, { verb, noun, kind: countKind }) : true;
   const match = useMemo(
     () =>
-      trimmedNoun
-        ? classifyCounterCreateMatch({ action: effectiveVerb, unit: trimmedNoun }, tasks)
+      trimmedNoun && renamed
+        ? classifyCounterCreateMatch(
+            { action: effectiveVerb, unit: trimmedNoun },
+            root ? counterEditDedupePool(root, tasks) : tasks,
+          )
         : null,
-    [effectiveVerb, trimmedNoun, tasks],
+    [effectiveVerb, trimmedNoun, tasks, root, renamed],
   );
 
   if (!open) return null;
@@ -129,6 +176,27 @@ export function CreateCounterSheet({
   // R1: the promote/standalone card was removed — a `standalone` match no
   // longer blocks or offers anything; only `established` blocks create.
   const canCreate = trimmedNoun !== '' && match?.kind !== 'established' && !startFromInvalid && !busy;
+  // A Duration counter's noun is optional in edit (a board-born root has no unit).
+  const canSave =
+    (trimmedNoun !== '' || !countKindNeedsUnit(countKind)) && match?.kind !== 'established' && !busy;
+
+  async function handleSave(): Promise<void> {
+    if (!root || !canSave) return;
+    genRef.current += 1;
+    const gen = genRef.current;
+    setError(null);
+    setBusy(true);
+    try {
+      await saveTaskEdit(root.id, counterEditSubmit(root, { verb, noun, kind: countKind }));
+      if (genRef.current !== gen) return;
+      setBusy(false);
+      onSaved?.();
+    } catch (e) {
+      if (genRef.current !== gen) return;
+      setError(e instanceof CompoundEditValidationError ? e.message : 'Could not save counter.');
+      setBusy(false);
+    }
+  }
 
   async function handleCreate(): Promise<void> {
     if (!canCreate) return;
@@ -144,7 +212,7 @@ export function CreateCounterSheet({
         countKind,
       });
       if (genRef.current !== gen) return;
-      onCreated(t.id);
+      onCreated?.(t.id);
     } catch {
       if (genRef.current !== gen) return;
       setError('Could not create counter.');
@@ -161,16 +229,20 @@ export function CreateCounterSheet({
     <div
       ref={modalRef}
       role="dialog"
-      aria-label="New counter"
+      aria-label={root ? 'Edit counter' : 'New counter'}
       {...modalProps}
       className={styles.backdrop}
       onClick={() => !busy && onClose()}
     >
       <div className={styles.dialog} onClick={(e) => e.stopPropagation()}>
-        <h3 className={styles.title}>New counter</h3>
+        <h3 className={styles.title}>{root ? 'Edit counter' : 'New counter'}</h3>
 
         <span className={`${styles.fieldLabel} ${styles.fieldLabelFirst}`}>Kind</span>
-        <KindPicker value={countKind} lock="none" onChange={handleKindChange} />
+        {root ? (
+          <KindPicker value={countKind} lock={kindPickerLock('edit', resolveCountKind(root))} onChange={requestKind} />
+        ) : (
+          <KindPicker value={countKind} lock="none" onChange={handleKindChange} />
+        )}
 
         <label className={styles.fieldLabel} htmlFor="create-counter-noun">
           What are you counting?
@@ -197,25 +269,31 @@ export function CreateCounterSheet({
           className={styles.fieldInput}
         />
 
-        <label className={styles.fieldLabel} htmlFor="create-counter-starting-count">
-          Start from (optional)
-        </label>
-        <GoalEntry
-          kind={countKind}
-          id="create-counter-starting-count"
-          aria-label="Start from"
-          value={startingCountStr}
-          onChange={setStartingCountStr}
-          placeholder="0"
-          invalid={startFromInvalid}
-          dense
-        />
+        {!root && (
+          <>
+            <label className={styles.fieldLabel} htmlFor="create-counter-starting-count">
+              Start from (optional)
+            </label>
+            <GoalEntry
+              kind={countKind}
+              id="create-counter-starting-count"
+              aria-label="Start from"
+              value={startingCountStr}
+              onChange={setStartingCountStr}
+              placeholder="0"
+              invalid={startFromInvalid}
+              dense
+            />
+          </>
+        )}
 
         {previewName && (
           <div className={styles.previewCard}>
             <div className={styles.previewRow}>
               <span className={styles.previewName}>{previewName}</span>
-              <span className={styles.previewCount}>{formatCountTotal(previewCount, countKind)}</span>
+              <span className={styles.previewCount}>
+                {formatCountTotal(root ? (root.currentCount ?? 0) : previewCount, countKind)}
+              </span>
             </div>
             <div className={styles.previewFooter}>
               <span className={styles.previewAllTime}>All-time</span>
@@ -246,10 +324,17 @@ export function CreateCounterSheet({
           <RisoButton kind="ghost" onClick={onClose} disabled={busy}>
             Cancel
           </RisoButton>
-          <RisoButton kind="blue" onClick={handleCreate} disabled={!canCreate}>
-            Create counter
-          </RisoButton>
+          {root ? (
+            <RisoButton kind="blue" onClick={handleSave} disabled={!canSave}>
+              Save
+            </RisoButton>
+          ) : (
+            <RisoButton kind="blue" onClick={handleCreate} disabled={!canCreate}>
+              Create counter
+            </RisoButton>
+          )}
         </div>
+        {kindDialog}
       </div>
     </div>
   );

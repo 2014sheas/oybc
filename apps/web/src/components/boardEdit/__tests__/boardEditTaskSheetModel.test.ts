@@ -9,7 +9,7 @@ import {
   showsCompoundEditor,
   type SheetInput,
 } from '../boardEditTaskSheetModel';
-import { typeControlMode } from '../../taskEdit/taskTypeRules';
+import { typeControlMode, typeLockedForEdit } from '../../taskEdit/taskTypeRules';
 
 function task(over: Partial<Task> = {}): Task {
   return {
@@ -52,6 +52,25 @@ describe('typeControlMode / showsCompoundEditor', () => {
   it('a linked counter shows its type fixed (no switch)', () => {
     expect(typeControlMode(TaskType.COUNTING, true)).toBe('fixed');
     expect(typeControlMode(TaskType.NORMAL, true)).toBe('fixed');
+  });
+
+  it('any shared counter keeps its type: linked copy, hub counter, or a board-born root other boards link to', () => {
+    const counting = task({ type: TaskType.COUNTING, action: 'Run', unit: 'miles', maxCount: 10 });
+    expect(typeLockedForEdit(counting, false)).toBe(false);
+    expect(typeControlMode(counting.type, typeLockedForEdit(counting, false))).toBe('switch');
+    // Board-born root with live linked copies (sharedCounterId == its id).
+    expect(typeLockedForEdit(counting, true)).toBe(true);
+    expect(typeControlMode(counting.type, typeLockedForEdit(counting, true))).toBe('fixed');
+    expect(typeLockedForEdit(task({ type: TaskType.COUNTING, isCounter: true }), false)).toBe(true);
+    expect(typeLockedForEdit(task({ type: TaskType.COUNTING, sharedCounterId: 'root' }), false)).toBe(true);
+    // Only a COUNTING task can be a root — a Simple task's copies flag is ignored.
+    expect(typeLockedForEdit(task(), true)).toBe(false);
+  });
+
+  it('before the linked-copies read resolves (undefined) a Counting task renders FIXED, never switch-then-fixed', () => {
+    const counting = task({ type: TaskType.COUNTING, action: 'Run', unit: 'miles', maxCount: 10 });
+    expect(typeControlMode(counting.type, typeLockedForEdit(counting, undefined))).toBe('fixed');
+    expect(typeControlMode(TaskType.NORMAL, typeLockedForEdit(task(), undefined))).toBe('switch');
   });
 
   it('the compound editor is open only for the Compound selection', () => {
@@ -134,6 +153,12 @@ describe('sheetValidationProblem', () => {
 });
 
 describe('buildSheetOverride', () => {
+  it('a Duration task keeps its own unit (a hub counter\'s noun) — the hidden field sends it back', () => {
+    const original = task({ type: TaskType.COUNTING, action: 'Practice', unit: 'piano', maxCount: 60, countKind: 'duration' });
+    const patch = buildSheetOverride(input({ original, action: 'Practice', goalStr: '1:00', unit: 'piano', countKind: 'duration' }));
+    expect(patch.unit).toBe('piano');
+  });
+
   it('Simple rename: title, the unchanged type, and an explicit cleared compound', () => {
     expect(buildSheetOverride(input({ title: ' New ' }))).toEqual({ title: 'New', type: TaskType.NORMAL, compound: undefined });
   });

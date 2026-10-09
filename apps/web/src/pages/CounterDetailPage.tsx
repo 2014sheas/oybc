@@ -12,6 +12,7 @@ import {
 import { useAuth } from '../firebase/useAuth';
 import { useSharedCounterGroups } from '../hooks/useSharedCounterGroups';
 import { useCounterDailyTotals } from '../hooks/useCounterDailyTotals';
+import { useTasks } from '../hooks/useTasks';
 import {
   computeTaskDeletionImpact,
   decrementSharedCounter,
@@ -22,20 +23,19 @@ import {
   undoLastCounterLog,
   type TaskDeletionImpact,
 } from '../db/operations/tasks';
-import { CompoundEditValidationError, saveTaskEdit } from '../db/operations';
 import { generateUUID } from '../db/utils';
 import {
   CounterDeleteConfirmDialog,
   CounterDetailLogCard,
   CounterDetailTaskCard,
   CounterLogToast,
+  CreateCounterSheet,
   CounterWriteError,
   attemptCounterWrite,
   COUNTER_NOT_UPDATED_MESSAGE,
 } from '../components/counters';
 import { counterDetailMenuItems, editableCounterRoot } from '../components/counters/counterDetailMenu';
 import { RowContextMenu } from '../components/wizard/RowContextMenu';
-import { TaskEditSheet } from './tasks/TaskEditSheet';
 import { RisoSectionLabel } from '../components/riso';
 import profileStyles from './ProfilePage.module.css';
 import styles from './CounterDetailPage.module.css';
@@ -49,8 +49,8 @@ import styles from './CounterDetailPage.module.css';
  *
  * Sections (R2 Counters UX refresh — design handoff §Counter Detail):
  *   1. Header — back circle · blue "SHARED COUNTER" kicker · counter name ·
- *      "⋯" overflow (Edit counter… — the global `TaskEditSheet` on the root —
- *      and Delete counter…).
+ *      "⋯" overflow (Edit counter… — the counter sheet in edit mode on the
+ *      root, never the task editor — and Delete counter…).
  *   2. Hero card — 46px blue all-time total + "all-time {noun}", a REAL
  *      7-day sparkline (`useCounterDailyTotals`), and the milestone bar
  *      (`counterMilestoneProgress` from `@oybc/shared`).
@@ -100,14 +100,15 @@ export function CounterDetailPage(): React.ReactElement {
   const [logError, setLogError] = useState<string | null>(null);
 
   const group = groups.find((g) => g.counterId === counterId);
-  // `counterId` IS the root task's id. Edit counter… opens the global editor
-  // on it (absent when the root is missing / deleted). Live, so a save
-  // re-renders the page with the new title / kind / unit.
+  // `counterId` IS the root task's id. Edit counter… opens the counter sheet
+  // in edit mode on it (absent when the root is missing / deleted). Live, so
+  // a save re-renders the page with the new title / kind / unit.
   const root = editableCounterRoot(
     useLiveQuery(() => (counterId ? fetchTask(counterId) : undefined), [counterId]),
   );
   const [editingRoot, setEditingRoot] = useState<Task | null>(null);
-  const [editError, setEditError] = useState<string | null>(null);
+  // The rename dedupe pool (as the hub's create sheet).
+  const tasks = useTasks(user?.id) ?? [];
 
   const handleLog = useCallback(
     async (direction: 'add' | 'remove', selectedAmount: number) => {
@@ -262,10 +263,7 @@ export function CounterDetailPage(): React.ReactElement {
             y={menuPos.y}
             items={counterDetailMenuItems({
               root,
-              onEdit: (r) => {
-                setEditError(null);
-                setEditingRoot(r);
-              },
+              onEdit: (r) => setEditingRoot(r),
               onDelete: () => void handleDeleteClick(),
             })}
             onClose={() => setMenuOpen(false)}
@@ -380,7 +378,6 @@ export function CounterDetailPage(): React.ReactElement {
           )}
 
           {/* 8. Delete-counter action — quiet red text link (was a filled button). */}
-          {editError && <p className={styles.deleteError} role="alert">{editError}</p>}
           {deleteError && <p className={styles.deleteError}>{deleteError}</p>}
           <div className={styles.deleteAction}>
             <button type="button" className={styles.deleteLink} onClick={() => void handleDeleteClick()}>
@@ -407,20 +404,14 @@ export function CounterDetailPage(): React.ReactElement {
         />
       )}
 
-      {editingRoot && (
-        <TaskEditSheet
-          task={editingRoot}
-          onSubmit={async (patch) => {
-            try {
-              await saveTaskEdit(editingRoot.id, patch);
-              setEditingRoot(null);
-            } catch (e) {
-              // Structure validation is shown inline by the sheet.
-              if (e instanceof CompoundEditValidationError) throw e;
-              setEditError(`Failed to save: ${(e as Error).message}`);
-            }
-          }}
-          onCancel={() => setEditingRoot(null)}
+      {editingRoot && user && (
+        <CreateCounterSheet
+          open
+          root={editingRoot}
+          tasks={tasks}
+          userId={user.id}
+          onClose={() => setEditingRoot(null)}
+          onSaved={() => setEditingRoot(null)}
         />
       )}
 

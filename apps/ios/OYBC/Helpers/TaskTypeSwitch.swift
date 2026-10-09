@@ -28,18 +28,38 @@ enum TaskTypeSwitch {
     }
 
     /// Whether an editor shows the Simple / Counting / Compound picker: only
-    /// for a Simple / Counting task that is not a linked counter or a hub
-    /// counter (`isCounter`) — a compound, an achievement, a linked copy and a
-    /// hub counter keep their type. A counter ROOT
-    /// with live copies is refused at Done / Save (`sharedCounterMessage`).
+    /// for a Simple / Counting task that is not a SHARED COUNTER — a linked
+    /// copy, a hub counter (`isCounter`), or a counting task other rows link
+    /// to (a board-born root, `hasLinkedCopies`) keeps its type (owner rule
+    /// 2026-10-09), as do a compound and an achievement. The save still
+    /// refuses a shared counter's switch (`sharedCounterMessage`) as the
+    /// backstop. Web twin: `typeLockedForEdit` + `typeControlMode`.
     ///
     /// - Parameters:
     ///   - task: The task (any staged override merged).
     ///   - original: The task before any staged override (nil ⇒ `task`).
-    static func showsPicker(task: Task, original: Task?) -> Bool {
+    ///   - hasLinkedCopies: Whether live rows link to it as their root
+    ///     (`initialHasLinkedCopies`, read in the sheet's `init`). `nil` =
+    ///     not known yet: a Counting task then shows its type FIXED, so the
+    ///     picker never appears and then disappears.
+    static func showsPicker(task: Task, original: Task?, hasLinkedCopies: Bool? = false) -> Bool {
         let base = original ?? task
         return (base.type == .normal || base.type == .counting)
             && task.sharedCounterId == nil && !base.isCounter
+            && !(base.type == .counting && hasLinkedCopies != false)
+    }
+
+    /// The sheet's first-frame linked-copies answer: a cheap synchronous
+    /// indexed read, only for a Counting task that is not already locked
+    /// (linked copy / hub counter); false otherwise. A failed read reads as
+    /// LOCKED (the save guard decides anyway).
+    ///
+    /// - Parameters:
+    ///   - task: The stored (original) task.
+    ///   - database: The database to read.
+    static func initialHasLinkedCopies(task: Task, database: AppDatabase) -> Bool {
+        guard task.type == .counting, task.sharedCounterId == nil, !task.isCounter else { return false }
+        return (try? database.hasLiveLinkedCopies(taskId: task.id)) ?? true
     }
 
     /// `task` with its type set to `next` and the fields the new type cannot

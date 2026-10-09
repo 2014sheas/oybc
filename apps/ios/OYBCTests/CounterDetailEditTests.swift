@@ -4,7 +4,7 @@ import GRDB
 
 /// Counter Detail "⋯" → Edit counter… (both platforms): the overflow lists
 /// Edit above Delete only for a live root, and an edit of the root through
-/// the global editor's write (`applyTaskEditPatch`) is what the page's reload
+/// the counter sheet's save (`CounterEditModel.patch` → `applyTaskEditPatch`) is what the page's reload
 /// (`CounterDetailView.loadSnapshot`) shows. Web twin:
 /// `components/counters/__tests__/counterDetailMenu.test.ts`.
 @MainActor
@@ -44,6 +44,7 @@ final class CounterDetailEditTests: XCTestCase {
 
     func test_loadSnapshot_exposesTheLiveRoot() throws {
         let snap = load(try seed())
+        XCTAssertEqual(Set(snap.tasks.map(\.id)), ["root", "copy"])
         XCTAssertEqual(snap.root?.id, "root")
         XCTAssertEqual(snap.group?.counterId, "root")
     }
@@ -56,11 +57,8 @@ final class CounterDetailEditTests: XCTestCase {
         let db = try seed()
         XCTAssertEqual(load(db).group?.countKind, .discrete)
 
-        let patch = EditTaskSheet.Patch(
-            title: "Jog miles", description: "", action: "Jog", unit: "miles", maxCountStr: "",
-            trigger: .bingo, requiredCountStr: "", refMode: .board, selectedBoardId: "", selectedTemplateId: "",
-            countKind: .continuous
-        )
+        let root = try XCTUnwrap(load(db).root)
+        let patch = CounterEditModel.patch(root: root, draft: .init(verb: "Jog", noun: "miles", kind: .continuous))
         try db.applyTaskEditPatch(taskId: "root", patch: patch)
 
         let snap = load(db)
