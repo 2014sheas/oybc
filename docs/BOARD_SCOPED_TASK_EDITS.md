@@ -209,7 +209,7 @@ Nothing new on the grid. In the Board Edit square sheet:
 | PR | Scope |
 | --- | --- |
 | 1 — foundation (inert) — **shipped (#573)** | `Task.forkedFromTaskId` (shared type + Zod, iOS GRDB v41 nullable column + `Codable`; no Dexie bump — unindexed), `FORK_NS` + `forkTaskId` / `forkedEventId` helpers (shared TS + Swift twin, vector-pinned), `planBoardScopedFork(task, board, placements, events)` pure planner returning `{ mode: 'inPlace' | 'fork', fork?, eventCopies?, childLinksToCopy?, repoint?, onBoardHolderCompoundIds? }` with vectors for the D1/D2 test and the type-change event filter, browse-filter extension, deletion-cascade guard. No UI change. |
-| 2 — Board Edit + wizard commit | `boardEditCommit.ts` ↔ `+EditCommit.swift` and `applyStagedTaskEditsForWizardPersist` ↔ `applyStagedTaskEdits` consume the planner inside the existing transaction; cascades for both tasks; sheet button label + first-fork confirm; e2e + XCTest (fork, in-place, compound parent-only, event migration keeps completion, type-change filter, sealed gate, idempotent replay). |
+| 2 — Board Edit + wizard commit — **shipped (#PR2)** | `boardEditCommit.ts` ↔ `+EditCommit.swift` and `applyStagedTaskEditsForWizardPersist` ↔ `applyStagedTaskEdits` consume the planner inside the existing transaction; cascades for both tasks; sheet button label + first-fork confirm; e2e + XCTest (fork, in-place, compound parent-only, event migration keeps completion, type-change filter, sealed gate, idempotent replay). |
 | 3 — root → copy propagation | Task Detail edit of a hub root propagates title/action/unit to live copies (shared `planRootFieldPropagation`, both platforms); fix `COUNTER_KINDS.md` D5 wording. |
 | 4 — docs | `TASK_SYSTEM.md` §Editing a task rewritten around the scope table; `BOARD_EDIT_REDESIGN.md:31` ("changes it everywhere") corrected; CLAUDE.md one-paragraph summary. |
 
@@ -236,6 +236,43 @@ Nothing new on the grid. In the Board Edit square sheet:
   BOTH placed directly and nested on the board. Compounds return
   `childLinksToCopy` (children stay shared).
 - No Dexie version bump: the field is unindexed (the v38 / v39 precedent).
+
+**PR 2 implementation notes:**
+
+- One entry point per platform — web `ensureBoardScopedTask`
+  (`db/operations/boardScopedEdit.ts`) ↔ iOS `AppDatabase.ensureBoardScopedTask`
+  (`AppDatabase+BoardScopedEdit.swift`) — called BEFORE the edit inside the
+  existing transaction; the edit then lands on the returned id. Every minted
+  row (fork, event copies, link copies) is skipped when already present, so a
+  replayed Save or another device's identical fork converges on the same rows.
+- **Holder order:** the direct placement is repointed first (through
+  `updateBoardTaskAndCascade`, so it bumps + enqueues like Replace); then each
+  `onBoardHolderCompoundIds` holder is made board-private by the same entry
+  point — a holder placed elsewhere is FORKED first (its own placement
+  repointed, its links copied) — and the link to the task inside its subtree
+  is rewritten in place (`repointCompoundLink`, version bump + enqueue);
+  intermediate compounds on the path are made board-private recursively. A
+  sub-task edited from the compound editor goes through the same call
+  (`applyStagedCompoundChildEdits` gained a board scope); when the parent is
+  not placed yet (the wizard) its link is repointed explicitly.
+- **Caches:** the fork's lifetime caches are stamped from its own events
+  AFTER the edit (`stampTaskCachesAuthored`, an authored write), since they
+  depend on the post-edit type / goal. One batched cascade covers the fork
+  and the original.
+- **Wizard:** web applies its staged edits once the board row exists (moved
+  below the board create/update), iOS passes the in-memory `Board` (its row
+  is written later in the same transaction). Forks are substituted into the
+  placements, the hand-added ids / dice and (iOS) a CHOSEN centre, so the
+  member-rule mint and the placements see the fork. A forked member is no
+  longer source supply, so a member rule keyed on the original no longer
+  applies to it (follow-up candidate). Pending (this-session) tasks have no
+  other placement and are edited in place. The pool editor and the
+  repeating-board pool path pass no board and stay global.
+- **UI:** `wouldForkOnBoard` (shared ↔ `BoardScopedFork.wouldFork`, called by
+  the planner, agreement-pinned over every planner vector) drives "Save for
+  this board"; the first-fork confirm is remembered in the edit draft (web
+  `useSquaresEditDraft.forkConfirmed` ↔ iOS `editForkConfirmed`), reset when
+  edit mode ends. Task Detail on a fork needed no change.
 
 Estimated size: PR 1 small, PR 2 medium (the commit paths are already staged and
 transactional — most of the work is the planner + tests), PR 3 small, PR 4 docs.

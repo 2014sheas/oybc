@@ -390,15 +390,19 @@ Inline-created children (a child whose definition is authored alongside the pare
 
 ### Editing a task
 
-> **Scope rule (locked 2026-10-08, owner ruling; train in flight):** edits made from a
-> **board** (Board Edit square sheet, wizard Tasks-step inline edit) will apply
-> to **that board only** — forking the task when it is placed anywhere else —
-> while edits from **Task Detail / the Tasks tab / the pool editor** stay
-> **global**. Today every surface below edits the shared row in place (except a
-> linked counter square, which already edits only this board's copy). The
-> design, decision points and PR train are in
-> [`BOARD_SCOPED_TASK_EDITS.md`](BOARD_SCOPED_TASK_EDITS.md); the bullets below
-> describe the shipped behaviour until that train lands.
+> **Scope (board-scoped edits, PR 2 shipped — [`BOARD_SCOPED_TASK_EDITS.md`](BOARD_SCOPED_TASK_EDITS.md)):**
+> an edit made from a **board** — Board Edit's square sheet (title / counting
+> fields / kind / Simple ⇄ Counting / into Compound / compound rule +
+> sub-tasks) or the one-off wizard's Tasks-step inline edit — applies to
+> **that board only**: when the task (directly, or through a compound) is
+> placed on any other board — sealed / archived included — the Save forks it
+> (`forkTaskId(board, task)`, in-window events migrated, the board's placement
+> repointed) and the edit lands on the fork; otherwise it edits in place.
+> **Task Detail, the Tasks tab, the pool editor** and the repeating-board pool
+> stay **global**; Board Edit's **Replace** touches the placement only; linked
+> counter squares already edit only this board's copy. The bullets below
+> describe each surface's mechanics; "global" there means "on the row the
+> scope rule chose".
 
 - **Compound editor — shipped on both platforms, from Task Detail** (web `TaskDetailPage` edit sheet → `CompoundFields`; iOS `TaskDetailView` → `EditTaskSheet` "Sub-tasks & rule" section → `RisoCompoundEditFieldsView`): operator picker + child list with add / rename / remove. Saving runs the compound-structure-edit transaction — web `saveTaskEdit` → `editCompoundStructure` (`apps/web/src/db/operations/compoundStructureEdit.ts`), iOS `applyTaskEditPatch` with `patch.compound` (`AppDatabase+TaskEditing.swift`) — which reuses the wizard's child-CRUD helper `applyStagedCompoundChildEdits` (rename = global edit of the child Task; remove = soft-delete the **link** only, the child Task survives; add = new child Task + link), bumps the parent's version once, then re-derives the affected boards: web runs one batched cascade/derivation pass over the parent + every touched child; iOS cascades each changed child inline, then the parent. Same final state on both; sealed boards are skipped.
 - **Link an existing library task as a sub-task — shipped on both platforms, both editors** (the Task Detail compound editor and the wizard's inline row editor add sub-tasks through the **wizard's own quick-add row** — web `WizardQuickAddRow` / iOS `RisoQuickAddRowView` with the draft-only `onSubmitText` callback: typing lists matching eligible library tasks and clicking/tapping one links it; Enter / Add appends a NEW sub-task, Normal or Counting per the "New sub:" chips — same job, same interface as adding a task to a board): a picked task is **linked, never copied** — a new `compound_children` link is minted at its position and the picked task's own row is not rewritten. Eligibility is the shared six-check guard `compoundChildLinkProblem` (`packages/shared`) ↔ `CompoundChildEligibility.linkProblem` (Swift): self, already linked here, achievement, deleted, goal-less counter, and loop (the candidate already contains the parent) — the refusal strings are byte-identical across platforms. The guard runs **before** structure validation on both save paths, so a bad pick gets its specific message. The row's matches come from `compoundChildPickerCandidates` (↔ Swift twin): the browsable library, filtered to eligible tasks, minus counting tasks lacking a goal or a unit (which structure validation would refuse). On the wizard's staged path, an ineligible link skips the **whole** staged compound edit (same as an invalid patch) — the candidate filter makes that unreachable.
