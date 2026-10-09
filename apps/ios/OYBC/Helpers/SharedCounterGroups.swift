@@ -39,7 +39,11 @@ struct SharedCounterMemberTask: Identifiable {
     let window: String?
     /// The task's personal target (`maxCount`), 0 when unset.
     let goal: CountValue
-    /// The task's window-scoped displayed amount (derived from lifetime).
+    /// The task's in-window displayed amount (when the caller passes
+    /// `eventsByTaskId`): a linked row's root increment sum over its stamped
+    /// window or its board's, a PLACED source's own events over its board's
+    /// window — each bounded at a sealed board's `sealedAt`, the play cell's
+    /// numbers. An UNPLACED row keeps the lifetime arithmetic.
     let logged: CountValue
     /// `logged >= goal` (only when goal > 0). Over-achievement is real.
     let met: Bool
@@ -207,11 +211,11 @@ func sharedCounterRootIds(_ tasks: [Task]) -> Set<String> {
 ///   - boardTasks: All board-task placement rows visible to the query.
 ///   - boards: All boards for the user (any status).
 ///   - eventsByTaskId: Optional non-deleted events grouped by `taskId` (at
-///     least the roots'). When given, a WINDOW-STAMPED derived member's
-///     `logged` is its root's increment sum inside the row's own
-///     `[startDate, endDate]` (bounded at its board's `sealedAt` when sealed)
-///     via `resolveLinkedCounterDisplay` — the play cell's and the kernel's
-///     rule. `nil` keeps the lifetime derivation, byte-identical to before.
+///     least the roots'). When given, every PLACED member's `logged` is its
+///     in-window count — a linked member via `resolveLinkedCounterDisplay`,
+///     a placed source via `resolveTaskWindowState` over its board's window
+///     — bounded at a sealed board's `sealedAt`: the play cell's and the
+///     kernel's rule. `nil` keeps the lifetime derivation, byte-identical to before.
 ///     Mirrors the TS `BuildSharedCounterGroupsInput.eventsByTaskId`.
 ///   - memberVisibility: Optional — which linked members each group lists
 ///     (see `SharedCounterMemberVisibility`). Applied AFTER root detection,
@@ -288,13 +292,26 @@ func buildSharedCounterGroups(
                 return LinkedCounterWindow(startDate: board.startDate, endDate: board.endDate)
             }()
             let displayed: CountValue
-            if !isSource, let eventsByTaskId,
+            if isSource, let eventsByTaskId, let board {
+                // A PLACED source (a board-born counter's own square) is an
+                // event-owning counting row: it reads its OWN events over its
+                // board's window, sealed-bounded — the play cell's rule —
+                // never the lifetime total, which is the group's `lifetime`.
+                displayed = resolveTaskWindowState(
+                    task: m,
+                    events: boundEventsAtSeal(eventsByTaskId[m.id] ?? [], sealedAt: board.sealedAt),
+                    windowStart: board.startDate,
+                    windowEnd: boardWindowEnd(board)
+                ).count
+            } else if !isSource, let eventsByTaskId,
                BoardSources.isWindowStampedDerived(m) || memberWindow != nil {
                 displayed = resolveLinkedCounterDisplay(
                     task: m, eventsByTaskId: eventsByTaskId, sealedAt: board?.sealedAt,
                     window: memberWindow
                 ).displayed
             } else {
+                // An unplaced source (a hub-born root) or unplaced linked row
+                // has no window: the library's lifetime arithmetic.
                 displayed = deriveDisplayedCount(
                     derivedBaseline: baseline,
                     derivedMaxCount: goal,
@@ -366,4 +383,16 @@ func buildSharedCounterGroups(
     // Sort by counter name, case-insensitive (mirrors TS localeCompare base).
     groups.sort { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
     return groups
+}
+
+/// Drop events after a sealed board's `sealedAt` (inclusive bound) — the same
+/// bound `resolveLinkedCounterDisplay` and the sealed re-derive apply. An
+/// absent or unparseable `sealedAt` applies no bound. Mirrors the TS
+/// `boundEventsAtSeal` in `sharedCounterGroups.ts`.
+private func boundEventsAtSeal(_ events: [TaskEvent], sealedAt: String?) -> [TaskEvent] {
+    guard let sealedAt, let bound = DateFormatting.parseISO(sealedAt) else { return events }
+    return events.filter { e in
+        guard let occurred = DateFormatting.parseISO(e.occurredAt) else { return false }
+        return occurred <= bound
+    }
 }

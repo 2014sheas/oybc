@@ -1,5 +1,5 @@
 import { useLiveQuery } from 'dexie-react-hooks';
-import { buildSharedCounterGroups } from '@oybc/shared';
+import { buildSharedCounterGroups, sharedCounterRootIds } from '@oybc/shared';
 import type { SharedCounterGroup, TaskEvent } from '@oybc/shared';
 import { db } from '../db/internal';
 import { healBoardNames } from '../db/operations/boardNames';
@@ -71,11 +71,11 @@ export async function loadSharedCounterGroups(
       ? await db.boardTasks.where('taskId').anyOf(taskIds).filter((bt) => !bt.isDeleted).toArray()
       : [];
 
-  // Window-stamped members read their root's in-window sum (the play
-  // cell's and the kernel's rule — docs/WINDOWED_COMPLETION.md
-  // §Derived-task carve-out, amended 2026-09-23), so the roots' events
-  // ride along. Indexed on `taskId`; one range scan per chunk.
-  const rootIds = [...new Set(tasks.flatMap((t) => (t.sharedCounterId ? [t.sharedCounterId] : [])))];
+  // Every placed member reads its in-window count from the root's events
+  // (the play cell's and the kernel's rule — docs/WINDOWED_COMPLETION.md
+  // §Derived-task carve-out) — a placed root reads its OWN — so the roots'
+  // events ride along. Indexed on `taskId`; one range scan per chunk.
+  const rootIds = [...sharedCounterRootIds(tasks)];
   const eventsByTaskId: Record<string, TaskEvent[]> = {};
   if (rootIds.length > 0) {
     for (const e of await db.taskEvents.where('taskId').anyOf(rootIds).toArray()) {

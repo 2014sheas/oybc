@@ -36,7 +36,7 @@ import { deriveDisplayedCount } from './sharedCounter';
 import { formatTimeframeLabel } from './calendarBoundaries';
 import { formatCounterName } from './counterName';
 import { isWindowStampedDerived } from './memberRules';
-import { resolveLinkedCounterDisplay } from './taskEvents';
+import { boardWindowEnd, resolveLinkedCounterDisplay, resolveTaskWindowState } from './taskEvents';
 import { isTaskExpired } from './taskExpiry';
 
 /**
@@ -61,10 +61,12 @@ export interface SharedCounterMemberTask {
   window: string | null;
   /** The task's personal target (`maxCount`), 0 when unset. */
   goal: number;
-  /** The task's window-scoped displayed amount: the ROOT's increment sum in
-   *  the row's own window for a window-stamped derived row (when the caller
-   *  supplies `eventsByTaskId`), else derived from the lifetime
-   *  (`lifetime − baseline`). */
+  /** The task's in-window displayed amount (when the caller supplies
+   *  `eventsByTaskId`): the ROOT's increment sum over a window-stamped row's
+   *  own window or a placed linked row's board window, and a PLACED source's
+   *  own events over its board's window — each bounded at a sealed board's
+   *  `sealedAt`, the play cell's numbers. An UNPLACED row (no board, no
+   *  window) keeps the lifetime arithmetic (`lifetime − baseline`). */
   logged: number;
   /** `logged >= goal` (only when `goal > 0`). Over-achievement is real. */
   met: boolean;
@@ -119,12 +121,13 @@ export interface BuildSharedCounterGroupsInput {
   boards: readonly Board[];
   /**
    * Optional — non-deleted events grouped by `taskId` (at least the roots').
-   * When present, a WINDOW-STAMPED derived member's `logged` is its root's
-   * increment sum inside the row's own `[startDate, endDate]` (bounded at its
-   * board's `sealedAt` when sealed) via `resolveLinkedCounterDisplay` — the
-   * rule the play cell and the derivation kernel use, so the hub never reads
-   * a later window's logs into an ended member. Absent → the lifetime
-   * derivation, byte-identical to before.
+   * When present, every PLACED member's `logged` is its in-window count —
+   * a linked member's root increment sum over its own window (stamped) or
+   * its board's (`resolveLinkedCounterDisplay`), a placed source's own events
+   * over its board's window (`resolveTaskWindowState`), bounded at a sealed
+   * board's `sealedAt` — the rule the play cell and the derivation kernel
+   * use, so the hub never reads other windows' logs into a member. Absent →
+   * the lifetime derivation, byte-identical to before.
    */
   eventsByTaskId?: Readonly<Record<string, TaskEvent[]>>;
   /**
@@ -157,6 +160,17 @@ export interface SharedCounterMemberVisibility {
   /** Reference time for `isTaskExpired`; defaults to `new Date()` — inject
    *  it in tests. */
   now?: Date;
+}
+
+/**
+ * Drop events after a sealed board's `sealedAt` (inclusive bound) — the same
+ * bound `resolveLinkedCounterDisplay` and the sealed re-derive apply. An
+ * absent or unparseable `sealedAt` applies no bound.
+ */
+function boundEventsAtSeal(events: TaskEvent[], sealedAt: string | null): TaskEvent[] {
+  const sealedAtMs = sealedAt ? new Date(sealedAt).getTime() : NaN;
+  if (Number.isNaN(sealedAtMs)) return events;
+  return events.filter((e) => new Date(e.occurredAt).getTime() <= sealedAtMs);
 }
 
 /**
@@ -312,15 +326,31 @@ export function buildSharedCounterGroups(
         !isWindowStampedDerived(m) && board
           ? { startDate: board.startDate, endDate: board.endDate ?? null }
           : null;
-      const displayed =
-        !isSource && input.eventsByTaskId && (isWindowStampedDerived(m) || memberWindow)
-          ? resolveLinkedCounterDisplay(
-              m,
-              input.eventsByTaskId as Record<string, TaskEvent[]>,
-              board?.sealedAt ?? null,
-              memberWindow,
-            ).displayed
-          : deriveDisplayedCount({ baseline, maxCount: goal, countKind: m.countKind }, { currentCount: lifetime }).displayed;
+      let displayed: number;
+      if (isSource && input.eventsByTaskId && board) {
+        // A PLACED source (a board-born counter's own square) is an
+        // event-owning counting row: it reads its OWN events over its
+        // board's window, sealed-bounded — the play cell's rule
+        // (`resolveClosedBoardCounterDisplay` / the live window context) —
+        // never the lifetime total, which is the group's `lifetime`.
+        displayed = resolveTaskWindowState(
+          m,
+          boundEventsAtSeal(input.eventsByTaskId[m.id] ?? [], board.sealedAt ?? null),
+          board.startDate,
+          boardWindowEnd(board),
+        ).count;
+      } else if (!isSource && input.eventsByTaskId && (isWindowStampedDerived(m) || memberWindow)) {
+        displayed = resolveLinkedCounterDisplay(
+          m,
+          input.eventsByTaskId as Record<string, TaskEvent[]>,
+          board?.sealedAt ?? null,
+          memberWindow,
+        ).displayed;
+      } else {
+        // An unplaced source (a hub-born root) or unplaced linked row has no
+        // window: the library's lifetime arithmetic.
+        displayed = deriveDisplayedCount({ baseline, maxCount: goal, countKind: m.countKind }, { currentCount: lifetime }).displayed;
+      }
 
       if (board) boardIds.add(board.id);
       const isActive = board?.status === BoardStatus.ACTIVE;
