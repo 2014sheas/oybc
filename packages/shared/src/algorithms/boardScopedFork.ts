@@ -16,9 +16,10 @@
  *     for a fork, build the fork row, the in-window event copies (§4, D4 (a))
  *     and the compound child-link copies (§6).
  *
- * Nothing here is wired into a write path yet (PR 2 consumes the plan
- * inside the Board Edit / wizard commit transactions). No persistence, no
- * clock, no platform code.
+ * PR 2 consumes the plan inside the Board Edit / wizard commit
+ * transactions; {@link wouldForkOnBoard} drives the Board Edit sheet's
+ * button label from the same test. No persistence, no clock, no platform
+ * code.
  *
  * Has a Swift twin (`Helpers/BoardScopedFork.swift`), pinned by the same
  * vector fixture (`tests/fixtures/boardScopedForkVectors.json`, copied
@@ -141,6 +142,46 @@ export type BoardScopedForkPlan =
       onBoardHolderCompoundIds: string[];
     };
 
+/** Input of {@link wouldForkOnBoard} — the placement half of {@link BoardScopedForkInput}. */
+export interface WouldForkOnBoardInput {
+  /** The task the board edit targets (pre-edit row). */
+  task: Pick<Task, 'id' | 'forkedFromTaskId' | 'sharedCounterId'>;
+  /** The board the edit is made from. */
+  boardId: string;
+  /** `board_tasks` rows (rows for unrelated tasks are ignored). */
+  placements: readonly Pick<BoardTask, 'id' | 'boardId' | 'taskId' | 'isDeleted'>[];
+  /** Boards referenced by `placements`; a board absent here is not live. */
+  boards: readonly Pick<Board, 'id' | 'isDeleted'>[];
+  /** `compound_children` links (the task's parents, for reachability). */
+  compoundChildren: readonly CompoundChild[];
+}
+
+/**
+ * Whether a board edit of `task` from `boardId` would land on a fork — the
+ * §2 "other placements" test alone, so the Board Edit sheet's button label
+ * ("Save for this board") and the Save commit
+ * ({@link planBoardScopedFork}, which calls this) can never disagree.
+ *
+ * False for a fork (never re-forked) and a linked counter (already this
+ * board's copy). Otherwise true iff the task — directly, or through any
+ * (transitive) parent compound over live links — has a live placement on a
+ * board OTHER than `boardId`. Live = `BoardTask` not deleted and its board
+ * present in `boards` and not deleted; sealed / archived boards count (D1).
+ *
+ * @param input - See {@link WouldForkOnBoardInput}.
+ * @returns `true` when the edit must fork.
+ */
+export function wouldForkOnBoard(input: WouldForkOnBoardInput): boolean {
+  const { task, boardId } = input;
+  if (task.forkedFromTaskId != null || task.sharedCounterId != null) return false;
+  const liveBoardIds = new Set(input.boards.filter((b) => !b.isDeleted).map((b) => b.id));
+  const holders = findTransitiveParentCompounds(task.id, [...input.compoundChildren]);
+  holders.add(task.id);
+  return input.placements.some(
+    (p) => !p.isDeleted && p.boardId !== boardId && holders.has(p.taskId) && liveBoardIds.has(p.boardId),
+  );
+}
+
 /** The event kind a task type owns, or `null` for a type that owns none (§4). */
 function ownedEventKind(type: TaskType): TaskEventKind | null {
   if (type === TaskType.NORMAL) return 'completion';
@@ -206,22 +247,19 @@ function ms(iso: string): number {
  */
 export function planBoardScopedFork(input: BoardScopedForkInput): BoardScopedForkPlan {
   const { task, board, now } = input;
-  if (task.forkedFromTaskId != null || task.sharedCounterId != null) return { mode: 'inPlace' };
+  if (!wouldForkOnBoard({ ...input, boardId: board.id })) return { mode: 'inPlace' };
 
   const liveBoardIds = new Set(input.boards.filter((b) => !b.isDeleted).map((b) => b.id));
   const holders = findTransitiveParentCompounds(task.id, [...input.compoundChildren]);
   holders.add(task.id);
 
-  let elsewhere = false;
   let repointId: string | null = null;
   const onBoardHolders = new Set<string>();
   for (const p of input.placements) {
-    if (p.isDeleted || !holders.has(p.taskId) || !liveBoardIds.has(p.boardId)) continue;
-    if (p.boardId !== board.id) elsewhere = true;
-    else if (p.taskId !== task.id) onBoardHolders.add(p.taskId);
+    if (p.isDeleted || p.boardId !== board.id || !holders.has(p.taskId) || !liveBoardIds.has(p.boardId)) continue;
+    if (p.taskId !== task.id) onBoardHolders.add(p.taskId);
     else if (repointId === null || p.id < repointId) repointId = p.id;
   }
-  if (!elsewhere) return { mode: 'inPlace' };
 
   const forkId = forkTaskId(board.id, task.id);
   const {

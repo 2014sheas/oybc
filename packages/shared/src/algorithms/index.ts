@@ -459,12 +459,14 @@ export {
   forkedEventId,
   forkLinkId,
   planBoardScopedFork,
+  wouldForkOnBoard,
 } from './boardScopedFork';
 
 export type {
   BoardScopedForkInput,
   BoardScopedForkPlan,
   BoardScopedForkRepoint,
+  WouldForkOnBoardInput,
 } from './boardScopedFork';
 
 // ===== Pull checkpoint — per-collection server `_syncedAt` watermark (2026-10-07) =====
