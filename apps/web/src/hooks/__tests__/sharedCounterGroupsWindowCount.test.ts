@@ -94,3 +94,29 @@ describe('loadSharedCounterGroups — member cards show the in-window count', ()
     expect(group!.tasks.find((t) => t.taskId === 'm-e')!.logged).toBe(7);
   });
 });
+
+describe('loadSharedCounterGroups — Counter Detail "Show expired tasks"', () => {
+  /** `m-e` is last week's window-stamped member (its own endDate has passed). */
+  async function seedWithExpiredMember(): Promise<void> {
+    await seed(null);
+    await db.tasks.update('m-e', { startDate: E.startDate, endDate: E.endDate, createdInWizard: true });
+  }
+
+  const memberIds = async (showExpired: boolean): Promise<string[]> =>
+    (await loadSharedCounterGroups('u1', showExpired))
+      .find((g) => g.counterId === 'root')!
+      .tasks.map((t) => t.taskId)
+      .sort();
+
+  it('hides the expired member by default; the open-board member and the root stay', async () => {
+    await seedWithExpiredMember();
+    expect(await memberIds(false)).toEqual(['m-w', 'root']);
+  });
+
+  it('lists the expired member when on, and the total is unaffected', async () => {
+    await seedWithExpiredMember();
+    expect(await memberIds(true)).toEqual(['m-e', 'm-w', 'root']);
+    const [off, on] = await Promise.all([loadSharedCounterGroups('u1', false), loadSharedCounterGroups('u1', true)]);
+    expect(on.find((g) => g.counterId === 'root')!.lifetime).toBe(off.find((g) => g.counterId === 'root')!.lifetime);
+  });
+});

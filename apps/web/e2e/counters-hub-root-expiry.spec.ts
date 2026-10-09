@@ -214,4 +214,26 @@ test.describe('Counters hub — a board-born root stays listed when its members 
     await expect(page.getByText('One tally, many squares'), 'profile block not empty').toHaveCount(0);
     await expect(page.getByText('Run miles').first(), 'profile block still lists the counter').toBeVisible();
   });
+
+  test('Counter Detail: its own "Show expired tasks" toggle reveals the expired member card', async ({ page }) => {
+    const rootId = await createMonthlyBoard(page);
+    const weeklyEnd = await createCoreWeeklyFromMonthly(page);
+    const d = await derivedRow(page, rootId);
+
+    await page.clock.install({ time: new Date(new Date(weeklyEnd).getTime() + 24 * 60 * 60 * 1000) });
+    await page.goto(`/profile/counters/${rootId}`);
+    await expect(page.getByRole('heading', { name: 'Run miles' })).toBeVisible();
+    const toggle = page.getByLabel('Show expired tasks');
+    await expect(toggle).not.toBeChecked();
+    await expect(page.getByText(d.title as string)).toHaveCount(0);
+
+    await toggle.check();
+    await expect(toggle).toBeChecked();
+    await expect(page.getByText(d.title as string).first()).toBeVisible();
+    await expect(page).toHaveURL(/showExpired=1/);
+
+    // The hub opens with the same setting (the back link carries it).
+    await page.getByRole('link', { name: 'Back to Counters' }).click();
+    await expect(page.getByLabel('Show expired tasks')).toBeChecked();
+  });
 });

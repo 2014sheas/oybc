@@ -1,7 +1,8 @@
 import { useState } from 'react';
-import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../firebase/useAuth';
 import { useSharedCounterGroups } from '../hooks/useSharedCounterGroups';
+import { useShowExpiredParam } from '../hooks/useShowExpiredParam';
 import { useTasks } from '../hooks/useTasks';
 import {
   CounterLedgerCard,
@@ -40,27 +41,13 @@ import styles from './CountersHubPage.module.css';
  * §Member rules (B3, RC9) — per-window DERIVED counters expire with their
  * board's window, so expired members are hidden by default and the same
  * `ShowExpiredToggle` the Tasks tab uses brings them back. The value lives in
- * the URL (`?showExpired=1`) — the one cross-page mechanism available here —
- * so Detail opens with the hub's setting instead of silently resetting it.
+ * the URL (`?showExpired=1`, `useShowExpiredParam`), shared with Counter
+ * Detail's own toggle, so the two screens never disagree.
  */
 export function CountersHubPage(): React.ReactElement {
   const { user } = useAuth();
   const navigate = useNavigate();
-  const [searchParams, setSearchParams] = useSearchParams();
-  const urlShowExpired = searchParams.get('showExpired') === '1';
-  // The checkbox reads a LOCAL mirror of the URL value, set in the same event
-  // as the click. React Router 7 commits `setSearchParams` inside a
-  // `startTransition`, so a checkbox controlled straight off the URL snaps
-  // back unchecked for a frame or more after the click (React restores a
-  // controlled input synchronously; the transition lands later) — a visible
-  // flicker, and a flaky `check()` in e2e/member-rules.spec.ts. The mirror
-  // still follows the URL when it changes from elsewhere (Back, a link).
-  const [showExpired, setShowExpired] = useState(urlShowExpired);
-  const [mirroredUrlValue, setMirroredUrlValue] = useState(urlShowExpired);
-  if (urlShowExpired !== mirroredUrlValue) {
-    setMirroredUrlValue(urlShowExpired);
-    setShowExpired(urlShowExpired);
-  }
+  const [showExpired, handleShowExpiredChange] = useShowExpiredParam();
   const groups = useSharedCounterGroups(user?.id, { showExpired });
   const tasks = useTasks(user?.id) ?? [];
   const [sheetOpen, setSheetOpen] = useState(false);
@@ -71,14 +58,6 @@ export function CountersHubPage(): React.ReactElement {
   // One page-level error line for a failed "+ Log" or Undo (the card never
   // renders its own, like the toast). Cleared by the next successful write.
   const [writeError, setWriteError] = useState<string | null>(null);
-
-  function handleShowExpiredChange(next: boolean): void {
-    setShowExpired(next);
-    const params = new URLSearchParams(searchParams);
-    if (next) params.set('showExpired', '1');
-    else params.delete('showExpired');
-    setSearchParams(params, { replace: true });
-  }
 
   function handleCreated(counterId: string): void {
     setSheetOpen(false);
