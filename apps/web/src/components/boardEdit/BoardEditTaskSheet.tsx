@@ -26,7 +26,8 @@ import { LinkedKindTag } from '../counters/LinkedKindTag';
 import { useKindSwitchRequest } from '../counters/useKindSwitchRequest';
 import { planKindSwitchPreview } from '../../db/operations/countKindSwitch';
 import { TaskTypeControl } from '../taskEdit/TaskTypeControl';
-import { typeControlMode } from '../taskEdit/taskTypeRules';
+import { typeControlMode, typeLockedForEdit } from '../taskEdit/taskTypeRules';
+import { useHasLiveLinkedCopies } from '../../hooks/useHasLiveLinkedCopies';
 import { CompoundFields, type LibraryInputsState } from '../wizard/CompoundFields';
 import {
   buildSheetOverride,
@@ -129,6 +130,8 @@ export function BoardEditTaskSheet({
   // ── Seed from task (which has overrides pre-merged by caller) ────────────
 
   const original = originalProp ?? task;
+  // A board-born root other boards link to is a shared counter: its type is fixed.
+  const hasLinkedCopies = useHasLiveLinkedCopies(task.id);
   const [selected, setSelected] = useState<TaskType>(task.type);
   // Blank for an auto-titled Counting task so the title re-derives (see model).
   const [title, setTitle] = useState(seedSheetTitle(task));
@@ -293,7 +296,10 @@ export function BoardEditTaskSheet({
     onDone(task.id, patch);
   };
 
-  const mode = typeControlMode(original.type, task.sharedCounterId != null || original.isCounter === true);
+  const mode = typeControlMode(
+    original.type,
+    typeLockedForEdit({ ...original, sharedCounterId: task.sharedCounterId }, hasLinkedCopies),
+  );
 
   // ── Render ───────────────────────────────────────────────────────────────
 

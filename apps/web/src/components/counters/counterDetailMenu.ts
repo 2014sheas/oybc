@@ -14,7 +14,7 @@ export function editableCounterRoot(task: Task | undefined | null): Task | null 
 
 /**
  * Counter Detail's "⋯" overflow items: "Edit counter…" (only with a live
- * root — it opens the global task editor on that root) above
+ * root — it opens the counter sheet in edit mode on that root) above
  * "Delete counter…". iOS twin: `CounterDetailContent.overflowMenu`.
  *
  * @param args.root - The editable root (`editableCounterRoot`), or `null`.

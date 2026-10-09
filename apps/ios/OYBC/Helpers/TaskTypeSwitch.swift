@@ -28,18 +28,23 @@ enum TaskTypeSwitch {
     }
 
     /// Whether an editor shows the Simple / Counting / Compound picker: only
-    /// for a Simple / Counting task that is not a linked counter or a hub
-    /// counter (`isCounter`) — a compound, an achievement, a linked copy and a
-    /// hub counter keep their type. A counter ROOT
-    /// with live copies is refused at Done / Save (`sharedCounterMessage`).
+    /// for a Simple / Counting task that is not a SHARED COUNTER — a linked
+    /// copy, a hub counter (`isCounter`), or a counting task other rows link
+    /// to (a board-born root, `hasLinkedCopies`) keeps its type (owner rule
+    /// 2026-10-09), as do a compound and an achievement. The save still
+    /// refuses a shared counter's switch (`sharedCounterMessage`) as the
+    /// backstop. Web twin: `typeLockedForEdit` + `typeControlMode`.
     ///
     /// - Parameters:
     ///   - task: The task (any staged override merged).
     ///   - original: The task before any staged override (nil ⇒ `task`).
-    static func showsPicker(task: Task, original: Task?) -> Bool {
+    ///   - hasLinkedCopies: Whether live rows link to it as their root
+    ///     (`AppDatabase.hasLiveLinkedCopies`, read by the sheet on open).
+    static func showsPicker(task: Task, original: Task?, hasLinkedCopies: Bool = false) -> Bool {
         let base = original ?? task
         return (base.type == .normal || base.type == .counting)
             && task.sharedCounterId == nil && !base.isCounter
+            && !(base.type == .counting && hasLinkedCopies)
     }
 
     /// `task` with its type set to `next` and the fields the new type cannot

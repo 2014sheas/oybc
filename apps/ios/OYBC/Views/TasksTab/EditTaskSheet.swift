@@ -89,6 +89,8 @@ struct EditTaskSheet: View {
     @State private var maxCountStr: String
     @State private var countKind: CountKind
     @State private var pendingSwitch: KindSwitchPreview?
+    /// A board-born root other boards link to is a shared counter (type fixed); read on open.
+    @State private var hasLinkedCopies = false
     // Achievement
     @State private var trigger: AchievementTrigger
     @State private var requiredCountStr: String
@@ -160,9 +162,9 @@ struct EditTaskSheet: View {
                     commonSection
 
                     // ── Type (Simple / Counting / Compound) ─────────────────
-                    // A compound / linked copy / hub counter shows its type
-                    // fixed (web `TaskTypeControl` 'fixed'); achievement none.
-                    if TaskTypeSwitch.showsPicker(task: task, original: nil) {
+                    // A compound / any shared counter shows its type fixed
+                    // (web `TaskTypeControl` 'fixed'); achievement none.
+                    if TaskTypeSwitch.showsPicker(task: task, original: nil, hasLinkedCopies: hasLinkedCopies) {
                         risoSection(label: "Type") {
                             TaskTypePickerView(selection: $selectedType)
                         }
@@ -197,6 +199,7 @@ struct EditTaskSheet: View {
             }
             .background(Color.risoPaper.ignoresSafeArea())
             .task(id: "\(task.id)|\(selectedType == .compound)") { await loadCompoundChildrenIfNeeded() }
+            .task(id: task.id) { hasLinkedCopies = (try? database.hasLiveLinkedCopies(taskId: task.id)) ?? false }
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .principal) {

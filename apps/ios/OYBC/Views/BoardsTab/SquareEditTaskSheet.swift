@@ -167,6 +167,8 @@ struct SquareEditTaskSheet: View {
     @State private var confirmingFork = false
     /// A Done-time refusal of the type change (a counter root with live copies).
     @State private var typeError: String?
+    /// A board-born root other boards link to is a shared counter (type fixed); read on open.
+    @State private var hasLinkedCopies = false
 
     // MARK: - Init
 
@@ -276,10 +278,10 @@ struct SquareEditTaskSheet: View {
     }
 
     /// Whether the Simple / Counting / Compound picker shows: only for a task
-    /// that may still switch type (never a compound, an achievement or a
-    /// linked counter).
-    static func showsTypePicker(task: Task, original: Task?) -> Bool {
-        TaskTypeSwitch.showsPicker(task: task, original: original)
+    /// that may still switch type (never a compound, an achievement or any
+    /// shared counter — `TaskTypeSwitch.showsPicker`).
+    static func showsTypePicker(task: Task, original: Task?, hasLinkedCopies: Bool = false) -> Bool {
+        TaskTypeSwitch.showsPicker(task: task, original: original, hasLinkedCopies: hasLinkedCopies)
     }
 
     /// The empty compound structure a Simple / Counting task starts from when
@@ -323,7 +325,9 @@ struct SquareEditTaskSheet: View {
     /// Whether the Simple / Counting / Compound type picker is shown — only
     /// for a task that may still switch type (never a compound or an
     /// achievement).
-    private var showsTypePicker: Bool { Self.showsTypePicker(task: task, original: original) }
+    private var showsTypePicker: Bool {
+        Self.showsTypePicker(task: task, original: original, hasLinkedCopies: hasLinkedCopies)
+    }
 
     /// The task's stored (pre-override) type.
     private var originalType: TaskType { (original ?? task).type }
@@ -443,6 +447,7 @@ struct SquareEditTaskSheet: View {
             }
             .background(Color.risoPaper.ignoresSafeArea())
             .task(id: task.id) {
+                hasLinkedCopies = (try? database.hasLiveLinkedCopies(taskId: task.id)) ?? false
                 guard let loadInputs else { return }
                 applyLoaded(await loadInputs())
             }

@@ -11,8 +11,8 @@ import SwiftUI
 ///
 /// Sections (R2 Counters UX refresh — design handoff §Counter Detail):
 ///   1. Header — back circle · blue "SHARED COUNTER" kicker · counter name ·
-///      "⋯" overflow (Edit counter… — the global `EditTaskSheet` on the root
-///      task, saved through `applyTaskEditPatch` — and Delete counter…).
+///      "⋯" overflow (Edit counter… — the counter sheet `NewCounterSheetView`
+///      in edit mode on the root task, never the task editor — and Delete counter…).
 ///   2. Hero card — all-time total + REAL 7-day sparkline
 ///      (`AppDatabase.fetchCounterDailyTotals`) + milestone bar
 ///      (`counterMilestoneProgress`, `Helpers/CounterMilestone.swift`).
@@ -51,7 +51,10 @@ struct CounterDetailView: View {
     /// "Edit counter…".
     @State private var root: Task?
     @State private var editingRoot: Task?
-    @State private var editError: String?
+    /// The user's live tasks — the counter sheet's rename dedupe pool.
+    @State private var tasks: [Task] = []
+    /// "Open {CounterName}" from the edit sheet's established-match card.
+    @State private var openCounterId: String?
 
     // Delete-counter (P5 decision 8: deleteCounterWithUnlink) UI state.
     @State private var deleteImpact: AppDatabase.TaskDeletionImpact?
@@ -74,9 +77,8 @@ struct CounterDetailView: View {
                     isLogging: isLogging,
                     logError: logError,
                     deleteError: deleteError,
-                    editError: editError,
                     onLog: { amount, direction in handleLog(amount: amount, direction: direction) },
-                    onEditTap: root.map { r in { editError = nil; editingRoot = r } },
+                    onEditTap: root.map { r in { editingRoot = r } },
                     onDeleteTap: handleDeleteTap,
                     onOpenBoard: onOpenBoard
                 )
@@ -126,18 +128,26 @@ struct CounterDetailView: View {
                 .interactiveDismissDisabled(isDeleting)
             }
         }
-        // Edit counter… — the canonical global editor on the root (Type is
-        // fixed for a hub counter; kind / title / action / unit propagate
-        // per D5 + #575 inside `applyTaskEditPatch`).
+        // Edit counter… — the counter sheet in edit mode on the root (kind /
+        // title / action / unit propagate per D5 + #575 inside its
+        // `applyTaskEditPatch` save).
         .sheet(item: $editingRoot) { task in
-            EditTaskSheet(
-                task: task,
-                database: database,
-                onSubmit: { patch in
-                    _Concurrency.Task { await saveRootEdit(taskId: task.id, patch: patch) }
-                },
-                onCancel: { editingRoot = nil }
-            )
+            if let userId = authService.currentUser?.id {
+                Self.editSheet(
+                    root: task, userId: userId, tasks: tasks, database: database,
+                    onNavigateToCounter: { id in
+                        editingRoot = nil
+                        openCounterId = id
+                    },
+                    onSaved: {
+                        editingRoot = nil
+                        loadData()
+                    }
+                )
+            }
+        }
+        .navigationDestination(item: $openCounterId) { id in
+            CounterDetailView(counterId: id, showExpired: showExpired, onOpenBoard: onOpenBoard, database: database)
         }
     }
 
@@ -149,6 +159,8 @@ struct CounterDetailView: View {
         let group: SharedCounterGroup?
         let dailyTotals: CounterDailyTotalsResult
         let root: Task?
+        /// The user's live tasks (the edit sheet's rename dedupe pool).
+        var tasks: [Task] = []
     }
 
     /// One page load (DB-injected, so tests drive it). RC9 — the kernel drops
@@ -164,12 +176,12 @@ struct CounterDetailView: View {
     nonisolated static func loadSnapshot(
         database: AppDatabase, userId: String, counterId: String, showExpired: Bool, now: String
     ) -> Snapshot {
-        let groups = database.fetchSharedCounterGroups(userId: userId, showExpired: showExpired).groups
+        let (tasks, groups) = database.fetchSharedCounterGroups(userId: userId, showExpired: showExpired)
         let totals = (try? database.fetchCounterDailyTotals(
             sourceTaskId: counterId, days: sparklineDays, now: now
         )) ?? CounterDailyTotalsResult(days: [], todayTotal: 0)
         let root = (try? database.fetchTask(id: counterId)).flatMap { $0.isDeleted ? nil : $0 }
-        return Snapshot(group: groups.first { $0.counterId == counterId }, dailyTotals: totals, root: root)
+        return Snapshot(group: groups.first { $0.counterId == counterId }, dailyTotals: totals, root: root, tasks: tasks)
     }
 
     private func loadData() {
@@ -186,30 +198,33 @@ struct CounterDetailView: View {
                 group = snap.group
                 dailyTotals = snap.dailyTotals
                 root = snap.root
+                tasks = snap.tasks
                 isLoaded = true
             }
         }
     }
 
-    // MARK: - Edit counter (global editor on the root)
+    // MARK: - Edit counter (the counter sheet in edit mode)
 
-    /// Saves the editor's patch on the root (`applyTaskEditPatch` — the same
-    /// write Task Detail uses), closes the sheet and reloads the page.
-    private func saveRootEdit(taskId: String, patch: EditTaskSheet.Patch) async {
-        let db = database
-        do {
-            _ = try await _Concurrency.Task.detached(priority: .userInitiated) {
-                try db.applyTaskEditPatch(taskId: taskId, patch: patch)
-            }.value
-            await MainActor.run {
-                editingRoot = nil
-                editError = nil
-                loadData()
-            }
-        } catch {
-            let message = AppDatabase.taskEditErrorMessage(error)
-            await MainActor.run { editError = message }
-        }
+    /// The sheet "Edit counter…" opens: the COUNTER sheet in edit mode on the
+    /// root (never the task editor — owner rule 2026-10-09). It saves through
+    /// `applyTaskEditPatch`, the write Task Detail uses.
+    ///
+    /// - Parameters:
+    ///   - root: The counter's live root task.
+    ///   - userId: The signed-in user.
+    ///   - tasks: The user's live tasks (rename dedupe pool).
+    ///   - database: The database the save writes.
+    ///   - onNavigateToCounter: "Open {CounterName}" on an established match.
+    ///   - onSaved: After a successful save (the page closes it + reloads).
+    static func editSheet(
+        root: Task, userId: String, tasks: [Task], database: AppDatabase,
+        onNavigateToCounter: @escaping (String) -> Void, onSaved: @escaping () -> Void
+    ) -> NewCounterSheetView {
+        NewCounterSheetView(
+            userId: userId, tasks: tasks, root: root, database: database,
+            onNavigateToCounter: onNavigateToCounter, onSaved: onSaved
+        )
     }
 
     // MARK: - Log (amount-chip driven — P2 + R2)
@@ -359,10 +374,8 @@ struct CounterDetailContent: View {
     /// closed by the time this is shown (mirrors web's close-dialog-on-error
     /// pattern), so it renders on this page itself.
     var deleteError: String?
-    /// Surfaced when an Edit counter… save fails.
-    var editError: String?
     var onLog: (CountValue, CounterLogDirection) -> Void
-    /// "⋯" → Edit counter… (opens the global editor on the root). Nil hides
+    /// "⋯" → Edit counter… (opens the counter sheet on the root). Nil hides
     /// the item (root missing / deleted).
     var onEditTap: (() -> Void)?
     /// Fired by the "⋯" overflow menu's "Delete counter…" item AND the
@@ -382,7 +395,6 @@ struct CounterDetailContent: View {
         isLogging: Bool = false,
         logError: String? = nil,
         deleteError: String? = nil,
-        editError: String? = nil,
         initialSelectedAmount: CountValue? = nil,
         /// Snapshot-testability seam: forces the "#" custom chip into its
         /// selected (gold, showing the live amount) state without requiring
@@ -398,7 +410,6 @@ struct CounterDetailContent: View {
         self.isLogging = isLogging
         self.logError = logError
         self.deleteError = deleteError
-        self.editError = editError
         self.onLog = onLog
         self.onEditTap = onEditTap
         self.onDeleteTap = onDeleteTap
@@ -477,13 +488,6 @@ struct CounterDetailContent: View {
                 }
 
                 // 8. Delete-counter action — quiet red text link.
-                if let editError {
-                    Text(editError)
-                        .font(.risoBody(12, .semibold))
-                        .foregroundStyle(Color.risoRed)
-                        .padding(.horizontal, Riso.gutter)
-                        .padding(.bottom, 8)
-                }
                 if let deleteError {
                     Text(deleteError)
                         .font(.risoBody(12, .semibold))

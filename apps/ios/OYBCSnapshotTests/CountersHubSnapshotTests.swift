@@ -150,7 +150,9 @@ final class CountersHubSnapshotTests: XCTestCase {
         kind: CountKind = .discrete,
         startText: String = "",
         previewCount: CountValue = 0,
-        startFromInvalid: Bool = false
+        startFromInvalid: Bool = false,
+        isEditing: Bool = false,
+        kindLock: KindPickerLock = .none
     ) -> some View {
         NavigationStack {
             ScrollView {
@@ -163,7 +165,9 @@ final class CountersHubSnapshotTests: XCTestCase {
                     previewName: previewName,
                     previewCount: previewCount,
                     trimmedUnit: unit,
-                    match: match
+                    match: match,
+                    isEditing: isEditing,
+                    kindLock: kindLock
                 )
                 .padding(16)
             }
@@ -183,6 +187,27 @@ final class CountersHubSnapshotTests: XCTestCase {
         assertSnapshot(
             of: host,
             as: .image(layout: .fixed(width: 393, height: 520), traits: .init(userInterfaceStyle: .dark)),
+            record: recordMode
+        )
+    }
+
+    /// Counter Detail "Edit counter…" — the counter sheet in EDIT mode: the
+    /// root's verb / noun / kind prefilled, Duration locked out (an existing
+    /// Discrete / Continuous counter), no "Start from", the all-time total.
+    func testEditCounterSheetLight() {
+        let host = sheetHost(verb: "Run", unit: "miles", previewName: "Run miles", match: nil,
+                             kind: .continuous, previewCount: 148.6, isEditing: true,
+                             kindLock: kindPickerLock(mode: .edit, kind: .continuous))
+        assertSnapshot(of: host, as: .image(layout: .fixed(width: 393, height: 440)), record: recordMode)
+    }
+
+    func testEditCounterSheetDark() {
+        let host = sheetHost(verb: "Run", unit: "miles", previewName: "Run miles", match: nil,
+                             kind: .continuous, previewCount: 148.6, isEditing: true,
+                             kindLock: kindPickerLock(mode: .edit, kind: .continuous))
+        assertSnapshot(
+            of: host,
+            as: .image(layout: .fixed(width: 393, height: 440), traits: .init(userInterfaceStyle: .dark)),
             record: recordMode
         )
     }
