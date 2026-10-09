@@ -213,7 +213,7 @@ Nothing new on the grid. In the Board Edit square sheet:
 | --- | --- |
 | 1 — foundation (inert) — **shipped (#573)** | `Task.forkedFromTaskId` (shared type + Zod, iOS GRDB v41 nullable column + `Codable`; no Dexie bump — unindexed), `FORK_NS` + `forkTaskId` / `forkedEventId` helpers (shared TS + Swift twin, vector-pinned), `planBoardScopedFork(task, board, placements, events)` pure planner returning `{ mode: 'inPlace' | 'fork', fork?, eventCopies?, childLinksToCopy?, repoint?, onBoardHolderCompoundIds? }` with vectors for the D1/D2 test and the type-change event filter, browse-filter extension, deletion-cascade guard. No UI change. |
 | 2 — Board Edit + wizard commit — **shipped (#574)** | `boardEditCommit.ts` ↔ `+EditCommit.swift` and `applyStagedTaskEditsForWizardPersist` ↔ `applyStagedTaskEdits` consume the planner inside the existing transaction; cascades for both tasks; sheet button label + first-fork confirm; e2e + XCTest (fork, in-place, compound parent-only, event migration keeps completion, type-change filter, sealed gate, idempotent replay). |
-| 3 — root → copy propagation | Task Detail edit of a hub root propagates title/action/unit to live copies (shared `planRootFieldPropagation`, both platforms); fix `COUNTER_KINDS.md` D5 wording. |
+| 3 — root → copy propagation — **shipped (#575)** | Task Detail edit of a hub root propagates title/action/unit to live copies (shared `planRootFieldPropagation`, both platforms); fix `COUNTER_KINDS.md` D5 wording. |
 | 4 — docs | `TASK_SYSTEM.md` §Editing a task rewritten around the scope table; `BOARD_EDIT_REDESIGN.md:31` ("changes it everywhere") corrected; CLAUDE.md one-paragraph summary. |
 
 **PR 1 implementation notes** (where the shipped code refines the sketches above):
@@ -285,6 +285,38 @@ Nothing new on the grid. In the Board Edit square sheet:
   sub-task an earlier override in the same Save already forked resolves to
   that fork (`forkTaskId(board, child)` linked under the parent), so a later
   holder edit never re-links the original. Task Detail on a fork needed no change.
+
+**PR 3 implementation notes:**
+
+- Pure rule: `planRootFieldPropagation(root, patch, copies, now)` (shared
+  `rootFieldPropagation.ts` ↔ `Helpers/RootFieldPropagation.swift`, pinned by
+  `rootFieldPropagationVectors.json`). Wired into the Task Detail save only —
+  web `saveTaskEdit` (non-compound branch, now always one transaction) ↔ iOS
+  `applyTaskEditPatch` — through `rootFieldPropagation.ts` ↔
+  `AppDatabase+RootFieldPropagation.swift`. Board Edit / wizard / pool edits
+  never propagate.
+- A root is a live COUNTING task with no `sharedCounterId` (the kind switch's
+  definition — a board-born counter that other rows link to counts too); a
+  live copy is a COUNTING row with `sharedCounterId == root.id`, not deleted,
+  not `isFrozenDerivedRow`, and not placed on a sealed board (a manually
+  closed board's window may not have ended, so the freeze alone does not
+  cover it).
+- Title table (each copy judged on its OWN pre-edit fields):
+
+  | Root's new title | Copy title | Result |
+  | --- | --- | --- |
+  | custom, changed | auto or custom | the root's new title, verbatim (the #542 mint rule — a fresh copy would carry it) |
+  | auto, or custom unchanged | auto | regenerated from the copy's action / unit / own goal / kind |
+  | auto, or custom unchanged | custom | kept |
+
+  action / unit propagate only when the root's value changed; the goal is
+  never in a patch; `description` is not propagated (counting copies are
+  minted without one).
+- Kind + fields in one save: the kind switch runs first and writes the
+  family; the planner reads the requested kind so an auto copy title follows
+  the copy's switch-rounded goal, and a copy the switch already bumped in this
+  transaction takes the fields without a second version bump (its enqueue
+  coalesces) — one authored write per copy.
 
 Estimated size: PR 1 small, PR 2 medium (the commit paths are already staged and
 transactional — most of the work is the planner + tests), PR 3 small, PR 4 docs.
