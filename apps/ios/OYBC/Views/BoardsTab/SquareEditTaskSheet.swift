@@ -167,8 +167,9 @@ struct SquareEditTaskSheet: View {
     @State private var confirmingFork = false
     /// A Done-time refusal of the type change (a counter root with live copies).
     @State private var typeError: String?
-    /// A board-born root other boards link to is a shared counter (type fixed); read on open.
-    @State private var hasLinkedCopies = false
+    /// A board-born root other boards link to is a shared counter (type fixed);
+    /// read synchronously in `init` so the FIRST frame is already right.
+    @State private var hasLinkedCopies: Bool
 
     // MARK: - Init
 
@@ -205,6 +206,7 @@ struct SquareEditTaskSheet: View {
         self.onForkConfirmed = onForkConfirmed
         self.onDone = onDone
         self.onCancel = onCancel
+        _hasLinkedCopies = State(initialValue: TaskTypeSwitch.initialHasLinkedCopies(task: original ?? task, database: database))
 
         // Blank for an auto-titled Counting task so the title re-derives
         // from Action/Goal/Unit (see `seededTitle(for:)`).
@@ -280,7 +282,7 @@ struct SquareEditTaskSheet: View {
     /// Whether the Simple / Counting / Compound picker shows: only for a task
     /// that may still switch type (never a compound, an achievement or any
     /// shared counter — `TaskTypeSwitch.showsPicker`).
-    static func showsTypePicker(task: Task, original: Task?, hasLinkedCopies: Bool = false) -> Bool {
+    static func showsTypePicker(task: Task, original: Task?, hasLinkedCopies: Bool? = false) -> Bool {
         TaskTypeSwitch.showsPicker(task: task, original: original, hasLinkedCopies: hasLinkedCopies)
     }
 
@@ -447,7 +449,6 @@ struct SquareEditTaskSheet: View {
             }
             .background(Color.risoPaper.ignoresSafeArea())
             .task(id: task.id) {
-                hasLinkedCopies = (try? database.hasLiveLinkedCopies(taskId: task.id)) ?? false
                 guard let loadInputs else { return }
                 applyLoaded(await loadInputs())
             }
@@ -585,7 +586,7 @@ struct SquareEditTaskSheet: View {
         var t = task
         t.type = .counting
         t.action = action
-        t.unit = countKindNeedsUnit(countKind) ? unit : ""
+        t.unit = unit
         t.countKind = countKind
         if let goal = parseCountInput(maxCountStr, kind: countKind) { t.maxCount = goal }
         let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -698,7 +699,8 @@ struct SquareEditTaskSheet: View {
                 title: title.trimmingCharacters(in: .whitespacesAndNewlines),
                 type: type,
                 action: action.trimmingCharacters(in: .whitespaces),
-                unit: countKindNeedsUnit(countKind) ? unit.trimmingCharacters(in: .whitespaces) : "",
+                // Duration hides Unit but keeps the row's own (a hub counter's noun names it).
+                unit: unit.trimmingCharacters(in: .whitespaces),
                 maxCount: parseCountInput(maxCountStr, kind: countKind),
                 compound: compoundSubmission,
                 countKind: type == .counting ? countKind : nil

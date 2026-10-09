@@ -38,17 +38,19 @@ export function typeControlMode(type: TaskType, locked = false): TypeControlMode
  * iOS twin: `TaskTypeSwitch.showsPicker(task:original:hasLinkedCopies:)`.
  *
  * @param task - The task's stored (original) row.
- * @param hasLinkedCopies - Whether any live row links to it as its root.
+ * @param hasLinkedCopies - Whether any live row links to it as its root;
+ *   `undefined` = not resolved yet, which LOCKS a Counting task (render fixed
+ *   until known, never a picker that then flips to fixed).
  * @returns True when the editor shows the type fixed.
  */
 export function typeLockedForEdit(
   task: Pick<Task, 'type' | 'sharedCounterId' | 'isCounter'>,
-  hasLinkedCopies: boolean,
+  hasLinkedCopies: boolean | undefined,
 ): boolean {
   return (
     task.sharedCounterId != null ||
     task.isCounter === true ||
-    (task.type === TaskType.COUNTING && hasLinkedCopies)
+    (task.type === TaskType.COUNTING && hasLinkedCopies !== false)
   );
 }
 

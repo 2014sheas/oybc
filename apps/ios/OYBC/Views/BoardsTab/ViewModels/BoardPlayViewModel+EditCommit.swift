@@ -648,7 +648,7 @@ extension BoardPlayViewModel {
                 )?.maxCount { updated.maxCount = rounded }
                 updated.countKind = kind
             }
-            if !countKindNeedsUnit(resolveCountKind(updated.countKind)) { updated.unit = "" }
+            // Duration keeps the row's own unit (a hub counter's noun); the sheet sends it back.
             if override.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 updated.title = TaskTitle.generateCounterTaskTitle(
                     action: updated.action ?? "", maxCount: updated.maxCount, unit: updated.unit ?? "",

@@ -4,6 +4,9 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { OperatorType, TaskType, type Task } from '@oybc/shared';
 
 vi.mock('../../../firebase/config', () => ({ auth: {}, firestore: {} }));
+// The live linked-copies read; `undefined` = not resolved yet (a static render).
+const linked = vi.hoisted(() => ({ value: undefined as boolean | undefined }));
+vi.mock('../../../hooks/useHasLiveLinkedCopies', () => ({ useHasLiveLinkedCopies: () => linked.value }));
 
 import { TaskEditSheet } from '../TaskEditSheet';
 
@@ -82,9 +85,16 @@ describe('TaskEditSheet — type switch', () => {
     expect(html).toContain('Compound');
   });
 
-  it('offers the switch for a plain Counting task', () => {
-    const html = render(makeTask({ type: TaskType.COUNTING, action: 'Run', unit: 'km', maxCount: 5 }));
-    expect(hasSwitch(html)).toBe(true);
+  it('offers the switch for a plain Counting task once no linked copy is known', () => {
+    const counting = makeTask({ type: TaskType.COUNTING, action: 'Run', unit: 'km', maxCount: 5 });
+    linked.value = undefined;
+    // First frame, before the read resolves: FIXED (never a switch that then disappears).
+    expect(hasSwitch(render(counting))).toBe(false);
+    linked.value = true;
+    expect(hasSwitch(render(counting))).toBe(false);
+    linked.value = false;
+    expect(hasSwitch(render(counting))).toBe(true);
+    linked.value = undefined;
   });
 
   it('shows no switch for a compound, a linked counter or an achievement', () => {

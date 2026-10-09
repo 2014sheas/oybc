@@ -21,9 +21,9 @@ describe('Board Edit sheet — counter kinds', () => {
     expect(sheetValidationProblem(input({ countKind: 'duration', goalStr: '1h', unit: '' }))).toBeNull();
     expect(sheetValidationProblem(input({ countKind: 'discrete', goalStr: '26.2' }))).toBe('Set a goal above zero.');
   });
-  it('a duration override drops the unit and titles in hours and minutes', () => {
+  it('a duration override keeps the row\'s own (hidden) unit and titles in hours and minutes', () => {
     const o = buildSheetOverride(input({ countKind: 'duration', action: 'Practice', goalStr: '1h 30m', unit: 'mi' }));
-    expect(o).toMatchObject({ countKind: 'duration', maxCount: 90, unit: '', title: 'Practice 1h 30m' });
+    expect(o).toMatchObject({ countKind: 'duration', maxCount: 90, unit: 'mi', title: 'Practice 1h 30m' });
   });
   it('switching a counting task to Simple leaves its kind alone (never cleared)', () => {
     const o = buildSheetOverride(input({ selected: TaskType.NORMAL, title: 'Run' }));

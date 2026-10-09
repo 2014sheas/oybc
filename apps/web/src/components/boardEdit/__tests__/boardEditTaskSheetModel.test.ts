@@ -67,6 +67,12 @@ describe('typeControlMode / showsCompoundEditor', () => {
     expect(typeLockedForEdit(task(), true)).toBe(false);
   });
 
+  it('before the linked-copies read resolves (undefined) a Counting task renders FIXED, never switch-then-fixed', () => {
+    const counting = task({ type: TaskType.COUNTING, action: 'Run', unit: 'miles', maxCount: 10 });
+    expect(typeControlMode(counting.type, typeLockedForEdit(counting, undefined))).toBe('fixed');
+    expect(typeControlMode(TaskType.NORMAL, typeLockedForEdit(task(), undefined))).toBe('switch');
+  });
+
   it('the compound editor is open only for the Compound selection', () => {
     expect(showsCompoundEditor(TaskType.COMPOUND)).toBe(true);
     expect(showsCompoundEditor(TaskType.NORMAL)).toBe(false);
@@ -147,6 +153,12 @@ describe('sheetValidationProblem', () => {
 });
 
 describe('buildSheetOverride', () => {
+  it('a Duration task keeps its own unit (a hub counter\'s noun) — the hidden field sends it back', () => {
+    const original = task({ type: TaskType.COUNTING, action: 'Practice', unit: 'piano', maxCount: 60, countKind: 'duration' });
+    const patch = buildSheetOverride(input({ original, action: 'Practice', goalStr: '1:00', unit: 'piano', countKind: 'duration' }));
+    expect(patch.unit).toBe('piano');
+  });
+
   it('Simple rename: title, the unchanged type, and an explicit cleared compound', () => {
     expect(buildSheetOverride(input({ title: ' New ' }))).toEqual({ title: 'New', type: TaskType.NORMAL, compound: undefined });
   });

@@ -8,8 +8,10 @@ import { hasLiveLinkedCopies } from '../db/operations';
  * iOS twin: the sheets' on-open `hasLiveLinkedCopies(taskId:)` read.
  *
  * @param taskId - The task being edited.
- * @returns True once the read resolves with a live copy; false meanwhile.
+ * @returns The answer, or `undefined` until the read resolves —
+ *   `typeLockedForEdit` reads `undefined` as LOCKED, so the first frame never
+ *   shows a picker that then disappears.
  */
-export function useHasLiveLinkedCopies(taskId: string): boolean {
-  return useLiveQuery(() => hasLiveLinkedCopies(taskId), [taskId]) ?? false;
+export function useHasLiveLinkedCopies(taskId: string): boolean | undefined {
+  return useLiveQuery(() => hasLiveLinkedCopies(taskId), [taskId]);
 }

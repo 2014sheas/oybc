@@ -39,12 +39,27 @@ enum TaskTypeSwitch {
     ///   - task: The task (any staged override merged).
     ///   - original: The task before any staged override (nil ⇒ `task`).
     ///   - hasLinkedCopies: Whether live rows link to it as their root
-    ///     (`AppDatabase.hasLiveLinkedCopies`, read by the sheet on open).
-    static func showsPicker(task: Task, original: Task?, hasLinkedCopies: Bool = false) -> Bool {
+    ///     (`initialHasLinkedCopies`, read in the sheet's `init`). `nil` =
+    ///     not known yet: a Counting task then shows its type FIXED, so the
+    ///     picker never appears and then disappears.
+    static func showsPicker(task: Task, original: Task?, hasLinkedCopies: Bool? = false) -> Bool {
         let base = original ?? task
         return (base.type == .normal || base.type == .counting)
             && task.sharedCounterId == nil && !base.isCounter
-            && !(base.type == .counting && hasLinkedCopies)
+            && !(base.type == .counting && hasLinkedCopies != false)
+    }
+
+    /// The sheet's first-frame linked-copies answer: a cheap synchronous
+    /// indexed read, only for a Counting task that is not already locked
+    /// (linked copy / hub counter); false otherwise. A failed read reads as
+    /// LOCKED (the save guard decides anyway).
+    ///
+    /// - Parameters:
+    ///   - task: The stored (original) task.
+    ///   - database: The database to read.
+    static func initialHasLinkedCopies(task: Task, database: AppDatabase) -> Bool {
+        guard task.type == .counting, task.sharedCounterId == nil, !task.isCounter else { return false }
+        return (try? database.hasLiveLinkedCopies(taskId: task.id)) ?? true
     }
 
     /// `task` with its type set to `next` and the fields the new type cannot

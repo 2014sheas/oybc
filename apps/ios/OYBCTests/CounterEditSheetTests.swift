@@ -110,6 +110,16 @@ final class CounterEditSheetTests: XCTestCase {
         XCTAssertEqual(saved.title, "Play piano")
     }
 
+    func test_boardEdit_durationOverrideKeepsTheRowsUnit() {
+        var r = root(kind: .duration, maxCount: 60)
+        r.action = "Practice"
+        r.unit = "piano"
+        let override = StagedTaskOverride(title: "", type: .counting, action: "Practice", unit: "piano", maxCount: 90)
+        let updated = BoardPlayViewModel.applyingOverride(override, to: r)
+        XCTAssertEqual(updated.unit, "piano")
+        XCTAssertEqual(updated.title, "Practice 1h 30m")
+    }
+
     // MARK: - Counter Detail opens the counter sheet
 
     func test_counterDetail_editSheet_isTheCounterSheetInEditMode() {
@@ -133,5 +143,25 @@ final class CounterEditSheetTests: XCTestCase {
         XCTAssertTrue(TaskTypeSwitch.showsPicker(task: simple, original: nil, hasLinkedCopies: true),
                       "only a Counting task can be a counter root")
         XCTAssertFalse(SquareEditTaskSheet.showsTypePicker(task: boardBorn, original: nil, hasLinkedCopies: true))
+    }
+
+    /// Late-mutation guard: an unknown answer (nil) shows a Counting task's
+    /// type FIXED, and the sheets' first-frame value comes from a synchronous
+    /// read in `init` — so the picker never shows then disappears.
+    func test_firstFrame_isLockedForALinkedRoot() throws {
+        var boardBorn = K.task("bb")
+        boardBorn.isCounter = false
+        XCTAssertFalse(TaskTypeSwitch.showsPicker(task: boardBorn, original: nil, hasLinkedCopies: nil))
+        var simple = boardBorn
+        simple.type = .normal
+        XCTAssertTrue(TaskTypeSwitch.showsPicker(task: simple, original: nil, hasLinkedCopies: nil))
+
+        let db = try AppDatabase.makeTestInstance()
+        try K.seedUser(db)
+        try db.saveTask(boardBorn)
+        XCTAssertFalse(TaskTypeSwitch.initialHasLinkedCopies(task: boardBorn, database: db))
+        try db.saveTask(K.task("copy", sharedCounterId: "bb"))
+        XCTAssertTrue(TaskTypeSwitch.initialHasLinkedCopies(task: boardBorn, database: db))
+        XCTAssertFalse(TaskTypeSwitch.initialHasLinkedCopies(task: simple, database: db), "only a Counting task is read")
     }
 }

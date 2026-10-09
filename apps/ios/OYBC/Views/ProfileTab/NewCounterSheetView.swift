@@ -225,10 +225,7 @@ struct NewCounterSheetView: View {
                     onSaved()
                 }
             } catch {
-                let message: String = {
-                    if case AppDatabase.TaskEditError.invalid(let m) = error { return m }
-                    return "Could not save counter."
-                }()
+                let message = AppDatabase.taskEditErrorMessage(error)
                 await MainActor.run {
                     busy = false
                     self.error = message

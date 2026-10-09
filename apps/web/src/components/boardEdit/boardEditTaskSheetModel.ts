@@ -178,7 +178,8 @@ export function buildSheetOverride(input: SheetInput): BoardEditTaskOverride {
     case TaskType.COUNTING: {
       const goal = parseGoal(input.goalStr, input.countKind) ?? countTargetStep(input.countKind);
       const action = input.action.trim();
-      const unit = countKindNeedsUnit(input.countKind) ? input.unit.trim() : '';
+      // Duration hides Unit but keeps the row's own (a hub counter's noun names it).
+      const unit = input.unit.trim();
       // Blank counting title = auto-generated from the sheet's CURRENT
       // action / goal / unit — exactly what the "Reads as" preview shows. The
       // field opens blank for an auto-titled task (`seedSheetTitle`), so a

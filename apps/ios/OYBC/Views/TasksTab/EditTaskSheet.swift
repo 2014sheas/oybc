@@ -89,8 +89,9 @@ struct EditTaskSheet: View {
     @State private var maxCountStr: String
     @State private var countKind: CountKind
     @State private var pendingSwitch: KindSwitchPreview?
-    /// A board-born root other boards link to is a shared counter (type fixed); read on open.
-    @State private var hasLinkedCopies = false
+    /// A board-born root other boards link to is a shared counter (type fixed);
+    /// read synchronously in `init` so the FIRST frame is already right.
+    @State private var hasLinkedCopies: Bool
     // Achievement
     @State private var trigger: AchievementTrigger
     @State private var requiredCountStr: String
@@ -127,6 +128,7 @@ struct EditTaskSheet: View {
         self.database = database
         self.onSubmit = onSubmit
         self.onCancel = onCancel
+        _hasLinkedCopies = State(initialValue: TaskTypeSwitch.initialHasLinkedCopies(task: task, database: database))
         _title = State(initialValue: task.title)
         _selectedType = State(initialValue: task.type)
         _description = State(initialValue: task.description ?? "")
@@ -199,7 +201,6 @@ struct EditTaskSheet: View {
             }
             .background(Color.risoPaper.ignoresSafeArea())
             .task(id: "\(task.id)|\(selectedType == .compound)") { await loadCompoundChildrenIfNeeded() }
-            .task(id: task.id) { hasLinkedCopies = (try? database.hasLiveLinkedCopies(taskId: task.id)) ?? false }
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .principal) {
