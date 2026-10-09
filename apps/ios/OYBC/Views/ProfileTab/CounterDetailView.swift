@@ -158,7 +158,13 @@ struct CounterDetailView: View {
         .navigationDestination(item: $openCounterId) { id in
             CounterDetailView(
                 counterId: id, showExpired: effectiveShowExpired,
-                onShowExpiredChange: onShowExpiredChange, onOpenBoard: onOpenBoard, database: database
+                onShowExpiredChange: { next in
+                    // A flip on the pushed Detail keeps THIS page (and the hub) in step.
+                    showExpiredOverride = next
+                    onShowExpiredChange?(next)
+                    loadData()
+                },
+                onOpenBoard: onOpenBoard, database: database
             )
         }
     }

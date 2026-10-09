@@ -297,11 +297,15 @@ func buildSharedCounterGroups(
                 // event-owning counting row: it reads its OWN events over its
                 // board's window, sealed-bounded — the play cell's rule —
                 // never the lifetime total, which is the group's `lifetime`.
+                let ownEvents = eventsByTaskId[m.id] ?? []
+                // An absent / unparseable `sealedAt` applies no bound.
+                let events: [TaskEvent] = board.sealedAt.flatMap { DateFormatting.parseISO($0) }.map { sealed in
+                    boundWindowContextAtSeal(
+                        eventsByTaskId: [m.id: ownEvents], sealedAtMs: sealed.timeIntervalSince1970 * 1000
+                    ).eventsByTaskId[m.id] ?? []
+                } ?? ownEvents
                 displayed = resolveTaskWindowState(
-                    task: m,
-                    events: boundEventsAtSeal(eventsByTaskId[m.id] ?? [], sealedAt: board.sealedAt),
-                    windowStart: board.startDate,
-                    windowEnd: boardWindowEnd(board)
+                    task: m, events: events, windowStart: board.startDate, windowEnd: boardWindowEnd(board)
                 ).count
             } else if !isSource, let eventsByTaskId,
                BoardSources.isWindowStampedDerived(m) || memberWindow != nil {
@@ -383,16 +387,4 @@ func buildSharedCounterGroups(
     // Sort by counter name, case-insensitive (mirrors TS localeCompare base).
     groups.sort { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
     return groups
-}
-
-/// Drop events after a sealed board's `sealedAt` (inclusive bound) — the same
-/// bound `resolveLinkedCounterDisplay` and the sealed re-derive apply. An
-/// absent or unparseable `sealedAt` applies no bound. Mirrors the TS
-/// `boundEventsAtSeal` in `sharedCounterGroups.ts`.
-private func boundEventsAtSeal(_ events: [TaskEvent], sealedAt: String?) -> [TaskEvent] {
-    guard let sealedAt, let bound = DateFormatting.parseISO(sealedAt) else { return events }
-    return events.filter { e in
-        guard let occurred = DateFormatting.parseISO(e.occurredAt) else { return false }
-        return occurred <= bound
-    }
 }

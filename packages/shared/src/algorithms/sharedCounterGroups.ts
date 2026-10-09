@@ -36,7 +36,12 @@ import { deriveDisplayedCount } from './sharedCounter';
 import { formatTimeframeLabel } from './calendarBoundaries';
 import { formatCounterName } from './counterName';
 import { isWindowStampedDerived } from './memberRules';
-import { boardWindowEnd, resolveLinkedCounterDisplay, resolveTaskWindowState } from './taskEvents';
+import {
+  boardWindowEnd,
+  boundWindowContextAtSeal,
+  resolveLinkedCounterDisplay,
+  resolveTaskWindowState,
+} from './taskEvents';
 import { isTaskExpired } from './taskExpiry';
 
 /**
@@ -160,17 +165,6 @@ export interface SharedCounterMemberVisibility {
   /** Reference time for `isTaskExpired`; defaults to `new Date()` — inject
    *  it in tests. */
   now?: Date;
-}
-
-/**
- * Drop events after a sealed board's `sealedAt` (inclusive bound) — the same
- * bound `resolveLinkedCounterDisplay` and the sealed re-derive apply. An
- * absent or unparseable `sealedAt` applies no bound.
- */
-function boundEventsAtSeal(events: TaskEvent[], sealedAt: string | null): TaskEvent[] {
-  const sealedAtMs = sealedAt ? new Date(sealedAt).getTime() : NaN;
-  if (Number.isNaN(sealedAtMs)) return events;
-  return events.filter((e) => new Date(e.occurredAt).getTime() <= sealedAtMs);
 }
 
 /**
@@ -333,12 +327,13 @@ export function buildSharedCounterGroups(
         // board's window, sealed-bounded — the play cell's rule
         // (`resolveClosedBoardCounterDisplay` / the live window context) —
         // never the lifetime total, which is the group's `lifetime`.
-        displayed = resolveTaskWindowState(
-          m,
-          boundEventsAtSeal(input.eventsByTaskId[m.id] ?? [], board.sealedAt ?? null),
-          board.startDate,
-          boardWindowEnd(board),
-        ).count;
+        const ownEvents = input.eventsByTaskId[m.id] ?? [];
+        // An absent / unparseable `sealedAt` applies no bound.
+        const sealedAtMs = board.sealedAt ? new Date(board.sealedAt).getTime() : NaN;
+        const events = Number.isNaN(sealedAtMs)
+          ? ownEvents
+          : boundWindowContextAtSeal({ [m.id]: ownEvents }, sealedAtMs).eventsByTaskId[m.id] ?? [];
+        displayed = resolveTaskWindowState(m, events, board.startDate, boardWindowEnd(board)).count;
       } else if (!isSource && input.eventsByTaskId && (isWindowStampedDerived(m) || memberWindow)) {
         displayed = resolveLinkedCounterDisplay(
           m,

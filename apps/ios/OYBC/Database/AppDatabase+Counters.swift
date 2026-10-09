@@ -260,9 +260,10 @@ extension AppDatabase {
     /// the WHOLE live task set — so a board-born counter whose members have
     /// all expired is still a root and still listed (the pre-fix read
     /// filtered the task set first and un-rooted it). The user's non-deleted
-    /// events are passed to `buildSharedCounterGroups` so a window-stamped
-    /// member's `logged` is its root's in-window sum — the play cell's and
-    /// the kernel's rule — never `lifetime − baseline`
+    /// events are passed to `buildSharedCounterGroups` so every placed
+    /// member's `logged` is its in-window count (a placed root's own events,
+    /// a linked member's root events, over its board's window) — the play
+    /// cell's and the kernel's rule — never `lifetime − baseline`
     /// (docs/WINDOWED_COMPLETION.md §Derived-task carve-out, amended
     /// 2026-09-23). Mirrors web `useSharedCounterGroups`.
     ///
