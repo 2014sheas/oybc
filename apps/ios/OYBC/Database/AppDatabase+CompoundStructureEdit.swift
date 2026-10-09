@@ -113,14 +113,22 @@ extension AppDatabase {
     /// removed sub-task (deleted or blank-titled) soft-deletes the LINK only —
     /// the child Task survives (orphans acceptable). Sub-tasks render/persist
     /// in `patch.children` order.
+    ///
+    /// `scopeBoard` (Board Edit, the board wizard — docs/BOARD_SCOPED_TASK_EDITS.md
+    /// §6) makes a changed existing sub-task BOARD-SCOPED: placed on any other
+    /// board, it is forked (`ensureBoardScopedTask`) and the parent's link
+    /// repointed to the fork, which takes the edit. nil = global (Task Detail,
+    /// pool editor).
     static func applyStagedCompoundChildEdits(
-        db: Database, parent: Task, patch: TaskEditPatch, now: String
+        db: Database, parent: Task, patch: TaskEditPatch, now: String, scopeBoard: Board? = nil
     ) throws {
         let parentId = parent.id
-        let existingLinks = try CompoundChild
-            .filter(Column("compoundTaskId") == parentId && Column("isDeleted") == false)
-            .fetchAll(db)
-        let linkByChildId = Dictionary(existingLinks.map { ($0.childTaskId, $0) }, uniquingKeysWith: { a, _ in a })
+        func readLinks() throws -> [CompoundChild] {
+            try CompoundChild
+                .filter(Column("compoundTaskId") == parentId && Column("isDeleted") == false)
+                .fetchAll(db)
+        }
+        var linkByChildId = Dictionary(try readLinks().map { ($0.childTaskId, $0) }, uniquingKeysWith: { a, _ in a })
 
         var keptChildIds = Set<String>()
         var displayIndex = 0
@@ -148,25 +156,46 @@ extension AppDatabase {
                     entityType: "compoundChildren", entityId: link.id, operationType: .create, payload: link, now: now
                 ).enqueue(db)
                 keptChildIds.insert(childId)
-            } else if let childId = step.childTaskId {
-                keptChildIds.insert(childId)
-                // Global child edit (rename / goal / unit) → save + cascade.
-                let existingChild = try Task.fetchOne(db, key: childId)
-                if let existingChild {
-                    let updated = applyStagedStepToChild(existingChild, step: step, title: title)
+            } else if var childId = step.childTaskId {
+                // Child edit (rename / goal / unit) → save + cascade: global,
+                // or — board-scoped — on a fork when placed on another board.
+                var existingChild = try Task.fetchOne(db, key: childId)
+                if let stored = existingChild {
+                    let preview = applyStagedStepToChild(stored, step: step, title: title)
                     // `?? ""`: the editor round-trips an absent action/unit as
                     // "" — not a change (a picked unit-less counter stays untouched).
-                    let changed = updated.title != existingChild.title
-                        || (updated.action ?? "") != (existingChild.action ?? "")
-                        || (updated.unit ?? "") != (existingChild.unit ?? "")
-                        || updated.maxCount != existingChild.maxCount
+                    let changed = preview.title != stored.title
+                        || (preview.action ?? "") != (stored.action ?? "")
+                        || (preview.unit ?? "") != (stored.unit ?? "")
+                        || preview.maxCount != stored.maxCount
                     if changed {
-                        var u = updated
+                        var scoped = BoardScopedTarget(targetId: childId, forked: false)
+                        if let scopeBoard {
+                            scoped = try ensureBoardScopedTask(
+                                db: db, taskId: childId, board: scopeBoard, editedType: stored.type, now: now
+                            )
+                        }
+                        var base = stored
+                        if scoped.forked {
+                            // The holder walk already repointed a placed
+                            // parent's link; a parent not placed yet (the
+                            // wizard) is repointed here.
+                            try repointCompoundLink(
+                                db: db, compoundId: parentId, oldChildId: childId, newChildId: scoped.targetId, now: now
+                            )
+                            linkByChildId = Dictionary(try readLinks().map { ($0.childTaskId, $0) }, uniquingKeysWith: { a, _ in a })
+                            childId = scoped.targetId
+                            base = try Task.fetchOne(db, key: childId) ?? stored
+                            existingChild = base
+                        }
+                        var u = applyStagedStepToChild(base, step: step, title: title)
                         u.version += 1
                         u.updatedAt = now
                         try Self.saveTaskAndCascade(db: db, task: u)
+                        try stampForkCaches(db: db, target: scoped, now: now)
                     }
                 }
+                keptChildIds.insert(childId)
                 if linkByChildId[childId] == nil {
                     // An existing library task picked as a sub-task: it has no
                     // link to this compound yet, so mint one at its display
@@ -201,7 +230,8 @@ extension AppDatabase {
 
         // Soft-delete links whose child is no longer kept (link only — the child
         // Task stays in the library; orphans are acceptable per product decision).
-        for link in existingLinks where !keptChildIds.contains(link.childTaskId) {
+        // Re-read: a board-scoped sub-task fork repointed links above.
+        for link in try readLinks() where !keptChildIds.contains(link.childTaskId) {
             var l = link
             l.isDeleted = true
             l.deletedAt = now

@@ -37,15 +37,27 @@ extension AppDatabase {
     ///     `StagedTaskEditError` instead so the whole save rolls back rather
     ///     than dropping the user's edit.
     ///   - now: ISO8601 timestamp for `updatedAt` and sync rows.
+    ///   - scopeBoard: The board the one-off wizard is creating. Non-nil makes
+    ///     every edit BOARD-SCOPED (docs/BOARD_SCOPED_TASK_EDITS.md): a task
+    ///     placed on any other board is forked for this board first and the
+    ///     edit lands on the fork; a task placed nowhere else — including one
+    ///     created in this wizard session — is edited in place. nil (pool
+    ///     editor, repeating-board pool) = global.
+    /// - Returns: Original id → fork id for every forked task, so the caller
+    ///   places the fork instead of the original.
+    @discardableResult
     static func applyStagedTaskEdits(
         db: Database,
         stagedEdits: [String: TaskEditPatch],
         skipSimpleIds: Set<String> = [],
         strict: Bool = false,
-        now: String
-    ) throws {
-        for taskId in stagedEdits.keys.sorted() {
-            guard let patch = stagedEdits[taskId] else { continue }
+        now: String,
+        scopeBoard: Board? = nil
+    ) throws -> [String: String] {
+        var forks: [String: String] = [:]
+        for stagedId in stagedEdits.keys.sorted() {
+            guard let patch = stagedEdits[stagedId] else { continue }
+            var taskId = stagedId
             guard var task = try Task.fetchOne(db, key: taskId) else {
                 if strict { throw StagedTaskEditError(taskId: taskId, reason: "task no longer exists") }
                 continue
@@ -55,6 +67,18 @@ extension AppDatabase {
             if let problem = patch.validate(type: task.type) {
                 if strict { throw StagedTaskEditError(taskId: taskId, reason: problem) }
                 continue
+            }
+            if task.type != .compound && skipSimpleIds.contains(taskId) { continue }
+            var scoped = BoardScopedTarget(targetId: taskId, forked: false)
+            if let scopeBoard {
+                scoped = try ensureBoardScopedTask(
+                    db: db, taskId: taskId, board: scopeBoard, editedType: task.type, now: now
+                )
+                if scoped.forked, let fork = try Task.fetchOne(db, key: scoped.targetId) {
+                    forks[stagedId] = fork.id
+                    taskId = fork.id
+                    task = fork
+                }
             }
             if task.type == .compound {
                 // An ineligible newly linked existing task skips the whole
@@ -66,10 +90,9 @@ extension AppDatabase {
                 task = patch.applied(to: task)
                 task.version += 1
                 task.updatedAt = now
-                try Self.applyStagedCompoundChildEdits(db: db, parent: task, patch: patch, now: now)
+                try Self.applyStagedCompoundChildEdits(db: db, parent: task, patch: patch, now: now, scopeBoard: scopeBoard)
                 try Self.saveTaskAndCascade(db: db, task: task)
             } else {
-                if skipSimpleIds.contains(taskId) { continue }
                 // The switch (rounding the root + its family) and the goal guard run first,
                 // inside the caller's write; a refused goal throws and rolls the whole save back.
                 if task.type == .counting,
@@ -85,6 +108,8 @@ extension AppDatabase {
                 task.updatedAt = now
                 try Self.saveTaskAndCascade(db: db, task: task)
             }
+            try stampForkCaches(db: db, target: scoped, now: now)
         }
+        return forks
     }
 }

@@ -106,6 +106,9 @@ struct BoardEditPresenter: ViewModifier {
                     libraryInputsState: .loading,
                     loadInputs: compoundInputsLoader(for: original, hasStagedCompound: staged != nil),
                     database: viewModel.database,
+                    wouldFork: viewModel.database.wouldForkOnBoard(taskId: target.task.id, boardId: viewModel.boardId),
+                    forkConfirmed: viewModel.editForkConfirmed,
+                    onForkConfirmed: { viewModel.editForkConfirmed = true },
                     onDone: { patch in
                         taskEditTarget = nil
                         viewModel.handleEditTaskOverride(taskId: target.task.id, patch: patch)

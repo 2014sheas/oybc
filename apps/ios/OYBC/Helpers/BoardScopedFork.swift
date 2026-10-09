@@ -1,13 +1,14 @@
 import Foundation
 
-// MARK: - Board-scoped task edits — fork ids + planner (PR 1, inert)
+// MARK: - Board-scoped task edits — fork ids + planner
 //
 // Swift twin of `packages/shared/src/algorithms/boardScopedFork.ts`
 // (docs/BOARD_SCOPED_TASK_EDITS.md). An edit made from a board affects the
 // task ONLY on that board: when the task is placed on any other board, the
 // edit lands on a FORK — a new Task that replaces the original on this
-// board's placement. This file is the pure planning half; nothing calls it
-// yet (PR 2 wires it into the Board Edit / wizard commit transactions).
+// board's placement. This file is the pure planning half; the Board Edit /
+// wizard commit transactions consume it (`AppDatabase+BoardScopedEdit.swift`)
+// and `wouldFork` drives the square sheet's "Save for this board" label.
 //
 // Pinned by `boardScopedForkVectors.json` (`BoardScopedForkVectorTests`). A
 // change here is a change in two places.
@@ -104,6 +105,39 @@ enum BoardScopedFork {
         Array(a.utf16).lexicographicallyPrecedes(Array(b.utf16))
     }
 
+    /// Whether a board edit of `task` from `boardId` would land on a fork —
+    /// the §2 "other placements" test alone, shared by the square sheet's
+    /// label and ``plan(task:board:editedType:placements:boards:compoundChildren:events:now:)``
+    /// so the two never disagree. Mirrors TS `wouldForkOnBoard`.
+    ///
+    /// False for a fork or a linked counter; otherwise true iff the task —
+    /// directly or through any transitive parent compound over live links —
+    /// has a live placement on a board OTHER than `boardId` (sealed and
+    /// archived boards count, D1; a board absent from `boards` is not live).
+    ///
+    /// - Parameters:
+    ///   - task: The task the edit targets.
+    ///   - boardId: The board the edit is made from.
+    ///   - placements: `board_tasks` rows (unrelated rows ignored).
+    ///   - boards: Boards referenced by `placements`.
+    ///   - compoundChildren: Links (the task's parents, for reachability).
+    /// - Returns: `true` when the edit must fork.
+    static func wouldFork(
+        task: Task,
+        boardId: String,
+        placements: [BoardTask],
+        boards: [Board],
+        compoundChildren: [CompoundChild]
+    ) -> Bool {
+        if task.forkedFromTaskId != nil || task.sharedCounterId != nil { return false }
+        let liveBoardIds = Set(boards.filter { !$0.isDeleted }.map(\.id))
+        var holders = DerivationPass.findTransitiveParentCompounds(changedTaskId: task.id, children: compoundChildren)
+        holders.insert(task.id)
+        return placements.contains {
+            !$0.isDeleted && $0.boardId != boardId && holders.contains($0.taskId) && liveBoardIds.contains($0.boardId)
+        }
+    }
+
     /// Plan a board-scoped edit of `task` from `board`. Mirrors the TS
     /// `planBoardScopedFork` rule for rule — see its doc for the full
     /// contract. In short:
@@ -146,7 +180,9 @@ enum BoardScopedFork {
         events: [TaskEvent],
         now: String
     ) -> Plan {
-        if task.forkedFromTaskId != nil || task.sharedCounterId != nil { return .inPlace }
+        guard wouldFork(
+            task: task, boardId: board.id, placements: placements, boards: boards, compoundChildren: compoundChildren
+        ) else { return .inPlace }
 
         let liveBoardIds = Set(boards.filter { !$0.isDeleted }.map(\.id))
         var holders = DerivationPass.findTransitiveParentCompounds(
@@ -155,19 +191,16 @@ enum BoardScopedFork {
         )
         holders.insert(task.id)
 
-        var elsewhere = false
         var repointId: String?
         var onBoardHolders = Set<String>()
-        for p in placements where !p.isDeleted && holders.contains(p.taskId) && liveBoardIds.contains(p.boardId) {
-            if p.boardId != board.id {
-                elsewhere = true
-            } else if p.taskId != task.id {
+        for p in placements where !p.isDeleted && p.boardId == board.id && holders.contains(p.taskId)
+            && liveBoardIds.contains(p.boardId) {
+            if p.taskId != task.id {
                 onBoardHolders.insert(p.taskId)
             } else if repointId.map({ precedes(p.id, $0) }) ?? true {
                 repointId = p.id
             }
         }
-        if !elsewhere { return .inPlace }
 
         let forkId = forkTaskId(boardId: board.id, taskId: task.id)
         var fork = task
