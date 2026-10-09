@@ -162,6 +162,17 @@ final class ApplyTaskEditPatchTypeSwitchTests: XCTestCase {
         try assertRefused(db, "R", patch(type: .normal, title: "Run"), keeps: .counting)
     }
 
+    func test_hubBornCounterWithZeroCopiesNeverChangesType() throws {
+        let db = try seeded()
+        var hub = K.task("H", maxCount: 10)
+        hub.isCounter = true
+        try db.saveTask(hub)
+        try assertRefused(db, "H", patch(type: .normal, title: "Run"), keeps: .counting)
+        var probe = hub
+        probe.sharedCounterId = nil
+        XCTAssertFalse(TaskTypeSwitch.showsPicker(task: probe, original: nil), "hub counter shows its type fixed")
+    }
+
     func test_achievementNeverChangesType() throws {
         let db = try seeded()
         try db.saveTask(plain("A", type: .achievement))

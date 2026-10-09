@@ -91,5 +91,6 @@ describe('TaskEditSheet — type switch', () => {
     expect(hasSwitch(render(makeTask({ type: TaskType.COMPOUND, operator: OperatorType.AND })))).toBe(false);
     expect(hasSwitch(render(makeTask({ type: TaskType.COUNTING, maxCount: 5, sharedCounterId: 'root' })))).toBe(false);
     expect(hasSwitch(render(makeTask({ type: TaskType.ACHIEVEMENT })))).toBe(false);
+    expect(hasSwitch(render(makeTask({ type: TaskType.COUNTING, maxCount: 5, isCounter: true })))).toBe(false);
   });
 });

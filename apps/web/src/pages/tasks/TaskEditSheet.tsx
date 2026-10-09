@@ -93,7 +93,8 @@ export function TaskEditSheet({
   });
   const [title, setTitle] = useState(task.title);
   const [selected, setSelected] = useState<TaskType>(task.type);
-  const typeMode = typeControlMode(task.type, task.sharedCounterId != null);
+  // A linked copy or a hub counter keeps its type (shown fixed).
+  const typeMode = typeControlMode(task.type, task.sharedCounterId != null || task.isCounter === true);
   const [description, setDescription] = useState(task.description ?? '');
 
   // Counting fields

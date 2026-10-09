@@ -60,7 +60,8 @@ extension AppDatabase {
         guard TaskTypeSwitch.allows(from: original.type, to: switched.type) else {
             throw TaskEditError.invalid(message: "This task’s type can’t be changed.")
         }
-        if original.type == .counting, try hasLiveLinkedCopies(db: db, taskId: original.id) {
+        if original.type == .counting,
+           try original.isCounter || hasLiveLinkedCopies(db: db, taskId: original.id) {
             throw TaskEditError.invalid(message: TaskTypeSwitch.sharedCounterMessage)
         }
         var task = switched

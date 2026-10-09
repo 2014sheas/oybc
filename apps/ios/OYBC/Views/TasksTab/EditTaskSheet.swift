@@ -160,9 +160,21 @@ struct EditTaskSheet: View {
                     commonSection
 
                     // ── Type (Simple / Counting / Compound) ─────────────────
+                    // A compound / linked copy / hub counter shows its type
+                    // fixed (web `TaskTypeControl` 'fixed'); achievement none.
                     if TaskTypeSwitch.showsPicker(task: task, original: nil) {
                         risoSection(label: "Type") {
                             TaskTypePickerView(selection: $selectedType)
+                        }
+                    } else if task.type != .achievement {
+                        risoSection(label: "Type") {
+                            HStack(spacing: 8) {
+                                RisoTypeBadge(kind: task.type.risoKind, style: .pill)
+                                Text(TaskTypePickerView.label(for: task.type))
+                                    .font(.risoHead(14, .bold))
+                                    .foregroundStyle(Color.risoInk)
+                                Spacer(minLength: 0)
+                            }
                         }
                     }
 

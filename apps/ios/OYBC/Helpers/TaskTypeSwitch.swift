@@ -28,16 +28,18 @@ enum TaskTypeSwitch {
     }
 
     /// Whether an editor shows the Simple / Counting / Compound picker: only
-    /// for a Simple / Counting task that is not a linked counter (a compound,
-    /// an achievement and a linked counter keep their type). A counter ROOT
+    /// for a Simple / Counting task that is not a linked counter or a hub
+    /// counter (`isCounter`) — a compound, an achievement, a linked copy and a
+    /// hub counter keep their type. A counter ROOT
     /// with live copies is refused at Done / Save (`sharedCounterMessage`).
     ///
     /// - Parameters:
     ///   - task: The task (any staged override merged).
     ///   - original: The task before any staged override (nil ⇒ `task`).
     static func showsPicker(task: Task, original: Task?) -> Bool {
-        let t = (original ?? task).type
-        return (t == .normal || t == .counting) && task.sharedCounterId == nil
+        let base = original ?? task
+        return (base.type == .normal || base.type == .counting)
+            && task.sharedCounterId == nil && !base.isCounter
     }
 
     /// `task` with its type set to `next` and the fields the new type cannot

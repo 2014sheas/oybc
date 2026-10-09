@@ -265,7 +265,7 @@ export function BoardEditTaskSheet({
     setDoneError(null);
     const patch = buildSheetOverride(input);
     if (patch.type !== original.type && original.type === TaskType.COUNTING && task.sharedCounterId == null) {
-      // A counter root with live copies keeps its type (Save refuses it too).
+      // A hub counter / root with live copies keeps its type (Save refuses it too).
       setChecking(true);
       try {
         if (await hasLiveLinkedCopies(task.id)) {
@@ -293,7 +293,7 @@ export function BoardEditTaskSheet({
     onDone(task.id, patch);
   };
 
-  const mode = typeControlMode(original.type, task.sharedCounterId != null);
+  const mode = typeControlMode(original.type, task.sharedCounterId != null || original.isCounter === true);
 
   // ── Render ───────────────────────────────────────────────────────────────
 

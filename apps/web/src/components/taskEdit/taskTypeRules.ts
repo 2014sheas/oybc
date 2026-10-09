@@ -18,8 +18,8 @@ export type TypeControlMode = 'switch' | 'fixed' | 'none';
  * compound is not offered); Achievement shows none.
  *
  * @param type - The task's ORIGINAL (stored / pending) type, not an override-merged one.
- * @param locked - True for a linked counter (`sharedCounterId != null`): its
- *   type is fixed. (A counter ROOT with live copies is refused at Done / Save
+ * @param locked - True for a linked counter (`sharedCounterId != null`) or a
+ *   hub counter (`isCounter`): its type is fixed. (A counter ROOT with live copies is refused at Done / Save
  *   with `SHARED_COUNTER_TYPE_MESSAGE` — a DB fact, not shown by the control.)
  */
 export function typeControlMode(type: TaskType, locked = false): TypeControlMode {

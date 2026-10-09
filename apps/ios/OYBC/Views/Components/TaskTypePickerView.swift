@@ -16,6 +16,16 @@ struct TaskTypePickerView: View {
         (.compound, "Compound"),
     ]
 
+    /// Human-readable type label for the fixed type row (web `typeLabel`).
+    static func label(for type: TaskType) -> String {
+        switch type {
+        case .normal:      return "Simple"
+        case .counting:    return "Counting"
+        case .compound:    return "Compound"
+        case .achievement: return "Achievement"
+        }
+    }
+
     var body: some View {
         RisoSegmented(options: Self.options.map { (value: $0.0, label: $0.1) }, selection: $selection)
     }

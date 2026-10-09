@@ -177,6 +177,12 @@ describe('saveTaskEdit — type switch (global editor)', () => {
     expect(await db.tasks.get('R')).toMatchObject({ type: TaskType.COUNTING, version: 1 });
   });
 
+  it('a hub-born counter with zero copies never changes type', async () => {
+    await db.tasks.add(task('H', { type: TaskType.COUNTING, action: 'Run', unit: 'km', maxCount: 10, isCounter: true }));
+    await expect(saveTaskEdit('H', { type: TaskType.NORMAL, title: 'Run' })).rejects.toBeInstanceOf(CompoundEditValidationError);
+    expect(await db.tasks.get('H')).toMatchObject({ type: TaskType.COUNTING, isCounter: true, version: 1 });
+  });
+
   it('an achievement never changes type', async () => {
     await db.tasks.add(task('A', { type: TaskType.ACHIEVEMENT }));
     await expect(saveTaskEdit('A', { type: TaskType.NORMAL, title: 'Plain' })).rejects.toThrow();

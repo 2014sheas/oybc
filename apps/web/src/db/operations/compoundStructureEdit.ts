@@ -497,7 +497,7 @@ export function taskTypeSwitchAllowed(from: TaskType, to: TaskType): boolean {
  *     version bump, then the boards cascade.
  *
  * Refused (throws, rolling back the ambient transaction): a linked counter,
- * a counter root with live copies, a disallowed pair, a Counting target
+ * a hub counter (`isCounter`) or a counter root with live copies, a disallowed pair, a Counting target
  * without a goal / unit, a Compound target without a structure.
  *
  * REQUIRES an active Dexie transaction over `boards`, `boardTasks`, `tasks`,
@@ -522,7 +522,7 @@ export async function applyTaskTypeSwitchInTransaction(
   if (!taskTypeSwitchAllowed(existing.type, nextType)) {
     throw new Error(`Task ${existing.id}: cannot change type ${existing.type} -> ${nextType}`);
   }
-  if (existing.type === TaskType.COUNTING && (await hasLiveLinkedCopies(existing.id))) {
+  if (existing.type === TaskType.COUNTING && (existing.isCounter === true || (await hasLiveLinkedCopies(existing.id)))) {
     throw new CompoundEditValidationError(SHARED_COUNTER_TYPE_MESSAGE);
   }
 
