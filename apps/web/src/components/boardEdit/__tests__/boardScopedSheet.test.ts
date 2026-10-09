@@ -2,7 +2,8 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { BoardStatus, CenterSquareType, TaskType, Timeframe, type Board, type BoardTask, type Task } from '@oybc/shared';
 import { db } from '../../../db/internal';
 import { fetchWouldForkOnBoard } from '../../../db/operations/boardScopedEdit';
-import { FORK_CONFIRM_BODY, needsForkConfirm, sheetDoneLabel } from '../boardScopedSheet';
+import { FORK_CONFIRM_BODY, childStepChanged, needsForkConfirm, sheetDoneLabel, sheetWouldFork } from '../boardScopedSheet';
+import type { ChildPatch, TaskEditPatch } from '../../../db/taskEditPatch';
 
 /**
  * Board-scoped task edits PR 2 — the Board Edit square sheet's scope control
@@ -63,5 +64,37 @@ describe('fetchWouldForkOnBoard', () => {
     expect(await fetchWouldForkOnBoard('S', 'B1')).toBe(false);
     expect(await fetchWouldForkOnBoard('D', 'B1')).toBe(false);
     expect(await fetchWouldForkOnBoard('pending-not-stored', 'B1')).toBe(false);
+  });
+});
+
+function step(childTaskId: string, title: string): ChildPatch {
+  return {
+    id: childTaskId, childTaskId, title, isCounting: false, childType: TaskType.NORMAL, action: '', goal: '',
+    unit: '', countKind: 'discrete', markedDeleted: false,
+  };
+}
+
+describe('sheetWouldFork — the compound AND its edited sub-tasks', () => {
+  const rows = { C: task('C', { title: 'Stretch' }), D: task('D', { title: 'Coffee' }) };
+  const draft = (cTitle: string): TaskEditPatch => ({
+    title: 'H', action: '', goal: '', unit: '', children: [step('C', cTitle), step('D', 'Coffee')],
+  });
+
+  it('is true when the task itself forks', () => {
+    expect(sheetWouldFork('H', null, { forking: new Set(['H']), rows })).toBe(true);
+  });
+
+  it('is true only when a forking sub-task is actually changed', () => {
+    const check = { forking: new Set(['C']), rows };
+    expect(sheetWouldFork('H', draft('Stretch'), check)).toBe(false);
+    expect(sheetWouldFork('H', draft('Stretch 10 min'), check)).toBe(true);
+    expect(sheetWouldFork('H', draft('Stretch 10 min'), { forking: new Set(['D']), rows })).toBe(false);
+  });
+
+  it('childStepChanged ignores removed / blank steps and unknown rows', () => {
+    expect(childStepChanged(rows.C, { ...step('C', 'X'), markedDeleted: true })).toBe(false);
+    expect(childStepChanged(rows.C, step('C', '  '))).toBe(false);
+    expect(childStepChanged(undefined, step('C', 'X'))).toBe(false);
+    expect(childStepChanged(rows.C, step('C', 'X'))).toBe(true);
   });
 });

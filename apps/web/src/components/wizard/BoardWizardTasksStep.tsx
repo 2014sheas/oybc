@@ -558,15 +558,9 @@ export function BoardWizardTasksStep({
     if (!editDraft) return;
     const previous = onStageEdit(taskId, editDraft);
     setEditingTaskId(null);
-    // "edited" (not "updated") — the change is captured for this board's
-    // creation, not yet written to the DB; don't overclaim persistence.
-    const boardCount = taskBoardCounts[taskId] ?? 0;
-    showToast(
-      boardCount > 0
-        ? `Staged · updates ${boardCount} board${boardCount === 1 ? '' : 's'} when you create`
-        : 'Staged · saves when you create the board',
-      () => onRevertEdit(taskId, previous),
-    );
+    // Captured for this board's creation, not yet written; board-scoped
+    // (docs/BOARD_SCOPED_TASK_EDITS.md), so it never updates other boards.
+    showToast('Staged · saves when you create the board', () => onRevertEdit(taskId, previous));
   }
 
   /** Discard the edit. If the draft differs from the task, toast "Edit

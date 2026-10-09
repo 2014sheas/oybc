@@ -153,4 +153,28 @@ describe('persistWizardBoardRows — board-scoped staged edits', () => {
 
     expect((await db.tasks.get('T'))!.title).toBe('Global');
   });
+
+  it('a sub-task forked inside a compound edit also replaces its own hand-added square', async () => {
+    const h = task('H', { title: 'Habits', type: TaskType.COMPOUND, operator: OperatorType.AND });
+    const c = task('C', { title: 'Stretch' });
+    await db.tasks.bulkAdd([h, c]);
+    await db.compoundChildren.add({ id: 'lhc', compoundTaskId: 'H', childTaskId: 'C', childIndex: 0, createdAt: T0, updatedAt: T0, version: 1, isDeleted: false });
+    await db.boards.add(otherBoard());
+    await db.boardTasks.add(placement('bt-other', OTHER, 'C'));
+    const patch: TaskEditPatch = {
+      ...emptyPatch('Habits'),
+      operator: OperatorType.AND,
+      children: [{ id: 'C', childTaskId: 'C', title: 'Stretch 10 min', isCounting: false, action: '', goal: '', unit: '', countKind: 'discrete', markedDeleted: false, childType: TaskType.NORMAL }],
+    };
+
+    const boardId = await persistWizardBoardRows(input([h, c], new Map([['H', patch]]), { manualTaskIds: ['H', 'C'] }));
+
+    const cFork = forkTaskId(boardId, 'C');
+    expect((await db.tasks.get(cFork))!.title).toBe('Stretch 10 min');
+    const placed = (await db.boardTasks.where('boardId').equals(boardId).toArray()).filter((p) => !p.isDeleted);
+    expect(placed.map((p) => p.taskId).sort()).toEqual(['H', cFork].sort());
+    const links = (await db.compoundChildren.where('compoundTaskId').equals('H').toArray()).filter((l) => !l.isDeleted);
+    expect(links.map((l) => l.childTaskId)).toEqual([cFork]);
+    expect((await db.boardTasks.get('bt-other'))!.taskId).toBe('C');
+  });
 });

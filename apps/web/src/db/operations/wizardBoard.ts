@@ -12,6 +12,7 @@ import {
   poolSourceSupplyById,
   withEffectiveMemberRules,
   availableSupplyIds,
+  forkTaskId,
   resolveSourceAvailable,
   type BoardSource,
   type BoardSourceSupply,
@@ -257,6 +258,26 @@ export async function persistWizardPendingTasksAndStagedEdits(
       await applyStagedTaskEditsForWizardPersist(stagedEdits, pendingIds, now);
     },
   );
+}
+
+/**
+ * Board-scoped edits: original id → its live fork on `boardId`
+ * (`forkTaskId(boardId, id)`) for every id in `ids` that has one. Lets the
+ * wizard place a fork minted anywhere in its staged edits — including a
+ * sub-task forked inside a compound edit — instead of the original.
+ *
+ * @param boardId - The board being created.
+ * @param ids - Candidate original ids (duplicates fine).
+ * @returns The substitutions found.
+ */
+async function forksOnBoard(boardId: string, ids: string[]): Promise<Map<string, string>> {
+  const out = new Map<string, string>();
+  for (const id of new Set(ids)) {
+    const forkId = forkTaskId(boardId, id);
+    const fork = await db.tasks.get(forkId);
+    if (fork && !fork.isDeleted) out.set(id, forkId);
+  }
+  return out;
 }
 
 /** Why a strict staged-edit application refused. */
@@ -686,9 +707,14 @@ export async function persistWizardBoardRows({
       // compound's sub-task edits) feeds the derivation pass below.
       if (status === 'active' && stagedEdits && stagedEdits.size > 0) {
         const pendingTaskIds = new Set(pendingTasks.map((p) => p.task.id));
-        const forks = await applyStagedTaskEditsForWizardPersist(stagedEdits, pendingTaskIds, currentTimestamp(), {
-          boardId,
-        });
+        await applyStagedTaskEditsForWizardPersist(stagedEdits, pendingTaskIds, currentTimestamp(), { boardId });
+        // Every placed / hand-added id with a fork on THIS board places the
+        // fork — top-level edits AND sub-tasks forked inside a compound edit.
+        const forks = await forksOnBoard(boardId, [
+          ...placement.map((t) => t?.id).filter((id): id is string => id != null),
+          ...(manualTaskIds ?? []),
+          ...Object.keys(manualTaskVary ?? {}),
+        ]);
         if (forks.size > 0) {
           placement = placement.map((t) => (t && forks.has(t.id) ? { ...t, id: forks.get(t.id)! } : t));
           manualTaskIds = manualTaskIds?.map((id) => forks.get(id) ?? id);

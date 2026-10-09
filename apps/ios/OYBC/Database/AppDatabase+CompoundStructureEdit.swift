@@ -40,6 +40,26 @@ extension AppDatabase {
     /// and for a counting sub-task the action/goal/unit + regenerated counting
     /// title). Returns the (possibly unchanged) task; caller bumps version if
     /// different.
+    /// Whether a compound-editor step changes its stored sub-task — the
+    /// comparison `applyStagedCompoundChildEdits` makes (shared with the
+    /// Board Edit sheet's fork label). A removed / blank step changes nothing.
+    ///
+    /// - Parameters:
+    ///   - row: The stored sub-task (nil = nothing to change).
+    ///   - step: The editor's step for it.
+    /// - Returns: `true` when the Save would write the sub-task.
+    static func childStepChanged(_ row: Task?, step: ChildPatch) -> Bool {
+        let title = step.title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let row, !step.markedDeleted, !title.isEmpty else { return false }
+        let next = applyStagedStepToChild(row, step: step, title: title)
+        // `?? ""`: the editor round-trips an absent action/unit as "" — not a
+        // change (a picked unit-less counter stays untouched).
+        return next.title != row.title
+            || (next.action ?? "") != (row.action ?? "")
+            || (next.unit ?? "") != (row.unit ?? "")
+            || next.maxCount != row.maxCount
+    }
+
     private static func applyStagedStepToChild(_ base: Task, step: ChildPatch, title: String) -> Task {
         var t = base
         if step.isCounting, base.type == .counting {
@@ -156,19 +176,19 @@ extension AppDatabase {
                     entityType: "compoundChildren", entityId: link.id, operationType: .create, payload: link, now: now
                 ).enqueue(db)
                 keptChildIds.insert(childId)
-            } else if var childId = step.childTaskId {
-                // Child edit (rename / goal / unit) → save + cascade: global,
-                // or — board-scoped — on a fork when placed on another board.
-                var existingChild = try Task.fetchOne(db, key: childId)
+            } else if let seededId = step.childTaskId {
+                // The step names the sub-task the editor was seeded with.
+                // Board-scoped: when an earlier override in this same Save
+                // already forked it for this board (the parent now links the
+                // fork), the step is about the fork — never re-link the original.
+                let forkOfSeeded = scopeBoard.map { BoardScopedFork.forkTaskId(boardId: $0.id, taskId: seededId) }
+                var childId = forkOfSeeded.flatMap { linkByChildId[$0] != nil ? $0 : nil } ?? seededId
+                // Change detection is against the SEEDED row (what the editor
+                // showed), so an untouched step never overwrites the fork.
+                let seededChild = try Task.fetchOne(db, key: seededId)
+                var existingChild = try childId == seededId ? seededChild : Task.fetchOne(db, key: childId)
                 if let stored = existingChild {
-                    let preview = applyStagedStepToChild(stored, step: step, title: title)
-                    // `?? ""`: the editor round-trips an absent action/unit as
-                    // "" — not a change (a picked unit-less counter stays untouched).
-                    let changed = preview.title != stored.title
-                        || (preview.action ?? "") != (stored.action ?? "")
-                        || (preview.unit ?? "") != (stored.unit ?? "")
-                        || preview.maxCount != stored.maxCount
-                    if changed {
+                    if childStepChanged(seededChild, step: step) {
                         var scoped = BoardScopedTarget(targetId: childId, forked: false)
                         if let scopeBoard {
                             scoped = try ensureBoardScopedTask(

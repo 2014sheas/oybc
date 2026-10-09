@@ -73,6 +73,24 @@ extension AppDatabase {
         }) ?? false
     }
 
+    /// What the Board Edit square sheet needs for its fork label: which of the
+    /// task and its live sub-tasks a board-scoped edit would fork, plus the
+    /// sub-tasks' stored rows (the baseline a compound-editor step is
+    /// compared to — `childStepChanged`). Read-only; empty on a read failure.
+    ///
+    /// - Parameters:
+    ///   - taskId: The sheet's task.
+    ///   - boardId: The board being edited.
+    /// - Returns: The forking ids and the sub-task rows.
+    func boardScopedForkCheck(taskId: String, boardId: String) -> (forking: Set<String>, rows: [String: Task]) {
+        let childIds = (try? read { db in
+            try CompoundChild.filter(Column("compoundTaskId") == taskId && Column("isDeleted") == false).fetchAll(db)
+        })?.map(\.childTaskId) ?? []
+        let rows = (try? read { db in try Task.filter(childIds.contains(Column("id"))).fetchAll(db) }) ?? []
+        let forking = Set(([taskId] + childIds).filter { wouldForkOnBoard(taskId: $0, boardId: boardId) })
+        return (forking, Dictionary(rows.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a }))
+    }
+
     /// Make `taskId` private to `boardId` ahead of a board-scoped edit,
     /// forking it when it is placed on any other board (see the file header
     /// for every write). Must run inside the caller's write transaction.

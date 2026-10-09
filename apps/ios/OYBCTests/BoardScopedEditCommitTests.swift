@@ -331,6 +331,66 @@ final class BoardScopedEditCommitTests: XCTestCase {
         XCTAssertFalse(db.wouldForkOnBoard(taskId: "pending", boardId: "B1"))
     }
 
+    /// Runs Save step 7b for several overrides, in order, on B1 squares.
+    private func commitAll(_ db: AppDatabase, _ items: [(stagedId: String, boardTaskId: String, ov: StagedTaskOverride)]) throws {
+        let inputs = try items.map { BoardPlayViewModel.StagedOverrideInput(stagedId: $0.stagedId, override: $0.ov, mapTask: try fetchTask(db, $0.stagedId)) }
+        let cells = items.map {
+            BoardPlayViewModel.StagedCellRef(boardTaskId: $0.boardTaskId, isNew: false, row: 0, col: 0, stagedTaskId: $0.stagedId)
+        }
+        try db.write { d in
+            try BoardPlayViewModel.applyStagedOverrides(
+                db: d, boardId: "B1", overrides: inputs, cells: cells, now: "2026-10-08T12:00:00.000Z"
+            )
+        }
+    }
+
+    func testHolderEditedAfterItsSubTaskForkedInTheSameSaveKeepsTheFork() throws {
+        let db = try makeDb()
+        try seedBoards(db)
+        for t in [task("C", title: "Stretch"), task("H", title: "Habits", type: .compound), task("X", title: "Water")] {
+            try db.saveTask(t)
+        }
+        try insert(db, [
+            link("lh1", "H", "C", 0), link("lh2", "H", "X", 1),
+            placement("btc", board: "B1", task: "C"), placement("bth", board: "B1", task: "H", col: 1),
+            placement("bt2", board: "B2", task: "C"),
+        ])
+        // The holder sheet was seeded from the stored rows: C still "Stretch".
+        var structure = TaskEditPatch(title: "Habits renamed")
+        structure.operatorType = .and
+        structure.children = [ChildPatch(from: try XCTUnwrap(try fetchTask(db, "C"))), ChildPatch(from: try XCTUnwrap(try fetchTask(db, "X")))]
+
+        try commitAll(db, [
+            ("C", "btc", override("Stretch 10 min")),
+            ("H", "bth", override("Habits renamed", .compound, compound: structure)),
+        ])
+
+        let cFork = BoardScopedFork.forkTaskId(boardId: "B1", taskId: "C")
+        XCTAssertEqual(try liveChildIds(db, of: "H"), [cFork, "X"].sorted())
+        XCTAssertEqual(try fetchTask(db, cFork)?.title, "Stretch 10 min")
+        XCTAssertEqual(try fetchTask(db, "H")?.title, "Habits renamed")
+    }
+
+    func testAFailingLaterOverrideRollsTheForkBack() throws {
+        let db = try makeDb()
+        try seedBoards(db)
+        try db.saveTask(task("T", title: "Read"))
+        try db.saveTask(task("P", title: "Bad", type: .compound))
+        try insert(db, [
+            placement("bt1", board: "B1", task: "T"), placement("bt2", board: "B2", task: "T"),
+            placement("btp", board: "B1", task: "P", col: 1),
+        ])
+        var empty = TaskEditPatch(title: "Bad")
+        empty.operatorType = .and
+
+        XCTAssertThrowsError(try commitAll(db, [
+            ("T", "bt1", override("Renamed")),
+            ("P", "btp", override("Bad", .compound, compound: empty)),
+        ]))
+        XCTAssertNil(try fetchTask(db, BoardScopedFork.forkTaskId(boardId: "B1", taskId: "T")))
+        XCTAssertEqual(try placedTaskId(db, "bt1"), "T")
+    }
+
     // MARK: - Sheet model
 
     func testSheetLabelAndConfirmRule() {
@@ -340,6 +400,19 @@ final class BoardScopedEditCommitTests: XCTestCase {
         XCTAssertFalse(SquareEditTaskSheet.needsForkConfirm(wouldFork: true, confirmed: true))
         XCTAssertFalse(SquareEditTaskSheet.needsForkConfirm(wouldFork: false, confirmed: false))
         XCTAssertEqual(SquareEditTaskSheet.forkConfirmBody, "Applies to this board only. Other boards keep the original.")
+    }
+
+    func testSheetWouldForkCountsAChangedForkingSubTask() {
+        let c = task("C", title: "Stretch")
+        var draft = TaskEditPatch(title: "H")
+        var step = ChildPatch(from: c)
+        draft.children = [step]
+        XCTAssertTrue(SquareEditTaskSheet.wouldFork(taskId: "H", draft: nil, forkingTaskIds: ["H"], rows: [:]))
+        XCTAssertFalse(SquareEditTaskSheet.wouldFork(taskId: "H", draft: draft, forkingTaskIds: ["C"], rows: ["C": c]))
+        step.title = "Stretch 10 min"
+        draft.children = [step]
+        XCTAssertTrue(SquareEditTaskSheet.wouldFork(taskId: "H", draft: draft, forkingTaskIds: ["C"], rows: ["C": c]))
+        XCTAssertFalse(SquareEditTaskSheet.wouldFork(taskId: "H", draft: draft, forkingTaskIds: [], rows: ["C": c]))
     }
 
     // MARK: - Wizard
@@ -423,5 +496,34 @@ final class BoardScopedEditCommitTests: XCTestCase {
         }
 
         XCTAssertEqual(try fetchTask(db, "T")?.title, "Global")
+    }
+
+    func testWizardSubTaskForkedInsideACompoundEditAlsoReplacesItsOwnSquare() throws {
+        let db = try makeDb()
+        try db.saveBoard(try board("B2", start: "2026-10-01T00:00:00.000Z", end: "2026-10-31T23:59:59.999Z"))
+        let h = task("H", title: "Habits", type: .compound)
+        let c = task("C", title: "Stretch")
+        try db.saveTask(h)
+        try db.saveTask(c)
+        try insert(db, [link("lhc", "H", "C", 0), placement("bt2", board: "B2", task: "C")])
+        var patch = TaskEditPatch(title: "Habits")
+        patch.operatorType = .and
+        var step = ChildPatch(from: c)
+        step.title = "Stretch 10 min"
+        patch.children = [step]
+
+        try db.saveWizardBoard(
+            board: try wizardBoard(),
+            boardTasks: [placement("new-0", board: "NEW", task: "H"), placement("new-1", board: "NEW", task: "C", col: 1)],
+            pendingTasks: [], stagedEdits: ["H": patch], isUpdate: false, manualTaskIds: ["H", "C"],
+            now: "2026-10-06T12:00:00.000Z"
+        )
+
+        let cFork = BoardScopedFork.forkTaskId(boardId: "NEW", taskId: "C")
+        XCTAssertEqual(try fetchTask(db, cFork)?.title, "Stretch 10 min")
+        XCTAssertEqual(try placedTaskId(db, "new-0"), "H")
+        XCTAssertEqual(try placedTaskId(db, "new-1"), cFork)
+        XCTAssertEqual(try liveChildIds(db, of: "H"), [cFork])
+        XCTAssertEqual(try placedTaskId(db, "bt2"), "C")
     }
 }

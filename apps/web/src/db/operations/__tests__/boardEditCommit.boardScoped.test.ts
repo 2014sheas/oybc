@@ -309,4 +309,55 @@ describe('commitSquareEdits — board-scoped edits', () => {
     expect(await db.tasks.get(forkTaskId(B1, 'T'))).toBeUndefined();
     expect((await db.tasks.get('T'))!.title).toBe('Read');
   });
+
+  it('a holder edited after its sub-task was forked in the same Save keeps the fork (no re-link of the original)', async () => {
+    await db.tasks.bulkAdd([
+      task('C', { title: 'Stretch' }),
+      task('H', { title: 'Habits', type: TaskType.COMPOUND, operator: OperatorType.AND }),
+      task('X', { title: 'Water' }),
+    ]);
+    await db.compoundChildren.bulkAdd([link('lh1', 'H', 'C', 0), link('lh2', 'H', 'X', 1)]);
+    await db.boardTasks.bulkAdd([
+      placement('btc', B1, 'C'), placement('bth', B1, 'H', 0, 1), placement('bt2', B2, 'C'),
+    ]);
+    // The holder sheet was seeded from the stored rows: C still "Stretch".
+    const patch = compoundPatch('Habits renamed', [
+      child({ childTaskId: 'C', title: 'Stretch' }),
+      child({ childTaskId: 'X', title: 'Water' }),
+    ]);
+
+    await commitSquareEdits(
+      input(
+        [cell({ cellId: 'btc', taskId: 'C' }), cell({ cellId: 'bth', taskId: 'H', col: 1 })],
+        [['C', { title: 'Stretch 10 min' }], ['H', { title: 'Habits renamed', compound: patch }]],
+      ),
+    );
+
+    const cFork = forkTaskId(B1, 'C');
+    const hLinks = (await db.compoundChildren.where('compoundTaskId').equals('H').toArray()).filter((l) => !l.isDeleted);
+    expect(hLinks.map((l) => l.childTaskId).sort()).toEqual([cFork, 'X'].sort());
+    expect((await db.tasks.get(cFork))!.title).toBe('Stretch 10 min');
+    expect((await db.tasks.get('H'))!.title).toBe('Habits renamed');
+  });
+
+  it('rolls the whole Save back when a later override fails: no fork row, placement unchanged', async () => {
+    await db.tasks.bulkAdd([
+      task('T', { title: 'Read' }),
+      task('P', { title: 'Bad', type: TaskType.COMPOUND, operator: OperatorType.AND }),
+    ]);
+    await db.boardTasks.bulkAdd([
+      placement('bt1', B1, 'T'), placement('bt2', B2, 'T'), placement('btp', B1, 'P', 0, 1),
+    ]);
+
+    await expect(
+      commitSquareEdits(
+        input(
+          [cell({ cellId: 'bt1', taskId: 'T' }), cell({ cellId: 'btp', taskId: 'P', col: 1 })],
+          [['T', { title: 'Renamed' }], ['P', { title: 'Bad', compound: compoundPatch('Bad', []) }]],
+        ),
+      ),
+    ).rejects.toThrow();
+    expect(await db.tasks.get(forkTaskId(B1, 'T'))).toBeUndefined();
+    expect((await db.boardTasks.get('bt1'))!.taskId).toBe('T');
+  });
 });

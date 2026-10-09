@@ -169,7 +169,10 @@ board"** **[D6 — ruled yes]** so the scope is visible as a control label, not 
   is placed nowhere is edited in place (D2: placements only). A forked
   child's link under the forked parent is repointed; the original parent keeps
   the original child. PR 2 forks a holder compound that is itself placed
-  elsewhere before repointing the copied link.
+  elsewhere before repointing the copied link. A holder placed nowhere else
+  gets its link rewritten in place — so a library / pool compound then
+  carries the hidden fork as its sub-task (consistent with D2: pool
+  membership is not a placement).
 - **Achievements** (title-only in Board Edit): same rule, trivially.
 - **Member rules / dry-run capacity / Sources sheet:** forks are never source
   supply (`isSourceSupplyTask` false — they are board-bound), so the planner and
@@ -263,16 +266,25 @@ Nothing new on the grid. In the Board Edit square sheet:
   below the board create/update), iOS passes the in-memory `Board` (its row
   is written later in the same transaction). Forks are substituted into the
   placements, the hand-added ids / dice and (iOS) a CHOSEN centre, so the
-  member-rule mint and the placements see the fork. A forked member is no
-  longer source supply, so a member rule keyed on the original no longer
-  applies to it (follow-up candidate). Pending (this-session) tasks have no
-  other placement and are edited in place. The pool editor and the
+  member-rule mint and the placements see the fork — any placed / hand-added
+  id whose `forkTaskId(board, id)` row exists is swapped, so a sub-task
+  forked inside a compound edit also replaces its own square. Member rules
+  cannot meet a fork: only hand-added rows carry the inline editor
+  (source-pulled members have none), so a source member is never edited
+  here. Pending (this-session) tasks have no other placement and are edited
+  in place. A draft board's placement counts as "another board" (it is a
+  live, undeleted board); resuming that draft makes it "this board". The pool editor and the
   repeating-board pool path pass no board and stay global.
 - **UI:** `wouldForkOnBoard` (shared ↔ `BoardScopedFork.wouldFork`, called by
   the planner, agreement-pinned over every planner vector) drives "Save for
-  this board"; the first-fork confirm is remembered in the edit draft (web
-  `useSquaresEditDraft.forkConfirmed` ↔ iOS `editForkConfirmed`), reset when
-  edit mode ends. Task Detail on a fork needed no change.
+  this board" — for the task itself, or a forking sub-task the compound
+  editor changes (web `sheetWouldFork` ↔ `SquareEditTaskSheet.wouldFork`;
+  web keeps Done disabled until the check loads). The first-fork confirm is
+  remembered in the edit draft (web `useSquaresEditDraft.forkConfirmed` ↔
+  iOS `editForkConfirmed`), reset when edit mode ends. A compound step whose
+  sub-task an earlier override in the same Save already forked resolves to
+  that fork (`forkTaskId(board, child)` linked under the parent), so a later
+  holder edit never re-links the original. Task Detail on a fork needed no change.
 
 Estimated size: PR 1 small, PR 2 medium (the commit paths are already staged and
 transactional — most of the work is the planner + tests), PR 3 small, PR 4 docs.

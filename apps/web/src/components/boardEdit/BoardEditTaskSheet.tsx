@@ -42,7 +42,8 @@ import {
   FORK_DONE_LABEL,
   needsForkConfirm,
   sheetDoneLabel,
-  useWouldForkOnBoard,
+  sheetWouldFork,
+  useForkCheck,
 } from './boardScopedSheet';
 import styles from './BoardEditTaskSheet.module.css';
 
@@ -202,7 +203,6 @@ export function BoardEditTaskSheet({
   const [libraryInputsState, setLibraryInputsState] = useState<LibraryInputsState>('loading');
   const [doneError, setDoneError] = useState<string | null>(null);
   const [checking, setChecking] = useState(false);
-  const wouldFork = useWouldForkOnBoard(task.id, boardId);
   const [confirmingFork, setConfirmingFork] = useState(false);
 
   const editorOpen = showsCompoundEditor(selected);
@@ -256,7 +256,13 @@ export function BoardEditTaskSheet({
 
   const input = { original, selected, title, action, goalStr, unit, countKind, compoundDraft, compoundBaseline };
   const problem = sheetValidationProblem(input);
-  const canSave = problem === null && !checking;
+  // Board-scoped: the task + its sub-tasks; Done waits for the check (no late label flip).
+  const forkCheck = useForkCheck(
+    [task.id, ...(compoundDraft?.children ?? []).map((c) => c.childTaskId ?? '')],
+    boardId,
+  );
+  const wouldFork = forkCheck !== null && sheetWouldFork(task.id, editorOpen ? compoundDraft : null, forkCheck);
+  const canSave = problem === null && !checking && forkCheck !== null;
   const goalNum = parseGoal(goalStr, countKind);
   const needsUnit = countKindNeedsUnit(countKind);
 

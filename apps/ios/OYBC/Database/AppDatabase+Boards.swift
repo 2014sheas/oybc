@@ -645,13 +645,23 @@ extension AppDatabase {
             var manualTaskVary = manualTaskVary
             var board = board
             if board.status == .active {
-                let forks = try Self.applyStagedTaskEdits(
+                try Self.applyStagedTaskEdits(
                     db: db,
                     stagedEdits: stagedEdits,
                     skipSimpleIds: Set(pendingTasks.map { $0.task.id }),
                     now: now,
                     scopeBoard: board
                 )
+                // Every placed / hand-added / centre id with a fork on THIS
+                // board places the fork — top-level edits AND sub-tasks forked
+                // inside a compound edit.
+                let candidates = boardTasks.map(\.taskId) + manualTaskIds + Array(manualTaskVary.keys)
+                    + (board.centerTaskId.map { [$0] } ?? [])
+                var forks: [String: String] = [:]
+                for id in Set(candidates) {
+                    let forkId = BoardScopedFork.forkTaskId(boardId: board.id, taskId: id)
+                    if let fork = try Task.fetchOne(db, key: forkId), !fork.isDeleted { forks[id] = forkId }
+                }
                 if !forks.isEmpty {
                     for i in boardTasks.indices { boardTasks[i].taskId = forks[boardTasks[i].taskId] ?? boardTasks[i].taskId }
                     manualTaskIds = manualTaskIds.map { forks[$0] ?? $0 }

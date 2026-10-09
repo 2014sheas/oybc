@@ -27,6 +27,7 @@ import {
   TaskType,
   compoundChildLinkProblem,
   countKindNeedsUnit,
+  forkTaskId,
   type CompoundChild,
   type CountKind,
   type Task,
@@ -120,20 +121,28 @@ export async function applyStagedCompoundChildEdits(
       await addToSyncQueue('compoundChildren', link.id, SyncOperationType.CREATE, link);
       keptChildIds.add(childId);
     } else if (step.childTaskId) {
-      let childId = step.childTaskId;
-      // Child edit (rename / goal / unit): global, or — board-scoped — on a
-      // fork when the sub-task is placed on any other board.
-      let existingChild = await db.tasks.get(childId);
-      if (existingChild) {
-        const preview = applyStepToChildTask(existingChild, step, title);
+      // The step names the sub-task the editor was seeded with. Board-scoped:
+      // when an earlier override in this same Save already forked it for this
+      // board (the parent now links the fork), the step is about the fork —
+      // never re-link the original over it.
+      const seededId = step.childTaskId;
+      const forkOfSeeded = scope ? forkTaskId(scope.boardId, seededId) : null;
+      let childId = forkOfSeeded && linkByChildId.has(forkOfSeeded) ? forkOfSeeded : seededId;
+      // Change detection is against the SEEDED row (what the editor showed),
+      // so an untouched step never overwrites an earlier edit of the fork.
+      const seededChild = await db.tasks.get(seededId);
+      let existingChild = childId === seededId ? seededChild : await db.tasks.get(childId);
+      if (seededChild && existingChild) {
+        const preview = applyStepToChildTask(seededChild, step, title);
         // `?? ''`: the editor round-trips an absent action/unit as '' — that
         // is not a change (a picked unit-less counter must stay untouched).
         const changed =
-          preview.title !== existingChild.title ||
-          (preview.action ?? '') !== (existingChild.action ?? '') ||
-          (preview.unit ?? '') !== (existingChild.unit ?? '') ||
-          preview.maxCount !== existingChild.maxCount;
+          preview.title !== seededChild.title ||
+          (preview.action ?? '') !== (seededChild.action ?? '') ||
+          (preview.unit ?? '') !== (seededChild.unit ?? '') ||
+          preview.maxCount !== seededChild.maxCount;
         if (changed) {
+          // Global, or — board-scoped — on a fork when placed on another board.
           const scoped = scope
             ? await ensureBoardScopedTask(childId, scope.boardId, existingChild.type, now)
             : { targetId: childId, forked: false };

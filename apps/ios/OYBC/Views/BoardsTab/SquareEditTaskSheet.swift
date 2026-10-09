@@ -60,10 +60,14 @@ struct SquareEditTaskSheet: View {
     /// Read-only: how many linked squares a Continuous → Discrete switch
     /// would also write (the confirm's "Follows on" line).
     var database: AppDatabase = .shared
-    /// The Save would FORK this task for the board being edited (it is placed
-    /// on another board — docs/BOARD_SCOPED_TASK_EDITS.md): Done reads
-    /// "Save for this board". From `AppDatabase.wouldForkOnBoard`.
-    var wouldFork: Bool = false
+    /// Ids (this task, its sub-tasks) the Save would FORK for the board being
+    /// edited — placed on another board (docs/BOARD_SCOPED_TASK_EDITS.md).
+    /// Done reads "Save for this board" when the task forks, or when the
+    /// compound editor changes a forking sub-task. From
+    /// `AppDatabase.boardScopedForkCheck`.
+    var forkingTaskIds: Set<String> = []
+    /// Stored rows of the sub-tasks — the baseline a step is compared to.
+    var forkBaselineRows: [String: Task] = [:]
     /// This board's edit session already confirmed a fork (§8: ask once).
     var forkConfirmed: Bool = false
     /// Records the first-fork confirm for the rest of the edit session.
@@ -78,6 +82,27 @@ struct SquareEditTaskSheet: View {
 
     /// Done's label for a sheet whose Save would (or would not) fork.
     static func doneLabel(wouldFork: Bool) -> String { wouldFork ? forkDoneLabel : "Done" }
+
+    /// Whether the sheet's Save would fork anything: the task itself, or a
+    /// sub-task the compound editor changes that is placed on another board.
+    /// Twin of web `sheetWouldFork`.
+    static func wouldFork(
+        taskId: String, draft: TaskEditPatch?, forkingTaskIds: Set<String>, rows: [String: Task]
+    ) -> Bool {
+        if forkingTaskIds.contains(taskId) { return true }
+        return (draft?.children ?? []).contains { step in
+            guard let id = step.childTaskId, forkingTaskIds.contains(id) else { return false }
+            return AppDatabase.childStepChanged(rows[id], step: step)
+        }
+    }
+
+    /// The live fork flag for this sheet's current draft.
+    private var wouldFork: Bool {
+        Self.wouldFork(
+            taskId: task.id, draft: type == .compound ? compoundDraft : nil,
+            forkingTaskIds: forkingTaskIds, rows: forkBaselineRows
+        )
+    }
 
     /// Whether Done must first ask — a fork this edit session hasn't confirmed.
     static func needsForkConfirm(wouldFork: Bool, confirmed: Bool) -> Bool { wouldFork && !confirmed }
@@ -154,7 +179,8 @@ struct SquareEditTaskSheet: View {
         loadInputs: (() async -> CompoundInputs)? = nil,
         startingType: TaskType? = nil,
         database: AppDatabase = .shared,
-        wouldFork: Bool = false,
+        forkingTaskIds: Set<String> = [],
+        forkBaselineRows: [String: Task] = [:],
         forkConfirmed: Bool = false,
         onForkConfirmed: (() -> Void)? = nil,
         onDone: @escaping (Patch) -> Void,
@@ -169,7 +195,8 @@ struct SquareEditTaskSheet: View {
         self.libraryInputsState = libraryInputsState
         self.loadInputs = loadInputs
         self.database = database
-        self.wouldFork = wouldFork
+        self.forkingTaskIds = forkingTaskIds
+        self.forkBaselineRows = forkBaselineRows
         self.forkConfirmed = forkConfirmed
         self.onForkConfirmed = onForkConfirmed
         self.onDone = onDone
