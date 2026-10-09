@@ -7,9 +7,9 @@ import {
   seedSheetTitle,
   sheetValidationProblem,
   showsCompoundEditor,
-  typeControlMode,
   type SheetInput,
 } from '../boardEditTaskSheetModel';
+import { typeControlMode } from '../../taskEdit/taskTypeRules';
 
 function task(over: Partial<Task> = {}): Task {
   return {

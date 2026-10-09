@@ -36,6 +36,9 @@ import { countingGoalError } from '../createPage/createFormCounting';
 import { CompoundFields, type LibraryInputsState } from '../../components/wizard/CompoundFields';
 import { loadLibraryInputs } from './loadLibraryInputs';
 import { compoundStructureChanged, compoundSubmitFor } from './compoundEditGate';
+import { TaskTypeControl } from '../../components/taskEdit/TaskTypeControl';
+import { typeControlMode } from '../../components/taskEdit/taskTypeRules';
+import { seedCompoundDraft } from '../../components/boardEdit/boardEditTaskSheetModel';
 import { useModalA11y } from '../../hooks/useModalA11y';
 import styles from './TaskDetailContent.module.css';
 
@@ -62,6 +65,12 @@ export interface TaskEditSheetProps {
  *   - Achievement re-target: mode toggle (specific board vs recurring template)
  *     + picker. Cycle detection runs before submit.
  *
+ * Type: a Simple / Counting task gets the shared Simple / Counting /
+ * Compound switch (`TaskTypeControl`); the save is GLOBAL and retroactive on
+ * every board placing the task (`saveTaskEdit` →
+ * `applyTaskTypeSwitchInTransaction`). A compound, a linked counter and an
+ * achievement keep their type.
+ *
  * Compound tasks: the rule (All of / Any of / At least N) and sub-tasks are
  * edited in place via the shared `CompoundFields` editor. The current
  * sub-tasks load once on open (an effect, so a static render never touches
@@ -83,6 +92,8 @@ export function TaskEditSheet({
     onCancel,
   });
   const [title, setTitle] = useState(task.title);
+  const [selected, setSelected] = useState<TaskType>(task.type);
+  const typeMode = typeControlMode(task.type, task.sharedCounterId != null);
   const [description, setDescription] = useState(task.description ?? '');
 
   // Counting fields
@@ -152,7 +163,9 @@ export function TaskEditSheet({
   // Compound structure (rule + sub-tasks). `null` until the current
   // sub-tasks have loaded; the draft's own `title` is ignored — the sheet's
   // Title field is the single source (merged in at render + submit).
-  const isCompound = task.type === TaskType.COMPOUND;
+  const isCompound = selected === TaskType.COMPOUND;
+  // Picked Compound on a Simple / Counting task: the structure always submits.
+  const isConverting = isCompound && task.type !== TaskType.COMPOUND;
   const [compoundDraft, setCompoundDraft] = useState<TaskEditPatch | null>(null);
   // What the editor opened with — only an edited structure is submitted.
   const [compoundBaseline, setCompoundBaseline] = useState<TaskEditPatch | null>(null);
@@ -164,9 +177,14 @@ export function TaskEditSheet({
   const [libraryInputsState, setLibraryInputsState] = useState<LibraryInputsState>('loading');
 
   useEffect(() => {
-    if (task.type !== TaskType.COMPOUND) return;
+    if (!isCompound) return;
     let cancelled = false;
     const load = async () => {
+      if (task.type !== TaskType.COMPOUND) {
+        // A conversion starts from the default empty "all" rule.
+        setCompoundDraft((d) => d ?? seedCompoundDraft(task, []));
+        return;
+      }
       try {
         const links = (await fetchCompoundChildren(task.id))
           .filter((l) => !l.isDeleted)
@@ -208,10 +226,11 @@ export function TaskEditSheet({
     return () => {
       cancelled = true;
     };
-    // Seed once per task identity — later edits to `task` (e.g. a live
-    // query refresh while the sheet is open) must not clobber the draft.
+    // Seed once per task identity (and when the editor first opens) — later
+    // edits to `task` (e.g. a live query refresh while the sheet is open)
+    // must not clobber the draft.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [task.id, task.type]);
+  }, [task.id, task.type, isCompound]);
 
   const compoundValidation =
     compoundDraft !== null ? validatePatch({ ...compoundDraft, title }, TaskType.COMPOUND) : null;
@@ -220,7 +239,7 @@ export function TaskEditSheet({
   // description edit through the basic route.
   const structureChanged = compoundStructureChanged(compoundBaseline, compoundDraft);
   const compoundBlocked =
-    isCompound && (compoundDraft === null || (structureChanged && compoundValidation !== null));
+    isCompound && (compoundDraft === null || ((structureChanged || isConverting) && compoundValidation !== null));
 
   const [submitting, setSubmitting] = useState(false);
   const [validationError, setValidationError] = useState<string | null>(null);
@@ -240,10 +259,17 @@ export function TaskEditSheet({
       description: description.trim() || undefined,
     };
 
-    if (task.type === TaskType.COUNTING) {
+    if (selected !== task.type) patch.type = selected;
+
+    if (selected === TaskType.COUNTING) {
       patch.action = action.trim();
       patch.unit = countKindNeedsUnit(countKind) ? unit.trim() : '';
-      if (maxCountStr.trim() !== '') {
+      if (task.type !== TaskType.COUNTING && countKindNeedsUnit(countKind) && !patch.unit) {
+        setValidationError('Add a unit, like km or pages.');
+        return;
+      }
+      // A conversion into Counting needs a goal; an existing counter may stay goal-less.
+      if (maxCountStr.trim() !== '' || task.type !== TaskType.COUNTING) {
         const error = countingGoalError(maxCountStr, countKind);
         if (error) {
           setValidationError(error);
@@ -303,7 +329,9 @@ export function TaskEditSheet({
 
     if (isCompound) {
       if (compoundDraft === null) return;
-      const compound = compoundSubmitFor(compoundBaseline, compoundDraft, title);
+      const compound = isConverting
+        ? { ...compoundDraft, title: title.trim() }
+        : compoundSubmitFor(compoundBaseline, compoundDraft, title);
       if (compound) patch.compound = compound;
     }
 
@@ -355,7 +383,17 @@ export function TaskEditSheet({
           />
         </label>
 
-        {task.type === TaskType.COUNTING && (
+        <TaskTypeControl
+          mode={typeMode}
+          selected={selected}
+          storedType={task.type}
+          onChange={(next) => {
+            setSelected(next);
+            setValidationError(null);
+          }}
+        />
+
+        {selected === TaskType.COUNTING && (
           <>
             <label className={styles.field}>
               <span className={styles.fieldLabel}>Action</span>
@@ -371,7 +409,11 @@ export function TaskEditSheet({
               {task.sharedCounterId ? (
                 <LinkedKindTag task={task} />
               ) : (
-                <KindPicker value={countKind} lock={kindPickerLock('edit', storedKind)} onChange={requestKind} />
+                <KindPicker
+                  value={countKind}
+                  lock={kindPickerLock(task.type === TaskType.COUNTING ? 'edit' : 'create', storedKind)}
+                  onChange={requestKind}
+                />
               )}
             </div>
             <label className={styles.field}>
