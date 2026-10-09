@@ -34,49 +34,60 @@ export function useSharedCounterGroups(
 ): SharedCounterGroup[] {
   const showExpired = options.showExpired === true;
   return useLiveQuery(
-    async () => {
-      if (!userId) return [];
-
-      // Fetch all non-deleted tasks + boards for this user. `buildSharedCounterGroups`
-      // also filters isDeleted internally, but pre-filtering avoids pulling tombstones
-      // through the grouping logic unnecessarily.
-      const [tasks, boards] = await Promise.all([
-        db.tasks.filter((t) => t.userId === userId && !t.isDeleted).toArray(),
-        db.boards
-          .filter((b) => b.userId === userId && !b.isDeleted)
-          .toArray()
-          .then(healBoardNames),
-      ]);
-
-      // Pull all boardTasks that link to any of the user's tasks, using the `taskId`
-      // index from schema v7 (`anyOf` keeps this to one indexed range scan per chunk).
-      const taskIds = tasks.map((t) => t.id);
-      const boardTasks =
-        taskIds.length > 0
-          ? await db.boardTasks.where('taskId').anyOf(taskIds).filter((bt) => !bt.isDeleted).toArray()
-          : [];
-
-      // Window-stamped members read their root's in-window sum (the play
-      // cell's and the kernel's rule — docs/WINDOWED_COMPLETION.md
-      // §Derived-task carve-out, amended 2026-09-23), so the roots' events
-      // ride along. Indexed on `taskId`; one range scan per chunk.
-      const rootIds = [...new Set(tasks.flatMap((t) => (t.sharedCounterId ? [t.sharedCounterId] : [])))];
-      const eventsByTaskId: Record<string, TaskEvent[]> = {};
-      if (rootIds.length > 0) {
-        for (const e of await db.taskEvents.where('taskId').anyOf(rootIds).toArray()) {
-          if (!e.isDeleted) (eventsByTaskId[e.taskId] ??= []).push(e);
-        }
-      }
-
-      return buildSharedCounterGroups({
-        tasks,
-        boardTasks,
-        boards,
-        eventsByTaskId,
-        memberVisibility: { showExpired },
-      });
-    },
+    () => (userId ? loadSharedCounterGroups(userId, showExpired) : []),
     [userId, showExpired],
     [] // default while loading
   );
+}
+
+/**
+ * One read of the SharedCounterGroup read-model (the body of
+ * `useSharedCounterGroups`'s live query; exported for tests).
+ *
+ * @param userId - The authenticated user's id.
+ * @param showExpired - `true` keeps expired members in.
+ * @returns The user's shared-counter groups.
+ */
+export async function loadSharedCounterGroups(
+  userId: string,
+  showExpired: boolean,
+): Promise<SharedCounterGroup[]> {
+  // Fetch all non-deleted tasks + boards for this user. `buildSharedCounterGroups`
+  // also filters isDeleted internally, but pre-filtering avoids pulling tombstones
+  // through the grouping logic unnecessarily.
+  const [tasks, boards] = await Promise.all([
+    db.tasks.filter((t) => t.userId === userId && !t.isDeleted).toArray(),
+    db.boards
+      .filter((b) => b.userId === userId && !b.isDeleted)
+      .toArray()
+      .then(healBoardNames),
+  ]);
+
+  // Pull all boardTasks that link to any of the user's tasks, using the `taskId`
+  // index from schema v7 (`anyOf` keeps this to one indexed range scan per chunk).
+  const taskIds = tasks.map((t) => t.id);
+  const boardTasks =
+    taskIds.length > 0
+      ? await db.boardTasks.where('taskId').anyOf(taskIds).filter((bt) => !bt.isDeleted).toArray()
+      : [];
+
+  // Window-stamped members read their root's in-window sum (the play
+  // cell's and the kernel's rule — docs/WINDOWED_COMPLETION.md
+  // §Derived-task carve-out, amended 2026-09-23), so the roots' events
+  // ride along. Indexed on `taskId`; one range scan per chunk.
+  const rootIds = [...new Set(tasks.flatMap((t) => (t.sharedCounterId ? [t.sharedCounterId] : [])))];
+  const eventsByTaskId: Record<string, TaskEvent[]> = {};
+  if (rootIds.length > 0) {
+    for (const e of await db.taskEvents.where('taskId').anyOf(rootIds).toArray()) {
+      if (!e.isDeleted) (eventsByTaskId[e.taskId] ??= []).push(e);
+    }
+  }
+
+  return buildSharedCounterGroups({
+    tasks,
+    boardTasks,
+    boards,
+    eventsByTaskId,
+    memberVisibility: { showExpired },
+  });
 }

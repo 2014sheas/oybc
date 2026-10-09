@@ -9,6 +9,7 @@ One real-world activity (e.g. *push-ups*) feeds **many** bingo-board squares fro
 Four surfaces:
 1. **Counters Hub** (Profile → "Shared counters") — Ledger layout: a card per counter with the lifetime number + a row per member task (board · window, logged/goal, progress bar). *(Tiles / Meters are prototype alternates — ship Ledger only.)*
 2. **Counter Detail** — lifetime hero, a **Log** stepper, "Appears on" timeframe chips, "Shared by N tasks" list, "Not counting now" (draft/inactive). *(Sparkline / streak / best-window / recent-windows history are P4 — deferred.)*
+   - **Edit counter…** (2026-10-09, both platforms) — the "⋯" overflow lists *Edit counter…* above *Delete counter…*; it opens the GLOBAL task editor (web `TaskEditSheet` → `saveTaskEdit`; iOS `EditTaskSheet` → `applyTaskEditPatch`) on the counter's ROOT (`counterId` = root task id; the item is absent when the root is missing / deleted). Type shows fixed for a hub counter; kind / title / action / unit changes propagate per D5 (`COUNTER_KINDS.md`) + #575 (live per-board copies; goal stays per-board). The hub list has no per-counter menu, so Counter Detail is the one edit entry. Seams: `counterDetailMenuItems` ↔ `CounterDetailContent.overflowItems`.
 3. **Board square logging** — a counting square linked to a shared counter shows a **shared marker** (↔ two dots); tapping opens the stepper with an "also counts on…" hint and fires a **credited toast** naming the other boards that changed.
 4. **Passive completion** — logging elsewhere flags affected squares as "arrived"; the next board-open shows a gold **arrival banner** + the square pulsing, and may complete a new **bingo** from activity logged somewhere else.
 
@@ -167,8 +168,9 @@ stays reachable in the library. Not mitigated further in v1.
   sources, two hub cards, unmergeable by LWW (different ids). Same race class
   as the existing create-and-link flow; accepted. A render-time duplicate badge
   (reusing the classify match) is the recorded v2 seam — no merge UI now.
-- **Stale auto-title** if action/unit ever change post-create: moot in v1 —
-  goal-less counters have no edit surface (hub create + log + delete only).
+- **Stale auto-title** if action/unit change post-create: Counter Detail's
+  *Edit counter…* (2026-10-09) edits the root's title / action / unit in the
+  global editor, and #575 regenerates live copies' auto-titles.
 - **Doc drift recorded:** `WINDOWED_COMPLETION.md` specced hub decrements as
   "tombstone the latest increment"; the shipped hub Detail stepper appends a
   clamped negative delta instead (seed-safe; correction noted in that doc).
