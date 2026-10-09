@@ -907,14 +907,14 @@ export function BoardPlaySurface({
         );
       })()}
 
-      {/* Edit-mode Task editor: opens BoardEditTaskSheet to stage field changes.
-          On Done, stages the patch in taskOverrides (no DB write). */}
+      {/* Edit-mode Task editor: stages field changes on Done (no DB write); Save forks if placed elsewhere. */}
       {editMode && editTaskSheetId && (() => {
         const sheetTask = editDraft.resolveTask(editTaskSheetId);
         if (!sheetTask) return null;
         return (
           <BoardEditTaskSheet
             task={sheetTask} original={editDraft.resolveOriginalTask(editTaskSheetId)} staged={editDraft.taskOverrides.get(editTaskSheetId)}
+            boardId={board.id} forkConfirmed={editDraft.forkConfirmed} onForkConfirmed={editDraft.confirmFork}
             onDone={(taskId, patch) => {
               editDraft.stageTaskEdit(taskId, patch);
               setEditTaskSheetId(null);

@@ -39,6 +39,9 @@ import {
   SyncOperationType,
   findTransitiveParentCompounds,
   planBoardScopedFork,
+  wouldForkOnBoard,
+  type Board,
+  type BoardTask,
   type CompoundChild,
   type TaskType,
 } from '@oybc/shared';
@@ -61,6 +64,49 @@ async function liveLinks(): Promise<CompoundChild[]> {
   return (await db.compoundChildren.toArray()).filter((l) => !l.isDeleted);
 }
 
+/** The placement-side inputs of the fork test for one task. */
+interface PlacementContext {
+  placements: BoardTask[];
+  boards: Board[];
+  compoundChildren: CompoundChild[];
+}
+
+/**
+ * Read the rows the §2 test needs for `taskId`: every `compound_children`
+ * row, the placements of the task and of its (transitive) parent compounds,
+ * and those placements' boards.
+ *
+ * @param taskId - The task under test.
+ * @returns The placement context.
+ */
+async function readPlacementContext(taskId: string): Promise<PlacementContext> {
+  const compoundChildren = await db.compoundChildren.toArray();
+  const reach = findTransitiveParentCompounds(taskId, compoundChildren);
+  reach.add(taskId);
+  const placements = await db.boardTasks.where('taskId').anyOf([...reach]).toArray();
+  const boardIds = [...new Set(placements.map((p) => p.boardId))];
+  const boards = boardIds.length > 0 ? await db.boards.where('id').anyOf(boardIds).toArray() : [];
+  return { placements, boards, compoundChildren };
+}
+
+/**
+ * Whether a Board Edit of `taskId` from `boardId` would land on a fork —
+ * drives the square sheet's "Save for this board" label and first-fork
+ * confirm from the same `wouldForkOnBoard` test the Save's planner runs.
+ * Read-only. A task not stored yet (a staged new task) never forks.
+ *
+ * @param taskId - The task the sheet edits.
+ * @param boardId - The board being edited.
+ * @returns `true` when the Save would fork the task.
+ */
+export async function fetchWouldForkOnBoard(taskId: string, boardId: string): Promise<boolean> {
+  return db.transaction('r', [db.tasks, db.boards, db.boardTasks, db.compoundChildren], async () => {
+    const task = await db.tasks.get(taskId);
+    if (!task || task.isDeleted) return false;
+    return wouldForkOnBoard({ task, boardId, ...(await readPlacementContext(taskId)) });
+  });
+}
+
 /**
  * Make `taskId` private to `boardId` ahead of a board-scoped edit, forking it
  * when it is placed on any other board (see the module doc for every write).
@@ -81,12 +127,7 @@ export async function ensureBoardScopedTask(
   const board = await db.boards.get(boardId);
   if (!task || task.isDeleted || !board) return { targetId: taskId, forked: false };
 
-  const compoundChildren = await db.compoundChildren.toArray();
-  const reach = findTransitiveParentCompounds(taskId, compoundChildren);
-  reach.add(taskId);
-  const placements = await db.boardTasks.where('taskId').anyOf([...reach]).toArray();
-  const boardIds = [...new Set(placements.map((p) => p.boardId))];
-  const boards = boardIds.length > 0 ? await db.boards.where('id').anyOf(boardIds).toArray() : [];
+  const { placements, boards, compoundChildren } = await readPlacementContext(taskId);
   const events = await db.taskEvents.where('taskId').equals(taskId).toArray();
 
   const plan = planBoardScopedFork({
