@@ -39,16 +39,16 @@ final class MigrationV40DataSurvivalTests: XCTestCase {
         return try JSONDecoder().decode(Board.self, from: JSONSerialization.data(withJSONObject: dict))
     }
 
-    private func task(_ id: String) -> Task {
-        Task(
-            id: id, userId: userId, title: "T", description: nil, type: .normal,
-            action: nil, unit: nil, maxCount: nil, operatorType: nil, threshold: nil,
-            referencedBoardId: nil, referencedTemplateId: nil, achievementTrigger: nil, requiredCount: nil,
-            totalCompletions: 0, totalInstances: 0, isCompleted: false, completedAt: nil, currentCount: nil,
-            createdAt: start, updatedAt: start, lastSyncedAt: nil, version: 1, isDeleted: false, deletedAt: nil,
-            timeframe: nil, startDate: nil, endDate: nil,
-            sharedCounterId: nil, baseline: nil, lastSyncedCount: nil, createdInWizard: false
-        )
+    /// Inserts a task with raw SQL naming only columns the v39 schema has —
+    /// the seed runs against a database migrated to v39, so the current
+    /// `Task` Codable (which carries columns added later, e.g. v41's
+    /// `forkedFromTaskId`) cannot be used to write it.
+    private func insertTask(_ id: String, _ db: Database) throws {
+        try db.execute(sql: """
+            INSERT INTO tasks (id, userId, title, type, totalCompletions, totalInstances,
+                               isCompleted, createdAt, updatedAt, version, isDeleted)
+            VALUES (?, ?, 'T', 'normal', 0, 0, 0, ?, ?, 1, 0)
+            """, arguments: [id, userId, start, start])
     }
 
     /// Seeds 3 boards × 9 placed tasks — board 1 SEALED (`sealedAt` +
@@ -69,7 +69,7 @@ final class MigrationV40DataSurvivalTests: XCTestCase {
                 extra = ["centerSquareType": CenterSquareType.chosen.rawValue, "centerTaskId": centreTaskId]
             }
             let taskIds = (0..<9).map { cell in b == 2 && cell == 4 ? centreTaskId : PullFixture.uuid(2, 100 + b * 9 + cell) }
-            for taskId in taskIds { try task(taskId).save(db) } // before the board: v39's centre FK is immediate
+            for taskId in taskIds { try insertTask(taskId, db) } // before the board: v39's centre FK is immediate
             try boardRow(boardId, extra: extra).save(db)
             for (cell, taskId) in taskIds.enumerated() {
                 try BoardTask(

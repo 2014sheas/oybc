@@ -226,6 +226,19 @@ export interface Task {
    * dropping it would break decode. It is inert residue; do not re-wire it.
    */
   lastSyncedCount?: number | null;
+
+  /**
+   * Board-scoped task edits (docs/BOARD_SCOPED_TASK_EDITS.md §3). Set on a
+   * FORK — the per-board copy a Board Edit edit mints when the task is
+   * placed on any other board — to the original task's id. Informational
+   * provenance only: a fork is an independent row (its own events, its own
+   * single placement), never re-forked, never browsable in the library
+   * (`computeBrowsableTasks`), never source supply (`isSourceSupplyTask`),
+   * and untouched by the original's `deleteTaskWithCascade`. Never cleared
+   * once set (not in `CLEARABLE_FIELDS_BY_COLLECTION`). Absent/null on every
+   * non-fork task. iOS GRDB v41 nullable TEXT column.
+   */
+  forkedFromTaskId?: string | null;
 }
 
 /**

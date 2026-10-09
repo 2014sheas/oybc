@@ -38,6 +38,11 @@ import { BoardStatus, TaskType } from '../constants/enums';
  * fresh device, or a row an old client wrote — would otherwise be reachable
  * from nowhere at all.
  *
+ * 4. Forks (board-scoped task edits, docs/BOARD_SCOPED_TASK_EDITS.md §3) — a
+ * task with `forkedFromTaskId` set is the per-board copy a Board Edit edit
+ * minted; it is reachable only from its square, never browsable, regardless
+ * of its placements (and even if an old client stripped `createdInWizard`).
+ *
  * Mirror of the iOS `TaskLibraryViewModel.computeBrowsableTasks`
  * (`streaks.ts ↔ Streaks.swift`-style parity). Pure and fully derived at read
  * time — no clearing logic: a hidden wizard-orphan reappears automatically the
@@ -80,6 +85,7 @@ export function computeBrowsableTasks(
   }
   return tasks.filter((task) => {
     if (isGoalLessCounter(task)) return false;
+    if (task.forkedFromTaskId != null) return false;
     // One generic family row: a member is represented by its root — but only
     // when that root really exists, so a dangling link stays visible here
     // rather than being reachable from nowhere.

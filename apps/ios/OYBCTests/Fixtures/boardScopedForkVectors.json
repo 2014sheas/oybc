@@ -1,0 +1,1515 @@
+{
+  "notes": {
+    "purpose": "Board-scoped task edits PR 1 (docs/BOARD_SCOPED_TASK_EDITS.md §2–§4, §6–§7): deterministic fork ids + planBoardScopedFork. Shared by packages/shared/tests/algorithms/boardScopedFork.test.ts and apps/ios/OYBCTests/BoardScopedForkVectorTests.swift (byte-identical copy in apps/ios/OYBCTests/Fixtures).",
+    "ids": "forkTaskId(boardId, taskId) = uuidv5(\"fork:task:<boardId>:<taskId>\"); forkedEventId(forkId, eventId) = uuidv5(\"fork:event:<forkId>:<eventId>\"); forkLinkId(forkId, childTaskId) = uuidv5(\"fork:link:<forkId>:<childTaskId>\") — all under OYBC_NAMESPACE. Literals below pin both platforms.",
+    "tasks": "Each vector task is expanded by the harness with lifetime caches that a fork must reset: isCompleted true, completedAt set, currentCount 5 (counting only), totalCompletions 3, totalInstances 2, version 7, createdAt/updatedAt 2026-01-01T00:00:00.000Z, isCounter true.",
+    "events": "Each event is expanded with userId \"u1\", version 3, createdAt/updatedAt 2026-01-01T00:00:00.000Z, isDeleted false unless set.",
+    "fork": "Every fork must have id=forkId, forkedFromTaskId=task.id, createdInWizard true, isCounter false, version 1, createdAt=updatedAt=now, isDeleted false, isCompleted false, no completedAt, currentCount 0 for counting (absent otherwise), totalCompletions 0, totalInstances 1, title/type unchanged. Every event copy: taskId=forkId, createdAt=updatedAt=now, version 1, userId preserved, isDeleted false. Every link copy: compoundTaskId=forkId, version 1, createdAt=updatedAt=now, isDeleted false.",
+    "holders": "onBoardHolderCompoundIds = the compounds with a live placement on THIS board that contain the task directly or transitively (over live links), sorted by id. PR 2 repoints the task’s link inside each holder’s subtree (forking a holder that is itself placed elsewhere first).",
+    "boards": "A board without a status is active; status only documents D1 (the planner ignores it).",
+    "windows": "Window = [startDate, min(endDate, sealedAt)], inclusive both ends, parsed-instant compare; endDate null = open-ended. All instants are Z-suffixed so the vectors are timezone-independent."
+  },
+  "ids": {
+    "forkTaskId": [
+      {
+        "boardId": "B1",
+        "taskId": "T",
+        "expected": "bea9618c-f778-5782-a484-ee776d5704b8"
+      },
+      {
+        "boardId": "B2",
+        "taskId": "T",
+        "expected": "1547149d-1d8d-590e-814d-e3e569f46523"
+      },
+      {
+        "boardId": "B1",
+        "taskId": "C",
+        "expected": "67c7e18b-b24e-529e-9ac1-b4435773016e"
+      }
+    ],
+    "forkedEventId": [
+      {
+        "forkId": "bea9618c-f778-5782-a484-ee776d5704b8",
+        "eventId": "e-mid",
+        "expected": "09c73733-8b6f-5665-92ff-2f521e7bd95f"
+      },
+      {
+        "forkId": "1547149d-1d8d-590e-814d-e3e569f46523",
+        "eventId": "e-mid",
+        "expected": "9c019622-34cf-5428-8914-8edbf07152fc"
+      }
+    ],
+    "forkLinkId": [
+      {
+        "forkId": "67c7e18b-b24e-529e-9ac1-b4435773016e",
+        "childTaskId": "kid-a",
+        "expected": "339969db-11c2-59a9-a31d-d14359e879d1"
+      }
+    ]
+  },
+  "planBoardScopedFork": {
+    "now": "2026-10-08T12:00:00.000Z",
+    "boards": [
+      {
+        "id": "B1",
+        "startDate": "2026-10-05T00:00:00.000Z",
+        "endDate": "2026-10-11T23:59:59.999Z",
+        "sealedAt": null,
+        "isDeleted": false
+      },
+      {
+        "id": "B2",
+        "startDate": "2026-10-01T00:00:00.000Z",
+        "endDate": "2026-10-31T23:59:59.999Z",
+        "sealedAt": null,
+        "isDeleted": false
+      },
+      {
+        "id": "BS",
+        "startDate": "2026-09-01T00:00:00.000Z",
+        "endDate": "2026-09-30T23:59:59.999Z",
+        "sealedAt": "2026-10-02T08:00:00.000Z",
+        "isDeleted": false
+      },
+      {
+        "id": "BD",
+        "startDate": "2026-10-01T00:00:00.000Z",
+        "endDate": "2026-10-31T23:59:59.999Z",
+        "sealedAt": null,
+        "isDeleted": true
+      },
+      {
+        "id": "BOPEN",
+        "startDate": "2026-10-05T00:00:00.000Z",
+        "endDate": null,
+        "sealedAt": null,
+        "isDeleted": false
+      },
+      {
+        "id": "BA",
+        "status": "archived",
+        "startDate": "2026-08-01T00:00:00.000Z",
+        "endDate": "2026-08-31T23:59:59.999Z",
+        "sealedAt": null,
+        "isDeleted": false
+      },
+      {
+        "id": "BSEAL",
+        "startDate": "2026-09-01T00:00:00.000Z",
+        "endDate": "2026-09-30T23:59:59.999Z",
+        "sealedAt": "2026-09-20T12:00:00.000Z",
+        "isDeleted": false
+      }
+    ],
+    "vectors": [
+      {
+        "name": "only placed on this board → inPlace",
+        "task": {
+          "id": "T",
+          "type": "normal",
+          "title": "Read a book"
+        },
+        "boardId": "B1",
+        "editedType": "normal",
+        "placements": [
+          {
+            "id": "bt1",
+            "boardId": "B1",
+            "taskId": "T",
+            "isDeleted": false
+          }
+        ],
+        "expected": {
+          "mode": "inPlace"
+        }
+      },
+      {
+        "name": "no placements at all → inPlace",
+        "task": {
+          "id": "T",
+          "type": "normal",
+          "title": "Read a book"
+        },
+        "boardId": "B1",
+        "editedType": "normal",
+        "placements": [],
+        "expected": {
+          "mode": "inPlace"
+        }
+      },
+      {
+        "name": "duplicate placements on this board only → inPlace",
+        "task": {
+          "id": "T",
+          "type": "normal",
+          "title": "Read a book"
+        },
+        "boardId": "B1",
+        "editedType": "normal",
+        "placements": [
+          {
+            "id": "bt1",
+            "boardId": "B1",
+            "taskId": "T",
+            "isDeleted": false
+          },
+          {
+            "id": "bt1b",
+            "boardId": "B1",
+            "taskId": "T",
+            "isDeleted": false
+          }
+        ],
+        "expected": {
+          "mode": "inPlace"
+        }
+      },
+      {
+        "name": "also placed on a live board → fork",
+        "task": {
+          "id": "T",
+          "type": "normal",
+          "title": "Read a book"
+        },
+        "boardId": "B1",
+        "editedType": "normal",
+        "placements": [
+          {
+            "id": "bt1",
+            "boardId": "B1",
+            "taskId": "T",
+            "isDeleted": false
+          },
+          {
+            "id": "bt2",
+            "boardId": "B2",
+            "taskId": "T",
+            "isDeleted": false
+          }
+        ],
+        "expected": {
+          "mode": "fork",
+          "forkId": "bea9618c-f778-5782-a484-ee776d5704b8",
+          "repoint": {
+            "boardTaskId": "bt1",
+            "newTaskId": "bea9618c-f778-5782-a484-ee776d5704b8"
+          },
+          "onBoardHolderCompoundIds": [],
+          "eventCopies": [],
+          "childLinksToCopy": []
+        }
+      },
+      {
+        "name": "D1: other placement only on a SEALED board → fork",
+        "task": {
+          "id": "T",
+          "type": "normal",
+          "title": "Read a book"
+        },
+        "boardId": "B1",
+        "editedType": "normal",
+        "placements": [
+          {
+            "id": "bt1",
+            "boardId": "B1",
+            "taskId": "T",
+            "isDeleted": false
+          },
+          {
+            "id": "bt-s",
+            "boardId": "BS",
+            "taskId": "T",
+            "isDeleted": false
+          }
+        ],
+        "expected": {
+          "mode": "fork",
+          "forkId": "bea9618c-f778-5782-a484-ee776d5704b8",
+          "repoint": {
+            "boardTaskId": "bt1",
+            "newTaskId": "bea9618c-f778-5782-a484-ee776d5704b8"
+          },
+          "onBoardHolderCompoundIds": [],
+          "eventCopies": [],
+          "childLinksToCopy": []
+        }
+      },
+      {
+        "name": "D1: other placement only on an ARCHIVED board → fork",
+        "task": {
+          "id": "T",
+          "type": "normal",
+          "title": "Read a book"
+        },
+        "boardId": "B1",
+        "editedType": "normal",
+        "placements": [
+          {
+            "id": "bt1",
+            "boardId": "B1",
+            "taskId": "T",
+            "isDeleted": false
+          },
+          {
+            "id": "bt-a",
+            "boardId": "BA",
+            "taskId": "T",
+            "isDeleted": false
+          }
+        ],
+        "expected": {
+          "mode": "fork",
+          "forkId": "bea9618c-f778-5782-a484-ee776d5704b8",
+          "repoint": {
+            "boardTaskId": "bt1",
+            "newTaskId": "bea9618c-f778-5782-a484-ee776d5704b8"
+          },
+          "onBoardHolderCompoundIds": [],
+          "eventCopies": [],
+          "childLinksToCopy": []
+        }
+      },
+      {
+        "name": "other placement is a tombstoned BoardTask → inPlace",
+        "task": {
+          "id": "T",
+          "type": "normal",
+          "title": "Read a book"
+        },
+        "boardId": "B1",
+        "editedType": "normal",
+        "placements": [
+          {
+            "id": "bt1",
+            "boardId": "B1",
+            "taskId": "T",
+            "isDeleted": false
+          },
+          {
+            "id": "bt2",
+            "boardId": "B2",
+            "taskId": "T",
+            "isDeleted": true
+          }
+        ],
+        "expected": {
+          "mode": "inPlace"
+        }
+      },
+      {
+        "name": "other placement is on a deleted board → inPlace",
+        "task": {
+          "id": "T",
+          "type": "normal",
+          "title": "Read a book"
+        },
+        "boardId": "B1",
+        "editedType": "normal",
+        "placements": [
+          {
+            "id": "bt1",
+            "boardId": "B1",
+            "taskId": "T",
+            "isDeleted": false
+          },
+          {
+            "id": "bt-d",
+            "boardId": "BD",
+            "taskId": "T",
+            "isDeleted": false
+          }
+        ],
+        "expected": {
+          "mode": "inPlace"
+        }
+      },
+      {
+        "name": "other placement is on a board missing locally → inPlace",
+        "task": {
+          "id": "T",
+          "type": "normal",
+          "title": "Read a book"
+        },
+        "boardId": "B1",
+        "editedType": "normal",
+        "placements": [
+          {
+            "id": "bt1",
+            "boardId": "B1",
+            "taskId": "T",
+            "isDeleted": false
+          },
+          {
+            "id": "bt-x",
+            "boardId": "B-UNKNOWN",
+            "taskId": "T",
+            "isDeleted": false
+          }
+        ],
+        "expected": {
+          "mode": "inPlace"
+        }
+      },
+      {
+        "name": "placements of OTHER tasks on other boards are ignored → inPlace",
+        "task": {
+          "id": "T",
+          "type": "normal",
+          "title": "Read a book"
+        },
+        "boardId": "B1",
+        "editedType": "normal",
+        "placements": [
+          {
+            "id": "bt1",
+            "boardId": "B1",
+            "taskId": "T",
+            "isDeleted": false
+          },
+          {
+            "id": "bt-o",
+            "boardId": "B2",
+            "taskId": "X",
+            "isDeleted": false
+          }
+        ],
+        "expected": {
+          "mode": "inPlace"
+        }
+      },
+      {
+        "name": "task is already a fork → inPlace (never re-forked)",
+        "task": {
+          "id": "T",
+          "type": "normal",
+          "title": "Read a book",
+          "forkedFromTaskId": "T0",
+          "createdInWizard": true
+        },
+        "boardId": "B1",
+        "editedType": "normal",
+        "placements": [
+          {
+            "id": "bt1",
+            "boardId": "B1",
+            "taskId": "T",
+            "isDeleted": false
+          },
+          {
+            "id": "bt2",
+            "boardId": "B2",
+            "taskId": "T",
+            "isDeleted": false
+          }
+        ],
+        "expected": {
+          "mode": "inPlace"
+        }
+      },
+      {
+        "name": "linked counter (sharedCounterId set) → inPlace",
+        "task": {
+          "id": "K",
+          "type": "counting",
+          "title": "Run 20 miles",
+          "action": "Run",
+          "unit": "miles",
+          "maxCount": 20,
+          "sharedCounterId": "ROOT"
+        },
+        "boardId": "B1",
+        "editedType": "counting",
+        "placements": [
+          {
+            "id": "bt1",
+            "boardId": "B1",
+            "taskId": "K",
+            "isDeleted": false
+          },
+          {
+            "id": "bt2",
+            "boardId": "B2",
+            "taskId": "K",
+            "isDeleted": false
+          }
+        ],
+        "expected": {
+          "mode": "inPlace"
+        }
+      },
+      {
+        "name": "reached on another board through a placed parent compound → fork",
+        "task": {
+          "id": "T",
+          "type": "normal",
+          "title": "Read a book"
+        },
+        "boardId": "B1",
+        "editedType": "normal",
+        "placements": [
+          {
+            "id": "bt1",
+            "boardId": "B1",
+            "taskId": "T",
+            "isDeleted": false
+          },
+          {
+            "id": "bt-p",
+            "boardId": "B2",
+            "taskId": "P",
+            "isDeleted": false
+          }
+        ],
+        "compoundChildren": [
+          {
+            "id": "lp",
+            "compoundTaskId": "P",
+            "childTaskId": "T",
+            "childIndex": 0,
+            "isDeleted": false
+          }
+        ],
+        "expected": {
+          "mode": "fork",
+          "forkId": "bea9618c-f778-5782-a484-ee776d5704b8",
+          "repoint": {
+            "boardTaskId": "bt1",
+            "newTaskId": "bea9618c-f778-5782-a484-ee776d5704b8"
+          },
+          "onBoardHolderCompoundIds": [],
+          "eventCopies": [],
+          "childLinksToCopy": []
+        }
+      },
+      {
+        "name": "reached through a GRANDPARENT compound placed elsewhere → fork",
+        "task": {
+          "id": "T",
+          "type": "normal",
+          "title": "Read a book"
+        },
+        "boardId": "B1",
+        "editedType": "normal",
+        "placements": [
+          {
+            "id": "bt1",
+            "boardId": "B1",
+            "taskId": "T",
+            "isDeleted": false
+          },
+          {
+            "id": "bt-g",
+            "boardId": "B2",
+            "taskId": "G",
+            "isDeleted": false
+          }
+        ],
+        "compoundChildren": [
+          {
+            "id": "lp",
+            "compoundTaskId": "P",
+            "childTaskId": "T",
+            "childIndex": 0,
+            "isDeleted": false
+          },
+          {
+            "id": "lg",
+            "compoundTaskId": "G",
+            "childTaskId": "P",
+            "childIndex": 0,
+            "isDeleted": false
+          }
+        ],
+        "expected": {
+          "mode": "fork",
+          "forkId": "bea9618c-f778-5782-a484-ee776d5704b8",
+          "repoint": {
+            "boardTaskId": "bt1",
+            "newTaskId": "bea9618c-f778-5782-a484-ee776d5704b8"
+          },
+          "onBoardHolderCompoundIds": [],
+          "eventCopies": [],
+          "childLinksToCopy": []
+        }
+      },
+      {
+        "name": "parent compound link is tombstoned → inPlace",
+        "task": {
+          "id": "T",
+          "type": "normal",
+          "title": "Read a book"
+        },
+        "boardId": "B1",
+        "editedType": "normal",
+        "placements": [
+          {
+            "id": "bt1",
+            "boardId": "B1",
+            "taskId": "T",
+            "isDeleted": false
+          },
+          {
+            "id": "bt-p",
+            "boardId": "B2",
+            "taskId": "P",
+            "isDeleted": false
+          }
+        ],
+        "compoundChildren": [
+          {
+            "id": "lp",
+            "compoundTaskId": "P",
+            "childTaskId": "T",
+            "childIndex": 0,
+            "isDeleted": true
+          }
+        ],
+        "expected": {
+          "mode": "inPlace"
+        }
+      },
+      {
+        "name": "reached only through a compound on THIS board → inPlace",
+        "task": {
+          "id": "T",
+          "type": "normal",
+          "title": "Read a book"
+        },
+        "boardId": "B1",
+        "editedType": "normal",
+        "placements": [
+          {
+            "id": "bt-p",
+            "boardId": "B1",
+            "taskId": "P",
+            "isDeleted": false
+          }
+        ],
+        "compoundChildren": [
+          {
+            "id": "lp",
+            "compoundTaskId": "P",
+            "childTaskId": "T",
+            "childIndex": 0,
+            "isDeleted": false
+          }
+        ],
+        "expected": {
+          "mode": "inPlace"
+        }
+      },
+      {
+        "name": "on this board only via a compound, placed directly elsewhere → fork with no repoint",
+        "task": {
+          "id": "T",
+          "type": "normal",
+          "title": "Read a book"
+        },
+        "boardId": "B1",
+        "editedType": "normal",
+        "placements": [
+          {
+            "id": "bt-p",
+            "boardId": "B1",
+            "taskId": "P",
+            "isDeleted": false
+          },
+          {
+            "id": "bt2",
+            "boardId": "B2",
+            "taskId": "T",
+            "isDeleted": false
+          }
+        ],
+        "compoundChildren": [
+          {
+            "id": "lp",
+            "compoundTaskId": "P",
+            "childTaskId": "T",
+            "childIndex": 0,
+            "isDeleted": false
+          }
+        ],
+        "expected": {
+          "mode": "fork",
+          "forkId": "bea9618c-f778-5782-a484-ee776d5704b8",
+          "repoint": null,
+          "onBoardHolderCompoundIds": [
+            "P"
+          ],
+          "eventCopies": [],
+          "childLinksToCopy": []
+        }
+      },
+      {
+        "name": "placed directly AND nested in a compound on this board → repoint + holder reported",
+        "task": {
+          "id": "T",
+          "type": "normal",
+          "title": "Read a book"
+        },
+        "boardId": "B1",
+        "editedType": "normal",
+        "placements": [
+          {
+            "id": "bt1",
+            "boardId": "B1",
+            "taskId": "T",
+            "isDeleted": false
+          },
+          {
+            "id": "bt-p",
+            "boardId": "B1",
+            "taskId": "P",
+            "isDeleted": false
+          },
+          {
+            "id": "bt2",
+            "boardId": "B2",
+            "taskId": "T",
+            "isDeleted": false
+          }
+        ],
+        "compoundChildren": [
+          {
+            "id": "lp",
+            "compoundTaskId": "P",
+            "childTaskId": "T",
+            "childIndex": 0,
+            "isDeleted": false
+          }
+        ],
+        "expected": {
+          "mode": "fork",
+          "forkId": "bea9618c-f778-5782-a484-ee776d5704b8",
+          "repoint": {
+            "boardTaskId": "bt1",
+            "newTaskId": "bea9618c-f778-5782-a484-ee776d5704b8"
+          },
+          "onBoardHolderCompoundIds": [
+            "P"
+          ],
+          "eventCopies": [],
+          "childLinksToCopy": []
+        }
+      },
+      {
+        "name": "holder compound on this board is itself placed on another board → fork, holder reported",
+        "task": {
+          "id": "T",
+          "type": "normal",
+          "title": "Read a book"
+        },
+        "boardId": "B1",
+        "editedType": "normal",
+        "placements": [
+          {
+            "id": "bt1",
+            "boardId": "B1",
+            "taskId": "T",
+            "isDeleted": false
+          },
+          {
+            "id": "bt-p1",
+            "boardId": "B1",
+            "taskId": "P",
+            "isDeleted": false
+          },
+          {
+            "id": "bt-p2",
+            "boardId": "B2",
+            "taskId": "P",
+            "isDeleted": false
+          }
+        ],
+        "compoundChildren": [
+          {
+            "id": "lp",
+            "compoundTaskId": "P",
+            "childTaskId": "T",
+            "childIndex": 0,
+            "isDeleted": false
+          }
+        ],
+        "expected": {
+          "mode": "fork",
+          "forkId": "bea9618c-f778-5782-a484-ee776d5704b8",
+          "repoint": {
+            "boardTaskId": "bt1",
+            "newTaskId": "bea9618c-f778-5782-a484-ee776d5704b8"
+          },
+          "onBoardHolderCompoundIds": [
+            "P"
+          ],
+          "eventCopies": [],
+          "childLinksToCopy": []
+        }
+      },
+      {
+        "name": "holders are transitive: a placed grandparent is reported, its unplaced middle is not",
+        "task": {
+          "id": "T",
+          "type": "normal",
+          "title": "Read a book"
+        },
+        "boardId": "B1",
+        "editedType": "normal",
+        "placements": [
+          {
+            "id": "bt-g",
+            "boardId": "B1",
+            "taskId": "G",
+            "isDeleted": false
+          },
+          {
+            "id": "bt-z",
+            "boardId": "B1",
+            "taskId": "Z",
+            "isDeleted": false
+          },
+          {
+            "id": "bt2",
+            "boardId": "B2",
+            "taskId": "T",
+            "isDeleted": false
+          }
+        ],
+        "compoundChildren": [
+          {
+            "id": "lp",
+            "compoundTaskId": "P",
+            "childTaskId": "T",
+            "childIndex": 0,
+            "isDeleted": false
+          },
+          {
+            "id": "lg",
+            "compoundTaskId": "G",
+            "childTaskId": "P",
+            "childIndex": 0,
+            "isDeleted": false
+          },
+          {
+            "id": "lz",
+            "compoundTaskId": "Z",
+            "childTaskId": "T",
+            "childIndex": 1,
+            "isDeleted": false
+          }
+        ],
+        "expected": {
+          "mode": "fork",
+          "forkId": "bea9618c-f778-5782-a484-ee776d5704b8",
+          "repoint": null,
+          "onBoardHolderCompoundIds": [
+            "G",
+            "Z"
+          ],
+          "eventCopies": [],
+          "childLinksToCopy": []
+        }
+      },
+      {
+        "name": "duplicate live placements on this board → repoint the smallest id",
+        "task": {
+          "id": "T",
+          "type": "normal",
+          "title": "Read a book"
+        },
+        "boardId": "B1",
+        "editedType": "normal",
+        "placements": [
+          {
+            "id": "bt9",
+            "boardId": "B1",
+            "taskId": "T",
+            "isDeleted": false
+          },
+          {
+            "id": "bt3",
+            "boardId": "B1",
+            "taskId": "T",
+            "isDeleted": false
+          },
+          {
+            "id": "bt1",
+            "boardId": "B1",
+            "taskId": "T",
+            "isDeleted": true
+          },
+          {
+            "id": "bt2",
+            "boardId": "B2",
+            "taskId": "T",
+            "isDeleted": false
+          }
+        ],
+        "expected": {
+          "mode": "fork",
+          "forkId": "bea9618c-f778-5782-a484-ee776d5704b8",
+          "repoint": {
+            "boardTaskId": "bt3",
+            "newTaskId": "bea9618c-f778-5782-a484-ee776d5704b8"
+          },
+          "onBoardHolderCompoundIds": [],
+          "eventCopies": [],
+          "childLinksToCopy": []
+        }
+      },
+      {
+        "name": "window: inclusive both ends; before/after, tombstoned and other-task events dropped",
+        "task": {
+          "id": "T",
+          "type": "normal",
+          "title": "Read a book"
+        },
+        "boardId": "B1",
+        "editedType": "normal",
+        "placements": [
+          {
+            "id": "bt1",
+            "boardId": "B1",
+            "taskId": "T",
+            "isDeleted": false
+          },
+          {
+            "id": "bt2",
+            "boardId": "B2",
+            "taskId": "T",
+            "isDeleted": false
+          }
+        ],
+        "events": [
+          {
+            "id": "e-before",
+            "taskId": "T",
+            "kind": "completion",
+            "occurredAt": "2026-10-04T23:59:59.999Z"
+          },
+          {
+            "id": "e-start",
+            "taskId": "T",
+            "kind": "completion",
+            "occurredAt": "2026-10-05T00:00:00.000Z",
+            "boardId": "B1"
+          },
+          {
+            "id": "e-mid",
+            "taskId": "T",
+            "kind": "completion",
+            "occurredAt": "2026-10-08T09:30:00.000Z",
+            "boardId": "B2"
+          },
+          {
+            "id": "e-end",
+            "taskId": "T",
+            "kind": "completion",
+            "occurredAt": "2026-10-11T23:59:59.999Z"
+          },
+          {
+            "id": "e-after",
+            "taskId": "T",
+            "kind": "completion",
+            "occurredAt": "2026-10-12T00:00:00.000Z"
+          },
+          {
+            "id": "e-deleted",
+            "taskId": "T",
+            "kind": "completion",
+            "occurredAt": "2026-10-07T10:00:00.000Z",
+            "isDeleted": true
+          },
+          {
+            "id": "e-othertask",
+            "taskId": "X",
+            "kind": "completion",
+            "occurredAt": "2026-10-07T10:00:00.000Z"
+          }
+        ],
+        "expected": {
+          "mode": "fork",
+          "forkId": "bea9618c-f778-5782-a484-ee776d5704b8",
+          "repoint": {
+            "boardTaskId": "bt1",
+            "newTaskId": "bea9618c-f778-5782-a484-ee776d5704b8"
+          },
+          "onBoardHolderCompoundIds": [],
+          "eventCopies": [
+            {
+              "id": "cd7fcb8d-fd4e-5df3-ac44-d3f010ccc0a8",
+              "sourceEventId": "e-start",
+              "kind": "completion",
+              "occurredAt": "2026-10-05T00:00:00.000Z",
+              "boardId": "B1"
+            },
+            {
+              "id": "09c73733-8b6f-5665-92ff-2f521e7bd95f",
+              "sourceEventId": "e-mid",
+              "kind": "completion",
+              "occurredAt": "2026-10-08T09:30:00.000Z",
+              "boardId": "B2"
+            },
+            {
+              "id": "d284d843-cd84-52f6-bc4c-df1809da458e",
+              "sourceEventId": "e-end",
+              "kind": "completion",
+              "occurredAt": "2026-10-11T23:59:59.999Z"
+            }
+          ],
+          "childLinksToCopy": []
+        }
+      },
+      {
+        "name": "window: endDate null is open-ended",
+        "task": {
+          "id": "T",
+          "type": "normal",
+          "title": "Read a book"
+        },
+        "boardId": "BOPEN",
+        "editedType": "normal",
+        "placements": [
+          {
+            "id": "bt-open",
+            "boardId": "BOPEN",
+            "taskId": "T",
+            "isDeleted": false
+          },
+          {
+            "id": "bt2",
+            "boardId": "B2",
+            "taskId": "T",
+            "isDeleted": false
+          }
+        ],
+        "events": [
+          {
+            "id": "o-before",
+            "taskId": "T",
+            "kind": "completion",
+            "occurredAt": "2026-10-04T12:00:00.000Z"
+          },
+          {
+            "id": "o-far",
+            "taskId": "T",
+            "kind": "completion",
+            "occurredAt": "2027-03-01T12:00:00.000Z"
+          }
+        ],
+        "expected": {
+          "mode": "fork",
+          "forkId": "95572862-46b8-5d47-a6d2-dd49873cc81e",
+          "repoint": {
+            "boardTaskId": "bt-open",
+            "newTaskId": "95572862-46b8-5d47-a6d2-dd49873cc81e"
+          },
+          "onBoardHolderCompoundIds": [],
+          "eventCopies": [
+            {
+              "id": "7a51fcee-69ed-554a-a461-ddc12fa0a432",
+              "sourceEventId": "o-far",
+              "kind": "completion",
+              "occurredAt": "2027-03-01T12:00:00.000Z"
+            }
+          ],
+          "childLinksToCopy": []
+        }
+      },
+      {
+        "name": "window: sealedAt narrows the upper bound (inclusive at sealedAt)",
+        "task": {
+          "id": "T",
+          "type": "normal",
+          "title": "Read a book"
+        },
+        "boardId": "BSEAL",
+        "editedType": "normal",
+        "placements": [
+          {
+            "id": "bt-seal",
+            "boardId": "BSEAL",
+            "taskId": "T",
+            "isDeleted": false
+          },
+          {
+            "id": "bt2",
+            "boardId": "B2",
+            "taskId": "T",
+            "isDeleted": false
+          }
+        ],
+        "events": [
+          {
+            "id": "s-in",
+            "taskId": "T",
+            "kind": "completion",
+            "occurredAt": "2026-09-10T12:00:00.000Z"
+          },
+          {
+            "id": "s-atseal",
+            "taskId": "T",
+            "kind": "completion",
+            "occurredAt": "2026-09-20T12:00:00.000Z"
+          },
+          {
+            "id": "s-afterseal",
+            "taskId": "T",
+            "kind": "completion",
+            "occurredAt": "2026-09-25T12:00:00.000Z"
+          }
+        ],
+        "expected": {
+          "mode": "fork",
+          "forkId": "c2907908-262d-53bc-be0f-6cd1a7186d31",
+          "repoint": {
+            "boardTaskId": "bt-seal",
+            "newTaskId": "c2907908-262d-53bc-be0f-6cd1a7186d31"
+          },
+          "onBoardHolderCompoundIds": [],
+          "eventCopies": [
+            {
+              "id": "410e6bf8-7034-5b39-8397-b0e2eaf5d938",
+              "sourceEventId": "s-in",
+              "kind": "completion",
+              "occurredAt": "2026-09-10T12:00:00.000Z"
+            },
+            {
+              "id": "78daefd8-17ce-53a4-abd2-3db385cf8793",
+              "sourceEventId": "s-atseal",
+              "kind": "completion",
+              "occurredAt": "2026-09-20T12:00:00.000Z"
+            }
+          ],
+          "childLinksToCopy": []
+        }
+      },
+      {
+        "name": "kind filter: Counting keeps increments only",
+        "task": {
+          "id": "K",
+          "type": "counting",
+          "title": "Run 20 miles",
+          "action": "Run",
+          "unit": "miles",
+          "maxCount": 20
+        },
+        "boardId": "B1",
+        "editedType": "counting",
+        "placements": [
+          {
+            "id": "bt1",
+            "boardId": "B1",
+            "taskId": "K",
+            "isDeleted": false
+          },
+          {
+            "id": "bt2",
+            "boardId": "B2",
+            "taskId": "K",
+            "isDeleted": false
+          }
+        ],
+        "events": [
+          {
+            "id": "m-c1",
+            "taskId": "K",
+            "kind": "completion",
+            "occurredAt": "2026-10-06T08:00:00.000Z"
+          },
+          {
+            "id": "m-i1",
+            "taskId": "K",
+            "kind": "increment",
+            "occurredAt": "2026-10-06T09:00:00.000Z",
+            "delta": 3
+          },
+          {
+            "id": "m-i2",
+            "taskId": "K",
+            "kind": "increment",
+            "occurredAt": "2026-10-07T09:00:00.000Z",
+            "delta": 2.5
+          }
+        ],
+        "expected": {
+          "mode": "fork",
+          "forkId": "78532aee-da03-5abd-b82d-5ef5f3489847",
+          "repoint": {
+            "boardTaskId": "bt1",
+            "newTaskId": "78532aee-da03-5abd-b82d-5ef5f3489847"
+          },
+          "onBoardHolderCompoundIds": [],
+          "eventCopies": [
+            {
+              "id": "f2694f0f-fae3-5c34-b9b6-3f275e25378c",
+              "sourceEventId": "m-i1",
+              "kind": "increment",
+              "occurredAt": "2026-10-06T09:00:00.000Z",
+              "delta": 3
+            },
+            {
+              "id": "d2a62127-805b-5cb8-8ff7-cb2607817147",
+              "sourceEventId": "m-i2",
+              "kind": "increment",
+              "occurredAt": "2026-10-07T09:00:00.000Z",
+              "delta": 2.5
+            }
+          ],
+          "childLinksToCopy": []
+        }
+      },
+      {
+        "name": "kind filter: switching to Normal keeps completions only",
+        "task": {
+          "id": "K",
+          "type": "counting",
+          "title": "Run 20 miles",
+          "action": "Run",
+          "unit": "miles",
+          "maxCount": 20
+        },
+        "boardId": "B1",
+        "editedType": "normal",
+        "placements": [
+          {
+            "id": "bt1",
+            "boardId": "B1",
+            "taskId": "K",
+            "isDeleted": false
+          },
+          {
+            "id": "bt2",
+            "boardId": "B2",
+            "taskId": "K",
+            "isDeleted": false
+          }
+        ],
+        "events": [
+          {
+            "id": "m-c1",
+            "taskId": "K",
+            "kind": "completion",
+            "occurredAt": "2026-10-06T08:00:00.000Z"
+          },
+          {
+            "id": "m-i1",
+            "taskId": "K",
+            "kind": "increment",
+            "occurredAt": "2026-10-06T09:00:00.000Z",
+            "delta": 3
+          },
+          {
+            "id": "m-i2",
+            "taskId": "K",
+            "kind": "increment",
+            "occurredAt": "2026-10-07T09:00:00.000Z",
+            "delta": 2.5
+          }
+        ],
+        "expected": {
+          "mode": "fork",
+          "forkId": "78532aee-da03-5abd-b82d-5ef5f3489847",
+          "repoint": {
+            "boardTaskId": "bt1",
+            "newTaskId": "78532aee-da03-5abd-b82d-5ef5f3489847"
+          },
+          "onBoardHolderCompoundIds": [],
+          "eventCopies": [
+            {
+              "id": "0b1b5931-b45a-5bc6-ac8d-b06d87ac3408",
+              "sourceEventId": "m-c1",
+              "kind": "completion",
+              "occurredAt": "2026-10-06T08:00:00.000Z"
+            }
+          ],
+          "childLinksToCopy": []
+        }
+      },
+      {
+        "name": "kind filter: Normal → Counting keeps increments only (none here)",
+        "task": {
+          "id": "T",
+          "type": "normal",
+          "title": "Read a book"
+        },
+        "boardId": "B1",
+        "editedType": "counting",
+        "placements": [
+          {
+            "id": "bt1",
+            "boardId": "B1",
+            "taskId": "T",
+            "isDeleted": false
+          },
+          {
+            "id": "bt2",
+            "boardId": "B2",
+            "taskId": "T",
+            "isDeleted": false
+          }
+        ],
+        "events": [
+          {
+            "id": "e-before",
+            "taskId": "T",
+            "kind": "completion",
+            "occurredAt": "2026-10-04T23:59:59.999Z"
+          },
+          {
+            "id": "e-start",
+            "taskId": "T",
+            "kind": "completion",
+            "occurredAt": "2026-10-05T00:00:00.000Z",
+            "boardId": "B1"
+          },
+          {
+            "id": "e-mid",
+            "taskId": "T",
+            "kind": "completion",
+            "occurredAt": "2026-10-08T09:30:00.000Z",
+            "boardId": "B2"
+          },
+          {
+            "id": "e-end",
+            "taskId": "T",
+            "kind": "completion",
+            "occurredAt": "2026-10-11T23:59:59.999Z"
+          },
+          {
+            "id": "e-after",
+            "taskId": "T",
+            "kind": "completion",
+            "occurredAt": "2026-10-12T00:00:00.000Z"
+          },
+          {
+            "id": "e-deleted",
+            "taskId": "T",
+            "kind": "completion",
+            "occurredAt": "2026-10-07T10:00:00.000Z",
+            "isDeleted": true
+          },
+          {
+            "id": "e-othertask",
+            "taskId": "X",
+            "kind": "completion",
+            "occurredAt": "2026-10-07T10:00:00.000Z"
+          }
+        ],
+        "expected": {
+          "mode": "fork",
+          "forkId": "bea9618c-f778-5782-a484-ee776d5704b8",
+          "repoint": {
+            "boardTaskId": "bt1",
+            "newTaskId": "bea9618c-f778-5782-a484-ee776d5704b8"
+          },
+          "onBoardHolderCompoundIds": [],
+          "eventCopies": [],
+          "childLinksToCopy": []
+        }
+      },
+      {
+        "name": "kind filter: into Compound keeps nothing",
+        "task": {
+          "id": "K",
+          "type": "counting",
+          "title": "Run 20 miles",
+          "action": "Run",
+          "unit": "miles",
+          "maxCount": 20
+        },
+        "boardId": "B1",
+        "editedType": "compound",
+        "placements": [
+          {
+            "id": "bt1",
+            "boardId": "B1",
+            "taskId": "K",
+            "isDeleted": false
+          },
+          {
+            "id": "bt2",
+            "boardId": "B2",
+            "taskId": "K",
+            "isDeleted": false
+          }
+        ],
+        "events": [
+          {
+            "id": "m-c1",
+            "taskId": "K",
+            "kind": "completion",
+            "occurredAt": "2026-10-06T08:00:00.000Z"
+          },
+          {
+            "id": "m-i1",
+            "taskId": "K",
+            "kind": "increment",
+            "occurredAt": "2026-10-06T09:00:00.000Z",
+            "delta": 3
+          },
+          {
+            "id": "m-i2",
+            "taskId": "K",
+            "kind": "increment",
+            "occurredAt": "2026-10-07T09:00:00.000Z",
+            "delta": 2.5
+          }
+        ],
+        "expected": {
+          "mode": "fork",
+          "forkId": "78532aee-da03-5abd-b82d-5ef5f3489847",
+          "repoint": {
+            "boardTaskId": "bt1",
+            "newTaskId": "78532aee-da03-5abd-b82d-5ef5f3489847"
+          },
+          "onBoardHolderCompoundIds": [],
+          "eventCopies": [],
+          "childLinksToCopy": []
+        }
+      },
+      {
+        "name": "compound fork: parent only, live links copied in childIndex order",
+        "task": {
+          "id": "C",
+          "type": "compound",
+          "title": "Morning routine",
+          "operator": "AND"
+        },
+        "boardId": "B1",
+        "editedType": "compound",
+        "placements": [
+          {
+            "id": "bt-c1",
+            "boardId": "B1",
+            "taskId": "C",
+            "isDeleted": false
+          },
+          {
+            "id": "bt-c2",
+            "boardId": "B2",
+            "taskId": "C",
+            "isDeleted": false
+          }
+        ],
+        "compoundChildren": [
+          {
+            "id": "l2",
+            "compoundTaskId": "C",
+            "childTaskId": "kid-b",
+            "childIndex": 1,
+            "isDeleted": false
+          },
+          {
+            "id": "l1",
+            "compoundTaskId": "C",
+            "childTaskId": "kid-a",
+            "childIndex": 0,
+            "isDeleted": false
+          },
+          {
+            "id": "l3",
+            "compoundTaskId": "C",
+            "childTaskId": "kid-gone",
+            "childIndex": 2,
+            "isDeleted": true
+          },
+          {
+            "id": "l4",
+            "compoundTaskId": "OTHER",
+            "childTaskId": "kid-z",
+            "childIndex": 0,
+            "isDeleted": false
+          }
+        ],
+        "expected": {
+          "mode": "fork",
+          "forkId": "67c7e18b-b24e-529e-9ac1-b4435773016e",
+          "repoint": {
+            "boardTaskId": "bt-c1",
+            "newTaskId": "67c7e18b-b24e-529e-9ac1-b4435773016e"
+          },
+          "onBoardHolderCompoundIds": [],
+          "eventCopies": [],
+          "childLinksToCopy": [
+            {
+              "id": "339969db-11c2-59a9-a31d-d14359e879d1",
+              "childTaskId": "kid-a",
+              "childIndex": 0
+            },
+            {
+              "id": "a8c049fd-a1be-54bc-8736-618f3a35b83a",
+              "childTaskId": "kid-b",
+              "childIndex": 1
+            }
+          ]
+        }
+      },
+      {
+        "name": "determinism: same task forked on another board gets a different id",
+        "task": {
+          "id": "T",
+          "type": "normal",
+          "title": "Read a book"
+        },
+        "boardId": "B2",
+        "editedType": "normal",
+        "placements": [
+          {
+            "id": "bt1",
+            "boardId": "B1",
+            "taskId": "T",
+            "isDeleted": false
+          },
+          {
+            "id": "bt2",
+            "boardId": "B2",
+            "taskId": "T",
+            "isDeleted": false
+          }
+        ],
+        "events": [
+          {
+            "id": "e-start",
+            "taskId": "T",
+            "kind": "completion",
+            "occurredAt": "2026-10-05T00:00:00.000Z",
+            "boardId": "B1"
+          },
+          {
+            "id": "e-mid",
+            "taskId": "T",
+            "kind": "completion",
+            "occurredAt": "2026-10-08T09:30:00.000Z",
+            "boardId": "B2"
+          }
+        ],
+        "expected": {
+          "mode": "fork",
+          "forkId": "1547149d-1d8d-590e-814d-e3e569f46523",
+          "repoint": {
+            "boardTaskId": "bt2",
+            "newTaskId": "1547149d-1d8d-590e-814d-e3e569f46523"
+          },
+          "onBoardHolderCompoundIds": [],
+          "eventCopies": [
+            {
+              "id": "4ac75379-38c7-5dc5-9f72-6ce3e300dd59",
+              "sourceEventId": "e-start",
+              "kind": "completion",
+              "occurredAt": "2026-10-05T00:00:00.000Z",
+              "boardId": "B1"
+            },
+            {
+              "id": "9c019622-34cf-5428-8914-8edbf07152fc",
+              "sourceEventId": "e-mid",
+              "kind": "completion",
+              "occurredAt": "2026-10-08T09:30:00.000Z",
+              "boardId": "B2"
+            }
+          ],
+          "childLinksToCopy": []
+        }
+      }
+    ]
+  }
+}

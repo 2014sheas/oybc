@@ -457,9 +457,13 @@ export function buildCounterFamilyMap(
  * health, and the deal all read through this. Mirrors the iOS
  * `isSourceSupplyTask` in `Helpers/BoardSources.swift` — keep in
  * lockstep.
+ *
+ * A fork (`forkedFromTaskId` set — board-scoped task edits,
+ * docs/BOARD_SCOPED_TASK_EDITS.md §6) is board-bound and never supply
+ * either: the pool / pulled board keeps supplying the original.
  */
-export function isSourceSupplyTask(task: Pick<Task, 'type'>): boolean {
-  return task.type !== TaskType.ACHIEVEMENT;
+export function isSourceSupplyTask(task: Pick<Task, 'type' | 'forkedFromTaskId'>): boolean {
+  return task.type !== TaskType.ACHIEVEMENT && task.forkedFromTaskId == null;
 }
 
 /**

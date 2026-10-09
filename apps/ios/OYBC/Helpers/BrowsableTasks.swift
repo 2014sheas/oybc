@@ -23,7 +23,7 @@ enum BrowsableTasks {
 
     /// Filters the task library to the set that should appear in
     /// library-browse surfaces (the Tasks tab list, the wizard's Library
-    /// sheet). Hides wizard-orphans, goal-less counters, and shared-counter
+    /// sheet). Hides forks, wizard-orphans, goal-less counters, and shared-counter
     /// members whose root is present — the full rule and its rationale live
     /// on the TS twin `computeBrowsableTasks` (`browsableTasks.ts`). One
     /// difference: callers must pass live (non-deleted) placements; the TS
@@ -58,6 +58,9 @@ enum BrowsableTasks {
         for task in tasks where !task.isDeleted { liveById[task.id] = task }
         return tasks.filter { task in
             if isGoalLessCounter(task) { return false }
+            // A fork (board-scoped task edits, docs/BOARD_SCOPED_TASK_EDITS.md
+            // §3) is reachable only from its square — never browsable.
+            if task.forkedFromTaskId != nil { return false }
             // One generic family row (owner ruling 2026-09-22): a member —
             // a window-stamped derived counter or a P5 linked member — is
             // represented in the library by its ROOT, but only when that root

@@ -147,6 +147,16 @@ struct Task: Codable, FetchableRecord, PersistableRecord, Identifiable {
     /// optional; stored as nullable TEXT (GRDB v39).
     var countKind: CountKind?
 
+    /// Board-scoped task edits (docs/BOARD_SCOPED_TASK_EDITS.md §3) — set on
+    /// a FORK, the per-board copy a Board Edit edit mints when the task is
+    /// placed on any other board, to the original task's id. Informational
+    /// provenance: a fork is an independent row, never re-forked, never
+    /// browsable, never source supply, untouched by the original's
+    /// `deleteTaskWithCascade`. Never cleared once set. `nil` on every
+    /// non-fork task (and every pre-v41 row / pre-feature payload). Stored as
+    /// nullable TEXT (GRDB v41). Mirrors the TS `Task.forkedFromTaskId`.
+    var forkedFromTaskId: String?
+
     // MARK: - Database Configuration
 
     static let databaseTableName = "tasks"
@@ -191,7 +201,8 @@ struct Task: Codable, FetchableRecord, PersistableRecord, Identifiable {
         createdInWizard: Bool = false,
         isCounter: Bool = false,
         defaultLogAmount: CountValue? = nil,
-        countKind: CountKind? = nil
+        countKind: CountKind? = nil,
+        forkedFromTaskId: String? = nil
     ) {
         self.id = id
         self.userId = userId
@@ -228,6 +239,7 @@ struct Task: Codable, FetchableRecord, PersistableRecord, Identifiable {
         self.isCounter = isCounter
         self.defaultLogAmount = defaultLogAmount
         self.countKind = countKind
+        self.forkedFromTaskId = forkedFromTaskId
     }
 
     // MARK: - Codable
@@ -257,6 +269,8 @@ struct Task: Codable, FetchableRecord, PersistableRecord, Identifiable {
         case defaultLogAmount
         // Counter kinds (GRDB v39)
         case countKind
+        // Board-scoped task edits — fork provenance (GRDB v41)
+        case forkedFromTaskId
     }
 
     init(from decoder: Decoder) throws {
@@ -308,6 +322,8 @@ struct Task: Codable, FetchableRecord, PersistableRecord, Identifiable {
         defaultLogAmount = try container.decodeIfPresent(CountValue.self, forKey: .defaultLogAmount)
         // Counter kinds. Forward-compat: pre-v39 rows + pre-feature payloads decode as nil.
         countKind = try container.decodeIfPresent(CountKind.self, forKey: .countKind)
+        // Board-scoped task edits. Forward-compat: pre-v41 rows + pre-feature payloads decode as nil.
+        forkedFromTaskId = try container.decodeIfPresent(String.self, forKey: .forkedFromTaskId)
     }
 
     func encode(to encoder: Encoder) throws {
@@ -355,6 +371,8 @@ struct Task: Codable, FetchableRecord, PersistableRecord, Identifiable {
         try container.encodeIfPresent(defaultLogAmount, forKey: .defaultLogAmount)
         // Counter kinds (additive optional).
         try container.encodeIfPresent(countKind, forKey: .countKind)
+        // Board-scoped task edits — fork provenance (additive optional, nil-skipped).
+        try container.encodeIfPresent(forkedFromTaskId, forKey: .forkedFromTaskId)
     }
 }
 
