@@ -277,3 +277,10 @@
   font-weight: 700;
   font-size: 0.9rem;
 }
+
+/* §Member rules (B3, RC9) — the "Show expired tasks" row over the member cards. */
+.filterRow {
+  display: flex;
+  justify-content: flex-end;
+  margin: 0 0 10px;
+}

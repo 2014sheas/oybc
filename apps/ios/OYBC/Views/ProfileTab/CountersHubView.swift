@@ -99,7 +99,10 @@ struct CountersHubView: View {
             }
         }
         .navigationDestination(item: $navigateToCounterId) { counterId in
-            CounterDetailView(counterId: counterId, showExpired: showExpired, onOpenBoard: onOpenBoard)
+            CounterDetailView(
+                counterId: counterId, showExpired: showExpired,
+                onShowExpiredChange: { showExpired = $0 }, onOpenBoard: onOpenBoard
+            )
         }
         .alert(
             "Counter not updated",

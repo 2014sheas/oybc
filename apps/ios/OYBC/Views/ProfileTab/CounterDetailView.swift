@@ -28,8 +28,13 @@ struct CounterDetailView: View {
     let counterId: String
     /// §Member rules (B3, RC9) — expired-member visibility, threaded from the
     /// hub on push (web carries it as `?showExpired=1`). Defaults to the hub's
-    /// own default, so other entry points need not pass it.
+    /// own default, so other entry points need not pass it. The page's own
+    /// "Show expired tasks" toggle starts from this value.
     var showExpired: Bool = false
+    /// Fired when this page's "Show expired tasks" toggle flips, so the hub
+    /// that pushed it keeps the same setting (web: the `?showExpired=1` URL
+    /// param the back link carries). Nil for entry points with no hub.
+    var onShowExpiredChange: ((Bool) -> Void)?
     /// Member-card tap → the host opens that board (cross-tab via
     /// `MainTabView.openBoard`, so a core board lands in its pager window).
     let onOpenBoard: (String) -> Void
@@ -43,6 +48,9 @@ struct CounterDetailView: View {
 
     @State private var group: SharedCounterGroup?
     @State private var isLoaded = false
+    /// The toggle's value once the person flips it here; nil = the value
+    /// the page was opened with (`showExpired`).
+    @State private var showExpiredOverride: Bool?
     @State private var dailyTotals = CounterDailyTotalsResult(days: [], todayTotal: 0)
     @State private var isLogging = false
     @State private var logError: String?
@@ -80,7 +88,8 @@ struct CounterDetailView: View {
                     onLog: { amount, direction in handleLog(amount: amount, direction: direction) },
                     onEditTap: root.map { r in { editingRoot = r } },
                     onDeleteTap: handleDeleteTap,
-                    onOpenBoard: onOpenBoard
+                    onOpenBoard: onOpenBoard,
+                    showExpired: showExpiredBinding
                 )
             } else if isLoaded {
                 notFoundState
@@ -147,8 +156,35 @@ struct CounterDetailView: View {
             }
         }
         .navigationDestination(item: $openCounterId) { id in
-            CounterDetailView(counterId: id, showExpired: showExpired, onOpenBoard: onOpenBoard, database: database)
+            CounterDetailView(
+                counterId: id, showExpired: effectiveShowExpired,
+                onShowExpiredChange: { next in
+                    // A flip on the pushed Detail keeps THIS page (and the hub) in step.
+                    showExpiredOverride = next
+                    onShowExpiredChange?(next)
+                    loadData()
+                },
+                onOpenBoard: onOpenBoard, database: database
+            )
         }
+    }
+
+    // MARK: - Show expired
+
+    /// The expired-member setting this page lists by.
+    private var effectiveShowExpired: Bool { showExpiredOverride ?? showExpired }
+
+    /// The "Show expired tasks" toggle's binding: flips the page's setting,
+    /// tells the hub, and reloads the group with the new member visibility.
+    private var showExpiredBinding: Binding<Bool> {
+        Binding(
+            get: { effectiveShowExpired },
+            set: { next in
+                showExpiredOverride = next
+                onShowExpiredChange?(next)
+                loadData()
+            }
+        )
     }
 
     // MARK: - Data loading
@@ -187,7 +223,7 @@ struct CounterDetailView: View {
     private func loadData() {
         guard let userId = authService.currentUser?.id else { return }
         let id = counterId
-        let visibility = showExpired
+        let visibility = effectiveShowExpired
         let db = database
         _Concurrency.Task.detached(priority: .userInitiated) {
             let snap = Self.loadSnapshot(
@@ -384,6 +420,9 @@ struct CounterDetailContent: View {
     var onDeleteTap: () -> Void
     /// Member-card tap → open that board (host-routed; core → pager).
     var onOpenBoard: (String) -> Void
+    /// The "Show expired tasks" toggle over the member cards (§Member rules
+    /// RC9 — the hub's control, same component). Nil hides it.
+    var showExpired: Binding<Bool>?
 
     /// Snapshot-testability seams forwarded to the Log card.
     private let initialSelectedAmount: CountValue?
@@ -403,9 +442,11 @@ struct CounterDetailContent: View {
         onLog: @escaping (CountValue, CounterLogDirection) -> Void = { _, _ in },
         onEditTap: (() -> Void)? = nil,
         onDeleteTap: @escaping () -> Void = {},
-        onOpenBoard: @escaping (String) -> Void = { _ in }
+        onOpenBoard: @escaping (String) -> Void = { _ in },
+        showExpired: Binding<Bool>? = nil
     ) {
         self.group = group
+        self.showExpired = showExpired
         self.dailyTotals = dailyTotals
         self.isLogging = isLogging
         self.logError = logError
@@ -472,6 +513,14 @@ struct CounterDetailContent: View {
                 .id("\(group.counterId)-\(group.countKind.rawValue)")
                 .padding(.horizontal, Riso.gutter)
                 .padding(.bottom, 18)
+
+                // 4. "Show expired tasks" — the hub's toggle (B3 RC9), over
+                //    the member cards it filters.
+                if let showExpired {
+                    RisoShowExpiredToggle(isOn: showExpired)
+                        .padding(.horizontal, Riso.gutter)
+                        .padding(.bottom, 12)
+                }
 
                 // 5. "Counting on N tasks" (active members)
                 if !activeMembers.isEmpty {

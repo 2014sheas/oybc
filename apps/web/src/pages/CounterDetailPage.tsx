@@ -1,6 +1,6 @@
 import { useCallback, useRef, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import {
   counterMilestoneProgress,
   countUnitSuffix,
@@ -11,6 +11,7 @@ import {
 } from '@oybc/shared';
 import { useAuth } from '../firebase/useAuth';
 import { useSharedCounterGroups } from '../hooks/useSharedCounterGroups';
+import { useShowExpiredParam } from '../hooks/useShowExpiredParam';
 import { useCounterDailyTotals } from '../hooks/useCounterDailyTotals';
 import { useTasks } from '../hooks/useTasks';
 import {
@@ -37,6 +38,7 @@ import {
 import { counterDetailMenuItems, editableCounterRoot } from '../components/counters/counterDetailMenu';
 import { RowContextMenu } from '../components/wizard/RowContextMenu';
 import { RisoSectionLabel } from '../components/riso';
+import { ShowExpiredToggle } from '../components/ShowExpiredToggle';
 import profileStyles from './ProfilePage.module.css';
 import styles from './CounterDetailPage.module.css';
 
@@ -72,12 +74,11 @@ export function CounterDetailPage(): React.ReactElement {
   const { counterId } = useParams<{ counterId: string }>();
   const navigate = useNavigate();
   const { user } = useAuth();
-  // §Member rules (B3, RC9) — Detail FOLLOWS the hub's expired-member
-  // setting, carried in the URL (`?showExpired=1`) by the ledger card that
-  // opened it. Detail owns no toggle of its own; the back links preserve the
-  // param so the hub keeps the setting on the way back.
-  const [searchParams] = useSearchParams();
-  const showExpired = searchParams.get('showExpired') === '1';
+  // §Member rules (B3, RC9) — the hub's expired-member setting, carried in
+  // the URL (`?showExpired=1`) by the ledger card that opened it. Detail's
+  // own "Show expired tasks" toggle flips the same param, and the back links
+  // preserve it, so the hub and Detail always agree.
+  const [showExpired, setShowExpired] = useShowExpiredParam();
   const countersHubPath = showExpired ? '/profile/counters?showExpired=1' : '/profile/counters';
   const groups = useSharedCounterGroups(user?.id, { showExpired });
   const dailyTotals = useCounterDailyTotals(counterId);
@@ -347,6 +348,12 @@ export function CounterDetailPage(): React.ReactElement {
 
         {/* Right column (desktop) / bottom section (mobile) */}
         <div className={styles.rightCol}>
+          {/* 4. "Show expired tasks" — the hub's toggle (B3 RC9), over the
+              member cards it filters. */}
+          <div className={styles.filterRow}>
+            <ShowExpiredToggle checked={showExpired} onChange={setShowExpired} />
+          </div>
+
           {/* 5. "Counting on N tasks" — active member cards */}
           {activeTasks.length > 0 && (
             <>

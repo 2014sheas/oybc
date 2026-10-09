@@ -280,6 +280,16 @@ final class CountersHubSnapshotTests: XCTestCase {
         )
     }
 
+    // MARK: - Detail — "Show expired tasks" toggle (the hub's control, RC9)
+
+    func testDetailShowExpiredToggleLight() {
+        let group = makeGroupWithMembers()
+        let host = NavigationStack {
+            CounterDetailContent(group: group, dailyTotals: makeDailyTotals(), showExpired: .constant(true))
+        }
+        assertSnapshot(of: host, as: .image(layout: .fixed(width: 393, height: 1400)), record: recordMode)
+    }
+
     // MARK: - Detail — single member (R2: grew — hero sparkline, stat strip, amount-chip log card, history)
 
     func testDetailSingleMemberLight() {
