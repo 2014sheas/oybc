@@ -497,10 +497,18 @@ extension BoardPlayViewModel {
                 var updated = Self.applyingOverride(
                     input.override, to: base, writesKind: input.override.type != base.type
                 )
+                if updated.type != base.type {
+                    // The shared type-switch write (also the global editor's).
+                    try AppDatabase.saveTypeSwitchedTask(
+                        db: db, original: base, switched: updated, structure: input.override.compound,
+                        now: now, scopeBoard: board
+                    )
+                    try AppDatabase.stampForkCaches(db: db, target: scoped, now: now)
+                    continue
+                }
                 if let structure = input.override.compound {
-                    // Mirrors `applyTaskEditPatch`'s compound branch, minus
-                    // its `type == .compound` gate (a conversion's row is
-                    // converted by `applyingOverride` just above).
+                    // Mirrors `applyTaskEditPatch`'s compound branch (an
+                    // existing compound; a conversion took the branch above).
                     guard updated.type == .compound else { continue }
                     var titled = structure
                     titled.title = input.override.title
@@ -578,7 +586,7 @@ extension BoardPlayViewModel {
     }
 
     /// Shown when a staged edit would change a linked counter's type.
-    nonisolated static let linkedCounterTypeMessage = "A linked counter’s type can’t be changed here."
+    nonisolated static let linkedCounterTypeMessage = TaskTypeSwitch.linkedCounterMessage
 
     /// Whether Board Edit may switch a task from `from` to `to`: Simple ⇄
     /// Counting, and Simple / Counting → Compound (the sheet's compound editor
@@ -586,9 +594,7 @@ extension BoardPlayViewModel {
     /// fate is undecided) and never into/out of Achievement (it carries its
     /// trigger + board/template target, edited from Task Detail).
     nonisolated static func boardEditAllowsTypeSwitch(from: TaskType, to: TaskType) -> Bool {
-        let switchable: Set<TaskType> = [.normal, .counting]
-        guard switchable.contains(from) else { return false }
-        return switchable.contains(to) || to == .compound
+        TaskTypeSwitch.allows(from: from, to: to)
     }
 
     /// Applies a staged "Edit task…" override to a task's fields (title,
@@ -618,7 +624,8 @@ extension BoardPlayViewModel {
         if task.sharedCounterId == nil,
            boardEditAllowsTypeSwitch(from: task.type, to: override.type),
            override.type != .compound || override.compound != nil {
-            updated.type = override.type
+            // Sets the type and clears what it can't carry (shared rule).
+            updated = TaskTypeSwitch.converting(updated, to: override.type)
         }
         switch updated.type {
         case .counting:
@@ -648,25 +655,9 @@ extension BoardPlayViewModel {
                     countKind: resolveCountKind(updated.countKind)
                 )
             }
-        case .normal:
-            if task.type == .counting {
-                updated.action   = nil
-                updated.unit     = nil
-                updated.maxCount = nil
-                // `countKind` stays (never cleared; ignored on non-counting types).
-            }
         case .compound:
-            if task.type != .compound {
-                // Conversion: drop the counting fields and the old own latch
-                // (a compound's completion derives from its sub-tasks; its old
-                // events become inert — same accepted class as Simple ⇄ Counting).
-                updated.action = nil
-                updated.unit = nil
-                updated.maxCount = nil
-                updated.isCompleted = false
-                updated.completedAt = nil
-                updated.currentCount = nil
-            }
+            // A conversion's counting fields + own latch were cleared by
+            // `TaskTypeSwitch.converting` (its old events become inert).
             if var structure = override.compound {
                 structure.title = override.title
                 updated = structure.applied(to: updated)
