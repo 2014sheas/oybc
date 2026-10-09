@@ -1,0 +1,155 @@
+{
+  "notes": {
+    "purpose": "Board-scoped task edits PR 3 (docs/BOARD_SCOPED_TASK_EDITS.md §6 Root → copy propagation): planRootFieldPropagation. Shared by packages/shared/tests/algorithms/rootFieldPropagation.test.ts and apps/ios/OYBCTests/RootFieldPropagationVectorTests.swift (byte-identical copy in apps/ios/OYBCTests/Fixtures).",
+    "root": "Each root is expanded by the harness with type counting, no sharedCounterId (unless set), isDeleted false.",
+    "copies": "Each copy is expanded with type counting unless set, sharedCounterId \"root\" unless set (null = unlinked), createdInWizard true, isDeleted false unless set, onSealedBoard false unless set.",
+    "patch": "The root's edit: an absent key is unchanged. maxCount / countKind decide the root's (and, for countKind, the copies') post-edit goal + kind, but never appear in an output patch.",
+    "expected": "[{copyId, patch}] sorted by copyId; a patch carries only the fields that differ from the copy (title / action / unit)."
+  },
+  "now": "2026-10-08T12:00:00.000Z",
+  "vectors": [
+    {
+      "name": "auto root, action change: auto copy regenerates from its own goal; custom copy keeps its title; frozen / deleted / sealed-board copies excluded",
+      "root": { "id": "root", "title": "Run 26 miles", "action": "Run", "unit": "miles", "maxCount": 26 },
+      "patch": { "title": "Jog 26 miles", "action": "Jog", "unit": "miles", "maxCount": 26 },
+      "copies": [
+        { "id": "c-auto", "title": "Run 10 miles", "action": "Run", "unit": "miles", "maxCount": 10, "startDate": "2026-10-05T00:00:00.000Z", "endDate": "2026-10-11T23:59:59.999Z" },
+        { "id": "c-custom", "title": "Morning run", "action": "Run", "unit": "miles", "maxCount": 10, "startDate": "2026-10-05T00:00:00.000Z", "endDate": "2026-10-11T23:59:59.999Z" },
+        { "id": "c-frozen", "title": "Run 8 miles", "action": "Run", "unit": "miles", "maxCount": 8, "startDate": "2026-09-28T00:00:00.000Z", "endDate": "2026-10-04T23:59:59.999Z" },
+        { "id": "c-deleted", "title": "Run 9 miles", "action": "Run", "unit": "miles", "maxCount": 9, "startDate": "2026-10-05T00:00:00.000Z", "endDate": "2026-10-11T23:59:59.999Z", "isDeleted": true },
+        { "id": "c-sealed", "title": "Run 7 miles", "action": "Run", "unit": "miles", "maxCount": 7, "startDate": "2026-10-05T00:00:00.000Z", "endDate": "2026-10-11T23:59:59.999Z", "onSealedBoard": true }
+      ],
+      "expected": [
+        { "copyId": "c-auto", "patch": { "title": "Jog 10 miles", "action": "Jog" } },
+        { "copyId": "c-custom", "patch": { "action": "Jog" } }
+      ]
+    },
+    {
+      "name": "unit change regenerates auto titles; custom keeps",
+      "root": { "id": "root", "title": "Run 26 miles", "action": "Run", "unit": "miles", "maxCount": 26 },
+      "patch": { "title": "Run 26 km", "unit": "km" },
+      "copies": [
+        { "id": "c-auto", "title": "Run 10 miles", "action": "Run", "unit": "miles", "maxCount": 10, "startDate": "2026-10-05T00:00:00.000Z", "endDate": "2026-10-11T23:59:59.999Z" },
+        { "id": "c-custom", "title": "Morning run", "action": "Run", "unit": "miles", "maxCount": 10, "startDate": "2026-10-05T00:00:00.000Z", "endDate": "2026-10-11T23:59:59.999Z" }
+      ],
+      "expected": [
+        { "copyId": "c-auto", "patch": { "title": "Run 10 km", "unit": "km" } },
+        { "copyId": "c-custom", "patch": { "unit": "km" } }
+      ]
+    },
+    {
+      "name": "goal never propagates: a goal-only edit (auto title follows the root's goal) writes no copy",
+      "root": { "id": "root", "title": "Run 26 miles", "action": "Run", "unit": "miles", "maxCount": 26 },
+      "patch": { "title": "Run 30 miles", "action": "Run", "unit": "miles", "maxCount": 30 },
+      "copies": [
+        { "id": "c-auto", "title": "Run 10 miles", "action": "Run", "unit": "miles", "maxCount": 10, "startDate": "2026-10-05T00:00:00.000Z", "endDate": "2026-10-11T23:59:59.999Z" },
+        { "id": "c-custom", "title": "Morning run", "action": "Run", "unit": "miles", "maxCount": 10, "startDate": "2026-10-05T00:00:00.000Z", "endDate": "2026-10-11T23:59:59.999Z" }
+      ],
+      "expected": []
+    },
+    {
+      "name": "custom root rename: every live copy carries the new name verbatim (auto and custom alike — the #542 mint rule)",
+      "root": { "id": "root", "title": "Run 26 miles", "action": "Run", "unit": "miles", "maxCount": 26 },
+      "patch": { "title": "  Marathon block ", "maxCount": 26 },
+      "copies": [
+        { "id": "c-auto", "title": "Run 10 miles", "action": "Run", "unit": "miles", "maxCount": 10, "startDate": "2026-10-05T00:00:00.000Z", "endDate": "2026-10-11T23:59:59.999Z" },
+        { "id": "c-custom", "title": "Morning run", "action": "Run", "unit": "miles", "maxCount": 10, "startDate": "2026-10-05T00:00:00.000Z", "endDate": "2026-10-11T23:59:59.999Z" }
+      ],
+      "expected": [
+        { "copyId": "c-auto", "patch": { "title": "Marathon block" } },
+        { "copyId": "c-custom", "patch": { "title": "Marathon block" } }
+      ]
+    },
+    {
+      "name": "auto root (renamed back from custom) + custom copy: the copy keeps its name",
+      "root": { "id": "root", "title": "Marathon block", "action": "Run", "unit": "miles", "maxCount": 26 },
+      "patch": { "title": "Run 26 miles" },
+      "copies": [
+        { "id": "c-custom", "title": "Marathon block", "action": "Run", "unit": "miles", "maxCount": 10, "startDate": "2026-10-05T00:00:00.000Z", "endDate": "2026-10-11T23:59:59.999Z" },
+        { "id": "c-auto", "title": "Run 10 miles", "action": "Run", "unit": "miles", "maxCount": 10, "startDate": "2026-10-05T00:00:00.000Z", "endDate": "2026-10-11T23:59:59.999Z" }
+      ],
+      "expected": []
+    },
+    {
+      "name": "custom root unchanged, unit change: auto copy regenerates, custom copy keeps its own name",
+      "root": { "id": "root", "title": "Marathon block", "action": "Run", "unit": "miles", "maxCount": 26 },
+      "patch": { "title": "Marathon block", "unit": "km" },
+      "copies": [
+        { "id": "c-auto", "title": "Run 10 miles", "action": "Run", "unit": "miles", "maxCount": 10, "startDate": "2026-10-05T00:00:00.000Z", "endDate": "2026-10-11T23:59:59.999Z" },
+        { "id": "c-custom", "title": "Morning run", "action": "Run", "unit": "miles", "maxCount": 10, "startDate": "2026-10-05T00:00:00.000Z", "endDate": "2026-10-11T23:59:59.999Z" }
+      ],
+      "expected": [
+        { "copyId": "c-auto", "patch": { "title": "Run 10 km", "unit": "km" } },
+        { "copyId": "c-custom", "patch": { "unit": "km" } }
+      ]
+    },
+    {
+      "name": "kind switch continuous → discrete: an auto copy's title follows its switch-rounded goal (goal itself is the switch's write)",
+      "root": { "id": "root", "title": "Run 26.2 miles", "action": "Run", "unit": "miles", "maxCount": 26.2, "countKind": "continuous" },
+      "patch": { "title": "Run 26 miles", "maxCount": 26, "countKind": "discrete" },
+      "copies": [
+        { "id": "c-auto", "title": "Run 10.5 miles", "action": "Run", "unit": "miles", "maxCount": 10.5, "countKind": "continuous", "startDate": "2026-10-05T00:00:00.000Z", "endDate": "2026-10-11T23:59:59.999Z" },
+        { "id": "c-custom", "title": "Morning run", "action": "Run", "unit": "miles", "maxCount": 10.5, "countKind": "continuous", "startDate": "2026-10-05T00:00:00.000Z", "endDate": "2026-10-11T23:59:59.999Z" }
+      ],
+      "expected": [
+        { "copyId": "c-auto", "patch": { "title": "Run 11 miles" } }
+      ]
+    },
+    {
+      "name": "kind switch + action change in one save: one patch per copy with both effects",
+      "root": { "id": "root", "title": "Run 26.2 miles", "action": "Run", "unit": "miles", "maxCount": 26.2, "countKind": "continuous" },
+      "patch": { "title": "Jog 26 miles", "action": "Jog", "maxCount": 26, "countKind": "discrete" },
+      "copies": [
+        { "id": "c-auto", "title": "Run 10.5 miles", "action": "Run", "unit": "miles", "maxCount": 10.5, "countKind": "continuous", "startDate": "2026-10-05T00:00:00.000Z", "endDate": "2026-10-11T23:59:59.999Z" }
+      ],
+      "expected": [
+        { "copyId": "c-auto", "patch": { "title": "Jog 11 miles", "action": "Jog" } }
+      ]
+    },
+    {
+      "name": "a non-window-stamped linked row (no startDate) is live; an unlinked row, another root's copy and a non-counting row are excluded",
+      "root": { "id": "root", "title": "Read 300 pages", "action": "Read", "unit": "pages", "maxCount": 300 },
+      "patch": { "title": "Read 300 chapters", "unit": "chapters" },
+      "copies": [
+        { "id": "c-unstamped", "title": "Read 50 pages", "action": "Read", "unit": "pages", "maxCount": 50, "createdInWizard": false },
+        { "id": "c-other-root", "title": "Read 50 pages", "action": "Read", "unit": "pages", "maxCount": 50, "sharedCounterId": "other", "startDate": "2026-10-05T00:00:00.000Z", "endDate": "2026-10-11T23:59:59.999Z" },
+        { "id": "c-unlinked", "title": "Read 50 pages", "action": "Read", "unit": "pages", "maxCount": 50, "sharedCounterId": null },
+        { "id": "c-normal", "title": "Read", "type": "normal", "startDate": "2026-10-05T00:00:00.000Z", "endDate": "2026-10-11T23:59:59.999Z" }
+      ],
+      "expected": [
+        { "copyId": "c-unstamped", "patch": { "title": "Read 50 chapters", "unit": "chapters" } }
+      ]
+    },
+    {
+      "name": "a linked row is not a root: its edits propagate nothing",
+      "root": { "id": "root", "title": "Run 26 miles", "action": "Run", "unit": "miles", "maxCount": 26, "sharedCounterId": "upstream" },
+      "patch": { "title": "Jog 26 miles", "action": "Jog" },
+      "copies": [
+        { "id": "c-auto", "title": "Run 10 miles", "action": "Run", "unit": "miles", "maxCount": 10, "startDate": "2026-10-05T00:00:00.000Z", "endDate": "2026-10-11T23:59:59.999Z" }
+      ],
+      "expected": []
+    },
+    {
+      "name": "an unchanged save writes nothing",
+      "root": { "id": "root", "title": "Run 26 miles", "action": "Run", "unit": "miles", "maxCount": 26 },
+      "patch": { "title": "Run 26 miles", "action": "Run", "unit": "miles", "maxCount": 26, "countKind": "discrete" },
+      "copies": [
+        { "id": "c-auto", "title": "Run 10 miles", "action": "Run", "unit": "miles", "maxCount": 10, "startDate": "2026-10-05T00:00:00.000Z", "endDate": "2026-10-11T23:59:59.999Z" }
+      ],
+      "expected": []
+    },
+    {
+      "name": "an auto copy whose stored title is empty regenerates; output sorted by copyId",
+      "root": { "id": "root", "title": "Swim 20 laps", "action": "Swim", "unit": "laps", "maxCount": 20 },
+      "patch": { "title": "Paddle 20 laps", "action": "Paddle" },
+      "copies": [
+        { "id": "c-z", "title": "Swim 5 laps", "action": "Swim", "unit": "laps", "maxCount": 5, "startDate": "2026-10-05T00:00:00.000Z", "endDate": "2026-10-11T23:59:59.999Z" },
+        { "id": "c-a", "title": "", "action": "Swim", "unit": "laps", "maxCount": 4, "startDate": "2026-10-05T00:00:00.000Z", "endDate": "2026-10-11T23:59:59.999Z" }
+      ],
+      "expected": [
+        { "copyId": "c-a", "patch": { "title": "Paddle 4 laps", "action": "Paddle" } },
+        { "copyId": "c-z", "patch": { "title": "Paddle 5 laps", "action": "Paddle" } }
+      ]
+    }
+  ]
+}

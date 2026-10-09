@@ -469,6 +469,17 @@ export type {
   WouldForkOnBoardInput,
 } from './boardScopedFork';
 
+// ===== Root → copy field propagation (board-scoped edits PR 3, 2026-10-08) =====
+export { planRootFieldPropagation } from './rootFieldPropagation';
+
+export type {
+  RootFieldEditPatch,
+  RootFieldPropagationEntry,
+  RootFieldPropagationPatch,
+  RootPropagationCopy,
+  RootPropagationRoot,
+} from './rootFieldPropagation';
+
 // ===== Pull checkpoint — per-collection server `_syncedAt` watermark (2026-10-07) =====
 export { comparePullWatermarks, nextPullWatermark } from './pullWatermark';
 

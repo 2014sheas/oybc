@@ -87,6 +87,10 @@ extension AppDatabase {
     /// this `write`, so there is no stale-read window. A nil `compound` keeps
     /// the basic-fields-only behaviour.
     ///
+    /// Counter roots: a root's title / action / unit edit propagates to its
+    /// live per-board copies in this same write (`propagateRootFields`,
+    /// docs/BOARD_SCOPED_TASK_EDITS.md §6); the goal stays per-board.
+    ///
     /// - Parameters:
     ///   - taskId: The task being edited.
     ///   - patch: The edit sheet's submitted values.
@@ -104,6 +108,8 @@ extension AppDatabase {
             guard var task = try Task.fetchOne(db, key: taskId), !task.isDeleted else {
                 throw TaskEditError.taskNotFound
             }
+            // A counter root's live copies, read before any write of this save.
+            let propagation = try Self.readRootPropagationSnapshot(db: db, taskId: taskId)
             // Switch first (inside this write), then parse the typed goal at the
             // FINAL kind; a refused goal throws and rolls the switch back.
             if task.type == .counting,
@@ -158,6 +164,17 @@ extension AppDatabase {
             task.updatedAt = now
             task.version += 1
             try Self.saveTaskAndCascade(db: db, task: task)
+            if let propagation {
+                try Self.propagateRootFields(
+                    db: db,
+                    snapshot: propagation,
+                    patch: RootFieldPropagation.EditPatch(
+                        title: task.title, action: task.action, unit: task.unit,
+                        maxCount: task.maxCount, countKind: patch.countKind
+                    ),
+                    now: now
+                )
+            }
             return task
         }
     }

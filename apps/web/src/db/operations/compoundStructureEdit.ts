@@ -33,6 +33,7 @@ import {
   type Task,
 } from '@oybc/shared';
 import { db } from '../internal';
+import { propagateRootFieldsInTransaction, readRootPropagationSnapshot } from './rootFieldPropagation';
 import { currentTimestamp, generateUUID } from '../utils';
 import {
   type TaskEditPatch,
@@ -407,19 +408,23 @@ export async function saveTaskEdit(taskId: string, submit: TaskEditSubmit): Prom
     await editCompoundStructure(taskId, compound, { description });
     return;
   }
-  if (countKind === undefined) {
-    await updateTaskAndCascade(taskId, basicPatch);
-    return;
-  }
-  // Kind switch + field patch are one write: a goal the final kind refuses
-  // (KindGoalError) rolls the switch back with it. `updateTaskAndCascade`'s
-  // nested transactions join this one.
+  // Kind switch + field patch + root → copy propagation are one write: a goal
+  // the final kind refuses (KindGoalError) rolls the switch back with it.
+  // `updateTaskAndCascade`'s nested transactions join this one.
   await db.transaction(
     'rw',
     [db.boards, db.boardTasks, db.tasks, db.compoundChildren, db.taskEvents, db.syncQueue],
     async () => {
-      await applyKindSwitchThenGoalGuard(taskId, countKind, basicPatch.maxCount, new Date().toISOString());
+      const nowIso = new Date().toISOString();
+      const propagation = await readRootPropagationSnapshot(taskId);
+      if (countKind !== undefined) {
+        await applyKindSwitchThenGoalGuard(taskId, countKind, basicPatch.maxCount, nowIso);
+      }
       await updateTaskAndCascade(taskId, basicPatch);
+      if (propagation) {
+        const { title, action, unit, maxCount } = basicPatch;
+        await propagateRootFieldsInTransaction(propagation, { title, action, unit, maxCount, countKind }, nowIso);
+      }
     },
   );
 }

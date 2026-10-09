@@ -29,7 +29,7 @@ rollout. Before launch the only clients are owner TestFlight builds.
 | D2 | **Representation:** counts are real numbers quantized to **2 decimal places** at every write (not fixed-point integers, not parallel fields). Integers are exact doubles, so discrete counters are bit-identical to today. |
 | D3 | **Precision fixed at 2dp** for `continuous`; display trims trailing zeros. |
 | D4 | **Discrete ⇄ Continuous switches both ways; Duration never switches** (no switch into or out of `duration` — a raw number has no unit, so "5 hours" would read as 5 minutes). Events are never rewritten; a discrete task's window sum rounds half-up at read; switching to discrete rounds `maxCount` (min 1) as an ordinary authored edit; switching back restores exact values. |
-| D5 | A shared-counter **family shares its root's kind**; linked/minted copies inherit it and follow a root switch (same cascade as a Goal edit). |
+| D5 | A shared-counter **family shares its root's kind**; linked/minted copies inherit it and follow a root switch (the kind switch's own family cascade). A root's title / action / unit edit propagates to live copies (`planRootFieldPropagation`, board-scoped edits PR 3); the goal is per-board and never propagates. |
 | D6 | `duration` is stored as **integer minutes** — it reuses the discrete logic branch exactly (all steps snap to 1 minute); only input + display differ. Live start/stop timers are out of scope. |
 | D7 | The UI extends the **existing** counter interactions (tap/stepper sheet, chips, last-used amount, custom entry, late log, toast) per kind rather than inventing new ones; Claude Design adapts them. |
 
