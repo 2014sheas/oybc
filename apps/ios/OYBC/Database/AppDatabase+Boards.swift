@@ -635,13 +635,39 @@ extension AppDatabase {
             //     and only apply; their rows already exist (pending loop above).
             //   • simple/counting — a PENDING one was already merged into its
             //     payload (persistWizardBoard), so skip it here; apply LIBRARY ones.
+            //
+            // BOARD-SCOPED (docs/BOARD_SCOPED_TASK_EDITS.md): planned against
+            // THIS board (its id + window, passed as a value — the row is
+            // written below), so a task placed on any other board is forked
+            // and the fork is what the mint and the placements below see.
+            var boardTasks = boardTasks
+            var manualTaskIds = manualTaskIds
+            var manualTaskVary = manualTaskVary
+            var board = board
             if board.status == .active {
                 try Self.applyStagedTaskEdits(
                     db: db,
                     stagedEdits: stagedEdits,
                     skipSimpleIds: Set(pendingTasks.map { $0.task.id }),
-                    now: now
+                    now: now,
+                    scopeBoard: board
                 )
+                // Every placed / hand-added / centre id with a fork on THIS
+                // board places the fork — top-level edits AND sub-tasks forked
+                // inside a compound edit.
+                let candidates = boardTasks.map(\.taskId) + manualTaskIds + Array(manualTaskVary.keys)
+                    + (board.centerTaskId.map { [$0] } ?? [])
+                var forks: [String: String] = [:]
+                for id in Set(candidates) {
+                    let forkId = BoardScopedFork.forkTaskId(boardId: board.id, taskId: id)
+                    if let fork = try Task.fetchOne(db, key: forkId), !fork.isDeleted { forks[id] = forkId }
+                }
+                if !forks.isEmpty {
+                    for i in boardTasks.indices { boardTasks[i].taskId = forks[boardTasks[i].taskId] ?? boardTasks[i].taskId }
+                    manualTaskIds = manualTaskIds.map { forks[$0] ?? $0 }
+                    manualTaskVary = Dictionary(manualTaskVary.map { (forks[$0.key] ?? $0.key, $0.value) }, uniquingKeysWith: { a, _ in a })
+                    if let centre = board.centerTaskId, let fork = forks[centre] { board.centerTaskId = fork }
+                }
             }
 
             // ── Board Sources §Member rules (B2): mint before placing ──────

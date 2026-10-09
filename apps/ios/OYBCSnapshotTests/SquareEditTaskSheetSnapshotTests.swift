@@ -163,6 +163,21 @@ final class SquareEditTaskSheetSnapshotTests: XCTestCase {
         )
     }
 
+    /// Board-scoped edits (docs/BOARD_SCOPED_TASK_EDITS.md §8): a task placed
+    /// on another board — the sheet's Done pill reads "Save for this board".
+    /// The `.toolbar` isn't rendered by an off-window snapshot, so the pill is
+    /// captured directly with the label the sheet computes.
+    func testSaveForThisBoardLight() {
+        let pill = RisoToolbarPill(title: SquareEditTaskSheet.doneLabel(wouldFork: true)) {}
+            .padding(16)
+            .background(Color.risoPaper)
+        assertSnapshot(
+            of: pill,
+            as: .image(layout: .fixed(width: 393, height: 80)),
+            record: recordMode
+        )
+    }
+
     // MARK: - Task fixtures
 
     /// Achievement task — type is immutable here, title only.

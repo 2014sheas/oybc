@@ -104,6 +104,10 @@ export interface UseSquaresEditDraftResult {
   centerCellKeepLocked: boolean;
   /** ids of live placements (present at seed) staged for removal — Save's removal step. */
   removedBoardTaskIds: string[];
+  /** Whether this edit session already confirmed a board-scoped fork (first-fork confirm, §8). */
+  forkConfirmed: boolean;
+  /** Remember the first-fork confirm until the edit session ends. */
+  confirmFork: () => void;
 }
 
 const EMPTY_STATE: SquaresEditDraftState = {
@@ -136,6 +140,10 @@ export function useSquaresEditDraft(
 
   const [state, setState] = useState<SquaresEditDraftState>(EMPTY_STATE);
   const [seeded, setSeeded] = useState(false);
+  // Board-scoped edits (docs/BOARD_SCOPED_TASK_EDITS.md §8): the first-fork
+  // confirm shows once per board per edit session; never persisted.
+  const [forkConfirmed, setForkConfirmed] = useState(false);
+  const confirmFork = useCallback(() => setForkConfirmed(true), []);
 
   const isOddBoard = gridSize % 2 === 1;
   const half = Math.floor(gridSize / 2);
@@ -148,6 +156,7 @@ export function useSquaresEditDraft(
     if (!editMode) {
       setState(EMPTY_STATE);
       setSeeded(false);
+      setForkConfirmed(false);
       return;
     }
     setState(seedDraft(boardTasks, boardCenterType, gridSize));
@@ -316,5 +325,7 @@ export function useSquaresEditDraft(
     isLegacyChosenOnDisk: (board.centerSquareType as CenterSquareType) === CenterSquareType.CHOSEN,
     centerCellKeepLocked,
     removedBoardTaskIds: [...state.removedIds],
+    forkConfirmed,
+    confirmFork,
   };
 }

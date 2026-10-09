@@ -36,6 +36,15 @@ import {
   typeControlMode,
   type BoardEditTaskOverride,
 } from './boardEditTaskSheetModel';
+import { BoardActionConfirmDialog } from '../boardActions/BoardActionConfirmDialog';
+import {
+  FORK_CONFIRM_BODY,
+  FORK_DONE_LABEL,
+  needsForkConfirm,
+  sheetDoneLabel,
+  sheetWouldFork,
+  useForkCheck,
+} from './boardScopedSheet';
 import styles from './BoardEditTaskSheet.module.css';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -66,6 +75,16 @@ export interface BoardEditTaskSheetProps {
   onDone: (taskId: string, patch: BoardEditTaskOverride) => void;
   /** Dismiss without staging any changes. */
   onCancel: () => void;
+  /**
+   * The board being edited. When the task is placed on any other board the
+   * Save forks it for this board (docs/BOARD_SCOPED_TASK_EDITS.md), so Done
+   * reads "Save for this board".
+   */
+  boardId?: string;
+  /** Whether this board's edit session already confirmed a fork. */
+  forkConfirmed?: boolean;
+  /** Records the first-fork confirm for the rest of the edit session. */
+  onForkConfirmed?: () => void;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -116,6 +135,9 @@ export function BoardEditTaskSheet({
   staged,
   onDone,
   onCancel,
+  boardId,
+  forkConfirmed = false,
+  onForkConfirmed,
 }: BoardEditTaskSheetProps): React.ReactElement {
   // aria-modal, Escape → cancel, initial focus, Tab trap, focus restore.
   const { ref: modalRef, props: modalProps } = useModalA11y<HTMLDivElement>({
@@ -181,6 +203,7 @@ export function BoardEditTaskSheet({
   const [libraryInputsState, setLibraryInputsState] = useState<LibraryInputsState>('loading');
   const [doneError, setDoneError] = useState<string | null>(null);
   const [checking, setChecking] = useState(false);
+  const [confirmingFork, setConfirmingFork] = useState(false);
 
   const editorOpen = showsCompoundEditor(selected);
 
@@ -233,7 +256,13 @@ export function BoardEditTaskSheet({
 
   const input = { original, selected, title, action, goalStr, unit, countKind, compoundDraft, compoundBaseline };
   const problem = sheetValidationProblem(input);
-  const canSave = problem === null && !checking;
+  // Board-scoped: the task + its sub-tasks; Done waits for the check (no late label flip).
+  const forkCheck = useForkCheck(
+    [task.id, ...(compoundDraft?.children ?? []).map((c) => c.childTaskId ?? '')],
+    boardId,
+  );
+  const wouldFork = forkCheck !== null && sheetWouldFork(task.id, editorOpen ? compoundDraft : null, forkCheck);
+  const canSave = problem === null && !checking && forkCheck !== null;
   const goalNum = parseGoal(goalStr, countKind);
   const needsUnit = countKindNeedsUnit(countKind);
 
@@ -246,8 +275,12 @@ export function BoardEditTaskSheet({
 
   // ── Submit ───────────────────────────────────────────────────────────────
 
-  const handleDone = async () => {
+  const handleDone = async (confirmed = forkConfirmed) => {
     if (!canSave) return;
+    if (needsForkConfirm(wouldFork, confirmed)) {
+      setConfirmingFork(true);
+      return;
+    }
     setDoneError(null);
     const patch = buildSheetOverride(input);
     if (patch.compound) {
@@ -443,9 +476,22 @@ export function BoardEditTaskSheet({
             disabled={!canSave}
             onClick={() => void handleDone()}
           >
-            Done
+            {sheetDoneLabel(wouldFork)}
           </button>
         </div>
+        {confirmingFork && (
+          <BoardActionConfirmDialog
+            title={`${FORK_DONE_LABEL}?`}
+            body={FORK_CONFIRM_BODY}
+            confirmLabel={FORK_DONE_LABEL}
+            onCancel={() => setConfirmingFork(false)}
+            onConfirm={() => {
+              setConfirmingFork(false);
+              onForkConfirmed?.();
+              void handleDone(true);
+            }}
+          />
+        )}
       </div>
     </div>
   );

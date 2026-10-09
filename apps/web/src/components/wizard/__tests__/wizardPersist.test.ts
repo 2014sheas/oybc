@@ -488,7 +488,7 @@ describe('persistWizardBoard — staged edits (Inline Task Editing PR-2)', () =>
       stagedEdits: new Map<string, TaskEditPatch>([['lib-1', emptyPatch('New title')]]),
     } as Partial<BoardWizardController>);
 
-    await persistWizardBoard({
+    const draftBoardId = await persistWizardBoard({
       controller,
       library: emptyTaskLibrary([task]),
       userId: 'user-1',
@@ -498,8 +498,10 @@ describe('persistWizardBoard — staged edits (Inline Task Editing PR-2)', () =>
     });
     expect((await db.tasks.get('lib-1'))?.title).toBe('Old title'); // draft: untouched
 
+    // Resume THAT draft (its own placement is "this board", so the edit is
+    // board-scoped but in place — no other board places lib-1).
     await persistWizardBoard({
-      controller,
+      controller: { ...controller, draftBoardId } as BoardWizardController,
       library: emptyTaskLibrary([task]),
       userId: 'user-1',
       placement: buildWizardPlacement(controller, emptyTaskLibrary([task])),

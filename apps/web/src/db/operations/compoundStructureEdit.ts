@@ -27,6 +27,7 @@ import {
   TaskType,
   compoundChildLinkProblem,
   countKindNeedsUnit,
+  forkTaskId,
   type CompoundChild,
   type CountKind,
   type Task,
@@ -45,6 +46,17 @@ import { runBoardCascadeForTasks } from './orchestration';
 import { addToSyncQueue } from './syncQueue';
 import { applyKindSwitchThenGoalGuard } from './countKindSwitch';
 import { updateTaskAndCascade, type UpdateTaskPatch } from './tasks.crud';
+import { ensureBoardScopedTask, repointCompoundLink, stampForkCaches } from './boardScopedEdit';
+
+/**
+ * A board-scoped edit's board (docs/BOARD_SCOPED_TASK_EDITS.md): Board Edit
+ * and the board wizard pass it so an edited sub-task placed on any other
+ * board is FORKED (and its link under the edited parent repointed) instead
+ * of edited globally. Absent = a global edit (Task Detail, pool editor).
+ */
+export interface BoardEditScope {
+  boardId: string;
+}
 
 /**
  * Applies a staged compound patch's child edits to its `compound_children`
@@ -74,11 +86,11 @@ export async function applyStagedCompoundChildEdits(
   parentUserId: string,
   patch: TaskEditPatch,
   now: string,
+  scope?: BoardEditScope,
 ): Promise<string[]> {
-  const existingLinks = (
-    await db.compoundChildren.where('compoundTaskId').equals(parentId).toArray()
-  ).filter((c) => !c.isDeleted);
-  const linkByChildId = new Map(existingLinks.map((l) => [l.childTaskId, l]));
+  const readLinks = async () =>
+    (await db.compoundChildren.where('compoundTaskId').equals(parentId).toArray()).filter((c) => !c.isDeleted);
+  let linkByChildId = new Map((await readLinks()).map((l) => [l.childTaskId, l]));
 
   const keptChildIds = new Set<string>();
   const touchedChildIds: string[] = [];
@@ -109,26 +121,48 @@ export async function applyStagedCompoundChildEdits(
       await addToSyncQueue('compoundChildren', link.id, SyncOperationType.CREATE, link);
       keptChildIds.add(childId);
     } else if (step.childTaskId) {
-      const childId = step.childTaskId;
-      keptChildIds.add(childId);
-      // Global child edit (rename / goal / unit).
-      const existingChild = await db.tasks.get(childId);
-      if (existingChild) {
-        const updated = applyStepToChildTask(existingChild, step, title);
+      // The step names the sub-task the editor was seeded with. Board-scoped:
+      // when an earlier override in this same Save already forked it for this
+      // board (the parent now links the fork), the step is about the fork —
+      // never re-link the original over it.
+      const seededId = step.childTaskId;
+      const forkOfSeeded = scope ? forkTaskId(scope.boardId, seededId) : null;
+      let childId = forkOfSeeded && linkByChildId.has(forkOfSeeded) ? forkOfSeeded : seededId;
+      // Change detection is against the SEEDED row (what the editor showed),
+      // so an untouched step never overwrites an earlier edit of the fork.
+      const seededChild = await db.tasks.get(seededId);
+      let existingChild = childId === seededId ? seededChild : await db.tasks.get(childId);
+      if (seededChild && existingChild) {
+        const preview = applyStepToChildTask(seededChild, step, title);
         // `?? ''`: the editor round-trips an absent action/unit as '' — that
         // is not a change (a picked unit-less counter must stay untouched).
         const changed =
-          updated.title !== existingChild.title ||
-          (updated.action ?? '') !== (existingChild.action ?? '') ||
-          (updated.unit ?? '') !== (existingChild.unit ?? '') ||
-          updated.maxCount !== existingChild.maxCount;
+          preview.title !== seededChild.title ||
+          (preview.action ?? '') !== (seededChild.action ?? '') ||
+          (preview.unit ?? '') !== (seededChild.unit ?? '') ||
+          preview.maxCount !== seededChild.maxCount;
         if (changed) {
+          // Global, or — board-scoped — on a fork when placed on another board.
+          const scoped = scope
+            ? await ensureBoardScopedTask(childId, scope.boardId, existingChild.type, now)
+            : { targetId: childId, forked: false };
+          if (scoped.forked) {
+            // The holder walk already repointed a placed parent's link; an
+            // edited parent not placed yet (the wizard) is repointed here.
+            await repointCompoundLink(parentId, childId, scoped.targetId, now);
+            linkByChildId = new Map((await readLinks()).map((l) => [l.childTaskId, l]));
+            childId = scoped.targetId;
+            existingChild = (await db.tasks.get(childId)) ?? existingChild;
+          }
+          const updated = applyStepToChildTask(existingChild, step, title);
           const saved: Task = { ...updated, version: (existingChild.version ?? 1) + 1, updatedAt: now };
           await db.tasks.update(childId, saved);
           await addToSyncQueue('tasks', childId, SyncOperationType.UPDATE, saved);
+          await stampForkCaches(scoped, now);
           touchedChildIds.push(childId);
         }
       }
+      keptChildIds.add(childId);
       const link = linkByChildId.get(childId);
       if (!link) {
         // An existing library task picked as a sub-task: it has no link to
@@ -162,7 +196,8 @@ export async function applyStagedCompoundChildEdits(
 
   // Soft-delete links whose child is no longer kept (link only — the child
   // Task stays in the library; orphans are acceptable per product decision).
-  for (const link of existingLinks) {
+  // Re-read: a board-scoped child fork repointed links above.
+  for (const link of await readLinks()) {
     if (keptChildIds.has(link.childTaskId)) continue;
     const updatedLink: CompoundChild = { ...link, isDeleted: true, deletedAt: now, version: link.version + 1, updatedAt: now };
     await db.compoundChildren.update(link.id, updatedLink);
@@ -263,15 +298,17 @@ const CASCADE_TABLES = () => [
  * @param structure - The edited title / operator / threshold / sub-tasks.
  * @param basic - Optional basic fields applied in the same version bump.
  * @param now - ISO8601 timestamp for version bumps + sync-queue rows.
+ * @param scope - Board-scoped edit's board (sub-task forks); absent = global.
  */
 export async function applyCompoundStructureEditInTransaction(
   task: Task,
   structure: TaskEditPatch,
   basic: CompoundEditBasic,
   now: string,
+  scope?: BoardEditScope,
 ): Promise<void> {
   const updated = applyPatchToTask(structure, task);
-  const touchedChildIds = await applyStagedCompoundChildEdits(task.id, task.userId, structure, now);
+  const touchedChildIds = await applyStagedCompoundChildEdits(task.id, task.userId, structure, now, scope);
   const saved: Task = {
     ...updated,
     ...(basic.description !== undefined ? { description: basic.description.trim() || undefined } : {}),
@@ -422,9 +459,10 @@ const COUNTING_ONLY_FIELDS = ['action', 'unit', 'maxCount', 'currentCount'] as c
  * REQUIRES an active Dexie transaction over `boards`, `boardTasks`, `tasks`,
  * `compoundChildren`, `taskEvents` and `syncQueue`.
  *
- * @param taskId - The (already remapped) placed task id.
+ * @param taskId - The (already remapped, already board-scoped) placed task id.
  * @param override - The staged override.
  * @param now - ISO8601 timestamp for version bumps + sync-queue rows.
+ * @param scope - The edited board: an edited sub-task placed elsewhere forks.
  * @throws CompoundEditValidationError for an invalid compound structure;
  *   Error for a disallowed type change or an incomplete Counting target.
  */
@@ -432,6 +470,7 @@ export async function applyBoardEditTaskOverrideInTransaction(
   taskId: string,
   override: TaskEditSubmit,
   now: string,
+  scope?: BoardEditScope,
 ): Promise<void> {
   const existing = await db.tasks.get(taskId);
   if (!existing || existing.isDeleted) return;
@@ -464,7 +503,7 @@ export async function applyBoardEditTaskOverrideInTransaction(
     const description = 'description' in fields ? (fields.description ?? '') : undefined;
     // A conversion must never write an operator-less compound (iOS defaults `.and`).
     const structure = typeChanged ? { ...compound, operator: compound.operator ?? OperatorType.AND } : compound;
-    await applyCompoundStructureEditInTransaction(base, structure, { description }, now);
+    await applyCompoundStructureEditInTransaction(base, structure, { description }, now, scope);
     return;
   }
 

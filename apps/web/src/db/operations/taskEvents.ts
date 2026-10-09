@@ -100,7 +100,7 @@ export function computeTaskCachesFromEvents(
  * @param taskId The event-owning task whose caches to restamp.
  * @param now    The write timestamp (shared with the event for coherence).
  */
-async function stampTaskCachesAuthored(taskId: string, now: string): Promise<void> {
+export async function stampTaskCachesAuthored(taskId: string, now: string): Promise<void> {
   const task = await db.tasks.get(taskId);
   if (!task || !isEventOwningTask(task)) return;
   const events = await db.taskEvents.where('taskId').equals(taskId).toArray();

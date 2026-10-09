@@ -315,4 +315,21 @@ final class BoardScopedForkVectorTests: XCTestCase {
             }
         }
     }
+
+    /// PR 2: `wouldFork` (the square sheet's "Save for this board" label)
+    /// agrees with the planner on every vector — twin of the shared
+    /// `wouldForkOnBoard.test.ts` agreement suite.
+    func testWouldForkAgreesWithPlanOnEveryVector() throws {
+        let section = try loadFixture().planBoardScopedFork
+        let boards = try section.boards.map(makeBoard)
+        for v in section.vectors {
+            let task = try makeTask(v.task)
+            let placements = v.placements.map(makePlacement)
+            let links = (v.compoundChildren ?? []).map(makeLink)
+            let would = BoardScopedFork.wouldFork(
+                task: task, boardId: v.boardId, placements: placements, boards: boards, compoundChildren: links
+            )
+            XCTAssertEqual(would, v.expected.mode == "fork", v.name)
+        }
+    }
 }

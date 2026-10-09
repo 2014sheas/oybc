@@ -160,10 +160,10 @@ final class BoardPlayViewModel: ObservableObject {
     /// every subsequent hold-move into the SAME "1 edit" until positions
     /// return to baseline (`SquaresEditCount`).
     @Published var editShuffled: Bool = false
-    /// Baseline `BoardTask.id`s present at seed time — the source set
-    /// `editSquaresEditCount` / `handleEditSave` diff the CURRENT draft
-    /// against to find staged removals. Not `@Published`: it only ever
-    /// changes together with `editSquaresDraft` inside `seedEditDraft`.
+    /// Board-scoped edits §8: this edit session confirmed a fork (reset by `seedEditDraft`).
+    @Published var editForkConfirmed: Bool = false
+    /// Baseline `BoardTask.id`s at seed time — `handleEditSave` diffs the draft against it for
+    /// removals. Not `@Published`: changes only with `editSquaresDraft` in `seedEditDraft`.
     var editBaselineBoardTaskIds: Set<String> = []
     /// The BoardTask id occupying the positional center at seed time, if the
     /// board is legacy CHOSEN (D1/D11) — lets the center Free-toggle's

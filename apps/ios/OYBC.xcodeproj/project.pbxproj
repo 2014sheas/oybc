@@ -73,6 +73,7 @@
 		1BA18CBB8646691B58DDA9D3 /* GoallessCounterEngineTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 80FABD55DC8F8998DED06E54 /* GoallessCounterEngineTests.swift */; };
 		1BB88B6B56A395A94BD5CF43 /* TaskDetailSheetView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 95765CD1D332F33B198789F4 /* TaskDetailSheetView.swift */; };
 		1BE54D34458E7B200040D2A0 /* BoardPlayViewModel+EditShuffle.swift in Sources */ = {isa = PBXBuildFile; fileRef = 95DBB639D4694F19D9F8EFBF /* BoardPlayViewModel+EditShuffle.swift */; };
+		1C7F4BB6CBEFE6233DC504AD /* AppDatabase+BoardScopedEdit.swift in Sources */ = {isa = PBXBuildFile; fileRef = 92090A0369B0E9D05313A11F /* AppDatabase+BoardScopedEdit.swift */; };
 		1CD12CFCD9A48E14C1771B94 /* RecurringTemplateMetaTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5B90F2FAA5B2A1205AC4485B /* RecurringTemplateMetaTests.swift */; };
 		1D02C85D668E9D8D77FA15A1 /* pullWatermarkVectors.json in Resources */ = {isa = PBXBuildFile; fileRef = 5912FD11C303469A051FA761 /* pullWatermarkVectors.json */; };
 		1D2E73D422257F6A0361BCB1 /* BoardWizardPreviewDerivedTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2E8CF69F33C744D9C11BF648 /* BoardWizardPreviewDerivedTests.swift */; };
@@ -136,6 +137,7 @@
 		354385C3A0F3D7DFCCC308BA /* LastCounterLogEntryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4D4CDEAE2BB9F00B76298584 /* LastCounterLogEntryTests.swift */; };
 		358A319A87735AB499BDFE9D /* EditTaskSheetCompoundGateTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 126F42F412556B811891438D /* EditTaskSheetCompoundGateTests.swift */; };
 		35A5F2CF9C5CFA2BBEFDF62F /* BoardDetailsSaveTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5BED5C03B8498984A290722E /* BoardDetailsSaveTests.swift */; };
+		3656616650C455CEEECE8924 /* BoardScopedEditCommitTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = EBB4B60DBEEE674CE6FAF56D /* BoardScopedEditCommitTests.swift */; };
 		37624F99D990B4337BC5C84F /* OYBCApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = C9AA2CED78BAF3773BDB4359 /* OYBCApp.swift */; };
 		37B53B6EE717147F734BA5D6 /* CoreWindowPickerModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 42EB756B51C55A32746FA219 /* CoreWindowPickerModel.swift */; };
 		37C391226001B488645D5136 /* BoardSettingsContent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 278F142538875C6E5906013C /* BoardSettingsContent.swift */; };
@@ -955,6 +957,7 @@
 		9003239610B8ED195B917771 /* CountingStepperModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CountingStepperModelTests.swift; sourceTree = "<group>"; };
 		9034D55E4975E6557D4114AF /* RisoCountingSubConfigRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RisoCountingSubConfigRow.swift; sourceTree = "<group>"; };
 		90C449352BD3981F5F43EE06 /* PoolEditorViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PoolEditorViewModel.swift; sourceTree = "<group>"; };
+		92090A0369B0E9D05313A11F /* AppDatabase+BoardScopedEdit.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AppDatabase+BoardScopedEdit.swift"; sourceTree = "<group>"; };
 		930B21C71FAB0140E9BE5960 /* BoardWizardViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BoardWizardViewModel.swift; sourceTree = "<group>"; };
 		937473152DAA0C83193C1EEA /* BoardDisplayName.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BoardDisplayName.swift; sourceTree = "<group>"; };
 		9415C18172747D079CA4D977 /* CoreBoardDefaultSetupFieldsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoreBoardDefaultSetupFieldsTests.swift; sourceTree = "<group>"; };
@@ -1147,6 +1150,7 @@
 		EB2CA9EF7ABBD6168DA65D31 /* BoardSettingsSummaryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BoardSettingsSummaryTests.swift; sourceTree = "<group>"; };
 		EB413B80CC1E7378AC5DC120 /* RisoTasksTabSnapshotTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RisoTasksTabSnapshotTests.swift; sourceTree = "<group>"; };
 		EB419351BD67F332E3F55FDB /* RisoMiniGrid.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RisoMiniGrid.swift; sourceTree = "<group>"; };
+		EBB4B60DBEEE674CE6FAF56D /* BoardScopedEditCommitTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BoardScopedEditCommitTests.swift; sourceTree = "<group>"; };
 		EBBA3C195B4D612586C25B43 /* BoardSettingsSnapshotTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BoardSettingsSnapshotTests.swift; sourceTree = "<group>"; };
 		EBFED9C2CDC0A4B6D0E652AC /* PoolEditorViewModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PoolEditorViewModelTests.swift; sourceTree = "<group>"; };
 		ECCBF1C8380F30B8C320AABD /* BoardWizardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BoardWizardView.swift; sourceTree = "<group>"; };
@@ -1307,6 +1311,7 @@
 				7B1680C62E5089B0B404F93B /* AppDatabase+BoardCompletion.swift */,
 				CD7A6D689B7BD9E730C3A060 /* AppDatabase+BoardLifecycle.swift */,
 				9CBA41AE6D92604254C2B2D4 /* AppDatabase+Boards.swift */,
+				92090A0369B0E9D05313A11F /* AppDatabase+BoardScopedEdit.swift */,
 				E980399A89CC07BD4B0D481A /* AppDatabase+BoardSources.swift */,
 				E90C151427BF0EF3B19EFE4C /* AppDatabase+BoardTasks.swift */,
 				3626155335AA5E2C10AD23BE /* AppDatabase+CompoundChildren.swift */,
@@ -1552,6 +1557,7 @@
 				CDE1F63BDDEC0EFE1D66D39C /* BoardPullLiveAndWatcherTests.swift */,
 				1754F6A314801932ADF62174 /* BoardRenewalsPreferencesTests.swift */,
 				AD2A6C2FD51F1F93495634C2 /* BoardReopenedAtTests.swift */,
+				EBB4B60DBEEE674CE6FAF56D /* BoardScopedEditCommitTests.swift */,
 				243F17189141F0D31B94E0EF /* BoardScopedForkFoundationTests.swift */,
 				5A8220BD3CA419F41DA30DAD /* BoardScopedForkVectorTests.swift */,
 				B85FFA0B072C48A52DCA509D /* BoardSettingsRosterTests.swift */,
@@ -2283,6 +2289,7 @@
 				06D9B0AFD9F2AF424ECDA3E1 /* AchievementWatchers.swift in Sources */,
 				A0479891B47FF7F4B138018D /* AppDatabase+BoardCompletion.swift in Sources */,
 				E82F38A566CB626E89D0F8D7 /* AppDatabase+BoardLifecycle.swift in Sources */,
+				1C7F4BB6CBEFE6233DC504AD /* AppDatabase+BoardScopedEdit.swift in Sources */,
 				90CC6D276E37A8E4A03E31DD /* AppDatabase+BoardSources.swift in Sources */,
 				D1BCD8285F254891D6184330 /* AppDatabase+BoardTasks.swift in Sources */,
 				C72B5E29FACC17DC39C2B238 /* AppDatabase+Boards.swift in Sources */,
@@ -2604,6 +2611,7 @@
 				23A4E377F46B13D64F097C3C /* BoardPullLiveAndWatcherTests.swift in Sources */,
 				A9ACF4F982834DC12ECAEE05 /* BoardRenewalsPreferencesTests.swift in Sources */,
 				C53CB9BE3024C8A8453B8FB5 /* BoardReopenedAtTests.swift in Sources */,
+				3656616650C455CEEECE8924 /* BoardScopedEditCommitTests.swift in Sources */,
 				C8C3FA4361DE417972665C41 /* BoardScopedForkFoundationTests.swift in Sources */,
 				195CDCA80939B80590F2FD12 /* BoardScopedForkVectorTests.swift in Sources */,
 				AA3BC13ADA4ADCB420BF3E3B /* BoardSettingsRosterTests.swift in Sources */,

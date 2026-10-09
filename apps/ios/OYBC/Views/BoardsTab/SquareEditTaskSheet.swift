@@ -60,8 +60,52 @@ struct SquareEditTaskSheet: View {
     /// Read-only: how many linked squares a Continuous → Discrete switch
     /// would also write (the confirm's "Follows on" line).
     var database: AppDatabase = .shared
+    /// Ids (this task, its sub-tasks) the Save would FORK for the board being
+    /// edited — placed on another board (docs/BOARD_SCOPED_TASK_EDITS.md).
+    /// Done reads "Save for this board" when the task forks, or when the
+    /// compound editor changes a forking sub-task. From
+    /// `AppDatabase.boardScopedForkCheck`.
+    var forkingTaskIds: Set<String> = []
+    /// Stored rows of the sub-tasks — the baseline a step is compared to.
+    var forkBaselineRows: [String: Task] = [:]
+    /// This board's edit session already confirmed a fork (§8: ask once).
+    var forkConfirmed: Bool = false
+    /// Records the first-fork confirm for the rest of the edit session.
+    var onForkConfirmed: (() -> Void)? = nil
     let onDone: (Patch) -> Void
     let onCancel: () -> Void
+
+    /// Done's label when the Save would fork (web `FORK_DONE_LABEL`).
+    static let forkDoneLabel = "Save for this board"
+    /// The first-fork confirm body (spec §1, verbatim; web `FORK_CONFIRM_BODY`).
+    static let forkConfirmBody = "Applies to this board only. Other boards keep the original."
+
+    /// Done's label for a sheet whose Save would (or would not) fork.
+    static func doneLabel(wouldFork: Bool) -> String { wouldFork ? forkDoneLabel : "Done" }
+
+    /// Whether the sheet's Save would fork anything: the task itself, or a
+    /// sub-task the compound editor changes that is placed on another board.
+    /// Twin of web `sheetWouldFork`.
+    static func wouldFork(
+        taskId: String, draft: TaskEditPatch?, forkingTaskIds: Set<String>, rows: [String: Task]
+    ) -> Bool {
+        if forkingTaskIds.contains(taskId) { return true }
+        return (draft?.children ?? []).contains { step in
+            guard let id = step.childTaskId, forkingTaskIds.contains(id) else { return false }
+            return AppDatabase.childStepChanged(rows[id], step: step)
+        }
+    }
+
+    /// The live fork flag for this sheet's current draft.
+    private var wouldFork: Bool {
+        Self.wouldFork(
+            taskId: task.id, draft: type == .compound ? compoundDraft : nil,
+            forkingTaskIds: forkingTaskIds, rows: forkBaselineRows
+        )
+    }
+
+    /// Whether Done must first ask — a fork this edit session hasn't confirmed.
+    static func needsForkConfirm(wouldFork: Bool, confirmed: Bool) -> Bool { wouldFork && !confirmed }
 
     /// What `loadInputs` returns.
     struct CompoundInputs {
@@ -120,6 +164,7 @@ struct SquareEditTaskSheet: View {
     @State private var pickerLibraryTasks: [Task]
     @State private var pickerLinks: [CompoundChild]
     @State private var pickerInputsState: RisoCompoundEditFieldsView.LibraryInputsState
+    @State private var confirmingFork = false
 
     // MARK: - Init
 
@@ -134,6 +179,10 @@ struct SquareEditTaskSheet: View {
         loadInputs: (() async -> CompoundInputs)? = nil,
         startingType: TaskType? = nil,
         database: AppDatabase = .shared,
+        forkingTaskIds: Set<String> = [],
+        forkBaselineRows: [String: Task] = [:],
+        forkConfirmed: Bool = false,
+        onForkConfirmed: (() -> Void)? = nil,
         onDone: @escaping (Patch) -> Void,
         onCancel: @escaping () -> Void
     ) {
@@ -146,6 +195,10 @@ struct SquareEditTaskSheet: View {
         self.libraryInputsState = libraryInputsState
         self.loadInputs = loadInputs
         self.database = database
+        self.forkingTaskIds = forkingTaskIds
+        self.forkBaselineRows = forkBaselineRows
+        self.forkConfirmed = forkConfirmed
+        self.onForkConfirmed = onForkConfirmed
         self.onDone = onDone
         self.onCancel = onCancel
 
@@ -387,7 +440,7 @@ struct SquareEditTaskSheet: View {
                         .foregroundStyle(Color.risoInk)
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    RisoToolbarPill(title: "Done") { submit() }
+                    RisoToolbarPill(title: Self.doneLabel(wouldFork: wouldFork)) { requestSubmit() }
                         .disabled(!isValid)
                 }
                 ToolbarItem(placement: .cancellationAction) {
@@ -395,6 +448,15 @@ struct SquareEditTaskSheet: View {
                         .font(.risoBody(15, .semibold))
                         .foregroundStyle(Color.risoMuted)
                 }
+            }
+            .alert("\(Self.forkDoneLabel)?", isPresented: $confirmingFork) {
+                Button("Cancel", role: .cancel) {}
+                Button(Self.forkDoneLabel) {
+                    onForkConfirmed?()
+                    submit()
+                }
+            } message: {
+                Text(Self.forkConfirmBody)
             }
         }
     }
@@ -593,6 +655,15 @@ struct SquareEditTaskSheet: View {
     }
 
     // MARK: - Submit
+
+    /// Done: asks once per edit session before the first fork, else submits.
+    private func requestSubmit() {
+        if Self.needsForkConfirm(wouldFork: wouldFork, confirmed: forkConfirmed) {
+            confirmingFork = true
+        } else {
+            submit()
+        }
+    }
 
     private func submit() {
         onDone(

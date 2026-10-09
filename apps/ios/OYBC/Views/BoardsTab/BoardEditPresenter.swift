@@ -98,6 +98,7 @@ struct BoardEditPresenter: ViewModifier {
             .sheet(item: $taskEditTarget) { target in
                 let original = originalTask(for: target.task)
                 let staged = viewModel.editTaskOverrides[target.task.id]?.compound
+                let forkCheck = viewModel.database.boardScopedForkCheck(taskId: target.task.id, boardId: viewModel.boardId)
                 SquareEditTaskSheet(
                     task: target.task,
                     original: original,
@@ -106,6 +107,10 @@ struct BoardEditPresenter: ViewModifier {
                     libraryInputsState: .loading,
                     loadInputs: compoundInputsLoader(for: original, hasStagedCompound: staged != nil),
                     database: viewModel.database,
+                    forkingTaskIds: forkCheck.forking,
+                    forkBaselineRows: forkCheck.rows,
+                    forkConfirmed: viewModel.editForkConfirmed,
+                    onForkConfirmed: { viewModel.editForkConfirmed = true },
                     onDone: { patch in
                         taskEditTarget = nil
                         viewModel.handleEditTaskOverride(taskId: target.task.id, patch: patch)
