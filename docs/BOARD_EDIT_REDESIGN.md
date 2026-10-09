@@ -28,8 +28,9 @@ claude.ai artifact "Board Edit Redesign Brief" (2026-09-26).
   mode + the size chip. **Core boards have no details sheet**: name, timeframe,
   repeats and archive are not fields on a core board (its window is
   structural; durable choices live in Board settings → core defaults).
-- **Square tap (edit)**: Replace task… · Edit task… ("changes it everywhere
-  it's used") · **Lock in place / Unlock** · Remove from board. Center square
+- **Square tap (edit)**: Replace task… · Edit task… (board-scoped: the edit applies to this board only and
+  forks the task when it is placed elsewhere — see
+  [`BOARD_SCOPED_TASK_EDITS.md`](BOARD_SCOPED_TASK_EDITS.md)) · **Lock in place / Unlock** · Remove from board. Center square
   toggles Free space ⇄ task square. **Tap an empty square = add** (staged;
   the play-mode "+" immediate write is retired). Press-and-hold moves a
   square; locked squares don't lift. Shuffle rearranges every unlocked square

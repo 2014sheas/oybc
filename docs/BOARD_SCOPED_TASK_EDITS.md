@@ -1,8 +1,6 @@
 # Board-scoped task edits (copy-on-write from Board Edit)
 
-**Status:** LOCKED 2026-10-08 — the owner accepted every recommendation in the
-decision table (D1–D6); the PR train in §9 is authorised. Design opened
-2026-10-08 after the owner's ruling:
+**Status:** SHIPPED 2026-10-08 (#573 #574 #575; docs #577). Design was LOCKED 2026-10-08: the owner accepted every recommendation in the decision table (D1–D6). Design opened 2026-10-08 after the owner's ruling:
 
 > "Edits at board level (via Edit board etc.) should ONLY affect the task in the
 > scope of that board, even if this means creating a new task upon the edit.
@@ -214,7 +212,7 @@ Nothing new on the grid. In the Board Edit square sheet:
 | 1 — foundation (inert) — **shipped (#573)** | `Task.forkedFromTaskId` (shared type + Zod, iOS GRDB v41 nullable column + `Codable`; no Dexie bump — unindexed), `FORK_NS` + `forkTaskId` / `forkedEventId` helpers (shared TS + Swift twin, vector-pinned), `planBoardScopedFork(task, board, placements, events)` pure planner returning `{ mode: 'inPlace' | 'fork', fork?, eventCopies?, childLinksToCopy?, repoint?, onBoardHolderCompoundIds? }` with vectors for the D1/D2 test and the type-change event filter, browse-filter extension, deletion-cascade guard. No UI change. |
 | 2 — Board Edit + wizard commit — **shipped (#574)** | `boardEditCommit.ts` ↔ `+EditCommit.swift` and `applyStagedTaskEditsForWizardPersist` ↔ `applyStagedTaskEdits` consume the planner inside the existing transaction; cascades for both tasks; sheet button label + first-fork confirm; e2e + XCTest (fork, in-place, compound parent-only, event migration keeps completion, type-change filter, sealed gate, idempotent replay). |
 | 3 — root → copy propagation — **shipped (#575)** | Task Detail edit of a hub root propagates title/action/unit to live copies (shared `planRootFieldPropagation`, both platforms); fix `COUNTER_KINDS.md` D5 wording. |
-| 4 — docs | `TASK_SYSTEM.md` §Editing a task rewritten around the scope table; `BOARD_EDIT_REDESIGN.md:31` ("changes it everywhere") corrected; CLAUDE.md one-paragraph summary. |
+| 4 — docs — **shipped (#577)** | `TASK_SYSTEM.md` §Editing a task rewritten around the scope table; `BOARD_EDIT_REDESIGN.md:31` ("changes it everywhere") corrected; CLAUDE.md one-paragraph summary. |
 
 **PR 1 implementation notes** (where the shipped code refines the sketches above):
 
@@ -254,7 +252,9 @@ Nothing new on the grid. In the Board Edit square sheet:
   point — a holder placed elsewhere is FORKED first (its own placement
   repointed, its links copied) — and the link to the task inside its subtree
   is rewritten in place (`repointCompoundLink`, version bump + enqueue);
-  intermediate compounds on the path are made board-private recursively. A
+  intermediate compounds on the path are made board-private recursively.
+  A holder edit staged later in the same Save is last-write-wins on the
+  fork's fields (the fork already exists, so the later patch overwrites it). A
   sub-task edited from the compound editor goes through the same call
   (`applyStagedCompoundChildEdits` gained a board scope); when the parent is
   not placed yet (the wizard) its link is repointed explicitly.
@@ -269,9 +269,10 @@ Nothing new on the grid. In the Board Edit square sheet:
   member-rule mint and the placements see the fork — any placed / hand-added
   id whose `forkTaskId(board, id)` row exists is swapped, so a sub-task
   forked inside a compound edit also replaces its own square. Member rules
-  cannot meet a fork: only hand-added rows carry the inline editor
-  (source-pulled members have none), so a source member is never edited
-  here. Pending (this-session) tasks have no other placement and are edited
+  can meet a fork only through one edge: a source-pulled counting member that
+  is also a sub-task of a hand-added compound, edited in that compound's
+  editor, is forked and swapped into the placements, and the member-rule mint
+  (keyed on the original id) then skips it (follow-up 4). Pending (this-session) tasks have no other placement and are edited
   in place. A draft board's placement counts as "another board" (it is a
   live, undeleted board); resuming that draft makes it "this board". The pool editor and the
   repeating-board pool path pass no board and stay global.
@@ -320,6 +321,22 @@ Nothing new on the grid. In the Board Edit square sheet:
 
 Estimated size: PR 1 small, PR 2 medium (the commit paths are already staged and
 transactional — most of the work is the planner + tests), PR 3 small, PR 4 docs.
+
+## Follow-ups
+
+Tracked in [#576](https://github.com/2014sheas/oybc/issues/576):
+
+1. Web Board Edit's Save label briefly drops to "Done" while the fork check
+   reloads after adding or linking a sub-task (`BoardEditTaskSheet.tsx`
+   fork-check key).
+2. `countKindSwitch.ts:123-150` and its Swift twin still rewrite kind / goal on
+   non-frozen copies placed on a hand-sealed board, while propagation skips
+   their titles. Apply the same sealed exclusion.
+3. Web passes the raw `basicPatch.title` to the propagation planner; iOS passes
+   the normalized post-write title. Results agree today; align them.
+4. The edge described in the PR 2 Wizard note: a source-pulled counting member
+   forked via a hand-added compound's sub-task editor is skipped by the
+   member-rule mint.
 
 ## 10. Out of scope / explicitly not changing
 
