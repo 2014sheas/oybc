@@ -344,6 +344,11 @@ From the end-user review. Theme: the deep machinery is built — most opportunit
     field with `@ScaledMetric` (or let it size intrinsically with a
     `minWidth`).
 
+### F12 — Board-scoped task edits — `M`, **SHIPPED (2026-10-08)**
+- **Why:** owner ruling 2026-10-08: edits made from a board must affect only that board, even if that means minting a new task; Task Detail edits stay global.
+- **Canonical doc:** `docs/BOARD_SCOPED_TASK_EDITS.md` (rule, fork test, event migration, root-to-copy propagation, PR notes, follow-ups #576).
+- **Shipped:** foundation #573 · Board Edit + wizard fork commit #574 · root-to-copy propagation #575 · docs #577.
+
 ### Explicit non-goal: AI board generation
 "Describe a goal, get a board" demos well but fights the app's soul (offline-first, no server dependency, user-owned data), and F2's starter templates capture most of the same "help me begin" value with zero infrastructure. If ever, a launch-later cloud nicety — recorded here so it isn't re-litigated from scratch.
 
