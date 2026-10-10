@@ -73,7 +73,7 @@ extension AppDatabase {
             if let problem = try compoundLinkProblem(db: db, parentId: task.id, patch: titled) {
                 throw TaskEditError.invalid(message: problem)
             }
-            if let problem = titled.validate(type: .compound) {
+            if let problem = titled.validate(type: .compound, countsToward: original.countsTowardCounterId != nil) {
                 throw TaskEditError.invalid(message: problem)
             }
             task = titled.applied(to: task)

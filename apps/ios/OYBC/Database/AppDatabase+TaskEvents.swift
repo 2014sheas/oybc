@@ -100,7 +100,10 @@ extension AppDatabase {
     ///   - db: The active GRDB write transaction.
     ///   - taskId: The event-owning task whose caches to restamp.
     ///   - now: The write timestamp (shared with the event for coherence).
-    static func stampTaskCachesAuthored(db: Database, taskId: String, now: String) throws {
+    ///   - ownerUid: The uid owning the enqueue (the pull's on a pull path).
+    static func stampTaskCachesAuthored(
+        db: Database, taskId: String, now: String, ownerUid: String? = SyncQueueOwnership.currentUid()
+    ) throws {
         guard var task = try Task.fetchOne(db, key: taskId), isEventOwningTask(task) else { return }
         let events = try TaskEvent.filter(Column("taskId") == taskId).fetchAll(db)
         let caches = computeTaskCachesFromEvents(task: task, events: events)
@@ -115,7 +118,8 @@ extension AppDatabase {
             entityId: taskId,
             operationType: .update,
             payload: task,
-            now: now
+            now: now,
+            ownerUid: ownerUid
         ).enqueue(db)
     }
 

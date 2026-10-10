@@ -144,7 +144,7 @@ final class SyncClearableFieldsTests: XCTestCase {
         XCTAssertEqual(Set(SyncService.clearableFields(for: "coreBoardDefaults")), ["defaultBoardSize", "defaultCenterType"])
         XCTAssertEqual(
             SyncService.clearableFields(for: "tasks"),
-            ["endDate", "counterName", "titleTemplateSingular", "titleTemplatePlural", "timeframeGoals"]
+            ["endDate", "counterName", "titleTemplateSingular", "titleTemplatePlural", "timeframeGoals", "countsTowardCounterId"]
         )
         XCTAssertEqual(SyncService.clearableFields(for: "boardTasks"), [])
         XCTAssertEqual(SyncService.clearableFields(for: "nope"), [])

@@ -92,6 +92,19 @@ extension AppDatabase {
     /// append/tombstone + any task-cache/propagation writes.
     static func reDeriveAfterLateLogWrite(db: Database, changedTaskIds: Set<String>, now: String) throws {
         guard !changedTaskIds.isEmpty else { return }
+        // "Counts toward" (docs/SHARED_COUNTER_SETTINGS.md §3b): a late log that
+        // completes a contributor stamps its increment at the board's endDate —
+        // the completing event's own `occurredAt` (D8). The counter's copies
+        // join the re-derivation below (live, sealed and watchers alike).
+        let countsToward = try writeCountsToward(db: db, changedTaskIds: Array(changedTaskIds), now: now)
+        try reDeriveReachedBoards(db: db, changedTaskIds: changedTaskIds.union(countsToward.cascadeIds), now: now)
+    }
+
+    /// `reDeriveAfterLateLogWrite`'s board half: live-cascade, sealed
+    /// re-derive and watcher refresh over every board reached by
+    /// `changedTaskIds`.
+    private static func reDeriveReachedBoards(db: Database, changedTaskIds: Set<String>, now: String) throws {
+        guard !changedTaskIds.isEmpty else { return }
 
         let affectedBoardIds = try Self.boardIdsReachedByTasks(db: db, taskIds: changedTaskIds)
 
@@ -137,8 +150,9 @@ extension AppDatabase {
     /// cascade only — never written.
     ///
     /// - Returns: The linked row ids to add to the re-derivation set.
-    private static func propagateRootLogToLinkedRows(
-        db: Database, rootId: String, reachOccurredAt: String, now: String
+    static func propagateRootLogToLinkedRows(
+        db: Database, rootId: String, reachOccurredAt: String, now: String,
+        ownerUid: String? = SyncQueueOwnership.currentUid()
     ) throws -> Set<String> {
         guard let rootAfter = try Task.fetchOne(db, key: rootId) else { return [] }
         let (linkedTasks, reachedFrozenIds) = try Self.fetchLinkedTasksForLog(
@@ -159,7 +173,8 @@ extension AppDatabase {
             linked.version += 1
             try linked.save(db)
             try SyncQueueBuilder.makeItem(
-                entityType: "tasks", entityId: linked.id, operationType: .update, payload: linked, now: now
+                entityType: "tasks", entityId: linked.id, operationType: .update, payload: linked, now: now,
+                ownerUid: ownerUid
             ).enqueue(db)
         }
         return Set(linkedTasks.map(\.id)).union(reachedFrozenIds)

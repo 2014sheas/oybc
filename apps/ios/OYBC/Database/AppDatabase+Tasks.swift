@@ -96,11 +96,15 @@ extension AppDatabase {
         let allChildren: [CompoundChild] = try CompoundChild
             .filter(Column("isDeleted") == false)
             .fetchAll(db)
+        // "Counts toward" (docs/SHARED_COUNTER_SETTINGS.md §3b): write the
+        // deterministic increments + the counter roots' logs first, then derive
+        // the counter's copies in this same pass.
+        let countsToward = try writeCountsToward(db: db, changedTaskIds: changedTaskIds, now: now)
         let allBoardTasks: [BoardTask] = try BoardTask
             .filter(Column("isDeleted") == false)
             .fetchAll(db)
         var affectedBoardIds: [String] = []
-        for id in changedTaskIds {
+        for id in changedTaskIds + countsToward.cascadeIds.sorted() {
             let parentCompounds = DerivationPass.findTransitiveParentCompounds(
                 changedTaskId: id,
                 children: allChildren
@@ -117,6 +121,7 @@ extension AppDatabase {
             db: db, boardIds: affectedBoardIds, allChildren: allChildren,
             allBoardTasks: allBoardTasks, now: now
         )
+        try finishCountsTowardRoots(db: db, rootIds: countsToward.rootIds, now: now)
     }
 
     /// Re-derive and persist (version bump + `.update` enqueue) each live,
@@ -260,6 +265,10 @@ extension AppDatabase {
         changedTaskId: String,
         now: String
     ) throws -> [String: CascadeBoardResult] {
+        // "Counts toward" (docs/SHARED_COUNTER_SETTINGS.md §3b): write first so
+        // a counter copy on the tapped board is read with the new increment
+        // (its bingo reaches this result map).
+        let countsToward = try writeCountsToward(db: db, changedTaskIds: [changedTaskId], now: now)
         let allChildren: [CompoundChild] = try CompoundChild
             .filter(Column("isDeleted") == false)
             .fetchAll(db)
@@ -284,15 +293,18 @@ extension AppDatabase {
             childrenByCompound[c.compoundTaskId, default: []].append(c)
         }
 
-        let parentCompounds = DerivationPass.findTransitiveParentCompounds(
-            changedTaskId: changedTaskId,
-            children: allChildren
-        )
-        let affectedBoardIds = DerivationPass.findAffectedBoardIds(
-            changedTaskId: changedTaskId,
-            parentCompounds: parentCompounds,
-            boardTasks: allBoardTasks
-        )
+        var affectedBoardIds = Set<String>()
+        for id in [changedTaskId] + countsToward.cascadeIds.sorted() {
+            let parentCompounds = DerivationPass.findTransitiveParentCompounds(
+                changedTaskId: id,
+                children: allChildren
+            )
+            affectedBoardIds.formUnion(DerivationPass.findAffectedBoardIds(
+                changedTaskId: id,
+                parentCompounds: parentCompounds,
+                boardTasks: allBoardTasks
+            ))
+        }
 
         var results: [String: CascadeBoardResult] = [:]
         for boardId in affectedBoardIds {
@@ -337,6 +349,7 @@ extension AppDatabase {
                 didAutoComplete: transition.didAutoComplete
             )
         }
+        try finishCountsTowardRoots(db: db, rootIds: countsToward.rootIds, now: now)
         return results
     }
 
@@ -579,6 +592,10 @@ extension AppDatabase {
         /// artifact of a board, not library content the user authored. 0 for
         /// any non-source task, and disjoint from `counterMemberCount` above.
         let derivedWindowCounterCount: Int
+        /// "Counts toward" (docs/SHARED_COUNTER_SETTINGS.md §3e) — the live
+        /// counter this task counts toward, whose increment the delete
+        /// tombstones; `nil` when it counts toward nothing (or it is gone).
+        var countsTowardCounter: Task? = nil
     }
 
     /// Read-only impact calculation; safe to call before showing the
@@ -617,6 +634,8 @@ extension AppDatabase {
                 .filter(Column("sharedCounterId") == taskId && Column("isDeleted") == false)
                 .fetchAll(db)
             let counterMembers = allMembers.filter { !BoardSources.isWindowStampedDerived($0) }
+            let counter = try Task.fetchOne(db, key: taskId)?.countsTowardCounterId
+                .flatMap { try Task.fetchOne(db, key: $0) }
             return TaskDeletionImpact(
                 boardTaskCount: visiblePlacements.count,
                 affectedBoardIds: Array(liveBoardIds),
@@ -626,6 +645,7 @@ extension AppDatabase {
                 counterMemberCount: counterMembers.count,
                 counterMembers: counterMembers,
                 derivedWindowCounterCount: allMembers.count - counterMembers.count,
+                countsTowardCounter: counter?.isDeleted == false ? counter : nil
             )
         }
     }
@@ -833,6 +853,13 @@ extension AppDatabase {
                 ).enqueue(db)
             }
         }
+
+        // 6. "Counts toward" (docs/SHARED_COUNTER_SETTINGS.md §3e) — a deleted
+        //    contributor's increment is tombstoned, and a compound that just
+        //    lost this child re-derives its own (parents captured pre-delete).
+        try applyCountsTowardInTransaction(
+            db: db, taskIds: [taskId] + parentCompoundsForDeletion.sorted(), now: now
+        )
     }
 
 }

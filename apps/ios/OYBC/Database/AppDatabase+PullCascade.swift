@@ -80,6 +80,14 @@ extension AppDatabase {
     ///   - changedTaskIds: The tasks whose state changed.
     ///   - ownerUid: The uid the pull runs for (owns the enqueues).
     static func runPullCascadeForTasks(db: Database, changedTaskIds: Set<String>, ownerUid: String) throws {
+        // "Counts toward" (docs/SHARED_COUNTER_SETTINGS.md §3b): a pulled event
+        // / row that completes a contributor re-derives the SAME deterministic
+        // increment here, owned by the pull's uid; the counter's copies join
+        // this pass.
+        let countsToward = try writeCountsToward(
+            db: db, changedTaskIds: Array(changedTaskIds), now: currentTimestamp(), pullOwnerUid: ownerUid
+        )
+        let changedTaskIds = changedTaskIds.union(countsToward.cascadeIds)
         let lookups = try loadPullCascadeLookups(db: db)
         var affectedBoardIds = Set<String>()
         for changedTaskId in changedTaskIds {
@@ -95,6 +103,7 @@ extension AppDatabase {
             guard let board = try Board.fetchOne(db, key: boardId), !board.isDeleted, board.sealedAt == nil else { continue }
             try writePullCascadeBoardStats(db: db, board: board, lookups: lookups, now: now, ownerUid: ownerUid)
         }
+        try finishCountsTowardRoots(db: db, rootIds: countsToward.rootIds, now: now, pullOwnerUid: ownerUid)
     }
 
     /// Board-integrity PR-1 (tombstones) — the `boardTasks`-pull cascade for

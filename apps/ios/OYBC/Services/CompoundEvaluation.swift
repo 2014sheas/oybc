@@ -134,7 +134,10 @@ enum CompoundEvaluation {
             // Vacuous truth: AND over zero children is true.
             // Matches set-theoretic AND-of-empty semantics and avoids surprising
             // an editor mid-restructure with a permanently-incomplete parent.
-            return childStates.isEmpty || childStates.allSatisfy { $0 }
+            // Exception: an unfilled "counts toward" container (no children
+            // yet) is incomplete (docs/SHARED_COUNTER_SETTINGS.md §3a).
+            if childStates.isEmpty { return compound.countsTowardCounterId == nil }
+            return childStates.allSatisfy { $0 }
         case .or:
             return childStates.contains(true)
         case .mOfN:
