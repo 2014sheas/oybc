@@ -1,7 +1,8 @@
 # Shared counter settings, placement defaults, and "counts toward"
 
-**Status:** DESIGN — awaiting owner rulings on the decision points **[D1]–[D9]**.
-Nothing here is built. Opened 2026-10-09 from the owner's brief:
+**Status:** LOCKED 2026-10-09 — the owner accepted every recommendation in the
+decision table (D1–D9); the PR train in §5 is authorised. Opened 2026-10-09 from
+the owner's brief:
 
 > Adding a shared counter to a board is awkward: search an existing counter and
 > edit the count, or create a whole new counter task. Ideally, search a shared
@@ -53,7 +54,7 @@ quick-add show. **Default at creation** = `formatCounterName(action, unit)`
 (today's derived label, so nothing changes for existing counters until edited).
 Blank/absent → derived (as today).
 
-**[D1]** Should renaming the counter also rewrite the noun/verb? Recommendation:
+**[D1 — ruled as recommended]** Should renaming the counter also rewrite the noun/verb? Recommendation:
 **no** — the name is a label; noun and verb stay the generator's inputs. (Rename
 "Run miles" → "Running" without touching "Run"/"miles".)
 
@@ -69,7 +70,7 @@ string with the placeholder **`#N`** for the count. **Defaults at creation**
 | Duration | `"{action} #N"` (the count renders as `Xh Ym`) | same |
 
 \* We have no singular noun today. Default the singular template to the plural
-one (`"Read #N books"`) and let the user edit it to `"Read #N book"` **[D2]** —
+one (`"Read #N books"`) and let the user edit it to `"Read #N book"` **[D2 — ruled as recommended]** —
 or add `unitSingular` as a third field. Recommendation: **no new noun field**;
 the template IS the singular form.
 
@@ -87,7 +88,7 @@ copy whose title was auto (same propagation plan as a unit change), custom copy
 titles are kept. One generator, every surface (cells, hub pills, Task Detail,
 previews).
 
-**[D3]** Backfill: write the defaults into existing roots once (migration-free:
+**[D3 — ruled as recommended]** Backfill: write the defaults into existing roots once (migration-free:
 on first edit / first render, authored write? NO — a render must not write) vs
 treat absent templates as "use the generated default" forever. Recommendation:
 **absent = default, never backfilled**; the sheet shows the default in the
@@ -105,7 +106,7 @@ pinned): `timeframeGoals[board.timeframe]` → else the existing auto-scale →
 else the root's goal → else none (the user is asked, as today). `CUSTOM`
 timeframe boards never match a default.
 
-**[D4]** When exactly one default is set, derive the others by the timeframe
+**[D4 — ruled as recommended]** When exactly one default is set, derive the others by the timeframe
 ratio (weekly×~4.35 = monthly, ×52 = yearly, ÷7 = daily, rounded per kind)?
 Recommendation: **yes, derived and shown dimmed in the sheet** so the user sees
 what a board would get, but stored only when edited. (Cheap, and it is what the
@@ -116,7 +117,7 @@ auto-scaler already does for source pulls — reuse its rounding.)
 Name · Kind · Noun · Verb · Singular title · Plural title · Defaults (Daily /
 Weekly / Monthly / Yearly). Create mode shows the same fields with their
 defaults prefilled (templates and name collapse to one line until the user
-expands them **[D5]** — or always visible; recommendation: **visible**, it is
+expands them **[D5 — ruled as recommended]** — or always visible; recommendation: **visible**, it is
 the only place they can be learned).
 
 ---
@@ -133,7 +134,7 @@ In the wizard Tasks step and Board Edit's quick-add/picker:
   goal)`. The user can still change the goal on the row (per board) — a
   changed goal re-renders the title unless custom.
 - The "Derive smaller version…" affordance (web `DeriveCounterModal`) becomes
-  redundant once defaults exist; retire it in the same PR **[D6]**
+  redundant once defaults exist; retire it in the same PR **[D6 — ruled as recommended]**
   (recommendation: retire — one path).
 
 No change to source-pulled members (member rules keep their own target logic;
@@ -160,7 +161,7 @@ because completion is already derived for every type:
   (default 1; Discrete integers). Set on the **contributing task** (any type:
   Simple, Counting, Compound, a fork, a per-board copy — but not another
   counter root, and not a task that is itself linked to a counter via
-  `sharedCounterId`) **[D7]**: one counter per task; recommendation **one**.
+  `sharedCounterId`) **[D7 — ruled as recommended]**: one counter per task; recommendation **one**.
 - The increment is a normal `task_events` row on the **root**: `kind: increment`,
   `amount`, `occurredAt = completion instant`, **deterministic id**
   `uuidv5(COUNTS_TOWARD_NS, contributingTaskId)`, so every device's re-derivation
@@ -192,7 +193,7 @@ The increment counts for the counter's boards whose window contains
 and "1 book / October". A contributing task that is itself a per-board copy
 (e.g. "read 250 pages" this week) completes once per window and counts once.
 An ended-but-unsealed board's late log stamps `min(now, endDate)` — the
-counts-toward event inherits that `occurredAt` **[D8]** (recommendation: yes,
+counts-toward event inherits that `occurredAt` **[D8 — ruled as recommended]** (recommendation: yes,
 same stamp as the completion that caused it).
 
 ### 3d. UI
@@ -215,7 +216,7 @@ same stamp as the completion that caused it).
 - Deleting a contributor: tombstone its counts-toward event (part of
   `deleteTaskWithCascade`).
 - Switching the counter's kind away from Discrete: refuse while contributors
-  exist (same shape as the existing "has live copies" guards) **[D9]**
+  exist (same shape as the existing "has live copies" guards) **[D9 — ruled as recommended]**
   (recommendation: refuse with the existing validation line).
 - Forking a contributing task (board-scoped edit): the fork keeps the flag; its
   event id is its own (new task id) — the original's event, if any, stays with
@@ -249,9 +250,9 @@ same stamp as the completion that caused it).
 
 ---
 
-## Decision summary
+## Decision summary — all RULED 2026-10-09 (recommendations accepted)
 
-| # | Question | Recommendation |
+| # | Question | Ruling |
 | --- | --- | --- |
 | D1 | Does renaming the counter rewrite noun/verb? | No — name is a label; noun/verb feed the templates. |
 | D2 | Add a `unitSingular` field, or let the singular template carry the singular noun? | Template only; default singular = plural template until edited. |
