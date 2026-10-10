@@ -45,21 +45,13 @@ struct RisoLibrarySheetView: View {
         searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
     }
 
-    /// Match the stored title OR — for a counting task — the pair-derived
-    /// generic name, because a family root's row here reads "Read pages"
-    /// rather than its stored "Read 35 pages" (owner ruling 2026-09-22).
-    /// Tested for every counting task, not just roots: cheaper than threading
-    /// the root set through, and harmless for a standalone counter whose title
-    /// already contains the same `(action, unit)` pair. Twin of web
-    /// `LibrarySheet.tsx`'s `matches` and `TasksTabViewModel.matchesSearch`.
+    /// The shared match set (docs/SHARED_COUNTER_SETTINGS.md §2): the stored
+    /// title OR — for a counting task — its name, noun, verb and plural
+    /// template, because a family root's row here reads its name rather than
+    /// its stored "Read 35 pages" (owner ruling 2026-09-22). Twin of web
+    /// `LibrarySheet.tsx`'s `matches`.
     private func matches(_ task: Task) -> Bool {
-        guard !trimmedQuery.isEmpty else { return true }
-        if task.title.lowercased().contains(trimmedQuery) { return true }
-        if task.type == .counting {
-            let generic = CounterName.formatCounterName(action: task.action, unit: task.unit)
-            if !generic.isEmpty, generic.lowercased().contains(trimmedQuery) { return true }
-        }
-        return false
+        CounterPlacement.taskSearchMatches(trimmedQuery, task: task)
     }
 
     // MARK: - Entry button

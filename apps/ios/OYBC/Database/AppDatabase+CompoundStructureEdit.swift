@@ -70,7 +70,8 @@ extension AppDatabase {
             let goal = parseCountInput(step.goal, kind: kind) ?? base.maxCount ?? 0
             t.action = action; t.unit = unit; t.maxCount = goal
             t.title = TaskTitle.generateCounterTaskTitle(
-                action: action, maxCount: goal, unit: unit, providedTitle: title, countKind: kind
+                action: action, maxCount: goal, unit: unit, providedTitle: title, countKind: kind,
+                settings: CounterSettings.TitleSettings(task: base)
             )
         } else {
             t.title = title

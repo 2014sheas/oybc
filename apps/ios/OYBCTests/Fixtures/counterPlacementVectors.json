@@ -1,0 +1,1056 @@
+{
+  "_note": "Cross-platform vectors for packages/shared/src/algorithms/counterPlacement.ts <-> apps/ios/OYBC/Helpers/CounterPlacement.swift (docs/SHARED_COUNTER_SETTINGS.md §2), plus the root-settings-aware counterCopyTitle in taskTitle.ts <-> TaskTitle.swift. Shared by packages/shared/tests/algorithms/counterPlacement.test.ts and apps/ios/OYBCTests/CounterPlacementVectorTests.swift (byte-identical copy in apps/ios/OYBCTests/Fixtures/). A counter with no timeframeGoals places exactly as before.",
+  "counterTimeframeDefault": [
+    {
+      "name": "the stored default",
+      "root": {
+        "maxCount": 12,
+        "timeframeGoals": {
+          "weekly": 20
+        }
+      },
+      "timeframe": "weekly",
+      "expected": 20
+    },
+    {
+      "name": "derived from the one set (D4)",
+      "root": {
+        "maxCount": 12,
+        "timeframeGoals": {
+          "weekly": 20
+        }
+      },
+      "timeframe": "daily",
+      "expected": 3
+    },
+    {
+      "name": "no defaults: null, never the root goal",
+      "root": {
+        "maxCount": 12
+      },
+      "timeframe": "weekly",
+      "expected": null
+    },
+    {
+      "name": "custom board: null",
+      "root": {
+        "maxCount": 12,
+        "timeframeGoals": {
+          "weekly": 20
+        }
+      },
+      "timeframe": "custom",
+      "expected": null
+    },
+    {
+      "name": "indefinite board: null",
+      "root": {
+        "timeframeGoals": {
+          "weekly": 20
+        }
+      },
+      "timeframe": "indefinite",
+      "expected": null
+    },
+    {
+      "name": "a zero stored default is no default",
+      "root": {
+        "maxCount": 12,
+        "timeframeGoals": {
+          "weekly": 0
+        }
+      },
+      "timeframe": "weekly",
+      "expected": null
+    }
+  ],
+  "placementGoalForCounter": [
+    {
+      "name": "explicit weekly default on a weekly board",
+      "root": {
+        "maxCount": 12,
+        "timeframeGoals": {
+          "weekly": 3
+        }
+      },
+      "board": {
+        "timeframe": "weekly"
+      },
+      "expected": 3
+    },
+    {
+      "name": "explicit daily default on a daily board",
+      "root": {
+        "maxCount": 12,
+        "timeframeGoals": {
+          "daily": 1,
+          "monthly": 10
+        }
+      },
+      "board": {
+        "timeframe": "daily"
+      },
+      "expected": 1
+    },
+    {
+      "name": "explicit monthly default on a monthly board",
+      "root": {
+        "maxCount": 12,
+        "timeframeGoals": {
+          "daily": 1,
+          "monthly": 10
+        }
+      },
+      "board": {
+        "timeframe": "monthly"
+      },
+      "expected": 10
+    },
+    {
+      "name": "explicit yearly default on a yearly board",
+      "root": {
+        "maxCount": 12,
+        "timeframeGoals": {
+          "yearly": 52
+        }
+      },
+      "board": {
+        "timeframe": "yearly"
+      },
+      "expected": 52
+    },
+    {
+      "name": "derived from the nearest set default",
+      "root": {
+        "maxCount": 12,
+        "timeframeGoals": {
+          "weekly": 7
+        }
+      },
+      "board": {
+        "timeframe": "daily"
+      },
+      "expected": 1
+    },
+    {
+      "name": "no defaults: the root goal (today)",
+      "root": {
+        "maxCount": 12
+      },
+      "board": {
+        "timeframe": "weekly"
+      },
+      "expected": 12
+    },
+    {
+      "name": "custom board never matches a default: the root goal",
+      "root": {
+        "maxCount": 12,
+        "timeframeGoals": {
+          "weekly": 3
+        }
+      },
+      "board": {
+        "timeframe": "custom"
+      },
+      "expected": 12
+    },
+    {
+      "name": "indefinite board: the root goal",
+      "root": {
+        "maxCount": 12,
+        "timeframeGoals": {
+          "weekly": 3
+        }
+      },
+      "board": {
+        "timeframe": "indefinite"
+      },
+      "expected": 12
+    },
+    {
+      "name": "goal-less root, no defaults: null",
+      "root": {},
+      "board": {
+        "timeframe": "weekly"
+      },
+      "expected": null
+    },
+    {
+      "name": "goal-less root with a default",
+      "root": {
+        "timeframeGoals": {
+          "weekly": 4
+        }
+      },
+      "board": {
+        "timeframe": "weekly"
+      },
+      "expected": 4
+    },
+    {
+      "name": "goal-less root on a custom board: null",
+      "root": {
+        "timeframeGoals": {
+          "weekly": 4
+        }
+      },
+      "board": {
+        "timeframe": "custom"
+      },
+      "expected": null
+    },
+    {
+      "name": "an existing (revived) copy keeps its goal",
+      "root": {
+        "maxCount": 12,
+        "timeframeGoals": {
+          "weekly": 3
+        }
+      },
+      "board": {
+        "timeframe": "weekly"
+      },
+      "existingCopy": {
+        "maxCount": 5
+      },
+      "expected": 5
+    },
+    {
+      "name": "an existing copy without a goal falls through",
+      "root": {
+        "maxCount": 12,
+        "timeframeGoals": {
+          "weekly": 3
+        }
+      },
+      "board": {
+        "timeframe": "weekly"
+      },
+      "existingCopy": {},
+      "expected": 3
+    },
+    {
+      "name": "continuous default",
+      "root": {
+        "countKind": "continuous",
+        "maxCount": 26.2,
+        "timeframeGoals": {
+          "weekly": 6.5
+        }
+      },
+      "board": {
+        "timeframe": "weekly"
+      },
+      "expected": 6.5
+    }
+  ],
+  "placementNeedsCopy": [
+    {
+      "name": "a default that differs from the root goal",
+      "root": {
+        "maxCount": 12,
+        "timeframeGoals": {
+          "weekly": 3
+        }
+      },
+      "board": {
+        "timeframe": "weekly"
+      },
+      "expected": true
+    },
+    {
+      "name": "a derived default that differs",
+      "root": {
+        "maxCount": 12,
+        "timeframeGoals": {
+          "weekly": 7
+        }
+      },
+      "board": {
+        "timeframe": "daily"
+      },
+      "expected": true
+    },
+    {
+      "name": "a default equal to the root goal: place the root",
+      "root": {
+        "maxCount": 12,
+        "timeframeGoals": {
+          "weekly": 12
+        }
+      },
+      "board": {
+        "timeframe": "weekly"
+      },
+      "expected": false
+    },
+    {
+      "name": "no defaults: place the root (today)",
+      "root": {
+        "maxCount": 12
+      },
+      "board": {
+        "timeframe": "weekly"
+      },
+      "expected": false
+    },
+    {
+      "name": "goal-less root with a default",
+      "root": {
+        "timeframeGoals": {
+          "weekly": 4
+        }
+      },
+      "board": {
+        "timeframe": "weekly"
+      },
+      "expected": true
+    },
+    {
+      "name": "custom board: place the root",
+      "root": {
+        "maxCount": 12,
+        "timeframeGoals": {
+          "weekly": 3
+        }
+      },
+      "board": {
+        "timeframe": "custom"
+      },
+      "expected": false
+    }
+  ],
+  "counterSearchMatches": [
+    {
+      "name": "the name",
+      "query": "Reading",
+      "root": {
+        "title": "Read 12 books",
+        "action": "Read",
+        "unit": "books",
+        "maxCount": 12,
+        "counterName": "Reading"
+      },
+      "expected": true
+    },
+    {
+      "name": "case-insensitive",
+      "query": "READING",
+      "root": {
+        "title": "Read 12 books",
+        "action": "Read",
+        "unit": "books",
+        "maxCount": 12,
+        "counterName": "Reading"
+      },
+      "expected": true
+    },
+    {
+      "name": "the verb",
+      "query": "read",
+      "root": {
+        "title": "Read 12 books",
+        "action": "Read",
+        "unit": "books",
+        "maxCount": 12,
+        "counterName": "Reading"
+      },
+      "expected": true
+    },
+    {
+      "name": "the noun",
+      "query": "books",
+      "root": {
+        "title": "Read 12 books",
+        "action": "Read",
+        "unit": "books",
+        "maxCount": 12,
+        "counterName": "Reading"
+      },
+      "expected": true
+    },
+    {
+      "name": "a prefix of the noun",
+      "query": "boo",
+      "root": {
+        "action": "Read",
+        "unit": "books",
+        "maxCount": 12,
+        "counterName": "Reading"
+      },
+      "expected": true
+    },
+    {
+      "name": "no field holds it",
+      "query": "pages",
+      "root": {
+        "title": "Read 12 books",
+        "action": "Read",
+        "unit": "books",
+        "maxCount": 12,
+        "counterName": "Reading"
+      },
+      "expected": false
+    },
+    {
+      "name": "empty query matches",
+      "query": "  ",
+      "root": {
+        "action": "Read",
+        "unit": "books"
+      },
+      "expected": true
+    },
+    {
+      "name": "diacritic-insensitive query",
+      "query": "cafe",
+      "root": {
+        "action": "Visit",
+        "unit": "cafés",
+        "counterName": "Café visits"
+      },
+      "expected": true
+    },
+    {
+      "name": "diacritic-insensitive name",
+      "query": "café",
+      "root": {
+        "action": "Visit",
+        "unit": "cafes"
+      },
+      "expected": true
+    },
+    {
+      "name": "the rendered plural template",
+      "query": "finish novels",
+      "root": {
+        "action": "Read",
+        "unit": "books",
+        "titleTemplatePlural": "Finish #N novels"
+      },
+      "expected": true
+    },
+    {
+      "name": "a word of the plural template",
+      "query": "novels",
+      "root": {
+        "action": "Read",
+        "unit": "books",
+        "titleTemplatePlural": "Finish #N novels"
+      },
+      "expected": true
+    },
+    {
+      "name": "the derived name when none is stored",
+      "query": "run miles",
+      "root": {
+        "title": "Run 26 miles",
+        "action": "Run",
+        "unit": "miles",
+        "maxCount": 26
+      },
+      "expected": true
+    },
+    {
+      "name": "duration verb",
+      "query": "practice",
+      "root": {
+        "action": "Practice",
+        "unit": "",
+        "countKind": "duration",
+        "maxCount": 90
+      },
+      "expected": true
+    }
+  ],
+  "taskSearchMatches": [
+    {
+      "name": "a plain task matches its title",
+      "query": "dog",
+      "task": {
+        "type": "normal",
+        "title": "Walk the dog"
+      },
+      "expected": true
+    },
+    {
+      "name": "a plain task never matches counter fields",
+      "query": "read",
+      "task": {
+        "type": "normal",
+        "title": "Walk the dog",
+        "action": "Read",
+        "unit": "books"
+      },
+      "expected": false
+    },
+    {
+      "name": "a counting task matches its counter name",
+      "query": "reading",
+      "task": {
+        "type": "counting",
+        "title": "Read 12 books",
+        "action": "Read",
+        "unit": "books",
+        "maxCount": 12,
+        "counterName": "Reading"
+      },
+      "expected": true
+    },
+    {
+      "name": "diacritic-insensitive title",
+      "query": "creme",
+      "task": {
+        "type": "normal",
+        "title": "Make crème brûlée"
+      },
+      "expected": true
+    }
+  ],
+  "counterCopyTitleWithRoot": [
+    {
+      "name": "an auto linked member renders the root's plural template",
+      "member": {
+        "title": "Read 5 books",
+        "action": "Read",
+        "unit": "books",
+        "maxCount": 5
+      },
+      "root": {
+        "titleTemplatePlural": "Finish #N novels"
+      },
+      "newMaxCount": 3,
+      "expected": "Finish 3 novels"
+    },
+    {
+      "name": "a member titled by the root's template is auto",
+      "member": {
+        "title": "Finish 5 novels",
+        "action": "Read",
+        "unit": "books",
+        "maxCount": 5
+      },
+      "root": {
+        "titleTemplatePlural": "Finish #N novels"
+      },
+      "newMaxCount": 3,
+      "expected": "Finish 3 novels"
+    },
+    {
+      "name": "the root's singular template at 1",
+      "member": {
+        "title": "Read 5 books",
+        "action": "Read",
+        "unit": "books",
+        "maxCount": 5
+      },
+      "root": {
+        "titleTemplateSingular": "Finish #N novel",
+        "titleTemplatePlural": "Finish #N novels"
+      },
+      "newMaxCount": 1,
+      "expected": "Finish 1 novel"
+    },
+    {
+      "name": "a custom member title is kept",
+      "member": {
+        "title": "My reading",
+        "action": "Read",
+        "unit": "books",
+        "maxCount": 5
+      },
+      "root": {
+        "titleTemplatePlural": "Finish #N novels"
+      },
+      "newMaxCount": 3,
+      "expected": "My reading"
+    },
+    {
+      "name": "a root without templates: the formula (today)",
+      "member": {
+        "title": "Read 5 books",
+        "action": "Read",
+        "unit": "books",
+        "maxCount": 5
+      },
+      "root": {},
+      "newMaxCount": 3,
+      "expected": "Read 3 books"
+    },
+    {
+      "name": "a goal-less member renders at the new goal",
+      "member": {
+        "title": "Reading",
+        "action": "Read",
+        "unit": "books"
+      },
+      "root": {
+        "counterName": "Reading",
+        "titleTemplatePlural": "Read #N books"
+      },
+      "newMaxCount": 4,
+      "expected": "Read 4 books"
+    }
+  ],
+  "planDerivedTasks": {
+    "_note": "Placement through the member-rule planner (memberRules.ts planDerivedTasks <-> BoardSources.planDerivedTasks). Every task here is also the roots map. 'derived:X' = derivedTaskId(boardId, X). Baselines are 0, vary is off (no rng).",
+    "boardId": "b-week",
+    "tasks": {
+      "R": {
+        "type": "counting",
+        "title": "Read 12 books",
+        "action": "Read",
+        "unit": "books",
+        "maxCount": 12,
+        "timeframeGoals": {
+          "weekly": 3
+        }
+      },
+      "T": {
+        "type": "counting",
+        "title": "Finish 12 novels",
+        "action": "Read",
+        "unit": "books",
+        "maxCount": 12,
+        "titleTemplateSingular": "Finish #N novel",
+        "titleTemplatePlural": "Finish #N novels",
+        "timeframeGoals": {
+          "weekly": 1
+        }
+      },
+      "P": {
+        "type": "counting",
+        "title": "Run 20 miles",
+        "action": "Run",
+        "unit": "miles",
+        "maxCount": 20
+      },
+      "G": {
+        "type": "counting",
+        "title": "Push-ups",
+        "action": "Do",
+        "unit": "push-ups",
+        "timeframeGoals": {
+          "daily": 50
+        }
+      },
+      "U": {
+        "type": "counting",
+        "title": "Walk 10 km",
+        "action": "Walk",
+        "unit": "km",
+        "maxCount": 10,
+        "timeframeGoals": {
+          "weekly": 40
+        }
+      },
+      "L": {
+        "type": "counting",
+        "title": "Read 5 books",
+        "action": "Read",
+        "unit": "books",
+        "maxCount": 5,
+        "sharedCounterId": "T"
+      },
+      "S": {
+        "type": "counting",
+        "title": "Read 30 books",
+        "action": "Read",
+        "unit": "books",
+        "maxCount": 30,
+        "sharedCounterId": "R"
+      },
+      "S2": {
+        "type": "counting",
+        "title": "Run 30 miles",
+        "action": "Run",
+        "unit": "miles",
+        "maxCount": 30,
+        "sharedCounterId": "P"
+      },
+      "S3": {
+        "type": "counting",
+        "title": "Walk 30 km",
+        "action": "Walk",
+        "unit": "km",
+        "maxCount": 30,
+        "sharedCounterId": "U"
+      }
+    },
+    "sourceWindows": {
+      "S": "monthly",
+      "S2": "monthly",
+      "S3": "monthly",
+      "R": "monthly"
+    },
+    "vectors": [
+      {
+        "name": "a hand-added root with a weekly default mints a copy at the default",
+        "window": "weekly",
+        "selected": [
+          "R"
+        ],
+        "manual": [
+          "R"
+        ],
+        "supplies": [],
+        "expected": {
+          "placement": [
+            "derived:R"
+          ],
+          "drafts": [
+            {
+              "root": "R",
+              "maxCount": 3,
+              "title": "Read 3 books"
+            }
+          ]
+        }
+      },
+      {
+        "name": "the copy's title renders the root's singular template",
+        "window": "weekly",
+        "selected": [
+          "T"
+        ],
+        "manual": [
+          "T"
+        ],
+        "supplies": [],
+        "expected": {
+          "placement": [
+            "derived:T"
+          ],
+          "drafts": [
+            {
+              "root": "T",
+              "maxCount": 1,
+              "title": "Finish 1 novel"
+            }
+          ]
+        }
+      },
+      {
+        "name": "a root with no defaults is placed as-is (today)",
+        "window": "weekly",
+        "selected": [
+          "P"
+        ],
+        "manual": [
+          "P"
+        ],
+        "supplies": [],
+        "expected": {
+          "placement": [
+            "P"
+          ],
+          "drafts": []
+        }
+      },
+      {
+        "name": "a custom board never matches a default: placed as-is",
+        "window": "custom",
+        "selected": [
+          "R"
+        ],
+        "manual": [
+          "R"
+        ],
+        "supplies": [],
+        "expected": {
+          "placement": [
+            "R"
+          ],
+          "drafts": []
+        }
+      },
+      {
+        "name": "a goal-less root takes its derived default",
+        "window": "weekly",
+        "selected": [
+          "G"
+        ],
+        "manual": [
+          "G"
+        ],
+        "supplies": [],
+        "expected": {
+          "placement": [
+            "derived:G"
+          ],
+          "drafts": [
+            {
+              "root": "G",
+              "maxCount": 350,
+              "title": "Do 350 push-ups"
+            }
+          ]
+        }
+      },
+      {
+        "name": "a hand-added linked row keeps its own goal; its title renders the root's template",
+        "window": "weekly",
+        "selected": [
+          "L"
+        ],
+        "manual": [
+          "L"
+        ],
+        "supplies": [],
+        "expected": {
+          "placement": [
+            "derived:T"
+          ],
+          "drafts": [
+            {
+              "root": "T",
+              "maxCount": 5,
+              "title": "Finish 5 novels"
+            }
+          ]
+        }
+      },
+      {
+        "name": "a board-sourced member consults the root's default before pro-rating",
+        "window": "weekly",
+        "selected": [
+          "S"
+        ],
+        "manual": [],
+        "supplies": [
+          {
+            "kind": "board",
+            "supply": [
+              "S"
+            ]
+          }
+        ],
+        "expected": {
+          "placement": [
+            "derived:R"
+          ],
+          "drafts": [
+            {
+              "root": "R",
+              "maxCount": 3,
+              "title": "Read 3 books"
+            }
+          ]
+        }
+      },
+      {
+        "name": "a board-sourced member with no defaults pro-rates (today)",
+        "window": "weekly",
+        "selected": [
+          "S2"
+        ],
+        "manual": [],
+        "supplies": [
+          {
+            "kind": "board",
+            "supply": [
+              "S2"
+            ]
+          }
+        ],
+        "expected": {
+          "placement": [
+            "derived:P"
+          ],
+          "drafts": [
+            {
+              "root": "P",
+              "maxCount": 7,
+              "title": "Run 7 miles"
+            }
+          ]
+        }
+      },
+      {
+        "name": "an explicit member-rule target beats the default",
+        "window": "weekly",
+        "selected": [
+          "S"
+        ],
+        "manual": [],
+        "supplies": [
+          {
+            "kind": "board",
+            "supply": [
+              "S"
+            ],
+            "memberRules": {
+              "S": {
+                "target": 5
+              }
+            }
+          }
+        ],
+        "expected": {
+          "placement": [
+            "derived:R"
+          ],
+          "drafts": [
+            {
+              "root": "R",
+              "maxCount": 5,
+              "title": "Read 5 books"
+            }
+          ]
+        }
+      },
+      {
+        "name": "a default above the source member's goal is the target",
+        "window": "weekly",
+        "selected": [
+          "S3"
+        ],
+        "manual": [],
+        "supplies": [
+          {
+            "kind": "board",
+            "supply": [
+              "S3"
+            ]
+          }
+        ],
+        "expected": {
+          "placement": [
+            "derived:U"
+          ],
+          "drafts": [
+            {
+              "root": "U",
+              "maxCount": 40,
+              "title": "Walk 40 km"
+            }
+          ]
+        }
+      },
+      {
+        "name": "a pool-sourced root is placed as-is (pools never auto-target)",
+        "window": "weekly",
+        "selected": [
+          "R"
+        ],
+        "manual": [],
+        "supplies": [
+          {
+            "kind": "pool",
+            "supply": [
+              "R"
+            ]
+          }
+        ],
+        "expected": {
+          "placement": [
+            "R"
+          ],
+          "drafts": []
+        }
+      }
+    ]
+  },
+  "effectiveMemberTarget": [
+    {
+      "name": "a board-pulled member previews its root's default",
+      "goal": 30,
+      "fromBoard": true,
+      "sourceWindow": "monthly",
+      "targetWindow": "weekly",
+      "timeframeDefault": 3,
+      "expected": 3
+    },
+    {
+      "name": "a default above the member's goal previews as-is",
+      "goal": 30,
+      "fromBoard": true,
+      "sourceWindow": "monthly",
+      "targetWindow": "weekly",
+      "timeframeDefault": 40,
+      "expected": 40
+    },
+    {
+      "name": "an explicit target beats the default",
+      "goal": 30,
+      "explicit": 5,
+      "fromBoard": true,
+      "sourceWindow": "monthly",
+      "targetWindow": "weekly",
+      "timeframeDefault": 3,
+      "expected": 5
+    },
+    {
+      "name": "a pool member ignores the default",
+      "goal": 30,
+      "fromBoard": false,
+      "sourceWindow": "monthly",
+      "targetWindow": "weekly",
+      "timeframeDefault": 3,
+      "expected": 30
+    },
+    {
+      "name": "no default: pro-rates (today)",
+      "goal": 30,
+      "fromBoard": true,
+      "sourceWindow": "monthly",
+      "targetWindow": "weekly",
+      "timeframeDefault": null,
+      "expected": 7
+    }
+  ],
+  "generateCounterTaskTitleWithSettings": [
+    {
+      "name": "no settings: the formula",
+      "action": "Read",
+      "maxCount": 3,
+      "unit": "books",
+      "settings": null,
+      "expected": "Read 3 books"
+    },
+    {
+      "name": "the root's plural template",
+      "action": "Read",
+      "maxCount": 3,
+      "unit": "books",
+      "settings": {
+        "titleTemplatePlural": "Finish #N novels"
+      },
+      "expected": "Finish 3 novels"
+    },
+    {
+      "name": "the root's singular template at 1",
+      "action": "Read",
+      "maxCount": 1,
+      "unit": "books",
+      "settings": {
+        "titleTemplateSingular": "Finish #N novel",
+        "titleTemplatePlural": "Finish #N novels"
+      },
+      "expected": "Finish 1 novel"
+    },
+    {
+      "name": "a provided title wins",
+      "action": "Read",
+      "maxCount": 3,
+      "unit": "books",
+      "providedTitle": "  My books ",
+      "settings": {
+        "titleTemplatePlural": "Finish #N novels"
+      },
+      "expected": "My books"
+    },
+    {
+      "name": "duration template",
+      "action": "Practice",
+      "maxCount": 90,
+      "unit": "",
+      "countKind": "duration",
+      "settings": {
+        "titleTemplatePlural": "Practise piano #N"
+      },
+      "expected": "Practise piano 1h 30m"
+    }
+  ]
+}

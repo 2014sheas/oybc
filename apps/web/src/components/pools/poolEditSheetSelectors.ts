@@ -1,4 +1,4 @@
-import type { Task } from '@oybc/shared';
+import { taskSearchMatches, type Task } from '@oybc/shared';
 
 /**
  * poolEditSheetSelectors.ts — pure derivations `PoolEditorBody` needs from
@@ -11,8 +11,10 @@ import type { Task } from '@oybc/shared';
 /**
  * The library-reuse picker's candidate list (I-2): `browsableTasks` (the
  * SAME draft-filtered set the Library segment browses — never the raw,
- * un-filtered task set) minus ids already on the pool, filtered by a
- * case-insensitive title query. Pickers are browse surfaces — a
+ * un-filtered task set) minus ids already on the pool, filtered by the
+ * shared `taskSearchMatches` (title, plus a counter's name / noun / verb /
+ * plural template — docs/SHARED_COUNTER_SETTINGS.md §2; case- and
+ * diacritic-insensitive). Pickers are browse surfaces — a
  * wizard-born draft task the Library tab hides shouldn't be offered here
  * either, even though a pool that already references one still resolves
  * its chip via `resolvePoolChips` below (which reads the full set).
@@ -22,10 +24,7 @@ export function selectLibraryPickerResults(
   selectedIds: ReadonlySet<string>,
   query: string,
 ): Task[] {
-  const q = query.trim().toLowerCase();
-  return browsableTasks
-    .filter((t) => !selectedIds.has(t.id))
-    .filter((t) => q === '' || t.title.toLowerCase().includes(q));
+  return browsableTasks.filter((t) => !selectedIds.has(t.id)).filter((t) => taskSearchMatches(query, t));
 }
 
 /** Cap for `selectQuickAddMatches`'s inline dropdown — the quick-add row

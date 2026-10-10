@@ -58,7 +58,8 @@ import type { BoardWindow, PlanMode } from './memberRules';
  * @param args.sourceWindow - The window the member was pulled from, if known.
  * @param args.targetWindow - The window of the board being assembled.
  * @param args.kind - The member's count kind (default `'discrete'`).
- * @returns The effective target (one step ≥, ≤ `goal`).
+ * @param args.timeframeDefault - The member's ROOT timeframe default for the target window (`counterTimeframeDefault`), consulted FIRST for a board-pulled member with no explicit target — the planner's rule (docs/SHARED_COUNTER_SETTINGS.md §2).
+ * @returns The effective target (one step ≥, ≤ `goal`; or the timeframe default as-is).
  */
 export function effectiveMemberTarget(args: {
   goal: number;
@@ -68,8 +69,10 @@ export function effectiveMemberTarget(args: {
   sourceWindow?: BoardWindow;
   targetWindow: BoardWindow;
   kind?: CountKind;
+  timeframeDefault?: number | null;
 }): number {
-  const { goal, explicit, fromBoard, sourceWindow, targetWindow, kind = 'discrete' } = args;
+  const { goal, explicit, fromBoard, sourceWindow, targetWindow, kind = 'discrete', timeframeDefault } = args;
+  if (fromBoard && explicit === undefined && timeframeDefault != null) return timeframeDefault;
   const targetDays = nominalWindowDays(targetWindow.timeframe, targetWindow.startDate, targetWindow.endDate);
   const base =
     explicit ??

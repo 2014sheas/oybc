@@ -44,7 +44,7 @@ enum SquarePickerCandidates {
             }
             guard eligibleTypes.contains(task.type) else { return false }
             if q.isEmpty { return true }
-            return task.title.localizedCaseInsensitiveContains(q)
+            return CounterPlacement.taskSearchMatches(q, task: task)
         }
         .sorted { $0.title.localizedCompare($1.title) == .orderedAscending }
     }

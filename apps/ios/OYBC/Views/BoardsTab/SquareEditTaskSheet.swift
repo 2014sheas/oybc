@@ -37,6 +37,8 @@ struct SquareEditTaskSheet: View {
     /// Task to edit. Caller pre-applies any existing `StagedTaskOverride` so
     /// the sheet opens with the most recent staged state.
     let task: Task
+    /// The counter ROOT's name + templates (the task's own when it is not a linked copy).
+    private let rootSettings: CounterSettings.TitleSettings
     /// The task as STORED (or as its pending payload holds it) — before any
     /// staged override. Decides whether the type picker shows and what
     /// "Compound" means (a conversion vs an edit), and supplies the counting
@@ -207,10 +209,15 @@ struct SquareEditTaskSheet: View {
         self.onDone = onDone
         self.onCancel = onCancel
         _hasLinkedCopies = State(initialValue: TaskTypeSwitch.initialHasLinkedCopies(task: original ?? task, database: database))
+        // Copy-side titles read the counter ROOT's templates (docs/SHARED_COUNTER_SETTINGS.md §1b).
+        let rootSettings = task.sharedCounterId == nil
+            ? CounterSettings.TitleSettings(task: task)
+            : (database.linkedCounterRoot(of: task).map(CounterSettings.TitleSettings.init(task:)) ?? .init())
+        self.rootSettings = rootSettings
 
         // Blank for an auto-titled Counting task so the title re-derives
         // from Action/Goal/Unit (see `seededTitle(for:)`).
-        _title       = State(initialValue: Self.seededTitle(for: task))
+        _title       = State(initialValue: Self.seededTitle(for: task, settings: rootSettings))
         // `startingType` pre-selects a segment (snapshot fixtures render the
         // converted-Compound state without driving a tap); production leaves nil.
         _type        = State(initialValue: startingType ?? Self.initialType(for: task))
@@ -302,13 +309,16 @@ struct SquareEditTaskSheet: View {
     /// type) seeds verbatim. Mirrors `TaskEditPatch.seededForEditor(from:)`
     /// and web `seedSheetTitle`.
     ///
-    /// - Parameter task: The task being edited (any staged override merged).
+    /// - Parameters:
+    ///   - task: The task being edited (any staged override merged).
+    ///   - settings: The counter ROOT's name + templates (a title rendered from
+    ///     them is auto too); nil = the task's own.
     /// - Returns: The initial Title field text.
-    static func seededTitle(for task: Task) -> String {
+    static func seededTitle(for task: Task, settings: CounterSettings.TitleSettings? = nil) -> String {
         guard task.type == .counting else { return task.title }
         let isAuto = TaskTitle.isAutoCounterTitle(
             title: task.title, action: task.action ?? "", maxCount: task.maxCount, unit: task.unit ?? "",
-            countKind: resolveCountKind(task.countKind)
+            countKind: resolveCountKind(task.countKind), settings: settings ?? CounterSettings.TitleSettings(task: task)
         )
         return isAuto ? "" : task.title
     }
@@ -415,21 +425,22 @@ struct SquareEditTaskSheet: View {
     /// (web `BoardEditTaskSheet`'s preview, same rule). nil until the goal
     /// (and, unless Duration, the unit) is valid.
     static func countingPreviewTitle(
-        title: String, action: String, goalText: String, unit: String, kind: CountKind
+        title: String, action: String, goalText: String, unit: String, kind: CountKind,
+        settings: CounterSettings.TitleSettings? = nil
     ) -> String? {
         guard let goal = parseCountInput(goalText, kind: kind) else { return nil }
         let needsUnit = countKindNeedsUnit(kind)
         let u = needsUnit ? unit.trimmingCharacters(in: .whitespaces) : ""
         if needsUnit && u.isEmpty { return nil }
         return TaskTitle.generateCounterTaskTitle(
-            action: action, maxCount: goal, unit: u, providedTitle: title, countKind: kind
+            action: action, maxCount: goal, unit: u, providedTitle: title, countKind: kind, settings: settings
         )
     }
 
     private var countingPreview: String? {
         guard type == .counting else { return nil }
         return Self.countingPreviewTitle(
-            title: title, action: action, goalText: maxCountStr, unit: unit, kind: countKind
+            title: title, action: action, goalText: maxCountStr, unit: unit, kind: countKind, settings: rootSettings
         )
     }
 
@@ -577,7 +588,7 @@ struct SquareEditTaskSheet: View {
     private func requestKind(_ next: CountKind) {
         guard KindSwitchCopy.needsConfirm(from: countKind, to: next) else { countKind = next; return }
         let linked = (try? database.previewCounterKindSwitch(rootTaskId: task.id, to: next))?.linkedCount ?? 0
-        pendingSwitch = KindSwitchPreview.planned(task: draftTask, to: next, linkedCount: linked)
+        pendingSwitch = KindSwitchPreview.planned(task: draftTask, to: next, linkedCount: linked, settings: rootSettings)
     }
 
     /// The task overlaid with this sheet's unsaved counting fields; a blank
@@ -592,7 +603,7 @@ struct SquareEditTaskSheet: View {
         let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
         t.title = trimmed.isEmpty
             ? TaskTitle.generateCounterTaskTitle(
-                action: action, maxCount: t.maxCount, unit: t.unit ?? "", countKind: countKind
+                action: action, maxCount: t.maxCount, unit: t.unit ?? "", countKind: countKind, settings: rootSettings
             )
             : trimmed
         return t
@@ -602,7 +613,9 @@ struct SquareEditTaskSheet: View {
     /// keeps re-deriving; a typed title that reads as the auto one follows.
     private func applyConfirmedSwitch(_ p: KindSwitchPreview) {
         if !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-           let titleAfter = KindSwitchPreview.planned(task: draftTask, to: p.to, linkedCount: 0)?.titleAfter {
+           let titleAfter = KindSwitchPreview.planned(
+               task: draftTask, to: p.to, linkedCount: 0, settings: rootSettings
+           )?.titleAfter {
             title = titleAfter
         }
         maxCountStr = KindSwitchCopy.switchedGoalText(maxCountStr, from: p.from, to: p.to)
@@ -693,10 +706,26 @@ struct SquareEditTaskSheet: View {
         }
     }
 
+    /// The Title Done submits. A blank counting title stays blank (regenerated
+    /// at Save) unless the root's templates render it differently from the
+    /// formula — then the templated title is sent (web `buildSheetOverride`).
+    private var submittedTitle: String {
+        let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.isEmpty, type == .counting,
+              let goal = parseCountInput(maxCountStr, kind: countKind) else { return trimmed }
+        let u = countKindNeedsUnit(countKind) ? unit.trimmingCharacters(in: .whitespaces) : ""
+        let a = action.trimmingCharacters(in: .whitespaces)
+        let templated = TaskTitle.generateCounterTaskTitle(
+            action: a, maxCount: goal, unit: u, countKind: countKind, settings: rootSettings
+        )
+        let formula = TaskTitle.generateCounterTaskTitle(action: a, maxCount: goal, unit: u, countKind: countKind)
+        return templated == formula ? trimmed : templated
+    }
+
     private func submit() {
         onDone(
             Patch(
-                title: title.trimmingCharacters(in: .whitespacesAndNewlines),
+                title: submittedTitle,
                 type: type,
                 action: action.trimmingCharacters(in: .whitespaces),
                 // Duration hides Unit but keeps the row's own (a hub counter's noun names it).

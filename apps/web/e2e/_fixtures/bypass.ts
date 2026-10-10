@@ -422,6 +422,13 @@ export interface SeedTask {
   /** Wizard-born provenance — the third mark of a window-stamped derived
    *  counter (`isWindowStampedDerived`). */
   createdInWizard?: boolean;
+  /** Shared counter settings (docs/SHARED_COUNTER_SETTINGS.md §1) — the root's name. */
+  counterName?: string;
+  /** `#N` title templates. */
+  titleTemplateSingular?: string;
+  titleTemplatePlural?: string;
+  /** Default goal per core timeframe. */
+  timeframeGoals?: { daily?: number; weekly?: number; monthly?: number; yearly?: number };
 }
 
 export async function seedTask(page: Page, task: SeedTask): Promise<void> {

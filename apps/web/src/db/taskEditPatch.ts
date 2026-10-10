@@ -2,6 +2,7 @@ import {
   OperatorType,
   TaskType,
   generateCounterTaskTitle,
+  isAutoCounterTitle,
   clampCompoundThreshold,
   countKindNeedsUnit,
   formatCountForInput,
@@ -10,6 +11,7 @@ import {
   type CountKind,
   compoundChildPickerCandidates,
   type CompoundChild,
+  type CounterTitleSettings,
   type Task,
 } from '@oybc/shared';
 import { generateUUID, currentTimestamp } from './utils';
@@ -175,21 +177,19 @@ export function patchFromTask(task: Task): TaskEditPatch {
  * auto-deriving as Action/Goal/Unit change in the editor — a non-blank
  * seeded title reads as "custom" in `applyPatchToTask` and would otherwise
  * never re-derive. A genuinely custom title is preserved verbatim. Mirrors
- * iOS `TaskEditPatch.seededForEditor(from:)`.
+ * iOS `TaskEditPatch.seededForEditor(from:)`. A title rendered from the
+ * counter root's templates is auto too (docs/SHARED_COUNTER_SETTINGS.md §1b).
+ *
+ * @param task - The task being opened.
+ * @param settings - The counter ROOT's name + templates (defaults to the task's own).
  */
-export function seedPatchForEditor(task: Task): TaskEditPatch {
+export function seedPatchForEditor(task: Task, settings: CounterTitleSettings | null = task): TaskEditPatch {
   const patch = patchFromTask(task);
-  if (task.type === TaskType.COUNTING) {
-    const autoTitle = generateCounterTaskTitle(
-      task.action ?? '',
-      task.maxCount,
-      task.unit ?? '',
-      undefined,
-      resolveCountKind(task),
-    );
-    if (task.title === autoTitle) {
-      return { ...patch, title: '' };
-    }
+  if (
+    task.type === TaskType.COUNTING &&
+    isAutoCounterTitle(task.title, task.action ?? '', task.maxCount, task.unit ?? '', resolveCountKind(task), settings)
+  ) {
+    return { ...patch, title: '' };
   }
   return patch;
 }
@@ -399,9 +399,10 @@ export function validatePatch(
  * is applied by the persist layer (`applyStagedCompoundChildEdits`, reached via
  * `applyCompoundStructureEditInTransaction` in
  * `db/operations/compoundStructureEdit.ts`), not here. Mirrors iOS
- * `TaskEditPatch.applied(to:)`.
+ * `TaskEditPatch.applied(to:)`. A blank counting title renders through the
+ * counter root's templates (`settings`, default the task's own).
  */
-export function applyPatchToTask(patch: TaskEditPatch, base: Task): Task {
+export function applyPatchToTask(patch: TaskEditPatch, base: Task, settings: CounterTitleSettings | null = base): Task {
   const trimmedTitle = patch.title.trim();
   switch (base.type) {
     case TaskType.COUNTING: {
@@ -410,7 +411,8 @@ export function applyPatchToTask(patch: TaskEditPatch, base: Task): Task {
       const a = patch.action.trim();
       const u = countKindNeedsUnit(kind) ? patch.unit.trim() : '';
       const g = parsePositiveGoal(patch.goal, kind) ?? (base.maxCount ?? 0);
-      const title = trimmedTitle.length === 0 ? generateCounterTaskTitle(a, g, u, undefined, kind) : trimmedTitle;
+      const title =
+        trimmedTitle.length === 0 ? generateCounterTaskTitle(a, g, u, undefined, kind, settings) : trimmedTitle;
       const next: Task = { ...base, action: a, unit: u, maxCount: g, title };
       // Written explicitly (incl. 'discrete') when it changes: sync merge-writes and
       // countKind is not a clearable field, so it is never deleted from an existing row.
@@ -499,7 +501,7 @@ export function applyStepToChildTask(base: Task, step: ChildPatch, title: string
     const kind = resolveCountKind(base);
     const unit = countKindNeedsUnit(kind) ? step.unit.trim() : '';
     const goal = parsePositiveGoal(step.goal, kind) ?? (base.maxCount ?? 0);
-    return { ...base, action, unit, maxCount: goal, title: generateCounterTaskTitle(action, goal, unit, title, kind) };
+    return { ...base, action, unit, maxCount: goal, title: generateCounterTaskTitle(action, goal, unit, title, kind, base) };
   }
   return { ...base, title };
 }

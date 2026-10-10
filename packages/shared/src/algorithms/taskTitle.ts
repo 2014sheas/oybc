@@ -11,6 +11,11 @@ import { renderCounterTitle, type CounterSettingsFields } from './counterSetting
  * @param maxCount - Target count (e.g., 100), rendered as a trimmed 2dp number (locale-independent: titles are stored data), or null/undefined for a goal-less hub-born counter
  * @param unit - Unit of measurement (e.g., "pages")
  * @param providedTitle - Optional user-provided title
+ * @param countKind - The row's kind.
+ * @param settings - The shared counter ROOT's name + templates
+ *   (docs/SHARED_COUNTER_SETTINGS.md §1b). Pass it whenever the row is a
+ *   counter root or a copy of one, so the title renders through the root's
+ *   templates; absent = the formula.
  * @returns The resolved task title string
  */
 export function generateCounterTaskTitle(
@@ -18,17 +23,18 @@ export function generateCounterTaskTitle(
   maxCount: number | null | undefined,
   unit: string,
   providedTitle?: string,
-  countKind: CountKind = 'discrete'
+  countKind: CountKind = 'discrete',
+  settings?: CounterTitleSettings | null
 ): string {
   if (providedTitle && providedTitle.trim().length > 0) {
     return providedTitle.trim();
   }
-  // One generator (docs/SHARED_COUNTER_SETTINGS.md §1b): no stored templates
-  // here, so `renderCounterTitle` takes its default path — the formula
+  // One generator (docs/SHARED_COUNTER_SETTINGS.md §1b): with no stored
+  // templates `renderCounterTitle` takes its default path — the formula
   // "{action} {goal} {unit}" (Duration "{action} {Xh Ym}"), and a goal-less
   // hub-born accumulator renders the pair-derived name (`formatCounterName`:
   // "Do" + "push-ups" → "Push-ups", "Run" + "miles" → "Run miles").
-  return renderCounterTitle({ action, unit, countKind }, maxCount);
+  return renderCounterTitle({ ...(settings ?? {}), action, unit, countKind }, maxCount);
 }
 
 /**
@@ -109,17 +115,29 @@ export function isAutoCounterTitle(
  * window heal's `windowStampedCopyDraft` so the two mint paths can never
  * disagree; Swift twin `TaskTitle.counterCopyTitle`.
  *
+ * A LINKED member (`sharedCounterId` set) carries no templates of its own,
+ * so the caller passes its ROOT's `settings` (docs/SHARED_COUNTER_SETTINGS.md
+ * §1b hand-off): the member's title is then judged and re-rendered through
+ * the root's templates. Omitted, the member's own fields are used (a root
+ * member, or a root with no templates — the formula).
+ *
  * @param member - The member being copied (its own title / action / unit / goal).
  * @param newMaxCount - The copy's target.
+ * @param settings - The ROOT's name + templates when `member` is a linked row.
  * @returns The copy's title.
  */
-export function counterCopyTitle(member: CounterTitleFields, newMaxCount: number): string {
+export function counterCopyTitle(
+  member: CounterTitleFields,
+  newMaxCount: number,
+  settings?: CounterTitleSettings | null
+): string {
   const action = member.action ?? '';
   const unit = member.unit ?? '';
   const countKind = member.countKind ?? 'discrete';
-  if (!isAutoCounterTitle(member.title, action, member.maxCount, unit, countKind, member)) {
+  const s: CounterTitleSettings = settings ?? member;
+  if (!isAutoCounterTitle(member.title, action, member.maxCount, unit, countKind, s)) {
     return member.title.trim();
   }
-  // A root member's own templates render the copy (absent → the formula).
-  return renderCounterTitle({ ...member, action, unit, countKind }, newMaxCount);
+  // The root's templates render the copy (absent → the formula).
+  return renderCounterTitle({ ...s, action, unit, countKind }, newMaxCount);
 }

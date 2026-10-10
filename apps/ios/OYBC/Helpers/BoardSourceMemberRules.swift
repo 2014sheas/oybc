@@ -440,6 +440,8 @@ extension BoardSources {
     ///     compound's parts are pro-rated by looking up the CHILD's id,
     ///     never the compound's).
     ///   - baselineByRootId: Shared-counter root id → its event-derived lifetime count.
+    ///   - rootsById: Root id → root, for roots not in `tasksById` (copy titles
+    ///     render through the root's templates; board pulls consult its defaults).
     ///   - rng: Uniform `[0, 1)` source.
     /// - Returns: Placement ids plus the derived drafts they refer to.
     static func planDerivedTasks(
@@ -454,9 +456,19 @@ extension BoardSources {
         childrenByCompoundId: [String: [CompoundChild]],
         sourceWindowByTaskId: [String: BoardWindow],
         baselineByRootId: [String: CountValue],
+        rootsById: [String: Task] = [:],
         rng: () -> Double
     ) -> PlanDerivedTasksResult {
         let manual = Set(manualTaskIds)
+        /// The member's shared-counter root (itself when it is the root), if known.
+        func rootOf(_ t: Task) -> Task? {
+            guard let sid = t.sharedCounterId, !sid.isEmpty else { return t }
+            return rootsById[sid] ?? tasksById[sid]
+        }
+        /// A root's timeframe default for this board (docs/SHARED_COUNTER_SETTINGS.md §2).
+        func defaultOf(_ root: Task?) -> CountValue? {
+            root.flatMap { CounterPlacement.counterTimeframeDefault(.init(task: $0), timeframe: window.timeframe) }
+        }
         let targetDays = nominalWindowDays(
             window.timeframe,
             startDate: window.startDate,
@@ -486,11 +498,8 @@ extension BoardSources {
         /// a board-pulled member pro-rates on one-off AND recurring boards
         /// alike (owner ruling 2026-09-21).
         ///
-        /// The final `min(max(step, floorToStep(base)), goal)` clamp is
-        /// redundant for on-step targets (`varyRange` re-clamps `t`
-        /// identically) and only observable on an off-step explicit target —
-        /// kept verbatim so the two platforms can never disagree about a
-        /// malformed stored rule.
+        /// The final clamp is kept verbatim from the TS twin (only observable
+        /// on an off-step explicit target).
         func resolveTarget(
             goal: CountValue,
             explicit: CountValue?,
@@ -498,6 +507,11 @@ extension BoardSources {
             taskIdForWindow: String,
             kind: CountKind
         ) -> CountValue {
+            // A board-sourced member consults its root's timeframe default FIRST
+            // (a source pull and a hand-add agree), as-is even above `goal`.
+            if explicit == nil, fromBoard, let dflt = defaultOf(tasksById[taskIdForWindow].flatMap(rootOf)) {
+                return dflt
+            }
             let base: CountValue
             if let explicit {
                 base = explicit
@@ -516,8 +530,9 @@ extension BoardSources {
             return Swift.min(Swift.max(countTargetStep(kind), floorToCountStep(base, kind: kind)), goal)
         }
         func mint(_ task: Task, replacesId: String, target: CountValue, vary: VaryLevel) -> DerivedTaskDraft {
-            // `goalOf` is non-nil at every call site (each branch checks first).
-            let goal = goalOf(task) ?? 1
+            // The vary clamp's ceiling: the goal, or a timeframe default above it
+            // (every pre-default target is ≤ the goal, so unchanged there).
+            let goal = Swift.max(goalOf(task) ?? 0, target)
             let root = task.sharedCounterId ?? task.id
             // The dedupe is checked BEFORE the roll: a collapsed occurrence
             // consumes no rng sample, so a seeded sequence reproduces
@@ -535,7 +550,9 @@ extension BoardSources {
                 maxCount: maxCount,
                 countKind: countKind,
                 baseline: isWholeCountKind(countKind) ? (baselineByRootId[root] ?? 0).rounded(.down) : quantizeCount(baselineByRootId[root] ?? 0),
-                title: TaskTitle.counterCopyTitle(member: task, newMaxCount: maxCount),
+                title: TaskTitle.counterCopyTitle(
+                    member: task, newMaxCount: maxCount, settings: rootOf(task).map(CounterSettings.TitleSettings.init(task:))
+                ),
                 action: action,
                 unit: unit,
                 timeframe: window.timeframe,
@@ -559,7 +576,15 @@ extension BoardSources {
             let parentId = supply?.partOf[id]
 
             if task.type == .counting {
-                guard let goal = goalOf(task) else {
+                let ownGoal = goalOf(task)
+                // A hand-added ROOT with a differing default for this board mints
+                // at it; a hand-added LINKED row keeps its own goal.
+                if isManual, !isLinkedMember(task), let dflt = defaultOf(task), dflt != ownGoal {
+                    placementIds.append(mint(task, replacesId: id, target: dflt, vary: manualTaskVary[id] ?? .off).id)
+                    continue
+                }
+                // A goal-less member pulled from a board takes its root's default.
+                guard let goal = ownGoal ?? (fromBoard ? defaultOf(rootOf(task)) : nil) else {
                     // Goal-less (an accumulator — including a goal-less
                     // LINKED member): nothing to mint a per-window target
                     // from, so it is placed as-is. Documented edge of the
@@ -600,31 +625,11 @@ extension BoardSources {
                             taskIdForWindow: id,
                             kind: resolveCountKind(task.countKind)
                         )
-                        // No identical clone (owner ruling 2026-09-22): a
-                        // derived row exists to carry a DIFFERENT target or a
-                        // vary range. When the resolved target already equals
-                        // the part's own goal and vary is off, place the root
-                        // part itself, exactly as the pool / hand-added
-                        // branches do. Decided on `resolveTarget`'s RESULT, so
-                        // the pro-rating stays intact. `rollTarget` consumes no
-                        // rng at `.off`, so the skip cannot shift a seeded
-                        // sequence on either platform. (TS twin, verbatim.)
-                        //
-                        // `sharedCounterId == nil` is load-bearing: you may
-                        // only place "the root task itself" when the member IS
-                        // the root. A member that is already a window-stamped
-                        // derived counter (yesterday's daily, pulled into
-                        // today's) resolves to `autoTarget(goal, 1, 1) == goal`
-                        // with vary off, and placing it would put ANOTHER
-                        // window's row on this board — its `startDate` still
-                        // names the old window, so the derived-counter
-                        // carve-out reads that window's baseline and the square
-                        // can open already complete, with
-                        // `refreshDerivedBaselines` recomputing from the same
-                        // stale `startDate` so it never heals. It must re-mint
-                        // for THIS window, exactly as the hand-added branch's
-                        // `isWindowStampedMember` guard above already ensures.
-                        if target == goal, vary == .off, task.sharedCounterId == nil {
+                        // No identical clone (owner ruling 2026-09-22) — the TS
+                        // twin carries the full reasoning, including why the
+                        // `sharedCounterId == nil` guard is load-bearing (a
+                        // window-stamped member must re-mint for THIS window).
+                        if target == ownGoal, vary == .off, task.sharedCounterId == nil {
                             placementIds.append(id)
                             continue
                         }
@@ -649,7 +654,7 @@ extension BoardSources {
                     // No identical clone (owner ruling 2026-09-22) — see the
                     // split-part branch above for the reasoning, the
                     // `sharedCounterId` guard included; same rule, same shape.
-                    if target == goal, vary == .off, task.sharedCounterId == nil {
+                    if target == ownGoal, vary == .off, task.sharedCounterId == nil {
                         placementIds.append(id)
                         continue
                     }

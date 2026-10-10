@@ -7,6 +7,7 @@ import {
   isAutoCounterTitle,
   parseCountInput,
   resolveCountKind,
+  type CounterTitleSettings,
   type CountKind,
   type Task,
 } from '@oybc/shared';
@@ -40,15 +41,18 @@ export function showsCompoundEditor(selected: TaskType): boolean {
  * chosen name and `buildSheetOverride` would carry the stale "Run 10 miles"
  * onto a goal of 5. A custom title (and any other type) seeds verbatim.
  * Mirrors `seedPatchForEditor` (`db/taskEditPatch.ts`) and iOS
- * `SquareEditTaskSheet.seededTitle(for:)`.
+ * `SquareEditTaskSheet.seededTitle(for:)`. A title rendered from the shared
+ * counter root's templates is auto too (docs/SHARED_COUNTER_SETTINGS.md §1b).
  *
  * @param task - The task being edited (any staged override already merged).
+ * @param rootSettings - The counter ROOT's name + templates when `task` is a
+ *   linked copy; omitted, the task's own (a root, or a plain task).
  */
-export function seedSheetTitle(task: Task): string {
+export function seedSheetTitle(task: Task, rootSettings?: CounterTitleSettings | null): string {
   const title = task.title ?? '';
   if (
     task.type === TaskType.COUNTING &&
-    isAutoCounterTitle(title, task.action ?? '', task.maxCount, task.unit ?? '', resolveCountKind(task))
+    isAutoCounterTitle(title, task.action ?? '', task.maxCount, task.unit ?? '', resolveCountKind(task), rootSettings ?? task)
   ) {
     return '';
   }
@@ -97,6 +101,8 @@ export interface SheetInput {
    * an unedited compound skip structure validation / submission.
    */
   compoundBaseline?: TaskEditPatch | null;
+  /** The counter ROOT's name + templates — a blank title renders through them. */
+  rootSettings?: CounterTitleSettings | null;
 }
 
 /**
@@ -185,7 +191,8 @@ export function buildSheetOverride(input: SheetInput): BoardEditTaskOverride {
       // field opens blank for an auto-titled task (`seedSheetTitle`), so a
       // goal-only edit regenerates the title instead of keeping the stored
       // one at the old goal.
-      patch.title = title || generateCounterTaskTitle(action, goal, unit, undefined, input.countKind);
+      patch.title =
+        title || generateCounterTaskTitle(action, goal, unit, undefined, input.countKind, input.rootSettings ?? original);
       patch.action = action;
       patch.maxCount = goal;
       patch.unit = unit;
