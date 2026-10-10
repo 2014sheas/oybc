@@ -175,10 +175,17 @@ in the library separately from its counter** (ruled), and when its counter is
 deleted it is **kept and decoupled** (ruled; `deleteCounterWithUnlink` already
 does exactly this). Everything in §3a–3c — the three fields, the occurrence-keyed
 credit ids, lineage, seals, guards and the single write path — stands unchanged.
-The member-management UI (member rows on Counter Detail carrying the amount,
-placement through the counter search, the library row's counter value, the
-remaining visibility rules) goes through a Claude Design brief before any
-implementation; until it lands, "+ New" is the only UI write of the flag.
+**Two further rulings the same day:** (i) **a unit task always credits exactly
+one** — "that should not be a field that lives anywhere": no amount control on any
+surface, the "+N" mark leaves the Counter Detail rows, "+ New" writes no amount;
+`Task.countsTowardAmount` stays as an inert column (decode + sync compat, like
+`lastSyncedCount`), never written by the app, to be dropped in a later schema
+cleanup; (ii) **a unit task shows which counter it belongs to the way a linked
+counting copy does today — the shared two-dot mark plus the counter's name** on
+its rows. The member-management UI (member rows on Counter Detail with a remove
+action, the "+ New" shape choice, placement through the counter search, the
+library row carrying the dots + counter name) goes through a Claude Design brief
+before any implementation; until it lands, "+ New" is the only UI write of the flag.
 
 ### 3a. Data
 
@@ -652,8 +659,9 @@ live, flagged member, else the smallest id), its status on its primary board
 (`pickPrimaryBoard`, now exported; `done` = `resolveContributionState` holds in
 that window, `inProgress` = a plain Counting task with an in-window count > 0
 or a Compound with a child complete in the window, else `notStarted`; lifetime
-when unplaced; sealed boards bounded at `sealedAt`), board, amount, credit
-count — in the handoff's order Done → In progress → Not started → title → id.
+when unplaced; sealed boards bounded at `sealedAt`), board, credit count (the
+row's amount was dropped in #590 — always one) — in the handoff's order
+Done → In progress → Not started → title → id.
 
 - **C1 Counter Detail → "Counts toward"** (Discrete roots only; hidden for
   Continuous / Duration): web `CountsTowardSection` over
@@ -663,7 +671,7 @@ count — in the handoff's order Done → In progress → Not started → title 
   (the standalone creator preset to the counter: web `NewTaskSheet
   presetCountsTowardCounterId` ↔ iOS `NewTaskSheetView`); rows = type badge ·
   title (done = muted + strikethrough) · primary board + timeframe dot · "× N"
-  (N ≥ 2 only) · "+N" (amount ≠ 1) · StatusPill (Done / In progress / Not
+  (N ≥ 2 only) · ~~"+N" (amount ≠ 1)~~ (removed in #590 — always one) · StatusPill (Done / In progress / Not
   started — web `components/StatusPill` extracted from Task Detail with a label
   set; iOS new `RisoStatusPill`); empty one-liner "Nothing counts toward {Name}
   yet."; row tap → Task Detail. The section sits between "Not counting now" and
@@ -766,7 +774,8 @@ count — in the handoff's order Done → In progress → Not started → title 
 
 - ~~iOS: a compound-create cycle refusal lands on the form line after the special-task panel has collapsed, so the line can be out of view.~~ Closed with the editor row's retirement (2026-10-10) — the panel no longer hosts the field.
 - ~~Web: an empty `fieldGroup` wrapper remains in the editor when the Counts toward row hides.~~ Closed the same way — the row is gone.
-- **Open (design round):** the member-model surfaces listed in the §3 amendment — Counter Detail member rows (amount, remove), "+ New" shape choice (Simple / Counting / Compound), placement of a unit task through the counter search, and how a unit task's library row shows its counter.
+- **Open (design round):** the member-model surfaces listed in the §3 amendment — Counter Detail member rows (remove action; no amount, always one), "+ New" shape choice (Simple / Counting / Compound), placement of a unit task through the counter search, and the unit task's library row carrying the two-dot mark + counter name.
+- **Schema cleanup (later):** drop the inert `countsTowardAmount` column / field / clearable entry once a migration window is convenient.
 
 Known edges (acceptable; revisit if a real case surfaces) are listed under the PR 3 hand-offs above.
 
