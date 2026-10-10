@@ -36,7 +36,11 @@ export type { SquareDraftCell } from './squareEditCount';
  * structure. Applied at Save (`applyBoardEditTaskOverrideInTransaction`).
  * `type` is only present when the staged type differs from the stored one.
  */
-export type BoardEditTaskOverride = UpdateTaskPatch & { compound?: TaskEditPatch };
+export type BoardEditTaskOverride = UpdateTaskPatch & {
+  compound?: TaskEditPatch;
+  /** "Counts toward" — present only when the row changed; written at Save through `setCountsTowardInTransaction`. */
+  countsToward?: { counterId: string | null; amount?: number };
+};
 
 export interface SquaresEditDraftState {
   cells: SquareDraftCell[];
@@ -407,8 +411,14 @@ export function deriveEditCount({ state, boardCenterType }: DeriveEditCountInput
  */
 export function applyOverrideForDisplay(base: Task, override: BoardEditTaskOverride | undefined): Task {
   if (!override) return base;
-  const { compound, ...fields } = override;
-  const merged = { ...base, ...(fields as Partial<Task>) };
+  const { compound, countsToward, ...fields } = override;
+  // The staged flag shows on the grid (the two-dot mark) before Save.
+  const flagged: Partial<Task> = countsToward
+    ? countsToward.counterId == null
+      ? { countsTowardCounterId: undefined, countsTowardAmount: undefined }
+      : { countsTowardCounterId: countsToward.counterId, countsTowardAmount: countsToward.amount }
+    : {};
+  const merged = { ...base, ...(fields as Partial<Task>), ...flagged };
   return compound && merged.type === TaskType.COMPOUND ? applyPatchToTask(compound, merged) : merged;
 }
 

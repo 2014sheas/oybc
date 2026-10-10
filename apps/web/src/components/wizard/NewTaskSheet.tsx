@@ -54,6 +54,8 @@ export interface NewTaskSheetProps {
    * which falls back to the live `useTasks` pool there.
    */
   suggestionPool?: Task[];
+  /** "Counts toward" preset (Counter Detail's "+ New"): the counter the new task counts toward. */
+  presetCountsTowardCounterId?: string;
 }
 
 /**
@@ -81,6 +83,7 @@ export function NewTaskSheet({
   defaultEndDate,
   deferPersist = false,
   suggestionPool,
+  presetCountsTowardCounterId,
 }: NewTaskSheetProps): React.ReactElement | null {
   if (!isOpen) return null;
 
@@ -97,6 +100,7 @@ export function NewTaskSheet({
       defaultEndDate={defaultEndDate}
       deferPersist={deferPersist}
       suggestionPool={suggestionPool}
+      presetCountsTowardCounterId={presetCountsTowardCounterId}
     />
   );
 }
@@ -117,6 +121,7 @@ function NewTaskSheetBody({
   defaultEndDate,
   deferPersist = false,
   suggestionPool,
+  presetCountsTowardCounterId,
 }: Omit<NewTaskSheetProps, 'isOpen'>): React.ReactElement {
   // aria-modal, Escape → close, initial focus, Tab trap, focus restore.
   const { ref: modalRef, props: modalProps } = useModalA11y<HTMLDivElement>({
@@ -134,6 +139,7 @@ function NewTaskSheetBody({
     defaultStartDate,
     defaultEndDate,
     deferPersist,
+    countsTowardPreset: presetCountsTowardCounterId ?? null,
   });
 
   /**

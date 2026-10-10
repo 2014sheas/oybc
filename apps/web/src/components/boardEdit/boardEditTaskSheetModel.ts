@@ -95,6 +95,8 @@ export interface SheetInput {
   countKind: CountKind;
   /** `null` until the compound draft has loaded / been seeded. */
   compoundDraft: TaskEditPatch | null;
+  /** "Counts toward" — set only when the row changed (`countsTowardSubmitFor`). */
+  countsToward?: { counterId: string | null; amount?: number };
   /**
    * The structure seeded from the STORED compound (`null` when unknown — a
    * staged structure was re-opened, or the original is not a compound). Lets
@@ -179,6 +181,8 @@ export function buildSheetOverride(input: SheetInput): BoardEditTaskOverride {
   // Explicit `type` always (even back to the original) so a stale staged type
   // is overwritten; the commit op treats type === stored as unchanged.
   patch.type = selected;
+  // Set even when `undefined`: the reducer spreads, so a stale staged value is overwritten.
+  patch.countsToward = input.countsToward;
 
   switch (selected) {
     case TaskType.COUNTING: {

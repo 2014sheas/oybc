@@ -29,7 +29,9 @@ import { currentTimestamp } from '../utils';
 import { addToSyncQueue } from './syncQueue';
 import { getSealImmuneWindowsForTask, stampTaskCachesAuthored } from './taskEvents';
 import { refreshDerivedBaselines } from './derivedCounters';
-import { writeLinkedRowPropagation } from './tasks.sharedCounter';
+import { writeLinkedRowPropagation, type AffectedBoard } from './tasks.sharedCounter';
+import { isBoardCreditable } from '../../utils/boardDisplayUtils';
+import { healBoardNames } from './boardNames';
 import { reDeriveSealedBoardsForTasks } from './sealing';
 import { refreshWatchersForBoards, resolveAffectedBoardIds } from './boardLifecycle';
 import { runBoardCascadeForTasks } from './orchestration';
@@ -415,8 +417,24 @@ export async function applyCountsTowardInTransaction(taskIds: Iterable<string>, 
  * @throws {CountsTowardError} with the `countsTowardProblem` code when refused.
  */
 export async function setCountsToward(taskId: string, counterId: string | null, amount?: number): Promise<void> {
-  await db.transaction('rw', COUNTS_TOWARD_TABLES, async () => {
-    const now = currentTimestamp();
+  await db.transaction('rw', COUNTS_TOWARD_TABLES, () => setCountsTowardInTransaction(taskId, counterId, amount, currentTimestamp()));
+}
+
+/**
+ * {@link setCountsToward}'s body, for callers already inside a transaction
+ * covering `COUNTS_TOWARD_TABLES` (Board Edit's commit flags the FORK after
+ * `ensureBoardScopedTask`; the task-edit save runs it beside its other
+ * writes). The ONE write path for the flag — nothing else may write
+ * `countsTowardCounterId`.
+ *
+ * @param taskId - The contributing task.
+ * @param counterId - The Discrete counter root, or `null` to stop counting.
+ * @param amount - Increment per completion (absent = 1).
+ * @param now - The write instant (stamps `countsTowardSince` on a set / re-point).
+ * @throws {CountsTowardError} with the `countsTowardProblem` code when refused.
+ */
+export async function setCountsTowardInTransaction(taskId: string, counterId: string | null, amount: number | undefined, now: string): Promise<void> {
+  {
     const task = await db.tasks.get(taskId);
     if (!task || task.isDeleted) throw new CountsTowardError('task-missing', `setCountsToward: ${taskId} is not a live task`);
     if (counterId != null) {
@@ -442,7 +460,29 @@ export async function setCountsToward(taskId: string, counterId: string | null, 
     await db.tasks.put(next);
     await addToSyncQueue('tasks', taskId, SyncOperationType.UPDATE, next);
     await runBoardCascadeForTasks([taskId], previousRoot != null && previousRoot !== counterId ? { countsTowardPreviousRoots: { [taskId]: previousRoot } } : {});
-  });
+  }
+}
+
+/**
+ * The boards a counts-toward credit on `rootId` lands on, for the credited
+ * toast ("+1 Books — also counted on …"): the ACTIVE, creditable boards
+ * (`isBoardCreditable` — not sealed, window not ended) placing the counter
+ * root or any live linked copy, minus `excludeBoardId` (the board the
+ * completion was made on). Same board set the shared-counter increment path
+ * credits.
+ *
+ * @param rootId - The counter root.
+ * @param excludeBoardId - The completing board (never listed).
+ * @param now - The clock the creditable check uses.
+ */
+export async function creditedBoardsForCounter(rootId: string, excludeBoardId: string | null, now: Date): Promise<AffectedBoard[]> {
+  const copies = await db.tasks.filter((t) => !t.isDeleted && t.sharedCounterId === rootId).toArray();
+  const ids = [rootId, ...copies.map((c) => c.id)];
+  const placements = await db.boardTasks.where('taskId').anyOf(ids).filter((bt) => !bt.isDeleted).toArray();
+  const boardIds = [...new Set(placements.map((p) => p.boardId))].filter((id) => id !== excludeBoardId);
+  if (boardIds.length === 0) return [];
+  const boards = healBoardNames(await db.boards.where('id').anyOf(boardIds).toArray());
+  return boards.filter((b) => isBoardCreditable(b, now)).map((b) => ({ boardId: b.id, boardName: b.name }));
 }
 
 /**

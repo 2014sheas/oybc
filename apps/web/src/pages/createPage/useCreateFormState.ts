@@ -1,4 +1,7 @@
 import { useCallback, useState } from 'react';
+import { CountsTowardError, setCountsToward as setCountsTowardOp } from '../../db/operations/countsToward';
+import { countsTowardProblemLabel } from '../../components/counters/countsTowardLabels';
+import type { CountsTowardSelection } from '../../components/counters/countsTowardFieldModel';
 import {
   AchievementTrigger,
   TaskType,
@@ -196,11 +199,21 @@ export interface UseCreateFormStateArgs {
    * is preserved so standalone quick-add is unchanged.
    */
   deferPersist?: boolean;
+  /**
+   * "Counts toward" (docs/SHARED_COUNTER_SETTINGS.md §3d) — the counter the
+   * new task is preset to count toward (Counter Detail's "+ New"). The row is
+   * shown only in immediate-persist mode (a pending wizard task has no row yet).
+   */
+  countsTowardPreset?: string | null;
 }
 
 export interface UseCreateFormState {
   // Form fields
   taskType: TaskType;
+  /** The "Counts toward" row's selection; `countsTowardEnabled` says whether the row renders. */
+  countsToward: CountsTowardSelection;
+  countsTowardEnabled: boolean;
+  setCountsToward: (next: CountsTowardSelection) => void;
   title: string;
   description: string;
   action: string;
@@ -280,8 +293,11 @@ export function useCreateFormState({
   defaultStartDate,
   defaultEndDate,
   deferPersist = false,
+  countsTowardPreset = null,
 }: UseCreateFormStateArgs): UseCreateFormState {
   const [taskType, setTaskType] = useState<TaskType>(TaskType.NORMAL);
+  const [countsToward, setCountsToward] = useState<CountsTowardSelection>({ counterId: countsTowardPreset, amount: 1 });
+  const countsTowardEnabled = !deferPersist;
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [action, setAction] = useState('');
@@ -653,20 +669,31 @@ export function useCreateFormState({
           });
         }
 
+        // "Counts toward" — through the ONE write path (validates, stamps `since`, cascades).
+        if (countsTowardEnabled && countsToward.counterId != null && taskType !== TaskType.ACHIEVEMENT) {
+          await setCountsTowardOp(newTask.id, countsToward.counterId, countsToward.amount);
+        }
+
         onTaskCreated(newTask);
         resetForm();
       } catch (error) {
-        const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+        const errorMessage =
+          error instanceof CountsTowardError && error.code !== 'task-missing'
+            ? countsTowardProblemLabel(error.code)
+            : error instanceof Error ? error.message : 'Unknown error occurred';
         setErrors((prev) => ({ ...prev, general: errorMessage }));
       } finally {
         setIsSubmitting(false);
       }
     },
-    [taskType, title, description, action, unit, maxCountStr, countKind, userId, onTaskCreated, onPendingCreated, deferPersist, achievementMode, achievementReferenceId, achievementTrigger, achievementRequiredCountStr, defaultTimeframe, defaultStartDate, defaultEndDate]
+    [taskType, title, description, action, unit, maxCountStr, countKind, userId, onTaskCreated, onPendingCreated, deferPersist, countsTowardEnabled, countsToward, achievementMode, achievementReferenceId, achievementTrigger, achievementRequiredCountStr, defaultTimeframe, defaultStartDate, defaultEndDate]
   );
 
   return {
     taskType,
+    countsToward,
+    countsTowardEnabled,
+    setCountsToward,
     title,
     description,
     action,
