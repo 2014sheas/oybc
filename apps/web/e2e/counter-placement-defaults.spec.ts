@@ -1,16 +1,10 @@
 import type { Page } from '@playwright/test';
 import { test, expect, seedBoard, seedTask, seedBoardTask, readTask } from './_fixtures/bypass';
-
-/**
- * `derivedTaskId` from the shared package. A dynamic import, read through
- * `default` when present: `@oybc/shared` ships CommonJS, and Playwright's ESM
- * loader does not always see its re-exported names as named exports.
- */
-async function derivedTaskId(boardId: string, rootId: string): Promise<string> {
-  const mod = await import('@oybc/shared');
-  const shared = (mod as unknown as { default?: typeof mod }).default ?? mod;
-  return shared.derivedTaskId(boardId, rootId);
-}
+import {
+  COUNTER_PLACEMENT_BOARD_ID,
+  COUNTER_PLACEMENT_EXPECTED_COPY_ID,
+  COUNTER_PLACEMENT_GOALLESS_ROOT_ID,
+} from './_fixtures/counterPlacementIds';
 
 /** Every non-deleted task row linking to `rootId` (raw IndexedDB). */
 async function linkedTaskIds(page: Page, rootId: string): Promise<string[]> {
@@ -44,7 +38,7 @@ const now = new Date();
 const p = (n: number): string => String(n).padStart(2, '0');
 const d = `${now.getFullYear()}-${p(now.getMonth() + 1)}-${p(now.getDate())}`;
 
-const BOARD_ID = 'dddddddd-cpd0-0001-0000-000000000000';
+const BOARD_ID = COUNTER_PLACEMENT_BOARD_ID;
 const ROOT = 'dddddddd-cpd0-0001-task-000000000001';
 const FILLER = 'dddddddd-cpd0-0001-task-000000000002';
 
@@ -112,7 +106,7 @@ test.describe('Shared counter placement defaults', () => {
   });
 
   test('Board Edit: a goal-less counter with no default — the row holds a Goal entry gating "+"; the typed goal is the copy\'s', async ({ page }) => {
-    const GOALLESS = 'dddddddd-cpd0-0001-task-000000000003';
+    const GOALLESS = COUNTER_PLACEMENT_GOALLESS_ROOT_ID;
     await seedTask(page, {
       id: GOALLESS, title: 'Pages', type: 'counting', action: 'Read', unit: 'pages', isCounter: true, currentCount: 40,
       counterName: 'Pages', titleTemplatePlural: 'Read #N pages!',
@@ -143,7 +137,8 @@ test.describe('Shared counter placement defaults', () => {
     const placed = await boardTaskIds(page, BOARD_ID);
     const copyId = placed.find((id) => id !== FILLER && id !== ROOT && id !== GOALLESS);
     // The placed row is the board's deterministic copy at the typed goal …
-    expect(copyId).toBe(await derivedTaskId(BOARD_ID, GOALLESS));
+    // (`derivedTaskId(BOARD_ID, GOALLESS)` — pinned by `counterPlacementIds.test.ts`.)
+    expect(copyId).toBe(COUNTER_PLACEMENT_EXPECTED_COPY_ID);
     const copy = await readTask(page, copyId!);
     expect(copy?.maxCount).toBe(5);
     expect(copy?.sharedCounterId).toBe(GOALLESS);
