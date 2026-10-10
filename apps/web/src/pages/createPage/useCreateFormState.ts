@@ -64,13 +64,13 @@ export interface FormErrors {
   general?: string;
 }
 
-// ─── Validation ──────────────────────────────────────────────────────────────
+// ─── Create ──────────────────────────────────────────────────────────────────
 
 /**
  * Creates a task through the single immediate-persist path. A non-null
  * `countsTowardCounterId` (Counter Detail's "+ New" preset) flags the task to
- * count toward that counter (one per completion; no amount is written) in the same transaction; null writes
- * no flag.
+ * count toward that counter (one per completion; no amount is written) in the
+ * same transaction; null writes no flag.
  *
  * @param userId - Owner of the new task.
  * @param input - Task fields.
@@ -83,6 +83,8 @@ export function createWithPreset(userId: string, input: CreateTaskInput, countsT
     ? createTaskCountingToward(userId, input, { counterId: countsTowardCounterId })
     : createTask(userId, input);
 }
+
+// ─── Validation ──────────────────────────────────────────────────────────────
 
 /**
  * Pure form-validation function. Returns an error object keyed by

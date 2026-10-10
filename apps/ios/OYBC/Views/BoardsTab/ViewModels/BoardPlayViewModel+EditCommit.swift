@@ -179,8 +179,7 @@ extension BoardPlayViewModel {
         let pendingPayloads: [PendingTaskPayload] = draftSnapshot.values.compactMap { cell in
             guard let payload = cell.pending else { return nil }
             guard let override = overridesSnapshot[payload.task.id] else { return payload }
-            // The flag is NOT merged: the inserted row goes through `setCountsToward(db:)`
-            // at step 7b like a stored one (validated, stamped with the Save's `now`).
+            // A pending row carries no counts-toward flag — no Board Edit path stages one.
             return PendingTaskPayload(
                 task: Self.applyingOverride(override, to: payload.task, writesKind: true),
                 childTasks: payload.childTasks,

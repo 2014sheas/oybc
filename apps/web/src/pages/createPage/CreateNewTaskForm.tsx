@@ -103,8 +103,6 @@ export interface CreateNewTaskFormProps {
   typeOptions?: TaskType[];
 }
 
-/** A task being created has no stored flag — the re-point confirm never fires. */
-
 export function CreateNewTaskForm({
   form,
   userId,

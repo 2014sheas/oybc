@@ -547,8 +547,6 @@ describe('countsTowardVectors — contributorCreditGroups', () => {
 describe('countsTowardVectors — countsTowardRows', () => {
   it.each(V.rows as any[])('$name', (v: any) => {
     const { tasks, inputs } = toGroupInputs(v);
-    // The shared fixture still carries the retired per-row `amount` (kept byte-identical with iOS); rows no longer expose it.
-    const expected = (v.expected as Array<Record<string, unknown>>).map(({ amount: _retired, ...rest }) => rest);
-    expect(countsTowardRows(v.root, tasks, inputs)).toEqual(expected);
+    expect(countsTowardRows(v.root, tasks, inputs)).toEqual(v.expected);
   });
 });

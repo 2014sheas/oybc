@@ -3,10 +3,9 @@ import SwiftUI
 import SnapshotTesting
 @testable import OYBC
 
-/// "Counts toward" PR 4 (docs/SHARED_COUNTER_SETTINGS.md §3) — the iOS
-/// surfaces: C1 the Counter Detail section, C2 the "Counts toward" row in the
-/// task editors (global + Board Edit) and its picker, C3 the board cell mark.
-/// Pure props throughout (no `AppDatabase.shared`); candidates are injected.
+/// "Counts toward" (docs/SHARED_COUNTER_SETTINGS.md §3) — the iOS surfaces:
+/// C1 the Counter Detail section and C3 the board cell mark (the C2 editor row
+/// was retired on 2026-10-10). Pure props throughout (no `AppDatabase.shared`).
 final class CountsTowardSnapshotTests: XCTestCase {
 
     private let recordMode: SnapshotTestingConfiguration.Record? = .missing

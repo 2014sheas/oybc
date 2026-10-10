@@ -205,7 +205,7 @@ final class CountsTowardVectorTests: XCTestCase {
         let scope: String; let occurrence: MiniOccurrence; let occurredAt: String; let delta: Double?; let isDeleted: Bool?
     }
     private struct MiniRow: Decodable {
-        let taskId: String; let status: String; let boardId: String?; let amount: Int; let creditCount: Int; let latestOccurredAt: String?
+        let taskId: String; let status: String; let boardId: String?; let creditCount: Int; let latestOccurredAt: String?
     }
     private struct RowsVector: Decodable {
         let name: String; let root: String; let tasks: [MiniTask]; let events: [MiniEvent]; let rootCredits: [MiniRootCredit]

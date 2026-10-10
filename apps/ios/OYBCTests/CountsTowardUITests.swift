@@ -2,11 +2,11 @@ import XCTest
 import GRDB
 @testable import OYBC
 
-/// "Counts toward" PR 4 (iOS half) — the Counter Detail section's data, the
-/// editors' write path (`setCountsToward(db:…)`, `applyTaskEditPatch`, Board
-/// Edit's staged override), the create form, the credited-boards reader and the
-/// completion-moment toast. Web twins: `countsTowardSection.test.ts`,
-/// `taskEditCountsToward.test.ts`, `boardEditCommit.countsToward.test.ts`.
+/// "Counts toward" (iOS half) — the Counter Detail section's data, the create
+/// form's "+ New" preset (the one UI write of the flag since the editor row was
+/// retired on 2026-10-10), the loop re-check after a structure edit, fork
+/// inheritance, the credited-boards reader and the completion-moment toast.
+/// Web twin: `db/operations/__tests__/countsTowardUi.test.ts`.
 @MainActor
 final class CountsTowardUITests: XCTestCase {
 
@@ -646,7 +646,5 @@ final class CountsTowardUITests: XCTestCase {
         }
         XCTAssertEqual(try db.read { try CompoundChild.filter(Column("compoundTaskId") == self.boxId && Column("isDeleted") == false).fetchCount($0) }, 1)
     }
-
-    // MARK: - Board Edit: a NEW staged task is flagged through the one path, atomically
 
 }
