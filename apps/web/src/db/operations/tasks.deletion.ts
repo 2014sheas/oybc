@@ -22,7 +22,7 @@ import {
   softDeleteWindowStampedDerived,
   windowStampedDerivedIdsForRoot,
 } from './derivedCounters';
-import { applyCountsTowardForTasks } from './countsToward';
+import { applyCountsTowardInTransaction } from './countsToward';
 
 /**
  * Summary of what `deleteTaskWithCascade` (or a dry-run) would remove.
@@ -329,5 +329,5 @@ export async function deleteTaskWithCascadeInTxn(
   //    contributor's increment is tombstoned, and a compound that just lost
   //    this child re-derives its own. The parents were captured before the
   //    links were severed, so they are passed explicitly.
-  await applyCountsTowardForTasks([id, ...parents], now);
+  await applyCountsTowardInTransaction([id, ...parents], now);
 }

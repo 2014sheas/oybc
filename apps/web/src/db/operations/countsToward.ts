@@ -17,11 +17,10 @@ import { currentTimestamp } from '../utils';
 import { addToSyncQueue } from './syncQueue';
 import { stampTaskCachesAuthored } from './taskEvents';
 import { refreshDerivedBaselines } from './derivedCounters';
-import { propagateToLinkedRows } from './tasks.sharedCounter';
+import { writeLinkedRowPropagation } from './tasks.sharedCounter';
 import { reDeriveSealedBoardsForTasks } from './sealing';
 import { refreshWatchersForBoards, resolveAffectedBoardIds } from './boardLifecycle';
 import { runBoardCascadeForTasks } from './orchestration';
-import { buildWindowContext } from './windowContext';
 
 /**
  * countsToward.ts — "counts toward", web data half
@@ -29,13 +28,16 @@ import { buildWindowContext } from './windowContext';
  * `AppDatabase+CountsToward.swift`. The pure rules live in `@oybc/shared`
  * (`countsToward.ts`); this module writes them.
  *
- *   - {@link applyCountsTowardForTasks} — the cascade hook. Runs at the end of
- *     every `runBoardCascadeForTasks` (the one choke point every local write,
- *     the pull paths and the late-log re-derivation go through), inside the
- *     same transaction: for each changed task and each compound containing it,
+ *   - {@link writeCountsTowardForTasks} / {@link finishCountsTowardRoots} —
+ *     the cascade hook, wrapped around the board pass of every
+ *     `runBoardCascadeForTasks` (the one choke point every local write, the
+ *     pull paths and the late-log re-derivation go through), inside the same
+ *     transaction: for each changed task and each compound containing it,
  *     compare its derived lifetime completion with the deterministic event on
  *     its counter root and insert / revise / tombstone it (version bump +
- *     enqueue), then run the root's own cascade exactly like a hand log.
+ *     enqueue), then write the root's log like a hand log; the board pass
+ *     derives the copies' boards, the finish phase re-derives sealed boards
+ *     and refreshes watchers.
  *   - {@link setCountsToward} — the write-time entry that sets / clears the
  *     flag (validated by `countsTowardProblem`).
  *   - {@link countContributorsOf} — the guard the kind switch and the delete
@@ -48,15 +50,6 @@ import { buildWindowContext } from './windowContext';
  * self-feeding loop; this bound is the runtime belt.
  */
 export const MAX_COUNTS_TOWARD_DEPTH = 3;
-
-/** Snapshot a caller already loaded (the board cascade's lookups). */
-export interface CountsTowardLookups {
-  allTasks: Task[];
-  /** Live compound links. */
-  allChildren: CompoundChild[];
-  /** Non-deleted events grouped by `taskId`. */
-  eventsByTaskId: Record<string, TaskEvent[]>;
-}
 
 /** Refused {@link setCountsToward}; nothing is written. */
 export class CountsTowardError extends Error {
@@ -89,45 +82,71 @@ export async function countContributorsOf(counterId: string): Promise<Task[]> {
   return db.tasks.filter((t) => !t.isDeleted && t.countsTowardCounterId === counterId).toArray();
 }
 
+/** What {@link writeCountsTowardForTasks} touched, for the caller's board pass. */
+export interface CountsTowardWrites {
+  /** Counter roots + live / reached-frozen copies whose boards must re-derive. */
+  cascadeIds: Set<string>;
+  /** Counter roots whose events moved (sealed re-derive + watchers after the pass). */
+  rootIds: Set<string>;
+}
+
 /**
- * The cascade hook (§3b). For every task in `changedTaskIds` and every
- * compound transitively containing one, plan the counts-toward write
- * (`planCountsTowardAction`) and apply it; then re-cascade each counter root
- * whose events moved. Idempotent: a replay with no state change writes
- * nothing.
+ * The cascade hook, WRITE phase (§3b). For every task in `changedTaskIds` and
+ * every compound transitively containing one, plan the counts-toward write
+ * (`planCountsTowardAction`) and apply it (event row, version bump, enqueue);
+ * then, for each counter root whose events moved, run a hand log's writes —
+ * restamp the root's lifetime caches, refresh window-stamped baselines,
+ * propagate to its live copies — and re-enter one level deeper for
+ * contributors that contain those copies. Board derivation is left to the
+ * caller's ONE pass over `cascadeIds` (so a copy on the contributor's own
+ * board is read with the new increment and its bingo lands in that pass's
+ * result map); {@link finishCountsTowardRoots} runs after it. Idempotent: a
+ * replay with no state change writes nothing.
+ *
+ * Cheap when nothing counts toward anything: the candidate rows and their
+ * deterministic event ids are read by key; the whole-table loads happen only
+ * when a candidate is flagged or already holds an event.
  *
  * MUST run inside the caller's `rw` transaction over `boards`, `boardTasks`,
  * `tasks`, `compoundChildren`, `taskEvents`, `syncQueue`.
  *
  * @param changedTaskIds - Tasks whose derived state may have changed.
  * @param now - The write instant (`createdAt` / `updatedAt` of written rows).
- * @param depth - Chain depth (0 for a top-level cascade).
- * @param lookups - A snapshot the caller already holds, if any.
+ * @param liveChildren - The live compound links, when the caller already loaded them.
+ * @param depth - Chain depth (0 for a top-level call).
+ * @returns The ids the caller's board pass must add, and the roots to finish.
  */
-export async function applyCountsTowardForTasks(
+export async function writeCountsTowardForTasks(
   changedTaskIds: Iterable<string>,
   now: string,
+  liveChildren?: CompoundChild[],
   depth = 0,
-  lookups?: CountsTowardLookups,
-): Promise<void> {
-  if (depth > MAX_COUNTS_TOWARD_DEPTH) return;
-  const allChildren = lookups?.allChildren ?? (await db.compoundChildren.filter((c) => !c.isDeleted).toArray());
-  const allTasks = lookups?.allTasks ?? (await db.tasks.toArray());
-  const taskById: Record<string, Task> = {};
-  for (const t of allTasks) taskById[t.id] = t;
-
+): Promise<CountsTowardWrites> {
+  const out: CountsTowardWrites = { cascadeIds: new Set(), rootIds: new Set() };
+  if (depth > MAX_COUNTS_TOWARD_DEPTH) return out;
+  const allChildren = liveChildren ?? (await db.compoundChildren.filter((c) => !c.isDeleted).toArray());
   const candidates = new Set<string>();
   for (const id of changedTaskIds) {
     candidates.add(id);
     for (const parent of findTransitiveParentCompounds(id, allChildren)) candidates.add(parent);
   }
-  const ids = [...candidates].filter((id) => taskById[id] !== undefined);
-  if (ids.length === 0) return;
+  const candidateIds = [...candidates];
+  if (candidateIds.length === 0) return out;
+  const rows = await db.tasks.bulkGet(candidateIds);
+  const stored = await db.taskEvents.bulkGet(candidateIds.map(countsTowardEventId));
+  const relevant = rows
+    .map((task, i) => ({ task, existing: stored[i] }))
+    .filter((c): c is { task: Task; existing: TaskEvent | undefined } =>
+      c.task !== undefined && (c.task.countsTowardCounterId != null || c.existing !== undefined),
+    );
+  if (relevant.length === 0) return out;
 
-  const stored = await db.taskEvents.bulkGet(ids.map(countsTowardEventId));
-  if (ids.every((id, i) => taskById[id].countsTowardCounterId == null && stored[i] === undefined)) return;
-
-  const eventsByTaskId = lookups?.eventsByTaskId ?? (await buildWindowContext()).eventsByTaskId;
+  const taskById: Record<string, Task> = {};
+  for (const t of await db.tasks.toArray()) taskById[t.id] = t;
+  // Read inline (not via `buildWindowContext`): one fewer native-async hop
+  // between Dexie requests keeps the caller's transaction zone alive.
+  const eventsByTaskId: Record<string, TaskEvent[]> = {};
+  for (const e of await db.taskEvents.toArray()) if (!e.isDeleted) (eventsByTaskId[e.taskId] ??= []).push(e);
   const childrenByCompound: Record<string, CompoundChild[]> = {};
   for (const c of allChildren) (childrenByCompound[c.compoundTaskId] ??= []).push(c);
 
@@ -137,11 +156,7 @@ export async function applyCountsTowardForTasks(
     if (!list.includes(occurredAt)) list.push(occurredAt);
     reach.set(rootId, list);
   };
-
-  for (const [i, id] of ids.entries()) {
-    const task = taskById[id];
-    const existing = stored[i];
-    if (task.countsTowardCounterId == null && existing === undefined) continue;
+  for (const { task, existing } of relevant) {
     const state = resolveContributionState(task, childrenByCompound, taskById, eventsByTaskId);
     const action = planCountsTowardAction(task, taskById, state, existing);
     if (!action) continue;
@@ -150,7 +165,17 @@ export async function applyCountsTowardForTasks(
     if (action.kind === 'revise') noteReach(action.previousRootId, action.previousOccurredAt);
   }
 
-  for (const [rootId, instants] of reach) await cascadeCounterRoot(rootId, instants, now, depth);
+  for (const [rootId, instants] of reach) {
+    const ids = await writeCounterRootLog(rootId, instants, now);
+    if (ids.length === 0) continue;
+    out.rootIds.add(rootId);
+    for (const id of ids) out.cascadeIds.add(id);
+    // Chained contributors: a compound containing one of these copies.
+    const deeper = await writeCountsTowardForTasks(ids, now, undefined, depth + 1);
+    for (const id of deeper.cascadeIds) out.cascadeIds.add(id);
+    for (const id of deeper.rootIds) out.rootIds.add(id);
+  }
+  return out;
 }
 
 /** Apply one planned write: the event row + its sync entry. */
@@ -200,29 +225,58 @@ async function writeCountsTowardAction(
 }
 
 /**
- * A counter root's events moved: the same tail a hand log runs
- * (`incrementSharedCounter` / `undoLastCounterLog`) — restamp the root's
- * lifetime caches from events, refresh window-stamped baselines, propagate to
- * live copies + cascade their boards (which re-enters the hook one level
- * deeper for chained contributors), reach frozen copies whose window holds
- * any moved instant, re-derive sealed boards, refresh watchers.
+ * A counter root's events moved: a hand log's writes (`incrementSharedCounter`
+ * / `undoLastCounterLog`) without the board cascade — restamp the root's
+ * lifetime caches from events, refresh window-stamped baselines, write its
+ * live copies, and name the frozen copies whose window holds a moved instant.
+ *
+ * @returns The root + copy ids to re-derive (`[]` for a deleted root).
  */
-async function cascadeCounterRoot(rootId: string, instants: string[], now: string, depth: number): Promise<void> {
+async function writeCounterRootLog(rootId: string, instants: string[], now: string): Promise<string[]> {
   const root = await db.tasks.get(rootId);
-  if (!root || root.isDeleted) return;
+  if (!root || root.isDeleted) return [];
   await stampTaskCachesAuthored(rootId, now);
   await refreshDerivedBaselines(rootId);
   const after = await db.tasks.get(rootId);
   const [first, ...rest] = instants;
-  await propagateToLinkedRows(rootId, after?.currentCount ?? 0, now, first, { countsTowardDepth: depth + 1 });
+  const { linkedIds, reachedFrozenIds } = await writeLinkedRowPropagation(rootId, after?.currentCount ?? 0, now, first);
+  const ids = new Set([rootId, ...linkedIds, ...reachedFrozenIds]);
   if (rest.length > 0) {
     const linked = await db.tasks.where('sharedCounterId').equals(rootId).filter((t) => !t.isDeleted).toArray();
-    const frozen = linked.filter((t) => rest.some((at) => isFrozenRowReachedByEvent(t, at, now))).map((t) => t.id);
-    if (frozen.length > 0) await runBoardCascadeForTasks(frozen, { countsTowardDepth: depth + 1 });
+    for (const t of linked) if (rest.some((at) => isFrozenRowReachedByEvent(t, at, now))) ids.add(t.id);
   }
-  await reDeriveSealedBoardsForTasks([rootId]);
-  const watcherSeedIds = await resolveAffectedBoardIds([rootId]);
+  return [...ids];
+}
+
+/**
+ * The cascade hook, FINISH phase — after the caller's board pass: re-derive
+ * the sealed boards placing the roots' copies (a moved instant may sit inside
+ * a closed window — the deterministic sealed re-derive) and refresh the
+ * achievement watchers of every board reached.
+ *
+ * @param rootIds - {@link CountsTowardWrites.rootIds}.
+ */
+export async function finishCountsTowardRoots(rootIds: Set<string>): Promise<void> {
+  if (rootIds.size === 0) return;
+  await reDeriveSealedBoardsForTasks(rootIds);
+  const watcherSeedIds = await resolveAffectedBoardIds(rootIds);
   if (watcherSeedIds.size > 0) await refreshWatchersForBoards(watcherSeedIds);
+}
+
+/**
+ * The whole hook for a write path with no board cascade of its own (a
+ * container created from already-done sub-tasks; a cascade delete): the
+ * write phase, a board pass over what it touched, the finish phase.
+ *
+ * MUST run inside an `rw` transaction over the tables named above.
+ *
+ * @param taskIds - The tasks to re-derive.
+ * @param now - The write instant.
+ */
+export async function applyCountsTowardInTransaction(taskIds: Iterable<string>, now: string): Promise<void> {
+  const writes = await writeCountsTowardForTasks(taskIds, now);
+  if (writes.cascadeIds.size > 0) await runBoardCascadeForTasks(writes.cascadeIds);
+  await finishCountsTowardRoots(writes.rootIds);
 }
 
 /**
@@ -266,14 +320,12 @@ export async function setCountsToward(taskId: string, counterId: string | null, 
 }
 
 /**
- * Run the counts-toward hook for `taskIds` in its own transaction — for a
- * write path that has no board cascade of its own (a container created from
- * already-done sub-tasks counts at once).
+ * {@link applyCountsTowardInTransaction} in its own transaction.
  *
  * @param taskIds - The tasks to re-derive.
  */
 export async function syncCountsTowardFor(taskIds: string[]): Promise<void> {
-  await db.transaction('rw', COUNTS_TOWARD_TABLES, () => applyCountsTowardForTasks(taskIds, currentTimestamp()));
+  await db.transaction('rw', COUNTS_TOWARD_TABLES, () => applyCountsTowardInTransaction(taskIds, currentTimestamp()));
 }
 
 /**

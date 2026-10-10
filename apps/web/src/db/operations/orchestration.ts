@@ -19,7 +19,7 @@ import { writeBoardDerivedStats } from './boardDerivedWrite';
 import { fetchAllCompoundChildren } from './compoundChildren';
 import { fetchAllBoardTasks } from './boardTasks';
 import { buildWindowContext } from './windowContext';
-import { applyCountsTowardForTasks } from './countsToward';
+import { finishCountsTowardRoots, writeCountsTowardForTasks } from './countsToward';
 import {
   appendCompletionEvent,
   appendIncrementEvent,
@@ -73,12 +73,6 @@ export interface BoardCascadeEntry extends BoardStatsUpdate {
  */
 interface CascadeOptions {
   authored?: boolean;
-  /**
-   * "Counts toward" chain depth (docs/SHARED_COUNTER_SETTINGS.md §3b) — set
-   * only by the counts-toward root cascade when it re-enters this cascade;
-   * every other caller leaves it absent (0).
-   */
-  countsTowardDepth?: number;
 }
 
 /**
@@ -131,9 +125,19 @@ export async function runBoardCascadeForTasks(
   const authored = opts.authored ?? true;
   const now = currentTimestamp();
   const changedIds = [...changedTaskIds];
+  const allChildren = await fetchAllCompoundChildren();
+
+  // "Counts toward" (docs/SHARED_COUNTER_SETTINGS.md §3b): a changed task (or
+  // a compound containing it) that counts toward a counter gets its
+  // deterministic increment inserted / tombstoned in THIS transaction and its
+  // counter root's log written like a hand log — BEFORE this pass's lookups
+  // load, and the counter's copies join this pass's affected set, so a copy
+  // on one of these boards is read with the new increment (its bingo lands in
+  // this result map). Authored and pull-path cascades alike: the event is
+  // deterministic, so a pull that re-derives it converges on the same row.
+  const countsToward = await writeCountsTowardForTasks(changedIds, now, allChildren);
 
   // Build the lookups for the derivation pass.
-  const allChildren = await fetchAllCompoundChildren();
   const allBoardTasks = await fetchAllBoardTasks();
   const allTasks = await db.tasks.toArray();
   // Phase 6.3 — `computeBoardStatsUpdate` needs the workspace's boards
@@ -152,7 +156,7 @@ export async function runBoardCascadeForTasks(
 
   // Resolve the UNION of affected boards across every changed task.
   const affectedBoardIds = new Set<string>();
-  for (const changedTaskId of changedIds) {
+  for (const changedTaskId of [...changedIds, ...countsToward.cascadeIds]) {
     const parentCompounds = findTransitiveParentCompounds(changedTaskId, allChildren);
     for (const id of findAffectedBoardIds(changedTaskId, parentCompounds, allBoardTasks)) {
       affectedBoardIds.add(id);
@@ -201,17 +205,9 @@ export async function runBoardCascadeForTasks(
     });
   }
 
-  // "Counts toward" (docs/SHARED_COUNTER_SETTINGS.md §3b): a changed task (or
-  // a compound containing it) that counts toward a counter gets its
-  // deterministic increment inserted / tombstoned in THIS transaction, then
-  // the counter root cascades like a hand log. Written for authored and
-  // pull-path cascades alike — the event is deterministic, so a pull that
-  // re-derives it converges on the same row instead of ping-ponging.
-  await applyCountsTowardForTasks(changedIds, now, opts.countsTowardDepth ?? 0, {
-    allTasks,
-    allChildren,
-    eventsByTaskId: windowContext.eventsByTaskId,
-  });
+  // Counts toward, finish phase: sealed boards + achievement watchers of the
+  // counter roots whose events just moved.
+  await finishCountsTowardRoots(countsToward.rootIds);
 
   return resultMap;
 }

@@ -154,6 +154,20 @@ describe('counts toward — a Simple task', () => {
     expect(queued).toContain(countsTowardEventId(SIMPLE));
   });
 
+  it('a counter copy on the SAME board is read with the new increment in the same pass (its bingo is reported)', async () => {
+    await seed();
+    const DONE = '00000000-0000-4000-8000-0000000000b9';
+    await db.tasks.put(task(DONE));
+    await db.taskEvents.put(completion('00000000-0000-4000-8000-0000000000b8', DONE, '2026-10-02T10:00:00.000Z'));
+    // Row 0 of October: Dune · the counter's copy (goal 1) · an already-done task.
+    await db.boardTasks.bulkPut([placement('bt-copy-oct', OCT, COPY, 1), placement('bt-done', OCT, DONE, 2)]);
+
+    const result = await handleTaskCompletion(OCT, 'bt-simple', { isCompleted: true });
+
+    expect(result.newBingos).toHaveLength(1);
+    expect((await db.boards.get(OCT))?.completedTasks).toBe(3);
+  });
+
   it('un-completing tombstones the increment and the copy drops back', async () => {
     await seed();
     await handleTaskCompletion(OCT, 'bt-simple', { isCompleted: true });

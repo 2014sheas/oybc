@@ -61,8 +61,6 @@ export interface AffectedBoard {
  * @param now              The operation's ISO8601 timestamp (also the freeze clock).
  * @param reachOccurredAt  The `occurredAt` of the event this operation wrote or
  *   tombstoned (a `now` stamp reaches no frozen row, so passing it is inert).
- * @param cascadeOpts      Passed to the board cascade — the counts-toward root
- *   cascade sets `countsTowardDepth` (docs/SHARED_COUNTER_SETTINGS.md §3b).
  * @returns The live ACTIVE boards placing the source or an unfrozen linked row,
  *   read BEFORE the cascade rewrites board status.
  */
@@ -71,8 +69,60 @@ export async function propagateToLinkedRows(
   newSourceCount: number,
   now: string,
   reachOccurredAt?: string,
-  cascadeOpts: { countsTowardDepth?: number } = {},
 ): Promise<AffectedBoard[]> {
+  const { linkedIds, reachedFrozenIds } = await writeLinkedRowPropagation(
+    sourceTaskId,
+    newSourceCount,
+    now,
+    reachOccurredAt,
+  );
+
+  // Collect ACTIVE boards containing the source + any UNFROZEN linked task
+  // BEFORE the cascade rewrites board stats/status — the "also counted" toast set.
+  const allChangedTaskIds = [sourceTaskId, ...linkedIds];
+  const placements = await db.boardTasks
+    .where('taskId').anyOf(allChangedTaskIds)
+    .filter((bt) => !bt.isDeleted)
+    .toArray();
+  const uniqueBoardIds = [...new Set(placements.map((p) => p.boardId))];
+  const boardRows = uniqueBoardIds.length > 0
+    ? await db.boards.where('id').anyOf(uniqueBoardIds).toArray()
+    : [];
+  const affectedBoards: AffectedBoard[] = boardRows
+    // Windowed linked counters: a sealed (Closed) or ended board cannot change,
+    // so it is never credited (`status` alone leaves a closed board `.active`).
+    .filter((b) => isBoardCreditable(b, new Date(now)))
+    .map((b) => ({ boardId: b.id, boardName: b.name }));
+
+  // ONE batched cascade: lookups + window context built once, each affected
+  // board recomputed once (it reads the rows written above, same transaction).
+  // Its per-board result map is not needed — credit comes from the pre-read above.
+  await runBoardCascadeForTasks([...allChangedTaskIds, ...reachedFrozenIds]);
+
+  return affectedBoards;
+}
+
+/**
+ * The WRITE half of {@link propagateToLinkedRows}, with no board cascade:
+ * re-derive and write (authored, enqueued) every live unfrozen linked row of
+ * `sourceTaskId` from `newSourceCount`, and name the frozen rows whose window
+ * holds `reachOccurredAt`. The counts-toward hook uses it so the caller's ONE
+ * board pass derives the copies' boards too (docs/SHARED_COUNTER_SETTINGS.md §3b).
+ *
+ * Same transaction contract as {@link propagateToLinkedRows}.
+ *
+ * @param sourceTaskId    The shared-counter root whose count just changed.
+ * @param newSourceCount  The root's `currentCount` after the change.
+ * @param now             The operation's ISO8601 timestamp (also the freeze clock).
+ * @param reachOccurredAt The moved event's `occurredAt`, if any.
+ * @returns The written linked row ids and the frozen rows to cascade only.
+ */
+export async function writeLinkedRowPropagation(
+  sourceTaskId: string,
+  newSourceCount: number,
+  now: string,
+  reachOccurredAt?: string,
+): Promise<{ linkedIds: string[]; reachedFrozenIds: string[] }> {
   // Indexed read (the `sharedCounterId` index exists since Dexie v11), then
   // drop tombstones; split off the rows whose window has ended.
   const linkedRows = await db.tasks
@@ -120,29 +170,7 @@ export async function propagateToLinkedRows(
     }
   }
 
-  // Collect ACTIVE boards containing the source + any UNFROZEN linked task
-  // BEFORE the cascade rewrites board stats/status — the "also counted" toast set.
-  const allChangedTaskIds = [sourceTaskId, ...linkedTasks.map((t) => t.id)];
-  const placements = await db.boardTasks
-    .where('taskId').anyOf(allChangedTaskIds)
-    .filter((bt) => !bt.isDeleted)
-    .toArray();
-  const uniqueBoardIds = [...new Set(placements.map((p) => p.boardId))];
-  const boardRows = uniqueBoardIds.length > 0
-    ? await db.boards.where('id').anyOf(uniqueBoardIds).toArray()
-    : [];
-  const affectedBoards: AffectedBoard[] = boardRows
-    // Windowed linked counters: a sealed (Closed) or ended board cannot change,
-    // so it is never credited (`status` alone leaves a closed board `.active`).
-    .filter((b) => isBoardCreditable(b, new Date(now)))
-    .map((b) => ({ boardId: b.id, boardName: b.name }));
-
-  // ONE batched cascade: lookups + window context built once, each affected
-  // board recomputed once (it reads the rows written above, same transaction).
-  // Its per-board result map is not needed — credit comes from the pre-read above.
-  await runBoardCascadeForTasks([...allChangedTaskIds, ...reachedFrozenIds], cascadeOpts);
-
-  return affectedBoards;
+  return { linkedIds: linkedTasks.map((t) => t.id), reachedFrozenIds };
 }
 
 /**
