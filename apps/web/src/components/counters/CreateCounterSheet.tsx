@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   classifyCounterCreateMatch,
+  counterDisplayName,
   formatCounterName,
   countKindNeedsUnit,
   formatCountForInput,
@@ -313,7 +314,7 @@ export function CreateCounterSheet({
               className={styles.matchLinkButton}
               onClick={() => handleOpenCounter(match.task.id)}
             >
-              Open {formatCounterName(match.task.action, match.task.unit) || match.task.title}
+              Open {counterDisplayName(match.task)}
             </button>
           </div>
         )}

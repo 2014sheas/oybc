@@ -5,10 +5,10 @@ import {
   SyncOperationType,
   TaskType,
   deriveDisplayedCount,
-  generateCounterTaskTitle,
   isQuantizedCount,
   isWholeCountKind,
   isWindowStampedDerived,
+  renderCounterTitle,
   type CountKind,
   type Task,
 } from '@oybc/shared';
@@ -50,7 +50,14 @@ import { softDeleteWindowStampedDerived } from './derivedCounters';
  */
 export async function createCounterTask(
   userId: string,
-  input: { action: string; unit: string; startingCount?: number; countKind?: CountKind },
+  input: {
+    action: string;
+    unit: string;
+    startingCount?: number;
+    countKind?: CountKind;
+    /** Shared counter settings the create sheet stored (absent = default). */
+    settings?: Pick<Task, 'counterName' | 'titleTemplateSingular' | 'titleTemplatePlural' | 'timeframeGoals'>;
+  },
 ): Promise<Task> {
   const action = input.action.trim();
   const unit = input.unit.trim();
@@ -60,8 +67,10 @@ export async function createCounterTask(
   if (!isQuantizedCount(startingCount) || startingCount < 0 || (isWholeCountKind(countKind) && !Number.isInteger(startingCount))) {
     throw new Error('createCounterTask: startingCount must be a non-negative count at the counter kind');
   }
+  const settings = definedSettings(input.settings);
   const validated = CreateTaskInputSchema.parse({
-    title: generateCounterTaskTitle(action, null, unit),
+    // Goal-less: the title is the counter's name (`renderCounterTitle`).
+    title: renderCounterTitle({ action, unit, countKind, ...settings }, null),
     type: TaskType.COUNTING,
     action,
     unit,
@@ -78,6 +87,7 @@ export async function createCounterTask(
     unit,
     isCounter: true,
     countKind,
+    ...settings,
     currentCount: startingCount,
     isCompleted: false,
     totalCompletions: 0,
@@ -96,6 +106,24 @@ export async function createCounterTask(
     }
   });
   return task;
+}
+
+/**
+ * The settings keys that carry a value (an absent key stays absent — D3).
+ *
+ * @param settings - The create sheet's stored settings.
+ */
+function definedSettings(
+  settings: Pick<Task, 'counterName' | 'titleTemplateSingular' | 'titleTemplatePlural' | 'timeframeGoals'> | undefined,
+): Partial<Task> {
+  const out: Partial<Task> = {};
+  if (settings?.counterName) out.counterName = settings.counterName;
+  if (settings?.titleTemplateSingular) out.titleTemplateSingular = settings.titleTemplateSingular;
+  if (settings?.titleTemplatePlural) out.titleTemplatePlural = settings.titleTemplatePlural;
+  if (settings?.timeframeGoals && Object.keys(settings.timeframeGoals).length > 0) {
+    out.timeframeGoals = settings.timeframeGoals;
+  }
+  return out;
 }
 
 /**

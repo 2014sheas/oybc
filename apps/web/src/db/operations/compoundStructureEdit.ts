@@ -436,10 +436,33 @@ export async function saveTaskEdit(taskId: string, submit: TaskEditSubmit): Prom
       await updateTaskAndCascade(taskId, basicPatch);
       if (propagation) {
         const { title, action, unit, maxCount } = basicPatch;
-        await propagateRootFieldsInTransaction(propagation, { title, action, unit, maxCount, countKind }, nowIso);
+        await propagateRootFieldsInTransaction(
+          propagation,
+          { title, action, unit, maxCount, countKind, ...counterSettingsEdit(basicPatch) },
+          nowIso,
+        );
       }
     },
   );
+}
+
+/**
+ * A submit's name / template edits for root → copy propagation: a present key
+ * is an edit (`undefined` = cleared → `null`); an absent key is unchanged.
+ *
+ * @param patch - The submit's basic fields.
+ * @returns The propagation patch's settings keys.
+ */
+function counterSettingsEdit(patch: UpdateTaskPatch): {
+  counterName?: string | null;
+  titleTemplateSingular?: string | null;
+  titleTemplatePlural?: string | null;
+} {
+  const out: { counterName?: string | null; titleTemplateSingular?: string | null; titleTemplatePlural?: string | null } = {};
+  for (const k of ['counterName', 'titleTemplateSingular', 'titleTemplatePlural'] as const) {
+    if (k in patch) out[k] = patch[k] ?? null;
+  }
+  return out;
 }
 
 /** The Task fields that only a Counting task carries (cleared on any switch away). */
