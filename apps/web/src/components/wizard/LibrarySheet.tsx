@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { PARENT_TIMEFRAMES, TaskType, formatCounterName, isTaskExpired, type CompoundChild, type Task, type Timeframe } from '@oybc/shared';
+import { PARENT_TIMEFRAMES, TaskType, isTaskExpired, taskSearchMatches, type CompoundChild, type Task, type Timeframe } from '@oybc/shared';
 import { useModalA11y } from '../../hooks/useModalA11y';
 import { RisoChip, RisoTypeBadge } from '../riso';
 import { renderTaskRow } from './TaskRow';
@@ -124,23 +124,12 @@ export function LibrarySheet({
   }, [hasParentTimeframes, activeFilter]);
 
   const visible = useMemo(() => {
-    const q = searchQuery.trim().toLowerCase();
-    // Match the stored title OR — for a counting task — the pair-derived
-    // generic name, because a family root's row here reads "Read pages" rather
-    // than its stored "Read 35 pages" (owner ruling 2026-09-22). Tested for
-    // every counting task, not just roots: cheaper than threading the root set
-    // through, and harmless for a standalone counter whose title already
-    // contains the same `(action, unit)` pair. Twin of `useTasksFilters`'s
-    // `matchesSearch` and iOS `RisoLibrarySheetView.matches`.
-    const matches = (t: Task): boolean => {
-      if (q.length === 0) return true;
-      if (t.title.toLowerCase().includes(q)) return true;
-      if (t.type === TaskType.COUNTING) {
-        const generic = formatCounterName(t.action, t.unit);
-        if (generic && generic.toLowerCase().includes(q)) return true;
-      }
-      return false;
-    };
+    // The shared match set (docs/SHARED_COUNTER_SETTINGS.md §2): the stored
+    // title OR — for a counting task — its name, noun, verb and plural
+    // template, because a family root's row here reads its name rather than
+    // its stored "Read 35 pages" (owner ruling 2026-09-22). Twin of iOS
+    // `RisoLibrarySheetView.matches`.
+    const matches = (t: Task): boolean => taskSearchMatches(searchQuery, t);
     const notExpired = (t: Task): boolean => !isTaskExpired(t);
 
     if (activeFilter === 'from-parents') {

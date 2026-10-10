@@ -139,7 +139,7 @@ extension AppDatabase {
                 rootTaskId: copy.rootTaskId, events: try rootEvents(copy.rootTaskId), boundary: copy.startDate
             )
             guard let draft = BoardSources.windowStampedCopyDraft(
-                copy: copy, sourceTask: source, baseline: baseline
+                copy: copy, sourceTask: source, baseline: baseline, settings: .init(task: rootTask)
             ) else { continue }
             try mintLinkedCounterCopy(
                 db: db, draft: draft, root: rootTask, userId: userId, now: now, reviveTombstoned: false
@@ -192,6 +192,13 @@ extension AppDatabase {
     /// unchanged for anything else (including a goal-less linked row, which
     /// has nothing to mint a target from).
     ///
+    /// A counter ROOT with a timeframe default for this board that differs
+    /// from its own goal (`CounterPlacement.placementNeedsCopy`,
+    /// docs/SHARED_COUNTER_SETTINGS.md §2) resolves the same way, its copy
+    /// minted at `placementGoalForCounter`; without one it is placed as-is. An
+    /// existing (or restored) copy keeps its own goal; a linked task's new copy
+    /// carries the linked task's own goal. Twin of web `resolveBoardPlacementTaskId`.
+    ///
     /// Runs inside the caller's write transaction. Covers Board Edit's
     /// add/replace square, which bypasses the wizard's member-rule planner.
     ///
@@ -204,15 +211,29 @@ extension AppDatabase {
     static func resolveWindowStampedPlacementId(
         db: Database, task: Task, board: Board, now: String
     ) throws -> String {
-        guard task.type == .counting, let root = task.sharedCounterId, !root.isEmpty,
-              !BoardSources.isWindowStampedForBoard(task, board: board) else { return task.id }
+        guard task.type == .counting else { return task.id }
+        let isRootWithDefault = (task.sharedCounterId ?? "").isEmpty
+            && CounterPlacement.placementNeedsCopy(.init(task: task), timeframe: board.timeframe)
+        if !isRootWithDefault {
+            guard let linked = task.sharedCounterId, !linked.isEmpty,
+                  !BoardSources.isWindowStampedForBoard(task, board: board) else { return task.id }
+        }
+        let root = isRootWithDefault ? task.id : (task.sharedCounterId ?? task.id)
         let id = BoardSources.derivedTaskId(boardId: board.id, rootTaskId: root)
         if id == task.id { return task.id }
 
-        if let existing = try Task.fetchOne(db, key: id), !existing.isDeleted {
+        let existing = try Task.fetchOne(db, key: id)
+        if let existing, !existing.isDeleted {
             return BoardSources.isWindowStampedForBoard(existing, board: board) ? id : task.id
         }
-        guard let rootTask = try Task.fetchOne(db, key: root) else { return task.id }
+        guard let rootTask = try (isRootWithDefault ? task : Task.fetchOne(db, key: root)) else { return task.id }
+        // The copy's goal: a (tombstoned) existing copy's own, else (a root) the
+        // board-timeframe default, else (a linked task) its own goal.
+        let goal = isRootWithDefault
+            ? CounterPlacement.placementGoalForCounter(
+                .init(task: task), timeframe: board.timeframe, existingCopyGoal: existing?.maxCount
+            )
+            : (existing?.maxCount ?? task.maxCount)
         let events = try TaskEvent
             .filter(Column("taskId") == root && Column("isDeleted") == false).fetchAll(db)
         let copy = BoardSources.LinkedCounterWindowCopy(
@@ -222,8 +243,9 @@ extension AppDatabase {
         let baseline = BoardSources.computeWindowBaseline(
             rootTaskId: root, events: events, boundary: board.startDate
         )
-        guard let draft = BoardSources.windowStampedCopyDraft(copy: copy, sourceTask: task, baseline: baseline)
-        else { return task.id }
+        guard let draft = BoardSources.windowStampedCopyDraft(
+            copy: copy, sourceTask: task, baseline: baseline, settings: .init(task: rootTask), maxCount: goal
+        ) else { return task.id }
         try mintLinkedCounterCopy(db: db, draft: draft, root: rootTask, userId: task.userId, now: now)
         try refreshDerivedBaselines(db: db, rootTaskId: root)
         return id

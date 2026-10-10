@@ -21,26 +21,31 @@ enum TaskTitle {
     ///     hub-born counter (P5) — a running tally with no threshold.
     ///   - unit: Unit of measurement (e.g., "pages").
     ///   - providedTitle: Optional user-provided title.
+    ///   - countKind: The row's kind.
+    ///   - settings: The shared counter ROOT's name + templates
+    ///     (docs/SHARED_COUNTER_SETTINGS.md §1b) — pass it whenever the row is
+    ///     a counter root or a copy of one; absent = the formula.
     /// - Returns: The resolved task title string.
     static func generateCounterTaskTitle(
         action: String,
         maxCount: CountValue?,
         unit: String,
         providedTitle: String? = nil,
-        countKind: CountKind = .discrete
+        countKind: CountKind = .discrete,
+        settings: CounterSettings.TitleSettings? = nil
     ) -> String {
         if let providedTitle {
             let trimmed = providedTitle.trimmingCharacters(in: .whitespacesAndNewlines)
             if !trimmed.isEmpty { return trimmed }
         }
-        // One generator (docs/SHARED_COUNTER_SETTINGS.md §1b): no stored
-        // templates here, so `renderCounterTitle` takes its default path — the
-        // formula "{action} {goal} {unit}" (Duration "{action} {Xh Ym}", the
-        // goal locale-independent: titles are STORED), and a goal-less hub-born
+        // One generator (docs/SHARED_COUNTER_SETTINGS.md §1b): with no stored
+        // templates `renderCounterTitle` takes its default path — the formula
+        // "{action} {goal} {unit}" (Duration "{action} {Xh Ym}", the goal
+        // locale-independent: titles are STORED), and a goal-less hub-born
         // accumulator renders the pair-derived name (`CounterName.formatCounterName`:
         // "Do" + "push-ups" → "Push-ups", "Run" + "miles" → "Run miles").
-        return CounterSettings.renderCounterTitle(
-            CounterSettings.Fields(action: action, unit: unit, countKind: countKind), goal: maxCount
+        return renderedTitle(
+            settings ?? CounterSettings.TitleSettings(), action: action, unit: unit, countKind: countKind, goal: maxCount
         )
     }
 }
@@ -118,12 +123,16 @@ extension TaskTitle {
     /// - Parameters:
     ///   - member: The member being copied (its own title / action / unit / goal).
     ///   - newMaxCount: The copy's target.
+    ///   - settings: The ROOT's name + templates when `member` is a linked row
+    ///     (it carries none of its own); `nil` = the member's own.
     /// - Returns: The copy's title.
-    static func counterCopyTitle(member: Task, newMaxCount: CountValue) -> String {
+    static func counterCopyTitle(
+        member: Task, newMaxCount: CountValue, settings rootSettings: CounterSettings.TitleSettings? = nil
+    ) -> String {
         let action = member.action ?? ""
         let unit = member.unit ?? ""
         let countKind = resolveCountKind(member.countKind)
-        let settings = CounterSettings.TitleSettings(task: member)
+        let settings = rootSettings ?? CounterSettings.TitleSettings(task: member)
         if !isAutoCounterTitle(
             title: member.title, action: action, maxCount: member.maxCount, unit: unit, countKind: countKind,
             settings: settings

@@ -57,7 +57,11 @@ extension BoardSources {
     ///   - sourceWindow: The window the member was pulled from, if known.
     ///   - targetWindow: The window of the board being assembled.
     ///   - kind: The member's count kind.
-    /// - Returns: The effective target (one step ≥, ≤ `goal`).
+    ///   - timeframeDefault: The counter's timeframe default for the target
+    ///     window — consulted FIRST with no explicit target, the planner's rule
+    ///     (docs/SHARED_COUNTER_SETTINGS.md §2): a board-pulled member's ROOT's,
+    ///     a pool-pulled ROOT's own; a pool-pulled linked row passes nil.
+    /// - Returns: The effective target (one step ≥, ≤ `goal`; or the default as-is).
     static func effectiveMemberTarget(
         goal: CountValue,
         explicit: CountValue? = nil,
@@ -65,8 +69,10 @@ extension BoardSources {
         fromBoard: Bool,
         sourceWindow: BoardWindow? = nil,
         targetWindow: BoardWindow,
-        kind: CountKind = .discrete
+        kind: CountKind = .discrete,
+        timeframeDefault: CountValue? = nil
     ) -> CountValue {
+        if explicit == nil, let timeframeDefault { return timeframeDefault }
         let targetDays = nominalWindowDays(
             targetWindow.timeframe,
             startDate: targetWindow.startDate,

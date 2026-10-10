@@ -237,6 +237,9 @@ extension AppDatabase {
         // on every board that has one; a date-less board opens now.
         let boundary = window.startDate ?? now
         var baselineByRootId: [String: CountValue] = [:]
+        // Roots' settings (docs/SHARED_COUNTER_SETTINGS.md §2): copy titles
+        // render through the root's templates; board pulls consult its defaults.
+        var rootsById: [String: Task] = [:]
         for root in candidateRootIds(
             selectedIds: selectedIds,
             tasksById: tasksById,
@@ -247,6 +250,7 @@ extension AppDatabase {
                 events: events,
                 boundary: boundary
             )
+            if let local = try tasksById[root] ?? Task.fetchOne(db, key: root) { rootsById[root] = local }
         }
 
         let drafts = BoardSources.planDerivedTasks(
@@ -261,6 +265,7 @@ extension AppDatabase {
             childrenByCompoundId: childrenByCompoundId,
             sourceWindowByTaskId: sourceWindowByTaskId,
             baselineByRootId: baselineByRootId,
+            rootsById: rootsById,
             rng: rng
         )
 
@@ -273,8 +278,7 @@ extension AppDatabase {
         // EVERY id the drafts reference — `tasksById` covers the selected
         // members, but a member that is itself a derived counter points at a
         // root that may not be on this board at all.
-        var rootsById: [String: Task] = [:]
-        for draft in drafts.derivedTasks {
+        for draft in drafts.derivedTasks where rootsById[draft.rootTaskId] == nil {
             if let local = try tasksById[draft.rootTaskId] ?? Task.fetchOne(db, key: draft.rootTaskId) {
                 rootsById[draft.rootTaskId] = local
             }

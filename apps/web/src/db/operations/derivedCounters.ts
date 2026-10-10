@@ -230,8 +230,13 @@ export async function planAndMintDerivedRows(
   // every board that has one; a date-less (INDEFINITE) board opens now.
   const boundary = window.startDate ?? now;
   const baselineByRootId: Record<string, number> = {};
+  // Roots' settings (docs/SHARED_COUNTER_SETTINGS.md §2): copy titles render
+  // through the root's templates; board-pulled members consult its defaults.
+  const rootsById: Record<string, Task> = {};
   for (const root of candidateRootIds(selectedIds, tasksById, childrenByCompoundId)) {
     baselineByRootId[root] = computeWindowBaseline(root, events, boundary);
+    const row = tasksById[root] ?? (await db.tasks.get(root));
+    if (row) rootsById[root] = row;
   }
 
   const drafts = planDerivedTasks({
@@ -246,6 +251,7 @@ export async function planAndMintDerivedRows(
     childrenByCompoundId,
     sourceWindowByTaskId,
     baselineByRootId,
+    rootsById,
     rng,
   });
 
@@ -258,8 +264,8 @@ export async function planAndMintDerivedRows(
   // them for EVERY id the drafts reference — `tasksById` covers the selected
   // members, but a member that is itself a derived counter points at a root
   // that may not be on this board at all.
-  const rootsById: Record<string, Task> = {};
   for (const d of drafts.derivedTasks) {
+    if (rootsById[d.rootTaskId]) continue;
     const local = tasksById[d.rootTaskId] ?? (await db.tasks.get(d.rootTaskId));
     if (local) rootsById[d.rootTaskId] = local;
   }

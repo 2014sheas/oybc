@@ -773,7 +773,9 @@ struct BoardWizardTasksStepView: View {
             // field when it still matches its auto-generated form, so the
             // title keeps re-deriving as Action/Goal/Unit change in the
             // editor (bug: a non-blank seeded title never re-derived).
-            var d = TaskEditPatch.seededForEditor(from: task)
+            var d = TaskEditPatch.seededForEditor(
+                from: task, settings: task.sharedCounterId.map { effectiveTaskById[$0].map(CounterSettings.TitleSettings.init(task:)) ?? .init() }
+            )
             if task.type == .compound {
                 // First open: seed sub-task rows from the compound's links
                 // (in childIndex order), resolving each child Task.

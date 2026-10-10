@@ -39,6 +39,8 @@ import type { BoardSourceSupply } from './boardSources';
 import { isTimeframeExpired, isWithinTimeframe } from './calendarBoundaries';
 import { countTargetStep, floorToCountStep, isWholeCountKind, quantizeCount, resolveCountKind } from './countValue';
 import type { CountKind } from './countValue';
+import { counterTimeframeDefault } from './counterPlacement';
+import type { CounterSettingsFields } from './counterSettings';
 import { autoTarget, nominalWindowDays, rollTarget } from './memberRuleTargets';
 import { deriveDisplayedCount } from './sharedCounter';
 import { counterCopyTitle } from './taskTitle';
@@ -162,7 +164,8 @@ export interface BoardWindow {
 export type PlanTask = Pick<
   Task,
   'id' | 'type' | 'title' | 'action' | 'unit' | 'maxCount' | 'sharedCounterId' | 'startDate' | 'operator' | 'threshold' | 'countKind'
->;
+> &
+  Pick<CounterSettingsFields, 'counterName' | 'titleTemplateSingular' | 'titleTemplatePlural' | 'timeframeGoals'>;
 
 /** An in-memory window-stamped derived counter, before B2 persists it. */
 export interface DerivedTaskDraft {
@@ -250,6 +253,14 @@ export interface PlanDerivedTasksArgs {
   sourceWindowByTaskId: Record<string, BoardWindow | undefined>;
   /** Shared-counter root id → its event-derived lifetime count. */
   baselineByRootId: Record<string, number>;
+  /**
+   * Shared-counter root id → the root's settings (docs/SHARED_COUNTER_SETTINGS.md
+   * §2), for roots NOT already in `tasksById`: a linked member's copy title
+   * renders through its root's templates, and a board-sourced member consults
+   * its root's timeframe default before pro-rating. Optional — absent, a
+   * linked member's root is looked up in `tasksById` and otherwise ignored.
+   */
+  rootsById?: Record<string, CounterSettingsFields>;
   rng: () => number;
 }
 
@@ -348,9 +359,13 @@ export function planDerivedTasks(args: PlanDerivedTasksArgs): PlanDerivedTasksRe
     childrenByCompoundId,
     sourceWindowByTaskId,
     baselineByRootId,
+    rootsById = {},
     rng,
   } = args;
   const manual = new Set(manualTaskIds);
+  /** The member's shared-counter root (itself when it is the root), if known. */
+  const rootOf = (t: PlanTask): CounterSettingsFields | undefined =>
+    t.sharedCounterId ? (rootsById[t.sharedCounterId] ?? tasksById[t.sharedCounterId]) : t;
   const targetDays = nominalWindowDays(window.timeframe, window.startDate, window.endDate);
   const placementIds: string[] = [];
   const derivedTasks: DerivedTaskDraft[] = [];
@@ -384,6 +399,13 @@ export function planDerivedTasks(args: PlanDerivedTasksArgs): PlanDerivedTasksRe
     taskIdForWindow: string,
     kind: CountKind
   ): number => {
+    // docs/SHARED_COUNTER_SETTINGS.md §2: a board-sourced member consults its
+    // root's timeframe default FIRST (so a source pull and a hand-add agree),
+    // then pro-rates. The default is the target as-is, even above `goal`.
+    const t = tasksById[taskIdForWindow];
+    const root = t && explicit === undefined && fromBoard ? rootOf(t) : undefined;
+    const dflt = root ? counterTimeframeDefault(root, window.timeframe) : null;
+    if (dflt !== null) return dflt;
     const base =
       explicit ??
       (fromBoard ? autoTarget(goal, sourceDaysFor(taskIdForWindow), targetDays, kind) : goal);
@@ -394,7 +416,10 @@ export function planDerivedTasks(args: PlanDerivedTasksArgs): PlanDerivedTasksRe
   // A whole kind's baseline cache is floored (the heal path's rule); continuous quantizes.
   const wholeBaseline = (x: number, kind: CountKind): number => (isWholeCountKind(kind) ? Math.floor(x) : quantizeCount(x));
   const mint = (t: PlanTask, replacesId: string, target: number, vary: VaryLevel): DerivedTaskDraft => {
-    const goal = goalOf(t)!;
+    // The vary clamp's ceiling: the member's goal, or a timeframe default
+    // above it (a goal-less root's default IS its goal). Every pre-default
+    // target is ≤ the goal, so this is the goal exactly as before.
+    const goal = Math.max(goalOf(t) ?? 0, target);
     const root = t.sharedCounterId ?? t.id;
     // The dedupe is checked BEFORE the roll: a collapsed occurrence consumes
     // no rng sample, so a seeded sequence reproduces identically on both
@@ -413,7 +438,7 @@ export function planDerivedTasks(args: PlanDerivedTasksArgs): PlanDerivedTasksRe
       maxCount,
       countKind,
       baseline: wholeBaseline(baselineByRootId[root] ?? 0, countKind),
-      title: counterCopyTitle(t, maxCount),
+      title: counterCopyTitle(t, maxCount, rootOf(t) ?? null),
       action,
       unit,
       timeframe: window.timeframe,
@@ -438,7 +463,28 @@ export function planDerivedTasks(args: PlanDerivedTasksArgs): PlanDerivedTasksRe
     const parentId = sup?.partOf[id];
 
     if (t.type === TaskType.COUNTING) {
-      const goal = goalOf(t);
+      const ownGoal = goalOf(t);
+      // A hand-added or POOL-sourced ROOT with a timeframe default for this
+      // board that differs from its own goal is minted at that default — the
+      // default is also the vary roll's base (docs/SHARED_COUNTER_SETTINGS.md
+      // §2: a source pull and a hand-add agree). A LINKED row keeps its own goal
+      // (its user-chosen target). Pools still never pro-rate or take a target.
+      const poolSourced = sup !== undefined && !fromBoard;
+      const handDefault =
+        (isManual || poolSourced) && !isLinkedMember(t) ? counterTimeframeDefault(t, window.timeframe) : null;
+      if (handDefault !== null && handDefault !== ownGoal) {
+        const handVary: VaryLevel = isManual
+          ? (manualTaskVary[id] ?? 0)
+          : parentId
+            ? (rules[parentId]?.parts?.[id]?.vary ?? 0)
+            : (rules[id]?.vary ?? 0);
+        placementIds.push(mint(t, id, handDefault, handVary).id);
+        continue;
+      }
+      // A goal-less member pulled from a board takes its root's default as its goal.
+      const sourcedDefault =
+        ownGoal === null && fromBoard ? counterTimeframeDefault(rootOf(t) ?? {}, window.timeframe) : null;
+      const goal = ownGoal ?? sourcedDefault;
       if (goal === null) {
         // Goal-less (an accumulator — including a goal-less LINKED member):
         // nothing to mint a per-window target from, so it is placed as-is.
@@ -495,7 +541,7 @@ export function planDerivedTasks(args: PlanDerivedTasksArgs): PlanDerivedTasksRe
           // the same stale `startDate` so it never heals. It must re-mint for
           // THIS window, exactly as the hand-added branch's
           // `isWindowStampedMember` guard above already ensures.
-          if (target === goal && vary === 0 && t.sharedCounterId == null) {
+          if (target === ownGoal && vary === 0 && t.sharedCounterId == null) {
             placementIds.push(id);
             continue;
           }
@@ -512,7 +558,7 @@ export function planDerivedTasks(args: PlanDerivedTasksArgs): PlanDerivedTasksRe
         // No identical clone (owner ruling 2026-09-22) — see the split-part
         // branch above for the reasoning, the `sharedCounterId` guard included;
         // same rule, same shape.
-        if (target === goal && vary === 0 && t.sharedCounterId == null) {
+        if (target === ownGoal && vary === 0 && t.sharedCounterId == null) {
           placementIds.push(id);
           continue;
         }

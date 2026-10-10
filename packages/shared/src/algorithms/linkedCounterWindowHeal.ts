@@ -38,7 +38,7 @@ import type { CountKind } from './countValue';
 import { isWholeCountKind, quantizeCount, resolveCountKind } from './countValue';
 import { derivedTaskId, isWindowStampedDerived } from './memberRules';
 import type { DerivedTaskDraft } from './memberRules';
-import { counterCopyTitle } from './taskTitle';
+import { counterCopyTitle, type CounterTitleSettings } from './taskTitle';
 
 /**
  * Do two stored `startDate`s name the same window opening?
@@ -365,20 +365,29 @@ export function planLinkedCounterWindowHeal(input: LinkedCounterWindowHealInput)
  * derived row needs a per-window target, and {@link planLinkedCounterWindowHeal}
  * never emits a copy for such a row — this is the defensive twin of that rule.
  *
+ * `options` (docs/SHARED_COUNTER_SETTINGS.md §2): `settings` = the ROOT's
+ * name + templates, so the copy's title is judged and rendered through them
+ * (a linked source carries none of its own); `maxCount` = the placement goal
+ * (`placementGoalForCounter`) overriding the source's — the Board Edit
+ * placement path passes both, the heal sweep passes only `settings`.
+ *
  * @param copy - The planned copy.
  * @param sourceTask - The linked row it stands in for.
  * @param baseline - The root's event-derived count at the copy's window start.
- * @returns The draft, or `null` when the source has no goal.
+ * @param options - Optional root settings and goal override.
+ * @returns The draft, or `null` when there is no goal.
  */
 export function windowStampedCopyDraft(
   copy: LinkedCounterWindowCopy,
   sourceTask: Pick<Task, 'title' | 'action' | 'unit' | 'maxCount' | 'countKind'>,
-  baseline: number
+  baseline: number,
+  options: { settings?: CounterTitleSettings | null; maxCount?: number | null } = {}
 ): DerivedTaskDraft | null {
   const countKind = resolveCountKind(sourceTask);
-  if (!hasCopyGoal(sourceTask.maxCount, countKind)) return null;
+  const goal = options.maxCount ?? sourceTask.maxCount;
+  if (!hasCopyGoal(goal, countKind)) return null;
   const whole = (x: number): number => (isWholeCountKind(countKind) ? Math.floor(x) : quantizeCount(x));
-  const maxCount = whole(sourceTask.maxCount!);
+  const maxCount = whole(goal!);
   const action = sourceTask.action ?? '';
   const unit = sourceTask.unit ?? '';
   return {
@@ -389,7 +398,7 @@ export function windowStampedCopyDraft(
     maxCount,
     countKind,
     baseline: Math.max(0, whole(baseline)),
-    title: counterCopyTitle(sourceTask, maxCount),
+    title: counterCopyTitle(sourceTask, maxCount, options.settings ?? null),
     action,
     unit,
     timeframe: copy.timeframe,

@@ -185,8 +185,10 @@ struct TaskEditPatch: Equatable {
     /// task. Assumes `validate` already passed. Does NOT bump
     /// `version`/`updatedAt` — the persist caller owns that. Compound child
     /// Task/link CRUD is applied by the persist layer
-    /// (`AppDatabase.applyStagedCompoundChildEdits`), not here.
-    func applied(to base: OYBC.Task) -> OYBC.Task {
+    /// (`AppDatabase.applyStagedCompoundChildEdits`), not here. A blank
+    /// counting title renders through the counter root's templates
+    /// (`settings`, default the task's own — docs/SHARED_COUNTER_SETTINGS.md §1b).
+    func applied(to base: OYBC.Task, settings: CounterSettings.TitleSettings? = nil) -> OYBC.Task {
         var t = base
         switch base.type {
         case .counting:
@@ -203,7 +205,10 @@ struct TaskEditPatch: Equatable {
             if kind != resolveCountKind(base.countKind) { t.countKind = kind }
             let typed = trimmedTitle
             t.title = typed.isEmpty
-                ? TaskTitle.generateCounterTaskTitle(action: a, maxCount: g, unit: u, countKind: kind)
+                ? TaskTitle.generateCounterTaskTitle(
+                    action: a, maxCount: g, unit: u, countKind: kind,
+                    settings: settings ?? CounterSettings.TitleSettings(task: base)
+                )
                 : typed
         case .compound:
             // Parent-level fields only; child Task/link CRUD is applied by the
@@ -235,16 +240,17 @@ extension TaskEditPatch {
     /// genuinely custom title is preserved verbatim. `init(from:)` itself is
     /// left unchanged — it's also asserted directly by
     /// `TaskEditPatchTests.test_init_from_counting_task_clones_fields`.
-    static func seededForEditor(from task: OYBC.Task) -> TaskEditPatch {
+    static func seededForEditor(
+        from task: OYBC.Task, settings: CounterSettings.TitleSettings? = nil
+    ) -> TaskEditPatch {
         var patch = TaskEditPatch(from: task)
-        if task.type == .counting {
-            let autoTitle = TaskTitle.generateCounterTaskTitle(
-                action: task.action ?? "", maxCount: task.maxCount, unit: task.unit ?? "",
-                countKind: resolveCountKind(task.countKind)
-            )
-            if task.title == autoTitle {
-                patch.title = ""
-            }
+        // A title rendered from the counter root's templates is auto too
+        // (docs/SHARED_COUNTER_SETTINGS.md §1b); `settings` defaults to the task's own.
+        if task.type == .counting, TaskTitle.isAutoCounterTitle(
+            title: task.title, action: task.action ?? "", maxCount: task.maxCount, unit: task.unit ?? "",
+            countKind: resolveCountKind(task.countKind), settings: settings ?? CounterSettings.TitleSettings(task: task)
+        ) {
+            patch.title = ""
         }
         return patch
     }

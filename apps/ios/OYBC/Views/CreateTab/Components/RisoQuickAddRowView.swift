@@ -89,10 +89,11 @@ struct RisoQuickAddRowView: View {
     /// create-only call sites byte-identical to today.
     private var libraryMatches: [OYBC.Task] {
         guard onExistingTaskPicked != nil, !trimmedText.isEmpty else { return [] }
-        let q = trimmedText.lowercased()
+        // The shared match set (docs/SHARED_COUNTER_SETTINGS.md §2): title, plus a
+        // counter's name / noun / verb / plural template; case- and diacritic-insensitive.
         return libraryTasks
             .filter { !selectedIds.contains($0.id) }
-            .filter { $0.title.lowercased().contains(q) }
+            .filter { CounterPlacement.taskSearchMatches(trimmedText, task: $0) }
             .prefix(4)
             .map { $0 }
     }

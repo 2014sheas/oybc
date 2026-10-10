@@ -8,6 +8,7 @@ import {
   resolveCountKind,
   type CompoundChild,
   type CountKind,
+  type CounterTitleSettings,
   type Task,
 } from '@oybc/shared';
 import {
@@ -87,6 +88,8 @@ export interface BoardEditTaskSheetProps {
   forkConfirmed?: boolean;
   /** Records the first-fork confirm for the rest of the edit session. */
   onForkConfirmed?: () => void;
+  /** A linked copy's counter ROOT (name + templates) — auto titles render through it. */
+  rootSettings?: CounterTitleSettings | null;
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
@@ -120,6 +123,7 @@ export function BoardEditTaskSheet({
   boardId,
   forkConfirmed = false,
   onForkConfirmed,
+  rootSettings: rootSettingsProp,
 }: BoardEditTaskSheetProps): React.ReactElement {
   // aria-modal, Escape → cancel, initial focus, Tab trap, focus restore.
   const { ref: modalRef, props: modalProps } = useModalA11y<HTMLDivElement>({
@@ -130,11 +134,13 @@ export function BoardEditTaskSheet({
   // ── Seed from task (which has overrides pre-merged by caller) ────────────
 
   const original = originalProp ?? task;
+  // Copy-side titles read the root's templates (docs/SHARED_COUNTER_SETTINGS.md §1b).
+  const rootSettings = rootSettingsProp ?? task;
   // A board-born root other boards link to is a shared counter: its type is fixed.
   const hasLinkedCopies = useHasLiveLinkedCopies(task.id);
   const [selected, setSelected] = useState<TaskType>(task.type);
   // Blank for an auto-titled Counting task so the title re-derives (see model).
-  const [title, setTitle] = useState(seedSheetTitle(task));
+  const [title, setTitle] = useState(seedSheetTitle(task, rootSettings));
 
   // Counting fields
   const [action, setAction] = useState(task.action ?? '');
@@ -150,7 +156,7 @@ export function BoardEditTaskSheet({
   const draftGoal = parseGoal(goalStr, countKind) ?? task.maxCount;
   const draftSubject = {
     ...task,
-    title: title.trim() || generateCounterTaskTitle(action.trim(), draftGoal, unit.trim(), undefined, countKind),
+    title: title.trim() || generateCounterTaskTitle(action.trim(), draftGoal, unit.trim(), undefined, countKind, rootSettings),
     action,
     unit,
     countKind,
@@ -165,7 +171,7 @@ export function BoardEditTaskSheet({
       // A typed custom title follows the switch only if it was the auto one;
       // a blank title keeps re-deriving at the new kind.
       if (title.trim()) {
-        const after = planKindSwitchPreview(draftSubject, k, 0)?.titleAfter;
+        const after = planKindSwitchPreview(draftSubject, k, 0, rootSettings)?.titleAfter;
         if (after) setTitle(after);
       }
       setCountKind(k);
@@ -238,7 +244,7 @@ export function BoardEditTaskSheet({
 
   // ── Validation ───────────────────────────────────────────────────────────
 
-  const input = { original, selected, title, action, goalStr, unit, countKind, compoundDraft, compoundBaseline };
+  const input = { original, selected, title, action, goalStr, unit, countKind, compoundDraft, compoundBaseline, rootSettings };
   const problem = sheetValidationProblem(input);
   // Board-scoped: the task + its sub-tasks; Done waits for the check (no late label flip).
   const forkCheck = useForkCheck(
@@ -254,7 +260,7 @@ export function BoardEditTaskSheet({
 
   const readsAs: string | null =
     selected === TaskType.COUNTING && goalNum !== null && (!needsUnit || unit.trim())
-      ? generateCounterTaskTitle(action.trim(), goalNum, needsUnit ? unit.trim() : '', title.trim() || undefined, countKind)
+      ? generateCounterTaskTitle(action.trim(), goalNum, needsUnit ? unit.trim() : '', title.trim() || undefined, countKind, rootSettings)
       : null;
 
   // ── Submit ───────────────────────────────────────────────────────────────

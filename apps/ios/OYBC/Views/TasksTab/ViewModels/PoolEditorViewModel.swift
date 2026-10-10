@@ -332,10 +332,11 @@ final class PoolEditorViewModel {
         selectedIds: Set<String>,
         query: String
     ) -> [Task] {
-        let q = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        // The shared match set (docs/SHARED_COUNTER_SETTINGS.md §2) — web
+        // `selectLibraryPickerResults` twin.
         return browsableTasks
             .filter { !selectedIds.contains($0.id) }
-            .filter { q.isEmpty || $0.title.lowercased().contains(q) }
+            .filter { CounterPlacement.taskSearchMatches(query, task: $0) }
     }
 
     /// Resolves `taskIds` to the RESOLVABLE subset in `taskIds` order against

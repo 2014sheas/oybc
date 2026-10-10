@@ -144,3 +144,33 @@ describe('resolvePoolChips', () => {
     expect(result).toEqual([fresh]);
   });
 });
+
+describe('selectQuickAddMatches — shared counter search (docs/SHARED_COUNTER_SETTINGS.md §2)', () => {
+  const reading = buildTask('r', {
+    title: 'Read 12 books',
+    type: TaskType.COUNTING,
+    action: 'Read',
+    unit: 'books',
+    maxCount: 12,
+    counterName: 'Reading',
+  });
+  const walk = buildTask('w', { title: 'Walk the dog' });
+
+  it.each(['read', 'books', 'Reading', 'READING'])('finds the counter by "%s"', (q) => {
+    expect(selectQuickAddMatches([reading, walk], new Set(), q).map((t) => t.id)).toEqual(['r']);
+  });
+
+  it('finds it by a word of its plural template', () => {
+    const novels = { ...reading, titleTemplatePlural: 'Finish #N novels' };
+    expect(selectQuickAddMatches([novels], new Set(), 'novels').map((t) => t.id)).toEqual(['r']);
+  });
+
+  it('is diacritic-insensitive on titles', () => {
+    const creme = buildTask('c', { title: 'Make crème brûlée' });
+    expect(selectQuickAddMatches([creme], new Set(), 'creme').map((t) => t.id)).toEqual(['c']);
+  });
+
+  it('a plain task still matches only its title', () => {
+    expect(selectQuickAddMatches([walk], new Set(), 'read')).toEqual([]);
+  });
+});

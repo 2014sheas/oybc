@@ -1186,6 +1186,20 @@ instances, any task list for a recurring board.
      `sourceDays` = `nominalWindowDays` of the **source board's** timeframe
      (`sourceWindowByMemberId`); `targetDays` = `nominalWindowDays` of the
      board being made.
+   - **Consults the root's timeframe default first** (shared counter
+     settings PR 2, docs/SHARED_COUNTER_SETTINGS.md §2): with no explicit
+     `target`, a board-sourced member whose ROOT carries a default for the
+     board's timeframe (`counterTimeframeDefault` — stored, else derived per
+     D4; never on CUSTOM / INDEFINITE) takes that default as its target
+     as-is (even above the member's goal) before any pro-rating, so a source
+     pull and a hand-add agree. No default → `autoTarget` exactly as before.
+     An explicit target (a member rule, or the one-off prefill below) still
+     wins; the member row previews the same number (`effectiveMemberTarget`'s
+     `timeframeDefault`). **Pool-sourced** members consult the counter's own
+     default too (owner ruling 2026-10-09): a pool-pulled ROOT whose default
+     for the board differs from its goal mints at that default (also the vary
+     roll's base), exactly like a hand-add; a pool-pulled linked row keeps its
+     own goal. Pools still never pro-rate and still ignore a `target`.
    - One-off: the wizard writes an explicit `target` at pull time, prefilled
      with the source's **remaining, pro-rated to this board's window** —
      `prefilledOneOffTarget = autoTarget(remainingTarget(goal, windowCount),

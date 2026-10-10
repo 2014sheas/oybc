@@ -260,7 +260,7 @@ struct RisoCompoundFieldsView: View {
         return taskLibrary
             .filter { $0.type != .compound }
             .filter { !addedTitles.contains($0.title.lowercased()) }
-            .filter { $0.title.lowercased().contains(q) }
+            .filter { CounterPlacement.taskSearchMatches(q, task: $0) }
             .prefix(3)
             .map { $0 }
     }

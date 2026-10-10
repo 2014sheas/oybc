@@ -48,8 +48,14 @@ struct KindSwitchPreview: Equatable, Identifiable {
     ///   - task: The task (or editor draft) being switched.
     ///   - to: The requested kind.
     ///   - linkedCount: Live family rows the switch would also write.
+    ///   - settings: The counter ROOT's name + templates — the title is judged
+    ///     and re-rendered through them (docs/SHARED_COUNTER_SETTINGS.md §1b);
+    ///     nil = the task's own (a root).
     /// - Returns: The preview, or nil when the switch is refused.
-    static func planned(task: Task, to: CountKind, linkedCount: Int) -> KindSwitchPreview? {
+    static func planned(
+        task: Task, to: CountKind, linkedCount: Int, settings: CounterSettings.TitleSettings? = nil
+    ) -> KindSwitchPreview? {
+        let settings = settings ?? CounterSettings.TitleSettings(task: task)
         let from = resolveCountKind(task.countKind)
         guard let patch = planCountKindSwitch(
             maxCount: task.maxCount, defaultLogAmount: task.defaultLogAmount, from: from, to: to
@@ -57,7 +63,8 @@ struct KindSwitchPreview: Equatable, Identifiable {
         let action = task.action ?? ""
         let unit = task.unit ?? ""
         let auto = TaskTitle.isAutoCounterTitle(
-            title: task.title, action: action, maxCount: task.maxCount, unit: unit, countKind: from
+            title: task.title, action: action, maxCount: task.maxCount, unit: unit, countKind: from,
+            settings: settings
         )
         let loggedBefore = quantizeCount(task.currentCount ?? 0)
         return KindSwitchPreview(
@@ -66,7 +73,8 @@ struct KindSwitchPreview: Equatable, Identifiable {
             titleBefore: task.title,
             titleAfter: auto
                 ? TaskTitle.generateCounterTaskTitle(
-                    action: action, maxCount: patch.maxCount ?? task.maxCount, unit: unit, countKind: to
+                    action: action, maxCount: patch.maxCount ?? task.maxCount, unit: unit, countKind: to,
+                    settings: settings
                 )
                 : task.title,
             loggedBefore: loggedBefore,

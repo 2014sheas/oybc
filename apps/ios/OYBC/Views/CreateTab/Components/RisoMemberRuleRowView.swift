@@ -125,6 +125,16 @@ struct MemberRuleRowModel: Equatable {
     ) {
         let isOn = state == .included
         self.isOn = isOn
+        /// The counter default the planner consults first: a board-pulled member's
+        /// ROOT's, a pool-pulled ROOT's own (a pool-pulled linked row keeps its goal).
+        func rootDefault(_ t: Task?) -> CountValue? {
+            guard let t else { return nil }
+            if !fromBoard, t.sharedCounterId != nil { return nil }
+            let root = t.sharedCounterId.flatMap { taskById[$0] } ?? (t.sharedCounterId == nil ? t : nil)
+            return root.flatMap {
+                CounterPlacement.counterTimeframeDefault(.init(task: $0), timeframe: wizardWindow.timeframe)
+            }
+        }
         let memberVary = rule.vary ?? .off
         self.memberVary = memberVary
 
@@ -142,7 +152,8 @@ struct MemberRuleRowModel: Equatable {
                 fromBoard: fromBoard,
                 sourceWindow: sourceWindow,
                 targetWindow: wizardWindow,
-                kind: kind
+                kind: kind,
+                timeframeDefault: rootDefault(task)
             )
             : 0
         self.target = target
@@ -153,7 +164,7 @@ struct MemberRuleRowModel: Equatable {
             : nil
         self.showsDice = isOn && isCounting
         self.rangeLabel = (isOn && isCounting)
-            ? BoardSources.varyRangeLabel(t: target, level: memberVary, goal: goal, unit: unit, kind: kind)
+            ? BoardSources.varyRangeLabel(t: target, level: memberVary, goal: Swift.max(goal, target), unit: unit, kind: kind)
             : nil
 
         // `childIndex` order — the same order `applyMemberRules` expands a
@@ -215,7 +226,8 @@ struct MemberRuleRowModel: Equatable {
                     fromBoard: fromBoard,
                     sourceWindow: sourceWindow,
                     targetWindow: wizardWindow,
-                    kind: partKind
+                    kind: partKind,
+                    timeframeDefault: rootDefault(childTask)
                 )
                 : 0
             let showsStepper = partIsCounting && fromBoard
@@ -233,7 +245,7 @@ struct MemberRuleRowModel: Equatable {
                 showsExclude: isSplit && canExcludeAny,
                 rangeLabel: partIsCounting
                     ? BoardSources.varyRangeLabel(
-                        t: partTarget, level: level, goal: partGoal, unit: "", kind: partKind
+                        t: partTarget, level: level, goal: Swift.max(partGoal, partTarget), unit: "", kind: partKind
                     )
                     : nil
             )

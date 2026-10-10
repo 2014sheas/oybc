@@ -11,6 +11,7 @@ import {
   quantizeCount,
   resolveCountKind,
   type CountKind,
+  type CounterTitleSettings,
   type Task,
 } from '@oybc/shared';
 import { db } from '../internal';
@@ -209,28 +210,36 @@ export interface KindSwitchPreview {
 /**
  * Pure preview from a task's own fields (pending tasks use it directly).
  *
+ * The title is judged and re-rendered through the counter ROOT's templates
+ * (docs/SHARED_COUNTER_SETTINGS.md §1b): `settings` defaults to the task's own
+ * (a root), and a caller previewing a linked copy passes its root's.
+ *
  * @param task - The task (or editor draft) being switched.
  * @param to - The requested kind.
  * @param linkedCount - Live family rows the switch would also write.
+ * @param settings - The root's name + templates (defaults to `task`'s own).
  * @returns The preview, or null when the switch is refused.
  */
 export function planKindSwitchPreview(
-  task: Pick<Task, 'title' | 'action' | 'unit' | 'maxCount' | 'currentCount' | 'countKind'>,
+  task: Pick<Task, 'title' | 'action' | 'unit' | 'maxCount' | 'currentCount' | 'countKind'> & CounterTitleSettings,
   to: CountKind,
   linkedCount: number,
+  settings: CounterTitleSettings | null = task,
 ): KindSwitchPreview | null {
   const from = resolveCountKind(task);
   const patch = planCountKindSwitch(task, from, to);
   if (!patch) return null;
   const action = task.action ?? '';
   const unit = task.unit ?? '';
-  const auto = isAutoCounterTitle(task.title, action, task.maxCount, unit, from);
+  const auto = isAutoCounterTitle(task.title, action, task.maxCount, unit, from, settings);
   const loggedBefore = quantizeCount(task.currentCount ?? 0);
   return {
     from,
     to,
     titleBefore: task.title,
-    titleAfter: auto ? generateCounterTaskTitle(action, patch.maxCount ?? task.maxCount, unit, undefined, to) : task.title,
+    titleAfter: auto
+      ? generateCounterTaskTitle(action, patch.maxCount ?? task.maxCount, unit, undefined, to, settings)
+      : task.title,
     loggedBefore,
     loggedAfter: finalizeWindowCount(loggedBefore, to),
     linkedCount,

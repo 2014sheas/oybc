@@ -245,7 +245,7 @@ same stamp as the completion that caused it).
 | PR | Scope |
 | --- | --- |
 | 1 — counter settings data + logic (name, templates, timeframe defaults; sheet UI follows the design handoff) — **SHIPPED (data + logic) in #584** | shared types + Zod + GRDB migration (nullable columns) + Dexie (no index); `renderCounterTitle` / `resolveCounterDefaultGoal` / default-template helpers with vectors; `isAutoCounterTitle` → template-aware; propagation (#575) extended to template/name edits; the counter sheet's new fields (create + edit); hub/Detail/pickers show `counterName`. Inert for untouched counters (absent = today's behaviour). |
-| 2 — placement uses defaults | quick-add / picker mint with `resolveCounterDefaultGoal` + rendered title; shared search-match set; retire `DeriveCounterModal` (D6); source-pull auto-scaler consults defaults. |
+| 2 — placement uses defaults — **SHIPPED (logic) in #585** | quick-add / picker mint with `resolveCounterDefaultGoal` + rendered title; shared search-match set; retire `DeriveCounterModal` (D6); source-pull auto-scaler consults defaults. |
 | 3 — counts toward (data + cascade) | `countsTowardCounterId/Amount`, deterministic event mint/tombstone in the cascade, delete/kind guards, zero-child container rule; vectors + XCTest/Vitest; no UI. |
 | 4 — counts toward (UI) | Counter Detail section + "+ New"; task editor picker; cell badge; e2e + snapshots. |
 | 5 — docs | SHARED_COUNTERS / COUNTER_KINDS / TASK_SYSTEM / CLAUDE.md. |
@@ -287,6 +287,46 @@ Library SEARCH still matches title + `formatCounterName` — the shared search-m
   characters; both sheets (web `CreateCounterSheet` ↔ iOS `NewCounterSheetView`)
   must enforce them in the UI PR, or a long entry is refused at the sync
   boundary.
+
+**PR 2 notes (2026-10-09).** Helpers (`counterPlacement.ts` ↔ `CounterPlacement.swift`,
+`counterPlacementVectors.json`): `counterTimeframeDefault` (stored → D4-derived, NO
+root-goal fallback — what the auto-scaler consults), `placementGoalForCounter(root,
+board, existingCopy?)` (an existing copy's goal → `resolveCounterDefaultGoal` → the
+root's goal), `placementNeedsCopy` (a hand-added ROOT mints a copy only when its default
+for the board differs from its own goal — otherwise it is placed as-is, the
+no-identical-clone rule), `normalizeSearchText` / `counterSearchMatches` /
+`taskSearchMatches` (title, plus a counter's name / noun / verb / plural template with
+`#N` removed; case- and diacritic-insensitive SUBSTRING — the existing quick-add
+matcher's rule, so every prefix and word match). Mint paths: the planner's hand-added
+branch (wizard persist, recurring spawn, Preview), Board Edit add + Replace
+(`resolveBoardPlacementTaskId` ↔ `resolveWindowStampedPlacementId`), and the board-source
+auto-scaler (`resolveTarget` + `effectiveMemberTarget`'s `timeframeDefault`). Rulings
+taken inside the spec: (1) the default applies when the picked task IS the counter root;
+a hand-added LINKED task keeps its own goal (its user-chosen target — applying the root's
+fallback goal to it would change behaviour for counters with no defaults); (2) an
+existing copy at the deterministic id — live or revived from a tombstone — keeps its
+goal; (3) **pool pulls honour the default too** (owner ruling 2026-10-09, review of
+#585: "a source pull and a hand-add agree" covers pools) — a pool-pulled ROOT mints at its
+board-timeframe default when it differs from its goal, the default being the vary roll's
+base; a pool-pulled linked row keeps its goal; pools still never pro-rate. (4) The one-off
+board-source prefill keeps its "remaining in the source window, pro-rated" explicit
+target, which still wins over a default (RULED 2026-10-09: keep as is). Copy-side titles: `generateCounterTaskTitle` gained a
+trailing `settings` (TS + Swift), `counterCopyTitle` / `windowStampedCopyDraft` take the
+ROOT's settings, and every production call site on both platforms is pinned with a reason
+by `packages/shared/tests/algorithms/counterTitleCallSites.test.ts` (0 raw copy-side
+calls). Search is wired into the wizard quick-add, the library sheet, the pool editor's
+library picker, the core-defaults sheet, Board Edit's picker (iOS
+`SquarePickerCandidates`), the Tasks tab (`useTasksFilters.matchesSearch` ↔
+`TasksTabViewModel.matchesSearch`, + description) and the compound sub-task
+autocomplete (iOS `RisoCompoundFieldsView`; web already uses the quick-add row). The
+`#N` placeholder is never matched (it is replaced by a space before matching). "Derive smaller version…" (web `DeriveCounterModal`, its menu
+item, `deriveCounterLink`; iOS's orphaned `DeriveCounterLink.swift`) is deleted (D6).
+**Deferred to the UI PR:** the match row showing the default goal (rows still read the
+root's title until the copy is minted / the Preview runs), the no-default state, the
+member-rule target stepper's `max` when a default exceeds the member's goal, the wizard
+pool-row editor's live title preview (iOS `RisoPoolRowEditorView`, still the formula —
+no root in scope), and the counter sheet's Defaults / template fields (+ the Zod length
+caps above).
 
 ---
 

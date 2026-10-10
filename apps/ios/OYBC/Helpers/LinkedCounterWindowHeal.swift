@@ -275,14 +275,20 @@ extension BoardSources {
     ///   - copy: The planned copy.
     ///   - sourceTask: The linked row it stands in for.
     ///   - baseline: The root's event-derived count at the copy's window start.
-    /// - Returns: The draft, or `nil` when the source has no goal.
+    ///   - settings: The ROOT's name + templates — the copy's title is judged and
+    ///     rendered through them (docs/SHARED_COUNTER_SETTINGS.md §1b).
+    ///   - maxCount: The placement goal (`CounterPlacement.placementGoalForCounter`)
+    ///     overriding the source's — the placement choke point passes it.
+    /// - Returns: The draft, or `nil` when there is no goal.
     static func windowStampedCopyDraft(
         copy: LinkedCounterWindowCopy,
         sourceTask: Task,
-        baseline: CountValue
+        baseline: CountValue,
+        settings: CounterSettings.TitleSettings? = nil,
+        maxCount goalOverride: CountValue? = nil
     ) -> DerivedTaskDraft? {
         let countKind = resolveCountKind(sourceTask.countKind)
-        guard let goal = sourceTask.maxCount, hasCopyGoal(goal, kind: countKind) else { return nil }
+        guard let goal = goalOverride ?? sourceTask.maxCount, hasCopyGoal(goal, kind: countKind) else { return nil }
         func whole(_ x: CountValue) -> CountValue {
             isWholeCountKind(countKind) ? x.rounded(.down) : quantizeCount(x)
         }
@@ -297,7 +303,7 @@ extension BoardSources {
             maxCount: maxCount,
             countKind: countKind,
             baseline: Swift.max(0, whole(baseline)),
-            title: TaskTitle.counterCopyTitle(member: sourceTask, newMaxCount: maxCount),
+            title: TaskTitle.counterCopyTitle(member: sourceTask, newMaxCount: maxCount, settings: settings),
             action: action,
             unit: unit,
             timeframe: copy.timeframe,

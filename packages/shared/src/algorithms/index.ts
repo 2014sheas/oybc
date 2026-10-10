@@ -24,6 +24,15 @@ export type {
   CounterTimeframeGoals,
   CounterTitleTemplates,
 } from './counterSettings';
+export {
+  counterSearchMatches,
+  counterTimeframeDefault,
+  normalizeSearchText,
+  placementGoalForCounter,
+  placementNeedsCopy,
+  taskSearchMatches,
+} from './counterPlacement';
+export type { PlacementBoard, PlacementExistingCopy } from './counterPlacement';
 
 // ===== Counter kinds (docs/COUNTER_KINDS.md) =====
 export {

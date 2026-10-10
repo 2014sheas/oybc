@@ -5,6 +5,7 @@ import {
   countTargetStep,
   countUnitSuffix,
   countingSummary,
+  counterTimeframeDefault,
   effectiveMemberTarget,
   formatCount,
   resolveCountKind,
@@ -134,6 +135,11 @@ export function MemberRuleRow({
    * disclosure.
    */
   const isOn = state === 'included';
+  /** The counter default the planner consults first: a board-pulled member's ROOT's, a pool-pulled ROOT's own. */
+  const rootDefault = (t: Task | undefined): number | null =>
+    t && (fromBoard || !t.sharedCounterId)
+      ? counterTimeframeDefault((t.sharedCounterId ? taskById[t.sharedCounterId] : t) ?? {}, wizardWindow.timeframe)
+      : null;
 
   const goal = task?.type === TaskType.COUNTING ? (task.maxCount ?? 0) : 0;
   const isCounting = goal > 0;
@@ -148,9 +154,10 @@ export function MemberRuleRow({
         sourceWindow,
         targetWindow: wizardWindow,
         kind,
+        timeframeDefault: rootDefault(task),
       })
     : 0;
-  const memberRange = isCounting ? varyRangeLabel(target, memberVary, goal, unit, kind) : null;
+  const memberRange = isCounting ? varyRangeLabel(target, memberVary, Math.max(goal, target), unit, kind) : null;
 
   const isCompound = task?.type === TaskType.COMPOUND && parts.length > 0;
   const split = rule.split === true;
@@ -354,6 +361,7 @@ export function MemberRuleRow({
                 childId={part.childTaskId}
                 canExclude={parts.length - excludedPartIds.size > 1}
                 task={taskById[part.childTaskId]}
+                timeframeDefault={rootDefault(taskById[part.childTaskId])}
                 rule={rule}
                 split={split}
                 memberVary={memberVary}
@@ -382,6 +390,8 @@ interface PartLineProps {
    */
   canExclude: boolean;
   task: Task | undefined;
+  /** The part's ROOT default for the wizard window (board sources only). */
+  timeframeDefault: number | null;
   rule: BoardSourceMemberRule;
   split: boolean;
   memberVary: VaryLevel;
@@ -413,6 +423,7 @@ function PartLine({
   childId,
   canExclude,
   task,
+  timeframeDefault,
   rule,
   split,
   memberVary,
@@ -440,9 +451,10 @@ function PartLine({
         sourceWindow,
         targetWindow: wizardWindow,
         kind,
+        timeframeDefault,
       })
     : 0;
-  const range = isCounting ? varyRangeLabel(target, level, goal, '', kind) : null;
+  const range = isCounting ? varyRangeLabel(target, level, Math.max(goal, target), '', kind) : null;
 
   if (excluded) {
     return (
