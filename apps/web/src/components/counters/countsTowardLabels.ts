@@ -25,9 +25,3 @@ const LABELS: Record<Exclude<CountsTowardErrorCode, 'task-missing'>, string> = {
 export function countsTowardProblemLabel(code: Exclude<CountsTowardErrorCode, 'task-missing'>): string {
   return LABELS[code];
 }
-
-/** The "Counts toward" field's label. */
-export const COUNTS_TOWARD_LABEL = 'Counts toward';
-
-/** The value shown when a task counts toward nothing. */
-export const COUNTS_TOWARD_NONE = 'None';

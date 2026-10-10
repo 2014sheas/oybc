@@ -1,7 +1,6 @@
 import { useCallback, useState } from 'react';
 import { CountsTowardError } from '../../db/operations/countsToward';
 import { countsTowardProblemLabel } from '../../components/counters/countsTowardLabels';
-import type { CountsTowardSelection } from '../../components/counters/countsTowardFieldModel';
 import {
   AchievementTrigger,
   TaskType,
@@ -66,6 +65,24 @@ export interface FormErrors {
 }
 
 // ─── Validation ──────────────────────────────────────────────────────────────
+
+/**
+ * Creates a task through the single immediate-persist path. A non-null
+ * `countsTowardCounterId` (Counter Detail's "+ New" preset) flags the task to
+ * count toward that counter with amount 1 in the same transaction; null writes
+ * no flag.
+ *
+ * @param userId - Owner of the new task.
+ * @param input - Task fields.
+ * @param countsTowardCounterId - Counter root to count toward, or null.
+ * @returns The created task.
+ * @throws {CountsTowardError} when the flag is refused (nothing persists).
+ */
+export function createWithPreset(userId: string, input: CreateTaskInput, countsTowardCounterId: string | null): Promise<Task> {
+  return countsTowardCounterId != null
+    ? createTaskCountingToward(userId, input, { counterId: countsTowardCounterId, amount: 1 })
+    : createTask(userId, input);
+}
 
 /**
  * Pure form-validation function. Returns an error object keyed by
@@ -202,8 +219,8 @@ export interface UseCreateFormStateArgs {
   deferPersist?: boolean;
   /**
    * "Counts toward" (docs/SHARED_COUNTER_SETTINGS.md §3d) — the counter the
-   * new task is preset to count toward (Counter Detail's "+ New"). The row is
-   * shown only in immediate-persist mode (a pending wizard task has no row yet).
+   * new task is preset to count toward (Counter Detail's "+ New"). No form
+   * shows a row for it; the immediate-persist create flags the task silently.
    */
   countsTowardPreset?: string | null;
 }
@@ -211,10 +228,8 @@ export interface UseCreateFormStateArgs {
 export interface UseCreateFormState {
   // Form fields
   taskType: TaskType;
-  /** The "Counts toward" row's selection; `countsTowardEnabled` says whether the row renders. */
-  countsToward: CountsTowardSelection;
-  countsTowardEnabled: boolean;
-  setCountsToward: (next: CountsTowardSelection) => void;
+  /** The counter the create is preset to count toward (no UI row); null otherwise. */
+  countsTowardPreset: string | null;
   title: string;
   description: string;
   action: string;
@@ -297,8 +312,6 @@ export function useCreateFormState({
   countsTowardPreset = null,
 }: UseCreateFormStateArgs): UseCreateFormState {
   const [taskType, setTaskType] = useState<TaskType>(TaskType.NORMAL);
-  const [countsToward, setCountsToward] = useState<CountsTowardSelection>({ counterId: countsTowardPreset, amount: 1 });
-  const countsTowardEnabled = !deferPersist;
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [action, setAction] = useState('');
@@ -613,9 +626,7 @@ export function useCreateFormState({
         // ── Immediate-persist path (default — standalone quick-add) ────────
         // "Counts toward": create + flag in ONE transaction (a refused flag persists nothing).
         const create = (input: CreateTaskInput): Promise<Task> =>
-          countsTowardEnabled && countsToward.counterId != null && taskType !== TaskType.ACHIEVEMENT
-            ? createTaskCountingToward(userId, input, { counterId: countsToward.counterId, amount: countsToward.amount })
-            : createTask(userId, input);
+          createWithPreset(userId, input, taskType === TaskType.ACHIEVEMENT ? null : countsTowardPreset);
         if (taskType === TaskType.NORMAL) {
           newTask = await create({
             title: title.trim(),
@@ -687,14 +698,12 @@ export function useCreateFormState({
         setIsSubmitting(false);
       }
     },
-    [taskType, title, description, action, unit, maxCountStr, countKind, userId, onTaskCreated, onPendingCreated, deferPersist, countsTowardEnabled, countsToward, achievementMode, achievementReferenceId, achievementTrigger, achievementRequiredCountStr, defaultTimeframe, defaultStartDate, defaultEndDate]
+    [taskType, title, description, action, unit, maxCountStr, countKind, userId, onTaskCreated, onPendingCreated, deferPersist, countsTowardPreset, achievementMode, achievementReferenceId, achievementTrigger, achievementRequiredCountStr, defaultTimeframe, defaultStartDate, defaultEndDate]
   );
 
   return {
     taskType,
-    countsToward,
-    countsTowardEnabled,
-    setCountsToward,
+    countsTowardPreset,
     title,
     description,
     action,

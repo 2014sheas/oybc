@@ -59,7 +59,7 @@ test.describe('Counter Detail — Counts toward section', () => {
     await expect(page).toHaveURL(new RegExp(`/tasks/${DUNE}`));
   });
 
-  test('a counter nothing counts toward shows the empty one-liner; "+ New" opens the creator preset to it', async ({ page }) => {
+  test('a counter nothing counts toward shows the empty one-liner; "+ New" creates a task that counts toward it, with no row shown', async ({ page }) => {
     await page.goto(`/profile/counters/${ROOT2}?__oybc_test_bypass=1`);
     const section = page.getByRole('region', { name: 'Counts toward' });
     await expect(section.getByText('Nothing counts toward Miles yet.')).toBeVisible();
@@ -67,7 +67,9 @@ test.describe('Counter Detail — Counts toward section', () => {
 
     await section.getByRole('button', { name: '+ New' }).click();
     const sheet = page.getByRole('dialog', { name: 'New task' });
-    await expect(sheet.getByRole('button', { name: 'Counts toward: Miles' })).toBeVisible();
+    // No task form carries the field: the sheet shows no "Counts toward" row.
+    await expect(sheet.getByText('Counts toward')).toHaveCount(0);
+    await expect(sheet.getByRole('button', { name: /^Counts toward/ })).toHaveCount(0);
     await sheet.getByRole('textbox', { name: /^Title/ }).fill('Walk to work');
     await sheet.getByRole('button', { name: 'Add to library' }).click();
     await expect(sheet).toHaveCount(0);
