@@ -107,11 +107,10 @@ func findLinkableCounter(
         return x.id < y.id
     }.first!
 
-    // Name: R1 pair-derived display name (CounterName.formatCounterName),
+    // Name: `CounterSettings.counterDisplayName` — the root's counterName, else R1 pair-derived (CounterName.formatCounterName),
     // falling back to `title` when the pair can't produce one (mirrors TS:
     // `formatCounterName(best.action, best.unit) || best.title`).
-    let derivedName = CounterName.formatCounterName(action: best.action, unit: best.unit)
-    let name = derivedName.isEmpty ? best.title : derivedName
+    let name = CounterSettings.counterDisplayName(best)
 
     return LinkableCounterSuggestion(
         counterId: best.id,

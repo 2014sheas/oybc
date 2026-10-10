@@ -187,6 +187,18 @@ extension AppDatabase {
         migrator.registerMigration("v41") { db in
             try db.execute(sql: "ALTER TABLE tasks ADD COLUMN forkedFromTaskId TEXT")
         }
+
+        // v42: shared counter settings (docs/SHARED_COUNTER_SETTINGS.md §1) —
+        // a counter root's `counterName`, `titleTemplateSingular`,
+        // `titleTemplatePlural` and `timeframeGoals` (a JSON string). Nullable
+        // TEXT: every pre-v42 row stays NULL = the default (D3 — no backfill).
+        // No index. Web: no Dexie bump (unindexed — the v39/v41 precedent).
+        migrator.registerMigration("v42") { db in
+            try db.execute(sql: "ALTER TABLE tasks ADD COLUMN counterName TEXT")
+            try db.execute(sql: "ALTER TABLE tasks ADD COLUMN titleTemplateSingular TEXT")
+            try db.execute(sql: "ALTER TABLE tasks ADD COLUMN titleTemplatePlural TEXT")
+            try db.execute(sql: "ALTER TABLE tasks ADD COLUMN timeframeGoals TEXT")
+        }
     }
 }
 

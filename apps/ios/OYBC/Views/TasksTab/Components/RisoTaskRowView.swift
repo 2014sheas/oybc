@@ -90,8 +90,7 @@ struct RisoTaskRowView: View {
     /// fallback `SharedCounterGroups.swift` uses.
     private var displayTitle: String {
         guard isFamilyRoot else { return task.title }
-        let generic = CounterName.formatCounterName(action: task.action, unit: task.unit)
-        return generic.isEmpty ? task.title : generic
+        return CounterSettings.counterDisplayName(task)
     }
 
     private var accessibilityText: String {

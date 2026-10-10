@@ -379,10 +379,7 @@ struct NewCounterSheetContentView: View {
     @ViewBuilder
     private var dedupeBanner: some View {
         if let match, match.kind == .established {
-            let counterName: String = {
-                let derived = CounterName.formatCounterName(action: match.task.action, unit: match.task.unit)
-                return derived.isEmpty ? match.task.title : derived
-            }()
+            let counterName = CounterSettings.counterDisplayName(match.task)
             VStack(alignment: .leading, spacing: 6) {
                 Text("You're already counting \(trimmedUnit)")
                     .font(.risoHead(13, .bold))

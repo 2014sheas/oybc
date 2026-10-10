@@ -72,6 +72,9 @@ struct EditTaskSheet: View {
         /// The type the editor switched to — nil = unchanged (Simple ⇄
         /// Counting, or Simple / Counting → Compound with `compound`).
         var type: TaskType? = nil
+        /// A counter ROOT's post-edit shared counter settings (the counter
+        /// sheet) — nil = unchanged; a nil member inside clears that setting.
+        var counterSettings: CounterSettings.Stored? = nil
 
         enum RefMode {
             case board, template

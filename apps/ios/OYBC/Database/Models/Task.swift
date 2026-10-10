@@ -157,6 +157,19 @@ struct Task: Codable, FetchableRecord, PersistableRecord, Identifiable {
     /// nullable TEXT (GRDB v41). Mirrors the TS `Task.forkedFromTaskId`.
     var forkedFromTaskId: String?
 
+    /// Shared counter settings (docs/SHARED_COUNTER_SETTINGS.md §1) — set on a
+    /// counter ROOT only, by the counter sheet; each `nil` until the user edits
+    /// it away from its default (D3 — never backfilled, never written on read),
+    /// and cleared back to `nil` when reset (all four are clearable on sync).
+    /// `counterName` → the hub / Detail / picker label (`CounterSettings.counterDisplayName`);
+    /// the templates carry `#N` for the count (`CounterSettings.renderCounterTitle`);
+    /// `timeframeGoals` → default goal per core timeframe. Nullable TEXT
+    /// columns (GRDB v42); `timeframeGoals` is a JSON string. Mirrors the TS fields.
+    var counterName: String?
+    var titleTemplateSingular: String?
+    var titleTemplatePlural: String?
+    var timeframeGoals: CounterTimeframeGoals?
+
     // MARK: - Database Configuration
 
     static let databaseTableName = "tasks"
@@ -202,7 +215,11 @@ struct Task: Codable, FetchableRecord, PersistableRecord, Identifiable {
         isCounter: Bool = false,
         defaultLogAmount: CountValue? = nil,
         countKind: CountKind? = nil,
-        forkedFromTaskId: String? = nil
+        forkedFromTaskId: String? = nil,
+        counterName: String? = nil,
+        titleTemplateSingular: String? = nil,
+        titleTemplatePlural: String? = nil,
+        timeframeGoals: CounterTimeframeGoals? = nil
     ) {
         self.id = id
         self.userId = userId
@@ -240,6 +257,10 @@ struct Task: Codable, FetchableRecord, PersistableRecord, Identifiable {
         self.defaultLogAmount = defaultLogAmount
         self.countKind = countKind
         self.forkedFromTaskId = forkedFromTaskId
+        self.counterName = counterName
+        self.titleTemplateSingular = titleTemplateSingular
+        self.titleTemplatePlural = titleTemplatePlural
+        self.timeframeGoals = timeframeGoals
     }
 
     // MARK: - Codable
@@ -271,6 +292,8 @@ struct Task: Codable, FetchableRecord, PersistableRecord, Identifiable {
         case countKind
         // Board-scoped task edits — fork provenance (GRDB v41)
         case forkedFromTaskId
+        // Shared counter settings (GRDB v42)
+        case counterName, titleTemplateSingular, titleTemplatePlural, timeframeGoals
     }
 
     init(from decoder: Decoder) throws {
@@ -324,6 +347,24 @@ struct Task: Codable, FetchableRecord, PersistableRecord, Identifiable {
         countKind = try container.decodeIfPresent(CountKind.self, forKey: .countKind)
         // Board-scoped task edits. Forward-compat: pre-v41 rows + pre-feature payloads decode as nil.
         forkedFromTaskId = try container.decodeIfPresent(String.self, forKey: .forkedFromTaskId)
+        // Shared counter settings. Forward-compat: pre-v42 rows + pre-feature payloads decode as nil.
+        counterName = try container.decodeIfPresent(String.self, forKey: .counterName)
+        titleTemplateSingular = try container.decodeIfPresent(String.self, forKey: .titleTemplateSingular)
+        titleTemplatePlural = try container.decodeIfPresent(String.self, forKey: .titleTemplatePlural)
+        timeframeGoals = Self.decodeTimeframeGoals(container)
+    }
+
+    /// `timeframeGoals` is a JSON string in GRDB (like `Board.sealedCompletedCells`);
+    /// a native object (a JSON payload) decodes too. Malformed / empty → nil.
+    private static func decodeTimeframeGoals(_ container: KeyedDecodingContainer<CodingKeys>) -> CounterTimeframeGoals? {
+        let goals: CounterTimeframeGoals?
+        if let json = try? container.decodeIfPresent(String.self, forKey: .timeframeGoals),
+           let data = json.data(using: .utf8) {
+            goals = try? JSONDecoder().decode(CounterTimeframeGoals.self, from: data)
+        } else {
+            goals = try? container.decodeIfPresent(CounterTimeframeGoals.self, forKey: .timeframeGoals)
+        }
+        return goals?.isEmpty == false ? goals : nil
     }
 
     func encode(to encoder: Encoder) throws {
@@ -373,6 +414,24 @@ struct Task: Codable, FetchableRecord, PersistableRecord, Identifiable {
         try container.encodeIfPresent(countKind, forKey: .countKind)
         // Board-scoped task edits — fork provenance (additive optional, nil-skipped).
         try container.encodeIfPresent(forkedFromTaskId, forKey: .forkedFromTaskId)
+        // Shared counter settings (additive optional, nil-skipped — a clear is
+        // written by `AppDatabase.writeCounterSettingsColumns`, since GRDB's
+        // update only SETs encoded keys).
+        try container.encodeIfPresent(counterName, forKey: .counterName)
+        try container.encodeIfPresent(titleTemplateSingular, forKey: .titleTemplateSingular)
+        try container.encodeIfPresent(titleTemplatePlural, forKey: .titleTemplatePlural)
+        if let json = Self.timeframeGoalsJSON(timeframeGoals) {
+            try container.encode(json, forKey: .timeframeGoals)
+        }
+    }
+
+    /// `timeframeGoals` as its stored JSON string (sorted keys; nil when absent / empty).
+    static func timeframeGoalsJSON(_ goals: CounterTimeframeGoals?) -> String? {
+        guard let goals, !goals.isEmpty else { return nil }
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        guard let data = try? encoder.encode(goals) else { return nil }
+        return String(data: data, encoding: .utf8)
     }
 }
 

@@ -1312,8 +1312,7 @@ final class BoardPlayViewModel: ObservableObject {
     /// derivation and the Counters Hub/Detail labels verbatim).
     private static func counterDisplayName(_ source: Task?) -> String {
         guard let source = source else { return "" }
-        let derived = CounterName.formatCounterName(action: source.action, unit: source.unit)
-        return derived.isEmpty ? source.title : derived
+        return CounterSettings.counterDisplayName(source)
     }
 
     /// A task's own SQUARE display name — its stored title (e.g. "Do 200

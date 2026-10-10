@@ -33,26 +33,15 @@ enum TaskTitle {
             let trimmed = providedTitle.trimmingCharacters(in: .whitespacesAndNewlines)
             if !trimmed.isEmpty { return trimmed }
         }
-        let trimmedAction = action.trimmingCharacters(in: .whitespacesAndNewlines)
-        let trimmedUnit = unit.trimmingCharacters(in: .whitespacesAndNewlines)
-        // Goal-less hub-born counters are accumulators with no numeric
-        // target — the title IS the pair-derived counter display name
-        // (design 2026-07-18, R1 counters refresh). The earlier P5
-        // "{action} ({unit})" parenthetical is retired: "Do" + "push-ups"
-        // now renders "Push-ups", "Run" + "miles" renders "Run miles" —
-        // see `CounterName.formatCounterName`.
-        guard let maxCount else {
-            return CounterName.formatCounterName(action: action, unit: unit)
-        }
-        // Duration's unit IS time: "Practice 10h 30m" (minutes stored; the
-        // `Xh Ym` rendering is locale-independent).
-        if countKind == .duration {
-            return "\(trimmedAction) \(formatCount(maxCount, kind: .duration, locale: Locale(identifier: "en_US_POSIX")))"
-        }
-        // Titles are STORED, so the goal renders locale-independently
-        // (2dp, trimmed, `.` separator) — never the device locale.
-        let goal = formatCount(maxCount, kind: .continuous, locale: Locale(identifier: "en_US_POSIX"))
-        return "\(trimmedAction) \(goal) \(trimmedUnit)"
+        // One generator (docs/SHARED_COUNTER_SETTINGS.md §1b): no stored
+        // templates here, so `renderCounterTitle` takes its default path — the
+        // formula "{action} {goal} {unit}" (Duration "{action} {Xh Ym}", the
+        // goal locale-independent: titles are STORED), and a goal-less hub-born
+        // accumulator renders the pair-derived name (`CounterName.formatCounterName`:
+        // "Do" + "push-ups" → "Push-ups", "Run" + "miles" → "Run miles").
+        return CounterSettings.renderCounterTitle(
+            CounterSettings.Fields(action: action, unit: unit, countKind: countKind), goal: maxCount
+        )
     }
 }
 
@@ -76,19 +65,41 @@ extension TaskTitle {
     ///   - action: The task's own action verb (`""` when absent).
     ///   - maxCount: The task's own goal (`nil` for goal-less).
     ///   - unit: The task's own unit (`""` when absent).
+    ///   - countKind: The task's kind.
+    ///   - settings: The ROOT's name + templates (template-aware: a title equal
+    ///     to `CounterSettings.renderCounterTitle` for this goal is also auto;
+    ///     the legacy formula always still counts). A copy carries none of its own.
     /// - Returns: `true` when the title is empty or generated; `false` when custom.
     static func isAutoCounterTitle(
         title: String,
         action: String,
         maxCount: CountValue?,
         unit: String,
-        countKind: CountKind = .discrete
+        countKind: CountKind = .discrete,
+        settings: CounterSettings.TitleSettings? = nil
     ) -> Bool {
         let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
         if trimmed.isEmpty { return true }
         let auto = generateCounterTaskTitle(action: action, maxCount: maxCount, unit: unit, countKind: countKind)
             .trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmed == auto
+        if trimmed == auto { return true }
+        guard let settings else { return false }
+        return trimmed == renderedTitle(settings, action: action, unit: unit, countKind: countKind, goal: maxCount)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// `CounterSettings.renderCounterTitle` for a row's own action / unit /
+    /// kind under a root's name + templates.
+    static func renderedTitle(
+        _ settings: CounterSettings.TitleSettings, action: String, unit: String, countKind: CountKind, goal: CountValue?
+    ) -> String {
+        CounterSettings.renderCounterTitle(
+            CounterSettings.Fields(
+                action: action, unit: unit, countKind: countKind, counterName: settings.counterName,
+                titleTemplateSingular: settings.titleTemplateSingular, titleTemplatePlural: settings.titleTemplatePlural
+            ),
+            goal: goal
+        )
     }
 
     /// The title a per-board COPY of a counting member carries. Twin of the
@@ -98,7 +109,8 @@ extension TaskTitle {
     /// is `false`) carries over VERBATIM (trimmed) — even when the copy's
     /// target differs, because the user chose that name. An auto (or empty)
     /// title is regenerated from the copy's `action` / NEW `maxCount` /
-    /// `unit`, exactly as before the 2026-10-06 fix. Shared by
+    /// `unit` — through the member's own templates when it is a root carrying
+    /// them (absent = the formula, exactly as before the 2026-10-06 fix). Shared by
     /// `BoardSources.planDerivedTasks`'s mint and the linked-counter window
     /// heal's `windowStampedCopyDraft` so the two mint paths can never
     /// disagree.
@@ -111,9 +123,14 @@ extension TaskTitle {
         let action = member.action ?? ""
         let unit = member.unit ?? ""
         let countKind = resolveCountKind(member.countKind)
-        if !isAutoCounterTitle(title: member.title, action: action, maxCount: member.maxCount, unit: unit, countKind: countKind) {
+        let settings = CounterSettings.TitleSettings(task: member)
+        if !isAutoCounterTitle(
+            title: member.title, action: action, maxCount: member.maxCount, unit: unit, countKind: countKind,
+            settings: settings
+        ) {
             return member.title.trimmingCharacters(in: .whitespacesAndNewlines)
         }
-        return generateCounterTaskTitle(action: action, maxCount: newMaxCount, unit: unit, countKind: countKind)
+        // A root member's own templates render the copy (absent → the formula).
+        return renderedTitle(settings, action: action, unit: unit, countKind: countKind, goal: newMaxCount)
     }
 }

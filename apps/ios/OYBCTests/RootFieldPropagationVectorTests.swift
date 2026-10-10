@@ -16,6 +16,9 @@ final class RootFieldPropagationVectorTests: XCTestCase {
         let maxCount: Double?
         let countKind: String?
         let sharedCounterId: String?
+        let counterName: String?
+        let titleTemplateSingular: String?
+        let titleTemplatePlural: String?
     }
 
     /// `sharedCounterId` is tri-state in the fixture: absent → "root", null → unlinked.
@@ -59,12 +62,45 @@ final class RootFieldPropagationVectorTests: XCTestCase {
         }
     }
 
+    /// The three settings keys are tri-state: absent → unchanged, null → cleared.
     private struct FixPatch: Decodable {
         let title: String?
         let action: String?
         let unit: String?
         let maxCount: Double?
         let countKind: String?
+        let counterName: String??
+        let titleTemplateSingular: String??
+        let titleTemplatePlural: String??
+
+        enum CodingKeys: String, CodingKey {
+            case title, action, unit, maxCount, countKind, counterName, titleTemplateSingular, titleTemplatePlural
+        }
+
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            title = try c.decodeIfPresent(String.self, forKey: .title)
+            action = try c.decodeIfPresent(String.self, forKey: .action)
+            unit = try c.decodeIfPresent(String.self, forKey: .unit)
+            maxCount = try c.decodeIfPresent(Double.self, forKey: .maxCount)
+            countKind = try c.decodeIfPresent(String.self, forKey: .countKind)
+            func tri(_ k: CodingKeys) throws -> String?? {
+                c.contains(k) ? .some(try c.decodeIfPresent(String.self, forKey: k)) : .none
+            }
+            counterName = try tri(.counterName)
+            titleTemplateSingular = try tri(.titleTemplateSingular)
+            titleTemplatePlural = try tri(.titleTemplatePlural)
+        }
+
+        /// The root's post-edit name + templates, or nil when the patch touches none.
+        func settings(root: Task) -> CounterSettings.TitleSettings? {
+            guard counterName != nil || titleTemplateSingular != nil || titleTemplatePlural != nil else { return nil }
+            return CounterSettings.TitleSettings(
+                counterName: counterName ?? root.counterName,
+                titleTemplateSingular: titleTemplateSingular ?? root.titleTemplateSingular,
+                titleTemplatePlural: titleTemplatePlural ?? root.titleTemplatePlural
+            )
+        }
     }
 
     private struct FixFieldPatch: Decodable {
@@ -119,16 +155,19 @@ final class RootFieldPropagationVectorTests: XCTestCase {
     }
 
     func test_coversTheFixture() throws {
-        XCTAssertEqual(try loadFixture().vectors.count, 12)
+        XCTAssertEqual(try loadFixture().vectors.count, 17)
     }
 
     func test_vectors() throws {
         let fixture = try loadFixture()
         for v in fixture.vectors {
-            let root = try makeTask(
+            var root = try makeTask(
                 id: v.root.id, title: v.root.title, type: .counting, action: v.root.action, unit: v.root.unit,
                 maxCount: v.root.maxCount, countKind: v.root.countKind, sharedCounterId: v.root.sharedCounterId
             )
+            root.counterName = v.root.counterName
+            root.titleTemplateSingular = v.root.titleTemplateSingular
+            root.titleTemplatePlural = v.root.titleTemplatePlural
             let copies = try v.copies.map { c -> RootFieldPropagation.Copy in
                 let type = try XCTUnwrap(TaskType(rawValue: c.type ?? "counting"), "unknown type in \(v.name)")
                 let linked: String? = switch c.sharedCounterId {
@@ -144,7 +183,8 @@ final class RootFieldPropagationVectorTests: XCTestCase {
             }
             let patch = RootFieldPropagation.EditPatch(
                 title: v.patch.title, action: v.patch.action, unit: v.patch.unit, maxCount: v.patch.maxCount,
-                countKind: try v.patch.countKind.map { try XCTUnwrap(CountKind(rawValue: $0)) }
+                countKind: try v.patch.countKind.map { try XCTUnwrap(CountKind(rawValue: $0)) },
+                settings: v.patch.settings(root: root)
             )
             let out = RootFieldPropagation.plan(root: root, patch: patch, copies: copies, now: fixture.now)
             let expected = v.expected.map {

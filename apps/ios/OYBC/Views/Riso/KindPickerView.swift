@@ -77,10 +77,9 @@ extension KindTagView {
             self.init(kind: resolveCountKind(task.countKind))
             return
         }
-        let name = CounterName.formatCounterName(action: root.action, unit: root.unit)
         self.init(
             kind: resolveCountKind(root.countKind),
-            counterName: name.isEmpty ? root.title : name,
+            counterName: CounterSettings.counterDisplayName(root),
             lifetime: root.currentCount ?? 0
         )
     }
