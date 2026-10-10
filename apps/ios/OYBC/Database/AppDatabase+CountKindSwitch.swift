@@ -25,6 +25,12 @@ enum CountKindSwitchError: Error, Equatable {
     /// A whole kind received a fractional goal (D4). Thrown by
     /// `applyKindSwitchThenGoalGuard` — the caller's transaction rolls back.
     case goalNotWhole
+    /// Leaving Discrete while tasks count toward the counter
+    /// (docs/SHARED_COUNTER_SETTINGS.md D9) — see `countsTowardMessage`.
+    case hasContributors
+
+    /// Refusal line for `hasContributors` (web `COUNTS_TOWARD_KIND_MESSAGE`).
+    static let countsTowardMessage = "A counter other tasks count toward stays Discrete."
 }
 
 /// What the Continuous → Discrete confirm shows (docs/COUNTER_KINDS.md §5).
@@ -138,6 +144,10 @@ extension AppDatabase {
             to: to
         ) else {
             throw CountKindSwitchError.refused
+        }
+        // D9 — "counts toward" targets Discrete counters only.
+        if to != .discrete, try !Self.countsTowardContributors(db: db, counterId: root.id).isEmpty {
+            throw CountKindSwitchError.hasContributors
         }
         // Lifetime caches recomputed from events in the same write (the root
         // via computeTaskCachesFromEvents, linked rows via propagateIncrement

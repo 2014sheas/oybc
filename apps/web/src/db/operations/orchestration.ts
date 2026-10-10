@@ -19,6 +19,7 @@ import { writeBoardDerivedStats } from './boardDerivedWrite';
 import { fetchAllCompoundChildren } from './compoundChildren';
 import { fetchAllBoardTasks } from './boardTasks';
 import { buildWindowContext } from './windowContext';
+import { finishCountsTowardRoots, writeCountsTowardForTasks } from './countsToward';
 import {
   appendCompletionEvent,
   appendIncrementEvent,
@@ -70,8 +71,23 @@ export interface BoardCascadeEntry extends BoardStatsUpdate {
  * data, so every device converges independently (docs/WINDOWED_COMPLETION.md
  * §Seal snapshots — the same contract as the sealed re-derive).
  */
-interface CascadeOptions {
+export interface CascadeOptions {
   authored?: boolean;
+  /**
+   * Inside the closed-board late-log path (`lateLog.ts`): the instant that
+   * path stamped (the closed board's `endDate`). A counts-toward credit at
+   * exactly that instant is exempt from the counter's sealed windows, because
+   * that path re-derives every sealed board deterministically; any other
+   * credit the same cascade reaches stays suppressed
+   * (docs/SHARED_COUNTER_SETTINGS.md §3b, D11).
+   */
+  lateLogStamp?: string;
+  /**
+   * Counter roots the named tasks counted toward BEFORE this write (a
+   * re-point / clear, a pulled row that was flagged) — the counts-toward
+   * writer reconciles their credits on those roots too.
+   */
+  countsTowardPreviousRoots?: Record<string, string>;
 }
 
 /**
@@ -123,9 +139,24 @@ export async function runBoardCascadeForTasks(
 ): Promise<Map<string, BoardCascadeEntry>> {
   const authored = opts.authored ?? true;
   const now = currentTimestamp();
+  const changedIds = [...changedTaskIds];
+  const allChildren = await fetchAllCompoundChildren();
+
+  // "Counts toward" (docs/SHARED_COUNTER_SETTINGS.md §3b): a changed task (or
+  // a compound containing it) that counts toward a counter gets its
+  // deterministic increment inserted / tombstoned in THIS transaction and its
+  // counter root's log written like a hand log — BEFORE this pass's lookups
+  // load, and the counter's copies join this pass's affected set, so a copy
+  // on one of these boards is read with the new increment (its bingo lands in
+  // this result map). Authored and pull-path cascades alike: the event is
+  // deterministic, so a pull that re-derives it converges on the same row.
+  const countsToward = await writeCountsTowardForTasks(changedIds, now, {
+    liveChildren: allChildren,
+    lateLogStamp: opts.lateLogStamp ?? null,
+    previousRootsByTask: opts.countsTowardPreviousRoots,
+  });
 
   // Build the lookups for the derivation pass.
-  const allChildren = await fetchAllCompoundChildren();
   const allBoardTasks = await fetchAllBoardTasks();
   const allTasks = await db.tasks.toArray();
   // Phase 6.3 — `computeBoardStatsUpdate` needs the workspace's boards
@@ -144,7 +175,7 @@ export async function runBoardCascadeForTasks(
 
   // Resolve the UNION of affected boards across every changed task.
   const affectedBoardIds = new Set<string>();
-  for (const changedTaskId of changedTaskIds) {
+  for (const changedTaskId of [...changedIds, ...countsToward.cascadeIds]) {
     const parentCompounds = findTransitiveParentCompounds(changedTaskId, allChildren);
     for (const id of findAffectedBoardIds(changedTaskId, parentCompounds, allBoardTasks)) {
       affectedBoardIds.add(id);
@@ -192,6 +223,10 @@ export async function runBoardCascadeForTasks(
       boardReactivated,
     });
   }
+
+  // Counts toward, finish phase: sealed boards + achievement watchers of the
+  // counter roots whose events just moved.
+  await finishCountsTowardRoots(countsToward.rootIds);
 
   return resultMap;
 }

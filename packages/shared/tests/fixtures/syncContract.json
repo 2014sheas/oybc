@@ -41,11 +41,17 @@
       "counterName",
       "titleTemplateSingular",
       "titleTemplatePlural",
-      "timeframeGoals"
+      "timeframeGoals",
+      "countsTowardCounterId",
+      "countsTowardAmount",
+      "countsTowardSince"
     ],
     "coreBoardDefaults": [
       "defaultBoardSize",
       "defaultCenterType"
+    ],
+    "taskEvents": [
+      "deletedAt"
     ]
   },
   "pullApplyOrder": [

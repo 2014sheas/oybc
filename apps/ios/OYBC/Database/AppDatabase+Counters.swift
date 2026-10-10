@@ -143,6 +143,14 @@ extension AppDatabase {
                     "promoteTaskToCounter: derived tasks cannot be counters"
                 )
             }
+            // A counter may not count toward a counter (the shared Zod shape
+            // rule — a flagged promoted row would be dropped by every other
+            // device's pull).
+            guard task.countsTowardCounterId == nil else {
+                throw AppDatabaseError.counterPromotionRejected(
+                    "promoteTaskToCounter: a task that counts toward a counter cannot be a counter"
+                )
+            }
             task.isCounter = true
             task.updatedAt = now
             task.version += 1
@@ -257,6 +265,9 @@ extension AppDatabase {
                 }
             }
 
+            // "Counts toward" (docs/SHARED_COUNTER_SETTINGS.md §3e) — contributors
+            // stop counting toward the deleted counter; their events go with it.
+            try Self.unflagCountsTowardContributors(db: db, counterId: sourceId, now: now)
             try Self.deleteTaskWithCascadeInDb(
                 db: db, taskId: sourceId, now: now, extraAffectedBoardIds: retiredBoardIds
             )

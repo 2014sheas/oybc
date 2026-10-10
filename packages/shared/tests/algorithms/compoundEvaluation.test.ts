@@ -27,6 +27,7 @@ interface MiniTask {
   threshold?: number;
   isCompleted?: boolean;
   isDeleted?: boolean;
+  countsTowardCounterId?: string;
 }
 
 interface MiniChild {
@@ -66,6 +67,7 @@ function toTask(m: MiniTask): Task {
     updatedAt: BASE_TS,
     version: 1,
     isDeleted: m.isDeleted ?? false,
+    countsTowardCounterId: m.countsTowardCounterId,
   };
 }
 

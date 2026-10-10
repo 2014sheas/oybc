@@ -3,6 +3,7 @@ import { AchievementTrigger, BoardStatus, TaskType, Timeframe, CenterSquareType,
 import { ManualTaskVarySchema } from './boardSource';
 import { CountKindSchema, positiveCount, nonNegativeCount, isValidCountDelta, countFieldsMatchKind } from './countValue';
 import { isQuantizedCount } from '../algorithms/countValue';
+import { countsTowardShapeOk } from './countsToward';
 
 /**
  * Validation schemas using Zod
@@ -366,72 +367,9 @@ export const UpdateTaskInputSchema = z.object({
   { message: "Clearing baseline requires clearing sharedCounterId in the same patch, and vice versa" },
 );
 
-// ===== Compound creation input =====
+// ===== Compound creation input (compoundCreate.ts) =====
 
-export const AutoCreateCompoundChildTaskSchema = z.object({
-  type: z.enum([TaskType.NORMAL, TaskType.COUNTING]),
-  title: z.string().min(1).max(200),
-  description: z.string().max(1000).optional(),
-  action: z.string().min(1).max(50).optional(),
-  unit: z.string().min(1).max(50).optional(),
-  maxCount: positiveCount().optional(),
-  // R1 counters refresh — auto-link (see AutoCreateCompoundChildTask doc).
-  sharedCounterId: z.string().uuid().nullable().optional(),
-  baseline: nonNegativeCount().nullable().optional(),
-  countKind: CountKindSchema.optional(),
-}).refine(
-  (data) => {
-    if (data.type === TaskType.COUNTING) {
-      return data.action !== undefined && (data.unit !== undefined || data.countKind === 'duration') && data.maxCount !== undefined;
-    }
-    return true;
-  },
-  { message: 'Counting child tasks require action, unit, and maxCount' },
-).refine(
-  countFieldsMatchKind,
-  { message: 'Whole-number kinds need whole goals' },
-).refine(
-  (data) => (data.sharedCounterId != null) === (data.baseline != null),
-  { message: 'sharedCounterId and baseline must both be set or both be absent' },
-);
-
-export const CreateCompoundChildEntrySchema = z.object({
-  childTaskId: z.string().uuid().optional(),
-  autoCreate: AutoCreateCompoundChildTaskSchema.optional(),
-}).refine(
-  (data) => (data.childTaskId !== undefined) !== (data.autoCreate !== undefined),
-  { message: 'CreateCompoundChildEntry must specify exactly one of childTaskId or autoCreate' },
-);
-
-export const CreateCompoundTaskInputSchema = z.object({
-  title: z.string().min(1).max(200),
-  description: z.string().max(1000).optional(),
-  operator: z.nativeEnum(OperatorType),
-  threshold: z.number().int().positive().optional(),
-  // One sub-task is enough (2026-10-06, owner ask); zero stays blocked.
-  children: z.array(CreateCompoundChildEntrySchema).min(1),
-  // Phase 6.Y — Timeboxed Tasks. Optional; when set, the parent
-  // compound AND all inline-created children inherit this triple at
-  // creation time (see createCompound in db/operations/tasks.ts).
-  timeframe: z.nativeEnum(Timeframe).optional(),
-  startDate: z.string().optional(),
-  endDate: z.string().optional(),
-}).refine(
-  (data) => {
-    if (data.operator === OperatorType.M_OF_N) {
-      return data.threshold !== undefined && data.threshold >= 1 && data.threshold <= data.children.length;
-    }
-    return true;
-  },
-  { message: "operator='M_OF_N' requires threshold in [1, children.length]" },
-).refine(
-  (data) => {
-    // No duplicate childTaskIds.
-    const ids = data.children.map((c) => c.childTaskId).filter((id): id is string => id !== undefined);
-    return new Set(ids).size === ids.length;
-  },
-  { message: 'Compound children must not contain duplicate childTaskId references' },
-);
+export * from './compoundCreate';
 
 /**
  * Shared counter settings — default goals per core timeframe
@@ -540,7 +478,17 @@ export const TaskSchema = z.object({
   titleTemplateSingular: z.string().max(200).optional(),
   titleTemplatePlural: z.string().max(200).optional(),
   timeframeGoals: CounterTimeframeGoalsSchema.optional(),
+  // "Counts toward" (docs/SHARED_COUNTER_SETTINGS.md §3) — the counter root a
+  // contributing task increments on completion; clearable. Shape only here
+  // (`countsTowardShapeOk`); the cross-row rules are write-time.
+  countsTowardCounterId: z.string().uuid().nullable().optional(),
+  countsTowardAmount: z.number().int().positive().optional(),
+  // D11 — the instant the flag was set / re-pointed; present iff the flag is.
+  countsTowardSince: z.string().datetime().nullable().optional(),
 }).refine(
+  countsTowardShapeOk,
+  { message: 'A task may not count toward itself, a counter, a linked copy or an achievement may not count toward a counter, and countsTowardSince travels with the flag' },
+).refine(
   (data) => {
     // Compound tasks must have an operator.
     if (data.type === TaskType.COMPOUND) {

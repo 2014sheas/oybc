@@ -347,11 +347,16 @@ export function clampThreshold(threshold: number, subtaskCount: number): number 
  * the given task type. Handles NORMAL, COUNTING, and COMPOUND; ACHIEVEMENT
  * isn't editable in the pool (returns `null`). Mirrors iOS
  * `TaskEditPatch.validate(type:)`.
+ *
+ * `opts.countsToward` — the compound counts toward a counter
+ * (docs/SHARED_COUNTER_SETTINGS.md §3a): an unfilled container with zero
+ * sub-tasks is then allowed.
  */
 export function validatePatch(
   patch: TaskEditPatch,
   type: TaskType,
   storedKind: CountKind = 'discrete',
+  opts: { countsToward?: boolean } = {},
 ): string | null {
   const trimmedTitle = patch.title.trim();
   switch (type) {
@@ -367,8 +372,9 @@ export function validatePatch(
     case TaskType.COMPOUND: {
       if (trimmedTitle.length === 0) return 'A title is required.';
       const kept = liveChildren(patch);
-      // One sub-task is enough (2026-10-06, owner ask); zero stays blocked.
-      if (kept.length < 1) return 'A compound task needs a sub-task.';
+      // One sub-task is enough (2026-10-06, owner ask); zero stays blocked —
+      // except for a container that counts toward a counter (§3a).
+      if (kept.length < 1 && !opts.countsToward) return 'A compound task needs a sub-task.';
       for (const child of kept) {
         if (!child.isCounting) continue;
         const ok =

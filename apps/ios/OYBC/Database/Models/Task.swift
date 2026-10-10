@@ -170,6 +170,23 @@ struct Task: Codable, FetchableRecord, PersistableRecord, Identifiable {
     var titleTemplatePlural: String?
     var timeframeGoals: CounterTimeframeGoals?
 
+    /// "Counts toward" (docs/SHARED_COUNTER_SETTINGS.md §3) — set on a
+    /// CONTRIBUTING task: for every COMPLETION OCCURRENCE of the task (D10 — a
+    /// live completion event; a placement window in which a plain counting /
+    /// compound task is complete) the board cascade writes one increment of
+    /// `countsTowardAmount` (nil = 1) on this Discrete counter root, id
+    /// `CountsToward.eventId(contributorId:occurrence:)`; a withdrawn occurrence
+    /// (an undo, a removed placement, a cleared flag) has its event tombstoned
+    /// (`AppDatabase+CountsToward.swift`). Never on a counter root, a linked
+    /// copy or an Achievement. Clearable on sync (a clear is written by raw SQL —
+    /// `encode` nil-skips). Nullable TEXT / INTEGER columns (GRDB v43).
+    var countsTowardCounterId: String?
+    var countsTowardAmount: Int?
+    /// D11 — the ISO instant the flag was set (or re-pointed); present iff the
+    /// flag is. Only occurrences at or after it credit. Cleared with the flag;
+    /// unchanged when only the amount changes. Clearable on sync (GRDB v43).
+    var countsTowardSince: String?
+
     // MARK: - Database Configuration
 
     static let databaseTableName = "tasks"
@@ -219,7 +236,10 @@ struct Task: Codable, FetchableRecord, PersistableRecord, Identifiable {
         counterName: String? = nil,
         titleTemplateSingular: String? = nil,
         titleTemplatePlural: String? = nil,
-        timeframeGoals: CounterTimeframeGoals? = nil
+        timeframeGoals: CounterTimeframeGoals? = nil,
+        countsTowardCounterId: String? = nil,
+        countsTowardAmount: Int? = nil,
+        countsTowardSince: String? = nil
     ) {
         self.id = id
         self.userId = userId
@@ -261,6 +281,9 @@ struct Task: Codable, FetchableRecord, PersistableRecord, Identifiable {
         self.titleTemplateSingular = titleTemplateSingular
         self.titleTemplatePlural = titleTemplatePlural
         self.timeframeGoals = timeframeGoals
+        self.countsTowardCounterId = countsTowardCounterId
+        self.countsTowardAmount = countsTowardAmount
+        self.countsTowardSince = countsTowardSince
     }
 
     // MARK: - Codable
@@ -294,6 +317,8 @@ struct Task: Codable, FetchableRecord, PersistableRecord, Identifiable {
         case forkedFromTaskId
         // Shared counter settings (GRDB v42)
         case counterName, titleTemplateSingular, titleTemplatePlural, timeframeGoals
+        // Counts toward (GRDB v43)
+        case countsTowardCounterId, countsTowardAmount, countsTowardSince
     }
 
     init(from decoder: Decoder) throws {
@@ -352,6 +377,10 @@ struct Task: Codable, FetchableRecord, PersistableRecord, Identifiable {
         titleTemplateSingular = try container.decodeIfPresent(String.self, forKey: .titleTemplateSingular)
         titleTemplatePlural = try container.decodeIfPresent(String.self, forKey: .titleTemplatePlural)
         timeframeGoals = Self.decodeTimeframeGoals(container)
+        // Counts toward. Forward-compat: pre-v43 rows + pre-feature payloads decode as nil.
+        countsTowardCounterId = try container.decodeIfPresent(String.self, forKey: .countsTowardCounterId)
+        countsTowardAmount = try container.decodeIfPresent(Int.self, forKey: .countsTowardAmount)
+        countsTowardSince = try container.decodeIfPresent(String.self, forKey: .countsTowardSince)
     }
 
     /// `timeframeGoals` is a JSON string in GRDB (like `Board.sealedCompletedCells`);
@@ -423,6 +452,11 @@ struct Task: Codable, FetchableRecord, PersistableRecord, Identifiable {
         if let json = Self.timeframeGoalsJSON(timeframeGoals) {
             try container.encode(json, forKey: .timeframeGoals)
         }
+        // Counts toward (additive optional, nil-skipped — a clear is written by
+        // `AppDatabase.writeCountsTowardColumns`).
+        try container.encodeIfPresent(countsTowardCounterId, forKey: .countsTowardCounterId)
+        try container.encodeIfPresent(countsTowardAmount, forKey: .countsTowardAmount)
+        try container.encodeIfPresent(countsTowardSince, forKey: .countsTowardSince)
     }
 
     /// `timeframeGoals` as its stored JSON string (sorted keys; nil when absent / empty).

@@ -161,6 +161,7 @@ extension AppDatabase {
         }
 
         var changedTaskIds = Set<String>()
+        var previousCountsTowardRoots: [String: String] = [:]
         var changedBoardIds = Set<String>()
         var pulledBoards: [PulledBoard] = []
         for remote in docs {
@@ -196,7 +197,15 @@ extension AppDatabase {
             let kind = local.map { "remote v\(remoteV) > local v\(toInt($0["version"]))" } ?? "new"
             outcome.details.append("Pulled \(name)/\(id) (\(kind))")
             switch name {
-            case "tasks": changedTaskIds.insert(id)
+            case "tasks":
+                changedTaskIds.insert(id)
+                // "Counts toward" (D11): a pulled row that was flagged here but
+                // is now unflagged or re-pointed hands its previous root to the
+                // cascade, so the credits keyed on that root are reconciled.
+                if let previousRoot = local?["countsTowardCounterId"] as? String,
+                   previousRoot != (remote["countsTowardCounterId"] as? String) {
+                    previousCountsTowardRoots[id] = previousRoot
+                }
             case "compoundChildren": if let parent = remote["compoundTaskId"] as? String { changedTaskIds.insert(parent) }
             // Board-integrity PR-1: a pulled placement (live OR tombstone)
             // changes its board's geometry.
@@ -212,7 +221,7 @@ extension AppDatabase {
             // B2 FI1: a pulled window-stamped derived counter's baseline is a
             // non-authored cache refreshed per task before the derivation.
             for taskId in changedTaskIds { _ = try refreshPulledDerivedBaseline(db: db, taskId: taskId) }
-            try runPullCascadeForTasks(db: db, changedTaskIds: changedTaskIds, ownerUid: userId)
+            try runPullCascadeForTasks(db: db, changedTaskIds: changedTaskIds, ownerUid: userId, previousCountsTowardRoots: previousCountsTowardRoots)
             // A new / changed sub-task link changes a compound's result on
             // SEALED boards too (the live cascade skips them): re-derive their
             // snapshots from the link set (non-authored, the sanctioned path).

@@ -530,7 +530,7 @@ extension BoardPlayViewModel {
                     if let problem = try AppDatabase.compoundLinkProblem(db: db, parentId: updated.id, patch: titled) {
                         throw AppDatabase.TaskEditError.invalid(message: problem)
                     }
-                    if let problem = titled.validate(type: .compound) {
+                    if let problem = titled.validate(type: .compound, countsToward: updated.countsTowardCounterId != nil) {
                         throw AppDatabase.TaskEditError.invalid(message: problem)
                     }
                     updated.updatedAt = now
@@ -580,13 +580,16 @@ extension BoardPlayViewModel {
             // An override for a square no longer on the board never commits.
             guard placedTaskIds.contains(taskId) else { continue }
             // A linked counter can't change type or gain sub-tasks.
-            if let stored = try? database.fetchTask(id: taskId), stored.sharedCounterId != nil,
+            let stored = try? database.fetchTask(id: taskId)
+            if let stored, stored.sharedCounterId != nil,
                override.type != stored.type || override.compound != nil {
                 return linkedCounterTypeMessage
             }
             guard var structure = override.compound else { continue }
             structure.title = override.title
-            if let problem = structure.validate(type: .compound) { return problem }
+            if let problem = structure.validate(type: .compound, countsToward: stored?.countsTowardCounterId != nil) {
+                return problem
+            }
             var guarded = structure
             guarded.children.removeAll { $0.childTaskId.map(pendingChildIds.contains) ?? false }
             do {

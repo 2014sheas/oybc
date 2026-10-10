@@ -17,7 +17,7 @@ import { db } from '../internal';
 import { refreshPulledDerivedBaseline } from './derivedCounters';
 import { resolveConflict, type SyncableEntity } from '../../firebase/conflictResolver';
 import { recordSyncEvent } from '../../firebase/syncStatus';
-import { runBoardCascadeForTask, runBoardCascadeForBoardId } from './orchestration';
+import { runBoardCascadeForTask, runBoardCascadeForTasks, runBoardCascadeForBoardId } from './orchestration';
 import { reDeriveSealedBoardsByIds } from './sealing';
 import { addToSyncQueue, stampTransactionSyncOwner } from './syncQueue';
 import { refreshWatchersForBoards } from './boardLifecycle';
@@ -228,12 +228,19 @@ export async function applyRemoteSubdoc(
         // enqueue), and BEFORE the cascade so the board stats below read the
         // corrected number.
         await refreshPulledDerivedBaseline(validated as unknown as Task);
+        // "Counts toward" (D11): a pulled row that was flagged here but is now
+        // unflagged or re-pointed hands its previous root to the cascade, so
+        // the credits keyed on that root are reconciled (every credit key
+        // carries its root — nothing else could find them).
+        const previousRoot = (localData as Partial<Task> | undefined)?.countsTowardCounterId ?? null;
+        const nextRoot = (validated as unknown as Partial<Task>).countsTowardCounterId ?? null;
+        const opts = previousRoot != null && previousRoot !== nextRoot ? { countsTowardPreviousRoots: { [validated.id]: previousRoot } } : {};
         // Let cascade errors propagate so the outer Dexie transaction rolls
         // back the `table.put(validated)` that just landed. Pulling will retry
         // on the next cycle. Previously this branch swallowed errors, which
         // left the task applied locally but board stats stale forever — a
         // silent divergence that no safety net resolved.
-        await runBoardCascadeForTask(validated.id);
+        await runBoardCascadeForTasks([validated.id], opts);
       } else if (collectionName === 'compoundChildren') {
         // For a pulled CompoundChild, cascade via the parent compound task.
         const compoundTaskId = (validated as { compoundTaskId?: unknown }).compoundTaskId;

@@ -262,6 +262,33 @@ export interface Task {
   titleTemplateSingular?: string;
   titleTemplatePlural?: string;
   timeframeGoals?: CounterTimeframeGoals;
+
+  /**
+   * "Counts toward" (docs/SHARED_COUNTER_SETTINGS.md §3) — set on a
+   * CONTRIBUTING task. For every COMPLETION OCCURRENCE of the task (D10 — a
+   * live completion event; a placement window in which a plain counting /
+   * compound task is complete) the board cascade writes one increment event
+   * of `countsTowardAmount` (absent = 1) on this Discrete counter ROOT with
+   * the deterministic id `countsTowardEventId(task.id, occurrence)`, stamped
+   * at the completion instant; when an occurrence is withdrawn (an undo, a
+   * removed placement, a cleared flag) its event is tombstoned
+   * (`countsToward.ts`).
+   * One counter per task (D7). Never on a counter root, a linked copy
+   * (`sharedCounterId`) or an Achievement (Zod shape rule); the target must be
+   * a live Discrete counter root (`countsTowardProblem`, write time). Cleared
+   * to absent when unset or when its counter is deleted — clearable on sync.
+   * iOS GRDB v43 nullable columns.
+   */
+  countsTowardCounterId?: string | null;
+  /** Positive integer increment per completion; absent = 1. */
+  countsTowardAmount?: number;
+  /**
+   * D11 — the ISO instant the flag was set (or re-pointed at a different
+   * counter); present iff `countsTowardCounterId` is. Only occurrences at or
+   * after it credit (`isOccurrenceWanted`). Cleared with the flag; unchanged
+   * when only the amount changes. Clearable on sync.
+   */
+  countsTowardSince?: string | null;
 }
 
 /**
@@ -438,4 +465,8 @@ export interface CreateCompoundTaskInput {
   timeframe?: Timeframe;
   startDate?: string;
   endDate?: string;
+  /** "Counts toward" (docs/SHARED_COUNTER_SETTINGS.md §3a) — with this set,
+   *  `children` may be empty (an unfilled container). */
+  countsTowardCounterId?: string;
+  countsTowardAmount?: number;
 }

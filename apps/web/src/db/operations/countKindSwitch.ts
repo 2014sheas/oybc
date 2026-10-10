@@ -18,6 +18,7 @@ import { db } from '../internal';
 import { addToSyncQueue } from './syncQueue';
 import { runBoardCascadeForTasks } from './orchestration';
 import { computeTaskCachesFromEvents } from './taskEvents';
+import { countContributorsOf } from './countsToward';
 
 /**
  * countKindSwitch.ts — counter kinds, web half of the family-wide kind rules
@@ -30,7 +31,13 @@ import { computeTaskCachesFromEvents } from './taskEvents';
  */
 
 /** Why {@link switchCounterKind} refused. */
-export type CountKindSwitchErrorCode = 'not-a-root' | 'refused' | 'not-counting';
+export type CountKindSwitchErrorCode = 'not-a-root' | 'refused' | 'not-counting' | 'has-contributors';
+
+/**
+ * Refusal line when a counter other tasks count toward would leave Discrete
+ * (docs/SHARED_COUNTER_SETTINGS.md D9; iOS `CountKindSwitch.countsTowardMessage`).
+ */
+export const COUNTS_TOWARD_KIND_MESSAGE = 'A counter other tasks count toward stays Discrete.';
 
 /** Thrown by {@link switchCounterKind}; nothing is written when it is. */
 export class CountKindSwitchError extends Error {
@@ -72,7 +79,8 @@ export class CountKindSwitchError extends Error {
  * @throws {CountKindSwitchError} `not-counting` when the id is not a live
  *   COUNTING task; `not-a-root` for a linked row (only roots switch);
  *   `refused` when the root cannot move from its kind to `to` (duration
- *   either way, or no change).
+ *   either way, or no change); `has-contributors` when leaving Discrete while
+ *   tasks count toward the counter (D9).
  */
 export async function switchCounterKind(
   rootTaskId: string,
@@ -115,6 +123,11 @@ export async function switchCounterKindInTransaction(
       'refused',
       `switchCounterKind: ${resolveCountKind(root)} → ${to} is not a permitted switch`,
     );
+  }
+  // D9 — "counts toward" targets Discrete counters only; leaving Discrete
+  // while contributors exist is refused (the message is the user-facing line).
+  if (to !== 'discrete' && (await countContributorsOf(root.id)).length > 0) {
+    throw new CountKindSwitchError('has-contributors', COUNTS_TOWARD_KIND_MESSAGE);
   }
   const rootEvents = await db.taskEvents.where('taskId').equals(root.id).toArray();
   const rootCaches = computeTaskCachesFromEvents({ ...root, ...rootPatch, countKind: to }, rootEvents);

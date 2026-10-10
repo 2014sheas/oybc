@@ -199,6 +199,18 @@ extension AppDatabase {
             try db.execute(sql: "ALTER TABLE tasks ADD COLUMN titleTemplatePlural TEXT")
             try db.execute(sql: "ALTER TABLE tasks ADD COLUMN timeframeGoals TEXT")
         }
+
+        // v43: "counts toward" (docs/SHARED_COUNTER_SETTINGS.md §3a) — a
+        // contributing task's `countsTowardCounterId` (the Discrete counter root
+        // it increments on completion) and `countsTowardAmount` (nil = 1).
+        // Nullable; every pre-v43 row stays NULL = counts toward nothing. No
+        // index (the contributors read is a rare guard). Web: no Dexie bump.
+        migrator.registerMigration("v43") { db in
+            try db.execute(sql: "ALTER TABLE tasks ADD COLUMN countsTowardCounterId TEXT")
+            try db.execute(sql: "ALTER TABLE tasks ADD COLUMN countsTowardAmount INTEGER")
+            // D11 — the instant the flag was set; only occurrences at or after it credit.
+            try db.execute(sql: "ALTER TABLE tasks ADD COLUMN countsTowardSince TEXT")
+        }
     }
 }
 

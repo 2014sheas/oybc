@@ -142,7 +142,7 @@ extension AppDatabase {
                 if let problem = try Self.compoundLinkProblem(db: db, parentId: task.id, patch: structure) {
                     throw TaskEditError.invalid(message: problem)
                 }
-                if let problem = structure.validate(type: .compound) {
+                if let problem = structure.validate(type: .compound, countsToward: task.countsTowardCounterId != nil) {
                     throw TaskEditError.invalid(message: problem)
                 }
                 // title, operatorType, clamped threshold (nil unless M-of-N)

@@ -19,9 +19,10 @@ final class CompoundEvaluationVectorTests: XCTestCase {
         let threshold: Int?
         let isCompleted: Bool?
         let isDeleted: Bool?
+        let countsTowardCounterId: String?
 
         enum CodingKeys: String, CodingKey {
-            case id, type, threshold, isCompleted, isDeleted
+            case id, type, threshold, isCompleted, isDeleted, countsTowardCounterId
             case operatorField = "operator"
         }
     }
@@ -75,7 +76,8 @@ final class CompoundEvaluationVectorTests: XCTestCase {
             createdAt: ts,
             updatedAt: ts,
             version: 1,
-            isDeleted: m.isDeleted ?? false
+            isDeleted: m.isDeleted ?? false,
+            countsTowardCounterId: m.countsTowardCounterId
         )
     }
 

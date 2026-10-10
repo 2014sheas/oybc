@@ -145,7 +145,11 @@ struct TaskEditPatch: Equatable {
     /// The blocking validation message, or nil when the patch is valid for the
     /// given task type. Handles `.normal`, `.counting`, and `.compound`;
     /// `.achievement` isn't editable in the pool (returns nil).
-    func validate(type: TaskType) -> String? {
+    ///
+    /// `countsToward` — the compound counts toward a counter
+    /// (docs/SHARED_COUNTER_SETTINGS.md §3a): an unfilled container with zero
+    /// sub-tasks is then allowed. Web twin: `validatePatch`'s `opts.countsToward`.
+    func validate(type: TaskType, countsToward: Bool = false) -> String? {
         switch type {
         case .counting:
             // Counting titles are optional (auto-generated), so no title check.
@@ -159,8 +163,9 @@ struct TaskEditPatch: Equatable {
         case .compound:
             if trimmedTitle.isEmpty { return "A title is required." }
             let kept = liveChildren
-            // One sub-task is enough (2026-10-06, owner ask); zero stays blocked.
-            if kept.count < 1 { return "A compound task needs a sub-task." }
+            // One sub-task is enough (2026-10-06, owner ask); zero stays blocked —
+            // except for a container that counts toward a counter (§3a).
+            if kept.count < 1 && !countsToward { return "A compound task needs a sub-task." }
             for child in kept where child.isCounting {
                 let goalOK = parseCountInput(child.goal, kind: child.countKind) != nil
                 let unitOK = !countKindNeedsUnit(child.countKind)

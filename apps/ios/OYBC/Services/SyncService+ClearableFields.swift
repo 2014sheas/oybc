@@ -13,7 +13,8 @@ import GRDB
 // pull. `tasks.endDate` joined for the windowed-linked-counter heal: stamping
 // a legacy task row onto an INDEFINITE board must clear its old `endDate`
 // cross-device; the four shared counter settings joined so a setting reset to
-// its default (stored absent, D3) clears on every device. This file centralizes every such field behind one
+// its default (stored absent, D3) clears on every device, and so does an unset
+// `countsTowardCounterId` (SHARED_COUNTER_SETTINGS §3e). This file centralizes every such field behind one
 // per-collection map, mirroring the TS `CLEARABLE_FIELDS_BY_COLLECTION`
 // (`packages/shared/src/constants/syncContract.ts`), pinned equal by
 // `SyncContractTests.testClearableFieldsByCollectionMatchesFixture`.
@@ -26,7 +27,12 @@ import GRDB
 let clearableFieldsByCollection: [String: [String]] = [
     "boards": ["endDate", "completedAt", "sealedAt", "sealedCompletedCells"],
     "coreBoardDefaults": ["defaultBoardSize", "defaultCenterType"],
-    "tasks": ["endDate", "counterName", "titleTemplateSingular", "titleTemplatePlural", "timeframeGoals"],
+    "tasks": [
+        "endDate", "counterName", "titleTemplateSingular", "titleTemplatePlural", "timeframeGoals",
+        "countsTowardCounterId", "countsTowardAmount", "countsTowardSince",
+    ],
+    // A revived counts-toward credit drops `deletedAt` (SHARED_COUNTER_SETTINGS §3b).
+    "taskEvents": ["deletedAt"],
 ]
 
 /// The `boards` entry of `clearableFieldsByCollection` — kept as a named

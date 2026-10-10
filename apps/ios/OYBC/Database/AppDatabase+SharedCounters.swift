@@ -55,6 +55,9 @@ extension AppDatabase {
         cascadeOnlyTaskIds: [String] = [],
         now: String
     ) throws -> [AffectedBoard] {
+        // "Counts toward" (docs/SHARED_COUNTER_SETTINGS.md §3b): a compound that
+        // contains one of these copies may have just completed.
+        let countsToward = try Self.writeCountsToward(db: db, changedTaskIds: allChangedTaskIds, now: now)
         let allTasksWS: [Task] = try Task.fetchAll(db)
         let allChildren: [CompoundChild] = try CompoundChild
             .filter(Column("isDeleted") == false)
@@ -79,7 +82,7 @@ extension AppDatabase {
 
         // Collect all cascade-affected board ids.
         var allAffectedBoardIds = Set<String>()
-        for taskId in allChangedTaskIds + cascadeOnlyTaskIds {
+        for taskId in allChangedTaskIds + cascadeOnlyTaskIds + countsToward.cascadeIds.sorted() {
             let parentCompounds = DerivationPass.findTransitiveParentCompounds(
                 changedTaskId: taskId,
                 children: allChildren
@@ -125,6 +128,8 @@ extension AppDatabase {
                 now: now
             ).enqueue(db)
         }
+
+        try Self.finishCountsTowardRoots(db: db, rootIds: countsToward.rootIds, now: now)
 
         // Build the credit-toast result: boards that can still count a log
         // (live, active, not closed, not ended) holding any member task.
