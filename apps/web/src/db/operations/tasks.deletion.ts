@@ -22,6 +22,7 @@ import {
   softDeleteWindowStampedDerived,
   windowStampedDerivedIdsForRoot,
 } from './derivedCounters';
+import { applyCountsTowardForTasks } from './countsToward';
 
 /**
  * Summary of what `deleteTaskWithCascade` (or a dry-run) would remove.
@@ -57,6 +58,10 @@ export interface TaskDeletionImpact {
    *  unlinking: each is a per-window artifact of a board, not library
    *  content the user authored. 0 for any non-source task. */
   derivedWindowCounterCount: number;
+  /** "Counts toward" (docs/SHARED_COUNTER_SETTINGS.md §3e) — the live counter
+   *  this task counts toward, whose increment the delete tombstones; `null`
+   *  when it counts toward nothing (or its counter is gone). */
+  countsTowardCounter: Task | null;
 }
 /**
  * Compute the cascade impact for a candidate deletion. Pure read; does
@@ -103,6 +108,8 @@ export async function computeTaskDeletionImpact(
     .where('sharedCounterId').equals(id)
     .filter((t) => !t.isDeleted).toArray();
   const counterMembers = allMembers.filter((t) => !isWindowStampedDerived(t));
+  const task = await db.tasks.get(id);
+  const counter = task?.countsTowardCounterId ? await db.tasks.get(task.countsTowardCounterId) : undefined;
   return {
     boardTaskCount: visiblePlacements.length,
     affectedBoardIds: Array.from(liveBoardIdSet),
@@ -112,6 +119,7 @@ export async function computeTaskDeletionImpact(
     counterMemberCount: counterMembers.length,
     counterMembers,
     derivedWindowCounterCount: allMembers.length - counterMembers.length,
+    countsTowardCounter: counter && !counter.isDeleted ? counter : null,
   };
 }
 /**
@@ -316,4 +324,10 @@ export async function deleteTaskWithCascadeInTxn(
       await writeBoardDerivedStats(affectedBoard, stats, now);
     }
   }
+
+  // 6. "Counts toward" (docs/SHARED_COUNTER_SETTINGS.md §3e) — a deleted
+  //    contributor's increment is tombstoned, and a compound that just lost
+  //    this child re-derives its own. The parents were captured before the
+  //    links were severed, so they are passed explicitly.
+  await applyCountsTowardForTasks([id, ...parents], now);
 }

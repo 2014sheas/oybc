@@ -7,7 +7,8 @@ import type {
   CycleCheckCandidate,
   CycleCheckContext,
 } from '@oybc/shared';
-import { AchievementTrigger, SyncOperationType, TaskType, OperatorType, boardDisplayName, hasCycle, isEventOwningTask, isGoalLessCounter } from '@oybc/shared';
+import { AchievementTrigger, SyncOperationType, TaskType, OperatorType, boardDisplayName, countsTowardProblem, hasCycle, isEventOwningTask, isGoalLessCounter } from '@oybc/shared';
+import { CountsTowardError, syncCountsTowardFor } from './countsToward';
 import { generateUUID, currentTimestamp } from '../utils';
 import { addToSyncQueue } from './syncQueue';
 import { runBoardCascadeForTask } from './orchestration';
@@ -227,6 +228,10 @@ export async function createCompound(
     timeframe: input.timeframe,
     startDate: input.startDate,
     endDate: input.endDate,
+    ...(input.countsTowardCounterId ? { countsTowardCounterId: input.countsTowardCounterId } : {}),
+    ...(input.countsTowardCounterId && input.countsTowardAmount !== undefined
+      ? { countsTowardAmount: input.countsTowardAmount }
+      : {}),
   };
 
   const childRowsToSync: { task?: Task; child: CompoundChild }[] = [];
@@ -312,6 +317,19 @@ export async function createCompound(
       await db.compoundChildren.add(childRow);
       childRowsToSync.push({ task: inlineCreatedTask, child: childRow });
     }
+
+    // "Counts toward" (docs/SHARED_COUNTER_SETTINGS.md §3a) — validated
+    // against the stored rows, children included (a throw rolls back).
+    if (compound.countsTowardCounterId) {
+      const problem = countsTowardProblem({
+        task: compound,
+        targetId: compound.countsTowardCounterId,
+        amount: compound.countsTowardAmount,
+        tasks: await db.tasks.toArray(),
+        children: await db.compoundChildren.filter((c) => !c.isDeleted).toArray(),
+      });
+      if (problem) throw new CountsTowardError(problem, `createCompound: counts toward refused (${problem})`);
+    }
   });
 
   // Enqueue sync entries OUTSIDE the transaction (matches createTask pattern).
@@ -322,6 +340,8 @@ export async function createCompound(
     }
     await addToSyncQueue('compoundChildren', childRow.id, SyncOperationType.CREATE, childRow);
   }
+  // A container built from already-done sub-tasks counts at once.
+  if (compound.countsTowardCounterId) await syncCountsTowardFor([compound.id]);
 
   return compound;
 }

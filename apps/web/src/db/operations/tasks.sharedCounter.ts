@@ -61,6 +61,8 @@ export interface AffectedBoard {
  * @param now              The operation's ISO8601 timestamp (also the freeze clock).
  * @param reachOccurredAt  The `occurredAt` of the event this operation wrote or
  *   tombstoned (a `now` stamp reaches no frozen row, so passing it is inert).
+ * @param cascadeOpts      Passed to the board cascade — the counts-toward root
+ *   cascade sets `countsTowardDepth` (docs/SHARED_COUNTER_SETTINGS.md §3b).
  * @returns The live ACTIVE boards placing the source or an unfrozen linked row,
  *   read BEFORE the cascade rewrites board status.
  */
@@ -69,6 +71,7 @@ export async function propagateToLinkedRows(
   newSourceCount: number,
   now: string,
   reachOccurredAt?: string,
+  cascadeOpts: { countsTowardDepth?: number } = {},
 ): Promise<AffectedBoard[]> {
   // Indexed read (the `sharedCounterId` index exists since Dexie v11), then
   // drop tombstones; split off the rows whose window has ended.
@@ -137,7 +140,7 @@ export async function propagateToLinkedRows(
   // ONE batched cascade: lookups + window context built once, each affected
   // board recomputed once (it reads the rows written above, same transaction).
   // Its per-board result map is not needed — credit comes from the pre-read above.
-  await runBoardCascadeForTasks([...allChangedTaskIds, ...reachedFrozenIds]);
+  await runBoardCascadeForTasks([...allChangedTaskIds, ...reachedFrozenIds], cascadeOpts);
 
   return affectedBoards;
 }

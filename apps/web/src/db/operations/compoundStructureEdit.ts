@@ -354,13 +354,16 @@ export async function editCompoundStructure(
 ): Promise<void> {
   // Pre-checks run outside any transaction so a validation failure never
   // opens one.
-  assertLiveCompound(await db.tasks.get(taskId), taskId);
+  const stored = await db.tasks.get(taskId);
+  assertLiveCompound(stored, taskId);
   // Link eligibility first: a picked task that can never be a sub-task
   // (e.g. a goal-less hub counter) gets its specific reason rather than
   // validatePatch's generic "needs a goal and a unit".
   const linkProblem = await compoundLinkProblemForPatch(taskId, structure);
   if (linkProblem !== null) throw new CompoundEditValidationError(linkProblem);
-  const problem = validatePatch(structure, TaskType.COMPOUND);
+  const problem = validatePatch(structure, TaskType.COMPOUND, undefined, {
+    countsToward: stored?.countsTowardCounterId != null,
+  });
   if (problem !== null) throw new CompoundEditValidationError(problem);
   const now = currentTimestamp();
   await db.transaction('rw', CASCADE_TABLES(), async () => {
@@ -553,7 +556,9 @@ export async function applyTaskTypeSwitchInTransaction(
     if (!compound) throw new Error(`Task ${existing.id}: a conversion into compound needs its structure`);
     const linkProblem = await compoundLinkProblemForPatch(existing.id, compound);
     if (linkProblem !== null) throw new CompoundEditValidationError(linkProblem);
-    const problem = validatePatch(compound, TaskType.COMPOUND);
+    const problem = validatePatch(compound, TaskType.COMPOUND, undefined, {
+      countsToward: existing.countsTowardCounterId != null,
+    });
     if (problem !== null) throw new CompoundEditValidationError(problem);
     const base: Task = { ...existing, type: TaskType.COMPOUND, isCompleted: false, completedAt: undefined };
     for (const k of COUNTING_ONLY_FIELDS) base[k] = undefined;
@@ -648,7 +653,9 @@ export async function applyBoardEditTaskOverrideInTransaction(
     if (existing.type !== TaskType.COMPOUND) throw new Error(`Task ${taskId}: a compound structure needs type compound`);
     const linkProblem = await compoundLinkProblemForPatch(taskId, compound);
     if (linkProblem !== null) throw new CompoundEditValidationError(linkProblem);
-    const problem = validatePatch(compound, TaskType.COMPOUND);
+    const problem = validatePatch(compound, TaskType.COMPOUND, undefined, {
+      countsToward: existing.countsTowardCounterId != null,
+    });
     if (problem !== null) throw new CompoundEditValidationError(problem);
     const description = 'description' in fields ? (fields.description ?? '') : undefined;
     await applyCompoundStructureEditInTransaction(existing, compound, { description }, now, scope);

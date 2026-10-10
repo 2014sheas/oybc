@@ -17,6 +17,7 @@ import { addToSyncQueue } from './syncQueue';
 import { insertIncrementEventRaw } from './taskEvents';
 import { deleteTaskWithCascadeInTxn } from './tasks.deletion';
 import { softDeleteWindowStampedDerived } from './derivedCounters';
+import { unflagContributorsOf } from './countsToward';
 
 /**
  * P5 — Counters Hub write ops (docs/SHARED_COUNTERS.md §P5).
@@ -240,6 +241,9 @@ export async function deleteCounterWithUnlink(sourceId: string): Promise<void> {
           await insertIncrementEventRaw(m.id, displayed, undefined, now, SEED_EVENT_OCCURRED_AT);
         }
       }
+      // "Counts toward" (docs/SHARED_COUNTER_SETTINGS.md §3e) — contributors
+      // stop counting toward the deleted counter; their events go with it.
+      await unflagContributorsOf(sourceId, now);
       await deleteTaskWithCascadeInTxn(sourceId, now, retiredBoardIds);
     },
   );

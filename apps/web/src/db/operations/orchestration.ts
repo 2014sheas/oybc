@@ -19,6 +19,7 @@ import { writeBoardDerivedStats } from './boardDerivedWrite';
 import { fetchAllCompoundChildren } from './compoundChildren';
 import { fetchAllBoardTasks } from './boardTasks';
 import { buildWindowContext } from './windowContext';
+import { applyCountsTowardForTasks } from './countsToward';
 import {
   appendCompletionEvent,
   appendIncrementEvent,
@@ -72,6 +73,12 @@ export interface BoardCascadeEntry extends BoardStatsUpdate {
  */
 interface CascadeOptions {
   authored?: boolean;
+  /**
+   * "Counts toward" chain depth (docs/SHARED_COUNTER_SETTINGS.md §3b) — set
+   * only by the counts-toward root cascade when it re-enters this cascade;
+   * every other caller leaves it absent (0).
+   */
+  countsTowardDepth?: number;
 }
 
 /**
@@ -123,6 +130,7 @@ export async function runBoardCascadeForTasks(
 ): Promise<Map<string, BoardCascadeEntry>> {
   const authored = opts.authored ?? true;
   const now = currentTimestamp();
+  const changedIds = [...changedTaskIds];
 
   // Build the lookups for the derivation pass.
   const allChildren = await fetchAllCompoundChildren();
@@ -144,7 +152,7 @@ export async function runBoardCascadeForTasks(
 
   // Resolve the UNION of affected boards across every changed task.
   const affectedBoardIds = new Set<string>();
-  for (const changedTaskId of changedTaskIds) {
+  for (const changedTaskId of changedIds) {
     const parentCompounds = findTransitiveParentCompounds(changedTaskId, allChildren);
     for (const id of findAffectedBoardIds(changedTaskId, parentCompounds, allBoardTasks)) {
       affectedBoardIds.add(id);
@@ -192,6 +200,18 @@ export async function runBoardCascadeForTasks(
       boardReactivated,
     });
   }
+
+  // "Counts toward" (docs/SHARED_COUNTER_SETTINGS.md §3b): a changed task (or
+  // a compound containing it) that counts toward a counter gets its
+  // deterministic increment inserted / tombstoned in THIS transaction, then
+  // the counter root cascades like a hand log. Written for authored and
+  // pull-path cascades alike — the event is deterministic, so a pull that
+  // re-derives it converges on the same row instead of ping-ponging.
+  await applyCountsTowardForTasks(changedIds, now, opts.countsTowardDepth ?? 0, {
+    allTasks,
+    allChildren,
+    eventsByTaskId: windowContext.eventsByTaskId,
+  });
 
   return resultMap;
 }

@@ -134,6 +134,7 @@ const CASES: DialogCase[] = [
           counterMemberCount: 0,
           counterMembers: [],
           derivedWindowCounterCount: 0,
+          countsTowardCounter: null,
         },
         onConfirm: noop,
         onCancel: noop,
