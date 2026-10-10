@@ -11,6 +11,7 @@ import {
 } from './boardTasks';
 import { applyBoardEditTaskOverrideInTransaction } from './compoundStructureEdit';
 import { ensureBoardScopedTask, stampForkCaches } from './boardScopedEdit';
+import { assertCountsTowardStillValid, setCountsTowardInTransaction } from './countsToward';
 import { dropReplacedLinkedPendingRows, persistWizardPendingTasks } from './wizardBoard';
 import type { SquareDraftCell } from '../../hooks/squareEditCount';
 import type { BoardEditTaskOverride } from '../../hooks/squaresEditReducer';
@@ -199,6 +200,12 @@ export async function commitSquareEdits(input: CommitSquareEditsInput): Promise<
         const editedType = patch.compound ? TaskType.COMPOUND : (patch.type ?? stored.type);
         const scoped = await ensureBoardScopedTask(targetId, boardId, editedType, now);
         await applyBoardEditTaskOverrideInTransaction(scoped.targetId, patch, now, { boardId });
+        // "Counts toward" lands on the (possibly forked) placed row through the
+        // ONE write path — fork first, flag the fork (docs/SHARED_COUNTER_SETTINGS.md §5).
+        if (patch.countsToward) await setCountsTowardInTransaction(scoped.targetId, patch.countsToward.counterId, patch.countsToward.amount, now);
+        // An already-flagged compound whose sub-tasks changed: the structure
+        // may not have closed a feeding loop (§3e) — refused, the Save rolls back.
+        else await assertCountsTowardStillValid(scoped.targetId);
         await stampForkCaches(scoped, now);
       }
 

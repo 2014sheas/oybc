@@ -60,6 +60,8 @@ export interface BuildStepProps {
   onAddInline: () => void;
   onBack: () => void;
   onNext: () => void;
+  /** A counts-toward container may be created empty (docs/SHARED_COUNTER_SETTINGS.md §3a). */
+  allowEmpty?: boolean;
   /** Open an existing subtask's library detail (sheet over the wizard).
    *  Pulled up to the wizard root so the sheet state can live above the
    *  step-by-step navigation. */
@@ -90,6 +92,7 @@ export function BuildStep({
   onBack,
   onNext,
   onOpenTask,
+  allowEmpty = false,
 }: BuildStepProps): React.ReactElement {
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState<LibraryFilter>('all');
@@ -118,8 +121,8 @@ export function BuildStep({
   }, [subtasks, allTasks]);
 
   // One sub-task is enough (2026-10-06, owner ask); zero stays blocked.
-  const hasMinimum = subtasks.length >= 1;
-  const allReady = readyCount === subtasks.length && readyCount >= 1;
+  const hasMinimum = subtasks.length >= 1 || allowEmpty;
+  const allReady = readyCount === subtasks.length && (readyCount >= 1 || allowEmpty);
   const canAdvance = hasMinimum && allReady;
 
   const statusText: string = !hasMinimum

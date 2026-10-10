@@ -47,6 +47,7 @@ private struct CreditToastState {
     let unit: String
     let verb: CounterLogToastView.Verb
     let message: String
+    let undo: SharedCounterCreditToastPayload.UndoKind
     let toastKey: String
 }
 
@@ -544,7 +545,7 @@ struct BoardPlayView: View {
                         verb: creditToast.verb,
                         message: creditToast.message,
                         onUndo: {
-                            viewModel.undoSharedCounterLog(sourceTaskId: creditToast.sourceTaskId)
+                            viewModel.undoCreditToast(creditToast.undo, sourceTaskId: creditToast.sourceTaskId)
                             withAnimation(.easeOut(duration: 0.2)) { self.creditToast = nil }
                         },
                         onDone: {
@@ -999,6 +1000,7 @@ struct BoardPlayView: View {
                 unit: payload.unit,
                 verb: payload.isIncrement ? .logged : .removed,
                 message: payload.message,
+                undo: payload.undo,
                 toastKey: UUID().uuidString
             )
         }
@@ -1182,10 +1184,7 @@ struct BoardPlayView: View {
         // routed through `viewModel.sharedCounterSourceId(for:)` (single
         // source of truth for this detection, shared with the stepper sheet
         // and the tap-routing handlers).
-        let isSharedCounterCell: Bool = {
-            guard let t = task, t.type == .counting else { return false }
-            return viewModel.sharedCounterSourceId(for: t) != nil
-        }()
+        let isSharedCounterCell = viewModel.showsSharedCounterMark(for: task)
 
         // Compound child progress — mirrors original playSquare.
         let compoundLinks = task.map { compoundChildrenByCompound[$0.id] ?? [] } ?? []

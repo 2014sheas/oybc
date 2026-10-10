@@ -67,7 +67,7 @@ enum CompoundEvaluation {
     /// event-owning primitive resolves windowed. Only a context with no
     /// `windowStart` (lifetime) still reads a linked child's latch. Mirrors
     /// the TS `resolvePrimitiveChildState`.
-    private static func resolvePrimitiveChildState(
+    static func resolvePrimitiveChildState(
         _ child: Task,
         _ windowContext: CompoundWindowContext?
     ) -> Bool {

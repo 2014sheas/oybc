@@ -131,14 +131,14 @@ private func isVisibleCounterMember(
 
 /// Pick a member task's "primary" board placement: prefer ACTIVE board, then
 /// newest startDate, then stable id tie-break. Mirrors the TS `pickPrimaryBoard`.
-private func pickPrimaryBoard(
+func pickPrimaryBoard(
     taskId: String,
     boardTasks: [BoardTask],
     boardsById: [String: Board]
 ) -> Board? {
     var candidates: [Board] = []
     for bt in boardTasks {
-        guard bt.taskId == taskId,
+        guard bt.taskId == taskId, !bt.isDeleted,
               let board = boardsById[bt.boardId],
               !board.isDeleted
         else { continue }

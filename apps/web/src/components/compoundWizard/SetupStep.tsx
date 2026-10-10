@@ -12,6 +12,8 @@ export interface SetupStepProps {
   onOperatorChange: (next: OperatorType) => void;
   onCancel: () => void;
   onNext: () => void;
+  /** The "Counts toward" row (standalone create only). */
+  countsTowardField?: React.ReactNode;
 }
 
 /**
@@ -26,6 +28,7 @@ export function SetupStep({
   onOperatorChange,
   onCancel,
   onNext,
+  countsTowardField,
 }: SetupStepProps): React.ReactElement {
   const trimmedTitle = title.trim();
   const titleError =
@@ -63,6 +66,8 @@ export function SetupStep({
 
         <OperatorSelector selectedOperator={operator} onOperatorChange={onOperatorChange} />
       </div>
+
+      {countsTowardField}
 
       <div className={styles.footer}>
         <button type="button" className={styles.cancelButton} onClick={onCancel}>

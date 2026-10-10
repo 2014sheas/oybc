@@ -1,13 +1,17 @@
 import { useCallback, useState } from 'react';
+import { CountsTowardError } from '../../db/operations/countsToward';
+import { countsTowardProblemLabel } from '../../components/counters/countsTowardLabels';
+import type { CountsTowardSelection } from '../../components/counters/countsTowardFieldModel';
 import {
   AchievementTrigger,
   TaskType,
   countKindNeedsUnit,
   type CountKind,
+  type CreateTaskInput,
   type Task,
   type CompoundChild,
 } from '@oybc/shared';
-import { createTask } from '../../db/operations/tasks';
+import { createTask, createTaskCountingToward } from '../../db/operations/tasks';
 import { generateUUID, currentTimestamp } from '../../db/utils';
 import { countingGoalError, countingSaveFields } from './createFormCounting';
 import { type SubtaskFormState, createEmptySubtask } from '../../components/subtaskDraftUtils';
@@ -196,11 +200,21 @@ export interface UseCreateFormStateArgs {
    * is preserved so standalone quick-add is unchanged.
    */
   deferPersist?: boolean;
+  /**
+   * "Counts toward" (docs/SHARED_COUNTER_SETTINGS.md §3d) — the counter the
+   * new task is preset to count toward (Counter Detail's "+ New"). The row is
+   * shown only in immediate-persist mode (a pending wizard task has no row yet).
+   */
+  countsTowardPreset?: string | null;
 }
 
 export interface UseCreateFormState {
   // Form fields
   taskType: TaskType;
+  /** The "Counts toward" row's selection; `countsTowardEnabled` says whether the row renders. */
+  countsToward: CountsTowardSelection;
+  countsTowardEnabled: boolean;
+  setCountsToward: (next: CountsTowardSelection) => void;
   title: string;
   description: string;
   action: string;
@@ -280,8 +294,11 @@ export function useCreateFormState({
   defaultStartDate,
   defaultEndDate,
   deferPersist = false,
+  countsTowardPreset = null,
 }: UseCreateFormStateArgs): UseCreateFormState {
   const [taskType, setTaskType] = useState<TaskType>(TaskType.NORMAL);
+  const [countsToward, setCountsToward] = useState<CountsTowardSelection>({ counterId: countsTowardPreset, amount: 1 });
+  const countsTowardEnabled = !deferPersist;
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [action, setAction] = useState('');
@@ -594,8 +611,13 @@ export function useCreateFormState({
         }
 
         // ── Immediate-persist path (default — standalone quick-add) ────────
+        // "Counts toward": create + flag in ONE transaction (a refused flag persists nothing).
+        const create = (input: CreateTaskInput): Promise<Task> =>
+          countsTowardEnabled && countsToward.counterId != null && taskType !== TaskType.ACHIEVEMENT
+            ? createTaskCountingToward(userId, input, { counterId: countsToward.counterId, amount: countsToward.amount })
+            : createTask(userId, input);
         if (taskType === TaskType.NORMAL) {
-          newTask = await createTask(userId, {
+          newTask = await create({
             title: title.trim(),
             description: description.trim() || undefined,
             type: TaskType.NORMAL,
@@ -608,7 +630,7 @@ export function useCreateFormState({
           });
         } else if (taskType === TaskType.COUNTING) {
           const fields = countingSaveFields(kind, action, unit, maxCountStr, title);
-          newTask = await createTask(userId, {
+          newTask = await create({
             title: fields.title,
             description: description.trim() || undefined,
             type: TaskType.COUNTING,
@@ -656,17 +678,23 @@ export function useCreateFormState({
         onTaskCreated(newTask);
         resetForm();
       } catch (error) {
-        const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+        const errorMessage =
+          error instanceof CountsTowardError && error.code !== 'task-missing'
+            ? countsTowardProblemLabel(error.code)
+            : error instanceof Error ? error.message : 'Unknown error occurred';
         setErrors((prev) => ({ ...prev, general: errorMessage }));
       } finally {
         setIsSubmitting(false);
       }
     },
-    [taskType, title, description, action, unit, maxCountStr, countKind, userId, onTaskCreated, onPendingCreated, deferPersist, achievementMode, achievementReferenceId, achievementTrigger, achievementRequiredCountStr, defaultTimeframe, defaultStartDate, defaultEndDate]
+    [taskType, title, description, action, unit, maxCountStr, countKind, userId, onTaskCreated, onPendingCreated, deferPersist, countsTowardEnabled, countsToward, achievementMode, achievementReferenceId, achievementTrigger, achievementRequiredCountStr, defaultTimeframe, defaultStartDate, defaultEndDate]
   );
 
   return {
     taskType,
+    countsToward,
+    countsTowardEnabled,
+    setCountsToward,
     title,
     description,
     action,

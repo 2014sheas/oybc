@@ -32,6 +32,7 @@ import {
   fetchTemplatesReferencingTask,
 } from '../../db/operations/recurringBoardTemplates';
 import { TypeBadge } from '../../components/TypeBadge';
+import { StatusPill, type StatusPillStatus } from '../../components/StatusPill';
 import { formatRelativeTime } from '../../utils/relativeTime';
 import { LinkedCounterCaptionView } from './LinkedCounterCaptionView';
 import { TaskEditSheet } from './TaskEditSheet';
@@ -92,15 +93,11 @@ function formatDate(iso: string): string {
 
 // ─── Sub-components ────────────────────────────────────────────────────────────
 
-function StatusPill({ task }: { task: Task }): React.ReactElement {
-  if (task.isCompleted) {
-    return <span className={`${styles.statusPill} ${styles.statusCompleted}`}>Completed</span>;
-  }
-  // RB7 — a linked member's progress is its window's, not its root's total.
-  if (task.type === TaskType.COUNTING && displayedCountFor(task) > 0) {
-    return <span className={`${styles.statusPill} ${styles.statusInProgress}`}>In progress</span>;
-  }
-  return <span className={`${styles.statusPill} ${styles.statusNeverStarted}`}>Never started</span>;
+/** The pill state for a task's lifetime view (RB7 — a linked member's progress is its window's, not its root's total). */
+function taskPillStatus(task: Task): StatusPillStatus {
+  if (task.isCompleted) return 'completed';
+  if (task.type === TaskType.COUNTING && displayedCountFor(task) > 0) return 'inProgress';
+  return 'notStarted';
 }
 
 function CountingSourceCaption({
@@ -411,7 +408,7 @@ export function TaskDetailContent({
         <h1 className={styles.title}>{task.title || '(untitled task)'}</h1>
         <div className={styles.badges}>
           <TypeBadge type={typeLabel(task)} />
-          <StatusPill task={task} />
+          <StatusPill status={taskPillStatus(task)} />
         </div>
         {task.description && (
           <p className={styles.description}>{task.description}</p>

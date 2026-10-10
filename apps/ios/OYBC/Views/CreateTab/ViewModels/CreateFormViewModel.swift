@@ -138,6 +138,11 @@ final class CreateFormViewModel {
     var countingSharedCounterId: String? = nil
     var countingBaseline: CountValue? = nil
 
+    /// What the new task counts toward (docs/SHARED_COUNTER_SETTINGS.md §3,
+    /// PR 4). Honoured only by the immediate-persist path (never a deferred /
+    /// pending create) and never for an Achievement.
+    var countsToward = CountsTowardSelection()
+
     // UI state
     var isSubmitting: Bool = false
     var errorMessage: String?
@@ -398,12 +403,29 @@ final class CreateFormViewModel {
             return
         }
 
+        // Counts toward: refuse BEFORE anything is created (the form's error line).
+        let countsTowardTarget = resolvedType == .achievement ? nil : countsToward.counterId
+        let countsTowardAmount = countsToward.amount
+        if let target = countsTowardTarget,
+           let problem = CountsToward.problem(
+               task: newTask, targetId: target, amount: Double(countsTowardAmount),
+               tasks: (try? database.fetchTasks(userId: userId)) ?? [], children: []
+           ) {
+            isSubmitting = false
+            errorMessage = problem.label
+            return
+        }
+
         // ── Immediate-persist path (default — standalone quick-add) ─────────
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             guard let self else { return }
             do {
                 if progressChildLinks.isEmpty {
-                    try self.database.createTaskAndEnqueue(newTask, now: now)
+                    // Create + flag in ONE write: a refusal persists nothing.
+                    try self.database.createTaskAndEnqueue(
+                        newTask, now: now,
+                        countsToward: countsTowardTarget.map { CountsTowardPatch(counterId: $0, amount: countsTowardAmount) }
+                    )
                 } else {
                     try self.database.createTaskWithPairedChildrenAndEnqueue(
                         task: newTask,
@@ -428,7 +450,8 @@ final class CreateFormViewModel {
             } catch {
                 DispatchQueue.main.async {
                     self.isSubmitting = false
-                    self.errorMessage = "Failed: \(error.localizedDescription)"
+                    self.errorMessage = (error as? AppDatabase.CountsTowardError)?.label
+                        ?? "Failed: \(error.localizedDescription)"
                 }
             }
         }
@@ -447,6 +470,7 @@ final class CreateFormViewModel {
         countingDeriveFromTask = nil
         countingSharedCounterId = nil
         countingBaseline = nil
+        countsToward = CountsTowardSelection()
         achievementMode = .specificBoard
         achievementReferenceId = nil
         achievementTrigger = .greenlog
@@ -607,8 +631,10 @@ final class CreateFormViewModel {
     ) {
         let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedTitle.isEmpty else { return }
-        // One sub-task is enough (2026-10-06, owner ask); zero stays blocked.
-        guard subs.count >= 1 else { return }
+        // One sub-task is enough (2026-10-06, owner ask); zero stays blocked —
+        // except a compound that counts toward a counter (§3a; never in a deferred create).
+        let countsTowardTarget = deferPersist ? nil : countsToward.counterId
+        guard subs.count >= 1 || countsTowardTarget != nil else { return }
 
         isSubmitting = true
         errorMessage = nil
@@ -637,6 +663,16 @@ final class CreateFormViewModel {
             startDate: defaultStartDate,
             endDate: defaultEndDate
         )
+        if let target = countsTowardTarget {
+            if let problem = CountsToward.problem(
+                task: parentTask, targetId: target, amount: Double(countsToward.amount),
+                tasks: (try? database.fetchTasks(userId: userId)) ?? [], children: []
+            ) {
+                isSubmitting = false
+                errorMessage = problem.label
+                return
+            }
+        }
 
         // Build child tasks + link rows. For EXISTING subs the child task is
         // already in GRDB — only the CompoundChild link row is new. For NEW
@@ -748,6 +784,8 @@ final class CreateFormViewModel {
         let capturedChildTasks = childTasks
         let capturedChildLinks = childLinks
         let capturedParent = parentTask
+        // The compound goes in unflagged; the create's own write flags it after its children exist.
+        let capturedCountsToward = countsTowardTarget.map { CountsTowardPatch(counterId: $0, amount: countsToward.amount) }
 
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             guard let self else { return }
@@ -760,7 +798,8 @@ final class CreateFormViewModel {
                     parent: capturedParent,
                     newChildTasks: capturedChildTasks,
                     childLinks: capturedChildLinks,
-                    now: now
+                    now: now,
+                    countsToward: capturedCountsToward
                 )
 
                 DispatchQueue.main.async {
@@ -776,7 +815,8 @@ final class CreateFormViewModel {
             } catch {
                 DispatchQueue.main.async {
                     self.isSubmitting = false
-                    self.errorMessage = "Failed: \(error.localizedDescription)"
+                    self.errorMessage = (error as? AppDatabase.CountsTowardError)?.label
+                        ?? "Failed: \(error.localizedDescription)"
                 }
             }
         }

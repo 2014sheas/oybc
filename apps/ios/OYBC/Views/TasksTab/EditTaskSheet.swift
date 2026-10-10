@@ -45,6 +45,11 @@ struct EditTaskSheet: View {
     /// defaulted so production call sites are unchanged).
     var database: AppDatabase = .shared
 
+    /// Every live task of the user — the "Counts toward" row's candidates.
+    /// nil ⇒ loaded from `database` on appear (the row stays hidden until then);
+    /// snapshot fixtures inject it.
+    var countsTowardTasks: [Task]? = nil
+
     // MARK: - Patch
 
     struct Patch {
@@ -75,6 +80,9 @@ struct EditTaskSheet: View {
         /// A counter ROOT's post-edit shared counter settings (the counter
         /// sheet) — nil = unchanged; a nil member inside clears that setting.
         var counterSettings: CounterSettings.Stored? = nil
+        /// What the task counts toward — nil = untouched (set only when the
+        /// selection or amount differs from the stored row).
+        var countsToward: CountsTowardPatch? = nil
 
         enum RefMode {
             case board, template
@@ -113,6 +121,9 @@ struct EditTaskSheet: View {
     @State private var pickerLibraryTasks: [Task] = []
     @State private var pickerLinks: [CompoundChild] = []
     @State private var libraryInputsState: RisoCompoundEditFieldsView.LibraryInputsState = .loading
+    // "Counts toward" row (docs/SHARED_COUNTER_SETTINGS.md §3, PR 4).
+    @State private var countsTowardSel: CountsTowardSelection
+    @State private var countsTowardAllTasks: [Task]?
 
     // MARK: - Init
 
@@ -122,6 +133,7 @@ struct EditTaskSheet: View {
         availableTemplates: [RecurringBoardTemplate] = [],
         database: AppDatabase = .shared,
         seededCompoundChildren: [Task]? = nil,
+        countsTowardTasks: [Task]? = nil,
         onSubmit: @escaping (Patch) -> Void,
         onCancel: @escaping () -> Void
     ) {
@@ -129,6 +141,11 @@ struct EditTaskSheet: View {
         self.availableBoards = availableBoards
         self.availableTemplates = availableTemplates
         self.database = database
+        self.countsTowardTasks = countsTowardTasks
+        _countsTowardAllTasks = State(initialValue: countsTowardTasks)
+        _countsTowardSel = State(initialValue: CountsTowardFieldView.selection(
+            counterId: task.countsTowardCounterId, amount: task.countsTowardAmount
+        ))
         self.onSubmit = onSubmit
         self.onCancel = onCancel
         _hasLinkedCopies = State(initialValue: TaskTypeSwitch.initialHasLinkedCopies(task: task, database: database))
@@ -199,11 +216,23 @@ struct EditTaskSheet: View {
                     if selectedType == .compound {
                         compoundSection
                     }
+
+                    // ── Counts toward ───────────────────────────────────────
+                    if showsCountsToward, let all = countsTowardAllTasks {
+                        CountsTowardFieldView(
+                            tasks: all, editedTaskId: task.id,
+                            storedCounterId: task.countsTowardCounterId, selection: $countsTowardSel
+                        )
+                        .padding(12)
+                        .risoCard(fill: .risoPaper2)
+                        .risoHardShadow(Riso.Shadow.small)
+                    }
                 }
                 .padding(16)
             }
             .background(Color.risoPaper.ignoresSafeArea())
             .task(id: "\(task.id)|\(selectedType == .compound)") { await loadCompoundChildrenIfNeeded() }
+            .task(id: task.id) { await loadCountsTowardTasksIfNeeded() }
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .principal) {
@@ -413,13 +442,40 @@ struct EditTaskSheet: View {
         }
     }
 
+    // MARK: - Counts toward
+
+    /// Whether the "Counts toward" row shows (loaded tasks + a task that can contribute).
+    private var showsCountsToward: Bool {
+        guard let all = countsTowardAllTasks else { return false }
+        return CountsTowardFieldView.isVisible(task: task, selectedType: selectedType, tasks: all)
+    }
+
+    /// The patch to submit: only when the row shows and differs from the stored row.
+    private var countsTowardPatch: CountsTowardPatch? {
+        guard showsCountsToward else { return nil }
+        return CountsTowardFieldView.patch(
+            selection: countsTowardSel, storedCounterId: task.countsTowardCounterId, storedAmount: task.countsTowardAmount
+        )
+    }
+
+    private func loadCountsTowardTasksIfNeeded() async {
+        guard countsTowardAllTasks == nil else { return }
+        let db = database
+        let userId = task.userId
+        let loaded = try? await _Concurrency.Task.detached(priority: .userInitiated) {
+            try db.fetchTasks(userId: userId)
+        }.value
+        countsTowardAllTasks = loaded ?? []
+    }
+
     // MARK: - Compound state
 
     /// Validation of the edited structure titled from the Title field, or nil.
+    /// A compound that counts toward a counter may have no sub-tasks.
     private var compoundValidation: String? {
         guard selectedType == .compound, var draft = compoundDraft else { return nil }
         draft.title = title
-        return draft.validate(type: .compound)
+        return draft.validate(type: .compound, countsToward: (countsTowardPatch.map { $0.counterId != nil } ?? (task.countsTowardCounterId != nil)))
     }
 
     /// Save is blocked on an empty title; for a compound, also while the
@@ -430,7 +486,8 @@ struct EditTaskSheet: View {
         if title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return true }
         guard selectedType == .compound else { return false }
         guard compoundDraft != nil else { return true }
-        return (isConverting || Self.compoundStructureChanged(baseline: compoundBaseline, draft: compoundDraft))
+        let clearsFlag = countsTowardPatch.map { $0.counterId == nil } ?? false
+        return (isConverting || clearsFlag || Self.compoundStructureChanged(baseline: compoundBaseline, draft: compoundDraft))
             && compoundValidation != nil
     }
 
@@ -592,7 +649,8 @@ struct EditTaskSheet: View {
                 selectedTemplateId: selectedTemplateId,
                 compound: compoundPatch,
                 countKind: selectedType == .counting && task.sharedCounterId == nil ? countKind : nil,
-                type: selectedType != task.type ? selectedType : nil
+                type: selectedType != task.type ? selectedType : nil,
+                countsToward: countsTowardPatch
             )
         )
     }

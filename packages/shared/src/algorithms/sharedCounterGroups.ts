@@ -171,12 +171,12 @@ export interface SharedCounterMemberVisibility {
  * Pick a member task's "primary" board placement: prefer an ACTIVE board, then
  * the most recent by startDate, then a stable id tie-break. Deterministic.
  */
-function pickPrimaryBoard(
+export function pickPrimaryBoard<B extends Pick<Board, 'id' | 'isDeleted' | 'status' | 'startDate'>>(
   taskId: string,
-  boardTasks: readonly BoardTask[],
-  boardsById: Map<string, Board>,
-): Board | null {
-  const candidates: Board[] = [];
+  boardTasks: ReadonlyArray<Pick<BoardTask, 'taskId' | 'boardId' | 'isDeleted'>>,
+  boardsById: Map<string, B>,
+): B | null {
+  const candidates: B[] = [];
   for (const bt of boardTasks) {
     if (bt.taskId !== taskId || bt.isDeleted) continue;
     const board = boardsById.get(bt.boardId);

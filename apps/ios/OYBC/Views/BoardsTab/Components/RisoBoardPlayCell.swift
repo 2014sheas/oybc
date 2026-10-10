@@ -162,17 +162,22 @@ struct RisoBoardPlayCell: View {
     /// corner-chip states (locked / unsaved edit) when shown.
     private var accessibilityLabel: String {
         var suffix = ""
+        if showsSharedCounterMark { suffix += ", shared counter" }
         if showsLockChip { suffix += ", locked in place" }
         if showsDirtyChip { suffix += ", unsaved edit" }
         return baseAccessibilityLabel + suffix
     }
 
+    /// The two-dot shared-counter mark shows on any not-done cell that feeds a
+    /// shared counter — a linked counting square, or (PR 4) any square that
+    /// counts toward one. Its VoiceOver suffix follows the mark.
+    private var showsSharedCounterMark: Bool { isSharedCounter && !isCompleted && !isCenter }
+
     private var baseAccessibilityLabel: String {
         if isCenter { return title.isEmpty ? "Free space" : "\(title), free space" }
         switch taskType {
         case .counting:
-            let sharedSuffix = isSharedCounter ? ", shared counter" : ""
-            return "\(title), counting, \(formatCount(currentCount, kind: countKind)) of \(formatCount(maxCount, kind: countKind))\(sharedSuffix)"
+            return "\(title), counting, \(formatCount(currentCount, kind: countKind)) of \(formatCount(maxCount, kind: countKind))"
         case .compound:
             // Same operator-aware target as the visual bar, so VoiceOver
             // never contradicts it (e.g. "1 of 4" on a complete Any-of cell).
@@ -326,7 +331,7 @@ struct RisoBoardPlayCell: View {
             // ↔ Shared-counter marker — top-right, not-done shared counting cells only.
             // Two stacked dots (handoff `.cn-link`) indicate this square feeds a shared
             // counter. Hidden once completed (check takes over the slot).
-            if isSharedCounter && !isCompleted && taskType == .counting {
+            if showsSharedCounterMark {
                 VStack(spacing: 2) {
                     Circle()
                         .fill(Color.risoBlue)

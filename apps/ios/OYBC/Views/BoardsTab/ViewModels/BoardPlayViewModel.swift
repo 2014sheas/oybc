@@ -861,6 +861,7 @@ final class BoardPlayViewModel: ObservableObject {
             guard let self = self else { return }
             do {
                 var newBingoMsg: String? = nil
+                let creditBefore = Self.countsTowardCreditSnapshot(database: database, currentBoardId: currentBoardId, writtenTaskId: childTask.id)
                 // Child isn't on this board — the fallback write (child event
                 // append + cache stamp + windowed cross-board cascade) is owned
                 // by `AppDatabase.toggleCompoundChildFallback`. This VM derives
@@ -886,13 +887,14 @@ final class BoardPlayViewModel: ObservableObject {
                         newBingoMsg = "Bingo! (\(gained.joined(separator: ", ")))"
                     }
                 }
+                let creditPayload = Self.countsTowardCreditToast(database: database, snapshot: creditBefore, currentBoardId: currentBoardId, writtenTaskId: childTask.id, undo: .uncomplete(taskId: childTask.id, boardTaskId: nil))
                 await MainActor.run {
                     self.reload { self.isProcessing = false }
                     if let msg = newBingoMsg {
                         self.bingoMessage = msg
                         self.scheduleBingoMessageDismiss(msg)
                     }
-                    self.emitFlash(risoNotification: newBingoMsg, creditToast: nil)
+                    self.emitFlash(risoNotification: newBingoMsg, creditToast: creditPayload)
                 }
             } catch {
                 dlog("⚠️ BoardPlayView compoundChildToggle error: \(error)")
@@ -930,7 +932,7 @@ final class BoardPlayViewModel: ObservableObject {
     ///   - boardTask: The `BoardTask` placement record on the current board
     ///     (updatedAt/version will be bumped + sync-queued).
     ///   - persistDefault: R3 — an explicit custom amount to save as the task's default, off the main actor.
-    private func runOrchestration(
+    func runOrchestration(
         taskId: String,
         intent: AppDatabase.CompletionIntent,
         boardTask: BoardTask, persistDefault: CountValue? = nil
@@ -940,18 +942,16 @@ final class BoardPlayViewModel: ObservableObject {
         let now = AppDatabase.currentTimestamp()
         let currentBoardId = board.id
         let database = self.database
+        let priorCount = windowedState(forTaskId: taskId).count
 
         _Concurrency.Task.detached(priority: .userInitiated) { [weak self] in
             guard let self = self else { return }
             do {
                 var newBingoMsg: String? = nil
+                let creditBefore = Self.countsTowardCreditSnapshot(database: database, currentBoardId: currentBoardId, writtenTaskId: taskId)
 
-                // The complete write transaction (draft auto-activate, TaskEvent
-                // append, cache stamp, BoardTask bump, windowed cross-board
-                // cascade + sync-enqueue) lives in
-                // `AppDatabase.completeTaskOrchestrated`. This VM only derives
-                // the flash message for the *current* board from the returned
-                // per-board results.
+                // The whole write transaction lives in `AppDatabase.completeTaskOrchestrated`;
+                // this VM only derives the *current* board's flash message from its results.
                 let cascadeResults = try database.completeTaskOrchestrated(
                     board: board,
                     taskId: taskId,
@@ -961,9 +961,7 @@ final class BoardPlayViewModel: ObservableObject {
                 )
                 if let amount = persistDefault { do { try database.setCounterDefaultLogAmount(sourceTaskId: taskId, amount: amount) } catch { dlog("BoardPlayVM: persist default failed: \(error)") } }
 
-                // Surface a flash message for the *current* board only.
-                // Other affected boards still updated stats — they just
-                // don't get a transient banner since the user isn't on them.
+                // Flash for the *current* board only (other boards update silently).
                 if let result = cascadeResults[currentBoardId] {
                     let lost = result.update.lostBingos.sorted()
                     let gained = result.update.newBingos.sorted()
@@ -978,7 +976,7 @@ final class BoardPlayViewModel: ObservableObject {
                     }
                 }
 
-                // Refresh UI on main thread.
+                let creditPayload = Self.countsTowardCreditToast(database: database, snapshot: creditBefore, currentBoardId: currentBoardId, writtenTaskId: taskId, undo: Self.creditUndo(intent: intent, taskId: taskId, boardTaskId: boardTask.id, priorCount: priorCount))
                 await MainActor.run {
                     // Full reload: board + placements + workspace task data. The
                     // task-data refresh keeps the compound detail sheet (rendered
@@ -989,7 +987,7 @@ final class BoardPlayViewModel: ObservableObject {
                         self.bingoMessage = msg
                         self.scheduleBingoMessageDismiss(msg)
                     }
-                    self.emitFlash(risoNotification: newBingoMsg, creditToast: nil)
+                    self.emitFlash(risoNotification: newBingoMsg, creditToast: creditPayload)
                 }
             } catch {
                 dlog("⚠️ BoardPlayView orchestration error: \(error)")
@@ -1394,17 +1392,16 @@ final class BoardPlayViewModel: ObservableObject {
 /// `CounterLogToastView`, which now renders arbitrary `message` text with an
 /// Undo affordance instead of only its own verb-derived copy).
 struct SharedCounterCreditToastPayload: Equatable {
-    /// The shared counter's SOURCE task id — `Undo` reverses THIS counter's
-    /// last log entry via `AppDatabase.undoLastCounterLog(sourceTaskId:)`,
-    /// regardless of which board square triggered the toast.
+    /// The shared counter's SOURCE task id (a `.counterLog` Undo reverses its last log entry).
     let sourceTaskId: String
-    /// The amount just logged/removed — matches what Undo will reverse
-    /// (decrement uses the CLAMPED `effectiveDelta`, not the requested amount).
+    /// The amount just logged/removed (decrement uses the CLAMPED `effectiveDelta`).
     let amount: CountValue
     let unit: String
     let isIncrement: Bool
     /// Full pinned copy contract string — see `sharedCreditToastText`.
     let message: String
+    /// What Undo reverses — a hand log (default) or a counts-toward completion (`UndoKind`).
+    var undo: UndoKind = .counterLog
 }
 
 // MARK: - BoardPlayFlashEvent

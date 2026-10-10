@@ -32,6 +32,7 @@ import {
   isForkLineageLoaded,
   lineageRootId,
 } from '../../src/algorithms/countsTowardLineage';
+import { contributorCreditGroups, countsTowardRows } from '../../src/algorithms/countsTowardCredits';
 import { countsTowardProblem } from '../../src/algorithms/countsTowardValidation';
 import { forkedEventId } from '../../src/algorithms/boardScopedFork';
 import { evaluateCompound } from '../../src/algorithms/compoundEvaluation';
@@ -50,6 +51,7 @@ const V = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'fixtures', 'cou
 
 interface MiniTask {
   id: string;
+  title?: string;
   type?: string;
   operator?: string;
   threshold?: number;
@@ -99,7 +101,7 @@ function toTask(m: MiniTask): Task {
   return {
     id: m.id,
     userId: 'u',
-    title: m.id,
+    title: m.title ?? m.id,
     type: (m.type as TaskType) ?? TaskType.NORMAL,
     operator: m.operator as OperatorType | undefined,
     threshold: m.threshold,
@@ -508,5 +510,43 @@ describe('TaskSchema — countsToward shape rules', () => {
   it('refuses a non-positive or fractional amount', () => {
     expect(TaskSchema.safeParse({ ...base, countsTowardCounterId: ROOT, countsTowardSince: SINCE, countsTowardAmount: 0 }).success).toBe(false);
     expect(TaskSchema.safeParse({ ...base, countsTowardCounterId: ROOT, countsTowardSince: SINCE, countsTowardAmount: 1.5 }).success).toBe(false);
+  });
+});
+
+/** The tasks + `ContributionInputs` a creditGroups / rows vector describes (root credits minted at their deterministic ids). */
+function toGroupInputs(v: any): { tasks: Task[]; inputs: ContributionInputs } {
+    const tasks = (v.tasks as MiniTask[]).map(toTask);
+    const taskById = Object.fromEntries(tasks.map((t) => [t.id, t]));
+    const credits: TaskEvent[] = (v.rootCredits as any[]).map((c, i) =>
+      toEvent(
+        { id: countsTowardEventId(v.root, c.scope, c.occurrence), taskId: v.root, delta: c.delta ?? 1, occurredAt: c.occurredAt, isDeleted: c.isDeleted },
+        1000 + i,
+      ),
+    );
+    const events = [...(v.events as MiniEvent[]).map(toEvent), ...credits];
+    const children = toChildren(v.children ?? []);
+    const inputs: ContributionInputs = {
+      taskById,
+      childrenByCompound: group(children.filter((c) => !c.isDeleted), 'compoundTaskId'),
+      allChildrenByCompound: group(children, 'compoundTaskId'),
+      eventsByTaskId: group(events.filter((e) => !e.isDeleted), 'taskId'),
+      allEventsByTaskId: group(events, 'taskId'),
+      placements: (v.placements as MiniPlacement[]).map(toPlacement),
+      boardById: Object.fromEntries((v.boards as MiniBoard[]).map((b) => [b.id, toBoard(b)])),
+    };
+    return { tasks, inputs };
+}
+
+describe('countsTowardVectors — contributorCreditGroups', () => {
+  it.each(V.creditGroups as any[])('$name', (v: any) => {
+    const { tasks, inputs } = toGroupInputs(v);
+    expect(contributorCreditGroups(v.root, tasks, inputs)).toEqual(v.expected);
+  });
+});
+
+describe('countsTowardVectors — countsTowardRows', () => {
+  it.each(V.rows as any[])('$name', (v: any) => {
+    const { tasks, inputs } = toGroupInputs(v);
+    expect(countsTowardRows(v.root, tasks, inputs)).toEqual(v.expected);
   });
 });

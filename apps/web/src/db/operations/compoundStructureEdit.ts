@@ -29,6 +29,7 @@ import {
   countKindNeedsUnit,
   forkTaskId,
   type CompoundChild,
+  countsTowardProblem,
   type CountKind,
   type Task,
 } from '@oybc/shared';
@@ -46,6 +47,7 @@ import {
 import { runBoardCascadeForTasks } from './orchestration';
 import { addToSyncQueue } from './syncQueue';
 import { applyKindSwitchThenGoalGuard } from './countKindSwitch';
+import { assertCountsTowardStillValid, setCountsTowardInTransaction } from './countsToward';
 import { computeTaskCachesFromEvents } from './taskEvents';
 import { updateTaskAndCascade, type UpdateTaskPatch } from './tasks.crud';
 import { ensureBoardScopedTask, repointCompoundLink, stampForkCaches } from './boardScopedEdit';
@@ -251,6 +253,36 @@ export async function compoundLinkProblemForPatch(
 }
 
 /**
+ * Whether `patch`'s sub-tasks would close a counts-toward loop for a flagged
+ * compound (docs/SHARED_COUNTER_SETTINGS.md §3e) — the target counter, one of
+ * its copies, or a compound holding either, named as a sub-task. The sheet's
+ * Done pre-check (the UI maps the code to its label); the save itself
+ * re-validates after the structure lands (`assertCountsTowardStillValid`).
+ *
+ * @param parentId - The compound.
+ * @param patch - The staged structure.
+ * @param countsTowardTargetId - The flag the save ends with (a staged value); absent = the stored flag.
+ * @returns `'cycle'`, or `null` when the structure is allowed (or the compound is not flagged).
+ */
+export async function countsTowardLoopForPatch(
+  parentId: string,
+  patch: TaskEditPatch,
+  countsTowardTargetId?: string | null,
+): Promise<'cycle' | null> {
+  const parent = await db.tasks.get(parentId);
+  const targetId = countsTowardTargetId === undefined ? (parent?.countsTowardCounterId ?? null) : countsTowardTargetId;
+  if (!parent || targetId == null) return null;
+  const keptIds = [...new Set(patch.children.filter((c) => !c.markedDeleted && !isNewChild(c) && c.childTaskId).map((c) => c.childTaskId as string))];
+  const allLinks = (await db.compoundChildren.toArray()).filter((l) => !l.isDeleted);
+  const hypothetical: CompoundChild[] = [
+    ...allLinks.filter((l) => l.compoundTaskId !== parentId),
+    ...keptIds.map((childTaskId, i) => ({ id: `staged-${i}`, compoundTaskId: parentId, childTaskId, childIndex: i, createdAt: '', updatedAt: '', version: 1, isDeleted: false })),
+  ];
+  const problem = countsTowardProblem({ task: parent, targetId, tasks: await db.tasks.toArray(), children: hypothetical });
+  return problem === 'cycle' ? 'cycle' : null;
+}
+
+/**
  * Basic (non-structural) fields that ride along with a standalone compound
  * save, so the Task Detail sheet's description edit lands in the SAME version
  * bump as the structure change (the title rides in `structure.title`, not
@@ -387,7 +419,12 @@ export async function editCompoundStructure(
  * plus — for a compound whose structure the user edited — the structure
  * patch.
  */
-export type TaskEditSubmit = UpdateTaskPatch & { compound?: TaskEditPatch; countKind?: CountKind };
+export type TaskEditSubmit = UpdateTaskPatch & {
+  compound?: TaskEditPatch;
+  countKind?: CountKind;
+  /** "Counts toward" — present only when the row changed: a counter (+ amount) or `null` to clear. */
+  countsToward?: { counterId: string | null; amount?: number };
+};
 
 /**
  * Router used by both Task Detail edit call sites. A submit whose `type`
@@ -403,6 +440,25 @@ export type TaskEditSubmit = UpdateTaskPatch & { compound?: TaskEditPatch; count
  *   otherwise whatever `updateTaskAndCascade` / `editCompoundStructure` throw.
  */
 export async function saveTaskEdit(taskId: string, submit: TaskEditSubmit): Promise<void> {
+  const { countsToward, ...rest } = submit;
+  // ONE transaction (the field routes' own transactions nest into it): a set /
+  // re-point goes FIRST (it validates before any write, and a compound emptied
+  // of sub-tasks in the same save is then judged against the new flag), the
+  // fields next, a clear LAST (a zero-child compound refuses the clear). The
+  // flag is then re-validated against the post-edit rows, so a sub-task added
+  // in the same save cannot close a feeding loop. Any throw rolls everything
+  // back — no flag or credit survives a refused structure.
+  await db.transaction('rw', CASCADE_TABLES(), async () => {
+    const now = currentTimestamp();
+    if (countsToward && countsToward.counterId != null) await setCountsTowardInTransaction(taskId, countsToward.counterId, countsToward.amount, now);
+    await saveTaskEditFields(taskId, rest);
+    if (countsToward && countsToward.counterId == null) await setCountsTowardInTransaction(taskId, null, undefined, now);
+    await assertCountsTowardStillValid(taskId, { strict: countsToward?.counterId != null });
+  });
+}
+
+/** {@link saveTaskEdit} without the counts-toward step. */
+async function saveTaskEditFields(taskId: string, submit: Omit<TaskEditSubmit, 'countsToward'>): Promise<void> {
   const stored = await db.tasks.get(taskId);
   if (stored && submit.type !== undefined && submit.type !== stored.type) {
     // A type switch: GLOBAL (no board scope) and retroactive on every board.
@@ -634,7 +690,8 @@ export async function applyBoardEditTaskOverrideInTransaction(
 ): Promise<void> {
   const existing = await db.tasks.get(taskId);
   if (!existing || existing.isDeleted) return;
-  const { compound, ...fields } = override;
+  // `countsToward` is written by the commit through `setCountsTowardInTransaction`, never as a field.
+  const { compound, countsToward: _countsToward, ...fields } = override;
   const typeChanged = (fields.type ?? existing.type) !== existing.type;
   // The kind switch owns `countKind` (`updateTask` never writes it raw).
   const { countKind: stagedKind, ...plainFields } = fields;

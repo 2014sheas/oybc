@@ -1,0 +1,28 @@
+.statusPill {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 11px;
+  border: 2px solid var(--riso-ink);
+  border-radius: 999px;
+  font-family: var(--riso-font-head);
+  font-size: 0.78rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.dense {
+  padding: 3px 9px;
+  font-size: 11px;
+}
+.statusCompleted {
+  background: var(--riso-green);
+  color: var(--riso-on-color);
+}
+.statusInProgress {
+  /* gold is a light static fill → static ink for its content */
+  background: var(--riso-gold);
+  color: var(--riso-ink-static);
+}
+.statusNeverStarted {
+  background: var(--riso-paper-2);
+  color: var(--riso-muted);
+}
