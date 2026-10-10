@@ -166,7 +166,7 @@ because completion is already derived for every type:
 **Amendment 2026-10-10 (owner ruling, after #588 shipped): the "counts toward"
 field lives in NO user-facing interface.** The editor row #588 put on every task
 create and edit sheet (picker, None, amount stepper, re-point confirm) was a
-creation-form contract violation and is RETIRED (retirement PR, 2026-10-10, both
+creation-form contract violation and is RETIRED (#590, 2026-10-10, both
 platforms). The relationship is a **membership owned by the counter**, as the
 owner's original design scoped it: a *discrete unit task* — Simple, Counting or
 Compound (Counting ruled in: "books / pages" is the founding example) — is created
@@ -393,7 +393,7 @@ same stamp as the completion that caused it).
 | 3 — counts toward (data + cascade) — **SHIPPED (data + cascade) in #586** | `countsTowardCounterId/Amount`, deterministic event mint/tombstone in the cascade, delete/kind guards, zero-child container rule; vectors + XCTest/Vitest; no UI. |
 | 4 — counts toward (UI) — **SHIPPED (UI) in #588** | Counter Detail section + "+ New"; task editor picker; cell badge; credited toast; e2e + snapshots. |
 | 5 — docs — **SHIPPED (close-out PR)** | SHARED_COUNTERS §Current model / COUNTER_KINDS §7a / TASK_SYSTEM §Counts toward / CLAUDE.md. |
-| 6 — retire the editor row (owner ruling 2026-10-10) — **retirement PR** | The "Counts toward" row leaves every create and edit sheet on both platforms (field component, model, staged Board Edit override, editor patch field, re-point confirm, e2e editor spec, 5 snapshot baselines); "+ New" flags silently at amount 1; the db layer is untouched. Member-model UI follows a Claude Design brief. |
+| 6 — retire the editor row (owner ruling 2026-10-10) — **#590** | The "Counts toward" row leaves every create and edit sheet on both platforms (field component, model, staged Board Edit override, editor patch field, re-point confirm, e2e editor spec, 5 snapshot baselines); "+ New" flags silently at amount 1; the db layer is untouched. Member-model UI follows a Claude Design brief. |
 
 **PR 1 notes (2026-10-09).** Fields: `Task.counterName`, `titleTemplateSingular`,
 `titleTemplatePlural`, `timeframeGoals` (`{daily?, weekly?, monthly?, yearly?}`) —
