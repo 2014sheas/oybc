@@ -311,35 +311,44 @@ extension AppDatabase {
     /// - Throws: `CountsTowardError.refused` with the `CountsToward.problem` code.
     func setCountsToward(taskId: String, counterId: String?, amount: Int? = nil, now: String = AppDatabase.currentTimestamp()) throws {
         try write { db in
-            guard var task = try Task.fetchOne(db, key: taskId), !task.isDeleted else {
-                throw CountsTowardError.taskMissing
-            }
-            if let counterId, let problem = CountsToward.problem(
-                task: task, targetId: counterId, amount: amount.map(Double.init),
-                tasks: try Task.fetchAll(db),
-                children: try CompoundChild.filter(Column("isDeleted") == false).fetchAll(db)
-            ) {
-                throw CountsTowardError.refused(problem)
-            }
-            let previousRoot = task.countsTowardCounterId
-            if let counterId {
-                task.countsTowardSince = (counterId == previousRoot ? task.countsTowardSince : nil) ?? now
-            } else {
-                task.countsTowardSince = nil
-            }
-            task.countsTowardCounterId = counterId
-            task.countsTowardAmount = counterId == nil ? nil : amount
-            task.updatedAt = now
-            task.version += 1
-            try task.save(db)
-            try Self.writeCountsTowardColumns(db: db, task: task)
-            try SyncQueueBuilder.makeItem(
-                entityType: "tasks", entityId: task.id, operationType: .update, payload: task, now: now
-            ).enqueue(db)
-            var previousRoots: [String: String] = [:]
-            if let previousRoot, previousRoot != counterId { previousRoots[task.id] = previousRoot }
-            try Self.runBoardCascadeForTasks(db: db, changedTaskIds: [task.id], now: now, countsTowardPreviousRoots: previousRoots)
+            try Self.setCountsToward(db: db, taskId: taskId, counterId: counterId, amount: amount, now: now)
         }
+    }
+
+    /// `db`-scoped twin of `setCountsToward(taskId:counterId:amount:now:)` — the
+    /// ONE write path for `countsTowardCounterId` / `Amount` / `Since`. Editors
+    /// that already hold a write transaction (the global task editor, Board
+    /// Edit's Save) call it inside theirs, so the validation, the `countsTowardSince`
+    /// stamp, the sync entry and the cascade stay identical to the standalone call.
+    static func setCountsToward(db: Database, taskId: String, counterId: String?, amount: Int? = nil, now: String) throws {
+        guard var task = try Task.fetchOne(db, key: taskId), !task.isDeleted else {
+            throw CountsTowardError.taskMissing
+        }
+        if let counterId, let problem = CountsToward.problem(
+            task: task, targetId: counterId, amount: amount.map(Double.init),
+            tasks: try Task.fetchAll(db),
+            children: try CompoundChild.filter(Column("isDeleted") == false).fetchAll(db)
+        ) {
+            throw CountsTowardError.refused(problem)
+        }
+        let previousRoot = task.countsTowardCounterId
+        if let counterId {
+            task.countsTowardSince = (counterId == previousRoot ? task.countsTowardSince : nil) ?? now
+        } else {
+            task.countsTowardSince = nil
+        }
+        task.countsTowardCounterId = counterId
+        task.countsTowardAmount = counterId == nil ? nil : amount
+        task.updatedAt = now
+        task.version += 1
+        try task.save(db)
+        try Self.writeCountsTowardColumns(db: db, task: task)
+        try SyncQueueBuilder.makeItem(
+            entityType: "tasks", entityId: task.id, operationType: .update, payload: task, now: now
+        ).enqueue(db)
+        var previousRoots: [String: String] = [:]
+        if let previousRoot, previousRoot != counterId { previousRoots[task.id] = previousRoot }
+        try Self.runBoardCascadeForTasks(db: db, changedTaskIds: [task.id], now: now, countsTowardPreviousRoots: previousRoots)
     }
 
     /// Write the three counts-toward columns as stored on `task`, NULL included

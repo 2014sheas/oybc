@@ -63,6 +63,10 @@ struct CounterDetailView: View {
     @State private var tasks: [Task] = []
     /// "Open {CounterName}" from the edit sheet's established-match card.
     @State private var openCounterId: String?
+    /// The "Counts toward" section (nil = hidden: not a Discrete counter).
+    @State private var countsToward: CountsTowardSectionData?
+    @State private var openedTaskId: TaskIdItem?
+    @State private var showNewCountsToward = false
 
     // Delete-counter (P5 decision 8: deleteCounterWithUnlink) UI state.
     @State private var deleteImpact: AppDatabase.TaskDeletionImpact?
@@ -89,7 +93,10 @@ struct CounterDetailView: View {
                     onEditTap: root.map { r in { editingRoot = r } },
                     onDeleteTap: handleDeleteTap,
                     onOpenBoard: onOpenBoard,
-                    showExpired: showExpiredBinding
+                    showExpired: showExpiredBinding,
+                    countsToward: countsToward,
+                    onNewCountsToward: { showNewCountsToward = true },
+                    onOpenCountsTowardTask: { openedTaskId = TaskIdItem(id: $0) }
                 )
             } else if isLoaded {
                 notFoundState
@@ -155,6 +162,22 @@ struct CounterDetailView: View {
                 )
             }
         }
+        .navigationDestination(item: $openedTaskId) { item in
+            TaskDetailView(
+                taskId: item.id, userId: authService.currentUser?.id ?? "",
+                onChanged: { loadData() }, onDeleted: { openedTaskId = nil; loadData() },
+                onOpenBoard: onOpenBoard, database: database
+            )
+        }
+        .sheet(isPresented: $showNewCountsToward) {
+            if let userId = authService.currentUser?.id {
+                NewTaskSheetView(
+                    userId: userId, onTaskCreated: { _, _, _ in loadData() },
+                    onLibraryReloadRequested: { loadData() }, taskLibrary: tasks,
+                    presetCountsTowardCounterId: counterId
+                )
+            }
+        }
         .navigationDestination(item: $openCounterId) { id in
             CounterDetailView(
                 counterId: id, showExpired: effectiveShowExpired,
@@ -197,6 +220,8 @@ struct CounterDetailView: View {
         let root: Task?
         /// The user's live tasks (the edit sheet's rename dedupe pool).
         var tasks: [Task] = []
+        /// The "Counts toward" section; nil hides it (not a Discrete counter).
+        var countsToward: CountsTowardSectionData? = nil
     }
 
     /// One page load (DB-injected, so tests drive it). RC9 — the kernel drops
@@ -217,7 +242,11 @@ struct CounterDetailView: View {
             sourceTaskId: counterId, days: sparklineDays, now: now
         )) ?? CounterDailyTotalsResult(days: [], todayTotal: 0)
         let root = (try? database.fetchTask(id: counterId)).flatMap { $0.isDeleted ? nil : $0 }
-        return Snapshot(group: groups.first { $0.counterId == counterId }, dailyTotals: totals, root: root, tasks: tasks)
+        let countsToward = (try? database.fetchCountsTowardSection(counterId: counterId)) ?? nil
+        return Snapshot(
+            group: groups.first { $0.counterId == counterId }, dailyTotals: totals, root: root, tasks: tasks,
+            countsToward: countsToward
+        )
     }
 
     private func loadData() {
@@ -235,6 +264,7 @@ struct CounterDetailView: View {
                 dailyTotals = snap.dailyTotals
                 root = snap.root
                 tasks = snap.tasks
+                countsToward = snap.countsToward
                 isLoaded = true
             }
         }
@@ -423,6 +453,10 @@ struct CounterDetailContent: View {
     /// The "Show expired tasks" toggle over the member cards (§Member rules
     /// RC9 — the hub's control, same component). Nil hides it.
     var showExpired: Binding<Bool>?
+    /// The "Counts toward" section (nil hides it) + its taps.
+    var countsToward: CountsTowardSectionData?
+    var onNewCountsToward: () -> Void
+    var onOpenCountsTowardTask: (String) -> Void
 
     /// Snapshot-testability seams forwarded to the Log card.
     private let initialSelectedAmount: CountValue?
@@ -443,10 +477,16 @@ struct CounterDetailContent: View {
         onEditTap: (() -> Void)? = nil,
         onDeleteTap: @escaping () -> Void = {},
         onOpenBoard: @escaping (String) -> Void = { _ in },
-        showExpired: Binding<Bool>? = nil
+        showExpired: Binding<Bool>? = nil,
+        countsToward: CountsTowardSectionData? = nil,
+        onNewCountsToward: @escaping () -> Void = {},
+        onOpenCountsTowardTask: @escaping (String) -> Void = { _ in }
     ) {
         self.group = group
         self.showExpired = showExpired
+        self.countsToward = countsToward
+        self.onNewCountsToward = onNewCountsToward
+        self.onOpenCountsTowardTask = onOpenCountsTowardTask
         self.dailyTotals = dailyTotals
         self.isLogging = isLogging
         self.logError = logError
@@ -536,7 +576,13 @@ struct CounterDetailContent: View {
                         .padding(.bottom, 14)
                 }
 
-                // 8. Delete-counter action — quiet red text link.
+                // 8. "Counts toward" — the tasks whose completion credits this counter.
+                if let countsToward {
+                    CountsTowardSectionView(data: countsToward, onNew: onNewCountsToward, onOpenTask: onOpenCountsTowardTask)
+                        .padding(.bottom, 14)
+                }
+
+                // 9. Delete-counter action — quiet red text link.
                 if let deleteError {
                     Text(deleteError)
                         .font(.risoBody(12, .semibold))
@@ -857,110 +903,3 @@ struct CounterDetailContent: View {
             .padding(.bottom, 8)
     }
 }
-
-// MARK: - Preview
-
-#if DEBUG
-#Preview("Counter Detail — populated") {
-    let srcMember = SharedCounterMemberTask(
-        taskId: "src",
-        taskTitle: "Push-ups",
-        isSource: true,
-        boardId: "bm",
-        boardName: "February Fitness",
-        timeframe: .monthly,
-        window: "February 2026",
-        goal: 1000,
-        logged: 512,
-        met: false,
-        over: 0,
-        isActive: true
-    )
-    let weekMember = SharedCounterMemberTask(
-        taskId: "der1",
-        taskTitle: "Push-ups",
-        isSource: false,
-        boardId: "bw",
-        boardName: "Week 5 Wellness",
-        timeframe: .weekly,
-        window: "Week of Feb 3 – 9, 2026",
-        goal: 30,
-        logged: 45,
-        met: true,
-        over: 15,
-        isActive: true
-    )
-    let inactiveMember = SharedCounterMemberTask(
-        taskId: "der2",
-        taskTitle: "Push-ups",
-        isSource: false,
-        boardId: nil,
-        boardName: nil,
-        timeframe: .daily,
-        window: nil,
-        goal: 10,
-        logged: 0,
-        met: false,
-        over: 0,
-        isActive: false
-    )
-    let group = SharedCounterGroup(
-        counterId: "src",
-        name: "Push-ups",
-        action: "Do",
-        unit: "reps",
-        lifetime: 512,
-        defaultLogAmount: 10,
-        tasks: [srcMember, weekMember, inactiveMember],
-        taskCount: 3,
-        boardCount: 2,
-        activeTaskCount: 2
-    )
-    let dailyTotals = CounterDailyTotalsResult(
-        days: [
-            CounterDailyTotal(dateISO: "2026-01-26", total: 12),
-            CounterDailyTotal(dateISO: "2026-01-27", total: 0),
-            CounterDailyTotal(dateISO: "2026-01-28", total: 30),
-            CounterDailyTotal(dateISO: "2026-01-29", total: 8),
-            CounterDailyTotal(dateISO: "2026-01-30", total: 15),
-            CounterDailyTotal(dateISO: "2026-01-31", total: 20),
-            CounterDailyTotal(dateISO: "2026-02-01", total: 10),
-        ],
-        todayTotal: 10
-    )
-    NavigationStack {
-        CounterDetailContent(group: group, dailyTotals: dailyTotals)
-    }
-}
-
-#Preview("Counter Detail — empty / 0 lifetime") {
-    let src = SharedCounterMemberTask(
-        taskId: "src",
-        taskTitle: "Morning runs",
-        isSource: true,
-        boardId: "b1",
-        boardName: "April Running",
-        timeframe: .monthly,
-        window: "April 2026",
-        goal: 20,
-        logged: 0,
-        met: false,
-        over: 0,
-        isActive: true
-    )
-    let group = SharedCounterGroup(
-        counterId: "src",
-        name: "Morning runs",
-        action: "Go for",
-        unit: "runs",
-        lifetime: 0,
-        tasks: [src],
-        taskCount: 1,
-        boardCount: 1,
-        activeTaskCount: 1
-    )
-    NavigationStack {
-        CounterDetailContent(group: group)
-    }
-}
-#endif

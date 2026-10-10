@@ -30,6 +30,10 @@ import {
   type InlineSubtaskDraft,
   inlineSubtaskToAutoCreate,
 } from './compoundSubtaskDraft';
+import { CountsTowardError } from '../../db/operations/countsToward';
+import { CountsTowardField } from '../counters/CountsTowardField';
+import { countsTowardProblemLabel } from '../counters/countsTowardLabels';
+import type { CountsTowardSelection } from '../counters/countsTowardFieldModel';
 import styles from './CompoundTaskWizard.module.css';
 
 // Stable empty fallbacks for `?? FALLBACK` — see BoardPlayPage.tsx for rationale.
@@ -42,7 +46,13 @@ export interface CompoundTaskWizardProps {
   userId?: string;
   /** Invoked with the newly created compound Task after a successful save. */
   onCreated?: (task: Task) => void;
+  /** "Counts toward" (standalone create): the selection the Setup step edits; absent hides the row. */
+  countsToward?: CountsTowardSelection;
+  onCountsTowardChange?: (next: CountsTowardSelection) => void;
 }
+
+/** A task being created has no stored flag — the re-point confirm never fires. */
+const NO_COUNTS_TOWARD: CountsTowardSelection = { counterId: null, amount: 1 };
 
 function createExistingSubtask(id: string, kind: 'task' | 'compound'): ExistingSubtaskDraft {
   return {
@@ -79,8 +89,11 @@ function createEmptyInlineSubtask(): InlineSubtaskDraft {
 export function CompoundTaskWizard({
   userId,
   onCreated,
+  countsToward,
+  onCountsTowardChange,
 }: CompoundTaskWizardProps = {}): React.ReactElement {
   const resolvedUserId = userId ?? PLAYGROUND_USER_ID;
+  const countsTowardId = countsToward?.counterId ?? null;
 
   // Core form state
   const [title, setTitle] = useState('');
@@ -261,6 +274,7 @@ export function CompoundTaskWizard({
         operator,
         threshold: operator === OperatorType.M_OF_N ? threshold : undefined,
         children,
+        ...(countsTowardId != null ? { countsTowardCounterId: countsTowardId, countsTowardAmount: countsToward?.amount } : {}),
       });
 
       setSuccessMessage('Compound task created!');
@@ -268,7 +282,7 @@ export function CompoundTaskWizard({
       resetForm();
       setTimeout(() => setSuccessMessage(null), SUCCESS_DISMISS_MS);
     } catch (err) {
-      setErrorMessage(`Failed: ${err instanceof Error ? err.message : String(err)}`);
+      setErrorMessage(err instanceof CountsTowardError && err.code !== 'task-missing' ? countsTowardProblemLabel(err.code) : `Failed: ${err instanceof Error ? err.message : String(err)}`);
     } finally {
       setIsSubmitting(false);
     }
@@ -293,6 +307,11 @@ export function CompoundTaskWizard({
           onOperatorChange={setOperator}
           onCancel={resetForm}
           onNext={() => setCurrentStep(2)}
+          countsTowardField={
+            countsToward && onCountsTowardChange ? (
+              <CountsTowardField userId={resolvedUserId} stored={NO_COUNTS_TOWARD} value={countsToward} onChange={onCountsTowardChange} />
+            ) : undefined
+          }
         />
       )}
 
@@ -314,6 +333,7 @@ export function CompoundTaskWizard({
           onBack={() => setCurrentStep(1)}
           onNext={() => setCurrentStep(3)}
           onOpenTask={(id) => setOpenedTaskInLibrary(id)}
+          allowEmpty={countsTowardId != null}
         />
       )}
 

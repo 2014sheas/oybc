@@ -14,6 +14,7 @@ import { useSharedCounterGroups } from '../hooks/useSharedCounterGroups';
 import { useShowExpiredParam } from '../hooks/useShowExpiredParam';
 import { useCounterDailyTotals } from '../hooks/useCounterDailyTotals';
 import { useTasks } from '../hooks/useTasks';
+import { useCountsTowardSection } from '../hooks/useCountsTowardSection';
 import {
   computeTaskDeletionImpact,
   decrementSharedCounter,
@@ -30,6 +31,7 @@ import {
   CounterDetailLogCard,
   CounterDetailTaskCard,
   CounterLogToast,
+  CountsTowardSection,
   CreateCounterSheet,
   CounterWriteError,
   attemptCounterWrite,
@@ -38,6 +40,7 @@ import {
 import { counterDetailMenuItems, editableCounterRoot } from '../components/counters/counterDetailMenu';
 import { RowContextMenu } from '../components/wizard/RowContextMenu';
 import { RisoSectionLabel } from '../components/riso';
+import { NewTaskSheet } from '../components/wizard/NewTaskSheet';
 import { ShowExpiredToggle } from '../components/ShowExpiredToggle';
 import profileStyles from './ProfilePage.module.css';
 import styles from './CounterDetailPage.module.css';
@@ -110,6 +113,9 @@ export function CounterDetailPage(): React.ReactElement {
   const [editingRoot, setEditingRoot] = useState<Task | null>(null);
   // The rename dedupe pool (as the hub's create sheet).
   const tasks = useTasks(user?.id) ?? [];
+  // "Counts toward" (§3d) — the tasks that count toward this counter (Discrete only).
+  const countsTowardData = useCountsTowardSection(counterId);
+  const [newContributorOpen, setNewContributorOpen] = useState(false);
 
   const handleLog = useCallback(
     async (direction: 'add' | 'remove', selectedAmount: number) => {
@@ -384,6 +390,16 @@ export function CounterDetailPage(): React.ReactElement {
             </>
           )}
 
+          {/* 7b. "Counts toward" — tasks that count toward this Discrete counter (§3d, PR 4). */}
+          {kind === 'discrete' && countsTowardData && (
+            <CountsTowardSection
+              data={countsTowardData}
+              counterName={group.name}
+              onNew={() => setNewContributorOpen(true)}
+              onOpenTask={(taskId) => navigate(`/tasks/${taskId}`)}
+            />
+          )}
+
           {/* 8. Delete-counter action — quiet red text link (was a filled button). */}
           {deleteError && <p className={styles.deleteError}>{deleteError}</p>}
           <div className={styles.deleteAction}>
@@ -393,6 +409,18 @@ export function CounterDetailPage(): React.ReactElement {
           </div>
         </div>
       </div>
+
+      {user && (
+        <NewTaskSheet
+          isOpen={newContributorOpen}
+          onClose={() => setNewContributorOpen(false)}
+          userId={user.id}
+          onTaskCreated={() => {}}
+          onCompositeCreated={() => {}}
+          submitLabel="Add to library"
+          presetCountsTowardCounterId={counterId}
+        />
+      )}
 
       {deleteImpact && (
         <CounterDeleteConfirmDialog

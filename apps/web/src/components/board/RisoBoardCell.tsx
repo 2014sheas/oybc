@@ -23,7 +23,8 @@ export interface BoardCellModel {
   /**
    * When true, renders a two-dot shared-counter marker on the cell corner
    * (only while not done). Set for COUNTING tasks that are either a shared-
-   * counter source or a linked derived counter.
+   * counter source or a linked derived counter, and for a task of ANY type
+   * that counts toward a counter (docs/SHARED_COUNTER_SETTINGS.md §3d).
    */
   isShared?: boolean;
   /**
@@ -108,7 +109,7 @@ export function RisoBoardCell({ cell, onClick, onContextMenu, badge, cellSize = 
     <>
       {badge}
       {chip}
-      {cell.type === 'counting' && !cell.done && cell.isShared && (
+      {!cell.done && cell.isShared && (
         <span className={styles.sharedMarker} aria-hidden="true">
           <i /><i />
         </span>

@@ -82,6 +82,10 @@ struct StagedTaskOverride {
     /// transaction (`applyStagedOverrides`); a pending task or a Simple →
     /// Counting conversion takes it directly (`applyingOverride`).
     var countKind: CountKind? = nil
+    /// What the task counts toward — nil = untouched. Written at Save by the
+    /// one `AppDatabase.setCountsToward(db:…)` path, AFTER the board-scope fork
+    /// (the FORK is flagged, never the original).
+    var countsToward: CountsTowardPatch? = nil
 }
 
 // MARK: - EditModeTaskTarget

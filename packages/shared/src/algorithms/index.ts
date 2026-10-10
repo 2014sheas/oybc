@@ -109,6 +109,8 @@ export {
   lineageRootId,
 } from './countsTowardLineage';
 export type { ForkEventResolver } from './countsTowardLineage';
+export { contributorCreditGroups, contributorRowStatus, countsTowardRows } from './countsTowardCredits';
+export type { ContributorCreditGroup, ContributorRow, ContributorRowStatus } from './countsTowardCredits';
 export { countsTowardProblem, isSharedCounterRoot } from './countsTowardValidation';
 export type { CountsTowardProblem } from './countsTowardValidation';
 export type {
@@ -139,6 +141,7 @@ export { formatCounterName } from './counterName';
 // ===== Compound tasks unification =====
 export {
   evaluateCompound,
+  resolvePrimitiveChildState,
   clampCompoundThreshold,
   compoundRuleLabel,
 } from './compoundEvaluation';
@@ -330,7 +333,7 @@ export type {
 // counters interaction). The module + its tests/fixtures were deleted in WC PR D.
 
 // ===== Shared Counters — Hub / Detail read-model builder (P1) =====
-export { buildSharedCounterGroups, sharedCounterRootIds } from './sharedCounterGroups';
+export { buildSharedCounterGroups, pickPrimaryBoard, sharedCounterRootIds } from './sharedCounterGroups';
 
 export type {
   SharedCounterGroup,

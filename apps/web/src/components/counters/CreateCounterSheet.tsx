@@ -18,6 +18,7 @@ import {
 } from '@oybc/shared';
 import { CompoundEditValidationError, saveTaskEdit } from '../../db/operations';
 import { createCounterTask } from '../../db/operations/tasks';
+import { CountKindSwitchError } from '../../db/operations/countKindSwitch';
 import { useModalA11y } from '../../hooks/useModalA11y';
 import { RisoButton } from '../riso';
 import { DefaultsRow } from './DefaultsRow';
@@ -259,7 +260,8 @@ export function CreateCounterSheet({
       onSaved?.();
     } catch (e) {
       if (genRef.current !== gen) return;
-      setError(e instanceof CompoundEditValidationError ? e.message : 'Could not save counter.');
+      // A kind switch off Discrete while tasks count toward the counter is refused (D9) — its line is the message.
+      setError(e instanceof CompoundEditValidationError || (e instanceof CountKindSwitchError && e.code === 'has-contributors') ? e.message : 'Could not save counter.');
       setBusy(false);
     }
   }

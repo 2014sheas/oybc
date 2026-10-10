@@ -113,6 +113,13 @@ struct RisoCompoundFieldsView: View {
     /// Owned form VM — reset on each successful submit.
     @State private var form = CreateFormViewModel()
 
+    /// The user's live tasks — supplied only by an immediate-create host (the
+    /// New task sheet), which shows the "Counts toward" row. nil hides it.
+    var countsTowardTasks: [OYBC.Task]? = nil
+    /// Counter Detail's "+ New" preset.
+    var presetCountsTowardCounterId: String? = nil
+    @State private var countsToward = CountsTowardSelection()
+
     // MARK: - Init (production)
 
     /// Production initialiser — all compound fields start at their defaults.
@@ -131,7 +138,9 @@ struct RisoCompoundFieldsView: View {
         onPendingCreated: ((_ payload: PendingTaskPayload) -> Void)? = nil,
         onLibraryReloadRequested: @escaping () -> Void,
         onSubmitted: @escaping () -> Void,
-        submitLabel: String = "Add to board ✦"
+        submitLabel: String = "Add to board ✦",
+        countsTowardTasks: [OYBC.Task]? = nil,
+        presetCountsTowardCounterId: String? = nil
     ) {
         self.taskLibrary = taskLibrary
         self.suggestionPool = suggestionPool
@@ -144,6 +153,9 @@ struct RisoCompoundFieldsView: View {
         self.onLibraryReloadRequested = onLibraryReloadRequested
         self.onSubmitted = onSubmitted
         self.submitLabel = submitLabel
+        self.countsTowardTasks = countsTowardTasks
+        self.presetCountsTowardCounterId = presetCountsTowardCounterId
+        _countsToward = State(initialValue: CountsTowardSelection(counterId: presetCountsTowardCounterId))
 
         // Default empty state
         _compoundTitle    = State(initialValue: "")
@@ -247,8 +259,16 @@ struct RisoCompoundFieldsView: View {
     /// zero stays blocked).
     private var canSubmitCompound: Bool {
         !compoundTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
-        compoundSubs.count >= 1
+        (compoundSubs.count >= 1 || countsTowardActive)
     }
+
+    /// Whether the "Counts toward" row shows (an immediate create with a counter to pick).
+    private var showsCountsToward: Bool {
+        CountsTowardFieldView.showsOnCreate(tasks: countsTowardTasks, deferred: onPendingCreated != nil)
+    }
+
+    /// A compound that counts toward a counter may have no sub-tasks.
+    private var countsTowardActive: Bool { showsCountsToward && countsToward.counterId != nil }
 
     /// Autocomplete matches — up to 3 non-compound library tasks whose title
     /// contains the current `subInputText` (case-insensitive), excluding tasks
@@ -402,9 +422,18 @@ struct RisoCompoundFieldsView: View {
             }
 
             // "A compound task needs a sub-task." warning (same copy as TaskEditPatch validation)
-            if compoundSubs.count < 1 {
+            if compoundSubs.count < 1 && !countsTowardActive {
                 Text("A compound task needs a sub-task.")
                     .font(.risoBody(11, .semibold))
+                    .foregroundStyle(Color.risoRed)
+            }
+
+            if showsCountsToward, let all = countsTowardTasks {
+                CountsTowardFieldView(tasks: all, editedTaskId: nil, storedCounterId: nil, selection: $countsToward)
+            }
+            if let message = form.errorMessage {
+                Text(message)
+                    .font(.risoBody(11.5, .extraBold))
                     .foregroundStyle(Color.risoRed)
             }
 
@@ -626,6 +655,7 @@ struct RisoCompoundFieldsView: View {
     private func submitCompound() {
         guard canSubmitCompound else { return }
         let rule = compoundRule.toVMRule(threshold: effectiveThreshold)
+        form.countsToward = countsTowardActive ? countsToward : CountsTowardSelection()
         form.handleCreateCompoundAndAddToPool(
             userId: userId,
             title: compoundTitle.trimmingCharacters(in: .whitespacesAndNewlines),
@@ -641,6 +671,8 @@ struct RisoCompoundFieldsView: View {
             deferPersist: onPendingCreated != nil,
             onPendingCreated: onPendingCreated
         )
+        // A synchronous counts-toward refusal keeps the builder open with its error line.
+        if countsTowardActive, form.errorMessage != nil { return }
         // NOTE: deliberately do NOT replace `form` here. The immediate-persist
         // path dispatches a background write that captures `[weak self]` on this
         // `form` instance and fires onTaskCreated/onLibraryReloadRequested in its
@@ -670,6 +702,7 @@ struct RisoCompoundFieldsView: View {
         subKind           = .discrete
         subAutocompleteVisible = false
         subLink           = CounterLinkState()
+        countsToward      = CountsTowardSelection(counterId: presetCountsTowardCounterId)
     }
 
     // MARK: - Field helpers

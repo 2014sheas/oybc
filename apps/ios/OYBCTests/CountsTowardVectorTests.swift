@@ -11,6 +11,7 @@ final class CountsTowardVectorTests: XCTestCase {
 
     private struct MiniTask: Decodable {
         let id: String
+        let title: String?
         let type: String?
         let operatorField: String?
         let threshold: Int?
@@ -31,7 +32,7 @@ final class CountsTowardVectorTests: XCTestCase {
         let forkedFromTaskId: String?
 
         enum CodingKeys: String, CodingKey {
-            case id, type, threshold, maxCount, isCompleted, completedAt, isDeleted, isCounter
+            case id, title, type, threshold, maxCount, isCompleted, completedAt, isDeleted, isCounter
             case sharedCounterId, createdInWizard, startDate, endDate, countKind, createdAt
             case countsTowardCounterId, countsTowardAmount, countsTowardSince, forkedFromTaskId
             case operatorField = "operator"
@@ -39,7 +40,7 @@ final class CountsTowardVectorTests: XCTestCase {
 
         var task: Task {
             Task(
-                id: id, userId: "u", title: id, type: TaskType(rawValue: type ?? "normal") ?? .normal,
+                id: id, userId: "u", title: title ?? id, type: TaskType(rawValue: type ?? "normal") ?? .normal,
                 maxCount: maxCount, operatorType: operatorField.flatMap { OperatorType(rawValue: $0) },
                 threshold: threshold, totalCompletions: 0, totalInstances: 0,
                 isCompleted: isCompleted ?? false, completedAt: completedAt,
@@ -200,6 +201,23 @@ final class CountsTowardVectorTests: XCTestCase {
         let name: String; let taskId: String; let targetId: String; let amount: Double?
         let tasks: [MiniTask]; let children: [MiniLink]; let expected: String?
     }
+    private struct MiniRootCredit: Decodable {
+        let scope: String; let occurrence: MiniOccurrence; let occurredAt: String; let delta: Double?; let isDeleted: Bool?
+    }
+    private struct MiniRow: Decodable {
+        let taskId: String; let status: String; let boardId: String?; let amount: Int; let creditCount: Int; let latestOccurredAt: String?
+    }
+    private struct RowsVector: Decodable {
+        let name: String; let root: String; let tasks: [MiniTask]; let events: [MiniEvent]; let rootCredits: [MiniRootCredit]
+        let children: [MiniLink]; let placements: [MiniPlacement]; let boards: [MiniBoard]; let expected: [MiniRow]
+    }
+    private struct MiniGroup: Decodable {
+        let scopeId: String; let memberIds: [String]; let representativeId: String; let creditCount: Int; let latestOccurredAt: String?
+    }
+    private struct CreditGroupsVector: Decodable {
+        let name: String; let root: String; let tasks: [MiniTask]; let events: [MiniEvent]; let rootCredits: [MiniRootCredit]
+        let children: [MiniLink]; let placements: [MiniPlacement]; let boards: [MiniBoard]; let expected: [MiniGroup]
+    }
     private struct Fixture: Decodable {
         let eventId: [EventIdVector]
         let amount: [AmountVector]
@@ -209,6 +227,8 @@ final class CountsTowardVectorTests: XCTestCase {
         let planSet: [PlanSetVector]
         let lineageDelta: [LineageDeltaVector]
         let problem: [ProblemVector]
+        let creditGroups: [CreditGroupsVector]
+        let rows: [RowsVector]
     }
 
     private func load() throws -> Fixture {
@@ -254,7 +274,7 @@ final class CountsTowardVectorTests: XCTestCase {
 
     private func miniTask(_ id: String, amount: Double? = nil, from: String? = nil, since: String? = nil, counter: String? = nil) -> Task {
         MiniTask(
-            id: id, type: nil, operatorField: nil, threshold: nil, maxCount: nil, isCompleted: nil, completedAt: nil,
+            id: id, title: nil, type: nil, operatorField: nil, threshold: nil, maxCount: nil, isCompleted: nil, completedAt: nil,
             isDeleted: nil, isCounter: nil, sharedCounterId: nil, createdInWizard: nil, startDate: nil, endDate: nil,
             countKind: nil, createdAt: nil, countsTowardCounterId: counter, countsTowardAmount: amount,
             countsTowardSince: since, forkedFromTaskId: from
@@ -352,6 +372,57 @@ final class CountsTowardVectorTests: XCTestCase {
         }
     }
 
+    /// `contributorCreditGroups` (PR 4, `CountsTowardCredits.swift`): the root's
+    /// credits are minted as increments at the deterministic id; the lineage
+    /// groups (members, representative, live count, latest instant) match.
+    /// The inputs a creditGroups / rows vector describes, with the root's credits minted at their deterministic ids.
+    private func groupInputs(
+        root: String, tasks: [MiniTask], events: [MiniEvent], rootCredits: [MiniRootCredit],
+        children: [MiniLink], placements: [MiniPlacement], boards: [MiniBoard]
+    ) -> CountsToward.Inputs {
+        let credits = rootCredits.enumerated().map { i, c in
+            MiniEvent(
+                id: CountsToward.eventId(rootId: root, contributorScopeId: c.scope, occurrence: c.occurrence.occurrence),
+                taskId: root, delta: c.delta ?? 1, occurredAt: c.occurredAt, isDeleted: c.isDeleted
+            ).event(1000 + i)
+        }
+        var inputs = inputs(tasks: tasks, events: events, children: children, placements: placements, boards: boards)
+        for e in credits {
+            inputs.allEventsByTaskId[e.taskId, default: []].append(e)
+            if !e.isDeleted { inputs.eventsByTaskId[e.taskId, default: []].append(e) }
+        }
+        return inputs
+    }
+
+    /// `countsTowardRows` (PR 4): one row per lineage — representative, status on the primary board, amount, credits — in the handoff's order.
+    func test_countsTowardRows() throws {
+        for v in try load().rows {
+            let inputs = groupInputs(root: v.root, tasks: v.tasks, events: v.events, rootCredits: v.rootCredits, children: v.children, placements: v.placements, boards: v.boards)
+            let rows = CountsToward.countsTowardRows(rootId: v.root, tasks: v.tasks.map(\.task), inputs: inputs)
+            let expected = v.expected.map {
+                CountsToward.ContributorRow(
+                    taskId: $0.taskId, status: CountsToward.ContributorRowStatus(rawValue: $0.status)!, boardId: $0.boardId,
+                    amount: $0.amount, creditCount: $0.creditCount, latestOccurredAt: $0.latestOccurredAt
+                )
+            }
+            XCTAssertEqual(rows, expected, v.name)
+        }
+    }
+
+    func test_contributorCreditGroups() throws {
+        for v in try load().creditGroups {
+            let inputs = groupInputs(root: v.root, tasks: v.tasks, events: v.events, rootCredits: v.rootCredits, children: v.children, placements: v.placements, boards: v.boards)
+            let groups = CountsToward.contributorCreditGroups(rootId: v.root, tasks: v.tasks.map(\.task), inputs: inputs)
+            let expected = v.expected.map {
+                CountsToward.ContributorCreditGroup(
+                    scopeId: $0.scopeId, memberIds: $0.memberIds, representativeId: $0.representativeId,
+                    creditCount: $0.creditCount, latestOccurredAt: $0.latestOccurredAt
+                )
+            }
+            XCTAssertEqual(groups, expected, v.name)
+        }
+    }
+
     func test_lineageCreditDelta() throws {
         for v in try load().lineageDelta {
             XCTAssertEqual(CountsToward.lineageCreditDelta(rootId: v.root, members: v.members.map(\.task), lineageRootTaskId: v.lineageRoot), v.expected, v.name)
@@ -445,7 +516,7 @@ final class CountsTowardVectorTests: XCTestCase {
         XCTAssertFalse(CountsToward.isOccurrenceWanted(since: "2026-10-10T00:00:00.000Z", occurredAt: "garbage"))
 
         let root = MiniTask(
-            id: "root", type: "counting", operatorField: nil, threshold: nil, maxCount: nil, isCompleted: nil, completedAt: nil,
+            id: "root", title: nil, type: "counting", operatorField: nil, threshold: nil, maxCount: nil, isCompleted: nil, completedAt: nil,
             isDeleted: nil, isCounter: true, sharedCounterId: nil, createdInWizard: nil, startDate: nil, endDate: nil,
             countKind: nil, createdAt: nil, countsTowardCounterId: nil, countsTowardAmount: nil, countsTowardSince: nil, forkedFromTaskId: nil
         ).task

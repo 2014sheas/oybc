@@ -429,6 +429,12 @@ export interface SeedTask {
   titleTemplatePlural?: string;
   /** Default goal per core timeframe. */
   timeframeGoals?: { daily?: number; weekly?: number; monthly?: number; yearly?: number };
+  /** "Counts toward" (docs/SHARED_COUNTER_SETTINGS.md §3a) — the Discrete counter root this task credits. */
+  countsTowardCounterId?: string;
+  /** Increment per completion (absent = 1). */
+  countsTowardAmount?: number;
+  /** ISO instant the flag was set — present iff the flag is (D11). */
+  countsTowardSince?: string;
 }
 
 export async function seedTask(page: Page, task: SeedTask): Promise<void> {

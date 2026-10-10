@@ -339,7 +339,7 @@ export function BoardPlaySurface({
     handleComplete,
     handleSharedCounterIncrement,
     handleSharedCounterDecrement,
-    undoCounterLog,
+    undoCreditedToast,
     handleCompoundChildToggle,
   } = useBoardPlay({
     board,
@@ -481,14 +481,14 @@ export function BoardPlaySurface({
           counterName={creditedToast.counterName}
           boardNames={creditedToast.boardNames}
           onUndo={() => {
-            const sourceTaskId = creditedToast.sourceTaskId;
             // Await-then-clear like R2's Hub/Detail callers (#342 review M3):
             // a failed undo must not leave the user believing it succeeded.
             void (async () => {
               try {
                 // Route through the hook so the reversal flashes any board
-                // COMPLETED→ACTIVE / lost-bingo transition it causes (F1).
-                await undoCounterLog(sourceTaskId);
+                // COMPLETED→ACTIVE / lost-bingo transition it causes (F1);
+                // a counts-toward credit's Undo un-completes the task instead.
+                await undoCreditedToast(creditedToast);
               } catch (err) {
                 console.error('Undo failed', err);
               } finally {
@@ -721,10 +721,10 @@ export function BoardPlaySurface({
                 // Phase 2 — Shared Counters: mark the cell as shared when
                 // it is a source OR a linked derived counter, so the
                 // two-dot ↔ marker appears on the grid while not done.
+                // A contributing task ("counts toward", any type) carries the same mark.
                 const isSharedCountingTask =
-                  squareData.type === 'counting' &&
                   !taskIsCompleted &&
-                  (task.sharedCounterId != null || sharedCounterSourceIds.has(task.id));
+                  ((squareData.type === 'counting' && (task.sharedCounterId != null || sharedCounterSourceIds.has(task.id))) || task.countsTowardCounterId != null);
 
                 // Board Edit redesign slice 3 (D1) — the lock chip reflects
                 // the EFFECTIVE lock: a stored lock, or a legacy-CHOSEN

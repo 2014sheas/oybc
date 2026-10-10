@@ -64,7 +64,7 @@ export function evaluateCompound(
  * resolves windowed. Only a context with no `windowStart` (lifetime) still
  * reads a linked child's latch.
  */
-function resolvePrimitiveChildState(
+export function resolvePrimitiveChildState(
   child: Task,
   windowContext: CompoundWindowContext | undefined,
 ): boolean {

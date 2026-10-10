@@ -1,0 +1,185 @@
+/* "Counts toward" editor row — design handoff §C2 (CountsTowardRow, web). */
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.label {
+  font-family: var(--riso-font-head);
+  font-size: 0.8rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--riso-muted);
+}
+.row {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+}
+.valueButton {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border: 2px solid var(--riso-ink);
+  border-radius: var(--riso-r-card);
+  background: var(--riso-paper);
+  color: var(--riso-ink);
+  cursor: pointer;
+  text-align: left;
+}
+.valueButton:focus-visible,
+.stepBtn:focus-visible,
+.option:focus-visible {
+  outline: 3px solid var(--riso-blue);
+  outline-offset: 2px;
+}
+.mark {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 0 0 auto;
+}
+.mark i {
+  display: block;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--riso-blue);
+  border: 1px solid var(--riso-ink-static);
+  box-sizing: content-box;
+}
+.value {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--riso-font-head);
+  font-size: 15px;
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.none {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--riso-font-body);
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--riso-muted);
+}
+.chevron {
+  font-family: var(--riso-font-head);
+  font-size: 18px;
+  font-weight: 800;
+  color: var(--riso-muted);
+  line-height: 1;
+}
+.stepper {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  border: 1.5px solid var(--riso-ink);
+  border-radius: var(--riso-r-card);
+  background: var(--riso-paper);
+  overflow: hidden;
+}
+.stepBtn {
+  width: 34px;
+  align-self: stretch;
+  border: 0;
+  background: transparent;
+  color: var(--riso-muted);
+  font-family: var(--riso-font-head);
+  font-size: 16px;
+  font-weight: 800;
+  cursor: pointer;
+}
+.amount {
+  min-width: 26px;
+  text-align: center;
+  font-family: var(--riso-font-head);
+  font-size: 14px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+.listbox {
+  margin-top: 2px;
+  background: var(--riso-paper-2);
+  border: 2px solid var(--riso-ink);
+  border-radius: var(--riso-r-card);
+  box-shadow: 4px 4px 0 var(--riso-shadow-ink);
+  overflow: hidden;
+}
+.searchWrap {
+  padding: 10px 10px 8px;
+}
+.search {
+  width: 100%;
+  padding: 9px 12px;
+  border: 2px solid var(--riso-ink);
+  border-radius: var(--riso-r-card);
+  font-family: var(--riso-font-head);
+  font-size: 14px;
+  font-weight: 700;
+  background: var(--riso-paper);
+  color: var(--riso-ink);
+  caret-color: var(--riso-blue);
+  box-sizing: border-box;
+}
+.search::placeholder {
+  color: var(--riso-muted);
+  opacity: 1;
+}
+.option {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border: 0;
+  border-top: 1.5px solid var(--riso-hair);
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+  color: var(--riso-ink);
+  min-height: 44px;
+  box-sizing: border-box;
+}
+.option:hover {
+  background: var(--riso-paper);
+}
+.optionNone {
+  flex: 1;
+  font-family: var(--riso-font-body);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--riso-muted);
+}
+.optionMain {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.optionName {
+  font-family: var(--riso-font-head);
+  font-size: 14px;
+  font-weight: 700;
+}
+.optionMeta {
+  flex: 0 0 auto;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--riso-muted);
+  white-space: nowrap;
+}
+.check {
+  color: var(--riso-blue);
+  display: inline-grid;
+  place-items: center;
+}
