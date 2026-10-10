@@ -163,6 +163,23 @@ because completion is already derived for every type:
 > `amount` (default 1) stamped at the completion instant; when it becomes
 > incomplete again, that increment is tombstoned.
 
+**Amendment 2026-10-10 (owner ruling, after #588 shipped): the "counts toward"
+field lives in NO user-facing interface.** The editor row #588 put on every task
+create and edit sheet (picker, None, amount stepper, re-point confirm) was a
+creation-form contract violation and is RETIRED (retirement PR, 2026-10-10, both
+platforms). The relationship is a **membership owned by the counter**, as the
+owner's original design scoped it: a *discrete unit task* — Simple, Counting or
+Compound (Counting ruled in: "books / pages" is the founding example) — is created
+from Counter Detail ("+ New", which flags silently at amount 1), is **searchable
+in the library separately from its counter** (ruled), and when its counter is
+deleted it is **kept and decoupled** (ruled; `deleteCounterWithUnlink` already
+does exactly this). Everything in §3a–3c — the three fields, the occurrence-keyed
+credit ids, lineage, seals, guards and the single write path — stands unchanged.
+The member-management UI (member rows on Counter Detail carrying the amount,
+placement through the counter search, the library row's counter value, the
+remaining visibility rules) goes through a Claude Design brief before any
+implementation; until it lands, "+ New" is the only UI write of the flag.
+
 ### 3a. Data
 
 - `Task.countsTowardCounterId?: string | null` (root id), `Task.countsTowardAmount?: number`
@@ -307,9 +324,11 @@ same stamp as the completion that caused it).
   in progress, with their board if placed) and **"+ New"** which creates a task
   pre-flagged to count toward this counter (opens the normal new-task flow with
   the flag set; the owner's "empty container" is "New compound" here).
-- The task editor (Task Detail / Tasks tab; Board Edit sheet per the scope rule)
+- ~~The task editor (Task Detail / Tasks tab; Board Edit sheet per the scope rule)
   gets a **Counts toward** picker (none / a Discrete counter) — a label + value
-  row, the picker is the existing counter search.
+  row, the picker is the existing counter search.~~ **Retired 2026-10-10** — see
+  the amendment at the top of §3: no task form carries the field; membership is
+  set only from the counter side ("+ New" today; member rows after the design round).
 - Board cell: a contributing task shows the counter's badge (the same small
   linked-counter mark) — no sentence.
 - The counter's cell/pill math is unchanged: increments are increments.
@@ -374,6 +393,7 @@ same stamp as the completion that caused it).
 | 3 — counts toward (data + cascade) — **SHIPPED (data + cascade) in #586** | `countsTowardCounterId/Amount`, deterministic event mint/tombstone in the cascade, delete/kind guards, zero-child container rule; vectors + XCTest/Vitest; no UI. |
 | 4 — counts toward (UI) — **SHIPPED (UI) in #588** | Counter Detail section + "+ New"; task editor picker; cell badge; credited toast; e2e + snapshots. |
 | 5 — docs — **SHIPPED (close-out PR)** | SHARED_COUNTERS §Current model / COUNTER_KINDS §7a / TASK_SYSTEM §Counts toward / CLAUDE.md. |
+| 6 — retire the editor row (owner ruling 2026-10-10) — **retirement PR** | The "Counts toward" row leaves every create and edit sheet on both platforms (field component, model, staged Board Edit override, editor patch field, re-point confirm, e2e editor spec, 5 snapshot baselines); "+ New" flags silently at amount 1; the db layer is untouched. Member-model UI follows a Claude Design brief. |
 
 **PR 1 notes (2026-10-09).** Fields: `Task.counterName`, `titleTemplateSingular`,
 `titleTemplatePlural`, `timeframeGoals` (`{daily?, weekly?, monthly?, yearly?}`) —
@@ -744,8 +764,9 @@ count — in the handoff's order Done → In progress → Not started → title 
 
 ## Follow-ups (from PR 4, not blocking)
 
-- iOS: a compound-create cycle refusal lands on the form line after the special-task panel has collapsed, so the line can be out of view.
-- Web: an empty `fieldGroup` wrapper remains in the editor when the Counts toward row hides.
+- ~~iOS: a compound-create cycle refusal lands on the form line after the special-task panel has collapsed, so the line can be out of view.~~ Closed with the editor row's retirement (2026-10-10) — the panel no longer hosts the field.
+- ~~Web: an empty `fieldGroup` wrapper remains in the editor when the Counts toward row hides.~~ Closed the same way — the row is gone.
+- **Open (design round):** the member-model surfaces listed in the §3 amendment — Counter Detail member rows (amount, remove), "+ New" shape choice (Simple / Counting / Compound), placement of a unit task through the counter search, and how a unit task's library row shows its counter.
 
 Known edges (acceptable; revisit if a real case surfaces) are listed under the PR 3 hand-offs above.
 
