@@ -115,33 +115,22 @@ extension AppDatabase {
         now: String = AppDatabase.currentTimestamp()
     ) throws -> Task {
         try write { db in
-            // A set / re-point runs BEFORE the other steps (the later steps then
-            // see the flag); a clear runs AFTER them (a compound emptied of
-            // sub-tasks in this save is validated against the cleared flag).
-            if let ct = patch.countsToward, ct.counterId != nil {
-                try Self.setCountsToward(db: db, taskId: taskId, counterId: ct.counterId, amount: ct.amount, now: now)
-            }
             let saved = try Self.applyTaskEditPatchSteps(db: db, taskId: taskId, patch: patch, now: now)
-            try Self.recheckCountsToward(
-                db: db, taskId: taskId, strict: patch.countsToward.map { $0.counterId != nil } ?? false
-            )
-            guard let ct = patch.countsToward else { return saved }
-            if ct.counterId == nil {
-                try Self.setCountsToward(db: db, taskId: taskId, counterId: nil, amount: nil, now: now)
-            }
-            return try Task.fetchOne(db, key: taskId) ?? saved
+            // A member compound's structure edit must not close a loop.
+            try Self.recheckCountsToward(db: db, taskId: taskId, strict: false)
+            return saved
         }
     }
 
-    /// The edit's non-counts-toward steps, inside the caller's write transaction.
+    /// The edit's steps, inside the caller's write transaction.
     private static func applyTaskEditPatchSteps(
         db: Database, taskId: String, patch: EditTaskSheet.Patch, now: String
     ) throws -> Task {
         guard var task = try Task.fetchOne(db, key: taskId), !task.isDeleted else {
             throw TaskEditError.taskNotFound
         }
-        // The flag the task ends this save with (a set / clear in the patch wins).
-        let countsTowardAfter = patch.countsToward.map { $0.counterId != nil } ?? (task.countsTowardCounterId != nil)
+        // A member compound may hold no sub-tasks.
+        let countsTowardAfter = task.countsTowardCounterId != nil
         // Type switch (Simple ⇄ Counting, Simple / Counting → Compound):
         // GLOBAL — no board scope — and retroactive on every board.
         if let next = patch.type, next != task.type {

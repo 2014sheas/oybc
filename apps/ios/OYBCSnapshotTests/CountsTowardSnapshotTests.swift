@@ -105,66 +105,6 @@ final class CountsTowardSnapshotTests: XCTestCase {
         assertSnapshot(of: pills, as: .image(layout: .fixed(width: 393, height: 56), traits: dark(false)), record: recordMode)
     }
 
-    // MARK: - C2
-
-    private var pool: [Task] {
-        [counter("ct-books", "Books"), counter("ct-novels", "Novels", count: 5), counter("ct-pages", "Pages", count: 1240)]
-    }
-
-    private func editSheet(_ task: Task) -> some View {
-        EditTaskSheet(task: task, countsTowardTasks: pool + [task], onSubmit: { _ in }, onCancel: {})
-    }
-
-    func testEditTaskSheetFieldSetLight() {
-        assertSnapshot(
-            of: editSheet(flagged("ed-1", "Read Dune", type: .normal, amount: 1)),
-            as: .image(layout: .fixed(width: 393, height: 600), traits: dark(false)), record: recordMode
-        )
-    }
-
-    func testEditTaskSheetFieldNoneLight() {
-        var task = flagged("ed-2", "Read Dune", type: .normal)
-        task.countsTowardCounterId = nil
-        assertSnapshot(
-            of: editSheet(task),
-            as: .image(layout: .fixed(width: 393, height: 600), traits: dark(false)), record: recordMode
-        )
-    }
-
-    func testSquareEditSheetFieldSetAmount2Dark() {
-        let task = flagged("sq-1", "Read Dune", type: .normal, amount: 2)
-        assertSnapshot(
-            of: SquareEditTaskSheet(task: task, countsTowardTasks: pool + [task], onDone: { _ in }, onCancel: {}),
-            as: .image(layout: .fixed(width: 393, height: 560), traits: dark(true)), record: recordMode
-        )
-    }
-
-    func testSquareEditSheetFieldNoneDark() {
-        var task = flagged("sq-2", "Read Dune", type: .normal)
-        task.countsTowardCounterId = nil
-        assertSnapshot(
-            of: SquareEditTaskSheet(task: task, countsTowardTasks: pool + [task], onDone: { _ in }, onCancel: {}),
-            as: .image(layout: .fixed(width: 393, height: 560), traits: dark(true)), record: recordMode
-        )
-    }
-
-    func testPickerOpenLight() {
-        struct Host: View {
-            let tasks: [Task]
-            @State var sel = CountsTowardSelection(counterId: "ct-books", amount: 1)
-            var body: some View {
-                CountsTowardFieldView(
-                    tasks: tasks, editedTaskId: nil, storedCounterId: nil, selection: $sel, initiallyOpen: true
-                )
-                .padding(16).background(Color.risoPaper)
-            }
-        }
-        assertSnapshot(
-            of: Host(tasks: pool),
-            as: .image(layout: .fixed(width: 393, height: 320), traits: dark(false)), record: recordMode
-        )
-    }
-
     // MARK: - C3
 
     private func markGrid() -> some View {

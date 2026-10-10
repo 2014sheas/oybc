@@ -70,12 +70,8 @@ struct RisoQuickAddRowView: View {
     /// without changing the timeframe its created tasks carry.
     var placementTimeframe: Timeframe? = nil
 
-    /// The user's live tasks — supplied only by an immediate-create host (the
-    /// New task sheet), which shows the "Counts toward" row. nil hides it.
-    var countsTowardTasks: [OYBC.Task]? = nil
-    /// Counter Detail's "+ New" preset.
+    /// Counter Detail's "+ New" preset: the create counts toward this counter.
     var presetCountsTowardCounterId: String? = nil
-    @State private var countsToward = CountsTowardSelection()
 
     @State private var text: String = ""
     @State private var form = CreateFormViewModel()
@@ -139,7 +135,6 @@ struct RisoQuickAddRowView: View {
         placeholderOverride: String? = nil,
         placementTimeframe: Timeframe? = nil,
         seedText: String = "",
-        countsTowardTasks: [OYBC.Task]? = nil,
         presetCountsTowardCounterId: String? = nil
     ) {
         self.userId = userId
@@ -158,14 +153,12 @@ struct RisoQuickAddRowView: View {
         self.placeholderOverride = placeholderOverride
         self.placementTimeframe = placementTimeframe
         _text = State(initialValue: seedText)
-        self.countsTowardTasks = countsTowardTasks
         self.presetCountsTowardCounterId = presetCountsTowardCounterId
-        _countsToward = State(initialValue: CountsTowardSelection(counterId: presetCountsTowardCounterId))
     }
 
-    /// Whether the "Counts toward" row shows (an immediate Normal create with a counter to pick).
-    private var showsCountsToward: Bool {
-        onSubmitText == nil && CountsTowardFieldView.showsOnCreate(tasks: countsTowardTasks, deferred: onPendingCreated != nil)
+    /// The preset applies to an immediate Normal create only.
+    private var presetActive: Bool {
+        presetCountsTowardCounterId != nil && onSubmitText == nil && onPendingCreated == nil
     }
 
     // MARK: - Body
@@ -202,9 +195,7 @@ struct RisoQuickAddRowView: View {
                     .padding(.top, 8)
             }
 
-            if showsCountsToward, let all = countsTowardTasks {
-                CountsTowardFieldView(tasks: all, editedTaskId: nil, storedCounterId: nil, selection: $countsToward)
-                    .padding(.top, 10)
+            if presetActive {
                 if let message = form.errorMessage {
                     Text(message)
                         .font(.risoBody(11.5, .extraBold))
@@ -274,7 +265,7 @@ struct RisoQuickAddRowView: View {
         // Configure the form for a Normal task
         form.taskType = .normal
         form.title = trimmed
-        form.countsToward = showsCountsToward ? countsToward : CountsTowardSelection()
+        form.countsToward = presetActive ? CountsTowardSelection(counterId: presetCountsTowardCounterId) : CountsTowardSelection()
 
         form.handleCreateAndAddToPool(
             userId: userId,
@@ -294,7 +285,6 @@ struct RisoQuickAddRowView: View {
 
         // Reset immediately — the model's async path handles DB work
         text = ""
-        countsToward = CountsTowardSelection(counterId: presetCountsTowardCounterId)
         form = CreateFormViewModel()
         placeholderIndex += 1
         focused = true
