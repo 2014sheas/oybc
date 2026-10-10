@@ -1,6 +1,4 @@
 import { useEffect, useMemo, useState } from 'react';
-import { CountsTowardField } from '../../components/counters/CountsTowardField';
-import type { CountsTowardSelection } from '../../components/counters/countsTowardFieldModel';
 import {
   AchievementTrigger,
   TaskType,
@@ -104,9 +102,6 @@ export interface CreateNewTaskFormProps {
    */
   typeOptions?: TaskType[];
 }
-
-/** A task being created has no stored flag — the re-point confirm never fires. */
-const NO_COUNTS_TOWARD: CountsTowardSelection = { counterId: null, amount: 1 };
 
 export function CreateNewTaskForm({
   form,
@@ -244,8 +239,7 @@ export function CreateNewTaskForm({
         <CompoundTaskWizard
           userId={userId}
           onCreated={onCompositeCreated}
-          countsToward={form.countsTowardEnabled ? form.countsToward : undefined}
-          onCountsTowardChange={form.countsTowardEnabled ? form.setCountsToward : undefined}
+          countsTowardPreset={form.countsTowardPreset}
         />
       ) : (
         <form className={styles.form} onSubmit={handleFormSubmit}>
@@ -504,12 +498,6 @@ export function CreateNewTaskForm({
                   Title: <strong>{titlePreview}</strong>
                 </div>
               )}
-            </div>
-          )}
-
-          {form.countsTowardEnabled && userId && form.taskType !== TaskType.ACHIEVEMENT && (
-            <div className={styles.fieldGroup}>
-              <CountsTowardField userId={userId} stored={NO_COUNTS_TOWARD} value={form.countsToward} onChange={form.setCountsToward} labelClassName={styles.label} hideWhenNoTargets />
             </div>
           )}
 

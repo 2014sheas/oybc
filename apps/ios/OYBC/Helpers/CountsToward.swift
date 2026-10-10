@@ -96,11 +96,11 @@ enum CountsToward {
         return true
     }
 
-    /// The increment a contributor writes: `countsTowardAmount`, or 1 when absent / not positive.
-    static func amount(of task: Task) -> Int {
-        if let a = task.countsTowardAmount, a > 0 { return a }
-        return 1
-    }
+    /// The increment a contributor writes: always 1. A unit task credits its
+    /// counter exactly once per completion (owner ruling 2026-10-10, #590);
+    /// `Task.countsTowardAmount` is an inert column kept for decode / sync
+    /// compat and is deliberately NOT read here (web `countsTowardAmountOf`).
+    static func amount(of _: Task) -> Int { 1 }
 
     /// A task's completion (over one window) and the instant it completed.
     struct ContributionState: Equatable {
@@ -594,7 +594,9 @@ enum CountsToward {
     /// The amount a lineage writes on `rootId` — one deterministic rule when
     /// members disagree: the lineage root's (top ancestor's) amount when it is
     /// a live, flagged member targeting `rootId`, else the amount of the
-    /// member with the smallest id among those; 1 when none qualifies.
+    /// member with the smallest id among those; 1 when none qualifies. Since #590
+    /// every member's amount is 1, so this always returns 1 (kept until the
+    /// schema cleanup drops the column).
     static func lineageCreditDelta(rootId: String, members: [Task], lineageRootTaskId: String) -> Int {
         let targeting = members
             .filter { !$0.isDeleted && canContribute($0) && $0.countsTowardCounterId == rootId }
@@ -640,6 +642,7 @@ enum CountsToward {
         /// another lineage member also wants (one in `wantedIds`); a credit
         /// wanted by this contributor alone (a fork's own completion) carries
         /// the contributor's own amount. `nil` → the contributor's own everywhere.
+        /// Since #590 every amount is 1, so the distinction is inert.
         var deltaForRoot: ((String) -> Int)? = nil
     }
 

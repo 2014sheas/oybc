@@ -74,10 +74,6 @@ struct SquareEditTaskSheet: View {
     var forkConfirmed: Bool = false
     /// Records the first-fork confirm for the rest of the edit session.
     var onForkConfirmed: (() -> Void)? = nil
-    /// Every live task of the user — the "Counts toward" row's candidates. nil ⇒
-    /// loaded from `database` on appear (the row stays hidden until then);
-    /// snapshot fixtures inject it.
-    var countsTowardTasks: [Task]? = nil
     let onDone: (Patch) -> Void
     let onCancel: () -> Void
 
@@ -145,9 +141,6 @@ struct SquareEditTaskSheet: View {
         /// The kind chosen for a Counting task (nil for every other type).
         /// Staged; a stored root switches inside the Save transaction.
         var countKind: CountKind? = nil
-        /// What the task counts toward — nil = untouched (set only when the
-        /// selection or amount differs from the stored row).
-        var countsToward: CountsTowardPatch? = nil
     }
 
     // MARK: - Local state
@@ -179,9 +172,6 @@ struct SquareEditTaskSheet: View {
     /// A board-born root other boards link to is a shared counter (type fixed);
     /// read synchronously in `init` so the FIRST frame is already right.
     @State private var hasLinkedCopies: Bool
-    // "Counts toward" row (docs/SHARED_COUNTER_SETTINGS.md §3, PR 4).
-    @State private var countsTowardSel: CountsTowardSelection
-    @State private var countsTowardAllTasks: [Task]?
 
     // MARK: - Init
 
@@ -200,7 +190,6 @@ struct SquareEditTaskSheet: View {
         forkBaselineRows: [String: Task] = [:],
         forkConfirmed: Bool = false,
         onForkConfirmed: (() -> Void)? = nil,
-        countsTowardTasks: [Task]? = nil,
         onDone: @escaping (Patch) -> Void,
         onCancel: @escaping () -> Void
     ) {
@@ -217,11 +206,6 @@ struct SquareEditTaskSheet: View {
         self.forkBaselineRows = forkBaselineRows
         self.forkConfirmed = forkConfirmed
         self.onForkConfirmed = onForkConfirmed
-        self.countsTowardTasks = countsTowardTasks
-        _countsTowardAllTasks = State(initialValue: countsTowardTasks)
-        _countsTowardSel = State(initialValue: CountsTowardFieldView.selection(
-            counterId: task.countsTowardCounterId, amount: task.countsTowardAmount
-        ))
         self.onDone = onDone
         self.onCancel = onCancel
         _hasLinkedCopies = State(initialValue: TaskTypeSwitch.initialHasLinkedCopies(task: original ?? task, database: database))
@@ -401,7 +385,7 @@ struct SquareEditTaskSheet: View {
     /// can still be renamed), mirroring `EditTaskSheet`.
     private var compoundValidation: String? {
         guard type == .compound, let d = titledDraft else { return nil }
-        if !isConverting && !seededFromStaged && !countsTowardCleared
+        if !isConverting && !seededFromStaged
             && !EditTaskSheet.compoundStructureChanged(baseline: compoundBaseline, draft: compoundDraft) {
             return nil
         }
@@ -410,45 +394,9 @@ struct SquareEditTaskSheet: View {
 
     // MARK: - Counts toward
 
-    /// The task as stored / pending, before any staged override — what the row compares to.
-    private var countsTowardBaseline: Task { original ?? task }
-
-    /// Whether the "Counts toward" row shows (loaded tasks + a task that can contribute).
-    private var showsCountsToward: Bool {
-        guard let all = countsTowardAllTasks else { return false }
-        return CountsTowardFieldView.isVisible(task: countsTowardBaseline, selectedType: type, tasks: all)
-    }
-
-    /// The patch Done submits: only when the row shows and differs from the stored row.
-    private var countsTowardPatch: CountsTowardPatch? {
-        guard showsCountsToward else { return nil }
-        return CountsTowardFieldView.patch(
-            selection: countsTowardSel, storedCounterId: countsTowardBaseline.countsTowardCounterId,
-            storedAmount: countsTowardBaseline.countsTowardAmount
-        )
-    }
-
-    /// True when this edit clears the flag (the compound must then hold a sub-task).
-    private var countsTowardCleared: Bool {
-        guard let patch = countsTowardPatch else { return false }
-        return patch.counterId == nil
-    }
-
-    /// Whether the task counts toward a counter after this edit (a compound
-    /// that does may have no sub-tasks).
-    private var countsTowardFlagAfter: Bool {
-        showsCountsToward ? countsTowardSel.counterId != nil : countsTowardBaseline.countsTowardCounterId != nil
-    }
-
-    private func loadCountsTowardTasksIfNeeded() async {
-        guard countsTowardAllTasks == nil else { return }
-        let db = database
-        let userId = task.userId
-        let loaded = try? await _Concurrency.Task.detached(priority: .userInitiated) {
-            try db.fetchTasks(userId: userId)
-        }.value
-        countsTowardAllTasks = loaded ?? []
-    }
+    /// Whether the task already counts toward a counter (stored / pending
+    /// row): a compound that does may have no sub-tasks.
+    private var countsTowardFlagAfter: Bool { (original ?? task).countsTowardCounterId != nil }
 
     private var isCompoundBlocked: Bool {
         compoundDraft == nil || compoundValidation != nil
@@ -513,15 +461,6 @@ struct SquareEditTaskSheet: View {
                     if showsTypePicker { typeSection }
                     if type == .counting { countingSection }
                     if type == .compound { compoundSection }
-                    if showsCountsToward, let all = countsTowardAllTasks {
-                        CountsTowardFieldView(
-                            tasks: all, editedTaskId: task.id,
-                            storedCounterId: countsTowardBaseline.countsTowardCounterId, selection: $countsTowardSel
-                        )
-                        .padding(12)
-                        .risoCard(fill: .risoPaper2)
-                        .risoHardShadow(Riso.Shadow.small)
-                    }
                 }
                 .padding(16)
             }
@@ -530,7 +469,6 @@ struct SquareEditTaskSheet: View {
                 guard let loadInputs else { return }
                 applyLoaded(await loadInputs())
             }
-            .task(id: task.id) { await loadCountsTowardTasksIfNeeded() }
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .principal) {
@@ -800,8 +738,7 @@ struct SquareEditTaskSheet: View {
                 unit: unit.trimmingCharacters(in: .whitespaces),
                 maxCount: parseCountInput(maxCountStr, kind: countKind),
                 compound: compoundSubmission,
-                countKind: type == .counting ? countKind : nil,
-                countsToward: countsTowardPatch
+                countKind: type == .counting ? countKind : nil
             )
         )
     }

@@ -3,10 +3,9 @@ import SwiftUI
 import SnapshotTesting
 @testable import OYBC
 
-/// "Counts toward" PR 4 (docs/SHARED_COUNTER_SETTINGS.md §3) — the iOS
-/// surfaces: C1 the Counter Detail section, C2 the "Counts toward" row in the
-/// task editors (global + Board Edit) and its picker, C3 the board cell mark.
-/// Pure props throughout (no `AppDatabase.shared`); candidates are injected.
+/// "Counts toward" (docs/SHARED_COUNTER_SETTINGS.md §3) — the iOS surfaces:
+/// C1 the Counter Detail section and C3 the board cell mark (the C2 editor row
+/// was retired on 2026-10-10). Pure props throughout (no `AppDatabase.shared`).
 final class CountsTowardSnapshotTests: XCTestCase {
 
     private let recordMode: SnapshotTestingConfiguration.Record? = .missing
@@ -34,9 +33,9 @@ final class CountsTowardSnapshotTests: XCTestCase {
     }
 
     private func row(
-        _ id: String, _ status: CountsToward.ContributorRowStatus, board: String?, amount: Int = 1, credits: Int = 0
+        _ id: String, _ status: CountsToward.ContributorRowStatus, board: String?, credits: Int = 0
     ) -> CountsToward.ContributorRow {
-        .init(taskId: id, status: status, boardId: board, amount: amount, creditCount: credits, latestOccurredAt: nil)
+        .init(taskId: id, status: status, boardId: board, creditCount: credits, latestOccurredAt: nil)
     }
 
     /// Six mixed rows like the handoff: done Simple on a yearly board, in-progress
@@ -61,7 +60,7 @@ final class CountsTowardSnapshotTests: XCTestCase {
             rows: [
                 row("r1", .done, board: "by", credits: 3),
                 row("r2", .inProgress, board: "bw"),
-                row("r3", .inProgress, board: "bm", amount: 2),
+                row("r3", .inProgress, board: "bm"),
                 row("r4", .notStarted, board: "bm"),
                 row("r5", .notStarted, board: nil),
                 row("r6", .notStarted, board: nil),
@@ -103,66 +102,6 @@ final class CountsTowardSnapshotTests: XCTestCase {
         }
         .padding(16).background(Color.risoPaper)
         assertSnapshot(of: pills, as: .image(layout: .fixed(width: 393, height: 56), traits: dark(false)), record: recordMode)
-    }
-
-    // MARK: - C2
-
-    private var pool: [Task] {
-        [counter("ct-books", "Books"), counter("ct-novels", "Novels", count: 5), counter("ct-pages", "Pages", count: 1240)]
-    }
-
-    private func editSheet(_ task: Task) -> some View {
-        EditTaskSheet(task: task, countsTowardTasks: pool + [task], onSubmit: { _ in }, onCancel: {})
-    }
-
-    func testEditTaskSheetFieldSetLight() {
-        assertSnapshot(
-            of: editSheet(flagged("ed-1", "Read Dune", type: .normal, amount: 1)),
-            as: .image(layout: .fixed(width: 393, height: 600), traits: dark(false)), record: recordMode
-        )
-    }
-
-    func testEditTaskSheetFieldNoneLight() {
-        var task = flagged("ed-2", "Read Dune", type: .normal)
-        task.countsTowardCounterId = nil
-        assertSnapshot(
-            of: editSheet(task),
-            as: .image(layout: .fixed(width: 393, height: 600), traits: dark(false)), record: recordMode
-        )
-    }
-
-    func testSquareEditSheetFieldSetAmount2Dark() {
-        let task = flagged("sq-1", "Read Dune", type: .normal, amount: 2)
-        assertSnapshot(
-            of: SquareEditTaskSheet(task: task, countsTowardTasks: pool + [task], onDone: { _ in }, onCancel: {}),
-            as: .image(layout: .fixed(width: 393, height: 560), traits: dark(true)), record: recordMode
-        )
-    }
-
-    func testSquareEditSheetFieldNoneDark() {
-        var task = flagged("sq-2", "Read Dune", type: .normal)
-        task.countsTowardCounterId = nil
-        assertSnapshot(
-            of: SquareEditTaskSheet(task: task, countsTowardTasks: pool + [task], onDone: { _ in }, onCancel: {}),
-            as: .image(layout: .fixed(width: 393, height: 560), traits: dark(true)), record: recordMode
-        )
-    }
-
-    func testPickerOpenLight() {
-        struct Host: View {
-            let tasks: [Task]
-            @State var sel = CountsTowardSelection(counterId: "ct-books", amount: 1)
-            var body: some View {
-                CountsTowardFieldView(
-                    tasks: tasks, editedTaskId: nil, storedCounterId: nil, selection: $sel, initiallyOpen: true
-                )
-                .padding(16).background(Color.risoPaper)
-            }
-        }
-        assertSnapshot(
-            of: Host(tasks: pool),
-            as: .image(layout: .fixed(width: 393, height: 320), traits: dark(false)), record: recordMode
-        )
     }
 
     // MARK: - C3

@@ -31,9 +31,7 @@ import {
   inlineSubtaskToAutoCreate,
 } from './compoundSubtaskDraft';
 import { CountsTowardError } from '../../db/operations/countsToward';
-import { CountsTowardField } from '../counters/CountsTowardField';
 import { countsTowardProblemLabel } from '../counters/countsTowardLabels';
-import type { CountsTowardSelection } from '../counters/countsTowardFieldModel';
 import styles from './CompoundTaskWizard.module.css';
 
 // Stable empty fallbacks for `?? FALLBACK` — see BoardPlayPage.tsx for rationale.
@@ -46,13 +44,9 @@ export interface CompoundTaskWizardProps {
   userId?: string;
   /** Invoked with the newly created compound Task after a successful save. */
   onCreated?: (task: Task) => void;
-  /** "Counts toward" (standalone create): the selection the Setup step edits; absent hides the row. */
-  countsToward?: CountsTowardSelection;
-  onCountsTowardChange?: (next: CountsTowardSelection) => void;
+  /** Counter id the new compound silently counts toward (Counter Detail "+ New"); no UI row. */
+  countsTowardPreset?: string | null;
 }
-
-/** A task being created has no stored flag — the re-point confirm never fires. */
-const NO_COUNTS_TOWARD: CountsTowardSelection = { counterId: null, amount: 1 };
 
 function createExistingSubtask(id: string, kind: 'task' | 'compound'): ExistingSubtaskDraft {
   return {
@@ -89,11 +83,10 @@ function createEmptyInlineSubtask(): InlineSubtaskDraft {
 export function CompoundTaskWizard({
   userId,
   onCreated,
-  countsToward,
-  onCountsTowardChange,
+  countsTowardPreset,
 }: CompoundTaskWizardProps = {}): React.ReactElement {
   const resolvedUserId = userId ?? PLAYGROUND_USER_ID;
-  const countsTowardId = countsToward?.counterId ?? null;
+  const countsTowardId = countsTowardPreset ?? null;
 
   // Core form state
   const [title, setTitle] = useState('');
@@ -274,7 +267,7 @@ export function CompoundTaskWizard({
         operator,
         threshold: operator === OperatorType.M_OF_N ? threshold : undefined,
         children,
-        ...(countsTowardId != null ? { countsTowardCounterId: countsTowardId, countsTowardAmount: countsToward?.amount } : {}),
+        ...(countsTowardId != null ? { countsTowardCounterId: countsTowardId } : {}),
       });
 
       setSuccessMessage('Compound task created!');
@@ -307,11 +300,6 @@ export function CompoundTaskWizard({
           onOperatorChange={setOperator}
           onCancel={resetForm}
           onNext={() => setCurrentStep(2)}
-          countsTowardField={
-            countsToward && onCountsTowardChange ? (
-              <CountsTowardField userId={resolvedUserId} stored={NO_COUNTS_TOWARD} value={countsToward} onChange={onCountsTowardChange} hideWhenNoTargets />
-            ) : undefined
-          }
         />
       )}
 

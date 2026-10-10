@@ -38,8 +38,6 @@ export type { SquareDraftCell } from './squareEditCount';
  */
 export type BoardEditTaskOverride = UpdateTaskPatch & {
   compound?: TaskEditPatch;
-  /** "Counts toward" — present only when the row changed; written at Save through `setCountsTowardInTransaction`. */
-  countsToward?: { counterId: string | null; amount?: number };
 };
 
 export interface SquaresEditDraftState {
@@ -411,14 +409,8 @@ export function deriveEditCount({ state, boardCenterType }: DeriveEditCountInput
  */
 export function applyOverrideForDisplay(base: Task, override: BoardEditTaskOverride | undefined): Task {
   if (!override) return base;
-  const { compound, countsToward, ...fields } = override;
-  // The staged flag follows the task for display / re-open of the sheet (the Board Edit grid draws no mark).
-  const flagged: Partial<Task> = countsToward
-    ? countsToward.counterId == null
-      ? { countsTowardCounterId: undefined, countsTowardAmount: undefined }
-      : { countsTowardCounterId: countsToward.counterId, countsTowardAmount: countsToward.amount }
-    : {};
-  const merged = { ...base, ...(fields as Partial<Task>), ...flagged };
+  const { compound, ...fields } = override;
+  const merged = { ...base, ...(fields as Partial<Task>) };
   return compound && merged.type === TaskType.COMPOUND ? applyPatchToTask(compound, merged) : merged;
 }
 

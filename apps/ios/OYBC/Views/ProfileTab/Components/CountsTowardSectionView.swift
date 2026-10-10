@@ -35,17 +35,11 @@ struct CountsTowardSectionView: View {
         creditCount >= 2 ? "\u{00D7} \(creditCount)" : nil
     }
 
-    /// "+2" — only when the amount is not the default 1.
-    static func amountMark(_ amount: Int) -> String? {
-        amount != 1 ? "+\(amount)" : nil
-    }
-
-    /// "{title}, {Done|In progress|Not started}[, {board}][, counted {n} times][, plus {amount}]"
+    /// "{title}, {Done|In progress|Not started}[, {board}][, counted {n} times]"
     static func accessibilityLabel(title: String, row: CountsToward.ContributorRow, boardName: String?) -> String {
         var parts = [title, RisoStatusPill.Status(row.status).label]
         if let boardName { parts.append(boardName) }
         if row.creditCount >= 2 { parts.append("counted \(row.creditCount) times") }
-        if row.amount != 1 { parts.append("plus \(row.amount)") }
         return parts.joined(separator: ", ")
     }
 
@@ -117,11 +111,6 @@ struct CountsTowardSectionView: View {
                     boardLine(row: row, board: board)
                 }
                 Spacer(minLength: 4)
-                if let mark = Self.amountMark(row.amount) {
-                    Text(mark)
-                        .font(.risoHead(11, .extraBold))
-                        .foregroundStyle(Color.risoMuted)
-                }
                 RisoStatusPill(status: .init(row.status))
             }
             .padding(.vertical, 8)

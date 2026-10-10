@@ -29,7 +29,7 @@ test.describe('Counter Detail — Counts toward section', () => {
     await seedTask(page, { id: ROOT2, title: 'Walk 100 miles', type: 'counting', action: 'Walk', unit: 'miles', maxCount: 100, isCounter: true, counterName: 'Miles' });
     await seedBoard(page, { id: BOARD, name: 'Reading day', boardSize: 3, timeframe: 'daily', status: 'active', startDate: START, endDate: END, centerSquareType: 'free' });
     await seedTask(page, { id: DUNE, title: 'Finish Dune', type: 'normal', countsTowardCounterId: ROOT, countsTowardSince: SINCE });
-    await seedTask(page, { id: PAGES, title: 'Read 250 pages', type: 'counting', action: 'Read', unit: 'pages', maxCount: 250, countsTowardCounterId: ROOT, countsTowardAmount: 2, countsTowardSince: SINCE });
+    await seedTask(page, { id: PAGES, title: 'Read 250 pages', type: 'counting', action: 'Read', unit: 'pages', maxCount: 250, countsTowardCounterId: ROOT, countsTowardSince: SINCE });
     await seedTask(page, { id: LOOSE, title: 'Audiobook: Piranesi', type: 'normal', countsTowardCounterId: ROOT, countsTowardSince: SINCE });
     await seedBoardTask(page, { id: 'eeeeeeee-ctw0-0001-bt-000000000020', boardId: BOARD, taskId: DUNE, row: 0, col: 0 });
     await seedBoardTask(page, { id: 'eeeeeeee-ctw0-0001-bt-000000000021', boardId: BOARD, taskId: PAGES, row: 0, col: 1 });
@@ -47,7 +47,7 @@ test.describe('Counter Detail — Counts toward section', () => {
     await expect(rows.nth(0)).toContainText('Reading day');
     await expect(rows.nth(0)).toContainText('Done');
     await expect(rows.nth(1)).toContainText('Read 250 pages');
-    await expect(rows.nth(1)).toContainText('+2');
+    await expect(rows.nth(1)).not.toContainText('+2');
     await expect(rows.nth(1)).toContainText('In progress');
     await expect(rows.nth(2)).toContainText('Audiobook: Piranesi');
     await expect(rows.nth(2)).toContainText('Not started');
@@ -59,7 +59,7 @@ test.describe('Counter Detail — Counts toward section', () => {
     await expect(page).toHaveURL(new RegExp(`/tasks/${DUNE}`));
   });
 
-  test('a counter nothing counts toward shows the empty one-liner; "+ New" opens the creator preset to it', async ({ page }) => {
+  test('a counter nothing counts toward shows the empty one-liner; "+ New" creates a task that counts toward it, with no row shown', async ({ page }) => {
     await page.goto(`/profile/counters/${ROOT2}?__oybc_test_bypass=1`);
     const section = page.getByRole('region', { name: 'Counts toward' });
     await expect(section.getByText('Nothing counts toward Miles yet.')).toBeVisible();
@@ -67,12 +67,15 @@ test.describe('Counter Detail — Counts toward section', () => {
 
     await section.getByRole('button', { name: '+ New' }).click();
     const sheet = page.getByRole('dialog', { name: 'New task' });
-    await expect(sheet.getByRole('button', { name: 'Counts toward: Miles' })).toBeVisible();
+    // No task form carries the field: the sheet shows no "Counts toward" row.
+    await expect(sheet.getByText('Counts toward')).toHaveCount(0);
+    await expect(sheet.getByRole('button', { name: /^Counts toward/ })).toHaveCount(0);
     await sheet.getByRole('textbox', { name: /^Title/ }).fill('Walk to work');
     await sheet.getByRole('button', { name: 'Add to library' }).click();
     await expect(sheet).toHaveCount(0);
 
-    await expect.poll(async () => readTaskByTitle(page, 'Walk to work')).toMatchObject({ countsTowardCounterId: ROOT2, countsTowardAmount: 1 });
+    await expect.poll(async () => readTaskByTitle(page, 'Walk to work')).toMatchObject({ countsTowardCounterId: ROOT2 });
+    expect(((await readTaskByTitle(page, 'Walk to work')) ?? {}).countsTowardAmount ?? null).toBeNull();
     await expect(section.getByText('Counts toward · 1 task')).toBeVisible();
     await expect(section.getByRole('listitem')).toContainText('Walk to work');
   });

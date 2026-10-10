@@ -108,11 +108,3 @@
   color: var(--riso-muted);
   font-variant-numeric: tabular-nums;
 }
-.amount {
-  flex: 0 0 auto;
-  font-family: var(--riso-font-head);
-  font-size: 12px;
-  font-weight: 800;
-  color: var(--riso-muted);
-  font-variant-numeric: tabular-nums;
-}

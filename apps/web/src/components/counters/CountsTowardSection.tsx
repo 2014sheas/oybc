@@ -34,17 +34,12 @@ export function creditCountText(row: Pick<ContributorRow, 'creditCount'>): strin
   return row.creditCount >= 2 ? `× ${row.creditCount}` : null;
 }
 
-/** The muted "+N" amount — only when the increment per completion is not 1. */
-export function amountText(row: Pick<ContributorRow, 'amount'>): string | null {
-  return row.amount === 1 ? null : `+${row.amount}`;
-}
-
 /**
  * Counter Detail's "Counts toward" section (docs/SHARED_COUNTER_SETTINGS.md
  * §3d; design handoff §C1): the tasks that count toward a Discrete counter —
  * type badge · title (done = muted + strikethrough) · primary board with its
- * timeframe dot (none when unplaced) · "× N" credits (N ≥ 2) · "+N" amount
- * (≠ 1) · StatusPill — or the empty one-liner. Shown for Discrete counters only.
+ * timeframe dot (none when unplaced) · "× N" credits (N ≥ 2)
+ * · StatusPill — or the empty one-liner. Shown for Discrete counters only.
  */
 export function CountsTowardSection({ data, counterName, onNew, onOpenTask }: CountsTowardSectionProps): React.ReactElement {
   const { rows, taskById, boardById } = data;
@@ -65,7 +60,6 @@ export function CountsTowardSection({ data, counterName, onNew, onOpenTask }: Co
             const board = row.boardId ? boardById[row.boardId] : undefined;
             if (!task) return null;
             const credits = creditCountText(row);
-            const amount = amountText(row);
             const done = row.status === 'done';
             return (
               <li key={row.taskId} className={styles.item}>
@@ -85,7 +79,6 @@ export function CountsTowardSection({ data, counterName, onNew, onOpenTask }: Co
                       </span>
                     )}
                   </span>
-                  {amount && <span className={styles.amount}>{amount}</span>}
                   <StatusPill status={PILL_STATUS[row.status]} labels={COUNTS_TOWARD_STATUS_LABELS} dense />
                 </button>
               </li>

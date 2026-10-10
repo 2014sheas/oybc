@@ -2,11 +2,11 @@ import XCTest
 import GRDB
 @testable import OYBC
 
-/// "Counts toward" PR 4 (iOS half) — the Counter Detail section's data, the
-/// editors' write path (`setCountsToward(db:…)`, `applyTaskEditPatch`, Board
-/// Edit's staged override), the create form, the credited-boards reader and the
-/// completion-moment toast. Web twins: `countsTowardSection.test.ts`,
-/// `taskEditCountsToward.test.ts`, `boardEditCommit.countsToward.test.ts`.
+/// "Counts toward" (iOS half) — the Counter Detail section's data, the create
+/// form's "+ New" preset (the one UI write of the flag since the editor row was
+/// retired on 2026-10-10), the loop re-check after a structure edit, fork
+/// inheritance, the credited-boards reader and the completion-moment toast.
+/// Web twin: `db/operations/__tests__/countsTowardUi.test.ts`.
 @MainActor
 final class CountsTowardUITests: XCTestCase {
 
@@ -108,7 +108,6 @@ final class CountsTowardUITests: XCTestCase {
         XCTAssertEqual(data.rows.map(\.status), [.done, .notStarted])
         XCTAssertEqual(data.rows[0].boardId, bA)
         XCTAssertNil(data.rows[1].boardId)
-        XCTAssertEqual(data.rows[1].amount, 2)
         XCTAssertEqual(data.taskById[simple]?.title, "Read Dune")
         XCTAssertEqual(data.boardById[bA]?.timeframe, .yearly)
     }
@@ -142,8 +141,6 @@ final class CountsTowardUITests: XCTestCase {
         XCTAssertEqual(CountsTowardSectionView.heading(count: 6), "Counts toward · 6 tasks")
         XCTAssertNil(CountsTowardSectionView.creditMark(1))
         XCTAssertEqual(CountsTowardSectionView.creditMark(3), "\u{00D7} 3")
-        XCTAssertNil(CountsTowardSectionView.amountMark(1))
-        XCTAssertEqual(CountsTowardSectionView.amountMark(2), "+2")
     }
 
     // MARK: - Single write path
@@ -183,78 +180,12 @@ final class CountsTowardUITests: XCTestCase {
 
     // MARK: - C2 global editor
 
-    private func patch(_ t: Task, countsToward: CountsTowardPatch?, compound: TaskEditPatch? = nil) -> EditTaskSheet.Patch {
+    private func patch(_ t: Task, compound: TaskEditPatch? = nil) -> EditTaskSheet.Patch {
         EditTaskSheet.Patch(
             title: t.title, description: "", action: t.action ?? "", unit: t.unit ?? "", maxCountStr: "",
             trigger: .greenlog, requiredCountStr: "", refMode: .board, selectedBoardId: "", selectedTemplateId: "",
-            compound: compound, countsToward: countsToward
+            compound: compound
         )
-    }
-
-    func test_globalEditor_setRepointAndClear() throws {
-        let db = try makeDb()
-        try db.write { d in
-            try task(root, type: .counting, maxCount: 12, isCounter: true).save(d)
-            try task(root2, type: .counting, maxCount: 5, isCounter: true, title: "Novels").save(d)
-            try task(simple).save(d)
-        }
-        let t = try fetch(db, simple)
-        try db.applyTaskEditPatch(taskId: simple, patch: patch(t, countsToward: CountsTowardPatch(counterId: root, amount: 2)), now: now)
-        var saved = try fetch(db, simple)
-        XCTAssertEqual(saved.countsTowardCounterId, root)
-        XCTAssertEqual(saved.countsTowardAmount, 2)
-        XCTAssertEqual(saved.countsTowardSince, now)
-
-        try db.applyTaskEditPatch(taskId: simple, patch: patch(saved, countsToward: CountsTowardPatch(counterId: root2, amount: 2)), now: "2026-10-15T09:00:00.000Z")
-        saved = try fetch(db, simple)
-        XCTAssertEqual(saved.countsTowardCounterId, root2)
-        XCTAssertEqual(saved.countsTowardSince, "2026-10-15T09:00:00.000Z")
-
-        try db.applyTaskEditPatch(taskId: simple, patch: patch(saved, countsToward: CountsTowardPatch(counterId: nil, amount: nil)), now: now)
-        saved = try fetch(db, simple)
-        XCTAssertNil(saved.countsTowardCounterId)
-        XCTAssertNil(saved.countsTowardAmount)
-    }
-
-    func test_globalEditor_nilPatchLeavesTheFlagUntouched() throws {
-        let db = try makeDb()
-        try db.write { d in
-            try task(root, type: .counting, maxCount: 12, isCounter: true).save(d)
-            try task(simple, countsToward: root, amount: 2).save(d)
-        }
-        var t = try fetch(db, simple)
-        t.title = "Renamed"
-        try db.applyTaskEditPatch(taskId: simple, patch: patch(t, countsToward: nil), now: now)
-        let saved = try fetch(db, simple)
-        XCTAssertEqual(saved.title, "Renamed")
-        XCTAssertEqual(saved.countsTowardCounterId, root)
-        XCTAssertEqual(saved.countsTowardAmount, 2)
-    }
-
-    func test_globalEditor_refusalSurfacesTheLabel() throws {
-        let db = try makeDb()
-        try db.write { d in
-            try task(root, type: .counting, maxCount: 12, isCounter: true, countKind: .continuous).save(d)
-            try task(simple).save(d)
-        }
-        let t = try fetch(db, simple)
-        XCTAssertThrowsError(try db.applyTaskEditPatch(
-            taskId: simple, patch: patch(t, countsToward: CountsTowardPatch(counterId: root, amount: 1)), now: now
-        )) { XCTAssertEqual(AppDatabase.taskEditErrorMessage($0), "Pick a Discrete counter.") }
-        XCTAssertNil(try fetch(db, simple).countsTowardCounterId)
-    }
-
-    func test_globalEditor_clearOnAnEmptyCompoundIsRefusedBeforeAnythingIsWritten() throws {
-        let db = try makeDb()
-        try db.write { d in
-            try task(root, type: .counting, maxCount: 12, isCounter: true).save(d)
-            try task(boxId, type: .compound, countsToward: root).save(d)
-        }
-        let t = try fetch(db, boxId)
-        XCTAssertThrowsError(try db.applyTaskEditPatch(
-            taskId: boxId, patch: patch(t, countsToward: CountsTowardPatch(counterId: nil, amount: nil)), now: now
-        )) { XCTAssertEqual(AppDatabase.taskEditErrorMessage($0), "A compound task needs a sub-task.") }
-        XCTAssertEqual(try fetch(db, boxId).countsTowardCounterId, root)
     }
 
     func test_kindSwitchRefusalLine() {
@@ -265,34 +196,6 @@ final class CountsTowardUITests: XCTestCase {
     }
 
     // MARK: - Field rules
-
-    func test_fieldCandidatesVisibilityAndPatch() {
-        let counter = task(root, type: .counting, maxCount: 12, isCounter: true, title: "Books")
-        let continuous = task(root2, type: .counting, maxCount: 5, isCounter: true, countKind: .continuous)
-        let plain = task(simple, type: .counting, maxCount: 3)
-        let linked = task(copy, type: .counting, maxCount: 1, sharedCounterId: root)
-        let all = [counter, continuous, plain, linked]
-        XCTAssertEqual(CountsTowardFieldView.candidates(tasks: all, editedTaskId: nil).map(\.id), [root])
-        XCTAssertTrue(CountsTowardFieldView.candidates(tasks: all, editedTaskId: root).isEmpty)
-
-        XCTAssertTrue(CountsTowardFieldView.isVisible(task: task(loose), selectedType: .normal, tasks: all))
-        XCTAssertFalse(CountsTowardFieldView.isVisible(task: counter, selectedType: .counting, tasks: all))
-        XCTAssertFalse(CountsTowardFieldView.isVisible(task: linked, selectedType: .counting, tasks: all))
-        XCTAssertFalse(CountsTowardFieldView.isVisible(task: task(loose, type: .achievement), selectedType: .achievement, tasks: all))
-        XCTAssertFalse(CountsTowardFieldView.isVisible(task: task(loose), selectedType: .achievement, tasks: all))
-
-        // Patch only when changed; amount edit alone is a change; a clear is a patch.
-        XCTAssertNil(CountsTowardFieldView.patch(selection: .init(counterId: nil), storedCounterId: nil, storedAmount: nil))
-        XCTAssertNil(CountsTowardFieldView.patch(selection: .init(counterId: root, amount: 1), storedCounterId: root, storedAmount: nil))
-        XCTAssertEqual(
-            CountsTowardFieldView.patch(selection: .init(counterId: root, amount: 2), storedCounterId: root, storedAmount: 1),
-            CountsTowardPatch(counterId: root, amount: 2)
-        )
-        XCTAssertEqual(
-            CountsTowardFieldView.patch(selection: .init(counterId: nil), storedCounterId: root, storedAmount: 2),
-            CountsTowardPatch(counterId: nil, amount: nil)
-        )
-    }
 
     func test_refusalLabels() {
         let labels = [
@@ -321,65 +224,26 @@ final class CountsTowardUITests: XCTestCase {
         }
     }
 
-    private func staged(_ title: String, countsToward: CountsTowardPatch?) -> StagedTaskOverride {
-        StagedTaskOverride(title: title, type: .normal, action: nil, unit: nil, maxCount: nil, compound: nil, countsToward: countsToward)
+    private func staged(_ title: String) -> StagedTaskOverride {
+        StagedTaskOverride(title: title, type: .normal, action: nil, unit: nil, maxCount: nil, compound: nil)
     }
 
-    func test_boardEdit_flagsInPlaceWhenPlacedOnlyHere() throws {
+    func test_boardEdit_forkInheritsAnExistingFlag() throws {
         let db = try makeDb()
         try db.write { d in
             try task(root, type: .counting, maxCount: 12, isCounter: true).save(d)
-            try task(simple).save(d)
-            try board(bA).save(d)
-            try placement("bt1", bA, simple).save(d)
-        }
-        try commit(db, stagedId: simple, boardTaskId: "bt1", staged(simple, countsToward: CountsTowardPatch(counterId: root, amount: 2)))
-        let saved = try fetch(db, simple)
-        XCTAssertEqual(saved.countsTowardCounterId, root)
-        XCTAssertEqual(saved.countsTowardAmount, 2)
-        XCTAssertNotNil(saved.countsTowardSince)
-    }
-
-    func test_boardEdit_forksFirstAndFlagsOnlyTheFork() throws {
-        let db = try makeDb()
-        try db.write { d in
-            try task(root, type: .counting, maxCount: 12, isCounter: true).save(d)
-            try task(simple).save(d)
+            try task(simple, countsToward: root, amount: 2).save(d)
             try board(bA).save(d)
             try board(bB).save(d)
             try placement("bt1", bA, simple).save(d)
             try placement("bt2", bB, simple).save(d)
         }
-        try commit(db, stagedId: simple, boardTaskId: "bt1", staged(simple, countsToward: CountsTowardPatch(counterId: root, amount: 1)))
+        try commit(db, stagedId: simple, boardTaskId: "bt1", staged("Renamed"))
         let forkId = BoardScopedFork.forkTaskId(boardId: bA, taskId: simple)
         let fork = try fetch(db, forkId)
         XCTAssertEqual(fork.countsTowardCounterId, root)
-        XCTAssertNil(try fetch(db, simple).countsTowardCounterId, "the original's flag is untouched")
-    }
-
-    func test_boardEdit_stagedClearClears() throws {
-        let db = try makeDb()
-        try db.write { d in
-            try task(root, type: .counting, maxCount: 12, isCounter: true).save(d)
-            try task(simple, countsToward: root).save(d)
-            try board(bA).save(d)
-            try placement("bt1", bA, simple).save(d)
-        }
-        try commit(db, stagedId: simple, boardTaskId: "bt1", staged(simple, countsToward: CountsTowardPatch(counterId: nil, amount: nil)))
-        XCTAssertNil(try fetch(db, simple).countsTowardCounterId)
-    }
-
-    func test_boardEdit_displayMergeFollowsTheStagedValue() {
-        let base = task(simple)
-        let merged = BoardPlayViewModel.applyingOverride(
-            staged(simple, countsToward: CountsTowardPatch(counterId: root, amount: 3)), to: base
-        )
-        XCTAssertEqual(merged.countsTowardCounterId, root)
-        XCTAssertEqual(merged.countsTowardAmount, 3)
-        let unmerged = BoardPlayViewModel.applyingOverride(
-            staged(simple, countsToward: CountsTowardPatch(counterId: root, amount: 3)), to: base, mergesCountsToward: false
-        )
-        XCTAssertNil(unmerged.countsTowardCounterId)
+        XCTAssertEqual(fork.countsTowardAmount, 2)
+        XCTAssertEqual(try fetch(db, simple).countsTowardCounterId, root, "the original keeps its flag")
     }
 
     // MARK: - Create form
@@ -390,14 +254,44 @@ final class CountsTowardUITests: XCTestCase {
         let form = CreateFormViewModel(database: db)
         form.taskType = .normal
         form.title = "Read Dune"
-        form.countsToward = CountsTowardSelection(counterId: root, amount: 2)
+        form.countsToward = CountsTowardSelection(counterId: root)
         let created = expectation(description: "created")
         form.handleCreateAndAddToPool(userId: user, onTaskCreated: { _, _, _ in created.fulfill() }, onLibraryReloadRequested: {})
         wait(for: [created], timeout: 5)
         let made = try XCTUnwrap(try db.fetchTasks(userId: user).first { $0.title == "Read Dune" })
         XCTAssertEqual(made.countsTowardCounterId, root)
-        XCTAssertEqual(made.countsTowardAmount, 2)
+        XCTAssertNil(made.countsTowardAmount)
         XCTAssertNotNil(made.countsTowardSince)
+    }
+
+    func test_createForm_withoutPresetWritesNoFlag() throws {
+        let db = try makeDb()
+        try db.saveTask(task(root, type: .counting, maxCount: 12, isCounter: true))
+        let form = CreateFormViewModel(database: db)
+        form.taskType = .normal
+        form.title = "Read Dune"
+        let created = expectation(description: "created")
+        form.handleCreateAndAddToPool(userId: user, onTaskCreated: { _, _, _ in created.fulfill() }, onLibraryReloadRequested: {})
+        wait(for: [created], timeout: 5)
+        let made = try XCTUnwrap(try db.fetchTasks(userId: user).first { $0.title == "Read Dune" })
+        XCTAssertNil(made.countsTowardCounterId)
+        XCTAssertNil(made.countsTowardAmount)
+        XCTAssertNil(made.countsTowardSince)
+    }
+
+    func test_createForm_presetWritesTheFlagWithNoAmount() throws {
+        let db = try makeDb()
+        try db.saveTask(task(root, type: .counting, maxCount: 12, isCounter: true))
+        let form = CreateFormViewModel(database: db)
+        form.taskType = .normal
+        form.title = "Read Dune"
+        form.countsToward = CountsTowardSelection(counterId: root)
+        let created = expectation(description: "created")
+        form.handleCreateAndAddToPool(userId: user, onTaskCreated: { _, _, _ in created.fulfill() }, onLibraryReloadRequested: {})
+        wait(for: [created], timeout: 5)
+        let made = try XCTUnwrap(try db.fetchTasks(userId: user).first { $0.title == "Read Dune" })
+        XCTAssertEqual(made.countsTowardCounterId, root)
+        XCTAssertNil(made.countsTowardAmount)
     }
 
     func test_createForm_refusalShowsTheLabelAndCreatesNothing() throws {
@@ -416,7 +310,7 @@ final class CountsTowardUITests: XCTestCase {
         let db = try makeDb()
         try db.saveTask(task(root, type: .counting, maxCount: 12, isCounter: true))
         let form = CreateFormViewModel(database: db)
-        form.countsToward = CountsTowardSelection(counterId: root, amount: 1)
+        form.countsToward = CountsTowardSelection(counterId: root)
         let created = expectation(description: "created")
         form.handleCreateCompoundAndAddToPool(
             userId: user, title: "Weekly reads", rule: CreateFormViewModel.CompoundRule.allOf, subs: [],
@@ -501,12 +395,13 @@ final class CountsTowardUITests: XCTestCase {
 
     func test_toast_simpleCompletionCreditedOnAnotherBoard() throws {
         let db = try makeDb()
+        // A stored amount of 2 is inert (#590 ruling): the toast reports the one credit written.
         try seedToast(db, contributor: task(simple, countsToward: root, amount: 2))
         let before = BoardPlayViewModel.countsTowardCreditSnapshot(database: db, currentBoardId: bA, writtenTaskId: simple)
         try complete(db, simple, intent: .setCompleted(true))
         let payload = try XCTUnwrap(toast(db, written: simple, before: before, undo: .uncomplete(taskId: simple, boardTaskId: "bt1")))
         XCTAssertEqual(payload.undo, .uncomplete(taskId: simple, boardTaskId: "bt1"))
-        XCTAssertEqual(payload.amount, 2)
+        XCTAssertEqual(payload.amount, 1)
         XCTAssertTrue(payload.message.contains("also counted on Board e2"), payload.message)
     }
 
@@ -670,7 +565,7 @@ final class CountsTowardUITests: XCTestCase {
         let db = try makeDb()
         try db.saveTask(task(root, type: .counting, maxCount: 12, isCounter: true, countKind: .continuous))
         XCTAssertThrowsError(try db.createTaskAndEnqueue(
-            task("new-1", title: "Nope"), now: now, countsToward: CountsTowardPatch(counterId: root, amount: 1)
+            task("new-1", title: "Nope"), now: now, countsToward: CountsTowardPatch(counterId: root)
         ))
         XCTAssertNil(try db.fetchTask(id: "new-1"))
     }
@@ -684,7 +579,7 @@ final class CountsTowardUITests: XCTestCase {
         let parent = task(boxId, type: .compound, title: "Loop")
         XCTAssertThrowsError(try db.createCompoundAndEnqueue(
             parent: parent, newChildTasks: [], childLinks: [link("l1", boxId, copy, 0)], now: now,
-            countsToward: CountsTowardPatch(counterId: root, amount: 1)
+            countsToward: CountsTowardPatch(counterId: root)
         )) { XCTAssertEqual($0 as? AppDatabase.CountsTowardError, .refused(.cycle)) }
         XCTAssertNil(try db.fetchTask(id: boxId))
         XCTAssertEqual(try db.read { try CompoundChild.fetchCount($0) }, 0)
@@ -699,7 +594,7 @@ final class CountsTowardUITests: XCTestCase {
         }
         try db.createCompoundAndEnqueue(
             parent: task(boxId, type: .compound), newChildTasks: [], childLinks: [link("l1", boxId, kid, 0)], now: now,
-            countsToward: CountsTowardPatch(counterId: root, amount: 1)
+            countsToward: CountsTowardPatch(counterId: root)
         )
         let saved = try fetch(db, boxId)
         XCTAssertEqual(saved.countsTowardCounterId, root)
@@ -735,7 +630,7 @@ final class CountsTowardUITests: XCTestCase {
         try seedFlaggedCompound(db)
         let box = try fetch(db, boxId)
         XCTAssertThrowsError(try db.applyTaskEditPatch(
-            taskId: boxId, patch: patch(box, countsToward: nil, compound: try structureAddingCopy(db)), now: now
+            taskId: boxId, patch: patch(box, compound: try structureAddingCopy(db)), now: now
         )) { XCTAssertEqual(AppDatabase.taskEditErrorMessage($0), "That counter already feeds this task.") }
         XCTAssertEqual(try db.read { try CompoundChild.filter(Column("compoundTaskId") == self.boxId && Column("isDeleted") == false).fetchCount($0) }, 1)
     }
@@ -745,7 +640,7 @@ final class CountsTowardUITests: XCTestCase {
         try seedFlaggedCompound(db)
         let ov = StagedTaskOverride(
             title: boxId, type: .compound, action: nil, unit: nil, maxCount: nil,
-            compound: try structureAddingCopy(db), countsToward: nil
+            compound: try structureAddingCopy(db)
         )
         XCTAssertThrowsError(try commit(db, stagedId: boxId, boardTaskId: "bt1", ov)) {
             XCTAssertEqual($0 as? AppDatabase.CountsTowardError, .refused(.cycle))
@@ -753,48 +648,4 @@ final class CountsTowardUITests: XCTestCase {
         XCTAssertEqual(try db.read { try CompoundChild.filter(Column("compoundTaskId") == self.boxId && Column("isDeleted") == false).fetchCount($0) }, 1)
     }
 
-    // MARK: - Board Edit: a NEW staged task is flagged through the one path, atomically
-
-    func test_boardEdit_newTaskFlagRefusedWhenTheCounterChangedRollsTheInsertBack() throws {
-        let db = try makeDb()
-        try db.write { d in
-            try self.task(self.root, type: .counting, maxCount: 12, isCounter: true, countKind: .continuous).save(d)
-            try self.board(self.bA).save(d)
-        }
-        let newTask = task("new-staged", title: "Staged")
-        let ov = staged("Staged", countsToward: CountsTowardPatch(counterId: root, amount: 1))
-        XCTAssertThrowsError(try db.write { d in
-            try newTask.save(d)                       // step 1 inserts the pending row
-            try self.placement("bt-new", self.bA, "new-staged").save(d)
-            try BoardPlayViewModel.applyStagedOverrides(
-                db: d, boardId: self.bA,
-                overrides: [.init(stagedId: "new-staged", override: ov, mapTask: nil)],
-                cells: [.init(boardTaskId: "bt-new", isNew: false, row: 0, col: 0, stagedTaskId: "new-staged")],
-                now: self.now
-            )
-        }) { XCTAssertEqual($0 as? AppDatabase.CountsTowardError, .refused(.targetNotDiscrete)) }
-        XCTAssertNil(try db.fetchTask(id: "new-staged"), "the whole Save rolled back")
-    }
-
-    func test_boardEdit_newTaskIsFlaggedWithTheSavesNow() throws {
-        let db = try makeDb()
-        try db.write { d in
-            try self.task(self.root, type: .counting, maxCount: 12, isCounter: true).save(d)
-            try self.board(self.bA).save(d)
-            try self.task("new-staged", title: "Staged").save(d)
-            try self.placement("bt-new", self.bA, "new-staged").save(d)
-        }
-        let ov = staged("Staged", countsToward: CountsTowardPatch(counterId: root, amount: 1))
-        try db.write { d in
-            try BoardPlayViewModel.applyStagedOverrides(
-                db: d, boardId: self.bA,
-                overrides: [.init(stagedId: "new-staged", override: ov, mapTask: nil)],
-                cells: [.init(boardTaskId: "bt-new", isNew: false, row: 0, col: 0, stagedTaskId: "new-staged")],
-                now: self.now
-            )
-        }
-        let saved = try fetch(db, "new-staged")
-        XCTAssertEqual(saved.countsTowardCounterId, root)
-        XCTAssertEqual(saved.countsTowardSince, now)
-    }
 }

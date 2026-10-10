@@ -6,7 +6,6 @@ import {
   TaskType,
   Timeframe,
   countsTowardEventId,
-  forkTaskId,
   type Board,
   type BoardTask,
   type CompoundChild,
@@ -16,8 +15,8 @@ import {
 import { db } from '../../internal';
 import { commitSquareEdits, type CommitSquareEditsInput } from '../boardEditCommit';
 import { saveTaskEdit } from '../compoundStructureEdit';
-import { CompoundEditValidationError, compoundLinkProblemForPatch, countsTowardLoopForPatch } from '../compoundStructureEdit';
-import { CountsTowardError, setCountsToward } from '../countsToward';
+import { compoundLinkProblemForPatch, countsTowardLoopForPatch } from '../compoundStructureEdit';
+import { setCountsToward } from '../countsToward';
 import { findNewBoardCredit, loadCountsTowardSection, snapshotLiveCreditIds } from '../countsTowardSection';
 import { handleTaskCompletion } from '../orchestration';
 import { createTaskCountingToward, toggleCompoundChildFallback } from '../tasks.crud';
@@ -26,6 +25,7 @@ import type { BoardEditTaskOverride } from '../../../hooks/squaresEditReducer';
 import { onBoardContributors, revertUpdatesFor, writtenLineage } from '../../../hooks/useBoardPlay';
 import { countsTowardProblemLabel } from '../../../components/counters/countsTowardLabels';
 import type { TaskEditPatch } from '../../taskEditPatch';
+import { createWithPreset } from '../../../pages/createPage/useCreateFormState';
 
 /**
  * "Counts toward" PR 4 — the UI's data seams (docs/SHARED_COUNTER_SETTINGS.md
@@ -95,7 +95,7 @@ afterEach(async () => {
 });
 
 describe('loadCountsTowardSection', () => {
-  it('lists one row per contributor with its primary board, state, amount and live credit count', async () => {
+  it('lists one row per contributor with its primary board, state and live credit count', async () => {
     await db.tasks.bulkAdd([
       rootTask(),
       task(DUNE, { title: 'Finish Dune', countsTowardCounterId: ROOT, countsTowardSince: T0 }),
@@ -114,9 +114,9 @@ describe('loadCountsTowardSection', () => {
 
     const data = await loadCountsTowardSection(ROOT);
     expect(data.rows).toEqual([
-      { taskId: DUNE, status: 'done', boardId: B1, amount: 1, creditCount: 2, latestOccurredAt: '2026-10-06T09:00:00.000Z' },
-      { taskId: PAGES, status: 'inProgress', boardId: B1, amount: 2, creditCount: 0, latestOccurredAt: null },
-      { taskId: LOOSE, status: 'notStarted', boardId: null, amount: 1, creditCount: 0, latestOccurredAt: null },
+      { taskId: DUNE, status: 'done', boardId: B1, creditCount: 2, latestOccurredAt: '2026-10-06T09:00:00.000Z' },
+      { taskId: PAGES, status: 'inProgress', boardId: B1, creditCount: 0, latestOccurredAt: null },
+      { taskId: LOOSE, status: 'notStarted', boardId: null, creditCount: 0, latestOccurredAt: null },
     ]);
     expect(data.taskById[DUNE]?.title).toBe('Finish Dune');
     expect(data.boardById[B1]?.name).toBe('Reading week');
@@ -125,85 +125,6 @@ describe('loadCountsTowardSection', () => {
   it('is empty with no contributors (no table scans beyond the contributor read)', async () => {
     await db.tasks.bulkAdd([rootTask(), task(DUNE, { title: 'Finish Dune' })]);
     expect(await loadCountsTowardSection(ROOT)).toEqual({ rows: [], taskById: {}, boardById: {} });
-  });
-});
-
-describe('commitSquareEdits — a staged "Counts toward"', () => {
-  it('flags the task in place when it is placed only on this board, stamping `since` and minting the in-window credit', async () => {
-    await db.tasks.bulkAdd([rootTask(), task(DUNE, { title: 'Finish Dune' })]);
-    await db.boardTasks.add(placement('bt1', B1, DUNE));
-    await db.taskEvents.add(event('c1', DUNE, 'completion', '2026-10-06T09:00:00.000Z'));
-
-    await commitSquareEdits(commitInput([cell({ cellId: 'bt1', taskId: DUNE })], [[DUNE, { title: 'Finish Dune', countsToward: { counterId: ROOT, amount: 2 } }]]));
-
-    const dune = (await db.tasks.get(DUNE))!;
-    expect(dune).toMatchObject({ countsTowardCounterId: ROOT, countsTowardAmount: 2, countsTowardSince: NOW });
-    expect(await db.tasks.get(forkTaskId(B1, DUNE))).toBeUndefined();
-    // D11: the completion before `since` never credits.
-    expect(await liveCredits()).toHaveLength(0);
-  });
-
-  it('forks FIRST when placed elsewhere and flags only the fork; the original keeps no flag', async () => {
-    await db.tasks.bulkAdd([rootTask(), task(DUNE, { title: 'Finish Dune' })]);
-    await db.boardTasks.bulkAdd([placement('bt1', B1, DUNE), placement('bt2', B2, DUNE)]);
-
-    await commitSquareEdits(commitInput([cell({ cellId: 'bt1', taskId: DUNE })], [[DUNE, { title: 'Finish Dune', countsToward: { counterId: ROOT } }]]));
-
-    const forkId = forkTaskId(B1, DUNE);
-    const fork = (await db.tasks.get(forkId))!;
-    expect(fork.forkedFromTaskId).toBe(DUNE);
-    expect(fork).toMatchObject({ countsTowardCounterId: ROOT, countsTowardSince: NOW });
-    expect((await db.boardTasks.get('bt1'))!.taskId).toBe(forkId);
-    const original = (await db.tasks.get(DUNE))!;
-    expect(original.countsTowardCounterId).toBeUndefined();
-    expect((await db.boardTasks.get('bt2'))!.taskId).toBe(DUNE);
-
-    // Completing the forked square now credits the root.
-    await handleTaskCompletion(B1, 'bt1', { isCompleted: true });
-    expect(await liveCredits()).toHaveLength(1);
-  });
-
-  it('clears a staged "None" (the credit is withdrawn) and refuses a bad target inside the transaction', async () => {
-    await db.tasks.bulkAdd([rootTask(), task(DUNE, { title: 'Finish Dune', countsTowardCounterId: ROOT, countsTowardSince: T0 })]);
-    await db.boardTasks.add(placement('bt1', B1, DUNE));
-    await handleTaskCompletion(B1, 'bt1', { isCompleted: true });
-    expect(await liveCredits()).toHaveLength(1);
-
-    await commitSquareEdits(commitInput([cell({ cellId: 'bt1', taskId: DUNE })], [[DUNE, { title: 'Finish Dune', countsToward: { counterId: null } }]]));
-    expect((await db.tasks.get(DUNE))!.countsTowardCounterId).toBeUndefined();
-    expect(await liveCredits()).toHaveLength(0);
-
-    await expect(
-      commitSquareEdits(commitInput([cell({ cellId: 'bt1', taskId: DUNE })], [[DUNE, { title: 'Renamed', countsToward: { counterId: DUNE } }]])),
-    ).rejects.toBeInstanceOf(CountsTowardError);
-    // Atomic: the rename rolled back with the refused flag.
-    expect((await db.tasks.get(DUNE))!.title).toBe('Finish Dune');
-  });
-});
-
-describe('saveTaskEdit — countsToward', () => {
-  it('sets the flag before the field write and clears it after; an untouched row writes nothing', async () => {
-    await db.tasks.bulkAdd([rootTask(), task(DUNE, { title: 'Finish Dune' })]);
-
-    await saveTaskEdit(DUNE, { title: 'Finish Dune Messiah', countsToward: { counterId: ROOT, amount: 3 } });
-    expect((await db.tasks.get(DUNE))!).toMatchObject({ title: 'Finish Dune Messiah', countsTowardCounterId: ROOT, countsTowardAmount: 3, countsTowardSince: NOW });
-
-    const before = (await db.tasks.get(DUNE))!.version;
-    await saveTaskEdit(DUNE, { title: 'Finish Dune Messiah' });
-    expect((await db.tasks.get(DUNE))!.countsTowardCounterId).toBe(ROOT);
-
-    await saveTaskEdit(DUNE, { title: 'Done with Dune', countsToward: { counterId: null } });
-    const after = (await db.tasks.get(DUNE))!;
-    expect(after.title).toBe('Done with Dune');
-    expect(after.countsTowardCounterId).toBeUndefined();
-    expect(after.countsTowardSince).toBeUndefined();
-    expect(after.version).toBeGreaterThan(before);
-  });
-
-  it('a refused target throws the CountsTowardError before any field is written', async () => {
-    await db.tasks.bulkAdd([rootTask(), task(DUNE, { title: 'Finish Dune' })]);
-    await expect(saveTaskEdit(DUNE, { title: 'Renamed', countsToward: { counterId: DUNE } })).rejects.toMatchObject({ code: 'self' });
-    expect((await db.tasks.get(DUNE))!.title).toBe('Finish Dune');
   });
 });
 
@@ -360,30 +281,11 @@ describe('fix round — guards', () => {
     const BOX = '90000000-0000-4000-8000-0000000000c1';
     await db.tasks.bulkAdd([rootTask(), task(BOX, { title: 'Shell', type: TaskType.COMPOUND, operator: OperatorType.AND, countsTowardCounterId: ROOT, countsTowardSince: T0 })]);
     await expect(setCountsToward(BOX, null)).rejects.toMatchObject({ code: 'compound-needs-child' });
-    await expect(saveTaskEdit(BOX, { title: 'Shell', countsToward: { counterId: null } })).rejects.toMatchObject({ code: 'compound-needs-child' });
     expect((await db.tasks.get(BOX))!.countsTowardCounterId).toBe(ROOT);
     expect(countsTowardProblemLabel('compound-needs-child')).toBe('A compound task needs a sub-task.');
   });
 
-  it('saveTaskEdit is ONE transaction: a structure refusal after the set leaves no flag and no credit', async () => {
-    const BOX = '90000000-0000-4000-8000-0000000000c1';
-    const KID = '90000000-0000-4000-8000-0000000000c2';
-    await db.tasks.bulkAdd([rootTask(), task(BOX, { title: 'Box', type: TaskType.COMPOUND, operator: OperatorType.AND }), task(KID, { title: 'Kid', isCompleted: true, completedAt: NOW })]);
-    await db.compoundChildren.add({ id: 'l1', compoundTaskId: BOX, childTaskId: KID, childIndex: 0, createdAt: T0, updatedAt: T0, version: 1, isDeleted: false });
-    await db.taskEvents.add(event('k1', KID, 'completion', NOW));
-    // Setting the flag would credit the already-complete compound; the structure patch is invalid (a nameless counting sub-task).
-    const bad: TaskEditPatch = {
-      title: 'Box', action: '', goal: '', unit: '', operator: OperatorType.AND,
-      children: [{ id: KID, childTaskId: KID, title: 'Kid', isCounting: false, action: '', goal: '', unit: '', countKind: 'discrete', markedDeleted: false, childType: TaskType.NORMAL },
-        { id: 'new', childTaskId: null, title: 'Pages', isCounting: true, action: '', goal: '', unit: '', countKind: 'discrete', markedDeleted: false, childType: TaskType.COUNTING }],
-    };
-    await expect(saveTaskEdit(BOX, { title: 'Box', compound: bad, countsToward: { counterId: ROOT } })).rejects.toBeInstanceOf(CompoundEditValidationError);
-    expect((await db.tasks.get(BOX))!.countsTowardCounterId).toBeUndefined();
-    expect(await liveCredits()).toHaveLength(0);
-    expect(await db.syncQueue.count()).toBe(0);
-  });
-
-  it('a sub-task that closes a counts-toward loop is refused — in the same save as the set, and on an already-flagged compound (both editors)', async () => {
+  it('a sub-task that closes a counts-toward loop is refused on an already-flagged compound (both editors)', async () => {
     const BOX = '90000000-0000-4000-8000-0000000000c1';
     await db.tasks.bulkAdd([
       rootTask(),
@@ -395,17 +297,11 @@ describe('fix round — guards', () => {
       title: 'Box', action: '', goal: '', unit: '', operator: OperatorType.AND,
       children: [{ id: COPY, childTaskId: COPY, title: 'Read 1 book', isCounting: true, action: 'Read', goal: '1', unit: 'books', countKind: 'discrete', markedDeleted: false, childType: TaskType.COUNTING }],
     };
-    // Same save: set + a copy of the target as the sub-task.
-    await expect(saveTaskEdit(BOX, { title: 'Box', compound: withCopy, countsToward: { counterId: ROOT } })).rejects.toMatchObject({ code: 'cycle' });
-    expect((await db.tasks.get(BOX))!.countsTowardCounterId).toBeUndefined();
-    expect(await db.compoundChildren.where('compoundTaskId').equals(BOX).count()).toBe(0);
-
     // Already flagged: the structure edit alone is refused — Task Detail save, the Board Edit pre-check and its commit.
     await setCountsToward(BOX, ROOT);
     await expect(saveTaskEdit(BOX, { title: 'Box', compound: withCopy })).rejects.toMatchObject({ code: 'cycle' });
-    // The Board Edit sheet's Done pre-check (the UI maps the code to its label); a staged target is honoured too.
+    // The Board Edit sheet's Done pre-check (the UI maps the code to its label).
     expect(await countsTowardLoopForPatch(BOX, withCopy)).toBe('cycle');
-    expect(await countsTowardLoopForPatch(BOX, withCopy, null)).toBeNull();
     expect(await compoundLinkProblemForPatch(BOX, withCopy)).toBeNull();
     await expect(commitSquareEdits(commitInput([cell({ cellId: 'bt-box', taskId: BOX })], [[BOX, { title: 'Box', compound: withCopy }]]))).rejects.toMatchObject({ code: 'cycle' });
     expect(await db.compoundChildren.where('compoundTaskId').equals(BOX).filter((l) => !l.isDeleted).count()).toBe(0);
@@ -426,5 +322,17 @@ describe('setCountsToward (the one write path) — sanity', () => {
   it('refuses a Continuous target with the target-not-discrete code', async () => {
     await db.tasks.bulkAdd([rootTask(ROOT2, { countKind: 'continuous' }), task(DUNE)]);
     await expect(setCountsToward(DUNE, ROOT2)).rejects.toMatchObject({ code: 'target-not-discrete' });
+  });
+});
+
+describe('createWithPreset — the create form\'s silent "+ New" flag', () => {
+  it('a preset writes the flag and no amount (always one); no preset writes none', async () => {
+    await db.tasks.bulkAdd([rootTask()]);
+    const flagged = await createWithPreset(USER, { title: 'Walk to work', type: TaskType.NORMAL }, ROOT);
+    expect(flagged).toMatchObject({ countsTowardCounterId: ROOT, countsTowardSince: NOW });
+    expect(flagged.countsTowardAmount).toBeUndefined();
+    const plain = await createWithPreset(USER, { title: 'Stretch', type: TaskType.NORMAL }, null);
+    expect(plain.countsTowardCounterId).toBeUndefined();
+    expect(plain.countsTowardSince).toBeUndefined();
   });
 });

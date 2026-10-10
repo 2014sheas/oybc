@@ -85,7 +85,6 @@
 		1F86E90477B32252B675108D /* AppDatabase+CompoundStructureEdit.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB048DAB5D5A772C210BADB6 /* AppDatabase+CompoundStructureEdit.swift */; };
 		2015EA2FCCA896B9F131C1E7 /* SyncQueueBuilder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8909013EF9D9767B1F494EAF /* SyncQueueBuilder.swift */; };
 		20303A5F782938E9478A07B5 /* TaskLibraryViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2C781A106EEE50F8886C0DBE /* TaskLibraryViewModel.swift */; };
-		20D34CFA0AC5CB2D521C1DCF /* CountsTowardFieldView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD0F3DA42ED58D1C22E851B9 /* CountsTowardFieldView.swift */; };
 		2198D04C73F0B636341FC504 /* CounterArrivalsVectorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 42579D82ECB611F862E1BB6B /* CounterArrivalsVectorTests.swift */; };
 		227656F306E2CC85B50B4C3D /* BoardEditCenterToggleSnapshotTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = ECFBD57469D1F7D6246585A8 /* BoardEditCenterToggleSnapshotTests.swift */; };
 		227A155368C5CE516D73D978 /* AppDatabase+TaskTypeSwitch.swift in Sources */ = {isa = PBXBuildFile; fileRef = CD03599075D333958220DD4A /* AppDatabase+TaskTypeSwitch.swift */; };
@@ -1193,7 +1192,6 @@
 		DC667CC3BC6E70C3A91EA693 /* RisoProfileIdentityHeader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RisoProfileIdentityHeader.swift; sourceTree = "<group>"; };
 		DCA2E34EA7CAA29BA2596F60 /* TaskDeleteConfirmView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskDeleteConfirmView.swift; sourceTree = "<group>"; };
 		DCEF8FBDEA02F3DC90FE801E /* RearrangeJiggleTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RearrangeJiggleTests.swift; sourceTree = "<group>"; };
-		DD0F3DA42ED58D1C22E851B9 /* CountsTowardFieldView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CountsTowardFieldView.swift; sourceTree = "<group>"; };
 		DE2853654120D7E16111DA40 /* EntitlementTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EntitlementTests.swift; sourceTree = "<group>"; };
 		DF7B94F09C3473C58879F79F /* RisoBingoToast.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RisoBingoToast.swift; sourceTree = "<group>"; };
 		DF7CFCFD2C7AF0403A3655F8 /* placementVectors.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = placementVectors.json; sourceTree = "<group>"; };
@@ -1345,7 +1343,6 @@
 			children = (
 				BEE590743FB84D4774C6036E /* AchievementSquareBadgeData.swift */,
 				5F1723A942118A8CFA1692DF /* CounterLogToastView.swift */,
-				DD0F3DA42ED58D1C22E851B9 /* CountsTowardFieldView.swift */,
 				7F0890EDAD1903D6917B3F06 /* KindSwitchConfirmView.swift */,
 				BA16533FF3233DF0CDE0769C /* PendingCoreBoardsSectionView.swift */,
 				76A1B524639196880C1BEB8F /* PoolPickerSheetView.swift */,
@@ -2543,7 +2540,6 @@
 				6A4224700146BA7485C97D72 /* CountingStepperModel.swift in Sources */,
 				87958E87D898554F2BB5E248 /* CountsToward.swift in Sources */,
 				3696DDEA04301D043A89BA06 /* CountsTowardCredits.swift in Sources */,
-				20D34CFA0AC5CB2D521C1DCF /* CountsTowardFieldView.swift in Sources */,
 				5DE44D758EC7A1361FBF1FC7 /* CountsTowardLabels.swift in Sources */,
 				3647B31C5F08CCB160E90F95 /* CountsTowardPatch.swift in Sources */,
 				A138F98629DF6591E599E444 /* CountsTowardSectionView.swift in Sources */,

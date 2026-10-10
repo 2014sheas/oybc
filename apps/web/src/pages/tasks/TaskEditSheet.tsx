@@ -1,9 +1,6 @@
 import { useEffect, useState } from 'react';
-import { CountsTowardField } from '../../components/counters/CountsTowardField';
 import { countsTowardProblemLabel } from '../../components/counters/countsTowardLabels';
-import { countsTowardSubmitFor, showsCountsTowardRow, storedCountsToward, type CountsTowardSelection } from '../../components/counters/countsTowardFieldModel';
 import { CountsTowardError } from '../../db/operations/countsToward';
-import { useTasks } from '../../hooks/useTasks';
 import {
   AchievementTrigger,
   TaskType,
@@ -251,12 +248,6 @@ export function TaskEditSheet({
   const [submitting, setSubmitting] = useState(false);
   const [validationError, setValidationError] = useState<string | null>(null);
 
-  // "Counts toward" (docs/SHARED_COUNTER_SETTINGS.md §3d) — hidden for rows that can never contribute.
-  const allTasks = useTasks(task.userId) ?? [];
-  const storedCounts = storedCountsToward(task);
-  const [countsToward, setCountsToward] = useState<CountsTowardSelection>(storedCounts);
-  const showsCountsToward = showsCountsTowardRow(task, allTasks, selected);
-
   const parsePositiveInt = (raw: string): number | null | 'empty' => {
     const trimmed = raw.trim();
     if (trimmed === '') return 'empty';
@@ -271,10 +262,6 @@ export function TaskEditSheet({
       title: title.trim(),
       description: description.trim() || undefined,
     };
-    if (showsCountsToward) {
-      const countsTowardSubmit = countsTowardSubmitFor(storedCounts, countsToward);
-      if (countsTowardSubmit) patch.countsToward = countsTowardSubmit;
-    }
 
     if (selected !== task.type) patch.type = selected;
 
@@ -556,17 +543,6 @@ export function TaskEditSheet({
               <p className={styles.compoundValidation}>{compoundValidation}</p>
             )}
           </fieldset>
-        )}
-
-        {showsCountsToward && (
-          <CountsTowardField
-            userId={task.userId}
-            taskId={task.id}
-            stored={storedCounts}
-            value={countsToward}
-            onChange={setCountsToward}
-            labelClassName={styles.fieldLabel}
-          />
         )}
 
         {validationError !== null && (

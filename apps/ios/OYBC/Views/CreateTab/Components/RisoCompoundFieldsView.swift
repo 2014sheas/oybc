@@ -113,12 +113,8 @@ struct RisoCompoundFieldsView: View {
     /// Owned form VM — reset on each successful submit.
     @State private var form = CreateFormViewModel()
 
-    /// The user's live tasks — supplied only by an immediate-create host (the
-    /// New task sheet), which shows the "Counts toward" row. nil hides it.
-    var countsTowardTasks: [OYBC.Task]? = nil
-    /// Counter Detail's "+ New" preset.
+    /// Counter Detail's "+ New" preset: the create counts toward this counter.
     var presetCountsTowardCounterId: String? = nil
-    @State private var countsToward = CountsTowardSelection()
 
     // MARK: - Init (production)
 
@@ -139,7 +135,6 @@ struct RisoCompoundFieldsView: View {
         onLibraryReloadRequested: @escaping () -> Void,
         onSubmitted: @escaping () -> Void,
         submitLabel: String = "Add to board ✦",
-        countsTowardTasks: [OYBC.Task]? = nil,
         presetCountsTowardCounterId: String? = nil
     ) {
         self.taskLibrary = taskLibrary
@@ -153,9 +148,7 @@ struct RisoCompoundFieldsView: View {
         self.onLibraryReloadRequested = onLibraryReloadRequested
         self.onSubmitted = onSubmitted
         self.submitLabel = submitLabel
-        self.countsTowardTasks = countsTowardTasks
         self.presetCountsTowardCounterId = presetCountsTowardCounterId
-        _countsToward = State(initialValue: CountsTowardSelection(counterId: presetCountsTowardCounterId))
 
         // Default empty state
         _compoundTitle    = State(initialValue: "")
@@ -262,13 +255,11 @@ struct RisoCompoundFieldsView: View {
         (compoundSubs.count >= 1 || countsTowardActive)
     }
 
-    /// Whether the "Counts toward" row shows (an immediate create with a counter to pick).
-    private var showsCountsToward: Bool {
-        CountsTowardFieldView.showsOnCreate(tasks: countsTowardTasks, deferred: onPendingCreated != nil)
+    /// A compound created from Counter Detail's "+ New" (immediate create with
+    /// the preset) counts toward that counter and may have no sub-tasks.
+    private var countsTowardActive: Bool {
+        presetCountsTowardCounterId != nil && onPendingCreated == nil
     }
-
-    /// A compound that counts toward a counter may have no sub-tasks.
-    private var countsTowardActive: Bool { showsCountsToward && countsToward.counterId != nil }
 
     /// Autocomplete matches — up to 3 non-compound library tasks whose title
     /// contains the current `subInputText` (case-insensitive), excluding tasks
@@ -428,9 +419,6 @@ struct RisoCompoundFieldsView: View {
                     .foregroundStyle(Color.risoRed)
             }
 
-            if showsCountsToward, let all = countsTowardTasks {
-                CountsTowardFieldView(tasks: all, editedTaskId: nil, storedCounterId: nil, selection: $countsToward)
-            }
             if let message = form.errorMessage {
                 Text(message)
                     .font(.risoBody(11.5, .extraBold))
@@ -655,7 +643,7 @@ struct RisoCompoundFieldsView: View {
     private func submitCompound() {
         guard canSubmitCompound else { return }
         let rule = compoundRule.toVMRule(threshold: effectiveThreshold)
-        form.countsToward = countsTowardActive ? countsToward : CountsTowardSelection()
+        form.countsToward = countsTowardActive ? CountsTowardSelection(counterId: presetCountsTowardCounterId) : CountsTowardSelection()
         form.handleCreateCompoundAndAddToPool(
             userId: userId,
             title: compoundTitle.trimmingCharacters(in: .whitespacesAndNewlines),
@@ -702,7 +690,6 @@ struct RisoCompoundFieldsView: View {
         subKind           = .discrete
         subAutocompleteVisible = false
         subLink           = CounterLinkState()
-        countsToward      = CountsTowardSelection(counterId: presetCountsTowardCounterId)
     }
 
     // MARK: - Field helpers

@@ -399,11 +399,11 @@ apps/web/src/pages/                               apps/ios/OYBC/Views/
 │   (counts-toward UI, 2026-10-10 — docs/SHARED_COUNTER_SETTINGS.md §5 PR 4:
 │    components/counters/CountsTowardSection.tsx ←→ ProfileTab/Components/CountsTowardSectionView.swift
 │    over db/operations/countsTowardSection.ts + hooks/useCountsTowardSection.ts ←→
-│    Database/AppDatabase+CountsTowardSection.swift; the editors' row
-│    components/counters/CountsTowardField.tsx (+ countsTowardFieldModel.ts,
-│    countsTowardLabels.ts, hooks/useCountsTowardTargets.ts) ←→
-│    Views/Components/CountsTowardFieldView.swift (+ Helpers/CountsTowardPatch.swift,
-│    Helpers/CountsTowardLabels.swift); components/StatusPill.tsx (extracted from
+│    Database/AppDatabase+CountsTowardSection.swift; the editors' "Counts toward"
+│    row was RETIRED 2026-10-10 (owner ruling: the field lives in no user-facing
+│    interface — a contributor is a member of its counter, created from "+ New";
+│    member-model UI pending a design round, SHARED_COUNTER_SETTINGS.md §3
+│    amendment); components/StatusPill.tsx (extracted from
 │    Task Detail) ←→ Views/Riso/RisoStatusPill.swift; the credited-toast undo kind in
 │    hooks/useBoardPlay.ts ←→ BoardPlayViewModel+CountsToward.swift; pure half
 │    packages/shared/src/algorithms/countsTowardCredits.ts ←→ Helpers/CountsTowardCredits.swift)

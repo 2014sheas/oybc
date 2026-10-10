@@ -1,8 +1,5 @@
 import { useEffect, useState } from 'react';
-import { CountsTowardField } from '../counters/CountsTowardField';
 import { countsTowardProblemLabel } from '../counters/countsTowardLabels';
-import { countsTowardSubmitFor, showsCountsTowardRow, storedCountsToward, type CountsTowardSelection } from '../counters/countsTowardFieldModel';
-import { useTasks } from '../../hooks/useTasks';
 import {
   TaskType,
   countKindNeedsUnit,
@@ -157,17 +154,6 @@ export function BoardEditTaskSheet({
   );
   const [unit, setUnit] = useState(task.unit ?? '');
 
-  // "Counts toward" (docs/SHARED_COUNTER_SETTINGS.md §3d) — seeded from the
-  // staged value (re-open) over the stored one; hidden for rows that can never contribute.
-  const allTasks = useTasks(task.userId) ?? [];
-  const storedCounts = storedCountsToward(original);
-  const [countsToward, setCountsToward] = useState<CountsTowardSelection>(
-    staged?.countsToward
-      ? { counterId: staged.countsToward.counterId, amount: staged.countsToward.amount ?? 1 }
-      : storedCounts,
-  );
-  const showsCountsToward = showsCountsTowardRow(original, allTasks, selected);
-
   // The confirm previews the DRAFT (title / goal typed here, not yet staged).
   const draftGoal = parseGoal(goalStr, countKind) ?? task.maxCount;
   const draftSubject = {
@@ -260,8 +246,7 @@ export function BoardEditTaskSheet({
 
   // ── Validation ───────────────────────────────────────────────────────────
 
-  const countsTowardSubmit = showsCountsToward ? countsTowardSubmitFor(storedCounts, countsToward) : undefined;
-  const input = { original, selected, title, action, goalStr, unit, countKind, compoundDraft, compoundBaseline, rootSettings, countsToward: countsTowardSubmit };
+  const input = { original, selected, title, action, goalStr, unit, countKind, compoundDraft, compoundBaseline, rootSettings };
   const problem = sheetValidationProblem(input);
   // Board-scoped: the task + its sub-tasks; Done waits for the check (no late label flip).
   const forkCheck = useForkCheck(
@@ -312,9 +297,9 @@ export function BoardEditTaskSheet({
           setDoneError(linkProblem);
           return;
         }
-        // A flagged compound (stored, or staged in this sheet) may not take a
-        // sub-task that closes a counts-toward loop; Save re-checks too.
-        const loop = await countsTowardLoopForPatch(task.id, patch.compound, countsTowardSubmit === undefined ? storedCounts.counterId : countsTowardSubmit.counterId);
+        // A flagged compound may not take a sub-task that closes a
+        // counts-toward loop; Save re-checks too.
+        const loop = await countsTowardLoopForPatch(task.id, patch.compound);
         if (loop !== null) {
           setDoneError(countsTowardProblemLabel(loop));
           return;
@@ -465,17 +450,6 @@ export function BoardEditTaskSheet({
               <p className={styles.problem}>{problem}</p>
             )}
           </div>
-        )}
-
-        {showsCountsToward && (
-          <CountsTowardField
-            userId={task.userId}
-            taskId={task.id}
-            stored={storedCounts}
-            value={countsToward}
-            onChange={setCountsToward}
-            labelClassName={styles.fieldLabel}
-          />
         )}
 
         {doneError !== null && (

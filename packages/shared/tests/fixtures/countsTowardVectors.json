@@ -1,5 +1,5 @@
 {
-  "_note": "Hand-authored fixture (edit directly, then `pnpm --filter @oybc/shared run gen:sync-fixtures`). Pins packages/shared/src/algorithms/countsToward.ts (+ countsTowardLineage.ts / countsTowardValidation.ts; tests/algorithms/countsToward.test.ts) against its Swift twin Helpers/CountsToward.swift (OYBCTests/CountsTowardVectorTests.swift) — docs/SHARED_COUNTER_SETTINGS.md §3 (D10: one credit per completion occurrence; D11: count from `countsTowardSince`). Task defaults for unlisted fields: type=normal, isCompleted=false, isDeleted=false, createdAt=2026-01-01T00:00:00.000Z. Event defaults: isDeleted=false, kind=increment when delta is set else completion. Board defaults: status=active, isDeleted=false. Placement defaults: isDeleted=false. Link defaults: isDeleted=false. `state` vectors take an optional `window`. `credits` / `candidates` / `planSet` name occurrences ({kind: event|childEvent|board|lifetime}) and the ROOT they are minted on (`root`, default \"root\"); the test derives each credit id with countsTowardEventId(root, lineageRootId(contributor), occurrence) and compares sets sorted by id. `candidates.roots` lists the roots to enumerate. `planSet.lineageWanted` lists occurrences other lineage members keep; `planSet.lineageDelta` maps a root to the lineage's amount (applied only to credits also in `lineageWanted`). `lineageDelta` vectors pin lineageCreditDelta. `creditGroups` vectors (PR 4 — countsTowardCredits.ts ↔ CountsToward.contributorCreditGroups) list the ROOT's credits as `rootCredits` ({scope, occurrence, occurredAt, delta?=1, isDeleted?}); the test mints each as an increment on `root` with id countsTowardEventId(root, scope, occurrence) and expects the lineage groups (scopeId, memberIds, representativeId, creditCount, latestOccurredAt) in scope order. `rows` vectors pin countsTowardRows (same inputs as `creditGroups`; tasks may carry `title`): one row per lineage — representative, status (done / inProgress / notStarted on the primary board), boardId, amount, creditCount, latestOccurredAt — in Done, In progress, Not started order, then title, then id.",
+  "_note": "Hand-authored fixture (edit directly, then `pnpm --filter @oybc/shared run gen:sync-fixtures`). Pins packages/shared/src/algorithms/countsToward.ts (+ countsTowardLineage.ts / countsTowardValidation.ts; tests/algorithms/countsToward.test.ts) against its Swift twin Helpers/CountsToward.swift (OYBCTests/CountsTowardVectorTests.swift) — docs/SHARED_COUNTER_SETTINGS.md §3 (D10: one credit per completion occurrence; D11: count from `countsTowardSince`). Task defaults for unlisted fields: type=normal, isCompleted=false, isDeleted=false, createdAt=2026-01-01T00:00:00.000Z. Event defaults: isDeleted=false, kind=increment when delta is set else completion. Board defaults: status=active, isDeleted=false. Placement defaults: isDeleted=false. Link defaults: isDeleted=false. `state` vectors take an optional `window`. `credits` / `candidates` / `planSet` name occurrences ({kind: event|childEvent|board|lifetime}) and the ROOT they are minted on (`root`, default \"root\"); the test derives each credit id with countsTowardEventId(root, lineageRootId(contributor), occurrence) and compares sets sorted by id. `candidates.roots` lists the roots to enumerate. `planSet.lineageWanted` lists occurrences other lineage members keep; `planSet.lineageDelta` maps a root to the lineage's amount (applied only to credits also in `lineageWanted`). `lineageDelta` vectors pin lineageCreditDelta. `creditGroups` vectors (PR 4 — countsTowardCredits.ts ↔ CountsToward.contributorCreditGroups) list the ROOT's credits as `rootCredits` ({scope, occurrence, occurredAt, delta?=1, isDeleted?}); the test mints each as an increment on `root` with id countsTowardEventId(root, scope, occurrence) and expects the lineage groups (scopeId, memberIds, representativeId, creditCount, latestOccurredAt) in scope order. `rows` vectors pin countsTowardRows (same inputs as `creditGroups`; tasks may carry `title`): one row per lineage — representative, status (done / inProgress / notStarted on the primary board), boardId, creditCount, latestOccurredAt — in Done, In progress, Not started order, then title, then id. Amount ruling (#590, 2026-10-10): a unit task always credits one — the amount / lineageDelta expectations are pinned to 1 and the planSet vectors that exercised amount ≠ 1 were removed.",
   "eventId": [
     {
       "root": "root",
@@ -72,7 +72,7 @@
     {
       "name": "three",
       "countsTowardAmount": 3,
-      "expected": 3
+      "expected": 1
     },
     {
       "name": "zero-falls-back-to-one",
@@ -2914,54 +2914,6 @@
       ]
     },
     {
-      "name": "amount-three",
-      "contributor": {
-        "id": "t",
-        "countsTowardCounterId": "root",
-        "countsTowardAmount": 3
-      },
-      "tasks": [
-        {
-          "id": "root",
-          "type": "counting",
-          "isCounter": true
-        }
-      ],
-      "wanted": [
-        {
-          "occurrence": {
-            "kind": "event",
-            "eventId": "c1"
-          },
-          "occurredAt": "2026-10-14T09:00:00.000Z",
-          "root": "root"
-        }
-      ],
-      "candidates": [
-        {
-          "occurrence": {
-            "kind": "event",
-            "eventId": "c1"
-          },
-          "root": "root"
-        }
-      ],
-      "stored": [],
-      "expected": [
-        {
-          "occurrence": {
-            "kind": "event",
-            "eventId": "c1"
-          },
-          "root": "root",
-          "kind": "insert",
-          "rootId": "root",
-          "delta": 3,
-          "occurredAt": "2026-10-14T09:00:00.000Z"
-        }
-      ]
-    },
-    {
       "name": "two-windows-two-inserts",
       "contributor": {
         "id": "t",
@@ -3350,216 +3302,6 @@
           "occurredAt": "2026-10-08T09:00:00.000Z",
           "previousRootId": "root",
           "previousOccurredAt": "2026-10-07T09:00:00.000Z",
-          "wasDeleted": false
-        }
-      ]
-    },
-    {
-      "name": "amount-changed-revises",
-      "contributor": {
-        "id": "t",
-        "countsTowardCounterId": "root",
-        "countsTowardAmount": 2
-      },
-      "tasks": [
-        {
-          "id": "root",
-          "type": "counting",
-          "isCounter": true
-        }
-      ],
-      "wanted": [
-        {
-          "occurrence": {
-            "kind": "event",
-            "eventId": "c1"
-          },
-          "occurredAt": "2026-10-07T09:00:00.000Z",
-          "root": "root"
-        }
-      ],
-      "candidates": [
-        {
-          "occurrence": {
-            "kind": "event",
-            "eventId": "c1"
-          },
-          "root": "root"
-        }
-      ],
-      "stored": [
-        {
-          "occurrence": {
-            "kind": "event",
-            "eventId": "c1"
-          },
-          "taskId": "root",
-          "delta": 1,
-          "occurredAt": "2026-10-07T09:00:00.000Z"
-        }
-      ],
-      "expected": [
-        {
-          "occurrence": {
-            "kind": "event",
-            "eventId": "c1"
-          },
-          "root": "root",
-          "kind": "revise",
-          "rootId": "root",
-          "delta": 2,
-          "occurredAt": "2026-10-07T09:00:00.000Z",
-          "previousRootId": "root",
-          "previousOccurredAt": "2026-10-07T09:00:00.000Z",
-          "wasDeleted": false
-        }
-      ]
-    },
-    {
-      "name": "lineage-delta-applies-only-to-a-credit-another-member-also-wants",
-      "contributor": {
-        "id": "t",
-        "countsTowardCounterId": "root",
-        "countsTowardAmount": 3
-      },
-      "tasks": [
-        {
-          "id": "root",
-          "type": "counting",
-          "isCounter": true
-        }
-      ],
-      "wanted": [
-        {
-          "occurrence": {
-            "kind": "event",
-            "eventId": "c1"
-          },
-          "occurredAt": "2026-10-07T09:00:00.000Z",
-          "root": "root"
-        },
-        {
-          "occurrence": {
-            "kind": "event",
-            "eventId": "c2"
-          },
-          "occurredAt": "2026-10-14T09:00:00.000Z",
-          "root": "root"
-        }
-      ],
-      "candidates": [
-        {
-          "occurrence": {
-            "kind": "event",
-            "eventId": "c1"
-          },
-          "root": "root"
-        },
-        {
-          "occurrence": {
-            "kind": "event",
-            "eventId": "c2"
-          },
-          "root": "root"
-        }
-      ],
-      "stored": [
-        {
-          "occurrence": {
-            "kind": "event",
-            "eventId": "c1"
-          },
-          "taskId": "root",
-          "delta": 1,
-          "occurredAt": "2026-10-07T09:00:00.000Z"
-        }
-      ],
-      "lineageWanted": [
-        {
-          "occurrence": {
-            "kind": "event",
-            "eventId": "c1"
-          },
-          "root": "root"
-        }
-      ],
-      "lineageDelta": {
-        "root": 1
-      },
-      "expected": [
-        {
-          "occurrence": {
-            "kind": "event",
-            "eventId": "c2"
-          },
-          "root": "root",
-          "kind": "insert",
-          "rootId": "root",
-          "delta": 3,
-          "occurredAt": "2026-10-14T09:00:00.000Z"
-        }
-      ]
-    },
-    {
-      "name": "a-credit-only-the-contributor-wants-keeps-its-own-amount-despite-the-lineage-delta",
-      "contributor": {
-        "id": "t",
-        "countsTowardCounterId": "root",
-        "countsTowardAmount": 3
-      },
-      "tasks": [
-        {
-          "id": "root",
-          "type": "counting",
-          "isCounter": true
-        }
-      ],
-      "wanted": [
-        {
-          "occurrence": {
-            "kind": "event",
-            "eventId": "c2"
-          },
-          "occurredAt": "2026-10-14T09:00:00.000Z",
-          "root": "root"
-        }
-      ],
-      "candidates": [
-        {
-          "occurrence": {
-            "kind": "event",
-            "eventId": "c2"
-          },
-          "root": "root"
-        }
-      ],
-      "stored": [
-        {
-          "occurrence": {
-            "kind": "event",
-            "eventId": "c2"
-          },
-          "taskId": "root",
-          "delta": 1,
-          "occurredAt": "2026-10-14T09:00:00.000Z"
-        }
-      ],
-      "lineageDelta": {
-        "root": 1
-      },
-      "expected": [
-        {
-          "occurrence": {
-            "kind": "event",
-            "eventId": "c2"
-          },
-          "root": "root",
-          "kind": "revise",
-          "rootId": "root",
-          "delta": 3,
-          "occurredAt": "2026-10-14T09:00:00.000Z",
-          "previousRootId": "root",
-          "previousOccurredAt": "2026-10-14T09:00:00.000Z",
           "wasDeleted": false
         }
       ]
@@ -4186,76 +3928,6 @@
       ]
     },
     {
-      "name": "lineage-does-not-protect-a-credit-the-contributor-itself-revises",
-      "contributor": {
-        "id": "t",
-        "countsTowardCounterId": "root",
-        "countsTowardAmount": 2
-      },
-      "tasks": [
-        {
-          "id": "root",
-          "type": "counting",
-          "isCounter": true
-        }
-      ],
-      "wanted": [
-        {
-          "occurrence": {
-            "kind": "event",
-            "eventId": "c1"
-          },
-          "occurredAt": "2026-10-07T09:00:00.000Z",
-          "root": "root"
-        }
-      ],
-      "candidates": [
-        {
-          "occurrence": {
-            "kind": "event",
-            "eventId": "c1"
-          },
-          "root": "root"
-        }
-      ],
-      "stored": [
-        {
-          "occurrence": {
-            "kind": "event",
-            "eventId": "c1"
-          },
-          "taskId": "root",
-          "delta": 1,
-          "occurredAt": "2026-10-07T09:00:00.000Z"
-        }
-      ],
-      "lineageWanted": [
-        {
-          "occurrence": {
-            "kind": "event",
-            "eventId": "c1"
-          },
-          "root": "root"
-        }
-      ],
-      "expected": [
-        {
-          "occurrence": {
-            "kind": "event",
-            "eventId": "c1"
-          },
-          "root": "root",
-          "kind": "revise",
-          "rootId": "root",
-          "delta": 2,
-          "occurredAt": "2026-10-07T09:00:00.000Z",
-          "previousRootId": "root",
-          "previousOccurredAt": "2026-10-07T09:00:00.000Z",
-          "wasDeleted": false
-        }
-      ]
-    },
-    {
       "name": "fork-with-unloaded-original-plans-nothing",
       "contributor": {
         "id": "f",
@@ -4658,6 +4330,75 @@
         }
       ],
       "expected": []
+    },
+    {
+      "name": "lineage-does-not-protect-a-credit-the-contributor-itself-revises",
+      "contributor": {
+        "id": "t",
+        "countsTowardCounterId": "root"
+      },
+      "tasks": [
+        {
+          "id": "root",
+          "type": "counting",
+          "isCounter": true
+        }
+      ],
+      "wanted": [
+        {
+          "occurrence": {
+            "kind": "event",
+            "eventId": "c1"
+          },
+          "occurredAt": "2026-10-08T09:00:00.000Z",
+          "root": "root"
+        }
+      ],
+      "candidates": [
+        {
+          "occurrence": {
+            "kind": "event",
+            "eventId": "c1"
+          },
+          "root": "root"
+        }
+      ],
+      "stored": [
+        {
+          "occurrence": {
+            "kind": "event",
+            "eventId": "c1"
+          },
+          "taskId": "root",
+          "delta": 1,
+          "occurredAt": "2026-10-07T09:00:00.000Z"
+        }
+      ],
+      "lineageWanted": [
+        {
+          "occurrence": {
+            "kind": "event",
+            "eventId": "c1"
+          },
+          "root": "root"
+        }
+      ],
+      "expected": [
+        {
+          "occurrence": {
+            "kind": "event",
+            "eventId": "c1"
+          },
+          "root": "root",
+          "kind": "revise",
+          "rootId": "root",
+          "delta": 1,
+          "occurredAt": "2026-10-08T09:00:00.000Z",
+          "previousRootId": "root",
+          "previousOccurredAt": "2026-10-07T09:00:00.000Z",
+          "wasDeleted": false
+        }
+      ]
     }
   ],
   "lineageDelta": [
@@ -4703,7 +4444,7 @@
           "countsTowardAmount": 2
         }
       ],
-      "expected": 2
+      "expected": 1
     },
     {
       "name": "deleted-and-unflagged-members-do-not-count",
@@ -4728,7 +4469,7 @@
           "countsTowardAmount": 3
         }
       ],
-      "expected": 3
+      "expected": 1
     },
     {
       "name": "nobody-targets-the-root-is-one",
@@ -5664,7 +5405,6 @@
           "taskId": "t",
           "status": "done",
           "boardId": "w1",
-          "amount": 1,
           "creditCount": 1,
           "latestOccurredAt": "2026-10-07T09:00:00.000Z"
         }
@@ -5695,7 +5435,6 @@
           "taskId": "t",
           "status": "notStarted",
           "boardId": null,
-          "amount": 1,
           "creditCount": 0,
           "latestOccurredAt": null
         }
@@ -5764,7 +5503,6 @@
           "taskId": "c",
           "status": "inProgress",
           "boardId": "w1",
-          "amount": 2,
           "creditCount": 0,
           "latestOccurredAt": null
         },
@@ -5772,7 +5510,6 @@
           "taskId": "z",
           "status": "notStarted",
           "boardId": "w1",
-          "amount": 1,
           "creditCount": 0,
           "latestOccurredAt": null
         }
@@ -5869,7 +5606,6 @@
           "taskId": "k2",
           "status": "done",
           "boardId": "w1",
-          "amount": 1,
           "creditCount": 1,
           "latestOccurredAt": "2026-10-08T09:00:00.000Z"
         },
@@ -5877,7 +5613,6 @@
           "taskId": "k1",
           "status": "inProgress",
           "boardId": "w1",
-          "amount": 1,
           "creditCount": 0,
           "latestOccurredAt": null
         }
@@ -5944,7 +5679,6 @@
           "taskId": "t",
           "status": "notStarted",
           "boardId": "w1",
-          "amount": 1,
           "creditCount": 1,
           "latestOccurredAt": "2026-09-20T09:00:00.000Z"
         }
@@ -5993,7 +5727,6 @@
           "taskId": "t",
           "status": "notStarted",
           "boardId": "s",
-          "amount": 1,
           "creditCount": 0,
           "latestOccurredAt": null
         }
@@ -6034,7 +5767,6 @@
           "taskId": "w",
           "status": "notStarted",
           "boardId": null,
-          "amount": 1,
           "creditCount": 0,
           "latestOccurredAt": null
         },
@@ -6042,7 +5774,6 @@
           "taskId": "y",
           "status": "notStarted",
           "boardId": null,
-          "amount": 1,
           "creditCount": 0,
           "latestOccurredAt": null
         },
@@ -6050,7 +5781,6 @@
           "taskId": "x",
           "status": "notStarted",
           "boardId": null,
-          "amount": 1,
           "creditCount": 0,
           "latestOccurredAt": null
         }
@@ -6114,7 +5844,6 @@
           "taskId": "o",
           "status": "notStarted",
           "boardId": null,
-          "amount": 1,
           "creditCount": 1,
           "latestOccurredAt": "2026-10-07T09:00:00.000Z"
         }

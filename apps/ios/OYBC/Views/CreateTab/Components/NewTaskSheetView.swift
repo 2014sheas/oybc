@@ -92,12 +92,6 @@ struct NewTaskSheetContentView: View {
 
     /// Counter Detail's "+ New": the counter the new task counts toward (preselected).
     var presetCountsTowardCounterId: String? = nil
-    /// Every live task of the user — the "Counts toward" candidates (the
-    /// browsable `taskLibrary` hides goal-less hub counters). nil ⇒ loaded on appear.
-    var countsTowardTasks: [OYBC.Task]? = nil
-    @State private var loadedCountsTowardTasks: [OYBC.Task]?
-
-    private var countsTowardPool: [OYBC.Task]? { countsTowardTasks ?? loadedCountsTowardTasks }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
@@ -118,7 +112,6 @@ struct NewTaskSheetContentView: View {
                         },
                         onPendingCreated: nil,
                         onLibraryReloadRequested: onLibraryReloadRequested,
-                        countsTowardTasks: countsTowardPool,
                         presetCountsTowardCounterId: presetCountsTowardCounterId
                     )
                 }
@@ -147,17 +140,9 @@ struct NewTaskSheetContentView: View {
                     },
                     onPendingCreated: nil,
                     onLibraryReloadRequested: onLibraryReloadRequested,
-                    countsTowardTasks: countsTowardPool,
                     presetCountsTowardCounterId: presetCountsTowardCounterId
                 )
             }
-        }
-        .task {
-            guard countsTowardTasks == nil, loadedCountsTowardTasks == nil else { return }
-            let uid = userId
-            loadedCountsTowardTasks = try? await _Concurrency.Task.detached(priority: .userInitiated) {
-                try AppDatabase.shared.fetchTasks(userId: uid)
-            }.value
         }
         // The removed trailing caption carried the only full-width frame.
         .frame(maxWidth: .infinity, alignment: .leading)
