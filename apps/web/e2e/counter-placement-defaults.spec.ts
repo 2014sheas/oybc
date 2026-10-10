@@ -59,7 +59,13 @@ test.describe('Shared counter placement defaults', () => {
 
     // "novels" is only in the counter's plural template — the shared match set finds it.
     await page.getByLabel('New normal task title').fill('novels');
-    await page.getByRole('button', { name: /Read 12 books/ }).click();
+    // The match row shows the counter's NAME, its kind and the goal this board gets (the UI PR).
+    const row = page.getByRole('list', { name: 'Matching library tasks' }).getByRole('button', { name: /Reading/ });
+    await expect(row).toBeVisible();
+    await expect(row).toContainText('Discrete');
+    await expect(row).toContainText('Weekly · 3 books');
+    await expect(row).not.toContainText('Read 12 books');
+    await row.click();
 
     await page.getByRole('button', { name: 'Save changes' }).click();
     await expect(page.getByText('Board saved')).toBeVisible();
@@ -72,5 +78,43 @@ test.describe('Shared counter placement defaults', () => {
     const copy = await readTask(page, copyId!);
     expect(copy?.maxCount).toBe(3);
     expect(copy?.sharedCounterId).toBe(ROOT);
+  });
+
+  test('Board Edit: a goal-less counter with no default — the row holds a Goal entry gating "+"; the typed goal is the copy\'s', async ({ page }) => {
+    const GOALLESS = 'dddddddd-cpd0-0001-task-000000000003';
+    await seedTask(page, {
+      id: GOALLESS, title: 'Pages', type: 'counting', action: 'Read', unit: 'pages', isCounter: true, currentCount: 40,
+      counterName: 'Pages', titleTemplatePlural: 'Read #N pages!',
+    });
+    await page.goto(`/boards/${BOARD_ID}?__oybc_test_bypass=1`);
+    await page.getByRole('button', { name: 'Edit board' }).click();
+    await page.getByRole('button', { name: /^Empty square, row 3, column 2$/ }).click();
+    await expect(page.getByRole('dialog', { name: /Add square/ })).toBeVisible();
+
+    await page.getByLabel('New normal task title').fill('pages');
+    const list = page.getByRole('list', { name: 'Matching library tasks' });
+    const plus = list.getByRole('button', { name: 'Add Pages' });
+    await expect(plus).toBeDisabled();
+    const goal = list.getByLabel('Goal for Pages');
+    await expect(goal).toHaveAttribute('placeholder', 'Goal');
+    await goal.fill('5');
+    await expect(plus).toBeEnabled();
+    await plus.click();
+    // The picker closes on the pick; nothing was written to the counter root.
+    await expect(page.getByRole('dialog', { name: /Add square/ })).toHaveCount(0);
+    expect(await readTask(page, GOALLESS)).not.toHaveProperty('maxCount');
+
+    await page.getByRole('button', { name: 'Save changes' }).click();
+    await expect(page.getByText('Board saved')).toBeVisible();
+
+    await page.reload();
+    await expect(page.getByText('Read 5 pages!')).toBeVisible();
+    const placed = await boardTaskIds(page, BOARD_ID);
+    const copyId = placed.find((id) => id !== FILLER && id !== ROOT && id !== GOALLESS);
+    expect(copyId).toBeDefined();
+    const copy = await readTask(page, copyId!);
+    expect(copy?.maxCount).toBe(5);
+    expect(copy?.sharedCounterId).toBe(GOALLESS);
+    expect(await readTask(page, GOALLESS)).not.toHaveProperty('maxCount');
   });
 });

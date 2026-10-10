@@ -94,3 +94,82 @@
   font-size: 13.5px;
   color: var(--riso-ink);
 }
+
+/* ─── Shared counter match row (handoff PlaceFrame.dc.html) ───
+   name · dense kind tag · goal slot · plus; the row stays 44px. */
+.dropdownRowButton,
+.dropdownRowStatic {
+  min-height: 44px;
+  box-sizing: border-box;
+}
+
+.dropdownRowStatic {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 14px;
+  color: var(--riso-ink);
+}
+
+.dropdownRowMain {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.dropdownRowMain .dropdownRowTitle {
+  flex: 0 1 auto;
+}
+
+/* "Weekly · " muted prefix + ink value, or just the value. */
+.rowGoal {
+  flex: 0 0 auto;
+  font-family: var(--riso-font-body);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--riso-muted);
+  white-space: nowrap;
+}
+
+.rowGoalValue {
+  color: var(--riso-ink);
+  font-weight: 700;
+}
+
+/* No default for this board: the slot is an empty kind-aware Goal entry. */
+.rowGoalEntry {
+  flex: 0 0 auto;
+  width: 112px;
+  display: flex;
+}
+
+.rowGoalEntry > * {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.rowPlusButton {
+  flex: 0 0 auto;
+  display: inline-grid;
+  place-items: center;
+  padding: 4px;
+  border: none;
+  background: transparent;
+  color: var(--riso-ink);
+  cursor: pointer;
+}
+
+.rowPlusButton:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.rowPlusButton:focus-visible {
+  outline: 3px solid var(--riso-blue);
+  outline-offset: 1px;
+  border-radius: var(--riso-r-card);
+}

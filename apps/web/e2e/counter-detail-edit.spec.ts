@@ -33,12 +33,12 @@ test('Counter Detail: Edit counter… renames and switches the kind Discrete →
   const sheet = page.getByRole('dialog', { name: 'Edit counter' });
   await expect(sheet).toBeVisible();
   await expect(sheet.getByLabel('What are you counting?')).toHaveValue('miles');
-  await expect(sheet.getByLabel('Task verb (optional)')).toHaveValue('Run');
+  await expect(sheet.getByLabel('Task verb', { exact: true })).toHaveValue('Run');
   await expect(sheet.getByRole('button', { name: 'Simple' })).toHaveCount(0);
   await expect(sheet.getByRole('button', { name: 'Compound' })).toHaveCount(0);
   await expect(sheet.getByText('Start from')).toHaveCount(0);
 
-  await sheet.getByLabel('Task verb (optional)').fill('Jog');
+  await sheet.getByLabel('Task verb', { exact: true }).fill('Jog');
   await sheet.getByRole('group', { name: 'Kind' }).getByRole('button', { name: 'Continuous' }).click();
   await sheet.getByRole('button', { name: 'Save', exact: true }).click();
   await expect(sheet).toHaveCount(0);

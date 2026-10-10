@@ -338,7 +338,10 @@ export function MemberRuleRow({
                     value={target}
                     kind={kind}
                     min={countTargetStep(kind)}
-                    max={goal}
+                    // A board-timeframe default above the member's goal is a
+                    // valid target (docs/SHARED_COUNTER_SETTINGS.md §2), so the
+                    // stepper admits it instead of clamping back to the goal.
+                    max={Math.max(goal, target)}
                     onChange={(next) => onSetTarget(next)}
                     // The goal rides INSIDE the pill now — B3's separate
                     // "of 35 pages" caption restated what an auto-generated

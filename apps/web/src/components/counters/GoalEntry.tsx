@@ -15,6 +15,8 @@ export interface GoalEntryProps {
   suffix?: string;
   dense?: boolean;
   invalid?: boolean;
+  /** Unset state: the value is a derived default shown dimmed (muted text, hairline keyline). */
+  dim?: boolean;
   autoFocus?: boolean;
   /** Enter key — the custom-amount rows commit on it. */
   onEnter?: () => void;
@@ -32,9 +34,11 @@ export interface GoalEntryProps {
  * @returns The field.
  */
 export function GoalEntry(props: GoalEntryProps): React.ReactElement {
-  const { kind, value, onChange, id, placeholder, suffix, dense, invalid, autoFocus, onEnter, onEscape } = props;
+  const { kind, value, onChange, id, placeholder, suffix, dense, invalid, dim, autoFocus, onEnter, onEscape } = props;
   const label = props['aria-label'];
-  const fieldClass = [styles.field, dense ? styles.dense : '', invalid ? styles.invalid : ''].filter(Boolean).join(' ');
+  const fieldClass = [styles.field, dense ? styles.dense : '', invalid ? styles.invalid : '', dim ? styles.dim : '']
+    .filter(Boolean)
+    .join(' ');
   const onKeyDown = (e: React.KeyboardEvent<HTMLInputElement>): void => {
     if (e.key === 'Enter' && onEnter) { e.preventDefault(); onEnter(); }
     if (e.key === 'Escape' && onEscape) { e.preventDefault(); onEscape(); }

@@ -1,0 +1,87 @@
+/* TemplateField — the `#N` title field + its live value row
+   (design handoff TemplateField.dc.html, web metrics). */
+
+.wrap {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.label {
+  display: block;
+  font-family: var(--riso-font-head);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--riso-muted);
+  margin: 0 0 6px;
+}
+
+.input {
+  width: 100%;
+  padding: 8px 10px;
+  border-radius: var(--riso-r-card);
+  border: 2px solid var(--riso-ink);
+  background: var(--riso-paper);
+  color: var(--riso-ink);
+  font-family: var(--riso-font-body);
+  font-size: 15px;
+  font-weight: 500;
+  box-sizing: border-box;
+  transition: box-shadow 0.1s;
+}
+
+/* Unset: the derived default as real, dimmed text on a hairline keyline. */
+.dim {
+  color: var(--riso-muted);
+  border-color: var(--riso-hair);
+}
+
+.input:focus {
+  outline: none;
+  box-shadow: 3px 3px 0 var(--riso-shadow-ink);
+}
+
+.input:focus-visible {
+  outline: 3px solid var(--riso-blue);
+  outline-offset: 2px;
+}
+
+.example {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  margin-top: 6px;
+  min-width: 0;
+}
+
+.arrow {
+  flex: 0 0 auto;
+  font-family: var(--riso-font-head);
+  font-size: 12px;
+  font-weight: 800;
+  color: var(--riso-muted);
+}
+
+.rendered {
+  font-family: var(--riso-font-head);
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--riso-ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.renderedDim {
+  color: var(--riso-muted);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .input {
+    transition: none;
+  }
+}
