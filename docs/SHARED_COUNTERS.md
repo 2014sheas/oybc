@@ -360,3 +360,5 @@ is old while its `createdAt` is the newest; see `WINDOWED_COMPLETION.md`
 toast window is reversed instead of the displayed one. Accepted for a
 single-user product (same-surface re-logs replace the toast); threading the
 entry id through the toast payload is the exact-fix if this ever matters.
+
+> **Design in progress (2026-10-09):** per-counter settings (name, `#N` title templates, default goals per core timeframe), placement at the board-timeframe default, and "counts toward" (any task increments a Discrete counter on completion) — see [`SHARED_COUNTER_SETTINGS.md`](SHARED_COUNTER_SETTINGS.md).
