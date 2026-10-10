@@ -72,7 +72,7 @@ const DEFAULT_VERB = 'Do';
  *     CLAUDE.md's Global Constraints). Create proceeds normally.
  *   - no match → Create proceeds normally.
  *
- * Modeled on `DeriveCounterModal` (backdrop + `role="dialog"` +
+ * A modal sheet (backdrop + `role="dialog"` +
  * Escape-to-cancel `keydown` effect + `stopPropagation` on the inner panel).
  * This is a presentational-ish component that owns its own field state but
  * calls the ops directly (no parent form to lift state into) — the caller

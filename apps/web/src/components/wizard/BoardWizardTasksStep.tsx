@@ -4,7 +4,6 @@ import {
   Timeframe,
   TaskType,
   buildCounterFamilyMap,
-  generateCounterTaskTitle,
   type BoardSource,
   type BoardWindow,
   type CompoundChild,
@@ -14,7 +13,6 @@ import {
   type VaryLevel,
 } from '@oybc/shared';
 import { fetchAllBoardTasks } from '../../db/operations';
-import { createTask } from '../../db/operations/tasks';
 import type { SourceSheetBoardEntry } from '../../db/operations/boardSources';
 import {
   overlayCompoundChildrenWithStagedEdits,
@@ -33,8 +31,6 @@ import {
   type SupplyInfoMap,
 } from '../../pages/createHub/wizardSources';
 import { RisoSectionLabel } from '../riso';
-import { DeriveCounterModal } from './DeriveCounterModal';
-import { resolveDeriveLinkTarget } from './deriveCounterLink';
 import { LibrarySheet } from './LibrarySheet';
 
 /**
@@ -233,8 +229,7 @@ export interface BoardWizardTasksStepProps {
  *      ✎ opens the inline `PoolRowEditor`.
  *   6. Footer — Back / Next.
  *
- * Cross-cutting overlays (right-click menu, derive-smaller modal,
- * task-detail sheet) stay owned here since the SAME `RowContextMenu`
+ * Cross-cutting overlays (right-click menu, task-detail sheet) stay owned here since the SAME `RowContextMenu`
  * instance serves both `LibrarySheet` and `PoolList` rows.
  *
  * The component is controlled — `selectedTaskIds`, `poolOrder`,
@@ -379,11 +374,6 @@ export function BoardWizardTasksStep({
   const [rowContextMenu, setRowContextMenu] = useState<
     { taskId: string; x: number; y: number } | null
   >(null);
-  /** Source counting task + draft new maxCount for the "derive smaller
-   *  version" quick action. Null when the deriver modal is closed. */
-  const [derivingFromTask, setDerivingFromTask] = useState<Task | null>(null);
-  const [deriveMaxCountInput, setDeriveMaxCountInput] = useState('');
-  const [deriveError, setDeriveError] = useState<string | null>(null);
   /** When set, mounts TaskDetailSheet over the wizard so the user can
    *  inspect a task's full library detail without losing wizard state.
    *  Mirrors iOS BoardWizardTasksStepView's "Open in library" context-menu
@@ -533,7 +523,7 @@ export function BoardWizardTasksStep({
       // First open: `seedPatchForEditor` blanks a Counting task's Title
       // field when it still matches its auto-generated form, so the title
       // keeps re-deriving as Action/Goal/Unit change in the editor.
-      draft = seedPatchForEditor(task);
+      draft = seedPatchForEditor(task, task.sharedCounterId ? (effectiveTaskMap[task.sharedCounterId] ?? null) : task);
       if (task.type === TaskType.COMPOUND) {
         const links = [...(effectiveChildrenByCompound[taskId] ?? [])].sort(
           (a, b) => a.childIndex - b.childIndex,
@@ -821,8 +811,6 @@ export function BoardWizardTasksStep({
           return null;
         }
         const isCompound = target.type === TaskType.COMPOUND;
-        const isCounting = target.type === TaskType.COUNTING
-          && target.action != null && target.unit != null && target.maxCount != null;
         const isSelected = selectedTaskIds.has(target.id);
         const isCenter = centerTaskId === target.id;
         const leaves = (effectiveChildrenByCompound[target.id] ?? [])
@@ -853,18 +841,6 @@ export function BoardWizardTasksStep({
                 glyph: isSelected ? '−' : '+',
                 action: () => { handleToggle(target.id); close(); },
               },
-              ...(isCounting
-                ? [{
-                    label: 'Derive smaller version…',
-                    glyph: '⇣',
-                    action: () => {
-                      setDerivingFromTask(target);
-                      setDeriveMaxCountInput('');
-                      setDeriveError(null);
-                      close();
-                    },
-                  }]
-                : []),
               ...(isCompound
                 ? [
                     ...(leaves.length > 0
@@ -922,52 +898,6 @@ export function BoardWizardTasksStep({
         onClose={() => setOpenedTaskInLibrary(null)}
         onOpenTask={(id) => setOpenedTaskInLibrary(id)}
       />
-
-      {derivingFromTask && (
-        <DeriveCounterModal
-          source={derivingFromTask}
-          maxCountInput={deriveMaxCountInput}
-          onMaxCountChange={(v) => { setDeriveMaxCountInput(v); setDeriveError(null); }}
-          error={deriveError}
-          onCancel={() => setDerivingFromTask(null)}
-          onSave={async () => {
-            const parsed = parseInt(deriveMaxCountInput.trim(), 10);
-            if (!Number.isFinite(parsed) || parsed <= 0) {
-              setDeriveError('Goal must be a positive integer');
-              return;
-            }
-            const action = (derivingFromTask.action ?? '').trim();
-            const unit = (derivingFromTask.unit ?? '').trim();
-            const title = generateCounterTaskTitle(action, parsed, unit);
-            // R1 counters refresh — "Derive smaller version" must produce a
-            // LINKED task, not a standalone duplicate (the modal's own copy
-            // already promises "same counter, lower goal"). See
-            // `resolveDeriveLinkTarget` for the source-resolution rule.
-            // `effectiveTaskMap` (already loaded for this component's row
-            // rendering) resolves the root task synchronously when
-            // `derivingFromTask` is itself derived.
-            const linkTarget = resolveDeriveLinkTarget(
-              derivingFromTask,
-              effectiveTaskMap[derivingFromTask.sharedCounterId ?? derivingFromTask.id],
-            );
-            try {
-              const newTask = await createTask(userId, {
-                title,
-                type: TaskType.COUNTING,
-                action,
-                unit,
-                maxCount: parsed,
-                sharedCounterId: linkTarget.sharedCounterId,
-                baseline: linkTarget.baseline,
-              });
-              onTaskCreated(newTask);
-              setDerivingFromTask(null);
-            } catch (err) {
-              setDeriveError(err instanceof Error ? err.message : 'Failed to save');
-            }
-          }}
-        />
-      )}
 
       {removeSourceConfirm}
 

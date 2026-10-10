@@ -33,7 +33,6 @@ import { TaskConfirmDeleteDialog } from '../../pages/tasks/TaskConfirmDeleteDial
 import { TaskEditSheet } from '../../pages/tasks/TaskEditSheet';
 import { RemoveSourceConfirmDialog } from '../wizard/RemoveSourceConfirmDialog';
 import { BoardWizardCancelDialog } from '../wizard/BoardWizardCancelDialog';
-import { DeriveCounterModal } from '../wizard/DeriveCounterModal';
 import { NewTaskSheet } from '../wizard/NewTaskSheet';
 import { MissingSourceDialog } from '../boards/MissingSourceDialog';
 import { BoardEditTaskSheet } from '../boardEdit/BoardEditTaskSheet';
@@ -92,13 +91,6 @@ const COMPOUND = makeTask('t-3', {
   title: 'Morning routine',
   type: TaskType.COMPOUND,
   operator: OperatorType.AND,
-});
-const COUNTER = makeTask('t-2', {
-  title: 'Run 30 miles',
-  type: TaskType.COUNTING,
-  action: 'Run',
-  unit: 'miles',
-  maxCount: 30,
 });
 
 function inRouter(el: React.ReactElement): React.ReactElement {
@@ -179,18 +171,6 @@ const CASES: DialogCase[] = [
         onRemoveSource: noop,
         onPause: noop,
         onDismiss: noop,
-      }),
-  },
-  {
-    name: 'DeriveCounterModal',
-    element: () =>
-      React.createElement(DeriveCounterModal, {
-        source: COUNTER,
-        maxCountInput: '10',
-        onMaxCountChange: noop,
-        error: null,
-        onCancel: noop,
-        onSave: noop,
       }),
   },
   {

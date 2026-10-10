@@ -1,6 +1,6 @@
 /* CreateCounterSheet — Counters Hub "+ New counter" modal (Shared Counters P5;
    R1 counters refresh — preview card + gold-only dedupe + RisoButton footer).
-   Pattern mirrors DeriveCounterModal.module.css (backdrop + dialog + fields). */
+   Backdrop + dialog + fields. */
 
 .backdrop {
   position: fixed;
