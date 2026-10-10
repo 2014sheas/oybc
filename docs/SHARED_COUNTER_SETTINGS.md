@@ -1,5 +1,7 @@
 # Shared counter settings, placement defaults, and "counts toward"
 
+**Design brief for Claude Design:** [`design/shared-counter-settings/BRIEF.md`](design/shared-counter-settings/BRIEF.md) — UI PRs (counter sheet fields, placement row, counts-toward surfaces) wait for its handoff; data/logic PRs ship first.
+
 **Status:** LOCKED 2026-10-09 — the owner accepted every recommendation in the
 decision table (D1–D9); the PR train in §5 is authorised. Opened 2026-10-09 from
 the owner's brief:
@@ -242,7 +244,7 @@ same stamp as the completion that caused it).
 
 | PR | Scope |
 | --- | --- |
-| 1 — counter settings (name, templates, timeframe defaults) | shared types + Zod + GRDB migration (nullable columns) + Dexie (no index); `renderCounterTitle` / `resolveCounterDefaultGoal` / default-template helpers with vectors; `isAutoCounterTitle` → template-aware; propagation (#575) extended to template/name edits; the counter sheet's new fields (create + edit); hub/Detail/pickers show `counterName`. Inert for untouched counters (absent = today's behaviour). |
+| 1 — counter settings data + logic (name, templates, timeframe defaults; sheet UI follows the design handoff) | shared types + Zod + GRDB migration (nullable columns) + Dexie (no index); `renderCounterTitle` / `resolveCounterDefaultGoal` / default-template helpers with vectors; `isAutoCounterTitle` → template-aware; propagation (#575) extended to template/name edits; the counter sheet's new fields (create + edit); hub/Detail/pickers show `counterName`. Inert for untouched counters (absent = today's behaviour). |
 | 2 — placement uses defaults | quick-add / picker mint with `resolveCounterDefaultGoal` + rendered title; shared search-match set; retire `DeriveCounterModal` (D6); source-pull auto-scaler consults defaults. |
 | 3 — counts toward (data + cascade) | `countsTowardCounterId/Amount`, deterministic event mint/tombstone in the cascade, delete/kind guards, zero-child container rule; vectors + XCTest/Vitest; no UI. |
 | 4 — counts toward (UI) | Counter Detail section + "+ New"; task editor picker; cell badge; e2e + snapshots. |
