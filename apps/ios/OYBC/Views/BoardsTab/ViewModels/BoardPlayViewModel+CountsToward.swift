@@ -45,10 +45,13 @@ extension BoardPlayViewModel {
     /// Snapshots the live credit-event ids on the roots of every flagged task
     /// placed on `currentBoardId`. Nil when no placed task counts toward a counter.
     /// Reads the database (call off the main actor).
-    nonisolated static func countsTowardCreditSnapshot(database: AppDatabase, currentBoardId: String?) -> CountsTowardCreditSnapshot? {
+    nonisolated static func countsTowardCreditSnapshot(
+        database: AppDatabase, currentBoardId: String?, writtenTaskId: String
+    ) -> CountsTowardCreditSnapshot? {
         guard let currentBoardId else { return nil }
         return try? database.read { db in
-            let roots = Set(try onBoardContributors(db: db, boardId: currentBoardId).compactMap(\.countsTowardCounterId))
+            let roots = Set(try onBoardContributors(db: db, boardId: currentBoardId, writtenTaskId: writtenTaskId)
+                .compactMap(\.countsTowardCounterId))
             guard !roots.isEmpty else { return nil }
             var out: [String: Set<String>] = [:]
             for root in roots {
@@ -58,9 +61,15 @@ extension BoardPlayViewModel {
         }
     }
 
-    private nonisolated static func onBoardContributors(db: Database, boardId: String) throws -> [Task] {
+    /// The flagged tasks a write can credit: the WRITTEN task and its transitive
+    /// parent compounds, placed on this board. (Never every on-board contributor:
+    /// a credit another square — or a pull — lands between the two snapshots is
+    /// not this write's, so it must not be attributed or undone.)
+    private nonisolated static func onBoardContributors(db: Database, boardId: String, writtenTaskId: String) throws -> [Task] {
+        let links = try CompoundChild.filter(Column("isDeleted") == false).fetchAll(db)
+        let family = Set([writtenTaskId] + DerivationPass.findTransitiveParentCompounds(changedTaskId: writtenTaskId, children: links))
         let ids = try BoardTask.filter(Column("boardId") == boardId && Column("isDeleted") == false).fetchAll(db).map(\.taskId)
-        return try Task.fetchAll(db, keys: Set(ids)).filter { !$0.isDeleted && $0.countsTowardCounterId != nil }
+        return try Task.fetchAll(db, keys: Set(ids).intersection(family)).filter { !$0.isDeleted && $0.countsTowardCounterId != nil }
     }
 
     private nonisolated static func liveCreditIds(db: Database, rootId: String) throws -> [String] {
@@ -96,12 +105,12 @@ extension BoardPlayViewModel {
     ///   - currentBoardId: The board being played.
     ///   - undo: What Undo reverses (`creditUndo`).
     nonisolated static func countsTowardCreditToast(
-        database: AppDatabase, snapshot: CountsTowardCreditSnapshot?, currentBoardId: String?,
+        database: AppDatabase, snapshot: CountsTowardCreditSnapshot?, currentBoardId: String?, writtenTaskId: String,
         undo: SharedCounterCreditToastPayload.UndoKind
     ) -> SharedCounterCreditToastPayload? {
         guard let snapshot, let currentBoardId else { return nil }
         return try? database.read { db in
-            let onBoard = try onBoardContributors(db: db, boardId: currentBoardId)
+            let onBoard = try onBoardContributors(db: db, boardId: currentBoardId, writtenTaskId: writtenTaskId)
             let tasks = try Task.fetchAll(db)
             var taskById: [String: Task] = [:]
             for t in tasks { taskById[t.id] = t }
@@ -126,8 +135,14 @@ extension BoardPlayViewModel {
                     .fetchAll(db).map(\.boardId)).subtracting([currentBoardId])
                 var others: [AppDatabase.AffectedBoard] = []
                 for board in try Board.fetchAll(db, keys: boardIds) where !board.isDeleted && board.status != .draft {
-                    let startMs = CountsToward.epochMs(board.startDate)
-                    let endMs = board.endDate.map(CountsToward.epochMs) ?? .infinity
+                    // A sealed board bounds at min(endDate, sealedAt) (`buildSealImmuneWindows`).
+                    let (startMs, endMs): (Double, Double) = {
+                        if let sealedAt = board.sealedAt {
+                            let w = buildSealImmuneWindows(sealedBoards: [(board.startDate, board.endDate, sealedAt)])[0]
+                            return (w.startMs, w.endMs)
+                        }
+                        return (CountsToward.epochMs(board.startDate), board.endDate.map(CountsToward.epochMs) ?? .infinity)
+                    }()
                     let holds = credits.contains { e in
                         let at = CountsToward.epochMs(e.occurredAt)
                         return !at.isNaN && (startMs.isNaN || at >= startMs) && (endMs.isNaN || at <= endMs)

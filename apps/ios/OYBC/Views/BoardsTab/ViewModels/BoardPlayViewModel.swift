@@ -861,7 +861,7 @@ final class BoardPlayViewModel: ObservableObject {
             guard let self = self else { return }
             do {
                 var newBingoMsg: String? = nil
-                let creditBefore = Self.countsTowardCreditSnapshot(database: database, currentBoardId: currentBoardId)
+                let creditBefore = Self.countsTowardCreditSnapshot(database: database, currentBoardId: currentBoardId, writtenTaskId: childTask.id)
                 // Child isn't on this board — the fallback write (child event
                 // append + cache stamp + windowed cross-board cascade) is owned
                 // by `AppDatabase.toggleCompoundChildFallback`. This VM derives
@@ -887,7 +887,7 @@ final class BoardPlayViewModel: ObservableObject {
                         newBingoMsg = "Bingo! (\(gained.joined(separator: ", ")))"
                     }
                 }
-                let creditPayload = Self.countsTowardCreditToast(database: database, snapshot: creditBefore, currentBoardId: currentBoardId, undo: .uncomplete(taskId: childTask.id, boardTaskId: nil))
+                let creditPayload = Self.countsTowardCreditToast(database: database, snapshot: creditBefore, currentBoardId: currentBoardId, writtenTaskId: childTask.id, undo: .uncomplete(taskId: childTask.id, boardTaskId: nil))
                 await MainActor.run {
                     self.reload { self.isProcessing = false }
                     if let msg = newBingoMsg {
@@ -948,7 +948,7 @@ final class BoardPlayViewModel: ObservableObject {
             guard let self = self else { return }
             do {
                 var newBingoMsg: String? = nil
-                let creditBefore = Self.countsTowardCreditSnapshot(database: database, currentBoardId: currentBoardId)
+                let creditBefore = Self.countsTowardCreditSnapshot(database: database, currentBoardId: currentBoardId, writtenTaskId: taskId)
 
                 // The whole write transaction lives in `AppDatabase.completeTaskOrchestrated`;
                 // this VM only derives the *current* board's flash message from its results.
@@ -976,7 +976,7 @@ final class BoardPlayViewModel: ObservableObject {
                     }
                 }
 
-                let creditPayload = Self.countsTowardCreditToast(database: database, snapshot: creditBefore, currentBoardId: currentBoardId, undo: Self.creditUndo(intent: intent, taskId: taskId, boardTaskId: boardTask.id, priorCount: priorCount))
+                let creditPayload = Self.countsTowardCreditToast(database: database, snapshot: creditBefore, currentBoardId: currentBoardId, writtenTaskId: taskId, undo: Self.creditUndo(intent: intent, taskId: taskId, boardTaskId: boardTask.id, priorCount: priorCount))
                 await MainActor.run {
                     // Full reload: board + placements + workspace task data. The
                     // task-data refresh keeps the compound detail sheet (rendered

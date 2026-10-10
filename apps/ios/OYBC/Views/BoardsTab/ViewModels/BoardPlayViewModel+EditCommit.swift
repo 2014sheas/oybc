@@ -414,10 +414,10 @@ extension BoardPlayViewModel {
                     self.editSaveInFlight = false
                     self.emitEdit(.saveFailed(CountKindSwitchError.countsTowardMessage))
                 }
-            } catch AppDatabase.CountsTowardError.refused(let problem) {
+            } catch let countsToward as AppDatabase.CountsTowardError {
                 await MainActor.run {
                     self.editSaveInFlight = false
-                    self.emitEdit(.saveFailed(problem.label))
+                    self.emitEdit(.saveFailed(countsToward.label ?? "Couldn’t save your changes — please try again."))
                 }
             } catch BoardEditError.boardNotEditable {
                 await MainActor.run {
@@ -477,6 +477,7 @@ extension BoardPlayViewModel {
         let placements = try BoardTask
             .filter(Column("boardId") == boardId && Column("isDeleted") == false).fetchAll(db)
         var touched = Set<String>()
+        var deferredClears: [String] = []
         for input in overrides {
             // Only a square still on the board commits its staged edit: a
             // removed / replaced square's override is dropped (no targets).
@@ -517,14 +518,15 @@ extension BoardPlayViewModel {
                 // field apply so a conversion / compound edit validates against
                 // the flag this Save ends with; `base` then carries the new version.
                 if let ct = input.override.countsToward {
-                    try AppDatabase.setCountsToward(db: db, taskId: target, counterId: ct.counterId, amount: ct.amount, now: now)
-                    guard let flagged = try Task.fetchOne(db, key: target) else { continue }
-                    if ct.counterId == nil, flagged.type == .compound,
-                       try CompoundChild.filter(Column("compoundTaskId") == target && Column("isDeleted") == false).fetchCount(db) == 0,
-                       input.override.compound?.children.isEmpty != false {
-                        throw AppDatabase.TaskEditError.invalid(message: "A compound task needs a sub-task.")
+                    if ct.counterId == nil, input.override.compound != nil {
+                        // A clear alongside a structure edit runs AFTER it (post-loop), so the
+                        // sub-task guard in `setCountsToward` sees the compound's final children.
+                        deferredClears.append(target)
+                    } else {
+                        try AppDatabase.setCountsToward(db: db, taskId: target, counterId: ct.counterId, amount: ct.amount, now: now)
+                        guard let flagged = try Task.fetchOne(db, key: target) else { continue }
+                        base = flagged
                     }
-                    base = flagged
                 }
                 // A stored counter ROOT switches kind first (inside this Save),
                 // then the typed goal is guarded at the final kind — a refused
@@ -578,6 +580,9 @@ extension BoardPlayViewModel {
                 try AppDatabase.saveTaskAndCascade(db: db, task: updated)
                 try AppDatabase.stampForkCaches(db: db, target: scoped, now: now)
             }
+        }
+        for id in deferredClears {
+            try AppDatabase.setCountsToward(db: db, taskId: id, counterId: nil, amount: nil, now: now)
         }
         // The flag was validated before the structure step: re-run it against the
         // post-edit rows so a loop closed by this Save's sub-task edit never persists.

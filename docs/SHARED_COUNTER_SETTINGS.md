@@ -678,7 +678,9 @@ count — in the handoff's order Done → In progress → Not started → title 
   it, or a compound holding either — is refused on the existing cycle line
   ("That counter already feeds this task.") in the same save as the set AND on
   an already-flagged compound whose flag the save did not touch (both editors;
-  web's `compoundLinkProblemForPatch` pre-checks it at Done); a save that did
+  web's `countsTowardLoopForPatch` returns the code at Board Edit Done and the
+  sheet maps it to the label; Board Edit's Save refusal shows the same label);
+  a save that did
   not touch the flag refuses only such a loop, a target that drifted for
   another reason never blocks an unrelated edit; (c) a compound with no live
   sub-tasks may NOT stop counting — the clear is refused with "A compound task
@@ -700,13 +702,20 @@ count — in the handoff's order Done → In progress → Not started → title 
   round**): the credited toast shows ONLY when the cascade actually wrote a
   NEW live credit for a contributor PLACED ON THIS BOARD — the live credit
   ids on the roots of the board's flagged tasks are snapshotted before the
-  write and diffed after it, and a new id is attributed to an on-board
-  contributor through `candidateContributionIds` (web `snapshotLiveCreditIds`
-  / `findNewBoardCredit` + `useBoardPlay`'s `watchCredits` ↔ iOS
-  `countsTowardCreditSnapshot` / `countsTowardCreditToast`) — and only under
-  the trigger: the counter has squares on OTHER boards (root or live copies;
-  not deleted, not draft) whose window `[startDate, endDate]` contains the
-  credit's `occurredAt` (not `isBoardCreditable(now)`). This covers a Simple
+  write and diffed after it, and a new id is attributed through
+  `candidateContributionIds` ONLY to the WRITTEN task or a compound deriving
+  through it, transitively, placed on this board (web `writtenLineage` — a
+  credit that lands between the two snapshots, a pull or a rapid second tap,
+  is never pinned on and undone through the wrong square); the new credits of
+  that contributor on its root are SUMMED into the toast amount, and a
+  contributor whose credits no other board counts is skipped for the next
+  one (web `snapshotLiveCreditIds` / `findNewBoardCredit` + `useBoardPlay`'s
+  `watchCredits` ↔ iOS `countsTowardCreditSnapshot` /
+  `countsTowardCreditToast`) — and only under the trigger: the counter has
+  squares on OTHER boards (root or live copies; not deleted, not draft) whose
+  COUNTED window contains a credit's `occurredAt` — `[startDate, endDate]`,
+  bounded at `min(endDate, sealedAt)` on a sealed board via
+  `buildSealImmuneWindows` (not `isBoardCreditable(now)`). This covers a Simple
   square checked off, a Counting square reaching its goal and a Compound
   completed through a sub-task toggle (once), and never fires when nothing
   was credited (a late log before `since`, a seal-suppressed write, a lineage

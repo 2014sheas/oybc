@@ -3,6 +3,8 @@ import { createPortal } from 'react-dom';
 import type { Board } from '@oybc/shared';
 import { RisoButton, RisoIcon } from '../riso';
 import { BoardNotEditableError } from '../../db/operations/boards';
+import { CountsTowardError } from '../../db/operations/countsToward';
+import { countsTowardProblemLabel } from '../counters/countsTowardLabels';
 import { BOARD_CLOSED_MESSAGE } from '../boardActions/boardDetailsPatch';
 import { BoardActionConfirmDialog } from '../boardActions/BoardActionConfirmDialog';
 import styles from './BoardEditPanel.module.css';
@@ -119,6 +121,13 @@ export function BoardEditPanel({
       if (err instanceof BoardNotEditableError) {
         setSaving(false);
         setBoardClosed(true);
+        return;
+      }
+      if (err instanceof CountsTowardError && err.code !== 'task-missing') {
+        // A refused "Counts toward" (a loop closed by the staged structure, a
+        // target that left Discrete) — the same line the task editors show.
+        setValidationError(countsTowardProblemLabel(err.code));
+        setSaving(false);
         return;
       }
       console.error('BoardEditPanel: save failed', err);

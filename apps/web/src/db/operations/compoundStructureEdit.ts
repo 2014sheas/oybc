@@ -48,7 +48,6 @@ import { runBoardCascadeForTasks } from './orchestration';
 import { addToSyncQueue } from './syncQueue';
 import { applyKindSwitchThenGoalGuard } from './countKindSwitch';
 import { assertCountsTowardStillValid, setCountsTowardInTransaction } from './countsToward';
-import { countsTowardProblemLabel } from '../../components/counters/countsTowardLabels';
 import { computeTaskCachesFromEvents } from './taskEvents';
 import { updateTaskAndCascade, type UpdateTaskPatch } from './tasks.crud';
 import { ensureBoardScopedTask, repointCompoundLink, stampForkCaches } from './boardScopedEdit';
@@ -231,27 +230,12 @@ export async function applyStagedCompoundChildEdits(
 export async function compoundLinkProblemForPatch(
   parentId: string,
   patch: TaskEditPatch,
-  countsTowardTargetId?: string | null,
 ): Promise<string | null> {
   const kept = patch.children.filter(
     (c) => !c.markedDeleted && c.title.trim().length > 0 && !isNewChild(c) && c.childTaskId,
   );
   if (kept.length === 0) return null;
   const allLinks = (await db.compoundChildren.toArray()).filter((l) => !l.isDeleted);
-  // A flagged compound (stored flag, or the staged one the caller passes) may
-  // not take a sub-task that closes a counts-toward loop — the target counter,
-  // one of its copies, or a compound holding either (§3e).
-  const parent = await db.tasks.get(parentId);
-  const targetId = countsTowardTargetId === undefined ? (parent?.countsTowardCounterId ?? null) : countsTowardTargetId;
-  if (parent && targetId != null) {
-    const keptIds = new Set(kept.map((c) => c.childTaskId as string));
-    const hypothetical: CompoundChild[] = [
-      ...allLinks.filter((l) => l.compoundTaskId !== parentId),
-      ...[...keptIds].map((childTaskId, i) => ({ id: `staged-${i}`, compoundTaskId: parentId, childTaskId, childIndex: i, createdAt: '', updatedAt: '', version: 1, isDeleted: false })),
-    ];
-    const problem = countsTowardProblem({ task: parent, targetId, tasks: await db.tasks.toArray(), children: hypothetical });
-    if (problem === 'cycle') return countsTowardProblemLabel('cycle');
-  }
   const linkedHere = new Set(
     allLinks.filter((l) => l.compoundTaskId === parentId).map((l) => l.childTaskId),
   );
@@ -266,6 +250,36 @@ export async function compoundLinkProblemForPatch(
     if (problem !== null) return problem;
   }
   return null;
+}
+
+/**
+ * Whether `patch`'s sub-tasks would close a counts-toward loop for a flagged
+ * compound (docs/SHARED_COUNTER_SETTINGS.md §3e) — the target counter, one of
+ * its copies, or a compound holding either, named as a sub-task. The sheet's
+ * Done pre-check (the UI maps the code to its label); the save itself
+ * re-validates after the structure lands (`assertCountsTowardStillValid`).
+ *
+ * @param parentId - The compound.
+ * @param patch - The staged structure.
+ * @param countsTowardTargetId - The flag the save ends with (a staged value); absent = the stored flag.
+ * @returns `'cycle'`, or `null` when the structure is allowed (or the compound is not flagged).
+ */
+export async function countsTowardLoopForPatch(
+  parentId: string,
+  patch: TaskEditPatch,
+  countsTowardTargetId?: string | null,
+): Promise<'cycle' | null> {
+  const parent = await db.tasks.get(parentId);
+  const targetId = countsTowardTargetId === undefined ? (parent?.countsTowardCounterId ?? null) : countsTowardTargetId;
+  if (!parent || targetId == null) return null;
+  const keptIds = [...new Set(patch.children.filter((c) => !c.markedDeleted && !isNewChild(c) && c.childTaskId).map((c) => c.childTaskId as string))];
+  const allLinks = (await db.compoundChildren.toArray()).filter((l) => !l.isDeleted);
+  const hypothetical: CompoundChild[] = [
+    ...allLinks.filter((l) => l.compoundTaskId !== parentId),
+    ...keptIds.map((childTaskId, i) => ({ id: `staged-${i}`, compoundTaskId: parentId, childTaskId, childIndex: i, createdAt: '', updatedAt: '', version: 1, isDeleted: false })),
+  ];
+  const problem = countsTowardProblem({ task: parent, targetId, tasks: await db.tasks.toArray(), children: hypothetical });
+  return problem === 'cycle' ? 'cycle' : null;
 }
 
 /**

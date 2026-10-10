@@ -127,10 +127,6 @@ extension AppDatabase {
             )
             guard let ct = patch.countsToward else { return saved }
             if ct.counterId == nil {
-                if saved.type == .compound,
-                   try CompoundChild.filter(Column("compoundTaskId") == taskId && Column("isDeleted") == false).fetchCount(db) == 0 {
-                    throw TaskEditError.invalid(message: "A compound task needs a sub-task.")
-                }
                 try Self.setCountsToward(db: db, taskId: taskId, counterId: nil, amount: nil, now: now)
             }
             return try Task.fetchOne(db, key: taskId) ?? saved

@@ -2,7 +2,6 @@ import { useCallback } from 'react';
 import {
   BoardStatus,
   counterDisplayName,
-  countsTowardAmountOf,
   effectiveCenter,
   resolveTaskWindowState,
   type Board,
@@ -59,12 +58,33 @@ export function revertUpdatesFor(
   return null;
 }
 
-/** The credited toast for a counts-toward credit this write produced (its Undo reverses the write). */
+/**
+ * The task a write touched plus every compound that derives through it,
+ * transitively (`childrenByCompound` inverted) — the only tasks a credit from
+ * that write can belong to. Attributing to these alone keeps a credit that
+ * lands between the two snapshots (a pull, a rapid second tap on another
+ * square) from being pinned on — and undone through — the wrong square.
+ */
+export function writtenLineage(taskId: string, childrenByCompound: Record<string, CompoundChild[]>): Set<string> {
+  const out = new Set<string>([taskId]);
+  const stack = [taskId];
+  while (stack.length > 0) {
+    const child = stack.pop() as string;
+    for (const [compoundId, links] of Object.entries(childrenByCompound)) {
+      if (out.has(compoundId) || !links.some((l) => !l.isDeleted && l.childTaskId === child)) continue;
+      out.add(compoundId);
+      stack.push(compoundId);
+    }
+  }
+  return out;
+}
+
+/** The credited toast for the counts-toward credits this write produced (its Undo reverses the write). */
 function countsTowardCreditToast(found: NewBoardCredit, revert: () => Promise<void>): CreditedToast {
   return {
     sourceTaskId: found.root.id,
     counterName: counterDisplayName(found.root),
-    amount: found.credit.delta ?? countsTowardAmountOf(found.contributor),
+    amount: found.amount,
     verb: 'logged',
     boardNames: found.otherBoards.map((b) => b.boardName),
     key: Date.now(),
@@ -311,8 +331,9 @@ export function useBoardPlay(params: UseBoardPlayParams): UseBoardPlayResult {
    * no toast. `revert` is the toast's Undo: the exact inverse write.
    */
   const watchCredits = useCallback(
-    async (write: () => Promise<void>, revert: () => Promise<void>): Promise<void> => {
-      const contributors = onBoardContributors(boardTasks, taskMap);
+    async (writtenTaskId: string, write: () => Promise<void>, revert: () => Promise<void>): Promise<void> => {
+      const lineage = writtenLineage(writtenTaskId, compoundChildrenByCompound);
+      const contributors = onBoardContributors(boardTasks, taskMap).filter((c) => lineage.has(c.id));
       if (!boardId || contributors.length === 0) {
         await write();
         return;
@@ -323,7 +344,7 @@ export function useBoardPlay(params: UseBoardPlayParams): UseBoardPlayResult {
       const found = await findNewBoardCredit(boardId, contributors, before);
       if (found && found.otherBoards.length > 0) onCreditedToast(countsTowardCreditToast(found, revert));
     },
-    [boardId, boardTasks, taskMap, onCreditedToast],
+    [boardId, boardTasks, taskMap, compoundChildrenByCompound, onCreditedToast],
   );
 
   /** {@link completeRaw} under the credited-toast watch (the Undo puts the square back). */
@@ -332,7 +353,12 @@ export function useBoardPlay(params: UseBoardPlayParams): UseBoardPlayResult {
       const bt = boardTasks.find((b) => b.id === boardTaskId);
       const task = bt ? taskMap[bt.taskId] : undefined;
       const revert = task ? revertUpdatesFor(task, updates, squareWindowContext) : null;
+      if (!task) {
+        await completeRaw(boardTaskId, updates);
+        return;
+      }
       await watchCredits(
+        task.id,
         () => completeRaw(boardTaskId, updates),
         () => (revert ? completeRaw(boardTaskId, revert) : Promise.resolve()),
       );
@@ -592,7 +618,7 @@ export function useBoardPlay(params: UseBoardPlayParams): UseBoardPlayResult {
       };
       // A flagged compound completed by this toggle credits its counter once
       // (the watch); the toast's Undo toggles the child back.
-      await watchCredits(() => toggle(desired), () => toggle(!desired));
+      await watchCredits(childTaskId, () => toggle(desired), () => toggle(!desired));
     },
     [playLocked, taskMap, boardTasks, completeRaw, watchCredits, onFlash, boardId,
       compoundChildrenByCompound, squareWindowContext]

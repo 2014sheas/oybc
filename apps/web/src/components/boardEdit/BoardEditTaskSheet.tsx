@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { CountsTowardField } from '../counters/CountsTowardField';
+import { countsTowardProblemLabel } from '../counters/countsTowardLabels';
 import { countsTowardSubmitFor, showsCountsTowardRow, storedCountsToward, type CountsTowardSelection } from '../counters/countsTowardFieldModel';
 import { useTasks } from '../../hooks/useTasks';
 import {
@@ -17,6 +18,7 @@ import {
 import {
   SHARED_COUNTER_TYPE_MESSAGE,
   compoundLinkProblemForPatch,
+  countsTowardLoopForPatch,
   fetchCompoundChildren,
   fetchTasksByIds,
   hasLiveLinkedCopies,
@@ -308,6 +310,13 @@ export function BoardEditTaskSheet({
         const linkProblem = await compoundLinkProblemForPatch(task.id, patch.compound);
         if (linkProblem !== null) {
           setDoneError(linkProblem);
+          return;
+        }
+        // A flagged compound (stored, or staged in this sheet) may not take a
+        // sub-task that closes a counts-toward loop; Save re-checks too.
+        const loop = await countsTowardLoopForPatch(task.id, patch.compound, countsTowardSubmit === undefined ? storedCounts.counterId : countsTowardSubmit.counterId);
+        if (loop !== null) {
+          setDoneError(countsTowardProblemLabel(loop));
           return;
         }
       } finally {

@@ -62,29 +62,6 @@ export async function fetchTasksByIds(ids: string[]): Promise<Task[]> {
  * defensively so a programmer error in a non-schema-validating call site
  * (e.g., a test) surfaces immediately.
  */
-/**
- * {@link createTask} + "counts toward" in ONE transaction: the row is created
- * and flagged through `setCountsTowardInTransaction` (validated, `since`
- * stamped, cascaded); a refused flag persists nothing — no unflagged
- * leftover, no duplicate on re-submit.
- *
- * @param userId - The owner.
- * @param input - The task to create.
- * @param countsToward - The Discrete counter root + amount.
- * @throws {CountsTowardError} when the flag is refused (the create rolls back).
- */
-export async function createTaskCountingToward(
-  userId: string,
-  input: CreateTaskInput,
-  countsToward: { counterId: string; amount?: number },
-): Promise<Task> {
-  return db.transaction('rw', [db.boards, db.boardTasks, db.tasks, db.compoundChildren, db.taskEvents, db.syncQueue], async () => {
-    const task = await createTask(userId, input);
-    await setCountsTowardInTransaction(task.id, countsToward.counterId, countsToward.amount, currentTimestamp());
-    return (await db.tasks.get(task.id)) ?? task;
-  });
-}
-
 export async function createTask(
   userId: string,
   input: CreateTaskInput
@@ -203,6 +180,29 @@ export async function createTask(
   await addToSyncQueue('tasks', task.id, SyncOperationType.CREATE, task);
 
   return task;
+}
+
+/**
+ * {@link createTask} + "counts toward" in ONE transaction: the row is created
+ * and flagged through `setCountsTowardInTransaction` (validated, `since`
+ * stamped, cascaded); a refused flag persists nothing — no unflagged
+ * leftover, no duplicate on re-submit.
+ *
+ * @param userId - The owner.
+ * @param input - The task to create.
+ * @param countsToward - The Discrete counter root + amount.
+ * @throws {CountsTowardError} when the flag is refused (the create rolls back).
+ */
+export async function createTaskCountingToward(
+  userId: string,
+  input: CreateTaskInput,
+  countsToward: { counterId: string; amount?: number },
+): Promise<Task> {
+  return db.transaction('rw', [db.boards, db.boardTasks, db.tasks, db.compoundChildren, db.taskEvents, db.syncQueue], async () => {
+    const task = await createTask(userId, input);
+    await setCountsTowardInTransaction(task.id, countsToward.counterId, countsToward.amount, currentTimestamp());
+    return (await db.tasks.get(task.id)) ?? task;
+  });
 }
 /**
  * Create a new compound task (unifies former progress + composite create paths).

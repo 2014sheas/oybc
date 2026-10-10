@@ -10,6 +10,7 @@
 import {
   BoardStatus,
   buildForkChildrenIndex,
+  buildSealImmuneWindows,
   candidateContributionIds,
   countsTowardRows,
   forkLineageIds,
@@ -124,25 +125,34 @@ export async function snapshotLiveCreditIds(rootIds: ReadonlyArray<string>): Pro
   return new Set(rows.map((e) => e.id));
 }
 
-/** What the credited toast shows for a counts-toward credit this write produced. */
+/** What the credited toast shows for the counts-toward credits this write produced. */
 export interface NewBoardCredit {
-  /** The on-board contributor the credit belongs to. */
+  /** The on-board contributor the credits belong to. */
   contributor: Task;
-  /** The counter root it was written on. */
+  /** The counter root they were written on. */
   root: Task;
-  /** The credit event (its `delta` is the amount shown, its `occurredAt` picks the boards). */
-  credit: TaskEvent;
-  /** OTHER boards placing the root or a live copy whose window contains the credit — the toast's trigger. */
+  /** The new credit events on that root (their `delta`s sum to `amount`; their instants pick the boards). */
+  credits: TaskEvent[];
+  /** The amount the toast shows — the sum of the new credits' deltas. */
+  amount: number;
+  /** OTHER boards placing the root or a live copy whose window contains a credit — the toast's trigger. */
   otherBoards: AffectedBoard[];
 }
 
-/** Whether `[startDate, endDate]` (inclusive, open-ended without an end) contains `iso`. */
-function windowContains(board: Pick<Board, 'startDate' | 'endDate'>, iso: string): boolean {
+/**
+ * Whether the board's COUNTED window contains `iso`: `[startDate, endDate]`
+ * (inclusive; open-ended without an end), bounded at `sealedAt` on a sealed
+ * board (`buildSealImmuneWindows` — `[startDate, min(endDate, sealedAt)]`,
+ * the set of instants a closed board counted).
+ */
+function countedWindowContains(board: Pick<Board, 'startDate' | 'endDate' | 'sealedAt'>, iso: string): boolean {
   const t = new Date(iso).getTime();
-  const start = new Date(board.startDate).getTime();
-  if (!(t >= start)) return false;
-  if (board.endDate == null) return true;
-  return t <= new Date(board.endDate).getTime();
+  if (board.sealedAt != null) {
+    const [w] = buildSealImmuneWindows([{ startDate: board.startDate, endDate: board.endDate, sealedAt: board.sealedAt }]);
+    return t >= w.startMs && t <= w.endMs;
+  }
+  if (!(t >= new Date(board.startDate).getTime())) return false;
+  return board.endDate == null || t <= new Date(board.endDate).getTime();
 }
 
 /**
@@ -170,16 +180,20 @@ export async function findNewBoardCredit(boardId: string, contributors: Readonly
     const rootId = contributor.countsTowardCounterId as string;
     const root = inputs.taskById[rootId];
     if (!root || root.isDeleted) continue;
-    const credit = candidateContributionIds(contributor, inputs, [rootId]).map((id) => newById.get(id)).find((e): e is TaskEvent => e != null);
-    if (!credit) continue;
+    // Every new credit on this root that belongs to the contributor — summed (iOS parity).
+    const credits = candidateContributionIds(contributor, inputs, [rootId]).map((id) => newById.get(id)).filter((e): e is TaskEvent => e != null);
+    if (credits.length === 0) continue;
     const copies = (await db.tasks.filter((t) => !t.isDeleted && t.sharedCounterId === rootId).toArray()).map((t) => t.id);
     const placements = await db.boardTasks.where('taskId').anyOf([rootId, ...copies]).filter((bt) => !bt.isDeleted).toArray();
     const boardIds = [...new Set(placements.map((p) => p.boardId))].filter((id) => id !== boardId);
     const boards = boardIds.length > 0 ? healBoardNames(await db.boards.where('id').anyOf(boardIds).toArray()) : [];
     const otherBoards = boards
-      .filter((b) => !b.isDeleted && b.status !== BoardStatus.DRAFT && windowContains(b, credit.occurredAt))
+      .filter((b) => !b.isDeleted && b.status !== BoardStatus.DRAFT && credits.some((c) => countedWindowContains(b, c.occurredAt)))
       .map((b) => ({ boardId: b.id, boardName: b.name }));
-    return { contributor, root, credit, otherBoards };
+    // No other board counts it → keep looking (another contributor's credit may have one).
+    if (otherBoards.length === 0) continue;
+    const amount = credits.reduce((sum, c) => sum + (c.delta ?? 1), 0);
+    return { contributor, root, credits, amount, otherBoards };
   }
   return null;
 }

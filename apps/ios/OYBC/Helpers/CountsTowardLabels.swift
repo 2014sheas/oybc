@@ -27,6 +27,7 @@ extension AppDatabase.CountsTowardError {
         switch self {
         case .taskMissing: return nil
         case .refused(let problem): return problem.label
+        case .compoundNeedsChild: return "A compound task needs a sub-task."
         }
     }
 }

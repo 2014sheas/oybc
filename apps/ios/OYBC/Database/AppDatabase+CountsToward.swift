@@ -32,6 +32,8 @@ extension AppDatabase {
     enum CountsTowardError: Error, Equatable {
         case taskMissing
         case refused(CountsToward.Problem)
+        /// A clear on a compound with no live sub-tasks (it would be left invalid).
+        case compoundNeedsChild
     }
 
     /// Live tasks that count toward `counterId`.
@@ -330,6 +332,10 @@ extension AppDatabase {
             children: try CompoundChild.filter(Column("isDeleted") == false).fetchAll(db)
         ) {
             throw CountsTowardError.refused(problem)
+        }
+        if counterId == nil, task.type == .compound,
+           try CompoundChild.filter(Column("compoundTaskId") == taskId && Column("isDeleted") == false).fetchCount(db) == 0 {
+            throw CountsTowardError.compoundNeedsChild
         }
         let previousRoot = task.countsTowardCounterId
         if let counterId {
