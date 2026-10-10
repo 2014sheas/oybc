@@ -321,12 +321,49 @@ library picker, the core-defaults sheet, Board Edit's picker (iOS
 autocomplete (iOS `RisoCompoundFieldsView`; web already uses the quick-add row). The
 `#N` placeholder is never matched (it is replaced by a space before matching). "Derive smaller version…" (web `DeriveCounterModal`, its menu
 item, `deriveCounterLink`; iOS's orphaned `DeriveCounterLink.swift`) is deleted (D6).
-**Deferred to the UI PR:** the match row showing the default goal (rows still read the
+~~**Deferred to the UI PR:** the match row showing the default goal (rows still read the
 root's title until the copy is minted / the Preview runs), the no-default state, the
 member-rule target stepper's `max` when a default exceeds the member's goal, the wizard
 pool-row editor's live title preview (iOS `RisoPoolRowEditorView`, still the formula —
 no root in scope), and the counter sheet's Defaults / template fields (+ the Zod length
-caps above).
+caps above).~~ — all closed by the UI PR below.
+
+**UI PR notes (2026-10-10 — design handoff `design_handoff_counter_settings/`, both
+platforms).** The counter sheet (`CreateCounterSheet` ↔ `NewCounterSheetView`) now reads
+**Name · Kind · What are you counting? · Task verb · Singular title · Plural title ·
+Defaults (Daily / Weekly / Monthly / Yearly) · Start from (create only)**, built from two
+reusable pieces — `TemplateField` ↔ `TemplateFieldView` (plain-text `#N` input + a
+live-rendered `→ Read 1 book` value row at the handoff's example counts: singular 1,
+plural 12 / 2.5 / 90 min) and `DefaultsRow` ↔ `DefaultsRowView` (2×2 kind-aware
+`GoalEntry` cells). One rule for every optional field: blank = unset = the derived default
+shown dimmed (muted text, hairline keyline) as real text to type over; typing makes it
+solid and stores it; clearing stores absent. The pure half is shared:
+`counterSettingsDraftFromRoot` / `counterSettingsDefaults` / `storedCounterSettingsFromDraft`
+/ `storedCounterSettings` / `changedCounterSettingsKeys` (`counterSettings.ts` ↔
+`CounterSettings.swift`, vector-pinned) — a typed value equal to its dimmed default is
+stored absent (so it keeps deriving live; a goal is judged against what the OTHER entered
+goals derive for it, shortest first), the singular's default is the typed plural (D2),
+and an edit-mode Save writes only the settings whose stored value changed (web
+present-`undefined` = clear; iOS `Patch.counterSettings` only when changed). Length caps
+(name 100, templates 200) are enforced in the inputs. Placement: the quick-add / Board
+Edit picker row for a shared counter root shows the NAME · a dense kind tag · the goal
+slot via the shared `placementGoalSource` (`"Weekly · 2 books"` for a timeframe default,
+`"12 books"` for the root's own goal). The stepper admits a default above the member's
+goal (`max = max(goal, target)`), and `RisoPoolRowEditorView` renders its preview through
+the root's templates (its own, or the linked root fetched once). Three design calls
+ratified from the handoff: (1) the sheet's **preview card (name + All-time) is removed**
+— Name does its job and all-time lives in Counter Detail; (2) **the verb is required**
+(the "blank verb submits as Do" fallback is gone; inline validation "Enter what you're
+counting." / "Enter a verb." under the two required fields, primary disabled while either
+is empty; an existing Duration root's noun stays optional in edit); (3) **no default for
+this board → the goal slot IS a Goal entry** (placeholder "Goal", unit suffix; "+" dimmed
+until a number is typed) and the pick hands the host a **pending LINKED counting task**
+at that goal (`buildPendingLinkedCounter` ↔ `QuickAddCounterPlacement.pendingLinkedTask`
+— the special panel's auto-link shape, no window fields), which the planner / Board Edit
+resolver mints into the per-board copy exactly as a picked linked row; nothing is written
+to the counter root, no schema, no modal. Hosts without a board timeframe (pool editor)
+or without a deferred-create path keep the plain row. The counts-toward UI (spec §3d /
+PR 4) remains pending.
 
 ---
 
