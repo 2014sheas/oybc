@@ -6,7 +6,24 @@
 export * from '@oybc/bingo-core';
 
 export { generateCounterTaskTitle, isAutoCounterTitle, counterCopyTitle } from './taskTitle';
-export type { CounterTitleFields } from './taskTitle';
+export type { CounterTitleFields, CounterTitleSettings } from './taskTitle';
+export {
+  COUNT_PLACEHOLDER,
+  COUNTER_GOAL_TIMEFRAMES,
+  counterDisplayName,
+  defaultTitleTemplates,
+  derivedTimeframeGoals,
+  effectiveTitleTemplates,
+  formatTitleCount,
+  renderCounterTitle,
+  resolveCounterDefaultGoal,
+} from './counterSettings';
+export type {
+  CounterGoalTimeframe,
+  CounterSettingsFields,
+  CounterTimeframeGoals,
+  CounterTitleTemplates,
+} from './counterSettings';
 
 // ===== Counter kinds (docs/COUNTER_KINDS.md) =====
 export {

@@ -37,7 +37,11 @@
       "sealedCompletedCells"
     ],
     "tasks": [
-      "endDate"
+      "endDate",
+      "counterName",
+      "titleTemplateSingular",
+      "titleTemplatePlural",
+      "timeframeGoals"
     ],
     "coreBoardDefaults": [
       "defaultBoardSize",

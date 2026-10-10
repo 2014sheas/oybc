@@ -1,0 +1,75 @@
+{
+  "_note": "Cross-platform vectors for packages/shared/src/algorithms/counterSettings.ts <-> apps/ios/OYBC/Helpers/CounterSettings.swift (docs/SHARED_COUNTER_SETTINGS.md §1), plus the template-aware isAutoCounterTitle / counterCopyTitle in taskTitle.ts <-> TaskTitle.swift. Shared by packages/shared/tests/algorithms/counterSettings.test.ts and apps/ios/OYBCTests/CounterSettingsVectorTests.swift. A root's absent field is omitted (countKind absent = discrete). Rendering: goal == 1 -> singular template (absent -> the plural), else plural; '#N' -> the count (Duration 'Xh Ym', else the 2dp-trimmed number, locale-free); no stored template -> the legacy formula; goal-less -> the name. D4 derivation: nearest set timeframe (tie -> the shorter), scaled by nominal days 1/7/30/365, ceil to the kind's step.",
+  "defaultTitleTemplates": [
+    { "name": "discrete: '{action} #N {unit}', singular = plural (D2)", "root": { "action": "Read", "unit": "books" }, "expected": { "singular": "Read #N books", "plural": "Read #N books" } },
+    { "name": "trims action and unit", "root": { "action": "  Run ", "unit": "miles  " }, "expected": { "singular": "Run #N miles", "plural": "Run #N miles" } },
+    { "name": "continuous is like discrete", "root": { "action": "Run", "unit": "km", "countKind": "continuous" }, "expected": { "singular": "Run #N km", "plural": "Run #N km" } },
+    { "name": "duration: '{action} #N' (no unit)", "root": { "action": "Practice", "unit": "guitar", "countKind": "duration" }, "expected": { "singular": "Practice #N", "plural": "Practice #N" } }
+  ],
+  "effectiveTitleTemplates": [
+    { "name": "nothing stored = the defaults", "root": { "action": "Read", "unit": "books" }, "expected": { "singular": "Read #N books", "plural": "Read #N books" } },
+    { "name": "stored plural only: singular follows it", "root": { "action": "Read", "unit": "books", "titleTemplatePlural": "Finish #N novels" }, "expected": { "singular": "Finish #N novels", "plural": "Finish #N novels" } },
+    { "name": "stored singular only: plural stays default", "root": { "action": "Read", "unit": "books", "titleTemplateSingular": " Read #N book " }, "expected": { "singular": "Read #N book", "plural": "Read #N books" } },
+    { "name": "blank stored values are absent", "root": { "action": "Read", "unit": "books", "titleTemplateSingular": "  ", "titleTemplatePlural": "" }, "expected": { "singular": "Read #N books", "plural": "Read #N books" } }
+  ],
+  "renderCounterTitle": [
+    { "name": "defaults, plural", "root": { "action": "Read", "unit": "books" }, "goal": 12, "expected": "Read 12 books" },
+    { "name": "defaults, goal 1 renders the default singular (= plural)", "root": { "action": "Read", "unit": "books" }, "goal": 1, "expected": "Read 1 books" },
+    { "name": "stored singular at goal 1", "root": { "action": "Read", "unit": "books", "titleTemplateSingular": "Read #N book" }, "goal": 1, "expected": "Read 1 book" },
+    { "name": "stored singular is not used for goal != 1", "root": { "action": "Read", "unit": "books", "titleTemplateSingular": "Read #N book" }, "goal": 12, "expected": "Read 12 books" },
+    { "name": "stored plural", "root": { "action": "Read", "unit": "books", "titleTemplatePlural": "Finish #N novels" }, "goal": 3, "expected": "Finish 3 novels" },
+    { "name": "stored plural, goal 1, no singular: the plural renders", "root": { "action": "Read", "unit": "books", "titleTemplatePlural": "Finish #N novels" }, "goal": 1, "expected": "Finish 1 novels" },
+    { "name": "template without #N renders as-is", "root": { "action": "Read", "unit": "books", "titleTemplateSingular": "Finish the book" }, "goal": 1, "expected": "Finish the book" },
+    { "name": "every #N is replaced", "root": { "action": "Do", "unit": "sets", "titleTemplatePlural": "#N of #N sets" }, "goal": 3, "expected": "3 of 3 sets" },
+    { "name": "a stored template renders trimmed", "root": { "action": "Read", "unit": "books", "titleTemplatePlural": "  Read #N tomes  " }, "goal": 4, "expected": "Read 4 tomes" },
+    { "name": "a blank stored template is absent (legacy formula)", "root": { "action": "Read", "unit": "books", "titleTemplatePlural": "   " }, "goal": 4, "expected": "Read 4 books" },
+    { "name": "continuous count, 2dp trimmed", "root": { "action": "Run", "unit": "km", "countKind": "continuous", "titleTemplatePlural": "Run #N km outside" }, "goal": 2.5, "expected": "Run 2.5 km outside" },
+    { "name": "duration default formats Xh Ym", "root": { "action": "Practice", "countKind": "duration" }, "goal": 90, "expected": "Practice 1h 30m" },
+    { "name": "duration stored template", "root": { "action": "Practice", "countKind": "duration", "titleTemplatePlural": "Play guitar #N" }, "goal": 150, "expected": "Play guitar 2h 30m" },
+    { "name": "duration whole hours", "root": { "action": "Practice", "countKind": "duration", "titleTemplatePlural": "Play #N" }, "goal": 120, "expected": "Play 2h" },
+    { "name": "goal-less renders the name", "root": { "action": "Run", "unit": "miles", "counterName": "Running" }, "goal": null, "expected": "Running" },
+    { "name": "goal-less without a name renders the pair-derived name", "root": { "action": "Run", "unit": "miles" }, "goal": null, "expected": "Run miles" },
+    { "name": "goal-less elides Do", "root": { "action": "Do", "unit": "push-ups" }, "goal": null, "expected": "Push-ups" }
+  ],
+  "counterDisplayName": [
+    { "name": "the stored name wins", "root": { "title": "Run 26 miles", "action": "Run", "unit": "miles", "counterName": "Running" }, "expected": "Running" },
+    { "name": "the stored name is trimmed", "root": { "action": "Read", "unit": "books", "counterName": "  Books  " }, "expected": "Books" },
+    { "name": "no name: formatCounterName(action, unit)", "root": { "title": "Run 26 miles", "action": "Run", "unit": "miles" }, "expected": "Run miles" },
+    { "name": "a blank name is absent", "root": { "action": "Run", "unit": "miles", "counterName": "   " }, "expected": "Run miles" },
+    { "name": "nothing derivable: the stored title", "root": { "title": " Mystery ", "action": "Do" }, "expected": "Mystery" }
+  ],
+  "derivedTimeframeGoals": [
+    { "name": "none set: nothing derived", "root": { "maxCount": 12 }, "expected": { "daily": null, "weekly": null, "monthly": null, "yearly": null } },
+    { "name": "one set (weekly 20, discrete): ceil by 1/7/30/365", "root": { "timeframeGoals": { "weekly": 20 } }, "expected": { "daily": 3, "weekly": null, "monthly": 86, "yearly": 1043 } },
+    { "name": "continuous rounds up to tenths", "root": { "countKind": "continuous", "timeframeGoals": { "monthly": 26.2 } }, "expected": { "daily": 0.9, "weekly": 6.2, "monthly": null, "yearly": 318.8 } },
+    { "name": "duration scales minutes", "root": { "countKind": "duration", "timeframeGoals": { "daily": 30 } }, "expected": { "daily": null, "weekly": 210, "monthly": 900, "yearly": 10950 } },
+    { "name": "two set: each unset one derives from the nearest", "root": { "timeframeGoals": { "daily": 5, "yearly": 1000 } }, "expected": { "daily": null, "weekly": 35, "monthly": 83, "yearly": null } },
+    { "name": "a tie goes to the shorter timeframe", "root": { "timeframeGoals": { "daily": 2, "monthly": 100 } }, "expected": { "daily": null, "weekly": 14, "monthly": null, "yearly": 1217 } },
+    { "name": "non-positive values are unset", "root": { "timeframeGoals": { "daily": 0, "weekly": 7 } }, "expected": { "daily": 1, "weekly": null, "monthly": 30, "yearly": 365 } }
+  ],
+  "resolveCounterDefaultGoal": [
+    { "name": "the stored default", "root": { "maxCount": 12, "timeframeGoals": { "weekly": 20 } }, "timeframe": "weekly", "expected": 20 },
+    { "name": "derived from the one set (D4)", "root": { "maxCount": 12, "timeframeGoals": { "weekly": 20 } }, "timeframe": "daily", "expected": 3 },
+    { "name": "derived monthly", "root": { "timeframeGoals": { "weekly": 20 } }, "timeframe": "monthly", "expected": 86 },
+    { "name": "derived yearly", "root": { "timeframeGoals": { "weekly": 20 } }, "timeframe": "yearly", "expected": 1043 },
+    { "name": "none set: the root's goal", "root": { "maxCount": 12 }, "timeframe": "monthly", "expected": 12 },
+    { "name": "none set, goal-less: null", "root": {}, "timeframe": "weekly", "expected": null },
+    { "name": "CUSTOM never matches", "root": { "maxCount": 12, "timeframeGoals": { "weekly": 20 } }, "timeframe": "custom", "expected": null },
+    { "name": "INDEFINITE never matches", "root": { "maxCount": 12, "timeframeGoals": { "weekly": 20 } }, "timeframe": "indefinite", "expected": null },
+    { "name": "duration stored default (minutes)", "root": { "countKind": "duration", "timeframeGoals": { "daily": 45 } }, "timeframe": "daily", "expected": 45 }
+  ],
+  "isAutoCounterTitle": [
+    { "name": "equals the stored plural template's render: auto", "title": "Read 12 novels", "root": { "action": "Read", "unit": "books", "titleTemplatePlural": "Read #N novels" }, "goal": 12, "expected": true },
+    { "name": "the legacy formula still counts (pre-template auto title)", "title": "Read 12 books", "root": { "action": "Read", "unit": "books", "titleTemplatePlural": "Read #N novels" }, "goal": 12, "expected": true },
+    { "name": "equals the singular render at goal 1: auto", "title": "Read 1 book", "root": { "action": "Read", "unit": "books", "titleTemplateSingular": "Read #N book" }, "goal": 1, "expected": true },
+    { "name": "a chosen name: custom", "title": "Morning reading", "root": { "action": "Read", "unit": "books", "titleTemplatePlural": "Read #N novels" }, "goal": 12, "expected": false },
+    { "name": "goal-less: equals the counter name: auto", "title": "Running", "root": { "action": "Run", "unit": "miles", "counterName": "Running" }, "goal": null, "expected": true },
+    { "name": "no settings: a template-shaped title is custom", "title": "Read 12 novels", "root": { "action": "Read", "unit": "books" }, "goal": 12, "expected": false }
+  ],
+  "counterCopyTitle": [
+    { "name": "a root member's plural template renders the copy", "member": { "title": "Read 12 novels", "action": "Read", "unit": "books", "maxCount": 12, "titleTemplatePlural": "Read #N novels" }, "newMaxCount": 3, "expected": "Read 3 novels" },
+    { "name": "a root member's singular template at a target of 1", "member": { "title": "Read 12 novels", "action": "Read", "unit": "books", "maxCount": 12, "titleTemplateSingular": "Read #N novel", "titleTemplatePlural": "Read #N novels" }, "newMaxCount": 1, "expected": "Read 1 novel" },
+    { "name": "a legacy auto title with templates set re-renders through them", "member": { "title": "Read 12 books", "action": "Read", "unit": "books", "maxCount": 12, "titleTemplatePlural": "Read #N novels" }, "newMaxCount": 3, "expected": "Read 3 novels" },
+    { "name": "a custom title still carries verbatim", "member": { "title": "Book club", "action": "Read", "unit": "books", "maxCount": 12, "titleTemplatePlural": "Read #N novels" }, "newMaxCount": 3, "expected": "Book club" }
+  ]
+}

@@ -150,6 +150,68 @@
         { "copyId": "c-a", "patch": { "title": "Paddle 4 laps", "action": "Paddle" } },
         { "copyId": "c-z", "patch": { "title": "Paddle 5 laps", "action": "Paddle" } }
       ]
+    },
+    {
+      "name": "plural template edit (shared counter settings): auto copies re-render through it — goal 1 too (singular follows the plural); custom kept",
+      "root": { "id": "root", "title": "Read 12 books", "action": "Read", "unit": "books", "maxCount": 12 },
+      "patch": { "title": "Read 12 novels", "titleTemplatePlural": "Read #N novels" },
+      "copies": [
+        { "id": "c-auto", "title": "Read 3 books", "action": "Read", "unit": "books", "maxCount": 3, "startDate": "2026-10-05T00:00:00.000Z", "endDate": "2026-10-11T23:59:59.999Z" },
+        { "id": "c-one", "title": "Read 1 books", "action": "Read", "unit": "books", "maxCount": 1, "startDate": "2026-10-05T00:00:00.000Z", "endDate": "2026-10-11T23:59:59.999Z" },
+        { "id": "c-custom", "title": "Book club", "action": "Read", "unit": "books", "maxCount": 3, "startDate": "2026-10-05T00:00:00.000Z", "endDate": "2026-10-11T23:59:59.999Z" }
+      ],
+      "expected": [
+        { "copyId": "c-auto", "patch": { "title": "Read 3 novels" } },
+        { "copyId": "c-one", "patch": { "title": "Read 1 novels" } }
+      ]
+    },
+    {
+      "name": "singular template edit alone: only goal-1 copies change; a copy auto under the OLD template re-renders",
+      "root": { "id": "root", "title": "Read 12 novels", "action": "Read", "unit": "books", "maxCount": 12, "titleTemplatePlural": "Read #N novels" },
+      "patch": { "titleTemplateSingular": "Read #N novel" },
+      "copies": [
+        { "id": "c-one", "title": "Read 1 novels", "action": "Read", "unit": "books", "maxCount": 1, "startDate": "2026-10-05T00:00:00.000Z", "endDate": "2026-10-11T23:59:59.999Z" },
+        { "id": "c-three", "title": "Read 3 novels", "action": "Read", "unit": "books", "maxCount": 3, "startDate": "2026-10-05T00:00:00.000Z", "endDate": "2026-10-11T23:59:59.999Z" }
+      ],
+      "expected": [
+        { "copyId": "c-one", "patch": { "title": "Read 1 novel" } }
+      ]
+    },
+    {
+      "name": "clearing a template (null) back to the default re-renders auto copies through the formula",
+      "root": { "id": "root", "title": "Read 12 novels", "action": "Read", "unit": "books", "maxCount": 12, "titleTemplatePlural": "Read #N novels" },
+      "patch": { "title": "Read 12 books", "titleTemplatePlural": null },
+      "copies": [
+        { "id": "c-auto", "title": "Read 3 novels", "action": "Read", "unit": "books", "maxCount": 3, "startDate": "2026-10-05T00:00:00.000Z", "endDate": "2026-10-11T23:59:59.999Z" },
+        { "id": "c-custom", "title": "Book club", "action": "Read", "unit": "books", "maxCount": 3, "startDate": "2026-10-05T00:00:00.000Z", "endDate": "2026-10-11T23:59:59.999Z" }
+      ],
+      "expected": [
+        { "copyId": "c-auto", "patch": { "title": "Read 3 books" } }
+      ]
+    },
+    {
+      "name": "a name edit re-renders a goal-less auto copy; copies with a goal keep their titles",
+      "root": { "id": "root", "title": "Run miles", "action": "Run", "unit": "miles" },
+      "patch": { "title": "Running", "counterName": "Running" },
+      "copies": [
+        { "id": "c-goalless", "title": "Run miles", "action": "Run", "unit": "miles", "startDate": "2026-10-05T00:00:00.000Z", "endDate": "2026-10-11T23:59:59.999Z" },
+        { "id": "c-goal", "title": "Run 10 miles", "action": "Run", "unit": "miles", "maxCount": 10, "startDate": "2026-10-05T00:00:00.000Z", "endDate": "2026-10-11T23:59:59.999Z" }
+      ],
+      "expected": [
+        { "copyId": "c-goalless", "patch": { "title": "Running" } }
+      ]
+    },
+    {
+      "name": "a template edit under an unchanged custom root title: auto copies re-render, custom copies keep",
+      "root": { "id": "root", "title": "Marathon block", "action": "Run", "unit": "miles", "maxCount": 26 },
+      "patch": { "title": "Marathon block", "titleTemplatePlural": "Jog #N miles" },
+      "copies": [
+        { "id": "c-auto", "title": "Run 10 miles", "action": "Run", "unit": "miles", "maxCount": 10, "startDate": "2026-10-05T00:00:00.000Z", "endDate": "2026-10-11T23:59:59.999Z" },
+        { "id": "c-custom", "title": "Morning run", "action": "Run", "unit": "miles", "maxCount": 10, "startDate": "2026-10-05T00:00:00.000Z", "endDate": "2026-10-11T23:59:59.999Z" }
+      ],
+      "expected": [
+        { "copyId": "c-auto", "patch": { "title": "Jog 10 miles" } }
+      ]
     }
   ]
 }

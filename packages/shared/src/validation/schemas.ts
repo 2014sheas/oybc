@@ -433,6 +433,18 @@ export const CreateCompoundTaskInputSchema = z.object({
   { message: 'Compound children must not contain duplicate childTaskId references' },
 );
 
+/**
+ * Shared counter settings — default goals per core timeframe
+ * (docs/SHARED_COUNTER_SETTINGS.md §1c). Each key optional; a value is a
+ * positive 2dp count in the counter's kind units.
+ */
+export const CounterTimeframeGoalsSchema = z.object({
+  daily: positiveCount().optional(),
+  weekly: positiveCount().optional(),
+  monthly: positiveCount().optional(),
+  yearly: positiveCount().optional(),
+});
+
 export const TaskSchema = z.object({
   id: z.string().uuid(),
   userId: z.string(),
@@ -522,6 +534,12 @@ export const TaskSchema = z.object({
   // cleared, not in CLEARABLE_FIELDS_BY_COLLECTION. Optional + nullable so
   // pre-feature payloads and old clients decode unchanged.
   forkedFromTaskId: z.string().uuid().nullable().optional(),
+  // Shared counter settings (docs/SHARED_COUNTER_SETTINGS.md §1) — root-only,
+  // absent = default; clearable (CLEARABLE_FIELDS_BY_COLLECTION.tasks).
+  counterName: z.string().max(100).optional(),
+  titleTemplateSingular: z.string().max(200).optional(),
+  titleTemplatePlural: z.string().max(200).optional(),
+  timeframeGoals: CounterTimeframeGoalsSchema.optional(),
 }).refine(
   (data) => {
     // Compound tasks must have an operator.
