@@ -3,7 +3,8 @@ import GRDB
 @testable import OYBC
 
 /// "Counts toward" PR 3 — data + cascade (docs/SHARED_COUNTER_SETTINGS.md §3;
-/// D10: one credit per completion occurrence).
+/// D10: one credit per completion occurrence; D11: count from
+/// `countsTowardSince`, credits honour the counter's sealed windows).
 /// Twin of web `db/operations/__tests__/countsToward.test.ts`.
 @MainActor
 final class CountsTowardTests: XCTestCase {
@@ -11,6 +12,7 @@ final class CountsTowardTests: XCTestCase {
     private let user = "user-1"
     private let t0 = "2026-01-01T00:00:00.000Z"
     private let root = "00000000-0000-4000-8000-0000000000a1"   // "Read 12 books"
+    private let root2 = "00000000-0000-4000-8000-0000000000a3"  // "Finish 5 novels"
     private let copy = "00000000-0000-4000-8000-0000000000a2"   // weekly copy, goal 1
     private let simple = "00000000-0000-4000-8000-0000000000b1" // "Read Dune"
     private let run = "00000000-0000-4000-8000-0000000000b2"    // "Run 2 km" — a plain counting contributor
@@ -33,13 +35,15 @@ final class CountsTowardTests: XCTestCase {
     private let dayEnd = "2026-10-14T23:59:59.999Z"
     private let inW1 = "2026-10-07T09:00:00.000Z"
     private let now = "2026-10-14T09:00:00.000Z"
+    private let later = "2026-10-16T09:00:00.000Z"
 
     // MARK: - Fixtures
 
+    /// A flagged task carries the counter AND the D11 `since` stamp (t0 = before every event here).
     private func task(
         _ id: String, type: TaskType = .normal, maxCount: CountValue? = nil, sharedCounterId: String? = nil,
         isCounter: Bool = false, operatorType: OperatorType? = nil, countKind: CountKind? = nil,
-        countsTowardCounterId: String? = nil, countsTowardAmount: Int? = nil
+        countsTowardCounterId: String? = nil, countsTowardAmount: Int? = nil, countsTowardSince: String? = nil
     ) -> Task {
         Task(
             id: id, userId: user, title: id, type: type,
@@ -48,7 +52,8 @@ final class CountsTowardTests: XCTestCase {
             currentCount: type == .counting ? 0 : nil, createdAt: t0, updatedAt: t0, version: 1, isDeleted: false,
             sharedCounterId: sharedCounterId, baseline: sharedCounterId == nil ? nil : 0,
             isCounter: isCounter, countKind: countKind,
-            countsTowardCounterId: countsTowardCounterId, countsTowardAmount: countsTowardAmount
+            countsTowardCounterId: countsTowardCounterId, countsTowardAmount: countsTowardAmount,
+            countsTowardSince: countsTowardCounterId == nil ? nil : (countsTowardSince ?? t0)
         )
     }
 
@@ -164,6 +169,29 @@ final class CountsTowardTests: XCTestCase {
         }
     }
 
+    /// Seed "Read Dune" on October AND the week board, complete it on October,
+    /// then fork it for October (the fork copies the in-window completion).
+    private func forkCompletedDune(_ db: AppDatabase) throws -> Task {
+        try seed(db)
+        try db.write { try placement("bt-other", week, simple, col: 2).save($0) }
+        try complete(db, oct, "bt-simple", simple)
+        let plan = try db.read { d in
+            BoardScopedFork.plan(
+                task: try XCTUnwrap(Task.fetchOne(d, key: simple)), board: board(oct, octStart, octEnd), editedType: .normal,
+                placements: try BoardTask.fetchAll(d), boards: try Board.fetchAll(d),
+                compoundChildren: [], events: try TaskEvent.fetchAll(d), now: now
+            )
+        }
+        guard case let .fork(fork, eventCopies, _, _, _) = plan else { throw XCTSkip("expected a fork") }
+        try db.write { d in
+            try fork.save(d)
+            for e in eventCopies { try e.save(d) }
+            try d.execute(sql: "UPDATE board_tasks SET taskId = ? WHERE id = 'bt-simple'", arguments: [fork.id])
+            try AppDatabase.runBoardCascadeForTasks(db: d, changedTaskIds: [self.simple, fork.id], now: self.now)
+        }
+        return fork
+    }
+
     private func sortedByInstant(_ rows: [TaskEvent]) -> [TaskEvent] {
         rows.sorted { a, b in
             let (ma, mb) = (DateFormatting.parseISO(a.occurredAt)!, DateFormatting.parseISO(b.occurredAt)!)
@@ -173,13 +201,14 @@ final class CountsTowardTests: XCTestCase {
     }
 
     /// Every counts-toward credit stored on the root (any state), by instant.
-    private func storedCredits(_ db: AppDatabase) throws -> [TaskEvent] {
-        sortedByInstant(try db.read { try TaskEvent.filter(Column("taskId") == self.root && Column("kind") == "increment").fetchAll($0) })
+    private func storedCredits(_ db: AppDatabase, rootId: String? = nil) throws -> [TaskEvent] {
+        let r = rootId ?? root
+        return sortedByInstant(try db.read { try TaskEvent.filter(Column("taskId") == r && Column("kind") == "increment").fetchAll($0) })
     }
 
     /// The LIVE credits on the root, by instant.
-    private func liveCredits(_ db: AppDatabase) throws -> [TaskEvent] {
-        try storedCredits(db).filter { !$0.isDeleted }
+    private func liveCredits(_ db: AppDatabase, rootId: String? = nil) throws -> [TaskEvent] {
+        try storedCredits(db, rootId: rootId).filter { !$0.isDeleted }
     }
 
     /// The contributor's own live events, by instant.
@@ -187,12 +216,14 @@ final class CountsTowardTests: XCTestCase {
         sortedByInstant(try db.read { try TaskEvent.filter(Column("taskId") == taskId && Column("isDeleted") == false).fetchAll($0) })
     }
 
-    private func creditId(_ contributor: String, _ occurrence: CountsToward.Occurrence) -> String {
-        CountsToward.eventId(contributorId: contributor, occurrence: occurrence)
+    private func creditId(_ scope: String, _ occurrence: CountsToward.Occurrence) -> String {
+        CountsToward.eventId(contributorScopeId: scope, occurrence: occurrence)
     }
 
-    /// An event-keyed credit id — the contributor is not part of the name.
+    /// An own-event credit id — the contributor is not part of the name.
     private func eventCredit(_ eventId: String) -> String { creditId("-", .event(eventId: eventId)) }
+    /// A compound's credit for its completing child's event — scoped by the compound (its lineage root).
+    private func childCredit(_ compoundId: String, _ eventId: String) -> String { creditId(compoundId, .childEvent(eventId: eventId)) }
 
     private func fetch(_ db: AppDatabase, _ id: String) throws -> Task { try XCTUnwrap(db.read { try Task.fetchOne($0, key: id) }) }
     private func completedTasks(_ db: AppDatabase, _ boardId: String) throws -> Int { try XCTUnwrap(db.fetchBoard(id: boardId)).completedTasks }
@@ -358,7 +389,7 @@ final class CountsTowardTests: XCTestCase {
         XCTAssertEqual(try completedTasks(db, oct), 1)
     }
 
-    func test_compoundCreditsEachCompleteWindow_andAnUnplacedOneCreditsItsLifetime() throws {
+    func test_compoundCreditsEachCompleteWindow_keyedByTheCompletingChildEvent_andAnUnplacedOneToo() throws {
         let life = "00000000-0000-4000-8000-0000000000d2"
         let db = try AppDatabase.makeTestInstance(); try seedUser(db)
         try db.write { d in
@@ -380,60 +411,65 @@ final class CountsTowardTests: XCTestCase {
         try libraryComplete(db, childA, at: "2026-10-13T09:00:00.000Z")
         try libraryComplete(db, childB, at: "2026-10-15T09:00:00.000Z")
 
+        let a = try liveEvents(db, of: childA)
+        let b = try liveEvents(db, of: childB)
         let credits = try liveCredits(db)
-        XCTAssertEqual(credits.map(\.id), [
-            creditId(life, .lifetime),
-            creditId(box, .window(startDate: w1Start)),
-            creditId(box, .window(startDate: weekStart)),
-        ])
+        XCTAssertEqual(credits.map(\.id), [childCredit(life, a[0].id), childCredit(box, b[0].id), childCredit(box, b[1].id)])
         XCTAssertEqual(credits.map(\.occurredAt), ["2026-10-06T09:00:00.000Z", inW1, "2026-10-15T09:00:00.000Z"])
         XCTAssertEqual(try fetch(db, root).currentCount, 3)
     }
 
-    func test_boardScopedFork_carriesTheCompletionOverAsTheSameCredit_oneLiveCreditBeforeAndAfter() throws {
-        let db = try AppDatabase.makeTestInstance(); try seed(db)
-        try db.write { try placement("bt-other", week, simple, col: 2).save($0) }
-        try complete(db, oct, "bt-simple", simple)
+    func test_compoundOnDailyAndMonthly_completedOnce_isOneCredit() throws {
+        let db = try AppDatabase.makeTestInstance(); try seedUser(db)
+        try db.write { d in
+            try task(root, type: .counting, maxCount: 12, isCounter: true).save(d)
+            try task(box, type: .compound, operatorType: .and, countsTowardCounterId: root).save(d)
+            try task(childA).save(d)
+            try link("l-a", box, childA, 0).save(d)
+            try board(day, dayStart, dayEnd).save(d)
+            try board(oct, octStart, octEnd).save(d)
+            try placement("bt-day", day, box).save(d)
+            try placement("bt-oct", oct, box, col: 1).save(d)
+        }
+        try libraryComplete(db, childA, at: now)
+        let a = try XCTUnwrap(liveEvents(db, of: childA).first)
+        XCTAssertEqual(try liveCredits(db).map(\.id), [childCredit(box, a.id)])
+    }
+
+    func test_editingABoardsStartDate_keepsACompoundsCredit() throws {
+        let db = try AppDatabase.makeTestInstance(); try seedUser(db)
+        try db.write { d in
+            try task(root, type: .counting, maxCount: 12, isCounter: true).save(d)
+            try task(box, type: .compound, operatorType: .and, countsTowardCounterId: root).save(d)
+            try task(childA).save(d)
+            try link("l-a", box, childA, 0).save(d)
+            try board(oct, octStart, octEnd).save(d)
+            try placement("bt-oct", oct, box).save(d)
+        }
+        try libraryComplete(db, childA, at: now)
         let before = try liveCredits(db)
         XCTAssertEqual(before.count, 1)
 
-        let plan = try db.read { d in
-            BoardScopedFork.plan(
-                task: try XCTUnwrap(Task.fetchOne(d, key: simple)), board: board(oct, octStart, octEnd), editedType: .normal,
-                placements: try BoardTask.fetchAll(d), boards: try Board.fetchAll(d),
-                compoundChildren: [], events: try TaskEvent.fetchAll(d), now: now
-            )
-        }
-        guard case let .fork(fork, eventCopies, _, _, _) = plan else { return XCTFail("expected a fork") }
-        XCTAssertEqual(fork.countsTowardCounterId, root)
-        XCTAssertEqual(eventCopies.count, 1)
-        try db.write { d in
-            try fork.save(d)
-            for e in eventCopies { try e.save(d) }
-            try d.execute(sql: "UPDATE board_tasks SET taskId = ? WHERE id = 'bt-simple'", arguments: [fork.id])
-            try AppDatabase.runBoardCascadeForTasks(db: d, changedTaskIds: [self.simple, fork.id], now: self.now)
-        }
+        try db.updateBoardAndCascade(boardId: oct, patch: AppDatabase.UpdateActiveBoardPatch(startDate: "2026-10-03T00:00:00.000Z"))
+        try db.write { try AppDatabase.runBoardCascadeForTasks(db: $0, changedTaskIds: [self.box], now: self.later) }
 
-        let after = try storedCredits(db)
-        XCTAssertEqual(after.map(\.id), before.map(\.id))
-        XCTAssertEqual(after.map(\.version), before.map(\.version))
-        XCTAssertEqual(try fetch(db, root).currentCount, 1)
-        // A replay from the fork's side changes nothing.
-        try db.write { try AppDatabase.runBoardCascadeForTasks(db: $0, changedTaskIds: [fork.id], now: self.now) }
+        XCTAssertEqual(try storedCredits(db).map(\.id), before.map(\.id))
         XCTAssertEqual(try storedCredits(db).map(\.version), before.map(\.version))
+        XCTAssertEqual(try fetch(db, root).currentCount, 1)
     }
 
-    func test_clearingTheFlag_tombstonesEveryLiveCredit() throws {
+    func test_clearingTheFlag_tombstonesEveryLiveCredit_andTheSinceStamp() throws {
         let db = try AppDatabase.makeTestInstance(); try seedWeeks(db)
         try complete(db, w1, "bt-w1", simple, at: inW1)
         try complete(db, w2, "bt-w2", simple)
         XCTAssertEqual(try liveCredits(db).count, 2)
 
-        try db.setCountsToward(taskId: simple, counterId: nil)
+        try db.setCountsToward(taskId: simple, counterId: nil, now: later)
 
         XCTAssertEqual(try liveCredits(db).count, 0)
         XCTAssertEqual(try storedCredits(db).map(\.version), [2, 2])
         XCTAssertEqual(try fetch(db, root).currentCount, 0)
+        XCTAssertNil(try fetch(db, simple).countsTowardSince)
     }
 
     func test_replayAfterSeveralOccurrences_writesNothing() throws {
@@ -453,38 +489,191 @@ final class CountsTowardTests: XCTestCase {
         XCTAssertEqual(try db.read { try SyncQueueItem.fetchCount($0) }, queueBefore)
     }
 
+    // MARK: - Fork lineage shares one credit
+
+    func test_boardScopedFork_carriesTheCompletionOverAsTheSameCredit() throws {
+        let db = try AppDatabase.makeTestInstance()
+        let fork = try forkCompletedDune(db)
+        XCTAssertEqual(fork.countsTowardCounterId, root)
+        XCTAssertEqual(fork.countsTowardSince, t0)
+        XCTAssertEqual(try liveCredits(db).count, 1)
+        XCTAssertEqual(try fetch(db, root).currentCount, 1)
+        let before = try storedCredits(db)
+        try db.write { try AppDatabase.runBoardCascadeForTasks(db: $0, changedTaskIds: [fork.id], now: self.now) }
+        XCTAssertEqual(try storedCredits(db).map(\.version), before.map(\.version))
+    }
+
+    func test_undoOnTheForksBoardOnly_theOriginalStillWantsTheCredit_soItStays() throws {
+        let db = try AppDatabase.makeTestInstance()
+        let fork = try forkCompletedDune(db)
+        try complete(db, oct, "bt-simple", fork.id, false)
+
+        XCTAssertEqual(try liveEvents(db, of: fork.id).count, 0)
+        XCTAssertEqual(try liveEvents(db, of: simple).count, 1)
+        XCTAssertEqual(try liveCredits(db).map(\.version), [1])
+        XCTAssertEqual(try fetch(db, root).currentCount, 1)
+    }
+
+    func test_undoOnTheOriginalOnly_theForkStillWantsTheCredit_soItStays() throws {
+        let db = try AppDatabase.makeTestInstance()
+        let fork = try forkCompletedDune(db)
+        try complete(db, week, "bt-other", simple, false)
+
+        XCTAssertEqual(try liveEvents(db, of: simple).count, 0)
+        XCTAssertEqual(try liveEvents(db, of: fork.id).count, 1)
+        XCTAssertEqual(try liveCredits(db).map(\.version), [1])
+    }
+
+    func test_deletingTheOriginal_theForkStillWantsTheCredit_soItStays() throws {
+        let db = try AppDatabase.makeTestInstance()
+        _ = try forkCompletedDune(db)
+        try db.deleteTaskWithCascade(taskId: simple)
+        XCTAssertEqual(try liveCredits(db).map(\.version), [1])
+    }
+
+    func test_clearingTheForksFlag_theOriginalStillWantsIt_onceBothAreGoneItIsTombstoned() throws {
+        let db = try AppDatabase.makeTestInstance()
+        let fork = try forkCompletedDune(db)
+        try db.setCountsToward(taskId: fork.id, counterId: nil, now: later)
+        XCTAssertEqual(try liveCredits(db).map(\.version), [1])
+
+        try complete(db, week, "bt-other", simple, false)
+        XCTAssertEqual(try liveCredits(db).count, 0)
+        XCTAssertEqual(try storedCredits(db).map(\.version), [2])
+    }
+
+    // MARK: - Count from flag time (D11)
+
+    func test_flagSetAfterACompletion_doesNotCreditIt_aCompletionAfterTheFlagDoes() throws {
+        let db = try AppDatabase.makeTestInstance(); try seed(db, flagged: false)
+        try libraryComplete(db, simple, at: "2026-10-10T10:00:00.000Z")
+
+        try db.setCountsToward(taskId: simple, counterId: root, now: now)
+        XCTAssertEqual(try fetch(db, simple).countsTowardSince, now)
+        XCTAssertEqual(try liveCredits(db).count, 0)
+
+        try libraryComplete(db, simple, at: later)
+        let events = try liveEvents(db, of: simple)
+        XCTAssertEqual(try liveCredits(db).map(\.id), [eventCredit(events[1].id)])
+        XCTAssertEqual(try liveCredits(db).first?.occurredAt, later)
+    }
+
+    func test_lateLogStampedAtAnEndedBoardsEndDateBeforeTheFlag_doesNotCredit() throws {
+        let db = try AppDatabase.makeTestInstance(); try seedUser(db)
+        try db.write { d in
+            try task(root, type: .counting, maxCount: 12, isCounter: true).save(d)
+            try task(simple).save(d)
+            try board(w1, w1Start, w1End).save(d)
+            try placement("bt-w1", w1, simple).save(d)
+        }
+        try db.setCountsToward(taskId: simple, counterId: root, now: now) // since = 10-14, after W1 ended
+
+        try complete(db, w1, "bt-w1", simple) // stamped min(now, endDate) = W1's end
+
+        let stamp = try XCTUnwrap(liveEvents(db, of: simple).first?.occurredAt)
+        XCTAssertEqual(DateFormatting.parseISO(stamp), DateFormatting.parseISO(w1End))
+        XCTAssertEqual(try liveCredits(db).count, 0)
+    }
+
+    func test_repointingToAnotherCounter_resetsSince_tombstonesEarlierCredits_creditsLaterOnesOnTheNewRoot() throws {
+        let db = try AppDatabase.makeTestInstance(); try seed(db)
+        try db.write { try task(root2, type: .counting, maxCount: 5, isCounter: true).save($0) }
+        try complete(db, oct, "bt-simple", simple)
+        XCTAssertEqual(try liveCredits(db).count, 1)
+
+        try db.setCountsToward(taskId: simple, counterId: root2, now: later)
+        XCTAssertEqual(try fetch(db, simple).countsTowardSince, later)
+        XCTAssertEqual(try liveCredits(db).count, 0)
+        XCTAssertEqual(try liveCredits(db, rootId: root2).count, 0)
+
+        try libraryComplete(db, simple, at: "2026-10-17T09:00:00.000Z")
+        XCTAssertEqual(try liveCredits(db, rootId: root2).map(\.occurredAt), ["2026-10-17T09:00:00.000Z"])
+        XCTAssertEqual(try liveCredits(db).count, 0)
+    }
+
+    func test_changingOnlyTheAmountKeepsSince_clearingDropsIt() throws {
+        let db = try AppDatabase.makeTestInstance(); try seed(db)
+        try complete(db, oct, "bt-simple", simple)
+        try db.setCountsToward(taskId: simple, counterId: root, amount: 3, now: later)
+        XCTAssertEqual(try fetch(db, simple).countsTowardSince, t0)
+        XCTAssertEqual(try liveCredits(db).map(\.delta), [3])
+
+        try db.setCountsToward(taskId: simple, counterId: nil, now: later)
+        let cleared = try fetch(db, simple)
+        XCTAssertNil(cleared.countsTowardCounterId)
+        XCTAssertNil(cleared.countsTowardAmount)
+        XCTAssertNil(cleared.countsTowardSince)
+    }
+
+    // MARK: - Credits honour the counter's sealed windows (D11)
+
+    func test_undoOnTheOpenMonthly_leavesACreditInsideANowSealedWeeklyCopyWindow_snapshotUnchanged() throws {
+        let db = try AppDatabase.makeTestInstance(); try seed(db)
+        try complete(db, oct, "bt-simple", simple)
+        XCTAssertEqual(try completedTasks(db, week), 1)
+        XCTAssertTrue(try db.sealBoard(boardId: week, now: "2026-10-19T00:00:00.000Z"))
+        let sealed = try XCTUnwrap(db.fetchBoard(id: week))
+        XCTAssertEqual(sealed.sealedCompletedCells, [0])
+
+        try complete(db, oct, "bt-simple", simple, false, at: "2026-10-20T09:00:00.000Z")
+
+        XCTAssertEqual(try liveEvents(db, of: simple).count, 0)
+        XCTAssertEqual(try liveCredits(db).map(\.version), [1])
+        XCTAssertEqual(try fetch(db, root).currentCount, 1)
+        let after = try XCTUnwrap(db.fetchBoard(id: week))
+        XCTAssertEqual(after.sealedCompletedCells, [0])
+        XCTAssertEqual(after.completedTasks, 1)
+        XCTAssertEqual(after.version, sealed.version)
+    }
+
+    func test_aCreditInsideASealedCopyWindow_isNotMintedOutsideTheLateLogPath() throws {
+        let db = try AppDatabase.makeTestInstance(); try seed(db)
+        XCTAssertTrue(try db.sealBoard(boardId: week, now: "2026-10-19T00:00:00.000Z"))
+        try libraryComplete(db, simple, at: now) // 10-14 sits inside the sealed week
+        XCTAssertEqual(try liveCredits(db).count, 0)
+
+        try libraryComplete(db, simple, at: "2026-10-20T09:00:00.000Z") // outside it
+        XCTAssertEqual(try liveCredits(db).map(\.occurredAt), ["2026-10-20T09:00:00.000Z"])
+    }
+
     // MARK: - A Compound container
 
-    func test_compoundCountsOnceBothSubTasksAreDone_keyedByTheOctoberWindow_stampedAtTheLaterOne() throws {
+    func test_compoundCountsOnceBothSubTasksAreDone_keyedByTheLaterChildsEvent() throws {
         let db = try AppDatabase.makeTestInstance(); try seedBox(db)
         try libraryComplete(db, childA, at: "2026-10-13T08:00:00.000Z")
         XCTAssertEqual(try liveCredits(db).count, 0)
         try libraryComplete(db, childB, at: "2026-10-15T20:00:00.000Z")
 
+        let b = try XCTUnwrap(liveEvents(db, of: childB).first)
         let credits = try liveCredits(db)
         XCTAssertEqual(credits.count, 1)
         let ev = try XCTUnwrap(credits.first)
-        XCTAssertEqual(ev.id, creditId(box, .window(startDate: octStart)))
+        XCTAssertEqual(ev.id, childCredit(box, b.id))
         XCTAssertEqual(ev.taskId, root)
         XCTAssertEqual(ev.delta, 1)
         XCTAssertEqual(ev.occurredAt, "2026-10-15T20:00:00.000Z")
         XCTAssertEqual(try completedTasks(db, week), 1)
     }
 
-    func test_lateLogOnClosedBoard_completesTheContainerThere_thatWindowsCreditStampedAtEndDate() throws {
+    func test_lateLogOnClosedBoard_completesTheContainer_creditStampedAtEndDate_evenThoughTheCopysWindowThereIsSealed() throws {
         let db = try AppDatabase.makeTestInstance(); try seedBox(db)
         let closedStart = "2026-10-01T00:00:00.000Z"
         let closedEnd = "2026-10-07T23:59:59.999Z"
         try db.write { d in
             try board(closed, closedStart, closedEnd, sealedAt: "2026-10-08T00:00:01.000Z").save(d)
             try placement("bt-closed", closed, box, col: 1).save(d)
+            try placement("bt-copy-closed", closed, copy, col: 2).save(d)
             try completion("ev-a", childA, "2026-10-03T10:00:00.000Z").save(d)
         }
         try db.lateLogCompoundParts(boardId: closed, compoundTaskId: box, childTaskIds: [childB], now: now)
 
-        let ev = try XCTUnwrap(liveCredits(db).first { $0.id == creditId(box, .window(startDate: closedStart)) })
-        XCTAssertEqual(ev.taskId, root)
-        XCTAssertEqual(DateFormatting.parseISO(ev.occurredAt), DateFormatting.parseISO(closedEnd))
+        let b = try XCTUnwrap(liveEvents(db, of: childB).first)
+        let credits = try liveCredits(db)
+        XCTAssertEqual(credits.map(\.id), [childCredit(box, b.id)])
+        XCTAssertEqual(credits.first?.taskId, root)
+        XCTAssertEqual(DateFormatting.parseISO(try XCTUnwrap(credits.first?.occurredAt)), DateFormatting.parseISO(closedEnd))
+        let cells = try XCTUnwrap(db.fetchBoard(id: closed)?.sealedCompletedCells)
+        XCTAssertTrue(cells.contains(1) && cells.contains(2))
     }
 
     func test_deletingTheSubTaskTheContainerNeeded_reDerivesIt() throws {
@@ -522,7 +711,7 @@ final class CountsTowardTests: XCTestCase {
         XCTAssertNil(try db.computeTaskDeletionImpact(taskId: copy).countsTowardCounter)
     }
 
-    func test_deletingTheCounter_unflagsContributors_creditsStayWithTheRoot() throws {
+    func test_deletingTheCounter_unflagsContributors_sinceCleared_creditsStayWithTheRoot() throws {
         let db = try AppDatabase.makeTestInstance(); try seed(db)
         try complete(db, oct, "bt-simple", simple)
         let versionBefore = try fetch(db, simple).version
@@ -532,6 +721,7 @@ final class CountsTowardTests: XCTestCase {
 
         let after = try fetch(db, simple)
         XCTAssertNil(after.countsTowardCounterId)
+        XCTAssertNil(after.countsTowardSince)
         XCTAssertEqual(after.version, versionBefore + 1)
         XCTAssertTrue(try queued(db, "tasks").contains(simple))
         XCTAssertEqual(try storedCredits(db).map(\.isDeleted), [false])
@@ -544,6 +734,19 @@ final class CountsTowardTests: XCTestCase {
         }
         XCTAssertNil(try fetch(db, root).countKind)
         XCTAssertEqual(CountKindSwitchError.countsTowardMessage, "A counter other tasks count toward stays Discrete.")
+    }
+
+    func test_aFlaggedCountingTask_cannotBePromotedToACounter() throws {
+        let db = try AppDatabase.makeTestInstance(); try seedUser(db)
+        try db.write { d in
+            try task(root, type: .counting, maxCount: 12, isCounter: true).save(d)
+            try runTask().save(d)
+        }
+        XCTAssertThrowsError(try db.promoteTaskToCounter(taskId: run, now: now)) { error in
+            XCTAssertTrue("\(error)".contains("counterPromotionRejected"), "expected counterPromotionRejected, got \(error)")
+            XCTAssertTrue("\(error)".contains("counts toward a counter cannot be a counter"))
+        }
+        XCTAssertFalse(try fetch(db, run).isCounter)
     }
 
     func test_setCountsToward_validates_mintsAtOnceForADoneTask_clearTombstones() throws {
@@ -561,7 +764,7 @@ final class CountsTowardTests: XCTestCase {
             XCTAssertEqual($0 as? AppDatabase.CountsTowardError, .refused(.selfTarget))
         }
 
-        try db.setCountsToward(taskId: simple, counterId: root, amount: 2)
+        try db.setCountsToward(taskId: simple, counterId: root, amount: 2, now: "2026-10-09T00:00:00.000Z") // since before the completion
         let credits = try liveCredits(db)
         XCTAssertEqual(credits.map(\.id), [eventCredit(done.id)])
         XCTAssertEqual(credits.first?.delta, 2)

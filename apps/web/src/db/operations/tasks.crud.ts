@@ -228,7 +228,8 @@ export async function createCompound(
     timeframe: input.timeframe,
     startDate: input.startDate,
     endDate: input.endDate,
-    ...(input.countsTowardCounterId ? { countsTowardCounterId: input.countsTowardCounterId } : {}),
+    // D11 — a container created flagged counts from its creation instant.
+    ...(input.countsTowardCounterId ? { countsTowardCounterId: input.countsTowardCounterId, countsTowardSince: now } : {}),
     ...(input.countsTowardCounterId && input.countsTowardAmount !== undefined
       ? { countsTowardAmount: input.countsTowardAmount }
       : {}),

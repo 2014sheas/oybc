@@ -96,7 +96,7 @@ describe('syncContract fixture', () => {
     ]);
   });
 
-  it('tasks clears endDate (heal, 2026-10-01) the four shared counter settings (cleared to default = absent) and countsTowardCounterId', () => {
+  it('tasks clears endDate (heal, 2026-10-01), the four shared counter settings (cleared to default = absent) and the three counts-toward fields', () => {
     expect([...CLEARABLE_FIELDS_BY_COLLECTION.tasks]).toEqual([
       'endDate',
       'counterName',
@@ -104,7 +104,13 @@ describe('syncContract fixture', () => {
       'titleTemplatePlural',
       'timeframeGoals',
       'countsTowardCounterId',
+      'countsTowardAmount',
+      'countsTowardSince',
     ]);
+  });
+
+  it('taskEvents clears deletedAt (a revived counts-toward credit drops its tombstone stamp)', () => {
+    expect([...CLEARABLE_FIELDS_BY_COLLECTION.taskEvents]).toEqual(['deletedAt']);
   });
 
   it('every clearable collection is a real sync collection', () => {

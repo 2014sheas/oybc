@@ -3,25 +3,30 @@
  * shared counter (docs/SHARED_COUNTER_SETTINGS.md §3, PR 3 — data + cascade).
  *
  * A contributing task carries `countsTowardCounterId` (+ optional
- * `countsTowardAmount`, default 1). Its counter ROOT receives ONE increment
- * event per COMPLETION OCCURRENCE of the contributor (D10, ruled 2026-10-10:
- * once per occurrence, not once per task lifetime — a manual square on a
- * repeating weekly board is the SAME task every week, and counts every week
- * it is completed). Each occurrence has a stable key and a deterministic
- * credit id ({@link countsTowardEventId}); when an occurrence is no longer
- * derived (an undo, a removed placement, a cleared flag) its credit is
- * tombstoned. The write happens in the board cascade on both platforms (web
+ * `countsTowardAmount`, default 1; `countsTowardSince`, the instant the flag
+ * was set — D11). Its counter ROOT receives ONE increment event per
+ * COMPLETION OCCURRENCE of the contributor (D10, ruled 2026-10-10: once per
+ * occurrence, not once per task lifetime — a manual square on a repeating
+ * weekly board is the SAME task every week, and counts every week it is
+ * completed). Each occurrence has a stable key and a deterministic credit id
+ * ({@link countsTowardEventId}); when an occurrence is no longer derived (an
+ * undo, a removed placement, a cleared flag) its credit is tombstoned. The
+ * write happens in the board cascade on both platforms (web
  * `db/operations/countsToward.ts` ↔ iOS `AppDatabase+CountsToward.swift`);
  * this module is the pure half:
  *
  *   - {@link countsTowardEventId} — the uuidv5 seam, so every device's
  *     re-derivation produces the same row and union-by-id sync stays correct.
  *   - {@link resolveContributionCredits} — the WANTED credits, from live data.
+ *   - {@link isOccurrenceWanted} — the D11 "count from flag time" gate.
  *   - {@link candidateContributionIds} — every credit id the contributor may
  *     have owned (live AND tombstoned data), so a withdrawn occurrence is found
  *     and tombstoned.
  *   - {@link planCountsTowardActions} — the per-contributor set reconciliation:
- *     insert / revise / tombstone per credit id (idempotent).
+ *     insert / revise / tombstone per credit id (idempotent), protecting the
+ *     credits another member of the contributor's fork lineage still wants.
+ *   - {@link isCreditWriteSealSuppressed} — the D11 "credits honour the
+ *     counter's sealed windows" gate the writers apply per action.
  *   - {@link resolveContributionState} — one window's completion + instant
  *     (§3c / D8: a late log's `min(now, endDate)` stamp is inherited because
  *     the instant IS the completing event's `occurredAt`).
@@ -34,15 +39,22 @@
  *     state is complete; key = the id of the increment that last crossed the
  *     goal inside that window (unplaced → the lifetime evaluation, same key).
  *   - COMPOUND — one per live placement window in which the windowed
- *     derivation is complete; key = `window:<board startDate>` (unplaced →
- *     `lifetime`). Compounds own no events, so the window stands in.
+ *     derivation is complete; key = the COMPLETING CHILD's event (the child
+ *     event that set the instant — All of → the last child's, Any of → the
+ *     first, At least N → the N-th; nested compounds pass theirs up), so
+ *     overlapping boards and board date edits collapse to one credit. Only
+ *     when the completing child is a latched row with no event: key =
+ *     `board:<boardId>` (stable across date edits), or `lifetime` unplaced.
  *
  * An event key is globally unique, so the credit id for an event-keyed
  * occurrence does NOT include the contributor id: a board-scoped fork copies
  * the original's in-window events onto itself (`forkedEventId`) — a copy is
  * resolved back to its SOURCE event's id through the `forkedFromTaskId`
- * lineage ({@link canonicalOccurrenceEventId}), so the original and its fork
- * share one credit instead of double-counting.
+ * lineage ({@link ForkEventResolver}), so the original and its fork share one
+ * credit instead of double-counting. Because several lineage members can want
+ * the same credit, a member tombstones an event-keyed credit only when NO
+ * live, flagged lineage member wants it ({@link planCountsTowardActions}'s
+ * `lineageWantedIds`).
  *
  * Has a Swift twin (`Helpers/CountsToward.swift`) pinned by
  * `tests/fixtures/countsTowardVectors.json` (copied byte-identically to
@@ -55,16 +67,18 @@ import type { BoardTask } from '../types/boardTask';
 import type { CompoundChild } from '../types/compoundChild';
 import type { Task } from '../types/task';
 import type { TaskEvent } from '../types/taskEvent';
-import { forkedEventId } from './boardScopedFork';
 import { quantizeCount, resolveCountKind } from './countValue';
+import { createForkEventResolver, lineageRootId, type ForkEventResolver } from './countsTowardLineage';
 import { isWindowStampedDerived } from './memberRules';
 import {
   boardWindowEnd,
   boundWindowContextAtSeal,
+  isEventSealImmune,
   resolveDerivedCounterWindowState,
   resolveTaskWindowState,
   resolveWindowStampedDerivedState,
   type CompoundWindowContext,
+  type SealImmuneWindow,
 } from './taskEvents';
 import { uuidv5 } from './uuidv5';
 
@@ -73,32 +87,44 @@ export const COUNTS_TOWARD_NAMESPACE = 'counts-toward:event';
 
 /** One completion occurrence of a contributor — the key its credit is minted under. */
 export type ContributionOccurrence =
+  /** A NORMAL / plain COUNTING contributor's OWN completing event. */
   | { kind: 'event'; eventId: string }
-  | { kind: 'window'; startDate: string }
+  /** A COMPOUND contributor's completing CHILD event (scoped — several compounds may share a child). */
+  | { kind: 'childEvent'; eventId: string }
+  /** A placed compound whose completing child owns no event. */
+  | { kind: 'board'; boardId: string }
+  /** An unplaced compound whose completing child owns no event. */
   | { kind: 'lifetime' };
 
 /**
- * Deterministic id of the credit `contributorId` writes on its counter root
- * for `occurrence`.
+ * Deterministic id of the credit a contributor writes on its counter root
+ * for `occurrence`. `contributorScopeId` is the contributor's fork-lineage
+ * ROOT ({@link lineageRootId}) — a fork shares its original's scope, so the
+ * two never mint distinct credits for one occurrence.
  *
- *   - `event`    → `uuidv5("counts-toward:event:<eventId>")` — the event id is
- *                  globally unique, so the contributor is NOT part of the name
- *                  (a fork's copied event resolves to the same credit).
- *   - `window`   → `uuidv5("counts-toward:event:<contributorId>:window:<startDate>")`.
- *   - `lifetime` → `uuidv5("counts-toward:event:<contributorId>:lifetime")`.
+ *   - `event`      → `uuidv5("counts-toward:event:<eventId>")` — an own event
+ *                    belongs to exactly one task (a fork's copy resolves to its
+ *                    source), so no scope is needed.
+ *   - `childEvent` → `uuidv5("counts-toward:event:<scope>:child-event:<eventId>")`
+ *                    — two compounds containing the same child each credit
+ *                    their own completion of it.
+ *   - `board`      → `uuidv5("counts-toward:event:<scope>:board:<boardId>")`.
+ *   - `lifetime`   → `uuidv5("counts-toward:event:<scope>:lifetime")`.
  *
- * @param contributorId - The task carrying `countsTowardCounterId`.
+ * @param contributorScopeId - The contributor's lineage root id (its own id when it is not a fork).
  * @param occurrence - The occurrence key.
  * @returns A stable uuidv5 — every device derives the same id.
  */
-export function countsTowardEventId(contributorId: string, occurrence: ContributionOccurrence): string {
+export function countsTowardEventId(contributorScopeId: string, occurrence: ContributionOccurrence): string {
   switch (occurrence.kind) {
     case 'event':
       return uuidv5(`${COUNTS_TOWARD_NAMESPACE}:${occurrence.eventId}`);
-    case 'window':
-      return uuidv5(`${COUNTS_TOWARD_NAMESPACE}:${contributorId}:window:${occurrence.startDate}`);
+    case 'childEvent':
+      return uuidv5(`${COUNTS_TOWARD_NAMESPACE}:${contributorScopeId}:child-event:${occurrence.eventId}`);
+    case 'board':
+      return uuidv5(`${COUNTS_TOWARD_NAMESPACE}:${contributorScopeId}:board:${occurrence.boardId}`);
     case 'lifetime':
-      return uuidv5(`${COUNTS_TOWARD_NAMESPACE}:${contributorId}:lifetime`);
+      return uuidv5(`${COUNTS_TOWARD_NAMESPACE}:${contributorScopeId}:lifetime`);
   }
 }
 
@@ -119,8 +145,10 @@ export interface ContributionState {
   isCompleted: boolean;
   /** ISO instant the task became complete; `null` when incomplete. */
   completedAt: string | null;
-  /** For an event-owning contributor: the event that completed it (its crossing / first completion). */
+  /** The event that completed it (own crossing / first completion; a compound's completing child's). */
   completingEventId?: string;
+  /** The task that owns `completingEventId` (a linked child's crossing belongs to its ROOT). */
+  completingTaskId?: string;
 }
 
 const INCOMPLETE: ContributionState = { isCompleted: false, completedAt: null };
@@ -131,13 +159,32 @@ export type ContributionWindow = Pick<CompoundWindowContext, 'windowStart' | 'wi
 /** The lifetime window: no bounds. */
 export const LIFETIME_WINDOW: ContributionWindow = { windowStart: null, windowEnd: null };
 
+/** Epoch ms of an ISO instant (`NaN` when unparseable — the JS `Date` degrade). */
 const toMs = (iso: string): number => new Date(iso).getTime();
 
 const compareIds = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
 
-/** Ascending by parsed instant, then by string (deterministic ties). */
-function sortInstants(instants: string[]): string[] {
-  return [...instants].sort((a, b) => toMs(a) - toMs(b) || compareIds(a, b));
+/**
+ * Whether two ISO instants denote the same moment: parsed-ms equality, or the
+ * raw strings when either does not parse (so an unparseable stamp never makes
+ * a replay look like a change).
+ */
+function sameInstant(a: string, b: string): boolean {
+  const ma = toMs(a);
+  const mb = toMs(b);
+  if (Number.isNaN(ma) || Number.isNaN(mb)) return a === b;
+  return ma === mb;
+}
+
+/** Ascending by parsed instant, then by the tie-break keys (deterministic). */
+function compareStates(a: ContributionState, b: ContributionState): number {
+  const [ia, ib] = [a.completedAt ?? '', b.completedAt ?? ''];
+  return (
+    toMs(ia) - toMs(ib) ||
+    compareIds(ia, ib) ||
+    compareIds(a.completingEventId ?? '', b.completingEventId ?? '') ||
+    compareIds(a.completingTaskId ?? '', b.completingTaskId ?? '')
+  );
 }
 
 /** Live events of `events` whose `occurredAt` falls inside `[windowStart, windowEnd]` (inclusive; `null` = unbounded). */
@@ -175,7 +222,9 @@ function crossingEvent(events: TaskEvent[], target: number): TaskEvent | null {
 
 /** A completed state stamped at `event` (or incomplete when there is none). */
 function completedBy(event: TaskEvent | null): ContributionState {
-  return event ? { isCompleted: true, completedAt: event.occurredAt, completingEventId: event.id } : INCOMPLETE;
+  return event
+    ? { isCompleted: true, completedAt: event.occurredAt, completingEventId: event.id, completingTaskId: event.taskId }
+    : INCOMPLETE;
 }
 
 /** A latched row (achievement, hub-linked copy in a lifetime window): its cache + `completedAt`. */
@@ -240,19 +289,20 @@ function stateOf(
     const vacuous = task.operator === OperatorType.AND && task.countsTowardCounterId == null;
     return vacuous ? { isCompleted: true, completedAt: null } : INCOMPLETE;
   }
-  const done = childStates.filter((s) => s.isCompleted);
-  const instants = sortInstants(done.map((s) => s.completedAt).filter((x): x is string => x != null));
-  const nth = (n: number): string | null =>
-    instants.length === 0 ? null : instants[Math.min(n, instants.length) - 1];
+  const done = childStates.filter((s) => s.isCompleted).sort(compareStates);
+  const nth = (n: number): ContributionState => {
+    const { isCompleted: _done, ...rest } = done[Math.min(n, done.length) - 1];
+    return { isCompleted: true, ...rest };
+  };
 
   switch (task.operator) {
     case OperatorType.AND:
-      return done.length === childStates.length ? { isCompleted: true, completedAt: nth(instants.length) } : INCOMPLETE;
+      return done.length === childStates.length ? nth(done.length) : INCOMPLETE;
     case OperatorType.OR:
-      return done.length > 0 ? { isCompleted: true, completedAt: nth(1) } : INCOMPLETE;
+      return done.length > 0 ? nth(1) : INCOMPLETE;
     case OperatorType.M_OF_N: {
       const required = Math.max(1, task.threshold ?? 1);
-      return done.length >= required ? { isCompleted: true, completedAt: nth(required) } : INCOMPLETE;
+      return done.length >= required ? nth(required) : INCOMPLETE;
     }
     default:
       return INCOMPLETE;
@@ -271,16 +321,19 @@ function stateOf(
  *     is inherited verbatim — D8); `completingEventId` names it.
  *   - Plain COUNTING — complete iff the in-window sum reaches `maxCount`; the
  *     instant is the `occurredAt` of the increment that last crossed it
- *     (`completingEventId`).
+ *     (`completingEventId`). A goal of 0 is degenerate: complete, but no
+ *     increment ever crosses it, so no event names the occurrence.
  *   - Window-stamped linked COUNTING (a compound child) — the root's events
- *     inside its own window, same crossing rule. Any other linked child
- *     resolves over the HOST window (owner rule 2026-10-01); only a lifetime
- *     window reads its latch (`completedAt`), as `evaluateCompound` does.
+ *     inside its own window, same crossing rule (`completingTaskId` = the
+ *     root). Any other linked child resolves over the HOST window (owner rule
+ *     2026-10-01); only a lifetime window reads its latch (`completedAt`), as
+ *     `evaluateCompound` does.
  *   - COMPOUND — the operator over its live children (the same states
  *     `evaluateCompound` gives in that window); the instant is when the rule
- *     became satisfied: All of → the LAST child's instant (the max), Any of →
- *     the first, At least N → the N-th. A counts-toward container with no
- *     children is incomplete.
+ *     became satisfied: All of → the LAST child's (the max), Any of → the
+ *     first, At least N → the N-th — and that child's `completingEventId` /
+ *     `completingTaskId` pass up (a nested compound passes its own). A
+ *     counts-toward container with no children is incomplete.
  *   - ACHIEVEMENT (as a compound child) — its latch.
  *
  * A complete task whose instant cannot be derived (a vacuous compound, a
@@ -293,7 +346,7 @@ function stateOf(
  * @param eventsByTaskId - Events grouped by `taskId` (deleted ones ignored;
  *   a sealed board's caller bounds them at `sealedAt` first).
  * @param window - The window to evaluate over (default: lifetime).
- * @returns `{ isCompleted, completedAt, completingEventId? }`.
+ * @returns `{ isCompleted, completedAt, completingEventId?, completingTaskId? }`.
  */
 export function resolveContributionState(
   task: Task,
@@ -305,27 +358,39 @@ export function resolveContributionState(
   const ctx: CompoundWindowContext = { windowStart: window.windowStart, windowEnd: window.windowEnd, eventsByTaskId };
   const s = stateOf(task, ctx, childrenByCompound, taskById, new Set());
   if (!s.isCompleted) return INCOMPLETE;
-  return { isCompleted: true, completedAt: s.completedAt ?? task.createdAt, ...(s.completingEventId ? { completingEventId: s.completingEventId } : {}) };
+  return {
+    isCompleted: true,
+    completedAt: s.completedAt ?? task.createdAt,
+    ...(s.completingEventId ? { completingEventId: s.completingEventId } : {}),
+    ...(s.completingTaskId ? { completingTaskId: s.completingTaskId } : {}),
+  };
 }
+
+// ---------------------------------------------------------------------------
+// Credits
+// ---------------------------------------------------------------------------
 
 /** The data a contributor's credits are derived from. */
 export interface ContributionInputs {
   /** Every task by id (resolves the counter root, compound children, fork lineage). */
   taskById: Record<string, Task>;
-  /** `compoundTaskId` → links (deleted ones ignored). */
+  /** `compoundTaskId` → LIVE links (deleted ones ignored). */
   childrenByCompound: Record<string, CompoundChild[]>;
+  /** `compoundTaskId` → links in ANY state (the candidate subtree); defaults to `childrenByCompound`. */
+  allChildrenByCompound?: Record<string, CompoundChild[]>;
   /** Non-deleted events grouped by `taskId` (the kernel convention). */
   eventsByTaskId: Record<string, TaskEvent[]>;
   /**
-   * EVERY event (tombstones included) of the contributor and of its fork
-   * ancestors, grouped by `taskId` — the candidate keys, and the fork lineage
-   * a copied event is resolved through.
+   * EVERY event (tombstones included) by `taskId` — the contributor's, its
+   * fork ancestors', and (for a compound) its subtree's and their roots'.
    */
   allEventsByTaskId: Record<string, TaskEvent[]>;
   /** The contributor's placements, any state (rows for other tasks are ignored). */
   placements: ReadonlyArray<Pick<BoardTask, 'boardId' | 'taskId' | 'isDeleted'>>;
   /** Boards referenced by `placements`, any state. A board absent here is treated as not live. */
   boardById: Record<string, Pick<Board, 'id' | 'isDeleted' | 'status' | 'startDate' | 'endDate' | 'sealedAt'>>;
+  /** A shared {@link ForkEventResolver}; one is created over the inputs when absent. */
+  forkEvents?: ForkEventResolver;
 }
 
 /** One credit a contributor wants on its counter root. */
@@ -337,46 +402,19 @@ export interface ContributionCredit {
   occurredAt: string;
 }
 
-/** Deepest `forkedFromTaskId` chain followed when resolving a copied event. */
-const MAX_FORK_LINEAGE = 8;
+const resolverOf = (inputs: ContributionInputs): ForkEventResolver =>
+  inputs.forkEvents ?? createForkEventResolver(inputs.taskById, inputs.allEventsByTaskId);
 
-/**
- * The SOURCE event id an event of `task` is keyed by: for a board-scoped
- * fork, a copied event (`forkedEventId(fork.id, source.id)`) resolves to the
- * original's event, transitively up the `forkedFromTaskId` lineage; any
- * other event is its own key.
- *
- * @param eventId - An event of `task`.
- * @param task - The event's owner.
- * @param taskById - Every task by id.
- * @param allEventsByTaskId - Every event (any state) of the lineage, by `taskId`.
- * @returns The canonical event id.
- */
-export function canonicalOccurrenceEventId(
-  eventId: string,
-  task: Pick<Task, 'id' | 'forkedFromTaskId'>,
-  taskById: Record<string, Pick<Task, 'id' | 'forkedFromTaskId'>>,
-  allEventsByTaskId: Record<string, TaskEvent[]>,
-): string {
-  let current = task;
-  let id = eventId;
-  for (let depth = 0; depth < MAX_FORK_LINEAGE; depth += 1) {
-    const sourceId = current.forkedFromTaskId;
-    if (sourceId == null) return id;
-    const source = taskById[sourceId];
-    if (!source) return id;
-    const match = (allEventsByTaskId[sourceId] ?? []).find((e) => forkedEventId(current.id, e.id) === id);
-    if (!match) return id;
-    id = match.id;
-    current = source;
-  }
-  return id;
+/** The event-keyed occurrence for `eventId` owned by `taskId`, resolved through the fork lineage. */
+function eventOccurrence(eventId: string, taskId: string, inputs: ContributionInputs, resolver: ForkEventResolver): ContributionOccurrence {
+  const owner = inputs.taskById[taskId];
+  return { kind: 'event', eventId: owner ? resolver.resolve(eventId, owner) : eventId };
 }
 
 /** The live boards placing `task`, each as the window its square is evaluated over (sealed → bounded at `sealedAt`). */
-function liveWindowsOf(task: Task, inputs: ContributionInputs): Array<{ startDate: string; ctx: CompoundWindowContext }> {
+function liveWindowsOf(task: Task, inputs: ContributionInputs): Array<{ boardId: string; ctx: CompoundWindowContext }> {
   const seen = new Set<string>();
-  const out: Array<{ startDate: string; ctx: CompoundWindowContext }> = [];
+  const out: Array<{ boardId: string; startDate: string; ctx: CompoundWindowContext }> = [];
   for (const p of inputs.placements) {
     if (p.isDeleted || p.taskId !== task.id || seen.has(p.boardId)) continue;
     seen.add(p.boardId);
@@ -386,9 +424,9 @@ function liveWindowsOf(task: Task, inputs: ContributionInputs): Array<{ startDat
     const eventsByTaskId = Number.isNaN(sealedAtMs)
       ? inputs.eventsByTaskId
       : boundWindowContextAtSeal(inputs.eventsByTaskId, sealedAtMs).eventsByTaskId;
-    out.push({ startDate: b.startDate, ctx: { windowStart: b.startDate, windowEnd: boardWindowEnd(b), eventsByTaskId } });
+    out.push({ boardId: b.id, startDate: b.startDate, ctx: { windowStart: b.startDate, windowEnd: boardWindowEnd(b), eventsByTaskId } });
   }
-  return out.sort((a, b) => toMs(a.startDate) - toMs(b.startDate) || compareIds(a.startDate, b.startDate));
+  return out.sort((a, b) => toMs(a.startDate) - toMs(b.startDate) || compareIds(a.boardId, b.boardId));
 }
 
 /**
@@ -402,85 +440,83 @@ function liveWindowsOf(task: Task, inputs: ContributionInputs): Array<{ startDat
  *     increment; placed nowhere → the lifetime evaluation, same key. The
  *     same crossing event in two overlapping windows is ONE credit.
  *   - COMPOUND — one per live placement window whose windowed derivation is
- *     complete, keyed `window:<board startDate>` (two boards sharing a start
- *     date credit once — the known caveat); placed nowhere → `lifetime`.
- *   - A linked row, an achievement or a deleted task — none.
+ *     complete, keyed by the completing child's (fork-resolved) event; when
+ *     that child owns no event, `board:<boardId>`; placed nowhere → the
+ *     lifetime evaluation, keyed by the completing event or `lifetime`.
+ *   - A linked row, an achievement, a counter root or a deleted task — none.
  *
- * Does NOT consult the flag or the target: {@link planCountsTowardActions}
- * applies those.
+ * Does NOT consult the flag, the target or `countsTowardSince`:
+ * {@link planCountsTowardActions} applies those.
  *
  * @param task - The contributor.
  * @param inputs - See {@link ContributionInputs}.
  * @returns The wanted credits, deduplicated by id, in a deterministic order.
  */
 export function resolveContributionCredits(task: Task, inputs: ContributionInputs): ContributionCredit[] {
-  if (task.isDeleted) return [];
+  if (task.isDeleted || task.isCounter === true) return [];
+  const resolver = resolverOf(inputs);
+  const scope = lineageRootId(task, inputs.taskById);
   const byId = new Map<string, ContributionCredit>();
   const want = (occurrence: ContributionOccurrence, occurredAt: string): void => {
-    const eventId = countsTowardEventId(task.id, occurrence);
+    const eventId = countsTowardEventId(scope, occurrence);
     const prior = byId.get(eventId);
     if (!prior || toMs(occurredAt) < toMs(prior.occurredAt)) byId.set(eventId, { eventId, occurrence, occurredAt });
   };
-  const eventKey = (eventId: string): ContributionOccurrence => ({
-    kind: 'event',
-    eventId: canonicalOccurrenceEventId(eventId, task, inputs.taskById, inputs.allEventsByTaskId),
-  });
+  const evaluate = (ctx: CompoundWindowContext): ContributionState =>
+    resolveContributionState(task, inputs.childrenByCompound, inputs.taskById, ctx.eventsByTaskId, ctx);
+  const lifetimeCtx: CompoundWindowContext = { ...LIFETIME_WINDOW, eventsByTaskId: inputs.eventsByTaskId };
 
   if (task.type === TaskType.NORMAL) {
     for (const e of inputs.eventsByTaskId[task.id] ?? []) {
-      if (!e.isDeleted && e.kind === 'completion') want(eventKey(e.id), e.occurredAt);
+      if (!e.isDeleted && e.kind === 'completion') want(eventOccurrence(e.id, task.id, inputs, resolver), e.occurredAt);
     }
   } else if (task.type === TaskType.COUNTING) {
     if (task.sharedCounterId) return [];
     const windows = liveWindowsOf(task, inputs);
-    const contexts = windows.length > 0 ? windows.map((w) => w.ctx) : [{ ...LIFETIME_WINDOW, eventsByTaskId: inputs.eventsByTaskId }];
-    for (const ctx of contexts) {
-      const s = resolveContributionState(task, inputs.childrenByCompound, inputs.taskById, ctx.eventsByTaskId, ctx);
-      if (s.isCompleted && s.completingEventId) want(eventKey(s.completingEventId), s.completedAt as string);
+    for (const ctx of windows.length > 0 ? windows.map((w) => w.ctx) : [lifetimeCtx]) {
+      const s = evaluate(ctx);
+      if (s.isCompleted && s.completingEventId) {
+        want(eventOccurrence(s.completingEventId, s.completingTaskId ?? task.id, inputs, resolver), s.completedAt as string);
+      }
     }
   } else if (task.type === TaskType.COMPOUND) {
+    const childEvent = (s: ContributionState): ContributionOccurrence | null => {
+      if (!s.completingEventId) return null;
+      const resolved = eventOccurrence(s.completingEventId, s.completingTaskId ?? task.id, inputs, resolver);
+      return resolved.kind === 'event' ? { kind: 'childEvent', eventId: resolved.eventId } : resolved;
+    };
     const windows = liveWindowsOf(task, inputs);
     if (windows.length === 0) {
-      const s = resolveContributionState(task, inputs.childrenByCompound, inputs.taskById, inputs.eventsByTaskId);
-      if (s.isCompleted) want({ kind: 'lifetime' }, s.completedAt as string);
+      const s = evaluate(lifetimeCtx);
+      if (s.isCompleted) want(childEvent(s) ?? { kind: 'lifetime' }, s.completedAt as string);
     }
     for (const w of windows) {
-      const s = resolveContributionState(task, inputs.childrenByCompound, inputs.taskById, w.ctx.eventsByTaskId, w.ctx);
-      if (s.isCompleted) want({ kind: 'window', startDate: w.startDate }, s.completedAt as string);
+      const s = evaluate(w.ctx);
+      if (s.isCompleted) want(childEvent(s) ?? { kind: 'board', boardId: w.boardId }, s.completedAt as string);
     }
   }
   return [...byId.values()].sort((a, b) => compareIds(a.eventId, b.eventId));
 }
 
 /**
- * Every credit id `task` MAY own — a superset of
- * {@link resolveContributionCredits} built from live AND tombstoned data:
- * every event of the task (raw id and its fork-resolved id), one window key
- * per placement (any state, boards any state), and the lifetime key. A
- * stored credit at any of these ids that is no longer wanted is tombstoned.
+ * D11 (ruled 2026-10-10) — "count from now on": an occurrence credits only
+ * when its instant (the credit's `occurredAt`) is at or after the
+ * contributor's `countsTowardSince` (the instant the flag was set or
+ * re-pointed). A contributor with no `since` (a legacy row) credits every
+ * occurrence. An unparseable `since` applies no bound; an unparseable
+ * instant is never wanted. The single place the "wanted" policy lives — the
+ * planner and the lineage union both go through it.
  *
- * @param task - The contributor (flagged or not).
- * @param inputs - See {@link ContributionInputs}.
- * @returns Sorted, deduplicated credit ids.
+ * @param contributor - The task (its `countsTowardSince` is read).
+ * @param credit - The occurrence under consideration.
  */
-export function candidateContributionIds(task: Task, inputs: ContributionInputs): string[] {
-  const ids = new Set<string>();
-  for (const e of inputs.allEventsByTaskId[task.id] ?? []) {
-    ids.add(countsTowardEventId(task.id, { kind: 'event', eventId: e.id }));
-    ids.add(
-      countsTowardEventId(task.id, {
-        kind: 'event',
-        eventId: canonicalOccurrenceEventId(e.id, task, inputs.taskById, inputs.allEventsByTaskId),
-      }),
-    );
-  }
-  for (const p of inputs.placements) {
-    if (p.taskId !== task.id) continue;
-    const b = inputs.boardById[p.boardId];
-    if (b) ids.add(countsTowardEventId(task.id, { kind: 'window', startDate: b.startDate }));
-  }
-  ids.add(countsTowardEventId(task.id, { kind: 'lifetime' }));
-  return [...ids].sort(compareIds);
+export function isOccurrenceWanted(contributor: Pick<Task, 'countsTowardSince'>, credit: Pick<ContributionCredit, 'occurredAt'>): boolean {
+  const since = contributor.countsTowardSince;
+  if (since == null) return true;
+  const sinceMs = toMs(since);
+  if (Number.isNaN(sinceMs)) return true;
+  const at = toMs(credit.occurredAt);
+  return !Number.isNaN(at) && at >= sinceMs;
 }
 
 /**
@@ -501,6 +537,122 @@ export function isCountsTowardTarget(task: Task | undefined): task is Task {
   );
 }
 
+/**
+ * Whether `task` can hold or want a credit at all: not a counter root, not a
+ * linked copy, not an Achievement (none may carry the flag — Zod shape rule).
+ * The writers skip such rows before any candidate work.
+ *
+ * @param task - The candidate contributor.
+ */
+export function canContribute(task: Pick<Task, 'type' | 'isCounter' | 'sharedCounterId'>): boolean {
+  return task.isCounter !== true && task.sharedCounterId == null && task.type !== TaskType.ACHIEVEMENT;
+}
+
+/**
+ * The credit ids the planner would KEEP for `contributor` — its wanted
+ * credits gated by the flag, the target and {@link isOccurrenceWanted} — the
+ * same gate {@link planCountsTowardActions} applies, exposed so a lineage
+ * member's wants can be unioned ({@link planCountsTowardActions}'
+ * `lineageWantedIds`).
+ *
+ * @param contributor - The lineage member.
+ * @param inputs - Its {@link ContributionInputs} (own placements).
+ * @returns The credit ids, or `[]` when it can credit nothing.
+ */
+export function keptCreditIdsFor(contributor: Task, inputs: ContributionInputs): string[] {
+  const targetId = contributor.countsTowardCounterId ?? null;
+  const target = targetId != null ? inputs.taskById[targetId] : undefined;
+  if (contributor.isDeleted || !canContribute(contributor) || !isCountsTowardTarget(target)) return [];
+  return resolveContributionCredits(contributor, inputs)
+    .filter((c) => isOccurrenceWanted(contributor, c))
+    .map((c) => c.eventId);
+}
+
+/** The task ids a compound's candidate keys reach: its subtree (links in any state) and the roots its linked children read. */
+function candidateSubtreeIds(task: Task, inputs: ContributionInputs): string[] {
+  const links = inputs.allChildrenByCompound ?? inputs.childrenByCompound;
+  const seen = new Set<string>([task.id]);
+  const out = new Set<string>();
+  const stack = [task.id];
+  while (stack.length > 0) {
+    const parent = stack.pop() as string;
+    for (const link of links[parent] ?? []) {
+      const childId = link.childTaskId;
+      if (seen.has(childId)) continue;
+      seen.add(childId);
+      out.add(childId);
+      const child = inputs.taskById[childId];
+      if (!child) continue;
+      if (child.sharedCounterId) out.add(child.sharedCounterId);
+      if (child.type === TaskType.COMPOUND) stack.push(childId);
+    }
+  }
+  return [...out];
+}
+
+/**
+ * Every credit id `task` MAY own — a superset of
+ * {@link resolveContributionCredits} built from live AND tombstoned data:
+ * every event of the task (raw id, and its fork-resolved id when that
+ * differs), for a compound every event of its subtree and of the roots its
+ * linked children read (raw + resolved, links in any state), one `board` key
+ * per placement (any state, boards any state), and the `lifetime` key. A
+ * stored credit at any of these ids that is no longer wanted is tombstoned.
+ *
+ * @param task - The contributor (flagged or not).
+ * @param inputs - See {@link ContributionInputs}.
+ * @returns Sorted, deduplicated credit ids.
+ */
+export function candidateContributionIds(task: Task, inputs: ContributionInputs): string[] {
+  const resolver = resolverOf(inputs);
+  const scope = lineageRootId(task, inputs.taskById);
+  const ids = new Set<string>();
+  const addEventsOf = (ownerId: string, kind: 'event' | 'childEvent'): void => {
+    const owner = inputs.taskById[ownerId];
+    for (const e of inputs.allEventsByTaskId[ownerId] ?? []) {
+      ids.add(countsTowardEventId(scope, { kind, eventId: e.id }));
+      const canonical = owner ? resolver.resolve(e.id, owner) : e.id;
+      if (canonical !== e.id) ids.add(countsTowardEventId(scope, { kind, eventId: canonical }));
+    }
+  };
+  addEventsOf(task.id, 'event');
+  if (task.type === TaskType.COMPOUND) for (const id of candidateSubtreeIds(task, inputs)) addEventsOf(id, 'childEvent');
+  for (const p of inputs.placements) {
+    if (p.taskId === task.id) ids.add(countsTowardEventId(scope, { kind: 'board', boardId: p.boardId }));
+  }
+  ids.add(countsTowardEventId(scope, { kind: 'lifetime' }));
+  return [...ids].sort(compareIds);
+}
+
+/**
+ * The cheap PROBE a writer runs for an unflagged contributor with no fork
+ * parent before deciding whether it is relevant at all: the `lifetime` key,
+ * a `board` key per placement (any state) and the raw event key of each of
+ * its own most recent events (`ownEvents`, the caller caps the count), all
+ * scoped by the task's OWN id (the probe runs before the lineage is known, so
+ * an unflagged fork's lineage-scoped keys are not probed — a flagged lineage
+ * member reconciles those). An unflagged task holds credits only after an
+ * interrupted flag clear (the clear tombstones in the same transaction), so
+ * this bounded probe is the self-heal, not the correctness path.
+ *
+ * @param task - The unflagged contributor.
+ * @param ownEvents - Its own events (any state), most recent first, capped.
+ * @param placements - Its placements (any state).
+ */
+export function probeContributionIds(
+  task: Pick<Task, 'id'>,
+  ownEvents: ReadonlyArray<Pick<TaskEvent, 'id'>>,
+  placements: ReadonlyArray<Pick<BoardTask, 'boardId' | 'taskId'>>,
+): string[] {
+  const ids = new Set<string>([countsTowardEventId(task.id, { kind: 'lifetime' })]);
+  for (const e of ownEvents) ids.add(countsTowardEventId(task.id, { kind: 'event', eventId: e.id }));
+  for (const p of placements) if (p.taskId === task.id) ids.add(countsTowardEventId(task.id, { kind: 'board', boardId: p.boardId }));
+  return [...ids].sort(compareIds);
+}
+
+/** How many of an unflagged task's most recent events {@link probeContributionIds} looks at. */
+export const COUNTS_TOWARD_PROBE_EVENT_LIMIT = 256;
+
 /** One write the cascade makes for a contributing task. */
 export type CountsTowardAction =
   | { kind: 'insert'; eventId: string; rootId: string; delta: number; occurredAt: string }
@@ -517,24 +669,33 @@ export type CountsTowardAction =
     }
   | { kind: 'tombstone'; eventId: string; rootId: string; occurredAt: string };
 
+const EMPTY_IDS: ReadonlySet<string> = new Set();
+
 /**
  * Reconcile a contributor's credit SET: compare the wanted credits with the
  * stored events at every candidate id and decide each write.
  *
- *   - Wanted (live contributor, flagged, target valid) + no event → `insert`.
+ *   - Wanted (live contributor, flagged, target valid, occurrence at or after
+ *     `countsTowardSince` — {@link isOccurrenceWanted}) + no event → `insert`.
  *   - Wanted + a tombstoned event → `revise` (revive).
  *   - Wanted + a live event that differs (counter, amount or instant) →
  *     `revise`; identical → nothing (replay is a no-op).
  *   - Not wanted + a live event → `tombstone` — an undone completion, a
- *     removed placement, a cleared flag (which tombstones every live credit).
+ *     removed placement, a cleared flag (which tombstones every live credit),
+ *     an occurrence before `since` — UNLESS another live, flagged member of
+ *     the contributor's fork lineage still wants that credit
+ *     (`lineageWantedIds`, from {@link keptCreditIdsFor} over the lineage):
+ *     the credit belongs to the lineage, not to whichever member reconciled
+ *     last.
  *   - Counter deleted (or not pulled yet) → nothing: its events go with it
  *     (§3e) — no write either way.
  *
  * @param contributor - The task (flagged or not).
  * @param taskById - Every task by id (resolves the counter roots).
- * @param wanted - {@link resolveContributionCredits} for `contributor`.
+ * @param wanted - {@link resolveContributionCredits} for `contributor` (unfiltered).
  * @param candidateIds - {@link candidateContributionIds} for `contributor`.
  * @param storedById - The stored events at the wanted + candidate ids (any state).
+ * @param lineageWantedIds - Credit ids the other lineage members keep.
  * @returns The actions, ordered by credit id (deterministic).
  */
 export function planCountsTowardActions(
@@ -543,15 +704,19 @@ export function planCountsTowardActions(
   wanted: ReadonlyArray<ContributionCredit>,
   candidateIds: ReadonlyArray<string>,
   storedById: Record<string, TaskEvent | undefined>,
+  lineageWantedIds: ReadonlySet<string> = EMPTY_IDS,
 ): CountsTowardAction[] {
   const targetId = contributor.countsTowardCounterId ?? null;
   const target = targetId != null ? taskById[targetId] : undefined;
   if (targetId != null && (!target || target.isDeleted)) return [];
 
-  const canCredit = !contributor.isDeleted && isCountsTowardTarget(target);
+  const canCredit = !contributor.isDeleted && canContribute(contributor) && isCountsTowardTarget(target);
   const wantedById = new Map<string, { rootId: string; delta: number; occurredAt: string }>();
   if (canCredit) {
-    for (const w of wanted) wantedById.set(w.eventId, { rootId: target.id, delta: countsTowardAmountOf(contributor), occurredAt: w.occurredAt });
+    for (const w of wanted) {
+      if (!isOccurrenceWanted(contributor, w)) continue;
+      wantedById.set(w.eventId, { rootId: target.id, delta: countsTowardAmountOf(contributor), occurredAt: w.occurredAt });
+    }
   }
   const ids = [...new Set([...wantedById.keys(), ...candidateIds])].sort(compareIds);
 
@@ -561,6 +726,7 @@ export function planCountsTowardActions(
     const want = wantedById.get(eventId);
     if (existing && !existing.isDeleted) {
       if (!want) {
+        if (lineageWantedIds.has(eventId)) continue;
         const root = taskById[existing.taskId];
         if (!root || root.isDeleted) continue;
         actions.push({ kind: 'tombstone', eventId, rootId: existing.taskId, occurredAt: existing.occurredAt });
@@ -570,7 +736,7 @@ export function planCountsTowardActions(
         existing.kind === 'increment' &&
         existing.taskId === want.rootId &&
         existing.delta === want.delta &&
-        toMs(existing.occurredAt) === toMs(want.occurredAt);
+        sameInstant(existing.occurredAt, want.occurredAt);
       if (same) continue;
       actions.push({ kind: 'revise', eventId, ...want, previousRootId: existing.taskId, previousOccurredAt: existing.occurredAt, wasDeleted: false });
       continue;
@@ -585,75 +751,40 @@ export function planCountsTowardActions(
   return actions;
 }
 
-/** Why a counts-toward assignment is refused at write time. */
-export type CountsTowardProblem =
-  | 'self'
-  | 'contributor-is-counter'
-  | 'contributor-is-linked'
-  | 'contributor-is-achievement'
-  | 'target-not-counter'
-  | 'target-not-discrete'
-  | 'invalid-amount'
-  | 'cycle';
-
-/**
- * Whether `task` is a shared-counter ROOT: a hub counter, or a task other
- * live rows link to via `sharedCounterId`.
- *
- * @param task - The candidate.
- * @param tasks - Every task (any superset of the linked rows).
- */
-export function isSharedCounterRoot(task: Task, tasks: ReadonlyArray<Task>): boolean {
-  if (task.isCounter === true) return true;
-  return tasks.some((t) => !t.isDeleted && t.sharedCounterId === task.id);
+/** The roots an action touches, each with the instant it writes there. */
+export function creditActionReach(action: CountsTowardAction): Array<{ rootId: string; occurredAt: string }> {
+  const reach = [{ rootId: action.rootId, occurredAt: action.occurredAt }];
+  if (action.kind === 'revise') reach.push({ rootId: action.previousRootId, occurredAt: action.previousOccurredAt });
+  return reach;
 }
 
 /**
- * Write-time validation for `task.countsTowardCounterId = targetId` (§3a, D7).
- * Refused when: the task points at itself; the task is a counter root or a
- * linked copy, or an Achievement; the target is not a live, unlinked
- * COUNTING root (hub counter or linked-to) or not Discrete; the amount is not
- * a positive integer; or the task's own subtree already feeds that counter (a
- * child that IS the counter or links to it — a self-sustaining loop).
+ * D11 (ruled 2026-10-10) — credits honour the counter's sealed windows like
+ * every other event: an insert / revise / tombstone is SKIPPED when the
+ * instant it writes (the credit's `occurredAt`; for a revise also the
+ * previous instant, on the previous root) sits inside a seal-immune window
+ * of a sealed board holding that root or one of its copies
+ * (`getSealImmuneWindowsForTask(root)` ↔ `sealImmuneWindows(db:taskId:)`,
+ * through {@link isEventSealImmune} — a credit carries no `boardId`, so the
+ * late-log relaxation never applies to the credit row itself). The one
+ * exception is a write that runs inside the closed-board LATE-LOG path
+ * (`lateLog = true`), which already re-derives every sealed board
+ * deterministically. The single place the write-skip policy lives.
  *
- * @param input.task - The contributing task as stored.
- * @param input.targetId - The counter it should count toward.
- * @param input.amount - The requested `countsTowardAmount` (absent = 1).
- * @param input.tasks - Every task.
- * @param input.children - Every compound link (deleted ones ignored).
- * @returns The first problem, or `null` when the assignment is allowed.
+ * @param action - The planned write.
+ * @param immuneWindowsByRoot - The immune windows per root the action reaches.
+ * @param now - The write instant (the credit row's `createdAt`).
+ * @param lateLog - `true` inside the closed-board late-log path.
  */
-export function countsTowardProblem(input: {
-  task: Task;
-  targetId: string;
-  amount?: number;
-  tasks: ReadonlyArray<Task>;
-  children: ReadonlyArray<CompoundChild>;
-}): CountsTowardProblem | null {
-  const { task, targetId, amount, tasks, children } = input;
-  if (targetId === task.id) return 'self';
-  if (task.type === TaskType.ACHIEVEMENT) return 'contributor-is-achievement';
-  if (task.sharedCounterId != null) return 'contributor-is-linked';
-  if (isSharedCounterRoot(task, tasks)) return 'contributor-is-counter';
-  const target = tasks.find((t) => t.id === targetId);
-  if (!target || target.isDeleted || target.type !== TaskType.COUNTING || target.sharedCounterId != null || !isSharedCounterRoot(target, tasks)) {
-    return 'target-not-counter';
-  }
-  if (resolveCountKind(target) !== 'discrete') return 'target-not-discrete';
-  if (amount !== undefined && !(Number.isInteger(amount) && amount > 0)) return 'invalid-amount';
-
-  const byId = new Map(tasks.map((t) => [t.id, t]));
-  const seen = new Set<string>([task.id]);
-  const stack = [task.id];
-  while (stack.length > 0) {
-    const parent = stack.pop() as string;
-    for (const link of children) {
-      if (link.isDeleted || link.compoundTaskId !== parent || seen.has(link.childTaskId)) continue;
-      seen.add(link.childTaskId);
-      const child = byId.get(link.childTaskId);
-      if (child && (child.id === targetId || child.sharedCounterId === targetId)) return 'cycle';
-      stack.push(link.childTaskId);
-    }
-  }
-  return null;
+export function isCreditWriteSealSuppressed(
+  action: CountsTowardAction,
+  immuneWindowsByRoot: Record<string, ReadonlyArray<SealImmuneWindow>>,
+  now: string,
+  lateLog: boolean,
+): boolean {
+  if (lateLog) return false;
+  return creditActionReach(action).some(({ rootId, occurredAt }) => {
+    const windows = immuneWindowsByRoot[rootId] ?? [];
+    return windows.length > 0 && isEventSealImmune({ occurredAt, createdAt: now, boardId: undefined }, windows);
+  });
 }

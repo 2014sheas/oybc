@@ -1,5 +1,5 @@
 {
-  "_note": "Hand-authored fixture (edit directly, then `pnpm --filter @oybc/shared run gen:sync-fixtures`). Pins packages/shared/src/algorithms/countsToward.ts (tests/algorithms/countsToward.test.ts) against its Swift twin Helpers/CountsToward.swift (OYBCTests/CountsTowardVectorTests.swift) — docs/SHARED_COUNTER_SETTINGS.md §3 (D10: one credit per completion occurrence). Task defaults for unlisted fields: type=normal, isCompleted=false, isDeleted=false, createdAt=2026-01-01T00:00:00.000Z. Event defaults: isDeleted=false, kind=increment when delta is set else completion. Board defaults: status=active, isDeleted=false. Placement defaults: isDeleted=false. `state` vectors take an optional `window` ({windowStart, windowEnd}; absent = lifetime). `credits` / `candidates` / `planSet` name occurrences ({kind: event|window|lifetime}); the test derives each credit id with countsTowardEventId(contributor.id, occurrence) and compares sets sorted by id.",
+  "_note": "Hand-authored fixture (edit directly, then `pnpm --filter @oybc/shared run gen:sync-fixtures`). Pins packages/shared/src/algorithms/countsToward.ts (tests/algorithms/countsToward.test.ts) against its Swift twin Helpers/CountsToward.swift (OYBCTests/CountsTowardVectorTests.swift) — docs/SHARED_COUNTER_SETTINGS.md §3 (D10: one credit per completion occurrence; D11: count from `countsTowardSince`). Task defaults for unlisted fields: type=normal, isCompleted=false, isDeleted=false, createdAt=2026-01-01T00:00:00.000Z. Event defaults: isDeleted=false, kind=increment when delta is set else completion. Board defaults: status=active, isDeleted=false. Placement defaults: isDeleted=false. Link defaults: isDeleted=false. `state` vectors take an optional `window` ({windowStart, windowEnd}; absent = lifetime). `credits` / `candidates` / `planSet` name occurrences ({kind: event|childEvent|board|lifetime}); the test derives each credit id with countsTowardEventId(lineageRootId(contributor), occurrence) and compares sets sorted by id. `planSet.lineageWanted` lists occurrences other lineage members keep.",
   "eventId": [
     {
       "contributorId": "t-simple",
@@ -28,10 +28,18 @@
     {
       "contributorId": "compound-dune",
       "occurrence": {
-        "kind": "window",
-        "startDate": "2026-10-12T00:00:00.000Z"
+        "kind": "board",
+        "boardId": "00000000-0000-4000-8000-0000000000e4"
       },
-      "expected": "ce05c223-329b-5c62-8cba-3faa8a92747c"
+      "expected": "3997ee11-edd7-5e4f-b19e-3f103e2d4979"
+    },
+    {
+      "contributorId": "compound-dune",
+      "occurrence": {
+        "kind": "childEvent",
+        "eventId": "c1"
+      },
+      "expected": "4a3d5bdc-706f-5bcc-9c4f-712f0e4c2cef"
     },
     {
       "contributorId": "compound-dune",
@@ -108,7 +116,8 @@
       "expected": {
         "isCompleted": true,
         "completedAt": "2026-10-08T12:00:00.000Z",
-        "completingEventId": "c2"
+        "completingEventId": "c2",
+        "completingTaskId": "t"
       }
     },
     {
@@ -130,7 +139,8 @@
       "expected": {
         "isCompleted": true,
         "completedAt": "2026-10-31T23:59:59.999Z",
-        "completingEventId": "c1"
+        "completingEventId": "c1",
+        "completingTaskId": "t"
       }
     },
     {
@@ -183,7 +193,8 @@
       "expected": {
         "isCompleted": true,
         "completedAt": "2026-10-03T00:00:00.000Z",
-        "completingEventId": "i2"
+        "completingEventId": "i2",
+        "completingTaskId": "t"
       }
     },
     {
@@ -220,7 +231,8 @@
       "expected": {
         "isCompleted": true,
         "completedAt": "2026-10-05T00:00:00.000Z",
-        "completingEventId": "i3"
+        "completingEventId": "i3",
+        "completingTaskId": "t"
       }
     },
     {
@@ -287,7 +299,9 @@
       ],
       "expected": {
         "isCompleted": true,
-        "completedAt": "2026-10-09T00:00:00.000Z"
+        "completedAt": "2026-10-09T00:00:00.000Z",
+        "completingEventId": "cb",
+        "completingTaskId": "b"
       }
     },
     {
@@ -368,7 +382,9 @@
       ],
       "expected": {
         "isCompleted": true,
-        "completedAt": "2026-10-05T00:00:00.000Z"
+        "completedAt": "2026-10-05T00:00:00.000Z",
+        "completingEventId": "cb",
+        "completingTaskId": "b"
       }
     },
     {
@@ -424,7 +440,9 @@
       ],
       "expected": {
         "isCompleted": true,
-        "completedAt": "2026-10-04T00:00:00.000Z"
+        "completedAt": "2026-10-04T00:00:00.000Z",
+        "completingEventId": "cc",
+        "completingTaskId": "c"
       }
     },
     {
@@ -488,7 +506,9 @@
       ],
       "expected": {
         "isCompleted": true,
-        "completedAt": "2026-10-12T00:00:00.000Z"
+        "completedAt": "2026-10-12T00:00:00.000Z",
+        "completingEventId": "cb",
+        "completingTaskId": "b"
       }
     },
     {
@@ -527,7 +547,9 @@
       ],
       "expected": {
         "isCompleted": true,
-        "completedAt": "2026-10-05T00:00:00.000Z"
+        "completedAt": "2026-10-05T00:00:00.000Z",
+        "completingEventId": "ca",
+        "completingTaskId": "a"
       }
     },
     {
@@ -618,7 +640,9 @@
       ],
       "expected": {
         "isCompleted": true,
-        "completedAt": "2026-10-06T00:00:00.000Z"
+        "completedAt": "2026-10-06T00:00:00.000Z",
+        "completingEventId": "r3",
+        "completingTaskId": "root"
       }
     },
     {
@@ -709,7 +733,8 @@
       "expected": {
         "isCompleted": true,
         "completedAt": "2026-10-14T12:00:00.000Z",
-        "completingEventId": "c3"
+        "completingEventId": "c3",
+        "completingTaskId": "t"
       }
     },
     {
@@ -750,7 +775,8 @@
       "expected": {
         "isCompleted": true,
         "completedAt": "2026-10-15T00:00:00.000Z",
-        "completingEventId": "i3"
+        "completingEventId": "i3",
+        "completingTaskId": "t"
       }
     },
     {
@@ -842,7 +868,9 @@
       },
       "expected": {
         "isCompleted": true,
-        "completedAt": "2026-10-16T00:00:00.000Z"
+        "completedAt": "2026-10-16T00:00:00.000Z",
+        "completingEventId": "r3",
+        "completingTaskId": "root"
       }
     },
     {
@@ -878,6 +906,52 @@
       "expected": {
         "isCompleted": false,
         "completedAt": null
+      }
+    },
+    {
+      "name": "compound-at-least-n-tie-breaks-equal-instants-by-event-id",
+      "taskId": "p",
+      "tasks": [
+        {
+          "id": "p",
+          "type": "compound",
+          "operator": "M_OF_N",
+          "threshold": 1
+        },
+        {
+          "id": "a"
+        },
+        {
+          "id": "b"
+        }
+      ],
+      "events": [
+        {
+          "id": "cb",
+          "taskId": "b",
+          "occurredAt": "2026-10-05T00:00:00.000Z"
+        },
+        {
+          "id": "ca",
+          "taskId": "a",
+          "occurredAt": "2026-10-05T00:00:00.000Z"
+        }
+      ],
+      "children": [
+        {
+          "compoundTaskId": "p",
+          "childTaskId": "a"
+        },
+        {
+          "compoundTaskId": "p",
+          "childTaskId": "b"
+        }
+      ],
+      "expected": {
+        "isCompleted": true,
+        "completedAt": "2026-10-05T00:00:00.000Z",
+        "completingEventId": "ca",
+        "completingTaskId": "a"
       }
     }
   ],
@@ -1536,7 +1610,56 @@
       "expected": []
     },
     {
-      "name": "compound-one-credit-per-complete-window",
+      "name": "deleted-contributor-none",
+      "taskId": "t",
+      "tasks": [
+        {
+          "id": "t",
+          "isDeleted": true
+        }
+      ],
+      "events": [
+        {
+          "id": "c1",
+          "taskId": "t",
+          "occurredAt": "2026-10-14T09:00:00.000Z"
+        }
+      ],
+      "children": [],
+      "placements": [],
+      "boards": [],
+      "expected": []
+    },
+    {
+      "name": "achievement-none",
+      "taskId": "t",
+      "tasks": [
+        {
+          "id": "t",
+          "type": "achievement",
+          "isCompleted": true,
+          "completedAt": "2026-10-14T09:00:00.000Z"
+        }
+      ],
+      "events": [],
+      "children": [],
+      "placements": [
+        {
+          "boardId": "w2",
+          "taskId": "t"
+        }
+      ],
+      "boards": [
+        {
+          "id": "w2",
+          "startDate": "2026-10-12T00:00:00.000Z",
+          "endDate": "2026-10-18T23:59:59.999Z"
+        }
+      ],
+      "expected": []
+    },
+    {
+      "name": "compound-one-credit-per-complete-window-keyed-by-the-completing-child-event",
       "taskId": "p",
       "tasks": [
         {
@@ -1608,15 +1731,15 @@
       "expected": [
         {
           "occurrence": {
-            "kind": "window",
-            "startDate": "2026-10-05T00:00:00.000Z"
+            "kind": "childEvent",
+            "eventId": "cb1"
           },
           "occurredAt": "2026-10-07T00:00:00.000Z"
         },
         {
           "occurrence": {
-            "kind": "window",
-            "startDate": "2026-10-12T00:00:00.000Z"
+            "kind": "childEvent",
+            "eventId": "cb2"
           },
           "occurredAt": "2026-10-15T00:00:00.000Z"
         }
@@ -1690,15 +1813,15 @@
       "expected": [
         {
           "occurrence": {
-            "kind": "window",
-            "startDate": "2026-10-05T00:00:00.000Z"
+            "kind": "childEvent",
+            "eventId": "cb1"
           },
           "occurredAt": "2026-10-07T00:00:00.000Z"
         }
       ]
     },
     {
-      "name": "compound-unplaced-lifetime",
+      "name": "compound-unplaced-keyed-by-the-completing-child-event",
       "taskId": "p",
       "tasks": [
         {
@@ -1740,14 +1863,15 @@
       "expected": [
         {
           "occurrence": {
-            "kind": "lifetime"
+            "kind": "childEvent",
+            "eventId": "cb"
           },
           "occurredAt": "2026-10-09T00:00:00.000Z"
         }
       ]
     },
     {
-      "name": "compound-two-boards-sharing-a-start-date-credit-once",
+      "name": "compound-on-overlapping-daily-and-monthly-credits-once",
       "taskId": "p",
       "tasks": [
         {
@@ -1763,7 +1887,7 @@
         {
           "id": "ca",
           "taskId": "a",
-          "occurredAt": "2026-10-01T09:00:00.000Z"
+          "occurredAt": "2026-10-14T09:00:00.000Z"
         }
       ],
       "children": [
@@ -1785,8 +1909,8 @@
       "boards": [
         {
           "id": "day",
-          "startDate": "2026-10-01T00:00:00.000Z",
-          "endDate": "2026-10-01T23:59:59.999Z"
+          "startDate": "2026-10-14T00:00:00.000Z",
+          "endDate": "2026-10-14T23:59:59.999Z"
         },
         {
           "id": "month",
@@ -1797,10 +1921,203 @@
       "expected": [
         {
           "occurrence": {
-            "kind": "window",
-            "startDate": "2026-10-01T00:00:00.000Z"
+            "kind": "childEvent",
+            "eventId": "ca"
           },
-          "occurredAt": "2026-10-01T09:00:00.000Z"
+          "occurredAt": "2026-10-14T09:00:00.000Z"
+        }
+      ]
+    },
+    {
+      "name": "compound-board-start-date-edit-keeps-the-same-credit",
+      "taskId": "p",
+      "tasks": [
+        {
+          "id": "p",
+          "type": "compound",
+          "operator": "AND"
+        },
+        {
+          "id": "a"
+        }
+      ],
+      "events": [
+        {
+          "id": "ca",
+          "taskId": "a",
+          "occurredAt": "2026-10-14T09:00:00.000Z"
+        }
+      ],
+      "children": [
+        {
+          "compoundTaskId": "p",
+          "childTaskId": "a"
+        }
+      ],
+      "placements": [
+        {
+          "boardId": "month",
+          "taskId": "p"
+        }
+      ],
+      "boards": [
+        {
+          "id": "month",
+          "startDate": "2026-10-03T00:00:00.000Z",
+          "endDate": "2026-10-31T23:59:59.999Z"
+        }
+      ],
+      "expected": [
+        {
+          "occurrence": {
+            "kind": "childEvent",
+            "eventId": "ca"
+          },
+          "occurredAt": "2026-10-14T09:00:00.000Z"
+        }
+      ]
+    },
+    {
+      "name": "compound-linked-child-crossing-belongs-to-the-root",
+      "taskId": "p",
+      "tasks": [
+        {
+          "id": "p",
+          "type": "compound",
+          "operator": "AND"
+        },
+        {
+          "id": "h",
+          "type": "counting",
+          "maxCount": 2,
+          "sharedCounterId": "root"
+        },
+        {
+          "id": "root",
+          "type": "counting",
+          "isCounter": true
+        }
+      ],
+      "events": [
+        {
+          "id": "r1",
+          "taskId": "root",
+          "delta": 1,
+          "occurredAt": "2026-10-13T00:00:00.000Z"
+        },
+        {
+          "id": "r2",
+          "taskId": "root",
+          "delta": 1,
+          "occurredAt": "2026-10-14T00:00:00.000Z"
+        }
+      ],
+      "children": [
+        {
+          "compoundTaskId": "p",
+          "childTaskId": "h"
+        }
+      ],
+      "placements": [
+        {
+          "boardId": "w2",
+          "taskId": "p"
+        }
+      ],
+      "boards": [
+        {
+          "id": "w2",
+          "startDate": "2026-10-12T00:00:00.000Z",
+          "endDate": "2026-10-18T23:59:59.999Z"
+        }
+      ],
+      "expected": [
+        {
+          "occurrence": {
+            "kind": "childEvent",
+            "eventId": "r2"
+          },
+          "occurredAt": "2026-10-14T00:00:00.000Z"
+        }
+      ]
+    },
+    {
+      "name": "compound-latched-child-with-no-event-falls-back-to-the-board-key",
+      "taskId": "p",
+      "tasks": [
+        {
+          "id": "p",
+          "type": "compound",
+          "operator": "AND"
+        },
+        {
+          "id": "ach",
+          "type": "achievement",
+          "isCompleted": true,
+          "completedAt": "2026-10-13T00:00:00.000Z"
+        }
+      ],
+      "events": [],
+      "children": [
+        {
+          "compoundTaskId": "p",
+          "childTaskId": "ach"
+        }
+      ],
+      "placements": [
+        {
+          "boardId": "w2",
+          "taskId": "p"
+        }
+      ],
+      "boards": [
+        {
+          "id": "w2",
+          "startDate": "2026-10-12T00:00:00.000Z",
+          "endDate": "2026-10-18T23:59:59.999Z"
+        }
+      ],
+      "expected": [
+        {
+          "occurrence": {
+            "kind": "board",
+            "boardId": "w2"
+          },
+          "occurredAt": "2026-10-13T00:00:00.000Z"
+        }
+      ]
+    },
+    {
+      "name": "compound-latched-child-with-no-event-unplaced-falls-back-to-lifetime",
+      "taskId": "p",
+      "tasks": [
+        {
+          "id": "p",
+          "type": "compound",
+          "operator": "AND"
+        },
+        {
+          "id": "ach",
+          "type": "achievement",
+          "isCompleted": true,
+          "completedAt": "2026-10-13T00:00:00.000Z"
+        }
+      ],
+      "events": [],
+      "children": [
+        {
+          "compoundTaskId": "p",
+          "childTaskId": "ach"
+        }
+      ],
+      "placements": [],
+      "boards": [],
+      "expected": [
+        {
+          "occurrence": {
+            "kind": "lifetime"
+          },
+          "occurredAt": "2026-10-13T00:00:00.000Z"
         }
       ]
     },
@@ -1847,52 +2164,144 @@
       "expected": []
     },
     {
-      "name": "deleted-contributor-none",
-      "taskId": "t",
+      "name": "compound-forked-child-copy-resolves-to-the-source-event",
+      "taskId": "p",
       "tasks": [
         {
-          "id": "t",
-          "isDeleted": true
+          "id": "p",
+          "type": "compound",
+          "operator": "AND"
+        },
+        {
+          "id": "00000000-0000-4000-8000-00000000aa01"
+        },
+        {
+          "id": "00000000-0000-4000-8000-00000000ff01",
+          "forkedFromTaskId": "00000000-0000-4000-8000-00000000aa01"
         }
       ],
       "events": [
         {
-          "id": "c1",
-          "taskId": "t",
+          "id": "00000000-0000-4000-8000-0000000000e1",
+          "taskId": "00000000-0000-4000-8000-00000000aa01",
+          "occurredAt": "2026-10-14T09:00:00.000Z"
+        },
+        {
+          "id": "1abe21f4-cde4-51f6-b2f6-4783f44ad4b9",
+          "taskId": "00000000-0000-4000-8000-00000000ff01",
+          "occurredAt": "2026-10-14T09:00:00.000Z"
+        }
+      ],
+      "children": [
+        {
+          "compoundTaskId": "p",
+          "childTaskId": "00000000-0000-4000-8000-00000000ff01"
+        }
+      ],
+      "placements": [
+        {
+          "boardId": "month",
+          "taskId": "p"
+        }
+      ],
+      "boards": [
+        {
+          "id": "month",
+          "startDate": "2026-10-01T00:00:00.000Z",
+          "endDate": "2026-10-31T23:59:59.999Z"
+        }
+      ],
+      "expected": [
+        {
+          "occurrence": {
+            "kind": "childEvent",
+            "eventId": "00000000-0000-4000-8000-0000000000e1"
+          },
+          "occurredAt": "2026-10-14T09:00:00.000Z"
+        }
+      ]
+    },
+    {
+      "name": "compound-fork-shares-the-originals-credit-scope",
+      "taskId": "pf",
+      "tasks": [
+        {
+          "id": "p0",
+          "type": "compound",
+          "operator": "AND"
+        },
+        {
+          "id": "pf",
+          "type": "compound",
+          "operator": "AND",
+          "forkedFromTaskId": "p0"
+        },
+        {
+          "id": "a"
+        }
+      ],
+      "events": [
+        {
+          "id": "ca",
+          "taskId": "a",
+          "occurredAt": "2026-10-14T09:00:00.000Z"
+        }
+      ],
+      "children": [
+        {
+          "compoundTaskId": "p0",
+          "childTaskId": "a"
+        },
+        {
+          "compoundTaskId": "pf",
+          "childTaskId": "a"
+        }
+      ],
+      "placements": [
+        {
+          "boardId": "month",
+          "taskId": "pf"
+        }
+      ],
+      "boards": [
+        {
+          "id": "month",
+          "startDate": "2026-10-01T00:00:00.000Z",
+          "endDate": "2026-10-31T23:59:59.999Z"
+        }
+      ],
+      "expected": [
+        {
+          "occurrence": {
+            "kind": "childEvent",
+            "eventId": "ca"
+          },
+          "occurredAt": "2026-10-14T09:00:00.000Z"
+        }
+      ]
+    },
+    {
+      "name": "counter-root-contributes-nothing",
+      "taskId": "root",
+      "tasks": [
+        {
+          "id": "root",
+          "type": "counting",
+          "maxCount": 1,
+          "isCounter": true
+        }
+      ],
+      "events": [
+        {
+          "id": "r1",
+          "taskId": "root",
+          "delta": 1,
           "occurredAt": "2026-10-14T09:00:00.000Z"
         }
       ],
       "children": [],
       "placements": [],
       "boards": [],
-      "expected": []
-    },
-    {
-      "name": "achievement-none",
-      "taskId": "t",
-      "tasks": [
-        {
-          "id": "t",
-          "type": "achievement",
-          "isCompleted": true,
-          "completedAt": "2026-10-14T09:00:00.000Z"
-        }
-      ],
-      "events": [],
-      "children": [],
-      "placements": [
-        {
-          "boardId": "w2",
-          "taskId": "t"
-        }
-      ],
-      "boards": [
-        {
-          "id": "w2",
-          "startDate": "2026-10-12T00:00:00.000Z",
-          "endDate": "2026-10-18T23:59:59.999Z"
-        }
-      ],
       "expected": []
     }
   ],
@@ -1923,6 +2332,7 @@
           "occurredAt": "2026-10-07T09:00:00.000Z"
         }
       ],
+      "children": [],
       "placements": [
         {
           "boardId": "w1",
@@ -1970,16 +2380,16 @@
           "eventId": "c2"
         },
         {
-          "kind": "window",
-          "startDate": "2026-10-05T00:00:00.000Z"
+          "kind": "board",
+          "boardId": "w1"
         },
         {
-          "kind": "window",
-          "startDate": "2026-10-01T00:00:00.000Z"
+          "kind": "board",
+          "boardId": "gone"
         },
         {
-          "kind": "window",
-          "startDate": "2026-10-12T00:00:00.000Z"
+          "kind": "board",
+          "boardId": "w2"
         },
         {
           "kind": "lifetime"
@@ -2010,6 +2420,7 @@
           "occurredAt": "2026-10-14T09:00:00.000Z"
         }
       ],
+      "children": [],
       "placements": [],
       "boards": [],
       "expected": [
@@ -2027,6 +2438,125 @@
       ]
     },
     {
+      "name": "compound-subtree-events-in-any-state-and-the-roots-its-linked-children-read",
+      "taskId": "p",
+      "tasks": [
+        {
+          "id": "p",
+          "type": "compound",
+          "operator": "AND"
+        },
+        {
+          "id": "inner",
+          "type": "compound",
+          "operator": "AND"
+        },
+        {
+          "id": "a"
+        },
+        {
+          "id": "z"
+        },
+        {
+          "id": "h",
+          "type": "counting",
+          "maxCount": 2,
+          "sharedCounterId": "root"
+        },
+        {
+          "id": "root",
+          "type": "counting",
+          "isCounter": true
+        }
+      ],
+      "events": [
+        {
+          "id": "ca1",
+          "taskId": "a",
+          "occurredAt": "2026-10-06T00:00:00.000Z"
+        },
+        {
+          "id": "ca2",
+          "taskId": "a",
+          "occurredAt": "2026-10-07T00:00:00.000Z",
+          "isDeleted": true
+        },
+        {
+          "id": "cz",
+          "taskId": "z",
+          "occurredAt": "2026-10-07T00:00:00.000Z"
+        },
+        {
+          "id": "r1",
+          "taskId": "root",
+          "delta": 1,
+          "occurredAt": "2026-10-08T00:00:00.000Z"
+        },
+        {
+          "id": "x1",
+          "taskId": "unrelated",
+          "occurredAt": "2026-10-08T00:00:00.000Z"
+        }
+      ],
+      "children": [
+        {
+          "compoundTaskId": "p",
+          "childTaskId": "inner"
+        },
+        {
+          "compoundTaskId": "inner",
+          "childTaskId": "a"
+        },
+        {
+          "compoundTaskId": "p",
+          "childTaskId": "z",
+          "isDeleted": true
+        },
+        {
+          "compoundTaskId": "p",
+          "childTaskId": "h"
+        }
+      ],
+      "placements": [
+        {
+          "boardId": "w2",
+          "taskId": "p"
+        }
+      ],
+      "boards": [
+        {
+          "id": "w2",
+          "startDate": "2026-10-12T00:00:00.000Z",
+          "endDate": "2026-10-18T23:59:59.999Z"
+        }
+      ],
+      "expected": [
+        {
+          "kind": "childEvent",
+          "eventId": "ca1"
+        },
+        {
+          "kind": "childEvent",
+          "eventId": "ca2"
+        },
+        {
+          "kind": "childEvent",
+          "eventId": "cz"
+        },
+        {
+          "kind": "childEvent",
+          "eventId": "r1"
+        },
+        {
+          "kind": "board",
+          "boardId": "w2"
+        },
+        {
+          "kind": "lifetime"
+        }
+      ]
+    },
+    {
       "name": "no-data-is-just-lifetime",
       "taskId": "t",
       "tasks": [
@@ -2035,6 +2565,7 @@
         }
       ],
       "events": [],
+      "children": [],
       "placements": [],
       "boards": [],
       "expected": [
@@ -2368,8 +2899,8 @@
           "eventId": "c2"
         },
         {
-          "kind": "window",
-          "startDate": "2026-10-05T00:00:00.000Z"
+          "kind": "board",
+          "boardId": "w1"
         },
         {
           "kind": "lifetime"
@@ -2396,8 +2927,8 @@
         },
         {
           "occurrence": {
-            "kind": "window",
-            "startDate": "2026-10-05T00:00:00.000Z"
+            "kind": "board",
+            "boardId": "w1"
           },
           "taskId": "root",
           "delta": 1,
@@ -2442,16 +2973,16 @@
       "wanted": [
         {
           "occurrence": {
-            "kind": "window",
-            "startDate": "2026-10-05T00:00:00.000Z"
+            "kind": "board",
+            "boardId": "w1"
           },
           "occurredAt": "2026-10-08T09:00:00.000Z"
         }
       ],
       "candidates": [
         {
-          "kind": "window",
-          "startDate": "2026-10-05T00:00:00.000Z"
+          "kind": "board",
+          "boardId": "w1"
         },
         {
           "kind": "lifetime"
@@ -2460,8 +2991,8 @@
       "stored": [
         {
           "occurrence": {
-            "kind": "window",
-            "startDate": "2026-10-05T00:00:00.000Z"
+            "kind": "board",
+            "boardId": "w1"
           },
           "taskId": "root",
           "delta": 1,
@@ -2471,8 +3002,8 @@
       "expected": [
         {
           "occurrence": {
-            "kind": "window",
-            "startDate": "2026-10-05T00:00:00.000Z"
+            "kind": "board",
+            "boardId": "w1"
           },
           "kind": "revise",
           "rootId": "root",
@@ -2990,6 +3521,430 @@
           "occurredAt": "2026-10-14T09:00:00.000Z"
         }
       ]
+    },
+    {
+      "name": "lineage-member-still-wants-it-no-tombstone",
+      "contributor": {
+        "id": "t",
+        "countsTowardCounterId": "root"
+      },
+      "tasks": [
+        {
+          "id": "root",
+          "type": "counting",
+          "isCounter": true
+        }
+      ],
+      "wanted": [],
+      "candidates": [
+        {
+          "kind": "event",
+          "eventId": "c1"
+        },
+        {
+          "kind": "event",
+          "eventId": "c2"
+        }
+      ],
+      "stored": [
+        {
+          "occurrence": {
+            "kind": "event",
+            "eventId": "c1"
+          },
+          "taskId": "root",
+          "delta": 1,
+          "occurredAt": "2026-10-07T09:00:00.000Z"
+        },
+        {
+          "occurrence": {
+            "kind": "event",
+            "eventId": "c2"
+          },
+          "taskId": "root",
+          "delta": 1,
+          "occurredAt": "2026-10-14T09:00:00.000Z"
+        }
+      ],
+      "lineageWanted": [
+        {
+          "kind": "event",
+          "eventId": "c1"
+        }
+      ],
+      "expected": [
+        {
+          "occurrence": {
+            "kind": "event",
+            "eventId": "c2"
+          },
+          "kind": "tombstone",
+          "rootId": "root",
+          "occurredAt": "2026-10-14T09:00:00.000Z"
+        }
+      ]
+    },
+    {
+      "name": "lineage-does-not-protect-a-credit-the-contributor-itself-revises",
+      "contributor": {
+        "id": "t",
+        "countsTowardCounterId": "root",
+        "countsTowardAmount": 2
+      },
+      "tasks": [
+        {
+          "id": "root",
+          "type": "counting",
+          "isCounter": true
+        }
+      ],
+      "wanted": [
+        {
+          "occurrence": {
+            "kind": "event",
+            "eventId": "c1"
+          },
+          "occurredAt": "2026-10-07T09:00:00.000Z"
+        }
+      ],
+      "candidates": [
+        {
+          "kind": "event",
+          "eventId": "c1"
+        }
+      ],
+      "stored": [
+        {
+          "occurrence": {
+            "kind": "event",
+            "eventId": "c1"
+          },
+          "taskId": "root",
+          "delta": 1,
+          "occurredAt": "2026-10-07T09:00:00.000Z"
+        }
+      ],
+      "lineageWanted": [
+        {
+          "kind": "event",
+          "eventId": "c1"
+        }
+      ],
+      "expected": [
+        {
+          "occurrence": {
+            "kind": "event",
+            "eventId": "c1"
+          },
+          "kind": "revise",
+          "rootId": "root",
+          "delta": 2,
+          "occurredAt": "2026-10-07T09:00:00.000Z",
+          "previousRootId": "root",
+          "previousOccurredAt": "2026-10-07T09:00:00.000Z",
+          "wasDeleted": false
+        }
+      ]
+    },
+    {
+      "name": "since-excludes-earlier-occurrences",
+      "contributor": {
+        "id": "t",
+        "countsTowardCounterId": "root",
+        "countsTowardSince": "2026-10-10T00:00:00.000Z"
+      },
+      "tasks": [
+        {
+          "id": "root",
+          "type": "counting",
+          "isCounter": true
+        }
+      ],
+      "wanted": [
+        {
+          "occurrence": {
+            "kind": "event",
+            "eventId": "c1"
+          },
+          "occurredAt": "2026-10-07T09:00:00.000Z"
+        },
+        {
+          "occurrence": {
+            "kind": "event",
+            "eventId": "c2"
+          },
+          "occurredAt": "2026-10-14T09:00:00.000Z"
+        }
+      ],
+      "candidates": [
+        {
+          "kind": "event",
+          "eventId": "c1"
+        },
+        {
+          "kind": "event",
+          "eventId": "c2"
+        }
+      ],
+      "stored": [],
+      "expected": [
+        {
+          "occurrence": {
+            "kind": "event",
+            "eventId": "c2"
+          },
+          "kind": "insert",
+          "rootId": "root",
+          "delta": 1,
+          "occurredAt": "2026-10-14T09:00:00.000Z"
+        }
+      ]
+    },
+    {
+      "name": "since-tombstones-an-earlier-credit",
+      "contributor": {
+        "id": "t",
+        "countsTowardCounterId": "root",
+        "countsTowardSince": "2026-10-10T00:00:00.000Z"
+      },
+      "tasks": [
+        {
+          "id": "root",
+          "type": "counting",
+          "isCounter": true
+        }
+      ],
+      "wanted": [
+        {
+          "occurrence": {
+            "kind": "event",
+            "eventId": "c1"
+          },
+          "occurredAt": "2026-10-07T09:00:00.000Z"
+        },
+        {
+          "occurrence": {
+            "kind": "event",
+            "eventId": "c2"
+          },
+          "occurredAt": "2026-10-14T09:00:00.000Z"
+        }
+      ],
+      "candidates": [
+        {
+          "kind": "event",
+          "eventId": "c1"
+        },
+        {
+          "kind": "event",
+          "eventId": "c2"
+        }
+      ],
+      "stored": [
+        {
+          "occurrence": {
+            "kind": "event",
+            "eventId": "c1"
+          },
+          "taskId": "root",
+          "delta": 1,
+          "occurredAt": "2026-10-07T09:00:00.000Z"
+        },
+        {
+          "occurrence": {
+            "kind": "event",
+            "eventId": "c2"
+          },
+          "taskId": "root",
+          "delta": 1,
+          "occurredAt": "2026-10-14T09:00:00.000Z"
+        }
+      ],
+      "expected": [
+        {
+          "occurrence": {
+            "kind": "event",
+            "eventId": "c1"
+          },
+          "kind": "tombstone",
+          "rootId": "root",
+          "occurredAt": "2026-10-07T09:00:00.000Z"
+        }
+      ]
+    },
+    {
+      "name": "since-at-the-instant-is-wanted",
+      "contributor": {
+        "id": "t",
+        "countsTowardCounterId": "root",
+        "countsTowardSince": "2026-10-14T09:00:00.000Z"
+      },
+      "tasks": [
+        {
+          "id": "root",
+          "type": "counting",
+          "isCounter": true
+        }
+      ],
+      "wanted": [
+        {
+          "occurrence": {
+            "kind": "event",
+            "eventId": "c2"
+          },
+          "occurredAt": "2026-10-14T09:00:00.000Z"
+        }
+      ],
+      "candidates": [
+        {
+          "kind": "event",
+          "eventId": "c2"
+        }
+      ],
+      "stored": [],
+      "expected": [
+        {
+          "occurrence": {
+            "kind": "event",
+            "eventId": "c2"
+          },
+          "kind": "insert",
+          "rootId": "root",
+          "delta": 1,
+          "occurredAt": "2026-10-14T09:00:00.000Z"
+        }
+      ]
+    },
+    {
+      "name": "repoint-resets-since-tombstones-the-old-root-credits-before-it",
+      "contributor": {
+        "id": "t",
+        "countsTowardCounterId": "root2",
+        "countsTowardSince": "2026-10-10T00:00:00.000Z"
+      },
+      "tasks": [
+        {
+          "id": "root",
+          "type": "counting",
+          "isCounter": true
+        },
+        {
+          "id": "root2",
+          "type": "counting",
+          "isCounter": true
+        }
+      ],
+      "wanted": [
+        {
+          "occurrence": {
+            "kind": "event",
+            "eventId": "c1"
+          },
+          "occurredAt": "2026-10-07T09:00:00.000Z"
+        },
+        {
+          "occurrence": {
+            "kind": "event",
+            "eventId": "c2"
+          },
+          "occurredAt": "2026-10-14T09:00:00.000Z"
+        }
+      ],
+      "candidates": [
+        {
+          "kind": "event",
+          "eventId": "c1"
+        },
+        {
+          "kind": "event",
+          "eventId": "c2"
+        }
+      ],
+      "stored": [
+        {
+          "occurrence": {
+            "kind": "event",
+            "eventId": "c1"
+          },
+          "taskId": "root",
+          "delta": 1,
+          "occurredAt": "2026-10-07T09:00:00.000Z"
+        },
+        {
+          "occurrence": {
+            "kind": "event",
+            "eventId": "c2"
+          },
+          "taskId": "root",
+          "delta": 1,
+          "occurredAt": "2026-10-14T09:00:00.000Z"
+        }
+      ],
+      "expected": [
+        {
+          "occurrence": {
+            "kind": "event",
+            "eventId": "c1"
+          },
+          "kind": "tombstone",
+          "rootId": "root",
+          "occurredAt": "2026-10-07T09:00:00.000Z"
+        },
+        {
+          "occurrence": {
+            "kind": "event",
+            "eventId": "c2"
+          },
+          "kind": "revise",
+          "rootId": "root2",
+          "delta": 1,
+          "occurredAt": "2026-10-14T09:00:00.000Z",
+          "previousRootId": "root",
+          "previousOccurredAt": "2026-10-14T09:00:00.000Z",
+          "wasDeleted": false
+        }
+      ]
+    },
+    {
+      "name": "unparseable-instant-replay-is-a-no-op",
+      "contributor": {
+        "id": "t",
+        "countsTowardCounterId": "root"
+      },
+      "tasks": [
+        {
+          "id": "root",
+          "type": "counting",
+          "isCounter": true
+        }
+      ],
+      "wanted": [
+        {
+          "occurrence": {
+            "kind": "event",
+            "eventId": "c1"
+          },
+          "occurredAt": "not-a-date"
+        }
+      ],
+      "candidates": [
+        {
+          "kind": "event",
+          "eventId": "c1"
+        }
+      ],
+      "stored": [
+        {
+          "occurrence": {
+            "kind": "event",
+            "eventId": "c1"
+          },
+          "taskId": "root",
+          "delta": 1,
+          "occurredAt": "not-a-date"
+        }
+      ],
+      "expected": []
     }
   ],
   "problem": [
@@ -3251,6 +4206,129 @@
         }
       ],
       "expected": "cycle"
+    },
+    {
+      "name": "two-hop-loop-through-another-contributor-is-a-cycle",
+      "taskId": "x",
+      "targetId": "c1",
+      "tasks": [
+        {
+          "id": "x",
+          "type": "compound",
+          "operator": "AND"
+        },
+        {
+          "id": "copyC2",
+          "type": "counting",
+          "sharedCounterId": "c2"
+        },
+        {
+          "id": "y",
+          "type": "compound",
+          "operator": "AND",
+          "countsTowardCounterId": "c2"
+        },
+        {
+          "id": "copyC1",
+          "type": "counting",
+          "sharedCounterId": "c1"
+        },
+        {
+          "id": "c1",
+          "type": "counting",
+          "isCounter": true
+        },
+        {
+          "id": "c2",
+          "type": "counting",
+          "isCounter": true
+        }
+      ],
+      "children": [
+        {
+          "compoundTaskId": "x",
+          "childTaskId": "copyC2"
+        },
+        {
+          "compoundTaskId": "y",
+          "childTaskId": "copyC1"
+        }
+      ],
+      "expected": "cycle"
+    },
+    {
+      "name": "holder-that-is-an-ancestor-of-the-task-is-not-a-cycle",
+      "taskId": "t",
+      "targetId": "c1",
+      "tasks": [
+        {
+          "id": "t"
+        },
+        {
+          "id": "p",
+          "type": "compound",
+          "operator": "AND"
+        },
+        {
+          "id": "copyC1",
+          "type": "counting",
+          "sharedCounterId": "c1"
+        },
+        {
+          "id": "c1",
+          "type": "counting",
+          "isCounter": true
+        }
+      ],
+      "children": [
+        {
+          "compoundTaskId": "p",
+          "childTaskId": "t"
+        },
+        {
+          "compoundTaskId": "p",
+          "childTaskId": "copyC1"
+        }
+      ],
+      "expected": null
+    },
+    {
+      "name": "chain-that-never-returns-is-not-a-cycle",
+      "taskId": "x",
+      "targetId": "c1",
+      "tasks": [
+        {
+          "id": "x"
+        },
+        {
+          "id": "y",
+          "type": "compound",
+          "operator": "AND",
+          "countsTowardCounterId": "c2"
+        },
+        {
+          "id": "copyC1",
+          "type": "counting",
+          "sharedCounterId": "c1"
+        },
+        {
+          "id": "c1",
+          "type": "counting",
+          "isCounter": true
+        },
+        {
+          "id": "c2",
+          "type": "counting",
+          "isCounter": true
+        }
+      ],
+      "children": [
+        {
+          "compoundTaskId": "y",
+          "childTaskId": "copyC1"
+        }
+      ],
+      "expected": null
     }
   ]
 }

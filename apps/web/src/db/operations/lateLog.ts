@@ -79,7 +79,7 @@ async function applyLateLogSideEffects(changedTaskIds: Iterable<string>): Promis
   // A shared-counter ROOT is never placed: live-cascade from its
   // window-stamped derived rows too (iOS `reDeriveAfterLateLogWrite` reaches
   // the same boards via `boardIdsReachedByTasks`).
-  await runBoardCascadeForTasks(await withWindowStampedDerived(new Set(ids)));
+  await runBoardCascadeForTasks(await withWindowStampedDerived(new Set(ids)), { lateLog: true });
   await reDeriveSealedBoardsForTasks(ids);
   if (affectedBoardIds.size > 0) await refreshWatchersForBoards(affectedBoardIds);
 }

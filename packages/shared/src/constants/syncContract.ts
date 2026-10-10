@@ -196,8 +196,21 @@ export const PULL_APPLY_ORDER = [
  */
 export const CLEARABLE_FIELDS_BY_COLLECTION = {
   boards: ['endDate', 'completedAt', 'sealedAt', 'sealedCompletedCells'],
-  tasks: ['endDate', 'counterName', 'titleTemplateSingular', 'titleTemplatePlural', 'timeframeGoals', 'countsTowardCounterId'],
+  tasks: [
+    'endDate',
+    'counterName',
+    'titleTemplateSingular',
+    'titleTemplatePlural',
+    'timeframeGoals',
+    'countsTowardCounterId',
+    'countsTowardAmount',
+    'countsTowardSince',
+  ],
   coreBoardDefaults: ['defaultBoardSize', 'defaultCenterType'],
+  // A revived counts-toward credit (a tombstoned event reconciled back to
+  // live) drops `deletedAt`; without this the stale stamp survived the
+  // Firestore merge (docs/SHARED_COUNTER_SETTINGS.md §3b).
+  taskEvents: ['deletedAt'],
 } as const satisfies Partial<Record<SyncCollection, readonly string[]>>;
 
 /** Collections that carry at least one clearable field. */

@@ -282,6 +282,13 @@ export interface Task {
   countsTowardCounterId?: string | null;
   /** Positive integer increment per completion; absent = 1. */
   countsTowardAmount?: number;
+  /**
+   * D11 — the ISO instant the flag was set (or re-pointed at a different
+   * counter); present iff `countsTowardCounterId` is. Only occurrences at or
+   * after it credit (`isOccurrenceWanted`). Cleared with the flag; unchanged
+   * when only the amount changes. Clearable on sync.
+   */
+  countsTowardSince?: string | null;
 }
 
 /**

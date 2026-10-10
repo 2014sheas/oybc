@@ -9,26 +9,39 @@ import type { TaskEvent } from '../../src/types/taskEvent';
 import type { CountKind } from '../../src/algorithms/countValue';
 import {
   COUNTS_TOWARD_NAMESPACE,
+  canContribute,
   candidateContributionIds,
-  canonicalOccurrenceEventId,
   countsTowardAmountOf,
   countsTowardEventId,
-  countsTowardProblem,
   isCountsTowardTarget,
+  isCreditWriteSealSuppressed,
+  isOccurrenceWanted,
+  keptCreditIdsFor,
   planCountsTowardActions,
+  probeContributionIds,
   resolveContributionCredits,
   resolveContributionState,
   type ContributionInputs,
   type ContributionOccurrence,
 } from '../../src/algorithms/countsToward';
+import {
+  buildForkChildrenIndex,
+  canonicalOccurrenceEventId,
+  createForkEventResolver,
+  forkLineageIds,
+  lineageRootId,
+} from '../../src/algorithms/countsTowardLineage';
+import { countsTowardProblem } from '../../src/algorithms/countsTowardValidation';
 import { forkedEventId } from '../../src/algorithms/boardScopedFork';
 import { evaluateCompound } from '../../src/algorithms/compoundEvaluation';
+import { buildSealImmuneWindows } from '../../src/algorithms/taskEvents';
 import { TaskSchema } from '../../src/validation/schemas';
 
 /**
  * Vector pins for `countsToward.ts` ↔ iOS `CountsToward.swift`
  * (`CountsTowardVectorTests`) — docs/SHARED_COUNTER_SETTINGS.md §3 (D10: one
- * credit per completion occurrence).
+ * credit per completion occurrence; D11: count from `countsTowardSince`,
+ * credits honour sealed windows).
  */
 
 const V = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'fixtures', 'countsTowardVectors.json'), 'utf8'));
@@ -51,6 +64,7 @@ interface MiniTask {
   createdAt?: string;
   countsTowardCounterId?: string;
   countsTowardAmount?: number;
+  countsTowardSince?: string;
   forkedFromTaskId?: string;
 }
 
@@ -104,6 +118,7 @@ function toTask(m: MiniTask): Task {
     countKind: m.countKind,
     countsTowardCounterId: m.countsTowardCounterId,
     countsTowardAmount: m.countsTowardAmount,
+    countsTowardSince: m.countsTowardSince,
     forkedFromTaskId: m.forkedFromTaskId,
   };
 }
@@ -162,11 +177,13 @@ function toInputs(v: any): { task: Task; inputs: ContributionInputs } {
   const tasks = (v.tasks as MiniTask[]).map(toTask);
   const taskById = Object.fromEntries(tasks.map((t) => [t.id, t]));
   const events = (v.events as MiniEvent[]).map(toEvent);
+  const children = toChildren(v.children ?? []);
   return {
     task: taskById[v.taskId],
     inputs: {
       taskById,
-      childrenByCompound: group(toChildren(v.children ?? []), 'compoundTaskId'),
+      childrenByCompound: group(children.filter((c) => !c.isDeleted), 'compoundTaskId'),
+      allChildrenByCompound: group(children, 'compoundTaskId'),
       eventsByTaskId: group(events.filter((e) => !e.isDeleted), 'taskId'),
       allEventsByTaskId: group(events, 'taskId'),
       placements: (v.placements as MiniPlacement[]).map(toPlacement),
@@ -187,7 +204,7 @@ describe('countsTowardVectors — eventId', () => {
     const ev: ContributionOccurrence = { kind: 'event', eventId: 'x' };
     expect(countsTowardEventId('a', ev)).toBe(countsTowardEventId('b', ev));
     expect(countsTowardEventId('a', { kind: 'lifetime' })).not.toBe(countsTowardEventId('b', { kind: 'lifetime' }));
-    expect(countsTowardEventId('a', { kind: 'window', startDate: T0 })).not.toBe(countsTowardEventId('a', { kind: 'lifetime' }));
+    expect(countsTowardEventId('a', { kind: 'board', boardId: 'b1' })).not.toBe(countsTowardEventId('a', { kind: 'lifetime' }));
   });
 });
 
@@ -231,8 +248,9 @@ describe('countsTowardVectors — resolveContributionState', () => {
 describe('countsTowardVectors — resolveContributionCredits', () => {
   it.each(V.credits as any[])('$name', (v: any) => {
     const { task, inputs } = toInputs(v);
+    const scope = lineageRootId(task, inputs.taskById);
     const expected = byId(
-      (v.expected as any[]).map((e) => ({ eventId: countsTowardEventId(task.id, e.occurrence), occurrence: e.occurrence, occurredAt: e.occurredAt })),
+      (v.expected as any[]).map((e) => ({ eventId: countsTowardEventId(scope, e.occurrence), occurrence: e.occurrence, occurredAt: e.occurredAt })),
     );
     expect(resolveContributionCredits(task, inputs)).toEqual(expected);
   });
@@ -246,33 +264,64 @@ describe('countsTowardVectors — resolveContributionCredits', () => {
       }
     }
   });
+
+  it('a shared resolver gives the same credits as an ad-hoc one', () => {
+    for (const v of V.credits as any[]) {
+      const { task, inputs } = toInputs(v);
+      const shared = { ...inputs, forkEvents: createForkEventResolver(inputs.taskById, inputs.allEventsByTaskId) };
+      expect(resolveContributionCredits(task, shared)).toEqual(resolveContributionCredits(task, inputs));
+    }
+  });
 });
 
 describe('countsTowardVectors — candidateContributionIds', () => {
   it.each(V.candidates as any[])('$name', (v: any) => {
     const { task, inputs } = toInputs(v);
-    const expected = [...new Set((v.expected as ContributionOccurrence[]).map((o) => countsTowardEventId(task.id, o)))].sort();
+    const scope = lineageRootId(task, inputs.taskById);
+    const expected = [...new Set((v.expected as ContributionOccurrence[]).map((o) => countsTowardEventId(scope, o)))].sort();
     expect(candidateContributionIds(task, inputs)).toEqual(expected);
   });
 });
 
-describe('canonicalOccurrenceEventId', () => {
-  it('walks a fork-of-a-fork back to the source event; an unknown ancestor or a non-copied event stays itself', () => {
-    const o = toTask({ id: 'o' });
-    const f1 = toTask({ id: 'f1', forkedFromTaskId: 'o' });
-    const f2 = toTask({ id: 'f2', forkedFromTaskId: 'f1' });
-    const orphan = toTask({ id: 'orphan', forkedFromTaskId: 'missing' });
+describe('fork lineage', () => {
+  const o = toTask({ id: 'o' });
+  const f1 = toTask({ id: 'f1', forkedFromTaskId: 'o' });
+  const f2 = toTask({ id: 'f2', forkedFromTaskId: 'f1' });
+  const g1 = toTask({ id: 'g1', forkedFromTaskId: 'o' });
+  const orphan = toTask({ id: 'orphan', forkedFromTaskId: 'missing' });
+  const taskById = { o, f1, f2, g1, orphan };
+
+  it('canonicalOccurrenceEventId walks a fork-of-a-fork back to the source event; an unknown ancestor or a non-copied event stays itself', () => {
     const e = toEvent({ id: 'e', taskId: 'o', occurredAt: T0 }, 0);
     const e1 = { ...e, id: forkedEventId('f1', 'e'), taskId: 'f1' };
     const e2 = { ...e, id: forkedEventId('f2', e1.id), taskId: 'f2' };
     const own = toEvent({ id: 'own', taskId: 'f1', occurredAt: T0 }, 1);
-    const taskById = { o, f1, f2, orphan };
     const all = { o: [e], f1: [e1, own], f2: [e2] };
     expect(canonicalOccurrenceEventId(e2.id, f2, taskById, all)).toBe('e');
     expect(canonicalOccurrenceEventId(e1.id, f1, taskById, all)).toBe('e');
     expect(canonicalOccurrenceEventId('own', f1, taskById, all)).toBe('own');
     expect(canonicalOccurrenceEventId('e', o, taskById, all)).toBe('e');
     expect(canonicalOccurrenceEventId('x', orphan, taskById, all)).toBe('x');
+  });
+
+  it('lineageRootId is the top of the loaded forkedFromTaskId chain', () => {
+    expect(lineageRootId(f2, taskById)).toBe('o');
+    expect(lineageRootId(g1, taskById)).toBe('o');
+    expect(lineageRootId(o, taskById)).toBe('o');
+    expect(lineageRootId(orphan, taskById)).toBe('orphan');
+    const compoundKey: ContributionOccurrence = { kind: 'childEvent', eventId: 'e' };
+    expect(countsTowardEventId(lineageRootId(f2, taskById), compoundKey)).toBe(countsTowardEventId('o', compoundKey));
+    expect(countsTowardEventId('o', compoundKey)).not.toBe(countsTowardEventId('p', compoundKey));
+    expect(countsTowardEventId('o', compoundKey)).not.toBe(countsTowardEventId('o', { kind: 'event', eventId: 'e' }));
+  });
+
+  it('forkLineageIds reaches ancestors, descendants and siblings, excluding the task itself', () => {
+    const index = buildForkChildrenIndex(Object.values(taskById));
+    expect(forkLineageIds('o', taskById, index)).toEqual(['f1', 'f2', 'g1']);
+    expect(forkLineageIds('f2', taskById, index)).toEqual(['f1', 'g1', 'o']);
+    expect(forkLineageIds('g1', taskById, index)).toEqual(['f1', 'f2', 'o']);
+    expect(forkLineageIds('orphan', taskById, index)).toEqual([]);
+    expect(forkLineageIds('lone', taskById, index)).toEqual([]);
   });
 });
 
@@ -288,8 +337,92 @@ describe('countsTowardVectors — planCountsTowardActions', () => {
     for (const s of v.stored as any[]) {
       storedById[idOf(s.occurrence)] = toEvent({ id: idOf(s.occurrence), taskId: s.taskId, delta: s.delta, occurredAt: s.occurredAt, isDeleted: s.isDeleted }, 0);
     }
+    const lineage = new Set(((v.lineageWanted ?? []) as ContributionOccurrence[]).map(idOf));
     const expected = byId((v.expected as any[]).map(({ occurrence, ...rest }) => ({ eventId: idOf(occurrence), ...rest })));
-    expect(planCountsTowardActions(contributor, taskById, wanted, candidates, storedById)).toEqual(expected);
+    expect(planCountsTowardActions(contributor, taskById, wanted, candidates, storedById, lineage)).toEqual(expected);
+  });
+});
+
+describe('isOccurrenceWanted / keptCreditIdsFor (D11)', () => {
+  it('no since → every occurrence; a since bounds by parsed instant; unparseable since is no bound; unparseable instant is never wanted', () => {
+    expect(isOccurrenceWanted({ countsTowardSince: undefined }, { occurredAt: T0 })).toBe(true);
+    expect(isOccurrenceWanted({ countsTowardSince: '2026-10-10T00:00:00.000Z' }, { occurredAt: '2026-10-09T23:59:59.999Z' })).toBe(false);
+    expect(isOccurrenceWanted({ countsTowardSince: '2026-10-10T00:00:00.000Z' }, { occurredAt: '2026-10-10T00:00:00.000Z' })).toBe(true);
+    expect(isOccurrenceWanted({ countsTowardSince: 'garbage' }, { occurredAt: T0 })).toBe(true);
+    expect(isOccurrenceWanted({ countsTowardSince: '2026-10-10T00:00:00.000Z' }, { occurredAt: 'garbage' })).toBe(false);
+  });
+
+  it('keptCreditIdsFor applies the flag, the target and since; a counter root / unflagged / deleted member keeps nothing', () => {
+    const root = toTask({ id: 'root', type: 'counting', isCounter: true });
+    const t = toTask({ id: 't', countsTowardCounterId: 'root', countsTowardSince: '2026-10-10T00:00:00.000Z' });
+    const events = [toEvent({ id: 'c1', taskId: 't', occurredAt: '2026-10-07T00:00:00.000Z' }, 0), toEvent({ id: 'c2', taskId: 't', occurredAt: '2026-10-14T00:00:00.000Z' }, 1)];
+    const base: ContributionInputs = {
+      taskById: { root, t },
+      childrenByCompound: {},
+      eventsByTaskId: { t: events },
+      allEventsByTaskId: { t: events },
+      placements: [],
+      boardById: {},
+    };
+    expect(keptCreditIdsFor(t, base)).toEqual([countsTowardEventId('t', { kind: 'event', eventId: 'c2' })]);
+    expect(keptCreditIdsFor({ ...t, countsTowardCounterId: undefined }, base)).toEqual([]);
+    expect(keptCreditIdsFor({ ...t, isDeleted: true }, base)).toEqual([]);
+    expect(keptCreditIdsFor({ ...t, countsTowardCounterId: 'missing' }, base)).toEqual([]);
+    expect(keptCreditIdsFor(root, base)).toEqual([]);
+  });
+});
+
+describe('canContribute / probeContributionIds', () => {
+  it('counter roots, linked copies and achievements never contribute', () => {
+    expect(canContribute(toTask({ id: 'a' }))).toBe(true);
+    expect(canContribute(toTask({ id: 'a', type: 'counting' }))).toBe(true);
+    expect(canContribute(toTask({ id: 'a', type: 'counting', isCounter: true }))).toBe(false);
+    expect(canContribute(toTask({ id: 'a', type: 'counting', sharedCounterId: 'r' }))).toBe(false);
+    expect(canContribute(toTask({ id: 'a', type: 'achievement' }))).toBe(false);
+  });
+
+  it('the probe is lifetime + board keys + the raw key of each given event', () => {
+    const ids = probeContributionIds({ id: 't' }, [{ id: 'c1' }, { id: 'c2' }], [{ boardId: 'b1', taskId: 't' }, { boardId: 'b9', taskId: 'other' }]);
+    expect(ids).toEqual(
+      [
+        countsTowardEventId('t', { kind: 'lifetime' }),
+        countsTowardEventId('t', { kind: 'event', eventId: 'c1' }),
+        countsTowardEventId('t', { kind: 'event', eventId: 'c2' }),
+        countsTowardEventId('t', { kind: 'board', boardId: 'b1' }),
+      ].sort(),
+    );
+  });
+});
+
+describe('isCreditWriteSealSuppressed (D11)', () => {
+  const windows = buildSealImmuneWindows([{ startDate: '2026-10-05T00:00:00.000Z', endDate: '2026-10-11T23:59:59.999Z', sealedAt: '2026-10-12T00:00:01.000Z' }]);
+  const inside = '2026-10-07T09:00:00.000Z';
+  const outside = '2026-10-14T09:00:00.000Z';
+  const now = '2026-10-20T00:00:00.000Z';
+
+  it('skips an insert / tombstone whose instant sits in a sealed window of the root, unless on the late-log path', () => {
+    const insert = { kind: 'insert' as const, eventId: 'x', rootId: 'root', delta: 1, occurredAt: inside };
+    expect(isCreditWriteSealSuppressed(insert, { root: windows }, now, false)).toBe(true);
+    expect(isCreditWriteSealSuppressed(insert, { root: windows }, now, true)).toBe(false);
+    expect(isCreditWriteSealSuppressed({ ...insert, occurredAt: outside }, { root: windows }, now, false)).toBe(false);
+    expect(isCreditWriteSealSuppressed(insert, { other: windows }, now, false)).toBe(false);
+    expect(isCreditWriteSealSuppressed({ kind: 'tombstone', eventId: 'x', rootId: 'root', occurredAt: inside }, { root: windows }, now, false)).toBe(true);
+  });
+
+  it('a revise is skipped when EITHER its new instant on the new root or its previous instant on the previous root is sealed', () => {
+    const revise = {
+      kind: 'revise' as const,
+      eventId: 'x',
+      rootId: 'root2',
+      delta: 1,
+      occurredAt: outside,
+      previousRootId: 'root',
+      previousOccurredAt: inside,
+      wasDeleted: false,
+    };
+    expect(isCreditWriteSealSuppressed(revise, { root: windows }, now, false)).toBe(true);
+    expect(isCreditWriteSealSuppressed(revise, { root2: windows }, now, false)).toBe(false);
+    expect(isCreditWriteSealSuppressed({ ...revise, occurredAt: inside }, { root2: windows }, now, false)).toBe(true);
   });
 });
 
@@ -316,6 +449,7 @@ describe('isCountsTowardTarget', () => {
 
 describe('TaskSchema — countsToward shape rules', () => {
   const ROOT = '00000000-0000-4000-8000-0000000000c1';
+  const SINCE = '2026-10-10T00:00:00.000Z';
   const base = {
     id: '00000000-0000-4000-8000-000000000001',
     userId: 'u',
@@ -329,27 +463,33 @@ describe('TaskSchema — countsToward shape rules', () => {
     isDeleted: false,
   };
 
-  it('accepts a contributor with a counter and an amount', () => {
-    expect(TaskSchema.safeParse({ ...base, countsTowardCounterId: ROOT, countsTowardAmount: 3 }).success).toBe(true);
+  it('accepts a contributor with a counter, a since and an amount', () => {
+    expect(TaskSchema.safeParse({ ...base, countsTowardCounterId: ROOT, countsTowardSince: SINCE, countsTowardAmount: 3 }).success).toBe(true);
     expect(TaskSchema.safeParse({ ...base, countsTowardCounterId: null }).success).toBe(true);
   });
 
+  it('since travels with the flag (D11): neither without the other', () => {
+    expect(TaskSchema.safeParse({ ...base, countsTowardCounterId: ROOT }).success).toBe(false);
+    expect(TaskSchema.safeParse({ ...base, countsTowardSince: SINCE }).success).toBe(false);
+    expect(TaskSchema.safeParse({ ...base, countsTowardCounterId: ROOT, countsTowardSince: 'not-a-date' }).success).toBe(false);
+  });
+
   it('refuses counting toward itself', () => {
-    expect(TaskSchema.safeParse({ ...base, countsTowardCounterId: base.id }).success).toBe(false);
+    expect(TaskSchema.safeParse({ ...base, countsTowardCounterId: base.id, countsTowardSince: SINCE }).success).toBe(false);
   });
 
   it('refuses a hub counter, a linked copy or an achievement as a contributor', () => {
-    expect(TaskSchema.safeParse({ ...base, type: TaskType.COUNTING, action: 'Read', unit: 'books', maxCount: 3, isCounter: true, countsTowardCounterId: ROOT }).success).toBe(false);
+    expect(TaskSchema.safeParse({ ...base, type: TaskType.COUNTING, action: 'Read', unit: 'books', maxCount: 3, isCounter: true, countsTowardCounterId: ROOT, countsTowardSince: SINCE }).success).toBe(false);
     expect(
-      TaskSchema.safeParse({ ...base, type: TaskType.COUNTING, action: 'Read', unit: 'books', maxCount: 3, sharedCounterId: '00000000-0000-4000-8000-0000000000c2', baseline: 0, countsTowardCounterId: ROOT }).success,
+      TaskSchema.safeParse({ ...base, type: TaskType.COUNTING, action: 'Read', unit: 'books', maxCount: 3, sharedCounterId: '00000000-0000-4000-8000-0000000000c2', baseline: 0, countsTowardCounterId: ROOT, countsTowardSince: SINCE }).success,
     ).toBe(false);
     expect(
-      TaskSchema.safeParse({ ...base, type: TaskType.ACHIEVEMENT, referencedBoardId: '00000000-0000-4000-8000-0000000000b1', countsTowardCounterId: ROOT }).success,
+      TaskSchema.safeParse({ ...base, type: TaskType.ACHIEVEMENT, referencedBoardId: '00000000-0000-4000-8000-0000000000b1', countsTowardCounterId: ROOT, countsTowardSince: SINCE }).success,
     ).toBe(false);
   });
 
   it('refuses a non-positive or fractional amount', () => {
-    expect(TaskSchema.safeParse({ ...base, countsTowardCounterId: ROOT, countsTowardAmount: 0 }).success).toBe(false);
-    expect(TaskSchema.safeParse({ ...base, countsTowardCounterId: ROOT, countsTowardAmount: 1.5 }).success).toBe(false);
+    expect(TaskSchema.safeParse({ ...base, countsTowardCounterId: ROOT, countsTowardSince: SINCE, countsTowardAmount: 0 }).success).toBe(false);
+    expect(TaskSchema.safeParse({ ...base, countsTowardCounterId: ROOT, countsTowardSince: SINCE, countsTowardAmount: 1.5 }).success).toBe(false);
   });
 });

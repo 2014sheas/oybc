@@ -160,10 +160,21 @@ because completion is already derived for every type:
 ### 3a. Data
 
 - `Task.countsTowardCounterId?: string | null` (root id), `Task.countsTowardAmount?: number`
-  (default 1; Discrete integers). Set on the **contributing task** (any type:
+  (default 1; Discrete integers), `Task.countsTowardSince?: string | null` (the
+  ISO instant the flag was set or re-pointed — present iff the flag is; cleared
+  with it; unchanged when only the amount changes; all three clearable on sync
+  — **[D11 — ruled 2026-10-10]**). Set on the **contributing task** (any type:
   Simple, Counting, Compound, a fork, a per-board copy — but not another
   counter root, and not a task that is itself linked to a counter via
   `sharedCounterId`) **[D7 — ruled as recommended]**: one counter per task; recommendation **one**.
+  **Count from now on (D11):** an occurrence is WANTED only when its instant
+  (the credit's `occurredAt`) is at or after `countsTowardSince`
+  (`isOccurrenceWanted`); occurrences before it never credit, so flagging a
+  task with history does not back-fill the counter, and re-pointing to another
+  counter resets the stamp (earlier credits on the old counter are withdrawn
+  because they are no longer wanted). D8 is unchanged: a late log stamped at an
+  ended board's `endDate` before `since` does NOT credit — the stamp is the
+  occurrence instant.
 - The increment is a normal `task_events` row on the **root**: `kind: increment`,
   `amount`, `occurredAt = completion instant`, with a **deterministic id**, so
   every device's re-derivation produces the same row (union-by-id sync stays
@@ -172,32 +183,51 @@ because completion is already derived for every type:
   shared-task rule a manual square on a repeating weekly board is the SAME task
   every week, so it credits every week it is completed, and un-completing one
   week withdraws only that week's credit. The occurrence key and the credit id
-  (`countsTowardEventId(contributorId, occurrence)` — `countsToward.ts` ↔
-  `CountsToward.swift`, namespace `counts-toward:event`) per contributor type:
+  (`countsTowardEventId(scope, occurrence)` — `countsToward.ts` ↔
+  `CountsToward.swift`, namespace `counts-toward:event`; `scope` = the
+  contributor's fork-lineage ROOT, `lineageRootId`, so a fork shares its
+  original's keys) per contributor type:
 
   | Contributor | One occurrence per | Key | Credit id (uuidv5 name) | Stamped at |
   | --- | --- | --- | --- | --- |
   | Simple | live completion event | that event's id | `counts-toward:event:<eventId>` | the event's `occurredAt` |
   | plain Counting | live placement window its windowed state is complete in (unplaced → the lifetime evaluation) | the id of the increment that last crossed the goal inside that window | `counts-toward:event:<eventId>` | the crossing increment's `occurredAt` |
-  | Compound | live placement window its windowed derivation is complete in (unplaced → `lifetime`) | `window:<board startDate>` / `lifetime` | `counts-toward:event:<contributorId>:window:<startDate>` / `…:<contributorId>:lifetime` | when its rule was met in that window |
+  | Compound | live placement window its windowed derivation is complete in (unplaced → the lifetime evaluation) | the COMPLETING CHILD's event — All of → the last child's, Any of → the first, At least N → the N-th, a nested compound passing its own up (fork-resolved) | `counts-toward:event:<scope>:child-event:<eventId>` | that child event's `occurredAt` |
+  | Compound whose completing child owns no event (a latched row) | as above | `board:<boardId>` when placed, `lifetime` when not | `counts-toward:event:<scope>:board:<boardId>` / `…:<scope>:lifetime` | when its rule was met |
 
   "Live placement window" is the kernel's: the board not deleted and not a
   draft, `[startDate, endDate]` inclusive (`resolveTaskWindowState` /
   `evaluateCompound`'s window context), a sealed board bounded at `sealedAt`
-  (`boundWindowContextAtSeal`), an ended board at its `endDate`. Because an
-  event key is globally unique it does NOT carry the contributor id: the same
-  crossing increment inside two overlapping windows (a daily inside its
-  monthly) is one credit, and a board-scoped fork's copied event
-  (`forkedEventId`) is resolved back to its SOURCE event through the
-  `forkedFromTaskId` lineage (`canonicalOccurrenceEventId`), so the original
-  and its fork share one credit instead of double-counting. Known caveat: a
-  compound on two boards that share a `startDate` credits once per window key.
-  The cascade reconciles each contributor's credit SET — wanted credits from
-  live data against the stored events at every CANDIDATE id (built from live
-  AND tombstoned data: every event of the task, raw and fork-resolved; a window
-  key per placement in any state, boards in any state; `lifetime`) — insert /
-  revise / tombstone / nothing per id; a cleared flag tombstones every live
-  credit; a deleted (or not-yet-pulled) counter writes nothing.
+  (`boundWindowContextAtSeal`), an ended board at its `endDate`. An OWN-event
+  key carries no scope (an event belongs to one task): the same crossing
+  increment inside two overlapping windows (a daily inside its monthly) is one
+  credit, and a board-scoped fork's copied event (`forkedEventId`) is resolved
+  back to its SOURCE event through the `forkedFromTaskId` lineage
+  (`ForkEventResolver` / `canonicalOccurrenceEventId`), so the original and its
+  fork share one credit instead of double-counting. A compound's key is SCOPED
+  (two compounds containing the same child each credit their own completion of
+  it) but keyed by the child's event, so overlapping boards and a board
+  start-date edit collapse to one credit; the `board:` fallback is stable
+  across date edits. Consequences of windowed vs event-owned derivation: a
+  Simple credit survives its board's deletion (the event does), while a
+  Counting / Compound credit re-keys to the lifetime evaluation when its last
+  board goes (the window did); two devices completing the same Simple task
+  offline in one window converge on TWO completion events and therefore two
+  credits (the existing WC union-by-id edge — not deduplicated); a plain
+  Counting goal of 0 is complete without any increment crossing it, so it names
+  no occurrence and never credits (degenerate). The cascade reconciles each
+  contributor's credit SET — wanted credits from live data (gated by D11)
+  against the stored events at every CANDIDATE id (built from live AND
+  tombstoned data: every event of the task, raw and fork-resolved; for a
+  compound every event of its subtree and of the roots its linked children
+  read, links in any state; a `board` key per placement in any state; `lifetime`)
+  — insert / revise / tombstone / nothing per id; a cleared flag tombstones
+  every live credit; a deleted (or not-yet-pulled) counter writes nothing.
+  **Lineage union:** a credit belongs to the fork lineage, not to whichever
+  member reconciled last — a member tombstones an event-keyed credit only when
+  NO live, flagged member of its lineage (ancestors via `forkedFromTaskId`,
+  descendants, transitively) still wants it (`keptCreditIdsFor` over
+  `forkLineageIds`, passed to `planCountsTowardActions`).
 - A Compound container with **zero children** is allowed ONLY when it counts
   toward a counter (it is "unfilled" and incomplete until it has children and
   they complete) — the owner's shell idea, as a special case of the rule.
@@ -212,8 +242,18 @@ insert / tombstone accordingly, then run the counter root's own cascade
 (copies, boards, hub). Sealed-board rules apply unchanged: a contributing task
 on a sealed board can only change via the late-log path, which already
 re-derives deterministically — the counts-toward event follows that
-re-derivation. The compound carve-out stands: the compound still owns no
-events; the event lives on the counter root.
+re-derivation. **Credits honour the COUNTER's sealed windows like every other
+event [D11 — ruled 2026-10-10]:** an insert / revise / tombstone is skipped
+when the instant it writes (the credit's `occurredAt`; for a revise also the
+previous instant on the previous root) sits inside a seal-immune window of a
+sealed board holding the root or one of its copies (`isEventSealImmune` over
+`getSealImmuneWindowsForTask(root)` ↔ `sealImmuneWindows(db:taskId:)`, through
+`isCreditWriteSealSuppressed`), EXCEPT when the write runs inside the
+closed-board late-log path (`lateLog`), which re-derives every sealed board
+deterministically — so an undo on an open board cannot move a count that a
+closed board already froze, and a Reopen lets the next cascade settle it. The
+compound carve-out stands: the compound still owns no events; the event lives
+on the counter root.
 
 ### 3c. Windows
 
@@ -250,12 +290,21 @@ same stamp as the completion that caused it).
 - Switching the counter's kind away from Discrete: refuse while contributors
   exist (same shape as the existing "has live copies" guards) **[D9 — ruled as recommended]**
   (recommendation: refuse with the existing validation line).
-- Forking a contributing task (board-scoped edit): the fork keeps the flag. Its
-  in-window completion is COPIED onto it (`forkedEventId`, BOARD_SCOPED_TASK_EDITS
-  D4 (a)), and that copy resolves to the original's event for the credit key
-  (§3a), so the original and the fork share ONE credit — no double count. An
-  undo on the fork's board withdraws the fork's copy only; the credit stays
-  while the original's own event is live (the original is still complete).
+- Forking a contributing task (board-scoped edit): the fork keeps the flag (and
+  its `countsTowardSince`). Its in-window completion is COPIED onto it
+  (`forkedEventId`, BOARD_SCOPED_TASK_EDITS D4 (a)), that copy resolves to the
+  original's event for the credit key, and a compound fork's scoped keys use the
+  lineage root (§3a) — so the original and the fork share ONE credit, no double
+  count. The credit follows the LINEAGE UNION rule: it stays while any live,
+  flagged member of the lineage still wants it (an undo on either board, a
+  deleted original, a fork whose flag is cleared) and is tombstoned only once
+  no member does.
+- Cycles: `countsTowardProblem` walks the feeding graph transitively (counter →
+  the counter and its copies → the compounds holding them → their own
+  counts-toward counters → …) and refuses an assignment as soon as that walk
+  reaches the task or a task in its subtree — the direct case and multi-hop
+  loops alike. The cascade's depth cap (`MAX_COUNTS_TOWARD_DEPTH` = 3) is the
+  runtime belt and logs when hit (DEBUG on iOS).
 - `countsTowardAmount` > 1 (one "unit" worth several counts): allowed, Discrete
   integer, default 1.
 
@@ -409,82 +458,111 @@ window-stamped member the planner already mints from. Hosts without a board time
 (pool editor) or without a deferred-create path keep the plain row. The counts-toward UI (spec §3d /
 PR 4) remains pending.
 
-**PR 3 notes (2026-10-09; D10 fix round 2026-10-10).** Fields:
-`Task.countsTowardCounterId` (uuid, nullable, in
-`CLEARABLE_FIELDS_BY_COLLECTION.tasks`) and `countsTowardAmount` (positive int,
-absent = 1) — Zod shape rule `countsTowardShapeOk` (not self; not a hub counter,
-a linked copy or an Achievement), iOS GRDB v43, no Dexie bump. Pure half
-`countsToward.ts` ↔ `CountsToward.swift` (`countsTowardVectors.json`: eventId /
-amount / state (lifetime + windowed) / credits / candidates / planSet /
-problem): `countsTowardEventId(contributorId, occurrence)`,
-`resolveContributionState(…, window)`, `resolveContributionCredits`,
-`candidateContributionIds`, `canonicalOccurrenceEventId`,
-`planCountsTowardActions`, `countsTowardProblem`. Data half
+**PR 3 notes (2026-10-09; D10 fix round 2026-10-10; D11 round 2026-10-10).**
+Fields: `Task.countsTowardCounterId` (uuid, nullable), `countsTowardAmount`
+(positive int, absent = 1) and `countsTowardSince` (ISO, present iff the flag
+is) — all three in `CLEARABLE_FIELDS_BY_COLLECTION.tasks` (a cleared amount or
+stamp must leave the Firestore doc too), Zod shape rule `countsTowardShapeOk`
+(not self; not a hub counter, a linked copy or an Achievement; `since` travels
+with the flag), iOS GRDB v43 (all three columns), no Dexie bump.
+`taskEvents.deletedAt` is clearable too (a revived credit drops its tombstone
+stamp). Pure half `countsToward.ts` ↔ `CountsToward.swift`
+(`countsTowardVectors.json`: eventId / amount / state (lifetime + windowed) /
+credits / candidates / planSet / problem): `countsTowardEventId(scope,
+occurrence)`, `lineageRootId`, `resolveContributionState(…, window)`,
+`resolveContributionCredits`, `isOccurrenceWanted` (the D11 "wanted" seam),
+`keptCreditIdsFor`, `candidateContributionIds`, `probeContributionIds`,
+`createForkEventResolver` / `canonicalOccurrenceEventId`, `forkLineageIds`,
+`planCountsTowardActions(…, lineageWantedIds)`, `isCreditWriteSealSuppressed`
+(the D11 sealed-window seam), `countsTowardProblem`. Data half
 `db/operations/countsToward.ts` ↔ `AppDatabase+CountsToward.swift`.
 
-- **One credit per completion occurrence (D10)** — the key table in §3a. The
-  instant: Simple = the EARLIEST in-window completion's `occurredAt` (one
-  credit per live completion event); plain Counting = the increment that last
-  crossed the goal inside the window; Compound = when its rule was met in the
-  window (same states as `evaluateCompound` in that window's context — All of
-  → the latest child (the max), Any of → the first, At least N → the N-th);
-  Achievement contributors are refused (their completion is per board). A late
-  log's `min(now, endDate)` stamp is inherited because the instant IS the
-  completing event's `occurredAt` (D8). An instant that can't be derived (a
-  latch without `completedAt`) falls back to the contributor's `createdAt`. A
-  linked counting child inside a compound resolves over the HOST window (owner
-  rule 2026-10-01); only a lifetime evaluation reads its latch.
+- **One credit per completion occurrence (D10), counted from the flag (D11)**
+  — the key table and the wanted rule in §3a. The instant: Simple = the
+  EARLIEST in-window completion's `occurredAt` (one credit per live completion
+  event); plain Counting = the increment that last crossed the goal inside the
+  window; Compound = the completing child's event — All of → the latest child
+  (the max), Any of → the first, At least N → the N-th, ties broken by instant
+  string, then event id, then task id (same states as `evaluateCompound` in
+  that window's context); Achievement contributors are refused (their
+  completion is per board). A late log's `min(now, endDate)` stamp is
+  inherited because the instant IS the completing event's `occurredAt` (D8).
+  An instant that can't be derived (a latch without `completedAt`) falls back
+  to the contributor's `createdAt`. A linked counting child inside a compound
+  resolves over the HOST window (owner rule 2026-10-01); only a lifetime
+  evaluation reads its latch.
 - **Where:** a write phase runs at the START of every cascade entry
   (`runBoardCascadeForTasks` on web — which the pull, late-log and edit paths all
-  reach; on iOS also `runBoardCascadeForTaskWithResults`, the shared-counter
-  cascade, the pull cascade with the pull's uid owning the enqueues, and the
-  late-log re-derivation). For each changed task and each compound containing
-  it, the writer loads the candidate's fork ancestors, its own events (any
-  state), its placements (any state) and their boards by index, derives the
-  candidate credit ids, reads the stored events at those ids, and — only when
-  the task is flagged or holds a credit — loads the workspace (tasks, live
-  events, links), derives the wanted credits, and applies the plan's insert /
-  revise / tombstone actions; then the root's hand-log writes (caches,
-  baselines, copy propagation) — and the copies join that same board pass, so
-  a copy on the contributor's own board is read with the new increment (its
-  bingo reaches the result map). A finish phase then re-derives the sealed
-  boards placing the copies and refreshes watchers. Chains (a counter's copy
-  inside another contributor) re-enter up to depth 3; `countsTowardProblem`
-  refuses a contributor whose own subtree holds the target or a copy of it.
-- **Guards:** `setCountsToward` (validated; mints every occurrence at once for
-  a task with completions; a clear tombstones every live credit);
-  `createCompound` accepts the flag (zero children allowed);
-  `deleteTaskWithCascade` tombstones the contributor's credits and re-derives
-  the compounds that lost it; `deleteCounterWithUnlink` unflags contributors
-  (authored) and leaves their events with the deleted root; the kind switch
-  refuses leaving Discrete while contributors exist (`COUNTS_TOWARD_KIND_MESSAGE`
-  ↔ `CountKindSwitchError.countsTowardMessage`); `computeTaskDeletionImpact`
-  names the counter; `validatePatch` ↔ `TaskEditPatch.validate` allow zero
-  sub-tasks for a counts-toward compound, which `evaluateCompound` keeps
-  incomplete while empty.
+  reach, the late-log path passing `lateLog: true`; on iOS also
+  `runBoardCascadeForTaskWithResults`, the shared-counter cascade, the pull
+  cascade with the pull's uid owning the enqueues, and the late-log
+  re-derivation, likewise `lateLog: true`). For each changed task and each
+  compound containing it: rows that can never contribute (counter roots,
+  linked copies, achievements — `canContribute`) are dropped; a FLAGGED row is
+  relevant; an UNFLAGGED row is relevant only when a stored credit sits at one
+  of its PROBE ids (`lifetime`, a `board` key per placement, the raw key of
+  its most recent 256 events — indexed reads, no lineage walk; a cleared flag
+  tombstones in the same transaction, so this bounded probe is the self-heal
+  for an interrupted clear, not the correctness path). Only then the writer
+  loads the workspace (tasks + a fork-children index, events live and any
+  state, links live and any state), the lineage members' placements and
+  boards, builds ONE fork-event resolver (a reverse map per fork, O(M) hashes
+  once), derives the wanted and candidate credits, unions the lineage's kept
+  credits, reads the stored events by id, and applies the plan's insert /
+  revise / tombstone actions — each first checked against the root's
+  seal-immune windows (cached per root; skipped on the late-log path); then
+  the root's hand-log writes (caches, baselines, copy propagation) — and the
+  copies join that same board pass, so a copy on the contributor's own board
+  is read with the new increment (its bingo reaches the result map). A finish
+  phase then re-derives the sealed boards placing the copies and refreshes
+  watchers. Chains (a counter's copy inside another contributor) re-enter up
+  to depth 3 (logged when the cap is hit).
+- **Guards:** `setCountsToward` (validated; stamps `countsTowardSince = now`
+  when the flag is set or re-pointed, keeps it on an amount-only change; mints
+  every occurrence at or after `since` at once; a clear tombstones every live
+  credit the lineage no longer wants and drops all three fields);
+  `createCompound` accepts the flag (zero children allowed; `since` = creation);
+  `promoteTaskToCounter` refuses a flagged task (a counter may not count toward
+  a counter — the shape rule would drop the row on every other device's pull);
+  `deleteTaskWithCascade` tombstones the contributor's credits (lineage-aware)
+  and re-derives the compounds that lost it; `deleteCounterWithUnlink` unflags
+  contributors (authored, `since` cleared) and leaves their events with the
+  deleted root; the kind switch refuses leaving Discrete while contributors
+  exist (`COUNTS_TOWARD_KIND_MESSAGE` ↔ `CountKindSwitchError.countsTowardMessage`);
+  `computeTaskDeletionImpact` names the counter; `validatePatch` ↔
+  `TaskEditPatch.validate` allow zero sub-tasks for a counts-toward compound,
+  which `evaluateCompound` keeps incomplete while empty.
 
 **Hand-offs from PR 3 (for the UI PR):**
 
+- **The picker sets `since`.** Setting or re-pointing the flag goes through
+  `setCountsToward` (web) ↔ `setCountsToward(taskId:counterId:amount:)` (iOS),
+  which stamps `countsTowardSince`; no UI shows the stamp. A picker that
+  re-points an already-counting task withdraws its earlier credits on the old
+  counter (D11) — the confirm dialog may say so; nothing else explains it.
 - **Counter Detail's "Counts toward" section shows per-contributor CREDIT
   COUNTS**, not a done / not-done bit: a contributor's live credits on the root
   (`taskEvents` on the root whose id is one of `candidateContributionIds(task)`,
   or — cheaper for a list — every live increment on the root grouped by the
-  contributor that owns its key) with the latest `occurredAt`; a repeating
-  weekly square reads "3 ×", a one-off "1 ×" / "—".
+  contributor whose scope owns its key) with the latest `occurredAt`; a
+  repeating weekly square reads "3 ×", a one-off "1 ×" / "—"; a fork and its
+  original share one scope and so one count.
 - **Fork edge for the picker / cell mark:** a fork and its original share one
-  credit (§3e); an undo on the fork's board leaves the credit while the
-  original's event is live. Surfaces that explain "why is this still counted"
-  must not caption it (owner rule) — show the original's completion instead.
-- **Compound window-key caveat:** two boards sharing a `startDate` credit once;
-  a compound nested inside another placed compound (not placed itself) credits
-  only its lifetime occurrence. Both are acceptable for PR 4; revisit if a
-  real case surfaces.
+  credit under the lineage-union rule (§3e). Surfaces that explain "why is
+  this still counted" must not caption it (owner rule) — show the lineage
+  member's completion instead.
+- **Known edges (acceptable for PR 4; revisit if a real case surfaces):** a
+  compound nested inside another placed compound (not placed itself) credits
+  its lifetime evaluation only; a credit left inside a sealed window by a
+  suppressed write settles on the next cascade after a Reopen; an unflagged
+  FORK's lineage-scoped keys are not probed (its flagged lineage members
+  reconcile them).
 - No UI sets the flag yet; the editors need a picker that calls
   `setCountsToward` (validation codes → user lines) — PR 4.
 
 ---
 
-## Decision summary — D1–D9 RULED 2026-10-09 (recommendations accepted), D10 RULED 2026-10-10
+## Decision summary — D1–D9 RULED 2026-10-09 (recommendations accepted), D10–D11 RULED 2026-10-10
 
 | # | Question | Ruling |
 | --- | --- | --- |
@@ -498,3 +576,4 @@ problem): `countsTowardEventId(contributorId, occurrence)`,
 | D8 | Counts-toward event inherits the completion's late-log stamp? | Yes. |
 | D9 | Kind switch off Discrete refused while contributors exist? | Yes (existing validation-line pattern). |
 | D10 | A contributor credits once per task lifetime (A) or once per completion occurrence (B)? | **B** — once per completion occurrence (2026-10-10). The same task on a repeating weekly board credits every week it is completed; un-completing one week withdraws only that week's credit. Keys per type in §3a. |
+| D11 | (a) Does setting the flag credit every historical occurrence, or count from now on? (b) Do credit writes respect the counter's sealed windows? | (a) **Count from now on** (2026-10-10): `Task.countsTowardSince` is stamped when the flag is set or re-pointed, cleared with it, unchanged on an amount-only change; only occurrences at or after it credit (D8 stamp = occurrence instant). (b) **Credits honour the counter's sealed windows** like every other event — a write whose instant sits inside a seal-immune window of a board holding the root or a copy is skipped, except inside the closed-board late-log path (§3b). |

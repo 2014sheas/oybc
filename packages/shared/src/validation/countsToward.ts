@@ -18,7 +18,10 @@ export function countsTowardShapeOk(data: {
   isCounter?: boolean;
   sharedCounterId?: string | null;
   countsTowardCounterId?: string | null;
+  countsTowardSince?: string | null;
 }): boolean {
+  // D11: `countsTowardSince` travels with the flag — present iff the flag is.
+  if ((data.countsTowardSince != null) !== (data.countsTowardCounterId != null)) return false;
   if (data.countsTowardCounterId == null) return true;
   if (data.countsTowardCounterId === data.id) return false;
   if (data.isCounter === true || data.sharedCounterId != null) return false;

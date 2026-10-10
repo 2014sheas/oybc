@@ -752,35 +752,46 @@ user-favorable double credit. That edge caused the root-square counter bug
   A task carrying `countsTowardCounterId` adds ordinary `increment` events to
   that Discrete counter ROOT (event-owning, so the carve-out is unchanged — a
   compound contributor still owns no events; the events live on the root),
-  ONE PER COMPLETION OCCURRENCE of the contributor: a Simple task per live
+  ONE PER COMPLETION OCCURRENCE of the contributor, counted from the instant
+  the flag was set (`countsTowardSince`, D11): a Simple task per live
   completion event (keyed by that event), a plain Counting task per live
   placement window in which its windowed state is complete (keyed by the
   increment that crossed the goal inside that window — the same crossing in
   two overlapping windows is one credit; lifetime when unplaced), a Compound
   per live placement window in which its windowed derivation is complete
-  (keyed `window:<board startDate>`; `lifetime` when unplaced). Windows are the
-  kernel's: `[startDate, endDate]`, a sealed board bounded at `sealedAt`, a
-  draft or deleted board not a window. Each credit's id is the deterministic
-  `countsTowardEventId(contributor, occurrence)` (uuidv5; an event-keyed id
-  omits the contributor, and a board-scoped fork's copied event resolves to
-  its source event through the `forkedFromTaskId` lineage, so the original and
-  its fork share one credit), so every device's re-derivation writes the same
-  rows and union-by-id sync stays correct. They are written by the board
-  cascade (`writeCountsTowardForTasks` ↔ `writeCountsToward`, around the board
-  pass of `runBoardCascadeForTasks` and every other cascade entry incl. the
-  pull and late-log paths), never by a UI gesture, as a per-contributor SET
-  reconciliation: the wanted credits (from live data) against the stored
-  events at every candidate id (from live AND tombstoned data — tombstoned
-  completions, removed placements, deleted boards) — a new occurrence inserts
-  (stamped at the completion instant — the completing event's `occurredAt`,
-  so a late log's `endDate` stamp is inherited; a compound's when its rule
-  was met), a withdrawn one tombstones (an undo removes only that window's
-  credit), a changed instant / amount / counter revises, a cleared flag
-  tombstones every live credit, and a replay with no state change writes
-  nothing. The root's caches, baselines and copies then follow exactly as for
-  a hand log, and the copies' boards derive in the same pass. A deleted
-  counter keeps its events (contributors are unflagged); a deleted
-  contributor's credits are tombstoned.
+  (keyed by the completing CHILD's event under the compound's lineage-root
+  scope, so overlapping boards and board date edits collapse to one credit;
+  `board:<boardId>` / `lifetime` only when that child owns no event). Windows
+  are the kernel's: `[startDate, endDate]`, a sealed board bounded at
+  `sealedAt`, a draft or deleted board not a window. Each credit's id is the
+  deterministic `countsTowardEventId(scope, occurrence)` (uuidv5; an own-event
+  id omits the contributor, a board-scoped fork's copied event resolves to its
+  source event through the `forkedFromTaskId` lineage, and a fork's scoped
+  keys use the lineage root, so the original and its fork share one credit —
+  tombstoned only when no live, flagged lineage member wants it), so every
+  device's re-derivation writes the same rows and union-by-id sync stays
+  correct. They are written by the board cascade (`writeCountsTowardForTasks`
+  ↔ `writeCountsToward`, around the board pass of `runBoardCascadeForTasks`
+  and every other cascade entry incl. the pull and late-log paths), never by
+  a UI gesture, as a per-contributor SET reconciliation: the wanted credits
+  (from live data) against the stored events at every candidate id (from live
+  AND tombstoned data — tombstoned completions, removed placements, deleted
+  boards) — a new occurrence inserts (stamped at the completion instant — the
+  completing event's `occurredAt`, so a late log's `endDate` stamp is
+  inherited; a compound's when its rule was met), a withdrawn one tombstones
+  (an undo removes only that window's credit), a changed instant / amount /
+  counter revises, a cleared flag tombstones every live credit, and a replay
+  with no state change writes nothing. **Credits honour the counter's sealed
+  windows like every other event (D11):** a credit write whose instant sits
+  inside a seal-immune window of a sealed board holding the root or one of
+  its copies is skipped (`isCreditWriteSealSuppressed` over the root's
+  `getSealImmuneWindowsForTask` ↔ `sealImmuneWindows`), except inside the
+  closed-board late-log path, which re-derives sealed boards deterministically
+  — a frozen record never moves because an open board was undone. The root's
+  caches, baselines and copies then follow exactly as for a hand log, and the
+  copies' boards derive in the same pass. A deleted counter keeps its events
+  (contributors are unflagged); a deleted contributor's credits are
+  tombstoned (unless a fork of it still wants them).
 
 ## Sync
 

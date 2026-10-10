@@ -12,11 +12,15 @@ import GRDB
 //     `runBoardCascadeForTaskWithResults`, the shared-counter cascade, the pull
 //     cascade, the late-log re-derivation; the cascade delete via
 //     `applyCountsTowardInTransaction`) inside the same write transaction: for
-//     each changed task and each compound containing it, insert / revise /
-//     tombstone the deterministic event on its counter root (version bump +
-//     enqueue) and write the root's log like a hand log; the board pass derives
-//     the copies' boards, the finish phase re-derives sealed boards + watchers.
-//   - `setCountsToward` — the write-time entry (validated by `CountsToward.problem`).
+//     each changed task and each compound containing it, reconcile its credit
+//     SET — one credit per completion occurrence (D10), counted from
+//     `countsTowardSince` (D11), the fork lineage's wants protected, the
+//     counter's sealed windows honoured (D11) — insert / revise / tombstone
+//     (version bump + enqueue) and write the root's log like a hand log; the
+//     board pass derives the copies' boards, the finish phase re-derives sealed
+//     boards + watchers.
+//   - `setCountsToward` — the write-time entry (validated by `CountsToward.problem`;
+//     stamps `countsTowardSince`).
 //   - `countsTowardContributors` / `unflagCountsTowardContributors` — the
 //     kind-switch and delete-counter guards.
 extension AppDatabase {
@@ -45,20 +49,49 @@ extension AppDatabase {
         var rootIds: Set<String> = []
     }
 
+    /// The whole-workspace lookups loaded once a candidate is relevant.
+    private struct CountsTowardWorkspace {
+        var taskById: [String: Task] = [:]
+        var forkChildren: [String: [String]] = [:]
+        var childrenByCompound: [String: [CompoundChild]] = [:]
+        var allChildrenByCompound: [String: [CompoundChild]] = [:]
+        var eventsByTaskId: [String: [TaskEvent]] = [:]
+        var allEventsByTaskId: [String: [TaskEvent]] = [:]
+    }
+
+    private static func loadCountsTowardWorkspace(db: Database) throws -> CountsTowardWorkspace {
+        var ws = CountsTowardWorkspace()
+        let tasks = try Task.fetchAll(db)
+        for t in tasks { ws.taskById[t.id] = t }
+        ws.forkChildren = CountsToward.buildForkChildrenIndex(tasks)
+        for e in try TaskEvent.fetchAll(db) {
+            ws.allEventsByTaskId[e.taskId, default: []].append(e)
+            if !e.isDeleted { ws.eventsByTaskId[e.taskId, default: []].append(e) }
+        }
+        for c in try CompoundChild.fetchAll(db) {
+            ws.allChildrenByCompound[c.compoundTaskId, default: []].append(c)
+            if !c.isDeleted { ws.childrenByCompound[c.compoundTaskId, default: []].append(c) }
+        }
+        return ws
+    }
+
     /// The cascade hook, WRITE phase (§3b; twin of the web
     /// `writeCountsTowardForTasks`). For every task in `changedTaskIds` and
-    /// every compound transitively containing one, reconcile its credit SET —
-    /// one credit per completion occurrence (D10): `resolveContributionCredits`
-    /// vs the stored events at `candidateContributionIds` → `plan` → apply
-    /// each action (event row, version bump, enqueue); then, for each counter
-    /// root whose events moved, run a hand log's writes — restamp the root's
-    /// caches, refresh window-stamped baselines, write its live copies — and
-    /// re-enter one level deeper for contributors containing those copies.
-    /// Board derivation is left to the caller's ONE pass over `cascadeIds` (so
-    /// a copy on the contributor's own board is read with the new increment);
-    /// `finishCountsTowardRoots` runs after it. Idempotent. Cheap when nothing
-    /// counts toward anything (candidates, their placements, own events and
-    /// stored credits are read by key / index).
+    /// every compound transitively containing one, reconcile its credit set
+    /// and apply each action (event row, version bump, enqueue); then, for
+    /// each counter root whose events moved, run a hand log's writes —
+    /// restamp the root's caches, refresh window-stamped baselines, write its
+    /// live copies — and re-enter one level deeper for contributors containing
+    /// those copies. Board derivation is left to the caller's ONE pass over
+    /// `cascadeIds`; `finishCountsTowardRoots` runs after it. Idempotent.
+    ///
+    /// Cost shape: rows that can never contribute (`CountsToward.canContribute`)
+    /// are dropped first. A FLAGGED candidate is always relevant; an UNFLAGGED
+    /// one only when a stored credit exists at one of its PROBE ids
+    /// (`lifetime`, a `board` key per placement, the raw key of its most recent
+    /// `probeEventLimit` events — indexed reads). The whole-workspace loads, the
+    /// fork lineage, the full candidate keys and the per-root sealed windows are
+    /// read only once a candidate is relevant.
     ///
     /// - Parameters:
     ///   - db: The caller's write transaction.
@@ -66,67 +99,96 @@ extension AppDatabase {
     ///   - now: The write instant.
     ///   - pullOwnerUid: `nil` for a local write; the PULL's uid on the pull
     ///     path (it owns every enqueue).
+    ///   - lateLog: `true` inside the closed-board late-log path (D11: sealed
+    ///     windows are not a write barrier there).
     ///   - depth: Chain depth (0 for a top-level call).
     /// - Returns: The ids the caller's board pass must add, and the roots to finish.
     static func writeCountsToward(
-        db: Database, changedTaskIds: [String], now: String, pullOwnerUid: String? = nil, depth: Int = 0
+        db: Database, changedTaskIds: [String], now: String, pullOwnerUid: String? = nil, lateLog: Bool = false, depth: Int = 0
     ) throws -> CountsTowardWrites {
         var out = CountsTowardWrites()
-        guard depth <= maxCountsTowardDepth, !changedTaskIds.isEmpty else { return out }
-        let allChildren = try CompoundChild.filter(Column("isDeleted") == false).fetchAll(db)
+        guard !changedTaskIds.isEmpty else { return out }
+        guard depth <= maxCountsTowardDepth else {
+            #if DEBUG
+            dlog("[countsToward] chain depth cap reached; not re-entering depth=\(depth) ids=\(changedTaskIds)")
+            #endif
+            return out
+        }
+        let liveChildren = try CompoundChild.filter(Column("isDeleted") == false).fetchAll(db)
         var candidates: [String] = []
         for id in changedTaskIds {
             if !candidates.contains(id) { candidates.append(id) }
-            for parent in DerivationPass.findTransitiveParentCompounds(changedTaskId: id, children: allChildren)
+            for parent in DerivationPass.findTransitiveParentCompounds(changedTaskId: id, children: liveChildren)
             where !candidates.contains(parent) {
                 candidates.append(parent)
             }
         }
-        let candidateTasks = try Task.fetchAll(db, keys: candidates)
-        guard !candidateTasks.isEmpty else { return out }
+        let rows = try Task.fetchAll(db, keys: candidates).filter(CountsToward.canContribute)
+        guard !rows.isEmpty else { return out }
 
-        // The candidates' keyed data (indexed reads): fork ancestors, own
-        // events (any state — the candidate keys), placements and their boards.
-        let data = try loadCountsTowardCandidateData(db: db, rows: candidateTasks)
-        func liteInputs(_ task: Task) -> CountsToward.Inputs {
-            CountsToward.Inputs(
-                taskById: data.lineageById, childrenByCompound: [:], eventsByTaskId: [:],
-                allEventsByTaskId: data.allEventsByTaskId,
-                placements: data.placements.filter { $0.taskId == task.id }, boardById: data.boardById
-            )
-        }
-        var candidateIdsByTask: [String: [String]] = [:]
-        for task in candidateTasks {
-            candidateIdsByTask[task.id] = CountsToward.candidateContributionIds(task, inputs: liteInputs(task))
-        }
+        // Phase 1 — relevance.
         var storedById: [String: TaskEvent] = [:]
-        for e in try TaskEvent.fetchAll(db, keys: Set(candidateIdsByTask.values.joined())) { storedById[e.id] = e }
-        let relevant = candidateTasks.filter { task in
-            task.countsTowardCounterId != nil
-                || (candidateIdsByTask[task.id] ?? []).contains { storedById[$0] != nil }
+        var relevant = rows.filter { $0.countsTowardCounterId != nil }
+        let unflagged = rows.filter { $0.countsTowardCounterId == nil }
+        if !unflagged.isEmpty {
+            let placements = try BoardTask.filter(unflagged.map(\.id).contains(Column("taskId"))).fetchAll(db)
+            var probeIdsByTask: [String: [String]] = [:]
+            for t in unflagged {
+                let recent = try TaskEvent
+                    .filter(Column("taskId") == t.id)
+                    .order(Column("occurredAt").desc)
+                    .limit(CountsToward.probeEventLimit)
+                    .fetchAll(db)
+                probeIdsByTask[t.id] = CountsToward.probeContributionIds(taskId: t.id, ownEvents: recent, placements: placements)
+            }
+            for e in try TaskEvent.fetchAll(db, keys: Set(probeIdsByTask.values.joined())) { storedById[e.id] = e }
+            for t in unflagged where (probeIdsByTask[t.id] ?? []).contains(where: { storedById[$0] != nil }) { relevant.append(t) }
         }
         guard !relevant.isEmpty else { return out }
 
-        var taskById: [String: Task] = [:]
-        for t in try Task.fetchAll(db) { taskById[t.id] = t }
-        var childrenByCompound: [String: [CompoundChild]] = [:]
-        for c in allChildren { childrenByCompound[c.compoundTaskId, default: []].append(c) }
-        let eventsByTaskId = try buildWindowContext(db: db).eventsByTaskId
+        // Phase 2 — the workspace, the lineage, the full keys.
+        let ws = try loadCountsTowardWorkspace(db: db)
+        let resolver = CountsToward.ForkEventResolver(taskById: ws.taskById, allEventsByTaskId: ws.allEventsByTaskId)
+        var lineageByTask: [String: [String]] = [:]
+        for t in relevant { lineageByTask[t.id] = CountsToward.forkLineageIds(t.id, taskById: ws.taskById, forkChildren: ws.forkChildren) }
+        let memberIds = Set(relevant.map(\.id)).union(lineageByTask.values.joined())
+        let placements = try BoardTask.filter(Array(memberIds).contains(Column("taskId"))).fetchAll(db)
+        var boardById: [String: Board] = [:]
+        for b in try Board.fetchAll(db, keys: Set(placements.map(\.boardId))) { boardById[b.id] = b }
+        func inputs(for task: Task) -> CountsToward.Inputs {
+            CountsToward.Inputs(
+                taskById: ws.taskById, childrenByCompound: ws.childrenByCompound, allChildrenByCompound: ws.allChildrenByCompound,
+                eventsByTaskId: ws.eventsByTaskId, allEventsByTaskId: ws.allEventsByTaskId,
+                placements: placements.filter { $0.taskId == task.id }, boardById: boardById, forkEvents: resolver
+            )
+        }
+        var keptByMember: [String: [String]] = [:]
+        func kept(_ memberId: String) -> [String] {
+            if let k = keptByMember[memberId] { return k }
+            let k = ws.taskById[memberId].map { CountsToward.keptCreditIds(for: $0, inputs: inputs(for: $0)) } ?? []
+            keptByMember[memberId] = k
+            return k
+        }
+        var immuneByRoot: [String: [SealImmuneWindow]] = [:]
+        func loadImmune(_ rootId: String) throws {
+            if immuneByRoot[rootId] == nil { immuneByRoot[rootId] = try sealImmuneWindows(db: db, taskId: rootId) }
+        }
 
         var reach: [(rootId: String, instants: [String])] = []
         for task in relevant {
-            var inputs = liteInputs(task)
-            inputs.taskById = taskById
-            inputs.childrenByCompound = childrenByCompound
-            inputs.eventsByTaskId = eventsByTaskId
-            let wanted = CountsToward.resolveContributionCredits(task, inputs: inputs)
-            let missing = wanted.map(\.eventId).filter { storedById[$0] == nil }
+            let taskInputs = inputs(for: task)
+            let wanted = CountsToward.resolveContributionCredits(task, inputs: taskInputs)
+            let candidateIds = CountsToward.candidateContributionIds(task, inputs: taskInputs)
+            let lineageWanted = Set((lineageByTask[task.id] ?? []).flatMap(kept))
+            let missing = Set(candidateIds + wanted.map(\.eventId)).filter { storedById[$0] == nil }
             for e in try TaskEvent.fetchAll(db, keys: missing) { storedById[e.id] = e }
             let actions = CountsToward.plan(
-                contributor: task, taskById: taskById, wanted: wanted,
-                candidateIds: candidateIdsByTask[task.id] ?? [], storedById: storedById
+                contributor: task, taskById: ws.taskById, wanted: wanted,
+                candidateIds: candidateIds, storedById: storedById, lineageWantedIds: lineageWanted
             )
             for action in actions {
+                if !lateLog { for r in action.reach { try loadImmune(r.rootId) } }
+                if CountsToward.isCreditWriteSealSuppressed(action, immuneWindowsByRoot: immuneByRoot, now: now, lateLog: lateLog) { continue }
                 try writeCountsTowardAction(
                     db: db, action: action, userId: task.userId, existing: storedById[action.eventId], now: now, pullOwnerUid: pullOwnerUid
                 )
@@ -146,48 +208,12 @@ extension AppDatabase {
             out.cascadeIds.formUnion(ids)
             // Chained contributors: a compound containing one of these copies.
             let deeper = try writeCountsToward(
-                db: db, changedTaskIds: Array(ids), now: now, pullOwnerUid: pullOwnerUid, depth: depth + 1
+                db: db, changedTaskIds: Array(ids), now: now, pullOwnerUid: pullOwnerUid, lateLog: lateLog, depth: depth + 1
             )
             out.cascadeIds.formUnion(deeper.cascadeIds)
             out.rootIds.formUnion(deeper.rootIds)
         }
         return out
-    }
-
-    /// The per-candidate rows the planner reads (twin of the web `CandidateData`).
-    private struct CountsTowardCandidateData {
-        /// The candidates plus their fork ancestors.
-        var lineageById: [String: Task]
-        var allEventsByTaskId: [String: [TaskEvent]]
-        var placements: [BoardTask]
-        var boardById: [String: Board]
-    }
-
-    /// Deepest `forkedFromTaskId` chain loaded for a candidate (a fork of a fork…).
-    private static let maxCountsTowardForkLineage = 8
-
-    /// Load the keyed rows every candidate's keys derive from (indexed reads only).
-    private static func loadCountsTowardCandidateData(db: Database, rows: [Task]) throws -> CountsTowardCandidateData {
-        var lineageById: [String: Task] = [:]
-        for t in rows { lineageById[t.id] = t }
-        var frontier = rows.compactMap(\.forkedFromTaskId).filter { lineageById[$0] == nil }
-        var depth = 0
-        while !frontier.isEmpty, depth < maxCountsTowardForkLineage {
-            let found = try Task.fetchAll(db, keys: Set(frontier))
-            for t in found { lineageById[t.id] = t }
-            frontier = found.compactMap(\.forkedFromTaskId).filter { lineageById[$0] == nil }
-            depth += 1
-        }
-        var allEventsByTaskId: [String: [TaskEvent]] = [:]
-        for e in try TaskEvent.filter(Array(lineageById.keys).contains(Column("taskId"))).fetchAll(db) {
-            allEventsByTaskId[e.taskId, default: []].append(e)
-        }
-        let placements = try BoardTask.filter(rows.map(\.id).contains(Column("taskId"))).fetchAll(db)
-        var boardById: [String: Board] = [:]
-        for b in try Board.fetchAll(db, keys: Set(placements.map(\.boardId))) { boardById[b.id] = b }
-        return CountsTowardCandidateData(
-            lineageById: lineageById, allEventsByTaskId: allEventsByTaskId, placements: placements, boardById: boardById
-        )
     }
 
     /// Apply one planned write: the event row + its sync entry.
@@ -228,7 +254,8 @@ extension AppDatabase {
             e.updatedAt = now
             e.version += 1
             try e.save(db)
-            // `save` skips nil keys — clear the tombstone stamp explicitly.
+            // `save` skips nil keys — clear the tombstone stamp explicitly
+            // (`taskEvents.deletedAt` is clearable on sync, so the remote drops it too).
             try db.execute(sql: "UPDATE task_events SET deletedAt = NULL WHERE id = ?", arguments: [e.id])
             try enqueue(e, .update)
         }
@@ -278,15 +305,16 @@ extension AppDatabase {
     }
 
     /// Set (or clear, with `counterId == nil`) what a task counts toward, then
-    /// run its cascade so the credits follow at once (a cleared flag tombstones
-    /// every live credit). Authored: version bump +
-    /// UPDATE enqueue; a clear writes NULL to both columns (raw SQL — `encode`
-    /// nil-skips; clearable on sync).
+    /// run its cascade so the credits follow at once. D11: setting the flag, or
+    /// re-pointing it at a DIFFERENT counter, stamps `countsTowardSince = now`
+    /// (occurrences before it never credit); changing only the amount keeps it;
+    /// a clear NULLs all three columns (raw SQL — `encode` nil-skips; clearable
+    /// on sync). Authored: version bump + UPDATE enqueue.
     ///
+    /// - Parameter now: The write instant (injectable for tests; defaults to the clock).
     /// - Throws: `CountsTowardError.refused` with the `CountsToward.problem` code.
-    func setCountsToward(taskId: String, counterId: String?, amount: Int? = nil) throws {
+    func setCountsToward(taskId: String, counterId: String?, amount: Int? = nil, now: String = AppDatabase.currentTimestamp()) throws {
         try write { db in
-            let now = Self.currentTimestamp()
             guard var task = try Task.fetchOne(db, key: taskId), !task.isDeleted else {
                 throw CountsTowardError.taskMissing
             }
@@ -296,6 +324,11 @@ extension AppDatabase {
                 children: try CompoundChild.filter(Column("isDeleted") == false).fetchAll(db)
             ) {
                 throw CountsTowardError.refused(problem)
+            }
+            if let counterId {
+                task.countsTowardSince = (counterId == task.countsTowardCounterId ? task.countsTowardSince : nil) ?? now
+            } else {
+                task.countsTowardSince = nil
             }
             task.countsTowardCounterId = counterId
             task.countsTowardAmount = counterId == nil ? nil : amount
@@ -310,21 +343,22 @@ extension AppDatabase {
         }
     }
 
-    /// Write both counts-toward columns as stored on `task`, NULL included
+    /// Write the three counts-toward columns as stored on `task`, NULL included
     /// (GRDB's update only SETs encoded keys, and `Task.encode` nil-skips).
     static func writeCountsTowardColumns(db: Database, task: Task) throws {
         try db.execute(
-            sql: "UPDATE tasks SET countsTowardCounterId = ?, countsTowardAmount = ? WHERE id = ?",
-            arguments: [task.countsTowardCounterId, task.countsTowardAmount, task.id]
+            sql: "UPDATE tasks SET countsTowardCounterId = ?, countsTowardAmount = ?, countsTowardSince = ? WHERE id = ?",
+            arguments: [task.countsTowardCounterId, task.countsTowardAmount, task.countsTowardSince, task.id]
         )
     }
 
-    /// Clear `countsTowardCounterId` on every live contributor of a counter that
-    /// is being deleted (§3e). Authored; the events stay with the deleted root.
+    /// Clear the counts-toward fields on every live contributor of a counter
+    /// that is being deleted (§3e). Authored; the events stay with the deleted root.
     static func unflagCountsTowardContributors(db: Database, counterId: String, now: String) throws {
         for var c in try countsTowardContributors(db: db, counterId: counterId) {
             c.countsTowardCounterId = nil
             c.countsTowardAmount = nil
+            c.countsTowardSince = nil
             c.updatedAt = now
             c.version += 1
             try c.save(db)

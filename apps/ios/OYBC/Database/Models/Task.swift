@@ -182,6 +182,10 @@ struct Task: Codable, FetchableRecord, PersistableRecord, Identifiable {
     /// `encode` nil-skips). Nullable TEXT / INTEGER columns (GRDB v43).
     var countsTowardCounterId: String?
     var countsTowardAmount: Int?
+    /// D11 — the ISO instant the flag was set (or re-pointed); present iff the
+    /// flag is. Only occurrences at or after it credit. Cleared with the flag;
+    /// unchanged when only the amount changes. Clearable on sync (GRDB v43).
+    var countsTowardSince: String?
 
     // MARK: - Database Configuration
 
@@ -234,7 +238,8 @@ struct Task: Codable, FetchableRecord, PersistableRecord, Identifiable {
         titleTemplatePlural: String? = nil,
         timeframeGoals: CounterTimeframeGoals? = nil,
         countsTowardCounterId: String? = nil,
-        countsTowardAmount: Int? = nil
+        countsTowardAmount: Int? = nil,
+        countsTowardSince: String? = nil
     ) {
         self.id = id
         self.userId = userId
@@ -278,6 +283,7 @@ struct Task: Codable, FetchableRecord, PersistableRecord, Identifiable {
         self.timeframeGoals = timeframeGoals
         self.countsTowardCounterId = countsTowardCounterId
         self.countsTowardAmount = countsTowardAmount
+        self.countsTowardSince = countsTowardSince
     }
 
     // MARK: - Codable
@@ -312,7 +318,7 @@ struct Task: Codable, FetchableRecord, PersistableRecord, Identifiable {
         // Shared counter settings (GRDB v42)
         case counterName, titleTemplateSingular, titleTemplatePlural, timeframeGoals
         // Counts toward (GRDB v43)
-        case countsTowardCounterId, countsTowardAmount
+        case countsTowardCounterId, countsTowardAmount, countsTowardSince
     }
 
     init(from decoder: Decoder) throws {
@@ -374,6 +380,7 @@ struct Task: Codable, FetchableRecord, PersistableRecord, Identifiable {
         // Counts toward. Forward-compat: pre-v43 rows + pre-feature payloads decode as nil.
         countsTowardCounterId = try container.decodeIfPresent(String.self, forKey: .countsTowardCounterId)
         countsTowardAmount = try container.decodeIfPresent(Int.self, forKey: .countsTowardAmount)
+        countsTowardSince = try container.decodeIfPresent(String.self, forKey: .countsTowardSince)
     }
 
     /// `timeframeGoals` is a JSON string in GRDB (like `Board.sealedCompletedCells`);
@@ -449,6 +456,7 @@ struct Task: Codable, FetchableRecord, PersistableRecord, Identifiable {
         // `AppDatabase.writeCountsTowardColumns`).
         try container.encodeIfPresent(countsTowardCounterId, forKey: .countsTowardCounterId)
         try container.encodeIfPresent(countsTowardAmount, forKey: .countsTowardAmount)
+        try container.encodeIfPresent(countsTowardSince, forKey: .countsTowardSince)
     }
 
     /// `timeframeGoals` as its stored JSON string (sorted keys; nil when absent / empty).

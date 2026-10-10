@@ -151,6 +151,9 @@ export async function promoteTaskToCounter(taskId: string): Promise<Task> {
     if (!t || t.isDeleted) throw new Error(`promoteTaskToCounter: task ${taskId} not found`);
     if (t.type !== TaskType.COUNTING) throw new Error('promoteTaskToCounter: only counting tasks');
     if (t.sharedCounterId != null) throw new Error('promoteTaskToCounter: derived tasks cannot be counters');
+    // A counter may not count toward a counter (Zod shape rule — a flagged
+    // promoted row would be dropped by every other device's pull).
+    if (t.countsTowardCounterId != null) throw new Error('promoteTaskToCounter: a task that counts toward a counter cannot be a counter');
     updated = { ...t, isCounter: true, updatedAt: now, version: t.version + 1 };
     await db.tasks.put(updated);
     await addToSyncQueue('tasks', taskId, SyncOperationType.UPDATE, updated);

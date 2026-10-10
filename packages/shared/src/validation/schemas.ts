@@ -483,9 +483,11 @@ export const TaskSchema = z.object({
   // (`countsTowardShapeOk`); the cross-row rules are write-time.
   countsTowardCounterId: z.string().uuid().nullable().optional(),
   countsTowardAmount: z.number().int().positive().optional(),
+  // D11 — the instant the flag was set / re-pointed; present iff the flag is.
+  countsTowardSince: z.string().datetime().nullable().optional(),
 }).refine(
   countsTowardShapeOk,
-  { message: 'A task may not count toward itself, and a counter, a linked copy or an achievement may not count toward a counter' },
+  { message: 'A task may not count toward itself, a counter, a linked copy or an achievement may not count toward a counter, and countsTowardSince travels with the flag' },
 ).refine(
   (data) => {
     // Compound tasks must have an operator.

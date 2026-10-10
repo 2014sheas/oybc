@@ -208,6 +208,8 @@ extension AppDatabase {
         migrator.registerMigration("v43") { db in
             try db.execute(sql: "ALTER TABLE tasks ADD COLUMN countsTowardCounterId TEXT")
             try db.execute(sql: "ALTER TABLE tasks ADD COLUMN countsTowardAmount INTEGER")
+            // D11 — the instant the flag was set; only occurrences at or after it credit.
+            try db.execute(sql: "ALTER TABLE tasks ADD COLUMN countsTowardSince TEXT")
         }
     }
 }

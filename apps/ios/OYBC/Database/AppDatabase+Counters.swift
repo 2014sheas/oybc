@@ -143,6 +143,14 @@ extension AppDatabase {
                     "promoteTaskToCounter: derived tasks cannot be counters"
                 )
             }
+            // A counter may not count toward a counter (the shared Zod shape
+            // rule — a flagged promoted row would be dropped by every other
+            // device's pull).
+            guard task.countsTowardCounterId == nil else {
+                throw AppDatabaseError.counterPromotionRejected(
+                    "promoteTaskToCounter: a task that counts toward a counter cannot be a counter"
+                )
+            }
             task.isCounter = true
             task.updatedAt = now
             task.version += 1

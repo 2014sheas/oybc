@@ -144,8 +144,13 @@ final class SyncClearableFieldsTests: XCTestCase {
         XCTAssertEqual(Set(SyncService.clearableFields(for: "coreBoardDefaults")), ["defaultBoardSize", "defaultCenterType"])
         XCTAssertEqual(
             SyncService.clearableFields(for: "tasks"),
-            ["endDate", "counterName", "titleTemplateSingular", "titleTemplatePlural", "timeframeGoals", "countsTowardCounterId"]
+            [
+                "endDate", "counterName", "titleTemplateSingular", "titleTemplatePlural", "timeframeGoals",
+                "countsTowardCounterId", "countsTowardAmount", "countsTowardSince",
+            ]
         )
+        // A revived counts-toward credit drops its tombstone stamp (SHARED_COUNTER_SETTINGS §3b).
+        XCTAssertEqual(SyncService.clearableFields(for: "taskEvents"), ["deletedAt"])
         XCTAssertEqual(SyncService.clearableFields(for: "boardTasks"), [])
         XCTAssertEqual(SyncService.clearableFields(for: "nope"), [])
     }

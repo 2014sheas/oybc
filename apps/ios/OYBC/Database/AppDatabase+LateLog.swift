@@ -96,7 +96,9 @@ extension AppDatabase {
         // completes a contributor stamps its increment at the board's endDate —
         // the completing event's own `occurredAt` (D8). The counter's copies
         // join the re-derivation below (live, sealed and watchers alike).
-        let countsToward = try writeCountsToward(db: db, changedTaskIds: Array(changedTaskIds), now: now)
+        // `lateLog: true` — this path re-derives every sealed board deterministically,
+        // so the counter's sealed windows are not a write barrier here (D11).
+        let countsToward = try writeCountsToward(db: db, changedTaskIds: Array(changedTaskIds), now: now, lateLog: true)
         try reDeriveReachedBoards(db: db, changedTaskIds: changedTaskIds.union(countsToward.cascadeIds), now: now)
     }
 

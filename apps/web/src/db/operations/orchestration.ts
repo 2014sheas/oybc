@@ -73,6 +73,13 @@ export interface BoardCascadeEntry extends BoardStatsUpdate {
  */
 interface CascadeOptions {
   authored?: boolean;
+  /**
+   * `true` inside the closed-board late-log path (`lateLog.ts`): the
+   * counts-toward writes then ignore the counter's sealed windows, because
+   * that path re-derives every sealed board deterministically
+   * (docs/SHARED_COUNTER_SETTINGS.md §3b, D11).
+   */
+  lateLog?: boolean;
 }
 
 /**
@@ -135,7 +142,7 @@ export async function runBoardCascadeForTasks(
   // on one of these boards is read with the new increment (its bingo lands in
   // this result map). Authored and pull-path cascades alike: the event is
   // deterministic, so a pull that re-derives it converges on the same row.
-  const countsToward = await writeCountsTowardForTasks(changedIds, now, allChildren);
+  const countsToward = await writeCountsTowardForTasks(changedIds, now, { liveChildren: allChildren, lateLog: opts.lateLog === true });
 
   // Build the lookups for the derivation pass.
   const allBoardTasks = await fetchAllBoardTasks();
