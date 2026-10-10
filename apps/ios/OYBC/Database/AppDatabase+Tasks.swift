@@ -364,7 +364,7 @@ extension AppDatabase {
     /// - Parameters:
     ///   - task: The new Task to insert.
     ///   - now: ISO8601 timestamp for the sync-queue row.
-    func createTaskAndEnqueue(_ task: Task, now: String) throws {
+    func createTaskAndEnqueue(_ task: Task, now: String, countsToward: CountsTowardPatch? = nil) throws {
         try write { db in
             // Counter kinds (D5): a linked row carries its root's kind.
             let task = try Self.withRootCountKind(db: db, task)
@@ -376,6 +376,10 @@ extension AppDatabase {
                 payload: task,
                 now: now
             ).enqueue(db)
+            // "Counts toward": the same transaction, so a refusal persists nothing.
+            if let ct = countsToward, let counterId = ct.counterId {
+                try Self.setCountsToward(db: db, taskId: task.id, counterId: counterId, amount: ct.amount, now: now)
+            }
         }
     }
 
@@ -473,7 +477,8 @@ extension AppDatabase {
         parent: Task,
         newChildTasks: [Task],
         childLinks: [CompoundChild],
-        now: String
+        now: String,
+        countsToward: CountsTowardPatch? = nil
     ) throws {
         let newChildIds = Set(newChildTasks.map { $0.id })
         try write { db in
@@ -526,6 +531,14 @@ extension AppDatabase {
                     payload: link,
                     now: now
                 ).enqueue(db)
+            }
+
+            // 3. "Counts toward": the compound went in UNFLAGGED; the one write
+            //    path now validates against the inserted rows (loops through the
+            //    sub-tasks), stamps `countsTowardSince` and cascades, so already
+            //    done sub-tasks credit. A refusal rolls the whole create back.
+            if let ct = countsToward, let counterId = ct.counterId {
+                try Self.setCountsToward(db: db, taskId: parent.id, counterId: counterId, amount: ct.amount, now: now)
             }
         }
     }

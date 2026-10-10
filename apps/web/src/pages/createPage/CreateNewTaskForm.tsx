@@ -509,7 +509,7 @@ export function CreateNewTaskForm({
 
           {form.countsTowardEnabled && userId && form.taskType !== TaskType.ACHIEVEMENT && (
             <div className={styles.fieldGroup}>
-              <CountsTowardField userId={userId} stored={NO_COUNTS_TOWARD} value={form.countsToward} onChange={form.setCountsToward} labelClassName={styles.label} />
+              <CountsTowardField userId={userId} stored={NO_COUNTS_TOWARD} value={form.countsToward} onChange={form.setCountsToward} labelClassName={styles.label} hideWhenNoTargets />
             </div>
           )}
 

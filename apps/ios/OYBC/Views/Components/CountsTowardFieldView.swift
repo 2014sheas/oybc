@@ -11,7 +11,7 @@ struct CountsTowardSelection: Equatable {
 /// button naming the counter (or "None") that toggles an inline counter picker,
 /// plus — once a counter is chosen — the per-completion amount stepper.
 /// Shared by the global task editor, the Board Edit square sheet and the create
-/// sheet. Web twin: `components/countsToward/CountsTowardField.tsx`.
+/// sheet. Web twin: `components/counters/CountsTowardField.tsx`.
 struct CountsTowardFieldView: View {
     /// Every live task of the user (candidates and counter names resolve from it).
     let tasks: [Task]
@@ -221,7 +221,7 @@ struct CountsTowardFieldView: View {
                         .lineLimit(1)
                     KindTagView(kind: kind, dense: true)
                     Spacer(minLength: 0)
-                    Text("\(formatCount(task.currentCount ?? 0, kind: kind)) all-time")
+                    Text("\(formatCountTotal(task.currentCount ?? 0, kind: kind)) all-time")
                         .font(.risoBody(12, .semibold))
                         .foregroundStyle(Color.risoMuted)
                         .lineLimit(1)

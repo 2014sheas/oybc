@@ -667,31 +667,63 @@ count — in the handoff's order Done → In progress → Not started → title 
   `setCountsTowardInTransaction` ↔ `setCountsToward(db:…)` inside the commit
   transaction (iOS runs it right after the fork, before the field apply; web
   after the field apply — both validate inside the transaction, both land on
-  the fork). Create sheet (immediate persist only, Normal / Counting /
-  Compound): Normal / Counting create then `setCountsToward`; Compound passes
-  the fields to `createCompound` ↔ flags the parent before
-  `createCompoundAndEnqueue` (zero sub-tasks allowed only when flagged). D9:
-  the counter sheet's kind switch off Discrete surfaces the refusal line.
+  the fork; a NEW staged task is inserted unflagged and flagged the same way
+  with the Save's `now`). The staged value is merged into the task for
+  display / re-open only (the Board Edit grid draws no mark). **Review-round
+  rules (2026-10-10):** (a) the global save is ONE transaction — set / re-point
+  → fields → clear — so a refused structure leaves no flag and no credit;
+  (b) after any compound STRUCTURE edit the flag is re-validated against the
+  post-edit rows (`assertCountsTowardStillValid` ↔ `recheckCountsToward(db:)`):
+  a sub-task that closes a counts-toward loop — the target counter, a copy of
+  it, or a compound holding either — is refused on the existing cycle line
+  ("That counter already feeds this task.") in the same save as the set AND on
+  an already-flagged compound whose flag the save did not touch (both editors;
+  web's `compoundLinkProblemForPatch` pre-checks it at Done); a save that did
+  not touch the flag refuses only such a loop, a target that drifted for
+  another reason never blocks an unrelated edit; (c) a compound with no live
+  sub-tasks may NOT stop counting — the clear is refused with "A compound task
+  needs a sub-task." (web `CountsTowardError('compound-needs-child')`) because
+  a zero-child compound is legal only while it counts toward (§3a) and would
+  otherwise evaluate vacuously complete. Create sheet (immediate persist only,
+  Normal / Counting / Compound; the row renders only when at least one Discrete
+  counter exists — ruled 2026-10-10): create + flag in ONE transaction (web
+  `createTaskCountingToward` ↔ iOS `createTaskAndEnqueue(…, countsToward:)` /
+  `createCompoundAndEnqueue(…, countsToward:)` — the row is inserted
+  unflagged, then `setCountsToward` validates against the inserted rows,
+  stamps `since` and cascades; a refusal persists nothing). D9: the counter
+  sheet's kind switch off Discrete surfaces the refusal line.
 - **C3 board cell**: the two-dot mark shows for a contributing task of ANY
   type while not done (web `isShared` predicate in `BoardPlaySurface` ↔ iOS
   `showsSharedCounterMark(for:)`); the Board Edit grid draws no mark (as
   before).
-- **C4 completion moment** (no new component): completing a contributing
-  Simple square (checked off) or plain Counting square (reaching its goal,
-  judged against the board's pre-write window) fires the existing credited
-  toast when the counter has squares on OTHER boards
-  (`creditedBoardsForCounter` ↔ `creditedBoards(forCounterRoot:excludingBoardId:)`
-  — the increment path's creditable-board rule); its Undo UN-COMPLETES the
-  square (web `CreditedToast.undo = { kind: 'uncomplete' }` ↔ iOS
-  `UndoKind.uncomplete`) and the cascade tombstones the credit — never
-  `undoLastCounterLog`. A compound contributor's completion (via a child
-  toggle) fires no toast yet — open edge.
+- **C4 completion moment** (no new component; **ruled 2026-10-10, review
+  round**): the credited toast shows ONLY when the cascade actually wrote a
+  NEW live credit for a contributor PLACED ON THIS BOARD — the live credit
+  ids on the roots of the board's flagged tasks are snapshotted before the
+  write and diffed after it, and a new id is attributed to an on-board
+  contributor through `candidateContributionIds` (web `snapshotLiveCreditIds`
+  / `findNewBoardCredit` + `useBoardPlay`'s `watchCredits` ↔ iOS
+  `countsTowardCreditSnapshot` / `countsTowardCreditToast`) — and only under
+  the trigger: the counter has squares on OTHER boards (root or live copies;
+  not deleted, not draft) whose window `[startDate, endDate]` contains the
+  credit's `occurredAt` (not `isBoardCreditable(now)`). This covers a Simple
+  square checked off, a Counting square reaching its goal and a Compound
+  completed through a sub-task toggle (once), and never fires when nothing
+  was credited (a late log before `since`, a seal-suppressed write, a lineage
+  already credited, an unflagged square, a sub-task of an unplaced compound).
+  Its Undo reverses the exact write — Simple un-completed, Counting restored
+  to its PREVIOUS windowed count, a compound's child toggled back — never
+  `undoLastCounterLog`.
 - **Tests**: shared vectors (both platforms); web Vitest
   (`countsTowardUi.test.ts` ×2 — section loader, commit fork/in-place/clear,
   `saveTaskEdit` order, credited boards, toast preview; field / section
   models) + Playwright `counts-toward-section.spec.ts` /
   `counts-toward-editor.spec.ts` (ids pinned by `countsTowardIds.test.ts`);
   iOS `CountsTowardUITests` + `CountsTowardSnapshotTests` (11 baselines).
+- **Handoff deviation (noted for the record):** the editor row sits as the
+  LAST field before the sheet actions (the frames list Title / Description /
+  Counts toward and omit the Type control + type fields the real sheets carry).
+  One row per fork lineage in the section (the drawing has no forks).
 
 ---
 

@@ -8,7 +8,9 @@
  */
 
 import {
+  BoardStatus,
   buildForkChildrenIndex,
+  candidateContributionIds,
   countsTowardRows,
   forkLineageIds,
   type Board,
@@ -21,6 +23,7 @@ import {
 import { db } from '../internal';
 import { healBoardNames } from './boardNames';
 import { countContributorsOf } from './countsToward';
+import type { AffectedBoard } from './tasks.sharedCounter';
 
 /** The section's rows plus the rows' display data. */
 export interface CountsTowardSectionData {
@@ -51,18 +54,19 @@ function subtreeIds(taskId: string, linksByCompound: Record<string, CompoundChil
 }
 
 /**
- * Loads the "Counts toward" rows for counter root `counterId`.
+ * The {@link ContributionInputs} for `memberIds` (contributors, any state):
+ * every task + compound link (the lineage / subtree walks need them), the
+ * events (any state) of the members, their fork lineages, their compound
+ * subtrees and `extraEventTaskIds` (the roots), the members' placements and
+ * the boards they reference.
  *
- * Reads every task + compound link (the lineage / subtree walks need them),
- * then only the events and placements of the contributors, their fork
- * lineages, their compound subtrees and the root itself.
- *
- * @param counterId - The counter root.
- * @returns Rows (empty when nothing counts toward it) + the referenced tasks / boards.
+ * @param memberIds - The contributors to load for.
+ * @param extraEventTaskIds - Further tasks whose events are needed (the counter roots).
  */
-export async function loadCountsTowardSection(counterId: string): Promise<CountsTowardSectionData> {
-  const contributors = await countContributorsOf(counterId);
-  if (contributors.length === 0) return EMPTY;
+export async function loadContributionInputs(
+  memberIds: ReadonlyArray<string>,
+  extraEventTaskIds: ReadonlyArray<string> = [],
+): Promise<{ tasks: Task[]; inputs: ContributionInputs & { boardById: Record<string, Board> } }> {
   const tasks = await db.tasks.toArray();
   const taskById: Record<string, Task> = Object.fromEntries(tasks.map((t) => [t.id, t]));
   const links = await db.compoundChildren.toArray();
@@ -74,13 +78,13 @@ export async function loadCountsTowardSection(counterId: string): Promise<Counts
   }
 
   const forkChildren = buildForkChildrenIndex(tasks);
-  const memberIds = new Set<string>();
-  for (const c of contributors) {
-    memberIds.add(c.id);
-    for (const id of forkLineageIds(c.id, taskById, forkChildren)) memberIds.add(id);
+  const members = new Set<string>();
+  for (const id of memberIds) {
+    members.add(id);
+    for (const other of forkLineageIds(id, taskById, forkChildren)) members.add(other);
   }
-  const eventTaskIds = new Set<string>([counterId, ...memberIds]);
-  for (const id of memberIds) for (const sub of subtreeIds(id, allChildrenByCompound, taskById)) eventTaskIds.add(sub);
+  const eventTaskIds = new Set<string>([...extraEventTaskIds, ...members]);
+  for (const id of members) for (const sub of subtreeIds(id, allChildrenByCompound, taskById)) eventTaskIds.add(sub);
 
   const events = await db.taskEvents.where('taskId').anyOf([...eventTaskIds]).toArray();
   const eventsByTaskId: Record<string, TaskEvent[]> = {};
@@ -89,11 +93,93 @@ export async function loadCountsTowardSection(counterId: string): Promise<Counts
     (allEventsByTaskId[e.taskId] ??= []).push(e);
     if (!e.isDeleted) (eventsByTaskId[e.taskId] ??= []).push(e);
   }
-  const placements = await db.boardTasks.where('taskId').anyOf([...memberIds]).toArray();
+  const placements = await db.boardTasks.where('taskId').anyOf([...members]).toArray();
   const boardIds = [...new Set(placements.map((p) => p.boardId))];
   const boards = boardIds.length > 0 ? healBoardNames(await db.boards.where('id').anyOf(boardIds).toArray()) : [];
   const boardById: Record<string, Board> = Object.fromEntries(boards.map((b) => [b.id, b]));
+  return { tasks, inputs: { taskById, childrenByCompound, allChildrenByCompound, eventsByTaskId, allEventsByTaskId, placements, boardById } };
+}
 
-  const inputs: ContributionInputs = { taskById, childrenByCompound, allChildrenByCompound, eventsByTaskId, allEventsByTaskId, placements, boardById };
-  return { rows: countsTowardRows(counterId, tasks, inputs), taskById, boardById };
+/**
+ * Loads the "Counts toward" rows for counter root `counterId`.
+ *
+ * @param counterId - The counter root.
+ * @returns Rows (empty when nothing counts toward it) + the referenced tasks / boards.
+ */
+export async function loadCountsTowardSection(counterId: string): Promise<CountsTowardSectionData> {
+  const contributors = await countContributorsOf(counterId);
+  if (contributors.length === 0) return EMPTY;
+  const { tasks, inputs } = await loadContributionInputs(contributors.map((c) => c.id), [counterId]);
+  return { rows: countsTowardRows(counterId, tasks, inputs), taskById: inputs.taskById, boardById: inputs.boardById };
+}
+
+// ---------------------------------------------------------------------------
+// Completion moment — did this write credit a contributor on this board?
+// ---------------------------------------------------------------------------
+
+/** The ids of the live credit increments on `rootIds` (a hand log is one too — the DIFF is what matters). */
+export async function snapshotLiveCreditIds(rootIds: ReadonlyArray<string>): Promise<Set<string>> {
+  if (rootIds.length === 0) return new Set();
+  const rows = await db.taskEvents.where('taskId').anyOf([...rootIds]).filter((e) => !e.isDeleted && e.kind === 'increment').toArray();
+  return new Set(rows.map((e) => e.id));
+}
+
+/** What the credited toast shows for a counts-toward credit this write produced. */
+export interface NewBoardCredit {
+  /** The on-board contributor the credit belongs to. */
+  contributor: Task;
+  /** The counter root it was written on. */
+  root: Task;
+  /** The credit event (its `delta` is the amount shown, its `occurredAt` picks the boards). */
+  credit: TaskEvent;
+  /** OTHER boards placing the root or a live copy whose window contains the credit — the toast's trigger. */
+  otherBoards: AffectedBoard[];
+}
+
+/** Whether `[startDate, endDate]` (inclusive, open-ended without an end) contains `iso`. */
+function windowContains(board: Pick<Board, 'startDate' | 'endDate'>, iso: string): boolean {
+  const t = new Date(iso).getTime();
+  const start = new Date(board.startDate).getTime();
+  if (!(t >= start)) return false;
+  if (board.endDate == null) return true;
+  return t <= new Date(board.endDate).getTime();
+}
+
+/**
+ * After a write on `boardId` (+ its cascade): the NEW live credit — one of
+ * the on-board contributors' candidate ids — that was not in `before`, with
+ * the OTHER boards it landed on (design handoff §C4, ruled 2026-10-10: the
+ * toast fires only when a credit was actually written for a contributor
+ * placed on THIS board, and only when the counter has squares on other
+ * boards whose window contains the credit's instant). `null` otherwise — a
+ * late log before `since`, a seal-suppressed write, a lineage already
+ * credited, an unflagged task, a sub-task of an unplaced compound.
+ *
+ * @param boardId - The board the write was made on.
+ * @param contributors - The flagged tasks placed on it (board order).
+ * @param before - {@link snapshotLiveCreditIds} taken before the write.
+ */
+export async function findNewBoardCredit(boardId: string, contributors: ReadonlyArray<Task>, before: ReadonlySet<string>): Promise<NewBoardCredit | null> {
+  const rootIds = [...new Set(contributors.map((c) => c.countsTowardCounterId).filter((id): id is string => id != null))];
+  if (rootIds.length === 0) return null;
+  const after = await db.taskEvents.where('taskId').anyOf(rootIds).filter((e) => !e.isDeleted && e.kind === 'increment' && !before.has(e.id)).toArray();
+  if (after.length === 0) return null;
+  const newById = new Map(after.map((e) => [e.id, e]));
+  const { inputs } = await loadContributionInputs(contributors.map((c) => c.id), rootIds);
+  for (const contributor of contributors) {
+    const rootId = contributor.countsTowardCounterId as string;
+    const root = inputs.taskById[rootId];
+    if (!root || root.isDeleted) continue;
+    const credit = candidateContributionIds(contributor, inputs, [rootId]).map((id) => newById.get(id)).find((e): e is TaskEvent => e != null);
+    if (!credit) continue;
+    const copies = (await db.tasks.filter((t) => !t.isDeleted && t.sharedCounterId === rootId).toArray()).map((t) => t.id);
+    const placements = await db.boardTasks.where('taskId').anyOf([rootId, ...copies]).filter((bt) => !bt.isDeleted).toArray();
+    const boardIds = [...new Set(placements.map((p) => p.boardId))].filter((id) => id !== boardId);
+    const boards = boardIds.length > 0 ? healBoardNames(await db.boards.where('id').anyOf(boardIds).toArray()) : [];
+    const otherBoards = boards
+      .filter((b) => !b.isDeleted && b.status !== BoardStatus.DRAFT && windowContains(b, credit.occurredAt))
+      .map((b) => ({ boardId: b.id, boardName: b.name }));
+    return { contributor, root, credit, otherBoards };
+  }
+  return null;
 }

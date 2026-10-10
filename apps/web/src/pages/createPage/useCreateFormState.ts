@@ -1,5 +1,5 @@
 import { useCallback, useState } from 'react';
-import { CountsTowardError, setCountsToward as setCountsTowardOp } from '../../db/operations/countsToward';
+import { CountsTowardError } from '../../db/operations/countsToward';
 import { countsTowardProblemLabel } from '../../components/counters/countsTowardLabels';
 import type { CountsTowardSelection } from '../../components/counters/countsTowardFieldModel';
 import {
@@ -7,10 +7,11 @@ import {
   TaskType,
   countKindNeedsUnit,
   type CountKind,
+  type CreateTaskInput,
   type Task,
   type CompoundChild,
 } from '@oybc/shared';
-import { createTask } from '../../db/operations/tasks';
+import { createTask, createTaskCountingToward } from '../../db/operations/tasks';
 import { generateUUID, currentTimestamp } from '../../db/utils';
 import { countingGoalError, countingSaveFields } from './createFormCounting';
 import { type SubtaskFormState, createEmptySubtask } from '../../components/subtaskDraftUtils';
@@ -610,8 +611,13 @@ export function useCreateFormState({
         }
 
         // ── Immediate-persist path (default — standalone quick-add) ────────
+        // "Counts toward": create + flag in ONE transaction (a refused flag persists nothing).
+        const create = (input: CreateTaskInput): Promise<Task> =>
+          countsTowardEnabled && countsToward.counterId != null && taskType !== TaskType.ACHIEVEMENT
+            ? createTaskCountingToward(userId, input, { counterId: countsToward.counterId, amount: countsToward.amount })
+            : createTask(userId, input);
         if (taskType === TaskType.NORMAL) {
-          newTask = await createTask(userId, {
+          newTask = await create({
             title: title.trim(),
             description: description.trim() || undefined,
             type: TaskType.NORMAL,
@@ -624,7 +630,7 @@ export function useCreateFormState({
           });
         } else if (taskType === TaskType.COUNTING) {
           const fields = countingSaveFields(kind, action, unit, maxCountStr, title);
-          newTask = await createTask(userId, {
+          newTask = await create({
             title: fields.title,
             description: description.trim() || undefined,
             type: TaskType.COUNTING,
@@ -667,11 +673,6 @@ export function useCreateFormState({
             startDate: defaultStartDate,
             endDate: defaultEndDate,
           });
-        }
-
-        // "Counts toward" — through the ONE write path (validates, stamps `since`, cascades).
-        if (countsTowardEnabled && countsToward.counterId != null && taskType !== TaskType.ACHIEVEMENT) {
-          await setCountsTowardOp(newTask.id, countsToward.counterId, countsToward.amount);
         }
 
         onTaskCreated(newTask);

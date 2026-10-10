@@ -1,6 +1,7 @@
 import { db } from '../internal';
 import {
   SyncOperationType,
+  TaskType,
   buildForkChildrenIndex,
   canContribute,
   candidateContributionIds,
@@ -29,9 +30,7 @@ import { currentTimestamp } from '../utils';
 import { addToSyncQueue } from './syncQueue';
 import { getSealImmuneWindowsForTask, stampTaskCachesAuthored } from './taskEvents';
 import { refreshDerivedBaselines } from './derivedCounters';
-import { writeLinkedRowPropagation, type AffectedBoard } from './tasks.sharedCounter';
-import { isBoardCreditable } from '../../utils/boardDisplayUtils';
-import { healBoardNames } from './boardNames';
+import { writeLinkedRowPropagation } from './tasks.sharedCounter';
 import { reDeriveSealedBoardsForTasks } from './sealing';
 import { refreshWatchersForBoards, resolveAffectedBoardIds } from './boardLifecycle';
 import { runBoardCascadeForTasks } from './orchestration';
@@ -68,16 +67,19 @@ import { runBoardCascadeForTasks } from './orchestration';
  */
 export const MAX_COUNTS_TOWARD_DEPTH = 3;
 
+/** {@link CountsTowardError} codes: the shared write-time problems plus the two local ones. */
+export type CountsTowardErrorCode = CountsTowardProblem | 'task-missing' | 'compound-needs-child';
+
 /** Refused {@link setCountsToward}; nothing is written. */
 export class CountsTowardError extends Error {
   /** Why it was refused. */
-  readonly code: CountsTowardProblem | 'task-missing';
+  readonly code: CountsTowardErrorCode;
 
   /**
    * @param code - The refusal reason.
    * @param message - Developer-facing detail.
    */
-  constructor(code: CountsTowardProblem | 'task-missing', message: string) {
+  constructor(code: CountsTowardErrorCode, message: string) {
     super(message);
     this.name = 'CountsTowardError';
     this.code = code;
@@ -447,6 +449,11 @@ export async function setCountsTowardInTransaction(taskId: string, counterId: st
       });
       if (problem) throw new CountsTowardError(problem, `setCountsToward: ${taskId} → ${counterId} refused (${problem})`);
     }
+    if (counterId == null && task.type === TaskType.COMPOUND && (await liveChildCount(taskId)) === 0) {
+      // A zero-child compound is legal ONLY while it counts toward (§3a); cleared, it
+      // would evaluate vacuously complete (phantom done squares / bingo).
+      throw new CountsTowardError('compound-needs-child', `setCountsToward: ${taskId} has no sub-tasks; clearing the flag is refused`);
+    }
     const previousRoot = task.countsTowardCounterId ?? null;
     const since = counterId == null ? undefined : counterId === previousRoot && task.countsTowardSince != null ? task.countsTowardSince : now;
     const { countsTowardCounterId: _id, countsTowardAmount: _amount, countsTowardSince: _since, ...rest } = task;
@@ -463,27 +470,40 @@ export async function setCountsTowardInTransaction(taskId: string, counterId: st
   }
 }
 
-/**
- * The boards a counts-toward credit on `rootId` lands on, for the credited
- * toast ("+1 Books — also counted on …"): the ACTIVE, creditable boards
- * (`isBoardCreditable` — not sealed, window not ended) placing the counter
- * root or any live linked copy, minus `excludeBoardId` (the board the
- * completion was made on). Same board set the shared-counter increment path
- * credits.
- *
- * @param rootId - The counter root.
- * @param excludeBoardId - The completing board (never listed).
- * @param now - The clock the creditable check uses.
- */
-export async function creditedBoardsForCounter(rootId: string, excludeBoardId: string | null, now: Date): Promise<AffectedBoard[]> {
-  const copies = await db.tasks.filter((t) => !t.isDeleted && t.sharedCounterId === rootId).toArray();
-  const ids = [rootId, ...copies.map((c) => c.id)];
-  const placements = await db.boardTasks.where('taskId').anyOf(ids).filter((bt) => !bt.isDeleted).toArray();
-  const boardIds = [...new Set(placements.map((p) => p.boardId))].filter((id) => id !== excludeBoardId);
-  if (boardIds.length === 0) return [];
-  const boards = healBoardNames(await db.boards.where('id').anyOf(boardIds).toArray());
-  return boards.filter((b) => isBoardCreditable(b, now)).map((b) => ({ boardId: b.id, boardName: b.name }));
+/** Live sub-task links of a compound. */
+async function liveChildCount(compoundId: string): Promise<number> {
+  return db.compoundChildren.where('compoundTaskId').equals(compoundId).filter((l) => !l.isDeleted).count();
 }
+
+/**
+ * Re-validates a task's STORED counts-toward flag against the rows as they
+ * are now — run AFTER a compound structure edit inside its transaction, so a
+ * sub-task added in the same save cannot close a feeding loop the earlier
+ * validation could not see (docs/SHARED_COUNTER_SETTINGS.md §3e). A task that
+ * is not flagged passes.
+ *
+ * @param taskId - The edited task.
+ * @param opts.strict - Refuse ANY problem (the save also set / changed the flag); default: a loop only.
+ * @throws {CountsTowardError} with the `countsTowardProblem` code (the write rolls back).
+ */
+export async function assertCountsTowardStillValid(taskId: string, opts: { strict?: boolean } = {}): Promise<void> {
+  const task = await db.tasks.get(taskId);
+  if (!task || task.isDeleted || task.countsTowardCounterId == null) return;
+  const problem = countsTowardProblem({
+    task,
+    targetId: task.countsTowardCounterId,
+    amount: task.countsTowardAmount,
+    tasks: await db.tasks.toArray(),
+    children: await db.compoundChildren.filter((c) => !c.isDeleted).toArray(),
+  });
+  // A save that did not touch the flag refuses only a LOOP its structure
+  // closed; a target that drifted for another reason (deleted elsewhere) does
+  // not block an unrelated edit — the cascade writes nothing for it.
+  if (problem && (opts.strict || problem === 'cycle')) {
+    throw new CountsTowardError(problem, `countsToward: ${taskId} → ${task.countsTowardCounterId} no longer valid (${problem})`);
+  }
+}
+
 
 /**
  * {@link applyCountsTowardInTransaction} in its own transaction.

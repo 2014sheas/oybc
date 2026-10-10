@@ -466,33 +466,241 @@ final class CountsTowardUITests: XCTestCase {
         XCTAssertEqual(boards.map(\.boardId), [bB])
     }
 
-    func test_completionToast_carriesAnUncompleteUndo_andIsAbsentWithoutOtherBoards() throws {
-        let db = try makeDb()
+    // MARK: - Credited toast (diff of live credits)
+
+    private func link(_ id: String, _ parent: String, _ child: String, _ idx: Int) -> CompoundChild {
+        CompoundChild(id: id, compoundTaskId: parent, childTaskId: child, childIndex: idx,
+                      createdAt: t0, updatedAt: t0, lastSyncedAt: nil, version: 1, isDeleted: false, deletedAt: nil)
+    }
+
+    /// Root on board B (window open), contributor placed on board A.
+    private func seedToast(_ db: AppDatabase, contributor: Task) throws {
         try db.write { d in
             try task(root, type: .counting, maxCount: 12, isCounter: true, title: "Books").save(d)
-            try task(simple, countsToward: root, amount: 2).save(d)
+            try contributor.save(d)
             try board(bA).save(d)
             try board(bB).save(d)
-            try placement("bt1", bA, simple).save(d)
+            try placement("bt1", bA, contributor.id).save(d)
+            try placement("bt2", bB, root).save(d)
         }
-        // No other board places the counter yet: no toast.
-        XCTAssertNil(BoardPlayViewModel.countsTowardCreditToast(
-            database: db, taskId: simple, intent: .setCompleted(true), boardTaskId: "bt1", currentBoardId: bA
-        ))
-        try db.write { d in try self.placement("bt2", self.bB, self.root).save(d) }
-        let payload = try XCTUnwrap(BoardPlayViewModel.countsTowardCreditToast(
-            database: db, taskId: simple, intent: .setCompleted(true), boardTaskId: "bt1", currentBoardId: bA
-        ))
+    }
+
+    private func complete(_ db: AppDatabase, _ taskId: String, intent: AppDatabase.CompletionIntent, at stamp: String? = nil) throws {
+        let b = try XCTUnwrap(try db.read { try Board.fetchOne($0, key: self.bA) })
+        let bt = try XCTUnwrap(try db.read { try BoardTask.fetchOne($0, key: "bt1") })
+        _ = try db.completeTaskOrchestrated(board: b, taskId: taskId, intent: intent, boardTask: bt, now: stamp ?? now)
+    }
+
+    private func toast(
+        _ db: AppDatabase, before: CountsTowardCreditSnapshot?, undo: SharedCounterCreditToastPayload.UndoKind
+    ) -> SharedCounterCreditToastPayload? {
+        BoardPlayViewModel.countsTowardCreditToast(database: db, snapshot: before, currentBoardId: bA, undo: undo)
+    }
+
+    func test_toast_simpleCompletionCreditedOnAnotherBoard() throws {
+        let db = try makeDb()
+        try seedToast(db, contributor: task(simple, countsToward: root, amount: 2))
+        let before = BoardPlayViewModel.countsTowardCreditSnapshot(database: db, currentBoardId: bA)
+        try complete(db, simple, intent: .setCompleted(true))
+        let payload = try XCTUnwrap(toast(db, before: before, undo: .uncomplete(taskId: simple, boardTaskId: "bt1")))
         XCTAssertEqual(payload.undo, .uncomplete(taskId: simple, boardTaskId: "bt1"))
-        XCTAssertEqual(payload.sourceTaskId, root)
         XCTAssertEqual(payload.amount, 2)
         XCTAssertTrue(payload.message.contains("also counted on Board e2"), payload.message)
-        // Un-completing never toasts; an unflagged task never toasts.
-        XCTAssertNil(BoardPlayViewModel.countsTowardCreditToast(
-            database: db, taskId: simple, intent: .setCompleted(false), boardTaskId: "bt1", currentBoardId: bA
+    }
+
+    func test_toast_countingGoalReached_undoRestoresPreviousCount() throws {
+        let db = try makeDb()
+        try seedToast(db, contributor: task(loose, type: .counting, maxCount: 2, countsToward: root))
+        // 1 of 2 → no credit yet.
+        try complete(db, loose, intent: .setWindowedCount(1))
+        let before = BoardPlayViewModel.countsTowardCreditSnapshot(database: db, currentBoardId: bA)
+        try complete(db, loose, intent: .setWindowedCount(2))
+        let undo = BoardPlayViewModel.creditUndo(intent: .setWindowedCount(2), taskId: loose, boardTaskId: "bt1", priorCount: 1)
+        let payload = try XCTUnwrap(toast(db, before: before, undo: undo))
+        XCTAssertEqual(payload.undo, .restoreCount(taskId: loose, boardTaskId: "bt1", count: 1))
+        // The Undo's write restores the count and withdraws the credit.
+        try complete(db, loose, intent: .setWindowedCount(1))
+        let after = BoardPlayViewModel.countsTowardCreditSnapshot(database: db, currentBoardId: bA)
+        XCTAssertEqual(after?.liveIdsByRoot[root]?.count, 0)
+    }
+
+    func test_toast_compoundViaChildToggle_once() throws {
+        let db = try makeDb()
+        try seedToast(db, contributor: task(boxId, type: .compound, countsToward: root))
+        try db.write { d in
+            try self.task(self.kid).save(d)
+            try self.link("l1", self.boxId, self.kid, 0).save(d)
+        }
+        let before = BoardPlayViewModel.countsTowardCreditSnapshot(database: db, currentBoardId: bA)
+        _ = try db.toggleCompoundChildFallback(
+            childTaskId: kid, desiredCompleted: true, windowStart: start, windowEnd: end, boardId: bA, now: now
+        )
+        let payload = try XCTUnwrap(toast(db, before: before, undo: .uncomplete(taskId: kid, boardTaskId: nil)))
+        XCTAssertEqual(payload.undo, .uncomplete(taskId: kid, boardTaskId: nil))
+        // A second snapshot after the credit exists yields no further toast.
+        let again = BoardPlayViewModel.countsTowardCreditSnapshot(database: db, currentBoardId: bA)
+        XCTAssertNil(toast(db, before: again, undo: .counterLog))
+    }
+
+    func test_toast_noneWhenNothingCredited() throws {
+        // A late log stamped before `since` writes no credit.
+        let db = try makeDb()
+        var flagged = task(simple, countsToward: root)
+        flagged.countsTowardSince = "2026-12-01T00:00:00.000Z"
+        try seedToast(db, contributor: flagged)
+        let before = BoardPlayViewModel.countsTowardCreditSnapshot(database: db, currentBoardId: bA)
+        try complete(db, simple, intent: .setCompleted(true))
+        XCTAssertNil(toast(db, before: before, undo: .counterLog))
+
+        // Unflagged: no snapshot, no toast.
+        let db2 = try makeDb()
+        try seedToast(db2, contributor: task(simple))
+        XCTAssertNil(BoardPlayViewModel.countsTowardCreditSnapshot(database: db2, currentBoardId: bA))
+    }
+
+    func test_toast_noneWhenNoOtherBoardWindowHoldsTheCredit() throws {
+        let db = try makeDb()
+        try seedToast(db, contributor: task(simple, countsToward: root))
+        // Move board B's window to the past: it no longer holds today's credit.
+        try db.write { d in
+            try d.execute(sql: "UPDATE boards SET endDate = ? WHERE id = ?", arguments: ["2026-10-13T00:00:00.000Z", self.bB])
+        }
+        let before = BoardPlayViewModel.countsTowardCreditSnapshot(database: db, currentBoardId: bA)
+        try complete(db, simple, intent: .setCompleted(true))
+        XCTAssertNil(toast(db, before: before, undo: .counterLog))
+    }
+
+    // MARK: - Create is one write
+
+    func test_createTask_refusalPersistsNothing() throws {
+        let db = try makeDb()
+        try db.saveTask(task(root, type: .counting, maxCount: 12, isCounter: true, countKind: .continuous))
+        XCTAssertThrowsError(try db.createTaskAndEnqueue(
+            task("new-1", title: "Nope"), now: now, countsToward: CountsTowardPatch(counterId: root, amount: 1)
         ))
-        XCTAssertNil(BoardPlayViewModel.countsTowardCreditToast(
-            database: db, taskId: root, intent: .setCompleted(true), boardTaskId: nil, currentBoardId: bA
-        ))
+        XCTAssertNil(try db.fetchTask(id: "new-1"))
+    }
+
+    func test_createCompound_loopThroughAutoLinkedSubTaskIsRefusedAndNothingPersists() throws {
+        let db = try makeDb()
+        try db.write { d in
+            try self.task(self.root, type: .counting, maxCount: 12, isCounter: true).save(d)
+            try self.task(self.copy, type: .counting, maxCount: 1, sharedCounterId: self.root).save(d)
+        }
+        let parent = task(boxId, type: .compound, title: "Loop")
+        XCTAssertThrowsError(try db.createCompoundAndEnqueue(
+            parent: parent, newChildTasks: [], childLinks: [link("l1", boxId, copy, 0)], now: now,
+            countsToward: CountsTowardPatch(counterId: root, amount: 1)
+        )) { XCTAssertEqual($0 as? AppDatabase.CountsTowardError, .refused(.cycle)) }
+        XCTAssertNil(try db.fetchTask(id: boxId))
+        XCTAssertEqual(try db.read { try CompoundChild.fetchCount($0) }, 0)
+    }
+
+    func test_createCompound_alreadyDoneSubTaskCreditsAtCreate() throws {
+        let db = try makeDb()
+        try db.write { d in
+            try self.task(self.root, type: .counting, maxCount: 12, isCounter: true).save(d)
+            try self.task(self.kid).save(d)
+            try self.completion("c-kid", self.kid, "2026-10-14T10:00:00.000Z").insert(d)
+        }
+        try db.createCompoundAndEnqueue(
+            parent: task(boxId, type: .compound), newChildTasks: [], childLinks: [link("l1", boxId, kid, 0)], now: now,
+            countsToward: CountsTowardPatch(counterId: root, amount: 1)
+        )
+        let saved = try fetch(db, boxId)
+        XCTAssertEqual(saved.countsTowardCounterId, root)
+        let credits = try db.read {
+            try TaskEvent.filter(Column("taskId") == self.root && Column("isDeleted") == false).fetchCount($0)
+        }
+        XCTAssertEqual(credits, 1)
+    }
+
+    // MARK: - Loop closed by the same Save's structure edit
+
+    private func seedFlaggedCompound(_ db: AppDatabase) throws {
+        try db.write { d in
+            try self.task(self.root, type: .counting, maxCount: 12, isCounter: true).save(d)
+            try self.task(self.copy, type: .counting, maxCount: 1, sharedCounterId: self.root).save(d)
+            try self.task(self.kid).save(d)
+            try self.task(self.boxId, type: .compound, countsToward: self.root).save(d)
+            try self.link("l1", self.boxId, self.kid, 0).save(d)
+            try self.board(self.bA).save(d)
+            try self.placement("bt1", self.bA, self.boxId).save(d)
+        }
+    }
+
+    private func structureAddingCopy(_ db: AppDatabase) throws -> TaskEditPatch {
+        let box = try fetch(db, boxId)
+        var draft = TaskEditPatch.seededForEditor(from: box)
+        draft.children = [try fetch(db, kid), try fetch(db, copy)].map { ChildPatch(from: $0) }
+        return draft
+    }
+
+    func test_globalEditor_structureLoopOnAnAlreadyFlaggedCompoundIsRefused() throws {
+        let db = try makeDb()
+        try seedFlaggedCompound(db)
+        let box = try fetch(db, boxId)
+        XCTAssertThrowsError(try db.applyTaskEditPatch(
+            taskId: boxId, patch: patch(box, countsToward: nil, compound: try structureAddingCopy(db)), now: now
+        )) { XCTAssertEqual(AppDatabase.taskEditErrorMessage($0), "That counter already feeds this task.") }
+        XCTAssertEqual(try db.read { try CompoundChild.filter(Column("compoundTaskId") == self.boxId && Column("isDeleted") == false).fetchCount($0) }, 1)
+    }
+
+    func test_boardEdit_structureLoopOnAnAlreadyFlaggedCompoundIsRefused() throws {
+        let db = try makeDb()
+        try seedFlaggedCompound(db)
+        let ov = StagedTaskOverride(
+            title: boxId, type: .compound, action: nil, unit: nil, maxCount: nil,
+            compound: try structureAddingCopy(db), countsToward: nil
+        )
+        XCTAssertThrowsError(try commit(db, stagedId: boxId, boardTaskId: "bt1", ov)) {
+            XCTAssertEqual($0 as? AppDatabase.CountsTowardError, .refused(.cycle))
+        }
+        XCTAssertEqual(try db.read { try CompoundChild.filter(Column("compoundTaskId") == self.boxId && Column("isDeleted") == false).fetchCount($0) }, 1)
+    }
+
+    // MARK: - Board Edit: a NEW staged task is flagged through the one path, atomically
+
+    func test_boardEdit_newTaskFlagRefusedWhenTheCounterChangedRollsTheInsertBack() throws {
+        let db = try makeDb()
+        try db.write { d in
+            try self.task(self.root, type: .counting, maxCount: 12, isCounter: true, countKind: .continuous).save(d)
+            try self.board(self.bA).save(d)
+        }
+        let newTask = task("new-staged", title: "Staged")
+        let ov = staged("Staged", countsToward: CountsTowardPatch(counterId: root, amount: 1))
+        XCTAssertThrowsError(try db.write { d in
+            try newTask.save(d)                       // step 1 inserts the pending row
+            try self.placement("bt-new", self.bA, "new-staged").save(d)
+            try BoardPlayViewModel.applyStagedOverrides(
+                db: d, boardId: self.bA,
+                overrides: [.init(stagedId: "new-staged", override: ov, mapTask: nil)],
+                cells: [.init(boardTaskId: "bt-new", isNew: false, row: 0, col: 0, stagedTaskId: "new-staged")],
+                now: self.now
+            )
+        }) { XCTAssertEqual($0 as? AppDatabase.CountsTowardError, .refused(.targetNotDiscrete)) }
+        XCTAssertNil(try db.fetchTask(id: "new-staged"), "the whole Save rolled back")
+    }
+
+    func test_boardEdit_newTaskIsFlaggedWithTheSavesNow() throws {
+        let db = try makeDb()
+        try db.write { d in
+            try self.task(self.root, type: .counting, maxCount: 12, isCounter: true).save(d)
+            try self.board(self.bA).save(d)
+            try self.task("new-staged", title: "Staged").save(d)
+            try self.placement("bt-new", self.bA, "new-staged").save(d)
+        }
+        let ov = staged("Staged", countsToward: CountsTowardPatch(counterId: root, amount: 1))
+        try db.write { d in
+            try BoardPlayViewModel.applyStagedOverrides(
+                db: d, boardId: self.bA,
+                overrides: [.init(stagedId: "new-staged", override: ov, mapTask: nil)],
+                cells: [.init(boardTaskId: "bt-new", isNew: false, row: 0, col: 0, stagedTaskId: "new-staged")],
+                now: self.now
+            )
+        }
+        let saved = try fetch(db, "new-staged")
+        XCTAssertEqual(saved.countsTowardCounterId, root)
+        XCTAssertEqual(saved.countsTowardSince, now)
     }
 }

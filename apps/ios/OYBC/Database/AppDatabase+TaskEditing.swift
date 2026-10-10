@@ -122,6 +122,9 @@ extension AppDatabase {
                 try Self.setCountsToward(db: db, taskId: taskId, counterId: ct.counterId, amount: ct.amount, now: now)
             }
             let saved = try Self.applyTaskEditPatchSteps(db: db, taskId: taskId, patch: patch, now: now)
+            try Self.recheckCountsToward(
+                db: db, taskId: taskId, strict: patch.countsToward.map { $0.counterId != nil } ?? false
+            )
             guard let ct = patch.countsToward else { return saved }
             if ct.counterId == nil {
                 if saved.type == .compound,

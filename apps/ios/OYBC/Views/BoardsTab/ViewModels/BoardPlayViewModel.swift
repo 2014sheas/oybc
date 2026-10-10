@@ -861,6 +861,7 @@ final class BoardPlayViewModel: ObservableObject {
             guard let self = self else { return }
             do {
                 var newBingoMsg: String? = nil
+                let creditBefore = Self.countsTowardCreditSnapshot(database: database, currentBoardId: currentBoardId)
                 // Child isn't on this board — the fallback write (child event
                 // append + cache stamp + windowed cross-board cascade) is owned
                 // by `AppDatabase.toggleCompoundChildFallback`. This VM derives
@@ -886,7 +887,7 @@ final class BoardPlayViewModel: ObservableObject {
                         newBingoMsg = "Bingo! (\(gained.joined(separator: ", ")))"
                     }
                 }
-                let creditPayload = Self.countsTowardCreditToast(database: database, taskId: childTask.id, intent: .setCompleted(desiredCompleted), boardTaskId: nil, currentBoardId: currentBoardId)
+                let creditPayload = Self.countsTowardCreditToast(database: database, snapshot: creditBefore, currentBoardId: currentBoardId, undo: .uncomplete(taskId: childTask.id, boardTaskId: nil))
                 await MainActor.run {
                     self.reload { self.isProcessing = false }
                     if let msg = newBingoMsg {
@@ -931,7 +932,7 @@ final class BoardPlayViewModel: ObservableObject {
     ///   - boardTask: The `BoardTask` placement record on the current board
     ///     (updatedAt/version will be bumped + sync-queued).
     ///   - persistDefault: R3 — an explicit custom amount to save as the task's default, off the main actor.
-    private func runOrchestration(
+    func runOrchestration(
         taskId: String,
         intent: AppDatabase.CompletionIntent,
         boardTask: BoardTask, persistDefault: CountValue? = nil
@@ -941,11 +942,13 @@ final class BoardPlayViewModel: ObservableObject {
         let now = AppDatabase.currentTimestamp()
         let currentBoardId = board.id
         let database = self.database
+        let priorCount = windowedState(forTaskId: taskId).count
 
         _Concurrency.Task.detached(priority: .userInitiated) { [weak self] in
             guard let self = self else { return }
             do {
                 var newBingoMsg: String? = nil
+                let creditBefore = Self.countsTowardCreditSnapshot(database: database, currentBoardId: currentBoardId)
 
                 // The whole write transaction lives in `AppDatabase.completeTaskOrchestrated`;
                 // this VM only derives the *current* board's flash message from its results.
@@ -973,7 +976,7 @@ final class BoardPlayViewModel: ObservableObject {
                     }
                 }
 
-                let creditPayload = Self.countsTowardCreditToast(database: database, taskId: taskId, intent: intent, boardTaskId: boardTask.id, currentBoardId: currentBoardId)
+                let creditPayload = Self.countsTowardCreditToast(database: database, snapshot: creditBefore, currentBoardId: currentBoardId, undo: Self.creditUndo(intent: intent, taskId: taskId, boardTaskId: boardTask.id, priorCount: priorCount))
                 await MainActor.run {
                     // Full reload: board + placements + workspace task data. The
                     // task-data refresh keeps the compound detail sheet (rendered

@@ -180,13 +180,10 @@ extension BoardPlayViewModel {
         let pendingPayloads: [PendingTaskPayload] = draftSnapshot.values.compactMap { cell in
             guard let payload = cell.pending else { return nil }
             guard let override = overridesSnapshot[payload.task.id] else { return payload }
-            var merged = Self.applyingOverride(override, to: payload.task, writesKind: true)
-            // A pending task is inserted at step 1 (no `setCountsToward` run): stamp the D11 anchor here.
-            if merged.countsTowardCounterId != nil, merged.countsTowardSince == nil {
-                merged.countsTowardSince = AppDatabase.currentTimestamp()
-            }
+            // The flag is NOT merged: the inserted row goes through `setCountsToward(db:)`
+            // at step 7b like a stored one (validated, stamped with the Save's `now`).
             return PendingTaskPayload(
-                task: merged,
+                task: Self.applyingOverride(override, to: payload.task, writesKind: true, mergesCountsToward: false),
                 childTasks: payload.childTasks,
                 childLinks: payload.childLinks
             )
@@ -479,6 +476,7 @@ extension BoardPlayViewModel {
         guard !overrides.isEmpty, let board = try Board.fetchOne(db, key: boardId) else { return }
         let placements = try BoardTask
             .filter(Column("boardId") == boardId && Column("isDeleted") == false).fetchAll(db)
+        var touched = Set<String>()
         for input in overrides {
             // Only a square still on the board commits its staged edit: a
             // removed / replaced square's override is dropped (no targets).
@@ -495,7 +493,9 @@ extension BoardPlayViewModel {
                 // at step 1 (no `mapTask`); only a compound override still
                 // needs the inserted row (child CRUD + rule).
                 var row: Task? = isRemapped ? try Task.fetchOne(db, key: target) : input.mapTask
-                if row == nil && input.override.compound != nil { row = try Task.fetchOne(db, key: target) }
+                if row == nil && (input.override.compound != nil || input.override.countsToward != nil) {
+                    row = try Task.fetchOne(db, key: target)
+                }
                 guard var base = row else { continue }
                 // A linked counter is never converted or given sub-tasks.
                 if base.sharedCounterId != nil, input.override.type != base.type || input.override.compound != nil {
@@ -511,6 +511,7 @@ extension BoardPlayViewModel {
                     guard let forkRow = try Task.fetchOne(db, key: target) else { continue }
                     base = forkRow
                 }
+                touched.insert(target)
                 // Counts toward — the ONE write path, on the board-scoped target
                 // (the FORK when the task forked, never the original). Before the
                 // field apply so a conversion / compound edit validates against
@@ -577,6 +578,12 @@ extension BoardPlayViewModel {
                 try AppDatabase.saveTaskAndCascade(db: db, task: updated)
                 try AppDatabase.stampForkCaches(db: db, target: scoped, now: now)
             }
+        }
+        // The flag was validated before the structure step: re-run it against the
+        // post-edit rows so a loop closed by this Save's sub-task edit never persists.
+        let patched = Set(overrides.filter { $0.override.countsToward != nil }.map(\.stagedId))
+        for id in touched.sorted() {
+            try AppDatabase.recheckCountsToward(db: db, taskId: id, strict: patched.contains(id))
         }
     }
 

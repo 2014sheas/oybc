@@ -24,6 +24,8 @@ export interface CountsTowardFieldProps {
   onChange: (next: CountsTowardSelection) => void;
   /** The host sheet's field-label class (keeps the row's label in step with its neighbours). */
   labelClassName?: string;
+  /** Create sheets: render nothing until at least one Discrete counter exists (ruled 2026-10-10). */
+  hideWhenNoTargets?: boolean;
 }
 
 /**
@@ -34,7 +36,7 @@ export interface CountsTowardFieldProps {
  * KindTag · "{n} all-time". Re-pointing an already-counting task asks first
  * (the confirm body is the one place the consequence is stated).
  */
-export function CountsTowardField({ userId, taskId, stored, value, onChange, labelClassName }: CountsTowardFieldProps): React.ReactElement {
+export function CountsTowardField({ userId, taskId, stored, value, onChange, labelClassName, hideWhenNoTargets }: CountsTowardFieldProps): React.ReactElement | null {
   const targets = useCountsTowardTargets(userId, taskId);
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
@@ -56,6 +58,7 @@ export function CountsTowardField({ userId, taskId, stored, value, onChange, lab
     pick(target?.id ?? null);
   };
   const storedTarget = stored.counterId != null ? targets.find((t) => t.id === stored.counterId) : undefined;
+  if (hideWhenNoTargets && targets.length === 0) return null;
 
   return (
     <div className={styles.field}>
@@ -94,7 +97,7 @@ export function CountsTowardField({ userId, taskId, stored, value, onChange, lab
       </div>
 
       {open && (
-        <div className={styles.listbox} id={listId} role="listbox" aria-label="Counters">
+        <div className={styles.popover}>
           <div className={styles.searchWrap}>
             <input
               type="text"
@@ -106,6 +109,7 @@ export function CountsTowardField({ userId, taskId, stored, value, onChange, lab
               autoFocus
             />
           </div>
+          <div id={listId} role="listbox" aria-label="Counters">
           <button type="button" role="option" aria-selected={value.counterId == null} className={styles.option} onClick={() => requestPick(null)}>
             <span className={styles.optionNone}>{COUNTS_TOWARD_NONE}</span>
             {value.counterId == null && <span className={styles.check}><RisoIcon name="check" size={16} /></span>}
@@ -121,6 +125,7 @@ export function CountsTowardField({ userId, taskId, stored, value, onChange, lab
               {t.id === value.counterId && <span className={styles.check}><RisoIcon name="check" size={16} /></span>}
             </button>
           ))}
+          </div>
         </div>
       )}
 

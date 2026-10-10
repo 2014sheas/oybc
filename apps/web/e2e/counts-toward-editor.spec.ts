@@ -52,7 +52,8 @@ test.describe('Task editors — Counts toward row', () => {
     await sheet.getByRole('button', { name: 'Counts toward: None' }).click();
     const listbox = sheet.getByRole('listbox', { name: 'Counters' });
     await expect(listbox.getByRole('option')).toHaveText([/None/, /Books.*Discrete.*all-time/, /Miles.*Discrete.*all-time/]);
-    await listbox.getByRole('textbox', { name: 'Search counters' }).fill('boo');
+    // The search box sits beside the listbox, not inside it (a11y).
+    await sheet.getByRole('textbox', { name: 'Search counters' }).fill('boo');
     await expect(listbox.getByRole('option')).toHaveCount(2);
     await listbox.getByRole('option', { name: /Books/ }).click();
     await expect(sheet.getByRole('button', { name: 'Counts toward: Books' })).toBeVisible();

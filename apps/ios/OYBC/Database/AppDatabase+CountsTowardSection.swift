@@ -32,35 +32,14 @@ extension CountsTowardSectionData: Equatable {
 
 extension AppDatabase {
 
-    /// The Counter Detail "Counts toward" section for `counterId`, or nil when
-    /// the counter is missing / deleted / not Discrete (the section is hidden
-    /// for Continuous and Duration counters — only a Discrete counter can be a
-    /// counts-toward target).
-    ///
-    /// - Parameter counterId: The counter's root task id.
-    /// - Returns: The section data (possibly with no rows), or nil to hide it.
-    /// - Throws: A database read error.
-    func fetchCountsTowardSection(counterId: String) throws -> CountsTowardSectionData? {
-        try read { db in try Self.fetchCountsTowardSection(db: db, counterId: counterId) }
-    }
-
-    /// `db`-scoped twin of `fetchCountsTowardSection(counterId:)`.
-    static func fetchCountsTowardSection(db: Database, counterId: String) throws -> CountsTowardSectionData? {
-        guard let root = try Task.fetchOne(db, key: counterId), CountsToward.isTarget(root) else { return nil }
-        let tasks = try Task.fetchAll(db)
-        var taskById: [String: Task] = [:]
-        for t in tasks { taskById[t.id] = t }
-        let contributors = tasks.filter {
-            !$0.isDeleted && $0.countsTowardCounterId == counterId && CountsToward.canContribute($0)
-        }
-        let name = CounterSettings.counterDisplayName(root)
-        guard !contributors.isEmpty else {
-            return CountsTowardSectionData(counterName: name, rows: [], taskById: [:], boardById: [:])
-        }
-
-        // Scope the event / placement reads: contributors, their fork lineages,
-        // their compound subtrees (links in any state), the roots their linked
-        // children read, and the counter root (the credits).
+    /// The `CountsToward.Inputs` the row / credit kernels read for counter
+    /// `counterId`: scoped to its contributors, their fork lineages, compound
+    /// subtrees (links in any state), the roots their linked children read and
+    /// the counter root (the credits). Shared by the Counter Detail section and
+    /// the board-play credited toast.
+    static func countsTowardInputs(
+        db: Database, counterId: String, tasks: [Task], taskById: [String: Task], contributors: [Task]
+    ) throws -> CountsToward.Inputs {
         var allChildrenByCompound: [String: [CompoundChild]] = [:]
         var childrenByCompound: [String: [CompoundChild]] = [:]
         for c in try CompoundChild.fetchAll(db) {
@@ -94,13 +73,45 @@ extension AppDatabase {
             eventsByTaskId: eventsByTaskId, allEventsByTaskId: allEventsByTaskId,
             placements: placements, boardById: boardById
         )
+        return inputs
+    }
+
+    /// The Counter Detail "Counts toward" section for `counterId`, or nil when
+    /// the counter is missing / deleted / not Discrete (the section is hidden
+    /// for Continuous and Duration counters — only a Discrete counter can be a
+    /// counts-toward target).
+    ///
+    /// - Parameter counterId: The counter's root task id.
+    /// - Returns: The section data (possibly with no rows), or nil to hide it.
+    /// - Throws: A database read error.
+    func fetchCountsTowardSection(counterId: String) throws -> CountsTowardSectionData? {
+        try read { db in try Self.fetchCountsTowardSection(db: db, counterId: counterId) }
+    }
+
+    /// `db`-scoped twin of `fetchCountsTowardSection(counterId:)`.
+    static func fetchCountsTowardSection(db: Database, counterId: String) throws -> CountsTowardSectionData? {
+        guard let root = try Task.fetchOne(db, key: counterId), CountsToward.isTarget(root) else { return nil }
+        let tasks = try Task.fetchAll(db)
+        var taskById: [String: Task] = [:]
+        for t in tasks { taskById[t.id] = t }
+        let contributors = tasks.filter {
+            !$0.isDeleted && $0.countsTowardCounterId == counterId && CountsToward.canContribute($0)
+        }
+        let name = CounterSettings.counterDisplayName(root)
+        guard !contributors.isEmpty else {
+            return CountsTowardSectionData(counterName: name, rows: [], taskById: [:], boardById: [:])
+        }
+
+        let inputs = try countsTowardInputs(
+            db: db, counterId: counterId, tasks: tasks, taskById: taskById, contributors: contributors
+        )
         let rows = CountsToward.countsTowardRows(rootId: counterId, tasks: tasks, inputs: inputs)
         let rowBoardIds = Set(rows.compactMap(\.boardId))
         return CountsTowardSectionData(
             counterName: name,
             rows: rows,
             taskById: taskById.filter { id, _ in rows.contains { $0.taskId == id } },
-            boardById: boardById.filter { rowBoardIds.contains($0.key) }
+            boardById: inputs.boardById.filter { rowBoardIds.contains($0.key) }
         )
     }
 }

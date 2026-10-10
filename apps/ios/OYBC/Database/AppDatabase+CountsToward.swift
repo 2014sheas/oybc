@@ -351,6 +351,25 @@ extension AppDatabase {
         try Self.runBoardCascadeForTasks(db: db, changedTaskIds: [task.id], now: now, countsTowardPreviousRoots: previousRoots)
     }
 
+    /// Re-validates a task's counts-toward flag AFTER the same Save's structure
+    /// edit (a compound sub-task step can close a loop the pre-structure check
+    /// could not see). A task that ends the Save unflagged is skipped. `strict`
+    /// (the Save also set / changed the flag) refuses any problem; otherwise only
+    /// a `.cycle` is refused, so an unrelated edit of an already-flagged task
+    /// is never blocked by a target that drifted for another reason.
+    ///
+    /// - Throws: `CountsTowardError.refused` (rolls the caller's write back).
+    static func recheckCountsToward(db: Database, taskId: String, strict: Bool) throws {
+        guard let task = try Task.fetchOne(db, key: taskId), !task.isDeleted,
+              let target = task.countsTowardCounterId else { return }
+        let problem = CountsToward.problem(
+            task: task, targetId: target, amount: task.countsTowardAmount.map(Double.init),
+            tasks: try Task.fetchAll(db),
+            children: try CompoundChild.filter(Column("isDeleted") == false).fetchAll(db)
+        )
+        if let problem, strict || problem == .cycle { throw CountsTowardError.refused(problem) }
+    }
+
     /// Write the three counts-toward columns as stored on `task`, NULL included
     /// (GRDB's update only SETs encoded keys, and `Task.encode` nil-skips).
     static func writeCountsTowardColumns(db: Database, task: Task) throws {

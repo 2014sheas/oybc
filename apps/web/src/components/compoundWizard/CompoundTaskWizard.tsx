@@ -309,7 +309,7 @@ export function CompoundTaskWizard({
           onNext={() => setCurrentStep(2)}
           countsTowardField={
             countsToward && onCountsTowardChange ? (
-              <CountsTowardField userId={resolvedUserId} stored={NO_COUNTS_TOWARD} value={countsToward} onChange={onCountsTowardChange} />
+              <CountsTowardField userId={resolvedUserId} stored={NO_COUNTS_TOWARD} value={countsToward} onChange={onCountsTowardChange} hideWhenNoTargets />
             ) : undefined
           }
         />

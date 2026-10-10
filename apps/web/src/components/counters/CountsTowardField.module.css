@@ -105,7 +105,7 @@
   font-weight: 800;
   font-variant-numeric: tabular-nums;
 }
-.listbox {
+.popover {
   margin-top: 2px;
   background: var(--riso-paper-2);
   border: 2px solid var(--riso-ink);

@@ -421,7 +421,11 @@ final class CreateFormViewModel {
             guard let self else { return }
             do {
                 if progressChildLinks.isEmpty {
-                    try self.database.createTaskAndEnqueue(newTask, now: now)
+                    // Create + flag in ONE write: a refusal persists nothing.
+                    try self.database.createTaskAndEnqueue(
+                        newTask, now: now,
+                        countsToward: countsTowardTarget.map { CountsTowardPatch(counterId: $0, amount: countsTowardAmount) }
+                    )
                 } else {
                     try self.database.createTaskWithPairedChildrenAndEnqueue(
                         task: newTask,
@@ -429,10 +433,6 @@ final class CreateFormViewModel {
                         childLinks: progressChildLinks,
                         now: now
                     )
-                }
-                // The one counts-toward write path (stamps `countsTowardSince`, syncs, cascades).
-                if let target = countsTowardTarget {
-                    try self.database.setCountsToward(taskId: taskId, counterId: target, amount: countsTowardAmount)
                 }
                 DispatchQueue.main.async {
                     self.isSubmitting = false
@@ -645,7 +645,7 @@ final class CreateFormViewModel {
         let resolvedOperator = rule.operatorType
         let resolvedThreshold: Int? = resolvedOperator == .mOfN ? rule.threshold : nil
 
-        var parentTask = OYBC.Task(
+        let parentTask = OYBC.Task(
             id: compoundId,
             userId: userId,
             title: trimmedTitle,
@@ -672,10 +672,6 @@ final class CreateFormViewModel {
                 errorMessage = problem.label
                 return
             }
-            // Compounds are flagged on the parent BEFORE the create (nothing is complete yet).
-            parentTask.countsTowardCounterId = target
-            parentTask.countsTowardAmount = countsToward.amount
-            parentTask.countsTowardSince = now
         }
 
         // Build child tasks + link rows. For EXISTING subs the child task is
@@ -788,6 +784,8 @@ final class CreateFormViewModel {
         let capturedChildTasks = childTasks
         let capturedChildLinks = childLinks
         let capturedParent = parentTask
+        // The compound goes in unflagged; the create's own write flags it after its children exist.
+        let capturedCountsToward = countsTowardTarget.map { CountsTowardPatch(counterId: $0, amount: countsToward.amount) }
 
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             guard let self else { return }
@@ -800,7 +798,8 @@ final class CreateFormViewModel {
                     parent: capturedParent,
                     newChildTasks: capturedChildTasks,
                     childLinks: capturedChildLinks,
-                    now: now
+                    now: now,
+                    countsToward: capturedCountsToward
                 )
 
                 DispatchQueue.main.async {
@@ -816,7 +815,8 @@ final class CreateFormViewModel {
             } catch {
                 DispatchQueue.main.async {
                     self.isSubmitting = false
-                    self.errorMessage = "Failed: \(error.localizedDescription)"
+                    self.errorMessage = (error as? AppDatabase.CountsTowardError)?.label
+                        ?? "Failed: \(error.localizedDescription)"
                 }
             }
         }

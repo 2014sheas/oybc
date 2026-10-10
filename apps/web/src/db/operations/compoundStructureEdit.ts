@@ -29,6 +29,7 @@ import {
   countKindNeedsUnit,
   forkTaskId,
   type CompoundChild,
+  countsTowardProblem,
   type CountKind,
   type Task,
 } from '@oybc/shared';
@@ -46,7 +47,8 @@ import {
 import { runBoardCascadeForTasks } from './orchestration';
 import { addToSyncQueue } from './syncQueue';
 import { applyKindSwitchThenGoalGuard } from './countKindSwitch';
-import { setCountsToward } from './countsToward';
+import { assertCountsTowardStillValid, setCountsTowardInTransaction } from './countsToward';
+import { countsTowardProblemLabel } from '../../components/counters/countsTowardLabels';
 import { computeTaskCachesFromEvents } from './taskEvents';
 import { updateTaskAndCascade, type UpdateTaskPatch } from './tasks.crud';
 import { ensureBoardScopedTask, repointCompoundLink, stampForkCaches } from './boardScopedEdit';
@@ -229,12 +231,27 @@ export async function applyStagedCompoundChildEdits(
 export async function compoundLinkProblemForPatch(
   parentId: string,
   patch: TaskEditPatch,
+  countsTowardTargetId?: string | null,
 ): Promise<string | null> {
   const kept = patch.children.filter(
     (c) => !c.markedDeleted && c.title.trim().length > 0 && !isNewChild(c) && c.childTaskId,
   );
   if (kept.length === 0) return null;
   const allLinks = (await db.compoundChildren.toArray()).filter((l) => !l.isDeleted);
+  // A flagged compound (stored flag, or the staged one the caller passes) may
+  // not take a sub-task that closes a counts-toward loop — the target counter,
+  // one of its copies, or a compound holding either (§3e).
+  const parent = await db.tasks.get(parentId);
+  const targetId = countsTowardTargetId === undefined ? (parent?.countsTowardCounterId ?? null) : countsTowardTargetId;
+  if (parent && targetId != null) {
+    const keptIds = new Set(kept.map((c) => c.childTaskId as string));
+    const hypothetical: CompoundChild[] = [
+      ...allLinks.filter((l) => l.compoundTaskId !== parentId),
+      ...[...keptIds].map((childTaskId, i) => ({ id: `staged-${i}`, compoundTaskId: parentId, childTaskId, childIndex: i, createdAt: '', updatedAt: '', version: 1, isDeleted: false })),
+    ];
+    const problem = countsTowardProblem({ task: parent, targetId, tasks: await db.tasks.toArray(), children: hypothetical });
+    if (problem === 'cycle') return countsTowardProblemLabel('cycle');
+  }
   const linkedHere = new Set(
     allLinks.filter((l) => l.compoundTaskId === parentId).map((l) => l.childTaskId),
   );
@@ -410,12 +427,20 @@ export type TaskEditSubmit = UpdateTaskPatch & {
  */
 export async function saveTaskEdit(taskId: string, submit: TaskEditSubmit): Promise<void> {
   const { countsToward, ...rest } = submit;
-  // A set / re-point goes FIRST (it validates before any write, and a compound
-  // emptied of sub-tasks in the same save is then judged against the new flag);
-  // a clear goes LAST (a zero-child compound is refused before the clear lands).
-  if (countsToward && countsToward.counterId != null) await setCountsToward(taskId, countsToward.counterId, countsToward.amount);
-  await saveTaskEditFields(taskId, rest);
-  if (countsToward && countsToward.counterId == null) await setCountsToward(taskId, null);
+  // ONE transaction (the field routes' own transactions nest into it): a set /
+  // re-point goes FIRST (it validates before any write, and a compound emptied
+  // of sub-tasks in the same save is then judged against the new flag), the
+  // fields next, a clear LAST (a zero-child compound refuses the clear). The
+  // flag is then re-validated against the post-edit rows, so a sub-task added
+  // in the same save cannot close a feeding loop. Any throw rolls everything
+  // back — no flag or credit survives a refused structure.
+  await db.transaction('rw', CASCADE_TABLES(), async () => {
+    const now = currentTimestamp();
+    if (countsToward && countsToward.counterId != null) await setCountsTowardInTransaction(taskId, countsToward.counterId, countsToward.amount, now);
+    await saveTaskEditFields(taskId, rest);
+    if (countsToward && countsToward.counterId == null) await setCountsTowardInTransaction(taskId, null, undefined, now);
+    await assertCountsTowardStillValid(taskId, { strict: countsToward?.counterId != null });
+  });
 }
 
 /** {@link saveTaskEdit} without the counts-toward step. */

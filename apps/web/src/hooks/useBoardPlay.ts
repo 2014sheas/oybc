@@ -1,7 +1,6 @@
 import { useCallback } from 'react';
 import {
   BoardStatus,
-  TaskType,
   counterDisplayName,
   countsTowardAmountOf,
   effectiveCenter,
@@ -15,8 +14,7 @@ import {
 import { db } from '../db/internal';
 import { compoundChildToggleDesired, type SquareWindowContext } from '../db/adapters';
 import { handleTaskCompletion } from '../db/operations/orchestration';
-import { creditedBoardsForCounter } from '../db/operations/countsToward';
-import { fetchTask } from '../db/operations/tasks';
+import { findNewBoardCredit, snapshotLiveCreditIds, type NewBoardCredit } from '../db/operations/countsTowardSection';
 import {
   decrementSharedCounter,
   incrementSharedCounter,
@@ -29,54 +27,48 @@ import { commitSquareEdits } from '../db/operations/boardEditCommit';
 import type { ContextMenuState } from '../components/interactiveTaskSquareUtils';
 import { useSquaresEditDraft, type UseSquaresEditDraftResult } from './useSquaresEditDraft';
 
-/** What a counts-toward completion needs for its credited toast. */
-interface CountsTowardCredit {
-  task: Task;
-  boardTaskId: string;
-  /** The write that puts the square back (the toast's Undo). */
-  revert: { isCompleted?: boolean; currentCount?: number };
+/** The flagged tasks placed on this board, in board order (the credited toast's contributors). */
+export function onBoardContributors(boardTasks: ReadonlyArray<BoardTask>, taskMap: Record<string, Task>): Task[] {
+  const seen = new Set<string>();
+  const out: Task[] = [];
+  for (const bt of boardTasks) {
+    const t = taskMap[bt.taskId];
+    if (!t || seen.has(t.id) || t.countsTowardCounterId == null || t.sharedCounterId != null) continue;
+    seen.add(t.id);
+    out.push(t);
+  }
+  return out;
 }
 
 /**
- * "Counts toward" (docs/SHARED_COUNTER_SETTINGS.md §3d, design handoff §C4):
- * when a write completes a CONTRIBUTING square — a Simple task checked off,
- * or a plain Counting one reaching its goal, judged against the board's
- * window (`ctx`, the pre-write snapshot) — the credited toast fires under
- * today's trigger (the counter has squares on OTHER boards). Returns what
- * the toast needs, or `null`.
+ * The write that puts a square back after a completion write — the credited
+ * toast's Undo (design handoff §C4): a Simple square is un-completed, a
+ * Counting square is restored to its PREVIOUS windowed count (read from the
+ * pre-write window snapshot), anything else is left to the caller.
  */
-export function countsTowardCreditPreview(
-  boardTaskId: string,
+export function revertUpdatesFor(
+  task: Task,
   updates: { isCompleted?: boolean; currentCount?: number },
-  boardTasks: ReadonlyArray<BoardTask>,
-  taskMap: Record<string, Task>,
   ctx: SquareWindowContext,
-): CountsTowardCredit | null {
-  const bt = boardTasks.find((b) => b.id === boardTaskId);
-  const task = bt ? taskMap[bt.taskId] : undefined;
-  if (!task || task.countsTowardCounterId == null || task.sharedCounterId != null) return null;
-  const before = resolveTaskWindowState(task, ctx.eventsByTaskId[task.id] ?? [], ctx.windowStart, ctx.windowEnd);
-  if (before.isCompleted) return null;
-  if (task.type === TaskType.NORMAL && updates.isCompleted === true) return { task, boardTaskId, revert: { isCompleted: false } };
-  if (task.type === TaskType.COUNTING && updates.currentCount != null && task.maxCount != null && updates.currentCount >= task.maxCount) {
-    return { task, boardTaskId, revert: { currentCount: before.count } };
+): { isCompleted?: boolean; currentCount?: number } | null {
+  if (updates.isCompleted !== undefined) return { isCompleted: !updates.isCompleted };
+  if (updates.currentCount !== undefined) {
+    const before = resolveTaskWindowState(task, ctx.eventsByTaskId[task.id] ?? [], ctx.windowStart, ctx.windowEnd);
+    return { currentCount: before.count };
   }
   return null;
 }
 
-/** The credited toast for a counts-toward completion, or `null` when the counter has no squares on other boards. */
-async function countsTowardCreditToast(credit: CountsTowardCredit, boardId: string): Promise<CreditedToast | null> {
-  const rootId = credit.task.countsTowardCounterId as string;
-  const [root, otherBoards] = await Promise.all([fetchTask(rootId), creditedBoardsForCounter(rootId, boardId, new Date())]);
-  if (!root || root.isDeleted || otherBoards.length === 0) return null;
+/** The credited toast for a counts-toward credit this write produced (its Undo reverses the write). */
+function countsTowardCreditToast(found: NewBoardCredit, revert: () => Promise<void>): CreditedToast {
   return {
-    sourceTaskId: rootId,
-    counterName: counterDisplayName(root),
-    amount: countsTowardAmountOf(credit.task),
+    sourceTaskId: found.root.id,
+    counterName: counterDisplayName(found.root),
+    amount: found.credit.delta ?? countsTowardAmountOf(found.contributor),
     verb: 'logged',
-    boardNames: otherBoards.map((b) => b.boardName),
+    boardNames: found.otherBoards.map((b) => b.boardName),
     key: Date.now(),
-    undo: { kind: 'uncomplete', boardTaskId: credit.boardTaskId, updates: credit.revert },
+    undo: { kind: 'uncomplete', revert },
   };
 }
 
@@ -102,7 +94,7 @@ export interface CreditedToast {
    * UN-COMPLETES the contributing square (`uncomplete`: the write that puts
    * it back) and the cascade tombstones the credit. Absent = `counterLog`.
    */
-  undo?: { kind: 'counterLog' } | { kind: 'uncomplete'; boardTaskId: string; updates: { isCompleted?: boolean; currentCount?: number } };
+  undo?: { kind: 'counterLog' } | { kind: 'uncomplete'; revert: () => Promise<void> };
   /** Pair-derived counter name (`resolveCreditedCounterName`), never raw `task.title`. */
   counterName: string;
   /** The amount actually applied (for a decrement, the clamped `effectiveDelta`) — matches what Undo will reverse. */
@@ -269,7 +261,7 @@ export function useBoardPlay(params: UseBoardPlayParams): UseBoardPlayResult {
    * Handles task completion via the orchestration layer, then shows
    * appropriate flash messages based on bingo detection results.
    */
-  const handleComplete = useCallback(
+  const completeRaw = useCallback(
     async (
       boardTaskId: string,
       updates: {
@@ -280,12 +272,7 @@ export function useBoardPlay(params: UseBoardPlayParams): UseBoardPlayResult {
     ): Promise<void> => {
       if (!boardId) return;
       try {
-        const credit = countsTowardCreditPreview(boardTaskId, updates, boardTasks, taskMap, squareWindowContext);
         const result = await handleTaskCompletion(boardId, boardTaskId, updates);
-        if (credit) {
-          const toast = await countsTowardCreditToast(credit, boardId);
-          if (toast) onCreditedToast(toast);
-        }
         // Priority: reactivated > lostBingos > greenlog > newBingos — shared
         // ladder lives in `deriveFlashOutcome` (issue #270, B2-W2 dedup).
         //
@@ -310,7 +297,47 @@ export function useBoardPlay(params: UseBoardPlayParams): UseBoardPlayResult {
       }
     },
 
-    [boardId, onFlash, setContextMenu, boardTasks, taskMap, squareWindowContext, onCreditedToast]
+    [boardId, onFlash, setContextMenu]
+  );
+
+  /**
+   * "Counts toward" (design handoff §C4, ruled 2026-10-10): runs `write`
+   * between two looks at the live credits on the roots of the flagged tasks
+   * placed on this board; a NEW live credit that belongs to one of them (the
+   * cascade actually credited this board's contributor) shows the credited
+   * toast — only when the counter has squares on OTHER boards whose window
+   * contains the credit. Nothing credited (a late log before `since`, a
+   * seal-suppressed write, a lineage already credited, an unflagged task) →
+   * no toast. `revert` is the toast's Undo: the exact inverse write.
+   */
+  const watchCredits = useCallback(
+    async (write: () => Promise<void>, revert: () => Promise<void>): Promise<void> => {
+      const contributors = onBoardContributors(boardTasks, taskMap);
+      if (!boardId || contributors.length === 0) {
+        await write();
+        return;
+      }
+      const roots = [...new Set(contributors.map((c) => c.countsTowardCounterId as string))];
+      const before = await snapshotLiveCreditIds(roots);
+      await write();
+      const found = await findNewBoardCredit(boardId, contributors, before);
+      if (found && found.otherBoards.length > 0) onCreditedToast(countsTowardCreditToast(found, revert));
+    },
+    [boardId, boardTasks, taskMap, onCreditedToast],
+  );
+
+  /** {@link completeRaw} under the credited-toast watch (the Undo puts the square back). */
+  const handleComplete = useCallback(
+    async (boardTaskId: string, updates: { isCompleted?: boolean; currentCount?: number; completedStepIds?: string[] }): Promise<void> => {
+      const bt = boardTasks.find((b) => b.id === boardTaskId);
+      const task = bt ? taskMap[bt.taskId] : undefined;
+      const revert = task ? revertUpdatesFor(task, updates, squareWindowContext) : null;
+      await watchCredits(
+        () => completeRaw(boardTaskId, updates),
+        () => (revert ? completeRaw(boardTaskId, revert) : Promise.resolve()),
+      );
+    },
+    [boardTasks, taskMap, squareWindowContext, watchCredits, completeRaw],
   );
 
 
@@ -510,12 +537,12 @@ export function useBoardPlay(params: UseBoardPlayParams): UseBoardPlayResult {
     async (toast: CreditedToast): Promise<void> => {
       if (toast.undo?.kind === 'uncomplete') {
         // A counts-toward credit is derived: putting the square back tombstones it (never `undoLastCounterLog`).
-        await handleComplete(toast.undo.boardTaskId, toast.undo.updates);
+        await toast.undo.revert();
         return;
       }
       await undoCounterLog(toast.sourceTaskId);
     },
-    [handleComplete, undoCounterLog],
+    [undoCounterLog],
   );
 
   /**
@@ -546,23 +573,28 @@ export function useBoardPlay(params: UseBoardPlayParams): UseBoardPlayResult {
       const desired =
         compoundChildToggleDesired(childTask, taskMap, compoundChildrenByCompound, squareWindowContext);
 
-      if (currentBt) {
-        await handleComplete(currentBt.id, { isCompleted: desired });
-      } else {
+      const toggle = async (to: boolean): Promise<void> => {
+        if (currentBt) {
+          await completeRaw(currentBt.id, { isCompleted: to });
+          return;
+        }
         // Child is not on the current board (placed elsewhere, or not at all),
         // but the parent compound still derives through it. One Dexie
         // transaction (event write + sync enqueue + cascade), so a downstream
         // failure rolls back the partial writes (issue #270, B2-W2).
         try {
           const { windowStart, windowEnd } = squareWindowContext;
-          await toggleCompoundChildFallback(childTaskId, desired, windowStart, windowEnd, boardId);
+          await toggleCompoundChildFallback(childTaskId, to, windowStart, windowEnd, boardId);
         } catch (err) {
           console.error('Compound child toggle failed:', err);
           onFlash('Something went wrong', 'bingo');
         }
-      }
+      };
+      // A flagged compound completed by this toggle credits its counter once
+      // (the watch); the toast's Undo toggles the child back.
+      await watchCredits(() => toggle(desired), () => toggle(!desired));
     },
-    [playLocked, taskMap, boardTasks, handleComplete, onFlash, boardId,
+    [playLocked, taskMap, boardTasks, completeRaw, watchCredits, onFlash, boardId,
       compoundChildrenByCompound, squareWindowContext]
   );
 

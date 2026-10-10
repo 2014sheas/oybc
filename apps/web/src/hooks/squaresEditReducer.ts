@@ -412,7 +412,7 @@ export function deriveEditCount({ state, boardCenterType }: DeriveEditCountInput
 export function applyOverrideForDisplay(base: Task, override: BoardEditTaskOverride | undefined): Task {
   if (!override) return base;
   const { compound, countsToward, ...fields } = override;
-  // The staged flag shows on the grid (the two-dot mark) before Save.
+  // The staged flag follows the task for display / re-open of the sheet (the Board Edit grid draws no mark).
   const flagged: Partial<Task> = countsToward
     ? countsToward.counterId == null
       ? { countsTowardCounterId: undefined, countsTowardAmount: undefined }

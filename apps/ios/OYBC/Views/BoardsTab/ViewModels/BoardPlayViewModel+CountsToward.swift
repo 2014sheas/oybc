@@ -1,4 +1,5 @@
 import Foundation
+import GRDB
 
 // MARK: - BoardPlayViewModel + "Counts toward" board surfaces
 
@@ -28,47 +29,132 @@ extension SharedCounterCreditToastPayload {
         /// A counts-toward completion: the tapped task's completion itself —
         /// the cascade then tombstones the credit. NEVER `undoLastCounterLog`.
         case uncomplete(taskId: String, boardTaskId: String?)
+        /// A counting goal reached: restore the task's PREVIOUS windowed count.
+        case restoreCount(taskId: String, boardTaskId: String, count: CountValue)
     }
+}
+
+/// The live credit events on each counter root a flagged task placed on this
+/// board counts toward, read BEFORE a completion write (the toast diffs it).
+struct CountsTowardCreditSnapshot {
+    let liveIdsByRoot: [String: Set<String>]
 }
 
 extension BoardPlayViewModel {
 
-    /// The "also counted on …" toast for a completion that credited a counter
-    /// other boards place — reuses the shared-counter toast copy
-    /// (`sharedCreditToastText`) with an `.uncomplete` Undo. Nil when the task
-    /// does not count toward a counter, the intent did not complete it, or no
-    /// other board is credited. Reads the database (call off the main actor).
+    /// Snapshots the live credit-event ids on the roots of every flagged task
+    /// placed on `currentBoardId`. Nil when no placed task counts toward a counter.
+    /// Reads the database (call off the main actor).
+    nonisolated static func countsTowardCreditSnapshot(database: AppDatabase, currentBoardId: String?) -> CountsTowardCreditSnapshot? {
+        guard let currentBoardId else { return nil }
+        return try? database.read { db in
+            let roots = Set(try onBoardContributors(db: db, boardId: currentBoardId).compactMap(\.countsTowardCounterId))
+            guard !roots.isEmpty else { return nil }
+            var out: [String: Set<String>] = [:]
+            for root in roots {
+                out[root] = Set(try liveCreditIds(db: db, rootId: root))
+            }
+            return CountsTowardCreditSnapshot(liveIdsByRoot: out)
+        }
+    }
+
+    private nonisolated static func onBoardContributors(db: Database, boardId: String) throws -> [Task] {
+        let ids = try BoardTask.filter(Column("boardId") == boardId && Column("isDeleted") == false).fetchAll(db).map(\.taskId)
+        return try Task.fetchAll(db, keys: Set(ids)).filter { !$0.isDeleted && $0.countsTowardCounterId != nil }
+    }
+
+    private nonisolated static func liveCreditIds(db: Database, rootId: String) throws -> [String] {
+        try TaskEvent
+            .filter(Column("taskId") == rootId && Column("kind") == TaskEventKind.increment.rawValue && Column("isDeleted") == false)
+            .fetchAll(db).map(\.id)
+    }
+
+    /// The Undo for the write `intent` just made: a completion un-completes; a
+    /// goal-reaching count restores the count it started from.
+    nonisolated static func creditUndo(
+        intent: AppDatabase.CompletionIntent, taskId: String, boardTaskId: String?, priorCount: CountValue
+    ) -> SharedCounterCreditToastPayload.UndoKind {
+        switch intent {
+        case .setCompleted: return .uncomplete(taskId: taskId, boardTaskId: boardTaskId)
+        case .setWindowedCount:
+            guard let boardTaskId else { return .uncomplete(taskId: taskId, boardTaskId: nil) }
+            return .restoreCount(taskId: taskId, boardTaskId: boardTaskId, count: priorCount)
+        }
+    }
+
+    /// The "also counted on …" toast, ONLY when the write + cascade just made
+    /// NEW live credits (diffed against `snapshot`) that a contributor placed on
+    /// THIS board owns (`candidateContributionIds`), AND the counter has squares
+    /// (root or live copies) on OTHER non-deleted, non-draft boards whose window
+    /// contains a credit's `occurredAt`. Nothing credited (late log before
+    /// `since`, seal-suppressed, lineage already credited, unflagged, sub-task
+    /// of an unplaced compound) means no toast. Reads the database (off-main).
     ///
     /// - Parameters:
     ///   - database: The injected database.
-    ///   - taskId: The completed task.
-    ///   - intent: The completion intent — only `.setCompleted(true)` credits.
-    ///   - boardTaskId: The tapped placement on this board, nil for a compound-child fallback.
-    ///   - currentBoardId: The board being played (excluded from the credited list).
+    ///   - snapshot: `countsTowardCreditSnapshot` taken before the write.
+    ///   - currentBoardId: The board being played.
+    ///   - undo: What Undo reverses (`creditUndo`).
     nonisolated static func countsTowardCreditToast(
-        database: AppDatabase, taskId: String, intent: AppDatabase.CompletionIntent, boardTaskId: String?, currentBoardId: String?
+        database: AppDatabase, snapshot: CountsTowardCreditSnapshot?, currentBoardId: String?,
+        undo: SharedCounterCreditToastPayload.UndoKind
     ) -> SharedCounterCreditToastPayload? {
-        guard case .setCompleted(true) = intent, let task = try? database.fetchTask(id: taskId), !task.isDeleted,
-              let rootId = task.countsTowardCounterId,
-              let root = try? database.fetchTask(id: rootId), !root.isDeleted,
-              let boards = try? database.creditedBoards(forCounterRoot: rootId, excludingBoardId: currentBoardId),
-              !boards.isEmpty
-        else { return nil }
-        let amount = CountValue(CountsToward.amount(of: task))
-        let kind = resolveCountKind(root.countKind)
-        return SharedCounterCreditToastPayload(
-            sourceTaskId: rootId, amount: amount, unit: "", isIncrement: true,
-            message: sharedCreditToastText(
-                counterName: CounterSettings.counterDisplayName(root), amount: amount, kind: kind,
-                otherBoards: boards, isIncrement: true
-            ),
-            undo: .uncomplete(taskId: taskId, boardTaskId: boardTaskId)
-        )
+        guard let snapshot, let currentBoardId else { return nil }
+        return try? database.read { db in
+            let onBoard = try onBoardContributors(db: db, boardId: currentBoardId)
+            let tasks = try Task.fetchAll(db)
+            var taskById: [String: Task] = [:]
+            for t in tasks { taskById[t.id] = t }
+            for (root, before) in snapshot.liveIdsByRoot.sorted(by: { $0.key < $1.key }) {
+                guard let rootTask = taskById[root], !rootTask.isDeleted else { continue }
+                let fresh = try TaskEvent
+                    .filter(Column("taskId") == root && Column("kind") == TaskEventKind.increment.rawValue && Column("isDeleted") == false)
+                    .fetchAll(db).filter { !before.contains($0.id) }
+                let mine = onBoard.filter { $0.countsTowardCounterId == root }
+                guard !fresh.isEmpty, !mine.isEmpty else { continue }
+                let contributors = tasks.filter { !$0.isDeleted && $0.countsTowardCounterId == root }
+                let inputs = try AppDatabase.countsTowardInputs(
+                    db: db, counterId: root, tasks: tasks, taskById: taskById, contributors: contributors
+                )
+                var owned = Set<String>()
+                for c in mine { owned.formUnion(CountsToward.candidateContributionIds(c, inputs: inputs, rootIds: [root])) }
+                let credits = fresh.filter { owned.contains($0.id) }
+                guard !credits.isEmpty else { continue }
+                // Other boards placing the root or a live copy whose window holds a credit.
+                let memberIds = [root] + tasks.filter { !$0.isDeleted && $0.sharedCounterId == root }.map(\.id)
+                let boardIds = Set(try BoardTask.filter(memberIds.contains(Column("taskId")) && Column("isDeleted") == false)
+                    .fetchAll(db).map(\.boardId)).subtracting([currentBoardId])
+                var others: [AppDatabase.AffectedBoard] = []
+                for board in try Board.fetchAll(db, keys: boardIds) where !board.isDeleted && board.status != .draft {
+                    let startMs = CountsToward.epochMs(board.startDate)
+                    let endMs = board.endDate.map(CountsToward.epochMs) ?? .infinity
+                    let holds = credits.contains { e in
+                        let at = CountsToward.epochMs(e.occurredAt)
+                        return !at.isNaN && (startMs.isNaN || at >= startMs) && (endMs.isNaN || at <= endMs)
+                    }
+                    if holds { others.append(AppDatabase.AffectedBoard(boardId: board.id, boardName: board.displayName)) }
+                }
+                guard !others.isEmpty else { continue }
+                others.sort { $0.boardId < $1.boardId }
+                let amount = credits.reduce(CountValue(0)) { $0 + ($1.delta ?? 0) }
+                let kind = resolveCountKind(rootTask.countKind)
+                return SharedCounterCreditToastPayload(
+                    sourceTaskId: root, amount: amount, unit: "", isIncrement: true,
+                    message: sharedCreditToastText(
+                        counterName: CounterSettings.counterDisplayName(rootTask), amount: amount, kind: kind,
+                        otherBoards: others, isIncrement: true
+                    ),
+                    undo: undo
+                )
+            }
+            return nil
+        }
     }
 
     /// The credit toast's Undo: a hand-log credit reverses the counter's last
-    /// log; a counts-toward credit un-completes the task (no-op when it is no
-    /// longer complete in this window).
+    /// log; a counts-toward credit reverses the exact write made — un-complete
+    /// the task, or restore the count it started from (no-op when it no longer
+    /// holds in this window).
     func undoCreditToast(_ undo: SharedCounterCreditToastPayload.UndoKind, sourceTaskId: String) {
         switch undo {
         case .counterLog:
@@ -80,6 +166,9 @@ extension BoardPlayViewModel {
             } else if let task = taskMap[taskId] {
                 handleCompoundChildToggle(childTask: task)
             }
+        case let .restoreCount(taskId, boardTaskId, count):
+            guard !isProcessing, let placement = boardTasks.first(where: { $0.id == boardTaskId }) else { return }
+            runOrchestration(taskId: taskId, intent: .setWindowedCount(count), boardTask: placement)
         }
     }
 }
