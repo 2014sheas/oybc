@@ -577,10 +577,13 @@ extension BoardSources {
 
             if task.type == .counting {
                 let ownGoal = goalOf(task)
-                // A hand-added ROOT with a differing default for this board mints
-                // at it; a hand-added LINKED row keeps its own goal.
-                if isManual, !isLinkedMember(task), let dflt = defaultOf(task), dflt != ownGoal {
-                    placementIds.append(mint(task, replacesId: id, target: dflt, vary: manualTaskVary[id] ?? .off).id)
+                // A hand-added or POOL-sourced ROOT with a differing default mints
+                // at it (also the vary base); a LINKED row keeps its own goal.
+                if isManual || (supply != nil && !fromBoard), !isLinkedMember(task),
+                   let dflt = defaultOf(task), dflt != ownGoal {
+                    let vary = isManual ? (manualTaskVary[id] ?? .off)
+                        : parentId.map { rules[$0]?.parts?[id]?.vary ?? .off } ?? (rules[id]?.vary ?? .off)
+                    placementIds.append(mint(task, replacesId: id, target: dflt, vary: vary).id)
                     continue
                 }
                 // A goal-less member pulled from a board takes its root's default.
@@ -651,9 +654,7 @@ extension BoardSources {
                         taskIdForWindow: id,
                         kind: resolveCountKind(task.countKind)
                     )
-                    // No identical clone (owner ruling 2026-09-22) — see the
-                    // split-part branch above for the reasoning, the
-                    // `sharedCounterId` guard included; same rule, same shape.
+                    // No identical clone (owner ruling 2026-09-22) — same rule as the split part.
                     if target == ownGoal, vary == .off, task.sharedCounterId == nil {
                         placementIds.append(id)
                         continue

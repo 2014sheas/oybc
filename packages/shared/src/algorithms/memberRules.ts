@@ -464,13 +464,21 @@ export function planDerivedTasks(args: PlanDerivedTasksArgs): PlanDerivedTasksRe
 
     if (t.type === TaskType.COUNTING) {
       const ownGoal = goalOf(t);
-      // A hand-added ROOT with a timeframe default for this board that differs
-      // from its own goal is minted at that default (docs/SHARED_COUNTER_SETTINGS.md
-      // §2); a hand-added LINKED row keeps its own goal (its user-chosen target).
+      // A hand-added or POOL-sourced ROOT with a timeframe default for this
+      // board that differs from its own goal is minted at that default — the
+      // default is also the vary roll's base (docs/SHARED_COUNTER_SETTINGS.md
+      // §2: a source pull and a hand-add agree). A LINKED row keeps its own goal
+      // (its user-chosen target). Pools still never pro-rate or take a target.
+      const poolSourced = sup !== undefined && !fromBoard;
       const handDefault =
-        isManual && !isLinkedMember(t) ? counterTimeframeDefault(t, window.timeframe) : null;
+        (isManual || poolSourced) && !isLinkedMember(t) ? counterTimeframeDefault(t, window.timeframe) : null;
       if (handDefault !== null && handDefault !== ownGoal) {
-        placementIds.push(mint(t, id, handDefault, manualTaskVary[id] ?? 0).id);
+        const handVary: VaryLevel = isManual
+          ? (manualTaskVary[id] ?? 0)
+          : parentId
+            ? (rules[parentId]?.parts?.[id]?.vary ?? 0)
+            : (rules[id]?.vary ?? 0);
+        placementIds.push(mint(t, id, handDefault, handVary).id);
         continue;
       }
       // A goal-less member pulled from a board takes its root's default as its goal.

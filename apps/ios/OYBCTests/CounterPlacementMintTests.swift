@@ -126,6 +126,19 @@ final class CounterPlacementMintTests: XCTestCase {
         XCTAssertTrue(out.minted.tasks.isEmpty)
     }
 
+    func test_poolPull_rootMintsAtItsWeeklyDefault() throws {
+        let r = root(goals: CounterTimeframeGoals(weekly: 3))
+        let db = try makeDb(root: r)
+        let supply = BoardSources.ExpandedSupply(
+            source: BoardSource(sourceId: "pool-1", kind: .pool), supplyTaskIds: ["root"], partOf: [:]
+        )
+        let out = try mint(db, selected: ["root"], manual: [], supplies: [supply], tasksById: ["root": r])
+        let copyId = BoardSources.derivedTaskId(boardId: "wk", rootTaskId: "root")
+        XCTAssertEqual(out.placementIds, [copyId])
+        XCTAssertEqual(try K.fetchTask(db, copyId)?.maxCount, 3)
+        XCTAssertEqual(try K.fetchTask(db, copyId)?.title, "Run 3 mi")
+    }
+
     func test_sourcePull_consultsRootDefaultBeforeProRating() throws {
         let r = root(goals: CounterTimeframeGoals(weekly: 4))
         let db = try makeDb(root: r)

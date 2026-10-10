@@ -236,13 +236,11 @@ final class TasksTabViewModel {
     /// `useTasksFilters.ts` `matchesSearch`.
     static func matchesSearch(_ task: Task, trimmedLower: String) -> Bool {
         guard !trimmedLower.isEmpty else { return true }
-        if task.title.lowercased().contains(trimmedLower) { return true }
-        if let desc = task.description, desc.lowercased().contains(trimmedLower) { return true }
-        if task.type == .counting {
-            let generic = CounterName.formatCounterName(action: task.action, unit: task.unit)
-            if !generic.isEmpty, generic.lowercased().contains(trimmedLower) { return true }
-        }
-        return false
+        // The shared match set (docs/SHARED_COUNTER_SETTINGS.md §2) — title, plus a
+        // counter's name / noun / verb / plural template — and the description.
+        if CounterPlacement.taskSearchMatches(trimmedLower, task: task) { return true }
+        return CounterPlacement.normalizeSearchText(task.description)
+            .contains(CounterPlacement.normalizeSearchText(trimmedLower))
     }
 
     static func matchesStatus(

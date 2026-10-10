@@ -135,9 +135,11 @@ export function MemberRuleRow({
    * disclosure.
    */
   const isOn = state === 'included';
-  /** A board-pulled counter's ROOT default for this window — the planner consults it first. */
+  /** The counter default the planner consults first: a board-pulled member's ROOT's, a pool-pulled ROOT's own. */
   const rootDefault = (t: Task | undefined): number | null =>
-    fromBoard && t ? counterTimeframeDefault((t.sharedCounterId ? taskById[t.sharedCounterId] : t) ?? {}, wizardWindow.timeframe) : null;
+    t && (fromBoard || !t.sharedCounterId)
+      ? counterTimeframeDefault((t.sharedCounterId ? taskById[t.sharedCounterId] : t) ?? {}, wizardWindow.timeframe)
+      : null;
 
   const goal = task?.type === TaskType.COUNTING ? (task.maxCount ?? 0) : 0;
   const isCounting = goal > 0;

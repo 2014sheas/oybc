@@ -125,9 +125,11 @@ struct MemberRuleRowModel: Equatable {
     ) {
         let isOn = state == .included
         self.isOn = isOn
-        /// A board-pulled counter's ROOT default for this window — the planner consults it first.
+        /// The counter default the planner consults first: a board-pulled member's
+        /// ROOT's, a pool-pulled ROOT's own (a pool-pulled linked row keeps its goal).
         func rootDefault(_ t: Task?) -> CountValue? {
-            guard fromBoard, let t else { return nil }
+            guard let t else { return nil }
+            if !fromBoard, t.sharedCounterId != nil { return nil }
             let root = t.sharedCounterId.flatMap { taskById[$0] } ?? (t.sharedCounterId == nil ? t : nil)
             return root.flatMap {
                 CounterPlacement.counterTimeframeDefault(.init(task: $0), timeframe: wizardWindow.timeframe)

@@ -4,7 +4,8 @@ import {
   BoardStatus,
   TaskType,
   computeBrowsableTasks,
-  formatCounterName,
+  normalizeSearchText,
+  taskSearchMatches,
   isTaskExpired,
   type Board,
   type BoardTask,
@@ -311,13 +312,10 @@ export function matchesTypeFilter(task: Task, filter: TypeFilter): boolean {
  */
 export function matchesSearch(task: Task, trimmedLowerQuery: string): boolean {
   if (!trimmedLowerQuery) return true;
-  if (task.title.toLowerCase().includes(trimmedLowerQuery)) return true;
-  if (task.description?.toLowerCase().includes(trimmedLowerQuery)) return true;
-  if (task.type === TaskType.COUNTING) {
-    const generic = formatCounterName(task.action, task.unit);
-    if (generic && generic.toLowerCase().includes(trimmedLowerQuery)) return true;
-  }
-  return false;
+  // The shared match set (docs/SHARED_COUNTER_SETTINGS.md §2) — title, plus a
+  // counter's name / noun / verb / plural template — and the description.
+  if (taskSearchMatches(trimmedLowerQuery, task)) return true;
+  return normalizeSearchText(task.description).includes(normalizeSearchText(trimmedLowerQuery));
 }
 
 function matchesStatusFilter(

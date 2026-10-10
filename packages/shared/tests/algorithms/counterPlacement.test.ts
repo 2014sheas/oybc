@@ -110,7 +110,8 @@ describe('counterPlacementVectors — planDerivedTasks (placement defaults)', ()
       baselineByRootId: {},
       rootsById: tasksById,
       rng: () => {
-        throw new Error('vary is off — no rng');
+        if (v.rng === undefined) throw new Error('vary is off — no rng');
+        return v.rng;
       },
     });
     expect(out.placementIds).toEqual(v.expected.placement.map(resolve));

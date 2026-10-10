@@ -89,7 +89,7 @@ final class CounterPlacementVectorTests: XCTestCase {
     private struct PlanExpected: Decodable { let placement: [String]; let drafts: [PlanDraft] }
     private struct PlanVector: Decodable {
         let name: String; let window: String; let selected: [String]; let manual: [String]
-        let supplies: [PlanSupply]; let expected: PlanExpected
+        let supplies: [PlanSupply]; let rng: Double?; let expected: PlanExpected
     }
     private struct Plan: Decodable {
         let boardId: String; let tasks: [String: Root]; let sourceWindows: [String: String]; let vectors: [PlanVector]
@@ -225,7 +225,10 @@ final class CounterPlacementVectorTests: XCTestCase {
                 boardId: p.boardId, window: .init(timeframe: try tf(v.window)), mode: .oneOff,
                 tasksById: tasksById, childrenByCompoundId: [:], sourceWindowByTaskId: sourceWindows,
                 baselineByRootId: [:], rootsById: tasksById,
-                rng: { XCTFail("vary is off — no rng"); return 0 }
+                rng: {
+                    guard let r = v.rng else { XCTFail("vary is off — no rng"); return 0 }
+                    return r
+                }
             )
             XCTAssertEqual(out.placementIds, v.expected.placement.map(resolve), v.name)
             XCTAssertEqual(

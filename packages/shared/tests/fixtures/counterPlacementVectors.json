@@ -462,6 +462,26 @@
         "maxCount": 90
       },
       "expected": true
+    },
+    {
+      "name": "the #N placeholder is never matched (\"#n\")",
+      "query": "#n",
+      "root": {
+        "action": "Read",
+        "unit": "books",
+        "titleTemplatePlural": "Read #N books"
+      },
+      "expected": false
+    },
+    {
+      "name": "the #N placeholder is never matched (\"n\" alone finds nothing here)",
+      "query": "n",
+      "root": {
+        "action": "Read",
+        "unit": "books",
+        "titleTemplatePlural": "Read #N books"
+      },
+      "expected": false
     }
   ],
   "taskSearchMatches": [
@@ -929,7 +949,7 @@
         }
       },
       {
-        "name": "a pool-sourced root is placed as-is (pools never auto-target)",
+        "name": "a pool-sourced root mints at its weekly default (goal 12, weekly 3 → 3)",
         "window": "weekly",
         "selected": [
           "R"
@@ -945,7 +965,91 @@
         ],
         "expected": {
           "placement": [
-            "R"
+            "derived:R"
+          ],
+          "drafts": [
+            {
+              "root": "R",
+              "maxCount": 3,
+              "title": "Read 3 books"
+            }
+          ]
+        }
+      },
+      {
+        "name": "a pool-sourced root with vary on rolls around its default (3 ± 20% → [2, 4]; rng 0.99 → 4)",
+        "window": "weekly",
+        "selected": [
+          "R"
+        ],
+        "manual": [],
+        "supplies": [
+          {
+            "kind": "pool",
+            "supply": [
+              "R"
+            ],
+            "memberRules": {
+              "R": {
+                "vary": 1
+              }
+            }
+          }
+        ],
+        "rng": 0.99,
+        "expected": {
+          "placement": [
+            "derived:R"
+          ],
+          "drafts": [
+            {
+              "root": "R",
+              "maxCount": 4,
+              "title": "Read 4 books"
+            }
+          ]
+        }
+      },
+      {
+        "name": "a pool-sourced root with no defaults is placed as-is (today)",
+        "window": "weekly",
+        "selected": [
+          "P"
+        ],
+        "manual": [],
+        "supplies": [
+          {
+            "kind": "pool",
+            "supply": [
+              "P"
+            ]
+          }
+        ],
+        "expected": {
+          "placement": [
+            "P"
+          ],
+          "drafts": []
+        }
+      },
+      {
+        "name": "a pool-sourced linked row keeps its own goal (pools never pro-rate)",
+        "window": "weekly",
+        "selected": [
+          "S2"
+        ],
+        "manual": [],
+        "supplies": [
+          {
+            "kind": "pool",
+            "supply": [
+              "S2"
+            ]
+          }
+        ],
+        "expected": {
+          "placement": [
+            "S2"
           ],
           "drafts": []
         }
@@ -982,13 +1086,13 @@
       "expected": 5
     },
     {
-      "name": "a pool member ignores the default",
+      "name": "a pool-pulled root previews its default",
       "goal": 30,
       "fromBoard": false,
       "sourceWindow": "monthly",
       "targetWindow": "weekly",
       "timeframeDefault": 3,
-      "expected": 30
+      "expected": 3
     },
     {
       "name": "no default: pro-rates (today)",
@@ -998,6 +1102,15 @@
       "targetWindow": "weekly",
       "timeframeDefault": null,
       "expected": 7
+    },
+    {
+      "name": "a pool member with no default keeps its goal (no pro-rating)",
+      "goal": 30,
+      "fromBoard": false,
+      "sourceWindow": "monthly",
+      "targetWindow": "weekly",
+      "timeframeDefault": null,
+      "expected": 30
     }
   ],
   "generateCounterTaskTitleWithSettings": [

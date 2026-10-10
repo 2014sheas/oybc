@@ -27,6 +27,7 @@ beforeEach(async () => {
 afterEach(async () => {
   vi.useRealTimers();
   await clearAll();
+  await db.pools.clear();
 });
 
 describe('Board Edit placement — a counter root with a timeframe default', () => {
@@ -137,6 +138,27 @@ describe('Wizard hand-add — a counter root with a timeframe default', () => {
     const row = (await db.tasks.get(copyId))!;
     expect(row.maxCount).toBe(7);
     expect(row.title).toBe('Run 7 mi');
+  });
+
+  it('a POOL-pulled root mints at its weekly default too (a source pull and a hand-add agree)', async () => {
+    const root = rootTask({ timeframeGoals: { weekly: 3 }, titleTemplatePlural: 'Run #N mi' });
+    await db.tasks.put(root);
+    await db.pools.add({
+      id: 'pool-1', userId: USER, name: 'Runs', taskIds: [ROOT],
+      createdAt: WEEK_START, updatedAt: WEEK_START, version: 1, isDeleted: false,
+    });
+
+    const boardId = await persistWizardBoardRows({
+      ...input(root),
+      manualTaskIds: [],
+      sources: [{ sourceId: 'pool-1', kind: 'pool', min: 0, max: null, excludedTaskIds: [], filter: 'all' }],
+    });
+
+    const copyId = derivedTaskId(boardId, ROOT);
+    const placed = await db.boardTasks.where('boardId').equals(boardId).toArray();
+    expect(placed.map((p) => p.taskId)).toEqual([copyId]);
+    expect((await db.tasks.get(copyId))?.maxCount).toBe(3);
+    expect((await db.tasks.get(copyId))?.title).toBe('Run 3 mi');
   });
 
   it('no defaults: the root itself is placed, exactly as before', async () => {

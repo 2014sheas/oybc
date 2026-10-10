@@ -305,20 +305,28 @@ taken inside the spec: (1) the default applies when the picked task IS the count
 a hand-added LINKED task keeps its own goal (its user-chosen target — applying the root's
 fallback goal to it would change behaviour for counters with no defaults); (2) an
 existing copy at the deterministic id — live or revived from a tombstone — keeps its
-goal; (3) pool-sourced members never auto-target, so they ignore defaults; the one-off
-board-source prefill (remaining-in-source-window, written as an explicit target) also
-still wins over a default. Copy-side titles: `generateCounterTaskTitle` gained a
+goal; (3) **pool pulls honour the default too** (owner ruling 2026-10-09, review of
+#585: "a source pull and a hand-add agree" covers pools) — a pool-pulled ROOT mints at its
+board-timeframe default when it differs from its goal, the default being the vary roll's
+base; a pool-pulled linked row keeps its goal; pools still never pro-rate. (4) The one-off
+board-source prefill keeps its "remaining in the source window, pro-rated" explicit
+target, which still wins over a default (RULED 2026-10-09: keep as is). Copy-side titles: `generateCounterTaskTitle` gained a
 trailing `settings` (TS + Swift), `counterCopyTitle` / `windowStampedCopyDraft` take the
 ROOT's settings, and every production call site on both platforms is pinned with a reason
 by `packages/shared/tests/algorithms/counterTitleCallSites.test.ts` (0 raw copy-side
 calls). Search is wired into the wizard quick-add, the library sheet, the pool editor's
-library picker, the core-defaults sheet and Board Edit's picker (iOS
-`SquarePickerCandidates`). "Derive smaller version…" (web `DeriveCounterModal`, its menu
+library picker, the core-defaults sheet, Board Edit's picker (iOS
+`SquarePickerCandidates`), the Tasks tab (`useTasksFilters.matchesSearch` ↔
+`TasksTabViewModel.matchesSearch`, + description) and the compound sub-task
+autocomplete (iOS `RisoCompoundFieldsView`; web already uses the quick-add row). The
+`#N` placeholder is never matched (it is replaced by a space before matching). "Derive smaller version…" (web `DeriveCounterModal`, its menu
 item, `deriveCounterLink`; iOS's orphaned `DeriveCounterLink.swift`) is deleted (D6).
 **Deferred to the UI PR:** the match row showing the default goal (rows still read the
 root's title until the copy is minted / the Preview runs), the no-default state, the
-member-rule target stepper's `max` when a default exceeds the member's goal, and the
-counter sheet's Defaults / template fields (+ the Zod length caps above).
+member-rule target stepper's `max` when a default exceeds the member's goal, the wizard
+pool-row editor's live title preview (iOS `RisoPoolRowEditorView`, still the formula —
+no root in scope), and the counter sheet's Defaults / template fields (+ the Zod length
+caps above).
 
 ---
 

@@ -1195,7 +1195,11 @@ instances, any task list for a recurring board.
      pull and a hand-add agree. No default → `autoTarget` exactly as before.
      An explicit target (a member rule, or the one-off prefill below) still
      wins; the member row previews the same number (`effectiveMemberTarget`'s
-     `timeframeDefault`). Pools still never auto-target.
+     `timeframeDefault`). **Pool-sourced** members consult the counter's own
+     default too (owner ruling 2026-10-09): a pool-pulled ROOT whose default
+     for the board differs from its goal mints at that default (also the vary
+     roll's base), exactly like a hand-add; a pool-pulled linked row keeps its
+     own goal. Pools still never pro-rate and still ignore a `target`.
    - One-off: the wizard writes an explicit `target` at pull time, prefilled
      with the source's **remaining, pro-rated to this board's window** —
      `prefilledOneOffTarget = autoTarget(remainingTarget(goal, windowCount),
