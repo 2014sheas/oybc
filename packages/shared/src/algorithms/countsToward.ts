@@ -2,9 +2,9 @@
  * countsToward.ts — "counts toward": any task as the unit of a Discrete
  * shared counter (docs/SHARED_COUNTER_SETTINGS.md §3, PR 3 — data + cascade).
  *
- * A contributing task carries `countsTowardCounterId` (+ optional
- * `countsTowardAmount`, default 1; `countsTowardSince`, the instant the flag
- * was set — D11). Its counter ROOT receives ONE increment event per
+ * A contributing task carries `countsTowardCounterId` (+ `countsTowardSince`,
+ * the instant the flag was set — D11; `countsTowardAmount` is an inert column
+ * since #590 — a credit is always 1, see {@link countsTowardAmountOf}). Its counter ROOT receives ONE increment event per
  * COMPLETION OCCURRENCE of the contributor (D10, ruled 2026-10-10: once per
  * occurrence, not once per task lifetime — a manual square on a repeating
  * weekly board is the SAME task every week, and counts every week it is
@@ -655,7 +655,9 @@ export function candidateContributionIds(task: Task, inputs: ContributionInputs,
  * The amount a lineage writes on `rootId` — one deterministic rule when
  * members disagree: the lineage root's (top ancestor's) amount when it is a
  * live, flagged member targeting `rootId`, else the amount of the member
- * with the smallest id among those. `1` when none qualifies.
+ * with the smallest id among those. `1` when none qualifies. Since #590 every
+ * member's amount is 1, so this always returns 1; the machinery stays until
+ * the schema cleanup drops the column.
  *
  * @param rootId - The counter root.
  * @param members - The contributor and every loaded lineage member.
@@ -695,9 +697,9 @@ export interface LineageContext {
    * The amount the lineage writes on a root ({@link lineageCreditDelta}).
    * Applied ONLY to a credit another lineage member also wants (one in
    * `wantedIds`); a credit wanted by this contributor alone — a fork's own
-   * completion — carries the contributor's own amount, so a board-scoped
-   * amount edit on a fork governs the fork's own completions. Default: the
-   * contributor's own amount everywhere.
+   * completion — carries the contributor's own amount. Default: the
+   * contributor's own amount everywhere. Since #590 every amount is 1, so the
+   * distinction is inert (kept until the schema cleanup).
    */
   deltaForRoot?: (rootId: string) => number;
 }

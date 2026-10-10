@@ -4330,6 +4330,75 @@
         }
       ],
       "expected": []
+    },
+    {
+      "name": "lineage-does-not-protect-a-credit-the-contributor-itself-revises",
+      "contributor": {
+        "id": "t",
+        "countsTowardCounterId": "root"
+      },
+      "tasks": [
+        {
+          "id": "root",
+          "type": "counting",
+          "isCounter": true
+        }
+      ],
+      "wanted": [
+        {
+          "occurrence": {
+            "kind": "event",
+            "eventId": "c1"
+          },
+          "occurredAt": "2026-10-08T09:00:00.000Z",
+          "root": "root"
+        }
+      ],
+      "candidates": [
+        {
+          "occurrence": {
+            "kind": "event",
+            "eventId": "c1"
+          },
+          "root": "root"
+        }
+      ],
+      "stored": [
+        {
+          "occurrence": {
+            "kind": "event",
+            "eventId": "c1"
+          },
+          "taskId": "root",
+          "delta": 1,
+          "occurredAt": "2026-10-07T09:00:00.000Z"
+        }
+      ],
+      "lineageWanted": [
+        {
+          "occurrence": {
+            "kind": "event",
+            "eventId": "c1"
+          },
+          "root": "root"
+        }
+      ],
+      "expected": [
+        {
+          "occurrence": {
+            "kind": "event",
+            "eventId": "c1"
+          },
+          "root": "root",
+          "kind": "revise",
+          "rootId": "root",
+          "delta": 1,
+          "occurredAt": "2026-10-08T09:00:00.000Z",
+          "previousRootId": "root",
+          "previousOccurredAt": "2026-10-07T09:00:00.000Z",
+          "wasDeleted": false
+        }
+      ]
     }
   ],
   "lineageDelta": [

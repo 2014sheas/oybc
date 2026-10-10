@@ -594,7 +594,9 @@ enum CountsToward {
     /// The amount a lineage writes on `rootId` — one deterministic rule when
     /// members disagree: the lineage root's (top ancestor's) amount when it is
     /// a live, flagged member targeting `rootId`, else the amount of the
-    /// member with the smallest id among those; 1 when none qualifies.
+    /// member with the smallest id among those; 1 when none qualifies. Since #590
+    /// every member's amount is 1, so this always returns 1 (kept until the
+    /// schema cleanup drops the column).
     static func lineageCreditDelta(rootId: String, members: [Task], lineageRootTaskId: String) -> Int {
         let targeting = members
             .filter { !$0.isDeleted && canContribute($0) && $0.countsTowardCounterId == rootId }
@@ -640,6 +642,7 @@ enum CountsToward {
         /// another lineage member also wants (one in `wantedIds`); a credit
         /// wanted by this contributor alone (a fork's own completion) carries
         /// the contributor's own amount. `nil` → the contributor's own everywhere.
+        /// Since #590 every amount is 1, so the distinction is inert.
         var deltaForRoot: ((String) -> Int)? = nil
     }
 
