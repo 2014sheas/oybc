@@ -455,4 +455,8 @@ export interface CreateCompoundTaskInput {
   timeframe?: Timeframe;
   startDate?: string;
   endDate?: string;
+  /** "Counts toward" (docs/SHARED_COUNTER_SETTINGS.md §3a) — with this set,
+   *  `children` may be empty (an unfilled container). */
+  countsTowardCounterId?: string;
+  countsTowardAmount?: number;
 }
