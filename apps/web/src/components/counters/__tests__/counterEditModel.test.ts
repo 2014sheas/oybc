@@ -135,7 +135,7 @@ describe('shared counter settings through saveTaskEdit (the patch path the desig
   });
 
   it('createCounterTask stores only the given settings; the goal-less title is the name', async () => {
-    const t = await createCounterTask('u1', { action: 'Read', unit: 'books', settings: { counterName: 'Books', titleTemplatePlural: '' } });
+    const t = await createCounterTask('u1', { action: 'Read', unit: 'books', settings: { counterName: '  Books ', titleTemplatePlural: '   ' } });
     const saved = (await db.tasks.get(t.id))!;
     expect(saved).toMatchObject({ title: 'Books', counterName: 'Books' });
     expect('titleTemplatePlural' in saved).toBe(false);

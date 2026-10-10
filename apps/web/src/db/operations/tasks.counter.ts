@@ -109,7 +109,7 @@ export async function createCounterTask(
 }
 
 /**
- * The settings keys that carry a value (an absent key stays absent — D3).
+ * The settings keys that carry a value, trimmed (an absent or whitespace-only key stays absent — D3).
  *
  * @param settings - The create sheet's stored settings.
  */
@@ -117,9 +117,14 @@ function definedSettings(
   settings: Pick<Task, 'counterName' | 'titleTemplateSingular' | 'titleTemplatePlural' | 'timeframeGoals'> | undefined,
 ): Partial<Task> {
   const out: Partial<Task> = {};
-  if (settings?.counterName) out.counterName = settings.counterName;
-  if (settings?.titleTemplateSingular) out.titleTemplateSingular = settings.titleTemplateSingular;
-  if (settings?.titleTemplatePlural) out.titleTemplatePlural = settings.titleTemplatePlural;
+  // Trimmed; whitespace-only = absent (the iOS `CounterSettings.storedText` rule).
+  const text = (v: string | undefined): string | undefined => v?.trim() || undefined;
+  const counterName = text(settings?.counterName);
+  const singular = text(settings?.titleTemplateSingular);
+  const plural = text(settings?.titleTemplatePlural);
+  if (counterName) out.counterName = counterName;
+  if (singular) out.titleTemplateSingular = singular;
+  if (plural) out.titleTemplatePlural = plural;
   if (settings?.timeframeGoals && Object.keys(settings.timeframeGoals).length > 0) {
     out.timeframeGoals = settings.timeframeGoals;
   }

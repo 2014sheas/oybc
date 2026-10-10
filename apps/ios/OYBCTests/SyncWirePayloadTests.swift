@@ -151,6 +151,31 @@ final class SyncWirePayloadTests: XCTestCase {
         XCTAssertEqual(pulled.taskIds, ["t1", "t2"])
     }
 
+    /// Shared counter settings (GRDB v42): `Task.timeframeGoals` is a JSON
+    /// string column, an OBJECT on the wire (web `CounterTimeframeGoalsSchema`),
+    /// and a JSON string again once the pull's generic upsert stores it.
+    func testTask_TimeframeGoalsExpandsToAnObjectOnPushAndRoundTripsOnPull() throws {
+        let now = "2026-10-09T00:00:00.000Z"
+        let task = Task(
+            id: "root", userId: "u1", title: "Run miles", type: .counting, action: "Run", unit: "miles",
+            totalCompletions: 0, totalInstances: 0, createdAt: now, updatedAt: now, version: 1, isDeleted: false,
+            isCounter: true, counterName: "Running", timeframeGoals: CounterTimeframeGoals(weekly: 20, yearly: 1000)
+        )
+        let dict = try encodeToDict(task)
+        XCTAssertTrue(dict["timeframeGoals"] is String, "timeframeGoals should be a JSON string before expansion")
+
+        let wire = SyncWirePayload.expandJSONStrings(dict)
+        XCTAssertEqual(wire["timeframeGoals"] as? [String: Double], ["weekly": 20, "yearly": 1000])
+        XCTAssertEqual(wire["counterName"] as? String, "Running")
+
+        var row = wire
+        let goalsData = try JSONSerialization.data(withJSONObject: wire["timeframeGoals"] as Any)
+        row["timeframeGoals"] = String(data: goalsData, encoding: .utf8)
+        let pulled = try JSONDecoder().decode(Task.self, from: JSONSerialization.data(withJSONObject: row))
+        XCTAssertEqual(pulled.timeframeGoals, CounterTimeframeGoals(weekly: 20, yearly: 1000))
+        XCTAssertEqual(pulled.counterName, "Running")
+    }
+
     /// A pool without defaults still carries the key (`{}`) on the wire — a
     /// clear propagates as an overwrite, never as a field delete — and a doc
     /// from a client that predates the field decodes to an empty map.
