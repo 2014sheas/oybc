@@ -584,21 +584,51 @@ final class CountsTowardTests: XCTestCase {
         XCTAssertEqual(try fetch(db, root2).currentCount, 1)
     }
 
-    func test_forkAndOriginalDisagreeOnTheAmount_oneCreditWithTheLineageRootsAmount_replaysWriteNothing() throws {
+    func test_forkAndOriginalDisagreeOnTheAmount_sharedCreditTakesTheLineageRootsAmount_theForksOwnCompletionTakesTheForks() throws {
         let db = try AppDatabase.makeTestInstance()
         let fork = try forkCompletedDune(db)
         try db.setCountsToward(taskId: fork.id, counterId: root, amount: 3, now: later)
 
+        // The copied completion is wanted by both members → the lineage root's amount (1), not the fork's 3.
         XCTAssertEqual(try liveCredits(db).map(\.delta), [1])
         XCTAssertEqual(try liveCredits(db).map(\.version), [1])
         try expectReplayNoop(db, [fork.id])
         try expectReplayNoop(db, [simple])
 
-        // The lineage root's amount is the rule: raising it moves the one credit.
+        // Raising the lineage root's amount moves the shared credit (2 — still not the fork's 3).
         try db.setCountsToward(taskId: simple, counterId: root, amount: 2, now: later)
         XCTAssertEqual(try liveCredits(db).map(\.delta), [2])
         XCTAssertEqual(try liveCredits(db).map(\.version), [2])
         try expectReplayNoop(db, [fork.id])
+
+        // A completion only the fork makes credits the fork's own amount.
+        try complete(db, oct, "bt-simple", fork.id, false)
+        try complete(db, oct, "bt-simple", fork.id, true, at: later)
+        let own = try XCTUnwrap(liveEvents(db, of: fork.id).first { $0.occurredAt == later })
+        XCTAssertEqual(try liveCredits(db).map(\.delta), [2, 3])
+        XCTAssertEqual(try liveCredits(db).map(\.version), [2, 1])
+        XCTAssertEqual(try liveCredits(db).map(\.id).last, eventCredit(own.id))
+        XCTAssertEqual(try fetch(db, root).currentCount, 5)
+        try expectReplayNoop(db, [fork.id])
+        try expectReplayNoop(db, [simple])
+    }
+
+    func test_creditWritesJoinTheCallersTransaction_aThrowAfterTheCascadePersistsNothing() throws {
+        struct Abort: Error {}
+        let db = try AppDatabase.makeTestInstance(); try seed(db)
+        let queueBefore = try db.read { try SyncQueueItem.fetchCount($0) }
+        XCTAssertThrowsError(try db.write { d in
+            try AppDatabase.appendCompletionEvent(db: d, taskId: self.simple, boardId: self.oct, now: self.now, occurredAt: self.now)
+            try AppDatabase.runBoardCascadeForTasks(db: d, changedTaskIds: [self.simple], now: self.now)
+            // Written, inside the transaction.
+            XCTAssertEqual(try TaskEvent.filter(Column("taskId") == self.root && Column("isDeleted") == false).fetchCount(d), 1)
+            throw Abort()
+        })
+
+        XCTAssertEqual(try storedCredits(db).count, 0)
+        XCTAssertEqual(try liveEvents(db, of: simple).count, 0)
+        XCTAssertEqual(try db.read { try SyncQueueItem.fetchCount($0) }, queueBefore)
+        XCTAssertEqual(try fetch(db, root).currentCount, 0)
     }
 
     func test_forkWhoseOriginalIsNotLoadedYet_producesNothingUntilTheOriginalArrives() throws {

@@ -243,11 +243,14 @@ because completion is already derived for every type:
   member reconciled last — a member tombstones an event-keyed credit only when
   NO live, flagged member of its lineage (ancestors via `forkedFromTaskId`,
   descendants, transitively) still wants it (`keptCreditIdsFor` over
-  `forkLineageIds`, passed to `planCountsTowardActions`), and the lineage
-  writes ONE amount on a root (`lineageCreditDelta`: the lineage root's when
-  it is a live, flagged member targeting that root, else the smallest task id
-  among such members) so two members with different `countsTowardAmount`
-  never revise a shared credit back and forth.
+  `forkLineageIds`, passed to `planCountsTowardActions`), and a credit MORE
+  THAN ONE member wants is written at ONE lineage amount
+  (`lineageCreditDelta`: the lineage root's when it is a live, flagged member
+  targeting that root, else the smallest task id among such members) so two
+  members with different `countsTowardAmount` never revise a shared credit
+  back and forth; a credit a single member wants (a fork's own completion)
+  carries that member's own amount, so a board-scoped amount edit on a fork
+  governs the fork's own completions.
 - A Compound container with **zero children** is allowed ONLY when it counts
   toward a counter (it is "unfilled" and incomplete until it has children and
   they complete) — the owner's shell idea, as a special case of the rule.
@@ -326,9 +329,14 @@ same stamp as the completion that caused it).
   carries its root, so the original re-pointed to counter B while the fork
   still targets A keeps one credit on A (the fork's) and credits B from the
   original's new `since` onward: two separate credits, one each, never a flip;
-  on the AMOUNT — one deterministic rule, the lineage root's amount when it
-  targets that root, else the smallest task id among the members that do
-  (`lineageCreditDelta`), so a replay writes nothing.
+  on the AMOUNT — a credit both want takes one deterministic lineage amount,
+  the lineage root's when it targets that root, else the smallest task id
+  among the members that do (`lineageCreditDelta`), so a replay writes
+  nothing; a credit only one of them wants (the fork's own completion, the
+  original's own) takes that member's amount. A pulled unflag that arrives
+  before the counter's own deletion may tombstone credits on a counter that
+  is being deleted — it converges (the events go with the counter) with no
+  visible count change.
 - Cycles: `countsTowardProblem` walks the feeding graph transitively (counter →
   the counter and its copies → the compounds holding them → their own
   counts-toward counters → …) and refuses an assignment as soon as that walk
@@ -573,9 +581,12 @@ credits / candidates / planSet / lineageDelta / problem):
 
 **Hand-offs from PR 3 (for the UI PR):**
 
-- **The picker sets `since`.** Setting or re-pointing the flag goes through
-  `setCountsToward` (web) ↔ `setCountsToward(taskId:counterId:amount:)` (iOS),
-  which stamps `countsTowardSince`; no UI shows the stamp. A picker that
+- **Every UI path that sets, clears or re-points the flag MUST go through
+  `setCountsToward`** (web) ↔ `setCountsToward(taskId:counterId:amount:)`
+  (iOS) — it stamps `countsTowardSince` and hands the previous root to the
+  cascade, which nothing else can derive; a board-scoped edit forks FIRST
+  (`planBoardScopedFork`) and then writes the flag on the fork through the
+  same call. No UI shows the stamp. A picker that
   re-points an already-counting task withdraws its earlier credits on the old
   counter (D11) — the confirm dialog may say so; nothing else explains it.
 - **Counter Detail's "Counts toward" section shows per-contributor CREDIT
@@ -595,7 +606,9 @@ credits / candidates / planSet / lineageDelta / problem):
   suppressed write settles on the next cascade after a Reopen; an interrupted
   re-point whose previous root no lineage member targets any more is
   reconciled only by a cascade that learns that root (a pull of the row, or a
-  later re-point through `setCountsToward`).
+  later re-point through `setCountsToward`); a pulled unflag that lands before
+  the counter's own deletion tombstones credits on a counter about to go — it
+  converges, no visible count change.
 - No UI sets the flag yet; the editors need a picker that calls
   `setCountsToward` (validation codes → user lines) — PR 4.
 

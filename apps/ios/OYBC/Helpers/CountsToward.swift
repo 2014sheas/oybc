@@ -636,7 +636,10 @@ enum CountsToward {
     struct LineageContext {
         /// Credit ids the OTHER live, flagged lineage members keep.
         var wantedIds: Set<String> = []
-        /// The amount the lineage writes on a root; `nil` → the contributor's own.
+        /// The amount the lineage writes on a root — applied ONLY to a credit
+        /// another lineage member also wants (one in `wantedIds`); a credit
+        /// wanted by this contributor alone (a fork's own completion) carries
+        /// the contributor's own amount. `nil` → the contributor's own everywhere.
         var deltaForRoot: ((String) -> Int)? = nil
     }
 
@@ -660,12 +663,16 @@ enum CountsToward {
         let target = targetId.flatMap { taskById[$0] }
         if targetId != nil, target == nil || target?.isDeleted == true { return [] }
         guard isForkLineageLoaded(contributor, taskById: taskById) else { return [] }
-        let deltaFor: (String) -> Int = lineage.deltaForRoot ?? { _ in amount(of: contributor) }
+        let ownAmount = amount(of: contributor)
+        let deltaFor: (String) -> Int = lineage.deltaForRoot ?? { _ in ownAmount }
 
         var wantedById: [String: (rootId: String, delta: Int, occurredAt: String)] = [:]
         if !contributor.isDeleted, canContribute(contributor), isTarget(target), let target {
             for w in wanted where w.rootId == target.id && isOccurrenceWanted(since: contributor.countsTowardSince, occurredAt: w.occurredAt) {
-                wantedById[w.eventId] = (target.id, deltaFor(target.id), w.occurredAt)
+                // A credit shared with another lineage member takes the lineage's
+                // amount; one only this contributor wants takes its own.
+                let delta = lineage.wantedIds.contains(w.eventId) ? deltaFor(target.id) : ownAmount
+                wantedById[w.eventId] = (target.id, delta, w.occurredAt)
             }
         }
         let ids = Set(wantedById.keys).union(candidateIds).sorted()

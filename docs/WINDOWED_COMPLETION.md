@@ -770,7 +770,8 @@ user-favorable double credit. That edge caused the root-square counter bug
   resolves to its source event through the `forkedFromTaskId` lineage, and a
   fork's scoped keys use the lineage root, so the original and its fork share
   one credit — tombstoned only when no live, flagged lineage member wants it,
-  written at the lineage's one agreed amount), so every device's
+  written at the lineage's one agreed amount while more than one member wants
+  it and at a member's own amount when it alone does), so every device's
   re-derivation writes the same rows and union-by-id sync stays correct. They are written by the board cascade (`writeCountsTowardForTasks`
   ↔ `writeCountsToward`, around the board pass of `runBoardCascadeForTasks`
   and every other cascade entry incl. the pull and late-log paths), never by

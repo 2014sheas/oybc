@@ -1,5 +1,5 @@
 {
-  "_note": "Hand-authored fixture (edit directly, then `pnpm --filter @oybc/shared run gen:sync-fixtures`). Pins packages/shared/src/algorithms/countsToward.ts (+ countsTowardLineage.ts / countsTowardValidation.ts; tests/algorithms/countsToward.test.ts) against its Swift twin Helpers/CountsToward.swift (OYBCTests/CountsTowardVectorTests.swift) — docs/SHARED_COUNTER_SETTINGS.md §3 (D10: one credit per completion occurrence; D11: count from `countsTowardSince`). Task defaults for unlisted fields: type=normal, isCompleted=false, isDeleted=false, createdAt=2026-01-01T00:00:00.000Z. Event defaults: isDeleted=false, kind=increment when delta is set else completion. Board defaults: status=active, isDeleted=false. Placement defaults: isDeleted=false. Link defaults: isDeleted=false. `state` vectors take an optional `window`. `credits` / `candidates` / `planSet` name occurrences ({kind: event|childEvent|board|lifetime}) and the ROOT they are minted on (`root`, default \"root\"); the test derives each credit id with countsTowardEventId(root, lineageRootId(contributor), occurrence) and compares sets sorted by id. `candidates.roots` lists the roots to enumerate. `planSet.lineageWanted` lists occurrences other lineage members keep; `planSet.lineageDelta` maps a root to the lineage's amount. `lineageDelta` vectors pin lineageCreditDelta.",
+  "_note": "Hand-authored fixture (edit directly, then `pnpm --filter @oybc/shared run gen:sync-fixtures`). Pins packages/shared/src/algorithms/countsToward.ts (+ countsTowardLineage.ts / countsTowardValidation.ts; tests/algorithms/countsToward.test.ts) against its Swift twin Helpers/CountsToward.swift (OYBCTests/CountsTowardVectorTests.swift) — docs/SHARED_COUNTER_SETTINGS.md §3 (D10: one credit per completion occurrence; D11: count from `countsTowardSince`). Task defaults for unlisted fields: type=normal, isCompleted=false, isDeleted=false, createdAt=2026-01-01T00:00:00.000Z. Event defaults: isDeleted=false, kind=increment when delta is set else completion. Board defaults: status=active, isDeleted=false. Placement defaults: isDeleted=false. Link defaults: isDeleted=false. `state` vectors take an optional `window`. `credits` / `candidates` / `planSet` name occurrences ({kind: event|childEvent|board|lifetime}) and the ROOT they are minted on (`root`, default \"root\"); the test derives each credit id with countsTowardEventId(root, lineageRootId(contributor), occurrence) and compares sets sorted by id. `candidates.roots` lists the roots to enumerate. `planSet.lineageWanted` lists occurrences other lineage members keep; `planSet.lineageDelta` maps a root to the lineage's amount (applied only to credits also in `lineageWanted`). `lineageDelta` vectors pin lineageCreditDelta.",
   "eventId": [
     {
       "root": "root",
@@ -3416,7 +3416,7 @@
       ]
     },
     {
-      "name": "lineage-delta-overrides-the-contributors-amount",
+      "name": "lineage-delta-applies-only-to-a-credit-another-member-also-wants",
       "contributor": {
         "id": "t",
         "countsTowardCounterId": "root",
@@ -3437,6 +3437,14 @@
           },
           "occurredAt": "2026-10-07T09:00:00.000Z",
           "root": "root"
+        },
+        {
+          "occurrence": {
+            "kind": "event",
+            "eventId": "c2"
+          },
+          "occurredAt": "2026-10-14T09:00:00.000Z",
+          "root": "root"
         }
       ],
       "candidates": [
@@ -3444,6 +3452,13 @@
           "occurrence": {
             "kind": "event",
             "eventId": "c1"
+          },
+          "root": "root"
+        },
+        {
+          "occurrence": {
+            "kind": "event",
+            "eventId": "c2"
           },
           "root": "root"
         }
@@ -3459,10 +3474,95 @@
           "occurredAt": "2026-10-07T09:00:00.000Z"
         }
       ],
+      "lineageWanted": [
+        {
+          "occurrence": {
+            "kind": "event",
+            "eventId": "c1"
+          },
+          "root": "root"
+        }
+      ],
       "lineageDelta": {
         "root": 1
       },
-      "expected": []
+      "expected": [
+        {
+          "occurrence": {
+            "kind": "event",
+            "eventId": "c2"
+          },
+          "root": "root",
+          "kind": "insert",
+          "rootId": "root",
+          "delta": 3,
+          "occurredAt": "2026-10-14T09:00:00.000Z"
+        }
+      ]
+    },
+    {
+      "name": "a-credit-only-the-contributor-wants-keeps-its-own-amount-despite-the-lineage-delta",
+      "contributor": {
+        "id": "t",
+        "countsTowardCounterId": "root",
+        "countsTowardAmount": 3
+      },
+      "tasks": [
+        {
+          "id": "root",
+          "type": "counting",
+          "isCounter": true
+        }
+      ],
+      "wanted": [
+        {
+          "occurrence": {
+            "kind": "event",
+            "eventId": "c2"
+          },
+          "occurredAt": "2026-10-14T09:00:00.000Z",
+          "root": "root"
+        }
+      ],
+      "candidates": [
+        {
+          "occurrence": {
+            "kind": "event",
+            "eventId": "c2"
+          },
+          "root": "root"
+        }
+      ],
+      "stored": [
+        {
+          "occurrence": {
+            "kind": "event",
+            "eventId": "c2"
+          },
+          "taskId": "root",
+          "delta": 1,
+          "occurredAt": "2026-10-14T09:00:00.000Z"
+        }
+      ],
+      "lineageDelta": {
+        "root": 1
+      },
+      "expected": [
+        {
+          "occurrence": {
+            "kind": "event",
+            "eventId": "c2"
+          },
+          "root": "root",
+          "kind": "revise",
+          "rootId": "root",
+          "delta": 3,
+          "occurredAt": "2026-10-14T09:00:00.000Z",
+          "previousRootId": "root",
+          "previousOccurredAt": "2026-10-14T09:00:00.000Z",
+          "wasDeleted": false
+        }
+      ]
     },
     {
       "name": "counter-moved-tombstones-the-old-root-and-inserts-on-the-new",

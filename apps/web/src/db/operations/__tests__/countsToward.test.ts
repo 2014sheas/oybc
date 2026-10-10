@@ -520,18 +520,48 @@ describe('counts toward — fork lineage shares one credit', () => {
     expect((await db.tasks.get(ROOT2))?.currentCount).toBe(1);
   });
 
-  it('the fork and the original disagree on the amount: one credit, the lineage root’s amount, and replays write nothing', async () => {
+  it('the fork and the original disagree on the amount: the SHARED credit takes the lineage root’s amount, the fork’s OWN completion takes the fork’s', async () => {
     const fork = await forkCompletedDune();
     await at(LATER, () => setCountsToward(fork.id, ROOT, 3));
 
+    // The copied completion is wanted by both members → the lineage root's amount (1), not the fork's 3.
     expect(await liveCredits()).toMatchObject([{ delta: 1, version: 1 }]);
     await expectReplayNoop([fork.id]);
     await expectReplayNoop([SIMPLE]);
 
-    // The lineage root's amount is the rule: raising it moves the one credit.
+    // Raising the lineage root's amount moves the shared credit (2 — still not the fork's 3).
     await at(LATER, () => setCountsToward(SIMPLE, ROOT, 2));
     expect(await liveCredits()).toMatchObject([{ delta: 2, version: 2 }]);
     await expectReplayNoop([fork.id]);
+
+    // A completion only the fork makes credits the fork's own amount.
+    await handleTaskCompletion(OCT, 'bt-simple', { isCompleted: false });
+    await at(LATER, () => handleTaskCompletion(OCT, 'bt-simple', { isCompleted: true }));
+    const own = (await liveEventsOf(fork.id)).find((e) => e.occurredAt === LATER)!;
+    expect(await liveCredits()).toMatchObject([
+      { delta: 2, version: 2 },
+      { id: eventCredit(own.id), delta: 3, occurredAt: LATER, version: 1 },
+    ]);
+    expect((await db.tasks.get(ROOT))?.currentCount).toBe(5);
+    await expectReplayNoop([fork.id]);
+    await expectReplayNoop([SIMPLE]);
+  });
+
+  it('the credit writes join the caller’s transaction: a throw after the cascade persists no credit and no sync-queue entry', async () => {
+    await seed();
+    const queueBefore = await db.syncQueue.count();
+    await expect(
+      db.transaction('rw', db.tables, async () => {
+        await handleTaskCompletion(OCT, 'bt-simple', { isCompleted: true });
+        expect(await liveCredits()).toHaveLength(1); // written, inside the transaction
+        throw new Error('abort');
+      }),
+    ).rejects.toThrow('abort');
+
+    expect(await storedCredits()).toHaveLength(0);
+    expect(await liveEventsOf(SIMPLE)).toHaveLength(0);
+    expect(await db.syncQueue.count()).toBe(queueBefore);
+    expect((await db.tasks.get(ROOT))?.currentCount).toBe(0);
   });
 
   it('a fork whose original is not loaded yet produces nothing until the original arrives', async () => {

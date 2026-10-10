@@ -689,7 +689,14 @@ const EMPTY_IDS: ReadonlySet<string> = new Set();
 export interface LineageContext {
   /** Credit ids the OTHER live, flagged lineage members keep ({@link keptCreditIdsFor}). */
   wantedIds?: ReadonlySet<string>;
-  /** The amount the lineage writes on a root ({@link lineageCreditDelta}); default: the contributor's own. */
+  /**
+   * The amount the lineage writes on a root ({@link lineageCreditDelta}).
+   * Applied ONLY to a credit another lineage member also wants (one in
+   * `wantedIds`); a credit wanted by this contributor alone — a fork's own
+   * completion — carries the contributor's own amount, so a board-scoped
+   * amount edit on a fork governs the fork's own completions. Default: the
+   * contributor's own amount everywhere.
+   */
   deltaForRoot?: (rootId: string) => number;
 }
 
@@ -736,14 +743,18 @@ export function planCountsTowardActions(
   if (targetId != null && (!target || target.isDeleted)) return [];
   if (!isForkLineageLoaded(contributor, taskById)) return [];
   const lineageWantedIds = lineage.wantedIds ?? EMPTY_IDS;
-  const deltaFor = lineage.deltaForRoot ?? (() => countsTowardAmountOf(contributor));
+  const ownAmount = countsTowardAmountOf(contributor);
+  const deltaFor = lineage.deltaForRoot ?? (() => ownAmount);
 
   const canCredit = !contributor.isDeleted && canContribute(contributor) && isCountsTowardTarget(target);
   const wantedById = new Map<string, { rootId: string; delta: number; occurredAt: string }>();
   if (canCredit) {
     for (const w of wanted) {
       if (w.rootId !== target.id || !isOccurrenceWanted(contributor, w)) continue;
-      wantedById.set(w.eventId, { rootId: target.id, delta: deltaFor(target.id), occurredAt: w.occurredAt });
+      // A credit shared with another lineage member takes the lineage's amount;
+      // one only this contributor wants takes its own.
+      const delta = lineageWantedIds.has(w.eventId) ? deltaFor(target.id) : ownAmount;
+      wantedById.set(w.eventId, { rootId: target.id, delta, occurredAt: w.occurredAt });
     }
   }
   const ids = [...new Set([...wantedById.keys(), ...candidateIds])].sort(compareIds);
