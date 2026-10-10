@@ -25,7 +25,7 @@ final class CounterEditSheetTests: XCTestCase {
 
     func test_seed_prefillsVerbNounKind() {
         let d = CounterEditModel.seed(root(kind: .continuous))
-        XCTAssertEqual(d, CounterEditModel.Draft(verb: "Run", noun: "miles", kind: .continuous))
+        XCTAssertEqual(d, CounterEditModel.Draft(verb: "Run", noun: "miles", kind: .continuous, settings: .init()))
     }
 
     func test_patch_autoTitleFollows_kindOnlyWhenChanged_noGoalOrType() {
@@ -45,15 +45,132 @@ final class CounterEditSheetTests: XCTestCase {
         XCTAssertEqual(k.countKind, .continuous)
     }
 
-    func test_patch_blankVerbIsDo_customTitleKept_boardBornGoalSwitches() {
-        XCTAssertEqual(CounterEditModel.patch(root: root(), draft: .init(verb: " ", noun: "push-ups", kind: .discrete)).title, "Push-ups")
-        XCTAssertEqual(CounterEditModel.patch(root: root(), draft: .init(verb: " ", noun: "push-ups", kind: .discrete)).action, "Do")
+    func test_patch_customTitleKept_boardBornGoalSwitches_noDoSubstitution() {
+        // A blank verb is no longer rewritten to "Do" (the sheet requires one).
+        XCTAssertEqual(CounterEditModel.patch(root: root(), draft: .init(verb: " ", noun: "push-ups", kind: .discrete)).action, "")
         XCTAssertEqual(
             CounterEditModel.patch(root: root(title: "Morning miles"), draft: .init(verb: "Jog", noun: "miles", kind: .discrete)).title,
             "Morning miles"
         )
         let bb = root(title: "Run 2.6 miles", kind: .continuous, maxCount: 2.6)
         XCTAssertEqual(CounterEditModel.patch(root: bb, draft: .init(verb: "Run", noun: "miles", kind: .discrete)).title, "Run 3 miles")
+    }
+
+    // MARK: - Settings in the patch (docs/SHARED_COUNTER_SETTINGS.md §1)
+
+    func test_seed_carriesTheStoredSettingsAsTypedText() {
+        var r = root()
+        r.counterName = "Miles"
+        r.titleTemplateSingular = "Run #N mile"
+        r.timeframeGoals = CounterTimeframeGoals(weekly: 10)
+        let d = CounterEditModel.seed(r)
+        XCTAssertEqual(d.settings, CounterSettings.Draft(name: "Miles", singular: "Run #N mile", plural: "", goals: [.weekly: 10]))
+    }
+
+    func test_patch_settingsNilWhenUnchanged_presentWhenChanged() {
+        var r = root()
+        r.counterName = "Miles"
+        r.timeframeGoals = CounterTimeframeGoals(weekly: 10)
+        var d = CounterEditModel.seed(r)
+        XCTAssertNil(CounterEditModel.patch(root: r, draft: d).counterSettings)
+
+        // Typing the dimmed defaults back is still "unchanged": a plural equal to the default is absent.
+        d.settings.plural = "Run #N miles"
+        d.settings.goals[.monthly] = 43
+        XCTAssertNil(CounterEditModel.patch(root: r, draft: d).counterSettings)
+
+        d.settings.singular = "Run #N mile"
+        d.settings.goals[.daily] = 3
+        let after = CounterEditModel.patch(root: r, draft: d).counterSettings
+        XCTAssertEqual(after?.counterName, "Miles")
+        XCTAssertEqual(after?.titleTemplateSingular, "Run #N mile")
+        XCTAssertNil(after?.titleTemplatePlural)
+        XCTAssertEqual(after?.timeframeGoals, CounterTimeframeGoals(daily: 3, weekly: 10))
+
+        // Clearing a stored setting writes the nil.
+        d = CounterEditModel.seed(r)
+        d.settings.name = ""
+        let cleared = CounterEditModel.patch(root: r, draft: d).counterSettings
+        XCTAssertNotNil(cleared)
+        XCTAssertNil(cleared?.counterName)
+    }
+
+    func test_patch_goalLessRootTitleFollowsTheNewName() {
+        let r = root()
+        var d = CounterEditModel.seed(r)
+        d.settings.name = "Mileage"
+        let p = CounterEditModel.patch(root: r, draft: d)
+        XCTAssertEqual(p.title, "Mileage")
+        XCTAssertEqual(p.counterSettings?.counterName, "Mileage")
+    }
+
+    func test_save_settingsReachTheRootAndItsCopies() throws {
+        let db = try AppDatabase.makeTestInstance()
+        try K.seedUser(db)
+        let r = root()
+        try db.saveTask(r)
+        var d = CounterEditModel.seed(r)
+        d.settings.name = "Mileage"
+        d.settings.plural = "Ran #N miles"
+        d.settings.goals = [.weekly: 10]
+        try db.applyTaskEditPatch(taskId: "root", patch: CounterEditModel.patch(root: r, draft: d))
+        let saved = try XCTUnwrap(K.fetchTask(db, "root"))
+        XCTAssertEqual(saved.counterName, "Mileage")
+        XCTAssertEqual(saved.titleTemplatePlural, "Ran #N miles")
+        XCTAssertEqual(saved.timeframeGoals, CounterTimeframeGoals(weekly: 10))
+        XCTAssertEqual(saved.title, "Mileage")
+    }
+
+    func test_identityChanged_trimsVerbsWithoutDoFallback() {
+        let r = root()
+        XCTAssertTrue(CounterEditModel.identityChanged(root: r, draft: .init(verb: "", noun: "miles", kind: .discrete)))
+        XCTAssertFalse(CounterEditModel.identityChanged(root: r, draft: .init(verb: " Run ", noun: "miles ", kind: .discrete)))
+    }
+
+    // MARK: - CounterSheetForm
+
+    func test_form_requiredFieldsAndErrors() {
+        var f = CounterSheetForm()
+        XCTAssertFalse(f.requiredFilled(isEditing: false))
+        XCTAssertNil(f.error(for: .noun, touched: [], isEditing: false))
+        XCTAssertEqual(f.error(for: .noun, touched: [.noun], isEditing: false), "Enter what you're counting.")
+        XCTAssertEqual(f.error(for: .verb, touched: [.verb], isEditing: false), "Enter a verb.")
+        f.noun = "books"
+        XCTAssertFalse(f.requiredFilled(isEditing: false))
+        f.verb = "Read"
+        XCTAssertTrue(f.requiredFilled(isEditing: false))
+        XCTAssertNil(f.error(for: .noun, touched: [.noun], isEditing: false))
+    }
+
+    func test_form_durationNounOptionalOnlyInEdit() {
+        var f = CounterSheetForm(verb: "Practice", kind: .duration)
+        XCTAssertTrue(f.requiredFilled(isEditing: true))
+        XCTAssertFalse(f.requiredFilled(isEditing: false))
+        XCTAssertNil(f.error(for: .noun, touched: [.noun], isEditing: true))
+        f.kind = .discrete
+        XCTAssertFalse(f.requiredFilled(isEditing: true))
+    }
+
+    func test_form_defaultsAreLiveAndGated() {
+        var f = CounterSheetForm(verb: "Read", noun: "books", goalTexts: [.weekly: "7"])
+        XCTAssertEqual(f.defaults.name, "Read books")
+        XCTAssertEqual(f.shownTemplateDefault(f.defaults.plural), "Read #N books")
+        XCTAssertEqual(f.defaults.goals[.daily] ?? nil, 1)
+        f.noun = ""
+        XCTAssertEqual(f.shownTemplateDefault(f.defaults.plural), "")
+        XCTAssertTrue(CounterSheetForm(verb: "Practice", kind: .duration).shownTemplateDefault("Practice #N") == "Practice #N")
+    }
+
+    func test_form_storedSettingsDropDefaultsAndFlagBadGoals() {
+        var f = CounterSheetForm(verb: "Read", noun: "books", name: "Read books", plural: "Read #N novels")
+        f.goalTexts = [.weekly: "2", .monthly: "9"]
+        let s = f.storedSettings
+        XCTAssertNil(s.counterName)
+        XCTAssertEqual(s.titleTemplatePlural, "Read #N novels")
+        XCTAssertEqual(s.timeframeGoals, CounterTimeframeGoals(weekly: 2))
+        XCTAssertFalse(f.goalsInvalid)
+        f.goalTexts[.daily] = "abc"
+        XCTAssertTrue(f.goalsInvalid)
     }
 
     func test_identityChanged_andDedupePool_dropTheFamily() {

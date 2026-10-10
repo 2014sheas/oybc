@@ -68,6 +68,8 @@ final class CounterPlacementVectorTests: XCTestCase {
     private struct GoalVector: Decodable {
         let name: String; let root: Root; let board: Board; let existingCopy: Existing?; let expected: Double?
     }
+    private struct SourceExpected: Decodable { let goal: Double; let fromTimeframe: Bool }
+    private struct SourceVector: Decodable { let name: String; let root: Root; let board: Board; let expected: SourceExpected? }
     private struct NeedsVector: Decodable { let name: String; let root: Root; let board: Board; let expected: Bool }
     private struct SearchVector: Decodable { let name: String; let query: String; let root: Root; let expected: Bool }
     private struct TaskSearchVector: Decodable { let name: String; let query: String; let task: Root; let expected: Bool }
@@ -98,6 +100,7 @@ final class CounterPlacementVectorTests: XCTestCase {
     private struct Fixture: Decodable {
         let counterTimeframeDefault: [DefaultVector]
         let placementGoalForCounter: [GoalVector]
+        let placementGoalSource: [SourceVector]
         let placementNeedsCopy: [NeedsVector]
         let counterSearchMatches: [SearchVector]
         let taskSearchMatches: [TaskSearchVector]
@@ -124,6 +127,16 @@ final class CounterPlacementVectorTests: XCTestCase {
             XCTAssertEqual(
                 CounterPlacement.counterTimeframeDefault(v.root.fields, timeframe: try tf(v.timeframe)), v.expected, v.name
             )
+        }
+    }
+
+    func testPlacementGoalSource() throws {
+        let vectors = try loadFixture().placementGoalSource
+        XCTAssertFalse(vectors.isEmpty)
+        for v in vectors {
+            let got = CounterPlacement.placementGoalSource(v.root.fields, timeframe: try tf(v.board.timeframe))
+            let want = v.expected.map { CounterPlacement.PlacementGoalSource(goal: $0.goal, fromTimeframe: $0.fromTimeframe) }
+            XCTAssertEqual(got, want, v.name)
         }
     }
 

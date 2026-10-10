@@ -11,29 +11,34 @@ enum CounterEditModel {
 
     /// The sheet's editable fields.
     struct Draft: Equatable {
-        /// "Task verb" — stored as `action`; blank submits as "Do".
+        /// "Task verb" — stored as `action`; required (no "Do" fallback).
         var verb: String
         /// "What are you counting?" — stored as `unit`.
         var noun: String
         var kind: CountKind
+        /// Name, singular / plural templates and default goals as typed
+        /// (blank / absent = unset; see `CounterSettings.stored(fromDraft:context:)`).
+        var settings: CounterSettings.Draft = .init()
     }
-
-    /// Fallback verb for a blank "Task verb" (the create sheet's rule).
-    static let defaultVerb = "Do"
 
     /// The sheet's fields seeded from the counter's root.
     ///
     /// - Parameter root: The counter's root task.
     /// - Returns: The prefilled draft.
     static func seed(_ root: Task) -> Draft {
-        Draft(verb: root.action ?? "", noun: root.unit ?? "", kind: resolveCountKind(root.countKind))
+        Draft(
+            verb: root.action ?? "", noun: root.unit ?? "", kind: resolveCountKind(root.countKind),
+            settings: CounterSettings.draft(from: CounterSettings.Fields(task: root))
+        )
     }
 
     /// The `applyTaskEditPatch` patch for a draft: action / unit, `countKind`
     /// only when it changed, the root's own description (kept), no goal
     /// (`maxCountStr` "" leaves it to the kind switch), no type — and the
     /// title, regenerated from the new fields (at the goal the kind switch
-    /// leaves) when the root's title is auto, else kept verbatim.
+    /// leaves) through the POST-edit name / templates when the root's title is
+    /// auto, else kept verbatim. `counterSettings` is set only when the typed
+    /// settings differ from the stored ones (Save writes only what changed).
     ///
     /// - Parameters:
     ///   - root: The counter's root task (stored).
@@ -41,25 +46,38 @@ enum CounterEditModel {
     /// - Returns: The patch for `applyTaskEditPatch(taskId: root.id, …)`.
     static func patch(root: Task, draft: Draft) -> EditTaskSheet.Patch {
         let storedKind = resolveCountKind(root.countKind)
-        let action = trimmed(draft.verb).isEmpty ? defaultVerb : trimmed(draft.verb)
+        let action = trimmed(draft.verb)
         let unit = trimmed(draft.noun)
         let kindChanged = draft.kind != storedKind
         let goal = kindChanged
             ? (planCountKindSwitch(maxCount: root.maxCount, defaultLogAmount: nil, from: storedKind, to: draft.kind)?.maxCount ?? root.maxCount)
             : root.maxCount
+        let before = CounterSettings.stored(CounterSettings.Fields(task: root))
+        let after = CounterSettings.stored(
+            fromDraft: draft.settings,
+            context: CounterSettings.Fields(action: action, unit: unit, countKind: draft.kind)
+        )
+        let settingsChanged = after != before
         let settings = CounterSettings.TitleSettings(task: root)
+        let postSettings = settingsChanged
+            ? CounterSettings.TitleSettings(
+                counterName: after.counterName, titleTemplateSingular: after.titleTemplateSingular,
+                titleTemplatePlural: after.titleTemplatePlural
+            )
+            : settings
         let auto = TaskTitle.isAutoCounterTitle(
             title: root.title, action: root.action ?? "", maxCount: root.maxCount, unit: root.unit ?? "",
             countKind: storedKind, settings: settings
         )
         // Re-rendered through the root's stored name / templates (absent = the formula).
         let title = auto
-            ? TaskTitle.renderedTitle(settings, action: action, unit: unit, countKind: draft.kind, goal: goal)
+            ? TaskTitle.renderedTitle(postSettings, action: action, unit: unit, countKind: draft.kind, goal: goal)
             : root.title
         return EditTaskSheet.Patch(
             title: title, description: root.description ?? "", action: action, unit: unit, maxCountStr: "",
             trigger: .bingo, requiredCountStr: "", refMode: .board, selectedBoardId: "", selectedTemplateId: "",
-            countKind: kindChanged ? draft.kind : nil
+            countKind: kindChanged ? draft.kind : nil,
+            counterSettings: settingsChanged ? after : nil
         )
     }
 
@@ -67,8 +85,7 @@ enum CounterEditModel {
     /// then does the sheet check for an established counter of that name.
     static func identityChanged(root: Task, draft: Draft) -> Bool {
         let seed = seed(root)
-        func verb(_ v: String) -> String { trimmed(v).isEmpty ? defaultVerb : trimmed(v) }
-        return verb(draft.verb) != verb(seed.verb) || trimmed(draft.noun) != trimmed(seed.noun)
+        return trimmed(draft.verb) != trimmed(seed.verb) || trimmed(draft.noun) != trimmed(seed.noun)
     }
 
     /// The dedupe pool for a rename: every task except the counter's own

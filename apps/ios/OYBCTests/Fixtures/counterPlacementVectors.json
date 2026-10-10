@@ -1165,5 +1165,87 @@
       },
       "expected": "Practise piano 1h 30m"
     }
+  ],
+  "placementGoalSource": [
+    {
+      "name": "a stored weekly default: from the timeframe",
+      "root": {
+        "maxCount": 12,
+        "timeframeGoals": {
+          "weekly": 2
+        }
+      },
+      "board": {
+        "timeframe": "weekly"
+      },
+      "expected": {
+        "goal": 2,
+        "fromTimeframe": true
+      }
+    },
+    {
+      "name": "a derived default: from the timeframe",
+      "root": {
+        "timeframeGoals": {
+          "weekly": 7
+        }
+      },
+      "board": {
+        "timeframe": "daily"
+      },
+      "expected": {
+        "goal": 1,
+        "fromTimeframe": true
+      }
+    },
+    {
+      "name": "no defaults: the root's own goal, no prefix",
+      "root": {
+        "maxCount": 12
+      },
+      "board": {
+        "timeframe": "weekly"
+      },
+      "expected": {
+        "goal": 12,
+        "fromTimeframe": false
+      }
+    },
+    {
+      "name": "custom board with defaults: the root's own goal, no prefix",
+      "root": {
+        "maxCount": 12,
+        "timeframeGoals": {
+          "weekly": 2
+        }
+      },
+      "board": {
+        "timeframe": "custom"
+      },
+      "expected": {
+        "goal": 12,
+        "fromTimeframe": false
+      }
+    },
+    {
+      "name": "goal-less root, no defaults: none (the row offers a Goal entry)",
+      "root": {},
+      "board": {
+        "timeframe": "weekly"
+      },
+      "expected": null
+    },
+    {
+      "name": "goal-less root with defaults on a custom board: none",
+      "root": {
+        "timeframeGoals": {
+          "weekly": 2
+        }
+      },
+      "board": {
+        "timeframe": "custom"
+      },
+      "expected": null
+    }
   ]
 }

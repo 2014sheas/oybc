@@ -5,10 +5,12 @@ import SwiftUI
 /// §Creation Surfaces). iOS twin of web's `CreateCounterSheet.tsx` — copy is
 /// VERBATIM per CLAUDE.md cross-platform parity rule.
 ///
-/// Fields follow the (verb, noun) identity model: "What are you counting?"
-/// captures the noun (stored as `unit`, autofocused), the optional "Task
-/// verb" captures the verb (stored as `action`, defaulting to "Do" when left
-/// blank), and "Start from" seeds the lifetime total. Recomputes a dedupe
+/// Fields (shared counter settings, docs/SHARED_COUNTER_SETTINGS.md §1):
+/// Name · Kind · "What are you counting?" (the noun, stored as `unit`) · "Task
+/// verb" (stored as `action`) · Singular / Plural title · Defaults per core
+/// timeframe · "Start from" (create only). Only the noun and the verb are
+/// required; every other text field is optional — blank = unset, and the
+/// derived default shows DIMMED in the field (`CounterSheetForm`). Recomputes a dedupe
 /// classification per keystroke via `classifyCounterCreateMatch`:
 ///
 ///   - `established` match → Create is disabled; a gold card offers
@@ -51,14 +53,8 @@ struct NewCounterSheetView: View {
 
     @Environment(\.dismiss) private var dismiss
 
-    /// Fallback verb when the "Task verb" field is left blank — per the
-    /// (verb, noun) identity model, an empty verb submits as "Do".
-    private static let defaultVerb = "Do"
-
-    @State private var verb: String = ""
-    @State private var unit: String = ""
-    @State private var startingCountText: String = ""
-    @State private var countKind: CountKind = .discrete
+    @State private var form = CounterSheetForm()
+    @State private var touched: Set<CounterSheetField> = []
     @State private var error: String? = nil
     @State private var busy: Bool = false
     @State private var pendingSwitch: KindSwitchPreview?
@@ -77,65 +73,40 @@ struct NewCounterSheetView: View {
         self.database = database
         self.onNavigateToCounter = onNavigateToCounter
         self.onSaved = onSaved
-        if let root {
-            let seed = CounterEditModel.seed(root)
-            _verb = State(initialValue: seed.verb)
-            _unit = State(initialValue: seed.noun)
-            _countKind = State(initialValue: seed.kind)
-        }
+        if let root { _form = State(initialValue: CounterSheetForm.seed(root: root)) }
     }
-
-    private var draft: CounterEditModel.Draft { .init(verb: verb, noun: unit, kind: countKind) }
 
     // MARK: - Derived
 
-    private var trimmedVerb: String {
-        verb.trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-    private var trimmedUnit: String {
-        unit.trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-    private var effectiveVerb: String {
-        trimmedVerb.isEmpty ? Self.defaultVerb : trimmedVerb
-    }
-
-    private var previewName: String {
-        guard !trimmedUnit.isEmpty else { return "" }
-        return CounterName.formatCounterName(action: effectiveVerb, unit: trimmedUnit)
-    }
+    private var isEditing: Bool { root != nil }
 
     private var startFromEmpty: Bool {
-        startingCountText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        form.startText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
-    /// The parsed seed at the selected kind — the one value preview, validation and save all use.
+    /// The parsed seed at the selected kind — the one value validation and save both use.
     private var startFromValue: CountValue? {
-        parseCountInput(startingCountText, kind: countKind, allowZero: true)
+        parseCountInput(form.startText, kind: form.kind, allowZero: true)
     }
     private var startFromInvalid: Bool { !startFromEmpty && startFromValue == nil }
 
-    private var previewCount: CountValue { startFromValue ?? 0 }
-
     /// Edit mode checks only a rename, against everything but the counter's family.
+    /// Only computed once both the noun and the verb are filled.
     private var match: CounterCreateMatch? {
-        guard !trimmedUnit.isEmpty else { return nil }
+        guard !form.trimmedNoun.isEmpty, !form.trimmedVerb.isEmpty else { return nil }
         guard let root else {
-            return classifyCounterCreateMatch(action: effectiveVerb, unit: trimmedUnit, tasks: tasks)
+            return classifyCounterCreateMatch(action: form.trimmedVerb, unit: form.trimmedNoun, tasks: tasks)
         }
-        guard CounterEditModel.identityChanged(root: root, draft: draft) else { return nil }
+        guard CounterEditModel.identityChanged(root: root, draft: form.editDraft) else { return nil }
         return classifyCounterCreateMatch(
-            action: effectiveVerb, unit: trimmedUnit, tasks: CounterEditModel.dedupePool(root: root, tasks: tasks)
+            action: form.trimmedVerb, unit: form.trimmedNoun, tasks: CounterEditModel.dedupePool(root: root, tasks: tasks)
         )
     }
 
-    /// R1: the promote/standalone card was removed — a `standalone` match no
-    /// longer blocks or offers anything; only `established` blocks create.
-    private var canCreate: Bool {
-        !trimmedUnit.isEmpty && match?.kind != .established && !startFromInvalid && !busy
-    }
-
-    /// A Duration counter's noun is optional in edit (a board-born root has no unit).
-    private var canSave: Bool {
-        (!trimmedUnit.isEmpty || !countKindNeedsUnit(countKind)) && match?.kind != .established && !busy
+    /// Create / Save: the required fields are filled, nothing blocks (an
+    /// established match, an unparseable entry), and no write is in flight.
+    private var canSubmit: Bool {
+        form.requiredFilled(isEditing: isEditing) && match?.kind != .established
+            && !startFromInvalid && !form.goalsInvalid && !busy
     }
 
     // MARK: - Body
@@ -144,18 +115,13 @@ struct NewCounterSheetView: View {
         NavigationStack {
             ScrollView {
                 NewCounterSheetContentView(
-                    verb: $verb,
-                    unit: $unit,
-                    startingCountText: $startingCountText,
-                    countKind: $countKind,
+                    form: $form,
+                    touched: $touched,
                     startFromInvalid: startFromInvalid,
                     error: error,
                     busy: busy,
-                    previewName: previewName,
-                    previewCount: root.map { $0.currentCount ?? 0 } ?? previewCount,
-                    trimmedUnit: trimmedUnit,
                     match: match,
-                    isEditing: root != nil,
+                    isEditing: isEditing,
                     kindLock: root.map { kindPickerLock(mode: .edit, kind: resolveCountKind($0.countKind)) } ?? .none,
                     onKindRequest: root == nil ? nil : requestKind,
                     onViewCounter: onNavigateToCounter
@@ -173,10 +139,12 @@ struct NewCounterSheetView: View {
                 ToolbarItem(placement: .confirmationAction) {
                     if root == nil {
                         RisoToolbarPill(title: "Create counter") { handleCreate() }
-                            .disabled(!canCreate)
+                            .disabled(!canSubmit)
+                            .opacity(canSubmit ? 1 : 0.5)
                     } else {
                         RisoToolbarPill(title: "Save") { handleSave() }
-                            .disabled(!canSave)
+                            .disabled(!canSubmit)
+                            .opacity(canSubmit ? 1 : 0.5)
                     }
                 }
                 ToolbarItem(placement: .cancellationAction) {
@@ -191,9 +159,13 @@ struct NewCounterSheetView: View {
         // sheet's private `busy` state, so the dismiss guard lives here,
         // keyed on this view's own `busy`.
         .interactiveDismissDisabled(busy)
-        // The seed grammar differs per kind (decimal / h:m) — a stale entry would mis-parse.
-        .onChange(of: countKind) { startingCountText = "" }
-        .kindSwitchConfirm(pending: $pendingSwitch) { p in countKind = p.to }
+        // The seed and default-goal grammar differ per kind (decimal / h:m) — a
+        // stale entry would mis-parse. Edit keeps its entered goals (kind units).
+        .onChange(of: form.kind) {
+            form.startText = ""
+            if root == nil { form.goalTexts = [:] }
+        }
+        .kindSwitchConfirm(pending: $pendingSwitch) { p in form.kind = p.to }
     }
 
     // MARK: - Edit mode
@@ -201,19 +173,19 @@ struct NewCounterSheetView: View {
     /// Continuous → Discrete opens the shared confirm (previewing the draft);
     /// any other permitted change applies at once.
     private func requestKind(_ next: CountKind) {
-        guard let root, KindSwitchCopy.needsConfirm(from: countKind, to: next) else { countKind = next; return }
+        guard let root, KindSwitchCopy.needsConfirm(from: form.kind, to: next) else { form.kind = next; return }
         let linked = (try? database.previewCounterKindSwitch(rootTaskId: root.id, to: next))?.linkedCount ?? 0
         var draftTask = root
-        draftTask.action = verb
-        draftTask.unit = unit
-        draftTask.countKind = countKind
+        draftTask.action = form.verb
+        draftTask.unit = form.noun
+        draftTask.countKind = form.kind
         pendingSwitch = KindSwitchPreview.planned(task: draftTask, to: next, linkedCount: linked)
     }
 
     /// Saves through `applyTaskEditPatch` — the Task Detail write.
     private func handleSave() {
-        guard let root, canSave else { return }
-        let patch = CounterEditModel.patch(root: root, draft: draft)
+        guard let root, canSubmit else { return }
+        let patch = CounterEditModel.patch(root: root, draft: form.editDraft)
         let db = database
         error = nil
         busy = true
@@ -237,11 +209,12 @@ struct NewCounterSheetView: View {
     // MARK: - Actions
 
     private func handleCreate() {
-        guard canCreate else { return }
-        let capturedVerb = effectiveVerb
-        let capturedUnit = trimmedUnit
+        guard canSubmit else { return }
+        let capturedVerb = form.trimmedVerb
+        let capturedUnit = form.trimmedNoun
         let parsedStarting = startFromValue
-        let capturedKind = countKind
+        let capturedKind = form.kind
+        let capturedSettings = form.storedSettings
         error = nil
         busy = true
         _Concurrency.Task.detached(priority: .userInitiated) {
@@ -253,6 +226,7 @@ struct NewCounterSheetView: View {
                     unit: capturedUnit,
                     startingCount: parsedStarting,
                     countKind: capturedKind,
+                    settings: capturedSettings,
                     now: now
                 )
                 await MainActor.run {
@@ -271,23 +245,19 @@ struct NewCounterSheetView: View {
 
 // MARK: - NewCounterSheetContentView (pure-props leaf, snapshot-testable)
 
-/// The scrollable content of `NewCounterSheetView` — fields, preview, dedupe
-/// banner, and error caption — without the NavigationStack toolbar chrome.
-/// Extracted as a real reusable view (mirrors `NewTaskSheetContentView`) so
-/// the sheet and the snapshot tests render the SAME layout from one source
-/// of truth.
+/// The scrollable content of `NewCounterSheetView` — fields, dedupe banner and
+/// error caption — without the NavigationStack toolbar chrome. Extracted as a
+/// real reusable view (mirrors `NewTaskSheetContentView`) so the sheet and the
+/// snapshot tests render the SAME layout from one source of truth.
 struct NewCounterSheetContentView: View {
 
-    @Binding var verb: String
-    @Binding var unit: String
-    @Binding var startingCountText: String
-    @Binding var countKind: CountKind
+    @Binding var form: CounterSheetForm
+    /// Required fields that have been edited-then-emptied or blurred while
+    /// empty — the only ones that show their inline error.
+    @Binding var touched: Set<CounterSheetField>
     var startFromInvalid: Bool = false
     var error: String? = nil
     var busy: Bool = false
-    var previewName: String = ""
-    var previewCount: CountValue = 0
-    var trimmedUnit: String = ""
     var match: CounterCreateMatch? = nil
     /// Edit mode: hides "Start from" (the seed is a create-only field).
     var isEditing: Bool = false
@@ -296,29 +266,43 @@ struct NewCounterSheetContentView: View {
     var onKindRequest: ((CountKind) -> Void)? = nil
     var onViewCounter: (String) -> Void = { _ in }
 
+    @FocusState private var focus: CounterSheetField?
+
     var body: some View {
+        let defaults = form.defaults
         VStack(alignment: .leading, spacing: 14) {
 
+            TemplateFieldView(
+                label: "Name", text: $form.name, derived: defaults.name, count: 1, kind: form.kind,
+                showsExample: false, maxLength: 100
+            )
+
             fieldBlock(label: "Kind") {
-                KindPickerView(selection: $countKind, lock: kindLock, onRequest: onKindRequest)
+                KindPickerView(selection: $form.kind, lock: kindLock, onRequest: onKindRequest)
             }
 
-            fieldBlock(label: "What are you counting?") {
-                RisoTextField(placeholder: "push-ups", text: $unit)
-            }
+            requiredField(label: "What are you counting?", placeholder: "push-ups", text: $form.noun, field: .noun)
 
-            fieldBlock(label: "Task verb (optional)") {
-                RisoTextField(placeholder: "Do", text: $verb)
-            }
+            requiredField(label: "Task verb", placeholder: "Read", text: $form.verb, field: .verb)
+
+            TemplateFieldView(
+                label: "Singular title", text: $form.singular,
+                derived: form.shownTemplateDefault(defaults.singular),
+                count: TemplateFieldModel.exampleCount(plural: false, kind: form.kind), kind: form.kind
+            )
+
+            TemplateFieldView(
+                label: "Plural title", text: $form.plural,
+                derived: form.shownTemplateDefault(defaults.plural),
+                count: TemplateFieldModel.exampleCount(plural: true, kind: form.kind), kind: form.kind
+            )
+
+            DefaultsRowView(kind: form.kind, unit: form.trimmedNoun, texts: $form.goalTexts, derived: defaults.goals)
 
             if !isEditing {
                 fieldBlock(label: "Start from (optional)") {
-                    GoalEntryView(kind: countKind, text: $startingCountText, placeholder: "0", invalid: startFromInvalid)
+                    GoalEntryView(kind: form.kind, text: $form.startText, placeholder: "0", invalid: startFromInvalid)
                 }
-            }
-
-            if !previewName.isEmpty {
-                previewCard
             }
 
             dedupeBanner
@@ -329,9 +313,14 @@ struct NewCounterSheetContentView: View {
                     .foregroundStyle(Color.risoRed)
             }
         }
+        .onChange(of: focus) { old, _ in
+            if let old { touched.insert(old) }
+        }
+        .onChange(of: form.noun) { touched.insert(.noun) }
+        .onChange(of: form.verb) { touched.insert(.verb) }
     }
 
-    // MARK: - Field block
+    // MARK: - Field blocks
 
     private func fieldBlock<Content: View>(label: String, @ViewBuilder content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: 5) {
@@ -343,34 +332,20 @@ struct NewCounterSheetContentView: View {
         }
     }
 
-    // MARK: - Live preview card
-
-    private var previewCard: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack(alignment: .firstTextBaseline) {
-                Text(previewName)
-                    .font(.risoHead(15, .extraBold))
-                    .foregroundStyle(Color.risoInk)
-                Spacer(minLength: 8)
-                Text(formatCountTotal(previewCount, kind: countKind))
-                    .font(.risoHead(15, .extraBold))
-                    .foregroundStyle(Color.risoInk)
-            }
-            HStack {
-                Spacer(minLength: 8)
-                Text("All-time")
-                    .font(.risoBody(10, .bold))
-                    .tracking(0.3)
-                    .foregroundStyle(Color.risoMuted)
+    /// A required text field: red keyline + an inline error underneath once touched and empty.
+    private func requiredField(
+        label: String, placeholder: String, text: Binding<String>, field: CounterSheetField
+    ) -> some View {
+        let message = form.error(for: field, touched: touched, isEditing: isEditing)
+        return fieldBlock(label: label) {
+            RisoTextField(placeholder: placeholder, text: text, invalid: message != nil)
+                .focused($focus, equals: field)
+            if let message {
+                Text(message)
+                    .font(.risoBody(12, .semibold))
+                    .foregroundStyle(Color.risoRed)
             }
         }
-        .padding(12)
-        .background(Color.risoPaper2)
-        .clipShape(RoundedRectangle(cornerRadius: Riso.cardRadius))
-        .overlay(
-            RoundedRectangle(cornerRadius: Riso.cardRadius)
-                .strokeBorder(Color.risoInk, lineWidth: Riso.Keyline.dense)
-        )
     }
 
     // MARK: - Dedupe banner (established match only — R1 removed the
@@ -381,7 +356,7 @@ struct NewCounterSheetContentView: View {
         if let match, match.kind == .established {
             let counterName = CounterSettings.counterDisplayName(match.task)
             VStack(alignment: .leading, spacing: 6) {
-                Text("You're already counting \(trimmedUnit)")
+                Text("You're already counting \(form.trimmedNoun)")
                     .font(.risoHead(13, .bold))
                     .foregroundStyle(Color.risoInkStatic)
                 Text("\(formatCountTotal(match.lifetime, kind: resolveCountKind(match.task.countKind))) all-time · counting on \(match.memberCount) task\(match.memberCount == 1 ? "" : "s")")
@@ -415,13 +390,8 @@ struct NewCounterSheetContentView: View {
     NavigationStack {
         ScrollView {
             NewCounterSheetContentView(
-                verb: .constant(""),
-                unit: .constant("push-ups"),
-                startingCountText: .constant(""),
-                countKind: .constant(.discrete),
-                previewName: "Push-ups",
-                previewCount: 0,
-                trimmedUnit: "push-ups",
+                form: .constant(CounterSheetForm(noun: "push-ups")),
+                touched: .constant([]),
                 match: CounterCreateMatch(
                     kind: .established,
                     task: Task(

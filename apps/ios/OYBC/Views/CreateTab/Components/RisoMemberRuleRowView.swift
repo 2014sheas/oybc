@@ -565,7 +565,7 @@ struct RisoMemberRuleRowView: View {
                     RisoCountStepperView(
                         value: Binding(get: { model.target }, set: { onSetTarget($0) }),
                         kind: model.kind,
-                        max: model.goal,
+                        max: Swift.max(model.goal, model.target),
                         suffix: model.targetSuffix
                     )
                 }

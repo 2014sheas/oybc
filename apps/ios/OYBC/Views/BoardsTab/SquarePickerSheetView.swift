@@ -41,6 +41,9 @@ struct SquarePickerSheetView: View {
     /// Achievement, D14) — nil for an existing task OR a just-created
     /// Compound (created immediately by the special panel).
     let onConfirm: (_ taskId: String, _ pending: PendingTaskPayload?) -> Void
+    /// The board's timeframe: a counter match row shows the goal a placed copy
+    /// would get on it (nil = no goal slot).
+    var timeframe: Timeframe? = nil
 
     // MARK: - Derived
 
@@ -83,7 +86,8 @@ struct SquarePickerSheetView: View {
                             libraryTasks: candidateTasks,
                             onExistingTaskPicked: { task in
                                 onConfirm(task.id, nil)
-                            }
+                            },
+                            placementTimeframe: timeframe
                         )
 
                         RisoSpecialTaskPanel(

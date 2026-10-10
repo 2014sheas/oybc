@@ -103,10 +103,11 @@ final class CounterSettingsEditTests: XCTestCase {
         r.titleTemplatePlural = "Run #N miles!"
         try db.saveTask(r)
         try db.saveTask(K.task("copy", maxCount: 10, sharedCounterId: "root", title: "Run 10 miles!"))
-        try db.applyTaskEditPatch(
-            taskId: "root",
-            patch: CounterEditModel.patch(root: r, draft: .init(verb: "Jog", noun: "miles", kind: .discrete))
-        )
+        // The sheet seeds the stored settings, so an untouched settings section writes nothing.
+        var draft = CounterEditModel.seed(r)
+        draft.verb = "Jog"
+        XCTAssertNil(CounterEditModel.patch(root: r, draft: draft).counterSettings)
+        try db.applyTaskEditPatch(taskId: "root", patch: CounterEditModel.patch(root: r, draft: draft))
         let saved = try XCTUnwrap(K.fetchTask(db, "root"))
         XCTAssertEqual(saved.counterName, "Running")
         XCTAssertEqual(saved.titleTemplatePlural, "Run #N miles!")

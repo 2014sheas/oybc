@@ -64,7 +64,37 @@ final class CounterSettingsVectorTests: XCTestCase {
     }
     private struct CopyVector: Decodable { let name: String; let member: Root; let newMaxCount: Double; let expected: String }
 
+    private struct Context: Decodable {
+        let action: String?, unit: String?, countKind: CountKind?
+        var fields: CounterSettings.Fields { .init(action: action, unit: unit, countKind: countKind) }
+    }
+    private struct DraftJSON: Decodable {
+        let name: String, singular: String, plural: String
+        let goals: [String: Double?]
+        var value: CounterSettings.Draft {
+            var g: [CounterSettings.GoalTimeframe: CountValue] = [:]
+            for (k, v) in goals { if let t = CounterSettings.GoalTimeframe(rawValue: k), let v { g[t] = v } }
+            return .init(name: name, singular: singular, plural: plural, goals: g)
+        }
+    }
+    private struct DefaultsExpected: Decodable {
+        let name: String, singular: String, plural: String
+        let goals: [String: Double?]
+    }
+    private struct DefaultsVector: Decodable {
+        let name: String; let context: Context; let draft: DraftJSON; let expected: DefaultsExpected
+    }
+    private struct StoredExpected: Decodable {
+        let counterName: String?, titleTemplateSingular: String?, titleTemplatePlural: String?
+        let timeframeGoals: Goals?
+    }
+    private struct StoredVector: Decodable {
+        let name: String; let context: Context; let draft: DraftJSON; let expected: StoredExpected
+    }
+
     private struct Fixture: Decodable {
+        let counterSettingsDefaults: [DefaultsVector]
+        let storedCounterSettingsFromDraft: [StoredVector]
         let defaultTitleTemplates: [TemplatesVector]
         let effectiveTitleTemplates: [TemplatesVector]
         let renderCounterTitle: [RenderVector]
@@ -95,6 +125,41 @@ final class CounterSettingsVectorTests: XCTestCase {
             let t = CounterSettings.effectiveTitleTemplates(v.root.fields)
             XCTAssertEqual(Pair(singular: t.singular, plural: t.plural), v.expected, v.name)
         }
+    }
+
+    func testCounterSettingsDefaults() throws {
+        let vectors = try loadFixture().counterSettingsDefaults
+        XCTAssertFalse(vectors.isEmpty)
+        for v in vectors {
+            let d = CounterSettings.defaults(v.context.fields, draft: v.draft.value)
+            XCTAssertEqual(d.name, v.expected.name, v.name)
+            XCTAssertEqual(d.singular, v.expected.singular, v.name)
+            XCTAssertEqual(d.plural, v.expected.plural, v.name)
+            for t in CounterSettings.GoalTimeframe.allCases {
+                XCTAssertEqual(d.goals[t] ?? nil, (v.expected.goals[t.rawValue] ?? nil), "\(v.name) \(t)")
+            }
+        }
+    }
+
+    func testStoredCounterSettingsFromDraft() throws {
+        let vectors = try loadFixture().storedCounterSettingsFromDraft
+        XCTAssertFalse(vectors.isEmpty)
+        for v in vectors {
+            let s = CounterSettings.stored(fromDraft: v.draft.value, context: v.context.fields)
+            XCTAssertEqual(s.counterName, v.expected.counterName, v.name)
+            XCTAssertEqual(s.titleTemplateSingular, v.expected.titleTemplateSingular, v.name)
+            XCTAssertEqual(s.titleTemplatePlural, v.expected.titleTemplatePlural, v.name)
+            XCTAssertEqual(s.timeframeGoals, v.expected.timeframeGoals?.value, v.name)
+        }
+    }
+
+    func testDraftFromRootRoundTripsStored() {
+        let root = CounterSettings.Fields(
+            counterName: " Books ", titleTemplatePlural: "", timeframeGoals: CounterTimeframeGoals(weekly: 2, monthly: 0)
+        )
+        let draft = CounterSettings.draft(from: root)
+        XCTAssertEqual(draft, .init(name: "Books", singular: "", plural: "", goals: [.weekly: 2]))
+        XCTAssertEqual(CounterSettings.stored(root), CounterSettings.Stored(counterName: "Books", timeframeGoals: CounterTimeframeGoals(weekly: 2)))
     }
 
     func testRenderCounterTitle() throws {

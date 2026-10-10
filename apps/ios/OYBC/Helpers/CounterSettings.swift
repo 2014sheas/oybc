@@ -212,6 +212,124 @@ enum CounterSettings {
             .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
+    // MARK: - Counter sheet draft (the settings UI)
+
+    /// The counter sheet's optional fields as typed: "" / an absent goal =
+    /// unset (the derived default shows dimmed). Goals are in the kind's
+    /// units. TS twin: `CounterSettingsDraft`.
+    struct Draft: Equatable {
+        var name: String = ""
+        var singular: String = ""
+        var plural: String = ""
+        var goals: [GoalTimeframe: CountValue] = [:]
+    }
+
+    /// The dimmed value each optional field shows while unset ("" / nil =
+    /// nothing). TS twin: `CounterSettingsDefaults`.
+    struct Defaults: Equatable {
+        var name: String
+        var singular: String
+        var plural: String
+        var goals: [GoalTimeframe: CountValue?]
+    }
+
+    /// A stored goals struct as a per-timeframe map (set members only).
+    static func goalMap(_ goals: CounterTimeframeGoals?) -> [GoalTimeframe: CountValue] {
+        var out: [GoalTimeframe: CountValue] = [:]
+        for t in GoalTimeframe.allCases { if let v = goals?[t] { out[t] = v } }
+        return out
+    }
+
+    /// The entered goals that are usable positive numbers.
+    private static func enteredGoals(_ goals: [GoalTimeframe: CountValue]) -> CounterTimeframeGoals {
+        var out = CounterTimeframeGoals()
+        for t in GoalTimeframe.allCases {
+            if let v = goals[t], v.isFinite, v > 0 { out[t] = v }
+        }
+        return out
+    }
+
+    /// The sheet's draft seeded from a stored root ("" / absent for an unset
+    /// field). TS twin: `counterSettingsDraftFromRoot`.
+    ///
+    /// - Parameter root: The counter's root fields.
+    /// - Returns: The draft.
+    static func draft(from root: Fields) -> Draft {
+        let goals = goalMap(enteredGoals(goalMap(root.timeframeGoals)))
+        return Draft(
+            name: storedText(root.counterName) ?? "",
+            singular: storedText(root.titleTemplateSingular) ?? "",
+            plural: storedText(root.titleTemplatePlural) ?? "",
+            goals: goals
+        )
+    }
+
+    /// The dimmed defaults for a draft over the sheet's live context: the
+    /// name is `formatCounterName(action, unit)`, the plural is the default
+    /// template, the singular is the typed plural when there is one, else the
+    /// default (D2), and each unset goal derives from the entered ones (D4).
+    /// TS twin: `counterSettingsDefaults`.
+    ///
+    /// - Parameters:
+    ///   - context: The sheet's live verb / noun / kind.
+    ///   - draft: The typed draft.
+    /// - Returns: The defaults.
+    static func defaults(_ context: Fields, draft: Draft) -> Defaults {
+        let plural = defaultTitleTemplates(context).plural
+        return Defaults(
+            name: CounterName.formatCounterName(action: context.action, unit: context.unit),
+            singular: storedText(draft.plural) ?? plural,
+            plural: plural,
+            goals: derivedTimeframeGoals(
+                Fields(countKind: context.countKind, timeframeGoals: enteredGoals(draft.goals))
+            )
+        )
+    }
+
+    /// The stored settings a draft resolves to (D3 — stored only when the
+    /// user typed something that is not the default): a blank field, or one
+    /// equal to its dimmed default, is absent. A goal equal to what the OTHER
+    /// entered goals derive for it is absent too, judged shortest timeframe
+    /// first against the goals still kept. TS twin:
+    /// `storedCounterSettingsFromDraft`.
+    ///
+    /// - Parameters:
+    ///   - draft: The typed draft.
+    ///   - context: The sheet's live verb / noun / kind.
+    /// - Returns: The stored settings (nil members = absent).
+    static func stored(fromDraft draft: Draft, context: Fields) -> Stored {
+        let d = defaults(context, draft: draft)
+        var out = Stored()
+        if let name = storedText(draft.name), name != d.name { out.counterName = name }
+        if let plural = storedText(draft.plural), plural != d.plural { out.titleTemplatePlural = plural }
+        if let singular = storedText(draft.singular), singular != d.singular { out.titleTemplateSingular = singular }
+        var remaining = enteredGoals(draft.goals)
+        for t in GoalTimeframe.allCases {
+            guard let v = remaining[t] else { continue }
+            var others = remaining
+            others[t] = nil
+            let derived = derivedTimeframeGoals(Fields(countKind: context.countKind, timeframeGoals: others))[t] ?? nil
+            if derived == v { remaining[t] = nil }
+        }
+        if !remaining.isEmpty { out.timeframeGoals = remaining }
+        return out
+    }
+
+    /// The settings as stored on a root, in `Stored` shape (blank text =
+    /// nil; only positive goals). TS twin: `storedCounterSettings`.
+    ///
+    /// - Parameter root: The counter's root fields.
+    /// - Returns: The stored settings.
+    static func stored(_ root: Fields) -> Stored {
+        var out = Stored()
+        out.counterName = storedText(root.counterName)
+        out.titleTemplateSingular = storedText(root.titleTemplateSingular)
+        out.titleTemplatePlural = storedText(root.titleTemplatePlural)
+        let goals = enteredGoals(goalMap(root.timeframeGoals))
+        if !goals.isEmpty { out.timeframeGoals = goals }
+        return out
+    }
+
     // MARK: - Default goals
 
     /// A stored goal when it is a usable positive number, else nil.

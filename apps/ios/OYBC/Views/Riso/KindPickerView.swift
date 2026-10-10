@@ -35,22 +35,30 @@ struct KindTagView: View {
     let kind: CountKind
     var counterName: String? = nil
     var lifetime: CountValue? = nil
+    /// The compact chip a dense row carries (quick-add match rows): tighter
+    /// padding, a 1.5pt keyline, smaller type and dots.
+    var dense: Bool = false
 
     var body: some View {
         HStack(spacing: 8) {
-            HStack(spacing: 6) {
-                Text(kind.label).font(.risoHead(12, .bold))
+            HStack(spacing: dense ? 5 : 6) {
+                Text(kind.label).font(.risoHead(dense ? 11 : 12, .bold))
+                    .lineLimit(1)
+                    .fixedSize(horizontal: true, vertical: false)
                 HStack(spacing: 2) {
-                    Circle().frame(width: 5, height: 5)
-                    Circle().frame(width: 5, height: 5)
+                    Circle().frame(width: dense ? 4 : 5, height: dense ? 4 : 5)
+                    Circle().frame(width: dense ? 4 : 5, height: dense ? 4 : 5)
                 }
                 .accessibilityHidden(true)
             }
             .foregroundStyle(Color.risoPaper)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 6)
+            .padding(.horizontal, dense ? 8 : 10)
+            .padding(.vertical, dense ? 3 : 6)
             .background(RoundedRectangle(cornerRadius: Riso.cardRadius).fill(Color.risoBlue))
-            .overlay(RoundedRectangle(cornerRadius: Riso.cardRadius).strokeBorder(Color.risoInk, lineWidth: Riso.Keyline.container))
+            .overlay(
+                RoundedRectangle(cornerRadius: Riso.cardRadius)
+                    .strokeBorder(Color.risoInk, lineWidth: dense ? Riso.Keyline.dense : Riso.Keyline.container)
+            )
             if let counterName, let lifetime {
                 Text("\(counterName) · \(formatCountTotal(lifetime, kind: kind)) all-time")
                     .font(.risoBody(12, .semibold))
