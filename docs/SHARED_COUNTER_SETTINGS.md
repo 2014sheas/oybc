@@ -2,8 +2,14 @@
 
 **Design brief for Claude Design:** [`design/shared-counter-settings/BRIEF.md`](design/shared-counter-settings/BRIEF.md) — UI PRs (counter sheet fields, placement row, counts-toward surfaces) wait for its handoff; data/logic PRs ship first.
 
-**Status:** LOCKED 2026-10-09 — the owner accepted every recommendation in the
-decision table (D1–D9); the PR train in §5 is authorised. Opened 2026-10-09 from
+**Status: COMPLETE (2026-10-10).** The train shipped in five PRs — #584 PR 1 (settings
+data + logic, 2026-10-09), #585 PR 2 (placement defaults, 2026-10-09), #587 UI A/B/D
+(counter sheet + placement row, 2026-10-10), #586 PR 3 (counts toward data + cascade,
+2026-10-10) and #588 PR 4 (counts toward UI, 2026-10-10) — plus this docs close-out as PR 5.
+D1–D9 were ruled 2026-10-09 (recommendations accepted), D10–D11 on 2026-10-10. The current
+model end to end is [`SHARED_COUNTERS.md` §Current model](SHARED_COUNTERS.md#current-model-2026-10--settings--counts-toward-shipped);
+this document remains the rationale and decision record (the sections below describe the design
+as locked, §5 the per-PR implementation notes). Opened 2026-10-09 from
 the owner's brief:
 
 > Adding a shared counter to a board is awkward: search an existing counter and
@@ -367,7 +373,7 @@ same stamp as the completion that caused it).
 | 2 — placement uses defaults — **SHIPPED (logic) in #585** | quick-add / picker mint with `resolveCounterDefaultGoal` + rendered title; shared search-match set; retire `DeriveCounterModal` (D6); source-pull auto-scaler consults defaults. |
 | 3 — counts toward (data + cascade) — **SHIPPED (data + cascade) in #586** | `countsTowardCounterId/Amount`, deterministic event mint/tombstone in the cascade, delete/kind guards, zero-child container rule; vectors + XCTest/Vitest; no UI. |
 | 4 — counts toward (UI) — **SHIPPED (UI) in #588** | Counter Detail section + "+ New"; task editor picker; cell badge; credited toast; e2e + snapshots. |
-| 5 — docs | SHARED_COUNTERS / COUNTER_KINDS / TASK_SYSTEM / CLAUDE.md. |
+| 5 — docs — **SHIPPED (close-out PR)** | SHARED_COUNTERS §Current model / COUNTER_KINDS §7a / TASK_SYSTEM §Counts toward / CLAUDE.md. |
 
 **PR 1 notes (2026-10-09).** Fields: `Task.counterName`, `titleTemplateSingular`,
 `titleTemplatePlural`, `timeframeGoals` (`{daily?, weekly?, monthly?, yearly?}`) —
@@ -494,7 +500,7 @@ references it, and the template's hand-added list must resolve it at every spawn
 is why it carries the window fields: it expires with its window and reads as the
 window-stamped member the planner already mints from. Hosts without a board timeframe
 (pool editor) or without a deferred-create path keep the plain row. The counts-toward UI (spec §3d /
-PR 4) remains pending.
+PR 4) shipped in #588 (notes below).
 
 **PR 3 notes (2026-10-09; D10 fix round 2026-10-10; D11 round 2026-10-10).**
 Fields: `Task.countsTowardCounterId` (uuid, nullable), `countsTowardAmount`
@@ -733,6 +739,15 @@ count — in the handoff's order Done → In progress → Not started → title 
   LAST field before the sheet actions (the frames list Title / Description /
   Counts toward and omit the Type control + type fields the real sheets carry).
   One row per fork lineage in the section (the drawing has no forks).
+
+---
+
+## Follow-ups (from PR 4, not blocking)
+
+- iOS: a compound-create cycle refusal lands on the form line after the special-task panel has collapsed, so the line can be out of view.
+- Web: an empty `fieldGroup` wrapper remains in the editor when the Counts toward row hides.
+
+Known edges (acceptable; revisit if a real case surfaces) are listed under the PR 3 hand-offs above.
 
 ---
 

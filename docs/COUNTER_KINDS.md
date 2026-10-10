@@ -180,6 +180,9 @@ draws it; hub / Counter Detail rows keep the green "met" fill. Vary ranges rende
 
 ## 7. Open items
 
+- **OPEN (owner) — default-amount rule unification.** Whether the default log amount should follow one rule across surfaces. Unruled.
+- **OPEN (owner) — compound-child late-log +1 for Duration.** The compound-child late-log path writes a +1 increment; whether that is right for a Duration child is unruled.
+
 - ~~Interface details in the brief §3B~~ — decided in §5 (handoff + owner overrides, 2026-10-07).
 
 Carried to PR 3/4 — all closed (each by the named task in `docs/COUNTER_KINDS_UI_PLAN.md`):
@@ -192,6 +195,14 @@ Carried to PR 3/4 — all closed (each by the named task in `docs/COUNTER_KINDS_
 - ~~`varyRangeLabel` / `countingSummary` duration copy.~~ Closed by **Task 1** (`formatCountRange`) + **Task 5**.
 - ~~iOS `switchCounterKind` cascades per row (perf).~~ Closed by **Task 8** (`runBoardCascadeForTasks`: each affected board derived once).
 - ~~Digit/locale decision: counts use Latin digits (R10).~~ Closed by **Task 1** (parsers accept ASCII digits only; formatters stay `latn`).
+
+## 7a. Counts toward and kinds (shared counters train, 2026-10)
+
+"Counts toward" ([`SHARED_COUNTER_SETTINGS.md` §3](SHARED_COUNTER_SETTINGS.md#3-counts-toward-any-task-as-the-unit-of-a-discrete-counter), summary in [`SHARED_COUNTERS.md` §Current model](SHARED_COUNTERS.md#current-model-2026-10--settings--counts-toward-shipped)) interacts with kinds in three places:
+
+- **Discrete only (D9).** A task may count toward a Discrete counter root only — a contributor adds whole-number credits (`countsTowardAmount` is a positive integer, absent = 1), and "the unit is a thing". Pickers filter to Discrete roots, Counter Detail shows the Counts toward section for Discrete roots only, and `setCountsToward` refuses any other target.
+- **Kind switch refusal.** While live contributors exist the counter's kind cannot leave Discrete: web `switchCounterKind` (`CountKindSwitchError('has-contributors')`) / iOS `switchCounterKind` refuse with "A counter other tasks count toward stays Discrete." (`COUNTS_TOWARD_KIND_MESSAGE` ↔ `CountKindSwitchError.countsTowardMessage`). Unflagging every contributor (or deleting them) lifts the refusal.
+- **Counter sheet Kind row.** The kind picker in the counter sheet (create and edit) keeps its existing locks (Duration never switches; the Continuous → Discrete confirm). Moving a counter that has contributors off Discrete is refused and the sheet shows the refusal line as its error.
 
 ## 8. Testing
 
