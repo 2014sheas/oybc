@@ -1,0 +1,449 @@
+{
+  "_note": "Hand-authored fixture (edit directly, then `pnpm --filter @oybc/shared run gen:sync-fixtures`). Pins packages/shared/src/algorithms/countsToward.ts (tests/algorithms/countsToward.test.ts) against its Swift twin Helpers/CountsToward.swift (OYBCTests/CountsTowardVectorTests.swift) — docs/SHARED_COUNTER_SETTINGS.md §3. Task defaults for unlisted fields: type=normal, isCompleted=false, isDeleted=false, createdAt=2026-01-01T00:00:00.000Z. Event defaults: isDeleted=false, kind=increment when delta is set else completion. Plan `expected` omits eventId (always countsTowardEventId(contributor.id)).",
+  "eventId": [
+    { "taskId": "t-simple", "expected": "b42d9057-2aaa-5f76-b689-9f1da2a8a9cf" },
+    { "taskId": "00000000-0000-4000-8000-000000000001", "expected": "6e6eafcf-6803-5b6e-8d62-1f3927afba8e" },
+    { "taskId": "compound-dune", "expected": "d5f40a4b-d307-597a-80d6-1269ae809ea1" }
+  ],
+  "amount": [
+    { "name": "absent-is-one", "expected": 1 },
+    { "name": "three", "countsTowardAmount": 3, "expected": 3 },
+    { "name": "zero-falls-back-to-one", "countsTowardAmount": 0, "expected": 1 },
+    { "name": "fraction-falls-back-to-one", "countsTowardAmount": 1.5, "expected": 1 }
+  ],
+  "state": [
+    {
+      "name": "normal-no-events-incomplete",
+      "taskId": "t",
+      "tasks": [{ "id": "t" }],
+      "events": [],
+      "children": [],
+      "expected": { "isCompleted": false, "completedAt": null }
+    },
+    {
+      "name": "normal-earliest-live-completion",
+      "taskId": "t",
+      "tasks": [{ "id": "t" }],
+      "events": [
+        { "id": "c1", "taskId": "t", "occurredAt": "2026-10-10T12:00:00.000Z" },
+        { "id": "c2", "taskId": "t", "occurredAt": "2026-10-08T12:00:00.000Z" },
+        { "id": "c3", "taskId": "t", "occurredAt": "2026-10-01T12:00:00.000Z", "isDeleted": true }
+      ],
+      "children": [],
+      "expected": { "isCompleted": true, "completedAt": "2026-10-08T12:00:00.000Z" }
+    },
+    {
+      "name": "normal-late-log-stamp-inherited",
+      "taskId": "t",
+      "tasks": [{ "id": "t" }],
+      "events": [{ "id": "c1", "taskId": "t", "occurredAt": "2026-10-31T23:59:59.999Z" }],
+      "children": [],
+      "expected": { "isCompleted": true, "completedAt": "2026-10-31T23:59:59.999Z" }
+    },
+    {
+      "name": "normal-deleted-task-incomplete",
+      "taskId": "t",
+      "tasks": [{ "id": "t", "isDeleted": true }],
+      "events": [{ "id": "c1", "taskId": "t", "occurredAt": "2026-10-08T12:00:00.000Z" }],
+      "children": [],
+      "expected": { "isCompleted": false, "completedAt": null }
+    },
+    {
+      "name": "counting-crossing-increment",
+      "taskId": "t",
+      "tasks": [{ "id": "t", "type": "counting", "maxCount": 3 }],
+      "events": [
+        { "id": "i2", "taskId": "t", "delta": 2, "occurredAt": "2026-10-03T00:00:00.000Z" },
+        { "id": "i1", "taskId": "t", "delta": 2, "occurredAt": "2026-10-01T00:00:00.000Z" }
+      ],
+      "children": [],
+      "expected": { "isCompleted": true, "completedAt": "2026-10-03T00:00:00.000Z" }
+    },
+    {
+      "name": "counting-dip-then-recross-uses-last-crossing",
+      "taskId": "t",
+      "tasks": [{ "id": "t", "type": "counting", "maxCount": 3 }],
+      "events": [
+        { "id": "i1", "taskId": "t", "delta": 3, "occurredAt": "2026-10-01T00:00:00.000Z" },
+        { "id": "i2", "taskId": "t", "delta": -1, "occurredAt": "2026-10-02T00:00:00.000Z" },
+        { "id": "i3", "taskId": "t", "delta": 1, "occurredAt": "2026-10-05T00:00:00.000Z" }
+      ],
+      "children": [],
+      "expected": { "isCompleted": true, "completedAt": "2026-10-05T00:00:00.000Z" }
+    },
+    {
+      "name": "counting-short-of-goal-incomplete",
+      "taskId": "t",
+      "tasks": [{ "id": "t", "type": "counting", "maxCount": 5 }],
+      "events": [{ "id": "i1", "taskId": "t", "delta": 4, "occurredAt": "2026-10-01T00:00:00.000Z" }],
+      "children": [],
+      "expected": { "isCompleted": false, "completedAt": null }
+    },
+    {
+      "name": "compound-all-of-is-the-max-child-instant",
+      "taskId": "p",
+      "tasks": [{ "id": "p", "type": "compound", "operator": "AND" }, { "id": "a" }, { "id": "b" }],
+      "events": [
+        { "id": "ca", "taskId": "a", "occurredAt": "2026-10-05T00:00:00.000Z" },
+        { "id": "cb", "taskId": "b", "occurredAt": "2026-10-09T00:00:00.000Z" }
+      ],
+      "children": [{ "compoundTaskId": "p", "childTaskId": "a" }, { "compoundTaskId": "p", "childTaskId": "b" }],
+      "expected": { "isCompleted": true, "completedAt": "2026-10-09T00:00:00.000Z" }
+    },
+    {
+      "name": "compound-all-of-one-child-open-incomplete",
+      "taskId": "p",
+      "tasks": [{ "id": "p", "type": "compound", "operator": "AND" }, { "id": "a" }, { "id": "b" }],
+      "events": [{ "id": "ca", "taskId": "a", "occurredAt": "2026-10-05T00:00:00.000Z" }],
+      "children": [{ "compoundTaskId": "p", "childTaskId": "a" }, { "compoundTaskId": "p", "childTaskId": "b" }],
+      "expected": { "isCompleted": false, "completedAt": null }
+    },
+    {
+      "name": "compound-any-of-is-the-first-child-instant",
+      "taskId": "p",
+      "tasks": [{ "id": "p", "type": "compound", "operator": "OR" }, { "id": "a" }, { "id": "b" }],
+      "events": [
+        { "id": "ca", "taskId": "a", "occurredAt": "2026-10-09T00:00:00.000Z" },
+        { "id": "cb", "taskId": "b", "occurredAt": "2026-10-05T00:00:00.000Z" }
+      ],
+      "children": [{ "compoundTaskId": "p", "childTaskId": "a" }, { "compoundTaskId": "p", "childTaskId": "b" }],
+      "expected": { "isCompleted": true, "completedAt": "2026-10-05T00:00:00.000Z" }
+    },
+    {
+      "name": "compound-at-least-n-is-the-nth-child-instant",
+      "taskId": "p",
+      "tasks": [{ "id": "p", "type": "compound", "operator": "M_OF_N", "threshold": 2 }, { "id": "a" }, { "id": "b" }, { "id": "c" }],
+      "events": [
+        { "id": "ca", "taskId": "a", "occurredAt": "2026-10-01T00:00:00.000Z" },
+        { "id": "cb", "taskId": "b", "occurredAt": "2026-10-09T00:00:00.000Z" },
+        { "id": "cc", "taskId": "c", "occurredAt": "2026-10-04T00:00:00.000Z" }
+      ],
+      "children": [
+        { "compoundTaskId": "p", "childTaskId": "a" },
+        { "compoundTaskId": "p", "childTaskId": "b" },
+        { "compoundTaskId": "p", "childTaskId": "c" }
+      ],
+      "expected": { "isCompleted": true, "completedAt": "2026-10-04T00:00:00.000Z" }
+    },
+    {
+      "name": "compound-nested-all-of-takes-the-deepest-max",
+      "taskId": "p",
+      "tasks": [
+        { "id": "p", "type": "compound", "operator": "AND" },
+        { "id": "inner", "type": "compound", "operator": "AND" },
+        { "id": "a" },
+        { "id": "b" },
+        { "id": "c" }
+      ],
+      "events": [
+        { "id": "ca", "taskId": "a", "occurredAt": "2026-10-02T00:00:00.000Z" },
+        { "id": "cb", "taskId": "b", "occurredAt": "2026-10-12T00:00:00.000Z" },
+        { "id": "cc", "taskId": "c", "occurredAt": "2026-10-07T00:00:00.000Z" }
+      ],
+      "children": [
+        { "compoundTaskId": "p", "childTaskId": "inner" },
+        { "compoundTaskId": "p", "childTaskId": "c" },
+        { "compoundTaskId": "inner", "childTaskId": "a" },
+        { "compoundTaskId": "inner", "childTaskId": "b" }
+      ],
+      "expected": { "isCompleted": true, "completedAt": "2026-10-12T00:00:00.000Z" }
+    },
+    {
+      "name": "compound-deleted-link-ignored",
+      "taskId": "p",
+      "tasks": [{ "id": "p", "type": "compound", "operator": "AND" }, { "id": "a" }, { "id": "b" }],
+      "events": [{ "id": "ca", "taskId": "a", "occurredAt": "2026-10-05T00:00:00.000Z" }],
+      "children": [
+        { "compoundTaskId": "p", "childTaskId": "a" },
+        { "compoundTaskId": "p", "childTaskId": "b", "isDeleted": true }
+      ],
+      "expected": { "isCompleted": true, "completedAt": "2026-10-05T00:00:00.000Z" }
+    },
+    {
+      "name": "compound-empty-counts-toward-container-incomplete",
+      "taskId": "p",
+      "tasks": [{ "id": "p", "type": "compound", "operator": "AND", "countsTowardCounterId": "root" }],
+      "events": [],
+      "children": [],
+      "expected": { "isCompleted": false, "completedAt": null }
+    },
+    {
+      "name": "compound-empty-all-of-vacuous-falls-back-to-createdAt",
+      "taskId": "p",
+      "tasks": [{ "id": "p", "type": "compound", "operator": "AND", "createdAt": "2026-02-02T00:00:00.000Z" }],
+      "events": [],
+      "children": [],
+      "expected": { "isCompleted": true, "completedAt": "2026-02-02T00:00:00.000Z" }
+    },
+    {
+      "name": "compound-window-stamped-linked-child-crosses-inside-its-window",
+      "taskId": "p",
+      "tasks": [
+        { "id": "p", "type": "compound", "operator": "AND" },
+        {
+          "id": "w",
+          "type": "counting",
+          "maxCount": 2,
+          "sharedCounterId": "root",
+          "createdInWizard": true,
+          "startDate": "2026-10-01T00:00:00.000Z",
+          "endDate": "2026-10-31T23:59:59.999Z"
+        },
+        { "id": "root", "type": "counting", "isCounter": true }
+      ],
+      "events": [
+        { "id": "r1", "taskId": "root", "delta": 1, "occurredAt": "2026-09-25T00:00:00.000Z" },
+        { "id": "r2", "taskId": "root", "delta": 1, "occurredAt": "2026-10-02T00:00:00.000Z" },
+        { "id": "r3", "taskId": "root", "delta": 1, "occurredAt": "2026-10-06T00:00:00.000Z" }
+      ],
+      "children": [{ "compoundTaskId": "p", "childTaskId": "w" }],
+      "expected": { "isCompleted": true, "completedAt": "2026-10-06T00:00:00.000Z" }
+    },
+    {
+      "name": "compound-hub-linked-child-reads-its-latch",
+      "taskId": "p",
+      "tasks": [
+        { "id": "p", "type": "compound", "operator": "AND" },
+        { "id": "h", "type": "counting", "maxCount": 2, "sharedCounterId": "root", "isCompleted": true, "completedAt": "2026-10-03T00:00:00.000Z" }
+      ],
+      "events": [],
+      "children": [{ "compoundTaskId": "p", "childTaskId": "h" }],
+      "expected": { "isCompleted": true, "completedAt": "2026-10-03T00:00:00.000Z" }
+    }
+  ],
+  "plan": [
+    {
+      "name": "complete-no-event-inserts",
+      "contributor": { "id": "t", "countsTowardCounterId": "root" },
+      "tasks": [{ "id": "root", "type": "counting", "isCounter": true }],
+      "state": { "isCompleted": true, "completedAt": "2026-10-14T09:00:00.000Z" },
+      "existing": null,
+      "expected": { "kind": "insert", "rootId": "root", "delta": 1, "occurredAt": "2026-10-14T09:00:00.000Z" }
+    },
+    {
+      "name": "amount-three",
+      "contributor": { "id": "t", "countsTowardCounterId": "root", "countsTowardAmount": 3 },
+      "tasks": [{ "id": "root", "type": "counting", "isCounter": true }],
+      "state": { "isCompleted": true, "completedAt": "2026-10-14T09:00:00.000Z" },
+      "existing": null,
+      "expected": { "kind": "insert", "rootId": "root", "delta": 3, "occurredAt": "2026-10-14T09:00:00.000Z" }
+    },
+    {
+      "name": "replay-identical-is-a-no-op",
+      "contributor": { "id": "t", "countsTowardCounterId": "root" },
+      "tasks": [{ "id": "root", "type": "counting", "isCounter": true }],
+      "state": { "isCompleted": true, "completedAt": "2026-10-14T09:00:00.000Z" },
+      "existing": { "taskId": "root", "delta": 1, "occurredAt": "2026-10-14T09:00:00.000Z" },
+      "expected": null
+    },
+    {
+      "name": "instant-moved-revises",
+      "contributor": { "id": "t", "countsTowardCounterId": "root" },
+      "tasks": [{ "id": "root", "type": "counting", "isCounter": true }],
+      "state": { "isCompleted": true, "completedAt": "2026-10-15T09:00:00.000Z" },
+      "existing": { "taskId": "root", "delta": 1, "occurredAt": "2026-10-14T09:00:00.000Z" },
+      "expected": {
+        "kind": "revise",
+        "rootId": "root",
+        "delta": 1,
+        "occurredAt": "2026-10-15T09:00:00.000Z",
+        "previousRootId": "root",
+        "previousOccurredAt": "2026-10-14T09:00:00.000Z",
+        "wasDeleted": false
+      }
+    },
+    {
+      "name": "tombstoned-event-revives",
+      "contributor": { "id": "t", "countsTowardCounterId": "root" },
+      "tasks": [{ "id": "root", "type": "counting", "isCounter": true }],
+      "state": { "isCompleted": true, "completedAt": "2026-10-15T09:00:00.000Z" },
+      "existing": { "taskId": "root", "delta": 1, "occurredAt": "2026-10-14T09:00:00.000Z", "isDeleted": true },
+      "expected": {
+        "kind": "revise",
+        "rootId": "root",
+        "delta": 1,
+        "occurredAt": "2026-10-15T09:00:00.000Z",
+        "previousRootId": "root",
+        "previousOccurredAt": "2026-10-14T09:00:00.000Z",
+        "wasDeleted": true
+      }
+    },
+    {
+      "name": "incomplete-live-event-tombstones",
+      "contributor": { "id": "t", "countsTowardCounterId": "root" },
+      "tasks": [{ "id": "root", "type": "counting", "isCounter": true }],
+      "state": { "isCompleted": false, "completedAt": null },
+      "existing": { "taskId": "root", "delta": 1, "occurredAt": "2026-10-14T09:00:00.000Z" },
+      "expected": { "kind": "tombstone", "rootId": "root", "occurredAt": "2026-10-14T09:00:00.000Z" }
+    },
+    {
+      "name": "unflagged-stale-live-event-tombstones",
+      "contributor": { "id": "t" },
+      "tasks": [{ "id": "root", "type": "counting", "isCounter": true }],
+      "state": { "isCompleted": true, "completedAt": "2026-10-14T09:00:00.000Z" },
+      "existing": { "taskId": "root", "delta": 1, "occurredAt": "2026-10-14T09:00:00.000Z" },
+      "expected": { "kind": "tombstone", "rootId": "root", "occurredAt": "2026-10-14T09:00:00.000Z" }
+    },
+    {
+      "name": "deleted-contributor-tombstones",
+      "contributor": { "id": "t", "countsTowardCounterId": "root", "isDeleted": true },
+      "tasks": [{ "id": "root", "type": "counting", "isCounter": true }],
+      "state": { "isCompleted": false, "completedAt": null },
+      "existing": { "taskId": "root", "delta": 1, "occurredAt": "2026-10-14T09:00:00.000Z" },
+      "expected": { "kind": "tombstone", "rootId": "root", "occurredAt": "2026-10-14T09:00:00.000Z" }
+    },
+    {
+      "name": "deleted-counter-keeps-its-events",
+      "contributor": { "id": "t", "countsTowardCounterId": "root" },
+      "tasks": [{ "id": "root", "type": "counting", "isCounter": true, "isDeleted": true }],
+      "state": { "isCompleted": false, "completedAt": null },
+      "existing": { "taskId": "root", "delta": 1, "occurredAt": "2026-10-14T09:00:00.000Z" },
+      "expected": null
+    },
+    {
+      "name": "unflagged-after-counter-deleted-keeps-its-events",
+      "contributor": { "id": "t" },
+      "tasks": [{ "id": "root", "type": "counting", "isCounter": true, "isDeleted": true }],
+      "state": { "isCompleted": true, "completedAt": "2026-10-14T09:00:00.000Z" },
+      "existing": { "taskId": "root", "delta": 1, "occurredAt": "2026-10-14T09:00:00.000Z" },
+      "expected": null
+    },
+    {
+      "name": "counter-not-discrete-tombstones",
+      "contributor": { "id": "t", "countsTowardCounterId": "root" },
+      "tasks": [{ "id": "root", "type": "counting", "isCounter": true, "countKind": "continuous" }],
+      "state": { "isCompleted": true, "completedAt": "2026-10-14T09:00:00.000Z" },
+      "existing": { "taskId": "root", "delta": 1, "occurredAt": "2026-10-14T09:00:00.000Z" },
+      "expected": { "kind": "tombstone", "rootId": "root", "occurredAt": "2026-10-14T09:00:00.000Z" }
+    },
+    {
+      "name": "incomplete-no-event-is-a-no-op",
+      "contributor": { "id": "t", "countsTowardCounterId": "root" },
+      "tasks": [{ "id": "root", "type": "counting", "isCounter": true }],
+      "state": { "isCompleted": false, "completedAt": null },
+      "existing": null,
+      "expected": null
+    }
+  ],
+  "problem": [
+    {
+      "name": "hub-counter-target-ok",
+      "taskId": "t",
+      "targetId": "root",
+      "tasks": [{ "id": "t" }, { "id": "root", "type": "counting", "isCounter": true }],
+      "children": [],
+      "expected": null
+    },
+    {
+      "name": "linked-to-root-target-ok",
+      "taskId": "t",
+      "targetId": "root",
+      "tasks": [
+        { "id": "t", "type": "compound", "operator": "AND" },
+        { "id": "root", "type": "counting" },
+        { "id": "copy", "type": "counting", "sharedCounterId": "root" }
+      ],
+      "children": [],
+      "expected": null
+    },
+    {
+      "name": "self",
+      "taskId": "root",
+      "targetId": "root",
+      "tasks": [{ "id": "root", "type": "counting", "isCounter": true }],
+      "children": [],
+      "expected": "self"
+    },
+    {
+      "name": "contributor-is-hub-counter",
+      "taskId": "c2",
+      "targetId": "root",
+      "tasks": [{ "id": "c2", "type": "counting", "isCounter": true }, { "id": "root", "type": "counting", "isCounter": true }],
+      "children": [],
+      "expected": "contributor-is-counter"
+    },
+    {
+      "name": "contributor-is-linked-to-root",
+      "taskId": "c2",
+      "targetId": "root",
+      "tasks": [
+        { "id": "c2", "type": "counting" },
+        { "id": "c2copy", "type": "counting", "sharedCounterId": "c2" },
+        { "id": "root", "type": "counting", "isCounter": true }
+      ],
+      "children": [],
+      "expected": "contributor-is-counter"
+    },
+    {
+      "name": "contributor-is-linked-copy",
+      "taskId": "copy",
+      "targetId": "root",
+      "tasks": [{ "id": "copy", "type": "counting", "sharedCounterId": "other" }, { "id": "root", "type": "counting", "isCounter": true }],
+      "children": [],
+      "expected": "contributor-is-linked"
+    },
+    {
+      "name": "contributor-is-achievement",
+      "taskId": "ach",
+      "targetId": "root",
+      "tasks": [{ "id": "ach", "type": "achievement" }, { "id": "root", "type": "counting", "isCounter": true }],
+      "children": [],
+      "expected": "contributor-is-achievement"
+    },
+    {
+      "name": "target-plain-counting-not-a-root",
+      "taskId": "t",
+      "targetId": "plain",
+      "tasks": [{ "id": "t" }, { "id": "plain", "type": "counting" }],
+      "children": [],
+      "expected": "target-not-counter"
+    },
+    {
+      "name": "target-deleted",
+      "taskId": "t",
+      "targetId": "root",
+      "tasks": [{ "id": "t" }, { "id": "root", "type": "counting", "isCounter": true, "isDeleted": true }],
+      "children": [],
+      "expected": "target-not-counter"
+    },
+    {
+      "name": "target-continuous",
+      "taskId": "t",
+      "targetId": "root",
+      "tasks": [{ "id": "t" }, { "id": "root", "type": "counting", "isCounter": true, "countKind": "continuous" }],
+      "children": [],
+      "expected": "target-not-discrete"
+    },
+    {
+      "name": "amount-zero",
+      "taskId": "t",
+      "targetId": "root",
+      "amount": 0,
+      "tasks": [{ "id": "t" }, { "id": "root", "type": "counting", "isCounter": true }],
+      "children": [],
+      "expected": "invalid-amount"
+    },
+    {
+      "name": "amount-fraction",
+      "taskId": "t",
+      "targetId": "root",
+      "amount": 1.5,
+      "tasks": [{ "id": "t" }, { "id": "root", "type": "counting", "isCounter": true }],
+      "children": [],
+      "expected": "invalid-amount"
+    },
+    {
+      "name": "subtree-holds-a-copy-of-the-counter",
+      "taskId": "p",
+      "targetId": "root",
+      "tasks": [
+        { "id": "p", "type": "compound", "operator": "AND" },
+        { "id": "inner", "type": "compound", "operator": "AND" },
+        { "id": "copy", "type": "counting", "sharedCounterId": "root" },
+        { "id": "root", "type": "counting", "isCounter": true }
+      ],
+      "children": [{ "compoundTaskId": "p", "childTaskId": "inner" }, { "compoundTaskId": "inner", "childTaskId": "copy" }],
+      "expected": "cycle"
+    }
+  ]
+}

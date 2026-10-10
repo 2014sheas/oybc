@@ -79,6 +79,19 @@ export {
   resolveFamilyCountKind,
 } from './countEntry';
 export type { KindPickerLock } from './countEntry';
+
+// ===== "Counts toward" (docs/SHARED_COUNTER_SETTINGS.md §3) =====
+export {
+  COUNTS_TOWARD_NAMESPACE,
+  countsTowardEventId,
+  countsTowardAmountOf,
+  countsTowardProblem,
+  isCountsTowardTarget,
+  isSharedCounterRoot,
+  planCountsTowardAction,
+  resolveContributionState,
+} from './countsToward';
+export type { ContributionState, CountsTowardAction, CountsTowardProblem } from './countsToward';
 export {
   fixedLogChipAmounts,
   goalChipAmounts,

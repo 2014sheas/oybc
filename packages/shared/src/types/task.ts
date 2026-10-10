@@ -262,6 +262,23 @@ export interface Task {
   titleTemplateSingular?: string;
   titleTemplatePlural?: string;
   timeframeGoals?: CounterTimeframeGoals;
+
+  /**
+   * "Counts toward" (docs/SHARED_COUNTER_SETTINGS.md §3) — set on a
+   * CONTRIBUTING task. When its derived LIFETIME state becomes complete, the
+   * board cascade writes one increment event of `countsTowardAmount` (absent
+   * = 1) on this Discrete counter ROOT with the deterministic id
+   * `countsTowardEventId(task.id)`, stamped at the completion instant; when it
+   * becomes incomplete again that event is tombstoned (`countsToward.ts`).
+   * One counter per task (D7). Never on a counter root, a linked copy
+   * (`sharedCounterId`) or an Achievement (Zod shape rule); the target must be
+   * a live Discrete counter root (`countsTowardProblem`, write time). Cleared
+   * to absent when unset or when its counter is deleted — clearable on sync.
+   * iOS GRDB v43 nullable columns.
+   */
+  countsTowardCounterId?: string | null;
+  /** Positive integer increment per completion; absent = 1. */
+  countsTowardAmount?: number;
 }
 
 /**

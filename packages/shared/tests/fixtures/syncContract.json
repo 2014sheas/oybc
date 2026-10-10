@@ -41,7 +41,8 @@
       "counterName",
       "titleTemplateSingular",
       "titleTemplatePlural",
-      "timeframeGoals"
+      "timeframeGoals",
+      "countsTowardCounterId"
     ],
     "coreBoardDefaults": [
       "defaultBoardSize",

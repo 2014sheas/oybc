@@ -120,7 +120,10 @@ function evaluateCompoundInner(
       // Vacuous truth: a compound with zero children is treated as complete.
       // This matches set-theoretic AND-of-empty semantics and avoids surprising
       // an editor mid-restructure with a permanently-incomplete parent.
-      return childStates.length === 0 || childStates.every(Boolean);
+      // Exception: an unfilled "counts toward" container (no children yet) is
+      // incomplete (docs/SHARED_COUNTER_SETTINGS.md §3a).
+      if (childStates.length === 0) return compound.countsTowardCounterId == null;
+      return childStates.every(Boolean);
     case OperatorType.OR:
       return childStates.some(Boolean);
     case OperatorType.M_OF_N: {

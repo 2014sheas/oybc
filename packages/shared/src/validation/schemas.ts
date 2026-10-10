@@ -232,6 +232,27 @@ const requiredCountRulesOk = (data: {
   return data.requiredCount == null;
 };
 
+/**
+ * "Counts toward" row-shape rule (docs/SHARED_COUNTER_SETTINGS.md §3a, D7):
+ * a task may not count toward ITSELF, and a hub counter (`isCounter`), a
+ * linked copy (`sharedCounterId` set) or an Achievement may not count toward
+ * any counter. The cross-row rules (the target is a live Discrete counter
+ * root; the task is not a root that other rows link to) need the database
+ * and live in `countsTowardProblem`, called at write time.
+ */
+const countsTowardShapeOk = (data: {
+  id?: string;
+  type?: TaskType;
+  isCounter?: boolean;
+  sharedCounterId?: string | null;
+  countsTowardCounterId?: string | null;
+}): boolean => {
+  if (data.countsTowardCounterId == null) return true;
+  if (data.countsTowardCounterId === data.id) return false;
+  if (data.isCounter === true || data.sharedCounterId != null) return false;
+  return data.type !== TaskType.ACHIEVEMENT;
+};
+
 export const CreateTaskInputSchema = z.object({
   title: z.string().min(1).max(200),
   description: z.string().max(1000).optional(),
@@ -408,8 +429,12 @@ export const CreateCompoundTaskInputSchema = z.object({
   description: z.string().max(1000).optional(),
   operator: z.nativeEnum(OperatorType),
   threshold: z.number().int().positive().optional(),
-  // One sub-task is enough (2026-10-06, owner ask); zero stays blocked.
-  children: z.array(CreateCompoundChildEntrySchema).min(1),
+  // One sub-task is enough (2026-10-06, owner ask); zero stays blocked —
+  // except for a container that counts toward a counter (refinement below).
+  children: z.array(CreateCompoundChildEntrySchema),
+  // "Counts toward" (docs/SHARED_COUNTER_SETTINGS.md §3a).
+  countsTowardCounterId: z.string().uuid().optional(),
+  countsTowardAmount: z.number().int().positive().optional(),
   // Phase 6.Y — Timeboxed Tasks. Optional; when set, the parent
   // compound AND all inline-created children inherit this triple at
   // creation time (see createCompound in db/operations/tasks.ts).
@@ -417,6 +442,9 @@ export const CreateCompoundTaskInputSchema = z.object({
   startDate: z.string().optional(),
   endDate: z.string().optional(),
 }).refine(
+  (data) => data.children.length >= 1 || data.countsTowardCounterId != null,
+  { message: 'A compound task needs a sub-task', path: ['children'] },
+).refine(
   (data) => {
     if (data.operator === OperatorType.M_OF_N) {
       return data.threshold !== undefined && data.threshold >= 1 && data.threshold <= data.children.length;
@@ -540,7 +568,15 @@ export const TaskSchema = z.object({
   titleTemplateSingular: z.string().max(200).optional(),
   titleTemplatePlural: z.string().max(200).optional(),
   timeframeGoals: CounterTimeframeGoalsSchema.optional(),
+  // "Counts toward" (docs/SHARED_COUNTER_SETTINGS.md §3) — the counter root a
+  // contributing task increments on completion; clearable. Shape only here
+  // (`countsTowardShapeOk`); the cross-row rules are write-time.
+  countsTowardCounterId: z.string().uuid().nullable().optional(),
+  countsTowardAmount: z.number().int().positive().optional(),
 }).refine(
+  countsTowardShapeOk,
+  { message: 'A task may not count toward itself, and a counter, a linked copy or an achievement may not count toward a counter' },
+).refine(
   (data) => {
     // Compound tasks must have an operator.
     if (data.type === TaskType.COMPOUND) {

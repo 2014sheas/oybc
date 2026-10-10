@@ -448,6 +448,24 @@ describe('CreateCompoundTaskInputSchema', () => {
     expect(result.success).toBe(false);
   });
 
+  it('valid: zero children ONLY when the container counts toward a counter (SHARED_COUNTER_SETTINGS §3a)', () => {
+    const flagged = CreateCompoundTaskInputSchema.safeParse(
+      validCreateCompoundTaskInput({
+        children: [],
+        countsTowardCounterId: '00000000-0000-0000-0000-0000000000c1',
+      })
+    );
+    expect(flagged.success).toBe(true);
+    const amount = CreateCompoundTaskInputSchema.safeParse(
+      validCreateCompoundTaskInput({
+        children: [],
+        countsTowardCounterId: '00000000-0000-0000-0000-0000000000c1',
+        countsTowardAmount: 0,
+      })
+    );
+    expect(amount.success).toBe(false);
+  });
+
   it('invalid: child entry with both childTaskId AND autoCreate → fails', () => {
     const result = CreateCompoundTaskInputSchema.safeParse(
       validCreateCompoundTaskInput({

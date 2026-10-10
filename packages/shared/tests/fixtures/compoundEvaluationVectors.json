@@ -39,6 +39,15 @@
       "expected": true
     },
     {
+      "name": "and-zero-children-counts-toward-container-is-incomplete",
+      "compoundId": "parent",
+      "tasks": [
+        { "id": "parent", "type": "compound", "operator": "AND", "countsTowardCounterId": "counter" }
+      ],
+      "children": [],
+      "expected": false
+    },
+    {
       "name": "and-filters-soft-deleted-child-link",
       "compoundId": "parent",
       "tasks": [
