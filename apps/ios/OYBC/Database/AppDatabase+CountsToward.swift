@@ -47,15 +47,18 @@ extension AppDatabase {
 
     /// The cascade hook, WRITE phase (§3b; twin of the web
     /// `writeCountsTowardForTasks`). For every task in `changedTaskIds` and
-    /// every compound transitively containing one, plan and apply the
-    /// counts-toward write (event row, version bump, enqueue); then, for each
-    /// counter root whose events moved, run a hand log's writes — restamp the
-    /// root's caches, refresh window-stamped baselines, write its live copies
-    /// — and re-enter one level deeper for contributors containing those
-    /// copies. Board derivation is left to the caller's ONE pass over
-    /// `cascadeIds` (so a copy on the contributor's own board is read with the
-    /// new increment); `finishCountsTowardRoots` runs after it. Idempotent.
-    /// Cheap when nothing counts toward anything (candidates read by key).
+    /// every compound transitively containing one, reconcile its credit SET —
+    /// one credit per completion occurrence (D10): `resolveContributionCredits`
+    /// vs the stored events at `candidateContributionIds` → `plan` → apply
+    /// each action (event row, version bump, enqueue); then, for each counter
+    /// root whose events moved, run a hand log's writes — restamp the root's
+    /// caches, refresh window-stamped baselines, write its live copies — and
+    /// re-enter one level deeper for contributors containing those copies.
+    /// Board derivation is left to the caller's ONE pass over `cascadeIds` (so
+    /// a copy on the contributor's own board is read with the new increment);
+    /// `finishCountsTowardRoots` runs after it. Idempotent. Cheap when nothing
+    /// counts toward anything (candidates, their placements, own events and
+    /// stored credits are read by key / index).
     ///
     /// - Parameters:
     ///   - db: The caller's write transaction.
@@ -80,12 +83,27 @@ extension AppDatabase {
             }
         }
         let candidateTasks = try Task.fetchAll(db, keys: candidates)
-        var storedById: [String: TaskEvent] = [:]
-        for e in try TaskEvent.fetchAll(db, keys: candidateTasks.map { CountsToward.eventId(contributingTaskId: $0.id) }) {
-            storedById[e.id] = e
+        guard !candidateTasks.isEmpty else { return out }
+
+        // The candidates' keyed data (indexed reads): fork ancestors, own
+        // events (any state — the candidate keys), placements and their boards.
+        let data = try loadCountsTowardCandidateData(db: db, rows: candidateTasks)
+        func liteInputs(_ task: Task) -> CountsToward.Inputs {
+            CountsToward.Inputs(
+                taskById: data.lineageById, childrenByCompound: [:], eventsByTaskId: [:],
+                allEventsByTaskId: data.allEventsByTaskId,
+                placements: data.placements.filter { $0.taskId == task.id }, boardById: data.boardById
+            )
         }
-        let relevant = candidateTasks.filter {
-            $0.countsTowardCounterId != nil || storedById[CountsToward.eventId(contributingTaskId: $0.id)] != nil
+        var candidateIdsByTask: [String: [String]] = [:]
+        for task in candidateTasks {
+            candidateIdsByTask[task.id] = CountsToward.candidateContributionIds(task, inputs: liteInputs(task))
+        }
+        var storedById: [String: TaskEvent] = [:]
+        for e in try TaskEvent.fetchAll(db, keys: Set(candidateIdsByTask.values.joined())) { storedById[e.id] = e }
+        let relevant = candidateTasks.filter { task in
+            task.countsTowardCounterId != nil
+                || (candidateIdsByTask[task.id] ?? []).contains { storedById[$0] != nil }
         }
         guard !relevant.isEmpty else { return out }
 
@@ -97,19 +115,27 @@ extension AppDatabase {
 
         var reach: [(rootId: String, instants: [String])] = []
         for task in relevant {
-            let existing = storedById[CountsToward.eventId(contributingTaskId: task.id)]
-            let state = CountsToward.resolveContributionState(
-                task, childrenByCompound: childrenByCompound, taskById: taskById, eventsByTaskId: eventsByTaskId
+            var inputs = liteInputs(task)
+            inputs.taskById = taskById
+            inputs.childrenByCompound = childrenByCompound
+            inputs.eventsByTaskId = eventsByTaskId
+            let wanted = CountsToward.resolveContributionCredits(task, inputs: inputs)
+            let missing = wanted.map(\.eventId).filter { storedById[$0] == nil }
+            for e in try TaskEvent.fetchAll(db, keys: missing) { storedById[e.id] = e }
+            let actions = CountsToward.plan(
+                contributor: task, taskById: taskById, wanted: wanted,
+                candidateIds: candidateIdsByTask[task.id] ?? [], storedById: storedById
             )
-            guard let action = CountsToward.plan(contributor: task, taskById: taskById, state: state, existing: existing) else {
-                continue
-            }
-            try writeCountsTowardAction(db: db, action: action, userId: task.userId, existing: existing, now: now, pullOwnerUid: pullOwnerUid)
-            for r in action.reach {
-                if let i = reach.firstIndex(where: { $0.rootId == r.rootId }) {
-                    if !reach[i].instants.contains(r.occurredAt) { reach[i].instants.append(r.occurredAt) }
-                } else {
-                    reach.append((r.rootId, [r.occurredAt]))
+            for action in actions {
+                try writeCountsTowardAction(
+                    db: db, action: action, userId: task.userId, existing: storedById[action.eventId], now: now, pullOwnerUid: pullOwnerUid
+                )
+                for r in action.reach {
+                    if let i = reach.firstIndex(where: { $0.rootId == r.rootId }) {
+                        if !reach[i].instants.contains(r.occurredAt) { reach[i].instants.append(r.occurredAt) }
+                    } else {
+                        reach.append((r.rootId, [r.occurredAt]))
+                    }
                 }
             }
         }
@@ -126,6 +152,42 @@ extension AppDatabase {
             out.rootIds.formUnion(deeper.rootIds)
         }
         return out
+    }
+
+    /// The per-candidate rows the planner reads (twin of the web `CandidateData`).
+    private struct CountsTowardCandidateData {
+        /// The candidates plus their fork ancestors.
+        var lineageById: [String: Task]
+        var allEventsByTaskId: [String: [TaskEvent]]
+        var placements: [BoardTask]
+        var boardById: [String: Board]
+    }
+
+    /// Deepest `forkedFromTaskId` chain loaded for a candidate (a fork of a fork…).
+    private static let maxCountsTowardForkLineage = 8
+
+    /// Load the keyed rows every candidate's keys derive from (indexed reads only).
+    private static func loadCountsTowardCandidateData(db: Database, rows: [Task]) throws -> CountsTowardCandidateData {
+        var lineageById: [String: Task] = [:]
+        for t in rows { lineageById[t.id] = t }
+        var frontier = rows.compactMap(\.forkedFromTaskId).filter { lineageById[$0] == nil }
+        var depth = 0
+        while !frontier.isEmpty, depth < maxCountsTowardForkLineage {
+            let found = try Task.fetchAll(db, keys: Set(frontier))
+            for t in found { lineageById[t.id] = t }
+            frontier = found.compactMap(\.forkedFromTaskId).filter { lineageById[$0] == nil }
+            depth += 1
+        }
+        var allEventsByTaskId: [String: [TaskEvent]] = [:]
+        for e in try TaskEvent.filter(Array(lineageById.keys).contains(Column("taskId"))).fetchAll(db) {
+            allEventsByTaskId[e.taskId, default: []].append(e)
+        }
+        let placements = try BoardTask.filter(rows.map(\.id).contains(Column("taskId"))).fetchAll(db)
+        var boardById: [String: Board] = [:]
+        for b in try Board.fetchAll(db, keys: Set(placements.map(\.boardId))) { boardById[b.id] = b }
+        return CountsTowardCandidateData(
+            lineageById: lineageById, allEventsByTaskId: allEventsByTaskId, placements: placements, boardById: boardById
+        )
     }
 
     /// Apply one planned write: the event row + its sync entry.
@@ -216,7 +278,8 @@ extension AppDatabase {
     }
 
     /// Set (or clear, with `counterId == nil`) what a task counts toward, then
-    /// run its cascade so the event follows at once. Authored: version bump +
+    /// run its cascade so the credits follow at once (a cleared flag tombstones
+    /// every live credit). Authored: version bump +
     /// UPDATE enqueue; a clear writes NULL to both columns (raw SQL — `encode`
     /// nil-skips; clearable on sync).
     ///

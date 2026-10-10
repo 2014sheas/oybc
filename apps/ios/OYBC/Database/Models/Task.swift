@@ -171,10 +171,12 @@ struct Task: Codable, FetchableRecord, PersistableRecord, Identifiable {
     var timeframeGoals: CounterTimeframeGoals?
 
     /// "Counts toward" (docs/SHARED_COUNTER_SETTINGS.md §3) — set on a
-    /// CONTRIBUTING task: when its derived lifetime state becomes complete the
-    /// board cascade writes one increment of `countsTowardAmount` (nil = 1) on
-    /// this Discrete counter root, id `CountsToward.eventId(contributingTaskId:)`;
-    /// when it becomes incomplete again that event is tombstoned
+    /// CONTRIBUTING task: for every COMPLETION OCCURRENCE of the task (D10 — a
+    /// live completion event; a placement window in which a plain counting /
+    /// compound task is complete) the board cascade writes one increment of
+    /// `countsTowardAmount` (nil = 1) on this Discrete counter root, id
+    /// `CountsToward.eventId(contributorId:occurrence:)`; a withdrawn occurrence
+    /// (an undo, a removed placement, a cleared flag) has its event tombstoned
     /// (`AppDatabase+CountsToward.swift`). Never on a counter root, a linked
     /// copy or an Achievement. Clearable on sync (a clear is written by raw SQL —
     /// `encode` nil-skips). Nullable TEXT / INTEGER columns (GRDB v43).
