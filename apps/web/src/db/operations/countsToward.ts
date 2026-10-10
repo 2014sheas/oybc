@@ -1,13 +1,16 @@
 import { db } from '../internal';
 import {
   SyncOperationType,
-  countsTowardEventId,
+  candidateContributionIds,
   countsTowardProblem,
   findTransitiveParentCompounds,
   isFrozenRowReachedByEvent,
-  planCountsTowardAction,
-  resolveContributionState,
+  planCountsTowardActions,
+  resolveContributionCredits,
+  type Board,
+  type BoardTask,
   type CompoundChild,
+  type ContributionInputs,
   type CountsTowardAction,
   type CountsTowardProblem,
   type Task,
@@ -33,9 +36,9 @@ import { runBoardCascadeForTasks } from './orchestration';
  *     `runBoardCascadeForTasks` (the one choke point every local write, the
  *     pull paths and the late-log re-derivation go through), inside the same
  *     transaction: for each changed task and each compound containing it,
- *     compare its derived lifetime completion with the deterministic event on
- *     its counter root and insert / revise / tombstone it (version bump +
- *     enqueue), then write the root's log like a hand log; the board pass
+ *     reconcile its credit SET on its counter root — one credit per
+ *     completion occurrence (D10): insert / revise / tombstone (version bump
+ *     + enqueue) — then write the root's log like a hand log; the board pass
  *     derives the copies' boards, the finish phase re-derives sealed boards
  *     and refreshes watchers.
  *   - {@link setCountsToward} — the write-time entry that sets / clears the
@@ -50,6 +53,9 @@ import { runBoardCascadeForTasks } from './orchestration';
  * self-feeding loop; this bound is the runtime belt.
  */
 export const MAX_COUNTS_TOWARD_DEPTH = 3;
+
+/** Deepest `forkedFromTaskId` chain loaded for a candidate (a fork of a fork…). */
+const MAX_FORK_LINEAGE = 8;
 
 /** Refused {@link setCountsToward}; nothing is written. */
 export class CountsTowardError extends Error {
@@ -69,6 +75,8 @@ export class CountsTowardError extends Error {
 
 /** The transaction scope every entry point here needs. */
 const COUNTS_TOWARD_TABLES = [db.boards, db.boardTasks, db.tasks, db.compoundChildren, db.taskEvents, db.syncQueue];
+
+const isDefined = <T>(x: T | undefined): x is T => x !== undefined;
 
 /**
  * Live tasks that count toward `counterId`.
@@ -90,22 +98,62 @@ export interface CountsTowardWrites {
   rootIds: Set<string>;
 }
 
+/** The per-candidate rows the planner reads: the candidate's own placements, boards and events (any state). */
+interface CandidateData {
+  /** The candidates plus their fork ancestors. */
+  lineageById: Record<string, Task>;
+  allEventsByTaskId: Record<string, TaskEvent[]>;
+  placements: BoardTask[];
+  boardById: Record<string, Board>;
+}
+
+/** The candidates' fork ancestors (`forkedFromTaskId`, transitively, bounded). */
+async function fetchForkAncestors(rows: Task[]): Promise<Task[]> {
+  const out: Task[] = [];
+  const seen = new Set(rows.map((r) => r.id));
+  let frontier = rows.map((r) => r.forkedFromTaskId).filter((id): id is string => id != null && !seen.has(id));
+  for (let depth = 0; depth < MAX_FORK_LINEAGE && frontier.length > 0; depth += 1) {
+    for (const id of frontier) seen.add(id);
+    const found = (await db.tasks.bulkGet([...new Set(frontier)])).filter(isDefined);
+    out.push(...found);
+    frontier = found.map((t) => t.forkedFromTaskId).filter((id): id is string => id != null && !seen.has(id));
+  }
+  return out;
+}
+
+/** Load the keyed rows every candidate's keys derive from (indexed reads only). */
+async function loadCandidateData(rows: Task[]): Promise<CandidateData> {
+  const ancestors = await fetchForkAncestors(rows);
+  const lineageById: Record<string, Task> = {};
+  for (const t of [...rows, ...ancestors]) lineageById[t.id] = t;
+  const allEventsByTaskId: Record<string, TaskEvent[]> = {};
+  for (const e of await db.taskEvents.where('taskId').anyOf(Object.keys(lineageById)).toArray()) {
+    (allEventsByTaskId[e.taskId] ??= []).push(e);
+  }
+  const placements = await db.boardTasks.where('taskId').anyOf(rows.map((r) => r.id)).toArray();
+  const boardById: Record<string, Board> = {};
+  for (const b of (await db.boards.bulkGet([...new Set(placements.map((p) => p.boardId))])).filter(isDefined)) boardById[b.id] = b;
+  return { lineageById, allEventsByTaskId, placements, boardById };
+}
+
 /**
  * The cascade hook, WRITE phase (§3b). For every task in `changedTaskIds` and
- * every compound transitively containing one, plan the counts-toward write
- * (`planCountsTowardAction`) and apply it (event row, version bump, enqueue);
- * then, for each counter root whose events moved, run a hand log's writes —
- * restamp the root's lifetime caches, refresh window-stamped baselines,
- * propagate to its live copies — and re-enter one level deeper for
- * contributors that contain those copies. Board derivation is left to the
- * caller's ONE pass over `cascadeIds` (so a copy on the contributor's own
- * board is read with the new increment and its bingo lands in that pass's
- * result map); {@link finishCountsTowardRoots} runs after it. Idempotent: a
- * replay with no state change writes nothing.
+ * every compound transitively containing one, reconcile its credit set
+ * (`resolveContributionCredits` vs the stored events at
+ * `candidateContributionIds` → `planCountsTowardActions`) and apply each
+ * action (event row, version bump, enqueue); then, for each counter root
+ * whose events moved, run a hand log's writes — restamp the root's lifetime
+ * caches, refresh window-stamped baselines, propagate to its live copies —
+ * and re-enter one level deeper for contributors that contain those copies.
+ * Board derivation is left to the caller's ONE pass over `cascadeIds` (so a
+ * copy on the contributor's own board is read with the new increment and its
+ * bingo lands in that pass's result map); {@link finishCountsTowardRoots}
+ * runs after it. Idempotent: a replay with no state change writes nothing.
  *
- * Cheap when nothing counts toward anything: the candidate rows and their
- * deterministic event ids are read by key; the whole-table loads happen only
- * when a candidate is flagged or already holds an event.
+ * Cheap when nothing counts toward anything: the candidate rows, their
+ * placements, their own events (any state — the candidate keys) and the
+ * stored credits at those keys are read by index; the whole-table loads
+ * happen only when a candidate is flagged or already holds a credit.
  *
  * MUST run inside the caller's `rw` transaction over `boards`, `boardTasks`,
  * `tasks`, `compoundChildren`, `taskEvents`, `syncQueue`.
@@ -130,15 +178,27 @@ export async function writeCountsTowardForTasks(
     candidates.add(id);
     for (const parent of findTransitiveParentCompounds(id, allChildren)) candidates.add(parent);
   }
-  const candidateIds = [...candidates];
-  if (candidateIds.length === 0) return out;
-  const rows = await db.tasks.bulkGet(candidateIds);
-  const stored = await db.taskEvents.bulkGet(candidateIds.map(countsTowardEventId));
-  const relevant = rows
-    .map((task, i) => ({ task, existing: stored[i] }))
-    .filter((c): c is { task: Task; existing: TaskEvent | undefined } =>
-      c.task !== undefined && (c.task.countsTowardCounterId != null || c.existing !== undefined),
-    );
+  if (candidates.size === 0) return out;
+  const rows = (await db.tasks.bulkGet([...candidates])).filter(isDefined);
+  if (rows.length === 0) return out;
+
+  const data = await loadCandidateData(rows);
+  const liteInputs = (task: Task): ContributionInputs => ({
+    taskById: data.lineageById,
+    childrenByCompound: {},
+    eventsByTaskId: {},
+    allEventsByTaskId: data.allEventsByTaskId,
+    placements: data.placements.filter((p) => p.taskId === task.id),
+    boardById: data.boardById,
+  });
+  const candidateIdsByTask = new Map(rows.map((task) => [task.id, candidateContributionIds(task, liteInputs(task))]));
+  const storedById: Record<string, TaskEvent | undefined> = {};
+  for (const e of (await db.taskEvents.bulkGet([...new Set([...candidateIdsByTask.values()].flat())])).filter(isDefined)) {
+    storedById[e.id] = e;
+  }
+  const relevant = rows.filter(
+    (task) => task.countsTowardCounterId != null || (candidateIdsByTask.get(task.id) ?? []).some((id) => storedById[id] !== undefined),
+  );
   if (relevant.length === 0) return out;
 
   const taskById: Record<string, Task> = {};
@@ -156,13 +216,18 @@ export async function writeCountsTowardForTasks(
     if (!list.includes(occurredAt)) list.push(occurredAt);
     reach.set(rootId, list);
   };
-  for (const { task, existing } of relevant) {
-    const state = resolveContributionState(task, childrenByCompound, taskById, eventsByTaskId);
-    const action = planCountsTowardAction(task, taskById, state, existing);
-    if (!action) continue;
-    await writeCountsTowardAction(action, task.userId, existing, now);
-    noteReach(action.rootId, action.occurredAt);
-    if (action.kind === 'revise') noteReach(action.previousRootId, action.previousOccurredAt);
+  for (const task of relevant) {
+    const inputs: ContributionInputs = { ...liteInputs(task), taskById, childrenByCompound, eventsByTaskId };
+    const wanted = resolveContributionCredits(task, inputs);
+    const candidateIds = candidateIdsByTask.get(task.id) ?? [];
+    const missing = wanted.map((w) => w.eventId).filter((id) => !(id in storedById));
+    for (const e of (await db.taskEvents.bulkGet(missing)).filter(isDefined)) storedById[e.id] = e;
+    for (const action of planCountsTowardActions(task, taskById, wanted, candidateIds, storedById)) {
+      const existing = storedById[action.eventId];
+      await writeCountsTowardAction(action, task.userId, existing, now);
+      noteReach(action.rootId, action.occurredAt);
+      if (action.kind === 'revise') noteReach(action.previousRootId, action.previousOccurredAt);
+    }
   }
 
   for (const [rootId, instants] of reach) {
@@ -281,9 +346,10 @@ export async function applyCountsTowardInTransaction(taskIds: Iterable<string>, 
 
 /**
  * Set (or clear, with `counterId: null`) what a task counts toward, then run
- * its cascade so the event follows at once (a task already complete mints
- * its increment; a cleared one tombstones it). Authored: version bump +
- * UPDATE enqueue; a clear removes both fields (clearable on sync).
+ * its cascade so the credits follow at once (a task with completion
+ * occurrences mints them; a cleared one tombstones every live credit).
+ * Authored: version bump + UPDATE enqueue; a clear removes both fields
+ * (clearable on sync).
  *
  * @param taskId - The contributing task.
  * @param counterId - The Discrete counter root, or `null` to stop counting.

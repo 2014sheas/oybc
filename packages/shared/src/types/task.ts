@@ -265,11 +265,14 @@ export interface Task {
 
   /**
    * "Counts toward" (docs/SHARED_COUNTER_SETTINGS.md §3) — set on a
-   * CONTRIBUTING task. When its derived LIFETIME state becomes complete, the
-   * board cascade writes one increment event of `countsTowardAmount` (absent
-   * = 1) on this Discrete counter ROOT with the deterministic id
-   * `countsTowardEventId(task.id)`, stamped at the completion instant; when it
-   * becomes incomplete again that event is tombstoned (`countsToward.ts`).
+   * CONTRIBUTING task. For every COMPLETION OCCURRENCE of the task (D10 — a
+   * live completion event; a placement window in which a plain counting /
+   * compound task is complete) the board cascade writes one increment event
+   * of `countsTowardAmount` (absent = 1) on this Discrete counter ROOT with
+   * the deterministic id `countsTowardEventId(task.id, occurrence)`, stamped
+   * at the completion instant; when an occurrence is withdrawn (an undo, a
+   * removed placement, a cleared flag) its event is tombstoned
+   * (`countsToward.ts`).
    * One counter per task (D7). Never on a counter root, a linked copy
    * (`sharedCounterId`) or an Achievement (Zod shape rule); the target must be
    * a live Discrete counter root (`countsTowardProblem`, write time). Cleared

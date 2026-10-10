@@ -83,15 +83,27 @@ export type { KindPickerLock } from './countEntry';
 // ===== "Counts toward" (docs/SHARED_COUNTER_SETTINGS.md §3) =====
 export {
   COUNTS_TOWARD_NAMESPACE,
+  LIFETIME_WINDOW,
+  candidateContributionIds,
+  canonicalOccurrenceEventId,
   countsTowardEventId,
   countsTowardAmountOf,
   countsTowardProblem,
   isCountsTowardTarget,
   isSharedCounterRoot,
-  planCountsTowardAction,
+  planCountsTowardActions,
+  resolveContributionCredits,
   resolveContributionState,
 } from './countsToward';
-export type { ContributionState, CountsTowardAction, CountsTowardProblem } from './countsToward';
+export type {
+  ContributionCredit,
+  ContributionInputs,
+  ContributionOccurrence,
+  ContributionState,
+  ContributionWindow,
+  CountsTowardAction,
+  CountsTowardProblem,
+} from './countsToward';
 export {
   fixedLogChipAmounts,
   goalChipAmounts,
