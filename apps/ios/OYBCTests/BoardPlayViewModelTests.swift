@@ -1200,8 +1200,10 @@ final class BoardPlayViewModelTests: XCTestCase {
     }
 
     /// Counter kinds (D5) — a picker quick-add row linked to a continuous
-    /// root is stored with the root's kind at Save (the VM-built row carries
-    /// none of its own).
+    /// root: Save places the board's own window-stamped copy, stored with the
+    /// root's kind (the VM-built row carries none of its own). The pending
+    /// linked row the copy replaced is never written or enqueued (no orphan
+    /// member — docs/SHARED_COUNTER_SETTINGS.md §5 UI PR notes).
     func test_handleEditSave_pendingLinkedRow_carriesRootCountKind() throws {
         let db = try makeDb()
         try seedWorkspace(db)
@@ -1228,12 +1230,18 @@ final class BoardPlayViewModelTests: XCTestCase {
         XCTAssertTrue(vm.handleEditSave())
         XCTAssertTrue(waitUntil { vm.editEvent?.outcome == .saved })
 
-        XCTAssertEqual(dbTask(db, "pending-linked")?.countKind, .continuous)
+        let copyId = BoardSources.derivedTaskId(boardId: "b1", rootTaskId: "root-amt")
+        XCTAssertNotNil(try db.fetchBoardTasks(boardId: "b1").first { $0.taskId == copyId }, "the copy is what is placed")
+        XCTAssertEqual(dbTask(db, copyId)?.countKind, .continuous)
+        XCTAssertEqual(dbTask(db, copyId)?.maxCount, 5)
         let created = try db.fetchPendingSyncItems().filter {
-            $0.entityType == "tasks" && $0.entityId == "pending-linked" && $0.operationType == .create
+            $0.entityType == "tasks" && $0.entityId == copyId && $0.operationType == .create
         }
         let payload = try JSONDecoder().decode(Task.self, from: Data(try XCTUnwrap(created.first).payload.utf8))
         XCTAssertEqual(payload.countKind, .continuous, "the CREATE payload carries the kind too")
+        // The replaced pending row left no trace: no row, no sync item.
+        XCTAssertNil(dbTask(db, "pending-linked"))
+        XCTAssertFalse(try db.fetchPendingSyncItems().contains { $0.entityType == "tasks" && $0.entityId == "pending-linked" })
     }
 
     /// D15 — removals run BEFORE adds so a freed position is never mistaken

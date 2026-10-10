@@ -204,6 +204,33 @@ export async function persistWizardPendingTasks(
 }
 
 /**
+ * Remove a pending LINKED counting row (the quick-add match row's, or the
+ * special panel's auto-link create) that a mint replaced with the board's
+ * deterministic per-board copy: its `tasks` row and its sync CREATE item are
+ * deleted inside the caller's transaction, so from outside it was never
+ * written or enqueued. Scoped to bare linked pending rows ONLY — an ordinary
+ * pending pool task that overflows the board is still created (overfill is
+ * the variety mechanism). Twin: iOS `AppDatabase.dropReplacedLinkedPendingRows`.
+ *
+ * MUST run inside an open `rw` transaction scoping `tasks` + `syncQueue`.
+ *
+ * @param pendingTasks - The payloads the caller wrote.
+ * @param placedTaskIds - The ids actually placed on the board.
+ */
+export async function dropReplacedLinkedPendingRows(
+  pendingTasks: readonly WizardPendingTaskWrite[],
+  placedTaskIds: ReadonlySet<string>,
+): Promise<void> {
+  for (const payload of pendingTasks) {
+    const t = payload.task;
+    const isLinkedPending = !!t.sharedCounterId && t.type === TaskType.COUNTING && payload.childTasks.length === 0;
+    if (!isLinkedPending || placedTaskIds.has(t.id)) continue;
+    await db.tasks.delete(t.id);
+    await db.syncQueue.where('[entityType+entityId]').equals(['tasks', t.id]).delete();
+  }
+}
+
+/**
  * Standalone-transaction variant of the pending-task drain (Bug #85) PLUS
  * the Inline Task Editing (web PR-2) staged-edits apply, both in ONE
  * transaction — the recurring-template persist path's call site
@@ -774,6 +801,14 @@ export async function persistWizardBoardRows({
       // board's `centerTaskId` to follow it. The mint only runs on ACTIVE
       // saves, and an active save no longer writes CHOSEN / `centerTaskId`
       // (slice 3 D4) — the derived id simply lands in the locked centre cell.)
+
+      // A pending LINKED row the mint just replaced with the board's own copy
+      // is never left behind as an orphan library member: it was written above
+      // only so the planner could read it, and leaves this transaction unwritten
+      // and unenqueued. A draft keeps it (the draft's placement references it).
+      if (status === 'active' && placementIds.length > 0) {
+        await dropReplacedLinkedPendingRows(pendingTasks, new Set(placementIds));
+      }
 
       let placedSoFar = 0;
       // Two members sharing a shared-counter root collapse onto ONE derived

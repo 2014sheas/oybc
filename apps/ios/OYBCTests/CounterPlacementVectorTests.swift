@@ -84,6 +84,9 @@ final class CounterPlacementVectorTests: XCTestCase {
         let name: String; let goal: Double; let explicit: Double?; let fromBoard: Bool
         let sourceWindow: String; let targetWindow: String; let timeframeDefault: Double?; let expected: Double
     }
+    private struct StepperMaxVector: Decodable {
+        let name: String; let goal: Double; let timeframeDefault: Double?; let expected: Double
+    }
     private struct PlanSupply: Decodable {
         let kind: String; let supply: [String]; let memberRules: [String: BoardSourceMemberRule]?
     }
@@ -108,6 +111,7 @@ final class CounterPlacementVectorTests: XCTestCase {
         let planDerivedTasks: Plan
         let effectiveMemberTarget: [TargetVector]
         let generateCounterTaskTitleWithSettings: [GenerateVector]
+        let memberStepperMax: [StepperMaxVector]
     }
 
     private func loadFixture() throws -> Fixture {
@@ -211,6 +215,14 @@ final class CounterPlacementVectorTests: XCTestCase {
                     timeframeDefault: v.timeframeDefault
                 ),
                 v.expected, v.name
+            )
+        }
+    }
+
+    func testMemberStepperMaxAdmitsADefaultAboveTheGoal() throws {
+        for v in try loadFixture().memberStepperMax {
+            XCTAssertEqual(
+                BoardSources.memberStepperMax(goal: v.goal, timeframeDefault: v.timeframeDefault), v.expected, v.name
             )
         }
     }

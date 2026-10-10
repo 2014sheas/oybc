@@ -74,6 +74,10 @@ struct MemberRuleRowModel: Equatable {
     /// when the stepper is. Was `caption`, a separate label beside the
     /// stepper, before B3.1.
     let targetSuffix: String?
+    /// The stepper's ceiling: the goal, or the counter's board-timeframe
+    /// default when higher (`BoardSources.memberStepperMax`), so a default
+    /// above the goal stays reachable after stepping below the goal.
+    let stepperMax: CountValue
     let showsDice: Bool
     /// Blue range line under the main row; nil at vary `.off`.
     let rangeLabel: String?
@@ -159,6 +163,7 @@ struct MemberRuleRowModel: Equatable {
         self.target = target
         let showsStepper = isOn && isCounting && fromBoard
         self.showsStepper = showsStepper
+        self.stepperMax = BoardSources.memberStepperMax(goal: goal, timeframeDefault: rootDefault(task))
         self.targetSuffix = showsStepper
             ? "/ \(formatCount(goal, kind: kind))\(countUnitSuffix(kind, unit: unit))"
             : nil
@@ -565,7 +570,7 @@ struct RisoMemberRuleRowView: View {
                     RisoCountStepperView(
                         value: Binding(get: { model.target }, set: { onSetTarget($0) }),
                         kind: model.kind,
-                        max: Swift.max(model.goal, model.target),
+                        max: model.stepperMax,
                         suffix: model.targetSuffix
                     )
                 }

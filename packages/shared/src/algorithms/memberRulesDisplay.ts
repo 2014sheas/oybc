@@ -91,6 +91,21 @@ export function effectiveMemberTarget(args: {
 }
 
 /**
+ * The member target stepper's ceiling: the member's goal, or its counter's
+ * board-timeframe default when that is higher (docs/SHARED_COUNTER_SETTINGS.md
+ * §2 — a default above the goal is a valid target, and the user must be able
+ * to step back UP to it after stepping below the goal; `max(goal, target)`
+ * could not). Swift twin: `BoardSources.memberStepperMax`.
+ *
+ * @param goal - The member's own goal.
+ * @param timeframeDefault - Its counter's timeframe default for the board, or null.
+ * @returns The stepper's `max`.
+ */
+export function memberStepperMax(goal: number, timeframeDefault: number | null | undefined): number {
+  return timeframeDefault != null && timeframeDefault > goal ? timeframeDefault : goal;
+}
+
+/**
  * Human-readable vary range for a rule-editing surface — the inclusive
  * `[lo, hi]` from {@link varyRange}, rendered as `"lo–hi unit"` (en dash;
  * `unit` omitted entirely when empty).

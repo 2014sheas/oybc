@@ -97,6 +97,21 @@ extension BoardSources {
         return Swift.min(Swift.max(countTargetStep(kind), floorToCountStep(base, kind: kind)), goal)
     }
 
+    /// The member target stepper's ceiling: the member's goal, or its
+    /// counter's board-timeframe default when that is higher
+    /// (docs/SHARED_COUNTER_SETTINGS.md §2 — a default above the goal is a
+    /// valid target, and the user must be able to step back UP to it after
+    /// stepping below the goal). TS twin: `memberStepperMax`.
+    ///
+    /// - Parameters:
+    ///   - goal: The member's own goal.
+    ///   - timeframeDefault: Its counter's timeframe default for the board, or nil.
+    /// - Returns: The stepper's `max`.
+    static func memberStepperMax(goal: CountValue, timeframeDefault: CountValue?) -> CountValue {
+        if let timeframeDefault, timeframeDefault > goal { return timeframeDefault }
+        return goal
+    }
+
     /// Human-readable vary range for a rule-editing surface — the inclusive
     /// `lo...hi` from ``varyRange(t:level:goal:kind:)``, rendered as
     /// `"lo–hi unit"` (EN DASH, U+2013; the unit omitted entirely when empty).

@@ -272,9 +272,10 @@ struct NewCounterSheetContentView: View {
         let defaults = form.defaults
         VStack(alignment: .leading, spacing: 14) {
 
+            // The derived name needs a noun (web parity): a verb alone shows nothing dimmed.
             TemplateFieldView(
-                label: "Name", text: $form.name, derived: defaults.name, count: 1, kind: form.kind,
-                showsExample: false, maxLength: 100
+                label: "Name", text: $form.name, derived: form.trimmedNoun.isEmpty ? "" : defaults.name, count: 1,
+                kind: form.kind, showsExample: false, maxLength: 100
             )
 
             fieldBlock(label: "Kind") {

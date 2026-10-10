@@ -206,7 +206,8 @@ struct RisoQuickAddRowView: View {
                     },
                     onPickWithGoal: { goal in
                         let payload = QuickAddCounterPlacement.pendingLinkedTask(
-                            root: task, goal: goal, userId: userId, now: AppDatabase.currentTimestamp()
+                            root: task, goal: goal, userId: userId, now: AppDatabase.currentTimestamp(),
+                            timeframe: defaultTimeframe, startDate: defaultStartDate, endDate: defaultEndDate
                         )
                         onTaskCreated(payload.task.id, payload.task.title, TaskType.counting.rawValue)
                         onPendingCreated?(payload)

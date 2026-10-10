@@ -68,24 +68,42 @@ export function counterMatchRowGoal(root: Task, timeframe: Timeframe): CounterMa
   };
 }
 
+/** The host board's window, stamped on the pending linked row (as `useLinkedCounterCreate` does). */
+export interface PendingLinkedWindow {
+  timeframe?: Timeframe;
+  startDate?: string;
+  endDate?: string;
+}
+
 /**
  * The pending LINKED counting task the no-default match row builds from a
- * typed goal — the same shape as the special panel's deferred auto-link
- * create: linked to the root, the root's verb / noun / kind, the typed goal,
- * the title rendered through the root's templates, start-from-zero baseline,
- * wizard-born. Deliberately carries NO window fields: a linked row with a
- * `startDate` would read as a window-stamped derived copy. The planner (and
- * Board Edit's placement resolver) then mints the per-board copy at this goal
- * — a picked LINKED row keeps its own goal. Nothing is written to the root.
+ * typed goal — the special panel's deferred auto-link shape
+ * (`useLinkedCounterCreate`): linked to the root, the root's verb / noun /
+ * kind, the typed goal, the title rendered through the root's templates,
+ * start-from-zero baseline, wizard-born, and the host board's window fields
+ * so that, wherever the row IS persisted (a draft; a repeating board's
+ * member list), it expires with its window. On an active one-off save and in
+ * Board Edit the planner / placement resolver mint the per-board copy at this
+ * goal — a picked LINKED row keeps its own goal — and the persist seams then
+ * never write this row (`dropReplacedLinkedPendingRows`). Nothing is written
+ * to the root.
  *
  * @param root - The counter root.
  * @param goal - The typed goal (positive, at the root's kind).
  * @param userId - Owner of the new task.
  * @param id - The new task's id.
  * @param now - ISO8601 creation instant.
+ * @param window - The host board's timeframe / dates, when it has them.
  * @returns The payload for `onPendingCreated`.
  */
-export function buildPendingLinkedCounter(root: Task, goal: number, userId: string, id: string, now: string): PendingTaskPayload {
+export function buildPendingLinkedCounter(
+  root: Task,
+  goal: number,
+  userId: string,
+  id: string,
+  now: string,
+  window: PendingLinkedWindow = {},
+): PendingTaskPayload {
   const kind = resolveCountKind(root);
   const task: Task = {
     id,
@@ -106,9 +124,24 @@ export function buildPendingLinkedCounter(root: Task, goal: number, userId: stri
     updatedAt: now,
     version: 1,
     isDeleted: false,
+    ...(window.timeframe !== undefined ? { timeframe: window.timeframe } : {}),
+    ...(window.startDate !== undefined ? { startDate: window.startDate } : {}),
+    ...(window.endDate !== undefined ? { endDate: window.endDate } : {}),
     createdInWizard: true,
   };
   return { task, childTasks: [], childLinks: [] };
+}
+
+/**
+ * Is this pending payload a bare LINKED counting row (the match row's or the
+ * special panel's auto-link create) — the only pending shape a mint replaces
+ * with the per-board copy, so the persist seams must not write it once it is
+ * not among the placed ids. Ordinary pending pool tasks are never dropped.
+ *
+ * @param payload - A pending payload.
+ */
+export function isLinkedPendingPayload(payload: PendingTaskPayload): boolean {
+  return !!payload.task.sharedCounterId && payload.task.type === TaskType.COUNTING && payload.childTasks.length === 0;
 }
 
 /**

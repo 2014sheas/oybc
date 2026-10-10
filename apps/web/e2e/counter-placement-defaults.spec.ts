@@ -2,6 +2,37 @@ import type { Page } from '@playwright/test';
 import { test, expect, seedBoard, seedTask, seedBoardTask, readTask } from './_fixtures/bypass';
 
 /**
+ * `derivedTaskId` from the shared package. A dynamic import, read through
+ * `default` when present: `@oybc/shared` ships CommonJS, and Playwright's ESM
+ * loader does not always see its re-exported names as named exports.
+ */
+async function derivedTaskId(boardId: string, rootId: string): Promise<string> {
+  const mod = await import('@oybc/shared');
+  const shared = (mod as unknown as { default?: typeof mod }).default ?? mod;
+  return shared.derivedTaskId(boardId, rootId);
+}
+
+/** Every non-deleted task row linking to `rootId` (raw IndexedDB). */
+async function linkedTaskIds(page: Page, rootId: string): Promise<string[]> {
+  return page.evaluate((id) => {
+    return new Promise<string[]>((resolve, reject) => {
+      const openReq = indexedDB.open('oybc');
+      openReq.onerror = () => reject(openReq.error);
+      openReq.onsuccess = () => {
+        const db = openReq.result;
+        const req = db.transaction(['tasks'], 'readonly').objectStore('tasks').getAll();
+        req.onsuccess = () => {
+          db.close();
+          const rows = req.result as { id: string; sharedCounterId?: string; isDeleted?: boolean }[];
+          resolve(rows.filter((r) => r.sharedCounterId === id && !r.isDeleted).map((r) => r.id));
+        };
+        req.onerror = () => reject(req.error);
+      };
+    });
+  }, rootId);
+}
+
+/**
  * docs/SHARED_COUNTER_SETTINGS.md §2 (PR 2) — a shared counter carrying a
  * weekly default is found by a word of its title template, and placing it on
  * a WEEKLY board mints the per-board copy at that default with the templated
@@ -111,10 +142,22 @@ test.describe('Shared counter placement defaults', () => {
     await expect(page.getByText('Read 5 pages!')).toBeVisible();
     const placed = await boardTaskIds(page, BOARD_ID);
     const copyId = placed.find((id) => id !== FILLER && id !== ROOT && id !== GOALLESS);
-    expect(copyId).toBeDefined();
+    // The placed row is the board's deterministic copy at the typed goal …
+    expect(copyId).toBe(await derivedTaskId(BOARD_ID, GOALLESS));
     const copy = await readTask(page, copyId!);
     expect(copy?.maxCount).toBe(5);
     expect(copy?.sharedCounterId).toBe(GOALLESS);
     expect(await readTask(page, GOALLESS)).not.toHaveProperty('maxCount');
+    // … and the pending linked row the pick built was never written: the copy is
+    // the ONLY row linking to the counter, so Counter Detail lists one member.
+    expect(await linkedTaskIds(page, GOALLESS)).toEqual([copyId]);
+    await page.goto(`/profile/counters/${GOALLESS}?__oybc_test_bypass=1`);
+    await expect(page.getByLabel(/^Read 5 pages!:/)).toHaveCount(1);
+    // "Not counting now" holds only the unplaced root itself — never a ghost
+    // "Read 5 pages!" member left over from the pick.
+    const inactive = page.getByRole('list', { name: 'Inactive tasks not currently counting' });
+    await expect(inactive.getByLabel(/^Read 5 pages!/)).toHaveCount(0);
+    await expect(inactive.getByLabel(/— inactive$/)).toHaveCount(1);
+    await expect(inactive.getByLabel(/^Pages — inactive$/)).toHaveCount(1);
   });
 });

@@ -364,6 +364,21 @@ extension BoardPlayViewModel {
                         )
                     }
 
+                    // 7a. A pending LINKED row that steps 3 / 7 replaced with the
+                    //     board's own copy is never left behind as an orphan
+                    //     library member: it was written in step 1 only so the
+                    //     choke points could read it.
+                    if !pendingPayloads.isEmpty {
+                        let placedTaskIds = Set(
+                            try BoardTask
+                                .filter(Column("boardId") == bid && Column("isDeleted") == false)
+                                .fetchAll(db).map(\.taskId)
+                        )
+                        try AppDatabase.dropReplacedLinkedPendingRows(
+                            db: db, pending: pendingPayloads, placedTaskIds: placedTaskIds
+                        )
+                    }
+
                     // 7b. Staged task-field overrides, remapped onto the ids the
                     //     replacements/adds actually placed on this board.
                     try Self.applyStagedOverrides(

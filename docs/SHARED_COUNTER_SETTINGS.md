@@ -340,16 +340,19 @@ shown dimmed (muted text, hairline keyline) as real text to type over; typing ma
 solid and stores it; clearing stores absent. The pure half is shared:
 `counterSettingsDraftFromRoot` / `counterSettingsDefaults` / `storedCounterSettingsFromDraft`
 / `storedCounterSettings` / `changedCounterSettingsKeys` (`counterSettings.ts` ↔
-`CounterSettings.swift`, vector-pinned) — a typed value equal to its dimmed default is
-stored absent (so it keeps deriving live; a goal is judged against what the OTHER entered
-goals derive for it, shortest first), the singular's default is the typed plural (D2),
+`CounterSettings.swift`, vector-pinned) — a typed Name / template equal to its dimmed
+default is stored absent (so it keeps deriving live), while a typed Defaults cell is stored
+AS TYPED, never normalised (dropping a goal that equals its derivation would move a
+derived cell the user saw beside it — fix round, 2026-10-10), the singular's default is
+the typed plural (D2),
 and an edit-mode Save writes only the settings whose stored value changed (web
 present-`undefined` = clear; iOS `Patch.counterSettings` only when changed). Length caps
 (name 100, templates 200) are enforced in the inputs. Placement: the quick-add / Board
 Edit picker row for a shared counter root shows the NAME · a dense kind tag · the goal
 slot via the shared `placementGoalSource` (`"Weekly · 2 books"` for a timeframe default,
-`"12 books"` for the root's own goal). The stepper admits a default above the member's
-goal (`max = max(goal, target)`), and `RisoPoolRowEditorView` renders its preview through
+`"12 books"` for the root's own goal). The member stepper's ceiling is
+`memberStepperMax(goal, timeframeDefault)` (both platforms), so a default above the goal
+stays reachable after stepping below the goal, and `RisoPoolRowEditorView` renders its preview through
 the root's templates (its own, or the linked root fetched once). Three design calls
 ratified from the handoff: (1) the sheet's **preview card (name + All-time) is removed**
 — Name does its job and all-time lives in Counter Detail; (2) **the verb is required**
@@ -359,10 +362,19 @@ is empty; an existing Duration root's noun stays optional in edit); (3) **no def
 this board → the goal slot IS a Goal entry** (placeholder "Goal", unit suffix; "+" dimmed
 until a number is typed) and the pick hands the host a **pending LINKED counting task**
 at that goal (`buildPendingLinkedCounter` ↔ `QuickAddCounterPlacement.pendingLinkedTask`
-— the special panel's auto-link shape, no window fields), which the planner / Board Edit
-resolver mints into the per-board copy exactly as a picked linked row; nothing is written
-to the counter root, no schema, no modal. Hosts without a board timeframe (pool editor)
-or without a deferred-create path keep the plain row. The counts-toward UI (spec §3d /
+— the special panel's auto-link shape, stamped with the host board's window), which the
+planner / Board Edit resolver mints into the per-board copy exactly as a picked linked
+row; nothing is written to the counter root, no schema, no modal. **The replaced linked
+pending row is never persisted:** the one-off wizard persist and Board Edit's commit drop a
+bare linked pending row (and its sync item) that is not among the placed ids, inside the
+same transaction (`dropReplacedLinkedPendingRows`, both platforms) — so no orphan member
+ever reaches Counter Detail (this also closes the special panel's older leftover).
+Ordinary pending pool tasks are untouched (overfill is the variety mechanism). A DRAFT
+save and a REPEATING board's member list still write the row — a draft's placement
+references it, and the template's hand-added list must resolve it at every spawn — which
+is why it carries the window fields: it expires with its window and reads as the
+window-stamped member the planner already mints from. Hosts without a board timeframe
+(pool editor) or without a deferred-create path keep the plain row. The counts-toward UI (spec §3d /
 PR 4) remains pending.
 
 ---

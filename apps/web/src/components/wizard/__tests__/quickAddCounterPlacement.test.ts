@@ -6,6 +6,7 @@ import {
   buildPendingLinkedCounter,
   counterMatchRowGoal,
   counterMatchRowName,
+  isLinkedPendingPayload,
   isSharedCounterRoot,
 } from '../quickAddCounterPlacement';
 import { WizardQuickAddRow } from '../WizardQuickAddRow';
@@ -60,6 +61,14 @@ describe('buildPendingLinkedCounter', () => {
     expect(isWindowStampedDerived(t)).toBe(false);
     expect(childTasks).toEqual([]);
     expect(childLinks).toEqual([]);
+    // With a host board window the row is stamped like `useLinkedCounterCreate`'s,
+    // so wherever it IS persisted (a draft, a repeating board's members) it expires.
+    const stamped = buildPendingLinkedCounter(root, 3, 'u1', 'n4', T0, {
+      timeframe: Timeframe.WEEKLY, startDate: '2026-10-05T00:00:00.000', endDate: '2026-10-11T23:59:59.999',
+    }).task;
+    expect(stamped).toMatchObject({ timeframe: Timeframe.WEEKLY, startDate: '2026-10-05T00:00:00.000', endDate: '2026-10-11T23:59:59.999' });
+    expect(isLinkedPendingPayload({ task: stamped, childTasks: [], childLinks: [] })).toBe(true);
+    expect(isLinkedPendingPayload({ task: { ...stamped, sharedCounterId: undefined }, childTasks: [], childLinks: [] })).toBe(false);
     expect(buildPendingLinkedCounter(root, 1, 'u1', 'n2', T0).task.title).toBe('Read 1 book');
     expect(buildPendingLinkedCounter(task({ countKind: 'continuous', unit: 'mi' }), 2.5, 'u1', 'n3', T0).task).toMatchObject({ countKind: 'continuous', title: 'Read 2.5 mi' });
   });

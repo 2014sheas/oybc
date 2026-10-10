@@ -1247,5 +1247,31 @@
       },
       "expected": null
     }
+  ],
+  "memberStepperMax": [
+    {
+      "name": "no default: the goal",
+      "goal": 35,
+      "timeframeDefault": null,
+      "expected": 35
+    },
+    {
+      "name": "a default below the goal: the goal",
+      "goal": 35,
+      "timeframeDefault": 20,
+      "expected": 35
+    },
+    {
+      "name": "a default above the goal: the default (the user can step back up to it)",
+      "goal": 35,
+      "timeframeDefault": 50,
+      "expected": 50
+    },
+    {
+      "name": "a default equal to the goal: the goal",
+      "goal": 35,
+      "timeframeDefault": 35,
+      "expected": 35
+    }
   ]
 }

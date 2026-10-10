@@ -214,7 +214,11 @@ export function WizardQuickAddRow({
    * is written to the counter root.
    */
   function handleCounterGoalPicked(root: Task, goal: number): void {
-    const payload = buildPendingLinkedCounter(root, goal, userId, generateUUID(), currentTimestamp());
+    const payload = buildPendingLinkedCounter(root, goal, userId, generateUUID(), currentTimestamp(), {
+      timeframe: currentTimeframe,
+      startDate: currentStartDate,
+      endDate: currentEndDate,
+    });
     onTaskCreated(payload.task);
     onPendingCreated!(payload);
     setRowGoalText((m) => ({ ...m, [root.id]: '' }));

@@ -11,7 +11,7 @@ import {
 } from './boardTasks';
 import { applyBoardEditTaskOverrideInTransaction } from './compoundStructureEdit';
 import { ensureBoardScopedTask, stampForkCaches } from './boardScopedEdit';
-import { persistWizardPendingTasks } from './wizardBoard';
+import { dropReplacedLinkedPendingRows, persistWizardPendingTasks } from './wizardBoard';
 import type { SquareDraftCell } from '../../hooks/squareEditCount';
 import type { BoardEditTaskOverride } from '../../hooks/squaresEditReducer';
 import { currentTimestamp } from '../utils';
@@ -166,6 +166,14 @@ export async function commitSquareEdits(input: CommitSquareEditsInput): Promise<
           });
           if (added.taskId !== cell.taskId) placedIdByStagedId.set(cell.taskId, added.taskId);
         }
+      }
+
+      // 7a. A pending LINKED row that steps 3 / 7 replaced with the board's
+      //     own copy is never left behind as an orphan library member: it was
+      //     written in step 1 only so the choke points could read it.
+      if (pendingWrites.length > 0) {
+        const placed = new Set(cells.map((c) => placedIdByStagedId.get(c.taskId) ?? c.taskId));
+        await dropReplacedLinkedPendingRows(pendingWrites, placed);
       }
 
       // 7b. Task-field overrides — AFTER replacements and adds so each lands on

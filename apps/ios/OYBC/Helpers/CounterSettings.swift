@@ -287,11 +287,11 @@ enum CounterSettings {
     }
 
     /// The stored settings a draft resolves to (D3 — stored only when the
-    /// user typed something that is not the default): a blank field, or one
-    /// equal to its dimmed default, is absent. A goal equal to what the OTHER
-    /// entered goals derive for it is absent too, judged shortest timeframe
-    /// first against the goals still kept. TS twin:
-    /// `storedCounterSettingsFromDraft`.
+    /// user typed something): a blank text field, or one equal to its dimmed
+    /// default, is absent. A typed goal is stored AS TYPED — never normalised
+    /// against what the other goals derive (dropping it would move the
+    /// derived value of a cell the user saw dimmed beside it); all cells
+    /// clear → nil. TS twin: `storedCounterSettingsFromDraft`.
     ///
     /// - Parameters:
     ///   - draft: The typed draft.
@@ -303,15 +303,8 @@ enum CounterSettings {
         if let name = storedText(draft.name), name != d.name { out.counterName = name }
         if let plural = storedText(draft.plural), plural != d.plural { out.titleTemplatePlural = plural }
         if let singular = storedText(draft.singular), singular != d.singular { out.titleTemplateSingular = singular }
-        var remaining = enteredGoals(draft.goals)
-        for t in GoalTimeframe.allCases {
-            guard let v = remaining[t] else { continue }
-            var others = remaining
-            others[t] = nil
-            let derived = derivedTimeframeGoals(Fields(countKind: context.countKind, timeframeGoals: others))[t] ?? nil
-            if derived == v { remaining[t] = nil }
-        }
-        if !remaining.isEmpty { out.timeframeGoals = remaining }
+        let goals = enteredGoals(draft.goals)
+        if !goals.isEmpty { out.timeframeGoals = goals }
         return out
     }
 

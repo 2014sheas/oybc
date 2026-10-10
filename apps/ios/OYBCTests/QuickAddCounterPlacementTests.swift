@@ -1,4 +1,5 @@
 import XCTest
+import GRDB
 @testable import OYBC
 
 /// The quick-add / Board Edit picker's counter rows (docs/SHARED_COUNTER_SETTINGS.md §2):
@@ -56,6 +57,84 @@ final class QuickAddCounterPlacementTests: XCTestCase {
         XCTAssertNil(t.endDate)
         XCTAssertTrue(payload.childTasks.isEmpty)
         XCTAssertTrue(payload.childLinks.isEmpty)
+    }
+
+    func testPendingLinkedTaskCarriesTheHostBoardWindow_andIsALinkedPendingPayload() {
+        let root = counting(isCounter: true)
+        let payload = QuickAddCounterPlacement.pendingLinkedTask(
+            root: root, goal: 3, userId: "u1", now: "n",
+            timeframe: .weekly, startDate: "2026-10-05T00:00:00.000", endDate: "2026-10-11T23:59:59.999"
+        )
+        XCTAssertEqual(payload.task.timeframe, .weekly)
+        XCTAssertEqual(payload.task.startDate, "2026-10-05T00:00:00.000")
+        XCTAssertEqual(payload.task.endDate, "2026-10-11T23:59:59.999")
+        XCTAssertTrue(QuickAddCounterPlacement.isLinkedPendingPayload(payload))
+        var plain = payload.task
+        plain.sharedCounterId = nil
+        XCTAssertFalse(QuickAddCounterPlacement.isLinkedPendingPayload(
+            PendingTaskPayload(task: plain, childTasks: [], childLinks: [])
+        ))
+    }
+
+    // MARK: - Persist seam: a replaced linked pending row is never written
+
+    /// An active one-off save with a hand-added linked pending row: the board
+    /// places `derivedTaskId(board, root)` at the typed goal, and the pending
+    /// row — written only so the planner could read it — leaves the
+    /// transaction unwritten and unenqueued (no orphan member on Counter Detail).
+    func testSaveWizardBoard_replacedLinkedPendingRow_isNeverPersistedOrEnqueued() throws {
+        typealias K = LinkedWindowKit
+        let db = try AppDatabase.makeTestInstance()
+        try K.seedUser(db)
+        var rootTask = K.task("root", maxCount: nil, currentCount: 40)
+        rootTask.isCounter = true
+        try db.saveTask(rootTask)
+        let start = "2026-09-01T00:00:00.000Z", end = "2026-09-30T00:00:00.000Z"
+        var board = K.board(id: "b1", startDate: start, endDate: end, size: 1)
+        board.status = .active
+        let pending = QuickAddCounterPlacement.pendingLinkedTask(
+            root: rootTask, goal: 5, userId: K.userId, now: start,
+            timeframe: .monthly, startDate: start, endDate: end
+        )
+        let row = K.placement(id: "bt", boardId: "b1", taskId: pending.task.id)
+
+        try db.saveWizardBoard(
+            board: board, boardTasks: [row], pendingTasks: [pending],
+            isUpdate: false, manualTaskIds: [pending.task.id], now: start
+        )
+
+        let copyId = BoardSources.derivedTaskId(boardId: "b1", rootTaskId: "root")
+        XCTAssertEqual(try db.fetchBoardTasks(boardId: "b1").map(\.taskId), [copyId])
+        XCTAssertEqual(try K.fetchTask(db, copyId)?.maxCount, 5)
+        XCTAssertNil(try K.fetchTask(db, pending.task.id), "the replaced pending row is not written")
+        XCTAssertTrue(try K.queue(db, type: "tasks", id: pending.task.id).isEmpty, "…and not enqueued")
+        XCTAssertFalse(try K.queue(db, type: "tasks", id: copyId).isEmpty, "the copy is")
+        let linked = try db.read { try Task.filter(Column("sharedCounterId") == "root").fetchAll($0).map(\.id) }
+        XCTAssertEqual(linked, [copyId], "exactly one row links to the root — no ghost member")
+    }
+
+    /// A draft save keeps the pending row (the draft's placement references it) and mints nothing.
+    func testSaveWizardBoard_draft_keepsTheLinkedPendingRow() throws {
+        typealias K = LinkedWindowKit
+        let db = try AppDatabase.makeTestInstance()
+        try K.seedUser(db)
+        var rootTask = K.task("root", maxCount: nil, currentCount: 40)
+        rootTask.isCounter = true
+        try db.saveTask(rootTask)
+        let start = "2026-09-01T00:00:00.000Z", end = "2026-09-30T00:00:00.000Z"
+        var board = K.board(id: "b1", startDate: start, endDate: end, size: 1)
+        board.status = .draft
+        let pending = QuickAddCounterPlacement.pendingLinkedTask(
+            root: rootTask, goal: 5, userId: K.userId, now: start,
+            timeframe: .monthly, startDate: start, endDate: end
+        )
+        try db.saveWizardBoard(
+            board: board, boardTasks: [K.placement(id: "bt", boardId: "b1", taskId: pending.task.id)],
+            pendingTasks: [pending], isUpdate: false, manualTaskIds: [pending.task.id], now: start
+        )
+        XCTAssertEqual(try db.fetchBoardTasks(boardId: "b1").map(\.taskId), [pending.task.id])
+        XCTAssertNotNil(try K.fetchTask(db, pending.task.id))
+        XCTAssertNil(try K.fetchTask(db, BoardSources.derivedTaskId(boardId: "b1", rootTaskId: "root")))
     }
 
     func testPendingLinkedTaskKeepsANonDiscreteKindAndZeroBaseline() {

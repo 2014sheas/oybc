@@ -85,7 +85,8 @@ describe('counterEditSubmit', () => {
     expect(changed.counterName).toBeUndefined();
     expect(changed.titleTemplateSingular).toBe('Jog #N mile');
     expect('titleTemplatePlural' in changed).toBe(false);
-    expect(changed.timeframeGoals).toEqual({ weekly: 25 });
+    // Typed goals are stored as typed — never normalised against each other.
+    expect(changed.timeframeGoals).toEqual({ weekly: 25, daily: 4 });
     // The goal-less root's title is its name — now the derived one.
     expect(changed.title).toBe('Run miles');
   });

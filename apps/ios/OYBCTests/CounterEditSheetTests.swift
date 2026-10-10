@@ -74,10 +74,18 @@ final class CounterEditSheetTests: XCTestCase {
         var d = CounterEditModel.seed(r)
         XCTAssertNil(CounterEditModel.patch(root: r, draft: d).counterSettings)
 
-        // Typing the dimmed defaults back is still "unchanged": a plural equal to the default is absent.
+        // Typing a template's dimmed default back is still "unchanged": a plural
+        // equal to the default is absent.
         d.settings.plural = "Run #N miles"
-        d.settings.goals[.monthly] = 43
         XCTAssertNil(CounterEditModel.patch(root: r, draft: d).counterSettings)
+
+        // A typed Defaults cell is stored AS TYPED — even one equal to its
+        // derived value (dropping it would move a derived cell the user saw).
+        d.settings.goals[.monthly] = 43
+        XCTAssertEqual(
+            CounterEditModel.patch(root: r, draft: d).counterSettings?.timeframeGoals,
+            CounterTimeframeGoals(weekly: 10, monthly: 43)
+        )
 
         d.settings.singular = "Run #N mile"
         d.settings.goals[.daily] = 3
@@ -85,7 +93,7 @@ final class CounterEditSheetTests: XCTestCase {
         XCTAssertEqual(after?.counterName, "Miles")
         XCTAssertEqual(after?.titleTemplateSingular, "Run #N mile")
         XCTAssertNil(after?.titleTemplatePlural)
-        XCTAssertEqual(after?.timeframeGoals, CounterTimeframeGoals(daily: 3, weekly: 10))
+        XCTAssertEqual(after?.timeframeGoals, CounterTimeframeGoals(daily: 3, weekly: 10, monthly: 43))
 
         // Clearing a stored setting writes the nil.
         d = CounterEditModel.seed(r)
@@ -161,13 +169,14 @@ final class CounterEditSheetTests: XCTestCase {
         XCTAssertTrue(CounterSheetForm(verb: "Practice", kind: .duration).shownTemplateDefault("Practice #N") == "Practice #N")
     }
 
-    func test_form_storedSettingsDropDefaultsAndFlagBadGoals() {
+    func test_form_storedSettingsDropTextDefaults_keepTypedGoals_andFlagBadGoals() {
         var f = CounterSheetForm(verb: "Read", noun: "books", name: "Read books", plural: "Read #N novels")
         f.goalTexts = [.weekly: "2", .monthly: "9"]
         let s = f.storedSettings
         XCTAssertNil(s.counterName)
         XCTAssertEqual(s.titleTemplatePlural, "Read #N novels")
-        XCTAssertEqual(s.timeframeGoals, CounterTimeframeGoals(weekly: 2))
+        // Goals are stored as typed — monthly 9 equals its derivation but was typed.
+        XCTAssertEqual(s.timeframeGoals, CounterTimeframeGoals(weekly: 2, monthly: 9))
         XCTAssertFalse(f.goalsInvalid)
         f.goalTexts[.daily] = "abc"
         XCTAssertTrue(f.goalsInvalid)

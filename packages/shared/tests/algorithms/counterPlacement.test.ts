@@ -12,7 +12,7 @@ import {
 import { counterCopyTitle, generateCounterTaskTitle } from '../../src/algorithms/taskTitle';
 import { derivedTaskId, planDerivedTasks } from '../../src/algorithms/memberRules';
 import { windowStampedCopyDraft } from '../../src/algorithms/linkedCounterWindowHeal';
-import { effectiveMemberTarget } from '../../src/algorithms/memberRulesDisplay';
+import { effectiveMemberTarget, memberStepperMax } from '../../src/algorithms/memberRulesDisplay';
 import type { Timeframe } from '../../src/constants/enums';
 
 const V = JSON.parse(
@@ -166,6 +166,12 @@ describe('windowStampedCopyDraft — root settings + placement goal', () => {
     const d = windowStampedCopyDraft(copy, { ...source, maxCount: undefined, title: 'Read books' }, 0, { maxCount: 4 });
     expect(d?.maxCount).toBe(4);
     expect(d?.title).toBe('Read 4 books');
+  });
+});
+
+describe('counterPlacementVectors — memberStepperMax admits a default above the goal', () => {
+  it.each(V.memberStepperMax as any[])('$name', (v: any) => {
+    expect(memberStepperMax(v.goal, v.timeframeDefault)).toBe(v.expected);
   });
 });
 

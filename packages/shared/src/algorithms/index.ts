@@ -419,6 +419,7 @@ export type {
 // ===== Member rules — display + rule-editing helpers (B3, docs/BOARD_SOURCES.md §Member rules) =====
 export {
   effectiveMemberTarget,
+  memberStepperMax,
   varyRangeLabel,
   splitSquaresNote,
   memberRuleFor,
