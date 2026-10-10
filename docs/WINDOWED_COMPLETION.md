@@ -748,6 +748,23 @@ user-favorable double credit. That edge caused the root-square counter bug
   PR D deletes the dead code. The `lastSyncedCount` field stays in the schema
   (inert) for decode compatibility. `SYNC_STRATEGY.md`'s shared-counter section
   gets a superseded-by pointer to this doc.
+- **Counts-toward increments (2026-10-09, [`SHARED_COUNTER_SETTINGS.md` §3](SHARED_COUNTER_SETTINGS.md#3-counts-toward-any-task-as-the-unit-of-a-discrete-counter)).**
+  A task carrying `countsTowardCounterId` adds ONE ordinary `increment` event
+  to that Discrete counter ROOT (event-owning, so the carve-out is unchanged —
+  a compound contributor still owns no events; the event lives on the root)
+  with the deterministic id `countsTowardEventId(contributor)` (uuidv5), so
+  every device's re-derivation writes the same row and union-by-id sync stays
+  correct. It is written by the board cascade (`writeCountsTowardForTasks` ↔
+  `writeCountsToward`, around the board pass of `runBoardCascadeForTasks` and
+  every other cascade entry incl. the pull and late-log paths), never by a UI
+  gesture: the contributor's derived LIFETIME completion inserts it (stamped at
+  the completion instant — the completing event's `occurredAt`, so a late
+  log's `endDate` stamp is inherited; a compound's when its rule was met),
+  incompletion tombstones it, a changed instant / amount revises it, and a
+  replay with no state change writes nothing. The root's caches, baselines and
+  copies then follow exactly as for a hand log, and the copies' boards derive
+  in the same pass. A deleted counter keeps its events (contributors are
+  unflagged); a deleted contributor's event is tombstoned.
 
 ## Sync
 

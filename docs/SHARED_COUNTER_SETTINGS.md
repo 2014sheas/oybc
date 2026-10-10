@@ -246,7 +246,7 @@ same stamp as the completion that caused it).
 | --- | --- |
 | 1 — counter settings data + logic (name, templates, timeframe defaults; sheet UI follows the design handoff) — **SHIPPED (data + logic) in #584** | shared types + Zod + GRDB migration (nullable columns) + Dexie (no index); `renderCounterTitle` / `resolveCounterDefaultGoal` / default-template helpers with vectors; `isAutoCounterTitle` → template-aware; propagation (#575) extended to template/name edits; the counter sheet's new fields (create + edit); hub/Detail/pickers show `counterName`. Inert for untouched counters (absent = today's behaviour). |
 | 2 — placement uses defaults — **SHIPPED (logic) in #585** | quick-add / picker mint with `resolveCounterDefaultGoal` + rendered title; shared search-match set; retire `DeriveCounterModal` (D6); source-pull auto-scaler consults defaults. |
-| 3 — counts toward (data + cascade) | `countsTowardCounterId/Amount`, deterministic event mint/tombstone in the cascade, delete/kind guards, zero-child container rule; vectors + XCTest/Vitest; no UI. |
+| 3 — counts toward (data + cascade) — **SHIPPED (data + cascade) in #586** | `countsTowardCounterId/Amount`, deterministic event mint/tombstone in the cascade, delete/kind guards, zero-child container rule; vectors + XCTest/Vitest; no UI. |
 | 4 — counts toward (UI) | Counter Detail section + "+ New"; task editor picker; cell badge; e2e + snapshots. |
 | 5 — docs | SHARED_COUNTERS / COUNTER_KINDS / TASK_SYSTEM / CLAUDE.md. |
 
@@ -376,6 +376,59 @@ is why it carries the window fields: it expires with its window and reads as the
 window-stamped member the planner already mints from. Hosts without a board timeframe
 (pool editor) or without a deferred-create path keep the plain row. The counts-toward UI (spec §3d /
 PR 4) remains pending.
+
+**PR 3 notes (2026-10-09).** Fields: `Task.countsTowardCounterId` (uuid,
+nullable, in `CLEARABLE_FIELDS_BY_COLLECTION.tasks`) and `countsTowardAmount`
+(positive int, absent = 1) — Zod shape rule `countsTowardShapeOk` (not self; not a
+hub counter, a linked copy or an Achievement), iOS GRDB v43, no Dexie bump. Pure
+half `countsToward.ts` ↔ `CountsToward.swift` (`countsTowardVectors.json`):
+`countsTowardEventId` (uuidv5 name `counts-toward:event:<taskId>`),
+`resolveContributionState`, `planCountsTowardAction`, `countsTowardProblem`.
+Data half `db/operations/countsToward.ts` ↔ `AppDatabase+CountsToward.swift`.
+
+- **"Complete" is the contributor's LIFETIME state** (the event id is per task, so
+  a task counts at most once, from whichever board or the library completed it):
+  Simple = any live completion event, instant = the EARLIEST one's `occurredAt`;
+  plain Counting = lifetime sum ≥ goal, instant = the increment that last crossed
+  it; Compound = its rule over its children (same states as `evaluateCompound` in
+  a lifetime context), instant = when the rule was met — All of → the latest child
+  (the max), Any of → the first, At least N → the N-th; Achievement contributors
+  are refused (their completion is per board, no lifetime state). A late log's
+  `min(now, endDate)` stamp is inherited because the instant IS the completing
+  event's `occurredAt` (D8). An instant that can't be derived (a latch without
+  `completedAt`) falls back to the contributor's `createdAt`.
+- **Where:** a write phase runs at the START of every cascade entry
+  (`runBoardCascadeForTasks` on web — which the pull, late-log and edit paths all
+  reach; on iOS also `runBoardCascadeForTaskWithResults`, the shared-counter
+  cascade, the pull cascade with the pull's uid owning the enqueues, and the
+  late-log re-derivation): event insert / revise / tombstone, then the root's
+  hand-log writes (caches, baselines, copy propagation) — and the copies join that
+  same board pass, so a copy on the contributor's own board is read with the new
+  increment (its bingo reaches the result map). A finish phase then re-derives the
+  sealed boards placing the copies and refreshes watchers. Chains (a counter's
+  copy inside another contributor) re-enter up to depth 3; `countsTowardProblem`
+  refuses a contributor whose own subtree holds the target or a copy of it.
+- **Guards:** `setCountsToward` (validated; mints at once for a done task; a
+  clear tombstones); `createCompound` accepts the flag (zero children allowed);
+  `deleteTaskWithCascade` tombstones the contributor's event and re-derives the
+  compounds that lost it; `deleteCounterWithUnlink` unflags contributors
+  (authored) and leaves their events with the deleted root; the kind switch
+  refuses leaving Discrete while contributors exist (`COUNTS_TOWARD_KIND_MESSAGE`
+  ↔ `CountKindSwitchError.countsTowardMessage`); `computeTaskDeletionImpact`
+  names the counter; `validatePatch` ↔ `TaskEditPatch.validate` allow zero
+  sub-tasks for a counts-toward compound, which `evaluateCompound` keeps
+  incomplete while empty.
+
+**Hand-offs from PR 3 (for the UI PR):**
+
+- **Forking an already-complete contributor double counts.** A board-scoped fork
+  copies the original's in-window events (BOARD_SCOPED_TASK_EDITS D4 (a)) and
+  keeps the flag, so the fork completes and mints its own event while the
+  original's stays — §3e's "no double count" holds only for a fork made before
+  the completion. Options for PR 4: drop the flag from a fork whose original
+  already counted, or skip forking the flag when the original's event is live.
+- No UI sets the flag yet; the editors need a picker that calls
+  `setCountsToward` (validation codes → user lines) — PR 4.
 
 ---
 
