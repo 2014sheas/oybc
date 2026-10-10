@@ -33,6 +33,9 @@ struct NewTaskSheetView: View {
     /// so callers that don't have the library yet don't need to change.
     var taskLibrary: [OYBC.Task] = []
 
+    /// Counter Detail's "+ New": the counter the new task counts toward (preselected).
+    var presetCountsTowardCounterId: String? = nil
+
     @Environment(\.dismiss) private var dismiss
 
     // MARK: - Body
@@ -44,7 +47,8 @@ struct NewTaskSheetView: View {
                     userId: userId,
                     onTaskCreated: onTaskCreated,
                     onLibraryReloadRequested: onLibraryReloadRequested,
-                    taskLibrary: taskLibrary
+                    taskLibrary: taskLibrary,
+                    presetCountsTowardCounterId: presetCountsTowardCounterId
                 )
                 .padding(16)
             }
@@ -86,6 +90,15 @@ struct NewTaskSheetContentView: View {
     /// break (no suggestions shown when empty).
     var taskLibrary: [OYBC.Task] = []
 
+    /// Counter Detail's "+ New": the counter the new task counts toward (preselected).
+    var presetCountsTowardCounterId: String? = nil
+    /// Every live task of the user — the "Counts toward" candidates (the
+    /// browsable `taskLibrary` hides goal-less hub counters). nil ⇒ loaded on appear.
+    var countsTowardTasks: [OYBC.Task]? = nil
+    @State private var loadedCountsTowardTasks: [OYBC.Task]?
+
+    private var countsTowardPool: [OYBC.Task]? { countsTowardTasks ?? loadedCountsTowardTasks }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
 
@@ -104,7 +117,9 @@ struct NewTaskSheetContentView: View {
                             onTaskCreated(taskId, title, type)
                         },
                         onPendingCreated: nil,
-                        onLibraryReloadRequested: onLibraryReloadRequested
+                        onLibraryReloadRequested: onLibraryReloadRequested,
+                        countsTowardTasks: countsTowardPool,
+                        presetCountsTowardCounterId: presetCountsTowardCounterId
                     )
                 }
                 .padding(12)
@@ -131,9 +146,18 @@ struct NewTaskSheetContentView: View {
                         onLibraryReloadRequested()
                     },
                     onPendingCreated: nil,
-                    onLibraryReloadRequested: onLibraryReloadRequested
+                    onLibraryReloadRequested: onLibraryReloadRequested,
+                    countsTowardTasks: countsTowardPool,
+                    presetCountsTowardCounterId: presetCountsTowardCounterId
                 )
             }
+        }
+        .task {
+            guard countsTowardTasks == nil, loadedCountsTowardTasks == nil else { return }
+            let uid = userId
+            loadedCountsTowardTasks = try? await _Concurrency.Task.detached(priority: .userInitiated) {
+                try AppDatabase.shared.fetchTasks(userId: uid)
+            }.value
         }
         // The removed trailing caption carried the only full-width frame.
         .frame(maxWidth: .infinity, alignment: .leading)

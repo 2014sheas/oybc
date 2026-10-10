@@ -122,7 +122,8 @@ extension BoardPlayViewModel {
             unit: patch.unit.isEmpty ? nil : patch.unit,
             maxCount: patch.maxCount,
             compound: patch.compound,
-            countKind: patch.countKind
+            countKind: patch.countKind,
+            countsToward: patch.countsToward
         )
     }
 
@@ -179,8 +180,13 @@ extension BoardPlayViewModel {
         let pendingPayloads: [PendingTaskPayload] = draftSnapshot.values.compactMap { cell in
             guard let payload = cell.pending else { return nil }
             guard let override = overridesSnapshot[payload.task.id] else { return payload }
+            var merged = Self.applyingOverride(override, to: payload.task, writesKind: true)
+            // A pending task is inserted at step 1 (no `setCountsToward` run): stamp the D11 anchor here.
+            if merged.countsTowardCounterId != nil, merged.countsTowardSince == nil {
+                merged.countsTowardSince = AppDatabase.currentTimestamp()
+            }
             return PendingTaskPayload(
-                task: Self.applyingOverride(override, to: payload.task, writesKind: true),
+                task: merged,
                 childTasks: payload.childTasks,
                 childLinks: payload.childLinks
             )
@@ -406,6 +412,16 @@ extension BoardPlayViewModel {
                     self.editSaveInFlight = false
                     self.emitEdit(.saveFailed(message))
                 }
+            } catch CountKindSwitchError.hasContributors {
+                await MainActor.run {
+                    self.editSaveInFlight = false
+                    self.emitEdit(.saveFailed(CountKindSwitchError.countsTowardMessage))
+                }
+            } catch AppDatabase.CountsTowardError.refused(let problem) {
+                await MainActor.run {
+                    self.editSaveInFlight = false
+                    self.emitEdit(.saveFailed(problem.label))
+                }
             } catch BoardEditError.boardNotEditable {
                 await MainActor.run {
                     self.editSaveInFlight = false
@@ -495,6 +511,20 @@ extension BoardPlayViewModel {
                     guard let forkRow = try Task.fetchOne(db, key: target) else { continue }
                     base = forkRow
                 }
+                // Counts toward — the ONE write path, on the board-scoped target
+                // (the FORK when the task forked, never the original). Before the
+                // field apply so a conversion / compound edit validates against
+                // the flag this Save ends with; `base` then carries the new version.
+                if let ct = input.override.countsToward {
+                    try AppDatabase.setCountsToward(db: db, taskId: target, counterId: ct.counterId, amount: ct.amount, now: now)
+                    guard let flagged = try Task.fetchOne(db, key: target) else { continue }
+                    if ct.counterId == nil, flagged.type == .compound,
+                       try CompoundChild.filter(Column("compoundTaskId") == target && Column("isDeleted") == false).fetchCount(db) == 0,
+                       input.override.compound?.children.isEmpty != false {
+                        throw AppDatabase.TaskEditError.invalid(message: "A compound task needs a sub-task.")
+                    }
+                    base = flagged
+                }
                 // A stored counter ROOT switches kind first (inside this Save),
                 // then the typed goal is guarded at the final kind — a refused
                 // goal throws `goalNotWhole` and the whole Save rolls back. A
@@ -510,7 +540,7 @@ extension BoardPlayViewModel {
                     }
                 }
                 var updated = Self.applyingOverride(
-                    input.override, to: base, writesKind: input.override.type != base.type
+                    input.override, to: base, writesKind: input.override.type != base.type, mergesCountsToward: false
                 )
                 if updated.type != base.type {
                     // The shared type-switch write (also the global editor's).
@@ -587,7 +617,8 @@ extension BoardPlayViewModel {
             }
             guard var structure = override.compound else { continue }
             structure.title = override.title
-            if let problem = structure.validate(type: .compound, countsToward: stored?.countsTowardCounterId != nil) {
+            let flagAfter = override.countsToward.map { $0.counterId != nil } ?? (stored?.countsTowardCounterId != nil)
+            if let problem = structure.validate(type: .compound, countsToward: flagAfter) {
                 return problem
             }
             var guarded = structure
@@ -630,15 +661,23 @@ extension BoardPlayViewModel {
     /// - Parameters:
     ///   - override: The staged override.
     ///   - task: The stored / pending task it lays over.
+    ///   - mergesCountsToward: False at Save step 7b, where the stored row's flag
+    ///     is written (and validated / cascaded) by `setCountsToward(db:…)`.
     ///   - writesKind: True ⇒ the override's `countKind` is set directly (a
     ///     PENDING task, a Simple → Counting conversion, or the staged grid);
     ///     false ⇒ a stored counting row's kind is left to the switch guard in
     ///     `applyStagedOverrides`. A linked row's kind never changes here.
     nonisolated static func applyingOverride(
-        _ override: StagedTaskOverride, to task: Task, writesKind: Bool = false
+        _ override: StagedTaskOverride, to task: Task, writesKind: Bool = false, mergesCountsToward: Bool = true
     ) -> Task {
         var updated = task
         updated.title = override.title
+        // The grid / a pending payload follow the staged counts-toward value; a
+        // stored row's flag is written through `setCountsToward(db:…)` instead.
+        if mergesCountsToward, let ct = override.countsToward, task.sharedCounterId == nil, task.type != .achievement {
+            updated.countsTowardCounterId = ct.counterId
+            updated.countsTowardAmount = ct.counterId == nil ? nil : ct.amount
+        }
         if task.sharedCounterId == nil,
            boardEditAllowsTypeSwitch(from: task.type, to: override.type),
            override.type != .compound || override.compound != nil {

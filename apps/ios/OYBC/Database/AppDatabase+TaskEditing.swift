@@ -51,6 +51,11 @@ extension AppDatabase {
     /// - Parameter error: The error thrown by `applyTaskEditPatch`.
     /// - Returns: The string the edit surface shows in its error slot.
     static func taskEditErrorMessage(_ error: Error) -> String {
+        if let counts = error as? CountsTowardError, let label = counts.label { return label }
+        // D9: leaving Discrete while tasks count toward the counter.
+        if let switchError = error as? CountKindSwitchError, switchError == .hasContributors {
+            return CountKindSwitchError.countsTowardMessage
+        }
         guard let editError = error as? TaskEditError else {
             return "Failed to save: \(error.localizedDescription)"
         }
@@ -110,95 +115,119 @@ extension AppDatabase {
         now: String = AppDatabase.currentTimestamp()
     ) throws -> Task {
         try write { db in
-            guard var task = try Task.fetchOne(db, key: taskId), !task.isDeleted else {
-                throw TaskEditError.taskNotFound
+            // A set / re-point runs BEFORE the other steps (the later steps then
+            // see the flag); a clear runs AFTER them (a compound emptied of
+            // sub-tasks in this save is validated against the cleared flag).
+            if let ct = patch.countsToward, ct.counterId != nil {
+                try Self.setCountsToward(db: db, taskId: taskId, counterId: ct.counterId, amount: ct.amount, now: now)
             }
-            // Type switch (Simple ⇄ Counting, Simple / Counting → Compound):
-            // GLOBAL — no board scope — and retroactive on every board.
-            if let next = patch.type, next != task.type {
-                var switched = TaskTypeSwitch.converting(task, to: next)
-                if next == .counting { switched.countKind = patch.countKind ?? .discrete }
-                try Self.applyBasicFields(of: patch, to: &switched)
-                return try Self.saveTypeSwitchedTask(
-                    db: db, original: task, switched: switched, structure: patch.compound, now: now
-                )
+            let saved = try Self.applyTaskEditPatchSteps(db: db, taskId: taskId, patch: patch, now: now)
+            guard let ct = patch.countsToward else { return saved }
+            if ct.counterId == nil {
+                if saved.type == .compound,
+                   try CompoundChild.filter(Column("compoundTaskId") == taskId && Column("isDeleted") == false).fetchCount(db) == 0 {
+                    throw TaskEditError.invalid(message: "A compound task needs a sub-task.")
+                }
+                try Self.setCountsToward(db: db, taskId: taskId, counterId: nil, amount: nil, now: now)
             }
-            // A counter root's live copies, read before any write of this save.
-            let propagation = try Self.readRootPropagationSnapshot(db: db, taskId: taskId)
-            // Switch first (inside this write), then parse the typed goal at the
-            // FINAL kind; a refused goal throws and rolls the switch back.
-            if task.type == .counting,
-               try Self.applyKindSwitchThenGoalGuard(db: db, taskId: taskId, to: patch.countKind, maxCount: nil, now: Date()) {
-                guard let refreshed = try Task.fetchOne(db, key: taskId) else { throw TaskEditError.taskNotFound }
-                task = refreshed
-            }
-            try Self.applyBasicFields(of: patch, to: &task)
+            return try Task.fetchOne(db, key: taskId) ?? saved
+        }
+    }
 
-            if task.type == .compound, let structure = patch.compound {
-                // Link eligibility first: a library task picked as a new
-                // sub-task that can never be one (self / duplicate /
-                // achievement / deleted / goal-less counter / loop) gets its
-                // specific reason, not validate's generic "needs a goal".
-                if let problem = try Self.compoundLinkProblem(db: db, parentId: task.id, patch: structure) {
-                    throw TaskEditError.invalid(message: problem)
-                }
-                if let problem = structure.validate(type: .compound, countsToward: task.countsTowardCounterId != nil) {
-                    throw TaskEditError.invalid(message: problem)
-                }
-                // title, operatorType, clamped threshold (nil unless M-of-N)
-                task = structure.applied(to: task)
-                task.updatedAt = now
-                task.version += 1
-                try Self.applyStagedCompoundChildEdits(db: db, parent: task, patch: structure, now: now)
-                try Self.saveTaskAndCascade(db: db, task: task)
-                return task
-            }
+    /// The edit's non-counts-toward steps, inside the caller's write transaction.
+    private static func applyTaskEditPatchSteps(
+        db: Database, taskId: String, patch: EditTaskSheet.Patch, now: String
+    ) throws -> Task {
+        guard var task = try Task.fetchOne(db, key: taskId), !task.isDeleted else {
+            throw TaskEditError.taskNotFound
+        }
+        // The flag the task ends this save with (a set / clear in the patch wins).
+        let countsTowardAfter = patch.countsToward.map { $0.counterId != nil } ?? (task.countsTowardCounterId != nil)
+        // Type switch (Simple ⇄ Counting, Simple / Counting → Compound):
+        // GLOBAL — no board scope — and retroactive on every board.
+        if let next = patch.type, next != task.type {
+            var switched = TaskTypeSwitch.converting(task, to: next)
+            if next == .counting { switched.countKind = patch.countKind ?? .discrete }
+            try Self.applyBasicFields(of: patch, to: &switched)
+            return try Self.saveTypeSwitchedTask(
+                db: db, original: task, switched: switched, structure: patch.compound, now: now
+            )
+        }
+        // A counter root's live copies, read before any write of this save.
+        let propagation = try Self.readRootPropagationSnapshot(db: db, taskId: taskId)
+        // Switch first (inside this write), then parse the typed goal at the
+        // FINAL kind; a refused goal throws and rolls the switch back.
+        if task.type == .counting,
+           try Self.applyKindSwitchThenGoalGuard(db: db, taskId: taskId, to: patch.countKind, maxCount: nil, now: Date()) {
+            guard let refreshed = try Task.fetchOne(db, key: taskId) else { throw TaskEditError.taskNotFound }
+            task = refreshed
+        }
+        try Self.applyBasicFields(of: patch, to: &task)
 
-            if task.type == .achievement {
-                task.achievementTrigger = patch.trigger
-                let retarget = try Self.validatedAchievementRetarget(patch)
-                let check: TaskEditCycleCheck
-                do {
-                    check = try Self.checkAchievementRetargetCycle(
-                        db: db,
-                        taskId: task.id,
-                        referencedBoardId: retarget.referencedBoardId,
-                        referencedTemplateId: retarget.referencedTemplateId
-                    )
-                } catch {
-                    throw TaskEditError.cycleCheckFailed(message: error.localizedDescription)
-                }
-                if case .cycle(let pathNames) = check {
-                    throw TaskEditError.cycle(pathNames: pathNames)
-                }
-                task.referencedBoardId = retarget.referencedBoardId
-                task.referencedTemplateId = retarget.referencedTemplateId
-                task.requiredCount = retarget.requiredCount
+        if task.type == .compound, let structure = patch.compound {
+            // Link eligibility first: a library task picked as a new
+            // sub-task that can never be one (self / duplicate /
+            // achievement / deleted / goal-less counter / loop) gets its
+            // specific reason, not validate's generic "needs a goal".
+            if let problem = try Self.compoundLinkProblem(db: db, parentId: task.id, patch: structure) {
+                throw TaskEditError.invalid(message: problem)
             }
-
+            if let problem = structure.validate(type: .compound, countsToward: countsTowardAfter) {
+                throw TaskEditError.invalid(message: problem)
+            }
+            // title, operatorType, clamped threshold (nil unless M-of-N)
+            task = structure.applied(to: task)
             task.updatedAt = now
             task.version += 1
+            try Self.applyStagedCompoundChildEdits(db: db, parent: task, patch: structure, now: now)
             try Self.saveTaskAndCascade(db: db, task: task)
-            if patch.counterSettings != nil { try Self.writeCounterSettingsColumns(db: db, task: task) }
-            if let propagation {
-                try Self.propagateRootFields(
-                    db: db,
-                    snapshot: propagation,
-                    patch: RootFieldPropagation.EditPatch(
-                        title: task.title, action: task.action, unit: task.unit,
-                        maxCount: task.maxCount, countKind: patch.countKind,
-                        settings: patch.counterSettings.map {
-                            CounterSettings.TitleSettings(
-                                counterName: $0.counterName, titleTemplateSingular: $0.titleTemplateSingular,
-                                titleTemplatePlural: $0.titleTemplatePlural
-                            )
-                        }
-                    ),
-                    now: now
-                )
-            }
             return task
         }
+
+        if task.type == .achievement {
+            task.achievementTrigger = patch.trigger
+            let retarget = try Self.validatedAchievementRetarget(patch)
+            let check: TaskEditCycleCheck
+            do {
+                check = try Self.checkAchievementRetargetCycle(
+                    db: db,
+                    taskId: task.id,
+                    referencedBoardId: retarget.referencedBoardId,
+                    referencedTemplateId: retarget.referencedTemplateId
+                )
+            } catch {
+                throw TaskEditError.cycleCheckFailed(message: error.localizedDescription)
+            }
+            if case .cycle(let pathNames) = check {
+                throw TaskEditError.cycle(pathNames: pathNames)
+            }
+            task.referencedBoardId = retarget.referencedBoardId
+            task.referencedTemplateId = retarget.referencedTemplateId
+            task.requiredCount = retarget.requiredCount
+        }
+
+        task.updatedAt = now
+        task.version += 1
+        try Self.saveTaskAndCascade(db: db, task: task)
+        if patch.counterSettings != nil { try Self.writeCounterSettingsColumns(db: db, task: task) }
+        if let propagation {
+            try Self.propagateRootFields(
+                db: db,
+                snapshot: propagation,
+                patch: RootFieldPropagation.EditPatch(
+                    title: task.title, action: task.action, unit: task.unit,
+                    maxCount: task.maxCount, countKind: patch.countKind,
+                    settings: patch.counterSettings.map {
+                        CounterSettings.TitleSettings(
+                            counterName: $0.counterName, titleTemplateSingular: $0.titleTemplateSingular,
+                            titleTemplatePlural: $0.titleTemplatePlural
+                        )
+                    }
+                ),
+                now: now
+            )
+        }
+        return task
     }
 
     /// Would saving `patch` re-target the Achievement `taskId` into a

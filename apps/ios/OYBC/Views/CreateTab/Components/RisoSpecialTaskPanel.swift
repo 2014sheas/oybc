@@ -53,6 +53,12 @@ struct RisoSpecialTaskPanel: View {
     var submitLabel: String = "Add to board ✦"
     /// Snapshot seam: opens the panel on Counting with these field values.
     var countingSeed: CountingSeed? = nil
+    /// The user's live tasks — supplied only by an immediate-create host (the
+    /// New task sheet), which shows the "Counts toward" row on Counting and
+    /// Compound (never Achievement). nil hides it.
+    var countsTowardTasks: [OYBC.Task]? = nil
+    /// Counter Detail's "+ New" preset.
+    var presetCountsTowardCounterId: String? = nil
 
     /// Pre-filled counting fields (snapshot tests).
     struct CountingSeed {
@@ -65,6 +71,8 @@ struct RisoSpecialTaskPanel: View {
     @State private var isExpanded: Bool = false
     @State private var selectedType: SpecialType = .counting
     @State private var form = CreateFormViewModel()
+    @State private var countsToward = CountsTowardSelection()
+    @State private var seededCountsToward = false
 
     /// The type chips offered — Achievement drops out in pool context.
     private var availableTypes: [SpecialType] {
@@ -100,7 +108,20 @@ struct RisoSpecialTaskPanel: View {
                 expandedPanel
             }
         }
-        .onAppear { applyCountingSeed() }
+        .onAppear {
+            applyCountingSeed()
+            if !seededCountsToward {
+                seededCountsToward = true
+                countsToward = CountsTowardSelection(counterId: presetCountsTowardCounterId)
+            }
+        }
+    }
+
+    /// Whether the Counting "Counts toward" row shows (an immediate create, a
+    /// counter to pick, and not an auto-linked create).
+    private var showsCountingCountsToward: Bool {
+        linkedSuggestion == nil
+            && CountsTowardFieldView.showsOnCreate(tasks: countsTowardTasks, deferred: onPendingCreated != nil)
     }
 
     private func applyCountingSeed() {
@@ -310,6 +331,15 @@ struct RisoSpecialTaskPanel: View {
             // default ON, "Don't link" opts out).
             counterLinkBanner
 
+            if showsCountingCountsToward, let all = countsTowardTasks {
+                CountsTowardFieldView(tasks: all, editedTaskId: nil, storedCounterId: nil, selection: $countsToward)
+                if let message = form.errorMessage {
+                    Text(message)
+                        .font(.risoBody(11.5, .extraBold))
+                        .foregroundStyle(Color.risoRed)
+                }
+            }
+
             // Add button
             RisoButton(title: submitLabel, kind: .blue, fullWidth: true) {
                 submitCounting()
@@ -358,6 +388,7 @@ struct RisoSpecialTaskPanel: View {
             ? countingUnitText.trimmingCharacters(in: .whitespacesAndNewlines) : ""
         form.countingMaxCount = countingGoalText.trimmingCharacters(in: .whitespacesAndNewlines)
         form.title = ""
+        form.countsToward = showsCountingCountsToward ? countsToward : CountsTowardSelection()
 
         // R1: auto-link default ON — apply the suggestion unless opted out
         // via "Don't link". Baseline is always "start fresh": this task's
@@ -383,6 +414,8 @@ struct RisoSpecialTaskPanel: View {
             deferPersist: onPendingCreated != nil,
             onPendingCreated: onPendingCreated
         )
+        // A synchronous counts-toward refusal keeps the panel open with its error line.
+        if form.countsToward.counterId != nil, form.errorMessage != nil { return }
         countingActionText = ""
         countingGoalText = ""
         countingUnitText = ""
@@ -408,7 +441,9 @@ struct RisoSpecialTaskPanel: View {
             onPendingCreated: onPendingCreated,
             onLibraryReloadRequested: onLibraryReloadRequested,
             onSubmitted: { collapse() },
-            submitLabel: submitLabel
+            submitLabel: submitLabel,
+            countsTowardTasks: countsTowardTasks,
+            presetCountsTowardCounterId: presetCountsTowardCounterId
         )
     }
 
@@ -626,6 +661,7 @@ struct RisoSpecialTaskPanel: View {
         achievementTitle = ""
         achievementBoardId = nil
         achievementTemplateId = nil
+        countsToward = CountsTowardSelection(counterId: presetCountsTowardCounterId)
         form = CreateFormViewModel()
     }
 
