@@ -1,13 +1,18 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import {
+  changedCounterSettingsKeys,
   counterDisplayName,
+  counterSettingsDefaults,
+  counterSettingsDraftFromRoot,
   defaultTitleTemplates,
   derivedTimeframeGoals,
   effectiveTitleTemplates,
   formatTitleCount,
   renderCounterTitle,
   resolveCounterDefaultGoal,
+  storedCounterSettings,
+  storedCounterSettingsFromDraft,
 } from '../../src/algorithms/counterSettings';
 import { counterCopyTitle, generateCounterTaskTitle, isAutoCounterTitle } from '../../src/algorithms/taskTitle';
 
@@ -95,5 +100,42 @@ describe('inert for untouched counters', () => {
   it('formatTitleCount is locale-free', () => {
     expect(formatTitleCount(1234.5, 'continuous')).toBe('1234.5');
     expect(formatTitleCount(61, 'duration')).toBe('1h 1m');
+  });
+});
+
+describe('counterSettingsVectors — the counter sheet draft (UI PR)', () => {
+  it.each(V.counterSettingsDefaults as any[])('defaults: $name', (v: any) => {
+    expect(counterSettingsDefaults(v.context, v.draft)).toEqual(v.expected);
+  });
+
+  it.each(V.storedCounterSettingsFromDraft as any[])('stored: $name', (v: any) => {
+    expect(storedCounterSettingsFromDraft(v.context, v.draft)).toEqual(v.expected);
+  });
+
+  it('a draft seeded from a root round-trips through store', () => {
+    const root = {
+      action: 'Read', unit: 'books', counterName: 'Books', titleTemplateSingular: 'Read #N book',
+      titleTemplatePlural: 'Read #N novels', timeframeGoals: { weekly: 2, yearly: 0 },
+    };
+    const draft = counterSettingsDraftFromRoot(root);
+    expect(draft).toEqual({ name: 'Books', singular: 'Read #N book', plural: 'Read #N novels', goals: { weekly: 2 } });
+    expect(storedCounterSettingsFromDraft(root, draft)).toEqual(storedCounterSettings(root));
+  });
+
+  it('blank / whitespace stored fields seed as unset', () => {
+    expect(counterSettingsDraftFromRoot({ counterName: '  ', titleTemplatePlural: null })).toEqual({
+      name: '', singular: '', plural: '', goals: {},
+    });
+    expect(storedCounterSettings({ counterName: ' ', timeframeGoals: { daily: 0 } })).toEqual({});
+  });
+
+  it('changedCounterSettingsKeys lists only the keys whose stored value differs', () => {
+    const before = { counterName: 'Books', timeframeGoals: { weekly: 2 } };
+    expect(changedCounterSettingsKeys(before, before)).toEqual([]);
+    expect(changedCounterSettingsKeys(before, { timeframeGoals: { weekly: 2 } })).toEqual(['counterName']);
+    expect(changedCounterSettingsKeys(before, { counterName: 'Books', timeframeGoals: { weekly: 3 } })).toEqual(['timeframeGoals']);
+    expect(changedCounterSettingsKeys(before, { counterName: 'Books', timeframeGoals: { weekly: 2, daily: 1 } })).toEqual(['timeframeGoals']);
+    expect(changedCounterSettingsKeys({}, { titleTemplateSingular: 'Read #N book', titleTemplatePlural: 'Read #N novels' }))
+      .toEqual(['titleTemplateSingular', 'titleTemplatePlural']);
   });
 });

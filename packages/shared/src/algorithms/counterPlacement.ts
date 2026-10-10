@@ -83,6 +83,33 @@ export function placementGoalForCounter(
   );
 }
 
+/** Where a match row's goal comes from (the quick-add / picker row's goal slot). */
+export interface PlacementGoalSource {
+  /** The goal the per-board copy would carry. */
+  goal: number;
+  /** True when it is the board-timeframe default (stored or D4-derived) — the
+   *  row prefixes the board's timeframe; false when it fell through to the
+   *  root's own goal. */
+  fromTimeframe: boolean;
+}
+
+/**
+ * The goal a match row shows for placing a counter ROOT on `board`, and where
+ * it came from: {@link placementGoalForCounter} with no existing copy, tagged
+ * `fromTimeframe` when {@link counterTimeframeDefault} resolves. Null when no
+ * goal resolves at all (a goal-less root on a board with no default) — the row
+ * then offers a Goal entry instead.
+ *
+ * @param root - The counter root's fields.
+ * @param board - The board receiving the placement.
+ * @returns The goal and its source, or null.
+ */
+export function placementGoalSource(root: CounterSettingsFields, board: PlacementBoard): PlacementGoalSource | null {
+  const goal = placementGoalForCounter(root, board);
+  if (goal === null) return null;
+  return { goal, fromTimeframe: counterTimeframeDefault(root, board.timeframe) !== null };
+}
+
 /**
  * Whether hand-adding the ROOT itself to `board` must mint a per-board copy
  * instead of placing the root: only when the root carries a timeframe default
