@@ -72,14 +72,16 @@ const LATE_LOG_TABLES = [
  * same function the pull path uses), then refresh any achievement watcher of
  * whatever board just changed. Called from every entry point below.
  */
-async function applyLateLogSideEffects(changedTaskIds: Iterable<string>): Promise<void> {
+async function applyLateLogSideEffects(changedTaskIds: Iterable<string>, lateLogStamp: string): Promise<void> {
   const ids = [...new Set(changedTaskIds)];
   if (ids.length === 0) return;
   const affectedBoardIds = await resolveAffectedBoardIds(ids);
   // A shared-counter ROOT is never placed: live-cascade from its
   // window-stamped derived rows too (iOS `reDeriveAfterLateLogWrite` reaches
-  // the same boards via `boardIdsReachedByTasks`).
-  await runBoardCascadeForTasks(await withWindowStampedDerived(new Set(ids)), { lateLog: true });
+  // the same boards via `boardIdsReachedByTasks`). `lateLogStamp` = the
+  // instant this path stamped: only a counts-toward credit at that instant is
+  // exempt from the counter's sealed windows (D11).
+  await runBoardCascadeForTasks(await withWindowStampedDerived(new Set(ids)), { lateLogStamp });
   await reDeriveSealedBoardsForTasks(ids);
   if (affectedBoardIds.size > 0) await refreshWatchersForBoards(affectedBoardIds);
 }
@@ -162,7 +164,7 @@ export async function lateLogCompletion(
 
     const occurredAt = lateLogOccurredAt(board, now);
     await appendCompletionEvent(taskId, boardId, now, occurredAt);
-    await applyLateLogSideEffects([taskId]);
+    await applyLateLogSideEffects([taskId], occurredAt);
   });
 }
 
@@ -234,7 +236,7 @@ export async function lateLogIncrement(
     // linked ids (sealed boards are skipped there — `applyLateLogSideEffects`
     // below covers the sealed re-derive for THIS board).
     await propagateToLinkedRows(rootId, newRootCount, now, occurredAt);
-    await applyLateLogSideEffects([rootId, taskId]);
+    await applyLateLogSideEffects([rootId, taskId], occurredAt);
   });
 }
 
@@ -299,7 +301,7 @@ export async function lateLogCompoundParts(
       touchedTaskIds.add(action.childTaskId);
     }
 
-    await applyLateLogSideEffects([...touchedTaskIds]);
+    await applyLateLogSideEffects([...touchedTaskIds], occurredAt);
   });
 }
 
@@ -464,7 +466,7 @@ export async function undoLateLog(
 
     if (entry.kind === 'completion') {
       await restampCaches(effectiveTaskId, now);
-      await applyLateLogSideEffects([effectiveTaskId]);
+      await applyLateLogSideEffects([effectiveTaskId], entry.occurredAt);
       return true;
     }
 
@@ -499,7 +501,7 @@ export async function undoLateLog(
       await propagateToLinkedRows(effectiveTaskId, newRootCount, now, entry.occurredAt);
     }
 
-    await applyLateLogSideEffects([effectiveTaskId, taskId]);
+    await applyLateLogSideEffects([effectiveTaskId, taskId], entry.occurredAt);
     return true;
   });
 }

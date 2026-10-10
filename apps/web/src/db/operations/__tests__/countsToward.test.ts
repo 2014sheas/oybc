@@ -24,6 +24,7 @@ import { deleteTaskWithCascade, computeTaskDeletionImpact } from '../tasks.delet
 import { deleteCounterWithUnlink, promoteTaskToCounter } from '../tasks.counter';
 import { updateBoardAndCascade } from '../boards';
 import { sealBoard } from '../sealing';
+import { applyRemoteSubdoc } from '../pullApply';
 import { COUNTS_TOWARD_KIND_MESSAGE, CountKindSwitchError, switchCounterKind } from '../countKindSwitch';
 import { CountsTowardError, setCountsToward } from '../countsToward';
 import { applyTaskEventsBatch } from '../taskEventPull';
@@ -41,8 +42,10 @@ const T0 = '2026-01-01T00:00:00.000Z';
 const ROOT = '00000000-0000-4000-8000-0000000000a1'; // "Read 12 books" counter
 const ROOT2 = '00000000-0000-4000-8000-0000000000a3'; // "Finish 5 novels" counter
 const COPY = '00000000-0000-4000-8000-0000000000a2'; // weekly copy, goal 1
+const COPY2 = '00000000-0000-4000-8000-0000000000a4'; // ROOT2's copy, goal 1
 const SIMPLE = '00000000-0000-4000-8000-0000000000b1'; // "Read Dune"
 const RUN = '00000000-0000-4000-8000-0000000000b2'; // "Run 2 km" — a plain counting contributor
+const OTHER = '00000000-0000-4000-8000-0000000000b3'; // a second Simple contributor
 const CHILD_A = '00000000-0000-4000-8000-0000000000c1';
 const CHILD_B = '00000000-0000-4000-8000-0000000000c2';
 const BOX = '00000000-0000-4000-8000-0000000000d1'; // compound container
@@ -52,6 +55,8 @@ const CLOSED = '00000000-0000-4000-8000-0000000000e3';
 const W1 = '00000000-0000-4000-8000-0000000000e4'; // the repeating weekly board, window 1
 const W2 = '00000000-0000-4000-8000-0000000000e5'; // … window 2
 const DAY = '00000000-0000-4000-8000-0000000000e6';
+const SEALED_LATE = '00000000-0000-4000-8000-0000000000e7';
+const MISSING = '00000000-0000-4000-8000-00000000dead';
 
 const OCT_START = '2026-10-01T00:00:00.000Z';
 const OCT_END = '2026-10-31T23:59:59.999Z';
@@ -88,8 +93,11 @@ const flagged = (over: Partial<Task> = {}): Partial<Task> => ({ countsTowardCoun
 const rootTask = (over: Partial<Task> = {}): Task =>
   task(ROOT, { type: TaskType.COUNTING, action: 'Read', unit: 'books', maxCount: 12, currentCount: 0, isCounter: true, ...over });
 
-const copyTask = (): Task =>
-  task(COPY, { type: TaskType.COUNTING, action: 'Read', unit: 'books', maxCount: 1, sharedCounterId: ROOT, baseline: 0, currentCount: 0 });
+const root2Task = (): Task =>
+  task(ROOT2, { type: TaskType.COUNTING, action: 'Finish', unit: 'novels', maxCount: 5, currentCount: 0, isCounter: true });
+
+const copyTask = (id = COPY, rootId = ROOT): Task =>
+  task(id, { type: TaskType.COUNTING, action: 'Read', unit: 'books', maxCount: 1, sharedCounterId: rootId, baseline: 0, currentCount: 0 });
 
 function board(id: string, startDate: string, endDate: string, over: Partial<Board> = {}): Board {
   return {
@@ -162,11 +170,11 @@ async function liveEventsOf(taskId: string): Promise<TaskEvent[]> {
   return sortByInstant((await db.taskEvents.where('taskId').equals(taskId).toArray()).filter((e) => !e.isDeleted));
 }
 
-const creditId = (contributorId: string, occurrence: ContributionOccurrence): string => countsTowardEventId(contributorId, occurrence);
-/** An own-event credit id — the contributor is not part of the name. */
-const eventCredit = (eventId: string): string => creditId('-', { kind: 'event', eventId });
+const creditId = (rootId: string, scope: string, occurrence: ContributionOccurrence): string => countsTowardEventId(rootId, scope, occurrence);
+/** An own-event credit id on `rootId` — the contributor is not part of the name. */
+const eventCredit = (eventId: string, rootId = ROOT): string => creditId(rootId, '-', { kind: 'event', eventId });
 /** A compound's credit for its completing child's event — scoped by the compound (its lineage root). */
-const childCredit = (compoundId: string, eventId: string): string => creditId(compoundId, { kind: 'childEvent', eventId });
+const childCredit = (compoundId: string, eventId: string, rootId = ROOT): string => creditId(rootId, compoundId, { kind: 'childEvent', eventId });
 
 async function inTxn<T>(fn: () => Promise<T>): Promise<T> {
   return db.transaction('rw', [db.boards, db.boardTasks, db.tasks, db.compoundChildren, db.taskEvents, db.syncQueue], fn);
@@ -216,6 +224,15 @@ async function forkCompletedDune(): Promise<Task> {
   return plan.fork;
 }
 
+/** Credits + sync queue before/after a replay must be byte-identical. */
+async function expectReplayNoop(taskIds: string[], roots: string[] = [ROOT]): Promise<void> {
+  const before = await Promise.all(roots.map((r) => storedCredits(r)));
+  const queueBefore = await db.syncQueue.count();
+  await inTxn(() => runBoardCascadeForTasks(taskIds));
+  expect(await Promise.all(roots.map((r) => storedCredits(r)))).toEqual(before);
+  expect(await db.syncQueue.count()).toBe(queueBefore);
+}
+
 beforeEach(() => {
   vi.useFakeTimers({ toFake: ['Date'] });
   vi.setSystemTime(new Date(NOW));
@@ -234,7 +251,7 @@ afterEach(async () => {
 });
 
 describe('counts toward — a Simple task', () => {
-  it('completing it writes +1 on the root, keyed by the completion event and stamped at it; the weekly copy counts it in-window', async () => {
+  it('completing it writes +1 on the root, keyed by the root + completion event and stamped at it; the weekly copy counts it in-window', async () => {
     await seed();
     await handleTaskCompletion(OCT, 'bt-simple', { isCompleted: true });
 
@@ -284,16 +301,8 @@ describe('counts toward — a Simple task', () => {
   it('a replayed cascade with no state change writes nothing', async () => {
     await seed();
     await handleTaskCompletion(OCT, 'bt-simple', { isCompleted: true });
-    const queueBefore = await db.syncQueue.count();
-    const creditsBefore = await storedCredits();
     const rootVersionBefore = (await db.tasks.get(ROOT))!.version;
-
-    await inTxn(() => runBoardCascadeForTasks([SIMPLE]));
-
-    expect(creditsBefore).toHaveLength(1);
-    expect(creditsBefore[0].version).toBe(1);
-    expect(await db.syncQueue.count()).toBe(queueBefore);
-    expect(await storedCredits()).toEqual(creditsBefore);
+    await expectReplayNoop([SIMPLE]);
     expect((await db.tasks.get(ROOT))!.version).toBe(rootVersionBefore);
   });
 });
@@ -440,14 +449,8 @@ describe('counts toward — one credit per completion occurrence (D10)', () => {
     await seedWeeks();
     await at(IN_W1, () => handleTaskCompletion(W1, 'bt-w1', { isCompleted: true }));
     await handleTaskCompletion(W2, 'bt-w2', { isCompleted: true });
-    const creditsBefore = await storedCredits();
-    const queueBefore = await db.syncQueue.count();
-
-    await inTxn(() => runBoardCascadeForTasks([SIMPLE]));
-    await inTxn(() => runBoardCascadeForTasks([ROOT]));
-
-    expect(await storedCredits()).toEqual(creditsBefore);
-    expect(await db.syncQueue.count()).toBe(queueBefore);
+    await expectReplayNoop([SIMPLE]);
+    await expectReplayNoop([ROOT]);
   });
 });
 
@@ -458,9 +461,7 @@ describe('counts toward — fork lineage shares one credit', () => {
     expect(fork.countsTowardSince).toBe(T0);
     expect(await liveCredits()).toHaveLength(1);
     expect((await db.tasks.get(ROOT))?.currentCount).toBe(1);
-    const before = await storedCredits();
-    await inTxn(() => runBoardCascadeForTasks([fork.id]));
-    expect(await storedCredits()).toEqual(before);
+    await expectReplayNoop([fork.id]);
   });
 
   it('an undo on the FORK’s board only — the original still wants the credit, so it stays', async () => {
@@ -497,6 +498,54 @@ describe('counts toward — fork lineage shares one credit', () => {
     expect(await liveCredits()).toHaveLength(0);
     expect((await storedCredits()).map((c) => c.version)).toEqual([2]);
   });
+
+  it('the original re-pointed to another counter while the fork keeps the first: separate credits, one on each root, and replays write nothing', async () => {
+    const fork = await forkCompletedDune();
+    await db.tasks.put(root2Task());
+
+    await at(LATER, () => setCountsToward(SIMPLE, ROOT2));
+    // The shared completion (10-14) is before the original's new `since`, so
+    // only the fork keeps crediting ROOT; the original credits ROOT2 from now on.
+    expect((await liveCredits(ROOT)).map((c) => c.version)).toEqual([1]);
+    expect(await liveCredits(ROOT2)).toHaveLength(0);
+
+    await logCompletion(SIMPLE, '2026-10-17T09:00:00.000Z');
+    const [, e2] = await liveEventsOf(SIMPLE);
+    expect(await liveCredits(ROOT2)).toMatchObject([{ id: eventCredit(e2.id, ROOT2), occurredAt: '2026-10-17T09:00:00.000Z' }]);
+    expect((await liveCredits(ROOT)).map((c) => c.version)).toEqual([1]);
+
+    await expectReplayNoop([SIMPLE], [ROOT, ROOT2]);
+    await expectReplayNoop([fork.id], [ROOT, ROOT2]);
+    expect((await db.tasks.get(ROOT))?.currentCount).toBe(1);
+    expect((await db.tasks.get(ROOT2))?.currentCount).toBe(1);
+  });
+
+  it('the fork and the original disagree on the amount: one credit, the lineage root’s amount, and replays write nothing', async () => {
+    const fork = await forkCompletedDune();
+    await at(LATER, () => setCountsToward(fork.id, ROOT, 3));
+
+    expect(await liveCredits()).toMatchObject([{ delta: 1, version: 1 }]);
+    await expectReplayNoop([fork.id]);
+    await expectReplayNoop([SIMPLE]);
+
+    // The lineage root's amount is the rule: raising it moves the one credit.
+    await at(LATER, () => setCountsToward(SIMPLE, ROOT, 2));
+    expect(await liveCredits()).toMatchObject([{ delta: 2, version: 2 }]);
+    await expectReplayNoop([fork.id]);
+  });
+
+  it('a fork whose original is not loaded yet produces nothing until the original arrives', async () => {
+    await db.tasks.bulkPut([rootTask(), task(OTHER, { forkedFromTaskId: MISSING, createdInWizard: true, ...flagged() })]);
+    await db.boards.put(board(OCT, OCT_START, OCT_END));
+    await db.boardTasks.put(placement('bt-other', OCT, OTHER));
+    await handleTaskCompletion(OCT, 'bt-other', { isCompleted: true });
+    expect(await storedCredits()).toHaveLength(0);
+
+    await db.tasks.put(task(MISSING));
+    await inTxn(() => runBoardCascadeForTasks([OTHER]));
+    const [done] = await liveEventsOf(OTHER);
+    expect(await liveCredits()).toMatchObject([{ id: eventCredit(done.id), occurredAt: NOW }]);
+  });
 });
 
 describe('counts toward — count from flag time (D11)', () => {
@@ -525,15 +574,16 @@ describe('counts toward — count from flag time (D11)', () => {
     expect(await liveCredits()).toHaveLength(0);
   });
 
-  it('re-pointing to another counter resets since: earlier credits on the old counter are tombstoned, later occurrences credit the new one', async () => {
+  it('re-pointing to another counter resets since: the old root’s earlier credit is tombstoned, later occurrences credit the new root', async () => {
     await seed();
-    await db.tasks.put(task(ROOT2, { type: TaskType.COUNTING, action: 'Finish', unit: 'novels', maxCount: 5, currentCount: 0, isCounter: true }));
+    await db.tasks.put(root2Task());
     await handleTaskCompletion(OCT, 'bt-simple', { isCompleted: true });
     expect(await liveCredits(ROOT)).toHaveLength(1);
 
     await at(LATER, () => setCountsToward(SIMPLE, ROOT2));
     expect((await db.tasks.get(SIMPLE))?.countsTowardSince).toBe(LATER);
     expect(await liveCredits(ROOT)).toHaveLength(0);
+    expect((await storedCredits(ROOT)).map((c) => c.version)).toEqual([2]);
     expect(await liveCredits(ROOT2)).toHaveLength(0);
 
     await logCompletion(SIMPLE, '2026-10-17T09:00:00.000Z');
@@ -582,6 +632,42 @@ describe('counts toward — credits honour the counter’s sealed windows (D11)'
 
     await logCompletion(SIMPLE, '2026-10-20T09:00:00.000Z'); // outside it
     expect((await liveCredits()).map((c) => c.occurredAt)).toEqual(['2026-10-20T09:00:00.000Z']);
+  });
+
+  it('the late-log exemption covers only the stamped instant: a chained credit at another instant inside a sealed window stays suppressed', async () => {
+    const closedEnd = '2026-10-07T23:59:59.999Z';
+    const Z = '00000000-0000-4000-8000-0000000000c3';
+    await db.tasks.bulkPut([
+      rootTask(),
+      root2Task(),
+      copyTask(COPY, ROOT),
+      copyTask(COPY2, ROOT2),
+      task(SIMPLE, flagged()), // → ROOT, late-logged on the closed board
+      task(BOX, { type: TaskType.COMPOUND, operator: OperatorType.AND, ...flagged({ countsTowardCounterId: ROOT2 }) }), // [copy of ROOT, Z] → ROOT2
+      task(Z),
+    ]);
+    await db.compoundChildren.bulkPut([link('l-copy', BOX, COPY, 0), link('l-z', BOX, Z, 1)]);
+    await db.boards.bulkPut([
+      board(CLOSED, OCT_START, closedEnd, { sealedAt: '2026-10-08T00:00:01.000Z', sealedCompletedCells: [] }),
+      board(OCT, OCT_START, OCT_END), // open; holds ROOT's copy and the container
+      board(SEALED_LATE, '2026-10-19T00:00:00.000Z', '2026-10-25T23:59:59.999Z', { sealedAt: '2026-10-26T00:00:01.000Z', sealedCompletedCells: [] }), // holds ROOT2's copy
+    ]);
+    await db.boardTasks.bulkPut([
+      placement('bt-simple-closed', CLOSED, SIMPLE),
+      placement('bt-copy-oct', OCT, COPY),
+      placement('bt-box-oct', OCT, BOX, 1),
+      placement('bt-copy2-late', SEALED_LATE, COPY2),
+    ]);
+    await db.taskEvents.put(completion('ev-z', Z, '2026-10-20T09:00:00.000Z'));
+
+    await at('2026-10-27T09:00:00.000Z', () => lateLogCompletion(CLOSED, SIMPLE, '2026-10-27T09:00:00.000Z'));
+
+    // ROOT's credit at the stamped instant lands; the container it completes
+    // (its completing child is Z at 10-20) sits inside ROOT2's sealed copy
+    // window → that chained credit is suppressed.
+    expect((await liveCredits(ROOT)).map((c) => c.occurredAt)).toEqual([new Date(closedEnd).toISOString()]);
+    expect(await storedCredits(ROOT2)).toHaveLength(0);
+    expect((await db.tasks.get(ROOT2))?.currentCount).toBe(0);
   });
 });
 
@@ -745,5 +831,37 @@ describe('counts toward — pull path', () => {
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({ delta: 1, occurredAt: '2026-10-13T07:30:00.000Z', isDeleted: false });
     expect((await db.tasks.get(ROOT))?.currentCount).toBe(1);
+  });
+
+  it('pulling a contributor row whose flag another device cleared withdraws its credits here (a compound, keyed on the previous root)', async () => {
+    await db.tasks.bulkPut([rootTask(), task(BOX, { type: TaskType.COMPOUND, operator: OperatorType.AND, ...flagged() }), task(CHILD_A)]);
+    await db.compoundChildren.put(link('l-a', BOX, CHILD_A, 0));
+    await db.boards.put(board(OCT, OCT_START, OCT_END));
+    await db.boardTasks.put(placement('bt-box', OCT, BOX));
+    await logCompletion(CHILD_A, NOW);
+    expect(await liveCredits()).toHaveLength(1);
+
+    const local = (await db.tasks.get(BOX))!;
+    const { countsTowardCounterId: _c, countsTowardSince: _s, ...rest } = local;
+    const status = await applyRemoteSubdoc('tasks', { ...rest, updatedAt: LATER, version: local.version + 1 }, USER);
+    expect(status).toMatch(/Pulled tasks/);
+
+    expect(await liveCredits()).toHaveLength(0);
+    expect((await storedCredits()).map((c) => c.version)).toEqual([2]);
+    expect((await db.tasks.get(ROOT))?.currentCount).toBe(0);
+  });
+
+  it('pulling a contributor row another device re-pointed moves its credits to the new root from the new since', async () => {
+    await seed();
+    await db.tasks.put(root2Task());
+    await handleTaskCompletion(OCT, 'bt-simple', { isCompleted: true });
+    expect(await liveCredits(ROOT)).toHaveLength(1);
+
+    const local = (await db.tasks.get(SIMPLE))!;
+    await applyRemoteSubdoc('tasks', { ...local, countsTowardCounterId: ROOT2, countsTowardSince: T0, updatedAt: LATER, version: local.version + 1 }, USER);
+
+    expect(await liveCredits(ROOT)).toHaveLength(0);
+    expect((await storedCredits(ROOT)).map((c) => c.version)).toEqual([2]);
+    expect((await liveCredits(ROOT2)).map((c) => c.occurredAt)).toEqual([NOW]);
   });
 });

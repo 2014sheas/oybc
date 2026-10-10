@@ -91,15 +91,18 @@ extension AppDatabase {
     static func runBoardCascadeForTasks(
         db: Database,
         changedTaskIds: [String],
-        now: String
+        now: String,
+        countsTowardPreviousRoots: [String: String] = [:]
     ) throws {
         let allChildren: [CompoundChild] = try CompoundChild
             .filter(Column("isDeleted") == false)
             .fetchAll(db)
         // "Counts toward" (docs/SHARED_COUNTER_SETTINGS.md §3b): write the
         // deterministic increments + the counter roots' logs first, then derive
-        // the counter's copies in this same pass.
-        let countsToward = try writeCountsToward(db: db, changedTaskIds: changedTaskIds, now: now)
+        // the counter's copies in this same pass. `countsTowardPreviousRoots`:
+        // the roots the named tasks counted toward before this write (a
+        // re-point / clear), reconciled too.
+        let countsToward = try writeCountsToward(db: db, changedTaskIds: changedTaskIds, now: now, previousRoots: countsTowardPreviousRoots)
         let allBoardTasks: [BoardTask] = try BoardTask
             .filter(Column("isDeleted") == false)
             .fetchAll(db)

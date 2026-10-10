@@ -2,9 +2,9 @@ import XCTest
 @testable import OYBC
 
 /// Cross-platform vector pins for `CountsToward` (Swift twin of
-/// `packages/shared/src/algorithms/countsToward.ts`), driven by the checked-in
-/// copy of `countsTowardVectors.json` — the same fixture
-/// `packages/shared/tests/algorithms/countsToward.test.ts` runs
+/// `packages/shared/src/algorithms/countsToward.ts` + lineage / validation),
+/// driven by the checked-in copy of `countsTowardVectors.json` — the same
+/// fixture `packages/shared/tests/algorithms/countsToward.test.ts` runs
 /// (docs/SHARED_COUNTER_SETTINGS.md §3; D10: one credit per completion
 /// occurrence; D11: count from `countsTowardSince`, credits honour sealed windows).
 final class CountsTowardVectorTests: XCTestCase {
@@ -145,12 +145,32 @@ final class CountsTowardVectorTests: XCTestCase {
         let completingTaskId: String?
     }
 
-    private struct MiniCredit: Decodable { let occurrence: MiniOccurrence; let occurredAt: String }
+    /// An occurrence named with the root it is minted on (`root` default
+    /// "root"). The candidates group writes the occurrence FLAT (no
+    /// `occurrence` wrapper) — the TS test reads `e.occurrence ?? e`.
+    private struct MiniKeyed: Decodable {
+        let occurrence: MiniOccurrence
+        let root: String?
+        let occurredAt: String?
+
+        enum CodingKeys: String, CodingKey { case occurrence, root, occurredAt }
+
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            root = try c.decodeIfPresent(String.self, forKey: .root)
+            occurredAt = try c.decodeIfPresent(String.self, forKey: .occurredAt)
+            if let wrapped = try c.decodeIfPresent(MiniOccurrence.self, forKey: .occurrence) {
+                occurrence = wrapped
+            } else {
+                occurrence = try MiniOccurrence(from: decoder)
+            }
+        }
+    }
     private struct MiniStored: Decodable {
         let occurrence: MiniOccurrence; let taskId: String; let delta: Double?; let occurredAt: String; let isDeleted: Bool?
     }
 
-    private struct EventIdVector: Decodable { let contributorId: String; let occurrence: MiniOccurrence; let expected: String }
+    private struct EventIdVector: Decodable { let root: String; let contributorId: String; let occurrence: MiniOccurrence; let expected: String }
     private struct AmountVector: Decodable { let name: String; let countsTowardAmount: Double?; let expected: Int }
     private struct StateVector: Decodable {
         let name: String; let taskId: String; let tasks: [MiniTask]; let events: [MiniEvent]
@@ -158,20 +178,23 @@ final class CountsTowardVectorTests: XCTestCase {
     }
     private struct CreditsVector: Decodable {
         let name: String; let taskId: String; let tasks: [MiniTask]; let events: [MiniEvent]; let children: [MiniLink]
-        let placements: [MiniPlacement]; let boards: [MiniBoard]; let expected: [MiniCredit]
+        let placements: [MiniPlacement]; let boards: [MiniBoard]; let expected: [MiniKeyed]
     }
     private struct CandidatesVector: Decodable {
         let name: String; let taskId: String; let tasks: [MiniTask]; let events: [MiniEvent]; let children: [MiniLink]
-        let placements: [MiniPlacement]; let boards: [MiniBoard]; let expected: [MiniOccurrence]
+        let placements: [MiniPlacement]; let boards: [MiniBoard]; let roots: [String]; let expected: [MiniKeyed]
     }
     private struct ExpectedAction: Decodable {
-        let occurrence: MiniOccurrence; let kind: String; let rootId: String; let delta: Int?; let occurredAt: String
+        let occurrence: MiniOccurrence; let root: String?; let kind: String; let rootId: String; let delta: Int?; let occurredAt: String
         let previousRootId: String?; let previousOccurredAt: String?; let wasDeleted: Bool?
     }
     private struct PlanSetVector: Decodable {
-        let name: String; let contributor: MiniTask; let tasks: [MiniTask]; let wanted: [MiniCredit]
-        let candidates: [MiniOccurrence]; let stored: [MiniStored]; let lineageWanted: [MiniOccurrence]?
-        let expected: [ExpectedAction]
+        let name: String; let contributor: MiniTask; let tasks: [MiniTask]; let wanted: [MiniKeyed]
+        let candidates: [MiniKeyed]; let stored: [MiniStored]; let lineageWanted: [MiniKeyed]?
+        let lineageDelta: [String: Int]?; let expected: [ExpectedAction]
+    }
+    private struct LineageDeltaVector: Decodable {
+        let name: String; let root: String; let lineageRoot: String; let members: [MiniTask]; let expected: Int
     }
     private struct ProblemVector: Decodable {
         let name: String; let taskId: String; let targetId: String; let amount: Double?
@@ -184,6 +207,7 @@ final class CountsTowardVectorTests: XCTestCase {
         let credits: [CreditsVector]
         let candidates: [CandidatesVector]
         let planSet: [PlanSetVector]
+        let lineageDelta: [LineageDeltaVector]
         let problem: [ProblemVector]
     }
 
@@ -240,10 +264,13 @@ final class CountsTowardVectorTests: XCTestCase {
     func test_eventId() throws {
         for v in try load().eventId {
             XCTAssertEqual(
-                CountsToward.eventId(contributorScopeId: v.contributorId, occurrence: v.occurrence.occurrence), v.expected,
-                "\(v.contributorId) \(v.occurrence.kind)"
+                CountsToward.eventId(rootId: v.root, contributorScopeId: v.contributorId, occurrence: v.occurrence.occurrence), v.expected,
+                "\(v.root) \(v.contributorId) \(v.occurrence.kind)"
             )
         }
+        let ev = CountsToward.Occurrence.event(eventId: "x")
+        XCTAssertEqual(CountsToward.eventId(rootId: "root", contributorScopeId: "a", occurrence: ev), CountsToward.eventId(rootId: "root", contributorScopeId: "b", occurrence: ev))
+        XCTAssertNotEqual(CountsToward.eventId(rootId: "root", contributorScopeId: "a", occurrence: ev), CountsToward.eventId(rootId: "root2", contributorScopeId: "a", occurrence: ev))
     }
 
     func test_amount() throws {
@@ -288,20 +315,28 @@ final class CountsTowardVectorTests: XCTestCase {
             let inputs = inputs(tasks: v.tasks, events: v.events, children: v.children, placements: v.placements, boards: v.boards)
             let task = try XCTUnwrap(inputs.taskById[v.taskId])
             let scope = CountsToward.lineageRootId(task, taskById: inputs.taskById)
-            let expected = v.expected.map {
-                CountsToward.Credit(
-                    eventId: CountsToward.eventId(contributorScopeId: scope, occurrence: $0.occurrence.occurrence),
-                    occurrence: $0.occurrence.occurrence, occurredAt: $0.occurredAt
+            let expected = v.expected.map { k -> CountsToward.Credit in
+                let root = k.root ?? "root"
+                return CountsToward.Credit(
+                    eventId: CountsToward.eventId(rootId: root, contributorScopeId: scope, occurrence: k.occurrence.occurrence),
+                    rootId: root, occurrence: k.occurrence.occurrence, occurredAt: k.occurredAt!
                 )
             }.sorted { $0.eventId < $1.eventId }
             let credits = CountsToward.resolveContributionCredits(task, inputs: inputs)
             XCTAssertEqual(credits, expected, v.name)
-            // Every wanted credit is among the candidates; a shared resolver agrees.
-            let candidates = Set(CountsToward.candidateContributionIds(task, inputs: inputs))
+            // Every wanted credit is among the candidates on its root; a shared resolver agrees.
+            let roots = Array(Set(credits.map(\.rootId)))
+            let candidates = Set(CountsToward.candidateContributionIds(task, inputs: inputs, rootIds: roots))
             for c in credits { XCTAssertTrue(candidates.contains(c.eventId), "\(v.name): \(c.eventId) not a candidate") }
             var shared = inputs
             shared.forkEvents = CountsToward.ForkEventResolver(taskById: inputs.taskById, allEventsByTaskId: inputs.allEventsByTaskId)
             XCTAssertEqual(CountsToward.resolveContributionCredits(task, inputs: shared), credits, v.name)
+            XCTAssertEqual(CountsToward.resolveContributionCredits(task, inputs: inputs, rootId: .some(nil)), [], v.name)
+            if task.countsTowardCounterId != nil {
+                let onOther = CountsToward.resolveContributionCredits(task, inputs: inputs, rootId: "root2")
+                XCTAssertEqual(Set(onOther.map { "\($0.occurrence)|\($0.occurredAt)" }), Set(credits.map { "\($0.occurrence)|\($0.occurredAt)" }), v.name)
+                for c in onOther { XCTAssertEqual(c.rootId, "root2", v.name) }
+            }
         }
     }
 
@@ -310,8 +345,16 @@ final class CountsTowardVectorTests: XCTestCase {
             let inputs = inputs(tasks: v.tasks, events: v.events, children: v.children, placements: v.placements, boards: v.boards)
             let task = try XCTUnwrap(inputs.taskById[v.taskId])
             let scope = CountsToward.lineageRootId(task, taskById: inputs.taskById)
-            let expected = Set(v.expected.map { CountsToward.eventId(contributorScopeId: scope, occurrence: $0.occurrence) }).sorted()
-            XCTAssertEqual(CountsToward.candidateContributionIds(task, inputs: inputs), expected, v.name)
+            let expected = Set(v.expected.map {
+                CountsToward.eventId(rootId: $0.root ?? "root", contributorScopeId: scope, occurrence: $0.occurrence.occurrence)
+            }).sorted()
+            XCTAssertEqual(CountsToward.candidateContributionIds(task, inputs: inputs, rootIds: v.roots), expected, v.name)
+        }
+    }
+
+    func test_lineageCreditDelta() throws {
+        for v in try load().lineageDelta {
+            XCTAssertEqual(CountsToward.lineageCreditDelta(rootId: v.root, members: v.members.map(\.task), lineageRootTaskId: v.lineageRoot), v.expected, v.name)
         }
     }
 
@@ -320,17 +363,24 @@ final class CountsTowardVectorTests: XCTestCase {
             let contributor = v.contributor.task
             var taskById = Dictionary(uniqueKeysWithValues: v.tasks.map { ($0.task.id, $0.task) })
             taskById[contributor.id] = contributor
-            func idOf(_ o: MiniOccurrence) -> String { CountsToward.eventId(contributorScopeId: contributor.id, occurrence: o.occurrence) }
-            let wanted = v.wanted.map { CountsToward.Credit(eventId: idOf($0.occurrence), occurrence: $0.occurrence.occurrence, occurredAt: $0.occurredAt) }
-            let candidates = v.candidates.map(idOf)
+            func idOf(_ o: MiniOccurrence, _ root: String?) -> String {
+                CountsToward.eventId(rootId: root ?? "root", contributorScopeId: contributor.id, occurrence: o.occurrence)
+            }
+            let wanted = v.wanted.map {
+                CountsToward.Credit(eventId: idOf($0.occurrence, $0.root), rootId: $0.root ?? "root", occurrence: $0.occurrence.occurrence, occurredAt: $0.occurredAt!)
+            }
+            let candidates = v.candidates.map { idOf($0.occurrence, $0.root) }
             var storedById: [String: TaskEvent] = [:]
             for s in v.stored {
-                let id = idOf(s.occurrence)
+                let id = idOf(s.occurrence, s.taskId)
                 storedById[id] = MiniEvent(id: id, taskId: s.taskId, delta: s.delta, occurredAt: s.occurredAt, isDeleted: s.isDeleted).event(0)
             }
-            let lineage = Set((v.lineageWanted ?? []).map(idOf))
+            var lineage = CountsToward.LineageContext(wantedIds: Set((v.lineageWanted ?? []).map { idOf($0.occurrence, $0.root) }))
+            if let deltas = v.lineageDelta {
+                lineage.deltaForRoot = { rootId in deltas[rootId] ?? CountsToward.amount(of: contributor) }
+            }
             let expected: [CountsToward.Action] = v.expected.map { exp in
-                let id = idOf(exp.occurrence)
+                let id = idOf(exp.occurrence, exp.root)
                 switch exp.kind {
                 case "insert":
                     return .insert(eventId: id, rootId: exp.rootId, delta: exp.delta!, occurredAt: exp.occurredAt)
@@ -345,14 +395,13 @@ final class CountsTowardVectorTests: XCTestCase {
                 }
             }.sorted { $0.eventId < $1.eventId }
             let actions = CountsToward.plan(
-                contributor: contributor, taskById: taskById, wanted: wanted, candidateIds: candidates,
-                storedById: storedById, lineageWantedIds: lineage
+                contributor: contributor, taskById: taskById, wanted: wanted, candidateIds: candidates, storedById: storedById, lineage: lineage
             )
             XCTAssertEqual(actions, expected, v.name)
         }
     }
 
-    func test_forkLineage_canonicalEvent_lineageRoot_andMembers() {
+    func test_forkLineage_canonicalEvent_lineageRoot_loaded_andMembers() {
         let (o, f1, f2, g1, orphan) = (miniTask("o"), miniTask("f1", from: "o"), miniTask("f2", from: "f1"), miniTask("g1", from: "o"), miniTask("orphan", from: "missing"))
         let at = "2026-01-01T00:00:00.000Z"
         let e = MiniEvent(id: "e", taskId: "o", delta: nil, occurredAt: at, isDeleted: nil).event(0)
@@ -370,10 +419,16 @@ final class CountsTowardVectorTests: XCTestCase {
         XCTAssertEqual(CountsToward.lineageRootId(f2, taskById: taskById), "o")
         XCTAssertEqual(CountsToward.lineageRootId(g1, taskById: taskById), "o")
         XCTAssertEqual(CountsToward.lineageRootId(orphan, taskById: taskById), "orphan")
+        XCTAssertTrue(CountsToward.isForkLineageLoaded(f2, taskById: taskById))
+        XCTAssertTrue(CountsToward.isForkLineageLoaded(o, taskById: taskById))
+        XCTAssertFalse(CountsToward.isForkLineageLoaded(orphan, taskById: taskById))
+        XCTAssertFalse(CountsToward.isForkLineageLoaded(f2, taskById: ["f2": f2, "f1": f1]))
         let key = CountsToward.Occurrence.childEvent(eventId: "e")
-        XCTAssertEqual(CountsToward.eventId(contributorScopeId: "o", occurrence: key), CountsToward.eventId(contributorScopeId: CountsToward.lineageRootId(f2, taskById: taskById), occurrence: key))
-        XCTAssertNotEqual(CountsToward.eventId(contributorScopeId: "o", occurrence: key), CountsToward.eventId(contributorScopeId: "p", occurrence: key))
-        XCTAssertNotEqual(CountsToward.eventId(contributorScopeId: "o", occurrence: key), CountsToward.eventId(contributorScopeId: "o", occurrence: .event(eventId: "e")))
+        XCTAssertEqual(
+            CountsToward.eventId(rootId: "r", contributorScopeId: "o", occurrence: key),
+            CountsToward.eventId(rootId: "r", contributorScopeId: CountsToward.lineageRootId(f2, taskById: taskById), occurrence: key)
+        )
+        XCTAssertNotEqual(CountsToward.eventId(rootId: "r", contributorScopeId: "o", occurrence: key), CountsToward.eventId(rootId: "r", contributorScopeId: "p", occurrence: key))
 
         let index = CountsToward.buildForkChildrenIndex(Array(taskById.values))
         XCTAssertEqual(CountsToward.forkLineageIds("o", taskById: taskById, forkChildren: index), ["f1", "f2", "g1"])
@@ -403,7 +458,7 @@ final class CountsTowardVectorTests: XCTestCase {
             taskById: ["root": root, "t": t], childrenByCompound: [:], eventsByTaskId: ["t": events], allEventsByTaskId: ["t": events],
             placements: [], boardById: [:]
         )
-        XCTAssertEqual(CountsToward.keptCreditIds(for: t, inputs: base), [CountsToward.eventId(contributorScopeId: "t", occurrence: .event(eventId: "c2"))])
+        XCTAssertEqual(CountsToward.keptCreditIds(for: t, inputs: base), [CountsToward.eventId(rootId: "root", contributorScopeId: "t", occurrence: .event(eventId: "c2"))])
         var unflagged = t; unflagged.countsTowardCounterId = nil
         XCTAssertEqual(CountsToward.keptCreditIds(for: unflagged, inputs: base), [])
         var deleted = t; deleted.isDeleted = true
@@ -411,7 +466,7 @@ final class CountsTowardVectorTests: XCTestCase {
         XCTAssertEqual(CountsToward.keptCreditIds(for: root, inputs: base), [])
     }
 
-    func test_canContribute_andProbe() {
+    func test_canContribute() {
         XCTAssertTrue(CountsToward.canContribute(miniTask("a")))
         var counter = miniTask("c"); counter.type = .counting; counter.isCounter = true
         XCTAssertFalse(CountsToward.canContribute(counter))
@@ -419,37 +474,27 @@ final class CountsTowardVectorTests: XCTestCase {
         XCTAssertFalse(CountsToward.canContribute(linked))
         var ach = miniTask("x"); ach.type = .achievement
         XCTAssertFalse(CountsToward.canContribute(ach))
-
-        let events = [
-            MiniEvent(id: "c1", taskId: "t", delta: nil, occurredAt: "2026-10-07T00:00:00.000Z", isDeleted: nil).event(0),
-            MiniEvent(id: "c2", taskId: "t", delta: nil, occurredAt: "2026-10-08T00:00:00.000Z", isDeleted: nil).event(1),
-        ]
-        let placements = [MiniPlacement(boardId: "b1", taskId: "t", isDeleted: nil).placement(0), MiniPlacement(boardId: "b9", taskId: "other", isDeleted: nil).placement(1)]
-        let expected = [
-            CountsToward.eventId(contributorScopeId: "t", occurrence: .lifetime),
-            CountsToward.eventId(contributorScopeId: "t", occurrence: .event(eventId: "c1")),
-            CountsToward.eventId(contributorScopeId: "t", occurrence: .event(eventId: "c2")),
-            CountsToward.eventId(contributorScopeId: "t", occurrence: .board(boardId: "b1")),
-        ].sorted()
-        XCTAssertEqual(CountsToward.probeContributionIds(taskId: "t", ownEvents: events, placements: placements), expected)
     }
 
     func test_isCreditWriteSealSuppressed() {
         let windows = buildSealImmuneWindows(sealedBoards: [("2026-10-05T00:00:00.000Z", "2026-10-11T23:59:59.999Z", "2026-10-12T00:00:01.000Z")])
         let inside = "2026-10-07T09:00:00.000Z"
+        let alsoInside = "2026-10-09T09:00:00.000Z"
         let outside = "2026-10-14T09:00:00.000Z"
         let now = "2026-10-20T00:00:00.000Z"
         let insert = CountsToward.Action.insert(eventId: "x", rootId: "root", delta: 1, occurredAt: inside)
-        XCTAssertTrue(CountsToward.isCreditWriteSealSuppressed(insert, immuneWindowsByRoot: ["root": windows], now: now, lateLog: false))
-        XCTAssertFalse(CountsToward.isCreditWriteSealSuppressed(insert, immuneWindowsByRoot: ["root": windows], now: now, lateLog: true))
-        XCTAssertFalse(CountsToward.isCreditWriteSealSuppressed(.insert(eventId: "x", rootId: "root", delta: 1, occurredAt: outside), immuneWindowsByRoot: ["root": windows], now: now, lateLog: false))
-        XCTAssertFalse(CountsToward.isCreditWriteSealSuppressed(insert, immuneWindowsByRoot: ["other": windows], now: now, lateLog: false))
-        XCTAssertTrue(CountsToward.isCreditWriteSealSuppressed(.tombstone(eventId: "x", rootId: "root", occurredAt: inside), immuneWindowsByRoot: ["root": windows], now: now, lateLog: false))
+        XCTAssertTrue(CountsToward.isCreditWriteSealSuppressed(insert, immuneWindowsByRoot: ["root": windows], now: now, lateLogStamp: nil))
+        XCTAssertFalse(CountsToward.isCreditWriteSealSuppressed(insert, immuneWindowsByRoot: ["root": windows], now: now, lateLogStamp: inside))
+        XCTAssertTrue(CountsToward.isCreditWriteSealSuppressed(insert, immuneWindowsByRoot: ["root": windows], now: now, lateLogStamp: alsoInside))
+        XCTAssertFalse(CountsToward.isCreditWriteSealSuppressed(.insert(eventId: "x", rootId: "root", delta: 1, occurredAt: outside), immuneWindowsByRoot: ["root": windows], now: now, lateLogStamp: nil))
+        XCTAssertFalse(CountsToward.isCreditWriteSealSuppressed(insert, immuneWindowsByRoot: ["other": windows], now: now, lateLogStamp: nil))
+        XCTAssertTrue(CountsToward.isCreditWriteSealSuppressed(.tombstone(eventId: "x", rootId: "root", occurredAt: inside), immuneWindowsByRoot: ["root": windows], now: now, lateLogStamp: nil))
         let revise = CountsToward.Action.revise(
             eventId: "x", rootId: "root2", delta: 1, occurredAt: outside, previousRootId: "root", previousOccurredAt: inside, wasDeleted: false
         )
-        XCTAssertTrue(CountsToward.isCreditWriteSealSuppressed(revise, immuneWindowsByRoot: ["root": windows], now: now, lateLog: false))
-        XCTAssertFalse(CountsToward.isCreditWriteSealSuppressed(revise, immuneWindowsByRoot: ["root2": windows], now: now, lateLog: false))
+        XCTAssertTrue(CountsToward.isCreditWriteSealSuppressed(revise, immuneWindowsByRoot: ["root": windows], now: now, lateLogStamp: nil))
+        XCTAssertFalse(CountsToward.isCreditWriteSealSuppressed(revise, immuneWindowsByRoot: ["root2": windows], now: now, lateLogStamp: nil))
+        XCTAssertFalse(CountsToward.isCreditWriteSealSuppressed(revise, immuneWindowsByRoot: ["root": windows], now: now, lateLogStamp: inside))
     }
 
     func test_problem() throws {

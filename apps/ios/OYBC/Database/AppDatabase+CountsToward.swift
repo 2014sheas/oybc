@@ -14,13 +14,13 @@ import GRDB
 //     `applyCountsTowardInTransaction`) inside the same write transaction: for
 //     each changed task and each compound containing it, reconcile its credit
 //     SET — one credit per completion occurrence (D10), counted from
-//     `countsTowardSince` (D11), the fork lineage's wants protected, the
-//     counter's sealed windows honoured (D11) — insert / revise / tombstone
-//     (version bump + enqueue) and write the root's log like a hand log; the
-//     board pass derives the copies' boards, the finish phase re-derives sealed
-//     boards + watchers.
+//     `countsTowardSince` (D11), keyed on the target root, the fork lineage's
+//     wants protected and its amount agreed, the counter's sealed windows
+//     honoured (D11) — insert / revise / tombstone (version bump + enqueue) and
+//     write the root's log like a hand log; the board pass derives the copies'
+//     boards, the finish phase re-derives sealed boards + watchers.
 //   - `setCountsToward` — the write-time entry (validated by `CountsToward.problem`;
-//     stamps `countsTowardSince`).
+//     stamps `countsTowardSince`; hands the previous root to the cascade).
 //   - `countsTowardContributors` / `unflagCountsTowardContributors` — the
 //     kind-switch and delete-counter guards.
 extension AppDatabase {
@@ -85,13 +85,14 @@ extension AppDatabase {
     /// those copies. Board derivation is left to the caller's ONE pass over
     /// `cascadeIds`; `finishCountsTowardRoots` runs after it. Idempotent.
     ///
-    /// Cost shape: rows that can never contribute (`CountsToward.canContribute`)
-    /// are dropped first. A FLAGGED candidate is always relevant; an UNFLAGGED
-    /// one only when a stored credit exists at one of its PROBE ids
-    /// (`lifetime`, a `board` key per placement, the raw key of its most recent
-    /// `probeEventLimit` events — indexed reads). The whole-workspace loads, the
-    /// fork lineage, the full candidate keys and the per-root sealed windows are
-    /// read only once a candidate is relevant.
+    /// Relevance: rows that can never contribute (`CountsToward.canContribute`)
+    /// are dropped first; a FLAGGED row is relevant, and so is a row whose
+    /// previous root the caller knows (`previousRoots` — a re-point / clear,
+    /// a pulled row that was flagged). Every credit key carries its root, so an
+    /// unflagged row with no known previous root has nothing derivable to
+    /// reconcile. The whole-workspace loads, the fork lineage, the candidate
+    /// keys and the per-root sealed windows are read only once a candidate is
+    /// relevant.
     ///
     /// - Parameters:
     ///   - db: The caller's write transaction.
@@ -99,12 +100,14 @@ extension AppDatabase {
     ///   - now: The write instant.
     ///   - pullOwnerUid: `nil` for a local write; the PULL's uid on the pull
     ///     path (it owns every enqueue).
-    ///   - lateLog: `true` inside the closed-board late-log path (D11: sealed
-    ///     windows are not a write barrier there).
+    ///   - lateLogStamp: Inside the closed-board late-log path, the instant it
+    ///     stamped — only a credit at that instant is exempt from sealed windows (D11).
+    ///   - previousRoots: Roots the named tasks counted toward before this write.
     ///   - depth: Chain depth (0 for a top-level call).
     /// - Returns: The ids the caller's board pass must add, and the roots to finish.
     static func writeCountsToward(
-        db: Database, changedTaskIds: [String], now: String, pullOwnerUid: String? = nil, lateLog: Bool = false, depth: Int = 0
+        db: Database, changedTaskIds: [String], now: String, pullOwnerUid: String? = nil,
+        lateLogStamp: String? = nil, previousRoots: [String: String] = [:], depth: Int = 0
     ) throws -> CountsTowardWrites {
         var out = CountsTowardWrites()
         guard !changedTaskIds.isEmpty else { return out }
@@ -124,29 +127,9 @@ extension AppDatabase {
             }
         }
         let rows = try Task.fetchAll(db, keys: candidates).filter(CountsToward.canContribute)
-        guard !rows.isEmpty else { return out }
-
-        // Phase 1 — relevance.
-        var storedById: [String: TaskEvent] = [:]
-        var relevant = rows.filter { $0.countsTowardCounterId != nil }
-        let unflagged = rows.filter { $0.countsTowardCounterId == nil }
-        if !unflagged.isEmpty {
-            let placements = try BoardTask.filter(unflagged.map(\.id).contains(Column("taskId"))).fetchAll(db)
-            var probeIdsByTask: [String: [String]] = [:]
-            for t in unflagged {
-                let recent = try TaskEvent
-                    .filter(Column("taskId") == t.id)
-                    .order(Column("occurredAt").desc)
-                    .limit(CountsToward.probeEventLimit)
-                    .fetchAll(db)
-                probeIdsByTask[t.id] = CountsToward.probeContributionIds(taskId: t.id, ownEvents: recent, placements: placements)
-            }
-            for e in try TaskEvent.fetchAll(db, keys: Set(probeIdsByTask.values.joined())) { storedById[e.id] = e }
-            for t in unflagged where (probeIdsByTask[t.id] ?? []).contains(where: { storedById[$0] != nil }) { relevant.append(t) }
-        }
+        let relevant = rows.filter { $0.countsTowardCounterId != nil || previousRoots[$0.id] != nil }
         guard !relevant.isEmpty else { return out }
 
-        // Phase 2 — the workspace, the lineage, the full keys.
         let ws = try loadCountsTowardWorkspace(db: db)
         let resolver = CountsToward.ForkEventResolver(taskById: ws.taskById, allEventsByTaskId: ws.allEventsByTaskId)
         var lineageByTask: [String: [String]] = [:]
@@ -173,25 +156,36 @@ extension AppDatabase {
         func loadImmune(_ rootId: String) throws {
             if immuneByRoot[rootId] == nil { immuneByRoot[rootId] = try sealImmuneWindows(db: db, taskId: rootId) }
         }
+        var storedById: [String: TaskEvent] = [:]
 
         var reach: [(rootId: String, instants: [String])] = []
         for task in relevant {
             let taskInputs = inputs(for: task)
+            let members = [task] + (lineageByTask[task.id] ?? []).compactMap { ws.taskById[$0] }
+            // Every root the lineage currently targets, plus the one the caller
+            // knows this task targeted before — the keys a stale credit can sit under.
+            var candidateRoots = members.compactMap(\.countsTowardCounterId)
+            if let previous = previousRoots[task.id] { candidateRoots.append(previous) }
             let wanted = CountsToward.resolveContributionCredits(task, inputs: taskInputs)
-            let candidateIds = CountsToward.candidateContributionIds(task, inputs: taskInputs)
+            let candidateIds = CountsToward.candidateContributionIds(task, inputs: taskInputs, rootIds: candidateRoots)
             let lineageWanted = Set((lineageByTask[task.id] ?? []).flatMap(kept))
+            let lineageRoot = CountsToward.lineageRootId(task, taskById: ws.taskById)
             let missing = Set(candidateIds + wanted.map(\.eventId)).filter { storedById[$0] == nil }
             for e in try TaskEvent.fetchAll(db, keys: missing) { storedById[e.id] = e }
             let actions = CountsToward.plan(
-                contributor: task, taskById: ws.taskById, wanted: wanted,
-                candidateIds: candidateIds, storedById: storedById, lineageWantedIds: lineageWanted
+                contributor: task, taskById: ws.taskById, wanted: wanted, candidateIds: candidateIds, storedById: storedById,
+                lineage: CountsToward.LineageContext(
+                    wantedIds: lineageWanted,
+                    deltaForRoot: { rootId in CountsToward.lineageCreditDelta(rootId: rootId, members: members, lineageRootTaskId: lineageRoot) }
+                )
             )
             for action in actions {
-                if !lateLog { for r in action.reach { try loadImmune(r.rootId) } }
-                if CountsToward.isCreditWriteSealSuppressed(action, immuneWindowsByRoot: immuneByRoot, now: now, lateLog: lateLog) { continue }
+                for r in action.reach { try loadImmune(r.rootId) }
+                if CountsToward.isCreditWriteSealSuppressed(action, immuneWindowsByRoot: immuneByRoot, now: now, lateLogStamp: lateLogStamp) { continue }
                 try writeCountsTowardAction(
                     db: db, action: action, userId: task.userId, existing: storedById[action.eventId], now: now, pullOwnerUid: pullOwnerUid
                 )
+                storedById[action.eventId] = try TaskEvent.fetchOne(db, key: action.eventId)
                 for r in action.reach {
                     if let i = reach.firstIndex(where: { $0.rootId == r.rootId }) {
                         if !reach[i].instants.contains(r.occurredAt) { reach[i].instants.append(r.occurredAt) }
@@ -208,7 +202,7 @@ extension AppDatabase {
             out.cascadeIds.formUnion(ids)
             // Chained contributors: a compound containing one of these copies.
             let deeper = try writeCountsToward(
-                db: db, changedTaskIds: Array(ids), now: now, pullOwnerUid: pullOwnerUid, lateLog: lateLog, depth: depth + 1
+                db: db, changedTaskIds: Array(ids), now: now, pullOwnerUid: pullOwnerUid, lateLogStamp: lateLogStamp, depth: depth + 1
             )
             out.cascadeIds.formUnion(deeper.cascadeIds)
             out.rootIds.formUnion(deeper.rootIds)
@@ -309,7 +303,9 @@ extension AppDatabase {
     /// re-pointing it at a DIFFERENT counter, stamps `countsTowardSince = now`
     /// (occurrences before it never credit); changing only the amount keeps it;
     /// a clear NULLs all three columns (raw SQL — `encode` nil-skips; clearable
-    /// on sync). Authored: version bump + UPDATE enqueue.
+    /// on sync). The previous root is handed to the cascade so the credits keyed
+    /// on it are withdrawn (a re-point = tombstone + insert). Authored: version
+    /// bump + UPDATE enqueue.
     ///
     /// - Parameter now: The write instant (injectable for tests; defaults to the clock).
     /// - Throws: `CountsTowardError.refused` with the `CountsToward.problem` code.
@@ -325,8 +321,9 @@ extension AppDatabase {
             ) {
                 throw CountsTowardError.refused(problem)
             }
+            let previousRoot = task.countsTowardCounterId
             if let counterId {
-                task.countsTowardSince = (counterId == task.countsTowardCounterId ? task.countsTowardSince : nil) ?? now
+                task.countsTowardSince = (counterId == previousRoot ? task.countsTowardSince : nil) ?? now
             } else {
                 task.countsTowardSince = nil
             }
@@ -339,7 +336,9 @@ extension AppDatabase {
             try SyncQueueBuilder.makeItem(
                 entityType: "tasks", entityId: task.id, operationType: .update, payload: task, now: now
             ).enqueue(db)
-            try Self.runBoardCascadeForTasks(db: db, changedTaskIds: [task.id], now: now)
+            var previousRoots: [String: String] = [:]
+            if let previousRoot, previousRoot != counterId { previousRoots[task.id] = previousRoot }
+            try Self.runBoardCascadeForTasks(db: db, changedTaskIds: [task.id], now: now, countsTowardPreviousRoots: previousRoots)
         }
     }
 

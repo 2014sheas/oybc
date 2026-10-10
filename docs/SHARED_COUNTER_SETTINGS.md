@@ -183,17 +183,24 @@ because completion is already derived for every type:
   shared-task rule a manual square on a repeating weekly board is the SAME task
   every week, so it credits every week it is completed, and un-completing one
   week withdraws only that week's credit. The occurrence key and the credit id
-  (`countsTowardEventId(scope, occurrence)` — `countsToward.ts` ↔
-  `CountsToward.swift`, namespace `counts-toward:event`; `scope` = the
-  contributor's fork-lineage ROOT, `lineageRootId`, so a fork shares its
-  original's keys) per contributor type:
+  (`countsTowardEventId(rootId, scope, occurrence)` — `countsToward.ts` ↔
+  `CountsToward.swift`, namespace `counts-toward:event`; `rootId` = the TARGET
+  counter, in every key, so lineage members share a credit only while they
+  target the same counter and a re-point is a tombstone + an insert, never a
+  flip; `scope` = the contributor's fork-lineage ROOT, `lineageRootId`, so a
+  fork shares its original's keys) per contributor type:
 
   | Contributor | One occurrence per | Key | Credit id (uuidv5 name) | Stamped at |
   | --- | --- | --- | --- | --- |
-  | Simple | live completion event | that event's id | `counts-toward:event:<eventId>` | the event's `occurredAt` |
-  | plain Counting | live placement window its windowed state is complete in (unplaced → the lifetime evaluation) | the id of the increment that last crossed the goal inside that window | `counts-toward:event:<eventId>` | the crossing increment's `occurredAt` |
-  | Compound | live placement window its windowed derivation is complete in (unplaced → the lifetime evaluation) | the COMPLETING CHILD's event — All of → the last child's, Any of → the first, At least N → the N-th, a nested compound passing its own up (fork-resolved) | `counts-toward:event:<scope>:child-event:<eventId>` | that child event's `occurredAt` |
-  | Compound whose completing child owns no event (a latched row) | as above | `board:<boardId>` when placed, `lifetime` when not | `counts-toward:event:<scope>:board:<boardId>` / `…:<scope>:lifetime` | when its rule was met |
+  | Simple | live completion event | that event's id | `counts-toward:event:<rootId>:<eventId>` | the event's `occurredAt` |
+  | plain Counting | live placement window its windowed state is complete in (unplaced → the lifetime evaluation) | the id of the increment that last crossed the goal inside that window | `counts-toward:event:<rootId>:<eventId>` | the crossing increment's `occurredAt` |
+  | Compound | live placement window its windowed derivation is complete in (unplaced → the lifetime evaluation) | the COMPLETING CHILD's event — All of → the last child's, Any of → the first, At least N → the N-th, a nested compound passing its own up (fork-resolved); ties by instant string, then event id, then task id — an undated vacuous nested child sorts first | `counts-toward:event:<rootId>:<scope>:child-event:<eventId>` | that child event's `occurredAt` |
+  | Compound whose completing child owns no event (a latched row) | as above | `board:<boardId>` when placed, `lifetime` when not | `counts-toward:event:<rootId>:<scope>:board:<boardId>` / `…:<rootId>:<scope>:lifetime` | when its rule was met |
+
+  A consequence worth stating once: a late log stamped at an ended board's
+  `endDate` that lies BEFORE `countsTowardSince` never credits — even when the
+  log itself is made after the flag was set — because the stamp is the
+  occurrence instant (D8 × D11).
 
   "Live placement window" is the kernel's: the board not deleted and not a
   draft, `[startDate, endDate]` inclusive (`resolveTaskWindowState` /
@@ -220,14 +227,27 @@ because completion is already derived for every type:
   against the stored events at every CANDIDATE id (built from live AND
   tombstoned data: every event of the task, raw and fork-resolved; for a
   compound every event of its subtree and of the roots its linked children
-  read, links in any state; a `board` key per placement in any state; `lifetime`)
+  read, links in any state; a `board` key per placement in any state;
+  `lifetime` — each minted on every root the writer can derive: the task's
+  current target, the current targets of its loaded lineage members, and a
+  previous target the write path knows — `setCountsToward`'s re-point / clear
+  and a pulled row that was flagged hand it over explicitly, since nothing else
+  could find keys on a root nobody targets any more; an interrupted re-point
+  whose previous root is lost is reconciled by the next cascade that learns it)
   — insert / revise / tombstone / nothing per id; a cleared flag tombstones
-  every live credit; a deleted (or not-yet-pulled) counter writes nothing.
+  every live credit; a deleted (or not-yet-pulled) counter writes nothing; a
+  fork whose `forkedFromTaskId` chain is not fully loaded produces no credits
+  and no actions until it is (its scope would otherwise move when the original
+  lands — `isForkLineageLoaded`).
   **Lineage union:** a credit belongs to the fork lineage, not to whichever
   member reconciled last — a member tombstones an event-keyed credit only when
   NO live, flagged member of its lineage (ancestors via `forkedFromTaskId`,
   descendants, transitively) still wants it (`keptCreditIdsFor` over
-  `forkLineageIds`, passed to `planCountsTowardActions`).
+  `forkLineageIds`, passed to `planCountsTowardActions`), and the lineage
+  writes ONE amount on a root (`lineageCreditDelta`: the lineage root's when
+  it is a live, flagged member targeting that root, else the smallest task id
+  among such members) so two members with different `countsTowardAmount`
+  never revise a shared credit back and forth.
 - A Compound container with **zero children** is allowed ONLY when it counts
   toward a counter (it is "unfilled" and incomplete until it has children and
   they complete) — the owner's shell idea, as a special case of the rule.
@@ -248,10 +268,14 @@ when the instant it writes (the credit's `occurredAt`; for a revise also the
 previous instant on the previous root) sits inside a seal-immune window of a
 sealed board holding the root or one of its copies (`isEventSealImmune` over
 `getSealImmuneWindowsForTask(root)` ↔ `sealImmuneWindows(db:taskId:)`, through
-`isCreditWriteSealSuppressed`), EXCEPT when the write runs inside the
-closed-board late-log path (`lateLog`), which re-derives every sealed board
-deterministically — so an undo on an open board cannot move a count that a
-closed board already froze, and a Reopen lets the next cascade settle it. The
+`isCreditWriteSealSuppressed`), EXCEPT for a credit whose instant EQUALS the
+instant the closed-board late-log path stamped (`lateLogStamp`, the closed
+board's `endDate` — web `CascadeOptions.lateLogStamp` ↔ iOS
+`writeCountsToward(lateLogStamp:)`), because that path re-derives every
+sealed board deterministically; a chained credit the same cascade reaches at
+another instant stays suppressed — so an undo on an open board cannot move a
+count that a closed board already froze, and a Reopen lets the next cascade
+settle it. The
 compound carve-out stands: the compound still owns no events; the event lives
 on the counter root.
 
@@ -298,7 +322,13 @@ same stamp as the completion that caused it).
   count. The credit follows the LINEAGE UNION rule: it stays while any live,
   flagged member of the lineage still wants it (an undo on either board, a
   deleted original, a fork whose flag is cleared) and is tombstoned only once
-  no member does.
+  no member does. **When the lineage disagrees:** on the TARGET — every key
+  carries its root, so the original re-pointed to counter B while the fork
+  still targets A keeps one credit on A (the fork's) and credits B from the
+  original's new `since` onward: two separate credits, one each, never a flip;
+  on the AMOUNT — one deterministic rule, the lineage root's amount when it
+  targets that root, else the smallest task id among the members that do
+  (`lineageCreditDelta`), so a replay writes nothing.
 - Cycles: `countsTowardProblem` walks the feeding graph transitively (counter →
   the counter and its copies → the compounds holding them → their own
   counts-toward counters → …) and refuses an assignment as soon as that walk
@@ -468,13 +498,15 @@ with the flag), iOS GRDB v43 (all three columns), no Dexie bump.
 `taskEvents.deletedAt` is clearable too (a revived credit drops its tombstone
 stamp). Pure half `countsToward.ts` ↔ `CountsToward.swift`
 (`countsTowardVectors.json`: eventId / amount / state (lifetime + windowed) /
-credits / candidates / planSet / problem): `countsTowardEventId(scope,
-occurrence)`, `lineageRootId`, `resolveContributionState(…, window)`,
+credits / candidates / planSet / lineageDelta / problem):
+`countsTowardEventId(rootId, scope, occurrence)`, `lineageRootId`,
+`isForkLineageLoaded`, `resolveContributionState(…, window)`,
 `resolveContributionCredits`, `isOccurrenceWanted` (the D11 "wanted" seam),
-`keptCreditIdsFor`, `candidateContributionIds`, `probeContributionIds`,
-`createForkEventResolver` / `canonicalOccurrenceEventId`, `forkLineageIds`,
-`planCountsTowardActions(…, lineageWantedIds)`, `isCreditWriteSealSuppressed`
-(the D11 sealed-window seam), `countsTowardProblem`. Data half
+`keptCreditIdsFor`, `candidateContributionIds(…, rootIds)`,
+`lineageCreditDelta`, `createForkEventResolver` / `canonicalOccurrenceEventId`,
+`forkLineageIds`, `planCountsTowardActions(…, { wantedIds, deltaForRoot })`,
+`isCreditWriteSealSuppressed(…, lateLogStamp)` (the D11 sealed-window seam),
+`countsTowardProblem`. Data half
 `db/operations/countsToward.ts` ↔ `AppDatabase+CountsToward.swift`.
 
 - **One credit per completion occurrence (D10), counted from the flag (D11)**
@@ -493,24 +525,30 @@ occurrence)`, `lineageRootId`, `resolveContributionState(…, window)`,
   evaluation reads its latch.
 - **Where:** a write phase runs at the START of every cascade entry
   (`runBoardCascadeForTasks` on web — which the pull, late-log and edit paths all
-  reach, the late-log path passing `lateLog: true`; on iOS also
+  reach, the late-log path passing its stamp as `lateLogStamp`; on iOS also
   `runBoardCascadeForTaskWithResults`, the shared-counter cascade, the pull
   cascade with the pull's uid owning the enqueues, and the late-log
-  re-derivation, likewise `lateLog: true`). For each changed task and each
+  re-derivation, likewise with the stamp). For each changed task and each
   compound containing it: rows that can never contribute (counter roots,
   linked copies, achievements — `canContribute`) are dropped; a FLAGGED row is
-  relevant; an UNFLAGGED row is relevant only when a stored credit sits at one
-  of its PROBE ids (`lifetime`, a `board` key per placement, the raw key of
-  its most recent 256 events — indexed reads, no lineage walk; a cleared flag
-  tombstones in the same transaction, so this bounded probe is the self-heal
-  for an interrupted clear, not the correctness path). Only then the writer
+  relevant, and so is a row whose PREVIOUS root the caller knows
+  (`previousRootsByTask` ↔ `previousRoots`: a re-point / clear from
+  `setCountsToward`; a pulled row that was flagged or re-pointed — web
+  `pullApply` ↔ iOS `applyPullBatchTx` compare the pre-image and mark it for
+  a FULL reconcile). Every key carries its root, so an unflagged row with no
+  known previous root has nothing derivable to reconcile — the earlier
+  256-event probe was retired for that reason. Only then the writer
   loads the workspace (tasks + a fork-children index, events live and any
   state, links live and any state), the lineage members' placements and
   boards, builds ONE fork-event resolver (a reverse map per fork, O(M) hashes
-  once), derives the wanted and candidate credits, unions the lineage's kept
-  credits, reads the stored events by id, and applies the plan's insert /
-  revise / tombstone actions — each first checked against the root's
-  seal-immune windows (cached per root; skipped on the late-log path); then
+  once), derives the wanted and candidate credits on every derivable root,
+  unions the lineage's kept credits and its amount rule, reads the stored
+  events by id, and applies the plan's insert / revise / tombstone actions —
+  each first checked against the root's seal-immune windows (cached per root;
+  only a write at the late-log stamp's instant is exempt). Web only: the
+  writer awaits its Dexie reads directly — a nested async helper around a
+  Dexie read adds a native-promise hop that loses Dexie's transaction zone and
+  would run the credit writes outside the caller's transaction. Then
   the root's hand-log writes (caches, baselines, copy propagation) — and the
   copies join that same board pass, so a copy on the contributor's own board
   is read with the new increment (its bingo reaches the result map). A finish
@@ -554,9 +592,10 @@ occurrence)`, `lineageRootId`, `resolveContributionState(…, window)`,
 - **Known edges (acceptable for PR 4; revisit if a real case surfaces):** a
   compound nested inside another placed compound (not placed itself) credits
   its lifetime evaluation only; a credit left inside a sealed window by a
-  suppressed write settles on the next cascade after a Reopen; an unflagged
-  FORK's lineage-scoped keys are not probed (its flagged lineage members
-  reconcile them).
+  suppressed write settles on the next cascade after a Reopen; an interrupted
+  re-point whose previous root no lineage member targets any more is
+  reconciled only by a cascade that learns that root (a pull of the row, or a
+  later re-point through `setCountsToward`).
 - No UI sets the flag yet; the editors need a picker that calls
   `setCountsToward` (validation codes → user lines) — PR 4.
 

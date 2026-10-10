@@ -764,13 +764,14 @@ user-favorable double credit. That edge caused the root-square counter bug
   `board:<boardId>` / `lifetime` only when that child owns no event). Windows
   are the kernel's: `[startDate, endDate]`, a sealed board bounded at
   `sealedAt`, a draft or deleted board not a window. Each credit's id is the
-  deterministic `countsTowardEventId(scope, occurrence)` (uuidv5; an own-event
-  id omits the contributor, a board-scoped fork's copied event resolves to its
-  source event through the `forkedFromTaskId` lineage, and a fork's scoped
-  keys use the lineage root, so the original and its fork share one credit —
-  tombstoned only when no live, flagged lineage member wants it), so every
-  device's re-derivation writes the same rows and union-by-id sync stays
-  correct. They are written by the board cascade (`writeCountsTowardForTasks`
+  deterministic `countsTowardEventId(rootId, scope, occurrence)` (uuidv5;
+  every key carries the TARGET root, so a re-point is a tombstone + an insert;
+  an own-event id omits the contributor, a board-scoped fork's copied event
+  resolves to its source event through the `forkedFromTaskId` lineage, and a
+  fork's scoped keys use the lineage root, so the original and its fork share
+  one credit — tombstoned only when no live, flagged lineage member wants it,
+  written at the lineage's one agreed amount), so every device's
+  re-derivation writes the same rows and union-by-id sync stays correct. They are written by the board cascade (`writeCountsTowardForTasks`
   ↔ `writeCountsToward`, around the board pass of `runBoardCascadeForTasks`
   and every other cascade entry incl. the pull and late-log paths), never by
   a UI gesture, as a per-contributor SET reconciliation: the wanted credits
@@ -785,9 +786,11 @@ user-favorable double credit. That edge caused the root-square counter bug
   windows like every other event (D11):** a credit write whose instant sits
   inside a seal-immune window of a sealed board holding the root or one of
   its copies is skipped (`isCreditWriteSealSuppressed` over the root's
-  `getSealImmuneWindowsForTask` ↔ `sealImmuneWindows`), except inside the
-  closed-board late-log path, which re-derives sealed boards deterministically
-  — a frozen record never moves because an open board was undone. The root's
+  `getSealImmuneWindowsForTask` ↔ `sealImmuneWindows`), except a credit at
+  exactly the instant the closed-board late-log path stamped (that path
+  re-derives sealed boards deterministically; a chained credit at another
+  instant stays suppressed) — a frozen record never moves because an open
+  board was undone. The root's
   caches, baselines and copies then follow exactly as for a hand log, and the
   copies' boards derive in the same pass. A deleted counter keeps its events
   (contributors are unflagged); a deleted contributor's credits are

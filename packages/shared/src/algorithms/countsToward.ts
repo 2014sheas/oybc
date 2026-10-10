@@ -68,7 +68,7 @@ import type { CompoundChild } from '../types/compoundChild';
 import type { Task } from '../types/task';
 import type { TaskEvent } from '../types/taskEvent';
 import { quantizeCount, resolveCountKind } from './countValue';
-import { createForkEventResolver, lineageRootId, type ForkEventResolver } from './countsTowardLineage';
+import { createForkEventResolver, isForkLineageLoaded, lineageRootId, type ForkEventResolver } from './countsTowardLineage';
 import { isWindowStampedDerived } from './memberRules';
 import {
   boardWindowEnd,
@@ -97,34 +97,38 @@ export type ContributionOccurrence =
   | { kind: 'lifetime' };
 
 /**
- * Deterministic id of the credit a contributor writes on its counter root
- * for `occurrence`. `contributorScopeId` is the contributor's fork-lineage
- * ROOT ({@link lineageRootId}) — a fork shares its original's scope, so the
- * two never mint distinct credits for one occurrence.
+ * Deterministic id of the credit a contributor writes on counter root
+ * `rootId` for `occurrence`. Every name carries the TARGET root, so lineage
+ * members share a credit only while they target the same counter (a re-point
+ * is a tombstone on the old root + an insert on the new one, never a flip).
+ * `contributorScopeId` is the contributor's fork-lineage ROOT
+ * ({@link lineageRootId}) — a fork shares its original's scope, so the two
+ * never mint distinct credits for one occurrence.
  *
- *   - `event`      → `uuidv5("counts-toward:event:<eventId>")` — an own event
- *                    belongs to exactly one task (a fork's copy resolves to its
- *                    source), so no scope is needed.
- *   - `childEvent` → `uuidv5("counts-toward:event:<scope>:child-event:<eventId>")`
+ *   - `event`      → `uuidv5("counts-toward:event:<rootId>:<eventId>")` — an
+ *                    own event belongs to exactly one task (a fork's copy
+ *                    resolves to its source), so no scope is needed.
+ *   - `childEvent` → `uuidv5("counts-toward:event:<rootId>:<scope>:child-event:<eventId>")`
  *                    — two compounds containing the same child each credit
  *                    their own completion of it.
- *   - `board`      → `uuidv5("counts-toward:event:<scope>:board:<boardId>")`.
- *   - `lifetime`   → `uuidv5("counts-toward:event:<scope>:lifetime")`.
+ *   - `board`      → `uuidv5("counts-toward:event:<rootId>:<scope>:board:<boardId>")`.
+ *   - `lifetime`   → `uuidv5("counts-toward:event:<rootId>:<scope>:lifetime")`.
  *
+ * @param rootId - The counter root the credit is written on.
  * @param contributorScopeId - The contributor's lineage root id (its own id when it is not a fork).
  * @param occurrence - The occurrence key.
  * @returns A stable uuidv5 — every device derives the same id.
  */
-export function countsTowardEventId(contributorScopeId: string, occurrence: ContributionOccurrence): string {
+export function countsTowardEventId(rootId: string, contributorScopeId: string, occurrence: ContributionOccurrence): string {
   switch (occurrence.kind) {
     case 'event':
-      return uuidv5(`${COUNTS_TOWARD_NAMESPACE}:${occurrence.eventId}`);
+      return uuidv5(`${COUNTS_TOWARD_NAMESPACE}:${rootId}:${occurrence.eventId}`);
     case 'childEvent':
-      return uuidv5(`${COUNTS_TOWARD_NAMESPACE}:${contributorScopeId}:child-event:${occurrence.eventId}`);
+      return uuidv5(`${COUNTS_TOWARD_NAMESPACE}:${rootId}:${contributorScopeId}:child-event:${occurrence.eventId}`);
     case 'board':
-      return uuidv5(`${COUNTS_TOWARD_NAMESPACE}:${contributorScopeId}:board:${occurrence.boardId}`);
+      return uuidv5(`${COUNTS_TOWARD_NAMESPACE}:${rootId}:${contributorScopeId}:board:${occurrence.boardId}`);
     case 'lifetime':
-      return uuidv5(`${COUNTS_TOWARD_NAMESPACE}:${contributorScopeId}:lifetime`);
+      return uuidv5(`${COUNTS_TOWARD_NAMESPACE}:${rootId}:${contributorScopeId}:lifetime`);
   }
 }
 
@@ -397,6 +401,8 @@ export interface ContributionInputs {
 export interface ContributionCredit {
   /** The credit's deterministic id ({@link countsTowardEventId}). */
   eventId: string;
+  /** The counter root the credit is written on. */
+  rootId: string;
   occurrence: ContributionOccurrence;
   /** The completion instant the credit is stamped at. */
   occurredAt: string;
@@ -444,23 +450,33 @@ function liveWindowsOf(task: Task, inputs: ContributionInputs): Array<{ boardId:
  *     that child owns no event, `board:<boardId>`; placed nowhere → the
  *     lifetime evaluation, keyed by the completing event or `lifetime`.
  *   - A linked row, an achievement, a counter root or a deleted task — none.
+ *   - A fork whose `forkedFromTaskId` chain is not fully loaded — none (its
+ *     keys depend on the lineage root, so it waits for the lineage to arrive;
+ *     {@link isForkLineageLoaded}).
  *
- * Does NOT consult the flag, the target or `countsTowardSince`:
+ * Keys are minted on `rootId` (default: the task's own target). Does NOT
+ * consult the flag's validity or `countsTowardSince`:
  * {@link planCountsTowardActions} applies those.
  *
  * @param task - The contributor.
  * @param inputs - See {@link ContributionInputs}.
- * @returns The wanted credits, deduplicated by id, in a deterministic order.
+ * @param rootId - The counter root to key the credits on (default: `task.countsTowardCounterId`).
+ * @returns The wanted credits, deduplicated by id, in a deterministic order; `[]` with no root.
  */
-export function resolveContributionCredits(task: Task, inputs: ContributionInputs): ContributionCredit[] {
-  if (task.isDeleted || task.isCounter === true) return [];
+export function resolveContributionCredits(
+  task: Task,
+  inputs: ContributionInputs,
+  rootId: string | null = task.countsTowardCounterId ?? null,
+): ContributionCredit[] {
+  if (rootId == null || task.isDeleted || task.isCounter === true) return [];
+  if (!isForkLineageLoaded(task, inputs.taskById)) return [];
   const resolver = resolverOf(inputs);
   const scope = lineageRootId(task, inputs.taskById);
   const byId = new Map<string, ContributionCredit>();
   const want = (occurrence: ContributionOccurrence, occurredAt: string): void => {
-    const eventId = countsTowardEventId(scope, occurrence);
+    const eventId = countsTowardEventId(rootId, scope, occurrence);
     const prior = byId.get(eventId);
-    if (!prior || toMs(occurredAt) < toMs(prior.occurredAt)) byId.set(eventId, { eventId, occurrence, occurredAt });
+    if (!prior || toMs(occurredAt) < toMs(prior.occurredAt)) byId.set(eventId, { eventId, rootId, occurrence, occurredAt });
   };
   const evaluate = (ctx: CompoundWindowContext): ContributionState =>
     resolveContributionState(task, inputs.childrenByCompound, inputs.taskById, ctx.eventsByTaskId, ctx);
@@ -591,67 +607,65 @@ function candidateSubtreeIds(task: Task, inputs: ContributionInputs): string[] {
 }
 
 /**
- * Every credit id `task` MAY own — a superset of
+ * Every credit id `task` MAY own on any of `rootIds` — a superset of
  * {@link resolveContributionCredits} built from live AND tombstoned data:
  * every event of the task (raw id, and its fork-resolved id when that
  * differs), for a compound every event of its subtree and of the roots its
  * linked children read (raw + resolved, links in any state), one `board` key
- * per placement (any state, boards any state), and the `lifetime` key. A
- * stored credit at any of these ids that is no longer wanted is tombstoned.
+ * per placement (any state, boards any state), and the `lifetime` key — each
+ * minted on every root in `rootIds`. A stored credit at any of these ids that
+ * is no longer wanted is tombstoned.
+ *
+ * `rootIds` is what the writer can derive: the task's current target, the
+ * current targets of its loaded lineage members, and a previous target the
+ * write path knows (a re-point / clear, a pulled row that was flagged). A
+ * previous root nobody remembers (an interrupted re-point) is reconciled by
+ * the next cascade that learns it.
  *
  * @param task - The contributor (flagged or not).
  * @param inputs - See {@link ContributionInputs}.
+ * @param rootIds - The counter roots to enumerate keys on.
  * @returns Sorted, deduplicated credit ids.
  */
-export function candidateContributionIds(task: Task, inputs: ContributionInputs): string[] {
+export function candidateContributionIds(task: Task, inputs: ContributionInputs, rootIds: ReadonlyArray<string>): string[] {
+  const roots = [...new Set(rootIds)];
+  if (roots.length === 0) return [];
   const resolver = resolverOf(inputs);
   const scope = lineageRootId(task, inputs.taskById);
-  const ids = new Set<string>();
+  const occurrences: ContributionOccurrence[] = [{ kind: 'lifetime' }];
   const addEventsOf = (ownerId: string, kind: 'event' | 'childEvent'): void => {
     const owner = inputs.taskById[ownerId];
     for (const e of inputs.allEventsByTaskId[ownerId] ?? []) {
-      ids.add(countsTowardEventId(scope, { kind, eventId: e.id }));
+      occurrences.push({ kind, eventId: e.id });
       const canonical = owner ? resolver.resolve(e.id, owner) : e.id;
-      if (canonical !== e.id) ids.add(countsTowardEventId(scope, { kind, eventId: canonical }));
+      if (canonical !== e.id) occurrences.push({ kind, eventId: canonical });
     }
   };
   addEventsOf(task.id, 'event');
   if (task.type === TaskType.COMPOUND) for (const id of candidateSubtreeIds(task, inputs)) addEventsOf(id, 'childEvent');
-  for (const p of inputs.placements) {
-    if (p.taskId === task.id) ids.add(countsTowardEventId(scope, { kind: 'board', boardId: p.boardId }));
-  }
-  ids.add(countsTowardEventId(scope, { kind: 'lifetime' }));
+  for (const p of inputs.placements) if (p.taskId === task.id) occurrences.push({ kind: 'board', boardId: p.boardId });
+  const ids = new Set<string>();
+  for (const rootId of roots) for (const o of occurrences) ids.add(countsTowardEventId(rootId, scope, o));
   return [...ids].sort(compareIds);
 }
 
 /**
- * The cheap PROBE a writer runs for an unflagged contributor with no fork
- * parent before deciding whether it is relevant at all: the `lifetime` key,
- * a `board` key per placement (any state) and the raw event key of each of
- * its own most recent events (`ownEvents`, the caller caps the count), all
- * scoped by the task's OWN id (the probe runs before the lineage is known, so
- * an unflagged fork's lineage-scoped keys are not probed — a flagged lineage
- * member reconciles those). An unflagged task holds credits only after an
- * interrupted flag clear (the clear tombstones in the same transaction), so
- * this bounded probe is the self-heal, not the correctness path.
+ * The amount a lineage writes on `rootId` — one deterministic rule when
+ * members disagree: the lineage root's (top ancestor's) amount when it is a
+ * live, flagged member targeting `rootId`, else the amount of the member
+ * with the smallest id among those. `1` when none qualifies.
  *
- * @param task - The unflagged contributor.
- * @param ownEvents - Its own events (any state), most recent first, capped.
- * @param placements - Its placements (any state).
+ * @param rootId - The counter root.
+ * @param members - The contributor and every loaded lineage member.
+ * @param lineageRootTaskId - {@link lineageRootId} of the lineage.
  */
-export function probeContributionIds(
-  task: Pick<Task, 'id'>,
-  ownEvents: ReadonlyArray<Pick<TaskEvent, 'id'>>,
-  placements: ReadonlyArray<Pick<BoardTask, 'boardId' | 'taskId'>>,
-): string[] {
-  const ids = new Set<string>([countsTowardEventId(task.id, { kind: 'lifetime' })]);
-  for (const e of ownEvents) ids.add(countsTowardEventId(task.id, { kind: 'event', eventId: e.id }));
-  for (const p of placements) if (p.taskId === task.id) ids.add(countsTowardEventId(task.id, { kind: 'board', boardId: p.boardId }));
-  return [...ids].sort(compareIds);
+export function lineageCreditDelta(rootId: string, members: ReadonlyArray<Task>, lineageRootTaskId: string): number {
+  const targeting = members
+    .filter((m) => !m.isDeleted && canContribute(m) && m.countsTowardCounterId === rootId)
+    .sort((a, b) => compareIds(a.id, b.id));
+  const chosen = targeting.find((m) => m.id === lineageRootTaskId) ?? targeting[0];
+  return chosen ? countsTowardAmountOf(chosen) : 1;
 }
-
-/** How many of an unflagged task's most recent events {@link probeContributionIds} looks at. */
-export const COUNTS_TOWARD_PROBE_EVENT_LIMIT = 256;
 
 /** One write the cascade makes for a contributing task. */
 export type CountsTowardAction =
@@ -671,6 +685,14 @@ export type CountsTowardAction =
 
 const EMPTY_IDS: ReadonlySet<string> = new Set();
 
+/** What the writer knows about the contributor's fork lineage, for {@link planCountsTowardActions}. */
+export interface LineageContext {
+  /** Credit ids the OTHER live, flagged lineage members keep ({@link keptCreditIdsFor}). */
+  wantedIds?: ReadonlySet<string>;
+  /** The amount the lineage writes on a root ({@link lineageCreditDelta}); default: the contributor's own. */
+  deltaForRoot?: (rootId: string) => number;
+}
+
 /**
  * Reconcile a contributor's credit SET: compare the wanted credits with the
  * stored events at every candidate id and decide each write.
@@ -678,24 +700,27 @@ const EMPTY_IDS: ReadonlySet<string> = new Set();
  *   - Wanted (live contributor, flagged, target valid, occurrence at or after
  *     `countsTowardSince` — {@link isOccurrenceWanted}) + no event → `insert`.
  *   - Wanted + a tombstoned event → `revise` (revive).
- *   - Wanted + a live event that differs (counter, amount or instant) →
- *     `revise`; identical → nothing (replay is a no-op).
+ *   - Wanted + a live event that differs (amount or instant) → `revise`;
+ *     identical → nothing (replay is a no-op). A moved counter is never a
+ *     revise: the key carries the root, so the old credit is tombstoned and a
+ *     new one inserted.
  *   - Not wanted + a live event → `tombstone` — an undone completion, a
  *     removed placement, a cleared flag (which tombstones every live credit),
- *     an occurrence before `since` — UNLESS another live, flagged member of
- *     the contributor's fork lineage still wants that credit
- *     (`lineageWantedIds`, from {@link keptCreditIdsFor} over the lineage):
- *     the credit belongs to the lineage, not to whichever member reconciled
- *     last.
+ *     an occurrence before `since`, a re-pointed counter — UNLESS another
+ *     live, flagged member of the contributor's fork lineage still wants that
+ *     credit (`lineage.wantedIds`, from {@link keptCreditIdsFor} over the
+ *     lineage): the credit belongs to the lineage, not to whichever member
+ *     reconciled last.
  *   - Counter deleted (or not pulled yet) → nothing: its events go with it
- *     (§3e) — no write either way.
+ *     (§3e) — no write either way. A fork whose lineage is not fully loaded →
+ *     nothing (its keys are not yet derivable).
  *
  * @param contributor - The task (flagged or not).
  * @param taskById - Every task by id (resolves the counter roots).
  * @param wanted - {@link resolveContributionCredits} for `contributor` (unfiltered).
  * @param candidateIds - {@link candidateContributionIds} for `contributor`.
  * @param storedById - The stored events at the wanted + candidate ids (any state).
- * @param lineageWantedIds - Credit ids the other lineage members keep.
+ * @param lineage - See {@link LineageContext}.
  * @returns The actions, ordered by credit id (deterministic).
  */
 export function planCountsTowardActions(
@@ -704,18 +729,21 @@ export function planCountsTowardActions(
   wanted: ReadonlyArray<ContributionCredit>,
   candidateIds: ReadonlyArray<string>,
   storedById: Record<string, TaskEvent | undefined>,
-  lineageWantedIds: ReadonlySet<string> = EMPTY_IDS,
+  lineage: LineageContext = {},
 ): CountsTowardAction[] {
   const targetId = contributor.countsTowardCounterId ?? null;
   const target = targetId != null ? taskById[targetId] : undefined;
   if (targetId != null && (!target || target.isDeleted)) return [];
+  if (!isForkLineageLoaded(contributor, taskById)) return [];
+  const lineageWantedIds = lineage.wantedIds ?? EMPTY_IDS;
+  const deltaFor = lineage.deltaForRoot ?? (() => countsTowardAmountOf(contributor));
 
   const canCredit = !contributor.isDeleted && canContribute(contributor) && isCountsTowardTarget(target);
   const wantedById = new Map<string, { rootId: string; delta: number; occurredAt: string }>();
   if (canCredit) {
     for (const w of wanted) {
-      if (!isOccurrenceWanted(contributor, w)) continue;
-      wantedById.set(w.eventId, { rootId: target.id, delta: countsTowardAmountOf(contributor), occurredAt: w.occurredAt });
+      if (w.rootId !== target.id || !isOccurrenceWanted(contributor, w)) continue;
+      wantedById.set(w.eventId, { rootId: target.id, delta: deltaFor(target.id), occurredAt: w.occurredAt });
     }
   }
   const ids = [...new Set([...wantedById.keys(), ...candidateIds])].sort(compareIds);
@@ -767,23 +795,26 @@ export function creditActionReach(action: CountsTowardAction): Array<{ rootId: s
  * (`getSealImmuneWindowsForTask(root)` ↔ `sealImmuneWindows(db:taskId:)`,
  * through {@link isEventSealImmune} — a credit carries no `boardId`, so the
  * late-log relaxation never applies to the credit row itself). The one
- * exception is a write that runs inside the closed-board LATE-LOG path
- * (`lateLog = true`), which already re-derives every sealed board
- * deterministically. The single place the write-skip policy lives.
+ * exception is the closed-board LATE-LOG path, which re-derives every sealed
+ * board deterministically: it passes the instant it stamped
+ * (`lateLogStamp`, the closed board's `endDate`), and only an instant EQUAL
+ * to that stamp is exempt — a chained credit deeper in the same cascade at
+ * another instant stays suppressed. The single place the write-skip policy
+ * lives.
  *
  * @param action - The planned write.
  * @param immuneWindowsByRoot - The immune windows per root the action reaches.
  * @param now - The write instant (the credit row's `createdAt`).
- * @param lateLog - `true` inside the closed-board late-log path.
+ * @param lateLogStamp - The late-logged instant, or `null` outside that path.
  */
 export function isCreditWriteSealSuppressed(
   action: CountsTowardAction,
   immuneWindowsByRoot: Record<string, ReadonlyArray<SealImmuneWindow>>,
   now: string,
-  lateLog: boolean,
+  lateLogStamp: string | null,
 ): boolean {
-  if (lateLog) return false;
   return creditActionReach(action).some(({ rootId, occurredAt }) => {
+    if (lateLogStamp != null && sameInstant(occurredAt, lateLogStamp)) return false;
     const windows = immuneWindowsByRoot[rootId] ?? [];
     return windows.length > 0 && isEventSealImmune({ occurredAt, createdAt: now, boardId: undefined }, windows);
   });

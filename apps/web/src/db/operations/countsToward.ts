@@ -1,7 +1,5 @@
-import Dexie from 'dexie';
 import { db } from '../internal';
 import {
-  COUNTS_TOWARD_PROBE_EVENT_LIMIT,
   SyncOperationType,
   buildForkChildrenIndex,
   canContribute,
@@ -14,8 +12,9 @@ import {
   isCreditWriteSealSuppressed,
   isFrozenRowReachedByEvent,
   keptCreditIdsFor,
+  lineageCreditDelta,
+  lineageRootId,
   planCountsTowardActions,
-  probeContributionIds,
   resolveContributionCredits,
   type Board,
   type CompoundChild,
@@ -39,7 +38,7 @@ import { runBoardCascadeForTasks } from './orchestration';
  * countsToward.ts — "counts toward", web data half
  * (docs/SHARED_COUNTER_SETTINGS.md §3b). Swift twin:
  * `AppDatabase+CountsToward.swift`. The pure rules live in `@oybc/shared`
- * (`countsToward.ts`); this module writes them.
+ * (`countsToward.ts` + `countsTowardLineage.ts`); this module writes them.
  *
  *   - {@link writeCountsTowardForTasks} / {@link finishCountsTowardRoots} —
  *     the cascade hook, wrapped around the board pass of every
@@ -48,13 +47,14 @@ import { runBoardCascadeForTasks } from './orchestration';
  *     transaction: for each changed task and each compound containing it,
  *     reconcile its credit SET on its counter root — one credit per
  *     completion occurrence (D10), counted from `countsTowardSince` (D11),
- *     the fork lineage's wants protected, the counter's sealed windows
- *     honoured (D11): insert / revise / tombstone (version bump + enqueue) —
- *     then write the root's log like a hand log; the board pass derives the
- *     copies' boards, the finish phase re-derives sealed boards and refreshes
- *     watchers.
+ *     keyed on the target root, the fork lineage's wants protected and its
+ *     amount agreed, the counter's sealed windows honoured (D11): insert /
+ *     revise / tombstone (version bump + enqueue) — then write the root's
+ *     log like a hand log; the board pass derives the copies' boards, the
+ *     finish phase re-derives sealed boards and refreshes watchers.
  *   - {@link setCountsToward} — the write-time entry that sets / clears the
- *     flag (validated by `countsTowardProblem`; stamps `countsTowardSince`).
+ *     flag (validated by `countsTowardProblem`; stamps `countsTowardSince`;
+ *     hands the previous root to the cascade so its credits are withdrawn).
  *   - {@link countContributorsOf} — the guard the kind switch and the delete
  *     paths read.
  */
@@ -111,8 +111,18 @@ export interface CountsTowardWrites {
 export interface CountsTowardWriteOptions {
   /** The live compound links, when the caller already loaded them. */
   liveChildren?: CompoundChild[];
-  /** `true` inside the closed-board late-log path (sealed windows are not a write barrier there — D11). */
-  lateLog?: boolean;
+  /**
+   * Inside the closed-board late-log path: the instant that path stamped
+   * (the closed board's `endDate`). Only a credit at that exact instant is
+   * exempt from the counter's sealed windows (D11).
+   */
+  lateLogStamp?: string | null;
+  /**
+   * Counter roots the named tasks counted toward BEFORE this write (a
+   * re-point / clear, a pulled row that was flagged) — their credits on those
+   * roots are reconciled too.
+   */
+  previousRootsByTask?: Record<string, string>;
   /** Chain depth (0 for a top-level call). */
   depth?: number;
 }
@@ -148,11 +158,6 @@ async function loadWorkspace(): Promise<Workspace> {
   return { taskById, forkChildren: buildForkChildrenIndex(tasks), childrenByCompound, allChildrenByCompound, eventsByTaskId, allEventsByTaskId };
 }
 
-/** The most recent `limit` events (any state) of `taskId`, newest first — the unflagged-task probe's input. */
-async function recentOwnEvents(taskId: string, limit: number): Promise<TaskEvent[]> {
-  return db.taskEvents.where('[taskId+occurredAt]').between([taskId, Dexie.minKey], [taskId, Dexie.maxKey]).reverse().limit(limit).toArray();
-}
-
 /**
  * The cascade hook, WRITE phase (§3b). For every task in `changedTaskIds` and
  * every compound transitively containing one, reconcile its credit set and
@@ -166,17 +171,15 @@ async function recentOwnEvents(taskId: string, limit: number): Promise<TaskEvent
  * {@link finishCountsTowardRoots} runs after it. Idempotent: a replay with no
  * state change writes nothing.
  *
- * Cost shape: rows that can never contribute (counter roots, linked copies,
- * achievements — `canContribute`) are dropped first. A FLAGGED candidate is
- * always relevant. An UNFLAGGED one is relevant only when a stored credit
- * exists at one of its PROBE ids (`probeContributionIds`: `lifetime`, a
- * `board` key per placement, the raw key of its most recent
- * `COUNTS_TOWARD_PROBE_EVENT_LIMIT` events — indexed reads, no lineage
- * walk); a cleared flag tombstones in the same transaction, so an unflagged
- * task holds credits only after an interrupted clear and the capped probe
- * is its self-heal. The whole-workspace loads, the fork lineage, the full
- * candidate keys and the per-root sealed windows are read only once a
- * candidate is relevant.
+ * Relevance: rows that can never contribute (counter roots, linked copies,
+ * achievements — `canContribute`) are dropped first; a FLAGGED row is
+ * relevant, and so is a row whose previous root the caller knows
+ * (`previousRootsByTask`). Every credit key carries its root, so an unflagged
+ * row with no known previous root has nothing derivable to reconcile — the
+ * write paths that clear or re-point a flag (`setCountsToward`, the pull of a
+ * row that was flagged) pass that root explicitly. The whole-workspace loads,
+ * the fork lineage, the candidate keys and the per-root sealed windows are
+ * read only once a candidate is relevant.
  *
  * MUST run inside the caller's `rw` transaction over `boards`, `boardTasks`,
  * `tasks`, `compoundChildren`, `taskEvents`, `syncQueue`.
@@ -193,7 +196,8 @@ export async function writeCountsTowardForTasks(
 ): Promise<CountsTowardWrites> {
   const out: CountsTowardWrites = { cascadeIds: new Set(), rootIds: new Set() };
   const depth = opts.depth ?? 0;
-  const lateLog = opts.lateLog === true;
+  const lateLogStamp = opts.lateLogStamp ?? null;
+  const previousRoots = opts.previousRootsByTask ?? {};
   if (depth > MAX_COUNTS_TOWARD_DEPTH) {
     console.debug('[countsToward] chain depth cap reached; not re-entering', { depth, changedTaskIds: [...changedTaskIds] });
     return out;
@@ -206,25 +210,9 @@ export async function writeCountsTowardForTasks(
   }
   if (candidates.size === 0) return out;
   const rows = (await db.tasks.bulkGet([...candidates])).filter(isDefined).filter(canContribute);
-  if (rows.length === 0) return out;
-
-  // Phase 1 — relevance. Flagged rows are relevant; unflagged rows only when
-  // a stored credit sits at one of their probe ids.
-  const storedById: Record<string, TaskEvent | undefined> = {};
-  const unflagged = rows.filter((t) => t.countsTowardCounterId == null);
-  const relevant = rows.filter((t) => t.countsTowardCounterId != null);
-  if (unflagged.length > 0) {
-    const placements = await db.boardTasks.where('taskId').anyOf(unflagged.map((t) => t.id)).toArray();
-    const probeIdsByTask = new Map<string, string[]>();
-    for (const t of unflagged) {
-      probeIdsByTask.set(t.id, probeContributionIds(t, await recentOwnEvents(t.id, COUNTS_TOWARD_PROBE_EVENT_LIMIT), placements));
-    }
-    for (const e of (await db.taskEvents.bulkGet([...new Set([...probeIdsByTask.values()].flat())])).filter(isDefined)) storedById[e.id] = e;
-    for (const t of unflagged) if ((probeIdsByTask.get(t.id) ?? []).some((id) => storedById[id] !== undefined)) relevant.push(t);
-  }
+  const relevant = rows.filter((t) => t.countsTowardCounterId != null || previousRoots[t.id] != null);
   if (relevant.length === 0) return out;
 
-  // Phase 2 — the workspace, the lineage, the full keys.
   const ws = await loadWorkspace();
   const resolver = createForkEventResolver(ws.taskById, ws.allEventsByTaskId);
   const lineageByTask = new Map(relevant.map((t) => [t.id, forkLineageIds(t.id, ws.taskById, ws.forkChildren)]));
@@ -252,11 +240,12 @@ export async function writeCountsTowardForTasks(
     }
     return kept;
   };
+  // Per-root seal-immune windows, cached for the cascade. Looked up INLINE
+  // below (not through an async helper): a second native-promise hop around a
+  // Dexie read loses Dexie's transaction zone, and the credit writes would
+  // then run outside the caller's transaction.
   const immuneByRoot: Record<string, ReadonlyArray<SealImmuneWindow>> = {};
-  const immuneFor = async (rootId: string): Promise<ReadonlyArray<SealImmuneWindow>> => {
-    if (!(rootId in immuneByRoot)) immuneByRoot[rootId] = await getSealImmuneWindowsForTask(rootId);
-    return immuneByRoot[rootId];
-  };
+  const storedById: Record<string, TaskEvent | undefined> = {};
 
   const reach = new Map<string, string[]>();
   const noteReach = (rootId: string, occurredAt: string): void => {
@@ -266,16 +255,30 @@ export async function writeCountsTowardForTasks(
   };
   for (const task of relevant) {
     const inputs = inputsFor(task);
+    const members = [task, ...(lineageByTask.get(task.id) ?? []).map((id) => ws.taskById[id]).filter(isDefined)];
+    // Every root the lineage currently targets, plus the one the caller knows
+    // this task targeted before — the keys a stale credit can sit under.
+    const candidateRoots = [
+      ...new Set([...members.map((m) => m.countsTowardCounterId).filter((r): r is string => r != null), ...(previousRoots[task.id] ? [previousRoots[task.id]] : [])]),
+    ];
     const wanted = resolveContributionCredits(task, inputs);
-    const candidateIds = candidateContributionIds(task, inputs);
+    const candidateIds = candidateContributionIds(task, inputs, candidateRoots);
     const lineageWanted = new Set((lineageByTask.get(task.id) ?? []).flatMap(keptFor));
+    const lineageRoot = lineageRootId(task, ws.taskById);
     const missing = [...new Set([...candidateIds, ...wanted.map((w) => w.eventId)])].filter((id) => !(id in storedById));
     for (const id of missing) storedById[id] = undefined;
     for (const e of (await db.taskEvents.bulkGet(missing)).filter(isDefined)) storedById[e.id] = e;
-    for (const action of planCountsTowardActions(task, ws.taskById, wanted, candidateIds, storedById, lineageWanted)) {
-      if (!lateLog) for (const { rootId } of creditActionReach(action)) await immuneFor(rootId);
-      if (isCreditWriteSealSuppressed(action, immuneByRoot, now, lateLog)) continue;
+    const actions = planCountsTowardActions(task, ws.taskById, wanted, candidateIds, storedById, {
+      wantedIds: lineageWanted,
+      deltaForRoot: (rootId) => lineageCreditDelta(rootId, members, lineageRoot),
+    });
+    for (const action of actions) {
+      for (const { rootId } of creditActionReach(action)) {
+        if (!(rootId in immuneByRoot)) immuneByRoot[rootId] = await getSealImmuneWindowsForTask(rootId);
+      }
+      if (isCreditWriteSealSuppressed(action, immuneByRoot, now, lateLogStamp)) continue;
       await writeCountsTowardAction(action, task.userId, storedById[action.eventId], now);
+      storedById[action.eventId] = await db.taskEvents.get(action.eventId);
       for (const { rootId, occurredAt } of creditActionReach(action)) noteReach(rootId, occurredAt);
     }
   }
@@ -286,7 +289,7 @@ export async function writeCountsTowardForTasks(
     out.rootIds.add(rootId);
     for (const id of ids) out.cascadeIds.add(id);
     // Chained contributors: a compound containing one of these copies.
-    const deeper = await writeCountsTowardForTasks(ids, now, { lateLog, depth: depth + 1 });
+    const deeper = await writeCountsTowardForTasks(ids, now, { lateLogStamp, depth: depth + 1 });
     for (const id of deeper.cascadeIds) out.cascadeIds.add(id);
     for (const id of deeper.rootIds) out.rootIds.add(id);
   }
@@ -401,8 +404,10 @@ export async function applyCountsTowardInTransaction(taskIds: Iterable<string>, 
  * its cascade so the credits follow at once. D11: setting the flag, or
  * re-pointing it at a DIFFERENT counter, stamps `countsTowardSince = now`
  * (occurrences before it never credit); changing only the amount keeps it;
- * a clear removes all three fields (clearable on sync). Authored: version
- * bump + UPDATE enqueue.
+ * a clear removes all three fields (clearable on sync). The previous root is
+ * handed to the cascade so the credits keyed on it are withdrawn (a re-point
+ * is a tombstone on the old root + an insert on the new one). Authored:
+ * version bump + UPDATE enqueue.
  *
  * @param taskId - The contributing task.
  * @param counterId - The Discrete counter root, or `null` to stop counting.
@@ -424,7 +429,8 @@ export async function setCountsToward(taskId: string, counterId: string | null, 
       });
       if (problem) throw new CountsTowardError(problem, `setCountsToward: ${taskId} → ${counterId} refused (${problem})`);
     }
-    const since = counterId == null ? undefined : counterId === task.countsTowardCounterId && task.countsTowardSince != null ? task.countsTowardSince : now;
+    const previousRoot = task.countsTowardCounterId ?? null;
+    const since = counterId == null ? undefined : counterId === previousRoot && task.countsTowardSince != null ? task.countsTowardSince : now;
     const { countsTowardCounterId: _id, countsTowardAmount: _amount, countsTowardSince: _since, ...rest } = task;
     const next: Task = {
       ...rest,
@@ -435,7 +441,7 @@ export async function setCountsToward(taskId: string, counterId: string | null, 
     };
     await db.tasks.put(next);
     await addToSyncQueue('tasks', taskId, SyncOperationType.UPDATE, next);
-    await runBoardCascadeForTasks([taskId]);
+    await runBoardCascadeForTasks([taskId], previousRoot != null && previousRoot !== counterId ? { countsTowardPreviousRoots: { [taskId]: previousRoot } } : {});
   });
 }
 

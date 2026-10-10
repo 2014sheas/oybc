@@ -2,14 +2,17 @@ import Foundation
 
 // MARK: - "Counts toward" — pure half
 //
-// Swift twin of `packages/shared/src/algorithms/countsToward.ts`
+// Swift twin of `packages/shared/src/algorithms/countsToward.ts` (+
+// `countsTowardLineage.ts` / `countsTowardValidation.ts`)
 // (docs/SHARED_COUNTER_SETTINGS.md §3). A contributing task carries
 // `countsTowardCounterId` (+ `countsTowardAmount`, nil = 1; `countsTowardSince`,
 // the instant the flag was set — D11). Its counter ROOT receives ONE increment
 // per COMPLETION OCCURRENCE of the contributor (D10, ruled 2026-10-10). Each
 // occurrence has a stable key and a deterministic credit id
-// (`eventId(contributorId:occurrence:)`); a withdrawn occurrence has its credit
-// tombstoned. The write lives in the cascade (`AppDatabase+CountsToward.swift`).
+// (`eventId(rootId:contributorScopeId:occurrence:)` — every key carries the
+// TARGET root, so lineage members share a credit only while they target the
+// same counter); a withdrawn occurrence has its credit tombstoned. The write
+// lives in the cascade (`AppDatabase+CountsToward.swift`).
 //
 // Occurrence keys: NORMAL — one per live completion event (key = the event
 // id); plain COUNTING — one per live placement window in which its windowed
@@ -17,13 +20,14 @@ import Foundation
 // evaluation, same key); COMPOUND — one per live placement window in which its
 // derivation is complete, keyed by the COMPLETING CHILD's event (All of → the
 // last child's, Any of → the first, At least N → the N-th; nested compounds
-// pass theirs up), so overlapping boards and board date edits collapse to one
-// credit; a latched child with no event → `board:<boardId>`, or `lifetime`
-// unplaced. An event key omits the contributor id, and a board-scoped fork's
-// copied event (`BoardScopedFork.forkedEventId`) resolves to its SOURCE event
-// through the `forkedFromTaskId` lineage (`ForkEventResolver`), so the original
-// and the fork share one credit; a member tombstones an event-keyed credit only
-// when NO live, flagged lineage member wants it (`plan`'s `lineageWantedIds`).
+// pass theirs up) under the compound's lineage-root scope; a latched child with
+// no event → `board:<boardId>`, or `lifetime` unplaced. An own-event key omits
+// the contributor, and a board-scoped fork's copied event
+// (`BoardScopedFork.forkedEventId`) resolves to its SOURCE event through the
+// `forkedFromTaskId` lineage (`ForkEventResolver`), so the original and the
+// fork share one credit; a member tombstones a credit only when NO live,
+// flagged lineage member wants it (`plan`'s `LineageContext.wantedIds`), and
+// the lineage writes one agreed amount (`lineageCreditDelta`).
 //
 // Pinned by `countsTowardVectors.json` (`CountsTowardVectorTests`). A change
 // here is a change in two places.
@@ -31,9 +35,6 @@ enum CountsToward {
 
     /// uuidv5 name prefix for a contributing task's counts-toward increments.
     static let namespace = "counts-toward:event"
-
-    /// How many of an unflagged task's most recent events `probeContributionIds` looks at.
-    static let probeEventLimit = 256
 
     /// Deepest `forkedFromTaskId` chain followed when resolving a copied event / a lineage.
     static let maxForkLineage = 8
@@ -50,21 +51,23 @@ enum CountsToward {
         case lifetime
     }
 
-    /// Deterministic id of the credit a contributor writes on its root for
-    /// `occurrence` (twin of the TS `countsTowardEventId`). `contributorScopeId`
-    /// is the contributor's fork-lineage ROOT (`lineageRootId`) — a fork shares
-    /// its original's scope. An own-event key omits the scope (an event belongs
-    /// to one task; a fork's copy resolves to its source).
-    static func eventId(contributorScopeId: String, occurrence: Occurrence) -> String {
+    /// Deterministic id of the credit a contributor writes on counter root
+    /// `rootId` for `occurrence` (twin of the TS `countsTowardEventId`). Every
+    /// name carries the target root (a re-point is a tombstone + an insert,
+    /// never a flip). `contributorScopeId` is the contributor's fork-lineage
+    /// ROOT (`lineageRootId`) — a fork shares its original's scope. An
+    /// own-event key omits the scope (an event belongs to one task; a fork's
+    /// copy resolves to its source).
+    static func eventId(rootId: String, contributorScopeId: String, occurrence: Occurrence) -> String {
         switch occurrence {
         case let .event(eventId):
-            return UUIDv5.uuidv5(name: "\(namespace):\(eventId)")
+            return UUIDv5.uuidv5(name: "\(namespace):\(rootId):\(eventId)")
         case let .childEvent(eventId):
-            return UUIDv5.uuidv5(name: "\(namespace):\(contributorScopeId):child-event:\(eventId)")
+            return UUIDv5.uuidv5(name: "\(namespace):\(rootId):\(contributorScopeId):child-event:\(eventId)")
         case let .board(boardId):
-            return UUIDv5.uuidv5(name: "\(namespace):\(contributorScopeId):board:\(boardId)")
+            return UUIDv5.uuidv5(name: "\(namespace):\(rootId):\(contributorScopeId):board:\(boardId)")
         case .lifetime:
-            return UUIDv5.uuidv5(name: "\(namespace):\(contributorScopeId):lifetime")
+            return UUIDv5.uuidv5(name: "\(namespace):\(rootId):\(contributorScopeId):lifetime")
         }
     }
 
@@ -78,6 +81,19 @@ enum CountsToward {
             current = parent
         }
         return current.id
+    }
+
+    /// Whether every ancestor on `task`'s `forkedFromTaskId` chain is loaded. A
+    /// fork whose original has not been pulled yet produces no credits and no
+    /// actions until it has (its scope would otherwise move when the original lands).
+    static func isForkLineageLoaded(_ task: Task, taskById: [String: Task]) -> Bool {
+        var current = task
+        for _ in 0..<maxForkLineage {
+            guard let parentId = current.forkedFromTaskId else { return true }
+            guard let parent = taskById[parentId] else { return false }
+            current = parent
+        }
+        return true
     }
 
     /// The increment a contributor writes: `countsTowardAmount`, or 1 when absent / not positive.
@@ -128,20 +144,27 @@ enum CountsToward {
         return ma == mb
     }
 
-    /// Ascending by parsed instant, then by the tie-break keys (deterministic).
+    /// The TS `toMs(a) - toMs(b) || compareIds(a, b)` idiom: an unparseable
+    /// instant on EITHER side (NaN difference) falls through to the raw-string
+    /// compare, so `""` (no instant) sorts before any dated instant.
+    private static func instantBefore(_ a: String, _ b: String) -> Bool? {
+        let diff = epochMs(a) - epochMs(b)
+        if !diff.isNaN && diff != 0 { return diff < 0 }
+        if a != b { return a < b }
+        return nil
+    }
+
+    /// Ascending by parsed instant, then by the tie-break keys (deterministic;
+    /// mirrors the TS `compareStates` byte for byte).
     private static func stateBefore(_ a: ContributionState, _ b: ContributionState) -> Bool {
-        let (ia, ib) = (a.completedAt ?? "", b.completedAt ?? "")
-        let (ma, mb) = (epochMs(ia), epochMs(ib))
-        if ma != mb, !(ma.isNaN && mb.isNaN) { return ma.isNaN ? false : mb.isNaN ? true : ma < mb }
-        if ia != ib { return ia < ib }
+        if let byInstant = instantBefore(a.completedAt ?? "", b.completedAt ?? "") { return byInstant }
         let (ea, eb) = (a.completingEventId ?? "", b.completingEventId ?? "")
         if ea != eb { return ea < eb }
         return (a.completingTaskId ?? "") < (b.completingTaskId ?? "")
     }
 
     private static func eventBefore(_ a: TaskEvent, _ b: TaskEvent) -> Bool {
-        let (ma, mb) = (epochMs(a.occurredAt), epochMs(b.occurredAt))
-        if ma != mb { return ma < mb }
+        if let byInstant = instantBefore(a.occurredAt, b.occurredAt) { return byInstant }
         return a.id < b.id
     }
 
@@ -388,8 +411,10 @@ enum CountsToward {
 
     /// One credit a contributor wants on its counter root.
     struct Credit: Equatable {
-        /// The credit's deterministic id (`eventId(contributorId:occurrence:)`).
+        /// The credit's deterministic id (`eventId(rootId:contributorScopeId:occurrence:)`).
         let eventId: String
+        /// The counter root the credit is written on.
+        let rootId: String
         let occurrence: Occurrence
         /// The completion instant the credit is stamped at.
         let occurredAt: String
@@ -416,24 +441,27 @@ enum CountsToward {
             out.append((b.id, b.startDate, CompoundWindowContext(windowStart: b.startDate, windowEnd: boardWindowEnd(b), eventsByTaskId: events)))
         }
         return out.sorted { a, b in
-            let (ma, mb) = (epochMs(a.startDate), epochMs(b.startDate))
-            if ma != mb { return ma < mb }
+            if let byInstant = instantBefore(a.startDate, b.startDate) { return byInstant }
             return a.boardId < b.boardId
         }
     }
 
-    /// The credits `task` WANTS on its counter root, from live data (twin of
-    /// the TS `resolveContributionCredits`). Does NOT consult the flag, the
-    /// target or `countsTowardSince`: `plan` applies those.
-    static func resolveContributionCredits(_ task: Task, inputs: Inputs) -> [Credit] {
-        if task.isDeleted || task.isCounter { return [] }
+    /// The credits `task` WANTS on counter root `rootId` (default: its own
+    /// target), from live data (twin of the TS `resolveContributionCredits`).
+    /// Nothing without a root, for a non-contributor, or for a fork whose
+    /// lineage is not fully loaded. Does NOT consult the flag's validity or
+    /// `countsTowardSince`: `plan` applies those.
+    static func resolveContributionCredits(_ task: Task, inputs: Inputs, rootId explicitRoot: String?? = nil) -> [Credit] {
+        let rootId: String? = explicitRoot ?? task.countsTowardCounterId
+        guard let rootId, !task.isDeleted, !task.isCounter else { return [] }
+        guard isForkLineageLoaded(task, taskById: inputs.taskById) else { return [] }
         let resolver = inputs.resolver
         let scope = lineageRootId(task, taskById: inputs.taskById)
         var byId: [String: Credit] = [:]
         func want(_ occurrence: Occurrence, _ occurredAt: String) {
-            let id = eventId(contributorScopeId: scope, occurrence: occurrence)
+            let id = eventId(rootId: rootId, contributorScopeId: scope, occurrence: occurrence)
             if let prior = byId[id], !(epochMs(occurredAt) < epochMs(prior.occurredAt)) { return }
-            byId[id] = Credit(eventId: id, occurrence: occurrence, occurredAt: occurredAt)
+            byId[id] = Credit(eventId: id, rootId: rootId, occurrence: occurrence, occurredAt: occurredAt)
         }
         func evaluate(_ ctx: CompoundWindowContext) -> ContributionState {
             resolveContributionState(
@@ -449,7 +477,7 @@ enum CountsToward {
                 want(eventOccurrence(e.id, ownerId: task.id, inputs: inputs, resolver: resolver), e.occurredAt)
             }
         case .counting:
-            if let rootId = task.sharedCounterId, !rootId.isEmpty { return [] }
+            if let linked = task.sharedCounterId, !linked.isEmpty { return [] }
             let windows = liveWindows(of: task, inputs: inputs)
             for ctx in windows.isEmpty ? [lifetimeCtx] : windows.map(\.ctx) {
                 let s = evaluate(ctx)
@@ -507,7 +535,7 @@ enum CountsToward {
 
     /// The credit ids the planner would KEEP for `contributor` — its wanted
     /// credits gated by the flag, the target and `isOccurrenceWanted` — exposed
-    /// so a lineage member's wants can be unioned (`plan`'s `lineageWantedIds`).
+    /// so a lineage member's wants can be unioned (`plan`'s `LineageContext.wantedIds`).
     static func keptCreditIds(for contributor: Task, inputs: Inputs) -> [String] {
         let target = contributor.countsTowardCounterId.flatMap { inputs.taskById[$0] }
         guard !contributor.isDeleted, canContribute(contributor), isTarget(target) else { return [] }
@@ -535,49 +563,50 @@ enum CountsToward {
         return out
     }
 
-    /// Every credit id `task` MAY own (twin of the TS `candidateContributionIds`):
-    /// every event of the task (raw, plus its fork-resolved id when that differs),
-    /// for a compound every event of its subtree and the roots its linked children
-    /// read, a `board` key per placement (any state), and `lifetime`.
-    static func candidateContributionIds(_ task: Task, inputs: Inputs) -> [String] {
+    /// Every credit id `task` MAY own on any of `rootIds` (twin of the TS
+    /// `candidateContributionIds`): every event of the task (raw, plus its
+    /// fork-resolved id when that differs), for a compound every event of its
+    /// subtree and the roots its linked children read, a `board` key per
+    /// placement (any state), and `lifetime` — each minted on every root.
+    static func candidateContributionIds(_ task: Task, inputs: Inputs, rootIds: [String]) -> [String] {
+        let roots = Array(Set(rootIds))
+        guard !roots.isEmpty else { return [] }
         let resolver = inputs.resolver
         let scope = lineageRootId(task, taskById: inputs.taskById)
-        var ids = Set<String>()
+        var occurrences: [Occurrence] = [.lifetime]
         func addEvents(of ownerId: String, asChild: Bool) {
             let owner = inputs.taskById[ownerId]
             func key(_ id: String) -> Occurrence { asChild ? .childEvent(eventId: id) : .event(eventId: id) }
             for e in inputs.allEventsByTaskId[ownerId] ?? [] {
-                ids.insert(eventId(contributorScopeId: scope, occurrence: key(e.id)))
+                occurrences.append(key(e.id))
                 let canonical = owner.map { resolver.resolve(e.id, task: $0) } ?? e.id
-                if canonical != e.id { ids.insert(eventId(contributorScopeId: scope, occurrence: key(canonical))) }
+                if canonical != e.id { occurrences.append(key(canonical)) }
             }
         }
         addEvents(of: task.id, asChild: false)
         if task.type == .compound { for id in candidateSubtreeIds(task, inputs: inputs) { addEvents(of: id, asChild: true) } }
-        for p in inputs.placements where p.taskId == task.id {
-            ids.insert(eventId(contributorScopeId: scope, occurrence: .board(boardId: p.boardId)))
-        }
-        ids.insert(eventId(contributorScopeId: scope, occurrence: .lifetime))
+        for p in inputs.placements where p.taskId == task.id { occurrences.append(.board(boardId: p.boardId)) }
+        var ids = Set<String>()
+        for rootId in roots { for o in occurrences { ids.insert(eventId(rootId: rootId, contributorScopeId: scope, occurrence: o)) } }
         return ids.sorted()
     }
 
-    /// The cheap PROBE the writer runs for an unflagged contributor before
-    /// deciding whether it is relevant: `lifetime`, a `board` key per placement
-    /// (any state) and the raw event key of each of its most recent events
-    /// (`ownEvents`, capped by the caller at `probeEventLimit`), scoped by the
-    /// task's OWN id (the lineage is not known yet; a flagged lineage member
-    /// reconciles lineage-scoped keys).
-    static func probeContributionIds(taskId: String, ownEvents: [TaskEvent], placements: [BoardTask]) -> [String] {
-        var ids: Set<String> = [eventId(contributorScopeId: taskId, occurrence: .lifetime)]
-        for e in ownEvents { ids.insert(eventId(contributorScopeId: taskId, occurrence: .event(eventId: e.id))) }
-        for p in placements where p.taskId == taskId { ids.insert(eventId(contributorScopeId: taskId, occurrence: .board(boardId: p.boardId))) }
-        return ids.sorted()
+    /// The amount a lineage writes on `rootId` — one deterministic rule when
+    /// members disagree: the lineage root's (top ancestor's) amount when it is
+    /// a live, flagged member targeting `rootId`, else the amount of the
+    /// member with the smallest id among those; 1 when none qualifies.
+    static func lineageCreditDelta(rootId: String, members: [Task], lineageRootTaskId: String) -> Int {
+        let targeting = members
+            .filter { !$0.isDeleted && canContribute($0) && $0.countsTowardCounterId == rootId }
+            .sorted { $0.id < $1.id }
+        let chosen = targeting.first { $0.id == lineageRootTaskId } ?? targeting.first
+        return chosen.map(amount(of:)) ?? 1
     }
 
     /// One write the cascade makes for a contributing task.
     enum Action: Equatable {
         case insert(eventId: String, rootId: String, delta: Int, occurredAt: String)
-        /// Update a stored event in place (amount / instant / counter moved, or a revive).
+        /// Update a stored event in place (amount / instant moved, or a revive).
         case revise(
             eventId: String, rootId: String, delta: Int, occurredAt: String,
             previousRootId: String, previousOccurredAt: String, wasDeleted: Bool
@@ -603,28 +632,40 @@ enum CountsToward {
         }
     }
 
+    /// What the writer knows about the contributor's fork lineage (twin of the TS `LineageContext`).
+    struct LineageContext {
+        /// Credit ids the OTHER live, flagged lineage members keep.
+        var wantedIds: Set<String> = []
+        /// The amount the lineage writes on a root; `nil` → the contributor's own.
+        var deltaForRoot: ((String) -> Int)? = nil
+    }
+
     /// Reconcile a contributor's credit SET (twin of the TS
     /// `planCountsTowardActions`): insert / revise / tombstone per candidate id,
     /// in id order; nothing for an identical live row; a tombstone is withheld
-    /// for a credit another live, flagged lineage member still wants
-    /// (`lineageWantedIds`); nothing at all while the counter is deleted (or not
-    /// pulled yet). Occurrences before `countsTowardSince` are not wanted (D11).
+    /// for a credit another live, flagged lineage member still wants; a moved
+    /// counter is a tombstone + an insert (the key carries the root); nothing
+    /// at all while the counter is deleted / not pulled yet or the fork
+    /// lineage is not fully loaded. Occurrences before `countsTowardSince` are
+    /// not wanted (D11).
     static func plan(
         contributor: Task,
         taskById: [String: Task],
         wanted: [Credit],
         candidateIds: [String],
         storedById: [String: TaskEvent],
-        lineageWantedIds: Set<String> = []
+        lineage: LineageContext = LineageContext()
     ) -> [Action] {
         let targetId = contributor.countsTowardCounterId
         let target = targetId.flatMap { taskById[$0] }
         if targetId != nil, target == nil || target?.isDeleted == true { return [] }
+        guard isForkLineageLoaded(contributor, taskById: taskById) else { return [] }
+        let deltaFor: (String) -> Int = lineage.deltaForRoot ?? { _ in amount(of: contributor) }
 
         var wantedById: [String: (rootId: String, delta: Int, occurredAt: String)] = [:]
         if !contributor.isDeleted, canContribute(contributor), isTarget(target), let target {
-            for w in wanted where isOccurrenceWanted(since: contributor.countsTowardSince, occurredAt: w.occurredAt) {
-                wantedById[w.eventId] = (target.id, amount(of: contributor), w.occurredAt)
+            for w in wanted where w.rootId == target.id && isOccurrenceWanted(since: contributor.countsTowardSince, occurredAt: w.occurredAt) {
+                wantedById[w.eventId] = (target.id, deltaFor(target.id), w.occurredAt)
             }
         }
         let ids = Set(wantedById.keys).union(candidateIds).sorted()
@@ -635,7 +676,7 @@ enum CountsToward {
             let want = wantedById[id]
             if let existing, !existing.isDeleted {
                 guard let want else {
-                    if lineageWantedIds.contains(id) { continue }
+                    if lineage.wantedIds.contains(id) { continue }
                     guard let root = taskById[existing.taskId], !root.isDeleted else { continue }
                     actions.append(.tombstone(eventId: id, rootId: root.id, occurredAt: existing.occurredAt))
                     continue
@@ -667,13 +708,15 @@ enum CountsToward {
     /// for a revise also the previous instant, on the previous root) sits inside
     /// a seal-immune window of a sealed board holding that root or one of its
     /// copies (`AppDatabase.sealImmuneWindows(db:taskId:)` on the root), EXCEPT
-    /// inside the closed-board late-log path (`lateLog`), which re-derives every
-    /// sealed board deterministically. The single place the write-skip policy lives.
+    /// an instant EQUAL to the closed-board late-log path's stamp
+    /// (`lateLogStamp`) — that path re-derives every sealed board
+    /// deterministically; a chained credit at another instant stays suppressed.
+    /// The single place the write-skip policy lives.
     static func isCreditWriteSealSuppressed(
-        _ action: Action, immuneWindowsByRoot: [String: [SealImmuneWindow]], now: String, lateLog: Bool
+        _ action: Action, immuneWindowsByRoot: [String: [SealImmuneWindow]], now: String, lateLogStamp: String?
     ) -> Bool {
-        if lateLog { return false }
-        return action.reach.contains { r in
+        action.reach.contains { r in
+            if let stamp = lateLogStamp, sameInstant(r.occurredAt, stamp) { return false }
             let windows = immuneWindowsByRoot[r.rootId] ?? []
             return !windows.isEmpty && isEventSealImmune(occurredAt: r.occurredAt, createdAt: now, boardId: nil, windows: windows)
         }

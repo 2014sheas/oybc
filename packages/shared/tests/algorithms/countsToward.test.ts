@@ -17,8 +17,8 @@ import {
   isCreditWriteSealSuppressed,
   isOccurrenceWanted,
   keptCreditIdsFor,
+  lineageCreditDelta,
   planCountsTowardActions,
-  probeContributionIds,
   resolveContributionCredits,
   resolveContributionState,
   type ContributionInputs,
@@ -29,6 +29,7 @@ import {
   canonicalOccurrenceEventId,
   createForkEventResolver,
   forkLineageIds,
+  isForkLineageLoaded,
   lineageRootId,
 } from '../../src/algorithms/countsTowardLineage';
 import { countsTowardProblem } from '../../src/algorithms/countsTowardValidation';
@@ -38,10 +39,11 @@ import { buildSealImmuneWindows } from '../../src/algorithms/taskEvents';
 import { TaskSchema } from '../../src/validation/schemas';
 
 /**
- * Vector pins for `countsToward.ts` ↔ iOS `CountsToward.swift`
- * (`CountsTowardVectorTests`) — docs/SHARED_COUNTER_SETTINGS.md §3 (D10: one
- * credit per completion occurrence; D11: count from `countsTowardSince`,
- * credits honour sealed windows).
+ * Vector pins for `countsToward.ts` (+ lineage / validation) ↔ iOS
+ * `CountsToward.swift` (`CountsTowardVectorTests`) —
+ * docs/SHARED_COUNTER_SETTINGS.md §3 (D10: one credit per completion
+ * occurrence; D11: count from `countsTowardSince`, credits honour sealed
+ * windows).
  */
 
 const V = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'fixtures', 'countsTowardVectors.json'), 'utf8'));
@@ -195,16 +197,18 @@ function toInputs(v: any): { task: Task; inputs: ContributionInputs } {
 const byId = <T extends { eventId: string }>(rows: T[]): T[] => [...rows].sort((a, b) => (a.eventId < b.eventId ? -1 : a.eventId > b.eventId ? 1 : 0));
 
 describe('countsTowardVectors — eventId', () => {
-  it.each(V.eventId as any[])('$contributorId $occurrence.kind', (v: any) => {
-    expect(countsTowardEventId(v.contributorId, v.occurrence)).toBe(v.expected);
+  it.each(V.eventId as any[])('$root $contributorId $occurrence.kind', (v: any) => {
+    expect(countsTowardEventId(v.root, v.contributorId, v.occurrence)).toBe(v.expected);
   });
 
-  it('uses the counts-toward name prefix; an event key ignores the contributor, the other keys include it', () => {
+  it('every key carries the root; an own-event key ignores the scope, the other keys include it', () => {
     expect(COUNTS_TOWARD_NAMESPACE).toBe('counts-toward:event');
     const ev: ContributionOccurrence = { kind: 'event', eventId: 'x' };
-    expect(countsTowardEventId('a', ev)).toBe(countsTowardEventId('b', ev));
-    expect(countsTowardEventId('a', { kind: 'lifetime' })).not.toBe(countsTowardEventId('b', { kind: 'lifetime' }));
-    expect(countsTowardEventId('a', { kind: 'board', boardId: 'b1' })).not.toBe(countsTowardEventId('a', { kind: 'lifetime' }));
+    expect(countsTowardEventId('root', 'a', ev)).toBe(countsTowardEventId('root', 'b', ev));
+    expect(countsTowardEventId('root', 'a', ev)).not.toBe(countsTowardEventId('root2', 'a', ev));
+    expect(countsTowardEventId('root', 'a', { kind: 'lifetime' })).not.toBe(countsTowardEventId('root', 'b', { kind: 'lifetime' }));
+    expect(countsTowardEventId('root', 'a', { kind: 'childEvent', eventId: 'x' })).not.toBe(countsTowardEventId('root', 'a', ev));
+    expect(countsTowardEventId('root', 'a', { kind: 'board', boardId: 'b1' })).not.toBe(countsTowardEventId('root', 'a', { kind: 'lifetime' }));
   });
 });
 
@@ -250,26 +254,35 @@ describe('countsTowardVectors — resolveContributionCredits', () => {
     const { task, inputs } = toInputs(v);
     const scope = lineageRootId(task, inputs.taskById);
     const expected = byId(
-      (v.expected as any[]).map((e) => ({ eventId: countsTowardEventId(scope, e.occurrence), occurrence: e.occurrence, occurredAt: e.occurredAt })),
+      (v.expected as any[]).map((e) => {
+        const rootId = e.root ?? 'root';
+        return { eventId: countsTowardEventId(rootId, scope, e.occurrence), rootId, occurrence: e.occurrence, occurredAt: e.occurredAt };
+      }),
     );
     expect(resolveContributionCredits(task, inputs)).toEqual(expected);
   });
 
-  it('every wanted credit is among the candidates', () => {
+  it('every wanted credit is among the candidates on its root', () => {
     for (const v of V.credits as any[]) {
       const { task, inputs } = toInputs(v);
-      const candidates = new Set(candidateContributionIds(task, inputs));
-      for (const c of resolveContributionCredits(task, inputs)) {
-        expect({ name: v.name, has: candidates.has(c.eventId) }).toEqual({ name: v.name, has: true });
-      }
+      const credits = resolveContributionCredits(task, inputs);
+      const candidates = new Set(candidateContributionIds(task, inputs, [...new Set(credits.map((c) => c.rootId))]));
+      for (const c of credits) expect({ name: v.name, has: candidates.has(c.eventId) }).toEqual({ name: v.name, has: true });
     }
   });
 
-  it('a shared resolver gives the same credits as an ad-hoc one', () => {
+  it('a shared resolver gives the same credits as an ad-hoc one; an explicit root re-keys them', () => {
     for (const v of V.credits as any[]) {
       const { task, inputs } = toInputs(v);
       const shared = { ...inputs, forkEvents: createForkEventResolver(inputs.taskById, inputs.allEventsByTaskId) };
-      expect(resolveContributionCredits(task, shared)).toEqual(resolveContributionCredits(task, inputs));
+      const credits = resolveContributionCredits(task, inputs);
+      expect(resolveContributionCredits(task, shared)).toEqual(credits);
+      expect(resolveContributionCredits(task, inputs, null)).toEqual([]);
+      if (task.countsTowardCounterId == null) continue; // unflagged: nothing on its own root; an explicit root still keys its occurrences
+      const onOther = resolveContributionCredits(task, inputs, 'root2');
+      const occurrences = (rows: typeof credits): string[] => rows.map((c) => JSON.stringify([c.occurrence, c.occurredAt])).sort();
+      expect(occurrences(onOther)).toEqual(occurrences(credits));
+      for (const c of onOther) expect(c.rootId).toBe('root2');
     }
   });
 });
@@ -278,8 +291,14 @@ describe('countsTowardVectors — candidateContributionIds', () => {
   it.each(V.candidates as any[])('$name', (v: any) => {
     const { task, inputs } = toInputs(v);
     const scope = lineageRootId(task, inputs.taskById);
-    const expected = [...new Set((v.expected as ContributionOccurrence[]).map((o) => countsTowardEventId(scope, o)))].sort();
-    expect(candidateContributionIds(task, inputs)).toEqual(expected);
+    const expected = [...new Set((v.expected as any[]).map((e) => countsTowardEventId(e.root ?? 'root', scope, e.occurrence ?? e)))].sort();
+    expect(candidateContributionIds(task, inputs, v.roots)).toEqual(expected);
+  });
+});
+
+describe('countsTowardVectors — lineageCreditDelta', () => {
+  it.each(V.lineageDelta as any[])('$name', (v: any) => {
+    expect(lineageCreditDelta(v.root, (v.members as MiniTask[]).map(toTask), v.lineageRoot)).toBe(v.expected);
   });
 });
 
@@ -304,15 +323,18 @@ describe('fork lineage', () => {
     expect(canonicalOccurrenceEventId('x', orphan, taskById, all)).toBe('x');
   });
 
-  it('lineageRootId is the top of the loaded forkedFromTaskId chain', () => {
+  it('lineageRootId is the top of the loaded chain; isForkLineageLoaded is false while an ancestor is missing', () => {
     expect(lineageRootId(f2, taskById)).toBe('o');
     expect(lineageRootId(g1, taskById)).toBe('o');
     expect(lineageRootId(o, taskById)).toBe('o');
     expect(lineageRootId(orphan, taskById)).toBe('orphan');
+    expect(isForkLineageLoaded(f2, taskById)).toBe(true);
+    expect(isForkLineageLoaded(o, taskById)).toBe(true);
+    expect(isForkLineageLoaded(orphan, taskById)).toBe(false);
+    expect(isForkLineageLoaded(f2, { f2, f1 })).toBe(false);
     const compoundKey: ContributionOccurrence = { kind: 'childEvent', eventId: 'e' };
-    expect(countsTowardEventId(lineageRootId(f2, taskById), compoundKey)).toBe(countsTowardEventId('o', compoundKey));
-    expect(countsTowardEventId('o', compoundKey)).not.toBe(countsTowardEventId('p', compoundKey));
-    expect(countsTowardEventId('o', compoundKey)).not.toBe(countsTowardEventId('o', { kind: 'event', eventId: 'e' }));
+    expect(countsTowardEventId('r', lineageRootId(f2, taskById), compoundKey)).toBe(countsTowardEventId('r', 'o', compoundKey));
+    expect(countsTowardEventId('r', 'o', compoundKey)).not.toBe(countsTowardEventId('r', 'p', compoundKey));
   });
 
   it('forkLineageIds reaches ancestors, descendants and siblings, excluding the task itself', () => {
@@ -330,15 +352,19 @@ describe('countsTowardVectors — planCountsTowardActions', () => {
     const contributor = toTask(v.contributor);
     const tasks = (v.tasks as MiniTask[]).map(toTask);
     const taskById = Object.fromEntries([...tasks, contributor].map((t) => [t.id, t]));
-    const idOf = (o: ContributionOccurrence): string => countsTowardEventId(contributor.id, o);
-    const wanted = (v.wanted as any[]).map((w) => ({ eventId: idOf(w.occurrence), occurrence: w.occurrence, occurredAt: w.occurredAt }));
-    const candidates = (v.candidates as ContributionOccurrence[]).map(idOf);
+    const idOf = (o: ContributionOccurrence, root = 'root'): string => countsTowardEventId(root, contributor.id, o);
+    const wanted = (v.wanted as any[]).map((w) => ({ eventId: idOf(w.occurrence, w.root), rootId: w.root ?? 'root', occurrence: w.occurrence, occurredAt: w.occurredAt }));
+    const candidates = (v.candidates as any[]).map((c) => idOf(c.occurrence, c.root));
     const storedById: Record<string, TaskEvent> = {};
     for (const s of v.stored as any[]) {
-      storedById[idOf(s.occurrence)] = toEvent({ id: idOf(s.occurrence), taskId: s.taskId, delta: s.delta, occurredAt: s.occurredAt, isDeleted: s.isDeleted }, 0);
+      const id = idOf(s.occurrence, s.taskId);
+      storedById[id] = toEvent({ id, taskId: s.taskId, delta: s.delta, occurredAt: s.occurredAt, isDeleted: s.isDeleted }, 0);
     }
-    const lineage = new Set(((v.lineageWanted ?? []) as ContributionOccurrence[]).map(idOf));
-    const expected = byId((v.expected as any[]).map(({ occurrence, ...rest }) => ({ eventId: idOf(occurrence), ...rest })));
+    const lineage = {
+      wantedIds: new Set(((v.lineageWanted ?? []) as any[]).map((c) => idOf(c.occurrence, c.root))),
+      ...(v.lineageDelta ? { deltaForRoot: (rootId: string) => v.lineageDelta[rootId] ?? countsTowardAmountOf(contributor) } : {}),
+    };
+    const expected = byId((v.expected as any[]).map(({ occurrence, root, ...rest }) => ({ eventId: idOf(occurrence, root), ...rest })));
     expect(planCountsTowardActions(contributor, taskById, wanted, candidates, storedById, lineage)).toEqual(expected);
   });
 });
@@ -364,7 +390,7 @@ describe('isOccurrenceWanted / keptCreditIdsFor (D11)', () => {
       placements: [],
       boardById: {},
     };
-    expect(keptCreditIdsFor(t, base)).toEqual([countsTowardEventId('t', { kind: 'event', eventId: 'c2' })]);
+    expect(keptCreditIdsFor(t, base)).toEqual([countsTowardEventId('root', 't', { kind: 'event', eventId: 'c2' })]);
     expect(keptCreditIdsFor({ ...t, countsTowardCounterId: undefined }, base)).toEqual([]);
     expect(keptCreditIdsFor({ ...t, isDeleted: true }, base)).toEqual([]);
     expect(keptCreditIdsFor({ ...t, countsTowardCounterId: 'missing' }, base)).toEqual([]);
@@ -372,7 +398,7 @@ describe('isOccurrenceWanted / keptCreditIdsFor (D11)', () => {
   });
 });
 
-describe('canContribute / probeContributionIds', () => {
+describe('canContribute', () => {
   it('counter roots, linked copies and achievements never contribute', () => {
     expect(canContribute(toTask({ id: 'a' }))).toBe(true);
     expect(canContribute(toTask({ id: 'a', type: 'counting' }))).toBe(true);
@@ -380,33 +406,23 @@ describe('canContribute / probeContributionIds', () => {
     expect(canContribute(toTask({ id: 'a', type: 'counting', sharedCounterId: 'r' }))).toBe(false);
     expect(canContribute(toTask({ id: 'a', type: 'achievement' }))).toBe(false);
   });
-
-  it('the probe is lifetime + board keys + the raw key of each given event', () => {
-    const ids = probeContributionIds({ id: 't' }, [{ id: 'c1' }, { id: 'c2' }], [{ boardId: 'b1', taskId: 't' }, { boardId: 'b9', taskId: 'other' }]);
-    expect(ids).toEqual(
-      [
-        countsTowardEventId('t', { kind: 'lifetime' }),
-        countsTowardEventId('t', { kind: 'event', eventId: 'c1' }),
-        countsTowardEventId('t', { kind: 'event', eventId: 'c2' }),
-        countsTowardEventId('t', { kind: 'board', boardId: 'b1' }),
-      ].sort(),
-    );
-  });
 });
 
 describe('isCreditWriteSealSuppressed (D11)', () => {
   const windows = buildSealImmuneWindows([{ startDate: '2026-10-05T00:00:00.000Z', endDate: '2026-10-11T23:59:59.999Z', sealedAt: '2026-10-12T00:00:01.000Z' }]);
   const inside = '2026-10-07T09:00:00.000Z';
+  const alsoInside = '2026-10-09T09:00:00.000Z';
   const outside = '2026-10-14T09:00:00.000Z';
   const now = '2026-10-20T00:00:00.000Z';
 
-  it('skips an insert / tombstone whose instant sits in a sealed window of the root, unless on the late-log path', () => {
+  it('skips an insert / tombstone whose instant sits in a sealed window of the root; only the late-logged instant itself is exempt', () => {
     const insert = { kind: 'insert' as const, eventId: 'x', rootId: 'root', delta: 1, occurredAt: inside };
-    expect(isCreditWriteSealSuppressed(insert, { root: windows }, now, false)).toBe(true);
-    expect(isCreditWriteSealSuppressed(insert, { root: windows }, now, true)).toBe(false);
-    expect(isCreditWriteSealSuppressed({ ...insert, occurredAt: outside }, { root: windows }, now, false)).toBe(false);
-    expect(isCreditWriteSealSuppressed(insert, { other: windows }, now, false)).toBe(false);
-    expect(isCreditWriteSealSuppressed({ kind: 'tombstone', eventId: 'x', rootId: 'root', occurredAt: inside }, { root: windows }, now, false)).toBe(true);
+    expect(isCreditWriteSealSuppressed(insert, { root: windows }, now, null)).toBe(true);
+    expect(isCreditWriteSealSuppressed(insert, { root: windows }, now, inside)).toBe(false);
+    expect(isCreditWriteSealSuppressed(insert, { root: windows }, now, alsoInside)).toBe(true);
+    expect(isCreditWriteSealSuppressed({ ...insert, occurredAt: outside }, { root: windows }, now, null)).toBe(false);
+    expect(isCreditWriteSealSuppressed(insert, { other: windows }, now, null)).toBe(false);
+    expect(isCreditWriteSealSuppressed({ kind: 'tombstone', eventId: 'x', rootId: 'root', occurredAt: inside }, { root: windows }, now, null)).toBe(true);
   });
 
   it('a revise is skipped when EITHER its new instant on the new root or its previous instant on the previous root is sealed', () => {
@@ -420,9 +436,10 @@ describe('isCreditWriteSealSuppressed (D11)', () => {
       previousOccurredAt: inside,
       wasDeleted: false,
     };
-    expect(isCreditWriteSealSuppressed(revise, { root: windows }, now, false)).toBe(true);
-    expect(isCreditWriteSealSuppressed(revise, { root2: windows }, now, false)).toBe(false);
-    expect(isCreditWriteSealSuppressed({ ...revise, occurredAt: inside }, { root2: windows }, now, false)).toBe(true);
+    expect(isCreditWriteSealSuppressed(revise, { root: windows }, now, null)).toBe(true);
+    expect(isCreditWriteSealSuppressed(revise, { root2: windows }, now, null)).toBe(false);
+    expect(isCreditWriteSealSuppressed({ ...revise, occurredAt: inside }, { root2: windows }, now, null)).toBe(true);
+    expect(isCreditWriteSealSuppressed(revise, { root: windows }, now, inside)).toBe(false);
   });
 });
 

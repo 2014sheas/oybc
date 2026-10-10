@@ -1,52 +1,67 @@
 {
-  "_note": "Hand-authored fixture (edit directly, then `pnpm --filter @oybc/shared run gen:sync-fixtures`). Pins packages/shared/src/algorithms/countsToward.ts (tests/algorithms/countsToward.test.ts) against its Swift twin Helpers/CountsToward.swift (OYBCTests/CountsTowardVectorTests.swift) — docs/SHARED_COUNTER_SETTINGS.md §3 (D10: one credit per completion occurrence; D11: count from `countsTowardSince`). Task defaults for unlisted fields: type=normal, isCompleted=false, isDeleted=false, createdAt=2026-01-01T00:00:00.000Z. Event defaults: isDeleted=false, kind=increment when delta is set else completion. Board defaults: status=active, isDeleted=false. Placement defaults: isDeleted=false. Link defaults: isDeleted=false. `state` vectors take an optional `window` ({windowStart, windowEnd}; absent = lifetime). `credits` / `candidates` / `planSet` name occurrences ({kind: event|childEvent|board|lifetime}); the test derives each credit id with countsTowardEventId(lineageRootId(contributor), occurrence) and compares sets sorted by id. `planSet.lineageWanted` lists occurrences other lineage members keep.",
+  "_note": "Hand-authored fixture (edit directly, then `pnpm --filter @oybc/shared run gen:sync-fixtures`). Pins packages/shared/src/algorithms/countsToward.ts (+ countsTowardLineage.ts / countsTowardValidation.ts; tests/algorithms/countsToward.test.ts) against its Swift twin Helpers/CountsToward.swift (OYBCTests/CountsTowardVectorTests.swift) — docs/SHARED_COUNTER_SETTINGS.md §3 (D10: one credit per completion occurrence; D11: count from `countsTowardSince`). Task defaults for unlisted fields: type=normal, isCompleted=false, isDeleted=false, createdAt=2026-01-01T00:00:00.000Z. Event defaults: isDeleted=false, kind=increment when delta is set else completion. Board defaults: status=active, isDeleted=false. Placement defaults: isDeleted=false. Link defaults: isDeleted=false. `state` vectors take an optional `window`. `credits` / `candidates` / `planSet` name occurrences ({kind: event|childEvent|board|lifetime}) and the ROOT they are minted on (`root`, default \"root\"); the test derives each credit id with countsTowardEventId(root, lineageRootId(contributor), occurrence) and compares sets sorted by id. `candidates.roots` lists the roots to enumerate. `planSet.lineageWanted` lists occurrences other lineage members keep; `planSet.lineageDelta` maps a root to the lineage's amount. `lineageDelta` vectors pin lineageCreditDelta.",
   "eventId": [
     {
+      "root": "root",
       "contributorId": "t-simple",
       "occurrence": {
         "kind": "event",
         "eventId": "c1"
       },
-      "expected": "da3ee602-1594-5d8b-8099-8785c683483f"
+      "expected": "8ca0cb1c-f151-5ccf-84c9-f0aa6e62d0c8"
     },
     {
+      "root": "root",
       "contributorId": "other",
       "occurrence": {
         "kind": "event",
         "eventId": "c1"
       },
-      "expected": "da3ee602-1594-5d8b-8099-8785c683483f"
+      "expected": "8ca0cb1c-f151-5ccf-84c9-f0aa6e62d0c8"
     },
     {
+      "root": "root2",
+      "contributorId": "t-simple",
+      "occurrence": {
+        "kind": "event",
+        "eventId": "c1"
+      },
+      "expected": "c5a7d9a9-f5ae-51a0-8dfa-53c7bddb7075"
+    },
+    {
+      "root": "00000000-0000-4000-8000-0000000000a1",
       "contributorId": "00000000-0000-4000-8000-000000000001",
       "occurrence": {
         "kind": "event",
         "eventId": "00000000-0000-4000-8000-0000000000f9"
       },
-      "expected": "f55b0c46-a75a-5c27-bf5a-bca0b8986de5"
+      "expected": "ddae8ed4-b97b-5655-813a-c390637ab933"
     },
     {
-      "contributorId": "compound-dune",
-      "occurrence": {
-        "kind": "board",
-        "boardId": "00000000-0000-4000-8000-0000000000e4"
-      },
-      "expected": "3997ee11-edd7-5e4f-b19e-3f103e2d4979"
-    },
-    {
+      "root": "root",
       "contributorId": "compound-dune",
       "occurrence": {
         "kind": "childEvent",
         "eventId": "c1"
       },
-      "expected": "4a3d5bdc-706f-5bcc-9c4f-712f0e4c2cef"
+      "expected": "57619b34-b245-524c-a95b-68abb6a4071a"
     },
     {
+      "root": "root",
+      "contributorId": "compound-dune",
+      "occurrence": {
+        "kind": "board",
+        "boardId": "00000000-0000-4000-8000-0000000000e4"
+      },
+      "expected": "e1467779-d1b8-519e-b4d5-f45130440b08"
+    },
+    {
+      "root": "root",
       "contributorId": "compound-dune",
       "occurrence": {
         "kind": "lifetime"
       },
-      "expected": "5d4f226b-f76e-55cc-9970-1fd8ea38ed50"
+      "expected": "43819d74-aa5e-5c86-8303-38dd6669b850"
     }
   ],
   "amount": [
@@ -953,6 +968,89 @@
         "completingEventId": "ca",
         "completingTaskId": "a"
       }
+    },
+    {
+      "name": "compound-all-of-undated-vacuous-nested-child-sorts-first",
+      "taskId": "p",
+      "tasks": [
+        {
+          "id": "p",
+          "type": "compound",
+          "operator": "AND"
+        },
+        {
+          "id": "empty",
+          "type": "compound",
+          "operator": "AND"
+        },
+        {
+          "id": "a"
+        }
+      ],
+      "events": [
+        {
+          "id": "ca",
+          "taskId": "a",
+          "occurredAt": "2026-10-05T00:00:00.000Z"
+        }
+      ],
+      "children": [
+        {
+          "compoundTaskId": "p",
+          "childTaskId": "empty"
+        },
+        {
+          "compoundTaskId": "p",
+          "childTaskId": "a"
+        }
+      ],
+      "expected": {
+        "isCompleted": true,
+        "completedAt": "2026-10-05T00:00:00.000Z",
+        "completingEventId": "ca",
+        "completingTaskId": "a"
+      }
+    },
+    {
+      "name": "compound-any-of-undated-vacuous-nested-child-is-first-and-has-no-event",
+      "taskId": "p",
+      "tasks": [
+        {
+          "id": "p",
+          "type": "compound",
+          "operator": "OR",
+          "createdAt": "2026-02-02T00:00:00.000Z"
+        },
+        {
+          "id": "empty",
+          "type": "compound",
+          "operator": "AND"
+        },
+        {
+          "id": "a"
+        }
+      ],
+      "events": [
+        {
+          "id": "ca",
+          "taskId": "a",
+          "occurredAt": "2026-10-05T00:00:00.000Z"
+        }
+      ],
+      "children": [
+        {
+          "compoundTaskId": "p",
+          "childTaskId": "empty"
+        },
+        {
+          "compoundTaskId": "p",
+          "childTaskId": "a"
+        }
+      ],
+      "expected": {
+        "isCompleted": true,
+        "completedAt": "2026-02-02T00:00:00.000Z"
+      }
     }
   ],
   "credits": [
@@ -961,7 +1059,8 @@
       "taskId": "t",
       "tasks": [
         {
-          "id": "t"
+          "id": "t",
+          "countsTowardCounterId": "root"
         }
       ],
       "events": [
@@ -1027,7 +1126,8 @@
       "taskId": "t",
       "tasks": [
         {
-          "id": "t"
+          "id": "t",
+          "countsTowardCounterId": "root"
         }
       ],
       "events": [
@@ -1075,7 +1175,8 @@
       "taskId": "t",
       "tasks": [
         {
-          "id": "t"
+          "id": "t",
+          "countsTowardCounterId": "root"
         }
       ],
       "events": [
@@ -1107,7 +1208,8 @@
         },
         {
           "id": "00000000-0000-4000-8000-00000000ff01",
-          "forkedFromTaskId": "00000000-0000-4000-8000-00000000aa01"
+          "forkedFromTaskId": "00000000-0000-4000-8000-00000000aa01",
+          "countsTowardCounterId": "root"
         }
       ],
       "events": [
@@ -1151,7 +1253,8 @@
       "taskId": "00000000-0000-4000-8000-00000000aa01",
       "tasks": [
         {
-          "id": "00000000-0000-4000-8000-00000000aa01"
+          "id": "00000000-0000-4000-8000-00000000aa01",
+          "countsTowardCounterId": "root"
         },
         {
           "id": "00000000-0000-4000-8000-00000000ff01",
@@ -1201,7 +1304,8 @@
         {
           "id": "t",
           "type": "counting",
-          "maxCount": 2
+          "maxCount": 2,
+          "countsTowardCounterId": "root"
         }
       ],
       "events": [
@@ -1277,7 +1381,8 @@
         {
           "id": "t",
           "type": "counting",
-          "maxCount": 2
+          "maxCount": 2,
+          "countsTowardCounterId": "root"
         }
       ],
       "events": [
@@ -1334,7 +1439,8 @@
         {
           "id": "t",
           "type": "counting",
-          "maxCount": 2
+          "maxCount": 2,
+          "countsTowardCounterId": "root"
         }
       ],
       "events": [
@@ -1404,7 +1510,8 @@
         {
           "id": "t",
           "type": "counting",
-          "maxCount": 3
+          "maxCount": 3,
+          "countsTowardCounterId": "root"
         }
       ],
       "events": [
@@ -1441,7 +1548,8 @@
         {
           "id": "t",
           "type": "counting",
-          "maxCount": 3
+          "maxCount": 3,
+          "countsTowardCounterId": "root"
         }
       ],
       "events": [
@@ -1482,7 +1590,8 @@
         {
           "id": "t",
           "type": "counting",
-          "maxCount": 3
+          "maxCount": 3,
+          "countsTowardCounterId": "root"
         }
       ],
       "events": [
@@ -1522,7 +1631,8 @@
         {
           "id": "t",
           "type": "counting",
-          "maxCount": 3
+          "maxCount": 3,
+          "countsTowardCounterId": "root"
         }
       ],
       "events": [
@@ -1615,7 +1725,8 @@
       "tasks": [
         {
           "id": "t",
-          "isDeleted": true
+          "isDeleted": true,
+          "countsTowardCounterId": "root"
         }
       ],
       "events": [
@@ -1665,7 +1776,8 @@
         {
           "id": "p",
           "type": "compound",
-          "operator": "AND"
+          "operator": "AND",
+          "countsTowardCounterId": "root"
         },
         {
           "id": "a"
@@ -1752,7 +1864,8 @@
         {
           "id": "p",
           "type": "compound",
-          "operator": "AND"
+          "operator": "AND",
+          "countsTowardCounterId": "root"
         },
         {
           "id": "a"
@@ -1827,7 +1940,8 @@
         {
           "id": "p",
           "type": "compound",
-          "operator": "AND"
+          "operator": "AND",
+          "countsTowardCounterId": "root"
         },
         {
           "id": "a"
@@ -1877,7 +1991,8 @@
         {
           "id": "p",
           "type": "compound",
-          "operator": "AND"
+          "operator": "AND",
+          "countsTowardCounterId": "root"
         },
         {
           "id": "a"
@@ -1935,7 +2050,8 @@
         {
           "id": "p",
           "type": "compound",
-          "operator": "AND"
+          "operator": "AND",
+          "countsTowardCounterId": "root"
         },
         {
           "id": "a"
@@ -1984,7 +2100,8 @@
         {
           "id": "p",
           "type": "compound",
-          "operator": "AND"
+          "operator": "AND",
+          "countsTowardCounterId": "root"
         },
         {
           "id": "h",
@@ -2048,7 +2165,8 @@
         {
           "id": "p",
           "type": "compound",
-          "operator": "AND"
+          "operator": "AND",
+          "countsTowardCounterId": "root"
         },
         {
           "id": "ach",
@@ -2094,7 +2212,8 @@
         {
           "id": "p",
           "type": "compound",
-          "operator": "AND"
+          "operator": "AND",
+          "countsTowardCounterId": "root"
         },
         {
           "id": "ach",
@@ -2128,7 +2247,8 @@
         {
           "id": "p",
           "type": "compound",
-          "operator": "AND"
+          "operator": "AND",
+          "countsTowardCounterId": "root"
         },
         {
           "id": "a"
@@ -2170,7 +2290,8 @@
         {
           "id": "p",
           "type": "compound",
-          "operator": "AND"
+          "operator": "AND",
+          "countsTowardCounterId": "root"
         },
         {
           "id": "00000000-0000-4000-8000-00000000aa01"
@@ -2234,7 +2355,8 @@
           "id": "pf",
           "type": "compound",
           "operator": "AND",
-          "forkedFromTaskId": "p0"
+          "forkedFromTaskId": "p0",
+          "countsTowardCounterId": "root"
         },
         {
           "id": "a"
@@ -2296,6 +2418,59 @@
           "id": "r1",
           "taskId": "root",
           "delta": 1,
+          "occurredAt": "2026-10-14T09:00:00.000Z"
+        }
+      ],
+      "children": [],
+      "placements": [],
+      "boards": [],
+      "expected": []
+    },
+    {
+      "name": "fork-whose-original-is-not-loaded-produces-nothing",
+      "taskId": "00000000-0000-4000-8000-00000000ff01",
+      "tasks": [
+        {
+          "id": "00000000-0000-4000-8000-00000000ff01",
+          "forkedFromTaskId": "00000000-0000-4000-8000-00000000aa01",
+          "countsTowardCounterId": "root"
+        }
+      ],
+      "events": [
+        {
+          "id": "1abe21f4-cde4-51f6-b2f6-4783f44ad4b9",
+          "taskId": "00000000-0000-4000-8000-00000000ff01",
+          "occurredAt": "2026-10-14T09:00:00.000Z"
+        }
+      ],
+      "children": [],
+      "placements": [
+        {
+          "boardId": "month",
+          "taskId": "00000000-0000-4000-8000-00000000ff01"
+        }
+      ],
+      "boards": [
+        {
+          "id": "month",
+          "startDate": "2026-10-01T00:00:00.000Z",
+          "endDate": "2026-10-31T23:59:59.999Z"
+        }
+      ],
+      "expected": []
+    },
+    {
+      "name": "unflagged-contributor-wants-nothing",
+      "taskId": "t",
+      "tasks": [
+        {
+          "id": "t"
+        }
+      ],
+      "events": [
+        {
+          "id": "c1",
+          "taskId": "t",
           "occurredAt": "2026-10-14T09:00:00.000Z"
         }
       ],
@@ -2394,6 +2569,9 @@
         {
           "kind": "lifetime"
         }
+      ],
+      "roots": [
+        "root"
       ]
     },
     {
@@ -2435,6 +2613,9 @@
         {
           "kind": "lifetime"
         }
+      ],
+      "roots": [
+        "root"
       ]
     },
     {
@@ -2554,6 +2735,9 @@
         {
           "kind": "lifetime"
         }
+      ],
+      "roots": [
+        "root"
       ]
     },
     {
@@ -2572,7 +2756,107 @@
         {
           "kind": "lifetime"
         }
+      ],
+      "roots": [
+        "root"
       ]
+    },
+    {
+      "name": "keys-are-enumerated-on-every-root",
+      "taskId": "t",
+      "tasks": [
+        {
+          "id": "t"
+        }
+      ],
+      "events": [
+        {
+          "id": "c1",
+          "taskId": "t",
+          "occurredAt": "2026-10-14T09:00:00.000Z"
+        }
+      ],
+      "children": [],
+      "placements": [
+        {
+          "boardId": "w1",
+          "taskId": "t"
+        }
+      ],
+      "boards": [
+        {
+          "id": "w1",
+          "startDate": "2026-10-01T00:00:00.000Z",
+          "endDate": "2026-10-31T23:59:59.999Z"
+        }
+      ],
+      "roots": [
+        "root",
+        "root2"
+      ],
+      "expected": [
+        {
+          "root": "root",
+          "occurrence": {
+            "kind": "event",
+            "eventId": "c1"
+          }
+        },
+        {
+          "root": "root2",
+          "occurrence": {
+            "kind": "event",
+            "eventId": "c1"
+          }
+        },
+        {
+          "root": "root",
+          "occurrence": {
+            "kind": "board",
+            "boardId": "w1"
+          }
+        },
+        {
+          "root": "root2",
+          "occurrence": {
+            "kind": "board",
+            "boardId": "w1"
+          }
+        },
+        {
+          "root": "root",
+          "occurrence": {
+            "kind": "lifetime"
+          }
+        },
+        {
+          "root": "root2",
+          "occurrence": {
+            "kind": "lifetime"
+          }
+        }
+      ]
+    },
+    {
+      "name": "no-roots-no-candidates",
+      "taskId": "t",
+      "tasks": [
+        {
+          "id": "t"
+        }
+      ],
+      "events": [
+        {
+          "id": "c1",
+          "taskId": "t",
+          "occurredAt": "2026-10-14T09:00:00.000Z"
+        }
+      ],
+      "children": [],
+      "placements": [],
+      "boards": [],
+      "roots": [],
+      "expected": []
     }
   ],
   "planSet": [
@@ -2595,16 +2879,23 @@
             "kind": "event",
             "eventId": "c1"
           },
-          "occurredAt": "2026-10-14T09:00:00.000Z"
+          "occurredAt": "2026-10-14T09:00:00.000Z",
+          "root": "root"
         }
       ],
       "candidates": [
         {
-          "kind": "event",
-          "eventId": "c1"
+          "occurrence": {
+            "kind": "event",
+            "eventId": "c1"
+          },
+          "root": "root"
         },
         {
-          "kind": "lifetime"
+          "occurrence": {
+            "kind": "lifetime"
+          },
+          "root": "root"
         }
       ],
       "stored": [],
@@ -2614,6 +2905,7 @@
             "kind": "event",
             "eventId": "c1"
           },
+          "root": "root",
           "kind": "insert",
           "rootId": "root",
           "delta": 1,
@@ -2641,13 +2933,17 @@
             "kind": "event",
             "eventId": "c1"
           },
-          "occurredAt": "2026-10-14T09:00:00.000Z"
+          "occurredAt": "2026-10-14T09:00:00.000Z",
+          "root": "root"
         }
       ],
       "candidates": [
         {
-          "kind": "event",
-          "eventId": "c1"
+          "occurrence": {
+            "kind": "event",
+            "eventId": "c1"
+          },
+          "root": "root"
         }
       ],
       "stored": [],
@@ -2657,6 +2953,7 @@
             "kind": "event",
             "eventId": "c1"
           },
+          "root": "root",
           "kind": "insert",
           "rootId": "root",
           "delta": 3,
@@ -2683,27 +2980,38 @@
             "kind": "event",
             "eventId": "c1"
           },
-          "occurredAt": "2026-10-07T09:00:00.000Z"
+          "occurredAt": "2026-10-07T09:00:00.000Z",
+          "root": "root"
         },
         {
           "occurrence": {
             "kind": "event",
             "eventId": "c2"
           },
-          "occurredAt": "2026-10-14T09:00:00.000Z"
+          "occurredAt": "2026-10-14T09:00:00.000Z",
+          "root": "root"
         }
       ],
       "candidates": [
         {
-          "kind": "event",
-          "eventId": "c1"
+          "occurrence": {
+            "kind": "event",
+            "eventId": "c1"
+          },
+          "root": "root"
         },
         {
-          "kind": "event",
-          "eventId": "c2"
+          "occurrence": {
+            "kind": "event",
+            "eventId": "c2"
+          },
+          "root": "root"
         },
         {
-          "kind": "lifetime"
+          "occurrence": {
+            "kind": "lifetime"
+          },
+          "root": "root"
         }
       ],
       "stored": [],
@@ -2713,6 +3021,7 @@
             "kind": "event",
             "eventId": "c1"
           },
+          "root": "root",
           "kind": "insert",
           "rootId": "root",
           "delta": 1,
@@ -2723,6 +3032,7 @@
             "kind": "event",
             "eventId": "c2"
           },
+          "root": "root",
           "kind": "insert",
           "rootId": "root",
           "delta": 1,
@@ -2749,27 +3059,38 @@
             "kind": "event",
             "eventId": "c1"
           },
-          "occurredAt": "2026-10-07T09:00:00.000Z"
+          "occurredAt": "2026-10-07T09:00:00.000Z",
+          "root": "root"
         },
         {
           "occurrence": {
             "kind": "event",
             "eventId": "c2"
           },
-          "occurredAt": "2026-10-14T09:00:00.000Z"
+          "occurredAt": "2026-10-14T09:00:00.000Z",
+          "root": "root"
         }
       ],
       "candidates": [
         {
-          "kind": "event",
-          "eventId": "c1"
+          "occurrence": {
+            "kind": "event",
+            "eventId": "c1"
+          },
+          "root": "root"
         },
         {
-          "kind": "event",
-          "eventId": "c2"
+          "occurrence": {
+            "kind": "event",
+            "eventId": "c2"
+          },
+          "root": "root"
         },
         {
-          "kind": "lifetime"
+          "occurrence": {
+            "kind": "lifetime"
+          },
+          "root": "root"
         }
       ],
       "stored": [
@@ -2813,20 +3134,30 @@
             "kind": "event",
             "eventId": "c1"
           },
-          "occurredAt": "2026-10-07T09:00:00.000Z"
+          "occurredAt": "2026-10-07T09:00:00.000Z",
+          "root": "root"
         }
       ],
       "candidates": [
         {
-          "kind": "event",
-          "eventId": "c1"
+          "occurrence": {
+            "kind": "event",
+            "eventId": "c1"
+          },
+          "root": "root"
         },
         {
-          "kind": "event",
-          "eventId": "c2"
+          "occurrence": {
+            "kind": "event",
+            "eventId": "c2"
+          },
+          "root": "root"
         },
         {
-          "kind": "lifetime"
+          "occurrence": {
+            "kind": "lifetime"
+          },
+          "root": "root"
         }
       ],
       "stored": [
@@ -2855,6 +3186,7 @@
             "kind": "event",
             "eventId": "c2"
           },
+          "root": "root",
           "kind": "tombstone",
           "rootId": "root",
           "occurredAt": "2026-10-14T09:00:00.000Z"
@@ -2873,37 +3205,34 @@
           "isCounter": true
         }
       ],
-      "wanted": [
+      "wanted": [],
+      "candidates": [
         {
           "occurrence": {
             "kind": "event",
             "eventId": "c1"
           },
-          "occurredAt": "2026-10-07T09:00:00.000Z"
+          "root": "root"
         },
         {
           "occurrence": {
             "kind": "event",
             "eventId": "c2"
           },
-          "occurredAt": "2026-10-14T09:00:00.000Z"
-        }
-      ],
-      "candidates": [
-        {
-          "kind": "event",
-          "eventId": "c1"
+          "root": "root"
         },
         {
-          "kind": "event",
-          "eventId": "c2"
+          "occurrence": {
+            "kind": "board",
+            "boardId": "w1"
+          },
+          "root": "root"
         },
         {
-          "kind": "board",
-          "boardId": "w1"
-        },
-        {
-          "kind": "lifetime"
+          "occurrence": {
+            "kind": "lifetime"
+          },
+          "root": "root"
         }
       ],
       "stored": [
@@ -2942,6 +3271,7 @@
             "kind": "event",
             "eventId": "c1"
           },
+          "root": "root",
           "kind": "tombstone",
           "rootId": "root",
           "occurredAt": "2026-10-07T09:00:00.000Z"
@@ -2951,6 +3281,7 @@
             "kind": "event",
             "eventId": "c2"
           },
+          "root": "root",
           "kind": "tombstone",
           "rootId": "root",
           "occurredAt": "2026-10-14T09:00:00.000Z"
@@ -2976,16 +3307,23 @@
             "kind": "board",
             "boardId": "w1"
           },
-          "occurredAt": "2026-10-08T09:00:00.000Z"
+          "occurredAt": "2026-10-08T09:00:00.000Z",
+          "root": "root"
         }
       ],
       "candidates": [
         {
-          "kind": "board",
-          "boardId": "w1"
+          "occurrence": {
+            "kind": "board",
+            "boardId": "w1"
+          },
+          "root": "root"
         },
         {
-          "kind": "lifetime"
+          "occurrence": {
+            "kind": "lifetime"
+          },
+          "root": "root"
         }
       ],
       "stored": [
@@ -3005,6 +3343,7 @@
             "kind": "board",
             "boardId": "w1"
           },
+          "root": "root",
           "kind": "revise",
           "rootId": "root",
           "delta": 1,
@@ -3035,13 +3374,17 @@
             "kind": "event",
             "eventId": "c1"
           },
-          "occurredAt": "2026-10-07T09:00:00.000Z"
+          "occurredAt": "2026-10-07T09:00:00.000Z",
+          "root": "root"
         }
       ],
       "candidates": [
         {
-          "kind": "event",
-          "eventId": "c1"
+          "occurrence": {
+            "kind": "event",
+            "eventId": "c1"
+          },
+          "root": "root"
         }
       ],
       "stored": [
@@ -3061,6 +3404,7 @@
             "kind": "event",
             "eventId": "c1"
           },
+          "root": "root",
           "kind": "revise",
           "rootId": "root",
           "delta": 2,
@@ -3072,7 +3416,56 @@
       ]
     },
     {
-      "name": "counter-moved-revises-every-credit",
+      "name": "lineage-delta-overrides-the-contributors-amount",
+      "contributor": {
+        "id": "t",
+        "countsTowardCounterId": "root",
+        "countsTowardAmount": 3
+      },
+      "tasks": [
+        {
+          "id": "root",
+          "type": "counting",
+          "isCounter": true
+        }
+      ],
+      "wanted": [
+        {
+          "occurrence": {
+            "kind": "event",
+            "eventId": "c1"
+          },
+          "occurredAt": "2026-10-07T09:00:00.000Z",
+          "root": "root"
+        }
+      ],
+      "candidates": [
+        {
+          "occurrence": {
+            "kind": "event",
+            "eventId": "c1"
+          },
+          "root": "root"
+        }
+      ],
+      "stored": [
+        {
+          "occurrence": {
+            "kind": "event",
+            "eventId": "c1"
+          },
+          "taskId": "root",
+          "delta": 1,
+          "occurredAt": "2026-10-07T09:00:00.000Z"
+        }
+      ],
+      "lineageDelta": {
+        "root": 1
+      },
+      "expected": []
+    },
+    {
+      "name": "counter-moved-tombstones-the-old-root-and-inserts-on-the-new",
       "contributor": {
         "id": "t",
         "countsTowardCounterId": "root2"
@@ -3095,24 +3488,46 @@
             "kind": "event",
             "eventId": "c1"
           },
-          "occurredAt": "2026-10-07T09:00:00.000Z"
+          "occurredAt": "2026-10-07T09:00:00.000Z",
+          "root": "root2"
         },
         {
           "occurrence": {
             "kind": "event",
             "eventId": "c2"
           },
-          "occurredAt": "2026-10-14T09:00:00.000Z"
+          "occurredAt": "2026-10-14T09:00:00.000Z",
+          "root": "root2"
         }
       ],
       "candidates": [
         {
-          "kind": "event",
-          "eventId": "c1"
+          "occurrence": {
+            "kind": "event",
+            "eventId": "c1"
+          },
+          "root": "root"
         },
         {
-          "kind": "event",
-          "eventId": "c2"
+          "occurrence": {
+            "kind": "event",
+            "eventId": "c2"
+          },
+          "root": "root"
+        },
+        {
+          "occurrence": {
+            "kind": "event",
+            "eventId": "c1"
+          },
+          "root": "root2"
+        },
+        {
+          "occurrence": {
+            "kind": "event",
+            "eventId": "c2"
+          },
+          "root": "root2"
         }
       ],
       "stored": [
@@ -3141,28 +3556,76 @@
             "kind": "event",
             "eventId": "c1"
           },
-          "kind": "revise",
-          "rootId": "root2",
-          "delta": 1,
-          "occurredAt": "2026-10-07T09:00:00.000Z",
-          "previousRootId": "root",
-          "previousOccurredAt": "2026-10-07T09:00:00.000Z",
-          "wasDeleted": false
+          "root": "root",
+          "kind": "tombstone",
+          "rootId": "root",
+          "occurredAt": "2026-10-07T09:00:00.000Z"
         },
         {
           "occurrence": {
             "kind": "event",
             "eventId": "c2"
           },
-          "kind": "revise",
+          "root": "root",
+          "kind": "tombstone",
+          "rootId": "root",
+          "occurredAt": "2026-10-14T09:00:00.000Z"
+        },
+        {
+          "occurrence": {
+            "kind": "event",
+            "eventId": "c1"
+          },
+          "root": "root2",
+          "kind": "insert",
           "rootId": "root2",
           "delta": 1,
-          "occurredAt": "2026-10-14T09:00:00.000Z",
-          "previousRootId": "root",
-          "previousOccurredAt": "2026-10-14T09:00:00.000Z",
-          "wasDeleted": false
+          "occurredAt": "2026-10-07T09:00:00.000Z"
+        },
+        {
+          "occurrence": {
+            "kind": "event",
+            "eventId": "c2"
+          },
+          "root": "root2",
+          "kind": "insert",
+          "rootId": "root2",
+          "delta": 1,
+          "occurredAt": "2026-10-14T09:00:00.000Z"
         }
       ]
+    },
+    {
+      "name": "a-wanted-credit-on-another-root-than-the-target-is-ignored",
+      "contributor": {
+        "id": "t",
+        "countsTowardCounterId": "root"
+      },
+      "tasks": [
+        {
+          "id": "root",
+          "type": "counting",
+          "isCounter": true
+        },
+        {
+          "id": "root2",
+          "type": "counting",
+          "isCounter": true
+        }
+      ],
+      "wanted": [
+        {
+          "occurrence": {
+            "kind": "event",
+            "eventId": "c1"
+          },
+          "occurredAt": "2026-10-07T09:00:00.000Z",
+          "root": "root2"
+        }
+      ],
+      "candidates": [],
+      "stored": [],
+      "expected": []
     },
     {
       "name": "tombstoned-event-revives",
@@ -3183,13 +3646,17 @@
             "kind": "event",
             "eventId": "c1"
           },
-          "occurredAt": "2026-10-14T09:00:00.000Z"
+          "occurredAt": "2026-10-14T09:00:00.000Z",
+          "root": "root"
         }
       ],
       "candidates": [
         {
-          "kind": "event",
-          "eventId": "c1"
+          "occurrence": {
+            "kind": "event",
+            "eventId": "c1"
+          },
+          "root": "root"
         }
       ],
       "stored": [
@@ -3210,6 +3677,7 @@
             "kind": "event",
             "eventId": "c1"
           },
+          "root": "root",
           "kind": "revise",
           "rootId": "root",
           "delta": 1,
@@ -3236,8 +3704,11 @@
       "wanted": [],
       "candidates": [
         {
-          "kind": "event",
-          "eventId": "c1"
+          "occurrence": {
+            "kind": "event",
+            "eventId": "c1"
+          },
+          "root": "root"
         }
       ],
       "stored": [
@@ -3257,6 +3728,7 @@
             "kind": "event",
             "eventId": "c1"
           },
+          "root": "root",
           "kind": "tombstone",
           "rootId": "root",
           "occurredAt": "2026-10-14T09:00:00.000Z"
@@ -3280,8 +3752,11 @@
       "wanted": [],
       "candidates": [
         {
-          "kind": "event",
-          "eventId": "c1"
+          "occurrence": {
+            "kind": "event",
+            "eventId": "c1"
+          },
+          "root": "root"
         }
       ],
       "stored": [
@@ -3301,6 +3776,7 @@
             "kind": "event",
             "eventId": "c1"
           },
+          "root": "root",
           "kind": "tombstone",
           "rootId": "root",
           "occurredAt": "2026-10-14T09:00:00.000Z"
@@ -3324,8 +3800,11 @@
       "wanted": [],
       "candidates": [
         {
-          "kind": "event",
-          "eventId": "c1"
+          "occurrence": {
+            "kind": "event",
+            "eventId": "c1"
+          },
+          "root": "root"
         }
       ],
       "stored": [
@@ -3354,13 +3833,17 @@
             "kind": "event",
             "eventId": "c1"
           },
-          "occurredAt": "2026-10-14T09:00:00.000Z"
+          "occurredAt": "2026-10-14T09:00:00.000Z",
+          "root": "root"
         }
       ],
       "candidates": [
         {
-          "kind": "event",
-          "eventId": "c1"
+          "occurrence": {
+            "kind": "event",
+            "eventId": "c1"
+          },
+          "root": "root"
         }
       ],
       "stored": [],
@@ -3379,19 +3862,14 @@
           "isDeleted": true
         }
       ],
-      "wanted": [
+      "wanted": [],
+      "candidates": [
         {
           "occurrence": {
             "kind": "event",
             "eventId": "c1"
           },
-          "occurredAt": "2026-10-14T09:00:00.000Z"
-        }
-      ],
-      "candidates": [
-        {
-          "kind": "event",
-          "eventId": "c1"
+          "root": "root"
         }
       ],
       "stored": [
@@ -3427,13 +3905,17 @@
             "kind": "event",
             "eventId": "c1"
           },
-          "occurredAt": "2026-10-14T09:00:00.000Z"
+          "occurredAt": "2026-10-14T09:00:00.000Z",
+          "root": "root"
         }
       ],
       "candidates": [
         {
-          "kind": "event",
-          "eventId": "c1"
+          "occurrence": {
+            "kind": "event",
+            "eventId": "c1"
+          },
+          "root": "root"
         }
       ],
       "stored": [
@@ -3453,6 +3935,7 @@
             "kind": "event",
             "eventId": "c1"
           },
+          "root": "root",
           "kind": "tombstone",
           "rootId": "root",
           "occurredAt": "2026-10-14T09:00:00.000Z"
@@ -3475,11 +3958,17 @@
       "wanted": [],
       "candidates": [
         {
-          "kind": "event",
-          "eventId": "c1"
+          "occurrence": {
+            "kind": "event",
+            "eventId": "c1"
+          },
+          "root": "root"
         },
         {
-          "kind": "lifetime"
+          "occurrence": {
+            "kind": "lifetime"
+          },
+          "root": "root"
         }
       ],
       "stored": [],
@@ -3504,7 +3993,8 @@
             "kind": "event",
             "eventId": "c9"
           },
-          "occurredAt": "2026-10-14T09:00:00.000Z"
+          "occurredAt": "2026-10-14T09:00:00.000Z",
+          "root": "root"
         }
       ],
       "candidates": [],
@@ -3515,6 +4005,7 @@
             "kind": "event",
             "eventId": "c9"
           },
+          "root": "root",
           "kind": "insert",
           "rootId": "root",
           "delta": 1,
@@ -3538,12 +4029,18 @@
       "wanted": [],
       "candidates": [
         {
-          "kind": "event",
-          "eventId": "c1"
+          "occurrence": {
+            "kind": "event",
+            "eventId": "c1"
+          },
+          "root": "root"
         },
         {
-          "kind": "event",
-          "eventId": "c2"
+          "occurrence": {
+            "kind": "event",
+            "eventId": "c2"
+          },
+          "root": "root"
         }
       ],
       "stored": [
@@ -3568,8 +4065,11 @@
       ],
       "lineageWanted": [
         {
-          "kind": "event",
-          "eventId": "c1"
+          "occurrence": {
+            "kind": "event",
+            "eventId": "c1"
+          },
+          "root": "root"
         }
       ],
       "expected": [
@@ -3578,6 +4078,7 @@
             "kind": "event",
             "eventId": "c2"
           },
+          "root": "root",
           "kind": "tombstone",
           "rootId": "root",
           "occurredAt": "2026-10-14T09:00:00.000Z"
@@ -3604,13 +4105,17 @@
             "kind": "event",
             "eventId": "c1"
           },
-          "occurredAt": "2026-10-07T09:00:00.000Z"
+          "occurredAt": "2026-10-07T09:00:00.000Z",
+          "root": "root"
         }
       ],
       "candidates": [
         {
-          "kind": "event",
-          "eventId": "c1"
+          "occurrence": {
+            "kind": "event",
+            "eventId": "c1"
+          },
+          "root": "root"
         }
       ],
       "stored": [
@@ -3626,8 +4131,11 @@
       ],
       "lineageWanted": [
         {
-          "kind": "event",
-          "eventId": "c1"
+          "occurrence": {
+            "kind": "event",
+            "eventId": "c1"
+          },
+          "root": "root"
         }
       ],
       "expected": [
@@ -3636,6 +4144,7 @@
             "kind": "event",
             "eventId": "c1"
           },
+          "root": "root",
           "kind": "revise",
           "rootId": "root",
           "delta": 2,
@@ -3645,6 +4154,52 @@
           "wasDeleted": false
         }
       ]
+    },
+    {
+      "name": "fork-with-unloaded-original-plans-nothing",
+      "contributor": {
+        "id": "f",
+        "forkedFromTaskId": "missing",
+        "countsTowardCounterId": "root"
+      },
+      "tasks": [
+        {
+          "id": "root",
+          "type": "counting",
+          "isCounter": true
+        }
+      ],
+      "wanted": [
+        {
+          "occurrence": {
+            "kind": "event",
+            "eventId": "c1"
+          },
+          "occurredAt": "2026-10-07T09:00:00.000Z",
+          "root": "root"
+        }
+      ],
+      "candidates": [
+        {
+          "occurrence": {
+            "kind": "event",
+            "eventId": "c1"
+          },
+          "root": "root"
+        }
+      ],
+      "stored": [
+        {
+          "occurrence": {
+            "kind": "event",
+            "eventId": "c2"
+          },
+          "taskId": "root",
+          "delta": 1,
+          "occurredAt": "2026-10-14T09:00:00.000Z"
+        }
+      ],
+      "expected": []
     },
     {
       "name": "since-excludes-earlier-occurrences",
@@ -3666,24 +4221,32 @@
             "kind": "event",
             "eventId": "c1"
           },
-          "occurredAt": "2026-10-07T09:00:00.000Z"
+          "occurredAt": "2026-10-07T09:00:00.000Z",
+          "root": "root"
         },
         {
           "occurrence": {
             "kind": "event",
             "eventId": "c2"
           },
-          "occurredAt": "2026-10-14T09:00:00.000Z"
+          "occurredAt": "2026-10-14T09:00:00.000Z",
+          "root": "root"
         }
       ],
       "candidates": [
         {
-          "kind": "event",
-          "eventId": "c1"
+          "occurrence": {
+            "kind": "event",
+            "eventId": "c1"
+          },
+          "root": "root"
         },
         {
-          "kind": "event",
-          "eventId": "c2"
+          "occurrence": {
+            "kind": "event",
+            "eventId": "c2"
+          },
+          "root": "root"
         }
       ],
       "stored": [],
@@ -3693,6 +4256,7 @@
             "kind": "event",
             "eventId": "c2"
           },
+          "root": "root",
           "kind": "insert",
           "rootId": "root",
           "delta": 1,
@@ -3720,24 +4284,32 @@
             "kind": "event",
             "eventId": "c1"
           },
-          "occurredAt": "2026-10-07T09:00:00.000Z"
+          "occurredAt": "2026-10-07T09:00:00.000Z",
+          "root": "root"
         },
         {
           "occurrence": {
             "kind": "event",
             "eventId": "c2"
           },
-          "occurredAt": "2026-10-14T09:00:00.000Z"
+          "occurredAt": "2026-10-14T09:00:00.000Z",
+          "root": "root"
         }
       ],
       "candidates": [
         {
-          "kind": "event",
-          "eventId": "c1"
+          "occurrence": {
+            "kind": "event",
+            "eventId": "c1"
+          },
+          "root": "root"
         },
         {
-          "kind": "event",
-          "eventId": "c2"
+          "occurrence": {
+            "kind": "event",
+            "eventId": "c2"
+          },
+          "root": "root"
         }
       ],
       "stored": [
@@ -3766,6 +4338,7 @@
             "kind": "event",
             "eventId": "c1"
           },
+          "root": "root",
           "kind": "tombstone",
           "rootId": "root",
           "occurredAt": "2026-10-07T09:00:00.000Z"
@@ -3792,13 +4365,17 @@
             "kind": "event",
             "eventId": "c2"
           },
-          "occurredAt": "2026-10-14T09:00:00.000Z"
+          "occurredAt": "2026-10-14T09:00:00.000Z",
+          "root": "root"
         }
       ],
       "candidates": [
         {
-          "kind": "event",
-          "eventId": "c2"
+          "occurrence": {
+            "kind": "event",
+            "eventId": "c2"
+          },
+          "root": "root"
         }
       ],
       "stored": [],
@@ -3808,6 +4385,7 @@
             "kind": "event",
             "eventId": "c2"
           },
+          "root": "root",
           "kind": "insert",
           "rootId": "root",
           "delta": 1,
@@ -3816,7 +4394,7 @@
       ]
     },
     {
-      "name": "repoint-resets-since-tombstones-the-old-root-credits-before-it",
+      "name": "repoint-resets-since-tombstones-the-old-root-credits-and-inserts-later-ones-on-the-new",
       "contributor": {
         "id": "t",
         "countsTowardCounterId": "root2",
@@ -3840,24 +4418,46 @@
             "kind": "event",
             "eventId": "c1"
           },
-          "occurredAt": "2026-10-07T09:00:00.000Z"
+          "occurredAt": "2026-10-07T09:00:00.000Z",
+          "root": "root2"
         },
         {
           "occurrence": {
             "kind": "event",
             "eventId": "c2"
           },
-          "occurredAt": "2026-10-14T09:00:00.000Z"
+          "occurredAt": "2026-10-14T09:00:00.000Z",
+          "root": "root2"
         }
       ],
       "candidates": [
         {
-          "kind": "event",
-          "eventId": "c1"
+          "occurrence": {
+            "kind": "event",
+            "eventId": "c1"
+          },
+          "root": "root"
         },
         {
-          "kind": "event",
-          "eventId": "c2"
+          "occurrence": {
+            "kind": "event",
+            "eventId": "c2"
+          },
+          "root": "root"
+        },
+        {
+          "occurrence": {
+            "kind": "event",
+            "eventId": "c1"
+          },
+          "root": "root2"
+        },
+        {
+          "occurrence": {
+            "kind": "event",
+            "eventId": "c2"
+          },
+          "root": "root2"
         }
       ],
       "stored": [
@@ -3886,6 +4486,7 @@
             "kind": "event",
             "eventId": "c1"
           },
+          "root": "root",
           "kind": "tombstone",
           "rootId": "root",
           "occurredAt": "2026-10-07T09:00:00.000Z"
@@ -3895,13 +4496,21 @@
             "kind": "event",
             "eventId": "c2"
           },
-          "kind": "revise",
+          "root": "root",
+          "kind": "tombstone",
+          "rootId": "root",
+          "occurredAt": "2026-10-14T09:00:00.000Z"
+        },
+        {
+          "occurrence": {
+            "kind": "event",
+            "eventId": "c2"
+          },
+          "root": "root2",
+          "kind": "insert",
           "rootId": "root2",
           "delta": 1,
-          "occurredAt": "2026-10-14T09:00:00.000Z",
-          "previousRootId": "root",
-          "previousOccurredAt": "2026-10-14T09:00:00.000Z",
-          "wasDeleted": false
+          "occurredAt": "2026-10-14T09:00:00.000Z"
         }
       ]
     },
@@ -3924,13 +4533,17 @@
             "kind": "event",
             "eventId": "c1"
           },
-          "occurredAt": "not-a-date"
+          "occurredAt": "not-a-date",
+          "root": "root"
         }
       ],
       "candidates": [
         {
-          "kind": "event",
-          "eventId": "c1"
+          "occurrence": {
+            "kind": "event",
+            "eventId": "c1"
+          },
+          "root": "root"
         }
       ],
       "stored": [
@@ -3945,6 +4558,90 @@
         }
       ],
       "expected": []
+    }
+  ],
+  "lineageDelta": [
+    {
+      "name": "lineage-root-wins-when-it-targets-the-root",
+      "root": "root",
+      "lineageRoot": "o",
+      "members": [
+        {
+          "id": "o",
+          "countsTowardCounterId": "root",
+          "countsTowardAmount": 1
+        },
+        {
+          "id": "f",
+          "forkedFromTaskId": "o",
+          "countsTowardCounterId": "root",
+          "countsTowardAmount": 3
+        }
+      ],
+      "expected": 1
+    },
+    {
+      "name": "smallest-id-among-members-targeting-the-root-otherwise",
+      "root": "root",
+      "lineageRoot": "o",
+      "members": [
+        {
+          "id": "o",
+          "countsTowardCounterId": "root2",
+          "countsTowardAmount": 5
+        },
+        {
+          "id": "f2",
+          "forkedFromTaskId": "o",
+          "countsTowardCounterId": "root",
+          "countsTowardAmount": 3
+        },
+        {
+          "id": "f1",
+          "forkedFromTaskId": "o",
+          "countsTowardCounterId": "root",
+          "countsTowardAmount": 2
+        }
+      ],
+      "expected": 2
+    },
+    {
+      "name": "deleted-and-unflagged-members-do-not-count",
+      "root": "root",
+      "lineageRoot": "o",
+      "members": [
+        {
+          "id": "o",
+          "countsTowardCounterId": "root",
+          "countsTowardAmount": 4,
+          "isDeleted": true
+        },
+        {
+          "id": "f1",
+          "forkedFromTaskId": "o",
+          "countsTowardAmount": 2
+        },
+        {
+          "id": "f2",
+          "forkedFromTaskId": "o",
+          "countsTowardCounterId": "root",
+          "countsTowardAmount": 3
+        }
+      ],
+      "expected": 3
+    },
+    {
+      "name": "nobody-targets-the-root-is-one",
+      "root": "root",
+      "lineageRoot": "o",
+      "members": [
+        {
+          "id": "o",
+          "countsTowardCounterId": "root2",
+          "countsTowardAmount": 4
+        }
+      ],
+      "expected": 1
     }
   ],
   "problem": [

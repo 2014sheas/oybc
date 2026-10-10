@@ -162,7 +162,9 @@ extension AppDatabase {
         }
 
         for root in rootsTouched { try refreshDerivedBaselines(db: db, rootTaskId: root) }
-        try reDeriveAfterLateLogWrite(db: db, changedTaskIds: changedIds, now: now)
+        // The heal is not a late log: no credit write is exempt from the
+        // counter's seal-immune windows here (`lateLogStamp: nil`).
+        try reDeriveAfterLateLogWrite(db: db, changedTaskIds: changedIds, now: now, lateLogStamp: nil)
         return (stamped, copied)
     }
 

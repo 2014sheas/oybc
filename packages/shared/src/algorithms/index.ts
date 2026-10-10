@@ -83,7 +83,6 @@ export type { KindPickerLock } from './countEntry';
 // ===== "Counts toward" (docs/SHARED_COUNTER_SETTINGS.md §3) =====
 export {
   COUNTS_TOWARD_NAMESPACE,
-  COUNTS_TOWARD_PROBE_EVENT_LIMIT,
   LIFETIME_WINDOW,
   canContribute,
   candidateContributionIds,
@@ -94,17 +93,19 @@ export {
   isCreditWriteSealSuppressed,
   isOccurrenceWanted,
   keptCreditIdsFor,
+  lineageCreditDelta,
   planCountsTowardActions,
-  probeContributionIds,
   resolveContributionCredits,
   resolveContributionState,
 } from './countsToward';
+export type { LineageContext } from './countsToward';
 export {
   MAX_FORK_LINEAGE,
   buildForkChildrenIndex,
   canonicalOccurrenceEventId,
   createForkEventResolver,
   forkLineageIds,
+  isForkLineageLoaded,
   lineageRootId,
 } from './countsTowardLineage';
 export type { ForkEventResolver } from './countsTowardLineage';

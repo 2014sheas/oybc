@@ -152,3 +152,24 @@ export function lineageRootId(task: Pick<Task, 'id' | 'forkedFromTaskId'>, taskB
   }
   return current.id;
 }
+
+/**
+ * Whether every ancestor on `task`'s `forkedFromTaskId` chain is present in
+ * `taskById` (bounded by {@link MAX_FORK_LINEAGE}). A fork whose original has
+ * not been pulled yet produces no credits and no actions until it has — its
+ * scope ({@link lineageRootId}) would otherwise move when the original lands.
+ *
+ * @param task - The contributor.
+ * @param taskById - Every loaded task by id.
+ */
+export function isForkLineageLoaded(task: Pick<Task, 'id' | 'forkedFromTaskId'>, taskById: Record<string, Pick<Task, 'id' | 'forkedFromTaskId'>>): boolean {
+  let current = task;
+  for (let depth = 0; depth < MAX_FORK_LINEAGE; depth += 1) {
+    const parentId = current.forkedFromTaskId;
+    if (parentId == null) return true;
+    const parent = taskById[parentId];
+    if (!parent) return false;
+    current = parent;
+  }
+  return true;
+}

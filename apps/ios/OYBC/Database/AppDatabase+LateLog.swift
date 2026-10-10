@@ -90,15 +90,17 @@ extension AppDatabase {
     ///
     /// MUST run inside the caller's write transaction, after the event
     /// append/tombstone + any task-cache/propagation writes.
-    static func reDeriveAfterLateLogWrite(db: Database, changedTaskIds: Set<String>, now: String) throws {
+    static func reDeriveAfterLateLogWrite(db: Database, changedTaskIds: Set<String>, now: String, lateLogStamp: String?) throws {
         guard !changedTaskIds.isEmpty else { return }
         // "Counts toward" (docs/SHARED_COUNTER_SETTINGS.md §3b): a late log that
         // completes a contributor stamps its increment at the board's endDate —
         // the completing event's own `occurredAt` (D8). The counter's copies
         // join the re-derivation below (live, sealed and watchers alike).
-        // `lateLog: true` — this path re-derives every sealed board deterministically,
-        // so the counter's sealed windows are not a write barrier here (D11).
-        let countsToward = try writeCountsToward(db: db, changedTaskIds: Array(changedTaskIds), now: now, lateLog: true)
+        // `lateLogStamp` — this path re-derives every sealed board
+        // deterministically, so a credit at exactly the stamped instant is
+        // exempt from the counter's sealed windows; any other credit the same
+        // cascade reaches stays suppressed (D11).
+        let countsToward = try writeCountsToward(db: db, changedTaskIds: Array(changedTaskIds), now: now, lateLogStamp: lateLogStamp)
         try reDeriveReachedBoards(db: db, changedTaskIds: changedTaskIds.union(countsToward.cascadeIds), now: now)
     }
 
@@ -213,7 +215,7 @@ extension AppDatabase {
 
             let occurredAt = lateLogOccurredAt(board: board, nowIso: now)
             try Self.appendCompletionEvent(db: db, taskId: taskId, boardId: boardId, now: now, occurredAt: occurredAt)
-            try Self.reDeriveAfterLateLogWrite(db: db, changedTaskIds: [taskId], now: now)
+            try Self.reDeriveAfterLateLogWrite(db: db, changedTaskIds: [taskId], now: now, lateLogStamp: occurredAt)
         }
     }
 
@@ -262,7 +264,7 @@ extension AppDatabase {
             let linkedIds = try Self.propagateRootLogToLinkedRows(
                 db: db, rootId: rootId, reachOccurredAt: occurredAt, now: now
             )
-            try Self.reDeriveAfterLateLogWrite(db: db, changedTaskIds: linkedIds.union([rootId]), now: now)
+            try Self.reDeriveAfterLateLogWrite(db: db, changedTaskIds: linkedIds.union([rootId]), now: now, lateLogStamp: occurredAt)
         }
     }
 
@@ -402,7 +404,7 @@ extension AppDatabase {
                 try Self.appendIncrementEvent(db: db, taskId: id, delta: 1, boardId: boardId, now: now, occurredAt: occurredAt)
             }
             let touched = plan.completionIds.union(plan.incrementIds).union([compoundTaskId])
-            try Self.reDeriveAfterLateLogWrite(db: db, changedTaskIds: touched, now: now)
+            try Self.reDeriveAfterLateLogWrite(db: db, changedTaskIds: touched, now: now, lateLogStamp: occurredAt)
         }
     }
 
@@ -448,7 +450,7 @@ extension AppDatabase {
                 ))
             }
 
-            try Self.reDeriveAfterLateLogWrite(db: db, changedTaskIds: changedIds, now: now)
+            try Self.reDeriveAfterLateLogWrite(db: db, changedTaskIds: changedIds, now: now, lateLogStamp: latest.occurredAt)
         }
     }
 }
