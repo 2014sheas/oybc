@@ -823,7 +823,7 @@ window-stamped derived counters B2 started minting.
   detection has run over the whole live task set.** (Hub-expired-filter
   amendment, 2026-09-30: the rule originally lived in the callers as
   `visibleCounterTasks` ↔ `filterCounterTasks`, run BEFORE grouping. A
-  board-born counter is a root only because a live task links to it, so once
+  counting task that other boards link to is a root only because a live task links to it, so once
   its last members expired they were filtered out first, the root stopped
   being a root, and the whole counter vanished from the hub and the Profile
   home until "Show expired" was toggled. Both caller filters are retired;
@@ -1769,7 +1769,7 @@ visible in the Tasks-tab library beside its root. Two rules:
    Library browse (`computeBrowsableTasks` ↔ `BrowsableTasks`) hides every
    task with a live `sharedCounterId` — window-stamped derived rows *and*
    P5 shared-counter members — and keeps the family root. A root that heads
-   a family (≥1 live member links to it, or it is a hub-born `isCounter`
+   a family (≥1 live member links to it, or it is a counter created from the hub, `isCounter`
    counter — the same root test `buildSharedCounterGroups` uses, extracted
    into a shared `sharedCounterRootIds(tasks)` helper with a Swift twin)
    renders with the **generic label `formatCounterName(action, unit)`**

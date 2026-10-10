@@ -15,6 +15,42 @@ Four surfaces:
 3. **Board square logging** — a counting square linked to a shared counter shows a **shared marker** (↔ two dots); tapping opens the stepper with an "also counts on…" hint and fires a **credited toast** naming the other boards that changed.
 4. **Passive completion** — logging elsewhere flags affected squares as "arrived"; the next board-open shows a gold **arrival banner** + the square pulsing, and may complete a new **bingo** from activity logged somewhere else.
 
+## Current model (2026-10 — settings + counts toward, SHIPPED)
+
+Shipped by the shared-counters train (#584–#588, close-out docs PR 5); the spec, rationale and decisions D1–D11 are in [`SHARED_COUNTER_SETTINGS.md`](SHARED_COUNTER_SETTINGS.md). Sections below that predate it describe the engine and the earlier UX rounds; where they disagree, this section and the code win.
+
+**Counter settings** (all optional fields on the counter's ROOT `Task`; absent = derived default, never backfilled, stored only when edited — D3; all clearable on sync):
+
+| Field | Meaning | Resolver (`packages/shared/src/algorithms/counterSettings.ts` ↔ `Helpers/CounterSettings.swift`) |
+| --- | --- | --- |
+| `counterName` | label the hub, Counter Detail, pickers, link hints, toasts show; a label only — noun/verb stay the generator's inputs (D1) | `counterDisplayName` (else `formatCounterName(action, unit)`, else the stored title) |
+| `titleTemplateSingular` / `titleTemplatePlural` | square-title templates with `#N` for the count; goal 1 renders the singular, else the plural; no `#N` renders as-is; the singular defaults to the typed plural (D2) | `renderCounterTitle(root, goal)`; `generateCounterTaskTitle` delegates; `isAutoCounterTitle` is template-aware, so a name/template edit re-renders every auto-titled live copy and keeps custom titles (`planRootFieldPropagation`) |
+| `timeframeGoals` | default goal per core timeframe (`daily`/`weekly`/`monthly`/`yearly`); an unset one derives from the nearest set one, shown dimmed, stored only when typed (D4); `CUSTOM` never matches | `resolveCounterDefaultGoal(root, timeframe)` |
+
+The counter sheet (web `CreateCounterSheet` ↔ iOS `NewCounterSheetView`, edit mode via **Edit counter…**) reads Name · Kind · What are you counting? · Task verb (required) · Singular title · Plural title · Defaults (2×2) · Start from (create only). One rule for optional fields: blank = the derived default shown dimmed, typing stores, clearing stores absent (Defaults cells store what was typed, verbatim). Caps: name 100, templates 200.
+
+**Placement defaults** (`counterPlacement.ts` ↔ `CounterPlacement.swift`): every placement path (wizard persist, recurring spawn, Preview, Board Edit add / Replace, quick-add) mints the per-board copy at `placementGoalForCounter` — an existing copy's goal, else the counter's default for the board's timeframe, else the root's goal. A hand-added root whose default equals its goal is placed as-is (no identical clone); a picked LINKED row keeps its own goal; pool pulls honour the default (the vary roll's base) and never pro-rate; the one-off board-source prefill keeps its remaining-based target. No default for the board → the match row's goal slot is a Goal entry and the pick hands the host a pending LINKED counting task (a bare one that is replaced is dropped at persist: `dropReplacedLinkedPendingRows`). Search is one shared matcher (`counterSearchMatches` / `taskSearchMatches`: name, noun, verb, plural template with `#N` removed). **Retired:** "Derive smaller version…" (`DeriveCounterModal`, D6) — a smaller target is a timeframe default or the copy's own per-board goal.
+
+**Counts toward** — any NORMAL, plain COUNTING or COMPOUND task may count toward ONE Discrete shared counter (D7, D9; never a Continuous / Duration counter, another counter root, a linked copy or an Achievement). Fields on the contributor: `countsTowardCounterId`, `countsTowardAmount` (positive integer, absent = 1), `countsTowardSince` (present iff the flag is). When the task's derived state completes, the cascade writes an ordinary `increment` event on the counter ROOT with a deterministic id; un-completing tombstones it. A compound still owns no events — the credit lives on the root. A COMPOUND with zero children is legal only while it counts toward a counter (it stays incomplete until it has children that complete).
+
+One credit per completion OCCURRENCE (D10), not per task lifetime — a repeating weekly board's square credits every week it is completed:
+
+| Contributor | One credit per | Stamped at |
+| --- | --- | --- |
+| NORMAL | live completion event (keyed by its id) | that event's `occurredAt` |
+| plain COUNTING | placement window it is complete in (unplaced → lifetime) — keyed by the increment that crossed the goal there | the crossing increment's `occurredAt` |
+| COMPOUND | placement window it is complete in (unplaced → lifetime) — keyed by the completing child's canonical event, scoped by fork-lineage root | that child event's `occurredAt` |
+| COMPOUND whose completing child owns no event (latched) | placement board (`board:<id>`) or `lifetime` when unplaced | when its rule was met |
+
+The target ROOT is part of every key. Fork lineage shares credits (an original and its board-scoped fork never double-count; a credit stays while any live flagged lineage member wants it).
+
+- **Counted from flag time (D11a).** A credit is wanted only when its instant is at or after `countsTowardSince`; setting the flag does not back-fill, re-pointing resets the stamp and withdraws the old counter's credits. A late log stamped at an ended board's `endDate` before `since` does not credit (D8 × D11).
+- **Sealed windows respected (D11b).** An insert / revise / tombstone whose instant lies in a seal-immune window of a board holding the root or a copy is skipped, except at the closed-board late-log path's own stamp.
+- **One write path.** Every set / re-point / clear of the flag goes through `setCountsToward` / `setCountsTowardInTransaction` (`apps/web/src/db/operations/countsToward.ts`) ↔ `AppDatabase.setCountsToward` / static `setCountsToward(db:…)` (`AppDatabase+CountsToward.swift`): it validates (`countsTowardProblem`, transitive cycle guard), stamps `since`, and hands the previous root to the cascade. Guards: `promoteTaskToCounter` refuses a flagged task; the counter's kind switch off Discrete is refused while contributors exist ([`COUNTER_KINDS.md`](COUNTER_KINDS.md)); `deleteCounterWithUnlink` unflags contributors; `deleteTaskWithCascade` tombstones the contributor's credits.
+- **What the UI shows.** Counter Detail → **Counts toward** (Discrete roots only): one row per fork lineage with a StatusPill for the current-window state, "× N" only when ≥ 2 credits, "+N" when the amount ≠ 1, and **+ New** (the create sheet preset to the counter). The task editors (Task Detail / Tasks tab, Board Edit square sheet, create sheets) carry a **Counts toward** row — shown only when at least one Discrete counter exists — whose picker is the counter search filtered to Discrete, with a None row and an amount stepper; re-pointing asks before withdrawing the old counter's credits. A contributing board cell wears the two-dot shared mark while not done. Completing a contributor shows the credited toast only when a credit was actually written and the counter has squares on other boards whose counted window holds it; Undo reverses that exact write.
+
+See [`WINDOWED_COMPLETION.md` §Derived-task carve-out](WINDOWED_COMPLETION.md#derived-task-carve-out) for the event rules and [`TASK_SYSTEM.md` §Counts toward](TASK_SYSTEM.md#counts-toward) for the task-model view.
+
 ## The engine already exists (don't rebuild it)
 
 OYBC shipped a live, production shared-counter **engine** (Issue #84, Phases 0–4, both platforms). The engineering-risky core is done:
@@ -38,7 +74,7 @@ A **"counter"** = one **source** counting task (a task with ≥1 live task linki
 | `counter.lifetime` | source task's `currentCount` (MVP: as-is, can be decremented; a never-reset accumulator is deferred) |
 | `counter.name / action / unit` | source task's `title / action / unit` |
 | a `task` in the counter | a member Task (source or linked), with its own board + timeframe + `maxCount` |
-| `task.logged` | the member's **in-window count** — what its board square shows (2026-10-09): a placed linked member = the root's increments inside its board's window (`resolveLinkedCounterDisplay`), a placed source (board-born root) = its own events inside its board's window (`resolveTaskWindowState`), both bounded at a sealed board's `sealedAt`. Only an UNPLACED row (no board, no window — the library rule) falls back to `deriveDisplayedCount` (source = full count; linked = count − baseline). The counter's all-time number is `lifetime`, never a member's `logged`. |
+| `task.logged` | the member's **in-window count** — what its board square shows (2026-10-09): a placed linked member = the root's increments inside its board's window (`resolveLinkedCounterDisplay`), a placed source (a counting task other boards link to) = its own events inside its board's window (`resolveTaskWindowState`), both bounded at a sealed board's `sealedAt`. Only an UNPLACED row (no board, no window — the library rule) falls back to `deriveDisplayedCount` (source = full count; linked = count − baseline). The counter's all-time number is `lifetime`, never a member's `logged`. |
 | `task.goal` | member's `maxCount` |
 | `task.window` | `formatTimeframeLabel(task.timeframe, task.startDate)` |
 | active vs "Not counting now" | member's board is `ACTIVE` vs draft/completed/archived/placeless |
@@ -67,7 +103,7 @@ No engine change: P2's `incrementSharedCounter` already fans the log out to ever
 
 ## Deferred (not in this MVP)
 
-- **P4 rich stats** — 7-day sparkline, counter-level streak, best-window, closed-window history. *(Update 2026-07: the "only real schema addition" this bullet used to require — a per-increment log — has since shipped as `task_events` (`docs/WINDOWED_COMPLETION.md`). P4 is now a pure read-model feature over source-task increment events; hub-born counters (P5) have full history from birth, with seed events identifiable by the far-past `occurredAt` sentinel.)*
+- **P4 rich stats** — 7-day sparkline, counter-level streak, best-window, closed-window history. *(Update 2026-07: the "only real schema addition" this bullet used to require — a per-increment log — has since shipped as `task_events` (`docs/WINDOWED_COMPLETION.md`). P4 is now a pure read-model feature over source-task increment events; counters created from the hub (P5) have full history from birth, with seed events identifiable by the far-past `occurredAt` sentinel.)*
 - **True per-window resets** ("a fresh weekly task starts at 0 while all-time climbs") — OYBC's already-deferred "Decision 6 / v2"; the prototype only conveys it via copy + independent goals.
 - **Never-reset lifetime accumulator** — MVP uses `currentCount`.
 - **Fully-automatic grouping by action+unit** (silent link, no prompt) — NOT building. Instead see "Link suggestions" below.
@@ -78,9 +114,9 @@ The handoff's "counters link up on their own" is core, not deferred: without it,
 
 - **Shared:** `findLinkableCounter({action, unit, excludeTaskId?}, tasks) → { counterId, name, lifetime, memberCount } | null` (`packages/shared/src/algorithms/linkableCounter.ts`, Jest-tested). `action` is the **verb** and `unit` is the **noun** — together they form the (verb, noun) pair that identifies a counter (Do·push-ups ≠ Do·sit-ups; Run·miles ≠ Bike·miles by construction). Matches non-derived candidates; most-established counter wins. `name` is `counterDisplayName` — the root's `counterName` when set (shared counter settings, docs/SHARED_COUNTER_SETTINGS.md §1a), else the pair-derived display name (`formatCounterName`), falling back to the source's stored title. iOS ports it (`LinkableCounter.swift`).
 
-**Naming (shared counter settings PR 1, 2026-10-09).** A counter ROOT may carry `counterName`, `titleTemplateSingular` / `titleTemplatePlural` (`#N` = the count) and `timeframeGoals` (default goal per core timeframe). All four are absent until edited (absent = default, never backfilled) and clearable on sync. Every counter label (hub, Counter Detail, pickers, library rows, link hints, arrival banner, credited toast) reads `counterDisplayName`; square titles render through `renderCounterTitle` (`generateCounterTaskTitle` delegates to it — byte-identical for an untouched counter); `isAutoCounterTitle` is template-aware, and a name / template edit re-renders every live auto-titled copy (`planRootFieldPropagation`). Placement using the defaults is PR 2; the sheet UI follows the design handoff.
+**Naming (shared counter settings PR 1, 2026-10-09).** A counter ROOT may carry `counterName`, `titleTemplateSingular` / `titleTemplatePlural` (`#N` = the count) and `timeframeGoals` (default goal per core timeframe). All four are absent until edited (absent = default, never backfilled) and clearable on sync. Every counter label (hub, Counter Detail, pickers, library rows, link hints, arrival banner, credited toast) reads `counterDisplayName`; square titles render through `renderCounterTitle` (`generateCounterTaskTitle` delegates to it — byte-identical for an untouched counter); `isAutoCounterTitle` is template-aware, and a name / template edit re-renders every live auto-titled copy (`planRootFieldPropagation`). Placement using the defaults and the sheet UI have shipped (see [§Current model](#current-model-2026-10--settings--counts-toward-shipped)).
 - **UI (both platforms):** the auto-link hint card renders inline in the counting create sub-fields, wherever counting tasks are created (board-wizard Tasks step special panel + its inline compound-sub counting fields, Tasks-tab New Task sheet, quick-add). Linking is on by default; "Don't link" opts out for that create. Reuses `LinkedCounterInput` / `sharedCounterId`.
-- **Suggestion pool caveat:** the match pool must include goal-less hub-born counters (excluded from the browsable task list) and, in wizard contexts, this session's not-yet-persisted pending tasks — otherwise a hub counter or a just-created same-pair task silently fails to link. See `suggestionPool` (iOS `RisoSpecialTaskPanel`/`RisoCompoundFieldsView`; web `BoardWizardTasksStep.effectiveSuggestionPool` / `CreateNewTaskForm`'s `suggestionPool` prop).
+- **Suggestion pool caveat:** the match pool must include goal-less counters created from the hub (excluded from the browsable task list) and, in wizard contexts, this session's not-yet-persisted pending tasks — otherwise a hub counter or a just-created same-pair task silently fails to link. See `suggestionPool` (iOS `RisoSpecialTaskPanel`/`RisoCompoundFieldsView`; web `BoardWizardTasksStep.effectiveSuggestionPool` / `CreateNewTaskForm`'s `suggestionPool` prop).
 
 ## Locked decisions
 
@@ -100,7 +136,7 @@ Web:     apps/web/src/pages/CountersHubPage.tsx        ←→  iOS  Views/Profil
          components/counters/* (Ledger card, member row, log stepper)  ←→  Views/ProfileTab/Components/*
 ```
 
-## P5 — Hub-born counters (design locked 2026-07-15)
+## P5 — Counters created from the hub (design locked 2026-07-15)
 
 > **Status: IMPLEMENTED — PR-1 #330 (shared, merged) + PR-2 (platforms, this PR).**
 > Gate-2 device verification pending (relayed checklist). Original design record below.
@@ -113,7 +149,7 @@ Web:     apps/web/src/pages/CountersHubPage.tsx        ←→  iOS  Views/Profil
 
 ### Concept
 
-A hub-born counter is a **standalone source counting task**: `isCounter: true`,
+A counter created from the hub is a **standalone source counting task**: `isCounter: true`,
 `action` + `unit`, auto-generated editable title, **no `maxCount`**, no board
 placement. No new entity, no engine rewrite. The counter acquires members the
 way counters already do — the create-form link suggestion and the counting
@@ -139,7 +175,7 @@ carry the goals and windows; the counter is the accumulator).
 `incrementSharedCounter` / `decrementSharedCounter` currently **throw** on a
 nil/undefined source `maxCount` ("data integrity error") on both platforms
 (web `tasks.sharedCounter.ts`, iOS `AppDatabase+SharedCounters.swift`) — the
-hub-born counter's own Log stepper would crash on first tap. Both guards relax
+hub counter's own Log stepper would crash on first tap. Both guards relax
 to accept goal-less sources, and the source completion-latch comparisons gain a
 `maxCount != null` guard (a goal-less source never auto-completes;
 `resolveTaskWindowState` and the lifetime-cache stamp already handle absent
@@ -270,8 +306,7 @@ the counters area — Hub, Detail, creation surfaces, board-play touchpoints —
   (plural noun) + optional "Start from", live preview card, RisoButton
   footer (ad-hoc button CSS deleted). CountingStepFields → labels
   **Verb\* · Goal\* · Counting\***, live title preview, blue auto-link hint
-  card + outlined "Don't link" pill. DeriveCounterModal → "Smaller version",
-  inherits the pair, previews derived title, RisoButton footer.
+  card + outlined "Don't link" pill. DeriveCounterModal → "Smaller version" *(superseded: retired in #585, D6 — timeframe defaults replace it)*.
 - **Board-play**: RisoCreditedToast amount-aware ("**+10 push-ups** — also
   counted on Daily Grind.") + Undo pill; RisoArrivalBanner tightened copy;
   square modal/context menu gains the same amount options.
@@ -363,4 +398,4 @@ toast window is reversed instead of the displayed one. Accepted for a
 single-user product (same-surface re-logs replace the toast); threading the
 entry id through the toast payload is the exact-fix if this ever matters.
 
-> **Design in progress (2026-10-09):** per-counter settings (name, `#N` title templates, default goals per core timeframe), placement at the board-timeframe default, and "counts toward" (any task increments a Discrete counter on completion) — see [`SHARED_COUNTER_SETTINGS.md`](SHARED_COUNTER_SETTINGS.md).
+> **Shipped (2026-10-09/10, #584–#588):** per-counter settings, placement at the board-timeframe default and "counts toward" — see [§Current model](#current-model-2026-10--settings--counts-toward-shipped) and [`SHARED_COUNTER_SETTINGS.md`](SHARED_COUNTER_SETTINGS.md).

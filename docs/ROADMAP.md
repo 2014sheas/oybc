@@ -283,6 +283,7 @@ From the end-user review. Theme: the deep machinery is built — most opportunit
 
 ### F1 — Shared Counters P2–P4 — `L`, **in flight**
 - Canonical doc: `docs/SHARED_COUNTERS.md`. P2 board-play polish (shared marker, credited toast), P3 arrival banner — **SHIPPED** [#307](https://github.com/2014sheas/oybc/pull/307) (`counterArrivals.ts` is now wired: web `hooks/useCounterArrivals.ts` in `BoardPlaySurface`, iOS `detectCounterArrivals` in `BoardPlayViewModel`), P4 rich stats (deferred per the canonical doc). This is the differentiator — finish making the engine visible before starting new tracks.
+- **Shared counter settings + "counts toward" train — SHIPPED 2026-10-09/10** ([#584](https://github.com/2014sheas/oybc/pull/584) settings data, [#585](https://github.com/2014sheas/oybc/pull/585) placement defaults, [#587](https://github.com/2014sheas/oybc/pull/587) counter sheet UI, [#586](https://github.com/2014sheas/oybc/pull/586) counts-toward cascade, [#588](https://github.com/2014sheas/oybc/pull/588) counts-toward UI, docs close-out): see `docs/SHARED_COUNTERS.md` §Current model and `docs/SHARED_COUNTER_SETTINGS.md`.
 
 ### F2 — Starter board gallery + tutorial rework (#157) — `L`
 - **Why:** the biggest funnel risk is cold start — empty library + a 24-square authoring lift before any fun. Starter templates and the tutorial rework are the same "first session" problem; do them as one design effort.

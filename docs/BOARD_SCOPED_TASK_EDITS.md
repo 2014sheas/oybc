@@ -297,7 +297,7 @@ Nothing new on the grid. In the Board Edit square sheet:
   `AppDatabase+RootFieldPropagation.swift`. Board Edit / wizard / pool edits
   never propagate.
 - A root is a live COUNTING task with no `sharedCounterId` (the kind switch's
-  definition — a board-born counter that other rows link to counts too); a
+  definition — a counting task that other rows link to counts too); a
   live copy is a COUNTING row with `sharedCounterId == root.id`, not deleted,
   not `isFrozenDerivedRow`, and not placed on a sealed board (a manually
   closed board's window may not have ended, so the freeze alone does not
