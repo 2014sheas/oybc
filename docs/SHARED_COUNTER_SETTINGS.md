@@ -366,7 +366,7 @@ same stamp as the completion that caused it).
 | 1 — counter settings data + logic (name, templates, timeframe defaults; sheet UI follows the design handoff) — **SHIPPED (data + logic) in #584** | shared types + Zod + GRDB migration (nullable columns) + Dexie (no index); `renderCounterTitle` / `resolveCounterDefaultGoal` / default-template helpers with vectors; `isAutoCounterTitle` → template-aware; propagation (#575) extended to template/name edits; the counter sheet's new fields (create + edit); hub/Detail/pickers show `counterName`. Inert for untouched counters (absent = today's behaviour). |
 | 2 — placement uses defaults — **SHIPPED (logic) in #585** | quick-add / picker mint with `resolveCounterDefaultGoal` + rendered title; shared search-match set; retire `DeriveCounterModal` (D6); source-pull auto-scaler consults defaults. |
 | 3 — counts toward (data + cascade) — **SHIPPED (data + cascade) in #586** | `countsTowardCounterId/Amount`, deterministic event mint/tombstone in the cascade, delete/kind guards, zero-child container rule; vectors + XCTest/Vitest; no UI. |
-| 4 — counts toward (UI) — **SHIPPED (UI) in #TBD** | Counter Detail section + "+ New"; task editor picker; cell badge; credited toast; e2e + snapshots. |
+| 4 — counts toward (UI) — **SHIPPED (UI) in #588** | Counter Detail section + "+ New"; task editor picker; cell badge; credited toast; e2e + snapshots. |
 | 5 — docs | SHARED_COUNTERS / COUNTER_KINDS / TASK_SYSTEM / CLAUDE.md. |
 
 **PR 1 notes (2026-10-09).** Fields: `Task.counterName`, `titleTemplateSingular`,
