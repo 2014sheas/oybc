@@ -107,6 +107,63 @@ function baseInput(
   };
 }
 
+describe('persistWizardBoardRows — a replaced pending LINKED row is never written (no orphan member)', () => {
+  const ROOT = uuid(90);
+  const PENDING = uuid(91);
+  const root = (): Task => ({
+    id: ROOT, userId: USER, title: 'Pages', type: TaskType.COUNTING, action: 'Read', unit: 'pages', isCounter: true,
+    currentCount: 40, isCompleted: false, totalCompletions: 0, totalInstances: 0, createdAt: START, updatedAt: START,
+    version: 1, isDeleted: false,
+  });
+  const pendingLinked = (): Task => ({
+    id: PENDING, userId: USER, title: 'Read 5 pages', type: TaskType.COUNTING, action: 'Read', unit: 'pages', maxCount: 5,
+    currentCount: 0, sharedCounterId: ROOT, baseline: 40, isCompleted: false, totalCompletions: 0, totalInstances: 0,
+    createdAt: START, updatedAt: START, version: 1, isDeleted: false, timeframe: Timeframe.DAILY, startDate: START,
+    createdInWizard: true,
+  });
+
+  it('active save: the board places derivedTaskId(board, root) at the typed goal; the pending row and its sync item are gone', async () => {
+    await db.tasks.add(root());
+    const pending = pendingLinked();
+    const placement = new Array(9).fill(null);
+    placement[0] = pending;
+
+    const boardId = await persistWizardBoardRows(
+      baseInput({
+        placement,
+        pendingTasks: [{ task: pending, childTasks: [], childLinks: [] }],
+        manualTaskIds: [PENDING],
+        manualTaskVary: {},
+        status: 'active',
+      }),
+    );
+
+    const copyId = derivedTaskId(boardId, ROOT);
+    const placed = await db.boardTasks.where('boardId').equals(boardId).toArray();
+    expect(placed.map((p) => p.taskId)).toEqual([copyId]);
+    expect(await db.tasks.get(copyId)).toMatchObject({ maxCount: 5, sharedCounterId: ROOT });
+    expect(await db.tasks.get(PENDING)).toBeUndefined();
+    const queued = await db.syncQueue.toArray();
+    expect(queued.some((q) => q.entityType === 'tasks' && q.entityId === PENDING)).toBe(false);
+    expect(queued.some((q) => q.entityType === 'tasks' && q.entityId === copyId)).toBe(true);
+    // Exactly one row links to the root: the copy. No ghost member on Counter Detail.
+    expect((await db.tasks.where('sharedCounterId').equals(ROOT).toArray()).map((t) => t.id)).toEqual([copyId]);
+  });
+
+  it('draft save: the pending row IS written (the draft references it) — and nothing is minted', async () => {
+    await db.tasks.add(root());
+    const pending = pendingLinked();
+    const placement = new Array(9).fill(null);
+    placement[0] = pending;
+    const boardId = await persistWizardBoardRows(
+      baseInput({ placement, pendingTasks: [{ task: pending, childTasks: [], childLinks: [] }], manualTaskIds: [PENDING], status: 'draft' }),
+    );
+    expect((await db.boardTasks.where('boardId').equals(boardId).toArray()).map((p) => p.taskId)).toEqual([PENDING]);
+    expect(await db.tasks.get(PENDING)).toBeDefined();
+    expect(await db.tasks.get(derivedTaskId(boardId, ROOT))).toBeUndefined();
+  });
+});
+
 describe('persistWizardBoardRows — windowed derivation pass (item 2)', () => {
   it('fresh create + activate: a task already windowed-complete stores completedTasks=1, not a hand-init 0', async () => {
     const task = await seedWindowedCompleteTask(uuid(1));

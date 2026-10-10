@@ -91,7 +91,8 @@ struct BoardEditPresenter: ViewModifier {
                             viewModel.handleEditReplace(cellKey: target.cellKey, taskId: taskId, pending: pending)
                         }
                         pickerTarget = nil
-                    }
+                    },
+                    timeframe: viewModel.board?.timeframe
                 )
             }
             // Edit-task sheet (i6, unchanged from slice 2).

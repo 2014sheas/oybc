@@ -10,29 +10,40 @@ export type { CounterTitleFields, CounterTitleSettings } from './taskTitle';
 export {
   COUNT_PLACEHOLDER,
   COUNTER_GOAL_TIMEFRAMES,
+  COUNTER_SETTINGS_KEYS,
+  changedCounterSettingsKeys,
   counterDisplayName,
+  counterSettingsDefaults,
+  counterSettingsDraftFromRoot,
   defaultTitleTemplates,
   derivedTimeframeGoals,
   effectiveTitleTemplates,
   formatTitleCount,
   renderCounterTitle,
   resolveCounterDefaultGoal,
+  storedCounterSettings,
+  storedCounterSettingsFromDraft,
 } from './counterSettings';
 export type {
   CounterGoalTimeframe,
+  CounterSettingsContext,
+  CounterSettingsDefaults,
+  CounterSettingsDraft,
   CounterSettingsFields,
   CounterTimeframeGoals,
   CounterTitleTemplates,
+  StoredCounterSettings,
 } from './counterSettings';
 export {
   counterSearchMatches,
   counterTimeframeDefault,
   normalizeSearchText,
   placementGoalForCounter,
+  placementGoalSource,
   placementNeedsCopy,
   taskSearchMatches,
 } from './counterPlacement';
-export type { PlacementBoard, PlacementExistingCopy } from './counterPlacement';
+export type { PlacementBoard, PlacementExistingCopy, PlacementGoalSource } from './counterPlacement';
 
 // ===== Counter kinds (docs/COUNTER_KINDS.md) =====
 export {
@@ -408,6 +419,7 @@ export type {
 // ===== Member rules — display + rule-editing helpers (B3, docs/BOARD_SOURCES.md §Member rules) =====
 export {
   effectiveMemberTarget,
+  memberStepperMax,
   varyRangeLabel,
   splitSquaresNote,
   memberRuleFor,

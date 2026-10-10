@@ -5,13 +5,14 @@ import {
   counterTimeframeDefault,
   normalizeSearchText,
   placementGoalForCounter,
+  placementGoalSource,
   placementNeedsCopy,
   taskSearchMatches,
 } from '../../src/algorithms/counterPlacement';
 import { counterCopyTitle, generateCounterTaskTitle } from '../../src/algorithms/taskTitle';
 import { derivedTaskId, planDerivedTasks } from '../../src/algorithms/memberRules';
 import { windowStampedCopyDraft } from '../../src/algorithms/linkedCounterWindowHeal';
-import { effectiveMemberTarget } from '../../src/algorithms/memberRulesDisplay';
+import { effectiveMemberTarget, memberStepperMax } from '../../src/algorithms/memberRulesDisplay';
 import type { Timeframe } from '../../src/constants/enums';
 
 const V = JSON.parse(
@@ -32,6 +33,18 @@ describe('counterPlacementVectors — counterTimeframeDefault', () => {
 describe('counterPlacementVectors — placementGoalForCounter', () => {
   it.each(V.placementGoalForCounter as any[])('$name', (v: any) => {
     expect(placementGoalForCounter(v.root, v.board, v.existingCopy)).toBe(v.expected);
+  });
+});
+
+describe('counterPlacementVectors — placementGoalSource (the match row)', () => {
+  it('pins the timeframe source, the root-goal source and the no-goal case', () => {
+    const outcomes = (V.placementGoalSource as any[]).map((v) =>
+      v.expected === null ? 'none' : v.expected.fromTimeframe ? 'timeframe' : 'root'
+    );
+    expect(new Set(outcomes)).toEqual(new Set(['none', 'timeframe', 'root']));
+  });
+  it.each(V.placementGoalSource as any[])('$name', (v: any) => {
+    expect(placementGoalSource(v.root, v.board)).toEqual(v.expected);
   });
 });
 
@@ -153,6 +166,12 @@ describe('windowStampedCopyDraft — root settings + placement goal', () => {
     const d = windowStampedCopyDraft(copy, { ...source, maxCount: undefined, title: 'Read books' }, 0, { maxCount: 4 });
     expect(d?.maxCount).toBe(4);
     expect(d?.title).toBe('Read 4 books');
+  });
+});
+
+describe('counterPlacementVectors — memberStepperMax admits a default above the goal', () => {
+  it.each(V.memberStepperMax as any[])('$name', (v: any) => {
+    expect(memberStepperMax(v.goal, v.timeframeDefault)).toBe(v.expected);
   });
 });
 

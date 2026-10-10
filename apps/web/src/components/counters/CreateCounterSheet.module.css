@@ -1,6 +1,7 @@
-/* CreateCounterSheet — Counters Hub "+ New counter" modal (Shared Counters P5;
-   R1 counters refresh — preview card + gold-only dedupe + RisoButton footer).
-   Backdrop + dialog + fields. */
+/* CreateCounterSheet — the ONE counter editor (Counters Hub "+ New counter",
+   Counter Detail "Edit counter…"); shared counter settings handoff
+   CounterSheet.dc.html — Name · Kind · noun · verb · templates · Defaults ·
+   Start from; gold-only dedupe + RisoButton footer. Backdrop + dialog + fields. */
 
 .backdrop {
   position: fixed;
@@ -45,11 +46,35 @@
   margin: 12px 0 6px;
 }
 
-/* The sheet's first label (Kind). Not `:first-of-type` — that also matched
-   the first <label> ("What are you counting?"), pinning it flush under the
-   Kind picker. */
+/* The sheet's first label (Name). Not `:first-of-type` — that also matched
+   other <label>s further down the sheet. */
 .fieldLabelFirst {
   margin-top: 0;
+}
+
+/* The template / Defaults blocks carry their own labels. */
+.block {
+  margin-top: 12px;
+}
+
+/* Unset optional field: the derived default as real, dimmed text on a
+   hairline keyline (typing makes it solid). */
+.dim {
+  color: var(--riso-muted);
+  border-color: var(--riso-hair);
+}
+
+/* A required field that is empty after being touched. */
+.fieldInvalid {
+  border-color: var(--riso-red);
+}
+
+.fieldError {
+  margin-top: 6px;
+  font-family: var(--riso-font-body);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--riso-red);
 }
 
 .fieldInput {
@@ -73,59 +98,6 @@
 .fieldInput:focus-visible {
   outline: 3px solid var(--riso-blue);
   outline-offset: 2px;
-}
-
-/* ─── Live preview card (R1) ───
-   Paper-2 card with the derived counter name + right-aligned start count +
-   "All-time" label + a sub line, matching screenshots 03/04's preview. */
-.previewCard {
-  margin-top: 14px;
-  padding: 12px 14px 10px;
-  border: 2px solid var(--riso-ink);
-  border-radius: var(--riso-r-card);
-  background: var(--riso-paper);
-  box-shadow: 3px 3px 0 var(--riso-shadow-ink);
-}
-
-.previewRow {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 10px;
-}
-
-.previewName {
-  font-family: var(--riso-font-head);
-  font-size: 1.15rem;
-  font-weight: 800;
-  letter-spacing: -0.02em;
-  color: var(--riso-ink);
-}
-
-.previewCount {
-  font-family: var(--riso-font-head);
-  font-size: 1.15rem;
-  font-weight: 800;
-  color: var(--riso-blue);
-  font-variant-numeric: tabular-nums;
-}
-
-.previewFooter {
-  margin-top: 4px;
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 10px;
-}
-
-.previewAllTime {
-  flex-shrink: 0;
-  font-family: var(--riso-font-head);
-  font-size: 0.68rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--riso-muted);
 }
 
 /* ─── Dedupe match card — gold only (R1: the green "standalone/promote"

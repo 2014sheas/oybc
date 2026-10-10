@@ -7,4 +7,9 @@
 }
 .dots { display: inline-flex; gap: 2px; }
 .dots i { width: 5px; height: 5px; border-radius: 50%; background: var(--riso-on-color); }
+/* Dense scale for the quick-add / picker match rows (handoff: 3×8 padding,
+   1.5px keyline, 11px, 4px dots) — the row stays 44px. */
+.tagRowDense { min-height: 0; }
+.tagDense { gap: 5px; padding: 3px 8px; border-width: 1.5px; font-size: 11px; line-height: 1.2; }
+.tagDense .dots i { width: 4px; height: 4px; }
 .tagMeta { font-family: var(--riso-font-body); font-size: 12px; font-weight: 600; color: var(--riso-muted); }

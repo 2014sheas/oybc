@@ -31,6 +31,10 @@ struct GoalEntryView: View {
     var startsOpen: Bool = false
     /// Red keyline for an unparseable entry (web `GoalEntry`'s `invalid`).
     var invalid: Bool = false
+    /// Muted text + hairline keyline: the shown value is a DERIVED default,
+    /// not an entry (the counter sheet's Defaults row). Default false keeps
+    /// every other caller's look.
+    var dimmed: Bool = false
 
     @State private var wheelOpen = false
 
@@ -40,7 +44,7 @@ struct GoalEntryView: View {
 
     private var numericBody: some View {
         ZStack(alignment: .trailing) {
-            RisoNumberField(placeholder: placeholder ?? "100", text: $text, keyboard: GoalEntryModel.keyboard(for: kind), invalid: invalid)
+            RisoNumberField(placeholder: placeholder ?? "100", text: $text, keyboard: GoalEntryModel.keyboard(for: kind), invalid: invalid, dimmed: dimmed)
             if let suffix, !suffix.isEmpty {
                 Text(suffix)
                     .font(.risoBody(11, .semibold))
@@ -57,7 +61,7 @@ struct GoalEntryView: View {
                 HStack {
                     Text(text.isEmpty ? (placeholder ?? "0h 0m") : formatCount(parseCountInput(text, kind: .duration, allowZero: true) ?? 0, kind: .duration))
                         .font(.risoHead(14, .bold))
-                        .foregroundStyle(text.isEmpty ? Color.risoMuted : Color.risoInk)
+                        .foregroundStyle(text.isEmpty || dimmed ? Color.risoMuted : Color.risoInk)
                     Spacer()
                     Image(systemName: "chevron.down")
                         .font(.system(size: 11, weight: .bold))
@@ -67,7 +71,10 @@ struct GoalEntryView: View {
                 .padding(.horizontal, 11)
                 .frame(minHeight: 40)
                 .background(RoundedRectangle(cornerRadius: 7).fill(Color.risoPaper))
-                .overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(invalid ? Color.risoRed : Color.risoInk, lineWidth: Riso.Keyline.container))
+                .overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(
+                    invalid ? Color.risoRed : (dimmed ? Color.risoInk.opacity(0.35) : Color.risoInk),
+                    lineWidth: dimmed && !invalid ? Riso.Keyline.dense : Riso.Keyline.container
+                ))
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)

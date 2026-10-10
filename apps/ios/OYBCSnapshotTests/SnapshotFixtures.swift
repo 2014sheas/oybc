@@ -130,9 +130,13 @@ enum SnapshotFixtures {
         maxCount: CountValue? = nil,
         operatorType: OperatorType? = nil,
         threshold: Int? = nil,
-        isCompleted: Bool = false
+        isCompleted: Bool = false,
+        isCounter: Bool = false,
+        countKind: CountKind? = nil,
+        timeframeGoals: CounterTimeframeGoals? = nil,
+        counterName: String? = nil
     ) -> Task {
-        Task(
+        var task = Task(
             id: id,
             userId: userId,
             title: title,
@@ -153,8 +157,13 @@ enum SnapshotFixtures {
             lastSyncedAt: nil,
             version: 1,
             isDeleted: false,
-            deletedAt: nil
+            deletedAt: nil,
+            isCounter: isCounter
         )
+        task.countKind = countKind
+        task.timeframeGoals = timeframeGoals
+        task.counterName = counterName
+        return task
     }
 
     // MARK: - Shared-counter family (owner ruling 2026-09-22)

@@ -1,6 +1,6 @@
 import 'fake-indexeddb/auto';
 import { afterEach, describe, expect, it } from 'vitest';
-import { TaskType, type Task } from '@oybc/shared';
+import { TaskType, type CounterSettingsDraft, type Task } from '@oybc/shared';
 import { db } from '../../../db/internal';
 import { saveTaskEdit } from '../../../db/operations/compoundStructureEdit';
 import {
@@ -22,6 +22,11 @@ const root = (over: Partial<Task> = {}): Task =>
     ...over,
   }) as Task;
 
+/** A draft with nothing typed in the optional settings. */
+const UNSET: CounterSettingsDraft = { name: '', singular: '', plural: '', goals: {} };
+const draft = (verb: string, noun: string, kind: 'discrete' | 'continuous' | 'duration', settings: Partial<CounterSettingsDraft> = {}) =>
+  ({ verb, noun, kind, settings: { ...UNSET, ...settings } });
+
 afterEach(async () => {
   await Promise.all([
     db.tasks.clear(), db.taskEvents.clear(), db.boards.clear(), db.boardTasks.clear(),
@@ -30,45 +35,79 @@ afterEach(async () => {
 });
 
 describe('seedCounterEditDraft', () => {
-  it('prefills verb (action), noun (unit) and kind from the root', () => {
+  it('prefills verb (action), noun (unit), kind and the stored settings from the root', () => {
     expect(seedCounterEditDraft(root({ countKind: 'continuous' }))).toEqual({
-      verb: 'Run', noun: 'miles', kind: 'continuous',
+      verb: 'Run', noun: 'miles', kind: 'continuous', settings: UNSET,
     });
+    expect(
+      seedCounterEditDraft(root({ counterName: 'Running', titleTemplatePlural: 'Jog #N miles', timeframeGoals: { weekly: 20 } })).settings,
+    ).toEqual({ name: 'Running', singular: '', plural: 'Jog #N miles', goals: { weekly: 20 } });
   });
 });
 
 describe('counterEditSubmit', () => {
   it('an auto-titled root: title follows the new verb / noun; kind sent only when changed', () => {
-    expect(counterEditSubmit(root(), { verb: 'Jog', noun: 'km', kind: 'discrete' })).toEqual({
+    expect(counterEditSubmit(root(), draft('Jog', 'km', 'discrete'))).toEqual({
       title: 'Jog km', action: 'Jog', unit: 'km',
     });
-    expect(counterEditSubmit(root(), { verb: 'Run', noun: 'miles', kind: 'continuous' })).toEqual({
+    expect(counterEditSubmit(root(), draft('Run', 'miles', 'continuous'))).toEqual({
       title: 'Run miles', action: 'Run', unit: 'miles', countKind: 'continuous',
     });
   });
 
-  it('a blank verb submits as "Do" (the create sheet rule)', () => {
-    expect(counterEditSubmit(root(), { verb: '  ', noun: 'push-ups', kind: 'discrete' })).toMatchObject({
-      action: 'Do', unit: 'push-ups', title: 'Push-ups',
-    });
+  it('the verb is required — a blank verb is submitted as typed (trimmed), never substituted', () => {
+    expect(counterEditSubmit(root(), draft('  ', 'push-ups', 'discrete'))).toMatchObject({ action: '', unit: 'push-ups' });
   });
 
   it('a custom title is kept verbatim', () => {
-    expect(counterEditSubmit(root({ title: 'Morning miles' }), { verb: 'Jog', noun: 'miles', kind: 'discrete' }))
+    expect(counterEditSubmit(root({ title: 'Morning miles' }), draft('Jog', 'miles', 'discrete')))
       .toMatchObject({ title: 'Morning miles', action: 'Jog' });
   });
 
-  it('a board-born auto-titled root regenerates with its (switched) goal', () => {
+  it('a counting task other boards link to, auto-titled, regenerates with its (switched) goal', () => {
     const r = root({ isCounter: false, title: 'Run 2.6 miles', maxCount: 2.6, countKind: 'continuous' });
-    expect(counterEditSubmit(r, { verb: 'Run', noun: 'miles', kind: 'discrete' }).title).toBe('Run 3 miles');
+    expect(counterEditSubmit(r, draft('Run', 'miles', 'discrete')).title).toBe('Run 3 miles');
+  });
+
+  it('settings: only the keys whose stored value changed are sent; a clear is present-undefined', () => {
+    const r = root({ counterName: 'Running', titleTemplatePlural: 'Jog #N miles', timeframeGoals: { weekly: 20 } });
+    // Nothing changed → no settings keys at all.
+    const same = counterEditSubmit(r, draft('Run', 'miles', 'discrete', { name: 'Running', plural: 'Jog #N miles', goals: { weekly: 20 } }));
+    expect(Object.keys(same).sort()).toEqual(['action', 'title', 'unit']);
+    expect(same.title).toBe('Running');
+
+    // Name cleared (→ derived), singular typed, weekly changed + daily added.
+    const changed = counterEditSubmit(
+      r,
+      draft('Run', 'miles', 'discrete', { name: '', singular: 'Jog #N mile', plural: 'Jog #N miles', goals: { weekly: 25, daily: 4 } }),
+    );
+    expect('counterName' in changed).toBe(true);
+    expect(changed.counterName).toBeUndefined();
+    expect(changed.titleTemplateSingular).toBe('Jog #N mile');
+    expect('titleTemplatePlural' in changed).toBe(false);
+    // Typed goals are stored as typed — never normalised against each other.
+    expect(changed.timeframeGoals).toEqual({ weekly: 25, daily: 4 });
+    // The goal-less root's title is its name — now the derived one.
+    expect(changed.title).toBe('Run miles');
+  });
+
+  it('a typed name equal to the derived default stores absent; the title follows the new name', () => {
+    const r = root({ counterName: 'Running' });
+    const out = counterEditSubmit(r, draft('Run', 'miles', 'discrete', { name: 'Run miles' }));
+    expect('counterName' in out).toBe(true);
+    expect(out.counterName).toBeUndefined();
+    expect(out.title).toBe('Run miles');
+    const renamed = counterEditSubmit(root(), draft('Run', 'miles', 'discrete', { name: 'Miles' }));
+    expect(renamed).toMatchObject({ counterName: 'Miles', title: 'Miles' });
   });
 });
 
 describe('counterEditIdentityChanged / counterEditDedupePool', () => {
   it('detects a verb / noun change and drops the counter family from the dedupe pool', () => {
     const r = root();
-    expect(counterEditIdentityChanged(r, { verb: 'Run', noun: 'miles', kind: 'continuous' })).toBe(false);
-    expect(counterEditIdentityChanged(r, { verb: 'Run', noun: 'km', kind: 'discrete' })).toBe(true);
+    expect(counterEditIdentityChanged(r, { verb: 'Run', noun: 'miles' })).toBe(false);
+    expect(counterEditIdentityChanged(r, { verb: 'Run', noun: 'km' })).toBe(true);
+    expect(counterEditIdentityChanged(r, { verb: '', noun: 'miles' })).toBe(true);
     const copy = root({ id: 'copy', isCounter: false, sharedCounterId: 'root' });
     const other = root({ id: 'other', action: 'Do', unit: 'push-ups' });
     expect(counterEditDedupePool(r, [r, copy, other]).map((t) => t.id)).toEqual(['other']);
@@ -80,47 +119,41 @@ describe('the counter sheet save goes through saveTaskEdit (the Task Detail writ
     await db.tasks.add(root());
     await db.tasks.add(root({ id: 'copy', isCounter: false, sharedCounterId: 'root', maxCount: 10, title: 'Run 10 miles', currentCount: 0 }));
 
-    await saveTaskEdit('root', counterEditSubmit(root(), { verb: 'Jog', noun: 'miles', kind: 'continuous' }));
+    await saveTaskEdit('root', counterEditSubmit(root(), draft('Jog', 'miles', 'continuous')));
 
     expect(await db.tasks.get('root')).toMatchObject({ title: 'Jog miles', action: 'Jog', countKind: 'continuous', type: TaskType.COUNTING });
     expect(await db.tasks.get('copy')).toMatchObject({ action: 'Jog', countKind: 'continuous', title: 'Jog 10 miles' });
   });
-});
 
-describe('shared counter settings through saveTaskEdit (the patch path the design-handoff UI will wire)', () => {
-  it('a name + plural template + timeframe goals reach the root, re-render auto copies, keep custom ones', async () => {
+  it('the sheet submit stores typed templates + defaults and re-renders auto copies through them', async () => {
     await db.tasks.add(root());
     await db.tasks.add(root({ id: 'copy', isCounter: false, sharedCounterId: 'root', maxCount: 10, title: 'Run 10 miles', currentCount: 0 }));
     await db.tasks.add(root({ id: 'one', isCounter: false, sharedCounterId: 'root', maxCount: 1, title: 'Run 1 miles', currentCount: 0 }));
-    await db.tasks.add(root({ id: 'custom', isCounter: false, sharedCounterId: 'root', maxCount: 10, title: 'Morning run', currentCount: 0 }));
 
-    await saveTaskEdit('root', {
-      title: 'Running',
-      counterName: 'Running',
-      titleTemplateSingular: 'Jog #N mile',
-      titleTemplatePlural: 'Jog #N miles',
-      timeframeGoals: { weekly: 20 },
-    });
+    await saveTaskEdit(
+      'root',
+      counterEditSubmit(root(), draft('Run', 'miles', 'discrete', { name: 'Running', singular: 'Jog #N mile', plural: 'Jog #N miles', goals: { weekly: 20 } })),
+    );
 
     expect(await db.tasks.get('root')).toMatchObject({
-      title: 'Running', counterName: 'Running', titleTemplatePlural: 'Jog #N miles', timeframeGoals: { weekly: 20 },
+      title: 'Running', counterName: 'Running', titleTemplateSingular: 'Jog #N mile', titleTemplatePlural: 'Jog #N miles', timeframeGoals: { weekly: 20 },
     });
     expect((await db.tasks.get('copy'))!.title).toBe('Jog 10 miles');
     expect((await db.tasks.get('one'))!.title).toBe('Jog 1 mile');
-    expect((await db.tasks.get('custom'))!.title).toBe('Morning run');
     expect(resolveCreditedCounterName((await db.tasks.get('root'))!)).toBe('Running');
   });
 
-  it('clearing a setting (present-undefined) stores it absent and re-renders auto copies through the formula', async () => {
+  it('clearing a setting in the sheet stores it absent and re-renders auto copies through the formula', async () => {
     const r = root({ counterName: 'Running', titleTemplatePlural: 'Jog #N miles', title: 'Running' });
     await db.tasks.add(r);
     await db.tasks.add(root({ id: 'copy', isCounter: false, sharedCounterId: 'root', maxCount: 10, title: 'Jog 10 miles', currentCount: 0 }));
 
-    await saveTaskEdit('root', { title: 'Run miles', counterName: undefined, titleTemplatePlural: undefined });
+    await saveTaskEdit('root', counterEditSubmit(r, draft('Run', 'miles', 'discrete')));
 
     const cleared = (await db.tasks.get('root'))!;
     expect('counterName' in cleared).toBe(false);
     expect('titleTemplatePlural' in cleared).toBe(false);
+    expect(cleared.title).toBe('Run miles');
     expect((await db.tasks.get('copy'))!.title).toBe('Run 10 miles');
     expect(resolveCreditedCounterName(cleared)).toBe('Run miles');
   });
@@ -129,7 +162,7 @@ describe('shared counter settings through saveTaskEdit (the patch path the desig
     const r = root({ titleTemplatePlural: 'Run #N miles!' });
     await db.tasks.add(r);
     await db.tasks.add(root({ id: 'copy', isCounter: false, sharedCounterId: 'root', maxCount: 10, title: 'Run 10 miles!', currentCount: 0 }));
-    await saveTaskEdit('root', counterEditSubmit(r, { verb: 'Jog', noun: 'miles', kind: 'discrete' }));
+    await saveTaskEdit('root', counterEditSubmit(r, draft('Jog', 'miles', 'discrete', { plural: 'Run #N miles!' })));
     expect(await db.tasks.get('copy')).toMatchObject({ action: 'Jog', title: 'Run 10 miles!' });
     expect((await db.tasks.get('root'))!.titleTemplatePlural).toBe('Run #N miles!');
   });

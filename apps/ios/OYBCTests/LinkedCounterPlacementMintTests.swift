@@ -129,6 +129,36 @@ final class LinkedCounterPlacementMintTests: XCTestCase {
         XCTAssertEqual(rowCount, 2, "hubA + exactly one minted row")
     }
 
+    /// Board Edit's picker: a goal-less counter picked through the no-default
+    /// Goal entry stages a pending LINKED row; Save places the board's own
+    /// copy and never writes the pending row (no orphan member, no sync item).
+    func test_boardEditSave_replacedLinkedPendingRow_isNeverPersistedOrEnqueued() throws {
+        let db = try makeDb()
+        var rootTask = try XCTUnwrap(K.fetchTask(db, "root"))
+        rootTask.maxCount = nil
+        rootTask.isCounter = true
+        try db.saveTask(rootTask)
+        try db.saveTask(K.task("old", maxCount: 5))
+        try db.saveBoardTask(K.placement(id: "bt", boardId: "b1", taskId: "old", size: 3))
+        let vm = loadedVM(db)
+        vm.seedEditDraft(from: try XCTUnwrap(vm.board))
+
+        let pending = QuickAddCounterPlacement.pendingLinkedTask(
+            root: rootTask, goal: 5, userId: K.userId, now: septStart
+        )
+        vm.handleEditAdd(cellKey: "0-1", taskId: pending.task.id, pending: pending)
+        XCTAssertTrue(vm.handleEditSave())
+        XCTAssertTrue(waitUntil { vm.editEvent?.outcome == .saved })
+
+        let placed = try db.fetchBoardTasks(boardId: "b1").map(\.taskId).sorted()
+        XCTAssertEqual(placed, ["old", derived("b1")].sorted())
+        XCTAssertEqual(try K.fetchTask(db, derived("b1"))?.maxCount, 5)
+        XCTAssertNil(try K.fetchTask(db, pending.task.id), "the replaced pending row is not written")
+        XCTAssertTrue(try K.queue(db, type: "tasks", id: pending.task.id).isEmpty, "…and not enqueued")
+        let linked = try db.read { try Task.filter(Column("sharedCounterId") == "root").fetchAll($0).map(\.id) }
+        XCTAssertEqual(linked, [derived("b1")], "exactly one row links to the root — no ghost member")
+    }
+
     // MARK: - Board Edit override remap (review Major)
 
     private let patch = SquareEditTaskSheet.Patch(

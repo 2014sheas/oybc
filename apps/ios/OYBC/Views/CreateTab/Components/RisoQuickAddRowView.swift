@@ -63,6 +63,12 @@ struct RisoQuickAddRowView: View {
     /// Fixed placeholder instead of the rotating pool (the compound editor's
     /// Counting mode names the field the action: "Do").
     var placeholderOverride: String? = nil
+    /// The board's timeframe for a counter match row's goal slot (what a placed
+    /// copy would get). nil falls back to `defaultTimeframe`; both nil = no
+    /// goal slot (the pool editor / core-defaults hosts). Kept separate from
+    /// `defaultTimeframe` so a host (Board Edit's picker) can show the slot
+    /// without changing the timeframe its created tasks carry.
+    var placementTimeframe: Timeframe? = nil
 
     @State private var text: String = ""
     @State private var form = CreateFormViewModel()
@@ -124,6 +130,7 @@ struct RisoQuickAddRowView: View {
         submitTextEnabled: Bool = true,
         onTextChange: ((String) -> Void)? = nil,
         placeholderOverride: String? = nil,
+        placementTimeframe: Timeframe? = nil,
         seedText: String = ""
     ) {
         self.userId = userId
@@ -140,6 +147,7 @@ struct RisoQuickAddRowView: View {
         self.submitTextEnabled = submitTextEnabled
         self.onTextChange = onTextChange
         self.placeholderOverride = placeholderOverride
+        self.placementTimeframe = placementTimeframe
         _text = State(initialValue: seedText)
     }
 
@@ -188,26 +196,24 @@ struct RisoQuickAddRowView: View {
     private var libraryMatchesDropdown: some View {
         VStack(alignment: .leading, spacing: 0) {
             ForEach(libraryMatches) { task in
-                Button {
-                    onExistingTaskPicked?(task)
-                    text = ""
-                } label: {
-                    HStack(spacing: 10) {
-                        RisoTypeBadge(kind: task.type.risoQuickAddKind, style: .letterSquare)
-                        Text(task.title.isEmpty ? "(untitled task)" : task.title)
-                            .font(.risoBody(13.5, .semibold))
-                            .foregroundStyle(Color.risoInk)
-                            .lineLimit(1)
-                        Spacer(minLength: 0)
-                        Image(systemName: "plus")
-                            .font(.system(size: 13, weight: .bold))
-                            .foregroundStyle(Color.risoMuted)
+                QuickAddMatchRow(
+                    task: task,
+                    timeframe: placementTimeframe ?? defaultTimeframe,
+                    canCreatePending: onPendingCreated != nil,
+                    onPick: {
+                        onExistingTaskPicked?(task)
+                        text = ""
+                    },
+                    onPickWithGoal: { goal in
+                        let payload = QuickAddCounterPlacement.pendingLinkedTask(
+                            root: task, goal: goal, userId: userId, now: AppDatabase.currentTimestamp(),
+                            timeframe: defaultTimeframe, startDate: defaultStartDate, endDate: defaultEndDate
+                        )
+                        onTaskCreated(payload.task.id, payload.task.title, TaskType.counting.rawValue)
+                        onPendingCreated?(payload)
+                        text = ""
                     }
-                    .padding(.vertical, 9)
-                    .padding(.horizontal, 12)
-                    .contentShape(Rectangle()) // whole row is the tap target, not just the title/icon glyphs
-                }
-                .buttonStyle(.plain)
+                )
 
                 if task.id != libraryMatches.last?.id {
                     Divider().overlay(Color.risoInk.opacity(0.12))
@@ -259,6 +265,117 @@ struct RisoQuickAddRowView: View {
         form = CreateFormViewModel()
         placeholderIndex += 1
         focused = true
+    }
+}
+
+// MARK: - Match row
+
+/// One dropdown row. A plain task shows badge · title · plus. A shared counter
+/// ROOT shows badge · counter name · a dense kind tag, and — in a board context
+/// (`timeframe` set) — a goal slot: the goal a placed copy would get ("Weekly ·
+/// 2 books", or the root's own "12 books"), or, for a goal-less root with no
+/// default, an inline Goal entry that gates the plus (the row then places a
+/// pending linked counting task at that goal). Web twin: `WizardQuickAddRow`'s
+/// match row.
+private struct QuickAddMatchRow: View {
+    let task: OYBC.Task
+    let timeframe: Timeframe?
+    /// A host that can take a pending task (the wizard, Board Edit's picker).
+    let canCreatePending: Bool
+    /// Place the existing task (a plain row, or a root with a goal source).
+    let onPick: () -> Void
+    /// Place a pending linked task at the entered goal.
+    let onPickWithGoal: (CountValue) -> Void
+
+    @State private var goalText = ""
+
+    private var isRoot: Bool { QuickAddCounterPlacement.isSharedCounterRoot(task) }
+    private var kind: CountKind { resolveCountKind(task.countKind) }
+    private var title: String {
+        isRoot ? CounterSettings.counterDisplayName(task) : (task.title.isEmpty ? "(untitled task)" : task.title)
+    }
+    private var source: CounterPlacement.PlacementGoalSource? {
+        guard isRoot, let timeframe else { return nil }
+        return CounterPlacement.placementGoalSource(CounterSettings.Fields(task: task), timeframe: timeframe)
+    }
+    /// A goal-less root with no default: the row asks for a goal.
+    private var needsGoalEntry: Bool { isRoot && timeframe != nil && source == nil && canCreatePending }
+    private var enteredGoal: CountValue? {
+        parseCountInput(goalText, kind: kind).flatMap { $0 > 0 ? $0 : nil }
+    }
+
+    var body: some View {
+        if needsGoalEntry {
+            HStack(spacing: 10) {
+                Button(action: pickWithGoal) { rowLead }
+                    .buttonStyle(.plain)
+                    .allowsHitTesting(enteredGoal != nil)
+                GoalEntryView(
+                    kind: kind, text: $goalText, placeholder: "Goal",
+                    suffix: (task.unit ?? "").trimmingCharacters(in: .whitespaces)
+                )
+                .frame(width: 104)
+                Button(action: pickWithGoal) { plus }
+                    .buttonStyle(.plain)
+                    .opacity(enteredGoal != nil ? 1 : 0.45)
+                    .allowsHitTesting(enteredGoal != nil)
+            }
+            .padding(.vertical, 5)
+            .padding(.horizontal, 12)
+            .frame(minHeight: 44)
+        } else {
+            Button(action: onPick) {
+                HStack(spacing: 10) {
+                    rowLead
+                    goalSlot
+                    plus
+                }
+                .padding(.vertical, 9)
+                .padding(.horizontal, 12)
+                .frame(minHeight: isRoot ? 44 : 0)
+                .contentShape(Rectangle()) // whole row is the tap target, not just the title/icon glyphs
+            }
+            .buttonStyle(.plain)
+        }
+    }
+
+    private func pickWithGoal() {
+        guard let goal = enteredGoal else { return }
+        onPickWithGoal(goal)
+        goalText = ""
+    }
+
+    /// Badge · title (· dense kind tag for a counter root), taking the free width.
+    private var rowLead: some View {
+        HStack(spacing: 10) {
+            RisoTypeBadge(kind: task.type.risoQuickAddKind, style: .letterSquare)
+            Text(title)
+                .font(.risoBody(13.5, .semibold))
+                .foregroundStyle(Color.risoInk)
+                .lineLimit(1)
+            if isRoot { KindTagView(kind: kind, dense: true) }
+            Spacer(minLength: 0)
+        }
+        .contentShape(Rectangle())
+    }
+
+    /// "Weekly · 2 books" / "12 books" — the goal a placed copy would get.
+    @ViewBuilder
+    private var goalSlot: some View {
+        if let source, let timeframe {
+            let value = formatCount(source.goal, kind: kind) + countUnitSuffix(kind, unit: task.unit)
+            (Text(source.fromTimeframe ? "\(timeframe.risoDisplayName) · " : "")
+                .font(.risoBody(12, .semibold)).foregroundColor(Color.risoMuted)
+                + Text(value).font(.risoBody(12, .bold)).foregroundColor(Color.risoInk))
+                .lineLimit(1)
+                .fixedSize()
+        }
+    }
+
+    private var plus: some View {
+        Image(systemName: "plus")
+            .font(.system(size: 13, weight: .bold))
+            .foregroundStyle(Color.risoMuted)
     }
 }
 

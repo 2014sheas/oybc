@@ -68,6 +68,8 @@ final class CounterPlacementVectorTests: XCTestCase {
     private struct GoalVector: Decodable {
         let name: String; let root: Root; let board: Board; let existingCopy: Existing?; let expected: Double?
     }
+    private struct SourceExpected: Decodable { let goal: Double; let fromTimeframe: Bool }
+    private struct SourceVector: Decodable { let name: String; let root: Root; let board: Board; let expected: SourceExpected? }
     private struct NeedsVector: Decodable { let name: String; let root: Root; let board: Board; let expected: Bool }
     private struct SearchVector: Decodable { let name: String; let query: String; let root: Root; let expected: Bool }
     private struct TaskSearchVector: Decodable { let name: String; let query: String; let task: Root; let expected: Bool }
@@ -81,6 +83,9 @@ final class CounterPlacementVectorTests: XCTestCase {
     private struct TargetVector: Decodable {
         let name: String; let goal: Double; let explicit: Double?; let fromBoard: Bool
         let sourceWindow: String; let targetWindow: String; let timeframeDefault: Double?; let expected: Double
+    }
+    private struct StepperMaxVector: Decodable {
+        let name: String; let goal: Double; let timeframeDefault: Double?; let expected: Double
     }
     private struct PlanSupply: Decodable {
         let kind: String; let supply: [String]; let memberRules: [String: BoardSourceMemberRule]?
@@ -98,6 +103,7 @@ final class CounterPlacementVectorTests: XCTestCase {
     private struct Fixture: Decodable {
         let counterTimeframeDefault: [DefaultVector]
         let placementGoalForCounter: [GoalVector]
+        let placementGoalSource: [SourceVector]
         let placementNeedsCopy: [NeedsVector]
         let counterSearchMatches: [SearchVector]
         let taskSearchMatches: [TaskSearchVector]
@@ -105,6 +111,7 @@ final class CounterPlacementVectorTests: XCTestCase {
         let planDerivedTasks: Plan
         let effectiveMemberTarget: [TargetVector]
         let generateCounterTaskTitleWithSettings: [GenerateVector]
+        let memberStepperMax: [StepperMaxVector]
     }
 
     private func loadFixture() throws -> Fixture {
@@ -124,6 +131,16 @@ final class CounterPlacementVectorTests: XCTestCase {
             XCTAssertEqual(
                 CounterPlacement.counterTimeframeDefault(v.root.fields, timeframe: try tf(v.timeframe)), v.expected, v.name
             )
+        }
+    }
+
+    func testPlacementGoalSource() throws {
+        let vectors = try loadFixture().placementGoalSource
+        XCTAssertFalse(vectors.isEmpty)
+        for v in vectors {
+            let got = CounterPlacement.placementGoalSource(v.root.fields, timeframe: try tf(v.board.timeframe))
+            let want = v.expected.map { CounterPlacement.PlacementGoalSource(goal: $0.goal, fromTimeframe: $0.fromTimeframe) }
+            XCTAssertEqual(got, want, v.name)
         }
     }
 
@@ -198,6 +215,14 @@ final class CounterPlacementVectorTests: XCTestCase {
                     timeframeDefault: v.timeframeDefault
                 ),
                 v.expected, v.name
+            )
+        }
+    }
+
+    func testMemberStepperMaxAdmitsADefaultAboveTheGoal() throws {
+        for v in try loadFixture().memberStepperMax {
+            XCTAssertEqual(
+                BoardSources.memberStepperMax(goal: v.goal, timeframeDefault: v.timeframeDefault), v.expected, v.name
             )
         }
     }

@@ -6,6 +6,9 @@
 .field:focus-within { outline: 3px solid var(--riso-blue); outline-offset: 1px; }
 .dense { padding: 11px 12px; }
 .invalid { border-color: var(--riso-red); }
+/* Unset: a derived default shown dimmed — muted text on a hairline keyline. */
+.dim { border-color: var(--riso-hair); }
+.dim .input { color: var(--riso-muted); }
 /* width: 0 — an <input>'s intrinsic ~20ch width would otherwise set the
    field's min-content, so the h / m pair overflowed narrow rows (390px). */
 .input {

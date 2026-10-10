@@ -47,10 +47,6 @@ const ALLOWLIST: Record<string, { count: number; reason: string }> = {
   'apps/ios/OYBC/Views/BoardsTab/ViewModels/BoardPlayViewModel.swift': { count: 1, reason: BLANK_FALLBACK },
   'apps/ios/OYBC/Views/CreateTab/Components/RisoCompoundEditFieldsView.swift': { count: 1, reason: NEW_TASK },
   'apps/ios/OYBC/Views/CreateTab/Components/RisoCompoundFieldsView.swift': { count: 1, reason: NEW_TASK },
-  'apps/ios/OYBC/Views/CreateTab/Components/RisoPoolRowEditorView.swift': {
-    count: 1,
-    reason: "live preview of the draft's own fields (no root in scope); the formula is auto and the mint re-renders through the root",
-  },
   'apps/ios/OYBC/Views/CreateTab/Components/RisoSpecialTaskPanel.swift': { count: 1, reason: NEW_TASK },
   'apps/ios/OYBC/Views/CreateTab/Components/TaskEditPatch.swift': { count: 2, reason: TEMPLATE_AWARE },
   'apps/ios/OYBC/Views/CreateTab/ViewModels/CreateFormViewModel.swift': { count: 3, reason: NEW_TASK },

@@ -119,4 +119,26 @@ enum CounterPlacement {
     static func taskSearchMatches(_ query: String, task: Task) -> Bool {
         taskSearchMatches(query, type: task.type, fields: CounterSettings.Fields(task: task))
     }
+
+    /// Where a placed counter's goal comes from (the quick-add / picker row's
+    /// goal slot): the goal and whether it is a timeframe default (shown with
+    /// the timeframe prefix) rather than the root's own goal.
+    struct PlacementGoalSource: Equatable {
+        let goal: CountValue
+        let fromTimeframe: Bool
+    }
+
+    /// The goal a freshly placed copy would get on a board of `timeframe`,
+    /// plus whether it is a timeframe default. Nil when the root has no goal
+    /// at all (the row then offers a Goal entry). TS twin:
+    /// `placementGoalSource`.
+    ///
+    /// - Parameters:
+    ///   - root: The counter root's fields.
+    ///   - timeframe: The board's timeframe.
+    /// - Returns: The source, or nil.
+    static func placementGoalSource(_ root: CounterSettings.Fields, timeframe: Timeframe) -> PlacementGoalSource? {
+        guard let goal = placementGoalForCounter(root, timeframe: timeframe) else { return nil }
+        return PlacementGoalSource(goal: goal, fromTimeframe: counterTimeframeDefault(root, timeframe: timeframe) != nil)
+    }
 }

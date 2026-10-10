@@ -1,10 +1,18 @@
 import { useMemo, useRef, useState } from 'react';
-import { TaskType, type Task, type Timeframe } from '@oybc/shared';
+import { TaskType, parseCountInput, resolveCountKind, type Task, type Timeframe } from '@oybc/shared';
 import { createTask } from '../../db/operations/tasks';
 import { generateUUID, currentTimestamp } from '../../db/utils';
 import { RisoButton, RisoIcon, RisoTypeBadge } from '../riso';
 import type { PendingTaskPayload } from '../../pages/createPage/useCreateFormState';
 import { selectQuickAddMatches } from '../pools/poolEditSheetSelectors';
+import { GoalEntry } from '../counters/GoalEntry';
+import { KindTag } from '../counters/KindTag';
+import {
+  buildPendingLinkedCounter,
+  counterMatchRowGoal,
+  counterMatchRowName,
+  isSharedCounterRoot,
+} from './quickAddCounterPlacement';
 import styles from './WizardQuickAddRow.module.css';
 
 /**
@@ -84,6 +92,10 @@ export interface WizardQuickAddRowProps {
   /** Fixed placeholder instead of the rotating pool (the compound editor's
    *  Counting mode names the field the action: "Do"). */
   placeholder?: string;
+  /** Initial field text — the dropdown is text-driven, so a seeded text
+   *  renders the populated-dropdown state deterministically (tests only;
+   *  iOS twin: `RisoQuickAddRowView(seedText:)`). */
+  seedText?: string;
 }
 
 /** Stable empty-Set identity for the `selectedIds` default — avoids a new
@@ -127,6 +139,15 @@ const PLACEHOLDERS = [
  * text. Backward-compatible: omitting the new props (today's callers)
  * renders no dropdown at all.
  *
+ * A match row for a shared counter ROOT (docs/SHARED_COUNTER_SETTINGS.md §2;
+ * handoff `PlaceFrame.dc.html`) shows the counter's NAME, a dense kind tag and
+ * — when the host passed `currentTimeframe` (a board context) — the goal this
+ * board will get: "Weekly · 2 books" for a timeframe default, "12 books" for
+ * the root's own goal. When no goal resolves at all, the same slot holds an
+ * empty kind-aware Goal entry and the "+" stays dimmed until a number is
+ * typed; the pick then hands a pending LINKED counting task at that goal to
+ * `onPendingCreated` (hosts without it keep the plain row).
+ *
  * iOS source: `Views/CreateTab/Components/RisoQuickAddRowView.swift`.
  */
 export function WizardQuickAddRow({
@@ -144,10 +165,13 @@ export function WizardQuickAddRow({
   canSubmitText = true,
   onTextChange,
   placeholder: fixedPlaceholder,
+  seedText = '',
 }: WizardQuickAddRowProps): React.ReactElement {
-  const [text, setText] = useState('');
+  const [text, setText] = useState(seedText);
   const [placeholderIndex, setPlaceholderIndex] = useState(0);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  /** The Goal entry's text per no-default counter row (keyed by task id). */
+  const [rowGoalText, setRowGoalText] = useState<Record<string, string>>({});
   const inputRef = useRef<HTMLInputElement>(null);
 
   const trimmed = text.trim();
@@ -182,6 +206,94 @@ export function WizardQuickAddRow({
     // it requires non-empty text.
     updateText('');
     inputRef.current?.focus();
+  }
+
+  /**
+   * The no-default counter row's "+": the typed goal becomes a pending LINKED
+   * counting task (minted into this board's copy at persist / Save). Nothing
+   * is written to the counter root.
+   */
+  function handleCounterGoalPicked(root: Task, goal: number): void {
+    const payload = buildPendingLinkedCounter(root, goal, userId, generateUUID(), currentTimestamp(), {
+      timeframe: currentTimeframe,
+      startDate: currentStartDate,
+      endDate: currentEndDate,
+    });
+    onTaskCreated(payload.task);
+    onPendingCreated!(payload);
+    setRowGoalText((m) => ({ ...m, [root.id]: '' }));
+    updateText('');
+    inputRef.current?.focus();
+  }
+
+  /** The dropdown row for one match — a counter root gets the name · kind tag · goal slot. */
+  function renderMatchRow(task: Task): React.ReactElement {
+    const counterRow = isSharedCounterRoot(task) && currentTimeframe !== undefined;
+    if (!counterRow) {
+      return (
+        <button type="button" className={styles.dropdownRowButton} onClick={() => handleExistingPicked(task)}>
+          <RisoTypeBadge type={task.type} />
+          <span className={styles.dropdownRowTitle}>{task.title || '(untitled task)'}</span>
+          <RisoIcon name="plus" size={14} />
+        </button>
+      );
+    }
+    const name = counterMatchRowName(task);
+    const kind = resolveCountKind(task);
+    const slot = counterMatchRowGoal(task, currentTimeframe!);
+    const needsGoal = slot === null && onPendingCreated !== undefined;
+    if (!needsGoal) {
+      return (
+        <button type="button" className={styles.dropdownRowButton} onClick={() => handleExistingPicked(task)}>
+          <RisoTypeBadge type={task.type} />
+          <span className={styles.dropdownRowMain}>
+            <span className={styles.dropdownRowTitle}>{name}</span>
+            <KindTag kind={kind} dense />
+          </span>
+          {slot && (
+            <span className={styles.rowGoal}>
+              {slot.prefix}
+              <span className={styles.rowGoalValue}>{slot.value}</span>
+            </span>
+          )}
+          <RisoIcon name="plus" size={14} />
+        </button>
+      );
+    }
+    const goalText = rowGoalText[task.id] ?? '';
+    const goal = parseCountInput(goalText, kind);
+    const valid = goal !== null && goal > 0;
+    return (
+      <div className={styles.dropdownRowStatic} role="group" aria-label={`${name}, goal for this board`}>
+        <RisoTypeBadge type={task.type} />
+        <span className={styles.dropdownRowMain}>
+          <span className={styles.dropdownRowTitle}>{name}</span>
+          <KindTag kind={kind} dense />
+        </span>
+        <span className={styles.rowGoalEntry}>
+          <GoalEntry
+            kind={kind}
+            aria-label={`Goal for ${name}`}
+            value={goalText}
+            onChange={(next) => setRowGoalText((m) => ({ ...m, [task.id]: next }))}
+            placeholder="Goal"
+            suffix={task.unit ?? undefined}
+            invalid={goalText.trim() !== '' && !valid}
+            onEnter={() => valid && handleCounterGoalPicked(task, goal!)}
+            dense
+          />
+        </span>
+        <button
+          type="button"
+          className={styles.rowPlusButton}
+          aria-label={`Add ${name}`}
+          disabled={!valid}
+          onClick={() => valid && handleCounterGoalPicked(task, goal!)}
+        >
+          <RisoIcon name="plus" size={14} />
+        </button>
+      </div>
+    );
   }
 
   async function handleSubmit(): Promise<void> {
@@ -307,17 +419,7 @@ export function WizardQuickAddRow({
         <ul className={styles.dropdownList} aria-label="Matching library tasks">
           {libraryMatches.map((task) => (
             <li key={task.id} className={styles.dropdownItem}>
-              <button
-                type="button"
-                className={styles.dropdownRowButton}
-                onClick={() => handleExistingPicked(task)}
-              >
-                <RisoTypeBadge type={task.type} />
-                <span className={styles.dropdownRowTitle}>
-                  {task.title || '(untitled task)'}
-                </span>
-                <RisoIcon name="plus" size={14} />
-              </button>
+              {renderMatchRow(task)}
             </li>
           ))}
         </ul>

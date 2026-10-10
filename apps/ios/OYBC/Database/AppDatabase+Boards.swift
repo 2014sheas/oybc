@@ -601,6 +601,32 @@ extension AppDatabase {
     ///   - rng: Uniform `[0, 1)` source for the member-rule dice rolls —
     ///     unseeded in production; tests inject a fixed one (web twin
     ///     `persistWizardBoardRows({ rng })`).
+    /// Remove a pending LINKED counting row (the quick-add match row's, or
+    /// the special panel's auto-link create) that a mint replaced with the
+    /// board's deterministic per-board copy: its `tasks` row and its sync
+    /// CREATE item are deleted inside the caller's transaction, so from
+    /// outside it was never written or enqueued. Scoped to bare linked
+    /// pending rows ONLY (`QuickAddCounterPlacement.isLinkedPendingPayload`)
+    /// — an ordinary pending pool task that overflows the board is still
+    /// created (overfill is the variety mechanism). Web twin:
+    /// `dropReplacedLinkedPendingRows` (`wizardBoard.ts`).
+    ///
+    /// - Parameters:
+    ///   - db: The active write transaction.
+    ///   - pending: The payloads the caller wrote.
+    ///   - placedTaskIds: The ids actually placed on the board.
+    static func dropReplacedLinkedPendingRows(
+        db: Database, pending: [PendingTaskPayload], placedTaskIds: Set<String>
+    ) throws {
+        for payload in pending
+        where QuickAddCounterPlacement.isLinkedPendingPayload(payload) && !placedTaskIds.contains(payload.task.id) {
+            _ = try Task.deleteOne(db, key: payload.task.id)
+            _ = try SyncQueueItem
+                .filter(Column("entityType") == "tasks" && Column("entityId") == payload.task.id)
+                .deleteAll(db)
+        }
+    }
+
     func saveWizardBoard(
         board: Board,
         boardTasks: [BoardTask],
@@ -730,6 +756,14 @@ extension AppDatabase {
                     deduped.append(row)
                 }
                 placedRows = deduped
+                // A pending LINKED row the mint just replaced with the board's
+                // own copy is never left behind as an orphan library member: it
+                // was written above only so the planner could read it, and
+                // leaves this transaction unwritten and unenqueued. A draft
+                // keeps it (the draft's placement references it).
+                try Self.dropReplacedLinkedPendingRows(
+                    db: db, pending: pendingTasks, placedTaskIds: Set(placedRows.map(\.taskId))
+                )
                 // A CHOSEN centre that resolved to a derived counter must have
                 // the board's stored `centerTaskId` follow it, or a resumed
                 // draft would stop recognising its own centre square.

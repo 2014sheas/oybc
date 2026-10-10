@@ -139,17 +139,13 @@ final class CountersHubSnapshotTests: XCTestCase {
         )
     }
 
-    // MARK: - New counter sheet — default (empty fields)
+    // MARK: - Counter sheet (create + edit; docs/SHARED_COUNTER_SETTINGS.md §1)
 
     @ViewBuilder
     private func sheetHost(
-        verb: String,
-        unit: String,
-        previewName: String,
-        match: CounterCreateMatch?,
-        kind: CountKind = .discrete,
-        startText: String = "",
-        previewCount: CountValue = 0,
+        _ form: CounterSheetForm,
+        touched: Set<CounterSheetField> = [],
+        match: CounterCreateMatch? = nil,
         startFromInvalid: Bool = false,
         isEditing: Bool = false,
         kindLock: KindPickerLock = .none
@@ -157,14 +153,9 @@ final class CountersHubSnapshotTests: XCTestCase {
         NavigationStack {
             ScrollView {
                 NewCounterSheetContentView(
-                    verb: .constant(verb),
-                    unit: .constant(unit),
-                    startingCountText: .constant(startText),
-                    countKind: .constant(kind),
+                    form: .constant(form),
+                    touched: .constant(touched),
                     startFromInvalid: startFromInvalid,
-                    previewName: previewName,
-                    previewCount: previewCount,
-                    trimmedUnit: unit,
                     match: match,
                     isEditing: isEditing,
                     kindLock: kindLock
@@ -175,78 +166,104 @@ final class CountersHubSnapshotTests: XCTestCase {
         }
     }
 
-    func testNewCounterSheetContinuousLight() {
-        let host = sheetHost(verb: "Run", unit: "miles", previewName: "Run miles", match: nil,
-                             kind: .continuous, startText: "148.6", previewCount: 148.6)
-        assertSnapshot(of: host, as: .image(layout: .fixed(width: 393, height: 520)), record: recordMode)
-    }
-
-    func testNewCounterSheetContinuousDark() {
-        let host = sheetHost(verb: "Run", unit: "miles", previewName: "Run miles", match: nil,
-                             kind: .continuous, startText: "148.6", previewCount: 148.6)
+    private func assertSheet(_ form: @autoclosure () -> some View, height: CGFloat, dark: Bool, name: String = #function) {
         assertSnapshot(
-            of: host,
-            as: .image(layout: .fixed(width: 393, height: 520), traits: .init(userInterfaceStyle: .dark)),
-            record: recordMode
+            of: form(),
+            as: .image(layout: .fixed(width: 393, height: height), traits: .init(userInterfaceStyle: dark ? .dark : .light)),
+            record: recordMode, testName: name
         )
     }
 
-    /// Counter Detail "Edit counter…" — the counter sheet in EDIT mode: the
-    /// root's verb / noun / kind prefilled, Duration locked out (an existing
-    /// Discrete / Continuous counter), no "Start from", the all-time total.
-    func testEditCounterSheetLight() {
-        let host = sheetHost(verb: "Run", unit: "miles", previewName: "Run miles", match: nil,
-                             kind: .continuous, previewCount: 148.6, isEditing: true,
-                             kindLock: kindPickerLock(mode: .edit, kind: .continuous))
-        assertSnapshot(of: host, as: .image(layout: .fixed(width: 393, height: 440)), record: recordMode)
-    }
-
-    func testEditCounterSheetDark() {
-        let host = sheetHost(verb: "Run", unit: "miles", previewName: "Run miles", match: nil,
-                             kind: .continuous, previewCount: 148.6, isEditing: true,
-                             kindLock: kindPickerLock(mode: .edit, kind: .continuous))
-        assertSnapshot(
-            of: host,
-            as: .image(layout: .fixed(width: 393, height: 440), traits: .init(userInterfaceStyle: .dark)),
-            record: recordMode
+    /// The Edit-mode fixture: stored name + singular SOLID, plural and the
+    /// Daily / Monthly / Yearly defaults derived from Weekly 2 and DIMMED.
+    private var editForm: CounterSheetForm {
+        CounterSheetForm(
+            verb: "Read", noun: "books", name: "Books", singular: "Read #N book",
+            kind: .discrete, goalTexts: [.weekly: "2"]
         )
     }
 
-    /// I4 — an unparseable "Start from" (3 decimals on Continuous) draws the
-    /// field's invalid state (red keyline), like web `CreateCounterSheet`.
-    func testNewCounterSheetStartFromInvalidLight() {
-        let host = sheetHost(verb: "Run", unit: "miles", previewName: "Run miles", match: nil,
-                             kind: .continuous, startText: "3.125", startFromInvalid: true)
-        assertSnapshot(of: host, as: .image(layout: .fixed(width: 393, height: 520)), record: recordMode)
-    }
-
-    func testNewCounterSheetStartFromInvalidDark() {
-        let host = sheetHost(verb: "Run", unit: "miles", previewName: "Run miles", match: nil,
-                             kind: .continuous, startText: "3.125", startFromInvalid: true)
-        assertSnapshot(
-            of: host,
-            as: .image(layout: .fixed(width: 393, height: 520), traits: .init(userInterfaceStyle: .dark)),
-            record: recordMode
+    private var durationForm: CounterSheetForm {
+        CounterSheetForm(
+            verb: "Practice", noun: "piano", name: "Piano", kind: .duration,
+            goalTexts: [.weekly: "300"]
         )
     }
 
     func testNewCounterSheetDefaultLight() {
-        let host = sheetHost(verb: "", unit: "", previewName: "", match: nil)
-        assertSnapshot(of: host, as: .image(layout: .fixed(width: 393, height: 460)), record: recordMode)
+        assertSheet(sheetHost(CounterSheetForm()), height: 900, dark: false)
     }
 
     func testNewCounterSheetDefaultDark() {
-        let host = sheetHost(verb: "", unit: "", previewName: "", match: nil)
-        assertSnapshot(
-            of: host,
-            as: .image(layout: .fixed(width: 393, height: 460), traits: .init(userInterfaceStyle: .dark)),
-            record: recordMode
+        assertSheet(sheetHost(CounterSheetForm()), height: 900, dark: true)
+    }
+
+    /// Both required fields emptied after editing: red keylines + inline errors.
+    func testNewCounterSheetValidationLight() {
+        assertSheet(sheetHost(CounterSheetForm(), touched: [.noun, .verb]), height: 960, dark: false)
+    }
+
+    func testNewCounterSheetValidationDark() {
+        assertSheet(sheetHost(CounterSheetForm(), touched: [.noun, .verb]), height: 960, dark: true)
+    }
+
+    /// Noun + verb typed: the dimmed name + templates appear, Defaults stay empty.
+    func testNewCounterSheetContinuousLight() {
+        let form = CounterSheetForm(verb: "Run", noun: "miles", startText: "148.6", kind: .continuous)
+        assertSheet(sheetHost(form), height: 900, dark: false)
+    }
+
+    func testNewCounterSheetContinuousDark() {
+        let form = CounterSheetForm(verb: "Run", noun: "miles", startText: "148.6", kind: .continuous)
+        assertSheet(sheetHost(form), height: 900, dark: true)
+    }
+
+    /// Counter Detail "Edit counter…" — the sheet in EDIT mode: Duration
+    /// locked out (an existing Discrete counter), no "Start from".
+    func testEditCounterSheetLight() {
+        assertSheet(
+            sheetHost(editForm, isEditing: true, kindLock: kindPickerLock(mode: .edit, kind: .discrete)),
+            height: 820, dark: false
         )
+    }
+
+    func testEditCounterSheetDark() {
+        assertSheet(
+            sheetHost(editForm, isEditing: true, kindLock: kindPickerLock(mode: .edit, kind: .discrete)),
+            height: 820, dark: true
+        )
+    }
+
+    /// Duration: h:m Defaults entries (derived ones dimmed), no unit suffix.
+    func testEditCounterSheetDurationLight() {
+        assertSheet(
+            sheetHost(durationForm, isEditing: true, kindLock: kindPickerLock(mode: .edit, kind: .duration)),
+            height: 880, dark: false
+        )
+    }
+
+    func testEditCounterSheetDurationDark() {
+        assertSheet(
+            sheetHost(durationForm, isEditing: true, kindLock: kindPickerLock(mode: .edit, kind: .duration)),
+            height: 880, dark: true
+        )
+    }
+
+    /// I4 — an unparseable "Start from" (3 decimals on Continuous) draws the
+    /// field's invalid state (red keyline).
+    func testNewCounterSheetStartFromInvalidLight() {
+        let form = CounterSheetForm(verb: "Run", noun: "miles", startText: "3.125", kind: .continuous)
+        assertSheet(sheetHost(form, startFromInvalid: true), height: 900, dark: false)
+    }
+
+    func testNewCounterSheetStartFromInvalidDark() {
+        let form = CounterSheetForm(verb: "Run", noun: "miles", startText: "3.125", kind: .continuous)
+        assertSheet(sheetHost(form, startFromInvalid: true), height: 900, dark: true)
     }
 
     // MARK: - New counter sheet — established match (Create disabled, "Open {CounterName}")
 
-    func testNewCounterSheetEstablishedMatchLight() {
+    private var establishedMatch: CounterCreateMatch {
         let now = "2026-02-01T00:00:00.000"
         let sourceTask = Task(
             id: "src", userId: "u1", title: "Push-ups", type: .counting,
@@ -256,28 +273,17 @@ final class CountersHubSnapshotTests: XCTestCase {
             createdAt: now, updatedAt: now,
             version: 1, isDeleted: false, isCounter: true
         )
-        let match = CounterCreateMatch(kind: .established, task: sourceTask, lifetime: 512, memberCount: 2)
-        let host = sheetHost(verb: "", unit: "push-ups", previewName: "Push-ups", match: match)
-        assertSnapshot(of: host, as: .image(layout: .fixed(width: 393, height: 660)), record: recordMode)
+        return CounterCreateMatch(kind: .established, task: sourceTask, lifetime: 512, memberCount: 2)
+    }
+
+    func testNewCounterSheetEstablishedMatchLight() {
+        let form = CounterSheetForm(verb: "Do", noun: "push-ups")
+        assertSheet(sheetHost(form, match: establishedMatch), height: 1020, dark: false)
     }
 
     func testNewCounterSheetEstablishedMatchDark() {
-        let now = "2026-02-01T00:00:00.000"
-        let sourceTask = Task(
-            id: "src", userId: "u1", title: "Push-ups", type: .counting,
-            action: "Do", unit: "push-ups",
-            totalCompletions: 0, totalInstances: 0,
-            currentCount: 512,
-            createdAt: now, updatedAt: now,
-            version: 1, isDeleted: false, isCounter: true
-        )
-        let match = CounterCreateMatch(kind: .established, task: sourceTask, lifetime: 512, memberCount: 2)
-        let host = sheetHost(verb: "", unit: "push-ups", previewName: "Push-ups", match: match)
-        assertSnapshot(
-            of: host,
-            as: .image(layout: .fixed(width: 393, height: 660), traits: .init(userInterfaceStyle: .dark)),
-            record: recordMode
-        )
+        let form = CounterSheetForm(verb: "Do", noun: "push-ups")
+        assertSheet(sheetHost(form, match: establishedMatch), height: 1020, dark: true)
     }
 
     // MARK: - Detail — "Show expired tasks" toggle (the hub's control, RC9)

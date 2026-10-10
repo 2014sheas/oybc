@@ -362,15 +362,21 @@ struct RisoTextField: View {
     @Binding var text: String
     var axis: Axis = .horizontal
     var reservedLines: Int? = nil
+    /// Red keyline (a failed validation under the field).
+    var invalid: Bool = false
+    /// Muted text + hairline keyline: the field shows its DERIVED default as
+    /// real text (the shared counter settings' "blank = unset" rule). Typing
+    /// makes it solid again.
+    var dimmed: Bool = false
 
     var body: some View {
         if let lines = reservedLines {
             TextField(placeholder, text: $text, axis: axis)
                 .lineLimit(lines, reservesSpace: true)
-                .fieldStyle()
+                .fieldStyle(invalid: invalid, dimmed: dimmed)
         } else {
             TextField(placeholder, text: $text, axis: axis)
-                .fieldStyle()
+                .fieldStyle(invalid: invalid, dimmed: dimmed)
         }
     }
 }
@@ -387,11 +393,13 @@ struct RisoNumberField: View {
     var keyboard: UIKeyboardType = .numberPad
     /// Red keyline for an unparseable entry (web `GoalEntry`'s `.invalid`).
     var invalid: Bool = false
+    /// Muted text + hairline keyline (a derived default shown as real text).
+    var dimmed: Bool = false
 
     var body: some View {
         TextField(placeholder, text: $text)
             .keyboardType(keyboard)
-            .fieldStyle(invalid: invalid)
+            .fieldStyle(invalid: invalid, dimmed: dimmed)
     }
 }
 
@@ -416,11 +424,12 @@ struct RisoSecureField: View {
 
 private extension View {
     /// Shared padding/font/background/keyline used by `RisoTextField`
-    /// and `RisoNumberField`. `invalid` draws the keyline red.
-    func fieldStyle(invalid: Bool = false) -> some View {
+    /// and `RisoNumberField`. `invalid` draws the keyline red; `dimmed` draws
+    /// muted text on a hairline keyline (invalid wins).
+    func fieldStyle(invalid: Bool = false, dimmed: Bool = false) -> some View {
         self
             .font(.risoHead(14, .bold))
-            .foregroundStyle(Color.risoInk)
+            .foregroundStyle(dimmed ? Color.risoMuted : Color.risoInk)
             .tint(Color.risoBlue)
             .padding(.horizontal, 11)
             .padding(.vertical, 10)
@@ -428,7 +437,10 @@ private extension View {
             .clipShape(RoundedRectangle(cornerRadius: Riso.cardRadius))
             .overlay(
                 RoundedRectangle(cornerRadius: Riso.cardRadius)
-                    .strokeBorder(invalid ? Color.risoRed : Color.risoInk, lineWidth: Riso.Keyline.container)
+                    .strokeBorder(
+                        invalid ? Color.risoRed : (dimmed ? Color.risoInk.opacity(0.35) : Color.risoInk),
+                        lineWidth: dimmed && !invalid ? Riso.Keyline.dense : Riso.Keyline.container
+                    )
             )
     }
 }

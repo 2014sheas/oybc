@@ -218,6 +218,165 @@ export function derivedTimeframeGoals(root: CounterSettingsFields): Record<Count
   };
 }
 
+// ─── The counter sheet's draft (the UI PR) ───────────────────────────────────
+
+/**
+ * The counter sheet's optional fields as typed: `''` / an absent goal = unset
+ * (the derived default shows dimmed). Goals are in the kind's units.
+ */
+export interface CounterSettingsDraft {
+  name: string;
+  singular: string;
+  plural: string;
+  goals: Partial<Record<CounterGoalTimeframe, number | null>>;
+}
+
+/** The four settings as stored on a root; an absent key = absent (the default). */
+export interface StoredCounterSettings {
+  counterName?: string;
+  titleTemplateSingular?: string;
+  titleTemplatePlural?: string;
+  timeframeGoals?: CounterTimeframeGoals;
+}
+
+/** The dimmed value each optional field shows while unset (`''` / null = nothing). */
+export interface CounterSettingsDefaults {
+  name: string;
+  singular: string;
+  plural: string;
+  goals: Record<CounterGoalTimeframe, number | null>;
+}
+
+/** The root fields the sheet's defaults derive from (the sheet's LIVE noun / verb / kind). */
+export type CounterSettingsContext = Pick<CounterSettingsFields, 'action' | 'unit' | 'countKind'>;
+
+/**
+ * The entered goals that are usable positive numbers.
+ *
+ * @param goals - The draft's goals.
+ */
+function enteredGoals(goals: CounterSettingsDraft['goals']): CounterTimeframeGoals {
+  const out: CounterTimeframeGoals = {};
+  for (const t of COUNTER_GOAL_TIMEFRAMES) {
+    const v = goals[t];
+    if (typeof v === 'number' && Number.isFinite(v) && v > 0) out[t] = v;
+  }
+  return out;
+}
+
+/**
+ * The sheet's draft seeded from a stored root (`''` / absent for an unset field).
+ *
+ * @param root - The counter's root fields.
+ * @returns The draft.
+ */
+export function counterSettingsDraftFromRoot(root: CounterSettingsFields): CounterSettingsDraft {
+  return {
+    name: storedText(root.counterName) ?? '',
+    singular: storedText(root.titleTemplateSingular) ?? '',
+    plural: storedText(root.titleTemplatePlural) ?? '',
+    goals: { ...enteredGoals(root.timeframeGoals ?? {}) },
+  };
+}
+
+/**
+ * The dimmed defaults for a draft over the sheet's live context: the name is
+ * `formatCounterName(action, unit)`, the plural is the default template, the
+ * singular is the typed plural when there is one, else the default (D2), and
+ * each unset goal derives from the entered ones (D4; nothing entered → none).
+ *
+ * @param context - The sheet's live verb / noun / kind.
+ * @param draft - The typed draft.
+ * @returns The defaults.
+ */
+export function counterSettingsDefaults(context: CounterSettingsContext, draft: CounterSettingsDraft): CounterSettingsDefaults {
+  const templates = defaultTitleTemplates(context);
+  const plural = templates.plural;
+  const singular = storedText(draft.plural) ?? plural;
+  return {
+    name: formatCounterName(context.action, context.unit),
+    singular,
+    plural,
+    goals: derivedTimeframeGoals({ countKind: context.countKind, timeframeGoals: enteredGoals(draft.goals) }),
+  };
+}
+
+/**
+ * The stored settings a draft resolves to (D3 — stored only when the user
+ * typed something): a blank text field, or one equal to its dimmed default,
+ * is absent. A typed goal is stored AS TYPED — never normalised against what
+ * the other goals derive (dropping it would move the derived value of a cell
+ * the user saw dimmed beside it); all cells clear → absent.
+ *
+ * @param context - The sheet's live verb / noun / kind.
+ * @param draft - The typed draft.
+ * @returns The stored settings (absent keys = absent).
+ */
+export function storedCounterSettingsFromDraft(
+  context: CounterSettingsContext,
+  draft: CounterSettingsDraft
+): StoredCounterSettings {
+  const defaults = counterSettingsDefaults(context, draft);
+  const out: StoredCounterSettings = {};
+  const name = storedText(draft.name);
+  if (name !== null && name !== defaults.name) out.counterName = name;
+  const plural = storedText(draft.plural);
+  if (plural !== null && plural !== defaults.plural) out.titleTemplatePlural = plural;
+  const singular = storedText(draft.singular);
+  if (singular !== null && singular !== defaults.singular) out.titleTemplateSingular = singular;
+  const goals = enteredGoals(draft.goals);
+  if (Object.keys(goals).length > 0) out.timeframeGoals = goals;
+  return out;
+}
+
+/**
+ * The settings as stored on a root, in {@link StoredCounterSettings} shape
+ * (blank text = absent; only positive goals).
+ *
+ * @param root - The counter's root fields.
+ * @returns The stored settings.
+ */
+export function storedCounterSettings(root: CounterSettingsFields): StoredCounterSettings {
+  const out: StoredCounterSettings = {};
+  const name = storedText(root.counterName);
+  if (name !== null) out.counterName = name;
+  const singular = storedText(root.titleTemplateSingular);
+  if (singular !== null) out.titleTemplateSingular = singular;
+  const plural = storedText(root.titleTemplatePlural);
+  if (plural !== null) out.titleTemplatePlural = plural;
+  const goals = enteredGoals(root.timeframeGoals ?? {});
+  if (Object.keys(goals).length > 0) out.timeframeGoals = goals;
+  return out;
+}
+
+/** The keys of {@link StoredCounterSettings}. */
+export const COUNTER_SETTINGS_KEYS = [
+  'counterName',
+  'titleTemplateSingular',
+  'titleTemplatePlural',
+  'timeframeGoals',
+] as const;
+
+/**
+ * The setting keys whose stored value differs between `before` and `after`
+ * (goals compared per timeframe) — the keys an edit-mode Save writes.
+ *
+ * @param before - The settings as stored.
+ * @param after - The settings the draft resolves to.
+ * @returns The changed keys, in {@link COUNTER_SETTINGS_KEYS} order.
+ */
+export function changedCounterSettingsKeys(
+  before: StoredCounterSettings,
+  after: StoredCounterSettings
+): (typeof COUNTER_SETTINGS_KEYS)[number][] {
+  return COUNTER_SETTINGS_KEYS.filter((k) => {
+    if (k !== 'timeframeGoals') return (before[k] ?? null) !== (after[k] ?? null);
+    const a = before.timeframeGoals ?? {};
+    const b = after.timeframeGoals ?? {};
+    return COUNTER_GOAL_TIMEFRAMES.some((t) => (a[t] ?? null) !== (b[t] ?? null));
+  });
+}
+
 /**
  * The default goal a counter brings to a board of `timeframe` (spec §1c):
  * the stored default → else one derived from the set defaults (D4) → else

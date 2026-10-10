@@ -90,6 +90,31 @@ afterEach(async () => {
 });
 
 describe('commitSquareEdits', () => {
+  it('a pending LINKED row the add replaced with the board copy is never written — no orphan member, no sync item', async () => {
+    const { derivedTaskId } = await import('@oybc/shared');
+    await db.boards.add(seedBoard());
+    await db.tasks.add(seedTask('root', { type: TaskType.COUNTING, action: 'Read', unit: 'pages', isCounter: true, currentCount: 40 }));
+    const pending = seedTask('pending-linked', {
+      type: TaskType.COUNTING, action: 'Read', unit: 'pages', maxCount: 5, currentCount: 0,
+      sharedCounterId: 'root', baseline: 40, createdInWizard: true, timeframe: Timeframe.MONTHLY, startDate: START,
+    });
+
+    await commitSquareEdits(
+      baseInput({
+        cells: [cell({ cellId: 'new-0-0', taskId: 'pending-linked', row: 0, col: 0, originalTaskId: null, pending: { task: pending, childTasks: [], childLinks: [] } })],
+      }),
+    );
+
+    const copyId = derivedTaskId(BOARD, 'root');
+    const placements = await db.boardTasks.where('boardId').equals(BOARD).toArray();
+    expect(placements.map((p) => p.taskId)).toEqual([copyId]);
+    expect(await db.tasks.get(copyId)).toMatchObject({ maxCount: 5, sharedCounterId: 'root' });
+    expect(await db.tasks.get('pending-linked')).toBeUndefined();
+    const queued = await db.syncQueue.toArray();
+    expect(queued.some((q) => q.entityType === 'tasks' && q.entityId === 'pending-linked')).toBe(false);
+    expect((await db.tasks.where('sharedCounterId').equals('root').toArray()).map((t) => t.id)).toEqual([copyId]);
+  });
+
   it('writes a pending new task (createdInWizard: false) + its placement + 2 queue rows', async () => {
     await db.boards.add(seedBoard());
     const pendingTask = seedTask('task-new', { createdInWizard: true });

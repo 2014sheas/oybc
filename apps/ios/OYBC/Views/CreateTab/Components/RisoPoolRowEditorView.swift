@@ -25,6 +25,8 @@ struct RisoPoolRowEditorView: View {
 
     @FocusState private var titleFocused: Bool
     @State private var pendingSwitch: KindSwitchPreview?
+    /// The family root a LINKED counting row renders its title through (fetched once on appear).
+    @State private var linkedRoot: Task?
 
     private var taskId: String { task.id }
     private var taskType: TaskType { task.type }
@@ -58,7 +60,10 @@ struct RisoPoolRowEditorView: View {
         }
         .risoCard(fill: .risoPaper2)
         .risoHardShadow(Riso.Shadow.card)
-        .onAppear { titleFocused = true }
+        .onAppear {
+            titleFocused = true
+            if task.sharedCounterId != nil { linkedRoot = database.linkedCounterRoot(of: task) }
+        }
     }
 
     // MARK: - Header
@@ -176,8 +181,13 @@ struct RisoPoolRowEditorView: View {
         let u = draft.unit.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !a.isEmpty, !(countKindNeedsUnit(draft.countKind) && u.isEmpty),
               let goal = parseCountInput(draft.goal, kind: draft.countKind), goal > 0 else { return "" }
-        return TaskTitle.generateCounterTaskTitle(
-            action: a, maxCount: goal, unit: countKindNeedsUnit(draft.countKind) ? u : "", countKind: draft.countKind
+        // Through the counter root's name / templates (the row itself when it is a
+        // root, else its linked root); absent = the legacy formula.
+        let settings = task.sharedCounterId == nil
+            ? CounterSettings.TitleSettings(task: task)
+            : linkedRoot.map { CounterSettings.TitleSettings(task: $0) } ?? CounterSettings.TitleSettings()
+        return TaskTitle.renderedTitle(
+            settings, action: a, unit: countKindNeedsUnit(draft.countKind) ? u : "", countKind: draft.countKind, goal: goal
         )
     }
 

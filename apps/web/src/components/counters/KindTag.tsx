@@ -7,6 +7,8 @@ export interface KindTagProps {
   counterName?: string;
   /** The family's all-time total. */
   lifetime?: number;
+  /** Dense scale for dropdown rows (3×8 padding, 1.5px keyline, 11px) so a 44px row keeps its height. */
+  dense?: boolean;
 }
 
 /**
@@ -15,10 +17,10 @@ export interface KindTagProps {
  *
  * @returns The tag row.
  */
-export function KindTag({ kind, counterName, lifetime }: KindTagProps): React.ReactElement {
+export function KindTag({ kind, counterName, lifetime, dense }: KindTagProps): React.ReactElement {
   return (
-    <div className={styles.tagRow}>
-      <span className={styles.tag}>
+    <div className={`${styles.tagRow} ${dense ? styles.tagRowDense : ''}`}>
+      <span className={`${styles.tag} ${dense ? styles.tagDense : ''}`}>
         {COUNT_KIND_LABELS[kind]}
         <span className={styles.dots} aria-hidden="true"><i /><i /></span>
       </span>
