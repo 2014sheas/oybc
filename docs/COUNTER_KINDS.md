@@ -180,8 +180,8 @@ draws it; hub / Counter Detail rows keep the green "met" fill. Vary ranges rende
 
 ## 7. Open items
 
-- **OPEN (owner) — default-amount rule unification.** Whether the default log amount should follow one rule across surfaces. Unruled.
-- **OPEN (owner) — compound-child late-log +1 for Duration.** The compound-child late-log path writes a +1 increment; whether that is right for a Duration child is unruled.
+- **OPEN (owner) — default log amount rule is not unified.** A board square's log sheet defaults to an explicit custom amount only, while Counter Detail defaults to any last logged amount. Which rule wins is unruled.
+- **OPEN (owner) — compound-child late-log amount for Duration.** The compound-child late-log fallback writes a fixed `+1` increment for a plain counting child (web `LateLogSheet` stages `delta: 1`, which `lateLogCompoundParts` appends; iOS `lateLogCompoundParts` appends `delta: 1`). Whether a Duration child should get a different amount (minutes / goal-based) is unruled.
 
 - ~~Interface details in the brief §3B~~ — decided in §5 (handoff + owner overrides, 2026-10-07).
 
@@ -201,8 +201,8 @@ Carried to PR 3/4 — all closed (each by the named task in `docs/COUNTER_KINDS_
 "Counts toward" ([`SHARED_COUNTER_SETTINGS.md` §3](SHARED_COUNTER_SETTINGS.md#3-counts-toward-any-task-as-the-unit-of-a-discrete-counter), summary in [`SHARED_COUNTERS.md` §Current model](SHARED_COUNTERS.md#current-model-2026-10--settings--counts-toward-shipped)) interacts with kinds in three places:
 
 - **Discrete only (D9).** A task may count toward a Discrete counter root only — a contributor adds whole-number credits (`countsTowardAmount` is a positive integer, absent = 1), and "the unit is a thing". Pickers filter to Discrete roots, Counter Detail shows the Counts toward section for Discrete roots only, and `setCountsToward` refuses any other target.
-- **Kind switch refusal.** While live contributors exist the counter's kind cannot leave Discrete: web `switchCounterKind` (`CountKindSwitchError('has-contributors')`) / iOS `switchCounterKind` refuse with "A counter other tasks count toward stays Discrete." (`COUNTS_TOWARD_KIND_MESSAGE` ↔ `CountKindSwitchError.countsTowardMessage`). Unflagging every contributor (or deleting them) lifts the refusal.
-- **Counter sheet Kind row.** The kind picker in the counter sheet (create and edit) keeps its existing locks (Duration never switches; the Continuous → Discrete confirm). Moving a counter that has contributors off Discrete is refused and the sheet shows the refusal line as its error.
+- **Kind switch refusal.** While live contributors exist the counter's kind cannot leave Discrete: both platforms refuse the switch — web `switchCounterKind` throws `CountKindSwitchError('has-contributors')`, iOS `switchCounterKind` throws `CountKindSwitchError.hasContributors` — with "A counter other tasks count toward stays Discrete." (`COUNTS_TOWARD_KIND_MESSAGE` ↔ `CountKindSwitchError.countsTowardMessage`). Unflagging every contributor (or deleting them) lifts the refusal.
+- **Counter sheet Kind row.** The kind picker in the counter sheet (create and edit) keeps its existing locks (Duration never switches; the Continuous → Discrete confirm). Moving a counter that has contributors off Discrete is refused and the web sheet shows the refusal line as its error.
 
 ## 8. Testing
 

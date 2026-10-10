@@ -230,7 +230,7 @@ finding C1). Explicitly:
    resolves from its ROOT's events inside its own stamped window — see the
    next paragraph. **Every other linked row** (`sharedCounterId` set, not
    window-stamped — the pre-member-rules "hub-linked" copies made by the
-   retired "From a board…" tap=Link, the still-live "Derive smaller version…"
+   retired "From a board…" tap=Link, the retired "Derive smaller version…" (#585)
    / auto-link / compound-child creators, and hand-timeboxed rows) resolves
    from the ROOT's events over the HOST board's context window
    `[windowStart, windowEnd]` (`resolveDerivedCounterWindowState(task,
