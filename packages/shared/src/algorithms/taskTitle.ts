@@ -1,5 +1,5 @@
-import { formatCounterName } from './counterName';
-import { formatCount, quantizeCount, type CountKind } from './countValue';
+import { type CountKind } from './countValue';
+import { renderCounterTitle, type CounterSettingsFields } from './counterSettings';
 
 /**
  * Generates a display title for a COUNTING task.
@@ -23,20 +23,12 @@ export function generateCounterTaskTitle(
   if (providedTitle && providedTitle.trim().length > 0) {
     return providedTitle.trim();
   }
-  // Goal-less hub-born counters are accumulators with no numeric target —
-  // the title IS the pair-derived counter display name (design 2026-07-18,
-  // R1 counters refresh). The earlier P5 "{action} ({unit})" parenthetical
-  // is retired: "Do" + "push-ups" now renders "Push-ups", "Run" + "miles"
-  // renders "Run miles" — see `formatCounterName`.
-  if (maxCount == null) {
-    return formatCounterName(action, unit);
-  }
-  if (countKind === 'duration') {
-    // Duration's unit IS time: "Practice 10h 30m" (minutes are stored; the
-    // `Xh Ym` rendering is locale-independent, so stored titles stay stable).
-    return `${action.trim()} ${formatCount(maxCount, 'duration')}`;
-  }
-  return `${action.trim()} ${String(quantizeCount(maxCount))} ${unit.trim()}`;
+  // One generator (docs/SHARED_COUNTER_SETTINGS.md §1b): no stored templates
+  // here, so `renderCounterTitle` takes its default path — the formula
+  // "{action} {goal} {unit}" (Duration "{action} {Xh Ym}"), and a goal-less
+  // hub-born accumulator renders the pair-derived name (`formatCounterName`:
+  // "Do" + "push-ups" → "Push-ups", "Run" + "miles" → "Run miles").
+  return renderCounterTitle({ action, unit, countKind }, maxCount);
 }
 
 /**
@@ -51,7 +43,17 @@ export interface CounterTitleFields {
   unit?: string | null;
   maxCount?: number | null;
   countKind?: CountKind | null;
+  /** A root's per-counter settings (docs/SHARED_COUNTER_SETTINGS.md §1); absent on copies. */
+  counterName?: string | null;
+  titleTemplateSingular?: string | null;
+  titleTemplatePlural?: string | null;
 }
+
+/** The root settings that decide a rendered title (name + templates). */
+export type CounterTitleSettings = Pick<
+  CounterSettingsFields,
+  'counterName' | 'titleTemplateSingular' | 'titleTemplatePlural'
+>;
 
 /**
  * Whether a counting task's title is the AUTO one — i.e. not a name the
@@ -70,7 +72,14 @@ export interface CounterTitleFields {
  * @param title - The stored title.
  * @param action - The task's own action verb (`''` when absent).
  * @param maxCount - The task's own goal (`null`/`undefined` for goal-less).
+ * Template-aware (docs/SHARED_COUNTER_SETTINGS.md §1b): with the root's
+ * `settings`, a title equal to {@link renderCounterTitle} for this row's goal
+ * is also auto; the legacy formula always still counts, so a title generated
+ * before the root had templates stays auto.
+ *
  * @param unit - The task's own unit (`''` when absent).
+ * @param countKind - The task's kind.
+ * @param settings - The ROOT's name + templates (a copy carries none of its own).
  * @returns `true` when the title is empty or generated; `false` when custom.
  */
 export function isAutoCounterTitle(
@@ -78,11 +87,14 @@ export function isAutoCounterTitle(
   action: string,
   maxCount: number | null | undefined,
   unit: string,
-  countKind: CountKind = 'discrete'
+  countKind: CountKind = 'discrete',
+  settings?: CounterTitleSettings | null
 ): boolean {
   const trimmed = title.trim();
   if (trimmed.length === 0) return true;
-  return trimmed === generateCounterTaskTitle(action, maxCount, unit, undefined, countKind).trim();
+  if (trimmed === generateCounterTaskTitle(action, maxCount, unit, undefined, countKind).trim()) return true;
+  if (!settings) return false;
+  return trimmed === renderCounterTitle({ ...settings, action, unit, countKind }, maxCount).trim();
 }
 
 /**
@@ -91,8 +103,9 @@ export function isAutoCounterTitle(
  * A custom member title ({@link isAutoCounterTitle} is `false`) carries
  * over VERBATIM (trimmed) — even when the copy's target differs, because the
  * user chose that name. An auto (or empty) title is regenerated from the
- * copy's `action` / NEW `maxCount` / `unit`, exactly as before the
- * 2026-10-06 fix. Shared by `planDerivedTasks`'s mint and the linked-counter
+ * copy's `action` / NEW `maxCount` / `unit` — through the member's own title
+ * templates when it is a root carrying them (absent = the formula, exactly as
+ * before the 2026-10-06 fix). Shared by `planDerivedTasks`'s mint and the linked-counter
  * window heal's `windowStampedCopyDraft` so the two mint paths can never
  * disagree; Swift twin `TaskTitle.counterCopyTitle`.
  *
@@ -104,8 +117,9 @@ export function counterCopyTitle(member: CounterTitleFields, newMaxCount: number
   const action = member.action ?? '';
   const unit = member.unit ?? '';
   const countKind = member.countKind ?? 'discrete';
-  if (!isAutoCounterTitle(member.title, action, member.maxCount, unit, countKind)) {
+  if (!isAutoCounterTitle(member.title, action, member.maxCount, unit, countKind, member)) {
     return member.title.trim();
   }
-  return generateCounterTaskTitle(action, newMaxCount, unit, undefined, countKind);
+  // A root member's own templates render the copy (absent → the formula).
+  return renderCounterTitle({ ...member, action, unit, countKind }, newMaxCount);
 }

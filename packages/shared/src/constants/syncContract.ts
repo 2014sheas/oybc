@@ -178,6 +178,9 @@ export const PULL_APPLY_ORDER = [
  *    window; a stamp onto an INDEFINITE board (`endDate` absent) must clear a
  *    legacy task-level `endDate` on every device, or the row's window would
  *    end on one device and run open on another.
+ *  - `tasks.counterName` / `titleTemplateSingular` / `titleTemplatePlural` /
+ *    `timeframeGoals` — a shared counter setting cleared back to its default
+ *    is stored ABSENT (docs/SHARED_COUNTER_SETTINGS.md D3).
  *
  * Consumers: web push (`syncService.ts` — `deleteField()` for each absent
  * field of the row's collection, via `clearableFieldsFor`); iOS push
@@ -190,7 +193,7 @@ export const PULL_APPLY_ORDER = [
  */
 export const CLEARABLE_FIELDS_BY_COLLECTION = {
   boards: ['endDate', 'completedAt', 'sealedAt', 'sealedCompletedCells'],
-  tasks: ['endDate'],
+  tasks: ['endDate', 'counterName', 'titleTemplateSingular', 'titleTemplatePlural', 'timeframeGoals'],
   coreBoardDefaults: ['defaultBoardSize', 'defaultCenterType'],
 } as const satisfies Partial<Record<SyncCollection, readonly string[]>>;
 

@@ -244,11 +244,49 @@ same stamp as the completion that caused it).
 
 | PR | Scope |
 | --- | --- |
-| 1 — counter settings data + logic (name, templates, timeframe defaults; sheet UI follows the design handoff) | shared types + Zod + GRDB migration (nullable columns) + Dexie (no index); `renderCounterTitle` / `resolveCounterDefaultGoal` / default-template helpers with vectors; `isAutoCounterTitle` → template-aware; propagation (#575) extended to template/name edits; the counter sheet's new fields (create + edit); hub/Detail/pickers show `counterName`. Inert for untouched counters (absent = today's behaviour). |
+| 1 — counter settings data + logic (name, templates, timeframe defaults; sheet UI follows the design handoff) — **SHIPPED (data + logic) in #584** | shared types + Zod + GRDB migration (nullable columns) + Dexie (no index); `renderCounterTitle` / `resolveCounterDefaultGoal` / default-template helpers with vectors; `isAutoCounterTitle` → template-aware; propagation (#575) extended to template/name edits; the counter sheet's new fields (create + edit); hub/Detail/pickers show `counterName`. Inert for untouched counters (absent = today's behaviour). |
 | 2 — placement uses defaults | quick-add / picker mint with `resolveCounterDefaultGoal` + rendered title; shared search-match set; retire `DeriveCounterModal` (D6); source-pull auto-scaler consults defaults. |
 | 3 — counts toward (data + cascade) | `countsTowardCounterId/Amount`, deterministic event mint/tombstone in the cascade, delete/kind guards, zero-child container rule; vectors + XCTest/Vitest; no UI. |
 | 4 — counts toward (UI) | Counter Detail section + "+ New"; task editor picker; cell badge; e2e + snapshots. |
 | 5 — docs | SHARED_COUNTERS / COUNTER_KINDS / TASK_SYSTEM / CLAUDE.md. |
+
+**PR 1 notes (2026-10-09).** Fields: `Task.counterName`, `titleTemplateSingular`,
+`titleTemplatePlural`, `timeframeGoals` (`{daily?, weekly?, monthly?, yearly?}`) —
+Zod optional, iOS GRDB v42 nullable TEXT (`timeframeGoals` a JSON string), no Dexie
+bump (unindexed), all four in `CLEARABLE_FIELDS_BY_COLLECTION.tasks`. Helpers
+(`counterSettings.ts` ↔ `CounterSettings.swift`, `counterSettingsVectors.json`):
+`defaultTitleTemplates`, `effectiveTitleTemplates`, `renderCounterTitle`,
+`counterDisplayName`, `derivedTimeframeGoals`, `resolveCounterDefaultGoal`. The count
+renders locale-free (the legacy generator's formatting), so a stored template equal to
+the default renders exactly like the formula. With no stored template the legacy
+formula renders unchanged (inert, pinned over every pre-existing generator vector).
+D4 detail: an unset timeframe derives from the NEAREST set one (tie → the shorter),
+scaled by the auto-scaler's nominal days (1 / 7 / 30 / 365) and `ceilToCountStep`;
+CUSTOM / INDEFINITE resolve to null. iOS: `Task.encode` nil-skips the four, so a clear
+is written by `writeCounterSettingsColumns` (raw SQL) inside `applyTaskEditPatch`. The
+edit path accepts the fields today (web `saveTaskEdit` submit keys, present-`undefined`
+= clear; iOS `EditTaskSheet.Patch.counterSettings`), so the UI PR is wiring only.
+Library SEARCH still matches title + `formatCounterName` — the shared search-match set
+(adding `counterName`) is PR 2.
+
+**Hand-offs from PR 1 (must land before any UI can store a template):**
+
+- **Copy-side title call sites still use the plain formula.** ~60
+  `generateCounterTaskTitle` / two-argument `isAutoCounterTitle` call sites judge
+  or regenerate a COPY's title without the root's `CounterTitleSettings`, so a
+  template-rendered title there reads as CUSTOM (kept verbatim) and a regenerated
+  one ignores the templates. Known ones: the kind-switch preview / write
+  (`countKindSwitch.ts:227,233` ↔ `AppDatabase+CountKindSwitch.swift:59-69`), the
+  Board Edit title seed (`boardEditTaskSheetModel.ts:51` ↔
+  `SquareEditTaskSheet.swift:309`), wizard / Board Edit goal changes, and
+  placement minting. PR 2 (or the UI PR, whichever stores a template first) must
+  pass the root's settings through every one of them — `planRootFieldPropagation`,
+  `counterCopyTitle` and the counter sheet's own root title are already
+  template-aware.
+- **Length caps.** Zod caps `counterName` at 100 and each template at 200
+  characters; both sheets (web `CreateCounterSheet` ↔ iOS `NewCounterSheetView`)
+  must enforce them in the UI PR, or a long entry is refused at the sync
+  boundary.
 
 ---
 

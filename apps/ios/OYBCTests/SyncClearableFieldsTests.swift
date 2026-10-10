@@ -142,7 +142,10 @@ final class SyncClearableFieldsTests: XCTestCase {
         // `boards` entry, so comparing the two would assert nothing.
         XCTAssertEqual(Set(SyncService.clearableFields(for: "boards")), ["endDate", "completedAt", "sealedAt", "sealedCompletedCells"])
         XCTAssertEqual(Set(SyncService.clearableFields(for: "coreBoardDefaults")), ["defaultBoardSize", "defaultCenterType"])
-        XCTAssertEqual(SyncService.clearableFields(for: "tasks"), ["endDate"])
+        XCTAssertEqual(
+            SyncService.clearableFields(for: "tasks"),
+            ["endDate", "counterName", "titleTemplateSingular", "titleTemplatePlural", "timeframeGoals"]
+        )
         XCTAssertEqual(SyncService.clearableFields(for: "boardTasks"), [])
         XCTAssertEqual(SyncService.clearableFields(for: "nope"), [])
     }

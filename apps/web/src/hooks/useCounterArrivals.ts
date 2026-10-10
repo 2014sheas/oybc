@@ -3,7 +3,7 @@ import {
   TaskType,
   resolveLinkedCounterDisplay,
   detectCounterArrivals,
-  formatCounterName,
+  counterDisplayName as rootDisplayName,
   resolveTaskWindowState,
   snapshotCounterSquares,
   type ArrivalSquare,
@@ -32,7 +32,8 @@ export interface BuildArrivalSquaresInput {
 }
 
 /**
- * Resolve a counter's display name from its source task — pair-derived via
+ * Resolve a counter's display name from its source task — the shared
+ * `counterDisplayName`: its `counterName`, else pair-derived via
  * `formatCounterName(action, unit)`, falling back to the stored title when
  * the pair is empty (Counters Refresh R3 copy contract: NEVER raw
  * `task.title` alone as the primary source for a COUNTER name; matches
@@ -43,7 +44,7 @@ export interface BuildArrivalSquaresInput {
  */
 function counterDisplayName(source: Task | undefined): string {
   if (!source) return '';
-  return formatCounterName(source.action, source.unit) || source.title || '';
+  return rootDisplayName(source);
 }
 
 /**

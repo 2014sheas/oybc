@@ -409,8 +409,7 @@ struct RisoLibrarySheetView: View {
     /// `components/wizard/TaskRow.tsx`.
     private func displayTitle(_ task: Task) -> String {
         guard library.familyRootIds.contains(task.id) else { return task.title }
-        let generic = CounterName.formatCounterName(action: task.action, unit: task.unit)
-        return generic.isEmpty ? task.title : generic
+        return CounterSettings.counterDisplayName(task)
     }
 
     private func buildSubtitle(_ task: Task) -> String? {

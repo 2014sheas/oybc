@@ -1,4 +1,5 @@
 import type { CountKind } from '../algorithms/countValue';
+import type { CounterTimeframeGoals } from '../algorithms/counterSettings';
 import { AchievementTrigger, OperatorType, TaskType, Timeframe } from '../constants/enums';
 
 /**
@@ -239,6 +240,28 @@ export interface Task {
    * non-fork task. iOS GRDB v41 nullable TEXT column.
    */
   forkedFromTaskId?: string | null;
+
+  /**
+   * Shared counter settings (docs/SHARED_COUNTER_SETTINGS.md §1) — set on a
+   * counter ROOT only, by the counter sheet. Each is ABSENT until the user
+   * edits it away from its default (D3: never backfilled, never written on
+   * read), and clearing one back to its default removes it — so all four are
+   * in `CLEARABLE_FIELDS_BY_COLLECTION.tasks`.
+   *
+   * - `counterName` — the label the hub, Counter Detail, pickers and
+   *   quick-add show (`counterDisplayName`); absent → `formatCounterName`.
+   * - `titleTemplateSingular` / `titleTemplatePlural` — square titles with
+   *   `#N` for the count (`renderCounterTitle`); absent → the legacy
+   *   `"{action} #N {unit}"` formula; singular absent → the plural.
+   * - `timeframeGoals` — default goals per core timeframe, in the kind's
+   *   units (`resolveCounterDefaultGoal`).
+   *
+   * iOS GRDB v42 nullable TEXT columns (`timeframeGoals` as a JSON string).
+   */
+  counterName?: string;
+  titleTemplateSingular?: string;
+  titleTemplatePlural?: string;
+  timeframeGoals?: CounterTimeframeGoals;
 }
 
 /**

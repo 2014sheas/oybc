@@ -179,13 +179,20 @@ extension AppDatabase {
             task.updatedAt = now
             task.version += 1
             try Self.saveTaskAndCascade(db: db, task: task)
+            if patch.counterSettings != nil { try Self.writeCounterSettingsColumns(db: db, task: task) }
             if let propagation {
                 try Self.propagateRootFields(
                     db: db,
                     snapshot: propagation,
                     patch: RootFieldPropagation.EditPatch(
                         title: task.title, action: task.action, unit: task.unit,
-                        maxCount: task.maxCount, countKind: patch.countKind
+                        maxCount: task.maxCount, countKind: patch.countKind,
+                        settings: patch.counterSettings.map {
+                            CounterSettings.TitleSettings(
+                                counterName: $0.counterName, titleTemplateSingular: $0.titleTemplateSingular,
+                                titleTemplatePlural: $0.titleTemplatePlural
+                            )
+                        }
                     ),
                     now: now
                 )
@@ -281,6 +288,12 @@ extension AppDatabase {
             } else {
                 task.unit = patch.unit.trimmingCharacters(in: .whitespacesAndNewlines)
             }
+            if let settings = patch.counterSettings {
+                task.counterName = settings.counterName
+                task.titleTemplateSingular = settings.titleTemplateSingular
+                task.titleTemplatePlural = settings.titleTemplatePlural
+                task.timeframeGoals = settings.timeframeGoals
+            }
             let goal = patch.maxCountStr.trimmingCharacters(in: .whitespaces)
             if !goal.isEmpty {
                 guard let max = parseCountInput(goal, kind: kind) else {
@@ -293,6 +306,28 @@ extension AppDatabase {
                 task.maxCount = max
             }
         }
+    }
+
+    /// Write the four shared counter settings columns verbatim (NULL for a
+    /// cleared one). `Task.encode` nil-skips them, and GRDB's `save` only SETs
+    /// encoded keys — so without this a setting reset to its default would
+    /// keep its stale local value. The enqueued payload already omits the
+    /// cleared keys, so the push deletes them remotely (clearable fields).
+    ///
+    /// - Parameters:
+    ///   - db: The active write transaction.
+    ///   - task: The saved row (its in-memory settings are the truth).
+    static func writeCounterSettingsColumns(db: Database, task: Task) throws {
+        try db.execute(
+            sql: """
+                UPDATE tasks SET counterName = ?, titleTemplateSingular = ?, titleTemplatePlural = ?, timeframeGoals = ?
+                WHERE id = ?
+                """,
+            arguments: [
+                task.counterName, task.titleTemplateSingular, task.titleTemplatePlural,
+                Task.timeframeGoalsJSON(task.timeframeGoals), task.id,
+            ]
+        )
     }
 
     /// Resolve and validate the Achievement reference the patch asks for.

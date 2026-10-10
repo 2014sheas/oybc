@@ -1,4 +1,4 @@
-import { formatCounterName, resolveCountKind, type Task } from '@oybc/shared';
+import { counterDisplayName, resolveCountKind, type Task } from '@oybc/shared';
 import type { KindTagProps } from './KindTag';
 
 /**
@@ -17,7 +17,7 @@ export function linkedKindTagProps(task: Task, pool: readonly Task[]): KindTagPr
   if (!root) return { kind: resolveCountKind(task) };
   return {
     kind: resolveCountKind(root),
-    counterName: formatCounterName(root.action, root.unit) || root.title,
+    counterName: counterDisplayName(root),
     lifetime: root.currentCount ?? 0,
   };
 }

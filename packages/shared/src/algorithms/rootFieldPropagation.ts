@@ -2,7 +2,8 @@ import { TaskType } from '../constants/enums';
 import type { Task } from '../types/task';
 import { planCountKindSwitch, resolveCountKind, type CountKind } from './countValue';
 import { isFrozenDerivedRow } from './memberRules';
-import { generateCounterTaskTitle, isAutoCounterTitle } from './taskTitle';
+import { renderCounterTitle } from './counterSettings';
+import { isAutoCounterTitle, type CounterTitleSettings } from './taskTitle';
 
 /**
  * rootFieldPropagation.ts — a counter ROOT's Task Detail edit reaching its
@@ -10,7 +11,9 @@ import { generateCounterTaskTitle, isAutoCounterTitle } from './taskTitle';
  * twin: `Helpers/RootFieldPropagation.swift`; pinned by
  * `rootFieldPropagationVectors.json`.
  *
- * Title / action / unit propagate; the goal never does (each board scales
+ * Title / action / unit propagate, and an edit of the root's NAME or title
+ * TEMPLATES (docs/SHARED_COUNTER_SETTINGS.md §1) re-renders every live copy
+ * whose title is auto (custom titles kept); the goal never does (each board scales
  * its own target) and the kind is written by the kind switch
  * (`countKindSwitch.ts`), which this planner only reads so an auto copy
  * title tracks the copy's switch-rounded goal. `description` is not
@@ -20,7 +23,17 @@ import { generateCounterTaskTitle, isAutoCounterTitle } from './taskTitle';
 /** The root as stored BEFORE the edit. */
 export type RootPropagationRoot = Pick<
   Task,
-  'id' | 'type' | 'title' | 'action' | 'unit' | 'maxCount' | 'countKind' | 'sharedCounterId'
+  | 'id'
+  | 'type'
+  | 'title'
+  | 'action'
+  | 'unit'
+  | 'maxCount'
+  | 'countKind'
+  | 'sharedCounterId'
+  | 'counterName'
+  | 'titleTemplateSingular'
+  | 'titleTemplatePlural'
 >;
 
 /** The root's edit. An absent key is unchanged. */
@@ -32,6 +45,42 @@ export interface RootFieldEditPatch {
   maxCount?: number | null;
   /** The root's requested kind (applied by the kind switch, read here). */
   countKind?: CountKind;
+  /** The root's new name; `null` clears it back to the derived default. */
+  counterName?: string | null;
+  /** The root's new singular template; `null` clears it to the default. */
+  titleTemplateSingular?: string | null;
+  /** The root's new plural template; `null` clears it to the default. */
+  titleTemplatePlural?: string | null;
+}
+
+/**
+ * The root's name + templates after `patch` (absent key = unchanged, `null` = cleared).
+ *
+ * @param root - The root before the edit.
+ * @param patch - The root's edit.
+ * @returns The post-edit settings.
+ */
+function settingsAfterPatch(root: RootPropagationRoot, patch: RootFieldEditPatch): CounterTitleSettings {
+  const pick = (k: keyof CounterTitleSettings): string | undefined =>
+    patch[k] === undefined ? (root[k] ?? undefined) : (patch[k] ?? undefined);
+  return {
+    counterName: pick('counterName'),
+    titleTemplateSingular: pick('titleTemplateSingular'),
+    titleTemplatePlural: pick('titleTemplatePlural'),
+  };
+}
+
+/**
+ * Whether two settings differ (each compared trimmed; blank = absent).
+ *
+ * @param a - Settings.
+ * @param b - Settings.
+ */
+function settingsDiffer(a: CounterTitleSettings, b: CounterTitleSettings): boolean {
+  const norm = (v: string | null | undefined): string => (v ?? '').trim();
+  return (['counterName', 'titleTemplateSingular', 'titleTemplatePlural'] as const).some(
+    (k) => norm(a[k]) !== norm(b[k]),
+  );
 }
 
 /** A candidate copy (any row read by `sharedCounterId == root.id`), as stored BEFORE the edit. */
@@ -77,8 +126,11 @@ export interface RootFieldPropagationEntry {
  * - action / unit: a changed root value is copied verbatim.
  * - title: when the root's NEW title is custom and changed, every live copy
  *   carries it verbatim (the #542 mint rule — a fresh copy would carry it).
- *   Otherwise an AUTO copy title is regenerated from the copy's action /
- *   unit / own (switch-rounded) goal / kind, and a CUSTOM copy title is kept.
+ *   Otherwise an AUTO copy title (auto against the root's PRE-edit templates,
+ *   or the legacy formula) is re-rendered through the root's POST-edit
+ *   templates from the copy's action / unit / own (switch-rounded) goal /
+ *   kind, and a CUSTOM copy title is kept. A name / template edit alone
+ *   triggers that re-render.
  * - The goal is never in a patch.
  *
  * @param root - The root before the edit.
@@ -111,10 +163,18 @@ export function planRootFieldPropagation(
   const actionChanged = actionAfter !== actionBefore;
   const unitChanged = unitAfter !== unitBefore;
   const kindChanged = kindAfter !== rootKind;
-  if (!titleChanged && !actionChanged && !unitChanged && !kindChanged) return [];
+  const settingsBefore: CounterTitleSettings = {
+    counterName: root.counterName,
+    titleTemplateSingular: root.titleTemplateSingular,
+    titleTemplatePlural: root.titleTemplatePlural,
+  };
+  const settingsAfter = settingsAfterPatch(root, patch);
+  const settingsChanged = settingsDiffer(settingsBefore, settingsAfter);
+  if (!titleChanged && !actionChanged && !unitChanged && !kindChanged && !settingsChanged) return [];
 
   const carryRootTitle =
-    titleChanged && !isAutoCounterTitle(titleAfter, actionAfter, goalAfter, unitAfter, kindAfter);
+    titleChanged &&
+    !isAutoCounterTitle(titleAfter, actionAfter, goalAfter, unitAfter, kindAfter, settingsAfter);
 
   const out: RootFieldPropagationEntry[] = [];
   for (const copy of copies) {
@@ -122,6 +182,7 @@ export function planRootFieldPropagation(
     const entry = planCopy(copy, {
       kindChanged, kindAfter, actionChanged, actionAfter, unitChanged, unitAfter,
       carriedTitle: carryRootTitle ? titleAfter : null,
+      settingsBefore, settingsAfter,
     });
     if (entry) out.push(entry);
   }
@@ -138,6 +199,10 @@ interface RootOutcome {
   unitAfter: string;
   /** The root's new custom title every copy carries, or null. */
   carriedTitle: string | null;
+  /** The root's name + templates before the edit (judge a copy's title auto against these). */
+  settingsBefore: CounterTitleSettings;
+  /** The root's name + templates after the edit (re-render an auto copy title through these). */
+  settingsAfter: CounterTitleSettings;
 }
 
 /**
@@ -175,12 +240,12 @@ function planCopy(copy: RootPropagationCopy, root: RootOutcome): RootFieldPropag
   let title: string;
   if (root.carriedTitle !== null) {
     title = root.carriedTitle;
-  } else if (isAutoCounterTitle(copy.title, actionBefore, copy.maxCount, unitBefore, kindBefore)) {
+  } else if (isAutoCounterTitle(copy.title, actionBefore, copy.maxCount, unitBefore, kindBefore, root.settingsBefore)) {
     // The kind switch rounds the copy's goal; an auto title follows it.
     const switched = root.kindChanged ? planCountKindSwitch(copy, kindBefore, root.kindAfter) : null;
     const kind = switched ? root.kindAfter : kindBefore;
     const goal = switched?.maxCount ?? copy.maxCount;
-    title = generateCounterTaskTitle(action, goal, unit, undefined, kind);
+    title = renderCounterTitle({ ...root.settingsAfter, action, unit, countKind: kind }, goal);
   } else {
     title = copy.title;
   }

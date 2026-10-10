@@ -365,13 +365,10 @@ func buildSharedCounterGroups(
 
         groups.append(SharedCounterGroup(
             counterId: sourceId,
-            // R1: pair-derived display name (CounterName.formatCounterName),
+            // The root's counterName, else R1 pair-derived (CounterName.formatCounterName),
             // stored-title fallback when the (action, unit) pair can't
             // produce one (e.g. a legacy row with neither field set).
-            name: {
-                let derived = CounterName.formatCounterName(action: source.action, unit: source.unit)
-                return derived.isEmpty ? source.title : derived
-            }(),
+            name: CounterSettings.counterDisplayName(source),
             action: source.action,
             unit: source.unit,
             lifetime: lifetime,

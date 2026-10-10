@@ -31,6 +31,7 @@ extension AppDatabase {
     ///   - unit: Unit of measurement (trimmed; must be non-blank after trimming).
     ///   - startingCount: Optional non-negative starting count (defaults to 0).
     ///   - countKind: The counter's kind, written explicitly (default `.discrete`); whole-number kinds refuse a fractional seed.
+    ///   - settings: The shared counter settings the create sheet stored (nil members = default).
     ///   - now: ISO8601 write timestamp.
     /// - Returns: The newly created counter Task.
     /// - Throws: `AppDatabaseError.invalidCounterInput` if `action`/`unit`
@@ -42,6 +43,7 @@ extension AppDatabase {
         unit: String,
         startingCount: CountValue?,
         countKind: CountKind = .discrete,
+        settings: CounterSettings.Stored = .init(),
         now: String
     ) throws -> Task {
         let trimmedAction = action.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -58,7 +60,12 @@ extension AppDatabase {
             )
         }
 
-        let title = TaskTitle.generateCounterTaskTitle(action: trimmedAction, maxCount: nil, unit: trimmedUnit)
+        let name = CounterSettings.storedText(settings.counterName)
+        // Goal-less: the title is the counter's name (`renderCounterTitle`).
+        let title = CounterSettings.renderCounterTitle(
+            CounterSettings.Fields(action: trimmedAction, unit: trimmedUnit, countKind: countKind, counterName: name),
+            goal: nil
+        )
         let task = Task(
             id: Self.generateUUID(),
             userId: userId,
@@ -75,7 +82,11 @@ extension AppDatabase {
             version: 1,
             isDeleted: false,
             isCounter: true,
-            countKind: countKind
+            countKind: countKind,
+            counterName: name,
+            titleTemplateSingular: CounterSettings.storedText(settings.titleTemplateSingular),
+            titleTemplatePlural: CounterSettings.storedText(settings.titleTemplatePlural),
+            timeframeGoals: settings.timeframeGoals?.isEmpty == false ? settings.timeframeGoals : nil
         )
 
         try write { db in

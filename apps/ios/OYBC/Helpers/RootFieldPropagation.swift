@@ -4,8 +4,9 @@ import Foundation
 //
 // Swift twin of `packages/shared/src/algorithms/rootFieldPropagation.ts`
 // (docs/BOARD_SCOPED_TASK_EDITS.md §6). A counter ROOT's Task Detail edit
-// reaches its live per-board copies: title / action / unit propagate; the
-// goal never does (each board scales its own target); the kind is written by
+// reaches its live per-board copies: title / action / unit propagate, and a
+// NAME / title-TEMPLATE edit (docs/SHARED_COUNTER_SETTINGS.md §1) re-renders
+// every live copy whose title is auto (custom kept); the goal never does (each board scales its own target); the kind is written by
 // the kind switch (`AppDatabase+CountKindSwitch.swift`), which this planner
 // only reads so an auto copy title tracks the copy's switch-rounded goal.
 // `description` is not propagated: per-board counting copies are minted
@@ -24,6 +25,9 @@ enum RootFieldPropagation {
         var maxCount: CountValue?
         /// The root's requested kind (applied by the kind switch, read here).
         var countKind: CountKind?
+        /// The root's POST-edit name + templates — nil = unchanged (a nil
+        /// member inside is a cleared / default setting).
+        var settings: CounterSettings.TitleSettings? = nil
     }
 
     /// A candidate copy (any row read by `sharedCounterId == root.id`), as stored BEFORE the edit.
@@ -58,6 +62,10 @@ enum RootFieldPropagation {
         let unitAfter: String
         /// The root's new custom title every copy carries, or nil.
         let carriedTitle: String?
+        /// The root's name + templates before the edit (a copy's title is judged auto against these).
+        let settingsBefore: CounterSettings.TitleSettings
+        /// The root's name + templates after the edit (an auto copy title re-renders through these).
+        let settingsAfter: CounterSettings.TitleSettings
     }
 
     /// Plan the copy writes a root edit implies. Twin of `planRootFieldPropagation`.
@@ -69,8 +77,10 @@ enum RootFieldPropagation {
     /// - action / unit: a changed root value is copied verbatim.
     /// - title: when the root's NEW title is custom and changed, every live copy
     ///   carries it verbatim (the #542 mint rule). Otherwise an AUTO copy title
-    ///   is regenerated from the copy's action / unit / own (switch-rounded)
-    ///   goal / kind, and a CUSTOM copy title is kept.
+    ///   (auto against the root's PRE-edit templates, or the legacy formula) is
+    ///   re-rendered through the POST-edit templates from the copy's action /
+    ///   unit / own (switch-rounded) goal / kind, and a CUSTOM copy title is
+    ///   kept. A name / template edit alone triggers that re-render.
     /// - The goal is never in a patch.
     ///
     /// - Parameters:
@@ -98,21 +108,34 @@ enum RootFieldPropagation {
         let actionChanged = actionAfter != actionBefore
         let unitChanged = unitAfter != unitBefore
         let kindChanged = kindAfter != rootKind
-        guard titleChanged || actionChanged || unitChanged || kindChanged else { return [] }
+        let settingsBefore = CounterSettings.TitleSettings(task: root)
+        let settingsAfter = patch.settings ?? settingsBefore
+        let settingsChanged = settingsDiffer(settingsBefore, settingsAfter)
+        guard titleChanged || actionChanged || unitChanged || kindChanged || settingsChanged else { return [] }
 
         let carryRootTitle = titleChanged && !TaskTitle.isAutoCounterTitle(
-            title: titleAfter, action: actionAfter, maxCount: goalAfter, unit: unitAfter, countKind: kindAfter
+            title: titleAfter, action: actionAfter, maxCount: goalAfter, unit: unitAfter, countKind: kindAfter,
+            settings: settingsAfter
         )
         let outcome = RootOutcome(
             kindChanged: kindChanged, kindAfter: kindAfter,
             actionChanged: actionChanged, actionAfter: actionAfter,
             unitChanged: unitChanged, unitAfter: unitAfter,
-            carriedTitle: carryRootTitle ? titleAfter : nil
+            carriedTitle: carryRootTitle ? titleAfter : nil,
+            settingsBefore: settingsBefore, settingsAfter: settingsAfter
         )
         return copies
             .filter { isLiveCopy($0, rootId: root.id, now: now) }
             .compactMap { planCopy($0.task, root: outcome) }
             .sorted { $0.copyId < $1.copyId }
+    }
+
+    /// Whether two name / template sets differ (each compared trimmed; blank = absent).
+    private static func settingsDiffer(_ a: CounterSettings.TitleSettings, _ b: CounterSettings.TitleSettings) -> Bool {
+        let norm = { (v: String?) in CounterSettings.storedText(v) ?? "" }
+        return norm(a.counterName) != norm(b.counterName)
+            || norm(a.titleTemplateSingular) != norm(b.titleTemplateSingular)
+            || norm(a.titleTemplatePlural) != norm(b.titleTemplatePlural)
     }
 
     /// Whether `copy` is a live copy of `rootId` that a root edit may write.
@@ -137,7 +160,8 @@ enum RootFieldPropagation {
         if let carried = root.carriedTitle {
             title = carried
         } else if TaskTitle.isAutoCounterTitle(
-            title: copy.title, action: actionBefore, maxCount: copy.maxCount, unit: unitBefore, countKind: kindBefore
+            title: copy.title, action: actionBefore, maxCount: copy.maxCount, unit: unitBefore, countKind: kindBefore,
+            settings: root.settingsBefore
         ) {
             // The kind switch rounds the copy's goal; an auto title follows it.
             let switched = root.kindChanged
@@ -147,7 +171,7 @@ enum RootFieldPropagation {
                 : nil
             let kind = switched != nil ? root.kindAfter : kindBefore
             let goal = switched?.maxCount ?? copy.maxCount
-            title = TaskTitle.generateCounterTaskTitle(action: action, maxCount: goal, unit: unit, countKind: kind)
+            title = TaskTitle.renderedTitle(root.settingsAfter, action: action, unit: unit, countKind: kind, goal: goal)
         } else {
             title = copy.title
         }

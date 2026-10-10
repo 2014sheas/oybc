@@ -1,7 +1,7 @@
 import {
-  generateCounterTaskTitle,
   isAutoCounterTitle,
   planCountKindSwitch,
+  renderCounterTitle,
   resolveCountKind,
   type CountKind,
   type Task,
@@ -42,8 +42,10 @@ export function seedCounterEditDraft(root: Task): CounterEditDraft {
 
 /**
  * The `saveTaskEdit` submit for a draft: action / unit, `countKind` only when
- * it changed, and the title — regenerated from the new fields (at the goal
- * the kind switch leaves) when the root's title is auto, else kept verbatim.
+ * it changed, and the title — re-rendered from the new fields through the
+ * root's stored name / title templates (docs/SHARED_COUNTER_SETTINGS.md §1b;
+ * absent = the formula), at the goal the kind switch leaves, when the root's
+ * title is auto, else kept verbatim.
  * Never a type, description or goal.
  *
  * @param root - The counter's root task (stored).
@@ -58,8 +60,8 @@ export function counterEditSubmit(root: Task, draft: CounterEditDraft): TaskEdit
   const goal = kindChanged
     ? (planCountKindSwitch({ maxCount: root.maxCount }, storedKind, draft.kind)?.maxCount ?? root.maxCount)
     : root.maxCount;
-  const auto = isAutoCounterTitle(root.title, root.action ?? '', root.maxCount, root.unit ?? '', storedKind);
-  const title = auto ? generateCounterTaskTitle(action, goal, unit, undefined, draft.kind) : root.title;
+  const auto = isAutoCounterTitle(root.title, root.action ?? '', root.maxCount, root.unit ?? '', storedKind, root);
+  const title = auto ? renderCounterTitle({ ...root, action, unit, countKind: draft.kind }, goal) : root.title;
   return { title, action, unit, ...(kindChanged ? { countKind: draft.kind } : {}) };
 }
 

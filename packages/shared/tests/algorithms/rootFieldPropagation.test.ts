@@ -24,6 +24,9 @@ interface FixRoot {
   maxCount?: number;
   countKind?: CountKind;
   sharedCounterId?: string;
+  counterName?: string;
+  titleTemplateSingular?: string;
+  titleTemplatePlural?: string;
 }
 interface FixCopy {
   id: string;
@@ -58,7 +61,17 @@ const fixture = JSON.parse(
 
 const makeRoot = (r: FixRoot): Pick<
   Task,
-  'id' | 'type' | 'title' | 'action' | 'unit' | 'maxCount' | 'countKind' | 'sharedCounterId'
+  | 'id'
+  | 'type'
+  | 'title'
+  | 'action'
+  | 'unit'
+  | 'maxCount'
+  | 'countKind'
+  | 'sharedCounterId'
+  | 'counterName'
+  | 'titleTemplateSingular'
+  | 'titleTemplatePlural'
 > => ({ ...r, type: TaskType.COUNTING });
 
 const makeCopy = (c: FixCopy): RootPropagationCopy => ({
@@ -79,7 +92,7 @@ const makeCopy = (c: FixCopy): RootPropagationCopy => ({
 
 describe('planRootFieldPropagation — shared vectors', () => {
   it('covers the fixture', () => {
-    expect(fixture.vectors.length).toBe(12);
+    expect(fixture.vectors.length).toBe(17);
   });
 
   for (const v of fixture.vectors) {

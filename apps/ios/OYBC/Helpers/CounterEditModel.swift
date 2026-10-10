@@ -47,12 +47,14 @@ enum CounterEditModel {
         let goal = kindChanged
             ? (planCountKindSwitch(maxCount: root.maxCount, defaultLogAmount: nil, from: storedKind, to: draft.kind)?.maxCount ?? root.maxCount)
             : root.maxCount
+        let settings = CounterSettings.TitleSettings(task: root)
         let auto = TaskTitle.isAutoCounterTitle(
             title: root.title, action: root.action ?? "", maxCount: root.maxCount, unit: root.unit ?? "",
-            countKind: storedKind
+            countKind: storedKind, settings: settings
         )
+        // Re-rendered through the root's stored name / templates (absent = the formula).
         let title = auto
-            ? TaskTitle.generateCounterTaskTitle(action: action, maxCount: goal, unit: unit, countKind: draft.kind)
+            ? TaskTitle.renderedTitle(settings, action: action, unit: unit, countKind: draft.kind, goal: goal)
             : root.title
         return EditTaskSheet.Patch(
             title: title, description: root.description ?? "", action: action, unit: unit, maxCountStr: "",

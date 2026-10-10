@@ -1,4 +1,4 @@
-import { formatCounterName, TaskType, type Task } from '@oybc/shared';
+import { counterDisplayName, TaskType, type Task } from '@oybc/shared';
 import { counterRowTitle } from '../../components/counters/counterRowTitle';
 import { RisoTypeBadge } from '../../components/riso';
 import { computeStatusLabel } from './taskCountDisplay';
@@ -99,7 +99,7 @@ export function TaskRow({
   // (action, unit) pair can't produce a name — the same stored-title fallback
   // `sharedCounterGroups.ts` uses.
   const displayTitle = isFamilyRoot
-    ? formatCounterName(task.action, task.unit) || task.title
+    ? counterDisplayName(task)
     : task.title;
   const titleForA11y = displayTitle || '(untitled task)';
 

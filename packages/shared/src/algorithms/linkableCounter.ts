@@ -22,7 +22,7 @@
 
 import type { Task } from '../types/task';
 import { TaskType } from '../constants/enums';
-import { formatCounterName } from './counterName';
+import { counterDisplayName } from './counterSettings';
 import { resolveCountKind, type CountKind } from './countValue';
 
 /** The existing counter a new task can join, plus display stats for the suggestion. */
@@ -111,7 +111,7 @@ export function findLinkableCounter(
   const best = candidates[0];
   return {
     counterId: best.id,
-    name: formatCounterName(best.action, best.unit) || best.title,
+    name: counterDisplayName(best),
     lifetime: best.currentCount ?? 0,
     memberCount: 1 + (linkerCountBySource.get(best.id) ?? 0),
     countKind: resolveCountKind(best),

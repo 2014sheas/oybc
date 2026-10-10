@@ -5,7 +5,7 @@
  * does the credited toast show" seams are unit-testable without a DOM or a
  * live Dexie transaction (mirrors the `boardPlayFlash.ts` precedent).
  */
-import { formatCounterName, type Task } from '@oybc/shared';
+import { counterDisplayName, type Task } from '@oybc/shared';
 
 /**
  * Resolves the shared-counter SOURCE task id for a given task, or `null`
@@ -56,5 +56,5 @@ export function resolveSharedCounterDefaultAmount(sourceTask: Task | undefined):
  */
 export function resolveCreditedCounterName(sourceTask: Task | undefined): string {
   if (!sourceTask) return '';
-  return formatCounterName(sourceTask.action, sourceTask.unit) || sourceTask.title || '';
+  return counterDisplayName(sourceTask);
 }

@@ -1,4 +1,4 @@
-import { TaskType, formatCounterName, type Task } from '@oybc/shared';
+import { TaskType, counterDisplayName, type Task } from '@oybc/shared';
 import { counterRowSubtitle } from '../counters/counterRowTitle';
 import { RisoTypeBadge } from '../riso';
 import styles from './BoardWizardTasksStep.module.css';
@@ -43,7 +43,7 @@ export function renderTaskRow({
 }: TaskRowProps): React.ReactElement {
   const subtitle = isFamilyRoot ? '' : buildTaskSubtitle(task);
   const displayTitle = isFamilyRoot
-    ? formatCounterName(task.action, task.unit) || task.title
+    ? counterDisplayName(task)
     : task.title;
   const boards = taskBoardCounts[task.id] ?? 0;
   const usageHint = boards === 0 ? 'unused' : `${boards} board${boards === 1 ? '' : 's'}`;
