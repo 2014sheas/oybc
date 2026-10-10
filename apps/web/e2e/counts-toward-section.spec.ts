@@ -47,7 +47,7 @@ test.describe('Counter Detail — Counts toward section', () => {
     await expect(rows.nth(0)).toContainText('Reading day');
     await expect(rows.nth(0)).toContainText('Done');
     await expect(rows.nth(1)).toContainText('Read 250 pages');
-    await expect(rows.nth(1)).toContainText('+2');
+    await expect(rows.nth(1)).not.toContainText('+2');
     await expect(rows.nth(1)).toContainText('In progress');
     await expect(rows.nth(2)).toContainText('Audiobook: Piranesi');
     await expect(rows.nth(2)).toContainText('Not started');
@@ -74,7 +74,8 @@ test.describe('Counter Detail — Counts toward section', () => {
     await sheet.getByRole('button', { name: 'Add to library' }).click();
     await expect(sheet).toHaveCount(0);
 
-    await expect.poll(async () => readTaskByTitle(page, 'Walk to work')).toMatchObject({ countsTowardCounterId: ROOT2, countsTowardAmount: 1 });
+    await expect.poll(async () => readTaskByTitle(page, 'Walk to work')).toMatchObject({ countsTowardCounterId: ROOT2 });
+    expect(((await readTaskByTitle(page, 'Walk to work')) ?? {}).countsTowardAmount ?? null).toBeNull();
     await expect(section.getByText('Counts toward · 1 task')).toBeVisible();
     await expect(section.getByRole('listitem')).toContainText('Walk to work');
   });

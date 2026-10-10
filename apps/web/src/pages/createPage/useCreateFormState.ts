@@ -69,7 +69,7 @@ export interface FormErrors {
 /**
  * Creates a task through the single immediate-persist path. A non-null
  * `countsTowardCounterId` (Counter Detail's "+ New" preset) flags the task to
- * count toward that counter with amount 1 in the same transaction; null writes
+ * count toward that counter (one per completion; no amount is written) in the same transaction; null writes
  * no flag.
  *
  * @param userId - Owner of the new task.
@@ -80,7 +80,7 @@ export interface FormErrors {
  */
 export function createWithPreset(userId: string, input: CreateTaskInput, countsTowardCounterId: string | null): Promise<Task> {
   return countsTowardCounterId != null
-    ? createTaskCountingToward(userId, input, { counterId: countsTowardCounterId, amount: 1 })
+    ? createTaskCountingToward(userId, input, { counterId: countsTowardCounterId })
     : createTask(userId, input);
 }
 

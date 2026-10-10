@@ -26,7 +26,6 @@ import { evaluateCompound, resolvePrimitiveChildState } from './compoundEvaluati
 import {
   canContribute,
   candidateContributionIds,
-  countsTowardAmountOf,
   resolveContributionState,
   type ContributionInputs,
 } from './countsToward';
@@ -125,8 +124,6 @@ export interface ContributorRow {
   status: ContributorRowStatus;
   /** The primary board ({@link pickPrimaryBoard}); `null` when unplaced. */
   boardId: string | null;
-  /** The representative's `countsTowardAmount` (1 when absent). */
-  amount: number;
   /** The lineage's live credits on the root ({@link contributorCreditGroups}). */
   creditCount: number;
   /** The latest credit instant; `null` with no credits. */
@@ -212,7 +209,6 @@ export function countsTowardRows(rootId: string, tasks: ReadonlyArray<Task>, inp
       taskId: task.id,
       status: contributorRowStatus(task, inputs, board),
       boardId: board?.id ?? null,
-      amount: countsTowardAmountOf(task),
       creditCount: g.creditCount,
       latestOccurredAt: g.latestOccurredAt,
       title: task.title.toLowerCase(),

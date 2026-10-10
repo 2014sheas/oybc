@@ -267,7 +267,7 @@ export function CompoundTaskWizard({
         operator,
         threshold: operator === OperatorType.M_OF_N ? threshold : undefined,
         children,
-        ...(countsTowardId != null ? { countsTowardCounterId: countsTowardId, countsTowardAmount: 1 } : {}),
+        ...(countsTowardId != null ? { countsTowardCounterId: countsTowardId } : {}),
       });
 
       setSuccessMessage('Compound task created!');

@@ -95,7 +95,7 @@ afterEach(async () => {
 });
 
 describe('loadCountsTowardSection', () => {
-  it('lists one row per contributor with its primary board, state, amount and live credit count', async () => {
+  it('lists one row per contributor with its primary board, state and live credit count', async () => {
     await db.tasks.bulkAdd([
       rootTask(),
       task(DUNE, { title: 'Finish Dune', countsTowardCounterId: ROOT, countsTowardSince: T0 }),
@@ -114,9 +114,9 @@ describe('loadCountsTowardSection', () => {
 
     const data = await loadCountsTowardSection(ROOT);
     expect(data.rows).toEqual([
-      { taskId: DUNE, status: 'done', boardId: B1, amount: 1, creditCount: 2, latestOccurredAt: '2026-10-06T09:00:00.000Z' },
-      { taskId: PAGES, status: 'inProgress', boardId: B1, amount: 2, creditCount: 0, latestOccurredAt: null },
-      { taskId: LOOSE, status: 'notStarted', boardId: null, amount: 1, creditCount: 0, latestOccurredAt: null },
+      { taskId: DUNE, status: 'done', boardId: B1, creditCount: 2, latestOccurredAt: '2026-10-06T09:00:00.000Z' },
+      { taskId: PAGES, status: 'inProgress', boardId: B1, creditCount: 0, latestOccurredAt: null },
+      { taskId: LOOSE, status: 'notStarted', boardId: null, creditCount: 0, latestOccurredAt: null },
     ]);
     expect(data.taskById[DUNE]?.title).toBe('Finish Dune');
     expect(data.boardById[B1]?.name).toBe('Reading week');
@@ -326,10 +326,11 @@ describe('setCountsToward (the one write path) — sanity', () => {
 });
 
 describe('createWithPreset — the create form\'s silent "+ New" flag', () => {
-  it('a preset writes the flag with amount 1; no preset writes none', async () => {
+  it('a preset writes the flag and no amount (always one); no preset writes none', async () => {
     await db.tasks.bulkAdd([rootTask()]);
     const flagged = await createWithPreset(USER, { title: 'Walk to work', type: TaskType.NORMAL }, ROOT);
-    expect(flagged).toMatchObject({ countsTowardCounterId: ROOT, countsTowardAmount: 1, countsTowardSince: NOW });
+    expect(flagged).toMatchObject({ countsTowardCounterId: ROOT, countsTowardSince: NOW });
+    expect(flagged.countsTowardAmount).toBeUndefined();
     const plain = await createWithPreset(USER, { title: 'Stretch', type: TaskType.NORMAL }, null);
     expect(plain.countsTowardCounterId).toBeUndefined();
     expect(plain.countsTowardSince).toBeUndefined();

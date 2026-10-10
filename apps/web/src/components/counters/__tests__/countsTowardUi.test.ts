@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { TaskType, Timeframe, type Board, type Task } from '@oybc/shared';
-import { CountsTowardSection, amountText, countsTowardHeading, creditCountText } from '../CountsTowardSection';
+import { CountsTowardSection, countsTowardHeading, creditCountText } from '../CountsTowardSection';
 import { countsTowardProblemLabel } from '../countsTowardLabels';
 
 /**
@@ -19,15 +19,13 @@ function task(id: string, over: Partial<Task> = {}): Task {
   };
 }
 describe('CountsTowardSection — model', () => {
-  it('heading counts rows; "× N" only from 2 credits; "+N" only when the amount is not 1', () => {
+  it('heading counts rows; "× N" only from 2 credits', () => {
     expect(countsTowardHeading(0)).toBe('Counts toward');
     expect(countsTowardHeading(1)).toBe('Counts toward · 1 task');
     expect(countsTowardHeading(6)).toBe('Counts toward · 6 tasks');
     expect(creditCountText({ creditCount: 0 })).toBeNull();
     expect(creditCountText({ creditCount: 1 })).toBeNull();
     expect(creditCountText({ creditCount: 3 })).toBe('× 3');
-    expect(amountText({ amount: 1 })).toBeNull();
-    expect(amountText({ amount: 2 })).toBe('+2');
   });
 
   it('renders the rows as drawn: badge, title (done = strikethrough class), board + dot, × N, +N, pill; and the empty one-liner', () => {
@@ -39,9 +37,9 @@ describe('CountsTowardSection — model', () => {
         onOpenTask: () => {},
         data: {
           rows: [
-            { taskId: 'dune', status: 'done', boardId: 'b1', amount: 1, creditCount: 3, latestOccurredAt: T0 },
-            { taskId: 'club', status: 'inProgress', boardId: null, amount: 2, creditCount: 1, latestOccurredAt: null },
-            { taskId: 'loose', status: 'notStarted', boardId: null, amount: 1, creditCount: 0, latestOccurredAt: null },
+            { taskId: 'dune', status: 'done', boardId: 'b1', creditCount: 3, latestOccurredAt: T0 },
+            { taskId: 'club', status: 'inProgress', boardId: null, creditCount: 1, latestOccurredAt: null },
+            { taskId: 'loose', status: 'notStarted', boardId: null, creditCount: 0, latestOccurredAt: null },
           ],
           taskById: {
             dune: task('dune', { title: 'Finish Dune' }),
@@ -57,7 +55,7 @@ describe('CountsTowardSection — model', () => {
     expect(html).toContain('Finish Dune');
     expect(html).toContain('2026 Reading');
     expect(html).toContain('× 3');
-    expect(html).toContain('+2');
+    expect(html).not.toContain('+2');
     expect(html).toContain('>Done<');
     expect(html).toContain('>In progress<');
     expect(html).toContain('>Not started<');
