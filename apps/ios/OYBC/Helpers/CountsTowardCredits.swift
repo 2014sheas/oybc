@@ -105,8 +105,6 @@ extension CountsToward {
         let status: ContributorRowStatus
         /// The primary board (`pickPrimaryBoard`); `nil` when unplaced.
         let boardId: String?
-        /// The representative's `countsTowardAmount` (1 when absent).
-        let amount: Int
         /// The lineage's live credits on the root (`contributorCreditGroups`).
         let creditCount: Int
         /// The latest credit instant; `nil` with no credits.
@@ -178,7 +176,6 @@ extension CountsToward {
                     taskId: task.id,
                     status: contributorRowStatus(task, inputs: inputs, board: board),
                     boardId: board?.id,
-                    amount: amount(of: task),
                     creditCount: g.creditCount,
                     latestOccurredAt: g.latestOccurredAt
                 ),

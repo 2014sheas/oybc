@@ -405,10 +405,9 @@ final class CreateFormViewModel {
 
         // Counts toward: refuse BEFORE anything is created (the form's error line).
         let countsTowardTarget = resolvedType == .achievement ? nil : countsToward.counterId
-        let countsTowardAmount = countsToward.amount
         if let target = countsTowardTarget,
            let problem = CountsToward.problem(
-               task: newTask, targetId: target, amount: Double(countsTowardAmount),
+               task: newTask, targetId: target, amount: 1,
                tasks: (try? database.fetchTasks(userId: userId)) ?? [], children: []
            ) {
             isSubmitting = false
@@ -424,7 +423,7 @@ final class CreateFormViewModel {
                     // Create + flag in ONE write: a refusal persists nothing.
                     try self.database.createTaskAndEnqueue(
                         newTask, now: now,
-                        countsToward: countsTowardTarget.map { CountsTowardPatch(counterId: $0, amount: countsTowardAmount) }
+                        countsToward: countsTowardTarget.map { CountsTowardPatch(counterId: $0) }
                     )
                 } else {
                     try self.database.createTaskWithPairedChildrenAndEnqueue(
@@ -665,7 +664,7 @@ final class CreateFormViewModel {
         )
         if let target = countsTowardTarget {
             if let problem = CountsToward.problem(
-                task: parentTask, targetId: target, amount: Double(countsToward.amount),
+                task: parentTask, targetId: target, amount: 1,
                 tasks: (try? database.fetchTasks(userId: userId)) ?? [], children: []
             ) {
                 isSubmitting = false
@@ -785,7 +784,7 @@ final class CreateFormViewModel {
         let capturedChildLinks = childLinks
         let capturedParent = parentTask
         // The compound goes in unflagged; the create's own write flags it after its children exist.
-        let capturedCountsToward = countsTowardTarget.map { CountsTowardPatch(counterId: $0, amount: countsToward.amount) }
+        let capturedCountsToward = countsTowardTarget.map { CountsTowardPatch(counterId: $0) }
 
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             guard let self else { return }

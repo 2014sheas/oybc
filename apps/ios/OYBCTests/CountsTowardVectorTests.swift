@@ -402,7 +402,7 @@ final class CountsTowardVectorTests: XCTestCase {
             let expected = v.expected.map {
                 CountsToward.ContributorRow(
                     taskId: $0.taskId, status: CountsToward.ContributorRowStatus(rawValue: $0.status)!, boardId: $0.boardId,
-                    amount: $0.amount, creditCount: $0.creditCount, latestOccurredAt: $0.latestOccurredAt
+                    creditCount: $0.creditCount, latestOccurredAt: $0.latestOccurredAt
                 )
             }
             XCTAssertEqual(rows, expected, v.name)

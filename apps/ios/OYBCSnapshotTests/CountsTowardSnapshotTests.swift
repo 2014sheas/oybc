@@ -34,9 +34,9 @@ final class CountsTowardSnapshotTests: XCTestCase {
     }
 
     private func row(
-        _ id: String, _ status: CountsToward.ContributorRowStatus, board: String?, amount: Int = 1, credits: Int = 0
+        _ id: String, _ status: CountsToward.ContributorRowStatus, board: String?, credits: Int = 0
     ) -> CountsToward.ContributorRow {
-        .init(taskId: id, status: status, boardId: board, amount: amount, creditCount: credits, latestOccurredAt: nil)
+        .init(taskId: id, status: status, boardId: board, creditCount: credits, latestOccurredAt: nil)
     }
 
     /// Six mixed rows like the handoff: done Simple on a yearly board, in-progress
@@ -61,7 +61,7 @@ final class CountsTowardSnapshotTests: XCTestCase {
             rows: [
                 row("r1", .done, board: "by", credits: 3),
                 row("r2", .inProgress, board: "bw"),
-                row("r3", .inProgress, board: "bm", amount: 2),
+                row("r3", .inProgress, board: "bm"),
                 row("r4", .notStarted, board: "bm"),
                 row("r5", .notStarted, board: nil),
                 row("r6", .notStarted, board: nil),

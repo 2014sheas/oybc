@@ -108,7 +108,6 @@ final class CountsTowardUITests: XCTestCase {
         XCTAssertEqual(data.rows.map(\.status), [.done, .notStarted])
         XCTAssertEqual(data.rows[0].boardId, bA)
         XCTAssertNil(data.rows[1].boardId)
-        XCTAssertEqual(data.rows[1].amount, 2)
         XCTAssertEqual(data.taskById[simple]?.title, "Read Dune")
         XCTAssertEqual(data.boardById[bA]?.timeframe, .yearly)
     }
@@ -142,8 +141,6 @@ final class CountsTowardUITests: XCTestCase {
         XCTAssertEqual(CountsTowardSectionView.heading(count: 6), "Counts toward · 6 tasks")
         XCTAssertNil(CountsTowardSectionView.creditMark(1))
         XCTAssertEqual(CountsTowardSectionView.creditMark(3), "\u{00D7} 3")
-        XCTAssertNil(CountsTowardSectionView.amountMark(1))
-        XCTAssertEqual(CountsTowardSectionView.amountMark(2), "+2")
     }
 
     // MARK: - Single write path
@@ -257,13 +254,13 @@ final class CountsTowardUITests: XCTestCase {
         let form = CreateFormViewModel(database: db)
         form.taskType = .normal
         form.title = "Read Dune"
-        form.countsToward = CountsTowardSelection(counterId: root, amount: 2)
+        form.countsToward = CountsTowardSelection(counterId: root)
         let created = expectation(description: "created")
         form.handleCreateAndAddToPool(userId: user, onTaskCreated: { _, _, _ in created.fulfill() }, onLibraryReloadRequested: {})
         wait(for: [created], timeout: 5)
         let made = try XCTUnwrap(try db.fetchTasks(userId: user).first { $0.title == "Read Dune" })
         XCTAssertEqual(made.countsTowardCounterId, root)
-        XCTAssertEqual(made.countsTowardAmount, 2)
+        XCTAssertNil(made.countsTowardAmount)
         XCTAssertNotNil(made.countsTowardSince)
     }
 
@@ -282,7 +279,7 @@ final class CountsTowardUITests: XCTestCase {
         XCTAssertNil(made.countsTowardSince)
     }
 
-    func test_createForm_presetWritesTheFlagWithAmountOne() throws {
+    func test_createForm_presetWritesTheFlagWithNoAmount() throws {
         let db = try makeDb()
         try db.saveTask(task(root, type: .counting, maxCount: 12, isCounter: true))
         let form = CreateFormViewModel(database: db)
@@ -294,7 +291,7 @@ final class CountsTowardUITests: XCTestCase {
         wait(for: [created], timeout: 5)
         let made = try XCTUnwrap(try db.fetchTasks(userId: user).first { $0.title == "Read Dune" })
         XCTAssertEqual(made.countsTowardCounterId, root)
-        XCTAssertEqual(made.countsTowardAmount, 1)
+        XCTAssertNil(made.countsTowardAmount)
     }
 
     func test_createForm_refusalShowsTheLabelAndCreatesNothing() throws {
@@ -313,7 +310,7 @@ final class CountsTowardUITests: XCTestCase {
         let db = try makeDb()
         try db.saveTask(task(root, type: .counting, maxCount: 12, isCounter: true))
         let form = CreateFormViewModel(database: db)
-        form.countsToward = CountsTowardSelection(counterId: root, amount: 1)
+        form.countsToward = CountsTowardSelection(counterId: root)
         let created = expectation(description: "created")
         form.handleCreateCompoundAndAddToPool(
             userId: user, title: "Weekly reads", rule: CreateFormViewModel.CompoundRule.allOf, subs: [],
@@ -567,7 +564,7 @@ final class CountsTowardUITests: XCTestCase {
         let db = try makeDb()
         try db.saveTask(task(root, type: .counting, maxCount: 12, isCounter: true, countKind: .continuous))
         XCTAssertThrowsError(try db.createTaskAndEnqueue(
-            task("new-1", title: "Nope"), now: now, countsToward: CountsTowardPatch(counterId: root, amount: 1)
+            task("new-1", title: "Nope"), now: now, countsToward: CountsTowardPatch(counterId: root)
         ))
         XCTAssertNil(try db.fetchTask(id: "new-1"))
     }
@@ -581,7 +578,7 @@ final class CountsTowardUITests: XCTestCase {
         let parent = task(boxId, type: .compound, title: "Loop")
         XCTAssertThrowsError(try db.createCompoundAndEnqueue(
             parent: parent, newChildTasks: [], childLinks: [link("l1", boxId, copy, 0)], now: now,
-            countsToward: CountsTowardPatch(counterId: root, amount: 1)
+            countsToward: CountsTowardPatch(counterId: root)
         )) { XCTAssertEqual($0 as? AppDatabase.CountsTowardError, .refused(.cycle)) }
         XCTAssertNil(try db.fetchTask(id: boxId))
         XCTAssertEqual(try db.read { try CompoundChild.fetchCount($0) }, 0)
@@ -596,7 +593,7 @@ final class CountsTowardUITests: XCTestCase {
         }
         try db.createCompoundAndEnqueue(
             parent: task(boxId, type: .compound), newChildTasks: [], childLinks: [link("l1", boxId, kid, 0)], now: now,
-            countsToward: CountsTowardPatch(counterId: root, amount: 1)
+            countsToward: CountsTowardPatch(counterId: root)
         )
         let saved = try fetch(db, boxId)
         XCTAssertEqual(saved.countsTowardCounterId, root)

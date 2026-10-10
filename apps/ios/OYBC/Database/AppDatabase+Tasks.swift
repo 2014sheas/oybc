@@ -378,7 +378,7 @@ extension AppDatabase {
             ).enqueue(db)
             // "Counts toward": the same transaction, so a refusal persists nothing.
             if let ct = countsToward, let counterId = ct.counterId {
-                try Self.setCountsToward(db: db, taskId: task.id, counterId: counterId, amount: ct.amount, now: now)
+                try Self.setCountsToward(db: db, taskId: task.id, counterId: counterId, amount: nil, now: now)
             }
         }
     }
@@ -538,7 +538,7 @@ extension AppDatabase {
             //    sub-tasks), stamps `countsTowardSince` and cascades, so already
             //    done sub-tasks credit. A refusal rolls the whole create back.
             if let ct = countsToward, let counterId = ct.counterId {
-                try Self.setCountsToward(db: db, taskId: parent.id, counterId: counterId, amount: ct.amount, now: now)
+                try Self.setCountsToward(db: db, taskId: parent.id, counterId: counterId, amount: nil, now: now)
             }
         }
     }
