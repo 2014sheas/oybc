@@ -96,11 +96,11 @@ enum CountsToward {
         return true
     }
 
-    /// The increment a contributor writes: `countsTowardAmount`, or 1 when absent / not positive.
-    static func amount(of task: Task) -> Int {
-        if let a = task.countsTowardAmount, a > 0 { return a }
-        return 1
-    }
+    /// The increment a contributor writes: always 1. A unit task credits its
+    /// counter exactly once per completion (owner ruling 2026-10-10, #590);
+    /// `Task.countsTowardAmount` is an inert column kept for decode / sync
+    /// compat and is deliberately NOT read here (web `countsTowardAmountOf`).
+    static func amount(of _: Task) -> Int { 1 }
 
     /// A task's completion (over one window) and the instant it completed.
     struct ContributionState: Equatable {

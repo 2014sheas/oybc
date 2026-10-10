@@ -133,15 +133,17 @@ export function countsTowardEventId(rootId: string, contributorScopeId: string, 
 }
 
 /**
- * The increment a contributor writes: its `countsTowardAmount`, or 1 when
- * absent / not a positive integer.
+ * The increment a contributor writes: always 1. A unit task credits its
+ * counter exactly once per completion (owner ruling 2026-10-10, #590);
+ * `Task.countsTowardAmount` is an inert column kept for decode / sync compat
+ * and is deliberately NOT read here, so a row that somehow carries another
+ * value still credits one.
  *
- * @param task - The contributing task.
- * @returns A positive integer.
+ * @param _task - The contributing task (unused; kept for call-site symmetry with iOS).
+ * @returns 1.
  */
-export function countsTowardAmountOf(task: Pick<Task, 'countsTowardAmount'>): number {
-  const a = task.countsTowardAmount;
-  return a != null && Number.isInteger(a) && a > 0 ? a : 1;
+export function countsTowardAmountOf(_task: Pick<Task, 'countsTowardAmount'>): number {
+  return 1;
 }
 
 /** A contributing task's completion (over one window) and the instant it completed. */

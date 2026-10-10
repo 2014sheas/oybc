@@ -291,11 +291,11 @@ describe('counts toward — a Simple task', () => {
     expect((await db.boards.get(WEEK))?.completedTasks).toBe(0);
   });
 
-  it('carries countsTowardAmount', async () => {
+  it('a stored countsTowardAmount is ignored: a credit is always one (#590 ruling)', async () => {
     await seed({ countsTowardAmount: 3 });
     await handleTaskCompletion(OCT, 'bt-simple', { isCompleted: true });
-    expect((await liveCredits())[0]?.delta).toBe(3);
-    expect((await db.tasks.get(ROOT))?.currentCount).toBe(3);
+    expect((await liveCredits())[0]?.delta).toBe(1);
+    expect((await db.tasks.get(ROOT))?.currentCount).toBe(1);
   });
 
   it('a replayed cascade with no state change writes nothing', async () => {
@@ -520,29 +520,29 @@ describe('counts toward — fork lineage shares one credit', () => {
     expect((await db.tasks.get(ROOT2))?.currentCount).toBe(1);
   });
 
-  it('the fork and the original disagree on the amount: the SHARED credit takes the lineage root’s amount, the fork’s OWN completion takes the fork’s', async () => {
+  it('stored amounts on the fork and the original are ignored: the shared credit stays one and is never revised; the fork’s own completion credits one', async () => {
     const fork = await forkCompletedDune();
     await at(LATER, () => setCountsToward(fork.id, ROOT, 3));
 
-    // The copied completion is wanted by both members → the lineage root's amount (1), not the fork's 3.
+    // The copied completion is wanted by both members → one credit of 1, untouched by the fork's stored 3.
     expect(await liveCredits()).toMatchObject([{ delta: 1, version: 1 }]);
     await expectReplayNoop([fork.id]);
     await expectReplayNoop([SIMPLE]);
 
-    // Raising the lineage root's amount moves the shared credit (2 — still not the fork's 3).
+    // A stored amount on the original changes nothing either — no revision, version stays 1.
     await at(LATER, () => setCountsToward(SIMPLE, ROOT, 2));
-    expect(await liveCredits()).toMatchObject([{ delta: 2, version: 2 }]);
+    expect(await liveCredits()).toMatchObject([{ delta: 1, version: 1 }]);
     await expectReplayNoop([fork.id]);
 
-    // A completion only the fork makes credits the fork's own amount.
+    // A completion only the fork makes credits one.
     await handleTaskCompletion(OCT, 'bt-simple', { isCompleted: false });
     await at(LATER, () => handleTaskCompletion(OCT, 'bt-simple', { isCompleted: true }));
     const own = (await liveEventsOf(fork.id)).find((e) => e.occurredAt === LATER)!;
     expect(await liveCredits()).toMatchObject([
-      { delta: 2, version: 2 },
-      { id: eventCredit(own.id), delta: 3, occurredAt: LATER, version: 1 },
+      { delta: 1, version: 1 },
+      { id: eventCredit(own.id), delta: 1, occurredAt: LATER, version: 1 },
     ]);
-    expect((await db.tasks.get(ROOT))?.currentCount).toBe(5);
+    expect((await db.tasks.get(ROOT))?.currentCount).toBe(2);
     await expectReplayNoop([fork.id]);
     await expectReplayNoop([SIMPLE]);
   });
@@ -621,12 +621,12 @@ describe('counts toward — count from flag time (D11)', () => {
     expect(await liveCredits(ROOT)).toHaveLength(0);
   });
 
-  it('changing only the amount keeps since; clearing drops it', async () => {
+  it('re-setting the same target keeps since (a stored amount is inert); clearing drops it', async () => {
     await seed();
     await handleTaskCompletion(OCT, 'bt-simple', { isCompleted: true });
     await at(LATER, () => setCountsToward(SIMPLE, ROOT, 3));
     expect((await db.tasks.get(SIMPLE))?.countsTowardSince).toBe(T0);
-    expect(await liveCredits()).toMatchObject([{ delta: 3 }]);
+    expect(await liveCredits()).toMatchObject([{ delta: 1 }]);
 
     await setCountsToward(SIMPLE, null);
     const cleared = (await db.tasks.get(SIMPLE))!;
@@ -824,8 +824,8 @@ describe('counts toward — deletion and guards', () => {
     await expect(setCountsToward(SIMPLE, '00000000-0000-4000-8000-0000000000f2')).rejects.toBeInstanceOf(CountsTowardError);
     await expect(setCountsToward(SIMPLE, SIMPLE)).rejects.toMatchObject({ code: 'self' });
 
-    await at('2026-10-09T00:00:00.000Z', () => setCountsToward(SIMPLE, ROOT, 2)); // since before the completion
-    expect(await liveCredits()).toMatchObject([{ id: eventCredit(done.id), delta: 2, occurredAt: '2026-10-10T10:00:00.000Z' }]);
+    await at('2026-10-09T00:00:00.000Z', () => setCountsToward(SIMPLE, ROOT)); // since before the completion
+    expect(await liveCredits()).toMatchObject([{ id: eventCredit(done.id), delta: 1, occurredAt: '2026-10-10T10:00:00.000Z' }]);
 
     await setCountsToward(SIMPLE, null);
     const cleared = await db.tasks.get(SIMPLE);

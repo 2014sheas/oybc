@@ -29,7 +29,7 @@ test.describe('Counter Detail — Counts toward section', () => {
     await seedTask(page, { id: ROOT2, title: 'Walk 100 miles', type: 'counting', action: 'Walk', unit: 'miles', maxCount: 100, isCounter: true, counterName: 'Miles' });
     await seedBoard(page, { id: BOARD, name: 'Reading day', boardSize: 3, timeframe: 'daily', status: 'active', startDate: START, endDate: END, centerSquareType: 'free' });
     await seedTask(page, { id: DUNE, title: 'Finish Dune', type: 'normal', countsTowardCounterId: ROOT, countsTowardSince: SINCE });
-    await seedTask(page, { id: PAGES, title: 'Read 250 pages', type: 'counting', action: 'Read', unit: 'pages', maxCount: 250, countsTowardCounterId: ROOT, countsTowardAmount: 2, countsTowardSince: SINCE });
+    await seedTask(page, { id: PAGES, title: 'Read 250 pages', type: 'counting', action: 'Read', unit: 'pages', maxCount: 250, countsTowardCounterId: ROOT, countsTowardSince: SINCE });
     await seedTask(page, { id: LOOSE, title: 'Audiobook: Piranesi', type: 'normal', countsTowardCounterId: ROOT, countsTowardSince: SINCE });
     await seedBoardTask(page, { id: 'eeeeeeee-ctw0-0001-bt-000000000020', boardId: BOARD, taskId: DUNE, row: 0, col: 0 });
     await seedBoardTask(page, { id: 'eeeeeeee-ctw0-0001-bt-000000000021', boardId: BOARD, taskId: PAGES, row: 0, col: 1 });

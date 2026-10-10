@@ -395,12 +395,13 @@ final class CountsTowardUITests: XCTestCase {
 
     func test_toast_simpleCompletionCreditedOnAnotherBoard() throws {
         let db = try makeDb()
+        // A stored amount of 2 is inert (#590 ruling): the toast reports the one credit written.
         try seedToast(db, contributor: task(simple, countsToward: root, amount: 2))
         let before = BoardPlayViewModel.countsTowardCreditSnapshot(database: db, currentBoardId: bA, writtenTaskId: simple)
         try complete(db, simple, intent: .setCompleted(true))
         let payload = try XCTUnwrap(toast(db, written: simple, before: before, undo: .uncomplete(taskId: simple, boardTaskId: "bt1")))
         XCTAssertEqual(payload.undo, .uncomplete(taskId: simple, boardTaskId: "bt1"))
-        XCTAssertEqual(payload.amount, 2)
+        XCTAssertEqual(payload.amount, 1)
         XCTAssertTrue(payload.message.contains("also counted on Board e2"), payload.message)
     }
 

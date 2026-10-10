@@ -284,11 +284,12 @@ final class CountsTowardTests: XCTestCase {
         XCTAssertEqual(try completedTasks(db, week), 0)
     }
 
-    func test_amountThree() throws {
+    /// #590 ruling: a stored `countsTowardAmount` is inert — a credit is always one.
+    func test_storedAmountIsIgnored_creditIsAlwaysOne() throws {
         let db = try AppDatabase.makeTestInstance(); try seed(db, amount: 3)
         try complete(db, oct, "bt-simple", simple)
-        XCTAssertEqual(try liveCredits(db).first?.delta, 3)
-        XCTAssertEqual(try fetch(db, root).currentCount, 3)
+        XCTAssertEqual(try liveCredits(db).first?.delta, 1)
+        XCTAssertEqual(try fetch(db, root).currentCount, 1)
     }
 
     func test_copyOnTheSameBoard_isReadInTheSamePass_itsBingoIsReported() throws {
@@ -584,31 +585,33 @@ final class CountsTowardTests: XCTestCase {
         XCTAssertEqual(try fetch(db, root2).currentCount, 1)
     }
 
-    func test_forkAndOriginalDisagreeOnTheAmount_sharedCreditTakesTheLineageRootsAmount_theForksOwnCompletionTakesTheForks() throws {
+    /// #590 ruling: stored amounts on the fork and the original are ignored — the
+    /// shared credit stays one and is never revised; the fork's own completion credits one.
+    func test_storedAmountsOnForkAndOriginalAreIgnored_sharedCreditStaysOne_ownCompletionCreditsOne() throws {
         let db = try AppDatabase.makeTestInstance()
         let fork = try forkCompletedDune(db)
         try db.setCountsToward(taskId: fork.id, counterId: root, amount: 3, now: later)
 
-        // The copied completion is wanted by both members → the lineage root's amount (1), not the fork's 3.
+        // The copied completion is wanted by both members → one credit of 1, untouched by the fork's stored 3.
         XCTAssertEqual(try liveCredits(db).map(\.delta), [1])
         XCTAssertEqual(try liveCredits(db).map(\.version), [1])
         try expectReplayNoop(db, [fork.id])
         try expectReplayNoop(db, [simple])
 
-        // Raising the lineage root's amount moves the shared credit (2 — still not the fork's 3).
+        // A stored amount on the original changes nothing either — no revision, version stays 1.
         try db.setCountsToward(taskId: simple, counterId: root, amount: 2, now: later)
-        XCTAssertEqual(try liveCredits(db).map(\.delta), [2])
-        XCTAssertEqual(try liveCredits(db).map(\.version), [2])
+        XCTAssertEqual(try liveCredits(db).map(\.delta), [1])
+        XCTAssertEqual(try liveCredits(db).map(\.version), [1])
         try expectReplayNoop(db, [fork.id])
 
-        // A completion only the fork makes credits the fork's own amount.
+        // A completion only the fork makes credits one.
         try complete(db, oct, "bt-simple", fork.id, false)
         try complete(db, oct, "bt-simple", fork.id, true, at: later)
         let own = try XCTUnwrap(liveEvents(db, of: fork.id).first { $0.occurredAt == later })
-        XCTAssertEqual(try liveCredits(db).map(\.delta), [2, 3])
-        XCTAssertEqual(try liveCredits(db).map(\.version), [2, 1])
+        XCTAssertEqual(try liveCredits(db).map(\.delta), [1, 1])
+        XCTAssertEqual(try liveCredits(db).map(\.version), [1, 1])
         XCTAssertEqual(try liveCredits(db).map(\.id).last, eventCredit(own.id))
-        XCTAssertEqual(try fetch(db, root).currentCount, 5)
+        XCTAssertEqual(try fetch(db, root).currentCount, 2)
         try expectReplayNoop(db, [fork.id])
         try expectReplayNoop(db, [simple])
     }
@@ -697,12 +700,12 @@ final class CountsTowardTests: XCTestCase {
         XCTAssertEqual(try liveCredits(db).count, 0)
     }
 
-    func test_changingOnlyTheAmountKeepsSince_clearingDropsIt() throws {
+    func test_resettingTheSameTargetKeepsSince_storedAmountInert_clearingDropsIt() throws {
         let db = try AppDatabase.makeTestInstance(); try seed(db)
         try complete(db, oct, "bt-simple", simple)
         try db.setCountsToward(taskId: simple, counterId: root, amount: 3, now: later)
         XCTAssertEqual(try fetch(db, simple).countsTowardSince, t0)
-        XCTAssertEqual(try liveCredits(db).map(\.delta), [3])
+        XCTAssertEqual(try liveCredits(db).map(\.delta), [1])
 
         try db.setCountsToward(taskId: simple, counterId: nil, now: later)
         let cleared = try fetch(db, simple)
@@ -904,10 +907,10 @@ final class CountsTowardTests: XCTestCase {
             XCTAssertEqual($0 as? AppDatabase.CountsTowardError, .refused(.selfTarget))
         }
 
-        try db.setCountsToward(taskId: simple, counterId: root, amount: 2, now: "2026-10-09T00:00:00.000Z") // since before the completion
+        try db.setCountsToward(taskId: simple, counterId: root, now: "2026-10-09T00:00:00.000Z") // since before the completion
         let credits = try liveCredits(db)
         XCTAssertEqual(credits.map(\.id), [eventCredit(done.id)])
-        XCTAssertEqual(credits.first?.delta, 2)
+        XCTAssertEqual(credits.first?.delta, 1)
         XCTAssertEqual(credits.first?.occurredAt, "2026-10-10T10:00:00.000Z")
 
         try db.setCountsToward(taskId: simple, counterId: nil)
