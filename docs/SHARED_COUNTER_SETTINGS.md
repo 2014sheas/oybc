@@ -807,7 +807,8 @@ Done → In progress → Not started → title → id.
 - ~~Web: an empty `fieldGroup` wrapper remains in the editor when the Counts toward row hides.~~ Closed the same way — the row is gone.
 - ~~Open (design round): Counter Detail member rows (remove action), "+ New" shape choice.~~ Shipped in unit-tasks PR 1 (§3 amendment, PR table row 7).
 - **Open (unit-tasks PR 2):** the dense `UnitTag` as the first item of every list/picker row's subtitle (Tasks tab, wizard library sheet, quick-add match, pool editor, square picker), and the counter name added to a unit task's library search-match set. The C7 "Counter" Filters dropdown is not being built.
-- **Edge (accepted):** the counter-delete line counts live non-fork unit tasks; the section heading counts fork lineages — they differ only when a lineage's flagged member is a fork whose original is unflagged.
+- **Remove clears the whole lineage:** `ContributorRow.memberIds` (live flagged members, sorted) is what Remove unflags — web `removeUnitTaskLineage` runs every `setCountsTowardInTransaction` in one transaction — because a board-scoped fork inherits the flag and shares the lineage's credits. A zero-sub-task compound shows no remove control (an empty same-width slot): `compound-needs-child` refuses clearing it, and it may only stay counting toward the counter. The counter-delete line's N is the section's row count (`loadCountsTowardSection(id).rows.length`).
+- **Pre-existing, fix separately:** `unflagContributorsOf` (counter delete) unflags a zero-child compound directly, which then evaluates vacuously complete.
 - **Schema cleanup (later):** drop the inert `countsTowardAmount` column / field / clearable entry once a migration window is convenient.
 
 Known edges (acceptable; revisit if a real case surfaces) are listed under the PR 3 hand-offs above.

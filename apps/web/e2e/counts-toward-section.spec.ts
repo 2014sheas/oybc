@@ -123,7 +123,11 @@ test.describe('Counter Detail — Unit tasks section', () => {
     await sheet.getByRole('button', { name: 'Create Compound' }).click();
     await expect(sheet).toHaveCount(0);
     await expect.poll(async () => readTaskByTitle(page, 'Walking club night')).toMatchObject({ countsTowardCounterId: ROOT2 });
-    await expect(section.getByRole('listitem').filter({ hasText: 'Walking club night' })).toContainText('No subtasks yet');
+    const club = section.getByRole('listitem').filter({ hasText: 'Walking club night' });
+    await expect(club).toContainText('No subtasks yet');
+    // A zero-subtask compound has no remove control (it may only stay counting toward the counter).
+    await expect(club.getByRole('button', { name: 'Remove from Miles' })).toHaveCount(0);
+    await expect(section.getByRole('listitem').filter({ hasText: 'Walk to work' }).getByRole('button', { name: 'Remove from Miles' })).toHaveCount(1);
   });
 
   test('remove without credits is immediate: the row leaves, the task stays in the library', async ({ page }) => {

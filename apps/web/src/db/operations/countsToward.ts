@@ -423,6 +423,21 @@ export async function setCountsToward(taskId: string, counterId: string | null, 
 }
 
 /**
+ * Removes a unit task from its counter: clears the flag on EVERY live flagged
+ * member of its fork lineage (a board-scoped fork keeps the flag and shares the
+ * lineage's credits) in one transaction, so the credits are withdrawn together.
+ *
+ * @param memberIds - `ContributorRow.memberIds`.
+ * @throws {CountsTowardError} when a member's clear is refused (nothing is written).
+ */
+export async function removeUnitTaskLineage(memberIds: ReadonlyArray<string>): Promise<void> {
+  await db.transaction('rw', COUNTS_TOWARD_TABLES, async () => {
+    const now = currentTimestamp();
+    for (const id of memberIds) await setCountsTowardInTransaction(id, null, undefined, now);
+  });
+}
+
+/**
  * {@link setCountsToward}'s body, for callers already inside a transaction
  * covering `COUNTS_TOWARD_TABLES` (Board Edit's commit flags the FORK after
  * `ensureBoardScopedTask`; the task-edit save runs it beside its other

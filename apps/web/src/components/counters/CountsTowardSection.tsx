@@ -8,11 +8,13 @@ import { COUNTS_TOWARD_STATUS_LABELS, StatusPill, type StatusPillStatus } from '
 import {
   UNIT_TASKS_EMPTY,
   creditCountText,
+  removableRow,
   removeNeedsConfirm,
   removeSlotLabel,
   rowProgressText,
   unitTasksHeading,
 } from './countsTowardLabels';
+import { CounterWriteError } from './CounterWriteError';
 import { RemoveUnitTaskConfirmDialog } from './RemoveUnitTaskConfirmDialog';
 import { timeframeDotColor } from './timeframeDotColor';
 import styles from './CountsTowardSection.module.css';
@@ -25,8 +27,10 @@ export interface CountsTowardSectionProps {
   onNew: () => void;
   /** Row tap → Task Detail. */
   onOpenTask: (taskId: string) => void;
-  /** Withdraws a unit task from the counter (`setCountsToward(taskId, null)`). */
-  onRemove: (taskId: string) => Promise<void>;
+  /** Withdraws a unit task from the counter — clears every `memberIds` flag (`removeUnitTaskLineage`). */
+  onRemove: (memberIds: string[]) => Promise<void>;
+  /** A failed remove's line, shown under the list. */
+  removeError?: string | null;
   /** The task "+ New" just created: its row wears the gold return ring until the next interaction. */
   arrivedTaskId?: string | null;
   /** The next interaction after an arrival — clears the ring. */
@@ -48,7 +52,7 @@ const PILL_STATUS: Record<ContributorRowStatus, StatusPillStatus> = {
  * one-liner. A unit task with credits confirms before removal; one without
  * is removed at once.
  */
-export function CountsTowardSection({ data, counterName, onNew, onOpenTask, onRemove, arrivedTaskId = null, onArrivalSeen }: CountsTowardSectionProps): React.ReactElement {
+export function CountsTowardSection({ data, counterName, onNew, onOpenTask, onRemove, removeError = null, arrivedTaskId = null, onArrivalSeen }: CountsTowardSectionProps): React.ReactElement {
   const { rows, taskById, boardById } = data;
   const [confirmId, setConfirmId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -65,10 +69,10 @@ export function CountsTowardSection({ data, counterName, onNew, onOpenTask, onRe
     };
   }, [arrivedTaskId, onArrivalSeen]);
 
-  async function remove(taskId: string): Promise<void> {
+  async function remove(memberIds: string[]): Promise<void> {
     setBusy(true);
     try {
-      await onRemove(taskId);
+      await onRemove(memberIds);
     } finally {
       setBusy(false);
       setConfirmId(null);
@@ -119,26 +123,32 @@ export function CountsTowardSection({ data, counterName, onNew, onOpenTask, onRe
                   </span>
                   <StatusPill status={PILL_STATUS[row.status]} labels={COUNTS_TOWARD_STATUS_LABELS} dense />
                 </button>
-                <button
-                  type="button"
-                  className={styles.removeButton}
-                  aria-label={removeSlotLabel(counterName)}
-                  onClick={() => (removeNeedsConfirm(row) ? setConfirmId(row.taskId) : void remove(row.taskId))}
-                >
-                  ✕
-                </button>
+                {removableRow(row) ? (
+                  <button
+                    type="button"
+                    className={styles.removeButton}
+                    aria-label={removeSlotLabel(counterName)}
+                    disabled={busy}
+                    onClick={() => (removeNeedsConfirm(row) ? setConfirmId(row.taskId) : void remove(row.memberIds))}
+                  >
+                    ✕
+                  </button>
+                ) : (
+                  <span className={styles.removeSpacer} aria-hidden="true">✕</span>
+                )}
               </li>
             );
           })}
         </ul>
       )}
+      <CounterWriteError message={removeError} />
       {confirmRow && confirmTask && (
         <RemoveUnitTaskConfirmDialog
           counterName={counterName}
           taskTitle={confirmTask.title}
           credits={confirmRow.creditCount}
           busy={busy}
-          onConfirm={() => void remove(confirmRow.taskId)}
+          onConfirm={() => void remove(confirmRow.memberIds)}
           onCancel={() => setConfirmId(null)}
         />
       )}

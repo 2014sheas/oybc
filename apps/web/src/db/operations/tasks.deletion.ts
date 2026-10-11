@@ -22,7 +22,8 @@ import {
   softDeleteWindowStampedDerived,
   windowStampedDerivedIdsForRoot,
 } from './derivedCounters';
-import { applyCountsTowardInTransaction, countContributorsOf } from './countsToward';
+import { applyCountsTowardInTransaction } from './countsToward';
+import { loadCountsTowardSection } from './countsTowardSection';
 
 /**
  * Summary of what `deleteTaskWithCascade` (or a dry-run) would remove.
@@ -62,7 +63,7 @@ export interface TaskDeletionImpact {
    *  this task counts toward, whose increment the delete tombstones; `null`
    *  when it counts toward nothing (or its counter is gone). */
   countsTowardCounter: Task | null;
-  /** Unit tasks — live, non-fork tasks that count toward THIS task as a counter; the counter delete keeps them as ordinary tasks. 0 for any non-counter. */
+  /** Unit tasks — fork lineages of live tasks that count toward THIS task as a counter; the counter delete keeps them as ordinary tasks. 0 for any non-counter. */
   unitTaskCount: number;
 }
 /**
@@ -111,7 +112,8 @@ export async function computeTaskDeletionImpact(
     .filter((t) => !t.isDeleted).toArray();
   const counterMembers = allMembers.filter((t) => !isWindowStampedDerived(t));
   const task = await db.tasks.get(id);
-  const unitTaskCount = (await countContributorsOf(id)).filter((t) => t.forkedFromTaskId == null).length;
+  // The same N as Counter Detail's heading: one per fork lineage.
+  const unitTaskCount = (await loadCountsTowardSection(id)).rows.length;
   const counter = task?.countsTowardCounterId ? await db.tasks.get(task.countsTowardCounterId) : undefined;
   return {
     boardTaskCount: visiblePlacements.length,

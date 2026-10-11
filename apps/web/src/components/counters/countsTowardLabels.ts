@@ -76,6 +76,14 @@ export function rowProgressText(row: Pick<ContributorRow, 'status' | 'progress' 
   return null;
 }
 
+/**
+ * Whether a row shows a remove control: a compound with no sub-tasks does not —
+ * it may only stay while it counts toward the counter (`compound-needs-child`).
+ */
+export function removableRow(row: Pick<ContributorRow, 'childProgress'>): boolean {
+  return row.childProgress?.total !== 0;
+}
+
 /** Removing needs a confirm only when the lineage has credits to withdraw. */
 export function removeNeedsConfirm(row: Pick<ContributorRow, 'creditCount'>): boolean {
   return row.creditCount >= 1;

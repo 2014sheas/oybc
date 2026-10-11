@@ -10,6 +10,7 @@ import {
   creditCountText,
   removeConfirmBody,
   removeConfirmTitle,
+  removableRow,
   removeNeedsConfirm,
   removeSlotLabel,
   rowProgressText,
@@ -63,6 +64,9 @@ describe('CountsTowardSection — model', () => {
     expect(removeConfirmTitle('Books')).toBe('Remove from Books?');
     expect(removeConfirmBody('Read before bed', 4, 'Books')).toBe("'Read before bed' stays in your library. Its 4 credits on Books are withdrawn.");
     expect(removeConfirmBody('Finish Dune', 1, 'Books')).toBe("'Finish Dune' stays in your library. Its 1 credit on Books is withdrawn.");
+    expect(removableRow({ childProgress: { done: 0, total: 0 } })).toBe(false);
+    expect(removableRow({ childProgress: { done: 0, total: 2 } })).toBe(true);
+    expect(removableRow({ childProgress: null })).toBe(true);
     expect(removeSlotLabel('Books')).toBe('Remove from Books');
     expect(unitTagLabel('Books')).toBe('Unit task of Books');
   });
@@ -84,9 +88,9 @@ describe('CountsTowardSection — model', () => {
         arrivedTaskId: 'club',
         data: {
           rows: [
-            { taskId: 'pages', status: 'inProgress', boardId: 'b1', creditCount: 0, latestOccurredAt: null, progress: { current: 120, goal: 300, kind: 'discrete' }, childProgress: null },
-            { taskId: 'club', status: 'notStarted', boardId: null, creditCount: 0, latestOccurredAt: null, progress: null, childProgress: { done: 0, total: 0 } },
-            { taskId: 'dune', status: 'done', boardId: 'b1', creditCount: 3, latestOccurredAt: T0, ...none },
+            { taskId: 'pages', memberIds: ['pages'], status: 'inProgress', boardId: 'b1', creditCount: 0, latestOccurredAt: null, progress: { current: 120, goal: 300, kind: 'discrete' }, childProgress: null },
+            { taskId: 'club', memberIds: ['club'], status: 'notStarted', boardId: null, creditCount: 0, latestOccurredAt: null, progress: null, childProgress: { done: 0, total: 0 } },
+            { taskId: 'dune', memberIds: ['dune'], status: 'done', boardId: 'b1', creditCount: 3, latestOccurredAt: T0, ...none },
           ],
           taskById: {
             pages: task('pages', { title: 'Read 300 pages', type: TaskType.COUNTING, unit: 'pages' }),
@@ -107,7 +111,9 @@ describe('CountsTowardSection — model', () => {
     expect(html).toContain('>In progress<');
     expect(html).toContain('>Not started<');
     expect((html.match(/titleDone/g) ?? []).length).toBe(1);
-    expect((html.match(/aria-label="Remove from Books"/g) ?? []).length).toBe(3);
+    // The zero-subtask compound has no remove control (an empty same-width slot keeps the layout).
+    expect((html.match(/aria-label="Remove from Books"/g) ?? []).length).toBe(2);
+    expect((html.match(/removeSpacer/g) ?? []).length).toBe(1);
     // Only the just-created row wears the return ring.
     expect((html.match(/arrived/g) ?? []).length).toBe(1);
     expect(html).toContain('background:var(--riso-red)');

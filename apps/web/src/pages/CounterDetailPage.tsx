@@ -25,7 +25,7 @@ import {
   undoLastCounterLog,
   type TaskDeletionImpact,
 } from '../db/operations/tasks';
-import { setCountsToward } from '../db/operations/countsToward';
+import { removeUnitTaskLineage } from '../db/operations/countsToward';
 import { generateUUID } from '../db/utils';
 import {
   CounterDeleteConfirmDialog,
@@ -119,9 +119,10 @@ export function CounterDetailPage(): React.ReactElement {
   const [newContributorOpen, setNewContributorOpen] = useState(false);
   // The unit task "+ New" just created — its row wears the gold return ring until the next interaction.
   const [arrivedTaskId, setArrivedTaskId] = useState<string | null>(null);
-  async function handleRemoveUnitTask(taskId: string): Promise<void> {
-    const ok = await attemptCounterWrite('remove unit task', () => setCountsToward(taskId, null));
-    setLogError(ok ? null : COUNTER_NOT_UPDATED_MESSAGE);
+  const [removeError, setRemoveError] = useState<string | null>(null);
+  async function handleRemoveUnitTask(memberIds: string[]): Promise<void> {
+    const ok = await attemptCounterWrite('remove unit task', () => removeUnitTaskLineage(memberIds));
+    setRemoveError(ok ? null : COUNTER_NOT_UPDATED_MESSAGE);
   }
 
   const handleLog = useCallback(
@@ -405,6 +406,7 @@ export function CounterDetailPage(): React.ReactElement {
               onNew={() => setNewContributorOpen(true)}
               onOpenTask={(taskId) => navigate(`/tasks/${taskId}`)}
               onRemove={handleRemoveUnitTask}
+              removeError={removeError}
               arrivedTaskId={arrivedTaskId}
               onArrivalSeen={() => setArrivedTaskId(null)}
             />

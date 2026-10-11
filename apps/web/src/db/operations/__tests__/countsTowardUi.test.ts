@@ -16,7 +16,7 @@ import { db } from '../../internal';
 import { commitSquareEdits, type CommitSquareEditsInput } from '../boardEditCommit';
 import { saveTaskEdit } from '../compoundStructureEdit';
 import { compoundLinkProblemForPatch, countsTowardLoopForPatch } from '../compoundStructureEdit';
-import { setCountsToward } from '../countsToward';
+import { removeUnitTaskLineage, setCountsToward } from '../countsToward';
 import { computeTaskDeletionImpact } from '../tasks.deletion';
 import { deleteCounterWithUnlink } from '../tasks.counter';
 import { findNewBoardCredit, loadCountsTowardSection, snapshotLiveCreditIds } from '../countsTowardSection';
@@ -117,9 +117,9 @@ describe('loadCountsTowardSection', () => {
     const data = await loadCountsTowardSection(ROOT);
     // In progress → Not started → Done (unit-tasks handoff Decision 8).
     expect(data.rows).toEqual([
-      { taskId: PAGES, status: 'inProgress', boardId: B1, creditCount: 0, latestOccurredAt: null, progress: { current: 100, goal: 250, kind: 'discrete' }, childProgress: null },
-      { taskId: LOOSE, status: 'notStarted', boardId: null, creditCount: 0, latestOccurredAt: null, progress: null, childProgress: null },
-      { taskId: DUNE, status: 'done', boardId: B1, creditCount: 2, latestOccurredAt: '2026-10-06T09:00:00.000Z', progress: null, childProgress: null },
+      { taskId: PAGES, memberIds: [PAGES], status: 'inProgress', boardId: B1, creditCount: 0, latestOccurredAt: null, progress: { current: 100, goal: 250, kind: 'discrete' }, childProgress: null },
+      { taskId: LOOSE, memberIds: [LOOSE], status: 'notStarted', boardId: null, creditCount: 0, latestOccurredAt: null, progress: null, childProgress: null },
+      { taskId: DUNE, memberIds: [DUNE], status: 'done', boardId: B1, creditCount: 2, latestOccurredAt: '2026-10-06T09:00:00.000Z', progress: null, childProgress: null },
     ]);
     expect(data.taskById[DUNE]?.title).toBe('Finish Dune');
     expect(data.boardById[B1]?.name).toBe('Reading week');
@@ -358,7 +358,25 @@ describe('unit tasks — remove and counter delete', () => {
     expect(await liveCredits()).toHaveLength(0);
   });
 
-  it('the counter-delete impact counts the unit tasks (forks and deleted ones excluded); the delete keeps and decouples them', async () => {
+  it('remove clears EVERY lineage member in one transaction: a flagged board-scoped fork leaves with its original', async () => {
+    const FORK = '90000000-0000-4000-8000-0000000000b9';
+    await db.tasks.bulkAdd([
+      rootTask(),
+      task(DUNE, { title: 'Finish Dune', countsTowardCounterId: ROOT, countsTowardSince: T0 }),
+      task(FORK, { title: 'Finish Dune', forkedFromTaskId: DUNE, countsTowardCounterId: ROOT, countsTowardSince: T0 }),
+    ]);
+    const before = await loadCountsTowardSection(ROOT);
+    expect(before.rows).toHaveLength(1);
+    expect(before.rows[0]?.memberIds).toEqual([DUNE, FORK].sort());
+
+    // Clearing only the representative would leave the row (the fork keeps the flag).
+    await removeUnitTaskLineage(before.rows[0]?.memberIds ?? []);
+
+    expect((await loadCountsTowardSection(ROOT)).rows).toEqual([]);
+    for (const id of [DUNE, FORK]) expect((await db.tasks.get(id))?.countsTowardCounterId ?? null).toBeNull();
+  });
+
+  it('the counter-delete impact counts the unit-task lineages (a fork shares its original\'s; deleted ones excluded); the delete keeps and decouples them', async () => {
     await db.tasks.bulkAdd([
       rootTask(),
       task(DUNE, { title: 'Finish Dune', countsTowardCounterId: ROOT, countsTowardSince: T0 }),
@@ -367,6 +385,7 @@ describe('unit tasks — remove and counter delete', () => {
       task('fork', { title: 'Finish Dune', countsTowardCounterId: ROOT, countsTowardSince: T0, forkedFromTaskId: DUNE }),
     ]);
     expect((await computeTaskDeletionImpact(ROOT)).unitTaskCount).toBe(2);
+    expect((await loadCountsTowardSection(ROOT)).rows).toHaveLength(2);
     expect((await computeTaskDeletionImpact(DUNE)).unitTaskCount).toBe(0);
 
     await deleteCounterWithUnlink(ROOT);
