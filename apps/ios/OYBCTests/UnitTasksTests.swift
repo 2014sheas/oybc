@@ -62,6 +62,20 @@ final class UnitTasksTests: XCTestCase {
         XCTAssertEqual(CountsTowardLabels.submitLabel, "Add to library")
     }
 
+    func test_boardLineDetailGating() {
+        func r(_ st: CountsToward.ContributorRowStatus, p: CountsToward.Progress? = nil, c: CountsToward.ChildProgress? = nil) -> CountsToward.ContributorRow {
+            .init(taskId: "t", status: st, boardId: nil, creditCount: 0, latestOccurredAt: nil, progress: p, childProgress: c)
+        }
+        let p = CountsToward.Progress(current: 0, goal: 300, kind: .discrete)
+        XCTAssertNil(CountsTowardSectionView.detailText(row: r(.notStarted, p: p), unit: "pages"))
+        XCTAssertEqual(CountsTowardSectionView.detailText(row: r(.inProgress, p: .init(current: 120, goal: 300, kind: .discrete)), unit: "pages"), "120 / 300 pages")
+        XCTAssertEqual(CountsTowardSectionView.detailText(row: r(.notStarted, c: .init(done: 0, total: 0)), unit: nil), "No subtasks yet")
+        XCTAssertEqual(CountsTowardSectionView.detailText(row: r(.done, c: .init(done: 0, total: 0)), unit: nil), "No subtasks yet")
+        XCTAssertEqual(CountsTowardSectionView.detailText(row: r(.inProgress, c: .init(done: 1, total: 2)), unit: nil), "1 of 2")
+        XCTAssertNil(CountsTowardSectionView.detailText(row: r(.done, c: .init(done: 2, total: 2)), unit: nil))
+        XCTAssertNil(CountsTowardSectionView.detailText(row: r(.notStarted, c: .init(done: 0, total: 2)), unit: nil))
+    }
+
     // MARK: - Arrival diff
 
     private func data(_ ids: [String]) -> CountsTowardSectionData {

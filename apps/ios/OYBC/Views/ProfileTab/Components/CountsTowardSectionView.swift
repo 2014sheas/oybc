@@ -32,12 +32,20 @@ struct CountsTowardSectionView: View {
         creditCount >= 2 ? "\u{00D7} \(creditCount)" : nil
     }
 
+    /// The board line's progress text: "120 / 300 pages" only while in progress; a compound
+    /// reads "No subtasks yet" with no children, "1 of 2" while in progress.
+    static func detailText(row: CountsToward.ContributorRow, unit: String?) -> String? {
+        if let c = row.childProgress, c.total == 0 { return CountsTowardLabels.childProgress(c) }
+        guard row.status == .inProgress else { return nil }
+        return row.progress.map { CountsTowardLabels.progress($0, unit: unit) }
+            ?? row.childProgress.map(CountsTowardLabels.childProgress)
+    }
+
     /// "{title}, {Done|In progress|Not started}[, {board}][, {progress}][, counted {n} times]"
     static func accessibilityLabel(title: String, row: CountsToward.ContributorRow, boardName: String?, unit: String? = nil) -> String {
         var parts = [title, RisoStatusPill.Status(row.status).label]
         if let boardName { parts.append(boardName) }
-        if let p = row.progress { parts.append(CountsTowardLabels.progress(p, unit: unit)) }
-        if let c = row.childProgress { parts.append(CountsTowardLabels.childProgress(c)) }
+        if let d = detailText(row: row, unit: unit) { parts.append(d) }
         if row.creditCount >= 2 { parts.append("counted \(row.creditCount) times") }
         return parts.joined(separator: ", ")
     }
@@ -173,8 +181,7 @@ struct CountsTowardSectionView: View {
     @ViewBuilder
     private func boardLine(row: CountsToward.ContributorRow, board: Board?, unit: String?) -> some View {
         let credit = Self.creditMark(row.creditCount)
-        let detail = row.progress.map { CountsTowardLabels.progress($0, unit: unit) }
-            ?? row.childProgress.map(CountsTowardLabels.childProgress)
+        let detail = Self.detailText(row: row, unit: unit)
         if board != nil || credit != nil || detail != nil {
             HStack(spacing: 5) {
                 if let board {
