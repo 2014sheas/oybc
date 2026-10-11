@@ -418,6 +418,14 @@ export function TaskDetailContent({
       {/* Type-specific facts */}
       <TypeSpecificFacts task={task} onOpenCounter={onOpenCounter} />
 
+      {/* Unit task of a counter: the same row a linked copy shows, any type. */}
+      {task.countsTowardCounterId != null && (
+        <section className={styles.section}>
+          <h2 className={styles.sectionHeading}>Counter</h2>
+          <CountingSourceCaption sharedCounterId={task.countsTowardCounterId} onOpenCounter={onOpenCounter} />
+        </section>
+      )}
+
       {/* Subtask of: parent compound back-refs */}
       {parentCompounds && parentCompounds.length > 0 && (
         <section className={styles.section}>

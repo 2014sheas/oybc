@@ -1,4 +1,5 @@
-import { taskSearchMatches, type Task } from '@oybc/shared';
+import type { Task } from '@oybc/shared';
+import { taskSearchMatchesWithCounter } from '../counters/rowCounterTagName';
 
 /**
  * poolEditSheetSelectors.ts — pure derivations `PoolEditorBody` needs from
@@ -12,8 +13,9 @@ import { taskSearchMatches, type Task } from '@oybc/shared';
  * The library-reuse picker's candidate list (I-2): `browsableTasks` (the
  * SAME draft-filtered set the Library segment browses — never the raw,
  * un-filtered task set) minus ids already on the pool, filtered by the
- * shared `taskSearchMatches` (title, plus a counter's name / noun / verb /
- * plural template — docs/SHARED_COUNTER_SETTINGS.md §2; case- and
+ * shared `taskSearchMatchesWithCounter` (title, plus a counter's name / noun /
+ * verb / plural template — docs/SHARED_COUNTER_SETTINGS.md §2 — and, for a
+ * unit task or linked copy, its counter's own name; case- and
  * diacritic-insensitive). Pickers are browse surfaces — a
  * wizard-born draft task the Library tab hides shouldn't be offered here
  * either, even though a pool that already references one still resolves
@@ -24,7 +26,7 @@ export function selectLibraryPickerResults(
   selectedIds: ReadonlySet<string>,
   query: string,
 ): Task[] {
-  return browsableTasks.filter((t) => !selectedIds.has(t.id)).filter((t) => taskSearchMatches(query, t));
+  return browsableTasks.filter((t) => !selectedIds.has(t.id)).filter((t) => taskSearchMatchesWithCounter(query, t, browsableTasks));
 }
 
 /** Cap for `selectQuickAddMatches`'s inline dropdown — the quick-add row

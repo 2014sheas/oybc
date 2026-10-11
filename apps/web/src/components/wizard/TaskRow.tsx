@@ -1,5 +1,6 @@
 import { TaskType, counterDisplayName, type Task } from '@oybc/shared';
 import { counterRowSubtitle } from '../counters/counterRowTitle';
+import { UnitTag } from '../counters/UnitTag';
 import { RisoTypeBadge } from '../riso';
 import styles from './BoardWizardTasksStep.module.css';
 
@@ -28,6 +29,8 @@ export interface TaskRowProps {
    *  renders under its generic `formatCounterName` label with no target count.
    *  Selecting it still adds THIS task (the root); only the copy changes. */
   isFamilyRoot?: boolean;
+  /** Counter name for the row's `UnitTag` (`rowCounterTagName`); first item of the subtitle slot. */
+  counterTagName?: string | null;
 }
 
 export function renderTaskRow({
@@ -40,6 +43,7 @@ export function renderTaskRow({
   isCenter = false,
   onCenterClick,
   isFamilyRoot = false,
+  counterTagName = null,
 }: TaskRowProps): React.ReactElement {
   const subtitle = isFamilyRoot ? '' : buildTaskSubtitle(task);
   const displayTitle = isFamilyRoot
@@ -59,7 +63,12 @@ export function renderTaskRow({
         <RisoTypeBadge type={task.type} />
         <div className={styles.rowCenter}>
           <span className={styles.rowTitle}>{displayTitle}</span>
-          {subtitle && <span className={styles.rowSubtitle}>{subtitle}</span>}
+          {(counterTagName || subtitle) && (
+            <span className={styles.rowSubtitle}>
+              {counterTagName && <UnitTag name={counterTagName} dense />}
+              {subtitle && <span className={styles.rowSubtitleText}>{subtitle}</span>}
+            </span>
+          )}
         </div>
         <span className={styles.rowUsage}>{usageHint}</span>
       </button>

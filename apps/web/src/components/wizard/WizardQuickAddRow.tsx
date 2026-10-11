@@ -7,6 +7,9 @@ import type { PendingTaskPayload } from '../../pages/createPage/useCreateFormSta
 import { selectQuickAddMatches } from '../pools/poolEditSheetSelectors';
 import { GoalEntry } from '../counters/GoalEntry';
 import { KindTag } from '../counters/KindTag';
+import { rowCounterTagName } from '../counters/rowCounterTagName';
+import { UnitTag } from '../counters/UnitTag';
+import { buildTaskSubtitle } from './TaskRow';
 import {
   buildPendingLinkedCounter,
   counterMatchRowGoal,
@@ -230,10 +233,20 @@ export function WizardQuickAddRow({
   function renderMatchRow(task: Task): React.ReactElement {
     const counterRow = isSharedCounterRoot(task) && currentTimeframe !== undefined;
     if (!counterRow) {
+      const tagName = rowCounterTagName(task, libraryTasks ?? []);
+      const detail = tagName ? buildTaskSubtitle(task) : '';
       return (
         <button type="button" className={styles.dropdownRowButton} onClick={() => handleExistingPicked(task)}>
           <RisoTypeBadge type={task.type} />
-          <span className={styles.dropdownRowTitle}>{task.title || '(untitled task)'}</span>
+          {tagName ? (
+            <span className={styles.dropdownRowMain}>
+              <span className={styles.dropdownRowTitle}>{task.title || '(untitled task)'}</span>
+              <UnitTag name={tagName} dense />
+              {detail && <span className={styles.rowGoal}>{detail}</span>}
+            </span>
+          ) : (
+            <span className={styles.dropdownRowTitle}>{task.title || '(untitled task)'}</span>
+          )}
           <RisoIcon name="plus" size={14} />
         </button>
       );

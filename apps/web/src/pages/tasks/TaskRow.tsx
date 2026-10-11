@@ -1,6 +1,7 @@
 import { counterDisplayName, TaskType, type Task } from '@oybc/shared';
 import { counterRowTitle } from '../../components/counters/counterRowTitle';
 import { RisoTypeBadge } from '../../components/riso';
+import { UnitTag } from '../../components/counters/UnitTag';
 import { computeStatusLabel } from './taskCountDisplay';
 import { formatRelativeTime } from '../../utils/relativeTime';
 import styles from './TaskRow.module.css';
@@ -44,6 +45,9 @@ export interface TaskRowProps {
    *  count-free treatment and the "Counter" subtitle must stay identical on
    *  both. Change one, change the other in the same commit. */
   isFamilyRoot?: boolean;
+  /** The counter name for the row's `UnitTag` (`rowCounterTagName`) — a linked
+   *  copy or a unit task; null / absent = no tag. First item of the meta line. */
+  counterTagName?: string | null;
 }
 
 /**
@@ -80,6 +84,7 @@ export function TaskRow({
   isExpanded = false,
   onToggleExpand,
   isFamilyRoot = false,
+  counterTagName = null,
 }: TaskRowProps): React.ReactElement {
   // A family root carries NO count anywhere on the row — not in the title, not
   // in the subtitle, and not in the status slot, whose counting branch is
@@ -102,6 +107,9 @@ export function TaskRow({
     ? counterDisplayName(task)
     : task.title;
   const titleForA11y = displayTitle || '(untitled task)';
+  const metaText = [subtitle, status, lastCompleted ? `Last completed ${lastCompleted}` : '', usage ?? '']
+    .filter(Boolean)
+    .join(' · ');
 
   return (
     <div className={styles.row}>
@@ -129,11 +137,10 @@ export function TaskRow({
           <RisoTypeBadge type={task.type} />
           <div className={styles.rowText}>
             <span className={styles.rowTitle}>{titleForA11y}</span>
-            {(subtitle || status || lastCompleted || usage) && (
+            {(counterTagName || metaText) && (
               <span className={styles.rowMeta}>
-                {[subtitle, status, lastCompleted ? `Last completed ${lastCompleted}` : '', usage ?? '']
-                  .filter(Boolean)
-                  .join(' · ')}
+                {counterTagName && <UnitTag name={counterTagName} dense />}
+                {metaText && <span className={styles.rowMetaText}>{metaText}</span>}
               </span>
             )}
           </div>
