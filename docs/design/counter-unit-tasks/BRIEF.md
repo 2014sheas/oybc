@@ -38,8 +38,11 @@ What is decided (owner rulings, 2026-10-10):
 - **Deleting the counter keeps its unit tasks** and simply decouples them; they
   become ordinary tasks.
 - **A unit task shows which counter it belongs to the way a linked counter
-  copy does today**: the shared **two-dot mark** plus the **counter's name** on
-  its rows. No sentence.
+  copy does today**: the shared **two-dot mark** plus the **counter's name**.
+  Today that treatment exists in the editors (the kind tag with dots +
+  "Books · 12 all-time"), on Task Detail (a row: counter name · all-time
+  total · chevron) and on board cells (the two-dot corner mark); list and
+  picker rows carry nothing yet. Extending it to rows is yours. No sentence.
 
 What is yours to design: the member list on Counter Detail (with removal), the
 "+ New" moment and its shape choice, how a unit task reads everywhere a task is
@@ -69,10 +72,12 @@ screen.
    surface needs the relationship, it shows the mark + name as a **value**, and
    changing the relationship happens on Counter Detail.
 4. **Same job, same interface.** "+ New" opens the **existing** new-task sheet
-   (type control Simple · Counting · Compound, the same fields as the Tasks
-   tab's quick-add). Rows reuse the **existing** task row (type badge · title ·
-   subtitle · usage) and the **existing** linked-counter treatment (two-dot
-   mark + name). Removal uses the platform's existing row-removal idiom.
+   (the Tasks tab's: a type control, then the fields of the chosen type; web's
+   Compound opens its Setup → Build → Review mini-wizard, iOS builds the
+   compound inline). Rows reuse the **existing** task row (type badge · title ·
+   subtitle · usage) and extend the **existing** linked-counter treatment
+   (two-dot mark + name) to them. Removal uses the platform's existing
+   row-removal idiom.
 5. **No amount, ever.** No stepper, no "+N" mark, no "×2" on rows. The only
    count-like thing on a row is the existing "× N" credit count for a repeating
    unit task completed in N windows (a weekly square done four weeks running).
@@ -101,6 +106,10 @@ one-liner "Nothing counts toward Books yet.". Keep what works; change:
   repeating weekly unit task with "× 4".
 - **Ordering.** Propose (in progress first? most recently completed first?).
 - **Empty state** one-liner (keep or reword) and the list at ~6 mixed tasks.
+- **Adjacency.** Counter Detail already lists the counter's **linked copies**
+  as cards ("Counting on N tasks" / "Not counting now") directly above this
+  section. Show the full page so the two lists read as different things
+  (see §D).
 - **The counter delete confirm** gains one consequence line: unit tasks are
   kept (consequence bodies are allowed). Show the dialog.
 
@@ -114,11 +123,14 @@ counter; the created task silently belongs to it.
   name + two-dot mark somewhere in the sheet's chrome (title? a tag under the
   title? a non-interactive chip?) — pick one and justify. It is **not** a
   control: there is nothing to change or clear here.
-- The **shape choice**: Simple · Counting · Compound is the sheet's existing
-  type control. Confirm it reads right in this context, with the Counting
-  variant's own goal + unit ("Read · 300 · pages") and the Compound variant
-  allowed to submit with **zero** sub-tasks (today's minimum is one — show the
-  empty-shell state of the compound fields as valid).
+- The **shape choice**: the sheet's existing type control reads **Normal ·
+  Counting · Compound · Achievement** today (the editors say "Simple" for the
+  first — pick one label and say which). Opened from a counter it offers
+  **three** shapes: Achievement is absent, not disabled. Show the Counting
+  variant with its own kind picker, goal and unit ("Read · 300 · pages") and
+  the Compound variant submitting with **zero** sub-tasks — this entry point
+  already allows it; design how the empty shell reads in the web wizard's
+  Build and Review steps and in iOS's inline compound fields.
 - After create: the new row appears in A; show the return moment.
 - The Counting variant has one trap: typing a verb + noun that matches an
   **existing counter** today auto-links the new task to that counter as a copy
@@ -144,9 +156,9 @@ linked copy. Design that treatment once and show it on:
    unit tasks stand alone in the results (recommendation: stand alone — they
    are tasks, not goals).
 4. **Pool editor row** (a unit task pulled into a pool).
-5. **Task Detail header** for a unit task — a row to its counter (name · all-time
-   total · chevron → Counter Detail), reusing the row a linked copy shows
-   today. No edit affordance for the relationship.
+5. **Task Detail** for a unit task — the row a linked copy shows today
+   (counter name · all-time total · chevron → Counter Detail), reused as-is.
+   No edit affordance for the relationship.
 6. **Board cell** — unchanged (shipped C3: the two-dot mark on a not-done cell).
    Include one 4×4 frame for continuity only.
 
@@ -192,9 +204,11 @@ permitted if you need it — argue for or against.
   row, a library filter/grouping recommendation) and D (unit vs copy, side by
   side) — **iOS and web, light and dark**.
 - The dots + counter-name **row tag** as one reusable piece (dense + regular).
-- A short decisions list: the section heading; where the counter identity sits
-  in the "+ New" sheet; the removal idiom per platform and whether it confirms;
-  whether unit tasks and linked copies are visually distinguished and how; the
-  library visibility recommendation; the ordering of the member list.
-- Handoff as before (exported zip with a `README.md` mapping each frame to the
-  surface names in §3).
+- A short decisions list: the section heading; the first type label (Normal
+  or Simple); where the counter identity sits in the "+ New" sheet; the
+  removal idiom per platform and whether it confirms; whether unit tasks and
+  linked copies are visually distinguished and how; whether unit tasks appear
+  under the counter's match row or stand alone; the library visibility
+  recommendation; the ordering of the list.
+- Handoff as for the previous briefs: an exported zip with a `README.md`
+  mapping each frame to the surface names in §3.
