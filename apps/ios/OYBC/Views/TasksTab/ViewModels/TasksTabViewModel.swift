@@ -167,6 +167,7 @@ final class TasksTabViewModel {
         let trimmed = search.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         let placementCounts = placementCounts(boardTasks: library.allLibraryBoardTasks)
         let activeCounts = activePlacementCounts(boardTasks: library.allLibraryBoardTasks)
+        let counterRoots = trimmed.isEmpty ? [:] : library.counterRoots
 
         let independentlyPlaced = Self.independentlyPlacedTaskIds(
             childTaskIds: library.childTaskIds,
@@ -184,7 +185,7 @@ final class TasksTabViewModel {
                 guard library.childTaskIds.contains(task.id) else { return true }
                 return independentlyPlaced.contains(task.id)
             }
-            .filter { Self.matchesSearch($0, trimmedLower: trimmed) }
+            .filter { Self.matchesSearch($0, trimmedLower: trimmed, counterRoot: counterRoots[$0.id]) }
             .filter { Self.matchesStatus($0, library: library, filter: statusFilter) }
 
         let used = Self.applyUsage(
@@ -234,11 +235,15 @@ final class TasksTabViewModel {
     /// same `(action, unit)` pair its title already contains. The stored title
     /// keeps matching, so "Read 35" still finds the row too. Web twin:
     /// `useTasksFilters.ts` `matchesSearch`.
-    static func matchesSearch(_ task: Task, trimmedLower: String) -> Bool {
+    ///
+    /// `counterRoot` is the row's counter root: typing the counter's display
+    /// name or noun also finds its unit tasks and linked copies (unit-tasks
+    /// PR 2, Decision 7).
+    static func matchesSearch(_ task: Task, trimmedLower: String, counterRoot: Task? = nil) -> Bool {
         guard !trimmedLower.isEmpty else { return true }
         // The shared match set (docs/SHARED_COUNTER_SETTINGS.md §2) — title, plus a
         // counter's name / noun / verb / plural template — and the description.
-        if CounterPlacement.taskSearchMatches(trimmedLower, task: task) { return true }
+        if CounterPlacement.taskSearchMatches(trimmedLower, task: task, counterRoot: counterRoot) { return true }
         return CounterPlacement.normalizeSearchText(task.description)
             .contains(CounterPlacement.normalizeSearchText(trimmedLower))
     }

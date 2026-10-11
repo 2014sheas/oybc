@@ -82,6 +82,7 @@ struct BoardEditPresenter: ViewModifier {
                     mode: target.mode,
                     userId: userId,
                     candidateTasks: candidateTasks(for: target.mode),
+                    counterRootTasks: allTasks,
                     onDismiss: { pickerTarget = nil },
                     onConfirm: { taskId, pending in
                         switch target.mode {
@@ -244,6 +245,7 @@ struct BoardEditPresenter: ViewModifier {
                     let library = try database.fetchCompoundPickerInputs(userId: userId)
                     inputs.libraryTasks = library.libraryTasks
                     inputs.allLinks = library.allLinks
+                    inputs.allTasks = library.allTasks
                 } catch {
                     inputs.libraryLoaded = false
                 }

@@ -68,6 +68,7 @@ struct PoolEditorBodyView: View {
                     onPendingCreated: nil,
                     onLibraryReloadRequested: { vm.library.loadLibrary(userId: vm.userId) },
                     libraryTasks: vm.poolableBrowsableTasks,
+                    counterRootTasks: vm.library.libraryTasks,
                     selectedIds: Set(vm.poolTaskIds),
                     onExistingTaskPicked: { vm.add($0.id) }
                 )
@@ -113,6 +114,7 @@ struct PoolEditorBodyView: View {
                             task: task,
                             draft: $vm.editDraft,
                             libraryTasks: vm.pickerLibraryTasks,
+                            counterRootTasks: vm.pickerAllTasks,
                             allLinks: vm.allLinks,
                             onSave: { vm.saveEdit() },
                             onDiscard: { vm.discardEdit() }

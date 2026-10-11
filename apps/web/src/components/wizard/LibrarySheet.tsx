@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
-import { PARENT_TIMEFRAMES, TaskType, isTaskExpired, taskSearchMatches, type CompoundChild, type Task, type Timeframe } from '@oybc/shared';
+import { PARENT_TIMEFRAMES, TaskType, isTaskExpired, type CompoundChild, type Task, type Timeframe } from '@oybc/shared';
 import { useModalA11y } from '../../hooks/useModalA11y';
 import { RisoChip, RisoTypeBadge } from '../riso';
+import { rowCounterTagName, taskSearchMatchesWithCounter } from '../counters/rowCounterTagName';
+import { UnitTag } from '../counters/UnitTag';
 import { renderTaskRow } from './TaskRow';
 import stepStyles from './BoardWizardTasksStep.module.css';
 import styles from './LibrarySheet.module.css';
@@ -129,7 +131,7 @@ export function LibrarySheet({
     // template, because a family root's row here reads its name rather than
     // its stored "Read 35 pages" (owner ruling 2026-09-22). Twin of iOS
     // `RisoLibrarySheetView.matches`.
-    const matches = (t: Task): boolean => taskSearchMatches(searchQuery, t);
+    const matches = (t: Task): boolean => taskSearchMatchesWithCounter(searchQuery, t, effectiveTaskMap);
     const notExpired = (t: Task): boolean => !isTaskExpired(t);
 
     if (activeFilter === 'from-parents') {
@@ -156,7 +158,7 @@ export function LibrarySheet({
         : [];
 
     return { tasks, composites };
-  }, [effectiveAllTasks, activeFilter, searchQuery, parentBoardTasks, groupByCompound, childTaskIds]);
+  }, [effectiveAllTasks, effectiveTaskMap, activeFilter, searchQuery, parentBoardTasks, groupByCompound, childTaskIds]);
 
   const compositeLeafPreviews = useMemo(() => {
     const previews: Record<string, { titles: string[]; totalLeaves: number }> = {};
@@ -310,6 +312,7 @@ export function LibrarySheet({
                           isCenter,
                           onCenterClick: () => onCenterClick(task.id),
                           isFamilyRoot: familyRootIds?.has(task.id) ?? false,
+                          counterTagName: rowCounterTagName(task, effectiveTaskMap),
                         })}
                       </li>
                     );
@@ -328,6 +331,7 @@ export function LibrarySheet({
                           : preview.titles.join(', ')
                         : '';
                     const leaves = compositeLeafTasks[ct.id] ?? [];
+                    const compoundTagName = rowCounterTagName(ct, effectiveTaskMap);
                     return (
                       <li key={ct.id}>
                         <div className={isCompoundSelected ? stepStyles.rowSelectedWrap : stepStyles.rowWrap}>
@@ -344,8 +348,11 @@ export function LibrarySheet({
                             <RisoTypeBadge type="compound" />
                             <div className={stepStyles.rowCenter}>
                               <span className={stepStyles.rowTitle}>{ct.title}</span>
-                              {previewSubtitle && (
-                                <span className={stepStyles.rowSubtitle}>{previewSubtitle}</span>
+                              {(compoundTagName || previewSubtitle) && (
+                                <span className={stepStyles.rowSubtitle}>
+                                  {compoundTagName && <UnitTag name={compoundTagName} dense />}
+                                  {previewSubtitle && <span className={stepStyles.rowSubtitleText}>{previewSubtitle}</span>}
+                                </span>
                               )}
                             </div>
                             <span className={stepStyles.rowUsage}>
@@ -399,6 +406,7 @@ export function LibrarySheet({
                                     showCenterStar: centerTaskMode && leafIsSelected,
                                     isCenter: leafIsCenter,
                                     onCenterClick: () => onCenterClick(leafTask.id),
+                                    counterTagName: rowCounterTagName(leafTask, effectiveTaskMap),
                                   })}
                                 </li>
                               );

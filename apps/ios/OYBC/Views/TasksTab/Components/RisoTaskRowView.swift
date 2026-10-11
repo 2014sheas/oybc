@@ -31,6 +31,10 @@ struct RisoTaskRowView: View {
     /// the "Counter" subtitle must stay identical on both. Change one, change
     /// the other in the same commit.
     var isFamilyRoot: Bool = false
+    /// The counter this row's task belongs to (`rowCounterTagName`) — a dense
+    /// `UnitTagView` leads the subtitle slot. Linked copies and unit tasks
+    /// carry it alike. nil = no tag (default keeps every call site unchanged).
+    var counterTagName: String? = nil
 
     var body: some View {
         HStack(spacing: 10) {
@@ -43,12 +47,7 @@ struct RisoTaskRowView: View {
                     .font(.risoBody(15, .semibold))
                     .foregroundStyle(Color.risoInk)
                     .lineLimit(1)
-                if let sub = subtitle {
-                    Text(sub)
-                        .font(.risoBody(12, .regular))
-                        .foregroundStyle(Color.risoMuted)
-                        .lineLimit(1)
-                }
+                RisoRowSubtitleView(counterTagName: counterTagName, text: subtitle)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 

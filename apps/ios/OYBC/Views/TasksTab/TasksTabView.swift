@@ -136,6 +136,7 @@ struct TasksTabView: View {
             let filtered = vm.filteredTasks(library: library)
             let placementCounts = vm.placementCounts(boardTasks: library.allLibraryBoardTasks)
             let activeCounts = vm.activePlacementCounts(boardTasks: library.allLibraryBoardTasks)
+            let counterTagNames = library.counterTagNames
             let independentlyPlaced = TasksTabViewModel.independentlyPlacedTaskIds(
                 childTaskIds: library.childTaskIds,
                 placementCounts: placementCounts
@@ -276,7 +277,8 @@ struct TasksTabView: View {
                                 childPlacementCounts: placementCounts,
                                 childActivePlacementCounts: activeCounts,
                                 onChildTap: { childId in openTask(childId) },
-                                childFamilyRootIds: library.familyRootIds
+                                childFamilyRootIds: library.familyRootIds,
+                                counterTagNames: counterTagNames
                             )
                             }
                             .buttonStyle(.plain)
@@ -318,7 +320,8 @@ struct TasksTabView: View {
                                     activePlacementCount: activeCounts[task.id] ?? 0,
                                     usageCountsLoaded: vm.usageCountsLoaded,
                                     childCount: library.compoundChildrenByCompound[task.id]?.count ?? 0,
-                                    isFamilyRoot: library.familyRootIds.contains(task.id)
+                                    isFamilyRoot: library.familyRootIds.contains(task.id),
+                                    counterTagName: counterTagNames[task.id]
                                 )
                             }
                             .buttonStyle(.plain)

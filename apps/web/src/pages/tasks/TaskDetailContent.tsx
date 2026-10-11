@@ -103,10 +103,13 @@ function taskPillStatus(task: Task): StatusPillStatus {
 function CountingSourceCaption({
   sharedCounterId,
   onOpenCounter,
+  heading,
 }: {
   sharedCounterId: string;
   onOpenCounter?: (sharedCounterId: string) => void;
-}): React.ReactElement {
+  /** When set, the row sits in a section with this heading — rendered only once the root resolves. */
+  heading?: string;
+}): React.ReactElement | null {
   // Phase 2 — Shared Counters: single-row lookup for the source task title.
   // Rendered only when sharedCounterId is present, so the hook always fires.
   //
@@ -130,13 +133,21 @@ function CountingSourceCaption({
   // Also treat soft-deleted rows as not-found.
   const found = sourceTask !== null && !sourceTask.isDeleted;
 
-  return (
+  const row = (
     <LinkedCounterCaptionView
       sharedCounterId={sharedCounterId}
       isLoading={isLoading}
       sourceTask={found ? (sourceTask as Task) : null}
       onOpenCounter={onOpenCounter}
     />
+  );
+  if (heading === undefined) return row;
+  if (!found || !onOpenCounter) return null;
+  return (
+    <section className={styles.section}>
+      <h2 className={styles.sectionHeading}>{heading}</h2>
+      {row}
+    </section>
   );
 }
 
@@ -417,6 +428,11 @@ export function TaskDetailContent({
 
       {/* Type-specific facts */}
       <TypeSpecificFacts task={task} onOpenCounter={onOpenCounter} />
+
+      {/* Unit task of a counter: the same row a linked copy shows, any type. */}
+      {task.countsTowardCounterId != null && (
+        <CountingSourceCaption sharedCounterId={task.countsTowardCounterId} onOpenCounter={onOpenCounter} heading="Counter" />
+      )}
 
       {/* Subtask of: parent compound back-refs */}
       {parentCompounds && parentCompounds.length > 0 && (

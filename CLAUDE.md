@@ -410,7 +410,11 @@ apps/web/src/pages/                               apps/ios/OYBC/Views/
 │    countsTowardLabels.ts ↔ CountsTowardLabels.swift, and "+ New" from-counter mode
 │    (pages/createPage/fromCounterMode.ts ↔ RisoSpecialTaskPanel: Simple · Counting ·
 │    Compound, no auto-link) — SHARED_COUNTER_SETTINGS.md §3 amendment, PR row 7;
-│    rows-everywhere + search = PR 2); components/StatusPill.tsx (extracted from
+│    PR 2: the row tag everywhere via `rowCounterTagName` — web
+│    components/counters/rowCounterTagName.ts ↔ iOS Helpers/RowCounterTagName.swift
+│    — first in the subtitle/meta slot of the Tasks tab, Library sheet, quick-add
+│    match and pool editor rows, + counter-name search + the Task Detail "Counter"
+│    row; PR row 8); components/StatusPill.tsx (extracted from
 │    Task Detail) ←→ Views/Riso/RisoStatusPill.swift; the credited-toast undo kind in
 │    hooks/useBoardPlay.ts ←→ BoardPlayViewModel+CountsToward.swift; pure half
 │    packages/shared/src/algorithms/countsTowardCredits.ts ←→ Helpers/CountsTowardCredits.swift)

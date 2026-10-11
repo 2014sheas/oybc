@@ -36,6 +36,8 @@ struct SquarePickerSheetView: View {
     /// already excluded. The quick-add row applies its own live text filter
     /// on top of this list.
     let candidateTasks: [Task]
+    /// The full task set the quick-add row resolves counter roots against.
+    var counterRootTasks: [Task] = []
     let onDismiss: () -> Void
     /// `pending` is non-nil for a not-yet-created task (Normal / Counting /
     /// Achievement, D14) — nil for an existing task OR a just-created
@@ -84,6 +86,7 @@ struct SquarePickerSheetView: View {
                             },
                             onLibraryReloadRequested: {},
                             libraryTasks: candidateTasks,
+                            counterRootTasks: counterRootTasks,
                             onExistingTaskPicked: { task in
                                 onConfirm(task.id, nil)
                             },

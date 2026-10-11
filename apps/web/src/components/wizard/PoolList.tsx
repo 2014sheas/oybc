@@ -9,6 +9,8 @@ import {
 } from '@oybc/shared';
 import { DiceButton } from '../riso';
 import { TypeBadge } from '../TypeBadge';
+import { rowCounterTagName } from '../counters/rowCounterTagName';
+import { UnitTag } from '../counters/UnitTag';
 import { buildPoolRowSubtitle } from './poolRowSubtitle';
 import styles from './PoolList.module.css';
 
@@ -148,6 +150,7 @@ export function PoolList({
             const isCompound = task.type === TaskType.COMPOUND;
             const isCenter = centerTaskMode && centerTaskId === task.id;
             const isExpanded = expandedId === task.id;
+            const counterTagName = rowCounterTagName(task, effectiveTaskMap);
             const subtitle = buildPoolRowSubtitle(
               task,
               effectiveChildrenByCompound[task.id] ?? [],
@@ -208,7 +211,12 @@ export function PoolList({
                   <TypeBadge type={task.type} letterOnly />
                   <div className={styles.rowText}>
                     <span className={styles.rowTitle}>{task.title || '(untitled task)'}</span>
-                    {subtitle && <span className={styles.rowSubtitle}>{subtitle}</span>}
+                    {(counterTagName || subtitle) && (
+                      <span className={styles.rowSubtitle}>
+                        {counterTagName && <UnitTag name={counterTagName} dense />}
+                        {subtitle && <span className={styles.rowSubtitleText}>{subtitle}</span>}
+                      </span>
+                    )}
                     {varyRange !== null && (
                       <span className={styles.rowRangeLine}>{varyRange}</span>
                     )}

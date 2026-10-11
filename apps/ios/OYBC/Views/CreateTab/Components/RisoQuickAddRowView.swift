@@ -38,6 +38,11 @@ struct RisoQuickAddRowView: View {
     /// The browsable candidate pool to poll while typing. Empty (default)
     /// disables polling entirely — see `libraryMatches`.
     var libraryTasks: [OYBC.Task] = []
+    /// The FULL (unfiltered) task set the row tag / counter-name search resolves
+    /// counter roots against — never the browse- or candidate-filtered
+    /// `libraryTasks`, which drops goal-less counters. `libraryTasks` is merged
+    /// in so hosts that pass nothing keep resolving what they can.
+    var counterRootTasks: [OYBC.Task] = []
     /// Ids to exclude from matches (already-selected/added tasks).
     var selectedIds: Set<String> = []
     /// Fired when the user taps a matched library row — the host appends
@@ -96,23 +101,24 @@ struct RisoQuickAddRowView: View {
     /// not 3 — per the quick-add spec). Always empty when the host hasn't
     /// opted in (`onExistingTaskPicked == nil`), which keeps existing
     /// create-only call sites byte-identical to today.
-    private var libraryMatches: [OYBC.Task] {
+    private func libraryMatches(roots: [String: OYBC.Task]) -> [OYBC.Task] {
         guard onExistingTaskPicked != nil, !trimmedText.isEmpty else { return [] }
-        // The shared match set (docs/SHARED_COUNTER_SETTINGS.md §2): title, plus a
-        // counter's name / noun / verb / plural template; case- and diacritic-insensitive.
-        return libraryTasks
-            .filter { !selectedIds.contains($0.id) }
-            .filter { CounterPlacement.taskSearchMatches(trimmedText, task: $0) }
-            .prefix(4)
-            .map { $0 }
+        // The shared match set (docs/SHARED_COUNTER_SETTINGS.md §2) plus the
+        // counter's name / noun for its unit tasks and copies; direct hits first.
+        let candidates = libraryTasks.filter { !selectedIds.contains($0.id) }
+        return Array(CounterPlacement.rankedTaskMatches(candidates, query: trimmedText, rootsById: roots).prefix(4))
+    }
+
+    /// The pool indexed by id, so each match row's counter tag is a lookup, not a scan.
+    private var rootsById: [String: OYBC.Task] {
+        Dictionary((counterRootTasks + libraryTasks).map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
     }
 
     /// Dropdown shows whenever matches exist — purely text-driven, mirroring
     /// `RisoCompoundFieldsView.subAutocompleteVisible`'s actual behavior
     /// (also text-driven, not focus-driven). This alone satisfies "hides
     /// when empty/on selection": both submit and a match tap clear `text`,
-    /// which empties `libraryMatches` on the next render.
-    private var showLibraryDropdown: Bool { !libraryMatches.isEmpty }
+    /// which empties the matches on the next render.
 
     // MARK: - Init
 
@@ -127,6 +133,7 @@ struct RisoQuickAddRowView: View {
         onPendingCreated: ((_ payload: PendingTaskPayload) -> Void)?,
         onLibraryReloadRequested: @escaping () -> Void,
         libraryTasks: [OYBC.Task] = [],
+        counterRootTasks: [OYBC.Task] = [],
         selectedIds: Set<String> = [],
         onExistingTaskPicked: ((OYBC.Task) -> Void)? = nil,
         onSubmitText: ((String) -> Void)? = nil,
@@ -145,6 +152,7 @@ struct RisoQuickAddRowView: View {
         self.onPendingCreated = onPendingCreated
         self.onLibraryReloadRequested = onLibraryReloadRequested
         self.libraryTasks = libraryTasks
+        self.counterRootTasks = counterRootTasks
         self.selectedIds = selectedIds
         self.onExistingTaskPicked = onExistingTaskPicked
         self.onSubmitText = onSubmitText
@@ -190,8 +198,11 @@ struct RisoQuickAddRowView: View {
                     .allowsHitTesting(canSubmit)
             }
 
-            if showLibraryDropdown {
-                libraryMatchesDropdown
+            // Resolved once per render: the roots index, then the ranked matches.
+            let roots = trimmedText.isEmpty ? [:] : rootsById
+            let matches = libraryMatches(roots: roots)
+            if !matches.isEmpty {
+                libraryMatchesDropdown(matches, roots: roots)
                     .padding(.top, 8)
             }
 
@@ -212,11 +223,12 @@ struct RisoQuickAddRowView: View {
     /// shape (keylined paper card, divider-separated rows) but with the pool
     /// sheet's row style (`RisoTypeBadge` + title + "+" affordance) per the
     /// quick-add spec.
-    private var libraryMatchesDropdown: some View {
+    private func libraryMatchesDropdown(_ matches: [OYBC.Task], roots: [String: OYBC.Task]) -> some View {
         VStack(alignment: .leading, spacing: 0) {
-            ForEach(libraryMatches) { task in
+            ForEach(matches) { task in
                 QuickAddMatchRow(
                     task: task,
+                    counterTagName: rowCounterTagName(task: task, rootsById: roots),
                     timeframe: placementTimeframe ?? defaultTimeframe,
                     canCreatePending: onPendingCreated != nil,
                     onPick: {
@@ -234,7 +246,7 @@ struct RisoQuickAddRowView: View {
                     }
                 )
 
-                if task.id != libraryMatches.last?.id {
+                if task.id != matches.last?.id {
                     Divider().overlay(Color.risoInk.opacity(0.12))
                 }
             }
@@ -302,6 +314,9 @@ struct RisoQuickAddRowView: View {
 /// match row.
 private struct QuickAddMatchRow: View {
     let task: OYBC.Task
+    /// The counter a unit task / linked copy belongs to (`rowCounterTagName`):
+    /// a dense `UnitTagView` inline after the title. nil for everything else.
+    var counterTagName: String? = nil
     let timeframe: Timeframe?
     /// A host that can take a pending task (the wizard, Board Edit's picker).
     let canCreatePending: Bool
@@ -376,7 +391,18 @@ private struct QuickAddMatchRow: View {
                 .font(.risoBody(13.5, .semibold))
                 .foregroundStyle(Color.risoInk)
                 .lineLimit(1)
+                .layoutPriority(1)
             if isRoot { KindTagView(kind: kind, dense: true) }
+            else if let counterTagName {
+                UnitTagView(name: counterTagName, dense: true)
+                // A Counting unit task / copy keeps its muted auto title after the tag (nothing when it restates the title).
+                if task.type == .counting, let goal = TaskCountDisplay.counterRowSubtitle(for: task) {
+                    Text(goal)
+                        .font(.risoBody(12, .regular))
+                        .foregroundStyle(Color.risoMuted)
+                        .lineLimit(1)
+                }
+            }
             Spacer(minLength: 0)
         }
         .contentShape(Rectangle())

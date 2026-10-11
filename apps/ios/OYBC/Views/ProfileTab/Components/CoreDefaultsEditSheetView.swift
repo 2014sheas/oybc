@@ -302,6 +302,7 @@ struct CoreDefaultsEditSheetView: View {
                 onPendingCreated: nil,
                 onLibraryReloadRequested: { library.loadLibrary(userId: userId) },
                 libraryTasks: library.browsableTasks,
+                counterRootTasks: library.libraryTasks,
                 selectedIds: resolved.selectedTaskIds,
                 onExistingTaskPicked: { task in addDefaultTask(task.id) }
             )

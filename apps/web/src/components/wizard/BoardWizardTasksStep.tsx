@@ -627,6 +627,7 @@ export function BoardWizardTasksStep({
             // autocomplete already use, so a typed title that matches an
             // existing task offers a reuse match instead of a duplicate.
             libraryTasks={effectiveAllTasks}
+            lookupTasks={effectiveTaskMap}
             selectedIds={selectedTaskIds}
             onExistingTaskPicked={onTaskCreated}
           />
@@ -711,6 +712,7 @@ export function BoardWizardTasksStep({
               onSave={() => saveEdit(task.id)}
               onDiscard={() => discardEdit(task.id)}
               libraryTasks={pickerLibraryTasks}
+              lookupTasks={effectiveTaskMap}
               allLinks={pickerLinks}
             />
           )

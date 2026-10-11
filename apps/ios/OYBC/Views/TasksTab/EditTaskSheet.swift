@@ -112,6 +112,7 @@ struct EditTaskSheet: View {
     /// every live link (the loop check), loaded with the sub-tasks.
     @State private var pickerLibraryTasks: [Task] = []
     @State private var pickerLinks: [CompoundChild] = []
+    @State private var pickerAllTasks: [Task] = []
     @State private var libraryInputsState: RisoCompoundEditFieldsView.LibraryInputsState = .loading
 
     // MARK: - Init
@@ -389,6 +390,7 @@ struct EditTaskSheet: View {
                         ),
                         parentId: task.id,
                         libraryTasks: pickerLibraryTasks,
+                        counterRootTasks: pickerAllTasks,
                         allLinks: pickerLinks,
                         libraryInputsState: libraryInputsState
                     )
@@ -475,6 +477,7 @@ struct EditTaskSheet: View {
             }.value
             pickerLibraryTasks = library.libraryTasks
             pickerLinks = library.allLinks
+            pickerAllTasks = library.allTasks
             libraryInputsState = .loaded
         } catch {
             #if DEBUG

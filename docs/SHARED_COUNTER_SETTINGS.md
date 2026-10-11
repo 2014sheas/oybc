@@ -210,10 +210,31 @@ Compound may have zero sub-tasks (Review shows a **Counter** row holding the den
 tag), and the new row returns with a 3px inset gold ring until the next
 interaction. The counter-delete confirm gains one muted line (`Its N unit tasks
 are kept as ordinary tasks.`, hidden at 0; web `TaskDeletionImpact.unitTaskCount`).
-No task form or editor carries any counter control. **Still pending (PR 2,
-`feature/unit-tasks-rows`):** the dense tag on every list/picker row (Tasks tab,
-library sheet, quick-add match, pool editor, square picker) and the counter name
-in the library search-match set.
+No task form or editor carries any counter control.
+
+**Member UI, part 2 — SHIPPED (unit-tasks PR 2, both platforms).** The dense
+`UnitTag` is the **first item of the subtitle / meta slot** on every list and
+picker row — Tasks tab, wizard Library sheet, quick-add match (wizard Tasks step
+and the Board Edit square picker, one component; the tag sits inline after the
+title, the counter's OWN match row keeps its kind tag + goal, unit tasks are
+separate stand-alone rows, never nested), pool editor — for a unit task AND a
+linked copy alike (Decision 5: no new mark; the subtitle tells them apart). The
+name comes from the pure `rowCounterTagName(task, pool)` (web
+`components/counters/rowCounterTagName.ts` ↔ iOS `Helpers/RowCounterTagName.swift`).
+The counter's display name and noun (unit) join a unit task's search-match set
+(`taskSearchMatchesWithCounter` ↔ iOS twin: Tasks tab filter, Library sheet filter,
+quick-add / picker matcher; not the verb, plural template or stored title).
+Roots resolve through the surface's UNFILTERED task map / list (`TaskLookup`),
+never the browse-filtered candidate list — `computeBrowsableTasks` drops
+goal-less (hub-created) counters. Quick-add ranks direct hits ahead of
+counter-name-only hits before its 4-row cap. Task Detail of a unit task shows the
+existing linked-counter row under a **Counter** heading (name · all-time total ·
+chevron → Counter Detail; no edit affordance). The Tasks-tab library and the Library sheet list one
+generic row per counter family (copies hidden), so a linked copy's tag appears on
+the board / pool list rows, not as its own Tasks-tab or Library-sheet row. The
+Task Detail row shows the counter's display name, and its heading renders only
+once the root resolves. The C7
+"Counter" Filters dropdown is not built.
 
 ### 3a. Data
 
@@ -430,6 +451,7 @@ same stamp as the completion that caused it).
 | 5 — docs — **SHIPPED (close-out PR)** | SHARED_COUNTERS §Current model / COUNTER_KINDS §7a / TASK_SYSTEM §Counts toward / CLAUDE.md. |
 | 6 — retire the editor row (owner ruling 2026-10-10) — **#590** | The "Counts toward" row leaves every create and edit sheet on both platforms (field component, model, staged Board Edit override, editor patch field, re-point confirm, e2e editor spec, 5 snapshot baselines); "+ New" flags silently (no amount written); the credit amount is pinned to one on both platforms (`countsTowardAmountOf` ↔ `CountsToward.amount(of:)` return 1 — no credit reads the column); the db write path is untouched. Member-model UI follows a Claude Design brief. |
 | 7 — member UI part 1: Counter Detail "Unit tasks" + "+ New" from-counter mode + `UnitTag` (unit-tasks PR 1, both platforms) — **SHIPPED** | Section heading / order / progress / Remove (+ credits-gated confirm) / return ring / counter-delete line; `ContributorRow.progress` + `childProgress` and the new ordering (vector-pinned); from-counter sheet (tag under the title, Simple · Counting · Compound, no auto-link, empty compound + Review "Counter" row). Rows everywhere + search-match = PR 2. |
+| 8 — member UI part 2: `UnitTag` on every row + counter-name search + Task Detail "Counter" row (unit-tasks PR 2, both platforms) — **SHIPPED** | `rowCounterTagName` (pure, both platforms); tag first in the Tasks tab / Library sheet / quick-add / pool editor subtitle slot for unit tasks and linked copies; the counter name in the Tasks-tab, Library-sheet and quick-add matchers; Task Detail "Counter" row (no edit). |
 
 **PR 1 notes (2026-10-09).** Fields: `Task.counterName`, `titleTemplateSingular`,
 `titleTemplatePlural`, `timeframeGoals` (`{daily?, weekly?, monthly?, yearly?}`) —
@@ -804,7 +826,9 @@ Done → In progress → Not started → title → id.
 - ~~iOS: a compound-create cycle refusal lands on the form line after the special-task panel has collapsed, so the line can be out of view.~~ Closed with the editor row's retirement (2026-10-10) — the panel no longer hosts the field.
 - ~~Web: an empty `fieldGroup` wrapper remains in the editor when the Counts toward row hides.~~ Closed the same way — the row is gone.
 - ~~Open (design round): Counter Detail member rows (remove action), "+ New" shape choice.~~ Shipped in unit-tasks PR 1 (§3 amendment, PR table row 7).
-- **Open (unit-tasks PR 2):** the dense `UnitTag` as the first item of every list/picker row's subtitle (Tasks tab, wizard library sheet, quick-add match, pool editor, square picker), and the counter name added to a unit task's library search-match set. The C7 "Counter" Filters dropdown is not being built.
+- Follow-up: the Tasks-tab Counting row subtitle differs between platforms (web "Read 300 pages", iOS "Read · goal 300 pages") — pre-existing; converge later.
+- Follow-up: the Tasks tab does not auto-expand a compound whose non-independent child matched only by counter name (the title-only auto-expand rule is unchanged).
+- ~~Open (unit-tasks PR 2): row tag + counter-name search match.~~ Shipped (§3 amendment, member UI part 2, PR table row 8). The C7 "Counter" Filters dropdown is not being built.
 - **Remove clears the whole lineage:** `ContributorRow.memberIds` (live flagged members, sorted) is what Remove unflags — web `removeUnitTaskLineage` runs every `setCountsTowardInTransaction` in one transaction — because a board-scoped fork inherits the flag and shares the lineage's credits. A zero-sub-task compound shows no remove control (an empty same-width slot): `compound-needs-child` refuses clearing it, and it may only stay counting toward the counter. The counter-delete line's N is the section's row count (`loadCountsTowardSection(id).rows.length`).
 - **Pre-existing, fix separately:** `unflagContributorsOf` (counter delete) unflags a zero-child compound directly, which then evaluates vacuously complete.
 - **Schema cleanup (later):** drop the inert `countsTowardAmount` column / field / clearable entry once a migration window is convenient.

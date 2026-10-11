@@ -16,6 +16,7 @@ import {
   type TaskEditPatch,
 } from '../../db/taskEditPatch';
 import { MiniTypeBadge, type MiniBadgeType } from './MiniTypeBadge';
+import type { TaskLookup } from '../counters/rowCounterTagName';
 import { WizardQuickAddRow } from './WizardQuickAddRow';
 import { CountingSubConfigRow } from './CountingSubConfigRow';
 import styles from './PoolRowEditor.module.css';
@@ -42,6 +43,8 @@ export interface CompoundFieldsProps {
    * matches.
    */
   libraryTasks: Task[];
+  /** The surface's FULL task set — resolves unit-task counter roots the browse-filtered `libraryTasks` drops (tag + counter-name match). */
+  lookupTasks?: TaskLookup;
   /** Live compound links across ALL compounds (for the loop check). */
   allLinks: CompoundChild[];
   /** Whether `libraryTasks` / `allLinks` have loaded (Task Detail loads them
@@ -72,6 +75,7 @@ export function CompoundFields({
   onDraftChange,
   parentId,
   libraryTasks,
+  lookupTasks,
   allLinks,
   libraryInputsState = 'loaded',
 }: CompoundFieldsProps): React.ReactElement {
@@ -153,6 +157,7 @@ export function CompoundFields({
         onTaskCreated={() => {}}
         disabled={libraryInputsState === 'loading'}
         libraryTasks={candidates}
+        lookupTasks={lookupTasks}
         selectedIds={NO_SELECTED_IDS}
         onExistingTaskPicked={(task) => onDraftChange(appendPickedChild(draft, task))}
         onSubmitText={appendTyped}

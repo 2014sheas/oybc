@@ -169,12 +169,10 @@ struct RisoPoolListView: View {
                     .font(.risoHead(14, .bold))
                     .foregroundStyle(Color.risoInk)
                     .lineLimit(1)
-                if let detail {
-                    Text(detail)
-                        .font(.risoBody(10.5, .semibold))
-                        .foregroundStyle(Color.risoMuted)
-                        .lineLimit(1)
-                }
+                RisoRowSubtitleView(
+                    counterTagName: rowCounterTagName(task: task, rootsById: effectiveTaskById),
+                    text: detail, fontSize: 10.5, weight: .semibold
+                )
                 if let varyRange {
                     Text(varyRange)
                         .font(.risoBody(10.5, .semibold))

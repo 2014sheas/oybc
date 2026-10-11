@@ -42,6 +42,10 @@ struct RisoCompoundGroupRowView: View {
     /// unaffected.
     var childFamilyRootIds: Set<String> = []
 
+    /// Row-tag counter names by task id (`rowCounterTagName`) — the parent's
+    /// and each child's dense `UnitTagView`. Defaults empty (no tags).
+    var counterTagNames: [String: String] = [:]
+
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             // ── Parent row + chevron ───────────────────────────────────
@@ -51,7 +55,8 @@ struct RisoCompoundGroupRowView: View {
                     placementCount: placementCount,
                     activePlacementCount: activePlacementCount,
                     usageCountsLoaded: usageCountsLoaded,
-                    childCount: childCount
+                    childCount: childCount,
+                    counterTagName: counterTagNames[task.id]
                 )
 
                 if isExpandable {
@@ -90,7 +95,8 @@ struct RisoCompoundGroupRowView: View {
                                         activePlacementCount: childActivePlacementCounts[child.id] ?? 0,
                                         usageCountsLoaded: usageCountsLoaded,
                                         childCount: 0,
-                                        isFamilyRoot: childFamilyRootIds.contains(child.id)
+                                        isFamilyRoot: childFamilyRootIds.contains(child.id),
+                                        counterTagName: counterTagNames[child.id]
                                     )
                                 }
                             }

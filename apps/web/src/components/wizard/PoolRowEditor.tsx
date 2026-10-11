@@ -13,6 +13,7 @@ import { KindPicker } from '../counters/KindPicker';
 import { LinkedKindTag } from '../counters/LinkedKindTag';
 import { useKindSwitchRequest } from '../counters/useKindSwitchRequest';
 import { countingPreview, validatePatch, type TaskEditPatch } from '../../db/taskEditPatch';
+import type { TaskLookup } from '../counters/rowCounterTagName';
 import { CompoundFields } from './CompoundFields';
 import { MiniTypeBadge, type MiniBadgeType } from './MiniTypeBadge';
 import styles from './PoolRowEditor.module.css';
@@ -33,6 +34,8 @@ export interface PoolRowEditorProps {
   onDiscard: () => void;
   /** Compound only — browsable library tasks the sub-task quick-add row matches against. */
   libraryTasks: Task[];
+  /** Full task set for unit-task counter-root lookup (see `CompoundFields`). */
+  lookupTasks?: TaskLookup;
   /** Compound only — live links across all compounds (loop check). */
   allLinks: CompoundChild[];
 }
@@ -63,6 +66,7 @@ export function PoolRowEditor({
   onSave,
   onDiscard,
   libraryTasks,
+  lookupTasks,
   allLinks,
 }: PoolRowEditorProps): React.ReactElement {
   const taskId = task.id;
@@ -178,6 +182,7 @@ export function PoolRowEditor({
             onDraftChange={onDraftChange}
             parentId={taskId}
             libraryTasks={libraryTasks}
+            lookupTasks={lookupTasks}
             allLinks={allLinks}
           />
         )}

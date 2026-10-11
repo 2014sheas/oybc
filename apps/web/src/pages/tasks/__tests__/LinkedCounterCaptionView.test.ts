@@ -20,8 +20,8 @@ describe('LinkedCounterCaptionView', () => {
       }),
     );
     expect(html).toContain('<button');
-    expect(html).toContain('aria-label="Open Push-ups counter"');
-    expect(html).toContain('Push-ups');
+    expect(html).toContain('aria-label="Open Reps counter"');
+    expect(html).toContain('>Reps<');
     expect(html).toContain('512 reps');
     expect(html).not.toContain('Linked to');
   });

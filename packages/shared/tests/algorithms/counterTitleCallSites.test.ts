@@ -36,6 +36,7 @@ const ALLOWLIST: Record<string, { count: number; reason: string }> = {
   'apps/ios/OYBC/Database/AppDatabase+CountKindSwitch.swift': { count: 2, reason: TEMPLATE_AWARE },
   'apps/ios/OYBC/Helpers/CounterEditModel.swift': { count: 1, reason: TEMPLATE_AWARE },
   'apps/ios/OYBC/Helpers/RootFieldPropagation.swift': { count: 2, reason: TEMPLATE_AWARE },
+  'apps/ios/OYBC/Helpers/TaskCountDisplay.swift': { count: 1, reason: TEMPLATE_AWARE },
   'apps/ios/OYBC/Views/BoardsTab/SquareEditTaskSheet.swift': {
     count: 5,
     reason: `${TEMPLATE_AWARE}; one settings-less call is the formula comparator in submittedTitle`,

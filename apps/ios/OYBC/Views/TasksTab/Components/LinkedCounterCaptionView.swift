@@ -21,18 +21,22 @@ struct LinkedCounterCaptionView: View {
     var database: AppDatabase = .shared
     /// Tap handler for the found-state row; receives `sharedCounterId`.
     var onOpenCounter: (String) -> Void = { _ in }
+    /// Snapshot / preview seam: a resolved source that skips the database read.
+    var fixedSource: LinkedCounterSource? = nil
+    /// Section label drawn above the row — only once the counter has resolved.
+    var sectionLabel: String? = nil
 
     @State private var source: LinkedCounterSource? = nil
     @State private var loading = true
 
     var body: some View {
         Group {
-            if loading {
+            if let fixedSource {
+                labeled(fixedSource)
+            } else if loading {
                 EmptyView()
             } else {
-                LinkedCounterCaptionLabel(source: source) {
-                    onOpenCounter(sharedCounterId)
-                }
+                labeled(source)
             }
         }
         // Keyed on the id so a different linked counter refetches, and
@@ -40,7 +44,15 @@ struct LinkedCounterCaptionView: View {
         .task(id: sharedCounterId) { await loadSource() }
     }
 
+    @ViewBuilder
+    private func labeled(_ source: LinkedCounterSource?) -> some View {
+        if let source {
+            LinkedCounterCaptionLabel(source: source, sectionLabel: sectionLabel) { onOpenCounter(sharedCounterId) }
+        }
+    }
+
     private func loadSource() async {
+        guard fixedSource == nil else { return }
         loading = true
         let db = database
         let id = sharedCounterId
@@ -73,7 +85,7 @@ struct LinkedCounterCaptionView: View {
         }
         guard let task, !task.isDeleted else { return nil }
         return LinkedCounterSource(
-            title: task.title,
+            title: CounterSettings.counterDisplayName(task),
             lifetime: task.currentCount ?? 0,
             unit: task.unit ?? "",
             kind: resolveCountKind(task.countKind)
@@ -97,11 +109,15 @@ struct LinkedCounterSource: Equatable {
 struct LinkedCounterCaptionLabel: View {
 
     let source: LinkedCounterSource?
+    /// A label inside the card above the row, like USAGE / ACTIVITY.
+    var sectionLabel: String? = nil
     var onOpen: () -> Void = {}
 
     var body: some View {
         if let source {
             Button(action: onOpen) {
+                VStack(alignment: .leading, spacing: 4) {
+                    if let sectionLabel { Text(sectionLabel).risoSectionLabel() }
                 HStack(alignment: .center, spacing: 10) {
                     Text(source.title)
                         .font(.risoBody(14, .medium))
@@ -114,6 +130,7 @@ struct LinkedCounterCaptionLabel: View {
                     Image(systemName: "chevron.right")
                         .font(.system(size: 11, weight: .bold))
                         .foregroundStyle(Color.risoMuted)
+                }
                 }
                 .padding(12)
                 .frame(maxWidth: .infinity, alignment: .leading)

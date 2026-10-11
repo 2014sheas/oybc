@@ -7,6 +7,9 @@ import type { PendingTaskPayload } from '../../pages/createPage/useCreateFormSta
 import { selectQuickAddMatches } from '../pools/poolEditSheetSelectors';
 import { GoalEntry } from '../counters/GoalEntry';
 import { KindTag } from '../counters/KindTag';
+import { rowCounterTagName, type TaskLookup } from '../counters/rowCounterTagName';
+import { UnitTag } from '../counters/UnitTag';
+import { buildTaskSubtitle } from './TaskRow';
 import {
   buildPendingLinkedCounter,
   counterMatchRowGoal,
@@ -59,6 +62,11 @@ export interface WizardQuickAddRowProps {
    * exactly as the create-only baseline (no dropdown).
    */
   libraryTasks?: Task[];
+  /** The surface's FULL task set (map or list) used only to resolve a unit
+   *  task's / linked copy's counter root for the tag and the counter-name
+   *  match — `libraryTasks` is browse-filtered and drops goal-less counters.
+   *  Defaults to `libraryTasks`. */
+  lookupTasks?: TaskLookup;
   /** Ids to exclude from the dropdown (already selected/added on this
    *  surface). Defaults to empty — only meaningful alongside `libraryTasks`. */
   selectedIds?: Set<string>;
@@ -159,6 +167,7 @@ export function WizardQuickAddRow({
   onPendingCreated,
   disabled = false,
   libraryTasks,
+  lookupTasks,
   selectedIds,
   onExistingTaskPicked,
   onSubmitText,
@@ -192,8 +201,8 @@ export function WizardQuickAddRow({
   const pollingEnabled = libraryTasks !== undefined && onExistingTaskPicked !== undefined;
   const libraryMatches = useMemo<Task[]>(() => {
     if (!pollingEnabled || trimmed === '') return [];
-    return selectQuickAddMatches(libraryTasks!, selectedIds ?? EMPTY_SELECTED_IDS, trimmed);
-  }, [pollingEnabled, libraryTasks, selectedIds, trimmed]);
+    return selectQuickAddMatches(libraryTasks!, selectedIds ?? EMPTY_SELECTED_IDS, trimmed, lookupTasks ?? libraryTasks);
+  }, [pollingEnabled, libraryTasks, lookupTasks, selectedIds, trimmed]);
   // Text-driven (not focus-gated) to match the app's existing inline
   // autocomplete convention (RisoCompoundFieldsView) and iOS's twin — an
   // in-flow suggestion list, so there's no floating overlay to dismiss on
@@ -230,10 +239,20 @@ export function WizardQuickAddRow({
   function renderMatchRow(task: Task): React.ReactElement {
     const counterRow = isSharedCounterRoot(task) && currentTimeframe !== undefined;
     if (!counterRow) {
+      const tagName = rowCounterTagName(task, lookupTasks ?? libraryTasks ?? []);
+      const detail = tagName ? buildTaskSubtitle(task) : '';
       return (
         <button type="button" className={styles.dropdownRowButton} onClick={() => handleExistingPicked(task)}>
           <RisoTypeBadge type={task.type} />
-          <span className={styles.dropdownRowTitle}>{task.title || '(untitled task)'}</span>
+          {tagName ? (
+            <span className={styles.dropdownRowMain}>
+              <span className={styles.dropdownRowTitle}>{task.title || '(untitled task)'}</span>
+              <UnitTag name={tagName} dense />
+              {detail && <span className={styles.rowGoal}>{detail}</span>}
+            </span>
+          ) : (
+            <span className={styles.dropdownRowTitle}>{task.title || '(untitled task)'}</span>
+          )}
           <RisoIcon name="plus" size={14} />
         </button>
       );

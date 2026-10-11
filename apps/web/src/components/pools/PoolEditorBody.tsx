@@ -157,8 +157,8 @@ export function PoolEditorBody({
     [browsableTasks],
   );
   const libraryResults = useMemo(
-    () => selectLibraryPickerResults(poolableBrowsableTasks, selectedIdSet, librarySearch),
-    [poolableBrowsableTasks, selectedIdSet, librarySearch],
+    () => selectLibraryPickerResults(poolableBrowsableTasks, selectedIdSet, librarySearch, allTasks),
+    [poolableBrowsableTasks, selectedIdSet, librarySearch, allTasks],
   );
   // Sub-task quick-add matches (compound editor): browsable tasks with staged edits overlaid.
   const pickerLibraryTasks = useMemo<Task[]>(
@@ -284,6 +284,7 @@ export function PoolEditorBody({
           <WizardQuickAddRow
             userId={userId}
             libraryTasks={poolableBrowsableTasks}
+            lookupTasks={allTasks}
             selectedIds={selectedIdSet}
             onTaskCreated={addTask}
             onExistingTaskPicked={addTask}
@@ -364,6 +365,7 @@ export function PoolEditorBody({
                   onSave={() => saveEdit(task.id)}
                   onDiscard={discardEdit}
                   libraryTasks={pickerLibraryTasks}
+                  lookupTasks={allTasks}
                   allLinks={pickerLinks}
                 />
               )

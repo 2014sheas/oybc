@@ -119,6 +119,14 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.rowSubtitleText {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .rowUsage {
   flex: 0 0 auto;

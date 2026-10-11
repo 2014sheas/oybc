@@ -115,6 +115,8 @@ struct SquareEditTaskSheet: View {
         var children: [Task]?
         var libraryTasks: [Task]
         var allLinks: [CompoundChild]
+        /// The FULL task set (counter-root lookups).
+        var allTasks: [Task] = []
         /// False ⇒ the library inputs failed to load (editor still usable).
         var libraryLoaded: Bool = true
         /// Non-nil ⇒ the sub-tasks failed to load (shown, Done stays blocked).
@@ -165,6 +167,7 @@ struct SquareEditTaskSheet: View {
     @State private var compoundLoadError: String?
     @State private var pickerLibraryTasks: [Task]
     @State private var pickerLinks: [CompoundChild]
+    @State private var pickerAllTasks: [Task] = []
     @State private var pickerInputsState: RisoCompoundEditFieldsView.LibraryInputsState
     @State private var confirmingFork = false
     /// A Done-time refusal of the type change (a counter root with live copies).
@@ -421,6 +424,7 @@ struct SquareEditTaskSheet: View {
         compoundLoadError = inputs.childrenError
         pickerLibraryTasks = inputs.libraryTasks
         pickerLinks = inputs.allLinks
+        pickerAllTasks = inputs.allTasks
         pickerInputsState = inputs.libraryLoaded ? .loaded : .failed
     }
 
@@ -641,6 +645,7 @@ struct SquareEditTaskSheet: View {
                         ),
                         parentId: task.id,
                         libraryTasks: pickerLibraryTasks,
+                        counterRootTasks: pickerAllTasks,
                         allLinks: pickerLinks,
                         libraryInputsState: pickerInputsState
                     )

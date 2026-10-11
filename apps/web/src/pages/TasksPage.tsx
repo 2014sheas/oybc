@@ -17,6 +17,7 @@ import { TaskRow } from './tasks/TaskRow';
 import { TaskEditSheet } from './tasks/TaskEditSheet';
 import { TaskConfirmDeleteDialog } from './tasks/TaskConfirmDeleteDialog';
 import { useTasksFilters } from './tasks/useTasksFilters';
+import { rowCounterTagName } from '../components/counters/rowCounterTagName';
 import {
   NEW_POOL_PATH,
   TASKS_SEGMENT_PARAM,
@@ -225,6 +226,7 @@ export function TasksPage({ userId }: TasksPageProps): React.ReactElement {
                       usageCountsLoaded={filters.usageCountsLoaded}
                       childCount={children.length}
                       isFamilyRoot={library.familyRootIds.has(task.id)}
+                      counterTagName={library.familyRootIds.has(task.id) ? null : rowCounterTagName(task, library.taskMap)}
                       onClick={openTask}
                       onEdit={handleRowEdit}
                       onDelete={handleRowDelete}
@@ -258,6 +260,7 @@ export function TasksPage({ userId }: TasksPageProps): React.ReactElement {
                                 usageCountsLoaded={filters.usageCountsLoaded}
                                 childCount={grandchildren}
                                 isFamilyRoot={library.familyRootIds.has(child.id)}
+                                counterTagName={library.familyRootIds.has(child.id) ? null : rowCounterTagName(child, library.taskMap)}
                                 onClick={openTask}
                               />
                             </li>

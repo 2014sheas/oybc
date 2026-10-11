@@ -30,6 +30,8 @@ struct RisoCompoundEditFieldsView: View {
     /// `CompoundChildEligibility.pickerCandidates` and offered as the
     /// quick-add row's matches.
     var libraryTasks: [Task]
+    /// The FULL task set the sub-task quick-add resolves counter roots against.
+    var counterRootTasks: [Task] = []
     /// Live compound links across ALL compounds (for the loop check).
     var allLinks: [CompoundChild]
     /// Whether `libraryTasks` / `allLinks` have loaded (Task Detail loads them
@@ -74,6 +76,7 @@ struct RisoCompoundEditFieldsView: View {
         draft: Binding<TaskEditPatch>,
         parentId: String,
         libraryTasks: [Task],
+        counterRootTasks: [Task] = [],
         allLinks: [CompoundChild],
         libraryInputsState: LibraryInputsState = .loaded,
         newSubSeed: NewSubSeed = NewSubSeed()
@@ -81,6 +84,7 @@ struct RisoCompoundEditFieldsView: View {
         _draft = draft
         self.parentId = parentId
         self.libraryTasks = libraryTasks
+        self.counterRootTasks = counterRootTasks
         self.allLinks = allLinks
         self.libraryInputsState = libraryInputsState
         _newSubCounting = State(initialValue: newSubSeed.counting)
@@ -340,6 +344,7 @@ struct RisoCompoundEditFieldsView: View {
                     allLinks: allLinks,
                     currentChildIds: draft.keptChildTaskIds
                 ),
+                counterRootTasks: counterRootTasks,
                 onExistingTaskPicked: { task in Self.appendPicked(task, to: &draft) },
                 onSubmitText: { text in appendTyped(text) },
                 submitTextEnabled: !newSubCounting

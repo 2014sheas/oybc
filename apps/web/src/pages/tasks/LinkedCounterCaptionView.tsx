@@ -1,4 +1,4 @@
-import { countUnitSuffix, formatCountTotal, resolveCountKind, type Task } from '@oybc/shared';
+import { counterDisplayName, countUnitSuffix, formatCountTotal, resolveCountKind, type Task } from '@oybc/shared';
 import styles from './TaskDetailContent.module.css';
 
 export interface LinkedCounterCaptionViewProps {
@@ -26,14 +26,15 @@ export function LinkedCounterCaptionView({
 }: LinkedCounterCaptionViewProps): React.ReactElement | null {
   if (!sourceTask || !onOpenCounter) return null;
   const kind = resolveCountKind(sourceTask);
+  const name = counterDisplayName(sourceTask);
   return (
     <button
       type="button"
       className={`${styles.subtaskRow} ${styles.linkedCounterRow}`}
-      aria-label={`Open ${sourceTask.title} counter`}
+      aria-label={`Open ${name} counter`}
       onClick={() => onOpenCounter(sharedCounterId)}
     >
-      <span className={styles.linkedCounterTitle}>{sourceTask.title}</span>
+      <span className={styles.linkedCounterTitle}>{name}</span>
       <span className={styles.linkedCounterTotal}>
         {formatCountTotal(sourceTask.currentCount ?? 0, kind)}
         {countUnitSuffix(kind, sourceTask.unit)}

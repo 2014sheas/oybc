@@ -153,13 +153,16 @@ final class ViewDbSeamLoaderTests: XCTestCase {
 
     // MARK: - Linked-counter caption
 
-    func test_captionSource_liveSource_isTitleLifetimeAndUnit() throws {
+    func test_captionSource_liveSource_isCounterNameLifetimeAndUnit() throws {
         let db = try makeDb()
         try seedTask(db, id: "root", title: "Read 35 pages", currentCount: 512)
 
         XCTAssertEqual(
             try LinkedCounterCaptionView.resolveSource(database: db, sharedCounterId: "root"),
-            LinkedCounterSource(title: "Read 35 pages", lifetime: 512, unit: "pages", kind: .discrete)
+            LinkedCounterSource(
+                title: CounterSettings.counterDisplayName(try XCTUnwrap(db.read { try Task.fetchOne($0, key: "root") })),
+                lifetime: 512, unit: "pages", kind: .discrete
+            )
         )
     }
 

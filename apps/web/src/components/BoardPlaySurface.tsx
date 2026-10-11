@@ -893,7 +893,7 @@ export function BoardPlaySurface({
             timeframe={board.timeframe}
             startDate={board.startDate}
             endDate={board.endDate}
-            libraryTasks={candidates}
+            libraryTasks={candidates} lookupTasks={taskMap}
             onPick={(pick: SquarePick) => {
               if (pickerState.mode === 'replace') {
                 editDraft.stageReplace(pickerState.cellId, pick);

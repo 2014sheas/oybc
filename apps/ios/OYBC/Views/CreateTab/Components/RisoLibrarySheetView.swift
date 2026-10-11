@@ -50,8 +50,12 @@ struct RisoLibrarySheetView: View {
     /// template, because a family root's row here reads its name rather than
     /// its stored "Read 35 pages" (owner ruling 2026-09-22). Twin of web
     /// `LibrarySheet.tsx`'s `matches`.
+    /// Typing a counter's name also finds its unit tasks / linked copies
+    /// (unit-tasks PR 2, Decision 7).
     private func matches(_ task: Task) -> Bool {
-        CounterPlacement.taskSearchMatches(trimmedQuery, task: task)
+        CounterPlacement.taskSearchMatches(
+            trimmedQuery, task: task, counterRoot: rowCounterRoot(task: task, rootsById: effectiveTaskById)
+        )
     }
 
     // MARK: - Entry button
@@ -243,51 +247,16 @@ struct RisoLibrarySheetView: View {
                     expandedCompoundId = isExpanded ? nil : task.id
                 }
             } label: {
-                HStack(spacing: 9) {
-                    // Green left bar when added
-                    Rectangle()
-                        .fill(isAdded ? Color.risoGreen : Color.clear)
-                        .frame(width: 4)
-
-                    // Type badge
-                    RisoTypeBadge(kind: risoKind(for: task.type), style: .letterSquare)
-
-                    // Title + subtitle
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(displayTitle(task))
-                            .font(.risoHead(13.5, .bold))
-                            .foregroundStyle(Color.risoInk)
-                            .lineLimit(1)
-                        if let sub = subtitle {
-                            Text(sub)
-                                .font(.risoBody(10.5, .semibold))
-                                .foregroundStyle(Color.risoMuted)
-                                .lineLimit(1)
-                        }
-                    }
-                    Spacer(minLength: 4)
-
-                    // Usage count
-                    Text(usageText)
-                        .font(.risoHead(10, .extraBold))
-                        .foregroundStyle(Color.risoMuted)
-
-                    // State indicator
-                    if isCompound {
-                        Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
-                            .font(.system(size: 11, weight: .bold))
-                            .foregroundStyle(Color.risoMuted)
-                            .frame(width: 18)
-                    } else {
-                        Text(isAdded ? "✓" : "＋")
-                            .font(.risoHead(14, .extraBold))
-                            .foregroundStyle(isAdded ? Color.risoGreen : Color.risoBlue)
-                            .frame(width: 18)
-                    }
-                }
-                .padding(.vertical, 9)
-                .padding(.trailing, 11)
-                .background(isAdded ? Color.risoPaper : Color.risoPaper2)
+                RisoLibraryRowLabel(
+                    title: displayTitle(task),
+                    kind: risoKind(for: task.type),
+                    counterTagName: rowCounterTagName(task: task, rootsById: effectiveTaskById),
+                    subtitle: subtitle,
+                    usageText: usageText,
+                    isAdded: isAdded,
+                    isCompound: isCompound,
+                    isExpanded: isExpanded
+                )
             }
             .buttonStyle(.plain)
 
@@ -424,5 +393,63 @@ struct RisoLibrarySheetView: View {
         default:
             return nil
         }
+    }
+}
+
+
+/// One library row's visual content (the tap target's label): green added
+/// bar, type badge, title, the subtitle slot — the dense counter `UnitTagView`
+/// first, then the goal / rule text — usage count and the ＋ / ✓ / chevron
+/// state. A pure prop view so snapshots render it without a sheet.
+struct RisoLibraryRowLabel: View {
+    let title: String
+    let kind: RisoTaskKind
+    /// `rowCounterTagName` of the row's task; nil = no tag.
+    let counterTagName: String?
+    let subtitle: String?
+    let usageText: String
+    let isAdded: Bool
+    let isCompound: Bool
+    let isExpanded: Bool
+
+    var body: some View {
+        HStack(spacing: 9) {
+            // Green left bar when added
+            Rectangle()
+                .fill(isAdded ? Color.risoGreen : Color.clear)
+                .frame(width: 4)
+
+            RisoTypeBadge(kind: kind, style: .letterSquare)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.risoHead(13.5, .bold))
+                    .foregroundStyle(Color.risoInk)
+                    .lineLimit(1)
+                RisoRowSubtitleView(
+                    counterTagName: counterTagName, text: subtitle, fontSize: 10.5, weight: .semibold
+                )
+            }
+            Spacer(minLength: 4)
+
+            Text(usageText)
+                .font(.risoHead(10, .extraBold))
+                .foregroundStyle(Color.risoMuted)
+
+            if isCompound {
+                Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundStyle(Color.risoMuted)
+                    .frame(width: 18)
+            } else {
+                Text(isAdded ? "✓" : "＋")
+                    .font(.risoHead(14, .extraBold))
+                    .foregroundStyle(isAdded ? Color.risoGreen : Color.risoBlue)
+                    .frame(width: 18)
+            }
+        }
+        .padding(.vertical, 9)
+        .padding(.trailing, 11)
+        .background(isAdded ? Color.risoPaper : Color.risoPaper2)
     }
 }
