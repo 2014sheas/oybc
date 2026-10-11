@@ -491,6 +491,7 @@ struct BoardWizardTasksStepView: View {
                                 task: task,
                                 draft: $editDraft,
                                 libraryTasks: pickerLibraryTasks,
+                                counterRootTasks: Array(effectiveTaskById.values),
                                 allLinks: effectiveChildrenByCompound.values.flatMap { $0 },
                                 onSave: { saveEdit(task) },
                                 onDiscard: { discardEdit(task) }

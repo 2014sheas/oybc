@@ -122,4 +122,41 @@ final class RowCounterTagNameTests: XCTestCase {
         vm.search = "walk"
         XCTAssertEqual(vm.filteredTasks(library: library).map(\.id), ["p"])
     }
+
+    // MARK: - Fix round 1
+
+    func test_selfReferenceAndEmptyNameYieldNoTag() {
+        var selfRef = task("s", "x", countsToward: "s")
+        selfRef.isCounter = false
+        XCTAssertNil(rowCounterTagName(task: selfRef, pool: [selfRef]))
+        var blank = task("b", "", type: .counting, counterName: "")
+        blank.action = nil
+        blank.unit = nil
+        XCTAssertNil(rowCounterTagName(task: task("u", "x", countsToward: "b"), pool: [blank]))
+    }
+
+    func test_rankedMatchesPutDirectHitsFirst() {
+        let viaCounter = task("u", "Finish Dune", countsToward: "root")
+        let direct = task("d", "Books club")
+        let ranked = CounterPlacement.rankedTaskMatches([viaCounter, direct], query: "books", rootsById: ["root": root])
+        XCTAssertEqual(ranked.map(\.id), ["d", "u"])
+    }
+
+    func test_poolPickerFindsUnitTasksByCounterName() {
+        let unit = task("u", "Finish Dune", countsToward: "root")
+        let r = PoolEditorViewModel.filterLibraryResults(
+            browsableTasks: [unit], selectedIds: [], query: "books", rootsById: ["root": root]
+        )
+        XCTAssertEqual(r.map(\.id), ["u"])
+    }
+
+    func test_counterRowSubtitleOmitsARestatedTitle() {
+        var t = task("c", "Read 2 books", type: .counting)
+        t.action = "Read"; t.unit = "books"; t.maxCount = 2
+        XCTAssertNil(TaskCountDisplay.counterRowSubtitle(for: t))
+        t.title = "Shelf"
+        XCTAssertEqual(TaskCountDisplay.counterRowSubtitle(for: t), "Read 2 books")
+        t.maxCount = nil
+        XCTAssertNil(TaskCountDisplay.counterRowSubtitle(for: t))
+    }
 }

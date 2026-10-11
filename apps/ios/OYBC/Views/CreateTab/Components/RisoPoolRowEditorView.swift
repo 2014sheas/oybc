@@ -18,6 +18,8 @@ struct RisoPoolRowEditorView: View {
     @Binding var draft: TaskEditPatch
     /// Compound only — browsable library tasks the sub-task quick-add row matches against.
     let libraryTasks: [Task]
+    /// The FULL task set for counter-root lookups in the sub-task quick-add.
+    var counterRootTasks: [Task] = []
     /// Compound only — live links across all compounds (loop check).
     let allLinks: [CompoundChild]
     let onSave: () -> Void
@@ -45,6 +47,7 @@ struct RisoPoolRowEditorView: View {
                         draft: $draft,
                         parentId: taskId,
                         libraryTasks: libraryTasks,
+                        counterRootTasks: counterRootTasks,
                         allLinks: allLinks
                     )
                 }

@@ -205,9 +205,9 @@ extension AppDatabase {
     /// `TaskEditSheet`'s `loadPickerInputs`.
     ///
     /// - Parameter userId: The signed-in user.
-    /// - Returns: The browsable library tasks and live links.
+    /// - Returns: The browsable library tasks, live links and the FULL task set (counter-root lookups).
     /// - Throws: A GRDB error if the read fails.
-    func fetchCompoundPickerInputs(userId: String) throws -> (libraryTasks: [Task], allLinks: [CompoundChild]) {
+    func fetchCompoundPickerInputs(userId: String) throws -> (libraryTasks: [Task], allLinks: [CompoundChild], allTasks: [Task]) {
         try read { db in
             let tasks = try Task
                 .filter(Column("userId") == userId && Column("isDeleted") == false)
@@ -230,7 +230,7 @@ extension AppDatabase {
                 boardStatusById: boardStatusById,
                 childToParents: childToParents
             )
-            return (browsable, links)
+            return (browsable, links, tasks)
         }
     }
 }

@@ -54,6 +54,8 @@ final class PoolEditorViewModel {
     /// Compound editor inputs from `fetchCompoundPickerInputs` (browsable
     /// library + live links).
     var pickerLibraryBase: [Task] = []
+    /// The full task set (counter-root lookups).
+    var pickerAllTasks: [Task] = []
     var allLinks: [CompoundChild] = []
 
     var busy = false
@@ -131,7 +133,8 @@ final class PoolEditorViewModel {
         Self.filterLibraryResults(
             browsableTasks: poolableBrowsableTasks,
             selectedIds: Set(poolTaskIds),
-            query: query
+            query: query,
+            rootsById: effectiveTaskById
         )
     }
 
@@ -252,6 +255,7 @@ final class PoolEditorViewModel {
         do {
             let inputs = try database.fetchCompoundPickerInputs(userId: userId)
             pickerLibraryBase = inputs.libraryTasks
+            pickerAllTasks = inputs.allTasks
             allLinks = inputs.allLinks
         } catch {
             dlog("PoolEditorViewModel.loadPickerInputs failed: \(error)")
@@ -330,13 +334,15 @@ final class PoolEditorViewModel {
     static func filterLibraryResults(
         browsableTasks: [Task],
         selectedIds: Set<String>,
-        query: String
+        query: String,
+        rootsById: [String: Task] = [:]
     ) -> [Task] {
-        // The shared match set (docs/SHARED_COUNTER_SETTINGS.md §2) — web
-        // `selectLibraryPickerResults` twin.
-        return browsableTasks
-            .filter { !selectedIds.contains($0.id) }
-            .filter { CounterPlacement.taskSearchMatches(query, task: $0) }
+        // The shared match set (docs/SHARED_COUNTER_SETTINGS.md §2) plus a
+        // counter's display name / noun for its unit tasks, direct hits first —
+        // web `selectLibraryPickerResults` twin.
+        CounterPlacement.rankedTaskMatches(
+            browsableTasks.filter { !selectedIds.contains($0.id) }, query: query, rootsById: rootsById
+        )
     }
 
     /// Resolves `taskIds` to the RESOLVABLE subset in `taskIds` order against

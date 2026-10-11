@@ -236,8 +236,8 @@ final class TasksTabViewModel {
     /// keeps matching, so "Read 35" still finds the row too. Web twin:
     /// `useTasksFilters.ts` `matchesSearch`.
     ///
-    /// `counterRoot` is the row's counter root: typing any of the counter's
-    /// match texts (name, noun, verb, plural title) also finds its unit tasks and linked copies (unit-tasks
+    /// `counterRoot` is the row's counter root: typing the counter's display
+    /// name or noun also finds its unit tasks and linked copies (unit-tasks
     /// PR 2, Decision 7).
     static func matchesSearch(_ task: Task, trimmedLower: String, counterRoot: Task? = nil) -> Bool {
         guard !trimmedLower.isEmpty else { return true }

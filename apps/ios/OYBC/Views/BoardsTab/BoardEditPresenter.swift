@@ -245,6 +245,7 @@ struct BoardEditPresenter: ViewModifier {
                     let library = try database.fetchCompoundPickerInputs(userId: userId)
                     inputs.libraryTasks = library.libraryTasks
                     inputs.allLinks = library.allLinks
+                    inputs.allTasks = library.allTasks
                 } catch {
                     inputs.libraryLoaded = false
                 }

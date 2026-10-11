@@ -114,6 +114,7 @@ struct PoolEditorBodyView: View {
                             task: task,
                             draft: $vm.editDraft,
                             libraryTasks: vm.pickerLibraryTasks,
+                            counterRootTasks: vm.pickerAllTasks,
                             allLinks: vm.allLinks,
                             onSave: { vm.saveEdit() },
                             onDiscard: { vm.discardEdit() }

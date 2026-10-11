@@ -83,7 +83,7 @@ final class UnitTaskRowsSnapshotTests: XCTestCase {
             RisoPaperBackground()
             VStack(spacing: 7) {
                 card(label("Finish Dune", .normal, tag: "Books", sub: nil, usage: "1 bd", added: true), added: true)
-                card(label("Read 300 pages", .counting, tag: "Books", sub: "300 pages", usage: "1 bd", added: false), added: false)
+                card(label("Read 300 pages", .counting, tag: "Books", sub: TaskCountDisplay.goalSubtitle(for: unit("u1", "Read 300 pages", .counting, maxCount: 300, unitWord: "pages")), usage: "1 bd", added: false), added: false)
                 card(label("Book club night", .compound, tag: "Books", sub: nil, usage: "0 bds", added: true, compound: true), added: true)
                 card(label("Walk the dog", .normal, tag: nil, sub: nil, usage: "2 bds", added: false), added: false)
             }

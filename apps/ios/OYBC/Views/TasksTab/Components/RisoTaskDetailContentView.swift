@@ -61,7 +61,7 @@ struct RisoTaskDetailContentView: View {
                 if let counterId = task.countsTowardCounterId {
                     LinkedCounterCaptionView(
                         sharedCounterId: counterId, database: database,
-                        onOpenCounter: onOpenCounter, usesCounterName: true,
+                        onOpenCounter: onOpenCounter,
                         fixedSource: counterSourceOverride, sectionLabel: "COUNTER"
                     )
                 }

@@ -21,9 +21,6 @@ struct LinkedCounterCaptionView: View {
     var database: AppDatabase = .shared
     /// Tap handler for the found-state row; receives `sharedCounterId`.
     var onOpenCounter: (String) -> Void = { _ in }
-    /// A unit task's row (`countsTowardCounterId`): the row names the counter
-    /// by its display name rather than the root's stored title.
-    var usesCounterName: Bool = false
     /// Snapshot / preview seam: a resolved source that skips the database read.
     var fixedSource: LinkedCounterSource? = nil
     /// Section label drawn above the row — only once the counter has resolved.
@@ -50,10 +47,7 @@ struct LinkedCounterCaptionView: View {
     @ViewBuilder
     private func labeled(_ source: LinkedCounterSource?) -> some View {
         if let source {
-            VStack(alignment: .leading, spacing: 6) {
-                if let sectionLabel { Text(sectionLabel).risoSectionLabel() }
-                LinkedCounterCaptionLabel(source: source) { onOpenCounter(sharedCounterId) }
-            }
+            LinkedCounterCaptionLabel(source: source, sectionLabel: sectionLabel) { onOpenCounter(sharedCounterId) }
         }
     }
 
@@ -62,10 +56,9 @@ struct LinkedCounterCaptionView: View {
         loading = true
         let db = database
         let id = sharedCounterId
-        let useName = usesCounterName
         do {
             let resolved = try await _Concurrency.Task.detached(priority: .userInitiated) {
-                try Self.resolveSource(database: db, sharedCounterId: id, usesCounterName: useName)
+                try Self.resolveSource(database: db, sharedCounterId: id)
             }.value
             guard !_Concurrency.Task.isCancelled else { return }
             source = resolved
@@ -84,16 +77,15 @@ struct LinkedCounterCaptionView: View {
     /// - Parameters:
     ///   - database: The database to read from.
     ///   - sharedCounterId: The linked counter's source task id.
-    ///   - usesCounterName: Name the counter by `counterDisplayName` (unit task) instead of the stored title.
     /// - Returns: The resolved source, or nil.
     /// - Throws: Any GRDB read error.
-    nonisolated static func resolveSource(database: AppDatabase, sharedCounterId: String, usesCounterName: Bool = false) throws -> LinkedCounterSource? {
+    nonisolated static func resolveSource(database: AppDatabase, sharedCounterId: String) throws -> LinkedCounterSource? {
         let task = try database.read { db in
             try OYBC.Task.fetchOne(db, key: sharedCounterId)
         }
         guard let task, !task.isDeleted else { return nil }
         return LinkedCounterSource(
-            title: usesCounterName ? CounterSettings.counterDisplayName(task) : task.title,
+            title: CounterSettings.counterDisplayName(task),
             lifetime: task.currentCount ?? 0,
             unit: task.unit ?? "",
             kind: resolveCountKind(task.countKind)
@@ -117,11 +109,15 @@ struct LinkedCounterSource: Equatable {
 struct LinkedCounterCaptionLabel: View {
 
     let source: LinkedCounterSource?
+    /// A label inside the card above the row, like USAGE / ACTIVITY.
+    var sectionLabel: String? = nil
     var onOpen: () -> Void = {}
 
     var body: some View {
         if let source {
             Button(action: onOpen) {
+                VStack(alignment: .leading, spacing: 4) {
+                    if let sectionLabel { Text(sectionLabel).risoSectionLabel() }
                 HStack(alignment: .center, spacing: 10) {
                     Text(source.title)
                         .font(.risoBody(14, .medium))
@@ -134,6 +130,7 @@ struct LinkedCounterCaptionLabel: View {
                     Image(systemName: "chevron.right")
                         .font(.system(size: 11, weight: .bold))
                         .foregroundStyle(Color.risoMuted)
+                }
                 }
                 .padding(12)
                 .frame(maxWidth: .infinity, alignment: .leading)

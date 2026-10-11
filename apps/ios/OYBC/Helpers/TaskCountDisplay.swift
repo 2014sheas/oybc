@@ -81,4 +81,26 @@ enum TaskCountDisplay {
               !countKindNeedsUnit(kind) || !(task.unit ?? "").isEmpty else { return nil }
         return "\(action) · goal \(formatCountWithUnit(max, kind: kind, unit: task.unit))"
     }
+
+    /// The auto counting title from a task's own fields ("Run 26.2 miles"), or
+    /// nil when action, goal or a needed unit is missing. Web twin:
+    /// `counterRowTitle`.
+    static func counterRowTitle(for task: Task) -> String? {
+        let kind = resolveCountKind(task.countKind)
+        let action = (task.action ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        let unit = (task.unit ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !action.isEmpty, let max = task.maxCount else { return nil }
+        if countKindNeedsUnit(kind) && unit.isEmpty { return nil }
+        return TaskTitle.generateCounterTaskTitle(
+            action: action, maxCount: max, unit: unit, countKind: kind,
+            settings: CounterSettings.TitleSettings(task: task)
+        )
+    }
+
+    /// The subtitle under a counting task's row: its auto title, or nil when
+    /// that merely restates the row's own title. Web twin: `counterRowSubtitle`.
+    static func counterRowSubtitle(for task: Task) -> String? {
+        guard let derived = counterRowTitle(for: task) else { return nil }
+        return derived.lowercased() == task.title.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() ? nil : derived
+    }
 }
