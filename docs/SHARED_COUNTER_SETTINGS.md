@@ -1,6 +1,7 @@
 # Shared counter settings, placement defaults, and "counts toward"
 
 **Design brief for Claude Design:** [`design/shared-counter-settings/BRIEF.md`](design/shared-counter-settings/BRIEF.md) — UI PRs (counter sheet fields, placement row, counts-toward surfaces) wait for its handoff; data/logic PRs ship first.
+**Second brief (member model, 2026-10-10):** [`design/counter-unit-tasks/BRIEF.md`](design/counter-unit-tasks/BRIEF.md) — the unit-task surfaces listed in the §3 amendment wait for its handoff.
 
 **Status: COMPLETE (2026-10-10).** The train shipped in five PRs — #584 PR 1 (settings
 data + logic, 2026-10-09), #585 PR 2 (placement defaults, 2026-10-09), #587 UI A/B/D
@@ -187,6 +188,7 @@ counting copy does today — the shared two-dot mark plus the counter's name** o
 its rows. The member-management UI (member rows on Counter Detail with a remove
 action, the "+ New" shape choice, placement through the counter search, the
 library row carrying the dots + counter name) goes through a Claude Design brief
+([`design/counter-unit-tasks/BRIEF.md`](design/counter-unit-tasks/BRIEF.md))
 before any implementation; until it lands, "+ New" is the only UI write of the flag.
 
 ### 3a. Data
@@ -776,7 +778,7 @@ Done → In progress → Not started → title → id.
 
 - ~~iOS: a compound-create cycle refusal lands on the form line after the special-task panel has collapsed, so the line can be out of view.~~ Closed with the editor row's retirement (2026-10-10) — the panel no longer hosts the field.
 - ~~Web: an empty `fieldGroup` wrapper remains in the editor when the Counts toward row hides.~~ Closed the same way — the row is gone.
-- **Open (design round):** the member-model surfaces listed in the §3 amendment — Counter Detail member rows (remove action; no amount, always one), "+ New" shape choice (Simple / Counting / Compound), placement of a unit task through the counter search, and the unit task's library row carrying the two-dot mark + counter name.
+- **Open (design round):** the member-model surfaces listed in the §3 amendment — Counter Detail member rows (remove action; no amount, always one), "+ New" shape choice (Simple / Counting / Compound), placement of a unit task through the counter search, and the unit task's library row carrying the two-dot mark + counter name. Brief: [`design/counter-unit-tasks/BRIEF.md`](design/counter-unit-tasks/BRIEF.md).
 - **Schema cleanup (later):** drop the inert `countsTowardAmount` column / field / clearable entry once a migration window is convenient.
 
 Known edges (acceptable; revisit if a real case surfaces) are listed under the PR 3 hand-offs above.
