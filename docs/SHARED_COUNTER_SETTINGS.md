@@ -1,7 +1,5 @@
 # Shared counter settings, placement defaults, and "counts toward"
 
-**Design brief for Claude Design:** [`design/shared-counter-settings/BRIEF.md`](design/shared-counter-settings/BRIEF.md) — UI PRs (counter sheet fields, placement row, counts-toward surfaces) wait for its handoff; data/logic PRs ship first.
-
 **Status: COMPLETE (2026-10-10).** The train shipped in five PRs — #584 PR 1 (settings
 data + logic, 2026-10-09), #585 PR 2 (placement defaults, 2026-10-09), #587 UI A/B/D
 (counter sheet + placement row, 2026-10-10), #586 PR 3 (counts toward data + cascade,

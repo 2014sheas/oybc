@@ -695,6 +695,8 @@ await db.transaction("rw", [db.tasks, db.compoundChildren], async () => {
 
 The `docs/superpowers/specs/` folder is **not in active use** — design docs for in-flight work live in CLAUDE.md and ARCHITECTURE.md instead. The legacy `2026-04-23-compound-tasks-unification-design.md` was the precursor for the unification work shipped in PR #43; the current canonical doc is `docs/TASK_SYSTEM.md`.
 
+**Claude Design prompts are not repo documents (owner rule, 2026-10-10).** A brief or prompt written for a claude.ai/design session is handed to the owner in chat, never committed under `docs/design/` and never opened as a PR (the two earlier `BRIEF.md` files were removed for this reason). What stays in the repo is the engineering spec the UI PRs implement from (`docs/<FEATURE>.md`) and the shipped Riso prototype under `docs/design/riso-redesign/`; design handoff zips stay gitignored (`design_handoff_*/`).
+
 **Not yet configured**: Prettier, SwiftLint.
 
 ## CI/CD
