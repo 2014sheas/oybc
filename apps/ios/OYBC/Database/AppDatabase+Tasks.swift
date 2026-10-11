@@ -612,6 +612,10 @@ extension AppDatabase {
         /// counter this task counts toward, whose increment the delete
         /// tombstones; `nil` when it counts toward nothing (or it is gone).
         var countsTowardCounter: Task? = nil
+        /// Unit tasks (docs/SHARED_COUNTER_SETTINGS.md §3d) — live tasks whose
+        /// `countsTowardCounterId` is this task; a counter delete keeps and
+        /// decouples them. 0 for any non-counter task.
+        var unitTaskCount: Int = 0
     }
 
     /// Read-only impact calculation; safe to call before showing the
@@ -661,7 +665,10 @@ extension AppDatabase {
                 counterMemberCount: counterMembers.count,
                 counterMembers: counterMembers,
                 derivedWindowCounterCount: allMembers.count - counterMembers.count,
-                countsTowardCounter: counter?.isDeleted == false ? counter : nil
+                countsTowardCounter: counter?.isDeleted == false ? counter : nil,
+                unitTaskCount: try Task
+                    .filter(Column("countsTowardCounterId") == taskId && Column("isDeleted") == false)
+                    .fetchCount(db)
             )
         }
     }

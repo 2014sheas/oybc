@@ -109,6 +109,25 @@ extension CountsToward {
         let creditCount: Int
         /// The latest credit instant; `nil` with no credits.
         let latestOccurredAt: String?
+        /// A plain COUNTING representative that is not done: its windowed count
+        /// vs its goal; `nil` otherwise.
+        var progress: Progress? = nil
+        /// A COMPOUND representative: done / total direct children on the same
+        /// window (total 0 = the "No subtasks yet" row); `nil` otherwise.
+        var childProgress: ChildProgress? = nil
+    }
+
+    /// A Counting unit task's `{current} / {goal}` with its real kind (the formatting key).
+    struct Progress: Equatable {
+        let current: CountValue
+        let goal: CountValue
+        let kind: CountKind
+    }
+
+    /// A Compound unit task's direct-child tally.
+    struct ChildProgress: Equatable {
+        let done: Int
+        let total: Int
     }
 
     /// The window a task is evaluated over on `board` — sealed boards bounded at `sealedAt`.
@@ -154,30 +173,57 @@ extension CountsToward {
 
     private static func statusOrder(_ s: ContributorRowStatus) -> Int {
         switch s {
-        case .done: return 0
-        case .inProgress: return 1
-        case .notStarted: return 2
+        case .inProgress: return 0
+        case .notStarted: return 1
+        case .done: return 2
         }
+    }
+
+    /// A plain Counting representative's windowed count vs goal (`nil` when it
+    /// is done, not Counting, or has no goal). Twin of the TS `contributorRowProgress`.
+    static func contributorRowProgress(_ task: Task, inputs: Inputs, board: Board?, status: ContributorRowStatus) -> Progress? {
+        guard task.type == .counting, status != .done, let goal = task.maxCount else { return nil }
+        let ctx = windowContext(of: board, eventsByTaskId: inputs.eventsByTaskId)
+        let state = resolveTaskWindowState(task: task, events: ctx.eventsByTaskId[task.id] ?? [], windowStart: ctx.windowStart, windowEnd: ctx.windowEnd)
+        return Progress(current: state.count, goal: goal, kind: resolveCountKind(task.countKind))
+    }
+
+    /// A Compound representative's done / total direct children on `board`'s window.
+    /// Twin of the TS `contributorChildProgress`.
+    static func contributorChildProgress(_ task: Task, inputs: Inputs, board: Board?) -> ChildProgress? {
+        guard task.type == .compound else { return nil }
+        let ctx = windowContext(of: board, eventsByTaskId: inputs.eventsByTaskId)
+        var done = 0, total = 0
+        for link in (inputs.childrenByCompound[task.id] ?? []) where !link.isDeleted {
+            guard let child = inputs.taskById[link.childTaskId], !child.isDeleted else { continue }
+            total += 1
+            if childDone(child, inputs: inputs, ctx: ctx) { done += 1 }
+        }
+        return ChildProgress(done: done, total: total)
     }
 
     /// The Counter Detail "Counts toward" rows for counter root `rootId`: one
     /// per fork lineage (`contributorCreditGroups`), standing for the lineage's
     /// representative, placed on the representative's primary board
     /// (`pickPrimaryBoard` over `inputs.placements` / `inputs.boardById`), in
-    /// the handoff's order — Done, In progress, Not started — then by title
-    /// (case-insensitive), then id. Twin of the TS `countsTowardRows`.
+    /// the handoff's order — In progress, Not started, Done (Done by latest
+    /// credit, newest first, no credit last) — then by title (case-insensitive),
+    /// then id. Twin of the TS `countsTowardRows`.
     static func countsTowardRows(rootId: String, tasks: [Task], inputs: Inputs) -> [ContributorRow] {
         var rows: [(row: ContributorRow, title: String)] = []
         for g in contributorCreditGroups(rootId: rootId, tasks: tasks, inputs: inputs) {
             guard let task = inputs.taskById[g.representativeId] else { continue }
             let board = pickPrimaryBoard(taskId: task.id, boardTasks: inputs.placements, boardsById: inputs.boardById)
+            let status = contributorRowStatus(task, inputs: inputs, board: board)
             rows.append((
                 ContributorRow(
                     taskId: task.id,
-                    status: contributorRowStatus(task, inputs: inputs, board: board),
+                    status: status,
                     boardId: board?.id,
                     creditCount: g.creditCount,
-                    latestOccurredAt: g.latestOccurredAt
+                    latestOccurredAt: g.latestOccurredAt,
+                    progress: contributorRowProgress(task, inputs: inputs, board: board, status: status),
+                    childProgress: contributorChildProgress(task, inputs: inputs, board: board)
                 ),
                 task.title.lowercased()
             ))
@@ -185,6 +231,11 @@ extension CountsToward {
         rows.sort { a, b in
             let (oa, ob) = (statusOrder(a.row.status), statusOrder(b.row.status))
             if oa != ob { return oa < ob }
+            if a.row.status == .done, a.row.latestOccurredAt != b.row.latestOccurredAt {
+                guard let la = a.row.latestOccurredAt else { return false }
+                guard let lb = b.row.latestOccurredAt else { return true }
+                return la > lb
+            }
             if a.title != b.title { return a.title < b.title }
             return a.row.taskId < b.row.taskId
         }

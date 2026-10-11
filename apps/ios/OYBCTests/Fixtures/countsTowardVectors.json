@@ -1,5 +1,5 @@
 {
-  "_note": "Hand-authored fixture (edit directly, then `pnpm --filter @oybc/shared run gen:sync-fixtures`). Pins packages/shared/src/algorithms/countsToward.ts (+ countsTowardLineage.ts / countsTowardValidation.ts; tests/algorithms/countsToward.test.ts) against its Swift twin Helpers/CountsToward.swift (OYBCTests/CountsTowardVectorTests.swift) — docs/SHARED_COUNTER_SETTINGS.md §3 (D10: one credit per completion occurrence; D11: count from `countsTowardSince`). Task defaults for unlisted fields: type=normal, isCompleted=false, isDeleted=false, createdAt=2026-01-01T00:00:00.000Z. Event defaults: isDeleted=false, kind=increment when delta is set else completion. Board defaults: status=active, isDeleted=false. Placement defaults: isDeleted=false. Link defaults: isDeleted=false. `state` vectors take an optional `window`. `credits` / `candidates` / `planSet` name occurrences ({kind: event|childEvent|board|lifetime}) and the ROOT they are minted on (`root`, default \"root\"); the test derives each credit id with countsTowardEventId(root, lineageRootId(contributor), occurrence) and compares sets sorted by id. `candidates.roots` lists the roots to enumerate. `planSet.lineageWanted` lists occurrences other lineage members keep; `planSet.lineageDelta` maps a root to the lineage's amount (applied only to credits also in `lineageWanted`). `lineageDelta` vectors pin lineageCreditDelta. `creditGroups` vectors (PR 4 — countsTowardCredits.ts ↔ CountsToward.contributorCreditGroups) list the ROOT's credits as `rootCredits` ({scope, occurrence, occurredAt, delta?=1, isDeleted?}); the test mints each as an increment on `root` with id countsTowardEventId(root, scope, occurrence) and expects the lineage groups (scopeId, memberIds, representativeId, creditCount, latestOccurredAt) in scope order. `rows` vectors pin countsTowardRows (same inputs as `creditGroups`; tasks may carry `title`): one row per lineage — representative, status (done / inProgress / notStarted on the primary board), boardId, creditCount, latestOccurredAt — in Done, In progress, Not started order, then title, then id. Amount ruling (#590, 2026-10-10): a unit task always credits one — the amount / lineageDelta expectations are pinned to 1 and the planSet vectors that exercised amount ≠ 1 were removed.",
+  "_note": "Hand-authored fixture (edit directly, then `pnpm --filter @oybc/shared run gen:sync-fixtures`). Pins packages/shared/src/algorithms/countsToward.ts (+ countsTowardLineage.ts / countsTowardValidation.ts; tests/algorithms/countsToward.test.ts) against its Swift twin Helpers/CountsToward.swift (OYBCTests/CountsTowardVectorTests.swift) — docs/SHARED_COUNTER_SETTINGS.md §3 (D10: one credit per completion occurrence; D11: count from `countsTowardSince`). Task defaults for unlisted fields: type=normal, isCompleted=false, isDeleted=false, createdAt=2026-01-01T00:00:00.000Z. Event defaults: isDeleted=false, kind=increment when delta is set else completion. Board defaults: status=active, isDeleted=false. Placement defaults: isDeleted=false. Link defaults: isDeleted=false. `state` vectors take an optional `window`. `credits` / `candidates` / `planSet` name occurrences ({kind: event|childEvent|board|lifetime}) and the ROOT they are minted on (`root`, default \"root\"); the test derives each credit id with countsTowardEventId(root, lineageRootId(contributor), occurrence) and compares sets sorted by id. `candidates.roots` lists the roots to enumerate. `planSet.lineageWanted` lists occurrences other lineage members keep; `planSet.lineageDelta` maps a root to the lineage's amount (applied only to credits also in `lineageWanted`). `lineageDelta` vectors pin lineageCreditDelta. `creditGroups` vectors (PR 4 — countsTowardCredits.ts ↔ CountsToward.contributorCreditGroups) list the ROOT's credits as `rootCredits` ({scope, occurrence, occurredAt, delta?=1, isDeleted?}); the test mints each as an increment on `root` with id countsTowardEventId(root, scope, occurrence) and expects the lineage groups (scopeId, memberIds, representativeId, creditCount, latestOccurredAt) in scope order. `rows` vectors pin countsTowardRows (same inputs as `creditGroups`; tasks may carry `title`): one row per lineage — representative, status (done / inProgress / notStarted on the primary board), boardId, creditCount, latestOccurredAt — in In progress, Not started, Done order (Decision 8 of the unit-tasks handoff; Done rows most recently credited first by latestOccurredAt desc with null last), then title (case-insensitive), then id; each row also carries `progress` ({current, goal, kind} — a COUNTING representative that is not done: windowed count on the primary board, lifetime when unplaced, kind = resolveCountKind) and `childProgress` ({done, total} — a COMPOUND representative: live direct links to live children, completion on the same window), both OMITTED from an `expected` row when null (the test defaults omitted to null). Amount ruling (#590, 2026-10-10): a unit task always credits one — the amount / lineageDelta expectations are pinned to 1 and the planSet vectors that exercised amount ≠ 1 were removed.",
   "eventId": [
     {
       "root": "root",
@@ -5504,19 +5504,29 @@
           "status": "inProgress",
           "boardId": "w1",
           "creditCount": 0,
-          "latestOccurredAt": null
+          "latestOccurredAt": null,
+          "progress": {
+            "current": 100,
+            "goal": 250,
+            "kind": "discrete"
+          }
         },
         {
           "taskId": "z",
           "status": "notStarted",
           "boardId": "w1",
           "creditCount": 0,
-          "latestOccurredAt": null
+          "latestOccurredAt": null,
+          "progress": {
+            "current": 0,
+            "goal": 10,
+            "kind": "discrete"
+          }
         }
       ]
     },
     {
-      "name": "compound-half-done-is-in-progress-all-done-is-done-sorted-done-first",
+      "name": "compound-half-done-is-in-progress-all-done-is-done-sorted-in-progress-first",
       "root": "root",
       "tasks": [
         {
@@ -5603,18 +5613,26 @@
       ],
       "expected": [
         {
-          "taskId": "k2",
-          "status": "done",
-          "boardId": "w1",
-          "creditCount": 1,
-          "latestOccurredAt": "2026-10-08T09:00:00.000Z"
-        },
-        {
           "taskId": "k1",
           "status": "inProgress",
           "boardId": "w1",
           "creditCount": 0,
-          "latestOccurredAt": null
+          "latestOccurredAt": null,
+          "childProgress": {
+            "done": 1,
+            "total": 2
+          }
+        },
+        {
+          "taskId": "k2",
+          "status": "done",
+          "boardId": "w1",
+          "creditCount": 1,
+          "latestOccurredAt": "2026-10-08T09:00:00.000Z",
+          "childProgress": {
+            "done": 1,
+            "total": 1
+          }
         }
       ]
     },
@@ -5846,6 +5864,230 @@
           "boardId": null,
           "creditCount": 1,
           "latestOccurredAt": "2026-10-07T09:00:00.000Z"
+        }
+      ]
+    },
+    {
+      "root": "root",
+      "tasks": [
+        {
+          "id": "root",
+          "type": "counting",
+          "isCounter": true
+        },
+        {
+          "id": "a",
+          "title": "Alpha",
+          "countsTowardCounterId": "root"
+        },
+        {
+          "id": "b",
+          "title": "Beta",
+          "countsTowardCounterId": "root"
+        },
+        {
+          "id": "c",
+          "title": "Gamma",
+          "countsTowardCounterId": "root"
+        },
+        {
+          "id": "n",
+          "title": "Open",
+          "countsTowardCounterId": "root"
+        }
+      ],
+      "events": [
+        {
+          "id": "ea",
+          "taskId": "a",
+          "occurredAt": "2026-10-06T09:00:00.000Z"
+        },
+        {
+          "id": "eb",
+          "taskId": "b",
+          "occurredAt": "2026-10-08T09:00:00.000Z"
+        }
+      ],
+      "rootCredits": [
+        {
+          "scope": "a",
+          "occurrence": {
+            "kind": "event",
+            "eventId": "ea"
+          },
+          "occurredAt": "2026-10-06T09:00:00.000Z"
+        },
+        {
+          "scope": "b",
+          "occurrence": {
+            "kind": "event",
+            "eventId": "eb"
+          },
+          "occurredAt": "2026-10-08T09:00:00.000Z"
+        }
+      ],
+      "children": [],
+      "placements": [
+        {
+          "boardId": "w1",
+          "taskId": "a"
+        },
+        {
+          "boardId": "w1",
+          "taskId": "b"
+        },
+        {
+          "boardId": "w1",
+          "taskId": "c"
+        },
+        {
+          "boardId": "w1",
+          "taskId": "n"
+        }
+      ],
+      "boards": [
+        {
+          "id": "w1",
+          "startDate": "2026-10-05T00:00:00.000Z",
+          "endDate": "2026-10-11T23:59:59.999Z"
+        }
+      ],
+      "name": "done-rows-sort-most-recently-credited-first-after-not-started",
+      "expected": [
+        {
+          "taskId": "c",
+          "status": "notStarted",
+          "boardId": "w1",
+          "creditCount": 0,
+          "latestOccurredAt": null
+        },
+        {
+          "taskId": "n",
+          "status": "notStarted",
+          "boardId": "w1",
+          "creditCount": 0,
+          "latestOccurredAt": null
+        },
+        {
+          "taskId": "b",
+          "status": "done",
+          "boardId": "w1",
+          "creditCount": 1,
+          "latestOccurredAt": "2026-10-08T09:00:00.000Z"
+        },
+        {
+          "taskId": "a",
+          "status": "done",
+          "boardId": "w1",
+          "creditCount": 1,
+          "latestOccurredAt": "2026-10-06T09:00:00.000Z"
+        }
+      ]
+    },
+    {
+      "root": "root",
+      "tasks": [
+        {
+          "id": "root",
+          "type": "counting",
+          "isCounter": true
+        },
+        {
+          "id": "k",
+          "title": "Book club night",
+          "type": "compound",
+          "operator": "AND",
+          "countsTowardCounterId": "root"
+        },
+        {
+          "id": "c",
+          "title": "Read 3 hours",
+          "type": "counting",
+          "maxCount": 10,
+          "countKind": "duration",
+          "countsTowardCounterId": "root"
+        },
+        {
+          "id": "d",
+          "title": "Done counting",
+          "type": "counting",
+          "maxCount": 2,
+          "countsTowardCounterId": "root"
+        }
+      ],
+      "events": [
+        {
+          "id": "i1",
+          "taskId": "c",
+          "occurredAt": "2026-10-06T09:00:00.000Z",
+          "delta": 3
+        },
+        {
+          "id": "i2",
+          "taskId": "d",
+          "occurredAt": "2026-10-06T09:00:00.000Z",
+          "delta": 2
+        }
+      ],
+      "rootCredits": [
+        {
+          "scope": "d",
+          "occurrence": {
+            "kind": "event",
+            "eventId": "i2"
+          },
+          "occurredAt": "2026-10-06T09:00:00.000Z"
+        }
+      ],
+      "children": [],
+      "placements": [
+        {
+          "boardId": "w1",
+          "taskId": "c"
+        },
+        {
+          "boardId": "w1",
+          "taskId": "d"
+        }
+      ],
+      "boards": [
+        {
+          "id": "w1",
+          "startDate": "2026-10-05T00:00:00.000Z",
+          "endDate": "2026-10-11T23:59:59.999Z"
+        }
+      ],
+      "name": "zero-child-compound-and-kinded-counting-progress-done-counting-has-none",
+      "expected": [
+        {
+          "taskId": "c",
+          "status": "inProgress",
+          "boardId": "w1",
+          "creditCount": 0,
+          "latestOccurredAt": null,
+          "progress": {
+            "current": 3,
+            "goal": 10,
+            "kind": "duration"
+          }
+        },
+        {
+          "taskId": "k",
+          "status": "notStarted",
+          "boardId": null,
+          "creditCount": 0,
+          "latestOccurredAt": null,
+          "childProgress": {
+            "done": 0,
+            "total": 0
+          }
+        },
+        {
+          "taskId": "d",
+          "status": "done",
+          "boardId": "w1",
+          "creditCount": 1,
+          "latestOccurredAt": "2026-10-06T09:00:00.000Z"
         }
       ]
     }

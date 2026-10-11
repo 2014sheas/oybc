@@ -103,11 +103,11 @@ final class CountsTowardUITests: XCTestCase {
         try seedSection(db)
         let data = try XCTUnwrap(try db.fetchCountsTowardSection(counterId: root))
         XCTAssertEqual(data.counterName, CounterSettings.counterDisplayName(try fetch(db, root)))
-        // Done first, then Not started (the unplaced lifetime state).
-        XCTAssertEqual(data.rows.map(\.taskId), [simple, loose])
-        XCTAssertEqual(data.rows.map(\.status), [.done, .notStarted])
-        XCTAssertEqual(data.rows[0].boardId, bA)
-        XCTAssertNil(data.rows[1].boardId)
+        // Not started (the unplaced lifetime state) first, then Done.
+        XCTAssertEqual(data.rows.map(\.taskId), [loose, simple])
+        XCTAssertEqual(data.rows.map(\.status), [.notStarted, .done])
+        XCTAssertNil(data.rows[0].boardId)
+        XCTAssertEqual(data.rows[1].boardId, bA)
         XCTAssertEqual(data.taskById[simple]?.title, "Read Dune")
         XCTAssertEqual(data.boardById[bA]?.timeframe, .yearly)
     }
@@ -136,9 +136,6 @@ final class CountsTowardUITests: XCTestCase {
     }
 
     func test_sectionCopy() {
-        XCTAssertEqual(CountsTowardSectionView.heading(count: 0), "Counts toward")
-        XCTAssertEqual(CountsTowardSectionView.heading(count: 1), "Counts toward · 1 task")
-        XCTAssertEqual(CountsTowardSectionView.heading(count: 6), "Counts toward · 6 tasks")
         XCTAssertNil(CountsTowardSectionView.creditMark(1))
         XCTAssertEqual(CountsTowardSectionView.creditMark(3), "\u{00D7} 3")
     }

@@ -36,7 +36,20 @@ struct NewTaskSheetView: View {
     /// Counter Detail's "+ New": the counter the new task counts toward (preselected).
     var presetCountsTowardCounterId: String? = nil
 
+    /// Injected database (ROADMAP B3 seam) — reads the preset counter's name.
+    var database: AppDatabase = .shared
+
     @Environment(\.dismiss) private var dismiss
+
+    /// The preset counter's display name (the title's `UnitTagView`); nil until loaded / without a preset.
+    @State private var counterName: String?
+
+    /// The preset counter's display name (`CounterSettings.counterDisplayName`);
+    /// nil when there is no preset or the root is missing / deleted.
+    static func presetCounterName(database: AppDatabase, counterId: String?) -> String? {
+        guard let counterId, let root = try? database.fetchTask(id: counterId), !root.isDeleted else { return nil }
+        return CounterSettings.counterDisplayName(root)
+    }
 
     // MARK: - Body
 
@@ -48,17 +61,19 @@ struct NewTaskSheetView: View {
                     onTaskCreated: onTaskCreated,
                     onLibraryReloadRequested: onLibraryReloadRequested,
                     taskLibrary: taskLibrary,
-                    presetCountsTowardCounterId: presetCountsTowardCounterId
+                    presetCountsTowardCounterId: presetCountsTowardCounterId,
+                    submitLabel: CountsTowardLabels.submitLabel
                 )
                 .padding(16)
             }
             .background(Color.risoPaper.ignoresSafeArea())
             .navigationBarTitleDisplayMode(.inline)
+            .onAppear {
+                counterName = Self.presetCounterName(database: database, counterId: presetCountsTowardCounterId)
+            }
             .toolbar {
                 ToolbarItem(placement: .principal) {
-                    Text("New task")
-                        .font(.risoHead(17, .extraBold))
-                        .foregroundStyle(Color.risoInk)
+                    NewTaskSheetTitle(counterName: counterName)
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     RisoToolbarPill(title: "Done") { dismiss() }
@@ -92,6 +107,9 @@ struct NewTaskSheetContentView: View {
 
     /// Counter Detail's "+ New": the counter the new task counts toward (preselected).
     var presetCountsTowardCounterId: String? = nil
+
+    /// Special-panel submit copy; the sheet passes "Add to library" for every host.
+    var submitLabel: String = "Add to board ✦"
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
@@ -140,11 +158,29 @@ struct NewTaskSheetContentView: View {
                     },
                     onPendingCreated: nil,
                     onLibraryReloadRequested: onLibraryReloadRequested,
+                    submitLabel: submitLabel,
                     presetCountsTowardCounterId: presetCountsTowardCounterId
                 )
             }
         }
         // The removed trailing caption carried the only full-width frame.
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+/// The sheet's toolbar title: "New task", plus the regular `UnitTagView` of the
+/// counter when opened from Counter Detail's "+ New". Non-interactive.
+struct NewTaskSheetTitle: View {
+    var counterName: String?
+
+    var body: some View {
+        VStack(spacing: 5) {
+            Text("New task")
+                .font(.risoHead(17, .extraBold))
+                .foregroundStyle(Color.risoInk)
+            if let counterName {
+                UnitTagView(name: counterName)
+            }
+        }
     }
 }

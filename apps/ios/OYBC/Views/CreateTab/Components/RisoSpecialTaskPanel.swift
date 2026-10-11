@@ -53,6 +53,8 @@ struct RisoSpecialTaskPanel: View {
     var submitLabel: String = "Add to board ✦"
     /// Snapshot seam: opens the panel on Counting with these field values.
     var countingSeed: CountingSeed? = nil
+    /// Snapshot seam: opens the panel on this type (Counting / Compound) with empty fields.
+    var startExpandedOn: SpecialType? = nil
     /// Counter Detail's "+ New" preset: a Counting / Compound create counts
     /// toward this counter (never Achievement).
     var presetCountsTowardCounterId: String? = nil
@@ -71,7 +73,7 @@ struct RisoSpecialTaskPanel: View {
 
     /// The type chips offered — Achievement drops out in pool context.
     private var availableTypes: [SpecialType] {
-        SpecialType.allCases.filter { allowAchievement || $0 != .achievement }
+        SpecialType.allCases.filter { achievementAllowed || $0 != .achievement }
     }
 
     // Achievement board/template pickers
@@ -108,12 +110,23 @@ struct RisoSpecialTaskPanel: View {
         }
     }
 
-    /// Whether a Counting create carries the preset (an immediate, non-linked create).
-    private var countingPresetActive: Bool {
-        presetCountsTowardCounterId != nil && linkedSuggestion == nil && onPendingCreated == nil
+    /// Counter Detail's "+ New" (immediate create with the preset): the new
+    /// task is a unit task — never Achievement, never a linked copy.
+    private var presetActive: Bool {
+        presetCountsTowardCounterId != nil && onPendingCreated == nil
     }
 
+    private var achievementAllowed: Bool { allowAchievement && !presetActive }
+
+    /// Whether a Counting create carries the preset (an immediate, non-linked create).
+    private var countingPresetActive: Bool { presetActive }
+
     private func applyCountingSeed() {
+        if countingSeed == nil, let type = startExpandedOn, !isExpanded {
+            isExpanded = true
+            selectedType = type
+            return
+        }
         guard let s = countingSeed, !isExpanded else { return }
         isExpanded = true
         selectedType = .counting
@@ -134,7 +147,7 @@ struct RisoSpecialTaskPanel: View {
                 Text("＋")
                     .font(.risoHead(15, .extraBold))
                     .foregroundStyle(Color.risoBlue)
-                Text(allowAchievement
+                Text(achievementAllowed
                         ? "Add a counting, compound or achievement task"
                         : "Add a counting or compound task")
                     .font(.risoHead(13, .bold))
@@ -255,11 +268,11 @@ struct RisoSpecialTaskPanel: View {
 
     /// The matched counter while the create auto-links (Duration never
     /// matches — it has no unit); nil once the user opts out.
-    private var linkedSuggestion: LinkableCounterSuggestion? { link.linked }
+    private var linkedSuggestion: LinkableCounterSuggestion? { presetActive ? nil : link.linked }
 
     /// The kind validation, preview and the saved row use: an auto-linking
     /// create takes the root's kind (D5 / R19), otherwise the picker.
-    private var effectiveKind: CountKind { link.effectiveKind(picker: countingKind) }
+    private var effectiveKind: CountKind { presetActive ? countingKind : link.effectiveKind(picker: countingKind) }
 
     /// The typed goal parsed at the effective kind, or nil when blank/invalid.
     private var countingGoal: CountValue? {
@@ -357,7 +370,7 @@ struct RisoSpecialTaskPanel: View {
     /// picker was retired.
     @ViewBuilder
     private var counterLinkBanner: some View {
-        if let suggestion = link.hint {
+        if !presetActive, let suggestion = link.hint {
             RisoCounterLinkHintView(
                 counterName: suggestion.name,
                 linked: !link.linkDisabled,
@@ -382,7 +395,7 @@ struct RisoSpecialTaskPanel: View {
         // via "Don't link". Baseline is always "start fresh": this task's
         // displayed count starts at 0 while the source's all-time keeps
         // climbing.
-        if let suggestion = link.linked, countingGoal != nil {
+        if let suggestion = linkedSuggestion, countingGoal != nil {
             form.countingSharedCounterId = suggestion.counterId
             form.countingBaseline = suggestion.lifetime
         } else {

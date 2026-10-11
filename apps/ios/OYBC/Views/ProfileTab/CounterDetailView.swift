@@ -67,6 +67,10 @@ struct CounterDetailView: View {
     @State private var countsToward: CountsTowardSectionData?
     @State private var openedTaskId: TaskIdItem?
     @State private var showNewCountsToward = false
+    /// The row "+ New" just added: promoted to `highlightedUnitTaskId` (the gold ring) when the sheet closes.
+    @State private var arrivedUnitTaskId: String?
+    @State private var highlightedUnitTaskId: String?
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     // Delete-counter (P5 decision 8: deleteCounterWithUnlink) UI state.
     @State private var deleteImpact: AppDatabase.TaskDeletionImpact?
@@ -96,7 +100,10 @@ struct CounterDetailView: View {
                     showExpired: showExpiredBinding,
                     countsToward: countsToward,
                     onNewCountsToward: { showNewCountsToward = true },
-                    onOpenCountsTowardTask: { openedTaskId = TaskIdItem(id: $0) }
+                    onOpenCountsTowardTask: { openedTaskId = TaskIdItem(id: $0) },
+                    onRemoveCountsTowardTask: handleRemoveUnitTask,
+                    highlightedUnitTaskId: highlightedUnitTaskId,
+                    onCountsTowardInteract: { clearUnitTaskHighlight() }
                 )
             } else if isLoaded {
                 notFoundState
@@ -169,12 +176,13 @@ struct CounterDetailView: View {
                 onOpenBoard: onOpenBoard, database: database
             )
         }
-        .sheet(isPresented: $showNewCountsToward) {
+        .sheet(isPresented: $showNewCountsToward, onDismiss: showArrivalRing) {
             if let userId = authService.currentUser?.id {
                 NewTaskSheetView(
                     userId: userId, onTaskCreated: { _, _, _ in loadData() },
                     onLibraryReloadRequested: { loadData() }, taskLibrary: tasks,
-                    presetCountsTowardCounterId: counterId
+                    presetCountsTowardCounterId: counterId,
+                    database: database
                 )
             }
         }
@@ -264,10 +272,47 @@ struct CounterDetailView: View {
                 dailyTotals = snap.dailyTotals
                 root = snap.root
                 tasks = snap.tasks
+                if showNewCountsToward, let fresh = Self.arrivedRowId(old: countsToward, new: snap.countsToward) {
+                    arrivedUnitTaskId = fresh
+                }
                 countsToward = snap.countsToward
                 isLoaded = true
             }
         }
+    }
+
+    // MARK: - Unit tasks (remove + the return ring)
+
+    /// The row id present in `new` but not `old` (the task "+ New" just made); nil when none.
+    nonisolated static func arrivedRowId(old: CountsTowardSectionData?, new: CountsTowardSectionData?) -> String? {
+        guard let new else { return nil }
+        let before = Set(old?.rows.map(\.taskId) ?? [])
+        return new.rows.map(\.taskId).first { !before.contains($0) }
+    }
+
+    /// Clears the task's counter (`setCountsToward(nil)` — the cascade withdraws its credits), then reloads.
+    private func handleRemoveUnitTask(_ taskId: String) {
+        let db = database
+        _Concurrency.Task.detached(priority: .userInitiated) {
+            _ = attemptLoggedWrite("CounterDetailView.removeUnitTask(\(taskId))") {
+                try db.setCountsToward(taskId: taskId, counterId: nil)
+            }
+            await MainActor.run { loadData() }
+        }
+    }
+
+    /// The sheet closed: the new row's 3pt gold ring fades in (no animation under Reduce Motion).
+    private func showArrivalRing() {
+        guard let id = arrivedUnitTaskId else { return }
+        arrivedUnitTaskId = nil
+        if reduceMotion { highlightedUnitTaskId = id } else {
+            withAnimation(.easeInOut(duration: 0.9)) { highlightedUnitTaskId = id }
+        }
+    }
+
+    private func clearUnitTaskHighlight() {
+        guard highlightedUnitTaskId != nil else { return }
+        highlightedUnitTaskId = nil
     }
 
     // MARK: - Edit counter (the counter sheet in edit mode)
@@ -457,6 +502,9 @@ struct CounterDetailContent: View {
     var countsToward: CountsTowardSectionData?
     var onNewCountsToward: () -> Void
     var onOpenCountsTowardTask: (String) -> Void
+    var onRemoveCountsTowardTask: (String) -> Void
+    var highlightedUnitTaskId: String?
+    var onCountsTowardInteract: () -> Void
 
     /// Snapshot-testability seams forwarded to the Log card.
     private let initialSelectedAmount: CountValue?
@@ -480,13 +528,19 @@ struct CounterDetailContent: View {
         showExpired: Binding<Bool>? = nil,
         countsToward: CountsTowardSectionData? = nil,
         onNewCountsToward: @escaping () -> Void = {},
-        onOpenCountsTowardTask: @escaping (String) -> Void = { _ in }
+        onOpenCountsTowardTask: @escaping (String) -> Void = { _ in },
+        onRemoveCountsTowardTask: @escaping (String) -> Void = { _ in },
+        highlightedUnitTaskId: String? = nil,
+        onCountsTowardInteract: @escaping () -> Void = {}
     ) {
         self.group = group
         self.showExpired = showExpired
         self.countsToward = countsToward
         self.onNewCountsToward = onNewCountsToward
         self.onOpenCountsTowardTask = onOpenCountsTowardTask
+        self.onRemoveCountsTowardTask = onRemoveCountsTowardTask
+        self.highlightedUnitTaskId = highlightedUnitTaskId
+        self.onCountsTowardInteract = onCountsTowardInteract
         self.dailyTotals = dailyTotals
         self.isLogging = isLogging
         self.logError = logError
@@ -578,7 +632,11 @@ struct CounterDetailContent: View {
 
                 // 8. "Counts toward" — the tasks whose completion credits this counter.
                 if let countsToward {
-                    CountsTowardSectionView(data: countsToward, onNew: onNewCountsToward, onOpenTask: onOpenCountsTowardTask)
+                    CountsTowardSectionView(
+                        data: countsToward, onNew: onNewCountsToward, onOpenTask: onOpenCountsTowardTask,
+                        onRemove: onRemoveCountsTowardTask, highlightedTaskId: highlightedUnitTaskId,
+                        onInteract: onCountsTowardInteract
+                    )
                         .padding(.bottom, 14)
                 }
 

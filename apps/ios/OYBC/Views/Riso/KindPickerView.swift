@@ -70,6 +70,37 @@ struct KindTagView: View {
     }
 }
 
+/// A unit task's row tag: the kind chip's dots + the counter's name, no kind
+/// word and no total. Same construction and metrics as `KindTagView`'s chip.
+/// Chrome, not a control. Web twin: `UnitTag.tsx`.
+struct UnitTagView: View {
+    let name: String
+    /// Rows: tighter padding, 1.5pt keyline, 11pt type, 4pt dots.
+    var dense: Bool = false
+
+    var body: some View {
+        HStack(spacing: dense ? 5 : 6) {
+            HStack(spacing: 2) {
+                Circle().frame(width: dense ? 4 : 5, height: dense ? 4 : 5)
+                Circle().frame(width: dense ? 4 : 5, height: dense ? 4 : 5)
+            }
+            .accessibilityHidden(true)
+            Text(name).font(.risoHead(dense ? 11 : 12, .bold))
+                .lineLimit(1)
+        }
+        .foregroundStyle(Color.risoPaper)
+        .padding(.horizontal, dense ? 8 : 10)
+        .padding(.vertical, dense ? 3 : 6)
+        .background(RoundedRectangle(cornerRadius: Riso.cardRadius).fill(Color.risoBlue))
+        .overlay(
+            RoundedRectangle(cornerRadius: Riso.cardRadius)
+                .strokeBorder(Color.risoInk, lineWidth: dense ? Riso.Keyline.dense : Riso.Keyline.container)
+        )
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(CountsTowardLabels.tagAccessibility(counter: name))
+    }
+}
+
 extension KindTagView {
     /// An existing linked row's tag (spec §5): the family root's kind,
     /// pair-derived counter name (title fallback) and all-time total — the
