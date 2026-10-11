@@ -60,6 +60,7 @@ final class UnitTasksTests: XCTestCase {
     func test_tagAndSubmitLabels() {
         XCTAssertEqual(CountsTowardLabels.tagAccessibility(counter: "Books"), "Unit task of Books")
         XCTAssertEqual(CountsTowardLabels.submitLabel, "Add to library")
+        XCTAssertEqual(CountsTowardLabels.counterNotUpdated, "Counter not updated. Try again.")
     }
 
     func test_boardLineDetailGating() {

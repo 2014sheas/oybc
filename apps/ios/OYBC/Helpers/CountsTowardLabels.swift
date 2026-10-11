@@ -77,6 +77,9 @@ enum CountsTowardLabels {
         }
     }
 
+    /// A failed Remove (web `COUNTER_NOT_UPDATED_MESSAGE`).
+    static let counterNotUpdated = "Counter not updated. Try again."
+
     /// The tag's accessibility label.
     static func tagAccessibility(counter: String) -> String { "Unit task of \(counter)" }
 

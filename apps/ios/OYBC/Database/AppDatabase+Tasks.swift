@@ -618,14 +618,6 @@ extension AppDatabase {
         var unitTaskCount: Int = 0
     }
 
-    /// Read-only impact calculation; safe to call before showing the
-    /// confirm dialog. Filters BoardTask placements to LIVE rows on
-    /// non-deleted boards — both the row's own `isDeleted` (Board-integrity
-    /// PR-1: a tombstoned placement isn't a real cell) and the board's
-    /// `isDeleted` (an orphan placement on a soft-deleted board would
-    /// otherwise inflate the user-facing count). The actual cascade still
-    /// soft-deletes every matching LIVE placement (storage cleanup); the
-    /// dialog only reports cells the user can still see.
     /// Distinct fork lineages among the live contributors of `counterId` — the
     /// same N as the Counter Detail section heading.
     static func unitTaskLineageCount(db: Database, counterId: String) throws -> Int {
@@ -637,6 +629,14 @@ extension AppDatabase {
         return Set(scopes).count
     }
 
+    /// Read-only impact calculation; safe to call before showing the
+    /// confirm dialog. Filters BoardTask placements to LIVE rows on
+    /// non-deleted boards — both the row's own `isDeleted` (Board-integrity
+    /// PR-1: a tombstoned placement isn't a real cell) and the board's
+    /// `isDeleted` (an orphan placement on a soft-deleted board would
+    /// otherwise inflate the user-facing count). The actual cascade still
+    /// soft-deletes every matching LIVE placement (storage cleanup); the
+    /// dialog only reports cells the user can still see.
     func computeTaskDeletionImpact(taskId: String) throws -> TaskDeletionImpact {
         try read { db in
             let allPlacements = try BoardTask

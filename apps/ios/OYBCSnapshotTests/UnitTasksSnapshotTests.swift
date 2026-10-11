@@ -51,10 +51,10 @@ final class UnitTasksSnapshotTests: XCTestCase {
     }
 
     private func row(
-        _ id: String, _ status: CountsToward.ContributorRowStatus, board: String?, credits: Int = 0,
+        _ id: String, _ status: CountsToward.ContributorRowStatus, board: String?, credits: Int = 0, at: String? = nil,
         progress: CountsToward.Progress? = nil, child: CountsToward.ChildProgress? = nil
     ) -> CountsToward.ContributorRow {
-        .init(taskId: id, status: status, boardId: board, creditCount: credits, latestOccurredAt: nil,
+        .init(taskId: id, status: status, boardId: board, creditCount: credits, latestOccurredAt: at,
               progress: progress, childProgress: child)
     }
 
@@ -71,8 +71,8 @@ final class UnitTasksSnapshotTests: XCTestCase {
         ]
         pairs += extra
         pairs += [
-            (unit("u5", "Read before bed", type: .normal), row("u5", .done, board: "bh", credits: 4)),
-            (unit("u6", "Finish Project Hail Mary", type: .normal), row("u6", .done, board: "bm")),
+            (unit("u5", "Read before bed", type: .normal), row("u5", .done, board: "bh", credits: 4, at: "2026-10-09T09:00:00.000Z")),
+            (unit("u6", "Finish Project Hail Mary", type: .normal), row("u6", .done, board: "bm", at: "2026-10-07T09:00:00.000Z")),
         ]
         let boards = [
             SnapshotFixtures.makeBoard(id: "bm", name: "October reading", timeframe: .monthly),

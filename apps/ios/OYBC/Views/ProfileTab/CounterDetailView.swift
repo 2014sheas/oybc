@@ -293,7 +293,7 @@ struct CounterDetailView: View {
         return new.rows.map(\.taskId).first { !before.contains($0) }
     }
 
-    /// Clears the task's counter (`setCountsToward(nil)` — the cascade withdraws its credits), then reloads.
+    /// Clears every lineage member's counter in one transaction (`removeUnitTasks` — the cascade withdraws the credits), then reloads.
     private func handleRemoveUnitTask(_ taskIds: [String]) {
         let db = database
         unitTaskError = nil
@@ -302,7 +302,7 @@ struct CounterDetailView: View {
                 try db.removeUnitTasks(taskIds: taskIds)
             }
             await MainActor.run {
-                if !ok { unitTaskError = "Failed to remove. Try again." }
+                if !ok { unitTaskError = CountsTowardLabels.counterNotUpdated }
                 loadData()
             }
         }

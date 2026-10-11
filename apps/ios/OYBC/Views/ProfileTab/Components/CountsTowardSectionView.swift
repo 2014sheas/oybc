@@ -15,9 +15,9 @@ struct CountsTowardSectionView: View {
     var onNew: () -> Void = {}
     /// Row tap — opens that task's detail.
     var onOpenTask: (String) -> Void = { _ in }
-    /// Remove (after the credits confirm when the lineage has any) — clears the task's counter.
+    /// Remove (after the credits confirm when the lineage has any) — clears every lineage member via `AppDatabase.removeUnitTasks` (one transaction).
     var onRemove: ([String]) -> Void = { _ in }
-    /// A failed remove, shown under the heading.
+    /// A failed remove, shown under the list.
     var errorMessage: String? = nil
     /// The row that just arrived from "+ New": a gold ring, until the next interaction.
     var highlightedTaskId: String? = nil
@@ -66,13 +66,6 @@ struct CountsTowardSectionView: View {
             }
             .padding(.bottom, 8)
 
-            if let errorMessage {
-                Text(errorMessage)
-                    .font(.risoBody(12, .semibold))
-                    .foregroundStyle(Color.risoRed)
-                    .padding(.bottom, 8)
-            }
-
             if data.rows.isEmpty {
                 emptyBox
             } else {
@@ -89,6 +82,13 @@ struct CountsTowardSectionView: View {
                         ) { rowCard(row) }
                     }
                 }
+            }
+
+            if let errorMessage {
+                Text(errorMessage)
+                    .font(.risoBody(12, .semibold))
+                    .foregroundStyle(Color.risoRed)
+                    .padding(.top, 8)
             }
         }
         .padding(.horizontal, Riso.gutter)

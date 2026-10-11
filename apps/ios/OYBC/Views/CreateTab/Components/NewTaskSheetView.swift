@@ -46,7 +46,7 @@ struct NewTaskSheetView: View {
 
     /// The preset counter's display name (`CounterSettings.counterDisplayName`);
     /// nil when there is no preset or the root is missing / deleted.
-    static func presetCounterName(database: AppDatabase, counterId: String?) -> String? {
+    nonisolated static func presetCounterName(database: AppDatabase, counterId: String?) -> String? {
         guard let counterId, let root = try? database.fetchTask(id: counterId), !root.isDeleted else { return nil }
         return CounterSettings.counterDisplayName(root)
     }
