@@ -125,11 +125,15 @@ export function BuildStep({
   const allReady = readyCount === subtasks.length && (readyCount >= 1 || allowEmpty);
   const canAdvance = hasMinimum && allReady;
 
+  // An empty unit-task compound is a valid create (no sub-tasks required).
+  const emptyReady = allowEmpty && subtasks.length === 0;
   const statusText: string = !hasMinimum
     ? 'Add a subtask.'
-    : !allReady
-      ? `${subtasks.length - readyCount} card${subtasks.length - readyCount === 1 ? '' : 's'} still need attention.`
-      : `${readyCount} subtask${readyCount === 1 ? '' : 's'} ready.`;
+    : emptyReady
+      ? 'Ready · no subtasks'
+      : !allReady
+        ? `${subtasks.length - readyCount} card${subtasks.length - readyCount === 1 ? '' : 's'} still need attention.`
+        : `${readyCount} subtask${readyCount === 1 ? '' : 's'} ready.`;
 
   // Stepper bounds track the actual subtask count. When the list
   // shrinks below the current threshold (e.g. user removes a subtask),
@@ -244,7 +248,13 @@ export function BuildStep({
 
           {subtasks.length === 0 && (
             <div className={styles.emptyState}>
-              No subtasks. Tap a row below or use <strong>+ New task</strong>.
+              {allowEmpty ? (
+                'No subtasks yet.'
+              ) : (
+                <>
+                  No subtasks. Tap a row below or use <strong>+ New task</strong>.
+                </>
+              )}
             </div>
           )}
         </div>

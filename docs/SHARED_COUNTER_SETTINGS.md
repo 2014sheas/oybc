@@ -187,6 +187,34 @@ action, the "+ New" shape choice, placement through the counter search, the
 library row carrying the dots + counter name) goes through a Claude Design brief
 before any implementation; until it lands, "+ New" is the only UI write of the flag.
 
+**Member UI, part 1 — SHIPPED (unit-tasks PR 1, both platforms; design handoff
+`design_handoff_unit_tasks`).** On screen the members are **"Unit tasks"** (never
+"contributor" / "member" / "flag"). Counter Detail's section reads `Unit tasks · N`
+(bare `Unit tasks` + the one-liner `No unit tasks yet.` when empty), orders rows
+**In progress → Not started → Done** (Done most recently credited first, then
+title, then id — `countsTowardRows`), adds the progress to the board line (a
+Counting unit task mid-progress `120 / 300 pages` in its real kind; a Compound
+`No subtasks yet` with no sub-tasks, `1 of 2 subtasks` mid-progress — web; iOS
+`1 of 2`; derived in the pure half as `ContributorRow.progress` /
+`childProgress`) and a **Remove** action (web: a persistent trailing ✕ slot; iOS: a trailing swipe
+button). Remove is `setCountsToward(taskId, null)` — immediate with no credits,
+a confirm (`Remove from {counter}?` / `'{title}' stays in your library. Its N
+credits on {counter} are withdrawn.`) when the lineage has ≥ 1 — and the credits
+are withdrawn by the existing cascade. "+ New" from Counter Detail is the normal
+new-task sheet in **from-counter mode**: the regular `UnitTag` (dots + counter
+name, sharing `KindTag`'s chip) under the sheet title, the type control reads
+**Simple · Counting · Compound** (Achievement absent; the first label is "Simple"
+everywhere the control renders), the counting shape never shows the Link / Don't
+link hint and **never auto-links** (a unit task may not be a linked copy), a
+Compound may have zero sub-tasks (Review shows a **Counter** row holding the dense
+tag), and the new row returns with a 3px inset gold ring until the next
+interaction. The counter-delete confirm gains one muted line (`Its N unit tasks
+are kept as ordinary tasks.`, hidden at 0; web `TaskDeletionImpact.unitTaskCount`).
+No task form or editor carries any counter control. **Still pending (PR 2,
+`feature/unit-tasks-rows`):** the dense tag on every list/picker row (Tasks tab,
+library sheet, quick-add match, pool editor, square picker) and the counter name
+in the library search-match set.
+
 ### 3a. Data
 
 - `Task.countsTowardCounterId?: string | null` (root id), `Task.countsTowardAmount?: number`
@@ -401,6 +429,7 @@ same stamp as the completion that caused it).
 | 4 — counts toward (UI) — **SHIPPED (UI) in #588** | Counter Detail section + "+ New"; task editor picker; cell badge; credited toast; e2e + snapshots. |
 | 5 — docs — **SHIPPED (close-out PR)** | SHARED_COUNTERS §Current model / COUNTER_KINDS §7a / TASK_SYSTEM §Counts toward / CLAUDE.md. |
 | 6 — retire the editor row (owner ruling 2026-10-10) — **#590** | The "Counts toward" row leaves every create and edit sheet on both platforms (field component, model, staged Board Edit override, editor patch field, re-point confirm, e2e editor spec, 5 snapshot baselines); "+ New" flags silently (no amount written); the credit amount is pinned to one on both platforms (`countsTowardAmountOf` ↔ `CountsToward.amount(of:)` return 1 — no credit reads the column); the db write path is untouched. Member-model UI follows a Claude Design brief. |
+| 7 — member UI part 1: Counter Detail "Unit tasks" + "+ New" from-counter mode + `UnitTag` (unit-tasks PR 1, both platforms) — **SHIPPED** | Section heading / order / progress / Remove (+ credits-gated confirm) / return ring / counter-delete line; `ContributorRow.progress` + `childProgress` and the new ordering (vector-pinned); from-counter sheet (tag under the title, Simple · Counting · Compound, no auto-link, empty compound + Review "Counter" row). Rows everywhere + search-match = PR 2. |
 
 **PR 1 notes (2026-10-09).** Fields: `Task.counterName`, `titleTemplateSingular`,
 `titleTemplatePlural`, `timeframeGoals` (`{daily?, weekly?, monthly?, yearly?}`) —
@@ -774,7 +803,10 @@ Done → In progress → Not started → title → id.
 
 - ~~iOS: a compound-create cycle refusal lands on the form line after the special-task panel has collapsed, so the line can be out of view.~~ Closed with the editor row's retirement (2026-10-10) — the panel no longer hosts the field.
 - ~~Web: an empty `fieldGroup` wrapper remains in the editor when the Counts toward row hides.~~ Closed the same way — the row is gone.
-- **Open (design round):** the member-model surfaces listed in the §3 amendment — Counter Detail member rows (remove action; no amount, always one), "+ New" shape choice (Simple / Counting / Compound), placement of a unit task through the counter search, and the unit task's library row carrying the two-dot mark + counter name.
+- ~~Open (design round): Counter Detail member rows (remove action), "+ New" shape choice.~~ Shipped in unit-tasks PR 1 (§3 amendment, PR table row 7).
+- **Open (unit-tasks PR 2):** the dense `UnitTag` as the first item of every list/picker row's subtitle (Tasks tab, wizard library sheet, quick-add match, pool editor, square picker), and the counter name added to a unit task's library search-match set. The C7 "Counter" Filters dropdown is not being built.
+- **Remove clears the whole lineage:** `ContributorRow.memberIds` (live flagged members, sorted) is what Remove unflags — web `removeUnitTaskLineage` runs every `setCountsTowardInTransaction` in one transaction — because a board-scoped fork inherits the flag and shares the lineage's credits. A zero-sub-task compound shows no remove control (an empty same-width slot): `compound-needs-child` refuses clearing it, and it may only stay counting toward the counter. The counter-delete line's N is the section's row count (`loadCountsTowardSection(id).rows.length`).
+- **Pre-existing, fix separately:** `unflagContributorsOf` (counter delete) unflags a zero-child compound directly, which then evaluates vacuously complete.
 - **Schema cleanup (later):** drop the inert `countsTowardAmount` column / field / clearable entry once a migration window is convenient.
 
 Known edges (acceptable; revisit if a real case surfaces) are listed under the PR 3 hand-offs above.

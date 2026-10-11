@@ -175,7 +175,8 @@ struct RisoCompoundFieldsView: View {
         onPendingCreated: ((_ payload: PendingTaskPayload) -> Void)? = nil,
         onLibraryReloadRequested: @escaping () -> Void = {},
         onSubmitted: @escaping () -> Void = {},
-        submitLabel: String = "Add to board ✦"
+        submitLabel: String = "Add to board ✦",
+        presetCountsTowardCounterId: String? = nil
     ) {
         self.taskLibrary = taskLibrary
         self.suggestionPool = suggestionPool
@@ -188,6 +189,7 @@ struct RisoCompoundFieldsView: View {
         self.onLibraryReloadRequested = onLibraryReloadRequested
         self.onSubmitted = onSubmitted
         self.submitLabel = submitLabel
+        self.presetCountsTowardCounterId = presetCountsTowardCounterId
 
         _compoundTitle    = State(initialValue: seed.title)
         _compoundRule     = State(initialValue: seed.rule)
@@ -222,11 +224,11 @@ struct RisoCompoundFieldsView: View {
 
     /// The matched counter while the new counting sub auto-links; nil once
     /// the user opts out (Duration never matches).
-    private var linkedSubSuggestion: LinkableCounterSuggestion? { subLink.linked }
+    private var linkedSubSuggestion: LinkableCounterSuggestion? { countsTowardActive ? nil : subLink.linked }
 
     /// The kind the new sub is validated, previewed and saved at: an
     /// auto-linking sub takes its root's kind (D5 / R19), otherwise the picker.
-    private var subEffectiveKind: CountKind { subLink.effectiveKind(picker: subKind) }
+    private var subEffectiveKind: CountKind { countsTowardActive ? subKind : subLink.effectiveKind(picker: subKind) }
 
     /// The typed sub goal parsed at the effective kind, or nil when
     /// blank/invalid — mirrors `RisoSpecialTaskPanel`'s `countingGoal`.
@@ -572,7 +574,7 @@ struct RisoCompoundFieldsView: View {
     /// `counterLinkBanner`, factored into the shared `RisoCounterLinkHintView`).
     @ViewBuilder
     private var subCounterLinkBanner: some View {
-        if let suggestion = subLink.hint {
+        if !countsTowardActive, let suggestion = subLink.hint {
             RisoCounterLinkHintView(
                 counterName: suggestion.name,
                 linked: !subLink.linkDisabled,
@@ -614,7 +616,7 @@ struct RisoCompoundFieldsView: View {
             let unit = countKindNeedsUnit(kind) ? subUnitText.trimmingCharacters(in: .whitespacesAndNewlines) : ""
             // R1: auto-link default ON — apply the suggestion unless opted
             // out via "Don't link". Baseline is always "start fresh".
-            let linked = subLink.linked
+            let linked = linkedSubSuggestion
             sub = .newCounting(
                 action: text,
                 goal: goal,

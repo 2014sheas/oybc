@@ -67,3 +67,12 @@ describe('CounterDeleteConfirmDialog — derived-counter line (B3 RC12)', () => 
     expect(html).toContain('3 board counters made from this one will be removed.');
   });
 });
+
+describe('CounterDeleteConfirmDialog — unit-task line', () => {
+  it('says the unit tasks are kept as ordinary tasks, singular and plural, hidden at 0', () => {
+    expect(render({ unitTaskCount: 6 })).toContain('Its 6 unit tasks are kept as ordinary tasks.');
+    expect(render({ unitTaskCount: 1 })).toContain('Its 1 unit task is kept as an ordinary task.');
+    expect(render({ unitTaskCount: 0 })).not.toContain('unit task');
+    expect(render({})).not.toContain('unit task');
+  });
+});

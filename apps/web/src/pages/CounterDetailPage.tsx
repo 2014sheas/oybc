@@ -25,6 +25,7 @@ import {
   undoLastCounterLog,
   type TaskDeletionImpact,
 } from '../db/operations/tasks';
+import { removeUnitTaskLineage } from '../db/operations/countsToward';
 import { generateUUID } from '../db/utils';
 import {
   CounterDeleteConfirmDialog,
@@ -116,6 +117,13 @@ export function CounterDetailPage(): React.ReactElement {
   // "Counts toward" (§3d) — the tasks that count toward this counter (Discrete only).
   const countsTowardData = useCountsTowardSection(counterId);
   const [newContributorOpen, setNewContributorOpen] = useState(false);
+  // The unit task "+ New" just created — its row wears the gold return ring until the next interaction.
+  const [arrivedTaskId, setArrivedTaskId] = useState<string | null>(null);
+  const [removeError, setRemoveError] = useState<string | null>(null);
+  async function handleRemoveUnitTask(memberIds: string[]): Promise<void> {
+    const ok = await attemptCounterWrite('remove unit task', () => removeUnitTaskLineage(memberIds));
+    setRemoveError(ok ? null : COUNTER_NOT_UPDATED_MESSAGE);
+  }
 
   const handleLog = useCallback(
     async (direction: 'add' | 'remove', selectedAmount: number) => {
@@ -397,6 +405,10 @@ export function CounterDetailPage(): React.ReactElement {
               counterName={group.name}
               onNew={() => setNewContributorOpen(true)}
               onOpenTask={(taskId) => navigate(`/tasks/${taskId}`)}
+              onRemove={handleRemoveUnitTask}
+              removeError={removeError}
+              arrivedTaskId={arrivedTaskId}
+              onArrivalSeen={() => setArrivedTaskId(null)}
             />
           )}
 
@@ -415,10 +427,11 @@ export function CounterDetailPage(): React.ReactElement {
           isOpen={newContributorOpen}
           onClose={() => setNewContributorOpen(false)}
           userId={user.id}
-          onTaskCreated={() => {}}
-          onCompositeCreated={() => {}}
+          onTaskCreated={(t) => setArrivedTaskId(t.id)}
+          onCompositeCreated={(t) => setArrivedTaskId(t.id)}
           submitLabel="Add to library"
           presetCountsTowardCounterId={counterId}
+          presetCounterName={group.name}
         />
       )}
 
@@ -427,6 +440,7 @@ export function CounterDetailPage(): React.ReactElement {
           counterName={group.name}
           memberCount={deleteImpact.counterMemberCount}
           derivedWindowCounterCount={deleteImpact.derivedWindowCounterCount}
+          unitTaskCount={deleteImpact.unitTaskCount}
           members={deleteImpact.counterMembers.map((m) => ({
             id: m.id,
             title: m.title,

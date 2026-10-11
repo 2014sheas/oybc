@@ -1,6 +1,7 @@
 import { useModalA11y } from '../../hooks/useModalA11y';
 import { useCreateFormState, type PendingTaskPayload } from '../../pages/createPage/useCreateFormState';
 import { CreateNewTaskForm } from '../../pages/createPage/CreateNewTaskForm';
+import { UnitTag } from '../counters/UnitTag';
 import { useLinkedCounterCreate } from './useLinkedCounterCreate';
 import { type Task, type Timeframe } from '@oybc/shared';
 import styles from './NewTaskSheet.module.css';
@@ -56,6 +57,8 @@ export interface NewTaskSheetProps {
   suggestionPool?: Task[];
   /** "Counts toward" preset (Counter Detail's "+ New"): the counter the new task counts toward. */
   presetCountsTowardCounterId?: string;
+  /** The preset counter's display name — the regular `UnitTag` under the title. */
+  presetCounterName?: string;
 }
 
 /**
@@ -84,6 +87,7 @@ export function NewTaskSheet({
   deferPersist = false,
   suggestionPool,
   presetCountsTowardCounterId,
+  presetCounterName,
 }: NewTaskSheetProps): React.ReactElement | null {
   if (!isOpen) return null;
 
@@ -101,6 +105,7 @@ export function NewTaskSheet({
       deferPersist={deferPersist}
       suggestionPool={suggestionPool}
       presetCountsTowardCounterId={presetCountsTowardCounterId}
+      presetCounterName={presetCounterName}
     />
   );
 }
@@ -122,6 +127,7 @@ function NewTaskSheetBody({
   deferPersist = false,
   suggestionPool,
   presetCountsTowardCounterId,
+  presetCounterName,
 }: Omit<NewTaskSheetProps, 'isOpen'>): React.ReactElement {
   // aria-modal, Escape → close, initial focus, Tab trap, focus restore.
   const { ref: modalRef, props: modalProps } = useModalA11y<HTMLDivElement>({
@@ -181,7 +187,10 @@ function NewTaskSheetBody({
         onClick={(e) => e.stopPropagation()}
       >
         <div className={styles.header}>
-          <h3 id="new-task-sheet-title" className={styles.title}>New task</h3>
+          <div className={styles.headerTitle}>
+            <h3 id="new-task-sheet-title" className={styles.title}>New task</h3>
+            {presetCountsTowardCounterId != null && presetCounterName && <UnitTag name={presetCounterName} />}
+          </div>
           <button
             type="button"
             className={styles.closeButton}
@@ -202,6 +211,7 @@ function NewTaskSheetBody({
             submitLabel={submitLabel ?? 'Create & Select'}
             onCreateLinked={handleCreateLinked}
             suggestionPool={suggestionPool}
+            presetCounterName={presetCounterName}
           />
         </div>
       </div>

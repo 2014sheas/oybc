@@ -58,6 +58,11 @@ struct CounterDeleteConfirmView: View {
                     ) {
                         RisoImpactNote(text: note)
                     }
+
+                    // Unit tasks are kept as ordinary tasks (decoupled).
+                    if let note = CountsTowardLabels.deleteNote(unitTaskCount: impact.unitTaskCount) {
+                        RisoImpactNote(text: note)
+                    }
                 }
                 .padding(Riso.gutter)
             }

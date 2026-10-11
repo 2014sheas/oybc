@@ -67,6 +67,12 @@ struct CounterDetailView: View {
     @State private var countsToward: CountsTowardSectionData?
     @State private var openedTaskId: TaskIdItem?
     @State private var showNewCountsToward = false
+    /// The row "+ New" just added: promoted to `highlightedUnitTaskId` (the gold ring) when the sheet closes.
+    @State private var arrivedUnitTaskId: String?
+    @State private var highlightedUnitTaskId: String?
+    /// A failed Remove, shown under the Unit tasks heading.
+    @State private var unitTaskError: String?
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     // Delete-counter (P5 decision 8: deleteCounterWithUnlink) UI state.
     @State private var deleteImpact: AppDatabase.TaskDeletionImpact?
@@ -96,7 +102,11 @@ struct CounterDetailView: View {
                     showExpired: showExpiredBinding,
                     countsToward: countsToward,
                     onNewCountsToward: { showNewCountsToward = true },
-                    onOpenCountsTowardTask: { openedTaskId = TaskIdItem(id: $0) }
+                    onOpenCountsTowardTask: { openedTaskId = TaskIdItem(id: $0) },
+                    onRemoveCountsTowardTask: handleRemoveUnitTask,
+                    unitTaskError: unitTaskError,
+                    highlightedUnitTaskId: highlightedUnitTaskId,
+                    onCountsTowardInteract: { clearUnitTaskHighlight() }
                 )
             } else if isLoaded {
                 notFoundState
@@ -169,12 +179,13 @@ struct CounterDetailView: View {
                 onOpenBoard: onOpenBoard, database: database
             )
         }
-        .sheet(isPresented: $showNewCountsToward) {
+        .sheet(isPresented: $showNewCountsToward, onDismiss: showArrivalRing) {
             if let userId = authService.currentUser?.id {
                 NewTaskSheetView(
                     userId: userId, onTaskCreated: { _, _, _ in loadData() },
                     onLibraryReloadRequested: { loadData() }, taskLibrary: tasks,
-                    presetCountsTowardCounterId: counterId
+                    presetCountsTowardCounterId: counterId,
+                    database: database
                 )
             }
         }
@@ -264,10 +275,51 @@ struct CounterDetailView: View {
                 dailyTotals = snap.dailyTotals
                 root = snap.root
                 tasks = snap.tasks
+                if showNewCountsToward, let fresh = Self.arrivedRowId(old: countsToward, new: snap.countsToward) {
+                    arrivedUnitTaskId = fresh
+                }
                 countsToward = snap.countsToward
                 isLoaded = true
             }
         }
+    }
+
+    // MARK: - Unit tasks (remove + the return ring)
+
+    /// The row id present in `new` but not `old` (the task "+ New" just made); nil when none.
+    nonisolated static func arrivedRowId(old: CountsTowardSectionData?, new: CountsTowardSectionData?) -> String? {
+        guard let new else { return nil }
+        let before = Set(old?.rows.map(\.taskId) ?? [])
+        return new.rows.map(\.taskId).first { !before.contains($0) }
+    }
+
+    /// Clears every lineage member's counter in one transaction (`removeUnitTasks` — the cascade withdraws the credits), then reloads.
+    private func handleRemoveUnitTask(_ taskIds: [String]) {
+        let db = database
+        unitTaskError = nil
+        _Concurrency.Task.detached(priority: .userInitiated) {
+            let ok = attemptLoggedWrite("CounterDetailView.removeUnitTask(\(taskIds))") {
+                try db.removeUnitTasks(taskIds: taskIds)
+            }
+            await MainActor.run {
+                if !ok { unitTaskError = CountsTowardLabels.counterNotUpdated }
+                loadData()
+            }
+        }
+    }
+
+    /// The sheet closed: the new row's 3pt gold ring fades in (no animation under Reduce Motion).
+    private func showArrivalRing() {
+        guard let id = arrivedUnitTaskId else { return }
+        arrivedUnitTaskId = nil
+        if reduceMotion { highlightedUnitTaskId = id } else {
+            withAnimation(.easeInOut(duration: 0.9)) { highlightedUnitTaskId = id }
+        }
+    }
+
+    private func clearUnitTaskHighlight() {
+        guard highlightedUnitTaskId != nil else { return }
+        highlightedUnitTaskId = nil
     }
 
     // MARK: - Edit counter (the counter sheet in edit mode)
@@ -457,6 +509,10 @@ struct CounterDetailContent: View {
     var countsToward: CountsTowardSectionData?
     var onNewCountsToward: () -> Void
     var onOpenCountsTowardTask: (String) -> Void
+    var onRemoveCountsTowardTask: ([String]) -> Void
+    var unitTaskError: String?
+    var highlightedUnitTaskId: String?
+    var onCountsTowardInteract: () -> Void
 
     /// Snapshot-testability seams forwarded to the Log card.
     private let initialSelectedAmount: CountValue?
@@ -480,13 +536,21 @@ struct CounterDetailContent: View {
         showExpired: Binding<Bool>? = nil,
         countsToward: CountsTowardSectionData? = nil,
         onNewCountsToward: @escaping () -> Void = {},
-        onOpenCountsTowardTask: @escaping (String) -> Void = { _ in }
+        onOpenCountsTowardTask: @escaping (String) -> Void = { _ in },
+        onRemoveCountsTowardTask: @escaping ([String]) -> Void = { _ in },
+        unitTaskError: String? = nil,
+        highlightedUnitTaskId: String? = nil,
+        onCountsTowardInteract: @escaping () -> Void = {}
     ) {
         self.group = group
         self.showExpired = showExpired
         self.countsToward = countsToward
         self.onNewCountsToward = onNewCountsToward
         self.onOpenCountsTowardTask = onOpenCountsTowardTask
+        self.onRemoveCountsTowardTask = onRemoveCountsTowardTask
+        self.unitTaskError = unitTaskError
+        self.highlightedUnitTaskId = highlightedUnitTaskId
+        self.onCountsTowardInteract = onCountsTowardInteract
         self.dailyTotals = dailyTotals
         self.isLogging = isLogging
         self.logError = logError
@@ -578,7 +642,11 @@ struct CounterDetailContent: View {
 
                 // 8. "Counts toward" — the tasks whose completion credits this counter.
                 if let countsToward {
-                    CountsTowardSectionView(data: countsToward, onNew: onNewCountsToward, onOpenTask: onOpenCountsTowardTask)
+                    CountsTowardSectionView(
+                        data: countsToward, onNew: onNewCountsToward, onOpenTask: onOpenCountsTowardTask,
+                        onRemove: onRemoveCountsTowardTask, errorMessage: unitTaskError, highlightedTaskId: highlightedUnitTaskId,
+                        onInteract: onCountsTowardInteract
+                    )
                         .padding(.bottom, 14)
                 }
 
@@ -599,6 +667,7 @@ struct CounterDetailContent: View {
 
                 Spacer(minLength: 24)
             }
+            .simultaneousGesture(TapGesture().onEnded { onCountsTowardInteract() })
         }
     }
 
