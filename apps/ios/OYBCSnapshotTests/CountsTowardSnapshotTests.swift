@@ -38,7 +38,7 @@ final class CountsTowardSnapshotTests: XCTestCase {
         .init(taskId: id, status: status, boardId: board, creditCount: credits, latestOccurredAt: nil)
     }
 
-    /// Six mixed rows like the handoff: done Simple on a yearly board, in-progress
+    /// Six mixed rows in the handoff order (In progress, Not started, Done): done Simple on a yearly board, in-progress
     /// Counting on a weekly, in-progress Compound (+2) on a monthly, not-started
     /// Simple on a monthly, an unplaced Simple, an unplaced Compound; one "× 3".
     private func sixRows() -> CountsTowardSectionData {
@@ -58,12 +58,12 @@ final class CountsTowardSnapshotTests: XCTestCase {
         return CountsTowardSectionData(
             counterName: "Books",
             rows: [
-                row("r1", .done, board: "by", credits: 3),
                 row("r2", .inProgress, board: "bw"),
                 row("r3", .inProgress, board: "bm"),
                 row("r4", .notStarted, board: "bm"),
                 row("r5", .notStarted, board: nil),
                 row("r6", .notStarted, board: nil),
+                row("r1", .done, board: "by", credits: 3),
             ],
             taskById: Dictionary(uniqueKeysWithValues: tasks.map { ($0.id, $0) }),
             boardById: Dictionary(uniqueKeysWithValues: boards.map { ($0.id, $0) })
