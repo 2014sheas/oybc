@@ -123,6 +123,11 @@ export interface ContributorRow {
   taskId: string;
   /** The representative's CURRENT state on its primary board (lifetime when unplaced). */
   status: ContributorRowStatus;
+  /**
+   * The lineage's live, flagged members (sorted by id) — what a Remove must
+   * unflag: a board-scoped fork keeps the flag and shares the lineage's credits.
+   */
+  memberIds: string[];
   /** The primary board ({@link pickPrimaryBoard}); `null` when unplaced. */
   boardId: string | null;
   /** The lineage's live credits on the root ({@link contributorCreditGroups}). */
@@ -210,7 +215,7 @@ export function contributorRowStatus(
 
 /**
  * The row's progress numbers on `board` (lifetime when `null`): counting →
- * {@link ContributorRowProgress} unless `status` is done; compound →
+ * {@link ContributorRowProgress} unless `status` is done or it has no goal; compound →
  * {@link ContributorChildProgress} (live links to live children); else both
  * `null`.
  */
@@ -221,9 +226,9 @@ export function contributorRowProgress(
   board: Pick<Board, 'startDate' | 'endDate' | 'sealedAt'> | null,
 ): { progress: ContributorRowProgress | null; childProgress: ContributorChildProgress | null } {
   const ctx = windowContextOf(board, inputs.eventsByTaskId);
-  if (task.type === TaskType.COUNTING && status !== 'done') {
+  if (task.type === TaskType.COUNTING && status !== 'done' && task.maxCount != null) {
     const state = resolveTaskWindowState(task, ctx.eventsByTaskId[task.id] ?? [], ctx.windowStart, ctx.windowEnd);
-    return { progress: { current: state.count, goal: task.maxCount ?? 0, kind: resolveCountKind(task) }, childProgress: null };
+    return { progress: { current: state.count, goal: task.maxCount, kind: resolveCountKind(task) }, childProgress: null };
   }
   if (task.type === TaskType.COMPOUND) {
     let total = 0;
@@ -274,6 +279,7 @@ export function countsTowardRows(rootId: string, tasks: ReadonlyArray<Task>, inp
     rows.push({
       taskId: task.id,
       status,
+      memberIds: g.memberIds,
       boardId: board?.id ?? null,
       creditCount: g.creditCount,
       latestOccurredAt: g.latestOccurredAt,
