@@ -59,14 +59,11 @@ struct RisoTaskDetailContentView: View {
                 // counter name, all-time total, chevron to Counter Detail. No edit
                 // affordance (unit-tasks PR 2, Decision 5).
                 if let counterId = task.countsTowardCounterId {
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("COUNTER").risoSectionLabel()
-                        LinkedCounterCaptionView(
-                            sharedCounterId: counterId, database: database,
-                            onOpenCounter: onOpenCounter, usesCounterName: true,
-                            fixedSource: counterSourceOverride
-                        )
-                    }
+                    LinkedCounterCaptionView(
+                        sharedCounterId: counterId, database: database,
+                        onOpenCounter: onOpenCounter, usesCounterName: true,
+                        fixedSource: counterSourceOverride, sectionLabel: "COUNTER"
+                    )
                 }
                 usageRow
                 if task.type == .compound && !compoundChildren.isEmpty {

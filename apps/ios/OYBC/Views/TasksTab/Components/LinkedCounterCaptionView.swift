@@ -26,6 +26,8 @@ struct LinkedCounterCaptionView: View {
     var usesCounterName: Bool = false
     /// Snapshot / preview seam: a resolved source that skips the database read.
     var fixedSource: LinkedCounterSource? = nil
+    /// Section label drawn above the row — only once the counter has resolved.
+    var sectionLabel: String? = nil
 
     @State private var source: LinkedCounterSource? = nil
     @State private var loading = true
@@ -33,18 +35,26 @@ struct LinkedCounterCaptionView: View {
     var body: some View {
         Group {
             if let fixedSource {
-                LinkedCounterCaptionLabel(source: fixedSource) { onOpenCounter(sharedCounterId) }
+                labeled(fixedSource)
             } else if loading {
                 EmptyView()
             } else {
-                LinkedCounterCaptionLabel(source: source) {
-                    onOpenCounter(sharedCounterId)
-                }
+                labeled(source)
             }
         }
         // Keyed on the id so a different linked counter refetches, and
         // cancelled when the caption leaves the screen.
         .task(id: sharedCounterId) { await loadSource() }
+    }
+
+    @ViewBuilder
+    private func labeled(_ source: LinkedCounterSource?) -> some View {
+        if let source {
+            VStack(alignment: .leading, spacing: 6) {
+                if let sectionLabel { Text(sectionLabel).risoSectionLabel() }
+                LinkedCounterCaptionLabel(source: source) { onOpenCounter(sharedCounterId) }
+            }
+        }
     }
 
     private func loadSource() async {

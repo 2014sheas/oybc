@@ -148,6 +148,17 @@ final class TaskLibraryViewModel {
         libraryTasks.first { $0.id == id }
     }
 
+    /// Counter roots by task id for every linked copy / unit task in the library
+    /// (the search matchers' full counter match set).
+    var counterRoots: [String: Task] {
+        let byId = Dictionary(libraryTasks.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        var roots: [String: Task] = [:]
+        for task in libraryTasks {
+            if let root = rowCounterRoot(task: task, rootsById: byId) { roots[task.id] = root }
+        }
+        return roots
+    }
+
     /// Row-tag counter names by task id (`rowCounterTagName`) for every linked
     /// copy / unit task in the library — built once per call so a list does
     /// one pass, not a pool scan per row.

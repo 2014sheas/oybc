@@ -38,6 +38,11 @@ struct RisoQuickAddRowView: View {
     /// The browsable candidate pool to poll while typing. Empty (default)
     /// disables polling entirely — see `libraryMatches`.
     var libraryTasks: [OYBC.Task] = []
+    /// The FULL (unfiltered) task set the row tag / counter-name search resolves
+    /// counter roots against — never the browse- or candidate-filtered
+    /// `libraryTasks`, which drops goal-less counters. `libraryTasks` is merged
+    /// in so hosts that pass nothing keep resolving what they can.
+    var counterRootTasks: [OYBC.Task] = []
     /// Ids to exclude from matches (already-selected/added tasks).
     var selectedIds: Set<String> = []
     /// Fired when the user taps a matched library row — the host appends
@@ -103,20 +108,22 @@ struct RisoQuickAddRowView: View {
         // Typing a counter's name also finds its unit tasks / linked copies
         // (unit-tasks PR 2, Decision 7).
         let roots = rootsById
-        return libraryTasks
+        let matched = libraryTasks
             .filter { !selectedIds.contains($0.id) }
             .filter {
                 CounterPlacement.taskSearchMatches(
-                    trimmedText, task: $0, counterName: rowCounterTagName(task: $0, rootsById: roots)
+                    trimmedText, task: $0, counterRoot: rowCounterRoot(task: $0, rootsById: roots)
                 )
             }
-            .prefix(4)
-            .map { $0 }
+        // The counter's own row stays ahead of counter-name-only hits under the cap.
+        let own = matched.filter { QuickAddCounterPlacement.isSharedCounterRoot($0) }
+        let rest = matched.filter { !QuickAddCounterPlacement.isSharedCounterRoot($0) }
+        return Array((own + rest).prefix(4))
     }
 
     /// The pool indexed by id, so each match row's counter tag is a lookup, not a scan.
     private var rootsById: [String: OYBC.Task] {
-        Dictionary(libraryTasks.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        Dictionary((counterRootTasks + libraryTasks).map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
     }
 
     /// Dropdown shows whenever matches exist — purely text-driven, mirroring
@@ -139,6 +146,7 @@ struct RisoQuickAddRowView: View {
         onPendingCreated: ((_ payload: PendingTaskPayload) -> Void)?,
         onLibraryReloadRequested: @escaping () -> Void,
         libraryTasks: [OYBC.Task] = [],
+        counterRootTasks: [OYBC.Task] = [],
         selectedIds: Set<String> = [],
         onExistingTaskPicked: ((OYBC.Task) -> Void)? = nil,
         onSubmitText: ((String) -> Void)? = nil,
@@ -157,6 +165,7 @@ struct RisoQuickAddRowView: View {
         self.onPendingCreated = onPendingCreated
         self.onLibraryReloadRequested = onLibraryReloadRequested
         self.libraryTasks = libraryTasks
+        self.counterRootTasks = counterRootTasks
         self.selectedIds = selectedIds
         self.onExistingTaskPicked = onExistingTaskPicked
         self.onSubmitText = onSubmitText
@@ -394,8 +403,18 @@ private struct QuickAddMatchRow: View {
                 .font(.risoBody(13.5, .semibold))
                 .foregroundStyle(Color.risoInk)
                 .lineLimit(1)
+                .layoutPriority(1)
             if isRoot { KindTagView(kind: kind, dense: true) }
-            else if let counterTagName { UnitTagView(name: counterTagName, dense: true) }
+            else if let counterTagName {
+                UnitTagView(name: counterTagName, dense: true)
+                // A Counting unit task / copy keeps its muted goal after the tag.
+                if task.type == .counting, let goal = TaskCountDisplay.goalSubtitle(for: task) {
+                    Text(goal)
+                        .font(.risoBody(12, .regular))
+                        .foregroundStyle(Color.risoMuted)
+                        .lineLimit(1)
+                }
+            }
             Spacer(minLength: 0)
         }
         .contentShape(Rectangle())

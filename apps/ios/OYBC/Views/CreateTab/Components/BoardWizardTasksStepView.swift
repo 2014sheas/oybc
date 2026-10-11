@@ -411,6 +411,7 @@ struct BoardWizardTasksStepView: View {
                             // is safe and keeps the Bug #85 pending-purge
                             // semantics on any future deselect.
                             libraryTasks: effectiveAllTasks,
+                            counterRootTasks: Array(effectiveTaskById.values),
                             selectedIds: selectedTaskIds,
                             onExistingTaskPicked: { task in
                                 toggleSelection(task.id)

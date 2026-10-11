@@ -82,6 +82,7 @@ struct BoardEditPresenter: ViewModifier {
                     mode: target.mode,
                     userId: userId,
                     candidateTasks: candidateTasks(for: target.mode),
+                    counterRootTasks: allTasks,
                     onDismiss: { pickerTarget = nil },
                     onConfirm: { taskId, pending in
                         switch target.mode {

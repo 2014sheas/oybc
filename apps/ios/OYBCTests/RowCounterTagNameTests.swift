@@ -59,18 +59,50 @@ final class RowCounterTagNameTests: XCTestCase {
     func test_counterNameMatchesUnitTasksButNotUnrelated() {
         let unit = task("u", "Finish Dune", countsToward: "root")
         XCTAssertFalse(TasksTabViewModel.matchesSearch(unit, trimmedLower: "books"))
-        XCTAssertTrue(TasksTabViewModel.matchesSearch(unit, trimmedLower: "books", counterName: "Books"))
-        XCTAssertTrue(TasksTabViewModel.matchesSearch(unit, trimmedLower: "dune", counterName: "Books"))
-        XCTAssertFalse(TasksTabViewModel.matchesSearch(unit, trimmedLower: "garden", counterName: "Books"))
-        XCTAssertTrue(TasksTabViewModel.matchesSearch(unit, trimmedLower: "", counterName: nil))
+        XCTAssertTrue(TasksTabViewModel.matchesSearch(unit, trimmedLower: "books", counterRoot: root))
+        XCTAssertTrue(TasksTabViewModel.matchesSearch(unit, trimmedLower: "dune", counterRoot: root))
+        XCTAssertFalse(TasksTabViewModel.matchesSearch(unit, trimmedLower: "garden", counterRoot: root))
+        XCTAssertTrue(TasksTabViewModel.matchesSearch(unit, trimmedLower: "", counterRoot: nil))
     }
 
     func test_placementMatcherCounterOverload() {
         let unit = task("u", "Finish Dune", countsToward: "root")
-        XCTAssertTrue(CounterPlacement.taskSearchMatches("BOOK", task: unit, counterName: "Books"))
-        XCTAssertTrue(CounterPlacement.taskSearchMatches("dune", task: unit, counterName: nil))
-        XCTAssertFalse(CounterPlacement.taskSearchMatches("book", task: unit, counterName: nil))
-        XCTAssertTrue(CounterPlacement.taskSearchMatches("", task: unit, counterName: nil))
+        XCTAssertTrue(CounterPlacement.taskSearchMatches("BOOK", task: unit, counterRoot: root))
+        XCTAssertTrue(CounterPlacement.taskSearchMatches("dune", task: unit, counterRoot: nil))
+        XCTAssertFalse(CounterPlacement.taskSearchMatches("book", task: unit, counterRoot: nil))
+        XCTAssertTrue(CounterPlacement.taskSearchMatches("", task: unit, counterRoot: nil))
+    }
+
+    func test_fullCounterMatchSetFindsUnitTasks() {
+        let unit = task("u", "Finish Dune", countsToward: "root")
+        // Display name + noun only; the verb ("read") and stored title do not widen it.
+        let named = task("root2", "Read 12 books", type: .counting, counterName: "Shelf")
+        XCTAssertTrue(TasksTabViewModel.matchesSearch(unit, trimmedLower: "shel", counterRoot: named))
+        XCTAssertTrue(TasksTabViewModel.matchesSearch(unit, trimmedLower: "books", counterRoot: named))
+        XCTAssertFalse(TasksTabViewModel.matchesSearch(unit, trimmedLower: "read", counterRoot: named))
+    }
+
+    func test_goalLessHubCounterRootStillTagsAndMatches() {
+        var goalless = task("hub", "Read books", type: .counting, counterName: "Shelf")
+        goalless.isCounter = true
+        goalless.maxCount = nil
+        let unit = task("u", "Finish Dune", countsToward: "hub")
+        XCTAssertEqual(rowCounterTagName(task: unit, pool: [goalless, unit]), "Shelf")
+        // Resolved from the FULL library even when browse filtering hides the root.
+        let library = TaskLibraryViewModel()
+        library.libraryTasks = [goalless, unit]
+        library.browsableTasks = [unit]
+        XCTAssertEqual(library.counterTagNames, ["u": "Shelf"])
+        let vm = TasksTabViewModel()
+        vm.search = "shelf"
+        XCTAssertEqual(vm.filteredTasks(library: library).map(\.id), ["u"])
+    }
+
+    func test_aCounterRootNeverGetsATag() {
+        var other = root
+        other.countsTowardCounterId = "root"
+        other.isCounter = true
+        XCTAssertNil(rowCounterTagName(task: other, pool: [root]))
     }
 
     func test_tasksTabFilterFindsUnitTasksByCounterName() {
