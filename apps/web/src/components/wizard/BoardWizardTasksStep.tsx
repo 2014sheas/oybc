@@ -712,6 +712,7 @@ export function BoardWizardTasksStep({
               onSave={() => saveEdit(task.id)}
               onDiscard={() => discardEdit(task.id)}
               libraryTasks={pickerLibraryTasks}
+              lookupTasks={effectiveTaskMap}
               allLinks={pickerLinks}
             />
           )

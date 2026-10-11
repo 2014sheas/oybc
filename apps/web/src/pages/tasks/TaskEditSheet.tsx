@@ -177,6 +177,7 @@ export function TaskEditSheet({
   // Sub-task quick-add inputs: the browsable library (its matches) and every
   // live link (the loop check), loaded once with the sub-tasks.
   const [libraryTasks, setLibraryTasks] = useState<Task[]>([]);
+  const [allTasks, setAllTasks] = useState<Task[]>([]);
   const [allLinks, setAllLinks] = useState<CompoundChild[]>([]);
   const [libraryInputsState, setLibraryInputsState] = useState<LibraryInputsState>('loading');
 
@@ -217,6 +218,7 @@ export function TaskEditSheet({
         const library = await loadLibraryInputs(task.userId);
         if (!cancelled) {
           setLibraryTasks(library.libraryTasks);
+          setAllTasks(library.allTasks);
           setAllLinks(library.allLinks);
           setLibraryInputsState('loaded');
         }
@@ -529,6 +531,7 @@ export function TaskEditSheet({
                 onDraftChange={(next) => setCompoundDraft(next)}
                 parentId={task.id}
                 libraryTasks={libraryTasks}
+                lookupTasks={allTasks}
                 allLinks={allLinks}
                 libraryInputsState={libraryInputsState}
               />

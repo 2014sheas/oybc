@@ -25,7 +25,7 @@ import {
  */
 export async function loadLibraryInputs(
   userId: string,
-): Promise<{ libraryTasks: Task[]; allLinks: CompoundChild[] }> {
+): Promise<{ libraryTasks: Task[]; allTasks: Task[]; allLinks: CompoundChild[] }> {
   const [tasks, links, boards, boardTasks] = await Promise.all([
     fetchTasksForUser(userId),
     fetchAllCompoundChildren(),
@@ -40,6 +40,7 @@ export async function loadLibraryInputs(
   for (const l of allLinks) (childToParents[l.childTaskId] ??= []).push(l.compoundTaskId);
   return {
     libraryTasks: computeBrowsableTasks(tasks, boardTasks, boardStatusById, childToParents),
+    allTasks: tasks,
     allLinks,
   };
 }

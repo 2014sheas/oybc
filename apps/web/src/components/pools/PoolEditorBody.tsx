@@ -365,6 +365,7 @@ export function PoolEditorBody({
                   onSave={() => saveEdit(task.id)}
                   onDiscard={discardEdit}
                   libraryTasks={pickerLibraryTasks}
+                  lookupTasks={allTasks}
                   allLinks={pickerLinks}
                 />
               )

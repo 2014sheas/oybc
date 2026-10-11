@@ -3,6 +3,7 @@ import { PARENT_TIMEFRAMES, TaskType, isTaskExpired, type CompoundChild, type Ta
 import { useModalA11y } from '../../hooks/useModalA11y';
 import { RisoChip, RisoTypeBadge } from '../riso';
 import { rowCounterTagName, taskSearchMatchesWithCounter } from '../counters/rowCounterTagName';
+import { UnitTag } from '../counters/UnitTag';
 import { renderTaskRow } from './TaskRow';
 import stepStyles from './BoardWizardTasksStep.module.css';
 import styles from './LibrarySheet.module.css';
@@ -330,6 +331,7 @@ export function LibrarySheet({
                           : preview.titles.join(', ')
                         : '';
                     const leaves = compositeLeafTasks[ct.id] ?? [];
+                    const compoundTagName = rowCounterTagName(ct, effectiveTaskMap);
                     return (
                       <li key={ct.id}>
                         <div className={isCompoundSelected ? stepStyles.rowSelectedWrap : stepStyles.rowWrap}>
@@ -346,8 +348,11 @@ export function LibrarySheet({
                             <RisoTypeBadge type="compound" />
                             <div className={stepStyles.rowCenter}>
                               <span className={stepStyles.rowTitle}>{ct.title}</span>
-                              {previewSubtitle && (
-                                <span className={stepStyles.rowSubtitle}>{previewSubtitle}</span>
+                              {(compoundTagName || previewSubtitle) && (
+                                <span className={stepStyles.rowSubtitle}>
+                                  {compoundTagName && <UnitTag name={compoundTagName} dense />}
+                                  {previewSubtitle && <span className={stepStyles.rowSubtitleText}>{previewSubtitle}</span>}
+                                </span>
                               )}
                             </div>
                             <span className={stepStyles.rowUsage}>

@@ -191,6 +191,7 @@ export function BoardEditTaskSheet({
   const [compoundBaseline, setCompoundBaseline] = useState<TaskEditPatch | null>(null);
   const [compoundLoadError, setCompoundLoadError] = useState<string | null>(null);
   const [libraryTasks, setLibraryTasks] = useState<Task[]>([]);
+  const [allTasks, setAllTasks] = useState<Task[]>([]);
   const [allLinks, setAllLinks] = useState<CompoundChild[]>([]);
   const [libraryInputsState, setLibraryInputsState] = useState<LibraryInputsState>('loading');
   const [doneError, setDoneError] = useState<string | null>(null);
@@ -228,6 +229,7 @@ export function BoardEditTaskSheet({
         const library = await loadLibraryInputs(task.userId);
         if (!cancelled) {
           setLibraryTasks(library.libraryTasks);
+          setAllTasks(library.allTasks);
           setAllLinks(library.allLinks);
           setLibraryInputsState('loaded');
         }
@@ -438,6 +440,7 @@ export function BoardEditTaskSheet({
                 }}
                 parentId={task.id}
                 libraryTasks={libraryTasks}
+                lookupTasks={allTasks}
                 allLinks={allLinks}
                 libraryInputsState={libraryInputsState}
               />
