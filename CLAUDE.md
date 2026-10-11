@@ -401,9 +401,16 @@ apps/web/src/pages/                               apps/ios/OYBC/Views/
 │    over db/operations/countsTowardSection.ts + hooks/useCountsTowardSection.ts ←→
 │    Database/AppDatabase+CountsTowardSection.swift; the editors' "Counts toward"
 │    row was RETIRED 2026-10-10 (owner ruling: the field lives in no user-facing
-│    interface — a contributor is a member of its counter, created from "+ New";
-│    member-model UI pending a design round, SHARED_COUNTER_SETTINGS.md §3
-│    amendment); components/StatusPill.tsx (extracted from
+│    interface — a contributor is a member of its counter, created from "+ New".
+│    Unit-tasks PR 1 (2026-10-11): the section is "Unit tasks · N" — order In
+│    progress → Not started → Done (`countsTowardRows`), progress / child tally on
+│    `ContributorRow`, a Remove action (web ✕ slot ↔ iOS swipe → `setCountsToward(id,
+│    null)`, credits-gated confirm), `UnitTag` (web components/counters/UnitTag.tsx ↔
+│    iOS `UnitTagView` in KindPickerView.swift; shares KindTag's chip), labels in
+│    countsTowardLabels.ts ↔ CountsTowardLabels.swift, and "+ New" from-counter mode
+│    (pages/createPage/fromCounterMode.ts ↔ RisoSpecialTaskPanel: Simple · Counting ·
+│    Compound, no auto-link) — SHARED_COUNTER_SETTINGS.md §3 amendment, PR row 7;
+│    rows-everywhere + search = PR 2); components/StatusPill.tsx (extracted from
 │    Task Detail) ←→ Views/Riso/RisoStatusPill.swift; the credited-toast undo kind in
 │    hooks/useBoardPlay.ts ←→ BoardPlayViewModel+CountsToward.swift; pure half
 │    packages/shared/src/algorithms/countsTowardCredits.ts ←→ Helpers/CountsTowardCredits.swift)
