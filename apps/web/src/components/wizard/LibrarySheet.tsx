@@ -130,7 +130,7 @@ export function LibrarySheet({
     // template, because a family root's row here reads its name rather than
     // its stored "Read 35 pages" (owner ruling 2026-09-22). Twin of iOS
     // `RisoLibrarySheetView.matches`.
-    const matches = (t: Task): boolean => taskSearchMatchesWithCounter(searchQuery, t, effectiveAllTasks);
+    const matches = (t: Task): boolean => taskSearchMatchesWithCounter(searchQuery, t, effectiveTaskMap);
     const notExpired = (t: Task): boolean => !isTaskExpired(t);
 
     if (activeFilter === 'from-parents') {
@@ -157,7 +157,7 @@ export function LibrarySheet({
         : [];
 
     return { tasks, composites };
-  }, [effectiveAllTasks, activeFilter, searchQuery, parentBoardTasks, groupByCompound, childTaskIds]);
+  }, [effectiveAllTasks, effectiveTaskMap, activeFilter, searchQuery, parentBoardTasks, groupByCompound, childTaskIds]);
 
   const compositeLeafPreviews = useMemo(() => {
     const previews: Record<string, { titles: string[]; totalLeaves: number }> = {};
@@ -311,7 +311,7 @@ export function LibrarySheet({
                           isCenter,
                           onCenterClick: () => onCenterClick(task.id),
                           isFamilyRoot: familyRootIds?.has(task.id) ?? false,
-                          counterTagName: rowCounterTagName(task, effectiveAllTasks),
+                          counterTagName: rowCounterTagName(task, effectiveTaskMap),
                         })}
                       </li>
                     );
@@ -401,7 +401,7 @@ export function LibrarySheet({
                                     showCenterStar: centerTaskMode && leafIsSelected,
                                     isCenter: leafIsCenter,
                                     onCenterClick: () => onCenterClick(leafTask.id),
-                                    counterTagName: rowCounterTagName(leafTask, effectiveAllTasks),
+                                    counterTagName: rowCounterTagName(leafTask, effectiveTaskMap),
                                   })}
                                 </li>
                               );

@@ -26,6 +26,13 @@ describe('rowCounterTagName', () => {
     expect(rowCounterTagName(unit, pool)).toBe('Read books');
     expect(rowCounterTagName(copy, pool)).toBe('Read books');
   });
+  it('resolves through a Map or a Record as well as a list', () => {
+    expect(rowCounterTagName(unit, new Map(pool.map((t) => [t.id, t])))).toBe('Read books');
+    expect(rowCounterTagName(unit, Object.fromEntries(pool.map((t) => [t.id, t])))).toBe('Read books');
+  });
+  it('is null for anything flagged isCounter, even with a link id', () => {
+    expect(rowCounterTagName({ ...unit, isCounter: true }, pool)).toBeNull();
+  });
   it('is null for a counter root, a plain task and an unresolvable root', () => {
     expect(rowCounterTagName(root, pool)).toBeNull();
     expect(rowCounterTagName(plain, pool)).toBeNull();
@@ -40,9 +47,23 @@ describe('counter name joins the match set', () => {
     expect(taskSearchMatchesWithCounter('Dune', unit, pool)).toBe(true);
     expect(taskSearchMatchesWithCounter('books', plain, pool)).toBe(false);
   });
+  it('narrow: the stored title of the root does not match a unit task', () => {
+    expect(taskSearchMatchesWithCounter('read 2', unit, pool)).toBe(false);
+  });
   it('Tasks tab matchesSearch threads the pool', () => {
     expect(matchesSearch(unit, 'books', pool)).toBe(true);
     expect(matchesSearch(unit, 'books')).toBe(false);
+  });
+  it('ranks direct hits ahead of counter-name-only hits, so the cap never drops the counter row', () => {
+    const many = Array.from({ length: 6 }, (_, i) => task({ id: `u${i}`, title: `Unit ${i}`, countsTowardCounterId: 'root' }));
+    const ids = selectQuickAddMatches([...many, root], new Set(), 'books').map((t) => t.id);
+    expect(ids).toHaveLength(4);
+    expect(ids[0]).toBe('root');
+  });
+  it('a goal-less root missing from the browse list still resolves through the lookup', () => {
+    const browse = [unit, plain];
+    expect(selectQuickAddMatches(browse, new Set(), 'books')).toEqual([]);
+    expect(selectQuickAddMatches(browse, new Set(), 'books', pool).map((t) => t.id)).toEqual(['unit']);
   });
   it('quick-add and library picker matchers surface the unit task by counter name', () => {
     expect(selectQuickAddMatches(pool, new Set(), 'books').map((t) => t.id)).toEqual(['root', 'copy', 'unit']);

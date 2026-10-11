@@ -157,8 +157,8 @@ export function CoreDefaultsSheet({
   );
   const selectedIdSet = useMemo(() => new Set(coreDefaultTaskIds), [coreDefaultTaskIds]);
   const libraryResults = useMemo(
-    () => selectLibraryPickerResults(browsableTasks, selectedIdSet, librarySearch),
-    [browsableTasks, selectedIdSet, librarySearch],
+    () => selectLibraryPickerResults(browsableTasks, selectedIdSet, librarySearch, allTasks),
+    [browsableTasks, selectedIdSet, librarySearch, allTasks],
   );
 
   // T3 — the resolved size/centre this sheet's controls DISPLAY: the
@@ -370,6 +370,7 @@ export function CoreDefaultsSheet({
                 userId={userId}
                 currentTimeframe={timeframe}
                 libraryTasks={browsableTasks}
+                lookupTasks={allTasks}
                 selectedIds={selectedIdSet}
                 onTaskCreated={addTask}
                 onExistingTaskPicked={addTask}

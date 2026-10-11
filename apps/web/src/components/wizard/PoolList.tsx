@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import {
   TaskType,
   resolveCountKind,
@@ -121,7 +121,6 @@ export function PoolList({
   onSetManualVary,
 }: PoolListProps): React.ReactElement {
   const [expandedId, setExpandedId] = useState<string | null>(null);
-  const poolTasksLookup = useMemo(() => Object.values(effectiveTaskMap), [effectiveTaskMap]);
   const poolTasks = poolOrder
     .map((id) => effectiveTaskMap[id])
     .filter((t): t is Task => t !== undefined);
@@ -151,7 +150,7 @@ export function PoolList({
             const isCompound = task.type === TaskType.COMPOUND;
             const isCenter = centerTaskMode && centerTaskId === task.id;
             const isExpanded = expandedId === task.id;
-            const counterTagName = rowCounterTagName(task, poolTasksLookup);
+            const counterTagName = rowCounterTagName(task, effectiveTaskMap);
             const subtitle = buildPoolRowSubtitle(
               task,
               effectiveChildrenByCompound[task.id] ?? [],

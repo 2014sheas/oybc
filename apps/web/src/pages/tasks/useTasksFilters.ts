@@ -12,7 +12,7 @@ import {
 } from '@oybc/shared';
 import { fetchAllBoards, fetchAllBoardTasks } from '../../db/operations';
 import type { TaskLibrary } from '../createPage/useTaskLibrary';
-import { taskSearchMatchesWithCounter } from '../../components/counters/rowCounterTagName';
+import { taskSearchMatchesWithCounter, type TaskLookup } from '../../components/counters/rowCounterTagName';
 import { displayedCountFor } from './taskCountDisplay';
 
 /** Type-filter chips on the Tasks tab. Mirrors the wizard's set but
@@ -224,7 +224,7 @@ export function useTasksFilters(library: TaskLibrary): TasksFiltersApi {
         if (!library.childTaskIds.has(t.id)) return true;
         return independentlyPlacedTaskIds.has(t.id);
       })
-      .filter((t) => matchesSearch(t, trimmed, library.allTasks))
+      .filter((t) => matchesSearch(t, trimmed, library.taskMap))
       .filter((t) => matchesStatusFilter(t, library, statusFilter));
     const used = applyUsageFilter(
       typed,
@@ -310,7 +310,7 @@ export function matchesTypeFilter(task: Task, filter: TypeFilter): boolean {
  * "Read 35" still finds the row too. iOS twin:
  * `TasksTabViewModel.matchesSearch`.
  */
-export function matchesSearch(task: Task, trimmedLowerQuery: string, pool: readonly Task[] = []): boolean {
+export function matchesSearch(task: Task, trimmedLowerQuery: string, pool: TaskLookup = []): boolean {
   if (!trimmedLowerQuery) return true;
   // The shared match set (docs/SHARED_COUNTER_SETTINGS.md §2) — title, plus a
   // counter's name / noun / verb / plural template — and the description.

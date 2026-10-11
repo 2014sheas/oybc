@@ -1,5 +1,5 @@
-import type { Task } from '@oybc/shared';
-import { taskSearchMatchesWithCounter } from '../counters/rowCounterTagName';
+import { taskSearchMatches, type Task } from '@oybc/shared';
+import { counterNameMatches, type TaskLookup } from '../counters/rowCounterTagName';
 
 /**
  * poolEditSheetSelectors.ts — pure derivations `PoolEditorBody` needs from
@@ -13,10 +13,12 @@ import { taskSearchMatchesWithCounter } from '../counters/rowCounterTagName';
  * The library-reuse picker's candidate list (I-2): `browsableTasks` (the
  * SAME draft-filtered set the Library segment browses — never the raw,
  * un-filtered task set) minus ids already on the pool, filtered by the
- * shared `taskSearchMatchesWithCounter` (title, plus a counter's name / noun /
- * verb / plural template — docs/SHARED_COUNTER_SETTINGS.md §2 — and, for a
- * unit task or linked copy, its counter's own name; case- and
- * diacritic-insensitive). Pickers are browse surfaces — a
+ * shared `taskSearchMatches` (title, plus a counter's name / noun / verb /
+ * plural template — docs/SHARED_COUNTER_SETTINGS.md §2) then, ranked after
+ * those direct hits, a unit task / linked copy found by its counter's name or
+ * noun (`counterNameMatches`; `lookup` resolves the root — pass the unfiltered
+ * task set, the browse filter drops goal-less counters); case- and
+ * diacritic-insensitive. Pickers are browse surfaces — a
  * wizard-born draft task the Library tab hides shouldn't be offered here
  * either, even though a pool that already references one still resolves
  * its chip via `resolvePoolChips` below (which reads the full set).
@@ -25,8 +27,13 @@ export function selectLibraryPickerResults(
   browsableTasks: readonly Task[],
   selectedIds: ReadonlySet<string>,
   query: string,
+  lookup: TaskLookup = browsableTasks,
 ): Task[] {
-  return browsableTasks.filter((t) => !selectedIds.has(t.id)).filter((t) => taskSearchMatchesWithCounter(query, t, browsableTasks));
+  const candidates = browsableTasks.filter((t) => !selectedIds.has(t.id));
+  // Direct hits (title / the counter's own fields) rank ahead of counter-name-only hits.
+  const direct = candidates.filter((t) => taskSearchMatches(query, t));
+  const viaCounter = candidates.filter((t) => !taskSearchMatches(query, t) && counterNameMatches(query, t, lookup));
+  return [...direct, ...viaCounter];
 }
 
 /** Cap for `selectQuickAddMatches`'s inline dropdown — the quick-add row
@@ -46,8 +53,9 @@ export function selectQuickAddMatches(
   browsableTasks: readonly Task[],
   selectedIds: ReadonlySet<string>,
   query: string,
+  lookup: TaskLookup = browsableTasks,
 ): Task[] {
-  return selectLibraryPickerResults(browsableTasks, selectedIds, query).slice(0, QUICK_ADD_MATCH_CAP);
+  return selectLibraryPickerResults(browsableTasks, selectedIds, query, lookup).slice(0, QUICK_ADD_MATCH_CAP);
 }
 
 /**

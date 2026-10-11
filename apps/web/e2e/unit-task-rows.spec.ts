@@ -63,10 +63,25 @@ test.describe('Unit task rows', () => {
     await expect(list.getByRole('button', { name: /Read 300 pages/ }).getByRole('img', { name: 'Unit task of Books' })).toBeVisible();
   });
 
+  test('a goal-less hub counter (no maxCount): its unit tasks still tag and match on quick-add', async ({ page }) => {
+    const HUB = 'ffffffff-ut20-0001-task-000000000010';
+    const HUBUNIT = 'ffffffff-ut20-0001-task-000000000011';
+    await seedTask(page, { id: HUB, title: 'Hike', type: 'counting', action: 'Hike', unit: 'trails', isCounter: true, counterName: 'Trails' });
+    await seedTask(page, { id: HUBUNIT, title: 'Hike Mount Tam', type: 'normal', countsTowardCounterId: HUB, countsTowardSince: SINCE });
+    await page.goto('/tasks?__oybc_test_bypass=1');
+    await expect(page.getByRole('button', { name: 'Open Hike Mount Tam details' }).getByRole('img', { name: 'Unit task of Trails' })).toBeVisible();
+    await page.goto(`/boards/${BOARD}?__oybc_test_bypass=1`);
+    await page.getByRole('button', { name: 'Edit board' }).click();
+    await page.getByRole('button', { name: /^Empty square, row 3, column 2$/ }).click();
+    await page.getByLabel('New normal task title').fill('Trails');
+    const row = page.getByRole('list', { name: 'Matching library tasks' }).getByRole('button', { name: /Hike Mount Tam/ });
+    await expect(row.getByRole('img', { name: 'Unit task of Trails' })).toBeVisible();
+  });
+
   test('Task Detail of a unit task: the Counter row opens Counter Detail', async ({ page }) => {
     await page.goto(`/tasks/${DUNE}?__oybc_test_bypass=1`);
     await expect(page.getByRole('heading', { name: 'Counter' })).toBeVisible();
-    await page.getByRole('button', { name: /^Open Read 12 books counter$/ }).click();
+    await page.getByRole('button', { name: /^Open Books counter$/ }).click();
     await expect(page).toHaveURL(new RegExp(`/profile/counters/${ROOT}`));
   });
 });

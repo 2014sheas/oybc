@@ -226,7 +226,7 @@ export function TasksPage({ userId }: TasksPageProps): React.ReactElement {
                       usageCountsLoaded={filters.usageCountsLoaded}
                       childCount={children.length}
                       isFamilyRoot={library.familyRootIds.has(task.id)}
-                      counterTagName={rowCounterTagName(task, library.allTasks)}
+                      counterTagName={library.familyRootIds.has(task.id) ? null : rowCounterTagName(task, library.taskMap)}
                       onClick={openTask}
                       onEdit={handleRowEdit}
                       onDelete={handleRowDelete}
@@ -260,7 +260,7 @@ export function TasksPage({ userId }: TasksPageProps): React.ReactElement {
                                 usageCountsLoaded={filters.usageCountsLoaded}
                                 childCount={grandchildren}
                                 isFamilyRoot={library.familyRootIds.has(child.id)}
-                                counterTagName={rowCounterTagName(child, library.allTasks)}
+                                counterTagName={library.familyRootIds.has(child.id) ? null : rowCounterTagName(child, library.taskMap)}
                                 onClick={openTask}
                               />
                             </li>

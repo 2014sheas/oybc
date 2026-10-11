@@ -221,13 +221,19 @@ separate stand-alone rows, never nested), pool editor — for a unit task AND a
 linked copy alike (Decision 5: no new mark; the subtitle tells them apart). The
 name comes from the pure `rowCounterTagName(task, pool)` (web
 `components/counters/rowCounterTagName.ts` ↔ iOS `Helpers/RowCounterTagName.swift`).
-The counter's name joins a unit task's search-match set (`taskSearchMatchesWithCounter`
-↔ iOS twin: Tasks tab filter, Library sheet filter, quick-add / picker matcher;
-the pool is threaded, no per-row query). Task Detail of a unit task shows the
+The counter's display name and noun (unit) join a unit task's search-match set
+(`taskSearchMatchesWithCounter` ↔ iOS twin: Tasks tab filter, Library sheet filter,
+quick-add / picker matcher; not the verb, plural template or stored title).
+Roots resolve through the surface's UNFILTERED task map / list (`TaskLookup`),
+never the browse-filtered candidate list — `computeBrowsableTasks` drops
+goal-less (hub-created) counters. Quick-add ranks direct hits ahead of
+counter-name-only hits before its 4-row cap. Task Detail of a unit task shows the
 existing linked-counter row under a **Counter** heading (name · all-time total ·
-chevron → Counter Detail; no edit affordance). The Tasks-tab library lists one
-generic row per counter family, so a linked copy's tag appears on the placed-row
-surfaces (wizard / pool / Library sheet), not as its own Tasks-tab row. The C7
+chevron → Counter Detail; no edit affordance). The Tasks-tab library and the Library sheet list one
+generic row per counter family (copies hidden), so a linked copy's tag appears on
+the board / pool list rows, not as its own Tasks-tab or Library-sheet row. The
+Task Detail row shows the counter's display name, and its heading renders only
+once the root resolves. The C7
 "Counter" Filters dropdown is not built.
 
 ### 3a. Data
@@ -820,6 +826,7 @@ Done → In progress → Not started → title → id.
 - ~~iOS: a compound-create cycle refusal lands on the form line after the special-task panel has collapsed, so the line can be out of view.~~ Closed with the editor row's retirement (2026-10-10) — the panel no longer hosts the field.
 - ~~Web: an empty `fieldGroup` wrapper remains in the editor when the Counts toward row hides.~~ Closed the same way — the row is gone.
 - ~~Open (design round): Counter Detail member rows (remove action), "+ New" shape choice.~~ Shipped in unit-tasks PR 1 (§3 amendment, PR table row 7).
+- Follow-up: the Tasks tab does not auto-expand a compound whose non-independent child matched only by counter name (the title-only auto-expand rule is unchanged).
 - ~~Open (unit-tasks PR 2): row tag + counter-name search match.~~ Shipped (§3 amendment, member UI part 2, PR table row 8). The C7 "Counter" Filters dropdown is not being built.
 - **Remove clears the whole lineage:** `ContributorRow.memberIds` (live flagged members, sorted) is what Remove unflags — web `removeUnitTaskLineage` runs every `setCountsTowardInTransaction` in one transaction — because a board-scoped fork inherits the flag and shares the lineage's credits. A zero-sub-task compound shows no remove control (an empty same-width slot): `compound-needs-child` refuses clearing it, and it may only stay counting toward the counter. The counter-delete line's N is the section's row count (`loadCountsTowardSection(id).rows.length`).
 - **Pre-existing, fix separately:** `unflagContributorsOf` (counter delete) unflags a zero-child compound directly, which then evaluates vacuously complete.

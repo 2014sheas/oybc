@@ -24,6 +24,8 @@ export interface SquarePickerSheetProps {
    * ineligible types).
    */
   libraryTasks: Task[];
+  /** The board's full task map — resolves unit-task counter roots the candidate filter drops. */
+  lookupTasks?: Readonly<Record<string, Task>>;
   /** Fires once, covering every pick path: an existing library task, a
    *  staged (deferred) new normal/counting/achievement task, or an
    *  immediately-persisted compound. */
@@ -48,6 +50,7 @@ export function SquarePickerSheet({
   startDate,
   endDate,
   libraryTasks,
+  lookupTasks,
   onPick,
   onClose,
 }: SquarePickerSheetProps): React.ReactElement {
@@ -85,6 +88,7 @@ export function SquarePickerSheet({
           currentStartDate={startDate}
           currentEndDate={endDate}
           libraryTasks={libraryTasks}
+          lookupTasks={lookupTasks}
           onExistingTaskPicked={(task) => onPick({ taskId: task.id })}
           onTaskCreated={() => { /* no-op — onPendingCreated below carries the same payload */ }}
           onPendingCreated={(payload) => onPick({ pending: payload })}
