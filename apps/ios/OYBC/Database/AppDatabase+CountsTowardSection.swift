@@ -32,6 +32,20 @@ extension CountsTowardSectionData: Equatable {
 
 extension AppDatabase {
 
+    /// Removes unit tasks from their counter: clears `countsToward` on EVERY id
+    /// (a row's lineage members, forks included) in ONE write transaction, so a
+    /// refusal on any member leaves all of them flagged.
+    ///
+    /// - Parameter taskIds: The members to unflag.
+    /// - Throws: A `CountsTowardError` (e.g. `compoundNeedsChild`); nothing is written then.
+    func removeUnitTasks(taskIds: [String], now: String = AppDatabase.currentTimestamp()) throws {
+        try write { db in
+            for id in taskIds {
+                try Self.setCountsToward(db: db, taskId: id, counterId: nil, now: now)
+            }
+        }
+    }
+
     /// The `CountsToward.Inputs` the row / credit kernels read for counter
     /// `counterId`: scoped to its contributors, their fork lineages, compound
     /// subtrees (links in any state), the roots their linked children read and

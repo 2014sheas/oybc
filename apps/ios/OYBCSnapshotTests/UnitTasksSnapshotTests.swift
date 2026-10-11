@@ -60,16 +60,17 @@ final class UnitTasksSnapshotTests: XCTestCase {
 
     /// The handoff's six: Counting mid-progress, Compound 1 of 2, Simple, zero-subtask Compound, a repeating "× 4", a done Simple.
     private func sixUnitTasks(extra: [(Task, CountsToward.ContributorRow)] = []) -> CountsTowardSectionData {
+        // The kernel's order: In progress, Not started, Done — each by title (Done by recency).
         var pairs: [(Task, CountsToward.ContributorRow)] = [
-            (unit("u1", "Read 300 pages", type: .counting, maxCount: 300),
-             row("u1", .inProgress, board: "bm", progress: .init(current: 120, goal: 300, kind: .discrete))),
             (unit("u2", "Finish the audiobook", type: .compound),
              row("u2", .inProgress, board: "by", child: .init(done: 1, total: 2))),
+            (unit("u1", "Read 300 pages", type: .counting, maxCount: 300),
+             row("u1", .inProgress, board: "bm", progress: .init(current: 120, goal: 300, kind: .discrete))),
+            (unit("u4", "Book club night", type: .compound), row("u4", .notStarted, board: nil, child: .init(done: 0, total: 0))),
+            (unit("u3", "Finish Dune", type: .normal), row("u3", .notStarted, board: "bw")),
         ]
         pairs += extra
         pairs += [
-            (unit("u3", "Finish Dune", type: .normal), row("u3", .notStarted, board: "bw")),
-            (unit("u4", "Book club night", type: .compound), row("u4", .notStarted, board: nil, child: .init(done: 0, total: 0))),
             (unit("u5", "Read before bed", type: .normal), row("u5", .done, board: "bh", credits: 4)),
             (unit("u6", "Finish Project Hail Mary", type: .normal), row("u6", .done, board: "bm")),
         ]
@@ -86,8 +87,8 @@ final class UnitTasksSnapshotTests: XCTestCase {
         )
     }
 
-    private func section(_ data: CountsTowardSectionData, highlight: String? = nil) -> some View {
-        CountsTowardSectionView(data: data, highlightedTaskId: highlight)
+    private func section(_ data: CountsTowardSectionData, highlight: String? = nil, openSwipe: String? = nil) -> some View {
+        CountsTowardSectionView(data: data, highlightedTaskId: highlight, openSwipeSeed: openSwipe)
             .padding(.vertical, 12)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             .background(Color.risoPaper)
@@ -123,6 +124,11 @@ final class UnitTasksSnapshotTests: XCTestCase {
             of: section(sixUnitTasks(extra: [arrived]), highlight: "u7"),
             as: .image(layout: .fixed(width: 393, height: 550), traits: dark(true)), record: recordMode
         )
+    }
+
+    /// A9: a row swiped open — the red Remove fills the card's height.
+    func testSectionSwipeOpenLight() {
+        assertSnapshot(of: section(sixUnitTasks(), openSwipe: "u3"), as: .image(layout: .fixed(width: 393, height: 480), traits: dark(false)), record: recordMode)
     }
 
     // MARK: - Counter delete confirm (A11)

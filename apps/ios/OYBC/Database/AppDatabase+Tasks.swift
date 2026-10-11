@@ -612,7 +612,7 @@ extension AppDatabase {
         /// counter this task counts toward, whose increment the delete
         /// tombstones; `nil` when it counts toward nothing (or it is gone).
         var countsTowardCounter: Task? = nil
-        /// Unit tasks (docs/SHARED_COUNTER_SETTINGS.md §3d) — live, non-fork tasks whose
+        /// Unit tasks (docs/SHARED_COUNTER_SETTINGS.md §3d) — live tasks, as distinct fork lineages, whose
         /// `countsTowardCounterId` is this task; a counter delete keeps and
         /// decouples them. 0 for any non-counter task.
         var unitTaskCount: Int = 0
@@ -626,6 +626,17 @@ extension AppDatabase {
     /// otherwise inflate the user-facing count). The actual cascade still
     /// soft-deletes every matching LIVE placement (storage cleanup); the
     /// dialog only reports cells the user can still see.
+    /// Distinct fork lineages among the live contributors of `counterId` — the
+    /// same N as the Counter Detail section heading.
+    static func unitTaskLineageCount(db: Database, counterId: String) throws -> Int {
+        let tasks = try Task.fetchAll(db)
+        let taskById = Dictionary(tasks.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+        let scopes = tasks
+            .filter { !$0.isDeleted && $0.countsTowardCounterId == counterId && CountsToward.canContribute($0) }
+            .map { CountsToward.lineageRootId($0, taskById: taskById) }
+        return Set(scopes).count
+    }
+
     func computeTaskDeletionImpact(taskId: String) throws -> TaskDeletionImpact {
         try read { db in
             let allPlacements = try BoardTask
@@ -666,10 +677,7 @@ extension AppDatabase {
                 counterMembers: counterMembers,
                 derivedWindowCounterCount: allMembers.count - counterMembers.count,
                 countsTowardCounter: counter?.isDeleted == false ? counter : nil,
-                unitTaskCount: try Task
-                    .filter(Column("countsTowardCounterId") == taskId && Column("isDeleted") == false
-                        && Column("forkedFromTaskId") == nil)
-                    .fetchCount(db)
+                unitTaskCount: try Self.unitTaskLineageCount(db: db, counterId: taskId)
             )
         }
     }

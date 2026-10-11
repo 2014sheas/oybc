@@ -21,78 +21,9 @@ final class CountsTowardSnapshotTests: XCTestCase {
         return t
     }
 
-    private func flagged(_ id: String, _ title: String, type: TaskType, amount: Int? = nil) -> Task {
-        var t = SnapshotFixtures.makeTask(
-            id: id, title: title, type: type, action: type == .counting ? "Run" : nil,
-            unit: type == .counting ? "km" : nil, maxCount: type == .counting ? 5 : nil,
-            operatorType: type == .compound ? .and : nil
-        )
-        t.countsTowardCounterId = "ct-books"
-        t.countsTowardAmount = amount
-        return t
-    }
-
-    private func row(
-        _ id: String, _ status: CountsToward.ContributorRowStatus, board: String?, credits: Int = 0
-    ) -> CountsToward.ContributorRow {
-        .init(taskId: id, status: status, boardId: board, creditCount: credits, latestOccurredAt: nil)
-    }
-
-    /// Six mixed rows in the handoff order (In progress, Not started, Done): done Simple on a yearly board, in-progress
-    /// Counting on a weekly, in-progress Compound (+2) on a monthly, not-started
-    /// Simple on a monthly, an unplaced Simple, an unplaced Compound; one "× 3".
-    private func sixRows() -> CountsTowardSectionData {
-        let tasks = [
-            flagged("r1", "Read Dune", type: .normal),
-            flagged("r2", "Run 5 km", type: .counting),
-            flagged("r3", "Weekend reading block", type: .compound, amount: 2),
-            flagged("r4", "Finish a novel", type: .normal),
-            flagged("r5", "Visit the library", type: .normal),
-            flagged("r6", "Reading club night", type: .compound),
-        ]
-        let boards = [
-            SnapshotFixtures.makeBoard(id: "by", name: "2026 goals", timeframe: .yearly),
-            SnapshotFixtures.makeBoard(id: "bw", name: "Week 42", timeframe: .weekly),
-            SnapshotFixtures.makeBoard(id: "bm", name: "October", timeframe: .monthly),
-        ]
-        return CountsTowardSectionData(
-            counterName: "Books",
-            rows: [
-                row("r2", .inProgress, board: "bw"),
-                row("r3", .inProgress, board: "bm"),
-                row("r4", .notStarted, board: "bm"),
-                row("r5", .notStarted, board: nil),
-                row("r6", .notStarted, board: nil),
-                row("r1", .done, board: "by", credits: 3),
-            ],
-            taskById: Dictionary(uniqueKeysWithValues: tasks.map { ($0.id, $0) }),
-            boardById: Dictionary(uniqueKeysWithValues: boards.map { ($0.id, $0) })
-        )
-    }
-
-    private func section(_ data: CountsTowardSectionData) -> some View {
-        CountsTowardSectionView(data: data)
-            .padding(.vertical, 12)
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-            .background(Color.risoPaper)
-    }
-
     private func dark(_ on: Bool) -> UITraitCollection { .init(userInterfaceStyle: on ? .dark : .light) }
 
     // MARK: - C1
-
-    func testSectionSixRowsLight() {
-        assertSnapshot(of: section(sixRows()), as: .image(layout: .fixed(width: 393, height: 470), traits: dark(false)), record: recordMode)
-    }
-
-    func testSectionSixRowsDark() {
-        assertSnapshot(of: section(sixRows()), as: .image(layout: .fixed(width: 393, height: 470), traits: dark(true)), record: recordMode)
-    }
-
-    func testSectionEmptyLight() {
-        let empty = CountsTowardSectionData(counterName: "Books", rows: [], taskById: [:], boardById: [:])
-        assertSnapshot(of: section(empty), as: .image(layout: .fixed(width: 393, height: 150), traits: dark(false)), record: recordMode)
-    }
 
     func testStatusPillsLight() {
         let pills = HStack(spacing: 8) {

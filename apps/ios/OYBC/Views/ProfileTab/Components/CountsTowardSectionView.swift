@@ -16,11 +16,15 @@ struct CountsTowardSectionView: View {
     /// Row tap — opens that task's detail.
     var onOpenTask: (String) -> Void = { _ in }
     /// Remove (after the credits confirm when the lineage has any) — clears the task's counter.
-    var onRemove: (String) -> Void = { _ in }
+    var onRemove: ([String]) -> Void = { _ in }
+    /// A failed remove, shown under the heading.
+    var errorMessage: String? = nil
     /// The row that just arrived from "+ New": a gold ring, until the next interaction.
     var highlightedTaskId: String? = nil
     /// Fired on any interaction so the container can clear `highlightedTaskId`.
     var onInteract: () -> Void = {}
+    /// Snapshot seam: opens this row's swipe action.
+    var openSwipeSeed: String? = nil
 
     @State private var pendingRemoval: CountsToward.ContributorRow?
     @State private var openSwipeId: String?
@@ -62,30 +66,40 @@ struct CountsTowardSectionView: View {
             }
             .padding(.bottom, 8)
 
+            if let errorMessage {
+                Text(errorMessage)
+                    .font(.risoBody(12, .semibold))
+                    .foregroundStyle(Color.risoRed)
+                    .padding(.bottom, 8)
+            }
+
             if data.rows.isEmpty {
                 emptyBox
             } else {
                 VStack(spacing: 5) {
                     ForEach(data.rows, id: \.taskId) { row in
                         SwipeToRemoveRow(
+                            enabled: Self.canRemove(row),
                             isOpen: Binding(
                                 get: { openSwipeId == row.taskId },
                                 set: { openSwipeId = $0 ? row.taskId : nil }
                             ),
-                            onRemove: { requestRemoval(row) }
+                            onRemove: { requestRemoval(row) },
+                            onDragStart: onInteract
                         ) { rowCard(row) }
                     }
                 }
             }
         }
         .padding(.horizontal, Riso.gutter)
+        .onAppear { if openSwipeId == nil { openSwipeId = openSwipeSeed } }
         .alert(
             pendingRemoval.map { _ in CountsTowardLabels.removeTitle(counter: data.counterName) } ?? "",
             isPresented: Binding(get: { pendingRemoval != nil }, set: { if !$0 { pendingRemoval = nil } }),
             presenting: pendingRemoval
         ) { row in
             Button("Cancel", role: .cancel) {}
-            Button("Remove") { onRemove(row.taskId) }
+            Button("Remove", role: .destructive) { onRemove(row.memberIds.isEmpty ? [row.taskId] : row.memberIds) }
         } message: { row in
             Text(CountsTowardLabels.removeBody(
                 title: data.taskById[row.taskId]?.title ?? "", credits: row.creditCount, counter: data.counterName
@@ -100,8 +114,13 @@ struct CountsTowardSectionView: View {
         if CountsTowardLabels.removeNeedsConfirm(creditCount: row.creditCount) {
             pendingRemoval = row
         } else {
-            onRemove(row.taskId)
+            onRemove(row.memberIds.isEmpty ? [row.taskId] : row.memberIds)
         }
+    }
+
+    /// An empty compound shell can't be cleared (it would be left without a sub-task).
+    static func canRemove(_ row: CountsToward.ContributorRow) -> Bool {
+        row.childProgress?.total != 0
     }
 
     private var newButton: some View {
@@ -175,7 +194,9 @@ struct CountsTowardSectionView: View {
         .accessibilityElement(children: .combine)
         .accessibilityLabel(Self.accessibilityLabel(title: title, row: row, boardName: board?.displayName, unit: task?.unit))
         .accessibilityAddTraits(.isButton)
-        .accessibilityAction(named: "Remove") { requestRemoval(row) }
+        .accessibilityActions {
+            if Self.canRemove(row) { Button("Remove") { requestRemoval(row) } }
+        }
     }
 
     @ViewBuilder
@@ -216,8 +237,10 @@ struct CountsTowardSectionView: View {
 /// which needs a `List` — this section lives inside Counter Detail's scroll.
 /// The button is a plain red `Button`, never `role: .destructive`.
 private struct SwipeToRemoveRow<Content: View>: View {
+    var enabled: Bool = true
     @Binding var isOpen: Bool
     let onRemove: () -> Void
+    var onDragStart: () -> Void = {}
     @ViewBuilder let content: () -> Content
 
     @State private var drag: CGFloat = 0
@@ -229,45 +252,55 @@ private struct SwipeToRemoveRow<Content: View>: View {
     }
 
     var body: some View {
-        ZStack(alignment: .trailing) {
-            if offset < 0 {
-                Button(action: onRemove) {
-                    VStack(spacing: 2) {
-                        Image(systemName: "trash").font(.system(size: 15, weight: .bold))
-                        Text("Remove").font(.risoHead(11, .bold))
-                    }
-                    .foregroundStyle(Color.risoPaper)
-                    .frame(width: Self.actionWidth)
-                    .frame(maxHeight: .infinity)
-                    .background(RoundedRectangle(cornerRadius: Riso.cardRadius).fill(Color.risoRed))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: Riso.cardRadius)
-                            .strokeBorder(Color.risoInk, lineWidth: Riso.Keyline.dense)
-                    )
+        content()
+            .contentShape(Rectangle())
+            .overlay {
+                // A tap on an OPEN row closes it instead of opening the task.
+                if isOpen {
+                    Color.clear.contentShape(Rectangle())
+                        .onTapGesture { withAnimation(.easeOut(duration: 0.18)) { isOpen = false } }
                 }
-                .buttonStyle(.plain)
             }
-            content()
-                .contentShape(Rectangle())
-                .offset(x: offset)
-                .simultaneousGesture(
-                    DragGesture(minimumDistance: 18)
-                        .onChanged { v in
-                            guard abs(v.translation.width) > abs(v.translation.height) else { return }
-                            drag = v.translation.width
+            .offset(x: offset)
+            // After `.offset` the background keeps the card's own frame, so the
+            // red button stays put and fills the card's height.
+            .background(alignment: .trailing) {
+                if offset < 0 {
+                    Button(action: onRemove) {
+                        VStack(spacing: 2) {
+                            Image(systemName: "trash").font(.system(size: 15, weight: .bold))
+                            Text("Remove").font(.risoHead(11, .bold))
                         }
-                        .onEnded { v in
-                            defer { drag = 0 }
-                            guard abs(v.translation.width) > abs(v.translation.height) else { return }
-                            let total = (isOpen ? -Self.actionWidth : 0) + v.translation.width
-                            if total < -240 {
-                                isOpen = false
-                                onRemove()
-                            } else {
-                                withAnimation(.easeOut(duration: 0.18)) { isOpen = total < -Self.actionWidth / 2 }
-                            }
+                        .foregroundStyle(Color.risoPaper)
+                        .frame(width: Self.actionWidth)
+                        .frame(maxHeight: .infinity)
+                        .background(RoundedRectangle(cornerRadius: Riso.cardRadius).fill(Color.risoRed))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: Riso.cardRadius)
+                                .strokeBorder(Color.risoInk, lineWidth: Riso.Keyline.dense)
+                        )
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .simultaneousGesture(
+                DragGesture(minimumDistance: enabled ? 18 : .infinity)
+                    .onChanged { v in
+                        guard abs(v.translation.width) > abs(v.translation.height) else { return }
+                        if drag == 0 { onDragStart() }
+                        drag = v.translation.width
+                    }
+                    .onEnded { v in
+                        defer { drag = 0 }
+                        guard abs(v.translation.width) > abs(v.translation.height) else { return }
+                        let total = (isOpen ? -Self.actionWidth : 0) + v.translation.width
+                        if total < -240 {
+                            isOpen = false
+                            onRemove()
+                        } else {
+                            withAnimation(.easeOut(duration: 0.18)) { isOpen = total < -Self.actionWidth / 2 }
                         }
-                )
-        }
+                    }
+            )
     }
 }

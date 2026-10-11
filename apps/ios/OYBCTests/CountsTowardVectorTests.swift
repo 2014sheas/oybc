@@ -207,7 +207,7 @@ final class CountsTowardVectorTests: XCTestCase {
     private struct MiniRow: Decodable {
         let taskId: String; let status: String; let boardId: String?; let creditCount: Int; let latestOccurredAt: String?
         /// Omitted = null.
-        let progress: MiniProgress?; let childProgress: MiniChildProgress?
+        let progress: MiniProgress?; let childProgress: MiniChildProgress?; let memberIds: [String]
     }
     private struct MiniProgress: Decodable { let current: Double; let goal: Double; let kind: CountKind }
     private struct MiniChildProgress: Decodable { let done: Int; let total: Int }
@@ -408,7 +408,8 @@ final class CountsTowardVectorTests: XCTestCase {
                     taskId: $0.taskId, status: CountsToward.ContributorRowStatus(rawValue: $0.status)!, boardId: $0.boardId,
                     creditCount: $0.creditCount, latestOccurredAt: $0.latestOccurredAt,
                     progress: $0.progress.map { CountsToward.Progress(current: $0.current, goal: $0.goal, kind: $0.kind) },
-                    childProgress: $0.childProgress.map { CountsToward.ChildProgress(done: $0.done, total: $0.total) }
+                    childProgress: $0.childProgress.map { CountsToward.ChildProgress(done: $0.done, total: $0.total) },
+                    memberIds: $0.memberIds
                 )
             }
             XCTAssertEqual(rows, expected, v.name)

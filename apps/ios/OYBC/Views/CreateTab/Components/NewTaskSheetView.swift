@@ -68,8 +68,13 @@ struct NewTaskSheetView: View {
             }
             .background(Color.risoPaper.ignoresSafeArea())
             .navigationBarTitleDisplayMode(.inline)
-            .onAppear {
-                counterName = Self.presetCounterName(database: database, counterId: presetCountsTowardCounterId)
+            .task(id: presetCountsTowardCounterId) {
+                let db = database
+                let id = presetCountsTowardCounterId
+                let name = await _Concurrency.Task.detached(priority: .userInitiated) {
+                    Self.presetCounterName(database: db, counterId: id)
+                }.value
+                counterName = name
             }
             .toolbar {
                 ToolbarItem(placement: .principal) {

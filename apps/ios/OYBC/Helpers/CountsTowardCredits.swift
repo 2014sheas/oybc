@@ -115,6 +115,8 @@ extension CountsToward {
         /// A COMPOUND representative: done / total direct children on the same
         /// window (total 0 = the "No subtasks yet" row); `nil` otherwise.
         var childProgress: ChildProgress? = nil
+        /// The lineage's live flagged members (sorted by id) — Remove clears every one.
+        var memberIds: [String] = []
     }
 
     /// A Counting unit task's `{current} / {goal}` with its real kind (the formatting key).
@@ -223,7 +225,8 @@ extension CountsToward {
                     creditCount: g.creditCount,
                     latestOccurredAt: g.latestOccurredAt,
                     progress: contributorRowProgress(task, inputs: inputs, board: board, status: status),
-                    childProgress: contributorChildProgress(task, inputs: inputs, board: board)
+                    childProgress: contributorChildProgress(task, inputs: inputs, board: board),
+                    memberIds: g.memberIds
                 ),
                 task.title.lowercased()
             ))

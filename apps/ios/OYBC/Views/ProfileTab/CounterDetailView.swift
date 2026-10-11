@@ -70,6 +70,8 @@ struct CounterDetailView: View {
     /// The row "+ New" just added: promoted to `highlightedUnitTaskId` (the gold ring) when the sheet closes.
     @State private var arrivedUnitTaskId: String?
     @State private var highlightedUnitTaskId: String?
+    /// A failed Remove, shown under the Unit tasks heading.
+    @State private var unitTaskError: String?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     // Delete-counter (P5 decision 8: deleteCounterWithUnlink) UI state.
@@ -102,6 +104,7 @@ struct CounterDetailView: View {
                     onNewCountsToward: { showNewCountsToward = true },
                     onOpenCountsTowardTask: { openedTaskId = TaskIdItem(id: $0) },
                     onRemoveCountsTowardTask: handleRemoveUnitTask,
+                    unitTaskError: unitTaskError,
                     highlightedUnitTaskId: highlightedUnitTaskId,
                     onCountsTowardInteract: { clearUnitTaskHighlight() }
                 )
@@ -291,13 +294,17 @@ struct CounterDetailView: View {
     }
 
     /// Clears the task's counter (`setCountsToward(nil)` — the cascade withdraws its credits), then reloads.
-    private func handleRemoveUnitTask(_ taskId: String) {
+    private func handleRemoveUnitTask(_ taskIds: [String]) {
         let db = database
+        unitTaskError = nil
         _Concurrency.Task.detached(priority: .userInitiated) {
-            _ = attemptLoggedWrite("CounterDetailView.removeUnitTask(\(taskId))") {
-                try db.setCountsToward(taskId: taskId, counterId: nil)
+            let ok = attemptLoggedWrite("CounterDetailView.removeUnitTask(\(taskIds))") {
+                try db.removeUnitTasks(taskIds: taskIds)
             }
-            await MainActor.run { loadData() }
+            await MainActor.run {
+                if !ok { unitTaskError = "Failed to remove. Try again." }
+                loadData()
+            }
         }
     }
 
@@ -502,7 +509,8 @@ struct CounterDetailContent: View {
     var countsToward: CountsTowardSectionData?
     var onNewCountsToward: () -> Void
     var onOpenCountsTowardTask: (String) -> Void
-    var onRemoveCountsTowardTask: (String) -> Void
+    var onRemoveCountsTowardTask: ([String]) -> Void
+    var unitTaskError: String?
     var highlightedUnitTaskId: String?
     var onCountsTowardInteract: () -> Void
 
@@ -529,7 +537,8 @@ struct CounterDetailContent: View {
         countsToward: CountsTowardSectionData? = nil,
         onNewCountsToward: @escaping () -> Void = {},
         onOpenCountsTowardTask: @escaping (String) -> Void = { _ in },
-        onRemoveCountsTowardTask: @escaping (String) -> Void = { _ in },
+        onRemoveCountsTowardTask: @escaping ([String]) -> Void = { _ in },
+        unitTaskError: String? = nil,
         highlightedUnitTaskId: String? = nil,
         onCountsTowardInteract: @escaping () -> Void = {}
     ) {
@@ -539,6 +548,7 @@ struct CounterDetailContent: View {
         self.onNewCountsToward = onNewCountsToward
         self.onOpenCountsTowardTask = onOpenCountsTowardTask
         self.onRemoveCountsTowardTask = onRemoveCountsTowardTask
+        self.unitTaskError = unitTaskError
         self.highlightedUnitTaskId = highlightedUnitTaskId
         self.onCountsTowardInteract = onCountsTowardInteract
         self.dailyTotals = dailyTotals
@@ -634,7 +644,7 @@ struct CounterDetailContent: View {
                 if let countsToward {
                     CountsTowardSectionView(
                         data: countsToward, onNew: onNewCountsToward, onOpenTask: onOpenCountsTowardTask,
-                        onRemove: onRemoveCountsTowardTask, highlightedTaskId: highlightedUnitTaskId,
+                        onRemove: onRemoveCountsTowardTask, errorMessage: unitTaskError, highlightedTaskId: highlightedUnitTaskId,
                         onInteract: onCountsTowardInteract
                     )
                         .padding(.bottom, 14)
@@ -657,6 +667,7 @@ struct CounterDetailContent: View {
 
                 Spacer(minLength: 24)
             }
+            .simultaneousGesture(TapGesture().onEnded { onCountsTowardInteract() })
         }
     }
 

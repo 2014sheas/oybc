@@ -1,5 +1,5 @@
 {
-  "_note": "Hand-authored fixture (edit directly, then `pnpm --filter @oybc/shared run gen:sync-fixtures`). Pins packages/shared/src/algorithms/countsToward.ts (+ countsTowardLineage.ts / countsTowardValidation.ts; tests/algorithms/countsToward.test.ts) against its Swift twin Helpers/CountsToward.swift (OYBCTests/CountsTowardVectorTests.swift) — docs/SHARED_COUNTER_SETTINGS.md §3 (D10: one credit per completion occurrence; D11: count from `countsTowardSince`). Task defaults for unlisted fields: type=normal, isCompleted=false, isDeleted=false, createdAt=2026-01-01T00:00:00.000Z. Event defaults: isDeleted=false, kind=increment when delta is set else completion. Board defaults: status=active, isDeleted=false. Placement defaults: isDeleted=false. Link defaults: isDeleted=false. `state` vectors take an optional `window`. `credits` / `candidates` / `planSet` name occurrences ({kind: event|childEvent|board|lifetime}) and the ROOT they are minted on (`root`, default \"root\"); the test derives each credit id with countsTowardEventId(root, lineageRootId(contributor), occurrence) and compares sets sorted by id. `candidates.roots` lists the roots to enumerate. `planSet.lineageWanted` lists occurrences other lineage members keep; `planSet.lineageDelta` maps a root to the lineage's amount (applied only to credits also in `lineageWanted`). `lineageDelta` vectors pin lineageCreditDelta. `creditGroups` vectors (PR 4 — countsTowardCredits.ts ↔ CountsToward.contributorCreditGroups) list the ROOT's credits as `rootCredits` ({scope, occurrence, occurredAt, delta?=1, isDeleted?}); the test mints each as an increment on `root` with id countsTowardEventId(root, scope, occurrence) and expects the lineage groups (scopeId, memberIds, representativeId, creditCount, latestOccurredAt) in scope order. `rows` vectors pin countsTowardRows (same inputs as `creditGroups`; tasks may carry `title`): one row per lineage — representative, status (done / inProgress / notStarted on the primary board), boardId, creditCount, latestOccurredAt — in In progress, Not started, Done order (Decision 8 of the unit-tasks handoff; Done rows most recently credited first by latestOccurredAt desc with null last), then title (case-insensitive), then id; each row also carries `progress` ({current, goal, kind} — a COUNTING representative that is not done: windowed count on the primary board, lifetime when unplaced, kind = resolveCountKind) and `childProgress` ({done, total} — a COMPOUND representative: live direct links to live children, completion on the same window), both OMITTED from an `expected` row when null (the test defaults omitted to null). Amount ruling (#590, 2026-10-10): a unit task always credits one — the amount / lineageDelta expectations are pinned to 1 and the planSet vectors that exercised amount ≠ 1 were removed.",
+  "_note": "Hand-authored fixture (edit directly, then `pnpm --filter @oybc/shared run gen:sync-fixtures`). Pins packages/shared/src/algorithms/countsToward.ts (+ countsTowardLineage.ts / countsTowardValidation.ts; tests/algorithms/countsToward.test.ts) against its Swift twin Helpers/CountsToward.swift (OYBCTests/CountsTowardVectorTests.swift) — docs/SHARED_COUNTER_SETTINGS.md §3 (D10: one credit per completion occurrence; D11: count from `countsTowardSince`). Task defaults for unlisted fields: type=normal, isCompleted=false, isDeleted=false, createdAt=2026-01-01T00:00:00.000Z. Event defaults: isDeleted=false, kind=increment when delta is set else completion. Board defaults: status=active, isDeleted=false. Placement defaults: isDeleted=false. Link defaults: isDeleted=false. `state` vectors take an optional `window`. `credits` / `candidates` / `planSet` name occurrences ({kind: event|childEvent|board|lifetime}) and the ROOT they are minted on (`root`, default \"root\"); the test derives each credit id with countsTowardEventId(root, lineageRootId(contributor), occurrence) and compares sets sorted by id. `candidates.roots` lists the roots to enumerate. `planSet.lineageWanted` lists occurrences other lineage members keep; `planSet.lineageDelta` maps a root to the lineage's amount (applied only to credits also in `lineageWanted`). `lineageDelta` vectors pin lineageCreditDelta. `creditGroups` vectors (PR 4 — countsTowardCredits.ts ↔ CountsToward.contributorCreditGroups) list the ROOT's credits as `rootCredits` ({scope, occurrence, occurredAt, delta?=1, isDeleted?}); the test mints each as an increment on `root` with id countsTowardEventId(root, scope, occurrence) and expects the lineage groups (scopeId, memberIds, representativeId, creditCount, latestOccurredAt) in scope order. `rows` vectors pin countsTowardRows (same inputs as `creditGroups`; tasks may carry `title`): one row per lineage — representative, status (done / inProgress / notStarted on the primary board), boardId, creditCount, latestOccurredAt — in In progress, Not started, Done order (Decision 8 of the unit-tasks handoff; Done rows most recently credited first by latestOccurredAt desc with null last), then title (case-insensitive), then id; each row also carries `progress` ({current, goal, kind} — a COUNTING representative that is not done: windowed count on the primary board, lifetime when unplaced, kind = resolveCountKind) and `childProgress` ({done, total} — a COMPOUND representative: live direct links to live children, completion on the same window), both OMITTED from an `expected` row when null (the test defaults omitted to null); `progress` is also null for a COUNTING row with no `maxCount`; `memberIds` (always present) is the lineage's live flagged members sorted by id — what a Remove unflags (a board-scoped fork keeps the flag and shares the lineage's credits). Amount ruling (#590, 2026-10-10): a unit task always credits one — the amount / lineageDelta expectations are pinned to 1 and the planSet vectors that exercised amount ≠ 1 were removed.",
   "eventId": [
     {
       "root": "root",
@@ -5406,7 +5406,10 @@
           "status": "done",
           "boardId": "w1",
           "creditCount": 1,
-          "latestOccurredAt": "2026-10-07T09:00:00.000Z"
+          "latestOccurredAt": "2026-10-07T09:00:00.000Z",
+          "memberIds": [
+            "t"
+          ]
         }
       ]
     },
@@ -5436,7 +5439,10 @@
           "status": "notStarted",
           "boardId": null,
           "creditCount": 0,
-          "latestOccurredAt": null
+          "latestOccurredAt": null,
+          "memberIds": [
+            "t"
+          ]
         }
       ]
     },
@@ -5509,7 +5515,10 @@
             "current": 100,
             "goal": 250,
             "kind": "discrete"
-          }
+          },
+          "memberIds": [
+            "c"
+          ]
         },
         {
           "taskId": "z",
@@ -5521,7 +5530,10 @@
             "current": 0,
             "goal": 10,
             "kind": "discrete"
-          }
+          },
+          "memberIds": [
+            "z"
+          ]
         }
       ]
     },
@@ -5621,7 +5633,10 @@
           "childProgress": {
             "done": 1,
             "total": 2
-          }
+          },
+          "memberIds": [
+            "k1"
+          ]
         },
         {
           "taskId": "k2",
@@ -5632,7 +5647,10 @@
           "childProgress": {
             "done": 1,
             "total": 1
-          }
+          },
+          "memberIds": [
+            "k2"
+          ]
         }
       ]
     },
@@ -5698,7 +5716,10 @@
           "status": "notStarted",
           "boardId": "w1",
           "creditCount": 1,
-          "latestOccurredAt": "2026-09-20T09:00:00.000Z"
+          "latestOccurredAt": "2026-09-20T09:00:00.000Z",
+          "memberIds": [
+            "t"
+          ]
         }
       ]
     },
@@ -5746,7 +5767,10 @@
           "status": "notStarted",
           "boardId": "s",
           "creditCount": 0,
-          "latestOccurredAt": null
+          "latestOccurredAt": null,
+          "memberIds": [
+            "t"
+          ]
         }
       ]
     },
@@ -5786,21 +5810,30 @@
           "status": "notStarted",
           "boardId": null,
           "creditCount": 0,
-          "latestOccurredAt": null
+          "latestOccurredAt": null,
+          "memberIds": [
+            "w"
+          ]
         },
         {
           "taskId": "y",
           "status": "notStarted",
           "boardId": null,
           "creditCount": 0,
-          "latestOccurredAt": null
+          "latestOccurredAt": null,
+          "memberIds": [
+            "y"
+          ]
         },
         {
           "taskId": "x",
           "status": "notStarted",
           "boardId": null,
           "creditCount": 0,
-          "latestOccurredAt": null
+          "latestOccurredAt": null,
+          "memberIds": [
+            "x"
+          ]
         }
       ]
     },
@@ -5863,7 +5896,11 @@
           "status": "notStarted",
           "boardId": null,
           "creditCount": 1,
-          "latestOccurredAt": "2026-10-07T09:00:00.000Z"
+          "latestOccurredAt": "2026-10-07T09:00:00.000Z",
+          "memberIds": [
+            "f",
+            "o"
+          ]
         }
       ]
     },
@@ -5959,28 +5996,40 @@
           "status": "notStarted",
           "boardId": "w1",
           "creditCount": 0,
-          "latestOccurredAt": null
+          "latestOccurredAt": null,
+          "memberIds": [
+            "c"
+          ]
         },
         {
           "taskId": "n",
           "status": "notStarted",
           "boardId": "w1",
           "creditCount": 0,
-          "latestOccurredAt": null
+          "latestOccurredAt": null,
+          "memberIds": [
+            "n"
+          ]
         },
         {
           "taskId": "b",
           "status": "done",
           "boardId": "w1",
           "creditCount": 1,
-          "latestOccurredAt": "2026-10-08T09:00:00.000Z"
+          "latestOccurredAt": "2026-10-08T09:00:00.000Z",
+          "memberIds": [
+            "b"
+          ]
         },
         {
           "taskId": "a",
           "status": "done",
           "boardId": "w1",
           "creditCount": 1,
-          "latestOccurredAt": "2026-10-06T09:00:00.000Z"
+          "latestOccurredAt": "2026-10-06T09:00:00.000Z",
+          "memberIds": [
+            "a"
+          ]
         }
       ]
     },
@@ -6069,7 +6118,10 @@
             "current": 3,
             "goal": 10,
             "kind": "duration"
-          }
+          },
+          "memberIds": [
+            "c"
+          ]
         },
         {
           "taskId": "k",
@@ -6080,14 +6132,445 @@
           "childProgress": {
             "done": 0,
             "total": 0
-          }
+          },
+          "memberIds": [
+            "k"
+          ]
         },
         {
           "taskId": "d",
           "status": "done",
           "boardId": "w1",
           "creditCount": 1,
-          "latestOccurredAt": "2026-10-06T09:00:00.000Z"
+          "latestOccurredAt": "2026-10-06T09:00:00.000Z",
+          "memberIds": [
+            "d"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "done-row-without-credits-sorts-after-credited-done-row-whatever-the-title",
+      "root": "root",
+      "tasks": [
+        {
+          "id": "root",
+          "type": "counting",
+          "isCounter": true
+        },
+        {
+          "countsTowardCounterId": "root",
+          "id": "u",
+          "title": "Aaa"
+        },
+        {
+          "countsTowardCounterId": "root",
+          "id": "c",
+          "title": "Zzz"
+        }
+      ],
+      "events": [
+        {
+          "id": "eu",
+          "taskId": "u",
+          "occurredAt": "2026-10-06T09:00:00.000Z"
+        },
+        {
+          "id": "ec",
+          "taskId": "c",
+          "occurredAt": "2026-10-07T09:00:00.000Z"
+        }
+      ],
+      "rootCredits": [
+        {
+          "scope": "c",
+          "occurrence": {
+            "kind": "event",
+            "eventId": "ec"
+          },
+          "occurredAt": "2026-10-07T09:00:00.000Z"
+        }
+      ],
+      "children": [],
+      "placements": [
+        {
+          "boardId": "w1",
+          "taskId": "u"
+        },
+        {
+          "boardId": "w1",
+          "taskId": "c"
+        }
+      ],
+      "boards": [
+        {
+          "id": "w1",
+          "startDate": "2026-10-05T00:00:00.000Z",
+          "endDate": "2026-10-11T23:59:59.999Z"
+        }
+      ],
+      "expected": [
+        {
+          "taskId": "c",
+          "status": "done",
+          "memberIds": [
+            "c"
+          ],
+          "boardId": "w1",
+          "creditCount": 1,
+          "latestOccurredAt": "2026-10-07T09:00:00.000Z"
+        },
+        {
+          "taskId": "u",
+          "status": "done",
+          "memberIds": [
+            "u"
+          ],
+          "boardId": "w1",
+          "creditCount": 0,
+          "latestOccurredAt": null
+        }
+      ]
+    },
+    {
+      "name": "child-progress-ignores-a-deleted-link-and-a-deleted-child",
+      "root": "root",
+      "tasks": [
+        {
+          "id": "root",
+          "type": "counting",
+          "isCounter": true
+        },
+        {
+          "countsTowardCounterId": "root",
+          "id": "k",
+          "title": "Club",
+          "type": "compound",
+          "operator": "AND"
+        },
+        {
+          "id": "a"
+        },
+        {
+          "id": "b"
+        },
+        {
+          "id": "x"
+        },
+        {
+          "id": "y",
+          "isDeleted": true
+        }
+      ],
+      "events": [
+        {
+          "id": "ea",
+          "taskId": "a",
+          "occurredAt": "2026-10-06T09:00:00.000Z"
+        },
+        {
+          "id": "ex",
+          "taskId": "x",
+          "occurredAt": "2026-10-06T09:00:00.000Z"
+        }
+      ],
+      "rootCredits": [],
+      "children": [
+        {
+          "compoundTaskId": "k",
+          "childTaskId": "a"
+        },
+        {
+          "compoundTaskId": "k",
+          "childTaskId": "b"
+        },
+        {
+          "compoundTaskId": "k",
+          "childTaskId": "x",
+          "isDeleted": true
+        },
+        {
+          "compoundTaskId": "k",
+          "childTaskId": "y"
+        }
+      ],
+      "placements": [
+        {
+          "boardId": "w1",
+          "taskId": "k"
+        }
+      ],
+      "boards": [
+        {
+          "id": "w1",
+          "startDate": "2026-10-05T00:00:00.000Z",
+          "endDate": "2026-10-11T23:59:59.999Z"
+        }
+      ],
+      "expected": [
+        {
+          "taskId": "k",
+          "status": "inProgress",
+          "memberIds": [
+            "k"
+          ],
+          "boardId": "w1",
+          "creditCount": 0,
+          "latestOccurredAt": null,
+          "childProgress": {
+            "done": 1,
+            "total": 2
+          }
+        }
+      ]
+    },
+    {
+      "name": "counting-progress-on-a-sealed-primary-board-is-bounded-at-sealedAt",
+      "root": "root",
+      "tasks": [
+        {
+          "id": "root",
+          "type": "counting",
+          "isCounter": true
+        },
+        {
+          "countsTowardCounterId": "root",
+          "id": "c",
+          "title": "Read",
+          "type": "counting",
+          "maxCount": 10
+        }
+      ],
+      "events": [
+        {
+          "id": "i1",
+          "taskId": "c",
+          "occurredAt": "2026-10-06T09:00:00.000Z",
+          "delta": 2
+        },
+        {
+          "id": "i2",
+          "taskId": "c",
+          "occurredAt": "2026-10-10T09:00:00.000Z",
+          "delta": 5
+        }
+      ],
+      "rootCredits": [],
+      "children": [],
+      "placements": [
+        {
+          "boardId": "s",
+          "taskId": "c"
+        }
+      ],
+      "boards": [
+        {
+          "id": "s",
+          "startDate": "2026-10-05T00:00:00.000Z",
+          "endDate": "2026-10-11T23:59:59.999Z",
+          "sealedAt": "2026-10-09T00:00:00.000Z"
+        }
+      ],
+      "expected": [
+        {
+          "taskId": "c",
+          "status": "inProgress",
+          "memberIds": [
+            "c"
+          ],
+          "boardId": "s",
+          "creditCount": 0,
+          "latestOccurredAt": null,
+          "progress": {
+            "current": 2,
+            "goal": 10,
+            "kind": "discrete"
+          }
+        }
+      ]
+    },
+    {
+      "name": "counting-without-a-goal-has-no-progress",
+      "root": "root",
+      "tasks": [
+        {
+          "id": "root",
+          "type": "counting",
+          "isCounter": true
+        },
+        {
+          "countsTowardCounterId": "root",
+          "id": "nm",
+          "title": "Loose",
+          "type": "counting"
+        }
+      ],
+      "events": [
+        {
+          "id": "i1",
+          "taskId": "nm",
+          "occurredAt": "2026-10-06T09:00:00.000Z",
+          "delta": 2
+        }
+      ],
+      "rootCredits": [],
+      "children": [],
+      "placements": [
+        {
+          "boardId": "w1",
+          "taskId": "nm"
+        }
+      ],
+      "boards": [
+        {
+          "id": "w1",
+          "startDate": "2026-10-05T00:00:00.000Z",
+          "endDate": "2026-10-11T23:59:59.999Z"
+        }
+      ],
+      "expected": [
+        {
+          "taskId": "nm",
+          "status": "inProgress",
+          "memberIds": [
+            "nm"
+          ],
+          "boardId": "w1",
+          "creditCount": 0,
+          "latestOccurredAt": null
+        }
+      ]
+    },
+    {
+      "name": "nested-compound-child-counts-done-only-when-it-derives-complete",
+      "root": "root",
+      "tasks": [
+        {
+          "id": "root",
+          "type": "counting",
+          "isCounter": true
+        },
+        {
+          "countsTowardCounterId": "root",
+          "id": "k",
+          "title": "Outer",
+          "type": "compound",
+          "operator": "AND"
+        },
+        {
+          "countsTowardCounterId": "root",
+          "id": "k2",
+          "title": "Outer two",
+          "type": "compound",
+          "operator": "AND"
+        },
+        {
+          "id": "n",
+          "type": "compound",
+          "operator": "AND"
+        },
+        {
+          "id": "m",
+          "type": "compound",
+          "operator": "AND"
+        },
+        {
+          "id": "p"
+        },
+        {
+          "id": "q"
+        },
+        {
+          "id": "r"
+        },
+        {
+          "id": "z"
+        }
+      ],
+      "events": [
+        {
+          "id": "ep",
+          "taskId": "p",
+          "occurredAt": "2026-10-06T09:00:00.000Z"
+        },
+        {
+          "id": "eq",
+          "taskId": "q",
+          "occurredAt": "2026-10-06T09:00:00.000Z"
+        }
+      ],
+      "rootCredits": [],
+      "children": [
+        {
+          "compoundTaskId": "k",
+          "childTaskId": "n"
+        },
+        {
+          "compoundTaskId": "k",
+          "childTaskId": "z"
+        },
+        {
+          "compoundTaskId": "n",
+          "childTaskId": "p"
+        },
+        {
+          "compoundTaskId": "n",
+          "childTaskId": "q"
+        },
+        {
+          "compoundTaskId": "k2",
+          "childTaskId": "m"
+        },
+        {
+          "compoundTaskId": "m",
+          "childTaskId": "r"
+        }
+      ],
+      "placements": [
+        {
+          "boardId": "w1",
+          "taskId": "k"
+        },
+        {
+          "boardId": "w1",
+          "taskId": "k2"
+        }
+      ],
+      "boards": [
+        {
+          "id": "w1",
+          "startDate": "2026-10-05T00:00:00.000Z",
+          "endDate": "2026-10-11T23:59:59.999Z"
+        }
+      ],
+      "expected": [
+        {
+          "taskId": "k",
+          "status": "inProgress",
+          "memberIds": [
+            "k"
+          ],
+          "boardId": "w1",
+          "creditCount": 0,
+          "latestOccurredAt": null,
+          "childProgress": {
+            "done": 1,
+            "total": 2
+          }
+        },
+        {
+          "taskId": "k2",
+          "status": "notStarted",
+          "memberIds": [
+            "k2"
+          ],
+          "boardId": "w1",
+          "creditCount": 0,
+          "latestOccurredAt": null,
+          "childProgress": {
+            "done": 0,
+            "total": 1
+          }
         }
       ]
     }

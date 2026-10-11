@@ -104,13 +104,13 @@ final class UnitTasksTests: XCTestCase {
         return db
     }
 
-    private func task(_ id: String, type: TaskType = .normal, isCounter: Bool = false, countsToward: String? = nil) -> Task {
+    private func task(_ id: String, type: TaskType = .normal, isCounter: Bool = false, countsToward: String? = nil, forked: String? = nil) -> Task {
         Task(
             id: id, userId: user, title: id, type: type,
             action: type == .counting ? "Read" : nil, unit: type == .counting ? "books" : nil,
             maxCount: type == .counting ? 12 : nil, totalCompletions: 0, totalInstances: 0,
             currentCount: type == .counting ? 0 : nil, createdAt: t0, updatedAt: t0, version: 1, isDeleted: false,
-            isCounter: isCounter, countsTowardCounterId: countsToward, countsTowardSince: countsToward == nil ? nil : t0
+            isCounter: isCounter, forkedFromTaskId: forked, countsTowardCounterId: countsToward, countsTowardSince: countsToward == nil ? nil : t0
         )
     }
 
@@ -132,6 +132,9 @@ final class UnitTasksTests: XCTestCase {
         try db.saveTask(task("u1", countsToward: root))
         try db.saveTask(task("u2", type: .compound, countsToward: root))
         try db.saveTask(task("other"))
+        // A flagged fork shares its original's lineage: still 2, the section heading's N.
+        try db.saveTask(task("u1-fork", countsToward: root, forked: "u1"))
+        XCTAssertEqual(try db.fetchCountsTowardSection(counterId: root)?.rows.count, 2)
         XCTAssertEqual(try db.computeTaskDeletionImpact(taskId: root).unitTaskCount, 2)
         XCTAssertEqual(try db.computeTaskDeletionImpact(taskId: "other").unitTaskCount, 0)
     }
@@ -143,5 +146,36 @@ final class UnitTasksTests: XCTestCase {
         try db.setCountsToward(taskId: "u1", counterId: nil)
         XCTAssertNil(try db.fetchTask(id: "u1")?.countsTowardCounterId)
         XCTAssertEqual(try db.fetchCountsTowardSection(counterId: root)?.rows.count, 0)
+    }
+
+    func test_removeClearsEveryLineageMemberIncludingAFlaggedFork() throws {
+        let db = try makeDb()
+        try db.saveTask(task(root, type: .counting, isCounter: true))
+        try db.saveTask(task("u1", countsToward: root))
+        try db.saveTask(task("u1-fork", countsToward: root, forked: "u1"))
+        let row = try XCTUnwrap(try db.fetchCountsTowardSection(counterId: root)?.rows.first)
+        XCTAssertEqual(row.memberIds, ["u1", "u1-fork"])
+        try db.removeUnitTasks(taskIds: row.memberIds)
+        XCTAssertNil(try db.fetchTask(id: "u1")?.countsTowardCounterId)
+        XCTAssertNil(try db.fetchTask(id: "u1-fork")?.countsTowardCounterId)
+        XCTAssertEqual(try db.fetchCountsTowardSection(counterId: root)?.rows.count, 0)
+    }
+
+    func test_emptyCompoundShellIsNotRemovable() {
+        func r(_ c: CountsToward.ChildProgress?) -> CountsToward.ContributorRow {
+            .init(taskId: "t", status: .notStarted, boardId: nil, creditCount: 0, latestOccurredAt: nil, childProgress: c)
+        }
+        XCTAssertFalse(CountsTowardSectionView.canRemove(r(.init(done: 0, total: 0))))
+        XCTAssertTrue(CountsTowardSectionView.canRemove(r(.init(done: 0, total: 2))))
+        XCTAssertTrue(CountsTowardSectionView.canRemove(r(nil)))
+    }
+
+    func test_removeIsAllOrNothingWhenAMemberIsRefused() throws {
+        let db = try makeDb()
+        try db.saveTask(task(root, type: .counting, isCounter: true))
+        try db.saveTask(task("u1", countsToward: root))
+        try db.saveTask(task("shell", type: .compound, countsToward: root))
+        XCTAssertThrowsError(try db.removeUnitTasks(taskIds: ["u1", "shell"]))
+        XCTAssertEqual(try db.fetchTask(id: "u1")?.countsTowardCounterId, root)
     }
 }
