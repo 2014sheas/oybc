@@ -376,6 +376,31 @@ describe('unit tasks — remove and counter delete', () => {
     for (const id of [DUNE, FORK]) expect((await db.tasks.get(id))?.countsTowardCounterId ?? null).toBeNull();
   });
 
+  it('the lineage remove withdraws the shared credit, and is all-or-nothing: a refused member leaves every flag and credit in place', async () => {
+    const SHELL = '90000000-0000-4000-8000-0000000000ba';
+    await db.tasks.bulkAdd([
+      rootTask(),
+      task(DUNE, { title: 'Finish Dune', countsTowardCounterId: ROOT, countsTowardSince: T0 }),
+      // A zero-child compound may not stop counting (compound-needs-child).
+      task(SHELL, { title: 'Club night', type: TaskType.COMPOUND, operator: OperatorType.AND, countsTowardCounterId: ROOT, countsTowardSince: T0 }),
+    ]);
+    await db.boardTasks.bulkAdd([placement('bt-dune', B1, DUNE)]);
+    await db.taskEvents.bulkAdd([
+      event('c1', DUNE, 'completion', '2026-10-06T09:00:00.000Z'),
+      event(countsTowardEventId(ROOT, DUNE, { kind: 'event', eventId: 'c1' }), ROOT, 'increment', '2026-10-06T09:00:00.000Z', 1),
+    ]);
+    expect(await liveCredits()).toHaveLength(1);
+
+    await expect(removeUnitTaskLineage([DUNE, SHELL])).rejects.toMatchObject({ code: 'compound-needs-child' });
+    expect((await db.tasks.get(DUNE))?.countsTowardCounterId).toBe(ROOT);
+    expect((await db.tasks.get(SHELL))?.countsTowardCounterId).toBe(ROOT);
+    expect(await liveCredits()).toHaveLength(1);
+
+    await removeUnitTaskLineage([DUNE]);
+    expect((await db.tasks.get(DUNE))?.countsTowardCounterId ?? null).toBeNull();
+    expect(await liveCredits()).toHaveLength(0);
+  });
+
   it('the counter-delete impact counts the unit-task lineages (a fork shares its original\'s; deleted ones excluded); the delete keeps and decouples them', async () => {
     await db.tasks.bulkAdd([
       rootTask(),
