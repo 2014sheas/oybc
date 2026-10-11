@@ -109,8 +109,8 @@ export {
   lineageRootId,
 } from './countsTowardLineage';
 export type { ForkEventResolver } from './countsTowardLineage';
-export { contributorCreditGroups, contributorRowStatus, countsTowardRows } from './countsTowardCredits';
-export type { ContributorCreditGroup, ContributorRow, ContributorRowStatus } from './countsTowardCredits';
+export { contributorCreditGroups, contributorRowProgress, contributorRowStatus, countsTowardRows } from './countsTowardCredits';
+export type { ContributorChildProgress, ContributorCreditGroup, ContributorRow, ContributorRowProgress, ContributorRowStatus } from './countsTowardCredits';
 export { countsTowardProblem, isSharedCounterRoot } from './countsTowardValidation';
 export type { CountsTowardProblem } from './countsTowardValidation';
 export type {

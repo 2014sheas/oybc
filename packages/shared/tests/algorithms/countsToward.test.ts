@@ -547,6 +547,6 @@ describe('countsTowardVectors — contributorCreditGroups', () => {
 describe('countsTowardVectors — countsTowardRows', () => {
   it.each(V.rows as any[])('$name', (v: any) => {
     const { tasks, inputs } = toGroupInputs(v);
-    expect(countsTowardRows(v.root, tasks, inputs)).toEqual(v.expected);
+    expect(countsTowardRows(v.root, tasks, inputs)).toEqual(v.expected.map((r: any) => ({ progress: null, childProgress: null, ...r })));
   });
 });

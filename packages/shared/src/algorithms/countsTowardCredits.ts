@@ -19,6 +19,7 @@
  */
 
 import { TaskType } from '../constants/enums';
+import { resolveCountKind, type CountKind } from './countValue';
 import type { Board } from '../types/board';
 import type { Task } from '../types/task';
 import type { TaskEvent } from '../types/taskEvent';
@@ -128,6 +129,30 @@ export interface ContributorRow {
   creditCount: number;
   /** The latest credit instant; `null` with no credits. */
   latestOccurredAt: string | null;
+  /**
+   * A plain COUNTING representative that is not done: its windowed count on
+   * the primary board (lifetime when unplaced) against its goal, in the
+   * task's real kind. `null` for every other row.
+   */
+  progress: ContributorRowProgress | null;
+  /**
+   * A COMPOUND representative: done / total direct children on the same
+   * window (total 0 = the "No subtasks yet" row). `null` for every other row.
+   */
+  childProgress: ContributorChildProgress | null;
+}
+
+/** A counting unit task's `current / goal` in its own kind. */
+export interface ContributorRowProgress {
+  current: number;
+  goal: number;
+  kind: CountKind;
+}
+
+/** A compound unit task's direct-child tally. */
+export interface ContributorChildProgress {
+  done: number;
+  total: number;
 }
 
 /** The window a task is evaluated over on `board` — sealed boards bounded at `sealedAt`. */
@@ -183,15 +208,55 @@ export function contributorRowStatus(
   return 'notStarted';
 }
 
-const STATUS_ORDER: Record<ContributorRowStatus, number> = { done: 0, inProgress: 1, notStarted: 2 };
+/**
+ * The row's progress numbers on `board` (lifetime when `null`): counting →
+ * {@link ContributorRowProgress} unless `status` is done; compound →
+ * {@link ContributorChildProgress} (live links to live children); else both
+ * `null`.
+ */
+export function contributorRowProgress(
+  task: Task,
+  status: ContributorRowStatus,
+  inputs: ContributionInputs,
+  board: Pick<Board, 'startDate' | 'endDate' | 'sealedAt'> | null,
+): { progress: ContributorRowProgress | null; childProgress: ContributorChildProgress | null } {
+  const ctx = windowContextOf(board, inputs.eventsByTaskId);
+  if (task.type === TaskType.COUNTING && status !== 'done') {
+    const state = resolveTaskWindowState(task, ctx.eventsByTaskId[task.id] ?? [], ctx.windowStart, ctx.windowEnd);
+    return { progress: { current: state.count, goal: task.maxCount ?? 0, kind: resolveCountKind(task) }, childProgress: null };
+  }
+  if (task.type === TaskType.COMPOUND) {
+    let total = 0;
+    let done = 0;
+    for (const l of (inputs.childrenByCompound[task.id] ?? []).filter((x) => !x.isDeleted)) {
+      const child = inputs.taskById[l.childTaskId];
+      if (!child || child.isDeleted) continue;
+      total += 1;
+      if (childDone(child, inputs, ctx)) done += 1;
+    }
+    return { progress: null, childProgress: { done, total } };
+  }
+  return { progress: null, childProgress: null };
+}
+
+const STATUS_ORDER: Record<ContributorRowStatus, number> = { inProgress: 0, notStarted: 1, done: 2 };
+
+/** Later instants first; `null` last. */
+function compareRecencyDesc(a: string | null, b: string | null): number {
+  if (a === b) return 0;
+  if (a == null) return 1;
+  if (b == null) return -1;
+  return a < b ? 1 : -1;
+}
 
 /**
  * The Counter Detail "Counts toward" rows for counter root `rootId`: one per
  * fork lineage ({@link contributorCreditGroups}), standing for the lineage's
  * representative, placed on the representative's primary board
  * ({@link pickPrimaryBoard} over `inputs.placements` / `inputs.boardById`),
- * in the handoff's order — Done, In progress, Not started — then by title
- * (case-insensitive), then id.
+ * in the unit-tasks handoff's order (Decision 8) — In progress, Not started,
+ * Done — Done rows most recently credited first (`latestOccurredAt` desc,
+ * `null` last), then by title (case-insensitive), then id.
  *
  * @param rootId - The counter root.
  * @param tasks - Every task.
@@ -205,15 +270,23 @@ export function countsTowardRows(rootId: string, tasks: ReadonlyArray<Task>, inp
     const task = inputs.taskById[g.representativeId];
     if (!task) continue;
     const board = pickPrimaryBoard(task.id, inputs.placements, boardsById);
+    const status = contributorRowStatus(task, inputs, board);
     rows.push({
       taskId: task.id,
-      status: contributorRowStatus(task, inputs, board),
+      status,
       boardId: board?.id ?? null,
       creditCount: g.creditCount,
       latestOccurredAt: g.latestOccurredAt,
+      ...contributorRowProgress(task, status, inputs, board),
       title: task.title.toLowerCase(),
     });
   }
-  rows.sort((a, b) => STATUS_ORDER[a.status] - STATUS_ORDER[b.status] || compareIds(a.title, b.title) || compareIds(a.taskId, b.taskId));
+  rows.sort(
+    (a, b) =>
+      STATUS_ORDER[a.status] - STATUS_ORDER[b.status] ||
+      (a.status === 'done' ? compareRecencyDesc(a.latestOccurredAt, b.latestOccurredAt) : 0) ||
+      compareIds(a.title, b.title) ||
+      compareIds(a.taskId, b.taskId),
+  );
   return rows.map(({ title: _t, ...row }) => row);
 }
