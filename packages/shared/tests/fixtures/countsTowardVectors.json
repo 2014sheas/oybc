@@ -6485,6 +6485,9 @@
         },
         {
           "id": "z"
+        },
+        {
+          "id": "s"
         }
       ],
       "events": [
@@ -6496,6 +6499,11 @@
         {
           "id": "eq",
           "taskId": "q",
+          "occurredAt": "2026-10-06T09:00:00.000Z"
+        },
+        {
+          "id": "es",
+          "taskId": "s",
           "occurredAt": "2026-10-06T09:00:00.000Z"
         }
       ],
@@ -6524,6 +6532,10 @@
         {
           "compoundTaskId": "m",
           "childTaskId": "r"
+        },
+        {
+          "compoundTaskId": "m",
+          "childTaskId": "s"
         }
       ],
       "placements": [

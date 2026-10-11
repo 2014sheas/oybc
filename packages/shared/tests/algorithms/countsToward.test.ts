@@ -515,26 +515,26 @@ describe('TaskSchema — countsToward shape rules', () => {
 
 /** The tasks + `ContributionInputs` a creditGroups / rows vector describes (root credits minted at their deterministic ids). */
 function toGroupInputs(v: any): { tasks: Task[]; inputs: ContributionInputs } {
-    const tasks = (v.tasks as MiniTask[]).map(toTask);
-    const taskById = Object.fromEntries(tasks.map((t) => [t.id, t]));
-    const credits: TaskEvent[] = (v.rootCredits as any[]).map((c, i) =>
-      toEvent(
-        { id: countsTowardEventId(v.root, c.scope, c.occurrence), taskId: v.root, delta: c.delta ?? 1, occurredAt: c.occurredAt, isDeleted: c.isDeleted },
-        1000 + i,
-      ),
-    );
-    const events = [...(v.events as MiniEvent[]).map(toEvent), ...credits];
-    const children = toChildren(v.children ?? []);
-    const inputs: ContributionInputs = {
-      taskById,
-      childrenByCompound: group(children.filter((c) => !c.isDeleted), 'compoundTaskId'),
-      allChildrenByCompound: group(children, 'compoundTaskId'),
-      eventsByTaskId: group(events.filter((e) => !e.isDeleted), 'taskId'),
-      allEventsByTaskId: group(events, 'taskId'),
-      placements: (v.placements as MiniPlacement[]).map(toPlacement),
-      boardById: Object.fromEntries((v.boards as MiniBoard[]).map((b) => [b.id, toBoard(b)])),
-    };
-    return { tasks, inputs };
+  const tasks = (v.tasks as MiniTask[]).map(toTask);
+  const taskById = Object.fromEntries(tasks.map((t) => [t.id, t]));
+  const credits: TaskEvent[] = (v.rootCredits as any[]).map((c, i) =>
+    toEvent(
+      { id: countsTowardEventId(v.root, c.scope, c.occurrence), taskId: v.root, delta: c.delta ?? 1, occurredAt: c.occurredAt, isDeleted: c.isDeleted },
+      1000 + i,
+    ),
+  );
+  const events = [...(v.events as MiniEvent[]).map(toEvent), ...credits];
+  const children = toChildren(v.children ?? []);
+  const inputs: ContributionInputs = {
+    taskById,
+    childrenByCompound: group(children.filter((c) => !c.isDeleted), 'compoundTaskId'),
+    allChildrenByCompound: group(children, 'compoundTaskId'),
+    eventsByTaskId: group(events.filter((e) => !e.isDeleted), 'taskId'),
+    allEventsByTaskId: group(events, 'taskId'),
+    placements: (v.placements as MiniPlacement[]).map(toPlacement),
+    boardById: Object.fromEntries((v.boards as MiniBoard[]).map((b) => [b.id, toBoard(b)])),
+  };
+  return { tasks, inputs };
 }
 
 describe('countsTowardVectors — contributorCreditGroups', () => {
