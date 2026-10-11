@@ -5,6 +5,7 @@ import {
   parseCountInput,
   type Task,
 } from '@oybc/shared';
+import { UnitTag } from '../counters/UnitTag';
 import { effectiveInlineKind, inlineSubtaskToAutoCreate, type SubtaskDraft } from './compoundSubtaskDraft';
 import styles from './ReviewStep.module.css';
 
@@ -19,6 +20,8 @@ export interface ReviewStepProps {
   allCompoundTasks: Task[];
   isSubmitting: boolean;
   errorMessage: string | null;
+  /** From-counter mode: the counter's name — adds a "Counter" row holding the dense `UnitTag`. */
+  counterName?: string;
   onBack: () => void;
   onCreate: () => void;
   /** Open an existing-mode subtask's library detail. Inline-mode chips
@@ -43,6 +46,7 @@ export function ReviewStep({
   allCompoundTasks,
   isSubmitting,
   errorMessage,
+  counterName,
   onBack,
   onCreate,
   onOpenTask,
@@ -71,10 +75,19 @@ export function ReviewStep({
             <span className={styles.rowHint}> · {subtasks.length} subtask{subtasks.length === 1 ? '' : 's'}</span>
           </dd>
         </div>
+        {counterName && (
+          <div className={styles.row}>
+            <dt>Counter</dt>
+            <dd>
+              <UnitTag name={counterName} dense />
+            </dd>
+          </div>
+        )}
       </dl>
 
       <div className={styles.chipSection}>
         <span className={styles.chipSectionHeading}>Subtasks</span>
+        {subtasks.length === 0 && <span className={styles.placeholder}>No subtasks yet</span>}
         <ul className={styles.chipList}>
           {subtasks.map((s, idx) => (
             <li key={s.id}>

@@ -46,6 +46,8 @@ export interface CompoundTaskWizardProps {
   onCreated?: (task: Task) => void;
   /** Counter id the new compound silently counts toward (Counter Detail "+ New"); no UI row. */
   countsTowardPreset?: string | null;
+  /** The preset counter's display name — the Review step's "Counter" row shows it as a dense `UnitTag`. */
+  counterName?: string;
 }
 
 function createExistingSubtask(id: string, kind: 'task' | 'compound'): ExistingSubtaskDraft {
@@ -84,6 +86,7 @@ export function CompoundTaskWizard({
   userId,
   onCreated,
   countsTowardPreset,
+  counterName,
 }: CompoundTaskWizardProps = {}): React.ReactElement {
   const resolvedUserId = userId ?? PLAYGROUND_USER_ID;
   const countsTowardId = countsTowardPreset ?? null;
@@ -335,6 +338,7 @@ export function CompoundTaskWizard({
           allCompoundTasks={allCompoundTasks}
           isSubmitting={isSubmitting}
           errorMessage={errorMessage}
+          counterName={countsTowardId != null ? counterName : undefined}
           onBack={() => setCurrentStep(2)}
           onCreate={handleCreate}
           onOpenTask={(id) => setOpenedTaskInLibrary(id)}

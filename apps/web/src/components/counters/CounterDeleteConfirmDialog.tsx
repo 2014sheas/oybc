@@ -1,4 +1,5 @@
 import { useModalA11y } from '../../hooks/useModalA11y';
+import { unitTasksKeptNote } from './countsTowardLabels';
 import { derivedCounterRemovalNote } from './derivedCounterRemovalNote';
 import styles from './CounterDeleteConfirmDialog.module.css';
 
@@ -28,6 +29,11 @@ export interface CounterDeleteConfirmDialogProps {
    * counts" is never read as covering them. `0` renders nothing.
    */
   derivedWindowCounterCount: number;
+  /**
+   * `impact.unitTaskCount` — the counter's unit tasks, which the delete keeps
+   * as ordinary tasks; a muted line says so. `0` / absent renders nothing.
+   */
+  unitTaskCount?: number;
   /** Member rows to list (title + board name where placed). */
   members: CounterDeleteConfirmMember[];
   /** True while `deleteCounterWithUnlink` is in flight — disables both actions
@@ -54,6 +60,7 @@ export function CounterDeleteConfirmDialog({
   counterName,
   memberCount,
   derivedWindowCounterCount,
+  unitTaskCount = 0,
   members,
   busy,
   onConfirm,
@@ -67,6 +74,7 @@ export function CounterDeleteConfirmDialog({
   // comes from the one helper both web confirm dialogs share, so it can
   // never drift from `TaskConfirmDeleteDialog`'s (or from iOS's).
   const derivedNote = derivedCounterRemovalNote(derivedWindowCounterCount);
+  const unitTasksNote = unitTasksKeptNote(unitTaskCount);
   const { ref: modalRef, props: modalProps } = useModalA11y<HTMLDivElement>({
     open: true,
     onCancel: () => {
@@ -112,6 +120,8 @@ export function CounterDeleteConfirmDialog({
         {derivedNote !== null && (
           <p className={styles.derivedNote}>{derivedNote}</p>
         )}
+
+        {unitTasksNote !== null && <p className={styles.derivedNote}>{unitTasksNote}</p>}
 
         <div className={styles.sheetActions}>
           <button

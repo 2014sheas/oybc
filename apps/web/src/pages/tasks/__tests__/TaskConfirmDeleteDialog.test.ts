@@ -48,6 +48,7 @@ function impact(over: Partial<TaskDeletionImpact> = {}): TaskDeletionImpact {
     counterMembers: [],
     derivedWindowCounterCount: 0,
     countsTowardCounter: null,
+    unitTaskCount: 0,
     ...over,
   };
 }

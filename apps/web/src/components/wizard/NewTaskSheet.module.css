@@ -33,6 +33,14 @@
   border-bottom: 2px solid var(--riso-ink);
 }
 
+.headerTitle {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 7px;
+  min-width: 0;
+}
+
 .title {
   margin: 0;
   font-family: var(--riso-font-head);

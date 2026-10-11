@@ -1,4 +1,4 @@
-/* Counter Detail → "Counts toward" — design handoff §C1 (CountsTowardSection, web). */
+/* Counter Detail → "Unit tasks" — unit-tasks handoff §A (CountsTowardSection, web). */
 .section {
   display: flex;
   flex-direction: column;
@@ -33,11 +33,17 @@
   overflow: hidden;
   box-shadow: 3px 3px 0 var(--riso-shadow-ink);
 }
+.item {
+  position: relative;
+  display: flex;
+  align-items: stretch;
+}
 .item + .item {
   border-top: 1.5px solid var(--riso-hair);
 }
 .rowButton {
-  width: 100%;
+  flex: 1;
+  min-width: 0;
   display: flex;
   align-items: center;
   gap: 12px;
@@ -107,4 +113,52 @@
   font-weight: 700;
   color: var(--riso-muted);
   font-variant-numeric: tabular-nums;
+}
+.progress {
+  flex: 0 0 auto;
+  font-variant-numeric: tabular-nums;
+  color: var(--riso-muted);
+}
+
+/* Trailing remove slot — TaskRow's .deleteButton metrics; always visible, hover only recolours. */
+.removeButton {
+  flex-shrink: 0;
+  padding: 0 0.85rem;
+  border: none;
+  border-left: 1.5px solid var(--riso-hair);
+  background: transparent;
+  color: var(--riso-muted);
+  cursor: pointer;
+  font-size: 1rem;
+  transition: background-color 0.12s, color 0.12s;
+}
+.removeButton:hover {
+  background: var(--riso-paper);
+  color: var(--riso-red);
+}
+.removeButton:focus-visible {
+  outline: 3px solid var(--riso-blue);
+  outline-offset: -3px;
+}
+
+/* Return moment — the row "+ New" just created wears a 3px inset gold ring until the next interaction. */
+.arrived::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  box-shadow: inset 0 0 0 3px var(--riso-gold);
+  animation: utArrive 0.9s ease-in-out both;
+}
+@keyframes utArrive {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .arrived::after {
+    animation: none;
+  }
+  .removeButton {
+    transition: none;
+  }
 }

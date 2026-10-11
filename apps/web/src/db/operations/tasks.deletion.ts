@@ -22,7 +22,7 @@ import {
   softDeleteWindowStampedDerived,
   windowStampedDerivedIdsForRoot,
 } from './derivedCounters';
-import { applyCountsTowardInTransaction } from './countsToward';
+import { applyCountsTowardInTransaction, countContributorsOf } from './countsToward';
 
 /**
  * Summary of what `deleteTaskWithCascade` (or a dry-run) would remove.
@@ -62,6 +62,8 @@ export interface TaskDeletionImpact {
    *  this task counts toward, whose increment the delete tombstones; `null`
    *  when it counts toward nothing (or its counter is gone). */
   countsTowardCounter: Task | null;
+  /** Unit tasks — live, non-fork tasks that count toward THIS task as a counter; the counter delete keeps them as ordinary tasks. 0 for any non-counter. */
+  unitTaskCount: number;
 }
 /**
  * Compute the cascade impact for a candidate deletion. Pure read; does
@@ -109,6 +111,7 @@ export async function computeTaskDeletionImpact(
     .filter((t) => !t.isDeleted).toArray();
   const counterMembers = allMembers.filter((t) => !isWindowStampedDerived(t));
   const task = await db.tasks.get(id);
+  const unitTaskCount = (await countContributorsOf(id)).filter((t) => t.forkedFromTaskId == null).length;
   const counter = task?.countsTowardCounterId ? await db.tasks.get(task.countsTowardCounterId) : undefined;
   return {
     boardTaskCount: visiblePlacements.length,
@@ -120,6 +123,7 @@ export async function computeTaskDeletionImpact(
     counterMembers,
     derivedWindowCounterCount: allMembers.length - counterMembers.length,
     countsTowardCounter: counter && !counter.isDeleted ? counter : null,
+    unitTaskCount,
   };
 }
 /**

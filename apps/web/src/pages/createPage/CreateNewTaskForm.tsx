@@ -18,6 +18,7 @@ import {
 import { GoalEntry } from '../../components/counters/GoalEntry';
 import { KindPicker } from '../../components/counters/KindPicker';
 import { KindTag } from '../../components/counters/KindTag';
+import { autoLinkCreateForPreset, typesForPreset } from './fromCounterMode';
 import { useBoards, useRecurringBoardTemplates, useTasks } from '../../hooks';
 import { getCharCountClass } from '../../components/playground/playgroundUtils';
 import {
@@ -39,7 +40,7 @@ import styles from './CreateNewTaskForm.module.css';
 const EMPTY_TASKS = Object.freeze([]) as unknown as Task[];
 
 const TASK_TYPES: { value: TaskType; label: string }[] = [
-  { value: TaskType.NORMAL, label: 'Normal' },
+  { value: TaskType.NORMAL, label: 'Simple' },
   { value: TaskType.COUNTING, label: 'Counting' },
   // Compound opens the wizard (operator + children chosen there).
   { value: TaskType.COMPOUND, label: 'Compound' },
@@ -101,6 +102,8 @@ export interface CreateNewTaskFormProps {
    * copy — see CLAUDE.md "reuse before creating".
    */
   typeOptions?: TaskType[];
+  /** From-counter mode: the counter's display name, for the compound Review step's "Counter" row. */
+  presetCounterName?: string;
 }
 
 export function CreateNewTaskForm({
@@ -108,13 +111,17 @@ export function CreateNewTaskForm({
   userId,
   onCompositeCreated,
   submitLabel = 'Create & Add to Pool',
-  onCreateLinked,
+  onCreateLinked: hostCreateLinked,
   suggestionPool,
   typeOptions,
+  presetCounterName,
 }: CreateNewTaskFormProps): React.ReactElement {
-  const visibleTypes = typeOptions
-    ? TASK_TYPES.filter((t) => typeOptions.includes(t.value))
-    : TASK_TYPES;
+  // From-counter mode (Counter Detail "+ New"): no Achievement, never auto-link.
+  const onCreateLinked = autoLinkCreateForPreset(hostCreateLinked, form.countsTowardPreset);
+  const visibleTypes = typesForPreset(
+    typeOptions ? TASK_TYPES.filter((t) => typeOptions.includes(t.value)) : TASK_TYPES,
+    form.countsTowardPreset,
+  );
   // Phase 6.3 — Workspace lookups for the Achievement-task picker.
   // Both hooks return non-deleted rows for `userId` (or `[]` while
   // auth is loading); the dropdowns render the empty state below
@@ -240,6 +247,7 @@ export function CreateNewTaskForm({
           userId={userId}
           onCreated={onCompositeCreated}
           countsTowardPreset={form.countsTowardPreset}
+          counterName={presetCounterName}
         />
       ) : (
         <form className={styles.form} onSubmit={handleFormSubmit}>
