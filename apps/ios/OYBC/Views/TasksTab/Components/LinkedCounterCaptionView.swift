@@ -21,13 +21,20 @@ struct LinkedCounterCaptionView: View {
     var database: AppDatabase = .shared
     /// Tap handler for the found-state row; receives `sharedCounterId`.
     var onOpenCounter: (String) -> Void = { _ in }
+    /// A unit task's row (`countsTowardCounterId`): the row names the counter
+    /// by its display name rather than the root's stored title.
+    var usesCounterName: Bool = false
+    /// Snapshot / preview seam: a resolved source that skips the database read.
+    var fixedSource: LinkedCounterSource? = nil
 
     @State private var source: LinkedCounterSource? = nil
     @State private var loading = true
 
     var body: some View {
         Group {
-            if loading {
+            if let fixedSource {
+                LinkedCounterCaptionLabel(source: fixedSource) { onOpenCounter(sharedCounterId) }
+            } else if loading {
                 EmptyView()
             } else {
                 LinkedCounterCaptionLabel(source: source) {
@@ -41,12 +48,14 @@ struct LinkedCounterCaptionView: View {
     }
 
     private func loadSource() async {
+        guard fixedSource == nil else { return }
         loading = true
         let db = database
         let id = sharedCounterId
+        let useName = usesCounterName
         do {
             let resolved = try await _Concurrency.Task.detached(priority: .userInitiated) {
-                try Self.resolveSource(database: db, sharedCounterId: id)
+                try Self.resolveSource(database: db, sharedCounterId: id, usesCounterName: useName)
             }.value
             guard !_Concurrency.Task.isCancelled else { return }
             source = resolved
@@ -65,15 +74,16 @@ struct LinkedCounterCaptionView: View {
     /// - Parameters:
     ///   - database: The database to read from.
     ///   - sharedCounterId: The linked counter's source task id.
+    ///   - usesCounterName: Name the counter by `counterDisplayName` (unit task) instead of the stored title.
     /// - Returns: The resolved source, or nil.
     /// - Throws: Any GRDB read error.
-    nonisolated static func resolveSource(database: AppDatabase, sharedCounterId: String) throws -> LinkedCounterSource? {
+    nonisolated static func resolveSource(database: AppDatabase, sharedCounterId: String, usesCounterName: Bool = false) throws -> LinkedCounterSource? {
         let task = try database.read { db in
             try OYBC.Task.fetchOne(db, key: sharedCounterId)
         }
         guard let task, !task.isDeleted else { return nil }
         return LinkedCounterSource(
-            title: task.title,
+            title: usesCounterName ? CounterSettings.counterDisplayName(task) : task.title,
             lifetime: task.currentCount ?? 0,
             unit: task.unit ?? "",
             kind: resolveCountKind(task.countKind)

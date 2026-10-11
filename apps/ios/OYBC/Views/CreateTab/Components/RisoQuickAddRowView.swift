@@ -100,11 +100,23 @@ struct RisoQuickAddRowView: View {
         guard onExistingTaskPicked != nil, !trimmedText.isEmpty else { return [] }
         // The shared match set (docs/SHARED_COUNTER_SETTINGS.md §2): title, plus a
         // counter's name / noun / verb / plural template; case- and diacritic-insensitive.
+        // Typing a counter's name also finds its unit tasks / linked copies
+        // (unit-tasks PR 2, Decision 7).
+        let roots = rootsById
         return libraryTasks
             .filter { !selectedIds.contains($0.id) }
-            .filter { CounterPlacement.taskSearchMatches(trimmedText, task: $0) }
+            .filter {
+                CounterPlacement.taskSearchMatches(
+                    trimmedText, task: $0, counterName: rowCounterTagName(task: $0, rootsById: roots)
+                )
+            }
             .prefix(4)
             .map { $0 }
+    }
+
+    /// The pool indexed by id, so each match row's counter tag is a lookup, not a scan.
+    private var rootsById: [String: OYBC.Task] {
+        Dictionary(libraryTasks.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
     }
 
     /// Dropdown shows whenever matches exist — purely text-driven, mirroring
@@ -213,10 +225,13 @@ struct RisoQuickAddRowView: View {
     /// sheet's row style (`RisoTypeBadge` + title + "+" affordance) per the
     /// quick-add spec.
     private var libraryMatchesDropdown: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            ForEach(libraryMatches) { task in
+        let matches = libraryMatches
+        let roots = rootsById
+        return VStack(alignment: .leading, spacing: 0) {
+            ForEach(matches) { task in
                 QuickAddMatchRow(
                     task: task,
+                    counterTagName: rowCounterTagName(task: task, rootsById: roots),
                     timeframe: placementTimeframe ?? defaultTimeframe,
                     canCreatePending: onPendingCreated != nil,
                     onPick: {
@@ -234,7 +249,7 @@ struct RisoQuickAddRowView: View {
                     }
                 )
 
-                if task.id != libraryMatches.last?.id {
+                if task.id != matches.last?.id {
                     Divider().overlay(Color.risoInk.opacity(0.12))
                 }
             }
@@ -302,6 +317,9 @@ struct RisoQuickAddRowView: View {
 /// match row.
 private struct QuickAddMatchRow: View {
     let task: OYBC.Task
+    /// The counter a unit task / linked copy belongs to (`rowCounterTagName`):
+    /// a dense `UnitTagView` inline after the title. nil for everything else.
+    var counterTagName: String? = nil
     let timeframe: Timeframe?
     /// A host that can take a pending task (the wizard, Board Edit's picker).
     let canCreatePending: Bool
@@ -377,6 +395,7 @@ private struct QuickAddMatchRow: View {
                 .foregroundStyle(Color.risoInk)
                 .lineLimit(1)
             if isRoot { KindTagView(kind: kind, dense: true) }
+            else if let counterTagName { UnitTagView(name: counterTagName, dense: true) }
             Spacer(minLength: 0)
         }
         .contentShape(Rectangle())

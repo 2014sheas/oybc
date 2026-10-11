@@ -34,6 +34,8 @@ struct RisoTaskDetailContentView: View {
     let onOpenBoard: (String) -> Void
     /// Opens Counter detail for the given shared-counter id (linked row).
     var onOpenCounter: (String) -> Void = { _ in }
+    /// Snapshot seam: the unit-task Counter row's resolved source (skips the DB read).
+    var counterSourceOverride: LinkedCounterSource? = nil
 
     // MARK: - Local state
 
@@ -52,6 +54,19 @@ struct RisoTaskDetailContentView: View {
                 // counting tasks surface their source here, like the original detail.
                 if task.type == .counting, let sharedCounterId = task.sharedCounterId {
                     LinkedCounterCaptionView(sharedCounterId: sharedCounterId, database: database, onOpenCounter: onOpenCounter)
+                }
+                // A unit task (any type): the same row under a "Counter" label —
+                // counter name, all-time total, chevron to Counter Detail. No edit
+                // affordance (unit-tasks PR 2, Decision 5).
+                if let counterId = task.countsTowardCounterId {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("COUNTER").risoSectionLabel()
+                        LinkedCounterCaptionView(
+                            sharedCounterId: counterId, database: database,
+                            onOpenCounter: onOpenCounter, usesCounterName: true,
+                            fixedSource: counterSourceOverride
+                        )
+                    }
                 }
                 usageRow
                 if task.type == .compound && !compoundChildren.isEmpty {

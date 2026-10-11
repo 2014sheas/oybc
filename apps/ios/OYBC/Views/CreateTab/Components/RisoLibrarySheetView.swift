@@ -50,8 +50,12 @@ struct RisoLibrarySheetView: View {
     /// template, because a family root's row here reads its name rather than
     /// its stored "Read 35 pages" (owner ruling 2026-09-22). Twin of web
     /// `LibrarySheet.tsx`'s `matches`.
+    /// Typing a counter's name also finds its unit tasks / linked copies
+    /// (unit-tasks PR 2, Decision 7).
     private func matches(_ task: Task) -> Bool {
-        CounterPlacement.taskSearchMatches(trimmedQuery, task: task)
+        CounterPlacement.taskSearchMatches(
+            trimmedQuery, task: task, counterName: rowCounterTagName(task: task, rootsById: effectiveTaskById)
+        )
     }
 
     // MARK: - Entry button
@@ -258,12 +262,10 @@ struct RisoLibrarySheetView: View {
                             .font(.risoHead(13.5, .bold))
                             .foregroundStyle(Color.risoInk)
                             .lineLimit(1)
-                        if let sub = subtitle {
-                            Text(sub)
-                                .font(.risoBody(10.5, .semibold))
-                                .foregroundStyle(Color.risoMuted)
-                                .lineLimit(1)
-                        }
+                        RisoRowSubtitleView(
+                            counterTagName: rowCounterTagName(task: task, rootsById: effectiveTaskById),
+                            text: subtitle, fontSize: 10.5, weight: .semibold
+                        )
                     }
                     Spacer(minLength: 4)
 

@@ -148,6 +148,18 @@ final class TaskLibraryViewModel {
         libraryTasks.first { $0.id == id }
     }
 
+    /// Row-tag counter names by task id (`rowCounterTagName`) for every linked
+    /// copy / unit task in the library — built once per call so a list does
+    /// one pass, not a pool scan per row.
+    var counterTagNames: [String: String] {
+        let byId = Dictionary(libraryTasks.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        var names: [String: String] = [:]
+        for task in libraryTasks {
+            if let name = rowCounterTagName(task: task, rootsById: byId) { names[task.id] = name }
+        }
+        return names
+    }
+
     // MARK: - Lifecycle
 
     /// Reloads libraryTasks + allCompoundChildren + allLibraryBoardTasks
