@@ -74,6 +74,16 @@ test.describe('Bingo + Greenlog moments', () => {
     await expect(page).toHaveURL(/\/create/);
   });
 
+  test('the Greenlog moment has a text Back to board that closes it', async ({ page }) => {
+    await seed(page, 7);
+    await page.goto(`/boards/${BOARD_ID}?__oybc_test_bypass=1`);
+    await page.getByRole('button', { name: /Cell 7/ }).click();
+    const moment = page.getByRole('dialog', { name: /Board complete/ });
+    await expect(moment).toBeVisible();
+    await moment.getByRole('button', { name: 'Back to board' }).click();
+    await expect(moment).toBeHidden();
+  });
+
   test('reduced motion skips the replay: every completed cell has landed at mount', async ({ page }) => {
     await page.emulateMedia({ reducedMotion: 'reduce' });
     await seed(page, 2);

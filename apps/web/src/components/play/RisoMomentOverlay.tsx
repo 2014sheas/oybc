@@ -168,9 +168,15 @@ export function RisoMomentOverlay(p: RisoMomentOverlayProps): React.ReactElement
               Start a new board
             </RisoButton>
           )}
-          <RisoButton kind={isGreen ? 'ghost' : 'neutral'} size="large" fullWidth onClick={p.onBack} data-modal-cancel>
-            Back to board
-          </RisoButton>
+          {isGreen ? (
+            <button type="button" className={styles.textBack} onClick={p.onBack} data-modal-cancel>
+              Back to board
+            </button>
+          ) : (
+            <RisoButton kind="neutral" size="large" fullWidth onClick={p.onBack} data-modal-cancel>
+              Back to board
+            </RisoButton>
+          )}
         </div>
       </div>
     </div>
