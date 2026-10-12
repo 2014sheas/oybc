@@ -68,11 +68,11 @@ struct RisoQuickAddRowView: View {
     /// Fixed placeholder instead of the rotating pool (the compound editor's
     /// Counting mode names the field the action: "Do").
     var placeholderOverride: String? = nil
-    /// The board's timeframe for a counter match row's goal slot (what a placed
-    /// copy would get). nil falls back to `defaultTimeframe`; both nil = no
-    /// goal slot (the pool editor / core-defaults hosts). Kept separate from
-    /// `defaultTimeframe` so a host (Board Edit's picker) can show the slot
-    /// without changing the timeframe its created tasks carry.
+    /// The board's timeframe a counter match row resolves its placement goal
+    /// against (a root with no goal for it gets an inline Goal entry). nil
+    /// falls back to `defaultTimeframe`. Kept separate from `defaultTimeframe`
+    /// so a host (Board Edit's picker) can resolve the goal without changing
+    /// the timeframe its created tasks carry.
     var placementTimeframe: Timeframe? = nil
     /// Widen the matches with goal-less counters from `counterRootTasks`
     /// (every counter created from the Counters hub — the browse filter hides
@@ -326,10 +326,10 @@ struct RisoQuickAddRowView: View {
 // MARK: - Match row
 
 /// One dropdown row. A plain task shows badge · title · plus. A shared counter
-/// ROOT shows badge · counter name · a dense kind tag, and — in a board context
-/// (`timeframe` set) — a goal slot: the goal a placed copy would get ("Weekly ·
-/// 2 books", or the root's own "12 books"), or, for a goal-less root with no
-/// default, an inline Goal entry that gates the plus (the row then places a
+/// ROOT shows badge · counter name · a dense kind tag · plus — no goal text
+/// (owner ruling 2026-10-12: redundant on the row). In a board context
+/// (`timeframe` set), a goal-less root with no default for the board instead
+/// shows an inline Goal entry that gates the plus (the row then places a
 /// pending linked counting task at that goal). Web twin: `WizardQuickAddRow`'s
 /// match row.
 private struct QuickAddMatchRow: View {
@@ -385,7 +385,6 @@ private struct QuickAddMatchRow: View {
             Button(action: onPick) {
                 HStack(spacing: 10) {
                     rowLead
-                    goalSlot
                     plus
                 }
                 .padding(.vertical, 9)
@@ -426,19 +425,6 @@ private struct QuickAddMatchRow: View {
             Spacer(minLength: 0)
         }
         .contentShape(Rectangle())
-    }
-
-    /// "Weekly · 2 books" / "12 books" — the goal a placed copy would get.
-    @ViewBuilder
-    private var goalSlot: some View {
-        if let source, let timeframe {
-            let value = formatCount(source.goal, kind: kind) + countUnitSuffix(kind, unit: task.unit)
-            (Text(source.fromTimeframe ? "\(timeframe.risoDisplayName) · " : "")
-                .font(.risoBody(12, .semibold)).foregroundColor(Color.risoMuted)
-                + Text(value).font(.risoBody(12, .bold)).foregroundColor(Color.risoInk))
-                .lineLimit(1)
-                .fixedSize()
-        }
     }
 
     private var plus: some View {

@@ -115,11 +115,11 @@ final class RisoQuickAddRowSnapshotTests: XCTestCase {
         )
     }
 
-    /// "Weekly · 2 books" — the root's weekly default on a weekly board.
+    /// A root with a weekly default on a weekly board: name · kind tag · plus (no goal slot).
     func testCounterRowWeeklyDefaultLight() { assertCounterRow(weeklyDefaultRoot, dark: false) }
     func testCounterRowWeeklyDefaultDark() { assertCounterRow(weeklyDefaultRoot, dark: true) }
 
-    /// "12 books" — no default for the board, the root's own goal, no prefix.
+    /// A root that falls through to its own goal: same row, no goal slot.
     func testCounterRowOwnGoalLight() { assertCounterRow(ownGoalRoot, dark: false) }
     func testCounterRowOwnGoalDark() { assertCounterRow(ownGoalRoot, dark: true) }
 

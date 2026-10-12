@@ -4,7 +4,6 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { TaskType, Timeframe, isWindowStampedDerived, type Task } from '@oybc/shared';
 import {
   buildPendingLinkedCounter,
-  counterMatchRowGoal,
   counterMatchRowName,
   isLinkedPendingPayload,
   isSharedCounterRoot,
@@ -26,24 +25,6 @@ describe('isSharedCounterRoot', () => {
     expect(isSharedCounterRoot(task({ isCounter: false, maxCount: 12 }))).toBe(false);
     expect(isSharedCounterRoot(task({ sharedCounterId: 'other' }))).toBe(false);
     expect(isSharedCounterRoot(task({ type: TaskType.NORMAL }))).toBe(false);
-  });
-});
-
-describe('counterMatchRowGoal', () => {
-  it('a timeframe default carries the board timeframe prefix; the root goal has none; nothing → null', () => {
-    expect(counterMatchRowGoal(task({ timeframeGoals: { weekly: 2 } }), Timeframe.WEEKLY)).toEqual({ prefix: 'Weekly · ', value: '2 books' });
-    expect(counterMatchRowGoal(task({ timeframeGoals: { weekly: 7 } }), Timeframe.DAILY)).toEqual({ prefix: 'Daily · ', value: '1 books' });
-    expect(counterMatchRowGoal(task({ maxCount: 12 }), Timeframe.WEEKLY)).toEqual({ prefix: '', value: '12 books' });
-    expect(counterMatchRowGoal(task({ maxCount: 12, timeframeGoals: { weekly: 2 } }), Timeframe.CUSTOM)).toEqual({ prefix: '', value: '12 books' });
-    expect(counterMatchRowGoal(task({}), Timeframe.WEEKLY)).toBeNull();
-    expect(counterMatchRowGoal(task({ timeframeGoals: { weekly: 2 } }), Timeframe.CUSTOM)).toBeNull();
-  });
-
-  it('formats with the counter\'s real kind', () => {
-    expect(counterMatchRowGoal(task({ countKind: 'duration', unit: '', timeframeGoals: { weekly: 90 } }), Timeframe.WEEKLY))
-      .toEqual({ prefix: 'Weekly · ', value: '1h 30m' });
-    expect(counterMatchRowGoal(task({ countKind: 'continuous', unit: 'mi', timeframeGoals: { weekly: 10 } }), Timeframe.DAILY))
-      .toEqual({ prefix: 'Daily · ', value: '1.5 mi' });
   });
 });
 
@@ -98,11 +79,13 @@ describe('WizardQuickAddRow match rows', () => {
     expect(render(library)).not.toContain('Matching library tasks');
   });
 
-  it('a root with a default: name · dense kind tag · "Weekly · 2 books" · plus, as ONE button row', () => {
+  it('a root with a default: name · dense kind tag · plus, as ONE button row — no goal text', () => {
     const h = render(library, { seedText: 'book' });
     const rows = h.split('<li ').slice(1);
     const r1 = rows.find((r) => r.includes('>Books<'))!;
-    expect(r1).toMatch(/<button[^>]*>.*>Books<.*Discrete.*Weekly · <span[^>]*>2 books<\/span>.*<\/button>/s);
+    expect(r1).toMatch(/<button[^>]*>.*>Books<.*Discrete.*<\/button>/s);
+    expect(r1).not.toContain('Weekly · ');
+    expect(r1).not.toContain('2 books');
     expect(r1).toContain('tagDense');
   });
 
@@ -128,7 +111,7 @@ describe('WizardQuickAddRow match rows', () => {
     expect(noBoard).not.toContain('role="group"');
     // A host without `onPendingCreated` (no deferred path) keeps the plain row for the no-default root too.
     const noPending = render(library, { seedText: 'book', onPendingCreated: undefined });
-    expect(noPending).toContain('Weekly · ');
+    expect(noPending).toContain('tagDense');
     expect(noPending).not.toContain('role="group"');
   });
 });

@@ -1,5 +1,5 @@
 import { useMemo, useRef, useState } from 'react';
-import { TaskType, parseCountInput, resolveCountKind, type Task, type Timeframe } from '@oybc/shared';
+import { TaskType, parseCountInput, placementGoalSource, resolveCountKind, type Task, type Timeframe } from '@oybc/shared';
 import { createTask } from '../../db/operations/tasks';
 import { generateUUID, currentTimestamp } from '../../db/utils';
 import { RisoButton, RisoIcon, RisoTypeBadge } from '../riso';
@@ -12,7 +12,6 @@ import { UnitTag } from '../counters/UnitTag';
 import { buildTaskSubtitle } from './TaskRow';
 import {
   buildPendingLinkedCounter,
-  counterMatchRowGoal,
   counterMatchRowName,
   isSharedCounterRoot,
 } from './quickAddCounterPlacement';
@@ -253,7 +252,7 @@ export function WizardQuickAddRow({
     inputRef.current?.focus();
   }
 
-  /** The dropdown row for one match — a counter root gets the name · kind tag · goal slot. */
+  /** The dropdown row for one match — a counter root gets the name · kind tag. */
   function renderMatchRow(task: Task): React.ReactElement {
     const counterRow = isSharedCounterRoot(task) && currentTimeframe !== undefined;
     if (!counterRow) {
@@ -277,8 +276,7 @@ export function WizardQuickAddRow({
     }
     const name = counterMatchRowName(task);
     const kind = resolveCountKind(task);
-    const slot = counterMatchRowGoal(task, currentTimeframe!);
-    const needsGoal = slot === null && onPendingCreated !== undefined;
+    const needsGoal = placementGoalSource(task, { timeframe: currentTimeframe! }) === null && onPendingCreated !== undefined;
     if (!needsGoal) {
       return (
         <button type="button" className={styles.dropdownRowButton} onClick={() => handleExistingPicked(task)}>
@@ -287,12 +285,6 @@ export function WizardQuickAddRow({
             <span className={styles.dropdownRowTitle}>{name}</span>
             <KindTag kind={kind} dense />
           </span>
-          {slot && (
-            <span className={styles.rowGoal}>
-              {slot.prefix}
-              <span className={styles.rowGoalValue}>{slot.value}</span>
-            </span>
-          )}
           <RisoIcon name="plus" size={14} />
         </button>
       );

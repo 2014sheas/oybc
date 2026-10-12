@@ -1,11 +1,7 @@
 import {
-  COUNTER_GOAL_TIMEFRAMES,
   TaskType,
   Timeframe,
-  countUnitSuffix,
   counterDisplayName,
-  formatCount,
-  placementGoalSource,
   renderCounterTitle,
   resolveCountKind,
   type Task,
@@ -15,24 +11,10 @@ import type { PendingTaskPayload } from '../../pages/createPage/useCreateFormSta
 /**
  * quickAddCounterPlacement.ts — the pure half of the quick-add / picker match
  * row for a shared counter (docs/SHARED_COUNTER_SETTINGS.md §2; design
- * handoff `PlaceFrame.dc.html`): which rows are counters, what the goal slot
- * says, and the pending LINKED task the no-default row builds. iOS twin:
+ * handoff `PlaceFrame.dc.html`): which rows are counters and the pending
+ * LINKED task the no-default row builds. iOS twin:
  * `QuickAddCounterPlacement.swift`.
  */
-
-/** The goal slot's text: a muted prefix (the board's timeframe, or `''`) + the ink value. */
-export interface CounterMatchRowGoal {
-  prefix: string;
-  value: string;
-}
-
-/** The board timeframe label the goal slot prefixes a timeframe default with. */
-const TIMEFRAME_PREFIX: Record<(typeof COUNTER_GOAL_TIMEFRAMES)[number], string> = {
-  daily: 'Daily',
-  weekly: 'Weekly',
-  monthly: 'Monthly',
-  yearly: 'Yearly',
-};
 
 /**
  * Is this library task a shared counter ROOT the match row treats specially:
@@ -45,27 +27,6 @@ const TIMEFRAME_PREFIX: Record<(typeof COUNTER_GOAL_TIMEFRAMES)[number], string>
 export function isSharedCounterRoot(task: Task): boolean {
   if (task.type !== TaskType.COUNTING || task.sharedCounterId) return false;
   return task.isCounter === true || Object.keys(task.timeframeGoals ?? {}).length > 0;
-}
-
-/**
- * The goal slot for placing `root` on a board of `timeframe`: "Weekly · " +
- * "2 books" when the goal is the board-timeframe default, just "12 books"
- * when it fell through to the root's own goal, null when nothing resolves
- * (the row offers a Goal entry instead).
- *
- * @param root - The counter root.
- * @param timeframe - The board's timeframe.
- * @returns The slot text, or null.
- */
-export function counterMatchRowGoal(root: Task, timeframe: Timeframe): CounterMatchRowGoal | null {
-  const src = placementGoalSource(root, { timeframe });
-  if (!src) return null;
-  const kind = resolveCountKind(root);
-  const prefixLabel = TIMEFRAME_PREFIX[timeframe as keyof typeof TIMEFRAME_PREFIX];
-  return {
-    prefix: src.fromTimeframe && prefixLabel ? `${prefixLabel} · ` : '',
-    value: `${formatCount(src.goal, kind)}${countUnitSuffix(kind, root.unit)}`,
-  };
 }
 
 /** The host board's window, stamped on the pending linked row (as `useLinkedCounterCreate` does). */
