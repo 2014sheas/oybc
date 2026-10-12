@@ -1,5 +1,5 @@
 import { isGoalLessCounter, taskSearchMatches, type Task } from '@oybc/shared';
-import { counterNameMatches, lookupValues, type TaskLookup } from '../counters/rowCounterTagName';
+import { counterNameMatches, type TaskLookup } from '../counters/rowCounterTagName';
 
 /**
  * poolEditSheetSelectors.ts — pure derivations `PoolEditorBody` needs from
@@ -17,7 +17,7 @@ import { counterNameMatches, lookupValues, type TaskLookup } from '../counters/r
  * plural template — docs/SHARED_COUNTER_SETTINGS.md §2) then, ranked after
  * those direct hits, a unit task / linked copy found by its counter's name or
  * noun (`counterNameMatches`; `lookup` resolves the root — pass the unfiltered
- * task set, the browse filter drops goal-less counters); case- and
+ * task set, the browse filter drops linked members); case- and
  * diacritic-insensitive. Pickers are browse surfaces — a
  * wizard-born draft task the Library tab hides shouldn't be offered here
  * either, even though a pool that already references one still resolves
@@ -48,66 +48,25 @@ export const QUICK_ADD_MATCH_CAP = 4;
  * title-contains filtering verbatim (never reinvented) and truncates to
  * `QUICK_ADD_MATCH_CAP` for the compact inline UI.
  *
- * `goalLessCounters`: goal-less counters (every counter created from the
- * Counters hub has no `maxCount`) are hidden from browsing, so they are never
- * in `browsableTasks`; this adds them back from `lookup` so typing a new
- * counter's name finds it. `'all'` — a host that places a counter as a pending
- * linked copy and asks for a goal when no default applies (the wizard Tasks
- * step). `'withDefaults'` — a host that stores the counter itself for later
- * board creation (pool editor, core defaults): only counters with at least one
- * window default, since board creation mints the copy at that board window's
- * default (stored or derived) and a counter with none would land goal-less.
- * `'none'` (default) elsewhere — compound sub-tasks can't take one.
+ * `includeGoalLessCounters`: a counter with no goal of its own (every counter
+ * created from the Counters hub) is browsable and places at the board
+ * window's default (`windowDefaultGoal` — the kind fallback when none is
+ * set), so every host that places onto a board or stores into a pool admits
+ * it. `false` (default) drops it — a compound sub-task can't take one.
  */
 export function selectQuickAddMatches(
   browsableTasks: readonly Task[],
   selectedIds: ReadonlySet<string>,
   query: string,
   lookup: TaskLookup = browsableTasks,
-  goalLessCounters: GoalLessCounterMode = 'none',
+  includeGoalLessCounters = false,
 ): Task[] {
   return selectLibraryPickerResults(
-    goalLessCounters === 'none' ? browsableTasks : withGoalLessCounters(browsableTasks, lookup, goalLessCounters),
+    includeGoalLessCounters ? browsableTasks : browsableTasks.filter((t) => !isGoalLessCounter(t)),
     selectedIds,
     query,
     lookup,
   ).slice(0, QUICK_ADD_MATCH_CAP);
-}
-
-/** Which goal-less counters a quick-add host admits (see `selectQuickAddMatches`). */
-export type GoalLessCounterMode = 'none' | 'all' | 'withDefaults';
-
-/**
- * `browsableTasks` plus every live goal-less counter ROOT in `lookup` (not a
- * fork, not itself linked) that isn't already in it, appended in lookup order;
- * `'withDefaults'` keeps only counters with at least one window default.
- *
- * @param browsableTasks - The browse-filtered candidates.
- * @param lookup - The surface's full task set.
- * @param mode - `'all'` or `'withDefaults'`.
- * @returns The widened candidate list.
- */
-export function withGoalLessCounters(
-  browsableTasks: readonly Task[],
-  lookup: TaskLookup,
-  mode: Exclude<GoalLessCounterMode, 'none'> = 'all',
-): readonly Task[] {
-  const ids = new Set(browsableTasks.map((t) => t.id));
-  const extra = lookupValues(lookup).filter(
-    (t) =>
-      !t.isDeleted &&
-      isGoalLessCounter(t) &&
-      t.forkedFromTaskId == null &&
-      t.sharedCounterId == null &&
-      !ids.has(t.id) &&
-      (mode === 'all' || hasWindowDefault(t)),
-  );
-  return extra.length === 0 ? browsableTasks : [...browsableTasks, ...extra];
-}
-
-/** Whether a counter stores a positive default goal for any window. */
-function hasWindowDefault(task: Task): boolean {
-  return Object.values(task.timeframeGoals ?? {}).some((g) => typeof g === 'number' && g > 0);
 }
 
 /**

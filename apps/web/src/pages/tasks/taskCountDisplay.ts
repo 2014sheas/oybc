@@ -74,7 +74,8 @@ export function computeStatusLabel(task: CountDisplayTask): string {
 /**
  * Task Detail's counting line — `"Run · 2 / 5 km"`, Continuous
  * `"Hike · 3.1 / 26.2 mi"`, Duration `"Practice · 4h 30m / 10h 30m"` (no
- * unit). Built from the DISPLAYED count, formatted per the task's kind.
+ * unit); a counter with no goal of its own shows its total alone
+ * (`"Do · 40 push-ups"`). Built from the DISPLAYED count, formatted per the task's kind.
  * iOS twin: `TaskCountDisplay.countingSubtitle(for:)`.
  *
  * @param task - The counting task being rendered.
@@ -85,6 +86,7 @@ export function countingDetailLine(
 ): string {
   const kind = resolveCountKind(task);
   const current = formatCount(displayedCountFor(task), kind);
-  const max = formatCount(task.maxCount ?? 0, kind);
-  return `${task.action ?? ''} · ${current} / ${max}${countUnitSuffix(kind, task.unit)}`;
+  const goal = task.maxCount ?? 0;
+  const max = goal > 0 ? ` / ${formatCount(goal, kind)}` : '';
+  return `${task.action ?? ''} · ${current}${max}${countUnitSuffix(kind, task.unit)}`;
 }

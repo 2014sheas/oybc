@@ -65,7 +65,7 @@ describe('WizardQuickAddRow match rows', () => {
     renderToStaticMarkup(
       React.createElement(WizardQuickAddRow, {
         userId: 'u1', onTaskCreated: () => {}, libraryTasks: library, onExistingTaskPicked: () => {},
-        currentTimeframe: Timeframe.WEEKLY, onPendingCreated: () => {}, ...props,
+        currentTimeframe: Timeframe.WEEKLY, onPendingCreated: () => {}, includeGoalLessCounters: true, ...props,
       }),
     );
 
@@ -89,8 +89,16 @@ describe('WizardQuickAddRow match rows', () => {
     expect(r1).toContain('tagDense');
   });
 
-  it('a goal-less root with no default: the slot is a Goal entry with the unit, the plus disabled; the typed goal gates it', () => {
+  it('a goal-less root with no default places at the kind fallback: the plain row, no Goal entry', () => {
     const h = render(library, { seedText: 'book' });
+    const rows = h.split('<li ').slice(1);
+    const r2 = rows.find((r) => r.includes('>Pages<'))!;
+    expect(r2).toContain('tagDense');
+    expect(r2).not.toContain('role="group"');
+  });
+
+  it('only a custom board with no parseable dates leaves nothing to resolve: the slot is a Goal entry', () => {
+    const h = render(library, { seedText: 'book', currentTimeframe: Timeframe.CUSTOM });
     const rows = h.split('<li ').slice(1);
     const r2 = rows.find((r) => r.includes('>Pages<'))!;
     expect(r2).toContain('role="group"');
@@ -98,6 +106,16 @@ describe('WizardQuickAddRow match rows', () => {
     expect(r2).toContain('placeholder="Goal"');
     expect(r2).toContain('>pages<');
     expect(r2).toMatch(/<button[^>]*aria-label="Add Pages"[^>]*disabled/);
+    const dated = render(library, {
+      seedText: 'book', currentTimeframe: Timeframe.CUSTOM, currentStartDate: '2026-10-01', currentEndDate: '2026-10-10',
+    });
+    expect(dated.split('<li ').slice(1).find((r) => r.includes('>Pages<'))!).not.toContain('role="group"');
+  });
+
+  it('a host that admits no goal-less counters (compound sub-tasks) never lists one', () => {
+    const h = render(library, { seedText: 'book', includeGoalLessCounters: false });
+    expect(h).not.toContain('>Pages<');
+    expect(h).not.toContain('>Books<');
   });
 
   it('a plain task row is unchanged; without a board timeframe every row is plain', () => {
