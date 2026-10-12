@@ -7,6 +7,18 @@ import { counterDisplayName, normalizeSearchText, taskSearchMatches, type Task }
  */
 export type TaskLookup = readonly Task[] | ReadonlyMap<string, Task> | Readonly<Record<string, Task>>;
 
+/**
+ * Every task in `lookup`, whatever its shape.
+ *
+ * @param lookup - A task list, id map or id record.
+ * @returns The tasks.
+ */
+export function lookupValues(lookup: TaskLookup): readonly Task[] {
+  if (Array.isArray(lookup)) return lookup as readonly Task[];
+  if (lookup instanceof Map) return [...(lookup as ReadonlyMap<string, Task>).values()];
+  return Object.values(lookup as Readonly<Record<string, Task>>);
+}
+
 function lookupTask(lookup: TaskLookup, id: string): Task | undefined {
   if (Array.isArray(lookup)) return (lookup as readonly Task[]).find((t) => t.id === id);
   if (lookup instanceof Map) return (lookup as ReadonlyMap<string, Task>).get(id);

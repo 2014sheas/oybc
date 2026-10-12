@@ -201,8 +201,16 @@ export function WizardQuickAddRow({
   const pollingEnabled = libraryTasks !== undefined && onExistingTaskPicked !== undefined;
   const libraryMatches = useMemo<Task[]>(() => {
     if (!pollingEnabled || trimmed === '') return [];
-    return selectQuickAddMatches(libraryTasks!, selectedIds ?? EMPTY_SELECTED_IDS, trimmed, lookupTasks ?? libraryTasks);
-  }, [pollingEnabled, libraryTasks, lookupTasks, selectedIds, trimmed]);
+    // Goal-less (hub) counters join the matches only where a counter row can
+    // place them — a host that knows the board's timeframe.
+    return selectQuickAddMatches(
+      libraryTasks!,
+      selectedIds ?? EMPTY_SELECTED_IDS,
+      trimmed,
+      lookupTasks ?? libraryTasks,
+      currentTimeframe !== undefined,
+    );
+  }, [pollingEnabled, libraryTasks, lookupTasks, selectedIds, trimmed, currentTimeframe]);
   // Text-driven (not focus-gated) to match the app's existing inline
   // autocomplete convention (RisoCompoundFieldsView) and iOS's twin — an
   // in-flow suggestion list, so there's no floating overlay to dismiss on

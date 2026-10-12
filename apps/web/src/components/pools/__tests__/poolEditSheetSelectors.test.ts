@@ -108,6 +108,43 @@ describe('selectQuickAddMatches', () => {
   });
 });
 
+/**
+ * A brand-new counter created from the Counters hub has no `maxCount` (its
+ * per-window defaults live in `timeframeGoals`), so the browse filter hides it
+ * and it is never in `browsableTasks`. A board-context quick-add must still
+ * find it by name (owner bug report 2026-10-12).
+ */
+describe('selectQuickAddMatches — goal-less hub counters', () => {
+  const hubCounter = buildTask('c1', {
+    title: 'Read books',
+    type: TaskType.COUNTING,
+    isCounter: true,
+    action: 'Read',
+    unit: 'books',
+    counterName: 'Books',
+    timeframeGoals: { weekly: 2 },
+  });
+  const other = buildTask('t1', { title: 'Stretch' });
+  const lookup = new Map([[hubCounter.id, hubCounter], [other.id, other]]);
+
+  it('finds a goal-less counter by its name when the host shows counter rows', () => {
+    const result = selectQuickAddMatches([other], new Set(), 'books', lookup, true);
+    expect(result.map((t) => t.id)).toEqual(['c1']);
+  });
+
+  it('does not offer it where a counter row cannot place it (pools, compound children)', () => {
+    expect(selectQuickAddMatches([other], new Set(), 'books', lookup)).toEqual([]);
+  });
+
+  it('skips a deleted counter, an already-selected one, and never duplicates a browsable one', () => {
+    const deleted = { ...hubCounter, id: 'c2', isDeleted: true };
+    const withDeleted = new Map([...lookup, [deleted.id, deleted]]);
+    expect(selectQuickAddMatches([other], new Set(), 'books', withDeleted, true).map((t) => t.id)).toEqual(['c1']);
+    expect(selectQuickAddMatches([other], new Set(['c1']), 'books', lookup, true)).toEqual([]);
+    expect(selectQuickAddMatches([other, hubCounter], new Set(), 'books', lookup, true).map((t) => t.id)).toEqual(['c1']);
+  });
+});
+
 describe('resolvePoolChips', () => {
   it('resolves ids against tasksById, in taskIds order', () => {
     const t1 = buildTask('t1');

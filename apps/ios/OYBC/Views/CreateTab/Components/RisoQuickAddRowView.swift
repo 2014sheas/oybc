@@ -105,7 +105,12 @@ struct RisoQuickAddRowView: View {
         guard onExistingTaskPicked != nil, !trimmedText.isEmpty else { return [] }
         // The shared match set (docs/SHARED_COUNTER_SETTINGS.md §2) plus the
         // counter's name / noun for its unit tasks and copies; direct hits first.
-        let candidates = libraryTasks.filter { !selectedIds.contains($0.id) }
+        // Goal-less (hub) counters join only where a counter row can place
+        // them — a host that knows the board's timeframe.
+        let pool = (placementTimeframe ?? defaultTimeframe) != nil
+            ? QuickAddCounterPlacement.withGoalLessCounters(libraryTasks, pool: counterRootTasks)
+            : libraryTasks
+        let candidates = pool.filter { !selectedIds.contains($0.id) }
         return Array(CounterPlacement.rankedTaskMatches(candidates, query: trimmedText, rootsById: roots).prefix(4))
     }
 
