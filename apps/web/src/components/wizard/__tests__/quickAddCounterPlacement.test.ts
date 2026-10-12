@@ -4,7 +4,6 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { TaskType, Timeframe, isWindowStampedDerived, type Task } from '@oybc/shared';
 import {
   buildPendingLinkedCounter,
-  counterMatchRowGoal,
   counterMatchRowName,
   isLinkedPendingPayload,
   isSharedCounterRoot,
@@ -26,24 +25,6 @@ describe('isSharedCounterRoot', () => {
     expect(isSharedCounterRoot(task({ isCounter: false, maxCount: 12 }))).toBe(false);
     expect(isSharedCounterRoot(task({ sharedCounterId: 'other' }))).toBe(false);
     expect(isSharedCounterRoot(task({ type: TaskType.NORMAL }))).toBe(false);
-  });
-});
-
-describe('counterMatchRowGoal', () => {
-  it('a timeframe default carries the board timeframe prefix; the root goal has none; nothing → null', () => {
-    expect(counterMatchRowGoal(task({ timeframeGoals: { weekly: 2 } }), Timeframe.WEEKLY)).toEqual({ prefix: 'Weekly · ', value: '2 books' });
-    expect(counterMatchRowGoal(task({ timeframeGoals: { weekly: 7 } }), Timeframe.DAILY)).toEqual({ prefix: 'Daily · ', value: '1 books' });
-    expect(counterMatchRowGoal(task({ maxCount: 12 }), Timeframe.WEEKLY)).toEqual({ prefix: '', value: '12 books' });
-    expect(counterMatchRowGoal(task({ maxCount: 12, timeframeGoals: { weekly: 2 } }), Timeframe.CUSTOM)).toEqual({ prefix: '', value: '12 books' });
-    expect(counterMatchRowGoal(task({}), Timeframe.WEEKLY)).toBeNull();
-    expect(counterMatchRowGoal(task({ timeframeGoals: { weekly: 2 } }), Timeframe.CUSTOM)).toBeNull();
-  });
-
-  it('formats with the counter\'s real kind', () => {
-    expect(counterMatchRowGoal(task({ countKind: 'duration', unit: '', timeframeGoals: { weekly: 90 } }), Timeframe.WEEKLY))
-      .toEqual({ prefix: 'Weekly · ', value: '1h 30m' });
-    expect(counterMatchRowGoal(task({ countKind: 'continuous', unit: 'mi', timeframeGoals: { weekly: 10 } }), Timeframe.DAILY))
-      .toEqual({ prefix: 'Daily · ', value: '1.5 mi' });
   });
 });
 

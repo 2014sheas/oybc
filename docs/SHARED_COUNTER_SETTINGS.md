@@ -562,7 +562,8 @@ ratified from the handoff: (1) the sheet's **preview card (name + All-time) is r
 (the "blank verb submits as Do" fallback is gone; inline validation "Enter what you're
 counting." / "Enter a verb." under the two required fields, primary disabled while either
 is empty; an existing Duration root's noun stays optional in edit); (3) **no default for
-this board → the goal slot IS a Goal entry** (placeholder "Goal", unit suffix; "+" dimmed
+this board → the match row shows a Goal entry** (amended 2026-10-12: otherwise the row
+shows no goal text — the "Weekly · 2 books" slot was retired as redundant) (placeholder "Goal", unit suffix; "+" dimmed
 until a number is typed) and the pick hands the host a **pending LINKED counting task**
 at that goal (`buildPendingLinkedCounter` ↔ `QuickAddCounterPlacement.pendingLinkedTask`
 — the special panel's auto-link shape, stamped with the host board's window), which the

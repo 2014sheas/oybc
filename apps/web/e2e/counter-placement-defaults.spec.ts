@@ -84,11 +84,11 @@ test.describe('Shared counter placement defaults', () => {
 
     // "novels" is only in the counter's plural template — the shared match set finds it.
     await page.getByLabel('New normal task title').fill('novels');
-    // The match row shows the counter's NAME, its kind and the goal this board gets (the UI PR).
+    // The match row shows the counter's NAME and its kind — no goal slot (the goal shows once placed).
     const row = page.getByRole('list', { name: 'Matching library tasks' }).getByRole('button', { name: /Reading/ });
     await expect(row).toBeVisible();
     await expect(row).toContainText('Discrete');
-    await expect(row).toContainText('Weekly · 3 books');
+    await expect(row).not.toContainText('Weekly · 3 books');
     await expect(row).not.toContainText('Read 12 books');
     await row.click();
 

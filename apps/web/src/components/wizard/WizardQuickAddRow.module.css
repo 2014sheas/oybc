@@ -96,7 +96,7 @@
 }
 
 /* ─── Shared counter match row (handoff PlaceFrame.dc.html) ───
-   name · dense kind tag · goal slot · plus; the row stays 44px. */
+   name · dense kind tag · plus (no goal text); the row stays 44px. */
 .dropdownRowButton,
 .dropdownRowStatic {
   min-height: 44px;
@@ -133,11 +133,6 @@
   font-weight: 600;
   color: var(--riso-muted);
   white-space: nowrap;
-}
-
-.rowGoalValue {
-  color: var(--riso-ink);
-  font-weight: 700;
 }
 
 /* No default for this board: the slot is an empty kind-aware Goal entry. */

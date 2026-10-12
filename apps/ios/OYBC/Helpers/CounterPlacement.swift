@@ -120,8 +120,8 @@ enum CounterPlacement {
         taskSearchMatches(query, type: task.type, fields: CounterSettings.Fields(task: task))
     }
 
-    /// Where a placed counter's goal comes from (the quick-add / picker row's
-    /// goal slot): the goal and whether it is a timeframe default (shown with
+    /// Where a placed counter's goal comes from (nil = the quick-add / picker
+    /// row asks for a Goal): the goal and whether it is a timeframe default (shown with
     /// the timeframe prefix) rather than the root's own goal.
     struct PlacementGoalSource: Equatable {
         let goal: CountValue
