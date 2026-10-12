@@ -126,7 +126,7 @@ test.describe('Profile home — Shared counters', () => {
     await expect(page.getByRole('link', { name: /^All \d/ })).toHaveCount(0);
   });
 
-  test('shows the two most recently logged counters first, and "+ Log" writes to the DB', async ({
+  test('lists counters most recently logged first, and "+ Log" writes to the DB', async ({
     page,
   }) => {
     const BOARD_ID = 'bbbbbbbb-2222-0000-0000-000000000000';
@@ -209,17 +209,17 @@ test.describe('Profile home — Shared counters', () => {
 
     await page.goto('/profile?__oybc_test_bypass=1');
 
-    // Header shows the full count even though only 2 rows render.
+    // Header shows the full count; all 3 fit under the 5-row cap
+    // (`PROFILE_COUNTER_ROWS` in pages/profileHome.ts).
     await expect(page.getByRole('link', { name: /^All 3/ })).toBeVisible();
 
     const rows = page.getByRole('listitem');
-    await expect(rows).toHaveCount(2);
+    await expect(rows).toHaveCount(3);
     const rowNames = await rows.allTextContents();
-    // Most-recently-logged first: Miles (C), then Pages (B). Push-ups (A)
-    // is excluded — only the top 2 show on the home surface.
+    // Most-recently-logged first: Miles (C), then Pages (B), then Push-ups (A).
     expect(rowNames[0]).toContain('Miles');
     expect(rowNames[1]).toContain('Pages');
-    await expect(page.getByText('Push-ups', { exact: true })).toHaveCount(0);
+    expect(rowNames[2]).toContain('Push-ups');
 
     // "+ Log" on the top (Miles) row increments the DB via the same write
     // path the Counters Hub uses (`incrementSharedCounter`).

@@ -146,17 +146,24 @@ export function lastLoggedTimestamp(
 }
 
 /**
+ * How many shared counters Profile home lists before "All N ›" (owner,
+ * 2026-10-12: raised from 2 — two rows left the page mostly empty).
+ * iOS twin: `ProfileHomeViewModel.profileCounterRows`.
+ */
+export const PROFILE_COUNTER_ROWS = 5;
+
+/**
  * Orders a user's shared-counter groups by most-recently-logged first and
- * returns the top `limit` (spec: "two most recently logged", "All N ›"
- * pushes the hub for the rest). Equal timestamps break on `counterId`
- * ascending — the same rule as iOS `ProfileHomeViewModel.orderCountersByRecency`,
- * so both platforms show the same two rows for the same data.
+ * returns the top `limit` ("All N ›" pushes the hub for the rest). Equal
+ * timestamps break on `counterId` ascending — the same rule as iOS
+ * `ProfileHomeViewModel.orderCountersByRecency`, so both platforms show the
+ * same rows for the same data.
  */
 export function selectRecentCounters(
   groups: readonly SharedCounterGroup[],
   tasksById: ReadonlyMap<string, Task>,
   eventsBySourceId: Readonly<Record<string, TaskEvent[]>>,
-  limit = 2,
+  limit = PROFILE_COUNTER_ROWS,
 ): ProfileHomeCounterRow[] {
   return groups
     .map((group) => ({
