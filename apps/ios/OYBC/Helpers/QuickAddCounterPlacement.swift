@@ -17,6 +17,29 @@ enum QuickAddCounterPlacement {
             && (task.isCounter || !(task.timeframeGoals?.isEmpty ?? true))
     }
 
+    /// The quick-add candidates widened with every live goal-less counter
+    /// ROOT in `pool` — not a fork, not itself linked (owner bug report
+    /// 2026-10-12). A counter created from the Counters hub has no `maxCount`
+    /// (its per-window defaults live in `timeframeGoals`), so the browse filter
+    /// hides it and it is never in a browse-filtered `candidates`; the wizard
+    /// Tasks step adds it back so typing the counter's name finds it.
+    /// Web twin: `withGoalLessCounters` (`poolEditSheetSelectors.ts`).
+    ///
+    /// - Parameters:
+    ///   - candidates: The browse-filtered candidates.
+    ///   - pool: The surface's full task set.
+    /// - Returns: `candidates`, then the missing goal-less counters in pool order.
+    static func withGoalLessCounters(_ candidates: [Task], pool: [Task]) -> [Task] {
+        var ids = Set(candidates.map(\.id))
+        var out = candidates
+        for task in pool where !task.isDeleted && BrowsableTasks.isGoalLessCounter(task)
+            && task.forkedFromTaskId == nil && task.sharedCounterId == nil && !ids.contains(task.id) {
+            ids.insert(task.id)
+            out.append(task)
+        }
+        return out
+    }
+
     /// The pending LINKED counting task for a goal-less counter root placed at
     /// `goal`: the special panel's deferred auto-link shape — a row whose own
     /// goal is `goal`, counting from zero, carrying the host board's window

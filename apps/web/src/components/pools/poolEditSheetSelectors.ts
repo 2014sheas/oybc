@@ -1,5 +1,5 @@
-import { taskSearchMatches, type Task } from '@oybc/shared';
-import { counterNameMatches, type TaskLookup } from '../counters/rowCounterTagName';
+import { isGoalLessCounter, taskSearchMatches, type Task } from '@oybc/shared';
+import { counterNameMatches, lookupValues, type TaskLookup } from '../counters/rowCounterTagName';
 
 /**
  * poolEditSheetSelectors.ts — pure derivations `PoolEditorBody` needs from
@@ -48,14 +48,44 @@ export const QUICK_ADD_MATCH_CAP = 4;
  * thin cap over `selectLibraryPickerResults`: reuses its exclude +
  * title-contains filtering verbatim (never reinvented) and truncates to
  * `QUICK_ADD_MATCH_CAP` for the compact inline UI.
+ *
+ * `includeGoalLessCounters` (a host that renders counter match rows — it
+ * knows the board's timeframe): goal-less counters (every counter created
+ * from the Counters hub has no `maxCount`) are hidden from browsing, so they
+ * are never in `browsableTasks`; they join the candidates from `lookup` so
+ * typing a new counter's name finds it, and its match row places it with the
+ * board-timeframe default or asks for a goal. Off elsewhere (pools,
+ * compound children), where a goal-less counter cannot be added.
  */
 export function selectQuickAddMatches(
   browsableTasks: readonly Task[],
   selectedIds: ReadonlySet<string>,
   query: string,
   lookup: TaskLookup = browsableTasks,
+  includeGoalLessCounters = false,
 ): Task[] {
-  return selectLibraryPickerResults(browsableTasks, selectedIds, query, lookup).slice(0, QUICK_ADD_MATCH_CAP);
+  return selectLibraryPickerResults(
+    includeGoalLessCounters ? withGoalLessCounters(browsableTasks, lookup) : browsableTasks,
+    selectedIds,
+    query,
+    lookup,
+  ).slice(0, QUICK_ADD_MATCH_CAP);
+}
+
+/**
+ * `browsableTasks` plus every live goal-less counter ROOT in `lookup` (not a
+ * fork, not itself linked) that isn't already in it, appended in lookup order.
+ *
+ * @param browsableTasks - The browse-filtered candidates.
+ * @param lookup - The surface's full task set.
+ * @returns The widened candidate list.
+ */
+export function withGoalLessCounters(browsableTasks: readonly Task[], lookup: TaskLookup): readonly Task[] {
+  const ids = new Set(browsableTasks.map((t) => t.id));
+  const extra = lookupValues(lookup).filter(
+    (t) => !t.isDeleted && isGoalLessCounter(t) && t.forkedFromTaskId == null && t.sharedCounterId == null && !ids.has(t.id),
+  );
+  return extra.length === 0 ? browsableTasks : [...browsableTasks, ...extra];
 }
 
 /**

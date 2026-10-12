@@ -33,6 +33,34 @@ final class QuickAddCounterPlacementTests: XCTestCase {
         XCTAssertFalse(QuickAddCounterPlacement.isSharedCounterRoot(normal))
     }
 
+    /// Owner bug report 2026-10-12: a brand-new hub counter (no `maxCount`,
+    /// per-window defaults only) is hidden by the browse filter, so a
+    /// board-context quick-add must widen its candidates with it.
+    func testWithGoalLessCountersAddsHubCountersOnce() {
+        let hub = counting(id: "c1", isCounter: true, goals: CounterTimeframeGoals(weekly: 2))
+        var deleted = counting(id: "c2", isCounter: true)
+        deleted.isDeleted = true
+        var withGoal = counting(id: "c3", isCounter: true)
+        withGoal.maxCount = 10
+        var plain = counting(id: "t1")
+        plain.type = .normal
+        let widened = QuickAddCounterPlacement.withGoalLessCounters([plain], pool: [plain, hub, deleted, withGoal])
+        XCTAssertEqual(widened.map(\.id), ["t1", "c1"], "only the live goal-less counter joins")
+        XCTAssertEqual(
+            QuickAddCounterPlacement.withGoalLessCounters([plain, hub], pool: [hub]).map(\.id),
+            ["t1", "c1"], "never duplicated"
+        )
+        let matches = CounterPlacement.rankedTaskMatches(widened, query: "read", rootsById: [:])
+        XCTAssertTrue(matches.contains { $0.id == "c1" }, "the widened list finds the counter by its name")
+        var fork = counting(id: "c4", isCounter: true)
+        fork.forkedFromTaskId = "c1"
+        let linked = counting(id: "c5", sharedCounterId: "c1", isCounter: true)
+        XCTAssertEqual(
+            QuickAddCounterPlacement.withGoalLessCounters([plain], pool: [fork, linked]).map(\.id),
+            ["t1"], "a fork or a linked row never joins — roots only"
+        )
+    }
+
     func testPendingLinkedTaskIsALinkedRowWithoutAWindow() {
         var root = counting(isCounter: true)
         root.titleTemplatePlural = "Read #N novels"

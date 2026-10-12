@@ -74,6 +74,14 @@ struct RisoQuickAddRowView: View {
     /// `defaultTimeframe` so a host (Board Edit's picker) can show the slot
     /// without changing the timeframe its created tasks carry.
     var placementTimeframe: Timeframe? = nil
+    /// Widen the matches with goal-less counters from `counterRootTasks`
+    /// (every counter created from the Counters hub — the browse filter hides
+    /// them). Only for a host whose `libraryTasks` IS browse-filtered (the
+    /// wizard Tasks step; Board Edit's picker already searches the full set),
+    /// and only honoured with a timeframe + `onPendingCreated`, so a goal-less
+    /// root is always placed as a pending linked copy. Web twin:
+    /// `WizardQuickAddRow.includeGoalLessCounters`.
+    var includeGoalLessCounters: Bool = false
 
     /// Counter Detail's "+ New" preset: the create counts toward this counter.
     var presetCountsTowardCounterId: String? = nil
@@ -105,7 +113,13 @@ struct RisoQuickAddRowView: View {
         guard onExistingTaskPicked != nil, !trimmedText.isEmpty else { return [] }
         // The shared match set (docs/SHARED_COUNTER_SETTINGS.md §2) plus the
         // counter's name / noun for its unit tasks and copies; direct hits first.
-        let candidates = libraryTasks.filter { !selectedIds.contains($0.id) }
+        // Goal-less (hub) counters join only for an opted-in host whose
+        // counter row can place them as a pending linked copy.
+        let widen = includeGoalLessCounters && (placementTimeframe ?? defaultTimeframe) != nil && onPendingCreated != nil
+        let pool = widen
+            ? QuickAddCounterPlacement.withGoalLessCounters(libraryTasks, pool: counterRootTasks)
+            : libraryTasks
+        let candidates = pool.filter { !selectedIds.contains($0.id) }
         return Array(CounterPlacement.rankedTaskMatches(candidates, query: trimmedText, rootsById: roots).prefix(4))
     }
 
@@ -141,6 +155,7 @@ struct RisoQuickAddRowView: View {
         onTextChange: ((String) -> Void)? = nil,
         placeholderOverride: String? = nil,
         placementTimeframe: Timeframe? = nil,
+        includeGoalLessCounters: Bool = false,
         seedText: String = "",
         presetCountsTowardCounterId: String? = nil
     ) {
@@ -160,6 +175,7 @@ struct RisoQuickAddRowView: View {
         self.onTextChange = onTextChange
         self.placeholderOverride = placeholderOverride
         self.placementTimeframe = placementTimeframe
+        self.includeGoalLessCounters = includeGoalLessCounters
         _text = State(initialValue: seedText)
         self.presetCountsTowardCounterId = presetCountsTowardCounterId
     }
