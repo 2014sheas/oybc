@@ -1,18 +1,25 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { toBlob } from 'html-to-image';
+import type { PosterCell } from '@oybc/shared';
 import { useModalA11y } from '../../hooks/useModalA11y';
 import { SharePoster } from './SharePoster';
+import { shareFilename, shareSheetTitle, shareText, shareTitle, type ShareKind } from './sharePosterModel';
 import { RisoButton, RisoIcon } from '../riso';
 import styles from './ShareBoardSheet.module.css';
 
 export interface ShareBoardSheetProps {
+  /** Which moment's poster: a bingo (blue) or a greenlog (green). */
+  kind: ShareKind;
   boardName: string;
+  boardSize: number;
+  /** The moment's end-state cells (`momentPosterCells`), row-major. */
+  cells: PosterCell[];
   completedTasks: number;
   totalTasks: number;
   linesCompleted: number;
   /**
-   * Compact streak label e.g. "3d", "2w". Omit for non-core boards or a zero streak.
-   * Presence shows the STREAK stat card on the poster; absence hides it.
+   * Compact streak label ("2w") for the poster's STREAK card; omit when the
+   * board has no recurring streak above 1 (`posterStreakLabel`).
    */
   streak?: string;
   /** Called when the user taps Done, presses Escape, or clicks the scrim. */
@@ -20,38 +27,30 @@ export interface ShareBoardSheetProps {
 }
 
 /**
- * Modal sheet for sharing the board's GREENLOG poster.
+ * Modal sheet for sharing a Bingo or Greenlog story poster.
  *
- * Presents a `SharePoster` card (the rasterisation target), an "Include stats"
- * toggle, and two action buttons:
- *   - **Share** — Web Share API with the PNG file (mobile/Edge); download fallback
+ * Presents a `SharePoster` card (the rasterisation target), a "Show task names"
+ * toggle (default on) and two action buttons:
+ *   - **Share** - Web Share API with the PNG file (mobile/Edge); download fallback
  *     on desktop or browsers without `navigator.canShare`.
- *   - **Save image** — always triggers a PNG download via `<a download>`.
+ *   - **Save image** - always triggers a PNG download via `<a download>`.
  *
- * Font embedding: `html-to-image` walks `document.styleSheets` to find and
- * inline `@font-face` rules from the browser's loaded stylesheets (including the
- * Bricolage Grotesque / Archivo fonts from Google Fonts). The font files are
- * served from `fonts.gstatic.com` with `Access-Control-Allow-Origin: *`, so they
- * are fetchable at export time. Cannot be verified headlessly — mark for human
- * browser QA.
+ * Font embedding: `html-to-image` inlines `@font-face` rules from
+ * `document.styleSheets` (Bricolage Grotesque / Archivo from Google Fonts);
+ * cannot be verified headlessly - mark for human browser QA.
  *
- * Deliberate divergences from iOS `ShareBoardSheet`:
- *   - No "Copy link" row: boards have no shareable URL on web yet.
- *   - No icon-labelled Messages/Stories/More targets: the Web Share API's native
- *     share sheet handles destination selection.
+ * Deliberate divergences from iOS `ShareBoardSheet`: no "Copy link" row (boards
+ * have no shareable URL on web) and no per-app targets (the Web Share API's
+ * native sheet handles destinations).
  *
  * Accessibility: `role="dialog"` + `useModalA11y` (aria-modal, Escape-to-close,
  * initial focus, Tab trap, focus restore).
- *
- * @param boardName - Board display name.
- * @param completedTasks - Squares completed.
- * @param totalTasks - Total squares.
- * @param linesCompleted - Bingo lines scored.
- * @param streak - Compact streak label. Omit to hide the STREAK stat on the poster.
- * @param onDismiss - Dismiss callback.
  */
 export function ShareBoardSheet({
+  kind,
   boardName,
+  boardSize,
+  cells,
   completedTasks,
   totalTasks,
   linesCompleted,
@@ -59,7 +58,7 @@ export function ShareBoardSheet({
   onDismiss,
 }: ShareBoardSheetProps): React.ReactElement {
   const posterRef = useRef<HTMLDivElement>(null);
-  const [includeStats, setIncludeStats] = useState(true);
+  const [showLabels, setShowLabels] = useState(true);
   const [busy, setBusy] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
 
@@ -92,7 +91,7 @@ export function ShareBoardSheet({
     if (!posterRef.current) return null;
     try {
       const blob = await toBlob(posterRef.current, {
-        pixelRatio: 2,   // 2× resolution for the 280 px card → 560 px output
+        pixelRatio: 2,   // 2× resolution for the 236 × 420 story card → 472 × 840 output
         skipFonts: false, // embed fonts (default; explicit for clarity)
       });
       return blob;
@@ -113,7 +112,7 @@ export function ShareBoardSheet({
         setToast('Could not render poster — try again.');
         return;
       }
-      const file = new File([blob], `${slugify(boardName)}-greenlog.png`, {
+      const file = new File([blob], shareFilename(boardName, kind), {
         type: 'image/png',
       });
 
@@ -122,13 +121,13 @@ export function ShareBoardSheet({
         // Requires HTTPS + a user-gesture — both are satisfied here (button click).
         await navigator.share({
           files: [file],
-          title: `${boardName} — GREENLOG`,
-          text: 'I crushed every square. GREENLOG on On Your Bingo Card!',
+          title: shareTitle(boardName, kind),
+          text: shareText(kind, boardName, linesCompleted, boardSize),
         });
         // Note: share was accepted — no success toast (the OS share sheet is feedback)
       } else {
         // Fallback for desktop browsers without Web Share file support.
-        triggerDownload(blob, boardName);
+        triggerDownload(blob, shareFilename(boardName, kind));
         setToast('Poster saved!');
       }
     } catch (err: unknown) {
@@ -139,7 +138,7 @@ export function ShareBoardSheet({
     } finally {
       setBusy(false);
     }
-  }, [busy, renderBlob, boardName]);
+  }, [busy, renderBlob, boardName, kind, linesCompleted, boardSize]);
 
   // ── Save image action ───────────────────────────────────────────────────
 
@@ -152,12 +151,12 @@ export function ShareBoardSheet({
         setToast('Could not render poster — try again.');
         return;
       }
-      triggerDownload(blob, boardName);
+      triggerDownload(blob, shareFilename(boardName, kind));
       setToast('Poster saved!');
     } finally {
       setBusy(false);
     }
-  }, [busy, renderBlob, boardName]);
+  }, [busy, renderBlob, boardName, kind, linesCompleted, boardSize]);
 
   // ── Render ──────────────────────────────────────────────────────────────
 
@@ -173,12 +172,12 @@ export function ShareBoardSheet({
         ref={modalRef}
         className={styles.sheet}
         role="dialog"
-        aria-label="Share board"
+        aria-label={shareSheetTitle(kind)}
         {...modalProps}
       >
         {/* Sheet header */}
         <div className={styles.header}>
-          <span className={styles.headerTitle}>Share board</span>
+          <span className={styles.headerTitle}>{shareSheetTitle(kind)}</span>
           <button type="button" className={styles.doneBtn} onClick={onDismiss} aria-label="Done">
             Done
           </button>
@@ -189,7 +188,7 @@ export function ShareBoardSheet({
           {/*
            * Poster wrapped in the keyline + hard-shadow elevation frame.
            * The inner `posterRef` div is the actual rasterisation target:
-           * calling `toBlob(posterRef.current)` captures just the blue card
+           * calling `toBlob(posterRef.current)` captures just the poster card
            * without the elevation border — matching iOS's `ImageRenderer` which
            * also renders `posterCard(...)` (no overlay shadow).
            */}
@@ -197,31 +196,33 @@ export function ShareBoardSheet({
             <div className={styles.posterElevated}>
               <SharePoster
                 ref={posterRef}
+                kind={kind}
                 boardName={boardName}
+                boardSize={boardSize}
+                cells={cells}
                 completedTasks={completedTasks}
                 totalTasks={totalTasks}
-                linesCompleted={linesCompleted}
                 streak={streak}
-                showStats={includeStats}
+                showLabels={showLabels}
               />
             </div>
           </div>
 
-          {/* Include stats toggle — mirrors iOS RisoInkSwitch */}
+          {/* Show task names toggle — mirrors iOS RisoInkSwitch */}
           <button
             type="button"
             className={styles.toggleRow}
-            onClick={() => setIncludeStats((v) => !v)}
-            aria-pressed={includeStats}
-            aria-label="Include stats on the card"
+            onClick={() => setShowLabels((v) => !v)}
+            aria-pressed={showLabels}
+            aria-label="Show task names"
           >
             <span
-              className={`${styles.inkSwitch} ${includeStats ? styles.switchOn : ''}`}
+              className={`${styles.inkSwitch} ${showLabels ? styles.switchOn : ''}`}
               aria-hidden="true"
             >
               <span className={styles.switchKnob} />
             </span>
-            <span className={styles.toggleLabel}>Include stats on the card</span>
+            <span className={styles.toggleLabel}>Show task names</span>
           </button>
 
           {/* Action buttons */}
@@ -268,22 +269,13 @@ export function ShareBoardSheet({
  * The object URL is revoked after 1 s to allow the browser to initiate the
  * download before the reference is freed.
  */
-function triggerDownload(blob: Blob, boardName: string): void {
+function triggerDownload(blob: Blob, filename: string): void {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `${slugify(boardName)}-greenlog.png`;
+  a.download = filename;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
   setTimeout(() => URL.revokeObjectURL(url), 1000);
-}
-
-/** Converts a board name to a safe filename slug. */
-function slugify(name: string): string {
-  return name
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 60);
 }

@@ -295,6 +295,9 @@ const CASES: DialogCase[] = [
     name: 'ShareBoardSheet',
     element: () =>
       React.createElement(ShareBoardSheet, {
+        kind: 'greenlog',
+        boardSize: 3,
+        cells: [],
         boardName: 'Week board',
         completedTasks: 9,
         totalTasks: 9,
