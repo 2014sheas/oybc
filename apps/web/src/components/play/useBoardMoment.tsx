@@ -15,7 +15,7 @@ import type { SquareWindowContext } from '../../db/adapters';
 import type { FlashOutcome } from '../boardPlayFlash';
 import { ShareBoardSheet } from '../share/ShareBoardSheet';
 import { RisoMomentOverlay } from './RisoMomentOverlay';
-import { buildMomentCellModels, isMomentReady, momentOpenDecision, type MomentPhase, type MomentTrigger } from './boardMomentUi';
+import { buildMomentCellModels, isMomentReady, momentOpenDecision, nextMomentSnapshot, type MomentPhase, type MomentSnapshot, type MomentTrigger } from './boardMomentUi';
 
 /** Delay before the moment opens, so the cell pop finishes first (iOS uses the same 0.52 s for both kinds). */
 const OPEN_DELAY_MS = 520;
@@ -54,6 +54,7 @@ export function useBoardMoment(p: UseBoardMomentParams): UseBoardMomentResult {
   const [trigger, setTrigger] = useState<MomentTrigger | null>(null);
   const [forced, setForced] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
+  const [snapshot, setSnapshot] = useState<MomentSnapshot | null>(null);
 
   const phaseRef = useRef<MomentPhase>('idle');
   const pendingKindRef = useRef<MomentTrigger['kind'] | null>(null);
@@ -72,18 +73,27 @@ export function useBoardMoment(p: UseBoardMomentParams): UseBoardMomentResult {
     timerRef.current = setTimeout(() => {
       phaseRef.current = 'open';
       setForced(false);
+      setSnapshot(null);
       setTrigger({ kind, newLineIds: outcome.newLineIds });
     }, OPEN_DELAY_MS);
   }, []);
 
-  const replay = useMemo(
-    () => trigger
-      ? computeBoardMomentReplay(
-        p.board, p.boardTasks, p.compoundChildrenByCompound, p.taskMap, p.squareWindowContext.eventsByTaskId, p.allBoards,
-      )
-      : null,
-    [trigger, p.board, p.boardTasks, p.compoundChildrenByCompound, p.taskMap, p.squareWindowContext, p.allBoards],
-  );
+  // While pending, the replay + end-state cells track the live data (the ready
+  // gate waits for the write to show). Once opened they are FROZEN: a sync
+  // landing mid-replay must not mutate the frames.
+  const live = useMemo<MomentSnapshot | null>(() => {
+    if (!trigger || snapshot) return null;
+    const replay = computeBoardMomentReplay(
+      p.board, p.boardTasks, p.compoundChildrenByCompound, p.taskMap, p.squareWindowContext.eventsByTaskId, p.allBoards,
+    );
+    const cells = buildMomentCellModels({
+      gridSize: p.gridSize, freeIdx: replay.freeIdx, btByPosition: p.btByPosition, taskMap: p.taskMap,
+      compoundChildrenByCompound: p.compoundChildrenByCompound, squareWindowContext: p.squareWindowContext,
+      cellStateByBoardTaskId: p.cellStateByBoardTaskId,
+    });
+    return { replay, cells };
+  }, [trigger, snapshot, p.board, p.boardTasks, p.compoundChildrenByCompound, p.taskMap, p.squareWindowContext,
+    p.allBoards, p.gridSize, p.btByPosition, p.cellStateByBoardTaskId]);
 
   useEffect(() => {
     if (!trigger) return undefined;
@@ -91,25 +101,14 @@ export function useBoardMoment(p: UseBoardMomentParams): UseBoardMomentResult {
     return () => clearTimeout(t);
   }, [trigger]);
 
-  // Latch: once the data has caught up the moment stays open, even if a later
-  // data refresh would momentarily read as "not ready".
-  const ready = trigger !== null && replay !== null && isMomentReady(replay, trigger);
+  const ready = trigger !== null && live !== null && isMomentReady(live.replay, trigger);
   useEffect(() => {
-    if (ready) setForced(true);
-  }, [ready]);
-  const shown = trigger !== null && replay !== null && forced;
-  const cells = useMemo(
-    () => shown && replay
-      ? buildMomentCellModels({
-        gridSize: p.gridSize, freeIdx: replay.freeIdx, btByPosition: p.btByPosition, taskMap: p.taskMap,
-        compoundChildrenByCompound: p.compoundChildrenByCompound, squareWindowContext: p.squareWindowContext,
-        cellStateByBoardTaskId: p.cellStateByBoardTaskId,
-      })
-      : [],
-    [shown, replay, p.gridSize, p.btByPosition, p.taskMap, p.compoundChildrenByCompound, p.squareWindowContext, p.cellStateByBoardTaskId],
-  );
+    const next = nextMomentSnapshot(snapshot, live, ready, forced);
+    if (next !== snapshot) setSnapshot(next);
+  }, [snapshot, live, ready, forced]);
 
-  if (!trigger || !replay || !shown) return { open, node: null };
+  if (!trigger || !snapshot) return { open, node: null };
+  const { replay, cells } = snapshot;
 
   const lineCount = Object.keys(replay.lineClosureBeat).length;
   const shareStreak = p.greenlogStreak > 0 && (STREAK_TIMEFRAMES as readonly string[]).includes(p.board.timeframe)
@@ -127,7 +126,7 @@ export function useBoardMoment(p: UseBoardMomentParams): UseBoardMomentResult {
         streak={p.greenlogStreak}
         timeframe={p.board.timeframe}
         onShare={() => setShareOpen(true)}
-        onBack={() => { setShareOpen(false); setTrigger(null); phaseRef.current = 'idle'; }}
+        onBack={() => { setShareOpen(false); setTrigger(null); setSnapshot(null); setForced(false); phaseRef.current = 'idle'; }}
         onNewBoard={() => navigate('/create')}
       />
       {shareOpen && (

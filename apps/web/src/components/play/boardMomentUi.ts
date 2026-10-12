@@ -128,3 +128,24 @@ export function momentOpenDecision(
   if (phase === 'pending' && pendingKind === 'bingo' && incoming === 'greenlog') return 'schedule';
   return 'ignore';
 }
+
+/** The replay + end-state cells a moment draws from, frozen when it opens. */
+export interface MomentSnapshot {
+  replay: BoardMomentReplay;
+  cells: BoardCellModel[];
+}
+
+/**
+ * The snapshot to hold: an existing one is kept as is (a data refresh mid-replay
+ * never changes it); otherwise the live one is taken once the board shows the
+ * outcome (`ready`) or the wait ran out (`forced`).
+ */
+export function nextMomentSnapshot(
+  current: MomentSnapshot | null,
+  live: MomentSnapshot | null,
+  ready: boolean,
+  forced: boolean,
+): MomentSnapshot | null {
+  if (current) return current;
+  return live && (ready || forced) ? live : null;
+}

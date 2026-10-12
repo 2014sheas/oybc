@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { BoardMomentReplay } from '@oybc/shared';
 import type { BoardCellModel } from '../board/RisoBoardCell';
-import { isMomentReady, momentOpenDecision, momentDisplayCell, momentPopPhase } from './boardMomentUi';
+import { isMomentReady, momentOpenDecision, nextMomentSnapshot, momentDisplayCell, momentPopPhase } from './boardMomentUi';
 
 const replay = (over: Partial<BoardMomentReplay> = {}): BoardMomentReplay => ({
   order: [
@@ -87,5 +87,22 @@ describe('momentOpenDecision', () => {
   it('nothing interrupts an open moment', () => {
     expect(momentOpenDecision('open', null, 'greenlog')).toBe('ignore');
     expect(momentOpenDecision('open', null, 'bingo')).toBe('ignore');
+  });
+});
+
+describe('nextMomentSnapshot', () => {
+  const snap = (n: number) => ({ replay: replay({ completedTasks: n }), cells: [] });
+  it('waits until the board shows the outcome or the wait runs out', () => {
+    expect(nextMomentSnapshot(null, snap(1), false, false)).toBeNull();
+    expect(nextMomentSnapshot(null, null, true, true)).toBeNull();
+  });
+  it('takes the live snapshot once ready or forced', () => {
+    const live = snap(2);
+    expect(nextMomentSnapshot(null, live, true, false)).toBe(live);
+    expect(nextMomentSnapshot(null, live, false, true)).toBe(live);
+  });
+  it('freezes: a later live snapshot never replaces the held one', () => {
+    const held = snap(3);
+    expect(nextMomentSnapshot(held, snap(9), true, true)).toBe(held);
   });
 });
