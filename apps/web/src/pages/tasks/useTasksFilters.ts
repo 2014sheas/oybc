@@ -83,8 +83,8 @@ export interface TasksFiltersApi extends TasksFiltersState {
   autoExpandCompoundIds: Set<string>;
   /** Draft-filtered task set (`computeBrowsableTasks` over
    *  `library.allTasks`) — the same set the Library segment browses.
-   *  Exposed so other browse-only surfaces (e.g. the Pools segment's
-   *  library-reuse picker, P2 I-2) can offer the same set without a
+   *  Exposed so other browse-only surfaces (e.g. the pool editor's
+   *  quick-add reuse matches, P2 I-2) can offer the same set without a
    *  second `computeBrowsableTasks` pass or duplicated live queries. NOT
    *  for resolution/chip-display use — those need the full `allTasks`
    *  set so a wizard-born task a pool already references still resolves. */

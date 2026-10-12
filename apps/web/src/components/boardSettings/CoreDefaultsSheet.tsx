@@ -17,13 +17,10 @@ import { useModalA11y } from '../../hooks/useModalA11y';
 import { WizardQuickAddRow } from '../wizard/WizardQuickAddRow';
 import {
   RisoButton,
-  RisoIcon,
   RisoSectionLabel,
   RisoSegmented,
-  RisoTypeBadge,
   type RisoSegmentedOption,
 } from '../riso';
-import { selectLibraryPickerResults } from '../pools/poolEditSheetSelectors';
 import { PoolPickerSheet } from '../pools/PoolPickerSheet';
 import styles from './CoreDefaultsSheet.module.css';
 
@@ -64,8 +61,7 @@ export interface CoreDefaultsSheetProps {
   achievableTaskIdsByTemplateId: Record<string, string[]> | undefined;
   /** The user's full non-deleted task library — resolves ids to chips. */
   allTasks: Task[];
-  /** Draft-filtered subset of `allTasks` — the library-reuse picker's
-   *  source list. */
+  /** Draft-filtered subset of `allTasks` — the quick-add match source. */
   browsableTasks: Task[];
   /** Backdrop click / Escape / Cancel / Close. */
   onClose: () => void;
@@ -123,8 +119,6 @@ export function CoreDefaultsSheet({
   );
   const [sessionTaskCache, setSessionTaskCache] = useState<Map<string, Task>>(() => new Map());
   const [showPoolPicker, setShowPoolPicker] = useState(false);
-  const [showLibraryPicker, setShowLibraryPicker] = useState(false);
-  const [librarySearch, setLibrarySearch] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -156,10 +150,6 @@ export function CoreDefaultsSheet({
     [coreDefaultTaskIds, tasksById],
   );
   const selectedIdSet = useMemo(() => new Set(coreDefaultTaskIds), [coreDefaultTaskIds]);
-  const libraryResults = useMemo(
-    () => selectLibraryPickerResults(browsableTasks, selectedIdSet, librarySearch, allTasks),
-    [browsableTasks, selectedIdSet, librarySearch, allTasks],
-  );
 
   // T3 — the resolved size/centre this sheet's controls DISPLAY: the
   // explicit override where set, else the global preference, run through
@@ -371,58 +361,13 @@ export function CoreDefaultsSheet({
                 currentTimeframe={timeframe}
                 libraryTasks={browsableTasks}
                 lookupTasks={allTasks}
+                includeGoalLessCounters
                 selectedIds={selectedIdSet}
                 onTaskCreated={addTask}
                 onExistingTaskPicked={addTask}
                 disabled={busy}
               />
             </div>
-
-            <button
-              type="button"
-              className={styles.libraryToggle}
-              onClick={() => setShowLibraryPicker((v) => !v)}
-              aria-expanded={showLibraryPicker}
-            >
-              Reuse a task from your library {showLibraryPicker ? '▴' : '▾'}
-            </button>
-
-            {showLibraryPicker && (
-              <div className={styles.libraryPicker}>
-                <input
-                  type="search"
-                  className={styles.librarySearch}
-                  placeholder="Search your tasks…"
-                  value={librarySearch}
-                  onChange={(e) => setLibrarySearch(e.target.value)}
-                  aria-label="Search your task library"
-                />
-                <ul className={styles.libraryList}>
-                  {libraryResults.length === 0 && (
-                    <li className={styles.libraryEmpty}>
-                      {librarySearch.trim()
-                        ? 'No matches.'
-                        : 'Every library task is already a default.'}
-                    </li>
-                  )}
-                  {libraryResults.map((task) => (
-                    <li key={task.id} className={styles.libraryRow}>
-                      <button
-                        type="button"
-                        className={styles.libraryRowButton}
-                        onClick={() => addTask(task)}
-                      >
-                        <RisoTypeBadge type={task.type} />
-                        <span className={styles.libraryRowTitle}>
-                          {task.title || '(untitled task)'}
-                        </span>
-                        <RisoIcon name="plus" size={14} />
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
 
             {error !== null && (
               <p className={styles.error} role="alert">

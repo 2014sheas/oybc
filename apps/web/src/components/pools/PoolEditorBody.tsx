@@ -16,7 +16,7 @@ import { PoolList } from '../wizard/PoolList';
 import { PoolRowEditor } from '../wizard/PoolRowEditor';
 import { SpecialTaskPanel } from '../wizard/SpecialTaskPanel';
 import { WizardQuickAddRow } from '../wizard/WizardQuickAddRow';
-import { RisoButton, RisoIcon, RisoTypeBadge } from '../riso';
+import { RisoButton } from '../riso';
 import { TasksPoolHeader } from '../wizard/TasksPoolHeader';
 import { computeDeckFloor, poolHeaderInputs } from './poolDeckPreview';
 import { deletePoolFromSheet, savePoolFromSheet, POOL_NAME_MAX_LENGTH } from './poolEditSheetOps';
@@ -32,7 +32,6 @@ import {
   setMemberVaryLevel,
   stageEditInto,
 } from './poolEditorModel';
-import { selectLibraryPickerResults } from './poolEditSheetSelectors';
 import styles from './PoolEditorBody.module.css';
 
 const NOOP = (): void => {};
@@ -48,8 +47,8 @@ export interface PoolEditorBodyProps {
    *  (a pool may reference a wizard-born draft task the Library hides; that
    *  reference must still resolve and be removable). */
   allTasks: Task[];
-  /** Draft-filtered subset of `allTasks` — the library picker / quick-add
-   *  match source (pickers are browse surfaces). */
+  /** Draft-filtered subset of `allTasks` — the quick-add match source
+   *  (a browse surface). */
   browsableTasks: Task[];
   /** Pre-seeds `taskIds` in create mode only; ignored when `pool` is set. */
   initialTaskIds?: string[];
@@ -68,8 +67,8 @@ export interface PoolEditorBodyProps {
 /**
  * PoolEditorBody — the pool editor, shaped like the board wizard's Tasks
  * step: NAME → the wizard's `TasksPoolHeader` card (count / deck floor / deck
- * preview note) → the ADD section (quick-add row, special-type panel) → the
- * dashed library-reuse row → the wizard's resting `PoolList` rows (tap ✎ for
+ * preview note) → the ADD section (quick-add row — typing also finds library
+ * tasks to reuse — and the special-type panel) → the wizard's resting `PoolList` rows (tap ✎ for
  * the inline `PoolRowEditor`; edits are STAGED here and applied with the
  * membership in one transaction at Save) → Delete pool (edit mode) → Cancel /
  * Save. Hosted by the full-screen `PoolEditorPage` and by the pool picker's
@@ -106,8 +105,6 @@ export function PoolEditorBody({
   const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
   const [editDraft, setEditDraft] = useState<TaskEditPatch | null>(null);
 
-  const [showLibraryPicker, setShowLibraryPicker] = useState(false);
-  const [librarySearch, setLibrarySearch] = useState('');
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -155,10 +152,6 @@ export function PoolEditorBody({
   const poolableBrowsableTasks = useMemo(
     () => browsableTasks.filter(isSourceSupplyTask),
     [browsableTasks],
-  );
-  const libraryResults = useMemo(
-    () => selectLibraryPickerResults(poolableBrowsableTasks, selectedIdSet, librarySearch, allTasks),
-    [poolableBrowsableTasks, selectedIdSet, librarySearch, allTasks],
   );
   // Sub-task quick-add matches (compound editor): browsable tasks with staged edits overlaid.
   const pickerLibraryTasks = useMemo<Task[]>(
@@ -246,8 +239,6 @@ export function PoolEditorBody({
     }
   }
 
-  const libraryQuery = librarySearch.trim();
-
   return (
     <div className={styles.root}>
       <div className={styles.fields}>
@@ -285,6 +276,7 @@ export function PoolEditorBody({
             userId={userId}
             libraryTasks={poolableBrowsableTasks}
             lookupTasks={allTasks}
+            includeGoalLessCounters
             selectedIds={selectedIdSet}
             onTaskCreated={addTask}
             onExistingTaskPicked={addTask}
@@ -303,43 +295,6 @@ export function PoolEditorBody({
           suggestionPool={allTasks}
         />
 
-        <button
-          type="button"
-          className={styles.libraryToggle}
-          onClick={() => setShowLibraryPicker((v) => !v)}
-          aria-expanded={showLibraryPicker}
-        >
-          Reuse a task from your library {showLibraryPicker ? '▴' : '▾'}
-        </button>
-
-        {showLibraryPicker && (
-          <div className={styles.libraryPicker}>
-            <input
-              type="search"
-              className={styles.librarySearch}
-              placeholder="Search your tasks…"
-              value={librarySearch}
-              onChange={(e) => setLibrarySearch(e.target.value)}
-              aria-label="Search your task library"
-            />
-            <ul className={styles.libraryList}>
-              {libraryResults.length === 0 && (
-                <li className={styles.libraryEmpty}>
-                  {libraryQuery ? 'No matches.' : 'Every library task is already in this pool.'}
-                </li>
-              )}
-              {libraryResults.map((task) => (
-                <li key={task.id} className={styles.libraryRow}>
-                  <button type="button" className={styles.libraryRowButton} onClick={() => addTask(task)}>
-                    <RisoTypeBadge type={task.type} />
-                    <span className={styles.libraryRowTitle}>{task.title || '(untitled task)'}</span>
-                    <RisoIcon name="plus" size={14} />
-                  </button>
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
 
         <div className={styles.listBlock}>
           <PoolList

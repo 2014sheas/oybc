@@ -304,7 +304,10 @@ struct CoreDefaultsEditSheetView: View {
                 libraryTasks: library.browsableTasks,
                 counterRootTasks: library.libraryTasks,
                 selectedIds: resolved.selectedTaskIds,
-                onExistingTaskPicked: { task in addDefaultTask(task.id) }
+                onExistingTaskPicked: { task in addDefaultTask(task.id) },
+                // Browse-filtered: hub counters (no goal) come back here, the
+                // ones with a window default (board creation mints the copy).
+                includeGoalLessCounters: true
             )
             .padding(12)
             .risoCard(fill: .risoPaper2)

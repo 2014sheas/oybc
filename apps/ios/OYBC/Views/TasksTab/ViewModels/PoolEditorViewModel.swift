@@ -129,14 +129,6 @@ final class PoolEditorViewModel {
         return pickerLibraryBase.map { byId[$0.id] ?? $0 }
     }
 
-    func libraryResults(query: String) -> [Task] {
-        Self.filterLibraryResults(
-            browsableTasks: poolableBrowsableTasks,
-            selectedIds: Set(poolTaskIds),
-            query: query,
-            rootsById: effectiveTaskById
-        )
-    }
 
     /// Save needs a name, at least one RESOLVABLE task, no open invalid
     /// editor state, and no write in flight.
@@ -329,21 +321,6 @@ final class PoolEditorViewModel {
         return "Could not save pool: Pool name must be \(nameMaxLength) characters or fewer."
     }
 
-    /// Library-reuse picker candidates: browsable minus selected, filtered by
-    /// a trimmed, case-insensitive title query.
-    static func filterLibraryResults(
-        browsableTasks: [Task],
-        selectedIds: Set<String>,
-        query: String,
-        rootsById: [String: Task] = [:]
-    ) -> [Task] {
-        // The shared match set (docs/SHARED_COUNTER_SETTINGS.md §2) plus a
-        // counter's display name / noun for its unit tasks, direct hits first —
-        // web `selectLibraryPickerResults` twin.
-        CounterPlacement.rankedTaskMatches(
-            browsableTasks.filter { !selectedIds.contains($0.id) }, query: query, rootsById: rootsById
-        )
-    }
 
     /// Resolves `taskIds` to the RESOLVABLE subset in `taskIds` order against
     /// the FULL library set; unresolvable ids drop from DISPLAY only.

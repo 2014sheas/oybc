@@ -76,10 +76,11 @@ struct RisoQuickAddRowView: View {
     var placementTimeframe: Timeframe? = nil
     /// Widen the matches with goal-less counters from `counterRootTasks`
     /// (every counter created from the Counters hub — the browse filter hides
-    /// them). Only for a host whose `libraryTasks` IS browse-filtered (the
-    /// wizard Tasks step; Board Edit's picker already searches the full set),
-    /// and only honoured with a timeframe + `onPendingCreated`, so a goal-less
-    /// root is always placed as a pending linked copy. Web twin:
+    /// them). For a host whose `libraryTasks` IS browse-filtered (wizard Tasks
+    /// step, pool editor, core defaults; Board Edit's picker already searches
+    /// the full set). With a timeframe + `onPendingCreated` every such counter
+    /// joins (placed as a pending linked copy, Goal asked when no default);
+    /// otherwise only those with a window default. Web twin:
     /// `WizardQuickAddRow.includeGoalLessCounters`.
     var includeGoalLessCounters: Bool = false
 
@@ -113,11 +114,14 @@ struct RisoQuickAddRowView: View {
         guard onExistingTaskPicked != nil, !trimmedText.isEmpty else { return [] }
         // The shared match set (docs/SHARED_COUNTER_SETTINGS.md §2) plus the
         // counter's name / noun for its unit tasks and copies; direct hits first.
-        // Goal-less (hub) counters join only for an opted-in host whose
-        // counter row can place them as a pending linked copy.
-        let widen = includeGoalLessCounters && (placementTimeframe ?? defaultTimeframe) != nil && onPendingCreated != nil
-        let pool = widen
-            ? QuickAddCounterPlacement.withGoalLessCounters(libraryTasks, pool: counterRootTasks)
+        // Goal-less (hub) counters join for an opted-in host: every one when its
+        // counter row can mint a pending linked copy and ask for a goal, else
+        // only those with a window default (pool / core defaults store it).
+        let canAskForGoal = (placementTimeframe ?? defaultTimeframe) != nil && onPendingCreated != nil
+        let pool = includeGoalLessCounters
+            ? QuickAddCounterPlacement.withGoalLessCounters(
+                libraryTasks, pool: counterRootTasks, requireDefault: !canAskForGoal
+            )
             : libraryTasks
         let candidates = pool.filter { !selectedIds.contains($0.id) }
         return Array(CounterPlacement.rankedTaskMatches(candidates, query: trimmedText, rootsById: roots).prefix(4))

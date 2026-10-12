@@ -2,8 +2,8 @@ import SwiftUI
 
 /// PoolEditorBodyView — the pool editor's scrolling content, shaped like the
 /// board wizard's Tasks step: NAME field → pool header card (count / deck
-/// floor / deck-preview note) → "Add tasks" (quick-add row + special-type
-/// panel) → dashed library-reuse row → the task list (`RisoPoolListView`,
+/// floor / deck-preview note) → "Add tasks" (quick-add row — typing also finds
+/// library tasks to reuse — + special-type panel) → the task list (`RisoPoolListView`,
 /// `surface: .pool`) with the inline row editor (`RisoPoolRowEditorView`).
 ///
 /// Leaf view over a `PoolEditorViewModel`; chrome (header / Save / Delete)
@@ -11,9 +11,6 @@ import SwiftUI
 struct PoolEditorBodyView: View {
 
     @Bindable var vm: PoolEditorViewModel
-
-    @State private var showLibraryPicker = false
-    @State private var librarySearch = ""
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
@@ -70,7 +67,10 @@ struct PoolEditorBodyView: View {
                     libraryTasks: vm.poolableBrowsableTasks,
                     counterRootTasks: vm.library.libraryTasks,
                     selectedIds: Set(vm.poolTaskIds),
-                    onExistingTaskPicked: { vm.add($0.id) }
+                    onExistingTaskPicked: { vm.add($0.id) },
+                    // Browse-filtered: hub counters (no goal) come back here, the
+                    // ones with a window default (board creation mints the copy).
+                    includeGoalLessCounters: true
                 )
             }
             .padding(12)
@@ -93,9 +93,6 @@ struct PoolEditorBodyView: View {
                 submitLabel: "Add to pool ✦"
             )
             .disabled(vm.busy)
-
-            libraryPickerToggle
-            if showLibraryPicker { libraryPicker }
 
             RisoPoolListView(
                 surface: .pool,
@@ -125,93 +122,6 @@ struct PoolEditorBodyView: View {
                 onSetManualVary: { vm.setMemberVary(taskId: $0, level: $1) }
             )
             .disabled(vm.busy)
-        }
-    }
-
-    // MARK: - Library picker (inline expand — NOT a modal sheet)
-
-    private var libraryPickerToggle: some View {
-        Button {
-            showLibraryPicker.toggle()
-        } label: {
-            HStack(spacing: 8) {
-                Image(systemName: "books.vertical")
-                    .font(.system(size: 15, weight: .bold)).foregroundStyle(Color.risoMuted)
-                Text("Reuse a task from your library \(showLibraryPicker ? "▴" : "▾")")
-                    .font(.risoHead(13, .bold)).foregroundStyle(Color.risoInk)
-                Spacer()
-            }
-            .padding(12)
-            .frame(maxWidth: .infinity)
-            .background(
-                RoundedRectangle(cornerRadius: Riso.cardRadius)
-                    .strokeBorder(Color.risoInk.opacity(0.5),
-                                  style: StrokeStyle(lineWidth: Riso.Keyline.container, dash: [5, 4]))
-            )
-            .contentShape(Rectangle()) // whole dashed row is the tap target
-        }
-        .buttonStyle(.plain)
-        .disabled(vm.busy)
-    }
-
-    private var libraryPicker: some View {
-        let results = vm.libraryResults(query: librarySearch)
-        let trimmedSearch = librarySearch.trimmingCharacters(in: .whitespacesAndNewlines)
-        return VStack(spacing: 0) {
-            HStack(spacing: 8) {
-                Image(systemName: "magnifyingglass").foregroundStyle(Color.risoMuted)
-                TextField("Search your tasks…", text: $librarySearch)
-                    .font(.risoBody(13, .regular)).foregroundStyle(Color.risoInk)
-                    .textInputAutocapitalization(.never).disableAutocorrection(true)
-            }
-            .padding(10)
-
-            Divider().background(Color.risoInk.opacity(0.08))
-
-            if results.isEmpty {
-                Text(trimmedSearch.isEmpty ? "Every library task is already in this pool." : "No matches.")
-                    .font(.risoBody(12.5, .regular)).foregroundStyle(Color.risoMuted)
-                    .multilineTextAlignment(.center)
-                    .frame(maxWidth: .infinity).padding(14)
-            } else {
-                ScrollView(showsIndicators: false) {
-                    LazyVStack(spacing: 0) {
-                        ForEach(results, id: \.id) { task in
-                            Button {
-                                vm.add(task.id)
-                            } label: {
-                                HStack(spacing: 10) {
-                                    RisoTypeBadge(kind: risoKind(task.type), style: .letterSquare)
-                                    Text(task.title.isEmpty ? "(untitled task)" : task.title)
-                                        .font(.risoBody(13.5, .semibold)).foregroundStyle(Color.risoInk)
-                                        .frame(maxWidth: .infinity, alignment: .leading)
-                                    Image(systemName: "plus")
-                                        .font(.system(size: 13, weight: .bold))
-                                        .foregroundStyle(Color.risoMuted)
-                                }
-                                .padding(.vertical, 10).padding(.horizontal, 14)
-                                .contentShape(Rectangle()) // whole row is the tap target
-                            }
-                            .buttonStyle(.plain)
-                            .disabled(vm.busy)
-                            Divider().background(Color.risoInk.opacity(0.08))
-                        }
-                    }
-                }
-                .frame(maxHeight: 220)
-            }
-        }
-        .background(Color.risoPaper)
-        .clipShape(RoundedRectangle(cornerRadius: Riso.cardRadius))
-        .overlay(RoundedRectangle(cornerRadius: Riso.cardRadius).strokeBorder(Color.risoInk, lineWidth: Riso.Keyline.container))
-    }
-
-    private func risoKind(_ type: TaskType) -> RisoTaskKind {
-        switch type {
-        case .normal: return .normal
-        case .counting: return .counting
-        case .compound: return .compound
-        case .achievement: return .achievement
         }
     }
 }
