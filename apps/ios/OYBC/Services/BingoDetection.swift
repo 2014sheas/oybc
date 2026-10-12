@@ -20,6 +20,11 @@ struct BingoDetectionResult {
 /// implementation in packages/shared for cross-platform consistency.
 enum BingoDetection {
 
+    /// Total number of lines on a `gridSize` board: every row, every column
+    /// and both diagonals (`2·size + 2`). The "OF {n}" in the bingo moment's
+    /// kicker. Mirrors bingo-core's `totalLineCount`.
+    static func totalLineCount(gridSize: Int) -> Int { 2 * gridSize + 2 }
+
     /// Detect all completed bingo lines on a board.
     ///
     /// Checks all rows, columns, and diagonals for completion.

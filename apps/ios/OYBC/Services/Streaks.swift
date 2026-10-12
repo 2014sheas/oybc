@@ -50,6 +50,20 @@ func compactStreakLabel(_ count: Int, timeframe: Timeframe) -> String {
     return "\(count)\(unit)"
 }
 
+/// Uppercase streak unit for the moment overlay's chip label
+/// ("{UNIT} STREAK"): DAY / WEEK / MONTH / YEAR. `.custom` / `.indefinite`
+/// have no cadence → empty (the chip never shows for them). Mirrors the TS
+/// `streakUnitLabel`.
+func streakUnitLabel(_ timeframe: Timeframe) -> String {
+    switch timeframe {
+    case .daily:   return "DAY"
+    case .weekly:  return "WEEK"
+    case .monthly: return "MONTH"
+    case .yearly:  return "YEAR"
+    case .custom, .indefinite: return ""
+    }
+}
+
 /// Whether a core board satisfies the streak criterion. Mirrors the Achievement
 /// trigger semantics (bingo = `linesCompleted >= 1`, greenlog = full board).
 private func boardMeets(_ board: Board, _ criterion: AchievementTrigger) -> Bool {

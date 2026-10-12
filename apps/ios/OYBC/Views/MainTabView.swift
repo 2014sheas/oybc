@@ -194,14 +194,13 @@ struct MainTabView: View {
 
             // ── "Preview a GREENLOG" sample (tutorial Share lesson) ──
             if showGreenlogPreview {
-                RisoGreenlogOverlay(
-                    completedTasks: 25,
-                    totalTasks: 25,
-                    linesCompleted: 12,
-                    boardName: "Sample board",
+                let sample = MomentPresentation.greenlogSample
+                RisoMomentOverlay(
+                    kind: sample.kind, replay: sample.replay, cells: sample.cells,
+                    boardName: "Sample board", linesCompleted: 12,
                     // Preview only — both buttons just close it (no real share).
                     onShare: { showGreenlogPreview = false },
-                    onDismiss: { showGreenlogPreview = false }
+                    onBack: { showGreenlogPreview = false }
                 )
                 .ignoresSafeArea()
                 .transition(.opacity)

@@ -618,25 +618,7 @@ final class BoardPlayViewModel: ObservableObject {
                     try? database.read { db in try Board.fetchOne(db, key: id) }
                 }
 
-                var newBingoMsg: String? = nil
-                if let before = boardBefore, let after = boardAfter {
-                    let prevBingos = Set(before.completedLineIds ?? [])
-                    let nextBingos = Set(after.completedLineIds ?? [])
-                    let gained = nextBingos.subtracting(prevBingos).sorted()
-                    let lost = prevBingos.subtracting(nextBingos).sorted()
-                    let totalSquares = after.boardSize * after.boardSize
-                    let isGreenlogNow = after.completedTasks >= totalSquares
-
-                    if before.status == .completed && after.status == .active {
-                        newBingoMsg = "Board reactivated — no longer complete"
-                    } else if !lost.isEmpty {
-                        newBingoMsg = "Bingo lost: \(lost.joined(separator: ", "))"
-                    } else if isGreenlogNow && after.status == .completed && before.status == .active {
-                        newBingoMsg = "GREENLOG!"
-                    } else if !gained.isEmpty {
-                        newBingoMsg = "Bingo! (\(gained.joined(separator: ", ")))"
-                    }
-                }
+                let flash = BoardFlashOutcome.resolve(before: boardBefore, after: boardAfter)
 
                 // P2/R3: Build the credited toast for OTHER boards that changed.
                 let otherBoards = creditResult.affectedBoards.filter { $0.boardId != currentBoardId }
@@ -653,11 +635,7 @@ final class BoardPlayViewModel: ObservableObject {
 
                 await MainActor.run {
                     self.reload { self.isProcessing = false }
-                    if let msg = newBingoMsg {
-                        self.bingoMessage = msg
-                        self.scheduleBingoMessageDismiss(msg)
-                    }
-                    self.emitFlash(risoNotification: newBingoMsg, creditToast: creditPayload)
+                    self.emitFlash(flash, creditToast: creditPayload)
                 }
             } catch {
                 dlog("⚠️ BoardPlayView shared-counter increment error: \(error)")
@@ -734,17 +712,7 @@ final class BoardPlayViewModel: ObservableObject {
                 let boardAfter: Board? = currentBoardId.flatMap { id in
                     try? database.read { db in try Board.fetchOne(db, key: id) }
                 }
-                var newBingoMsg: String? = nil
-                if let before = boardBefore, let after = boardAfter {
-                    let prevBingos = Set(before.completedLineIds ?? [])
-                    let nextBingos = Set(after.completedLineIds ?? [])
-                    let lost = prevBingos.subtracting(nextBingos).sorted()
-                    if before.status == .completed && after.status == .active {
-                        newBingoMsg = "Board reactivated — no longer complete"
-                    } else if !lost.isEmpty {
-                        newBingoMsg = "Bingo lost: \(lost.joined(separator: ", "))"
-                    }
-                }
+                let flash = BoardFlashOutcome.resolve(before: boardBefore, after: boardAfter, allowGains: false)
 
                 let otherBoards = decrementResult.affectedBoards.filter { $0.boardId != currentBoardId }
                 let creditPayload: SharedCounterCreditToastPayload? = otherBoards.isEmpty ? nil :
@@ -763,11 +731,7 @@ final class BoardPlayViewModel: ObservableObject {
 
                 await MainActor.run {
                     self.reload { self.isProcessing = false }
-                    if let msg = newBingoMsg {
-                        self.bingoMessage = msg
-                        self.scheduleBingoMessageDismiss(msg)
-                    }
-                    self.emitFlash(risoNotification: newBingoMsg, creditToast: creditPayload)
+                    self.emitFlash(flash, creditToast: creditPayload)
                 }
             } catch {
                 dlog("⚠️ BoardPlayView shared-counter decrement error: \(error)")
@@ -860,7 +824,6 @@ final class BoardPlayViewModel: ObservableObject {
         _Concurrency.Task.detached(priority: .userInitiated) { [weak self] in
             guard let self = self else { return }
             do {
-                var newBingoMsg: String? = nil
                 let creditBefore = Self.countsTowardCreditSnapshot(database: database, currentBoardId: currentBoardId, writtenTaskId: childTask.id)
                 // Child isn't on this board — the fallback write (child event
                 // append + cache stamp + windowed cross-board cascade) is owned
@@ -874,27 +837,11 @@ final class BoardPlayViewModel: ObservableObject {
                     boardId: currentBoardId,
                     now: now
                 )
-                if let cid = currentBoardId, let result = cascadeResults[cid] {
-                    let lost = result.update.lostBingos.sorted()
-                    let gained = result.update.newBingos.sorted()
-                    if result.wasReactivated {
-                        newBingoMsg = "Board reactivated — no longer complete"
-                    } else if !lost.isEmpty {
-                        newBingoMsg = "Bingo lost: \(lost.joined(separator: ", "))"
-                    } else if result.didAutoComplete {
-                        newBingoMsg = "GREENLOG!"
-                    } else if !gained.isEmpty {
-                        newBingoMsg = "Bingo! (\(gained.joined(separator: ", ")))"
-                    }
-                }
+                let flash = BoardFlashOutcome.resolve(cascade: currentBoardId.flatMap { cascadeResults[$0] })
                 let creditPayload = Self.countsTowardCreditToast(database: database, snapshot: creditBefore, currentBoardId: currentBoardId, writtenTaskId: childTask.id, undo: .uncomplete(taskId: childTask.id, boardTaskId: nil))
                 await MainActor.run {
                     self.reload { self.isProcessing = false }
-                    if let msg = newBingoMsg {
-                        self.bingoMessage = msg
-                        self.scheduleBingoMessageDismiss(msg)
-                    }
-                    self.emitFlash(risoNotification: newBingoMsg, creditToast: creditPayload)
+                    self.emitFlash(flash, creditToast: creditPayload)
                 }
             } catch {
                 dlog("⚠️ BoardPlayView compoundChildToggle error: \(error)")
@@ -947,7 +894,6 @@ final class BoardPlayViewModel: ObservableObject {
         _Concurrency.Task.detached(priority: .userInitiated) { [weak self] in
             guard let self = self else { return }
             do {
-                var newBingoMsg: String? = nil
                 let creditBefore = Self.countsTowardCreditSnapshot(database: database, currentBoardId: currentBoardId, writtenTaskId: taskId)
 
                 // The whole write transaction lives in `AppDatabase.completeTaskOrchestrated`;
@@ -962,19 +908,7 @@ final class BoardPlayViewModel: ObservableObject {
                 if let amount = persistDefault { do { try database.setCounterDefaultLogAmount(sourceTaskId: taskId, amount: amount) } catch { dlog("BoardPlayVM: persist default failed: \(error)") } }
 
                 // Flash for the *current* board only (other boards update silently).
-                if let result = cascadeResults[currentBoardId] {
-                    let lost = result.update.lostBingos.sorted()
-                    let gained = result.update.newBingos.sorted()
-                    if result.wasReactivated {
-                        newBingoMsg = "Board reactivated — no longer complete"
-                    } else if !lost.isEmpty {
-                        newBingoMsg = "Bingo lost: \(lost.joined(separator: ", "))"
-                    } else if result.didAutoComplete {
-                        newBingoMsg = "GREENLOG!"
-                    } else if !gained.isEmpty {
-                        newBingoMsg = "Bingo! (\(gained.joined(separator: ", ")))"
-                    }
-                }
+                let flash = BoardFlashOutcome.resolve(cascade: cascadeResults[currentBoardId])
 
                 let creditPayload = Self.countsTowardCreditToast(database: database, snapshot: creditBefore, currentBoardId: currentBoardId, writtenTaskId: taskId, undo: Self.creditUndo(intent: intent, taskId: taskId, boardTaskId: boardTask.id, priorCount: priorCount))
                 await MainActor.run {
@@ -983,11 +917,7 @@ final class BoardPlayViewModel: ObservableObject {
                     // from taskMap + compoundChildrenByCompound) in sync with the
                     // latest child-toggle state without a dismiss-and-reopen.
                     self.reload { self.isProcessing = false }
-                    if let msg = newBingoMsg {
-                        self.bingoMessage = msg
-                        self.scheduleBingoMessageDismiss(msg)
-                    }
-                    self.emitFlash(risoNotification: newBingoMsg, creditToast: creditPayload)
+                    self.emitFlash(flash, creditToast: creditPayload)
                 }
             } catch {
                 dlog("⚠️ BoardPlayView orchestration error: \(error)")
@@ -1033,14 +963,20 @@ final class BoardPlayViewModel: ObservableObject {
     }
 
     /// Publishes a one-shot `flashEvent` the view observes to fire its
-    /// `triggerRisoNotification(from:)` / `triggerCreditToast(payload:)`
-    /// animations. No-op when both payloads are nil.
-    func emitFlash(risoNotification: String?, creditToast: SharedCounterCreditToastPayload?) {
-        guard risoNotification != nil || creditToast != nil else { return }
+    /// moment overlay / `triggerCreditToast(payload:)` animations, and mirrors
+    /// the outcome's message into the transient `bingoMessage`. No-op when
+    /// there is neither a message nor a credit toast.
+    func emitFlash(_ outcome: BoardFlashOutcome, creditToast: SharedCounterCreditToastPayload?) {
+        if let msg = outcome.message {
+            bingoMessage = msg
+            scheduleBingoMessageDismiss(msg)
+        }
+        guard outcome.message != nil || creditToast != nil else { return }
         flashEventCounter += 1
         flashEvent = BoardPlayFlashEvent(
             id: flashEventCounter,
-            risoNotification: risoNotification,
+            risoNotification: outcome.message,
+            moment: outcome.moment,
             creditToast: creditToast
         )
     }
@@ -1421,9 +1357,13 @@ struct SharedCounterCreditToastPayload: Equatable {
 /// keeps consecutive identical-copy emissions distinct for `.onChange`.
 struct BoardPlayFlashEvent: Identifiable, Equatable {
     let id: Int
-    /// Message for the view's `triggerRisoNotification(from:)` (bingo toast /
-    /// GREENLOG overlay). Nil ⇒ the interaction produced no bingo-state change.
+    /// The transient message (reactivated / lost-bingo / the legacy bingo and
+    /// GREENLOG strings). Nil ⇒ the interaction produced no bingo-state change.
+    /// The view never routes on it — `moment` is the trigger.
     let risoNotification: String?
+    /// The Bingo / Greenlog moment to open (greenlog > bingo; two lines at
+    /// once is one trigger). Nil ⇒ no moment.
+    let moment: MomentTrigger?
     /// Payload for the view's `triggerCreditToast(payload:)` (shared-counter
     /// ripple). Nil ⇒ the ripple reached no OTHER board.
     let creditToast: SharedCounterCreditToastPayload?
