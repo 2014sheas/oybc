@@ -136,7 +136,10 @@ struct MemberRuleRowModel: Equatable {
             if !fromBoard, t.sharedCounterId != nil { return nil }
             let root = t.sharedCounterId.flatMap { taskById[$0] } ?? (t.sharedCounterId == nil ? t : nil)
             return root.flatMap {
-                CounterPlacement.counterTimeframeDefault(.init(task: $0), timeframe: wizardWindow.timeframe)
+                CounterPlacement.counterTimeframeDefault(
+                    .init(task: $0), timeframe: wizardWindow.timeframe,
+                    startDate: wizardWindow.startDate, endDate: wizardWindow.endDate
+                )
             }
         }
         let memberVary = rule.vary ?? .off

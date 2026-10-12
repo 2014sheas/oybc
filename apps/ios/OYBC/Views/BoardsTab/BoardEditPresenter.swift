@@ -93,7 +93,9 @@ struct BoardEditPresenter: ViewModifier {
                         }
                         pickerTarget = nil
                     },
-                    timeframe: viewModel.board?.timeframe
+                    timeframe: viewModel.board?.timeframe,
+                    startDate: viewModel.board?.startDate,
+                    endDate: viewModel.board?.endDate
                 )
             }
             // Edit-task sheet (i6, unchanged from slice 2).

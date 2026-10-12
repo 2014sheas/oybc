@@ -467,7 +467,11 @@ extension BoardSources {
         }
         /// A root's timeframe default for this board (docs/SHARED_COUNTER_SETTINGS.md §2).
         func defaultOf(_ root: Task?) -> CountValue? {
-            root.flatMap { CounterPlacement.counterTimeframeDefault(.init(task: $0), timeframe: window.timeframe) }
+            root.flatMap {
+                CounterPlacement.counterTimeframeDefault(
+                    .init(task: $0), timeframe: window.timeframe, startDate: window.startDate, endDate: window.endDate
+                )
+            }
         }
         let targetDays = nominalWindowDays(
             window.timeframe,

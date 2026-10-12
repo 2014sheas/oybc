@@ -56,8 +56,9 @@ final class CounterSettingsVectorTests: XCTestCase {
     private struct RenderVector: Decodable { let name: String; let root: Root; let goal: Double?; let expected: String }
     private struct NameVector: Decodable { let name: String; let root: Root; let expected: String }
     private struct DerivedVector: Decodable { let name: String; let root: Root; let expected: Goals }
+    private struct Dates: Decodable { let startDate: String?; let endDate: String? }
     private struct ResolveVector: Decodable {
-        let name: String; let root: Root; let timeframe: String; let expected: Double?
+        let name: String; let root: Root; let timeframe: String; let dates: Dates?; let expected: Double?
     }
     private struct AutoVector: Decodable {
         let name: String; let title: String; let root: Root; let goal: Double?; let expected: Bool
@@ -65,8 +66,8 @@ final class CounterSettingsVectorTests: XCTestCase {
     private struct CopyVector: Decodable { let name: String; let member: Root; let newMaxCount: Double; let expected: String }
 
     private struct Context: Decodable {
-        let action: String?, unit: String?, countKind: CountKind?
-        var fields: CounterSettings.Fields { .init(action: action, unit: unit, countKind: countKind) }
+        let action: String?, unit: String?, countKind: CountKind?, maxCount: Double?
+        var fields: CounterSettings.Fields { .init(action: action, unit: unit, maxCount: maxCount, countKind: countKind) }
     }
     private struct DraftJSON: Decodable {
         let name: String, singular: String, plural: String
@@ -187,7 +188,12 @@ final class CounterSettingsVectorTests: XCTestCase {
     func testResolveCounterDefaultGoal() throws {
         for v in try loadFixture().resolveCounterDefaultGoal {
             let tf = try XCTUnwrap(Timeframe(rawValue: v.timeframe), v.name)
-            XCTAssertEqual(CounterSettings.resolveCounterDefaultGoal(v.root.fields, timeframe: tf), v.expected, v.name)
+            XCTAssertEqual(
+                CounterSettings.resolveCounterDefaultGoal(
+                    v.root.fields, timeframe: tf, startDate: v.dates?.startDate, endDate: v.dates?.endDate
+                ),
+                v.expected, v.name
+            )
         }
     }
 

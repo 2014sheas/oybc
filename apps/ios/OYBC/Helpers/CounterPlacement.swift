@@ -7,8 +7,10 @@ import Foundation
 // and the search-match set the wizard quick-add / library sheet / Board Edit
 // picker share. Pinned by `counterPlacementVectors.json`
 // (`CounterPlacementVectorTests`). Inert for a counter with no
-// `timeframeGoals` — every helper then answers exactly what placement did
-// before. A change here is a change in two places.
+// `timeframeGoals` but a goal of its own — every helper then answers exactly
+// what placement did before; a counter with no goal at all resolves the kind
+// fallback (`CounterSettings.fallbackDailyGoal`). A board's dates matter for
+// CUSTOM only. A change here is a change in two places.
 enum CounterPlacement {
 
     /// A usable positive goal, or nil.
@@ -17,36 +19,43 @@ enum CounterPlacement {
         return v
     }
 
-    /// The root's default for `timeframe` WITHOUT the root-goal fallback: the
-    /// stored default, else one D4 derives, else nil (also nil for CUSTOM /
-    /// INDEFINITE). The member-rule auto-scaler consults this before its own
-    /// pro-rating. TS twin: `counterTimeframeDefault`.
+    /// The root's default for a board window WITHOUT the root-goal fallback
+    /// (`CounterSettings.windowDefaultGoal`: stored → D4-derived → the kind
+    /// fallback for a counter with no goal at all; INDEFINITE as yearly;
+    /// CUSTOM scaled to its dates). The member-rule auto-scaler consults this
+    /// before its own pro-rating. TS twin: `counterTimeframeDefault`.
     ///
     /// - Parameters:
     ///   - root: The counter root's fields.
     ///   - timeframe: The board's timeframe.
+    ///   - startDate: The board's start (CUSTOM only).
+    ///   - endDate: The board's end (CUSTOM only).
     /// - Returns: The timeframe default, or nil.
-    static func counterTimeframeDefault(_ root: CounterSettings.Fields, timeframe: Timeframe) -> CountValue? {
-        guard let t = CounterSettings.GoalTimeframe(rawValue: timeframe.rawValue) else { return nil }
-        return positive(root.timeframeGoals?[t]) ?? (CounterSettings.derivedTimeframeGoals(root)[t] ?? nil)
+    static func counterTimeframeDefault(
+        _ root: CounterSettings.Fields, timeframe: Timeframe, startDate: String? = nil, endDate: String? = nil
+    ) -> CountValue? {
+        CounterSettings.windowDefaultGoal(root, timeframe: timeframe, startDate: startDate, endDate: endDate)
     }
 
     /// The goal a per-board copy carries when it is placed on a board of
     /// `timeframe`: an EXISTING copy keeps its own goal; else
-    /// `resolveCounterDefaultGoal` (stored → derived → the root's goal); else
-    /// the root's own goal (CUSTOM / INDEFINITE); else nil. TS twin:
-    /// `placementGoalForCounter`.
+    /// `resolveCounterDefaultGoal` (stored → derived / kind fallback → the
+    /// root's goal); else nil (a CUSTOM board whose dates don't parse, for a
+    /// counter with no goal at all). TS twin: `placementGoalForCounter`.
     ///
     /// - Parameters:
     ///   - root: The counter root's fields.
     ///   - timeframe: The board's timeframe.
+    ///   - startDate: The board's start (CUSTOM only).
+    ///   - endDate: The board's end (CUSTOM only).
     ///   - existingCopyGoal: The goal of the row already holding the copy's id, if any.
     /// - Returns: The copy's goal, or nil.
     static func placementGoalForCounter(
-        _ root: CounterSettings.Fields, timeframe: Timeframe, existingCopyGoal: CountValue? = nil
+        _ root: CounterSettings.Fields, timeframe: Timeframe, startDate: String? = nil, endDate: String? = nil,
+        existingCopyGoal: CountValue? = nil
     ) -> CountValue? {
         positive(existingCopyGoal)
-            ?? CounterSettings.resolveCounterDefaultGoal(root, timeframe: timeframe)
+            ?? CounterSettings.resolveCounterDefaultGoal(root, timeframe: timeframe, startDate: startDate, endDate: endDate)
             ?? positive(root.maxCount)
     }
 
@@ -57,9 +66,14 @@ enum CounterPlacement {
     /// - Parameters:
     ///   - root: The counter root's fields.
     ///   - timeframe: The board's timeframe.
+    ///   - startDate: The board's start (CUSTOM only).
+    ///   - endDate: The board's end (CUSTOM only).
     /// - Returns: True when a copy must be minted.
-    static func placementNeedsCopy(_ root: CounterSettings.Fields, timeframe: Timeframe) -> Bool {
-        guard let dflt = counterTimeframeDefault(root, timeframe: timeframe) else { return false }
+    static func placementNeedsCopy(
+        _ root: CounterSettings.Fields, timeframe: Timeframe, startDate: String? = nil, endDate: String? = nil
+    ) -> Bool {
+        guard let dflt = counterTimeframeDefault(root, timeframe: timeframe, startDate: startDate, endDate: endDate)
+        else { return false }
         return dflt != positive(root.maxCount)
     }
 
@@ -129,16 +143,22 @@ enum CounterPlacement {
     }
 
     /// The goal a freshly placed copy would get on a board of `timeframe`,
-    /// plus whether it is a timeframe default. Nil when the root has no goal
-    /// at all (the row then offers a Goal entry). TS twin:
-    /// `placementGoalSource`.
+    /// plus whether it is a timeframe default. Nil when nothing resolves (a
+    /// CUSTOM board without parseable dates, for a counter with no goal at
+    /// all — the row then offers a Goal entry). TS twin: `placementGoalSource`.
     ///
     /// - Parameters:
     ///   - root: The counter root's fields.
     ///   - timeframe: The board's timeframe.
+    ///   - startDate: The board's start (CUSTOM only).
+    ///   - endDate: The board's end (CUSTOM only).
     /// - Returns: The source, or nil.
-    static func placementGoalSource(_ root: CounterSettings.Fields, timeframe: Timeframe) -> PlacementGoalSource? {
-        guard let goal = placementGoalForCounter(root, timeframe: timeframe) else { return nil }
-        return PlacementGoalSource(goal: goal, fromTimeframe: counterTimeframeDefault(root, timeframe: timeframe) != nil)
+    static func placementGoalSource(
+        _ root: CounterSettings.Fields, timeframe: Timeframe, startDate: String? = nil, endDate: String? = nil
+    ) -> PlacementGoalSource? {
+        guard let goal = placementGoalForCounter(root, timeframe: timeframe, startDate: startDate, endDate: endDate)
+        else { return nil }
+        let dflt = counterTimeframeDefault(root, timeframe: timeframe, startDate: startDate, endDate: endDate)
+        return PlacementGoalSource(goal: goal, fromTimeframe: dflt != nil)
     }
 }

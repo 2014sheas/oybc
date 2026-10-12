@@ -61,10 +61,13 @@ final class CounterPlacementVectorTests: XCTestCase {
         }
     }
 
-    private struct Board: Decodable { let timeframe: String }
+    private struct Board: Decodable { let timeframe: String; let startDate: String?; let endDate: String? }
+    private struct Dates: Decodable { let startDate: String?; let endDate: String? }
     private struct Existing: Decodable { let maxCount: Double? }
 
-    private struct DefaultVector: Decodable { let name: String; let root: Root; let timeframe: String; let expected: Double? }
+    private struct DefaultVector: Decodable {
+        let name: String; let root: Root; let timeframe: String; let dates: Dates?; let expected: Double?
+    }
     private struct GoalVector: Decodable {
         let name: String; let root: Root; let board: Board; let existingCopy: Existing?; let expected: Double?
     }
@@ -129,7 +132,10 @@ final class CounterPlacementVectorTests: XCTestCase {
     func testCounterTimeframeDefault() throws {
         for v in try loadFixture().counterTimeframeDefault {
             XCTAssertEqual(
-                CounterPlacement.counterTimeframeDefault(v.root.fields, timeframe: try tf(v.timeframe)), v.expected, v.name
+                CounterPlacement.counterTimeframeDefault(
+                    v.root.fields, timeframe: try tf(v.timeframe), startDate: v.dates?.startDate, endDate: v.dates?.endDate
+                ),
+                v.expected, v.name
             )
         }
     }
@@ -138,7 +144,9 @@ final class CounterPlacementVectorTests: XCTestCase {
         let vectors = try loadFixture().placementGoalSource
         XCTAssertFalse(vectors.isEmpty)
         for v in vectors {
-            let got = CounterPlacement.placementGoalSource(v.root.fields, timeframe: try tf(v.board.timeframe))
+            let got = CounterPlacement.placementGoalSource(
+                v.root.fields, timeframe: try tf(v.board.timeframe), startDate: v.board.startDate, endDate: v.board.endDate
+            )
             let want = v.expected.map { CounterPlacement.PlacementGoalSource(goal: $0.goal, fromTimeframe: $0.fromTimeframe) }
             XCTAssertEqual(got, want, v.name)
         }
@@ -148,7 +156,8 @@ final class CounterPlacementVectorTests: XCTestCase {
         for v in try loadFixture().placementGoalForCounter {
             XCTAssertEqual(
                 CounterPlacement.placementGoalForCounter(
-                    v.root.fields, timeframe: try tf(v.board.timeframe), existingCopyGoal: v.existingCopy?.maxCount
+                    v.root.fields, timeframe: try tf(v.board.timeframe), startDate: v.board.startDate,
+                    endDate: v.board.endDate, existingCopyGoal: v.existingCopy?.maxCount
                 ),
                 v.expected, v.name
             )
@@ -160,7 +169,10 @@ final class CounterPlacementVectorTests: XCTestCase {
         XCTAssertEqual(Set(vectors.map(\.expected)), [true, false])
         for v in vectors {
             XCTAssertEqual(
-                CounterPlacement.placementNeedsCopy(v.root.fields, timeframe: try tf(v.board.timeframe)), v.expected, v.name
+                CounterPlacement.placementNeedsCopy(
+                    v.root.fields, timeframe: try tf(v.board.timeframe), startDate: v.board.startDate, endDate: v.board.endDate
+                ),
+                v.expected, v.name
             )
         }
     }

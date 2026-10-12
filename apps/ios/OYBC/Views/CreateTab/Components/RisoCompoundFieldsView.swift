@@ -276,9 +276,11 @@ struct RisoCompoundFieldsView: View {
         let q = subInputText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         guard !q.isEmpty else { return [] }
         let addedTitles = Set(compoundSubs.map { $0.displayTitle.lowercased() })
+        // Hub counters (no goal of their own) are browsable; picking one starts a
+        // linked Counting sub-task (`prefillCounterSub`). Not in from-counter mode.
         let candidates = countsTowardActive
-            ? taskLibrary
-            : QuickAddCounterPlacement.withGoalLessCounters(taskLibrary, pool: suggestionPool ?? taskLibrary)
+            ? taskLibrary.filter { !BrowsableTasks.isGoalLessCounter($0) }
+            : taskLibrary
         return candidates
             .filter { $0.type != .compound }
             .filter { !addedTitles.contains($0.title.lowercased()) }

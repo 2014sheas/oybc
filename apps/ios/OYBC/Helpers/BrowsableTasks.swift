@@ -11,19 +11,21 @@ import Foundation
 enum BrowsableTasks {
 
     /// P5 — Hub-born counters. A goal-less counter (COUNTING + `isCounter` +
-    /// no `maxCount`) cannot evaluate on a board; it lives in the Counters
-    /// Hub, not the library. Keyed on the PAIR — never bare absent-
+    /// no `maxCount`) has no goal of its own. It is browsable (since
+    /// 2026-10-12: placing it mints a per-board copy at the window's default,
+    /// the kind fallback when none is set), but it cannot be a compound
+    /// sub-task as-is. Keyed on the PAIR — never bare absent-
     /// `maxCount` — so a row whose flag was stripped by an old client
     /// degrades to a visible library row, never an unreachable task
-    /// (docs/SHARED_COUNTERS.md §P5 decision 5). Also used by the PR-2
-    /// compound-child write guards (`AppDatabase+Tasks.swift`).
+    /// (docs/SHARED_COUNTERS.md §P5 decision 5). Used by the compound-child
+    /// write guards (`AppDatabase+Tasks.swift`) and pickers.
     static func isGoalLessCounter(_ task: Task) -> Bool {
         task.type == .counting && task.isCounter == true && task.maxCount == nil
     }
 
     /// Filters the task library to the set that should appear in
     /// library-browse surfaces (the Tasks tab list, the wizard's Library
-    /// sheet). Hides forks, wizard-orphans, goal-less counters, and shared-counter
+    /// sheet). Hides forks, wizard-orphans, and shared-counter
     /// members whose root is present — the full rule and its rationale live
     /// on the TS twin `computeBrowsableTasks` (`browsableTasks.ts`). One
     /// difference: callers must pass live (non-deleted) placements; the TS
@@ -57,7 +59,6 @@ enum BrowsableTasks {
         var liveById: [String: Task] = [:]
         for task in tasks where !task.isDeleted { liveById[task.id] = task }
         return tasks.filter { task in
-            if isGoalLessCounter(task) { return false }
             // A fork (board-scoped task edits, docs/BOARD_SCOPED_TASK_EDITS.md
             // §3) is reachable only from its square — never browsable.
             if task.forkedFromTaskId != nil { return false }

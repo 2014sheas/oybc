@@ -74,15 +74,16 @@ struct RisoQuickAddRowView: View {
     /// so a host (Board Edit's picker) can resolve the goal without changing
     /// the timeframe its created tasks carry.
     var placementTimeframe: Timeframe? = nil
-    /// Widen the matches with goal-less counters from `counterRootTasks`
-    /// (every counter created from the Counters hub — the browse filter hides
-    /// them). For a host whose `libraryTasks` IS browse-filtered (wizard Tasks
-    /// step, pool editor, core defaults; Board Edit's picker already searches
-    /// the full set). With a timeframe + `onPendingCreated` every such counter
-    /// joins (placed as a pending linked copy, Goal asked when no default);
-    /// otherwise only those with a window default. Web twin:
-    /// `WizardQuickAddRow.includeGoalLessCounters`.
-    var includeGoalLessCounters: Bool = false
+    /// The window `placementTimeframe` belongs to (a CUSTOM board's default
+    /// scales to it). nil falls back to `defaultStartDate` / `defaultEndDate`.
+    var placementStartDate: String? = nil
+    var placementEndDate: String? = nil
+    /// Drop counters with no goal of their own (every counter created from the
+    /// Counters hub) from the matches — for a compound sub-task, which can't
+    /// take one. Default false: every other host places them (placement mints
+    /// the copy at the window's default). Web twin:
+    /// `WizardQuickAddRow.excludeGoalLessCounters`.
+    var excludeGoalLessCounters: Bool = false
 
     /// Counter Detail's "+ New" preset: the create counts toward this counter.
     var presetCountsTowardCounterId: String? = nil
@@ -114,14 +115,10 @@ struct RisoQuickAddRowView: View {
         guard onExistingTaskPicked != nil, !trimmedText.isEmpty else { return [] }
         // The shared match set (docs/SHARED_COUNTER_SETTINGS.md §2) plus the
         // counter's name / noun for its unit tasks and copies; direct hits first.
-        // Goal-less (hub) counters join for an opted-in host: every one when its
-        // counter row can mint a pending linked copy and ask for a goal, else
-        // only those with a window default (pool / core defaults store it).
-        let canAskForGoal = (placementTimeframe ?? defaultTimeframe) != nil && onPendingCreated != nil
-        let pool = includeGoalLessCounters
-            ? QuickAddCounterPlacement.withGoalLessCounters(
-                libraryTasks, pool: counterRootTasks, requireDefault: !canAskForGoal
-            )
+        // Hub counters (no goal of their own) are browsable and place at the
+        // window's default; only a compound sub-task host drops them.
+        let pool = excludeGoalLessCounters
+            ? libraryTasks.filter { !BrowsableTasks.isGoalLessCounter($0) }
             : libraryTasks
         let candidates = pool.filter { !selectedIds.contains($0.id) }
         return Array(CounterPlacement.rankedTaskMatches(candidates, query: trimmedText, rootsById: roots).prefix(4))
@@ -159,7 +156,9 @@ struct RisoQuickAddRowView: View {
         onTextChange: ((String) -> Void)? = nil,
         placeholderOverride: String? = nil,
         placementTimeframe: Timeframe? = nil,
-        includeGoalLessCounters: Bool = false,
+        placementStartDate: String? = nil,
+        placementEndDate: String? = nil,
+        excludeGoalLessCounters: Bool = false,
         seedText: String = "",
         presetCountsTowardCounterId: String? = nil
     ) {
@@ -179,7 +178,9 @@ struct RisoQuickAddRowView: View {
         self.onTextChange = onTextChange
         self.placeholderOverride = placeholderOverride
         self.placementTimeframe = placementTimeframe
-        self.includeGoalLessCounters = includeGoalLessCounters
+        self.placementStartDate = placementStartDate
+        self.placementEndDate = placementEndDate
+        self.excludeGoalLessCounters = excludeGoalLessCounters
         _text = State(initialValue: seedText)
         self.presetCountsTowardCounterId = presetCountsTowardCounterId
     }
@@ -250,6 +251,8 @@ struct RisoQuickAddRowView: View {
                     task: task,
                     counterTagName: rowCounterTagName(task: task, rootsById: roots),
                     timeframe: placementTimeframe ?? defaultTimeframe,
+                    startDate: placementTimeframe != nil ? placementStartDate : defaultStartDate,
+                    endDate: placementTimeframe != nil ? placementEndDate : defaultEndDate,
                     canCreatePending: onPendingCreated != nil,
                     onPick: {
                         onExistingTaskPicked?(task)
@@ -338,6 +341,9 @@ private struct QuickAddMatchRow: View {
     /// a dense `UnitTagView` inline after the title. nil for everything else.
     var counterTagName: String? = nil
     let timeframe: Timeframe?
+    /// The board's window (CUSTOM only).
+    var startDate: String? = nil
+    var endDate: String? = nil
     /// A host that can take a pending task (the wizard, Board Edit's picker).
     let canCreatePending: Bool
     /// Place the existing task (a plain row, or a root with a goal source).
@@ -354,9 +360,12 @@ private struct QuickAddMatchRow: View {
     }
     private var source: CounterPlacement.PlacementGoalSource? {
         guard isRoot, let timeframe else { return nil }
-        return CounterPlacement.placementGoalSource(CounterSettings.Fields(task: task), timeframe: timeframe)
+        return CounterPlacement.placementGoalSource(
+            CounterSettings.Fields(task: task), timeframe: timeframe, startDate: startDate, endDate: endDate
+        )
     }
-    /// A goal-less root with no default: the row asks for a goal.
+    /// A root nothing resolves for (a CUSTOM board without dates, for a counter
+    /// with no goal at all): the row asks for a goal.
     private var needsGoalEntry: Bool { isRoot && timeframe != nil && source == nil && canCreatePending }
     private var enteredGoal: CountValue? {
         parseCountInput(goalText, kind: kind).flatMap { $0 > 0 ? $0 : nil }
