@@ -58,7 +58,13 @@ struct RisoMomentOverlay: View {
 
     private var finalBeat: Int { momentFinalBeat(replay, kind: kind) }
     private var beat: Int { beatOverride ?? (reduceMotion ? finalBeat : clock.beat) }
-    private var field: Color { kind == .bingo ? .risoBlue : .risoGreen }
+    /// The field is a FIXED colour in both appearances (handoff: "fields are
+    /// fixed colours") — static `#2c44c9` / `#1f9b6b`, never the adaptive tokens.
+    private var field: Color {
+        kind == .bingo
+            ? Color(red: 0x2c / 255, green: 0x44 / 255, blue: 0xc9 / 255)
+            : Color(red: 0x1f / 255, green: 0x9b / 255, blue: 0x6b / 255)
+    }
     private var showsStreakChip: Bool {
         kind == .greenlog && isCore && streak > 1 && !streakUnitLabel(timeframe).isEmpty
     }
@@ -88,6 +94,7 @@ struct RisoMomentOverlay: View {
             guard beatOverride == nil, !reduceMotion else { return }
             clock.start(finalBeat: finalBeat, kind: kind)
         }
+        .onDisappear { clock.stop() }
         .accessibilityElement(children: .contain)
         .accessibilityLabel(kind == .bingo ? "Bingo on \(boardName)" : "Greenlog on \(boardName)")
         .accessibilityAddTraits(.isModal)

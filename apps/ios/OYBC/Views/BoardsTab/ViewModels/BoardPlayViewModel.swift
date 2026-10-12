@@ -1158,7 +1158,11 @@ final class BoardPlayViewModel: ObservableObject {
         kernelCellStates = out
     }
 
+    /// Bumped at the end of every `apply(_:)` — the moment gate's "the post-write reload landed" signal.
+    private(set) var applyCount = 0
+
     private func apply(_ payload: TaskDataPayload) {
+        defer { applyCount += 1 }
         boardTasks = payload.boardTasks
         allTasks = payload.allTasks
         allCompoundChildren = payload.allCompoundChildren

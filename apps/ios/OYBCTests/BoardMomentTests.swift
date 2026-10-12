@@ -122,14 +122,124 @@ final class BoardMomentTests: XCTestCase {
         ])
         XCTAssertEqual(sorted.map(\.boardTaskId), ["early", "tieB", "late", "n2", "n7"])
     }
-}
 
-final class MomentStartNewBoardIntentTests: XCTestCase {
-    /// The intent `MainTabView` observes to open the Create tab.
-    func test_startNewBoardIntent_isDeliveredToObservers() {
+    // MARK: resolve(before:after:allowGains:)
+
+    private func board(status: BoardStatus = .active, lines: [String] = [], completed: Int = 0, size: Int = 3, id: String = "b") -> Board {
+        func json<T: Encodable>(_ v: T) -> String { String(data: try! JSONEncoder().encode(v), encoding: .utf8)! }
+        let dict: [String: Any] = [
+            "id": id, "userId": "u", "name": id, "status": status.rawValue, "boardSize": size,
+            "timeframe": Timeframe.custom.rawValue, "startDate": "2026-10-01T00:00:00.000Z",
+            "centerSquareType": CenterSquareType.none.rawValue, "isRandomized": false,
+            "totalTasks": size * size, "completedTasks": completed, "linesCompleted": lines.count,
+            "completedLineIds": json(lines),
+            "createdAt": "2026-01-01T00:00:00.000Z", "updatedAt": "2026-01-01T00:00:00.000Z",
+            "version": 1, "isDeleted": false,
+        ]
+        return try! JSONDecoder().decode(Board.self, from: JSONSerialization.data(withJSONObject: dict))
+    }
+
+    func test_resolveBeforeAfter_newLine() {
+        let out = BoardFlashOutcome.resolve(before: board(), after: board(lines: ["row_0"], completed: 3))
+        XCTAssertEqual(out.moment, MomentTrigger(kind: .bingo, newLineIds: ["row_0"]))
+    }
+
+    func test_resolveBeforeAfter_activeToCompletedWithAllSquares_isGreenlog() {
+        let out = BoardFlashOutcome.resolve(
+            before: board(lines: ["row_0"], completed: 8),
+            after: board(status: .completed, lines: ["row_0", "row_1"], completed: 9)
+        )
+        XCTAssertEqual(out.moment, MomentTrigger(kind: .greenlog, newLineIds: ["row_1"]))
+    }
+
+    func test_resolveBeforeAfter_allowGainsFalse_neverOpensAMoment() {
+        let out = BoardFlashOutcome.resolve(
+            before: board(), after: board(status: .completed, lines: ["row_0"], completed: 9), allowGains: false
+        )
+        XCTAssertNil(out.moment)
+        XCTAssertNil(out.message)
+        let lost = BoardFlashOutcome.resolve(before: board(lines: ["row_0"]), after: board(), allowGains: false)
+        XCTAssertEqual(lost.message, "Bingo lost: row_0")
+    }
+
+    func test_resolveBeforeAfter_nilBoards() {
+        XCTAssertEqual(BoardFlashOutcome.resolve(before: nil, after: board()), .none)
+    }
+
+    // MARK: resolve(cascade:)
+
+    private func cascade(wasReactivated: Bool = false, auto: Bool = false, new: [String] = [], lost: [String] = []) -> AppDatabase.CascadeBoardResult {
+        AppDatabase.CascadeBoardResult(
+            update: DerivationPass.BoardStatsUpdate(
+                boardId: "b", completedTasks: 0, linesCompleted: 0, completedLineIds: [], newBingos: new, lostBingos: lost
+            ),
+            wasReactivated: wasReactivated, isGreenlogNow: auto, didAutoComplete: auto
+        )
+    }
+
+    func test_resolveCascade() {
+        XCTAssertEqual(BoardFlashOutcome.resolve(cascade: nil), .none)
+        XCTAssertEqual(BoardFlashOutcome.resolve(cascade: cascade(new: ["col_1"])).moment, MomentTrigger(kind: .bingo, newLineIds: ["col_1"]))
+        XCTAssertEqual(BoardFlashOutcome.resolve(cascade: cascade(auto: true, new: ["col_1"])).moment?.kind, .greenlog)
+        XCTAssertNil(BoardFlashOutcome.resolve(cascade: cascade(wasReactivated: true)).moment)
+        XCTAssertNil(BoardFlashOutcome.resolve(cascade: cascade(new: ["col_1"], lost: ["row_0"])).moment)
+    }
+
+    // MARK: Gate
+
+    func test_gate_staleViewModelWaits_appliedOpens_timeoutOpensAnyway() {
+        let trigger = MomentTrigger(kind: .bingo, newLineIds: ["row_1"])
+        let stale = board(lines: [])
+        let fresh = board(lines: ["row_1"])
+        // Stale: reload has not applied (count unchanged) → not ready, waits past the minimum…
+        let notReady = MomentGate.isReady(trigger, boardId: "b", board: stale, applyCount: 4, applyCountAtTrigger: 4)
+        XCTAssertFalse(notReady)
+        XCTAssertFalse(MomentGate.shouldOpen(elapsed: 0.6, ready: notReady))
+        // …applied but the board lacks the line → still waiting.
+        XCTAssertFalse(MomentGate.isReady(trigger, boardId: "b", board: stale, applyCount: 5, applyCountAtTrigger: 4))
+        // Applied and the board shows the line → opens, but never before the pop minimum.
+        let ready = MomentGate.isReady(trigger, boardId: "b", board: fresh, applyCount: 5, applyCountAtTrigger: 4)
+        XCTAssertTrue(ready)
+        XCTAssertFalse(MomentGate.shouldOpen(elapsed: 0.3, ready: ready))
+        XCTAssertTrue(MomentGate.shouldOpen(elapsed: 0.6, ready: ready))
+        // Timeout opens anyway.
+        XCTAssertFalse(MomentGate.shouldOpen(elapsed: 1.4, ready: false))
+        XCTAssertTrue(MomentGate.shouldOpen(elapsed: 1.5, ready: false))
+    }
+
+    func test_gate_greenlogNeedsCompletedStatus_andTheSameBoard() {
+        let g = MomentTrigger(kind: .greenlog, newLineIds: [])
+        XCTAssertFalse(MomentGate.isReady(g, boardId: "b", board: board(), applyCount: 2, applyCountAtTrigger: 1))
+        XCTAssertTrue(MomentGate.isReady(g, boardId: "b", board: board(status: .completed), applyCount: 2, applyCountAtTrigger: 1))
+        // A pager swipe to another board is never ready.
+        XCTAssertFalse(MomentGate.isReady(g, boardId: "b", board: board(status: .completed, id: "other"), applyCount: 2, applyCountAtTrigger: 1))
+    }
+
+    // MARK: Coalescing
+
+    func test_coalesce_greenlogWins_bingosMerge() {
+        let bingo = MomentTrigger(kind: .bingo, newLineIds: ["row_0"])
+        let green = MomentTrigger(kind: .greenlog, newLineIds: ["col_2"])
+        XCTAssertEqual(MomentGate.coalesce(bingo, green).kind, .greenlog)
+        XCTAssertEqual(MomentGate.coalesce(green, bingo).kind, .greenlog)
+        XCTAssertEqual(MomentGate.coalesce(bingo, MomentTrigger(kind: .bingo, newLineIds: ["col_1"])),
+                       MomentTrigger(kind: .bingo, newLineIds: ["col_1", "row_0"]))
+    }
+
+    func test_shouldReplace_greenlogUpgradesBingo_neverDowngrades() {
+        XCTAssertTrue(MomentGate.shouldReplace(open: nil, new: .bingo))
+        XCTAssertTrue(MomentGate.shouldReplace(open: .bingo, new: .greenlog))
+        XCTAssertFalse(MomentGate.shouldReplace(open: .greenlog, new: .bingo))
+        XCTAssertFalse(MomentGate.shouldReplace(open: .bingo, new: .bingo))
+        XCTAssertFalse(MomentGate.shouldReplace(open: .greenlog, new: .greenlog))
+    }
+
+    // MARK: Start-a-new-board intent
+
+    func test_startNewBoardIntent_postsTheNotificationMainTabViewObserves() {
         let exp = expectation(description: "intent")
         let token = NotificationCenter.default.addObserver(forName: .momentStartNewBoard, object: nil, queue: nil) { _ in exp.fulfill() }
-        NotificationCenter.default.post(name: .momentStartNewBoard, object: nil)
+        MomentIntent.startNewBoard()
         wait(for: [exp], timeout: 1)
         NotificationCenter.default.removeObserver(token)
     }

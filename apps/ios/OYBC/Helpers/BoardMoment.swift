@@ -100,15 +100,17 @@ func computeBoardMomentReplay(
         let idx = bt.row * size + bt.col
         guard idx != freeIdx, !seenIdx.contains(idx) else { continue }
         let done = sealedSet.map { $0.contains(idx) } ?? built.cells.contains { $0.boardTaskId == bt.id && $0.isCompleted }
-        guard done else { continue }
+        // A completed cell whose task is missing is skipped (TS `continue`).
+        guard done, let task = taskById[bt.taskId] else { continue }
         seenIdx.insert(idx)
-        var instant: String? = nil
-        if let task = taskById[bt.taskId] {
-            instant = CountsToward.resolveContributionState(
-                task, childrenByCompound: childrenByCompound, taskById: taskById,
-                eventsByTaskId: events, window: window
-            ).completedAt
-        }
+        // The instant counts ONLY when an event completed the cell; the resolver's
+        // `completedAt` / `createdAt` fallback (latched achievement, empty
+        // compound) would sort those cells first, so they get nil → sort last.
+        let state = CountsToward.resolveContributionState(
+            task, childrenByCompound: childrenByCompound, taskById: taskById,
+            eventsByTaskId: events, window: window
+        )
+        let instant: String? = state.isCompleted && state.completingEventId != nil ? state.completedAt : nil
         entries.append(MomentOrderEntry(boardTaskId: bt.id, idx: idx, completedAt: instant))
     }
     let order = sortMomentOrder(entries)

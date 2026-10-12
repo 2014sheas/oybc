@@ -981,6 +981,28 @@ final class BoardPlayViewModelTests: XCTestCase {
                       "cascade should have re-saved the board holding the compound")
     }
 
+    /// Parity with web's compound-child fallback: completing an UNPLACED child
+    /// completes its placed compound and the board, so the flash carries the
+    /// greenlog moment trigger.
+    func test_handleCompoundChildToggle_notPlaced_completingBoard_emitsGreenlogMoment() throws {
+        let db = try makeDb()
+        try seedUser(db)
+        try db.saveBoard(makeOneCellBoard(id: "b1"))
+        try db.saveTask(makeCompoundTask("cmp"))
+        try db.saveTask(makeTask("child1"))
+        try db.saveBoardTask(makeBoardTask(id: "bt-cmp", boardId: "b1", taskId: "cmp", row: 0, col: 0))
+        try db.dbQueue.write { database in
+            try makeCompoundChild(parent: "cmp", child: "child1", idx: 0).insert(database)
+        }
+        let vm = loadedVM(db, boardId: "b1")
+        let child = try XCTUnwrap(vm.taskMap["child1"])
+
+        vm.handleCompoundChildToggle(childTask: child)
+
+        XCTAssertTrue(waitUntil { vm.flashEvent?.moment != nil && !vm.isProcessing }, "no moment emitted on the fallback path")
+        XCTAssertEqual(vm.flashEvent?.moment?.kind, .greenlog)
+    }
+
     // `test_handleAddTaskToCell_createsPlacement` /
     // `test_handleAddTaskToCell_reentrantCallIsNoOp` removed (Board Edit
     // redesign slice 3, D17) — the play-mode "+" immediate write is

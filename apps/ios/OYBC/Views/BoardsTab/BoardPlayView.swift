@@ -163,6 +163,8 @@ struct BoardPlayView: View {
     /// The open Bingo / Greenlog moment (nil when none) — see
     /// `BoardPlayView+Moment.swift`.
     @State var moment: MomentPresentation? = nil
+    /// A trigger waiting on the post-write reload (see `MomentGate`).
+    @State var momentPending: MomentPending? = nil
     /// Compact greenlog-streak value (e.g. "3d"/"2w") for the share poster +
     /// title-row chip. Non-nil only for core boards with a streak ≥ 1.
     // internal for the +Header extension split
