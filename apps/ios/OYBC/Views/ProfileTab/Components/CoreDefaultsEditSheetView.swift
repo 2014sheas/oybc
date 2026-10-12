@@ -305,6 +305,9 @@ struct CoreDefaultsEditSheetView: View {
                 counterRootTasks: library.libraryTasks,
                 selectedIds: resolved.selectedTaskIds,
                 onExistingTaskPicked: { task in addDefaultTask(task.id) },
+                // The goal slot on a counter match row ("Weekly · 2 books"),
+                // like web; created tasks stay timeframe-free.
+                placementTimeframe: timeframe,
                 // Browse-filtered: hub counters (no goal) come back here, the
                 // ones with a window default (board creation mints the copy).
                 includeGoalLessCounters: true

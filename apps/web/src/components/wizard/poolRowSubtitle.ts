@@ -21,7 +21,7 @@ export function buildPoolRowSubtitle(
     case TaskType.COUNTING: {
       const { action, unit, maxCount } = task;
       const kind = resolveCountKind(task);
-      if (action && (unit || kind === 'duration') && maxCount !== undefined) {
+      if (action && (unit || kind === 'duration') && maxCount != null) {
         base = `${action} · goal ${formatCountWithUnit(maxCount, kind, unit)}`;
       }
       break;
