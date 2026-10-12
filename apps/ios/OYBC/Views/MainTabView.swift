@@ -415,6 +415,10 @@ struct MainTabView: View {
         .onChange(of: selectedTab) { _, _ in
             _Concurrency.Task { await reconcileNotifications() }
         }
+        // Greenlog moment → "Start a new board" opens the Create tab.
+        .onReceive(NotificationCenter.default.publisher(for: .momentStartNewBoard)) { _ in
+            selectedTab = 2
+        }
         .onChange(of: notificationDelegate.pendingDeepLink) { _, _ in
             routePendingDeepLink()
         }

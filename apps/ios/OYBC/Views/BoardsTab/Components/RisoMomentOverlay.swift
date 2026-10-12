@@ -159,6 +159,9 @@ struct RisoMomentOverlay: View {
         .background(RoundedRectangle(cornerRadius: 14).fill(Color.risoInkStatic).offset(x: 8, y: 8))
         .frame(maxWidth: frameMaxWidth)
         .frame(maxWidth: .infinity)
+        // The board (frame AND cells) is always the light palette: undone
+        // cells stay cream on the cream frame in both appearances.
+        .environment(\.colorScheme, .light)
         .accessibilityHidden(true)
     }
 

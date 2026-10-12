@@ -123,3 +123,14 @@ final class BoardMomentTests: XCTestCase {
         XCTAssertEqual(sorted.map(\.boardTaskId), ["early", "tieB", "late", "n2", "n7"])
     }
 }
+
+final class MomentStartNewBoardIntentTests: XCTestCase {
+    /// The intent `MainTabView` observes to open the Create tab.
+    func test_startNewBoardIntent_isDeliveredToObservers() {
+        let exp = expectation(description: "intent")
+        let token = NotificationCenter.default.addObserver(forName: .momentStartNewBoard, object: nil, queue: nil) { _ in exp.fulfill() }
+        NotificationCenter.default.post(name: .momentStartNewBoard, object: nil)
+        wait(for: [exp], timeout: 1)
+        NotificationCenter.default.removeObserver(token)
+    }
+}

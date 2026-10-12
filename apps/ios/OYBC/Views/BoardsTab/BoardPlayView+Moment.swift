@@ -10,6 +10,14 @@ struct MomentPresentation: Equatable {
     let cells: [MomentCellInput]
 }
 
+// MARK: - Start-a-new-board intent
+
+extension Notification.Name {
+    /// Posted by the greenlog moment's "Start a new board"; `MainTabView`
+    /// flips to the Create tab (web twin: navigate to `/create`).
+    static let momentStartNewBoard = Notification.Name("oybc.moment.startNewBoard")
+}
+
 // MARK: - BoardPlayView + moment
 
 extension BoardPlayView {
@@ -27,6 +35,8 @@ extension BoardPlayView {
                 onShare: { showShareBoardSheet = true },
                 onBack: {
                     withAnimation(.easeOut(duration: 0.25)) { moment = nil }
+                    // "Start a new board" (the greenlog's neutral button) also opens Create.
+                    if m.kind == .greenlog { NotificationCenter.default.post(name: .momentStartNewBoard, object: nil) }
                 }
             )
             .ignoresSafeArea()
