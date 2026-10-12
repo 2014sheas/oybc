@@ -132,6 +132,10 @@ struct CounterLinkState {
     private(set) var suggestion: LinkableCounterSuggestion?
     /// True once the user tapped "Don't link" for the current pair.
     var linkDisabled: Bool = false
+    /// A counter the user PICKED (compound sub-task search): it stays the
+    /// suggestion while the typed verb / noun / kind still equal the ones the
+    /// pick filled in — even for Duration, which the pair matcher never links.
+    private var pinned: (suggestion: LinkableCounterSuggestion, action: String, unit: String, kind: CountKind)?
 
     init(suggestion: LinkableCounterSuggestion? = nil, linkDisabled: Bool = false) {
         self.suggestion = suggestion
@@ -164,7 +168,27 @@ struct CounterLinkState {
         rematch(action: action, unit: unit, kind: kind, tasks: tasks)
     }
 
+    /// Pins a picked counter root as the link target (auto-link ON) for the
+    /// verb / noun / kind the pick filled in; editing any of them unpins.
+    mutating func pin(_ root: Task, action: String, unit: String, kind: CountKind, tasks: [Task]) {
+        let pick = LinkableCounterSuggestion(
+            counterId: root.id,
+            name: CounterSettings.counterDisplayName(root),
+            lifetime: root.currentCount ?? 0,
+            memberCount: 1 + tasks.filter { !$0.isDeleted && $0.sharedCounterId == root.id }.count,
+            countKind: resolveCountKind(root.countKind)
+        )
+        pinned = (pick, action, unit, kind)
+        suggestion = pick
+        linkDisabled = false
+    }
+
     private mutating func rematch(action: String, unit: String, kind: CountKind, tasks: [Task]) {
+        if let p = pinned, p.action == action, p.unit == unit, p.kind == kind {
+            suggestion = p.suggestion
+            return
+        }
+        pinned = nil
         suggestion = kind == .duration ? nil : findLinkableCounter(action: action, unit: unit, tasks: tasks)
     }
 }
