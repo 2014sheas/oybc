@@ -2,8 +2,10 @@
    OYBC · Riso Web — Bingo + Greenlog moments (docs/BOARD_MOMENTS.md)
    Full-screen opaque takeover: blue field (bingo) / green field
    (greenlog), static cream board frame (see RisoBoard.module.css
-   `.momentFrame`). Keyframes (risoGreenlogIn / risoConfettiFall)
-   live in packages/riso-tokens/riso.css.
+   `.momentFrame`). The fields are FIXED colours in both themes (the
+   handoff: cream on the dark-mode mint is ~2:1). Keyframes are local
+   copies of riso.css's risoGreenlogIn / risoConfettiFall (a CSS module
+   localizes animation names).
    ============================================================ */
 
 .field {
@@ -15,10 +17,10 @@
   animation: momentIn var(--riso-anim-greenlog-in);
 }
 .blue {
-  background: var(--riso-blue);
+  background: #2c44c9;
 }
 .green {
-  background: var(--riso-green);
+  background: #1f9b6b;
 }
 @media (prefers-reduced-motion: reduce) {
   .field {

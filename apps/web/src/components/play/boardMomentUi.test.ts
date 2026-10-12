@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { BoardMomentReplay } from '@oybc/shared';
 import type { BoardCellModel } from '../board/RisoBoardCell';
-import { isMomentReady, momentDisplayCell, momentPopPhase } from './boardMomentUi';
+import { isMomentReady, momentOpenDecision, momentDisplayCell, momentPopPhase } from './boardMomentUi';
 
 const replay = (over: Partial<BoardMomentReplay> = {}): BoardMomentReplay => ({
   order: [
@@ -68,5 +68,24 @@ describe('momentPopPhase', () => {
     expect(momentPopPhase({ landed: true, green: true, popToken: 2 }, true)).toBe('green');
     expect(momentPopPhase({ landed: false, green: false, popToken: null }, true)).toBeNull();
     expect(momentPopPhase({ landed: true, green: true, popToken: 2 }, false)).toBeNull();
+  });
+});
+
+describe('momentOpenDecision', () => {
+  it('schedules when idle', () => {
+    expect(momentOpenDecision('idle', null, 'bingo')).toBe('schedule');
+    expect(momentOpenDecision('idle', null, 'greenlog')).toBe('schedule');
+  });
+  it('a greenlog replaces a pending bingo', () => {
+    expect(momentOpenDecision('pending', 'bingo', 'greenlog')).toBe('schedule');
+  });
+  it('a bingo never replaces anything, and a pending greenlog is kept', () => {
+    expect(momentOpenDecision('pending', 'bingo', 'bingo')).toBe('ignore');
+    expect(momentOpenDecision('pending', 'greenlog', 'bingo')).toBe('ignore');
+    expect(momentOpenDecision('pending', 'greenlog', 'greenlog')).toBe('ignore');
+  });
+  it('nothing interrupts an open moment', () => {
+    expect(momentOpenDecision('open', null, 'greenlog')).toBe('ignore');
+    expect(momentOpenDecision('open', null, 'bingo')).toBe('ignore');
   });
 });

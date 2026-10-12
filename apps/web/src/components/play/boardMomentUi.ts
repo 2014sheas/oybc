@@ -109,3 +109,22 @@ export function momentPopPhase(visual: MomentCellVisual, animate: boolean): 'lan
   if (visual.green) return 'green';
   return visual.landed ? 'land' : null;
 }
+
+/** Where the moment is in its life: nothing, waiting out the open delay, or showing. */
+export type MomentPhase = 'idle' | 'pending' | 'open';
+
+/**
+ * What a new trigger does. Nothing is pending or open: schedule it. While a
+ * bingo is still pending (not yet shown) a greenlog REPLACES it - the board
+ * cleared inside the delay - but a bingo never replaces anything, and nothing
+ * interrupts a moment that is already open.
+ */
+export function momentOpenDecision(
+  phase: MomentPhase,
+  pendingKind: MomentTrigger['kind'] | null,
+  incoming: MomentTrigger['kind'],
+): 'schedule' | 'ignore' {
+  if (phase === 'idle') return 'schedule';
+  if (phase === 'pending' && pendingKind === 'bingo' && incoming === 'greenlog') return 'schedule';
+  return 'ignore';
+}

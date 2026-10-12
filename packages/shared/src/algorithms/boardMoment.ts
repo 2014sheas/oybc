@@ -50,7 +50,7 @@ export interface MomentOrderEntry {
   boardTaskId: string;
   /** Flat cell index (`row * size + col`). */
   idx: number;
-  /** ISO instant the square became complete; `null` when none resolves. */
+  /** ISO instant of the event that completed the square; `null` when no event did (a latch, an empty compound, an achievement). */
   completedAt: string | null;
 }
 
@@ -156,7 +156,7 @@ export function computeBoardMomentReplay(
     const task = placement ? taskById[placement.taskId] : undefined;
     if (!placement || !task) continue;
     const s = resolveContributionState(task, childrenByCompound, taskById, events, window);
-    order.push({ boardTaskId: placement.id, idx, completedAt: s.isCompleted ? s.completedAt : null });
+    order.push({ boardTaskId: placement.id, idx, completedAt: s.isCompleted && s.completingEventId ? s.completedAt : null });
   }
   order.sort(compareEntries);
 

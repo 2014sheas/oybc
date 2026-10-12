@@ -242,10 +242,10 @@
 }
 @keyframes cellPopLand {
   0% {
-    transform: scale(0.9);
+    transform: translate(-1px, -1px) scale(0.9);
   }
   55% {
-    transform: scale(1.1);
+    transform: translate(-1px, -1px) scale(1.1);
   }
   100% {
     transform: translate(-1px, -1px) scale(1);
@@ -253,10 +253,10 @@
 }
 @keyframes cellPopGreen {
   0% {
-    transform: scale(0.9);
+    transform: translate(-1px, -1px) scale(0.9);
   }
   55% {
-    transform: scale(1.1);
+    transform: translate(-1px, -1px) scale(1.1);
   }
   100% {
     transform: translate(-1px, -1px) scale(1);

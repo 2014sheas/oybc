@@ -19,6 +19,8 @@
  * their own signal shape into `FlashOutcomeInput` first.
  */
 
+import { BoardStatus, type Board } from '@oybc/shared';
+
 /** Normalized signals both call sites reduce their own state down to. */
 export interface FlashOutcomeInput {
   /** True when the board just transitioned from COMPLETED back to ACTIVE. */
@@ -72,4 +74,24 @@ export function deriveFlashOutcome(input: FlashOutcomeInput): FlashOutcome | nul
     return { text: `Bingo! ${input.newBingos.join(', ')}`, kind: 'bingo', newLineIds: input.newBingos };
   }
   return null;
+}
+
+/**
+ * The flash a write caused, read off a before / after pair of board rows (the
+ * paths with no `TaskCompletionResult`: shared-counter log / remove / undo and
+ * the off-board compound-child toggle). `gains` also reads the ACTIVE ->
+ * COMPLETED transition and newly formed lines; a removal passes `false`, so
+ * only the reactivated / lost-bingo rungs can fire.
+ */
+export function flashFromBoardSnapshots(before: Board, after: Board, gains: boolean): FlashOutcome | null {
+  const prev = new Set(before.completedLineIds ?? []);
+  const next = new Set(after.completedLineIds ?? []);
+  const wasActive = before.status === BoardStatus.ACTIVE;
+  const isNowCompleted = after.status === BoardStatus.COMPLETED;
+  return deriveFlashOutcome({
+    boardReactivated: before.status === BoardStatus.COMPLETED && after.status === BoardStatus.ACTIVE,
+    lostBingos: [...prev].filter((id) => !next.has(id)),
+    isGreenlog: gains && wasActive && isNowCompleted && after.completedTasks >= after.boardSize * after.boardSize,
+    newBingos: gains ? [...next].filter((id) => !prev.has(id)) : [],
+  });
 }

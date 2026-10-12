@@ -84,10 +84,9 @@ const STREAK_A11Y_WORDS: Record<string, string> = {
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 interface FlashMessage {
-  text: string;
   // Transient messages only (lost bingo / reactivated / errors); the bingo and
   // greenlog moments are routed to `useBoardMoment` in showFlash.
-  variant: 'bingo';
+  text: string;
 }
 
 export interface BoardPlaySurfaceProps {
@@ -301,7 +300,7 @@ export function BoardPlaySurface({
       return;
     }
     if (flashTimerRef.current) clearTimeout(flashTimerRef.current);
-    const msg: FlashMessage = { text: outcome.text, variant: 'bingo' };
+    const msg: FlashMessage = { text: outcome.text };
     setFlashMessage(msg);
     flashTimerRef.current = setTimeout(() => {
       setFlashMessage((current) => current === msg ? null : current);
@@ -454,7 +453,7 @@ export function BoardPlaySurface({
       {/* Transient flash — lost bingo / reactivated / errors (bingo + greenlog
           route to the moment above). */}
       {flashMessage && (
-        <div className={`${styles.flashMessage} ${styles.flashBingo}`} role="status" aria-live="polite">
+        <div className={styles.flashMessage} role="status" aria-live="polite">
           {flashMessage.text}
         </div>
       )}

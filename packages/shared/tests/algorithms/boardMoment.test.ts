@@ -67,7 +67,7 @@ function toBoard(m: MiniBoard): Board {
   };
 }
 
-function toTask(m: { id: string; type?: string; operator?: string; maxCount?: number; referencedBoardId?: string; achievementTrigger?: string }): Task {
+function toTask(m: { id: string; type?: string; operator?: string; maxCount?: number; referencedBoardId?: string; achievementTrigger?: string; isCompleted?: boolean; completedAt?: string; sharedCounterId?: string; startDate?: string; endDate?: string; createdInWizard?: boolean }): Task {
   return {
     id: m.id,
     userId: 'u',
@@ -77,7 +77,12 @@ function toTask(m: { id: string; type?: string; operator?: string; maxCount?: nu
     maxCount: m.maxCount,
     referencedBoardId: m.referencedBoardId,
     achievementTrigger: m.achievementTrigger as Task['achievementTrigger'],
-    isCompleted: false,
+    isCompleted: m.isCompleted ?? false,
+    completedAt: m.completedAt,
+    sharedCounterId: m.sharedCounterId,
+    startDate: m.startDate,
+    endDate: m.endDate,
+    createdInWizard: m.createdInWizard,
     totalCompletions: 0,
     totalInstances: 0,
     createdAt: T0,

@@ -9,7 +9,7 @@ import type { Page } from '@playwright/test';
  */
 
 const BOARD_ID = 'aaaaaaaa-0b17-0000-0000-000000000001';
-const id = (n: number) => ({ task: `aaaaaaaa-0b17-task-0000-00000000000${n}`, bt: `aaaaaaaa-0b17-bt00-0000-00000000000${n}` });
+const id = (n: number) => ({ task: `aaaaaaaa-0b17-1000-0000-00000000000${n}`, bt: `aaaaaaaa-0b17-2000-0000-00000000000${n}` });
 const CELLS = [[0, 0], [0, 1], [0, 2], [1, 0], [1, 2], [2, 0], [2, 1], [2, 2]];
 
 const now = new Date();
@@ -26,7 +26,7 @@ async function seed(page: Page, done: number): Promise<void> {
     await seedTask(page, { id: id(i).task, title: `Cell ${i}`, type: 'normal' });
     await seedBoardTask(page, { id: id(i).bt, boardId: BOARD_ID, taskId: id(i).task, row: CELLS[i][0], col: CELLS[i][1] });
     if (i < done) {
-      await seedTaskEvent(page, { id: `aaaaaaaa-0b17-evnt-0000-00000000000${i}`, taskId: id(i).task, kind: 'completion', occurredAt: `${d}T00:00:${p(10 + i)}.000` });
+      await seedTaskEvent(page, { id: `aaaaaaaa-0b17-3000-0000-00000000000${i}`, taskId: id(i).task, kind: 'completion', occurredAt: `${d}T00:00:${p(10 + i)}.000` });
     }
   }
 }

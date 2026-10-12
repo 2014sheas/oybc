@@ -15,7 +15,7 @@ import type { SquareWindowContext } from '../../db/adapters';
 import type { FlashOutcome } from '../boardPlayFlash';
 import { ShareBoardSheet } from '../share/ShareBoardSheet';
 import { RisoMomentOverlay } from './RisoMomentOverlay';
-import { buildMomentCellModels, isMomentReady, type MomentTrigger } from './boardMomentUi';
+import { buildMomentCellModels, isMomentReady, momentOpenDecision, type MomentPhase, type MomentTrigger } from './boardMomentUi';
 
 /** Delay before the moment opens, so the cell pop finishes first (iOS uses the same 0.52 s for both kinds). */
 const OPEN_DELAY_MS = 520;
@@ -55,17 +55,24 @@ export function useBoardMoment(p: UseBoardMomentParams): UseBoardMomentResult {
   const [forced, setForced] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
 
-  const openRef = useRef(false);
+  const phaseRef = useRef<MomentPhase>('idle');
+  const pendingKindRef = useRef<MomentTrigger['kind'] | null>(null);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => () => { if (timerRef.current) clearTimeout(timerRef.current); }, []);
 
-  // A new trigger is ignored while a moment is pending or open.
+  // A new trigger replaces a pending bingo only when it is a greenlog; it is
+  // ignored while a moment is open.
   const open = useCallback((outcome: FlashOutcome): void => {
-    if (outcome.kind === 'message' || openRef.current) return;
-    openRef.current = true;
+    if (outcome.kind === 'message') return;
+    const kind = outcome.kind;
+    if (momentOpenDecision(phaseRef.current, pendingKindRef.current, kind) === 'ignore') return;
+    if (timerRef.current) clearTimeout(timerRef.current);
+    phaseRef.current = 'pending';
+    pendingKindRef.current = kind;
     timerRef.current = setTimeout(() => {
+      phaseRef.current = 'open';
       setForced(false);
-      setTrigger({ kind: outcome.kind as MomentTrigger['kind'], newLineIds: outcome.newLineIds });
+      setTrigger({ kind, newLineIds: outcome.newLineIds });
     }, OPEN_DELAY_MS);
   }, []);
 
@@ -120,7 +127,7 @@ export function useBoardMoment(p: UseBoardMomentParams): UseBoardMomentResult {
         streak={p.greenlogStreak}
         timeframe={p.board.timeframe}
         onShare={() => setShareOpen(true)}
-        onBack={() => { setShareOpen(false); setTrigger(null); openRef.current = false; }}
+        onBack={() => { setShareOpen(false); setTrigger(null); phaseRef.current = 'idle'; }}
         onNewBoard={() => navigate('/create')}
       />
       {shareOpen && (
