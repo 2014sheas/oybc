@@ -31,6 +31,7 @@ struct PoolEditorView: View {
     var onCreated: ((Pool) -> Void)? = nil
 
     @State private var confirmingDelete = false
+    @State private var keyboardVisible = false
 
     init(
         pool: Pool?,
@@ -63,8 +64,16 @@ struct PoolEditorView: View {
                     PoolEditorBodyView(vm: vm)
                         .padding(.horizontal, Riso.gutter).padding(.top, 14).padding(.bottom, 18)
                 }
-                footer
+                // The action bar stays down while the keyboard is up — it
+                // would otherwise ride up and eat the space the field needs.
+                if !keyboardVisible { footer }
             }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { _ in
+            keyboardVisible = true
+        }
+        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in
+            keyboardVisible = false
         }
         .navigationBarHidden(true)
         .interactiveDismissDisabled(vm.busy)
