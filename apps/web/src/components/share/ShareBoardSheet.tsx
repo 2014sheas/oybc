@@ -156,7 +156,7 @@ export function ShareBoardSheet({
     } finally {
       setBusy(false);
     }
-  }, [busy, renderBlob, boardName, kind, linesCompleted, boardSize]);
+  }, [busy, renderBlob, boardName, kind]);
 
   // ── Render ──────────────────────────────────────────────────────────────
 

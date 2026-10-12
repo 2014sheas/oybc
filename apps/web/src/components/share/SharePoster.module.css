@@ -13,8 +13,8 @@
     blue    #2C44C9   — risoBlue day-press (bingo card, counting cells)
     teal    #0E8F96   — compound cells
     red     #EB4D2E   — risoRed day-press (unchanged for poster)
-    green   #1F9B6B   — risoGreen day-press (badge fill)
-    gold    #FFC21F   — risoGold (unchanged across themes)
+    green   #1F9B6B   — risoGreen day-press (greenlog card, green cells)
+    gold    #FFC21F   — risoGold (kind badge, FREE star)
     muted   #7E7460   — risoMuted day-press (stat labels on cream)
 */
 
@@ -119,6 +119,7 @@
 .cell {
   position: relative;
   min-width: 0;
+  min-height: 0;
   box-sizing: border-box;
   border-radius: 3px;
   border: 1.5px solid #18120b;

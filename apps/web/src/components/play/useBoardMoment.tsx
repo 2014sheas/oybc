@@ -135,8 +135,8 @@ export function useBoardMoment(p: UseBoardMomentParams): UseBoardMomentResult {
           boardName={p.board.name}
           boardSize={replay.size}
           cells={momentPosterCells(replay, cells.map((c, idx) => ({ idx, label: c.label, type: c.type, isFree: c.isFree })), shareKind)}
-          completedTasks={p.board.completedTasks}
-          totalTasks={p.board.totalTasks}
+          completedTasks={replay.completedTasks}
+          totalTasks={replay.totalTasks}
           linesCompleted={lineCount}
           streak={posterStreakLabel(
             p.streakFor(shareKind === 'bingo' ? AchievementTrigger.BINGO : AchievementTrigger.GREENLOG),

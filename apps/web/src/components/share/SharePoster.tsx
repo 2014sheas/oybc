@@ -45,7 +45,11 @@ export const SharePoster = forwardRef<HTMLDivElement, SharePosterProps>(
           <div
             className={styles.grid}
             data-testid="poster-grid"
-            style={{ gridTemplateColumns: `repeat(${boardSize}, 1fr)`, gap: POSTER_GAP_PX }}
+            style={{
+              gridTemplateColumns: `repeat(${boardSize}, minmax(0, 1fr))`,
+              gridTemplateRows: `repeat(${boardSize}, minmax(0, 1fr))`,
+              gap: POSTER_GAP_PX,
+            }}
           >
             {cells.map((c) => {
               const tone = c.isFree ? (c.state === 'green' ? 'green' : 'free') : c.state === 'undone' ? 'undone' : c.state === 'green' ? 'green' : c.type;

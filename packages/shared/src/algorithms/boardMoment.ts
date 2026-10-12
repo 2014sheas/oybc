@@ -250,7 +250,7 @@ export interface PosterCell extends PosterCellInput {
  * (`momentCellVisual(idx, momentFinalBeat(replay, kind), replay, kind)`), so the
  * poster shows exactly the end state the moment held and never re-derives
  * completion. Green wins over landed; anything else is undone. Order and length
- * follow `cells`. Swift twin: `BoardMoment.posterCells`.
+ * follow `cells`. Swift twin: the free function `momentPosterCells(replay:cells:kind:)`.
  *
  * @param replay - {@link computeBoardMomentReplay}'s result.
  * @param cells - One input per grid cell.

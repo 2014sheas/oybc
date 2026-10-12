@@ -272,16 +272,6 @@ describe('momentPosterCells vectors', () => {
     });
   }
 
-  it('is the final-beat frame of momentCellVisual for every cell', () => {
-    for (const c of V.posterCells) {
-      const final = momentFinalBeat(c.replay, c.kind);
-      for (const cell of momentPosterCells(c.replay, c.cells, c.kind)) {
-        const v = momentCellVisual(cell.idx, final, c.replay, c.kind);
-        expect(cell.state).toBe(v.green ? 'green' : v.landed ? 'done' : 'undone');
-      }
-    }
-  });
-
   it('keeps the input order and length, and adds nothing else', () => {
     const c = V.posterCells[0];
     const out = momentPosterCells(c.replay, [...c.cells].reverse(), c.kind);

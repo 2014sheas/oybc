@@ -1,5 +1,5 @@
 import { test, expect, seedBoard, seedTask, seedBoardTask, seedTaskEvent } from './_fixtures/bypass';
-import type { Page } from '@playwright/test';
+import type { Locator, Page } from '@playwright/test';
 
 /**
  * Bingo + Greenlog moments (docs/BOARD_MOMENTS.md): completing a line opens the
@@ -29,6 +29,16 @@ async function seed(page: Page, done: number): Promise<void> {
       await seedTaskEvent(page, { id: `aaaaaaaa-0b17-3000-0000-00000000000${i}`, taskId: id(i).task, kind: 'completion', occurredAt: `${d}T00:00:${p(10 + i)}.000` });
     }
   }
+}
+
+/** Every poster cell is square (within 1px): rows must not size to their content. */
+async function expectSquareCells(poster: Locator): Promise<void> {
+  const boxes = await poster.locator('[data-state]').evaluateAll((els) => els.map((e) => {
+    const r = e.getBoundingClientRect();
+    return { w: r.width, h: r.height };
+  }));
+  expect(boxes.length).toBeGreaterThan(0);
+  for (const b of boxes) expect(Math.abs(b.w - b.h)).toBeLessThanOrEqual(1);
 }
 
 test.describe('Bingo + Greenlog moments', () => {
@@ -116,9 +126,11 @@ test.describe('Bingo + Greenlog moments', () => {
     await expect(poster.getByText('4/9')).toBeVisible();
     await expect(poster.getByText('STREAK')).toHaveCount(0);
 
+    await expectSquareCells(poster);
     await expect(poster.getByText('Cell 0')).toBeVisible();
     await sheet.getByRole('button', { name: 'Show task names' }).click();
     await expect(poster.getByText('Cell 0')).toHaveCount(0);
+    await expectSquareCells(poster);
     await sheet.getByRole('button', { name: 'Show task names' }).click();
     await expect(poster.getByText('Cell 0')).toBeVisible();
 
@@ -143,5 +155,10 @@ test.describe('Bingo + Greenlog moments', () => {
     await expect(poster.getByText('GREENLOG', { exact: true })).toBeVisible();
     await expect(poster.locator('[data-state="green"]')).toHaveCount(9);
     await expect(poster.getByText('9/9')).toBeVisible();
+    await expectSquareCells(poster);
+
+    const download = page.waitForEvent('download');
+    await sheet.getByRole('button', { name: 'Save poster as image' }).click();
+    expect((await download).suggestedFilename()).toBe('moment-board-greenlog.png');
   });
 });
