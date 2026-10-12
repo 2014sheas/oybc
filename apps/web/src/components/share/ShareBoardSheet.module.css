@@ -1,5 +1,5 @@
 /*
-  ShareBoardSheet — GREENLOG share poster modal.
+  ShareBoardSheet — Bingo / Greenlog share poster modal.
 
   Sheet CHROME uses adaptive Riso tokens (responsive to light/dark theme).
   The poster card INSIDE the sheet uses static colors — see SharePoster.module.css.
@@ -111,7 +111,7 @@
 .body {
   overflow-y: auto;
   flex: 1 1 auto;
-  padding: 16px 16px 28px;
+  padding: 16px 16px 40px;
   display: flex;
   flex-direction: column;
   gap: 14px;
@@ -138,7 +138,7 @@
      rasterised PNG (html-to-image targets the inner ref). */
 }
 
-/* ── Include stats toggle row ── */
+/* ── Show task names toggle row ── */
 .toggleRow {
   display: flex;
   align-items: center;

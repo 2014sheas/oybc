@@ -274,13 +274,12 @@ export function BoardPlaySurface({
   // isExpired, D12). The edit-mode draft comes from useBoardPlay below.
 
   // Timeframe greenlog streak (rail chip + the moment's streak chip).
-  const greenlogStreak = gatedStreak(
-    prefsReady, board.timeframe, AchievementTrigger.GREENLOG,
-    allBoards, prefs.weekStartDay, nowPinned,
-  );
+  const streakFor = (t: AchievementTrigger): number =>
+    gatedStreak(prefsReady, board.timeframe, t, allBoards, prefs.weekStartDay, nowPinned);
+  const greenlogStreak = streakFor(AchievementTrigger.GREENLOG);
   const { open: openMoment, node: momentNode } = useBoardMoment({
     board, boardTasks, taskMap, compoundChildrenByCompound, allBoards, cellStateByBoardTaskId,
-    btByPosition, squareWindowContext, gridSize, greenlogStreak,
+    btByPosition, squareWindowContext, gridSize, greenlogStreak, streakFor,
   });
 
   // ── Flash message helper ───────────────────────────────────────────────

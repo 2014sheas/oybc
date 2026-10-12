@@ -11,6 +11,7 @@ import {
   momentCellVisual,
   momentCounterAt,
   momentFinalBeat,
+  momentPosterCells,
   type BoardMomentReplay,
   type MomentKind,
 } from '../../src/algorithms/boardMoment';
@@ -261,5 +262,20 @@ describe('boardMoment edge cases', () => {
     built.board = { ...built.board, sealedCompletedCells: [0, 1, 2, 4, 7, 99, -1] };
     built.boardTasks = built.boardTasks.filter((bt) => bt.row * 3 + bt.col !== 7);
     expect(replayOf(built).order.map((e) => e.idx)).toEqual([0, 1, 2]);
+  });
+});
+
+describe('momentPosterCells vectors', () => {
+  for (const c of V.posterCells) {
+    it(c.name, () => {
+      expect(momentPosterCells(c.replay as BoardMomentReplay, c.cells, c.kind as MomentKind)).toEqual(c.expected);
+    });
+  }
+
+  it('keeps the input order and length, and adds nothing else', () => {
+    const c = V.posterCells[0];
+    const out = momentPosterCells(c.replay, [...c.cells].reverse(), c.kind);
+    expect(out.map((x) => x.idx)).toEqual([...c.cells].reverse().map((x: any) => x.idx));
+    expect(Object.keys(out[0]).sort()).toEqual(['idx', 'isFree', 'label', 'state', 'type']);
   });
 });

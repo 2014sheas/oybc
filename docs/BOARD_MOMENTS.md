@@ -21,7 +21,7 @@ A bingo moment fires once per write that completes at least one new line (two li
 
 ## Surfaces
 
-Layout, type, spacing and colours follow the handoff (sections 5a, 5b, 5e, 5f): blue field for Bingo with the kicker "LINE COMPLETE · n OF total", green field plus confetti for Greenlog with "BOARD COMPLETE" and, only on a core recurring timeframe with a streak above 1, the gold "{UNIT} STREAK" chip. The fields are fixed colours in both themes (bingo `#2c44c9`, greenlog `#1f9b6b`). The board frame is static cream and the board (frame and cells) renders in the light palette; the headline and counter are static on-colour; only the buttons and the streak chip adapt. A cell in a completed line is `lineGreen` (green fill, done chrome, no gold ring; FREE keeps its gold star and gains the done shadow); the play grid keeps its gold ring. Reduced motion skips the replay and shows the end state. Dismissal is Back to board / Escape (no tap-to-close); the share sheet opens over the moment and is still greenlog-shaped in this PR.
+Layout, type, spacing and colours follow the handoff (sections 5a, 5b, 5e, 5f): blue field for Bingo with the kicker "LINE COMPLETE · n OF total", green field plus confetti for Greenlog with "BOARD COMPLETE" and, only on a core recurring timeframe with a streak above 1, the gold "{UNIT} STREAK" chip. The fields are fixed colours in both themes (bingo `#2c44c9`, greenlog `#1f9b6b`). The board frame is static cream and the board (frame and cells) renders in the light palette; the headline and counter are static on-colour; only the buttons and the streak chip adapt. A cell in a completed line is `lineGreen` (green fill, done chrome, no gold ring; FREE keeps its gold star and gains the done shadow); the play grid keeps its gold ring. Reduced motion skips the replay and shows the end state. Dismissal is Back to board / Escape (no tap-to-close); the share sheet opens over the moment (see Share).
 
 | Web | iOS |
 | --- | --- |
@@ -29,8 +29,19 @@ Layout, type, spacing and colours follow the handoff (sections 5a, 5b, 5e, 5f): 
 | `components/play/useBoardMoment.tsx`, `boardMomentUi.ts` (open, ready check, snapshot, cell models) | `Views/BoardsTab/BoardPlayView+Moment.swift`, `Helpers/MomentGate.swift`, `ViewModels/BoardPlayViewModel+Moment.swift` |
 | `components/board/RisoBoardCell.tsx` (`lineGreen`, `pop`), `RisoBoardGrid.tsx` (`frame="moment"`) | `RisoBoardPlayCell.swift` (`isLineGreen`, external pop token) |
 | `hooks/useBoardPlay.ts` + `boardPlayFlash.ts` | `BoardPlayViewModel` flash builders |
+| `components/share/ShareBoardSheet.tsx`, `SharePoster.tsx`, `sharePosterModel.ts` | `Views/BoardsTab/Components/ShareBoardSheet.swift` |
 
 `RisoBingoToast` and `RisoGreenlog` (web) / their iOS twins are retired.
+
+## Share
+
+The moment's two share buttons open the share sheet in a kind: "Share this bingo" -> `kind: 'bingo'` ("Share bingo", blue poster), "Share my board" -> `kind: 'greenlog'` ("Share greenlog", green poster). It is the only entry point to the sheet (the rail and Edit do not open it); it opens over the moment (web z 300 / iOS `.sheet`) and Done returns to the moment.
+
+- **End-state cells, shared.** `momentPosterCells(replay, cells, kind)` (Swift free function `momentPosterCells(replay:cells:kind:)`, vectors in the `posterCells` family of `boardMomentVectors.json`) takes `PosterCellInput { idx, label, type, isFree }` per grid cell and returns `PosterCell` with `state` `undone | done | green`, each read from `momentCellVisual` at `momentFinalBeat` (green wins over landed; the FREE centre is `undone` unless a closed line or the greenlog wave reaches it). The poster never re-derives completion; it draws what the moment held.
+- **Poster** (`components/share/SharePoster.tsx` + `.module.css`, iOS `ShareBoardSheet.swift`): static hex only, story 9:16 at 236 x 420, exported at 2x (472 x 840). Blue (bingo) / green (greenlog) card, gold kind badge, OYBC wordmark, board name (2 lines max), a cream grid inset with `boardSize` columns (never fixed at 5), end-state cells (undone cream; done normal red, counting blue, compound teal; green; FREE ink with a gold star), the SQUARES stat card (`completedTasks/totalTasks`, the rail's numbers) and, on a recurring timeframe with a streak above 1, a STREAK card (the BINGO streak for a bingo poster, the GREENLOG streak for a greenlog one; `computeStreak(tf, trigger, ...)`), tagline "What's on your bingo card". One card spans the row. Stats are always on.
+- **Controls:** one "Show task names" switch (default on; labels at `clamp(6.5, 0.165 x cell, 14)` px, 2-line clamp; FREE keeps its star), then Share and Save image. Share text: bingo "Bingo on {board}! {n} of {lines} lines." (`n` = lines completed, `lines` = `totalLineCount(size)`), greenlog "I crushed every square. GREENLOG on On Your Bingo Card!". Share title "{board} - BINGO" / "{board} - GREENLOG"; filenames `{slug}-bingo.png` / `{slug}-greenlog.png`. Pure model: web `components/share/sharePosterModel.ts`.
+- **Divergence:** iOS keeps its "Copy link" row and four share targets; web has neither (no shareable URL; the Web Share API's sheet picks the destination).
+- Retired: `includeStats`, the three-stat trio (BINGOS stat), the 280 px card, the hard-coded 5x5 grid, "OWN YOUR BINGO CARD".
 
 ## Follow-ups
 

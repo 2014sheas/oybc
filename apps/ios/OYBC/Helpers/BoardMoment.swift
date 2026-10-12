@@ -194,3 +194,41 @@ func momentCellVisual(idx: Int, beat: Int, replay: BoardMomentReplay, kind: Mome
     let token: Int? = green ? greenAt : (landed ? landAt : nil)
     return MomentCellVisual(landed: landed, green: green, popToken: token)
 }
+
+// MARK: - momentPosterCells
+
+/// One slot of the share poster's grid, before its end state is derived.
+struct PosterCellInput: Equatable {
+    let idx: Int
+    let label: String
+    let type: CellTaskType
+    let isFree: Bool
+}
+
+/// A poster cell's end-state face: undone (cream), done (its type colour) or
+/// green (in a closed line / swept by the greenlog).
+enum PosterCellState: String, Equatable { case undone, done, green }
+
+/// One poster cell, ready to draw.
+struct PosterCell: Equatable {
+    let idx: Int
+    let label: String
+    let isFree: Bool
+    let state: PosterCellState
+    let type: CellTaskType
+}
+
+/// The poster grid's cells in their END state, derived from the replay's
+/// final beat through `momentCellVisual` — the poster never re-derives
+/// completion itself. Swift twin of `momentPosterCells` in
+/// `packages/shared/src/algorithms/boardMoment.ts` (vector-pinned).
+func momentPosterCells(
+    replay: BoardMomentReplay, cells: [PosterCellInput], kind: MomentTrigger.Kind
+) -> [PosterCell] {
+    let beat = momentFinalBeat(replay, kind: kind)
+    return cells.map { c in
+        let v = momentCellVisual(idx: c.idx, beat: beat, replay: replay, kind: kind)
+        let state: PosterCellState = v.green ? .green : (v.landed ? .done : .undone)
+        return PosterCell(idx: c.idx, label: c.label, isFree: c.isFree, state: state, type: c.type)
+    }
+}

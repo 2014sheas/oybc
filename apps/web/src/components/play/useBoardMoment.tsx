@@ -2,9 +2,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import {
-  STREAK_TIMEFRAMES,
-  compactStreakLabel,
+  AchievementTrigger,
   computeBoardMomentReplay,
+  momentPosterCells,
   type Board,
   type BoardTask,
   type CellState,
@@ -14,6 +14,7 @@ import {
 import type { SquareWindowContext } from '../../db/adapters';
 import type { FlashOutcome } from '../boardPlayFlash';
 import { ShareBoardSheet } from '../share/ShareBoardSheet';
+import { posterStreakLabel, type ShareKind } from '../share/sharePosterModel';
 import { RisoMomentOverlay } from './RisoMomentOverlay';
 import { buildMomentCellModels, isMomentReady, momentOpenDecision, nextMomentSnapshot, type MomentPhase, type MomentSnapshot, type MomentTrigger } from './boardMomentUi';
 
@@ -33,8 +34,10 @@ export interface UseBoardMomentParams {
   btByPosition: Record<string, BoardTask>;
   squareWindowContext: SquareWindowContext;
   gridSize: number;
-  /** Timeframe greenlog streak (0 while unready). */
+  /** Timeframe greenlog streak (0 while unready) - the moment's chip. */
   greenlogStreak: number;
+  /** A trigger's timeframe streak (0 while unready) - the share poster's STREAK card. */
+  streakFor: (trigger: AchievementTrigger) => number;
 }
 
 export interface UseBoardMomentResult {
@@ -53,7 +56,7 @@ export function useBoardMoment(p: UseBoardMomentParams): UseBoardMomentResult {
   const navigate = useNavigate();
   const [trigger, setTrigger] = useState<MomentTrigger | null>(null);
   const [forced, setForced] = useState(false);
-  const [shareOpen, setShareOpen] = useState(false);
+  const [shareKind, setShareKind] = useState<ShareKind | null>(null);
   const [snapshot, setSnapshot] = useState<MomentSnapshot | null>(null);
 
   const phaseRef = useRef<MomentPhase>('idle');
@@ -111,9 +114,6 @@ export function useBoardMoment(p: UseBoardMomentParams): UseBoardMomentResult {
   const { replay, cells } = snapshot;
 
   const lineCount = Object.keys(replay.lineClosureBeat).length;
-  const shareStreak = p.greenlogStreak > 0 && (STREAK_TIMEFRAMES as readonly string[]).includes(p.board.timeframe)
-    ? compactStreakLabel(p.greenlogStreak, p.board.timeframe)
-    : undefined;
 
   const node = (
     <>
@@ -123,20 +123,27 @@ export function useBoardMoment(p: UseBoardMomentParams): UseBoardMomentResult {
         cells={cells}
         boardName={p.board.name}
         linesCompleted={lineCount}
-        streak={p.greenlogStreak}
+        streak={p.board.isCore === true ? p.greenlogStreak : 0}
         timeframe={p.board.timeframe}
-        onShare={() => setShareOpen(true)}
-        onBack={() => { setShareOpen(false); setTrigger(null); setSnapshot(null); setForced(false); phaseRef.current = 'idle'; }}
+        onShare={() => setShareKind(trigger.kind)}
+        onBack={() => { setShareKind(null); setTrigger(null); setSnapshot(null); setForced(false); phaseRef.current = 'idle'; }}
         onNewBoard={() => navigate('/create')}
       />
-      {shareOpen && (
+      {shareKind && (
         <ShareBoardSheet
+          kind={shareKind}
           boardName={p.board.name}
-          completedTasks={p.board.completedTasks}
-          totalTasks={p.board.totalTasks}
+          boardSize={replay.size}
+          cells={momentPosterCells(replay, cells.map((c, idx) => ({ idx, label: c.label, type: c.type, isFree: c.isFree })), shareKind)}
+          completedTasks={replay.completedTasks}
+          totalTasks={replay.totalTasks}
           linesCompleted={lineCount}
-          streak={shareStreak}
-          onDismiss={() => setShareOpen(false)}
+          streak={posterStreakLabel(
+            p.streakFor(shareKind === 'bingo' ? AchievementTrigger.BINGO : AchievementTrigger.GREENLOG),
+            p.board.timeframe,
+            p.board.isCore === true,
+          )}
+          onDismiss={() => setShareKind(null)}
         />
       )}
     </>

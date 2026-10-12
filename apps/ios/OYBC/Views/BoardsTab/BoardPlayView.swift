@@ -163,12 +163,14 @@ struct BoardPlayView: View {
     /// The open moment and the trigger awaiting its reload — see `BoardPlayView+Moment.swift`.
     @State var moment: MomentPresentation? = nil
     @State var momentPending: MomentPending? = nil
-    /// Compact greenlog-streak value (e.g. "3d"/"2w") for the share poster +
-    /// title-row chip. Non-nil only for core boards with a streak ≥ 1.
+    /// Compact greenlog-streak value (e.g. "3d"/"2w") for the title-row chip.
+    /// Non-nil only for core boards with a streak ≥ 1.
     // internal for the +Header extension split
     @State var greenlogStreakValue: String? = nil
     /// The numeric greenlog streak the moment's chip rule reads (> 1).
     @State var greenlogStreakCount: Int = 0
+    /// The bingo streak for the share poster's STREAK card (bingo kind).
+    @State var bingoStreakCount: Int = 0
     /// Whether to show the Share Board sheet (opened from the moment overlay).
     @State var showShareBoardSheet: Bool = false
     // MARK: P2/R3 — Shared-counter credited toast
@@ -667,12 +669,12 @@ struct BoardPlayView: View {
             // Core-board surface rework — the streak chip now sits inline
             // in the title row, so the streak is computed on open (not only
             // when a GREENLOG fires). No-op for non-core boards.
-            refreshGreenlogStreak()
+            refreshStreaks()
         }
         // Recompute the title-row streak chip when the loaded board changes
         // (the embedded pager reuses this view instance across windows).
         .onChange(of: viewModel.board?.id) { _, _ in
-            refreshGreenlogStreak()
+            refreshStreaks()
         }
         .onDisappear {
             // P3 — re-snapshot the last-seen baseline on leaving (belt-and-suspenders).
@@ -777,22 +779,9 @@ struct BoardPlayView: View {
                 database: viewModel.database
             )
         }
-        // Share board sheet — presented from the moment overlay's share button;
-        // the overlay stays visible beneath the sheet.
-        .sheet(isPresented: $showShareBoardSheet) {
-            if let b = board {
-                ShareBoardSheet(
-                    boardName: b.name,
-                    boardId: b.id,
-                    completedTasks: b.completedTasks,
-                    totalTasks: b.totalTasks,
-                    linesCompleted: b.linesCompleted,
-                    streak: greenlogStreakValue,
-                    onDismiss: { showShareBoardSheet = false }
-                )
-                .presentationDetents([.medium, .large])
-            }
-        }
+        // Share sheet — presented from the moment overlay's share button
+        // (the overlay stays beneath it); the kind is the open moment's.
+        .sheet(isPresented: $showShareBoardSheet) { shareSheetContent }
         // P3 — arrival banner tap → Counter Detail (single counter) / Counters
         // Hub (multiple). Presented as a sheet (wrapped in its own
         // NavigationStack for the hub → detail push) to match how this view
@@ -963,13 +952,15 @@ struct BoardPlayView: View {
         dismissArrivalBanner()
     }
 
-    /// Computes the greenlog streak for the current board (core boards only) and
-    /// stores a compact label in `greenlogStreakValue` for the overlay + poster.
+    /// Computes the streaks for the current board (core boards only) and
+    /// stores a compact label in `greenlogStreakValue` for the title-row chip, plus
+    /// the greenlog / bingo counts the moment overlay and share poster read.
     /// Non-core boards → nil (the STREAK card hides). Reads boards off-main.
-    func refreshGreenlogStreak() {
+    func refreshStreaks() {
         guard let b = board, b.isCore else {
             greenlogStreakValue = nil
             greenlogStreakCount = 0
+            bingoStreakCount = 0
             return
         }
         let userId = b.userId
@@ -982,8 +973,12 @@ struct BoardPlayView: View {
                 timeframe: timeframe, criterion: .greenlog,
                 boards: boards, weekStartDay: weekStartDay, now: Date()
             )
+            let bingo = computeStreak(
+                timeframe: timeframe, criterion: .bingo,
+                boards: boards, weekStartDay: weekStartDay, now: Date()
+            )
             let value = count >= 1 ? compactStreakLabel(count, timeframe: timeframe) : nil
-            await MainActor.run { greenlogStreakValue = value; greenlogStreakCount = count }
+            await MainActor.run { greenlogStreakValue = value; greenlogStreakCount = count; bingoStreakCount = bingo }
         }
     }
 
