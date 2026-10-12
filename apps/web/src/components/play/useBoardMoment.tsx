@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import {
   STREAK_TIMEFRAMES,
@@ -15,6 +16,9 @@ import type { FlashOutcome } from '../boardPlayFlash';
 import { ShareBoardSheet } from '../share/ShareBoardSheet';
 import { RisoMomentOverlay } from './RisoMomentOverlay';
 import { buildMomentCellModels, isMomentReady, type MomentTrigger } from './boardMomentUi';
+
+/** Delay before the moment opens, so the cell pop finishes first (iOS uses the same 0.52 s for both kinds). */
+const OPEN_DELAY_MS = 520;
 
 /** How long to wait for the live data to catch up with the write before opening anyway. */
 const READY_TIMEOUT_MS = 1500;
@@ -51,10 +55,18 @@ export function useBoardMoment(p: UseBoardMomentParams): UseBoardMomentResult {
   const [forced, setForced] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
 
+  const openRef = useRef(false);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => { if (timerRef.current) clearTimeout(timerRef.current); }, []);
+
+  // A new trigger is ignored while a moment is pending or open.
   const open = useCallback((outcome: FlashOutcome): void => {
-    if (outcome.kind === 'message') return;
-    setForced(false);
-    setTrigger({ kind: outcome.kind, newLineIds: outcome.newLineIds });
+    if (outcome.kind === 'message' || openRef.current) return;
+    openRef.current = true;
+    timerRef.current = setTimeout(() => {
+      setForced(false);
+      setTrigger({ kind: outcome.kind as MomentTrigger['kind'], newLineIds: outcome.newLineIds });
+    }, OPEN_DELAY_MS);
   }, []);
 
   const replay = useMemo(
@@ -108,7 +120,7 @@ export function useBoardMoment(p: UseBoardMomentParams): UseBoardMomentResult {
         streak={p.greenlogStreak}
         timeframe={p.board.timeframe}
         onShare={() => setShareOpen(true)}
-        onBack={() => { setShareOpen(false); setTrigger(null); }}
+        onBack={() => { setShareOpen(false); setTrigger(null); openRef.current = false; }}
         onNewBoard={() => navigate('/create')}
       />
       {shareOpen && (
@@ -123,5 +135,5 @@ export function useBoardMoment(p: UseBoardMomentParams): UseBoardMomentResult {
       )}
     </>
   );
-  return { open, node };
+  return { open, node: createPortal(node, document.body) };
 }

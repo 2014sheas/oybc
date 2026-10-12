@@ -20,12 +20,20 @@
 }
 
 /* The moment overlay's frame (docs/BOARD_MOMENTS.md): static cream paper in BOTH
-   themes so green and type fills read on the blue / green field. The neutrals the
-   cells draw with are pinned to their light values for the same reason. */
+   themes, and the board (frame AND cells) renders in the LIGHT palette: every
+   token the cells draw with is pinned to its light value (owner ruling, matches iOS). */
 .momentFrame {
   --riso-paper: #f1e9d9;
   --riso-paper-2: #fbf6ea;
   --riso-ink: #18120b;
+  --riso-muted: #7e7460;
+  --riso-blue: #2c44c9;
+  --riso-blue-scrim: rgba(44, 68, 201, 0.16);
+  --riso-red: #eb4d2e;
+  --riso-green: #1f9b6b;
+  --riso-achievement: #7a3fb0;
+  --riso-teal: #0e8f96;
+  --riso-hair: rgba(24, 18, 11, 0.14);
   --riso-shadow-ink: #18120b;
   border: 2.5px solid #18120b;
   background: #fbf6ea;
