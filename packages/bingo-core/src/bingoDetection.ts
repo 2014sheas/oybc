@@ -121,6 +121,19 @@ export function detectBingos(
 }
 
 /**
+ * Total number of bingo lines on a `gridSize` board: every row, every column
+ * and the two diagonals (`2 * gridSize + 2`). The denominator of the "LINE
+ * COMPLETE - n OF {total}" kicker. Mirrors `BingoDetection.totalLineCount`
+ * in `apps/ios/OYBC/Helpers/BingoDetection.swift`.
+ *
+ * @param gridSize - Board size (3, 4, or 5)
+ * @returns The number of distinct line ids `detectBingos` can emit.
+ */
+export function totalLineCount(gridSize: BoardSize): number {
+  return 2 * gridSize + 2;
+}
+
+/**
  * Format a bingo detection result into a display message.
  *
  * Returns a human-readable string describing the bingo state:

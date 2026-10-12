@@ -157,6 +157,18 @@ export {
 export type { BoardStatsUpdate, CellState, AchievementCellBadge } from './derivationPass';
 
 // Sync-churn fix — board derivation writes only when derived state changed.
+export {
+  computeBoardMomentReplay,
+  momentCellVisual,
+  momentCounterAt,
+  momentFinalBeat,
+} from './boardMoment';
+export type {
+  BoardMomentReplay,
+  MomentCellVisual,
+  MomentKind,
+  MomentOrderEntry,
+} from './boardMoment';
 export { boardDerivedStateChanged } from './boardDerivedState';
 export type { BoardDerivedState } from './boardDerivedState';
 
@@ -272,6 +284,7 @@ export {
   computeAllStreaks,
   computeLongestStreak,
   compactStreakLabel,
+  streakUnitLabel,
 } from './streaks';
 
 export type { StreakPair, StreaksByTimeframe } from './streaks';

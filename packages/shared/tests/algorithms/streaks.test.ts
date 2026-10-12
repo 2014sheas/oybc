@@ -5,6 +5,7 @@ import {
   computeAllStreaks,
   computeLongestStreak,
   compactStreakLabel,
+  streakUnitLabel,
 } from '../../src/algorithms/streaks';
 import { AchievementTrigger, BoardStatus, CenterSquareType, Timeframe } from '../../src/constants/enums';
 import type { Board } from '../../src/types/board';
@@ -155,4 +156,17 @@ describe('compactStreakLabel (fixture-driven, tests/fixtures/streaksVectors.json
       expect(compactStreakLabel(v.count, v.timeframe as Timeframe)).toBe(v.expected);
     });
   }
+});
+
+describe('streakUnitLabel', () => {
+  it.each([
+    [Timeframe.DAILY, 'DAY'],
+    [Timeframe.WEEKLY, 'WEEK'],
+    [Timeframe.MONTHLY, 'MONTH'],
+    [Timeframe.YEARLY, 'YEAR'],
+    [Timeframe.CUSTOM, ''],
+    [Timeframe.INDEFINITE, ''],
+  ])('%s -> %s', (timeframe, unit) => {
+    expect(streakUnitLabel(timeframe)).toBe(unit);
+  });
 });

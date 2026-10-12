@@ -137,6 +137,24 @@ export function compactStreakLabel(count: number, timeframe: Timeframe): string 
 }
 
 /**
+ * The streak chip's unit word - "DAY" / "WEEK" / "MONTH" / "YEAR" - for a
+ * timeframe; the empty string for a timeframe with no streak (custom /
+ * indefinite). The chip reads "{UNIT} STREAK". Mirrors `streakUnitLabel` in
+ * `apps/ios/OYBC/Services/Streaks.swift`.
+ *
+ * @param timeframe The board's timeframe.
+ */
+export function streakUnitLabel(timeframe: Timeframe): string {
+  switch (timeframe) {
+    case Timeframe.DAILY: return 'DAY';
+    case Timeframe.WEEKLY: return 'WEEK';
+    case Timeframe.MONTHLY: return 'MONTH';
+    case Timeframe.YEARLY: return 'YEAR';
+    default: return '';
+  }
+}
+
+/**
  * Longest historical greenlog streak for a single timeframe.
  *
  * Walks backward from the current window, counting consecutive windows whose

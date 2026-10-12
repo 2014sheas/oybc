@@ -4,6 +4,7 @@ import {
   detectBingos,
   formatBingoMessage,
   getHighlightedSquares,
+  totalLineCount,
   BingoDetectionResult,
 } from '../src/bingoDetection';
 import type { BoardSize } from '../src/constants';
@@ -201,5 +202,22 @@ describe('uncomplete cascade scenarios', () => {
     expect(lostBingos).toEqual([]);
     expect(after.completedLines).toContain('row_0');
     expect(after.completedLines).toContain('col_2');
+  });
+});
+
+describe('totalLineCount', () => {
+  it.each([
+    [3, 8],
+    [4, 10],
+    [5, 12],
+  ])('a %dx%d board has %d lines', (size, expected) => {
+    expect(totalLineCount(size as BoardSize)).toBe(expected);
+  });
+
+  it('equals every line id detectBingos can emit on a full board', () => {
+    for (const size of [3, 4, 5] as BoardSize[]) {
+      const full = detectBingos(new Array(size * size).fill(true), size);
+      expect(full.completedLines).toHaveLength(totalLineCount(size));
+    }
   });
 });
