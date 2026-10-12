@@ -143,6 +143,13 @@ describe('selectQuickAddMatches — goal-less hub counters', () => {
     expect(selectQuickAddMatches([other], new Set(['c1']), 'books', lookup, true)).toEqual([]);
     expect(selectQuickAddMatches([other, hubCounter], new Set(), 'books', lookup, true).map((t) => t.id)).toEqual(['c1']);
   });
+
+  it('never adds a fork or a linked row, only goal-less counter roots', () => {
+    const fork = { ...hubCounter, id: 'c3', forkedFromTaskId: 'c1' };
+    const linked = { ...hubCounter, id: 'c4', sharedCounterId: 'c1' };
+    const onlyNonRoots = new Map([[fork.id, fork], [linked.id, linked], [other.id, other]]);
+    expect(selectQuickAddMatches([other], new Set(), 'books', onlyNonRoots, true)).toEqual([]);
+  });
 });
 
 describe('resolvePoolChips', () => {

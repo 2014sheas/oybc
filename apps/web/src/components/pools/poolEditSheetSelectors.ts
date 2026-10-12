@@ -73,8 +73,8 @@ export function selectQuickAddMatches(
 }
 
 /**
- * `browsableTasks` plus every live goal-less counter in `lookup` that isn't
- * already in it, appended in lookup order.
+ * `browsableTasks` plus every live goal-less counter ROOT in `lookup` (not a
+ * fork, not itself linked) that isn't already in it, appended in lookup order.
  *
  * @param browsableTasks - The browse-filtered candidates.
  * @param lookup - The surface's full task set.
@@ -82,7 +82,9 @@ export function selectQuickAddMatches(
  */
 export function withGoalLessCounters(browsableTasks: readonly Task[], lookup: TaskLookup): readonly Task[] {
   const ids = new Set(browsableTasks.map((t) => t.id));
-  const extra = lookupValues(lookup).filter((t) => !t.isDeleted && isGoalLessCounter(t) && !ids.has(t.id));
+  const extra = lookupValues(lookup).filter(
+    (t) => !t.isDeleted && isGoalLessCounter(t) && t.forkedFromTaskId == null && t.sharedCounterId == null && !ids.has(t.id),
+  );
   return extra.length === 0 ? browsableTasks : [...browsableTasks, ...extra];
 }
 

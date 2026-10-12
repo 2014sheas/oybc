@@ -415,7 +415,10 @@ struct BoardWizardTasksStepView: View {
                             selectedIds: selectedTaskIds,
                             onExistingTaskPicked: { task in
                                 toggleSelection(task.id)
-                            }
+                            },
+                            // `effectiveAllTasks` is browse-filtered, so a new
+                            // hub counter (no goal) would never match by name.
+                            includeGoalLessCounters: true
                         )
                     }
                     .padding(12)

@@ -17,12 +17,12 @@ enum QuickAddCounterPlacement {
             && (task.isCounter || !(task.timeframeGoals?.isEmpty ?? true))
     }
 
-    /// The quick-add candidates widened with every live goal-less counter in
-    /// `pool` (owner bug report 2026-10-12). A counter created from the
-    /// Counters hub has no `maxCount` (its per-window defaults live in
-    /// `timeframeGoals`), so the browse filter hides it and it is never in
-    /// `candidates`; a host that shows counter match rows (it knows the
-    /// board's timeframe) adds it back so typing the counter's name finds it.
+    /// The quick-add candidates widened with every live goal-less counter
+    /// ROOT in `pool` — not a fork, not itself linked (owner bug report
+    /// 2026-10-12). A counter created from the Counters hub has no `maxCount`
+    /// (its per-window defaults live in `timeframeGoals`), so the browse filter
+    /// hides it and it is never in a browse-filtered `candidates`; the wizard
+    /// Tasks step adds it back so typing the counter's name finds it.
     /// Web twin: `withGoalLessCounters` (`poolEditSheetSelectors.ts`).
     ///
     /// - Parameters:
@@ -32,7 +32,8 @@ enum QuickAddCounterPlacement {
     static func withGoalLessCounters(_ candidates: [Task], pool: [Task]) -> [Task] {
         var ids = Set(candidates.map(\.id))
         var out = candidates
-        for task in pool where !task.isDeleted && BrowsableTasks.isGoalLessCounter(task) && !ids.contains(task.id) {
+        for task in pool where !task.isDeleted && BrowsableTasks.isGoalLessCounter(task)
+            && task.forkedFromTaskId == nil && task.sharedCounterId == nil && !ids.contains(task.id) {
             ids.insert(task.id)
             out.append(task)
         }

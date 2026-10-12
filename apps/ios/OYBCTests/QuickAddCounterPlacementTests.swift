@@ -52,6 +52,13 @@ final class QuickAddCounterPlacementTests: XCTestCase {
         )
         let matches = CounterPlacement.rankedTaskMatches(widened, query: "read", rootsById: [:])
         XCTAssertTrue(matches.contains { $0.id == "c1" }, "the widened list finds the counter by its name")
+        var fork = counting(id: "c4", isCounter: true)
+        fork.forkedFromTaskId = "c1"
+        let linked = counting(id: "c5", sharedCounterId: "c1", isCounter: true)
+        XCTAssertEqual(
+            QuickAddCounterPlacement.withGoalLessCounters([plain], pool: [fork, linked]).map(\.id),
+            ["t1"], "a fork or a linked row never joins — roots only"
+        )
     }
 
     func testPendingLinkedTaskIsALinkedRowWithoutAWindow() {
