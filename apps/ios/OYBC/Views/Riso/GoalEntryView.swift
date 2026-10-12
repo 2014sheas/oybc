@@ -57,7 +57,13 @@ struct GoalEntryView: View {
 
     private var durationBody: some View {
         VStack(spacing: 8) {
-            Button { wheelOpen.toggle() } label: {
+            Button {
+                // The wheel needs no keyboard — drop whichever field still holds it.
+                if !wheelOpen {
+                    UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+                }
+                wheelOpen.toggle()
+            } label: {
                 HStack {
                     Text(text.isEmpty ? (placeholder ?? "0h 0m") : formatCount(parseCountInput(text, kind: .duration, allowZero: true) ?? 0, kind: .duration))
                         .font(.risoHead(14, .bold))
