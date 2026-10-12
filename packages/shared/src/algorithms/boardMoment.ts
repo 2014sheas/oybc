@@ -62,7 +62,7 @@ export interface BoardMomentReplay {
    * `idx`.
    */
   order: MomentOrderEntry[];
-  /** The FREE centre's index when the centre is FREE and unoccupied, else `null`. Never in `order`. */
+  /** The FREE centre's index when the centre is FREE and has no live placement (a tombstoned one does not occupy it), else `null`. Never in `order`. */
   freeIdx: number | null;
   /** Lines complete in the END state (ids as `detectBingos` emits them) -> the beat they flip green. */
   lineClosureBeat: Record<string, number>;
@@ -142,7 +142,7 @@ export function computeBoardMomentReplay(
   let freeIdx: number | null = null;
   if (size % 2 === 1 && board.centerSquareType === CenterSquareType.FREE) {
     const mid = Math.floor(size / 2);
-    if (!boardTasks.some((bt) => bt.row === mid && bt.col === mid)) freeIdx = mid * size + mid;
+    if (!boardTasks.some((bt) => !bt.isDeleted && bt.row === mid && bt.col === mid)) freeIdx = mid * size + mid;
   }
 
   const window = { windowStart: board.startDate, windowEnd: boardWindowEnd(board) };

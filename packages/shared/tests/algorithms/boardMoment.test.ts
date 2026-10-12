@@ -132,7 +132,7 @@ function build(c: any): Built {
     taskId: b.taskId,
     row: b.row,
     col: b.col,
-    isDeleted: false,
+    isDeleted: b.isDeleted ?? false,
     createdAt: T0,
     updatedAt: T0,
     version: 1,
@@ -179,7 +179,10 @@ describe('boardMomentVectors.json', () => {
         for (let i = 0; i < total; i++) if (momentCellVisual(i, finalBeat, replay, 'bingo').landed) landed.add(i);
         const expected = new Set<number>();
         if (built.board.sealedAt) {
-          for (const i of built.board.sealedCompletedCells ?? []) if (i !== replay.freeIdx) expected.add(i);
+          for (const i of built.board.sealedCompletedCells ?? []) {
+            const bt = built.boardTasks.find((b) => b.row * replay.size + b.col === i);
+            if (i !== replay.freeIdx && bt && built.taskById[bt.taskId]) expected.add(i);
+          }
         } else {
           const events = built.eventsByTaskId;
           const { grid } = computeBoardGrid(built.board, built.boardTasks, built.childrenByCompound, built.taskById, built.allBoards, { eventsByTaskId: events });
