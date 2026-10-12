@@ -105,7 +105,7 @@ test.describe('Shared counter placement defaults', () => {
     expect(copy?.sharedCounterId).toBe(ROOT);
   });
 
-  test('Board Edit: a goal-less counter with no default — the row holds a Goal entry gating "+"; the typed goal is the copy\'s', async ({ page }) => {
+  test('Board Edit: a goal-less counter with no default places at the kind fallback — 7 on a weekly board', async ({ page }) => {
     const GOALLESS = COUNTER_PLACEMENT_GOALLESS_ROOT_ID;
     await seedTask(page, {
       id: GOALLESS, title: 'Pages', type: 'counting', action: 'Read', unit: 'pages', isCounter: true, currentCount: 40,
@@ -118,41 +118,28 @@ test.describe('Shared counter placement defaults', () => {
 
     await page.getByLabel('New normal task title').fill('pages');
     const list = page.getByRole('list', { name: 'Matching library tasks' });
-    const plus = list.getByRole('button', { name: 'Add Pages' });
-    await expect(plus).toBeDisabled();
-    const goal = list.getByLabel('Goal for Pages');
-    await expect(goal).toHaveAttribute('placeholder', 'Goal');
-    await goal.fill('5');
-    await expect(plus).toBeEnabled();
-    await plus.click();
-    // The picker closes on the pick; nothing was written to the counter root.
+    // A plain match row: the fallback resolves, so no Goal entry.
+    await expect(list.getByLabel('Goal for Pages')).toHaveCount(0);
+    await list.getByRole('button', { name: /Pages/ }).click();
     await expect(page.getByRole('dialog', { name: /Add square/ })).toHaveCount(0);
-    expect(await readTask(page, GOALLESS)).not.toHaveProperty('maxCount');
 
     await page.getByRole('button', { name: 'Save changes' }).click();
     await expect(page.getByText('Board saved')).toBeVisible();
 
     await page.reload();
-    await expect(page.getByText('Read 5 pages!')).toBeVisible();
+    await expect(page.getByText('Read 7 pages!')).toBeVisible();
     const placed = await boardTaskIds(page, BOARD_ID);
     const copyId = placed.find((id) => id !== FILLER && id !== ROOT && id !== GOALLESS);
-    // The placed row is the board's deterministic copy at the typed goal …
-    // (`derivedTaskId(BOARD_ID, GOALLESS)` — pinned by `counterPlacementIds.test.ts`.)
+    // The placed row is the board's deterministic copy at the fallback goal
+    // (`derivedTaskId(BOARD_ID, GOALLESS)` — pinned by `counterPlacementIds.test.ts`);
+    // nothing is written to the counter root.
     expect(copyId).toBe(COUNTER_PLACEMENT_EXPECTED_COPY_ID);
     const copy = await readTask(page, copyId!);
-    expect(copy?.maxCount).toBe(5);
+    expect(copy?.maxCount).toBe(7);
     expect(copy?.sharedCounterId).toBe(GOALLESS);
-    expect(await readTask(page, GOALLESS)).not.toHaveProperty('maxCount');
-    // … and the pending linked row the pick built was never written: the copy is
-    // the ONLY row linking to the counter, so Counter Detail lists one member.
+    const root = await readTask(page, GOALLESS);
+    expect(root).not.toHaveProperty('maxCount');
+    expect(root).not.toHaveProperty('timeframeGoals');
     expect(await linkedTaskIds(page, GOALLESS)).toEqual([copyId]);
-    await page.goto(`/profile/counters/${GOALLESS}?__oybc_test_bypass=1`);
-    await expect(page.getByLabel(/^Read 5 pages!:/)).toHaveCount(1);
-    // "Not counting now" holds only the unplaced root itself — never a ghost
-    // "Read 5 pages!" member left over from the pick.
-    const inactive = page.getByRole('list', { name: 'Inactive tasks not currently counting' });
-    await expect(inactive.getByLabel(/^Read 5 pages!/)).toHaveCount(0);
-    await expect(inactive.getByLabel(/— inactive$/)).toHaveCount(1);
-    await expect(inactive.getByLabel(/^Pages — inactive$/)).toHaveCount(1);
   });
 });

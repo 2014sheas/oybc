@@ -130,16 +130,16 @@ describe('selectQuickAddMatches — goal-less hub counters', () => {
 
   it('a host that admits them (wizard, pool, core defaults) finds one by its name, with or without defaults', () => {
     const withDefaults = { ...hubCounter, id: 'c2', counterName: 'Bookmarks', timeframeGoals: { weekly: 2 } };
-    const result = selectQuickAddMatches([...library, withDefaults], new Set(), 'book', undefined, true);
+    const result = selectQuickAddMatches([...library, withDefaults], new Set(), 'book');
     expect(result.map((t) => t.id)).toEqual(['c1', 'c2']);
   });
 
   it('does not offer it in a host that admits none (compound sub-tasks)', () => {
-    expect(selectQuickAddMatches(library, new Set(), 'books')).toEqual([]);
+    expect(selectQuickAddMatches(library, new Set(), 'books', undefined, true)).toEqual([]);
   });
 
   it('skips an already-selected one', () => {
-    expect(selectQuickAddMatches(library, new Set(['c1']), 'books', undefined, true)).toEqual([]);
+    expect(selectQuickAddMatches(library, new Set(['c1']), 'books')).toEqual([]);
   });
 });
 

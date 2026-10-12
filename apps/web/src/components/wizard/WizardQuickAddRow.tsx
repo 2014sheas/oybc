@@ -66,12 +66,11 @@ export interface WizardQuickAddRowProps {
    *  match — `libraryTasks` is browse-filtered and drops linked members.
    *  Defaults to `libraryTasks`. */
   lookupTasks?: TaskLookup;
-  /** Keep counters with no goal of its own (every counter created from the
-   *  Counters hub) in the matches: a host that places onto a board or stores
-   *  into a pool (wizard Tasks step, pool editor, core defaults) — placement
-   *  mints the copy at the window's default. Default false drops them (a
-   *  compound sub-task can't take one). */
-  includeGoalLessCounters?: boolean;
+  /** Drop counters with no goal of their own (every counter created from the
+   *  Counters hub) from the matches — for a compound sub-task, which can't
+   *  take one. Default false: every other host places them (placement mints
+   *  the copy at the window's default). */
+  excludeGoalLessCounters?: boolean;
   /** Ids to exclude from the dropdown (already selected/added on this
    *  surface). Defaults to empty — only meaningful alongside `libraryTasks`. */
   selectedIds?: Set<string>;
@@ -173,7 +172,7 @@ export function WizardQuickAddRow({
   disabled = false,
   libraryTasks,
   lookupTasks,
-  includeGoalLessCounters = false,
+  excludeGoalLessCounters = false,
   selectedIds,
   onExistingTaskPicked,
   onSubmitText,
@@ -212,9 +211,9 @@ export function WizardQuickAddRow({
       selectedIds ?? EMPTY_SELECTED_IDS,
       trimmed,
       lookupTasks ?? libraryTasks,
-      includeGoalLessCounters,
+      excludeGoalLessCounters,
     );
-  }, [pollingEnabled, libraryTasks, lookupTasks, selectedIds, trimmed, includeGoalLessCounters]);
+  }, [pollingEnabled, libraryTasks, lookupTasks, selectedIds, trimmed, excludeGoalLessCounters]);
   // Text-driven (not focus-gated) to match the app's existing inline
   // autocomplete convention (RisoCompoundFieldsView) and iOS's twin — an
   // in-flow suggestion list, so there's no floating overlay to dismiss on

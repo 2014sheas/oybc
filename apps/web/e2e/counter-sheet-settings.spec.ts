@@ -41,7 +41,8 @@ test.describe('Counter sheet — shared counter settings', () => {
     await expect(sheet.getByText('Enter a verb.')).toHaveCount(0);
     await expect(create).toBeEnabled();
 
-    // Derived defaults, dimmed: the name and both templates; the Defaults cells empty.
+    // Derived defaults, dimmed: the name, both templates and the Defaults
+    // cells (the kind fallback, 1/day, until a default is typed).
     await expect(name).toHaveValue('Read books');
     await expect(name).toHaveAttribute('data-dim', 'true');
     const singular = sheet.getByRole('textbox', { name: 'Singular title' });
@@ -49,7 +50,8 @@ test.describe('Counter sheet — shared counter settings', () => {
     await expect(singular).toHaveAttribute('data-dim', 'true');
     await expect(sheet.getByLabel('Singular title renders as')).toHaveText(/Read 1 books/);
     await expect(sheet.getByLabel('Plural title renders as')).toHaveText(/Read 12 books/);
-    await expect(sheet.getByLabel('Weekly default')).toHaveValue('');
+    await expect(sheet.getByLabel('Weekly default')).toHaveValue('7');
+    await expect(sheet.getByLabel('Yearly default')).toHaveValue('365');
 
     // Type a singular template + a weekly default: solid; the other timeframes derive, dimmed.
     await singular.fill('Read #N book');

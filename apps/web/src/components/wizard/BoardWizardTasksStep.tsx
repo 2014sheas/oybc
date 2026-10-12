@@ -628,8 +628,6 @@ export function BoardWizardTasksStep({
             // existing task offers a reuse match instead of a duplicate.
             libraryTasks={effectiveAllTasks}
             lookupTasks={effectiveTaskMap}
-            // Hub counters (no goal of their own) place at the board window's default.
-            includeGoalLessCounters
             selectedIds={selectedTaskIds}
             onExistingTaskPicked={onTaskCreated}
           />

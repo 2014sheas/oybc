@@ -65,7 +65,7 @@ describe('WizardQuickAddRow match rows', () => {
     renderToStaticMarkup(
       React.createElement(WizardQuickAddRow, {
         userId: 'u1', onTaskCreated: () => {}, libraryTasks: library, onExistingTaskPicked: () => {},
-        currentTimeframe: Timeframe.WEEKLY, onPendingCreated: () => {}, includeGoalLessCounters: true, ...props,
+        currentTimeframe: Timeframe.WEEKLY, onPendingCreated: () => {}, ...props,
       }),
     );
 
@@ -113,7 +113,7 @@ describe('WizardQuickAddRow match rows', () => {
   });
 
   it('a host that admits no goal-less counters (compound sub-tasks) never lists one', () => {
-    const h = render(library, { seedText: 'book', includeGoalLessCounters: false });
+    const h = render(library, { seedText: 'book', excludeGoalLessCounters: true });
     expect(h).not.toContain('>Pages<');
     expect(h).not.toContain('>Books<');
   });

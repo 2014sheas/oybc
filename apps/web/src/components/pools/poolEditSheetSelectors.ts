@@ -48,21 +48,21 @@ export const QUICK_ADD_MATCH_CAP = 4;
  * title-contains filtering verbatim (never reinvented) and truncates to
  * `QUICK_ADD_MATCH_CAP` for the compact inline UI.
  *
- * `includeGoalLessCounters`: a counter with no goal of its own (every counter
+ * `excludeGoalLessCounters`: a counter with no goal of its own (every counter
  * created from the Counters hub) is browsable and places at the board
  * window's default (`windowDefaultGoal` — the kind fallback when none is
- * set), so every host that places onto a board or stores into a pool admits
- * it. `false` (default) drops it — a compound sub-task can't take one.
+ * set), so it matches by default; `true` drops it for the one host that
+ * can't take one (a compound sub-task).
  */
 export function selectQuickAddMatches(
   browsableTasks: readonly Task[],
   selectedIds: ReadonlySet<string>,
   query: string,
   lookup: TaskLookup = browsableTasks,
-  includeGoalLessCounters = false,
+  excludeGoalLessCounters = false,
 ): Task[] {
   return selectLibraryPickerResults(
-    includeGoalLessCounters ? browsableTasks : browsableTasks.filter((t) => !isGoalLessCounter(t)),
+    excludeGoalLessCounters ? browsableTasks.filter((t) => !isGoalLessCounter(t)) : browsableTasks,
     selectedIds,
     query,
     lookup,
