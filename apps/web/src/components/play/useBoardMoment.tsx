@@ -123,7 +123,7 @@ export function useBoardMoment(p: UseBoardMomentParams): UseBoardMomentResult {
         cells={cells}
         boardName={p.board.name}
         linesCompleted={lineCount}
-        streak={p.greenlogStreak}
+        streak={p.board.isCore === true ? p.greenlogStreak : 0}
         timeframe={p.board.timeframe}
         onShare={() => setShareKind(trigger.kind)}
         onBack={() => { setShareKind(null); setTrigger(null); setSnapshot(null); setForced(false); phaseRef.current = 'idle'; }}
@@ -141,6 +141,7 @@ export function useBoardMoment(p: UseBoardMomentParams): UseBoardMomentResult {
           streak={posterStreakLabel(
             p.streakFor(shareKind === 'bingo' ? AchievementTrigger.BINGO : AchievementTrigger.GREENLOG),
             p.board.timeframe,
+            p.board.isCore === true,
           )}
           onDismiss={() => setShareKind(null)}
         />

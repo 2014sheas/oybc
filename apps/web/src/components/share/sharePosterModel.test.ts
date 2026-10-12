@@ -33,11 +33,12 @@ describe('share sheet model', () => {
   });
 
   it('the streak card shows only on a recurring timeframe with a streak above 1', () => {
-    expect(posterStreakLabel(2, Timeframe.WEEKLY)).toBe('2w');
-    expect(posterStreakLabel(5, Timeframe.MONTHLY)).toBe('5mo');
-    expect(posterStreakLabel(1, Timeframe.WEEKLY)).toBeUndefined();
-    expect(posterStreakLabel(0, Timeframe.DAILY)).toBeUndefined();
-    expect(posterStreakLabel(9, Timeframe.CUSTOM)).toBeUndefined();
+    expect(posterStreakLabel(2, Timeframe.WEEKLY, true)).toBe('2w');
+    expect(posterStreakLabel(5, Timeframe.MONTHLY, true)).toBe('5mo');
+    expect(posterStreakLabel(1, Timeframe.WEEKLY, true)).toBeUndefined();
+    expect(posterStreakLabel(0, Timeframe.DAILY, true)).toBeUndefined();
+    expect(posterStreakLabel(9, Timeframe.CUSTOM, true)).toBeUndefined();
+    expect(posterStreakLabel(9, Timeframe.WEEKLY, false)).toBeUndefined();
   });
 
   it('label size clamps and cell size follows the board size', () => {

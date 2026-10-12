@@ -41,11 +41,11 @@ export function shareText(kind: ShareKind, boardName: string, linesCompleted: nu
 
 /**
  * The poster's STREAK card label, or `undefined` when the card is omitted: it
- * shows only on a recurring-timeframe board with a streak above 1 (the moment
+ * shows only on a CORE recurring-timeframe board with a streak above 1 (the moment
  * chip's rule).
  */
-export function posterStreakLabel(streak: number, timeframe: Timeframe): string | undefined {
-  if (streak <= 1 || !(STREAK_TIMEFRAMES as readonly string[]).includes(timeframe)) return undefined;
+export function posterStreakLabel(streak: number, timeframe: Timeframe, isCore: boolean): string | undefined {
+  if (!isCore || streak <= 1 || !(STREAK_TIMEFRAMES as readonly string[]).includes(timeframe)) return undefined;
   return compactStreakLabel(streak, timeframe);
 }
 
