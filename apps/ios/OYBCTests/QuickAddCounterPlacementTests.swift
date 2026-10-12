@@ -61,6 +61,22 @@ final class QuickAddCounterPlacementTests: XCTestCase {
         )
     }
 
+    /// A pool / core defaults host stores the counter for later board
+    /// creation, which mints it at the window's default — so only counters
+    /// with a default join there.
+    func testWithGoalLessCountersRequireDefaultKeepsOnlyCountersWithADefault() {
+        let withDefault = counting(id: "c1", isCounter: true, goals: CounterTimeframeGoals(weekly: 2))
+        let noDefault = counting(id: "c2", isCounter: true)
+        XCTAssertEqual(
+            QuickAddCounterPlacement.withGoalLessCounters([], pool: [withDefault, noDefault], requireDefault: true).map(\.id),
+            ["c1"]
+        )
+        XCTAssertEqual(
+            QuickAddCounterPlacement.withGoalLessCounters([], pool: [withDefault, noDefault]).map(\.id),
+            ["c1", "c2"]
+        )
+    }
+
     func testPendingLinkedTaskIsALinkedRowWithoutAWindow() {
         var root = counting(isCounter: true)
         root.titleTemplatePlural = "Read #N novels"

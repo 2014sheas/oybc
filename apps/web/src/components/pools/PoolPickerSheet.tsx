@@ -23,7 +23,7 @@ export interface PoolPickerSheetProps {
   /** id → Task lookup for health + the create-sheet's chip resolution. */
   tasksById: Record<string, Task>;
   /** The draft-filtered subset of tasks — passed straight through to the
-   *  nested `PoolEditorModal`'s "reuse a task from your library" picker. */
+   *  nested `PoolEditorModal`'s quick-add reuse matches. */
   browsableTasks: Task[];
   /** Currently-selected pool ids in the launching context (the defaults
    *  sheet's `corePoolIds` or the roster edit sheet's `poolIds`). */

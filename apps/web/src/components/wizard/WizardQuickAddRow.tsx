@@ -69,9 +69,10 @@ export interface WizardQuickAddRowProps {
   lookupTasks?: TaskLookup;
   /** Widen the matches with goal-less counters from `lookupTasks` (every
    *  counter created from the Counters hub — the browse filter hides them).
-   *  Only for a host whose `libraryTasks` IS browse-filtered (the wizard
-   *  Tasks step; Board Edit's picker already searches the full set), and only
-   *  honoured with `currentTimeframe` + `onPendingCreated`. Default false. */
+   *  For a host whose `libraryTasks` IS browse-filtered (wizard Tasks step,
+   *  pool editor, core defaults; Board Edit's picker already searches the
+   *  full set). With `currentTimeframe` + `onPendingCreated` every such
+   *  counter joins; otherwise only those with a window default. Default false. */
   includeGoalLessCounters?: boolean;
   /** Ids to exclude from the dropdown (already selected/added on this
    *  surface). Defaults to empty — only meaningful alongside `libraryTasks`. */
@@ -208,16 +209,17 @@ export function WizardQuickAddRow({
   const pollingEnabled = libraryTasks !== undefined && onExistingTaskPicked !== undefined;
   const libraryMatches = useMemo<Task[]>(() => {
     if (!pollingEnabled || trimmed === '') return [];
-    // Goal-less (hub) counters join the matches only for an opted-in host
-    // whose counter row can place them: it knows the board's timeframe and
-    // can mint the pending linked task (never the goal-less root itself).
-    return selectQuickAddMatches(
-      libraryTasks!,
-      selectedIds ?? EMPTY_SELECTED_IDS,
-      trimmed,
-      lookupTasks ?? libraryTasks,
-      includeGoalLessCounters && currentTimeframe !== undefined && onPendingCreated !== undefined,
-    );
+    // Goal-less (hub) counters join the matches for an opted-in host: every
+    // one when its counter row can mint a pending linked copy and ask for a
+    // goal (board timeframe + `onPendingCreated`), else only those with a
+    // window default (a pool / core defaults stores the counter; board
+    // creation mints it at the window's default).
+    const mode = !includeGoalLessCounters
+      ? 'none'
+      : currentTimeframe !== undefined && onPendingCreated !== undefined
+        ? 'all'
+        : 'withDefaults';
+    return selectQuickAddMatches(libraryTasks!, selectedIds ?? EMPTY_SELECTED_IDS, trimmed, lookupTasks ?? libraryTasks, mode);
   }, [pollingEnabled, libraryTasks, lookupTasks, selectedIds, trimmed, includeGoalLessCounters, currentTimeframe, onPendingCreated]);
   // Text-driven (not focus-gated) to match the app's existing inline
   // autocomplete convention (RisoCompoundFieldsView) and iOS's twin — an
@@ -448,8 +450,7 @@ export function WizardQuickAddRow({
       {/* Library-poll dropdown — OPTIONAL (only when `libraryTasks` +
           `onExistingTaskPicked` are both passed by the host). Mirrors the
           iOS `RisoCompoundFieldsView.subAutocompleteDropdown` precedent's
-          shape; row style matches the pool sheet's library-reuse picker
-          row (`RisoTypeBadge` + title + plus icon). */}
+          shape; rows are `RisoTypeBadge` + title + plus icon. */}
       {showDropdown && (
         <ul className={styles.dropdownList} aria-label="Matching library tasks">
           {libraryMatches.map((task) => (

@@ -252,7 +252,9 @@ acceptance above; not treated as a bug to fix.
    (web `savePoolFromSheet` ↔ iOS `createPoolAndEnqueue`/`updatePoolAndEnqueue`
    via the shared apply-staged-edits helper; Cancel discards them, created /
    reused library tasks stay). ADD TASKS mirrors the wizard pattern
-   (quick-add row + library reuse picker); dashed deck-preview line (e.g.
+   (quick-add row — typing also finds library tasks to reuse; the separate
+   "Reuse a task from your library" picker was retired 2026-10-12, both
+   platforms, pool editor + core defaults); dashed deck-preview line (e.g.
    `"8 tasks in the deck · fills a 3×3"` when healthy, or `"6 tasks in the
    deck · short on required tasks"` when short — the short branch drops the
    missing-count and board-size detail, owner decision, 2026-07-20); Delete

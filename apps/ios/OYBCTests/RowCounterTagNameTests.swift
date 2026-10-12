@@ -142,11 +142,9 @@ final class RowCounterTagNameTests: XCTestCase {
         XCTAssertEqual(ranked.map(\.id), ["d", "u"])
     }
 
-    func test_poolPickerFindsUnitTasksByCounterName() {
+    func test_quickAddFindsUnitTasksByCounterName() {
         let unit = task("u", "Finish Dune", countsToward: "root")
-        let r = PoolEditorViewModel.filterLibraryResults(
-            browsableTasks: [unit], selectedIds: [], query: "books", rootsById: ["root": root]
-        )
+        let r = CounterPlacement.rankedTaskMatches([unit], query: "books", rootsById: ["root": root])
         XCTAssertEqual(r.map(\.id), ["u"])
     }
 

@@ -8,8 +8,6 @@ import XCTest
 /// `poolEditSheetSelectors.test.ts`):
 ///
 /// - `nameLengthError(for:)` — I-1, the 120-char `PoolSchema.name` bound.
-/// - `filterLibraryResults(browsableTasks:selectedIds:query:)` — I-2, the
-///   library-reuse picker must offer only browse-visible tasks.
 /// - `resolveChips(taskIds:libraryTasks:)` — I-3, chip/count display must
 ///   resolve against the FULL library set so a pool that already
 ///   references a wizard-born draft task (or any other reference the
@@ -79,8 +77,6 @@ final class PoolEditorViewModelTests: XCTestCase {
         )
     }
 
-    // MARK: - I-2: filterLibraryResults
-
     func testHeaderInputs_HealthyAndShort() {
         let floor = PoolHealth.DeckFloor(boardSize: 3, floor: 8)
         let ok = PoolEditorViewModel.headerInputs(taskCount: 9, deckFloor: floor)
@@ -93,49 +89,6 @@ final class PoolEditorViewModelTests: XCTestCase {
         XCTAssertEqual(over.count, 12)
         XCTAssertEqual(over.required, 8)
         XCTAssertEqual(over.note, "12 tasks in the pool · fills a 3×3")
-    }
-
-    func testFilterLibraryResults_ExcludesAlreadySelectedIds() {
-        let t1 = buildTask("t1")
-        let t2 = buildTask("t2")
-        let result = PoolEditorViewModel.filterLibraryResults(
-            browsableTasks: [t1, t2], selectedIds: ["t1"], query: ""
-        )
-        XCTAssertEqual(result.map(\.id), ["t2"])
-    }
-
-    func testFilterLibraryResults_ExcludesWizardBornDraftNotInBrowsableInput() {
-        // Simulates the caller passing `library.browsableTasks` (already
-        // draft-filtered) — a wizard-born draft with no live-board
-        // placement never reaches this helper's input in the first place.
-        let normal = buildTask("t1", title: "Normal task")
-        let draft = buildTask("t2", title: "Draft task", createdInWizard: true)
-        let browsable = [normal] // `draft` excluded upstream, mirrors `TaskLibraryViewModel.browsableTasks`
-
-        let result = PoolEditorViewModel.filterLibraryResults(
-            browsableTasks: browsable, selectedIds: [], query: ""
-        )
-
-        XCTAssertEqual(result.map(\.id), ["t1"])
-        XCTAssertFalse(result.contains { $0.id == draft.id })
-    }
-
-    func testFilterLibraryResults_TrimmedCaseInsensitiveQuery() {
-        let morning = buildTask("t1", title: "Morning Kickstart")
-        let evening = buildTask("t2", title: "Evening wind-down")
-        let result = PoolEditorViewModel.filterLibraryResults(
-            browsableTasks: [morning, evening], selectedIds: [], query: "  MORNING  "
-        )
-        XCTAssertEqual(result.map(\.id), ["t1"])
-    }
-
-    func testFilterLibraryResults_EmptyQueryReturnsAllUnselected() {
-        let t1 = buildTask("t1")
-        let t2 = buildTask("t2")
-        let result = PoolEditorViewModel.filterLibraryResults(
-            browsableTasks: [t1, t2], selectedIds: [], query: "   "
-        )
-        XCTAssertEqual(Set(result.map(\.id)), Set(["t1", "t2"]))
     }
 
     // MARK: - I-3: resolveChips
