@@ -1,6 +1,5 @@
 import { useCallback } from 'react';
 import {
-  BoardStatus,
   counterDisplayName,
   effectiveCenter,
   resolveTaskWindowState,
@@ -20,7 +19,7 @@ import {
   setCounterDefaultLogAmount,
 } from '../db/operations/tasks';
 import { resolveCreditedCounterName } from '../components/boardPlaySharedCounterUtils';
-import { deriveFlashOutcome } from '../components/boardPlayFlash';
+import { deriveFlashOutcome, flashFromBoardSnapshots, messageOutcome, type FlashOutcome } from '../components/boardPlayFlash';
 import { toggleCompoundChildFallback, undoLastCounterLog } from '../db/operations/tasks';
 import { commitSquareEdits } from '../db/operations/boardEditCommit';
 import type { ContextMenuState } from '../components/interactiveTaskSquareUtils';
@@ -92,10 +91,6 @@ function countsTowardCreditToast(found: NewBoardCredit, revert: () => Promise<vo
   };
 }
 
-/** What `onFlash` is called with. `greenlog` routes to the overlay and a
- *  new bingo to the toast; only the residual cases reach the transient flash. */
-export type FlashVariant = 'bingo' | 'greenlog';
-
 /**
  * Credited-toast payload shown after a shared-counter log ripples to OTHER
  * boards (R3 — amount-aware + Undo; `sourceTaskId` lets the toast's Undo
@@ -156,8 +151,8 @@ export interface UseBoardPlayParams {
    * the real grid (BoardPlaySurface's own render already does this).
    */
   squareWindowContext: SquareWindowContext;
-  /** Show a transient flash / bingo toast / greenlog overlay (component's `showFlash`). */
-  onFlash: (text: string, variant: FlashVariant) => void;
+  /** Show a transient flash / the bingo or greenlog moment (component's `showFlash`). */
+  onFlash: (outcome: FlashOutcome) => void;
   /** Show the shared-counter credited toast (component's `setCreditedToast`). */
   onCreditedToast: (toast: CreditedToast) => void;
   /** Dismiss the floating context menu (component's `setContextMenu`). */
@@ -309,10 +304,10 @@ export function useBoardPlay(params: UseBoardPlayParams): UseBoardPlayResult {
           isGreenlog: result.boardCompleted,
           newBingos: result.newBingos,
         });
-        if (outcome) onFlash(outcome.text, outcome.variant);
+        if (outcome) onFlash(outcome);
       } catch (err) {
         console.error('Task completion failed:', err);
-        onFlash('Something went wrong', 'bingo');
+        onFlash(messageOutcome('Something went wrong'));
         setContextMenu(null);
       }
     },
@@ -407,27 +402,10 @@ export function useBoardPlay(params: UseBoardPlayParams): UseBoardPlayResult {
         const boardAfter = await db.boards.get(boardId);
         if (!boardBefore || !boardAfter) return;
 
-        const prevBingos = new Set(boardBefore.completedLineIds ?? []);
-        const nextBingos = new Set(boardAfter.completedLineIds ?? []);
-        const newBingos = [...nextBingos].filter((id) => !prevBingos.has(id));
-        const lostBingos = [...prevBingos].filter((id) => !nextBingos.has(id));
-        const totalSquares = boardAfter.boardSize * boardAfter.boardSize;
-        const isGreenlogRaw = boardAfter.completedTasks >= totalSquares;
-        const wasActive = boardBefore.status === BoardStatus.ACTIVE;
-        const isNowCompleted = boardAfter.status === BoardStatus.COMPLETED;
-        const wasCompleted = boardBefore.status === BoardStatus.COMPLETED;
-        const isNowActive = boardAfter.status === BoardStatus.ACTIVE;
-
-        // Same shared ladder as handleComplete (`deriveFlashOutcome`), fed
-        // from a before/after snapshot diff instead of a TaskCompletionResult
-        // — see boardPlayFlash.ts for why the two derivations differ here.
-        const outcome = deriveFlashOutcome({
-          boardReactivated: wasCompleted && isNowActive,
-          lostBingos,
-          isGreenlog: wasActive && isNowCompleted && isGreenlogRaw,
-          newBingos,
-        });
-        if (outcome) onFlash(outcome.text, outcome.variant);
+        // Same shared ladder as handleComplete, fed from a before/after
+        // snapshot diff — see boardPlayFlash.ts for why the derivations differ.
+        const outcome = flashFromBoardSnapshots(boardBefore, boardAfter, true);
+        if (outcome) onFlash(outcome);
 
         // Credited toast: show when the increment rippled to OTHER boards.
         const otherBoards = affectedBoards.filter((b) => b.boardId !== boardId);
@@ -444,7 +422,7 @@ export function useBoardPlay(params: UseBoardPlayParams): UseBoardPlayResult {
         }
       } catch (err) {
         console.error('Shared counter increment failed:', err);
-        onFlash('Something went wrong', 'bingo');
+        onFlash(messageOutcome('Something went wrong'));
       }
     },
     [boardId, playLocked, onFlash, onCreditedToast, taskMap],
@@ -486,18 +464,8 @@ export function useBoardPlay(params: UseBoardPlayParams): UseBoardPlayResult {
         // rungs can fire on a decrement (never greenlog / new bingos).
         const boardAfter = await db.boards.get(boardId);
         if (boardBefore && boardAfter) {
-          const prevBingos = new Set(boardBefore.completedLineIds ?? []);
-          const nextBingos = new Set(boardAfter.completedLineIds ?? []);
-          const lostBingos = [...prevBingos].filter((id) => !nextBingos.has(id));
-          const wasCompleted = boardBefore.status === BoardStatus.COMPLETED;
-          const isNowActive = boardAfter.status === BoardStatus.ACTIVE;
-          const outcome = deriveFlashOutcome({
-            boardReactivated: wasCompleted && isNowActive,
-            lostBingos,
-            isGreenlog: false,
-            newBingos: [],
-          });
-          if (outcome) onFlash(outcome.text, outcome.variant);
+          const outcome = flashFromBoardSnapshots(boardBefore, boardAfter, false);
+          if (outcome) onFlash(outcome);
         }
 
         // Credited toast: show when the decrement rippled to OTHER boards.
@@ -515,7 +483,7 @@ export function useBoardPlay(params: UseBoardPlayParams): UseBoardPlayResult {
         }
       } catch (err) {
         console.error('Shared counter decrement failed:', err);
-        onFlash('Something went wrong', 'bingo');
+        onFlash(messageOutcome('Something went wrong'));
       }
     },
     [boardId, playLocked, onFlash, onCreditedToast, taskMap],
@@ -543,18 +511,8 @@ export function useBoardPlay(params: UseBoardPlayParams): UseBoardPlayResult {
       const boardAfter = await db.boards.get(boardId);
       if (!boardBefore || !boardAfter) return;
 
-      const prevBingos = new Set(boardBefore.completedLineIds ?? []);
-      const nextBingos = new Set(boardAfter.completedLineIds ?? []);
-      const lostBingos = [...prevBingos].filter((id) => !nextBingos.has(id));
-      const wasCompleted = boardBefore.status === BoardStatus.COMPLETED;
-      const isNowActive = boardAfter.status === BoardStatus.ACTIVE;
-      const outcome = deriveFlashOutcome({
-        boardReactivated: wasCompleted && isNowActive,
-        lostBingos,
-        isGreenlog: false,
-        newBingos: [],
-      });
-      if (outcome) onFlash(outcome.text, outcome.variant);
+      const outcome = flashFromBoardSnapshots(boardBefore, boardAfter, false);
+      if (outcome) onFlash(outcome);
     },
     [boardId, onFlash],
   );
@@ -610,10 +568,14 @@ export function useBoardPlay(params: UseBoardPlayParams): UseBoardPlayResult {
         // failure rolls back the partial writes (issue #270, B2-W2).
         try {
           const { windowStart, windowEnd } = squareWindowContext;
+          const boardBefore = await db.boards.get(boardId);
           await toggleCompoundChildFallback(childTaskId, to, windowStart, windowEnd, boardId);
+          const boardAfter = await db.boards.get(boardId);
+          const outcome = boardBefore && boardAfter ? flashFromBoardSnapshots(boardBefore, boardAfter, true) : null;
+          if (outcome) onFlash(outcome);
         } catch (err) {
           console.error('Compound child toggle failed:', err);
-          onFlash('Something went wrong', 'bingo');
+          onFlash(messageOutcome('Something went wrong'));
         }
       };
       // A flagged compound completed by this toggle credits its counter once

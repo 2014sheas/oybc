@@ -19,6 +19,29 @@
   box-shadow: 8px 8px 0 var(--riso-shadow-ink);
 }
 
+/* The moment overlay's frame (docs/BOARD_MOMENTS.md): static cream paper in BOTH
+   themes, and the board (frame AND cells) renders in the LIGHT palette: every
+   token the cells draw with is pinned to its light value (owner ruling, matches iOS). */
+.momentFrame {
+  --riso-paper: #f1e9d9;
+  --riso-paper-2: #fbf6ea;
+  --riso-ink: #18120b;
+  --riso-muted: #7e7460;
+  --riso-blue: #2c44c9;
+  --riso-blue-scrim: rgba(44, 68, 201, 0.16);
+  --riso-red: #eb4d2e;
+  --riso-green: #1f9b6b;
+  --riso-achievement: #7a3fb0;
+  --riso-teal: #0e8f96;
+  --riso-hair: rgba(24, 18, 11, 0.14);
+  --riso-shadow-ink: #18120b;
+  border: 2.5px solid #18120b;
+  background: #fbf6ea;
+  padding: 11px;
+  box-shadow: 8px 8px 0 #18120b;
+  margin-inline: auto;
+}
+
 .cell {
   position: relative;
   aspect-ratio: 1;
@@ -189,6 +212,55 @@
   letter-spacing: 0.12em;
   position: relative;
   z-index: 1;
+}
+
+/* Moment overlay (docs/BOARD_MOMENTS.md): a cell in a completed line is GREEN
+   with the done chrome and no gold ring. `.cell.lineGreen` ties the specificity
+   of `.counting.done` / `.compound.done` and comes after them. Every resting
+   transform below is translate(-1px, -1px), the pop's end frame, so a pop never
+   lands on a different position (a FREE cell included). */
+.cell.lineGreen {
+  background: var(--riso-green);
+  box-shadow: 3px 3px 0 var(--riso-shadow-ink);
+  transform: translate(-1px, -1px);
+}
+.momentCell {
+  transition: background-color 0.18s, box-shadow 0.2s;
+  z-index: 2;
+}
+/* Two phases = two animation names, so landing -> green restarts the pop without
+   a remount (both are LOCAL copies of riso.css's risoCellPop: a CSS module
+   localizes the animation name, so a global keyframe is not reachable here). The class names carry "risoCellPop" so the global reduced-motion
+   guard in riso.css (substring match) switches both off. */
+.risoCellPopLand {
+  animation: cellPopLand var(--riso-anim-cell-pop);
+  z-index: 4;
+}
+.risoCellPopGreen {
+  animation: cellPopGreen var(--riso-anim-cell-pop);
+  z-index: 4;
+}
+@keyframes cellPopLand {
+  0% {
+    transform: translate(-1px, -1px) scale(0.9);
+  }
+  55% {
+    transform: translate(-1px, -1px) scale(1.1);
+  }
+  100% {
+    transform: translate(-1px, -1px) scale(1);
+  }
+}
+@keyframes cellPopGreen {
+  0% {
+    transform: translate(-1px, -1px) scale(0.9);
+  }
+  55% {
+    transform: translate(-1px, -1px) scale(1.1);
+  }
+  100% {
+    transform: translate(-1px, -1px) scale(1);
+  }
 }
 
 /* bingo-line highlight */

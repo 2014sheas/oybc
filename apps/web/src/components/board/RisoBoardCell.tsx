@@ -21,6 +21,11 @@ export interface BoardCellModel {
   /** Part of a completed bingo line (gold ring). */
   isLine: boolean;
   /**
+   * The moment overlay's completed-line state: green fill with the done
+   * chrome and NO gold ring. Never set on the play grid (it keeps the ring).
+   */
+  lineGreen?: boolean;
+  /**
    * When true, renders a two-dot shared-counter marker on the cell corner
    * (only while not done). Set for COUNTING tasks that are either a shared-
    * counter source or a linked derived counter, and for a task of ANY type
@@ -57,6 +62,14 @@ export interface RisoBoardCellProps {
   badge?: React.ReactNode;
   /** The cell's edge in px — picks the counting bar's text tier. Defaults to 88. */
   cellSize?: number;
+  /**
+   * Moment-overlay cell: `undefined` = an ordinary cell; otherwise the cell
+   * eases its fill/shadow and plays the pop for its current phase - `'land'`
+   * (just landed in its type colour) or `'green'` (just flipped green); `null`
+   * = settled. The two phases use differently-named animations so the switch
+   * restarts the pop without remounting the cell.
+   */
+  pop?: 'land' | 'green' | null;
 }
 
 /**
@@ -66,13 +79,17 @@ export interface RisoBoardCellProps {
  * `onContextMenu` wires the play board's context menu, and `badge` renders a
  * corner indicator (achievement watch).
  */
-export function RisoBoardCell({ cell, onClick, onContextMenu, badge, cellSize = 88 }: RisoBoardCellProps): React.ReactElement {
+export function RisoBoardCell({ cell, onClick, onContextMenu, badge, cellSize = 88, pop }: RisoBoardCellProps): React.ReactElement {
   const tagClass = cell.type === 'counting' ? styles.counting : cell.type === 'compound' ? styles.compound : '';
   const className = [
     styles.cell,
     cell.isFree ? styles.free : tagClass,
     cell.done && !cell.isFree ? styles.done : '',
     cell.isLine ? styles.line : '',
+    cell.lineGreen ? styles.lineGreen : '',
+    pop !== undefined ? styles.momentCell : '',
+    pop === 'land' ? styles.risoCellPopLand : '',
+    pop === 'green' ? styles.risoCellPopGreen : '',
     cell.isArrived ? styles.arrived : '',
     cell.locked || cell.dirty ? styles.hasChip : '',
     onClick ? styles.interactive : '',

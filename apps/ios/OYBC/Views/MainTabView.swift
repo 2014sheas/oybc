@@ -194,14 +194,14 @@ struct MainTabView: View {
 
             // ── "Preview a GREENLOG" sample (tutorial Share lesson) ──
             if showGreenlogPreview {
-                RisoGreenlogOverlay(
-                    completedTasks: 25,
-                    totalTasks: 25,
-                    linesCompleted: 12,
-                    boardName: "Sample board",
+                let sample = MomentPresentation.greenlogSample
+                RisoMomentOverlay(
+                    kind: sample.kind, replay: sample.replay, cells: sample.cells,
+                    boardName: "Sample board", linesCompleted: 12,
                     // Preview only — both buttons just close it (no real share).
                     onShare: { showGreenlogPreview = false },
-                    onDismiss: { showGreenlogPreview = false }
+                    onBack: { showGreenlogPreview = false },
+                    onNewBoard: { showGreenlogPreview = false }
                 )
                 .ignoresSafeArea()
                 .transition(.opacity)
@@ -415,6 +415,10 @@ struct MainTabView: View {
         }
         .onChange(of: selectedTab) { _, _ in
             _Concurrency.Task { await reconcileNotifications() }
+        }
+        // Greenlog moment → "Start a new board" opens the Create tab.
+        .onReceive(NotificationCenter.default.publisher(for: .momentStartNewBoard)) { _ in
+            selectedTab = 2
         }
         .onChange(of: notificationDelegate.pendingDeepLink) { _, _ in
             routePendingDeepLink()

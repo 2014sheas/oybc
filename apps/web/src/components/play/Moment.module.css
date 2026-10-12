@@ -1,0 +1,214 @@
+/* ============================================================
+   OYBC · Riso Web — Bingo + Greenlog moments (docs/BOARD_MOMENTS.md)
+   Full-screen opaque takeover: blue field (bingo) / green field
+   (greenlog), static cream board frame (see RisoBoard.module.css
+   `.momentFrame`). The fields are FIXED colours in both themes (the
+   handoff: cream on the dark-mode mint is ~2:1). Keyframes are local
+   copies of riso.css's risoGreenlogIn / risoConfettiFall (a CSS module
+   localizes animation names).
+   ============================================================ */
+
+.field {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  overflow-y: auto;
+  color: var(--riso-on-color);
+  animation: momentIn var(--riso-anim-greenlog-in);
+}
+.blue {
+  background: #2c44c9;
+}
+.green {
+  background: #1f9b6b;
+}
+@media (prefers-reduced-motion: reduce) {
+  .field {
+    animation: none;
+  }
+}
+
+.inner {
+  position: relative;
+  z-index: 2;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: 440px;
+  min-height: 100%;
+  margin: 0 auto;
+  padding: calc(max(env(safe-area-inset-top, 0px), 28px) + 20px) 24px max(44px, env(safe-area-inset-bottom, 0px));
+}
+
+.kicker {
+  font-family: var(--riso-font-head);
+  font-weight: 700;
+  font-size: 13px;
+  letter-spacing: 0.28em;
+  text-transform: uppercase;
+  color: var(--riso-gold);
+}
+
+.headRow {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 10px 0 22px;
+}
+.title {
+  font-family: var(--riso-font-head);
+  font-weight: 800;
+  font-size: clamp(56px, 20.9vw, 84px);
+  line-height: 0.82;
+  letter-spacing: -0.05em;
+}
+.counter {
+  text-align: right;
+  padding-bottom: 4px;
+}
+.counterV {
+  font-family: var(--riso-font-head);
+  font-weight: 800;
+  font-size: 30px;
+  line-height: 1;
+  color: var(--riso-gold);
+  font-variant-numeric: tabular-nums;
+}
+.counterV small {
+  font-size: 15px;
+  color: var(--riso-lavender);
+}
+.counterK {
+  font-family: var(--riso-font-head);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--riso-lavender);
+  margin-top: 3px;
+}
+
+.topRow {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px;
+}
+.topRow .kicker {
+  padding-bottom: 4px;
+}
+.counterGl {
+  font-family: var(--riso-font-head);
+  font-weight: 800;
+  font-size: 26px;
+  line-height: 1;
+  color: var(--riso-gold);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.counterGl small {
+  font-size: 14px;
+  color: rgba(251, 246, 234, 0.75);
+}
+.titleGl {
+  font-family: var(--riso-font-head);
+  font-weight: 800;
+  font-size: clamp(48px, 16.4vw, 66px);
+  line-height: 0.84;
+  letter-spacing: -0.045em;
+  margin: 10px 0 22px;
+}
+
+.streakRow {
+  display: flex;
+  margin-top: 22px;
+}
+.streak {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  background: var(--riso-gold);
+  color: var(--riso-ink-static);
+  border: 2px solid var(--riso-ink-static);
+  border-radius: var(--riso-r-card);
+  padding: 10px 16px;
+  box-shadow: 3px 3px 0 var(--riso-ink-static);
+}
+.streak b {
+  font-family: var(--riso-font-head);
+  font-weight: 800;
+  font-size: 24px;
+  line-height: 1;
+}
+.streak span {
+  font-family: var(--riso-font-head);
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  font-weight: 700;
+}
+
+.actions {
+  margin-top: auto;
+  padding-top: 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.textBack {
+  align-self: center;
+  margin-top: 4px;
+  padding: 8px 12px;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  font-family: var(--riso-font-head);
+  font-weight: 700;
+  font-size: 14px;
+  color: var(--riso-on-color);
+  opacity: 0.85;
+}
+.textBack:focus-visible {
+  outline: 3px solid var(--riso-on-color);
+  outline-offset: 2px;
+}
+
+.confetti {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 1;
+  overflow: hidden;
+}
+.confetti i {
+  position: absolute;
+  top: -24px;
+  display: block;
+  border: 1.5px solid var(--riso-ink-static);
+  animation: confettiFall var(--dur, 3s) linear var(--delay, 0s) infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .confetti {
+    display: none;
+  }
+}
+
+@keyframes momentIn {
+  from {
+    opacity: 0;
+    transform: scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes confettiFall {
+  to {
+    transform: translateY(1100px) rotate(540deg);
+    opacity: 0.9;
+  }
+}

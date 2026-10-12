@@ -11,7 +11,7 @@ import SnapshotTesting
 /// the leaf components directly — the DB-backed container needs interactive
 /// verification per CLAUDE.md conventions.
 ///
-/// Animation states (cell pop, toast drop-in, confetti fall) cannot be
+/// Animation states (cell pop, the moment replay, confetti fall) cannot be
 /// captured in static snapshots — those require interactive user verification.
 /// Static snapshots capture the *end states* of each animated transition.
 final class RisoPlayBoardSnapshotTests: XCTestCase {
@@ -193,38 +193,6 @@ final class RisoPlayBoardSnapshotTests: XCTestCase {
         )
     }
 
-    // MARK: - Bingo toast
-
-    func testBingoToastLight() {
-        let view = toastHost()
-        assertSnapshot(of: view, as: .image(layout: .fixed(width: 393, height: 120)), record: recordMode)
-    }
-
-    func testBingoToastDark() {
-        let view = toastHost()
-        assertSnapshot(
-            of: view,
-            as: .image(layout: .fixed(width: 393, height: 120), traits: .init(userInterfaceStyle: .dark)),
-            record: recordMode
-        )
-    }
-
-    // MARK: - GREENLOG overlay
-
-    func testGreenlogOverlayLight() {
-        let view = greenlogHost()
-        assertSnapshot(of: view, as: .image(layout: .fixed(width: 393, height: 852)), record: recordMode)
-    }
-
-    func testGreenlogOverlayDark() {
-        let view = greenlogHost()
-        assertSnapshot(
-            of: view,
-            as: .image(layout: .fixed(width: 393, height: 852), traits: .init(userInterfaceStyle: .dark)),
-            record: recordMode
-        )
-    }
-
     // MARK: - Composed 5×5 grid with mixed states (static fixture)
 
     func testComposedGridLight() {
@@ -272,31 +240,6 @@ final class RisoPlayBoardSnapshotTests: XCTestCase {
             )
             .padding(Riso.gutter)
         }
-    }
-
-    @ViewBuilder
-    private func toastHost() -> some View {
-        ZStack {
-            RisoPaperBackground()
-            RisoBingoToast(
-                subtitle: "Row 2 complete!",
-                bingoCount: 2,
-                boardSize: 5,
-                lineCells: [5, 6, 7, 8, 9] // row 2 (0-based row 1)
-            )
-                .padding(Riso.gutter)
-        }
-    }
-
-    @ViewBuilder
-    private func greenlogHost() -> some View {
-        RisoGreenlogOverlay(
-            completedTasks: 25,
-            totalTasks: 25,
-            linesCompleted: 12,
-            boardName: "Weekly Wellness",
-            streak: "7d"
-        )
     }
 
     /// 5×5 static grid with representative cell states: done (normal, counting,

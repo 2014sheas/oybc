@@ -142,30 +142,16 @@ extension BoardPlayViewModel {
             // path so the Undo pill surfaces the same feedback (only the
             // reactivated / lost-bingo rungs can fire). No-op when nothing was
             // reversed (`undoneAmount == 0`).
-            var newBingoMsg: String? = nil
-            if let result = result, result.undoneAmount > 0 {
-                let boardAfter: Board? = currentBoardId.flatMap { id in
-                    try? database.read { db in try Board.fetchOne(db, key: id) }
-                }
-                if let before = boardBefore, let after = boardAfter {
-                    let prevBingos = Set(before.completedLineIds ?? [])
-                    let nextBingos = Set(after.completedLineIds ?? [])
-                    let lost = prevBingos.subtracting(nextBingos).sorted()
-                    if before.status == .completed && after.status == .active {
-                        newBingoMsg = "Board reactivated — no longer complete"
-                    } else if !lost.isEmpty {
-                        newBingoMsg = "Bingo lost: \(lost.joined(separator: ", "))"
-                    }
-                }
-            }
+            let flash: BoardFlashOutcome = (result?.undoneAmount ?? 0) > 0
+                ? BoardFlashOutcome.resolve(
+                    before: boardBefore,
+                    after: currentBoardId.flatMap { id in try? database.read { db in try Board.fetchOne(db, key: id) } },
+                    allowGains: false)
+                : .none
 
             await MainActor.run {
                 self.reload { self.setProcessing(false) }
-                if let msg = newBingoMsg {
-                    self.bingoMessage = msg
-                    self.scheduleBingoMessageDismiss(msg)
-                    self.emitFlash(risoNotification: msg, creditToast: nil)
-                }
+                self.emitFlash(flash, creditToast: nil)
             }
         }
     }

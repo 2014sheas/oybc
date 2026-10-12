@@ -160,23 +160,17 @@ struct BoardPlayView: View {
     // `bingoMessage` is read/written through `viewModel.bingoMessage` directly.
     private var isProcessing: Bool { viewModel.isProcessing }
     // MARK: Riso visual layer state
-    /// Whether to show the GREENLOG full-bleed celebration overlay.
-    @State private var showGreenlogOverlay: Bool = false
-    /// Compact greenlog-streak value (e.g. "3d"/"2w") for the celebration overlay
-    /// + share poster. Non-nil only for core boards with a streak ≥ 1; nil hides
-    /// the STREAK card. Computed when the GREENLOG overlay is triggered.
+    /// The open moment and the trigger awaiting its reload — see `BoardPlayView+Moment.swift`.
+    @State var moment: MomentPresentation? = nil
+    @State var momentPending: MomentPending? = nil
+    /// Compact greenlog-streak value (e.g. "3d"/"2w") for the share poster +
+    /// title-row chip. Non-nil only for core boards with a streak ≥ 1.
     // internal for the +Header extension split
     @State var greenlogStreakValue: String? = nil
-    /// Whether to show the Share Board sheet (opened from the GREENLOG overlay).
-    @State private var showShareBoardSheet: Bool = false
-    /// Whether to show the bingo toast (drops from top).
-    @State private var showBingoToast: Bool = false
-    /// Subtitle for the current bingo toast (e.g. "Row 2 complete!").
-    @State private var bingoToastSubtitle: String = ""
-    /// Monotonic token so only the latest toast's auto-dismiss fires —
-    /// rapid bingos no longer spawn overlapping dismiss tasks that cut a
-    /// fresh toast short.
-    @State private var bingoToastGeneration: Int = 0
+    /// The numeric greenlog streak the moment's chip rule reads (> 1).
+    @State var greenlogStreakCount: Int = 0
+    /// Whether to show the Share Board sheet (opened from the moment overlay).
+    @State var showShareBoardSheet: Bool = false
     // MARK: P2/R3 — Shared-counter credited toast
     /// The showing credited toast's data (message + Undo target), or nil
     /// when no toast is up. R3: unified onto `CounterLogToastView` (amount-
@@ -491,27 +485,6 @@ struct BoardPlayView: View {
                 }
             }
 
-            // ── Bingo toast (drops from top) ──
-            if showBingoToast {
-                RisoBingoToast(
-                    subtitle: bingoToastSubtitle,
-                    bingoCount: board?.linesCompleted ?? 1,
-                    boardSize: gridSize,
-                    // All completed lines lit (the fresh one included) —
-                    // same derivation as the grid's gold-ring highlight.
-                    lineCells: highlightedSquareIndices
-                )
-                .padding(.horizontal, Riso.gutter)
-                .padding(.top, 54)
-                .transition(
-                    .asymmetric(
-                        insertion: .move(edge: .top).combined(with: .opacity),
-                        removal: .move(edge: .top).combined(with: .opacity)
-                    )
-                )
-                .zIndex(10)
-            }
-
             // ── P3: Shared-counter arrival banner (drops from top) ──
             if let banner = arrivalBanner {
                 RisoArrivalBanner(
@@ -565,27 +538,7 @@ struct BoardPlayView: View {
                 .zIndex(9)
             }
 
-            // ── GREENLOG overlay (full-bleed) ──
-            if showGreenlogOverlay, let b = board {
-                RisoGreenlogOverlay(
-                    completedTasks: b.completedTasks,
-                    totalTasks: b.totalTasks,
-                    linesCompleted: b.linesCompleted,
-                    boardName: b.name,
-                    streak: greenlogStreakValue,
-                    onShare: {
-                        showShareBoardSheet = true
-                    },
-                    onDismiss: {
-                        withAnimation(.easeOut(duration: 0.25)) {
-                            showGreenlogOverlay = false
-                        }
-                    }
-                )
-                .ignoresSafeArea()
-                .transition(.opacity)
-                .zIndex(20)
-            }
+            momentOverlayLayer // Bingo / Greenlog moment (full-bleed)
 
             // ── "Board saved" toast (drops from top after a successful edit save) ──
             if showEditSavedToast {
@@ -722,10 +675,9 @@ struct BoardPlayView: View {
             refreshGreenlogStreak()
         }
         .onDisappear {
-            // P3 — re-snapshot the last-seen baseline on leaving so local taps
-            // don't re-fire on the next open (belt-and-suspenders; the once-
-            // per-open detect + local-tap reloads already keep it current).
+            // P3 — re-snapshot the last-seen baseline on leaving (belt-and-suspenders).
             viewModel.snapshotArrivalsOnDisappear()
+            momentPending = nil // a trigger awaiting its reload dies with the view
         }
         // Defensive: also reload on boardId prop change. With `.id(boardId)`
         // on the standalone destination, SwiftUI re-creates the view (and the
@@ -742,8 +694,8 @@ struct BoardPlayView: View {
         // bingo/GREENLOG notification and a shared-counter credit toast.
         .onChange(of: viewModel.flashEvent) { _, event in
             guard let event else { return }
-            if let msg = event.risoNotification {
-                triggerRisoNotification(from: msg)
+            if let trigger = event.moment {
+                triggerMoment(trigger, applyCount: event.applyCount)
             }
             if let payload = event.creditToast {
                 triggerCreditToast(payload: payload)
@@ -825,8 +777,8 @@ struct BoardPlayView: View {
                 database: viewModel.database
             )
         }
-        // Share board sheet — presented from the GREENLOG overlay's "Share my board"
-        // button. The GREENLOG overlay stays visible beneath the sheet.
+        // Share board sheet — presented from the moment overlay's share button;
+        // the overlay stays visible beneath the sheet.
         .sheet(isPresented: $showShareBoardSheet) {
             if let b = board {
                 ShareBoardSheet(
@@ -937,51 +889,6 @@ struct BoardPlayView: View {
         .frame(maxWidth: .infinity)
     }
 
-    // MARK: - Riso Notification helpers
-
-    /// Called on the Main thread after every orchestration / shared-counter run.
-    /// Interprets the `bingoMessage` string set by the existing plumbing and
-    /// triggers the appropriate Riso visual:
-    ///   - "GREENLOG!" → full-bleed overlay (after ~520ms to let the cell pop land)
-    ///   - "Bingo! …" → drop-in toast (~2.8s then auto-dismiss)
-    ///   - other messages (reactivation, swap errors) → no Riso visual (bingoMessage
-    ///     remains set for potential legacy readers, but we don't toast these)
-    ///
-    /// Rapid bingos re-arm the toast: each one bumps `bingoToastGeneration`, and
-    /// only the latest generation's auto-dismiss fires, so a fresh toast isn't
-    /// cut short by an earlier one's timer.
-    private func triggerRisoNotification(from message: String) {
-        if message == "GREENLOG!" {
-            // Compute the greenlog streak for the overlay/poster (core boards
-            // only). Runs while the 0.52s reveal delay elapses.
-            refreshGreenlogStreak()
-            // Delay to let the 25th cell pop animation finish (~340ms + margin)
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.52) {
-                withAnimation(.easeIn(duration: 0.3)) {
-                    showGreenlogOverlay = true
-                }
-            }
-        } else if message.lowercased().contains("bingo") && !message.lowercased().contains("lost") {
-            // Extract a short subtitle from the message.
-            // Original format: "Bingo! (row_1, col_2)" → "Line complete!"
-            bingoToastSubtitle = "Line complete!"
-            bingoToastGeneration &+= 1
-            let generation = bingoToastGeneration
-            withAnimation(.spring(response: 0.5, dampingFraction: 0.7)) {
-                showBingoToast = true
-            }
-            // Auto-dismiss after ~2.8s — but only if no newer toast has been
-            // shown since (otherwise this stale timer would cut it short).
-            _Concurrency.Task.detached { @MainActor in
-                try? await _Concurrency.Task.sleep(nanoseconds: 2_800_000_000)
-                guard generation == bingoToastGeneration else { return }
-                withAnimation(.easeOut(duration: 0.25)) {
-                    showBingoToast = false
-                }
-            }
-        }
-    }
-
     // MARK: - P2/R3: Shared-counter credited toast helpers
 
     /// Fires the credited toast for a shared-counter ripple that reached
@@ -1059,9 +966,10 @@ struct BoardPlayView: View {
     /// Computes the greenlog streak for the current board (core boards only) and
     /// stores a compact label in `greenlogStreakValue` for the overlay + poster.
     /// Non-core boards → nil (the STREAK card hides). Reads boards off-main.
-    private func refreshGreenlogStreak() {
+    func refreshGreenlogStreak() {
         guard let b = board, b.isCore else {
             greenlogStreakValue = nil
+            greenlogStreakCount = 0
             return
         }
         let userId = b.userId
@@ -1075,7 +983,7 @@ struct BoardPlayView: View {
                 boards: boards, weekStartDay: weekStartDay, now: Date()
             )
             let value = count >= 1 ? compactStreakLabel(count, timeframe: timeframe) : nil
-            await MainActor.run { greenlogStreakValue = value }
+            await MainActor.run { greenlogStreakValue = value; greenlogStreakCount = count }
         }
     }
 

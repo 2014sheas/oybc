@@ -9,6 +9,11 @@ export interface RisoBoardGridProps {
   gap?: number;
   /** Extra class names for the frame (e.g. the play surface's sealed treatment). */
   className?: string;
+  /**
+   * `'moment'` draws the Bingo / Greenlog moment's frame: static cream paper
+   * with 11px padding in both themes (see `RisoBoard.module.css`).
+   */
+  frame?: 'default' | 'moment';
   /** Exactly `size × size` cells in row-major order. */
   children: React.ReactNode;
 }
@@ -21,11 +26,15 @@ export interface RisoBoardGridProps {
  */
 /** Frame padding (2 × 12) + border (2 × 2.5), in px. */
 const FRAME_CHROME_PX = 29;
+/** The moment frame's padding (2 × 11) + border (2 × 2.5), in px. */
+const MOMENT_FRAME_CHROME_PX = 27;
 
-export function RisoBoardGrid({ size, cellSize, gap = 8, className, children }: RisoBoardGridProps): React.ReactElement {
+export function RisoBoardGrid({ size, cellSize, gap = 8, className, frame = 'default', children }: RisoBoardGridProps): React.ReactElement {
+  const chrome = frame === 'moment' ? MOMENT_FRAME_CHROME_PX : FRAME_CHROME_PX;
+  const classes = [styles.board, frame === 'moment' ? styles.momentFrame : '', className ?? ''].filter(Boolean).join(' ');
   return (
     <div
-      className={className ? `${styles.board} ${className}` : styles.board}
+      className={classes}
       style={
         cellSize != null
           ? {
@@ -34,7 +43,7 @@ export function RisoBoardGrid({ size, cellSize, gap = 8, className, children }: 
               // viewport. `--cell-size` follows the actual cell edge (the
               // frame is a size container, so `cqw` is its content width).
               gridTemplateColumns: `repeat(${size}, minmax(0, ${cellSize}px))`,
-              width: `min(100%, ${size * cellSize + (size - 1) * gap + FRAME_CHROME_PX}px)`,
+              width: `min(100%, ${size * cellSize + (size - 1) * gap + chrome}px)`,
               containerType: 'inline-size',
               gap,
               ['--cell-size' as string]: `min(${cellSize}px, calc((100cqw - ${(size - 1) * gap}px) / ${size}))`,

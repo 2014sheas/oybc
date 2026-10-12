@@ -27,7 +27,7 @@
 /* ─── Flash messages ────────────────────────────────────────────────────────── */
 
 /* Transient flash — only the residual cases (lost bingo / reactivated / error);
-   new bingos + greenlog route to the toast/overlay. */
+   new bingos + greenlog route to the Bingo / Greenlog moment. */
 .flashMessage {
   position: fixed;
   top: 76px;
@@ -40,9 +40,6 @@
   font-size: 0.85rem;
   font-weight: 700;
   box-shadow: 4px 4px 0 var(--riso-shadow-ink);
-}
-
-.flashBingo {
   background: var(--riso-paper-2);
   color: var(--riso-ink);
 }

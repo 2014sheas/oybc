@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { nextTrappedFocusIndex } from '../useModalA11y';
+import { isModalOpen, nextTrappedFocusIndex } from '../useModalA11y';
 
 /**
  * `useModalA11y` — the one modal contract every web dialog shares (2026-09
@@ -139,5 +139,15 @@ describe('no dialog bypasses useModalA11y', () => {
 
   it('every role="dialog" / role="alertdialog" element spreads useModalA11y props', () => {
     expect(offenders).toEqual([]);
+  });
+});
+
+describe('isModalOpen', () => {
+  it('is true only while an aria-modal dialog is in the document', () => {
+    const asked: string[] = [];
+    const doc = (hit: boolean) => ({ querySelector: (sel: string) => { asked.push(sel); return hit ? {} : null; } }) as unknown as Document;
+    expect(isModalOpen(doc(true))).toBe(true);
+    expect(isModalOpen(doc(false))).toBe(false);
+    expect(asked[0]).toBe('[aria-modal="true"]');
   });
 });

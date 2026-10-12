@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { isModalOpen } from '../../hooks/useModalA11y';
 import { Navigate, useNavigate, useParams } from 'react-router-dom';
 import {
   AchievementTrigger,
@@ -162,20 +163,20 @@ export function CoreBoardWindowPage(): React.ReactElement {
   );
 
   // ←/→ keys + horizontal trackpad wheel step the window (spec 3b).
-  // Disabled while editing or while the picker is open; ignores keys
+  // Disabled while editing, while the picker or any modal dialog is open; ignores keys
   // typed into form fields.
   const wheelAccum = useRef(0);
   const wheelLock = useRef(false);
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent): void => {
-      if (childEditing || pickerOpen) return;
+      if (childEditing || pickerOpen || isModalOpen(document)) return;
       const target = e.target as HTMLElement | null;
       if (target && /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName)) return;
       if (e.key === 'ArrowLeft') go(-1);
       else if (e.key === 'ArrowRight') go(1);
     };
     const onWheel = (e: WheelEvent): void => {
-      if (childEditing || pickerOpen) return;
+      if (childEditing || pickerOpen || isModalOpen(document)) return;
       if (Math.abs(e.deltaX) <= Math.abs(e.deltaY)) return;
       if (wheelLock.current) return;
       wheelAccum.current += e.deltaX;

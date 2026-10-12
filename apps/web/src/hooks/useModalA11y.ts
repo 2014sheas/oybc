@@ -217,3 +217,12 @@ export function useModalA11y<T extends HTMLElement = HTMLDivElement>({
 
   return { ref, props: { 'aria-modal': true, tabIndex: -1, onKeyDown } };
 }
+
+/**
+ * Whether a modal dialog (anything marked `aria-modal="true"`) is open in
+ * `root`. Page-level keyboard / wheel handlers (the core-board pager) bail on
+ * it so a key meant for the dialog never steps the page behind it.
+ */
+export function isModalOpen(root: Pick<Document, 'querySelector'>): boolean {
+  return root.querySelector('[aria-modal="true"]') !== null;
+}

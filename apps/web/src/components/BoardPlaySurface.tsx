@@ -15,7 +15,6 @@ import {
   useBoardPlayData,
   useBoardPlay,
   useCounterArrivals,
-  type FlashVariant,
   type CreditedToast,
 } from '../hooks';
 import { resolveClosedBoardCounterDisplay, taskToSquareData, taskToSquareState } from '../db/adapters';
@@ -52,11 +51,10 @@ import { RisoIcon } from './riso';
 import { RisoBoardCell } from './board/RisoBoardCell';
 import { RisoBoardGrid } from './board/RisoBoardGrid';
 import { freeCellModel, taskCellLabel, toBoardCellModel } from './board/cellModel';
-import { RisoBingoToast } from './play/RisoBingoToast';
-import { RisoGreenlog } from './play/RisoGreenlog';
+import { useBoardMoment } from './play/useBoardMoment';
+import type { FlashOutcome } from './boardPlayFlash';
 import { CounterLogToast } from './counters/CounterLogToast';
 import { RisoArrivalBanner } from './play/RisoArrivalBanner';
-import { ShareBoardSheet } from './share/ShareBoardSheet';
 import { EndedBanner } from './boardPlay/EndedBanner';
 import { BoardStatusPill } from './boardPlay/BoardStatusPill';
 import { BoardLeftStatCard } from './boardPlay/BoardLeftStatCard';
@@ -69,10 +67,9 @@ import play from './play/Play.module.css';
 const FLASH_MS = 3000;
 
 /**
- * Core timeframes that carry a streak. Used to gate the share poster's
- * STREAK stat — CUSTOM / INDEFINITE boards have no streak. The label itself
- * is formatted by the shared `compactStreakLabel` so the suffix ("mo" for
- * monthly) matches the rest of the app (CoreBoardWindowBar, StreaksPage).
+ * Core timeframes that carry a streak (gates the rail's streak chip —
+ * CUSTOM / INDEFINITE boards have none). The label is formatted by the shared
+ * `compactStreakLabel` so the suffix matches the rest of the app.
  */
 const CORE_STREAK_TIMEFRAMES = new Set<string>(['daily', 'weekly', 'monthly', 'yearly']);
 
@@ -86,14 +83,10 @@ const STREAK_A11Y_WORDS: Record<string, string> = {
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-// `SquareDraftCell` + `FlashVariant` moved into `useBoardPlay` (B2-W3, issue
-// #270). `FlashVariant` is imported below for `showFlash`'s signature.
-
 interface FlashMessage {
+  // Transient messages only (lost bingo / reactivated / errors); the bingo and
+  // greenlog moments are routed to `useBoardMoment` in showFlash.
   text: string;
-  // The transient flash only ever holds 'bingo'-class messages (lost bingo /
-  // reactivated / errors); greenlog + new bingos are intercepted in showFlash.
-  variant: 'bingo';
 }
 
 export interface BoardPlaySurfaceProps {
@@ -171,12 +164,6 @@ export function BoardPlaySurface({
   // Board Edit redesign slice 4 (D12–D16) — "Ended, not closed" (pinned clock).
   const isEnded = isBoardEnded(board, nowPinned.getTime());
   const [flashMessage, setFlashMessage] = useState<FlashMessage | null>(null);
-  // Riso bingo toast (keyed to replay the drop) + greenlog overlay.
-  const [bingoToast, setBingoToast] = useState<{ key: number } | null>(null);
-  const [greenlogOpen, setGreenlogOpen] = useState(false);
-  // Share sheet: opens from the GREENLOG overlay's "Share my board" button.
-  const [shareSheetOpen, setShareSheetOpen] = useState(false);
-  const bingoTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [selectedSquareId, setSelectedSquareId] = useState<string | null>(null);
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   const [openedTaskInLibrary, setOpenedTaskInLibrary] = useState<string | null>(null);
@@ -276,7 +263,6 @@ export function BoardPlaySurface({
   useEffect(() => {
     return () => {
       if (flashTimerRef.current) clearTimeout(flashTimerRef.current);
-      if (bingoTimerRef.current) clearTimeout(bingoTimerRef.current);
       if (savedToastTimerRef.current) clearTimeout(savedToastTimerRef.current);
     };
   }, []);
@@ -287,6 +273,16 @@ export function BoardPlaySurface({
   // all come from useBoardPlayData above (isEnded/isSealed replaced its
   // isExpired, D12). The edit-mode draft comes from useBoardPlay below.
 
+  // Timeframe greenlog streak (rail chip + the moment's streak chip).
+  const greenlogStreak = gatedStreak(
+    prefsReady, board.timeframe, AchievementTrigger.GREENLOG,
+    allBoards, prefs.weekStartDay, nowPinned,
+  );
+  const { open: openMoment, node: momentNode } = useBoardMoment({
+    board, boardTasks, taskMap, compoundChildrenByCompound, allBoards, cellStateByBoardTaskId,
+    btByPosition, squareWindowContext, gridSize, greenlogStreak,
+  });
+
   // ── Flash message helper ───────────────────────────────────────────────
 
   // Wrapped in useCallback so the function reference is stable across
@@ -296,28 +292,20 @@ export function BoardPlaySurface({
   // (eslint-plugin-react-hooks v7.1+) is conservative about ref access
   // chains; useCallback makes the function's role explicit (event-time,
   // never during render) so the analyzer doesn't flag the call sites.
-  const showFlash = useCallback((text: string, variant: FlashVariant): void => {
-    // Route the completion signal to the Riso surfaces:
-    //  - greenlog → the full-screen overlay (persists until dismissed)
-    //  - a newly-formed bingo → the drop-in toast (auto-dismiss)
-    //  - everything else (lost bingo, reactivated, errors) → transient flash
-    if (variant === 'greenlog') {
-      setGreenlogOpen(true);
-      return;
-    }
-    if (variant === 'bingo' && text.startsWith('Bingo!')) {
-      if (bingoTimerRef.current) clearTimeout(bingoTimerRef.current);
-      setBingoToast({ key: Date.now() });
-      bingoTimerRef.current = setTimeout(() => setBingoToast(null), 2600);
+  const showFlash = useCallback((outcome: FlashOutcome): void => {
+    // bingo / greenlog → the full-screen moment; everything else (lost bingo,
+    // reactivated, errors) → the transient flash.
+    if (outcome.kind !== 'message') {
+      openMoment(outcome);
       return;
     }
     if (flashTimerRef.current) clearTimeout(flashTimerRef.current);
-    const msg = { text, variant };
+    const msg: FlashMessage = { text: outcome.text };
     setFlashMessage(msg);
     flashTimerRef.current = setTimeout(() => {
       setFlashMessage((current) => current === msg ? null : current);
     }, FLASH_MS);
-  }, []);
+  }, [openMoment]);
 
   // "Board saved" toast, shared by BoardEditPanel's Save and
   // BoardOptionsSection's Board-details Save (Board Edit redesign slice 2).
@@ -416,48 +404,10 @@ export function BoardPlaySurface({
 
   // ── Render ─────────────────────────────────────────────────────────────
 
-  // Compute streak once so both RisoGreenlog and ShareBoardSheet use the same value.
-  const greenlogStreak = gatedStreak(
-    prefsReady, board.timeframe, AchievementTrigger.GREENLOG,
-    allBoards, prefs.weekStartDay, nowPinned,
-  );
-
-  // Format as compact label for the share poster (e.g. "3d", "2w", "5mo").
-  // Only core boards (daily/weekly/monthly/yearly) have streaks; CUSTOM/INDEFINITE
-  // fall through to undefined so the poster's STREAK card is hidden.
-  const shareStreakLabel: string | undefined =
-    greenlogStreak > 0 && CORE_STREAK_TIMEFRAMES.has(board.timeframe)
-      ? compactStreakLabel(greenlogStreak, board.timeframe)
-      : undefined;
-
   return (
     <div className={play.play}>
-      {/* Greenlog overlay (page green, squares stay red) */}
-      {greenlogOpen && (
-        <RisoGreenlog
-          boardName={board.name}
-          boardSize={board.boardSize}
-          bingos={board.linesCompleted}
-          streak={greenlogStreak}
-          onShare={() => setShareSheetOpen(true)}
-          onNewBoard={() => navigate('/create')}
-          onClose={() => setGreenlogOpen(false)}
-        />
-      )}
-
-      {/* Share poster sheet — opens from the GREENLOG "Share my board" button */}
-      {shareSheetOpen && (
-        <ShareBoardSheet
-          boardName={board.name}
-          completedTasks={board.completedTasks}
-          totalTasks={board.totalTasks}
-          linesCompleted={board.linesCompleted}
-          streak={shareStreakLabel}
-          onDismiss={() => setShareSheetOpen(false)}
-        />
-      )}
-      {/* Bingo toast */}
-      {bingoToast && <RisoBingoToast key={bingoToast.key} count={board.linesCompleted} />}
+      {/* Bingo / Greenlog moment (+ its share sheet) */}
+      {momentNode}
 
       {/* Arrival banner — passive-completion (Shared Counters P3). Suppressed in
           edit mode (no shared-counter play while editing). */}
@@ -501,9 +451,9 @@ export function BoardPlaySurface({
       )}
 
       {/* Transient flash — lost bingo / reactivated / errors (bingo + greenlog
-          route to the toast/overlay above). */}
+          route to the moment above). */}
       {flashMessage && (
-        <div className={`${styles.flashMessage} ${styles.flashBingo}`} role="status" aria-live="polite">
+        <div className={styles.flashMessage} role="status" aria-live="polite">
           {flashMessage.text}
         </div>
       )}

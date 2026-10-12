@@ -55,6 +55,17 @@ struct RisoBoardPlayCell: View {
 
     var onTap: (() -> Void)? = nil
 
+    // Moment overlay (Bingo & Greenlog moments)
+    /// The square sits in a completed line AND the moment's replay has
+    /// flipped it: green fill, done chrome (check / halftone / shadow /
+    /// translate), NO gold ring. A FREE centre in a line goes green too, keeps
+    /// its gold star and gains the done shadow. The play grid never sets it.
+    var isLineGreen: Bool = false
+    /// External pop trigger: a change to a non-nil token plays the completion
+    /// pop without an `isCompleted` flip (the replay derives a cell's visual
+    /// from its beat, never from a view's mount). The play grid leaves it nil.
+    var popToken: Int? = nil
+
     // MARK: - Animation
 
     /// Animate the pop when the cell transitions from incomplete → complete.
@@ -70,11 +81,22 @@ struct RisoBoardPlayCell: View {
         }
         .aspectRatio(1, contentMode: .fit)
         .onChange(of: isCompleted) { old, new in
-            if !old && new {
+            // An externally-driven cell (`popToken` set) pops on its token only.
+            if !old && new && popToken == nil {
+                triggerCompletionPop()
+            }
+        }
+        .onChange(of: popToken) { old, new in
+            if new != nil && new != old {
                 triggerCompletionPop()
             }
         }
     }
+
+    /// Done chrome (halftone, shadow, translate, heavier keyline) — a done
+    /// task cell, or a green-flipped one. The FREE centre never takes the
+    /// halftone / translate; it gains only the shadow when green.
+    private var showsDoneChrome: Bool { isCompleted || isLineGreen }
 
     // MARK: - Cell rendering
 
@@ -86,7 +108,7 @@ struct RisoBoardPlayCell: View {
                 .fill(cellFill)
 
             // ── Halftone overprint on done cells ──
-            if isCompleted && !isCenter {
+            if showsDoneChrome && !isCenter {
                 RoundedRectangle(cornerRadius: Riso.cellRadius)
                     .fill(Color.clear)
                     .risoHalftone()
@@ -108,7 +130,7 @@ struct RisoBoardPlayCell: View {
         .background(
             // Hard ink shadow behind done cells (only on completed non-center cells)
             Group {
-                if isCompleted && !isCenter {
+                if showsDoneChrome && (!isCenter || isLineGreen) {
                     RoundedRectangle(cornerRadius: Riso.cellRadius)
                         .fill(Color.risoInk)
                         .offset(x: 2.5, y: 2.5)
@@ -118,7 +140,7 @@ struct RisoBoardPlayCell: View {
         // Bingo-line gold outer ring — drawn via .overlay so it renders outside the cell bounds
         .overlay(
             Group {
-                if isBingoLine {
+                if isBingoLine && !isLineGreen {
                     RoundedRectangle(cornerRadius: Riso.cellRadius)
                         .stroke(Color.risoGold, lineWidth: 3)
                         .padding(-3)
@@ -145,9 +167,9 @@ struct RisoBoardPlayCell: View {
     }
 
     private var cellZIndex: Double {
-        if isBingoLine { return 3 }
+        if isBingoLine && !isLineGreen { return 3 }
         if showsLockChip || showsDirtyChip { return 2 }
-        return isCompleted ? 1 : 0
+        return showsDoneChrome ? 1 : 0
     }
 
     private var buttonTraits: AccessibilityTraits {
@@ -254,12 +276,12 @@ struct RisoBoardPlayCell: View {
             Text(title)
                 .font(.risoBody(9, .bold))
                 .tracking(-0.09)
-                .lineLimit(isCompleted ? 2 : 3)
+                .lineLimit(showsDoneChrome ? 2 : 3)
                 .multilineTextAlignment(.center)
                 // Incomplete bingo-line cells fill gold — use non-inverting ink
                 // so the title stays readable in dark mode.
                 .foregroundStyle(
-                    isCompleted
+                    showsDoneChrome
                         ? Color.risoPaper
                         : (isBingoLine ? Color.risoInkStatic : Color.risoInk)
                 )
@@ -308,7 +330,7 @@ struct RisoBoardPlayCell: View {
             // bottom-trailing corner whenever a corner chip (lock / staged
             // edit) occupies the top-trailing slot, so the two never overlap
             // (parity with the web twin's RisoBoardCell).
-            if isCompleted {
+            if showsDoneChrome {
                 ZStack {
                     Circle()
                         .fill(Color.risoGold)
@@ -431,6 +453,7 @@ struct RisoBoardPlayCell: View {
         // cream in dark mode → gold-on-cream washout (the documented
         // adaptive-ink-fill trap; see RISO_UI_CHECKLIST.md). `taskCellContent`
         // dodges the same trap with `risoInkStatic`.
+        if isLineGreen { return Color.risoGreen }
         if isCenter { return Color.risoInkStatic }
         if !isCompleted {
             return isBingoLine ? Color.risoGold : Color.risoPaper2
@@ -445,12 +468,12 @@ struct RisoBoardPlayCell: View {
 
     private var keylineOverlay: some View {
         RoundedRectangle(cornerRadius: Riso.cellRadius)
-            .strokeBorder(Color.risoInk, lineWidth: isCompleted ? 2.0 : Riso.Keyline.dense)
+            .strokeBorder(Color.risoInk, lineWidth: showsDoneChrome ? 2.0 : Riso.Keyline.dense)
     }
 
     /// Translate done cells by −1pt to pair with the +2.5pt ink shadow.
     private var doneOffset: CGFloat {
-        isCompleted && !isCenter ? -1 : 0
+        showsDoneChrome && !isCenter ? -1 : 0
     }
 
     /// A lock or staged-edit chip sits on the top-trailing corner.
