@@ -31,29 +31,45 @@ export interface FlashOutcomeInput {
   newBingos: string[];
 }
 
+/**
+ * What a flash is. `bingo` / `greenlog` open the full-screen moment
+ * (`RisoMomentOverlay`); `message` is a transient line (lost bingo,
+ * reactivated, an error).
+ */
+export type FlashKind = 'bingo' | 'greenlog' | 'message';
+
 /** What to hand to `showFlash`, or `null` when none of the ladder's rungs match. */
 export interface FlashOutcome {
   text: string;
-  variant: 'bingo' | 'greenlog';
+  kind: FlashKind;
+  /** The line ids this write newly completed (empty for a `message`). */
+  newLineIds: string[];
+}
+
+/** A transient message outcome (errors and the like). */
+export function messageOutcome(text: string): FlashOutcome {
+  return { text, kind: 'message', newLineIds: [] };
 }
 
 /**
  * Reduce a normalized signal set down to the (single) flash message to show,
  * in priority order: reactivated > lostBingos > greenlog > newBingos.
- * Returns `null` when none apply (no flash for this write).
+ * Returns `null` when none apply (no flash for this write). A write that
+ * completes the board is a `greenlog` (it wins over any bingo it also formed);
+ * both kinds carry the lines the write newly completed.
  */
 export function deriveFlashOutcome(input: FlashOutcomeInput): FlashOutcome | null {
   if (input.boardReactivated) {
-    return { text: 'Board reactivated — no longer complete', variant: 'bingo' };
+    return messageOutcome('Board reactivated — no longer complete');
   }
   if (input.lostBingos.length > 0) {
-    return { text: `Bingo lost: ${input.lostBingos.join(', ')}`, variant: 'bingo' };
+    return messageOutcome(`Bingo lost: ${input.lostBingos.join(', ')}`);
   }
   if (input.isGreenlog) {
-    return { text: 'GREENLOG! Board complete!', variant: 'greenlog' };
+    return { text: 'GREENLOG! Board complete!', kind: 'greenlog', newLineIds: input.newBingos };
   }
   if (input.newBingos.length > 0) {
-    return { text: `Bingo! ${input.newBingos.join(', ')}`, variant: 'bingo' };
+    return { text: `Bingo! ${input.newBingos.join(', ')}`, kind: 'bingo', newLineIds: input.newBingos };
   }
   return null;
 }

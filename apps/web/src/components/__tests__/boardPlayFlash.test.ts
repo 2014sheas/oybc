@@ -26,28 +26,32 @@ describe('deriveFlashOutcome', () => {
   it('boardReactivated alone → reactivated message', () => {
     expect(deriveFlashOutcome({ ...base, boardReactivated: true })).toEqual({
       text: 'Board reactivated — no longer complete',
-      variant: 'bingo',
+      kind: 'message',
+      newLineIds: [],
     });
   });
 
   it('lostBingos alone → lost-bingo message listing the lines', () => {
     expect(deriveFlashOutcome({ ...base, lostBingos: ['row_0', 'col_1'] })).toEqual({
       text: 'Bingo lost: row_0, col_1',
-      variant: 'bingo',
+      kind: 'message',
+      newLineIds: [],
     });
   });
 
   it('isGreenlog alone → greenlog message', () => {
     expect(deriveFlashOutcome({ ...base, isGreenlog: true })).toEqual({
       text: 'GREENLOG! Board complete!',
-      variant: 'greenlog',
+      kind: 'greenlog',
+      newLineIds: [],
     });
   });
 
   it('newBingos alone → new-bingo message listing the lines', () => {
     expect(deriveFlashOutcome({ ...base, newBingos: ['diag_0'] })).toEqual({
       text: 'Bingo! diag_0',
-      variant: 'bingo',
+      kind: 'bingo',
+      newLineIds: ['diag_0'],
     });
   });
 
@@ -59,7 +63,7 @@ describe('deriveFlashOutcome', () => {
         isGreenlog: true,
         newBingos: ['col_1'],
       }),
-    ).toEqual({ text: 'Board reactivated — no longer complete', variant: 'bingo' });
+    ).toEqual({ text: 'Board reactivated — no longer complete', kind: 'message', newLineIds: [] });
   });
 
   it('lostBingos beats isGreenlog and newBingos', () => {
@@ -70,7 +74,7 @@ describe('deriveFlashOutcome', () => {
         isGreenlog: true,
         newBingos: ['col_1'],
       }),
-    ).toEqual({ text: 'Bingo lost: row_0', variant: 'bingo' });
+    ).toEqual({ text: 'Bingo lost: row_0', kind: 'message', newLineIds: [] });
   });
 
   it('isGreenlog beats newBingos', () => {
@@ -81,6 +85,6 @@ describe('deriveFlashOutcome', () => {
         isGreenlog: true,
         newBingos: ['col_1'],
       }),
-    ).toEqual({ text: 'GREENLOG! Board complete!', variant: 'greenlog' });
+    ).toEqual({ text: 'GREENLOG! Board complete!', kind: 'greenlog', newLineIds: ['col_1'] });
   });
 });

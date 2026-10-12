@@ -44,7 +44,7 @@ import { PoolEditorModal } from '../pools/PoolEditorModal';
 import { PoolPickerSheet } from '../pools/PoolPickerSheet';
 import { CoreDefaultsSheet } from '../boardSettings/CoreDefaultsSheet';
 import { ShareBoardSheet } from '../share/ShareBoardSheet';
-import { RisoGreenlog } from '../play/RisoGreenlog';
+import { RisoMomentOverlay } from '../play/RisoMomentOverlay';
 import { SignInModal } from '../signedOut/SignInModal';
 import { UpgradeModal } from '../signedOut/UpgradeModal';
 import { CoreWindowPickerPopover } from '../../pages/core-board-browser/CoreWindowPickerPopover';
@@ -303,16 +303,19 @@ const CASES: DialogCase[] = [
       }),
   },
   {
-    name: 'RisoGreenlog',
+    name: 'RisoMomentOverlay',
     element: () =>
-      React.createElement(RisoGreenlog, {
+      React.createElement(RisoMomentOverlay, {
+        kind: 'greenlog',
+        replay: { order: [], freeIdx: null, lineClosureBeat: {}, completedTasks: 0, totalTasks: 9, size: 3 },
+        cells: [],
         boardName: 'Week board',
-        boardSize: 3,
-        bingos: 8,
+        linesCompleted: 0,
         streak: 0,
+        timeframe: Timeframe.WEEKLY,
         onShare: noop,
+        onBack: noop,
         onNewBoard: noop,
-        onClose: noop,
       }),
   },
   {
