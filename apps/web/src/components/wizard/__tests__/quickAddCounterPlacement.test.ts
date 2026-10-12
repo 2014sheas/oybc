@@ -79,11 +79,13 @@ describe('WizardQuickAddRow match rows', () => {
     expect(render(library)).not.toContain('Matching library tasks');
   });
 
-  it('a root with a default: name · dense kind tag · "Weekly · 2 books" · plus, as ONE button row', () => {
+  it('a root with a default: name · dense kind tag · plus, as ONE button row — no goal text', () => {
     const h = render(library, { seedText: 'book' });
     const rows = h.split('<li ').slice(1);
     const r1 = rows.find((r) => r.includes('>Books<'))!;
-    expect(r1).toMatch(/<button[^>]*>.*>Books<.*Discrete.*Weekly · <span[^>]*>2 books<\/span>.*<\/button>/s);
+    expect(r1).toMatch(/<button[^>]*>.*>Books<.*Discrete.*<\/button>/s);
+    expect(r1).not.toContain('Weekly · ');
+    expect(r1).not.toContain('2 books');
     expect(r1).toContain('tagDense');
   });
 
@@ -109,7 +111,7 @@ describe('WizardQuickAddRow match rows', () => {
     expect(noBoard).not.toContain('role="group"');
     // A host without `onPendingCreated` (no deferred path) keeps the plain row for the no-default root too.
     const noPending = render(library, { seedText: 'book', onPendingCreated: undefined });
-    expect(noPending).toContain('Weekly · ');
+    expect(noPending).toContain('tagDense');
     expect(noPending).not.toContain('role="group"');
   });
 });
