@@ -110,7 +110,6 @@ struct ShareStoryPoster: View {
                     .foregroundStyle(lit ? Self.paper : Self.ink)
                     .multilineTextAlignment(.center)
                     .lineLimit(2)
-                    .minimumScaleFactor(0.8)
                     .padding(2)
             }
         }

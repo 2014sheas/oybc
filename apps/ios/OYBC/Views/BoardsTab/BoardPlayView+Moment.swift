@@ -51,8 +51,8 @@ extension BoardPlayView {
         }
     }
 
-    /// The share sheet for the open moment: its kind, the replay's end-state
-    /// cells (`momentPosterCells`) and the kind's own streak.
+    /// The share sheet for the open moment: its kind, the frozen replay's
+    /// numbers and end-state cells (`momentPosterCells`) and the kind's own streak.
     @ViewBuilder
     var shareSheetContent: some View {
         if let b = board, let m = moment {
@@ -61,8 +61,8 @@ extension BoardPlayView {
             }
             ShareBoardSheet(
                 content: BoardShareContent(
-                    kind: m.kind, boardName: b.name, completedTasks: b.completedTasks,
-                    totalTasks: b.totalTasks, linesCompleted: b.linesCompleted, boardSize: b.boardSize,
+                    kind: m.kind, boardName: b.name, completedTasks: m.replay.completedTasks,
+                    totalTasks: m.replay.totalTasks, linesCompleted: m.replay.lineClosureBeat.count, boardSize: b.boardSize,
                     streak: m.kind == .bingo ? bingoStreakCount : greenlogStreakCount,
                     timeframe: b.timeframe, isCore: b.isCore
                 ),
@@ -81,7 +81,7 @@ extension BoardPlayView {
     func triggerMoment(_ trigger: MomentTrigger, applyCount: Int) {
         guard let b = board else { return }
         // The streaks (core boards) compute while the gate waits.
-        refreshGreenlogStreak()
+        refreshStreaks()
         if let p = momentPending {
             momentPending?.trigger = MomentGate.coalesce(pending: p.trigger, arriving: trigger)
             return

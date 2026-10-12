@@ -51,6 +51,15 @@ final class BoardShareContentTests: XCTestCase {
         XCTAssertEqual(content(.greenlog, streak: 5, timeframe: .custom).stats.count, 1)
     }
 
+    func test_activityItemCarriesShareTitleAsSubject() throws {
+        let c = content(.bingo)
+        let item = PosterActivityItem(item: "poster", title: c.shareTitle)
+        let vc = UIActivityViewController(activityItems: [item], applicationActivities: nil)
+        XCTAssertEqual(item.activityViewController(vc, subjectForActivityType: nil), "October reset — BINGO")
+        XCTAssertEqual(item.activityViewControllerLinkMetadata(vc)?.title, "October reset — BINGO")
+        XCTAssertEqual(item.activityViewController(vc, itemForActivityType: nil) as? String, "poster")
+    }
+
     func test_showTaskNamesDefaultsOn() {
         XCTAssertTrue(BoardShareContent.showTaskNamesDefault)
     }

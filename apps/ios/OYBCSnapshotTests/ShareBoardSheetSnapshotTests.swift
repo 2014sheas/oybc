@@ -51,7 +51,7 @@ final class ShareBoardSheetSnapshotTests: XCTestCase {
             .filter { $0 != 12 }
         let r = replay(size: 5, done: Array(Set(done)).sorted(), lines: ["row_1": 5, "col_2": 9])
         let c = BoardShareContent(
-            kind: .bingo, boardName: "October reset", completedTasks: 13, totalTasks: 25, linesCompleted: 2,
+            kind: .bingo, boardName: "October reset", completedTasks: r.completedTasks, totalTasks: 25, linesCompleted: 2,
             boardSize: 5, streak: 2, timeframe: .weekly, isCore: true
         )
         return (c, cells(size: 5, replay: r, kind: .bingo))

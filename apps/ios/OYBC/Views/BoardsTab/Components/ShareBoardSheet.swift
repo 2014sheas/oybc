@@ -28,12 +28,23 @@ struct ShareBoardSheet: View {
     let cells: [PosterCell]
     let boardId: String
     var onDismiss: (() -> Void)? = nil
-    /// Initial value of the "Show task names" toggle (snapshot seam).
-    var initialShowTaskNames: Bool = BoardShareContent.showTaskNamesDefault
+
+    /// - Parameter initialShowTaskNames: Initial "Show task names" value (snapshot seam).
+    init(
+        content: BoardShareContent, cells: [PosterCell], boardId: String,
+        onDismiss: (() -> Void)? = nil,
+        initialShowTaskNames: Bool = BoardShareContent.showTaskNamesDefault
+    ) {
+        self.content = content
+        self.cells = cells
+        self.boardId = boardId
+        self.onDismiss = onDismiss
+        _showTaskNames = State(initialValue: initialShowTaskNames)
+    }
 
     // MARK: - State
 
-    @State private var showTaskNames: Bool = BoardShareContent.showTaskNamesDefault
+    @State private var showTaskNames: Bool
     @State private var linkCopied: Bool = false
     @State private var shareItem: ShareActivityItem? = nil
     /// Transient feedback for the "Save image" action (success or failure).
@@ -122,9 +133,6 @@ struct ShareBoardSheet: View {
                     .padding(.top, 56)
                     .transition(.move(edge: .top).combined(with: .opacity))
             }
-        }
-        .onAppear {
-            showTaskNames = initialShowTaskNames
         }
         .sheet(item: $shareItem) { item in
             ActivityViewController(activityItems: item.items)
@@ -305,13 +313,14 @@ struct ShareBoardSheet: View {
     private func presentShareSheet() {
         _Concurrency.Task { @MainActor in
             guard let image = renderPosterImage() else { return }
-            var items: [Any] = [image]
+            var poster: Any = image
             if let data = image.pngData() {
                 let url = FileManager.default.temporaryDirectory.appendingPathComponent(content.fileName)
-                if (try? data.write(to: url, options: .atomic)) != nil { items = [url] }
+                if (try? data.write(to: url, options: .atomic)) != nil { poster = url }
             }
-            items.append(content.shareText)
-            shareItem = ShareActivityItem(items: items)
+            shareItem = ShareActivityItem(items: [
+                PosterActivityItem(item: poster, title: content.shareTitle), content.shareText,
+            ])
         }
     }
 
