@@ -6,25 +6,25 @@
  * `Helpers/CounterPlacement.swift`; pinned by
  * `tests/fixtures/counterPlacementVectors.json`.
  *
- * Inert for a counter with no `timeframeGoals`: every helper then answers
- * exactly what placement did before (the root's own goal, no copy for a
- * hand-added root), so untouched counters place byte-for-byte as before.
+ * Inert for a counter with no `timeframeGoals` but a goal of its own: every
+ * helper then answers exactly what placement did before (the root's own goal,
+ * no copy for a hand-added root). A counter with no goal at all resolves the
+ * kind fallback (`COUNTER_FALLBACK_DAILY_GOAL`), so it always places with one.
  */
 
 import { TaskType, type Timeframe } from '../constants/enums';
 import {
-  COUNTER_GOAL_TIMEFRAMES,
   counterDisplayName,
-  derivedTimeframeGoals,
   effectiveTitleTemplates,
   COUNT_PLACEHOLDER,
   resolveCounterDefaultGoal,
-  type CounterGoalTimeframe,
+  windowDefaultGoal,
+  type CounterGoalWindowDates,
   type CounterSettingsFields,
 } from './counterSettings';
 
-/** The board fields placement reads. */
-export interface PlacementBoard {
+/** The board fields placement reads (the dates matter for CUSTOM only). */
+export interface PlacementBoard extends CounterGoalWindowDates {
   timeframe: Timeframe | string;
 }
 
@@ -43,28 +43,32 @@ function positive(v: number | null | undefined): number | null {
 }
 
 /**
- * The root's default for `timeframe` WITHOUT the root-goal fallback: the
- * stored default, else one D4 derives from the set defaults, else null (also
- * null for CUSTOM / INDEFINITE). This is what the member-rule auto-scaler
- * consults before its own pro-rating — {@link resolveCounterDefaultGoal}'s
- * root-goal fallback would stop it ever scaling.
+ * The root's default for a board window WITHOUT the root-goal fallback
+ * (`windowDefaultGoal`: stored → D4-derived → the kind fallback for a counter
+ * with no goal at all; INDEFINITE as yearly; CUSTOM scaled to its dates).
+ * This is what the member-rule auto-scaler consults before its own
+ * pro-rating — {@link resolveCounterDefaultGoal}'s root-goal fallback would
+ * stop it ever scaling.
  *
  * @param root - The counter root's fields.
  * @param timeframe - The board's timeframe.
+ * @param dates - The board's window (read for CUSTOM only).
  * @returns The timeframe default, or null.
  */
-export function counterTimeframeDefault(root: CounterSettingsFields, timeframe: Timeframe | string): number | null {
-  if (!(COUNTER_GOAL_TIMEFRAMES as readonly string[]).includes(timeframe)) return null;
-  const t = timeframe as CounterGoalTimeframe;
-  return positive(root.timeframeGoals?.[t]) ?? derivedTimeframeGoals(root)[t];
+export function counterTimeframeDefault(
+  root: CounterSettingsFields,
+  timeframe: Timeframe | string,
+  dates?: CounterGoalWindowDates | null
+): number | null {
+  return windowDefaultGoal(root, timeframe, dates);
 }
 
 /**
  * The goal a per-board copy of a counter carries when it is placed on
  * `board` (spec §2): an EXISTING copy at the deterministic id keeps its own
- * goal; else {@link resolveCounterDefaultGoal} (stored → derived → the
- * root's goal); else — a CUSTOM / INDEFINITE board, which never matches a
- * default — the root's own goal; else null (goal-less, nothing to copy).
+ * goal; else {@link resolveCounterDefaultGoal} (stored → derived / kind
+ * fallback → the root's goal); else null (a CUSTOM board whose dates don't
+ * parse, for a counter with no goal at all — nothing to copy).
  *
  * @param root - The counter root's fields.
  * @param board - The board receiving the placement.
@@ -78,7 +82,7 @@ export function placementGoalForCounter(
 ): number | null {
   return (
     positive(existingCopy?.maxCount) ??
-    resolveCounterDefaultGoal(root, board.timeframe) ??
+    resolveCounterDefaultGoal(root, board.timeframe, board) ??
     positive(root.maxCount)
   );
 }
@@ -107,7 +111,7 @@ export interface PlacementGoalSource {
 export function placementGoalSource(root: CounterSettingsFields, board: PlacementBoard): PlacementGoalSource | null {
   const goal = placementGoalForCounter(root, board);
   if (goal === null) return null;
-  return { goal, fromTimeframe: counterTimeframeDefault(root, board.timeframe) !== null };
+  return { goal, fromTimeframe: counterTimeframeDefault(root, board.timeframe, board) !== null };
 }
 
 /**
@@ -122,7 +126,7 @@ export function placementGoalSource(root: CounterSettingsFields, board: Placemen
  * @returns True when a copy must be minted.
  */
 export function placementNeedsCopy(root: CounterSettingsFields, board: PlacementBoard): boolean {
-  const dflt = counterTimeframeDefault(root, board.timeframe);
+  const dflt = counterTimeframeDefault(root, board.timeframe, board);
   return dflt !== null && dflt !== positive(root.maxCount);
 }
 

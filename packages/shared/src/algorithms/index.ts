@@ -9,6 +9,7 @@ export { generateCounterTaskTitle, isAutoCounterTitle, counterCopyTitle } from '
 export type { CounterTitleFields, CounterTitleSettings } from './taskTitle';
 export {
   COUNT_PLACEHOLDER,
+  COUNTER_FALLBACK_DAILY_GOAL,
   COUNTER_GOAL_TIMEFRAMES,
   COUNTER_SETTINGS_KEYS,
   changedCounterSettingsKeys,
@@ -23,9 +24,11 @@ export {
   resolveCounterDefaultGoal,
   storedCounterSettings,
   storedCounterSettingsFromDraft,
+  windowDefaultGoal,
 } from './counterSettings';
 export type {
   CounterGoalTimeframe,
+  CounterGoalWindowDates,
   CounterSettingsContext,
   CounterSettingsDefaults,
   CounterSettingsDraft,

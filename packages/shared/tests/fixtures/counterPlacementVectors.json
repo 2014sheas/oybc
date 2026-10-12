@@ -1,5 +1,5 @@
 {
-  "_note": "Cross-platform vectors for packages/shared/src/algorithms/counterPlacement.ts <-> apps/ios/OYBC/Helpers/CounterPlacement.swift (docs/SHARED_COUNTER_SETTINGS.md §2), plus the root-settings-aware counterCopyTitle in taskTitle.ts <-> TaskTitle.swift. Shared by packages/shared/tests/algorithms/counterPlacement.test.ts and apps/ios/OYBCTests/CounterPlacementVectorTests.swift (byte-identical copy in apps/ios/OYBCTests/Fixtures/). A counter with no timeframeGoals places exactly as before.",
+  "_note": "Cross-platform vectors for packages/shared/src/algorithms/counterPlacement.ts <-> apps/ios/OYBC/Helpers/CounterPlacement.swift (docs/SHARED_COUNTER_SETTINGS.md §2), plus the root-settings-aware counterCopyTitle in taskTitle.ts <-> TaskTitle.swift. Shared by packages/shared/tests/algorithms/counterPlacement.test.ts and apps/ios/OYBCTests/CounterPlacementVectorTests.swift (byte-identical copy in apps/ios/OYBCTests/Fixtures/). A counter with no timeframeGoals but a goal of its own places exactly as before; one with no goal at all resolves the kind fallback. A board's startDate/endDate (and a 'dates' key) matter for CUSTOM only.",
   "counterTimeframeDefault": [
     {
       "name": "the stored default",
@@ -32,7 +32,7 @@
       "expected": null
     },
     {
-      "name": "custom board: null",
+      "name": "custom board without dates: null",
       "root": {
         "maxCount": 12,
         "timeframeGoals": {
@@ -43,14 +43,14 @@
       "expected": null
     },
     {
-      "name": "indefinite board: null",
+      "name": "indefinite board: the yearly default",
       "root": {
         "timeframeGoals": {
           "weekly": 20
         }
       },
       "timeframe": "indefinite",
-      "expected": null
+      "expected": 1043
     },
     {
       "name": "a zero stored default is no default",
@@ -62,6 +62,35 @@
       },
       "timeframe": "weekly",
       "expected": null
+    },
+    {
+      "name": "goal-less root, nothing set: the fallback",
+      "root": {},
+      "timeframe": "weekly",
+      "expected": 7
+    },
+    {
+      "name": "a root with its own goal, nothing set: null (inert)",
+      "root": {
+        "maxCount": 12
+      },
+      "timeframe": "weekly",
+      "expected": null
+    },
+    {
+      "name": "custom board with dates: scaled to its length",
+      "root": {
+        "maxCount": 12,
+        "timeframeGoals": {
+          "weekly": 20
+        }
+      },
+      "timeframe": "custom",
+      "dates": {
+        "startDate": "2026-10-01",
+        "endDate": "2026-10-10"
+      },
+      "expected": 29
     }
   ],
   "placementGoalForCounter": [
@@ -143,7 +172,7 @@
       "expected": 12
     },
     {
-      "name": "custom board never matches a default: the root goal",
+      "name": "custom board without dates: the root goal",
       "root": {
         "maxCount": 12,
         "timeframeGoals": {
@@ -156,7 +185,7 @@
       "expected": 12
     },
     {
-      "name": "indefinite board: the root goal",
+      "name": "indefinite board: the yearly default",
       "root": {
         "maxCount": 12,
         "timeframeGoals": {
@@ -166,15 +195,15 @@
       "board": {
         "timeframe": "indefinite"
       },
-      "expected": 12
+      "expected": 157
     },
     {
-      "name": "goal-less root, no defaults: null",
+      "name": "goal-less root, no defaults: the kind fallback",
       "root": {},
       "board": {
         "timeframe": "weekly"
       },
-      "expected": null
+      "expected": 7
     },
     {
       "name": "goal-less root with a default",
@@ -189,7 +218,7 @@
       "expected": 4
     },
     {
-      "name": "goal-less root on a custom board: null",
+      "name": "goal-less root on a custom board without dates: null",
       "root": {
         "timeframeGoals": {
           "weekly": 4
@@ -243,6 +272,41 @@
         "timeframe": "weekly"
       },
       "expected": 6.5
+    },
+    {
+      "name": "custom board with dates: the default scaled to its length",
+      "root": {
+        "maxCount": 12,
+        "timeframeGoals": {
+          "weekly": 3
+        }
+      },
+      "board": {
+        "timeframe": "custom",
+        "startDate": "2026-10-01",
+        "endDate": "2026-10-10"
+      },
+      "expected": 5
+    },
+    {
+      "name": "goal-less root on a custom board: the fallback x days",
+      "root": {},
+      "board": {
+        "timeframe": "custom",
+        "startDate": "2026-10-01",
+        "endDate": "2026-10-10"
+      },
+      "expected": 10
+    },
+    {
+      "name": "goal-less duration root on a daily board: 30 min",
+      "root": {
+        "countKind": "duration"
+      },
+      "board": {
+        "timeframe": "daily"
+      },
+      "expected": 30
     }
   ],
   "placementNeedsCopy": [
@@ -308,7 +372,7 @@
       "expected": true
     },
     {
-      "name": "custom board: place the root",
+      "name": "custom board without dates: place the root",
       "root": {
         "maxCount": 12,
         "timeframeGoals": {
@@ -317,6 +381,39 @@
       },
       "board": {
         "timeframe": "custom"
+      },
+      "expected": false
+    },
+    {
+      "name": "goal-less root, nothing set: copy at the fallback",
+      "root": {},
+      "board": {
+        "timeframe": "monthly"
+      },
+      "expected": true
+    },
+    {
+      "name": "custom board with dates: copy at the scaled default",
+      "root": {
+        "maxCount": 12,
+        "timeframeGoals": {
+          "weekly": 3
+        }
+      },
+      "board": {
+        "timeframe": "custom",
+        "startDate": "2026-10-01",
+        "endDate": "2026-10-10"
+      },
+      "expected": true
+    },
+    {
+      "name": "a root with its own goal, nothing set: place the root",
+      "root": {
+        "maxCount": 12
+      },
+      "board": {
+        "timeframe": "weekly"
       },
       "expected": false
     }
@@ -1212,7 +1309,7 @@
       }
     },
     {
-      "name": "custom board with defaults: the root's own goal, no prefix",
+      "name": "custom board without dates: the root's own goal, no prefix",
       "root": {
         "maxCount": 12,
         "timeframeGoals": {
@@ -1228,15 +1325,18 @@
       }
     },
     {
-      "name": "goal-less root, no defaults: none (the row offers a Goal entry)",
+      "name": "goal-less root, no defaults: the kind fallback",
       "root": {},
       "board": {
         "timeframe": "weekly"
       },
-      "expected": null
+      "expected": {
+        "goal": 7,
+        "fromTimeframe": true
+      }
     },
     {
-      "name": "goal-less root with defaults on a custom board: none",
+      "name": "goal-less root with defaults on a custom board without dates: none",
       "root": {
         "timeframeGoals": {
           "weekly": 2
@@ -1246,6 +1346,24 @@
         "timeframe": "custom"
       },
       "expected": null
+    },
+    {
+      "name": "custom board with dates: the scaled default",
+      "root": {
+        "maxCount": 12,
+        "timeframeGoals": {
+          "weekly": 2
+        }
+      },
+      "board": {
+        "timeframe": "custom",
+        "startDate": "2026-10-01",
+        "endDate": "2026-10-10"
+      },
+      "expected": {
+        "goal": 3,
+        "fromTimeframe": true
+      }
     }
   ],
   "memberStepperMax": [

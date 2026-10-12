@@ -6,7 +6,7 @@ import { BoardStatus, TaskType } from '../constants/enums';
  * Filters the task library to the set that should appear in library-browse
  * surfaces (the Tasks tab list, the wizard "add from library" picker).
  *
- * Three independent classes of task are hidden:
+ * Two independent classes of task are hidden:
  *
  * 1. Wizard-orphans — a task is HIDDEN iff it is wizard-born
  * (`createdInWizard === true`) AND it has no placement on a live, non-draft
@@ -17,12 +17,7 @@ import { BoardStatus, TaskType } from '../constants/enums';
  * tasks (`createdInWizard` falsy) are never hidden, and a wizard-born task
  * with at least one active/completed placement is visible.
  *
- * 2. Goal-less counters (P5) — a COUNTING task with `isCounter === true` and
- * no `maxCount` cannot evaluate on a board; it lives in the Counters Hub,
- * not the library. See `isGoalLessCounter` for the exact predicate and why
- * it keys on the pair rather than bare absent-`maxCount`.
- *
- * 3. Shared-counter MEMBERS (owner ruling 2026-09-22) — a task whose
+ * 2. Shared-counter MEMBERS (owner ruling 2026-09-22) — a task whose
  * `sharedCounterId` points at a root that is PRESENT, live and COUNTING in
  * this same `tasks` set. That covers both the window-stamped derived counters
  * a board pull mints and the P5 linked members. The library shows ONE generic
@@ -84,7 +79,6 @@ export function computeBrowsableTasks(
     if (!t.isDeleted) liveById.set(t.id, t);
   }
   return tasks.filter((task) => {
-    if (isGoalLessCounter(task)) return false;
     if (task.forkedFromTaskId != null) return false;
     // One generic family row: a member is represented by its root — but only
     // when that root really exists, so a dangling link stays visible here
@@ -110,11 +104,13 @@ export function computeBrowsableTasks(
 
 /**
  * P5 — Hub-born counters. A goal-less counter (COUNTING + `isCounter` +
- * no `maxCount`) cannot evaluate on a board; it lives in the Counters Hub,
- * not the library. Keyed on the PAIR — never bare absent-`maxCount` — so a
+ * no `maxCount`) has no goal of its own. It is browsable (since 2026-10-12:
+ * placing it on a board mints a per-board copy at the window's default, the
+ * kind fallback when none is set — `windowDefaultGoal`), but it cannot be a
+ * compound sub-task as-is (it evaluates against no window). Keyed on the PAIR — never bare absent-`maxCount` — so a
  * row whose flag was stripped by an old client degrades to a visible
  * library row, never an unreachable task (docs/SHARED_COUNTERS.md §P5
- * decision 5). Also used by the PR-2 compound-child write guards.
+ * decision 5). Used by the compound-child write guards and pickers.
  */
 export function isGoalLessCounter(
   task: Pick<Task, 'type' | 'isCounter' | 'maxCount'>,

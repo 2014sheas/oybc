@@ -1,5 +1,5 @@
 {
-  "_note": "Cross-platform vectors for packages/shared/src/algorithms/counterSettings.ts <-> apps/ios/OYBC/Helpers/CounterSettings.swift (docs/SHARED_COUNTER_SETTINGS.md §1), plus the template-aware isAutoCounterTitle / counterCopyTitle in taskTitle.ts <-> TaskTitle.swift. Shared by packages/shared/tests/algorithms/counterSettings.test.ts and apps/ios/OYBCTests/CounterSettingsVectorTests.swift. A root's absent field is omitted (countKind absent = discrete). Rendering: goal == 1 -> singular template (absent -> the plural), else plural; '#N' -> the count (Duration 'Xh Ym', else the 2dp-trimmed number, locale-free); no stored template -> the legacy formula; goal-less -> the name. D4 derivation: nearest set timeframe (tie -> the shorter), scaled by nominal days 1/7/30/365, ceil to the kind's step.",
+  "_note": "Cross-platform vectors for packages/shared/src/algorithms/counterSettings.ts <-> apps/ios/OYBC/Helpers/CounterSettings.swift (docs/SHARED_COUNTER_SETTINGS.md §1), plus the template-aware isAutoCounterTitle / counterCopyTitle in taskTitle.ts <-> TaskTitle.swift. Shared by packages/shared/tests/algorithms/counterSettings.test.ts and apps/ios/OYBCTests/CounterSettingsVectorTests.swift. A root's absent field is omitted (countKind absent = discrete). Rendering: goal == 1 -> singular template (absent -> the plural), else plural; '#N' -> the count (Duration 'Xh Ym', else the 2dp-trimmed number, locale-free); no stored template -> the legacy formula; goal-less -> the name. D4 derivation: nearest set timeframe (tie -> the shorter), scaled by nominal days 1/7/30/365, ceil to the kind's step; nothing set and no goal of its own -> the kind fallback (1/day discrete + continuous, 30 min/day duration) scaled the same way. INDEFINITE resolves as yearly; CUSTOM scales the set default nearest in length (|log ratio|, tie -> shorter) or the fallback to its inclusive day count, null without parseable dates.",
   "defaultTitleTemplates": [
     { "name": "discrete: '{action} #N {unit}', singular = plural (D2)", "root": { "action": "Read", "unit": "books" }, "expected": { "singular": "Read #N books", "plural": "Read #N books" } },
     { "name": "trims action and unit", "root": { "action": "  Run ", "unit": "miles  " }, "expected": { "singular": "Run #N miles", "plural": "Run #N miles" } },
@@ -39,7 +39,10 @@
     { "name": "nothing derivable: the stored title", "root": { "title": " Mystery ", "action": "Do" }, "expected": "Mystery" }
   ],
   "derivedTimeframeGoals": [
-    { "name": "none set: nothing derived", "root": { "maxCount": 12 }, "expected": { "daily": null, "weekly": null, "monthly": null, "yearly": null } },
+    { "name": "none set, a goal of its own: nothing derived", "root": { "maxCount": 12 }, "expected": { "daily": null, "weekly": null, "monthly": null, "yearly": null } },
+    { "name": "none set, no goal at all: the discrete fallback (1/day)", "root": {}, "expected": { "daily": 1, "weekly": 7, "monthly": 30, "yearly": 365 } },
+    { "name": "none set, no goal at all: the duration fallback (30 min/day)", "root": { "countKind": "duration" }, "expected": { "daily": 30, "weekly": 210, "monthly": 900, "yearly": 10950 } },
+    { "name": "none set, no goal at all: the continuous fallback (1/day)", "root": { "countKind": "continuous" }, "expected": { "daily": 1, "weekly": 7, "monthly": 30, "yearly": 365 } },
     { "name": "one set (weekly 20, discrete): ceil by 1/7/30/365", "root": { "timeframeGoals": { "weekly": 20 } }, "expected": { "daily": 3, "weekly": null, "monthly": 86, "yearly": 1043 } },
     { "name": "continuous rounds up to tenths", "root": { "countKind": "continuous", "timeframeGoals": { "monthly": 26.2 } }, "expected": { "daily": 0.9, "weekly": 6.2, "monthly": null, "yearly": 318.8 } },
     { "name": "duration scales minutes", "root": { "countKind": "duration", "timeframeGoals": { "daily": 30 } }, "expected": { "daily": null, "weekly": 210, "monthly": 900, "yearly": 10950 } },
@@ -53,10 +56,17 @@
     { "name": "derived monthly", "root": { "timeframeGoals": { "weekly": 20 } }, "timeframe": "monthly", "expected": 86 },
     { "name": "derived yearly", "root": { "timeframeGoals": { "weekly": 20 } }, "timeframe": "yearly", "expected": 1043 },
     { "name": "none set: the root's goal", "root": { "maxCount": 12 }, "timeframe": "monthly", "expected": 12 },
-    { "name": "none set, goal-less: null", "root": {}, "timeframe": "weekly", "expected": null },
-    { "name": "CUSTOM never matches", "root": { "maxCount": 12, "timeframeGoals": { "weekly": 20 } }, "timeframe": "custom", "expected": null },
-    { "name": "INDEFINITE never matches", "root": { "maxCount": 12, "timeframeGoals": { "weekly": 20 } }, "timeframe": "indefinite", "expected": null },
-    { "name": "duration stored default (minutes)", "root": { "countKind": "duration", "timeframeGoals": { "daily": 45 } }, "timeframe": "daily", "expected": 45 }
+    { "name": "none set, goal-less: the kind fallback", "root": {}, "timeframe": "weekly", "expected": 7 },
+    { "name": "CUSTOM without parseable dates: the root's goal", "root": { "maxCount": 12, "timeframeGoals": { "weekly": 20 } }, "timeframe": "custom", "expected": 12 },
+    { "name": "INDEFINITE resolves as yearly (derived from weekly 20)", "root": { "maxCount": 12, "timeframeGoals": { "weekly": 20 } }, "timeframe": "indefinite", "expected": 1043 },
+    { "name": "duration stored default (minutes)", "root": { "countKind": "duration", "timeframeGoals": { "daily": 45 } }, "timeframe": "daily", "expected": 45 },
+    { "name": "CUSTOM 10 days scales the nearest set default (weekly 20)", "root": { "maxCount": 12, "timeframeGoals": { "weekly": 20 } }, "timeframe": "custom", "dates": { "startDate": "2026-10-01", "endDate": "2026-10-10" }, "expected": 29 },
+    { "name": "CUSTOM picks the default nearest in length (monthly over daily)", "root": { "timeframeGoals": { "daily": 2, "monthly": 50 } }, "timeframe": "custom", "dates": { "startDate": "2026-10-01", "endDate": "2026-10-10" }, "expected": 17 },
+    { "name": "CUSTOM goal-less: the fallback x days", "root": {}, "timeframe": "custom", "dates": { "startDate": "2026-10-01", "endDate": "2026-10-10" }, "expected": 10 },
+    { "name": "CUSTOM goal-less duration: 30 min x days", "root": { "countKind": "duration" }, "timeframe": "custom", "dates": { "startDate": "2026-10-01", "endDate": "2026-10-10" }, "expected": 300 },
+    { "name": "CUSTOM with no defaults keeps the root's goal", "root": { "maxCount": 12 }, "timeframe": "custom", "dates": { "startDate": "2026-10-01", "endDate": "2026-10-10" }, "expected": 12 },
+    { "name": "INDEFINITE goal-less: the yearly fallback", "root": {}, "timeframe": "indefinite", "expected": 365 },
+    { "name": "INDEFINITE with only a goal of its own: that goal", "root": { "maxCount": 12 }, "timeframe": "indefinite", "expected": 12 }
   ],
   "isAutoCounterTitle": [
     { "name": "equals the stored plural template's render: auto", "title": "Read 12 novels", "root": { "action": "Read", "unit": "books", "titleTemplatePlural": "Read #N novels" }, "goal": 12, "expected": true },
@@ -74,11 +84,12 @@
   ],
   "_draftNote": "The counter sheet's draft (the UI PR): counterSettingsDefaults(context, draft) is what each unset field shows dimmed; storedCounterSettingsFromDraft(context, draft) is what Save stores — a blank text field, or one equal to its dimmed default, = absent; a typed goal is stored AS TYPED (never normalised against what the other goals derive — that would move a derived cell the user saw); all goals clear = absent. An absent expected key = absent.",
   "counterSettingsDefaults": [
-    { "name": "nothing typed: name + default templates, no goals", "context": { "action": "Read", "unit": "books" }, "draft": { "name": "", "singular": "", "plural": "", "goals": {} }, "expected": { "name": "Read books", "singular": "Read #N books", "plural": "Read #N books", "goals": { "daily": null, "weekly": null, "monthly": null, "yearly": null } } },
-    { "name": "Do is dropped from the name", "context": { "action": "Do", "unit": "push-ups" }, "draft": { "name": "", "singular": "", "plural": "", "goals": {} }, "expected": { "name": "Push-ups", "singular": "Do #N push-ups", "plural": "Do #N push-ups", "goals": { "daily": null, "weekly": null, "monthly": null, "yearly": null } } },
-    { "name": "a typed plural is the singular's default (D2)", "context": { "action": "Read", "unit": "books" }, "draft": { "name": "", "singular": "", "plural": "Read #N novels", "goals": {} }, "expected": { "name": "Read books", "singular": "Read #N novels", "plural": "Read #N books", "goals": { "daily": null, "weekly": null, "monthly": null, "yearly": null } } },
+    { "name": "nothing typed: name + default templates, the fallback goals", "context": { "action": "Read", "unit": "books" }, "draft": { "name": "", "singular": "", "plural": "", "goals": {} }, "expected": { "name": "Read books", "singular": "Read #N books", "plural": "Read #N books", "goals": { "daily": 1, "weekly": 7, "monthly": 30, "yearly": 365 } } },
+    { "name": "Do is dropped from the name", "context": { "action": "Do", "unit": "push-ups" }, "draft": { "name": "", "singular": "", "plural": "", "goals": {} }, "expected": { "name": "Push-ups", "singular": "Do #N push-ups", "plural": "Do #N push-ups", "goals": { "daily": 1, "weekly": 7, "monthly": 30, "yearly": 365 } } },
+    { "name": "a typed plural is the singular's default (D2)", "context": { "action": "Read", "unit": "books" }, "draft": { "name": "", "singular": "", "plural": "Read #N novels", "goals": {} }, "expected": { "name": "Read books", "singular": "Read #N novels", "plural": "Read #N books", "goals": { "daily": 1, "weekly": 7, "monthly": 30, "yearly": 365 } } },
     { "name": "Duration template has no unit; a weekly goal derives the rest", "context": { "action": "Practice", "unit": "piano", "countKind": "duration" }, "draft": { "name": "", "singular": "", "plural": "", "goals": { "weekly": 300 } }, "expected": { "name": "Practice piano", "singular": "Practice #N", "plural": "Practice #N", "goals": { "daily": 43, "weekly": null, "monthly": 1286, "yearly": 15643 } } },
-    { "name": "Continuous derivation ceils to 0.1", "context": { "action": "Run", "unit": "miles", "countKind": "continuous" }, "draft": { "name": "", "singular": "", "plural": "", "goals": { "weekly": 10 } }, "expected": { "name": "Run miles", "singular": "Run #N miles", "plural": "Run #N miles", "goals": { "daily": 1.5, "weekly": null, "monthly": 42.9, "yearly": 521.5 } } }
+    { "name": "Continuous derivation ceils to 0.1", "context": { "action": "Run", "unit": "miles", "countKind": "continuous" }, "draft": { "name": "", "singular": "", "plural": "", "goals": { "weekly": 10 } }, "expected": { "name": "Run miles", "singular": "Run #N miles", "plural": "Run #N miles", "goals": { "daily": 1.5, "weekly": null, "monthly": 42.9, "yearly": 521.5 } } },
+    { "name": "a root with a goal of its own and nothing typed: no goals", "context": { "action": "Read", "unit": "books", "maxCount": 12 }, "draft": { "name": "", "singular": "", "plural": "", "goals": {} }, "expected": { "name": "Read books", "singular": "Read #N books", "plural": "Read #N books", "goals": { "daily": null, "weekly": null, "monthly": null, "yearly": null } } }
   ],
   "storedCounterSettingsFromDraft": [
     { "name": "nothing typed stores nothing", "context": { "action": "Read", "unit": "books" }, "draft": { "name": "", "singular": "", "plural": "", "goals": {} }, "expected": {} },
