@@ -24,7 +24,7 @@ export function slugify(name: string): string {
 
 /** `{slug}-bingo.png` / `{slug}-greenlog.png`. */
 export function shareFilename(boardName: string, kind: ShareKind): string {
-  return `${slugify(boardName)}-${kind}.png`;
+  return `${slugify(boardName) || 'board'}-${kind}.png`;
 }
 
 /** The native share sheet's title: "{board} — BINGO" / "{board} — GREENLOG". */

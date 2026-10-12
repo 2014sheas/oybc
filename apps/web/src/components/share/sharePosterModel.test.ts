@@ -16,6 +16,11 @@ describe('share sheet model', () => {
     expect(shareTitle('My Week', 'greenlog')).toBe('My Week — GREENLOG');
   });
 
+  it('an all-symbol board name falls back to "board" in the filename', () => {
+    expect(shareFilename('★★★', 'bingo')).toBe('board-bingo.png');
+    expect(shareFilename('!!!', 'greenlog')).toBe('board-greenlog.png');
+  });
+
   it('slugify trims and caps', () => {
     expect(slugify('  --Hi  There--  ')).toBe('hi-there');
     expect(slugify('x'.repeat(100))).toHaveLength(60);
