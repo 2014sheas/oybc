@@ -41,6 +41,17 @@ enum CounterPlacement {
         )
     }
 
+    /// ``counterTimeframeDefault(_:timeframe:startDate:endDate:kindFallback:)``
+    /// for a member-rule window.
+    static func counterTimeframeDefault(
+        _ root: CounterSettings.Fields, window: BoardSources.BoardWindow, kindFallback: Bool = true
+    ) -> CountValue? {
+        counterTimeframeDefault(
+            root, timeframe: window.timeframe, startDate: window.startDate, endDate: window.endDate,
+            kindFallback: kindFallback
+        )
+    }
+
     /// The goal a per-board copy carries when it is placed on a board of
     /// `timeframe`: an EXISTING copy keeps its own goal; else
     /// `resolveCounterDefaultGoal` (stored → derived / kind fallback → the
