@@ -169,6 +169,8 @@ struct BoardPlayView: View {
     @State var greenlogStreakValue: String? = nil
     /// The numeric greenlog streak the moment's chip rule reads (> 1).
     @State var greenlogStreakCount: Int = 0
+    /// The bingo streak for the share poster's STREAK card (bingo kind).
+    @State var bingoStreakCount: Int = 0
     /// Whether to show the Share Board sheet (opened from the moment overlay).
     @State var showShareBoardSheet: Bool = false
     // MARK: P2/R3 — Shared-counter credited toast
@@ -777,22 +779,9 @@ struct BoardPlayView: View {
                 database: viewModel.database
             )
         }
-        // Share board sheet — presented from the moment overlay's share button;
-        // the overlay stays visible beneath the sheet.
-        .sheet(isPresented: $showShareBoardSheet) {
-            if let b = board {
-                ShareBoardSheet(
-                    boardName: b.name,
-                    boardId: b.id,
-                    completedTasks: b.completedTasks,
-                    totalTasks: b.totalTasks,
-                    linesCompleted: b.linesCompleted,
-                    streak: greenlogStreakValue,
-                    onDismiss: { showShareBoardSheet = false }
-                )
-                .presentationDetents([.medium, .large])
-            }
-        }
+        // Share sheet — presented from the moment overlay's share button
+        // (the overlay stays beneath it); the kind is the open moment's.
+        .sheet(isPresented: $showShareBoardSheet) { shareSheetContent }
         // P3 — arrival banner tap → Counter Detail (single counter) / Counters
         // Hub (multiple). Presented as a sheet (wrapped in its own
         // NavigationStack for the hub → detail push) to match how this view
@@ -970,6 +959,7 @@ struct BoardPlayView: View {
         guard let b = board, b.isCore else {
             greenlogStreakValue = nil
             greenlogStreakCount = 0
+            bingoStreakCount = 0
             return
         }
         let userId = b.userId
@@ -982,8 +972,12 @@ struct BoardPlayView: View {
                 timeframe: timeframe, criterion: .greenlog,
                 boards: boards, weekStartDay: weekStartDay, now: Date()
             )
+            let bingo = computeStreak(
+                timeframe: timeframe, criterion: .bingo,
+                boards: boards, weekStartDay: weekStartDay, now: Date()
+            )
             let value = count >= 1 ? compactStreakLabel(count, timeframe: timeframe) : nil
-            await MainActor.run { greenlogStreakValue = value; greenlogStreakCount = count }
+            await MainActor.run { greenlogStreakValue = value; greenlogStreakCount = count; bingoStreakCount = bingo }
         }
     }
 

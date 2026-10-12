@@ -51,14 +51,37 @@ extension BoardPlayView {
         }
     }
 
+    /// The share sheet for the open moment: its kind, the replay's end-state
+    /// cells (`momentPosterCells`) and the kind's own streak.
+    @ViewBuilder
+    var shareSheetContent: some View {
+        if let b = board, let m = moment {
+            let inputs = m.cells.map {
+                PosterCellInput(idx: $0.idx, label: $0.title, type: $0.taskType, isFree: $0.slot == .free)
+            }
+            ShareBoardSheet(
+                content: BoardShareContent(
+                    kind: m.kind, boardName: b.name, completedTasks: b.completedTasks,
+                    totalTasks: b.totalTasks, linesCompleted: b.linesCompleted, boardSize: b.boardSize,
+                    streak: m.kind == .bingo ? bingoStreakCount : greenlogStreakCount,
+                    timeframe: b.timeframe, isCore: b.isCore
+                ),
+                cells: momentPosterCells(replay: m.replay, cells: inputs, kind: m.kind),
+                boardId: b.id,
+                onDismiss: { showShareBoardSheet = false }
+            )
+            .presentationDetents([.medium, .large])
+        }
+    }
+
     /// Queues the moment for a write's `MomentTrigger` (greenlog > bingo, set by
     /// the view model's outcome ladder — never inferred from message text).
     /// It opens once `MomentGate` says the post-write reload applied (or the
     /// timeout passes); triggers arriving meanwhile coalesce, greenlog winning.
     func triggerMoment(_ trigger: MomentTrigger, applyCount: Int) {
         guard let b = board else { return }
-        // The greenlog streak (core boards) computes while the gate waits.
-        if trigger.kind == .greenlog { refreshGreenlogStreak() }
+        // The streaks (core boards) compute while the gate waits.
+        refreshGreenlogStreak()
         if let p = momentPending {
             momentPending?.trigger = MomentGate.coalesce(pending: p.trigger, arriving: trigger)
             return

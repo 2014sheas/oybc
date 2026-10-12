@@ -147,7 +147,32 @@ final class BoardMomentVectorTests: XCTestCase {
         let expected: Expected
         let frames: [Frame]
     }
-    private struct Fixture: Decodable { let cases: [Case] }
+    private struct PosterCaseCell: Decodable {
+        let idx: Int
+        let label: String
+        let type: String
+        let isFree: Bool
+        let state: String?
+    }
+    private struct PosterReplay: Decodable {
+        let order: [Entry]
+        let freeIdx: Int?
+        let lineClosureBeat: [String: Int]
+        let completedTasks: Int
+        let totalTasks: Int
+        let size: Int
+    }
+    private struct PosterCase: Decodable {
+        let name: String
+        let kind: String
+        let replay: PosterReplay
+        let cells: [PosterCaseCell]
+        let expected: [PosterCaseCell]
+    }
+    private struct Fixture: Decodable {
+        let cases: [Case]
+        let posterCells: [PosterCase]
+    }
 
     private func load() throws -> Fixture {
         let url = try XCTUnwrap(Bundle(for: Self.self).url(forResource: "boardMomentVectors", withExtension: "json"))
@@ -225,6 +250,34 @@ final class BoardMomentVectorTests: XCTestCase {
                 XCTAssertEqual(green, f.green, "\(tag): green")
                 XCTAssertEqual(tokens, f.popTokens, "\(tag): popTokens")
             }
+        }
+    }
+
+    func test_posterCellsMatchVectors() throws {
+        let cases = try load().posterCells
+        XCTAssertGreaterThanOrEqual(cases.count, 4)
+        func type(_ s: String) -> CellTaskType {
+            switch s {
+            case "counting": return .counting
+            case "compound": return .compound
+            case "achievement": return .achievement
+            default: return .normal
+            }
+        }
+        for c in cases {
+            let r = BoardMomentReplay(
+                order: c.replay.order.map { MomentOrderEntry(boardTaskId: $0.boardTaskId, idx: $0.idx, completedAt: $0.completedAt) },
+                freeIdx: c.replay.freeIdx, lineClosureBeat: c.replay.lineClosureBeat,
+                completedTasks: c.replay.completedTasks, totalTasks: c.replay.totalTasks, size: c.replay.size
+            )
+            let kind: MomentTrigger.Kind = c.kind == "greenlog" ? .greenlog : .bingo
+            let inputs = c.cells.map { PosterCellInput(idx: $0.idx, label: $0.label, type: type($0.type), isFree: $0.isFree) }
+            let got = momentPosterCells(replay: r, cells: inputs, kind: kind)
+            XCTAssertEqual(got.map(\.idx), c.expected.map(\.idx), "\(c.name): idx")
+            XCTAssertEqual(got.map(\.label), c.expected.map(\.label), "\(c.name): label")
+            XCTAssertEqual(got.map(\.isFree), c.expected.map(\.isFree), "\(c.name): isFree")
+            XCTAssertEqual(got.map(\.type), c.expected.map { type($0.type) }, "\(c.name): type")
+            XCTAssertEqual(got.map(\.state.rawValue), c.expected.map { $0.state ?? "" }, "\(c.name): state")
         }
     }
 }

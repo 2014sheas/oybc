@@ -4,43 +4,36 @@ import Photos
 
 // MARK: - ShareBoardSheet
 
-/// Bottom sheet opened from the GREENLOG overlay's "Share my board" button.
+/// Bottom sheet opened from the Bingo / Greenlog moment overlay's share button
+/// (handoff 5c / 5d). `kind` picks the poster fill, badge, title, filename and
+/// share text (`BoardShareContent`).
 ///
-/// Presents a shareable poster card (blue card, halftone overprint, 2px keyline,
-/// 4px hard shadow) that can be rendered to an image for export. An "Include stats"
-/// toggle shows/hides the Squares/Bingos/Streak stat trio on the card.
-///
-/// Target row wires to `UIActivityViewController` (Messages, Stories, More) and a
-/// dedicated "Save image" button that renders the poster to the Photos library via
-/// `ImageRenderer`.
+/// The poster is the raster target: a 9:16 `ShareStoryPoster` (236 x 420 pt,
+/// static colours) showing the board's real end-state cells from
+/// `momentPosterCells`, with a "Show task names" toggle (default on) and an
+/// always-on stats row. Documented divergence from web: a "Copy link" row and
+/// four icon targets (Messages / Stories / Save image / More) instead of web's
+/// Share + Save image buttons.
 ///
 /// - Parameters:
-///   - board: The board whose completion is being shared.
-///   - completedTasks: Number of squares completed.
-///   - totalTasks: Total squares on the board.
-///   - linesCompleted: Number of bingo lines scored.
-///   - streak: Compact greenlog-streak label (e.g. "3d"/"2w"); nil hides the
-///     STREAK stat card (non-core boards have no streak).
+///   - content: The moment kind plus the board's numbers and streak.
+///   - cells: The poster's cells in their end state (`momentPosterCells`).
+///   - boardId: Used for the copy-link slug.
 ///   - onDismiss: Called when the user taps Done or dismisses the sheet.
 struct ShareBoardSheet: View {
 
     // MARK: - Props
 
-    let boardName: String
+    let content: BoardShareContent
+    let cells: [PosterCell]
     let boardId: String
-    let completedTasks: Int
-    let totalTasks: Int
-    let linesCompleted: Int
-    var streak: String? = nil
     var onDismiss: (() -> Void)? = nil
-    /// Initial value of the "Include stats on the card" toggle.
-    /// Exposed so snapshot tests can snapshot both toggle states without
-    /// needing to interact with the view.
-    var initialIncludeStats: Bool = true
+    /// Initial value of the "Show task names" toggle (snapshot seam).
+    var initialShowTaskNames: Bool = BoardShareContent.showTaskNamesDefault
 
     // MARK: - State
 
-    @State private var includeStats: Bool = true
+    @State private var showTaskNames: Bool = BoardShareContent.showTaskNamesDefault
     @State private var linkCopied: Bool = false
     @State private var shareItem: ShareActivityItem? = nil
     /// Transient feedback for the "Save image" action (success or failure).
@@ -58,7 +51,7 @@ struct ShareBoardSheet: View {
 
             // Sheet header
             HStack {
-                Text("Share board")
+                Text(content.sheetTitle)
                     .font(.risoHead(17, .extraBold))
                     .foregroundStyle(Color.risoInk)
                 Spacer()
@@ -94,13 +87,13 @@ struct ShareBoardSheet: View {
                 VStack(alignment: .leading, spacing: 0) {
 
                     // ── Poster card ──
-                    posterCardElevated
+                    posterElevated
                         .frame(maxWidth: .infinity)
                         .padding(.horizontal, 16)
                         .padding(.top, 16)
 
-                    // ── Include stats toggle ──
-                    includeStatsRow
+                    // ── Show task names toggle ──
+                    showNamesRow
                         .padding(.horizontal, 16)
                         .padding(.top, 14)
 
@@ -131,207 +124,46 @@ struct ShareBoardSheet: View {
             }
         }
         .onAppear {
-            includeStats = initialIncludeStats
+            showTaskNames = initialShowTaskNames
         }
         .sheet(item: $shareItem) { item in
             ActivityViewController(activityItems: item.items)
         }
     }
 
-    // MARK: - Poster card
+    // MARK: - Poster
 
-    /// The shareable poster card — the exact view that `ImageRenderer` rasterizes.
-    ///
-    /// Blue card + halftone overprint, 2px keyline + 4px hard shadow.
-    /// Rendered at a fixed 280pt wide so `ImageRenderer` output is deterministic.
-    ///
-    /// - Parameter showStats: Whether to include the stat trio (Squares/Bingos/Streak).
-    ///   Defaults to the current `includeStats` toggle state when called from `body`;
-    ///   snapshot tests pass an explicit value to pin the variant without toggling state.
-    func posterCard(showStats: Bool) -> some View {
-        VStack(alignment: .center, spacing: 13) {
-
-            // Top row: GREENLOG badge + OYBC wordmark
-            HStack {
-                // Green GREENLOG pill badge
-                Text("GREENLOG")
-                    .font(.risoHead(11, .extraBold))
-                    .tracking(0.88)
-                    .foregroundStyle(Color.risoInkStatic) // static: matches web SharePoster + the light-forced export
-                    .padding(.vertical, 3)
-                    .padding(.horizontal, 10)
-                    .background(Capsule().fill(Color.risoGreen))
-                    .overlay(Capsule().strokeBorder(Color.risoInk, lineWidth: Riso.Keyline.container))
-
-                Spacer()
-
-                // OYBC wordmark
-                Text("OYBC")
-                    .font(.risoHead(16, .extraBold))
-                    .tracking(-0.16)
-                    .foregroundStyle(Color.risoPaper)
-            }
-
-            // Board name
-            Text(boardName)
-                .font(.risoHead(22, .extraBold))
-                .tracking(-0.33)
-                .foregroundStyle(Color.risoPaper)
-                .multilineTextAlignment(.center)
-                .lineLimit(2)
-
-            // Full 5×5 mini-grid (poster variant)
-            posterMiniGrid
-                .frame(width: 200, height: 200)
-
-            // Optional stat trio (STREAK card only for core boards with a streak)
-            if showStats {
-                HStack(spacing: 8) {
-                    posterStatCard(value: "\(completedTasks)/\(totalTasks)", label: "SQUARES")
-                    posterStatCard(value: "\(linesCompleted)", label: "BINGOS")
-                    if let streak {
-                        posterStatCard(value: streak, label: "STREAK")
-                    }
-                }
-            }
-
-            // Footer caps
-            Text("OWN YOUR BINGO CARD")
-                .font(.risoHead(10, .bold))
-                .tracking(1.4)
-                .textCase(.uppercase)
-                .foregroundStyle(Color.risoPaper.opacity(0.7))
-        }
-        .padding(16)
-        .frame(maxWidth: .infinity)
-        .background(Color.risoBlue)
-        // Halftone overprint
-        .risoHalftone(tile: 9, layerOpacity: 0.45)
-        .clipShape(RoundedRectangle(cornerRadius: Riso.cardRadius))
+    /// The raster target — the exact view `ImageRenderer` rasterizes.
+    private var poster: ShareStoryPoster {
+        ShareStoryPoster(content: content, cells: cells, showTaskNames: showTaskNames)
     }
 
-    @ViewBuilder
-    private var posterCardElevated: some View {
-        posterCard(showStats: includeStats)
+    /// The preview in the sheet: the poster with its keyline + hard shadow
+    /// (preview chrome only — never part of the export).
+    private var posterElevated: some View {
+        poster
             .overlay(
-                RoundedRectangle(cornerRadius: Riso.cardRadius)
+                RoundedRectangle(cornerRadius: 8)
                     .strokeBorder(Color.risoInk, lineWidth: Riso.Keyline.container)
             )
             .background(
-                RoundedRectangle(cornerRadius: Riso.cardRadius)
+                RoundedRectangle(cornerRadius: 8)
                     .fill(Color.risoInk)
                     .offset(x: Riso.Shadow.card, y: Riso.Shadow.card)
             )
     }
 
-    // MARK: - Poster mini-grid
-
-    /// 5×5 grid for the poster — all 25 cells shown as done (red + halftone),
-    /// center cell is gold (FREE). Uses the board id for a deterministic scatter;
-    /// falls back to showing all 25 done since this is a GREENLOG moment.
-    @ViewBuilder
-    private var posterMiniGrid: some View {
-        let cols = 5
-        let rows = 5
-        let gap: CGFloat = 4
-        let cellSize = (200 - gap * CGFloat(cols - 1)) / CGFloat(cols)
-
-        VStack(spacing: gap) {
-            ForEach(0..<rows, id: \.self) { row in
-                HStack(spacing: gap) {
-                    ForEach(0..<cols, id: \.self) { col in
-                        let idx = row * cols + col
-                        let isCenter = (idx == 12)
-                        RoundedRectangle(cornerRadius: 3)
-                            .fill(isCenter ? Color.risoGold : Color.risoRed)
-                            .overlay(
-                                // Halftone on done cells only (not FREE)
-                                Group {
-                                    if !isCenter {
-                                        Canvas { ctx, size in
-                                            let r: CGFloat = 1.5
-                                            let step: CGFloat = 6
-                                            let paint = GraphicsContext.Shading.color(Color.risoInk.opacity(0.34))
-                                            var y: CGFloat = 0
-                                            while y < size.height {
-                                                var x: CGFloat = 0
-                                                while x < size.width {
-                                                    ctx.fill(
-                                                        Path(ellipseIn: CGRect(x: x, y: y, width: r, height: r)),
-                                                        with: paint
-                                                    )
-                                                    x += step
-                                                }
-                                                y += step
-                                            }
-                                        }
-                                        .blendMode(.multiply)
-                                    }
-                                }
-                            )
-                            .overlay(
-                                // Gold star in FREE center cell
-                                Group {
-                                    if isCenter {
-                                        StarShape()
-                                            .fill(Color.risoInkStatic)
-                                            .padding(4)
-                                    }
-                                }
-                            )
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 3)
-                                    .strokeBorder(
-                                        isCenter ? Color.risoInk : Color.risoInk,
-                                        lineWidth: 1.5
-                                    )
-                            )
-                            .frame(width: cellSize, height: cellSize)
-                    }
-                }
-            }
-        }
-    }
-
-    // MARK: - Poster stat card
+    // MARK: - Show task names toggle row
 
     @ViewBuilder
-    private func posterStatCard(value: String, label: String) -> some View {
-        VStack(spacing: 4) {
-            Text(value)
-                .font(.risoHead(18, .extraBold))
-                .foregroundStyle(Color.risoInk)
-                .monospacedDigit()
-                .lineLimit(1)
-                .minimumScaleFactor(0.7)
-            Text(label)
-                .font(.risoBody(8.5, .bold))
-                .tracking(1.0)
-                .textCase(.uppercase)
-                .foregroundStyle(Color.risoMuted)
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 8)
-        .padding(.horizontal, 4)
-        .background(Color.risoPaper)
-        .clipShape(RoundedRectangle(cornerRadius: 10))
-        .overlay(
-            RoundedRectangle(cornerRadius: 10)
-                .strokeBorder(Color.risoInk, lineWidth: Riso.Keyline.container)
-        )
-    }
-
-    // MARK: - Include stats toggle row
-
-    @ViewBuilder
-    private var includeStatsRow: some View {
+    private var showNamesRow: some View {
         Button {
-            includeStats.toggle()
+            showTaskNames.toggle()
         } label: {
             HStack(spacing: 10) {
                 // Ink pill switch
-                RisoInkSwitch(isOn: includeStats)
-                Text("Include stats on the card")
+                RisoInkSwitch(isOn: showTaskNames)
+                Text("Show task names")
                     .font(.risoHead(13.5, .bold))
                     .foregroundStyle(Color.risoInk)
                 Spacer()
@@ -339,6 +171,8 @@ struct ShareBoardSheet: View {
             .contentShape(Rectangle()) // whole row (incl. the Spacer) is the tap target
         }
         .buttonStyle(.plain)
+        .accessibilityAddTraits(.isToggle)
+        .accessibilityValue(showTaskNames ? "On" : "Off")
     }
 
     // MARK: - Copy link row
@@ -455,25 +289,29 @@ struct ShareBoardSheet: View {
         String(boardId.prefix(8)).lowercased()
     }
 
-    /// Renders the poster card to a `UIImage` via `ImageRenderer`.
+    /// Renders the poster to a `UIImage` via `ImageRenderer` at 2x
+    /// (472 x 840 px), forced to the light palette.
     ///
     /// - Returns: A rasterized PNG-ready `UIImage`, or `nil` if rendering fails.
     @MainActor
     private func renderPosterImage() -> UIImage? {
-        let renderer = ImageRenderer(
-            content: posterCard(showStats: includeStats)
-                .frame(width: 280)
-                .environment(\.colorScheme, .light)
-        )
-        renderer.scale = UIScreen.main.scale
+        let renderer = ImageRenderer(content: poster.environment(\.colorScheme, .light))
+        renderer.scale = 2
         return renderer.uiImage
     }
 
-    /// Presents `UIActivityViewController` with the rendered poster image.
+    /// Presents `UIActivityViewController` with the poster PNG (named
+    /// `{slug}-{kind}.png`) and the kind's share text.
     private func presentShareSheet() {
         _Concurrency.Task { @MainActor in
             guard let image = renderPosterImage() else { return }
-            shareItem = ShareActivityItem(items: [image])
+            var items: [Any] = [image]
+            if let data = image.pngData() {
+                let url = FileManager.default.temporaryDirectory.appendingPathComponent(content.fileName)
+                if (try? data.write(to: url, options: .atomic)) != nil { items = [url] }
+            }
+            items.append(content.shareText)
+            shareItem = ShareActivityItem(items: items)
         }
     }
 
@@ -615,33 +453,22 @@ private struct ShareActivityItem: Identifiable {
 
 // MARK: - Preview
 
-#Preview("Share board sheet — light") {
+#Preview("Share bingo sheet") {
+    let replay = BoardMomentReplay(order: [], freeIdx: nil, lineClosureBeat: [:], completedTasks: 0, totalTasks: 9, size: 3)
     Color.risoBlue.ignoresSafeArea()
         .sheet(isPresented: .constant(true)) {
             ShareBoardSheet(
-                boardName: "Weekly Wellness",
-                boardId: "board-abc-123-def",
-                completedTasks: 25,
-                totalTasks: 25,
-                linesCompleted: 5,
-                streak: "7d"
+                content: BoardShareContent(
+                    kind: .bingo, boardName: "Weekly Wellness", completedTasks: 0, totalTasks: 9,
+                    linesCompleted: 1, boardSize: 3
+                ),
+                cells: momentPosterCells(
+                    replay: replay,
+                    cells: (0..<9).map { PosterCellInput(idx: $0, label: "Task \($0)", type: .normal, isFree: false) },
+                    kind: .bingo
+                ),
+                boardId: "board-abc-123-def"
             )
             .presentationDetents([.medium, .large])
         }
-}
-
-#Preview("Share board sheet — dark") {
-    Color.risoBlue.ignoresSafeArea()
-        .sheet(isPresented: .constant(true)) {
-            ShareBoardSheet(
-                boardName: "Weekly Wellness",
-                boardId: "board-abc-123-def",
-                completedTasks: 25,
-                totalTasks: 25,
-                linesCompleted: 5,
-                streak: "7d"
-            )
-            .presentationDetents([.medium, .large])
-        }
-        .environment(\.colorScheme, .dark)
 }
