@@ -102,6 +102,9 @@ struct RisoCompoundFieldsView: View {
 
     /// Controls visibility of the smart-autocomplete dropdown below the sub input.
     @State private var subAutocompleteVisible: Bool = false
+    /// Set while a picked hub counter prefills the sub input, so that
+    /// write doesn't reopen the dropdown.
+    @State private var prefillingFromCounter = false
 
     // Counter-link state for the new-counting-sub fields (R1 counters
     // refresh — auto-link default ON). Same `CounterLinkState` as
@@ -263,14 +266,20 @@ struct RisoCompoundFieldsView: View {
         presetCountsTowardCounterId != nil && onPendingCreated == nil
     }
 
-    /// Autocomplete matches — up to 3 non-compound library tasks whose title
-    /// contains the current `subInputText` (case-insensitive), excluding tasks
-    /// already added as subs.
+    /// Autocomplete matches — up to 3 non-compound library tasks matching the
+    /// current `subInputText` (title / counter name), excluding tasks already
+    /// added as subs. Goal-less hub counters (hidden from the browsable
+    /// `taskLibrary`) come back from `suggestionPool` so typing a counter's
+    /// name finds it; picking one starts a linked Counting sub
+    /// (`prefillCounterSub`).
     private var subAutocompleteMatches: [OYBC.Task] {
         let q = subInputText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         guard !q.isEmpty else { return [] }
         let addedTitles = Set(compoundSubs.map { $0.displayTitle.lowercased() })
-        return taskLibrary
+        let candidates = countsTowardActive
+            ? taskLibrary
+            : QuickAddCounterPlacement.withGoalLessCounters(taskLibrary, pool: suggestionPool ?? taskLibrary)
+        return candidates
             .filter { $0.type != .compound }
             .filter { !addedTitles.contains($0.title.lowercased()) }
             .filter { CounterPlacement.taskSearchMatches(q, task: $0) }
@@ -341,7 +350,11 @@ struct RisoCompoundFieldsView: View {
                         .strokeBorder(Color.risoInk, lineWidth: Riso.Keyline.container)
                 )
                 .onChange(of: subInputText) { _, _ in
-                    subAutocompleteVisible = !subInputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                    if prefillingFromCounter {
+                        prefillingFromCounter = false
+                    } else {
+                        subAutocompleteVisible = !subInputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                    }
                     updateSubLinkSuggestion()
                 }
                 .onSubmit { addNewSub() }
@@ -490,11 +503,16 @@ struct RisoCompoundFieldsView: View {
     // MARK: - Autocomplete dropdown
 
     /// Smart autocomplete results dropdown. Each row shows ↩︎ · title ·
-    /// [goal unit if counting] · "reuse" badge.
+    /// [goal unit if counting] · "reuse" badge; a hub counter shows its name
+    /// and kind tag instead.
     private var subAutocompleteDropdown: some View {
         VStack(alignment: .leading, spacing: 0) {
             ForEach(subAutocompleteMatches) { task in
                 Button {
+                    if BrowsableTasks.isGoalLessCounter(task) {
+                        prefillCounterSub(task)
+                        return
+                    }
                     // Add as EXISTING sub and clear input
                     let sub = CreateFormViewModel.CompoundSubItem.existing(
                         taskId: task.id,
@@ -509,19 +527,29 @@ struct RisoCompoundFieldsView: View {
                         Text("↩︎")
                             .font(.risoBody(12, .semibold))
                             .foregroundStyle(Color.risoMuted)
-                        Text(task.title)
-                            .font(.risoHead(13, .bold))
-                            .foregroundStyle(Color.risoInk)
-                            .lineLimit(1)
+                        if BrowsableTasks.isGoalLessCounter(task) {
+                            Text(CounterSettings.counterDisplayName(task))
+                                .font(.risoHead(13, .bold))
+                                .foregroundStyle(Color.risoInk)
+                                .lineLimit(1)
+                            KindTagView(kind: resolveCountKind(task.countKind), dense: true)
+                        } else {
+                            Text(task.title)
+                                .font(.risoHead(13, .bold))
+                                .foregroundStyle(Color.risoInk)
+                                .lineLimit(1)
+                        }
                         if task.type == .counting, let max = task.maxCount, let unit = task.unit {
                             Text("\(formatCount(max, kind: resolveCountKind(task.countKind))) \(unit)")
                                 .font(.risoBody(11, .semibold))
                                 .foregroundStyle(Color.risoMuted)
                         }
                         Spacer(minLength: 0)
-                        Text("reuse")
-                            .font(.risoBody(11, .semibold))
-                            .foregroundStyle(Color.risoGreen)
+                        if !BrowsableTasks.isGoalLessCounter(task) {
+                            Text("reuse")
+                                .font(.risoBody(11, .semibold))
+                                .foregroundStyle(Color.risoGreen)
+                        }
                     }
                     .padding(.vertical, 8)
                     .padding(.horizontal, 11)
@@ -594,6 +622,24 @@ struct RisoCompoundFieldsView: View {
         }
         subLink.pairChanged(action: subInputText, unit: subUnitText, kind: subKind,
                             tasks: suggestionPool ?? taskLibrary)
+    }
+
+    /// A picked hub counter has no goal of its own, so it can't be linked as
+    /// an existing sub-task: switch the sub input to Counting with the
+    /// counter's verb / noun / kind and pin it as the link target (auto-link
+    /// ON) — the user enters the Goal and taps Add.
+    private func prefillCounterSub(_ root: OYBC.Task) {
+        let action = root.action ?? ""
+        let kind = resolveCountKind(root.countKind)
+        let unit = countKindNeedsUnit(kind) ? (root.unit ?? "") : ""
+        if subInputText != action { prefillingFromCounter = true }
+        subAutocompleteVisible = false
+        newSubType = .counting
+        subInputText = action
+        subKind = kind
+        subUnitText = unit
+        subGoalText = ""
+        subLink.pin(root, action: action, unit: unit, kind: kind, tasks: suggestionPool ?? taskLibrary)
     }
 
     // MARK: - Sub-add action

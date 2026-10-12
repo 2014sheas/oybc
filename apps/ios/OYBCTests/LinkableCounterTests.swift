@@ -193,4 +193,31 @@ final class LinkableCounterTests: XCTestCase {
         let result = classifyCounterCreateMatch(action: "Lunges", unit: "reps", tasks: [other])
         XCTAssertNil(result)
     }
+
+    // MARK: - Pinned pick (compound sub-task search)
+
+    func testPinnedPickSurvivesRematchOfTheSamePairEvenForDuration() {
+        var root = task("hub", action: "Meditate", unit: "", isCounter: true)
+        root.countKind = .duration
+        var state = CounterLinkState()
+        state.pin(root, action: "Meditate", unit: "", kind: .duration, tasks: [root])
+        // The view's onChange handlers re-run the matcher with the filled-in values.
+        state.pairChanged(action: "Meditate", unit: "", kind: .duration, tasks: [root])
+        state.kindChanged(action: "Meditate", unit: "", kind: .duration, tasks: [root])
+        XCTAssertEqual(state.linked?.counterId, "hub")
+        XCTAssertEqual(state.linked?.countKind, .duration)
+    }
+
+    func testEditingThePinnedPairUnpins() {
+        let root = task("hub", action: "Do", unit: "pushups", isCounter: true)
+        let linker = task("copy", action: "Do", unit: "pushups", sharedCounterId: "hub")
+        var state = CounterLinkState()
+        state.pin(root, action: "Do", unit: "pushups", kind: .discrete, tasks: [root, linker])
+        XCTAssertEqual(state.linked?.memberCount, 2)
+        state.pairChanged(action: "Do", unit: "squats", kind: .discrete, tasks: [root, linker])
+        XCTAssertNil(state.linked)
+        // Back to the original pair: the ordinary matcher finds the same root.
+        state.pairChanged(action: "Do", unit: "pushups", kind: .discrete, tasks: [root, linker])
+        XCTAssertEqual(state.linked?.counterId, "hub")
+    }
 }
