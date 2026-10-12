@@ -112,6 +112,31 @@ pinned): `timeframeGoals[board.timeframe]` → else the existing auto-scale →
 else the root's goal → else none (the user is asked, as today). `CUSTOM`
 timeframe boards never match a default.
 
+**Amended 2026-10-12 (owner ruling — every counter has a goal for every window).**
+The default-without-root-goal half is `windowDefaultGoal(root, timeframe, dates)`
+(↔ `CounterSettings.windowDefaultGoal`); `resolveCounterDefaultGoal` falls back to
+the root's goal after it. Three additions, all read-time (never stored — D3), so an
+entered default always wins and every unset cell keeps deriving from it (D4):
+
+- **Kind fallback.** A counter with no stored default AND no goal of its own (every
+  counter created from the Counters hub with blank Defaults) resolves
+  `COUNTER_FALLBACK_DAILY_GOAL` × the window's nominal days, rounded up per kind:
+  Discrete / Continuous **1 per day** (7 · 30 · 365), Duration **30 min per day**
+  (3h 30m · 15h · 182h 30m). The sheet shows these dimmed in the Defaults cells. A
+  counter with a goal of its own and no defaults stays inert (its own goal, as before).
+- **INDEFINITE resolves as YEARLY.**
+- **CUSTOM scales to its real length** (inclusive days from the board's dates): the
+  set default nearest in length (smallest |log ratio|, tie → shorter) scaled to the
+  window, else the kind fallback; null only when the dates don't parse.
+
+Consequence: a hub counter always places with a goal, so it is **browsable** —
+`computeBrowsableTasks` no longer hides goal-less counters, and the per-surface
+add-backs (`withGoalLessCounters`, #599 / #603) are gone. The only host that drops
+them is a compound sub-task picker (`excludeGoalLessCounters`; a goal-less root
+can't evaluate as a sub-task — compound create turns a picked counter into a linked
+Counting sub-task instead, #603). The quick-add Goal entry remains only for a CUSTOM
+board without parseable dates.
+
 **[D4 — ruled as recommended]** When exactly one default is set, derive the others by the timeframe
 ratio (weekly×~4.35 = monthly, ×52 = yearly, ÷7 = daily, rounded per kind)?
 Recommendation: **yes, derived and shown dimmed in the sheet** so the user sees
@@ -833,7 +858,7 @@ Done → In progress → Not started → title → id.
 - **Remove clears the whole lineage:** `ContributorRow.memberIds` (live flagged members, sorted) is what Remove unflags — web `removeUnitTaskLineage` runs every `setCountsTowardInTransaction` in one transaction — because a board-scoped fork inherits the flag and shares the lineage's credits. A zero-sub-task compound shows no remove control (an empty same-width slot): `compound-needs-child` refuses clearing it, and it may only stay counting toward the counter. The counter-delete line's N is the section's row count (`loadCountsTowardSection(id).rows.length`).
 - **Pre-existing, fix separately:** `unflagContributorsOf` (counter delete) unflags a zero-child compound directly, which then evaluates vacuously complete.
 - **Schema cleanup (later):** drop the inert `countsTowardAmount` column / field / clearable entry once a migration window is convenient.
-- **Accepted edge (2026-10-12, #599):** the pool editor and core defaults' quick-add now admit a hub counter (no `maxCount`) that has at least one window default; board creation mints its copy at the board window's default (`memberRules` → `counterTimeframeDefault`). A CUSTOM / INDEFINITE board that pulls such a pool has no matching default, so the counter lands as a goal-less accumulator square (the existing defensive branch). Revisit if it surfaces — e.g. ask for a goal in the wizard, as hand-added counters already do.
+- ~~**Accepted edge (2026-10-12, #599):** a CUSTOM / INDEFINITE board pulling a pool with a hub counter lands it as a goal-less accumulator square.~~ **Resolved the same day** by the §1c amendment: INDEFINITE resolves as yearly, CUSTOM scales to its dates, and a counter with no defaults takes the kind fallback — only a CUSTOM board without parseable dates still has nothing to resolve.
 
 Known edges (acceptable; revisit if a real case surfaces) are listed under the PR 3 hand-offs above.
 
