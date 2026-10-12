@@ -238,7 +238,7 @@ struct RisoMomentOverlay: View {
                 Button(action: onBack) {
                     Text("Back to board")
                         .font(.risoHead(14, .bold))
-                        .foregroundStyle(Color.risoPaper.opacity(0.85))
+                        .foregroundStyle(Color.risoOnColor.opacity(0.85))
                         .frame(maxWidth: .infinity)
                         .padding(.top, 4)
                 }
