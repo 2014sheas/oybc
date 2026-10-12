@@ -124,16 +124,27 @@ struct RisoPoolRowEditorView: View {
                     )
                 }
             }
-            HStack(alignment: .top, spacing: 8) {
+            // Duration's goal is an h/m wheel — too wide for the 84pt column,
+            // so it takes its own full-width line under Action.
+            if draft.countKind == .duration {
                 labeledField("Action", flex: true) {
                     RisoTextField(placeholder: "e.g. Run", text: $draft.action)
                 }
-                labeledField("Goal", width: 84) {
-                    GoalEntryView(kind: draft.countKind, text: $draft.goal, placeholder: "5")
+                labeledField("Goal", flex: true) {
+                    GoalEntryView(kind: .duration, text: $draft.goal, placeholder: "0h 0m")
                 }
-                if countKindNeedsUnit(draft.countKind) {
-                    labeledField("Unit", flex: true) {
-                        RisoTextField(placeholder: "km", text: $draft.unit)
+            } else {
+                HStack(alignment: .top, spacing: 8) {
+                    labeledField("Action", flex: true) {
+                        RisoTextField(placeholder: "e.g. Run", text: $draft.action)
+                    }
+                    labeledField("Goal", width: 84) {
+                        GoalEntryView(kind: draft.countKind, text: $draft.goal, placeholder: "5")
+                    }
+                    if countKindNeedsUnit(draft.countKind) {
+                        labeledField("Unit", flex: true) {
+                            RisoTextField(placeholder: "km", text: $draft.unit)
+                        }
                     }
                 }
             }

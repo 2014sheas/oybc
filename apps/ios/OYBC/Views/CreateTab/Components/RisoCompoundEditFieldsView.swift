@@ -267,16 +267,19 @@ struct RisoCompoundEditFieldsView: View {
             }
             if child.wrappedValue.isCounting {
                 VStack(alignment: .leading, spacing: 4) {
-                    HStack(spacing: 6) {
+                    // An existing sub-task edits at its OWN kind (no picker).
+                    // Duration's h/m wheel gets its own full-width line.
+                    if child.wrappedValue.countKind == .duration {
                         RisoTextField(placeholder: "e.g. Run", text: child.action).frame(maxWidth: .infinity)
-                        // An existing sub-task edits at its OWN kind (no picker).
-                        GoalEntryView(
-                            kind: child.wrappedValue.countKind, text: child.goal,
-                            placeholder: child.wrappedValue.countKind == .duration ? "0h 0m" : "5"
-                        )
-                        .frame(width: child.wrappedValue.countKind == .duration ? 120 : 76)
-                        if countKindNeedsUnit(child.wrappedValue.countKind) {
-                            RisoTextField(placeholder: "km", text: child.unit).frame(maxWidth: .infinity)
+                        GoalEntryView(kind: .duration, text: child.goal, placeholder: "0h 0m")
+                    } else {
+                        HStack(spacing: 6) {
+                            RisoTextField(placeholder: "e.g. Run", text: child.action).frame(maxWidth: .infinity)
+                            GoalEntryView(kind: child.wrappedValue.countKind, text: child.goal, placeholder: "5")
+                                .frame(width: 76)
+                            if countKindNeedsUnit(child.wrappedValue.countKind) {
+                                RisoTextField(placeholder: "km", text: child.unit).frame(maxWidth: .infinity)
+                            }
                         }
                     }
                     if let preview = subtaskCountingPreview(child.wrappedValue) {
