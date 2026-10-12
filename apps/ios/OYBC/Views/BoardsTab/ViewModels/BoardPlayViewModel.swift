@@ -962,10 +962,8 @@ final class BoardPlayViewModel: ObservableObject {
         return "\(sign)\(formatCount(amount, kind: kind)) \(counterName) — \(phrase) \(boardNames)."
     }
 
-    /// Publishes a one-shot `flashEvent` the view observes to fire its
-    /// moment overlay / `triggerCreditToast(payload:)` animations, and mirrors
-    /// the outcome's message into the transient `bingoMessage`. No-op when
-    /// there is neither a message nor a credit toast.
+    /// Publishes the one-shot `flashEvent` (moment / credit toast) and mirrors the
+    /// outcome's message into `bingoMessage`. No-op with neither.
     func emitFlash(_ outcome: BoardFlashOutcome, creditToast: SharedCounterCreditToastPayload?) {
         if let msg = outcome.message {
             bingoMessage = msg
@@ -1158,8 +1156,7 @@ final class BoardPlayViewModel: ObservableObject {
         kernelCellStates = out
     }
 
-    /// Bumped at the end of every `apply(_:)` — the moment gate's "the post-write reload landed" signal.
-    private(set) var applyCount = 0
+    private(set) var applyCount = 0 // bumped per apply(_:): the moment gate's "reload landed" signal
 
     private func apply(_ payload: TaskDataPayload) {
         defer { applyCount += 1 }
@@ -1393,7 +1390,6 @@ struct CounterArrivalEvent: Identifiable, Equatable {
     let arrivedCounters: [ArrivedCounter]
     /// Total arrived squares — selects the single-vs-multiple banner copy.
     let totalArrivedSquares: Int
-    /// The arrived square's task name for the single-square copy (nil for the
-    /// multiple-squares variant).
+    /// The single-square copy's task name (nil for the multiple-squares variant).
     let singleTaskName: String?
 }

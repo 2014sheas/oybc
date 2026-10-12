@@ -160,10 +160,8 @@ struct BoardPlayView: View {
     // `bingoMessage` is read/written through `viewModel.bingoMessage` directly.
     private var isProcessing: Bool { viewModel.isProcessing }
     // MARK: Riso visual layer state
-    /// The open Bingo / Greenlog moment (nil when none) — see
-    /// `BoardPlayView+Moment.swift`.
+    /// The open moment and the trigger awaiting its reload — see `BoardPlayView+Moment.swift`.
     @State var moment: MomentPresentation? = nil
-    /// A trigger waiting on the post-write reload (see `MomentGate`).
     @State var momentPending: MomentPending? = nil
     /// Compact greenlog-streak value (e.g. "3d"/"2w") for the share poster +
     /// title-row chip. Non-nil only for core boards with a streak ≥ 1.

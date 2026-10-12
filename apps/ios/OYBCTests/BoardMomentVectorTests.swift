@@ -22,12 +22,18 @@ final class BoardMomentVectorTests: XCTestCase {
         let referencedBoardId: String?
         let achievementTrigger: String?
         let isCompleted: Bool?
+        let completedAt: String?
         let isDeleted: Bool?
         let createdAt: String?
+        let sharedCounterId: String?
+        let startDate: String?
+        let endDate: String?
+        let createdInWizard: Bool?
 
         enum CodingKeys: String, CodingKey {
             case id, title, type, threshold, maxCount, referencedBoardId, achievementTrigger
-            case isCompleted, isDeleted, createdAt
+            case isCompleted, completedAt, isDeleted, createdAt
+            case sharedCounterId, startDate, endDate, createdInWizard
             case operatorField = "operator"
         }
 
@@ -38,9 +44,11 @@ final class BoardMomentVectorTests: XCTestCase {
                 threshold: threshold, referencedBoardId: referencedBoardId,
                 achievementTrigger: achievementTrigger.flatMap { AchievementTrigger(rawValue: $0) },
                 totalCompletions: 0, totalInstances: 0,
-                isCompleted: isCompleted ?? false,
+                isCompleted: isCompleted ?? false, completedAt: completedAt,
                 createdAt: createdAt ?? "2026-01-01T00:00:00.000Z", updatedAt: "2026-01-01T00:00:00.000Z",
-                version: 1, isDeleted: isDeleted ?? false
+                version: 1, isDeleted: isDeleted ?? false,
+                startDate: startDate, endDate: endDate, sharedCounterId: sharedCounterId,
+                createdInWizard: createdInWizard ?? false
             )
         }
     }
@@ -179,7 +187,7 @@ final class BoardMomentVectorTests: XCTestCase {
     // MARK: Tests
 
     func test_fixtureCoversEveryCase() throws {
-        XCTAssertGreaterThanOrEqual(try load().cases.count, 7)
+        XCTAssertGreaterThanOrEqual(try load().cases.count, 13)
     }
 
     func test_replayMatchesVectors() throws {

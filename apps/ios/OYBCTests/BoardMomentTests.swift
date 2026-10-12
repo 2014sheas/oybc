@@ -217,21 +217,19 @@ final class BoardMomentTests: XCTestCase {
 
     // MARK: Coalescing
 
-    func test_coalesce_greenlogWins_bingosMerge() {
+    func test_coalesce_greenlogReplacesPendingBingo_bingoNeverReplaces() {
         let bingo = MomentTrigger(kind: .bingo, newLineIds: ["row_0"])
         let green = MomentTrigger(kind: .greenlog, newLineIds: ["col_2"])
-        XCTAssertEqual(MomentGate.coalesce(bingo, green).kind, .greenlog)
-        XCTAssertEqual(MomentGate.coalesce(green, bingo).kind, .greenlog)
-        XCTAssertEqual(MomentGate.coalesce(bingo, MomentTrigger(kind: .bingo, newLineIds: ["col_1"])),
-                       MomentTrigger(kind: .bingo, newLineIds: ["col_1", "row_0"]))
+        XCTAssertEqual(MomentGate.coalesce(pending: bingo, arriving: green),
+                       MomentTrigger(kind: .greenlog, newLineIds: ["col_2", "row_0"]))
+        XCTAssertEqual(MomentGate.coalesce(pending: green, arriving: bingo), green)
+        XCTAssertEqual(MomentGate.coalesce(pending: bingo, arriving: MomentTrigger(kind: .bingo, newLineIds: ["col_1"])), bingo)
     }
 
-    func test_shouldReplace_greenlogUpgradesBingo_neverDowngrades() {
-        XCTAssertTrue(MomentGate.shouldReplace(open: nil, new: .bingo))
-        XCTAssertTrue(MomentGate.shouldReplace(open: .bingo, new: .greenlog))
-        XCTAssertFalse(MomentGate.shouldReplace(open: .greenlog, new: .bingo))
-        XCTAssertFalse(MomentGate.shouldReplace(open: .bingo, new: .bingo))
-        XCTAssertFalse(MomentGate.shouldReplace(open: .greenlog, new: .greenlog))
+    func test_nothingInterruptsAnOpenMoment() {
+        XCTAssertTrue(MomentGate.shouldOpen(whileOpen: nil))
+        XCTAssertFalse(MomentGate.shouldOpen(whileOpen: .bingo))
+        XCTAssertFalse(MomentGate.shouldOpen(whileOpen: .greenlog))
     }
 
     // MARK: Start-a-new-board intent

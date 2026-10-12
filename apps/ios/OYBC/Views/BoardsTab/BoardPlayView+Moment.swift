@@ -43,7 +43,6 @@ extension BoardPlayView {
                     MomentIntent.startNewBoard()
                 }
             )
-            .id(m.kind == .bingo ? 0 : 1) // an upgrade to greenlog restarts the replay
             .ignoresSafeArea()
             .transition(.opacity)
             .zIndex(20)
@@ -59,7 +58,7 @@ extension BoardPlayView {
         // The greenlog streak (core boards) computes while the gate waits.
         if trigger.kind == .greenlog { refreshGreenlogStreak() }
         if let p = momentPending {
-            momentPending?.trigger = MomentGate.coalesce(p.trigger, trigger)
+            momentPending?.trigger = MomentGate.coalesce(pending: p.trigger, arriving: trigger)
             return
         }
         momentPending = MomentPending(trigger: trigger, boardId: b.id, applyCount: viewModel.applyCount, start: Date())
@@ -79,7 +78,7 @@ extension BoardPlayView {
             }
             momentPending = nil
             guard viewModel.board?.id == p.boardId,
-                  MomentGate.shouldReplace(open: moment?.kind, new: p.trigger.kind),
+                  MomentGate.shouldOpen(whileOpen: moment?.kind),
                   let replay = viewModel.momentReplay() else { return }
             let presentation = MomentPresentation(
                 kind: p.trigger.kind, replay: replay, cells: viewModel.momentCellInputs(replay: replay)

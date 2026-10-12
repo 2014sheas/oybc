@@ -35,18 +35,17 @@ enum MomentGate {
         elapsed >= minimumDelay && (ready || elapsed >= timeout)
     }
 
-    /// Two triggers pending at once: greenlog wins; two bingos merge their lines.
-    static func coalesce(_ a: MomentTrigger, _ b: MomentTrigger) -> MomentTrigger {
-        let kind: MomentTrigger.Kind = (a.kind == .greenlog || b.kind == .greenlog) ? .greenlog : .bingo
-        return MomentTrigger(kind: kind, newLineIds: Array(Set(a.newLineIds + b.newLineIds)).sorted())
+    /// A trigger arriving while another is PENDING: a greenlog replaces
+    /// whatever is pending (carrying the lines of both); a bingo never
+    /// replaces anything.
+    static func coalesce(pending: MomentTrigger, arriving: MomentTrigger) -> MomentTrigger {
+        guard arriving.kind == .greenlog else { return pending }
+        return MomentTrigger(kind: .greenlog, newLineIds: Array(Set(pending.newLineIds + arriving.newLineIds)).sorted())
     }
 
-    /// Whether a ready trigger may take the screen: nothing open, or an open
-    /// bingo upgraded by a greenlog. Never downgrades or restarts the same kind.
-    static func shouldReplace(open: MomentTrigger.Kind?, new: MomentTrigger.Kind) -> Bool {
-        guard let open else { return true }
-        return open == .bingo && new == .greenlog
-    }
+    /// A ready trigger takes the screen only when no moment is open — nothing
+    /// interrupts an open moment.
+    static func shouldOpen(whileOpen open: MomentTrigger.Kind?) -> Bool { open == nil }
 }
 
 // MARK: - MomentIntent
