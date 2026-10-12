@@ -203,8 +203,9 @@ final class BoardMomentTests: XCTestCase {
         XCTAssertFalse(MomentGate.shouldOpen(elapsed: 0.3, ready: ready))
         XCTAssertTrue(MomentGate.shouldOpen(elapsed: 0.6, ready: ready))
         // Timeout opens anyway.
-        XCTAssertFalse(MomentGate.shouldOpen(elapsed: 1.4, ready: false))
-        XCTAssertTrue(MomentGate.shouldOpen(elapsed: 1.5, ready: false))
+        // Web's gate: the minimum, then up to 1.5 s MORE (~2.02 s worst case).
+        XCTAssertFalse(MomentGate.shouldOpen(elapsed: 2.0, ready: false))
+        XCTAssertTrue(MomentGate.shouldOpen(elapsed: 2.03, ready: false))
     }
 
     func test_gate_greenlogNeedsCompletedStatus_andTheSameBoard() {
@@ -240,5 +241,30 @@ final class BoardMomentTests: XCTestCase {
         MomentIntent.startNewBoard()
         wait(for: [exp], timeout: 1)
         NotificationCenter.default.removeObserver(token)
+    }
+
+    // MARK: Pending lifecycle
+
+    func test_disappearCancelsPending_andStaleChainExits() {
+        let first = MomentPending(trigger: MomentTrigger(kind: .bingo, newLineIds: []), boardId: "b", applyCount: 0, start: Date())
+        XCTAssertTrue(MomentGate.isLive(chain: first.id, pending: first))
+        // Disappear sets the pending to nil → its chain exits.
+        XCTAssertFalse(MomentGate.isLive(chain: first.id, pending: nil))
+        // A newer pending within the 100 ms tick: the stale chain still exits.
+        let second = MomentPending(trigger: MomentTrigger(kind: .bingo, newLineIds: []), boardId: "b", applyCount: 0, start: Date())
+        XCTAssertFalse(MomentGate.isLive(chain: first.id, pending: second))
+        XCTAssertTrue(MomentGate.isLive(chain: second.id, pending: second))
+    }
+
+    // MARK: Clock
+
+    @MainActor
+    func test_clockStop_midReplay_jumpsToTheFinalBeat() {
+        let clock = MomentReplayClock()
+        clock.stop() // never started: stays at 0
+        XCTAssertEqual(clock.beat, 0)
+        clock.start(finalBeat: 7, kind: .bingo)
+        clock.stop()
+        XCTAssertEqual(clock.beat, 7)
     }
 }

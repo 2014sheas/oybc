@@ -675,10 +675,9 @@ struct BoardPlayView: View {
             refreshGreenlogStreak()
         }
         .onDisappear {
-            // P3 — re-snapshot the last-seen baseline on leaving so local taps
-            // don't re-fire on the next open (belt-and-suspenders; the once-
-            // per-open detect + local-tap reloads already keep it current).
+            // P3 — re-snapshot the last-seen baseline on leaving (belt-and-suspenders).
             viewModel.snapshotArrivalsOnDisappear()
+            momentPending = nil // a trigger awaiting its reload dies with the view
         }
         // Defensive: also reload on boardId prop change. With `.id(boardId)`
         // on the standalone destination, SwiftUI re-creates the view (and the
@@ -696,7 +695,7 @@ struct BoardPlayView: View {
         .onChange(of: viewModel.flashEvent) { _, event in
             guard let event else { return }
             if let trigger = event.moment {
-                triggerMoment(trigger)
+                triggerMoment(trigger, applyCount: event.applyCount)
             }
             if let payload = event.creditToast {
                 triggerCreditToast(payload: payload)

@@ -14,7 +14,8 @@ import Foundation
 enum MomentGate {
     /// The cell pop finishes first (~340 ms + margin).
     static let minimumDelay: TimeInterval = 0.52
-    /// Open anyway after this long (web's gate).
+    /// After the minimum, wait up to this much MORE for readiness (web's gate:
+    /// 0.52 s then up to 1.5 s, ≈2.02 s worst case), then open anyway.
     static let timeout: TimeInterval = 1.5
 
     /// Whether the loaded `board` reflects the trigger's outcome AND the
@@ -30,10 +31,14 @@ enum MomentGate {
         }
     }
 
-    /// Open once the minimum has passed AND (ready OR timed out).
+    /// Open once the minimum has passed AND (ready OR the extra wait ran out).
     static func shouldOpen(elapsed: TimeInterval, ready: Bool) -> Bool {
-        elapsed >= minimumDelay && (ready || elapsed >= timeout)
+        elapsed >= minimumDelay && (ready || elapsed >= minimumDelay + timeout)
     }
+
+    /// Whether a poll chain (identified by its pending's `id`) is still the
+    /// live one: a disappear cleared the pending, or a newer pending started.
+    static func isLive(chain id: UUID, pending: MomentPending?) -> Bool { pending?.id == id }
 
     /// A trigger arriving while another is PENDING: a greenlog replaces
     /// whatever is pending (carrying the lines of both); a bingo never

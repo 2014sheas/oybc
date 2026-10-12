@@ -19,11 +19,13 @@ final class MomentReplayClock: ObservableObject {
     @Published private(set) var beat: Int = 0
     private var timer: Timer?
     private var started = false
+    private var finalBeat = 0
 
     /// Starts ticking. A second call is a no-op — the replay runs once per open.
     func start(finalBeat: Int, kind: MomentTrigger.Kind) {
         guard !started, finalBeat > 0 else { return }
         started = true
+        self.finalBeat = finalBeat
         timer = Timer.scheduledTimer(withTimeInterval: Self.cadence(for: kind), repeats: true) { [weak self] t in
             // Fires on the main run loop.
             MainActor.assumeIsolated {
@@ -34,6 +36,10 @@ final class MomentReplayClock: ObservableObject {
         }
     }
 
-    /// Stops the clock (the overlay disappeared).
-    func stop() { timer?.invalidate() }
+    /// Stops the clock (the overlay disappeared) and jumps to the final beat, so a
+    /// reappear shows the held end state rather than a frozen mid-replay board.
+    func stop() {
+        timer?.invalidate()
+        if started { beat = finalBeat }
+    }
 }

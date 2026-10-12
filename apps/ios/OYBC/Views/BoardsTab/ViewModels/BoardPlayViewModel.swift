@@ -974,7 +974,7 @@ final class BoardPlayViewModel: ObservableObject {
         flashEvent = BoardPlayFlashEvent(
             id: flashEventCounter,
             risoNotification: outcome.message,
-            moment: outcome.moment,
+            moment: outcome.moment, applyCount: applyCount,
             creditToast: creditToast
         )
     }
@@ -1362,11 +1362,11 @@ struct BoardPlayFlashEvent: Identifiable, Equatable {
     /// GREENLOG strings). Nil ⇒ the interaction produced no bingo-state change.
     /// The view never routes on it — `moment` is the trigger.
     let risoNotification: String?
-    /// The Bingo / Greenlog moment to open (greenlog > bingo; two lines at
-    /// once is one trigger). Nil ⇒ no moment.
+    /// The moment to open (greenlog > bingo). Nil ⇒ none.
     let moment: MomentTrigger?
-    /// Payload for the view's `triggerCreditToast(payload:)` (shared-counter
-    /// ripple). Nil ⇒ the ripple reached no OTHER board.
+    /// `applyCount` when emitted — before the write's reload can apply (the moment gate's baseline).
+    let applyCount: Int
+    /// The shared-counter ripple's credit toast; nil ⇒ it reached no OTHER board.
     let creditToast: SharedCounterCreditToastPayload?
 }
 

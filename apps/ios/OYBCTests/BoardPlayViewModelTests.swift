@@ -981,6 +981,19 @@ final class BoardPlayViewModelTests: XCTestCase {
                       "cascade should have re-saved the board holding the compound")
     }
 
+    /// The flash is stamped with `applyCount` at emit time — before the write's
+    /// reload can apply — so the moment gate compares against the right baseline.
+    func test_emitFlash_stampsApplyCountAtEmit() throws {
+        let db = try makeDb()
+        try seedUser(db)
+        try db.saveBoard(makeOneCellBoard(id: "b1"))
+        let vm = loadedVM(db, boardId: "b1")
+        let stamped = vm.applyCount
+        vm.emitFlash(BoardFlashOutcome.resolve(wasReactivated: false, lost: [], gained: ["row_0"], didGreenlog: false), creditToast: nil)
+        XCTAssertEqual(vm.flashEvent?.applyCount, stamped)
+        XCTAssertEqual(vm.flashEvent?.moment?.kind, .bingo)
+    }
+
     /// Parity with web's compound-child fallback: completing an UNPLACED child
     /// completes its placed compound and the board, so the flash carries the
     /// greenlog moment trigger.

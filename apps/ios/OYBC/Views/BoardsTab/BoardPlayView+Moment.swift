@@ -12,6 +12,8 @@ struct MomentPresentation: Equatable {
 
 /// A trigger waiting for the post-write reload to apply (see `MomentGate`).
 struct MomentPending: Equatable {
+    /// Identifies this pending's poll chain — a stale chain exits.
+    let id = UUID()
     var trigger: MomentTrigger
     /// The board the write happened on — a pager swipe must not replay another.
     let boardId: String
@@ -53,7 +55,7 @@ extension BoardPlayView {
     /// the view model's outcome ladder — never inferred from message text).
     /// It opens once `MomentGate` says the post-write reload applied (or the
     /// timeout passes); triggers arriving meanwhile coalesce, greenlog winning.
-    func triggerMoment(_ trigger: MomentTrigger) {
+    func triggerMoment(_ trigger: MomentTrigger, applyCount: Int) {
         guard let b = board else { return }
         // The greenlog streak (core boards) computes while the gate waits.
         if trigger.kind == .greenlog { refreshGreenlogStreak() }
@@ -61,19 +63,20 @@ extension BoardPlayView {
             momentPending?.trigger = MomentGate.coalesce(pending: p.trigger, arriving: trigger)
             return
         }
-        momentPending = MomentPending(trigger: trigger, boardId: b.id, applyCount: viewModel.applyCount, start: Date())
-        pollMoment()
+        let pending = MomentPending(trigger: trigger, boardId: b.id, applyCount: applyCount, start: Date())
+        momentPending = pending
+        pollMoment(chain: pending.id)
     }
 
-    private func pollMoment() {
+    private func pollMoment(chain: UUID) {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-            guard let p = momentPending else { return }
+            guard MomentGate.isLive(chain: chain, pending: momentPending), let p = momentPending else { return }
             let ready = MomentGate.isReady(
                 p.trigger, boardId: p.boardId, board: viewModel.board,
                 applyCount: viewModel.applyCount, applyCountAtTrigger: p.applyCount
             )
             guard MomentGate.shouldOpen(elapsed: Date().timeIntervalSince(p.start), ready: ready) else {
-                pollMoment()
+                pollMoment(chain: chain)
                 return
             }
             momentPending = nil
