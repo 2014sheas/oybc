@@ -123,6 +123,12 @@ final class ShareBoardSheetSnapshotTests: XCTestCase {
         assertSnapshot(of: posterHost(smallBingo(size: 3), names: true), as: posterLayout, record: recordMode)
     }
 
+    /// Cells stay identical squares with no labels (FREE star + 2-line labels
+    /// in `testPoster3x3` prove the names-on case): row heights never follow content.
+    func testPoster3x3NamesOff() {
+        assertSnapshot(of: posterHost(smallBingo(size: 3), names: false), as: posterLayout, record: recordMode)
+    }
+
     func testPoster4x4() {
         assertSnapshot(of: posterHost(smallBingo(size: 4), names: true), as: posterLayout, record: recordMode)
     }
