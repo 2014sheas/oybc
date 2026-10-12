@@ -29,6 +29,7 @@ export {
 export type {
   CounterGoalTimeframe,
   CounterGoalWindowDates,
+  WindowDefaultGoalOptions,
   CounterSettingsContext,
   CounterSettingsDefaults,
   CounterSettingsDraft,

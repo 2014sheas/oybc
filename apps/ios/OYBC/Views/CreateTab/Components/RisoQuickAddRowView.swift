@@ -40,7 +40,7 @@ struct RisoQuickAddRowView: View {
     var libraryTasks: [OYBC.Task] = []
     /// The FULL (unfiltered) task set the row tag / counter-name search resolves
     /// counter roots against — never the browse- or candidate-filtered
-    /// `libraryTasks`, which drops goal-less counters. `libraryTasks` is merged
+    /// `libraryTasks`, which drops linked members. `libraryTasks` is merged
     /// in so hosts that pass nothing keep resolving what they can.
     var counterRootTasks: [OYBC.Task] = []
     /// Ids to exclude from matches (already-selected/added tasks).

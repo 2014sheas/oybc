@@ -21,6 +21,7 @@ import {
   windowDefaultGoal,
   type CounterGoalWindowDates,
   type CounterSettingsFields,
+  type WindowDefaultGoalOptions,
 } from './counterSettings';
 
 /** The board fields placement reads (the dates matter for CUSTOM only). */
@@ -53,14 +54,16 @@ function positive(v: number | null | undefined): number | null {
  * @param root - The counter root's fields.
  * @param timeframe - The board's timeframe.
  * @param dates - The board's window (read for CUSTOM only).
+ * @param options - `kindFallback: false` for a caller with a goal of its own to pro-rate.
  * @returns The timeframe default, or null.
  */
 export function counterTimeframeDefault(
   root: CounterSettingsFields,
   timeframe: Timeframe | string,
-  dates?: CounterGoalWindowDates | null
+  dates?: CounterGoalWindowDates | null,
+  options?: WindowDefaultGoalOptions
 ): number | null {
-  return windowDefaultGoal(root, timeframe, dates);
+  return windowDefaultGoal(root, timeframe, dates, options);
 }
 
 /**

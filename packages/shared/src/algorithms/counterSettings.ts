@@ -227,9 +227,10 @@ function fallbackGoal(root: CounterSettingsFields, targetDays: number): number |
  *
  * @param root - The root's fields.
  * @param target - The timeframe to derive.
+ * @param kindFallback - Whether the kind fallback applies (default true).
  * @returns The derived goal, or null.
  */
-function derivedGoal(root: CounterSettingsFields, target: CounterGoalTimeframe): number | null {
+function derivedGoal(root: CounterSettingsFields, target: CounterGoalTimeframe, kindFallback = true): number | null {
   if (storedGoal(root.timeframeGoals, target) !== null) return null;
   const ti = COUNTER_GOAL_TIMEFRAMES.indexOf(target);
   let best: { t: CounterGoalTimeframe; d: number } | null = null;
@@ -239,7 +240,7 @@ function derivedGoal(root: CounterSettingsFields, target: CounterGoalTimeframe):
     if (best === null || d < best.d) best = { t, d };
   }
   const targetDays = nominalWindowDays(target as Timeframe) as number;
-  if (best === null) return fallbackGoal(root, targetDays);
+  if (best === null) return kindFallback ? fallbackGoal(root, targetDays) : null;
   const source = storedGoal(root.timeframeGoals, best.t) as number;
   return scaleGoal(root, source, nominalWindowDays(best.t as Timeframe) as number, targetDays);
 }
@@ -251,16 +252,17 @@ function derivedGoal(root: CounterSettingsFields, target: CounterGoalTimeframe):
  *
  * @param root - The root's fields.
  * @param days - The custom window's length in days.
+ * @param kindFallback - Whether the kind fallback applies (default true).
  * @returns The goal, or null.
  */
-function customWindowGoal(root: CounterSettingsFields, days: number): number | null {
+function customWindowGoal(root: CounterSettingsFields, days: number, kindFallback = true): number | null {
   let best: { t: CounterGoalTimeframe; d: number } | null = null;
   for (const t of COUNTER_GOAL_TIMEFRAMES) {
     if (storedGoal(root.timeframeGoals, t) === null) continue;
     const d = Math.abs(Math.log((nominalWindowDays(t as Timeframe) as number) / days));
     if (best === null || d < best.d - 1e-12) best = { t, d };
   }
-  if (best === null) return fallbackGoal(root, days);
+  if (best === null) return kindFallback ? fallbackGoal(root, days) : null;
   const source = storedGoal(root.timeframeGoals, best.t) as number;
   return scaleGoal(root, source, nominalWindowDays(best.t as Timeframe) as number, days);
 }
@@ -456,6 +458,17 @@ export interface CounterGoalWindowDates {
   endDate?: string | null;
 }
 
+/** Options for {@link windowDefaultGoal}. */
+export interface WindowDefaultGoalOptions {
+  /**
+   * Whether a counter with no goal at all takes the kind fallback (default
+   * true). False where the caller holds a goal of its own to pro-rate — a
+   * board-pulled LINKED member consulting its root (memberRules
+   * `resolveTarget`): a goal-less hub root must not override the member's goal.
+   */
+  kindFallback?: boolean;
+}
+
 /**
  * The default a counter carries for a board window WITHOUT the root-goal
  * fallback: a core timeframe's stored default → else one D4 derives (or the
@@ -466,18 +479,21 @@ export interface CounterGoalWindowDates {
  * @param root - The root's fields.
  * @param timeframe - The board's timeframe.
  * @param dates - The board's window (read for CUSTOM only).
+ * @param options - {@link WindowDefaultGoalOptions}.
  * @returns The default, or null.
  */
 export function windowDefaultGoal(
   root: CounterSettingsFields,
   timeframe: Timeframe | string,
-  dates?: CounterGoalWindowDates | null
+  dates?: CounterGoalWindowDates | null,
+  options?: WindowDefaultGoalOptions
 ): number | null {
+  const kindFallback = options?.kindFallback ?? true;
   const tf = timeframe === Timeframe.INDEFINITE ? 'yearly' : timeframe;
-  if (isGoalTimeframe(tf)) return storedGoal(root.timeframeGoals, tf) ?? derivedGoal(root, tf);
+  if (isGoalTimeframe(tf)) return storedGoal(root.timeframeGoals, tf) ?? derivedGoal(root, tf, kindFallback);
   if (tf !== Timeframe.CUSTOM) return null;
   const days = nominalWindowDays(Timeframe.CUSTOM, dates?.startDate ?? null, dates?.endDate ?? null);
-  return days === null ? null : customWindowGoal(root, days);
+  return days === null ? null : customWindowGoal(root, days, kindFallback);
 }
 
 /**

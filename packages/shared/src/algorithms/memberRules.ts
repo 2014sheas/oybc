@@ -401,10 +401,11 @@ export function planDerivedTasks(args: PlanDerivedTasksArgs): PlanDerivedTasksRe
   ): number => {
     // docs/SHARED_COUNTER_SETTINGS.md §2: a board-sourced member consults its
     // root's timeframe default FIRST (so a source pull and a hand-add agree),
-    // then pro-rates. The default is the target as-is, even above `goal`.
+    // then pro-rates. The default is the target as-is, even above `goal`. No
+    // kind fallback: the member has a goal of its own to pro-rate.
     const t = tasksById[taskIdForWindow];
     const root = t && explicit === undefined && fromBoard ? rootOf(t) : undefined;
-    const dflt = root ? counterTimeframeDefault(root, window.timeframe, window) : null;
+    const dflt = root ? counterTimeframeDefault(root, window.timeframe, window, { kindFallback: false }) : null;
     if (dflt !== null) return dflt;
     const base =
       explicit ??

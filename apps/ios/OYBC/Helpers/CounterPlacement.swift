@@ -30,11 +30,15 @@ enum CounterPlacement {
     ///   - timeframe: The board's timeframe.
     ///   - startDate: The board's start (CUSTOM only).
     ///   - endDate: The board's end (CUSTOM only).
+    ///   - kindFallback: False for a caller with a goal of its own to pro-rate.
     /// - Returns: The timeframe default, or nil.
     static func counterTimeframeDefault(
-        _ root: CounterSettings.Fields, timeframe: Timeframe, startDate: String? = nil, endDate: String? = nil
+        _ root: CounterSettings.Fields, timeframe: Timeframe, startDate: String? = nil, endDate: String? = nil,
+        kindFallback: Bool = true
     ) -> CountValue? {
-        CounterSettings.windowDefaultGoal(root, timeframe: timeframe, startDate: startDate, endDate: endDate)
+        CounterSettings.windowDefaultGoal(
+            root, timeframe: timeframe, startDate: startDate, endDate: endDate, kindFallback: kindFallback
+        )
     }
 
     /// The goal a per-board copy carries when it is placed on a board of

@@ -361,7 +361,7 @@ enum CounterSettings {
     /// the shorter), scaled by `nominalWindowDays` and rounded up with
     /// `ceilToCountStep`; with none set and no goal of its own, the kind
     /// fallback × the window. TS twin: `derivedGoal`.
-    private static func derivedGoal(_ root: Fields, _ target: GoalTimeframe) -> CountValue? {
+    private static func derivedGoal(_ root: Fields, _ target: GoalTimeframe, kindFallback: Bool = true) -> CountValue? {
         guard storedGoal(root.timeframeGoals, target) == nil else { return nil }
         let all = GoalTimeframe.allCases
         let ti = all.firstIndex(of: target)!
@@ -371,7 +371,7 @@ enum CounterSettings {
             if best == nil || d < best!.d { best = (t, d) }
         }
         guard let targetDays = BoardSources.nominalWindowDays(target.timeframe) else { return nil }
-        guard let best else { return fallbackGoal(root, days: targetDays) }
+        guard let best else { return kindFallback ? fallbackGoal(root, days: targetDays) : nil }
         guard let source = storedGoal(root.timeframeGoals, best.t),
               let sourceDays = BoardSources.nominalWindowDays(best.t.timeframe)
         else { return nil }
@@ -381,14 +381,14 @@ enum CounterSettings {
     /// The goal for a CUSTOM window of `days`: the SET timeframe nearest in
     /// length (smallest |log ratio|; tie → the shorter) scaled to `days`, else
     /// the kind fallback, else nil. TS twin: `customWindowGoal`.
-    private static func customWindowGoal(_ root: Fields, days: Int) -> CountValue? {
+    private static func customWindowGoal(_ root: Fields, days: Int, kindFallback: Bool = true) -> CountValue? {
         var best: (t: GoalTimeframe, d: Double)?
         for t in GoalTimeframe.allCases where storedGoal(root.timeframeGoals, t) != nil {
             guard let tDays = BoardSources.nominalWindowDays(t.timeframe) else { continue }
             let d = abs(log(Double(tDays) / Double(days)))
             if best == nil || d < best!.d - 1e-12 { best = (t, d) }
         }
-        guard let best else { return fallbackGoal(root, days: days) }
+        guard let best else { return kindFallback ? fallbackGoal(root, days: days) : nil }
         guard let source = storedGoal(root.timeframeGoals, best.t),
               let sourceDays = BoardSources.nominalWindowDays(best.t.timeframe)
         else { return nil }
@@ -414,18 +414,22 @@ enum CounterSettings {
     ///   - timeframe: The board's timeframe.
     ///   - startDate: The board's start (read for CUSTOM only).
     ///   - endDate: The board's end (read for CUSTOM only).
+    ///   - kindFallback: Whether a counter with no goal at all takes the kind
+    ///     fallback (default true). False where the caller holds a goal of its
+    ///     own to pro-rate — a board-pulled LINKED member consulting its root.
     /// - Returns: The default, or nil.
     static func windowDefaultGoal(
-        _ root: Fields, timeframe: Timeframe, startDate: String? = nil, endDate: String? = nil
+        _ root: Fields, timeframe: Timeframe, startDate: String? = nil, endDate: String? = nil,
+        kindFallback: Bool = true
     ) -> CountValue? {
         let tf: Timeframe = timeframe == .indefinite ? .yearly : timeframe
         if let t = GoalTimeframe(rawValue: tf.rawValue) {
-            return storedGoal(root.timeframeGoals, t) ?? derivedGoal(root, t)
+            return storedGoal(root.timeframeGoals, t) ?? derivedGoal(root, t, kindFallback: kindFallback)
         }
         guard tf == .custom,
               let days = BoardSources.nominalWindowDays(.custom, startDate: startDate, endDate: endDate)
         else { return nil }
-        return customWindowGoal(root, days: days)
+        return customWindowGoal(root, days: days, kindFallback: kindFallback)
     }
 
     /// The default goal a counter brings to a board of `timeframe` (§1c):

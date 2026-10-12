@@ -2,8 +2,8 @@ import { counterDisplayName, normalizeSearchText, taskSearchMatches, type Task }
 
 /**
  * Where a row resolves its counter root: a full id-keyed map (preferred — the
- * surface's unfiltered task map, so a goal-less hub counter the browse filter
- * drops still resolves), or a task list (linear scan).
+ * surface's unfiltered task map, so a root the surface's filter drops still
+ * resolves), or a task list (linear scan).
  */
 export type TaskLookup = readonly Task[] | ReadonlyMap<string, Task> | Readonly<Record<string, Task>>;
 

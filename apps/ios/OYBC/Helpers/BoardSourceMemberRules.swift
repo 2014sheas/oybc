@@ -466,10 +466,12 @@ extension BoardSources {
             return rootsById[sid] ?? tasksById[sid]
         }
         /// A root's timeframe default for this board (docs/SHARED_COUNTER_SETTINGS.md §2).
-        func defaultOf(_ root: Task?) -> CountValue? {
+        /// `kindFallback: false` where the member has a goal of its own to pro-rate.
+        func defaultOf(_ root: Task?, kindFallback: Bool = true) -> CountValue? {
             root.flatMap {
                 CounterPlacement.counterTimeframeDefault(
-                    .init(task: $0), timeframe: window.timeframe, startDate: window.startDate, endDate: window.endDate
+                    .init(task: $0), timeframe: window.timeframe, startDate: window.startDate, endDate: window.endDate,
+                    kindFallback: kindFallback
                 )
             }
         }
@@ -512,8 +514,10 @@ extension BoardSources {
             kind: CountKind
         ) -> CountValue {
             // A board-sourced member consults its root's timeframe default FIRST
-            // (a source pull and a hand-add agree), as-is even above `goal`.
-            if explicit == nil, fromBoard, let dflt = defaultOf(tasksById[taskIdForWindow].flatMap(rootOf)) {
+            // (a source pull and a hand-add agree), as-is even above `goal`. No
+            // kind fallback: the member has a goal of its own to pro-rate.
+            if explicit == nil, fromBoard,
+               let dflt = defaultOf(tasksById[taskIdForWindow].flatMap(rootOf), kindFallback: false) {
                 return dflt
             }
             let base: CountValue

@@ -138,7 +138,9 @@ struct MemberRuleRowModel: Equatable {
             return root.flatMap {
                 CounterPlacement.counterTimeframeDefault(
                     .init(task: $0), timeframe: wizardWindow.timeframe,
-                    startDate: wizardWindow.startDate, endDate: wizardWindow.endDate
+                    startDate: wizardWindow.startDate, endDate: wizardWindow.endDate,
+                    // A linked member pro-rates its own goal: no kind fallback from its root.
+                    kindFallback: t.sharedCounterId == nil
                 )
             }
         }

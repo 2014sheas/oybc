@@ -793,13 +793,28 @@
         "unit": "km",
         "maxCount": 30,
         "sharedCounterId": "U"
+      },
+      "H": {
+        "type": "counting",
+        "title": "Read pages",
+        "action": "Read",
+        "unit": "pages"
+      },
+      "S4": {
+        "type": "counting",
+        "title": "Read 60 pages",
+        "action": "Read",
+        "unit": "pages",
+        "maxCount": 60,
+        "sharedCounterId": "H"
       }
     },
     "sourceWindows": {
       "S": "monthly",
       "S2": "monthly",
       "S3": "monthly",
-      "R": "monthly"
+      "R": "monthly",
+      "S4": "monthly"
     },
     "vectors": [
       {
@@ -1149,6 +1164,85 @@
             "S2"
           ],
           "drafts": []
+        }
+      },
+      {
+        "name": "a hand-added hub root with no goal or defaults mints at the kind fallback (1/day -> 7)",
+        "window": "weekly",
+        "selected": [
+          "H"
+        ],
+        "manual": [
+          "H"
+        ],
+        "supplies": [],
+        "expected": {
+          "placement": [
+            "derived:H"
+          ],
+          "drafts": [
+            {
+              "root": "H",
+              "maxCount": 7,
+              "title": "Read 7 pages"
+            }
+          ]
+        }
+      },
+      {
+        "name": "a pool-sourced hub root with no goal or defaults mints at the kind fallback",
+        "window": "weekly",
+        "selected": [
+          "H"
+        ],
+        "manual": [],
+        "supplies": [
+          {
+            "kind": "pool",
+            "supply": [
+              "H"
+            ]
+          }
+        ],
+        "expected": {
+          "placement": [
+            "derived:H"
+          ],
+          "drafts": [
+            {
+              "root": "H",
+              "maxCount": 7,
+              "title": "Read 7 pages"
+            }
+          ]
+        }
+      },
+      {
+        "name": "a board-sourced member of a goal-less hub root pro-rates its OWN goal (60 monthly -> 14), never the root's kind fallback",
+        "window": "weekly",
+        "selected": [
+          "S4"
+        ],
+        "manual": [],
+        "supplies": [
+          {
+            "kind": "board",
+            "supply": [
+              "S4"
+            ]
+          }
+        ],
+        "expected": {
+          "placement": [
+            "derived:H"
+          ],
+          "drafts": [
+            {
+              "root": "H",
+              "maxCount": 14,
+              "title": "Read 14 pages"
+            }
+          ]
         }
       }
     ]
