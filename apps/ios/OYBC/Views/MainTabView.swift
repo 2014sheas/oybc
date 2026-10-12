@@ -200,7 +200,8 @@ struct MainTabView: View {
                     boardName: "Sample board", linesCompleted: 12,
                     // Preview only — both buttons just close it (no real share).
                     onShare: { showGreenlogPreview = false },
-                    onBack: { showGreenlogPreview = false }
+                    onBack: { showGreenlogPreview = false },
+                    onNewBoard: { showGreenlogPreview = false }
                 )
                 .ignoresSafeArea()
                 .transition(.opacity)

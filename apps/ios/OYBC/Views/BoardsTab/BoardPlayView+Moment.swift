@@ -35,8 +35,10 @@ extension BoardPlayView {
                 onShare: { showShareBoardSheet = true },
                 onBack: {
                     withAnimation(.easeOut(duration: 0.25)) { moment = nil }
-                    // "Start a new board" (the greenlog's neutral button) also opens Create.
-                    if m.kind == .greenlog { NotificationCenter.default.post(name: .momentStartNewBoard, object: nil) }
+                },
+                onNewBoard: {
+                    withAnimation(.easeOut(duration: 0.25)) { moment = nil }
+                    NotificationCenter.default.post(name: .momentStartNewBoard, object: nil)
                 }
             )
             .ignoresSafeArea()

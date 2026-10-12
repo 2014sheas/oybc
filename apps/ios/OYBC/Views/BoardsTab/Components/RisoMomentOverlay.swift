@@ -48,7 +48,10 @@ struct RisoMomentOverlay: View {
     /// Snapshot seam: pins the replay at a beat (no clock, no motion).
     var beatOverride: Int? = nil
     var onShare: () -> Void = {}
+    /// Dismisses back to the play board.
     var onBack: () -> Void = {}
+    /// Greenlog "Start a new board": dismisses AND opens Create.
+    var onNewBoard: () -> Void = {}
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @StateObject private var clock = MomentReplayClock()
@@ -223,7 +226,16 @@ struct RisoMomentOverlay: View {
             } else {
                 RisoButton(title: "Share my board", kind: .primary, systemImage: "square.and.arrow.up",
                            fullWidth: true, large: true, action: onShare)
-                RisoButton(title: "Start a new board", kind: .neutral, fullWidth: true, large: true, action: onBack)
+                RisoButton(title: "Start a new board", kind: .neutral, fullWidth: true, large: true, action: onNewBoard)
+                // Quiet exit (tap-to-close is gone): plain text, no border / fill.
+                Button(action: onBack) {
+                    Text("Back to board")
+                        .font(.risoHead(14, .bold))
+                        .foregroundStyle(Color.risoPaper.opacity(0.85))
+                        .frame(maxWidth: .infinity)
+                        .padding(.top, 4)
+                }
+                .buttonStyle(.plain)
             }
         }
     }
