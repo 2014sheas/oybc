@@ -11,6 +11,7 @@ import { useSharedCounterGroups } from './useSharedCounterGroups';
 import {
   buildBoardSettingsTileSummary,
   buildStreakTileData,
+  PROFILE_COUNTER_ROWS,
   selectRecentCounters,
   type BoardSettingsTileSummary,
   type ProfileHomeCounterRow,
@@ -23,7 +24,7 @@ import {
 export interface ProfileHomeData {
   boardSettings: BoardSettingsTileSummary;
   streak: StreakTileData;
-  /** Up to 2 counters, most recently logged first. */
+  /** Up to `PROFILE_COUNTER_ROWS` (5) counters, most recently logged first. */
   recentCounters: ProfileHomeCounterRow[];
   /** Total shared-counter count, for the "All {n} ›" header link. */
   totalCounterCount: number;
@@ -85,7 +86,7 @@ export function useProfileHome(): ProfileHomeData {
   const streak = useMemo(() => buildStreakTileData(boards, prefs.weekStartDay, now), [boards, prefs.weekStartDay, now]);
 
   const recentCounters = useMemo(
-    () => selectRecentCounters(groups, tasksById, eventsBySourceId ?? {}, 2),
+    () => selectRecentCounters(groups, tasksById, eventsBySourceId ?? {}, PROFILE_COUNTER_ROWS),
     [groups, tasksById, eventsBySourceId],
   );
 

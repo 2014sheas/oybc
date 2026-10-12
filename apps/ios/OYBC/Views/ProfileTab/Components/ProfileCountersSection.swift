@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// Profile-home "SHARED COUNTERS" section (design handoff §1.4) — a section
-/// label with a trailing "All {n} ›" link, then either up to 2 compact
+/// label with a trailing "All {n} ›" link, then either up to 5 compact
 /// counter rows (`SharedCounterLedgerCard(compact: true)`) in one shared
 /// card, or the dashed empty state.
 ///
@@ -9,10 +9,10 @@ import SwiftUI
 /// the "+ Log" write / sheet presentation and this stays snapshot-testable
 /// in isolation (same convention as `CountersHubContent` / `StreaksContent`).
 struct ProfileCountersSection: View {
-    /// Up to 2 groups, most-recently-logged first (`ProfileHomeViewModel`
-    /// already truncates — this view just renders what it's given).
+    /// Up to `ProfileHomeViewModel.profileCounterRows` groups, most-recently-
+    /// logged first (the VM already truncates — this view just renders them).
     let groups: [SharedCounterGroup]
-    /// Total live counter count (unfiltered by the 2-row cap) — drives the
+    /// Total live counter count (unfiltered by the row cap) — drives the
     /// "All {n} ›" link. The link itself hides when there are no counters
     /// at all (matching the Hub's own header convention).
     let totalCount: Int

@@ -17,6 +17,11 @@ import Foundation
 @MainActor
 final class ProfileHomeViewModel: ObservableObject {
 
+    /// How many shared counters Profile home lists before "All N ›" (owner,
+    /// 2026-10-12: raised from 2 — two rows left the page mostly empty).
+    /// Web twin: `PROFILE_COUNTER_ROWS` in `pages/profileHome.ts`.
+    nonisolated static let profileCounterRows = 5
+
     // MARK: - Published state
 
     /// Non-deleted repeating-board templates (active AND paused) — the
@@ -102,7 +107,7 @@ final class ProfileHomeViewModel: ObservableObject {
                     longestStreak: longestStreak,
                     greenlogCount: greenlogCount
                 )
-                self.recentCounters = Array(ordered.prefix(2))
+                self.recentCounters = Array(ordered.prefix(Self.profileCounterRows))
                 self.totalCounterCount = groups.count
                 self.counterDedupeTasks = tasks
                 self.isLoaded = true
