@@ -227,3 +227,39 @@ export function momentFinalBeat(replay: BoardMomentReplay, kind: MomentKind): nu
   if (kind === 'greenlog') return replay.order.length + 1 + 2 * (replay.size - 1);
   return Math.max(replay.order.length, ...Object.values(replay.lineClosureBeat));
 }
+
+/** A cell's identity on the share poster (everything the poster needs that the replay does not carry). */
+export interface PosterCellInput {
+  /** Flat cell index (`row * size + col`). */
+  idx: number;
+  label: string;
+  /** The task type's play colour family. */
+  type: 'normal' | 'counting' | 'compound' | 'achievement';
+  /** The FREE centre. */
+  isFree: boolean;
+}
+
+/** One poster cell in the moment's end state. */
+export interface PosterCell extends PosterCellInput {
+  /** `undone` (not completed; the FREE centre when no line holds it), `done` (type colour), `green` (a closed line / the greenlog wave). */
+  state: 'undone' | 'done' | 'green';
+}
+
+/**
+ * The share poster's cells: each input cell's frame at the moment's FINAL beat
+ * (`momentCellVisual(idx, momentFinalBeat(replay, kind), replay, kind)`), so the
+ * poster shows exactly the end state the moment held and never re-derives
+ * completion. Green wins over landed; anything else is undone. Order and length
+ * follow `cells`. Swift twin: `BoardMoment.posterCells`.
+ *
+ * @param replay - {@link computeBoardMomentReplay}'s result.
+ * @param cells - One input per grid cell.
+ * @param kind - Which moment the poster is for.
+ */
+export function momentPosterCells(replay: BoardMomentReplay, cells: PosterCellInput[], kind: MomentKind): PosterCell[] {
+  const finalBeat = momentFinalBeat(replay, kind);
+  return cells.map((c) => {
+    const v = momentCellVisual(c.idx, finalBeat, replay, kind);
+    return { ...c, state: v.green ? 'green' : v.landed ? 'done' : 'undone' };
+  });
+}

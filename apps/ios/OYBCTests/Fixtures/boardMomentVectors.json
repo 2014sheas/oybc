@@ -1,5 +1,5 @@
 {
- "_note": "Hand-authored fixture (edit directly, then `pnpm --filter @oybc/shared run gen:sync-fixtures`). Pins packages/shared/src/algorithms/boardMoment.ts (tests/algorithms/boardMoment.test.ts) against its Swift twin Helpers/BoardMoment.swift (OYBCTests/BoardMomentVectorTests.swift) - docs/BOARD_MOMENTS.md. Each case is `{name, board, tasks, children?, boardTasks, allBoards?, events, expected, frames}`. Defaults for unlisted fields: Task type=normal, isCompleted=false, isDeleted=false, createdAt=2026-01-01T00:00:00.000Z, title=id; Event kind=increment when `delta` is set else completion, id=`e<index>`, isDeleted=false; Board status=active, timeframe=custom, totalTasks=size*size, linesCompleted=len(completedLineIds); placements isDeleted=false (a `boardTasks` entry may set `isDeleted: true` - a tombstone), boardId=board.id; links isDeleted=false. `board` = {id, size, centerSquareType, startDate, endDate, completedTasks, completedLineIds?, sealedAt?, sealedCompletedCells?, status?}; `allBoards` entries use the same shape (size 3, centre free) and feed ACHIEVEMENT cells only; `tasks[].referencedBoardId` / `achievementTrigger` configure an achievement; `isCompleted` / `completedAt` set a task's latch; `sharedCounterId` / `startDate` / `endDate` / `createdInWizard` make a linked or window-stamped derived counter. The test calls computeBoardMomentReplay(board, boardTasks, childrenByCompound, taskById, eventsByTaskId, allBoards) with events grouped by taskId (a sealed board is bounded at sealedAt inside the kernel) and compares `expected` = {order[{boardTaskId, idx, completedAt}], freeIdx, lineClosureBeat{lineId: beat}, completedTasks, totalTasks, size, finalBeat{bingo, greenlog}} (finalBeat = momentFinalBeat(replay, kind)). Instant rule: a cell's `completedAt` is `resolveContributionState(...).completedAt` ONLY when that state is complete AND names a `completingEventId`; otherwise it is null (a latched achievement, an empty all-of compound, a sealed cell with no events) and the cell sorts after every dated one, ties by idx. Beats: beat 0 = empty board; order[i] lands at beat i+1; a line closes at max(land beat of its non-FREE cells)+1; a greenlog wave reaches cell (r,c) at order.length+1+r+c; lines never flip during a greenlog's landing pass. Each `frames` entry = {kind, beat, counter, landed[idx], green[idx], popTokens{idx: token}}: counter = momentCounterAt(beat) = max(0, completedTasks - order.length + min(beat, order.length)); landed/green/popTokens come from momentCellVisual(idx, beat, replay, kind) for every idx (a cell is listed under landed/green only when true; popTokens omits null; popToken = the cell's green beat when green, else its land beat when landed, else null; the FREE centre is never `landed`). Cases: simple cells in shuffled completion order with two lines closing on the 3rd and 5th squares and a FREE centre (in its lines, never in the closure max); a counting cell whose crossing increment (08:30) is earlier than its last log (12:00); a compound whose completing child is the last of all-of; a completed ACHIEVEMENT cell (no instant) sorting after every dated cell; a 4x4 with no FREE and two lines closing at different beats; a greenlog with two squares at the same instant (tie by idx) and every line present; a sealed board whose sealedCompletedCells disagrees with live events (the sealed set wins, a post-seal event is bounded out); a FREE centre whose only placement is a tombstone is still FREE (freeIdx set, the tombstoned cell absent from order); a sealed cell whose task is missing from `tasks` is skipped (not in order) while the counter stays the rail's number; a latched achievement with a stored completedAt and an empty all-of compound both have no completing event (null, sort last); a window-stamped derived counter orders by the crossing inside its OWN window and a hub-linked counter by the crossing inside the HOST window (each case puts an earlier crossing outside the right window so it discriminates).",
+ "_note": "Hand-authored fixture (edit directly, then `pnpm --filter @oybc/shared run gen:sync-fixtures`). Pins packages/shared/src/algorithms/boardMoment.ts (tests/algorithms/boardMoment.test.ts) against its Swift twin Helpers/BoardMoment.swift (OYBCTests/BoardMomentVectorTests.swift) - docs/BOARD_MOMENTS.md. Each case is `{name, board, tasks, children?, boardTasks, allBoards?, events, expected, frames}`. Defaults for unlisted fields: Task type=normal, isCompleted=false, isDeleted=false, createdAt=2026-01-01T00:00:00.000Z, title=id; Event kind=increment when `delta` is set else completion, id=`e<index>`, isDeleted=false; Board status=active, timeframe=custom, totalTasks=size*size, linesCompleted=len(completedLineIds); placements isDeleted=false (a `boardTasks` entry may set `isDeleted: true` - a tombstone), boardId=board.id; links isDeleted=false. `board` = {id, size, centerSquareType, startDate, endDate, completedTasks, completedLineIds?, sealedAt?, sealedCompletedCells?, status?}; `allBoards` entries use the same shape (size 3, centre free) and feed ACHIEVEMENT cells only; `tasks[].referencedBoardId` / `achievementTrigger` configure an achievement; `isCompleted` / `completedAt` set a task's latch; `sharedCounterId` / `startDate` / `endDate` / `createdInWizard` make a linked or window-stamped derived counter. The test calls computeBoardMomentReplay(board, boardTasks, childrenByCompound, taskById, eventsByTaskId, allBoards) with events grouped by taskId (a sealed board is bounded at sealedAt inside the kernel) and compares `expected` = {order[{boardTaskId, idx, completedAt}], freeIdx, lineClosureBeat{lineId: beat}, completedTasks, totalTasks, size, finalBeat{bingo, greenlog}} (finalBeat = momentFinalBeat(replay, kind)). Instant rule: a cell's `completedAt` is `resolveContributionState(...).completedAt` ONLY when that state is complete AND names a `completingEventId`; otherwise it is null (a latched achievement, an empty all-of compound, a sealed cell with no events) and the cell sorts after every dated one, ties by idx. Beats: beat 0 = empty board; order[i] lands at beat i+1; a line closes at max(land beat of its non-FREE cells)+1; a greenlog wave reaches cell (r,c) at order.length+1+r+c; lines never flip during a greenlog's landing pass. Each `frames` entry = {kind, beat, counter, landed[idx], green[idx], popTokens{idx: token}}: counter = momentCounterAt(beat) = max(0, completedTasks - order.length + min(beat, order.length)); landed/green/popTokens come from momentCellVisual(idx, beat, replay, kind) for every idx (a cell is listed under landed/green only when true; popTokens omits null; popToken = the cell's green beat when green, else its land beat when landed, else null; the FREE centre is never `landed`). Cases: simple cells in shuffled completion order with two lines closing on the 3rd and 5th squares and a FREE centre (in its lines, never in the closure max); a counting cell whose crossing increment (08:30) is earlier than its last log (12:00); a compound whose completing child is the last of all-of; a completed ACHIEVEMENT cell (no instant) sorting after every dated cell; a 4x4 with no FREE and two lines closing at different beats; a greenlog with two squares at the same instant (tie by idx) and every line present; a sealed board whose sealedCompletedCells disagrees with live events (the sealed set wins, a post-seal event is bounded out); a FREE centre whose only placement is a tombstone is still FREE (freeIdx set, the tombstoned cell absent from order); a sealed cell whose task is missing from `tasks` is skipped (not in order) while the counter stays the rail's number; a latched achievement with a stored completedAt and an empty all-of compound both have no completing event (null, sort last); a window-stamped derived counter orders by the crossing inside its OWN window and a hub-linked counter by the crossing inside the HOST window (each case puts an earlier crossing outside the right window so it discriminates). `posterCells` is a second family: each case = {name, kind, replay (BoardMomentReplay literal: order, freeIdx, lineClosureBeat, completedTasks, totalTasks, size), cells [{idx, label, type normal|counting|compound|achievement, isFree}], expected [{...cell, state}]} and pins momentPosterCells(replay, cells, kind) (Swift BoardMoment.posterCells): each cell's state is momentCellVisual at momentFinalBeat - green wins, else landed -> done, else undone (the FREE centre is undone unless a closed line / the greenlog wave reaches it); order and length follow `cells`.",
  "cases": [
   {
    "name": "simple-3x3-free-two-lines",
@@ -3309,6 +3309,1029 @@
       "1": 4,
       "2": 4
      }
+    }
+   ]
+  }
+ ],
+ "posterCells": [
+  {
+   "name": "bingo-3x3-free-in-line",
+   "kind": "bingo",
+   "replay": {
+    "order": [
+     {
+      "boardTaskId": "bt3",
+      "idx": 3,
+      "completedAt": null
+     },
+     {
+      "boardTaskId": "bt5",
+      "idx": 5,
+      "completedAt": null
+     },
+     {
+      "boardTaskId": "bt0",
+      "idx": 0,
+      "completedAt": null
+     }
+    ],
+    "freeIdx": 4,
+    "lineClosureBeat": {
+     "row_1": 3
+    },
+    "completedTasks": 4,
+    "totalTasks": 9,
+    "size": 3
+   },
+   "cells": [
+    {
+     "idx": 0,
+     "label": "Task 0",
+     "type": "counting",
+     "isFree": false
+    },
+    {
+     "idx": 1,
+     "label": "Task 1",
+     "type": "normal",
+     "isFree": false
+    },
+    {
+     "idx": 2,
+     "label": "Task 2",
+     "type": "normal",
+     "isFree": false
+    },
+    {
+     "idx": 3,
+     "label": "Task 3",
+     "type": "counting",
+     "isFree": false
+    },
+    {
+     "idx": 4,
+     "label": "FREE",
+     "type": "normal",
+     "isFree": true
+    },
+    {
+     "idx": 5,
+     "label": "Task 5",
+     "type": "compound",
+     "isFree": false
+    },
+    {
+     "idx": 6,
+     "label": "Task 6",
+     "type": "normal",
+     "isFree": false
+    },
+    {
+     "idx": 7,
+     "label": "Task 7",
+     "type": "normal",
+     "isFree": false
+    },
+    {
+     "idx": 8,
+     "label": "Task 8",
+     "type": "achievement",
+     "isFree": false
+    }
+   ],
+   "expected": [
+    {
+     "idx": 0,
+     "label": "Task 0",
+     "type": "counting",
+     "isFree": false,
+     "state": "done"
+    },
+    {
+     "idx": 1,
+     "label": "Task 1",
+     "type": "normal",
+     "isFree": false,
+     "state": "undone"
+    },
+    {
+     "idx": 2,
+     "label": "Task 2",
+     "type": "normal",
+     "isFree": false,
+     "state": "undone"
+    },
+    {
+     "idx": 3,
+     "label": "Task 3",
+     "type": "counting",
+     "isFree": false,
+     "state": "green"
+    },
+    {
+     "idx": 4,
+     "label": "FREE",
+     "type": "normal",
+     "isFree": true,
+     "state": "green"
+    },
+    {
+     "idx": 5,
+     "label": "Task 5",
+     "type": "compound",
+     "isFree": false,
+     "state": "green"
+    },
+    {
+     "idx": 6,
+     "label": "Task 6",
+     "type": "normal",
+     "isFree": false,
+     "state": "undone"
+    },
+    {
+     "idx": 7,
+     "label": "Task 7",
+     "type": "normal",
+     "isFree": false,
+     "state": "undone"
+    },
+    {
+     "idx": 8,
+     "label": "Task 8",
+     "type": "achievement",
+     "isFree": false,
+     "state": "undone"
+    }
+   ]
+  },
+  {
+   "name": "bingo-3x3-free-undone",
+   "kind": "bingo",
+   "replay": {
+    "order": [
+     {
+      "boardTaskId": "bt0",
+      "idx": 0,
+      "completedAt": null
+     },
+     {
+      "boardTaskId": "bt1",
+      "idx": 1,
+      "completedAt": null
+     },
+     {
+      "boardTaskId": "bt2",
+      "idx": 2,
+      "completedAt": null
+     },
+     {
+      "boardTaskId": "bt3",
+      "idx": 3,
+      "completedAt": null
+     }
+    ],
+    "freeIdx": 4,
+    "lineClosureBeat": {
+     "row_0": 4
+    },
+    "completedTasks": 5,
+    "totalTasks": 9,
+    "size": 3
+   },
+   "cells": [
+    {
+     "idx": 0,
+     "label": "Task 0",
+     "type": "normal",
+     "isFree": false
+    },
+    {
+     "idx": 1,
+     "label": "Task 1",
+     "type": "counting",
+     "isFree": false
+    },
+    {
+     "idx": 2,
+     "label": "Task 2",
+     "type": "compound",
+     "isFree": false
+    },
+    {
+     "idx": 3,
+     "label": "Task 3",
+     "type": "normal",
+     "isFree": false
+    },
+    {
+     "idx": 4,
+     "label": "FREE",
+     "type": "normal",
+     "isFree": true
+    },
+    {
+     "idx": 5,
+     "label": "Task 5",
+     "type": "normal",
+     "isFree": false
+    },
+    {
+     "idx": 6,
+     "label": "Task 6",
+     "type": "normal",
+     "isFree": false
+    },
+    {
+     "idx": 7,
+     "label": "Task 7",
+     "type": "compound",
+     "isFree": false
+    },
+    {
+     "idx": 8,
+     "label": "Task 8",
+     "type": "normal",
+     "isFree": false
+    }
+   ],
+   "expected": [
+    {
+     "idx": 0,
+     "label": "Task 0",
+     "type": "normal",
+     "isFree": false,
+     "state": "green"
+    },
+    {
+     "idx": 1,
+     "label": "Task 1",
+     "type": "counting",
+     "isFree": false,
+     "state": "green"
+    },
+    {
+     "idx": 2,
+     "label": "Task 2",
+     "type": "compound",
+     "isFree": false,
+     "state": "green"
+    },
+    {
+     "idx": 3,
+     "label": "Task 3",
+     "type": "normal",
+     "isFree": false,
+     "state": "done"
+    },
+    {
+     "idx": 4,
+     "label": "FREE",
+     "type": "normal",
+     "isFree": true,
+     "state": "undone"
+    },
+    {
+     "idx": 5,
+     "label": "Task 5",
+     "type": "normal",
+     "isFree": false,
+     "state": "undone"
+    },
+    {
+     "idx": 6,
+     "label": "Task 6",
+     "type": "normal",
+     "isFree": false,
+     "state": "undone"
+    },
+    {
+     "idx": 7,
+     "label": "Task 7",
+     "type": "compound",
+     "isFree": false,
+     "state": "undone"
+    },
+    {
+     "idx": 8,
+     "label": "Task 8",
+     "type": "normal",
+     "isFree": false,
+     "state": "undone"
+    }
+   ]
+  },
+  {
+   "name": "greenlog-5x5-all-green",
+   "kind": "greenlog",
+   "replay": {
+    "order": [
+     {
+      "boardTaskId": "bt0",
+      "idx": 0,
+      "completedAt": null
+     },
+     {
+      "boardTaskId": "bt1",
+      "idx": 1,
+      "completedAt": null
+     },
+     {
+      "boardTaskId": "bt2",
+      "idx": 2,
+      "completedAt": null
+     },
+     {
+      "boardTaskId": "bt3",
+      "idx": 3,
+      "completedAt": null
+     },
+     {
+      "boardTaskId": "bt4",
+      "idx": 4,
+      "completedAt": null
+     },
+     {
+      "boardTaskId": "bt5",
+      "idx": 5,
+      "completedAt": null
+     },
+     {
+      "boardTaskId": "bt6",
+      "idx": 6,
+      "completedAt": null
+     },
+     {
+      "boardTaskId": "bt7",
+      "idx": 7,
+      "completedAt": null
+     },
+     {
+      "boardTaskId": "bt8",
+      "idx": 8,
+      "completedAt": null
+     },
+     {
+      "boardTaskId": "bt9",
+      "idx": 9,
+      "completedAt": null
+     },
+     {
+      "boardTaskId": "bt10",
+      "idx": 10,
+      "completedAt": null
+     },
+     {
+      "boardTaskId": "bt11",
+      "idx": 11,
+      "completedAt": null
+     },
+     {
+      "boardTaskId": "bt13",
+      "idx": 13,
+      "completedAt": null
+     },
+     {
+      "boardTaskId": "bt14",
+      "idx": 14,
+      "completedAt": null
+     },
+     {
+      "boardTaskId": "bt15",
+      "idx": 15,
+      "completedAt": null
+     },
+     {
+      "boardTaskId": "bt16",
+      "idx": 16,
+      "completedAt": null
+     },
+     {
+      "boardTaskId": "bt17",
+      "idx": 17,
+      "completedAt": null
+     },
+     {
+      "boardTaskId": "bt18",
+      "idx": 18,
+      "completedAt": null
+     },
+     {
+      "boardTaskId": "bt19",
+      "idx": 19,
+      "completedAt": null
+     },
+     {
+      "boardTaskId": "bt20",
+      "idx": 20,
+      "completedAt": null
+     },
+     {
+      "boardTaskId": "bt21",
+      "idx": 21,
+      "completedAt": null
+     },
+     {
+      "boardTaskId": "bt22",
+      "idx": 22,
+      "completedAt": null
+     },
+     {
+      "boardTaskId": "bt23",
+      "idx": 23,
+      "completedAt": null
+     },
+     {
+      "boardTaskId": "bt24",
+      "idx": 24,
+      "completedAt": null
+     }
+    ],
+    "freeIdx": 12,
+    "lineClosureBeat": {},
+    "completedTasks": 25,
+    "totalTasks": 25,
+    "size": 5
+   },
+   "cells": [
+    {
+     "idx": 0,
+     "label": "Task 0",
+     "type": "normal",
+     "isFree": false
+    },
+    {
+     "idx": 1,
+     "label": "Task 1",
+     "type": "counting",
+     "isFree": false
+    },
+    {
+     "idx": 2,
+     "label": "Task 2",
+     "type": "normal",
+     "isFree": false
+    },
+    {
+     "idx": 3,
+     "label": "Task 3",
+     "type": "normal",
+     "isFree": false
+    },
+    {
+     "idx": 4,
+     "label": "Task 4",
+     "type": "normal",
+     "isFree": false
+    },
+    {
+     "idx": 5,
+     "label": "Task 5",
+     "type": "normal",
+     "isFree": false
+    },
+    {
+     "idx": 6,
+     "label": "Task 6",
+     "type": "normal",
+     "isFree": false
+    },
+    {
+     "idx": 7,
+     "label": "Task 7",
+     "type": "compound",
+     "isFree": false
+    },
+    {
+     "idx": 8,
+     "label": "Task 8",
+     "type": "normal",
+     "isFree": false
+    },
+    {
+     "idx": 9,
+     "label": "Task 9",
+     "type": "normal",
+     "isFree": false
+    },
+    {
+     "idx": 10,
+     "label": "Task 10",
+     "type": "normal",
+     "isFree": false
+    },
+    {
+     "idx": 11,
+     "label": "Task 11",
+     "type": "normal",
+     "isFree": false
+    },
+    {
+     "idx": 12,
+     "label": "FREE",
+     "type": "normal",
+     "isFree": true
+    },
+    {
+     "idx": 13,
+     "label": "Task 13",
+     "type": "normal",
+     "isFree": false
+    },
+    {
+     "idx": 14,
+     "label": "Task 14",
+     "type": "normal",
+     "isFree": false
+    },
+    {
+     "idx": 15,
+     "label": "Task 15",
+     "type": "normal",
+     "isFree": false
+    },
+    {
+     "idx": 16,
+     "label": "Task 16",
+     "type": "normal",
+     "isFree": false
+    },
+    {
+     "idx": 17,
+     "label": "Task 17",
+     "type": "normal",
+     "isFree": false
+    },
+    {
+     "idx": 18,
+     "label": "Task 18",
+     "type": "normal",
+     "isFree": false
+    },
+    {
+     "idx": 19,
+     "label": "Task 19",
+     "type": "normal",
+     "isFree": false
+    },
+    {
+     "idx": 20,
+     "label": "Task 20",
+     "type": "achievement",
+     "isFree": false
+    },
+    {
+     "idx": 21,
+     "label": "Task 21",
+     "type": "normal",
+     "isFree": false
+    },
+    {
+     "idx": 22,
+     "label": "Task 22",
+     "type": "normal",
+     "isFree": false
+    },
+    {
+     "idx": 23,
+     "label": "Task 23",
+     "type": "normal",
+     "isFree": false
+    },
+    {
+     "idx": 24,
+     "label": "Task 24",
+     "type": "normal",
+     "isFree": false
+    }
+   ],
+   "expected": [
+    {
+     "idx": 0,
+     "label": "Task 0",
+     "type": "normal",
+     "isFree": false,
+     "state": "green"
+    },
+    {
+     "idx": 1,
+     "label": "Task 1",
+     "type": "counting",
+     "isFree": false,
+     "state": "green"
+    },
+    {
+     "idx": 2,
+     "label": "Task 2",
+     "type": "normal",
+     "isFree": false,
+     "state": "green"
+    },
+    {
+     "idx": 3,
+     "label": "Task 3",
+     "type": "normal",
+     "isFree": false,
+     "state": "green"
+    },
+    {
+     "idx": 4,
+     "label": "Task 4",
+     "type": "normal",
+     "isFree": false,
+     "state": "green"
+    },
+    {
+     "idx": 5,
+     "label": "Task 5",
+     "type": "normal",
+     "isFree": false,
+     "state": "green"
+    },
+    {
+     "idx": 6,
+     "label": "Task 6",
+     "type": "normal",
+     "isFree": false,
+     "state": "green"
+    },
+    {
+     "idx": 7,
+     "label": "Task 7",
+     "type": "compound",
+     "isFree": false,
+     "state": "green"
+    },
+    {
+     "idx": 8,
+     "label": "Task 8",
+     "type": "normal",
+     "isFree": false,
+     "state": "green"
+    },
+    {
+     "idx": 9,
+     "label": "Task 9",
+     "type": "normal",
+     "isFree": false,
+     "state": "green"
+    },
+    {
+     "idx": 10,
+     "label": "Task 10",
+     "type": "normal",
+     "isFree": false,
+     "state": "green"
+    },
+    {
+     "idx": 11,
+     "label": "Task 11",
+     "type": "normal",
+     "isFree": false,
+     "state": "green"
+    },
+    {
+     "idx": 12,
+     "label": "FREE",
+     "type": "normal",
+     "isFree": true,
+     "state": "green"
+    },
+    {
+     "idx": 13,
+     "label": "Task 13",
+     "type": "normal",
+     "isFree": false,
+     "state": "green"
+    },
+    {
+     "idx": 14,
+     "label": "Task 14",
+     "type": "normal",
+     "isFree": false,
+     "state": "green"
+    },
+    {
+     "idx": 15,
+     "label": "Task 15",
+     "type": "normal",
+     "isFree": false,
+     "state": "green"
+    },
+    {
+     "idx": 16,
+     "label": "Task 16",
+     "type": "normal",
+     "isFree": false,
+     "state": "green"
+    },
+    {
+     "idx": 17,
+     "label": "Task 17",
+     "type": "normal",
+     "isFree": false,
+     "state": "green"
+    },
+    {
+     "idx": 18,
+     "label": "Task 18",
+     "type": "normal",
+     "isFree": false,
+     "state": "green"
+    },
+    {
+     "idx": 19,
+     "label": "Task 19",
+     "type": "normal",
+     "isFree": false,
+     "state": "green"
+    },
+    {
+     "idx": 20,
+     "label": "Task 20",
+     "type": "achievement",
+     "isFree": false,
+     "state": "green"
+    },
+    {
+     "idx": 21,
+     "label": "Task 21",
+     "type": "normal",
+     "isFree": false,
+     "state": "green"
+    },
+    {
+     "idx": 22,
+     "label": "Task 22",
+     "type": "normal",
+     "isFree": false,
+     "state": "green"
+    },
+    {
+     "idx": 23,
+     "label": "Task 23",
+     "type": "normal",
+     "isFree": false,
+     "state": "green"
+    },
+    {
+     "idx": 24,
+     "label": "Task 24",
+     "type": "normal",
+     "isFree": false,
+     "state": "green"
+    }
+   ]
+  },
+  {
+   "name": "bingo-4x4-undone-types",
+   "kind": "bingo",
+   "replay": {
+    "order": [
+     {
+      "boardTaskId": "bt0",
+      "idx": 0,
+      "completedAt": null
+     },
+     {
+      "boardTaskId": "bt1",
+      "idx": 1,
+      "completedAt": null
+     },
+     {
+      "boardTaskId": "bt2",
+      "idx": 2,
+      "completedAt": null
+     },
+     {
+      "boardTaskId": "bt3",
+      "idx": 3,
+      "completedAt": null
+     },
+     {
+      "boardTaskId": "bt4",
+      "idx": 4,
+      "completedAt": null
+     }
+    ],
+    "freeIdx": null,
+    "lineClosureBeat": {
+     "row_0": 5
+    },
+    "completedTasks": 5,
+    "totalTasks": 16,
+    "size": 4
+   },
+   "cells": [
+    {
+     "idx": 0,
+     "label": "Task 0",
+     "type": "normal",
+     "isFree": false
+    },
+    {
+     "idx": 1,
+     "label": "Task 1",
+     "type": "normal",
+     "isFree": false
+    },
+    {
+     "idx": 2,
+     "label": "Task 2",
+     "type": "normal",
+     "isFree": false
+    },
+    {
+     "idx": 3,
+     "label": "Task 3",
+     "type": "normal",
+     "isFree": false
+    },
+    {
+     "idx": 4,
+     "label": "Task 4",
+     "type": "counting",
+     "isFree": false
+    },
+    {
+     "idx": 5,
+     "label": "Task 5",
+     "type": "counting",
+     "isFree": false
+    },
+    {
+     "idx": 6,
+     "label": "Task 6",
+     "type": "normal",
+     "isFree": false
+    },
+    {
+     "idx": 7,
+     "label": "Task 7",
+     "type": "normal",
+     "isFree": false
+    },
+    {
+     "idx": 8,
+     "label": "Task 8",
+     "type": "normal",
+     "isFree": false
+    },
+    {
+     "idx": 9,
+     "label": "Task 9",
+     "type": "compound",
+     "isFree": false
+    },
+    {
+     "idx": 10,
+     "label": "Task 10",
+     "type": "compound",
+     "isFree": false
+    },
+    {
+     "idx": 11,
+     "label": "Task 11",
+     "type": "normal",
+     "isFree": false
+    },
+    {
+     "idx": 12,
+     "label": "Task 12",
+     "type": "normal",
+     "isFree": false
+    },
+    {
+     "idx": 13,
+     "label": "Task 13",
+     "type": "normal",
+     "isFree": false
+    },
+    {
+     "idx": 14,
+     "label": "Task 14",
+     "type": "normal",
+     "isFree": false
+    },
+    {
+     "idx": 15,
+     "label": "Task 15",
+     "type": "achievement",
+     "isFree": false
+    }
+   ],
+   "expected": [
+    {
+     "idx": 0,
+     "label": "Task 0",
+     "type": "normal",
+     "isFree": false,
+     "state": "green"
+    },
+    {
+     "idx": 1,
+     "label": "Task 1",
+     "type": "normal",
+     "isFree": false,
+     "state": "green"
+    },
+    {
+     "idx": 2,
+     "label": "Task 2",
+     "type": "normal",
+     "isFree": false,
+     "state": "green"
+    },
+    {
+     "idx": 3,
+     "label": "Task 3",
+     "type": "normal",
+     "isFree": false,
+     "state": "green"
+    },
+    {
+     "idx": 4,
+     "label": "Task 4",
+     "type": "counting",
+     "isFree": false,
+     "state": "done"
+    },
+    {
+     "idx": 5,
+     "label": "Task 5",
+     "type": "counting",
+     "isFree": false,
+     "state": "undone"
+    },
+    {
+     "idx": 6,
+     "label": "Task 6",
+     "type": "normal",
+     "isFree": false,
+     "state": "undone"
+    },
+    {
+     "idx": 7,
+     "label": "Task 7",
+     "type": "normal",
+     "isFree": false,
+     "state": "undone"
+    },
+    {
+     "idx": 8,
+     "label": "Task 8",
+     "type": "normal",
+     "isFree": false,
+     "state": "undone"
+    },
+    {
+     "idx": 9,
+     "label": "Task 9",
+     "type": "compound",
+     "isFree": false,
+     "state": "undone"
+    },
+    {
+     "idx": 10,
+     "label": "Task 10",
+     "type": "compound",
+     "isFree": false,
+     "state": "undone"
+    },
+    {
+     "idx": 11,
+     "label": "Task 11",
+     "type": "normal",
+     "isFree": false,
+     "state": "undone"
+    },
+    {
+     "idx": 12,
+     "label": "Task 12",
+     "type": "normal",
+     "isFree": false,
+     "state": "undone"
+    },
+    {
+     "idx": 13,
+     "label": "Task 13",
+     "type": "normal",
+     "isFree": false,
+     "state": "undone"
+    },
+    {
+     "idx": 14,
+     "label": "Task 14",
+     "type": "normal",
+     "isFree": false,
+     "state": "undone"
+    },
+    {
+     "idx": 15,
+     "label": "Task 15",
+     "type": "achievement",
+     "isFree": false,
+     "state": "undone"
     }
    ]
   }

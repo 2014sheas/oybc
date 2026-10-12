@@ -162,12 +162,15 @@ export {
   momentCellVisual,
   momentCounterAt,
   momentFinalBeat,
+  momentPosterCells,
 } from './boardMoment';
 export type {
   BoardMomentReplay,
   MomentCellVisual,
   MomentKind,
   MomentOrderEntry,
+  PosterCell,
+  PosterCellInput,
 } from './boardMoment';
 export { boardDerivedStateChanged } from './boardDerivedState';
 export type { BoardDerivedState } from './boardDerivedState';
