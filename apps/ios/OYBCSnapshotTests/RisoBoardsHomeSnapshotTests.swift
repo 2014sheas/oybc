@@ -212,7 +212,7 @@ final class RisoBoardsHomeSnapshotTests: XCTestCase {
             id: "b-monthly", name: "June Goals",
             timeframe: .monthly, status: .active,
             startDate: "2026-06-01T00:00:00.000",
-            // End date within 24h after fixedNow (noon Jun 12) → "Expiring".
+            // End date inside the monthly 3-day lead after fixedNow (noon Jun 12) → "Expiring".
             endDate: "2026-06-12T20:00:00.000"
         )
         let yearlyBoard = SnapshotFixtures.makeBoard(

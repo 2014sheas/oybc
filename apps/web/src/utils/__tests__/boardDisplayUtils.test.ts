@@ -38,17 +38,29 @@ describe('boardDisplayUtils — custom boards honor their end date', () => {
     expect(getExpiryLabel({ timeframe: Timeframe.CUSTOM })).toBe('No deadline');
   });
 
-  it('isBoardExpiringSoon: active custom board within 24h is expiring soon', () => {
+  it('isBoardExpiringSoon: a 10-day custom board is expiring in its last day', () => {
+    const startDate = iso(-9 * DAY);
     expect(
-      isBoardExpiringSoon({ status: BoardStatus.ACTIVE, timeframe: Timeframe.CUSTOM, endDate: iso(12 * 60 * 60 * 1000) }),
+      isBoardExpiringSoon({ status: BoardStatus.ACTIVE, timeframe: Timeframe.CUSTOM, startDate, endDate: iso(12 * 60 * 60 * 1000) }),
     ).toBe(true);
     // …but not one still days out, and not an indefinite board.
     expect(
-      isBoardExpiringSoon({ status: BoardStatus.ACTIVE, timeframe: Timeframe.CUSTOM, endDate: iso(3 * DAY) }),
+      isBoardExpiringSoon({ status: BoardStatus.ACTIVE, timeframe: Timeframe.CUSTOM, startDate, endDate: iso(3 * DAY) }),
     ).toBe(false);
     expect(
       isBoardExpiringSoon({ status: BoardStatus.ACTIVE, timeframe: Timeframe.INDEFINITE, endDate: iso(12 * 60 * 60 * 1000) }),
     ).toBe(false);
+  });
+
+  it('isBoardExpiringSoon: a daily board is expiring only in its last 3 hours', () => {
+    const board = (msLeft: number) => ({
+      status: BoardStatus.ACTIVE,
+      timeframe: Timeframe.DAILY,
+      startDate: iso(msLeft - DAY),
+      endDate: iso(msLeft),
+    });
+    expect(isBoardExpiringSoon(board(12 * 60 * 60 * 1000))).toBe(false);
+    expect(isBoardExpiringSoon(board(2 * 60 * 60 * 1000))).toBe(true);
   });
 });
 

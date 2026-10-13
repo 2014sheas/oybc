@@ -646,16 +646,12 @@ struct BoardListView: View {
         return "\(base) · \(expiry)"
     }
 
-    /// Returns true when the board's end date is within 24 hours of the
-    /// screen's PINNED `now` — never `timeIntervalSinceNow`, which made
-    /// the badge flip on an unrelated re-render (shape C).
+    /// Returns true when the board is inside its per-timeframe "Expiring"
+    /// lead time (`BoardExpiry`) at the screen's PINNED `now` — never
+    /// `timeIntervalSinceNow`, which made the badge flip on an unrelated
+    /// re-render (shape C).
     private func isBoardExpiringSoon(_ board: Board) -> Bool {
-        guard board.status == .active,
-              !board.isIndefinite,
-              let endStr = board.endDate,
-              let end = parseISO8601Date(endStr) else { return false }
-        let hoursLeft = end.timeIntervalSince(now) / 3600
-        return hoursLeft >= 0 && hoursLeft < 24
+        BoardExpiry.isExpiringSoon(board, now: now)
     }
 
     // MARK: - Data loading

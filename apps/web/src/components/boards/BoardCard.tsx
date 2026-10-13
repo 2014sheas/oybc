@@ -57,7 +57,7 @@ const STATUS_TO_BADGE: Record<BoardStatus, RisoBadgeKind> = {
  *
  * Priority order (mirrors iOS `RisoBoardCard` badge logic):
  *   1. Active + past end date      → "Expired"      (gold)
- *   2. Active + within 24 h       → "Expiring soon" (gold)
+ *   2. Active + inside its per-timeframe lead time (`isBoardExpiringSoon`) → "Expiring soon" (gold)
  *   3. Everything else            → normal status badge
  */
 function badgeFor(board: Board, now: Date): { kind: RisoBadgeKind; text: string } {
