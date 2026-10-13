@@ -74,6 +74,36 @@ enum CounterPlacement {
             ?? positive(root.maxCount)
     }
 
+    /// A host's window for `counterPickGoal(_:window:)`.
+    struct PickWindow: Equatable {
+        let timeframe: Timeframe
+        var startDate: String? = nil
+        var endDate: String? = nil
+    }
+
+    /// `counterPickGoal` over a `PickWindow` (nil = Indefinite).
+    static func counterPickGoal(_ root: CounterSettings.Fields, window: PickWindow?) -> CountValue? {
+        counterPickGoal(root, timeframe: window?.timeframe, startDate: window?.startDate, endDate: window?.endDate)
+    }
+
+    /// The goal a NEW sub-task linked to a picked counter starts with (owner
+    /// rule 2026-10-13: pre-filled, editable): the counter's default for the
+    /// host's window, as a placement there resolves it. No window reads as
+    /// Indefinite — the yearly default. TS twin: `counterPickGoal`.
+    ///
+    /// - Parameters:
+    ///   - root: The picked counter's fields.
+    ///   - timeframe: The host board's (or the compound's own) timeframe, if any.
+    ///   - startDate: Its start (CUSTOM only).
+    ///   - endDate: Its end (CUSTOM only).
+    /// - Returns: The goal, or nil.
+    static func counterPickGoal(
+        _ root: CounterSettings.Fields, timeframe: Timeframe?, startDate: String? = nil, endDate: String? = nil
+    ) -> CountValue? {
+        guard let timeframe else { return placementGoalForCounter(root, timeframe: .indefinite) }
+        return placementGoalForCounter(root, timeframe: timeframe, startDate: startDate, endDate: endDate)
+    }
+
     /// Whether hand-adding the ROOT itself must mint a per-board copy: only
     /// when it carries a timeframe default for this board that differs from
     /// its own goal. TS twin: `placementNeedsCopy`.

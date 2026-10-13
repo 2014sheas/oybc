@@ -214,7 +214,7 @@ export function CompoundTaskWizard({
    *  state update. */
   function toggleLibraryItem(id: string, kind: 'task' | 'compound'): void {
     // A counter is never a sub-task as-is: picking it starts a NEW Counting
-    // sub-task linked to it, the goal left for the user.
+    // sub-task linked to it, the goal pre-filled with its default.
     const counter = allTasks.find((t) => t.id === id);
     if (counter && isSharedCounterRoot(counter, counterRootIdsIn(allTasks))) {
       setSubtasks((prev) => [...prev, inlineSubtaskFromCounter(counter, crypto.randomUUID())]);

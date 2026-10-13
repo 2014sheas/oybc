@@ -2,6 +2,8 @@ import {
   TaskType,
   counterDisplayName,
   countKindNeedsUnit,
+  counterPickGoal,
+  formatCountForInput,
   findLinkableCounter,
   generateCounterTaskTitle,
   parseCountInput,
@@ -9,6 +11,7 @@ import {
   resolveCountKind,
   type CountKind,
   type CreateCompoundChildEntry,
+  type PlacementBoard,
   type LinkableCounter,
   type Task,
 } from '@oybc/shared';
@@ -66,16 +69,18 @@ export interface InlineSubtaskDraft {
 }
 
 /**
- * The inline Counting draft a picked hub counter (no goal of its own) becomes:
- * its verb, noun and kind, pinned to it, goal left for the user. iOS twin:
- * `RisoCompoundFieldsView.prefillCounterSub`.
+ * The inline Counting draft a picked counter becomes: its verb, noun and kind,
+ * pinned to it, the goal pre-filled with the counter's default for `window`
+ * (`counterPickGoal`; editable). iOS twin: `RisoCompoundFieldsView.prefillCounterSub`.
  *
  * @param root - The picked counter.
  * @param id - The draft id.
+ * @param window - The host's window, if any (none reads as Indefinite → yearly).
  * @returns The draft.
  */
-export function inlineSubtaskFromCounter(root: Task, id: string): InlineSubtaskDraft {
+export function inlineSubtaskFromCounter(root: Task, id: string, window?: PlacementBoard | null): InlineSubtaskDraft {
   const kind = resolveCountKind(root);
+  const goal = counterPickGoal(root, window);
   return {
     id,
     mode: 'inline',
@@ -83,7 +88,7 @@ export function inlineSubtaskFromCounter(root: Task, id: string): InlineSubtaskD
     title: '',
     action: root.action ?? '',
     unit: countKindNeedsUnit(kind) ? (root.unit ?? '') : '',
-    maxCountStr: '',
+    maxCountStr: goal !== null ? formatCountForInput(goal, kind) : '',
     steps: [],
     ...(kind !== 'discrete' ? { countKind: kind } : {}),
     pinnedCounterId: root.id,

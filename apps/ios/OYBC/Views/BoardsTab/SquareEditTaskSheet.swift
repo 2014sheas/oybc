@@ -55,6 +55,8 @@ struct SquareEditTaskSheet: View {
     /// Sub-task quick-add inputs (browsable library + every live link).
     var libraryTasks: [Task] = []
     var allLinks: [CompoundChild] = []
+    /// The board's window — a counter picked as a sub-task starts at its default for it.
+    var goalWindow: CounterPlacement.PickWindow? = nil
     var libraryInputsState: RisoCompoundEditFieldsView.LibraryInputsState = .loaded
     /// Optional async loader the presenter supplies (reads through the
     /// injected database); results replace the props above on appear.
@@ -185,6 +187,7 @@ struct SquareEditTaskSheet: View {
         compoundChildren: [Task]? = nil,
         libraryTasks: [Task] = [],
         allLinks: [CompoundChild] = [],
+        goalWindow: CounterPlacement.PickWindow? = nil,
         libraryInputsState: RisoCompoundEditFieldsView.LibraryInputsState = .loaded,
         loadInputs: (() async -> CompoundInputs)? = nil,
         startingType: TaskType? = nil,
@@ -202,6 +205,7 @@ struct SquareEditTaskSheet: View {
         self.compoundChildren = compoundChildren
         self.libraryTasks = libraryTasks
         self.allLinks = allLinks
+        self.goalWindow = goalWindow
         self.libraryInputsState = libraryInputsState
         self.loadInputs = loadInputs
         self.database = database
@@ -646,6 +650,7 @@ struct SquareEditTaskSheet: View {
                         parentId: task.id,
                         libraryTasks: pickerLibraryTasks,
                         counterRootTasks: pickerAllTasks,
+                        goalWindow: goalWindow,
                         allLinks: pickerLinks,
                         libraryInputsState: pickerInputsState
                     )

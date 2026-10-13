@@ -1485,5 +1485,65 @@
       "timeframeDefault": 35,
       "expected": 35
     }
+  ],
+  "counterPickGoal": [
+    {
+      "name": "a counter with no goal and no window takes the yearly kind fallback",
+      "root": {},
+      "expected": 365
+    },
+    {
+      "name": "a weekly default on a weekly host",
+      "root": {
+        "maxCount": 12,
+        "timeframeGoals": {
+          "weekly": 3
+        }
+      },
+      "board": {
+        "timeframe": "weekly"
+      },
+      "expected": 3
+    },
+    {
+      "name": "no window, no defaults: the counter's own goal",
+      "root": {
+        "maxCount": 12
+      },
+      "expected": 12
+    },
+    {
+      "name": "no window, a weekly default derives the yearly one",
+      "root": {
+        "timeframeGoals": {
+          "weekly": 2
+        }
+      },
+      "expected": 105
+    },
+    {
+      "name": "a Duration counter with no goal on a daily host takes 30 min",
+      "root": {
+        "countKind": "duration"
+      },
+      "board": {
+        "timeframe": "daily"
+      },
+      "expected": 30
+    },
+    {
+      "name": "a CUSTOM host scales the nearest default to its dates",
+      "root": {
+        "timeframeGoals": {
+          "weekly": 7
+        }
+      },
+      "board": {
+        "timeframe": "custom",
+        "startDate": "2026-10-01T00:00:00.000",
+        "endDate": "2026-10-03T23:59:59.999"
+      },
+      "expected": 3
+    }
   ]
 }

@@ -11,6 +11,7 @@ import {
   type CountKind,
   type CounterTitleSettings,
   type Task,
+  type PlacementBoard,
 } from '@oybc/shared';
 import {
   SHARED_COUNTER_TYPE_MESSAGE,
@@ -92,6 +93,8 @@ export interface BoardEditTaskSheetProps {
   onForkConfirmed?: () => void;
   /** A linked copy's counter ROOT (name + templates) — auto titles render through it. */
   rootSettings?: CounterTitleSettings | null;
+  /** The board's window — a counter picked as a sub-task starts at its default for it. */
+  goalWindow?: PlacementBoard | null;
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
@@ -126,6 +129,7 @@ export function BoardEditTaskSheet({
   forkConfirmed = false,
   onForkConfirmed,
   rootSettings: rootSettingsProp,
+  goalWindow,
 }: BoardEditTaskSheetProps): React.ReactElement {
   // aria-modal, Escape → cancel, initial focus, Tab trap, focus restore.
   const { ref: modalRef, props: modalProps } = useModalA11y<HTMLDivElement>({
@@ -442,6 +446,7 @@ export function BoardEditTaskSheet({
                 libraryTasks={libraryTasks}
                 lookupTasks={allTasks}
                 allLinks={allLinks}
+                goalWindow={goalWindow}
                 libraryInputsState={libraryInputsState}
               />
             ) : compoundLoadError !== null ? (

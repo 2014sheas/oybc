@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import {
+  counterPickGoal,
   counterSearchMatches,
   counterTimeframeDefault,
   normalizeSearchText,
@@ -33,6 +34,12 @@ describe('counterPlacementVectors — counterTimeframeDefault', () => {
 describe('counterPlacementVectors — placementGoalForCounter', () => {
   it.each(V.placementGoalForCounter as any[])('$name', (v: any) => {
     expect(placementGoalForCounter(v.root, v.board, v.existingCopy)).toBe(v.expected);
+  });
+});
+
+describe('counterPlacementVectors — counterPickGoal', () => {
+  it.each(V.counterPickGoal as any[])('$name', (v: any) => {
+    expect(counterPickGoal(v.root, v.board)).toBe(v.expected);
   });
 });
 

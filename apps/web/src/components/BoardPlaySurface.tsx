@@ -863,7 +863,7 @@ export function BoardPlaySurface({
         return (
           <BoardEditTaskSheet
             task={sheetTask} original={editDraft.resolveOriginalTask(editTaskSheetId)} staged={editDraft.taskOverrides.get(editTaskSheetId)}
-            boardId={board.id} forkConfirmed={editDraft.forkConfirmed} onForkConfirmed={editDraft.confirmFork} rootSettings={sheetTask.sharedCounterId ? taskMap[sheetTask.sharedCounterId] : null}
+            boardId={board.id} forkConfirmed={editDraft.forkConfirmed} onForkConfirmed={editDraft.confirmFork} rootSettings={sheetTask.sharedCounterId ? taskMap[sheetTask.sharedCounterId] : null} goalWindow={board}
             onDone={(taskId, patch) => {
               editDraft.stageTaskEdit(taskId, patch);
               setEditTaskSheetId(null);

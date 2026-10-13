@@ -43,6 +43,7 @@ export {
   counterTimeframeDefault,
   normalizeSearchText,
   placementGoalForCounter,
+  counterPickGoal,
   placementGoalSource,
   placementNeedsCopy,
   taskSearchMatches,

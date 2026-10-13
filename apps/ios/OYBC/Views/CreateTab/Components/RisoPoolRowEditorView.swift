@@ -20,6 +20,8 @@ struct RisoPoolRowEditorView: View {
     let libraryTasks: [Task]
     /// The FULL task set for counter-root lookups in the sub-task quick-add.
     var counterRootTasks: [Task] = []
+    /// Compound only — the host board's window (`RisoCompoundEditFieldsView.goalWindow`).
+    var goalWindow: CounterPlacement.PickWindow? = nil
     /// Compound only — live links across all compounds (loop check).
     let allLinks: [CompoundChild]
     let onSave: () -> Void
@@ -48,6 +50,7 @@ struct RisoPoolRowEditorView: View {
                         parentId: taskId,
                         libraryTasks: libraryTasks,
                         counterRootTasks: counterRootTasks,
+                        goalWindow: goalWindow,
                         allLinks: allLinks
                     )
                 }

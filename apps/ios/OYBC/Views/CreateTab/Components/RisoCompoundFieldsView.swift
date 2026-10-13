@@ -634,8 +634,8 @@ struct RisoCompoundFieldsView: View {
     }
 
     /// A picked counter is never linked as an existing sub-task: switch the sub input to Counting with the
-    /// counter's verb / noun / kind and pin it as the link target (auto-link
-    /// ON) — the user enters the Goal and taps Add.
+    /// counter's verb / noun / kind, the Goal pre-filled with its default for
+    /// this window, and pin it as the link target (auto-link ON).
     private func prefillCounterSub(_ root: OYBC.Task) {
         let action = root.action ?? ""
         let kind = resolveCountKind(root.countKind)
@@ -646,7 +646,10 @@ struct RisoCompoundFieldsView: View {
         subInputText = action
         subKind = kind
         subUnitText = unit
-        subGoalText = ""
+        // Pre-filled with the counter's default for this window (editable).
+        subGoalText = CounterPlacement.counterPickGoal(
+            .init(task: root), timeframe: defaultTimeframe, startDate: defaultStartDate, endDate: defaultEndDate
+        ).map { formatCountForInput($0, kind: kind) } ?? ""
         subLink.pin(root, action: action, unit: unit, kind: kind, tasks: suggestionPool ?? taskLibrary)
     }
 

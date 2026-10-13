@@ -99,29 +99,7 @@ struct BoardEditPresenter: ViewModifier {
                 )
             }
             // Edit-task sheet (i6, unchanged from slice 2).
-            .sheet(item: $taskEditTarget) { target in
-                let original = originalTask(for: target.task)
-                let staged = viewModel.editTaskOverrides[target.task.id]?.compound
-                let forkCheck = viewModel.database.boardScopedForkCheck(taskId: target.task.id, boardId: viewModel.boardId)
-                SquareEditTaskSheet(
-                    task: target.task,
-                    original: original,
-                    stagedCompound: staged,
-                    compoundChildren: staged == nil ? pendingCompoundChildren(for: original) : nil,
-                    libraryInputsState: .loading,
-                    loadInputs: compoundInputsLoader(for: original, hasStagedCompound: staged != nil),
-                    database: viewModel.database,
-                    forkingTaskIds: forkCheck.forking,
-                    forkBaselineRows: forkCheck.rows,
-                    forkConfirmed: viewModel.editForkConfirmed,
-                    onForkConfirmed: { viewModel.editForkConfirmed = true },
-                    onDone: { patch in
-                        taskEditTarget = nil
-                        viewModel.handleEditTaskOverride(taskId: target.task.id, patch: patch)
-                    },
-                    onCancel: { taskEditTarget = nil }
-                )
-            }
+            .sheet(item: $taskEditTarget) { target in taskEditSheet(for: target) }
             .alert(
                 "Couldn’t save",
                 isPresented: Binding(
@@ -254,6 +232,40 @@ struct BoardEditPresenter: ViewModifier {
                 return inputs
             }.value
         }
+    }
+
+    /// The Board Edit task sheet for `target` (its own function so the
+    /// type-checker handles the long initialiser).
+    @ViewBuilder
+    private func taskEditSheet(for target: EditModeTaskTarget) -> some View {
+            let original = originalTask(for: target.task)
+            let staged = viewModel.editTaskOverrides[target.task.id]?.compound
+            let forkCheck = viewModel.database.boardScopedForkCheck(taskId: target.task.id, boardId: viewModel.boardId)
+            SquareEditTaskSheet(
+                task: target.task,
+                original: original,
+                stagedCompound: staged,
+                compoundChildren: staged == nil ? pendingCompoundChildren(for: original) : nil,
+                goalWindow: boardGoalWindow,
+                libraryInputsState: .loading,
+                loadInputs: compoundInputsLoader(for: original, hasStagedCompound: staged != nil),
+                database: viewModel.database,
+                forkingTaskIds: forkCheck.forking,
+                forkBaselineRows: forkCheck.rows,
+                forkConfirmed: viewModel.editForkConfirmed,
+                onForkConfirmed: { viewModel.editForkConfirmed = true },
+                onDone: { patch in
+                    taskEditTarget = nil
+                    viewModel.handleEditTaskOverride(taskId: target.task.id, patch: patch)
+                },
+                onCancel: { taskEditTarget = nil }
+            )
+    }
+
+    /// The board's window for a counter picked as a compound sub-task.
+    private var boardGoalWindow: CounterPlacement.PickWindow? {
+        guard let board = viewModel.board else { return nil }
+        return CounterPlacement.PickWindow(timeframe: board.timeframe, startDate: board.startDate, endDate: board.endDate)
     }
 
     // MARK: - Candidates
