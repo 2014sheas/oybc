@@ -50,16 +50,23 @@ struct CounterLogToastView: View {
     /// caller is responsible for clearing the toast after this resolves —
     /// mirrors web's `onUndo` (does NOT itself call `onDone`).
     let onUndo: () -> Void
-    /// Called once after the auto-dismiss timer (~4s) expires. NOT called
-    /// by `onUndo` — the caller clears the toast itself on that path.
+    /// Called once — after the auto-dismiss timer (`UndoToast.dismissDelay`)
+    /// or on the first touch outside the toast. NOT called by `onUndo` — the
+    /// caller clears the toast itself on that path.
     let onDone: () -> Void
 
-    /// Auto-dismiss duration (design handoff §Interactions — "auto-dismiss ~4s").
-    private static let dismissDelay: TimeInterval = 4
+    /// Set once `onDone` has fired (a timer and a touch can both arrive).
+    @State private var done = false
 
     static func text(amount: CountValue, unit: String, verb: Verb, kind: CountKind) -> String {
         let a = formatCountWithUnit(amount, kind: kind, unit: unit)
         return verb == .logged ? "Logged +\(a)" : "Removed \(a)"
+    }
+
+    private func finish() {
+        guard !done else { return }
+        done = true
+        onDone()
     }
 
     private var bodyText: String { message ?? Self.text(amount: amount, unit: unit, verb: verb, kind: kind) }
@@ -93,13 +100,15 @@ struct CounterLogToastView: View {
                 .offset(x: Riso.Shadow.small, y: Riso.Shadow.small)
         )
         .accessibilityElement(children: .combine)
+        // Any other touch — a tap, a scroll — dismisses it (it must not get in the way).
+        .dismissOnOutsideTouch(perform: finish)
         .task {
             do {
-                try await _Concurrency.Task.sleep(nanoseconds: UInt64(Self.dismissDelay * 1_000_000_000))
+                try await _Concurrency.Task.sleep(nanoseconds: UndoToast.dismissDelayNanoseconds)
             } catch {
                 return // cancelled — the view was torn down (e.g. Undo already cleared it)
             }
-            onDone()
+            finish()
         }
     }
 }

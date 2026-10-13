@@ -1,10 +1,8 @@
-import { useEffect } from 'react';
-import type { CountKind } from '@oybc/shared';
+import { useEffect, useRef } from 'react';
+import { UNDO_TOAST_MS, type CountKind } from '@oybc/shared';
+import { useDismissOnOutsideInteraction } from '../../hooks/useDismissOnOutsideInteraction';
 import { formatCounterLogToastText } from './counterLogToastText';
 import styles from './CounterLogToast.module.css';
-
-/** Auto-dismiss duration in ms (design handoff §Interactions — "auto-dismiss ~4s"). */
-const TOAST_MS = 4000;
 
 export interface CounterLogToastProps {
   /** Amount just logged (always positive — see `verb`). */
@@ -38,7 +36,8 @@ export interface CounterLogToastProps {
   kind?: CountKind;
   /** Reverses the log entry (`undoLastCounterLog`). Disabled while pending. */
   onUndo: () => void;
-  /** Called once after the auto-dismiss timer expires OR after Undo resolves. */
+  /** Called after the auto-dismiss timer expires, on any interaction outside
+   *  the toast, OR after Undo resolves. */
   onDone: () => void;
 }
 
@@ -59,7 +58,8 @@ export interface CounterLogToastProps {
  * R3 retired the board-play-only `components/play/RisoCreditedToast.tsx`
  * (no Undo, fixed copy, 2.6s dismiss) in favor of extending this component —
  * exactly the merge its R2 docstring flagged as the expected R3 outcome, so
- * board-play now gets Undo + the ~4s dismiss window for free.
+ * board-play now gets Undo for free. It stays up `UNDO_TOAST_MS` and any
+ * interaction outside it dismisses it at once (owner rule 2026-10-13).
  *
  * Mount a new instance (different `key`) per toast so the auto-dismiss
  * timer resets cleanly.
@@ -77,15 +77,18 @@ export function CounterLogToast({
   useEffect(() => {
     // Capture onDone once at mount — a parent re-render (e.g. a live-query
     // update after the write this toast reports) must not restart the timer.
-    const id = setTimeout(onDone, TOAST_MS);
+    const id = setTimeout(onDone, UNDO_TOAST_MS);
     return () => clearTimeout(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  const ref = useRef<HTMLDivElement>(null);
+  useDismissOnOutsideInteraction(ref, onDone);
+
   const text = formatCounterLogToastText({ amount, unit, verb, counterName, boardNames, kind });
 
   return (
-    <div className={styles.toast} role="status" aria-live="polite" aria-atomic="true">
+    <div ref={ref} className={styles.toast} role="status" aria-live="polite" aria-atomic="true">
       <span className={styles.text}>{text}</span>
       <button type="button" className={styles.undoBtn} onClick={onUndo}>
         Undo

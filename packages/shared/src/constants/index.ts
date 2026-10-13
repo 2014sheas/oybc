@@ -30,3 +30,11 @@ export const DB_VERSION = 1;
  * Local database read target (milliseconds)
  */
 export const TARGET_READ_TIME_MS = 10;
+
+/**
+ * How long an Undo toast stays up before it dismisses itself (milliseconds).
+ * Any other touch, scroll or key press dismisses it sooner (owner rule
+ * 2026-10-13: the toast must not get in the way). iOS twin:
+ * `UndoToast.dismissDelay`.
+ */
+export const UNDO_TOAST_MS = 2500;

@@ -609,6 +609,7 @@
 		EDBA3733479AE8EDD6B27DB2 /* RisoText.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5245B5C7E07935259DEE614D /* RisoText.swift */; };
 		EDDAD56A65F7E9970995A8D3 /* BoardPlayViewModel+EditCommit.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9BF3DAFCE8E1EFC907BF863 /* BoardPlayViewModel+EditCommit.swift */; };
 		EE0FBBC7062E63C774C2B4AB /* AppDatabase+LateLog.swift in Sources */ = {isa = PBXBuildFile; fileRef = F10E15FDC946FC25587B18AC /* AppDatabase+LateLog.swift */; };
+		EE131CB76D6C35F1C4425588 /* UndoToast.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD566E612AAA6DC0BE58E80F /* UndoToast.swift */; };
 		EE25B39F85027177B63A16E7 /* RisoProfileRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2B9CC1100E046499CED2041 /* RisoProfileRow.swift */; };
 		EE8923EC70C290866809AF19 /* CreateHubView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 672279842817679C05C429E7 /* CreateHubView.swift */; };
 		F07FD14260D9793A3E65DAA6 /* CountersHubView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BFC1DDA95C4B2F0C7BDB80C3 /* CountersHubView.swift */; };
@@ -1231,6 +1232,7 @@
 		DCA2E34EA7CAA29BA2596F60 /* TaskDeleteConfirmView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskDeleteConfirmView.swift; sourceTree = "<group>"; };
 		DCEF8FBDEA02F3DC90FE801E /* RearrangeJiggleTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RearrangeJiggleTests.swift; sourceTree = "<group>"; };
 		DD30453B8D714B075D59EC40 /* boardMomentVectors.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = boardMomentVectors.json; sourceTree = "<group>"; };
+		DD566E612AAA6DC0BE58E80F /* UndoToast.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UndoToast.swift; sourceTree = "<group>"; };
 		DE2853654120D7E16111DA40 /* EntitlementTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EntitlementTests.swift; sourceTree = "<group>"; };
 		DF7CFCFD2C7AF0403A3655F8 /* placementVectors.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = placementVectors.json; sourceTree = "<group>"; };
 		DFC485837E7FFEBDB8B0B688 /* SquarePickerCandidatesTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SquarePickerCandidatesTests.swift; sourceTree = "<group>"; };
@@ -1314,7 +1316,7 @@
 		FF5F9FDA837D8BC9484CCF6C /* CoreBoardDefault.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoreBoardDefault.swift; sourceTree = "<group>"; };
 		FF67441213041C9A9901261C /* RisoCoreTimeframeGrid.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RisoCoreTimeframeGrid.swift; sourceTree = "<group>"; };
 		FFB954BE701004999E12FBE9 /* CoreBoardWindowViewModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoreBoardWindowViewModelTests.swift; sourceTree = "<group>"; };
-		"TEMP_96B83161-4988-4BED-8990-20C957F58110" /* Signing.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Signing.xcconfig; sourceTree = "<group>"; };
+		"TEMP_861C40DC-7A10-42E7-A7A6-64062A998F21" /* Signing.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Signing.xcconfig; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -1991,6 +1993,7 @@
 				ABEBA4124A93DC22DE779E3F /* TaskExpiry.swift */,
 				B090BB4E6405783975D15376 /* TaskTitle.swift */,
 				9F095D202D751148290C080A /* TaskTypeSwitch.swift */,
+				DD566E612AAA6DC0BE58E80F /* UndoToast.swift */,
 				E06C42D379970D782F6091C7 /* UUIDv5.swift */,
 			);
 			path = Helpers;
@@ -2235,10 +2238,10 @@
 			path = OYBCUITests;
 			sourceTree = "<group>";
 		};
-		"TEMP_40B67597-9205-403A-AAA8-44520C8FCFD8" /* ios */ = {
+		"TEMP_CCE5E174-4E65-420A-A1E1-01160FBD92FF" /* ios */ = {
 			isa = PBXGroup;
 			children = (
-				"TEMP_96B83161-4988-4BED-8990-20C957F58110" /* Signing.xcconfig */,
+				"TEMP_861C40DC-7A10-42E7-A7A6-64062A998F21" /* Signing.xcconfig */,
 			);
 			path = ios;
 			sourceTree = "<group>";
@@ -2790,6 +2793,7 @@
 				24B688A1A3A1A536EA95D326 /* TutorialProgressStore.swift in Sources */,
 				78B71BCED92035C81336587C /* UITestSeed.swift in Sources */,
 				BECA1D3017CA6E0A229E6533 /* UUIDv5.swift in Sources */,
+				EE131CB76D6C35F1C4425588 /* UndoToast.swift in Sources */,
 				AE68974162C7670D2CBD065C /* UpgradeAccountSheet.swift in Sources */,
 				9C24CDBF218203559E063F7F /* User.swift in Sources */,
 				8F31B08C030858C5E7FC208F /* WizardPreviewWindowed.swift in Sources */,
@@ -3106,7 +3110,7 @@
 /* Begin XCBuildConfiguration section */
 		017A8B55D46C455027C5CBDA /* Debug */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = "TEMP_96B83161-4988-4BED-8990-20C957F58110" /* Signing.xcconfig */;
+			baseConfigurationReference = "TEMP_861C40DC-7A10-42E7-A7A6-64062A998F21" /* Signing.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = OYBC/OYBC.entitlements;
@@ -3203,7 +3207,7 @@
 		};
 		2D2075CA2813758686875591 /* Release */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = "TEMP_96B83161-4988-4BED-8990-20C957F58110" /* Signing.xcconfig */;
+			baseConfigurationReference = "TEMP_861C40DC-7A10-42E7-A7A6-64062A998F21" /* Signing.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = OYBC/OYBC.entitlements;

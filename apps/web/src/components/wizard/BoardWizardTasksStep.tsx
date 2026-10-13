@@ -3,6 +3,7 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import {
   Timeframe,
   TaskType,
+  UNDO_TOAST_MS,
   buildCounterFamilyMap,
   type BoardSource,
   type BoardWindow,
@@ -24,6 +25,7 @@ import {
   type TaskEditPatch,
 } from '../../db/taskEditPatch';
 import { useParentBoardTasks } from '../../hooks';
+import { useDismissOnOutsideInteraction } from '../../hooks/useDismissOnOutsideInteraction';
 import type { PendingTaskPayload } from '../../pages/createPage/useCreateFormState';
 import { useBrowsableTasks, type TaskLibrary } from '../../pages/createPage/useTaskLibrary';
 import {
@@ -407,6 +409,9 @@ export function BoardWizardTasksStep({
   const [editBaseline, setEditBaseline] = useState<TaskEditPatch | null>(null);
   const [toast, setToast] = useState<{ text: string; undo?: () => void } | null>(null);
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const toastRef = useRef<HTMLDivElement>(null);
+  // Any other tap / scroll / key press dismisses the toast (it must not get in the way).
+  useDismissOnOutsideInteraction(toastRef, () => setToast(null), toast !== null);
 
   // Usage-hint data — "N boards" / "unused" — shared by LibrarySheet and
   // PoolList rows. Requires a live query since `useTaskLibrary` doesn't
@@ -502,7 +507,7 @@ export function BoardWizardTasksStep({
   function showToast(text: string, undo?: () => void): void {
     if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
     setToast({ text, undo });
-    toastTimerRef.current = setTimeout(() => setToast(null), 6000);
+    toastTimerRef.current = setTimeout(() => setToast(null), UNDO_TOAST_MS);
   }
 
   /** Open the inline editor for a row. Closes any other open editor (only
@@ -750,7 +755,7 @@ export function BoardWizardTasksStep({
       />
 
       {toast && (
-        <div className={styles.toast} role="status">
+        <div ref={toastRef} className={styles.toast} role="status">
           <span className={styles.toastText}>{toast.text}</span>
           {toast.undo && (
             <button
