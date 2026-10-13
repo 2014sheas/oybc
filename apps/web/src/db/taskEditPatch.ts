@@ -7,6 +7,7 @@ import {
   countKindNeedsUnit,
   formatCountForInput,
   parseCountInput,
+  renderCounterTitle,
   resolveCountKind,
   type CountKind,
   compoundChildPickerCandidates,
@@ -81,6 +82,11 @@ export interface ChildPatch {
   /** Counter kind (Counting only): picked for a NEW sub-task, the task's
    *  own for an existing one (no picker — goal edits at its own kind). */
   countKind: CountKind;
+  /** A NEW Counting sub-task built from a hub counter (picked in the
+   *  sub-task search): the counter it is linked to, and the counter's
+   *  lifetime count at pick time (the minted child counts from there). */
+  sharedCounterId?: string;
+  baseline?: number;
   markedDeleted: boolean;
 }
 
@@ -287,6 +293,9 @@ export function canAppendCounting(
  * @param goal - The Goal field's text (Counting only).
  * @param unit - The Counting (unit) field's text (Counting only).
  * @param kind - The new Counting sub-task's kind.
+ * @param linkedRoot - The hub counter the Counting sub-task links to (picked
+ *   in the sub-task search): titled through its templates, linked, counting
+ *   from its lifetime count.
  * @returns The next draft.
  */
 export function appendTypedChild(
@@ -296,15 +305,18 @@ export function appendTypedChild(
   goal = '',
   unit = '',
   kind: CountKind = 'discrete',
+  linkedRoot?: Task,
 ): TaskEditPatch {
   let child: ChildPatch;
   if (isCounting) {
     const parsedGoal = parsePositiveGoal(goal, kind);
     const trimmedUnit = countKindNeedsUnit(kind) ? unit.trim() : '';
-    const title =
-      parsedGoal !== undefined && (trimmedUnit.length > 0 || !countKindNeedsUnit(kind))
-        ? generateCounterTaskTitle(text, parsedGoal, trimmedUnit, undefined, kind)
-        : text;
+    const formed = parsedGoal !== undefined && (trimmedUnit.length > 0 || !countKindNeedsUnit(kind));
+    const title = !formed
+      ? text
+      : linkedRoot
+        ? renderCounterTitle(linkedRoot, parsedGoal)
+        : generateCounterTaskTitle(text, parsedGoal, trimmedUnit, undefined, kind);
     child = {
       ...newChildPatch(true),
       title,
@@ -312,6 +324,7 @@ export function appendTypedChild(
       goal: parsedGoal !== undefined ? formatCountForInput(parsedGoal, kind) : '',
       unit: trimmedUnit,
       countKind: kind,
+      ...(linkedRoot ? { sharedCounterId: linkedRoot.id, baseline: linkedRoot.currentCount ?? 0 } : {}),
     };
   } else {
     child = { ...newChildPatch(false), title: text };
@@ -470,6 +483,7 @@ export function buildNewChildTask(
       unit,
       maxCount: goal,
       ...(kind !== 'discrete' ? { countKind: kind } : {}),
+      ...(step.sharedCounterId ? { sharedCounterId: step.sharedCounterId, baseline: step.baseline ?? 0 } : {}),
       isCompleted: false,
       totalCompletions: 0,
       totalInstances: 0,
@@ -542,6 +556,7 @@ export function patchesEqual(a: TaskEditPatch, b: TaskEditPatch): boolean {
       x.goal !== y.goal ||
       x.unit !== y.unit ||
       x.countKind !== y.countKind ||
+      x.sharedCounterId !== y.sharedCounterId ||
       x.markedDeleted !== y.markedDeleted
     ) {
       return false;

@@ -3,6 +3,7 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import {
   OperatorType,
   TaskType,
+  isGoalLessCounter,
   type Task,
   type BoardTask,
   type CompoundChild,
@@ -28,6 +29,7 @@ import {
   type SubtaskDraft,
   type ExistingSubtaskDraft,
   type InlineSubtaskDraft,
+  inlineSubtaskFromCounter,
   inlineSubtaskToAutoCreate,
 } from './compoundSubtaskDraft';
 import { CountsTowardError } from '../../db/operations/countsToward';
@@ -211,6 +213,13 @@ export function CompoundTaskWizard({
    *  clamping is handled by BuildStep's effect, so this stays a pure
    *  state update. */
   function toggleLibraryItem(id: string, kind: 'task' | 'compound'): void {
+    // A hub counter (no goal of its own) can't be a sub-task as-is: it starts
+    // a NEW Counting sub-task linked to it, the goal left for the user.
+    const counter = allTasks.find((t) => t.id === id);
+    if (counter && isGoalLessCounter(counter)) {
+      setSubtasks((prev) => [...prev, inlineSubtaskFromCounter(counter, crypto.randomUUID())]);
+      return;
+    }
     setSubtasks((prev) => {
       const alreadyIdx = prev.findIndex(
         (s) => s.mode === 'existing' && s.selectedId === id,

@@ -1,5 +1,14 @@
 import { useState } from 'react';
-import { OperatorType, TaskType, countKindNeedsUnit, type CompoundChild, type CountKind, type Task } from '@oybc/shared';
+import {
+  OperatorType,
+  TaskType,
+  countKindNeedsUnit,
+  isGoalLessCounter,
+  resolveCountKind,
+  type CompoundChild,
+  type CountKind,
+  type Task,
+} from '@oybc/shared';
 import { RisoChip, RisoSectionLabel } from '../riso';
 import { OperatorSelector } from '../OperatorSelector';
 import { CounterStepper } from '../CounterStepper';
@@ -84,6 +93,8 @@ export function CompoundFields({
   const [newSubGoal, setNewSubGoal] = useState('');
   const [newSubUnit, setNewSubUnit] = useState('');
   const [newSubKind, setNewSubKind] = useState<CountKind>('discrete');
+  /** The hub counter a pick primed the New sub row with (see `pinnedRoot`). */
+  const [newSubCounterId, setNewSubCounterId] = useState<string | null>(null);
   const subCount = liveChildren(draft).length;
   const operator = draft.operator ?? OperatorType.AND;
   const threshold = draft.threshold ?? 2;
@@ -113,16 +124,45 @@ export function CompoundFields({
     onDraftChange({ ...draft, children: nextChildren, threshold: nextThreshold });
   }
 
-  const candidates = subtaskQuickAddCandidates(parentId, libraryTasks, allLinks, draft);
+  // Hub counters (no goal of their own) can't be linked as-is; picking one
+  // primes a NEW Counting sub-task linked to it (like compound create).
+  const hubCounters = libraryTasks.filter((t) => !t.isDeleted && isGoalLessCounter(t) && t.sharedCounterId == null);
+  const candidates = [...subtaskQuickAddCandidates(parentId, libraryTasks, allLinks, draft), ...hubCounters];
   const newSubPreview = newSubCounting ? readsAsPreview(newSubText, newSubGoal, newSubUnit, newSubKind) : undefined;
+  // The primed counter stays the link target while its verb / noun / kind are unchanged.
+  const primedRoot = newSubCounterId ? hubCounters.find((t) => t.id === newSubCounterId) : undefined;
+  const pinnedRoot =
+    primedRoot &&
+    newSubCounting &&
+    newSubText.trim() === (primedRoot.action ?? '').trim() &&
+    (!countKindNeedsUnit(newSubKind) || newSubUnit.trim() === (primedRoot.unit ?? '').trim()) &&
+    newSubKind === resolveCountKind(primedRoot)
+      ? primedRoot
+      : undefined;
 
   function appendTyped(text: string): void {
-    onDraftChange(appendTypedChild(draft, text, newSubCounting, newSubGoal, newSubUnit, newSubKind));
+    onDraftChange(appendTypedChild(draft, text, newSubCounting, newSubGoal, newSubUnit, newSubKind, pinnedRoot));
     // Back to Normal for the next one, like the create panel.
     setNewSubCounting(false);
     setNewSubGoal('');
     setNewSubUnit('');
     setNewSubKind('discrete');
+    setNewSubCounterId(null);
+  }
+
+  /** A picked hub counter primes the row (its verb is the field's next text). */
+  function handlePicked(task: Task): string | void {
+    if (!isGoalLessCounter(task)) {
+      onDraftChange(appendPickedChild(draft, task));
+      return;
+    }
+    const kind = resolveCountKind(task);
+    setNewSubCounting(true);
+    setNewSubKind(kind);
+    setNewSubUnit(countKindNeedsUnit(kind) ? (task.unit ?? '') : '');
+    setNewSubGoal('');
+    setNewSubCounterId(task.id);
+    return task.action ?? '';
   }
 
   return (
@@ -157,11 +197,11 @@ export function CompoundFields({
         onTaskCreated={() => {}}
         disabled={libraryInputsState === 'loading'}
         libraryTasks={candidates}
-        excludeGoalLessCounters
         lookupTasks={lookupTasks}
         selectedIds={NO_SELECTED_IDS}
-        onExistingTaskPicked={(task) => onDraftChange(appendPickedChild(draft, task))}
+        onExistingTaskPicked={handlePicked}
         onSubmitText={appendTyped}
+        text={newSubText}
         onTextChange={setNewSubText}
         canSubmitText={!newSubCounting || canAppendCounting(newSubText, newSubGoal, newSubUnit, newSubKind)}
         placeholder={newSubCounting ? 'Do' : undefined}

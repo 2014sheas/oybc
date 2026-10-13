@@ -46,7 +46,7 @@ import {
 } from '../taskEditPatch';
 import { runBoardCascadeForTasks } from './orchestration';
 import { addToSyncQueue } from './syncQueue';
-import { applyKindSwitchThenGoalGuard } from './countKindSwitch';
+import { applyKindSwitchThenGoalGuard, withRootCountKind } from './countKindSwitch';
 import { assertCountsTowardStillValid } from './countsToward';
 import { computeTaskCachesFromEvents } from './taskEvents';
 import { updateTaskAndCascade, type UpdateTaskPatch } from './tasks.crud';
@@ -108,7 +108,9 @@ export async function applyStagedCompoundChildEdits(
 
     if (isNewChild(step)) {
       const childId = generateUUID();
-      const child = buildNewChildTask(childId, step, title, parentUserId, now);
+      // A sub-task linked to a hub counter takes the root's kind (a kind
+      // switch on the counter may have landed since the pick).
+      const child = await withRootCountKind(buildNewChildTask(childId, step, title, parentUserId, now));
       await db.tasks.add(child);
       await addToSyncQueue('tasks', childId, SyncOperationType.CREATE, child);
       const link: CompoundChild = {

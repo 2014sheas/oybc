@@ -78,9 +78,11 @@ export interface WizardQuickAddRowProps {
    * Fired when the user taps a dropdown match to REUSE that existing task
    * instead of creating a new one. The host appends the existing task's id
    * (no DB write here — this row never creates on this path). Clears the
-   * input afterward, same as a create.
+   * input afterward, same as a create — unless the host returns the text the
+   * field should hold next (the compound editor primes a hub counter's verb);
+   * the dropdown then stays closed until the next keystroke.
    */
-  onExistingTaskPicked?: (task: Task) => void;
+  onExistingTaskPicked?: (task: Task) => void | string;
   /**
    * Draft-only submit — OPTIONAL. When provided, Enter / Add hands the
    * trimmed text to this callback (then clears the field) INSTEAD of
@@ -108,6 +110,10 @@ export interface WizardQuickAddRowProps {
    *  renders the populated-dropdown state deterministically (tests only;
    *  iOS twin: `RisoQuickAddRowView(seedText:)`). */
   seedText?: string;
+  /** Controlled field text: the host sets it (the compound editor primes a
+   *  picked hub counter's verb); edits still arrive via `onTextChange`.
+   *  Absent = the row owns its text. */
+  text?: string;
 }
 
 /** Stable empty-Set identity for the `selectedIds` default — avoids a new
@@ -180,8 +186,12 @@ export function WizardQuickAddRow({
   onTextChange,
   placeholder: fixedPlaceholder,
   seedText = '',
+  text: controlledText,
 }: WizardQuickAddRowProps): React.ReactElement {
-  const [text, setText] = useState(seedText);
+  const [ownText, setOwnText] = useState(seedText);
+  /** Closed after a pick that left text in the field, until the next keystroke. */
+  const [dropdownHeld, setDropdownHeld] = useState(false);
+  const text = controlledText ?? ownText;
   const [placeholderIndex, setPlaceholderIndex] = useState(0);
   const [isSubmitting, setIsSubmitting] = useState(false);
   /** The Goal entry's text per no-default counter row (keyed by task id). */
@@ -195,7 +205,7 @@ export function WizardQuickAddRow({
 
   /** Sets the field's text and mirrors it to the host. */
   function updateText(next: string): void {
-    setText(next);
+    setOwnText(next);
     onTextChange?.(next);
   }
 
@@ -218,13 +228,14 @@ export function WizardQuickAddRow({
   // autocomplete convention (RisoCompoundFieldsView) and iOS's twin — an
   // in-flow suggestion list, so there's no floating overlay to dismiss on
   // blur; it hides when the field clears or a match/create resets it.
-  const showDropdown = pollingEnabled && trimmed !== '' && libraryMatches.length > 0;
+  const showDropdown = pollingEnabled && trimmed !== '' && libraryMatches.length > 0 && !dropdownHeld;
 
   function handleExistingPicked(task: Task): void {
-    onExistingTaskPicked!(task);
+    const nextText = onExistingTaskPicked!(task);
     // Clear + refocus, same reset as a create — hides the dropdown since
     // it requires non-empty text.
-    updateText('');
+    updateText(typeof nextText === 'string' ? nextText : '');
+    setDropdownHeld(typeof nextText === 'string');
     inputRef.current?.focus();
   }
 
@@ -415,7 +426,10 @@ export function WizardQuickAddRow({
           className={styles.input}
           placeholder={placeholder}
           value={text}
-          onChange={(e) => updateText(e.target.value)}
+          onChange={(e) => {
+            setDropdownHeld(false);
+            updateText(e.target.value);
+          }}
           onKeyDown={handleKeyDown}
           aria-label="New normal task title"
           autoComplete="off"

@@ -1,9 +1,12 @@
 import {
   TaskType,
+  counterDisplayName,
   countKindNeedsUnit,
   findLinkableCounter,
   generateCounterTaskTitle,
   parseCountInput,
+  renderCounterTitle,
+  resolveCountKind,
   type CountKind,
   type CreateCompoundChildEntry,
   type LinkableCounter,
@@ -56,6 +59,54 @@ export interface InlineSubtaskDraft {
    *  sub-task that does not auto-link shows the picker; a linked one follows
    *  its root's kind (see {@link effectiveInlineKind}). */
   countKind?: CountKind;
+  /** A hub counter picked from the library list: the link target while the
+   *  draft's verb / noun / kind still match it (see {@link inlineLinkMatch}) —
+   *  so a Duration counter links too. */
+  pinnedCounterId?: string;
+}
+
+/**
+ * The inline Counting draft a picked hub counter (no goal of its own) becomes:
+ * its verb, noun and kind, pinned to it, goal left for the user. iOS twin:
+ * `RisoCompoundFieldsView.prefillCounterSub`.
+ *
+ * @param root - The picked counter.
+ * @param id - The draft id.
+ * @returns The draft.
+ */
+export function inlineSubtaskFromCounter(root: Task, id: string): InlineSubtaskDraft {
+  const kind = resolveCountKind(root);
+  return {
+    id,
+    mode: 'inline',
+    inlineType: 'counting',
+    title: '',
+    action: root.action ?? '',
+    unit: countKindNeedsUnit(kind) ? (root.unit ?? '') : '',
+    maxCountStr: '',
+    steps: [],
+    ...(kind !== 'discrete' ? { countKind: kind } : {}),
+    pinnedCounterId: root.id,
+  };
+}
+
+/**
+ * The pinned counter, while the draft still names it (verb, noun when the
+ * kind has one, kind).
+ *
+ * @param draft - The inline draft.
+ * @param allTasks - The library pool.
+ * @returns The pinned root, or undefined.
+ */
+function pinnedRoot(draft: InlineSubtaskDraft, allTasks: readonly Task[]): Task | undefined {
+  if (!draft.pinnedCounterId || draft.inlineType !== 'counting') return undefined;
+  const root = allTasks.find((t) => t.id === draft.pinnedCounterId && !t.isDeleted);
+  if (!root) return undefined;
+  const kind = draft.countKind ?? 'discrete';
+  if (kind !== resolveCountKind(root)) return undefined;
+  if (draft.action.trim() !== (root.action ?? '').trim()) return undefined;
+  if (countKindNeedsUnit(kind) && draft.unit.trim() !== (root.unit ?? '').trim()) return undefined;
+  return root;
 }
 
 export type SubtaskDraft = ExistingSubtaskDraft | InlineSubtaskDraft;
@@ -163,6 +214,16 @@ export function inlineLinkMatch(
   draft: InlineSubtaskDraft,
   allTasks: readonly Task[],
 ): LinkableCounter | null {
+  const pinned = pinnedRoot(draft, allTasks);
+  if (pinned) {
+    return {
+      counterId: pinned.id,
+      name: counterDisplayName(pinned),
+      lifetime: pinned.currentCount ?? 0,
+      memberCount: 1 + allTasks.filter((t) => !t.isDeleted && t.sharedCounterId === pinned.id).length,
+      countKind: resolveCountKind(pinned),
+    };
+  }
   if (draft.inlineType !== 'counting' || (draft.countKind ?? 'discrete') === 'duration') return null;
   const action = draft.action.trim();
   const unit = draft.unit.trim();
@@ -204,9 +265,14 @@ export function inlineSubtaskToAutoCreate(
   const action = subtask.action.trim();
   const unit = countKindNeedsUnit(kind) ? subtask.unit.trim() : '';
   const maxCount = parseCountInput(subtask.maxCountStr, kind) ?? undefined;
+  const pinned = match ? pinnedRoot(subtask, allTasks) : undefined;
   const title =
     subtask.title.trim() ||
-    (maxCount !== undefined ? generateCounterTaskTitle(action, maxCount, unit, undefined, kind) : action);
+    (maxCount === undefined
+      ? action
+      : pinned
+        ? renderCounterTitle(pinned, maxCount)
+        : generateCounterTaskTitle(action, maxCount, unit, undefined, kind));
   return {
     autoCreate: {
       type: TaskType.COUNTING,
