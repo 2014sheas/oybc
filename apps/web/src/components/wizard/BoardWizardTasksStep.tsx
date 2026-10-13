@@ -714,6 +714,7 @@ export function BoardWizardTasksStep({
               libraryTasks={pickerLibraryTasks}
               lookupTasks={effectiveTaskMap}
               allLinks={pickerLinks}
+              goalWindow={{ timeframe: currentTimeframe, startDate: currentStartDate, endDate: currentEndDate }}
             />
           )
         }

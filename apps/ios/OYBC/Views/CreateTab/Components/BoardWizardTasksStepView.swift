@@ -492,6 +492,7 @@ struct BoardWizardTasksStepView: View {
                                 draft: $editDraft,
                                 libraryTasks: pickerLibraryTasks,
                                 counterRootTasks: Array(effectiveTaskById.values),
+                                goalWindow: .init(timeframe: currentTimeframe, startDate: currentStartDate, endDate: currentEndDate),
                                 allLinks: effectiveChildrenByCompound.values.flatMap { $0 },
                                 onSave: { saveEdit(task) },
                                 onDiscard: { discardEdit(task) }

@@ -32,6 +32,10 @@ struct RisoCompoundEditFieldsView: View {
     var libraryTasks: [Task]
     /// The FULL task set the sub-task quick-add resolves counter roots against.
     var counterRootTasks: [Task] = []
+    /// The host board's window — a picked counter's goal starts at its default
+    /// for it (`CounterPlacement.counterPickGoal`). nil: the compound's own
+    /// window, else Indefinite (yearly). Web twin: `CompoundFields.goalWindow`.
+    var goalWindow: CounterPlacement.PickWindow? = nil
     /// Live compound links across ALL compounds (for the loop check).
     var allLinks: [CompoundChild]
     /// Whether `libraryTasks` / `allLinks` have loaded (Task Detail loads them
@@ -79,6 +83,7 @@ struct RisoCompoundEditFieldsView: View {
         parentId: String,
         libraryTasks: [Task],
         counterRootTasks: [Task] = [],
+        goalWindow: CounterPlacement.PickWindow? = nil,
         allLinks: [CompoundChild],
         libraryInputsState: LibraryInputsState = .loaded,
         newSubSeed: NewSubSeed = NewSubSeed()
@@ -87,6 +92,7 @@ struct RisoCompoundEditFieldsView: View {
         self.parentId = parentId
         self.libraryTasks = libraryTasks
         self.counterRootTasks = counterRootTasks
+        self.goalWindow = goalWindow
         self.allLinks = allLinks
         self.libraryInputsState = libraryInputsState
         _newSubCounting = State(initialValue: newSubSeed.counting)
@@ -221,13 +227,21 @@ struct RisoCompoundEditFieldsView: View {
         return root
     }
 
+    /// The compound's own window (its timeframe + dates), when it has one.
+    private var ownWindow: CounterPlacement.PickWindow? {
+        guard let parent = (counterRootTasks + libraryTasks).first(where: { $0.id == parentId }),
+              let timeframe = parent.timeframe else { return nil }
+        return .init(timeframe: timeframe, startDate: parent.startDate, endDate: parent.endDate)
+    }
+
     /// A picked counter primes the New sub row as Counting at its kind / noun.
     private func primeCounterSub(_ root: Task) {
         let kind = resolveCountKind(root.countKind)
         newSubCounting = true
         newSubKind = kind
         newSubUnit = countKindNeedsUnit(kind) ? (root.unit ?? "") : ""
-        newSubGoal = ""
+        newSubGoal = CounterPlacement.counterPickGoal(.init(task: root), window: goalWindow ?? ownWindow)
+            .map { formatCountForInput($0, kind: kind) } ?? ""
         newSubCounterId = root.id
     }
 

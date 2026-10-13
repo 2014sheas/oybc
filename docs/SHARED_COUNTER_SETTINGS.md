@@ -144,7 +144,12 @@ On every compound sub-task surface — iOS compound create (#603), web compound 
 tab, the wizard's pool-row editor, Board Edit's square sheet — web `CompoundFields` ↔
 iOS `RisoCompoundEditFieldsView`) — picking a hub counter primes a NEW Counting sub-task
 with the counter's verb, noun and kind, pinned as its link target while those stay
-unchanged (so a Duration counter links too); the user enters the goal. The minted child
+unchanged (so a Duration counter links too), the goal pre-filled with the counter's
+default for the host's window (owner rule 2026-10-13 — `counterPickGoal` ↔
+`CounterPlacement.counterPickGoal`, exactly what a placement on that window resolves:
+stored / derived default → kind fallback → the counter's own goal; the host board's window in
+the wizard and Board Edit, else the compound's own window, else Indefinite = the yearly
+default); the user edits it only to change it. The minted child
 carries `sharedCounterId` + `baseline` = the counter's lifetime at pick time
 (`ChildPatch.sharedCounterId` / `.baseline` → `buildNewChildTask` ↔
 `makeStagedChildTask`, then `withRootCountKind`), and is titled through the counter's

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { TaskType, type Task } from '@oybc/shared';
+import { TaskType, Timeframe, type Task } from '@oybc/shared';
 import {
   effectiveInlineKind,
   inlineLinkMatch,
@@ -16,10 +16,13 @@ const hub = (o: Partial<Task> = {}): Task =>
   }) as Task;
 
 describe('compound create — a picked hub counter becomes a linked Counting sub-task', () => {
-  it('the draft carries the counter verb, noun and kind, pinned, with no goal', () => {
+  it('the draft carries the counter verb, noun and kind, pinned, the goal pre-filled with its default', () => {
+    // No window reads as Indefinite → the yearly kind fallback.
     expect(inlineSubtaskFromCounter(hub(), 'd')).toMatchObject({
-      inlineType: 'counting', action: 'Read', unit: 'pages', maxCountStr: '', pinnedCounterId: 'hub',
+      inlineType: 'counting', action: 'Read', unit: 'pages', maxCountStr: '365', pinnedCounterId: 'hub',
     });
+    expect(inlineSubtaskFromCounter(hub({ timeframeGoals: { weekly: 20 } }), 'd', { timeframe: Timeframe.WEEKLY }).maxCountStr).toBe('20');
+    expect(inlineSubtaskFromCounter(hub({ maxCount: 12 }), 'd').maxCountStr).toBe('12');
     const dur = inlineSubtaskFromCounter(hub({ action: 'Practice', unit: undefined, countKind: 'duration' }), 'd');
     expect(dur).toMatchObject({ unit: '', countKind: 'duration', pinnedCounterId: 'hub' });
   });

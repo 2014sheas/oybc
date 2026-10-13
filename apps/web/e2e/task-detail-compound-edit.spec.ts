@@ -16,6 +16,7 @@ const CHILD_A_ID = 'cccccccc-0002-0000-0000-000000000002';
 const CHILD_B_ID = 'cccccccc-0003-0000-0000-000000000003';
 const LIBRARY_ID = 'cccccccc-0004-0000-0000-000000000004';
 const UNITLESS_ID = 'cccccccc-0005-0000-0000-000000000005';
+const COUNTER_ID = 'cccccccc-0006-0000-0000-000000000006';
 
 /** Reads the stored counting child titled `title` straight from IndexedDB. */
 async function readCountingChild(
@@ -274,5 +275,33 @@ test.describe('Task Detail — compound editing', () => {
     await expect(page.getByRole('button', { name: 'Open subtask: Stretch' })).toBeVisible();
     await page.getByRole('button', { name: 'Open subtask: Stretch' }).click();
     await expect(page).toHaveURL(new RegExp(`/tasks/${LIBRARY_ID}`));
+  });
+
+  test('a picked counter primes a linked Counting sub-task with the goal pre-filled from its default', async ({ page }) => {
+    // A hub counter with its own goal and a yearly default: Task Detail has no
+    // board window, so the default for Indefinite (yearly) fills the goal.
+    await seedTask(page, {
+      id: COUNTER_ID, title: 'Read 12 pages', type: 'counting', action: 'Read', unit: 'pages',
+      maxCount: 12, isCounter: true, timeframeGoals: { yearly: 50 },
+    });
+    await page.goto(`/tasks/${PARENT_ID}?__oybc_test_bypass=1`);
+    await expect(page.getByRole('heading', { name: 'Subtasks (2)' })).toBeVisible();
+    await page.getByRole('button', { name: 'Edit', exact: true }).click();
+    const sheet = page.getByRole('dialog', { name: 'Edit task' });
+    await expect(sheet.getByLabel('Sub-task 2 title')).toHaveValue('Squats');
+
+    const field = sheet.getByLabel('New normal task title');
+    await field.fill('Pages');
+    await sheet.getByRole('list', { name: 'Matching library tasks' }).getByRole('button', { name: /Read pages/ }).click();
+    const goal = sheet.getByRole('textbox', { name: 'Goal', exact: true });
+    await expect(goal).toHaveValue('50');
+    await expect(field).toHaveValue('Read');
+    await sheet.getByRole('button', { name: 'Add task' }).click();
+    await expect(sheet.getByLabel('Sub-task 3 goal')).toHaveValue('50');
+
+    await sheet.getByRole('button', { name: /save changes/i }).click();
+    await expect(sheet).toHaveCount(0);
+    await expect(page.getByRole('heading', { name: 'Subtasks (3)' })).toBeVisible();
+    expect(await readCountingChild(page, 'Read 50 pages')).toEqual({ type: 'counting', action: 'Read', maxCount: 50, unit: 'pages' });
   });
 });

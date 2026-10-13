@@ -3,9 +3,12 @@ import {
   OperatorType,
   TaskType,
   countKindNeedsUnit,
+  counterPickGoal,
+  formatCountForInput,
   resolveCountKind,
   type CompoundChild,
   type CountKind,
+  type PlacementBoard,
   type Task,
 } from '@oybc/shared';
 import { RisoChip, RisoSectionLabel } from '../riso';
@@ -24,7 +27,7 @@ import {
   type TaskEditPatch,
 } from '../../db/taskEditPatch';
 import { MiniTypeBadge, type MiniBadgeType } from './MiniTypeBadge';
-import type { TaskLookup } from '../counters/rowCounterTagName';
+import { taskLookupValues, type TaskLookup } from '../counters/rowCounterTagName';
 import { WizardQuickAddRow } from './WizardQuickAddRow';
 import { CountingSubConfigRow } from './CountingSubConfigRow';
 import { compoundSubCandidates } from './compoundSubCandidates';
@@ -33,6 +36,12 @@ import styles from './PoolRowEditor.module.css';
 /** Whether the host's library inputs (`libraryTasks` / `allLinks`) have
  *  arrived. Task Detail loads them on open; the wizard already holds them. */
 export type LibraryInputsState = 'loading' | 'loaded' | 'failed';
+
+/** The compound's own window (its timeframe + dates), when it has one. */
+function ownWindow(parentId: string, lookup: TaskLookup): PlacementBoard | null {
+  const parent = taskLookupValues(lookup).find((t) => t.id === parentId);
+  return parent?.timeframe ? { timeframe: parent.timeframe, startDate: parent.startDate, endDate: parent.endDate } : null;
+}
 
 /** Stable empty selection for the quick-add row — the candidates already
  *  exclude the compound's current sub-tasks. */
@@ -56,6 +65,10 @@ export interface CompoundFieldsProps {
   lookupTasks?: TaskLookup;
   /** Live compound links across ALL compounds (for the loop check). */
   allLinks: CompoundChild[];
+  /** The host board's window — a picked counter's goal starts at its default
+   *  for it (`counterPickGoal`). Absent: the compound's own window, else
+   *  Indefinite (yearly). */
+  goalWindow?: PlacementBoard | null;
   /** Whether `libraryTasks` / `allLinks` have loaded (Task Detail loads them
    *  on open; the wizard already holds them). Default `loaded`. */
   libraryInputsState?: LibraryInputsState;
@@ -86,6 +99,7 @@ export function CompoundFields({
   libraryTasks,
   lookupTasks,
   allLinks,
+  goalWindow,
   libraryInputsState = 'loaded',
 }: CompoundFieldsProps): React.ReactElement {
   const [newSubCounting, setNewSubCounting] = useState(false);
@@ -159,7 +173,8 @@ export function CompoundFields({
     setNewSubCounting(true);
     setNewSubKind(kind);
     setNewSubUnit(countKindNeedsUnit(kind) ? (task.unit ?? '') : '');
-    setNewSubGoal('');
+    const goal = counterPickGoal(task, goalWindow ?? ownWindow(parentId, lookupTasks ?? libraryTasks));
+    setNewSubGoal(goal !== null ? formatCountForInput(goal, kind) : '');
     setNewSubCounterId(task.id);
     return task.action ?? '';
   }

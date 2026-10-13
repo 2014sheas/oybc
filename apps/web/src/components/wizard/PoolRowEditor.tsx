@@ -5,6 +5,7 @@ import {
   parseCountInput,
   resolveCountKind,
   type CompoundChild,
+  type PlacementBoard,
   type Task,
 } from '@oybc/shared';
 import { RisoButton, RisoSectionLabel } from '../riso';
@@ -38,6 +39,8 @@ export interface PoolRowEditorProps {
   lookupTasks?: TaskLookup;
   /** Compound only — live links across all compounds (loop check). */
   allLinks: CompoundChild[];
+  /** Compound only — the host board's window (see `CompoundFields.goalWindow`). */
+  goalWindow?: PlacementBoard | null;
 }
 
 /**
@@ -68,6 +71,7 @@ export function PoolRowEditor({
   libraryTasks,
   lookupTasks,
   allLinks,
+  goalWindow,
 }: PoolRowEditorProps): React.ReactElement {
   const taskId = task.id;
   const taskType = task.type;
@@ -183,6 +187,7 @@ export function PoolRowEditor({
             parentId={taskId}
             libraryTasks={libraryTasks}
             lookupTasks={lookupTasks}
+            goalWindow={goalWindow}
             allLinks={allLinks}
           />
         )}
