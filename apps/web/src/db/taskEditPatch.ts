@@ -90,6 +90,26 @@ export interface ChildPatch {
   markedDeleted: boolean;
 }
 
+/**
+ * A card edit applied to a sub-task. Editing a linked NEW sub-task's verb or
+ * noun unlinks it (it no longer names the counter). iOS twin: `ChildPatch`'s
+ * `action` / `unit` `didSet`.
+ *
+ * @param child - The sub-task.
+ * @param patch - The edited fields.
+ * @returns The edited sub-task.
+ */
+export function editChildPatch(child: ChildPatch, patch: Partial<ChildPatch>): ChildPatch {
+  const next = { ...child, ...patch };
+  const renamed = (field: 'action' | 'unit') =>
+    patch[field] !== undefined && (patch[field] as string).trim() !== child[field].trim();
+  if (next.sharedCounterId && (renamed('action') || renamed('unit'))) {
+    delete next.sharedCounterId;
+    delete next.baseline;
+  }
+  return next;
+}
+
 /** `true` when the child was created in this editor session (no real Task
  *  row yet). Mirrors iOS `ChildPatch.isNew`. */
 export function isNewChild(child: ChildPatch): boolean {

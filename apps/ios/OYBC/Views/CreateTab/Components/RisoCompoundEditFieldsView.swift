@@ -203,9 +203,9 @@ struct RisoCompoundEditFieldsView: View {
     private var pinnedRoot: Task? {
         guard newSubCounting, let id = newSubCounterId, let root = hubCounters.first(where: { $0.id == id }),
               newSubKind == resolveCountKind(root.countKind),
-              newSubText.trimmingCharacters(in: .whitespacesAndNewlines) == (root.action ?? "").trimmingCharacters(in: .whitespaces),
+              newSubText.trimmingCharacters(in: .whitespacesAndNewlines) == (root.action ?? "").trimmingCharacters(in: .whitespacesAndNewlines),
               !countKindNeedsUnit(newSubKind)
-                || newSubUnit.trimmingCharacters(in: .whitespacesAndNewlines) == (root.unit ?? "").trimmingCharacters(in: .whitespaces)
+                || newSubUnit.trimmingCharacters(in: .whitespacesAndNewlines) == (root.unit ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         else { return nil }
         return root
     }

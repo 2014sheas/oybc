@@ -5,6 +5,7 @@ import {
   applyPatchToTask,
   seedPatchForEditor,
   buildNewChildTask,
+  editChildPatch,
   canAppendCounting,
   childPatchFromTask,
   newChildPatch,
@@ -81,6 +82,13 @@ describe('ChildPatch linked to a hub counter', () => {
     expect(buildNewChildTask('c1', step, step.title, 'u', 'now')).toMatchObject({
       sharedCounterId: 'hub', baseline: 40, maxCount: 20, title: 'Read 20 pages!',
     });
+  });
+  it('editing the card verb or noun unlinks it; a goal edit keeps the link', () => {
+    const step = appendTypedChild(EMPTY, 'Read', true, '20', 'pages', 'discrete', hub).children[0];
+    expect(editChildPatch(step, { goal: '25' }).sharedCounterId).toBe('hub');
+    expect(editChildPatch(step, { action: 'Read ' }).sharedCounterId).toBe('hub');
+    expect(editChildPatch(step, { action: 'Skim' })).not.toHaveProperty('sharedCounterId');
+    expect(editChildPatch(step, { unit: 'chapters' })).not.toHaveProperty('baseline');
   });
   it('an unlinked typed sub-task stays unlinked', () => {
     const step = appendTypedChild(EMPTY, 'Read', true, '20', 'pages').children[0];

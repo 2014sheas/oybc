@@ -33,9 +33,11 @@ struct ChildPatch: Identifiable, Equatable {
     /// one. `isCounting` stays the switch for the Action/Goal/Unit fields.
     /// Twin of web `ChildPatch.childType`.
     var childType: TaskType
-    var action: String = ""
+    /// Editing a linked NEW sub-task's verb or noun on its card unlinks it
+    /// (it no longer names the counter). Web twin: `editChildPatch`.
+    var action: String = "" { didSet { unlinkIfRenamed(oldValue, action) } }
     var goal: String = ""
-    var unit: String = ""
+    var unit: String = "" { didSet { unlinkIfRenamed(oldValue, unit) } }
     /// Counter kind (Counting only): picked for a NEW sub-task, the task's
     /// own for an existing one (no picker — its goal edits at its own kind).
     var countKind: CountKind = .discrete
@@ -48,6 +50,14 @@ struct ChildPatch: Identifiable, Equatable {
     var markedDeleted: Bool = false
 
     var isNew: Bool { childTaskId == nil }
+
+    private mutating func unlinkIfRenamed(_ old: String, _ new: String) {
+        guard sharedCounterId != nil,
+              old.trimmingCharacters(in: .whitespacesAndNewlines) != new.trimmingCharacters(in: .whitespacesAndNewlines)
+        else { return }
+        sharedCounterId = nil
+        baseline = nil
+    }
 
     /// - Parameter childType: Defaults to `.counting` / `.normal` per `isCounting`.
     init(id: String, childTaskId: String?, title: String, isCounting: Bool, childType: TaskType? = nil,

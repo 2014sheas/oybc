@@ -212,7 +212,11 @@ struct RisoQuickAddRowView: View {
                     .focused($focused)
                     .submitLabel(.done)
                     .onSubmit { submit() }
-                    .onChange(of: text) { _, newValue in onTextChange?(newValue) }
+                    .onChange(of: text) { _, newValue in
+                        // The dropdown hold lasts only while the picked text is untouched.
+                        if newValue != heldText { heldText = nil }
+                        onTextChange?(newValue)
+                    }
                     .padding(.horizontal, 12)
                     .padding(.vertical, 11)
                     .background(Color.risoPaper)

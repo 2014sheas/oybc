@@ -18,6 +18,7 @@ import {
   appendTypedChild,
   canAppendCounting,
   clampThreshold,
+  editChildPatch,
   liveChildren,
   readsAsPreview,
   subtaskQuickAddCandidates,
@@ -110,7 +111,7 @@ export function CompoundFields({
   function updateChild(id: string, patch: Partial<ChildPatch>): void {
     onDraftChange({
       ...draft,
-      children: draft.children.map((c) => (c.id === id ? { ...c, ...patch } : c)),
+      children: draft.children.map((c) => (c.id === id ? editChildPatch(c, patch) : c)),
     });
   }
 
