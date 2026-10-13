@@ -150,6 +150,22 @@ carries `sharedCounterId` + `baseline` = the counter's lifetime at pick time
 `makeStagedChildTask`, then `withRootCountKind`), and is titled through the counter's
 templates (`renderCounterTitle`) like every copy of it.
 
+**A search returns the counter (owner ruling 2026-10-13).** Every search surface treats a
+shared counter root the same way: the row is the COUNTER (its name + kind tag), and its
+linked copies are not listed beside it. A root is a counting task with no `sharedCounterId`
+that is a hub counter, carries timeframe defaults, or is linked to by another live task —
+web `isSharedCounterRoot(task, counterRootIdsIn(fullSet))` ↔ iOS
+`QuickAddCounterPlacement.isSharedCounterRoot(_:linkedRootIds:)`, the roots found in the
+surface's FULL task set (the browse list drops the linked members). The counter row no
+longer needs a board timeframe (web drew it only with one), so the pool editor and the
+compound editors show the counter too. Picking it: a board / pool / core-defaults host
+places the counter (placement mints the per-board copy as before); every compound
+sub-task picker — create and edit, whether or not the counter has its own goal — primes a
+new linked Counting sub-task (the rule above; it used to apply to goal-less counters only,
+linking any other root as itself). Board Edit's picker drops a linked copy whose root is
+listed (`isSquarePickerCandidate` ↔ `SquarePickerCandidates`). A compound made from Counter
+Detail's "+ New" lists no counter (it links nothing).
+
 **[D4 — ruled as recommended]** When exactly one default is set, derive the others by the timeframe
 ratio (weekly×~4.35 = monthly, ×52 = yearly, ÷7 = daily, rounded per kind)?
 Recommendation: **yes, derived and shown dimmed in the sheet** so the user sees

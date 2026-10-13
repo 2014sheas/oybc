@@ -33,6 +33,43 @@ final class QuickAddCounterPlacementTests: XCTestCase {
         XCTAssertFalse(QuickAddCounterPlacement.isSharedCounterRoot(normal))
     }
 
+    /// Owner bug report 2026-10-13: a search returns the COUNTER for every
+    /// counter root — a plain counting task other tasks link to included.
+    func testLinkedToRootIsACounterRoot() {
+        var plain = counting(id: "p")
+        plain.maxCount = 12
+        let copy = counting(id: "c", sharedCounterId: "p")
+        let ids = QuickAddCounterPlacement.counterRootIds(in: [plain, copy])
+        XCTAssertTrue(QuickAddCounterPlacement.isSharedCounterRoot(plain, linkedRootIds: ids))
+        XCTAssertFalse(QuickAddCounterPlacement.isSharedCounterRoot(copy, linkedRootIds: ids))
+        XCTAssertFalse(QuickAddCounterPlacement.isSharedCounterRoot(plain))
+    }
+
+    /// The compound editor's sub-task search lists every counter root as the
+    /// counter (with or without its own goal), after the eligible tasks.
+    func testCompoundSubCandidatesListEveryCounter() {
+        var hubGoal = counting(id: "hubGoal", isCounter: true)
+        hubGoal.maxCount = 12
+        let hub = counting(id: "hub", isCounter: true)
+        let defaults = counting(id: "defaults", goals: CounterTimeframeGoals(weekly: 2))
+        var plain = counting(id: "plain")
+        plain.maxCount = 5
+        let library = [hub, hubGoal, defaults, plain]
+        let result = QuickAddCounterPlacement.compoundSubCandidates(
+            parentId: "P", eligible: [hubGoal, plain], library: library, lookup: library
+        )
+        XCTAssertEqual(result.counterIds, ["hub", "hubGoal", "defaults"])
+        XCTAssertEqual(result.candidates.map(\.id), ["plain", "hub", "hubGoal", "defaults"])
+        // A compound counting toward a counter never lists it.
+        var parent = counting(id: "P")
+        parent.type = .compound
+        parent.countsTowardCounterId = "hubGoal"
+        let towards = QuickAddCounterPlacement.compoundSubCandidates(
+            parentId: "P", eligible: [hubGoal, plain], library: library, lookup: library + [parent]
+        )
+        XCTAssertEqual(towards.candidates.map(\.id), ["plain", "hub", "defaults"])
+    }
+
     /// Owner bug report 2026-10-12: a brand-new hub counter (no `maxCount`,
     /// no defaults) is browsable and found by its name, and placing it on any
     /// core board resolves the kind fallback — no Goal entry.

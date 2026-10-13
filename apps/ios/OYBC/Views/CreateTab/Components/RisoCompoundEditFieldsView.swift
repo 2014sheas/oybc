@@ -192,16 +192,27 @@ struct RisoCompoundEditFieldsView: View {
         )
     }
 
-    /// Hub counters (no goal of their own) in the library: offered in the
-    /// sub-task search; a pick primes a NEW Counting sub-task linked to one.
-    private var hubCounters: [Task] {
-        libraryTasks.filter { !$0.isDeleted && BrowsableTasks.isGoalLessCounter($0) && $0.sharedCounterId == nil }
+    /// The sub-task search set: eligible tasks, then every counter in the
+    /// library — a search returns the COUNTER, and a pick primes a NEW
+    /// Counting sub-task linked to it.
+    private var subCandidates: (candidates: [Task], counterIds: Set<String>) {
+        QuickAddCounterPlacement.compoundSubCandidates(
+            parentId: parentId,
+            eligible: CompoundChildEligibility.pickerCandidates(
+                parentId: parentId,
+                browsable: libraryTasks,
+                allLinks: allLinks,
+                currentChildIds: draft.keptChildTaskIds
+            ),
+            library: libraryTasks,
+            lookup: counterRootTasks
+        )
     }
 
     /// The primed counter while the row still names it (verb, noun when the
     /// kind has one, kind) — the link target of the next Counting append.
     private var pinnedRoot: Task? {
-        guard newSubCounting, let id = newSubCounterId, let root = hubCounters.first(where: { $0.id == id }),
+        guard newSubCounting, let id = newSubCounterId, let root = libraryTasks.first(where: { $0.id == id }),
               newSubKind == resolveCountKind(root.countKind),
               newSubText.trimmingCharacters(in: .whitespacesAndNewlines) == (root.action ?? "").trimmingCharacters(in: .whitespacesAndNewlines),
               !countKindNeedsUnit(newSubKind)
@@ -210,7 +221,7 @@ struct RisoCompoundEditFieldsView: View {
         return root
     }
 
-    /// A picked hub counter primes the New sub row as Counting at its kind / noun.
+    /// A picked counter primes the New sub row as Counting at its kind / noun.
     private func primeCounterSub(_ root: Task) {
         let kind = resolveCountKind(root.countKind)
         newSubCounting = true
@@ -374,7 +385,8 @@ struct RisoCompoundEditFieldsView: View {
     /// Counting config row + "Reads as" preview (Counting on) and the
     /// library load line.
     private var subtaskQuickAdd: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        let sub = subCandidates
+        return VStack(alignment: .leading, spacing: 8) {
             RisoQuickAddRowView(
                 userId: "",
                 defaultStartDate: nil,
@@ -382,17 +394,12 @@ struct RisoCompoundEditFieldsView: View {
                 onTaskCreated: { _, _, _ in },
                 onPendingCreated: nil,
                 onLibraryReloadRequested: {},
-                libraryTasks: CompoundChildEligibility.pickerCandidates(
-                    parentId: parentId,
-                    browsable: libraryTasks,
-                    allLinks: allLinks,
-                    currentChildIds: draft.keptChildTaskIds
-                ) + hubCounters,
+                libraryTasks: sub.candidates,
                 counterRootTasks: counterRootTasks,
                 onExistingTaskPicked: { task in
-                    if BrowsableTasks.isGoalLessCounter(task) { primeCounterSub(task) } else { Self.appendPicked(task, to: &draft) }
+                    if sub.counterIds.contains(task.id) { primeCounterSub(task) } else { Self.appendPicked(task, to: &draft) }
                 },
-                textAfterPick: { BrowsableTasks.isGoalLessCounter($0) ? ($0.action ?? "") : nil },
+                textAfterPick: { sub.counterIds.contains($0.id) ? ($0.action ?? "") : nil },
                 onSubmitText: { text in appendTyped(text) },
                 submitTextEnabled: !newSubCounting
                     || Self.canAppendCounting(text: newSubText, goal: newSubGoal, unit: newSubUnit, kind: newSubKind),

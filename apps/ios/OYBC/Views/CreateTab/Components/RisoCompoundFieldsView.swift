@@ -268,24 +268,31 @@ struct RisoCompoundFieldsView: View {
 
     /// Autocomplete matches — up to 3 non-compound library tasks matching the
     /// current `subInputText` (title / counter name), excluding tasks already
-    /// added as subs. Goal-less hub counters are browsable, so typing a
-    /// counter's name finds it; picking one starts a linked Counting sub
-    /// (`prefillCounterSub`).
+    /// added as subs and linked copies of a listed counter. A search returns the COUNTER for every shared counter
+    /// root (`counterIds`); picking one starts a linked Counting sub
+    /// (`prefillCounterSub`). From-counter mode links nothing, so it lists no
+    /// counter.
     private var subAutocompleteMatches: [OYBC.Task] {
         let q = subInputText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         guard !q.isEmpty else { return [] }
         let addedTitles = Set(compoundSubs.map { $0.displayTitle.lowercased() })
-        // Hub counters (no goal of their own) are browsable; picking one starts a
-        // linked Counting sub-task (`prefillCounterSub`). Not in from-counter mode.
-        let candidates = countsTowardActive
-            ? taskLibrary.filter { !BrowsableTasks.isGoalLessCounter($0) }
-            : taskLibrary
-        return candidates
+        let counters = counterIds
+        return taskLibrary
             .filter { $0.type != .compound }
+            .filter { !(countsTowardActive && counters.contains($0.id)) }
+            // A linked copy is reached through its counter.
+            .filter { $0.sharedCounterId.map { !counters.contains($0) } ?? true }
             .filter { !addedTitles.contains($0.title.lowercased()) }
             .filter { CounterPlacement.taskSearchMatches(q, task: $0) }
             .prefix(3)
             .map { $0 }
+    }
+
+    /// The shared counter roots in the library — found by their linked
+    /// members in the unfiltered pool.
+    private var counterIds: Set<String> {
+        let rootIds = QuickAddCounterPlacement.counterRootIds(in: suggestionPool ?? taskLibrary)
+        return Set(taskLibrary.filter { QuickAddCounterPlacement.isSharedCounterRoot($0, linkedRootIds: rootIds) }.map(\.id))
     }
 
     /// The effective threshold for "At least N", clamped to the valid stored
@@ -507,10 +514,11 @@ struct RisoCompoundFieldsView: View {
     /// [goal unit if counting] · "reuse" badge; a hub counter shows its name
     /// and kind tag instead.
     private var subAutocompleteDropdown: some View {
-        VStack(alignment: .leading, spacing: 0) {
+        let counters = counterIds
+        return VStack(alignment: .leading, spacing: 0) {
             ForEach(subAutocompleteMatches) { task in
                 Button {
-                    if BrowsableTasks.isGoalLessCounter(task) {
+                    if counters.contains(task.id) {
                         prefillCounterSub(task)
                         return
                     }
@@ -528,7 +536,7 @@ struct RisoCompoundFieldsView: View {
                         Text("↩︎")
                             .font(.risoBody(12, .semibold))
                             .foregroundStyle(Color.risoMuted)
-                        if BrowsableTasks.isGoalLessCounter(task) {
+                        if counters.contains(task.id) {
                             Text(CounterSettings.counterDisplayName(task))
                                 .font(.risoHead(13, .bold))
                                 .foregroundStyle(Color.risoInk)
@@ -540,13 +548,13 @@ struct RisoCompoundFieldsView: View {
                                 .foregroundStyle(Color.risoInk)
                                 .lineLimit(1)
                         }
-                        if task.type == .counting, let max = task.maxCount, let unit = task.unit {
+                        if !counters.contains(task.id), task.type == .counting, let max = task.maxCount, let unit = task.unit {
                             Text("\(formatCount(max, kind: resolveCountKind(task.countKind))) \(unit)")
                                 .font(.risoBody(11, .semibold))
                                 .foregroundStyle(Color.risoMuted)
                         }
                         Spacer(minLength: 0)
-                        if !BrowsableTasks.isGoalLessCounter(task) {
+                        if !counters.contains(task.id) {
                             Text("reuse")
                                 .font(.risoBody(11, .semibold))
                                 .foregroundStyle(Color.risoGreen)
@@ -625,8 +633,7 @@ struct RisoCompoundFieldsView: View {
                             tasks: suggestionPool ?? taskLibrary)
     }
 
-    /// A picked hub counter has no goal of its own, so it can't be linked as
-    /// an existing sub-task: switch the sub input to Counting with the
+    /// A picked counter is never linked as an existing sub-task: switch the sub input to Counting with the
     /// counter's verb / noun / kind and pin it as the link target (auto-link
     /// ON) — the user enters the Goal and taps Add.
     private func prefillCounterSub(_ root: OYBC.Task) {

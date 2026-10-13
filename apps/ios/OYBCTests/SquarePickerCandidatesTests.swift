@@ -87,4 +87,19 @@ final class SquarePickerCandidatesTests: XCTestCase {
         ))
         XCTAssertEqual(result.map(\.id), ["t2", "t1"])
     }
+
+    func test_linkedCopyOfAListedCounterIsNotACandidate() {
+        var root = makeTask("root", type: .counting)
+        root.isCounter = true
+        var copy = makeTask("copy", type: .counting)
+        copy.sharedCounterId = "root"
+        var orphan = makeTask("orphan", type: .counting)
+        orphan.sharedCounterId = "gone"
+        let tasks = [root, copy, orphan]
+        let result = SquarePickerCandidates.filter(.init(
+            candidateTasks: tasks, currentTaskId: nil, placedTaskIds: [],
+            counterFamilyByTaskId: BoardSources.buildCounterFamilyMap(tasks)
+        ))
+        XCTAssertEqual(Set(result.map(\.id)), ["root", "orphan"])
+    }
 }
