@@ -54,18 +54,20 @@ enum TaskCountDisplay {
     /// `sharedCounterId == nil`, so nothing observed it).
     ///
     /// Returns `nil` — "this row has no counting subtitle to show" — for
-    /// anything missing an action, a unit or a goal, which is exactly the
-    /// caller's previous `guard`.
+    /// anything missing an action or a needed unit. A counter with no goal of
+    /// its own (a hub counter, browsable since 2026-10-12) shows its total
+    /// alone. Web twin: `countingDetailLine`.
     ///
     /// - Parameter task: The task being rendered.
     /// - Returns: The subtitle, or `nil` when the task can't form one.
     static func countingSubtitle(for task: Task) -> String? {
         let kind = resolveCountKind(task.countKind)
-        guard let action = task.action, let max = task.maxCount,
-              task.unit != nil || kind == .duration else {
+        guard let action = task.action, task.unit != nil || kind == .duration else {
             return nil
         }
-        return "\(action) · \(formatCount(displayedCount(for: task), kind: kind)) / \(formatCount(max, kind: kind))\(countUnitSuffix(kind, unit: task.unit))"
+        // A counter with no goal of its own shows its total alone ("Do · 40 push-ups").
+        let max = task.maxCount.flatMap { $0 > 0 ? " / \(formatCount($0, kind: kind))" : nil } ?? ""
+        return "\(action) · \(formatCount(displayedCount(for: task), kind: kind))\(max)\(countUnitSuffix(kind, unit: task.unit))"
     }
 
     /// The library / pool / Tasks-row counting detail line — `"Run · goal 26.2 mi"`,

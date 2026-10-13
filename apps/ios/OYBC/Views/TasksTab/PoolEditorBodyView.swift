@@ -67,10 +67,7 @@ struct PoolEditorBodyView: View {
                     libraryTasks: vm.poolableBrowsableTasks,
                     counterRootTasks: vm.library.libraryTasks,
                     selectedIds: Set(vm.poolTaskIds),
-                    onExistingTaskPicked: { vm.add($0.id) },
-                    // Browse-filtered: hub counters (no goal) come back here, the
-                    // ones with a window default (board creation mints the copy).
-                    includeGoalLessCounters: true
+                    onExistingTaskPicked: { vm.add($0.id) }
                 )
             }
             .padding(12)

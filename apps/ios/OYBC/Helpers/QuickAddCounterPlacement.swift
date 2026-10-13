@@ -17,41 +17,6 @@ enum QuickAddCounterPlacement {
             && (task.isCounter || !(task.timeframeGoals?.isEmpty ?? true))
     }
 
-    /// The quick-add candidates widened with every live goal-less counter
-    /// ROOT in `pool` — not a fork, not itself linked (owner bug report
-    /// 2026-10-12). A counter created from the Counters hub has no `maxCount`
-    /// (its per-window defaults live in `timeframeGoals`), so the browse filter
-    /// hides it and it is never in a browse-filtered `candidates`; an opted-in
-    /// quick-add adds it back so typing the counter's name finds it.
-    /// `requireDefault` (a pool / core defaults host, which stores the counter
-    /// for later board creation): only counters with a window default, since
-    /// board creation mints the copy at that board window's default and a
-    /// counter with none would land goal-less.
-    /// Web twin: `withGoalLessCounters` (`poolEditSheetSelectors.ts`).
-    ///
-    /// - Parameters:
-    ///   - candidates: The browse-filtered candidates.
-    ///   - pool: The surface's full task set.
-    ///   - requireDefault: Keep only counters with at least one window default.
-    /// - Returns: `candidates`, then the missing goal-less counters in pool order.
-    static func withGoalLessCounters(_ candidates: [Task], pool: [Task], requireDefault: Bool = false) -> [Task] {
-        var ids = Set(candidates.map(\.id))
-        var out = candidates
-        for task in pool where !task.isDeleted && BrowsableTasks.isGoalLessCounter(task)
-            && task.forkedFromTaskId == nil && task.sharedCounterId == nil && !ids.contains(task.id)
-            && (!requireDefault || hasWindowDefault(task)) {
-            ids.insert(task.id)
-            out.append(task)
-        }
-        return out
-    }
-
-    /// Whether a counter stores a positive default goal for any window.
-    private static func hasWindowDefault(_ task: Task) -> Bool {
-        guard let g = task.timeframeGoals else { return false }
-        return [g.daily, g.weekly, g.monthly, g.yearly].contains { ($0 ?? 0) > 0 }
-    }
-
     /// The pending LINKED counting task for a goal-less counter root placed at
     /// `goal`: the special panel's deferred auto-link shape — a row whose own
     /// goal is `goal`, counting from zero, carrying the host board's window

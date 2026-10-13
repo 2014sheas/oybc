@@ -139,9 +139,9 @@ export interface Task {
   /**
    * P5 — Hub-born counters. `true` marks this COUNTING task as a counter in
    * its own right: it appears in the Counters Hub even with zero linked
-   * tasks, and — when goal-less (`maxCount` absent) — is excluded from
-   * library-browse surfaces (it lives in the hub; board presence goes
-   * through linked member tasks). Set by the hub "+ New counter" create and
+   * tasks. When goal-less (`maxCount` absent) it is still browsable (since
+   * 2026-10-12): placement mints a per-board copy at the window's default,
+   * the kind fallback when none is set — but it can't be a compound sub-task. Set by the hub "+ New counter" create and
    * promote-at-dedupe paths only; excluded from `UpdateTaskInput` (the
    * `lastSpawnedWindowKey` precedent). Optional/absent on all pre-P5 rows;
    * forward-compatible decode (`Board.isCore` precedent).

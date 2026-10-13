@@ -58,7 +58,7 @@ describe('counterSettingsVectors — derivedTimeframeGoals', () => {
 
 describe('counterSettingsVectors — resolveCounterDefaultGoal', () => {
   it.each(V.resolveCounterDefaultGoal as any[])('$name', (v: any) => {
-    expect(resolveCounterDefaultGoal(v.root, v.timeframe)).toBe(v.expected);
+    expect(resolveCounterDefaultGoal(v.root, v.timeframe, v.dates)).toBe(v.expected);
   });
 });
 

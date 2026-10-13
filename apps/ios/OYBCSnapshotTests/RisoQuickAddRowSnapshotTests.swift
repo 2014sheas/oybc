@@ -67,12 +67,12 @@ final class RisoQuickAddRowSnapshotTests: XCTestCase {
     // MARK: - Shared counter match rows (docs/SHARED_COUNTER_SETTINGS.md §2)
 
     /// A board-context quick-add row over one counter root.
-    private func counterRow(root: Task, seedText: String) -> some View {
+    private func counterRow(root: Task, seedText: String, timeframe: Timeframe = .weekly) -> some View {
         ZStack {
             RisoPaperBackground()
             RisoQuickAddRowView(
                 userId: SnapshotFixtures.userId,
-                defaultTimeframe: .weekly,
+                defaultTimeframe: timeframe,
                 defaultStartDate: nil,
                 defaultEndDate: nil,
                 onTaskCreated: { _, _, _ in },
@@ -107,9 +107,9 @@ final class RisoQuickAddRowSnapshotTests: XCTestCase {
         )
     }
 
-    private func assertCounterRow(_ root: Task, dark: Bool, name: String = #function) {
+    private func assertCounterRow(_ root: Task, dark: Bool, timeframe: Timeframe = .weekly, name: String = #function) {
         assertSnapshot(
-            of: counterRow(root: root, seedText: "book"),
+            of: counterRow(root: root, seedText: "book", timeframe: timeframe),
             as: .image(layout: .fixed(width: 393, height: 160), traits: .init(userInterfaceStyle: dark ? .dark : .light)),
             record: recordMode, testName: name
         )
@@ -123,7 +123,8 @@ final class RisoQuickAddRowSnapshotTests: XCTestCase {
     func testCounterRowOwnGoalLight() { assertCounterRow(ownGoalRoot, dark: false) }
     func testCounterRowOwnGoalDark() { assertCounterRow(ownGoalRoot, dark: true) }
 
-    /// A goal-less root with no default: an inline Goal entry, the plus dimmed.
-    func testCounterRowGoalEntryLight() { assertCounterRow(goalLessRoot, dark: false) }
-    func testCounterRowGoalEntryDark() { assertCounterRow(goalLessRoot, dark: true) }
+    /// A goal-less root on a CUSTOM board without dates (nothing resolves — on
+    /// any core board it takes the kind fallback): an inline Goal entry, the plus dimmed.
+    func testCounterRowGoalEntryLight() { assertCounterRow(goalLessRoot, dark: false, timeframe: .custom) }
+    func testCounterRowGoalEntryDark() { assertCounterRow(goalLessRoot, dark: true, timeframe: .custom) }
 }

@@ -175,18 +175,62 @@ function storedGoal(goals: CounterTimeframeGoals | null | undefined, t: CounterG
 }
 
 /**
+ * The daily goal a counter with NO goal at all — no stored default and no
+ * goal of its own — falls back to, per kind (owner ruling 2026-10-12;
+ * minutes for Duration). Read-time only, never stored (D3): an entered
+ * default always wins and every unset cell keeps deriving from it (D4).
+ */
+export const COUNTER_FALLBACK_DAILY_GOAL: Readonly<Record<CountKind, number>> = {
+  discrete: 1,
+  continuous: 1,
+  duration: 30,
+};
+
+/**
+ * `source` scaled from a `sourceDays` window to a `targetDays` one, rounded
+ * up to the kind's step (`ceilToCountStep`, the auto-scaler's rounding).
+ *
+ * @param root - The root's fields (its kind).
+ * @param source - The goal being scaled.
+ * @param sourceDays - Its window's nominal length.
+ * @param targetDays - The target window's length.
+ * @returns The scaled goal.
+ */
+function scaleGoal(root: CounterSettingsFields, source: number, sourceDays: number, targetDays: number): number {
+  return ceilToCountStep((source * targetDays) / sourceDays, root.countKind ?? 'discrete');
+}
+
+/**
+ * The goal for a `targetDays` window when the root has NO stored default and
+ * no goal of its own: {@link COUNTER_FALLBACK_DAILY_GOAL} × days. Null when
+ * the root has either (an untouched counter with a goal stays inert).
+ *
+ * @param root - The root's fields.
+ * @param targetDays - The window's length.
+ * @returns The fallback goal, or null.
+ */
+function fallbackGoal(root: CounterSettingsFields, targetDays: number): number | null {
+  const own = root.maxCount;
+  if (typeof own === 'number' && Number.isFinite(own) && own > 0) return null;
+  if (COUNTER_GOAL_TIMEFRAMES.some((t) => storedGoal(root.timeframeGoals, t) !== null)) return null;
+  return scaleGoal(root, COUNTER_FALLBACK_DAILY_GOAL[root.countKind ?? 'discrete'], 1, targetDays);
+}
+
+/**
  * The goal D4 derives for `target` from the nearest SET timeframe (by
  * position in {@link COUNTER_GOAL_TIMEFRAMES}; a tie goes to the shorter
  * one), scaled by the nominal window ratio (1 / 7 / 30 / 365 days — the
  * member-rule auto-scaler's `nominalWindowDays`) and rounded up to the
- * kind's step (`ceilToCountStep`, the auto-scaler's rounding). Null when no
- * timeframe is set or `target` itself is set.
+ * kind's step. With no timeframe set and no goal of its own, the root falls
+ * back to {@link COUNTER_FALLBACK_DAILY_GOAL} × the window. Null when
+ * `target` itself is set, or nothing is set but the root has its own goal.
  *
  * @param root - The root's fields.
  * @param target - The timeframe to derive.
+ * @param kindFallback - Whether the kind fallback applies (default true).
  * @returns The derived goal, or null.
  */
-function derivedGoal(root: CounterSettingsFields, target: CounterGoalTimeframe): number | null {
+function derivedGoal(root: CounterSettingsFields, target: CounterGoalTimeframe, kindFallback = true): number | null {
   if (storedGoal(root.timeframeGoals, target) !== null) return null;
   const ti = COUNTER_GOAL_TIMEFRAMES.indexOf(target);
   let best: { t: CounterGoalTimeframe; d: number } | null = null;
@@ -195,16 +239,38 @@ function derivedGoal(root: CounterSettingsFields, target: CounterGoalTimeframe):
     const d = Math.abs(COUNTER_GOAL_TIMEFRAMES.indexOf(t) - ti);
     if (best === null || d < best.d) best = { t, d };
   }
-  if (best === null) return null;
-  const source = storedGoal(root.timeframeGoals, best.t) as number;
-  const sourceDays = nominalWindowDays(best.t as Timeframe) as number;
   const targetDays = nominalWindowDays(target as Timeframe) as number;
-  return ceilToCountStep((source * targetDays) / sourceDays, root.countKind ?? 'discrete');
+  if (best === null) return kindFallback ? fallbackGoal(root, targetDays) : null;
+  const source = storedGoal(root.timeframeGoals, best.t) as number;
+  return scaleGoal(root, source, nominalWindowDays(best.t as Timeframe) as number, targetDays);
+}
+
+/**
+ * The goal for a CUSTOM window of `days`: the SET timeframe nearest in
+ * length (smallest |log ratio|; a tie goes to the shorter one) scaled to
+ * `days`, else the {@link COUNTER_FALLBACK_DAILY_GOAL} fallback, else null.
+ *
+ * @param root - The root's fields.
+ * @param days - The custom window's length in days.
+ * @param kindFallback - Whether the kind fallback applies (default true).
+ * @returns The goal, or null.
+ */
+function customWindowGoal(root: CounterSettingsFields, days: number, kindFallback = true): number | null {
+  let best: { t: CounterGoalTimeframe; d: number } | null = null;
+  for (const t of COUNTER_GOAL_TIMEFRAMES) {
+    if (storedGoal(root.timeframeGoals, t) === null) continue;
+    const d = Math.abs(Math.log((nominalWindowDays(t as Timeframe) as number) / days));
+    if (best === null || d < best.d - 1e-12) best = { t, d };
+  }
+  if (best === null) return kindFallback ? fallbackGoal(root, days) : null;
+  const source = storedGoal(root.timeframeGoals, best.t) as number;
+  return scaleGoal(root, source, nominalWindowDays(best.t as Timeframe) as number, days);
 }
 
 /**
  * The derived (dimmed) default for every UNSET core timeframe (D4); a set
- * timeframe, or every timeframe when none is set, maps to null.
+ * timeframe maps to null. With none set: the kind fallback per timeframe, or
+ * all null when the root has a goal of its own.
  *
  * @param root - The root's fields.
  * @returns One entry per core timeframe.
@@ -247,8 +313,12 @@ export interface CounterSettingsDefaults {
   goals: Record<CounterGoalTimeframe, number | null>;
 }
 
-/** The root fields the sheet's defaults derive from (the sheet's LIVE noun / verb / kind). */
-export type CounterSettingsContext = Pick<CounterSettingsFields, 'action' | 'unit' | 'countKind'>;
+/**
+ * The root fields the sheet's defaults derive from (the sheet's LIVE noun /
+ * verb / kind, plus the root's own goal — absent for a new counter, which then
+ * shows the kind fallback dimmed).
+ */
+export type CounterSettingsContext = Pick<CounterSettingsFields, 'action' | 'unit' | 'countKind' | 'maxCount'>;
 
 /**
  * The entered goals that are usable positive numbers.
@@ -283,7 +353,8 @@ export function counterSettingsDraftFromRoot(root: CounterSettingsFields): Count
  * The dimmed defaults for a draft over the sheet's live context: the name is
  * `formatCounterName(action, unit)`, the plural is the default template, the
  * singular is the typed plural when there is one, else the default (D2), and
- * each unset goal derives from the entered ones (D4; nothing entered → none).
+ * each unset goal derives from the entered ones (D4; nothing entered → the
+ * kind fallback, unless the root has a goal of its own).
  *
  * @param context - The sheet's live verb / noun / kind.
  * @param draft - The typed draft.
@@ -297,7 +368,11 @@ export function counterSettingsDefaults(context: CounterSettingsContext, draft: 
     name: formatCounterName(context.action, context.unit),
     singular,
     plural,
-    goals: derivedTimeframeGoals({ countKind: context.countKind, timeframeGoals: enteredGoals(draft.goals) }),
+    goals: derivedTimeframeGoals({
+      countKind: context.countKind,
+      maxCount: context.maxCount,
+      timeframeGoals: enteredGoals(draft.goals),
+    }),
   };
 }
 
@@ -377,19 +452,65 @@ export function changedCounterSettingsKeys(
   });
 }
 
+/** The dates a CUSTOM board's default reads (inclusive local-ISO days). */
+export interface CounterGoalWindowDates {
+  startDate?: string | null;
+  endDate?: string | null;
+}
+
+/** Options for {@link windowDefaultGoal}. */
+export interface WindowDefaultGoalOptions {
+  /**
+   * Whether a counter with no goal at all takes the kind fallback (default
+   * true). False where the caller holds a goal of its own to pro-rate — a
+   * board-pulled LINKED member consulting its root (memberRules
+   * `resolveTarget`): a goal-less hub root must not override the member's goal.
+   */
+  kindFallback?: boolean;
+}
+
 /**
- * The default goal a counter brings to a board of `timeframe` (spec §1c):
- * the stored default → else one derived from the set defaults (D4) → else
- * the root's own goal → else null. A CUSTOM or INDEFINITE board never
- * matches a default (null).
+ * The default a counter carries for a board window WITHOUT the root-goal
+ * fallback: a core timeframe's stored default → else one D4 derives (or the
+ * kind fallback for a counter with no goal at all); INDEFINITE resolves as
+ * YEARLY (owner ruling 2026-10-12); CUSTOM scales the nearest set default (or
+ * the kind fallback) to its real length, null when its dates don't parse.
  *
  * @param root - The root's fields.
  * @param timeframe - The board's timeframe.
+ * @param dates - The board's window (read for CUSTOM only).
+ * @param options - {@link WindowDefaultGoalOptions}.
+ * @returns The default, or null.
+ */
+export function windowDefaultGoal(
+  root: CounterSettingsFields,
+  timeframe: Timeframe | string,
+  dates?: CounterGoalWindowDates | null,
+  options?: WindowDefaultGoalOptions
+): number | null {
+  const kindFallback = options?.kindFallback ?? true;
+  const tf = timeframe === Timeframe.INDEFINITE ? 'yearly' : timeframe;
+  if (isGoalTimeframe(tf)) return storedGoal(root.timeframeGoals, tf) ?? derivedGoal(root, tf, kindFallback);
+  if (tf !== Timeframe.CUSTOM) return null;
+  const days = nominalWindowDays(Timeframe.CUSTOM, dates?.startDate ?? null, dates?.endDate ?? null);
+  return days === null ? null : customWindowGoal(root, days, kindFallback);
+}
+
+/**
+ * The default goal a counter brings to a board of `timeframe` (spec §1c):
+ * {@link windowDefaultGoal} → else the root's own goal → else null.
+ *
+ * @param root - The root's fields.
+ * @param timeframe - The board's timeframe.
+ * @param dates - The board's window (read for CUSTOM only).
  * @returns The goal, or null.
  */
-export function resolveCounterDefaultGoal(root: CounterSettingsFields, timeframe: Timeframe | string): number | null {
-  if (!isGoalTimeframe(timeframe)) return null;
-  const goal = storedGoal(root.timeframeGoals, timeframe) ?? derivedGoal(root, timeframe);
+export function resolveCounterDefaultGoal(
+  root: CounterSettingsFields,
+  timeframe: Timeframe | string,
+  dates?: CounterGoalWindowDates | null
+): number | null {
+  const goal = windowDefaultGoal(root, timeframe, dates);
   if (goal !== null) return goal;
   const own = root.maxCount;
   return typeof own === 'number' && own > 0 ? own : null;

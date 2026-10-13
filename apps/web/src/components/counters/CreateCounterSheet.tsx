@@ -189,7 +189,7 @@ export function CreateCounterSheet({
   const showNounError = nounMissing && (touched.noun || submitAttempted);
   const showVerbError = verbMissing && (touched.verb || submitAttempted);
 
-  const context = { action: trimmedVerb, unit: trimmedNoun, countKind };
+  const context = { action: trimmedVerb, unit: trimmedNoun, countKind, maxCount: root?.maxCount };
   const draft: CounterSettingsDraft = {
     name: settings.name,
     singular: settings.singular,

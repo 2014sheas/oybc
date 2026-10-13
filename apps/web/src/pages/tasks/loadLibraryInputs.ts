@@ -14,8 +14,9 @@ import {
 
 /**
  * Loads the sub-task quick-add row's inputs for `userId`: the browsable
- * library (`computeBrowsableTasks` — hides wizard drafts, goal-less hub
- * counters and deleted rows, exactly like the Tasks tab) and every live
+ * library (`computeBrowsableTasks` — hides wizard drafts, linked members and
+ * deleted rows, exactly like the Tasks tab; the sub-task row drops goal-less
+ * hub counters itself — `excludeGoalLessCounters`) and every live
  * compound link under one of the user's compounds (the loop check's graph;
  * scoped like `useTaskLibrary` so another account's rows on this device
  * never leak in).

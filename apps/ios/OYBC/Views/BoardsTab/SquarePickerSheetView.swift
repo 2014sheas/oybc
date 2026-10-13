@@ -46,6 +46,9 @@ struct SquarePickerSheetView: View {
     /// The board's timeframe: a counter match row resolves the goal a placed
     /// copy would get on it (none → an inline Goal entry).
     var timeframe: Timeframe? = nil
+    /// The board's window (a CUSTOM board's default scales to it).
+    var startDate: String? = nil
+    var endDate: String? = nil
 
     // MARK: - Derived
 
@@ -90,7 +93,9 @@ struct SquarePickerSheetView: View {
                             onExistingTaskPicked: { task in
                                 onConfirm(task.id, nil)
                             },
-                            placementTimeframe: timeframe
+                            placementTimeframe: timeframe,
+                            placementStartDate: startDate,
+                            placementEndDate: endDate
                         )
 
                         RisoSpecialTaskPanel(

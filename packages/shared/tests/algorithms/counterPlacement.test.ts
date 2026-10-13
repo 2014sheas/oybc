@@ -26,7 +26,7 @@ const V = JSON.parse(
 
 describe('counterPlacementVectors — counterTimeframeDefault', () => {
   it.each(V.counterTimeframeDefault as any[])('$name', (v: any) => {
-    expect(counterTimeframeDefault(v.root, v.timeframe)).toBe(v.expected);
+    expect(counterTimeframeDefault(v.root, v.timeframe, v.dates)).toBe(v.expected);
   });
 });
 

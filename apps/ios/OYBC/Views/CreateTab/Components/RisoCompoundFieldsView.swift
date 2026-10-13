@@ -58,9 +58,9 @@ struct RisoCompoundFieldsView: View {
     let taskLibrary: [OYBC.Task]
     /// Separate, UNFILTERED pool used only for the new-counting-sub
     /// counter-link suggestion (`updateSubLinkSuggestion`) — mirrors
-    /// `RisoSpecialTaskPanel.suggestionPool`. Goal-less hub-born counters are
-    /// excluded from the browsable `taskLibrary`, so matching against it
-    /// would never surface a link suggestion for them. Defaults to `nil`,
+    /// `RisoSpecialTaskPanel.suggestionPool` (the full set, plus this
+    /// session's pending tasks, so a just-created same-pair task links too).
+    /// Defaults to `nil`,
     /// which falls back to `taskLibrary` so existing call sites (Tasks-tab,
     /// which already passes the full unfiltered library as `taskLibrary`)
     /// are unaffected. Autocomplete keeps using `taskLibrary` unconditionally.
@@ -268,17 +268,18 @@ struct RisoCompoundFieldsView: View {
 
     /// Autocomplete matches — up to 3 non-compound library tasks matching the
     /// current `subInputText` (title / counter name), excluding tasks already
-    /// added as subs. Goal-less hub counters (hidden from the browsable
-    /// `taskLibrary`) come back from `suggestionPool` so typing a counter's
-    /// name finds it; picking one starts a linked Counting sub
+    /// added as subs. Goal-less hub counters are browsable, so typing a
+    /// counter's name finds it; picking one starts a linked Counting sub
     /// (`prefillCounterSub`).
     private var subAutocompleteMatches: [OYBC.Task] {
         let q = subInputText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         guard !q.isEmpty else { return [] }
         let addedTitles = Set(compoundSubs.map { $0.displayTitle.lowercased() })
+        // Hub counters (no goal of their own) are browsable; picking one starts a
+        // linked Counting sub-task (`prefillCounterSub`). Not in from-counter mode.
         let candidates = countsTowardActive
-            ? taskLibrary
-            : QuickAddCounterPlacement.withGoalLessCounters(taskLibrary, pool: suggestionPool ?? taskLibrary)
+            ? taskLibrary.filter { !BrowsableTasks.isGoalLessCounter($0) }
+            : taskLibrary
         return candidates
             .filter { $0.type != .compound }
             .filter { !addedTitles.contains($0.title.lowercased()) }

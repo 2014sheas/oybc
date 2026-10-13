@@ -401,10 +401,11 @@ export function planDerivedTasks(args: PlanDerivedTasksArgs): PlanDerivedTasksRe
   ): number => {
     // docs/SHARED_COUNTER_SETTINGS.md §2: a board-sourced member consults its
     // root's timeframe default FIRST (so a source pull and a hand-add agree),
-    // then pro-rates. The default is the target as-is, even above `goal`.
+    // then pro-rates. The default is the target as-is, even above `goal`. No
+    // kind fallback: the member has a goal of its own to pro-rate.
     const t = tasksById[taskIdForWindow];
     const root = t && explicit === undefined && fromBoard ? rootOf(t) : undefined;
-    const dflt = root ? counterTimeframeDefault(root, window.timeframe) : null;
+    const dflt = root ? counterTimeframeDefault(root, window.timeframe, window, { kindFallback: false }) : null;
     if (dflt !== null) return dflt;
     const base =
       explicit ??
@@ -471,7 +472,7 @@ export function planDerivedTasks(args: PlanDerivedTasksArgs): PlanDerivedTasksRe
       // (its user-chosen target). Pools still never pro-rate or take a target.
       const poolSourced = sup !== undefined && !fromBoard;
       const handDefault =
-        (isManual || poolSourced) && !isLinkedMember(t) ? counterTimeframeDefault(t, window.timeframe) : null;
+        (isManual || poolSourced) && !isLinkedMember(t) ? counterTimeframeDefault(t, window.timeframe, window) : null;
       if (handDefault !== null && handDefault !== ownGoal) {
         const handVary: VaryLevel = isManual
           ? (manualTaskVary[id] ?? 0)
@@ -483,7 +484,7 @@ export function planDerivedTasks(args: PlanDerivedTasksArgs): PlanDerivedTasksRe
       }
       // A goal-less member pulled from a board takes its root's default as its goal.
       const sourcedDefault =
-        ownGoal === null && fromBoard ? counterTimeframeDefault(rootOf(t) ?? {}, window.timeframe) : null;
+        ownGoal === null && fromBoard ? counterTimeframeDefault(rootOf(t) ?? {}, window.timeframe, window) : null;
       const goal = ownGoal ?? sourcedDefault;
       if (goal === null) {
         // Goal-less (an accumulator — including a goal-less LINKED member):

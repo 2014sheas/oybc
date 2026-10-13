@@ -215,7 +215,9 @@ extension AppDatabase {
     ) throws -> String {
         guard task.type == .counting else { return task.id }
         let isRootWithDefault = (task.sharedCounterId ?? "").isEmpty
-            && CounterPlacement.placementNeedsCopy(.init(task: task), timeframe: board.timeframe)
+            && CounterPlacement.placementNeedsCopy(
+                .init(task: task), timeframe: board.timeframe, startDate: board.startDate, endDate: board.endDate
+            )
         if !isRootWithDefault {
             guard let linked = task.sharedCounterId, !linked.isEmpty,
                   !BoardSources.isWindowStampedForBoard(task, board: board) else { return task.id }
@@ -233,7 +235,8 @@ extension AppDatabase {
         // board-timeframe default, else (a linked task) its own goal.
         let goal = isRootWithDefault
             ? CounterPlacement.placementGoalForCounter(
-                .init(task: task), timeframe: board.timeframe, existingCopyGoal: existing?.maxCount
+                .init(task: task), timeframe: board.timeframe, startDate: board.startDate, endDate: board.endDate,
+                existingCopyGoal: existing?.maxCount
             )
             : (existing?.maxCount ?? task.maxCount)
         let events = try TaskEvent

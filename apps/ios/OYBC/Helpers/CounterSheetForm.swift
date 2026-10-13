@@ -19,6 +19,10 @@ struct CounterSheetForm: Equatable {
     var kind: CountKind = .discrete
     /// Typed default-goal text per timeframe ("" / absent = unset).
     var goalTexts: [CounterSettings.GoalTimeframe: String] = [:]
+    /// The edited root's own goal (nil for a new counter): with no default
+    /// typed, a root that has one shows no derived defaults, one with none
+    /// shows the kind fallback dimmed.
+    var rootGoal: CountValue? = nil
 
     /// The edit sheet's form, seeded from the counter's root.
     ///
@@ -30,7 +34,8 @@ struct CounterSheetForm: Equatable {
             verb: seed.verb, noun: seed.noun,
             name: seed.settings.name, singular: seed.settings.singular, plural: seed.settings.plural,
             kind: seed.kind,
-            goalTexts: DefaultsRowModel.texts(from: seed.settings.goals, kind: seed.kind)
+            goalTexts: DefaultsRowModel.texts(from: seed.settings.goals, kind: seed.kind),
+            rootGoal: root.maxCount
         )
     }
 
@@ -52,7 +57,7 @@ struct CounterSheetForm: Equatable {
 
     /// The sheet's LIVE noun / verb / kind (never the stored root).
     var context: CounterSettings.Fields {
-        .init(action: trimmedVerb, unit: trimmedNoun, countKind: kind)
+        .init(action: trimmedVerb, unit: trimmedNoun, maxCount: rootGoal, countKind: kind)
     }
 
     /// The dimmed defaults the unset fields show.

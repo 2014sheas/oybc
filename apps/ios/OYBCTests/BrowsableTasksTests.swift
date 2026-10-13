@@ -176,18 +176,18 @@ final class BrowsableTasksTests: XCTestCase {
         XCTAssertTrue(result.isEmpty)
     }
 
-    // MARK: - Goal-less counter exclusion (P5)
+    // MARK: - Goal-less counters are browsable (P5, 2026-10-12)
     //
-    // Swift port of the TS `describe('goal-less counter exclusion (P5)')`
+    // Swift port of the TS `describe('goal-less counters (P5) are browsable')`
     // block in `packages/shared/tests/algorithms/browsableTasks.test.ts`.
 
-    func test_hidesGoalLessCounterFromBrowse() {
+    func test_showsGoalLessCounterInBrowse() {
         let result = BrowsableTasks.computeBrowsableTasks(
             tasks: [task("a", createdInWizard: false, type: .counting, maxCount: nil, isCounter: true)],
             boardTasks: [],
             boardStatusById: [:]
         )
-        XCTAssertTrue(result.isEmpty)
+        XCTAssertEqual(ids(result), ["a"])
     }
 
     func test_keepsPromotedCounterVisible() {

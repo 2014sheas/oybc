@@ -63,16 +63,14 @@ export interface WizardQuickAddRowProps {
   libraryTasks?: Task[];
   /** The surface's FULL task set (map or list) used only to resolve a unit
    *  task's / linked copy's counter root for the tag and the counter-name
-   *  match — `libraryTasks` is browse-filtered and drops goal-less counters.
+   *  match — `libraryTasks` is browse-filtered and drops linked members.
    *  Defaults to `libraryTasks`. */
   lookupTasks?: TaskLookup;
-  /** Widen the matches with goal-less counters from `lookupTasks` (every
-   *  counter created from the Counters hub — the browse filter hides them).
-   *  For a host whose `libraryTasks` IS browse-filtered (wizard Tasks step,
-   *  pool editor, core defaults; Board Edit's picker already searches the
-   *  full set). With `currentTimeframe` + `onPendingCreated` every such
-   *  counter joins; otherwise only those with a window default. Default false. */
-  includeGoalLessCounters?: boolean;
+  /** Drop counters with no goal of their own (every counter created from the
+   *  Counters hub) from the matches — for a compound sub-task, which can't
+   *  take one. Default false: every other host places them (placement mints
+   *  the copy at the window's default). */
+  excludeGoalLessCounters?: boolean;
   /** Ids to exclude from the dropdown (already selected/added on this
    *  surface). Defaults to empty — only meaningful alongside `libraryTasks`. */
   selectedIds?: Set<string>;
@@ -174,7 +172,7 @@ export function WizardQuickAddRow({
   disabled = false,
   libraryTasks,
   lookupTasks,
-  includeGoalLessCounters = false,
+  excludeGoalLessCounters = false,
   selectedIds,
   onExistingTaskPicked,
   onSubmitText,
@@ -208,18 +206,14 @@ export function WizardQuickAddRow({
   const pollingEnabled = libraryTasks !== undefined && onExistingTaskPicked !== undefined;
   const libraryMatches = useMemo<Task[]>(() => {
     if (!pollingEnabled || trimmed === '') return [];
-    // Goal-less (hub) counters join the matches for an opted-in host: every
-    // one when its counter row can mint a pending linked copy and ask for a
-    // goal (board timeframe + `onPendingCreated`), else only those with a
-    // window default (a pool / core defaults stores the counter; board
-    // creation mints it at the window's default).
-    const mode = !includeGoalLessCounters
-      ? 'none'
-      : currentTimeframe !== undefined && onPendingCreated !== undefined
-        ? 'all'
-        : 'withDefaults';
-    return selectQuickAddMatches(libraryTasks!, selectedIds ?? EMPTY_SELECTED_IDS, trimmed, lookupTasks ?? libraryTasks, mode);
-  }, [pollingEnabled, libraryTasks, lookupTasks, selectedIds, trimmed, includeGoalLessCounters, currentTimeframe, onPendingCreated]);
+    return selectQuickAddMatches(
+      libraryTasks!,
+      selectedIds ?? EMPTY_SELECTED_IDS,
+      trimmed,
+      lookupTasks ?? libraryTasks,
+      excludeGoalLessCounters,
+    );
+  }, [pollingEnabled, libraryTasks, lookupTasks, selectedIds, trimmed, excludeGoalLessCounters]);
   // Text-driven (not focus-gated) to match the app's existing inline
   // autocomplete convention (RisoCompoundFieldsView) and iOS's twin — an
   // in-flow suggestion list, so there's no floating overlay to dismiss on
@@ -276,7 +270,8 @@ export function WizardQuickAddRow({
     }
     const name = counterMatchRowName(task);
     const kind = resolveCountKind(task);
-    const needsGoal = placementGoalSource(task, { timeframe: currentTimeframe! }) === null && onPendingCreated !== undefined;
+    const placementBoard = { timeframe: currentTimeframe!, startDate: currentStartDate, endDate: currentEndDate };
+    const needsGoal = placementGoalSource(task, placementBoard) === null && onPendingCreated !== undefined;
     if (!needsGoal) {
       return (
         <button type="button" className={styles.dropdownRowButton} onClick={() => handleExistingPicked(task)}>

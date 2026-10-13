@@ -189,8 +189,8 @@ describe('computeBrowsableTasks', () => {
   });
 });
 
-describe('goal-less counter exclusion (P5)', () => {
-  it('hides a goal-less isCounter task from browse', () => {
+describe('goal-less counters (P5) are browsable', () => {
+  it('shows a goal-less isCounter root (placement resolves the window default / kind fallback)', () => {
     const tasks = [
       task('a', false, {
         type: TaskType.COUNTING,
@@ -199,7 +199,7 @@ describe('goal-less counter exclusion (P5)', () => {
       }),
     ];
     const result = computeBrowsableTasks(tasks, [], {});
-    expect(result).toHaveLength(0);
+    expect(ids(result)).toEqual(new Set(['a']));
   });
 
   it('keeps a promoted counter (isCounter + maxCount) visible', () => {

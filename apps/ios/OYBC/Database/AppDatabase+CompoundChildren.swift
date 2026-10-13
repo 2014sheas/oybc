@@ -198,8 +198,9 @@ extension AppDatabase {
 
     /// Inputs for the compound editor's sub-task quick-add row, read in one
     /// snapshot: the user's browsable library (`BrowsableTasks.computeBrowsableTasks`
-    /// — hides wizard drafts, goal-less hub counters and shared-counter
-    /// members, exactly like the Tasks tab) and every live link under one of
+    /// — hides wizard drafts and shared-counter members, exactly like the
+    /// Tasks tab; the picker then drops goal-less hub counters, which can't be
+    /// sub-tasks — `CompoundChildEligibility.pickerCandidates`) and every live link under one of
     /// the user's compounds (the loop check's graph; scoped so another
     /// account's rows on this device never leak in). Twin of web
     /// `TaskEditSheet`'s `loadPickerInputs`.

@@ -136,7 +136,12 @@ struct MemberRuleRowModel: Equatable {
             if !fromBoard, t.sharedCounterId != nil { return nil }
             let root = t.sharedCounterId.flatMap { taskById[$0] } ?? (t.sharedCounterId == nil ? t : nil)
             return root.flatMap {
-                CounterPlacement.counterTimeframeDefault(.init(task: $0), timeframe: wizardWindow.timeframe)
+                CounterPlacement.counterTimeframeDefault(
+                    .init(task: $0), timeframe: wizardWindow.timeframe,
+                    startDate: wizardWindow.startDate, endDate: wizardWindow.endDate,
+                    // A linked member pro-rates its own goal: no kind fallback from its root.
+                    kindFallback: t.sharedCounterId == nil
+                )
             }
         }
         let memberVary = rule.vary ?? .off

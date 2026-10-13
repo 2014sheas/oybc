@@ -281,7 +281,7 @@ enum CounterSettings {
             singular: storedText(draft.plural) ?? plural,
             plural: plural,
             goals: derivedTimeframeGoals(
-                Fields(countKind: context.countKind, timeframeGoals: enteredGoals(draft.goals))
+                Fields(maxCount: context.maxCount, countKind: context.countKind, timeframeGoals: enteredGoals(draft.goals))
             )
         )
     }
@@ -331,10 +331,37 @@ enum CounterSettings {
         return v
     }
 
+    /// The daily goal a counter with NO goal at all — no stored default and
+    /// no goal of its own — falls back to, per kind (owner ruling 2026-10-12;
+    /// minutes for Duration). Read-time only, never stored (D3). TS twin:
+    /// `COUNTER_FALLBACK_DAILY_GOAL`.
+    static func fallbackDailyGoal(_ kind: CountKind) -> CountValue {
+        switch kind {
+        case .discrete, .continuous: 1
+        case .duration: 30
+        }
+    }
+
+    /// `source` scaled from a `sourceDays` window to `targetDays`, rounded up
+    /// to the kind's step (the member-rule auto-scaler's ratio + rounding).
+    private static func scaleGoal(_ root: Fields, _ source: CountValue, from sourceDays: Int, to targetDays: Int) -> CountValue {
+        ceilToCountStep(source * CountValue(targetDays) / CountValue(sourceDays), kind: root.countKind ?? .discrete)
+    }
+
+    /// The goal for a `targetDays` window when the root has NO stored default
+    /// and no goal of its own: `fallbackDailyGoal` × days; nil otherwise (an
+    /// untouched counter with a goal stays inert).
+    private static func fallbackGoal(_ root: Fields, days targetDays: Int) -> CountValue? {
+        if let own = root.maxCount, own.isFinite, own > 0 { return nil }
+        if GoalTimeframe.allCases.contains(where: { storedGoal(root.timeframeGoals, $0) != nil }) { return nil }
+        return scaleGoal(root, fallbackDailyGoal(root.countKind ?? .discrete), from: 1, to: targetDays)
+    }
+
     /// The goal D4 derives for `target` from the nearest SET timeframe (tie →
     /// the shorter), scaled by `nominalWindowDays` and rounded up with
-    /// `ceilToCountStep` (the member-rule auto-scaler's ratio + rounding).
-    private static func derivedGoal(_ root: Fields, _ target: GoalTimeframe) -> CountValue? {
+    /// `ceilToCountStep`; with none set and no goal of its own, the kind
+    /// fallback × the window. TS twin: `derivedGoal`.
+    private static func derivedGoal(_ root: Fields, _ target: GoalTimeframe, kindFallback: Bool = true) -> CountValue? {
         guard storedGoal(root.timeframeGoals, target) == nil else { return nil }
         let all = GoalTimeframe.allCases
         let ti = all.firstIndex(of: target)!
@@ -343,24 +370,77 @@ enum CounterSettings {
             let d = abs(i - ti)
             if best == nil || d < best!.d { best = (t, d) }
         }
-        guard let best, let source = storedGoal(root.timeframeGoals, best.t),
-              let sourceDays = BoardSources.nominalWindowDays(best.t.timeframe),
-              let targetDays = BoardSources.nominalWindowDays(target.timeframe)
+        guard let targetDays = BoardSources.nominalWindowDays(target.timeframe) else { return nil }
+        guard let best else { return kindFallback ? fallbackGoal(root, days: targetDays) : nil }
+        guard let source = storedGoal(root.timeframeGoals, best.t),
+              let sourceDays = BoardSources.nominalWindowDays(best.t.timeframe)
         else { return nil }
-        return ceilToCountStep(source * CountValue(targetDays) / CountValue(sourceDays), kind: root.countKind ?? .discrete)
+        return scaleGoal(root, source, from: sourceDays, to: targetDays)
     }
 
-    /// The derived (dimmed) default for every UNSET core timeframe (D4).
+    /// The goal for a CUSTOM window of `days`: the SET timeframe nearest in
+    /// length (smallest |log ratio|; tie → the shorter) scaled to `days`, else
+    /// the kind fallback, else nil. TS twin: `customWindowGoal`.
+    private static func customWindowGoal(_ root: Fields, days: Int, kindFallback: Bool = true) -> CountValue? {
+        var best: (t: GoalTimeframe, d: Double)?
+        for t in GoalTimeframe.allCases where storedGoal(root.timeframeGoals, t) != nil {
+            guard let tDays = BoardSources.nominalWindowDays(t.timeframe) else { continue }
+            let d = abs(log(Double(tDays) / Double(days)))
+            if best == nil || d < best!.d - 1e-12 { best = (t, d) }
+        }
+        guard let best else { return kindFallback ? fallbackGoal(root, days: days) : nil }
+        guard let source = storedGoal(root.timeframeGoals, best.t),
+              let sourceDays = BoardSources.nominalWindowDays(best.t.timeframe)
+        else { return nil }
+        return scaleGoal(root, source, from: sourceDays, to: days)
+    }
+
+    /// The derived (dimmed) default for every UNSET core timeframe (D4); with
+    /// none set, the kind fallback — or all nil when the root has a goal of
+    /// its own.
     static func derivedTimeframeGoals(_ root: Fields) -> [GoalTimeframe: CountValue?] {
         Dictionary(uniqueKeysWithValues: GoalTimeframe.allCases.map { ($0, derivedGoal(root, $0)) })
     }
 
-    /// The default goal a counter brings to a board of `timeframe` (§1c): the
-    /// stored default → one derived from the set defaults (D4) → the root's
-    /// own goal → nil. CUSTOM / INDEFINITE boards never match (nil).
-    static func resolveCounterDefaultGoal(_ root: Fields, timeframe: Timeframe) -> CountValue? {
-        guard let t = GoalTimeframe(rawValue: timeframe.rawValue) else { return nil }
-        if let goal = storedGoal(root.timeframeGoals, t) ?? derivedGoal(root, t) { return goal }
+    /// The default a counter carries for a board window WITHOUT the root-goal
+    /// fallback: a core timeframe's stored default → else one D4 derives (or
+    /// the kind fallback for a counter with no goal at all); INDEFINITE as
+    /// YEARLY (owner ruling 2026-10-12); CUSTOM scales the nearest set default
+    /// (or the fallback) to its real length, nil when its dates don't parse.
+    /// TS twin: `windowDefaultGoal`.
+    ///
+    /// - Parameters:
+    ///   - root: The root's fields.
+    ///   - timeframe: The board's timeframe.
+    ///   - startDate: The board's start (read for CUSTOM only).
+    ///   - endDate: The board's end (read for CUSTOM only).
+    ///   - kindFallback: Whether a counter with no goal at all takes the kind
+    ///     fallback (default true). False where the caller holds a goal of its
+    ///     own to pro-rate — a board-pulled LINKED member consulting its root.
+    /// - Returns: The default, or nil.
+    static func windowDefaultGoal(
+        _ root: Fields, timeframe: Timeframe, startDate: String? = nil, endDate: String? = nil,
+        kindFallback: Bool = true
+    ) -> CountValue? {
+        let tf: Timeframe = timeframe == .indefinite ? .yearly : timeframe
+        if let t = GoalTimeframe(rawValue: tf.rawValue) {
+            return storedGoal(root.timeframeGoals, t) ?? derivedGoal(root, t, kindFallback: kindFallback)
+        }
+        guard tf == .custom,
+              let days = BoardSources.nominalWindowDays(.custom, startDate: startDate, endDate: endDate)
+        else { return nil }
+        return customWindowGoal(root, days: days, kindFallback: kindFallback)
+    }
+
+    /// The default goal a counter brings to a board of `timeframe` (§1c):
+    /// `windowDefaultGoal` → the root's own goal → nil. TS twin:
+    /// `resolveCounterDefaultGoal`.
+    static func resolveCounterDefaultGoal(
+        _ root: Fields, timeframe: Timeframe, startDate: String? = nil, endDate: String? = nil
+    ) -> CountValue? {
+        if let goal = windowDefaultGoal(root, timeframe: timeframe, startDate: startDate, endDate: endDate) {
+            return goal
+        }
         guard let own = root.maxCount, own > 0 else { return nil }
         return own
     }

@@ -276,7 +276,6 @@ export function PoolEditorBody({
             userId={userId}
             libraryTasks={poolableBrowsableTasks}
             lookupTasks={allTasks}
-            includeGoalLessCounters
             selectedIds={selectedIdSet}
             onTaskCreated={addTask}
             onExistingTaskPicked={addTask}

@@ -157,6 +157,7 @@ export function CompoundFields({
         onTaskCreated={() => {}}
         disabled={libraryInputsState === 'loading'}
         libraryTasks={candidates}
+        excludeGoalLessCounters
         lookupTasks={lookupTasks}
         selectedIds={NO_SELECTED_IDS}
         onExistingTaskPicked={(task) => onDraftChange(appendPickedChild(draft, task))}

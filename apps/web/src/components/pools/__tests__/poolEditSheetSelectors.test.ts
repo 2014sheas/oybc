@@ -115,6 +115,8 @@ describe('selectQuickAddMatches', () => {
  * find it by name (owner bug report 2026-10-12).
  */
 describe('selectQuickAddMatches — goal-less hub counters', () => {
+  // Browsable since 2026-10-12: placement mints a copy at the window's
+  // default (the kind fallback when none is set), so hosts see them directly.
   const hubCounter = buildTask('c1', {
     title: 'Read books',
     type: TaskType.COUNTING,
@@ -122,41 +124,22 @@ describe('selectQuickAddMatches — goal-less hub counters', () => {
     action: 'Read',
     unit: 'books',
     counterName: 'Books',
-    timeframeGoals: { weekly: 2 },
   });
   const other = buildTask('t1', { title: 'Stretch' });
-  const lookup = new Map([[hubCounter.id, hubCounter], [other.id, other]]);
+  const library = [other, hubCounter];
 
-  const noDefaults = { ...hubCounter, id: 'c9', counterName: 'Bookmarks', timeframeGoals: undefined };
-
-  it('finds a goal-less counter by its name in a host that admits all of them (wizard)', () => {
-    const result = selectQuickAddMatches([other], new Set(), 'books', lookup, 'all');
-    expect(result.map((t) => t.id)).toEqual(['c1']);
+  it('a host that admits them (wizard, pool, core defaults) finds one by its name, with or without defaults', () => {
+    const withDefaults = { ...hubCounter, id: 'c2', counterName: 'Bookmarks', timeframeGoals: { weekly: 2 } };
+    const result = selectQuickAddMatches([...library, withDefaults], new Set(), 'book');
+    expect(result.map((t) => t.id)).toEqual(['c1', 'c2']);
   });
 
   it('does not offer it in a host that admits none (compound sub-tasks)', () => {
-    expect(selectQuickAddMatches([other], new Set(), 'books', lookup)).toEqual([]);
+    expect(selectQuickAddMatches(library, new Set(), 'books', undefined, true)).toEqual([]);
   });
 
-  it('a pool / core defaults host admits only counters with a window default', () => {
-    const both = new Map([...lookup, [noDefaults.id, noDefaults]]);
-    expect(selectQuickAddMatches([other], new Set(), 'book', both, 'withDefaults').map((t) => t.id)).toEqual(['c1']);
-    expect(selectQuickAddMatches([other], new Set(), 'book', both, 'all').map((t) => t.id)).toEqual(['c1', 'c9']);
-  });
-
-  it('skips a deleted counter, an already-selected one, and never duplicates a browsable one', () => {
-    const deleted = { ...hubCounter, id: 'c2', isDeleted: true };
-    const withDeleted = new Map([...lookup, [deleted.id, deleted]]);
-    expect(selectQuickAddMatches([other], new Set(), 'books', withDeleted, 'all').map((t) => t.id)).toEqual(['c1']);
-    expect(selectQuickAddMatches([other], new Set(['c1']), 'books', lookup, 'all')).toEqual([]);
-    expect(selectQuickAddMatches([other, hubCounter], new Set(), 'books', lookup, 'all').map((t) => t.id)).toEqual(['c1']);
-  });
-
-  it('never adds a fork or a linked row, only goal-less counter roots', () => {
-    const fork = { ...hubCounter, id: 'c3', forkedFromTaskId: 'c1' };
-    const linked = { ...hubCounter, id: 'c4', sharedCounterId: 'c1' };
-    const onlyNonRoots = new Map([[fork.id, fork], [linked.id, linked], [other.id, other]]);
-    expect(selectQuickAddMatches([other], new Set(), 'books', onlyNonRoots, 'all')).toEqual([]);
+  it('skips an already-selected one', () => {
+    expect(selectQuickAddMatches(library, new Set(['c1']), 'books')).toEqual([]);
   });
 });
 

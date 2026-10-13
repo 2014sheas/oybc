@@ -21,12 +21,13 @@ it('field order: Name · Kind · noun · verb · Singular · Plural · Defaults 
   for (const s of ['A plural noun', 'Used in task titles', 'Already partway', 'link up automatically', 'All-time', 'placeholder="Do"']) expect(html).not.toContain(s);
   expect(html).toContain('placeholder="push-ups"');
   expect(html).toContain('placeholder="Read"');
-  // Nothing typed: no validation copy yet, the primary disabled, the Defaults cells empty.
+  // Nothing typed: no validation copy yet, the primary disabled, the Defaults
+  // cells showing the kind fallback (1/day, discrete) dimmed.
   expect(html).not.toContain("Enter what you're counting.");
   expect(html).not.toContain('Enter a verb.');
   expect(html).toMatch(/<button[^>]*disabled[^>]*>Create counter<\/button>/);
-  expect(inputTag(html, 'aria-label="Daily default"')).toContain('value=""');
-  expect(inputTag(html, 'aria-label="Yearly default"')).toContain('value=""');
+  expect(inputTag(html, 'aria-label="Daily default"')).toContain('value="1"');
+  expect(inputTag(html, 'aria-label="Yearly default"')).toContain('value="365"');
   // The Name field shows the (empty) derived name dimmed.
   expect(inputTag(html, 'id="create-counter-name"')).toContain('data-dim="true"');
 });

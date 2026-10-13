@@ -31,9 +31,8 @@ struct RisoSpecialTaskPanel: View {
     /// excluded) — compound-child pickers must stay filtered like this.
     var taskLibrary: [OYBC.Task] = []
     /// Separate, UNFILTERED pool used only for the counter-link suggestion
-    /// (`updateLinkSuggestion`). Goal-less hub-born counters are excluded
-    /// from the browsable set, so the wizard's suggestion would never fire
-    /// against them if it reused `taskLibrary`. Defaults to `nil`, which
+    /// (`updateLinkSuggestion`): the full set plus this session's pending
+    /// tasks, so a just-created same-pair task links too. Defaults to `nil`, which
     /// falls back to `taskLibrary` — so the Tasks-tab call site (which
     /// already passes the full, unfiltered library as `taskLibrary`) is
     /// unaffected.

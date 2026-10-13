@@ -1053,8 +1053,8 @@ final class DerivedCountersCascadeTests: XCTestCase {
         XCTAssertEqual(TaskCountDisplay.countingSubtitle(for: rootTask), "Run · 12 / 20 km")
     }
 
-    func test_countingSubtitle_isNilWhenTheTaskCannotFormOne() {
+    func test_countingSubtitle_goalLessShowsItsTotalAlone() {
         let goalless = countingTask(id: "goalless-h", maxCount: nil, currentCount: 3)
-        XCTAssertNil(TaskCountDisplay.countingSubtitle(for: goalless))
+        XCTAssertEqual(TaskCountDisplay.countingSubtitle(for: goalless), "Run · 3 km")
     }
 }

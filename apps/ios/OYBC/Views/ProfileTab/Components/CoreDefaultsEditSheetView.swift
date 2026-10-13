@@ -307,10 +307,7 @@ struct CoreDefaultsEditSheetView: View {
                 onExistingTaskPicked: { task in addDefaultTask(task.id) },
                 // Resolves a counter match row's placement goal for this
                 // timeframe, like web; created tasks stay timeframe-free.
-                placementTimeframe: timeframe,
-                // Browse-filtered: hub counters (no goal) come back here, the
-                // ones with a window default (board creation mints the copy).
-                includeGoalLessCounters: true
+                placementTimeframe: timeframe
             )
             .padding(12)
             .risoCard(fill: .risoPaper2)

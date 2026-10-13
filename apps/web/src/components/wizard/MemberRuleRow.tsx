@@ -139,7 +139,13 @@ export function MemberRuleRow({
   /** The counter default the planner consults first: a board-pulled member's ROOT's, a pool-pulled ROOT's own. */
   const rootDefault = (t: Task | undefined): number | null =>
     t && (fromBoard || !t.sharedCounterId)
-      ? counterTimeframeDefault((t.sharedCounterId ? taskById[t.sharedCounterId] : t) ?? {}, wizardWindow.timeframe)
+      ? counterTimeframeDefault(
+          (t.sharedCounterId ? taskById[t.sharedCounterId] : t) ?? {},
+          wizardWindow.timeframe,
+          wizardWindow,
+          // A linked member pro-rates its own goal: no kind fallback from its root.
+          { kindFallback: !t.sharedCounterId },
+        )
       : null;
 
   const goal = task?.type === TaskType.COUNTING ? (task.maxCount ?? 0) : 0;

@@ -361,7 +361,6 @@ export function CoreDefaultsSheet({
                 currentTimeframe={timeframe}
                 libraryTasks={browsableTasks}
                 lookupTasks={allTasks}
-                includeGoalLessCounters
                 selectedIds={selectedIdSet}
                 onTaskCreated={addTask}
                 onExistingTaskPicked={addTask}

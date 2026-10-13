@@ -126,4 +126,10 @@ describe('countingDetailLine (Task Detail counting line, per kind)', () => {
   it('Discrete reads as before, baseline-adjusted for a linked member', () => {
     expect(countingDetailLine(LINKED)).toBe('Run · 2 / 5 km');
   });
+
+  it('a counter with no goal of its own shows its total alone', () => {
+    expect(
+      countingDetailLine(task({ action: 'Do', unit: 'push-ups', currentCount: 40, maxCount: undefined })),
+    ).toBe('Do · 40 push-ups');
+  });
 });
