@@ -9,7 +9,7 @@ import SwiftUI
 ///
 /// Status derivation per card:
 /// - No core board for the current window → "Ready" (paper/empty dot)
-/// - Core board active + expiring soon → "Expiring" (gold dot)
+/// - Core board active + inside its expiring lead time → "Expiring" (gold dot)
 /// - Core board active, not expiring → "Active" (green dot)
 /// - Core board completed → "Done" (green dot)
 ///
@@ -145,15 +145,9 @@ private struct CoreTimeframeCard: View {
         case .completed: return .done
         case .draft: return .draft
         case .active:
-            // "Expiring" = the board's end date is within the next 24 hours.
-            // Already-past end dates (negative hoursLeft) are NOT expiring —
-            // a current-window core board shouldn't be expired, but guard it
-            // so past-window boards read as Active rather than Expiring.
-            if let endStr = board.endDate, let end = parseISO8601Date(endStr) {
-                let hoursLeft = end.timeIntervalSince(now) / 3600
-                return (hoursLeft >= 0 && hoursLeft < 24) ? .expiring : .active
-            }
-            return .active
+            // "Expiring" = inside the board's per-timeframe lead time
+            // (`BoardExpiry`); an already-past end date reads Active.
+            return BoardExpiry.isExpiringSoon(board, now: now) ? .expiring : .active
         default:
             return .ready
         }

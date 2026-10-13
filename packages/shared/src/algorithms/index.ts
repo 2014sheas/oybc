@@ -586,3 +586,15 @@ export type {
 export { comparePullWatermarks, nextPullWatermark } from './pullWatermark';
 
 export type { PullWatermark } from './pullWatermark';
+
+// ===== "Expiring" board tag lead time (2026-10-13) =====
+export {
+  isBoardExpiringSoon,
+  expiringSoonLeadMs,
+  EXPIRING_SOON_LEAD_MS,
+  CUSTOM_EXPIRING_SOON_FRACTION,
+  CUSTOM_EXPIRING_SOON_MIN_MS,
+  CUSTOM_EXPIRING_SOON_MAX_MS,
+} from './boardExpiry';
+
+export type { ExpiringBoardFields } from './boardExpiry';

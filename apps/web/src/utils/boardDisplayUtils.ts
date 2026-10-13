@@ -1,4 +1,10 @@
-import { BoardStatus, Timeframe, isTimeframeExpired } from '@oybc/shared';
+import {
+  BoardStatus,
+  Timeframe,
+  isTimeframeExpired,
+  isBoardExpiringSoon as sharedIsBoardExpiringSoon,
+  type ExpiringBoardFields,
+} from '@oybc/shared';
 
 /**
  * Returns a human-readable label for a board status.
@@ -93,32 +99,19 @@ export function boardMatchesListFilter(
 }
 
 /**
- * Returns whether an active board's end date is within the next 24 hours but
- * has not yet passed.
+ * Returns whether an active board is inside its "Expiring" lead time — a
+ * per-timeframe window before its end (daily 3 h … yearly 14 days), from the
+ * shared `isBoardExpiringSoon` (Swift twin `Helpers/BoardExpiry.swift`).
  *
- * Mirrors iOS `isBoardExpiringSoon(_:)` in `BoardListView.swift`. Only fires
- * for ACTIVE boards with a valid endDate that isn't INDEFINITE — custom boards
- * with an end date are included (they expire/seal like timed boards).
- *
- * @param board - Object with status, timeframe, and endDate fields
- * @returns true when endDate is in [now, now + 24h)
+ * @param board - Object with status, timeframe, startDate and endDate fields
+ * @returns true when the end is ahead of `now` and within the lead time
  */
 export function isBoardExpiringSoon(
-  board: {
-    status: string;
-    timeframe: string;
-    endDate?: string;
-  },
+  board: ExpiringBoardFields,
   /** See `isBoardExpired` — pin this at the screen. */
   now: Date = new Date(),
 ): boolean {
-  if (board.status !== BoardStatus.ACTIVE) return false;
-  // INDEFINITE timeframe or absent endDate = never expires.
-  if (board.timeframe === Timeframe.INDEFINITE || !board.endDate) return false;
-  const end = new Date(board.endDate).getTime();
-  if (!Number.isFinite(end)) return false;
-  const msLeft = end - now.getTime();
-  return msLeft >= 0 && msLeft < 24 * 60 * 60 * 1000;
+  return sharedIsBoardExpiringSoon(board, now.getTime());
 }
 
 /**
