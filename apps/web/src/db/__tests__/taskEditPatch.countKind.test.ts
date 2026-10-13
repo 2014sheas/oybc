@@ -5,6 +5,7 @@ import {
   applyPatchToTask,
   seedPatchForEditor,
   buildNewChildTask,
+  editChildPatch,
   canAppendCounting,
   childPatchFromTask,
   newChildPatch,
@@ -66,3 +67,33 @@ describe('TaskEditPatch countKind (pool rows)', () => {
     expect(applyPatchToTask({ ...seedPatchForEditor(legacy), goal: '30' }, legacy).countKind).toBeUndefined();
   });
 });
+
+describe('ChildPatch linked to a hub counter', () => {
+  const hub = {
+    id: 'hub', title: 'Read pages', type: TaskType.COUNTING, action: 'Read', unit: 'pages', isCounter: true,
+    currentCount: 40, titleTemplatePlural: 'Read #N pages!',
+  } as Task;
+  it('appendTypedChild links the new Counting sub-task, titled through the counter templates', () => {
+    const next = appendTypedChild(EMPTY, 'Read', true, '20', 'pages', 'discrete', hub);
+    expect(next.children[0]).toMatchObject({ title: 'Read 20 pages!', sharedCounterId: 'hub', baseline: 40, goal: '20' });
+  });
+  it('buildNewChildTask carries the link onto the minted child', () => {
+    const step = appendTypedChild(EMPTY, 'Read', true, '20', 'pages', 'discrete', hub).children[0];
+    expect(buildNewChildTask('c1', step, step.title, 'u', 'now')).toMatchObject({
+      sharedCounterId: 'hub', baseline: 40, maxCount: 20, title: 'Read 20 pages!',
+    });
+  });
+  it('editing the card verb or noun unlinks it; a goal edit keeps the link', () => {
+    const step = appendTypedChild(EMPTY, 'Read', true, '20', 'pages', 'discrete', hub).children[0];
+    expect(editChildPatch(step, { goal: '25' }).sharedCounterId).toBe('hub');
+    expect(editChildPatch(step, { action: 'Read ' }).sharedCounterId).toBe('hub');
+    expect(editChildPatch(step, { action: 'Skim' })).not.toHaveProperty('sharedCounterId');
+    expect(editChildPatch(step, { unit: 'chapters' })).not.toHaveProperty('baseline');
+  });
+  it('an unlinked typed sub-task stays unlinked', () => {
+    const step = appendTypedChild(EMPTY, 'Read', true, '20', 'pages').children[0];
+    expect(step.sharedCounterId).toBeUndefined();
+    expect(buildNewChildTask('c1', step, step.title, 'u', 'now')).not.toHaveProperty('sharedCounterId');
+  });
+});
+

@@ -13,7 +13,7 @@ import {
   type TaskEvent,
 } from '@oybc/shared';
 import { db } from '../../internal';
-import { childPatchFromTask, newChildPatch, type ChildPatch, type TaskEditPatch } from '../../taskEditPatch';
+import { appendTypedChild, childPatchFromTask, newChildPatch, type ChildPatch, type TaskEditPatch } from '../../taskEditPatch';
 import {
   CompoundEditValidationError,
   editCompoundStructure,
@@ -453,6 +453,25 @@ describe('editCompoundStructure — linking an EXISTING library task as a sub-ta
     expect(rows.filter((r) => r.entityType === 'tasks' && r.entityId === L_ID)).toHaveLength(0);
     // The board placing P re-derived with L counted.
     expect((await db.boards.get(X_ID))?.completedTasks).toBe(1);
+  });
+
+  it('a NEW sub-task built from a hub counter is minted linked, at the counter kind, counting from its lifetime', async () => {
+    // A goal-less hub counter whose kind was switched to Continuous after the pick.
+    const G = makeTask({
+      id: uuid(41), title: 'Run mi', type: TaskType.COUNTING, isCounter: true, action: 'Run', unit: 'mi',
+      currentCount: 12, countKind: 'continuous',
+    });
+    await db.tasks.add(G);
+    const picked = { ...G, countKind: undefined } as Task;
+    const step = appendTypedChild({ title: 'P', action: '', goal: '', unit: '', children: [] }, 'Run', true, '5', 'mi', 'discrete', picked)
+      .children[0];
+    await editCompoundStructure(P_ID, structureFor({ title: 'P', operator: OperatorType.AND }, [...keepAB(), step]));
+
+    const live = (await db.compoundChildren.where('compoundTaskId').equals(P_ID).toArray()).filter((l) => !l.isDeleted);
+    const minted = (await db.tasks.toArray()).find((t) => t.sharedCounterId === G.id);
+    expect(minted).toMatchObject({ type: TaskType.COUNTING, maxCount: 5, baseline: 12, countKind: 'continuous', title: 'Run 5 mi' });
+    expect(live.map((l) => l.childTaskId)).toContain(minted!.id);
+    expect(await db.tasks.get(G.id)).toEqual(G);
   });
 
   it('linking an existing counting task with no stored action leaves its row untouched', async () => {

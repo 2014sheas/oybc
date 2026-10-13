@@ -24,6 +24,19 @@ final class CompoundSubKindTests: XCTestCase {
         XCTAssertEqual(child.title, "Practice 1h 30m")
     }
 
+    func testEditingALinkedNewSubsVerbOrNounUnlinksIt() {
+        var c = ChildPatch(
+            id: "n", childTaskId: nil, title: "Read 20 pages", isCounting: true, action: "Read", goal: "20",
+            unit: "pages", sharedCounterId: "hub", baseline: 40
+        )
+        c.goal = "25"
+        c.action = "Read "
+        XCTAssertEqual(c.sharedCounterId, "hub", "a goal edit or whitespace keeps the link")
+        c.unit = "chapters"
+        XCTAssertNil(c.sharedCounterId)
+        XCTAssertNil(c.baseline)
+    }
+
     func testChildPatchSeedsKindAndTheAppendGateParsesPerKind() {
         var t = LinkedWindowKit.task("c", maxCount: 26.2); t.countKind = .continuous
         let patch = ChildPatch(from: t)

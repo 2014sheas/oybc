@@ -653,6 +653,33 @@ final class AppDatabaseTaskEditTests: XCTestCase {
         XCTAssertEqual(try db.read { try Board.fetchOne($0, key: f.x.id) }?.completedTasks, 1)
     }
 
+    /// A hub counter picked in the sub-task search becomes a NEW Counting
+    /// sub-task linked to it: titled through its templates, counting from its
+    /// lifetime, at the counter's kind even when it switched since the pick.
+    func test_editCompound_newSubFromHubCounter_isMintedLinked() throws {
+        let db = try makeDb(); let f = try compoundFixture(db)
+        var hub = makeTask("hub", type: .counting)
+        hub.title = "Run mi"; hub.action = "Run"; hub.unit = "mi"; hub.maxCount = nil
+        hub.isCounter = true; hub.currentCount = 12; hub.titleTemplatePlural = "Run #N mi outside"
+        var picked = hub
+        hub.countKind = .continuous
+        try db.write { conn in try hub.insert(conn) }
+
+        var s = structure(f.p, operator: .and, children: [ChildPatch(from: f.a), ChildPatch(from: f.b)])
+        RisoCompoundEditFieldsView.appendTyped("Run", isCounting: true, goal: "5", unit: "mi", linkedRoot: picked, to: &s)
+        XCTAssertEqual(s.children.last?.sharedCounterId, "hub")
+        XCTAssertEqual(s.children.last?.title, "Run 5 mi outside")
+        try db.applyTaskEditPatch(taskId: f.p.id, patch: basicPatch(title: "P", compound: s), now: now)
+
+        let minted = try XCTUnwrap(try db.read { try Task.filter(Column("sharedCounterId") == "hub").fetchOne($0) })
+        XCTAssertEqual(minted.maxCount, 5)
+        XCTAssertEqual(minted.baseline, 12)
+        XCTAssertEqual(minted.countKind, .continuous)
+        XCTAssertEqual(minted.title, "Run 5 mi outside")
+        XCTAssertTrue(try liveLinks(db, parent: f.p.id).map(\.childTaskId).contains(minted.id))
+        XCTAssertNil(try db.read { try Task.fetchOne($0, key: "hub") }?.maxCount, "the counter root is untouched")
+    }
+
     func test_editCompound_linkingCountingTaskWithNilAction_leavesRowUntouched() throws {
         let db = try makeDb(); let f = try compoundFixture(db)
         var c = makeTask("cnt", type: .counting)

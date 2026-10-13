@@ -33,20 +33,37 @@ struct ChildPatch: Identifiable, Equatable {
     /// one. `isCounting` stays the switch for the Action/Goal/Unit fields.
     /// Twin of web `ChildPatch.childType`.
     var childType: TaskType
-    var action: String = ""
+    /// Editing a linked NEW sub-task's verb or noun on its card unlinks it
+    /// (it no longer names the counter). Web twin: `editChildPatch`.
+    var action: String = "" { didSet { unlinkIfRenamed(oldValue, action) } }
     var goal: String = ""
-    var unit: String = ""
+    var unit: String = "" { didSet { unlinkIfRenamed(oldValue, unit) } }
     /// Counter kind (Counting only): picked for a NEW sub-task, the task's
     /// own for an existing one (no picker — its goal edits at its own kind).
     var countKind: CountKind = .discrete
+    /// A NEW Counting sub-task built from a hub counter (picked in the
+    /// sub-task search): the counter it links to, and the counter's lifetime
+    /// count at pick time (the minted child counts from there). Web twin:
+    /// `ChildPatch.sharedCounterId` / `.baseline`.
+    var sharedCounterId: String? = nil
+    var baseline: CountValue? = nil
     var markedDeleted: Bool = false
 
     var isNew: Bool { childTaskId == nil }
 
+    private mutating func unlinkIfRenamed(_ old: String, _ new: String) {
+        guard sharedCounterId != nil,
+              old.trimmingCharacters(in: .whitespacesAndNewlines) != new.trimmingCharacters(in: .whitespacesAndNewlines)
+        else { return }
+        sharedCounterId = nil
+        baseline = nil
+    }
+
     /// - Parameter childType: Defaults to `.counting` / `.normal` per `isCounting`.
     init(id: String, childTaskId: String?, title: String, isCounting: Bool, childType: TaskType? = nil,
          action: String = "", goal: String = "", unit: String = "",
-         countKind: CountKind = .discrete, markedDeleted: Bool = false) {
+         countKind: CountKind = .discrete, sharedCounterId: String? = nil, baseline: CountValue? = nil,
+         markedDeleted: Bool = false) {
         self.id = id
         self.childTaskId = childTaskId
         self.title = title
@@ -56,6 +73,8 @@ struct ChildPatch: Identifiable, Equatable {
         self.goal = goal
         self.unit = unit
         self.countKind = countKind
+        self.sharedCounterId = sharedCounterId
+        self.baseline = baseline
         self.markedDeleted = markedDeleted
     }
 

@@ -137,6 +137,19 @@ can't evaluate as a sub-task — compound create turns a picked counter into a l
 Counting sub-task instead, #603). The quick-add Goal entry remains only for a CUSTOM
 board without parseable dates.
 
+**Compound sub-tasks from a counter (owner ruling 2026-10-12: linked copy, fixed goal).**
+On every compound sub-task surface — iOS compound create (#603), web compound create
+(`CompoundTaskWizard`: a picked hub counter becomes an inline Counting draft,
+`inlineSubtaskFromCounter`), and compound EDIT on both platforms (Task Detail / Tasks
+tab, the wizard's pool-row editor, Board Edit's square sheet — web `CompoundFields` ↔
+iOS `RisoCompoundEditFieldsView`) — picking a hub counter primes a NEW Counting sub-task
+with the counter's verb, noun and kind, pinned as its link target while those stay
+unchanged (so a Duration counter links too); the user enters the goal. The minted child
+carries `sharedCounterId` + `baseline` = the counter's lifetime at pick time
+(`ChildPatch.sharedCounterId` / `.baseline` → `buildNewChildTask` ↔
+`makeStagedChildTask`, then `withRootCountKind`), and is titled through the counter's
+templates (`renderCounterTitle`) like every copy of it.
+
 **[D4 — ruled as recommended]** When exactly one default is set, derive the others by the timeframe
 ratio (weekly×~4.35 = monthly, ×52 = yearly, ÷7 = daily, rounded per kind)?
 Recommendation: **yes, derived and shown dimmed in the sheet** so the user sees

@@ -49,6 +49,11 @@ struct RisoQuickAddRowView: View {
     /// the EXISTING task's id (reuse, no create). `nil` (default) disables
     /// polling entirely, matching today's create-only hosts.
     var onExistingTaskPicked: ((OYBC.Task) -> Void)? = nil
+    /// After a pick, the text the field should hold next instead of clearing
+    /// (the compound editor primes a hub counter's verb); the dropdown then
+    /// stays closed until the text changes. nil / returning nil clears, as
+    /// before. Web twin: `onExistingTaskPicked` returning a string.
+    var textAfterPick: ((OYBC.Task) -> String?)? = nil
     /// Draft-only submit. When set, Return / Add hands the trimmed text to
     /// this closure (then clears the field) INSTEAD of creating a task — no
     /// `handleCreateAndAddToPool`, and `onTaskCreated` / `onPendingCreated`
@@ -89,6 +94,8 @@ struct RisoQuickAddRowView: View {
     var presetCountsTowardCounterId: String? = nil
 
     @State private var text: String = ""
+    /// The text a pick left in the field — the dropdown hides while it is unchanged.
+    @State private var heldText: String? = nil
     @State private var form = CreateFormViewModel()
     @FocusState private var focused: Bool
 
@@ -151,6 +158,7 @@ struct RisoQuickAddRowView: View {
         counterRootTasks: [OYBC.Task] = [],
         selectedIds: Set<String> = [],
         onExistingTaskPicked: ((OYBC.Task) -> Void)? = nil,
+        textAfterPick: ((OYBC.Task) -> String?)? = nil,
         onSubmitText: ((String) -> Void)? = nil,
         submitTextEnabled: Bool = true,
         onTextChange: ((String) -> Void)? = nil,
@@ -173,6 +181,7 @@ struct RisoQuickAddRowView: View {
         self.counterRootTasks = counterRootTasks
         self.selectedIds = selectedIds
         self.onExistingTaskPicked = onExistingTaskPicked
+        self.textAfterPick = textAfterPick
         self.onSubmitText = onSubmitText
         self.submitTextEnabled = submitTextEnabled
         self.onTextChange = onTextChange
@@ -203,7 +212,11 @@ struct RisoQuickAddRowView: View {
                     .focused($focused)
                     .submitLabel(.done)
                     .onSubmit { submit() }
-                    .onChange(of: text) { _, newValue in onTextChange?(newValue) }
+                    .onChange(of: text) { _, newValue in
+                        // The dropdown hold lasts only while the picked text is untouched.
+                        if newValue != heldText { heldText = nil }
+                        onTextChange?(newValue)
+                    }
                     .padding(.horizontal, 12)
                     .padding(.vertical, 11)
                     .background(Color.risoPaper)
@@ -222,7 +235,7 @@ struct RisoQuickAddRowView: View {
             // Resolved once per render: the roots index, then the ranked matches.
             let roots = trimmedText.isEmpty ? [:] : rootsById
             let matches = libraryMatches(roots: roots)
-            if !matches.isEmpty {
+            if !matches.isEmpty, heldText != text {
                 libraryMatchesDropdown(matches, roots: roots)
                     .padding(.top, 8)
             }
@@ -256,7 +269,12 @@ struct RisoQuickAddRowView: View {
                     canCreatePending: onPendingCreated != nil,
                     onPick: {
                         onExistingTaskPicked?(task)
-                        text = ""
+                        if let next = textAfterPick?(task) {
+                            heldText = next
+                            text = next
+                        } else {
+                            text = ""
+                        }
                     },
                     onPickWithGoal: { goal in
                         let payload = QuickAddCounterPlacement.pendingLinkedTask(
