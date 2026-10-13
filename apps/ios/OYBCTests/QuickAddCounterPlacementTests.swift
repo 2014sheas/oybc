@@ -70,6 +70,47 @@ final class QuickAddCounterPlacementTests: XCTestCase {
         XCTAssertEqual(towards.candidates.map(\.id), ["plain", "hub", "defaults"])
     }
 
+    /// Owner rule 2026-10-13: one tap on a counter appends a complete linked
+    /// Counting sub-task filled from it, the goal at the window's default; the
+    /// counter is then not offered again in THIS compound.
+    func testOneTapCounterSubAndPerCompoundExclusion() {
+        var root = counting(id: "r", isCounter: true, goals: CounterTimeframeGoals(weekly: 3))
+        root.currentCount = 9
+        var draft = TaskEditPatch(title: "C")
+        RisoCompoundEditFieldsView.appendCounterSub(root, window: .init(timeframe: .weekly), to: &draft)
+        XCTAssertEqual(draft.children.count, 1)
+        let child = draft.children[0]
+        XCTAssertTrue(child.isCounting)
+        XCTAssertEqual(child.action, "Read")
+        XCTAssertEqual(child.unit, "books")
+        XCTAssertEqual(child.goal, "3")
+        XCTAssertEqual(child.title, "Read 3 books")
+        XCTAssertEqual(child.sharedCounterId, "r")
+        XCTAssertEqual(child.baseline, 9)
+
+        let result = QuickAddCounterPlacement.compoundSubCandidates(
+            parentId: "P", eligible: [root], library: [root], lookup: [root], draft: draft
+        )
+        XCTAssertFalse(result.counterIds.contains("r"), "already a sub-task of this compound")
+        XCTAssertFalse(result.candidates.contains { $0.id == "r" }, "never offered as a plain task either")
+        // Another compound (an empty draft) still offers it.
+        XCTAssertTrue(QuickAddCounterPlacement.compoundSubCandidates(
+            parentId: "Q", eligible: [], library: [root], lookup: [root], draft: TaskEditPatch(title: "D")
+        ).counterIds.contains("r"))
+
+        // A saved child whose task links to the counter counts too; a deleted one frees it.
+        let saved = counting(id: "saved", sharedCounterId: "r")
+        var savedDraft = TaskEditPatch(title: "C")
+        savedDraft.children = [ChildPatch(id: "saved", childTaskId: "saved", title: "Read 3 books", isCounting: true)]
+        XCTAssertEqual(QuickAddCounterPlacement.countersInDraft(savedDraft, all: [root, saved]), ["saved", "r"])
+        savedDraft.children[0].markedDeleted = true
+        XCTAssertTrue(QuickAddCounterPlacement.countersInDraft(savedDraft, all: [root, saved]).isEmpty)
+
+        // Compound create: the linked new sub, and the per-compound exclusion set.
+        let sub = RisoCompoundFieldsView.counterSub(root, goal: 3, kind: .discrete)
+        XCTAssertEqual(RisoCompoundFieldsView.countersInSubs([sub, .newNormal(title: "x")]), ["r"])
+    }
+
     /// Owner bug report 2026-10-12: a brand-new hub counter (no `maxCount`,
     /// no defaults) is browsable and found by its name, and placing it on any
     /// core board resolves the kind fallback — no Goal entry.

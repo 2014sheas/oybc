@@ -88,8 +88,10 @@ enum CounterPlacement {
 
     /// The goal a NEW sub-task linked to a picked counter starts with (owner
     /// rule 2026-10-13: pre-filled, editable): the counter's default for the
-    /// host's window, as a placement there resolves it. No window reads as
-    /// Indefinite — the yearly default. TS twin: `counterPickGoal`.
+    /// host's window, as a placement there resolves it. No window — or one
+    /// that resolves nothing (a CUSTOM window whose dates don't parse) — reads
+    /// as Indefinite, the yearly default, so a counter always yields a goal.
+    /// TS twin: `counterPickGoal`.
     ///
     /// - Parameters:
     ///   - root: The picked counter's fields.
@@ -100,8 +102,10 @@ enum CounterPlacement {
     static func counterPickGoal(
         _ root: CounterSettings.Fields, timeframe: Timeframe?, startDate: String? = nil, endDate: String? = nil
     ) -> CountValue? {
-        guard let timeframe else { return placementGoalForCounter(root, timeframe: .indefinite) }
-        return placementGoalForCounter(root, timeframe: timeframe, startDate: startDate, endDate: endDate)
+        let inWindow = timeframe.flatMap {
+            placementGoalForCounter(root, timeframe: $0, startDate: startDate, endDate: endDate)
+        }
+        return inWindow ?? placementGoalForCounter(root, timeframe: .indefinite)
     }
 
     /// Whether hand-adding the ROOT itself must mint a per-board copy: only
