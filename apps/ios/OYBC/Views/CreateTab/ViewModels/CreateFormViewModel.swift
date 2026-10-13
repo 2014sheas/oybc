@@ -707,7 +707,12 @@ final class CreateFormViewModel {
             case .newCounting(let action, let goal, let unit, let sharedCounterId, let baseline, let countKind):
                 let newId = AppDatabase.generateUUID()
                 let childUnit = countKindNeedsUnit(countKind) ? unit.trimmingCharacters(in: .whitespacesAndNewlines) : ""
-                let autoTitle = TaskTitle.generateCounterTaskTitle(
+                // A sub-task linked to a counter renders the counter's title
+                // templates, like every copy of it (web `renderCounterTitle`).
+                let linkedRoot = sharedCounterId.flatMap { try? database.fetchTask(id: $0) }
+                let autoTitle = linkedRoot.map {
+                    CounterSettings.renderCounterTitle(CounterSettings.Fields(task: $0), goal: goal)
+                } ?? TaskTitle.generateCounterTaskTitle(
                     action: action, maxCount: goal, unit: childUnit, countKind: countKind
                 )
                 var newTask = OYBC.Task(

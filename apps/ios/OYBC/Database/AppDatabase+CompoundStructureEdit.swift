@@ -27,6 +27,10 @@ extension AppDatabase {
                 createdAt: now, updatedAt: now, version: 1, isDeleted: false
             )
             child.countKind = kind == .discrete ? nil : kind
+            if let counterId = step.sharedCounterId {
+                child.sharedCounterId = counterId
+                child.baseline = step.baseline ?? 0
+            }
             return child
         }
         return Task(
@@ -162,7 +166,11 @@ extension AppDatabase {
 
             if step.isNew {
                 let childId = AppDatabase.generateUUID()
-                let child = makeStagedChildTask(id: childId, step: step, title: title, userId: parent.userId, now: now)
+                // A sub-task linked to a hub counter takes the root's kind (a
+                // kind switch on the counter may have landed since the pick).
+                let child = try withRootCountKind(
+                    db: db, makeStagedChildTask(id: childId, step: step, title: title, userId: parent.userId, now: now)
+                )
                 try child.save(db)
                 try SyncQueueBuilder.makeItem(
                     entityType: "tasks", entityId: childId, operationType: .create, payload: child, now: now

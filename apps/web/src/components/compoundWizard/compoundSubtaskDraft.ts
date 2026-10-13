@@ -265,13 +265,14 @@ export function inlineSubtaskToAutoCreate(
   const action = subtask.action.trim();
   const unit = countKindNeedsUnit(kind) ? subtask.unit.trim() : '';
   const maxCount = parseCountInput(subtask.maxCountStr, kind) ?? undefined;
-  const pinned = match ? pinnedRoot(subtask, allTasks) : undefined;
+  // A sub-task linked to a counter renders the counter's title templates, like every copy of it.
+  const linkedRoot = match ? allTasks.find((t) => t.id === match.counterId) : undefined;
   const title =
     subtask.title.trim() ||
     (maxCount === undefined
       ? action
-      : pinned
-        ? renderCounterTitle(pinned, maxCount)
+      : linkedRoot
+        ? renderCounterTitle(linkedRoot, maxCount)
         : generateCounterTaskTitle(action, maxCount, unit, undefined, kind));
   return {
     autoCreate: {

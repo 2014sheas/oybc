@@ -39,6 +39,12 @@ struct ChildPatch: Identifiable, Equatable {
     /// Counter kind (Counting only): picked for a NEW sub-task, the task's
     /// own for an existing one (no picker — its goal edits at its own kind).
     var countKind: CountKind = .discrete
+    /// A NEW Counting sub-task built from a hub counter (picked in the
+    /// sub-task search): the counter it links to, and the counter's lifetime
+    /// count at pick time (the minted child counts from there). Web twin:
+    /// `ChildPatch.sharedCounterId` / `.baseline`.
+    var sharedCounterId: String? = nil
+    var baseline: CountValue? = nil
     var markedDeleted: Bool = false
 
     var isNew: Bool { childTaskId == nil }
@@ -46,7 +52,8 @@ struct ChildPatch: Identifiable, Equatable {
     /// - Parameter childType: Defaults to `.counting` / `.normal` per `isCounting`.
     init(id: String, childTaskId: String?, title: String, isCounting: Bool, childType: TaskType? = nil,
          action: String = "", goal: String = "", unit: String = "",
-         countKind: CountKind = .discrete, markedDeleted: Bool = false) {
+         countKind: CountKind = .discrete, sharedCounterId: String? = nil, baseline: CountValue? = nil,
+         markedDeleted: Bool = false) {
         self.id = id
         self.childTaskId = childTaskId
         self.title = title
@@ -56,6 +63,8 @@ struct ChildPatch: Identifiable, Equatable {
         self.goal = goal
         self.unit = unit
         self.countKind = countKind
+        self.sharedCounterId = sharedCounterId
+        self.baseline = baseline
         self.markedDeleted = markedDeleted
     }
 
