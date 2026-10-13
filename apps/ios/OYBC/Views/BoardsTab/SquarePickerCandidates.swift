@@ -7,7 +7,9 @@ import Foundation
 /// unit-testable without SwiftUI. Candidates exclude deleted tasks, tasks
 /// already in the DRAFT (not the live board — a staged add/replace this
 /// session already occupies a "slot" for counter-family purposes), and
-/// shared-counter family-mates of one, plus non-square-eligible types.
+/// shared-counter family-mates of one, linked copies of a counter whose root
+/// is listed (a search returns the COUNTER; placing it mints this board's
+/// copy), plus non-square-eligible types.
 enum SquarePickerCandidates {
 
     /// Task types eligible for a non-center square placement.
@@ -38,6 +40,7 @@ enum SquarePickerCandidates {
         return input.candidateTasks.filter { task in
             guard !task.isDeleted else { return false }
             if task.id == input.currentTaskId { return false }
+            if let rootId = task.sharedCounterId, input.counterFamilyByTaskId[rootId] != nil { return false }
             if input.placedTaskIds.contains(task.id), task.id != input.currentTaskId { return false }
             if let fam = input.counterFamilyByTaskId[task.id], placedFamilies.contains(fam) {
                 return false

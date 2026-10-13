@@ -13,6 +13,7 @@ import { buildTaskSubtitle } from './TaskRow';
 import {
   buildPendingLinkedCounter,
   counterMatchRowName,
+  counterRootIdsIn,
   isSharedCounterRoot,
 } from './quickAddCounterPlacement';
 import styles from './WizardQuickAddRow.module.css';
@@ -158,10 +159,9 @@ const PLACEHOLDERS = [
  * renders no dropdown at all.
  *
  * A match row for a shared counter ROOT (docs/SHARED_COUNTER_SETTINGS.md §2;
- * handoff `PlaceFrame.dc.html`) shows the counter's NAME, a dense kind tag and
- * — when the host passed `currentTimeframe` (a board context) — the goal this
- * board will get: "Weekly · 2 books" for a timeframe default, "12 books" for
- * the root's own goal. When no goal resolves at all, the same slot holds an
+ * handoff `PlaceFrame.dc.html`) shows the counter's NAME and a dense kind tag
+ * on every host (the root is the counter, not a task). On a board host
+ * (`currentTimeframe`) where no goal resolves at all, the row holds an
  * empty kind-aware Goal entry and the "+" stays dimmed until a number is
  * typed; the pick then hands a pending LINKED counting task at that goal to
  * `onPendingCreated` (hosts without it keep the plain row).
@@ -228,6 +228,10 @@ export function WizardQuickAddRow({
   // autocomplete convention (RisoCompoundFieldsView) and iOS's twin — an
   // in-flow suggestion list, so there's no floating overlay to dismiss on
   // blur; it hides when the field clears or a match/create resets it.
+  const rootIds = useMemo(
+    () => (pollingEnabled ? counterRootIdsIn(lookupTasks ?? libraryTasks!) : new Set<string>()),
+    [pollingEnabled, lookupTasks, libraryTasks],
+  );
   const showDropdown = pollingEnabled && trimmed !== '' && libraryMatches.length > 0 && !dropdownHeld;
 
   function handleExistingPicked(task: Task): void {
@@ -259,8 +263,7 @@ export function WizardQuickAddRow({
 
   /** The dropdown row for one match — a counter root gets the name · kind tag. */
   function renderMatchRow(task: Task): React.ReactElement {
-    const counterRow = isSharedCounterRoot(task) && currentTimeframe !== undefined;
-    if (!counterRow) {
+    if (!isSharedCounterRoot(task, rootIds)) {
       const tagName = rowCounterTagName(task, lookupTasks ?? libraryTasks ?? []);
       const detail = tagName ? buildTaskSubtitle(task) : '';
       return (
@@ -281,8 +284,11 @@ export function WizardQuickAddRow({
     }
     const name = counterMatchRowName(task);
     const kind = resolveCountKind(task);
-    const placementBoard = { timeframe: currentTimeframe!, startDate: currentStartDate, endDate: currentEndDate };
-    const needsGoal = placementGoalSource(task, placementBoard) === null && onPendingCreated !== undefined;
+    // Only a board host can need the inline goal (no default resolves for its window).
+    const needsGoal =
+      currentTimeframe !== undefined &&
+      onPendingCreated !== undefined &&
+      placementGoalSource(task, { timeframe: currentTimeframe, startDate: currentStartDate, endDate: currentEndDate }) === null;
     if (!needsGoal) {
       return (
         <button type="button" className={styles.dropdownRowButton} onClick={() => handleExistingPicked(task)}>

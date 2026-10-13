@@ -69,4 +69,12 @@ describe('isSquarePickerCandidate', () => {
     expect(isSquarePickerCandidate(task('a'), { currentTaskId: 'a' })).toBe(false);
     expect(isSquarePickerCandidate(task('b'), { currentTaskId: 'a' })).toBe(true);
   });
+
+  it('a linked copy of a listed counter is not a candidate — the search returns the counter', () => {
+    const fam = { root: 'root', copy: 'root' };
+    expect(isSquarePickerCandidate(task('copy', { type: TaskType.COUNTING, sharedCounterId: 'root' }), { placedTaskIds: new Set(), counterFamilyByTaskId: fam })).toBe(false);
+    expect(isSquarePickerCandidate(task('root', { type: TaskType.COUNTING }), { placedTaskIds: new Set(), counterFamilyByTaskId: fam })).toBe(true);
+    // An unresolvable root keeps its copy listed.
+    expect(isSquarePickerCandidate(task('copy', { type: TaskType.COUNTING, sharedCounterId: 'gone' }), { placedTaskIds: new Set(), counterFamilyByTaskId: fam })).toBe(true);
+  });
 });

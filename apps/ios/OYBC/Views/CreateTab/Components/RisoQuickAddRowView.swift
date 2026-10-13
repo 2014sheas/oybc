@@ -236,7 +236,10 @@ struct RisoQuickAddRowView: View {
             let roots = trimmedText.isEmpty ? [:] : rootsById
             let matches = libraryMatches(roots: roots)
             if !matches.isEmpty, heldText != text {
-                libraryMatchesDropdown(matches, roots: roots)
+                libraryMatchesDropdown(
+                    matches, roots: roots,
+                    counterRootIds: QuickAddCounterPlacement.counterRootIds(in: Array(roots.values))
+                )
                     .padding(.top, 8)
             }
 
@@ -257,11 +260,14 @@ struct RisoQuickAddRowView: View {
     /// shape (keylined paper card, divider-separated rows) but with the pool
     /// sheet's row style (`RisoTypeBadge` + title + "+" affordance) per the
     /// quick-add spec.
-    private func libraryMatchesDropdown(_ matches: [OYBC.Task], roots: [String: OYBC.Task]) -> some View {
+    private func libraryMatchesDropdown(
+        _ matches: [OYBC.Task], roots: [String: OYBC.Task], counterRootIds: Set<String>
+    ) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             ForEach(matches) { task in
                 QuickAddMatchRow(
                     task: task,
+                    isRoot: QuickAddCounterPlacement.isSharedCounterRoot(task, linkedRootIds: counterRootIds),
                     counterTagName: rowCounterTagName(task: task, rootsById: roots),
                     timeframe: placementTimeframe ?? defaultTimeframe,
                     startDate: placementTimeframe != nil ? placementStartDate : defaultStartDate,
@@ -279,7 +285,9 @@ struct RisoQuickAddRowView: View {
                     onPickWithGoal: { goal in
                         let payload = QuickAddCounterPlacement.pendingLinkedTask(
                             root: task, goal: goal, userId: userId, now: AppDatabase.currentTimestamp(),
-                            timeframe: defaultTimeframe, startDate: defaultStartDate, endDate: defaultEndDate
+                            timeframe: placementTimeframe ?? defaultTimeframe,
+                            startDate: placementTimeframe != nil ? placementStartDate : defaultStartDate,
+                            endDate: placementTimeframe != nil ? placementEndDate : defaultEndDate
                         )
                         onTaskCreated(payload.task.id, payload.task.title, TaskType.counting.rawValue)
                         onPendingCreated?(payload)
@@ -355,6 +363,9 @@ struct RisoQuickAddRowView: View {
 /// match row.
 private struct QuickAddMatchRow: View {
     let task: OYBC.Task
+    /// A shared counter root (`QuickAddCounterPlacement.isSharedCounterRoot`):
+    /// the row is the COUNTER — its name and kind tag.
+    let isRoot: Bool
     /// The counter a unit task / linked copy belongs to (`rowCounterTagName`):
     /// a dense `UnitTagView` inline after the title. nil for everything else.
     var counterTagName: String? = nil
@@ -371,7 +382,6 @@ private struct QuickAddMatchRow: View {
 
     @State private var goalText = ""
 
-    private var isRoot: Bool { QuickAddCounterPlacement.isSharedCounterRoot(task) }
     private var kind: CountKind { resolveCountKind(task.countKind) }
     private var title: String {
         isRoot ? CounterSettings.counterDisplayName(task) : (task.title.isEmpty ? "(untitled task)" : task.title)

@@ -4,8 +4,10 @@ import {
   counterDisplayName,
   renderCounterTitle,
   resolveCountKind,
+  sharedCounterRootIds,
   type Task,
 } from '@oybc/shared';
+import { taskLookupValues, type TaskLookup } from '../counters/rowCounterTagName';
 import type { PendingTaskPayload } from '../../pages/createPage/useCreateFormState';
 
 /**
@@ -18,15 +20,34 @@ import type { PendingTaskPayload } from '../../pages/createPage/useCreateFormSta
 
 /**
  * Is this library task a shared counter ROOT the match row treats specially:
- * a counting task with no `sharedCounterId` that is a hub counter or carries
- * timeframe defaults (a counting task other boards link to becomes one the
- * moment its defaults are set in the counter sheet).
+ * a counting task with no `sharedCounterId` that is a hub counter, carries
+ * timeframe defaults, or is linked to by another live task (`linkedRootIds`,
+ * from {@link counterRootIdsIn}) — the same roots the Tasks tab shows as
+ * counters, so every search surface returns the COUNTER for them.
  *
  * @param task - A library task.
+ * @param linkedRootIds - Ids other live tasks link to (default: none).
  */
-export function isSharedCounterRoot(task: Task): boolean {
+export function isSharedCounterRoot(task: Task, linkedRootIds: ReadonlySet<string> = NO_IDS): boolean {
   if (task.type !== TaskType.COUNTING || task.sharedCounterId) return false;
-  return task.isCounter === true || Object.keys(task.timeframeGoals ?? {}).length > 0;
+  return (
+    task.isCounter === true ||
+    Object.keys(task.timeframeGoals ?? {}).length > 0 ||
+    linkedRootIds.has(task.id)
+  );
+}
+
+const NO_IDS: ReadonlySet<string> = new Set();
+
+/**
+ * The counter roots in a surface's FULL task set (`sharedCounterRootIds`: a
+ * hub counter, or a task another live task links to) — pass the unfiltered
+ * set: the browse list drops the linked members that make a root.
+ *
+ * @param lookup - The surface's full task set (map or list).
+ */
+export function counterRootIdsIn(lookup: TaskLookup): Set<string> {
+  return sharedCounterRootIds(taskLookupValues(lookup));
 }
 
 /** The host board's window, stamped on the pending linked row (as `useLinkedCounterCreate` does). */

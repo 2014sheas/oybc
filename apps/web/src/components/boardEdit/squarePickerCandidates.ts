@@ -12,7 +12,9 @@ import type { Task } from '@oybc/shared';
  *   - NOT a member of a shared-counter family already in the draft — the
  *     one-counter-per-board rule — except when the only draft member IS the
  *     outgoing square (replacing "Read 20" → "Read 50" legitimately
- *     replaces the family's slot).
+ *     replaces the family's slot);
+ *   - NOT a linked copy of a counter the picker lists — a search returns
+ *     the COUNTER (its root), and placing it mints this board's copy.
  */
 export function isSquarePickerCandidate(
   task: Task,
@@ -25,6 +27,7 @@ export function isSquarePickerCandidate(
   const { currentTaskId, placedTaskIds, counterFamilyByTaskId } = args;
   if (task.isDeleted) return false;
   if (currentTaskId !== undefined && task.id === currentTaskId) return false;
+  if (task.sharedCounterId != null && counterFamilyByTaskId?.[task.sharedCounterId] !== undefined) return false;
   if (placedTaskIds !== undefined) {
     if (placedTaskIds.has(task.id) && task.id !== currentTaskId) return false;
     const fam = counterFamilyByTaskId?.[task.id];

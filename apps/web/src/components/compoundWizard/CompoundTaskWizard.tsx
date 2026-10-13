@@ -3,7 +3,6 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import {
   OperatorType,
   TaskType,
-  isGoalLessCounter,
   type Task,
   type BoardTask,
   type CompoundChild,
@@ -33,6 +32,7 @@ import {
   inlineSubtaskToAutoCreate,
 } from './compoundSubtaskDraft';
 import { CountsTowardError } from '../../db/operations/countsToward';
+import { counterRootIdsIn, isSharedCounterRoot } from '../wizard/quickAddCounterPlacement';
 import { countsTowardProblemLabel } from '../counters/countsTowardLabels';
 import styles from './CompoundTaskWizard.module.css';
 
@@ -213,10 +213,10 @@ export function CompoundTaskWizard({
    *  clamping is handled by BuildStep's effect, so this stays a pure
    *  state update. */
   function toggleLibraryItem(id: string, kind: 'task' | 'compound'): void {
-    // A hub counter (no goal of its own) can't be a sub-task as-is: it starts
-    // a NEW Counting sub-task linked to it, the goal left for the user.
+    // A counter is never a sub-task as-is: picking it starts a NEW Counting
+    // sub-task linked to it, the goal left for the user.
     const counter = allTasks.find((t) => t.id === id);
-    if (counter && isGoalLessCounter(counter)) {
+    if (counter && isSharedCounterRoot(counter, counterRootIdsIn(allTasks))) {
       setSubtasks((prev) => [...prev, inlineSubtaskFromCounter(counter, crypto.randomUUID())]);
       return;
     }
@@ -322,6 +322,7 @@ export function CompoundTaskWizard({
           threshold={threshold}
           onThresholdChange={setThreshold}
           allTasks={allTasks}
+          hideCounters={countsTowardId != null}
           allCompoundTasks={allCompoundTasks}
           taskBoardCounts={taskBoardCounts}
           compoundSubtaskCounts={compoundChildCounts}

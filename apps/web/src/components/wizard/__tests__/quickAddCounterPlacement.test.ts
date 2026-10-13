@@ -5,6 +5,7 @@ import { TaskType, Timeframe, isWindowStampedDerived, type Task } from '@oybc/sh
 import {
   buildPendingLinkedCounter,
   counterMatchRowName,
+  counterRootIdsIn,
   isLinkedPendingPayload,
   isSharedCounterRoot,
 } from '../quickAddCounterPlacement';
@@ -25,6 +26,16 @@ describe('isSharedCounterRoot', () => {
     expect(isSharedCounterRoot(task({ isCounter: false, maxCount: 12 }))).toBe(false);
     expect(isSharedCounterRoot(task({ sharedCounterId: 'other' }))).toBe(false);
     expect(isSharedCounterRoot(task({ type: TaskType.NORMAL }))).toBe(false);
+  });
+
+  it('a plain counting task another live task links to is a root too (counterRootIdsIn)', () => {
+    const plain = task({ id: 'p', isCounter: false, maxCount: 12 });
+    const copy = task({ id: 'c', isCounter: false, maxCount: 3, sharedCounterId: 'p' });
+    const ids = counterRootIdsIn([plain, copy]);
+    expect(isSharedCounterRoot(plain, ids)).toBe(true);
+    expect(isSharedCounterRoot(copy, ids)).toBe(false);
+    expect(isSharedCounterRoot(plain, counterRootIdsIn(new Map([[plain.id, plain]])))).toBe(false);
+    expect(isSharedCounterRoot(plain, counterRootIdsIn([plain, { ...copy, isDeleted: true }]))).toBe(false);
   });
 });
 
@@ -118,14 +129,14 @@ describe('WizardQuickAddRow match rows', () => {
     expect(h).not.toContain('>Books<');
   });
 
-  it('a plain task row is unchanged; without a board timeframe every row is plain', () => {
+  it('a plain task row is unchanged; without a board timeframe a counter is still the counter row', () => {
     const h = render(library, { seedText: 'book' });
     const rows = h.split('<li ').slice(1);
     const r3 = rows.find((r) => r.includes('Book flights'))!;
     expect(r3).not.toContain('tagDense');
     expect(r3).not.toContain('role="group"');
     const noBoard = render(library, { seedText: 'book', currentTimeframe: undefined });
-    expect(noBoard).not.toContain('tagDense');
+    expect(noBoard.split('<li ').slice(1).find((r) => r.includes('>Pages<'))!).toContain('tagDense');
     expect(noBoard).not.toContain('role="group"');
     // A host without `onPendingCreated` (no deferred path) keeps the plain row for the no-default root too.
     const noPending = render(library, { seedText: 'book', onPendingCreated: undefined });

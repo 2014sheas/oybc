@@ -6,15 +6,50 @@ import Foundation
 /// `quickAddCounterPlacement.ts`.
 enum QuickAddCounterPlacement {
 
-    /// Whether `task` is a shared counter ROOT (a counting task other boards
-    /// link to): counting, not itself linked, and either created from the hub
-    /// or carrying default goals.
+    /// Whether `task` is a shared counter ROOT the match row treats as the
+    /// COUNTER: counting, not itself linked, and created from the hub,
+    /// carrying default goals, or linked to by another live task
+    /// (`linkedRootIds`, from `counterRootIds(in:)`) — the same roots the
+    /// Tasks tab shows as counters, so every search returns the counter.
     ///
-    /// - Parameter task: Any task.
+    /// - Parameters:
+    ///   - task: Any task.
+    ///   - linkedRootIds: Ids other live tasks link to (default: none).
     /// - Returns: True for a counter root.
-    static func isSharedCounterRoot(_ task: Task) -> Bool {
+    static func isSharedCounterRoot(_ task: Task, linkedRootIds: Set<String> = []) -> Bool {
         task.type == .counting && task.sharedCounterId == nil
-            && (task.isCounter || !(task.timeframeGoals?.isEmpty ?? true))
+            && (task.isCounter || !(task.timeframeGoals?.isEmpty ?? true) || linkedRootIds.contains(task.id))
+    }
+
+    /// The counter roots in a surface's FULL task set (`sharedCounterRootIds`)
+    /// — pass the unfiltered set: the browse list drops the linked members
+    /// that make a root. Web twin: `counterRootIdsIn`.
+    static func counterRootIds(in tasks: [Task]) -> Set<String> {
+        sharedCounterRootIds(tasks)
+    }
+
+    /// The compound editor's sub-task search set: the eligible tasks with every
+    /// counter root in `library` listed as the COUNTER (a pick primes a new
+    /// linked Counting sub-task). The counter the compound itself counts toward
+    /// is left out (a sub linked to it would credit it twice). Web twin:
+    /// `compoundSubCandidates.ts`.
+    ///
+    /// - Parameters:
+    ///   - parentId: The compound being edited.
+    ///   - eligible: `CompoundChildEligibility.pickerCandidates` output.
+    ///   - library: Browsable library tasks.
+    ///   - lookup: The surface's FULL task set.
+    /// - Returns: The search set (eligible first, then counters) and the counter ids.
+    static func compoundSubCandidates(
+        parentId: String, eligible: [Task], library: [Task], lookup: [Task]
+    ) -> (candidates: [Task], counterIds: Set<String>) {
+        let rootIds = counterRootIds(in: lookup + library)
+        let countsToward = (lookup + library).first { $0.id == parentId }?.countsTowardCounterId
+        let counters = library.filter {
+            !$0.isDeleted && $0.id != countsToward && isSharedCounterRoot($0, linkedRootIds: rootIds)
+        }
+        let counterIds = Set(counters.map(\.id))
+        return (eligible.filter { !counterIds.contains($0.id) && $0.id != countsToward } + counters, counterIds)
     }
 
     /// The pending LINKED counting task for a goal-less counter root placed at

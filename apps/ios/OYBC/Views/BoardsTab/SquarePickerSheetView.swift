@@ -104,6 +104,7 @@ struct SquarePickerSheetView: View {
                             defaultStartDate: nil,
                             defaultEndDate: nil,
                             taskLibrary: candidateTasks,
+                            suggestionPool: counterRootTasks + candidateTasks,
                             onTaskCreated: { _, _, _ in },
                             onCompoundCreated: { task in
                                 onConfirm(task.id, nil)

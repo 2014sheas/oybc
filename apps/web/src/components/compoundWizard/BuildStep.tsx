@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { Task } from '@oybc/shared';
-import { OperatorType, TaskType, clampCompoundThreshold } from '@oybc/shared';
+import { OperatorType, TaskType, clampCompoundThreshold, taskSearchMatches } from '@oybc/shared';
+import { counterMatchRowName, counterRootIdsIn, isSharedCounterRoot } from '../wizard/quickAddCounterPlacement';
 import { counterRowSubtitle } from '../counters/counterRowTitle';
 import { CounterStepper } from '../CounterStepper';
 import { RisoChip, RisoTypeBadge } from '../riso';
@@ -34,6 +35,8 @@ interface LibraryRow {
   subtitle: string;
   usageHint: string;
   kind: 'task' | 'compound';
+  /** The library task — searched with the shared `taskSearchMatches`. */
+  task: Task;
 }
 
 export interface BuildStepProps {
@@ -45,6 +48,9 @@ export interface BuildStepProps {
   threshold: number;
   onThresholdChange: (next: number) => void;
   allTasks: Task[];
+  /** List no counter (a compound made from Counter Detail's "+ New" links
+   *  none). Default false. */
+  hideCounters?: boolean;
   allCompoundTasks: Task[];
   /** taskId → count of distinct boards the task is placed on. */
   taskBoardCounts: Record<string, number>;
@@ -81,6 +87,7 @@ export function BuildStep({
   threshold,
   onThresholdChange,
   allTasks,
+  hideCounters = false,
   allCompoundTasks,
   taskBoardCounts,
   compoundSubtaskCounts,
@@ -148,19 +155,27 @@ export function BuildStep({
   // ─── Library rows ─────────────────────────────────────────────────────────
 
   const libraryRows = useMemo<LibraryRow[]>(() => {
-    const taskRows: LibraryRow[] = allTasks.map((t) => {
+    // A counter is listed ONCE, as the counter (picking it starts a linked
+    // Counting sub-task); its linked copies are reached through it.
+    const rootIds = counterRootIdsIn(allTasks);
+    const taskRows: LibraryRow[] = allTasks
+      .filter((t) => !(t.sharedCounterId != null && rootIds.has(t.sharedCounterId)))
+      .filter((t) => !(hideCounters && isSharedCounterRoot(t, rootIds)))
+      .map((t) => {
       const boards = taskBoardCounts[t.id] ?? 0;
       // Short usage hint — long forms ("not on any board", "on 3 boards")
       // were eating enough horizontal space on iPhone to truncate the
       // title; keep parity by trimming on web too.
       const usageHint = boards === 0 ? 'unused' : `${boards} board${boards === 1 ? '' : 's'}`;
+      const counter = isSharedCounterRoot(t, rootIds);
       return {
         id: t.id,
-        title: t.title,
+        title: counter ? counterMatchRowName(t) : t.title,
         type: t.type as 'normal' | 'counting',
-        subtitle: buildTaskSubtitle(t),
-        usageHint,
+        subtitle: counter ? '' : buildTaskSubtitle(t),
+        usageHint: counter ? 'counter' : usageHint,
         kind: 'task',
+        task: t,
       };
     });
     const compoundRows: LibraryRow[] = allCompoundTasks.map((ct) => {
@@ -172,22 +187,24 @@ export function BuildStep({
         subtitle: buildCompoundSubtitle(ct.id, compoundLeafPreviews),
         usageHint: `${leaves} subtask${leaves === 1 ? '' : 's'}`,
         kind: 'compound',
+        task: ct,
       };
     });
     return [...taskRows, ...compoundRows].sort((a, b) => a.title.localeCompare(b.title));
   }, [
     allTasks,
+    hideCounters,
     allCompoundTasks,
     taskBoardCounts,
     compoundSubtaskCounts,
     compoundLeafPreviews,
   ]);
 
-  const q = query.trim().toLowerCase();
+  const q = query.trim();
   const visibleRows = libraryRows.filter((row) => {
     if (filter !== 'all' && row.type !== filter) return false;
     if (q.length === 0) return true;
-    return row.title.toLowerCase().includes(q) || row.subtitle.toLowerCase().includes(q);
+    return taskSearchMatches(q, row.task) || row.subtitle.toLowerCase().includes(q.toLowerCase());
   });
   // Note: the 'compound' filter matches all compound tasks (they appear in the
   // compoundRows list with type='compound').

@@ -3,7 +3,6 @@ import {
   OperatorType,
   TaskType,
   countKindNeedsUnit,
-  isGoalLessCounter,
   resolveCountKind,
   type CompoundChild,
   type CountKind,
@@ -21,7 +20,6 @@ import {
   editChildPatch,
   liveChildren,
   readsAsPreview,
-  subtaskQuickAddCandidates,
   type ChildPatch,
   type TaskEditPatch,
 } from '../../db/taskEditPatch';
@@ -29,6 +27,7 @@ import { MiniTypeBadge, type MiniBadgeType } from './MiniTypeBadge';
 import type { TaskLookup } from '../counters/rowCounterTagName';
 import { WizardQuickAddRow } from './WizardQuickAddRow';
 import { CountingSubConfigRow } from './CountingSubConfigRow';
+import { compoundSubCandidates } from './compoundSubCandidates';
 import styles from './PoolRowEditor.module.css';
 
 /** Whether the host's library inputs (`libraryTasks` / `allLinks`) have
@@ -125,10 +124,9 @@ export function CompoundFields({
     onDraftChange({ ...draft, children: nextChildren, threshold: nextThreshold });
   }
 
-  // Hub counters (no goal of their own) can't be linked as-is; picking one
-  // primes a NEW Counting sub-task linked to it (like compound create).
-  const hubCounters = libraryTasks.filter((t) => !t.isDeleted && isGoalLessCounter(t) && t.sharedCounterId == null);
-  const candidates = [...subtaskQuickAddCandidates(parentId, libraryTasks, allLinks, draft), ...hubCounters];
+  // A search returns the COUNTER: picking one primes a NEW linked Counting sub-task.
+  const { candidates, counterIds } = compoundSubCandidates(parentId, libraryTasks, lookupTasks ?? libraryTasks, allLinks, draft);
+  const hubCounters = candidates.filter((t) => counterIds.has(t.id));
   const newSubPreview = newSubCounting ? readsAsPreview(newSubText, newSubGoal, newSubUnit, newSubKind) : undefined;
   // The primed counter stays the link target while its verb / noun / kind are unchanged.
   const primedRoot = newSubCounterId ? hubCounters.find((t) => t.id === newSubCounterId) : undefined;
@@ -151,9 +149,9 @@ export function CompoundFields({
     setNewSubCounterId(null);
   }
 
-  /** A picked hub counter primes the row (its verb is the field's next text). */
+  /** A picked counter primes the row (its verb is the field's next text). */
   function handlePicked(task: Task): string | void {
-    if (!isGoalLessCounter(task)) {
+    if (!counterIds.has(task.id)) {
       onDraftChange(appendPickedChild(draft, task));
       return;
     }
