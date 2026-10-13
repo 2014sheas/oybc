@@ -9,6 +9,7 @@ import {
   findAffectedBoardIds,
   computeBoardStatsUpdate,
   resolvePlacements,
+  isCoreBoard,
 } from '@oybc/shared';
 import { generateUUID, currentTimestamp } from '../utils';
 import { addToSyncQueue } from './syncQueue';
@@ -359,7 +360,7 @@ export async function fetchCoreBoardsForTimeframe(
       [userId, timeframe, ''] as readonly unknown[],
       [userId, timeframe, '￿'] as readonly unknown[],
     )
-    .and((b) => !b.isDeleted && b.isCore === true)
+    .and((b) => !b.isDeleted && isCoreBoard(b))
     .toArray();
   return healBoardNames(boards);
 }

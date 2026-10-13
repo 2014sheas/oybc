@@ -55,6 +55,19 @@ describe('boardDisplayName', () => {
       expect(boardDisplayName(oneOff)).toBe('Today');
     });
 
+    it('heals a board spawned from a repeating board, which is never core', () => {
+      const spawned: BoardNameFields = {
+        name: 'Leg Day — Today',
+        startDate: '2026-03-15T00:00:00.000',
+        timeframe: Timeframe.DAILY,
+        isCore: false,
+        spawnedFromTemplateId: 'tpl-1',
+      };
+      expect(boardDisplayName(spawned)).toBe(
+        `Leg Day — ${formatWindowLabel(Timeframe.DAILY, '2026-03-15T00:00:00.000')}`,
+      );
+    });
+
     it('does not touch a name that merely CONTAINS the word today', () => {
       const board = coreBoard('Today I conquer', '2026-03-15T00:00:00.000');
       expect(boardDisplayName(board)).toBe('Today I conquer');

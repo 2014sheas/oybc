@@ -7,6 +7,7 @@ import {
   computeStreak,
   computeLongestStreak,
   compactStreakLabel,
+  isCoreBoard,
 } from '@oybc/shared';
 import type { Board } from '@oybc/shared';
 import { useAuth } from '../firebase/useAuth';
@@ -51,7 +52,7 @@ function buildWeekDots(boards: Board[], now: Date): WeekDot[] {
   const greenloggedDays = new Set<string>();
   for (const b of boards) {
     if (
-      b.isCore &&
+      isCoreBoard(b) &&
       b.timeframe === Timeframe.DAILY &&
       b.status === BoardStatus.COMPLETED &&
       !b.isDeleted &&

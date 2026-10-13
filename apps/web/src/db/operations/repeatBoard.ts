@@ -7,6 +7,7 @@ import {
   type RecurringBoardTemplate,
   type Timeframe,
   type WeekStartDay,
+  isCoreBoard,
 } from '@oybc/shared';
 import { generateUUID, currentTimestamp } from '../utils';
 import { addToSyncQueue } from './syncQueue';
@@ -54,6 +55,9 @@ export async function repeatBoardAsRecurring(
   userId: string,
   weekStartDay: WeekStartDay,
 ): Promise<RecurringBoardTemplate> {
+  // A core board is never repeated (the menu never offers it): back-stamping
+  // `spawnedFromTemplateId` would silently demote it (`isCoreBoard`).
+  if (isCoreBoard(board)) throw new Error('A core board cannot be repeated');
   const now = currentTimestamp();
 
   return await db.transaction(

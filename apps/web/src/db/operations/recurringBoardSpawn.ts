@@ -402,11 +402,9 @@ export async function spawnTemplateBoard(
         version: 1,
         isDeleted: false,
         spawnedFromTemplateId: template.id,
-        // Phase 6.1 — template-spawned boards are core by construction.
-        // They fulfill the same "recurring board for this window exists"
-        // promise as banner-spawned boards, so the recurring banner
-        // detector must treat them the same.
-        isCore: true,
+        // A repeating board's instance is never the core board for its
+        // window (owner bug 2026-10-13) — the core slot stays the user's.
+        isCore: false,
       };
 
       // For odd-sized boards, the center cell index is `floor(N²/2)`;

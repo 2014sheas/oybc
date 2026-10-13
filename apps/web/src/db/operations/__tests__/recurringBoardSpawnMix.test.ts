@@ -144,6 +144,10 @@ describe('spawnTemplateBoard — P1 pool-mix resolution', () => {
     const boardTasks = await db.boardTasks.where('boardId').equals(result.boardId).toArray();
     expect(boardTasks).toHaveLength(9); // NONE center — all 9 cells filled
     expect(new Set(boardTasks.map((bt) => bt.taskId))).toEqual(new Set(expectedMix.taskIds));
+    // A repeating board's instance never takes the core slot (owner bug 2026-10-13).
+    const spawned = await db.boards.get(result.boardId);
+    expect(spawned?.isCore).toBe(false);
+    expect(spawned?.spawnedFromTemplateId).toBe(template.id);
   });
 
   it('a soft-deleted pool contributes nothing (derived detachment) — the mix falls below the fillable floor', async () => {
