@@ -69,9 +69,9 @@ export interface InlineSubtaskDraft {
 }
 
 /**
- * The inline Counting draft a picked counter becomes: its verb, noun and kind,
- * pinned to it, the goal pre-filled with the counter's default for `window`
- * (`counterPickGoal`; editable). iOS twin: `RisoCompoundFieldsView.prefillCounterSub`.
+ * The inline Counting draft one tap on a counter adds: its verb, noun and kind,
+ * pinned to it, the goal at the counter's default for `window`
+ * (`counterPickGoal`; editable on the card). iOS twin: `RisoCompoundFieldsView.addCounterSub`.
  *
  * @param root - The picked counter.
  * @param id - The draft id.

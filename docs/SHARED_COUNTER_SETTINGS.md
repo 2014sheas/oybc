@@ -142,14 +142,19 @@ On every compound sub-task surface — iOS compound create (#603), web compound 
 (`CompoundTaskWizard`: a picked hub counter becomes an inline Counting draft,
 `inlineSubtaskFromCounter`), and compound EDIT on both platforms (Task Detail / Tasks
 tab, the wizard's pool-row editor, Board Edit's square sheet — web `CompoundFields` ↔
-iOS `RisoCompoundEditFieldsView`) — picking a hub counter primes a NEW Counting sub-task
-with the counter's verb, noun and kind, pinned as its link target while those stay
-unchanged (so a Duration counter links too), the goal pre-filled with the counter's
-default for the host's window (owner rule 2026-10-13 — `counterPickGoal` ↔
-`CounterPlacement.counterPickGoal`, exactly what a placement on that window resolves:
-stored / derived default → kind fallback → the counter's own goal; the host board's window in
-the wizard and Board Edit, else the compound's own window, else Indefinite = the yearly
-default); the user edits it only to change it. The minted child
+iOS `RisoCompoundEditFieldsView`) — **one tap on a counter adds the sub-task** (owner rule
+2026-10-13: no primed row, no Add): a NEW linked Counting sub-task filled entirely from the
+counter — verb, noun, kind, the title through its templates, and the goal at the counter's
+default for the host's window (`counterPickGoal` ↔ `CounterPlacement.counterPickGoal`: what a
+placement on that window resolves — stored / derived default → kind fallback → the counter's own
+goal; the host board's window in the wizard and Board Edit, else the compound's own window, else
+Indefinite = the yearly default, which is also the fallback when a window resolves nothing, so a
+counter always yields a goal). Web `appendCounterChild` / `inlineSubtaskFromCounter` ↔ iOS
+`RisoCompoundEditFieldsView.appendCounterSub` / `RisoCompoundFieldsView.addCounterSub`. The user
+changes the goal afterwards on the sub-task card (compound edit, incl. the board pool's row
+editor). A counter already a sub-task of THIS compound is not offered again (`countersInDraft`;
+iOS create `countersInSubs`); other compounds and the board are separate scopes. Typing a new
+Counting sub-task's verb + noun still auto-links as before. The minted child
 carries `sharedCounterId` + `baseline` = the counter's lifetime at pick time
 (`ChildPatch.sharedCounterId` / `.baseline` → `buildNewChildTask` ↔
 `makeStagedChildTask`, then `withRootCountKind`), and is titled through the counter's

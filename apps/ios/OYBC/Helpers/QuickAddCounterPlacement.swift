@@ -28,10 +28,28 @@ enum QuickAddCounterPlacement {
         sharedCounterRootIds(tasks)
     }
 
+    /// The counters already sub-tasks of this compound draft: a live child
+    /// linked to one (staged `sharedCounterId`, or a saved child whose task
+    /// links to it), or a root linked as itself. Web twin: `countersInDraft`.
+    static func countersInDraft(_ draft: TaskEditPatch, all: [Task]) -> Set<String> {
+        let byId = Dictionary(all.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        var used = Set<String>()
+        for child in draft.children where !child.markedDeleted {
+            if let id = child.sharedCounterId { used.insert(id) }
+            if let id = child.childTaskId {
+                used.insert(id)
+                if let linked = byId[id]?.sharedCounterId { used.insert(linked) }
+            }
+        }
+        return used
+    }
+
     /// The compound editor's sub-task search set: the eligible tasks with every
     /// counter root in `library` listed as the COUNTER (a pick primes a new
-    /// linked Counting sub-task). The counter the compound itself counts toward
-    /// is left out (a sub linked to it would credit it twice). Web twin:
+    /// linked Counting sub-task). Left out: the counter the compound itself
+    /// counts toward (a sub linked to it would credit it twice) and every
+    /// counter already a sub-task of THIS compound (`countersInDraft`; other
+    /// compounds and the board are separate scopes). Web twin:
     /// `compoundSubCandidates.ts`.
     ///
     /// - Parameters:
@@ -39,17 +57,23 @@ enum QuickAddCounterPlacement {
     ///   - eligible: `CompoundChildEligibility.pickerCandidates` output.
     ///   - library: Browsable library tasks.
     ///   - lookup: The surface's FULL task set.
+    ///   - draft: The staged structure (nil: nothing staged yet).
     /// - Returns: The search set (eligible first, then counters) and the counter ids.
     static func compoundSubCandidates(
-        parentId: String, eligible: [Task], library: [Task], lookup: [Task]
+        parentId: String, eligible: [Task], library: [Task], lookup: [Task], draft: TaskEditPatch? = nil
     ) -> (candidates: [Task], counterIds: Set<String>) {
-        let rootIds = counterRootIds(in: lookup + library)
-        let countsToward = (lookup + library).first { $0.id == parentId }?.countsTowardCounterId
+        let all = lookup + library
+        let rootIds = counterRootIds(in: all)
+        let countsToward = all.first { $0.id == parentId }?.countsTowardCounterId
+        let used = draft.map { countersInDraft($0, all: all) } ?? []
         let counters = library.filter {
-            !$0.isDeleted && $0.id != countsToward && isSharedCounterRoot($0, linkedRootIds: rootIds)
+            !$0.isDeleted && $0.id != countsToward && !used.contains($0.id)
+                && isSharedCounterRoot($0, linkedRootIds: rootIds)
         }
         let counterIds = Set(counters.map(\.id))
-        return (eligible.filter { !counterIds.contains($0.id) && $0.id != countsToward } + counters, counterIds)
+        // A counter is only ever offered AS the counter — never as a plain task.
+        let plain = eligible.filter { !isSharedCounterRoot($0, linkedRootIds: rootIds) && $0.id != countsToward }
+        return (plain + counters, counterIds)
     }
 
     /// The pending LINKED counting task for a goal-less counter root placed at

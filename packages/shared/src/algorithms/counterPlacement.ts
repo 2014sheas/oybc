@@ -95,16 +95,20 @@ export function placementGoalForCounter(
  * 2026-10-13: the goal is pre-filled, the user edits it if they want): the
  * counter's default for the host's window, exactly as a placement on that
  * window would resolve it ({@link placementGoalForCounter}). No window (a
- * Tasks-tab compound, a pool) reads as Indefinite — the yearly default.
- * iOS twin: `CounterPlacement.counterPickGoal`.
+ * Tasks-tab compound, a pool) reads as Indefinite — the yearly default — and
+ * so does a window that resolves nothing (a CUSTOM window whose dates don't
+ * parse), so a counter always yields a goal. iOS twin:
+ * `CounterPlacement.counterPickGoal`.
  *
  * @param root - The picked counter's fields.
  * @param window - The host board's (or the compound's own) window, if any.
- * @returns The goal, or null (a CUSTOM window whose dates don't parse, for a
- *   counter with no goal at all).
+ * @returns The goal (null only for malformed fields — Indefinite always resolves).
  */
 export function counterPickGoal(root: CounterSettingsFields, window?: PlacementBoard | null): number | null {
-  return placementGoalForCounter(root, window?.timeframe ? window : { timeframe: Timeframe.INDEFINITE });
+  const indefinite = { timeframe: Timeframe.INDEFINITE };
+  return (
+    (window?.timeframe ? placementGoalForCounter(root, window) : null) ?? placementGoalForCounter(root, indefinite)
+  );
 }
 
 /** Where a match row's goal comes from (the quick-add / picker row's goal slot). */

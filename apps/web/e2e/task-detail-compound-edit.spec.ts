@@ -277,9 +277,9 @@ test.describe('Task Detail — compound editing', () => {
     await expect(page).toHaveURL(new RegExp(`/tasks/${LIBRARY_ID}`));
   });
 
-  test('a picked counter primes a linked Counting sub-task with the goal pre-filled from its default', async ({ page }) => {
+  test('one tap on a counter adds a linked Counting sub-task filled from it, goal at its default', async ({ page }) => {
     // A hub counter with its own goal and a yearly default: Task Detail has no
-    // board window, so the default for Indefinite (yearly) fills the goal.
+    // board window, so the default for Indefinite (yearly) is the goal.
     await seedTask(page, {
       id: COUNTER_ID, title: 'Read 12 pages', type: 'counting', action: 'Read', unit: 'pages',
       maxCount: 12, isCounter: true, timeframeGoals: { yearly: 50 },
@@ -291,13 +291,17 @@ test.describe('Task Detail — compound editing', () => {
     await expect(sheet.getByLabel('Sub-task 2 title')).toHaveValue('Squats');
 
     const field = sheet.getByLabel('New normal task title');
+    const matches = sheet.getByRole('list', { name: 'Matching library tasks' });
     await field.fill('Pages');
-    await sheet.getByRole('list', { name: 'Matching library tasks' }).getByRole('button', { name: /Read pages/ }).click();
-    const goal = sheet.getByRole('textbox', { name: 'Goal', exact: true });
-    await expect(goal).toHaveValue('50');
-    await expect(field).toHaveValue('Read');
-    await sheet.getByRole('button', { name: 'Add task' }).click();
+    await matches.getByRole('button', { name: /Read pages/ }).click();
+    // Added straight away — no Counting row, no Add tap.
+    await expect(sheet.getByLabel('Sub-task 3 title')).toHaveValue('Read 50 pages');
     await expect(sheet.getByLabel('Sub-task 3 goal')).toHaveValue('50');
+    await expect(sheet.getByRole('textbox', { name: 'Goal', exact: true })).toHaveCount(0);
+    await expect(field).toHaveValue('');
+    // Already a sub-task of this compound: not offered again.
+    await field.fill('Pages');
+    await expect(matches).toHaveCount(0);
 
     await sheet.getByRole('button', { name: /save changes/i }).click();
     await expect(sheet).toHaveCount(0);

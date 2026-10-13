@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { TaskType, type Task } from '@oybc/shared';
-import { compoundSubCandidates } from '../compoundSubCandidates';
+import { TaskType, Timeframe, type Task } from '@oybc/shared';
+import { appendCounterChild, compoundSubCandidates, countersInDraft } from '../compoundSubCandidates';
 import { emptyPatch } from '../../../db/taskEditPatch';
 
 const T0 = '2026-10-01T00:00:00.000Z';
@@ -35,5 +35,32 @@ describe('compoundSubCandidates', () => {
 
   it('a root is found through its linked member in the FULL set only', () => {
     expect(compoundSubCandidates('P', library, library, [], emptyPatch('C')).counterIds.has('linkedTo')).toBe(false);
+  });
+
+  it('a counter already a sub-task of THIS compound is not offered again', () => {
+    const withHub = appendCounterChild(emptyPatch("C"), hubWithGoal);
+    const after = compoundSubCandidates('P', library, [...library, copy], [], withHub);
+    expect(after.counterIds.has('hubGoal')).toBe(false);
+    expect(after.candidates.map((t) => t.id)).not.toContain('hubGoal');
+    // A saved child linked to the counter (its task carries the link) counts too.
+    const savedCopy = task('saved', { sharedCounterId: 'hub' });
+    const saved = { ...emptyPatch('C'), children: [{ ...withHub.children[0], id: 'saved', childTaskId: 'saved', sharedCounterId: undefined }] };
+    expect([...countersInDraft(saved, [...library, savedCopy])]).toEqual(['saved', 'hub']);
+    // A deleted child frees it.
+    const deleted = { ...withHub, children: [{ ...withHub.children[0], markedDeleted: true }] };
+    expect(countersInDraft(deleted, library).size).toBe(0);
+  });
+});
+
+describe('appendCounterChild', () => {
+  it('one pick appends a complete linked Counting sub-task, goal at the window default', () => {
+    const root = task('r', { isCounter: true, maxCount: undefined, currentCount: 9, timeframeGoals: { weekly: 3 } });
+    const next = appendCounterChild(emptyPatch('C'), root, { timeframe: Timeframe.WEEKLY });
+    expect(next.children).toHaveLength(1);
+    expect(next.children[0]).toMatchObject({
+      isCounting: true, action: 'Read', unit: 'books', goal: '3', title: 'Read 3 books', sharedCounterId: 'r', baseline: 9,
+    });
+    // No window: the yearly default (derived from the weekly one).
+    expect(appendCounterChild(emptyPatch('C'), root).children[0].goal).toBe('157');
   });
 });

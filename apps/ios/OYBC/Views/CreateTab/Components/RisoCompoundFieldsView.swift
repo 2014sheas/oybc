@@ -102,9 +102,6 @@ struct RisoCompoundFieldsView: View {
 
     /// Controls visibility of the smart-autocomplete dropdown below the sub input.
     @State private var subAutocompleteVisible: Bool = false
-    /// Set while a picked hub counter prefills the sub input, so that
-    /// write doesn't reopen the dropdown.
-    @State private var prefillingFromCounter = false
 
     // Counter-link state for the new-counting-sub fields (R1 counters
     // refresh — auto-link default ON). Same `CounterLinkState` as
@@ -269,17 +266,19 @@ struct RisoCompoundFieldsView: View {
     /// Autocomplete matches — up to 3 non-compound library tasks matching the
     /// current `subInputText` (title / counter name), excluding tasks already
     /// added as subs and linked copies of a listed counter. A search returns the COUNTER for every shared counter
-    /// root (`counterIds`); picking one starts a linked Counting sub
-    /// (`prefillCounterSub`). From-counter mode links nothing, so it lists no
-    /// counter.
+    /// root (`counterIds`); one tap adds a linked Counting sub filled from it
+    /// (`addCounterSub`). From-counter mode links nothing, so it lists no
+    /// counter; a counter already a sub of this compound isn't listed again.
     private var subAutocompleteMatches: [OYBC.Task] {
         let q = subInputText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         guard !q.isEmpty else { return [] }
         let addedTitles = Set(compoundSubs.map { $0.displayTitle.lowercased() })
         let counters = counterIds
+        let used = Self.countersInSubs(compoundSubs)
         return taskLibrary
             .filter { $0.type != .compound }
-            .filter { !(countsTowardActive && counters.contains($0.id)) }
+            // From-counter mode lists no counter; a counter already a sub here isn't offered again.
+            .filter { !(counters.contains($0.id) && (countsTowardActive || used.contains($0.id))) }
             // A linked copy is reached through its counter.
             .filter { $0.sharedCounterId.map { !counters.contains($0) } ?? true }
             .filter { !addedTitles.contains($0.title.lowercased()) }
@@ -358,11 +357,7 @@ struct RisoCompoundFieldsView: View {
                         .strokeBorder(Color.risoInk, lineWidth: Riso.Keyline.container)
                 )
                 .onChange(of: subInputText) { _, _ in
-                    if prefillingFromCounter {
-                        prefillingFromCounter = false
-                    } else {
-                        subAutocompleteVisible = !subInputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                    }
+                    subAutocompleteVisible = !subInputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                     updateSubLinkSuggestion()
                 }
                 .onSubmit { addNewSub() }
@@ -519,7 +514,7 @@ struct RisoCompoundFieldsView: View {
             ForEach(subAutocompleteMatches) { task in
                 Button {
                     if counters.contains(task.id) {
-                        prefillCounterSub(task)
+                        addCounterSub(task)
                         return
                     }
                     // Add as EXISTING sub and clear input
@@ -633,24 +628,41 @@ struct RisoCompoundFieldsView: View {
                             tasks: suggestionPool ?? taskLibrary)
     }
 
-    /// A picked counter is never linked as an existing sub-task: switch the sub input to Counting with the
-    /// counter's verb / noun / kind, the Goal pre-filled with its default for
-    /// this window, and pin it as the link target (auto-link ON).
-    private func prefillCounterSub(_ root: OYBC.Task) {
-        let action = root.action ?? ""
+    /// A picked counter becomes a linked Counting sub — one tap, everything
+    /// from the counter: verb, noun, kind and the goal at its default for this
+    /// window (`CounterPlacement.counterPickGoal`); the save titles it through
+    /// the counter's templates. Web twin: `inlineSubtaskFromCounter`.
+    private func addCounterSub(_ root: OYBC.Task) {
         let kind = resolveCountKind(root.countKind)
-        let unit = countKindNeedsUnit(kind) ? (root.unit ?? "") : ""
-        if subInputText != action { prefillingFromCounter = true }
-        subAutocompleteVisible = false
-        newSubType = .counting
-        subInputText = action
-        subKind = kind
-        subUnitText = unit
-        // Pre-filled with the counter's default for this window (editable).
-        subGoalText = CounterPlacement.counterPickGoal(
+        guard let goal = CounterPlacement.counterPickGoal(
             .init(task: root), timeframe: defaultTimeframe, startDate: defaultStartDate, endDate: defaultEndDate
-        ).map { formatCountForInput($0, kind: kind) } ?? ""
-        subLink.pin(root, action: action, unit: unit, kind: kind, tasks: suggestionPool ?? taskLibrary)
+        ) else { return }
+        compoundSubs.append(Self.counterSub(root, goal: goal, kind: kind))
+        subInputText = ""
+        subAutocompleteVisible = false
+    }
+
+    /// The linked Counting sub item for `root` at `goal` (pure; unit-tested).
+    static func counterSub(_ root: OYBC.Task, goal: CountValue, kind: CountKind) -> CreateFormViewModel.CompoundSubItem {
+        .newCounting(
+            action: root.action ?? "",
+            goal: goal,
+            unit: countKindNeedsUnit(kind) ? (root.unit ?? "") : "",
+            sharedCounterId: root.id,
+            baseline: root.currentCount ?? 0,
+            countKind: kind
+        )
+    }
+
+    /// The counters already subs of this compound (a linked new sub, or one picked as itself).
+    static func countersInSubs(_ subs: [CreateFormViewModel.CompoundSubItem]) -> Set<String> {
+        Set(subs.compactMap { sub in
+            switch sub {
+            case .newCounting(_, _, _, let sharedCounterId, _, _): return sharedCounterId
+            case .existing(let taskId, _, _): return taskId
+            case .newNormal: return nil
+            }
+        })
     }
 
     // MARK: - Sub-add action

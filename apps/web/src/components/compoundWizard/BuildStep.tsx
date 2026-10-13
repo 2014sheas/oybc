@@ -9,6 +9,7 @@ import { SubtaskCard } from './SubtaskCard';
 import {
   type SubtaskDraft,
   evaluateSubtaskReadiness,
+  inlineLinkMatch,
 } from './compoundSubtaskDraft';
 import styles from './BuildStep.module.css';
 
@@ -158,9 +159,13 @@ export function BuildStep({
     // A counter is listed ONCE, as the counter (picking it starts a linked
     // Counting sub-task); its linked copies are reached through it.
     const rootIds = counterRootIdsIn(allTasks);
+    // A counter already a sub-task of this compound is not offered again.
+    const usedCounterIds = new Set(
+      subtasks.flatMap((s) => (s.mode === 'inline' ? [(s.linkDisabled ? null : inlineLinkMatch(s, allTasks))?.counterId ?? ''] : [s.selectedId])),
+    );
     const taskRows: LibraryRow[] = allTasks
       .filter((t) => !(t.sharedCounterId != null && rootIds.has(t.sharedCounterId)))
-      .filter((t) => !(hideCounters && isSharedCounterRoot(t, rootIds)))
+      .filter((t) => !(isSharedCounterRoot(t, rootIds) && (hideCounters || usedCounterIds.has(t.id))))
       .map((t) => {
       const boards = taskBoardCounts[t.id] ?? 0;
       // Short usage hint — long forms ("not on any board", "on 3 boards")
@@ -193,6 +198,7 @@ export function BuildStep({
     return [...taskRows, ...compoundRows].sort((a, b) => a.title.localeCompare(b.title));
   }, [
     allTasks,
+    subtasks,
     hideCounters,
     allCompoundTasks,
     taskBoardCounts,

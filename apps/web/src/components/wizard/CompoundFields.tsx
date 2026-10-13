@@ -3,9 +3,6 @@ import {
   OperatorType,
   TaskType,
   countKindNeedsUnit,
-  counterPickGoal,
-  formatCountForInput,
-  resolveCountKind,
   type CompoundChild,
   type CountKind,
   type PlacementBoard,
@@ -30,7 +27,7 @@ import { MiniTypeBadge, type MiniBadgeType } from './MiniTypeBadge';
 import { taskLookupValues, type TaskLookup } from '../counters/rowCounterTagName';
 import { WizardQuickAddRow } from './WizardQuickAddRow';
 import { CountingSubConfigRow } from './CountingSubConfigRow';
-import { compoundSubCandidates } from './compoundSubCandidates';
+import { appendCounterChild, compoundSubCandidates } from './compoundSubCandidates';
 import styles from './PoolRowEditor.module.css';
 
 /** Whether the host's library inputs (`libraryTasks` / `allLinks`) have
@@ -107,8 +104,6 @@ export function CompoundFields({
   const [newSubGoal, setNewSubGoal] = useState('');
   const [newSubUnit, setNewSubUnit] = useState('');
   const [newSubKind, setNewSubKind] = useState<CountKind>('discrete');
-  /** The hub counter a pick primed the New sub row with (see `pinnedRoot`). */
-  const [newSubCounterId, setNewSubCounterId] = useState<string | null>(null);
   const subCount = liveChildren(draft).length;
   const operator = draft.operator ?? OperatorType.AND;
   const threshold = draft.threshold ?? 2;
@@ -138,45 +133,26 @@ export function CompoundFields({
     onDraftChange({ ...draft, children: nextChildren, threshold: nextThreshold });
   }
 
-  // A search returns the COUNTER: picking one primes a NEW linked Counting sub-task.
+  // A search returns the COUNTER: one tap appends a linked Counting sub-task
+  // filled from it (the goal at its default for this window).
   const { candidates, counterIds } = compoundSubCandidates(parentId, libraryTasks, lookupTasks ?? libraryTasks, allLinks, draft);
-  const hubCounters = candidates.filter((t) => counterIds.has(t.id));
   const newSubPreview = newSubCounting ? readsAsPreview(newSubText, newSubGoal, newSubUnit, newSubKind) : undefined;
-  // The primed counter stays the link target while its verb / noun / kind are unchanged.
-  const primedRoot = newSubCounterId ? hubCounters.find((t) => t.id === newSubCounterId) : undefined;
-  const pinnedRoot =
-    primedRoot &&
-    newSubCounting &&
-    newSubText.trim() === (primedRoot.action ?? '').trim() &&
-    (!countKindNeedsUnit(newSubKind) || newSubUnit.trim() === (primedRoot.unit ?? '').trim()) &&
-    newSubKind === resolveCountKind(primedRoot)
-      ? primedRoot
-      : undefined;
 
   function appendTyped(text: string): void {
-    onDraftChange(appendTypedChild(draft, text, newSubCounting, newSubGoal, newSubUnit, newSubKind, pinnedRoot));
+    onDraftChange(appendTypedChild(draft, text, newSubCounting, newSubGoal, newSubUnit, newSubKind));
     // Back to Normal for the next one, like the create panel.
     setNewSubCounting(false);
     setNewSubGoal('');
     setNewSubUnit('');
     setNewSubKind('discrete');
-    setNewSubCounterId(null);
   }
 
-  /** A picked counter primes the row (its verb is the field's next text). */
-  function handlePicked(task: Task): string | void {
-    if (!counterIds.has(task.id)) {
+  function handlePicked(task: Task): void {
+    if (counterIds.has(task.id)) {
+      onDraftChange(appendCounterChild(draft, task, goalWindow ?? ownWindow(parentId, lookupTasks ?? libraryTasks)));
+    } else {
       onDraftChange(appendPickedChild(draft, task));
-      return;
     }
-    const kind = resolveCountKind(task);
-    setNewSubCounting(true);
-    setNewSubKind(kind);
-    setNewSubUnit(countKindNeedsUnit(kind) ? (task.unit ?? '') : '');
-    const goal = counterPickGoal(task, goalWindow ?? ownWindow(parentId, lookupTasks ?? libraryTasks));
-    setNewSubGoal(goal !== null ? formatCountForInput(goal, kind) : '');
-    setNewSubCounterId(task.id);
-    return task.action ?? '';
   }
 
   return (

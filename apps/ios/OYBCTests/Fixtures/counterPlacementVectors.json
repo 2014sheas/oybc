@@ -1544,6 +1544,16 @@
         "endDate": "2026-10-03T23:59:59.999"
       },
       "expected": 3
+    },
+    {
+      "name": "a CUSTOM host whose dates don't parse falls back to the yearly default",
+      "root": {},
+      "board": {
+        "timeframe": "custom",
+        "startDate": "not a date",
+        "endDate": "also not"
+      },
+      "expected": 365
     }
   ]
 }
