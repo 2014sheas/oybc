@@ -6,7 +6,7 @@
  *   - BINGO    → the window's core board has `linesCompleted >= 1`.
  *   - GREENLOG → the window's core board is `status === COMPLETED` (full board).
  *
- * Streaks apply to **core boards only** (`isCore === true`) — ad-hoc / custom
+ * Streaks apply to **core boards only** (`isCoreBoard()`) — ad-hoc / custom
  * boards have no recurrence cadence. Computed live from board state (no separate
  * persisted log), so it stays offline-first and auto-consistent across devices;
  * the trade-off is that un-completing a task on an old board can retroactively
@@ -27,7 +27,7 @@
 import { getTimeframeBoundaries, stepWindow } from './calendarBoundaries';
 import type { WeekStartDay } from './calendarBoundaries';
 import { AchievementTrigger, BoardStatus, Timeframe } from '../constants/enums';
-import type { Board } from '../types/board';
+import { isCoreBoard, type Board } from '../types/board';
 
 /** The four recurring timeframes streaks apply to (CUSTOM has no cadence). */
 export const STREAK_TIMEFRAMES = [
@@ -89,7 +89,7 @@ export function computeStreak(
   // returns, so window→board matching is a string-key lookup.
   const byStart = new Map<string, Board>();
   for (const b of boards) {
-    if (b.isCore === true && !b.isDeleted && b.timeframe === timeframe) {
+    if (isCoreBoard(b) && !b.isDeleted && b.timeframe === timeframe) {
       byStart.set(b.startDate, b);
     }
   }
@@ -183,7 +183,7 @@ export function computeLongestStreak(
 
   const byStart = new Map<string, Board>();
   for (const b of boards) {
-    if (b.isCore === true && !b.isDeleted && b.timeframe === timeframe) {
+    if (isCoreBoard(b) && !b.isDeleted && b.timeframe === timeframe) {
       byStart.set(b.startDate, b);
     }
   }

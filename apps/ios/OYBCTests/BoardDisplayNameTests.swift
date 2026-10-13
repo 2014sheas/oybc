@@ -14,9 +14,10 @@ final class BoardDisplayNameTests: XCTestCase {
         name: String,
         startDate: String,
         timeframe: Timeframe = .daily,
-        isCore: Bool = true
+        isCore: Bool = true,
+        spawnedFromTemplateId: String? = nil
     ) -> Board {
-        let dict: [String: Any] = [
+        var dict: [String: Any] = [
             "id": "b-\(startDate)-\(name)",
             "userId": "u1",
             "name": name,
@@ -36,6 +37,7 @@ final class BoardDisplayNameTests: XCTestCase {
             "version": 1,
             "isDeleted": false,
         ]
+        if let spawnedFromTemplateId { dict["spawnedFromTemplateId"] = spawnedFromTemplateId }
         let data = try! JSONSerialization.data(withJSONObject: dict)
         return try! JSONDecoder().decode(Board.self, from: data)
     }
@@ -70,6 +72,17 @@ final class BoardDisplayNameTests: XCTestCase {
     func testHealsOnlyTheWindowHalfOfASpawnedName() {
         let healed = coreBoard(name: "Leg Day — Today", startDate: "2026-03-15T00:00:00.000").displayName
         XCTAssertEqual(healed, "Leg Day — Mar 15, 2026")
+    }
+
+    /// A repeating board's instance is not core (it decodes `isCore` false)
+    /// but still carries an auto-composed name, so it still heals.
+    func testHealsASpawnedNonCoreBoardsName() {
+        let spawned = makeBoard(
+            name: "Leg Day — Today", startDate: "2026-03-15T00:00:00.000",
+            isCore: true, spawnedFromTemplateId: "tpl-1"
+        )
+        XCTAssertFalse(spawned.isCore)
+        XCTAssertEqual(spawned.displayName, "Leg Day — Mar 15, 2026")
     }
 
     func testKeepsAnEmDashBelongingToTheTemplateName() {

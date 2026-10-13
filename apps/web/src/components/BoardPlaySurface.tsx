@@ -6,7 +6,7 @@ import {
   buildCounterFamilyMap,
   effectiveCenter,
   isBoardEnded,
-  isLegacyChosenCenterLocked,
+  isCoreBoard, isLegacyChosenCenterLocked,
   isWindowStampedDerived,
   type Board,
   type Task,
@@ -573,7 +573,7 @@ export function BoardPlaySurface({
           onRemoved={() => {
             setEditSession(null);
             onEditModeChange?.(false);
-            if (!board.isCore) navigate('/boards');
+            if (!isCoreBoard(board)) navigate('/boards');
           }}
         />
       ) : (

@@ -4,6 +4,7 @@ import {
   isBoardEnded,
   type Board,
   type RecurringBoardTemplate,
+  isCoreBoard,
 } from '@oybc/shared';
 import type { RisoIconName } from '../riso/RisoIcon';
 
@@ -112,14 +113,14 @@ export function buildBoardMenuItems(args: {
   const { board, sourceTemplate, templatesLoaded, now } = args;
   if (board.status === BoardStatus.DRAFT) return [];
   if (board.status === BoardStatus.ARCHIVED) {
-    return board.isCore ? [ITEMS.coreDefaults, ITEMS.delete] : [ITEMS.delete];
+    return isCoreBoard(board) ? [ITEMS.coreDefaults, ITEMS.delete] : [ITEMS.delete];
   }
 
   const ended = isBoardEnded(board, now);
   const closed = isBoardClosed(board);
   const repeatEligible = isRepeatEligible(board, sourceTemplate, templatesLoaded);
 
-  if (board.isCore) {
+  if (isCoreBoard(board)) {
     const items: BoardMenuItem[] = [];
     if (closed) items.push(ITEMS.reopen);
     else if (ended) items.push(ITEMS.close);

@@ -37,7 +37,7 @@ enum BoardDisplayName {
     /// fields, so it can never change under an already-painted view.
     ///
     /// Only the two strings the auto-namers could actually produce are
-    /// treated as stale, matched exactly, and only on `isCore` boards:
+    /// treated as stale, matched exactly, and only on core or repeating-board instances:
     /// `"Today"` and `"<template name> — Today"`. Anything else is returned
     /// untouched, so a board the user renamed via Board Edit keeps its name
     /// even if that name contains the word "today".
@@ -46,9 +46,10 @@ enum BoardDisplayName {
     /// - Returns: The stored name, or an absolute window label when the
     ///   stored name is one of the known stale auto-generated forms.
     static func resolve(_ board: Board) -> String {
-        // User-authored names are never rewritten. Only auto-named core
-        // boards can hold a frozen label, so a non-core board is its own name.
-        guard board.isCore else { return board.name }
+        // User-authored names are never rewritten. Only auto-named boards —
+        // core boards and boards spawned from a repeating board — can hold a
+        // frozen label; any other board is its own name.
+        guard board.isCore || board.spawnedFromTemplateId != nil else { return board.name }
         guard let startDate = parseISO8601Date(board.startDate) else { return board.name }
 
         if board.name == staleWindowLabel {

@@ -10,6 +10,7 @@ import {
   type CellState,
   type CompoundChild,
   type Task,
+  isCoreBoard,
 } from '@oybc/shared';
 import type { SquareWindowContext } from '../../db/adapters';
 import type { FlashOutcome } from '../boardPlayFlash';
@@ -123,7 +124,7 @@ export function useBoardMoment(p: UseBoardMomentParams): UseBoardMomentResult {
         cells={cells}
         boardName={p.board.name}
         linesCompleted={lineCount}
-        streak={p.board.isCore === true ? p.greenlogStreak : 0}
+        streak={isCoreBoard(p.board) ? p.greenlogStreak : 0}
         timeframe={p.board.timeframe}
         onShare={() => setShareKind(trigger.kind)}
         onBack={() => { setShareKind(null); setTrigger(null); setSnapshot(null); setForced(false); phaseRef.current = 'idle'; }}
@@ -141,7 +142,7 @@ export function useBoardMoment(p: UseBoardMomentParams): UseBoardMomentResult {
           streak={posterStreakLabel(
             p.streakFor(shareKind === 'bingo' ? AchievementTrigger.BINGO : AchievementTrigger.GREENLOG),
             p.board.timeframe,
-            p.board.isCore === true,
+            isCoreBoard(p.board),
           )}
           onDismiss={() => setShareKind(null)}
         />

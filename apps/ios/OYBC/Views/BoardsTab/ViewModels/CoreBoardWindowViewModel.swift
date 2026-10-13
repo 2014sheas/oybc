@@ -173,6 +173,7 @@ final class CoreBoardWindowViewModel: ObservableObject {
                             && Column("timeframe") == timeframeRaw
                             && Column("startDate") == start
                         )
+                        .filter(Column("spawnedFromTemplateId") == nil)
                         .fetchOne(db)?.healingDisplayName()
                     let allBoards = try Board
                         .filter(Column("userId") == userId && Column("isDeleted") == false)

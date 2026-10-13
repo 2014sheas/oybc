@@ -62,10 +62,11 @@ export interface Board {
   spawnedFromTemplateId?: string;
 
   // Phase 6.1 core-board marker. `true` iff this board was created from
-  // the Boards-tab recurring banner OR auto-spawned from a
-  // RecurringBoardTemplate (Phase 6.2). The recurring-banner detector
-  // (`findPendingRecurringBoards`) suppresses the banner only when an
-  // `isCore: true` board exists for the active window — manual ad-hoc
+  // the Boards-tab recurring banner / core-board entry. Read it ONLY through
+  // `isCoreBoard()`: boards spawned from a repeating board stored `true`
+  // before 2026-10-13 and are not core. The recurring-banner detector
+  // (`findPendingRecurringBoards`) suppresses the banner only when a
+  // core board (`isCoreBoard`) exists for the active window — manual ad-hoc
   // boards for the same window do not dismiss the suggestion. Marked
   // optional so existing fixtures + old sync rows decode unchanged
   // (the Zod schema also defaults to `false`); the detector uses
@@ -156,6 +157,28 @@ export interface UpdateBoardInput {
   name?: string;
   description?: string;
   status?: BoardStatus;
+}
+
+/**
+ * Whether a board is a CORE board — the one board per core-timeframe window
+ * the Boards-tab core grid, the core-window pager, streaks, the recurring
+ * banner and the core options read.
+ *
+ * A board created from a repeating board (`spawnedFromTemplateId` set) is
+ * never core, whatever its stored `isCore` says: before 2026-10-13 the spawn
+ * path wrote `isCore: true`, so a repeating daily board took over the daily
+ * core slot and blocked the real core board (owner bug report). Reading
+ * through this predicate fixes those stored rows — and rows still written by
+ * older clients — without a data migration. Swift twin: `Board.init(from:)`
+ * normalizes `isCore` the same way at decode.
+ *
+ * @param board - `isCore` + `spawnedFromTemplateId`
+ * @returns true for a core board
+ */
+export function isCoreBoard(
+  board: Pick<Board, 'isCore' | 'spawnedFromTemplateId'>,
+): boolean {
+  return board.isCore === true && board.spawnedFromTemplateId == null;
 }
 
 /**

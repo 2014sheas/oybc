@@ -46,6 +46,7 @@ export interface BoardNameFields {
   timeframe: Timeframe;
   startDate: string;
   isCore?: boolean;
+  spawnedFromTemplateId?: string;
 }
 
 /**
@@ -60,9 +61,10 @@ export interface BoardNameFields {
  *   name is one of the known stale auto-generated forms
  */
 export function boardDisplayName(board: BoardNameFields): string {
-  // User-authored names are never rewritten. Only auto-named core boards
-  // can hold a frozen label, so a non-core board is always its own name.
-  if (!board.isCore) return board.name;
+  // User-authored names are never rewritten. Only auto-named boards — core
+  // boards and boards spawned from a repeating board — can hold a frozen
+  // label; any other board is always its own name.
+  if (!board.isCore && board.spawnedFromTemplateId == null) return board.name;
 
   // Fail safe on a malformed startDate: `formatWindowLabel` would render
   // "undefined NaN, NaN" rather than throw, which is worse than showing

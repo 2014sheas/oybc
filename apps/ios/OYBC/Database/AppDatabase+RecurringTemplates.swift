@@ -512,12 +512,10 @@ extension AppDatabase {
                     "version": 1,
                     "isDeleted": false,
                     "spawnedFromTemplateId": template.id,
-                    // Phase 6.1 — template-spawned boards are core by
-                    // construction. They fulfill the same "recurring
-                    // board for this window exists" promise as banner-
-                    // spawned boards, so the recurring banner detector
-                    // must treat them the same.
-                    "isCore": true,
+                    // A repeating board's instance is never the core board
+                    // for its window (owner bug 2026-10-13) — the core
+                    // slot stays the user's.
+                    "isCore": false,
                 ]
                 let boardData = try JSONSerialization.data(withJSONObject: boardDict)
                 var board = try JSONDecoder().decode(Board.self, from: boardData)
@@ -702,6 +700,9 @@ extension AppDatabase {
         weekStartDay: String,
         now: String
     ) throws -> RecurringBoardTemplate? {
+        // A core board is never repeated (the menu never offers it):
+        // back-stamping `spawnedFromTemplateId` would silently demote it.
+        guard !board.isCore else { return nil }
         var result: RecurringBoardTemplate?
         try write { db in
             // Board Edit slice 2 (D3/D11), relaxed by slice 4 (D12): the

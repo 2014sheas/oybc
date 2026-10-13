@@ -25,7 +25,7 @@ import {
   type WeekStartDay,
 } from './calendarBoundaries';
 import { BoardStatus, Timeframe } from '../constants/enums';
-import type { Board } from '../types/board';
+import { isCoreBoard, type Board } from '../types/board';
 import type { UserPreferences } from '../types/user';
 
 /**
@@ -153,15 +153,14 @@ export function findPendingRecurringBoards(
     // Only a *core* board for the window dismisses the banner. Manual
     // ad-hoc boards (same timeframe + same window, isCore = false) are
     // unrelated to the recurring suggestion and must NOT silently
-    // suppress it. A board is core iff it was created from the
-    // recurring banner (Phase 6.1) or auto-spawned from a
-    // RecurringBoardTemplate (Phase 6.2). See `Board.isCore`.
+    // suppress it, and neither may a board spawned from a repeating
+    // board. See `isCoreBoard`.
     const exists = boards.some(
       (b) =>
         b.timeframe === timeframe &&
         !b.isDeleted &&
         b.startDate === startDate &&
-        b.isCore === true
+        isCoreBoard(b)
     );
     if (exists) continue;
 
@@ -192,7 +191,7 @@ export function findPendingRecurringBoards(
  *
  * `currentBoard` matching uses the same string-equal predicate as
  * `findPendingRecurringBoards`: `timeframe === T && !isDeleted &&
- * startDate === computedStart && isCore === true`. Returns the matched
+ * startDate === computedStart && isCoreBoard()`. Returns the matched
  * `Board` (the first match if multiple exist — which shouldn't happen
  * but is harmless if it does).
  *
@@ -236,7 +235,7 @@ export function getCoreBoardSlots(
         b.timeframe === timeframe &&
         !b.isDeleted &&
         b.startDate === startDate &&
-        b.isCore === true,
+        isCoreBoard(b),
     );
 
     slots.push({
@@ -286,7 +285,7 @@ export interface CoreWindowRouteTarget {
  * opens.
  *
  * Returns `null` unless the board is exactly what the pager would find
- * for its window: a non-deleted `isCore` board on a daily / weekly /
+ * for its window: a non-deleted core board (`isCoreBoard`) on a daily / weekly /
  * monthly / yearly timeframe whose `startDate` equals the window start
  * recomputed from that date under the caller's `weekStartDay`. The last
  * check is the pager's own lookup key (`getCoreBoardSlots` /
@@ -303,10 +302,10 @@ export interface CoreWindowRouteTarget {
  * @returns The pager target, or `null` when the plain route must be used.
  */
 export function coreWindowRouteForBoard(
-  board: Pick<Board, 'isCore' | 'isDeleted' | 'timeframe' | 'startDate'>,
+  board: Pick<Board, 'isCore' | 'spawnedFromTemplateId' | 'isDeleted' | 'timeframe' | 'startDate'>,
   weekStartDay: WeekStartDay,
 ): CoreWindowRouteTarget | null {
-  if (board.isCore !== true || board.isDeleted) return null;
+  if (!isCoreBoard(board) || board.isDeleted) return null;
   if (!RECURRING_TIMEFRAMES_BY_WINDOW_ASC.includes(board.timeframe)) return null;
   // `Board.startDate` is a timezone-less local ISO string (`toLocalISO`),
   // which `new Date(...)` parses as local time — the same clock the

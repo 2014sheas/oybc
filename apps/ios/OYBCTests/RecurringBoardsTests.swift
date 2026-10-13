@@ -49,14 +49,15 @@ final class RecurringBoardsTests: XCTestCase {
         id: String? = nil,
         status: BoardStatus = .active,
         isDeleted: Bool = false,
-        isCore: Bool = false
+        isCore: Bool = false,
+        spawnedFromTemplateId: String? = nil
     ) -> Board {
         let window = computeTimeframeBoundaries(
             timeframe: timeframe,
             referenceDate: referenceDate,
             weekStartDay: "monday"
         )!
-        let dict: [String: Any] = [
+        var dict: [String: Any] = [
             "id": id ?? "board-\(timeframe.rawValue)-\(wizardLocalISOString(window.start))",
             "userId": "u1",
             "name": "\(timeframe.rawValue) board",
@@ -80,6 +81,7 @@ final class RecurringBoardsTests: XCTestCase {
             // fixture.
             "isCore": isCore,
         ]
+        if let spawnedFromTemplateId { dict["spawnedFromTemplateId"] = spawnedFromTemplateId }
         let data = try! JSONSerialization.data(withJSONObject: dict)
         return try! JSONDecoder().decode(Board.self, from: data)
     }
@@ -304,6 +306,36 @@ final class RecurringBoardsTests: XCTestCase {
                 now: date(2026, 5, 15)
             ).isEmpty
         )
+    }
+
+    // MARK: - Repeating-board instances are never core (owner bug 2026-10-13)
+
+    /// A board spawned from a repeating board that stored `isCore: true`
+    /// (every spawn before 2026-10-13) decodes as non-core, so it no longer
+    /// fills — and blocks — the daily core slot.
+    func testSpawnedBoardStoredAsCoreDoesNotFillTheCoreSlot() {
+        let now = date(2026, 5, 18)
+        let spawned = boardForWindow(
+            timeframe: .daily, referenceDate: now, id: "spawned-daily",
+            isCore: true, spawnedFromTemplateId: "tpl-1"
+        )
+        XCTAssertFalse(spawned.isCore)
+        let slots = getCoreBoardSlots(boards: [spawned], prefs: prefsAllEnabled, now: now)
+        XCTAssertNil(slots.first { $0.timeframe == .daily }?.currentBoard)
+        XCTAssertEqual(uncreatedCoreBoardSlots(slots).first?.timeframe, .daily)
+    }
+
+    /// The real core board for the window wins the slot alongside a
+    /// repeating board's instance for the same window.
+    func testCoreBoardFillsTheSlotBesideASpawnedBoard() {
+        let now = date(2026, 5, 18)
+        let spawned = boardForWindow(
+            timeframe: .daily, referenceDate: now, id: "spawned-daily",
+            isCore: true, spawnedFromTemplateId: "tpl-1"
+        )
+        let core = boardForWindow(timeframe: .daily, referenceDate: now, id: "core-daily", isCore: true)
+        let slots = getCoreBoardSlots(boards: [spawned, core], prefs: prefsAllEnabled, now: now)
+        XCTAssertEqual(slots.first { $0.timeframe == .daily }?.currentBoard?.id, "core-daily")
     }
 
     // MARK: - uncreatedCoreBoardSlots (Create-hub offer set)

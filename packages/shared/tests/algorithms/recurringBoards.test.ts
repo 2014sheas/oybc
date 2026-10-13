@@ -16,7 +16,7 @@ import {
   DEFAULT_USER_PREFERENCES,
   type UserPreferences,
 } from '../../src/types/user';
-import type { Board } from '../../src/types/board';
+import { isCoreBoard, type Board } from '../../src/types/board';
 
 // ─── Test fixtures ────────────────────────────────────────────────────────────
 
@@ -514,6 +514,23 @@ describe('getCoreBoardSlots', () => {
     expect(daily?.currentBoard?.id).toBe('core-daily');
     // The other 3 enabled timeframes still appear but unfilled.
     expect(slots.filter((s) => s.currentBoard === null)).toHaveLength(3);
+  });
+
+  it('a board spawned from a repeating board never fills the slot, even stored as core', () => {
+    // Every spawn before 2026-10-13 wrote isCore: true, so a repeating daily
+    // board took over (and blocked) the daily core slot.
+    const spawned = boardForWindow(Timeframe.DAILY, NOW, {
+      id: 'spawned-daily',
+      isCore: true,
+      spawnedFromTemplateId: 'tpl-1',
+    });
+    const core = boardForWindow(Timeframe.DAILY, NOW, { id: 'core-daily', isCore: true });
+    const daily = (boards: Board[]) =>
+      getCoreBoardSlots(boards, PREFS_ALL_ENABLED, NOW).find((s) => s.timeframe === Timeframe.DAILY);
+    expect(daily([spawned])?.currentBoard).toBeNull();
+    expect(daily([spawned, core])?.currentBoard?.id).toBe('core-daily');
+    expect(isCoreBoard(spawned)).toBe(false);
+    expect(isCoreBoard(core)).toBe(true);
   });
 
   it('ignores non-core boards even when the window matches', () => {

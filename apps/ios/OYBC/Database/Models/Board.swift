@@ -49,10 +49,13 @@ struct Board: Codable, FetchableRecord, PersistableRecord {
     var spawnedFromTemplateId: String?
 
     // Phase 6.1 core-board marker. True iff this board was created from
-    // the recurring banner (Phase 6.1) OR auto-spawned from a
-    // RecurringBoardTemplate (Phase 6.2). The recurring-banner detector
-    // (`findPendingRecurringBoards`) suppresses the banner only when an
-    // isCore board exists for the active window — manual ad-hoc boards
+    // the recurring banner / core-board entry. Never true for a board
+    // spawned from a repeating board: `init(from:)` forces it false when
+    // `spawnedFromTemplateId` is set — rows spawned before 2026-10-13 (and by
+    // older clients) stored `true` and took over the core slot (owner bug).
+    // Mirrors the shared `isCoreBoard()` read predicate. The recurring-banner detector
+    // (`findPendingRecurringBoards`) suppresses the banner only when a
+    // core board exists for the active window — manual ad-hoc boards
     // for the same window do not dismiss the suggestion. Defaults to
     // false; forward-compatible decode (missing column → false via
     // `decodeIfPresent ?? false`).
@@ -176,7 +179,8 @@ struct Board: Codable, FetchableRecord, PersistableRecord {
         spawnedFromTemplateId = try container.decodeIfPresent(String.self, forKey: .spawnedFromTemplateId)
         // Forward-compatible: missing column / missing key (pre-migration
         // local rows or pre-Phase-6.1 sync docs) decode as false.
-        isCore = try container.decodeIfPresent(Bool.self, forKey: .isCore) ?? false
+        isCore = (try container.decodeIfPresent(Bool.self, forKey: .isCore) ?? false)
+            && spawnedFromTemplateId == nil
 
         // Windowed Completion sealing — all optional/forward-compatible.
         sealedAt = try container.decodeIfPresent(String.self, forKey: .sealedAt)

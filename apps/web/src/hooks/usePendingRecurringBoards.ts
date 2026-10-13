@@ -9,7 +9,7 @@ import { db } from '../db/internal';
 /**
  * Reactive hook returning one slot per *enabled* recurring timeframe
  * (daily/weekly/monthly/yearly), with `currentBoard` populated when an
- * `isCore=true` board exists for the current window. Backs the Boards-tab
+ * core board (`isCoreBoard`) exists for the current window. Backs the Boards-tab
  * `CoreStrip` — the single core-board setup surface (the separate
  * "new windows" prompt banner was removed as a duplicate).
  *
