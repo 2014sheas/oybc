@@ -1,7 +1,8 @@
 import SwiftUI
 
 /// A transient toast shown above the wizard footer (staged-save / discard /
-/// remove), with an optional Undo affordance. Auto-dismisses after 6s.
+/// remove), with an optional Undo affordance. Dismisses after
+/// `UndoToast.dismissDelay`, or at once on any touch outside it.
 private struct PoolEditToast: Identifiable {
     let id = UUID()
     let text: String
@@ -524,7 +525,12 @@ struct BoardWizardTasksStepView: View {
             footer
         }
         .overlay(alignment: .bottom) {
-            if let toast { toastOverlay(toast) }
+            if let toast {
+                toastOverlay(toast).dismissOnOutsideTouch {
+                    toastDismiss?.cancel()
+                    self.toast = nil
+                }
+            }
         }
         // Board Sources P2 — the "Add from a pool or board" sheet (frames 2c/5c).
         //
@@ -845,7 +851,7 @@ struct BoardWizardTasksStepView: View {
         toastDismiss?.cancel()
         toast = PoolEditToast(text: text, undo: undo)
         toastDismiss = _Concurrency.Task {
-            try? await _Concurrency.Task.sleep(nanoseconds: 6_000_000_000)
+            try? await _Concurrency.Task.sleep(nanoseconds: UndoToast.dismissDelayNanoseconds)
             if !_Concurrency.Task.isCancelled { toast = nil }
         }
     }
