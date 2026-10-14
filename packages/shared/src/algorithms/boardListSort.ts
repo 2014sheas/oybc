@@ -64,6 +64,37 @@ export function isBoardActiveForList(board: Board, now: Date = new Date()): bool
   return isActiveForSort(board, now);
 }
 
+/**
+ * Task id → the number of DISTINCT boards it is placed on that are still in
+ * play ({@link isBoardActiveForList}): the "On N other boards" usage hint on
+ * the wizard's and pool editor's rows. Deleted, draft, completed, closed and
+ * ended boards don't count; a placement on a board missing from `boards`
+ * doesn't either. iOS twin: `activeBoardPlacementCounts` in
+ * `TimeframeFormatting.swift`.
+ *
+ * @param boardTasks - Placements (`taskId` + `boardId`), tombstones skipped.
+ * @param boards - The boards those placements may point at.
+ * @param now - Reference time for the ended check.
+ * @returns Counts keyed by task id; a task on no active board is absent.
+ */
+export function activeBoardPlacementCounts(
+  boardTasks: ReadonlyArray<{ taskId: string; boardId: string; isDeleted?: boolean }>,
+  boards: ReadonlyArray<Board>,
+  now: Date = new Date(),
+): Record<string, number> {
+  const active = new Set(boards.filter((b) => !b.isDeleted && isActiveForSort(b, now)).map((b) => b.id));
+  const byTask = new Map<string, Set<string>>();
+  for (const bt of boardTasks) {
+    if (bt.isDeleted || !active.has(bt.boardId)) continue;
+    let set = byTask.get(bt.taskId);
+    if (!set) byTask.set(bt.taskId, (set = new Set<string>()));
+    set.add(bt.boardId);
+  }
+  const counts: Record<string, number> = {};
+  for (const [taskId, set] of byTask) counts[taskId] = set.size;
+  return counts;
+}
+
 /** A board "still in play": ACTIVE status, not sealed, not past its endDate. */
 function isActiveForSort(board: Board, now: Date): boolean {
   if (board.status !== BoardStatus.ACTIVE) return false;

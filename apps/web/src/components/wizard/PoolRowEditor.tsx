@@ -121,7 +121,6 @@ export function PoolRowEditor({
               className={styles.field}
               value={draft.title}
               onChange={(e) => onDraftChange({ ...draft, title: e.target.value })}
-              autoFocus
               placeholder="Task title"
               aria-label="Task title"
             />

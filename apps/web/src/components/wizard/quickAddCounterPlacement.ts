@@ -2,6 +2,7 @@ import {
   TaskType,
   Timeframe,
   counterDisplayName,
+  placementGoalForCounter,
   renderCounterTitle,
   resolveCountKind,
   sharedCounterRootIds,
@@ -133,4 +134,60 @@ export function isLinkedPendingPayload(payload: PendingTaskPayload): boolean {
  */
 export function counterMatchRowName(root: Task): string {
   return counterDisplayName(root) || root.title || '(untitled task)';
+}
+
+/**
+ * The ids a quick-add dropdown leaves out: the surface's selected ids plus
+ * every counter a selected task is LINKED to — a counter already on this
+ * board (itself, or as its linked copy) is not offered again (owner rule
+ * 2026-10-13: one per scope). iOS twin: `RisoQuickAddRowView.libraryMatches`.
+ *
+ * @param selectedIds - Ids already on the surface.
+ * @param lookup - The surface's full task set (pending rows included).
+ * @returns The ids to exclude.
+ */
+export function quickAddExcludedIds(selectedIds: ReadonlySet<string>, lookup: TaskLookup): Set<string> {
+  const excluded = new Set(selectedIds);
+  for (const t of taskLookupValues(lookup)) {
+    if (t.sharedCounterId && selectedIds.has(t.id)) excluded.add(t.sharedCounterId);
+  }
+  return excluded;
+}
+
+/**
+ * A pending linked counter copy re-stamped onto the board's CURRENT window,
+ * for when the wizard's timeframe / dates change after the pick: the window
+ * fields move, and a goal still at the old window's default (never typed)
+ * follows to the new window's default. A typed goal is kept; a staged row
+ * edit still overrides either at display and persist. iOS twin:
+ * `QuickAddCounterPlacement.restampedPendingCounterCopy`.
+ *
+ * @param payload - Any pending payload.
+ * @param root - The counter the copy links to.
+ * @param window - The board's current window.
+ * @returns The re-stamped payload, or null when it isn't a linked copy or is already on this window.
+ */
+export function restampPendingCounterCopy(
+  payload: PendingTaskPayload,
+  root: Task,
+  window: PendingLinkedWindow & { timeframe: Timeframe },
+): PendingTaskPayload | null {
+  if (!isLinkedPendingPayload(payload)) return null;
+  const t = payload.task;
+  if (t.timeframe === window.timeframe && t.startDate === window.startDate && t.endDate === window.endDate) return null;
+  const oldDefault = t.timeframe
+    ? placementGoalForCounter(root, { timeframe: t.timeframe, startDate: t.startDate, endDate: t.endDate })
+    : null;
+  const goal =
+    oldDefault !== null && t.maxCount === oldDefault ? (placementGoalForCounter(root, window) ?? t.maxCount) : t.maxCount;
+  const { timeframe: _tf, startDate: _s, endDate: _e, ...rest } = t;
+  const task: Task = {
+    ...rest,
+    maxCount: goal,
+    title: goal != null ? renderCounterTitle(root, goal) : t.title,
+    timeframe: window.timeframe,
+    ...(window.startDate !== undefined ? { startDate: window.startDate } : {}),
+    ...(window.endDate !== undefined ? { endDate: window.endDate } : {}),
+  };
+  return { ...payload, task };
 }

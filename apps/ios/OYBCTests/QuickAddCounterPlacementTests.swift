@@ -269,4 +269,26 @@ final class QuickAddCounterPlacementTests: XCTestCase {
         XCTAssertEqual(DefaultsRowModel.invalid(texts, kind: .discrete), [.monthly, .yearly])
         XCTAssertEqual(DefaultsRowModel.texts(from: [.weekly: 2.5], kind: .continuous), [.weekly: "2.5"])
     }
+
+    func testRestampMovesAnUntouchedCopyToTheNewWindowAndKeepsATypedGoal() {
+        let root = counting(isCounter: true, goals: CounterTimeframeGoals(daily: 2, weekly: 10))
+        let daily = (tf: Timeframe.daily, s: "2026-10-14T00:00:00.000", e: "2026-10-14T23:59:59.999")
+        let weekly = CounterPlacement.PickWindow(
+            timeframe: .weekly, startDate: "2026-10-12T00:00:00.000", endDate: "2026-10-18T23:59:59.999"
+        )
+        func picked(_ goal: CountValue) -> PendingTaskPayload {
+            QuickAddCounterPlacement.pendingLinkedTask(
+                root: root, goal: goal, userId: "u1", now: "n", timeframe: daily.tf, startDate: daily.s, endDate: daily.e
+            )
+        }
+        let moved = QuickAddCounterPlacement.restampedPendingCounterCopy(picked(2), root: root, window: weekly)
+        XCTAssertEqual(moved?.task.maxCount, 10)
+        XCTAssertEqual(moved?.task.timeframe, .weekly)
+        XCTAssertEqual(moved?.task.startDate, weekly.startDate)
+        let typed = QuickAddCounterPlacement.restampedPendingCounterCopy(picked(7), root: root, window: weekly)
+        XCTAssertEqual(typed?.task.maxCount, 7)
+        XCTAssertEqual(typed?.task.timeframe, .weekly)
+        let same = CounterPlacement.PickWindow(timeframe: daily.tf, startDate: daily.s, endDate: daily.e)
+        XCTAssertNil(QuickAddCounterPlacement.restampedPendingCounterCopy(picked(2), root: root, window: same))
+    }
 }

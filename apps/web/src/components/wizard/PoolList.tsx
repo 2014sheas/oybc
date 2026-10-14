@@ -1,9 +1,12 @@
 import { useState } from 'react';
 import {
   TaskType,
+  placementGoalForCounter,
+  formatCount,
   resolveCountKind,
   varyRangeLabel,
   type CompoundChild,
+  type PlacementBoard,
   type Task,
   type VaryLevel,
 } from '@oybc/shared';
@@ -38,6 +41,9 @@ export interface PoolListProps {
   effectiveTaskMap: Record<string, Task>;
   effectiveChildrenByCompound: Record<string, CompoundChild[]>;
   taskBoardCounts: Record<string, number>;
+  /** The board's window: a counting row that isn't a linked copy captions
+   *  the goal placement gives it there (a counter's window default, else its own). */
+  counterGoalWindow?: PlacementBoard;
 
   centerTaskMode: boolean;
   centerTaskId: string | null;
@@ -107,6 +113,7 @@ export function PoolList({
   effectiveTaskMap,
   effectiveChildrenByCompound,
   taskBoardCounts,
+  counterGoalWindow,
   centerTaskMode,
   centerTaskId,
   onCenterClick,
@@ -151,10 +158,15 @@ export function PoolList({
             const isCenter = centerTaskMode && centerTaskId === task.id;
             const isExpanded = expandedId === task.id;
             const counterTagName = rowCounterTagName(task, effectiveTaskMap);
-            const subtitle = buildPoolRowSubtitle(
-              task,
-              effectiveChildrenByCompound[task.id] ?? [],
-            );
+            // The goal the board will get: a counter's window default, else its own.
+            const windowGoal =
+              counterGoalWindow && task.type === TaskType.COUNTING && !task.sharedCounterId
+                ? placementGoalForCounter(task, counterGoalWindow)
+                : null;
+            const subtitle =
+              windowGoal !== null
+                ? `goal ${formatCount(windowGoal, resolveCountKind(task))}`
+                : buildPoolRowSubtitle(task, effectiveChildrenByCompound[task.id] ?? []);
             const goal = countingGoal(task);
             const varyLevel: VaryLevel = manualTaskVary?.[task.id] ?? 0;
             // Hand-added counters vary around their own goal — there is no

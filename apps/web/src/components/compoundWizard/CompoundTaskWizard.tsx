@@ -3,6 +3,8 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import {
   OperatorType,
   TaskType,
+  activeBoardPlacementCounts,
+  type Board,
   type Task,
   type BoardTask,
   type CompoundChild,
@@ -11,6 +13,7 @@ import {
 import {
   createCompound,
   fetchAllBoardTasks,
+  fetchAllBoards,
   fetchAllCompoundChildren,
   fetchTasksForUser,
 } from '../../db/operations';
@@ -39,6 +42,7 @@ import styles from './CompoundTaskWizard.module.css';
 // Stable empty fallbacks for `?? FALLBACK` — see BoardPlayPage.tsx for rationale.
 const EMPTY_TASKS = Object.freeze([]) as unknown as Task[];
 const EMPTY_BOARD_TASKS = Object.freeze([]) as unknown as BoardTask[];
+const EMPTY_BOARDS = Object.freeze([]) as unknown as Board[];
 const EMPTY_COMPOUND_CHILDREN = Object.freeze([]) as unknown as CompoundChild[];
 
 export interface CompoundTaskWizardProps {
@@ -134,6 +138,7 @@ export function CompoundTaskWizard({
 
   // Usage hints for the existing-task picker.
   const allBoardTasks = useLiveQuery(() => fetchAllBoardTasks(), []) ?? EMPTY_BOARD_TASKS;
+  const allBoards = useLiveQuery(() => fetchAllBoards(), []) ?? EMPTY_BOARDS;
 
   // compoundChildren — used to compute child counts + leaf previews for compound tasks.
   const allCompoundChildren: CompoundChild[] = useLiveQuery(
@@ -141,21 +146,11 @@ export function CompoundTaskWizard({
     [],
   ) ?? EMPTY_COMPOUND_CHILDREN;
 
-  /** taskId → count of distinct board IDs it's placed on. */
-  const taskBoardCounts = useMemo(() => {
-    const buckets = new Map<string, Set<string>>();
-    for (const bt of allBoardTasks) {
-      let set = buckets.get(bt.taskId);
-      if (!set) {
-        set = new Set<string>();
-        buckets.set(bt.taskId, set);
-      }
-      set.add(bt.boardId);
-    }
-    const counts: Record<string, number> = {};
-    for (const [taskId, set] of buckets) counts[taskId] = set.size;
-    return counts;
-  }, [allBoardTasks]);
+  /** taskId → count of distinct still-in-play boards it's placed on. */
+  const taskBoardCounts = useMemo(
+    () => activeBoardPlacementCounts(allBoardTasks, allBoards),
+    [allBoardTasks, allBoards],
+  );
 
   /**
    * compoundTaskId → count of non-deleted direct children.

@@ -81,6 +81,14 @@ final class TaskLibraryViewModel {
     /// fetching the full table and tallying in-memory is fine at small N.
     var allLibraryBoardTasks: [BoardTask] = []
 
+    /// The user's non-deleted boards (loaded with `allLibraryBoardTasks`).
+    var libraryBoards: [Board] = []
+
+    /// Task id → distinct still-in-play boards it is placed on — the wizard's
+    /// and pool editor's "On N other boards" hint
+    /// (`activeBoardPlacementCounts`). Computed once per `reload()`, not per render.
+    var activeBoardCounts: [String: Int] = [:]
+
     /// Every task id that appears as a child of at least one compound.
     /// Recomputed on each reload alongside compoundChildrenByCompound.
     /// iOS twin of web's `TaskLibrary.childTaskIds`. (#73)
@@ -182,7 +190,8 @@ final class TaskLibraryViewModel {
             let tasks = try await Self.loadTasks(userId: userId, database: database)
             let children = try await Self.loadCompoundChildren(database: database)
             let boardTasks = try await Self.loadAllBoardTasks(database: database)
-            let boardStatusById = try await Self.loadBoardStatuses(userId: userId, database: database)
+            let boards = try await Self.loadBoards(userId: userId, database: database)
+            let boardStatusById = Dictionary(boards.map { ($0.id, $0.status) }, uniquingKeysWith: { a, _ in a })
             // #73 — child-id set + reverse (child → parents) map, derived up
             // front because the browsable filter needs it (compound children
             // inherit their parent compound's placements).
@@ -203,6 +212,8 @@ final class TaskLibraryViewModel {
                 self.browsableTasks = browsable
                 self.allCompoundChildren = children
                 self.allLibraryBoardTasks = boardTasks
+                self.libraryBoards = boards
+                self.activeBoardCounts = activeBoardPlacementCounts(boardTasks, boards: boards)
                 var grouped: [String: [CompoundChild]] = [:]
                 for c in children {
                     grouped[c.compoundTaskId, default: []].append(c)
@@ -259,12 +270,11 @@ final class TaskLibraryViewModel {
     /// Map of non-deleted boardId → status for the user. Drives the
     /// draft-only-visibility filter (a placement on a deleted board is
     /// absent from this map and therefore ignored).
-    private static func loadBoardStatuses(userId: String, database: AppDatabase) async throws -> [String: BoardStatus] {
+    private static func loadBoards(userId: String, database: AppDatabase) async throws -> [Board] {
         try await database.read { db in
-            let boards = try Board
+            try Board
                 .filter(Column("userId") == userId && Column("isDeleted") == false)
                 .fetchAll(db).healingDisplayNames()
-            return Dictionary(boards.map { ($0.id, $0.status) }, uniquingKeysWith: { a, _ in a })
         }
     }
 

@@ -1,9 +1,10 @@
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import {
   Timeframe,
   TaskType,
   UNDO_TOAST_MS,
+  activeBoardPlacementCounts,
   buildCounterFamilyMap,
   type BoardSource,
   type BoardWindow,
@@ -13,7 +14,7 @@ import {
   type Task,
   type VaryLevel,
 } from '@oybc/shared';
-import { fetchAllBoardTasks } from '../../db/operations';
+import { fetchAllBoardTasks, fetchAllBoards } from '../../db/operations';
 import type { SourceSheetBoardEntry } from '../../db/operations/boardSources';
 import {
   overlayCompoundChildrenWithStagedEdits,
@@ -57,6 +58,7 @@ import { mergeSuggestionPool } from './suggestionPool';
 import { TasksPoolHeader } from './TasksPoolHeader';
 import { WizardSourceRows } from './WizardSourceRows';
 import { WizardQuickAddRow } from './WizardQuickAddRow';
+import { restampPendingCounterCopy } from './quickAddCounterPlacement';
 import { TaskDetailSheet } from '../TaskDetailSheet';
 import { useRemoveSourceConfirm } from './useRemoveSourceConfirm';
 import styles from './BoardWizardTasksStep.module.css';
@@ -325,6 +327,16 @@ export function BoardWizardTasksStep({
     }
     return merged;
   }, [library.taskMap, pendingTasks, stagedEdits, userId]);
+  // A counter copy picked before the board's timeframe / dates changed follows the current window.
+  useEffect(() => {
+    if (!pendingTasks || !onPendingCreated) return;
+    const window = { timeframe: currentTimeframe, startDate: currentStartDate, endDate: currentEndDate };
+    for (const payload of pendingTasks.values()) {
+      const root = payload.task.sharedCounterId ? library.taskMap[payload.task.sharedCounterId] : undefined;
+      const next = root ? restampPendingCounterCopy(payload, root, window) : null;
+      if (next) onPendingCreated(next);
+    }
+  }, [pendingTasks, library.taskMap, currentTimeframe, currentStartDate, currentEndDate, onPendingCreated]);
   // §Member rules (B3) — the window the rules pro-rate a pulled counting
   // target AGAINST, and which planning mode applies. Both are already
   // props; nothing new is threaded from the page for them.
@@ -413,25 +425,17 @@ export function BoardWizardTasksStep({
   // Any other tap / scroll / key press dismisses the toast (it must not get in the way).
   useDismissOnOutsideInteraction(toastRef, () => setToast(null), toast !== null);
 
-  // Usage-hint data — "N boards" / "unused" — shared by LibrarySheet and
+  // Usage-hint data — the row's other-board count, still-in-play boards
+  // only (`activeBoardPlacementCounts`) — shared by LibrarySheet and
   // PoolList rows. Requires a live query since `useTaskLibrary` doesn't
   // expose boardTasks.
-  const allBoardTasks = useLiveQuery(() => fetchAllBoardTasks(), []) ?? [];
+  const allBoardTasks = useLiveQuery(() => fetchAllBoardTasks(), []);
+  const allBoards = useLiveQuery(() => fetchAllBoards(), []);
 
-  const taskBoardCounts = useMemo(() => {
-    const buckets = new Map<string, Set<string>>();
-    for (const bt of allBoardTasks) {
-      let set = buckets.get(bt.taskId);
-      if (!set) {
-        set = new Set<string>();
-        buckets.set(bt.taskId, set);
-      }
-      set.add(bt.boardId);
-    }
-    const counts: Record<string, number> = {};
-    for (const [taskId, set] of buckets) counts[taskId] = set.size;
-    return counts;
-  }, [allBoardTasks]);
+  const taskBoardCounts = useMemo(
+    () => activeBoardPlacementCounts(allBoardTasks ?? [], allBoards ?? []),
+    [allBoardTasks, allBoards],
+  );
 
   // Bug #85 — Merge in-memory pending `childLinks` with the live
   // `compoundChildrenByCompound` map so a newly-created (not-yet-
@@ -635,6 +639,7 @@ export function BoardWizardTasksStep({
             lookupTasks={effectiveTaskMap}
             selectedIds={selectedTaskIds}
             onExistingTaskPicked={onTaskCreated}
+            linksCounterPicks={!isRecurring}
           />
         </div>
 
@@ -701,6 +706,7 @@ export function BoardWizardTasksStep({
         effectiveTaskMap={effectiveTaskMap}
         effectiveChildrenByCompound={effectiveChildrenByCompound}
         taskBoardCounts={taskBoardCounts}
+        counterGoalWindow={{ timeframe: currentTimeframe, startDate: currentStartDate, endDate: currentEndDate }}
         centerTaskMode={centerTaskMode}
         centerTaskId={centerTaskId}
         onCenterClick={handleCenterRadio}

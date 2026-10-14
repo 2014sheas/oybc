@@ -320,6 +320,26 @@ func compareBoardsForList(_ a: Board, _ b: Board, now: Date = Date()) -> Bool {
     return activityAfter(a, b)
 }
 
+/// Task id → the number of DISTINCT still-in-play boards (`isActiveForSort`)
+/// it is placed on — the "On N other boards" usage hint. Deleted, draft,
+/// completed, closed and ended boards don't count, nor do placements on a
+/// board missing from `boards`. TS twin: `activeBoardPlacementCounts`
+/// (`packages/shared/src/algorithms/boardListSort.ts`).
+///
+/// - Parameters:
+///   - boardTasks: Placements; tombstones are skipped.
+///   - boards: The boards those placements may point at.
+///   - now: Reference time for the ended check.
+/// - Returns: Counts keyed by task id; a task on no active board is absent.
+func activeBoardPlacementCounts(_ boardTasks: [BoardTask], boards: [Board], now: Date = Date()) -> [String: Int] {
+    let active = Set(boards.filter { !$0.isDeleted && isActiveForSort($0, now: now) }.map(\.id))
+    var byTask: [String: Set<String>] = [:]
+    for bt in boardTasks where !bt.isDeleted && active.contains(bt.boardId) {
+        byTask[bt.taskId, default: []].insert(bt.boardId)
+    }
+    return byTask.mapValues(\.count)
+}
+
 /// A board "still in play": ACTIVE status, not sealed, not past its endDate.
 private func isActiveForSort(_ board: Board, now: Date) -> Bool {
     guard board.status == .active else { return false }

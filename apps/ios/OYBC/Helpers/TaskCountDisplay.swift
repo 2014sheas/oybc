@@ -84,6 +84,15 @@ enum TaskCountDisplay {
         return "\(action) · goal \(formatCountWithUnit(max, kind: kind, unit: task.unit))"
     }
 
+    /// The goal alone — `goal {value}` at the task's kind ("goal 5",
+    /// "goal 1h 30m") — for rows whose title already carries the action and
+    /// unit (the wizard / pool editor list). Nil without a positive goal.
+    /// Web twin: `buildPoolRowSubtitle`'s counting case.
+    static func goalOnlySubtitle(for task: Task) -> String? {
+        guard let max = task.maxCount, max > 0 else { return nil }
+        return "goal \(formatCount(max, kind: resolveCountKind(task.countKind)))"
+    }
+
     /// The auto counting title from a task's own fields ("Run 26.2 miles"), or
     /// nil when action, goal or a needed unit is missing. Web twin:
     /// `counterRowTitle`.

@@ -8,6 +8,8 @@ import {
   counterRootIdsIn,
   isLinkedPendingPayload,
   isSharedCounterRoot,
+  quickAddExcludedIds,
+  restampPendingCounterCopy,
 } from '../quickAddCounterPlacement';
 import { WizardQuickAddRow } from '../WizardQuickAddRow';
 
@@ -142,5 +144,36 @@ describe('WizardQuickAddRow match rows', () => {
     const noPending = render(library, { seedText: 'book', onPendingCreated: undefined });
     expect(noPending).toContain('tagDense');
     expect(noPending).not.toContain('role="group"');
+  });
+});
+
+describe('quickAddExcludedIds', () => {
+  it('adds the counter a selected task links to, and nothing for unselected links', () => {
+    const copy = task({ id: 'copy', sharedCounterId: 'root', isCounter: false });
+    const other = task({ id: 'other-copy', sharedCounterId: 'other-root', isCounter: false });
+    const excluded = quickAddExcludedIds(new Set(['copy', 'plain']), [task({}), copy, other]);
+    expect([...excluded].sort()).toEqual(['copy', 'plain', 'root']);
+  });
+});
+
+describe('restampPendingCounterCopy', () => {
+  const root = task({ timeframeGoals: { daily: 2, weekly: 10 } });
+  const daily = { timeframe: Timeframe.DAILY, startDate: '2026-10-14', endDate: '2026-10-14' };
+  const weekly = { timeframe: Timeframe.WEEKLY, startDate: '2026-10-12', endDate: '2026-10-18' };
+
+  it('moves an untouched copy to the new window and its default', () => {
+    const picked = buildPendingLinkedCounter(root, 2, 'u1', 'copy', T0, daily);
+    const next = restampPendingCounterCopy(picked, root, weekly);
+    expect(next?.task).toMatchObject({ id: 'copy', maxCount: 10, timeframe: Timeframe.WEEKLY, startDate: '2026-10-12' });
+  });
+
+  it('keeps a typed goal, moving only the window', () => {
+    const typed = buildPendingLinkedCounter(root, 7, 'u1', 'copy', T0, daily);
+    expect(restampPendingCounterCopy(typed, root, weekly)?.task).toMatchObject({ maxCount: 7, timeframe: Timeframe.WEEKLY });
+  });
+
+  it('is a no-op on the same window', () => {
+    const picked = buildPendingLinkedCounter(root, 2, 'u1', 'copy', T0, daily);
+    expect(restampPendingCounterCopy(picked, root, daily)).toBeNull();
   });
 });
