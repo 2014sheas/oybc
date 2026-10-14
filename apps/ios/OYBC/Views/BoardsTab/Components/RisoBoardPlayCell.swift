@@ -1,5 +1,39 @@
 import SwiftUI
 
+// MARK: - CellTextMetrics
+
+/// Text sizes for a task square, grown with the square's edge. The base
+/// sizes fit a 5×5 play cell (~64pt); a 3×3 cell (~112pt) reaches the
+/// caps, and anything smaller keeps the base sizes. Linear in between, so a
+/// 4×4 cell lands about a third of the way up.
+struct CellTextMetrics: Equatable {
+    /// Edge at or below which every size is the base size.
+    static let baseCellSize: CGFloat = 64
+    /// Edge at or above which every size is capped.
+    static let maxCellSize: CGFloat = 112
+
+    let title: CGFloat
+    let bar: CGFloat
+    let tag: CGFloat
+    let barHeight: CGFloat
+    /// Title inset that clears the top-left type tag.
+    let titleTopInset: CGFloat
+    /// Title inset that clears the bottom progress bar (4pt pad + bar + 1).
+    let titleBottomInset: CGFloat
+
+    /// - Parameter cellSize: the square's rendered edge, in points.
+    init(cellSize: CGFloat) {
+        let span = Self.maxCellSize - Self.baseCellSize
+        let t = min(max((cellSize - Self.baseCellSize) / span, 0), 1)
+        title = 9 + 5 * t
+        bar = 9 + 2 * t
+        tag = 7 + 2 * t
+        barHeight = 13 + 3 * t
+        titleTopInset = 20 + 4 * t
+        titleBottomInset = 4 + barHeight + 1
+    }
+}
+
 // MARK: - RisoBoardPlayCell
 
 /// The Riso-styled play-board cell used by `BoardPlayView`.
@@ -271,10 +305,11 @@ struct RisoBoardPlayCell: View {
 
     @ViewBuilder
     private func taskCellContent(size: CGFloat) -> some View {
+        let metrics = CellTextMetrics(cellSize: size)
         ZStack(alignment: .topLeading) {
             // Main label — vertically centered
             Text(title)
-                .font(.risoBody(9, .bold))
+                .font(.risoBody(metrics.title, .bold))
                 .tracking(-0.09)
                 .lineLimit(showsDoneChrome ? 2 : 3)
                 .multilineTextAlignment(.center)
@@ -287,13 +322,13 @@ struct RisoBoardPlayCell: View {
                 )
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .padding(.horizontal, 4)
-                .padding(.top, hasTopTag ? 20 : 6)
-                .padding(.bottom, hasBottomBar ? 18 : 6)
+                .padding(.top, hasTopTag ? metrics.titleTopInset : 6)
+                .padding(.bottom, hasBottomBar ? metrics.titleBottomInset : 6)
 
             // Type tag — top-left (counting or compound; hidden on done counting → blue bg)
             if taskType == .counting {
                 Text("×\(formatCount(maxCount, kind: countKind))")
-                    .font(.risoHead(7, .extraBold))
+                    .font(.risoHead(metrics.tag, .extraBold))
                     .foregroundStyle(Color.risoPaper)
                     .padding(.horizontal, 4)
                     .padding(.vertical, 1)
@@ -310,7 +345,7 @@ struct RisoBoardPlayCell: View {
 
             } else if taskType == .compound {
                 Text("C")
-                    .font(.risoHead(7, .extraBold))
+                    .font(.risoHead(metrics.tag, .extraBold))
                     .foregroundStyle(Color.risoPaper)
                     .padding(.horizontal, 4)
                     .padding(.vertical, 1)
@@ -369,7 +404,7 @@ struct RisoBoardPlayCell: View {
 
             // Bottom progress bar for counting / compound
             if hasBottomBar {
-                bottomProgressBar
+                bottomProgressBar(metrics)
                     .frame(maxHeight: .infinity, alignment: .bottom)
                     .padding(.horizontal, 4)
                     .padding(.bottom, 4)
@@ -378,7 +413,7 @@ struct RisoBoardPlayCell: View {
     }
 
     @ViewBuilder
-    private var bottomProgressBar: some View {
+    private func bottomProgressBar(_ metrics: CellTextMetrics) -> some View {
         let (cur, max, color): (CountValue, CountValue, Color) = {
             switch taskType {
             case .counting:
@@ -410,8 +445,8 @@ struct RisoBoardPlayCell: View {
             // `cur/max`, else `cur` (the ×tag already carries the goal), else
             // fill only — never shrunk; VoiceOver always carries "n of m".
             ViewThatFits(in: [.horizontal, .vertical]) {
-                barText("\(formatCount(cur, kind: barKind))/\(formatCount(max, kind: barKind))")
-                barText(formatCount(cur, kind: barKind))
+                barText("\(formatCount(cur, kind: barKind))/\(formatCount(max, kind: barKind))", size: metrics.bar)
+                barText(formatCount(cur, kind: barKind), size: metrics.bar)
                 Color.clear.frame(width: 0, height: 0)
             }
             // A tier fits only inside the keyline + a 3pt inset per side
@@ -421,16 +456,16 @@ struct RisoBoardPlayCell: View {
         }
         .clipShape(Capsule())
         .overlay(Capsule().strokeBorder(Color.risoInk, lineWidth: 1.5))
-        // 13pt (was 9): the smallest bar that holds a 9pt count. The
-        // title's 18pt bottom inset already clears 4 + 13.
-        .frame(height: 13)
+        // 13pt at the base size: the smallest bar that holds a 9pt count;
+        // grows with the count text (`CellTextMetrics`).
+        .frame(height: metrics.barHeight)
     }
 
     /// One bar-text tier. On the gold overshoot fill the ink is static —
     /// adaptive `risoInk` turns cream in dark mode and vanishes on gold.
-    private func barText(_ text: String) -> some View {
+    private func barText(_ text: String, size: CGFloat) -> some View {
         Text(text)
-            .font(.risoHead(9, .extraBold))
+            .font(.risoHead(size, .extraBold))
             .foregroundStyle(isOvershoot ? Color.risoInkStatic : Color.risoInk)
             .lineLimit(1)
             .fixedSize()
