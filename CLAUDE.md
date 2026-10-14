@@ -733,9 +733,9 @@ GitHub Actions workflows run on PRs to `dev` and on merge:
 
 **Dependabot** (`.github/dependabot.yml`): npm weekly (minor/patch grouped, majors separate), GitHub Actions monthly. SPM not supported — iOS deps bumped manually.
 
-**Copilot code review**: request on PRs via `gh api --method POST repos/{owner}/{repo}/pulls/{n}/requested_reviewers --input - <<< '{"reviewers":["Copilot"]}'`. Address review comments before merging.
+**Internal review**: every PR gets an internal review of its diff before merge (e.g. `/code-review`, or a review agent for larger changes), and its findings are fixed or explicitly declined. Copilot review is no longer a merge gate (retired 2026-10-14).
 
-**Addressing review comments**: each round of PR review (Copilot or human), **print a markdown table in the terminal response** (columns `Comment | Severity | Remedy`, one row per comment) showing what was flagged and what was done. Display-only and fresh per round — never put it in commit messages, PR descriptions, or CLAUDE.md.
+**Addressing review comments**: each round of PR review (internal, bot or human), **print a markdown table in the terminal response** (columns `Comment | Severity | Remedy`, one row per comment) showing what was flagged and what was done. Display-only and fresh per round — never put it in commit messages, PR descriptions, or CLAUDE.md.
 
 - **Comment**: short restatement (≤ 1 sentence) + file/line pointer.
 - **Severity**: `Critical` (correctness/security/data loss) · `Major` (happy-path bug, significant UX/a11y regression) · `Minor` (nit-level bug, stale-state edge, code smell) · `Nit` (style/naming/wording).
@@ -792,7 +792,7 @@ Rule for all four: **shrink the baseline as you clean up (the scripts emit a not
 
 - Feature branches: `feature/feature-name`
 - Bugfix branches: `bugfix/bug-description`
-- Merge to `dev` only after CI passes (web + iOS workflows) and Copilot review is addressed.
+- Merge to `dev` only after CI passes (web + iOS workflows) and the internal review's findings are addressed.
 - Dependabot PRs: review CI results, resolve lockfile conflicts via `git checkout --theirs pnpm-lock.yaml && pnpm install`, merge in dependency order (Actions bumps first, then lockfile-touching bumps sequentially).
 - When pushing to a dependabot branch, dependabot refuses auto-rebase ("edited by someone other than Dependabot") — manual rebase required for subsequent merges.
 
