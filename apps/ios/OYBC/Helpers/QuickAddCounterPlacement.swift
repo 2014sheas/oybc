@@ -134,4 +134,36 @@ enum QuickAddCounterPlacement {
     static func isLinkedPendingPayload(_ payload: PendingTaskPayload) -> Bool {
         payload.task.sharedCounterId != nil && payload.task.type == .counting && payload.childTasks.isEmpty
     }
+
+    /// A pending linked counter copy re-stamped onto the board's CURRENT
+    /// window, for when the wizard's timeframe / dates change after the pick:
+    /// the window fields move, and a goal still at the old window's default
+    /// (never typed) follows to the new window's default. A typed goal is
+    /// kept; a staged row edit still overrides either. Nil when it isn't a
+    /// linked copy or is already on this window. TS twin:
+    /// `restampPendingCounterCopy`.
+    static func restampedPendingCounterCopy(
+        _ payload: PendingTaskPayload, root: Task, window: CounterPlacement.PickWindow
+    ) -> PendingTaskPayload? {
+        guard isLinkedPendingPayload(payload) else { return nil }
+        var task = payload.task
+        if task.timeframe == window.timeframe, task.startDate == window.startDate, task.endDate == window.endDate {
+            return nil
+        }
+        let fields = CounterSettings.Fields(task: root)
+        let oldDefault = task.timeframe.flatMap {
+            CounterPlacement.placementGoalForCounter(fields, timeframe: $0, startDate: task.startDate, endDate: task.endDate)
+        }
+        if let oldDefault, task.maxCount == oldDefault,
+           let goal = CounterPlacement.placementGoalForCounter(
+               fields, timeframe: window.timeframe, startDate: window.startDate, endDate: window.endDate
+           ) {
+            task.maxCount = goal
+            task.title = CounterSettings.renderCounterTitle(fields, goal: goal)
+        }
+        task.timeframe = window.timeframe
+        task.startDate = window.startDate
+        task.endDate = window.endDate
+        return PendingTaskPayload(task: task, childTasks: payload.childTasks, childLinks: payload.childLinks)
+    }
 }

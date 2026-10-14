@@ -4,7 +4,7 @@ import SwiftUI
 /// `.counting`, and `.compound` tasks.
 ///
 /// Replaces a resting `RisoPoolListView` row in place: an accent header bar, a
-/// Title field (never autofocused — opening the editor raises no keyboard), the counting Action/Goal/Unit row with a live
+/// Title field (not autofocused), the counting Action/Goal/Unit row with a live
 /// "Reads as" preview, the compound SUB-TASKS editor (`RisoCompoundEditFieldsView`:
 /// the shared `RisoCompoundRulePicker` + sub-task cards + the quick-add row), a
 /// validation line, and Discard / Save actions. Edits are staged only —

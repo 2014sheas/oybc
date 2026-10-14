@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import {
   TaskType,
-  counterPickGoal,
+  placementGoalForCounter,
   formatCount,
   resolveCountKind,
   varyRangeLabel,
@@ -15,7 +15,6 @@ import { TypeBadge } from '../TypeBadge';
 import { rowCounterTagName } from '../counters/rowCounterTagName';
 import { UnitTag } from '../counters/UnitTag';
 import { buildPoolRowSubtitle } from './poolRowSubtitle';
-import { isSharedCounterRoot } from './quickAddCounterPlacement';
 import styles from './PoolList.module.css';
 
 /** off → a little → a lot → off (handoff §Interactions "Variation (dice)"). */
@@ -42,8 +41,8 @@ export interface PoolListProps {
   effectiveTaskMap: Record<string, Task>;
   effectiveChildrenByCompound: Record<string, CompoundChild[]>;
   taskBoardCounts: Record<string, number>;
-  /** A repeating board's window: a counter row (kept as the counter, each
-   *  spawn minting its own default) captions that window's default goal. */
+  /** The board's window: a counting row that isn't a linked copy captions
+   *  the goal placement gives it there (a counter's window default, else its own). */
   counterGoalWindow?: PlacementBoard;
 
   centerTaskMode: boolean;
@@ -159,8 +158,11 @@ export function PoolList({
             const isCenter = centerTaskMode && centerTaskId === task.id;
             const isExpanded = expandedId === task.id;
             const counterTagName = rowCounterTagName(task, effectiveTaskMap);
+            // The goal the board will get: a counter's window default, else its own.
             const windowGoal =
-              counterGoalWindow && isSharedCounterRoot(task) ? counterPickGoal(task, counterGoalWindow) : null;
+              counterGoalWindow && task.type === TaskType.COUNTING && !task.sharedCounterId
+                ? placementGoalForCounter(task, counterGoalWindow)
+                : null;
             const subtitle =
               windowGoal !== null
                 ? `goal ${formatCount(windowGoal, resolveCountKind(task))}`

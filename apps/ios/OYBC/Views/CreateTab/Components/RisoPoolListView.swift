@@ -52,8 +52,8 @@ struct RisoPoolListView: View {
     /// Count of OTHER boards each task is placed on — drives the "On N other
     /// boards" detail line for simple tasks. Absent ⇒ not shared.
     var sharedCountByTaskId: [String: Int] = [:]
-    /// A repeating board's window: a counter row (kept as the counter, each
-    /// spawn minting its own default) captions that window's default goal.
+    /// The board's window: a counting row that isn't a linked copy captions
+    /// the goal placement gives it there (a counter's window default, else its own).
     var counterGoalWindow: CounterPlacement.PickWindow? = nil
 
     /// The row currently open in the inline editor, if any. That row is
@@ -296,8 +296,11 @@ struct RisoPoolListView: View {
                 let shared = sharedCountByTaskId[task.id] ?? 0
                 return shared > 0 ? "On \(shared) other board\(shared == 1 ? "" : "s")" : nil
             case .counting:
-                if let w = counterGoalWindow, QuickAddCounterPlacement.isSharedCounterRoot(task),
-                   let goal = CounterPlacement.counterPickGoal(CounterSettings.Fields(task: task), window: w) {
+                // The goal the board will get: a counter's window default, else its own.
+                if let w = counterGoalWindow, task.sharedCounterId == nil,
+                   let goal = CounterPlacement.placementGoalForCounter(
+                       CounterSettings.Fields(task: task), timeframe: w.timeframe, startDate: w.startDate, endDate: w.endDate
+                   ) {
                     return "goal \(formatCount(goal, kind: resolveCountKind(task.countKind)))"
                 }
                 return Self.countingSubtitle(task)

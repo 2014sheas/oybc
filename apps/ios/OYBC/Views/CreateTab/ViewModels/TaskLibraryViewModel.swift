@@ -86,10 +86,8 @@ final class TaskLibraryViewModel {
 
     /// Task id → distinct still-in-play boards it is placed on — the wizard's
     /// and pool editor's "On N other boards" hint
-    /// (`activeBoardPlacementCounts`).
-    var activeBoardCounts: [String: Int] {
-        activeBoardPlacementCounts(allLibraryBoardTasks, boards: libraryBoards)
-    }
+    /// (`activeBoardPlacementCounts`). Computed once per `reload()`, not per render.
+    var activeBoardCounts: [String: Int] = [:]
 
     /// Every task id that appears as a child of at least one compound.
     /// Recomputed on each reload alongside compoundChildrenByCompound.
@@ -215,6 +213,7 @@ final class TaskLibraryViewModel {
                 self.allCompoundChildren = children
                 self.allLibraryBoardTasks = boardTasks
                 self.libraryBoards = boards
+                self.activeBoardCounts = activeBoardPlacementCounts(boardTasks, boards: boards)
                 var grouped: [String: [CompoundChild]] = [:]
                 for c in children {
                     grouped[c.compoundTaskId, default: []].append(c)

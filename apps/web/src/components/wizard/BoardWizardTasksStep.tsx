@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import {
   Timeframe,
@@ -58,6 +58,7 @@ import { mergeSuggestionPool } from './suggestionPool';
 import { TasksPoolHeader } from './TasksPoolHeader';
 import { WizardSourceRows } from './WizardSourceRows';
 import { WizardQuickAddRow } from './WizardQuickAddRow';
+import { restampPendingCounterCopy } from './quickAddCounterPlacement';
 import { TaskDetailSheet } from '../TaskDetailSheet';
 import { useRemoveSourceConfirm } from './useRemoveSourceConfirm';
 import styles from './BoardWizardTasksStep.module.css';
@@ -326,6 +327,16 @@ export function BoardWizardTasksStep({
     }
     return merged;
   }, [library.taskMap, pendingTasks, stagedEdits, userId]);
+  // A counter copy picked before the board's timeframe / dates changed follows the current window.
+  useEffect(() => {
+    if (!pendingTasks || !onPendingCreated) return;
+    const window = { timeframe: currentTimeframe, startDate: currentStartDate, endDate: currentEndDate };
+    for (const payload of pendingTasks.values()) {
+      const root = payload.task.sharedCounterId ? library.taskMap[payload.task.sharedCounterId] : undefined;
+      const next = root ? restampPendingCounterCopy(payload, root, window) : null;
+      if (next) onPendingCreated(next);
+    }
+  }, [pendingTasks, library.taskMap, currentTimeframe, currentStartDate, currentEndDate, onPendingCreated]);
   // §Member rules (B3) — the window the rules pro-rate a pulled counting
   // target AGAINST, and which planning mode applies. Both are already
   // props; nothing new is threaded from the page for them.
@@ -695,9 +706,7 @@ export function BoardWizardTasksStep({
         effectiveTaskMap={effectiveTaskMap}
         effectiveChildrenByCompound={effectiveChildrenByCompound}
         taskBoardCounts={taskBoardCounts}
-        counterGoalWindow={
-          isRecurring ? { timeframe: currentTimeframe, startDate: currentStartDate, endDate: currentEndDate } : undefined
-        }
+        counterGoalWindow={{ timeframe: currentTimeframe, startDate: currentStartDate, endDate: currentEndDate }}
         centerTaskMode={centerTaskMode}
         centerTaskId={centerTaskId}
         onCenterClick={handleCenterRadio}

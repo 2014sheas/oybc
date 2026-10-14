@@ -368,6 +368,20 @@ struct BoardWizardTasksStepView: View {
 
     // MARK: - Body
 
+    /// Re-stamps every pending linked counter copy onto the current window
+    /// (`QuickAddCounterPlacement.restampedPendingCounterCopy`).
+    private func restampCounterCopies() {
+        guard let pending = pendingTasks, let onPendingCreated else { return }
+        let window = CounterPlacement.PickWindow(timeframe: currentTimeframe, startDate: currentStartDate, endDate: currentEndDate)
+        for payload in pending.values {
+            guard let rootId = payload.task.sharedCounterId,
+                  let root = library.libraryTasks.first(where: { $0.id == rootId }),
+                  let next = QuickAddCounterPlacement.restampedPendingCounterCopy(payload, root: root, window: window)
+            else { continue }
+            onPendingCreated(next)
+        }
+    }
+
     var body: some View {
         ScrollViewReader { proxy in
             ScrollView {
@@ -480,9 +494,7 @@ struct BoardWizardTasksStepView: View {
                     },
                     onEdit: { taskId in openEditor(taskId) },
                     sharedCountByTaskId: taskBoardCounts,
-                    counterGoalWindow: isRecurring
-                        ? .init(timeframe: currentTimeframe, startDate: currentStartDate, endDate: currentEndDate)
-                        : nil,
+                    counterGoalWindow: .init(timeframe: currentTimeframe, startDate: currentStartDate, endDate: currentEndDate),
                     editingTaskId: editingTaskId,
                     editor: { task in
                         AnyView(
@@ -522,6 +534,8 @@ struct BoardWizardTasksStepView: View {
         .safeAreaInset(edge: .bottom) {
             footer
         }
+        // A counter copy picked before the board's timeframe / dates changed follows the current window.
+        .onAppear { restampCounterCopies() }
         .overlay(alignment: .bottom) {
             if let toast {
                 toastOverlay(toast).dismissOnOutsideTouch {
