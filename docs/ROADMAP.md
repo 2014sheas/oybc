@@ -14,32 +14,35 @@ Canonical output of the full project review run on **2026-07-06** (concept / arc
 
 ## Track L — iOS 1.0 launch (decided 2026-10-14) — **ACTIVE, takes priority over every other track**
 
-Output of the 2026-10-14 pre-submission review (App Store readiness audit, backlog sweep, product/UX inventory, competitive scan). **Target: in App Review by early December**, so 1.0 is live for the yearly-bingo-card season. Phases run roughly in order; L0 and L1 start immediately and in parallel, and L4.5's inventory + mechanical sweeps may start early. Items that already have a track entry point at it rather than restating it. Open owner decisions are marked **[decide]**.
+Output of the 2026-10-14 pre-submission review (App Store readiness audit, backlog sweep, product/UX inventory, competitive scan). **Target: in App Review by early December**, so 1.0 is live for the yearly-bingo-card season. Phases run roughly in order; L0 and L1 start immediately and in parallel, and L4.5's inventory + mechanical sweeps may start early. Items that already have a track entry point at it rather than restating it. Open owner decisions are marked **[decide]**. **Scope:** Track L is iOS-launch-scoped, but rule 6 still applies — any change to shared types or behaviour (3×3 default, default pools, tiers) lands on web in the same PR or records the justified gap.
 
 ### L0 — Stabilize + infrastructure
 - **Counters feature freeze:** bug fixes only on counters / compound / counts-toward until 1.0 (the most-churned surface — ~20 of the last 50 commits).
-- **A4** prod/dev Firebase split (prod project, prod `GoogleService-Info.plist` per build config, prod rules deploy, `REVENUECAT_ALLOWED_ENVIRONMENTS=PRODUCTION`).
-- **E9** App Check on iOS (App Attest) + enforcement on callables / Firestore.
-- Crash reporting (Crashlytics — Firebase is already linked).
+- **A4** prod/dev Firebase split: prod project + rules/indexes deploy; a `GoogleService-Info.plist` **and** `GIDClientID` / reversed-client-id URL scheme per build config (both are hardcoded in `project.yml` today); Anonymous, Apple and Google providers enabled in prod (guest mode fails with `auth/operation-not-allowed` otherwise); Functions + secrets deployed to prod (Blaze); `REVENUECAT_ALLOWED_ENVIRONMENTS=PRODUCTION`.
+- **E9** App Check on iOS (App Attest), with the debug provider for simulator / tests. Ship unenforced, watch the App Check metrics, then enforce callables → Firestore. Firestore enforcement applies to every client, so the web app must be registered (reCAPTCHA Enterprise) or stay off the prod project before that switch.
+- #570 launch-path parse cost moves here from L4 — a launch-watchdog kill is the most likely runtime rejection, and every later phase adds launch work.
+- Crash reporting (Crashlytics — Firebase is already linked); dSYM upload wired into the Xcode Cloud workflow or stacks are unsymbolicated.
+- Minimal funnel instrumentation so the L2 north-star (install → first bingo) is measurable at all; it changes the privacy manifest + nutrition label. **[decide]** Firebase Analytics vs a privacy-first counter.
 - Xcode Cloud Files-and-Folders start condition (`apps/ios/**`, `packages/**`) to protect the daily upload cap during the launch train.
 
 ### L1 — App Review blockers — `S` each
 - Hosted privacy policy + terms; linked from Settings, Help and the sign-in screen (5.1.1(i)).
 - `PrivacyInfo.xcprivacy` (UserDefaults `CA92.1`, collected data types, `NSPrivacyTracking = false`).
-- Sign in with Apple token revocation on account deletion (`revokeToken(withAuthorizationCode:)` — `AuthService.deleteAccount` never calls it).
+- Sign in with Apple token revocation on account deletion: for any Apple-linked account (even one that signed in another way), the delete flow runs the Apple reauth, keeps that authorization's fresh `authorizationCode`, and calls `revokeToken(withAuthorizationCode:)` **before** `user.delete()` (`AuthService.deleteAccount` never revokes today).
 - Working "Contact support" + App Store Connect support URL ([#528](https://github.com/2014sheas/oybc/issues/528)).
-- "Forgot password" on the login screen (`sendPasswordReset` exists, no view calls it).
+- "Forgot password" on the login screen. The existing `AuthService.sendPasswordReset()` only works signed-in (it reads `currentUser.email`), so this needs a signed-out variant that takes the typed email; the confirmation reads the same whether or not the account exists.
 - Remove the share sheet's "Copy link" row (`oybc.app/b/<id>` has no route / associated domain) until universal links exist.
 - iPhone-only + portrait (`TARGETED_DEVICE_FAMILY: "1"`) — no iPad layout exists.
-- Info.plist `CFBundleShortVersionString` / `CFBundleVersion` → `$(MARKETING_VERSION)` / `$(CURRENT_PROJECT_VERSION)`.
+- Version strings: `OYBC/Info.plist` carries literals `1.0` / `1` while `project.yml` sets `MARKETING_VERSION 1.0.0` and `ci_post_clone.sh` stamps `CURRENT_PROJECT_VERSION`. Confirm what a TestFlight build actually reports; if the literals win, switch them to `$(MARKETING_VERSION)` / `$(CURRENT_PROJECT_VERSION)`.
 
 ### L2 — First run (absorbs F2 / [#157](https://github.com/2014sheas/oybc/issues/157))
-1. **Default board size 3×3** for new users.
-2. **Default pools** — curated content, seeded on first user action (never in the background) with deterministic ids (uuidv5 of user + pool slug) so multi-device / guest-link sign-ins don't duplicate; seeded tasks are ordinary editable tasks. **[decide]** pool list + contents.
-3. **Tutorial rework** — an interactive, bingo-board-shaped tutorial covering every concept; ends with the user's first real playable board from a default pool. Pro lesson squares are previewable but locked; the payoff is a **bingo**, and at least one fully free line (middle row or a centre diagonal) guarantees every free user reaches it. North-star metric: install → first bingo.
+0. **Tier model first (L3a):** the tutorial's locked squares and the free daily core board need the gating model, so the pure `ProGating` tier definitions + entitlement read land at the start of L2; the purchase flow stays in L3.
+1. **Default board size 3×3** for new users: `UserPreferences.defaults` (iOS) and `mergeUserPreferences` (shared) together. Users with a stored size keep it; only prefs missing the field pick up the new default.
+2. **Default pools** — curated content, seeded on first user action (never in the background) with deterministic ids (uuidv5 of user + pool slug) so multi-device / guest-link sign-ins don't duplicate; seeded tasks are ordinary editable tasks. Wire them into `core_board_defaults` so the free daily core board is pre-filled on first setup. **[decide]** pool list + contents.
+3. **Tutorial rework** — an interactive, bingo-board-shaped tutorial covering every concept; ends with the user's first real playable board from a default pool. Pro lesson squares are previewable but locked; the payoff is a **bingo**, and at least one fully free line (middle row or a centre diagonal) guarantees every free user reaches it. North-star metric: install → first bingo. Progress today lives in a device-local UserDefaults `TutorialProgressStore`; decide whether the new tutorial's state syncs (reinstall / second device) or is deliberately per-device.
 
 ### L3 — Monetization (PR [#452](https://github.com/2014sheas/oybc/pull/452))
-- Rebase #452; rewrite `ProGating` to the decided tiers. **Free:** basic tasks, default pools, the daily core board, 5 **active** boards. **Pro:** everything else (recurring beyond daily, compound, achievement, shared counters / counts-toward, sources, …).
+- Rebase #452; `ProGating` already carries the decided tiers from L2's L3a step. **Free:** basic tasks, default pools, the daily core board, 5 **active** boards. **Pro:** everything else (recurring beyond daily, compound, achievement, shared counters / counts-toward, sources, …).
 - Gated affordances show a lock and open the paywall — never vanish. The active-board cap blocks **Activate**, not "Start a new board".
 - Paywall: Restore Purchases, terms + privacy links (3.1.2), sandbox purchases verified in the review build.
 - Lapse behaviour: existing Pro boards / counters / history stay readable and keep working through their window; only *creating* Pro things locks. Handle Pro-only data syncing onto an unentitled device.
@@ -47,12 +50,13 @@ Output of the 2026-10-14 pre-submission review (App Store readiness audit, backl
 - **[decide]** counting tasks free or Pro · what counts as "active" (drafts, ended-unclosed, does the daily core board use a slot) · pricing (subscription / lifetime / trial).
 
 ### L4 — Hardening
-- [#570](https://github.com/2014sheas/oybc/issues/570) launch-path ISO-8601 parse cost; consider `DatabaseQueue` → `DatabasePool` (CLAUDE.md pull-engine follow-up 1).
-- [#300](https://github.com/2014sheas/oybc/issues/300) forward-compat decode retry loop — before mixed client versions exist in the wild.
+- `DatabaseQueue` → `DatabasePool` (CLAUDE.md pull-engine follow-up 1) if #570's fix (moved to L0) doesn't clear large-account launch.
+- [#300](https://github.com/2014sheas/oybc/issues/300) forward-compat decode retry loop — must ship **in the 1.0 binary**: 1.0 is the oldest client that will ever be in the wild.
 - [#384](https://github.com/2014sheas/oybc/issues/384) "used 0× all-time".
 - [#576](https://github.com/2014sheas/oybc/issues/576) kind switch still rewrites copies on sealed boards.
 - B5: triage `try?` on write paths — at minimum log to crash reporting.
 - Accessibility: compact-stepper `@ScaledMetric` fix (F11 B3.1), Dynamic Type caps on grid cells, VoiceOver labels on wizard + play-surface sheets.
+- **[decide]** C7 sign-out local-data wipe (privacy on shared devices).
 - Close stale issues (#270, #284, #374, #370).
 
 ### L4.5 — UI polish + de-slop pass
@@ -72,6 +76,7 @@ Runs after L2–L3 (they add surfaces) and before L5 (screenshots come from the 
 - App Store listing: positioned as goals / habits as a bingo board (explicitly *not* a to-do app); first screenshot shows a counting square and a bingo; privacy nutrition labels, age rating, support URL.
 - External TestFlight beta (1–2 weeks of real users) once L2 lands.
 - Review notes: demo account, how to reach Pro features, guest mode.
+- `SKStoreReviewController` / `requestReview` prompt after a user's first few bingos (never on first launch, never mid-flow).
 - Phased release.
 
 ### Post-1.0 priorities (in order)
