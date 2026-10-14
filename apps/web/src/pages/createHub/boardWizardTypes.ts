@@ -294,6 +294,13 @@ export interface BoardWizardActions {
    * `BoardWizardViewModel.restoreToPool`.
    */
   restoreToPool: (taskId: string, index: number, payload: PendingTaskPayload | undefined) => void;
+  /**
+   * Swap a hand-added row for another in place — a counter ROOT row for the
+   * board-only linked copy its edit saves as, and back for Undo. Keeps the
+   * position, dice and center mark. Mirrors iOS
+   * `BoardWizardViewModel.replaceManualTask`.
+   */
+  replaceManualTask: (oldId: string, newId: string, payload: PendingTaskPayload | undefined) => void;
 }
 
 /** Computed flags exposed to step components for validation + display. */

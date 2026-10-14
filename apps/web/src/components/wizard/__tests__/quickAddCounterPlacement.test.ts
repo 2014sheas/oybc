@@ -6,6 +6,7 @@ import {
   buildPendingLinkedCounter,
   counterMatchRowName,
   counterRootIdsIn,
+  counterRowEditCopy,
   isLinkedPendingPayload,
   isSharedCounterRoot,
   quickAddExcludedIds,
@@ -175,5 +176,24 @@ describe('restampPendingCounterCopy', () => {
   it('is a no-op on the same window', () => {
     const picked = buildPendingLinkedCounter(root, 2, 'u1', 'copy', T0, daily);
     expect(restampPendingCounterCopy(picked, root, daily)).toBeNull();
+  });
+});
+
+describe('counterRowEditCopy', () => {
+  const root = task({ timeframeGoals: { daily: 2, weekly: 10 } });
+  const weekly = { timeframe: Timeframe.WEEKLY, startDate: '2026-10-12', endDate: '2026-10-18' };
+
+  it('a counter row edits as a linked copy at the window default, on the window', () => {
+    const copy = counterRowEditCopy(root, new Set(), 'u1', 'copy', T0, weekly);
+    expect(copy?.task).toMatchObject({
+      id: 'copy', sharedCounterId: 'root', maxCount: 10, timeframe: Timeframe.WEEKLY, startDate: '2026-10-12',
+    });
+    expect(copy && isLinkedPendingPayload(copy)).toBe(true);
+  });
+
+  it('is null for anything that is not a counter root', () => {
+    expect(counterRowEditCopy(task({ isCounter: false, maxCount: 4 }), new Set(), 'u1', 'c', T0, weekly)).toBeNull();
+    expect(counterRowEditCopy(task({ sharedCounterId: 'other', maxCount: 4 }), new Set(), 'u1', 'c', T0, weekly)).toBeNull();
+    expect(counterRowEditCopy(task({ type: TaskType.NORMAL }), new Set(), 'u1', 'c', T0, weekly)).toBeNull();
   });
 });

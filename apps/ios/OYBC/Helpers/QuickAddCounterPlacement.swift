@@ -126,6 +126,34 @@ enum QuickAddCounterPlacement {
         return PendingTaskPayload(task: task, childTasks: [], childLinks: [])
     }
 
+    /// The linked copy a hand-added counter ROOT row edits as: the pending
+    /// linked task at the board window's default goal (`placementGoalForCounter`),
+    /// so the row's editor opens on the goal the board will get and a Save
+    /// swaps the counter for this board-only copy — never writing the root.
+    /// Nil when `task` isn't a counter root or nothing resolves a goal. TS
+    /// twin: `counterRowEditCopy`.
+    ///
+    /// - Parameters:
+    ///   - task: The row's task.
+    ///   - linkedRootIds: `counterRootIds(in:)` over the surface's full task set.
+    ///   - userId: Owning user.
+    ///   - window: The host board's window.
+    /// - Returns: The copy's payload, or nil.
+    static func counterRowEditCopy(
+        _ task: Task, linkedRootIds: Set<String>, userId: String, window: CounterPlacement.PickWindow
+    ) -> PendingTaskPayload? {
+        guard isSharedCounterRoot(task, linkedRootIds: linkedRootIds),
+              let goal = CounterPlacement.placementGoalForCounter(
+                  CounterSettings.Fields(task: task), timeframe: window.timeframe,
+                  startDate: window.startDate, endDate: window.endDate
+              )
+        else { return nil }
+        return pendingLinkedTask(
+            root: task, goal: goal, userId: userId, now: AppDatabase.currentTimestamp(),
+            timeframe: window.timeframe, startDate: window.startDate, endDate: window.endDate
+        )
+    }
+
     /// Is this pending payload a bare LINKED counting row (the match row's or
     /// the special panel's auto-link create) — the only pending shape a mint
     /// replaces with the per-board copy, so the persist seams must not write

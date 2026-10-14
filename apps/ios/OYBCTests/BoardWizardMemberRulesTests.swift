@@ -449,6 +449,43 @@ final class BoardWizardMemberRulesTests: XCTestCase {
                        "a counter created in the wizard is dice-able before it is ever written")
     }
 
+    /// A counter row's edit swaps it for its board-only copy in place —
+    /// position, dice and center mark carry over — and Undo swaps back.
+    func test_replaceManualTask_swapsInPlaceCarryingDiceAndCenter() throws {
+        let vm = makeVM(try makeDb())
+        for id in ["a", "root", "b"] { vm.toggleTaskSelection(id) }
+        vm.manualTaskVary = ["root": .little]
+        vm.centerTaskId = "root"
+        let copy = makeTask("copy", type: .counting, maxCount: 10)
+
+        vm.replaceManualTask("root", with: "copy", payload: PendingTaskPayload(task: copy, childTasks: [], childLinks: []))
+
+        XCTAssertEqual(vm.poolOrder, ["a", "copy", "b"])
+        XCTAssertEqual(vm.selectedTaskIds, ["a", "copy", "b"])
+        XCTAssertEqual(vm.manualTaskVary, ["copy": .little])
+        XCTAssertEqual(vm.centerTaskId, "copy")
+        XCTAssertNotNil(vm.pendingTasks["copy"])
+
+        vm.replaceManualTask("copy", with: "root", payload: nil)
+
+        XCTAssertEqual(vm.poolOrder, ["a", "root", "b"])
+        XCTAssertEqual(vm.selectedTaskIds, ["a", "root", "b"])
+        XCTAssertEqual(vm.manualTaskVary, ["root": .little])
+        XCTAssertNil(vm.pendingTasks["copy"], "the copy leaves with its pending payload")
+    }
+
+    /// Undo of a ✕ re-enters the row as a hand-add, so the next selection
+    /// recompute keeps it (it used to drop out).
+    func test_restoreToPool_survivesTheNextRecompute() throws {
+        let vm = makeVM(try makeDb())
+        vm.toggleTaskSelection("a")
+        vm.toggleTaskSelection("a")
+        vm.restoreToPool("a", at: 0)
+        vm.recomputeSelectionFromSources()
+        XCTAssertEqual(vm.selectedTaskIds, ["a"])
+        XCTAssertEqual(vm.poolOrder, ["a"])
+    }
+
     func test_setManualVary_offRemovesTheEntry() throws {
         let database = try seedSourceBoard(try makeDb())
         let vm = makeVM(database)

@@ -152,7 +152,7 @@ struct RisoPoolListView: View {
         // §Member rules (B3) — a hand-added COUNTING row earns a dice: it
         // needs a goal to vary around. Hand-added counters vary around
         // their own goal, so there is no window to pro-rate against.
-        let goal = task.type == .counting ? (task.maxCount ?? 0) : 0
+        let goal = task.type == .counting ? (boardGoal(task) ?? task.maxCount ?? 0) : 0
         let showsDice = onSetManualVary != nil && goal > 0
         let varyLevel = manualTaskVary[task.id] ?? .off
         let varyRange = showsDice
@@ -283,6 +283,15 @@ struct RisoPoolListView: View {
 
     // MARK: - Helpers
 
+    /// The goal an unlinked counting row gets on this board: a counter's
+    /// window default, else its own (nil without `counterGoalWindow`).
+    private func boardGoal(_ task: OYBC.Task) -> CountValue? {
+        guard let w = counterGoalWindow, task.type == .counting, task.sharedCounterId == nil else { return nil }
+        return CounterPlacement.placementGoalForCounter(
+            CounterSettings.Fields(task: task), timeframe: w.timeframe, startDate: w.startDate, endDate: w.endDate
+        )
+    }
+
     /// Counting row detail — `goal {value}` at the task's kind (the title carries action + unit).
     static func countingSubtitle(_ task: OYBC.Task) -> String? {
         TaskCountDisplay.goalOnlySubtitle(for: task)
@@ -297,10 +306,7 @@ struct RisoPoolListView: View {
                 return shared > 0 ? "On \(shared) other board\(shared == 1 ? "" : "s")" : nil
             case .counting:
                 // The goal the board will get: a counter's window default, else its own.
-                if let w = counterGoalWindow, task.sharedCounterId == nil,
-                   let goal = CounterPlacement.placementGoalForCounter(
-                       CounterSettings.Fields(task: task), timeframe: w.timeframe, startDate: w.startDate, endDate: w.endDate
-                   ) {
+                if let goal = boardGoal(task) {
                     return "goal \(formatCount(goal, kind: resolveCountKind(task.countKind)))"
                 }
                 return Self.countingSubtitle(task)

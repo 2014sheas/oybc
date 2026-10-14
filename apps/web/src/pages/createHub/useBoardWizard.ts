@@ -23,6 +23,7 @@ import { appendSource } from './wizardSourcesLogic';
 import { useWizardSources } from './useWizardSources';
 import { useWizardCompoundChildren, useWizardMemberRules } from './useWizardMemberRules';
 import { useWizardDerived } from './useWizardDerived';
+import { useManualRowOps } from './useManualRowOps';
 import { resolveInitialWizardTimeframe } from './wizardTimeframeSeed';
 
 /** Stable empty fallback so a caller that omits `tasksById` doesn't cause
@@ -472,6 +473,7 @@ export function useBoardWizard({
     setPartVary,
     setManualVary,
     pruneManualVaryFor,
+    moveManualVary,
     resetMemberRules,
   } = useWizardMemberRules({
     initialManualTaskVary: () =>
@@ -812,47 +814,15 @@ export function useBoardWizard({
     });
   }, []);
 
-  /**
-   * Inline Task Editing (web PR-2) — restore a removed task to the pool at
-   * its original index. See `BoardWizardActions.restoreToPool`.
-   *
-   * Deliberately does NOT route through `toggleTaskSelection` (which always
-   * appends at the end of `poolOrder`) — Undo must restore the task at the
-   * exact index it was removed from, mirroring iOS
-   * `BoardWizardViewModel.restoreToPool`.
-   */
-  const restoreToPool = useCallback(
-    (taskId: string, index: number, payload: PendingTaskPayload | undefined) => {
-      setSelectedTaskIds((prev) => {
-        if (prev.has(taskId)) return prev;
-        const next = new Set(prev);
-        next.add(taskId);
-        return next;
-      });
-      setPoolOrder((prev) => {
-        if (prev.includes(taskId)) return prev;
-        const next = [...prev];
-        next.splice(Math.min(Math.max(index, 0), next.length), 0, taskId);
-        return next;
-      });
-      if (payload !== undefined) {
-        setPendingTasks((prev) => {
-          const next = new Map(prev);
-          next.set(taskId, payload);
-          return next;
-        });
-      }
-      // Board Sources P4 — a restored task re-enters as a hand-add (manual
-      // wins over any standing source exclude, which persists).
-      setManualTaskIds((prev) => {
-        if (prev.has(taskId)) return prev;
-        const next = new Set(prev);
-        next.add(taskId);
-        return next;
-      });
-    },
-    [setManualTaskIds],
-  );
+  const { restoreToPool, replaceManualTask } = useManualRowOps({
+    setSelectedTaskIds,
+    setPoolOrder,
+    setPendingTasks,
+    setManualTaskIds,
+    setStagedEdits,
+    setCenterTaskIdRaw,
+    moveManualVary,
+  });
 
   const setCenterTaskId = useCallback((id: string | null) => {
     setCenterTaskIdRaw(id);
@@ -982,6 +952,7 @@ export function useBoardWizard({
     stageEdit,
     revertEdit,
     restoreToPool,
+    replaceManualTask,
     goToStep,
     goNext,
     goBack,
