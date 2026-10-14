@@ -58,7 +58,8 @@ import { mergeSuggestionPool } from './suggestionPool';
 import { TasksPoolHeader } from './TasksPoolHeader';
 import { WizardSourceRows } from './WizardSourceRows';
 import { WizardQuickAddRow } from './WizardQuickAddRow';
-import { restampPendingCounterCopy } from './quickAddCounterPlacement';
+import { counterRootIdsIn, counterRowEditCopy, restampPendingCounterCopy } from './quickAddCounterPlacement';
+import { currentTimestamp, generateUUID } from '../../db/utils';
 import { TaskDetailSheet } from '../TaskDetailSheet';
 import { useRemoveSourceConfirm } from './useRemoveSourceConfirm';
 import styles from './BoardWizardTasksStep.module.css';
@@ -211,6 +212,8 @@ export interface BoardWizardTasksStepProps {
    *  its pending payload when non-`undefined`). Routes to
    *  `useBoardWizard.restoreToPool`. */
   onRestoreToPool: (taskId: string, index: number, payload: PendingTaskPayload | undefined) => void;
+  /** Swap a hand-added row for another in place. Routes to `useBoardWizard.replaceManualTask`. */
+  onReplaceManualTask?: (oldId: string, newId: string, payload: PendingTaskPayload | undefined) => void;
 
   /** Navigates to the previous wizard step. */
   onBack: () => void;
@@ -290,6 +293,7 @@ export function BoardWizardTasksStep({
   onStageEdit,
   onRevertEdit,
   onRestoreToPool,
+  onReplaceManualTask,
   onBack,
   onNext,
 }: BoardWizardTasksStepProps): React.ReactElement {
@@ -413,6 +417,9 @@ export function BoardWizardTasksStep({
   // At most one row open at a time.
   const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
   const [editDraft, setEditDraft] = useState<TaskEditPatch | null>(null);
+  /** A counter ROOT row edits as its board-only linked copy at the window
+   *  default (`counterRowEditCopy`); Save swaps it in. Mirrors iOS `editCounterCopy`. */
+  const [editCounterCopy, setEditCounterCopy] = useState<PendingTaskPayload | null>(null);
   /** The draft as it was when the editor opened — used to tell whether the
    *  user actually changed anything on Discard (comparing against a fresh
    *  `patchFromTask` would never carry compound children, so it would
@@ -518,10 +525,21 @@ export function BoardWizardTasksStep({
    *  one at a time). Seeds the draft from the effective (staged-overlaid)
    *  task. Mirrors iOS `BoardWizardTasksStepView.openEditor`. */
   function openEditor(taskId: string): void {
-    const task = effectiveTaskMap[taskId];
-    if (!task) return;
-    let draft: TaskEditPatch;
+    const row = effectiveTaskMap[taskId];
+    if (!row) return;
     const staged = stagedEdits.get(taskId);
+    const copy =
+      // Only a hand-added library row (the list's rows) — never a task new to this wizard.
+      staged || !onReplaceManualTask || !poolOrder.includes(taskId) || pendingTasks?.has(taskId)
+        ? null
+        : counterRowEditCopy(row, counterRootIdsIn(effectiveTaskMap), userId, generateUUID(), currentTimestamp(), {
+            timeframe: currentTimeframe,
+            startDate: currentStartDate,
+            endDate: currentEndDate,
+          });
+    setEditCounterCopy(copy);
+    const task = copy?.task ?? row;
+    let draft: TaskEditPatch;
     if (staged) {
       // Reopen: reuse the staged patch verbatim. `effectiveTaskMap`'s
       // overlay carries scalar edits (title/counting) but NOT compound
@@ -555,11 +573,22 @@ export function BoardWizardTasksStep({
    *  with undo to the previous snapshot. */
   function saveEdit(taskId: string): void {
     if (!editDraft) return;
+    if (editCounterCopy) {
+      // A counter row: an edit lands on its board-only copy, never the counter.
+      const copy = editCounterCopy;
+      setEditCounterCopy(null);
+      setEditingTaskId(null);
+      if (editBaseline && patchesEqual(editDraft, editBaseline)) return;
+      onReplaceManualTask?.(taskId, copy.task.id, copy);
+      onStageEdit(copy.task.id, editDraft);
+      showToast('Task edited', () => onReplaceManualTask?.(copy.task.id, taskId, undefined));
+      return;
+    }
     const previous = onStageEdit(taskId, editDraft);
     setEditingTaskId(null);
     // Captured for this board's creation, not yet written; board-scoped
     // (docs/BOARD_SCOPED_TASK_EDITS.md), so it never updates other boards.
-    showToast('Staged · saves when you create the board', () => onRevertEdit(taskId, previous));
+    showToast('Task edited', () => onRevertEdit(taskId, previous));
   }
 
   /** Discard the edit. If the draft differs from the task, toast "Edit
@@ -574,11 +603,15 @@ export function BoardWizardTasksStep({
     // "changed".
     const changed = !patchesEqual(editDraft, editBaseline);
     const keptDraft = editDraft;
+    const keptCopy = editCounterCopy;
+    const keptBaseline = editBaseline;
     setEditingTaskId(null);
+    setEditCounterCopy(null);
     if (changed) {
       showToast('Edit discarded', () => {
         setEditDraft(keptDraft);
-        setEditBaseline(keptDraft);
+        setEditBaseline(keptBaseline);
+        setEditCounterCopy(keptCopy);
         setEditingTaskId(taskId);
       });
     }
@@ -717,7 +750,7 @@ export function BoardWizardTasksStep({
         editor={(task) =>
           editDraft && (
             <PoolRowEditor
-              task={task}
+              task={editCounterCopy?.task ?? task}
               draft={editDraft}
               onDraftChange={setEditDraft}
               onSave={() => saveEdit(task.id)}

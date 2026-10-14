@@ -116,6 +116,34 @@ export function buildPendingLinkedCounter(
 }
 
 /**
+ * The linked copy a hand-added counter ROOT row edits as: the pending linked
+ * task at the board window's default goal (`placementGoalForCounter`), so the
+ * row's editor opens on the goal the board will get and a Save swaps the
+ * counter for this board-only copy — never writing the root. iOS twin:
+ * `QuickAddCounterPlacement.counterRowEditCopy`.
+ *
+ * @param task - The row's task.
+ * @param linkedRootIds - {@link counterRootIdsIn} over the surface's full task set.
+ * @param userId - Owner of the copy.
+ * @param id - The copy's id.
+ * @param now - ISO8601 creation instant.
+ * @param window - The host board's window.
+ * @returns The copy's payload, or null when `task` isn't a counter root or no goal resolves.
+ */
+export function counterRowEditCopy(
+  task: Task,
+  linkedRootIds: ReadonlySet<string>,
+  userId: string,
+  id: string,
+  now: string,
+  window: PendingLinkedWindow & { timeframe: Timeframe },
+): PendingTaskPayload | null {
+  if (!isSharedCounterRoot(task, linkedRootIds)) return null;
+  const goal = placementGoalForCounter(task, window);
+  return goal === null ? null : buildPendingLinkedCounter(task, goal, userId, id, now, window);
+}
+
+/**
  * Is this pending payload a bare LINKED counting row (the match row's or the
  * special panel's auto-link create) — the only pending shape a mint replaces
  * with the per-board copy, so the persist seams must not write it once it is

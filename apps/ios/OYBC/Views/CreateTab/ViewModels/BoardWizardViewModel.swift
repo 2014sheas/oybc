@@ -751,6 +751,7 @@ final class BoardWizardViewModel {
     /// under-fills (a `nil` grid cell). Library tasks pass `nil`.
     func restoreToPool(_ taskId: String, at index: Int, payload: PendingTaskPayload? = nil) {
         selectedTaskIds.insert(taskId)
+        manualTaskIds.insert(taskId) // re-enters as a hand-add (web twin does the same)
         if !poolOrder.contains(taskId) {
             poolOrder.insert(taskId, at: min(max(0, index), poolOrder.count))
         }

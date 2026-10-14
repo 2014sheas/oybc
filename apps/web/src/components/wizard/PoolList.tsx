@@ -22,7 +22,7 @@ function nextVary(level: VaryLevel): VaryLevel {
   return level === 0 ? 1 : level === 1 ? 2 : 0;
 }
 
-/** A hand-added counting row earns a dice: it needs a goal to vary around. */
+/** A hand-added counting row earns a dice: it needs a goal to vary around (a counter's window default first). */
 function countingGoal(task: Task): number {
   return task.type === TaskType.COUNTING ? (task.maxCount ?? 0) : 0;
 }
@@ -131,9 +131,15 @@ export function PoolList({
   const poolTasks = poolOrder
     .map((id) => effectiveTaskMap[id])
     .filter((t): t is Task => t !== undefined);
+  // The goal the board will get: a counter's window default, else its own.
+  const windowGoalOf = (task: Task): number | null =>
+    counterGoalWindow && task.type === TaskType.COUNTING && !task.sharedCounterId
+      ? placementGoalForCounter(task, counterGoalWindow)
+      : null;
   // The dice column only exists when SOME row can use it, so a board with
   // no counting tasks keeps the original 2-or-3-slot gutter width.
-  const showVaryColumn = onSetManualVary !== undefined && poolTasks.some((t) => countingGoal(t) > 0);
+  const showVaryColumn =
+    onSetManualVary !== undefined && poolTasks.some((t) => (windowGoalOf(t) ?? countingGoal(t)) > 0);
 
   return (
     <div className={styles.section}>
@@ -158,16 +164,12 @@ export function PoolList({
             const isCenter = centerTaskMode && centerTaskId === task.id;
             const isExpanded = expandedId === task.id;
             const counterTagName = rowCounterTagName(task, effectiveTaskMap);
-            // The goal the board will get: a counter's window default, else its own.
-            const windowGoal =
-              counterGoalWindow && task.type === TaskType.COUNTING && !task.sharedCounterId
-                ? placementGoalForCounter(task, counterGoalWindow)
-                : null;
+            const windowGoal = windowGoalOf(task);
             const subtitle =
               windowGoal !== null
                 ? `goal ${formatCount(windowGoal, resolveCountKind(task))}`
                 : buildPoolRowSubtitle(task, effectiveChildrenByCompound[task.id] ?? []);
-            const goal = countingGoal(task);
+            const goal = windowGoal ?? countingGoal(task);
             const varyLevel: VaryLevel = manualTaskVary?.[task.id] ?? 0;
             // Hand-added counters vary around their own goal — there is no
             // source window to pro-rate against.

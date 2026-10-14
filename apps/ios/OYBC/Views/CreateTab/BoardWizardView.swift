@@ -452,6 +452,7 @@ struct BoardWizardView: View {
                     // can write it atomically inside the board-save transaction.
                     wizard.addPendingTask(payload)
                 },
+                onReplaceManualTask: { wizard.replaceManualTask($0, with: $1, payload: $2) },
                 pendingTasks: wizard.pendingTasks,
                 onBack: { wizard.goBack() },
                 onNext: { wizard.goNext() },

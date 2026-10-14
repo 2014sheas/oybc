@@ -291,4 +291,25 @@ final class QuickAddCounterPlacementTests: XCTestCase {
         let same = CounterPlacement.PickWindow(timeframe: daily.tf, startDate: daily.s, endDate: daily.e)
         XCTAssertNil(QuickAddCounterPlacement.restampedPendingCounterCopy(picked(2), root: root, window: same))
     }
+
+    /// Owner bug 2026-10-14: a counter row on a board opens its editor on the
+    /// window's default goal — it edits as a linked copy, never the counter.
+    func testCounterRowEditCopyIsALinkedCopyAtTheWindowDefault() {
+        let root = counting(isCounter: true, goals: CounterTimeframeGoals(daily: 2, weekly: 10))
+        let weekly = CounterPlacement.PickWindow(
+            timeframe: .weekly, startDate: "2026-10-12T00:00:00.000", endDate: "2026-10-18T23:59:59.999"
+        )
+        let copy = QuickAddCounterPlacement.counterRowEditCopy(root, linkedRootIds: [], userId: "u1", window: weekly)
+        XCTAssertEqual(copy?.task.maxCount, 10)
+        XCTAssertEqual(copy?.task.sharedCounterId, "root")
+        XCTAssertEqual(copy?.task.timeframe, .weekly)
+        XCTAssertNotEqual(copy?.task.id, "root")
+        XCTAssertTrue(copy.map(QuickAddCounterPlacement.isLinkedPendingPayload) ?? false)
+        var plain = counting()
+        plain.maxCount = 4
+        XCTAssertNil(QuickAddCounterPlacement.counterRowEditCopy(plain, linkedRootIds: [], userId: "u1", window: weekly))
+        XCTAssertNil(QuickAddCounterPlacement.counterRowEditCopy(
+            counting(sharedCounterId: "x", isCounter: true), linkedRootIds: [], userId: "u1", window: weekly
+        ))
+    }
 }

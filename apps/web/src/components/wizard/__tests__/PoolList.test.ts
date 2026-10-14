@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { TaskType, varyRangeLabel, type Task, type VaryLevel } from '@oybc/shared';
+import { TaskType, Timeframe, varyRangeLabel, type Task, type VaryLevel } from '@oybc/shared';
 import { PoolList } from '../PoolList';
 
 /**
@@ -91,5 +91,32 @@ describe('PoolList — hand-added dice', () => {
     expect(html).not.toContain('aria-label="Vary: ');
     // An unactionable blue range with no control to change it is a dead end.
     expect(html).not.toContain('16–24 min');
+  });
+});
+
+describe('PoolList — a counter row', () => {
+  it('offers the dice around the window default when the counter has no goal of its own', () => {
+    const counter = makeTask('t-push', 'Pushups', {
+      type: TaskType.COUNTING, action: 'Do', unit: 'pushups', isCounter: true, timeframeGoals: { daily: 50 },
+    });
+    const html = renderToStaticMarkup(
+      React.createElement(PoolList, {
+        poolOrder: [counter.id],
+        effectiveTaskMap: { [counter.id]: counter },
+        effectiveChildrenByCompound: {},
+        taskBoardCounts: {},
+        counterGoalWindow: { timeframe: Timeframe.DAILY, startDate: '2026-10-14', endDate: '2026-10-14' },
+        centerTaskMode: false,
+        centerTaskId: null,
+        onCenterClick: () => {},
+        onRemove: () => {},
+        onContextMenu: () => {},
+        manualTaskVary: { [counter.id]: 1 },
+        onSetManualVary: () => {},
+      }),
+    );
+    expect(html).toContain('goal 50');
+    expect(html).toContain('aria-label="Vary: a little"');
+    expect(html).toContain(varyRangeLabel(50, 1, 50, 'pushups') as string);
   });
 });

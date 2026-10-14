@@ -156,6 +156,8 @@ export interface WizardMemberRulesController {
    * repeating record. Wizard-internal — not part of the controller surface.
    */
   pruneManualVaryFor: (taskId: string) => void;
+  /** Move a hand-added row's dice to the row replacing it (`replaceManualTask`). Wizard-internal. */
+  moveManualVary: (fromId: string, toId: string) => void;
   /** Reset the rules layer (the wizard's `reset()`). */
   resetMemberRules: () => void;
 }
@@ -274,6 +276,14 @@ export function useWizardMemberRules({
     setManualTaskVary((prev) => pruneManualVary(prev, taskId));
   }, []);
 
+  const moveManualVary = useCallback((fromId: string, toId: string) => {
+    setManualTaskVary((prev) => {
+      if (!(fromId in prev)) return prev;
+      const { [fromId]: level, ...rest } = prev;
+      return { ...rest, [toId]: level };
+    });
+  }, []);
+
   const resetMemberRules = useCallback(() => {
     setManualTaskVary({});
   }, []);
@@ -290,6 +300,7 @@ export function useWizardMemberRules({
     setPartVary,
     setManualVary,
     pruneManualVaryFor,
+    moveManualVary,
     resetMemberRules,
   };
 }

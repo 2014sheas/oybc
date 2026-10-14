@@ -315,6 +315,35 @@ extension BoardWizardViewModel {
         )
     }
 
+    /// Swap one hand-added row for another in place — a counter ROOT row for
+    /// the board-only linked copy its edit saves as, and back again for Undo
+    /// (`QuickAddCounterPlacement.counterRowEditCopy`). The new row keeps the
+    /// old one's position, dice and center mark; the old row's pending payload
+    /// and staged edit leave with it. Web twin: the Tasks step's
+    /// `replaceManualRow`.
+    ///
+    /// - Parameters:
+    ///   - oldId: The hand-added row leaving.
+    ///   - newId: The row taking its place.
+    ///   - payload: `newId`'s pending payload (nil for a library task).
+    func replaceManualTask(_ oldId: String, with newId: String, payload: PendingTaskPayload?) {
+        guard oldId != newId, manualTaskIds.contains(oldId) else { return }
+        let index = poolOrder.firstIndex(of: oldId) ?? poolOrder.count
+        let vary = manualTaskVary[oldId]
+        let wasCenter = centerTaskId == oldId
+        manualTaskIds.remove(oldId)
+        pendingTasks.removeValue(forKey: oldId)
+        stagedEdits.removeValue(forKey: oldId)
+        poolOrder.removeAll { $0 == oldId }
+        manualTaskVary.removeValue(forKey: oldId)
+        if let payload { pendingTasks[newId] = payload }
+        manualTaskIds.insert(newId)
+        if !poolOrder.contains(newId) { poolOrder.insert(newId, at: min(index, poolOrder.count)) }
+        if let vary { manualTaskVary[newId] = vary }
+        recomputeSelectionFromSources()
+        if wasCenter { centerTaskId = newId }
+    }
+
     // MARK: - Shared commit
 
     /// A rule edit that changed the SUPPLY (Split up, part exclusion):
