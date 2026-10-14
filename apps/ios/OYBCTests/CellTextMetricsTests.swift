@@ -11,6 +11,7 @@ final class CellTextMetricsTests: XCTestCase {
             XCTAssertEqual(m.title, 9)
             XCTAssertEqual(m.bar, 9)
             XCTAssertEqual(m.tag, 7)
+            XCTAssertEqual(m.freeStar, 17)
             XCTAssertEqual(m.barHeight, 13)
             XCTAssertEqual(m.titleTopInset, 20)
             XCTAssertEqual(m.titleBottomInset, 18)
@@ -23,6 +24,7 @@ final class CellTextMetricsTests: XCTestCase {
             XCTAssertEqual(m.title, 14)
             XCTAssertEqual(m.bar, 11)
             XCTAssertEqual(m.tag, 9)
+            XCTAssertEqual(m.freeStar, 22)
             XCTAssertEqual(m.barHeight, 16)
             XCTAssertEqual(m.titleTopInset, 24)
             XCTAssertEqual(m.titleBottomInset, 21)
@@ -34,5 +36,9 @@ final class CellTextMetricsTests: XCTestCase {
         XCTAssertEqual(m.title, 11.5, accuracy: 0.001)
         XCTAssertEqual(m.bar, 10, accuracy: 0.001)
         XCTAssertEqual(m.tag, 8, accuracy: 0.001)
+        XCTAssertEqual(m.freeStar, 19.5, accuracy: 0.001)
+        XCTAssertEqual(m.barHeight, 14.5, accuracy: 0.001)
+        XCTAssertEqual(m.titleTopInset, 22, accuracy: 0.001)
+        XCTAssertEqual(m.titleBottomInset, 19.5, accuracy: 0.001)
     }
 }

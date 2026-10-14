@@ -15,6 +15,8 @@ struct CellTextMetrics: Equatable {
     let title: CGFloat
     let bar: CGFloat
     let tag: CGFloat
+    /// FREE centre star edge.
+    let freeStar: CGFloat
     let barHeight: CGFloat
     /// Title inset that clears the top-left type tag.
     let titleTopInset: CGFloat
@@ -28,6 +30,7 @@ struct CellTextMetrics: Equatable {
         title = 9 + 5 * t
         bar = 9 + 2 * t
         tag = 7 + 2 * t
+        freeStar = 17 + 5 * t
         barHeight = 13 + 3 * t
         titleTopInset = 20 + 4 * t
         titleBottomInset = 4 + barHeight + 1
@@ -151,7 +154,7 @@ struct RisoBoardPlayCell: View {
 
             // ── Cell content ──
             if isCenter {
-                centerCellContent
+                centerCellContent(CellTextMetrics(cellSize: size))
             } else {
                 taskCellContent(size: size)
             }
@@ -285,16 +288,16 @@ struct RisoBoardPlayCell: View {
     }
 
     @ViewBuilder
-    private var centerCellContent: some View {
+    private func centerCellContent(_ metrics: CellTextMetrics) -> some View {
         VStack(spacing: 3) {
-            // Gold star shape
+            // Gold star shape — grows with the label.
             StarShape()
                 .fill(Color.risoGold)
-                .frame(width: 17, height: 17)
+                .frame(width: metrics.freeStar, height: metrics.freeStar)
             // Render the passed-in title, falling back to "FREE" when empty.
             // Scale/clamp so a longer title still fits the small cell.
             Text(title.isEmpty ? "FREE" : title)
-                .font(.risoHead(9, .extraBold))
+                .font(.risoHead(metrics.bar, .extraBold))
                 .tracking(1.0)
                 .foregroundStyle(Color.risoGold)
                 .multilineTextAlignment(.center)
@@ -440,8 +443,8 @@ struct RisoBoardPlayCell: View {
                         .frame(width: fraction * geo.size.width)
                 }
             }
-            // The count rides at the cell's own text step (the 9pt title /
-            // FREE label), never below it. Tiers (docs/COUNTER_KINDS.md §5):
+            // The count rides at the cell's own text step
+            // (`CellTextMetrics.bar`, shared with the FREE label), never below it. Tiers (docs/COUNTER_KINDS.md §5):
             // `cur/max`, else `cur` (the ×tag already carries the goal), else
             // fill only — never shrunk; VoiceOver always carries "n of m".
             ViewThatFits(in: [.horizontal, .vertical]) {
@@ -456,8 +459,7 @@ struct RisoBoardPlayCell: View {
         }
         .clipShape(Capsule())
         .overlay(Capsule().strokeBorder(Color.risoInk, lineWidth: 1.5))
-        // 13pt at the base size: the smallest bar that holds a 9pt count;
-        // grows with the count text (`CellTextMetrics`).
+        // The smallest bar that holds the count text (`CellTextMetrics.barHeight`).
         .frame(height: metrics.barHeight)
     }
 
