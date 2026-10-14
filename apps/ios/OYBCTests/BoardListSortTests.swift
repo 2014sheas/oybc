@@ -111,6 +111,31 @@ final class BoardListSortTests: XCTestCase {
         let draftNew = makeBoard(id: "draftNew", status: .draft, updatedAt: "2026-06-11T00:00:00.000Z")
         XCTAssertEqual(sortIds([draftOld, active, draftNew]), ["active", "draftNew", "draftOld"])
     }
+
+    // MARK: - activeBoardPlacementCounts (TS twin pinned in boardListSort.test.ts)
+
+    func test_activeBoardPlacementCounts_countsDistinctStillInPlayBoardsOnly() {
+        let boards = [
+            makeBoard(id: "a1"), makeBoard(id: "a2"),
+            makeBoard(id: "done", status: .completed), makeBoard(id: "draft", status: .draft),
+            makeBoard(id: "sealed", sealedAt: "2026-06-14T00:00:00.000Z"),
+            makeBoard(id: "ended", endDate: "2026-06-14T00:00:00.000Z"),
+        ]
+        func bt(_ task: String, _ board: String, deleted: Bool = false) -> BoardTask {
+            var row = BoardTask(
+                id: "\(task)-\(board)-\(deleted)", boardId: board, taskId: task, row: 0, col: 0,
+                isCenter: false, createdAt: "", updatedAt: "", lastSyncedAt: nil, version: 1
+            )
+            row.isDeleted = deleted
+            return row
+        }
+        let counts = activeBoardPlacementCounts(
+            [bt("t", "a1"), bt("t", "a2"), bt("t", "done"), bt("t", "draft"), bt("t", "sealed"),
+             bt("t", "ended"), bt("t", "unknown"), bt("u", "a1", deleted: true), bt("v", "done")],
+            boards: boards, now: now
+        )
+        XCTAssertEqual(counts, ["t": 2])
+    }
 }
 
 private extension ISO8601DateFormatter {

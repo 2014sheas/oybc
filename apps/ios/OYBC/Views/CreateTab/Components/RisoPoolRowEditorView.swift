@@ -4,7 +4,7 @@ import SwiftUI
 /// `.counting`, and `.compound` tasks.
 ///
 /// Replaces a resting `RisoPoolListView` row in place: an accent header bar, a
-/// Title field (autofocused), the counting Action/Goal/Unit row with a live
+/// Title field (never autofocused — opening the editor raises no keyboard), the counting Action/Goal/Unit row with a live
 /// "Reads as" preview, the compound SUB-TASKS editor (`RisoCompoundEditFieldsView`:
 /// the shared `RisoCompoundRulePicker` + sub-task cards + the quick-add row), a
 /// validation line, and Discard / Save actions. Edits are staged only —
@@ -27,7 +27,6 @@ struct RisoPoolRowEditorView: View {
     let onSave: () -> Void
     let onDiscard: () -> Void
 
-    @FocusState private var titleFocused: Bool
     @State private var pendingSwitch: KindSwitchPreview?
     /// The family root a LINKED counting row renders its title through (fetched once on appear).
     @State private var linkedRoot: Task?
@@ -67,7 +66,6 @@ struct RisoPoolRowEditorView: View {
         .risoCard(fill: .risoPaper2)
         .risoHardShadow(Riso.Shadow.card)
         .onAppear {
-            titleFocused = true
             if task.sharedCounterId != nil { linkedRoot = database.linkedCounterRoot(of: task) }
         }
     }
@@ -110,7 +108,6 @@ struct RisoPoolRowEditorView: View {
         VStack(alignment: .leading, spacing: 5) {
             Text("Task title").risoSectionLabel(.risoRed)
             RisoTextField(placeholder: "Task title", text: $draft.title)
-                .focused($titleFocused)
         }
     }
 

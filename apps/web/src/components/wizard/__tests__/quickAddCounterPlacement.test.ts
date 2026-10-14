@@ -8,6 +8,7 @@ import {
   counterRootIdsIn,
   isLinkedPendingPayload,
   isSharedCounterRoot,
+  quickAddExcludedIds,
 } from '../quickAddCounterPlacement';
 import { WizardQuickAddRow } from '../WizardQuickAddRow';
 
@@ -142,5 +143,14 @@ describe('WizardQuickAddRow match rows', () => {
     const noPending = render(library, { seedText: 'book', onPendingCreated: undefined });
     expect(noPending).toContain('tagDense');
     expect(noPending).not.toContain('role="group"');
+  });
+});
+
+describe('quickAddExcludedIds', () => {
+  it('adds the counter a selected task links to, and nothing for unselected links', () => {
+    const copy = task({ id: 'copy', sharedCounterId: 'root', isCounter: false });
+    const other = task({ id: 'other-copy', sharedCounterId: 'other-root', isCounter: false });
+    const excluded = quickAddExcludedIds(new Set(['copy', 'plain']), [task({}), copy, other]);
+    expect([...excluded].sort()).toEqual(['copy', 'plain', 'root']);
   });
 });

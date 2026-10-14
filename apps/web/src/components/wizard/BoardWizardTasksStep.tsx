@@ -4,6 +4,7 @@ import {
   Timeframe,
   TaskType,
   UNDO_TOAST_MS,
+  activeBoardPlacementCounts,
   buildCounterFamilyMap,
   type BoardSource,
   type BoardWindow,
@@ -13,7 +14,7 @@ import {
   type Task,
   type VaryLevel,
 } from '@oybc/shared';
-import { fetchAllBoardTasks } from '../../db/operations';
+import { fetchAllBoardTasks, fetchAllBoards } from '../../db/operations';
 import type { SourceSheetBoardEntry } from '../../db/operations/boardSources';
 import {
   overlayCompoundChildrenWithStagedEdits,
@@ -413,25 +414,17 @@ export function BoardWizardTasksStep({
   // Any other tap / scroll / key press dismisses the toast (it must not get in the way).
   useDismissOnOutsideInteraction(toastRef, () => setToast(null), toast !== null);
 
-  // Usage-hint data — "N boards" / "unused" — shared by LibrarySheet and
+  // Usage-hint data — the row's other-board count, still-in-play boards
+  // only (`activeBoardPlacementCounts`) — shared by LibrarySheet and
   // PoolList rows. Requires a live query since `useTaskLibrary` doesn't
   // expose boardTasks.
-  const allBoardTasks = useLiveQuery(() => fetchAllBoardTasks(), []) ?? [];
+  const allBoardTasks = useLiveQuery(() => fetchAllBoardTasks(), []);
+  const allBoards = useLiveQuery(() => fetchAllBoards(), []);
 
-  const taskBoardCounts = useMemo(() => {
-    const buckets = new Map<string, Set<string>>();
-    for (const bt of allBoardTasks) {
-      let set = buckets.get(bt.taskId);
-      if (!set) {
-        set = new Set<string>();
-        buckets.set(bt.taskId, set);
-      }
-      set.add(bt.boardId);
-    }
-    const counts: Record<string, number> = {};
-    for (const [taskId, set] of buckets) counts[taskId] = set.size;
-    return counts;
-  }, [allBoardTasks]);
+  const taskBoardCounts = useMemo(
+    () => activeBoardPlacementCounts(allBoardTasks ?? [], allBoards ?? []),
+    [allBoardTasks, allBoards],
+  );
 
   // Bug #85 — Merge in-memory pending `childLinks` with the live
   // `compoundChildrenByCompound` map so a newly-created (not-yet-
@@ -635,6 +628,7 @@ export function BoardWizardTasksStep({
             lookupTasks={effectiveTaskMap}
             selectedIds={selectedTaskIds}
             onExistingTaskPicked={onTaskCreated}
+            linksCounterPicks={!isRecurring}
           />
         </div>
 
@@ -701,6 +695,9 @@ export function BoardWizardTasksStep({
         effectiveTaskMap={effectiveTaskMap}
         effectiveChildrenByCompound={effectiveChildrenByCompound}
         taskBoardCounts={taskBoardCounts}
+        counterGoalWindow={
+          isRecurring ? { timeframe: currentTimeframe, startDate: currentStartDate, endDate: currentEndDate } : undefined
+        }
         centerTaskMode={centerTaskMode}
         centerTaskId={centerTaskId}
         onCenterClick={handleCenterRadio}

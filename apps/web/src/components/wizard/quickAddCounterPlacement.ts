@@ -134,3 +134,21 @@ export function isLinkedPendingPayload(payload: PendingTaskPayload): boolean {
 export function counterMatchRowName(root: Task): string {
   return counterDisplayName(root) || root.title || '(untitled task)';
 }
+
+/**
+ * The ids a quick-add dropdown leaves out: the surface's selected ids plus
+ * every counter a selected task is LINKED to — a counter already on this
+ * board (itself, or as its linked copy) is not offered again (owner rule
+ * 2026-10-13: one per scope). iOS twin: `RisoQuickAddRowView.libraryMatches`.
+ *
+ * @param selectedIds - Ids already on the surface.
+ * @param lookup - The surface's full task set (pending rows included).
+ * @returns The ids to exclude.
+ */
+export function quickAddExcludedIds(selectedIds: ReadonlySet<string>, lookup: TaskLookup): Set<string> {
+  const excluded = new Set(selectedIds);
+  for (const t of taskLookupValues(lookup)) {
+    if (t.sharedCounterId && selectedIds.has(t.id)) excluded.add(t.sharedCounterId);
+  }
+  return excluded;
+}

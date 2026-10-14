@@ -307,14 +307,8 @@ struct BoardWizardTasksStepView: View {
     // §Removed): core defaults now pre-pull as source rows, and the
     // Board-settings defaults sheet is the sole author surface.
 
-    /// taskId → count of distinct boards it's placed on (library usage hint).
-    private var taskBoardCounts: [String: Int] {
-        var buckets: [String: Set<String>] = [:]
-        for bt in library.allLibraryBoardTasks {
-            buckets[bt.taskId, default: []].insert(bt.boardId)
-        }
-        return buckets.mapValues { $0.count }
-    }
+    /// taskId → count of distinct still-in-play boards it's placed on (usage hint).
+    private var taskBoardCounts: [String: Int] { library.activeBoardCounts }
 
     /// Bug #85 / Inline Task Editing — effective compound-children map
     /// merging live + pending + staged child edits. Delegates to the shared
@@ -416,7 +410,8 @@ struct BoardWizardTasksStepView: View {
                             selectedIds: selectedTaskIds,
                             onExistingTaskPicked: { task in
                                 toggleSelection(task.id)
-                            }
+                            },
+                            linksCounterPicks: !isRecurring
                         )
                     }
                     .padding(12)
@@ -485,6 +480,9 @@ struct BoardWizardTasksStepView: View {
                     },
                     onEdit: { taskId in openEditor(taskId) },
                     sharedCountByTaskId: taskBoardCounts,
+                    counterGoalWindow: isRecurring
+                        ? .init(timeframe: currentTimeframe, startDate: currentStartDate, endDate: currentEndDate)
+                        : nil,
                     editingTaskId: editingTaskId,
                     editor: { task in
                         AnyView(

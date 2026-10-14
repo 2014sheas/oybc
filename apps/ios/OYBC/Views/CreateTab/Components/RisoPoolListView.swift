@@ -52,6 +52,9 @@ struct RisoPoolListView: View {
     /// Count of OTHER boards each task is placed on — drives the "On N other
     /// boards" detail line for simple tasks. Absent ⇒ not shared.
     var sharedCountByTaskId: [String: Int] = [:]
+    /// A repeating board's window: a counter row (kept as the counter, each
+    /// spawn minting its own default) captions that window's default goal.
+    var counterGoalWindow: CounterPlacement.PickWindow? = nil
 
     /// The row currently open in the inline editor, if any. That row is
     /// replaced in place by `editor`.
@@ -280,9 +283,9 @@ struct RisoPoolListView: View {
 
     // MARK: - Helpers
 
-    /// Counting row detail — `{action} · goal {value}` at the task's kind (Duration: "1h 30m", no unit).
+    /// Counting row detail — `goal {value}` at the task's kind (the title carries action + unit).
     static func countingSubtitle(_ task: OYBC.Task) -> String? {
-        TaskCountDisplay.goalSubtitle(for: task)
+        TaskCountDisplay.goalOnlySubtitle(for: task)
     }
 
     /// Detail subtitle. `isCenter` prefixes "Center square · ".
@@ -293,6 +296,10 @@ struct RisoPoolListView: View {
                 let shared = sharedCountByTaskId[task.id] ?? 0
                 return shared > 0 ? "On \(shared) other board\(shared == 1 ? "" : "s")" : nil
             case .counting:
+                if let w = counterGoalWindow, QuickAddCounterPlacement.isSharedCounterRoot(task),
+                   let goal = CounterPlacement.counterPickGoal(CounterSettings.Fields(task: task), window: w) {
+                    return "goal \(formatCount(goal, kind: resolveCountKind(task.countKind)))"
+                }
                 return Self.countingSubtitle(task)
             case .compound:
                 // `effectiveChildrenByCompound` / `task.operatorType` /

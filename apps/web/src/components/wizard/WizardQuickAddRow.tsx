@@ -15,6 +15,7 @@ import {
   counterMatchRowName,
   counterRootIdsIn,
   isSharedCounterRoot,
+  quickAddExcludedIds,
 } from './quickAddCounterPlacement';
 import styles from './WizardQuickAddRow.module.css';
 
@@ -73,8 +74,15 @@ export interface WizardQuickAddRowProps {
    *  the copy at the window's default). */
   excludeGoalLessCounters?: boolean;
   /** Ids to exclude from the dropdown (already selected/added on this
-   *  surface). Defaults to empty — only meaningful alongside `libraryTasks`. */
+   *  surface). Defaults to empty — only meaningful alongside `libraryTasks`.
+   *  A counter linked to by a selected task is excluded too (one per scope). */
   selectedIds?: Set<string>;
+  /** A one-off board wizard: picking a counter adds a pending LINKED copy at
+   *  the window's default goal (`placementGoalSource`) instead of the root,
+   *  so the row shows that goal and an edit to it stays on this board.
+   *  Default false (a repeating board keeps the root: each spawn mints its
+   *  own window's default). iOS twin: `RisoQuickAddRowView.linksCounterPicks`. */
+  linksCounterPicks?: boolean;
   /**
    * Fired when the user taps a dropdown match to REUSE that existing task
    * instead of creating a new one. The host appends the existing task's id
@@ -180,6 +188,7 @@ export function WizardQuickAddRow({
   lookupTasks,
   excludeGoalLessCounters = false,
   selectedIds,
+  linksCounterPicks = false,
   onExistingTaskPicked,
   onSubmitText,
   canSubmitText = true,
@@ -218,7 +227,7 @@ export function WizardQuickAddRow({
     if (!pollingEnabled || trimmed === '') return [];
     return selectQuickAddMatches(
       libraryTasks!,
-      selectedIds ?? EMPTY_SELECTED_IDS,
+      quickAddExcludedIds(selectedIds ?? EMPTY_SELECTED_IDS, lookupTasks ?? libraryTasks!),
       trimmed,
       lookupTasks ?? libraryTasks,
       excludeGoalLessCounters,
@@ -285,13 +294,19 @@ export function WizardQuickAddRow({
     const name = counterMatchRowName(task);
     const kind = resolveCountKind(task);
     // Only a board host can need the inline goal (no default resolves for its window).
-    const needsGoal =
-      currentTimeframe !== undefined &&
-      onPendingCreated !== undefined &&
-      placementGoalSource(task, { timeframe: currentTimeframe, startDate: currentStartDate, endDate: currentEndDate }) === null;
+    const source =
+      currentTimeframe !== undefined
+        ? placementGoalSource(task, { timeframe: currentTimeframe, startDate: currentStartDate, endDate: currentEndDate })
+        : null;
+    const needsGoal = currentTimeframe !== undefined && onPendingCreated !== undefined && source === null;
     if (!needsGoal) {
+      // One-off wizard: the counter lands as its linked copy at the default goal.
+      const pick =
+        linksCounterPicks && onPendingCreated !== undefined && source !== null
+          ? () => handleCounterGoalPicked(task, source.goal)
+          : () => handleExistingPicked(task);
       return (
-        <button type="button" className={styles.dropdownRowButton} onClick={() => handleExistingPicked(task)}>
+        <button type="button" className={styles.dropdownRowButton} onClick={pick}>
           <RisoTypeBadge type={task.type} />
           <span className={styles.dropdownRowMain}>
             <span className={styles.dropdownRowTitle}>{name}</span>

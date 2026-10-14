@@ -125,7 +125,7 @@ test.describe('Wizard Tasks step — inline PoolRowEditor (Inline Task Editing P
     // `seedPatchForEditor` so it keeps deriving as the goal changes).
     const updatedCountingRow = page.getByRole('listitem').filter({ hasText: 'Run 10 km' });
     await expect(updatedCountingRow).toBeVisible();
-    await expect(updatedCountingRow).toContainText('goal 10 km');
+    await expect(updatedCountingRow).toContainText('goal 10');
     await page.waitForTimeout(6100); // let the toast auto-dismiss before the next screenshot
     await page.screenshot({ path: '.playwright-mcp/pool-row-editor-02-counting-saved.png' });
 

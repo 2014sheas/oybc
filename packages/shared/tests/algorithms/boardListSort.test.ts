@@ -1,4 +1,4 @@
-import { compareBoardsForList } from '../../src/algorithms/boardListSort';
+import { activeBoardPlacementCounts, compareBoardsForList } from '../../src/algorithms/boardListSort';
 import type { Board } from '../../src/types/board';
 import { BoardStatus, CenterSquareType, Timeframe } from '../../src/constants/enums';
 
@@ -144,5 +144,39 @@ describe('compareBoardsForList', () => {
       updatedAt: '2026-06-11T00:00:00.000Z',
     });
     expect(sortIds([draftOld, active, draftNew])).toEqual(['active', 'draftNew', 'draftOld']);
+  });
+});
+
+describe('activeBoardPlacementCounts', () => {
+  const now = new Date('2026-06-22T12:00:00.000Z');
+  const boards = [
+    makeBoard({ id: 'a1' }),
+    makeBoard({ id: 'a2' }),
+    makeBoard({ id: 'done', status: BoardStatus.COMPLETED }),
+    makeBoard({ id: 'draft', status: BoardStatus.DRAFT }),
+    makeBoard({ id: 'sealed', sealedAt: '2026-06-21T00:00:00.000Z' }),
+    makeBoard({ id: 'ended', endDate: '2026-06-21T00:00:00.000Z' }),
+    makeBoard({ id: 'gone', isDeleted: true }),
+  ];
+
+  it('counts distinct still-in-play boards only', () => {
+    const counts = activeBoardPlacementCounts(
+      [
+        { taskId: 't', boardId: 'a1' },
+        { taskId: 't', boardId: 'a1' },
+        { taskId: 't', boardId: 'a2' },
+        { taskId: 't', boardId: 'done' },
+        { taskId: 't', boardId: 'draft' },
+        { taskId: 't', boardId: 'sealed' },
+        { taskId: 't', boardId: 'ended' },
+        { taskId: 't', boardId: 'gone' },
+        { taskId: 't', boardId: 'unknown' },
+        { taskId: 'u', boardId: 'a1', isDeleted: true },
+        { taskId: 'v', boardId: 'done' },
+      ],
+      boards,
+      now,
+    );
+    expect(counts).toEqual({ t: 2 });
   });
 });

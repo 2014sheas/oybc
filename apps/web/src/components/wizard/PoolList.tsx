@@ -1,9 +1,12 @@
 import { useState } from 'react';
 import {
   TaskType,
+  counterPickGoal,
+  formatCount,
   resolveCountKind,
   varyRangeLabel,
   type CompoundChild,
+  type PlacementBoard,
   type Task,
   type VaryLevel,
 } from '@oybc/shared';
@@ -12,6 +15,7 @@ import { TypeBadge } from '../TypeBadge';
 import { rowCounterTagName } from '../counters/rowCounterTagName';
 import { UnitTag } from '../counters/UnitTag';
 import { buildPoolRowSubtitle } from './poolRowSubtitle';
+import { isSharedCounterRoot } from './quickAddCounterPlacement';
 import styles from './PoolList.module.css';
 
 /** off → a little → a lot → off (handoff §Interactions "Variation (dice)"). */
@@ -38,6 +42,9 @@ export interface PoolListProps {
   effectiveTaskMap: Record<string, Task>;
   effectiveChildrenByCompound: Record<string, CompoundChild[]>;
   taskBoardCounts: Record<string, number>;
+  /** A repeating board's window: a counter row (kept as the counter, each
+   *  spawn minting its own default) captions that window's default goal. */
+  counterGoalWindow?: PlacementBoard;
 
   centerTaskMode: boolean;
   centerTaskId: string | null;
@@ -107,6 +114,7 @@ export function PoolList({
   effectiveTaskMap,
   effectiveChildrenByCompound,
   taskBoardCounts,
+  counterGoalWindow,
   centerTaskMode,
   centerTaskId,
   onCenterClick,
@@ -151,10 +159,12 @@ export function PoolList({
             const isCenter = centerTaskMode && centerTaskId === task.id;
             const isExpanded = expandedId === task.id;
             const counterTagName = rowCounterTagName(task, effectiveTaskMap);
-            const subtitle = buildPoolRowSubtitle(
-              task,
-              effectiveChildrenByCompound[task.id] ?? [],
-            );
+            const windowGoal =
+              counterGoalWindow && isSharedCounterRoot(task) ? counterPickGoal(task, counterGoalWindow) : null;
+            const subtitle =
+              windowGoal !== null
+                ? `goal ${formatCount(windowGoal, resolveCountKind(task))}`
+                : buildPoolRowSubtitle(task, effectiveChildrenByCompound[task.id] ?? []);
             const goal = countingGoal(task);
             const varyLevel: VaryLevel = manualTaskVary?.[task.id] ?? 0;
             // Hand-added counters vary around their own goal — there is no
