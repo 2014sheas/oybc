@@ -92,42 +92,48 @@ struct CompoundChildRow: View {
         }
     }
 
+    /// The kit's compact count pill (`RisoCountStepperView`'s 32pt capsule:
+    /// paper-2 fill, 1.5pt ink keyline, 32pt − / value / 32pt ＋), read-only
+    /// in the middle — the count is driven by the buttons, never typed.
     private func stepper(_ count: Count) -> some View {
-        HStack(spacing: 6) {
+        HStack(spacing: 0) {
             stepButton(
-                system: "minus", enabled: count.current > 0 && !disabled,
+                "−", enabled: count.current > 0 && !disabled,
                 label: "Remove \(formatCountWithUnit(count.step, kind: count.kind, unit: count.unit)) from \(title)"
             ) { onStep(-1) }
             Text("\(formatCount(count.current, kind: count.kind)) / \(formatCount(count.max, kind: count.kind))")
-                .font(.risoBody(12, .bold))
+                .font(.risoBody(13, .extraBold))
                 .monospacedDigit()
                 .foregroundStyle(Color.risoInk)
-                .frame(minWidth: 52)
+                .lineLimit(1)
+                .fixedSize()
+                .padding(.horizontal, 4)
                 .accessibilityLabel(
                     "\(formatCount(count.current, kind: count.kind)) of \(formatCountWithUnit(count.max, kind: count.kind, unit: count.unit))"
                 )
             stepButton(
-                system: "plus", enabled: !disabled,
+                "＋", enabled: !disabled,
                 label: "Add \(formatCountWithUnit(count.step, kind: count.kind, unit: count.unit)) to \(title)"
             ) { onStep(1) }
         }
+        .frame(height: 32)
+        .background(Color.risoPaper2)
+        .clipShape(Capsule())
+        .overlay(Capsule().strokeBorder(Color.risoInk, lineWidth: Riso.Keyline.dense))
         .accessibilityElement(children: .contain)
     }
 
-    /// A compact version of the counting card's `detailStepperButton`.
-    private func stepButton(system: String, enabled: Bool, label: String, action: @escaping () -> Void) -> some View {
+    /// One 32pt pill button — `RisoCountStepperView.stepButton`'s look.
+    private func stepButton(_ glyph: String, enabled: Bool, label: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            Image(systemName: system)
-                .font(.system(size: 13, weight: .bold))
-                // Enabled glyph sits on gold — non-inverting ink for dark mode.
-                .foregroundStyle(enabled ? Color.risoInkStatic : Color.risoMuted)
-                .frame(width: 30, height: 30)
-                .risoCard(fill: enabled ? .risoGold : .risoPaper)
-                // 44pt hit target around the compact 30pt card.
-                .frame(minWidth: 44, minHeight: 44)
+            Text(glyph)
+                .font(.risoHead(15, .extraBold))
+                .foregroundStyle(Color.risoInk)
+                .frame(width: 32, height: 32)
                 .contentShape(Rectangle())
         }
-        .buttonStyle(RisoButtonStyle())
+        .buttonStyle(.plain)
+        .opacity(enabled ? 1 : 0.4)
         .disabled(!enabled)
         .accessibilityLabel(label)
     }

@@ -618,41 +618,14 @@
   background-color: transparent;
 }
 
-.compoundChildStepper {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  flex-shrink: 0;
-}
-
-.compoundChildStepBtn {
-  width: 36px;
-  height: 36px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 1rem;
-  font-weight: 800;
-  line-height: 1;
-  color: var(--riso-ink-static);
-  background: var(--riso-gold);
-  border: 1.5px solid var(--riso-ink);
-  border-radius: 6px;
-  cursor: pointer;
-}
-
-.compoundChildStepBtn:disabled {
-  color: var(--riso-muted);
-  background: var(--riso-paper);
-  cursor: default;
-}
-
 .compoundChildCount {
-  min-width: 3.5rem;
-  text-align: center;
-  font-size: 0.85rem;
-  font-weight: 700;
+  /* Mirrors CounterStepper's `.compactInput` type, as static text. */
+  padding: 0 4px;
+  font-family: var(--riso-font-body);
+  font-size: 13px;
+  font-weight: 800;
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
   color: var(--riso-ink);
 }
 
