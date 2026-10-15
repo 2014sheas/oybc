@@ -7,7 +7,7 @@ import type {
   CycleCheckCandidate,
   CycleCheckContext,
 } from '@oybc/shared';
-import { AchievementTrigger, SyncOperationType, TaskType, OperatorType, boardDisplayName, countsTowardProblem, hasCycle, isEventOwningTask, isGoalLessCounter } from '@oybc/shared';
+import { AchievementTrigger, SyncOperationType, TaskType, OperatorType, boardDisplayName, countsTowardProblem, hasCycle, isEventOwningTask, isGoalLessCounter, quantizeCount, resolveTaskWindowState } from '@oybc/shared';
 import { CountsTowardError, setCountsTowardInTransaction, syncCountsTowardFor } from './countsToward';
 import { generateUUID, currentTimestamp } from '../utils';
 import { addToSyncQueue } from './syncQueue';
@@ -15,6 +15,7 @@ import { runBoardCascadeForTask } from './orchestration';
 import { withRootCountKind } from './countKindSwitch';
 import {
   appendCompletionEvent,
+  appendIncrementEvent,
   lateLogStampForBoard,
   tombstoneLatestCompletion,
   tombstoneWindowCompletions,
@@ -692,6 +693,53 @@ export async function toggleCompoundChildFallback(
       } else {
         await tombstoneWindowCompletions(childTaskId, windowStart, now, windowEnd);
       }
+      await runBoardCascadeForTask(childTaskId);
+    },
+  );
+}
+
+/**
+ * Board-context stepper for a plain COUNTING compound child NOT placed on the
+ * host board (`useBoardPlay.handleCompoundChildIncrement`; iOS twin
+ * `incrementCompoundChildFallback`). The count companion of
+ * {@link toggleCompoundChildFallback}: `delta` moves the child's count in the
+ * HOST BOARD'S WINDOW — an `increment` event stamped via `lateLogStampForBoard`
+ * (the board's `endDate` once its window has ended), a decrement gated so the
+ * window sum stays ≥ 0 — then the cross-board cascade, in ONE transaction.
+ *
+ * Only an event-owning counting child is authored here; a linked child's count
+ * is its counter's, logged through `incrementSharedCounter` by the caller. A
+ * no-op for a missing / non-counting / derived child, a zero (gated) delta, or
+ * a sealed host board.
+ *
+ * @param childTaskId - The counting child.
+ * @param delta - Signed amount (positive logs, negative removes).
+ * @param windowStart - The host board's `startDate`.
+ * @param windowEnd - The host board's `endDate`, or `null` (indefinite).
+ * @param boardId - The host board (event provenance + late-log stamp).
+ */
+export async function incrementCompoundChildFallback(
+  childTaskId: string,
+  delta: number,
+  windowStart: string,
+  windowEnd: string | null,
+  boardId: string,
+): Promise<void> {
+  await db.transaction(
+    'rw',
+    [db.tasks, db.taskEvents, db.boards, db.boardTasks, db.compoundChildren, db.syncQueue],
+    async () => {
+      const task = await db.tasks.get(childTaskId);
+      const board = await db.boards.get(boardId);
+      if (!task || board?.sealedAt) return;
+      if (task.type !== TaskType.COUNTING || !isEventOwningTask(task)) return;
+      const live = (await db.taskEvents.where('taskId').equals(childTaskId).toArray()).filter((e) => !e.isDeleted);
+      const current = resolveTaskWindowState(task, live, windowStart, windowEnd).count;
+      const gated = quantizeCount(delta < 0 ? Math.max(delta, -current) : delta);
+      if (gated === 0) return;
+      const now = currentTimestamp();
+      const occurredAt = await lateLogStampForBoard(boardId, now);
+      await appendIncrementEvent(childTaskId, gated, boardId, now, occurredAt);
       await runBoardCascadeForTask(childTaskId);
     },
   );

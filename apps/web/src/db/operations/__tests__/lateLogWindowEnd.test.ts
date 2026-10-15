@@ -7,6 +7,7 @@ import {
   Timeframe,
   computeBoardGrid,
   type Board,
+  type CompoundChild,
   type BoardTask,
   type Task,
   type TaskEvent,
@@ -143,7 +144,10 @@ async function cellFor(boardId: string, taskId: string) {
   const bts = (await db.boardTasks.where('boardId').equals(boardId).toArray()).filter((b) => !b.isDeleted);
   const taskById: Record<string, Task> = {};
   for (const t of await db.tasks.toArray()) taskById[t.id] = t;
-  const { cells } = computeBoardGrid(board, bts, {}, taskById, await db.boards.toArray(), await buildWindowContext());
+  // The REAL children map — an AND over `{}` (no children) is vacuously complete.
+  const childrenByCompound: Record<string, CompoundChild[]> = {};
+  for (const l of await db.compoundChildren.toArray()) (childrenByCompound[l.compoundTaskId] ??= []).push(l);
+  const { cells } = computeBoardGrid(board, bts, childrenByCompound, taskById, await db.boards.toArray(), await buildWindowContext());
   return cells.find((c) => c.taskId === taskId)!;
 }
 

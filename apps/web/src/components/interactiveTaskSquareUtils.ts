@@ -65,6 +65,21 @@ export interface CompoundChild {
   taskId: string;
   title: string;
   isCompleted: boolean;
+  /** Counting children only — the count the sheet's stepper shows and moves. */
+  count?: CompoundChildCount;
+}
+
+/**
+ * A counting child's count on the host board: its windowed count (a linked
+ * child: its counter's in-window total), goal, unit and kind, plus the amount
+ * one stepper tap logs (a linked child steps by its counter's default).
+ */
+export interface CompoundChildCount {
+  current: number;
+  max: number;
+  unit: string;
+  kind: CountKind;
+  step: number;
 }
 
 /**

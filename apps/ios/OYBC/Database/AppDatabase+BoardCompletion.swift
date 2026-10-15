@@ -209,4 +209,52 @@ extension AppDatabase {
             )
         }
     }
+
+    /// The count companion of `toggleCompoundChildFallback`: the compound
+    /// sheet's stepper on a plain COUNTING child NOT placed on the host board
+    /// (`BoardPlayViewModel.handleCompoundChildIncrement`). `delta` moves the
+    /// child's count in the HOST BOARD'S WINDOW — an `increment` event stamped
+    /// `lateLogStampForBoard` (the board's `endDate` once its window has
+    /// ended), a decrement gated so the window sum stays ≥ 0 — then the
+    /// cross-board cascade, in ONE transaction. Mirrors the web
+    /// `incrementCompoundChildFallback` (`tasks.crud.ts`).
+    ///
+    /// Only an event-owning counting child is authored here; a linked child's
+    /// count is its counter's, logged through `incrementSharedCounter` by the
+    /// caller. A no-op (empty result) for a missing / non-counting / derived
+    /// child, a zero (gated) delta, or a sealed host board.
+    ///
+    /// - Parameters:
+    ///   - childTaskId: The counting child.
+    ///   - delta: Signed amount (positive logs, negative removes).
+    ///   - windowStart: The host board's `startDate`.
+    ///   - windowEnd: The host board's inclusive upper bound, or `nil` (indefinite).
+    ///   - boardId: The host board (event provenance + late-log stamp).
+    ///   - now: ISO8601 timestamp stamped on every row written here.
+    /// - Returns: A `[boardId: CascadeBoardResult]` map for flash derivation.
+    func incrementCompoundChildFallback(
+        childTaskId: String,
+        delta: CountValue,
+        windowStart: String,
+        windowEnd: String?,
+        boardId: String?,
+        now: String
+    ) throws -> [String: CascadeBoardResult] {
+        try write { db in
+            if let boardId, try Board.fetchOne(db, key: boardId)?.sealedAt != nil { return [:] }
+            guard let child = try Task.fetchOne(db, key: childTaskId),
+                  child.type == .counting, isEventOwningTask(child)
+            else { return [:] }
+            let current = try Self.windowedState(
+                db: db, taskId: childTaskId, windowStart: windowStart, windowEnd: windowEnd
+            ).count
+            let gated = quantizeCount(delta < 0 ? max(delta, -current) : delta)
+            guard gated != 0 else { return [:] }
+            let occurredAt = try Self.lateLogStampForBoard(db: db, boardId: boardId, now: now)
+            try Self.appendIncrementEvent(
+                db: db, taskId: childTaskId, delta: gated, boardId: boardId, now: now, occurredAt: occurredAt
+            )
+            return try Self.runBoardCascadeForTaskWithResults(db: db, changedTaskId: childTaskId, now: now)
+        }
+    }
 }

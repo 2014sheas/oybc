@@ -1567,43 +1567,25 @@ struct BoardPlayView: View {
                         // can't be un-completed from here; disable + explain.
                         let sealBlocked = isDone && sealBlockedTaskIds.contains(link.childTaskId)
 
-                        VStack(alignment: .leading, spacing: 3) {
-                            HStack(spacing: 10) {
-                                Button {
-                                    guard let ct = childTask, !isBoardLocked, !isProcessing, !sealBlocked else { return }
-                                    viewModel.handleCompoundChildToggle(childTask: ct)
-                                } label: {
-                                    HStack(spacing: 8) {
-                                        Image(systemName: isDone ? "checkmark.circle.fill" : "circle")
-                                            .foregroundStyle(isDone ? Color.risoGreen : Color.risoMuted)
-                                        Text(childTask?.title ?? link.childTaskId)
-                                            .font(.risoBody(14, .semibold))
-                                            .foregroundStyle(Color.risoInk)
-                                        Spacer(minLength: 0)
-                                    }.padding(.vertical, 6).contentShape(Rectangle()) // whole row (incl. Spacer) is the tap target
-                                }
-                                .buttonStyle(.plain)
-                                .disabled(isProcessing || isBoardLocked || childTask == nil || sealBlocked)
-
-                                // Info button — opens the child task's detail, stacked
-                                // on top of this sheet (see `compoundChildDetailTaskId`).
-                                Button {
-                                    compoundChildDetailTaskId = TaskIdItem(id: link.childTaskId)
-                                } label: {
-                                    Image(systemName: "info.circle")
-                                        .font(.system(size: 16))
-                                        .foregroundStyle(Color.risoMuted)
-                                }
-                                .buttonStyle(.plain)
-                                .accessibilityLabel("Open \(childTask?.title ?? "task") in library")
-                            }
-                            if sealBlocked {
-                                Text("Closed window")
-                                    .font(.risoBody(11, .semibold))
-                                    .foregroundStyle(Color.risoMuted)
-                                    .padding(.leading, 24)
-                            }
-                        }
+                        // A counting child gets a count stepper, not a toggle
+                        // (its `Count` reads the same windowed value the cell does).
+                        CompoundChildRow(
+                            title: childTask?.title ?? link.childTaskId,
+                            isDone: isDone,
+                            sealBlocked: sealBlocked,
+                            disabled: isProcessing || isBoardLocked || childTask == nil,
+                            count: childTask.flatMap {
+                                CompoundChildRow.Count.make(
+                                    task: $0, current: windowedCount($0),
+                                    root: viewModel.sharedCounterSourceId(for: $0).flatMap { taskMap[$0] }
+                                )
+                            },
+                            onToggle: { if let ct = childTask { viewModel.handleCompoundChildToggle(childTask: ct) } },
+                            onStep: { dir in
+                                if let ct = childTask { viewModel.handleCompoundChildIncrement(childTask: ct, direction: dir) }
+                            },
+                            onInfo: { compoundChildDetailTaskId = TaskIdItem(id: link.childTaskId) }
+                        )
                     }
                 }
             }

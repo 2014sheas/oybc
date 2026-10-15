@@ -13,7 +13,7 @@ import {
   type CompoundChild,
   type CellState,
 } from '@oybc/shared';
-import type { TaskSquareData, SquareState } from '../components/interactiveTaskSquareUtils';
+import type { CompoundChildCount, TaskSquareData, SquareState } from '../components/interactiveTaskSquareUtils';
 
 /**
  * Windowed Completion (docs/WINDOWED_COMPLETION.md §Semantics): the per-square
@@ -142,6 +142,56 @@ export function compoundChildToggleDesired(
 }
 
 /**
+ * A counting child's count for the compound detail sheet's stepper (iOS twin:
+ * `CompoundChildRow`'s inputs in `BoardPlayView.compoundDetailContent`): the
+ * same windowed read the checkmark uses — a linked child reads its counter's
+ * in-window total (`resolveLinkedCounterDisplay`), an event-owning child its
+ * own events in the host window — and the amount a tap logs: a linked child
+ * steps by its counter's default log amount, a plain one by 1.
+ *
+ * @param childTask - The child task.
+ * @param taskMap - id → Task lookup (the counter root's default amount / kind).
+ * @param windowContext - The host board's window context, if any.
+ * @returns The count model, or `undefined` for a non-counting child.
+ */
+export function compoundChildCount(
+  childTask: Task,
+  taskMap: Record<string, Task>,
+  windowContext?: SquareWindowContext,
+): CompoundChildCount | undefined {
+  if (childTask.type !== TaskType.COUNTING) return undefined;
+  // The counter the step logs on: a linked child's root, or the child itself
+  // when it IS a counter root (hub counter, or linked to by another live task)
+  // — iOS `BoardPlayViewModel.sharedCounterSourceId(for:)`.
+  const isRoot =
+    childTask.isCounter === true ||
+    Object.values(taskMap).some((t) => t.sharedCounterId === childTask.id && !t.isDeleted);
+  const rootId = childTask.sharedCounterId ?? (isRoot ? childTask.id : undefined);
+  const root = rootId ? taskMap[rootId] : undefined;
+  let current: number;
+  if (childTask.sharedCounterId) {
+    current = resolveLinkedCounterDisplay(
+      childTask,
+      windowContext?.eventsByTaskId,
+      undefined,
+      windowContext ? { startDate: windowContext.windowStart, endDate: windowContext.windowEnd } : undefined,
+    ).displayed;
+  } else if (windowContext && isEventOwningTask(childTask)) {
+    const evts = windowContext.eventsByTaskId[childTask.id] ?? [];
+    current = resolveTaskWindowState(childTask, evts, windowContext.windowStart, windowContext.windowEnd).count;
+  } else {
+    current = childTask.currentCount ?? 0;
+  }
+  return {
+    current,
+    max: childTask.maxCount ?? 0,
+    unit: childTask.unit ?? '',
+    kind: resolveFamilyCountKind(childTask, (id) => taskMap[id]),
+    step: root?.defaultLogAmount ?? 1,
+  };
+}
+
+/**
  * Converts a Task record to the TaskSquareData shape expected by
  * InteractiveTaskSquare.
  *
@@ -193,7 +243,8 @@ export function taskToSquareData(
     const children = links.map((link) => {
       const childTask = map[link.childTaskId];
       if (!childTask) return { taskId: link.childTaskId, title: '<missing>', isCompleted: false };
-      return { taskId: link.childTaskId, title: childTask.title, isCompleted: resolveChild(childTask) };
+      const count = compoundChildCount(childTask, map, windowContext);
+      return { taskId: link.childTaskId, title: childTask.title, isCompleted: resolveChild(childTask), ...(count ? { count } : {}) };
     });
 
     return {

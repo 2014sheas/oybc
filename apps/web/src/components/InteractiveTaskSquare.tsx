@@ -344,6 +344,8 @@ interface InteractiveTaskSquareProps {
   onContextMenu?: (e: React.MouseEvent) => void;
   /** Compound tasks only: called when the user toggles a child task in the detail sheet. */
   onCompoundChildToggle?: (childTaskId: string) => void;
+  /** Compound tasks only: a counting child's stepper — `+1` logs its step, `-1` removes it. */
+  onCompoundChildIncrement?: (childTaskId: string, direction: 1 | -1) => void;
   /** Phase 6.3: when set, the cell renders an achievement-square badge
    *  at the top-left indicating cross-board tracking. */
   achievementBadge?: AchievementSquareBadgeData;
@@ -459,6 +461,8 @@ interface DetailModalProps {
   onDecrementCount: (id: string) => void;
   /** Compound tasks only: called when the user toggles a child task in the detail sheet. */
   onCompoundChildToggle?: (childTaskId: string) => void;
+  /** Compound tasks only: a counting child's stepper — `+1` logs its step, `-1` removes it. */
+  onCompoundChildIncrement?: (childTaskId: string, direction: 1 | -1) => void;
   /**
    * Optional: when provided, each compound child row renders a small "ⓘ"
    * icon button that fires this callback with the child's task ID. Opens
@@ -504,6 +508,7 @@ export function DetailModal({
   onIncrementCount,
   onDecrementCount,
   onCompoundChildToggle,
+  onCompoundChildIncrement,
   onOpenInLibrary,
   quickAmount,
   achievementBadge,
@@ -794,19 +799,26 @@ export function DetailModal({
             {/* Child task list */}
             <ul className={styles.compoundChildList}>
               {(sq.children ?? []).map((child) => (
+                // A counting child is driven by its stepper, not a tap-toggle:
+                // a linked child's count is its counter's, and a completion
+                // event means nothing to a count.
                 <li
                   key={child.taskId}
-                  className={styles.compoundChildItem}
-                  onClick={() => onCompoundChildToggle?.(child.taskId)}
-                  role="button"
-                  tabIndex={0}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' || e.key === ' ') {
-                      e.preventDefault();
-                      onCompoundChildToggle?.(child.taskId);
-                    }
-                  }}
-                  aria-pressed={child.isCompleted}
+                  className={`${styles.compoundChildItem} ${child.count ? styles.compoundChildItemCounting : ''}`}
+                  {...(child.count
+                    ? {}
+                    : {
+                        onClick: () => onCompoundChildToggle?.(child.taskId),
+                        role: 'button',
+                        tabIndex: 0,
+                        onKeyDown: (e: React.KeyboardEvent) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault();
+                            onCompoundChildToggle?.(child.taskId);
+                          }
+                        },
+                        'aria-pressed': child.isCompleted,
+                      })}
                 >
                   <span className={styles.compoundChildCheck}>
                     {child.isCompleted ? '✓' : '○'}
@@ -818,6 +830,31 @@ export function DetailModal({
                   >
                     {child.title}
                   </span>
+                  {child.count && (
+                    <span className={styles.compoundChildStepper}>
+                      <button
+                        type="button"
+                        className={styles.compoundChildStepBtn}
+                        disabled={child.count.current <= 0 || !onCompoundChildIncrement}
+                        onClick={() => onCompoundChildIncrement?.(child.taskId, -1)}
+                        aria-label={`Remove ${formatCountWithUnit(child.count.step, child.count.kind, child.count.unit)} from ${child.title}`}
+                      >
+                        −
+                      </button>
+                      <span className={styles.compoundChildCount}>
+                        {formatCount(child.count.current, child.count.kind)} / {formatCount(child.count.max, child.count.kind)}
+                      </span>
+                      <button
+                        type="button"
+                        className={styles.compoundChildStepBtn}
+                        disabled={!onCompoundChildIncrement}
+                        onClick={() => onCompoundChildIncrement?.(child.taskId, 1)}
+                        aria-label={`Add ${formatCountWithUnit(child.count.step, child.count.kind, child.count.unit)} to ${child.title}`}
+                      >
+                        +
+                      </button>
+                    </span>
+                  )}
                   {onOpenInLibrary && (
                     <button
                       type="button"

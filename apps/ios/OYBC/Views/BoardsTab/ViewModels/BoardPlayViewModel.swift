@@ -578,7 +578,7 @@ final class BoardPlayViewModel: ObservableObject {
     ///   - amount: Amount to log (R3; default 1 preserves prior behavior).
     ///   - persistAsDefault: R3 — forwarded to `setCounterDefaultLogAmount`
     ///     after a successful log; only `true` for an explicit custom entry.
-    private func runSharedCounterIncrement(
+    func runSharedCounterIncrement( // internal for the +CompoundChildCount extension
         sourceTaskId: String,
         counterName: String = "",
         unit: String = "", kind: CountKind = .discrete,
@@ -663,7 +663,7 @@ final class BoardPlayViewModel: ObservableObject {
     ///     using the REQUESTED `amount` (the user's chosen preference, even
     ///     if the write itself got clamped) after a successful log; only
     ///     `true` for an explicit custom entry.
-    private func runSharedCounterDecrement(
+    func runSharedCounterDecrement( // internal for the +CompoundChildCount extension
         sourceTaskId: String,
         counterName: String = "",
         unit: String = "", kind: CountKind = .discrete,
@@ -1245,7 +1245,7 @@ final class BoardPlayViewModel: ObservableObject {
     /// (R3 board-play touchpoints copy contract: NEVER raw `task.title` for
     /// the COUNTER name — matches `SharedCounterGroups.swift`'s `name`
     /// derivation and the Counters Hub/Detail labels verbatim).
-    private static func counterDisplayName(_ source: Task?) -> String {
+    static func counterDisplayName(_ source: Task?) -> String { // internal for +CompoundChildCount
         guard let source = source else { return "" }
         return CounterSettings.counterDisplayName(source)
     }
