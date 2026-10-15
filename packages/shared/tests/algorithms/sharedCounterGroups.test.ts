@@ -547,6 +547,41 @@ describe('primary-board resolution excludes tombstoned placements', () => {
     expect(later[0].activeTaskCount).toBe(0);
   });
 
+  it('the primary board is the one still in play, not the newer ended one (pickPrimaryBoard)', () => {
+    const source = toTask({
+      id: 'src',
+      title: 'Source',
+      currentCount: 10,
+      maxCount: null,
+      sharedCounterId: null,
+      baseline: null,
+      isDeleted: false,
+      isCounter: true,
+    });
+    // Newer, ACTIVE, but ended; vs older, still open.
+    const ended = {
+      ...toBoard({ id: 'ended', name: 'Ended', status: BoardStatus.ACTIVE, isDeleted: false }),
+      startDate: '2026-02-08T12:00:00.000Z',
+      endDate: '2026-02-14T12:00:00.000Z',
+    };
+    const open = {
+      ...toBoard({ id: 'open', name: 'Open', status: BoardStatus.ACTIVE, isDeleted: false }),
+      startDate: '2026-01-01T12:00:00.000Z',
+      endDate: '2026-12-31T12:00:00.000Z',
+    };
+    const groups = buildSharedCounterGroups({
+      tasks: [source],
+      boards: [ended, open],
+      boardTasks: [
+        { taskId: 'src', boardId: 'ended' },
+        { taskId: 'src', boardId: 'open' },
+      ].map(toBoardTask),
+      memberVisibility: { showExpired: true, now: new Date('2026-03-01T12:00:00.000Z') },
+    });
+    expect(groups[0].tasks[0].boardId).toBe('open');
+    expect(groups[0].tasks[0].isActive).toBe(true);
+  });
+
   it('a member with both a tombstoned and a live placement resolves to the live board', () => {
     const source = toTask({
       id: 'src',

@@ -60,9 +60,12 @@ export function compareBoardsForList(a: Board, b: Board, now: Date = new Date())
  * the Boards tab instead of re-deriving their own (which drifted: a raw
  * `status === ACTIVE` filter wrongly kept expired/sealed boards).
  */
-export function isBoardActiveForList(board: Board, now: Date = new Date()): boolean {
+export function isBoardActiveForList(board: InPlayBoardFields, now: Date = new Date()): boolean {
   return isActiveForSort(board, now);
 }
+
+/** The fields the in-play rule reads; `timeframe` absent = a dated board. */
+export type InPlayBoardFields = Pick<Board, 'status' | 'endDate' | 'sealedAt'> & Partial<Pick<Board, 'timeframe'>>;
 
 /**
  * Task id → the number of DISTINCT boards it is placed on that are still in
@@ -116,14 +119,14 @@ export function boardPlacementStatus(board: Board, now: Date = new Date()): Boar
 export type BoardPlacementStatus = BoardStatus | 'closed' | 'expired';
 
 /** A board "still in play": ACTIVE status, not sealed, not past its endDate. */
-function isActiveForSort(board: Board, now: Date): boolean {
+function isActiveForSort(board: InPlayBoardFields, now: Date): boolean {
   if (board.status !== BoardStatus.ACTIVE) return false;
   if (board.sealedAt != null) return false;
   return !isBoardEnded(board, now);
 }
 
 /** True when a dated board is past its endDate. INDEFINITE never ends. */
-function isBoardEnded(board: Board, now: Date): boolean {
+function isBoardEnded(board: InPlayBoardFields, now: Date): boolean {
   if (board.timeframe === Timeframe.INDEFINITE || !board.endDate) return false;
   return isTimeframeExpired(board.endDate, now);
 }

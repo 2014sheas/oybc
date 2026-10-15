@@ -341,6 +341,7 @@ export {
   compareBoardsForList,
   isBoardActiveForList,
   type BoardPlacementStatus,
+  type InPlayBoardFields,
 } from './boardListSort';
 
 export { computeBrowsableTasks, isGoalLessCounter } from './browsableTasks';

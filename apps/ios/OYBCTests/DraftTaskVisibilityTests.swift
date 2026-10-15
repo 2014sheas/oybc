@@ -236,6 +236,7 @@ final class DraftTaskVisibilityTests: XCTestCase {
     func testActivePlacementCounts_distinctActiveBoards() {
         let vm = TasksTabViewModel()
         vm.boardStatusById = ["active1": .active, "active2": .active, "draft1": .draft]
+        vm.activeBoardIds = ["active1", "active2"] // `reload()` derives this with `isBoardActiveForList`
         let bts = [
             placement("t", on: "active1"),
             placement("t", on: "active1"),  // duplicate row on the same active board

@@ -170,6 +170,27 @@ final class SharedCounterGroupsTests: XCTestCase {
         XCTAssertEqual(later.activeTaskCount, 0)
     }
 
+    func test_primaryBoardIsTheOneStillInPlay_notTheNewerEndedOne() {
+        let source = counter("src", currentCount: 10, isCounter: true)
+        var endedDict = boardDict("ended", status: .active) // newer, ACTIVE, but ended
+        endedDict["startDate"] = "2026-02-08T12:00:00.000Z"
+        endedDict["endDate"] = "2026-02-14T12:00:00.000Z"
+        var openDict = boardDict("open", status: .active) // older, still open
+        openDict["startDate"] = "2026-01-01T12:00:00.000Z"
+        openDict["endDate"] = "2026-12-31T12:00:00.000Z"
+        let decode = { (d: [String: Any]) in try! JSONDecoder().decode(Board.self, from: JSONSerialization.data(withJSONObject: d)) }
+        let groups = buildSharedCounterGroups(
+            tasks: [source],
+            boardTasks: [placement("src", "ended"), placement("src", "open")],
+            boards: [decode(endedDict), decode(openDict)],
+            memberVisibility: SharedCounterMemberVisibility(
+                showExpired: true, now: ISO8601DateFormatter().date(from: "2026-03-01T12:00:00Z")!
+            )
+        )
+        XCTAssertEqual(groups[0].tasks[0].boardId, "open")
+        XCTAssertTrue(groups[0].tasks[0].isActive)
+    }
+
     // MARK: - 1. No shared-counter links
 
     func test_returnsEmpty_whenNoSharedCounterLinks() {

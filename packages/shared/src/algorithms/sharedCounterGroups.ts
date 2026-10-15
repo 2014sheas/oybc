@@ -30,7 +30,7 @@ import type { Task } from '../types/task';
 import type { Board } from '../types/board';
 import type { BoardTask } from '../types/boardTask';
 import type { TaskEvent } from '../types/taskEvent';
-import { BoardStatus, TaskType, Timeframe } from '../constants/enums';
+import { TaskType, Timeframe } from '../constants/enums';
 import { quantizeCount, resolveCountKind, type CountKind } from './countValue';
 import { deriveDisplayedCount } from './sharedCounter';
 import { formatTimeframeLabel } from './calendarBoundaries';
@@ -43,7 +43,7 @@ import {
   resolveTaskWindowState,
 } from './taskEvents';
 import { isTaskExpired } from './taskExpiry';
-import { isBoardActiveForList } from './boardListSort';
+import { isBoardActiveForList, type InPlayBoardFields } from './boardListSort';
 
 /**
  * One member task of a shared counter, resolved to its board placement +
@@ -171,13 +171,18 @@ export interface SharedCounterMemberVisibility {
 }
 
 /**
- * Pick a member task's "primary" board placement: prefer an ACTIVE board, then
- * the most recent by startDate, then a stable id tie-break. Deterministic.
+ * Pick a member task's "primary" board placement: prefer a board still in play
+ * ({@link isBoardActiveForList} — never the stored status, which stays ACTIVE
+ * on an ended or closed board), then the most recent by startDate, then a
+ * stable id tie-break. Deterministic.
+ *
+ * @param now - Reference time for the in-play check (defaults to the clock).
  */
-export function pickPrimaryBoard<B extends Pick<Board, 'id' | 'isDeleted' | 'status' | 'startDate'>>(
+export function pickPrimaryBoard<B extends Pick<Board, 'id' | 'isDeleted' | 'startDate'> & InPlayBoardFields>(
   taskId: string,
   boardTasks: ReadonlyArray<Pick<BoardTask, 'taskId' | 'boardId' | 'isDeleted'>>,
   boardsById: Map<string, B>,
+  now: Date = new Date(),
 ): B | null {
   const candidates: B[] = [];
   for (const bt of boardTasks) {
@@ -187,8 +192,8 @@ export function pickPrimaryBoard<B extends Pick<Board, 'id' | 'isDeleted' | 'sta
   }
   if (candidates.length === 0) return null;
   candidates.sort((a, b) => {
-    const aActive = a.status === BoardStatus.ACTIVE ? 0 : 1;
-    const bActive = b.status === BoardStatus.ACTIVE ? 0 : 1;
+    const aActive = isBoardActiveForList(a, now) ? 0 : 1;
+    const bActive = isBoardActiveForList(b, now) ? 0 : 1;
     if (aActive !== bActive) return aActive - bActive;
     if (a.startDate !== b.startDate) return a.startDate < b.startDate ? 1 : -1; // newest first
     return a.id < b.id ? -1 : 1;
@@ -314,7 +319,7 @@ export function buildSharedCounterGroups(
       // The source is the accumulator (baseline 0); linked tasks derive.
       const baseline = isSource ? 0 : m.baseline ?? 0;
       const goal = m.maxCount ?? 0;
-      const board = pickPrimaryBoard(m.id, input.boardTasks, boardsById);
+      const board = pickPrimaryBoard(m.id, input.boardTasks, boardsById, now);
       // Window-stamped members read their own window from the root's events
       // (never `lifetime − baseline`, which counts later windows' logs too);
       // any other PLACED member reads its primary board's window the same
