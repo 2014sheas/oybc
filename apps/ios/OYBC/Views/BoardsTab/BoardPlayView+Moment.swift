@@ -95,6 +95,17 @@ extension BoardPlayView {
         pollMoment(chain: pending.id)
     }
 
+    /// Re-opens a moment the board already earned — the BINGOS card's tap —
+    /// straight away (no write to wait for). Ignored while one is pending or
+    /// open, like any other trigger.
+    func replayMoment(_ kind: MomentTrigger.Kind) {
+        guard momentPending == nil, MomentGate.shouldOpen(whileOpen: moment?.kind),
+              let replay = viewModel.momentReplay() else { return }
+        refreshStreaks()
+        let presentation = MomentPresentation(kind: kind, replay: replay, cells: viewModel.momentCellInputs(replay: replay))
+        withAnimation(.easeIn(duration: 0.3)) { moment = presentation }
+    }
+
     private func pollMoment(chain: UUID) {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
             guard MomentGate.isLive(chain: chain, pending: momentPending), let p = momentPending else { return }

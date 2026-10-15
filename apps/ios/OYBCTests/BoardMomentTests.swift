@@ -5,6 +5,16 @@ import XCTest
 /// helpers on a hand-built replay, `totalLineCount`, `streakUnitLabel`.
 final class BoardMomentTests: XCTestCase {
 
+    // MARK: replayMomentKind (the Bingos card's replay)
+
+    func test_replayMomentKind() {
+        XCTAssertEqual(replayMomentKind(status: .completed, linesCompleted: 12), .greenlog)
+        XCTAssertEqual(replayMomentKind(status: .active, linesCompleted: 1), .bingo)
+        XCTAssertEqual(replayMomentKind(status: .active, linesCompleted: 3), .bingo)
+        XCTAssertNil(replayMomentKind(status: .active, linesCompleted: 0))
+        XCTAssertNil(replayMomentKind(status: .draft, linesCompleted: 0))
+    }
+
     // MARK: totalLineCount / streakUnitLabel
 
     func test_totalLineCount() {

@@ -32,7 +32,7 @@
  */
 
 import { detectBingos, getHighlightedSquares, type BoardSize } from '@oybc/bingo-core';
-import { CenterSquareType } from '../constants/enums';
+import { BoardStatus, CenterSquareType } from '../constants/enums';
 import type { Board } from '../types/board';
 import type { BoardTask } from '../types/boardTask';
 import type { CompoundChild } from '../types/compoundChild';
@@ -220,6 +220,18 @@ export function momentCellVisual(idx: number, beat: number, replay: BoardMomentR
 export function momentCounterAt(beat: number, replay: BoardMomentReplay): number {
   const landed = Math.min(Math.max(beat, 0), replay.order.length);
   return Math.max(0, replay.completedTasks - replay.order.length + landed);
+}
+
+/**
+ * Which moment a board's Bingos card replays on tap, or `null` when it has
+ * nothing to replay: a greenlog board (`COMPLETED`) replays its Greenlog, a
+ * board with at least one line its Bingo. Same criteria as the achievement
+ * triggers and streaks (BINGO = `linesCompleted >= 1`, GREENLOG = full board).
+ * Swift twin: `replayMomentKind(status:linesCompleted:)`.
+ */
+export function replayMomentKind(status: BoardStatus, linesCompleted: number): MomentKind | null {
+  if (status === BoardStatus.COMPLETED) return 'greenlog';
+  return linesCompleted >= 1 ? 'bingo' : null;
 }
 
 /** The clock's last beat: the end state, held. */

@@ -168,6 +168,7 @@ export {
   momentCounterAt,
   momentFinalBeat,
   momentPosterCells,
+  replayMomentKind,
 } from './boardMoment';
 export type {
   BoardMomentReplay,

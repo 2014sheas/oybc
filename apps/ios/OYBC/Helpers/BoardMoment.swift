@@ -152,6 +152,17 @@ func sortMomentOrder(_ entries: [MomentOrderEntry]) -> [MomentOrderEntry] {
     }
 }
 
+// MARK: - Replay from the Bingos card
+
+/// Which moment a board's Bingos card replays on tap, or nil when it has
+/// nothing to replay: a greenlog board (`.completed`) replays its Greenlog, a
+/// board with at least one line its Bingo. Same criteria as the achievement
+/// triggers and streaks. TS twin: `replayMomentKind` in `boardMoment.ts`.
+func replayMomentKind(status: BoardStatus, linesCompleted: Int) -> MomentTrigger.Kind? {
+    if status == .completed { return .greenlog }
+    return linesCompleted >= 1 ? .bingo : nil
+}
+
 // MARK: - Beat helpers
 
 /// The last beat with anything left to show: bingo — the later of the last
