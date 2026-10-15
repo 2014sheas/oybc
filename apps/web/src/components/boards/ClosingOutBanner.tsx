@@ -21,8 +21,9 @@ export interface ClosingOutBannerProps {
  * the 6.1 recurring-window prompt). Each row: the board name + the window that
  * ended; a click anywhere on the row opens the still-live board to log (the
  * closing window keeps evaluating events until sealed), and the **Close out**
- * button seals it (freezes the snapshot via the seal transaction). The row disappears once the board is sealed (the
- * reactive `useClosingOutBoards` query drops it).
+ * button seals it (freezes the snapshot via the seal transaction). The row
+ * disappears once the board is sealed (the reactive `useClosingOutBoards`
+ * query drops it).
  */
 export function ClosingOutBanner({
   boards,
