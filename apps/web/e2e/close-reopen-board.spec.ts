@@ -120,6 +120,24 @@ test.describe('Close / Reopen a board (Board Edit redesign slice 4)', () => {
     expect(reopened?.reopenedAt).toBeTruthy();
   });
 
+  test('closing-out banner: a tap on the row opens the board; Close out closes it in place', async ({ page }) => {
+    await page.goto('/boards?__oybc_test_bypass=1');
+    const banner = page.getByRole('region', { name: 'Boards ready to close out' });
+    await expect(banner).toBeVisible();
+    // No separate Log button — the row itself is the way in.
+    await expect(banner.getByRole('button', { name: 'Log', exact: true })).toHaveCount(0);
+
+    // A click on the row's caption (not the name button) still opens it.
+    await banner.getByText(/anything left to log\?/).click();
+    await expect(page).toHaveURL(new RegExp(`/boards/${BOARD_ID}`));
+
+    await page.goto('/boards?__oybc_test_bypass=1');
+    await banner.getByRole('button', { name: 'Close out Ship the redesign' }).click();
+    await expect(banner).toHaveCount(0);
+    await expect(page).toHaveURL(/\/boards(\?|$)/);
+    expect((await readBoard(page, BOARD_ID))?.sealedAt).toBeTruthy();
+  });
+
   test('a reopened board never auto-closes and is excluded from the closing-out banner', async ({ page }) => {
     await seedBoard(page, {
       id: BOARD_ID,
