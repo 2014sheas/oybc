@@ -33,7 +33,9 @@ extension BoardPlayView {
                 expiryText: risoExpiryText(board: b),
                 endedText: isSealed ? risoEndedText(board: b) : nil,
                 endedStillLoggingDate: (isEnded && !isSealed) ? risoEndedText(board: b) : nil,
-                onBingosTap: editMode ? nil : replayMomentKind(status: b.status, linesCompleted: b.linesCompleted)
+                onBingosTap: editMode ? nil : replayMomentKind(
+                    status: b.status, completedTasks: b.completedTasks, totalTasks: b.totalTasks, linesCompleted: b.linesCompleted
+                )
                     .map { kind in { replayMoment(kind) } }
             )
             .padding(.horizontal, Riso.gutter)

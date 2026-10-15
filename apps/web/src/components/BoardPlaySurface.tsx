@@ -538,7 +538,7 @@ export function BoardPlaySurface({
               isSealed={isSealed} isEnded={isEnded} timeframe={board.timeframe}
               endDate={board.endDate} nowPinned={nowPinned}
             />
-            <BingosStatCard status={board.status} linesCompleted={board.linesCompleted} onReplay={replayMoment} />
+            <BingosStatCard board={board} onReplay={replayMoment} />
           </div>
         </aside>
       )}

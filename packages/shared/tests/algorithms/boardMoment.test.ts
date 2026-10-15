@@ -282,15 +282,20 @@ describe('momentPosterCells vectors', () => {
 });
 
 describe('replayMomentKind', () => {
+  const k = (status: BoardStatus, completedTasks: number, linesCompleted: number, totalTasks = 9) =>
+    replayMomentKind({ status, completedTasks, totalTasks, linesCompleted });
   it('replays the greenlog on a completed board', () => {
-    expect(replayMomentKind(BoardStatus.COMPLETED, 12)).toBe('greenlog');
+    expect(k(BoardStatus.COMPLETED, 9, 8)).toBe('greenlog');
   });
-  it('replays the bingo on an active board with a line', () => {
-    expect(replayMomentKind(BoardStatus.ACTIVE, 1)).toBe('bingo');
-    expect(replayMomentKind(BoardStatus.ACTIVE, 3)).toBe('bingo');
+  it('replays the greenlog on an archived full board (status no longer COMPLETED)', () => {
+    expect(k(BoardStatus.ARCHIVED, 9, 8)).toBe('greenlog');
+  });
+  it('replays the bingo on a board with a line', () => {
+    expect(k(BoardStatus.ACTIVE, 4, 1)).toBe('bingo');
+    expect(k(BoardStatus.ARCHIVED, 7, 3)).toBe('bingo');
   });
   it('has nothing to replay without a line', () => {
-    expect(replayMomentKind(BoardStatus.ACTIVE, 0)).toBeNull();
-    expect(replayMomentKind(BoardStatus.DRAFT, 0)).toBeNull();
+    expect(k(BoardStatus.ACTIVE, 2, 0)).toBeNull();
+    expect(k(BoardStatus.DRAFT, 0, 0, 0)).toBeNull();
   });
 });

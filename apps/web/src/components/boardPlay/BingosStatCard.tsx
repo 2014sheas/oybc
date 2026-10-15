@@ -1,9 +1,8 @@
-import { replayMomentKind, type BoardStatus, type MomentKind } from '@oybc/shared';
+import { replayMomentKind, type Board, type MomentKind } from '@oybc/shared';
 import play from '../play/Play.module.css';
 
 export interface BingosStatCardProps {
-  status: BoardStatus;
-  linesCompleted: number;
+  board: Pick<Board, 'status' | 'completedTasks' | 'totalTasks' | 'linesCompleted'>;
   /** Re-open the moment the board already earned (bingo or greenlog). */
   onReplay: (kind: MomentKind) => void;
 }
@@ -14,8 +13,9 @@ export interface BingosStatCardProps {
  * the Greenlog on a full board, else the Bingo — so its share sheet is never
  * lost behind "Back to board". With nothing earned it stays a plain card.
  */
-export function BingosStatCard({ status, linesCompleted, onReplay }: BingosStatCardProps): React.ReactElement {
-  const kind = replayMomentKind(status, linesCompleted);
+export function BingosStatCard({ board, onReplay }: BingosStatCardProps): React.ReactElement {
+  const kind = replayMomentKind(board);
+  const { linesCompleted } = board;
   const body = (
     <>
       <div className={play.statK}>Bingos</div>

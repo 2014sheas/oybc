@@ -224,14 +224,18 @@ export function momentCounterAt(beat: number, replay: BoardMomentReplay): number
 
 /**
  * Which moment a board's Bingos card replays on tap, or `null` when it has
- * nothing to replay: a greenlog board (`COMPLETED`) replays its Greenlog, a
- * board with at least one line its Bingo. Same criteria as the achievement
- * triggers and streaks (BINGO = `linesCompleted >= 1`, GREENLOG = full board).
- * Swift twin: `replayMomentKind(status:linesCompleted:)`.
+ * nothing to replay: a full board replays its Greenlog, a board with at least
+ * one line its Bingo. "Full" is `COMPLETED` OR every square counted — an
+ * archived board keeps its counts but not its `COMPLETED` status.
+ * Swift twin: `replayMomentKind(status:completedTasks:totalTasks:linesCompleted:)`.
  */
-export function replayMomentKind(status: BoardStatus, linesCompleted: number): MomentKind | null {
-  if (status === BoardStatus.COMPLETED) return 'greenlog';
-  return linesCompleted >= 1 ? 'bingo' : null;
+export function replayMomentKind(
+  board: Pick<Board, 'status' | 'completedTasks' | 'totalTasks' | 'linesCompleted'>,
+): MomentKind | null {
+  const full = board.status === BoardStatus.COMPLETED
+    || (board.totalTasks > 0 && board.completedTasks >= board.totalTasks);
+  if (full) return 'greenlog';
+  return board.linesCompleted >= 1 ? 'bingo' : null;
 }
 
 /** The clock's last beat: the end state, held. */
