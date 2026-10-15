@@ -28,6 +28,21 @@ enum QuickAddCounterPlacement {
         sharedCounterRootIds(tasks)
     }
 
+    /// Whether the browse surfaces (Tasks tab, Library sheet) hide `task` as
+    /// expired: past its own `endDate` (`TaskExpiry.isTaskExpired`) and NOT a
+    /// counter root. A root created inside a board wizard carries that board's
+    /// window, but it is the counter — a live family whatever its own window —
+    /// so it stays listed. Web twin: `isExpiredForBrowse`.
+    ///
+    /// - Parameters:
+    ///   - task: A library task.
+    ///   - linkedRootIds: `counterRootIds(in:)` over the surface's full task set.
+    ///   - now: Reference time for the expiry check.
+    /// - Returns: True when the surface leaves the row out.
+    static func isExpiredForBrowse(_ task: Task, linkedRootIds: Set<String>, now: Date = Date()) -> Bool {
+        !isSharedCounterRoot(task, linkedRootIds: linkedRootIds) && TaskExpiry.isTaskExpired(task, now: now)
+    }
+
     /// The counters already sub-tasks of this compound draft: a live child
     /// linked to one (staged `sharedCounterId`, or a saved child whose task
     /// links to it), or a root linked as itself. Web twin: `countersInDraft`.

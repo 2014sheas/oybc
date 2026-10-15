@@ -226,11 +226,16 @@ final class SharedCounterGroupsVectorTests: XCTestCase {
         let fixture = try loadFixture()
         XCTAssertFalse(fixture.vectors.isEmpty)
         for v in fixture.vectors {
+            // Inside every vector board's window (`toBoard` ends them
+            // 2026-02-07), so an ACTIVE vector board is "counting now"
+            // whenever the suite runs — the TS runner pins the same instant.
+            let vectorNow = ISO8601DateFormatter().date(from: "2026-02-03T12:00:00Z")!
             let groups = buildSharedCounterGroups(
                 tasks: v.tasks.map(toTask),
                 boardTasks: v.boardTasks.map(toBoardTask),
                 boards: v.boards.map(toBoard),
-                eventsByTaskId: toEvents(v)
+                eventsByTaskId: toEvents(v),
+                memberVisibility: SharedCounterMemberVisibility(showExpired: true, now: vectorNow)
             )
 
             XCTAssertEqual(groups.count, v.expected.count, "Vector '\(v.name)' group count")

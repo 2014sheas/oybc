@@ -112,7 +112,8 @@ struct SharedCounterGroup: Identifiable {
 struct SharedCounterMemberVisibility {
     /// `true` lists expired members too.
     let showExpired: Bool
-    /// Reference time for `isTaskExpired`; injected for deterministic tests.
+    /// Reference time for `isTaskExpired` and for each member's "counting
+    /// now" check; injected for deterministic tests.
     var now: Date = Date()
 }
 
@@ -232,6 +233,7 @@ func buildSharedCounterGroups(
     let liveTasks = tasks.filter { !$0.isDeleted }
     let tasksById = Dictionary(uniqueKeysWithValues: liveTasks.map { ($0.id, $0) })
     let boardsById = Dictionary(uniqueKeysWithValues: boards.map { ($0.id, $0) })
+    let now = memberVisibility?.now ?? Date()
 
     // Map source task id → its linked (derived) tasks. The key set is
     // `sharedCounterRootIds` — every task pointed at by a live
@@ -324,7 +326,9 @@ func buildSharedCounterGroups(
                 ).displayed
             }
             if let b = board { boardIdSet.insert(b.id) }
-            let isActive = board?.status == .active
+            // "Counting now" is the Boards tab's in-play rule, not the stored
+            // status — a board past its endDate (or closed) stays ACTIVE in the row.
+            let isActive = board.map { isBoardActiveForList($0, now: now) } ?? false
             if isActive { activeCount += 1 }
 
             // Window from the task's own timeframe/startDate; falls back to its board's.

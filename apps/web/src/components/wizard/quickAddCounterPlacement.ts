@@ -2,6 +2,7 @@ import {
   TaskType,
   Timeframe,
   counterDisplayName,
+  isTaskExpired,
   placementGoalForCounter,
   renderCounterTitle,
   resolveCountKind,
@@ -39,6 +40,21 @@ export function isSharedCounterRoot(task: Task, linkedRootIds: ReadonlySet<strin
 }
 
 const NO_IDS: ReadonlySet<string> = new Set();
+
+/**
+ * Is this task one the browse surfaces (Tasks tab, Library sheet) hide as
+ * expired: past its own `endDate` (`isTaskExpired`) and NOT a counter root. A
+ * root created inside a board wizard carries that board's window, but it is
+ * the counter — a live family whatever its own window — so it stays listed.
+ * iOS twin: `QuickAddCounterPlacement.isExpiredForBrowse`.
+ *
+ * @param task - A library task.
+ * @param linkedRootIds - {@link counterRootIdsIn} over the surface's full task set.
+ * @param now - Reference time for the expiry check.
+ */
+export function isExpiredForBrowse(task: Task, linkedRootIds: ReadonlySet<string>, now: Date = new Date()): boolean {
+  return !isSharedCounterRoot(task, linkedRootIds) && isTaskExpired(task, now);
+}
 
 /**
  * The counter roots in a surface's FULL task set (`sharedCounterRootIds`: a

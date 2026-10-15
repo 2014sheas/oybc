@@ -24,6 +24,9 @@ import type { TaskEvent } from '../../src/types/taskEvent';
 
 const FIXTURE_PATH = path.join(__dirname, '../fixtures/sharedCounterGroupsVectors.json');
 const TS = '2026-02-01T12:00:00.000Z';
+/** Inside every vector board's window (`toBoard` ends them 2026-02-07), so an
+ *  ACTIVE vector board is "counting now" whenever the suite runs. */
+const VECTOR_NOW = new Date('2026-02-03T12:00:00.000Z');
 
 interface MiniTask {
   id: string;
@@ -495,6 +498,55 @@ describe('primary-board resolution excludes tombstoned placements', () => {
     expect(groups[0].tasks[0].isActive).toBe(false);
   });
 
+  it('a member whose board is ACTIVE but past its endDate (or closed) is not counting now', () => {
+    const source = toTask({
+      id: 'src',
+      title: 'Source',
+      currentCount: 10,
+      maxCount: null,
+      sharedCounterId: null,
+      baseline: null,
+      isDeleted: false,
+      isCounter: true,
+    });
+    const member = toTask({
+      id: 'm',
+      title: 'Member',
+      currentCount: 10,
+      maxCount: 5,
+      sharedCounterId: 'src',
+      baseline: 0,
+      isDeleted: false,
+    });
+    const ended = toBoard({ id: 'ended', name: 'June', status: BoardStatus.ACTIVE, isDeleted: false });
+    const closed = {
+      ...toBoard({ id: 'closed', name: 'Closed', status: BoardStatus.ACTIVE, isDeleted: false }),
+      endDate: '2026-02-28T12:00:00.000Z',
+      sealedAt: '2026-02-05T12:00:00.000Z',
+    };
+    const build = (now: Date) =>
+      buildSharedCounterGroups({
+        tasks: [source, member],
+        boards: [ended, closed],
+        boardTasks: [
+          { taskId: 'src', boardId: 'ended' },
+          { taskId: 'm', boardId: 'closed' },
+        ].map(toBoardTask),
+        memberVisibility: { showExpired: true, now },
+      });
+
+    // Inside the window: the stored status and the in-play rule agree.
+    const live = build(new Date('2026-02-03T12:00:00.000Z'));
+    expect(live[0].tasks.find((t) => t.taskId === 'src')?.isActive).toBe(true);
+    expect(live[0].tasks.find((t) => t.taskId === 'm')?.isActive).toBe(false); // closed
+    expect(live[0].activeTaskCount).toBe(1);
+    // After the window: still `status: active` in the row, no longer counting now.
+    const later = build(new Date('2026-03-01T12:00:00.000Z'));
+    expect(later[0].tasks.find((t) => t.taskId === 'src')?.isActive).toBe(false);
+    expect(later[0].tasks.find((t) => t.taskId === 'src')?.boardId).toBe('ended');
+    expect(later[0].activeTaskCount).toBe(0);
+  });
+
   it('a member with both a tombstoned and a live placement resolves to the live board', () => {
     const source = toTask({
       id: 'src',
@@ -535,6 +587,7 @@ describe('buildSharedCounterGroups (fixture-driven, tests/fixtures/sharedCounter
         boards: v.boards.map(toBoard),
         boardTasks: v.boardTasks.map(toBoardTask),
         eventsByTaskId: toVectorEvents(v),
+        memberVisibility: { showExpired: true, now: VECTOR_NOW },
       });
 
       expect(groups).toHaveLength(v.expected.length);

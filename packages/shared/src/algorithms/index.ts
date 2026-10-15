@@ -335,7 +335,13 @@ export type {
 
 export { isTaskExpired } from './taskExpiry';
 
-export { activeBoardPlacementCounts, compareBoardsForList, isBoardActiveForList } from './boardListSort';
+export {
+  activeBoardPlacementCounts,
+  boardPlacementStatus,
+  compareBoardsForList,
+  isBoardActiveForList,
+  type BoardPlacementStatus,
+} from './boardListSort';
 
 export { computeBrowsableTasks, isGoalLessCounter } from './browsableTasks';
 

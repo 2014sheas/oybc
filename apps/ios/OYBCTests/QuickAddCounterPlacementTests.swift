@@ -45,6 +45,38 @@ final class QuickAddCounterPlacementTests: XCTestCase {
         XCTAssertFalse(QuickAddCounterPlacement.isSharedCounterRoot(plain))
     }
 
+    /// Owner bug report 2026-10-14: a counter root born in a June board's wizard
+    /// carries June's window, yet it is the counter — the Tasks tab and the
+    /// Library sheet keep listing it while hiding ordinary expired rows.
+    func testExpiredForBrowse_exemptsCounterRoots() {
+        let now = ISO8601DateFormatter().date(from: "2026-10-14T12:00:00Z")!
+        func june(_ t: Task) -> Task {
+            var t = t
+            t.timeframe = .monthly
+            t.startDate = "2026-06-01T00:00:00.000"
+            t.endDate = "2026-06-30T23:59:59.999"
+            return t
+        }
+        XCTAssertFalse(QuickAddCounterPlacement.isExpiredForBrowse(june(counting(isCounter: true)), linkedRootIds: [], now: now))
+        XCTAssertFalse(QuickAddCounterPlacement.isExpiredForBrowse(
+            june(counting(goals: CounterTimeframeGoals(daily: 100))), linkedRootIds: [], now: now
+        ))
+        var plain = june(counting(id: "p"))
+        plain.maxCount = 100
+        let copy = june(counting(id: "c", sharedCounterId: "p"))
+        let ids = QuickAddCounterPlacement.counterRootIds(in: [plain, copy])
+        XCTAssertFalse(QuickAddCounterPlacement.isExpiredForBrowse(plain, linkedRootIds: ids, now: now)) // linked-to → a root
+        XCTAssertTrue(QuickAddCounterPlacement.isExpiredForBrowse(plain, linkedRootIds: [], now: now))
+        XCTAssertTrue(QuickAddCounterPlacement.isExpiredForBrowse(copy, linkedRootIds: ids, now: now))
+        var normal = june(counting())
+        normal.type = .normal
+        XCTAssertTrue(QuickAddCounterPlacement.isExpiredForBrowse(normal, linkedRootIds: [], now: now))
+        // In its window, or without an endDate: never expired.
+        let inWindow = ISO8601DateFormatter().date(from: "2026-06-15T12:00:00Z")!
+        XCTAssertFalse(QuickAddCounterPlacement.isExpiredForBrowse(plain, linkedRootIds: [], now: inWindow))
+        XCTAssertFalse(QuickAddCounterPlacement.isExpiredForBrowse(counting(), linkedRootIds: [], now: now))
+    }
+
     /// The compound editor's sub-task search lists every counter root as the
     /// counter (with or without its own goal), after the eligible tasks.
     func testCompoundSubCandidatesListEveryCounter() {

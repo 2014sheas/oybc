@@ -340,6 +340,35 @@ func activeBoardPlacementCounts(_ boardTasks: [BoardTask], boards: [Board], now:
     return byTask.mapValues(\.count)
 }
 
+/// A board "still in play": ACTIVE status, not sealed, not past its endDate —
+/// the Boards tab's "active" notion, for every surface that says "active" of a
+/// board (usage counts, the hub's "counting now", Task Detail). TS twin:
+/// `isBoardActiveForList`.
+///
+/// - Parameters:
+///   - board: The board to classify.
+///   - now: Reference time for the ended check.
+/// - Returns: `true` when the board is still in play.
+func isBoardActiveForList(_ board: Board, now: Date = Date()) -> Bool {
+    isActiveForSort(board, now: now)
+}
+
+/// The status word a task's Usage list (Task Detail) shows for one of its
+/// boards — the Boards tab's classification, not the stored `status`, which
+/// stays ACTIVE on a board that was closed or whose window ended: `"closed"`
+/// when sealed (any status), `"expired"` for an ACTIVE board past its endDate,
+/// else the stored status raw value. TS twin: `boardPlacementStatus`.
+///
+/// - Parameters:
+///   - board: The placed-on board.
+///   - now: Reference time for the ended check.
+/// - Returns: A lowercase status word.
+func boardPlacementStatus(_ board: Board, now: Date = Date()) -> String {
+    if board.sealedAt != nil { return "closed" }
+    if board.status == .active, isBoardExpiredAt(board, now: now) { return "expired" }
+    return board.status.rawValue
+}
+
 /// A board "still in play": ACTIVE status, not sealed, not past its endDate.
 private func isActiveForSort(_ board: Board, now: Date) -> Bool {
     guard board.status == .active else { return false }

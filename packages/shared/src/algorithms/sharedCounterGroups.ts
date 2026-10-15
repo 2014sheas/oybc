@@ -43,6 +43,7 @@ import {
   resolveTaskWindowState,
 } from './taskEvents';
 import { isTaskExpired } from './taskExpiry';
+import { isBoardActiveForList } from './boardListSort';
 
 /**
  * One member task of a shared counter, resolved to its board placement +
@@ -77,8 +78,10 @@ export interface SharedCounterMemberTask {
   met: boolean;
   /** `logged - goal` when over the goal, else 0 (for the "N over" caption). */
   over: number;
-  /** True when this task is "counting now" — its board is ACTIVE. Draft /
-   *  completed / archived / placeless tasks are inactive ("Not counting now"). */
+  /** True when this task is "counting now" — its board is still in play
+   *  ({@link isBoardActiveForList}: ACTIVE, not closed, not past its endDate).
+   *  Draft / completed / archived / closed / ended / placeless tasks are
+   *  inactive ("Not counting now"). */
   isActive: boolean;
 }
 
@@ -162,8 +165,8 @@ export interface BuildSharedCounterGroupsInput {
 export interface SharedCounterMemberVisibility {
   /** `true` lists expired members too. */
   showExpired: boolean;
-  /** Reference time for `isTaskExpired`; defaults to `new Date()` — inject
-   *  it in tests. */
+  /** Reference time for `isTaskExpired` and for each member's "counting
+   *  now" check; defaults to `new Date()` — inject it in tests. */
   now?: Date;
 }
 
@@ -268,6 +271,7 @@ export function buildSharedCounterGroups(
   const tasks = input.tasks.filter((t) => !t.isDeleted);
   const tasksById = new Map<string, Task>(tasks.map((t) => [t.id, t]));
   const boardsById = new Map<string, Board>(input.boards.map((b) => [b.id, b]));
+  const now = input.memberVisibility?.now ?? new Date();
 
   // Source task ids = every task pointed at by a live linked task's
   // `sharedCounterId`, PLUS the P5 hub-born counters (a COUNTING task flagged
@@ -348,7 +352,9 @@ export function buildSharedCounterGroups(
       }
 
       if (board) boardIds.add(board.id);
-      const isActive = board?.status === BoardStatus.ACTIVE;
+      // "Counting now" is the Boards tab's in-play rule, not the stored
+      // status — a board past its endDate (or closed) stays ACTIVE in the row.
+      const isActive = board != null && isBoardActiveForList(board, now);
       if (isActive) activeCount += 1;
 
       // Window from the task's own timeframe/date (falls back to its board's).

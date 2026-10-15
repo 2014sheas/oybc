@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
-import { PARENT_TIMEFRAMES, TaskType, isTaskExpired, type CompoundChild, type Task, type Timeframe } from '@oybc/shared';
+import { PARENT_TIMEFRAMES, TaskType, type CompoundChild, type Task, type Timeframe } from '@oybc/shared';
 import { useModalA11y } from '../../hooks/useModalA11y';
 import { RisoChip, RisoTypeBadge } from '../riso';
 import { rowCounterTagName, taskSearchMatchesWithCounter } from '../counters/rowCounterTagName';
 import { UnitTag } from '../counters/UnitTag';
+import { counterRootIdsIn, isExpiredForBrowse } from './quickAddCounterPlacement';
 import { renderTaskRow } from './TaskRow';
 import stepStyles from './BoardWizardTasksStep.module.css';
 import styles from './LibrarySheet.module.css';
@@ -132,7 +133,10 @@ export function LibrarySheet({
     // its stored "Read 35 pages" (owner ruling 2026-09-22). Twin of iOS
     // `RisoLibrarySheetView.matches`.
     const matches = (t: Task): boolean => taskSearchMatchesWithCounter(searchQuery, t, effectiveTaskMap);
-    const notExpired = (t: Task): boolean => !isTaskExpired(t);
+    // Expired tasks are left out — except a counter root, which is the
+    // counter whatever window its creation board stamped on it.
+    const rootIds = counterRootIdsIn(effectiveTaskMap);
+    const notExpired = (t: Task): boolean => !isExpiredForBrowse(t, rootIds);
 
     if (activeFilter === 'from-parents') {
       const filtered = parentBoardTasks.filter((t) => notExpired(t) && matches(t));
