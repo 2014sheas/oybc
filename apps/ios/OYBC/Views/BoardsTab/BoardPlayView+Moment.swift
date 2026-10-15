@@ -45,7 +45,11 @@ extension BoardPlayView {
                     MomentIntent.startNewBoard()
                 }
             )
-            .ignoresSafeArea()
+            // The field bleeds edge to edge on its own (`field.ignoresSafeArea()`
+            // inside); the content keeps the safe-area insets so the kicker
+            // clears the status bar. The tab bar steps aside for the moment —
+            // its buttons sit above the home indicator, not behind the bar.
+            .toolbar(.hidden, for: .tabBar)
             .transition(.opacity)
             .zIndex(20)
         }

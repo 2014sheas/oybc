@@ -2,6 +2,7 @@ import { useEffect, useCallback, useState, useRef } from 'react';
 import { useModalA11y } from '../hooks/useModalA11y';
 import { TypeBadge } from './TypeBadge';
 import styles from './InteractiveTaskSquare.module.css';
+import stepperStyles from './CounterStepper.module.css';
 import { customChipLabel, formatCount, formatCountWithUnit, type CountKind } from '@oybc/shared';
 import {
   progressFraction,
@@ -831,27 +832,32 @@ export function DetailModal({
                     {child.title}
                   </span>
                   {child.count && (
-                    <span className={styles.compoundChildStepper}>
+                    // The kit's compact count pill (`CounterStepper` `compact`),
+                    // read-only in the middle — the count is driven, never typed.
+                    <span className={stepperStyles.compactPill}>
                       <button
                         type="button"
-                        className={styles.compoundChildStepBtn}
+                        className={stepperStyles.compactButton}
                         disabled={child.count.current <= 0 || !onCompoundChildIncrement}
                         onClick={() => onCompoundChildIncrement?.(child.taskId, -1)}
                         aria-label={`Remove ${formatCountWithUnit(child.count.step, child.count.kind, child.count.unit)} from ${child.title}`}
                       >
                         −
                       </button>
-                      <span className={styles.compoundChildCount}>
+                      <span
+                        className={styles.compoundChildCount}
+                        aria-label={`${formatCount(child.count.current, child.count.kind)} of ${formatCountWithUnit(child.count.max, child.count.kind, child.count.unit)}`}
+                      >
                         {formatCount(child.count.current, child.count.kind)} / {formatCount(child.count.max, child.count.kind)}
                       </span>
                       <button
                         type="button"
-                        className={styles.compoundChildStepBtn}
+                        className={stepperStyles.compactButton}
                         disabled={!onCompoundChildIncrement}
                         onClick={() => onCompoundChildIncrement?.(child.taskId, 1)}
                         aria-label={`Add ${formatCountWithUnit(child.count.step, child.count.kind, child.count.unit)} to ${child.title}`}
                       >
-                        +
+                        ＋
                       </button>
                     </span>
                   )}

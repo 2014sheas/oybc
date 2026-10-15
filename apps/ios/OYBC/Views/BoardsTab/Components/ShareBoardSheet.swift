@@ -393,30 +393,36 @@ private struct ShareTargetButton: View {
     let foreground: Color
     let action: () -> Void
 
+    /// The icon tile's side. A fixed size: inside the four-up `HStack` the
+    /// old `maxWidth: .infinity` + `aspectRatio(1)` pair had no definite
+    /// width to square against, so the tiles collapsed over their labels.
+    private static let tileSide: CGFloat = 56
+
     var body: some View {
-        Button(action: action) {
-            VStack(spacing: 7) {
+        VStack(spacing: 7) {
+            // The tile is the button; its hard shadow belongs to the tile
+            // alone (the label sits under it, unshadowed).
+            Button(action: action) {
                 Image(systemName: systemImage)
                     .font(.system(size: 22, weight: .semibold))
                     .foregroundStyle(foreground)
-                    .frame(maxWidth: .infinity)
-                    .aspectRatio(1, contentMode: .fit)
-                    .background(
-                        RoundedRectangle(cornerRadius: 14)
-                            .fill(fill)
-                    )
+                    .frame(width: Self.tileSide, height: Self.tileSide)
+                    .background(RoundedRectangle(cornerRadius: 14).fill(fill))
                     .overlay(
                         RoundedRectangle(cornerRadius: 14)
                             .strokeBorder(Color.risoInk, lineWidth: Riso.Keyline.container)
                     )
-                Text(label)
-                    .font(.risoHead(10.5, .bold))
-                    .foregroundStyle(Color.risoInk)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.8)
             }
+            .buttonStyle(ShareTargetButtonStyle())
+            .accessibilityLabel(label)
+            Text(label)
+                .font(.risoHead(10.5, .bold))
+                .foregroundStyle(Color.risoInk)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+                .accessibilityHidden(true)
         }
-        .buttonStyle(ShareTargetButtonStyle())
+        .frame(maxWidth: .infinity)
     }
 }
 
