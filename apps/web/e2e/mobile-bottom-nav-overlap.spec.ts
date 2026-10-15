@@ -109,7 +109,7 @@ test.describe('Mobile bottom nav never covers sheets / toasts (390)', () => {
     await expect(sheet).toBeVisible();
     await expectSheetOverNav(sheet);
     // The bottom-anchored dashed row is tappable and acts (opens the special-type panel).
-    await sheet.getByRole('button', { name: /Add a counting, compound or achievement task/ }).click();
+    await sheet.getByRole('button', { name: /Counting · Compound · Achievement/ }).click();
     await expect(sheet.getByRole('button', { name: 'Counting', exact: true })).toBeVisible();
   });
 

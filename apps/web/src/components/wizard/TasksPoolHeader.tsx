@@ -91,7 +91,7 @@ export function TasksPoolHeader({
             {centerSatisfied ? '★' : '☆'}
           </span>
           <span className={centerSatisfied ? styles.centerLabelOn : styles.centerLabelOff}>
-            {centerSatisfied ? 'Center task chosen' : 'Tap ☆ on a pool task to set the center'}
+            {centerSatisfied ? 'Center task chosen' : 'No center yet'}
           </span>
         </div>
       )}

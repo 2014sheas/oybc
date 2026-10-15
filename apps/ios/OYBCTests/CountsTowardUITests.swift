@@ -402,7 +402,8 @@ final class CountsTowardUITests: XCTestCase {
         let payload = try XCTUnwrap(toast(db, written: simple, before: before, undo: .uncomplete(taskId: simple, boardTaskId: "bt1")))
         XCTAssertEqual(payload.undo, .uncomplete(taskId: simple, boardTaskId: "bt1"))
         XCTAssertEqual(payload.amount, 1)
-        XCTAssertTrue(payload.message.contains("also counted on Board e2"), payload.message)
+        XCTAssertTrue(payload.message.hasPrefix("+"), payload.message)
+        XCTAssertFalse(payload.message.contains("Board e2"), payload.message)
     }
 
     func test_toast_countingGoalReached_undoRestoresPreviousCount() throws {

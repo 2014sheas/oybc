@@ -39,9 +39,7 @@ export function buildPoolRowSubtitle(
       break;
     }
     case TaskType.ACHIEVEMENT: {
-      const trigger = task.achievementTrigger === AchievementTrigger.BINGO ? 'First Bingo' : 'GREENLOG';
-      const target = task.referencedBoardId ? 'a board' : 'a repeating board';
-      base = `Watch ${target} · ${trigger}`;
+      base = task.achievementTrigger === AchievementTrigger.BINGO ? 'First Bingo' : 'GREENLOG';
       break;
     }
     default:

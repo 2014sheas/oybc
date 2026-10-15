@@ -374,10 +374,6 @@ struct StreaksContent: View {
             Text("No completed boards yet")
                 .font(.risoBody(14, .semibold))
                 .foregroundStyle(Color.risoMuted)
-            Text("Complete all tasks on any board to add it here.")
-                .font(.risoBody(12, .regular))
-                .foregroundStyle(Color.risoMuted.opacity(0.7))
-                .multilineTextAlignment(.center)
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 28)

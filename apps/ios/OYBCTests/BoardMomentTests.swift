@@ -69,7 +69,7 @@ final class BoardMomentTests: XCTestCase {
         XCTAssertEqual(lost.message, "Bingo lost: row_0")
         let reactivated = BoardFlashOutcome.resolve(wasReactivated: true, lost: ["row_0"], gained: [], didGreenlog: false)
         XCTAssertNil(reactivated.moment)
-        XCTAssertEqual(reactivated.message, "Board reactivated — no longer complete")
+        XCTAssertEqual(reactivated.message, "No longer complete")
     }
 
     func test_flash_nothingChanged() {

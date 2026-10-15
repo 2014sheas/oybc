@@ -22,17 +22,16 @@ const ATTENTION_COPY: Record<
   SpawnPoolFailureReason | 'no_pool_tasks_resolved' | 'spawn_failed' | 'source_board_missing',
   string
 > = {
-  pool_too_small: 'Mix is too small for the current configuration. Edit tasks to add more.',
-  has_deleted_tasks: 'A task in this mix was deleted. Edit tasks to refresh it.',
-  unsupported_timeframe: "This board's timeframe is no longer supported.",
-  unsupported_center: "This board's center cell is no longer supported.",
-  no_pool_tasks_resolved: "None of this board's tasks could be loaded. Edit tasks to refresh it.",
-  spawn_failed: "Couldn't make the next board. Try editing tasks to refresh it.",
+  pool_too_small: 'Not enough tasks',
+  has_deleted_tasks: 'A task was deleted',
+  unsupported_timeframe: 'Timeframe no longer supported',
+  unsupported_center: 'Center square no longer supported',
+  no_pool_tasks_resolved: "Tasks couldn't be loaded",
+  spawn_failed: "Couldn't make the next board",
   // Board Sources P3 — a pulled board-kind source's board is deleted or
   // archived; the next window waits until the source is removed (Edit
   // tasks) or the repeating board is paused.
-  source_board_missing:
-    'It pulls from a board that was deleted or archived. Edit tasks to remove that source.',
+  source_board_missing: 'A source board was deleted or archived',
 };
 
 export interface RepeatingBoardRowProps {

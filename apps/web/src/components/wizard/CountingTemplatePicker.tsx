@@ -140,7 +140,7 @@ export function CountingTemplatePicker({
             aria-expanded={open}
             aria-haspopup="listbox"
           >
-            Use existing counting task as template...
+            Copy a counting task…
           </button>
           {open && (
             <div className={styles.dropdown} role="listbox" aria-label="Counting task templates">

@@ -630,13 +630,11 @@ final class BoardPlayViewModelTests: XCTestCase {
         XCTAssertTrue(waitUntil { vm.flashEvent?.creditToast != nil },
                       "credit toast flash event never published for the OTHER board")
         let payload = try XCTUnwrap(vm.flashEvent?.creditToast)
-        XCTAssertTrue(payload.message.contains("Board b2"))
-        // R3: pinned copy contract — "+{N} {counterName} — also counted on
-        // {board list}." `c-src` has action "Do" + unit "reps" (no title
+        // Pinned copy contract — "+{N} {counterName}". `c-src` has action "Do" + unit "reps" (no title
         // override), so the pair-derived counter name is "Reps" — proves
         // this reads `formatCounterName` and NOT the stored title ("Task
         // c-src"), which is exactly what R3's `counterDisplayName` fix targets.
-        XCTAssertEqual(payload.message, "+1 Reps — also counted on Board b2.")
+        XCTAssertEqual(payload.message, "+1 Reps")
         XCTAssertEqual(payload.sourceTaskId, "c-src")
         XCTAssertEqual(payload.amount, 1)
     }

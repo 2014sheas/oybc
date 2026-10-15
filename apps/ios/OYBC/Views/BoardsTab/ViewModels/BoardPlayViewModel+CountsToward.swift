@@ -91,7 +91,7 @@ extension BoardPlayViewModel {
         }
     }
 
-    /// The "also counted on …" toast, ONLY when the write + cascade just made
+    /// The "+N {counter}" credit toast, ONLY when the write + cascade just made
     /// NEW live credits (diffed against `snapshot`) that a contributor placed on
     /// THIS board owns (`candidateContributionIds`), AND the counter has squares
     /// (root or live copies) on OTHER non-deleted, non-draft boards whose window
@@ -157,7 +157,7 @@ extension BoardPlayViewModel {
                     sourceTaskId: root, amount: amount, unit: "", isIncrement: true,
                     message: sharedCreditToastText(
                         counterName: CounterSettings.counterDisplayName(rootTask), amount: amount, kind: kind,
-                        otherBoards: others, isIncrement: true
+                        isIncrement: true
                     ),
                     undo: undo
                 )

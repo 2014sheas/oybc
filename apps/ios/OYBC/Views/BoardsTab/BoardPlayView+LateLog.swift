@@ -53,7 +53,7 @@ extension BoardPlayView {
                 .padding(.top, 8)
         }
         if isBoardLocked {
-            Text("Board closed — a permanent record")
+            Text("Board closed")
                 .font(.risoBody(12, .semibold))
                 .foregroundStyle(Color.risoRed)
                 .padding(.horizontal, Riso.gutter)

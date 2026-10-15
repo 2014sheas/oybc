@@ -496,7 +496,6 @@ struct BoardWizardTasksStepView: View {
                         centerTaskId = (centerTaskId == taskId) ? nil : taskId
                     },
                     onEdit: { taskId in openEditor(taskId) },
-                    sharedCountByTaskId: taskBoardCounts,
                     counterGoalWindow: pickWindow,
                     editingTaskId: editingTaskId,
                     editor: { task in

@@ -74,7 +74,7 @@ Screen gutter 20px · card padding 13–16px · grid gap 7px (board cells) · li
 
 First-run only (gated on a persisted flag; cleared, it replays). Full-bleed paper, no tab bar.
 
-- **Three intro slides** (horizontal, swipe or Next): each is centered art + left-aligned copy. (1) red-filled poster grid + kicker "Welcome to" / wordmark **OYBC** (64px) / "Own Your Bingo Card…"; (2) a board with one row + a diagonal lit, gold rings on the bingo line + kicker "The idea" / "Fill squares, score bingos."; (3) full red board + "The payoff" / "Clear it for a GREENLOG." Progress is a row of dots (active dot is a stretched red pill). **Skip** top-right on every slide; **Back** appears from slide 2.
+- **Three intro slides** (horizontal, swipe or Next): each is centered art + left-aligned copy. (1) red-filled poster grid + kicker "Welcome to" / wordmark **OYBC** (64px) / "On Your Bingo Card…"; (2) a board with one row + a diagonal lit, gold rings on the bingo line + kicker "The idea" / "Fill squares, score bingos."; (3) full red board + "The payoff" / "Clear it for a GREENLOG." Progress is a row of dots (active dot is a stretched red pill). **Skip** top-right on every slide; **Back** appears from slide 2.
 - **Sign-in panel** (after slide 3 → "Get started"): centered mini-board art (top row lit), kicker "One last thing", "Save your streak.", body, then **Continue with Apple** (ink-fill pill, Apple glyph), **Continue with email** (keyline pill), and a muted **Maybe later**. All three dismiss onboarding into Boards home. Wire Apple to real Sign in with Apple; "Maybe later" = anonymous/local.
 - Entrance: each slide slides in (transform only — never gate content on opacity, so first paint and reduced-motion always show it).
 - Prototype: clears on the "Replay onboarding" tweak; hash `#onboard`.
@@ -105,7 +105,7 @@ First-run only (gated on a persisted flag; cleared, it replays). Full-bleed pape
 
 Bottom sheet opened from GREENLOG's "Share my board" (prototype hash `#share`; tweak button). The GREENLOG stays underneath.
 
-- **Shareable poster card**: blue card with halftone overprint, 2px keyline + 4px hard shadow. Top row: green **GREENLOG** badge + **OYBC** wordmark. Board name (22px). Full 5×5 mini grid (red done cells with halftone, gold FREE center). Optional stat trio (Squares / Bingos / Streak as paper cards). Footer caps "OWN YOUR BINGO CARD". This card is what gets rendered to an image for sharing.
+- **Shareable poster card**: blue card with halftone overprint, 2px keyline + 4px hard shadow. Top row: green **GREENLOG** badge + **OYBC** wordmark. Board name (22px). Full 5×5 mini grid (red done cells with halftone, gold FREE center). Optional stat trio (Squares / Bingos / Streak as paper cards). Footer caps "ON YOUR BINGO CARD". This card is what gets rendered to an image for sharing.
 - **Include stats toggle** (ink pill switch) shows/hides the stat trio on the card.
 - **Copy link** row (keyline card + hard shadow): link icon + `oybc.app/b/…`; tap → turns green, icon → check, label → "Link copied".
 - **Targets**: 4 keyline icon-squares (hard shadow, press-collapse) — Messages (green), Stories (red), Save image (ink), More (paper). Wire to the iOS share sheet / `UIActivityViewController`; "Save image" renders the poster card to Photos.

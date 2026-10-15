@@ -391,7 +391,7 @@ final class CreateFormViewModel {
             // only commits when the wizard saves the board. Wording
             // reflects that so the user doesn't think the task already
             // exists in their library.
-            let successText = "Pending: \"\(resolvedTitle)\" — saved with the board"
+            let successText = "Added \"\(resolvedTitle)\""
             successMessage = successText
             resetForm()
             onTaskCreated(taskId, resolvedTitle, resolvedType.rawValue)
@@ -436,7 +436,7 @@ final class CreateFormViewModel {
                 DispatchQueue.main.async {
                     self.isSubmitting = false
                     onTaskCreated(taskId, resolvedTitle, resolvedType.rawValue)
-                    let successText = "Created & added to pool: \"\(resolvedTitle)\""
+                    let successText = "Added \"\(resolvedTitle)\""
                     self.successMessage = successText
                     self.resetForm()
                     onLibraryReloadRequested()
@@ -772,7 +772,7 @@ final class CreateFormViewModel {
                 childLinks: childLinks
             )
             isSubmitting = false
-            let successText = "Pending: \"\(trimmedTitle)\" — saved with the board"
+            let successText = "Added \"\(trimmedTitle)\""
             successMessage = successText
             onTaskCreated(compoundId, trimmedTitle, TaskType.compound.rawValue)
             onPendingCreated?(payload)
@@ -808,7 +808,7 @@ final class CreateFormViewModel {
                 DispatchQueue.main.async {
                     self.isSubmitting = false
                     onTaskCreated(compoundId, trimmedTitle, TaskType.compound.rawValue)
-                    let successText = "Created & added to pool: \"\(trimmedTitle)\""
+                    let successText = "Added \"\(trimmedTitle)\""
                     self.successMessage = successText
                     onLibraryReloadRequested()
                     DispatchQueue.main.asyncAfter(deadline: .now() + 3) {

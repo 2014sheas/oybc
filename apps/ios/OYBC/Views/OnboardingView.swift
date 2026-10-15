@@ -225,11 +225,6 @@ struct OnboardingView: View {
                 .tracking(slide.art == .wordmark ? -1.92 : -1.02)
                 .foregroundStyle(Color.risoInk)
                 .fixedSize(horizontal: false, vertical: true)
-
-            Text(slide.body)
-                .font(.risoBody(15, .regular))
-                .foregroundStyle(Color.risoMuted)
-                .fixedSize(horizontal: false, vertical: true)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .id(slideIndex) // forces SwiftUI to re-create the view so the
@@ -324,12 +319,6 @@ struct OnboardingView: View {
                     .font(.risoHead(28, .extraBold))
                     .tracking(-0.56)
                     .foregroundStyle(Color.risoInk)
-                    .multilineTextAlignment(.center)
-                    .padding(.bottom, 12)
-
-                Text("Sign in so your boards sync across your devices and your GREENLOG history never resets.")
-                    .font(.risoBody(14, .regular))
-                    .foregroundStyle(Color.risoMuted)
                     .multilineTextAlignment(.center)
                     .padding(.bottom, 28)
 
@@ -462,7 +451,7 @@ struct OnboardingView: View {
             advanceToNotif()
         } catch {
             errorMessage = Self.isOfflineError(error)
-                ? "You're offline. Connect once to start as a guest — then the app works offline."
+                ? "You're offline. Connect to continue as a guest."
                 : error.localizedDescription
         }
     }
@@ -529,30 +518,26 @@ struct OnboardingView: View {
 
 // MARK: - Slide model
 
-/// A single intro slide: kicker, title, body copy, and art kind.
+/// A single intro slide: kicker, title, and art kind.
 private struct OnboardingSlide {
     let kicker: String
     let title: String
-    let body: String
     let art: OnboardingArt
 
     static let all: [OnboardingSlide] = [
         OnboardingSlide(
             kicker: "Welcome to",
             title: "OYBC",
-            body: "Own Your Bingo Card. Turn the goals you keep meaning to hit into a board you actually want to fill.",
             art: .wordmark
         ),
         OnboardingSlide(
             kicker: "The idea",
             title: "Fill squares,\nscore bingos.",
-            body: "Every square is a habit or goal. Complete a row, column, or diagonal and it locks in as a bingo.",
             art: .lines
         ),
         OnboardingSlide(
             kicker: "The payoff",
             title: "Clear it for a\nGREENLOG.",
-            body: "Fill the whole board and the page goes loud — confetti, streaks, the works. Then you start fresh.",
             art: .full
         ),
     ]

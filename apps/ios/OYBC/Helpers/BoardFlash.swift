@@ -39,7 +39,7 @@ struct BoardFlashOutcome: Equatable {
     ) -> BoardFlashOutcome {
         let lost = lost.sorted(), gained = gained.sorted()
         if wasReactivated {
-            return BoardFlashOutcome(message: "Board reactivated — no longer complete", moment: nil)
+            return BoardFlashOutcome(message: "No longer complete", moment: nil)
         }
         if !lost.isEmpty {
             return BoardFlashOutcome(message: "Bingo lost: \(lost.joined(separator: ", "))", moment: nil)

@@ -270,15 +270,7 @@ export function BuildStep({
           ))}
 
           {subtasks.length === 0 && (
-            <div className={styles.emptyState}>
-              {allowEmpty ? (
-                'No subtasks yet.'
-              ) : (
-                <>
-                  No subtasks. Tap a row below or use <strong>+ New task</strong>.
-                </>
-              )}
-            </div>
+            <div className={styles.emptyState}>No subtasks yet.</div>
           )}
         </div>
       </div>
@@ -327,14 +319,14 @@ export function BuildStep({
         <div className={styles.libraryList}>
           {showEmptyLibrary && (
             <div className={styles.libraryEmptyState}>
-              Library is empty — tap <strong>+ New task</strong> to create one.
+              No tasks yet.
             </div>
           )}
           {showNoMatches && (
             <div className={styles.libraryEmptyState}>
               {q.length > 0
                 ? `No matches for "${query.trim()}" in ${filter === 'all' ? 'All' : filter}.`
-                : `No ${filter} tasks in your library — try a different filter.`}
+                : `No ${filter} tasks.`}
             </div>
           )}
           {!showEmptyLibrary && !showNoMatches && (
