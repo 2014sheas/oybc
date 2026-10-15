@@ -263,11 +263,7 @@ export function CreateNewTaskForm({
               className={`${styles.input} ${form.errors.title ? styles.inputError : ''}`}
               value={form.title}
               onChange={(e) => form.setTitle(e.target.value)}
-              placeholder={
-                form.taskType === TaskType.COUNTING
-                  ? 'Auto-generated if blank (e.g., "Run 26 miles")'
-                  : 'Enter task title'
-              }
+              placeholder="Enter task title"
               maxLength={TITLE_MAX_LENGTH + 1}
             />
             <span className={getCharCountClass(form.title.length, TITLE_MAX_LENGTH, styles)}>

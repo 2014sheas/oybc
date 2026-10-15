@@ -84,7 +84,7 @@ export interface StreakTileData {
    *  `StreaksPage` shows in its stat trio. */
   greenlogCount: number;
   /** True when there's no active bingo streak — renders the dashed empty
-   *  tile ("No streak yet" / "Clear a board to start one."). */
+   *  tile ("No streak yet"). */
   isEmpty: boolean;
 }
 

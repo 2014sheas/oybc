@@ -26,7 +26,7 @@ describe('deriveFlashOutcome', () => {
 
   it('boardReactivated alone → reactivated message', () => {
     expect(deriveFlashOutcome({ ...base, boardReactivated: true })).toEqual({
-      text: 'Board reactivated — no longer complete',
+      text: 'No longer complete',
       kind: 'message',
       newLineIds: [],
     });
@@ -64,7 +64,7 @@ describe('deriveFlashOutcome', () => {
         isGreenlog: true,
         newBingos: ['col_1'],
       }),
-    ).toEqual({ text: 'Board reactivated — no longer complete', kind: 'message', newLineIds: [] });
+    ).toEqual({ text: 'No longer complete', kind: 'message', newLineIds: [] });
   });
 
   it('lostBingos beats isGreenlog and newBingos', () => {

@@ -142,13 +142,13 @@ struct AccountSecurityView: View {
     private func submitChangeEmail(_ newEmail: String) {
         activeSheet = nil
         runSensitive({ try await authService.updateEmail(to: newEmail) },
-                     success: "Verification link sent to \(newEmail). Tap it there to finish the change.")
+                     success: "Verification link sent to \(newEmail)")
     }
 
     private func submitAddPassword(_ newEmail: String, _ password: String) {
         activeSheet = nil
         runSensitive({ try await authService.linkPassword(email: newEmail, password: password) },
-                     success: "Password added — you can now sign in with email.")
+                     success: "Password added.")
     }
 
     // MARK: - Link / unlink / delete

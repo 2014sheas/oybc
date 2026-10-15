@@ -100,7 +100,6 @@ struct PoolEditorBodyView: View {
                 isRecurring: false,
                 onRemove: { vm.remove($0) },
                 onEdit: { vm.openEditor($0) },
-                sharedCountByTaskId: vm.sharedCountByTaskId,
                 editingTaskId: vm.editingTaskId,
                 editor: { task in
                     AnyView(

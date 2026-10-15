@@ -41,7 +41,7 @@ async function dumpStore(page: Page, store: string): Promise<Row[]> {
 
 /** Tasks step: add the "Run 100 miles" counting task through the special panel. */
 async function addCounter(page: Page): Promise<void> {
-  await page.getByRole('button', { name: 'Add a counting, compound or achievement task' }).click();
+  await page.getByRole('button', { name: 'Counting · Compound · Achievement' }).click();
   await page.getByRole('button', { name: 'Counting', exact: true }).click();
   await page.getByRole('textbox', { name: 'Verb' }).fill('Run');
   await page.getByRole('textbox', { name: 'Goal' }).fill('100');

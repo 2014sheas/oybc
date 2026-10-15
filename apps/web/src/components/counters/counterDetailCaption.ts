@@ -11,7 +11,7 @@ import { formatCount, formatCountWithUnit, type CountKind, type SharedCounterMem
  */
 export function buildTaskCardCaption(task: SharedCounterMemberTask, unit: string, kind: CountKind): string {
   if (task.met && task.over > 0) return `✓ Goal met · ${formatCount(task.over, kind)} over`;
-  if (task.met) return '✓ Goal met this window';
+  if (task.met) return '✓ Goal met';
   const base = `${formatCountWithUnit(Math.max(0, task.goal - task.logged), kind, unit)} to go`;
   return task.window ? `${base} · ends ${task.window}` : base;
 }

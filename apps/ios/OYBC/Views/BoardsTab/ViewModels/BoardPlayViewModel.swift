@@ -629,7 +629,7 @@ final class BoardPlayViewModel: ObservableObject {
                         unit: unit,
                         isIncrement: true,
                         message: Self.sharedCreditToastText(
-                            counterName: counterName, amount: amount, kind: kind, otherBoards: otherBoards, isIncrement: true
+                            counterName: counterName, amount: amount, kind: kind, isIncrement: true
                         )
                     )
 
@@ -724,7 +724,6 @@ final class BoardPlayViewModel: ObservableObject {
                         message: Self.sharedCreditToastText(
                             counterName: counterName,
                             amount: decrementResult.effectiveDelta, kind: kind,
-                            otherBoards: otherBoards,
                             isIncrement: false
                         )
                     )
@@ -934,12 +933,11 @@ final class BoardPlayViewModel: ObservableObject {
     /// Builds the credited toast copy for an increment or decrement (R3
     /// board-play touchpoints — pinned copy contract, byte-identical to web):
     ///
-    /// Increment: `"+{N} {counterName} — also counted on {board list}."`
-    /// Decrement:  `"−{N} {counterName} — also removed from {board list}."`
+    /// Increment: `"+{N} {counterName}"`
+    /// Decrement:  `"−{N} {counterName}"`
     ///
-    /// The board-list join (comma-separated, unchanged from the pre-R3 copy)
-    /// is intentionally NOT touched here — the copy contract pins the verb
-    /// wording + sign + amount + counter-name only.
+    /// No board list: which boards were credited is provenance, which the
+    /// UI does not narrate (CLAUDE.md "No explanatory copy").
     ///
     /// Pure (reads only its parameters) so it is `nonisolated` — the shared-
     /// counter handlers build the copy on their background task before hopping
@@ -949,17 +947,13 @@ final class BoardPlayViewModel: ObservableObject {
     ///   - counterName: The counter's display name — pair-derived
     ///     (`Self.counterDisplayName`), never raw `task.title`.
     ///   - amount: The amount just logged/removed (matches what Undo will reverse).
-    ///   - otherBoards: Boards OTHER than the current board that were credited.
     ///   - isIncrement: `true` for increment, `false` for decrement.
     nonisolated static func sharedCreditToastText(
         counterName: String,
         amount: CountValue, kind: CountKind,
-        otherBoards: [AppDatabase.AffectedBoard],
         isIncrement: Bool
     ) -> String {
-        let boardNames = otherBoards.map { $0.boardName }.joined(separator: ", ")
-        let (sign, phrase) = isIncrement ? ("+", "also counted on") : ("−", "also removed from")
-        return "\(sign)\(formatCount(amount, kind: kind)) \(counterName) — \(phrase) \(boardNames)."
+        "\(isIncrement ? "+" : "−")\(formatCount(amount, kind: kind)) \(counterName)"
     }
 
     /// Publishes the one-shot `flashEvent` (moment / credit toast) and mirrors the

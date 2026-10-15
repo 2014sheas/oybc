@@ -76,9 +76,6 @@ export function HomePage(): React.ReactElement {
         <div>
           <RisoSectionLabel variant="kicker">{greetingDate()}</RisoSectionLabel>
           <h1 className={styles.title}>Welcome back.</h1>
-          <p className={styles.sub}>
-            Pick up where you left off, or print something new. The press is warm.
-          </p>
         </div>
         {streak > 0 && <StreakPill count={streak} />}
       </div>
@@ -114,7 +111,7 @@ export function HomePage(): React.ReactElement {
           </div>
           <RisoCard padded className={styles.placeholder}>
             <p className={styles.placeholderText}>
-              No active boards yet. Start one — pick a timeframe, drop in your tasks, and print the board.
+              No active boards yet.
             </p>
             <RisoButton
               kind="primary"

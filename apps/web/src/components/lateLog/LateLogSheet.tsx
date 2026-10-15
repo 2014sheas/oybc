@@ -197,7 +197,7 @@ function NormalBody({
   const isGreen = state?.isGreen ?? false;
 
   if (isGreen && !hasLateLog) {
-    return <p className={styles.noop}>Already complete — this record can&rsquo;t be undone.</p>;
+    return <p className={styles.noop}>Already complete</p>;
   }
 
   const handleClick = async (): Promise<void> => {

@@ -9,7 +9,7 @@ import SwiftUI
 /// R3 board-play touchpoints unify board-play's ripple toast (formerly
 /// `BoardPlayView`'s inline `showCreditToast`, no Undo) onto THIS component
 /// via the `message` override below: the credited-toast copy contract
-/// ("+{N} {counterName} — also counted on {boards}.") differs from this
+/// ("+{N} {counterName}") differs from this
 /// view's own amount+unit-derived copy, so `message` lets a caller supply
 /// fully composed text while reusing the card chrome + Undo affordance +
 /// auto-dismiss timer verbatim. Web's twin is `CounterLogToast` merged with
@@ -42,8 +42,8 @@ struct CounterLogToastView: View {
     var kind: CountKind = .discrete
     /// R3: a fully composed message that REPLACES the amount+unit+verb-
     /// derived copy — the board-play credited toast's contract
-    /// ("+{N} {counterName} — also counted on {board list}.") isn't
-    /// expressible as amount/unit/verb alone (it carries a board list). `nil`
+    /// ("+{N} {counterName}") isn't expressible as amount/unit/verb alone
+    /// (it carries the counter name, not the unit). `nil`
     /// (the default) preserves the R2 Hub/Detail "Logged/Removed" copy.
     var message: String? = nil
     /// Reverses the log entry (`AppDatabase.undoLastCounterLog`). The
@@ -147,7 +147,7 @@ struct CounterLogToastView: View {
             Spacer()
             CounterLogToastView(
                 amount: 10, unit: "push-ups", verb: .logged,
-                message: "+10 Push-ups — also counted on Daily Grind.",
+                message: "+10 Push-ups",
                 onUndo: {}, onDone: {}
             )
             .padding(.horizontal, Riso.gutter)

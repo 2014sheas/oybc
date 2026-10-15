@@ -45,7 +45,7 @@ export function isBoardExpired(
 
 /**
  * Can a shared-counter log still change this board's squares — i.e. should
- * it appear in the "also counted on" credit toast / stepper hint?
+ * it count in the credit toast / stepper hint?
  *
  * Windowed linked counters (owner rule 2026-10-01): only a live, ACTIVE board
  * that is neither sealed (Closed) nor ended qualifies. `status` alone is not

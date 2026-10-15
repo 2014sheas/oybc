@@ -887,7 +887,7 @@ export function DetailModal({
             Details") shows the watch target. */}
         {sq.type === 'achievement' && (
           <p className={styles.modalMeta}>
-            {achievementBadge ? formatAchievementBadgeLabel(achievementBadge) : 'No watch target set.'}
+            {achievementBadge ? formatAchievementBadgeLabel(achievementBadge) : 'No board picked'}
           </p>
         )}
       </div>
