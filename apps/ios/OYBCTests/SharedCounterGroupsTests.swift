@@ -31,6 +31,12 @@ final class SharedCounterGroupsTests: XCTestCase {
     // MARK: - Fixtures
 
     private let ts = "2026-02-01T12:00:00.000Z"
+    /// Inside every fixture board's window (`board(_:status:)` ends them
+    /// 2026-02-07), so an ACTIVE fixture board is "counting now" whenever
+    /// the suite runs — the TS vector runner pins the same instant.
+    private let inWindow = SharedCounterMemberVisibility(
+        showExpired: true, now: ISO8601DateFormatter().date(from: "2026-02-03T12:00:00Z")!
+    )
 
     /// Minimal counting Task. Mirrors the TS `counter()` fixture.
     private func counter(
@@ -86,7 +92,18 @@ final class SharedCounterGroupsTests: XCTestCase {
         status: BoardStatus,
         timeframe: Timeframe = .weekly
     ) -> Board {
-        let dict: [String: Any] = [
+        let data = try! JSONSerialization.data(withJSONObject: boardDict(id, status: status, timeframe: timeframe))
+        return try! JSONDecoder().decode(Board.self, from: data)
+    }
+
+    /// The JSON dictionary `board(_:status:timeframe:)` decodes — for cases
+    /// that need an extra field (`sealedAt`, a different `endDate`).
+    private func boardDict(
+        _ id: String,
+        status: BoardStatus,
+        timeframe: Timeframe = .weekly
+    ) -> [String: Any] {
+        [
             "id": id,
             "userId": "u1",
             "name": "Board \(id)",
@@ -105,8 +122,6 @@ final class SharedCounterGroupsTests: XCTestCase {
             "version": 1,
             "isDeleted": false,
         ]
-        let data = try! JSONSerialization.data(withJSONObject: dict)
-        return try! JSONDecoder().decode(Board.self, from: data)
     }
 
     /// Minimal BoardTask placement.
@@ -122,6 +137,58 @@ final class SharedCounterGroupsTests: XCTestCase {
             updatedAt: ts,
             version: 1
         )
+    }
+
+    // MARK: - "Counting now" is the in-play rule (sharedCounterGroups.test.ts twin)
+
+    func test_memberOnEndedOrClosedActiveBoard_isNotCountingNow() {
+        let source = counter("src", currentCount: 10, isCounter: true)
+        let member = counter("m", currentCount: 10, maxCount: 5, sharedCounterId: "src", baseline: 0)
+        let ended = board("ended", status: .active) // endDate 2026-02-07
+        var closedDict = boardDict("closed", status: .active)
+        closedDict["endDate"] = "2026-02-28T12:00:00.000Z"
+        closedDict["sealedAt"] = "2026-02-05T12:00:00.000Z"
+        let closed = try! JSONDecoder().decode(Board.self, from: JSONSerialization.data(withJSONObject: closedDict))
+        let iso = ISO8601DateFormatter()
+        func build(_ now: String) -> SharedCounterGroup {
+            buildSharedCounterGroups(
+                tasks: [source, member],
+                boardTasks: [placement("src", "ended"), placement("m", "closed")],
+                boards: [ended, closed],
+                memberVisibility: SharedCounterMemberVisibility(showExpired: true, now: iso.date(from: now)!)
+            )[0]
+        }
+        // Inside the window: the stored status and the in-play rule agree.
+        let live = build("2026-02-03T12:00:00Z")
+        XCTAssertTrue(live.tasks.first { $0.taskId == "src" }!.isActive)
+        XCTAssertFalse(live.tasks.first { $0.taskId == "m" }!.isActive) // closed
+        XCTAssertEqual(live.activeTaskCount, 1)
+        // After the window: still `status: active` in the row, no longer counting now.
+        let later = build("2026-03-01T12:00:00Z")
+        XCTAssertFalse(later.tasks.first { $0.taskId == "src" }!.isActive)
+        XCTAssertEqual(later.tasks.first { $0.taskId == "src" }!.boardId, "ended")
+        XCTAssertEqual(later.activeTaskCount, 0)
+    }
+
+    func test_primaryBoardIsTheOneStillInPlay_notTheNewerEndedOne() {
+        let source = counter("src", currentCount: 10, isCounter: true)
+        var endedDict = boardDict("ended", status: .active) // newer, ACTIVE, but ended
+        endedDict["startDate"] = "2026-02-08T12:00:00.000Z"
+        endedDict["endDate"] = "2026-02-14T12:00:00.000Z"
+        var openDict = boardDict("open", status: .active) // older, still open
+        openDict["startDate"] = "2026-01-01T12:00:00.000Z"
+        openDict["endDate"] = "2026-12-31T12:00:00.000Z"
+        let decode = { (d: [String: Any]) in try! JSONDecoder().decode(Board.self, from: JSONSerialization.data(withJSONObject: d)) }
+        let groups = buildSharedCounterGroups(
+            tasks: [source],
+            boardTasks: [placement("src", "ended"), placement("src", "open")],
+            boards: [decode(endedDict), decode(openDict)],
+            memberVisibility: SharedCounterMemberVisibility(
+                showExpired: true, now: ISO8601DateFormatter().date(from: "2026-03-01T12:00:00Z")!
+            )
+        )
+        XCTAssertEqual(groups[0].tasks[0].boardId, "open")
+        XCTAssertTrue(groups[0].tasks[0].isActive)
     }
 
     // MARK: - 1. No shared-counter links
@@ -143,7 +210,8 @@ final class SharedCounterGroupsTests: XCTestCase {
         let groups = buildSharedCounterGroups(
             tasks: [src, der],
             boardTasks: [placement("src", "bm"), placement("der", "bw")],
-            boards: [bWeekly, bMonthly]
+            boards: [bWeekly, bMonthly],
+            memberVisibility: inWindow
         )
 
         XCTAssertEqual(groups.count, 1)
@@ -207,7 +275,8 @@ final class SharedCounterGroupsTests: XCTestCase {
         let groups = buildSharedCounterGroups(
             tasks: [src, der],
             boardTasks: [placement("src", "active"), placement("der", "draft")],
-            boards: [board("active", status: .active), board("draft", status: .draft)]
+            boards: [board("active", status: .active), board("draft", status: .draft)],
+            memberVisibility: inWindow
         )
 
         let g = groups[0]
@@ -293,7 +362,8 @@ final class SharedCounterGroupsTests: XCTestCase {
         let groups = buildSharedCounterGroups(
             tasks: [src, der],
             boardTasks: [placement("src", "draft"), placement("src", "active")],
-            boards: [board("draft", status: .draft), board("active", status: .active)]
+            boards: [board("draft", status: .draft), board("active", status: .active)],
+            memberVisibility: inWindow
         )
 
         let sourceView = groups[0].tasks.first { $0.taskId == "src" }!

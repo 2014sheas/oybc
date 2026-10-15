@@ -7,6 +7,7 @@ import {
   counterMatchRowName,
   counterRootIdsIn,
   counterRowEditCopy,
+  isExpiredForBrowse,
   isLinkedPendingPayload,
   isSharedCounterRoot,
   quickAddExcludedIds,
@@ -39,6 +40,28 @@ describe('isSharedCounterRoot', () => {
     expect(isSharedCounterRoot(copy, ids)).toBe(false);
     expect(isSharedCounterRoot(plain, counterRootIdsIn(new Map([[plain.id, plain]])))).toBe(false);
     expect(isSharedCounterRoot(plain, counterRootIdsIn([plain, { ...copy, isDeleted: true }]))).toBe(false);
+  });
+});
+
+describe('isExpiredForBrowse', () => {
+  const NOW = new Date('2026-10-14T12:00:00.000Z');
+  const june = { timeframe: Timeframe.MONTHLY, startDate: '2026-06-01T00:00:00.000', endDate: '2026-06-30T23:59:59.999' };
+
+  it('an expired counter root stays browsable; an expired plain task, linked copy or normal task does not', () => {
+    // A root born in a June board's wizard carries June's window — it is still the counter.
+    expect(isExpiredForBrowse(task({ ...june }), new Set(), NOW)).toBe(false);
+    expect(isExpiredForBrowse(task({ ...june, isCounter: false, maxCount: 100, timeframeGoals: { daily: 100 } }), new Set(), NOW)).toBe(false);
+    const plain = task({ id: 'p', ...june, isCounter: false, maxCount: 100 });
+    const copy = task({ id: 'c', ...june, isCounter: false, maxCount: 100, sharedCounterId: 'p' });
+    expect(isExpiredForBrowse(plain, counterRootIdsIn([plain, copy]), NOW)).toBe(false); // linked-to → a root
+    expect(isExpiredForBrowse(plain, new Set(), NOW)).toBe(true);
+    expect(isExpiredForBrowse(copy, counterRootIdsIn([plain, copy]), NOW)).toBe(true);
+    expect(isExpiredForBrowse(task({ ...june, type: TaskType.NORMAL, isCounter: undefined }), new Set(), NOW)).toBe(true);
+  });
+
+  it('nothing in its window, or without an endDate, is expired', () => {
+    expect(isExpiredForBrowse(task({ ...june, isCounter: false, maxCount: 1 }), new Set(), new Date('2026-06-15T12:00:00.000Z'))).toBe(false);
+    expect(isExpiredForBrowse(task({ isCounter: false, maxCount: 1 }), new Set(), NOW)).toBe(false);
   });
 });
 

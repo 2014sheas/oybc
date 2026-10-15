@@ -185,6 +185,13 @@ test.describe('Counters hub — a board-born root stays listed when its members 
     // and the Profile home.
     const afterWeekly = new Date(new Date(weeklyEnd).getTime() + 24 * 60 * 60 * 1000);
     await page.clock.install({ time: afterWeekly });
+    // "Counting now" is the in-play rule (ACTIVE, not closed, not past its
+    // endDate), never the stored status: the ended weekly member is not
+    // counting, and the root's own monthly square counts only while the
+    // month is still open (a weekly that straddles the month end takes the
+    // monthly down with it).
+    const monthlyLive = afterWeekly.getTime() <= new Date(monthly!.endDate as string).getTime();
+    const countingNow = monthlyLive ? '1 task' : '0 tasks';
 
     await page.goto('/profile/counters');
     await expect(page.getByRole('heading', { name: 'Counters', level: 1 })).toBeVisible();
@@ -193,10 +200,9 @@ test.describe('Counters hub — a board-born root stays listed when its members 
       'hub still lists the monthly root after its only member expired',
     ).toBeVisible();
     // The ended weekly row is hidden by default: the card's only member row
-    // is the root's own square on the monthly board (that board's status is
-    // still `active` — sealing is a separate, lazy pass), so the footer
-    // counts one task, and the weekly row is nowhere on the page.
-    await expect(page.getByText('1 task · 1 board')).toBeVisible();
+    // is the root's own square on the monthly board, so the footer counts
+    // one board, and the weekly row is nowhere on the page.
+    await expect(page.getByText(`${countingNow} · 1 board`)).toBeVisible();
     await expect(page.getByText(d.title as string)).toHaveCount(0);
 
     // …and "Show expired tasks" lists it again. The toggle's state IS the
@@ -205,7 +211,8 @@ test.describe('Counters hub — a board-born root stays listed when its members 
     // flaky step in member-rules.spec.ts's hub test (ROADMAP E7).
     await page.goto('/profile/counters?showExpired=1');
     await expect(page.getByLabel('Show expired tasks')).toBeChecked();
-    await expect(page.getByText('2 tasks · 2 boards')).toBeVisible();
+    // Listed again, but an ended board's member is not counting now.
+    await expect(page.getByText(`${countingNow} · 2 boards`)).toBeVisible();
     await page.goto(`/profile/counters/${rootId}?showExpired=1`);
     await expect(page.getByRole('heading', { name: 'Run miles' })).toBeVisible();
     await expect(page.getByText(d.title as string).first()).toBeVisible();

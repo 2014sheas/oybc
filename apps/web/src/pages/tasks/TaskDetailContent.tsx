@@ -4,6 +4,7 @@ import { Link } from 'react-router-dom';
 import {
   AchievementTrigger,
   TaskType,
+  boardPlacementStatus,
   compoundRuleLabel,
   type Board,
   type BoardTask,
@@ -528,7 +529,7 @@ export function TaskDetailContent({
                 <Link to={`/boards/${b.id}`} className={styles.boardLink}>
                   {b.name}
                 </Link>{' '}
-                <span className={styles.boardStatusTag}>{b.status}</span>
+                <span className={styles.boardStatusTag}>{boardPlacementStatus(b)}</span>
               </li>
             ))}
           </ul>

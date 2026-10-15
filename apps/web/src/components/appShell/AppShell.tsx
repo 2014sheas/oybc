@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { BoardStatus } from '@oybc/shared';
+import { isBoardActiveForList } from '@oybc/shared';
 import { useAuth } from '../../firebase/useAuth';
 import { useBoards } from '../../hooks/useBoards';
 import { useBackstopAutoSeal } from '../../hooks/useBackstopAutoSeal';
@@ -28,7 +28,9 @@ export function AppShell({
 }): React.ReactElement {
   const { user } = useAuth();
   const boards = useBoards(user?.id);
-  const activeCount = boards.filter((b) => b.status === BoardStatus.ACTIVE).length;
+  // The Boards badge counts boards still in play — the Boards tab's own
+  // rule, not the stored status (which stays ACTIVE on an ended board).
+  const activeCount = boards.filter((b) => isBoardActiveForList(b)).length;
 
   // Windowed Completion — backstop auto-seal + stale-stats self-heal on ANY
   // authenticated surface, not just the Boards tab. A deep link straight to

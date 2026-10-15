@@ -112,7 +112,8 @@ struct SharedCounterGroup: Identifiable {
 struct SharedCounterMemberVisibility {
     /// `true` lists expired members too.
     let showExpired: Bool
-    /// Reference time for `isTaskExpired`; injected for deterministic tests.
+    /// Reference time for `isTaskExpired` and for each member's "counting
+    /// now" check; injected for deterministic tests.
     var now: Date = Date()
 }
 
@@ -129,12 +130,17 @@ private func isVisibleCounterMember(
 
 // MARK: - Builder
 
-/// Pick a member task's "primary" board placement: prefer ACTIVE board, then
-/// newest startDate, then stable id tie-break. Mirrors the TS `pickPrimaryBoard`.
+/// Pick a member task's "primary" board placement: prefer a board still in
+/// play (`isBoardActiveForList` — never the stored status, which stays ACTIVE
+/// on an ended or closed board), then newest startDate, then stable id
+/// tie-break. Mirrors the TS `pickPrimaryBoard`.
+///
+/// - Parameter now: Reference time for the in-play check (defaults to the clock).
 func pickPrimaryBoard(
     taskId: String,
     boardTasks: [BoardTask],
-    boardsById: [String: Board]
+    boardsById: [String: Board],
+    now: Date = Date()
 ) -> Board? {
     var candidates: [Board] = []
     for bt in boardTasks {
@@ -146,8 +152,8 @@ func pickPrimaryBoard(
     }
     guard !candidates.isEmpty else { return nil }
     candidates.sort { a, b in
-        let aActive = a.status == .active ? 0 : 1
-        let bActive = b.status == .active ? 0 : 1
+        let aActive = isBoardActiveForList(a, now: now) ? 0 : 1
+        let bActive = isBoardActiveForList(b, now: now) ? 0 : 1
         if aActive != bActive { return aActive < bActive }
         // Newest startDate first (string ISO8601 sort is lexicographic = chronological).
         if a.startDate != b.startDate { return a.startDate > b.startDate }
@@ -232,6 +238,7 @@ func buildSharedCounterGroups(
     let liveTasks = tasks.filter { !$0.isDeleted }
     let tasksById = Dictionary(uniqueKeysWithValues: liveTasks.map { ($0.id, $0) })
     let boardsById = Dictionary(uniqueKeysWithValues: boards.map { ($0.id, $0) })
+    let now = memberVisibility?.now ?? Date()
 
     // Map source task id → its linked (derived) tasks. The key set is
     // `sharedCounterRootIds` — every task pointed at by a live
@@ -279,7 +286,8 @@ func buildSharedCounterGroups(
             let board = pickPrimaryBoard(
                 taskId: m.id,
                 boardTasks: boardTasks,
-                boardsById: boardsById
+                boardsById: boardsById,
+                now: now
             )
             // Window-stamped members read their own window from the root's
             // events (never `lifetime − baseline`, which counts later
@@ -324,7 +332,9 @@ func buildSharedCounterGroups(
                 ).displayed
             }
             if let b = board { boardIdSet.insert(b.id) }
-            let isActive = board?.status == .active
+            // "Counting now" is the Boards tab's in-play rule, not the stored
+            // status — a board past its endDate (or closed) stays ACTIVE in the row.
+            let isActive = board.map { isBoardActiveForList($0, now: now) } ?? false
             if isActive { activeCount += 1 }
 
             // Window from the task's own timeframe/startDate; falls back to its board's.

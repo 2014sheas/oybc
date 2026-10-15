@@ -223,8 +223,10 @@ struct RisoLibrarySheetView: View {
         // Exclude expired tasks — one whose timebox window has already passed
         // can't meaningfully be added to a new board's pool (mirrors the
         // Tasks-tab default of hiding expired). Non-timeboxed tasks are never
-        // expired (isTaskExpired returns false when endDate is nil).
-        return source.filter { matches($0) && !TasksTabViewModel.isTaskExpired($0) }
+        // expired, and a counter root never is: it is the counter, whatever
+        // window its creation board stamped on it.
+        let rootIds = QuickAddCounterPlacement.counterRootIds(in: Array(effectiveTaskById.values))
+        return source.filter { matches($0) && !QuickAddCounterPlacement.isExpiredForBrowse($0, linkedRootIds: rootIds) }
     }
 
     // MARK: - Library row

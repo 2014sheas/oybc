@@ -176,7 +176,10 @@ struct RisoTaskDetailContentView: View {
                                     .foregroundStyle(Color.risoBlue)
                                     .lineLimit(1)
                                 Spacer(minLength: 4)
-                                Text(board.status.rawValue.uppercased())
+                                // The Boards tab's word for it — "expired" /
+                                // "closed" when the window is over, not the
+                                // stored status (which stays "active").
+                                Text(boardPlacementStatus(board, now: now).uppercased())
                                     .risoSectionLabel(Color.risoMuted)
                             }
                             .contentShape(Rectangle()) // whole row (incl. the Spacer) is the tap target
@@ -398,10 +401,11 @@ struct RisoTaskDetailContentView: View {
         }
     }
 
-    /// Count of placements on *active* boards (not all placements). Mirrors
-    /// the list row's `activePlacementCounts`, so "N active" agrees across views.
+    /// Count of placements on boards still in play (`isBoardActiveForList`),
+    /// not all placements. Mirrors the list row's `activePlacementCounts`, so
+    /// "N active" agrees across views.
     private var activePlacementCount: Int {
-        affectedBoards.filter { $0.status == .active }.count
+        affectedBoards.filter { isBoardActiveForList($0, now: now) }.count
     }
 
     private func formatDate(_ iso: String) -> String {
