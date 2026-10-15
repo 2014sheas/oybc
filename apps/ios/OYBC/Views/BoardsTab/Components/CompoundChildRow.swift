@@ -103,11 +103,15 @@ struct CompoundChildRow: View {
                 .monospacedDigit()
                 .foregroundStyle(Color.risoInk)
                 .frame(minWidth: 52)
+                .accessibilityLabel(
+                    "\(formatCount(count.current, kind: count.kind)) of \(formatCountWithUnit(count.max, kind: count.kind, unit: count.unit))"
+                )
             stepButton(
                 system: "plus", enabled: !disabled,
                 label: "Add \(formatCountWithUnit(count.step, kind: count.kind, unit: count.unit)) to \(title)"
             ) { onStep(1) }
         }
+        .accessibilityElement(children: .contain)
     }
 
     /// A compact version of the counting card's `detailStepperButton`.
@@ -119,6 +123,9 @@ struct CompoundChildRow: View {
                 .foregroundStyle(enabled ? Color.risoInkStatic : Color.risoMuted)
                 .frame(width: 30, height: 30)
                 .risoCard(fill: enabled ? .risoGold : .risoPaper)
+                // 44pt hit target around the compact 30pt card.
+                .frame(minWidth: 44, minHeight: 44)
+                .contentShape(Rectangle())
         }
         .buttonStyle(RisoButtonStyle())
         .disabled(!enabled)

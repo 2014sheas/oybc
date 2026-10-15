@@ -340,6 +340,7 @@ export function BoardPlaySurface({
     // locked only on sealed boards; an expired-but-unsealed board stays live.
     playLocked: isSealed,
     squareWindowContext,
+    sharedCounterSourceIds,
     onFlash: showFlash,
     onCreditedToast: setCreditedToast,
     setContextMenu,
@@ -921,7 +922,7 @@ export function BoardPlaySurface({
               if (modalCurrentCount > 0) void handleComplete(bt.id, { currentCount: modalCurrentCount - 1 });
             }}
             onCompoundChildToggle={squareData.type === 'compound' ? handleCompoundChildToggle : undefined}
-            onCompoundChildIncrement={squareData.type === 'compound' ? handleCompoundChildIncrement : undefined}
+            onCompoundChildIncrement={squareData.type === 'compound' && !isSealed ? handleCompoundChildIncrement : undefined}
             onOpenInLibrary={(taskId) => { setSelectedSquareId(null); setOpenedTaskInLibrary(taskId); }}
             quickAmount={quickAmount}
             achievementBadge={achievementBadgesByBoardTaskId[bt.id]}

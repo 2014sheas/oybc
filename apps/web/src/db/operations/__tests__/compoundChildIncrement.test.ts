@@ -128,11 +128,35 @@ describe('incrementCompoundChildFallback', () => {
     expect((await parentCell()).isCompleted).toBe(false);
   });
 
-  it('a decrement is gated at zero', async () => {
+  it('a decrement is gated at the WINDOW sum, not the lifetime sum', async () => {
     await seed();
     await incrementCompoundChildFallback('c', -1, A_START, A_END, A);
     expect(await liveEvents()).toEqual([]);
     expect(await db.syncQueue.count()).toBe(0);
+    // A log in the NEXT window (today) raises the lifetime count, not A's.
+    await db.taskEvents.add({
+      id: 'today', userId: USER, taskId: 'c', kind: 'increment', delta: 3, occurredAt: new Date('2026-09-23T08:00:00.000').toISOString(),
+      createdAt: '2026-09-23T08:00:00.000Z', updatedAt: '2026-09-23T08:00:00.000Z', version: 1, isDeleted: false,
+    });
+    await incrementCompoundChildFallback('c', -1, A_START, A_END, A);
+    expect((await liveEvents()).map((e) => e.id)).toEqual(['today']);
+  });
+
+  it('compoundChildCount: a counter ROOT child steps by its own default amount, a linked child by its root\'s, a plain child by 1', async () => {
+    const t = (over: Partial<Task>): Task => ({
+      id: 'x', userId: USER, title: 'x', type: TaskType.COUNTING, maxCount: 10, isCompleted: false, totalCompletions: 0, totalInstances: 1,
+      createdAt: '2026-09-01T00:00:00.000Z', updatedAt: '2026-09-01T00:00:00.000Z', version: 1, isDeleted: false, ...over,
+    });
+    const hub = t({ id: 'hub', isCounter: true, defaultLogAmount: 5, countKind: 'continuous', unit: 'mi' });
+    const plainRoot = t({ id: 'pr', defaultLogAmount: 7 });
+    const linked = t({ id: 'ln', sharedCounterId: 'pr' });
+    const plain = t({ id: 'pl', defaultLogAmount: 9 }); // a default on a non-counter is never a step
+    const taskMap = { hub, pr: plainRoot, ln: linked, pl: plain };
+    expect(compoundChildCount(hub, taskMap)).toMatchObject({ step: 5, kind: 'continuous', unit: 'mi' });
+    expect(compoundChildCount(plainRoot, taskMap)).toMatchObject({ step: 7 }); // linked to by `ln` → a root
+    expect(compoundChildCount(linked, taskMap)).toMatchObject({ step: 7 });
+    expect(compoundChildCount(plain, taskMap)).toMatchObject({ step: 1 });
+    expect(compoundChildCount(t({ id: 'n', type: TaskType.NORMAL }), taskMap)).toBeUndefined();
   });
 
   it('authors nothing for a linked child (its count is its counter\'s) or on a sealed board', async () => {

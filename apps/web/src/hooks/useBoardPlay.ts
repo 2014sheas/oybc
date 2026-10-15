@@ -1,4 +1,4 @@
-import { useCallback } from 'react';
+import { useCallback, useRef } from 'react';
 import {
   TaskType,
   counterDisplayName,
@@ -19,7 +19,7 @@ import {
   incrementSharedCounter,
   setCounterDefaultLogAmount,
 } from '../db/operations/tasks';
-import { resolveCreditedCounterName } from '../components/boardPlaySharedCounterUtils';
+import { resolveCreditedCounterName, resolveSharedCounterSourceId } from '../components/boardPlaySharedCounterUtils';
 import { deriveFlashOutcome, flashFromBoardSnapshots, messageOutcome, type FlashOutcome } from '../components/boardPlayFlash';
 import { incrementCompoundChildFallback, toggleCompoundChildFallback, undoLastCounterLog } from '../db/operations/tasks';
 import { commitSquareEdits } from '../db/operations/boardEditCommit';
@@ -152,6 +152,9 @@ export interface UseBoardPlayParams {
    * the real grid (BoardPlaySurface's own render already does this).
    */
   squareWindowContext: SquareWindowContext;
+  /** Counter ROOT ids on this board's task set (`useBoardPlayData`) — a root
+   *  child of a compound steps on its own counter, like a placed root square. */
+  sharedCounterSourceIds: Set<string>;
   /** Show a transient flash / the bingo or greenlog moment (component's `showFlash`). */
   onFlash: (outcome: FlashOutcome) => void;
   /** Show the shared-counter credited toast (component's `setCreditedToast`). */
@@ -234,6 +237,7 @@ export function useBoardPlay(params: UseBoardPlayParams): UseBoardPlayResult {
     gridSize,
     playLocked,
     squareWindowContext,
+    sharedCounterSourceIds,
     onFlash,
     onCreditedToast,
     setContextMenu,
@@ -602,12 +606,16 @@ export function useBoardPlay(params: UseBoardPlayParams): UseBoardPlayResult {
    * fallback. A linked child always logs on its counter, by the counter's
    * default amount, exactly like a placed linked square.
    */
+  // Re-entrancy guard for the placed-here path, whose write is an absolute
+  // count computed from React state (a fast double-tap would log one step).
+  const childStepInFlight = useRef(false);
   const handleCompoundChildIncrement = useCallback(
     async (childTaskId: string, direction: 1 | -1): Promise<void> => {
-      if (playLocked) return;
+      if (playLocked || childStepInFlight.current) return;
       const childTask = taskMap[childTaskId];
       if (!childTask || childTask.type !== TaskType.COUNTING) return;
-      const sourceId = childTask.sharedCounterId;
+      // A linked child — or a counter ROOT child — steps on its counter.
+      const sourceId = resolveSharedCounterSourceId(childTask, sharedCounterSourceIds);
       if (sourceId) {
         const amount = taskMap[sourceId]?.defaultLogAmount ?? 1;
         if (direction > 0) await handleSharedCounterIncrement(sourceId, amount);
@@ -628,19 +636,24 @@ export function useBoardPlay(params: UseBoardPlayParams): UseBoardPlayResult {
           const boardBefore = await db.boards.get(boardId);
           await incrementCompoundChildFallback(childTaskId, d, windowStart, windowEnd, boardId);
           const boardAfter = await db.boards.get(boardId);
-          const outcome = boardBefore && boardAfter ? flashFromBoardSnapshots(boardBefore, boardAfter, true) : null;
+          const outcome = boardBefore && boardAfter ? flashFromBoardSnapshots(boardBefore, boardAfter, d > 0) : null;
           if (outcome) onFlash(outcome);
         } catch (err) {
           console.error('Compound child increment failed:', err);
           onFlash(messageOutcome('Something went wrong'));
         }
       };
-      // A flagged compound completed by this step credits its counter once
-      // (the watch); the toast's Undo steps the child back.
-      await watchCredits(childTaskId, () => apply(current + delta, delta), () => apply(current, -delta));
+      childStepInFlight.current = true;
+      try {
+        // A flagged compound completed by this step credits its counter once
+        // (the watch); the toast's Undo steps the child back.
+        await watchCredits(childTaskId, () => apply(current + delta, delta), () => apply(current, -delta));
+      } finally {
+        childStepInFlight.current = false;
+      }
     },
     [playLocked, taskMap, boardTasks, completeRaw, watchCredits, onFlash, boardId, squareWindowContext,
-      handleSharedCounterIncrement, handleSharedCounterDecrement]
+      sharedCounterSourceIds, handleSharedCounterIncrement, handleSharedCounterDecrement]
   );
 
   return {

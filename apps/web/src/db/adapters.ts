@@ -160,7 +160,14 @@ export function compoundChildCount(
   windowContext?: SquareWindowContext,
 ): CompoundChildCount | undefined {
   if (childTask.type !== TaskType.COUNTING) return undefined;
-  const root = childTask.sharedCounterId ? taskMap[childTask.sharedCounterId] : undefined;
+  // The counter the step logs on: a linked child's root, or the child itself
+  // when it IS a counter root (hub counter, or linked to by another live task)
+  // — iOS `BoardPlayViewModel.sharedCounterSourceId(for:)`.
+  const isRoot =
+    childTask.isCounter === true ||
+    Object.values(taskMap).some((t) => t.sharedCounterId === childTask.id && !t.isDeleted);
+  const rootId = childTask.sharedCounterId ?? (isRoot ? childTask.id : undefined);
+  const root = rootId ? taskMap[rootId] : undefined;
   let current: number;
   if (childTask.sharedCounterId) {
     current = resolveLinkedCounterDisplay(

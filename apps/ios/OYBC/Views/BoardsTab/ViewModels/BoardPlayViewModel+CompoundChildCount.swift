@@ -56,7 +56,7 @@ extension BoardPlayViewModel {
         let windowEnd = self.windowEnd
         let currentBoardId = board?.id
         let database = self.database
-        isProcessing = true
+        setProcessing(true)
         _Concurrency.Task.detached(priority: .userInitiated) { [weak self] in
             guard let self else { return }
             do {
@@ -66,12 +66,12 @@ extension BoardPlayViewModel {
                 )
                 let flash = BoardFlashOutcome.resolve(cascade: currentBoardId.flatMap { results[$0] })
                 await MainActor.run {
-                    self.reload { self.isProcessing = false }
+                    self.reload { self.setProcessing(false) }
                     self.emitFlash(flash, creditToast: nil)
                 }
             } catch {
                 dlog("⚠️ BoardPlayView compoundChildIncrement error: \(error)")
-                await MainActor.run { self.isProcessing = false }
+                await MainActor.run { self.setProcessing(false) }
             }
         }
     }

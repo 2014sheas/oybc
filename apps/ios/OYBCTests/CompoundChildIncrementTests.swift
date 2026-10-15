@@ -101,10 +101,42 @@ final class CompoundChildIncrementTests: XCTestCase {
         XCTAssertEqual(try db.fetchBoard(id: "bA")?.completedTasks, 0, "stepping back un-completes the parent")
     }
 
-    func test_decrementIsGatedAtZero() throws {
+    func test_decrementIsGatedAtTheWindowSum_notTheLifetimeSum() throws {
         let (db, a) = try seed()
         XCTAssertTrue(try step(db, a, -1).isEmpty)
         XCTAssertTrue(try liveEvents(db).isEmpty, "nothing to remove → nothing authored")
+        // A log in the NEXT window raises the lifetime count, not A's.
+        try db.write { db in
+            try TaskEvent(
+                id: "today", userId: self.userId, taskId: "c", kind: .increment, delta: 3,
+                occurredAt: "2026-07-02T08:00:00.000Z", boardId: nil, createdAt: self.lateNow, updatedAt: self.lateNow,
+                lastSyncedAt: nil, version: 1, isDeleted: false, deletedAt: nil
+            ).save(db)
+        }
+        XCTAssertTrue(try step(db, a, -1).isEmpty)
+        XCTAssertEqual(try liveEvents(db).map(\.id), ["today"])
+    }
+
+    /// Web twin: `compoundChildCount` — a counter ROOT child steps by its own
+    /// default amount, a linked child by its root's, a plain child by 1.
+    func test_countModel_stepAndKindFollowTheCounter() throws {
+        var hub = task("hub", type: .counting, maxCount: 10)
+        hub.isCounter = true
+        hub.defaultLogAmount = 5
+        hub.countKind = .continuous
+        hub.unit = "mi"
+        var plain = task("pl", type: .counting, maxCount: 10)
+        plain.defaultLogAmount = 9 // a default on a non-counter is never a step
+        let linked = task("ln", type: .counting, maxCount: 3, sharedCounterId: "hub")
+
+        let hubCount = try XCTUnwrap(CompoundChildRow.Count.make(task: hub, current: 2, root: hub))
+        XCTAssertEqual(hubCount.step, 5)
+        XCTAssertEqual(hubCount.kind, .continuous)
+        XCTAssertEqual(hubCount.unit, "mi")
+        XCTAssertEqual(CompoundChildRow.Count.make(task: linked, current: 1, root: hub)?.step, 5)
+        XCTAssertEqual(CompoundChildRow.Count.make(task: linked, current: 1, root: hub)?.kind, .continuous)
+        XCTAssertEqual(CompoundChildRow.Count.make(task: plain, current: 0, root: nil)?.step, 1)
+        XCTAssertNil(CompoundChildRow.Count.make(task: task("n", type: .normal), current: 0, root: nil))
     }
 
     func test_linkedChildAndSealedBoardAuthorNothing() throws {

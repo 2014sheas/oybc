@@ -69,7 +69,7 @@ final class BoardPlayViewModel: ObservableObject {
 
     /// True while an interaction write (tap / stepper / swap / add / remove) is in
     /// flight. The view reads this to disable controls; only the moved handlers mutate it.
-    @Published var isProcessing = false // set by the +CompoundChildCount extension too
+    @Published private(set) var isProcessing = false
     /// +BoardActions' write seam for `isProcessing` (the setter stays private to the VM file).
     func setProcessing(_ value: Bool) { isProcessing = value }
     /// Test hook: seconds `reload` waits before fetching, to widen the write-done / reload-pending window. Always 0 in production.
