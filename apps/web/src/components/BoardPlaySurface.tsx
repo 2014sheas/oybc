@@ -58,6 +58,7 @@ import { RisoArrivalBanner } from './play/RisoArrivalBanner';
 import { EndedBanner } from './boardPlay/EndedBanner';
 import { BoardStatusPill } from './boardPlay/BoardStatusPill';
 import { BoardLeftStatCard } from './boardPlay/BoardLeftStatCard';
+import { BingosStatCard } from './boardPlay/BingosStatCard';
 import { LateLogSheet } from './lateLog/LateLogSheet';
 import styles from '../pages/BoardPlayPage.module.css';
 import play from './play/Play.module.css';
@@ -277,7 +278,7 @@ export function BoardPlaySurface({
   const streakFor = (t: AchievementTrigger): number =>
     gatedStreak(prefsReady, board.timeframe, t, allBoards, prefs.weekStartDay, nowPinned);
   const greenlogStreak = streakFor(AchievementTrigger.GREENLOG);
-  const { open: openMoment, node: momentNode } = useBoardMoment({
+  const { open: openMoment, replay: replayMoment, node: momentNode } = useBoardMoment({
     board, boardTasks, taskMap, compoundChildrenByCompound, allBoards, cellStateByBoardTaskId,
     btByPosition, squareWindowContext, gridSize, greenlogStreak, streakFor,
   });
@@ -537,13 +538,7 @@ export function BoardPlaySurface({
               isSealed={isSealed} isEnded={isEnded} timeframe={board.timeframe}
               endDate={board.endDate} nowPinned={nowPinned}
             />
-            <div className={`${play.stat} ${play.gold}`}>
-              <div className={play.statK}>Bingos</div>
-              <div className={play.statV}>
-                <span className={play.starS} aria-hidden="true" />
-                {board.linesCompleted}
-              </div>
-            </div>
+            <BingosStatCard board={board} onReplay={replayMoment} />
           </div>
         </aside>
       )}

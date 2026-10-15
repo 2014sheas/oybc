@@ -5,6 +5,20 @@ import XCTest
 /// helpers on a hand-built replay, `totalLineCount`, `streakUnitLabel`.
 final class BoardMomentTests: XCTestCase {
 
+    // MARK: replayMomentKind (the Bingos card's replay)
+
+    func test_replayMomentKind() {
+        func k(_ s: BoardStatus, _ done: Int, _ lines: Int, total: Int = 9) -> MomentTrigger.Kind? {
+            replayMomentKind(status: s, completedTasks: done, totalTasks: total, linesCompleted: lines)
+        }
+        XCTAssertEqual(k(.completed, 9, 8), .greenlog)
+        XCTAssertEqual(k(.archived, 9, 8), .greenlog) // archived keeps counts, not status
+        XCTAssertEqual(k(.active, 4, 1), .bingo)
+        XCTAssertEqual(k(.archived, 7, 3), .bingo)
+        XCTAssertNil(k(.active, 2, 0))
+        XCTAssertNil(k(.draft, 0, 0, total: 0))
+    }
+
     // MARK: totalLineCount / streakUnitLabel
 
     func test_totalLineCount() {

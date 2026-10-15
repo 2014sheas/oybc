@@ -23,6 +23,9 @@ struct RisoStatBar: View {
     /// shows "LEFT / Ended / <date> · still logging". Ignored when
     /// `endedText` is set (closed wins).
     var endedStillLoggingDate: String? = nil
+    /// Set once the board has earned a moment (`replayMomentKind`): the gold
+    /// BINGOS card becomes a button that replays it. Nil = a plain card.
+    var onBingosTap: (() -> Void)? = nil
 
     var body: some View {
         HStack(alignment: .top, spacing: 9) {
@@ -33,7 +36,14 @@ struct RisoStatBar: View {
             leftCard
 
             // ── Bingos card (gold) ──
-            bingosCard
+            if let onBingosTap {
+                Button(action: onBingosTap) { bingosCard }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("\(linesCompleted) \(linesCompleted == 1 ? "bingo" : "bingos")")
+                    .accessibilityHint("Replays the moment")
+            } else {
+                bingosCard
+            }
         }
         .fixedSize(horizontal: false, vertical: true)
     }

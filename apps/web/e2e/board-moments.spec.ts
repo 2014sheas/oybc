@@ -161,4 +161,34 @@ test.describe('Bingo + Greenlog moments', () => {
     await sheet.getByRole('button', { name: 'Save poster as image' }).click();
     expect((await download).suggestedFilename()).toBe('moment-board-greenlog.png');
   });
+
+  test('after Back to board, the Bingos card replays the Bingo moment (Share included)', async ({ page }) => {
+    await seed(page, 2);
+    await page.goto(`/boards/${BOARD_ID}?__oybc_test_bypass=1`);
+    // No line yet: the card is not a button.
+    await expect(page.getByRole('button', { name: /replay the/ })).toHaveCount(0);
+    await page.getByRole('button', { name: /Cell 2/ }).click();
+    const moment = page.getByRole('dialog', { name: /Bingo/ });
+    await moment.getByRole('button', { name: 'Back to board' }).click();
+    await expect(moment).toBeHidden();
+
+    await page.getByRole('button', { name: /replay the Bingo/ }).click();
+    await expect(moment).toBeVisible();
+    await expect(moment.getByText('BINGO!')).toBeVisible();
+    await moment.getByRole('button', { name: 'Share this bingo' }).click();
+    await expect(page.getByRole('dialog', { name: 'Share bingo' })).toBeVisible();
+  });
+
+  test('on a greenlogged board the Bingos card replays the Greenlog moment', async ({ page }) => {
+    await seed(page, 7);
+    await page.goto(`/boards/${BOARD_ID}?__oybc_test_bypass=1`);
+    await page.getByRole('button', { name: /Cell 7/ }).click();
+    const moment = page.getByRole('dialog', { name: /Board complete/ });
+    await moment.getByRole('button', { name: 'Back to board' }).click();
+    await expect(moment).toBeHidden();
+
+    await page.getByRole('button', { name: /replay the Greenlog/ }).click();
+    await expect(moment).toBeVisible();
+    await expect(moment.getByText('GREENLOG!')).toBeVisible();
+  });
 });
