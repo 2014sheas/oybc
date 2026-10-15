@@ -1,5 +1,6 @@
 import { useCallback } from 'react';
 import {
+  TaskType,
   counterDisplayName,
   effectiveCenter,
   resolveTaskWindowState,
@@ -20,7 +21,7 @@ import {
 } from '../db/operations/tasks';
 import { resolveCreditedCounterName } from '../components/boardPlaySharedCounterUtils';
 import { deriveFlashOutcome, flashFromBoardSnapshots, messageOutcome, type FlashOutcome } from '../components/boardPlayFlash';
-import { toggleCompoundChildFallback, undoLastCounterLog } from '../db/operations/tasks';
+import { incrementCompoundChildFallback, toggleCompoundChildFallback, undoLastCounterLog } from '../db/operations/tasks';
 import { commitSquareEdits } from '../db/operations/boardEditCommit';
 import type { ContextMenuState } from '../components/interactiveTaskSquareUtils';
 import { useSquaresEditDraft, type UseSquaresEditDraftResult } from './useSquaresEditDraft';
@@ -201,6 +202,13 @@ export interface UseBoardPlayResult {
   /** The credited toast's Undo: reverses a hand log, or un-completes a counts-toward contributor. */
   undoCreditedToast: (toast: CreditedToast) => Promise<void>;
   handleCompoundChildToggle: (childTaskId: string) => Promise<void>;
+  /**
+   * The compound sheet's stepper on a COUNTING child: `+1` logs the child's
+   * step, `-1` removes it. A linked child logs on its counter (the same path
+   * as a placed linked square); a plain child placed here goes through the
+   * orchestration, else `incrementCompoundChildFallback` (this board's window).
+   */
+  handleCompoundChildIncrement: (childTaskId: string, direction: 1 | -1) => Promise<void>;
 }
 
 /**
@@ -586,6 +594,55 @@ export function useBoardPlay(params: UseBoardPlayParams): UseBoardPlayResult {
       compoundChildrenByCompound, squareWindowContext]
   );
 
+  /**
+   * Counting children can't be tap-toggled (a completion event means nothing
+   * to a count, and a linked child's count is its counter's), so the sheet
+   * steps them. Same routing as `handleCompoundChildToggle`: a placement on
+   * THIS board goes through the orchestration; otherwise the board-window
+   * fallback. A linked child always logs on its counter, by the counter's
+   * default amount, exactly like a placed linked square.
+   */
+  const handleCompoundChildIncrement = useCallback(
+    async (childTaskId: string, direction: 1 | -1): Promise<void> => {
+      if (playLocked) return;
+      const childTask = taskMap[childTaskId];
+      if (!childTask || childTask.type !== TaskType.COUNTING) return;
+      const sourceId = childTask.sharedCounterId;
+      if (sourceId) {
+        const amount = taskMap[sourceId]?.defaultLogAmount ?? 1;
+        if (direction > 0) await handleSharedCounterIncrement(sourceId, amount);
+        else await handleSharedCounterDecrement(sourceId, amount);
+        return;
+      }
+      const { windowStart, windowEnd, eventsByTaskId } = squareWindowContext;
+      const current = resolveTaskWindowState(childTask, eventsByTaskId[childTaskId] ?? [], windowStart, windowEnd).count;
+      const delta = direction > 0 ? 1 : -Math.min(1, current);
+      if (delta === 0) return;
+      const currentBt = boardTasks.find((bt) => bt.taskId === childTaskId);
+      const apply = async (next: number, d: number): Promise<void> => {
+        if (currentBt) {
+          await completeRaw(currentBt.id, { currentCount: next });
+          return;
+        }
+        try {
+          const boardBefore = await db.boards.get(boardId);
+          await incrementCompoundChildFallback(childTaskId, d, windowStart, windowEnd, boardId);
+          const boardAfter = await db.boards.get(boardId);
+          const outcome = boardBefore && boardAfter ? flashFromBoardSnapshots(boardBefore, boardAfter, true) : null;
+          if (outcome) onFlash(outcome);
+        } catch (err) {
+          console.error('Compound child increment failed:', err);
+          onFlash(messageOutcome('Something went wrong'));
+        }
+      };
+      // A flagged compound completed by this step credits its counter once
+      // (the watch); the toast's Undo steps the child back.
+      await watchCredits(childTaskId, () => apply(current + delta, delta), () => apply(current, -delta));
+    },
+    [playLocked, taskMap, boardTasks, completeRaw, watchCredits, onFlash, boardId, squareWindowContext,
+      handleSharedCounterIncrement, handleSharedCounterDecrement]
+  );
+
   return {
     editDraft,
     commitEdits,
@@ -595,5 +652,6 @@ export function useBoardPlay(params: UseBoardPlayParams): UseBoardPlayResult {
     undoCounterLog,
     undoCreditedToast,
     handleCompoundChildToggle,
+    handleCompoundChildIncrement,
   };
 }

@@ -328,6 +328,7 @@ export function BoardPlaySurface({
     handleSharedCounterDecrement,
     undoCreditedToast,
     handleCompoundChildToggle,
+    handleCompoundChildIncrement,
   } = useBoardPlay({
     board,
     editMode,
@@ -919,9 +920,8 @@ export function BoardPlaySurface({
               if (isSealed) return;
               if (modalCurrentCount > 0) void handleComplete(bt.id, { currentCount: modalCurrentCount - 1 });
             }}
-            onCompoundChildToggle={
-              squareData.type === 'compound' ? handleCompoundChildToggle : undefined
-            }
+            onCompoundChildToggle={squareData.type === 'compound' ? handleCompoundChildToggle : undefined}
+            onCompoundChildIncrement={squareData.type === 'compound' ? handleCompoundChildIncrement : undefined}
             onOpenInLibrary={(taskId) => { setSelectedSquareId(null); setOpenedTaskInLibrary(taskId); }}
             quickAmount={quickAmount}
             achievementBadge={achievementBadgesByBoardTaskId[bt.id]}
