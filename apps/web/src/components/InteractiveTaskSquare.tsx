@@ -844,7 +844,10 @@ export function DetailModal({
                       >
                         −
                       </button>
-                      <span className={styles.compoundChildCount}>
+                      <span
+                        className={styles.compoundChildCount}
+                        aria-label={`${formatCount(child.count.current, child.count.kind)} of ${formatCountWithUnit(child.count.max, child.count.kind, child.count.unit)}`}
+                      >
                         {formatCount(child.count.current, child.count.kind)} / {formatCount(child.count.max, child.count.kind)}
                       </span>
                       <button

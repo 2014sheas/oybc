@@ -123,15 +123,19 @@ struct CompoundChildRow: View {
         .accessibilityElement(children: .contain)
     }
 
-    /// One 32pt pill button — `RisoCountStepperView.stepButton`'s look.
+    /// One 32pt pill button — `RisoCountStepperView.stepButton`'s look, with
+    /// an invisible 44pt-tall hit area: the compound sheet is a spacious
+    /// modal (unlike the wizard's dense member rows), and a mis-tap here logs.
     private func stepButton(_ glyph: String, enabled: Bool, label: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Text(glyph)
                 .font(.risoHead(15, .extraBold))
                 .foregroundStyle(Color.risoInk)
                 .frame(width: 32, height: 32)
+                .padding(.vertical, 6)
                 .contentShape(Rectangle())
         }
+        .padding(.vertical, -6)
         .buttonStyle(.plain)
         .opacity(enabled ? 1 : 0.4)
         .disabled(!enabled)
