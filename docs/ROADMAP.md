@@ -138,10 +138,10 @@ task/window core to one shape: a per-board goal modelled as an extra `Task`
 row (window-stamped derived counters, derived compounds, counter-placement
 copies, stamp-in-place), kept in sync by propagation, a freeze, baselines and
 a heal on every pull. Owner decision: remove the cause before launch rather
-than patch symptoms. `BoardTask` gains `targetOverride` / `childTargets`; a
+than patch symptoms. `BoardTask` gains `targetOverride` + `targetKind` / `childTargets` / `titleOverride`; a
 square's state becomes one pure function of task structure, placement
 parameters and the owner's events in the host window; the derived-row
-machinery is retired. Seven slices, each both platforms — spec, migration,
+machinery is retired. Nine PRs (slices 3 and 6 split for the two-client lockstep rule), each both platforms — spec, migration,
 acceptance and risks in [`TASK_WINDOW_REWORK.md`](TASK_WINDOW_REWORK.md).
 Slice 0 ("context window wins" + the folded-in correctness fixes) ships first
 and is independent of the rest.

@@ -15,31 +15,37 @@ the one compatibility risk, and the sequencing rules below are built around it.
 Owner rulings (2026-10-16): (1) a counter's per-window target is **frozen on
 the placement** when the board is made or the square is edited; (2)
 board-scoped forks **stay full Task clones but stop copying events**; (3)
-sequencing: merge #624 / #625, then this design doc, then `/feature` slices.
+sequencing: merge #624 / #625, then this design doc, then `/feature` slices;
+(4) a per-board rename of a counter square lives in **`titleOverride` on the
+placement**, never a fork; (5) the frozen target carries its **count kind**
+(`targetKind`), so a later kind switch never changes how a past board scores.
 
-Revision 2 (2026-10-16) folds in the internal design review of PR #626: the
-fork read-through rule, the Counters-hub re-model, no duplicate placements,
-heal retirement moved to slice 3, an equivalence-gated post-pull migration
-sweep, the member-rule input change, counts-toward, titles, and the wire
-shape of `childTargets`.
+Revisions: r2 (internal review 1) — fork read-through, hub on placements, no
+duplicate placements, heal retired in slice 3, gated post-pull sweep. r3
+(internal review 2) — corrected lockstep rule with slices 3 and 6 split,
+shadowing-clone fork rule with undo, forward child matching, no tombstones in
+the sweep, a defined gate with a terminal outcome, counts-toward boundary,
+root reachability helper, `titleOverride` / `targetKind`, wire details,
+sweep cost bounds, acceptance made testable.
 
 ## The model, stated once
 
 > A **Task** is a library definition (structure, default goal). A
 > **Placement** (`BoardTask`) puts a task on a board's grid and may carry
-> per-board parameters (lock, target override, child targets). **Events**
-> (`task_events`) are the only authored record of what happened; only
-> event-owning tasks (Normal, plain or root Counting) have them, and a linked
-> counter reads its root's events. **A square's state is a pure function of
-> the task structure, the placement's parameters, and the event owner's live
-> events with `occurredAt` inside the board's window
-> `[startDate, min(endDate, sealedAt)]`.** Compounds evaluate their children
-> over the same host window; Achievements evaluate watched boards over it.
-> Everything stored on a Task about completion is a cache for context-less
-> (library) readers and is never read by a board. A sealed board stores a
-> snapshot that must equal that function over the converged event union. Logs
-> from a board's own surface after its end are stamped `min(now, endDate)`;
-> logs from anywhere else are stamped `now`.
+> per-board parameters (lock, target override with its kind, child targets,
+> title override). **Events** (`task_events`) are the only authored record of
+> what happened; only event-owning tasks (Normal, plain or root Counting)
+> have them, and a linked counter reads its root's events. **A square's
+> state is a pure function of the task structure, the placement's
+> parameters, and the event owner's live events with `occurredAt` inside the
+> board's window `[startDate, min(endDate, sealedAt)]`.** Compounds evaluate
+> their children over the same host window; Achievements evaluate watched
+> boards over it. Counts shown anywhere, on a board or in the library, come
+> from events; the completion caches stored on a Task exist for sorting and
+> filtering only and are never read by a board. A sealed board stores a
+> snapshot that must equal that function over the converged event union.
+> Logs from a board's own surface after its end are stamped
+> `min(now, endDate)`; logs from anywhere else are stamped `now`.
 
 Every current invariant in `CLAUDE.md` §Windowed Completion follows from this
 paragraph except the derived-row ones (freeze, baseline, stamp, heal). The
@@ -49,8 +55,8 @@ rework is done when those four no longer exist.
 
 The model has no place to put a per-board parameter. Every per-board
 difference (a counter's window target, a vary roll, a split part, a per-board
-goal default) becomes a new `Task` row, and that row then needs machinery to
-stay in sync with the library row it shadows:
+goal default, a per-board title) becomes a new `Task` row, and that row then
+needs machinery to stay in sync with the library row it shadows:
 
 | Mechanism today | Why it exists | What it costs |
 | --- | --- | --- |
@@ -74,42 +80,65 @@ one surface choosing wrong.
 export interface BoardTask {
   // …existing: id, boardId, taskId, row, col, isCenter, isLocked, timestamps, sync meta
   /**
-   * A counting placement's goal for THIS board (owner ruling 2026-10-16:
-   * frozen when the board is made or the square is edited). Absent ⇒ the
-   * task's own `maxCount`. Carries the wizard's window-pro-rated auto target,
-   * a Vary roll, a Split-up part's share, or the root's timeframe default.
-   * Positive and step-aligned for the root's count kind (never 0: a goal of
-   * 0 would be "green at 0").
+   * A counting placement's goal for THIS board (ruling 1: frozen when the
+   * board is made or the square is edited). Absent ⇒ the task's own
+   * `maxCount`. Carries the wizard's window-pro-rated auto target, a Vary
+   * roll, a Split-up part's share, or the root's timeframe default.
+   * Positive and step-aligned for `targetKind` (never 0).
    */
   targetOverride?: number;
   /**
-   * A compound placement's per-child goals for THIS board. An ARRAY of
-   * `{ childId, target }`, keyed by the compound's own child task ids
-   * (a linked child is keyed by its own id, not its root). Absent ⇒ each
-   * child's own `maxCount`. Replaces per-window derived compounds + links.
-   * An array, not a map: Firestore writes are `merge: true`, and a map
-   * field deep-merges, so a removed key would survive remotely; an array
-   * replaces wholesale, and a whole-field clear rides the clearable-field
-   * delete like any other.
+   * The count kind `targetOverride` is expressed in (ruling 5). Written
+   * together with `targetOverride`, never alone. When the root's current
+   * kind differs, the kernel converts the target into the root's kind with
+   * the kind-switch conversion (`max(step, round-to-step)`), at read time,
+   * so a kind switch rewrites no placement and touches no sealed board.
+   */
+  targetKind?: CountKind;
+  /**
+   * A compound placement's per-child goals for THIS board: an ARRAY of
+   * `{ childId, target }` sorted by `childId`, keyed by the compound's own
+   * DIRECT child task ids (a linked child by its own id, not its root; a
+   * nested compound child keeps its own children's `maxCount`). Absent ⇒
+   * each child's own `maxCount`; `[]` is normalised to absent on write.
+   * Replaces per-window derived compounds + links. An array, not a map:
+   * Firestore writes are `merge: true` and a map deep-merges, so a removed
+   * key would survive remotely; an array replaces wholesale, and a
+   * whole-field clear rides the clearable-field delete. Stored as canonical
+   * JSON text (sorted keys) in GRDB so `rowsGenuinelyDiffer` and LWW compare
+   * bytes consistently. When a child is forked, its key is re-keyed to the
+   * fork in the same write.
    */
   childTargets?: { childId: string; target: number }[];
+  /**
+   * A per-board title for a counter square (ruling 4). Absent ⇒
+   * `placementTitle` renders the root's templates at the placement's goal.
+   * A rename on a counter square writes this and keeps the counter link;
+   * it never forks.
+   */
+  titleOverride?: string;
 }
 ```
 
-- Both fields are optional and absent on every existing row (forward-compat
-  decode like `isLocked`). They join `CLEARABLE_FIELDS_BY_COLLECTION.boardTasks`
-  (TS constant, Swift map, regenerated `syncContract.json`, C4 fixture pins
-  the wire shape). `firestore.rules` checks only `id` / `version` keys and
-  `userId`, so no rules change. Zod: `targetOverride > 0`, 2-dp quantized;
-  each `childTargets[].target` likewise; `childId`s unique.
+- All four fields are optional and absent on every existing row
+  (forward-compat decode like `isLocked`). They join
+  `CLEARABLE_FIELDS_BY_COLLECTION.boardTasks` (TS constant, Swift map,
+  regenerated `syncContract.json`; the C4 fixture pins the wire shape).
+  `firestore.rules` checks only `id` / `version` keys and `userId`, so no
+  rules change. Zod: `targetOverride > 0`, quantized to `targetKind`'s step;
+  each `childTargets[].target` likewise, `childId`s unique; every new field
+  parsed with a per-field `.catch(undefined)` so a bad value falls back to
+  the default instead of dropping the whole placement on pull.
 - A placement points at the **library entity**: the counter root, the user's
   hand-made linked task, or the source compound. Nothing is minted at
   placement time.
 - **One placement per (board, task) stays invariant.** `computePlacementIntegrityRepair`
   tombstones same-task duplicates on pull, deterministically, and that is
-  kept. Split-up parts that share one root collapse to one placement
-  (today's R13 rule: the first part's roll wins); parts on different children
-  are different task ids and need no duplicates.
+  kept. Split-up parts that share one root collapse to one placement (R13:
+  the first part's roll wins). Two parts on two different linked children of
+  one root are two squares completed by the same logs; the planner extends
+  counter-family exclusivity to collapse those onto one placement as well,
+  so this behaviour change does not reach the user.
 - A target edit, a shuffle and a lock now share one LWW row. For a single
   user this is acceptable; noted under Risks.
 
@@ -120,75 +149,95 @@ export interface BoardTask {
 - **Event owner**: the task itself for Normal / plain / root Counting; the
   root for a linked task (`sharedCounterId`); for a fork, the rule in §Forks.
 - **Window**: the host board's `[startDate, min(endDate, sealedAt)]`, always.
-  A task's own `startDate` / `endDate` / `timeframe` are never read by a
-  board (they are retired, see below).
-- **Goal**: `placement.targetOverride ?? task.maxCount`; a compound child's
-  goal is the parent placement's `childTargets` entry for that child, else
-  the child's own `maxCount`. The kernel finalizes the goal for the root's
-  CURRENT count kind at read time (`finalizeWindowCount` on the goal), so a
-  kind switch never rewrites placements (and never touches sealed boards).
+  "Host present" means a BOARD window; `LIFETIME_WINDOW` is not a host. A
+  task's own `startDate` / `endDate` / `timeframe` are never read by a board.
+- **Goal**: `placement.targetOverride ?? task.maxCount`, converted from
+  `targetKind` into the root's current kind when they differ; a compound
+  child's goal is the parent placement's `childTargets` entry for that child,
+  else the child's own `maxCount`.
 - **Completion**: one rule for every counting shape — complete iff a goal
-  exists and `count >= goal` (closes the audit's two-rules finding: a
-  goal-less linked row is never "green at 0").
+  exists and `count >= goal` (a goal-less linked row is never "green at 0").
 - Compounds recurse with the same window and the parent placement's
   `childTargets`; Achievements keep their watched-board rule.
-- **Title**: a shared `placementTitle(task, placement, root)` renders a
-  counting square's title through the root's templates at the placement's
-  goal (today's `counterCopyTitle`), used by every square-title surface
-  (cells, poster, previews, late-log sheet, Task Detail usage, arrivals).
+- **Title**: `placementTitle(task, placement, root)` = `titleOverride`, else
+  the root's templates rendered at the placement's goal (today's
+  `counterCopyTitle`), used by every square-title surface (cells, poster,
+  previews, late-log sheet, Task Detail usage, arrivals).
+- **Root reachability**: one helper on both platforms,
+  `placementsReachedByRoot(root)` = root → every task linked to it →
+  transitive parent compounds → placements. It replaces
+  `withWindowStampedDerived` / the three-mark expansion in
+  `boardLifecycle.resolveAffectedBoardIds`, `lateLog`, `sealing`,
+  `taskEventPull`, `expandToWindowStampedDerived` and iOS
+  `boardIdsReachedByTasks`, and the Sources supply loader uses it for a
+  hand-made linked placement's root events.
 
 `resolveLinkedCounterDisplay` becomes a thin wrapper over this rule (display
 = kernel, by construction). `countsToward.stateOf` and the Sources sheet's
 `resolveBoardSourceSupply` (done-filter, `windowCountByTaskId`) read the same
-rule with the placement. Context-less readers (library, a hub card with no
-board) compute lifetime from events: a root's lifetime sum; a linked task
-shows "Linked to ‹counter› · ‹lifetime total›" plus "goal N per board" (its
-`maxCount` remains the default placement goal).
+rule with the placement. Context-less readers (library, compound Task Detail,
+`computeTaskCachesFromEvents`, credits for unplaced compounds) compute from
+events: a root's lifetime sum; a linked task shows "Linked to ‹counter› ·
+‹lifetime total›" plus "goal N per board" (its `maxCount` remains the default
+placement goal). The start-from-zero `baseline` display for unplaced linked
+rows is retired with it.
 
 ### Counters hub, arrivals and the library family row
 
 Today a counter is a "root" only because some live task links to it
 (`sharedCounterRootIds`), and the hub's member cards ARE linked tasks. After
-the migration a board-born root may have no linked task left, so the hub
-must be re-modelled in slice 2, before any repoint:
+the sweep a board-born root may have no linked task left, so the hub is
+re-modelled in slice 2, before any repoint:
 
-- **Members = placements**: a root's direct placements plus the placements
-  of every task linked to it (reached through compound parents too). One
-  card per placement, with the placement's goal and the host board's window;
-  `pickPrimaryBoard` goes away.
-- **Root detection** gains: a counting task placed with a `targetOverride`,
-  or placed on more than one board, or `isCounter`. The migration also sets
-  `isCounter = true` on every root it repoints to, so detection does not
-  depend on the heuristic.
+- **Root detection**: a counting task is a root iff it `isCounter`, or has a
+  live linked task, or has a live placement carrying `targetOverride`. (Not
+  "placed on more than one board": that would make every recurring plain
+  counter a hub counter.) No stored flag is written by the sweep: `isCounter`
+  is refused by Zod together with `countsTowardCounterId` and `canContribute`
+  returns false for it, so setting it would drop rows on pull and withdraw
+  credits.
+- **Members = placements**: the root's direct placements plus the placements
+  reached through its linked tasks and their parent compounds. One card per
+  placement with the placement's goal, title and the host board's window;
+  `pickPrimaryBoard` goes away. Card actions: tap opens the board; "remove"
+  on a card of a linked task unlinks that task (task-level, as today); on a
+  card of the root it clears the override. Counter Detail's unit tasks and
+  return ring are task-level and unchanged. Forks are never members (a fork
+  has no counter link; renames no longer fork).
 - Arrivals (`useCounterArrivals` ↔ Swift) and the library family row use the
   same root set and placement members. Vectors pin hub groups before and
-  after the migration on the owner's export.
+  after the sweep on an anonymised fixture of the owner's export.
 
 ### Writers emit parameters, not rows
 
-- `planDerivedTasks` returns `placements: { taskId, targetOverride?, childTargets? }[]`
+- `planDerivedTasks` returns `placements: { taskId, targetOverride?, targetKind?, childTargets?, titleOverride? }[]`
   instead of `derivedTasks` / `derivedCompounds` drafts. The member-rule
-  maths (auto target, vary, split, pool default dice, timeframe defaults)
-  is unchanged in form, but **one input changes**: a board-sourced member's
-  goal (`goalOf`) must be the supplied placement's effective goal
-  (`targetOverride ?? maxCount`), which `BoardSourceSupplyInfo` now carries;
-  today it reads the derived row's frozen `maxCount`, and reading the root's
-  goal instead would pro-rate from 300 rather than 70. New vectors pull from
-  a board that holds overridden placements; the existing `memberRuleVectors`
-  are re-expected by hand against that rule, not mechanically.
+  maths (auto target, vary, split, pool default dice, timeframe defaults;
+  `placementGoalForCounter` / `counterPickGoal` survive with their output
+  becoming the override) is unchanged in form, but **one input changes**: a
+  board-sourced member's goal (`goalOf`) must be the supplied placement's
+  effective goal (`targetOverride ?? maxCount`), which `BoardSourceSupplyInfo`
+  now carries; today it reads the derived row's frozen `maxCount`, and
+  reading the root's goal instead would pro-rate from 300 rather than 70.
+  New vectors pull from a board that holds overridden placements; the
+  existing `memberRuleVectors` are re-expected by hand against that rule.
 - Wizard persist, recurring spawn, Board Edit add / replace, quick-add and
-  the two placement choke points all write the same `BoardTask` shape. The
-  choke points' "resolve to this board's own row" step is deleted in slice 3,
-  together with the heal (see §Sequencing).
+  the two placement choke points all write the same `BoardTask` shape.
+- **Every writer that copies an existing placement** (Repeat this board,
+  pulling from a board source, core next-window) resolves a placement that
+  still points at a derived row to its root or source compound with the
+  equivalent override / `childTargets` / `titleOverride` at write time, so
+  no derived row ever gains a new placement.
 - **Board Edit edits on a placed counter**: a goal edit writes
-  `targetOverride`; a compound child's goal edit writes `childTargets`;
-  only a title or structure edit forks (`wouldForkOnBoard` and its vectors
-  change in slice 3). Without this, every goal edit on a root placement would
-  fork the root and the next spawn's pull from that board would supply
-  nothing (forks are excluded from source supply).
+  `targetOverride` + `targetKind`; a compound child's goal edit writes
+  `childTargets`; a rename writes `titleOverride`; only a structure edit
+  forks (`wouldForkOnBoard` and its vectors change in slice 3a). Without
+  this, a goal edit on a root placement would fork the root and the next
+  spawn's pull from that board would supply nothing.
 - Recurring templates keep storing sources and member rules; spawn resolves
   them into placement parameters per window. **Repeat this board copies a
-  placement's frozen override** (ruling 1); spawn re-plans from rules.
+  placement's frozen override and title** (ruling 1); spawn re-plans from
+  rules.
 - Hand-added compound children get the same per-child goal treatment as
   pulled ones.
 - Counts-toward credits at the placement's goal (`crossingEvent` reads the
@@ -198,9 +247,8 @@ must be re-modelled in slice 2, before any repoint:
 
 - Window-stamped derived counters, derived compounds and derived links; the
   three-mark predicate `isWindowStampedDerived`, `isWindowStampedDerivedCompound`,
-  `isMintedForBoard`, `isBoardArtifact`, `derivedTaskId` / `derivedCompoundId`
-  / `derivedLinkId` minting (the id functions remain for the migration's
-  matching only).
+  `isMintedForBoard`, `isBoardArtifact`; `derivedTaskId` / `derivedCompoundId`
+  / `derivedLinkId` survive only in the sweep's matching.
 - `Task.startDate` / `endDate` / `timeframe` as kernel inputs. The columns
   stay for decode compatibility; the Tasks-tab "expired" filter and the hub's
   "show expired" are re-based on placements in slice 5 (an unplaced task is
@@ -212,42 +260,53 @@ must be re-modelled in slice 2, before any repoint:
   (draft-board library hiding). On rows the heal stamped, the original
   provenance is unrecoverable; harmless while the row is linked.
 - Counter-placement copies (`placementNeedsCopy`), root-field propagation to
-  copies, count-kind switch fan-out to copies (the kernel finalizes goals
-  per kind at read time instead).
-- `planLinkedCounterWindowHeal`, its data layers and the post-pull sweep
-  (slice 3), and the v18/v20 ↔ v37/v44 re-runs (migration history stays).
+  copies, count-kind switch fan-out to copies (`targetKind` freezes the
+  goal's kind instead).
+- `planLinkedCounterWindowHeal`, its data layers, the post-pull sweep and
+  the choke points' resolve step (slice 3a); the v18/v20 ↔ v37/v44 re-runs
+  (migration history stays).
 - `propagateIncrement`, `writeLinkedRowPropagation`, `isFrozenDerivedRow`,
   `isFrozenRowReachedByEvent`, `reachedFrozenIds`, `refreshDerivedBaselines`,
   `computeWindowBaseline` and the `baseline` field as a read input (column
   kept inert like `lastSyncedCount`); `deleteCounterWithUnlink` seeds the
-  unlinked member's snapshot from events, not `currentCount − baseline`. An
-  increment is one event write plus one cascade.
+  unlinked member's snapshot from events. An increment is one event write
+  plus one cascade.
 - Derived-row deletion cascades (`softDeleteWindowStampedDerived`,
-  `windowStampedDerivedOrphanedByBoard`); `deleteCounterWithUnlink` only
-  unlinks.
-- `tasks.timeframe` / `startDate` as clearable sync fields (added by #624)
-  once no writer clears them (after slice 5).
+  `windowStampedDerivedOrphanedByBoard`); `computeTaskDeletionImpact.derivedWindowCounterCount`
+  and `derivedCounterRemovalNote` (both platforms); `deleteCounterWithUnlink`
+  only unlinks.
+- `tasks.timeframe` / `startDate` / `endDate` as clearable sync fields (the
+  first two added by #624, the third by the 2026-10-01 heal) once no writer
+  clears them (after slice 5).
 
 ### Forks (owner ruling 2)
 
-Board-scoped forks stay real `Task` rows (title, structure and action
-genuinely diverge). The fork is an independent event owner for everything
-logged after it exists, so "read the original's events" must be precise:
+Board-scoped forks stay real `Task` rows (structure genuinely diverges;
+title and goal edits on counter squares no longer fork, see above). A fork is
+an independent event owner for everything logged after it exists, and
+existing forks already carry clones of their pre-fork events, so the rule
+must make both shapes evaluate identically:
 
-- **Read-through**: a fork's events are the original's events with
-  `occurredAt < fork.createdAt` (following `forkedFromTaskId` to the end of
-  the chain, each hop bounded by that hop's `createdAt`), unioned with the
-  fork's own events. Writers keep writing to the fork's id. This is the
-  D4(b) option in `BOARD_SCOPED_TASK_EDITS.md`, chosen now.
-- A fork whose type changed (`editedType`) reads only its own events; the
-  original's are of a kind its type cannot own.
-- Find-affected-boards and the sealed re-derivation walk forks in both
-  directions (an original's new event never reaches a fork, but a tombstoned
-  pre-fork event does).
-- `planBoardScopedFork` stops cloning events. Existing clones are tombstoned
-  by the migration (deterministic `forkedEventId`) **only under the
-  read-through rule above**, and only when the board's re-derivation is
-  unchanged (the equivalence gate).
+- **Shadowing clones**: for each event `e` of the original with
+  `occurredAt < fork.createdAt` (the converged `createdAt`, after LWW has
+  picked between two offline forkers), if a row with id
+  `forkedEventId(fork, e)` exists in ANY state, that clone's state decides
+  (live counts, tombstoned does not); otherwise the fork reads through to
+  `e`. The fork's own non-clone events count as its own. `ForkEventResolver`
+  already dedupes this way for counts-toward.
+- Existing forks therefore evaluate exactly as today; tombstoning old clones
+  is unnecessary and is not done.
+- **Undo on a fork** of a pre-fork occurrence writes a tombstoned shadow row
+  `forkedEventId(fork, e)` (authored); the original's event is untouched, so
+  no other board changes. Late-log undo on a fork does the same.
+- A fork whose type changed (`editedType`) reads only its own events.
+- A fork is never re-forked, so there is no chain.
+- Find-affected-boards and the sealed re-derivation include a fork's boards
+  for any original event with `occurredAt < fork.createdAt` (a late log
+  stamped at an ended board's `endDate`, or an offline event synced later,
+  can arrive after the fork with an earlier `occurredAt`).
+- `planBoardScopedFork` stops cloning events in slice 6b, after every client
+  reads shadows (slice 6a).
 
 ### Correctness fixes folded in (audit Majors 2, 5; Minors)
 
@@ -257,145 +316,165 @@ logged after it exists, so "read the original's events" must be precise:
   already has `reDeriveAfterLateLogWrite`; web gains the equivalent).
 - **Closed-board compound late log** maps a linked counting child to an
   increment on its root stamped at the board's late-log instant.
-- iOS inline-wizard compounds stop carrying the derived-compound marks
-  (moot once the predicate is gone, fixed in slice 0 anyway).
+- iOS inline-wizard compounds stop carrying the derived-compound marks.
 - Drafts never feed window logic; un-placing a task on a board clears its
   placement only.
 - Web adapters pass `sealedAt` for compound children; the extra closed-board
   sum implementation is deleted (display = kernel).
 - Decrement never completes (iOS behaviour, adopted on web).
 - Late-log matching (`selectClosedBoardLateLogs`) by provenance —
-  `boardId` + kind + `createdAt > board.endDate` — not by exact instant (a
-  sealed board authors no event; a direct late log happens before any seal
-  or Reopen), which also removes the cross-zone mismatch.
+  `boardId` + kind + `createdAt > board.endDate` — not by exact instant,
+  which also removes the cross-zone mismatch.
 
 ### Decisions
 
-| Question | Decision / recommendation | Where it lands |
+| Question | Decision | Where it lands |
 | --- | --- | --- |
-| Window evaluation is device-timezone dependent (board bounds are local-ISO). | Accept and document as travel-mode divergence; late logs matched by provenance (above). Revisit instants / per-board offset after launch. | Slice 0 |
+| Window evaluation is device-timezone dependent (board bounds are local-ISO). | Accept and document as travel-mode divergence; late logs matched by provenance. Revisit instants / per-board offset after launch. | Slice 0 |
 | Tasks tab "expired" and hub "show expired" key on a task's own window. | Re-base on placements with the two edges above. | Slice 5 |
 | Linked task in the library. | "Linked to ‹counter› · ‹lifetime total›" + "goal N per board". | Slice 2 |
-| Hub member model. | Members = placements; root detection widened; migration sets `isCounter`. | Slice 2 |
-| Board Edit goal edit on a placed counter. | Writes `targetOverride` / `childTargets`; never forks. | Slice 3 |
-| Repointed derived compounds and counts-toward. | A derived compound never copied `countsTowardCounterId`; after a repoint to a flagged source, credit only occurrences at or after the migration instant (`countsTowardSince` semantics), never retroactively. Pinned by a vector. | Slice 4 |
-| Live structure on past boards. | After the repoint, a source compound's structure and a root's templates render live on every unsealed past board (the derived rows used to snapshot them). Accepted; sealed boards are protected by the equivalence gate. | Risks |
+| Hub member model. | Members = placements; root = `isCounter` or linked or placed with an override; no stored flag written. | Slice 2 |
+| Board Edit edits on a placed counter. | Goal → `targetOverride` + `targetKind`; child goal → `childTargets`; rename → `titleOverride`; structure → fork. | Slice 3a |
+| Per-board title (ruling 4). | `titleOverride` on the placement. | Slice 1 |
+| Kind switch vs frozen targets (ruling 5). | `targetKind` on the placement; conversion at read time; sealed boards untouched. | Slice 1 |
+| Counts-toward on repointed placements. | A repointed placement on a board whose window ended before the contributor's `countsTowardSince` never credits; otherwise credits as any placement. Deterministic (converged data only), applies to counters and compounds. | Slice 4 |
+| Live structure on past boards. | After a repoint, a source compound's structure and a root's templates render live on unsealed past boards. Accepted; sealed boards are protected by the gate. | Risks |
+| Sweep writes on sealed boards. | Repointing a placement on a sealed board is an explicit, named exception to "sealed boards never mutate", with its own write path (`repointSealedPlacement`): deterministic content, re-derivation proven equal. | Slice 4 |
 
-## Migration (both platforms, deterministic, equivalence-gated)
+## Migration sweep (both platforms, deterministic, equivalence-gated)
 
 Not a one-shot. A **state-based sweep** (no completion marker) that runs at
-database open (GRDB `v45` / Dexie `v21` as the first trigger) **and after
-every clean pull**, until slice 5 has shipped on both clients; it keys on
-every placement → task pair in any state, including tombstoned, so rows
-minted by a not-yet-upgraded client are still converted when they arrive.
+database open (GRDB `v46` / Dexie `v22` as the first trigger; slice 1's
+columns are `v45` / `v21`) **and after every clean pull, after
+`healMissingCompletionEvents`**, until slice 5 has shipped on both clients.
+It never tombstones a task row; it only repoints placements and re-keys
+rules. Cost bounds: candidates are found by marks first (rows with the three
+marks, derived compounds, fork clones); the sweep exits immediately when
+there are none; one uuidv5 index is built per run over `(board, root)` and
+`(board, compound)` pairs pre-filtered by title, operator and threshold;
+tombstoned placements are scanned only on boards that hold a marked row.
+
 Each board is handled independently:
 
 1. **Compute, don't trust.** Build the board's post-repoint placements in
-   memory (steps 2–4), then run `computeBoardGrid` before and after over the
-   same event union. **Repoint only when the two are equal** (live boards:
-   cell states and stats; sealed boards: equal to `sealedCompletedCells`).
-   Otherwise leave the board's rows untouched; slice 2 already reads leftover
-   derived rows correctly as plain linked tasks over the host window, so a
-   skipped board is correct, merely uncleaned. The gate is the answer to
-   "what if the snapshot assertion fails on a device": nothing changes.
+   memory (steps 2–3), then run the kernel before and after over the same
+   event union and compare **`idx → isCompleted`, `completedTasks`,
+   `completedLineIds` and status** (bounded at `sealedAt` for a sealed
+   board). Titles, ids and hub membership are outside the comparison.
+   **Repoint only when equal.** A refused board gets a terminal outcome in
+   the same run: its marked rows have their window marks stripped and stay
+   as plain linked tasks / ordinary compounds, which the slice-2 kernel
+   reads over the host window; nothing else changes. Stored-snapshot drift
+   on a sealed board (slice 0's date-edit check names such boards) is
+   reported, not blocked on.
 2. **Derived counters**: repoint each live placement to the row's
-   `sharedCounterId`, set `targetOverride = row.maxCount` (folding a
-   later-version edit of the row's `maxCount` if one has arrived), bump
-   `version`, enqueue UPDATE; tombstone the derived row (authored). A derived
-   row whose title differs from the regenerated copy title (a Board Edit
-   rename) is kept as a fork of the root instead of losing the rename.
-3. **Derived compounds**: recover the source by **uuidv5 match**
-   (`derivedCompoundId(board, candidate) == id` over every compound in the
-   workspace, live or tombstoned), following chains (a daily pulled from
-   yesterday's daily derives from a derived compound) to a non-derived
-   source. Build `childTargets` keyed by the source's child ids
-   (`child.sharedCounterId ?? child.id` maps each derived child back).
-   **Repoint only when the source's operator, threshold and mapped child set
-   equal the derived compound's**; otherwise strip the derived compound's
-   window marks and keep it as an ordinary compound (correct under the
-   slice-2 kernel).
-4. **Stamped-in-place hand-made rows** (three marks, id ≠ any
-   `derivedTaskId`): no override write (absent already means `maxCount`);
-   the window fields are cleared in slice 5 with the filter re-base.
-5. **Stored rules keyed by derived ids**: re-key `BoardSource.memberRules`,
-   `parts`, `excludedTaskIds` and `manualTaskVary` on templates, pools and
-   draft boards from derived ids to their repoint targets (child-id keys to
-   source child ids). Rules are stale-inert by design, so without this step
-   the user's targets and exclusions would vanish silently.
-6. **Fork event clones**: tombstone events whose id matches
-   `forkedEventId(fork, original)`, under the read-through rule and the
-   equivalence gate.
-7. **Roots**: set `isCounter = true` on every root a placement was repointed
-   to.
-8. Run the derivation pass for every touched board. Orphaned derived rows
-   (no live placement, no live parent link) are tombstoned.
+   `sharedCounterId`; `targetOverride ??= row.maxCount` (a slice-3a edit
+   wins), `targetKind = row's kind`; a non-auto title (`!isAutoCounterTitle`)
+   becomes `titleOverride`; bump `version`, enqueue UPDATE. **The derived row
+   is not tombstoned here** (another board or compound placing it may have
+   been refused); step 5 retires orphans later.
+3. **Derived compounds**: find the source by **forward uuidv5 match**: for
+   every candidate `(mintBoard, source)` pair in the index,
+   `derivedCompoundId(mintBoard, source) == id`, which identifies both the
+   source and the mint board. Then map children forward: for each source
+   child `c`, `derivedTaskId(mintBoard, c.sharedCounterId ?? c.id)` must be a
+   link child of the derived compound, with collapsed parts allowed (two
+   source children on one root map to one derived child). **Repoint only
+   when the source's operator, threshold and forward-mapped child set equal
+   the derived compound's**; `childTargets` is keyed by `c.id` (collapsed
+   siblings get the same target), existing slice-3a entries re-keyed from
+   derived ids and preferred; a renamed derived compound's title becomes
+   `titleOverride`. Otherwise the terminal outcome of step 1.
+4. **Stored rules keyed by derived ids** (`BoardSource.memberRules`,
+   `parts`, `excludedTaskIds`, `manualTaskVary` on templates, pools and
+   drafts): re-key only rules that resolve against the source's current
+   supply, in deterministic order (derived id ascending, first wins when
+   several collapse onto one key). Rules are stale-inert by design, so
+   without this step the user's targets and exclusions would vanish silently.
+5. **Orphans**: a marked row with no live placement and no live parent link
+   anywhere is tombstoned (authored).
+6. Run the derivation pass for every touched board.
 
 Convergence: content is deterministic and the gate is a pure function of
 the converged inputs, so two devices sweeping the same state write the same
-rows; a device that swept while stale converges on the next sweep after the
-pull that brings the rest. Position edits racing a repoint lose at worst one
-move, never a square (the integrity repair keeps one row per task).
+rows; a device that swept while stale converges on the next sweep. Position
+edits racing a repoint lose at worst one move, never a square (the integrity
+repair keeps one row per task).
 
 ## Sequencing
 
-**Lockstep rule**: every slice deploys to the web app and the iOS TestFlight
-lane together, and no writer slice (3 onward) ships until both clients carry
-slice 1. The owner's two clients are the only version-skew exposure, and a
-client on an older build would run the heal and the choke-point resolve
-against new-shape data.
+**The lockstep rule**: a client may write a field or shape only after every
+client reads it and has stopped rewriting it. "Carry" is operational: the
+web deploy of a slice happens only after the TestFlight build of that slice
+is installed on the owner's device. Slices 3 and 6 are split so that the
+"read" half ships to both clients before the "write" half.
 
 | Slice | Scope | Retires / fixes |
 | --- | --- | --- |
-| **0 — Context window wins** | Kernel: when a host window is present, every linked row resolves over it (`resolveDerivedCounterWindowState` / `resolveLinkedCounterDisplay`, `countsToward.stateOf`, hub member cards; TS + Swift, vectors re-pinned). **The own-stamp branch stays as the context-less fallback** until slice 5, so a hub card or a compound-only derived child with no board still answers from its stamp rather than the latch. Plus: one late-log tail, closed-board late log for linked children, provenance-matched late logs, iOS wizard-compound parity, drafts out of the heal, web `sealedAt` for compound children, decrement latch parity, un-stamp resets `baseline`. Seal re-derivation checked over the owner's export before merge (a board whose dates were edited after minting re-derives differently; the check names any such board). | Audit Majors 1, 2, 3, 5 and the read side of 4; five Minors. No migration. |
-| **1 — Placement fields** | `BoardTask.targetOverride` / `childTargets` in shared types + Zod, Dexie (unindexed) and GRDB column, sync contract clearable fields (TS + Swift map), fixture regen. Inert: no reader, no writer. | — |
-| **2 — Kernel reads placements** | `resolveSquareState`, `placementTitle`; derivation pass, cells, previews, hub (re-modelled on placements), arrivals, library family row, counts-toward, Sources sheet supply, sealed re-derive and the late-log selectors read the placement; one completion rule; `resolveLinkedCounterDisplay` becomes a wrapper; library lifetime from events. Vectors: `derivationPassVectors`, `taskWindowStateVectors`, `memberRuleVectors` extended with placement params; hub-group vectors. Leftover minted rows read as plain linked tasks over the host window. | Two completion rules; display ≠ kernel; latch reads; `pickPrimaryBoard`. |
-| **3 — Writers emit placements** | `planDerivedTasks` output shape + `BoardSourceSupplyInfo` effective goal; wizard persist, spawn, Board Edit add/replace (goal edits write overrides), quick-add; **the choke points' resolve step, the linked-window heal and its post-pull sweep are deleted here**, not in slice 5, or new placements would be re-stamped and re-minted on the next pull. | Minting paths, `placementNeedsCopy`, the heal. |
-| **4 — Migration sweep** | The equivalence-gated sweep above, at open and after every pull; seal re-derivation vectors; counts-toward credit boundary. | Every derived row in existing data that can be repointed safely. |
-| **5 — Retire the machinery** | Delete propagation, freeze, baseline refresh, derived deletion cascades, three-mark predicates, task-window kernel inputs; clear stamped rows' window fields; re-base the expired filters; drop the sweep once both clients carry it and the owner's export shows no derived rows; docs: replace the `CLAUDE.md` Windowed Completion paragraph with the model statement and move its history into an ADR log in `WINDOWED_COMPLETION.md`; `BOARD_SOURCES.md` §Member rules rewritten in placement terms. | The four derived-row invariants. |
-| **6 — Forks read through** | Kernel read-through rule; `planBoardScopedFork` stops cloning events; affected-boards walk; clone tombstones ride the slice-4 sweep. | Duplicate occurrences in the log. |
+| **0 — Context window wins** | Kernel: when a BOARD window is present, every linked row resolves over it (`resolveDerivedCounterWindowState` / `resolveLinkedCounterDisplay`, `countsToward.stateOf`, hub member cards; TS + Swift, vectors re-pinned). **The own-stamp branch stays as the context-less fallback** until slice 5; the context-less readers are listed and vector-pinned. Plus: one late-log tail, closed-board late log for linked children, provenance-matched late logs, iOS wizard-compound parity, drafts out of the heal, web `sealedAt` for compound children, decrement latch parity, un-stamp resets `baseline`. Seal re-derivation checked over the owner's export (local script + anonymised fixture) before merge. | Audit Majors 1, 2, 3, 5 and the read side of 4; five Minors. No migration. |
+| **1 — Placement fields** | `BoardTask.targetOverride` / `targetKind` / `childTargets` / `titleOverride` in shared types + Zod (per-field catch), Dexie (unindexed) + GRDB `v45` / Dexie `v21`, canonical JSON for the array, sync contract clearable fields (TS + Swift map), fixture regen. Inert: no reader, no writer. | — |
+| **2 — Kernel reads placements** | `resolveSquareState`, `placementTitle`, `placementsReachedByRoot`; derivation pass, cells, previews, hub (re-modelled on placements), arrivals, library family row, counts-toward, Sources sheet supply, sealed re-derive and the late-log selectors read the placement; one completion rule; `resolveLinkedCounterDisplay` becomes a wrapper; library lifetime from events. Vectors: `derivationPassVectors`, `taskWindowStateVectors`, `memberRuleVectors` extended with placement params; hub-group vectors. Leftover minted rows read as plain linked tasks over the host window. | Two completion rules; display ≠ kernel; latch reads; `pickPrimaryBoard`; `withWindowStampedDerived`. |
+| **3a — Writers stop minting (both clients)** | Delete the heal, its post-pull sweep and the choke points' resolve step; Board Edit writes overrides / `childTargets` / `titleOverride` instead of forking; copy-writers (Repeat, board-source pulls, core next-window) resolve derived rows at write time; `BoardSourceSupplyInfo` carries the effective goal. | The heal, `placementNeedsCopy`, fork-on-goal-edit. |
+| **3b — Planner emits placements** | `planDerivedTasks` output shape; wizard persist, spawn, quick-add write parameters. Gated on both clients carrying 3a. | Minting paths. |
+| **4 — Migration sweep** | The gated sweep above, at open and after every pull; seal re-derivation vectors; counts-toward boundary; `repointSealedPlacement`. | Every derived row that can be repointed safely; the rest stripped to plain rows. |
+| **5 — Retire the machinery** | Delete propagation, freeze, baseline refresh, derived deletion cascades, three-mark predicates, task-window kernel inputs, the own-stamp fallback; clear stamped rows' window fields; re-base the expired filters; drop the sweep once both clients carry it and the fixture shows **no marked rows**; docs: replace the `CLAUDE.md` Windowed Completion paragraph with the model statement and move its history into an ADR log in `WINDOWED_COMPLETION.md`; `BOARD_SOURCES.md` §Member rules rewritten in placement terms. | The four derived-row invariants. |
+| **6a — Forks read shadows (both clients)** | Kernel: shadowing-clone rule, undo writes shadow tombstones, affected-boards walk includes forks. | — |
+| **6b — Forks stop cloning** | `planBoardScopedFork` stops cloning events. Gated on both clients carrying 6a. | Duplicate occurrences in the log. |
 
-Slice 0 is independent and ships first. Slices 1–3 are additive and merge one
-at a time (3 after both clients carry 1). Slices 4 and 5 are the cut-over.
+Slice 0 is independent and ships first. Slices 1, 2 and 3a are additive and
+merge one at a time; 3b after both clients carry 3a. Slices 4 and 5 are the
+cut-over; 6a/6b can ride alongside 4/5.
 
 ## Acceptance
 
-- `grep` finds no non-test reference to `isWindowStampedDerived`,
+- After slice 5: `grep` finds no non-test reference to `isWindowStampedDerived`,
   `isFrozenDerivedRow`, `refreshDerivedBaselines`, `propagateIncrement`,
   `planLinkedCounterWindowHeal` or `placementNeedsCopy` in `apps/` or
   `packages/shared/src`; `derivedTaskId` / `derivedCompoundId` survive only
-  in the migration sweep until it is dropped.
-- A daily series that re-places one compound with a linked counting child
-  completes that child on every spawn from logs inside each day's window
-  (the #624 scenario, as a vector on both platforms).
-- An increment writes exactly one `tasks` row (the root's lifetime cache) and
-  one event; no linked-row writes, no sync items for copies.
-- No sealed board's `sealedCompletedCells` changes across the migration on
-  the owner's export (the gate guarantees it; the test proves it).
-- The Counters hub shows one card per placement with the placement's goal,
-  on both platforms, before and after the sweep.
-- Every exported shared-algorithm function in the kernel is covered by a
-  vector suite run by Jest and the Swift twin (CI guard, new).
+  in the sweep until it is dropped.
+- The #624 scenario as a vector on both platforms: a daily series re-places
+  one compound with a linked counting child, and the child completes on
+  every spawn from logs inside each day's window.
+- An increment writes exactly one `tasks` row for the root's lifetime cache
+  plus whatever the counts-toward credit path writes for contributors; no
+  linked-row writes, no sync items for copies.
+- The anonymised owner fixture (committed; produced by a local export
+  script) shows no sealed board whose kernel re-derivation changes across
+  the sweep, and after slice 5 **no marked rows**.
+- The Counters hub shows one card per placement with the placement's goal
+  and title, on both platforms, before and after the sweep.
+- Fork vectors: read-through with and without shadows, undo of a pre-fork
+  occurrence, a late log arriving after the fork.
+- Counts-toward vectors: no retroactive credit on a repointed placement of
+  an ended board.
+- A two-client skew test per split slice (3a/3b, 6a/6b): the older client's
+  reads of the newer client's rows are correct.
+- Every exported function of the kernel modules (`taskEvents`,
+  `compoundEvaluation`, `derivationPass`, `memberRules`, `placementResolution`,
+  `boardScopedFork`, `countsToward`) is covered by a vector suite run by Jest
+  and the Swift twin (CI guard, new).
 - `CLAUDE.md` §Windowed Completion is the model paragraph plus links, not a
   list of amendments.
 
 ## Risks
 
-- **Scope**: seven slices across both platforms touching the four ~14k-line
-  layers. Mitigation: slices 0–3 are additive and individually revertible;
-  the cut-over is two PRs; the sweep is gated and skippable per board.
+- **Scope**: nine PRs across both platforms touching the four ~14k-line
+  layers. Mitigation: slices 0–3a are additive and individually revertible;
+  the cut-over is two PRs; the sweep is gated and skippable per board with a
+  terminal outcome.
 - **Member-rule inputs**: a board-sourced member's goal changes meaning
   (placement's effective goal, not a derived row's). Mitigation: explicit
   new vectors; existing vectors re-expected by hand.
 - **Semantics that move from snapshot to live**: a source compound's
   structure and a root's title templates render live on unsealed past
-  boards after a repoint. Accepted; the equivalence gate protects sealed
-  boards and refuses a repoint that would change a live board's state.
+  boards after a repoint. Accepted; the gate protects sealed boards and
+  refuses a repoint that would change a live board's state.
 - **Two-client skew**: the deployed web app and the TestFlight iOS build can
-  be on different slices. Mitigation: the lockstep rule; the sweep runs after
-  every pull so late-minted rows are still converted.
-- **One LWW row for position, lock and goal**: a target edit and a shuffle
-  on two devices now conflict where they did not before. Accepted for a
-  single user; noted for a future per-field merge if it ever matters.
+  be on different slices. Mitigation: the lockstep rule with split slices;
+  the sweep runs after every pull so late-minted rows are still converted.
+- **One LWW row for position, lock, goal and title**: edits on two devices
+  now conflict where they did not before. Accepted for a single user; noted
+  for a future per-field merge if it ever matters.
 - **The twin cost**: every slice is TS + Swift. Mitigation: the plan/apply
   pattern (shared kernel returns `{writes, enqueues, cascadeBoardIds}`, data
   layers apply) is adopted for every write path touched, so vectors pin the
