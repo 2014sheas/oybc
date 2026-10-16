@@ -571,3 +571,11 @@
   font-size: 0.85rem;
   color: var(--riso-muted);
 }
+
+/* Task Detail — the task's own window / linked-counter kind lines. */
+.windowLine {
+  margin: 0;
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: var(--riso-muted);
+}

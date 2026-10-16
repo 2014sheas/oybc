@@ -47,8 +47,11 @@ struct RisoTaskDetailContentView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
                 headerSection
-                if let sub = typeSubtitle {
-                    detailRow(label: "Details", value: sub)
+                // The type subtitle plus the task's own window / linked-counter
+                // kind (`TaskCountDisplay.windowCaptionLines`, web twin
+                // `TaskWindowFacts`) — one Details card, one line each.
+                if !detailsLines.isEmpty {
+                    detailRow(label: "Details", value: detailsLines.joined(separator: "\n"))
                 }
                 // Shared-counter link caption (Phase 2) — restored so linked
                 // counting tasks surface their source here, like the original detail.
@@ -365,6 +368,11 @@ struct RisoTaskDetailContentView: View {
         case .compound: return .compound
         case .achievement: return .achievement
         }
+    }
+
+    /// The Details card's lines: the type subtitle, then the window facts.
+    private var detailsLines: [String] {
+        [typeSubtitle].compactMap { $0 } + TaskCountDisplay.windowCaptionLines(for: task, now: now)
     }
 
     private var typeSubtitle: String? {
