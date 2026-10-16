@@ -141,7 +141,7 @@ a heal on every pull. Owner decision: remove the cause before launch rather
 than patch symptoms. `BoardTask` gains `targetOverride` / `childTargets`; a
 square's state becomes one pure function of task structure, placement
 parameters and the owner's events in the host window; the derived-row
-machinery is retired. Six slices, each both platforms — spec, migration,
+machinery is retired. Seven slices, each both platforms — spec, migration,
 acceptance and risks in [`TASK_WINDOW_REWORK.md`](TASK_WINDOW_REWORK.md).
 Slice 0 ("context window wins" + the folded-in correctness fixes) ships first
 and is independent of the rest.
