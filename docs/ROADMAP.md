@@ -131,6 +131,21 @@ The deep-dive's core finding: both platforms systematically bypass their own lay
 
 ---
 
+### B10 — Task/window rework: per-placement parameters — `XL` (design decided 2026-10-16)
+
+The 2026-10-16 architecture audit (after PR #624) traced every Major in the
+task/window core to one shape: a per-board goal modelled as an extra `Task`
+row (window-stamped derived counters, derived compounds, counter-placement
+copies, stamp-in-place), kept in sync by propagation, a freeze, baselines and
+a heal on every pull. Owner decision: remove the cause before launch rather
+than patch symptoms. `BoardTask` gains `targetOverride` / `childTargets`; a
+square's state becomes one pure function of task structure, placement
+parameters and the owner's events in the host window; the derived-row
+machinery is retired. Six slices, each both platforms — spec, migration,
+acceptance and risks in [`TASK_WINDOW_REWORK.md`](TASK_WINDOW_REWORK.md).
+Slice 0 ("context window wins" + the folded-in correctness fixes) ships first
+and is independent of the rest.
+
 ## Track C — Cross-platform drift closure & port-pattern protection
 
 The port pattern (TS source of truth → hand-mirrored Swift twin) is faithful where it exists but protected purely by convention. These make it mechanical, and fix the drift already found.
