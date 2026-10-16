@@ -5195,6 +5195,460 @@
           "isCompleted": false
         }
       ]
+    },
+    {
+      "name": "slice2a-placement-targetOverride-is-the-goal",
+      "board": {
+        "id": "b1",
+        "boardSize": 3,
+        "centerSquareType": "none",
+        "startDate": "2026-04-01T00:00:00.000Z",
+        "endDate": "2026-04-30T23:59:59.000Z",
+        "status": "active",
+        "linesCompleted": 0,
+        "completedLineIds": [],
+        "isDeleted": false,
+        "spawnedFromTemplateId": null
+      },
+      "boardTasksOnBoard": [
+        {
+          "taskId": "t1",
+          "row": 0,
+          "col": 0,
+          "targetOverride": 2,
+          "targetKind": "discrete"
+        }
+      ],
+      "childrenByCompound": {},
+      "taskById": {
+        "t1": {
+          "id": "t1",
+          "type": "counting",
+          "isCompleted": false,
+          "isDeleted": false,
+          "operator": null,
+          "threshold": null,
+          "referencedBoardId": null,
+          "referencedTemplateId": null,
+          "achievementTrigger": null,
+          "requiredCount": null,
+          "maxCount": 10,
+          "currentCount": 0,
+          "sharedCounterId": null
+        }
+      },
+      "allBoards": [],
+      "windowContext": {
+        "eventsByTaskId": {
+          "t1": [
+            {
+              "kind": "increment",
+              "occurredAt": "2026-04-10T12:00:00.000Z",
+              "delta": 2
+            }
+          ]
+        }
+      },
+      "expected": {
+        "boardId": "b1",
+        "completedTasks": 1,
+        "linesCompleted": 0,
+        "completedLineIds": [],
+        "newBingos": [],
+        "lostBingos": []
+      },
+      "expectedCells": [
+        {
+          "boardTaskId": "b1-t1",
+          "taskId": "t1",
+          "row": 0,
+          "col": 0,
+          "idx": 0,
+          "isCompleted": true
+        }
+      ]
+    },
+    {
+      "name": "slice2a-targetKind-converts-into-the-roots-current-kind",
+      "board": {
+        "id": "b1",
+        "boardSize": 3,
+        "centerSquareType": "none",
+        "startDate": "2026-04-01T00:00:00.000Z",
+        "endDate": "2026-04-30T23:59:59.000Z",
+        "status": "active",
+        "linesCompleted": 0,
+        "completedLineIds": [],
+        "isDeleted": false,
+        "spawnedFromTemplateId": null
+      },
+      "boardTasksOnBoard": [
+        {
+          "taskId": "t1",
+          "row": 0,
+          "col": 0,
+          "targetOverride": 2.4,
+          "targetKind": "continuous"
+        }
+      ],
+      "childrenByCompound": {},
+      "taskById": {
+        "t1": {
+          "id": "t1",
+          "type": "counting",
+          "isCompleted": false,
+          "isDeleted": false,
+          "operator": null,
+          "threshold": null,
+          "referencedBoardId": null,
+          "referencedTemplateId": null,
+          "achievementTrigger": null,
+          "requiredCount": null,
+          "maxCount": 10,
+          "currentCount": 0,
+          "sharedCounterId": null
+        }
+      },
+      "allBoards": [],
+      "windowContext": {
+        "eventsByTaskId": {
+          "t1": [
+            {
+              "kind": "increment",
+              "occurredAt": "2026-04-10T12:00:00.000Z",
+              "delta": 2
+            }
+          ]
+        }
+      },
+      "expected": {
+        "boardId": "b1",
+        "completedTasks": 1,
+        "linesCompleted": 0,
+        "completedLineIds": [],
+        "newBingos": [],
+        "lostBingos": []
+      },
+      "expectedCells": [
+        {
+          "boardTaskId": "b1-t1",
+          "taskId": "t1",
+          "row": 0,
+          "col": 0,
+          "idx": 0,
+          "isCompleted": true
+        }
+      ]
+    },
+    {
+      "name": "slice2a-linked-row-reads-the-placement-goal-over-the-host-window",
+      "board": {
+        "id": "b1",
+        "boardSize": 3,
+        "centerSquareType": "none",
+        "startDate": "2026-04-01T00:00:00.000Z",
+        "endDate": "2026-04-30T23:59:59.000Z",
+        "status": "active",
+        "linesCompleted": 0,
+        "completedLineIds": [],
+        "isDeleted": false,
+        "spawnedFromTemplateId": null
+      },
+      "boardTasksOnBoard": [
+        {
+          "taskId": "link",
+          "row": 0,
+          "col": 0,
+          "targetOverride": 3,
+          "targetKind": "discrete"
+        }
+      ],
+      "childrenByCompound": {},
+      "taskById": {
+        "root": {
+          "id": "root",
+          "type": "counting",
+          "isCompleted": false,
+          "isDeleted": false,
+          "operator": null,
+          "threshold": null,
+          "referencedBoardId": null,
+          "referencedTemplateId": null,
+          "achievementTrigger": null,
+          "requiredCount": null,
+          "maxCount": 100,
+          "currentCount": 0,
+          "sharedCounterId": null
+        },
+        "link": {
+          "id": "link",
+          "type": "counting",
+          "isCompleted": false,
+          "isDeleted": false,
+          "operator": null,
+          "threshold": null,
+          "referencedBoardId": null,
+          "referencedTemplateId": null,
+          "achievementTrigger": null,
+          "requiredCount": null,
+          "maxCount": 50,
+          "currentCount": 0,
+          "sharedCounterId": "root"
+        }
+      },
+      "allBoards": [],
+      "windowContext": {
+        "eventsByTaskId": {
+          "root": [
+            {
+              "kind": "increment",
+              "occurredAt": "2026-04-10T12:00:00.000Z",
+              "delta": 3
+            }
+          ]
+        }
+      },
+      "expected": {
+        "boardId": "b1",
+        "completedTasks": 1,
+        "linesCompleted": 0,
+        "completedLineIds": [],
+        "newBingos": [],
+        "lostBingos": []
+      },
+      "expectedCells": [
+        {
+          "boardTaskId": "b1-link",
+          "taskId": "link",
+          "row": 0,
+          "col": 0,
+          "idx": 0,
+          "isCompleted": true
+        }
+      ]
+    },
+    {
+      "name": "slice2a-compound-childTargets-apply-to-direct-children-only",
+      "board": {
+        "id": "b1",
+        "boardSize": 3,
+        "centerSquareType": "none",
+        "startDate": "2026-04-01T00:00:00.000Z",
+        "endDate": "2026-04-30T23:59:59.000Z",
+        "status": "active",
+        "linesCompleted": 0,
+        "completedLineIds": [],
+        "isDeleted": false,
+        "spawnedFromTemplateId": null
+      },
+      "boardTasksOnBoard": [
+        {
+          "taskId": "c",
+          "row": 0,
+          "col": 0,
+          "childTargets": [
+            {
+              "childId": "a",
+              "target": 1
+            },
+            {
+              "childId": "n",
+              "target": 1
+            }
+          ]
+        }
+      ],
+      "childrenByCompound": {
+        "c": [
+          {
+            "compoundTaskId": "c",
+            "childTaskId": "a",
+            "isDeleted": false
+          },
+          {
+            "compoundTaskId": "c",
+            "childTaskId": "n",
+            "isDeleted": false
+          }
+        ],
+        "n": [
+          {
+            "compoundTaskId": "n",
+            "childTaskId": "b",
+            "isDeleted": false
+          }
+        ]
+      },
+      "taskById": {
+        "c": {
+          "id": "c",
+          "type": "compound",
+          "isCompleted": false,
+          "isDeleted": false,
+          "operator": "AND",
+          "threshold": null,
+          "referencedBoardId": null,
+          "referencedTemplateId": null,
+          "achievementTrigger": null,
+          "requiredCount": null
+        },
+        "n": {
+          "id": "n",
+          "type": "compound",
+          "isCompleted": false,
+          "isDeleted": false,
+          "operator": "AND",
+          "threshold": null,
+          "referencedBoardId": null,
+          "referencedTemplateId": null,
+          "achievementTrigger": null,
+          "requiredCount": null
+        },
+        "a": {
+          "id": "a",
+          "type": "counting",
+          "isCompleted": false,
+          "isDeleted": false,
+          "operator": null,
+          "threshold": null,
+          "referencedBoardId": null,
+          "referencedTemplateId": null,
+          "achievementTrigger": null,
+          "requiredCount": null,
+          "maxCount": 10,
+          "currentCount": 0,
+          "sharedCounterId": null
+        },
+        "b": {
+          "id": "b",
+          "type": "counting",
+          "isCompleted": false,
+          "isDeleted": false,
+          "operator": null,
+          "threshold": null,
+          "referencedBoardId": null,
+          "referencedTemplateId": null,
+          "achievementTrigger": null,
+          "requiredCount": null,
+          "maxCount": 10,
+          "currentCount": 0,
+          "sharedCounterId": null
+        }
+      },
+      "allBoards": [],
+      "windowContext": {
+        "eventsByTaskId": {
+          "a": [
+            {
+              "kind": "increment",
+              "occurredAt": "2026-04-10T12:00:00.000Z",
+              "delta": 1
+            }
+          ],
+          "b": [
+            {
+              "kind": "increment",
+              "occurredAt": "2026-04-10T12:00:00.000Z",
+              "delta": 1
+            }
+          ]
+        }
+      },
+      "expected": {
+        "boardId": "b1",
+        "completedTasks": 0,
+        "linesCompleted": 0,
+        "completedLineIds": [],
+        "newBingos": [],
+        "lostBingos": []
+      },
+      "expectedCells": [
+        {
+          "boardTaskId": "b1-c",
+          "taskId": "c",
+          "row": 0,
+          "col": 0,
+          "idx": 0,
+          "isCompleted": false
+        }
+      ]
+    },
+    {
+      "name": "slice2a-goal-less-linked-row-is-never-green-at-zero",
+      "board": {
+        "id": "b1",
+        "boardSize": 3,
+        "centerSquareType": "none",
+        "startDate": "2026-04-01T00:00:00.000Z",
+        "endDate": "2026-04-30T23:59:59.000Z",
+        "status": "active",
+        "linesCompleted": 0,
+        "completedLineIds": [],
+        "isDeleted": false,
+        "spawnedFromTemplateId": null
+      },
+      "boardTasksOnBoard": [
+        {
+          "taskId": "link",
+          "row": 0,
+          "col": 0
+        }
+      ],
+      "childrenByCompound": {},
+      "taskById": {
+        "root": {
+          "id": "root",
+          "type": "counting",
+          "isCompleted": false,
+          "isDeleted": false,
+          "operator": null,
+          "threshold": null,
+          "referencedBoardId": null,
+          "referencedTemplateId": null,
+          "achievementTrigger": null,
+          "requiredCount": null,
+          "maxCount": null,
+          "currentCount": 0,
+          "sharedCounterId": null
+        },
+        "link": {
+          "id": "link",
+          "type": "counting",
+          "isCompleted": false,
+          "isDeleted": false,
+          "operator": null,
+          "threshold": null,
+          "referencedBoardId": null,
+          "referencedTemplateId": null,
+          "achievementTrigger": null,
+          "requiredCount": null,
+          "maxCount": null,
+          "currentCount": 0,
+          "sharedCounterId": "root"
+        }
+      },
+      "allBoards": [],
+      "windowContext": {
+        "eventsByTaskId": {}
+      },
+      "expected": {
+        "boardId": "b1",
+        "completedTasks": 0,
+        "linesCompleted": 0,
+        "completedLineIds": [],
+        "newBingos": [],
+        "lostBingos": []
+      },
+      "expectedCells": [
+        {
+          "boardTaskId": "b1-link",
+          "taskId": "link",
+          "row": 0,
+          "col": 0,
+          "idx": 0,
+          "isCompleted": false
+        }
+      ]
     }
   ],
   "expandToWindowStampedDerived": [

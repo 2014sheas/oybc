@@ -1,3 +1,4 @@
+import { withPlacementParams } from './placementParams';
 /**
  * boardMoment.ts - the replay kernel behind the Bingo and Greenlog moments
  * (docs/BOARD_MOMENTS.md). When a write completes a line or the whole board,
@@ -153,9 +154,11 @@ export function computeBoardMomentReplay(
     const placement = state
       ? boardTasks.find((bt) => bt.id === state.boardTaskId)
       : boardTasks.find((bt) => !bt.isDeleted && bt.row * size + bt.col === idx);
-    const task = placement ? taskById[placement.taskId] : undefined;
-    if (!placement || !task) continue;
-    const s = resolveContributionState(task, childrenByCompound, taskById, events, window);
+    const raw = placement ? taskById[placement.taskId] : undefined;
+    if (!placement || !raw) continue;
+    // The placement-adjusted task (slice 2a): its goal / child goals are the placement's.
+    const task = withPlacementParams(raw, placement);
+    const s = resolveContributionState(task, childrenByCompound, taskById, events, window, placement.childTargets);
     order.push({ boardTaskId: placement.id, idx, completedAt: s.isCompleted && s.completingEventId ? s.completedAt : null });
   }
   order.sort(compareEntries);

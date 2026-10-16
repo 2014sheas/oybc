@@ -1,3 +1,5 @@
+import { withChildTarget } from './placementParams';
+import type { PlacementChildTarget } from '../types/boardTask';
 /**
  * countsToward.ts — "counts toward": any task as the unit of a Discrete
  * shared counter (docs/SHARED_COUNTER_SETTINGS.md §3, PR 3 — data + cascade).
@@ -244,6 +246,7 @@ function stateOf(
   childrenByCompound: Record<string, CompoundChild[]>,
   taskById: Record<string, Task>,
   visiting: Set<string>,
+  childTargets?: PlacementChildTarget[] | null,
 ): ContributionState {
   if (task.isDeleted) return INCOMPLETE;
 
@@ -289,7 +292,8 @@ function stateOf(
     .map((link) => {
       const child = taskById[link.childTaskId];
       if (!child || child.isDeleted) return INCOMPLETE;
-      return stateOf(child, ctx, childrenByCompound, taskById, visiting);
+      // Direct children take the placement's child target; nested levels don't.
+      return stateOf(withChildTarget(child, childTargets), ctx, childrenByCompound, taskById, visiting);
     });
   visiting.delete(task.id);
 
@@ -364,9 +368,12 @@ export function resolveContributionState(
   taskById: Record<string, Task>,
   eventsByTaskId: Record<string, TaskEvent[]>,
   window: ContributionWindow = LIFETIME_WINDOW,
+  // The PLACEMENT's per-child goals for a placed compound (slice 2a) — its
+  // direct children only.
+  childTargets?: PlacementChildTarget[] | null,
 ): ContributionState {
   const ctx: CompoundWindowContext = { windowStart: window.windowStart, windowEnd: window.windowEnd, eventsByTaskId };
-  const s = stateOf(task, ctx, childrenByCompound, taskById, new Set());
+  const s = stateOf(task, ctx, childrenByCompound, taskById, new Set(), childTargets);
   if (!s.isCompleted) return INCOMPLETE;
   return {
     isCompleted: true,

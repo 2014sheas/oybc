@@ -98,6 +98,11 @@ interface MiniBoardTaskFull {
   row: number;
   col: number;
   isDeleted?: boolean;
+  /** Slice 2a — optional placement parameters (absent on every pre-rework vector). */
+  targetOverride?: number;
+  targetKind?: string;
+  childTargets?: { childId: string; target: number }[];
+  titleOverride?: string;
 }
 
 interface MiniBoard {
@@ -237,6 +242,10 @@ function toBoardTaskFull(m: MiniBoardTaskFull, boardId: string): BoardTask {
     updatedAt: BASE_TS,
     version: 1,
     isDeleted: m.isDeleted ?? false,
+    ...(m.targetOverride !== undefined ? { targetOverride: m.targetOverride } : {}),
+    ...(m.targetKind !== undefined ? { targetKind: m.targetKind as BoardTask['targetKind'] } : {}),
+    ...(m.childTargets !== undefined ? { childTargets: m.childTargets } : {}),
+    ...(m.titleOverride !== undefined ? { titleOverride: m.titleOverride } : {}),
   };
 }
 

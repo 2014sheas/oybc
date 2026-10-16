@@ -47,7 +47,8 @@ enum CompoundEvaluation {
         compound: Task,
         childrenByCompound: [String: [CompoundChild]],
         taskById: [String: Task],
-        windowContext: CompoundWindowContext? = nil
+        windowContext: CompoundWindowContext? = nil,
+        childTargets: [PlacementChildTarget]? = nil
     ) -> Bool {
         var visiting: Set<String> = []
         return evaluateInner(
@@ -55,7 +56,8 @@ enum CompoundEvaluation {
             childrenByCompound: childrenByCompound,
             taskById: taskById,
             visiting: &visiting,
-            windowContext: windowContext
+            windowContext: windowContext,
+            childTargets: childTargets
         )
     }
 
@@ -99,7 +101,10 @@ enum CompoundEvaluation {
         childrenByCompound: [String: [CompoundChild]],
         taskById: [String: Task],
         visiting: inout Set<String>,
-        windowContext: CompoundWindowContext?
+        windowContext: CompoundWindowContext?,
+        // The PLACEMENT's per-child goals (TASK_WINDOW_REWORK slice 2a) —
+        // applied to the placed compound's DIRECT children only.
+        childTargets: [PlacementChildTarget]? = nil
     ) -> Bool {
         guard compound.type == .compound else {
             return compound.isCompleted
@@ -117,7 +122,7 @@ enum CompoundEvaluation {
                 return false
             }
             if child.type == .compound {
-                // Nested compounds inherit the same host window.
+                // Nested compounds inherit the same host window (and no child targets).
                 return evaluateInner(
                     compound: child,
                     childrenByCompound: childrenByCompound,
@@ -126,7 +131,7 @@ enum CompoundEvaluation {
                     windowContext: windowContext
                 )
             }
-            return resolvePrimitiveChildState(child, windowContext)
+            return resolvePrimitiveChildState(PlacementParams.withChildTarget(child, childTargets: childTargets), windowContext)
         }
 
         switch compound.operatorType {

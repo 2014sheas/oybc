@@ -14,7 +14,7 @@ import {
   type CompoundChild,
   type Task,
 } from '@oybc/shared';
-import { taskToSquareState, type SquareWindowContext } from '../../db/adapters';
+import { taskToSquareState, type SquareWindowContext, placedTaskFor } from '../../db/adapters';
 import type { BoardCellModel } from './RisoBoardCell';
 import { cellTypeOf, freeCellModel, toBoardCellModel } from './cellModel';
 
@@ -78,7 +78,7 @@ export function buildRisoBoardCells(
       return { ...freeCellModel(`free-${i}`, getCenterDisplayText(board.centerSquareType) || 'FREE'), _done: true };
     }
     const bt = byPos.get(i);
-    const task = bt ? taskMap[bt.taskId] : undefined;
+    const task = bt ? placedTaskFor(bt, taskMap) : undefined;
     if (!bt || !task) {
       return { key: bt?.id ?? `empty-${i}`, label: '', type: 'normal', done: false, isFree: false, isLine: false, _done: false };
     }

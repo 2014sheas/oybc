@@ -69,7 +69,8 @@ extension BoardPlayView {
         guard routable, let t = task else { return }
         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
         lateLogErrorMessage = nil
-        lateLogTarget = LateLogSheetItem(id: boardTask.id, boardTaskId: boardTask.id, task: t)
+        // The placement-adjusted task (slice 2a): the sheet's goal is the placement's.
+        lateLogTarget = LateLogSheetItem(id: boardTask.id, boardTaskId: boardTask.id, task: viewModel.placedTask(boardTask) ?? t)
     }
 
     /// "Sep 1 – 30" — the closed board's window label.

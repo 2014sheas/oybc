@@ -227,7 +227,7 @@ func lateLogOccurredAt(board: Board, nowIso: String) -> String {
 /// `[startDate, endDate]` convention (inclusive both ends, parsed compare,
 /// `nil` `endDate` = unbounded) the kernel uses for board windows. Signed
 /// deltas are summed as-is, then low-clamped at 0; completion is
-/// `count >= (maxCount ?? 0)` (the `deriveDisplayedCount` convention).
+/// `maxCount != nil && count >= maxCount` (slice 2a: one rule).
 /// Overshoot is valid. `baseline` is NOT read.
 ///
 /// Mirrors the TS `resolveWindowStampedDerivedState`.
@@ -304,7 +304,9 @@ private func windowStampedDerivedState(
         return sum
     }
     let count = finalizeWindowCount(windowSum(), kind: resolveCountKind(countKind))
-    return TaskWindowState(isCompleted: count >= (maxCount ?? 0), count: count)
+    // One completion rule (TASK_WINDOW_REWORK slice 2a): a goal must exist and
+    // be reached — a goal-less linked row is never "green at 0".
+    return TaskWindowState(isCompleted: maxCount.map { count >= $0 } ?? false, count: count)
 }
 
 /// Kernel dispatch for the derived-counter branch: a `.counting` row with a

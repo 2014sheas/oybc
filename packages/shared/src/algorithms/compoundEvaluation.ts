@@ -1,3 +1,5 @@
+import { withChildTarget } from './placementParams';
+import type { PlacementChildTarget } from '../types/boardTask';
 import type { Task, CompoundChild } from '../types';
 import { OperatorType, TaskType } from '../constants/enums';
 import {
@@ -51,8 +53,9 @@ export function evaluateCompound(
   childrenByCompound: Record<string, CompoundChild[]>,
   taskById: Record<string, Task>,
   windowContext?: CompoundWindowContext,
+  childTargets?: PlacementChildTarget[] | null,
 ): boolean {
-  return evaluateCompoundInner(compound, childrenByCompound, taskById, new Set(), windowContext);
+  return evaluateCompoundInner(compound, childrenByCompound, taskById, new Set(), windowContext, childTargets);
 }
 
 /**
@@ -92,6 +95,10 @@ function evaluateCompoundInner(
   taskById: Record<string, Task>,
   visiting: Set<string>,
   windowContext: CompoundWindowContext | undefined,
+  // The PLACEMENT's per-child goals (TASK_WINDOW_REWORK slice 2a) — applied to
+  // the placed compound's DIRECT children only; nested compounds' children
+  // keep their own goals.
+  childTargets?: PlacementChildTarget[] | null,
 ): boolean {
   if (compound.type !== TaskType.COMPOUND) {
     return compound.isCompleted;
@@ -104,13 +111,13 @@ function evaluateCompoundInner(
 
   const links = (childrenByCompound[compound.id] ?? []).filter((c) => !c.isDeleted);
   const childStates: boolean[] = links.map((link) => {
-    const child = taskById[link.childTaskId];
-    if (!child || child.isDeleted) return false;
-    if (child.type === TaskType.COMPOUND) {
-      // Nested compounds inherit the same host window.
-      return evaluateCompoundInner(child, childrenByCompound, taskById, visiting, windowContext);
+    const raw = taskById[link.childTaskId];
+    if (!raw || raw.isDeleted) return false;
+    if (raw.type === TaskType.COMPOUND) {
+      // Nested compounds inherit the same host window (and no child targets).
+      return evaluateCompoundInner(raw, childrenByCompound, taskById, visiting, windowContext);
     }
-    return resolvePrimitiveChildState(child, windowContext);
+    return resolvePrimitiveChildState(withChildTarget(raw, childTargets), windowContext);
   });
 
   visiting.delete(compound.id);

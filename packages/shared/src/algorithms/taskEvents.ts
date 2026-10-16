@@ -231,7 +231,7 @@ export function lateLogOccurredAt(
  * `endDate` = unbounded) the kernel already uses for board windows. Deltas are
  * signed (a decrement is a negative delta) and summed as-is; the sum is then
  * low-clamped at 0 exactly like {@link resolveTaskWindowState} and
- * `deriveDisplayedCount`. Completion is `count >= (maxCount ?? 0)` — the
+ * `deriveDisplayedCount`. Completion is `maxCount != null && count >= maxCount` (slice 2a: one rule) — the
  * derived-counter convention (`deriveDisplayedCount`: a missing / 0 target is
  * immediately complete). Overshoot is valid; nothing is high-clamped.
  *
@@ -260,7 +260,9 @@ export function resolveWindowStampedDerivedState(
     }
   }
   const count = finalizeWindowCount(sum, resolveCountKind(task));
-  return { isCompleted: count >= (task.maxCount ?? 0), count };
+  // One completion rule (TASK_WINDOW_REWORK slice 2a): a goal must exist and
+  // be reached — a goal-less linked row is never "green at 0".
+  return { isCompleted: task.maxCount != null && count >= task.maxCount, count };
 }
 
 /**

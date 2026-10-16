@@ -10,6 +10,10 @@ import {
   type TaskEvent,
   type CompoundChild,
   type CellState,
+  withPlacementParams,
+  withChildTarget,
+  type PlacementChildTarget,
+  type BoardTask,
 } from '@oybc/shared';
 import type { CompoundChildCount, TaskSquareData, SquareState } from '../components/interactiveTaskSquareUtils';
 
@@ -210,12 +214,30 @@ export function compoundChildCount(
  * @param windowContext - Windowed Completion context for primitive/compound resolution
  * @returns TaskSquareData suitable for InteractiveTaskSquare
  */
+/**
+ * The placement-adjusted task a board surface renders for `bt` (slice 2a):
+ * `withPlacementParams` with the root's title settings for a linked task.
+ * `undefined` when the task is missing from the map.
+ *
+ * @param bt - The placement.
+ * @param taskMap - The workspace tasks by id.
+ * @returns The task to render, or `undefined`.
+ */
+export function placedTaskFor(bt: Pick<BoardTask, 'taskId'> & Partial<BoardTask>, taskMap: Record<string, Task>): Task | undefined {
+  const task = taskMap[bt.taskId];
+  if (!task) return undefined;
+  const root = task.sharedCounterId ? taskMap[task.sharedCounterId] : undefined;
+  return withPlacementParams(task, bt, root ?? null);
+}
+
 export function taskToSquareData(
   task: Task,
   compoundChildren?: CompoundChild[],
   taskMap?: Record<string, Task>,
   childrenByCompound?: Record<string, CompoundChild[]>,
   windowContext?: SquareWindowContext,
+  /** The compound placement's per-child goals (slice 2a), direct children only. */
+  childTargets?: PlacementChildTarget[] | null,
 ): TaskSquareData {
   // Board-integrity PR-3 (issue #360, finding 2) — ACHIEVEMENT squares are
   // read-only on the grid; their completion derives from the watched
@@ -245,8 +267,9 @@ export function taskToSquareData(
     const resolveChild = (childTask: Task): boolean =>
       resolveCompoundChildCompleted(childTask, map, cbMap, windowContext);
     const children = links.map((link) => {
-      const childTask = map[link.childTaskId];
-      if (!childTask) return { taskId: link.childTaskId, title: '<missing>', isCompleted: false };
+      const rawChild = map[link.childTaskId];
+      if (!rawChild) return { taskId: link.childTaskId, title: '<missing>', isCompleted: false };
+      const childTask = withChildTarget(rawChild, childTargets);
       const count = compoundChildCount(childTask, map, windowContext);
       return { taskId: link.childTaskId, title: childTask.title, isCompleted: resolveChild(childTask), ...(count ? { count } : {}) };
     });

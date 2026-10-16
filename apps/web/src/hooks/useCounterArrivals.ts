@@ -1,3 +1,4 @@
+import { placedTaskFor } from '../db/adapters';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   TaskType,
@@ -68,7 +69,7 @@ export function buildArrivalSquares(input: BuildArrivalSquaresInput): ArrivalSqu
   const { boardTasks, taskMap, sharedCounterSourceIds, windowContext } = input;
   const squares: ArrivalSquare[] = [];
   for (const bt of boardTasks) {
-    const task = taskMap[bt.taskId];
+    const task = placedTaskFor(bt, taskMap);
     if (!task || task.type !== TaskType.COUNTING) continue;
 
     // Resolve the counter's SOURCE task id: a linked member points at its

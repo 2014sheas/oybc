@@ -209,7 +209,8 @@ enum CountsToward {
         ctx: CompoundWindowContext,
         childrenByCompound: [String: [CompoundChild]],
         taskById: [String: Task],
-        visiting: inout Set<String>
+        visiting: inout Set<String>,
+        childTargets: [PlacementChildTarget]? = nil
     ) -> ContributionState {
         if task.isDeleted { return .incomplete }
         switch task.type {
@@ -259,7 +260,11 @@ enum CountsToward {
                 childStates.append(.incomplete)
                 continue
             }
-            childStates.append(stateOf(child, ctx: ctx, childrenByCompound: childrenByCompound, taskById: taskById, visiting: &visiting))
+            // Direct children take the placement's child target; nested levels don't.
+            childStates.append(stateOf(
+                PlacementParams.withChildTarget(child, childTargets: childTargets),
+                ctx: ctx, childrenByCompound: childrenByCompound, taskById: taskById, visiting: &visiting
+            ))
         }
         visiting.remove(task.id)
 
@@ -298,11 +303,12 @@ enum CountsToward {
         childrenByCompound: [String: [CompoundChild]],
         taskById: [String: Task],
         eventsByTaskId: [String: [TaskEvent]],
-        window: Window = .lifetime
+        window: Window = .lifetime,
+        childTargets: [PlacementChildTarget]? = nil
     ) -> ContributionState {
         let ctx = CompoundWindowContext(windowStart: window.windowStart, windowEnd: window.windowEnd, eventsByTaskId: eventsByTaskId)
         var visiting = Set<String>()
-        let s = stateOf(task, ctx: ctx, childrenByCompound: childrenByCompound, taskById: taskById, visiting: &visiting)
+        let s = stateOf(task, ctx: ctx, childrenByCompound: childrenByCompound, taskById: taskById, visiting: &visiting, childTargets: childTargets)
         guard s.isCompleted else { return .incomplete }
         return ContributionState(
             isCompleted: true, completedAt: s.completedAt ?? task.createdAt,

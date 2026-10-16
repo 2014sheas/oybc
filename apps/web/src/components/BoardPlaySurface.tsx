@@ -17,7 +17,7 @@ import {
   useCounterArrivals,
   type CreditedToast,
 } from '../hooks';
-import { resolveClosedBoardCounterDisplay, taskToSquareData, taskToSquareState } from '../db/adapters';
+import { placedTaskFor, resolveClosedBoardCounterDisplay, taskToSquareData, taskToSquareState } from '../db/adapters';
 import {
   DetailModal,
   FloatingContextMenu,
@@ -351,7 +351,7 @@ export function BoardPlaySurface({
   // field), in `useCountingLogModal`; the count is the modal's windowed value.
   const quickAmount = useCountingLogModal(selectedSquareId, (btId) => {
     const bt = boardTasks.find((b) => b.id === btId);
-    const task = bt ? taskMap[bt.taskId] : undefined;
+    const task = bt ? placedTaskFor(bt, taskMap) : undefined;
     if (!bt || !task || task.type !== TaskType.COUNTING) return null;
     const children = compoundChildrenByCompound[task.id] ?? [];
     return {
@@ -627,8 +627,8 @@ export function BoardPlaySurface({
                   continue;
                 }
 
-                // ── Resolve the base task from taskMap ───────────────────
-                const task: Task | undefined = resolvedTaskId ? taskMap[resolvedTaskId] : undefined;
+                const cellBt = boardTaskId ? boardTasks.find((b) => b.id === boardTaskId) : undefined; // slice 2a: placement-adjusted
+                const task: Task | undefined = !resolvedTaskId ? undefined : cellBt?.taskId === resolvedTaskId ? placedTaskFor(cellBt, taskMap) : taskMap[resolvedTaskId];
                 if (!task) {
                   cells.push(
                     <div key={`missing-${boardTaskId}`} className={styles.emptySquare}>?</div>
@@ -641,7 +641,7 @@ export function BoardPlaySurface({
                 // THIS placement (achievement completion has no other source).
                 const cellState = boardTaskId ? cellStateByBoardTaskId[boardTaskId] : undefined;
                 const squareData = taskToSquareData(
-                  task, taskChildren, taskMap, compoundChildrenByCompound, squareWindowContext,
+                  task, taskChildren, taskMap, compoundChildrenByCompound, squareWindowContext, cellBt?.childTargets,
                 );
                 const squareState = taskToSquareState(
                   task, taskChildren, taskMap, compoundChildrenByCompound, squareWindowContext, cellState,
@@ -875,11 +875,11 @@ export function BoardPlaySurface({
       {!editMode && selectedSquareId && (() => {
         const bt = boardTasks.find((b) => b.id === selectedSquareId);
         if (!bt) return null;
-        const task = taskMap[bt.taskId];
+        const task = placedTaskFor(bt, taskMap);
         if (!task) return null;
         const taskChildren = compoundChildrenByCompound[task.id] ?? [];
         const squareData = taskToSquareData(
-          task, taskChildren, taskMap, compoundChildrenByCompound, squareWindowContext,
+          task, taskChildren, taskMap, compoundChildrenByCompound, squareWindowContext, bt.childTargets,
         );
         const squareState = taskToSquareState(
           task, taskChildren, taskMap, compoundChildrenByCompound, squareWindowContext,
@@ -938,11 +938,11 @@ export function BoardPlaySurface({
       {!editMode && contextMenu && (() => {
         const bt = boardTasks.find((b) => b.id === contextMenu.squareId);
         if (!bt) return null;
-        const task = taskMap[bt.taskId];
+        const task = placedTaskFor(bt, taskMap);
         if (!task) return null;
         const taskChildren = compoundChildrenByCompound[task.id] ?? [];
         const squareData = taskToSquareData(
-          task, taskChildren, taskMap, compoundChildrenByCompound, squareWindowContext,
+          task, taskChildren, taskMap, compoundChildrenByCompound, squareWindowContext, bt.childTargets,
         );
         const squareState = taskToSquareState(
           task, taskChildren, taskMap, compoundChildrenByCompound, squareWindowContext,

@@ -519,10 +519,12 @@ enum DerivationPass {
                     compound: task,
                     childrenByCompound: childrenByCompound,
                     taskById: taskById,
-                    windowContext: compoundCtx
+                    windowContext: compoundCtx,
+                    childTargets: bt.childTargets
                 )
             } else {
-                isDone = resolvePrimitive(task)
+                // The placement-adjusted task (slice 2a): its goal is the placement's.
+                isDone = resolvePrimitive(PlacementParams.apply(task, placement: bt))
             }
             cells.append(CellState(
                 boardTaskId: bt.id,

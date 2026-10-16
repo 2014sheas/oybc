@@ -52,6 +52,15 @@ extension BoardPlayViewModel {
     /// - Parameter task: The task to resolve (its own `type` / `maxCount` are
     ///   used, so a staged edit override resolves as the staged type).
     /// - Returns: The windowed `{ isCompleted, count }`.
+    /// The placement-adjusted task a surface renders for `bt` (slice 2a):
+    /// `PlacementParams.apply` with the root's title settings for a linked
+    /// task. Web twin `placedTaskFor`.
+    func placedTask(_ bt: BoardTask) -> Task? {
+        guard let task = taskMap[bt.taskId] else { return nil }
+        let root = task.sharedCounterId.flatMap { taskMap[$0] }
+        return PlacementParams.apply(task, placement: bt, settings: root.map { CounterSettings.TitleSettings(task: $0) })
+    }
+
     func windowedState(of task: Task) -> TaskWindowState {
         resolveTaskWindowState(
             task: task,

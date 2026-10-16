@@ -8,6 +8,7 @@ import {
   isQuantizedCount,
   isWindowStampedDerived,
   quantizeCount,
+  withPlacementParams,
   lateLogOccurredAt,
   selectClosedBoardLateLogs,
   SyncOperationType,
@@ -585,8 +586,14 @@ export async function readClosedBoardSquareState(
 ): Promise<ClosedBoardSquareState | null> {
   const board = await db.boards.get(boardId);
   if (!board || board.isDeleted || board.sealedAt == null) return null;
-  const task = await db.tasks.get(taskId);
-  if (!task || task.isDeleted) return null;
+  const rawTask = await db.tasks.get(taskId);
+  if (!rawTask || rawTask.isDeleted) return null;
+  // The placement-adjusted task (slice 2a): the sheet's goal is the placement's.
+  const placement = await db.boardTasks
+    .where('boardId').equals(boardId)
+    .filter((bt) => bt.taskId === taskId && !bt.isDeleted)
+    .first();
+  const task = withPlacementParams(rawTask, placement ?? null);
 
   if (task.type === TaskType.NORMAL) {
     const events = await db.taskEvents.where('taskId').equals(taskId).toArray();
