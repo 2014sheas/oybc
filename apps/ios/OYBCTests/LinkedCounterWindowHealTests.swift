@@ -99,7 +99,7 @@ final class LinkedCounterWindowHealTests: XCTestCase {
         return db
     }
 
-    private func heal(_ db: AppDatabase) throws -> (stamped: Int, copied: Int) {
+    private func heal(_ db: AppDatabase) throws -> (stamped: Int, copied: Int, unstamped: Int) {
         try db.healLinkedCounterWindows(userId: K.userId)
     }
 
@@ -260,25 +260,85 @@ final class LinkedCounterWindowHealTests: XCTestCase {
         }
     }
 
-    func test_reachedViaCompound_childIsStamped() throws {
-        let db = try makeDb()
+    /// An AND compound `cmp` whose only child is `childId`, with `cmp` placed on `boardIds`.
+    private func seedCompound(_ db: AppDatabase, childId: String, on boardIds: [String]) throws {
         var compound = K.task("cmp", maxCount: nil)
         compound.type = .compound; compound.operatorType = .and; compound.action = nil; compound.unit = nil
         try db.saveTask(compound)
-        try db.saveTask(K.task("hub", sharedCounterId: "root"))
         try db.write { d in
             try CompoundChild(
-                id: "lnk", compoundTaskId: "cmp", childTaskId: "hub", childIndex: 0,
+                id: "lnk", compoundTaskId: "cmp", childTaskId: childId, childIndex: 0,
                 createdAt: "2026-05-01T00:00:00.000Z", updatedAt: "2026-05-01T00:00:00.000Z",
                 lastSyncedAt: nil, version: 1, isDeleted: false, deletedAt: nil
             ).insert(d)
         }
+        for boardId in boardIds {
+            try db.saveBoardTask(K.placement(id: "bt-\(boardId)", boardId: boardId, taskId: "cmp"))
+        }
+    }
+
+    func test_reachedViaCompound_childIsNeverStamped() throws {
+        let db = try makeDb()
+        try db.saveTask(K.task("hub", sharedCounterId: "root"))
         try db.saveBoard(K.board(id: "J", startDate: juneStart, endDate: juneEnd))
-        try db.saveBoardTask(K.placement(id: "btJ", boardId: "J", taskId: "cmp"))
+        try seedCompound(db, childId: "hub", on: ["J"])
 
         let r = try heal(db)
-        XCTAssertEqual(r.stamped, 1)
-        XCTAssertEqual(try K.fetchTask(db, "hub")?.startDate, juneStart)
+        XCTAssertEqual(r.stamped, 0)
+        XCTAssertEqual(r.unstamped, 0)
+        XCTAssertNil(try K.fetchTask(db, "hub")?.startDate)
+        XCTAssertTrue(try K.queue(db, type: "tasks", id: "hub").isEmpty)
+    }
+
+    /// Incident 2026-10-16: day 1 and day 4 of a daily series place the SAME
+    /// compound; the v37 heal had stamped its linked child with day 1. After a
+    /// 26-mile log on day 4 the child read 0 of 10 there and was frozen. The
+    /// sweep now clears the stamp (three fields, authored), mirrors the root's
+    /// lifetime count again and re-derives day 4's board.
+    func test_stampedCompoundChild_isUnstamped_andTheLaterBoardReDerives() throws {
+        let db = try makeDb()
+        let d13s = "2026-10-13T00:00:00.000Z", d13e = "2026-10-13T23:59:59.999Z"
+        let d16s = "2026-10-16T00:00:00.000Z", d16e = "2026-10-16T23:59:59.999Z"
+        var hub = K.task("hub", maxCount: 10, sharedCounterId: "root", startDate: d13s, endDate: d13e, createdInWizard: true, baseline: 7, currentCount: 7)
+        hub.timeframe = .daily
+        try db.saveTask(hub)
+        try db.saveBoard(K.board(id: "D13", startDate: d13s, endDate: d13e, timeframe: .daily))
+        try db.saveBoard(K.board(id: "D16", startDate: d16s, endDate: d16e, timeframe: .daily))
+        try seedCompound(db, childId: "hub", on: ["D13", "D16"])
+        // The 26-mile log on the counter, made on Oct 16 (root lifetime 7 → 33).
+        try K.addIncrement(db, taskId: "root", delta: 26, occurredAt: "2026-10-16T17:30:00.000Z")
+        try db.write { d in
+            var root = try XCTUnwrap(Task.fetchOne(d, key: "root")); root.currentCount = 33; try root.save(d)
+        }
+
+        let r = try heal(db)
+        XCTAssertEqual(r.stamped, 0); XCTAssertEqual(r.copied, 0); XCTAssertEqual(r.unstamped, 1)
+
+        let healed = try XCTUnwrap(K.fetchTask(db, "hub"))
+        XCTAssertFalse(BoardSources.isWindowStampedDerived(healed))
+        XCTAssertNil(healed.timeframe); XCTAssertNil(healed.startDate); XCTAssertNil(healed.endDate)
+        XCTAssertTrue(healed.createdInWizard, "not a window mark on its own — left as it was")
+        XCTAssertEqual(healed.currentCount, 33, "mirrors the root's lifetime count the freeze had skipped")
+        XCTAssertEqual(healed.version, 2)
+        XCTAssertEqual(try K.queue(db, type: "tasks", id: "hub").count, 1, "authored: enqueued for peers")
+        // Oct 16's compound now completes from the log in ITS window; Oct 13 stays empty.
+        XCTAssertEqual(try db.fetchBoard(id: "D16")?.completedTasks, 1)
+        XCTAssertEqual(try db.fetchBoard(id: "D13")?.completedTasks, 0)
+        // Idempotent.
+        let again = try heal(db)
+        XCTAssertEqual(again.stamped + again.copied + again.unstamped, 0)
+    }
+
+    func test_perWindowDerivedChild_underADerivedCompound_keepsItsStamp() throws {
+        let db = try makeDb()
+        let artifactId = BoardSources.derivedTaskId(boardId: "J", rootTaskId: "root")
+        try db.saveTask(K.task(artifactId, sharedCounterId: "root", startDate: juneStart, endDate: juneEnd, createdInWizard: true))
+        try db.saveBoard(K.board(id: "J", startDate: juneStart, endDate: juneEnd))
+        try seedCompound(db, childId: artifactId, on: ["J"])
+
+        let r = try heal(db)
+        XCTAssertEqual(r.unstamped, 0)
+        XCTAssertEqual(try K.fetchTask(db, artifactId)?.startDate, juneStart)
     }
 
     func test_sealedBoard_reDerivedFromInWindowEventsOnly() throws {

@@ -496,7 +496,7 @@ final class SyncService: ObservableObject {
             let windowed = try await database.writeAsync { db in
                 try AppDatabase.healLinkedCounterWindowsTx(db: db, userId: userId, now: AppDatabase.currentTimestamp())
             }
-            let total = windowed.stamped + windowed.copied
+            let total = windowed.stamped + windowed.copied + windowed.unstamped
             if total > 0 { result.pulled += total; result.details.append("Windowed \(total) linked counter(s)") }
         } catch {
             log("Linked-counter window heal skipped: \(error.localizedDescription)")

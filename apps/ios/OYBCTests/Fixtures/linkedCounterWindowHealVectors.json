@@ -1,5 +1,5 @@
 {
-  "_note": "Hand-authored vectors for linkedCounterWindowHeal.ts \u2194 Helpers/LinkedCounterWindowHeal.swift (owner rule 2026-10-01: a counting square on a board accounts only for the counter's logs inside that board's window). Every expectation was hand-computed; the copy ids are literal uuidv5 outputs (name \"sources:derived:<boardId>:<root>\", computed ONCE with the TS uuidv5) that Swift must reproduce independently. `planLinkedCounterWindowHeal` vectors share the `boards` roster below unless a vector carries its own `boards`. Task rows carry every field the planner reads; `null` = absent. Stamping is all-or-nothing (PR #537 review): an unstamped row is stamped only when every further placing board is a direct placement (and the row has a goal when there is more than one board); a window-stamped row placed on a board it is not stamped for gets a copy for that board.",
+  "_note": "Hand-authored vectors for linkedCounterWindowHeal.ts \u2194 Helpers/LinkedCounterWindowHeal.swift (owner rule 2026-10-01: a counting square on a board accounts only for the counter's logs inside that board's window). Every expectation was hand-computed; the copy ids are literal uuidv5 outputs (name \"sources:derived:<boardId>:<root>\", computed ONCE with the TS uuidv5) that Swift must reproduce independently. `planLinkedCounterWindowHeal` vectors share the `boards` roster below unless a vector carries its own `boards`. Task rows carry every field the planner reads; `null` = absent. A compound member (a live link from a live compound) is never stamped and an earlier stamp on one is cleared (`unstamps`, 2026-10-16); otherwise stamping is all-or-nothing (PR #537 review): an unstamped row is stamped only when every further placing board is a direct placement (and the row has a goal when there is more than one board); a window-stamped row placed on a board it is not stamped for gets a copy for that board.",
   "sameWindowStart": [
     {
       "name": "identical strings",
@@ -216,7 +216,8 @@
               "endDate": "2026-03-31T23:59:59.999Z"
             }
           ],
-          "copies": []
+          "copies": [],
+          "unstamps": []
         }
       },
       {
@@ -282,12 +283,13 @@
               "startDate": "2026-03-01T00:00:00.000Z",
               "endDate": "2026-03-31T23:59:59.999Z"
             }
-          ]
+          ],
+          "unstamps": []
         }
       },
       {
-        "name": "direct + reached via a compound \u2192 the reached (earlier) board stamps, the later direct placement is copied",
-        "note": "compA on February holds hub1 as a child; hub1 is placed directly on March. The FIRST board may be reached (the stamped row is what the compound reads); only FURTHER boards must be direct.",
+        "name": "direct + reached via a compound \u2192 no stamp (a compound member is never stamped); the direct March placement is copied",
+        "note": "compA on February holds hub1 as a child; hub1 is placed directly on March. A member stays hub-linked so compA reads it over EVERY host board's window (a stamp would pin it to February); the direct square still gets its per-board copy.",
         "tasks": [
           {
             "id": "hub1",
@@ -345,15 +347,7 @@
           }
         ],
         "expected": {
-          "stamps": [
-            {
-              "taskId": "hub1",
-              "boardId": "b-feb",
-              "timeframe": "monthly",
-              "startDate": "2026-02-01T00:00:00.000Z",
-              "endDate": "2026-02-28T23:59:59.999Z"
-            }
-          ],
+          "stamps": [],
           "copies": [
             {
               "id": "41684bc5-903a-5edd-be8d-5248ce41959c",
@@ -365,12 +359,13 @@
               "startDate": "2026-03-01T00:00:00.000Z",
               "endDate": "2026-03-31T23:59:59.999Z"
             }
-          ]
+          ],
+          "unstamps": []
         }
       },
       {
-        "name": "a further board reached only through a compound \u2192 NOTHING (the row stays unstamped, no copies)",
-        "note": "hub1 direct on January; compA places it on February and March only through the compound. A child link cannot be repointed per board, and a stamped row would read January's window on every board \u2014 so no stamp either: the kernel's context-window fallback renders all three boards correctly as long as the row stays unstamped.",
+        "name": "a compound member direct on January, reached on February and March \u2192 no stamp; January's direct placement is copied",
+        "note": "hub1 direct on January; compA places it on February and March only through the compound. A child link cannot be repointed per board and a member is never stamped (it would read January's window on every board); the direct January square gets its copy, the row stays hub-linked for the compound.",
         "tasks": [
           {
             "id": "hub1",
@@ -435,12 +430,24 @@
         ],
         "expected": {
           "stamps": [],
-          "copies": []
+          "copies": [
+            {
+              "id": "3efc78f7-9235-546d-810a-20b8cef854c0",
+              "boardId": "b-jan",
+              "boardTaskId": "bt-jan",
+              "sourceTaskId": "hub1",
+              "rootTaskId": "root-1",
+              "timeframe": "monthly",
+              "startDate": "2026-01-01T00:00:00.000Z",
+              "endDate": "2026-01-31T23:59:59.999Z"
+            }
+          ],
+          "unstamps": []
         }
       },
       {
-        "name": "reached-only single board \u2192 stamp (direct or reached alike)",
-        "note": "No direct placement at all; the first (only) board is reached through compA.",
+        "name": "reached-only single board \u2192 NOTHING (a compound member is never stamped)",
+        "note": "No direct placement at all; the only board is reached through compA. Incident 2026-10-16: a daily series re-places the same compound every window, so a child stamped here read 0 on every later spawn and was frozen out of propagation. The row stays hub-linked.",
         "tasks": [
           {
             "id": "hub1",
@@ -492,16 +499,9 @@
           }
         ],
         "expected": {
-          "stamps": [
-            {
-              "taskId": "hub1",
-              "boardId": "b-apr",
-              "timeframe": "monthly",
-              "startDate": "2026-04-01T00:00:00.000Z",
-              "endDate": "2026-04-30T23:59:59.999Z"
-            }
-          ],
-          "copies": []
+          "stamps": [],
+          "copies": [],
+          "unstamps": []
         }
       },
       {
@@ -535,7 +535,8 @@
         "compoundChildren": [],
         "expected": {
           "stamps": [],
-          "copies": []
+          "copies": [],
+          "unstamps": []
         }
       },
       {
@@ -593,7 +594,8 @@
               "startDate": "2026-03-01T00:00:00.000Z",
               "endDate": "2026-03-31T23:59:59.999Z"
             }
-          ]
+          ],
+          "unstamps": []
         }
       },
       {
@@ -654,7 +656,8 @@
               "endDate": "2026-04-30T23:59:59.999Z"
             }
           ],
-          "copies": []
+          "copies": [],
+          "unstamps": []
         }
       },
       {
@@ -703,7 +706,8 @@
               "endDate": null
             }
           ],
-          "copies": []
+          "copies": [],
+          "unstamps": []
         }
       },
       {
@@ -785,7 +789,8 @@
               "startDate": "2026-02-15T00:00:00.000Z",
               "endDate": null
             }
-          ]
+          ],
+          "unstamps": []
         }
       },
       {
@@ -832,12 +837,13 @@
         "compoundChildren": [],
         "expected": {
           "stamps": [],
-          "copies": []
+          "copies": [],
+          "unstamps": []
         }
       },
       {
-        "name": "direct and reached on the SAME board count once",
-        "note": "compA (holding hub1) and hub1 itself are both on February: one board, one stamp, no copy.",
+        "name": "direct and reached on the SAME board \u2192 no stamp; the direct February placement is copied",
+        "note": "compA (holding hub1) and hub1 itself are both on February: the member stays hub-linked for compA, the direct square gets February's copy.",
         "tasks": [
           {
             "id": "hub1",
@@ -895,16 +901,20 @@
           }
         ],
         "expected": {
-          "stamps": [
+          "stamps": [],
+          "copies": [
             {
-              "taskId": "hub1",
+              "id": "167529b7-2dde-5d6d-aad6-a99ba03b3da4",
               "boardId": "b-feb",
+              "boardTaskId": "bt-feb",
+              "sourceTaskId": "hub1",
+              "rootTaskId": "root-1",
               "timeframe": "monthly",
               "startDate": "2026-02-01T00:00:00.000Z",
               "endDate": "2026-02-28T23:59:59.999Z"
             }
           ],
-          "copies": []
+          "unstamps": []
         }
       },
       {
@@ -1015,7 +1025,8 @@
               "endDate": "2026-04-30T23:59:59.999Z"
             }
           ],
-          "copies": []
+          "copies": [],
+          "unstamps": []
         }
       },
       {
@@ -1132,7 +1143,8 @@
               "startDate": "2026-03-01T00:00:00.000Z",
               "endDate": "2026-03-31T23:59:59.999Z"
             }
-          ]
+          ],
+          "unstamps": []
         }
       },
       {
@@ -1190,7 +1202,8 @@
         "compoundChildren": [],
         "expected": {
           "stamps": [],
-          "copies": []
+          "copies": [],
+          "unstamps": []
         }
       },
       {
@@ -1262,7 +1275,8 @@
               "startDate": "2026-03-01T00:00:00.000Z",
               "endDate": "2026-03-31T23:59:59.999Z"
             }
-          ]
+          ],
+          "unstamps": []
         }
       },
       {
@@ -1344,7 +1358,8 @@
               "startDate": "zzz-not-a-date",
               "endDate": null
             }
-          ]
+          ],
+          "unstamps": []
         }
       },
       {
@@ -1393,12 +1408,13 @@
               "endDate": "2026-02-28T23:59:59.999Z"
             }
           ],
-          "copies": []
+          "copies": [],
+          "unstamps": []
         }
       },
       {
-        "name": "direct on the first and third boards, reached only on the second \u2192 NOTHING (all-or-nothing)",
-        "note": "hub1 direct on January and March; compA places it on February. One further board that cannot be repointed vetoes the whole plan for the row \u2014 March is not copied either.",
+        "name": "direct on the first and third boards, reached only on the second \u2192 no stamp; both direct placements are copied",
+        "note": "A member is never stamped; each direct square gets its own per-board copy and the compound on the second board keeps reading the hub-linked row over its own window.",
         "tasks": [
           {
             "id": "hub1",
@@ -1463,7 +1479,29 @@
         ],
         "expected": {
           "stamps": [],
-          "copies": []
+          "copies": [
+            {
+              "id": "3efc78f7-9235-546d-810a-20b8cef854c0",
+              "boardId": "b-jan",
+              "boardTaskId": "bt-jan",
+              "sourceTaskId": "hub1",
+              "rootTaskId": "root-1",
+              "timeframe": "monthly",
+              "startDate": "2026-01-01T00:00:00.000Z",
+              "endDate": "2026-01-31T23:59:59.999Z"
+            },
+            {
+              "id": "41684bc5-903a-5edd-be8d-5248ce41959c",
+              "boardId": "b-mar",
+              "boardTaskId": "bt-mar",
+              "sourceTaskId": "hub1",
+              "rootTaskId": "root-1",
+              "timeframe": "monthly",
+              "startDate": "2026-03-01T00:00:00.000Z",
+              "endDate": "2026-03-31T23:59:59.999Z"
+            }
+          ],
+          "unstamps": []
         }
       },
       {
@@ -1515,7 +1553,8 @@
               "startDate": "2026-03-01T00:00:00.000Z",
               "endDate": "2026-03-31T23:59:59.999Z"
             }
-          ]
+          ],
+          "unstamps": []
         }
       },
       {
@@ -1556,7 +1595,8 @@
         "compoundChildren": [],
         "expected": {
           "stamps": [],
-          "copies": []
+          "copies": [],
+          "unstamps": []
         }
       },
       {
@@ -1597,7 +1637,8 @@
         "compoundChildren": [],
         "expected": {
           "stamps": [],
-          "copies": []
+          "copies": [],
+          "unstamps": []
         }
       },
       {
@@ -1638,7 +1679,8 @@
         "compoundChildren": [],
         "expected": {
           "stamps": [],
-          "copies": []
+          "copies": [],
+          "unstamps": []
         }
       },
       {
@@ -1679,7 +1721,8 @@
         "compoundChildren": [],
         "expected": {
           "stamps": [],
-          "copies": []
+          "copies": [],
+          "unstamps": []
         }
       },
       {
@@ -1731,7 +1774,350 @@
         "compoundChildren": [],
         "expected": {
           "stamps": [],
-          "copies": []
+          "copies": [],
+          "unstamps": []
+        }
+      },
+      {
+        "name": "stamped compound member (random id, no direct placement) \u2192 unstamp, no copies",
+        "note": "The row an earlier heal stamped for February is compA's child on February and March; its id is not any board's deterministic artifact id. Clearing the stamp lets compA read it over each host board's window again.",
+        "tasks": [
+          {
+            "id": "hub1",
+            "type": "counting",
+            "sharedCounterId": "root-1",
+            "startDate": "2026-02-01T00:00:00.000Z",
+            "endDate": "2026-02-28T23:59:59.999Z",
+            "timeframe": "monthly",
+            "createdInWizard": true,
+            "isDeleted": false,
+            "maxCount": 5
+          },
+          {
+            "id": "compA",
+            "type": "compound",
+            "sharedCounterId": null,
+            "startDate": null,
+            "endDate": null,
+            "timeframe": null,
+            "createdInWizard": false,
+            "isDeleted": false,
+            "maxCount": null
+          },
+          {
+            "id": "root-1",
+            "type": "counting",
+            "sharedCounterId": null,
+            "startDate": null,
+            "endDate": null,
+            "timeframe": null,
+            "createdInWizard": false,
+            "isDeleted": false,
+            "maxCount": null
+          }
+        ],
+        "boardTasks": [
+          {
+            "id": "bt-cA-feb",
+            "boardId": "b-feb",
+            "taskId": "compA",
+            "isDeleted": false
+          },
+          {
+            "id": "bt-cA-mar",
+            "boardId": "b-mar",
+            "taskId": "compA",
+            "isDeleted": false
+          }
+        ],
+        "compoundChildren": [
+          {
+            "compoundTaskId": "compA",
+            "childTaskId": "hub1",
+            "isDeleted": false
+          }
+        ],
+        "expected": {
+          "stamps": [],
+          "copies": [],
+          "unstamps": [
+            {
+              "taskId": "hub1"
+            }
+          ]
+        }
+      },
+      {
+        "name": "stamped compound member also placed directly on the board it was stamped for \u2192 unstamp + a copy for that placement",
+        "note": "Once un-stamped the row is nobody's artifact, so even the February placement it was stamped for is repointed at February's deterministic copy.",
+        "tasks": [
+          {
+            "id": "hub1",
+            "type": "counting",
+            "sharedCounterId": "root-1",
+            "startDate": "2026-02-01T00:00:00.000Z",
+            "endDate": "2026-02-28T23:59:59.999Z",
+            "timeframe": "monthly",
+            "createdInWizard": true,
+            "isDeleted": false,
+            "maxCount": 5
+          },
+          {
+            "id": "compA",
+            "type": "compound",
+            "sharedCounterId": null,
+            "startDate": null,
+            "endDate": null,
+            "timeframe": null,
+            "createdInWizard": false,
+            "isDeleted": false,
+            "maxCount": null
+          },
+          {
+            "id": "root-1",
+            "type": "counting",
+            "sharedCounterId": null,
+            "startDate": null,
+            "endDate": null,
+            "timeframe": null,
+            "createdInWizard": false,
+            "isDeleted": false,
+            "maxCount": null
+          }
+        ],
+        "boardTasks": [
+          {
+            "id": "bt-cA-feb",
+            "boardId": "b-feb",
+            "taskId": "compA",
+            "isDeleted": false
+          },
+          {
+            "id": "bt-feb",
+            "boardId": "b-feb",
+            "taskId": "hub1",
+            "isDeleted": false
+          }
+        ],
+        "compoundChildren": [
+          {
+            "compoundTaskId": "compA",
+            "childTaskId": "hub1",
+            "isDeleted": false
+          }
+        ],
+        "expected": {
+          "stamps": [],
+          "copies": [
+            {
+              "id": "167529b7-2dde-5d6d-aad6-a99ba03b3da4",
+              "boardId": "b-feb",
+              "boardTaskId": "bt-feb",
+              "sourceTaskId": "hub1",
+              "rootTaskId": "root-1",
+              "timeframe": "monthly",
+              "startDate": "2026-02-01T00:00:00.000Z",
+              "endDate": "2026-02-28T23:59:59.999Z"
+            }
+          ],
+          "unstamps": [
+            {
+              "taskId": "hub1"
+            }
+          ]
+        }
+      },
+      {
+        "name": "goal-less stamped compound member \u2192 unstamp, no copies",
+        "note": "The stamp is cleared regardless of goal; a direct placement of a goal-less row has no target to copy.",
+        "tasks": [
+          {
+            "id": "hub1",
+            "type": "counting",
+            "sharedCounterId": "root-1",
+            "startDate": "2026-02-01T00:00:00.000Z",
+            "endDate": "2026-02-28T23:59:59.999Z",
+            "timeframe": "monthly",
+            "createdInWizard": true,
+            "isDeleted": false,
+            "maxCount": null
+          },
+          {
+            "id": "compA",
+            "type": "compound",
+            "sharedCounterId": null,
+            "startDate": null,
+            "endDate": null,
+            "timeframe": null,
+            "createdInWizard": false,
+            "isDeleted": false,
+            "maxCount": null
+          },
+          {
+            "id": "root-1",
+            "type": "counting",
+            "sharedCounterId": null,
+            "startDate": null,
+            "endDate": null,
+            "timeframe": null,
+            "createdInWizard": false,
+            "isDeleted": false,
+            "maxCount": null
+          }
+        ],
+        "boardTasks": [
+          {
+            "id": "bt-cA-feb",
+            "boardId": "b-feb",
+            "taskId": "compA",
+            "isDeleted": false
+          },
+          {
+            "id": "bt-feb",
+            "boardId": "b-feb",
+            "taskId": "hub1",
+            "isDeleted": false
+          }
+        ],
+        "compoundChildren": [
+          {
+            "compoundTaskId": "compA",
+            "childTaskId": "hub1",
+            "isDeleted": false
+          }
+        ],
+        "expected": {
+          "stamps": [],
+          "copies": [],
+          "unstamps": [
+            {
+              "taskId": "hub1"
+            }
+          ]
+        }
+      },
+      {
+        "name": "a per-window derived child under a derived compound on its own board \u2192 nothing (the board's artifact keeps its stamp)",
+        "note": "The planner / spawn mint a member-rule child under derivedTaskId(board, root) and link it from a per-window derived compound; that row IS February's artifact and is never un-stamped.",
+        "tasks": [
+          {
+            "id": "167529b7-2dde-5d6d-aad6-a99ba03b3da4",
+            "type": "counting",
+            "sharedCounterId": "root-1",
+            "startDate": "2026-02-01T00:00:00.000Z",
+            "endDate": "2026-02-28T23:59:59.999Z",
+            "timeframe": "monthly",
+            "createdInWizard": true,
+            "isDeleted": false,
+            "maxCount": 5
+          },
+          {
+            "id": "compD",
+            "type": "compound",
+            "sharedCounterId": null,
+            "startDate": "2026-02-01T00:00:00.000Z",
+            "endDate": "2026-02-28T23:59:59.999Z",
+            "timeframe": "monthly",
+            "createdInWizard": true,
+            "isDeleted": false,
+            "maxCount": null
+          },
+          {
+            "id": "root-1",
+            "type": "counting",
+            "sharedCounterId": null,
+            "startDate": null,
+            "endDate": null,
+            "timeframe": null,
+            "createdInWizard": false,
+            "isDeleted": false,
+            "maxCount": null
+          }
+        ],
+        "boardTasks": [
+          {
+            "id": "bt-cD-feb",
+            "boardId": "b-feb",
+            "taskId": "compD",
+            "isDeleted": false
+          }
+        ],
+        "compoundChildren": [
+          {
+            "compoundTaskId": "compD",
+            "childTaskId": "167529b7-2dde-5d6d-aad6-a99ba03b3da4",
+            "isDeleted": false
+          }
+        ],
+        "expected": {
+          "stamps": [],
+          "copies": [],
+          "unstamps": []
+        }
+      },
+      {
+        "name": "idempotent: an un-stamped compound member plans nothing",
+        "note": "The healed state of the un-stamp case: no startDate (createdInWizard stays true, it is not a window mark on its own), still compA's child on February and March.",
+        "tasks": [
+          {
+            "id": "hub1",
+            "type": "counting",
+            "sharedCounterId": "root-1",
+            "startDate": null,
+            "endDate": null,
+            "timeframe": null,
+            "createdInWizard": true,
+            "isDeleted": false,
+            "maxCount": 5
+          },
+          {
+            "id": "compA",
+            "type": "compound",
+            "sharedCounterId": null,
+            "startDate": null,
+            "endDate": null,
+            "timeframe": null,
+            "createdInWizard": false,
+            "isDeleted": false,
+            "maxCount": null
+          },
+          {
+            "id": "root-1",
+            "type": "counting",
+            "sharedCounterId": null,
+            "startDate": null,
+            "endDate": null,
+            "timeframe": null,
+            "createdInWizard": false,
+            "isDeleted": false,
+            "maxCount": null
+          }
+        ],
+        "boardTasks": [
+          {
+            "id": "bt-cA-feb",
+            "boardId": "b-feb",
+            "taskId": "compA",
+            "isDeleted": false
+          },
+          {
+            "id": "bt-cA-mar",
+            "boardId": "b-mar",
+            "taskId": "compA",
+            "isDeleted": false
+          }
+        ],
+        "compoundChildren": [
+          {
+            "compoundTaskId": "compA",
+            "childTaskId": "hub1",
+            "isDeleted": false
+          }
+        ],
+        "expected": {
+          "stamps": [],
+          "copies": [],
+          "unstamps": []
         }
       }
     ]

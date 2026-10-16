@@ -542,9 +542,9 @@ export async function pullSync(
     // clean-pull gate, idempotent, never fails the pull.
     try {
       const healedLinked = await healLinkedCounterWindows(userId);
-      if (healedLinked.stamped + healedLinked.copied > 0) {
+      if (healedLinked.stamped + healedLinked.copied + healedLinked.unstamped > 0) {
         result.details.push(
-          `Healed linked counters: ${healedLinked.stamped} stamped, ${healedLinked.copied} copied`,
+          `Healed linked counters: ${healedLinked.stamped} stamped, ${healedLinked.copied} copied, ${healedLinked.unstamped} unstamped`,
         );
       }
     } catch (err) {

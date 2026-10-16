@@ -28,7 +28,8 @@ let clearableFieldsByCollection: [String: [String]] = [
     "boards": ["endDate", "completedAt", "sealedAt", "sealedCompletedCells"],
     "coreBoardDefaults": ["defaultBoardSize", "defaultCenterType"],
     "tasks": [
-        "endDate", "counterName", "titleTemplateSingular", "titleTemplatePlural", "timeframeGoals",
+        "endDate", "timeframe", "startDate",
+        "counterName", "titleTemplateSingular", "titleTemplatePlural", "timeframeGoals",
         "countsTowardCounterId", "countsTowardAmount", "countsTowardSince",
     ],
     // A revived counts-toward credit drops `deletedAt` (SHARED_COUNTER_SETTINGS §3b).

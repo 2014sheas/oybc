@@ -211,6 +211,32 @@ extension AppDatabase {
             // D11 — the instant the flag was set; only occurrences at or after it credit.
             try db.execute(sql: "ALTER TABLE tasks ADD COLUMN countsTowardSince TEXT")
         }
+
+        // v44: re-run the windowed-linked-counter heal once (2026-10-16). The
+        // v37 sweep stamped a linked counting row that a compound carried with
+        // its first board's window; a daily series that re-places the same
+        // compound every window then read that child over its FIRST day
+        // everywhere (0 of 10 after a 26-mile log) and froze it out of
+        // propagation. The planner now never stamps a compound member and
+        // un-stamps one an earlier heal pinned. Data-only, same shape as v37;
+        // the post-pull sweep re-runs the same heal for rows pulled later.
+        migrator.registerMigration("v44") { db in
+            let userIds = try String.fetchAll(db, sql: "SELECT id FROM users")
+            for userId in userIds {
+                do {
+                    try db.inSavepoint {
+                        try AppDatabase.healLinkedCounterWindowsTx(
+                            db: db, userId: userId, now: AppDatabase.currentTimestamp()
+                        )
+                        return .commit
+                    }
+                } catch {
+                    #if DEBUG
+                    dlog("[Migration v44] linked-counter heal skipped for a user: \(error.localizedDescription)")
+                    #endif
+                }
+            }
+        }
     }
 }
 

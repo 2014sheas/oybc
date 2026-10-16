@@ -148,10 +148,23 @@ export interface LinkedCounterWindowCopy {
   endDate: string | null;
 }
 
+/**
+ * Clear a window-stamped row's stamp (`timeframe` / `startDate` / `endDate`)
+ * so it is hub-linked again and the kernel's context-window fallback renders
+ * it over the HOST board's window wherever a compound carries it. Planned
+ * only for a row that is a live compound's child and is not any board's own
+ * per-window artifact (see {@link planLinkedCounterWindowHeal} rule 3).
+ * `createdInWizard` is left as it is (it is not a window mark on its own).
+ */
+export interface LinkedCounterWindowUnstamp {
+  taskId: string;
+}
+
 /** Output of {@link planLinkedCounterWindowHeal}. */
 export interface LinkedCounterWindowHealPlan {
   stamps: LinkedCounterWindowStamp[];
   copies: LinkedCounterWindowCopy[];
+  unstamps: LinkedCounterWindowUnstamp[];
 }
 
 type HealBoard = LinkedCounterWindowHealInput['boards'][number];
@@ -182,41 +195,41 @@ function compareByTaskThenBoard(
 }
 
 /**
- * Plan the one-time heal of linked counters into per-board window-stamped
+ * Plan the (idempotent) heal of linked counters into per-board window-stamped
  * rows: pre-rule hub-linked rows (and any linked row that is windowed but
- * not wizard-born) get stamped / copied, and window-stamped rows sitting on
- * a board they are not stamped for get a copy.
+ * not wizard-born) get stamped / copied, window-stamped rows sitting on a
+ * board they are not stamped for get a copy, and a stamped row that a
+ * compound carries gets its stamp cleared.
  *
- * **Placing boards** of a row — non-deleted boards with a live
- * `board_tasks` row for the task (DIRECT), union non-deleted boards with a
- * live `board_tasks` row for a non-deleted COMPOUND that has a live
- * `compound_children` link to the task (its direct parent only — REACHED).
- * Ordered by (`startDate` asc as instants, `id` asc).
+ * **Direct placements** of a row — non-deleted boards with a live
+ * `board_tasks` row for the task. **Compound members** — rows with a live
+ * `compound_children` link from a non-deleted COMPOUND (its direct parent
+ * only). A member is REACHED on every board its parent is placed on, and a
+ * child link cannot be repointed per board.
  *
  * **1. Unstamped candidates** — non-deleted COUNTING tasks with a
  * `sharedCounterId` that are not {@link isWindowStampedDerived}. Once
  * stamped, a row is resolved from its OWN stamped window everywhere
  * (`resolveDerivedCounterWindowState` / `resolveLinkedCounterDisplay` take
- * the stamped path and ignore the context window), so a stamp is only safe
- * when every OTHER placing board gets its own copy. The rule is
- * all-or-nothing:
+ * the stamped path and ignore the context window), so:
  *
- *   - Stamped ONLY IF every placing board beyond the first is a DIRECT
- *     placement AND (when there is more than one board) the row carries a
- *     goal (`maxCount >= 1` — a copy needs a per-window target). Then the
- *     FIRST board (direct or reached alike) → a {@link LinkedCounterWindowStamp}
- *     (the row itself takes that board's window) and every further board →
- *     a {@link LinkedCounterWindowCopy} (`id = derivedTaskId(boardId, root)`,
- *     `boardTaskId` = that placement row, to repoint).
- *   - Otherwise (any further board reached only through a compound — a
- *     child link cannot be repointed per board — or a goal-less row on more
- *     than one board) → NOTHING: the row stays unstamped and the kernel's
- *     context-window fallback keeps rendering every board over its own
- *     window. Stamping it would freeze the skipped boards out of propagation
- *     once the first board's window ends.
- *   - A single-board candidate (direct or reached, with or without a goal)
- *     → stamp.
- *   - Unplaced candidates → nothing (library rows keep the lifetime display).
+ *   - A row that is NOT a compound member: the FIRST direct board (ordered
+ *     by `startDate` asc as instants, then `id`) → a
+ *     {@link LinkedCounterWindowStamp} (the row itself takes that board's
+ *     window) and every further direct board → a
+ *     {@link LinkedCounterWindowCopy} (`id = derivedTaskId(boardId, root)`,
+ *     `boardTaskId` = that placement row, to repoint). More than one board
+ *     requires a goal (`maxCount >= 1` — a copy needs a per-window target);
+ *     a goal-less row on more than one board → nothing. Unplaced → nothing
+ *     (library rows keep the lifetime display).
+ *   - A row that IS a compound member is NEVER stamped (incident
+ *     2026-10-16: a daily series re-places the same compound every window,
+ *     so a child stamped with the first window read 0 on every later board
+ *     and was frozen out of propagation). It stays hub-linked — the kernel's
+ *     context-window fallback renders every board over its own window —
+ *     and, when it has a goal, each of its DIRECT placements gets a copy
+ *     (a direct square is still per-board, like any other). Goal-less →
+ *     nothing.
  *
  * **2. Mis-placed window-stamped rows** — non-deleted COUNTING rows that ARE
  * {@link isWindowStampedDerived} with a live DIRECT placement on a board
@@ -228,18 +241,28 @@ function compareByTaskThenBoard(
  * board's deterministic id IS the row's own id is left alone — that row is
  * already the board's per-window artifact and only its dates are stale,
  * which the Board Edit date path owns (a copy would point the placement at
- * itself forever). Reached-only placements of a stamped row are out of
- * scope (nothing to repoint).
+ * itself forever).
+ *
+ * **3. Stamped compound members** — a window-stamped COUNTING row that is a
+ * compound member and is NOT any live board's own artifact (no live board
+ * `b` has `derivedTaskId(b.id, root) === id`; the planner / spawn / Board
+ * Edit mint their per-window children under THAT id and link them from a
+ * per-window derived compound, which keeps them) → a
+ * {@link LinkedCounterWindowUnstamp}: the stamp an earlier heal (or an
+ * old-app device) put on a hand-made / wizard-born child is cleared, and —
+ * with a goal — every direct placement gets a copy as in rule 1 (the row is
+ * no longer stamped for any board, so none is skipped).
  *
  * Deterministic for a given input (no clock, no rng; every tie is broken by
  * id) and idempotent once applied: a stamped row is window-stamped
- * (`createdInWizard` set by the stamp) and a repointed placement places the
- * board's own row (window-stamped for that board) instead of the source, so
- * the second run over healed data plans nothing. Output is sorted by
- * `taskId` then `boardId`.
+ * (`createdInWizard` set by the stamp), a repointed placement places the
+ * board's own row (window-stamped for that board) instead of the source,
+ * and an un-stamped member has no direct placement left to copy — so the
+ * second run over healed data plans nothing. Output is sorted by `taskId`
+ * then `boardId`.
  *
  * @param input - See {@link LinkedCounterWindowHealInput}.
- * @returns The stamps and copies to apply.
+ * @returns The stamps, copies and unstamps to apply.
  */
 export function planLinkedCounterWindowHeal(input: LinkedCounterWindowHealInput): LinkedCounterWindowHealPlan {
   const boardsById = new Map<string, HealBoard>();
@@ -281,6 +304,8 @@ export function planLinkedCounterWindowHeal(input: LinkedCounterWindowHealInput)
 
   const stamps: LinkedCounterWindowStamp[] = [];
   const copies: LinkedCounterWindowCopy[] = [];
+  const unstamps: LinkedCounterWindowUnstamp[] = [];
+  const liveBoards = [...boardsById.values()];
 
   const copyFor = (
     t: LinkedCounterWindowHealInput['tasks'][number],
@@ -297,36 +322,52 @@ export function planLinkedCounterWindowHeal(input: LinkedCounterWindowHealInput)
     endDate: board.endDate ?? null,
   });
 
+  /** Is `t` some live board's own per-window artifact (`derivedTaskId(b, root)`)? */
+  const isBoardArtifact = (t: LinkedCounterWindowHealInput['tasks'][number]): boolean =>
+    liveBoards.some((b) => derivedTaskId(b.id, t.sharedCounterId!) === t.id);
+
   for (const t of tasksById.values()) {
     if (t.type !== TaskType.COUNTING || !t.sharedCounterId) continue;
     const direct = placementsByTaskId.get(t.id) ?? new Map<string, string>();
     const hasGoal = hasCopyGoal(t.maxCount, resolveCountKind(t));
+    const isMember = (parentsByChildId.get(t.id)?.size ?? 0) > 0;
 
     if (isWindowStampedDerived(t)) {
+      // 3. A stamped compound member that is no board's artifact: clear the
+      //    stamp; its direct placements are then copied like any unstamped
+      //    member's (no board is "its own" any more).
+      const unstamp = isMember && !isBoardArtifact(t);
+      if (unstamp) unstamps.push({ taskId: t.id });
       // 2. Mis-placed window-stamped rows: a copy per direct placement on a
       //    board the row is not stamped for; the row keeps its own window.
       if (!hasGoal) continue;
       for (const [boardId, boardTaskId] of direct) {
         const board = boardsById.get(boardId)!;
-        if (isWindowStampedForBoard(t, board)) continue;
+        if (!unstamp && isWindowStampedForBoard(t, board)) continue;
         if (derivedTaskId(board.id, t.sharedCounterId) === t.id) continue;
         copies.push(copyFor(t, board, boardTaskId));
       }
       continue;
     }
 
-    // 1. Unstamped candidates: stamp the first board and copy every further
-    //    one — or do nothing at all.
-    const boardIds = new Set<string>(direct.keys());
-    for (const parentId of parentsByChildId.get(t.id) ?? []) {
-      for (const boardId of placementsByTaskId.get(parentId)?.keys() ?? []) boardIds.add(boardId);
+    if (isMember) {
+      // 1b. A compound member is never stamped; with a goal, each direct
+      //     placement gets its own per-board copy.
+      if (!hasGoal) continue;
+      for (const [boardId, boardTaskId] of direct) {
+        const board = boardsById.get(boardId)!;
+        if (derivedTaskId(board.id, t.sharedCounterId) === t.id) continue;
+        copies.push(copyFor(t, board, boardTaskId));
+      }
+      continue;
     }
-    if (boardIds.size === 0) continue;
 
-    const ordered = [...boardIds].map((id) => boardsById.get(id)!).sort(compareBoardWindows);
+    // 1a. Unstamped non-member: stamp the first direct board and copy every
+    //     further one — or do nothing at all.
+    if (direct.size === 0) continue;
+    const ordered = [...direct.keys()].map((id) => boardsById.get(id)!).sort(compareBoardWindows);
     const [first, ...further] = ordered;
-    const repointable = further.every((board) => direct.has(board.id)) && (further.length === 0 || hasGoal);
-    if (!repointable) continue;
+    if (further.length > 0 && !hasGoal) continue;
 
     stamps.push({
       taskId: t.id,
@@ -345,7 +386,8 @@ export function planLinkedCounterWindowHeal(input: LinkedCounterWindowHealInput)
       { taskId: b.sourceTaskId, boardId: b.boardId }
     )
   );
-  return { stamps, copies };
+  unstamps.sort((a, b) => (a.taskId < b.taskId ? -1 : a.taskId > b.taskId ? 1 : 0));
+  return { stamps, copies, unstamps };
 }
 
 /**

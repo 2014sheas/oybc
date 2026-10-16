@@ -97,6 +97,8 @@ describe('planLinkedCounterWindowHeal', () => {
     expect(
       P.vectors.some((v: any) => v.expected.stamps.length === 0 && v.expected.copies.length > 0)
     ).toBe(true);
+    // A stamped compound member: its stamp is cleared (2026-10-16).
+    expect(P.vectors.some((v: any) => v.expected.unstamps.length > 0)).toBe(true);
   });
 
   it.each(P.vectors as any[])('$name', (v: any) => {
@@ -143,7 +145,7 @@ describe('planLinkedCounterWindowHeal', () => {
       const c = plan.copies.find((x) => x.boardTaskId === bt.id);
       return c ? { ...bt, taskId: c.id } : bt;
     });
-    expect(planLinkedCounterWindowHeal({ ...input, tasks, boardTasks })).toEqual({ stamps: [], copies: [] });
+    expect(planLinkedCounterWindowHeal({ ...input, tasks, boardTasks })).toEqual({ stamps: [], copies: [], unstamps: [] });
   });
 
   it('is idempotent for a mis-placed window-stamped row: repointing the placement at the minted copy leaves nothing to plan', () => {
@@ -172,7 +174,38 @@ describe('planLinkedCounterWindowHeal', () => {
       const c = plan.copies.find((x) => x.boardTaskId === bt.id);
       return c ? { ...bt, taskId: c.id } : bt;
     });
-    expect(planLinkedCounterWindowHeal({ ...input, tasks, boardTasks })).toEqual({ stamps: [], copies: [] });
+    expect(planLinkedCounterWindowHeal({ ...input, tasks, boardTasks })).toEqual({ stamps: [], copies: [], unstamps: [] });
+  });
+});
+
+describe('incident 2026-10-16: a linked sub-task of a compound on a daily series', () => {
+  // The same compound (and the same hub-linked child) is placed on every
+  // daily spawn. The old planner stamped the child with the FIRST day's
+  // window ("reached-only single board → stamp"), so every later board read
+  // it over Oct 13 — 0 of 10 after a 26-mile log on Oct 16 — and the
+  // propagation freeze skipped it. A member is now never stamped, and the
+  // kernel resolves it over each host board's own window.
+  const oct13 = { id: 'd13', timeframe: 'daily', startDate: '2026-10-13T00:00:00', endDate: '2026-10-13T23:59:59.999', isDeleted: false };
+  const oct16 = { id: 'd16', timeframe: 'daily', startDate: '2026-10-16T00:00:00', endDate: '2026-10-16T23:59:59.999', isDeleted: false };
+  const child: HealTask = { id: 'bike', type: 'counting' as any, sharedCounterId: 'root', createdInWizard: true, isDeleted: false, maxCount: 10 };
+  const compound: HealTask = { id: 'biking', type: 'compound' as any, sharedCounterId: undefined, createdInWizard: true, isDeleted: false };
+  const root: HealTask = { id: 'root', type: 'counting' as any, sharedCounterId: undefined, createdInWizard: false, isDeleted: false };
+  const input = (boards: HealBoard[]): LinkedCounterWindowHealInput => ({
+    tasks: [child, compound, root],
+    boards,
+    boardTasks: boards.map((b) => ({ id: `bt-${b.id}`, boardId: b.id, taskId: 'biking', isDeleted: false })),
+    compoundChildren: [{ compoundTaskId: 'biking', childTaskId: 'bike', isDeleted: false }],
+  });
+
+  it('leaves the child hub-linked on day 1 and on every later spawn', () => {
+    expect(planLinkedCounterWindowHeal(input([oct13 as HealBoard]))).toEqual({ stamps: [], copies: [], unstamps: [] });
+    expect(planLinkedCounterWindowHeal(input([oct13, oct16] as HealBoard[]))).toEqual({ stamps: [], copies: [], unstamps: [] });
+  });
+
+  it('un-stamps a child an earlier heal pinned to day 1', () => {
+    const pinned: HealTask = { ...child, timeframe: Timeframe.DAILY, startDate: oct13.startDate, endDate: oct13.endDate };
+    const plan = planLinkedCounterWindowHeal({ ...input([oct13, oct16] as HealBoard[]), tasks: [pinned, compound, root] });
+    expect(plan).toEqual({ stamps: [], copies: [], unstamps: [{ taskId: 'bike' }] });
   });
 });
 
