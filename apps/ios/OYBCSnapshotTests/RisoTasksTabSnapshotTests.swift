@@ -508,6 +508,42 @@ final class RisoTasksTabSnapshotTests: XCTestCase {
         )
     }
 
+    // MARK: - RisoTaskDetailContentView — Linked counting task with its own window
+
+    /// The Details card's window + link lines (2026-10-16): a per-window copy
+    /// pinned to an ended day reads "Window · … · ended" and
+    /// "Linked counter · per-window copy" under the counting subtitle.
+    func testDetailLinkedWindowLight() {
+        var task = SnapshotFixtures.makeTask(
+            id: "t-linked", title: "Bike 10 miles indoors", type: .counting,
+            action: "Bike", unit: "miles indoors", maxCount: 10
+        )
+        task.sharedCounterId = "root-bike"
+        task.createdInWizard = true
+        task.timeframe = .daily
+        task.startDate = "2026-03-15T00:00:00"
+        task.endDate = "2026-03-15T23:59:59.999"
+        let view = RisoTaskDetailContentView(
+            task: task,
+            placements: [],
+            affectedBoards: [],
+            parentCompounds: [],
+            compoundChildren: [],
+            templates: [],
+            now: SnapshotFixtures.fixedNow,
+            onEditSubmit: { _ in },
+            onDeleteTap: {},
+            onOpenTask: { _ in },
+            onOpenBoard: { _ in }
+        )
+        .frame(width: 393, height: 560)
+        assertSnapshot(
+            of: view,
+            as: .image(layout: .fixed(width: 393, height: 560), traits: lightTraits()),
+            record: recordMode
+        )
+    }
+
     // MARK: - RisoTaskDetailContentView — Compound task
 
     func testDetailCompoundLight() {

@@ -606,3 +606,6 @@ export {
 } from './boardExpiry';
 
 export type { ExpiringBoardFields } from './boardExpiry';
+
+export { taskWindowCaptionLines } from './taskWindowCaption';
+export type { TaskWindowCaptionTask } from './taskWindowCaption';

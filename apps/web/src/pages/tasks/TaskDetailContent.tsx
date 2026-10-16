@@ -6,6 +6,7 @@ import {
   TaskType,
   boardPlacementStatus,
   compoundRuleLabel,
+  taskWindowCaptionLines,
   type Board,
   type BoardTask,
   type CompoundChild,
@@ -227,6 +228,25 @@ function AchievementTemplateFact({
   );
 }
 
+/**
+ * The task's own window and linked-counter kind, under the type facts
+ * (`taskWindowCaptionLines` — iOS twin in `RisoTaskDetailContentView`'s
+ * Details row). Renders nothing for a task with neither.
+ */
+function TaskWindowFacts({ task }: { task: Task }): React.ReactElement | null {
+  const lines = taskWindowCaptionLines(task);
+  if (lines.length === 0) return null;
+  return (
+    <section className={styles.section} aria-label="Window">
+      {lines.map((line) => (
+        <p key={line} className={styles.windowLine}>
+          {line}
+        </p>
+      ))}
+    </section>
+  );
+}
+
 function TypeSpecificFacts({
   task,
   onOpenCounter,
@@ -429,6 +449,9 @@ export function TaskDetailContent({
 
       {/* Type-specific facts */}
       <TypeSpecificFacts task={task} onOpenCounter={onOpenCounter} />
+
+      {/* The task's own window + link kind (read-only; empty for a plain task). */}
+      <TaskWindowFacts task={task} />
 
       {/* Unit task of a counter: the same row a linked copy shows, any type. */}
       {task.countsTowardCounterId != null && (

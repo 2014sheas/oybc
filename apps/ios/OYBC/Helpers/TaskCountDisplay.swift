@@ -70,6 +70,53 @@ enum TaskCountDisplay {
         return "\(action) · \(formatCount(displayedCount(for: task), kind: kind))\(max)\(countUnitSuffix(kind, unit: task.unit))"
     }
 
+    /// Task Detail's read-only window facts (owner request 2026-10-16, after
+    /// the PR #624 incident where a sub-task pinned to one day's window was
+    /// invisible in the UI). Up to two lines under the Details text:
+    ///
+    ///   - `"Window · <label>"` when the task carries its OWN window
+    ///     (`startDate` set): `formatWindowLabel` for a real timeframe, else
+    ///     the bare `start – end` dates (`start` alone when open-ended);
+    ///     `" · ended"` once `now` is past `endDate`.
+    ///   - a LINKED counting task: `"Linked counter · per-window copy"` when
+    ///     window-stamped (`BoardSources.isWindowStampedDerived`), else
+    ///     `"Linked counter · follows each board's window"`.
+    ///
+    /// Pure; web twin `taskWindowCaptionLines`.
+    ///
+    /// - Parameters:
+    ///   - task: The task being rendered.
+    ///   - now: The instant "ended" is judged against.
+    /// - Returns: The lines, in order; empty when the task has neither fact.
+    static func windowCaptionLines(for task: Task, now: Date = Date()) -> [String] {
+        var lines: [String] = []
+        if let start = task.startDate, !start.isEmpty, let startDate = DateFormatting.parseISO(start) {
+            let label: String
+            if let tf = task.timeframe, tf != .custom {
+                label = formatWindowLabel(timeframe: tf, startDate: startDate)
+            } else if let end = task.endDate, let endDate = DateFormatting.parseISO(end) {
+                label = "\(shortDate(startDate)) – \(shortDate(endDate))"
+            } else {
+                label = shortDate(startDate)
+            }
+            let ended = task.endDate.flatMap { DateFormatting.parseISO($0) }.map { now > $0 } ?? false
+            lines.append("Window · \(label)\(ended ? " · ended" : "")")
+        }
+        if task.type == .counting, let linked = task.sharedCounterId, !linked.isEmpty {
+            lines.append(
+                BoardSources.isWindowStampedDerived(task)
+                    ? "Linked counter · per-window copy"
+                    : "Linked counter · follows each board's window"
+            )
+        }
+        return lines
+    }
+
+    /// "Oct 13, 2026" — the DAILY form of `formatWindowLabel`, for a bare date.
+    private static func shortDate(_ date: Date) -> String {
+        formatWindowLabel(timeframe: .daily, startDate: date)
+    }
+
     /// The library / pool / Tasks-row counting detail line — `"Run · goal 26.2 mi"`,
     /// Duration `"Practice · goal 10h 30m"` (no unit). The one shared builder for
     /// `RisoPoolListView`, `RisoTaskRowView` and `RisoLibrarySheetView`; web twin
