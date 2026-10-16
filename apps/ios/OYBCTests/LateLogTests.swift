@@ -318,4 +318,55 @@ final class LateLogTests: XCTestCase {
         XCTAssertEqual(try fetchBoard(db, "b1").sealedCompletedCells, [0])
         XCTAssertEqual(try events(db, taskId: "child2").count, 0, "the un-staged OR sibling must not be touched")
     }
+
+    // MARK: - TASK_WINDOW_REWORK slice 0
+
+    /// One late-log tail: a counter log from an ended, unsealed daily re-derives
+    /// the SEALED weekly around it locally (before, only the other device's
+    /// pull did, so the sealed record diverged across devices).
+    func test_slice0_counterLogFromEndedDaily_reDerivesTheSealedWeekly() throws {
+        let db = try makeDb(); try seedUser(db)
+        var root = makeTask("t-root", type: .counting, maxCount: 1, currentCount: 0)
+        root.isCounter = true
+        try db.saveTask(root)
+        // Daily Jul 1 (ended, unsealed); weekly Jun 29 – Jul 5, closed Jul 6.
+        try db.saveBoard(makeBoard(id: "daily", startDate: "2026-07-01T00:00:00.000Z", endDate: "2026-07-01T23:59:59.999Z"))
+        try db.saveBoard(makeBoard(id: "weekly", startDate: "2026-06-29T00:00:00.000Z", endDate: "2026-07-05T23:59:59.999Z",
+                                    sealedAt: "2026-07-06T00:00:01.000Z", sealedCompletedCells: [], timeframe: .weekly))
+        try db.saveBoardTask(makeBoardTask(id: "bt-d", boardId: "daily", taskId: "t-root"))
+        try db.saveBoardTask(makeBoardTask(id: "bt-w", boardId: "weekly", taskId: "t-root"))
+
+        _ = try db.incrementSharedCounter(sourceTaskId: "t-root", by: 1, boardId: "daily", now: "2026-07-08T18:00:00.000Z")
+
+        let ev = try events(db, taskId: "t-root")
+        XCTAssertEqual(ev.count, 1)
+        XCTAssertEqual(ev.first?.occurredAt, "2026-07-01T23:59:59.999Z", "stamped at the daily's endDate")
+        XCTAssertEqual(try fetchBoard(db, "weekly").sealedCompletedCells, [0], "the sealed weekly re-derived locally")
+        XCTAssertEqual(try fetchBoard(db, "daily").completedTasks, 1)
+    }
+
+    /// A closed-board compound late log counts a LINKED counting child: the +1
+    /// is written on its root, the rule is met, the compound cell turns green.
+    func test_slice0_compoundLateLog_countsALinkedCountingChild() throws {
+        let db = try makeDb(); try seedUser(db)
+        var root = makeTask("t-root", type: .counting, maxCount: nil, currentCount: 0)
+        root.isCounter = true
+        try db.saveTask(root)
+        try db.saveTask(makeTask("bike", type: .counting, maxCount: 1, sharedCounterId: "t-root", createdInWizard: true, baseline: 0, currentCount: 0))
+        try db.saveTask(makeCompound("biking", operatorType: .and))
+        try db.write { try self.link("l1", compound: "biking", child: "bike", index: 0).save($0) }
+        try db.saveBoard(makeBoard(id: "b1", startDate: "2026-07-07T00:00:00.000Z", endDate: "2026-07-08T00:00:00.000Z",
+                                    sealedAt: "2026-07-09T00:00:00.000Z", sealedCompletedCells: []))
+        try db.saveBoardTask(makeBoardTask(id: "bt1", boardId: "b1", taskId: "biking"))
+
+        try db.lateLogCompoundParts(boardId: "b1", compoundTaskId: "biking", childTaskIds: ["bike"], now: "2026-07-10T00:00:00.000Z")
+
+        let rootEvents = try events(db, taskId: "t-root")
+        XCTAssertEqual(rootEvents.count, 1)
+        XCTAssertEqual(rootEvents.first?.delta, 1)
+        XCTAssertEqual(rootEvents.first?.boardId, "b1")
+        XCTAssertEqual(rootEvents.first?.occurredAt, "2026-07-08T00:00:00.000Z")
+        XCTAssertEqual(try events(db, taskId: "bike").count, 0, "a linked row owns no events")
+        XCTAssertEqual(try fetchBoard(db, "b1").sealedCompletedCells, [0])
+    }
 }

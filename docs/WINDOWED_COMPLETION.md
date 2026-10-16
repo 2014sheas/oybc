@@ -252,8 +252,9 @@ converges and the sweep is idempotent. A row placed on several boards keeps
 its id for the earliest board (by `startDate`, then id) and gets a
 deterministic per-board copy (`derivedTaskId(boardId, root)`, placement
 repointed) for each further DIRECT placement. The stamp is **all-or-nothing**:
-once stamped, a row resolves from its own window everywhere (the stamped path
-ignores the context window), so a row that a live COMPOUND carries (a child
+once stamped, a row USED to resolve from its own window everywhere; since
+`docs/TASK_WINDOW_REWORK.md` slice 0 (2026-10-16) the HOST board's window wins
+whenever one is given and the stamp is only the context-less fallback, so a row that a live COMPOUND carries (a child
 link cannot be repointed per board) is NEVER stamped — it stays hub-linked and
 the kernel fallback renders every host board over its own window, while each
 of its DIRECT placements still gets a per-board copy (goal-less → nothing);

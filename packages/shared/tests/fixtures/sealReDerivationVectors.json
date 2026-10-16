@@ -705,7 +705,7 @@
       ]
     },
     {
-      "name": "excludes pre-seal events, other boards, other tasks, deleted rows and non-endDate stamps",
+      "name": "provenance: excludes pre-end events, other boards, no-board rows, other tasks and deleted rows; a post-end log on this board counts whatever its stamp or the seal instant",
       "board": {
         "id": "d0000000-0000-0000-0000-00000000000d",
         "endDate": "2026-09-15T23:59:59.999Z",
@@ -819,7 +819,9 @@
         }
       ],
       "expectedIds": [
-        "e0000000-0000-0000-0000-000000000017"
+        "e0000000-0000-0000-0000-000000000017",
+        "e0000000-0000-0000-0000-000000000016",
+        "e0000000-0000-0000-0000-000000000011"
       ]
     },
     {
@@ -878,7 +880,7 @@
       ]
     },
     {
-      "name": "an unsealed board has no late logs",
+      "name": "an ended-but-unsealed board's post-end log is a late log (provenance; the seal instant is not read)",
       "board": {
         "id": "d0000000-0000-0000-0000-00000000000d",
         "endDate": "2026-09-15T23:59:59.999Z",
@@ -900,7 +902,9 @@
           "isDeleted": false
         }
       ],
-      "expectedIds": []
+      "expectedIds": [
+        "e0000000-0000-0000-0000-000000000031"
+      ]
     },
     {
       "name": "an indefinite board has no late logs",

@@ -1,4 +1,5 @@
 import {
+  BoardStatus,
   SyncOperationType,
   computeWindowBaseline,
   planLinkedCounterWindowHeal,
@@ -86,7 +87,9 @@ export async function healLinkedCounterWindows(
         db.compoundChildren.toArray(),
       ]);
       const ownTasks = tasks.filter((t) => t.userId === userId);
-      const ownBoards = boards.filter((b) => b.userId === userId);
+      // A DRAFT's window is editable and places original ids (mint is
+      // active-only), so it never stamps anything (slice 0).
+      const ownBoards = boards.filter((b) => b.userId === userId && b.status !== BoardStatus.DRAFT);
       const plan = planLinkedCounterWindowHeal({
         tasks: ownTasks,
         boardTasks,
@@ -178,8 +181,10 @@ export async function healLinkedCounterWindows(
           ...task,
           // The freeze skipped this row's propagation while it was stamped;
           // mirror the root's lifetime count again (hub-linked rows read
-          // `currentCount − baseline` in context-less readers).
+          // `currentCount − baseline` in context-less readers), and reset
+          // the baseline the stamp overwrote (re-link semantics).
           ...(root?.currentCount !== undefined ? { currentCount: root.currentCount } : {}),
+          baseline: 0,
           updatedAt: now,
           version: (task.version ?? 0) + 1,
         };

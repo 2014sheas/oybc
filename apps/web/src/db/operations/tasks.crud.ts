@@ -12,6 +12,8 @@ import { CountsTowardError, setCountsTowardInTransaction, syncCountsTowardFor } 
 import { generateUUID, currentTimestamp } from '../utils';
 import { addToSyncQueue } from './syncQueue';
 import { runBoardCascadeForTask } from './orchestration';
+import { reDeriveSealedBoardsForTasks } from './sealing';
+import { resolveAffectedBoardIds, refreshWatchersForBoards } from './boardLifecycle';
 import { withRootCountKind } from './countKindSwitch';
 import {
   appendCompletionEvent,
@@ -687,15 +689,30 @@ export async function toggleCompoundChildFallback(
       // Non-event-owning child: nothing is authored (see the rule above).
       if (!isEventOwningTask(task)) return;
       const now = currentTimestamp();
+      const occurredAt = await lateLogStampForBoard(boardId, now);
       if (desiredCompleted) {
-        const occurredAt = await lateLogStampForBoard(boardId, now);
         await appendCompletionEvent(childTaskId, boardId, now, occurredAt);
       } else {
         await tombstoneWindowCompletions(childTaskId, windowStart, now, windowEnd);
       }
       await runBoardCascadeForTask(childTaskId);
+      await finishLateStampedWrite(childTaskId, occurredAt, now);
     },
   );
+}
+
+/**
+ * One late-log tail (TASK_WINDOW_REWORK slice 0): a compound-child fallback
+ * whose event was stamped at an ended board's `endDate` may have landed inside
+ * a SEALED containing board's window; the live cascade skips sealed boards,
+ * so re-derive them and refresh watchers — the same tail undo and the
+ * shared-counter paths run. A no-op for a `now`-stamped write.
+ */
+async function finishLateStampedWrite(childTaskId: string, occurredAt: string, now: string): Promise<void> {
+  if (occurredAt === now) return;
+  await reDeriveSealedBoardsForTasks([childTaskId]);
+  const touched = await resolveAffectedBoardIds([childTaskId]);
+  if (touched.size > 0) await refreshWatchersForBoards(touched);
 }
 
 /**
@@ -741,6 +758,7 @@ export async function incrementCompoundChildFallback(
       const occurredAt = await lateLogStampForBoard(boardId, now);
       await appendIncrementEvent(childTaskId, gated, boardId, now, occurredAt);
       await runBoardCascadeForTask(childTaskId);
+      await finishLateStampedWrite(childTaskId, occurredAt, now);
     },
   );
 }

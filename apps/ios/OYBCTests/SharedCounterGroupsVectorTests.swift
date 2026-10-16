@@ -62,6 +62,26 @@ final class SharedCounterGroupsVectorTests: XCTestCase {
         let isDeleted: Bool
         /// Optional — a sealed board's seal instant.
         let sealedAt: String?
+        /// Optional own window (slice 0: a placed member reads its board's
+        /// window). `hasEndDate` distinguishes an absent key (shared default)
+        /// from an explicit `null` (open-ended).
+        let startDate: String?
+        let endDate: String?
+        let hasEndDate: Bool
+
+        private enum CodingKeys: String, CodingKey { case id, name, status, isDeleted, sealedAt, startDate, endDate }
+
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            id = try c.decode(String.self, forKey: .id)
+            name = try c.decode(String.self, forKey: .name)
+            status = try c.decode(String.self, forKey: .status)
+            isDeleted = try c.decode(Bool.self, forKey: .isDeleted)
+            sealedAt = try c.decodeIfPresent(String.self, forKey: .sealedAt)
+            startDate = try c.decodeIfPresent(String.self, forKey: .startDate)
+            hasEndDate = c.contains(.endDate)
+            endDate = try c.decodeIfPresent(String.self, forKey: .endDate)
+        }
     }
 
     private struct MiniBoardTask: Decodable {
@@ -191,8 +211,7 @@ final class SharedCounterGroupsVectorTests: XCTestCase {
             "status": m.status,
             "boardSize": 5,
             "timeframe": "weekly",
-            "startDate": ts,
-            "endDate": "2026-02-07T12:00:00.000Z",
+            "startDate": m.startDate ?? ts,
             "centerSquareType": "free",
             "isRandomized": false,
             "totalTasks": 25,
@@ -203,6 +222,8 @@ final class SharedCounterGroupsVectorTests: XCTestCase {
             "version": 1,
             "isDeleted": m.isDeleted,
         ]
+        // Absent key ⇒ the shared default; explicit `null` ⇒ open-ended (no key).
+        if !m.hasEndDate { dict["endDate"] = "2026-02-07T12:00:00.000Z" } else if let end = m.endDate { dict["endDate"] = end }
         if let sealedAt = m.sealedAt { dict["sealedAt"] = sealedAt }
         let data = try! JSONSerialization.data(withJSONObject: dict)
         return try! JSONDecoder().decode(Board.self, from: data)

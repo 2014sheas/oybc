@@ -30,14 +30,15 @@ const EMPTY_TASK_EVENTS = Object.freeze([]) as unknown as TaskEvent[];
  * @returns The board's square window context (memoized on events + bounds).
  */
 export function useSquareWindowContext(
-  board: Pick<Board, 'startDate' | 'endDate'>,
+  board: Pick<Board, 'startDate' | 'endDate'> & Partial<Pick<Board, 'sealedAt'>>,
 ): SquareWindowContext {
   const windowEnd = boardWindowEnd(board);
+  const sealedAt = board.sealedAt ?? null;
   const allTaskEvents: TaskEvent[] =
     useLiveQuery(() => db.taskEvents.toArray(), []) ?? EMPTY_TASK_EVENTS;
 
   return useMemo(
-    () => buildSquareWindowContext(allTaskEvents, board.startDate, windowEnd),
-    [allTaskEvents, board.startDate, windowEnd],
+    () => ({ ...buildSquareWindowContext(allTaskEvents, board.startDate, windowEnd), sealedAt }),
+    [allTaskEvents, board.startDate, windowEnd, sealedAt],
   );
 }

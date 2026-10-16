@@ -53,7 +53,8 @@ extension AppDatabase {
         db: Database,
         allChangedTaskIds: [String],
         cascadeOnlyTaskIds: [String] = [],
-        now: String
+        now: String,
+        lateLogStamp: String? = nil
     ) throws -> [AffectedBoard] {
         // "Counts toward" (docs/SHARED_COUNTER_SETTINGS.md §3b): a compound that
         // contains one of these copies may have just completed.
@@ -130,6 +131,19 @@ extension AppDatabase {
         }
 
         try Self.finishCountsTowardRoots(db: db, rootIds: countsToward.rootIds, now: now)
+
+        // One late-log tail (TASK_WINDOW_REWORK slice 0): an event stamped at an
+        // ended board's `endDate` (`lateLogStamp != now`) can land inside a
+        // SEALED containing board's window (a closed weekly around an ended
+        // daily). The live loop above skips sealed boards and only the pull
+        // path on the OTHER device re-derived them — so the sealed record
+        // diverged across devices. Re-derive them here and refresh watchers,
+        // exactly as `reDeriveAfterLateLogWrite` does for undo.
+        if let lateLogStamp, lateLogStamp != now {
+            let reached = Set(allChangedTaskIds + cascadeOnlyTaskIds).union(countsToward.cascadeIds)
+            try Self.reDeriveSealedBoards(db: db, changedTaskIds: reached)
+            try Self.refreshWatchersForBoards(db: db, changedBoardIds: allAffectedBoardIds, now: now)
+        }
 
         // Build the credit-toast result: boards that can still count a log
         // (live, active, not closed, not ended) holding any member task.
@@ -378,7 +392,8 @@ extension AppDatabase {
                 db: db,
                 allChangedTaskIds: allChangedTaskIds,
                 cascadeOnlyTaskIds: reachedFrozenIds,
-                now: now
+                now: now,
+                lateLogStamp: occurredAt
             )
             return SharedCounterCreditResult(affectedBoards: creditBoards)
         }
@@ -561,7 +576,8 @@ extension AppDatabase {
                 db: db,
                 allChangedTaskIds: allChangedTaskIds,
                 cascadeOnlyTaskIds: reachedFrozenIds,
-                now: now
+                now: now,
+                lateLogStamp: occurredAt
             )
             return SharedCounterDecrementResult(affectedBoards: creditBoards, effectiveDelta: eff)
         }

@@ -657,10 +657,11 @@ final class CreateFormViewModel {
             createdAt: now,
             updatedAt: now,
             version: 1,
-            isDeleted: false,
-            timeframe: defaultTimeframe,
-            startDate: defaultStartDate,
-            endDate: defaultEndDate
+            isDeleted: false
+            // No window on a hand-made compound (web parity, TASK_WINDOW_REWORK
+            // slice 0): with the wizard's dates + `createdInWizard` it matched
+            // `isWindowStampedDerivedCompound`, so Repeat dropped it and
+            // deleting its only board retired it (audit Major 3).
         )
         if let target = countsTowardTarget {
             if let problem = CountsToward.problem(

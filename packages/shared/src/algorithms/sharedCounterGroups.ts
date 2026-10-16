@@ -325,10 +325,10 @@ export function buildSharedCounterGroups(
       // any other PLACED member reads its primary board's window the same
       // way (owner rule 2026-10-01). An unplaced hub-linked member — no
       // board, so no window — keeps the lifetime arithmetic.
-      const memberWindow =
-        !isWindowStampedDerived(m) && board
-          ? { startDate: board.startDate, endDate: board.endDate ?? null }
-          : null;
+      // Context window wins (slice 0): a placed member — stamped or not —
+      // reads its primary board's window; only an unplaced stamped member
+      // falls back to its own stamp inside `resolveLinkedCounterDisplay`.
+      const memberWindow = board ? { startDate: board.startDate, endDate: board.endDate ?? null } : null;
       let displayed: number;
       if (isSource && input.eventsByTaskId && board) {
         // A PLACED source (a board-born counter's own square) is an

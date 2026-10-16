@@ -259,17 +259,21 @@ function stateOf(
   if (task.type === TaskType.COUNTING) {
     if (task.sharedCounterId) {
       const rootEvents = ctx.eventsByTaskId[task.sharedCounterId] ?? [];
+      // Context window wins (slice 0): a BOARD window applies to every
+      // linked row; a stamped row reads its own stamp only from a
+      // context-less (lifetime) caller; a hub-linked row with no window
+      // reads its latch.
+      if (ctx.windowStart != null) {
+        const derived = resolveDerivedCounterWindowState(task, ctx.eventsByTaskId, ctx);
+        if (!derived?.isCompleted) return INCOMPLETE;
+        return completedBy(crossingEvent(eventsInWindow(rootEvents, ctx), task.maxCount ?? 0));
+      }
       if (isWindowStampedDerived(task)) {
         if (!resolveWindowStampedDerivedState(task, rootEvents).isCompleted) return INCOMPLETE;
         const own = { windowStart: task.startDate as string, windowEnd: task.endDate ?? null };
         return completedBy(crossingEvent(eventsInWindow(rootEvents, own), task.maxCount ?? 0));
       }
-      // Owner rule 2026-10-01: any other linked row on a board resolves over
-      // the HOST window; only a lifetime reader still reads its latch.
-      const derived = resolveDerivedCounterWindowState(task, ctx.eventsByTaskId, ctx);
-      if (!derived) return latchState(task);
-      if (!derived.isCompleted) return INCOMPLETE;
-      return completedBy(crossingEvent(eventsInWindow(rootEvents, ctx), task.maxCount ?? 0));
+      return latchState(task);
     }
     const events = ctx.eventsByTaskId[task.id] ?? [];
     if (!resolveTaskWindowState(task, events, ctx.windowStart, ctx.windowEnd).isCompleted) return INCOMPLETE;

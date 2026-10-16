@@ -2860,7 +2860,7 @@
    ]
   },
   {
-   "name": "window-stamped-derived-counter-orders-by-its-own-window-crossing",
+   "name": "window-stamped-derived-counter-orders-by-its-host-window-crossing",
    "board": {
     "id": "b1",
     "size": 3,
@@ -2987,6 +2987,11 @@
    "expected": {
     "order": [
      {
+      "boardTaskId": "bt2",
+      "idx": 2,
+      "completedAt": "2026-10-03T09:00:00.000Z"
+     },
+     {
       "boardTaskId": "bt0",
       "idx": 0,
       "completedAt": "2026-10-03T09:30:00.000Z"
@@ -2995,11 +3000,6 @@
       "boardTaskId": "bt1",
       "idx": 1,
       "completedAt": "2026-10-03T10:00:00.000Z"
-     },
-     {
-      "boardTaskId": "bt2",
-      "idx": 2,
-      "completedAt": "2026-10-03T11:00:00.000Z"
      }
     ],
     "freeIdx": 4,
@@ -3028,11 +3028,11 @@
      "beat": 1,
      "counter": 2,
      "landed": [
-      0
+      2
      ],
      "green": [],
      "popTokens": {
-      "0": 1
+      "2": 1
      }
     },
     {
@@ -3041,12 +3041,12 @@
      "counter": 3,
      "landed": [
       0,
-      1
+      2
      ],
      "green": [],
      "popTokens": {
-      "0": 1,
-      "1": 2
+      "0": 2,
+      "2": 1
      }
     },
     {
@@ -3060,9 +3060,9 @@
      ],
      "green": [],
      "popTokens": {
-      "0": 1,
-      "1": 2,
-      "2": 3
+      "0": 2,
+      "1": 3,
+      "2": 1
      }
     },
     {
@@ -3085,7 +3085,8 @@
       "2": 4
      }
     }
-   ]
+   ],
+   "note": "Context window wins (slice 0): the stamped counter (own stamp Oct 3) resolves over the HOST board window (Oct 1-7), so +2 on Oct 2 and +1 at 09:00 on Oct 3 cross its goal of 3 at 09:00 — before t0 (09:30) and t1 (10:00). It lands first."
   },
   {
    "name": "host-window-linked-counter-orders-by-the-host-window-crossing",

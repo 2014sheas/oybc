@@ -2,12 +2,10 @@ import {
   TaskType,
   evaluateCompound,
   isEventOwningTask,
-  isWindowStampedDerived,
   resolveDerivedCounterWindowState,
   resolveFamilyCountKind,
   resolveLinkedCounterDisplay,
   resolveTaskWindowState,
-  resolveWindowStampedDerivedState,
   type Task,
   type TaskEvent,
   type CompoundChild,
@@ -41,6 +39,12 @@ export interface SquareWindowContext {
    * construction site states the bound explicitly.
    */
   windowEnd: string | null;
+  /**
+   * The board's `sealedAt` when it is closed (slice 0): a linked row's
+   * display drops root events after the seal, exactly as the sealed
+   * re-derive does — iOS passes `board?.sealedAt` everywhere, web did not.
+   */
+  sealedAt?: string | null;
   /** This workspace's non-deleted TaskEvents grouped by `taskId`. */
   eventsByTaskId: Record<string, TaskEvent[]>;
 }
@@ -173,7 +177,7 @@ export function compoundChildCount(
     current = resolveLinkedCounterDisplay(
       childTask,
       windowContext?.eventsByTaskId,
-      undefined,
+      windowContext?.sealedAt ?? undefined,
       windowContext ? { startDate: windowContext.windowStart, endDate: windowContext.windowEnd } : undefined,
     ).displayed;
   } else if (windowContext && isEventOwningTask(childTask)) {
@@ -366,7 +370,7 @@ export function taskToSquareState(
     const { displayed, isCompleted } = resolveLinkedCounterDisplay(
       task,
       windowContext?.eventsByTaskId,
-      undefined,
+      windowContext?.sealedAt ?? undefined,
       windowContext ? { startDate: windowContext.windowStart, endDate: windowContext.windowEnd } : null,
     );
     return {
@@ -427,26 +431,20 @@ export function resolveClosedBoardCounterDisplay(
   eventsByTaskId: Record<string, TaskEvent[]>,
   board: { startDate: string; endDate?: string | null; sealedAt?: string | null },
 ): { displayed: number; isCompleted: boolean } {
-  const rootId = task.sharedCounterId ?? task.id;
-  const rootEvents = (eventsByTaskId[rootId] ?? []).filter((e) => !e.isDeleted);
+  // Display = kernel (slice 0): a linked row is exactly what the live cell
+  // shows, bounded at the seal; this used to be a fourth hand-rolled copy of
+  // the in-window sum.
+  if (task.sharedCounterId != null) {
+    return resolveLinkedCounterDisplay(task, eventsByTaskId, board.sealedAt ?? undefined, {
+      startDate: board.startDate,
+      endDate: board.endDate ?? null,
+    });
+  }
+  const ownEvents = (eventsByTaskId[task.id] ?? []).filter((e) => !e.isDeleted);
   const sealedMs = board.sealedAt ? new Date(board.sealedAt).getTime() : NaN;
   const bounded = Number.isNaN(sealedMs)
-    ? rootEvents
-    : rootEvents.filter((e) => new Date(e.occurredAt).getTime() <= sealedMs);
-
-  if (isWindowStampedDerived(task)) {
-    const state = resolveWindowStampedDerivedState(task, bounded);
-    return { displayed: state.count, isCompleted: state.isCompleted };
-  }
-  if (task.sharedCounterId != null) {
-    // Owner rule 2026-10-01: a linked row that is not window-stamped is the
-    // root's sealed-bounded sum over THIS board's window — never the latch.
-    const state = resolveWindowStampedDerivedState(
-      { startDate: board.startDate, endDate: board.endDate ?? null, maxCount: task.maxCount, countKind: task.countKind },
-      bounded,
-    );
-    return { displayed: state.count, isCompleted: state.isCompleted };
-  }
+    ? ownEvents
+    : ownEvents.filter((e) => new Date(e.occurredAt).getTime() <= sealedMs);
   const { count, isCompleted } = resolveTaskWindowState(task, bounded, board.startDate, board.endDate ?? null);
   return { displayed: count, isCompleted };
 }

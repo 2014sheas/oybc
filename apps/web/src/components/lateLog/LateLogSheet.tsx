@@ -6,6 +6,8 @@ import {
   formatWindowLabel,
   formatCount,
   isEventOwningTask,
+  resolveLinkedCounterDisplay,
+  type TaskEvent,
   resolveCountKind,
   resolveFamilyCountKind,
   type Board,
@@ -74,7 +76,18 @@ function childIsCurrentlyComplete(
   child: Task,
   events: ReadonlyArray<{ isDeleted: boolean; kind: string; occurredAt: string; delta?: number }>,
   board: Board,
+  rootEvents: ReadonlyArray<TaskEvent> = [],
 ): boolean {
+  // A LINKED counting child (slice 0) reads its root's events over this
+  // board's window, bounded at the seal — the kernel's own rule.
+  if (child.type === TaskType.COUNTING && child.sharedCounterId) {
+    return resolveLinkedCounterDisplay(
+      child,
+      { [child.sharedCounterId]: [...rootEvents] },
+      board.sealedAt ?? undefined,
+      { startDate: board.startDate, endDate: board.endDate ?? null },
+    ).isCompleted;
+  }
   if (!isEventOwningTask(child)) return child.isCompleted;
   const sum = childWindowSum(child, events, board);
   if (child.type === TaskType.NORMAL) return sum > 0;
@@ -384,7 +397,15 @@ function CompoundBody({
         .sort((a, b) => a.childIndex - b.childIndex),
     [compoundChildrenByCompound, task.id],
   );
-  const childIds = useMemo(() => links.map((l) => l.childTaskId), [links]);
+  // Children plus the roots of linked counting children (slice 0: a linked
+  // child's state is its root's events over this board's window).
+  const childIds = useMemo(
+    () => [
+      ...links.map((l) => l.childTaskId),
+      ...links.flatMap((l) => (taskMap[l.childTaskId]?.sharedCounterId ? [taskMap[l.childTaskId].sharedCounterId as string] : [])),
+    ],
+    [links, taskMap],
+  );
 
   const events = useLiveQuery(() => fetchLiveEventsForTaskIds(childIds), [childIds], []) ?? [];
 
@@ -394,8 +415,9 @@ function CompoundBody({
   const rows = links.map((link) => {
     const child = taskMap[link.childTaskId];
     const childEvents = events.filter((e) => e.taskId === link.childTaskId);
-    const isCurrentlyComplete = child ? childIsCurrentlyComplete(child, childEvents, board) : false;
-    return { link, child, isCurrentlyComplete, childEvents };
+    const rootEvents = child?.sharedCounterId ? events.filter((e) => e.taskId === child.sharedCounterId) : [];
+    const isCurrentlyComplete = child ? childIsCurrentlyComplete(child, childEvents, board, rootEvents) : false;
+    return { link, child, isCurrentlyComplete, childEvents, rootEvents };
   });
 
   const stagedActions = useMemo<LateLogCompoundAction[]>(() => {
@@ -436,9 +458,11 @@ function CompoundBody({
   return (
     <>
       <div className={styles.partsList}>
-        {rows.map(({ link, child, isCurrentlyComplete, childEvents }) => {
+        {rows.map(({ link, child, isCurrentlyComplete, childEvents, rootEvents }) => {
           if (!child) return null;
-          const readOnly = !isEventOwningTask(child) || isCurrentlyComplete;
+          // A linked counting child is stageable (slice 0): its +1 logs on its root.
+          const stageable = isEventOwningTask(child) || (child.type === TaskType.COUNTING && child.sharedCounterId != null);
+          const readOnly = !stageable || isCurrentlyComplete;
           const staged =
             child.type === TaskType.NORMAL ? stagedComplete.has(link.childTaskId) : stagedIncrement.has(link.childTaskId);
           const on = isCurrentlyComplete || staged;
@@ -471,10 +495,17 @@ function CompoundBody({
                 {on ? '✓' : ''}
               </span>
               <span className={styles.partLabel}>{child.title}</span>
-              {child.type === TaskType.COUNTING && isEventOwningTask(child) && (
+              {child.type === TaskType.COUNTING && (isEventOwningTask(child) || child.sharedCounterId != null) && (
                 <span className={styles.partMeta}>
                   {formatCount(
-                    childWindowSum(child, childEvents, board) + (stagedIncrement.has(link.childTaskId) ? 1 : 0),
+                    (child.sharedCounterId
+                      ? resolveLinkedCounterDisplay(
+                          child,
+                          { [child.sharedCounterId]: [...rootEvents] },
+                          board.sealedAt ?? undefined,
+                          { startDate: board.startDate, endDate: board.endDate ?? null },
+                        ).displayed
+                      : childWindowSum(child, childEvents, board)) + (stagedIncrement.has(link.childTaskId) ? 1 : 0),
                     resolveCountKind(child),
                   )}
                   /{formatCount(child.maxCount ?? 0, resolveCountKind(child))}
