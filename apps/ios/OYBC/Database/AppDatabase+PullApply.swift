@@ -424,6 +424,9 @@ extension AppDatabase {
         guard allowedGRDBTables.contains(grdbTable) else { throw SyncError.invalidPayload("Unknown table: \(grdbTable)") }
         var cleaned = data
         cleaned.removeValue(forKey: "_syncedAt")
+        // Task/window rework slice 1: a placement's parameters are stored in
+        // their canonical shape (the same rule web applies after its parse).
+        if grdbTable == "board_tasks" { BoardTask.normalizePulledPlacementFields(&cleaned) }
         guard !cleaned.isEmpty else { return }
         guard cleaned["id"] is String else {
             throw SyncError.invalidPayload("Document missing 'id' field for \(grdbTable) upsert")

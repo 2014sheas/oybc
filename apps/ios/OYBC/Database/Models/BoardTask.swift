@@ -256,7 +256,9 @@ extension BoardTask {
         }
         if let raw = titleOverride {
             let title = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-            if !title.isEmpty, title.count <= titleOverrideMax { out.titleOverride = title }
+            // UTF-16 code units, the unit JS `.length` / Zod `.max` count in (a
+            // grapheme count would keep a 150-emoji title web drops).
+            if !title.isEmpty, title.utf16.count <= titleOverrideMax { out.titleOverride = title }
         }
         return out
     }
@@ -278,5 +280,36 @@ extension BoardTask {
         encoder.outputFormatting = [.sortedKeys]
         guard let data = try? encoder.encode(targets) else { return nil }
         return String(data: data, encoding: .utf8)
+    }
+}
+
+extension BoardTask {
+    /// Canonicalise the placement parameters of a PULLED `boardTasks` doc in
+    /// place, before `upsertPulledRecord` writes its raw columns — the pull
+    /// path never decodes the model, so without this the stored row would not
+    /// be the canonical one `init(from:)` / web's pull parse produce (orphan
+    /// kind, untrimmed title, unsorted `childTargets`). A dropped field is
+    /// REMOVED from the dict so the clearable-field NULL applies.
+    static func normalizePulledPlacementFields(_ data: inout [String: Any]) {
+        let rawTarget: CountValue? = (data["targetOverride"] as? NSNumber)?.doubleValue
+        let rawKind = (data["targetKind"] as? String).flatMap(CountKind.init(rawValue:))
+        var rawChildren: [PlacementChildTarget]?
+        if let entries = data["childTargets"] as? [Any] {
+            rawChildren = entries.compactMap { e in
+                guard let d = e as? [String: Any], let id = d["childId"] as? String,
+                      let t = (d["target"] as? NSNumber)?.doubleValue else { return nil }
+                return PlacementChildTarget(childId: id, target: t)
+            }
+        } else if let json = data["childTargets"] as? String, let bytes = json.data(using: .utf8) {
+            rawChildren = try? JSONDecoder().decode([PlacementChildTarget].self, from: bytes)
+        }
+        let rawTitle = data["titleOverride"] as? String
+        let norm = normalizedPlacementFields(
+            targetOverride: rawTarget, targetKind: rawKind, childTargets: rawChildren, titleOverride: rawTitle
+        )
+        if let t = norm.targetOverride { data["targetOverride"] = t } else { data.removeValue(forKey: "targetOverride") }
+        if let k = norm.targetKind { data["targetKind"] = k.rawValue } else { data.removeValue(forKey: "targetKind") }
+        if let json = childTargetsJSON(norm.childTargets) { data["childTargets"] = json } else { data.removeValue(forKey: "childTargets") }
+        if let title = norm.titleOverride { data["titleOverride"] = title } else { data.removeValue(forKey: "titleOverride") }
     }
 }

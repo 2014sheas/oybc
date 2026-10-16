@@ -617,10 +617,10 @@ export const BoardTaskSchema = z.object({
   // `BoardTask.init(from:)` (iOS), so both clients store one canonical row.
   targetOverride: positiveCount().optional().catch(undefined),
   targetKind: CountKindSchema.optional().catch(undefined),
-  childTargets: z
-    .array(z.object({ childId: z.string().min(1), target: positiveCount() }))
-    .optional()
-    .catch(undefined),
+  // Entries are validated by `normalizePlacementFields`, not here: a per-entry
+  // schema would drop the WHOLE array on one bad entry while iOS keeps the
+  // good ones (review of #628) — the normaliser is the one rule both apply.
+  childTargets: z.array(z.any()).optional().catch(undefined),
   titleOverride: z.string().trim().min(1).max(200).optional().catch(undefined),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),

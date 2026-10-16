@@ -1,3 +1,4 @@
+import { withNormalizedPlacementFields } from '../../src/algorithms/placementFields';
 import {
   BoardSchema,
   TaskSchema,
@@ -291,10 +292,22 @@ describe('BoardTaskSchema pull validation', () => {
     });
     expect(parsed.success).toBe(true);
     if (parsed.success) {
-      expect(parsed.data.targetOverride).toBeUndefined();
-      expect(parsed.data.targetKind).toBeUndefined();
-      expect(parsed.data.childTargets).toBeUndefined();
-      expect(parsed.data.titleOverride).toBeUndefined();
+      const row = withNormalizedPlacementFields(parsed.data);
+      expect(row.targetOverride).toBeUndefined();
+      expect(row.targetKind).toBeUndefined();
+      expect(row.childTargets).toBeUndefined();
+      expect(row.titleOverride).toBeUndefined();
+    }
+  });
+
+  it('a bad childTargets entry drops only itself after normalisation (one rule with iOS), never the array', () => {
+    const parsed = BoardTaskSchema.safeParse({
+      ...validBoardTask(),
+      childTargets: [{ childId: '', target: 1 }, { childId: 'a', target: 1 }, 'junk'],
+    });
+    expect(parsed.success).toBe(true);
+    if (parsed.success) {
+      expect(withNormalizedPlacementFields(parsed.data).childTargets).toEqual([{ childId: 'a', target: 1 }]);
     }
   });
 

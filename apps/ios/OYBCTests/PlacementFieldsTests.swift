@@ -117,4 +117,28 @@ final class PlacementFieldsTests: XCTestCase {
         XCTAssertEqual(decoded.targetOverride, 4)
         XCTAssertNil(decoded.targetKind, "an unknown kind is dropped, the override kept")
     }
+
+    func testPulledDoc_isStoredCanonical_andAFreeTextTitleIsNeverExpanded() throws {
+        let db = try seededDb()
+        // A messy remote doc: orphan kind, untrimmed title, unsorted + bad childTargets.
+        let doc: [String: Any] = [
+            "id": "bt1", "boardId": "b1", "taskId": "t1", "row": 0, "col": 0, "isCenter": false,
+            "targetKind": "discrete", "titleOverride": "  [1]  ",
+            "childTargets": [["childId": "z", "target": 2], ["childId": "", "target": 1], ["childId": "a", "target": 0.5]],
+            "createdAt": "2026-10-16T00:00:00.000Z", "updatedAt": "2026-10-16T00:00:00.000Z", "version": 1, "isDeleted": false,
+        ]
+        try db.write { try AppDatabase.upsertPulledRecord(db: $0, grdbTable: "board_tasks", data: doc) }
+        let row = try db.read { try Row.fetchOne($0, sql: "SELECT targetOverride, targetKind, childTargets, titleOverride FROM board_tasks WHERE id = 'bt1'") }
+        XCTAssertNil(row?["targetOverride"] as Double?)
+        XCTAssertNil(row?["targetKind"] as String?, "a kind without an override is dropped (NULLed)")
+        XCTAssertEqual(row?["childTargets"] as String?, #"[{"childId":"a","target":0.5},{"childId":"z","target":2}]"#)
+        XCTAssertEqual(row?["titleOverride"] as String?, "[1]", "trimmed; stored as text")
+
+        let back = try XCTUnwrap(db.read { try BoardTask.fetchOne($0, key: "bt1") })
+        let wire = SyncWirePayload.expandJSONStrings(
+            try XCTUnwrap(JSONSerialization.jsonObject(with: Data(SyncQueueBuilder.encodePayload(back).utf8)) as? [String: Any])
+        )
+        XCTAssertEqual(wire["titleOverride"] as? String, "[1]", "a per-board title is free text, never expanded to JSON")
+        XCTAssertTrue(wire["childTargets"] is [Any], "the JSON-text column still crosses as a native array")
+    }
 }
