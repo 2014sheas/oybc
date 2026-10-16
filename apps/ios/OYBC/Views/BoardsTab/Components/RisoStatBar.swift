@@ -73,7 +73,7 @@ struct RisoStatBar: View {
             .padding(.top, 3)
         }
         .padding(11)
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(Color.risoPaper2)
         .clipShape(RoundedRectangle(cornerRadius: Riso.cardRadius))
         .overlay(
@@ -115,7 +115,7 @@ struct RisoStatBar: View {
             }
         }
         .padding(11)
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(Color.risoPaper2)
         .clipShape(RoundedRectangle(cornerRadius: Riso.cardRadius))
         .overlay(
@@ -144,7 +144,7 @@ struct RisoStatBar: View {
             }
         }
         .padding(11)
-        .frame(minWidth: 72, alignment: .leading)
+        .frame(minWidth: 72, maxHeight: .infinity, alignment: .topLeading)
         .background(Color.risoGold)
         .clipShape(RoundedRectangle(cornerRadius: Riso.cardRadius))
         .overlay(

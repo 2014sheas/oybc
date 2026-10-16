@@ -69,8 +69,7 @@ export type InPlayBoardFields = Pick<Board, 'status' | 'endDate' | 'sealedAt'> &
 
 /**
  * Task id → the number of DISTINCT boards it is placed on that are still in
- * play ({@link isBoardActiveForList}): the "On N other boards" usage hint on
- * the wizard's and pool editor's rows. Deleted, draft, completed, closed and
+ * play ({@link isBoardActiveForList}): the board usage count on task rows. Deleted, draft, completed, closed and
  * ended boards don't count; a placement on a board missing from `boards`
  * doesn't either. iOS twin: `activeBoardPlacementCounts` in
  * `TimeframeFormatting.swift`.

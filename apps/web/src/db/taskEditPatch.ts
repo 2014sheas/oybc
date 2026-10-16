@@ -619,8 +619,8 @@ export function overlayTaskMapWithStagedEdits(
  * many sub-tasks does this compound have right now" while its editor is
  * open (or was staged and closed). A brand-new sub-task (no real
  * `childTaskId` yet) gets the synthetic id `staged-child-<patchChildId>` —
- * pair with `stagedNewChildPlaceholders` so a type-dependent read (e.g. the
- * "N with a goal" subcount) can resolve it. Mirrors iOS
+ * pair with `stagedNewChildPlaceholders` so a type-dependent read (e.g.
+ * windowed completion) can resolve it. Mirrors iOS
  * `effectiveCompoundChildrenByCompound`.
  */
 export function overlayCompoundChildrenWithStagedEdits(

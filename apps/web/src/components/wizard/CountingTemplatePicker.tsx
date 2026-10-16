@@ -82,8 +82,8 @@ export interface CountingTemplatePickerProps {
  * does exactly one thing: the template-prefill affordance ("Use as
  * template"), plus rendering the auto-link hint the host computed.
  *
- * When no template is selected: renders a dashed "Use existing counting
- * task as template..." button. Clicking opens an inline dropdown listing
+ * When no template is selected: renders a dashed "Copy a counting task…"
+ * button. Clicking opens an inline dropdown listing
  * counting tasks. When a template is selected: renders a compact banner
  * "Template: <title>" with a clear (×) button.
  */

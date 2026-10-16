@@ -388,9 +388,8 @@ final class CreateFormViewModel {
             )
             isSubmitting = false
             // Deferred-persist banner — the task is NOT yet in GRDB; it
-            // only commits when the wizard saves the board. Wording
-            // reflects that so the user doesn't think the task already
-            // exists in their library.
+            // only commits when the wizard saves the board. "Added" means
+            // added to this board's pool, which it now is.
             let successText = "Added \"\(resolvedTitle)\""
             successMessage = successText
             resetForm()
