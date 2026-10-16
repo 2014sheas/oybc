@@ -331,8 +331,7 @@ export function BoardWizardTasksStep({
     // the Step-3 preview reflect unsaved changes (the DB is untouched
     // until board create), then synthesize placeholder Task entries for
     // brand-new staged compound sub-tasks (no real Task row yet) so a
-    // type-dependent lookup (e.g. the pool subtitle's "N with a goal"
-    // subcount) resolves them. Mirrors iOS `effectiveTaskById`.
+    // type-dependent lookup (e.g. windowed completion) resolves them. Mirrors iOS `effectiveTaskById`.
     merged = overlayTaskMapWithStagedEdits(merged, stagedEdits);
     if (stagedEdits.size > 0) {
       const placeholders = stagedNewChildPlaceholders(userId, stagedEdits);

@@ -84,9 +84,8 @@ final class TaskLibraryViewModel {
     /// The user's non-deleted boards (loaded with `allLibraryBoardTasks`).
     var libraryBoards: [Board] = []
 
-    /// Task id → distinct still-in-play boards it is placed on — the wizard's
-    /// and pool editor's "On N other boards" hint
-    /// (`activeBoardPlacementCounts`). Computed once per `reload()`, not per render.
+    /// Task id → distinct still-in-play boards it is placed on — the library
+    /// rows' board usage count (`activeBoardPlacementCounts`). Computed once per `reload()`, not per render.
     var activeBoardCounts: [String: Int] = [:]
 
     /// Every task id that appears as a child of at least one compound.
