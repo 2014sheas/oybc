@@ -108,9 +108,16 @@ final class MigrationV40DataSurvivalTests: XCTestCase {
     func test_v39ToV40_keepsEveryRowAndValue_andTheBoardIndexesAndCascade() throws {
         let queue = try makeQueue(upTo: "v39")
         try queue.write(seed)
+        // Compare the v39 column set only: later migrations ADD columns to
+        // `board_tasks` (v45 — the per-placement parameters), which a `SELECT *`
+        // after the full run would surface as a spurious "value changed".
+        let btColumns = try queue.read { db in
+            try Row.fetchAll(db, sql: "PRAGMA table_info(board_tasks)").map { $0["name"] as String }
+        }
+        let btSelect = "SELECT \(btColumns.map { "\"\($0)\"" }.joined(separator: ", ")) FROM board_tasks ORDER BY id"
         let (countsBefore, boardsBefore, btBefore) = try queue.read { db in
             (try tableCounts(db), try boardSnapshot(db),
-             try Row.fetchAll(db, sql: "SELECT * FROM board_tasks ORDER BY id").map(\.description))
+             try Row.fetchAll(db, sql: btSelect).map(\.description))
         }
         XCTAssertEqual(countsBefore["boards"], 3)
         XCTAssertEqual(countsBefore["board_tasks"], 27)
@@ -127,7 +134,7 @@ final class MigrationV40DataSurvivalTests: XCTestCase {
             }
             XCTAssertEqual(after["sync_watermarks"], 0)
             XCTAssertEqual(try boardSnapshot(db), boardsBefore, "a board value changed")
-            XCTAssertEqual(try Row.fetchAll(db, sql: "SELECT * FROM board_tasks ORDER BY id").map(\.description), btBefore)
+            XCTAssertEqual(try Row.fetchAll(db, sql: btSelect).map(\.description), btBefore)
             let indexes = try String.fetchAll(db, sql: "SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'boards' AND sql IS NOT NULL")
             XCTAssertEqual(Set(indexes), [
                 "idx_boards_user_deleted", "idx_boards_user_timeframe_status",

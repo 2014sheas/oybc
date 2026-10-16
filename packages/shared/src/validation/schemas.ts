@@ -607,6 +607,21 @@ export const BoardTaskSchema = z.object({
   // Board Edit redesign slice 1 — per-square lock. Default-false forward
   // compat like `isDeleted` below: pre-feature docs decode on pull.
   isLocked: z.boolean().default(false),
+  // Task/window rework slice 1 (docs/TASK_WINDOW_REWORK.md) — per-placement
+  // parameters. Each field is validated on its own and a bad value falls
+  // back to ABSENT (`.catch(undefined)`) instead of rejecting the placement
+  // on pull — a square must never vanish over a malformed parameter. The
+  // cross-field rules (a `targetKind` only with an override, whole kinds
+  // need whole targets, sorted unique `childTargets`, `[]` ⇒ absent) are
+  // `normalizePlacementFields`, applied after the parse (web pull) and in
+  // `BoardTask.init(from:)` (iOS), so both clients store one canonical row.
+  targetOverride: positiveCount().optional().catch(undefined),
+  targetKind: CountKindSchema.optional().catch(undefined),
+  childTargets: z
+    .array(z.object({ childId: z.string().min(1), target: positiveCount() }))
+    .optional()
+    .catch(undefined),
+  titleOverride: z.string().trim().min(1).max(200).optional().catch(undefined),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
   lastSyncedAt: z.string().datetime().optional(),

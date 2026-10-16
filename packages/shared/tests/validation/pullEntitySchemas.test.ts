@@ -261,6 +261,43 @@ describe('BoardTaskSchema pull validation', () => {
     if (parsed.success) expect(parsed.data.isLocked).toBe(false);
   });
 
+  // Task/window rework slice 1 — per-placement parameters: optional, a bad
+  // value falls back to absent (never a rejected placement), a good one
+  // round-trips.
+  it('accepts the four placement parameters', () => {
+    const parsed = BoardTaskSchema.safeParse({
+      ...validBoardTask(),
+      targetOverride: 70,
+      targetKind: 'discrete',
+      childTargets: [{ childId: 'a0000000-0000-0000-0000-00000000000a', target: 2.5 }],
+      titleOverride: 'Read 70 pages',
+    });
+    expect(parsed.success).toBe(true);
+    if (parsed.success) {
+      expect(parsed.data.targetOverride).toBe(70);
+      expect(parsed.data.targetKind).toBe('discrete');
+      expect(parsed.data.childTargets).toEqual([{ childId: 'a0000000-0000-0000-0000-00000000000a', target: 2.5 }]);
+      expect(parsed.data.titleOverride).toBe('Read 70 pages');
+    }
+  });
+
+  it('a malformed placement parameter falls back to absent instead of rejecting the placement', () => {
+    const parsed = BoardTaskSchema.safeParse({
+      ...validBoardTask(),
+      targetOverride: -1,
+      targetKind: 'hours',
+      childTargets: [{ childId: '', target: 0 }],
+      titleOverride: '',
+    });
+    expect(parsed.success).toBe(true);
+    if (parsed.success) {
+      expect(parsed.data.targetOverride).toBeUndefined();
+      expect(parsed.data.targetKind).toBeUndefined();
+      expect(parsed.data.childTargets).toBeUndefined();
+      expect(parsed.data.titleOverride).toBeUndefined();
+    }
+  });
+
   it('keeps an explicit isLocked: true', () => {
     const parsed = BoardTaskSchema.safeParse({ ...validBoardTask(), isLocked: true });
     expect(parsed.success).toBe(true);

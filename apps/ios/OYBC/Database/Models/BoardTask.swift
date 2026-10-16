@@ -39,6 +39,21 @@ struct BoardTask: Codable, FetchableRecord, PersistableRecord {
     /// rows / peer payloads ⇒ `false` (GRDB migration v34 backfills 0).
     var isLocked: Bool = false
 
+    // ── Per-placement parameters (docs/TASK_WINDOW_REWORK.md, slice 1) ──
+    // All optional, absent on every pre-rework row (GRDB v45 adds nullable
+    // columns). INERT in slice 1: no reader (slice 2), no writer (slice 3).
+    // Mirrors the TS `BoardTask` fields; `childTargets` is stored as a
+    // sorted-keys JSON string (like `Board.sealedCompletedCells`) and
+    // expanded to a native array on push (`SyncWirePayload`).
+    /// A counting placement's goal for THIS board (frozen; ruling 1). Absent ⇒ the task's own `maxCount`.
+    var targetOverride: CountValue?
+    /// The kind `targetOverride` is expressed in; kept only alongside an override (ruling 5).
+    var targetKind: CountKind?
+    /// A compound placement's per-child goals, keyed by the compound's DIRECT child ids; sorted, unique.
+    var childTargets: [PlacementChildTarget]?
+    /// A per-board title for a counter square (ruling 4: a rename never forks).
+    var titleOverride: String?
+
     // Timestamps
     var createdAt: String // ISO8601
     var updatedAt: String // ISO8601
@@ -69,6 +84,10 @@ struct BoardTask: Codable, FetchableRecord, PersistableRecord {
         col: Int,
         isCenter: Bool,
         isLocked: Bool = false,
+        targetOverride: CountValue? = nil,
+        targetKind: CountKind? = nil,
+        childTargets: [PlacementChildTarget]? = nil,
+        titleOverride: String? = nil,
         createdAt: String,
         updatedAt: String,
         lastSyncedAt: String? = nil,
@@ -83,6 +102,13 @@ struct BoardTask: Codable, FetchableRecord, PersistableRecord {
         self.col = col
         self.isCenter = isCenter
         self.isLocked = isLocked
+        let norm = Self.normalizedPlacementFields(
+            targetOverride: targetOverride, targetKind: targetKind, childTargets: childTargets, titleOverride: titleOverride
+        )
+        self.targetOverride = norm.targetOverride
+        self.targetKind = norm.targetKind
+        self.childTargets = norm.childTargets
+        self.titleOverride = norm.titleOverride
         self.createdAt = createdAt
         self.updatedAt = updatedAt
         self.lastSyncedAt = lastSyncedAt
@@ -95,6 +121,7 @@ struct BoardTask: Codable, FetchableRecord, PersistableRecord {
 
     enum CodingKeys: String, CodingKey {
         case id, boardId, taskId, row, col, isCenter, isLocked
+        case targetOverride, targetKind, childTargets, titleOverride
         case createdAt, updatedAt
         case lastSyncedAt, version, isDeleted, deletedAt
     }
@@ -122,6 +149,21 @@ struct BoardTask: Codable, FetchableRecord, PersistableRecord {
         // Slice 1 lock — same forward-compat posture as `isDeleted` below
         // (v34 adds the column; pre-feature payloads carry no key).
         isLocked = try container.decodeIfPresent(Bool.self, forKey: .isLocked) ?? false
+        // Slice 1 placement parameters — each decoded leniently (a bad value
+        // ⇒ absent, never a thrown decode that drops the placement), then the
+        // cross-field rules of `normalizedPlacementFields` (twin of the TS
+        // `normalizePlacementFields`).
+        let rawTarget = (try? container.decodeIfPresent(CountValue.self, forKey: .targetOverride)) ?? nil
+        let rawKind = (try? container.decodeIfPresent(CountKind.self, forKey: .targetKind)) ?? nil
+        let rawChildren = Self.decodeChildTargets(container)
+        let rawTitle = (try? container.decodeIfPresent(String.self, forKey: .titleOverride)) ?? nil
+        let norm = Self.normalizedPlacementFields(
+            targetOverride: rawTarget, targetKind: rawKind, childTargets: rawChildren, titleOverride: rawTitle
+        )
+        targetOverride = norm.targetOverride
+        targetKind = norm.targetKind
+        childTargets = norm.childTargets
+        titleOverride = norm.titleOverride
         createdAt = try container.decode(String.self, forKey: .createdAt)
         updatedAt = try container.decode(String.self, forKey: .updatedAt)
         lastSyncedAt = try container.decodeIfPresent(String.self, forKey: .lastSyncedAt)
@@ -139,11 +181,102 @@ struct BoardTask: Codable, FetchableRecord, PersistableRecord {
         try container.encode(col, forKey: .col)
         try container.encode(isCenter, forKey: .isCenter)
         try container.encode(isLocked, forKey: .isLocked)
+        // Key-skipped when nil (NOT `encodeIfPresent`, which GRDB writes as a
+        // NULL column — a pre-v45 schema must still accept the row, see
+        // `MigrationV40DataSurvivalTests`): an absent parameter is the default,
+        // and on the wire an absent key is what the clearable-field delete
+        // (`clearableFieldsByCollection["boardTasks"]`) keys on. The flip side,
+        // as with `Task.counterName` et al.: `save()` never NULLs a column a
+        // value was removed from — a slice-3 writer that CLEARS a parameter
+        // must write the NULL explicitly (`writePlacementFieldColumns`, to come).
+        if let t = targetOverride { try container.encode(t, forKey: .targetOverride) }
+        if let k = targetKind { try container.encode(k, forKey: .targetKind) }
+        if let json = Self.childTargetsJSON(childTargets) {
+            try container.encode(json, forKey: .childTargets)
+        }
+        if let title = titleOverride { try container.encode(title, forKey: .titleOverride) }
         try container.encode(createdAt, forKey: .createdAt)
         try container.encode(updatedAt, forKey: .updatedAt)
         try container.encodeIfPresent(lastSyncedAt, forKey: .lastSyncedAt)
         try container.encode(version, forKey: .version)
         try container.encode(isDeleted, forKey: .isDeleted)
         try container.encodeIfPresent(deletedAt, forKey: .deletedAt)
+    }
+}
+
+/// One entry of `BoardTask.childTargets` (TS twin `PlacementChildTarget`).
+struct PlacementChildTarget: Codable, Equatable {
+    /// The compound's direct child task id.
+    let childId: String
+    /// That child's goal on this board; positive, quantized to the child's kind.
+    let target: CountValue
+}
+
+extension BoardTask {
+    /// The canonical placement parameters (docs/TASK_WINDOW_REWORK.md slice 1).
+    struct PlacementFields: Equatable {
+        var targetOverride: CountValue?
+        var targetKind: CountKind?
+        var childTargets: [PlacementChildTarget]?
+        var titleOverride: String?
+    }
+
+    /// Upper bound on a per-board title, matching the task title limit.
+    static let titleOverrideMax = 200
+
+    /// Normalise the placement parameters to their canonical stored shape —
+    /// the one rule both platforms apply on decode (TS twin
+    /// `normalizePlacementFields`, vector-pinned by `placementFieldsVectors.json`):
+    ///
+    /// - `targetOverride` must be finite, `> 0` and 2-dp quantized; for a whole
+    ///   `targetKind` it must also be whole. Otherwise override AND kind drop.
+    /// - `targetKind` is kept only alongside a kept override.
+    /// - `childTargets`: non-empty `childId`, positive quantized `target`,
+    ///   first entry per `childId` wins, sorted by `childId`; empty ⇒ nil.
+    /// - `titleOverride`: trimmed; empty or over `titleOverrideMax` ⇒ nil.
+    static func normalizedPlacementFields(
+        targetOverride: CountValue?, targetKind: CountKind?, childTargets: [PlacementChildTarget]?, titleOverride: String?
+    ) -> PlacementFields {
+        var out = PlacementFields()
+        if let t = targetOverride, t.isFinite, t > 0, isQuantizedCount(t),
+           !(targetKind.map { isWholeCountKind($0) && t.rounded() != t } ?? false) {
+            out.targetOverride = t
+            out.targetKind = targetKind
+        }
+        if let entries = childTargets {
+            var seen = Set<String>()
+            var kept: [PlacementChildTarget] = []
+            for e in entries {
+                guard !e.childId.isEmpty, !seen.contains(e.childId), e.target.isFinite, e.target > 0, isQuantizedCount(e.target) else { continue }
+                seen.insert(e.childId)
+                kept.append(e)
+            }
+            kept.sort { $0.childId < $1.childId }
+            if !kept.isEmpty { out.childTargets = kept }
+        }
+        if let raw = titleOverride {
+            let title = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !title.isEmpty, title.count <= titleOverrideMax { out.titleOverride = title }
+        }
+        return out
+    }
+
+    /// `childTargets` from a GRDB JSON string OR a native array (a pulled
+    /// payload); entries that fail to decode drop the whole value (⇒ absent).
+    private static func decodeChildTargets(_ container: KeyedDecodingContainer<CodingKeys>) -> [PlacementChildTarget]? {
+        if let json = try? container.decodeIfPresent(String.self, forKey: .childTargets) {
+            guard let data = json.data(using: .utf8) else { return nil }
+            return try? JSONDecoder().decode([PlacementChildTarget].self, from: data)
+        }
+        return (try? container.decodeIfPresent([PlacementChildTarget].self, forKey: .childTargets)) ?? nil
+    }
+
+    /// `childTargets` as its stored JSON string (sorted keys; nil when absent / empty).
+    static func childTargetsJSON(_ targets: [PlacementChildTarget]?) -> String? {
+        guard let targets, !targets.isEmpty else { return nil }
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        guard let data = try? encoder.encode(targets) else { return nil }
+        return String(data: data, encoding: .utf8)
     }
 }

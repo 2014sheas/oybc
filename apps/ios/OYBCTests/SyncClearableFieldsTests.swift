@@ -45,7 +45,7 @@ final class SyncClearableFieldsTests: XCTestCase {
 
     func test_applyClearableBoardFieldDeletes_noOpForNonBoardsCollection() {
         var cleaned: [String: Any] = ["id": "t1"]
-        SyncService.applyClearableFieldDeletes(collection: "boardTasks", cleaned: &cleaned)
+        SyncService.applyClearableFieldDeletes(collection: "compoundChildren", cleaned: &cleaned)
         for field in clearableBoardFields {
             XCTAssertNil(cleaned[field], "non-boards collections must never get the boards-only carve-out")
         }
@@ -152,7 +152,10 @@ final class SyncClearableFieldsTests: XCTestCase {
         )
         // A revived counts-toward credit drops its tombstone stamp (SHARED_COUNTER_SETTINGS §3b).
         XCTAssertEqual(SyncService.clearableFields(for: "taskEvents"), ["deletedAt"])
-        XCTAssertEqual(SyncService.clearableFields(for: "boardTasks"), [])
+        XCTAssertEqual(
+            SyncService.clearableFields(for: "boardTasks"),
+            ["targetOverride", "targetKind", "childTargets", "titleOverride"]
+        )
         XCTAssertEqual(SyncService.clearableFields(for: "nope"), [])
     }
 

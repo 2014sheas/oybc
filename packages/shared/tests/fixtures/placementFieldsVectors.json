@@ -1,0 +1,176 @@
+{
+  "_note": "Hand-authored vectors for normalizePlacementFields (packages/shared/src/algorithms/placementFields.ts) <-> BoardTask.normalizedPlacementFields (apps/ios/OYBC/Database/Models/BoardTask.swift), docs/TASK_WINDOW_REWORK.md slice 1. `input` holds the raw fields (null = absent); `expected` the canonical fields with dropped ones absent.",
+  "vectors": [
+    {
+      "name": "all absent stays absent",
+      "input": {},
+      "expected": {}
+    },
+    {
+      "name": "a positive quantized override is kept; a kind rides along",
+      "input": {
+        "targetOverride": 70,
+        "targetKind": "discrete"
+      },
+      "expected": {
+        "targetOverride": 70,
+        "targetKind": "discrete"
+      }
+    },
+    {
+      "name": "a kind without an override is dropped",
+      "input": {
+        "targetKind": "continuous"
+      },
+      "expected": {}
+    },
+    {
+      "name": "zero, negative and unquantized overrides are dropped with their kind",
+      "input": {
+        "targetOverride": 0,
+        "targetKind": "discrete"
+      },
+      "expected": {}
+    },
+    {
+      "name": "negative override dropped",
+      "input": {
+        "targetOverride": -3
+      },
+      "expected": {}
+    },
+    {
+      "name": "3-dp override dropped",
+      "input": {
+        "targetOverride": 2.125,
+        "targetKind": "continuous"
+      },
+      "expected": {}
+    },
+    {
+      "name": "a whole kind needs a whole target",
+      "input": {
+        "targetOverride": 2.5,
+        "targetKind": "duration"
+      },
+      "expected": {}
+    },
+    {
+      "name": "a continuous kind keeps a 2-dp target",
+      "input": {
+        "targetOverride": 2.5,
+        "targetKind": "continuous"
+      },
+      "expected": {
+        "targetOverride": 2.5,
+        "targetKind": "continuous"
+      }
+    },
+    {
+      "name": "childTargets sorted by childId, first duplicate wins, bad entries dropped, empty => absent",
+      "input": {
+        "childTargets": [
+          {
+            "childId": "b",
+            "target": 5
+          },
+          {
+            "childId": "a",
+            "target": 1.5
+          },
+          {
+            "childId": "b",
+            "target": 9
+          },
+          {
+            "childId": "",
+            "target": 1
+          },
+          {
+            "childId": "c",
+            "target": 0
+          },
+          {
+            "childId": "d",
+            "target": 1.005
+          }
+        ]
+      },
+      "expected": {
+        "childTargets": [
+          {
+            "childId": "a",
+            "target": 1.5
+          },
+          {
+            "childId": "b",
+            "target": 5
+          }
+        ]
+      }
+    },
+    {
+      "name": "an empty childTargets array is absent",
+      "input": {
+        "childTargets": []
+      },
+      "expected": {}
+    },
+    {
+      "name": "titleOverride is trimmed; empty is absent",
+      "input": {
+        "titleOverride": "  Read 70 pages  "
+      },
+      "expected": {
+        "titleOverride": "Read 70 pages"
+      }
+    },
+    {
+      "name": "a whitespace-only title is absent",
+      "input": {
+        "titleOverride": "   "
+      },
+      "expected": {}
+    },
+    {
+      "name": "an over-long title is absent",
+      "input": {
+        "titleOverride": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+      },
+      "expected": {}
+    },
+    {
+      "name": "everything together",
+      "input": {
+        "targetOverride": 10,
+        "targetKind": "discrete",
+        "childTargets": [
+          {
+            "childId": "z",
+            "target": 2
+          },
+          {
+            "childId": "y",
+            "target": 3
+          }
+        ],
+        "titleOverride": "Bike 10 miles indoors"
+      },
+      "expected": {
+        "targetOverride": 10,
+        "targetKind": "discrete",
+        "childTargets": [
+          {
+            "childId": "y",
+            "target": 3
+          },
+          {
+            "childId": "z",
+            "target": 2
+          }
+        ],
+        "titleOverride": "Bike 10 miles indoors"
+      }
+    }
+  ]
+}
