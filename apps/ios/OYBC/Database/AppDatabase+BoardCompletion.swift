@@ -272,6 +272,9 @@ extension AppDatabase {
     ) throws {
         guard occurredAt != now else { return }
         try reDeriveSealedBoards(db: db, changedTaskIds: [childTaskId])
-        try refreshWatchersForBoards(db: db, changedBoardIds: Set(results.keys), now: now)
+        // Every reached board, sealed ones included — `results` only names the
+        // live boards the cascade wrote (review of #627).
+        let reached = try boardIdsReachedByTasks(db: db, taskIds: [childTaskId]).union(results.keys)
+        try refreshWatchersForBoards(db: db, changedBoardIds: reached, now: now)
     }
 }

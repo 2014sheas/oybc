@@ -168,6 +168,13 @@ describe('selectClosedBoardLateLogs (sealReDerivationVectors.json#closedBoardLat
     ).toEqual([late]);
   });
 
+  it('an in-window log is never a late log even after endDate is edited to before it (occurredAt == createdAt)', () => {
+    const board = { id: 'board-1', endDate: '2026-09-15T23:59:59.999Z', sealedAt: '2026-09-20T00:00:00.000Z' };
+    // Logged Wednesday in-window; endDate later shortened to Tuesday.
+    const wed = ev({ id: 'wed', boardId: 'board-1', occurredAt: '2026-09-16T12:00:00.000Z', createdAt: '2026-09-16T12:00:00.000Z' });
+    expect(selectClosedBoardLateLogs([wed], board, SOURCE)).toEqual([]);
+  });
+
   it('matches by provenance, not the exact endDate instant: a cross-zone stamp still counts, an in-window log never does', () => {
     const board = { id: 'board-1', endDate: '2026-09-15T23:59:59.999Z', sealedAt: '2026-09-17T00:00:00.000Z' };
     const offZone = ev({ id: 'off', boardId: 'board-1', occurredAt: '2026-09-15T20:59:59.999Z', createdAt: '2026-09-18T10:00:00.000Z' });

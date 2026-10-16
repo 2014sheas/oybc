@@ -111,10 +111,16 @@ func selectClosedBoardLateLogs(
         DateFormatting.parseISO(iso).map { ($0.timeIntervalSince1970 * 1000).rounded() }
     }
 
+    // …and BACK-STAMPED (`occurredAt < createdAt`): the late-log stamp is the
+    // window end, while an in-window log's `occurredAt` IS its `createdAt` —
+    // so an `endDate` edited to before an ordinary log never turns that log
+    // into an undoable "late log" (review of #627).
     let lateLogs = events.filter { e in
         guard !e.isDeleted, e.taskId == taskId, e.boardId == boardId else { return false }
-        guard let created = DateFormatting.parseISO(e.createdAt) else { return false }
-        return created.timeIntervalSince1970 * 1000 > endMs
+        guard let created = DateFormatting.parseISO(e.createdAt),
+              let occurred = DateFormatting.parseISO(e.occurredAt) else { return false }
+        let createdMs = created.timeIntervalSince1970 * 1000
+        return createdMs > endMs && occurred.timeIntervalSince1970 * 1000 < createdMs
     }
     return lateLogs.sorted { a, b in
         let ca = ms(a.createdAt) ?? 0

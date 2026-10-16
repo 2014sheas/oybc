@@ -417,7 +417,7 @@ function CompoundBody({
     const childEvents = events.filter((e) => e.taskId === link.childTaskId);
     const rootEvents = child?.sharedCounterId ? events.filter((e) => e.taskId === child.sharedCounterId) : [];
     const isCurrentlyComplete = child ? childIsCurrentlyComplete(child, childEvents, board, rootEvents) : false;
-    return { link, child, isCurrentlyComplete, childEvents };
+    return { link, child, isCurrentlyComplete, childEvents, rootEvents };
   });
 
   const stagedActions = useMemo<LateLogCompoundAction[]>(() => {
@@ -458,7 +458,7 @@ function CompoundBody({
   return (
     <>
       <div className={styles.partsList}>
-        {rows.map(({ link, child, isCurrentlyComplete, childEvents }) => {
+        {rows.map(({ link, child, isCurrentlyComplete, childEvents, rootEvents }) => {
           if (!child) return null;
           // A linked counting child is stageable (slice 0): its +1 logs on its root.
           const stageable = isEventOwningTask(child) || (child.type === TaskType.COUNTING && child.sharedCounterId != null);
@@ -495,10 +495,17 @@ function CompoundBody({
                 {on ? '✓' : ''}
               </span>
               <span className={styles.partLabel}>{child.title}</span>
-              {child.type === TaskType.COUNTING && isEventOwningTask(child) && (
+              {child.type === TaskType.COUNTING && (isEventOwningTask(child) || child.sharedCounterId != null) && (
                 <span className={styles.partMeta}>
                   {formatCount(
-                    childWindowSum(child, childEvents, board) + (stagedIncrement.has(link.childTaskId) ? 1 : 0),
+                    (child.sharedCounterId
+                      ? resolveLinkedCounterDisplay(
+                          child,
+                          { [child.sharedCounterId]: [...rootEvents] },
+                          board.sealedAt ?? undefined,
+                          { startDate: board.startDate, endDate: board.endDate ?? null },
+                        ).displayed
+                      : childWindowSum(child, childEvents, board)) + (stagedIncrement.has(link.childTaskId) ? 1 : 0),
                     resolveCountKind(child),
                   )}
                   /{formatCount(child.maxCount ?? 0, resolveCountKind(child))}

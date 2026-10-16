@@ -84,9 +84,9 @@ function isMoreRecent(candidate: TaskEvent, current: TaskEvent): boolean {
 export interface ClosedBoardLateLogBoard {
   /** The board's id (a late log's `boardId` provenance). */
   id: string;
-  /** Window end; a late log is stamped exactly at this instant. */
+  /** Window end; a late log is CREATED after this instant (and back-stamped at or before it). */
   endDate?: string | null;
-  /** When the board closed; a late log is CREATED after this instant. */
+  /** When the board closed. Not read since slice 0 (provenance matching); kept for the call sites. */
   sealedAt?: string | null;
 }
 
@@ -119,22 +119,24 @@ export function selectClosedBoardLateLogs(
 ): TaskEvent[] {
   // Provenance, not an exact instant (TASK_WINDOW_REWORK slice 0): a late log
   // is an event this board authored (`boardId`) AFTER its window ended
-  // (`createdAt > endDate`). The old `occurredAt === endDate` match broke
-  // across time zones (the stamp is re-encoded in the writing device's zone)
-  // and `createdAt > sealedAt` missed a log made on an ended-but-unsealed
-  // board that was closed afterwards. A sealed board authors no event, so
-  // nothing after the seal is not a late log.
+  // (`createdAt > endDate`) and BACK-STAMPED (`occurredAt < createdAt` — the
+  // late-log stamp is the window end, while an in-window log's `occurredAt`
+  // IS its `createdAt`). The old `occurredAt === endDate` match broke across
+  // time zones (the stamp is re-encoded in the writing device's zone) and
+  // `createdAt > sealedAt` missed a log made on an ended-but-unsealed board
+  // that was closed afterwards. The back-stamp test keeps an ordinary
+  // in-window log from turning into an undoable "late log" when the board's
+  // `endDate` is later edited to before it (review of #627).
   if (board.endDate == null) return [];
   const endMs = new Date(board.endDate).getTime();
   if (Number.isNaN(endMs)) return [];
 
-  const lateLogs = events.filter(
-    (e) =>
-      !e.isDeleted &&
-      e.taskId === taskId &&
-      e.boardId === board.id &&
-      new Date(e.createdAt).getTime() > endMs,
-  );
+  const lateLogs = events.filter((e) => {
+    if (e.isDeleted || e.taskId !== taskId || e.boardId !== board.id) return false;
+    const createdMs = new Date(e.createdAt).getTime();
+    const occurredMs = new Date(e.occurredAt).getTime();
+    return createdMs > endMs && occurredMs < createdMs;
+  });
   return lateLogs.sort((a, b) => {
     const byCreated = new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
     if (byCreated !== 0) return byCreated;
