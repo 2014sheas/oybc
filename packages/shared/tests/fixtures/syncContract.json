@@ -38,6 +38,8 @@
     ],
     "tasks": [
       "endDate",
+      "timeframe",
+      "startDate",
       "counterName",
       "titleTemplateSingular",
       "titleTemplatePlural",

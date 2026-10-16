@@ -10,9 +10,12 @@ import GRDB
 // `Helpers/LinkedCounterWindowHeal.swift` (vector-pinned against the TS twin);
 // this file applies it:
 //
-//   - `healLinkedCounterWindowsTx` — one-time + post-pull sweep (GRDB v37 and
-//     `SyncService.pullSync`, mirroring heal-on-pull #448). AUTHORED writes with
-//     deterministic content, so every device converges and a re-run is a no-op.
+//   - `healLinkedCounterWindowsTx` — one-time + post-pull sweep (GRDB v37 / v44
+//     and `SyncService.pullSync`, mirroring heal-on-pull #448). AUTHORED writes
+//     with deterministic content, so every device converges and a re-run is a
+//     no-op. Since 2026-10-16 it also UN-stamps a row a live compound carries
+//     (a daily series re-places the same compound every window, so a child
+//     stamped with its first window read 0 on every later board).
 //   - `resolveWindowStampedPlacementId` — the placement choke points
 //     (`addBoardTaskToBoard`, `updateBoardTaskAndCascade`) resolve a hub-linked
 //     task to its board's own row before placing it. Board Edit's add/replace
@@ -43,7 +46,7 @@ extension AppDatabase {
     /// - Parameter userId: The owner whose rows to heal.
     /// - Returns: How many rows were stamped in place / minted as copies.
     @discardableResult
-    func healLinkedCounterWindows(userId: String) throws -> (stamped: Int, copied: Int) {
+    func healLinkedCounterWindows(userId: String) throws -> (stamped: Int, copied: Int, unstamped: Int) {
         try write { db in
             try Self.healLinkedCounterWindowsTx(db: db, userId: userId, now: Self.currentTimestamp())
         }
@@ -66,11 +69,12 @@ extension AppDatabase {
     ///   - db: The caller's open write transaction.
     ///   - userId: Owner of the rows; other users' rows are ignored.
     ///   - now: ISO8601 write stamp.
-    /// - Returns: Counts of rows stamped in place and minted as copies.
+    /// - Returns: Counts of rows stamped in place, minted as copies, and
+    ///   un-stamped.
     @discardableResult
     static func healLinkedCounterWindowsTx(
         db: Database, userId: String, now: String
-    ) throws -> (stamped: Int, copied: Int) {
+    ) throws -> (stamped: Int, copied: Int, unstamped: Int) {
         let tasks = try Task.filter(Column("userId") == userId).fetchAll(db)
         let boards = try Board.filter(Column("userId") == userId).fetchAll(db)
         let boardIds = Set(boards.map(\.id))
@@ -81,13 +85,14 @@ extension AppDatabase {
         let plan = BoardSources.planLinkedCounterWindowHeal(
             tasks: tasks, boardTasks: boardTasks, boards: boards, compoundChildren: children
         )
-        if plan.stamps.isEmpty && plan.copies.isEmpty { return (0, 0) }
+        if plan.stamps.isEmpty && plan.copies.isEmpty && plan.unstamps.isEmpty { return (0, 0, 0) }
 
         let tasksById = Dictionary(tasks.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
         var rootsTouched = Set<String>()
         var changedIds = Set<String>()
         var stamped = 0
         var copied = 0
+        var unstamped = 0
         var eventsByRoot: [String: [TaskEvent]] = [:]
         func rootEvents(_ root: String) throws -> [TaskEvent] {
             if let cached = eventsByRoot[root] { return cached }
@@ -161,11 +166,39 @@ extension AppDatabase {
             copied += 1
         }
 
+        // Unstamps run AFTER the copies: a copy's source row is read as it was
+        // (the copy keeps the member's own target); the member's stamp goes last.
+        // 2026-10-16: a stamped row a live compound carries (no board's own
+        // artifact) drops `timeframe` / `startDate` / `endDate` — the three
+        // sync as clears (`clearableFieldsByCollection["tasks"]`) — mirrors
+        // its root's lifetime count again (the freeze had skipped it) and is
+        // enqueued; the kernel then reads it over each host board's window.
+        for unstamp in plan.unstamps {
+            guard var task = tasksById[unstamp.taskId] else { continue }
+            task.timeframe = nil
+            task.startDate = nil
+            task.endDate = nil
+            if let root = task.sharedCounterId,
+               let rootTask = try tasksById[root] ?? Task.fetchOne(db, key: root),
+               let lifetime = rootTask.currentCount {
+                task.currentCount = lifetime
+            }
+            task.updatedAt = now
+            task.version += 1
+            try task.save(db)
+            try SyncQueueBuilder.makeItem(
+                entityType: "tasks", entityId: task.id, operationType: .update,
+                payload: task, now: now, ownerUid: userId
+            ).enqueue(db)
+            changedIds.insert(task.id)
+            unstamped += 1
+        }
+
         for root in rootsTouched { try refreshDerivedBaselines(db: db, rootTaskId: root) }
         // The heal is not a late log: no credit write is exempt from the
         // counter's seal-immune windows here (`lateLogStamp: nil`).
         try reDeriveAfterLateLogWrite(db: db, changedTaskIds: changedIds, now: now, lateLogStamp: nil)
-        return (stamped, copied)
+        return (stamped, copied, unstamped)
     }
 
     /// Materialise one window-stamped copy draft: build the row from the root

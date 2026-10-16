@@ -96,9 +96,11 @@ describe('syncContract fixture', () => {
     ]);
   });
 
-  it('tasks clears endDate (heal, 2026-10-01), the four shared counter settings (cleared to default = absent) and the three counts-toward fields', () => {
+  it('tasks clears endDate (heal, 2026-10-01), timeframe + startDate (compound-member un-stamp, 2026-10-16), the four shared counter settings (cleared to default = absent) and the three counts-toward fields', () => {
     expect([...CLEARABLE_FIELDS_BY_COLLECTION.tasks]).toEqual([
       'endDate',
+      'timeframe',
+      'startDate',
       'counterName',
       'titleTemplateSingular',
       'titleTemplatePlural',

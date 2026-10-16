@@ -253,12 +253,21 @@ its id for the earliest board (by `startDate`, then id) and gets a
 deterministic per-board copy (`derivedTaskId(boardId, root)`, placement
 repointed) for each further DIRECT placement. The stamp is **all-or-nothing**:
 once stamped, a row resolves from its own window everywhere (the stamped path
-ignores the context window), so a row whose further boards are not all
-repointable — any further board reached only through a compound, or a
-goal-less row on more than one board — is left UNSTAMPED with no copies, and
-the kernel fallback keeps rendering every board over its own window. A
-window-stamped row placed on a board it is not stamped for (an old-app
-placement, or a wrong "first board") gets that board's copy, no stamp
+ignores the context window), so a row that a live COMPOUND carries (a child
+link cannot be repointed per board) is NEVER stamped — it stays hub-linked and
+the kernel fallback renders every host board over its own window, while each
+of its DIRECT placements still gets a per-board copy (goal-less → nothing);
+likewise a goal-less row on more than one board is left alone. (Until
+2026-10-16 a member reached on exactly one board WAS stamped; a daily series
+re-places the same compound every window, so that child read its first day's
+window on every later spawn — 0 of 10 after a 26-mile log — and the freeze
+skipped it. The heal now also UN-stamps such a row: a stamped member that is
+no live board's own artifact — no board `b` has `derivedTaskId(b, root) == id`
+— drops `timeframe`/`startDate`/`endDate` (the three sync as clears), mirrors
+its root's lifetime count again and re-derives its boards; web Dexie v20 /
+iOS GRDB v44 re-run the sweep once.) A window-stamped row placed on a board
+it is not stamped for (an old-app placement, or a wrong "first board") gets
+that board's copy, no stamp
 (`planLinkedCounterWindowHeal`, shared `linkedCounterWindowHeal.ts` ↔
 `Helpers/LinkedCounterWindowHeal.swift`, pinned by
 `linkedCounterWindowHealVectors.json`). A repointed placement may sit on a SEALED board — the one named exception to

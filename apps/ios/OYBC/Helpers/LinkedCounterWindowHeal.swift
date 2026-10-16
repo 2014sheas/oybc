@@ -96,10 +96,22 @@ extension BoardSources {
         let endDate: String?
     }
 
+    /// Clear a window-stamped row's stamp (`timeframe` / `startDate` /
+    /// `endDate`) so it is hub-linked again and the kernel's context-window
+    /// fallback renders it over the HOST board's window wherever a compound
+    /// carries it. Planned only for a row that is a live compound's child and
+    /// is not any board's own per-window artifact (rule 3 of the planner).
+    /// `createdInWizard` is left as it is (not a window mark on its own).
+    /// Twin of the TS `LinkedCounterWindowUnstamp`.
+    struct LinkedCounterWindowUnstamp: Equatable {
+        let taskId: String
+    }
+
     /// Output of ``planLinkedCounterWindowHeal(tasks:boardTasks:boards:compoundChildren:)``.
     struct LinkedCounterWindowHealPlan: Equatable {
         let stamps: [LinkedCounterWindowStamp]
         let copies: [LinkedCounterWindowCopy]
+        let unstamps: [LinkedCounterWindowUnstamp]
     }
 
     /// Total order on boards: window start ascending (as INSTANTS, so the two
@@ -115,23 +127,23 @@ extension BoardSources {
         return a.id < b.id
     }
 
-    /// Plan the one-time heal of linked counters into per-board
-    /// window-stamped rows. Two kinds of row are planned:
+    /// Plan the (idempotent) heal of linked counters into per-board
+    /// window-stamped rows. Three kinds of row are planned:
     ///
     /// 1. **Unstamped candidates** (COUNTING, `sharedCounterId` set, not
-    ///    `isWindowStampedDerived`): all-or-nothing. The row is stamped with
-    ///    its FIRST placing board's window (direct or reached through a
-    ///    compound alike; boards ordered by startDate as instants, then id)
-    ///    ONLY IF every further placing board is a DIRECT placement AND —
-    ///    when there is more than one board — the row has a goal; every
-    ///    further board then gets a copy (`derivedTaskId(board, root)`,
-    ///    placement repointed). Otherwise (a further board reached only
-    ///    through a compound, or goal-less on >1 board) the plan holds
-    ///    NOTHING for the row: once stamped it would resolve from its own
-    ///    window everywhere and freeze the skipped boards out of
-    ///    propagation, whereas unstamped the kernel's context-window
-    ///    fallback renders every board correctly. Single-board candidates
-    ///    are stamped regardless of goal. Unplaced rows → nothing.
+    ///    `isWindowStampedDerived`).
+    ///    - NOT a compound member (no live link from a live compound): the
+    ///      FIRST direct placing board (by startDate as instants, then id)
+    ///      stamps the row in place; every further direct board gets a copy
+    ///      (`derivedTaskId(board, root)`, placement repointed). More than
+    ///      one board requires a goal; goal-less on >1 board → nothing.
+    ///      Unplaced → nothing.
+    ///    - A compound member is NEVER stamped (incident 2026-10-16: a daily
+    ///      series re-places the same compound every window, so a child
+    ///      stamped with the first window read 0 on every later board and
+    ///      was frozen out of propagation). Unstamped, the kernel's
+    ///      context-window fallback renders every board correctly; with a
+    ///      goal, each of its DIRECT placements gets a copy.
     /// 2. **Mis-placed window-stamped rows** (`isWindowStampedDerived`, with
     ///    a goal): a copy for every live DIRECT placement on a board the row
     ///    is not `isWindowStampedForBoard` — no stamp, the row keeps its own
@@ -139,6 +151,13 @@ extension BoardSources {
     ///    own id is left alone (that row IS the board's artifact with stale
     ///    dates — the Board Edit date path's job; a copy would repoint the
     ///    placement at itself forever).
+    /// 3. **Stamped compound members** (`isWindowStampedDerived`, a live
+    ///    compound's child) that are NOT any live board's own artifact (no
+    ///    live board `b` has `derivedTaskId(b.id, root) == id` — the
+    ///    planner / spawn / Board Edit mint per-window children under that
+    ///    id, linked from a per-window derived compound, and those keep
+    ///    their stamp) → an ``LinkedCounterWindowUnstamp``; with a goal, every
+    ///    direct placement then gets a copy (none is "its own" any more).
     ///
     /// Deterministic and idempotent; output sorted by task id then board id.
     /// Mirrors the TS twin `planLinkedCounterWindowHeal` in
@@ -149,7 +168,7 @@ extension BoardSources {
     ///   - boardTasks: Every placement row (tombstones are skipped here).
     ///   - boards: Every board row (deleted boards are skipped here).
     ///   - compoundChildren: Every link row (tombstones are skipped here).
-    /// - Returns: The stamps and copies to apply, sorted by task id then board id.
+    /// - Returns: The stamps, copies and unstamps to apply.
     static func planLinkedCounterWindowHeal(
         tasks: [Task],
         boardTasks: [BoardTask],
@@ -180,6 +199,8 @@ extension BoardSources {
 
         var stamps: [LinkedCounterWindowStamp] = []
         var copies: [LinkedCounterWindowCopy] = []
+        var unstamps: [LinkedCounterWindowUnstamp] = []
+        let liveBoards = Array(boardsById.values)
 
         func copy(for task: Task, root: String, board: Board, boardTaskId: String) -> LinkedCounterWindowCopy {
             LinkedCounterWindowCopy(
@@ -194,36 +215,54 @@ extension BoardSources {
             )
         }
 
+        /// Is `task` some live board's own per-window artifact (`derivedTaskId(b, root)`)?
+        func isBoardArtifact(_ task: Task, root: String) -> Bool {
+            liveBoards.contains { derivedTaskId(boardId: $0.id, rootTaskId: root) == task.id }
+        }
+
         for task in tasksById.values {
             guard task.type == .counting, let root = task.sharedCounterId, !root.isEmpty else { continue }
             let direct = placementsByTaskId[task.id] ?? [:]
             let hasGoal = hasCopyGoal(task.maxCount, kind: resolveCountKind(task.countKind))
+            let isMember = !(parentsByChildId[task.id] ?? []).isEmpty
 
             if isWindowStampedDerived(task) {
+                // 3. A stamped compound member that is no board's artifact: clear
+                //    the stamp; its direct placements are then copied like any
+                //    unstamped member's (no board is "its own" any more).
+                let unstamp = isMember && !isBoardArtifact(task, root: root)
+                if unstamp { unstamps.append(LinkedCounterWindowUnstamp(taskId: task.id)) }
                 // 2. Mis-placed window-stamped rows: a copy per direct placement
                 //    on a board the row is not stamped for; no stamp.
                 guard hasGoal else { continue }
                 for (boardId, boardTaskId) in direct {
-                    guard let board = boardsById[boardId], !isWindowStampedForBoard(task, board: board),
+                    guard let board = boardsById[boardId],
+                          unstamp || !isWindowStampedForBoard(task, board: board),
                           derivedTaskId(boardId: board.id, rootTaskId: root) != task.id else { continue }
                     copies.append(copy(for: task, root: root, board: board, boardTaskId: boardTaskId))
                 }
                 continue
             }
 
-            // 1. Unstamped candidates: stamp the first board and copy every
-            //    further one — or do nothing at all.
-            var boardIds = Set(direct.keys)
-            for parentId in parentsByChildId[task.id] ?? [] {
-                for boardId in (placementsByTaskId[parentId] ?? [:]).keys { boardIds.insert(boardId) }
+            if isMember {
+                // 1b. A compound member is never stamped; with a goal, each
+                //     direct placement gets its own per-board copy.
+                guard hasGoal else { continue }
+                for (boardId, boardTaskId) in direct {
+                    guard let board = boardsById[boardId],
+                          derivedTaskId(boardId: board.id, rootTaskId: root) != task.id else { continue }
+                    copies.append(copy(for: task, root: root, board: board, boardTaskId: boardTaskId))
+                }
+                continue
             }
-            if boardIds.isEmpty { continue }
 
-            let ordered = boardIds.compactMap { boardsById[$0] }.sorted(by: boardWindowPrecedes)
+            // 1a. Unstamped non-member: stamp the first direct board and copy
+            //     every further one — or do nothing at all.
+            if direct.isEmpty { continue }
+            let ordered = direct.keys.compactMap { boardsById[$0] }.sorted(by: boardWindowPrecedes)
             guard let first = ordered.first else { continue }
             let further = ordered.dropFirst()
-            let repointable = further.allSatisfy { direct[$0.id] != nil } && (further.isEmpty || hasGoal)
-            guard repointable else { continue }
+            if !further.isEmpty && !hasGoal { continue }
 
             stamps.append(LinkedCounterWindowStamp(
                 taskId: task.id,
@@ -245,7 +284,8 @@ extension BoardSources {
             if a.sourceTaskId != b.sourceTaskId { return a.sourceTaskId < b.sourceTaskId }
             return a.boardId < b.boardId
         }
-        return LinkedCounterWindowHealPlan(stamps: stamps, copies: copies)
+        unstamps.sort { $0.taskId < $1.taskId }
+        return LinkedCounterWindowHealPlan(stamps: stamps, copies: copies, unstamps: unstamps)
     }
 
     /// Whether a goal can seed a per-window copy: whole kinds need `>= 1`, a

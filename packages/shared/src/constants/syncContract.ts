@@ -178,6 +178,9 @@ export const PULL_APPLY_ORDER = [
  *    window; a stamp onto an INDEFINITE board (`endDate` absent) must clear a
  *    legacy task-level `endDate` on every device, or the row's window would
  *    end on one device and run open on another.
+ *  - `tasks.timeframe` / `startDate` — the same heal UN-stamps a linked row
+ *    a compound carries (2026-10-16); the cleared window must reach every
+ *    device, or the row stays pinned to one board's window elsewhere.
  *  - `tasks.counterName` / `titleTemplateSingular` / `titleTemplatePlural` /
  *    `timeframeGoals` — a shared counter setting cleared back to its default
  *    is stored ABSENT (docs/SHARED_COUNTER_SETTINGS.md D3).
@@ -198,6 +201,8 @@ export const CLEARABLE_FIELDS_BY_COLLECTION = {
   boards: ['endDate', 'completedAt', 'sealedAt', 'sealedCompletedCells'],
   tasks: [
     'endDate',
+    'timeframe',
+    'startDate',
     'counterName',
     'titleTemplateSingular',
     'titleTemplatePlural',

@@ -145,7 +145,8 @@ final class SyncClearableFieldsTests: XCTestCase {
         XCTAssertEqual(
             SyncService.clearableFields(for: "tasks"),
             [
-                "endDate", "counterName", "titleTemplateSingular", "titleTemplatePlural", "timeframeGoals",
+                "endDate", "timeframe", "startDate",
+                "counterName", "titleTemplateSingular", "titleTemplatePlural", "timeframeGoals",
                 "countsTowardCounterId", "countsTowardAmount", "countsTowardSince",
             ]
         )

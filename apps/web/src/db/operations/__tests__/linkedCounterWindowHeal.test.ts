@@ -40,7 +40,7 @@ describe('healLinkedCounterWindows', () => {
     await db.boards.put(boardRow(JUNE));
     await db.boardTasks.put(placement('bt-j', JUNE.id, 'H'));
 
-    expect(await healLinkedCounterWindows(USER)).toEqual({ stamped: 1, copied: 0 });
+    expect(await healLinkedCounterWindows(USER)).toEqual({ stamped: 1, copied: 0, unstamped: 0 });
 
     const h = (await db.tasks.get('H'))!;
     expect(h.timeframe).toBe(Timeframe.MONTHLY);
@@ -57,7 +57,7 @@ describe('healLinkedCounterWindows', () => {
     await db.boards.bulkPut([boardRow(JUNE), boardRow(SEPT)]);
     await db.boardTasks.bulkPut([placement('bt-j', JUNE.id, 'H'), placement('bt-s', SEPT.id, 'H')]);
 
-    expect(await healLinkedCounterWindows(USER)).toEqual({ stamped: 1, copied: 1 });
+    expect(await healLinkedCounterWindows(USER)).toEqual({ stamped: 1, copied: 1, unstamped: 0 });
 
     const copyId = derivedTaskId(SEPT.id, ROOT);
     const copy = (await db.tasks.get(copyId))!;
@@ -80,7 +80,7 @@ describe('healLinkedCounterWindows', () => {
     await db.boards.bulkPut([boardRow(JUNE), boardRow(SEPT)]);
     await db.boardTasks.bulkPut([placement('bt-j', JUNE.id, 'H'), placement('bt-s', SEPT.id, 'H')]);
 
-    expect(await healLinkedCounterWindows(USER)).toEqual({ stamped: 1, copied: 1 });
+    expect(await healLinkedCounterWindows(USER)).toEqual({ stamped: 1, copied: 1, unstamped: 0 });
 
     const copy = (await db.tasks.get(derivedTaskId(SEPT.id, ROOT)))!;
     expect(copy.title).toBe('Sunday long run');
@@ -97,14 +97,71 @@ describe('healLinkedCounterWindows', () => {
     expect((await db.tasks.get(derivedTaskId(SEPT.id, ROOT)))!.title).toBe('Run 5 miles');
   });
 
-  it('stamps a child reached only through a compound placement', async () => {
+  it('never stamps a child reached through a compound placement (2026-10-16)', async () => {
     await db.tasks.bulkPut([hubLinked('H'), compoundTask('C')]);
     await db.compoundChildren.put(link('l1', 'C', 'H'));
     await db.boards.put(boardRow(JUNE));
     await db.boardTasks.put(placement('bt-c', JUNE.id, 'C'));
 
-    expect(await healLinkedCounterWindows(USER)).toEqual({ stamped: 1, copied: 0 });
-    expect((await db.tasks.get('H'))!.startDate).toBe(JUNE.startDate);
+    expect(await healLinkedCounterWindows(USER)).toEqual({ stamped: 0, copied: 0, unstamped: 0 });
+    expect((await db.tasks.get('H'))!.startDate).toBeUndefined();
+    expect(await queued('tasks')).toEqual([]);
+  });
+
+  it('incident 2026-10-16: un-stamps a compound child pinned to its first daily window, clears the three fields as a sync clear, and the later board re-derives', async () => {
+    // Day 1 (Oct 13) and day 4 (Oct 16) of a daily series place the SAME
+    // compound; the v18 heal had stamped its linked child with Oct 13.
+    const d13 = { id: 'd13', startDate: '2026-10-13T00:00:00.000Z', endDate: '2026-10-13T23:59:59.999Z' };
+    const d16 = { id: 'd16', startDate: '2026-10-16T00:00:00.000Z', endDate: '2026-10-16T23:59:59.999Z' };
+    vi.setSystemTime(new Date('2026-10-16T17:31:00.000Z'));
+    await db.tasks.bulkPut([
+      hubLinked('H', {
+        maxCount: 10,
+        timeframe: Timeframe.DAILY,
+        startDate: d13.startDate,
+        endDate: d13.endDate,
+        createdInWizard: true,
+        currentCount: 0,
+      }),
+      compoundTask('C'),
+    ]);
+    await db.compoundChildren.put(link('l1', 'C', 'H'));
+    await db.boards.bulkPut([boardRow(d13), boardRow(d16)]);
+    await db.boardTasks.bulkPut([placement('bt-13', d13.id, 'C'), placement('bt-16', d16.id, 'C')]);
+    // The 26-mile log on the counter, made on Oct 16 (root lifetime 7 → 33).
+    await db.taskEvents.put(incEvent('e26', ROOT, 26, '2026-10-16T17:30:00.000Z'));
+    await db.tasks.update(ROOT, { currentCount: 33 });
+
+    expect(await healLinkedCounterWindows(USER)).toEqual({ stamped: 0, copied: 0, unstamped: 1 });
+
+    const h = (await db.tasks.get('H'))!;
+    expect(isWindowStampedDerived(h)).toBe(false);
+    expect(h.timeframe).toBeUndefined();
+    expect(h.startDate).toBeUndefined();
+    expect(h.endDate).toBeUndefined();
+    expect(h.createdInWizard).toBe(true);
+    expect(h.currentCount).toBe(33);
+    expect(h.version).toBe(3);
+    expect(await queued('tasks')).toEqual(['H']);
+    // Oct 16's compound now completes from the log in ITS window; Oct 13 stays empty.
+    expect((await db.boards.get(d16.id))!.completedTasks).toBe(1);
+    expect((await db.boards.get(d13.id))!.completedTasks).toBe(0);
+    // Idempotent.
+    expect(await healLinkedCounterWindows(USER)).toEqual({ stamped: 0, copied: 0, unstamped: 0 });
+  });
+
+  it('keeps the stamp on a per-window derived child under a derived compound (the board\'s own artifact)', async () => {
+    const artifactId = derivedTaskId(JUNE.id, ROOT);
+    await db.tasks.bulkPut([
+      hubLinked(artifactId, { timeframe: Timeframe.MONTHLY, startDate: JUNE.startDate, endDate: JUNE.endDate, createdInWizard: true }),
+      compoundTask('C'),
+    ]);
+    await db.compoundChildren.put(link('l1', 'C', artifactId));
+    await db.boards.put(boardRow(JUNE));
+    await db.boardTasks.put(placement('bt-c', JUNE.id, 'C'));
+
+    expect(await healLinkedCounterWindows(USER)).toEqual({ stamped: 0, copied: 0, unstamped: 0 });
+    expect((await db.tasks.get(artifactId))!.startDate).toBe(JUNE.startDate);
   });
 
   it('is idempotent: a second run plans nothing and enqueues nothing new', async () => {
@@ -116,7 +173,7 @@ describe('healLinkedCounterWindows', () => {
     const before = await db.syncQueue.count();
     const versions = (await db.tasks.toArray()).map((t) => [t.id, t.version]);
 
-    expect(await healLinkedCounterWindows(USER)).toEqual({ stamped: 0, copied: 0 });
+    expect(await healLinkedCounterWindows(USER)).toEqual({ stamped: 0, copied: 0, unstamped: 0 });
     expect(await db.syncQueue.count()).toBe(before);
     expect((await db.tasks.toArray()).map((t) => [t.id, t.version])).toEqual(versions);
   });
@@ -219,6 +276,6 @@ describe('healLinkedCounterWindows', () => {
     await db.tasks.put(hubLinked('H', { userId: 'someone-else' }));
     await db.boards.put(boardRow(JUNE, { userId: 'someone-else' }));
     await db.boardTasks.put(placement('bt-j', JUNE.id, 'H'));
-    expect(await healLinkedCounterWindows(USER)).toEqual({ stamped: 0, copied: 0 });
+    expect(await healLinkedCounterWindows(USER)).toEqual({ stamped: 0, copied: 0, unstamped: 0 });
   });
 });

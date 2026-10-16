@@ -35,6 +35,11 @@ import { currentTimestamp } from '../utils';
  *   - **Copy** — `materializeWindowCopy` (insert / revive the deterministic
  *     `derivedTaskId(board, root)` row + enqueue), then the placement
  *     (`boardTask`) is repointed at it (`version + 1`, UPDATE enqueue).
+ *   - **Unstamp** (2026-10-16) — a stamped row that a live compound carries
+ *     and that is no board's own artifact drops `timeframe` / `startDate` /
+ *     `endDate` (the three sync as clears — `CLEARABLE_FIELDS_BY_COLLECTION`),
+ *     mirrors its root's lifetime count again (the freeze had skipped it) and
+ *     is enqueued; the kernel then reads it over each host board's window.
  *
  * Afterwards, inside the same transaction: `refreshDerivedBaselines` for every
  * touched root (non-authored cache), the live board cascade for the reached
@@ -45,7 +50,7 @@ import { currentTimestamp } from '../utils';
  * Idempotent + self-limiting: once applied, stamped rows are
  * window-stamped and repointed placements no longer place the source, so the
  * next run plans nothing and returns `{0, 0}` without opening any writes.
- * Safe to call after every clean pull and from the Dexie v18 upgrade.
+ * Safe to call after every clean pull and from the Dexie v18 / v20 upgrades.
  *
  * Documented residuals (the source placement is then left as-is; the kernel
  * fallback still renders it windowed, and a later sweep re-plans it):
@@ -59,13 +64,15 @@ import { currentTimestamp } from '../utils';
  * Swift twin: `AppDatabase+LinkedCounterWindowHeal.swift`.
  *
  * @param userId The owning user's uid (scope guard + sync owner).
- * @returns How many rows were stamped in place and how many copies minted.
+ * @returns How many rows were stamped in place, how many copies minted and
+ *          how many stamps cleared.
  */
 export async function healLinkedCounterWindows(
   userId: string,
-): Promise<{ stamped: number; copied: number }> {
+): Promise<{ stamped: number; copied: number; unstamped: number }> {
   let stamped = 0;
   let copied = 0;
+  let unstamped = 0;
 
   await db.transaction(
     'rw',
@@ -86,7 +93,7 @@ export async function healLinkedCounterWindows(
         boards: ownBoards,
         compoundChildren,
       });
-      if (plan.stamps.length === 0 && plan.copies.length === 0) return;
+      if (plan.stamps.length === 0 && plan.copies.length === 0 && plan.unstamps.length === 0) return;
 
       const now = currentTimestamp();
       const taskById = new Map<string, Task>(ownTasks.map((t) => [t.id, t]));
@@ -161,6 +168,30 @@ export async function healLinkedCounterWindows(
         copied += 1;
       }
 
+      // Unstamps run AFTER the copies: a copy's source row is read as it was
+      // (the copy keeps the member's own target); the member's stamp goes last.
+      for (const unstamp of plan.unstamps) {
+        const task = taskById.get(unstamp.taskId);
+        if (!task) continue;
+        const root = task.sharedCounterId ? taskById.get(task.sharedCounterId) : undefined;
+        const next: Task = {
+          ...task,
+          // The freeze skipped this row's propagation while it was stamped;
+          // mirror the root's lifetime count again (hub-linked rows read
+          // `currentCount − baseline` in context-less readers).
+          ...(root?.currentCount !== undefined ? { currentCount: root.currentCount } : {}),
+          updatedAt: now,
+          version: (task.version ?? 0) + 1,
+        };
+        delete (next as { timeframe?: unknown }).timeframe;
+        delete (next as { startDate?: unknown }).startDate;
+        delete (next as { endDate?: unknown }).endDate;
+        await db.tasks.put(next);
+        await addToSyncQueue('tasks', next.id, SyncOperationType.UPDATE, next, 0, { ownerUid: userId });
+        touchedIds.add(next.id);
+        unstamped += 1;
+      }
+
       for (const root of touchedRoots) await refreshDerivedBaselines(root);
       const cascadeIds = await withWindowStampedDerived(new Set([...touchedIds, ...touchedRoots]));
       await runBoardCascadeForTasks(cascadeIds);
@@ -168,5 +199,5 @@ export async function healLinkedCounterWindows(
     },
   );
 
-  return { stamped, copied };
+  return { stamped, copied, unstamped };
 }

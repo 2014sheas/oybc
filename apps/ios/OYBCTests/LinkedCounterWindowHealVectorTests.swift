@@ -90,9 +90,14 @@ final class LinkedCounterWindowHealVectorTests: XCTestCase {
         let endDate: String?
     }
 
+    private struct FixUnstamp: Decodable {
+        let taskId: String
+    }
+
     private struct FixPlan: Decodable {
         let stamps: [FixStamp]
         let copies: [FixCopy]
+        let unstamps: [FixUnstamp]
     }
 
     private struct PlanVector: Decodable {
@@ -308,6 +313,8 @@ final class LinkedCounterWindowHealVectorTests: XCTestCase {
         })
         // A mis-placed window-stamped row: copies with no stamp.
         XCTAssertTrue(section.vectors.contains { $0.expected.stamps.isEmpty && !$0.expected.copies.isEmpty })
+        // A stamped compound member: its stamp is cleared (2026-10-16).
+        XCTAssertTrue(section.vectors.contains { !$0.expected.unstamps.isEmpty })
         let sharedBoards = try section.boards.map(makeBoard)
 
         for v in section.vectors {
@@ -326,6 +333,11 @@ final class LinkedCounterWindowHealVectorTests: XCTestCase {
             let expectedCopies = try v.expected.copies.map(makeCopy)
             XCTAssertEqual(plan.stamps, expectedStamps, "\(v.name): stamps")
             XCTAssertEqual(plan.copies, expectedCopies, "\(v.name): copies")
+            XCTAssertEqual(
+                plan.unstamps,
+                v.expected.unstamps.map { BoardSources.LinkedCounterWindowUnstamp(taskId: $0.taskId) },
+                "\(v.name): unstamps"
+            )
             // The pinned copy ids are literal uuidv5 outputs; they must also be
             // the id the wizard / spawn would mint for the same (board, root).
             for copy in plan.copies {
