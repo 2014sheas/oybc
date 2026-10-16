@@ -295,10 +295,12 @@ func buildSharedCounterGroups(
             // board's window the same way (owner rule 2026-10-01). An
             // unplaced hub-linked member — no board, so no window — keeps
             // the lifetime arithmetic.
-            let memberWindow: LinkedCounterWindow? = {
-                guard !BoardSources.isWindowStampedDerived(m), let board else { return nil }
-                return LinkedCounterWindow(startDate: board.startDate, endDate: board.endDate)
-            }()
+            // Context window wins (slice 0): a placed member — stamped or not —
+            // reads its primary board's window; only an unplaced stamped member
+            // falls back to its own stamp inside `resolveLinkedCounterDisplay`.
+            let memberWindow: LinkedCounterWindow? = board.map {
+                LinkedCounterWindow(startDate: $0.startDate, endDate: $0.endDate)
+            }
             let displayed: CountValue
             if isSource, let eventsByTaskId, let board {
                 // A PLACED source (a board-born counter's own square) is an

@@ -319,6 +319,7 @@ final class LinkedCounterWindowHealTests: XCTestCase {
         XCTAssertNil(healed.timeframe); XCTAssertNil(healed.startDate); XCTAssertNil(healed.endDate)
         XCTAssertTrue(healed.createdInWizard, "not a window mark on its own — left as it was")
         XCTAssertEqual(healed.currentCount, 33, "mirrors the root's lifetime count the freeze had skipped")
+        XCTAssertEqual(healed.baseline, 0, "the stamp's window baseline is reset (slice 0)")
         XCTAssertEqual(healed.version, 2)
         XCTAssertEqual(try K.queue(db, type: "tasks", id: "hub").count, 1, "authored: enqueued for peers")
         // Oct 16's compound now completes from the log in ITS window; Oct 13 stays empty.
@@ -327,6 +328,22 @@ final class LinkedCounterWindowHealTests: XCTestCase {
         // Idempotent.
         let again = try heal(db)
         XCTAssertEqual(again.stamped + again.copied + again.unstamped, 0)
+    }
+
+    /// Slice 0: a DRAFT's window is editable and places original ids, so it
+    /// never stamps a hub-linked row.
+    func test_draftBoard_neverStampsAHubLinkedRow() throws {
+        let db = try makeDb()
+        try db.saveTask(K.task("hub", sharedCounterId: "root"))
+        var draft = K.board(id: "D", startDate: juneStart, endDate: juneEnd)
+        draft.status = .draft
+        try db.saveBoard(draft)
+        try db.saveBoardTask(K.placement(id: "btD", boardId: "D", taskId: "hub"))
+
+        let r = try heal(db)
+        XCTAssertEqual(r.stamped + r.copied + r.unstamped, 0)
+        XCTAssertNil(try K.fetchTask(db, "hub")?.startDate)
+        XCTAssertTrue(try K.queue(db, type: "tasks", id: "hub").isEmpty)
     }
 
     func test_perWindowDerivedChild_underADerivedCompound_keepsItsStamp() throws {

@@ -99,6 +99,20 @@ export async function propagateToLinkedRows(
   // Its per-board result map is not needed — credit comes from the pre-read above.
   await runBoardCascadeForTasks([...allChangedTaskIds, ...reachedFrozenIds]);
 
+  // One late-log tail (TASK_WINDOW_REWORK slice 0): an event stamped at an
+  // ended board's `endDate` (`reachOccurredAt !== now`) can land inside a
+  // SEALED containing board's window (a closed weekly around an ended daily).
+  // The live cascade above skips sealed boards, and only the pull path on
+  // the OTHER device re-derived them — so the sealed record diverged across
+  // devices. Re-derive them here, then refresh watchers, exactly as undo
+  // does (iOS twin: `runSharedCounterCascade(lateLogStamp:)`).
+  if (reachOccurredAt != null && reachOccurredAt !== now) {
+    const reached = [...allChangedTaskIds, ...reachedFrozenIds];
+    await reDeriveSealedBoardsForTasks(reached);
+    const touched = await resolveAffectedBoardIds(reached);
+    if (touched.size > 0) await refreshWatchersForBoards(touched);
+  }
+
   return affectedBoards;
 }
 
@@ -371,15 +385,11 @@ export async function decrementSharedCounter(
       // auto-completes — the one-way latch below only fires once a maxCount exists.
       const newSourceCount = quantizeCount(currentCount - eff);
 
-      // 3. ONE-WAY LATCH: decrement does NOT un-complete.
-      const sourceWasCompleted = source.isCompleted;
-      const sourceNowCompleted =
-        sourceWasCompleted || (source.maxCount != null && newSourceCount >= source.maxCount);
-
+      // 3. ONE-WAY LATCH: decrement does NOT un-complete — and never
+      //    completes either (slice 0, iOS parity: a decrement cannot be the
+      //    log that reaches a goal; the latch is left exactly as it was).
       const updatedSource: Partial<Task> = {
         currentCount: newSourceCount,
-        isCompleted: sourceNowCompleted,
-        completedAt: !sourceWasCompleted && sourceNowCompleted ? now : source.completedAt,
         updatedAt: now,
         version: (source.version ?? 0) + 1,
       };

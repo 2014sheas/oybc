@@ -52,6 +52,9 @@ interface MiniBoard {
   isDeleted: boolean;
   /** Optional — a sealed board's seal instant. */
   sealedAt?: string;
+  /** Optional own window (slice 0); `endDate: null` = open-ended, absent = the shared default. */
+  startDate?: string | null;
+  endDate?: string | null;
 }
 
 interface MiniBoardTask {
@@ -142,8 +145,11 @@ function toBoard(m: MiniBoard): Board {
     status: m.status as BoardStatus,
     boardSize: 5,
     timeframe: Timeframe.WEEKLY,
-    startDate: TS,
-    endDate: '2026-02-07T12:00:00.000Z',
+    // A vector board may carry its own window (slice 0: a placed member —
+    // stamped or not — reads its board's window); absent ⇒ the shared
+    // default, `endDate: null` ⇒ open-ended.
+    startDate: m.startDate ?? TS,
+    endDate: !('endDate' in m) ? '2026-02-07T12:00:00.000Z' : m.endDate == null ? undefined : m.endDate,
     centerSquareType: CenterSquareType.FREE,
     isRandomized: false,
     totalTasks: 25,

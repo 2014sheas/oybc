@@ -394,12 +394,21 @@
       "expected": { "displayed": 1, "isCompleted": false }
     },
     {
-      "name": "window-stamped-row-ignores-a-passed-board-window-keeps-its-own-stamp",
-      "note": "A window-stamped row keeps its OWN stamped window (Sep 14-20 gives +3) even when a caller passes a different board window (October): the +9 in October does not count.",
+      "name": "window-stamped-row-takes-a-passed-board-window-over-its-own-stamp",
+      "note": "Context window wins (TASK_WINDOW_REWORK slice 0): a window-stamped row resolves over the board window a caller passes (October: the +9 counts, 9 >= 5), not its own Sep 14-20 stamp. The own stamp is read only when no window is passed (next vector).",
       "task": {"type": "counting", "maxCount": 5, "sharedCounterId": "root-1", "startDate": "2026-09-14T00:00:00.000Z", "endDate": "2026-09-20T23:59:59.999Z", "createdInWizard": true, "baseline": 0, "currentCount": 12, "isCompleted": true},
       "eventsByTaskId": { "root-1": [{ "kind": "increment", "delta": 3, "occurredAt": "2026-09-16T18:00:00.000Z", "isDeleted": false }, { "kind": "increment", "delta": 9, "occurredAt": "2026-10-05T12:00:00.000Z", "isDeleted": false }] },
       "sealedAt": null,
       "window": { "startDate": "2026-10-01T00:00:00.000Z", "endDate": "2026-10-31T23:59:59.999Z" },
+      "expected": { "displayed": 9, "isCompleted": true }
+    },
+    {
+      "name": "window-stamped-row-with-no-window-passed-reads-its-own-stamp",
+      "note": "The context-less fallback (kept until slice 5): no board window, so the row reads its own Sep 14-20 stamp — +3 only, not met.",
+      "task": {"type": "counting", "maxCount": 5, "sharedCounterId": "root-1", "startDate": "2026-09-14T00:00:00.000Z", "endDate": "2026-09-20T23:59:59.999Z", "createdInWizard": true, "baseline": 0, "currentCount": 12, "isCompleted": true},
+      "eventsByTaskId": { "root-1": [{ "kind": "increment", "delta": 3, "occurredAt": "2026-09-16T18:00:00.000Z", "isDeleted": false }, { "kind": "increment", "delta": 9, "occurredAt": "2026-10-05T12:00:00.000Z", "isDeleted": false }] },
+      "sealedAt": null,
+      "window": null,
       "expected": { "displayed": 3, "isCompleted": false }
     }
   ],

@@ -141,6 +141,7 @@ describe('healLinkedCounterWindows', () => {
     expect(h.endDate).toBeUndefined();
     expect(h.createdInWizard).toBe(true);
     expect(h.currentCount).toBe(33);
+    expect(h.baseline).toBe(0);
     expect(h.version).toBe(3);
     expect(await queued('tasks')).toEqual(['H']);
     // Oct 16's compound now completes from the log in ITS window; Oct 13 stays empty.

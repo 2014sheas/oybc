@@ -345,16 +345,20 @@ func resolveDerivedCounterWindowState(
 ) -> TaskWindowState? {
     guard task.type == .counting, let rootId = task.sharedCounterId else { return nil }
     let rootEvents = eventsByTaskId[rootId] ?? []
+    // Context window wins (docs/TASK_WINDOW_REWORK.md slice 0, 2026-10-16): a
+    // BOARD window, when given, is the window for EVERY linked row — stamped
+    // or hub-linked. The row's own stamp is read only by a context-less
+    // caller; that fallback is retired in slice 5.
+    if let windowStart {
+        return windowStampedDerivedState(
+            startDate: windowStart, endDate: windowEnd, maxCount: task.maxCount,
+            countKind: task.countKind, rootEvents: rootEvents, sealedBound: nil
+        )
+    }
     if BoardSources.isWindowStampedDerived(task) {
         return resolveWindowStampedDerivedState(task: task, rootEvents: rootEvents)
     }
-    // Owner rule 2026-10-01: a linked row that is NOT window-stamped resolves
-    // over the CONTEXT window — the placing board's — never its lifetime latch.
-    guard let windowStart else { return nil }
-    return windowStampedDerivedState(
-        startDate: windowStart, endDate: windowEnd, maxCount: task.maxCount,
-        countKind: task.countKind, rootEvents: rootEvents, sealedBound: nil
-    )
+    return nil
 }
 
 /// What a LINKED (derived) counting square or row SHOWS: its displayed count
@@ -387,8 +391,9 @@ func resolveDerivedCounterWindowState(
 ///   - task: The linked counting task being rendered.
 ///   - eventsByTaskId: Non-deleted events grouped by `taskId`, or `nil`.
 ///   - sealedAt: The row's board `sealedAt`, when that board is sealed.
-///   - window: The placing board's window, for a row that is not
-///     window-stamped; ignored for a window-stamped row.
+///   - window: The placing board's window. When given it is THE window for
+///     any linked row, stamped or not (slice 0); a stamped row reads its own
+///     stamp only without one.
 /// - Returns: The displayed count and completion.
 func resolveLinkedCounterDisplay(
     task: Task,
@@ -398,12 +403,14 @@ func resolveLinkedCounterDisplay(
 ) -> DeriveDisplayedCountResult {
     if let eventsByTaskId, task.type == .counting, let rootId = task.sharedCounterId,
        BoardSources.isWindowStampedDerived(task) || window != nil {
-        let stamped = BoardSources.isWindowStampedDerived(task)
         // An unparseable `sealedAt` applies no bound (parsed once, not per event).
         let sealedBound = sealedAt.flatMap { DateFormatting.parseISO($0) }
+        // Context window wins (slice 0): the placing board's window, when
+        // given, applies to a stamped row too; the own stamp is the
+        // context-less fallback only.
         let state = windowStampedDerivedState(
-            startDate: stamped ? task.startDate : window?.startDate,
-            endDate: stamped ? task.endDate : window?.endDate,
+            startDate: window?.startDate ?? task.startDate,
+            endDate: window != nil ? window?.endDate : task.endDate,
             maxCount: task.maxCount,
             countKind: task.countKind,
             rootEvents: eventsByTaskId[rootId] ?? [],

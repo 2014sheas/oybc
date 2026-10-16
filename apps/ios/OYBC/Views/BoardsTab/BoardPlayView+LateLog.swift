@@ -130,7 +130,8 @@ extension BoardPlayView {
             let children = viewModel.compoundChildrenByCompound[task.id] ?? []
             let parts: [LateLogCompoundPart] = children.compactMap { link in
                 guard let child = viewModel.taskMap[link.childTaskId], !child.isDeleted else { return nil }
-                let isStageable = child.type == .normal || (child.type == .counting && child.sharedCounterId == nil)
+                // A linked counting child is stageable too (slice 0): its +1 logs on its root.
+                let isStageable = child.type == .normal || child.type == .counting
                 let alreadyDone: Bool = {
                     if child.type == .compound {
                         return CompoundEvaluation.evaluate(

@@ -20,6 +20,7 @@ import {
   LateLogError,
 } from '../lateLog';
 import { sealBoard } from '../sealing';
+import { incrementSharedCounter } from '../tasks.sharedCounter';
 
 /**
  * Board Edit redesign slice 4 (T2, D7/D9) — direct late log on a CLOSED
@@ -611,5 +612,83 @@ describe('lateLogCompoundParts', () => {
     await expect(
       lateLogCompoundParts(DAILY, compoundId, [{ childTaskId: normalChildId, kind: 'completion' }], FRIDAY_NOW),
     ).rejects.toBeInstanceOf(LateLogError);
+  });
+});
+
+// ─── TASK_WINDOW_REWORK slice 0 ─────────────────────────────────────────────
+
+describe('slice 0: one late-log tail', () => {
+  it('a counter log from an ended, unsealed daily re-derives the SEALED weekly around it (not only on pull)', async () => {
+    // Root counter placed on the daily (ended Jul 1, unsealed) and on the weekly
+    // (Jun 29 – Jul 5, closed Jul 6). The log is stamped at the daily's endDate,
+    // which lies inside the sealed weekly's window and before its seal.
+    const ROOT = 'root-run';
+    await seedCountingTask(ROOT, 1, { isCounter: true });
+    await seedBoard(DAILY);
+    await seedBoard(WEEKLY, { timeframe: Timeframe.WEEKLY, startDate: WEEKLY_START, endDate: WEEKLY_END });
+    await placeTask(DAILY, ROOT, 0);
+    await placeTask(WEEKLY, ROOT, 0);
+    await sealBoard(WEEKLY, '2026-07-06T00:00:01.000Z');
+    expect((await db.boards.get(WEEKLY))?.sealedCompletedCells).toEqual([]);
+
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-07-08T18:00:00.000Z'));
+    try {
+      await incrementSharedCounter(ROOT, 1, DAILY);
+    } finally {
+      vi.useRealTimers();
+    }
+
+    const [ev] = await eventsFor(ROOT);
+    expect(ev.occurredAt).toBe(DAILY_END);
+    expect((await db.boards.get(WEEKLY))?.sealedCompletedCells).toEqual([0]);
+    expect((await db.boards.get(DAILY))?.completedTasks).toBe(1);
+  });
+});
+
+describe('slice 0: closed-board compound late log counts a linked counting child', () => {
+  it('stages the +1 on the child\'s ROOT, meets the rule, and the compound cell turns green', async () => {
+    const ROOT = 'root-bike';
+    const LINKED = 'bike-10';
+    const COMPOUND = 'biking';
+    await seedCountingTask(ROOT, 100, { isCounter: true });
+    await seedCountingTask(LINKED, 1, { sharedCounterId: ROOT, baseline: 0, createdInWizard: true });
+    const compound: Task = {
+      id: COMPOUND,
+      userId: USER,
+      title: 'Biking',
+      type: TaskType.COMPOUND,
+      operator: OperatorType.AND,
+      isCompleted: false,
+      totalCompletions: 0,
+      totalInstances: 1,
+      createdAt: DAILY_START,
+      updatedAt: DAILY_START,
+      version: 1,
+      isDeleted: false,
+    };
+    await db.tasks.add(compound);
+    const link: CompoundChild = {
+      id: 'link-bike',
+      compoundTaskId: COMPOUND,
+      childTaskId: LINKED,
+      childIndex: 0,
+      createdAt: DAILY_START,
+      updatedAt: DAILY_START,
+      version: 1,
+      isDeleted: false,
+    };
+    await db.compoundChildren.add(link);
+    await seedBoard(DAILY);
+    await placeTask(DAILY, COMPOUND, 0);
+    await sealBoard(DAILY, DAILY_SEALED_AT);
+
+    await lateLogCompoundParts(DAILY, COMPOUND, [{ childTaskId: LINKED, kind: 'increment', delta: 1 }], FRIDAY_NOW);
+
+    const rootEvents = await eventsFor(ROOT);
+    expect(rootEvents).toHaveLength(1);
+    expect(rootEvents[0]).toMatchObject({ delta: 1, boardId: DAILY, occurredAt: DAILY_END });
+    expect(await eventsFor(LINKED)).toHaveLength(0);
+    expect((await db.boards.get(DAILY))?.sealedCompletedCells).toEqual([0]);
   });
 });

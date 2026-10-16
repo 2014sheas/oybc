@@ -97,10 +97,15 @@ func selectClosedBoardLateLogs(
     sealedAt: String?,
     taskId: String
 ) -> [TaskEvent] {
-    guard let end = endDate.flatMap(DateFormatting.parseISO),
-          let sealed = sealedAt.flatMap(DateFormatting.parseISO) else { return [] }
-    let endMs = (end.timeIntervalSince1970 * 1000).rounded()
-    let sealedMs = sealed.timeIntervalSince1970 * 1000
+    // Provenance, not an exact instant (TASK_WINDOW_REWORK slice 0): a late
+    // log is an event this board authored (`boardId`) AFTER its window ended
+    // (`createdAt > endDate`). The old `occurredAt == endDate` match broke
+    // across time zones and `createdAt > sealedAt` missed a log made on an
+    // ended-but-unsealed board that was closed afterwards. `sealedAt` is no
+    // longer read (kept in the signature for the call sites).
+    _ = sealedAt
+    guard let end = endDate.flatMap(DateFormatting.parseISO) else { return [] }
+    let endMs = end.timeIntervalSince1970 * 1000
 
     func ms(_ iso: String) -> Double? {
         DateFormatting.parseISO(iso).map { ($0.timeIntervalSince1970 * 1000).rounded() }
@@ -108,9 +113,8 @@ func selectClosedBoardLateLogs(
 
     let lateLogs = events.filter { e in
         guard !e.isDeleted, e.taskId == taskId, e.boardId == boardId else { return false }
-        guard let occurred = ms(e.occurredAt), occurred == endMs else { return false }
         guard let created = DateFormatting.parseISO(e.createdAt) else { return false }
-        return created.timeIntervalSince1970 * 1000 > sealedMs
+        return created.timeIntervalSince1970 * 1000 > endMs
     }
     return lateLogs.sorted { a, b in
         let ca = ms(a.createdAt) ?? 0

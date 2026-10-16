@@ -248,6 +248,12 @@ export interface LateLogCompoundAction {
   kind: 'completion' | 'increment';
   /** Required when `kind === 'increment'`; a positive 2dp number. */
   delta?: number;
+  /**
+   * For a LINKED counting child (slice 0): the shared-counter ROOT the
+   * increment is written on (a linked row owns no events). Filled by the
+   * planner; the sheet never sets it.
+   */
+  eventTaskId?: string;
 }
 
 /**
@@ -259,10 +265,10 @@ export interface LateLogCompoundAction {
  * ({@link previewLateLogCompoundRule} is the sheet's read-only twin) —
  * otherwise it throws `LateLogError('ruleNotMet')` and writes nothing.
  *
- * Non-event-owning children (a derived counter, or a nested compound) are
- * read-only and always skipped — matching the WC compound-child-fallback
- * rule. A plain COUNTING child that is ITSELF a shared-counter link is also
- * skipped here (out of scope for this sheet — vanishingly rare nesting).
+ * A nested compound child is read-only and skipped (the WC compound-child-
+ * fallback rule). A LINKED counting child (slice 0) logs on its ROOT, like a
+ * placed linked square's `lateLogIncrement`; before, it was skipped and the
+ * compound's rule could never be met from this sheet.
  *
  * @param boardId        The closed board the log is made from.
  * @param compoundTaskId The compound task placed on it.
@@ -295,6 +301,30 @@ export async function lateLogCompoundParts(
     for (const action of planned) {
       if (action.kind === 'completion') {
         await appendCompletionEvent(action.childTaskId, boardId, now, occurredAt);
+      } else if (action.eventTaskId) {
+        // A linked child (slice 0): the increment is the ROOT's, exactly as
+        // `lateLogIncrement` writes it for a placed linked square.
+        const rootId = action.eventTaskId;
+        const root = await db.tasks.get(rootId);
+        if (!root || root.isDeleted) continue;
+        const delta = action.delta as number;
+        const newRootCount = quantizeCount((root.currentCount ?? 0) + delta);
+        const rootWasCompleted = root.isCompleted;
+        const rootNowCompleted =
+          rootWasCompleted || (root.maxCount != null && newRootCount >= root.maxCount);
+        await db.tasks.update(rootId, {
+          currentCount: newRootCount,
+          isCompleted: rootNowCompleted,
+          completedAt: !rootWasCompleted && rootNowCompleted ? now : root.completedAt,
+          updatedAt: now,
+          version: (root.version ?? 0) + 1,
+        });
+        const savedRoot = await db.tasks.get(rootId);
+        if (savedRoot) await addToSyncQueue('tasks', rootId, SyncOperationType.UPDATE, savedRoot, 0);
+        await insertIncrementEventRaw(rootId, delta, boardId, now, occurredAt);
+        await refreshDerivedBaselines(rootId);
+        await propagateToLinkedRows(rootId, newRootCount, now, occurredAt);
+        touchedTaskIds.add(rootId);
       } else {
         await appendIncrementEvent(action.childTaskId, action.delta as number, boardId, now, occurredAt);
       }
@@ -326,16 +356,26 @@ async function planCompoundActions(
   for (const action of actions) {
     if (!childIds.has(action.childTaskId)) continue;
     const child: Task | undefined = await db.tasks.get(action.childTaskId);
-    if (!child || child.isDeleted || !isEventOwningTask(child)) continue;
+    if (!child || child.isDeleted) continue;
+    // A LINKED counting child logs on its root (slice 0); everything else
+    // must own its events.
+    const linkedRoot = child.type === TaskType.COUNTING && child.sharedCounterId ? child.sharedCounterId : null;
+    if (!linkedRoot && !isEventOwningTask(child)) continue;
     if (action.kind === 'completion') {
       if (child.type !== TaskType.NORMAL) continue;
       const events = await db.taskEvents.where('taskId').equals(child.id).toArray();
       if (hasCompletionInSealedWindow(events, board.startDate, board.endDate, board.sealedAt as string)) continue;
       planned.push({ childTaskId: child.id, kind: 'completion' });
     } else {
-      if (child.type !== TaskType.COUNTING || child.sharedCounterId != null) continue;
+      if (child.type !== TaskType.COUNTING) continue;
       if (!isQuantizedCount(action.delta as number) || (action.delta as number) <= 0) continue;
-      planned.push({ childTaskId: child.id, kind: 'increment', delta: action.delta });
+      if (linkedRoot) {
+        const root = await db.tasks.get(linkedRoot);
+        if (!root || root.isDeleted) continue;
+        planned.push({ childTaskId: child.id, kind: 'increment', delta: action.delta, eventTaskId: linkedRoot });
+      } else {
+        planned.push({ childTaskId: child.id, kind: 'increment', delta: action.delta });
+      }
     }
   }
   return planned;
@@ -371,10 +411,12 @@ async function isCompoundRuleMetOnClosedBoard(
     (eventsByTaskId[e.taskId] ??= []).push(e);
   }
   planned.forEach((a, i) => {
-    (eventsByTaskId[a.childTaskId] ??= []).push({
+    // A linked child's staged increment lands on its ROOT, where the kernel reads it.
+    const eventTaskId = a.eventTaskId ?? a.childTaskId;
+    (eventsByTaskId[eventTaskId] ??= []).push({
       id: `staged-${i}`,
       userId: compound.userId,
-      taskId: a.childTaskId,
+      taskId: eventTaskId,
       kind: a.kind,
       ...(a.kind === 'increment' ? { delta: a.delta } : {}),
       occurredAt,

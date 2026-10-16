@@ -279,6 +279,9 @@ extension AppDatabase {
         let completionIds: Set<String>
         /// Plain COUNTING direct children to log `+1` on (D7).
         let incrementIds: Set<String>
+        /// LINKED counting direct children (slice 0) → the ROOT the `+1` is
+        /// written on (a linked row owns no events).
+        let linkedIncrementRoots: [String: String]
         /// The compound's rule under the staged state.
         let isRuleMet: Bool
     }
@@ -319,16 +322,22 @@ extension AppDatabase {
         let ownChildIds = Set((childrenByCompound[compound.id] ?? []).filter { !$0.isDeleted }.map(\.childTaskId))
         var completionIds = Set<String>()
         var incrementIds = Set<String>()
+        var linkedIncrementRoots: [String: String] = [:]
         for id in requestedChildIds where ownChildIds.contains(id) {
-            guard let child = taskById[id], !child.isDeleted, isEventOwningTask(child) else { continue }
+            guard let child = taskById[id], !child.isDeleted else { continue }
             switch child.type {
-            case .normal:
+            case .normal where isEventOwningTask(child):
                 let state = resolveTaskWindowState(
                     task: child, events: bounded[id] ?? [], windowStart: board.startDate, windowEnd: boardWindowEnd(board)
                 )
                 if !state.isCompleted { completionIds.insert(id) }
-            case .counting where child.sharedCounterId == nil:
+            case .counting where child.sharedCounterId == nil && isEventOwningTask(child):
                 incrementIds.insert(id)
+            case .counting:
+                // A LINKED counting child (slice 0) logs on its root, where the
+                // kernel reads it over this board's window.
+                guard let root = child.sharedCounterId, let rootTask = taskById[root], !rootTask.isDeleted else { continue }
+                linkedIncrementRoots[id] = root
             default:
                 continue
             }
@@ -344,6 +353,14 @@ extension AppDatabase {
                 lastSyncedAt: nil, version: 1, isDeleted: false, deletedAt: nil
             ))
         }
+        for (id, root) in linkedIncrementRoots {
+            staged[root, default: []].append(TaskEvent(
+                id: "staged-\(id)", userId: compound.userId, taskId: root,
+                kind: .increment, delta: 1,
+                occurredAt: occurredAt, boardId: board.id, createdAt: now, updatedAt: now,
+                lastSyncedAt: nil, version: 1, isDeleted: false, deletedAt: nil
+            ))
+        }
         let met = CompoundEvaluation.evaluate(
             compound: compound,
             childrenByCompound: childrenByCompound,
@@ -352,7 +369,10 @@ extension AppDatabase {
                 windowStart: board.startDate, windowEnd: boardWindowEnd(board), eventsByTaskId: staged
             )
         )
-        return CompoundLateLogPlan(completionIds: completionIds, incrementIds: incrementIds, isRuleMet: met)
+        return CompoundLateLogPlan(
+            completionIds: completionIds, incrementIds: incrementIds,
+            linkedIncrementRoots: linkedIncrementRoots, isRuleMet: met
+        )
     }
 
     /// Commits the staged parts of a COMPOUND square on a closed board —
@@ -403,7 +423,17 @@ extension AppDatabase {
             for id in plan.incrementIds {
                 try Self.appendIncrementEvent(db: db, taskId: id, delta: 1, boardId: boardId, now: now, occurredAt: occurredAt)
             }
-            let touched = plan.completionIds.union(plan.incrementIds).union([compoundTaskId])
+            var touched = plan.completionIds.union(plan.incrementIds).union([compoundTaskId])
+            // A linked child (slice 0): the `+1` is the ROOT's, exactly as
+            // `lateLogIncrement` writes it for a placed linked square.
+            for (childId, root) in plan.linkedIncrementRoots.sorted(by: { $0.key < $1.key }) {
+                try Self.appendIncrementEvent(db: db, taskId: root, delta: 1, boardId: boardId, now: now, occurredAt: occurredAt)
+                try Self.refreshDerivedBaselines(db: db, rootTaskId: root)
+                let linkedIds = try Self.propagateRootLogToLinkedRows(
+                    db: db, rootId: root, reachOccurredAt: occurredAt, now: now
+                )
+                touched.formUnion(linkedIds); touched.insert(root); touched.insert(childId)
+            }
             try Self.reDeriveAfterLateLogWrite(db: db, changedTaskIds: touched, now: now, lateLogStamp: occurredAt)
         }
     }

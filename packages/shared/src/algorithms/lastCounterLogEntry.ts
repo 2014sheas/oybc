@@ -117,18 +117,23 @@ export function selectClosedBoardLateLogs(
   board: ClosedBoardLateLogBoard,
   taskId: string,
 ): TaskEvent[] {
-  if (board.sealedAt == null || board.endDate == null) return [];
+  // Provenance, not an exact instant (TASK_WINDOW_REWORK slice 0): a late log
+  // is an event this board authored (`boardId`) AFTER its window ended
+  // (`createdAt > endDate`). The old `occurredAt === endDate` match broke
+  // across time zones (the stamp is re-encoded in the writing device's zone)
+  // and `createdAt > sealedAt` missed a log made on an ended-but-unsealed
+  // board that was closed afterwards. A sealed board authors no event, so
+  // nothing after the seal is not a late log.
+  if (board.endDate == null) return [];
   const endMs = new Date(board.endDate).getTime();
-  const sealedMs = new Date(board.sealedAt).getTime();
-  if (Number.isNaN(endMs) || Number.isNaN(sealedMs)) return [];
+  if (Number.isNaN(endMs)) return [];
 
   const lateLogs = events.filter(
     (e) =>
       !e.isDeleted &&
       e.taskId === taskId &&
       e.boardId === board.id &&
-      new Date(e.occurredAt).getTime() === endMs &&
-      new Date(e.createdAt).getTime() > sealedMs,
+      new Date(e.createdAt).getTime() > endMs,
   );
   return lateLogs.sort((a, b) => {
     const byCreated = new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();

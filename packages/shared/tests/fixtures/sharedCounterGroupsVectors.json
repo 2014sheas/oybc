@@ -827,7 +827,9 @@
           "id": "b-wk",
           "name": "Board wk",
           "status": "active",
-          "isDeleted": false
+          "isDeleted": false,
+          "startDate": "2026-09-14T00:00:00.000Z",
+          "endDate": "2026-09-20T23:59:59.999Z"
         }
       ],
       "boardTasks": [
@@ -932,7 +934,9 @@
           "name": "Board ind",
           "status": "completed",
           "isDeleted": false,
-          "sealedAt": "2026-09-22T03:00:00.000Z"
+          "sealedAt": "2026-09-22T03:00:00.000Z",
+          "startDate": "2026-09-14T00:00:00.000Z",
+          "endDate": null
         }
       ],
       "boardTasks": [
@@ -1137,7 +1141,9 @@
           "id": "b-wk",
           "name": "Board wk",
           "status": "active",
-          "isDeleted": false
+          "isDeleted": false,
+          "startDate": "2026-09-14T00:00:00.000Z",
+          "endDate": "2026-09-20T23:59:59.999Z"
         }
       ],
       "boardTasks": [

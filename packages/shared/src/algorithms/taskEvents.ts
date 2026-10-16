@@ -309,6 +309,7 @@ export interface LinkedCounterWindow {
  *                       absent for a context-less caller.
  * @returns The derived window state, or `null` when `task` is not a linked
  *          counter, or is a non-window-stamped one with no context window.
+ *          Precedence (slice 0): context window → own stamp → `null`.
  */
 export function resolveDerivedCounterWindowState(
   task: Task,
@@ -317,16 +318,22 @@ export function resolveDerivedCounterWindowState(
 ): TaskWindowState | null {
   if (task.type !== TaskType.COUNTING || !task.sharedCounterId) return null;
   const rootEvents = eventsByTaskId[task.sharedCounterId] ?? [];
+  // Context window wins (docs/TASK_WINDOW_REWORK.md slice 0, 2026-10-16): a
+  // BOARD window, when given, is the window for EVERY linked row — stamped
+  // or hub-linked. The row's own stamp is read only by a context-less
+  // caller (library, compound Task Detail, `computeTaskCachesFromEvents`,
+  // credits for unplaced compounds, a hub card with no board); the stamped
+  // fallback is retired in slice 5.
+  if (contextWindow?.windowStart != null) {
+    return resolveWindowStampedDerivedState(
+      { startDate: contextWindow.windowStart, endDate: contextWindow.windowEnd, maxCount: task.maxCount, countKind: task.countKind },
+      rootEvents,
+    );
+  }
   if (isWindowStampedDerived(task)) {
     return resolveWindowStampedDerivedState(task, rootEvents);
   }
-  // Owner rule 2026-10-01: a linked row that is NOT window-stamped resolves
-  // over the CONTEXT window — the placing board's — never its lifetime latch.
-  if (contextWindow?.windowStart == null) return null;
-  return resolveWindowStampedDerivedState(
-    { startDate: contextWindow.windowStart, endDate: contextWindow.windowEnd, maxCount: task.maxCount, countKind: task.countKind },
-    rootEvents,
-  );
+  return null;
 }
 
 /**
@@ -359,8 +366,9 @@ export function resolveDerivedCounterWindowState(
  *                       workspace, or at least the root's), or `null`/`undefined`
  *                       when the caller has none.
  * @param sealedAt       The row's board `sealedAt`, when that board is sealed.
- * @param window         The placing board's window, for a row that is not
- *                       window-stamped; ignored for a window-stamped row.
+ * @param window         The placing board's window. When given it is THE
+ *                       window for any linked row, stamped or not (slice 0);
+ *                       a stamped row reads its own stamp only without one.
  * @returns `{ displayed, isCompleted }`.
  */
 export function resolveLinkedCounterDisplay(
@@ -371,14 +379,17 @@ export function resolveLinkedCounterDisplay(
 ): { displayed: number; isCompleted: boolean } {
   if (eventsByTaskId && task.type === TaskType.COUNTING && task.sharedCounterId) {
     const stamped = isWindowStampedDerived(task);
-    if (stamped || window) {
+    if (window || stamped) {
       let rootEvents = eventsByTaskId[task.sharedCounterId] ?? [];
       const sealedAtMs = sealedAt ? new Date(sealedAt).getTime() : NaN;
       if (!Number.isNaN(sealedAtMs)) {
         rootEvents = rootEvents.filter((e) => new Date(e.occurredAt).getTime() <= sealedAtMs);
       }
+      // Context window wins (slice 0): the placing board's window, when
+      // given, applies to a stamped row too; the own stamp is the
+      // context-less fallback only.
       const { count, isCompleted } = resolveWindowStampedDerivedState(
-        stamped ? task : { startDate: window!.startDate, endDate: window!.endDate, maxCount: task.maxCount, countKind: task.countKind },
+        window ? { startDate: window.startDate, endDate: window.endDate, maxCount: task.maxCount, countKind: task.countKind } : task,
         rootEvents,
       );
       return { displayed: count, isCompleted };

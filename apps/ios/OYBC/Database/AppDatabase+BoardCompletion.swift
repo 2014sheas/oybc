@@ -191,8 +191,8 @@ extension AppDatabase {
             if let boardId, try Board.fetchOne(db, key: boardId)?.sealedAt != nil { return [:] }
             // Non-event-owning (or missing) child: nothing is authored (see the rule above).
             guard let child = try Task.fetchOne(db, key: childTaskId), isEventOwningTask(child) else { return [:] }
+            let occurredAt = try Self.lateLogStampForBoard(db: db, boardId: boardId, now: now)
             if desiredCompleted {
-                let occurredAt = try Self.lateLogStampForBoard(db: db, boardId: boardId, now: now)
                 try Self.appendCompletionEvent(
                     db: db, taskId: childTaskId, boardId: boardId, now: now, occurredAt: occurredAt
                 )
@@ -202,11 +202,13 @@ extension AppDatabase {
                 )
             }
 
-            return try Self.runBoardCascadeForTaskWithResults(
+            let results = try Self.runBoardCascadeForTaskWithResults(
                 db: db,
                 changedTaskId: childTaskId,
                 now: now
             )
+            try Self.finishLateStampedWrite(db: db, childTaskId: childTaskId, occurredAt: occurredAt, now: now, results: results)
+            return results
         }
     }
 
@@ -254,7 +256,22 @@ extension AppDatabase {
             try Self.appendIncrementEvent(
                 db: db, taskId: childTaskId, delta: gated, boardId: boardId, now: now, occurredAt: occurredAt
             )
-            return try Self.runBoardCascadeForTaskWithResults(db: db, changedTaskId: childTaskId, now: now)
+            let results = try Self.runBoardCascadeForTaskWithResults(db: db, changedTaskId: childTaskId, now: now)
+            try Self.finishLateStampedWrite(db: db, childTaskId: childTaskId, occurredAt: occurredAt, now: now, results: results)
+            return results
         }
+    }
+
+    /// One late-log tail (TASK_WINDOW_REWORK slice 0): a compound-child
+    /// fallback whose event was stamped at an ended board's `endDate` may have
+    /// landed inside a SEALED containing board's window; the live cascade skips
+    /// sealed boards, so re-derive them and refresh watchers — the same tail
+    /// undo and the shared-counter paths run. A no-op for a `now`-stamped write.
+    private static func finishLateStampedWrite(
+        db: Database, childTaskId: String, occurredAt: String, now: String, results: [String: CascadeBoardResult]
+    ) throws {
+        guard occurredAt != now else { return }
+        try reDeriveSealedBoards(db: db, changedTaskIds: [childTaskId])
+        try refreshWatchersForBoards(db: db, changedBoardIds: Set(results.keys), now: now)
     }
 }

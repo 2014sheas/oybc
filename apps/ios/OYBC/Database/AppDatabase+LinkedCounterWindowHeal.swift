@@ -76,7 +76,10 @@ extension AppDatabase {
         db: Database, userId: String, now: String
     ) throws -> (stamped: Int, copied: Int, unstamped: Int) {
         let tasks = try Task.filter(Column("userId") == userId).fetchAll(db)
+        // A DRAFT's window is editable and places original ids (mint is
+        // active-only), so it never stamps anything (slice 0).
         let boards = try Board.filter(Column("userId") == userId).fetchAll(db)
+            .filter { $0.status != .draft }
         let boardIds = Set(boards.map(\.id))
         let boardTasks = try BoardTask.filter(Column("isDeleted") == false).fetchAll(db)
             .filter { boardIds.contains($0.boardId) }
@@ -178,6 +181,10 @@ extension AppDatabase {
             task.timeframe = nil
             task.startDate = nil
             task.endDate = nil
+            // The stamp had overwritten the row's link baseline with the
+            // window baseline; a hub-linked row's lifetime display is
+            // `currentCount − baseline`, so reset it (re-link semantics).
+            task.baseline = 0
             if let root = task.sharedCounterId,
                let rootTask = try tasksById[root] ?? Task.fetchOne(db, key: root),
                let lifetime = rootTask.currentCount {
