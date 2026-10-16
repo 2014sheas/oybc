@@ -150,7 +150,7 @@ The net-new marketing landing + auth, in `apps/web/src/components/signedOut/`:
 
 `AuthGate.tsx` now renders `SignedOutHome` when signed out (it replaced the old
 inline login form). The "On Your Bingo Card" wordmark is the correct app-name
-expansion — the handoff prototype's "Own Your Bingo Card" is a typo; don't copy it.
+expansion — never "Own Your Bingo Card" (an old typo in the handoff prototype, since fixed).
 
 ## Phase 2a — App shell + nav (in review)
 

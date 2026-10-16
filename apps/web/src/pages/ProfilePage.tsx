@@ -224,7 +224,6 @@ export function ProfilePage(): React.ReactElement {
               </div>
               <div className={styles.tileBody}>
                 <h2 className={`${styles.tileTitle} ${styles.tileTitleMuted}`}>No streak yet</h2>
-                <p className={styles.tileCaption}>Clear a board to start one.</p>
               </div>
             </>
           ) : (

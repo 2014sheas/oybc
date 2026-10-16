@@ -61,7 +61,7 @@ struct ClosingOutBannerView: View {
     }
 }
 
-/// One closing-out board row: name + "Ended <window> — anything left to log?"
+/// One closing-out board row: name + "Ended <window>"
 /// + the Close out action. Tapping anywhere else on the row opens the board.
 private struct ClosingOutBoardRow: View {
     let board: Board
@@ -83,7 +83,7 @@ private struct ClosingOutBoardRow: View {
                     .font(.risoHead(14, .extraBold))
                     .foregroundStyle(Color.risoInk)
                     .lineLimit(1)
-                Text("Ended \(windowLabel) — anything left to log?")
+                Text("Ended \(windowLabel)")
                     .font(.risoBody(11.5, .semibold))
                     .foregroundStyle(Color.risoMuted)
                     .lineLimit(2)

@@ -50,10 +50,8 @@ export interface CounterLogToastProps {
  * Two copy variants, selected by whether `boardNames` is a non-empty array:
  *   - Standalone (Hub/Detail, no `boardNames`): "Logged +{N} {unit}" /
  *     "Removed {N} {unit}".
- *   - Credited (board-play, R3 copy contract): "+{N} {counterName} — also
- *     counted on {board list}." / "−{N} {counterName} — also removed from
- *     {board list}." — board list is a plain comma-join, unchanged from the
- *     retired `RisoCreditedToast`.
+ *   - Credited (board-play, R3 copy contract): "+{N} {counterName}" /
+ *     "−{N} {counterName}".
  *
  * R3 retired the board-play-only `components/play/RisoCreditedToast.tsx`
  * (no Undo, fixed copy, 2.6s dismiss) in favor of extending this component —

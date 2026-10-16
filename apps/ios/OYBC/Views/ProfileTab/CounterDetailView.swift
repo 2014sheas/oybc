@@ -911,7 +911,7 @@ struct CounterDetailContent: View {
             return "✓ Goal met · \(formatCount(member.over, kind: kind)) over"
         }
         if member.met {
-            return "✓ Goal met this window"
+            return "✓ Goal met"
         }
         let remaining = max(0, member.goal - member.logged)
         let base = "\(formatCountWithUnit(remaining, kind: kind, unit: unitLabel)) to go"

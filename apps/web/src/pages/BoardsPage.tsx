@@ -212,11 +212,6 @@ export function BoardsPage(): React.ReactElement {
           <h3 className={styles.emptyTitle}>
             {allBoards.length === 0 ? 'Nothing here yet.' : `No ${activeFilter} boards.`}
           </h3>
-          <p className={styles.emptyText}>
-            {allBoards.length === 0
-              ? 'Start one — pick a timeframe, drop in your tasks, and print the board.'
-              : 'Switch filters, or start a new board.'}
-          </p>
           <RisoButton
             kind="primary"
             icon={<RisoIcon name="plus" size={16} />}

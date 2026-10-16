@@ -72,7 +72,7 @@ export function ClosingOutBanner({
                   {b.name}
                 </button>
                 <span className={styles.closingBannerWindow}>
-                  Ended {formatTimeframeLabel(b.timeframe, b.startDate)} — anything left to log?
+                  Ended {formatTimeframeLabel(b.timeframe, b.startDate)}
                 </span>
               </div>
               <button

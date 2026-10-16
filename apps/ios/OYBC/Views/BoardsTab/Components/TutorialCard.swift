@@ -44,13 +44,6 @@ struct TutorialCard: View {
                     .accessibilityLabel("Hide tutorial")
                 }
 
-                Text(complete
-                     ? "Every square cleared. Replay it any time from settings."
-                     : "Learn OYBC by playing it — eight squares, eight key moves.")
-                    .font(.risoBody(13, .semibold))
-                    .foregroundStyle(Color.risoInkStatic.opacity(0.75))
-                    .fixedSize(horizontal: false, vertical: true)
-                    .frame(maxWidth: .infinity, alignment: .leading)
 
                 // Progress bar + count
                 HStack(spacing: 8) {

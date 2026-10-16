@@ -170,7 +170,7 @@
   font-size: 16px;
   color: var(--riso-muted);
 }
-/* Small sub-caption inside a stat card ("permanent record"). */
+/* Small sub-caption inside a stat card (the ended date). */
 .statSub {
   font-family: var(--riso-font-body);
   font-size: 10px;

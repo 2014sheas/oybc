@@ -2,7 +2,7 @@ import SwiftUI
 
 /// Special-type creation panel for the Riso wizard Tasks step.
 ///
-/// Collapsed state: dashed button "＋ Add a counting, compound or achievement task"
+/// Collapsed state: dashed button "＋ Counting · Compound · Achievement"
 /// Expanded state: type chips (Counting / Compound / Achievement) + type-specific fields.
 ///
 /// Counting: Action / Goal / Unit + live "reads as **Run 5 km**" preview.
@@ -147,8 +147,8 @@ struct RisoSpecialTaskPanel: View {
                     .font(.risoHead(15, .extraBold))
                     .foregroundStyle(Color.risoBlue)
                 Text(achievementAllowed
-                        ? "Add a counting, compound or achievement task"
-                        : "Add a counting or compound task")
+                        ? "Counting · Compound · Achievement"
+                        : "Counting · Compound")
                     .font(.risoHead(13, .bold))
                     .foregroundStyle(Color.risoInk)
                     .multilineTextAlignment(.leading)

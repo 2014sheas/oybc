@@ -47,7 +47,7 @@ export interface SpecialTaskPanelProps {
  * point for the wizard Tasks step (Web inline-editing port PR-1, porting
  * iOS `RisoSpecialTaskPanel`).
  *
- * Collapsed: a dashed "+ Add a counting, compound or achievement task"
+ * Collapsed: a dashed "+ Counting · Compound · Achievement"
  * button (handoff §2, `RisoLibrarySheetView.entryButton` sibling). Expanded:
  * a "SPECIAL TASK" card with a Type selector restricted to Counting /
  * Compound / Achievement, reusing `CreateNewTaskForm` VERBATIM via its new
@@ -78,8 +78,8 @@ export function SpecialTaskPanel(props: SpecialTaskPanelProps): React.ReactEleme
         <span className={styles.collapsedPlus} aria-hidden="true">＋</span>
         <span className={styles.collapsedLabel}>
           {allowAchievement
-            ? 'Add a counting, compound or achievement task'
-            : 'Add a counting or compound task'}
+            ? 'Counting · Compound · Achievement'
+            : 'Counting · Compound'}
         </span>
       </button>
     );

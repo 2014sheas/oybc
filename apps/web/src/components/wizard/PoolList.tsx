@@ -151,11 +151,7 @@ export function PoolList({
       </div>
 
       {poolTasks.length === 0 && !leadingRows ? (
-        <p className={styles.emptyNote}>
-          {surface === 'pool'
-            ? 'Nothing in this pool yet — type your own or add a special type.'
-            : 'Nothing in your pool yet — type your own, add a special type, or pull from a pool or board.'}
-        </p>
+        <p className={styles.emptyNote}>Nothing here yet.</p>
       ) : (
         <ul className={styles.list}>
           {leadingRows}

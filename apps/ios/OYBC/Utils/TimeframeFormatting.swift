@@ -321,7 +321,7 @@ func compareBoardsForList(_ a: Board, _ b: Board, now: Date = Date()) -> Bool {
 }
 
 /// Task id → the number of DISTINCT still-in-play boards (`isActiveForSort`)
-/// it is placed on — the "On N other boards" usage hint. Deleted, draft,
+/// it is placed on — the rows' board usage count. Deleted, draft,
 /// completed, closed and ended boards don't count, nor do placements on a
 /// board missing from `boards`. TS twin: `activeBoardPlacementCounts`
 /// (`packages/shared/src/algorithms/boardListSort.ts`).

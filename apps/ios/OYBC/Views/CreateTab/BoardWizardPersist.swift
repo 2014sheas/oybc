@@ -294,8 +294,7 @@ func buildWizardPlacement(
 /// draft order. A brand-new sub-task (no real `childTaskId` yet, `isNew ==
 /// true`) gets a synthetic id (`"staged-child-<patchChildId>"`) so it still
 /// counts toward "N sub-tasks" — pair with `stagedNewChildPlaceholders(...)`
-/// below so type-dependent reads (the "N with a goal" subcount, windowed
-/// completion) can resolve it. A not-yet-persisted child trivially evaluates
+/// below so type-dependent reads (windowed completion) can resolve it. A not-yet-persisted child trivially evaluates
 /// as incomplete (no events exist for it yet), which is correct: it can't
 /// have contributed to any past completion.
 func effectiveCompoundChildrenByCompound(

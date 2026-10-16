@@ -101,7 +101,7 @@ export function AccountSecurityPage(): React.ReactElement {
 
       {pendingEmail && (
         <p className={styles.pendingBanner}>
-          Check <b>{pendingEmail}</b> for a verification link to finish changing your email.
+          Verification link sent to <b>{pendingEmail}</b>
         </p>
       )}
 

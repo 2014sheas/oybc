@@ -485,9 +485,6 @@ struct BoardListView: View {
             Text("No \(currentFilterLabel) boards")
                 .risoH2()
                 .multilineTextAlignment(.center)
-            Text("Switch to a different filter to see your boards.")
-                .risoSub()
-                .multilineTextAlignment(.center)
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 40)
@@ -560,11 +557,6 @@ struct BoardListView: View {
             Text("Nothing here yet")
                 .risoH2()
                 .multilineTextAlignment(.center)
-
-            Text("Create your first board to start turning goals into bingo.")
-                .risoSub()
-                .multilineTextAlignment(.center)
-                .padding(.horizontal, 16)
 
             RisoButton(title: "New board", kind: .primary, systemImage: "plus") {
                 handleCreateTap()

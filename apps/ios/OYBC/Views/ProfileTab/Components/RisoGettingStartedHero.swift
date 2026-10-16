@@ -1,10 +1,9 @@
 import SwiftUI
 
 /// The Profile-home "day one" hero card (design handoff §1.3, frame `#4e`) —
-/// shown ABOVE the two tiles only while `completedCount == 0`. Copy is
-/// verbatim: kicker "GETTING STARTED", title "Make your first board", body
-/// "Eight short steps. This card leaves once you've done them.", a 6pt
-/// progress track, "{done}/{total}", and a pill button "Start".
+/// shown ABOVE the two tiles only while `completedCount == 0`: kicker
+/// "GETTING STARTED", title "Make your first board", a 6pt progress track,
+/// "{done}/{total}", and a pill button "Start".
 ///
 /// Distinct from `TutorialCard` (the Boards-tab pinned card): different
 /// copy, no dismiss ✕ (this card only ever shows at `completedCount == 0`
@@ -33,12 +32,6 @@ struct RisoGettingStartedHero: View {
                     .font(.risoHead(22, .extraBold))
                     .tracking(-0.44)
                     .foregroundStyle(Color.risoInkStatic)
-
-                Text("Eight short steps. This card leaves once you've done them.")
-                    .font(.risoBody(13, .semibold))
-                    .foregroundStyle(Color.risoInkStatic.opacity(0.85))
-                    .fixedSize(horizontal: false, vertical: true)
-                    .frame(maxWidth: .infinity, alignment: .leading)
 
                 HStack(spacing: 10) {
                     GeometryReader { geo in
