@@ -686,7 +686,7 @@ export async function softDeleteWindowStampedDerived(
       .toArray();
     for (const bt of placements) {
       const tombstoned = buildBoardTaskTombstone(bt, now);
-      await db.boardTasks.update(bt.id, tombstoned);
+      await db.boardTasks.put(tombstoned);
       await addToSyncQueue('boardTasks', bt.id, SyncOperationType.DELETE, tombstoned);
     }
 

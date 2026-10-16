@@ -150,7 +150,7 @@ describe('syncContract fixture', () => {
     expect(clearableFieldsFor('boards')).toEqual([...CLEARABLE_BOARD_FIELDS]);
     expect(clearableFieldsFor('coreBoardDefaults')).toEqual(['defaultBoardSize', 'defaultCenterType']);
     expect(clearableFieldsFor('tasks')).toEqual([...CLEARABLE_FIELDS_BY_COLLECTION.tasks]);
-    expect(clearableFieldsFor('boardTasks')).toEqual([]);
+    expect(clearableFieldsFor('boardTasks')).toEqual(['targetOverride', 'targetKind', 'childTargets', 'titleOverride']);
     expect(clearableFieldsFor('not-a-collection')).toEqual([]);
   });
 });

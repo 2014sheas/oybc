@@ -12,6 +12,7 @@ import {
   SyncOperationType,
   type SyncCollection,
   type Task,
+  withNormalizedPlacementFields,
 } from '@oybc/shared';
 import { db } from '../internal';
 import { refreshPulledDerivedBaseline } from './derivedCounters';
@@ -337,7 +338,16 @@ type RemoteSchema = {
 export const COLLECTION_SCHEMAS: Record<SyncCollection, RemoteSchema> = {
   boards: BoardSchema,
   tasks: TaskSchema,
-  boardTasks: BoardTaskSchema,
+  // Task/window rework slice 1: the per-placement parameters are
+  // normalised to their canonical shape right after the parse (cross-field
+  // rules Zod's per-field `.catch` can't express), exactly as iOS does in
+  // `BoardTask.init(from:)`, so both clients store one row.
+  boardTasks: {
+    safeParse: (input: unknown) => {
+      const r = BoardTaskSchema.safeParse(input);
+      return r.success ? { success: true as const, data: withNormalizedPlacementFields(r.data) } : r;
+    },
+  },
   compoundChildren: CompoundChildSchema,
   recurringBoardTemplates: RecurringBoardTemplateSchema,
   defaultPools: DefaultPoolSchema,

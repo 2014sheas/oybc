@@ -32,6 +32,8 @@ let clearableFieldsByCollection: [String: [String]] = [
         "counterName", "titleTemplateSingular", "titleTemplatePlural", "timeframeGoals",
         "countsTowardCounterId", "countsTowardAmount", "countsTowardSince",
     ],
+    // Task/window rework slice 1 — a cleared per-placement parameter is stored ABSENT.
+    "boardTasks": ["targetOverride", "targetKind", "childTargets", "titleOverride"],
     // A revived counts-toward credit drops `deletedAt` (SHARED_COUNTER_SETTINGS §3b).
     "taskEvents": ["deletedAt"],
 ]

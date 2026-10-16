@@ -187,6 +187,12 @@ export const PULL_APPLY_ORDER = [
  *  - `tasks.countsTowardCounterId` — a contributor stops counting toward a
  *    counter (unset, or its counter deleted) by storing the field ABSENT
  *    (docs/SHARED_COUNTER_SETTINGS.md §3e).
+ *  - `boardTasks.targetOverride` / `targetKind` / `childTargets` /
+ *    `titleOverride` — the per-placement parameters
+ *    (docs/TASK_WINDOW_REWORK.md slice 1): clearing an override (back to the
+ *    task's own goal / title) is stored ABSENT. `childTargets` is an ARRAY
+ *    precisely so a whole-field clear is expressible here — a map would
+ *    deep-merge under `merge: true` and a removed key would survive remotely.
  *
  * Consumers: web push (`syncService.ts` — `deleteField()` for each absent
  * field of the row's collection, via `clearableFieldsFor`); iOS push
@@ -212,6 +218,7 @@ export const CLEARABLE_FIELDS_BY_COLLECTION = {
     'countsTowardSince',
   ],
   coreBoardDefaults: ['defaultBoardSize', 'defaultCenterType'],
+  boardTasks: ['targetOverride', 'targetKind', 'childTargets', 'titleOverride'],
   // A revived counts-toward credit (a tombstoned event reconciled back to
   // live) drops `deletedAt`; without this the stale stamp survived the
   // Firestore merge (docs/SHARED_COUNTER_SETTINGS.md §3b).

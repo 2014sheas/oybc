@@ -237,6 +237,22 @@ extension AppDatabase {
                 }
             }
         }
+
+        // v45: Task/window rework slice 1 (docs/TASK_WINDOW_REWORK.md) — the
+        // per-placement parameters on `board_tasks`: `targetOverride` (REAL),
+        // `targetKind` (TEXT), `childTargets` (TEXT, sorted-keys JSON array of
+        // {childId, target}) and `titleOverride` (TEXT). All nullable, no
+        // backfill (absent = the task's own goal / title), no index. INERT
+        // until slice 2 reads and slice 3 writes them; synced under the
+        // existing `boardTasks` per-row LWW with the four as clearable fields.
+        // No rules change. Web: no Dexie bump (unindexed — the v39/v41
+        // precedent).
+        migrator.registerMigration("v45") { db in
+            try db.execute(sql: "ALTER TABLE board_tasks ADD COLUMN targetOverride REAL")
+            try db.execute(sql: "ALTER TABLE board_tasks ADD COLUMN targetKind TEXT")
+            try db.execute(sql: "ALTER TABLE board_tasks ADD COLUMN childTargets TEXT")
+            try db.execute(sql: "ALTER TABLE board_tasks ADD COLUMN titleOverride TEXT")
+        }
     }
 }
 

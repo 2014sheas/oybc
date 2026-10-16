@@ -52,6 +52,12 @@
       "defaultBoardSize",
       "defaultCenterType"
     ],
+    "boardTasks": [
+      "targetOverride",
+      "targetKind",
+      "childTargets",
+      "titleOverride"
+    ],
     "taskEvents": [
       "deletedAt"
     ]

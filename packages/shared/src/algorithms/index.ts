@@ -609,3 +609,6 @@ export type { ExpiringBoardFields } from './boardExpiry';
 
 export { taskWindowCaptionLines } from './taskWindowCaption';
 export type { TaskWindowCaptionTask } from './taskWindowCaption';
+
+export { normalizePlacementFields, withNormalizedPlacementFields, TITLE_OVERRIDE_MAX } from './placementFields';
+export type { PlacementFields } from './placementFields';

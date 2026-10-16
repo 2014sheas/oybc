@@ -62,7 +62,7 @@ export async function deleteBoardTasksForBoard(boardId: string): Promise<void> {
   const tasks = await db.boardTasks.where('boardId').equals(boardId).filter((bt) => !bt.isDeleted).toArray();
   for (const bt of tasks) {
     const tombstoned = buildBoardTaskTombstone(bt, now);
-    await db.boardTasks.update(bt.id, tombstoned);
+    await db.boardTasks.put(tombstoned);
     await addToSyncQueue('boardTasks', bt.id, SyncOperationType.DELETE, tombstoned);
   }
 }
@@ -76,6 +76,13 @@ export async function deleteBoardTasksForBoard(boardId: string): Promise<void> {
  *
  * @param existing - The live BoardTask row being removed.
  * @param now - The shared write timestamp for this deletion.
+ */
+/**
+ * The FULL tombstoned row (`...existing` + the tombstone stamps). Callers
+ * write it with `db.boardTasks.put(tombstoned)`, not `update(id, …)`: since
+ * the slice-1 placement parameters (`childTargets`, an array of objects),
+ * Dexie's `UpdateSpec<BoardTask>` no longer types a whole row, and a full-row
+ * put is the same write.
  */
 export function buildBoardTaskTombstone(existing: BoardTask, now: string): BoardTask {
   return {
@@ -264,7 +271,7 @@ export async function removeBoardTaskFromBoard(boardTaskId: string): Promise<voi
 
       // 1. Soft-delete (tombstone) the BoardTask placement.
       const tombstoned = buildBoardTaskTombstone(existing, now);
-      await db.boardTasks.update(boardTaskId, tombstoned);
+      await db.boardTasks.put(tombstoned);
 
       // Enqueue DELETE with the FRESH tombstoned payload (version bumped) —
       // not `existing`, whose stale version was the root cause of the
