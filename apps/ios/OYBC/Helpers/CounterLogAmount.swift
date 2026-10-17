@@ -114,7 +114,7 @@ enum CounterLogAmount {
         var chips = presets.map { TapChip(value: $0, label: "+" + formatCount($0, kind: kind), role: .preset) }
         if let goal, goal > 0 {
             let rest = ceilToCountStep(goal - windowedCount, kind: kind)
-            if rest > 0, !presets.contains(rest) {
+            if rest.isFinite, rest > 0, !presets.contains(rest) {
                 let text = kind == .duration ? compactDurationLabel(rest) : formatCount(rest, kind: kind)
                 chips.append(TapChip(value: rest, label: "+\(text) ✓", role: .rest))
             }

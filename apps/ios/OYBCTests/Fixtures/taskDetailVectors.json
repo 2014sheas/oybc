@@ -41,6 +41,15 @@
       "expected": "a"
     },
     {
+      "name": "equal deadline prefers the most recently active board",
+      "now": "2026-10-15T12:00:00Z",
+      "boards": [
+        { "id": "a", "status": "active", "timeframe": "weekly", "endDate": "2026-10-18T23:59:59Z", "updatedAt": "2026-10-01T00:00:00Z" },
+        { "id": "b", "status": "active", "timeframe": "weekly", "endDate": "2026-10-18T23:59:59Z", "updatedAt": "2026-10-10T00:00:00Z" }
+      ],
+      "expected": "b"
+    },
+    {
       "name": "nothing in play",
       "now": "2026-10-15T12:00:00Z",
       "boards": [
@@ -144,6 +153,35 @@
           { "key": "c:n", "kind": "created", "at": "2026-10-01T00:00:00Z", "text": "Created" }
         ],
         "completionCount": 2
+      }
+    },
+    {
+      "name": "ties, tombstoned completion, zero delta, continuous amount and an unparseable instant",
+      "input": {
+        "task": { "id": "r", "createdAt": "2026-10-01T00:00:00Z", "unit": "mi" },
+        "kind": "continuous",
+        "events": [
+          { "id": "e2", "kind": "increment", "delta": 0.5, "occurredAt": "2026-10-11T23:59:59Z" },
+          { "id": "e1", "kind": "increment", "delta": 1.5, "occurredAt": "2026-10-11T23:59:59Z" },
+          { "id": "c1", "kind": "completion", "occurredAt": "2026-10-11T23:59:59Z" },
+          { "id": "c2", "kind": "completion", "occurredAt": "2026-10-09T00:00:00Z", "isDeleted": true },
+          { "id": "z", "kind": "increment", "delta": 0, "occurredAt": "2026-10-09T00:00:00Z" },
+          { "id": "bad", "kind": "increment", "delta": 2, "occurredAt": "not-a-date" }
+        ],
+        "placements": [],
+        "missed": [ { "boardId": "wk41", "endDate": "2026-10-11T23:59:59Z" } ],
+        "boardNames": { "wk41": "Week 41" }
+      },
+      "expected": {
+        "rows": [
+          { "key": "m:wk41", "kind": "missed", "at": "2026-10-11T23:59:59Z", "text": "Missed · Week 41" },
+          { "key": "e:c1", "kind": "completed", "at": "2026-10-11T23:59:59Z", "text": "Completed" },
+          { "key": "e:e1", "kind": "logged", "at": "2026-10-11T23:59:59Z", "text": "Logged +1.5 mi" },
+          { "key": "e:e2", "kind": "logged", "at": "2026-10-11T23:59:59Z", "text": "Logged +0.5 mi" },
+          { "key": "c:r", "kind": "created", "at": "2026-10-01T00:00:00Z", "text": "Created" },
+          { "key": "e:bad", "kind": "logged", "at": "not-a-date", "text": "Logged +2 mi" }
+        ],
+        "completionCount": 1
       }
     },
     {

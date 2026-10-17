@@ -155,8 +155,8 @@ Header row (type square · title · meta), first item gold.
 
 | PR | Scope |
 | --- | --- |
-| **0 · Spec** | This doc + the binding decisions in `CLAUDE.md`. |
-| **1 · Kernel** | This doc + `CLAUDE.md`, and the shared pure helpers + Swift twins + vectors: `tapLogChips` (`logAmounts.ts` ↔ `CounterLogAmount.tapChips`, `logAmountVectors.json`), `pickHeroAnchorBoard` / `nextCompoundSubtask` / `buildTaskActivity` (`taskDetail.ts` ↔ `TaskDetailKernel.swift`, `taskDetailVectors.json`). No screen changes. |
+| **0 · Spec** | This doc + the binding decisions in `CLAUDE.md` (rides in PR 1's branch to save a TestFlight build). |
+| **1 · Kernel** | Shared pure helpers + Swift twins + vectors: `tapLogChips` (`logAmounts.ts` ↔ `CounterLogAmount.tapChips`, `logAmountVectors.json`), `pickHeroAnchorBoard` / `nextCompoundSubtask` / `buildTaskActivity` (`taskDetail.ts` ↔ `TaskDetailKernel.swift`, `taskDetailVectors.json`). No screen changes. |
 | **2 · Tap contract + square sheet** | Kit first (tap-to-log chip row, Undo strip, return pill on both; web `RisoToolbarPill` + undo pill promoted into `components/riso/`) — it lands with its first consumer because knip fails an unused web export. Then the square sheet (new files), Normal Undo toast, compound `+` children, Achievement tap, web busy flag, Counter Detail on `tapLogChips`. Deletes `RisoCountingStepperSheet` / `CountingStepperModel` / `detailSheet` content / `CompoundChildRow` stepper and web `DetailModal` counting branches + `useCountingLogModal`. |
 | **3 · Hold menu** | Unified vocabulary + closed-board "Late log…" on both. |
 | **4 · Task Detail shell** | Hero per type, segments (All / Links / Activity live; Boards shows today's placement list), ⋯ menu, sheet Done + return pill. |

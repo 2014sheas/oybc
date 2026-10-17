@@ -93,11 +93,28 @@ const KIND_ORDER: Record<TaskActivityKind, number> = {
   missed: 0, completed: 1, logged: 2, removed: 3, placed: 4, created: 5,
 };
 
+/**
+ * An amount with its unit — duration carries none ("1h 30m"), the others
+ * append the task's unit when it has one ("5 pages").
+ *
+ * @param value - The positive amount.
+ * @param kind - The family kind.
+ * @param unit - The task's unit.
+ * @returns The formatted amount.
+ */
 function amountText(value: number, kind: CountKind, unit: string | null | undefined): string {
   const u = kind === 'duration' || !unit ? '' : ` ${unit}`;
   return `${formatCount(value, kind)}${u}`;
 }
 
+/**
+ * The " · ‹board›" suffix for a row with provenance, or "" when the board is
+ * unknown.
+ *
+ * @param boardId - The event's provenance board.
+ * @param names - Board id → display name.
+ * @returns The suffix.
+ */
 function onBoard(boardId: string | undefined, names: Readonly<Record<string, string>>): string {
   const name = boardId ? names[boardId] : undefined;
   return name ? ` · ${name}` : '';
@@ -108,7 +125,8 @@ function onBoard(boardId: string | undefined, names: Readonly<Record<string, str
  * and completions from the task's live events, one "Placed on" row per live
  * placement, one "Missed" row per ended board it did not complete, and
  * "Created". Newest first; equal instants order missed → completed → logged
- * → removed → placed → created, then by key.
+ * → removed → placed → created, then by key (ASCII ids, so code-unit order
+ * matches Swift). An unparseable instant sorts as the oldest.
  *
  * @param input - The task, its events, placements and missed boards.
  * @returns The rows and the all-time completion count.
@@ -140,10 +158,16 @@ export function buildTaskActivity(input: TaskActivityInput): TaskActivity {
     if (name) rows.push({ key: `m:${m.boardId}`, kind: 'missed', at: m.endDate, text: `Missed · ${name}` });
   }
   rows.push({ key: `c:${task.id}`, kind: 'created', at: task.createdAt, text: 'Created' });
-  rows.sort((a, b) => {
-    const d = Date.parse(b.at) - Date.parse(a.at);
-    if (d !== 0 && !Number.isNaN(d)) return d;
-    return KIND_ORDER[a.kind] - KIND_ORDER[b.kind] || (a.key < b.key ? -1 : a.key > b.key ? 1 : 0);
-  });
-  return { rows, completionCount };
+  const instant = (at: string): number => {
+    const t = Date.parse(at);
+    return Number.isNaN(t) ? -Infinity : t;
+  };
+  const sorted = rows
+    .map((row) => ({ row, t: instant(row.at) }))
+    .sort((a, b) => {
+      if (a.t !== b.t) return a.t < b.t ? 1 : -1;
+      return KIND_ORDER[a.row.kind] - KIND_ORDER[b.row.kind] || (a.row.key < b.row.key ? -1 : a.row.key > b.row.key ? 1 : 0);
+    })
+    .map((x) => x.row);
+  return { rows: sorted, completionCount };
 }

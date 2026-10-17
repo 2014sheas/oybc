@@ -98,7 +98,8 @@ enum TaskDetailKernel {
     /// task's live events, one "Placed on" row per live placement, one
     /// "Missed" row per ended board it did not complete, and "Created".
     /// Newest first; equal instants order missed → completed → logged →
-    /// removed → placed → created, then by key.
+    /// removed → placed → created, then by key (ASCII ids, so scalar order
+    /// matches TS). An unparseable instant sorts as the oldest.
     ///
     /// - Parameters:
     ///   - taskId: The task's id.
@@ -115,13 +116,15 @@ enum TaskDetailKernel {
         events: [TaskEvent], placements: [BoardTask], missed: [MissedBoard],
         boardNames: [String: String]
     ) -> Activity {
+        /// The " · ‹board›" suffix, or "" when the board is unknown.
         func onBoard(_ id: String?) -> String {
             guard let id, let name = boardNames[id] else { return "" }
             return " · \(name)"
         }
+        /// An amount with its unit; duration carries none.
         func amount(_ v: CountValue) -> String {
-            let u = (kind == .duration || (unit ?? "").isEmpty) ? "" : " \(unit!)"
-            return formatCount(v, kind: kind) + u
+            if let unit, !unit.isEmpty, kind != .duration { return formatCount(v, kind: kind) + " \(unit)" }
+            return formatCount(v, kind: kind)
         }
         var rows: [ActivityRow] = []
         var completions = 0
@@ -147,12 +150,14 @@ enum TaskDetailKernel {
             }
         }
         rows.append(ActivityRow(key: "c:\(taskId)", kind: .created, at: createdAt, text: "Created"))
-        let instants = Dictionary(rows.map { ($0.key, parseISO8601Date($0.at)) }, uniquingKeysWith: { a, _ in a })
-        rows.sort { a, b in
-            if let ta = instants[a.key] ?? nil, let tb = instants[b.key] ?? nil, ta != tb { return ta > tb }
-            if a.kind.tieOrder != b.kind.tieOrder { return a.kind.tieOrder < b.kind.tieOrder }
-            return a.key < b.key
-        }
-        return Activity(rows: rows, completionCount: completions)
+        let sorted = rows
+            .map { (row: $0, t: parseISO8601Date($0.at)?.timeIntervalSince1970 ?? -.infinity) }
+            .sorted { a, b in
+                if a.t != b.t { return a.t > b.t }
+                if a.row.kind.tieOrder != b.row.kind.tieOrder { return a.row.kind.tieOrder < b.row.kind.tieOrder }
+                return a.row.key < b.row.key
+            }
+            .map(\.row)
+        return Activity(rows: sorted, completionCount: completions)
     }
 }

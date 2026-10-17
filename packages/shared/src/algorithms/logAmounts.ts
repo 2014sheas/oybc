@@ -83,7 +83,7 @@ function ceilToCountStep(x: number, kind: CountKind): number {
   return quantizeCount(Math.ceil(quantizeCount(x * 10) - 1e-9) / 10);
 }
 
-/** "+5h30" / "+45m" / "+2h" — the duration rest chip's compact label. */
+/** "5h30" / "45m" / "2h" — the duration rest chip's compact label (the caller adds "+"). */
 function compactDurationLabel(minutes: number): string {
   const total = Math.max(0, Math.round(minutes));
   const h = Math.floor(total / 60);
@@ -107,7 +107,7 @@ export function tapLogChips(kind: CountKind, goal?: number | null, windowedCount
   const chips: TapLogChip[] = FIXED[kind].map((v) => ({ value: v, label: `+${formatCount(v, kind)}`, role: 'preset' }));
   if (goal != null && goal > 0) {
     const rest = ceilToCountStep(goal - windowedCount, kind);
-    if (rest > 0 && !FIXED[kind].includes(rest)) {
+    if (Number.isFinite(rest) && rest > 0 && !FIXED[kind].includes(rest)) {
       const text = kind === 'duration' ? compactDurationLabel(rest) : formatCount(rest, kind);
       chips.push({ value: rest, label: `+${text} ✓`, role: 'rest' });
     }
