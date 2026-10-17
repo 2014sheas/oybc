@@ -137,8 +137,18 @@ export {
   customChipLabel,
   logPillLabel,
   logPillOpensDetail,
+  tapLogChips,
 } from './logAmounts';
-export type { LogChip } from './logAmounts';
+export type { LogChip, TapLogChip } from './logAmounts';
+export { pickHeroAnchorBoard, nextCompoundSubtask, buildTaskActivity } from './taskDetail';
+export type {
+  CompoundSubtaskCandidate,
+  CompoundSubtaskAction,
+  TaskActivityKind,
+  TaskActivityRow,
+  TaskActivityInput,
+  TaskActivity,
+} from './taskDetail';
 
 // ===== Pair-derived counter display names (R1 — counters refresh) =====
 export { formatCounterName } from './counterName';

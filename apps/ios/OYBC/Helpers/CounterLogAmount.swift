@@ -75,6 +75,54 @@ enum CounterLogAmount {
         fixedChipAmounts(kind).map { LogChip(value: $0, label: formatCount($0, kind: kind)) } + [customChip]
     }
 
+    /// One tap-to-log chip: a preset, the rest of the window's goal, or "Other…".
+    /// Swift twin of `TapLogChip`.
+    struct TapChip: Equatable {
+        enum Role: String, Equatable { case preset, rest, other }
+        /// `nil` on the "Other…" chip.
+        let value: CountValue?
+        let label: String
+        let role: Role
+    }
+
+    /// Ceil to the kind's step, so the rest chip always reaches the goal.
+    private static func ceilToCountStep(_ x: CountValue, kind: CountKind) -> CountValue {
+        guard kind == .continuous else { return (x - 1e-9).rounded(.up) }
+        return quantizeCount((quantizeCount(x * 10) - 1e-9).rounded(.up) / 10)
+    }
+
+    /// "5h30" / "45m" / "2h" — the duration rest chip's compact label.
+    private static func compactDurationLabel(_ minutes: CountValue) -> String {
+        let total = max(0, Int(minutes.rounded()))
+        let h = total / 60, m = total % 60
+        if h == 0 { return "\(m)m" }
+        return m == 0 ? "\(h)h" : "\(h)h" + String(format: "%02d", m)
+    }
+
+    /// The one-gesture chip row (docs/TASK_DETAIL_REDESIGN.md E3): the kind's
+    /// fixed presets, then the rest of this window's goal (`+N ✓`, ceiled to
+    /// the kind's step) when positive and not already a preset, then "Other…".
+    /// No goal (Counter Detail) → no rest chip.
+    ///
+    /// - Parameters:
+    ///   - kind: The counter's family kind.
+    ///   - goal: The square's goal in this window, if any.
+    ///   - windowedCount: The windowed count the rest is measured from.
+    /// - Returns: The chips, ending in "Other…".
+    static func tapChips(kind: CountKind, goal: CountValue?, windowedCount: CountValue = 0) -> [TapChip] {
+        let presets = fixedChipAmounts(kind)
+        var chips = presets.map { TapChip(value: $0, label: "+" + formatCount($0, kind: kind), role: .preset) }
+        if let goal, goal > 0 {
+            let rest = ceilToCountStep(goal - windowedCount, kind: kind)
+            if rest > 0, !presets.contains(rest) {
+                let text = kind == .duration ? compactDurationLabel(rest) : formatCount(rest, kind: kind)
+                chips.append(TapChip(value: rest, label: "+\(text) ✓", role: .rest))
+            }
+        }
+        chips.append(TapChip(value: nil, label: "Other…", role: .other))
+        return chips
+    }
+
     /// Closed-board late-log presets. Discrete keeps `+1 · +2 · +5`.
     static func lateLogChipAmounts(kind: CountKind, goal: CountValue) -> [CountValue] {
         kind == .discrete ? [1, 2, 5] : goalChipAmounts(goal: goal, kind: kind)

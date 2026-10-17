@@ -2,7 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import {
   boardSheetChips, customChipLabel, goalChipAmounts, hubChips, initialLogSelection, lateLogChipAmounts,
-  logPillLabel, logPillOpensDetail, quickLogAmount,
+  logPillLabel, logPillOpensDetail, quickLogAmount, tapLogChips,
 } from '../../src/algorithms/logAmounts';
 import * as barrel from '../../src/algorithms';
 import type { CountKind } from '../../src/algorithms/countValue';
@@ -23,6 +23,12 @@ describe('logAmounts vectors', () => {
   it.each(V.pill as any[])('pill: $name', (v: any) => {
     expect(logPillLabel(v.kind, v.default)).toBe(v.label);
     expect(logPillOpensDetail(v.kind, v.default)).toBe(v.opensDetail);
+  });
+  it.each(V.tapChips as any[])('tapChips: $name', (v: any) => {
+    const chips = tapLogChips(v.kind, v.goal, v.count);
+    expect(chips.map((c) => c.label)).toEqual(v.expected);
+    if (v.values) expect(chips.map((c) => c.value)).toEqual(v.values);
+    if (v.roles) expect(chips.map((c) => c.role)).toEqual(v.roles);
   });
   it.each(V.customChipLabel as any[])('customChipLabel: $name', (v: any) =>
     expect(customChipLabel(v.amount, v.kind)).toBe(v.expected));
