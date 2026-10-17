@@ -254,6 +254,72 @@ Vitest for the sheet's pure glue + kit; Playwright `square-sheet.spec.ts`
 Undo; compound `+` child; closed board → Late log…) and existing specs that
 drove `DetailModal` updated.
 
+## PR 3 — detailed scope (hold menu)
+
+One menu builder per platform — iOS `Views/BoardsTab/SquareMenu/SquareHoldMenu.swift`
+(a `contextMenu` body + header preview) ↔ web
+`components/boardPlay/squareMenu/` (replacing `FloatingContextMenu`'s
+per-type `amountActions` / `sharedAmountActions`), fed by one pure item list
+per platform so a unit test pins the vocabulary:
+
+| Type | Items (first gold) |
+| --- | --- |
+| Normal | Mark done / Mark not done · ─ · Details · Open in library |
+| Counting | Log +‹quickLogAmount› · Log +‹next preset above it› (omitted when none) · Log other amount… · ─ · Remove ‹unit›… · ─ · Details · Open in library |
+| Compound | ‹nextCompoundSubtask›: "Complete next sub-task" (meta: the child's name) or "Log +‹child quick amount› · ‹child›" · All sub-tasks… (meta "‹done› / ‹n›") · ─ · Open in library |
+| Achievement | Open ‹watched board› · ─ · Details · Open in library |
+| Closed board | every write item → one "Late log…" (lock icon, gold; only when `isLateLogRoutable`); Details · Open in library unchanged |
+
+"Details" / "All sub-tasks…" / "Log other amount…" / "Remove…" open the square
+sheet (the last two straight into its entry). Header row: type square ·
+title · meta ("12 / 20", "2 / 3", "Not done", "Watching"). Items single-line
+with ellipsis. Web shows the menu on closed boards (today it shows none) and
+drops "↺ Reset" (E7). Menu writes give the same Undo the tap gives (Normal →
+toast; counting / compound → the toast with the log text, since no sheet is
+open). Busy disables write items.
+
+## PR 4 — detailed scope (Task Detail shell)
+
+- **One data seam per platform**, shared by the route and the sheet: iOS
+  `Views/TasksTab/ViewModels/TaskDetailViewModel.swift` (DB-injected,
+  replacing the duplicated `@State` + `reload()` in `TaskDetailView` and
+  `TaskDetailSheetView`) ↔ web `hooks/useTaskDetail.ts` (the
+  `useLiveQuery` block lifted out of `TaskDetailContent`). It computes the
+  hero anchor (`pickHeroAnchorBoard` over today's placements until PR 5), the
+  anchor placement's windowed state through the kernel, and the Activity
+  feed (`buildTaskActivity`, missed boards = ended placements whose window the
+  kernel scores not done).
+- **Hero writes go through the anchor placement** with the same DB ops board
+  play uses (iOS `completeTaskOrchestrated` / shared-counter increment /
+  `undoLastCounterLog`; web `handleTaskCompletion` / `incrementSharedCounter`),
+  so a log from Task Detail is a log on that board (it is active, so it stamps
+  `now` — E6). **No anchor → no control**: the hero shows the kicker, title,
+  description and Edit; the Boards card says "Not on a board".
+- **Hero per type** as surface A, rendered by new view files (iOS
+  `Views/TasksTab/Components/TaskDetailHero*.swift`; web
+  `pages/tasks/taskDetailHero/`), reusing PR 2's `TapLogChipRow`,
+  `UndoStrip` and the compound checklist row. Achievement adds the
+  closest-line row: the watched board's per-cell completion read through the
+  kernel (one new read per platform: placements + events for that board).
+- **Segments** (`RisoSegmented .pill`): All (overview cards with "›" jumps) ·
+  Boards · N (today's placement rows: ring · name + CORE badge · "‹window› ·
+  ends ‹day› · ‹n› days left" · value · chevron) · Links (shared counter ·
+  subtask of · part of repeating board; compound sub-tasks; achievement
+  watches) · Activity (feed + footer "Completed ‹n›× all-time · updated
+  ‹relative›"). Selected segment survives content swaps in the sheet.
+- **⋯ menu:** Place on a board… (opens the existing placement flow from Task
+  Detail if one exists, else the board picker used by the Tasks tab — if none
+  exists on a platform the item is omitted and noted) · Open counter settings
+  (counting) · ─ · Delete task… (existing confirm). The bottom Edit / Delete
+  row is removed; Edit moves into the hero.
+- **Sheet:** grabber, Done pill grouped with ⋯, no back chevron; the return
+  pill (kit: iOS `Views/Riso/RisoReturnPill.swift` ↔ web
+  `components/riso/RisoReturnPill.tsx`, plus web `RisoToolbarPill`) takes the
+  chevron slot after an in-sheet swap and returns to the previous task.
+- Retires `RisoTaskDetailContentView` / `LinkedCounterCaptionView` usage on
+  the page and web `TaskDetailContent`'s section stack (keep any helper still
+  used elsewhere).
+
 ### Constraints every PR honours
 
 - **File-size caps:** `BoardPlayView.swift` (0 lines headroom),
