@@ -6,7 +6,7 @@ name: Web
 # previously meant only iOS PRs got an automated check.
 
 # No trigger-level `paths:` filter (2026-10 CI audit): the jobs below are
-# REQUIRED status checks on `dev`, and a required check whose workflow never
+# gated behind the REQUIRED `web-ok` check on `dev`, and a required check whose workflow never
 # triggers sits at "Expected — waiting" forever, blocking docs-only PRs. The
 # `changes` job decides instead; a job skipped by its `if:` reports success, so
 # an unrelated PR passes the required checks in seconds.
@@ -91,12 +91,14 @@ jobs:
         # `tsc` for shared. No separate typecheck step needed.
         run: pnpm -w build
 
-      - name: Test (bingo-core + riso-tokens)
+      - name: Test (every package except shared + web)
         # Packages without a coverage gate run their plain `test` task. shared
         # and web are NOT here: their coverage runs below ARE their test runs
         # (2026-10 CI audit — each suite used to run twice, once plain and once
         # under coverage).
-        run: pnpm turbo run test --filter=@oybc/bingo-core --filter=@oybc/riso-tokens
+        # Exclusion filters, so a future package with a `test` script runs here
+        # automatically instead of silently never running.
+        run: pnpm turbo run test --filter='!@oybc/shared' --filter='!@oybc/web'
 
       - name: Test + coverage gate (shared)
         # Jest `coverageThreshold` in packages/shared/jest.config.js (80% global
@@ -123,16 +125,21 @@ jobs:
           retention-days: 14
 
       - name: Lint
+        # `!cancelled()`: lint and the drift checks below still report when a
+        # test or coverage step above failed, so one push shows every red.
+        if: ${{ !cancelled() }}
         # ESLint on web + shared via Turbo's `lint` task.
         run: pnpm -w lint
 
       - name: Riso token drift-check
+        if: ${{ !cancelled() }}
         # apps/coming-soon hand-copies packages/riso-tokens/riso.css's token
         # VALUES under unprefixed names (by design — zero build dependency).
         # Fails if the two ever diverge in value. See docs/COMING_SOON.md.
         run: node scripts/check-coming-soon-tokens.mjs
 
       - name: Dead-code drift-check (knip)
+        if: ${{ !cancelled() }}
         # Fails on NEW unused web exports/types beyond the frozen baseline
         # (scripts/audit/knip-baseline.json) and on any unused file/dependency.
         # The mechanical half of the 2026-08 audit's dead-code findings.
@@ -218,3 +225,36 @@ jobs:
           name: playwright-report-shard-${{ matrix.shard }}
           path: apps/web/playwright-report
           retention-days: 7
+
+  web-ok:
+    # THE required status check for this workflow (2026-10-17). Requiring the
+    # real jobs directly fails in two ways: a matrix job skipped by its `if:`
+    # never expands, so its "(shard 1/2)" names never report and a required
+    # check waits forever; and if `changes` itself errors, every gated job is
+    # skipped and "skipped" counts as passing. This job always runs, fails
+    # unless `changes` succeeded, and fails unless every gated job passed or
+    # was skipped by the path gate.
+    needs: [changes, build-test-lint, e2e]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check results
+        env:
+          CHANGES: ${{ needs.changes.result }}
+          RESULTS: >-
+            build-test-lint=${{ needs.build-test-lint.result }}
+            e2e=${{ needs.e2e.result }}
+        run: |
+          set -u
+          if [ "$CHANGES" != success ]; then
+            echo "::error::changes job: $CHANGES — the path gate did not run, so nothing was tested"
+            exit 1
+          fi
+          fail=0
+          for pair in $RESULTS; do
+            job=${pair%%=*}; result=${pair#*=}
+            echo "$job: $result"
+            case "$result" in success|skipped) ;; *) echo "::error::$job: $result"; fail=1 ;; esac
+          done
+          exit $fail

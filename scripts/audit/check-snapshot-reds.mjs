@@ -12,8 +12,10 @@
  * Reads an `xcodebuild test -scheme OYBCSnapshotTests` log and:
  *   - fails if the OYBCSnapshotTests suite never reported finishing (a build
  *     error or a crash that killed the run — no result to trust);
- *   - fails if the per-case failures it parsed disagree with xcodebuild's own
- *     "with N failures" total (the parser missed something);
+ *   - fails if xcodebuild reported failures but no failing case was parsed
+ *     (the log format changed). Its "with N failures" counts ASSERTIONS, not
+ *     cases — one test can fail several — so a mere mismatch only prints a
+ *     note; the per-case lines are what the gate trusts;
  *   - fails on any failing test not in scripts/audit/snapshot-ci-known-reds.json;
  *   - prints a note for a known red that now passes (shrink the list).
  *
@@ -74,9 +76,13 @@ export function evaluate(parsed, known) {
     );
     return { errors, notes };
   }
-  if (parsed.reported !== null && parsed.reported !== parsed.failed.length) {
+  if (parsed.reported !== null && parsed.reported > 0 && parsed.failed.length === 0) {
     errors.push(
-      `xcodebuild reported ${parsed.reported} failures but ${parsed.failed.length} failing cases were parsed — the log format changed; fix the parser before trusting this gate.`,
+      `xcodebuild reported ${parsed.reported} failures but no failing test case was parsed — the log format changed; fix the parser before trusting this gate.`,
+    );
+  } else if (parsed.reported !== null && parsed.reported !== parsed.failed.length) {
+    notes.push(
+      `xcodebuild counted ${parsed.reported} failed assertions across ${parsed.failed.length} failing cases (a test can fail more than one assertion).`,
     );
   }
   const knownSet = new Set(known);
@@ -126,9 +132,16 @@ function selfTest() {
       notes: 0,
     },
     {
-      name: 'count mismatch → error',
+      name: 'more assertions than cases → note only',
       log: [line('A', 'testOne', 'failed'), done, 'Executed 5 tests, with 3 failures'].join('\n'),
       known: ['A testOne'],
+      errors: 0,
+      notes: 1,
+    },
+    {
+      name: 'failures reported, none parsed → error',
+      log: [done, 'Executed 5 tests, with 3 failures'].join('\n'),
+      known: [],
       errors: 1,
       notes: 0,
     },
