@@ -65,7 +65,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v7
         with:
-          node-version: 20
+          node-version: 22  # = the functions runtime (nodejs22) and package.json engines; Node 20 resolves different types (2026-10-17)
           cache: 'npm'
           cache-dependency-path: functions/package-lock.json
 
@@ -150,7 +150,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v7
         with:
-          node-version: 20
+          node-version: 22  # = the functions runtime (nodejs22) and package.json engines; Node 20 resolves different types (2026-10-17)
           cache: 'npm'
           cache-dependency-path: functions/package-lock.json
 

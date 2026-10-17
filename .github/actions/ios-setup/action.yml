@@ -1,0 +1,66 @@
+name: iOS setup
+description: >
+  Shared setup for every ios.yml job (run after actions/checkout): toolchain
+  printout, SPM package cache, pinned XcodeGen, the committed-pbxproj plist
+  guard, `xcodegen generate`, and the _Concurrency.Task shadow guard. Expects
+  DEVELOPER_DIR, XCODEGEN_VERSION, XCODEGEN_ZIP_SHA256 and DERIVED_DATA_PATH
+  in the job env (set at ios.yml's workflow level).
+
+runs:
+  using: composite
+  steps:
+    - name: Show toolchain versions
+      shell: bash
+      run: |
+        sw_vers
+        xcodebuild -version
+        swift --version
+        xcrun simctl list runtimes | grep -iE "ios" || true
+
+    - name: Cache SPM resolved packages
+      # Resolved package checkouts only, NOT built products (see #254).
+      # Keyed on project.yml (dependency floors) + the committed workspace
+      # Package.resolved (exact pins — Xcode Cloud requires it too).
+      uses: actions/cache@v6
+      with:
+        path: ${{ env.DERIVED_DATA_PATH }}/SourcePackages
+        key: ios-spm-${{ runner.os }}-${{ env.DEVELOPER_DIR }}-${{ hashFiles('apps/ios/project.yml', 'apps/ios/OYBC.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved') }}
+        restore-keys: |
+          ios-spm-${{ runner.os }}-${{ env.DEVELOPER_DIR }}-
+          ios-spm-${{ runner.os }}-
+
+    - name: Install xcodegen
+      # Pinned release binary, checksum-verified (xcodegen isn't on the
+      # macos-15 image; `brew install` cost 1-3 min per run).
+      shell: bash
+      run: |
+        set -euo pipefail
+        curl -sSL -o /tmp/xcodegen.zip \
+          "https://github.com/yonaskolb/XcodeGen/releases/download/${XCODEGEN_VERSION}/xcodegen.zip"
+        computed_sha256=$(shasum -a 256 /tmp/xcodegen.zip | awk '{print $1}')
+        if [ "$computed_sha256" != "$XCODEGEN_ZIP_SHA256" ]; then
+          echo "::error::xcodegen.zip checksum mismatch: expected $XCODEGEN_ZIP_SHA256, got $computed_sha256"
+          exit 1
+        fi
+        unzip -q /tmp/xcodegen.zip -d /tmp/xcodegen-install
+        mkdir -p "$RUNNER_TEMP/xcodegen"
+        cp -r /tmp/xcodegen-install/xcodegen/bin "$RUNNER_TEMP/xcodegen/bin"
+        cp -r /tmp/xcodegen-install/xcodegen/share "$RUNNER_TEMP/xcodegen/share"
+        echo "$RUNNER_TEMP/xcodegen/bin" >> "$GITHUB_PATH"
+
+    - name: Guard committed pbxproj keeps GoogleService-Info.plist ref
+      # BEFORE `xcodegen generate`: generate rewrites a 0-ref pbxproj on this
+      # runner (no gitignored plist), so this must inspect the committed one.
+      shell: bash
+      working-directory: apps/ios
+      run: bash scripts/check-firebase-plist-ref.sh
+
+    - name: Generate Xcode project
+      shell: bash
+      working-directory: apps/ios
+      run: "$RUNNER_TEMP/xcodegen/bin/xcodegen generate"
+
+    - name: Guard against _Concurrency.Task shadow
+      shell: bash
+      working-directory: apps/ios
+      run: bash scripts/check-task-shadow.sh
