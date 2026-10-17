@@ -60,11 +60,13 @@ test.describe('Counter kinds — logging (B1)', () => {
     await expect.poll(async () => (await readTask(page, PRACTICE))?.defaultLogAmount).toBe(90);
   });
 
-  test('right-click: + Add {last} unit', async ({ page }) => {
+  test('hold menu: Log +‹quick amount› writes with an Undo toast', async ({ page }) => {
     const run = page.getByRole('button', { name: 'Run 26.2 mi' });
     await run.click({ button: 'right' });
-    await page.getByRole('button', { name: '+ Add 6.6 mi' }).click();
-    await expect(run).toContainText('6.6/26.2');
+    await page.getByRole('menuitem', { name: 'Log +0.5 mi' }).click();
+    await expect(run).toContainText('0.5/26.2');
+    await page.getByRole('status').getByRole('button', { name: 'Undo' }).click();
+    await expect(run).toContainText('0/26.2');
   });
 
   test('hub: a never-logged Continuous counter pill opens Counter Detail', async ({ page }) => {

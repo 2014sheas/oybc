@@ -319,7 +319,7 @@ test.describe('Tasks tab', () => {
     await square.click({ button: 'right' });
 
     // The new menu item is the only place "Open in library" appears.
-    await page.getByRole('button', { name: /open in library/i }).click();
+    await page.getByRole('menuitem', { name: /open in library/i }).click();
 
     // TaskDetailSheet mounts over BoardPlay — the task title appears as
     // the detail heading. URL stays on the board (sheet is overlay state,
@@ -361,7 +361,7 @@ test.describe('Tasks tab', () => {
 
     await page.goto(`/boards/${BOARD_ID}?__oybc_test_bypass=1`);
     await page.getByRole('button', { name: 'Stretch' }).first().click({ button: 'right' });
-    await page.getByRole('button', { name: /open in library/i }).click();
+    await page.getByRole('menuitem', { name: /open in library/i }).click();
 
     // Sheet is open on the original board.
     await expect(page).toHaveURL(new RegExp(`/boards/${BOARD_ID}`));

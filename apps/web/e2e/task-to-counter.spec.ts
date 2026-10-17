@@ -47,7 +47,7 @@ test.describe('Task → counter navigation', () => {
     await page.goto(`/boards/${BOARD_ID}?__oybc_test_bypass=1`);
     // Active board: right-click → View Details opens the popup.
     await page.getByText('Push-ups weekly').first().click({ button: 'right' });
-    await page.getByRole('button', { name: /View Details/ }).click();
+    await page.getByRole('menuitem', { name: 'Details' }).click();
     const details = page.getByRole('button', { name: 'Open in library' });
     await expect(details).toBeVisible();
     await page.screenshot({ path: '.playwright-mcp/task-to-counter-popup.png' });

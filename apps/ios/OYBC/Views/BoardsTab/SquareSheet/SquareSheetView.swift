@@ -15,6 +15,17 @@ struct SquareSheetView: View {
 
     @State private var entry: SquareSheetEntry?
 
+    /// - Parameter initialEntry: Opens straight into "Other…" / "Remove…" (the hold menu's
+    ///   "Log other amount…" / "Remove…"); also the snapshot seam for the entry row.
+    init(content: SquareSheetContent, strip: SquareLogStrip? = nil, actions: SquareSheetActions = SquareSheetActions(),
+         initialOpenChildId: String? = nil, initialEntry: SquareSheetEntry? = nil) {
+        self.content = content
+        self.strip = strip
+        self.actions = actions
+        self.initialOpenChildId = initialOpenChildId
+        _entry = State(initialValue: initialEntry)
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             header

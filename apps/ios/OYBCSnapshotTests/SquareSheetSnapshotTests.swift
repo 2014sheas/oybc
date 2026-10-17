@@ -108,6 +108,14 @@ final class SquareSheetSnapshotTests: XCTestCase {
         )
     }
 
+    /// The hold menu's "Remove…" / "Log other amount…" open the sheet straight into its entry.
+    func testCountingOpensStraightIntoTheRemoveEntry() {
+        let view = SquareSheetView(content: countingContent(counting(12)), initialEntry: SquareSheetEntry(scopeTaskId: "t1", isRemove: true))
+            .frame(width: 393, height: 470)
+            .background(Color.risoPaper)
+        assertSnapshot(of: view, as: .image(layout: .fixed(width: 393, height: 470)), record: recordMode, testName: "testCountingRemoveEntryLight")
+    }
+
     // MARK: - Compound
 
     func testCompoundCollapsed() {

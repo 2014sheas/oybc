@@ -118,7 +118,7 @@ test.describe('Square sheet + tap contract', () => {
     await page.goto(`/boards/${BOARD}?__oybc_test_bypass=1`);
     const square = page.getByRole('button', { name: 'Finish Dune' });
     await square.click({ button: 'right' });
-    await page.getByRole('button', { name: /View Details/ }).click();
+    await page.getByRole('menuitem', { name: 'Details' }).click();
     const sheet = page.getByRole('dialog', { name: 'Finish Dune' });
     await sheet.getByRole('button', { name: 'Mark done' }).click();
     await expect(page.getByRole('dialog')).toHaveCount(0);
