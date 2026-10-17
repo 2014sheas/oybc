@@ -39,6 +39,9 @@ env:
   # Repo-relative derived data so the SPM checkout under it is cacheable.
   # Covered by apps/ios/.gitignore's bare `DerivedData` pattern.
   DERIVED_DATA_PATH: ${{ github.workspace }}/apps/ios/DerivedData
+  # OS=latest is deterministic given the Xcode pin: it resolves to the newest
+  # simulator runtime installed with that Xcode on the runner.
+  IOS_DESTINATION: platform=iOS Simulator,name=iPhone 16,OS=latest
 
 jobs:
   changes:
@@ -59,7 +62,6 @@ jobs:
               - 'apps/ios/**'
               - '.github/workflows/ios.yml'
               - '.github/actions/ios-setup/**'
-              - '.github/actions/ios-sim-boot/**'
               - 'scripts/audit/check-snapshot-reds.mjs'
               - 'scripts/audit/snapshot-ci-known-reds.json'
 
@@ -71,17 +73,18 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: ./.github/actions/ios-setup
-      - uses: ./.github/actions/ios-sim-boot
 
       - name: Build for testing
-        # Separate from the test run so the simulator keeps booting while this
-        # compiles. Raw xcodebuild output (no xcpretty) so crash logs and Swift
-        # fatal-error traces stay visible.
+        # No simulator pre-boot (measured on PR #631): a simulator booting or
+        # still settling alongside the compile starves the 3-core runner and
+        # slowed the build by more than the boot it hid. xcodebuild boots the
+        # device on demand after the build instead. Raw xcodebuild output (no
+        # xcpretty) so crash logs and Swift fatal-error traces stay visible.
         working-directory: apps/ios
         run: |
           xcodebuild build-for-testing \
             -scheme OYBC \
-            -destination "id=$SIM_UDID" \
+            -destination "$IOS_DESTINATION" \
             -derivedDataPath "$DERIVED_DATA_PATH" \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO
@@ -89,13 +92,12 @@ jobs:
       - name: Run logic tests
         working-directory: apps/ios
         run: |
-          xcrun simctl bootstatus "$SIM_UDID" -b
           # -xctestrun (not -scheme) runs the bundle build-for-testing wrote,
           # without reloading the project or re-resolving packages (~50 s).
           XCTESTRUN=$(ls "$DERIVED_DATA_PATH"/Build/Products/OYBC_*.xctestrun)
           xcodebuild test-without-building \
             -xctestrun "$XCTESTRUN" \
-            -destination "id=$SIM_UDID"
+            -destination "$IOS_DESTINATION"
 
   snapshot-tests:
     # BLOCKING on NEW reds only. CI's runner has iOS 26.2 simulators while
@@ -112,14 +114,13 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: ./.github/actions/ios-setup
-      - uses: ./.github/actions/ios-sim-boot
 
       - name: Build for testing
         working-directory: apps/ios
         run: |
           xcodebuild build-for-testing \
             -scheme OYBCSnapshotTests \
-            -destination "id=$SIM_UDID" \
+            -destination "$IOS_DESTINATION" \
             -derivedDataPath "$DERIVED_DATA_PATH" \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO
@@ -132,14 +133,13 @@ jobs:
           # library honours this env var ahead of any per-call setting.
           SNAPSHOT_TESTING_RECORD: never
         run: |
-          xcrun simctl bootstatus "$SIM_UDID" -b
           # xcodebuild's exit status is expected to be non-zero while known
           # reds exist; the gate step below decides pass/fail from the log.
           set +e
           XCTESTRUN=$(ls "$DERIVED_DATA_PATH"/Build/Products/OYBCSnapshotTests_*.xctestrun)
           xcodebuild test-without-building \
             -xctestrun "$XCTESTRUN" \
-            -destination "id=$SIM_UDID" \
+            -destination "$IOS_DESTINATION" \
             -resultBundlePath "$RUNNER_TEMP/snapshot-results.xcresult" 2>&1 | tee "$RUNNER_TEMP/snapshot.log"
           echo "xcodebuild exit: ${PIPESTATUS[0]}"
 
