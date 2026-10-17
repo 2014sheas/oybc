@@ -863,6 +863,25 @@ describe('buildSharedCounterGroups — memberVisibility (hub expired filter)', (
     expect(groups[0].activeTaskCount).toBe(0);
   });
 
+  it('showExpired: false also hides a card whose HOST window has ended or closed (a card is a placement)', () => {
+    const root = counting('root', { isCounter: true });
+    const linked = counting('m-open', { sharedCounterId: 'root' }); // no own stamp
+    const endedBoard: Board = { ...staleBoard, id: 'b-ended', name: 'Ended' };
+    const closedBoard: Board = { ...liveBoard, id: 'b-closed', name: 'Closed', sealedAt: '2026-09-15T12:00:00.000Z' };
+    const boards = [endedBoard, closedBoard, liveBoard];
+    const boardTasks = [
+      toBoardTask({ taskId: 'root', boardId: 'b-ended' }),
+      toBoardTask({ taskId: 'm-open', boardId: 'b-closed' }),
+      toBoardTask({ taskId: 'm-open', boardId: 'b-live' }),
+    ];
+    const hidden = buildSharedCounterGroups({ tasks: [root, linked], boards, boardTasks, memberVisibility: { showExpired: false, now: NOW } });
+    expect(hidden[0].tasks.map((t) => t.boardId)).toEqual(['b-live']);
+    const shown = buildSharedCounterGroups({ tasks: [root, linked], boards, boardTasks, memberVisibility: { showExpired: true, now: NOW } });
+    expect(shown[0].tasks.map((t) => t.boardId)).toEqual(['b-ended', 'b-closed', 'b-live']);
+    // `activeTaskCount` counts distinct tasks, like `taskCount`.
+    expect(shown[0].activeTaskCount).toBe(1);
+  });
+
   it('with no memberVisibility every live member is listed', () => {
     const root = counting('root');
     const stale = expiredMember('m-stale', 'root');

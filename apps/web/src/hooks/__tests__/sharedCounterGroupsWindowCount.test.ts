@@ -21,6 +21,8 @@ import { loadSharedCounterGroups } from '../useSharedCounterGroups';
  */
 
 const T0 = '2026-09-01T00:00:00.000Z';
+/** Inside W's window — the hub's expiry rule reads the host board's window (slice 2b). */
+const NOW = new Date('2026-10-07T12:00:00.000Z');
 // This week's board (open) and last week's (ended).
 const W = { id: 'b-w', startDate: '2026-10-05T00:00:00.000', endDate: '2026-10-11T23:59:59.999' };
 const E = { id: 'b-e', startDate: '2026-09-28T00:00:00.000', endDate: '2026-10-04T23:59:59.999' };
@@ -75,7 +77,7 @@ afterEach(async () => {
 describe('loadSharedCounterGroups — member cards show the in-window count', () => {
   it('hub-born root: each placed member reads its own board window, the total stays lifetime', async () => {
     await seed(null);
-    const group = (await loadSharedCounterGroups('u1', true)).find((g) => g.counterId === 'root');
+    const group = (await loadSharedCounterGroups('u1', true, NOW)).find((g) => g.counterId === 'root');
     const logged = Object.fromEntries(group!.tasks.map((t) => [t.taskId, t.logged]));
     expect(group!.lifetime).toBe(10);
     expect(logged['m-w']).toBe(3);
@@ -88,7 +90,7 @@ describe('loadSharedCounterGroups — member cards show the in-window count', ()
 
   it('board-born root placed on this week’s board shows 3 (its window), not the lifetime 10', async () => {
     await seed(W.id);
-    const group = (await loadSharedCounterGroups('u1', true)).find((g) => g.counterId === 'root');
+    const group = (await loadSharedCounterGroups('u1', true, NOW)).find((g) => g.counterId === 'root');
     const rootRow = group!.tasks.find((t) => t.taskId === 'root')!;
     expect(rootRow).toMatchObject({ boardId: W.id, logged: 3, goal: 5, met: false, over: 0 });
     expect(group!.lifetime).toBe(10);
@@ -104,7 +106,7 @@ describe('loadSharedCounterGroups — Counter Detail "Show expired tasks"', () =
   }
 
   const memberIds = async (showExpired: boolean): Promise<string[]> =>
-    (await loadSharedCounterGroups('u1', showExpired))
+    (await loadSharedCounterGroups('u1', showExpired, NOW))
       .find((g) => g.counterId === 'root')!
       .tasks.map((t) => t.taskId)
       .sort();
@@ -117,7 +119,7 @@ describe('loadSharedCounterGroups — Counter Detail "Show expired tasks"', () =
   it('lists the expired member when on, and the total is unaffected', async () => {
     await seedWithExpiredMember();
     expect(await memberIds(true)).toEqual(['m-e', 'm-w']);
-    const [off, on] = await Promise.all([loadSharedCounterGroups('u1', false), loadSharedCounterGroups('u1', true)]);
+    const [off, on] = await Promise.all([loadSharedCounterGroups('u1', false, NOW), loadSharedCounterGroups('u1', true, NOW)]);
     expect(on.find((g) => g.counterId === 'root')!.lifetime).toBe(off.find((g) => g.counterId === 'root')!.lifetime);
   });
 });

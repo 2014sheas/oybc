@@ -124,6 +124,14 @@ final class SharedCounterGroupsTests: XCTestCase {
         ]
     }
 
+    /// `board(_:status:)` whose window is still open at `rc9Now` (slice 2b: the
+    /// hub's expiry rule also reads the HOST board's window).
+    private func openBoard(_ id: String) -> Board {
+        var d = boardDict(id, status: .active)
+        d["endDate"] = "2026-12-31T12:00:00.000Z"
+        return try! JSONDecoder().decode(Board.self, from: JSONSerialization.data(withJSONObject: d))
+    }
+
     /// Minimal BoardTask placement.
     private func placement(_ taskId: String, _ boardId: String) -> BoardTask {
         BoardTask(
@@ -529,7 +537,7 @@ final class SharedCounterGroupsTests: XCTestCase {
         let groups = buildSharedCounterGroups(
             tasks: [root, live, expired],
             boardTasks: [placement("live", "b-live"), placement("expired", "b-old")],
-            boards: [board("b-live", status: .active), board("b-old", status: .active)],
+            boards: [openBoard("b-live"), board("b-old", status: .active)],
             memberVisibility: hideExpired
         )
 
@@ -581,11 +589,36 @@ final class SharedCounterGroupsTests: XCTestCase {
         let member = counter("member", sharedCounterId: "root")
 
         let groups = buildSharedCounterGroups(
-            tasks: [root, member], boardTasks: [placement("member", "b-live")], boards: [board("b-live", status: .active)],
+            tasks: [root, member], boardTasks: [placement("member", "b-live")], boards: [openBoard("b-live")],
             memberVisibility: hideExpired
         )
 
         XCTAssertEqual(groups.first?.tasks.map(\.taskId), ["member"])
+    }
+
+    func test_memberVisibility_hidesACardWhoseHostWindowEndedOrClosed() {
+        let root = counter("root", currentCount: 40, isCounter: true)
+        let linked = counter("linked", sharedCounterId: "root") // no own stamp
+        var endedDict = boardDict("ended", status: .active)
+        endedDict["startDate"] = "2026-02-01T12:00:00.000Z"
+        endedDict["endDate"] = "2026-02-07T12:00:00.000Z"
+        var closedDict = boardDict("closed", status: .active)
+        closedDict["sealedAt"] = "2026-02-05T12:00:00.000Z"
+        let decode = { (d: [String: Any]) in try! JSONDecoder().decode(Board.self, from: JSONSerialization.data(withJSONObject: d)) }
+        var openDict = boardDict("open", status: .active)
+        openDict["endDate"] = "2026-12-31T12:00:00.000Z"
+        let boards = [decode(endedDict), decode(closedDict), decode(openDict)]
+        let placements = [placement("root", "ended"), placement("linked", "closed"), placement("linked", "open")]
+
+        let hidden = buildSharedCounterGroups(tasks: [root, linked], boardTasks: placements, boards: boards, memberVisibility: hideExpired)
+        XCTAssertEqual(hidden.first?.tasks.map(\.boardId), ["open"])
+        let shown = buildSharedCounterGroups(
+            tasks: [root, linked], boardTasks: placements, boards: boards,
+            memberVisibility: SharedCounterMemberVisibility(showExpired: true, now: rc9Now)
+        )
+        XCTAssertEqual(shown.first?.tasks.map(\.boardId), ["ended", "closed", "open"])
+        // `activeTaskCount` counts distinct tasks, like `taskCount`.
+        XCTAssertEqual(shown.first?.activeTaskCount, 1)
     }
 
     func test_memberVisibility_nilListsEveryLiveMember() {

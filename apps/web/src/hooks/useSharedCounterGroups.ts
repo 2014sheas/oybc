@@ -51,6 +51,8 @@ export function useSharedCounterGroups(
 export async function loadSharedCounterGroups(
   userId: string,
   showExpired: boolean,
+  /** Reference time for the expiry rule (injected by tests). */
+  now: Date = new Date(),
 ): Promise<SharedCounterGroup[]> {
   // Fetch all non-deleted tasks + boards for this user. `buildSharedCounterGroups`
   // also filters isDeleted internally, but pre-filtering avoids pulling tombstones
@@ -92,6 +94,6 @@ export async function loadSharedCounterGroups(
     boards,
     compoundChildren,
     eventsByTaskId,
-    memberVisibility: { showExpired },
+    memberVisibility: { showExpired, now },
   });
 }

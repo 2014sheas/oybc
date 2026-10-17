@@ -314,7 +314,14 @@ func buildSharedCounterGroups(
 
         var boardIdSet = Set<String>()
         var memberTaskIds = Set<String>()
-        var activeCount = 0
+        var activeTaskIds = Set<String>()
+        /// `showExpired == false` also hides a card whose HOST window has ended or closed (a card is a placement).
+        func isExpiredPlacement(_ board: Board) -> Bool {
+            guard let memberVisibility, !memberVisibility.showExpired else { return false }
+            if board.sealedAt != nil { return true }
+            guard let end = board.endDate.flatMap({ DateFormatting.parseISO($0) }) else { return false }
+            return end < now
+        }
 
         /// One card: the placement `bt` on `board`, standing for `task` (already placement-adjusted).
         func card(_ bt: BoardTask, _ board: Board, _ task: Task, isSource: Bool, viaCompoundId: String?) -> SharedCounterMemberTask {
@@ -357,7 +364,7 @@ func buildSharedCounterGroups(
             // "Counting now" is the Boards tab's in-play rule, not the stored
             // status — a board past its endDate (or closed) stays ACTIVE in the row.
             let isActive = isBoardActiveForList(board, now: now)
-            if isActive { activeCount += 1 }
+            if isActive { activeTaskIds.insert(task.id) }
             let window = parseISO8601Date(board.startDate).map { formatTimeframeLabel(timeframe: board.timeframe, startDate: $0) }
             let met = goal > 0 && displayed >= goal
             return SharedCounterMemberTask(
@@ -380,7 +387,7 @@ func buildSharedCounterGroups(
 
         var memberViews: [SharedCounterMemberTask] = []
         for bt in livePlacements {
-            guard let board = boardsById[bt.boardId], !board.isDeleted else { continue }
+            guard let board = boardsById[bt.boardId], !board.isDeleted, !isExpiredPlacement(board) else { continue }
             if bt.taskId == sourceId {
                 memberViews.append(card(bt, board, PlacementParams.apply(source, placement: bt, settings: settings), isSource: true, viaCompoundId: nil))
                 continue
@@ -416,7 +423,7 @@ func buildSharedCounterGroups(
             tasks: memberViews,
             taskCount: memberTaskIds.count,
             boardCount: boardIdSet.count,
-            activeTaskCount: activeCount,
+            activeTaskCount: activeTaskIds.count,
             countKind: resolveCountKind(source.countKind)
         ))
     }

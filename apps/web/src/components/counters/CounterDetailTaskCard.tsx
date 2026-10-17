@@ -26,7 +26,7 @@ interface CounterDetailTaskCardProps {
  *     and a caption: "{window} · {remaining} to go" / "✓ Goal met" / "✓ Goal met · N over".
  *
  * Inactive cards (inactive=true, "Not counting now" section):
- *   - Greyed out, not clickable; name, Draft badge and board only.
+ *   - Greyed out, not clickable; name and board only (no badge — iOS parity).
  *
  * Matches the `cd-task` design from the shared-counters design handoff.
  */
@@ -54,7 +54,6 @@ export function CounterDetailTaskCard({
       <div className={`${styles.card} ${styles.cardInactive}`} aria-label={`${task.taskTitle} — inactive`}>
         <div className={styles.top}>
           <span className={styles.taskName}>{task.taskTitle}</span>
-          <span className={styles.inactiveBadge}>Draft</span>
         </div>
         {task.boardName && (
           <div className={styles.boardRow}>

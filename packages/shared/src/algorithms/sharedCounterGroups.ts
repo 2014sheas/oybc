@@ -124,7 +124,7 @@ export interface SharedCounterGroup {
   taskCount: number;
   /** Distinct live boards the counter appears on. */
   boardCount: number;
-  /** Cards that are counting now (active board). */
+  /** Distinct member tasks with a card that is counting now (active board). */
   activeTaskCount: number;
 }
 
@@ -176,7 +176,7 @@ export interface BuildSharedCounterGroupsInput {
 
 /** See {@link BuildSharedCounterGroupsInput.memberVisibility}. */
 export interface SharedCounterMemberVisibility {
-  /** `true` lists expired members too. */
+  /** `true` lists expired members too — a linked task past its own stamp, and (slice 2b) any card whose host board's window has ended or closed. */
   showExpired: boolean;
   /** Reference time for `isTaskExpired` and for each member's "counting
    *  now" check; defaults to `new Date()` — inject it in tests. */
@@ -368,7 +368,14 @@ export function buildSharedCounterGroups(
 
     const boardIds = new Set<string>();
     const memberTaskIds = new Set<string>();
-    let activeCount = 0;
+    const activeTaskIds = new Set<string>();
+    /** `showExpired: false` also hides a card whose HOST window has ended or closed (a card is a placement). */
+    const isExpiredPlacement = (board: Board): boolean => {
+      if (!input.memberVisibility || input.memberVisibility.showExpired) return false;
+      if (board.sealedAt) return true;
+      const endMs = board.endDate ? new Date(board.endDate).getTime() : NaN;
+      return !Number.isNaN(endMs) && endMs < now.getTime();
+    };
 
     /** One card: the placement `bt` on `board`, standing for `task` (already placement-adjusted). */
     const card = (
@@ -416,7 +423,7 @@ export function buildSharedCounterGroups(
       // "Counting now" is the Boards tab's in-play rule, not the stored
       // status — a board past its endDate (or closed) stays ACTIVE in the row.
       const isActive = isBoardActiveForList(board, now);
-      if (isActive) activeCount += 1;
+      if (isActive) activeTaskIds.add(task.id);
       const window = board.startDate ? formatTimeframeLabel(board.timeframe, board.startDate) : null;
       const met = goal > 0 && displayed >= goal;
       return {
@@ -440,7 +447,7 @@ export function buildSharedCounterGroups(
     const memberViews: SharedCounterMemberTask[] = [];
     for (const bt of livePlacements) {
       const board = boardsById.get(bt.boardId);
-      if (!board || board.isDeleted) continue;
+      if (!board || board.isDeleted || isExpiredPlacement(board)) continue;
       if (bt.taskId === sourceId) {
         memberViews.push(card(bt, board, withPlacementParams(source, bt, settings), 'root', null));
         continue;
@@ -480,7 +487,7 @@ export function buildSharedCounterGroups(
       tasks: memberViews,
       taskCount: memberTaskIds.size,
       boardCount: boardIds.size,
-      activeTaskCount: activeCount,
+      activeTaskCount: activeTaskIds.size,
     });
   }
 
