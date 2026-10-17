@@ -5,33 +5,16 @@ name: Web
 # consistent CI signal across the monorepo. Closes the gap that
 # previously meant only iOS PRs got an automated check.
 
+# No trigger-level `paths:` filter (2026-10 CI audit): the jobs below are
+# REQUIRED status checks on `dev`, and a required check whose workflow never
+# triggers sits at "Expected — waiting" forever, blocking docs-only PRs. The
+# `changes` job decides instead; a job skipped by its `if:` reports success, so
+# an unrelated PR passes the required checks in seconds.
 on:
   pull_request:
     branches: [dev]
-    paths:
-      - 'apps/web/**'
-      - 'apps/coming-soon/**'
-      - 'packages/**'
-      - 'scripts/check-coming-soon-tokens.mjs'
-      - 'scripts/check-knip.mjs'
-      - 'scripts/audit/**'
-      - 'package.json'
-      - 'pnpm-lock.yaml'
-      - 'turbo.json'
-      - '.github/workflows/web.yml'
   push:
     branches: [dev]
-    paths:
-      - 'apps/web/**'
-      - 'apps/coming-soon/**'
-      - 'packages/**'
-      - 'scripts/check-coming-soon-tokens.mjs'
-      - 'scripts/check-knip.mjs'
-      - 'scripts/audit/**'
-      - 'package.json'
-      - 'pnpm-lock.yaml'
-      - 'turbo.json'
-      - '.github/workflows/web.yml'
 
 # Cancel in-flight runs for the same PR when a newer commit is pushed.
 # `github.ref` is a Git ref (sanitised by GitHub), safe to interpolate
@@ -46,7 +29,41 @@ permissions:
   contents: read
 
 jobs:
+  changes:
+    # Path gate for the jobs below (see the `on:` comment). The filter list is
+    # the old trigger-level `paths:` list, plus the iOS fixture copies:
+    # packages/shared's fixtureSync.test.ts asserts they are byte-identical to
+    # the canonical fixtures, and that test only runs here — an iOS-only edit
+    # to a copy must still run it.
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      web: ${{ steps.filter.outputs.web }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            web:
+              - 'apps/web/**'
+              - 'apps/coming-soon/**'
+              - 'apps/ios/OYBCTests/Fixtures/**'
+              - 'packages/**'
+              - 'scripts/check-coming-soon-tokens.mjs'
+              - 'scripts/check-knip.mjs'
+              - 'scripts/audit/**'
+              - 'package.json'
+              - 'pnpm-lock.yaml'
+              - 'turbo.json'
+              - '.github/workflows/web.yml'
+
   build-test-lint:
+    needs: changes
+    if: needs.changes.outputs.web == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
@@ -74,29 +91,26 @@ jobs:
         # `tsc` for shared. No separate typecheck step needed.
         run: pnpm -w build
 
-      - name: Test
-        # Turbo runs the `test` task in any package that defines one:
-        # shared + bingo-core (Jest) and web (Vitest + fake-indexeddb). This is
-        # the pass/fail test signal — the coverage step below is separate so a
-        # coverage-tooling failure can never mask (or stand in for) a real
-        # test result.
-        run: pnpm -w test
+      - name: Test (bingo-core + riso-tokens)
+        # Packages without a coverage gate run their plain `test` task. shared
+        # and web are NOT here: their coverage runs below ARE their test runs
+        # (2026-10 CI audit — each suite used to run twice, once plain and once
+        # under coverage).
+        run: pnpm turbo run test --filter=@oybc/bingo-core --filter=@oybc/riso-tokens
 
-      - name: Shared coverage (gated)
-        # BLOCKING: Jest `coverageThreshold` in packages/shared/jest.config.js
-        # (80% global on statements/branches/functions/lines; barrel index.ts
-        # files excluded from measurement). Separate from Test so a threshold
-        # miss is distinguishable from a failing test.
+      - name: Test + coverage gate (shared)
+        # Jest `coverageThreshold` in packages/shared/jest.config.js (80% global
+        # on statements/branches/functions/lines; barrel index.ts files
+        # excluded). A failing test OR a threshold miss fails this step; Jest's
+        # output says which.
         run: pnpm --filter @oybc/shared test:coverage
 
-      - name: Web coverage (reported, not gated)
+      - name: Test + coverage floor (web)
         id: web-coverage
-        # Re-runs the web Vitest suite under v8 coverage. `text-summary` prints
-        # the four totals into this log; `json-summary` is uploaded below.
-        # REPORTED ONLY: no thresholds in apps/web/vitest.config.ts and
-        # `continue-on-error` here, so it never fails the job. (Shared IS gated
-        # — see the step above and CLAUDE.md §Testing Standards.)
-        continue-on-error: true
+        # Vitest under v8 coverage. `coverage.thresholds` in
+        # apps/web/vitest.config.ts is a FLOOR (the 2026-10-17 measurement,
+        # rounded down) — raise it as coverage grows, never lower it to pass.
+        # `text-summary` prints the totals here; `json-summary` uploads below.
         run: pnpm --filter @oybc/web test:coverage
 
       - name: Upload web coverage summary
@@ -130,8 +144,21 @@ jobs:
     # job so the fast build/test/lint signal above isn't blocked on the browser
     # download + a full UI run. Shares the workflow-level `concurrency` group, so
     # a newer push cancels this too.
+    #
+    # Sharded across two runners (2026-10 CI audit: one serial worker took
+    # ~8.5 min). Each shard keeps the exact single-worker, serial environment
+    # the suite was stabilised on — its own dev server, its own browser — so
+    # sharding cannot introduce cross-spec interference. `fail-fast: false` so
+    # one red shard still reports the other's results.
+    name: e2e (shard ${{ matrix.shard }}/2)
+    needs: changes
+    if: needs.changes.outputs.web == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2]
 
     steps:
       - uses: actions/checkout@v7
@@ -178,7 +205,7 @@ jobs:
           VITE_FIREBASE_MESSAGING_SENDER_ID: '000000000000'
           VITE_FIREBASE_APP_ID: '1:000000000000:web:e2edummy'
           VITE_FIREBASE_MEASUREMENT_ID: G-E2EDUMMY
-        run: pnpm --filter @oybc/web test:e2e
+        run: pnpm --filter @oybc/web test:e2e --shard=${{ matrix.shard }}/2
 
       - name: Upload Playwright report on failure
         # Gated on the e2e step's own outcome so the report uploads on a red
@@ -188,6 +215,6 @@ jobs:
         if: failure() && steps.e2e.outcome == 'failure'
         uses: actions/upload-artifact@v7
         with:
-          name: playwright-report
+          name: playwright-report-shard-${{ matrix.shard }}
           path: apps/web/playwright-report
           retention-days: 7

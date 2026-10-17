@@ -1,0 +1,25 @@
+{
+  "_comment": "iOS snapshot tests that fail on CI's iOS 26.2 runner but pass locally on the pinned 26.3.1 runtime (grid views lay out differently there). Read by scripts/audit/check-snapshot-reds.mjs; frozen 2026-10-17, identical across the 8 prior CI runs. Entries are \"<TestClass> <testName>\". Shrink as they are fixed; never grow to dodge a regression.",
+  "entries": [
+    "BoardEditCenterToggleSnapshotTests testFreeCenterInteractiveDark",
+    "BoardEditCenterToggleSnapshotTests testFreeCenterInteractiveLight",
+    "BoardEditCenterToggleSnapshotTests testNoneCenterEmptyLight",
+    "BoardEditCenterToggleSnapshotTests testNoneCenterWithTaskDark",
+    "BoardEditCenterToggleSnapshotTests testNoneCenterWithTaskLight",
+    "BoardEditOptionsSnapshotTests testActiveDirtyWithBoardSectionDark",
+    "BoardEditOptionsSnapshotTests testActiveDirtyWithBoardSectionLight",
+    "BoardEditPanelSnapshotTests testPanelDirtyLight",
+    "BoardEditPanelSnapshotTests testPanelMonthlyCleanDark",
+    "BoardEditPanelSnapshotTests testPanelMonthlyCleanLight",
+    "BoardEditPanelSnapshotTests testPanelSavingLight",
+    "BoardWizardStepsSnapshotTests testPreviewStepReady",
+    "BoardWizardStepsSnapshotTests testPreviewStepReadyDark",
+    "RisoCreateHubSnapshotTests testPreviewStepWithRisoGrid",
+    "RisoCreateHubSnapshotTests testPreviewStepWithRisoGridDark",
+    "WindowedCompletionSealingSnapshotTests testClosingOutBannerOneBoard",
+    "WindowedCompletionSealingSnapshotTests testClosingOutBannerThreeBoardsDark",
+    "WindowedCompletionSealingSnapshotTests testClosingOutBannerThreeBoardsLight",
+    "WizardArrangePreviewSnapshotTests testPreviewModeDark",
+    "WizardArrangePreviewSnapshotTests testPreviewModeLight"
+  ]
+}

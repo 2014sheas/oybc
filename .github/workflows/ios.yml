@@ -1,211 +1,188 @@
 name: iOS
 
-# Runs `xcodebuild test` against the OYBC scheme on every PR that
-# touches iOS or shared code. Fills the gap left by the Claude
-# environment not having Xcode available — lets contributors (human
-# or otherwise) catch compile errors and regressions before a human
-# has to press ⌘B locally.
+# Logic tests, snapshot tests and a Release build of the OYBC app, as three
+# PARALLEL macOS jobs (2026-10 CI audit — they used to run back to back in one
+# ~24-min job, half of it the snapshot step). Wall clock is now the slowest of
+# the three instead of their sum.
+#
+# No trigger-level `paths:` filter: these jobs are REQUIRED status checks on
+# `dev`, and a required check whose workflow never triggers blocks the PR
+# forever. The `changes` job gates them instead; a job skipped by its `if:`
+# reports success. `packages/shared/**` is deliberately NOT a trigger any more
+# — no iOS build input lives there (the cross-platform fixtures are checked-in
+# copies under apps/ios/OYBCTests/Fixtures, which ARE under apps/ios).
 
 on:
   pull_request:
     branches: [dev]
-    paths:
-      - 'apps/ios/**'
-      - 'packages/shared/**'
-      - '.github/workflows/ios.yml'
   push:
     branches: [dev]
-    paths:
-      - 'apps/ios/**'
-      - 'packages/shared/**'
-      - '.github/workflows/ios.yml'
 
-# Cancel in-flight runs for the same PR when a newer commit is pushed —
-# saves runner minutes during rapid iteration. `github.ref` is a Git
-# ref (sanitised by GitHub), safe to interpolate into the concurrency key.
 concurrency:
   group: ios-${{ github.ref }}
   cancel-in-progress: true
 
-# Least-privilege GITHUB_TOKEN (2026-09 audit T1): every job only reads the
-# repo. Widen per job, never here, and only where a step needs more.
+# Least-privilege GITHUB_TOKEN (2026-09 audit T1). Widen per job, never here.
 permissions:
   contents: read
 
-jobs:
-  build-and-test:
-    # macos-15 runners ship multiple Xcodes; we pin to 26.3 (year-based
-    # versioning) so snapshot baselines recorded against a developer's
-    # local Xcode 26.3 + iOS 26.x simulator match what CI renders. The
-    # default xcode-select on macos-15 is 16.4 — too old for the iOS
-    # 26.x simulator and a Swift major behind local. DEVELOPER_DIR is
-    # set at job level so every step (including xcodegen + swift via
-    # xcrun) uses the same toolchain.
-    runs-on: macos-15
-    # Bumped 20→30: the slow macos-15 runner has crept toward the cap (PRs #193
-    # 17m, #194 20m timeout) as the build + snapshot suite grew. 30 gives headroom.
-    # TODO(#254): revisit once warm-cache run times are known — a warm run
-    # (SPM cache hit + no brew install) should land well under 30.
-    timeout-minutes: 30
-    env:
-      DEVELOPER_DIR: /Applications/Xcode_26.3.app/Contents/Developer
-      # Pinned XcodeGen release (not the macos-15 image default — xcodegen
-      # isn't preinstalled on GitHub's macOS runners, so every run paid for
-      # a cold `brew install xcodegen`, ~1-3 min). We download the prebuilt
-      # release zip instead and verify its checksum. To bump: pick a new
-      # tag from https://github.com/yonaskolb/XcodeGen/releases, download
-      # `xcodegen.zip` for that tag, `shasum -a 256` it, and update both
-      # vars below.
-      XCODEGEN_VERSION: "2.45.4"
-      XCODEGEN_ZIP_SHA256: "090ec29491aad50aec10631bf6e62253fed733c50f3aab0f5ffc86bc170bdbef"
-      # Explicit, repo-relative derivedDataPath (instead of xcodebuild's
-      # default ~/Library/Developer/Xcode/DerivedData/<hash>) so the SPM
-      # checkout location under it is deterministic and cacheable. Both
-      # xcodebuild invocations below pass -derivedDataPath "$DERIVED_DATA_PATH"
-      # so the OYBC and OYBCSnapshotTests schemes share one resolved
-      # SourcePackages checkout. Already covered by apps/ios/.gitignore's
-      # bare `DerivedData` pattern.
-      DERIVED_DATA_PATH: ${{ github.workspace }}/apps/ios/DerivedData
+env:
+  # Pinned to Xcode 26.3 so snapshot baselines recorded on a local 26.3
+  # toolchain match what CI renders as closely as the runner's simulators
+  # allow. The macos-15 default (16.4) is too old for the iOS 26.x simulator.
+  DEVELOPER_DIR: /Applications/Xcode_26.3.app/Contents/Developer
+  # Pinned XcodeGen release (installed by .github/actions/ios-setup). To bump:
+  # pick a tag from https://github.com/yonaskolb/XcodeGen/releases, download
+  # its `xcodegen.zip`, `shasum -a 256` it, and update both vars.
+  XCODEGEN_VERSION: "2.45.4"
+  XCODEGEN_ZIP_SHA256: "090ec29491aad50aec10631bf6e62253fed733c50f3aab0f5ffc86bc170bdbef"
+  # Repo-relative derived data so the SPM checkout under it is cacheable.
+  # Covered by apps/ios/.gitignore's bare `DerivedData` pattern.
+  DERIVED_DATA_PATH: ${{ github.workspace }}/apps/ios/DerivedData
 
+jobs:
+  changes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      ios: ${{ steps.filter.outputs.ios }}
     steps:
       - uses: actions/checkout@v7
-
-      - name: Show toolchain versions
-        run: |
-          sw_vers
-          xcodebuild -version
-          swift --version
-          xcrun simctl list runtimes | grep -iE "ios" || true
-
-      - name: Cache SPM resolved packages
-        # Caches only the resolved package checkouts/artifacts under
-        # DerivedData/SourcePackages, NOT the built products — build-product
-        # caching is deliberately out of scope for this pass (see #254):
-        # invalidation across Xcode-version bumps and snapshot-determinism
-        # interactions aren't worth the complexity yet. This alone should
-        # remove most of the GRDB / Firebase iOS SDK / GoogleSignIn /
-        # swift-snapshot-testing network-resolution time.
-        #
-        # Keyed on project.yml (dependency floors) + the committed workspace
-        # Package.resolved (exact pins — tracked since the Xcode Cloud fix;
-        # Xcode Cloud requires it, and it makes local/CI/Cloud resolve the
-        # same versions). Either changing a floor or re-resolving pins
-        # invalidates the cache, matching intent.
-        uses: actions/cache@v6
+      - uses: dorny/paths-filter@v3
+        id: filter
         with:
-          path: ${{ env.DERIVED_DATA_PATH }}/SourcePackages
-          key: ios-spm-${{ runner.os }}-${{ env.DEVELOPER_DIR }}-${{ hashFiles('apps/ios/project.yml', 'apps/ios/OYBC.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved') }}
-          restore-keys: |
-            ios-spm-${{ runner.os }}-${{ env.DEVELOPER_DIR }}-
-            ios-spm-${{ runner.os }}-
+          filters: |
+            ios:
+              - 'apps/ios/**'
+              - '.github/workflows/ios.yml'
+              - '.github/actions/ios-setup/**'
+              - '.github/actions/ios-sim-boot/**'
+              - 'scripts/audit/check-snapshot-reds.mjs'
+              - 'scripts/audit/snapshot-ci-known-reds.json'
 
-      - name: Install xcodegen
-        # Pinned release binary instead of `brew install xcodegen` — brew
-        # has to build/fetch the formula fresh on every run since xcodegen
-        # isn't part of the macos-15 image, costing 1-3 min. Downloads the
-        # prebuilt zip GitHub publishes per release, verifies its sha256
-        # against XCODEGEN_ZIP_SHA256 above, then installs bin+share side
-        # by side (mirrors upstream's own install.sh) and adds bin to PATH.
-        run: |
-          set -euo pipefail
-          curl -sSL -o /tmp/xcodegen.zip \
-            "https://github.com/yonaskolb/XcodeGen/releases/download/${XCODEGEN_VERSION}/xcodegen.zip"
-          computed_sha256=$(shasum -a 256 /tmp/xcodegen.zip | awk '{print $1}')
-          if [ "$computed_sha256" != "$XCODEGEN_ZIP_SHA256" ]; then
-            echo "::error::xcodegen.zip checksum mismatch: expected $XCODEGEN_ZIP_SHA256, got $computed_sha256"
-            exit 1
-          fi
-          unzip -q /tmp/xcodegen.zip -d /tmp/xcodegen-install
-          mkdir -p "$RUNNER_TEMP/xcodegen"
-          cp -r /tmp/xcodegen-install/xcodegen/bin "$RUNNER_TEMP/xcodegen/bin"
-          cp -r /tmp/xcodegen-install/xcodegen/share "$RUNNER_TEMP/xcodegen/share"
-          echo "$RUNNER_TEMP/xcodegen/bin" >> "$GITHUB_PATH"
+  logic-tests:
+    needs: changes
+    if: needs.changes.outputs.ios == 'true'
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/ios-setup
+      - uses: ./.github/actions/ios-sim-boot
 
-      - name: Guard committed pbxproj keeps GoogleService-Info.plist ref
-        # Runs BEFORE `xcodegen generate` on purpose: the generate step below
-        # regenerates a 0-ref pbxproj on this runner (no gitignored plist here),
-        # so this must inspect the as-committed pbxproj. Fails the PR if someone
-        # committed a pbxproj that lost its plist reference (which builds fine
-        # but crashes at launch). See the script header for the full mechanism.
-        working-directory: apps/ios
-        run: bash scripts/check-firebase-plist-ref.sh
-
-      - name: Generate Xcode project
-        working-directory: apps/ios
-        run: xcodegen generate
-
-      - name: Guard against _Concurrency.Task shadow
-        working-directory: apps/ios
-        run: bash scripts/check-task-shadow.sh
-
-      - name: Build and test (iOS Simulator)
+      - name: Build for testing
+        # Separate from the test run so the simulator keeps booting while this
+        # compiles. Raw xcodebuild output (no xcpretty) so crash logs and Swift
+        # fatal-error traces stay visible.
         working-directory: apps/ios
         run: |
-          # Raw xcodebuild output (no xcpretty wrapper) so simulator
-          # crash logs and Swift fatal-error traces are visible in the
-          # CI log on failure. `xcbeautify` is a future option if
-          # verbosity becomes a problem, but for now raw output is
-          # more debuggable.
-          xcodebuild test \
+          xcodebuild build-for-testing \
             -scheme OYBC \
-            -destination 'platform=iOS Simulator,name=iPhone 16,OS=latest' \
+            -destination "id=$SIM_UDID" \
+            -derivedDataPath "$DERIVED_DATA_PATH" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO
+
+      - name: Run logic tests
+        working-directory: apps/ios
+        run: |
+          xcrun simctl bootstatus "$SIM_UDID" -b
+          xcodebuild test-without-building \
+            -scheme OYBC \
+            -destination "id=$SIM_UDID" \
+            -derivedDataPath "$DERIVED_DATA_PATH" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO
+
+  snapshot-tests:
+    # BLOCKING on NEW reds only. CI's runner has iOS 26.2 simulators while
+    # baselines are recorded on 26.3.1, and a fixed set of grid views lays out
+    # differently there (a real layout shift, not anti-aliasing — no tolerance
+    # absorbs it). scripts/audit/snapshot-ci-known-reds.json freezes that set;
+    # check-snapshot-reds.mjs fails on any red outside it, on a run that never
+    # finished, or on a log it can't fully account for. Shrink the list as
+    # reds are fixed; when the runner ships iOS 26.3 it should go empty.
+    needs: changes
+    if: needs.changes.outputs.ios == 'true'
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/ios-setup
+      - uses: ./.github/actions/ios-sim-boot
+
+      - name: Build for testing
+        working-directory: apps/ios
+        run: |
+          xcodebuild build-for-testing \
+            -scheme OYBCSnapshotTests \
+            -destination "id=$SIM_UDID" \
             -derivedDataPath "$DERIVED_DATA_PATH" \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO
 
       - name: Run snapshot tests
-        id: snapshot-tests
-        # Advisory in CI for now: the runner's macos-15 image has Xcode
-        # 26.3 with iOS 26.0/26.1/26.2 simulators (no 26.3 yet), while
-        # local dev machines typically have iOS 26.3.x — so snapshots
-        # recorded locally won't match CI's pixel-for-pixel until either
-        # (a) a runner image refresh ships iOS 26.3, or (b) a developer
-        # frees disk space and installs iOS 26.2 sim runtime locally to
-        # re-record baselines on the matching iOS.
-        #
-        # The xcresult artifact still uploads on failure (see next step),
-        # so a developer can always pull the diff and decide whether to
-        # re-record. Catastrophic breakage (build errors, view crashes)
-        # would also surface in this step's logs even when the job stays
-        # green — review CI logs, not just the green check.
-        continue-on-error: true
         working-directory: apps/ios
         env:
-          # Force fail-on-missing in CI. Tests use `record: .missing`
-          # locally so a first-run baseline auto-records — convenient
-          # on a dev machine but a silent-pass trap on CI: a new test
-          # class without committed PNGs would record an ephemeral
-          # baseline and pass green, hiding the fact that nothing is
-          # actually under version control. The library honours this
-          # env var ahead of any per-call setting, so `never` here
-          # forces real failure when a baseline is absent.
+          # Fail-on-missing in CI: tests use `record: .missing` locally, which
+          # would silently record an ephemeral baseline here and pass. The
+          # library honours this env var ahead of any per-call setting.
           SNAPSHOT_TESTING_RECORD: never
         run: |
-          # OS=latest is deterministic given the Xcode pin above: it
-          # resolves to whichever iOS simulator ships with Xcode 26.3.
-          # Bumping the Xcode pin (e.g. to 26.4) is a deliberate event —
-          # re-record baselines on the matching local Xcode + iOS, commit,
-          # push.
-          xcodebuild test \
+          xcrun simctl bootstatus "$SIM_UDID" -b
+          # xcodebuild's exit status is expected to be non-zero while known
+          # reds exist; the gate step below decides pass/fail from the log.
+          set +e
+          xcodebuild test-without-building \
             -scheme OYBCSnapshotTests \
-            -destination 'platform=iOS Simulator,name=iPhone 16,OS=latest' \
-            -resultBundlePath /tmp/snapshot-results.xcresult \
+            -destination "id=$SIM_UDID" \
+            -resultBundlePath "$RUNNER_TEMP/snapshot-results.xcresult" \
             -derivedDataPath "$DERIVED_DATA_PATH" \
             CODE_SIGNING_ALLOWED=NO \
-            CODE_SIGNING_REQUIRED=NO
+            CODE_SIGNING_REQUIRED=NO 2>&1 | tee "$RUNNER_TEMP/snapshot.log"
+          echo "xcodebuild exit: ${PIPESTATUS[0]}"
+
+      - name: Snapshot gate (new reds only)
+        id: gate
+        run: |
+          node scripts/audit/check-snapshot-reds.mjs --self-test
+          node scripts/audit/check-snapshot-reds.mjs "$RUNNER_TEMP/snapshot.log"
 
       - name: Upload snapshot test results on failure
-        # Gated on the snapshot step's outcome rather than job-level
-        # `failure()` because the snapshot step uses
-        # `continue-on-error: true` — that converts a step failure to
-        # a `success` conclusion at the job level, so `failure()` would
-        # return false and this upload would skip even when there's a
-        # diff worth inspecting. Outcome reflects what actually happened
-        # in the step.
-        if: steps.snapshot-tests.outcome == 'failure'
+        # Only when the gate fails — the known reds would otherwise upload a
+        # ~95 MB bundle on every run. Pull it to compare reference / failure /
+        # difference PNGs without re-running.
+        if: failure() && steps.gate.outcome == 'failure'
         uses: actions/upload-artifact@v7
         with:
           name: snapshot-test-results
-          path: /tmp/snapshot-results.xcresult
+          path: ${{ runner.temp }}/snapshot-results.xcresult
           retention-days: 7
           if-no-files-found: warn
+
+  release-build:
+    # Compiles the Release configuration for device, the way Xcode Cloud's
+    # archive does (2026-10 CI audit). The test jobs only build Debug, so
+    # code that compiles only under `#if DEBUG` (or breaks under Release
+    # optimisation) used to surface after merge, in the TestFlight build.
+    needs: changes
+    if: needs.changes.outputs.ios == 'true'
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/ios-setup
+
+      - name: Build Release (generic iOS device, unsigned)
+        working-directory: apps/ios
+        run: |
+          xcodebuild build \
+            -scheme OYBC \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath "$DERIVED_DATA_PATH" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO

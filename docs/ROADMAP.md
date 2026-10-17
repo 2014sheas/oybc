@@ -50,13 +50,14 @@ The review's core CI/CD finding: coverage tracks where the *apps* are, not where
 - **Scope:** workflow on push to `dev` touching `apps/coming-soon/**`: build, then deploy hosting using the existing `FIREBASE_SERVICE_ACCOUNT` secret pattern from `firestore-rules.yml`. Sequence after/with A4 if the project split lands first.
 - **Acceptance:** merging a coming-soon change publishes it without manual steps.
 
-### A7 — Security/dependency scanning depth — `S`
+### A7 — Security/dependency scanning depth — `S` (MOSTLY SHIPPED 2026-10-17: CodeQL js/ts + actions, secret scanning + push protection, Dependabot security alerts/updates; open: SPM CVE hand-check reminder, Swift CodeQL)
 - **Why:** no `pnpm audit` step, no secret scanning, and iOS SPM deps (Firebase, GRDB, GoogleSignIn) have no automated CVE coverage (Dependabot doesn't support SPM).
 - **Scope:** add a non-blocking `pnpm audit --prod` report step to web CI (blocking on `high`+ once the baseline is clean); enable GitHub secret scanning + push protection in repo settings; add a quarterly reminder (existing dependabot-sweep cron is the natural home) to hand-check SPM dep releases/CVEs.
 - **Acceptance:** a high-severity npm advisory or a pushed secret surfaces automatically instead of never.
 
-### A8 — Snapshot-test strict mode in CI — `S` (blocked on environment)
-- **Why:** the snapshot step is `continue-on-error: true` (`ios.yml:96`) because the CI runner's iOS simulator minor differs from local; visual regressions currently produce a green check.
+### A8 — Snapshot-test strict mode in CI — `S` (PARTIAL 2026-10-17; full strict blocked on environment)
+- **Status (2026-10-17 CI audit):** the snapshot step is no longer advisory. `snapshot-tests` (its own parallel job) fails on any red outside `scripts/audit/snapshot-ci-known-reds.json` — the 20 grid views that fail on the runner's iOS 26.2 and were identical across 8 runs — via `scripts/audit/check-snapshot-reds.mjs`, and is a required check. A genuine diff on any of the other ~507 tests now fails the PR. What remains is emptying the list.
+- **Why:** the CI runner's iOS simulator minor differs from local, so the 20 known reds still hide any regression on those views.
 - **Scope:** already documented in CLAUDE.md — either wait for a macos-15 image shipping iOS 26.3, or install the iOS 26.2 runtime locally, re-record baselines on `OS=26.2`, and drop the flag. Track the runner-image state in the dependabot-sweep reminder.
 - **Acceptance:** a genuine snapshot diff fails the PR.
 - **Open snapshot debt — one unexplained baseline offset (filed 2026-09-22, B3.1):**
