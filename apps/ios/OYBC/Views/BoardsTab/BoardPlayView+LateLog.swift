@@ -129,8 +129,10 @@ extension BoardPlayView {
 
         case .compound:
             let children = viewModel.compoundChildrenByCompound[task.id] ?? []
+            let childTargets = viewModel.boardTasks.first { $0.id == item.boardTaskId }?.childTargets
             let parts: [LateLogCompoundPart] = children.compactMap { link in
-                guard let child = viewModel.taskMap[link.childTaskId], !child.isDeleted else { return nil }
+                guard let raw = viewModel.taskMap[link.childTaskId], !raw.isDeleted else { return nil }
+                let child = PlacementParams.withChildTarget(raw, childTargets: childTargets) // slice 2a
                 // A linked counting child is stageable too (slice 0): its +1 logs on its root.
                 let isStageable = child.type == .normal || child.type == .counting
                 let alreadyDone: Bool = {

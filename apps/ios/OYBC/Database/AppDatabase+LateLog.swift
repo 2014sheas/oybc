@@ -306,7 +306,8 @@ extension AppDatabase {
         childrenByCompound: [String: [CompoundChild]],
         eventsByTaskId: [String: [TaskEvent]],
         occurredAt: String,
-        now: String
+        now: String,
+        childTargets: [PlacementChildTarget]? = nil
     ) -> CompoundLateLogPlan {
         let sealedAtMs = board.sealedAt.flatMap { DateFormatting.parseISO($0) }
             .map { $0.timeIntervalSince1970 * 1000 } ?? .infinity
@@ -361,13 +362,15 @@ extension AppDatabase {
                 lastSyncedAt: nil, version: 1, isDeleted: false, deletedAt: nil
             ))
         }
+        // The PLACEMENT's child goals (slice 2a) — what the sealed re-derive scores with.
         let met = CompoundEvaluation.evaluate(
             compound: compound,
             childrenByCompound: childrenByCompound,
             taskById: taskById,
             windowContext: CompoundWindowContext(
                 windowStart: board.startDate, windowEnd: boardWindowEnd(board), eventsByTaskId: staged
-            )
+            ),
+            childTargets: childTargets
         )
         return CompoundLateLogPlan(
             completionIds: completionIds, incrementIds: incrementIds,
@@ -410,10 +413,14 @@ extension AppDatabase {
             }
 
             let occurredAt = lateLogOccurredAt(board: board, nowIso: now)
+            let placement = try BoardTask
+                .filter(Column("boardId") == boardId && Column("taskId") == compoundTaskId && Column("isDeleted") == false)
+                .fetchOne(db)
             let plan = Self.planCompoundLateLog(
                 board: board, compound: compound, requestedChildIds: Set(childTaskIds),
                 taskById: taskById, childrenByCompound: childrenByCompound,
-                eventsByTaskId: eventsByTaskId, occurredAt: occurredAt, now: now
+                eventsByTaskId: eventsByTaskId, occurredAt: occurredAt, now: now,
+                childTargets: placement?.childTargets
             )
             guard plan.isRuleMet else { throw LateLogError.ruleNotMet }
 

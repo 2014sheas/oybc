@@ -428,11 +428,16 @@ async function isCompoundRuleMetOnClosedBoard(
       isDeleted: false,
     } as TaskEvent);
   });
+  // The PLACEMENT's child goals (slice 2a) — what the sealed re-derive scores with.
+  const placement = await db.boardTasks
+    .where('boardId').equals(board.id)
+    .filter((bt) => bt.taskId === compound.id && !bt.isDeleted)
+    .first();
   return evaluateCompound(compound, childrenByCompound, taskById, {
     windowStart: board.startDate,
     windowEnd: boardWindowEnd(board),
     eventsByTaskId,
-  });
+  }, placement?.childTargets);
 }
 
 /**

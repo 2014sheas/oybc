@@ -357,7 +357,7 @@ export function BoardPlaySurface({
     return {
       boardTaskId: btId, task, taskMap, isSealed,
       sourceId: resolveSharedCounterSourceId(task, sharedCounterSourceIds),
-      currentCount: taskToSquareState(task, children, taskMap, compoundChildrenByCompound, squareWindowContext, cellStateByBoardTaskId[btId]).currentCount,
+      currentCount: taskToSquareState(task, children, taskMap, compoundChildrenByCompound, squareWindowContext, cellStateByBoardTaskId[btId], bt.childTargets).currentCount,
       onIncrementShared: (s, a, p) => void handleSharedCounterIncrement(s, a, p),
       onDecrementShared: (s, a, p) => void handleSharedCounterDecrement(s, a, p),
       onSetStandaloneCount: (b, next) => void handleComplete(b, { currentCount: next }),
@@ -644,7 +644,7 @@ export function BoardPlaySurface({
                   task, taskChildren, taskMap, compoundChildrenByCompound, squareWindowContext, cellBt?.childTargets,
                 );
                 const squareState = taskToSquareState(
-                  task, taskChildren, taskMap, compoundChildrenByCompound, squareWindowContext, cellState,
+                  task, taskChildren, taskMap, compoundChildrenByCompound, squareWindowContext, cellState, cellBt?.childTargets,
                 );
                 // Windowed Completion — on a SEALED board, `done` reads the
                 // frozen `sealedCompletedCells` snapshot (docs §Effects of
@@ -883,7 +883,7 @@ export function BoardPlaySurface({
         );
         const squareState = taskToSquareState(
           task, taskChildren, taskMap, compoundChildrenByCompound, squareWindowContext,
-          cellStateByBoardTaskId[bt.id],
+          cellStateByBoardTaskId[bt.id], bt.childTargets,
         );
         // Use squareState.currentCount (baseline-adjusted for linked counters)
         // rather than the raw task.currentCount accumulator. For standalone
@@ -946,7 +946,7 @@ export function BoardPlaySurface({
         );
         const squareState = taskToSquareState(
           task, taskChildren, taskMap, compoundChildrenByCompound, squareWindowContext,
-          cellStateByBoardTaskId[bt.id],
+          cellStateByBoardTaskId[bt.id], bt.childTargets,
         );
         // Use squareState.currentCount (baseline-adjusted for linked counters).
         const menuCurrentCount = squareState.currentCount;
@@ -1045,13 +1045,10 @@ export function BoardPlaySurface({
           squares editor now. */}
 
       {/* D15 — the closed-board direct-log sheet. */}
-      {isSealed && lateLogTaskId && taskMap[lateLogTaskId] && (
-        <LateLogSheet
-          board={board} task={taskMap[lateLogTaskId]} taskMap={taskMap}
-          compoundChildrenByCompound={compoundChildrenByCompound}
-          onClose={() => setLateLogTaskId(null)}
-        />
-      )}
+      {isSealed && lateLogTaskId && taskMap[lateLogTaskId] && (() => { const lateLogBt = boardTasks.find((b) => b.taskId === lateLogTaskId && !b.isDeleted); return ( // slice 2a
+        <LateLogSheet board={board} task={(lateLogBt && placedTaskFor(lateLogBt, taskMap)) ?? taskMap[lateLogTaskId]} taskMap={taskMap}
+          compoundChildrenByCompound={compoundChildrenByCompound} childTargets={lateLogBt?.childTargets} onClose={() => setLateLogTaskId(null)} />
+      ); })()}
 
       {/* "Board saved" toast — displayed after a successful edit-mode save (~2.4s). */}
       {savedToast && (

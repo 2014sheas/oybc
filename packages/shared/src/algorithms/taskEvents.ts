@@ -232,8 +232,8 @@ export function lateLogOccurredAt(
  * signed (a decrement is a negative delta) and summed as-is; the sum is then
  * low-clamped at 0 exactly like {@link resolveTaskWindowState} and
  * `deriveDisplayedCount`. Completion is `maxCount != null && count >= maxCount` (slice 2a: one rule) — the
- * derived-counter convention (`deriveDisplayedCount`: a missing / 0 target is
- * immediately complete). Overshoot is valid; nothing is high-clamped.
+ * derived-counter convention (unlike `deriveDisplayedCount`'s context-less path,
+ * where a missing / 0 target still reads complete until slice 2b re-models the hub). Overshoot is valid; nothing is high-clamped.
  *
  * `baseline` is NOT read — it stays a non-authored display cache.
  *

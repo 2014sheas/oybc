@@ -138,7 +138,7 @@ export function buildBoardPreviewCells(
       const taskChildren = childrenByCompound[task.id] ?? [];
       const squareState = taskToSquareState(
         task, taskChildren, taskMap, childrenByCompound, windowContext,
-        cellStateByBoardTaskId[bt.id],
+        cellStateByBoardTaskId[bt.id], bt.childTargets,
       );
       const cellIndex = row * size + col;
       const completed = isSealed ? sealedCellSet.has(cellIndex) : squareState.isCompleted;

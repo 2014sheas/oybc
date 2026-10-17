@@ -43,15 +43,6 @@ extension BoardPlayViewModel {
         return grouped
     }
 
-    /// Resolve an event-owning primitive task's windowed state for the current
-    /// board window `[windowStart, windowEnd]` (docs §Semantics). Callers must
-    /// branch derived / compound / achievement BEFORE calling — this delegates
-    /// to the shared `resolveTaskWindowState`. This is the play CELL read: the
-    /// view's `windowedIsCompleted` / `windowedCount` resolve through it.
-    ///
-    /// - Parameter task: The task to resolve (its own `type` / `maxCount` are
-    ///   used, so a staged edit override resolves as the staged type).
-    /// - Returns: The windowed `{ isCompleted, count }`.
     /// The placement-adjusted task a surface renders for `bt` (slice 2a):
     /// `PlacementParams.apply` with the root's title settings for a linked
     /// task. Web twin `placedTaskFor`.
@@ -61,6 +52,15 @@ extension BoardPlayViewModel {
         return PlacementParams.apply(task, placement: bt, settings: root.map { CounterSettings.TitleSettings(task: $0) })
     }
 
+    /// Resolve an event-owning primitive task's windowed state for the current
+    /// board window `[windowStart, windowEnd]` (docs §Semantics). Callers must
+    /// branch derived / compound / achievement BEFORE calling — this delegates
+    /// to the shared `resolveTaskWindowState`. This is the play CELL read: the
+    /// view's `windowedIsCompleted` / `windowedCount` resolve through it.
+    ///
+    /// - Parameter task: The task to resolve (its own `type` / `maxCount` are
+    ///   used, so a staged edit override resolves as the staged type).
+    /// - Returns: The windowed `{ isCompleted, count }`.
     func windowedState(of task: Task) -> TaskWindowState {
         resolveTaskWindowState(
             task: task,

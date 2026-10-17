@@ -7,6 +7,8 @@ import {
   formatCount,
   isEventOwningTask,
   resolveLinkedCounterDisplay,
+  withChildTarget,
+  type PlacementChildTarget,
   type TaskEvent,
   resolveCountKind,
   resolveFamilyCountKind,
@@ -36,6 +38,8 @@ export interface LateLogSheetProps {
   taskMap: Record<string, Task>;
   /** Compound children by parent compound id. */
   compoundChildrenByCompound: Record<string, CompoundChild[]>;
+  /** The tapped compound placement's per-child goals (slice 2a), direct children only. */
+  childTargets?: PlacementChildTarget[] | null;
   onClose: () => void;
 }
 
@@ -106,6 +110,7 @@ export function LateLogSheet({
   task,
   taskMap,
   compoundChildrenByCompound,
+  childTargets,
   onClose,
 }: LateLogSheetProps): React.ReactElement {
   const { ref: modalRef, props: modalProps } = useModalA11y<HTMLDivElement>({ open: true, onCancel: onClose });
@@ -170,6 +175,7 @@ export function LateLogSheet({
             task={task}
             taskMap={taskMap}
             compoundChildrenByCompound={compoundChildrenByCompound}
+            childTargets={childTargets}
             busy={busy}
             setBusy={setBusy}
             commitCompoundParts={commitCompoundParts}
@@ -373,6 +379,7 @@ function CompoundBody({
   task,
   taskMap,
   compoundChildrenByCompound,
+  childTargets,
   busy,
   setBusy,
   commitCompoundParts,
@@ -382,6 +389,7 @@ function CompoundBody({
   task: Task;
   taskMap: Record<string, Task>;
   compoundChildrenByCompound: Record<string, CompoundChild[]>;
+  childTargets?: PlacementChildTarget[] | null;
   busy: boolean;
   setBusy: (b: boolean) => void;
   commitCompoundParts: (
@@ -413,7 +421,8 @@ function CompoundBody({
   const [stagedIncrement, setStagedIncrement] = useState<Set<string>>(new Set());
 
   const rows = links.map((link) => {
-    const child = taskMap[link.childTaskId];
+    const rawChild = taskMap[link.childTaskId];
+    const child = rawChild ? withChildTarget(rawChild, childTargets) : undefined; // slice 2a: the placement's child goal
     const childEvents = events.filter((e) => e.taskId === link.childTaskId);
     const rootEvents = child?.sharedCounterId ? events.filter((e) => e.taskId === child.sharedCounterId) : [];
     const isCurrentlyComplete = child ? childIsCurrentlyComplete(child, childEvents, board, rootEvents) : false;

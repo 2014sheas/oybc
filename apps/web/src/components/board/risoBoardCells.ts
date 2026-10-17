@@ -84,7 +84,7 @@ export function buildRisoBoardCells(
     }
     const ss = taskToSquareState(
       task, undefined, taskMap, compoundChildrenByCompound, squareWindowContext,
-      cellStateByBoardTaskId[bt.id],
+      cellStateByBoardTaskId[bt.id], bt.childTargets,
     );
     const type = cellTypeOf(task.type);
     // Sealed: `done` comes from the frozen snapshot, not live derivation —

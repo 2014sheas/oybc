@@ -341,6 +341,8 @@ export function taskToSquareState(
   childrenByCompound?: Record<string, CompoundChild[]>,
   windowContext?: SquareWindowContext,
   cellState?: CellState,
+  /** The compound placement's per-child goals (slice 2a), direct children only. */
+  childTargets?: PlacementChildTarget[] | null,
 ): SquareState {
   // Board-integrity PR-3 (issue #360, finding 2) — ACHIEVEMENT squares read
   // their completion from the kernel's per-cell resolution, never a lifetime
@@ -368,7 +370,7 @@ export function taskToSquareState(
         }
       : undefined;
     return {
-      isCompleted: evaluateCompound(task, cbMap, map, compoundCtx),
+      isCompleted: evaluateCompound(task, cbMap, map, compoundCtx, childTargets),
       currentCount: 0,
       completedStepIds: new Set<string>(),
     };

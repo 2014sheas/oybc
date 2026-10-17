@@ -1055,7 +1055,7 @@ struct BoardPlayView: View {
                     compound: task,
                     childrenByCompound: compoundChildrenByCompound,
                     taskById: taskMap,
-                    windowContext: boardWindowContext
+                    windowContext: boardWindowContext, childTargets: boardTask.childTargets
                 )
             }
             if task.type == .achievement {
@@ -1092,7 +1092,7 @@ struct BoardPlayView: View {
         // Compound child progress — mirrors original playSquare.
         let compoundLinks = task.map { compoundChildrenByCompound[$0.id] ?? [] } ?? []
         let compoundDoneCount = compoundLinks.filter { link in
-            guard let childTask = taskMap[link.childTaskId], !childTask.isDeleted else { return false }
+            guard let raw = taskMap[link.childTaskId], !raw.isDeleted else { return false }; let childTask = PlacementParams.withChildTarget(raw, childTargets: boardTask.childTargets) // slice 2a
             if childTask.type == .compound {
                 return CompoundEvaluation.evaluate(
                     compound: childTask,
