@@ -1,4 +1,4 @@
-import { withChildTarget } from './placementParams';
+import { withChildTarget, withPlacementParams } from './placementParams';
 import type { PlacementChildTarget } from '../types/boardTask';
 /**
  * countsToward.ts — "counts toward": any task as the unit of a Discrete
@@ -403,7 +403,7 @@ export interface ContributionInputs {
    */
   allEventsByTaskId: Record<string, TaskEvent[]>;
   /** The contributor's placements, any state (rows for other tasks are ignored). */
-  placements: ReadonlyArray<Pick<BoardTask, 'boardId' | 'taskId' | 'isDeleted'>>;
+  placements: ReadonlyArray<Pick<BoardTask, 'boardId' | 'taskId' | 'isDeleted'> & Partial<Pick<BoardTask, 'targetOverride' | 'targetKind' | 'childTargets'>>>;
   /** Boards referenced by `placements`, any state. A board absent here is treated as not live. */
   boardById: Record<string, Pick<Board, 'id' | 'isDeleted' | 'status' | 'startDate' | 'endDate' | 'sealedAt'>>;
   /** A shared {@link ForkEventResolver}; one is created over the inputs when absent. */
@@ -430,10 +430,13 @@ function eventOccurrence(eventId: string, taskId: string, inputs: ContributionIn
   return { kind: 'event', eventId: owner ? resolver.resolve(eventId, owner) : eventId };
 }
 
-/** The live boards placing `task`, each as the window its square is evaluated over (sealed → bounded at `sealedAt`). */
-function liveWindowsOf(task: Task, inputs: ContributionInputs): Array<{ boardId: string; ctx: CompoundWindowContext }> {
+/** A placement row as `liveWindowsOf` carries it (its slice 2b parameters). */
+type LivePlacement = ContributionInputs['placements'][number];
+
+/** The live boards placing `task`, each as the window its square is evaluated over (sealed → bounded at `sealedAt`), with the placement. */
+function liveWindowsOf(task: Task, inputs: ContributionInputs): Array<{ boardId: string; ctx: CompoundWindowContext; placement: LivePlacement }> {
   const seen = new Set<string>();
-  const out: Array<{ boardId: string; startDate: string; ctx: CompoundWindowContext }> = [];
+  const out: Array<{ boardId: string; startDate: string; ctx: CompoundWindowContext; placement: LivePlacement }> = [];
   for (const p of inputs.placements) {
     if (p.isDeleted || p.taskId !== task.id || seen.has(p.boardId)) continue;
     seen.add(p.boardId);
@@ -443,7 +446,7 @@ function liveWindowsOf(task: Task, inputs: ContributionInputs): Array<{ boardId:
     const eventsByTaskId = Number.isNaN(sealedAtMs)
       ? inputs.eventsByTaskId
       : boundWindowContextAtSeal(inputs.eventsByTaskId, sealedAtMs).eventsByTaskId;
-    out.push({ boardId: b.id, startDate: b.startDate, ctx: { windowStart: b.startDate, windowEnd: boardWindowEnd(b), eventsByTaskId } });
+    out.push({ boardId: b.id, startDate: b.startDate, ctx: { windowStart: b.startDate, windowEnd: boardWindowEnd(b), eventsByTaskId }, placement: p });
   }
   return out.sort((a, b) => toMs(a.startDate) - toMs(b.startDate) || compareIds(a.boardId, b.boardId));
 }
@@ -491,8 +494,13 @@ export function resolveContributionCredits(
     const prior = byId.get(eventId);
     if (!prior || toMs(occurredAt) < toMs(prior.occurredAt)) byId.set(eventId, { eventId, rootId, occurrence, occurredAt });
   };
-  const evaluate = (ctx: CompoundWindowContext): ContributionState =>
-    resolveContributionState(task, inputs.childrenByCompound, inputs.taskById, ctx.eventsByTaskId, ctx);
+  // Slice 2b: a placed window is scored with ITS placement's parameters — the
+  // goal the square shows is the goal the credit is earned at.
+  const evaluate = (ctx: CompoundWindowContext, placement?: LivePlacement): ContributionState =>
+    resolveContributionState(
+      placement ? withPlacementParams(task, placement) : task,
+      inputs.childrenByCompound, inputs.taskById, ctx.eventsByTaskId, ctx, placement?.childTargets,
+    );
   const lifetimeCtx: CompoundWindowContext = { ...LIFETIME_WINDOW, eventsByTaskId: inputs.eventsByTaskId };
 
   if (task.type === TaskType.NORMAL) {
@@ -502,8 +510,8 @@ export function resolveContributionCredits(
   } else if (task.type === TaskType.COUNTING) {
     if (task.sharedCounterId) return [];
     const windows = liveWindowsOf(task, inputs);
-    for (const ctx of windows.length > 0 ? windows.map((w) => w.ctx) : [lifetimeCtx]) {
-      const s = evaluate(ctx);
+    for (const { ctx, placement } of windows.length > 0 ? windows : [{ ctx: lifetimeCtx, placement: undefined }]) {
+      const s = evaluate(ctx, placement);
       if (s.isCompleted && s.completingEventId) {
         want(eventOccurrence(s.completingEventId, s.completingTaskId ?? task.id, inputs, resolver), s.completedAt as string);
       }
@@ -520,7 +528,7 @@ export function resolveContributionCredits(
       if (s.isCompleted) want(childEvent(s) ?? { kind: 'lifetime' }, s.completedAt as string);
     }
     for (const w of windows) {
-      const s = evaluate(w.ctx);
+      const s = evaluate(w.ctx, w.placement);
       if (s.isCompleted) want(childEvent(s) ?? { kind: 'board', boardId: w.boardId }, s.completedAt as string);
     }
   }

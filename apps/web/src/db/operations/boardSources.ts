@@ -9,6 +9,7 @@ import {
   isEventOwningTask,
   isSourceSupplyTask,
   isWindowStampedDerived,
+  withPlacementParams,
   poolSourceSupplyById,
   withEffectiveMemberRules,
   pickOpenSeriesInstance,
@@ -22,6 +23,7 @@ import {
   type BoardWindow,
   type CompoundChild,
   type RecurringBoardTemplate,
+  type BoardTask,
   type Task,
   type TaskEvent,
 } from '@oybc/shared';
@@ -98,7 +100,7 @@ export function resolveBoardSourceSupply(
     row: number;
     col: number;
     isDeleted?: boolean;
-  }>,
+  } & Partial<Pick<BoardTask, 'targetOverride' | 'targetKind' | 'childTargets' | 'titleOverride'>>>,
   tasksById: Record<string, Task>,
   eventsByTaskId: Record<string, TaskEvent[]>,
 ): BoardSourceSupplyInfo {
@@ -110,11 +112,13 @@ export function resolveBoardSourceSupply(
   const done = new Set<string>();
   const windowCountByTaskId: Record<string, number> = {};
   for (const bt of rows) {
-    const task = tasksById[bt.taskId];
+    const raw = tasksById[bt.taskId];
     // `isSourceSupplyTask`: achievements never enter source supply —
     // hand-placed watchers on the pulled board stay on that board only.
-    if (task === undefined || task.isDeleted || !isSourceSupplyTask(task) || seen.has(task.id))
+    if (raw === undefined || raw.isDeleted || !isSourceSupplyTask(raw) || seen.has(raw.id))
       continue;
+    // Slice 2b: "done" is scored at the PLACEMENT's goal (iOS `resolveSupply`).
+    const task = withPlacementParams(raw, bt);
     seen.add(task.id);
     supply.push(task.id);
     let isDone: boolean;

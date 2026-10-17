@@ -504,6 +504,11 @@ final class BoardPlayViewModel: ObservableObject {
         if allTasks.contains(where: { $0.sharedCounterId == task.id && !$0.isDeleted }) {
             return task.id
         }
+        // (c) Slice 2b: a plain counter placed with a `targetOverride` heads a
+        // family — the hub's `sharedCounterRootIds` rule.
+        if boardTasks.contains(where: { $0.taskId == task.id && !$0.isDeleted && $0.targetOverride != nil }) {
+            return task.id
+        }
         return nil
     }
 
@@ -1199,21 +1204,15 @@ final class BoardPlayViewModel: ObservableObject {
     func sharedCounterArrivalSquares() -> [ArrivalSquare] {
         let map = taskMap
         var out: [ArrivalSquare] = []
-        for bt in boardTasks {
-            guard let task = map[bt.taskId], task.type == .counting else { continue }
+        for bt in boardTasks where !bt.isDeleted {
+            // Slice 2b: the placed task (its placement goal / title) — web `placedTaskFor`.
+            guard let task = placedTask(bt), task.type == .counting else { continue }
 
-            let counterId: String
-            if let source = task.sharedCounterId {
-                counterId = source
-            } else if allTasks.contains(where: { $0.sharedCounterId == task.id && !$0.isDeleted })
-                || task.isCounter == true {
-                // P5: a promoted zero-link counter (no members yet) is still
-                // its own source — mirrors web `useBoardPlayData.ts:176`
-                // (`if (t.isCounter === true) sources.add(t.id)`), so it
-                // participates in arrival detection from the moment it's
-                // promoted, not just once a first member links to it.
-                counterId = task.id
-            } else {
+            // The family root: a linked task's target, else the task itself
+            // when it heads a family (`sharedCounterSourceId`'s rules — a
+            // promoted zero-link counter participates from the moment it's
+            // promoted, not just once a first member links to it).
+            guard let counterId = sharedCounterSourceId(for: task) else {
                 continue  // Not part of a shared-counter group.
             }
 

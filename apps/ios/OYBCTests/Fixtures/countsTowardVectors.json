@@ -2478,6 +2478,116 @@
       "placements": [],
       "boards": [],
       "expected": []
+    },
+    {
+      "name": "counting-placement-targetOverride-earns-the-credit-at-the-override",
+      "taskId": "t",
+      "tasks": [
+        {
+          "id": "t",
+          "type": "counting",
+          "maxCount": 5,
+          "countsTowardCounterId": "root"
+        }
+      ],
+      "events": [
+        {
+          "id": "i1",
+          "taskId": "t",
+          "delta": 1,
+          "occurredAt": "2026-10-06T00:00:00.000Z"
+        },
+        {
+          "id": "i2",
+          "taskId": "t",
+          "delta": 1,
+          "occurredAt": "2026-10-07T00:00:00.000Z"
+        }
+      ],
+      "children": [],
+      "placements": [
+        {
+          "boardId": "w1",
+          "taskId": "t",
+          "targetOverride": 2,
+          "targetKind": "discrete"
+        }
+      ],
+      "boards": [
+        {
+          "id": "w1",
+          "startDate": "2026-10-05T00:00:00.000Z",
+          "endDate": "2026-10-11T23:59:59.999Z"
+        }
+      ],
+      "expected": [
+        {
+          "occurrence": {
+            "kind": "event",
+            "eventId": "i2"
+          },
+          "occurredAt": "2026-10-07T00:00:00.000Z"
+        }
+      ]
+    },
+    {
+      "name": "compound-placement-childTargets-decide-the-credit",
+      "taskId": "k",
+      "tasks": [
+        {
+          "id": "k",
+          "type": "compound",
+          "countsTowardCounterId": "root",
+          "operator": "AND"
+        },
+        {
+          "id": "c",
+          "type": "counting",
+          "maxCount": 10
+        }
+      ],
+      "events": [
+        {
+          "id": "i1",
+          "taskId": "c",
+          "delta": 3,
+          "occurredAt": "2026-10-06T00:00:00.000Z"
+        }
+      ],
+      "children": [
+        {
+          "compoundTaskId": "k",
+          "childTaskId": "c"
+        }
+      ],
+      "placements": [
+        {
+          "boardId": "w1",
+          "taskId": "k",
+          "childTargets": [
+            {
+              "childId": "c",
+              "target": 3
+            }
+          ]
+        }
+      ],
+      "boards": [
+        {
+          "id": "w1",
+          "startDate": "2026-10-05T00:00:00.000Z",
+          "endDate": "2026-10-11T23:59:59.999Z"
+        }
+      ],
+      "expected": [
+        {
+          "occurrence": {
+            "kind": "childEvent",
+            "eventId": "i1"
+          },
+          "occurredAt": "2026-10-06T00:00:00.000Z"
+        }
+      ]
     }
   ],
   "candidates": [

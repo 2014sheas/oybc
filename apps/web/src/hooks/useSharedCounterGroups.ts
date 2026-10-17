@@ -75,7 +75,10 @@ export async function loadSharedCounterGroups(
   // (the play cell's and the kernel's rule — docs/WINDOWED_COMPLETION.md
   // §Derived-task carve-out) — a placed root reads its OWN — so the roots'
   // events ride along. Indexed on `taskId`; one range scan per chunk.
-  const rootIds = [...sharedCounterRootIds(tasks)];
+  const rootIds = [...sharedCounterRootIds(tasks, boardTasks)];
+  // Slice 2b: a linked child placed through a parent compound is a card per
+  // placement of that compound.
+  const compoundChildren = await db.compoundChildren.filter((c) => !c.isDeleted).toArray();
   const eventsByTaskId: Record<string, TaskEvent[]> = {};
   if (rootIds.length > 0) {
     for (const e of await db.taskEvents.where('taskId').anyOf(rootIds).toArray()) {
@@ -87,6 +90,7 @@ export async function loadSharedCounterGroups(
     tasks,
     boardTasks,
     boards,
+    compoundChildren,
     eventsByTaskId,
     memberVisibility: { showExpired },
   });

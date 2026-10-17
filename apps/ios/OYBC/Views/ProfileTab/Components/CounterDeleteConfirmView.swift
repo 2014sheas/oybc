@@ -149,7 +149,7 @@ struct CounterDeleteConfirmView: View {
 #if DEBUG
 #Preview("Delete counter — confirm sheet") {
     let src = SharedCounterMemberTask(
-        taskId: "src",
+        boardTaskId: "bt-src-bm", taskId: "src",
         taskTitle: "Push-ups",
         isSource: true,
         boardId: "bm",
@@ -160,7 +160,7 @@ struct CounterDeleteConfirmView: View {
         logged: 512,
         met: false,
         over: 0,
-        isActive: true
+        isActive: true, viaCompoundId: nil
     )
     let group = SharedCounterGroup(
         counterId: "src",

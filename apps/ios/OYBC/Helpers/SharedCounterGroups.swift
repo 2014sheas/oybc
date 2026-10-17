@@ -17,41 +17,49 @@ import Foundation
 
 // MARK: - View-model types
 
-/// One member task of a shared counter, resolved to its board placement +
-/// window + progress, ready for a Hub/Detail row.
+/// One card of a shared counter — a PLACEMENT (slice 2b), resolved to its
+/// host board's window + progress, ready for a Hub/Detail row. Mirrors the
+/// TS `SharedCounterMemberTask`.
 struct SharedCounterMemberTask: Identifiable {
-    /// Stable id for SwiftUI identity (equals taskId).
-    var id: String { taskId }
-    /// The member task's id.
+    /// Stable id for SwiftUI identity: one placement can carry two linked
+    /// children of the same compound, so the card is (placement, task).
+    var id: String { boardTaskId + ":" + taskId }
+    /// The placement this card stands for.
+    let boardTaskId: String
+    /// The member task on the card: the root, a linked task, or — when the
+    /// placement is a parent compound — the linked CHILD reached through it.
     let taskId: String
-    /// The member task's display title.
+    /// The card's title: the placement's `titleOverride`, else the root's
+    /// templates at the placement's goal, else the task's title.
     let taskTitle: String
-    /// True for the source task (the accumulator), false for a linked task.
+    /// True when the card's task is the root (the accumulator).
     let isSource: Bool
-    /// The board this task is primarily placed on (non-deleted), or nil when
-    /// the task has no live board placement.
-    let boardId: String?
-    let boardName: String?
-    /// The task's timeframe (for the accent dot color + window label).
+    /// The host board.
+    let boardId: String
+    let boardName: String
+    /// The host board's timeframe (accent dot colour + window label).
     let timeframe: Timeframe?
-    /// Human window label e.g. "This week" → "Week of Mar 23 – 29, 2026",
-    /// "February 2026", "2026". Nil when no timeframe/date is known.
+    /// Human window label for the host board's window, e.g. "Week of Mar 23 – 29, 2026".
     let window: String?
-    /// The task's personal target (`maxCount`), 0 when unset.
+    /// The placement's goal — `targetOverride` (in the task's kind), a parent
+    /// compound placement's `childTargets` entry, else the task's own
+    /// `maxCount` — 0 when unset.
     let goal: CountValue
-    /// The task's in-window displayed amount (when the caller passes
-    /// `eventsByTaskId`): a linked row's root increment sum over its stamped
-    /// window or its board's, a PLACED source's own events over its board's
-    /// window — each bounded at a sealed board's `sealedAt`, the play cell's
-    /// numbers. An UNPLACED row keeps the lifetime arithmetic.
+    /// The in-window displayed amount (when the caller passes
+    /// `eventsByTaskId`): the ROOT's increment sum over the host board's
+    /// window for a linked card, the root's OWN events for a root card — each
+    /// bounded at a sealed board's `sealedAt`, the play cell's numbers.
+    /// Without events, the lifetime arithmetic (`lifetime − baseline`).
     let logged: CountValue
     /// `logged >= goal` (only when goal > 0). Over-achievement is real.
     let met: Bool
     /// `logged - goal` when over the goal, else 0 (for the "N over" caption).
     let over: CountValue
-    /// True when this task is "counting now" — its board is ACTIVE.
-    /// Draft / completed / archived / placeless tasks are inactive.
+    /// True when this card is "counting now" — its board is still in play.
     let isActive: Bool
+    /// The parent compound placed here, when the card's task is a linked
+    /// child reached through it; `nil` for a direct placement.
+    let viaCompoundId: String?
 }
 
 /// A shared counter grouped for the Counters Hub / Detail.
@@ -78,9 +86,9 @@ struct SharedCounterGroup: Identifiable {
     /// different one. Defaulted here so every pre-existing call site
     /// (previews, tests) that doesn't specify it keeps compiling.
     var defaultLogAmount: CountValue? = nil
-    /// Source task first, then linked tasks (deterministic order).
+    /// One card per placement — root cards first, then by board name, task, placement.
     let tasks: [SharedCounterMemberTask]
-    /// Total member tasks (source + linked).
+    /// Distinct member tasks with a card.
     let taskCount: Int
     /// Distinct live boards the counter appears on.
     let boardCount: Int
@@ -187,9 +195,11 @@ func pickPrimaryBoard(
 ///
 /// Mirror of the TS `sharedCounterGroups.ts` `sharedCounterRootIds`.
 ///
-/// - Parameter tasks: Candidate tasks (soft-deleted rows filtered internally).
+/// - Parameters:
+///   - tasks: Candidate tasks (soft-deleted rows filtered internally).
+///   - boardTasks: Placements (any state); a live one with a `targetOverride` roots its task (rule c).
 /// - Returns: The root ids.
-func sharedCounterRootIds(_ tasks: [Task]) -> Set<String> {
+func sharedCounterRootIds(_ tasks: [Task], boardTasks: [BoardTask] = []) -> Set<String> {
     let live = tasks.filter { !$0.isDeleted }
     let liveById = Dictionary(live.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
     var roots = Set<String>()
@@ -200,6 +210,13 @@ func sharedCounterRootIds(_ tasks: [Task]) -> Set<String> {
     for task in live
     where task.type == .counting && task.isCounter == true && task.sharedCounterId == nil {
         roots.insert(task.id)
+    }
+    // (c) Slice 2b: a plain counter with a live placement carrying a
+    // `targetOverride` heads a family — a per-board goal on one counter is
+    // what a hub counter is. (Not "placed on more than one board": that would
+    // make every recurring plain counter a hub counter.)
+    for bt in boardTasks where !bt.isDeleted && bt.targetOverride != nil {
+        if let t = liveById[bt.taskId], t.type == .counting, t.sharedCounterId == nil { roots.insert(t.id) }
     }
     return roots
 }
@@ -216,6 +233,9 @@ func sharedCounterRootIds(_ tasks: [Task]) -> Set<String> {
 ///            filtering removes soft-deleted rows.
 ///   - boardTasks: All board-task placement rows visible to the query.
 ///   - boards: All boards for the user (any status).
+///   - compoundChildren: Compound links (any state). A linked task placed only
+///     through a parent compound gets a card per placement of that compound
+///     (slice 2b), at the placement's `childTargets` goal.
 ///   - eventsByTaskId: Optional non-deleted events grouped by `taskId` (at
 ///     least the roots'). When given, every PLACED member's `logged` is its
 ///     in-window count — a linked member via `resolveLinkedCounterDisplay`,
@@ -232,6 +252,7 @@ func buildSharedCounterGroups(
     tasks: [Task],
     boardTasks: [BoardTask],
     boards: [Board],
+    compoundChildren: [CompoundChild] = [],
     eventsByTaskId: [String: [TaskEvent]]? = nil,
     memberVisibility: SharedCounterMemberVisibility? = nil
 ) -> [SharedCounterGroup] {
@@ -239,19 +260,21 @@ func buildSharedCounterGroups(
     let tasksById = Dictionary(uniqueKeysWithValues: liveTasks.map { ($0.id, $0) })
     let boardsById = Dictionary(uniqueKeysWithValues: boards.map { ($0.id, $0) })
     let now = memberVisibility?.now ?? Date()
+    let livePlacements = boardTasks.filter { !$0.isDeleted }
+    // Live compound links by CHILD — the parents a linked task is reached through.
+    var parentsByChild: [String: [String]] = [:]
+    for c in compoundChildren where !c.isDeleted { parentsByChild[c.childTaskId, default: []].append(c.compoundTaskId) }
 
-    // Map source task id → its linked (derived) tasks. The key set is
+    // Map source task id → its linked tasks. The key set is
     // `sharedCounterRootIds` — every task pointed at by a live
-    // `sharedCounterId`, PLUS the P5 hub-born counters (a COUNTING task
-    // flagged `isCounter` is a counter in its own right, even with zero
-    // linked tasks) — which is the same walk this used to inline. Seeding an
-    // empty linked list for a member-less root lets it flow through the same
-    // member-view pipeline as a single-member group. A flagged row that is
-    // itself derived (`sharedCounterId` set) is malformed — the create-input
-    // validators reject the combination, but synced rows are unguarded — and
-    // the helper ignores it defensively.
+    // `sharedCounterId`, PLUS the P5 hub-born counters, PLUS a plain counter
+    // placed with a `targetOverride` (slice 2b). Seeding an empty linked list
+    // for a member-less root lets it flow through the same card pipeline. A
+    // flagged row that is itself derived (`sharedCounterId` set) is malformed
+    // — the create-input validators reject the combination, but synced rows
+    // are unguarded — and the helper ignores it defensively.
     var linkedBySource: [String: [Task]] = [:]
-    for rootId in sharedCounterRootIds(liveTasks) { linkedBySource[rootId] = [] }
+    for rootId in sharedCounterRootIds(liveTasks, boardTasks: livePlacements) { linkedBySource[rootId] = [] }
     for t in liveTasks {
         guard let srcId = t.sharedCounterId else { continue }
         // A link whose target is missing / deleted / not a counter has no key
@@ -268,111 +291,116 @@ func buildSharedCounterGroups(
 
     for (sourceId, linked) in linkedBySource {
         // Skip orphaned groups: source deleted / missing / not a counting task.
-        guard let source = tasksById[sourceId],
-              source.type == .counting
-        else { continue }
+        guard let source = tasksById[sourceId], source.type == .counting else { continue }
 
         let lifetime = quantizeCount(source.currentCount ?? 0)
-        let members: [Task] = [source] + linked
+        // The root is the title-settings source for its linked cards (`BoardPlayViewModel.placedTask`).
+        let settings = CounterSettings.TitleSettings(task: source)
+        let linkedById = Dictionary(uniqueKeysWithValues: linked.map { ($0.id, $0) })
+        // Every (transitive) parent compound of a linked task → the linked
+        // children reached through it, direct children first.
+        var childrenViaCompound: [String: [Task]] = [:]
+        for child in linked {
+            var seen = Set<String>()
+            var stack = parentsByChild[child.id] ?? []
+            while let parentId = stack.popLast() {
+                if seen.contains(parentId) { continue }
+                seen.insert(parentId)
+                guard let parent = tasksById[parentId], parent.type == .compound else { continue }
+                childrenViaCompound[parentId, default: []].append(child)
+                stack.append(contentsOf: parentsByChild[parentId] ?? [])
+            }
+        }
 
         var boardIdSet = Set<String>()
+        var memberTaskIds = Set<String>()
         var activeCount = 0
 
-        var memberViews: [SharedCounterMemberTask] = members.map { m in
-            let isSource = m.id == sourceId
-            // Source has baseline 0 (accumulates the full count).
-            let baseline = isSource ? 0 : (m.baseline ?? 0)
-            let goal = m.maxCount ?? 0
-            let board = pickPrimaryBoard(
-                taskId: m.id,
-                boardTasks: boardTasks,
-                boardsById: boardsById,
-                now: now
-            )
-            // Window-stamped members read their own window from the root's
-            // events (never `lifetime − baseline`, which counts later
-            // windows' logs too); any other PLACED member reads its primary
-            // board's window the same way (owner rule 2026-10-01). An
-            // unplaced hub-linked member — no board, so no window — keeps
-            // the lifetime arithmetic.
-            // Context window wins (slice 0): a placed member — stamped or not —
-            // reads its primary board's window; only an unplaced stamped member
-            // falls back to its own stamp inside `resolveLinkedCounterDisplay`.
-            let memberWindow: LinkedCounterWindow? = board.map {
-                LinkedCounterWindow(startDate: $0.startDate, endDate: $0.endDate)
-            }
+        /// One card: the placement `bt` on `board`, standing for `task` (already placement-adjusted).
+        func card(_ bt: BoardTask, _ board: Board, _ task: Task, isSource: Bool, viaCompoundId: String?) -> SharedCounterMemberTask {
+            let goal = task.maxCount ?? 0
+            let hostWindow = LinkedCounterWindow(startDate: board.startDate, endDate: board.endDate)
             let displayed: CountValue
-            if isSource, let eventsByTaskId, let board {
-                // A PLACED source (a board-born counter's own square) is an
+            if isSource, let eventsByTaskId {
+                // A PLACED root (a board-born counter's own square) is an
                 // event-owning counting row: it reads its OWN events over its
                 // board's window, sealed-bounded — the play cell's rule —
                 // never the lifetime total, which is the group's `lifetime`.
-                let ownEvents = eventsByTaskId[m.id] ?? []
+                let ownEvents = eventsByTaskId[task.id] ?? []
                 // An absent / unparseable `sealedAt` applies no bound.
                 let events: [TaskEvent] = board.sealedAt.flatMap { DateFormatting.parseISO($0) }.map { sealed in
                     boundWindowContextAtSeal(
-                        eventsByTaskId: [m.id: ownEvents], sealedAtMs: sealed.timeIntervalSince1970 * 1000
-                    ).eventsByTaskId[m.id] ?? []
+                        eventsByTaskId: [task.id: ownEvents], sealedAtMs: sealed.timeIntervalSince1970 * 1000
+                    ).eventsByTaskId[task.id] ?? []
                 } ?? ownEvents
                 displayed = resolveTaskWindowState(
-                    task: m, events: events, windowStart: board.startDate, windowEnd: boardWindowEnd(board)
+                    task: task, events: events, windowStart: board.startDate, windowEnd: boardWindowEnd(board)
                 ).count
-            } else if !isSource, let eventsByTaskId,
-               BoardSources.isWindowStampedDerived(m) || memberWindow != nil {
+            } else if !isSource, let eventsByTaskId {
+                // Context window wins (slice 0): a placed linked task — stamped
+                // or not, direct or through a parent compound — reads the host
+                // board's window from the ROOT's events.
                 displayed = resolveLinkedCounterDisplay(
-                    task: m, eventsByTaskId: eventsByTaskId, sealedAt: board?.sealedAt,
-                    window: memberWindow
+                    task: task, eventsByTaskId: eventsByTaskId, sealedAt: board.sealedAt, window: hostWindow
                 ).displayed
             } else {
-                // An unplaced source (a hub-born root) or unplaced linked row
-                // has no window: the library's lifetime arithmetic.
+                // No events supplied: the library's lifetime arithmetic (source baseline 0).
                 displayed = deriveDisplayedCount(
-                    derivedBaseline: baseline,
+                    derivedBaseline: isSource ? 0 : (task.baseline ?? 0),
                     derivedMaxCount: goal,
                     sourceCurrentCount: lifetime,
-                    countKind: m.countKind
+                    countKind: task.countKind
                 ).displayed
             }
-            if let b = board { boardIdSet.insert(b.id) }
+            boardIdSet.insert(board.id)
+            memberTaskIds.insert(task.id)
             // "Counting now" is the Boards tab's in-play rule, not the stored
             // status — a board past its endDate (or closed) stays ACTIVE in the row.
-            let isActive = board.map { isBoardActiveForList($0, now: now) } ?? false
+            let isActive = isBoardActiveForList(board, now: now)
             if isActive { activeCount += 1 }
-
-            // Window from the task's own timeframe/startDate; falls back to its board's.
-            let tf = m.timeframe ?? board?.timeframe
-            let startStr = m.startDate ?? board?.startDate
-            let window: String?
-            if let tf, let startStr, let startDate = parseISO8601Date(startStr) {
-                window = formatTimeframeLabel(timeframe: tf, startDate: startDate)
-            } else {
-                window = nil
-            }
-
+            let window = parseISO8601Date(board.startDate).map { formatTimeframeLabel(timeframe: board.timeframe, startDate: $0) }
             let met = goal > 0 && displayed >= goal
             return SharedCounterMemberTask(
-                taskId: m.id,
-                taskTitle: m.title,
+                boardTaskId: bt.id,
+                taskId: task.id,
+                taskTitle: task.title,
                 isSource: isSource,
-                boardId: board?.id,
-                boardName: board?.displayName,
-                timeframe: tf,
+                boardId: board.id,
+                boardName: board.displayName,
+                timeframe: board.timeframe,
                 window: window,
                 goal: goal,
                 logged: displayed,
                 met: met,
                 over: met ? quantizeCount(displayed - goal) : 0,
-                isActive: isActive
+                isActive: isActive,
+                viaCompoundId: viaCompoundId
             )
         }
 
-        // Source first, then by board name, then stable id tie-break.
+        var memberViews: [SharedCounterMemberTask] = []
+        for bt in livePlacements {
+            guard let board = boardsById[bt.boardId], !board.isDeleted else { continue }
+            if bt.taskId == sourceId {
+                memberViews.append(card(bt, board, PlacementParams.apply(source, placement: bt, settings: settings), isSource: true, viaCompoundId: nil))
+                continue
+            }
+            if let linkedTask = linkedById[bt.taskId] {
+                memberViews.append(card(bt, board, PlacementParams.apply(linkedTask, placement: bt, settings: settings), isSource: false, viaCompoundId: nil))
+                continue
+            }
+            for child in childrenViaCompound[bt.taskId] ?? [] {
+                // `childTargets` bind direct children only; a nested child keeps its own goal.
+                memberViews.append(card(bt, board, PlacementParams.withChildTarget(child, childTargets: bt.childTargets), isSource: false, viaCompoundId: bt.taskId))
+            }
+        }
+
+        // Deterministic card order: root cards first, then by board name, task id, placement id.
         memberViews.sort { a, b in
             if a.isSource != b.isSource { return a.isSource }
-            let an = a.boardName ?? ""
-            let bn = b.boardName ?? ""
-            if an != bn { return an < bn }
-            return a.taskId < b.taskId
+            if a.boardName != b.boardName { return a.boardName < b.boardName }
+            if a.taskId != b.taskId { return a.taskId < b.taskId }
+            return a.boardTaskId < b.boardTaskId
         }
 
         groups.append(SharedCounterGroup(
@@ -386,7 +414,7 @@ func buildSharedCounterGroups(
             lifetime: lifetime,
             defaultLogAmount: source.defaultLogAmount,
             tasks: memberViews,
-            taskCount: memberViews.count,
+            taskCount: memberTaskIds.count,
             boardCount: boardIdSet.count,
             activeTaskCount: activeCount,
             countKind: resolveCountKind(source.countKind)

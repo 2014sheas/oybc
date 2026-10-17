@@ -80,9 +80,10 @@ describe('loadSharedCounterGroups — member cards show the in-window count', ()
     expect(group!.lifetime).toBe(10);
     expect(logged['m-w']).toBe(3);
     expect(logged['m-e']).toBe(7);
-    // The unplaced hub-born root has no window: its row is the lifetime.
-    expect(logged['root']).toBe(10);
-    expect(group!.tasks.find((t) => t.taskId === 'm-w')).toMatchObject({ goal: 4, met: false });
+    // Slice 2b: cards are placements — the unplaced hub-born root has no card;
+    // its lifetime is the group's.
+    expect(logged['root']).toBeUndefined();
+    expect(group!.tasks.find((t) => t.taskId === 'm-w')).toMatchObject({ goal: 4, met: false, boardTaskId: expect.any(String) });
   });
 
   it('board-born root placed on this week’s board shows 3 (its window), not the lifetime 10', async () => {
@@ -110,12 +111,12 @@ describe('loadSharedCounterGroups — Counter Detail "Show expired tasks"', () =
 
   it('hides the expired member by default; the open-board member and the root stay', async () => {
     await seedWithExpiredMember();
-    expect(await memberIds(false)).toEqual(['m-w', 'root']);
+    expect(await memberIds(false)).toEqual(['m-w']); // the unplaced root has no card (slice 2b)
   });
 
   it('lists the expired member when on, and the total is unaffected', async () => {
     await seedWithExpiredMember();
-    expect(await memberIds(true)).toEqual(['m-e', 'm-w', 'root']);
+    expect(await memberIds(true)).toEqual(['m-e', 'm-w']);
     const [off, on] = await Promise.all([loadSharedCounterGroups('u1', false), loadSharedCounterGroups('u1', true)]);
     expect(on.find((g) => g.counterId === 'root')!.lifetime).toBe(off.find((g) => g.counterId === 'root')!.lifetime);
   });

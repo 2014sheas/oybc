@@ -280,12 +280,15 @@ extension AppDatabase {
         var supply: [String] = []
         var done = Set<String>()
         var windowCountByTaskId: [String: CountValue] = [:]
-        for id in placedIds {
+        for bt in rows {
+            let id = bt.taskId
             // `isSourceSupplyTask`: achievements never enter source supply —
             // hand-placed watchers on the pulled board stay on that board only.
-            guard let task = taskById[id],
-                  BoardSources.isSourceSupplyTask(task),
+            guard let raw = taskById[id],
+                  BoardSources.isSourceSupplyTask(raw),
                   !seen.contains(id) else { continue }
+            // Slice 2b: "done" is scored at the PLACEMENT's goal (web `resolveBoardSourceSupply`).
+            let task = PlacementParams.apply(raw, placement: bt)
             seen.insert(id)
             supply.append(id)
             let isDone: Bool

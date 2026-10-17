@@ -3,6 +3,7 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import {
   computeBoardGrid,
   detectBingos,
+  sharedCounterRootIds,
   type Board,
   type BoardSize,
   type BoardTask,
@@ -244,14 +245,13 @@ export function useBoardPlayData(board: Board, userId: string | undefined): Boar
   // (i.e., at least one other task points to them via `sharedCounterId`).
   // Computed once per render from taskMap so the grid `onAct` can detect
   // whether tapping a counting task should route through incrementSharedCounter.
-  const sharedCounterSourceIds = useMemo<Set<string>>(() => {
-    const sources = new Set<string>();
-    for (const t of Object.values(taskMap)) {
-      if (t.sharedCounterId) sources.add(t.sharedCounterId);
-      if (t.isCounter === true) sources.add(t.id); // P5: promoted zero-link counters
-    }
-    return sources;
-  }, [taskMap]);
+  // The hub's own root rule (`sharedCounterRootIds`: link targets, promoted
+  // zero-link counters, and — slice 2b — a plain counter placed with a
+  // `targetOverride`), so a square and its hub card agree on what is shared.
+  const sharedCounterSourceIds = useMemo<Set<string>>(
+    () => sharedCounterRootIds(Object.values(taskMap), boardTasks),
+    [taskMap, boardTasks],
+  );
 
   // `boardTasks` is already `resolvePlacements` output above — sorted by
   // (row, col, id) with at most one row per cell — so this sort/dict-build

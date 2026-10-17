@@ -316,7 +316,7 @@ struct CountersHubContent: View {
 #if DEBUG
 #Preview("Counters Hub — populated") {
     let src = SharedCounterMemberTask(
-        taskId: "src",
+        boardTaskId: "bt-src-bm", taskId: "src",
         taskTitle: "Push-ups",
         isSource: true,
         boardId: "bm",
@@ -327,10 +327,10 @@ struct CountersHubContent: View {
         logged: 512,
         met: false,
         over: 0,
-        isActive: true
+        isActive: true, viaCompoundId: nil
     )
     let der = SharedCounterMemberTask(
-        taskId: "der",
+        boardTaskId: "bt-der-bw", taskId: "der",
         taskTitle: "Push-ups",
         isSource: false,
         boardId: "bw",
@@ -341,7 +341,7 @@ struct CountersHubContent: View {
         logged: 45,
         met: true,
         over: 15,
-        isActive: true
+        isActive: true, viaCompoundId: nil
     )
     let group = SharedCounterGroup(
         counterId: "src",

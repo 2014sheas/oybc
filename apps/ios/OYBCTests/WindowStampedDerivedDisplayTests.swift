@@ -177,7 +177,7 @@ final class WindowStampedDerivedDisplayTests: XCTestCase {
         let groups = database.fetchSharedCounterGroups(userId: "u1", showExpired: true).groups
         let group = try XCTUnwrap(groups.first { $0.counterId == rootId })
         let logged = Dictionary(uniqueKeysWithValues: group.tasks.map { ($0.taskId, $0.logged) })
-        XCTAssertEqual(logged, [rootId: 20, "latched": 3, "met": 3])
+        XCTAssertEqual(logged, ["latched": 3, "met": 3]) // the unplaced root has no card (slice 2b)
         XCTAssertEqual(group.tasks.first { $0.taskId == "latched" }?.met, false)
     }
 }
