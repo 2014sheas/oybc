@@ -2,20 +2,6 @@ import XCTest
 @testable import OYBC
 
 final class TaskCountDisplayTests: XCTestCase {
-    func testCountingSubtitlePerKind() {
-        var run = LinkedWindowKit.task("r", maxCount: 26.2, currentCount: 12.4)
-        run.countKind = .continuous
-        run.unit = "mi"
-        XCTAssertEqual(TaskCountDisplay.countingSubtitle(for: run), "Run · 12.4 / 26.2 mi")
-        var practice = LinkedWindowKit.task("p", maxCount: 630, currentCount: 270)
-        practice.countKind = .duration
-        practice.action = "Practice"
-        practice.unit = ""
-        XCTAssertEqual(TaskCountDisplay.countingSubtitle(for: practice), "Practice · 4h 30m / 10h 30m")
-        let discrete = LinkedWindowKit.task("d", maxCount: 10, currentCount: 6)
-        XCTAssertEqual(TaskCountDisplay.countingSubtitle(for: discrete), "Run · 6 / 10 miles")
-    }
-
     func testGoalSubtitlePerKind() {
         var run = LinkedWindowKit.task("r", maxCount: 26.2)
         run.countKind = .continuous

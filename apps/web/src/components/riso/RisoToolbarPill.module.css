@@ -1,0 +1,25 @@
+.pill {
+  padding: 6px 14px;
+  border: 2px solid var(--riso-ink);
+  border-radius: 999px;
+  background: var(--riso-gold);
+  color: var(--riso-ink-static);
+  box-shadow: 2px 2px 0 var(--riso-ink);
+  font-family: var(--riso-font-head);
+  font-weight: 800;
+  font-size: 13px;
+  cursor: pointer;
+  transition: transform 0.1s ease-out, box-shadow 0.1s ease-out;
+}
+.onBand {
+  border-color: var(--riso-ink-static);
+  box-shadow: 2px 2px 0 var(--riso-ink-static);
+}
+.pill:active {
+  transform: translate(2px, 2px);
+  box-shadow: 0 0 0 transparent;
+}
+.pill:focus-visible {
+  outline: 3px solid var(--riso-on-color);
+  outline-offset: 2px;
+}

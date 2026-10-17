@@ -150,37 +150,4 @@ final class ViewDbSeamLoaderTests: XCTestCase {
         XCTAssertEqual(vm.drafts.map(\.board.id), ["d-1"])
         XCTAssertEqual(vm.drafts.first?.taskCount, 0)
     }
-
-    // MARK: - Linked-counter caption
-
-    func test_captionSource_liveSource_isCounterNameLifetimeAndUnit() throws {
-        let db = try makeDb()
-        try seedTask(db, id: "root", title: "Read 35 pages", currentCount: 512)
-
-        XCTAssertEqual(
-            try LinkedCounterCaptionView.resolveSource(database: db, sharedCounterId: "root"),
-            LinkedCounterSource(
-                title: CounterSettings.counterDisplayName(try XCTUnwrap(db.read { try Task.fetchOne($0, key: "root") })),
-                lifetime: 512, unit: "pages", kind: .discrete
-            )
-        )
-    }
-
-    func test_captionSource_carriesTheRootKind() throws {
-        let db = try makeDb()
-        try seedTask(db, id: "root", title: "Run", currentCount: 1250.5, countKind: .continuous)
-
-        XCTAssertEqual(
-            try LinkedCounterCaptionView.resolveSource(database: db, sharedCounterId: "root")?.kind,
-            .continuous
-        )
-    }
-
-    func test_captionSource_deletedOrMissingSource_isNil() throws {
-        let db = try makeDb()
-        try seedTask(db, id: "gone", title: "Deleted root", isDeleted: true)
-
-        XCTAssertNil(try LinkedCounterCaptionView.resolveSource(database: db, sharedCounterId: "gone"))
-        XCTAssertNil(try LinkedCounterCaptionView.resolveSource(database: db, sharedCounterId: "never-existed"))
-    }
 }

@@ -10,6 +10,7 @@ import { CompoundBody } from './CompoundBody';
 import { CountingBody } from './CountingBody';
 import { NormalBody } from './NormalBody';
 import { SquareSheet } from './SquareSheet';
+import styles from './SquareSheet.module.css';
 import { childLog, childToggle, countingLog, type Play, type WriteDeps } from './squareWrites';
 import { closedLabel, daysLeftLabel, isLateLogRoutable, liveStrip, logStripText } from './squareSheetModel';
 
@@ -28,9 +29,15 @@ export interface SquareSheetHostProps {
   onLateLog: (taskId: string) => void;
   onOpenBoard: (boardId: string) => void;
   /** Normal "Mark done": the surface closes the sheet and raises the same Undo toast a tap does. */
-  onToggleNormal: (boardTaskId: string, title: string, wasDone: boolean) => void;
+  onToggleNormal?: (boardTaskId: string, title: string, wasDone: boolean) => void;
   /** The hold menu's "Log other amount…" / "Remove…": open the counting entry straight away. */
   initialEntry?: 'add' | 'remove';
+  /** `hero` renders the body alone on Task Detail's coloured band (no frame); default `sheet`. */
+  variant?: 'sheet' | 'hero';
+  /** Hero only: Edit, placed by each body (beside Mark done / right of Remove… / below the list). */
+  trailing?: React.ReactNode;
+  /** Hero only: the Normal not-done pill's label, from the anchor's timeframe. */
+  notDoneLabel?: string;
 }
 
 /** An Undo strip: its line, the one write that reverses it, and the write sequence it was made at. */
@@ -67,7 +74,7 @@ function logError(what: string, err: unknown): void {
  * strip (written only when its write committed; hidden by any later write on
  * this board; gone when the sheet closes) and the one unfolded compound child.
  */
-function ResolvedSheet({ board, data, play, quiet, onClose, onOpenInLibrary, onLateLog, onOpenBoard, onToggleNormal, initialEntry, bt, task }: SquareSheetHostProps & { bt: BoardTask; task: Task }): React.ReactElement {
+function ResolvedSheet({ board, data, play, quiet, onClose, onOpenInLibrary, onLateLog, onOpenBoard, onToggleNormal, initialEntry, variant = 'sheet', trailing, notDoneLabel, bt, task }: SquareSheetHostProps & { bt: BoardTask; task: Task }): React.ReactElement {
   const [strip, setStrip] = useState<Strip | null>(null);
   const [openChildId, setOpenChildId] = useState<string | null>(null);
   const [now] = useState(() => Date.now());
@@ -132,6 +139,18 @@ function ResolvedSheet({ board, data, play, quiet, onClose, onOpenInLibrary, onL
     if (r) showStrip('toggle', `${child.title} · ${r.to ? 'done' : 'not done'}`, r.undo);
   };
 
+  const toggleNormal = async (): Promise<void> => {
+    if (onToggleNormal) {
+      onToggleNormal(bt.id, task.title, done);
+      return;
+    }
+    if (play.isWriting) return;
+    let ok = false;
+    await quiet(async () => { ok = await play.handleComplete(bt.id, { isCompleted: !done }); });
+    if (ok) showStrip('normal', `${task.title} · ${done ? 'not done' : 'done'}`, () => play.handleComplete(bt.id, { isCompleted: done }));
+  };
+
+  const hero = variant === 'hero';
   const header = { type: sq.type, title: sq.title, closedBoardName: sealed ? boardLabel : undefined, onClose, onOpenInLibrary: () => onOpenInLibrary(task.id) };
 
   let body: React.ReactElement;
@@ -140,7 +159,7 @@ function ResolvedSheet({ board, data, play, quiet, onClose, onOpenInLibrary, onL
       <CountingBody
         count={count} goal={sq.maxCount ?? 0} kind={kind} unit={sq.unit ?? ''} boardLabel={boardLabel}
         busy={play.isWriting} closedRow={closedRow} stripText={visible?.key === 'self' ? visible.text : null}
-        removeDisabled={count <= 0} initialEntry={initialEntry}
+        removeDisabled={count <= 0} initialEntry={initialEntry} trailing={hero ? trailing : undefined}
         onLog={(d, a, p) => void logCounting(d, a, p)} onUndo={() => void runUndo()}
       />
     );
@@ -179,8 +198,17 @@ function ResolvedSheet({ board, data, play, quiet, onClose, onOpenInLibrary, onL
     body = (
       <NormalBody
         done={done} busy={play.isWriting} blocked={blockedIds.has(task.id)} closedRow={closedRow}
-        onToggle={() => onToggleNormal(bt.id, task.title, done)}
+        onToggle={() => void toggleNormal()} stripText={visible?.key === 'normal' ? visible.text : null}
+        onUndo={() => void runUndo()} trailing={hero ? trailing : undefined} notDoneLabel={hero ? notDoneLabel : undefined}
       />
+    );
+  }
+  if (hero) {
+    return (
+      <div className={`${styles.body} ${sq.type === 'normal' ? '' : styles.onColor}`} style={{ marginTop: 18 }}>
+        {body}
+        {sq.type === 'compound' && trailing && <div style={{ display: 'flex', justifyContent: 'flex-end' }}>{trailing}</div>}
+      </div>
     );
   }
   return <SquareSheet {...header}>{body}</SquareSheet>;

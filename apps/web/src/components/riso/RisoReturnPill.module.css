@@ -1,0 +1,35 @@
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 200px;
+  padding: 6px 12px 6px 8px;
+  border: 2px solid var(--riso-ink-static);
+  border-radius: 999px;
+  background: var(--riso-paper-2);
+  box-shadow: 2px 2px 0 var(--riso-ink-static);
+  color: var(--riso-ink);
+  font-family: var(--riso-font-head);
+  font-weight: 700;
+  font-size: 13px;
+  cursor: pointer;
+  transition: transform 0.1s ease-out, box-shadow 0.1s ease-out;
+}
+.pill:active {
+  transform: translate(2px, 2px);
+  box-shadow: 0 0 0 transparent;
+}
+.pill:focus-visible {
+  outline: 3px solid var(--riso-on-color);
+  outline-offset: 2px;
+}
+.chev {
+  display: inline-flex;
+  flex: 0 0 auto;
+}
+.name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

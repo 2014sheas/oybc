@@ -331,6 +331,17 @@ open). Busy disables write items.
   the page and web `TaskDetailContent`'s section stack (keep any helper still
   used elsewhere).
 
+**PR 4 resolutions (implementation, 2026-10-17):** "Place on a board…" is
+omitted on both platforms (no placement flow is reachable from Task Detail
+today); the hero reuses board play's read model + writes for the anchor board
+(no side effects on mount — verified both platforms); Normal pill reads "NOT
+DONE THIS WEEK / TODAY / THIS MONTH / THIS YEAR"; the All overview is Boards ·
+Subtask of · Activity; Activity includes the shared-counter root's events for a
+linked task; a board is "missed" only once its window has ended (goal > 0 for
+counting); iOS swipe-back is kept on the custom-chrome routes by a scoped
+`InteractivePopEnabler`. **Carried to PR 5:** achievement values and nested
+sub-compound evaluation on non-anchor board rows.
+
 ### Constraints every PR honours
 
 - **File-size caps:** `BoardPlayView.swift` (0 lines headroom),

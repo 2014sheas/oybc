@@ -390,3 +390,95 @@
   font-weight: 600;
   color: var(--riso-muted);
 }
+
+/* ── Achievement closest line ── */
+.lineRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+}
+.lineLabel {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--riso-muted);
+  white-space: nowrap;
+}
+.lineCells {
+  display: flex;
+  flex: 1;
+  gap: 4px;
+  justify-content: flex-end;
+}
+.lineCell {
+  width: 22px;
+  height: 22px;
+  border-radius: 5px;
+  border: 1.5px solid var(--riso-ink-static);
+  background: transparent;
+}
+.lineCellDone {
+  background: var(--riso-gold);
+}
+
+/* ── On-colour tone: the same bodies on Task Detail's blue / teal / purple band.
+   DARK-MODE CONTRACT: on-colour and ink-static never flip. ── */
+.onColor {
+  color: var(--riso-on-color);
+  --log-link: var(--riso-lavender);
+}
+.onColor .countBlue,
+.onColor .countTeal {
+  color: var(--riso-on-color);
+}
+.onColor .heroLine,
+.onColor .eyebrow,
+.onColor .eyebrowRest,
+.onColor .childMeta,
+.onColor .chevron,
+.onColor .watchEyebrow,
+.onColor .daysLeft,
+.onColor .lineLabel {
+  color: var(--riso-lavender);
+}
+.onColor .bar,
+.onColor .segment {
+  border-color: var(--riso-on-color);
+  background: transparent;
+}
+.onColor .barFill {
+  background: var(--riso-gold);
+}
+.onColor .segmentDone {
+  background: var(--riso-gold);
+}
+.onColor .child {
+  border-color: var(--riso-on-color);
+  background: transparent;
+}
+.onColor .childOpen {
+  background: transparent;
+  border-top-color: var(--riso-lavender);
+}
+.onColor .box {
+  border-color: var(--riso-on-color);
+  background: transparent;
+  color: var(--riso-on-color);
+}
+.onColor .boxDone {
+  background: var(--riso-on-color);
+  color: var(--riso-teal);
+}
+.onColor .watchCard {
+  background: transparent;
+  border: 1.5px solid var(--riso-on-color);
+}
+.onColor .timeframeBadge {
+  background: transparent;
+  border-color: var(--riso-on-color);
+  color: var(--riso-on-color);
+}
+.onColor .closedBadge {
+  border-color: var(--riso-ink-static);
+  color: var(--riso-muted);
+}

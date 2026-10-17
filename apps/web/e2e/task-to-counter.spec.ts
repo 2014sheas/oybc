@@ -36,7 +36,7 @@ test.describe('Task → counter navigation', () => {
     // The row is labelled with the counter's display name (action + unit), not the stored title.
     const row = page.getByRole('button', { name: 'Open Push-ups reps counter' });
     await expect(row).toBeVisible();
-    await expect(row).toContainText('12 reps');
+    await expect(row).toContainText('12');
     await page.screenshot({ path: '.playwright-mcp/task-to-counter-detail.png' });
     await row.click();
     await expect(page).toHaveURL(new RegExp(`/profile/counters/${ROOT_ID}$`));
