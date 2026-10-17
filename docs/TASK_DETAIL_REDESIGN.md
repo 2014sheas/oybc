@@ -162,6 +162,98 @@ Header row (type square · title · meta), first item gold.
 | **4 · Task Detail shell** | Hero per type, segments (All / Links / Activity live; Boards shows today's placement list), ⋯ menu, sheet Done + return pill. |
 | **5 · Boards tab + placement resolution** | **Gated on rework 2c.** Active list + Past & drafts, + Place; placements resolved through `placementsReachedByRoot` and compound parents so linked counters and sub-tasks placed via a parent stop reading "On 0 boards". |
 
+## PR 2 — detailed scope (rides in #634 with PR 1)
+
+**Kit** (lands with its first consumer — knip fails an unused web export):
+
+- `TapLogChipRow` — iOS `Views/Riso/TapLogChipRow.swift` ↔ web
+  `components/riso/TapLogChipRow.tsx` (+ `.module.css`, barrel). Input: the
+  `tapLogChips` output, `size: regular | compact` (44pt / 34pt), `disabled`,
+  `onChip(chip)`. Presets and rest = gold fill, 2pt `inkStatic` keyline, 2pt
+  hard shadow, Bricolage 800 15pt `inkStatic`; "Other…" = paper2, flex 1.1;
+  a rest label of 4+ characters takes flex 1.3 at 13pt. Disabled = opacity
+  0.45 and hard shadow 0, layout unchanged. Press = translate 2pt + shadow 0.
+- `UndoStrip` — iOS `Views/Riso/UndoStrip.swift` ↔ web
+  `components/riso/UndoStrip.tsx`: paper2 card, green check icon, one text
+  line ("Logged +5 pages · Week 42"), Undo pill (iOS reuses `RisoUndoPill`;
+  web promotes the undo pill out of `MemberRuleRow.module.css` into the kit).
+
+**Square sheet** — iOS `Views/BoardsTab/SquareSheet/` (view files +
+`BoardPlayView+SquareSheet.swift` presenter) ↔ web
+`components/boardPlay/squareSheet/`. One `.sheet` / modal keyed by board-task
+id; detents medium / large, grabber, paper, 2pt ink top keyline, 12pt radius.
+
+- Header: type letter square (22pt) · title 18pt 800 (`placementTitle`) ·
+  "Library ›" pill → the existing open-in-library path (iOS
+  `taskDetailSheetTaskId` via the pending-drain; web `setOpenedTaskInLibrary`).
+- **Counting:** count 52pt (duration 40pt) + "/ ‹goal› ‹unit› · ‹board›",
+  status pill (IN PROGRESS gold / DONE green / none at 0), 12pt bar, "TAP TO
+  LOG" eyebrow + "‹rest› to go · ‹board›" (omitted when the goal is met), the
+  chip row from `tapLogChips(familyKind, windowGoal, windowedCount)`. A preset
+  or rest chip logs immediately through the existing write
+  (`handleCountingTap` / `handleSharedCounterIncrement` / web standalone
+  `handleComplete({ currentCount })`) with `persistAsDefault = false`;
+  "Other…" opens the kind's entry (`GoalEntryView` / `GoalEntry`) and logs
+  with `persistAsDefault = true`. After a log the `UndoStrip` shows under the
+  chips; Undo reverses that one log (shared: `undoLastCounterLog`; standalone:
+  restore the previous windowed count). "− Remove…" opens the same entry and
+  decrements. Haptic `.medium` on iOS.
+- **Compound:** done-count 52pt + "of ‹n› sub-tasks · ‹board›", status pill,
+  segmented bar (one segment per child, 4pt gaps), checklist rows: 28pt box
+  (toggle via `handleCompoundChildToggle`; a counting child's box is `+`) ·
+  type letter square · name 14pt 700 (0.75 opacity when done) · meta (counting:
+  "12 / 20" in blue) · chevron → open that child in library. Tapping a counting
+  child's `+` unfolds an 8pt bar + compact chip row + inline `UndoStrip`
+  (writes through `handleCompoundChildIncrement` with the chip amount — extend
+  it from ±1 / root default to an explicit amount; standalone Undo restores).
+  One child open at a time. Retires `CompoundChildRow`'s stepper.
+- **Achievement:** watched-board card (paper2, 1.5pt ink keyline): "WATCHED
+  BOARD" eyebrow + timeframe badge + "‹n› days left"; board name 22pt 800;
+  progress ("0 / 1 bingo", "Greenlog", or "‹met› / ‹required›" for a template
+  watcher); gold `Open ‹board›` button → dismiss, then the existing board
+  navigation (iOS `MainTabView.pushBoard`; web `coreWindowRouteForBoard`
+  routing). **The closest-line row moves to PR 4** (it needs the watched
+  board's per-cell completion, which neither platform reads today).
+- **Normal** never opens the sheet from a tap; "View Details" (until PR 3
+  rewrites the menu) opens it with a Mark done / Done button.
+- **Closed board** (`isBoardPlayLocked`): the sheet opens read-only for every
+  type — CLOSED badge in the header, the frozen count, chips / checkboxes /
+  Remove replaced by a lock row "Closed ‹sealedAt date›" + a small neutral
+  `Late log…` button routed to the existing late-log sheet when
+  `isLateLogRoutable` (absent otherwise).
+- **Busy:** iOS `isProcessing`; web gains `isWriting` state in `useBoardPlay`
+  around every write and undo (replaces the `childStepInFlight` ref). Busy
+  disables chips / checkboxes / buttons per the kit rule; nothing hides.
+
+**Tap contract:** Normal → toggle + Undo toast (the existing toast slot and
+component, extended with an optional second line): "‹title› · done" /
+"‹title› · not done", second line "‹board›" plus " · +1 ‹counter›" when the
+write credited a counter; Undo re-toggles (`uncomplete` kind). Counting /
+Compound / Achievement → square sheet. Closed board → square sheet read-only
+(replaces the direct late-log tap). The existing credited-toast for counting
+logs is replaced by the inline `UndoStrip` inside the sheet.
+
+**Counter Detail:** the log card's chip row becomes `TapLogChipRow` with
+`tapLogChips(kind)` (no goal → no rest chip); a chip logs immediately (still
+persisting the amount as the default — existing Counter Detail rule); "−
+Remove…" opens the entry and decrements; the existing toast stays.
+
+**Deleted:** iOS `RisoCountingStepperSheet`, `CountingStepperModel`,
+`BoardPlayView+CountingStepper.swift`, the `detailSheet` + `*DetailContent`
+bodies, `CompoundChildRow`'s stepper (and their tests / snapshot baselines);
+web `DetailModal`'s counting / compound branches (and `DetailModal` itself if
+nothing else uses it), `useCountingLogModal` / `countingLogModel` if unused.
+Every allowlisted file this PR shrinks gets its cap lowered to the new count.
+
+**Tests:** kernel already pinned. iOS: `SquareSheetSnapshotTests` (counting
+mid / done / duration, compound with a counting child open, achievement,
+closed, busy; light + dark), `TapLogChipRow` + `UndoStrip` in
+`RisoKitSnapshotTests`, unit tests for the sheet's view-model glue. Web:
+Vitest for the sheet's pure glue + kit; Playwright `square-sheet.spec.ts`
+(tap counting → chip → count moves → Undo restores; Normal tap → toast →
+Undo; compound `+` child; closed board → Late log…) and existing specs that
+drove `DetailModal` updated.
+
 ### Constraints every PR honours
 
 - **File-size caps:** `BoardPlayView.swift` (0 lines headroom),
