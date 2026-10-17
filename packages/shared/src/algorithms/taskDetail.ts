@@ -171,3 +171,38 @@ export function buildTaskActivity(input: TaskActivityInput): TaskActivity {
     .map((x) => x.row);
   return { rows: sorted, completionCount };
 }
+
+/** The watched board's best unfinished line, for the achievement card. */
+export interface ClosestLine {
+  /** Row-major cell indices along the line, in reading order. */
+  cells: number[];
+  /** How many of those cells are complete. */
+  done: number;
+}
+
+/**
+ * The unfinished line (row, column, then the two diagonals — `detectBingos`'
+ * order) with the most completed cells; the earliest wins a tie.
+ *
+ * @param completionGrid - Row-major completion flags, length `gridSize²`.
+ * @param gridSize - The board's edge (3, 4 or 5).
+ * @returns The line, or `undefined` when every line is complete or the grid
+ *   is malformed.
+ */
+export function closestLine(completionGrid: ReadonlyArray<boolean>, gridSize: number): ClosestLine | undefined {
+  if (gridSize < 1 || completionGrid.length !== gridSize * gridSize) return undefined;
+  const range = Array.from({ length: gridSize }, (_, i) => i);
+  const lines: number[][] = [
+    ...range.map((r) => range.map((c) => r * gridSize + c)),
+    ...range.map((c) => range.map((r) => r * gridSize + c)),
+    range.map((i) => i * gridSize + i),
+    range.map((i) => i * gridSize + (gridSize - 1 - i)),
+  ];
+  let best: ClosestLine | undefined;
+  for (const cells of lines) {
+    const done = cells.filter((i) => completionGrid[i]).length;
+    if (done === gridSize) continue;
+    if (!best || done > best.done) best = { cells, done };
+  }
+  return best;
+}

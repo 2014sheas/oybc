@@ -137,7 +137,7 @@ export {
   tapLogChips,
 } from './logAmounts';
 export type { LogChip, TapLogChip } from './logAmounts';
-export { pickHeroAnchorBoard, nextCompoundSubtask, buildTaskActivity } from './taskDetail';
+export { pickHeroAnchorBoard, nextCompoundSubtask, buildTaskActivity, closestLine } from './taskDetail';
 export type {
   CompoundSubtaskCandidate,
   CompoundSubtaskAction,
@@ -145,6 +145,7 @@ export type {
   TaskActivityRow,
   TaskActivityInput,
   TaskActivity,
+  ClosestLine,
 } from './taskDetail';
 
 // ===== Pair-derived counter display names (R1 — counters refresh) =====

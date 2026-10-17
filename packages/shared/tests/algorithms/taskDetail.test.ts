@@ -1,6 +1,6 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import { buildTaskActivity, nextCompoundSubtask, pickHeroAnchorBoard } from '../../src/algorithms/taskDetail';
+import { buildTaskActivity, closestLine, nextCompoundSubtask, pickHeroAnchorBoard } from '../../src/algorithms/taskDetail';
 import * as barrel from '../../src/algorithms';
 import type { Board } from '../../src/types/board';
 
@@ -18,8 +18,11 @@ describe('taskDetail vectors', () => {
   it.each(V.activity as any[])('activity: $name', (v: any) => {
     expect(buildTaskActivity(v.input)).toEqual(v.expected);
   });
+  it.each(V.closestLine as any[])('closestLine: $name', (v: any) => {
+    expect(closestLine(v.grid, v.gridSize) ?? null).toEqual(v.expected);
+  });
   it('every helper is in the barrel', () => {
-    for (const n of ['pickHeroAnchorBoard', 'nextCompoundSubtask', 'buildTaskActivity', 'tapLogChips']) {
+    for (const n of ['pickHeroAnchorBoard', 'nextCompoundSubtask', 'buildTaskActivity', 'tapLogChips', 'closestLine']) {
       expect(typeof (barrel as Record<string, unknown>)[n]).toBe('function');
     }
   });
