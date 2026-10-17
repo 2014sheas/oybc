@@ -46,6 +46,10 @@ struct CounterLogToastView: View {
     /// expressible as amount/unit/verb alone (it carries a board list). `nil`
     /// (the default) preserves the R2 Hub/Detail "Logged/Removed" copy.
     var message: String? = nil
+    /// A second muted line under `message` — the square tap contract's Normal
+    /// toast ("Finish Dune · done" / "Week 42 · +1 Books"). Switches the card
+    /// to that layout: green check, 14pt title, Undo pill, 2pt ink keyline.
+    var detail: String? = nil
     /// Reverses the log entry (`AppDatabase.undoLastCounterLog`). The
     /// caller is responsible for clearing the toast after this resolves —
     /// mirrors web's `onUndo` (does NOT itself call `onDone`).
@@ -72,6 +76,49 @@ struct CounterLogToastView: View {
     private var bodyText: String { message ?? Self.text(amount: amount, unit: unit, verb: verb, kind: kind) }
 
     var body: some View {
+        Group {
+            if let detail { detailCard(detail) } else { logCard }
+        }
+        .accessibilityElement(children: .combine)
+        // Any other touch — a tap, a scroll — dismisses it (it must not get in the way).
+        .dismissOnOutsideTouch(perform: finish)
+        .task {
+            do {
+                try await _Concurrency.Task.sleep(nanoseconds: UndoToast.dismissDelayNanoseconds)
+            } catch {
+                return // cancelled — the view was torn down (e.g. Undo already cleared it)
+            }
+            finish()
+        }
+    }
+
+    /// The two-line card: green check · title / detail · Undo pill.
+    private func detailCard(_ detail: String) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: "checkmark")
+                .font(.system(size: 14, weight: .heavy))
+                .foregroundStyle(Color.risoGreen)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(bodyText)
+                    .font(.risoHead(14, .extraBold))
+                    .foregroundStyle(Color.risoInk)
+                    .lineLimit(1)
+                Text(detail)
+                    .font(.risoBody(11, .semibold))
+                    .foregroundStyle(Color.risoMuted)
+                    .lineLimit(1)
+            }
+            Spacer(minLength: 8)
+            RisoUndoPill(accessibilityLabel: "Undo \(bodyText)", action: onUndo)
+        }
+        .padding(.leading, 14)
+        .padding(.trailing, 10)
+        .padding(.vertical, 8)
+        .risoCard(fill: .risoPaper2)
+        .risoHardShadow(Riso.Shadow.button)
+    }
+
+    private var logCard: some View {
         HStack(spacing: 10) {
             Text(bodyText)
                 .font(.risoBody(12, .semibold))
@@ -99,17 +146,6 @@ struct CounterLogToastView: View {
                 .fill(Color.risoInk)
                 .offset(x: Riso.Shadow.small, y: Riso.Shadow.small)
         )
-        .accessibilityElement(children: .combine)
-        // Any other touch — a tap, a scroll — dismisses it (it must not get in the way).
-        .dismissOnOutsideTouch(perform: finish)
-        .task {
-            do {
-                try await _Concurrency.Task.sleep(nanoseconds: UndoToast.dismissDelayNanoseconds)
-            } catch {
-                return // cancelled — the view was torn down (e.g. Undo already cleared it)
-            }
-            finish()
-        }
     }
 }
 

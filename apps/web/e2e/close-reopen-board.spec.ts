@@ -82,6 +82,7 @@ test.describe('Close / Reopen a board (Board Edit redesign slice 4)', () => {
 
     // ── Direct late log on the closed board ────────────────────────────
     await page.getByText('Write the recap').click();
+    await page.getByRole('dialog').getByRole('button', { name: 'Late log…' }).click();
     const sheet = page.getByRole('dialog', { name: /Write the recap/ });
     await expect(sheet).toBeVisible();
     await expect(sheet.getByText('Closed', { exact: true })).toBeVisible();
@@ -95,6 +96,7 @@ test.describe('Close / Reopen a board (Board Edit redesign slice 4)', () => {
 
     // ── Undo the late log ───────────────────────────────────────────────
     await page.getByText('Write the recap').click();
+    await page.getByRole('dialog').getByRole('button', { name: 'Late log…' }).click();
     const sheet2 = page.getByRole('dialog', { name: /Write the recap/ });
     await expect(sheet2.getByRole('button', { name: 'Undo late log' })).toBeVisible();
     await sheet2.getByRole('button', { name: 'Undo late log' }).click();

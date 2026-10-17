@@ -53,5 +53,24 @@
     { "name": "continuous", "amount": 3.1, "kind": "continuous", "expected": "#3.1" },
     { "name": "duration", "amount": 90, "kind": "duration", "expected": "#1h 30m" },
     { "name": "discrete", "amount": 7, "kind": "discrete", "expected": "#7" }
+  ],
+  "tapChips": [
+    { "name": "discrete with rest", "kind": "discrete", "goal": 20, "count": 12, "expected": ["+1", "+10", "+25", "+8 ✓", "Other…"], "values": [1, 10, 25, 8, null], "roles": ["preset", "preset", "preset", "rest", "other"] },
+    { "name": "discrete rest equal to a preset is omitted", "kind": "discrete", "goal": 20, "count": 10, "expected": ["+1", "+10", "+25", "Other…"] },
+    { "name": "discrete goal met has no rest", "kind": "discrete", "goal": 20, "count": 20, "expected": ["+1", "+10", "+25", "Other…"] },
+    { "name": "discrete overshoot has no rest", "kind": "discrete", "goal": 20, "count": 31, "expected": ["+1", "+10", "+25", "Other…"] },
+    { "name": "no goal (Counter Detail)", "kind": "discrete", "goal": null, "count": 0, "expected": ["+1", "+10", "+25", "Other…"] },
+    { "name": "continuous rest ceiled to 0.1", "kind": "continuous", "goal": 26.2, "count": 3.15, "expected": ["+0.5", "+1", "+5", "+23.1 ✓", "Other…"], "values": [0.5, 1, 5, 23.1, null] },
+    { "name": "duration compact rest", "kind": "duration", "goal": 630, "count": 300, "expected": ["+15m", "+30m", "+1h", "+5h30 ✓", "Other…"], "values": [15, 30, 60, 330, null] },
+    { "name": "duration rest under an hour", "kind": "duration", "goal": 60, "count": 15, "expected": ["+15m", "+30m", "+1h", "+45m ✓", "Other…"] },
+    { "name": "duration whole-hour rest", "kind": "duration", "goal": 180, "count": 60, "expected": ["+15m", "+30m", "+1h", "+2h ✓", "Other…"] },
+    { "name": "duration zero-padded minutes", "kind": "duration", "goal": 310, "count": 5, "expected": ["+15m", "+30m", "+1h", "+5h05 ✓", "Other…"] },
+    { "name": "continuous float edge 3 - 0.3", "kind": "continuous", "goal": 3, "count": 0.3, "expected": ["+0.5", "+1", "+5", "+2.7 ✓", "Other…"], "values": [0.5, 1, 5, 2.7, null] },
+    { "name": "continuous rest equal to a preset is omitted", "kind": "continuous", "goal": 6, "count": 1, "expected": ["+0.5", "+1", "+5", "Other…"] },
+    { "name": "duration rest of exactly an hour is omitted", "kind": "duration", "goal": 90, "count": 30, "expected": ["+15m", "+30m", "+1h", "Other…"] },
+    { "name": "duration rest over a day", "kind": "duration", "goal": 1600, "count": 0, "expected": ["+15m", "+30m", "+1h", "+26h40 ✓", "Other…"] },
+    { "name": "goal 0 has no rest", "kind": "discrete", "goal": 0, "count": 3, "expected": ["+1", "+10", "+25", "Other…"] },
+    { "name": "no goal with a count has no rest", "kind": "continuous", "goal": null, "count": 2, "expected": ["+0.5", "+1", "+5", "Other…"] },
+    { "name": "fractional discrete rest ceils to a whole", "kind": "discrete", "goal": 2.5, "count": 0, "expected": ["+1", "+10", "+25", "+3 ✓", "Other…"] }
   ]
 }

@@ -1,0 +1,206 @@
+{
+  "_note": "Cross-platform vectors for taskDetail.ts <-> TaskDetailKernel.swift (docs/TASK_DETAIL_REDESIGN.md). Hero anchor: soonest-ending in-play board (Boards-tab comparator), id tie-break. Next sub-task: first open Normal/Compound child, else first open Counting child. Activity: derived from events + placements + missed boards + createdAt, newest first. Every instant is UTC so the vectors are timezone-independent.",
+  "heroAnchor": [
+    {
+      "name": "soonest-ending active board wins",
+      "now": "2026-10-15T12:00:00Z",
+      "boards": [
+        { "id": "month", "status": "active", "timeframe": "monthly", "endDate": "2026-10-31T23:59:59Z", "updatedAt": "2026-10-01T00:00:00Z" },
+        { "id": "week", "status": "active", "timeframe": "weekly", "endDate": "2026-10-18T23:59:59Z", "updatedAt": "2026-10-01T00:00:00Z" }
+      ],
+      "expected": "week"
+    },
+    {
+      "name": "sealed, ended, draft and deleted boards are skipped",
+      "now": "2026-10-15T12:00:00Z",
+      "boards": [
+        { "id": "sealed", "status": "active", "timeframe": "weekly", "endDate": "2026-10-16T23:59:59Z", "sealedAt": "2026-10-14T00:00:00Z", "updatedAt": "2026-10-01T00:00:00Z" },
+        { "id": "ended", "status": "active", "timeframe": "weekly", "endDate": "2026-10-11T23:59:59Z", "updatedAt": "2026-10-01T00:00:00Z" },
+        { "id": "draft", "status": "draft", "timeframe": "weekly", "endDate": "2026-10-16T23:59:59Z", "updatedAt": "2026-10-01T00:00:00Z" },
+        { "id": "gone", "status": "active", "timeframe": "weekly", "endDate": "2026-10-16T23:59:59Z", "isDeleted": true, "updatedAt": "2026-10-01T00:00:00Z" },
+        { "id": "year", "status": "active", "timeframe": "yearly", "endDate": "2026-12-31T23:59:59Z", "updatedAt": "2026-10-01T00:00:00Z" }
+      ],
+      "expected": "year"
+    },
+    {
+      "name": "open-ended board sorts after a dated one",
+      "now": "2026-10-15T12:00:00Z",
+      "boards": [
+        { "id": "forever", "status": "active", "timeframe": "indefinite", "updatedAt": "2026-10-14T00:00:00Z" },
+        { "id": "year", "status": "active", "timeframe": "yearly", "endDate": "2026-12-31T23:59:59Z", "updatedAt": "2026-10-01T00:00:00Z" }
+      ],
+      "expected": "year"
+    },
+    {
+      "name": "equal deadline and activity tie-breaks on id",
+      "now": "2026-10-15T12:00:00Z",
+      "boards": [
+        { "id": "b", "status": "active", "timeframe": "weekly", "endDate": "2026-10-18T23:59:59Z", "updatedAt": "2026-10-01T00:00:00Z" },
+        { "id": "a", "status": "active", "timeframe": "weekly", "endDate": "2026-10-18T23:59:59Z", "updatedAt": "2026-10-01T00:00:00Z" }
+      ],
+      "expected": "a"
+    },
+    {
+      "name": "equal deadline prefers the most recently active board",
+      "now": "2026-10-15T12:00:00Z",
+      "boards": [
+        { "id": "a", "status": "active", "timeframe": "weekly", "endDate": "2026-10-18T23:59:59Z", "updatedAt": "2026-10-01T00:00:00Z" },
+        { "id": "b", "status": "active", "timeframe": "weekly", "endDate": "2026-10-18T23:59:59Z", "updatedAt": "2026-10-10T00:00:00Z" }
+      ],
+      "expected": "b"
+    },
+    {
+      "name": "nothing in play",
+      "now": "2026-10-15T12:00:00Z",
+      "boards": [
+        { "id": "ended", "status": "active", "timeframe": "weekly", "endDate": "2026-10-11T23:59:59Z", "updatedAt": "2026-10-01T00:00:00Z" }
+      ],
+      "expected": null
+    }
+  ],
+  "nextSubtask": [
+    {
+      "name": "first open toggle child",
+      "children": [
+        { "id": "a", "type": "normal", "isCompleted": true },
+        { "id": "b", "type": "counting", "isCompleted": false },
+        { "id": "c", "type": "normal", "isCompleted": false }
+      ],
+      "expected": { "kind": "toggle", "childId": "c" }
+    },
+    {
+      "name": "nested compound child is toggleable",
+      "children": [
+        { "id": "a", "type": "compound", "isCompleted": false },
+        { "id": "b", "type": "normal", "isCompleted": false }
+      ],
+      "expected": { "kind": "toggle", "childId": "a" }
+    },
+    {
+      "name": "only counting children open logs on the first",
+      "children": [
+        { "id": "a", "type": "normal", "isCompleted": true },
+        { "id": "b", "type": "counting", "isCompleted": false },
+        { "id": "c", "type": "counting", "isCompleted": false }
+      ],
+      "expected": { "kind": "log", "childId": "b" }
+    },
+    {
+      "name": "achievement children are never actionable",
+      "children": [
+        { "id": "a", "type": "achievement", "isCompleted": false }
+      ],
+      "expected": null
+    },
+    {
+      "name": "all done",
+      "children": [
+        { "id": "a", "type": "normal", "isCompleted": true },
+        { "id": "b", "type": "counting", "isCompleted": true }
+      ],
+      "expected": null
+    }
+  ],
+  "activity": [
+    {
+      "name": "counting feed with logs, removal, placement, miss and created",
+      "input": {
+        "task": { "id": "t", "createdAt": "2026-09-01T10:00:00Z", "unit": "pages" },
+        "kind": "discrete",
+        "events": [
+          { "id": "e1", "kind": "increment", "delta": 5, "occurredAt": "2026-10-14T09:00:00Z", "boardId": "wk42" },
+          { "id": "e2", "kind": "increment", "delta": -2, "occurredAt": "2026-10-14T10:00:00Z", "boardId": "wk42" },
+          { "id": "e3", "kind": "increment", "delta": 3, "occurredAt": "2026-10-13T09:00:00Z" },
+          { "id": "e4", "kind": "increment", "delta": 9, "occurredAt": "2026-10-12T09:00:00Z", "isDeleted": true }
+        ],
+        "placements": [
+          { "id": "p1", "boardId": "wk42", "createdAt": "2026-10-12T08:00:00Z" },
+          { "id": "p2", "boardId": "gone", "createdAt": "2026-10-12T08:00:00Z" }
+        ],
+        "missed": [ { "boardId": "wk41", "endDate": "2026-10-11T23:59:59Z" } ],
+        "boardNames": { "wk42": "Week 42", "wk41": "Week 41" }
+      },
+      "expected": {
+        "rows": [
+          { "key": "e:e2", "kind": "removed", "at": "2026-10-14T10:00:00Z", "text": "Removed 2 pages · Week 42" },
+          { "key": "e:e1", "kind": "logged", "at": "2026-10-14T09:00:00Z", "text": "Logged +5 pages · Week 42" },
+          { "key": "e:e3", "kind": "logged", "at": "2026-10-13T09:00:00Z", "text": "Logged +3 pages" },
+          { "key": "p:p1", "kind": "placed", "at": "2026-10-12T08:00:00Z", "text": "Placed on Week 42" },
+          { "key": "m:wk41", "kind": "missed", "at": "2026-10-11T23:59:59Z", "text": "Missed · Week 41" },
+          { "key": "c:t", "kind": "created", "at": "2026-09-01T10:00:00Z", "text": "Created" }
+        ],
+        "completionCount": 0
+      }
+    },
+    {
+      "name": "normal completions count and tie order",
+      "input": {
+        "task": { "id": "n", "createdAt": "2026-10-01T00:00:00Z", "unit": null },
+        "kind": "discrete",
+        "events": [
+          { "id": "c1", "kind": "completion", "occurredAt": "2026-10-05T00:00:00Z", "boardId": "wk41" },
+          { "id": "c2", "kind": "completion", "occurredAt": "2026-10-10T00:00:00Z" }
+        ],
+        "placements": [ { "id": "p1", "boardId": "wk41", "createdAt": "2026-10-05T00:00:00Z" } ],
+        "missed": [],
+        "boardNames": { "wk41": "Week 41" }
+      },
+      "expected": {
+        "rows": [
+          { "key": "e:c2", "kind": "completed", "at": "2026-10-10T00:00:00Z", "text": "Completed" },
+          { "key": "e:c1", "kind": "completed", "at": "2026-10-05T00:00:00Z", "text": "Completed · Week 41" },
+          { "key": "p:p1", "kind": "placed", "at": "2026-10-05T00:00:00Z", "text": "Placed on Week 41" },
+          { "key": "c:n", "kind": "created", "at": "2026-10-01T00:00:00Z", "text": "Created" }
+        ],
+        "completionCount": 2
+      }
+    },
+    {
+      "name": "ties, tombstoned completion, zero delta, continuous amount and an unparseable instant",
+      "input": {
+        "task": { "id": "r", "createdAt": "2026-10-01T00:00:00Z", "unit": "mi" },
+        "kind": "continuous",
+        "events": [
+          { "id": "e2", "kind": "increment", "delta": 0.5, "occurredAt": "2026-10-11T23:59:59Z" },
+          { "id": "e1", "kind": "increment", "delta": 1.5, "occurredAt": "2026-10-11T23:59:59Z" },
+          { "id": "c1", "kind": "completion", "occurredAt": "2026-10-11T23:59:59Z" },
+          { "id": "c2", "kind": "completion", "occurredAt": "2026-10-09T00:00:00Z", "isDeleted": true },
+          { "id": "z", "kind": "increment", "delta": 0, "occurredAt": "2026-10-09T00:00:00Z" },
+          { "id": "bad", "kind": "increment", "delta": 2, "occurredAt": "not-a-date" }
+        ],
+        "placements": [],
+        "missed": [ { "boardId": "wk41", "endDate": "2026-10-11T23:59:59Z" } ],
+        "boardNames": { "wk41": "Week 41" }
+      },
+      "expected": {
+        "rows": [
+          { "key": "m:wk41", "kind": "missed", "at": "2026-10-11T23:59:59Z", "text": "Missed · Week 41" },
+          { "key": "e:c1", "kind": "completed", "at": "2026-10-11T23:59:59Z", "text": "Completed" },
+          { "key": "e:e1", "kind": "logged", "at": "2026-10-11T23:59:59Z", "text": "Logged +1.5 mi" },
+          { "key": "e:e2", "kind": "logged", "at": "2026-10-11T23:59:59Z", "text": "Logged +0.5 mi" },
+          { "key": "c:r", "kind": "created", "at": "2026-10-01T00:00:00Z", "text": "Created" },
+          { "key": "e:bad", "kind": "logged", "at": "not-a-date", "text": "Logged +2 mi" }
+        ],
+        "completionCount": 1
+      }
+    },
+    {
+      "name": "duration amounts carry no unit",
+      "input": {
+        "task": { "id": "d", "createdAt": "2026-10-01T00:00:00Z", "unit": "guitar" },
+        "kind": "duration",
+        "events": [ { "id": "e1", "kind": "increment", "delta": 90, "occurredAt": "2026-10-02T00:00:00Z" } ],
+        "placements": [],
+        "missed": [],
+        "boardNames": {}
+      },
+      "expected": {
+        "rows": [
+          { "key": "e:e1", "kind": "logged", "at": "2026-10-02T00:00:00Z", "text": "Logged +1h 30m" },
+          { "key": "c:d", "kind": "created", "at": "2026-10-01T00:00:00Z", "text": "Created" }
+        ],
+        "completionCount": 0
+      }
+    }
+  ]
+}

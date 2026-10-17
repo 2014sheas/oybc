@@ -43,17 +43,17 @@ test.describe('Task → counter navigation', () => {
     await expect(page.getByText(/shared counter/i).first()).toBeVisible();
   });
 
-  test('board-square popup Task details row opens the task sheet', async ({ page }) => {
+  test('board-square popup Library pill opens the task sheet', async ({ page }) => {
     await page.goto(`/boards/${BOARD_ID}?__oybc_test_bypass=1`);
     // Active board: right-click → View Details opens the popup.
     await page.getByText('Push-ups weekly').first().click({ button: 'right' });
     await page.getByRole('button', { name: /View Details/ }).click();
-    const details = page.getByRole('button', { name: 'Task details' });
+    const details = page.getByRole('button', { name: 'Open in library' });
     await expect(details).toBeVisible();
     await page.screenshot({ path: '.playwright-mcp/task-to-counter-popup.png' });
     await details.click();
-    // The popup must be gone (not just covered) and the sheet must sit on
-    // top: Playwright's click fails if another element would receive it.
+    // The square sheet must be gone (not just covered) and the library sheet
+    // must sit on top: Playwright's click fails if another element would receive it.
     await expect(details).toBeHidden();
     const sheet = page.getByRole('dialog', { name: 'Task detail' });
     await expect(sheet).toBeVisible();

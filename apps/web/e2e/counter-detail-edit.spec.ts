@@ -46,8 +46,7 @@ test('Counter Detail: Edit counter… renames and switches the kind Discrete →
   await expect.poll(async () => readTask(page, COPY)).toMatchObject({ countKind: 'continuous', action: 'Jog', title: 'Jog 10 miles' });
 
   // The page reflects the new kind at once: Continuous chips, a 0.5 log.
-  await page.getByRole('group', { name: 'Log amount' }).getByRole('button', { name: '0.5', exact: true }).click();
-  await page.getByRole('button', { name: 'Add 0.5 miles' }).click();
+  await page.getByRole('group', { name: 'Log amount' }).getByRole('button', { name: 'Log +0.5 miles' }).click();
   await expect.poll(async () => readTask(page, ROOT)).toMatchObject({ currentCount: 0.5, defaultLogAmount: 0.5 });
 
   // The hub pill follows the kind; the member cell renders the Continuous count.

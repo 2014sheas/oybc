@@ -35,3 +35,7 @@ export type { RisoBadgeKind } from './RisoBadge';
 
 export { RisoTypeBadge } from './RisoTypeBadge';
 export type { RisoTaskType } from './RisoTypeBadge';
+
+export { TapLogChipRow } from './TapLogChipRow';
+
+export { UndoStrip } from './UndoStrip';

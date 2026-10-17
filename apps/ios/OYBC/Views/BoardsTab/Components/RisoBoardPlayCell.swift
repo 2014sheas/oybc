@@ -85,7 +85,7 @@ struct RisoBoardPlayCell: View {
     var compoundChildCount: Int = 0
     /// Operator-aware completion target for the compound progress bar
     /// (AND → child count, OR → 1, M_OF_N → threshold), mirroring web's
-    /// DetailModal fractions in `interactiveTaskSquareUtils.progressFraction`.
+    /// the web square sheet's fractions (`interactiveTaskSquareUtils.progressFraction`).
     /// `nil` falls back to `compoundChildCount` (AND semantics) so preview/
     /// fixture call sites that predate the operator-aware bar are unaffected.
     var compoundRequiredCount: Int? = nil

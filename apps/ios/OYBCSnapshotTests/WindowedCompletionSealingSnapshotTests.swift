@@ -74,41 +74,6 @@ final class WindowedCompletionSealingSnapshotTests: XCTestCase {
         )
     }
 
-    // MARK: - Disabled-with-explanation un-complete affordance (Decision 9)
-
-    private func toggleHost(isCompleted: Bool, sealBlocked: Bool) -> some View {
-        ZStack {
-            RisoPaperBackground()
-            CompletionToggleView(isCompleted: isCompleted, sealBlocked: sealBlocked, action: {})
-                .padding(Riso.gutter)
-        }
-    }
-
-    func testCompletionToggleSealBlockedLight() {
-        assertSnapshot(
-            of: toggleHost(isCompleted: true, sealBlocked: true),
-            as: .image(layout: .fixed(width: 393, height: 110)),
-            record: recordMode
-        )
-    }
-
-    func testCompletionToggleSealBlockedDark() {
-        assertSnapshot(
-            of: toggleHost(isCompleted: true, sealBlocked: true),
-            as: .image(layout: .fixed(width: 393, height: 110), traits: .init(userInterfaceStyle: .dark)),
-            record: recordMode
-        )
-    }
-
-    /// Contrast case — an ordinary (unblocked) complete state, no caption.
-    func testCompletionToggleUnblockedLight() {
-        assertSnapshot(
-            of: toggleHost(isCompleted: true, sealBlocked: false),
-            as: .image(layout: .fixed(width: 393, height: 90)),
-            record: recordMode
-        )
-    }
-
     // MARK: - Closing-out banner (0 / 1 / 3 boards)
 
     private func closingBoard(id: String, name: String, timeframe: Timeframe) -> Board {

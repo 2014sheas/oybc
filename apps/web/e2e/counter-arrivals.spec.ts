@@ -129,9 +129,9 @@ test.describe('Shared Counters P3 — arrival banner', () => {
 
     // ── 2. Log +1 on the Counter Detail page (a DIFFERENT surface). ──
     await page.goto(`/profile/counters/${SOURCE_TASK_ID}?__oybc_test_bypass=1`);
-    // The "+" stepper is labelled "Add 1 {unit}"; logging runs the live
+    // The "+1" chip logs at once; logging runs the live
     // `incrementSharedCounter` engine, fanning the count out to board B's square.
-    await page.getByRole('button', { name: /add 1 reps/i }).click();
+    await page.getByRole('group', { name: 'Log amount' }).getByRole('button', { name: 'Log +1 reps' }).click();
     // Wait for the lifetime hero to reflect the log (aria-label "{name}: {n} all-time {unit}").
     // The counter name is pair-derived from (action, unit) — `formatCounterName`
     // (#332) — so action "Push-ups" + unit "reps" reads "Push-ups reps".

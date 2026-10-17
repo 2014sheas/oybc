@@ -2,9 +2,8 @@ import { test, expect, seedBoard, seedBoardTask, seedTask, readTask } from './_f
 
 /**
  * Counter kinds — logging (docs/COUNTER_KINDS.md §5, B1): a counting square's
- * tap opens the DetailModal; Continuous / Duration log through the ¼ · ½ ·
- * goal · # chips and the always-open amount field, and only an explicitly
- * entered amount is remembered as the default.
+ * tap opens the square sheet; chips log at once (tapLogChips) and only an explicitly
+ * entered "Other…" amount is remembered as the default.
  */
 
 const now = new Date();
@@ -26,36 +25,37 @@ test.describe('Counter kinds — logging (B1)', () => {
     await page.goto(`/boards/${BOARD}?__oybc_test_bypass=1`);
   });
 
-  test('Continuous: chip, typed custom amount, remembered on reopen', async ({ page }) => {
+  test('Continuous: a chip logs at once; a typed Other… amount is remembered as the default', async ({ page }) => {
     const run = page.getByRole('button', { name: 'Run 26.2 mi' });
     await run.click();
-    const modal = page.getByRole('dialog');
-    await modal.getByRole('button', { name: '13.1', exact: true }).click();
-    await modal.getByRole('button', { name: '+ 13.1 mi' }).click();
-    await expect(modal).toContainText('13.1/26.2');
+    const sheet = page.getByRole('dialog');
+    await sheet.getByRole('button', { name: 'Log +5 mi' }).click();
+    await expect(sheet.getByText('Logged +5 mi')).toBeVisible();
+    await expect(sheet).toContainText('/ 26.2 mi');
     await page.keyboard.press('Escape');
-    await expect(run).toContainText('13.1/26.2');
+    await expect(run).toContainText('5/26.2');
     expect(await readTask(page, RUN)).not.toHaveProperty('defaultLogAmount');
     await run.click();
-    await modal.getByLabel('Log amount', { exact: true }).fill('3,1');
-    await modal.getByRole('button', { name: '+ 3.1 mi' }).click();
-    await expect(modal).toContainText('16.2/26.2');
+    await sheet.getByRole('button', { name: 'Log another amount' }).click();
+    await sheet.getByLabel('Custom amount').fill('3,1');
+    await sheet.getByRole('button', { name: 'Log', exact: true }).click();
+    await expect(sheet.getByText('Logged +3.1 mi')).toBeVisible();
     await page.keyboard.press('Escape');
+    await expect(run).toContainText('8.1/26.2');
     await expect.poll(async () => (await readTask(page, RUN))?.defaultLogAmount).toBe(3.1);
-    await run.click();
-    await expect(modal.getByRole('button', { name: '#3.1' })).toHaveAttribute('aria-pressed', 'true');
-    await expect(modal.getByLabel('Log amount', { exact: true })).toHaveValue('3.1');
   });
 
-  test('Duration: h / m entry', async ({ page }) => {
+  test('Duration: Other… takes h / m and the count renders h:m', async ({ page }) => {
     const practice = page.getByRole('button', { name: 'Practice 10h 30m' });
     await practice.click();
-    const modal = page.getByRole('dialog');
-    await expect(modal.getByRole('button', { name: '2h 38m', exact: true })).toHaveAttribute('aria-pressed', 'true');
-    await modal.getByLabel('Log amount hours').fill('1');
-    await modal.getByLabel('Log amount minutes').fill('30');
-    await modal.getByRole('button', { name: '+ 1h 30m' }).click();
-    await expect(modal).toContainText('1h 30m/10h 30m');
+    const sheet = page.getByRole('dialog');
+    await expect(sheet).toContainText('/ 10h 30m');
+    await expect(sheet.getByRole('button', { name: 'Log +15m' })).toBeVisible();
+    await sheet.getByRole('button', { name: 'Log another amount' }).click();
+    await sheet.getByLabel('Custom amount hours').fill('1');
+    await sheet.getByLabel('Custom amount minutes').fill('30');
+    await sheet.getByRole('button', { name: 'Log', exact: true }).click();
+    await expect(sheet).toContainText('Logged +1h 30m');
     await page.keyboard.press('Escape');
     await expect.poll(async () => (await readTask(page, PRACTICE))?.defaultLogAmount).toBe(90);
   });
@@ -77,8 +77,7 @@ test.describe('Counter kinds — logging (B1)', () => {
   test('Counter Detail: a Continuous counter logs 0.5', async ({ page }) => {
     await seedTask(page, { id: 'f3000000-0000-0000-0000-000000000001', title: 'Run miles', type: 'counting', action: 'Run', unit: 'miles', isCounter: true, countKind: 'continuous', currentCount: 148.6 });
     await page.goto('/profile/counters/f3000000-0000-0000-0000-000000000001?__oybc_test_bypass=1');
-    await page.getByRole('group', { name: 'Log amount' }).getByRole('button', { name: '0.5', exact: true }).click();
-    await page.getByRole('button', { name: 'Add 0.5 miles' }).click();
+    await page.getByRole('group', { name: 'Log amount' }).getByRole('button', { name: 'Log +0.5 miles' }).click();
     await expect(page.getByText('149.1', { exact: true })).toBeVisible();
   });
 });

@@ -202,9 +202,9 @@ test.describe('Windowed Completion (issue #317)', () => {
     await expect(counterSquare).toBeVisible();
     await expect(counterSquare).toContainText('0/10');
 
-    // Tap opens the stepper modal (counter kinds §5 — web no longer logs +1 on tap).
+    // Tap opens the square sheet (counter kinds §5 — web no longer logs +1 on tap).
     await counterSquare.click();
-    await page.getByRole('dialog').getByRole('button', { name: 'Increase' }).click();
+    await page.getByRole('dialog').getByRole('button', { name: /^Log \+1\b/ }).click();
     await page.keyboard.press('Escape');
     await expect(counterSquare).toContainText('1/10');
 

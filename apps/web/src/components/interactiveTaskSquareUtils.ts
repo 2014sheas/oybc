@@ -4,44 +4,9 @@
  * file exports components only — required for Fast Refresh / HMR.
  */
 
-import { countUnitSuffix, formatCount, type CountKind, type LogChip } from '@oybc/shared';
+import { countUnitSuffix, formatCount, type CountKind } from '@oybc/shared';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
-
-/**
- * The DetailModal's log-amount controls for a counting square
- * (docs/COUNTER_KINDS.md §5). Absent for a standalone Discrete square (plain
- * −/+ stepper). Discrete shared: `+1 · +10 · #` + the custom row + OK.
- * Continuous / Duration: ¼ · ½ · goal · # chips + the always-open amount
- * field (`amountText`), no OK — − and + apply the field's amount.
- */
-export type QuickAmountProps = {
-  kind: CountKind;
-  options: LogChip[];
-  /** The amount − / + apply; `null` when the field holds no valid amount. */
-  selected: number | null;
-  /** The amount rides on the custom `#` chip (persisted as the default on log). */
-  isCustomActive: boolean;
-  /** Discrete only: the custom-amount row is open. */
-  customOpen: boolean;
-  /** Discrete only: the custom-amount row's text. */
-  customDraft: string;
-  /** Continuous / Duration: the amount field's text (`parseCountInput` grammar). */
-  amountText: string;
-  unit: string;
-  /** "+ 3.1 mi" / "+ 2h 38m" / "+ 10". */
-  addLabel: string;
-  /** Disables − / + while the board is locked. */
-  busy: boolean;
-  removeDisabled: boolean;
-  onSelectChip(v: number): void;
-  onOpenCustom(): void;
-  onCustomDraftChange(raw: string): void;
-  onConfirmCustom(): void;
-  onAmountTextChange(raw: string): void;
-  onAdd(): void;
-  onRemove(): void;
-};
 
 /**
  * The interaction modes a task square can have.
@@ -65,6 +30,8 @@ export interface CompoundChild {
   taskId: string;
   title: string;
   isCompleted: boolean;
+  /** The child's own type (the checklist row's letter square); absent = Normal. */
+  taskType?: SquareTaskType;
   /** Counting children only — the count the sheet's stepper shows and moves. */
   count?: CompoundChildCount;
 }
@@ -110,7 +77,7 @@ export interface TaskSquareData {
   /**
    * Phase 2 — Shared Counters. Non-null when this is a linked derived
    * counter. The board-play surface maps `Task.sharedCounterId` into
-   * this field so the DetailModal and FloatingContextMenu can gate
+   * this field so the square sheet and FloatingContextMenu can gate
    * decrement/reset actions (linked counters are read-only; increments
    * must go through the source).
    */

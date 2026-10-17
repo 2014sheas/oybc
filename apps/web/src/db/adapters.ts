@@ -15,7 +15,7 @@ import {
   type PlacementChildTarget,
   type BoardTask,
 } from '@oybc/shared';
-import type { CompoundChildCount, TaskSquareData, SquareState } from '../components/interactiveTaskSquareUtils';
+import type { CompoundChildCount, SquareTaskType, TaskSquareData, SquareState } from '../components/interactiveTaskSquareUtils';
 
 /**
  * Windowed Completion (docs/WINDOWED_COMPLETION.md §Semantics): the per-square
@@ -150,8 +150,7 @@ export function compoundChildToggleDesired(
 }
 
 /**
- * A counting child's count for the compound detail sheet's stepper (iOS twin:
- * `CompoundChildRow`'s inputs in `BoardPlayView.compoundDetailContent`): the
+ * A counting child's count for the compound square sheet's checklist row: the
  * same windowed read the checkmark uses — a linked child reads its counter's
  * in-window total (`resolveLinkedCounterDisplay`), an event-owning child its
  * own events in the host window — and the amount a tap logs: a linked child
@@ -271,7 +270,7 @@ export function taskToSquareData(
       if (!rawChild) return { taskId: link.childTaskId, title: '<missing>', isCompleted: false };
       const childTask = withChildTarget(rawChild, childTargets);
       const count = compoundChildCount(childTask, map, windowContext);
-      return { taskId: link.childTaskId, title: childTask.title, isCompleted: resolveChild(childTask), ...(count ? { count } : {}) };
+      return { taskId: link.childTaskId, title: childTask.title, isCompleted: resolveChild(childTask), taskType: childTask.type as SquareTaskType, ...(count ? { count } : {}) };
     });
 
     return {
@@ -379,7 +378,7 @@ export function taskToSquareState(
   // Shared Counters — a linked (derived) counting square. `resolveLinkedCounterDisplay`
   // is the single display rule (docs §Derived-task carve-out, amended
   // 2026-09-23), so every consumer of `SquareState` (grid squares,
-  // DetailModal, FloatingContextMenu, progress bar) sees the same thing:
+  // square sheet, FloatingContextMenu, progress bar) sees the same thing:
   //   - WINDOW-STAMPED rows: count AND completion are the ROOT's increment sum
   //     inside the row's own `[startDate, endDate]` — the same function the
   //     derivation kernel resolves the cell with, so a cell can never paint

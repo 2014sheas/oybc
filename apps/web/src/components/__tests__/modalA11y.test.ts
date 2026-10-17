@@ -38,7 +38,6 @@ import { MissingSourceDialog } from '../boards/MissingSourceDialog';
 import { BoardEditTaskSheet } from '../boardEdit/BoardEditTaskSheet';
 import { SquareTapMenu } from '../boardEdit/SquareTapMenu';
 import { SquarePickerSheet } from '../boardEdit/SquarePickerSheet';
-import { DetailModal } from '../InteractiveTaskSquare';
 import { TaskDetailSheet } from '../TaskDetailSheet';
 import { PoolEditorModal } from '../pools/PoolEditorModal';
 import { PoolPickerSheet } from '../pools/PoolPickerSheet';
@@ -232,18 +231,6 @@ const CASES: DialogCase[] = [
         libraryTasks: [TASK],
         onPick: noop,
         onClose: noop,
-      }),
-  },
-  {
-    name: 'DetailModal (InteractiveTaskSquare)',
-    element: () =>
-      React.createElement(DetailModal, {
-        sq: { id: 'sq-1', title: 'Read', type: 'normal' },
-        state: { isCompleted: false, currentCount: 0, completedStepIds: new Set<string>() },
-        onClose: noop,
-        onToggleComplete: noop,
-        onIncrementCount: noop,
-        onDecrementCount: noop,
       }),
   },
   {

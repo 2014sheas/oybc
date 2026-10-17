@@ -117,28 +117,6 @@ final class CompoundChildIncrementTests: XCTestCase {
         XCTAssertEqual(try liveEvents(db).map(\.id), ["today"])
     }
 
-    /// Web twin: `compoundChildCount` — a counter ROOT child steps by its own
-    /// default amount, a linked child by its root's, a plain child by 1.
-    func test_countModel_stepAndKindFollowTheCounter() throws {
-        var hub = task("hub", type: .counting, maxCount: 10)
-        hub.isCounter = true
-        hub.defaultLogAmount = 5
-        hub.countKind = .continuous
-        hub.unit = "mi"
-        var plain = task("pl", type: .counting, maxCount: 10)
-        plain.defaultLogAmount = 9 // a default on a non-counter is never a step
-        let linked = task("ln", type: .counting, maxCount: 3, sharedCounterId: "hub")
-
-        let hubCount = try XCTUnwrap(CompoundChildRow.Count.make(task: hub, current: 2, root: hub))
-        XCTAssertEqual(hubCount.step, 5)
-        XCTAssertEqual(hubCount.kind, .continuous)
-        XCTAssertEqual(hubCount.unit, "mi")
-        XCTAssertEqual(CompoundChildRow.Count.make(task: linked, current: 1, root: hub)?.step, 5)
-        XCTAssertEqual(CompoundChildRow.Count.make(task: linked, current: 1, root: hub)?.kind, .continuous)
-        XCTAssertEqual(CompoundChildRow.Count.make(task: plain, current: 0, root: nil)?.step, 1)
-        XCTAssertNil(CompoundChildRow.Count.make(task: task("n", type: .normal), current: 0, root: nil))
-    }
-
     func test_linkedChildAndSealedBoardAuthorNothing() throws {
         let (linkedDb, a) = try seed(childLinked: true)
         XCTAssertTrue(try step(linkedDb, a, 1).isEmpty, "a linked child's count is its counter's")

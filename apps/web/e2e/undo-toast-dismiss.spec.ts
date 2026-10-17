@@ -12,9 +12,7 @@ test.describe('Undo toast', () => {
     await page.goto('/profile/counters?__oybc_test_bypass=1');
     await seedTask(page, { id: COUNTER, title: 'Run miles', type: 'counting', action: 'Run', unit: 'miles', isCounter: true, countKind: 'continuous', currentCount: 10 });
     await page.goto(`/profile/counters/${COUNTER}?__oybc_test_bypass=1`);
-    const amounts = page.getByRole('group', { name: 'Log amount' });
-    await amounts.getByRole('button', { name: '0.5', exact: true }).click();
-    const add = page.getByRole('button', { name: 'Add 0.5 miles' });
+    const add = page.getByRole('group', { name: 'Log amount' }).getByRole('button', { name: 'Log +0.5 miles' });
     const undo = page.getByRole('button', { name: 'Undo', exact: true });
 
     await add.click();

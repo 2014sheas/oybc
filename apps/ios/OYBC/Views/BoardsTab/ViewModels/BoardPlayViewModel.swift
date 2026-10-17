@@ -484,7 +484,7 @@ final class BoardPlayViewModel: ObservableObject {
     /// Resolves the shared-counter SOURCE task id for `task`, or `nil` when
     /// it doesn't participate in any shared-counter group. R3: extracted out
     /// of `handleCountingTap`/`handleCountingDecrement` so `BoardPlayView`
-    /// (chip visibility in `RisoCountingStepperSheet`, the context-menu
+    /// (the square sheet's chips, the context-menu
     /// default amount, the shared-cell marker) shares the exact same detection
     /// instead of re-deriving it — three call sites were re-implementing
     /// this before R3.

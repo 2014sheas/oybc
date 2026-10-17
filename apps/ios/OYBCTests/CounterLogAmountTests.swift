@@ -2,7 +2,7 @@ import XCTest
 @testable import OYBC
 
 /// `CounterLogAmount` — the amount-chip helpers shared by the Counter Detail
-/// Log card and the board-play `RisoCountingStepperSheet`. Swift twin of
+/// Log card and the board-play square sheet. Swift twin of
 /// web's `amountChips.test.ts`; keep the two pinned to the same numbers.
 final class CounterLogAmountTests: XCTestCase {
 
@@ -45,10 +45,11 @@ final class CounterLogAmountTests: XCTestCase {
     private struct PillV: Decodable { let name: String; let kind: CountKind; let `default`: Double?; let label: String; let opensDetail: Bool }
     private struct ToastV: Decodable { let name: String; let amount: Double; let unit: String; let verb: String; let kind: CountKind; let counterName: String?; let boardNames: [String]?; let expected: String }
     private struct CustomV: Decodable { let name: String; let amount: Double; let kind: CountKind; let expected: String }
+    private struct TapV: Decodable { let name: String; let kind: CountKind; let goal: Double?; let count: Double; let expected: [String]; let values: [Double?]?; let roles: [String]? }
     private struct LogFixture: Decodable {
         let goalChips: [ChipsV]; let boardSheetChipLabels: [LabelsV]; let hubChipLabels: [LabelsV]; let lateLogChips: [ChipsV]
         let initialSelection: [SelV]; let quickAmount: [QuickV]; let pill: [PillV]; let toast: [ToastV]
-        let customChipLabel: [CustomV]
+        let customChipLabel: [CustomV]; let tapChips: [TapV]
     }
 
     func testLogAmountVectors() throws {
@@ -78,6 +79,12 @@ final class CounterLogAmountTests: XCTestCase {
             } else {
                 XCTAssertEqual(CounterLogToastView.text(amount: v.amount, unit: v.unit, verb: v.verb == "logged" ? .logged : .removed, kind: v.kind), v.expected, v.name)
             }
+        }
+        for v in f.tapChips {
+            let chips = CounterLogAmount.tapChips(kind: v.kind, goal: v.goal, windowedCount: v.count)
+            XCTAssertEqual(chips.map(\.label), v.expected, v.name)
+            if let values = v.values { XCTAssertEqual(chips.map(\.value), values, v.name) }
+            if let roles = v.roles { XCTAssertEqual(chips.map(\.role.rawValue), roles, v.name) }
         }
         for v in f.customChipLabel { XCTAssertEqual(CounterLogAmount.customChipLabel(v.amount, kind: v.kind), v.expected, v.name) }
     }

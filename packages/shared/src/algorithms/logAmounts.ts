@@ -4,7 +4,7 @@
  * the "+ Log" pill label. Swift twin: `apps/ios/OYBC/Helpers/CounterLogAmount.swift`,
  * pinned by `tests/fixtures/logAmountVectors.json`.
  */
-import { countTargetStep, formatCount, roundToCountStep, type CountKind } from './countValue';
+import { countTargetStep, formatCount, quantizeCount, roundToCountStep, type CountKind } from './countValue';
 
 /** One chip; `value: null` is the custom `#` chip. */
 export interface LogChip {
@@ -67,6 +67,53 @@ export function boardSheetChips(kind: CountKind, goal: number): LogChip[] {
  */
 export function hubChips(kind: CountKind): LogChip[] {
   return [...FIXED[kind].map((v) => ({ value: v, label: formatCount(v, kind) })), CUSTOM];
+}
+
+/** One tap-to-log chip: a preset, the rest of the window's goal, or "Other…". */
+export interface TapLogChip {
+  /** `null` on the "Other…" chip. */
+  value: number | null;
+  label: string;
+  role: 'preset' | 'rest' | 'other';
+}
+
+/** Ceil to the kind's step, so the rest chip always reaches the goal. */
+function ceilToCountStep(x: number, kind: CountKind): number {
+  if (kind !== 'continuous') return Math.ceil(x - 1e-9);
+  return quantizeCount(Math.ceil(quantizeCount(x * 10) - 1e-9) / 10);
+}
+
+/** "5h30" / "45m" / "2h" — the duration rest chip's compact label (the caller adds "+"). */
+function compactDurationLabel(minutes: number): string {
+  const total = Math.max(0, Math.round(minutes));
+  const h = Math.floor(total / 60);
+  const m = total % 60;
+  if (h === 0) return `${m}m`;
+  return m === 0 ? `${h}h` : `${h}h${String(m).padStart(2, '0')}`;
+}
+
+/**
+ * The one-gesture chip row (docs/TASK_DETAIL_REDESIGN.md E3): the kind's
+ * fixed presets (`fixedLogChipAmounts`), then the rest of this window's goal
+ * (`+N ✓`, ceiled to the kind's step) when it is positive and not already a
+ * preset, then "Other…". No goal (Counter Detail) → no rest chip.
+ *
+ * @param kind - The counter's family kind.
+ * @param goal - The square's goal in this window, if any.
+ * @param windowedCount - The windowed count the rest is measured from.
+ * @returns The chips, ending in "Other…".
+ */
+export function tapLogChips(kind: CountKind, goal?: number | null, windowedCount = 0): TapLogChip[] {
+  const chips: TapLogChip[] = FIXED[kind].map((v) => ({ value: v, label: `+${formatCount(v, kind)}`, role: 'preset' }));
+  if (goal != null && goal > 0) {
+    const rest = ceilToCountStep(goal - windowedCount, kind);
+    if (Number.isFinite(rest) && rest > 0 && !FIXED[kind].includes(rest)) {
+      const text = kind === 'duration' ? compactDurationLabel(rest) : formatCount(rest, kind);
+      chips.push({ value: rest, label: `+${text} ✓`, role: 'rest' });
+    }
+  }
+  chips.push({ value: null, label: 'Other…', role: 'other' });
+  return chips;
 }
 
 /**
