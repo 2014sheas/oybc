@@ -1,10 +1,11 @@
 name: Boot iOS simulator
 description: >
   Starts booting an iPhone 16 on the newest installed iOS runtime and exports
-  its UDID as SIM_UDID. `simctl boot` returns once the boot is under way, so
-  the boot overlaps the next step's build instead of running after it
-  (2026-10 CI audit: each test step sat silent for 3.5–7.5 min before its
-  first test). Call `xcrun simctl bootstatus "$SIM_UDID" -b` before testing
+  its UDID as SIM_UDID. `simctl boot` blocks until the device is up (2–3 min
+  on the runner), so it runs in the BACKGROUND and the boot overlaps the next
+  step's build (2026-10 CI audit: each test step sat silent for 3.5–7.5 min
+  before its first test; a foreground boot only moved that time earlier).
+  The runner reaps the background process at job end, not step end. Call `xcrun simctl bootstatus "$SIM_UDID" -b` before testing
   to wait for it, and pass `-destination "id=$SIM_UDID"` to xcodebuild.
   "Newest installed runtime" matches the old `OS=latest` destination, which
   the Xcode pin makes deterministic on the runner.
@@ -30,5 +31,6 @@ runs:
         sys.exit("no available iPhone 16 simulator")
         ')
         echo "Booting iPhone 16 $UDID"
-        xcrun simctl boot "$UDID" || true   # already-booted is fine
+        # Background + detached; already-booted is fine. bootstatus -b waits.
+        nohup xcrun simctl boot "$UDID" > "$RUNNER_TEMP/sim-boot.log" 2>&1 &
         echo "SIM_UDID=$UDID" >> "$GITHUB_ENV"

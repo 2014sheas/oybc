@@ -90,12 +90,12 @@ jobs:
         working-directory: apps/ios
         run: |
           xcrun simctl bootstatus "$SIM_UDID" -b
+          # -xctestrun (not -scheme) runs the bundle build-for-testing wrote,
+          # without reloading the project or re-resolving packages (~50 s).
+          XCTESTRUN=$(ls "$DERIVED_DATA_PATH"/Build/Products/OYBC_*.xctestrun)
           xcodebuild test-without-building \
-            -scheme OYBC \
-            -destination "id=$SIM_UDID" \
-            -derivedDataPath "$DERIVED_DATA_PATH" \
-            CODE_SIGNING_ALLOWED=NO \
-            CODE_SIGNING_REQUIRED=NO
+            -xctestrun "$XCTESTRUN" \
+            -destination "id=$SIM_UDID"
 
   snapshot-tests:
     # BLOCKING on NEW reds only. CI's runner has iOS 26.2 simulators while
@@ -136,13 +136,11 @@ jobs:
           # xcodebuild's exit status is expected to be non-zero while known
           # reds exist; the gate step below decides pass/fail from the log.
           set +e
+          XCTESTRUN=$(ls "$DERIVED_DATA_PATH"/Build/Products/OYBCSnapshotTests_*.xctestrun)
           xcodebuild test-without-building \
-            -scheme OYBCSnapshotTests \
+            -xctestrun "$XCTESTRUN" \
             -destination "id=$SIM_UDID" \
-            -resultBundlePath "$RUNNER_TEMP/snapshot-results.xcresult" \
-            -derivedDataPath "$DERIVED_DATA_PATH" \
-            CODE_SIGNING_ALLOWED=NO \
-            CODE_SIGNING_REQUIRED=NO 2>&1 | tee "$RUNNER_TEMP/snapshot.log"
+            -resultBundlePath "$RUNNER_TEMP/snapshot-results.xcresult" 2>&1 | tee "$RUNNER_TEMP/snapshot.log"
           echo "xcodebuild exit: ${PIPESTATUS[0]}"
 
       - name: Snapshot gate (new reds only)
