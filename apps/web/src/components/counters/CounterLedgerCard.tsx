@@ -128,7 +128,7 @@ export function CounterLedgerCard({
       {activeTasks.length > 0 && (
         <div className={styles.rows} role="list" aria-label={`Tasks sharing ${group.name}`}>
           {activeTasks.map((task) => (
-            <LedgerTaskRow key={task.taskId} task={task} unit={group.unit} kind={group.countKind} />
+            <LedgerTaskRow key={`${task.boardTaskId}:${task.taskId}`} task={task} unit={group.unit} kind={group.countKind} />
           ))}
         </div>
       )}

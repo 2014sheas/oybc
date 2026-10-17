@@ -825,7 +825,7 @@ struct CounterDetailContent: View {
     @ViewBuilder
     private var activeMembersSection: some View {
         VStack(spacing: 0) {
-            ForEach(Array(activeMembers.enumerated()), id: \.element.taskId) { index, member in
+            ForEach(Array(activeMembers.enumerated()), id: \.element.id) { index, member in
                 if index > 0 {
                     Divider()
                         .background(Color.risoInk.opacity(0.12))
@@ -846,7 +846,7 @@ struct CounterDetailContent: View {
         }()
 
         return Button {
-            if let boardId = member.boardId { onOpenBoard(boardId) }
+            onOpenBoard(member.boardId)
         } label: {
             VStack(alignment: .leading, spacing: 6) {
                 HStack(spacing: 8) {
@@ -892,7 +892,6 @@ struct CounterDetailContent: View {
             .padding(.vertical, 12).contentShape(Rectangle()) // whole card (incl. the Spacer) is the tap target
         }
         .buttonStyle(.plain)
-        .disabled(member.boardId == nil)
         .accessibilityElement(children: .combine)
         .accessibilityLabel(
             "\(member.taskTitle) on \(member.boardName ?? "no board"), \(formatCountWithUnit(member.logged, kind: kind, unit: unitLabel)) of \(formatCountWithUnit(member.goal, kind: kind, unit: unitLabel)), \(caption(for: member))"
@@ -924,7 +923,7 @@ struct CounterDetailContent: View {
     @ViewBuilder
     private var inactiveMembersSection: some View {
         VStack(spacing: 0) {
-            ForEach(Array(inactiveMembers.enumerated()), id: \.element.taskId) { index, member in
+            ForEach(Array(inactiveMembers.enumerated()), id: \.element.id) { index, member in
                 if index > 0 {
                     Divider()
                         .background(Color.risoInk.opacity(0.12))

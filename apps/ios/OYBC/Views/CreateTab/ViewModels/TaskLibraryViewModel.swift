@@ -224,7 +224,7 @@ final class TaskLibraryViewModel {
                 self.compoundChildrenByCompound = grouped
                 self.childTaskIds = childIds
                 self.childToParents = reverseMap
-                self.familyRootIds = sharedCounterRootIds(tasks)
+                self.familyRootIds = sharedCounterRootIds(tasks, boardTasks: boardTasks)
                 self.loadError = nil
             }
         } catch {

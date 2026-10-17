@@ -29,6 +29,8 @@ const TS = '2026-02-01T12:00:00.000Z';
 const VECTOR_NOW = new Date('2026-02-03T12:00:00.000Z');
 
 interface MiniTask {
+  /** Slice 2b — `'compound'` builds a parent compound; default counting. */
+  type?: 'compound';
   id: string;
   title: string;
   currentCount: number | null;
@@ -61,13 +63,21 @@ interface MiniBoardTask {
   taskId: string;
   boardId: string;
   isDeleted?: boolean;
+  /** Slice 2b — per-placement parameters; `id` overrides the converter's `bt-<taskId>-<boardId>`. */
+  id?: string;
+  targetOverride?: number;
+  targetKind?: 'discrete' | 'continuous';
+  childTargets?: Array<{ childId: string; target: number }>;
+  titleOverride?: string;
 }
 
 interface MiniMemberTask {
+  boardTaskId: string;
   taskId: string;
   isSource: boolean;
-  boardId: string | null;
-  boardName: string | null;
+  boardId: string;
+  boardName: string;
+  viaCompoundId: string | null;
   goal: number;
   logged: number;
   met: boolean;
@@ -92,6 +102,8 @@ interface Vector {
   tasks: MiniTask[];
   boards: MiniBoard[];
   boardTasks: MiniBoardTask[];
+  /** Optional — live compound links (slice 2b: a parent compound's placements are cards for its linked children). */
+  compoundChildren?: Array<{ compoundTaskId: string; childTaskId: string }>;
   /** Optional — root id → increment events; passed through as `eventsByTaskId`. */
   eventsByTaskId?: Record<string, Array<{ id: string; kind: 'increment'; delta: number; occurredAt: string; isDeleted: boolean }>>;
   expected: MiniGroup[];
@@ -108,7 +120,7 @@ function toTask(m: MiniTask): Task {
     id: m.id,
     userId: 'u1',
     title: m.title,
-    type: TaskType.COUNTING,
+    type: m.type === 'compound' ? TaskType.COMPOUND : TaskType.COUNTING,
     // R1 (pair-derived counter names): intentionally NOT set here. These
     // fixture vectors predate pair-derived naming and were authored to
     // assert on `title`; leaving action/unit unset means
@@ -191,6 +203,10 @@ function toBoardTask(m: MiniBoardTask): BoardTask {
     updatedAt: TS,
     version: 1,
     isDeleted: m.isDeleted ?? false,
+    targetOverride: m.targetOverride,
+    targetKind: m.targetKind as BoardTask['targetKind'],
+    childTargets: m.childTargets,
+    titleOverride: m.titleOverride,
   };
 }
 
@@ -294,7 +310,7 @@ describe('sharedCounterRootIds — the extracted family-root test', () => {
 });
 
 describe('hub-born counters (P5)', () => {
-  it('a flagged zero-link source becomes a single-member group', () => {
+  it('a flagged zero-link source is a group; its cards are its placements', () => {
     const source = {
       ...toTask({
         id: 'c1',
@@ -318,12 +334,23 @@ describe('hub-born counters (P5)', () => {
     const [group] = groups;
     expect(group.counterId).toBe('c1');
     expect(group.lifetime).toBe(500);
-    expect(group.taskCount).toBe(1);
+    // Slice 2b: cards are placements — an unplaced root has a group and no card.
+    expect(group.taskCount).toBe(0);
     expect(group.boardCount).toBe(0);
-    expect(group.tasks).toHaveLength(1);
-    expect(group.tasks[0].isSource).toBe(true);
-    expect(group.tasks[0].goal).toBe(0);
-    expect(group.tasks[0].met).toBe(false);
+    expect(group.tasks).toHaveLength(0);
+
+    const board = toBoard({ id: 'b1', name: 'Board One', status: BoardStatus.ACTIVE, isDeleted: false });
+    const placed = buildSharedCounterGroups({
+      tasks: [source],
+      boards: [board],
+      boardTasks: [toBoardTask({ taskId: 'c1', boardId: 'b1' })],
+    });
+    expect(placed[0].tasks).toHaveLength(1);
+    expect(placed[0].tasks[0].isSource).toBe(true);
+    expect(placed[0].tasks[0].boardTaskId).toBe('bt-c1-b1');
+    expect(placed[0].tasks[0].goal).toBe(0);
+    expect(placed[0].tasks[0].met).toBe(false);
+    expect(placed[0].tasks[0].viaCompoundId).toBeNull();
   });
 
   it('a flagged source WITH links produces one group, not two', () => {
@@ -357,7 +384,7 @@ describe('hub-born counters (P5)', () => {
 
     expect(groups).toHaveLength(1);
     expect(groups[0].counterId).toBe('src');
-    expect(groups[0].taskCount).toBe(2);
+    expect(groups[0].tasks).toHaveLength(0); // nothing placed → no cards
   });
 
   it('an unflagged standalone counting task still produces no group', () => {
@@ -474,12 +501,12 @@ describe('pair-derived counter names (R1)', () => {
   });
 });
 
-// Board-integrity PR-1 (docs/BOARD_INTEGRITY.md) — `pickPrimaryBoard` (the
-// internal board-resolution helper) must never surface a board through a
-// TOMBSTONED placement, or a member row would show a "primary board" it's
-// no longer actually placed on.
-describe('primary-board resolution excludes tombstoned placements', () => {
-  it('a member whose only placement is tombstoned resolves to no board (not the dead one)', () => {
+// Board-integrity PR-1 (docs/BOARD_INTEGRITY.md) — a TOMBSTONED placement
+// never surfaces as a card, or the hub would show a board the task is no
+// longer actually placed on. (Slice 2b: cards ARE placements; the old
+// `pickPrimaryBoard` member resolution is gone from the hub.)
+describe('placement cards exclude tombstoned placements', () => {
+  it('a member whose only placement is tombstoned has no card (not the dead one)', () => {
     const source = toTask({
       id: 'src',
       title: 'Source',
@@ -500,8 +527,7 @@ describe('primary-board resolution excludes tombstoned placements', () => {
 
     expect(groups).toHaveLength(1);
     expect(groups[0].boardCount).toBe(0);
-    expect(groups[0].tasks[0].boardId).toBeNull();
-    expect(groups[0].tasks[0].isActive).toBe(false);
+    expect(groups[0].tasks).toHaveLength(0);
   });
 
   it('a member whose board is ACTIVE but past its endDate (or closed) is not counting now', () => {
@@ -553,7 +579,7 @@ describe('primary-board resolution excludes tombstoned placements', () => {
     expect(later[0].activeTaskCount).toBe(0);
   });
 
-  it('the primary board is the one still in play, not the newer ended one (pickPrimaryBoard)', () => {
+  it('a task on two boards is two cards — the ended one not counting now, the open one counting', () => {
     const source = toTask({
       id: 'src',
       title: 'Source',
@@ -584,11 +610,13 @@ describe('primary-board resolution excludes tombstoned placements', () => {
       ].map(toBoardTask),
       memberVisibility: { showExpired: true, now: new Date('2026-03-01T12:00:00.000Z') },
     });
-    expect(groups[0].tasks[0].boardId).toBe('open');
-    expect(groups[0].tasks[0].isActive).toBe(true);
+    expect(groups[0].tasks.map((t) => t.boardId)).toEqual(['ended', 'open']);
+    expect(groups[0].tasks.map((t) => t.isActive)).toEqual([false, true]);
+    expect(groups[0].taskCount).toBe(1);
+    expect(groups[0].boardCount).toBe(2);
   });
 
-  it('a member with both a tombstoned and a live placement resolves to the live board', () => {
+  it('a member with both a tombstoned and a live placement has one card, on the live board', () => {
     const source = toTask({
       id: 'src',
       title: 'Source',
@@ -612,6 +640,7 @@ describe('primary-board resolution excludes tombstoned placements', () => {
     });
 
     expect(groups).toHaveLength(1);
+    expect(groups[0].tasks).toHaveLength(1);
     expect(groups[0].tasks[0].boardId).toBe('board-live');
   });
 });
@@ -627,6 +656,7 @@ describe('buildSharedCounterGroups (fixture-driven, tests/fixtures/sharedCounter
         tasks: v.tasks.map(toTask),
         boards: v.boards.map(toBoard),
         boardTasks: v.boardTasks.map(toBoardTask),
+        compoundChildren: (v.compoundChildren ?? []).map((c) => ({ ...c, isDeleted: false })),
         eventsByTaskId: toVectorEvents(v),
         memberVisibility: { showExpired: true, now: VECTOR_NOW },
       });
@@ -644,6 +674,8 @@ describe('buildSharedCounterGroups (fixture-driven, tests/fixtures/sharedCounter
         expect(g.tasks).toHaveLength(exp.tasks.length);
         g.tasks.forEach((m, j) => {
           const expMember = exp.tasks[j];
+          expect(m.boardTaskId).toBe(expMember.boardTaskId);
+          expect(m.viaCompoundId).toBe(expMember.viaCompoundId);
           expect(m.taskId).toBe(expMember.taskId);
           expect(m.isSource).toBe(expMember.isSource);
           expect(m.boardId).toBe(expMember.boardId);
@@ -708,7 +740,24 @@ describe('buildSharedCounterGroups — memberVisibility (hub expired filter)', (
       maxCount: 5,
     });
 
-  it('keeps a root whose ONLY member has expired — as a single-member group', () => {
+  /** The host boards the stamped members above are placed on (window = stamp). */
+  const staleBoard: Board = {
+    ...toBoard({ id: 'b-stale', name: 'Stale week', status: BoardStatus.ACTIVE, isDeleted: false }),
+    startDate: '2026-09-07T00:00:00.000',
+    endDate: '2026-09-13T23:59:59.999',
+  };
+  const liveBoard: Board = {
+    ...toBoard({ id: 'b-live', name: 'Live week', status: BoardStatus.ACTIVE, isDeleted: false }),
+    startDate: '2026-09-14T00:00:00.000',
+    endDate: '2026-09-20T23:59:59.999',
+  };
+  const placements = [
+    toBoardTask({ taskId: 'm-stale', boardId: 'b-stale' }),
+    toBoardTask({ taskId: 'm-live', boardId: 'b-live' }),
+    toBoardTask({ taskId: 'm-open', boardId: 'b-live' }),
+  ];
+
+  it('keeps a root whose ONLY member has expired — as a card-less group', () => {
     // The board-born case: a plain counting task (not `isCounter`) that is a
     // root purely because a derived weekly row links to it.
     const root = counting('root', { currentCount: 40 });
@@ -716,33 +765,33 @@ describe('buildSharedCounterGroups — memberVisibility (hub expired filter)', (
 
     const groups = buildSharedCounterGroups({
       tasks: [root, stale],
-      boards: [],
-      boardTasks: [],
+      boards: [staleBoard],
+      boardTasks: placements,
       memberVisibility: { showExpired: false, now: NOW },
     });
 
     expect(groups.map((g) => g.counterId)).toEqual(['root']);
     expect(groups[0].lifetime).toBe(40);
-    expect(groups[0].taskCount).toBe(1);
+    expect(groups[0].taskCount).toBe(0);
     expect(groups[0].activeTaskCount).toBe(0);
-    expect(groups[0].tasks.map((t) => t.taskId)).toEqual(['root']);
+    expect(groups[0].tasks).toEqual([]);
   });
 
-  it('drops only the expired member; a live member and the source stay', () => {
+  it('drops only the expired member; a live member stays', () => {
     const root = counting('root', { currentCount: 40 });
     const live = liveMember('m-live', 'root');
     const stale = expiredMember('m-stale', 'root');
 
     const groups = buildSharedCounterGroups({
       tasks: [root, live, stale],
-      boards: [],
-      boardTasks: [],
+      boards: [staleBoard, liveBoard],
+      boardTasks: placements,
       memberVisibility: { showExpired: false, now: NOW },
     });
 
     expect(groups).toHaveLength(1);
-    expect(groups[0].tasks.map((t) => t.taskId)).toEqual(['root', 'm-live']);
-    expect(groups[0].taskCount).toBe(2);
+    expect(groups[0].tasks.map((t) => t.taskId)).toEqual(['m-live']);
+    expect(groups[0].taskCount).toBe(1);
   });
 
   it('showExpired: true lists every member', () => {
@@ -752,12 +801,12 @@ describe('buildSharedCounterGroups — memberVisibility (hub expired filter)', (
 
     const groups = buildSharedCounterGroups({
       tasks: [root, live, stale],
-      boards: [],
-      boardTasks: [],
+      boards: [staleBoard, liveBoard],
+      boardTasks: placements,
       memberVisibility: { showExpired: true, now: NOW },
     });
 
-    expect(groups[0].tasks.map((t) => t.taskId)).toEqual(['root', 'm-live', 'm-stale']);
+    expect(groups[0].tasks.map((t) => t.taskId)).toEqual(['m-live', 'm-stale']);
   });
 
   it('never hides a root, however old its own endDate', () => {
@@ -789,12 +838,12 @@ describe('buildSharedCounterGroups — memberVisibility (hub expired filter)', (
 
     const groups = buildSharedCounterGroups({
       tasks: [root, open],
-      boards: [],
-      boardTasks: [],
+      boards: [liveBoard],
+      boardTasks: placements,
       memberVisibility: { showExpired: false, now: NOW },
     });
 
-    expect(groups[0].tasks.map((t) => t.taskId)).toEqual(['root', 'm-open']);
+    expect(groups[0].tasks.map((t) => t.taskId)).toEqual(['m-open']);
   });
 
   it('a hidden member contributes no board row or active count', () => {
@@ -809,17 +858,36 @@ describe('buildSharedCounterGroups — memberVisibility (hub expired filter)', (
       memberVisibility: { showExpired: false, now: NOW },
     });
 
-    expect(groups[0].taskCount).toBe(1);
+    expect(groups[0].taskCount).toBe(0);
     expect(groups[0].boardCount).toBe(0);
     expect(groups[0].activeTaskCount).toBe(0);
   });
 
-  it('with no memberVisibility the output is unchanged (every live member listed)', () => {
+  it('showExpired: false also hides a card whose HOST window has ended or closed (a card is a placement)', () => {
+    const root = counting('root', { isCounter: true });
+    const linked = counting('m-open', { sharedCounterId: 'root' }); // no own stamp
+    const endedBoard: Board = { ...staleBoard, id: 'b-ended', name: 'Ended' };
+    const closedBoard: Board = { ...liveBoard, id: 'b-closed', name: 'Closed', sealedAt: '2026-09-15T12:00:00.000Z' };
+    const boards = [endedBoard, closedBoard, liveBoard];
+    const boardTasks = [
+      toBoardTask({ taskId: 'root', boardId: 'b-ended' }),
+      toBoardTask({ taskId: 'm-open', boardId: 'b-closed' }),
+      toBoardTask({ taskId: 'm-open', boardId: 'b-live' }),
+    ];
+    const hidden = buildSharedCounterGroups({ tasks: [root, linked], boards, boardTasks, memberVisibility: { showExpired: false, now: NOW } });
+    expect(hidden[0].tasks.map((t) => t.boardId)).toEqual(['b-live']);
+    const shown = buildSharedCounterGroups({ tasks: [root, linked], boards, boardTasks, memberVisibility: { showExpired: true, now: NOW } });
+    expect(shown[0].tasks.map((t) => t.boardId)).toEqual(['b-ended', 'b-closed', 'b-live']);
+    // `activeTaskCount` counts distinct tasks, like `taskCount`.
+    expect(shown[0].activeTaskCount).toBe(1);
+  });
+
+  it('with no memberVisibility every live member is listed', () => {
     const root = counting('root');
     const stale = expiredMember('m-stale', 'root');
 
-    const groups = buildSharedCounterGroups({ tasks: [root, stale], boards: [], boardTasks: [] });
+    const groups = buildSharedCounterGroups({ tasks: [root, stale], boards: [staleBoard], boardTasks: placements });
 
-    expect(groups[0].tasks.map((t) => t.taskId)).toEqual(['root', 'm-stale']);
+    expect(groups[0].tasks.map((t) => t.taskId)).toEqual(['m-stale']);
   });
 });

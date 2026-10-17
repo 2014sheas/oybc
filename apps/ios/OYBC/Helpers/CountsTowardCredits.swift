@@ -140,13 +140,20 @@ extension CountsToward {
         return CompoundWindowContext(windowStart: board.startDate, windowEnd: boardWindowEnd(board), eventsByTaskId: bounded)
     }
 
-    /// A direct child's completion in `ctx` (a nested compound derives; a primitive resolves windowed).
-    private static func childDone(_ child: Task, inputs: Inputs, ctx: CompoundWindowContext) -> Bool {
+    /// A direct child's completion in `ctx` (a nested compound derives; a
+    /// primitive resolves windowed), at the placement's child goal (slice 2b).
+    private static func childDone(_ child: Task, inputs: Inputs, ctx: CompoundWindowContext, childTargets: [PlacementChildTarget]? = nil) -> Bool {
         if child.isDeleted { return false }
         if child.type == .compound {
             return CompoundEvaluation.evaluate(compound: child, childrenByCompound: inputs.childrenByCompound, taskById: inputs.taskById, windowContext: ctx)
         }
-        return CompoundEvaluation.resolvePrimitiveChildState(child, ctx)
+        return CompoundEvaluation.resolvePrimitiveChildState(PlacementParams.withChildTarget(child, childTargets: childTargets), ctx)
+    }
+
+    /// The representative's live placement on `board` (its slice 2b parameters), if any.
+    private static func placement(of taskId: String, on board: Board?, inputs: Inputs) -> BoardTask? {
+        guard let board else { return nil }
+        return inputs.placements.first { $0.taskId == taskId && $0.boardId == board.id && !$0.isDeleted }
     }
 
     /// A contributor's StatusPill state on `board` (lifetime when `nil`):
@@ -155,10 +162,10 @@ extension CountsToward {
     /// with an in-window count above zero, or a Compound with at least one
     /// child complete in the window; `notStarted` otherwise (a Simple task is
     /// never in progress). Twin of the TS `contributorRowStatus`.
-    static func contributorRowStatus(_ task: Task, inputs: Inputs, board: Board?) -> ContributorRowStatus {
+    static func contributorRowStatus(_ task: Task, inputs: Inputs, board: Board?, childTargets: [PlacementChildTarget]? = nil) -> ContributorRowStatus {
         let ctx = windowContext(of: board, eventsByTaskId: inputs.eventsByTaskId)
         let window = Window(windowStart: ctx.windowStart, windowEnd: ctx.windowEnd)
-        if resolveContributionState(task, childrenByCompound: inputs.childrenByCompound, taskById: inputs.taskById, eventsByTaskId: ctx.eventsByTaskId, window: window).isCompleted {
+        if resolveContributionState(task, childrenByCompound: inputs.childrenByCompound, taskById: inputs.taskById, eventsByTaskId: ctx.eventsByTaskId, window: window, childTargets: childTargets).isCompleted {
             return .done
         }
         if task.type == .counting {
@@ -167,7 +174,7 @@ extension CountsToward {
         }
         if task.type == .compound {
             for link in (inputs.childrenByCompound[task.id] ?? []) where !link.isDeleted {
-                if let child = inputs.taskById[link.childTaskId], childDone(child, inputs: inputs, ctx: ctx) { return .inProgress }
+                if let child = inputs.taskById[link.childTaskId], childDone(child, inputs: inputs, ctx: ctx, childTargets: childTargets) { return .inProgress }
             }
         }
         return .notStarted
@@ -192,14 +199,14 @@ extension CountsToward {
 
     /// A Compound representative's done / total direct children on `board`'s window.
     /// Twin of the TS `contributorChildProgress`.
-    static func contributorChildProgress(_ task: Task, inputs: Inputs, board: Board?) -> ChildProgress? {
+    static func contributorChildProgress(_ task: Task, inputs: Inputs, board: Board?, childTargets: [PlacementChildTarget]? = nil) -> ChildProgress? {
         guard task.type == .compound else { return nil }
         let ctx = windowContext(of: board, eventsByTaskId: inputs.eventsByTaskId)
         var done = 0, total = 0
         for link in (inputs.childrenByCompound[task.id] ?? []) where !link.isDeleted {
             guard let child = inputs.taskById[link.childTaskId], !child.isDeleted else { continue }
             total += 1
-            if childDone(child, inputs: inputs, ctx: ctx) { done += 1 }
+            if childDone(child, inputs: inputs, ctx: ctx, childTargets: childTargets) { done += 1 }
         }
         return ChildProgress(done: done, total: total)
     }
@@ -214,9 +221,12 @@ extension CountsToward {
     static func countsTowardRows(rootId: String, tasks: [Task], inputs: Inputs) -> [ContributorRow] {
         var rows: [(row: ContributorRow, title: String)] = []
         for g in contributorCreditGroups(rootId: rootId, tasks: tasks, inputs: inputs) {
-            guard let task = inputs.taskById[g.representativeId] else { continue }
-            let board = pickPrimaryBoard(taskId: task.id, boardTasks: inputs.placements, boardsById: inputs.boardById)
-            let status = contributorRowStatus(task, inputs: inputs, board: board)
+            guard let raw = inputs.taskById[g.representativeId] else { continue }
+            let board = pickPrimaryBoard(taskId: raw.id, boardTasks: inputs.placements, boardsById: inputs.boardById)
+            // Slice 2b: the row shows the representative as placed on that board.
+            let placement = placement(of: raw.id, on: board, inputs: inputs)
+            let task = placement.map { PlacementParams.apply(raw, placement: $0) } ?? raw
+            let status = contributorRowStatus(task, inputs: inputs, board: board, childTargets: placement?.childTargets)
             rows.append((
                 ContributorRow(
                     taskId: task.id,
@@ -225,10 +235,10 @@ extension CountsToward {
                     creditCount: g.creditCount,
                     latestOccurredAt: g.latestOccurredAt,
                     progress: contributorRowProgress(task, inputs: inputs, board: board, status: status),
-                    childProgress: contributorChildProgress(task, inputs: inputs, board: board),
+                    childProgress: contributorChildProgress(task, inputs: inputs, board: board, childTargets: placement?.childTargets),
                     memberIds: g.memberIds
                 ),
-                task.title.lowercased()
+                raw.title.lowercased()
             ))
         }
         rows.sort { a, b in

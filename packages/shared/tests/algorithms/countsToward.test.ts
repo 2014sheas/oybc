@@ -93,6 +93,10 @@ interface MiniPlacement {
   boardId: string;
   taskId: string;
   isDeleted?: boolean;
+  /** Slice 2b — the placement's parameters (scored with the window). */
+  targetOverride?: number;
+  targetKind?: CountKind;
+  childTargets?: Array<{ childId: string; target: number }>;
 }
 
 const T0 = '2026-01-01T00:00:00.000Z';
@@ -166,8 +170,11 @@ function toBoard(m: MiniBoard): Pick<Board, 'id' | 'isDeleted' | 'status' | 'sta
   };
 }
 
-function toPlacement(m: MiniPlacement, i: number): Pick<BoardTask, 'id' | 'boardId' | 'taskId' | 'isDeleted'> {
-  return { id: `bt${i}`, boardId: m.boardId, taskId: m.taskId, isDeleted: m.isDeleted ?? false };
+function toPlacement(m: MiniPlacement, i: number): ContributionInputs['placements'][number] & Pick<BoardTask, 'id'> {
+  return {
+    id: `bt${i}`, boardId: m.boardId, taskId: m.taskId, isDeleted: m.isDeleted ?? false,
+    targetOverride: m.targetOverride, targetKind: m.targetKind, childTargets: m.childTargets,
+  };
 }
 
 function group<T extends { compoundTaskId?: string; taskId?: string }>(rows: T[], key: 'compoundTaskId' | 'taskId'): Record<string, T[]> {

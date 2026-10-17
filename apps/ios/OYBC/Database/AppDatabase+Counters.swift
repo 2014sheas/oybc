@@ -307,10 +307,14 @@ extension AppDatabase {
         let boards = (try? fetchBoards(userId: userId)) ?? []
         let boardTasks = (try? fetchAllBoardTasks()) ?? []
         let events = (try? fetchNonDeletedTaskEvents(userId: userId)) ?? []
+        // Slice 2b: a linked child placed through a parent compound is a card
+        // per placement of that compound.
+        let compoundChildren = (try? fetchAllCompoundChildren()) ?? []
         let groups = buildSharedCounterGroups(
             tasks: tasks,
             boardTasks: boardTasks,
             boards: boards,
+            compoundChildren: compoundChildren,
             eventsByTaskId: Dictionary(grouping: events, by: \.taskId),
             memberVisibility: SharedCounterMemberVisibility(showExpired: showExpired, now: now)
         )

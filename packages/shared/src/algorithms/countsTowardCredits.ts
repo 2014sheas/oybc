@@ -32,6 +32,8 @@ import {
 } from './countsToward';
 import { lineageRootId } from './countsTowardLineage';
 import { pickPrimaryBoard } from './sharedCounterGroups';
+import { withChildTarget, withPlacementParams } from './placementParams';
+import type { PlacementChildTarget } from '../types/boardTask';
 import { boardWindowEnd, boundWindowContextAtSeal, resolveTaskWindowState, type CompoundWindowContext } from './taskEvents';
 
 /** One fork lineage of contributors to a counter root, with its shared credit count. */
@@ -171,11 +173,17 @@ function windowContextOf(
   return { windowStart: board.startDate, windowEnd: boardWindowEnd(board), eventsByTaskId: bounded };
 }
 
-/** A direct child's completion in `ctx` (a nested compound derives; a primitive resolves windowed). */
-function childDone(child: Task, inputs: ContributionInputs, ctx: CompoundWindowContext): boolean {
+/** A direct child's completion in `ctx` (a nested compound derives; a primitive resolves windowed), at the placement's child goal (slice 2b). */
+function childDone(child: Task, inputs: ContributionInputs, ctx: CompoundWindowContext, childTargets?: PlacementChildTarget[] | null): boolean {
   if (child.isDeleted) return false;
   if (child.type === TaskType.COMPOUND) return evaluateCompound(child, inputs.childrenByCompound, inputs.taskById, ctx);
-  return resolvePrimitiveChildState(child, ctx);
+  return resolvePrimitiveChildState(withChildTarget(child, childTargets), ctx);
+}
+
+/** The representative's live placement on `board` (its slice 2b parameters), if any. */
+function placementOn(taskId: string, boardId: string | undefined, inputs: ContributionInputs): ContributionInputs['placements'][number] | undefined {
+  if (!boardId) return undefined;
+  return inputs.placements.find((p) => p.taskId === taskId && p.boardId === boardId && !p.isDeleted);
 }
 
 /**
@@ -195,10 +203,12 @@ export function contributorRowStatus(
   task: Task,
   inputs: ContributionInputs,
   board: Pick<Board, 'startDate' | 'endDate' | 'sealedAt'> | null,
+  /** The placement's per-child goals on `board` (slice 2b); `task` is already placement-adjusted. */
+  childTargets?: PlacementChildTarget[] | null,
 ): ContributorRowStatus {
   const ctx = windowContextOf(board, inputs.eventsByTaskId);
   const window = { windowStart: ctx.windowStart, windowEnd: ctx.windowEnd };
-  if (resolveContributionState(task, inputs.childrenByCompound, inputs.taskById, ctx.eventsByTaskId, window).isCompleted) return 'done';
+  if (resolveContributionState(task, inputs.childrenByCompound, inputs.taskById, ctx.eventsByTaskId, window, childTargets).isCompleted) return 'done';
   if (task.type === TaskType.COUNTING) {
     const state = resolveTaskWindowState(task, ctx.eventsByTaskId[task.id] ?? [], ctx.windowStart, ctx.windowEnd);
     return state.count > 0 ? 'inProgress' : 'notStarted';
@@ -207,7 +217,7 @@ export function contributorRowStatus(
     const links = (inputs.childrenByCompound[task.id] ?? []).filter((l) => !l.isDeleted);
     for (const l of links) {
       const child = inputs.taskById[l.childTaskId];
-      if (child && childDone(child, inputs, ctx)) return 'inProgress';
+      if (child && childDone(child, inputs, ctx, childTargets)) return 'inProgress';
     }
   }
   return 'notStarted';
@@ -224,6 +234,8 @@ export function contributorRowProgress(
   status: ContributorRowStatus,
   inputs: ContributionInputs,
   board: Pick<Board, 'startDate' | 'endDate' | 'sealedAt'> | null,
+  /** The placement's per-child goals on `board` (slice 2b); `task` is already placement-adjusted. */
+  childTargets?: PlacementChildTarget[] | null,
 ): { progress: ContributorRowProgress | null; childProgress: ContributorChildProgress | null } {
   const ctx = windowContextOf(board, inputs.eventsByTaskId);
   if (task.type === TaskType.COUNTING && status !== 'done' && task.maxCount != null) {
@@ -237,7 +249,7 @@ export function contributorRowProgress(
       const child = inputs.taskById[l.childTaskId];
       if (!child || child.isDeleted) continue;
       total += 1;
-      if (childDone(child, inputs, ctx)) done += 1;
+      if (childDone(child, inputs, ctx, childTargets)) done += 1;
     }
     return { progress: null, childProgress: { done, total } };
   }
@@ -272,10 +284,13 @@ export function countsTowardRows(rootId: string, tasks: ReadonlyArray<Task>, inp
   const boardsById = new Map(Object.entries(inputs.boardById));
   const rows: Array<ContributorRow & { title: string }> = [];
   for (const g of contributorCreditGroups(rootId, tasks, inputs)) {
-    const task = inputs.taskById[g.representativeId];
-    if (!task) continue;
-    const board = pickPrimaryBoard(task.id, inputs.placements, boardsById);
-    const status = contributorRowStatus(task, inputs, board);
+    const raw = inputs.taskById[g.representativeId];
+    if (!raw) continue;
+    const board = pickPrimaryBoard(raw.id, inputs.placements, boardsById);
+    // Slice 2b: the row shows the representative as placed on that board.
+    const placement = placementOn(raw.id, board?.id, inputs);
+    const task = placement ? withPlacementParams(raw, placement) : raw;
+    const status = contributorRowStatus(task, inputs, board, placement?.childTargets);
     rows.push({
       taskId: task.id,
       status,
@@ -283,8 +298,8 @@ export function countsTowardRows(rootId: string, tasks: ReadonlyArray<Task>, inp
       boardId: board?.id ?? null,
       creditCount: g.creditCount,
       latestOccurredAt: g.latestOccurredAt,
-      ...contributorRowProgress(task, status, inputs, board),
-      title: task.title.toLowerCase(),
+      ...contributorRowProgress(task, status, inputs, board, placement?.childTargets),
+      title: raw.title.toLowerCase(),
     });
   }
   rows.sort(

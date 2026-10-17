@@ -124,6 +124,14 @@ final class SharedCounterGroupsTests: XCTestCase {
         ]
     }
 
+    /// `board(_:status:)` whose window is still open at `rc9Now` (slice 2b: the
+    /// hub's expiry rule also reads the HOST board's window).
+    private func openBoard(_ id: String) -> Board {
+        var d = boardDict(id, status: .active)
+        d["endDate"] = "2026-12-31T12:00:00.000Z"
+        return try! JSONDecoder().decode(Board.self, from: JSONSerialization.data(withJSONObject: d))
+    }
+
     /// Minimal BoardTask placement.
     private func placement(_ taskId: String, _ boardId: String) -> BoardTask {
         BoardTask(
@@ -170,7 +178,7 @@ final class SharedCounterGroupsTests: XCTestCase {
         XCTAssertEqual(later.activeTaskCount, 0)
     }
 
-    func test_primaryBoardIsTheOneStillInPlay_notTheNewerEndedOne() {
+    func test_aTaskOnTwoBoardsIsTwoCards_theEndedOneNotCountingNow() {
         let source = counter("src", currentCount: 10, isCounter: true)
         var endedDict = boardDict("ended", status: .active) // newer, ACTIVE, but ended
         endedDict["startDate"] = "2026-02-08T12:00:00.000Z"
@@ -187,8 +195,11 @@ final class SharedCounterGroupsTests: XCTestCase {
                 showExpired: true, now: ISO8601DateFormatter().date(from: "2026-03-01T12:00:00Z")!
             )
         )
-        XCTAssertEqual(groups[0].tasks[0].boardId, "open")
-        XCTAssertTrue(groups[0].tasks[0].isActive)
+        // Slice 2b: cards ARE placements — one per board, the ended one not counting now.
+        XCTAssertEqual(groups[0].tasks.map(\.boardId), ["ended", "open"])
+        XCTAssertEqual(groups[0].tasks.map(\.isActive), [false, true])
+        XCTAssertEqual(groups[0].taskCount, 1)
+        XCTAssertEqual(groups[0].boardCount, 2)
     }
 
     // MARK: - 1. No shared-counter links
@@ -246,7 +257,9 @@ final class SharedCounterGroupsTests: XCTestCase {
         let src = counter("src", currentCount: 100)
         // Linked when source was at 70 → baseline 70 → displayed = 100 - 70 = 30.
         let der = counter("der", maxCount: 50, sharedCounterId: "src", baseline: 70)
-        let groups = buildSharedCounterGroups(tasks: [src, der], boardTasks: [], boards: [])
+        let groups = buildSharedCounterGroups(
+            tasks: [src, der], boardTasks: [placement("src", "b1"), placement("der", "b1")], boards: [board("b1", status: .active)]
+        )
 
         let derived = groups[0].tasks.first { $0.taskId == "der" }!
         XCTAssertEqual(derived.logged, 30)
@@ -259,7 +272,9 @@ final class SharedCounterGroupsTests: XCTestCase {
     func test_clampsToZeroWhenBaselineExceedsCount() {
         let src = counter("src", currentCount: 20)
         let der = counter("der", maxCount: 10, sharedCounterId: "src", baseline: 50)
-        let groups = buildSharedCounterGroups(tasks: [src, der], boardTasks: [], boards: [])
+        let groups = buildSharedCounterGroups(
+            tasks: [src, der], boardTasks: [placement("src", "b1"), placement("der", "b1")], boards: [board("b1", status: .active)]
+        )
 
         let derived = groups[0].tasks.first { $0.taskId == "der" }!
         XCTAssertEqual(derived.logged, 0)
@@ -300,7 +315,11 @@ final class SharedCounterGroupsTests: XCTestCase {
         let src = counter("src", currentCount: 10)
         let der1 = counter("der1", maxCount: 5, sharedCounterId: "src", baseline: 0)
         let der2 = counter("der2", maxCount: 5, sharedCounterId: "src", baseline: 0, isDeleted: true)
-        let groups = buildSharedCounterGroups(tasks: [src, der1, der2], boardTasks: [], boards: [])
+        let groups = buildSharedCounterGroups(
+            tasks: [src, der1, der2],
+            boardTasks: [placement("src", "b1"), placement("der1", "b1"), placement("der2", "b1")],
+            boards: [board("b1", status: .active)]
+        )
 
         XCTAssertEqual(groups[0].taskCount, 2) // source + der1 only
         let taskIds = Set(groups[0].tasks.map { $0.taskId })
@@ -309,7 +328,7 @@ final class SharedCounterGroupsTests: XCTestCase {
 
     // MARK: - 8. No live board placement → null board + inactive
 
-    func test_memberWithNoBoardPlacementHasNullBoardAndIsInactive() {
+    func test_unplacedLinkedMemberHasNoCard() {
         let src = counter("src", currentCount: 10)
         let der = counter("der", maxCount: 5, sharedCounterId: "src", baseline: 0)
         let groups = buildSharedCounterGroups(
@@ -318,10 +337,10 @@ final class SharedCounterGroupsTests: XCTestCase {
             boards: [board("b1", status: .active)]
         )
 
-        let derived = groups[0].tasks.first { $0.taskId == "der" }!
-        XCTAssertNil(derived.boardId)
-        XCTAssertNil(derived.boardName)
-        XCTAssertFalse(derived.isActive)
+        // Slice 2b: cards are placements — an unplaced linked task has none.
+        XCTAssertNil(groups[0].tasks.first { $0.taskId == "der" })
+        XCTAssertEqual(groups[0].tasks.map(\.taskId), ["src"])
+        XCTAssertEqual(groups[0].taskCount, 1)
     }
 
     // MARK: - 9. Distinct boards for boardCount
@@ -356,7 +375,7 @@ final class SharedCounterGroupsTests: XCTestCase {
 
     // MARK: - 11. Prefer ACTIVE over DRAFT as primary placement
 
-    func test_prefersActiveBoardOverDraftForPrimaryPlacement() {
+    func test_aTaskOnADraftAndAnActiveBoardIsTwoCards() {
         let src = counter("src", currentCount: 10, maxCount: 5)
         let der = counter("der", maxCount: 5, sharedCounterId: "src", baseline: 0)
         let groups = buildSharedCounterGroups(
@@ -366,9 +385,11 @@ final class SharedCounterGroupsTests: XCTestCase {
             memberVisibility: inWindow
         )
 
-        let sourceView = groups[0].tasks.first { $0.taskId == "src" }!
-        XCTAssertEqual(sourceView.boardId, "active")
-        XCTAssertTrue(sourceView.isActive)
+        // Slice 2b: one card per placement — the draft one not counting now.
+        let cards = groups[0].tasks.filter { $0.taskId == "src" }
+        XCTAssertEqual(cards.map(\.boardId), ["active", "draft"])
+        XCTAssertEqual(cards.map(\.isActive), [true, false])
+        XCTAssertEqual(groups[0].boardCount, 2)
     }
 
     // MARK: - P5. Hub-born counters (isCounter)
@@ -376,7 +397,7 @@ final class SharedCounterGroupsTests: XCTestCase {
     // Swift port of the TS `describe('hub-born counters (P5)')` block in
     // `packages/shared/tests/algorithms/sharedCounterGroups.test.ts`.
 
-    func test_flaggedZeroLinkSource_becomesSingleMemberGroup() {
+    func test_flaggedZeroLinkSource_isAGroupWhoseCardsAreItsPlacements() {
         let source = counter("c1", title: "Counter c1", currentCount: 500, isCounter: true)
         let groups = buildSharedCounterGroups(tasks: [source], boardTasks: [], boards: [])
 
@@ -384,12 +405,20 @@ final class SharedCounterGroupsTests: XCTestCase {
         let group = groups[0]
         XCTAssertEqual(group.counterId, "c1")
         XCTAssertEqual(group.lifetime, 500)
-        XCTAssertEqual(group.taskCount, 1)
+        // Slice 2b: cards are placements — an unplaced root has a group and no card.
+        XCTAssertEqual(group.taskCount, 0)
         XCTAssertEqual(group.boardCount, 0)
-        XCTAssertEqual(group.tasks.count, 1)
-        XCTAssertTrue(group.tasks[0].isSource)
-        XCTAssertEqual(group.tasks[0].goal, 0)
-        XCTAssertFalse(group.tasks[0].met)
+        XCTAssertEqual(group.tasks.count, 0)
+
+        let placed = buildSharedCounterGroups(
+            tasks: [source], boardTasks: [placement("c1", "b1")], boards: [board("b1", status: .active)]
+        )
+        XCTAssertEqual(placed[0].tasks.count, 1)
+        XCTAssertTrue(placed[0].tasks[0].isSource)
+        XCTAssertEqual(placed[0].tasks[0].boardTaskId, placement("c1", "b1").id)
+        XCTAssertEqual(placed[0].tasks[0].goal, 0)
+        XCTAssertFalse(placed[0].tasks[0].met)
+        XCTAssertNil(placed[0].tasks[0].viaCompoundId)
     }
 
     func test_flaggedSourceWithLinks_producesOneGroupNotTwo() {
@@ -399,7 +428,7 @@ final class SharedCounterGroupsTests: XCTestCase {
 
         XCTAssertEqual(groups.count, 1)
         XCTAssertEqual(groups[0].counterId, "src")
-        XCTAssertEqual(groups[0].taskCount, 2)
+        XCTAssertEqual(groups[0].tasks.count, 0) // nothing placed → no cards
     }
 
     func test_unflaggedStandaloneCountingTask_stillProducesNoGroup() {
@@ -475,7 +504,7 @@ final class SharedCounterGroupsTests: XCTestCase {
         SharedCounterMemberVisibility(showExpired: false, now: rc9Now)
     }
 
-    func test_memberVisibility_keepsARootWhoseOnlyMemberExpired_asASingleMemberGroup() {
+    func test_memberVisibility_keepsARootWhoseOnlyMemberExpired_asACardLessGroup() {
         // The board-born case: a plain counting task (not `isCounter`) that
         // is a root purely because a derived weekly row links to it.
         let root = counter("root", currentCount: 40)
@@ -484,14 +513,16 @@ final class SharedCounterGroupsTests: XCTestCase {
         )
 
         let groups = buildSharedCounterGroups(
-            tasks: [root, expired], boardTasks: [], boards: [], memberVisibility: hideExpired
+            tasks: [root, expired], boardTasks: [placement("expired", "b-old")], boards: [board("b-old", status: .active)],
+            memberVisibility: hideExpired
         )
 
         XCTAssertEqual(groups.map(\.counterId), ["root"], "the root stays listed")
         XCTAssertEqual(groups.first?.lifetime, 40)
-        XCTAssertEqual(groups.first?.taskCount, 1)
+        // Slice 2b: cards are placements — the hidden member's card is gone, the root has none.
+        XCTAssertEqual(groups.first?.taskCount, 0)
         XCTAssertEqual(groups.first?.activeTaskCount, 0)
-        XCTAssertEqual(groups.first?.tasks.map(\.taskId), ["root"])
+        XCTAssertEqual(groups.first?.tasks.map(\.taskId), [])
     }
 
     func test_memberVisibility_dropsOnlyTheExpiredMember() {
@@ -504,13 +535,16 @@ final class SharedCounterGroupsTests: XCTestCase {
         )
 
         let groups = buildSharedCounterGroups(
-            tasks: [root, live, expired], boardTasks: [], boards: [], memberVisibility: hideExpired
+            tasks: [root, live, expired],
+            boardTasks: [placement("live", "b-live"), placement("expired", "b-old")],
+            boards: [openBoard("b-live"), board("b-old", status: .active)],
+            memberVisibility: hideExpired
         )
 
         XCTAssertEqual(groups.count, 1)
-        XCTAssertEqual(groups.first?.tasks.map(\.taskId), ["root", "live"],
+        XCTAssertEqual(groups.first?.tasks.map(\.taskId), ["live"],
                        "only the member whose window has ended is dropped")
-        XCTAssertEqual(groups.first?.taskCount, 2)
+        XCTAssertEqual(groups.first?.taskCount, 1)
     }
 
     func test_memberVisibility_showExpiredListsEveryMember() {
@@ -523,12 +557,14 @@ final class SharedCounterGroupsTests: XCTestCase {
         )
 
         let groups = buildSharedCounterGroups(
-            tasks: [root, live, expired], boardTasks: [], boards: [],
+            tasks: [root, live, expired],
+            boardTasks: [placement("live", "b-live"), placement("expired", "b-old")],
+            boards: [board("b-live", status: .active), board("b-old", status: .active)],
             memberVisibility: SharedCounterMemberVisibility(showExpired: true, now: rc9Now)
         )
 
-        // Source first, then placeless members by id ("expired" < "live").
-        XCTAssertEqual(groups.first?.tasks.map(\.taskId), ["root", "expired", "live"])
+        // Cards by board name ("Board b-live" < "Board b-old").
+        XCTAssertEqual(groups.first?.tasks.map(\.taskId), ["live", "expired"])
     }
 
     func test_memberVisibility_neverHidesARootHoweverOldItsOwnEndDate() {
@@ -553,10 +589,36 @@ final class SharedCounterGroupsTests: XCTestCase {
         let member = counter("member", sharedCounterId: "root")
 
         let groups = buildSharedCounterGroups(
-            tasks: [root, member], boardTasks: [], boards: [], memberVisibility: hideExpired
+            tasks: [root, member], boardTasks: [placement("member", "b-live")], boards: [openBoard("b-live")],
+            memberVisibility: hideExpired
         )
 
-        XCTAssertEqual(groups.first?.tasks.map(\.taskId), ["root", "member"])
+        XCTAssertEqual(groups.first?.tasks.map(\.taskId), ["member"])
+    }
+
+    func test_memberVisibility_hidesACardWhoseHostWindowEndedOrClosed() {
+        let root = counter("root", currentCount: 40, isCounter: true)
+        let linked = counter("linked", sharedCounterId: "root") // no own stamp
+        var endedDict = boardDict("ended", status: .active)
+        endedDict["startDate"] = "2026-02-01T12:00:00.000Z"
+        endedDict["endDate"] = "2026-02-07T12:00:00.000Z"
+        var closedDict = boardDict("closed", status: .active)
+        closedDict["sealedAt"] = "2026-02-05T12:00:00.000Z"
+        let decode = { (d: [String: Any]) in try! JSONDecoder().decode(Board.self, from: JSONSerialization.data(withJSONObject: d)) }
+        var openDict = boardDict("open", status: .active)
+        openDict["endDate"] = "2026-12-31T12:00:00.000Z"
+        let boards = [decode(endedDict), decode(closedDict), decode(openDict)]
+        let placements = [placement("root", "ended"), placement("linked", "closed"), placement("linked", "open")]
+
+        let hidden = buildSharedCounterGroups(tasks: [root, linked], boardTasks: placements, boards: boards, memberVisibility: hideExpired)
+        XCTAssertEqual(hidden.first?.tasks.map(\.boardId), ["open"])
+        let shown = buildSharedCounterGroups(
+            tasks: [root, linked], boardTasks: placements, boards: boards,
+            memberVisibility: SharedCounterMemberVisibility(showExpired: true, now: rc9Now)
+        )
+        XCTAssertEqual(shown.first?.tasks.map(\.boardId), ["ended", "closed", "open"])
+        // `activeTaskCount` counts distinct tasks, like `taskCount`.
+        XCTAssertEqual(shown.first?.activeTaskCount, 1)
     }
 
     func test_memberVisibility_nilListsEveryLiveMember() {
@@ -565,9 +627,11 @@ final class SharedCounterGroupsTests: XCTestCase {
             "expired", sharedCounterId: "root", endDate: "2026-02-07T23:59:59.999Z"
         )
 
-        let groups = buildSharedCounterGroups(tasks: [root, expired], boardTasks: [], boards: [])
+        let groups = buildSharedCounterGroups(
+            tasks: [root, expired], boardTasks: [placement("expired", "b-old")], boards: [board("b-old", status: .active)]
+        )
 
-        XCTAssertEqual(groups.first?.tasks.map(\.taskId), ["root", "expired"])
+        XCTAssertEqual(groups.first?.tasks.map(\.taskId), ["expired"])
     }
 
     // MARK: - sharedCounterRootIds (the extracted family-root test)
@@ -645,14 +709,14 @@ final class SharedCounterGroupsTests: XCTestCase {
         let withExpired = buildSharedCounterGroups(
             tasks: [root, expired], boardTasks: [placement("expired", "b-old")], boards: [oldWeek]
         )
-        XCTAssertEqual(withExpired.first?.taskCount, 2, "both members without the rule")
+        XCTAssertEqual(withExpired.first?.taskCount, 1, "the placed member's card without the rule")
         XCTAssertEqual(withExpired.first?.boardCount, 1)
 
         let filtered = buildSharedCounterGroups(
             tasks: [root, expired], boardTasks: [placement("expired", "b-old")], boards: [oldWeek],
             memberVisibility: hideExpired
         )
-        XCTAssertEqual(filtered.first?.taskCount, 1, "the expired member never reaches the group")
+        XCTAssertEqual(filtered.first?.taskCount, 0, "the expired member never reaches the group")
         XCTAssertEqual(filtered.first?.boardCount, 0)
         XCTAssertEqual(filtered.first?.activeTaskCount, 0)
     }

@@ -18,16 +18,16 @@ final class CountersHubSnapshotTests: XCTestCase {
 
     private func makeGroupWithMembers() -> SharedCounterGroup {
         let src = SharedCounterMemberTask(
-            taskId: "src", taskTitle: "Push-ups", isSource: true,
+            boardTaskId: "bt-src-bm", taskId: "src", taskTitle: "Push-ups", isSource: true,
             boardId: "bm", boardName: "February Fitness",
             timeframe: .monthly, window: "February 2026",
-            goal: 1000, logged: 512, met: false, over: 0, isActive: true
+            goal: 1000, logged: 512, met: false, over: 0, isActive: true, viaCompoundId: nil
         )
         let der = SharedCounterMemberTask(
-            taskId: "der", taskTitle: "Push-ups", isSource: false,
+            boardTaskId: "bt-der-bw", taskId: "der", taskTitle: "Push-ups", isSource: false,
             boardId: "bw", boardName: "Week 5 Wellness",
             timeframe: .weekly, window: "Week of Feb 3 – 9, 2026",
-            goal: 30, logged: 45, met: true, over: 15, isActive: true
+            goal: 30, logged: 45, met: true, over: 15, isActive: true, viaCompoundId: nil
         )
         return SharedCounterGroup(
             counterId: "src", name: "Push-ups", action: "Do", unit: "reps",
@@ -38,10 +38,10 @@ final class CountersHubSnapshotTests: XCTestCase {
 
     private func makeSingleMemberGroup() -> SharedCounterGroup {
         let src = SharedCounterMemberTask(
-            taskId: "src", taskTitle: "Morning runs", isSource: true,
+            boardTaskId: "bt-src-b1", taskId: "src", taskTitle: "Morning runs", isSource: true,
             boardId: "b1", boardName: "April Running",
             timeframe: .monthly, window: "April 2026",
-            goal: 20, logged: 7, met: false, over: 0, isActive: true
+            goal: 20, logged: 7, met: false, over: 0, isActive: true, viaCompoundId: nil
         )
         return SharedCounterGroup(
             counterId: "src", name: "Morning runs", action: "Go for", unit: "runs",
@@ -88,9 +88,9 @@ final class CountersHubSnapshotTests: XCTestCase {
     private func makeContinuousDurationGroups() -> [SharedCounterGroup] {
         func member(_ id: String, _ board: String, _ window: String, _ tf: Timeframe, _ goal: CountValue, _ logged: CountValue) -> SharedCounterMemberTask {
             SharedCounterMemberTask(
-                taskId: id, taskTitle: board, isSource: false, boardId: id, boardName: board,
+                boardTaskId: "bt-\(id)-\(id)", taskId: id, taskTitle: board, isSource: false, boardId: id, boardName: board,
                 timeframe: tf, window: window, goal: goal, logged: logged,
-                met: logged >= goal, over: max(0, logged - goal), isActive: true
+                met: logged >= goal, over: max(0, logged - goal), isActive: true, viaCompoundId: nil
             )
         }
         let miles = SharedCounterGroup(

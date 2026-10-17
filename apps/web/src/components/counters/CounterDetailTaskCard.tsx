@@ -20,12 +20,13 @@ interface CounterDetailTaskCardProps {
  * CounterDetailTaskCard — one member task card in the Counter Detail screen.
  *
  * Active cards (inactive=false, default):
- *   - Tapping navigates to the task's board (/boards/:boardId).
+ *   - Tapping navigates to the card's board (/boards/:boardId) — a card is a
+ *     placement (slice 2b), so it always has one.
  *   - Shows task name, logged/goal, board + dot, window progress bar,
  *     and a caption: "{window} · {remaining} to go" / "✓ Goal met" / "✓ Goal met · N over".
  *
  * Inactive cards (inactive=true, "Not counting now" section):
- *   - Greyed out, not clickable; name, Draft / Unplaced badge and board only.
+ *   - Greyed out, not clickable; name and board only (no badge — iOS parity).
  *
  * Matches the `cd-task` design from the shared-counters design handoff.
  */
@@ -45,9 +46,7 @@ export function CounterDetailTaskCard({
   const value = memberValueParts(task.logged, task.goal, kind);
 
   const handleClick = () => {
-    if (!inactive && task.boardId) {
-      navigate(`/boards/${task.boardId}`);
-    }
+    if (!inactive) navigate(`/boards/${task.boardId}`);
   };
 
   if (inactive) {
@@ -55,9 +54,6 @@ export function CounterDetailTaskCard({
       <div className={`${styles.card} ${styles.cardInactive}`} aria-label={`${task.taskTitle} — inactive`}>
         <div className={styles.top}>
           <span className={styles.taskName}>{task.taskTitle}</span>
-          <span className={styles.inactiveBadge}>
-            {task.boardId ? 'Draft' : 'Unplaced'}
-          </span>
         </div>
         {task.boardName && (
           <div className={styles.boardRow}>
@@ -78,8 +74,7 @@ export function CounterDetailTaskCard({
       type="button"
       className={styles.card}
       onClick={handleClick}
-      disabled={!task.boardId}
-      aria-label={`${task.taskTitle}: ${formatCountWithUnit(task.logged, kind, unitStr)} of ${formatCountWithUnit(task.goal, kind, unitStr)}. ${task.boardName ?? ''}. ${caption}`}
+      aria-label={`${task.taskTitle}: ${formatCountWithUnit(task.logged, kind, unitStr)} of ${formatCountWithUnit(task.goal, kind, unitStr)}. ${task.boardName}. ${caption}`}
     >
       {/* Top row: task name (left) + logged/goal (right) */}
       <div className={styles.top}>
