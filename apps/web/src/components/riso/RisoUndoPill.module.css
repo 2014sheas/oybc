@@ -1,0 +1,26 @@
+.pill {
+  position: relative;
+  flex: 0 0 auto;
+  padding: 4px 11px;
+  border: 2px solid var(--riso-ink);
+  border-radius: 999px;
+  background: transparent;
+  font-family: var(--riso-font-head);
+  font-size: 12px;
+  font-weight: 800;
+  color: var(--riso-ink);
+  cursor: pointer;
+}
+.pill::before {
+  content: '';
+  position: absolute;
+  inset: -4px 0;
+}
+.pill:focus-visible {
+  outline: 3px solid var(--riso-blue);
+  outline-offset: 2px;
+}
+.pill:disabled {
+  opacity: 0.45;
+  cursor: default;
+}

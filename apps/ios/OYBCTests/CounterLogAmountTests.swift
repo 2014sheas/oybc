@@ -2,7 +2,7 @@ import XCTest
 @testable import OYBC
 
 /// `CounterLogAmount` — the amount-chip helpers shared by the Counter Detail
-/// Log card and the board-play `RisoCountingStepperSheet`. Swift twin of
+/// Log card and the board-play square sheet. Swift twin of
 /// web's `amountChips.test.ts`; keep the two pinned to the same numbers.
 final class CounterLogAmountTests: XCTestCase {
 

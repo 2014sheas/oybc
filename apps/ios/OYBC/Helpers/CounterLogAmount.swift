@@ -21,7 +21,7 @@ enum CounterPillAction: Equatable {
 /// to `parseCountInput`); `nil` when it isn't a positive amount.
 ///
 /// Shared (R3 board-play touchpoints) between `CounterDetailView`'s "#" chip
-/// (R2) and `RisoCountingStepperSheet`'s "#" chip (R3) so the two amount-chip
+/// (R2) and the retired stepper sheet's "#" chip (R3) so the two amount-chip
 /// UIs don't duplicate the rule. Swift twin of web's `parseCustomLogAmount`
 /// (`apps/web/src/components/counters/amountChips.ts`) — keep both in sync
 /// if the rule ever changes.

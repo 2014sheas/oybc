@@ -494,6 +494,8 @@ enum RisoBadgeStyle { case pill, letterSquare }
 struct RisoTypeBadge: View {
     let kind: RisoTaskKind
     var style: RisoBadgeStyle = .pill
+    /// Letter-square edge (20 in rows; the square sheet header draws 22).
+    var size: CGFloat = 20
 
     var body: some View {
         switch style {
@@ -510,7 +512,7 @@ struct RisoTypeBadge: View {
             Text(kind.letter)
                 .font(.risoHead(10, .extraBold))
                 .foregroundStyle(kind.foreground)
-                .frame(width: 20, height: 20)
+                .frame(width: size, height: size)
                 .background(RoundedRectangle(cornerRadius: Riso.cellRadius).fill(kind.fill))
                 .overlay(RoundedRectangle(cornerRadius: Riso.cellRadius).strokeBorder(Color.risoInk, lineWidth: Riso.Keyline.dense))
         }

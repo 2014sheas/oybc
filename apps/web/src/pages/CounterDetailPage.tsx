@@ -351,7 +351,6 @@ export function CounterDetailPage(): React.ReactElement {
             key={`${group.counterId}-${kind}`}
             kind={kind}
             unit={group.unit}
-            defaultLogAmount={group.defaultLogAmount}
             lifetime={group.lifetime}
             isLogging={isLogging}
             onLog={(direction, amount) => void handleLog(direction, amount)}

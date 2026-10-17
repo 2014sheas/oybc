@@ -1,0 +1,34 @@
+.strip {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 8px 10px;
+  background: var(--riso-paper-2);
+  border: 2px solid var(--riso-ink);
+  border-radius: var(--riso-r-card);
+  color: var(--riso-ink);
+}
+.check {
+  flex: 0 0 auto;
+  display: inline-flex;
+  color: var(--riso-green);
+}
+.text {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--riso-font-body);
+  font-size: 13px;
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.compact {
+  gap: 7px;
+  padding: 6px 8px;
+  border-width: 1.5px;
+}
+.compact .text {
+  font-size: 12px;
+}

@@ -254,6 +254,17 @@ Vitest for the sheet's pure glue + kit; Playwright `square-sheet.spec.ts`
 Undo; compound `+` child; closed board → Late log…) and existing specs that
 drove `DetailModal` updated.
 
+**PR 2 resolutions (implementation, 2026-10-17):** type letters are `N · # · C · A`
+on both platforms (web converged from `C / K` to the iOS kit); every write made
+inside the sheet suppresses the cross-board credited toast (the strip replaces
+it); the sheet's Normal Mark done closes the sheet and raises the tap's Undo
+toast; compound child toggles get an inline strip with an explicit revert; a
+strip is cleared by any later write and when the sheet closes or switches
+square, and shows only for a write that committed, with the amount actually
+applied; Remove is available whenever the windowed count is above 0; a
+template watcher has no Open button; an absent achievement trigger means
+Greenlog; un-completing a completion held by a sealed window is disabled.
+
 ## PR 3 — detailed scope (hold menu)
 
 One menu builder per platform — iOS `Views/BoardsTab/SquareMenu/SquareHoldMenu.swift`
