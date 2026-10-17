@@ -105,3 +105,35 @@ final class SquareSheetFormatTests: XCTestCase {
         XCTAssertEqual(SquareSheetFormat.toggleText(title: "Drink water", nowDone: false), "Drink water · not done")
     }
 }
+
+/// A cross-board credit toast must never replace a hold-menu write's Undo toast.
+final class CreditToastActionTests: XCTestCase {
+
+    private func toast(retoggle: BoardTask? = nil, squareUndo: SquareLogUndo? = nil) -> CreditToastState {
+        CreditToastState(
+            sourceTaskId: "t", amount: 0, unit: "", verb: .logged, message: "m", undo: .counterLog, toastKey: "k",
+            retoggle: retoggle, squareUndo: squareUndo
+        )
+    }
+
+    private func placement(taskId: String) -> BoardTask {
+        BoardTask(id: "bt", boardId: "b", taskId: taskId, row: 0, col: 0, isCenter: false,
+                  createdAt: "2026-06-01T00:00:00.000", updatedAt: "2026-06-01T00:00:00.000", lastSyncedAt: nil, version: 1)
+    }
+
+    func testMenuLogToastIsNeverReplacedByACreditToast() {
+        let menu = toast(squareUndo: .counterLog(sourceTaskId: "root"))
+        XCTAssertEqual(CreditToastAction.resolve(sheetOpen: false, showing: menu, creditedTaskId: nil), .ignore)
+    }
+
+    func testNormalToastAugmentsForItsOwnTaskOnly() {
+        let normal = toast(retoggle: placement(taskId: "n1"))
+        XCTAssertEqual(CreditToastAction.resolve(sheetOpen: false, showing: normal, creditedTaskId: "n1"), .augmentNormal)
+        XCTAssertEqual(CreditToastAction.resolve(sheetOpen: false, showing: normal, creditedTaskId: "other"), .replace)
+    }
+
+    func testSheetOpenAndNoToastCases() {
+        XCTAssertEqual(CreditToastAction.resolve(sheetOpen: true, showing: nil, creditedTaskId: nil), .ignore)
+        XCTAssertEqual(CreditToastAction.resolve(sheetOpen: false, showing: nil, creditedTaskId: nil), .replace)
+    }
+}

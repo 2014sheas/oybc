@@ -48,18 +48,6 @@ export function goalChipAmounts(goal: number, kind: CountKind): number[] {
 }
 
 /**
- * The stepper sheet / detail modal row. Discrete keeps `+1 · +10 · #`.
- *
- * @param kind - The counter's kind.
- * @param goal - The square's goal.
- * @returns The chips, ending in the custom `#`.
- */
-export function boardSheetChips(kind: CountKind, goal: number): LogChip[] {
-  if (kind === 'discrete') return [{ value: 1, label: '+1' }, { value: 10, label: '+10' }, CUSTOM];
-  return [...goalChipAmounts(goal, kind).map((v) => ({ value: v, label: formatCount(v, kind) })), CUSTOM];
-}
-
-/**
  * The Counter Detail Log card / hub row.
  *
  * @param kind - The counter's kind.
@@ -132,34 +120,6 @@ function presets(chips: LogChip[]): number[] {
 }
 
 /**
- * What a sheet opens on. A remembered default matching a chip selects it; for
- * Continuous / Duration any other default shows on `#`; Discrete keeps
- * `initialChipAmount` (a 1 / 10 / 25 default, else 1); with nothing
- * remembered, the first chip.
- *
- * @param kind - The counter's kind.
- * @param chips - The sheet's chips.
- * @param defaultLogAmount - The remembered last-used amount.
- * @returns The selected amount and whether it rides on the custom chip.
- */
-export function initialLogSelection(
-  kind: CountKind,
-  chips: LogChip[],
-  defaultLogAmount: number | null | undefined,
-): { amount: number; isCustom: boolean } {
-  const p = presets(chips);
-  if (defaultLogAmount != null && p.includes(defaultLogAmount)) {
-    return { amount: defaultLogAmount, isCustom: false };
-  }
-  if (kind === 'discrete') {
-    const keep = defaultLogAmount != null && FIXED.discrete.includes(defaultLogAmount);
-    return { amount: keep ? (defaultLogAmount as number) : 1, isCustom: false };
-  }
-  if (defaultLogAmount != null) return { amount: defaultLogAmount, isCustom: true };
-  return { amount: p[0] ?? countTargetStep(kind), isCustom: false };
-}
-
-/**
  * The one-tap / long-press "+ Add {last}" amount.
  *
  * @param kind - The counter's kind.
@@ -174,17 +134,6 @@ export function quickLogAmount(
 ): number {
   if (defaultLogAmount != null) return defaultLogAmount;
   return kind === 'discrete' ? 1 : (presets(chips)[0] ?? countTargetStep(kind));
-}
-
-/**
- * The selected custom chip's label — "#3.1", "#1h 30m".
- *
- * @param amount - The custom amount.
- * @param kind - The counter's kind.
- * @returns The label.
- */
-export function customChipLabel(amount: number, kind: CountKind): string {
-  return `#${formatCount(amount, kind)}`;
 }
 
 /**

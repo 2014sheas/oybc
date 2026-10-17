@@ -1,6 +1,5 @@
 import { useEffect, useCallback, useState, useRef } from 'react';
 import styles from './InteractiveTaskSquare.module.css';
-import { formatCountWithUnit, type CountKind } from '@oybc/shared';
 import {
   progressFraction,
   progressBarLabel,
@@ -34,39 +33,6 @@ interface ContextMenuProps {
    * for ALL task types. Triggers the task library detail sheet.
    */
   onOpenInLibrary?: (taskId: string) => void;
-  /**
-   * Counters Refresh R3 — quick-action amount options for a shared counting
-   * square (source or linked). When present, replaces the counting section's
-   * "+ Add {action} (+1)" button with three amount actions: "+1", "+{default}"
-   * (skipped when it collides with 1), and "# Custom amount…". The custom item
-   * routes to `onOpenCustom` rather than opening an inline input here — a
-   * floating, cursor-anchored menu isn't a safe place to lay out a text field
-   * (position is measured once on mount; growing the menu would overflow).
-   * Callers wire `onOpenCustom` to open the square sheet, which owns
-   * the full entry. Decrement / Reset
-   * stay the existing unlabeled-amount items — amount-mirrored decrement
-   * lives in the square sheet only.
-   */
-  sharedAmountActions?: {
-    unit: string;
-    defaultAmount: number;
-    onAdd: (amount: number) => void;
-    onOpenCustom: () => void;
-  };
-  /**
-   * Continuous / Duration squares: `+ Add {last} {unit}` / `# Custom amount…`
-   * / `− Remove {last} {unit}` at the last-used amount. Replaces
-   * `sharedAmountActions` and the plain +/− items; Discrete never sets it.
-   */
-  amountActions?: {
-    kind: CountKind;
-    amount: number;
-    unit: string;
-    onAdd: (amount: number) => void;
-    onRemove: (amount: number) => void;
-    onOpenCustom: () => void;
-    removeDisabled: boolean;
-  };
 }
 
 /**
@@ -93,8 +59,6 @@ export function FloatingContextMenu({
   onResetCount,
   onViewDetails,
   onOpenInLibrary,
-  sharedAmountActions,
-  amountActions,
   children,
 }: ContextMenuProps) {
   const menuRef = useRef<HTMLDivElement>(null);
@@ -150,106 +114,25 @@ export function FloatingContextMenu({
 
       {sq.type === 'counting' && (
         <>
-          {amountActions ? (
-            <>
-              <button
-                className={styles.contextMenuItem}
-                onClick={() => {
-                  amountActions.onAdd(amountActions.amount);
-                  onClose();
-                }}
-              >
-                + Add {formatCountWithUnit(amountActions.amount, amountActions.kind, amountActions.unit)}
-              </button>
-              <button
-                className={styles.contextMenuItem}
-                onClick={() => {
-                  amountActions.onOpenCustom();
-                  onClose();
-                }}
-              >
-                # Custom amount…
-              </button>
-              <button
-                className={styles.contextMenuItem}
-                disabled={amountActions.removeDisabled}
-                onClick={() => {
-                  amountActions.onRemove(amountActions.amount);
-                  onClose();
-                }}
-              >
-                − Remove {formatCountWithUnit(amountActions.amount, amountActions.kind, amountActions.unit)}
-              </button>
-            </>
-          ) : sharedAmountActions ? (
-            <>
-              {/* R3 — shared counting square quick actions. Overshoot is
-                  intentional (feedback_counter_overshoot_is_valid) — never
-                  disabled based on count. */}
-              <button
-                className={styles.contextMenuItem}
-                onClick={() => {
-                  sharedAmountActions.onAdd(1);
-                  onClose();
-                }}
-              >
-                + Add 1 {sharedAmountActions.unit}
-              </button>
-              {sharedAmountActions.defaultAmount !== 1 && (
-                <button
-                  className={styles.contextMenuItem}
-                  onClick={() => {
-                    sharedAmountActions.onAdd(sharedAmountActions.defaultAmount);
-                    onClose();
-                  }}
-                >
-                  + Add {sharedAmountActions.defaultAmount} {sharedAmountActions.unit}
-                </button>
-              )}
-              <button
-                className={styles.contextMenuItem}
-                onClick={() => {
-                  sharedAmountActions.onOpenCustom();
-                  onClose();
-                }}
-              >
-                # Custom amount…
-              </button>
-            </>
-          ) : (
-            <button
-              className={styles.contextMenuItem}
-              onClick={() => {
-                onIncrementCount?.(sq.id);
-                onClose();
-              }}
-              // Phase 3 — Shared Counters: overshoot is intentional, so
-              // the add button is never disabled based on count alone. For
-              // linked counters (sharedCounterId != null) there is no
-              // meaningful high-end limit — the source drives completion.
-              // For standalone counters we also allow overshoot per the
-              // feedback_counter_overshoot_is_valid invariant.
-            >
-              + Add {sq.action} (+1)
-            </button>
-          )}
-          {!amountActions && (
-            <button
-              className={styles.contextMenuItem}
-              // Linked counters can't be decremented directly (the handler
-              // no-ops) — disable instead of presenting a dead control, matching
-              // the detail modal (#342 review M1).
-              disabled={state.currentCount <= 0 || sq.sharedCounterId != null}
-              onClick={() => {
-                onDecrementCount?.(sq.id);
-                onClose();
-              }}
-            >
-              {/* R3: shared squares mirror the ADD amount on remove (contract:
-                  "decrement mirrors the add amount") — plain counting stays −1. */}
-              − Remove {sq.action} (−{sharedAmountActions ? sharedAmountActions.defaultAmount : 1})
-            </button>
-          )}
+          <button
+            className={styles.contextMenuItem}
+            onClick={() => {
+              onIncrementCount?.(sq.id);
+              onClose();
+            }}
+          >
+            + Add {sq.action} (+1)
+          </button>
+          <button
+            className={styles.contextMenuItem}
+            disabled={state.currentCount <= 0 || sq.sharedCounterId != null}
+            onClick={() => {
+              onDecrementCount?.(sq.id);
+              onClose();
+            }}
+          >
+            − Remove {sq.action} (−1)
+          </button>
           <button
             className={styles.contextMenuItem}
             disabled={state.currentCount <= 0}

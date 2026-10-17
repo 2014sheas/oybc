@@ -70,6 +70,8 @@ export interface RisoBoardCellProps {
    * restarts the pop without remounting the cell.
    */
   pop?: 'land' | 'green' | null;
+  /** The square whose hold menu is open keeps its focus ring. */
+  held?: boolean;
 }
 
 /**
@@ -79,7 +81,7 @@ export interface RisoBoardCellProps {
  * `onContextMenu` wires the play board's context menu, and `badge` renders a
  * corner indicator (achievement watch).
  */
-export function RisoBoardCell({ cell, onClick, onContextMenu, badge, cellSize = 88, pop }: RisoBoardCellProps): React.ReactElement {
+export function RisoBoardCell({ cell, onClick, onContextMenu, badge, cellSize = 88, pop, held }: RisoBoardCellProps): React.ReactElement {
   const tagClass = cell.type === 'counting' ? styles.counting : cell.type === 'compound' ? styles.compound : '';
   const className = [
     styles.cell,
@@ -93,6 +95,7 @@ export function RisoBoardCell({ cell, onClick, onContextMenu, badge, cellSize = 
     cell.isArrived ? styles.arrived : '',
     cell.locked || cell.dirty ? styles.hasChip : '',
     onClick ? styles.interactive : '',
+    held ? styles.held : '',
   ]
     .filter(Boolean)
     .join(' ');

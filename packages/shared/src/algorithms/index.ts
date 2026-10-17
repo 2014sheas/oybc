@@ -129,12 +129,9 @@ export type {
 export {
   fixedLogChipAmounts,
   goalChipAmounts,
-  boardSheetChips,
   hubChips,
   lateLogChipAmounts,
-  initialLogSelection,
   quickLogAmount,
-  customChipLabel,
   logPillLabel,
   logPillOpensDetail,
   tapLogChips,

@@ -1,32 +1,19 @@
 import { useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
-import {
-  AchievementTrigger, boardDisplayName, isCoreBoard, isWindowStampedDerived, resolveFamilyCountKind,
-  type Board, type BoardTask, type Task,
-} from '@oybc/shared';
-import type { BoardPlayData, UseBoardPlayResult } from '../../../hooks';
-import { placedTaskFor, resolveClosedBoardCounterDisplay, taskToSquareData, taskToSquareState } from '../../../db/adapters';
-import { setCounterDefaultLogAmount } from '../../../db/operations/tasks';
+import { AchievementTrigger, boardDisplayName, isCoreBoard, type Board, type BoardTask, type Task } from '@oybc/shared';
+import { placedTaskFor } from '../../../db/adapters';
+import { resolveSquareView, type SquareViewData } from './resolveSquareView';
 import { isUncompleteBlockedBySeal } from '../../../db/operations/taskEvents';
-import { resolveSharedCounterSourceId } from '../../boardPlaySharedCounterUtils';
 import { AchievementBody } from './AchievementBody';
 import { ClosedRow } from './ClosedRow';
 import { CompoundBody } from './CompoundBody';
 import { CountingBody } from './CountingBody';
 import { NormalBody } from './NormalBody';
 import { SquareSheet } from './SquareSheet';
+import { childLog, childToggle, countingLog, type Play, type WriteDeps } from './squareWrites';
 import { closedLabel, daysLeftLabel, isLateLogRoutable, liveStrip, logStripText } from './squareSheetModel';
 
-type Data = Pick<
-  BoardPlayData,
-  | 'boardTasks' | 'taskMap' | 'compoundChildrenByCompound' | 'allBoards' | 'achievementBadgesByBoardTaskId'
-  | 'cellStateByBoardTaskId' | 'sharedCounterSourceIds' | 'squareWindowContext' | 'gridSize'
->;
-type Play = Pick<
-  UseBoardPlayResult,
-  | 'handleComplete' | 'handleSharedCounterIncrement' | 'handleSharedCounterDecrement' | 'undoCounterLog'
-  | 'handleCompoundChildToggle' | 'handleCompoundChildIncrement' | 'logStandaloneCount' | 'isWriting' | 'writeSeq' | 'getWriteSeq'
->;
+type Data = SquareViewData;
 
 export interface SquareSheetHostProps {
   boardTaskId: string;
@@ -42,6 +29,8 @@ export interface SquareSheetHostProps {
   onOpenBoard: (boardId: string) => void;
   /** Normal "Mark done": the surface closes the sheet and raises the same Undo toast a tap does. */
   onToggleNormal: (boardTaskId: string, title: string, wasDone: boolean) => void;
+  /** The hold menu's "Log other amount…" / "Remove…": open the counting entry straight away. */
+  initialEntry?: 'add' | 'remove';
 }
 
 /** An Undo strip: its line, the one write that reverses it, and the write sequence it was made at. */
@@ -78,20 +67,13 @@ function logError(what: string, err: unknown): void {
  * strip (written only when its write committed; hidden by any later write on
  * this board; gone when the sheet closes) and the one unfolded compound child.
  */
-function ResolvedSheet({ board, data, play, quiet, onClose, onOpenInLibrary, onLateLog, onOpenBoard, onToggleNormal, bt, task }: SquareSheetHostProps & { bt: BoardTask; task: Task }): React.ReactElement {
+function ResolvedSheet({ board, data, play, quiet, onClose, onOpenInLibrary, onLateLog, onOpenBoard, onToggleNormal, initialEntry, bt, task }: SquareSheetHostProps & { bt: BoardTask; task: Task }): React.ReactElement {
   const [strip, setStrip] = useState<Strip | null>(null);
   const [openChildId, setOpenChildId] = useState<string | null>(null);
   const [now] = useState(() => Date.now());
 
-  const { taskMap, squareWindowContext } = data;
-  const sealed = board.sealedAt != null;
-  const children = data.compoundChildrenByCompound[task.id] ?? [];
-  const sq = taskToSquareData(task, children, taskMap, data.compoundChildrenByCompound, squareWindowContext, bt.childTargets);
-  const state = taskToSquareState(
-    task, children, taskMap, data.compoundChildrenByCompound, squareWindowContext, data.cellStateByBoardTaskId[bt.id], bt.childTargets,
-  );
-  const cellIndex = bt.row * data.gridSize + bt.col;
-  const done = sealed ? (board.sealedCompletedCells ?? []).includes(cellIndex) : state.isCompleted;
+  const { taskMap } = data;
+  const { sq, sealed, done, count, kind, hubLinked } = resolveSquareView(board, data, bt, task);
 
   // Completed Normal rows whose green a sealed window holds cannot be un-completed.
   const heldIds = [
@@ -105,16 +87,10 @@ function ResolvedSheet({ board, data, play, quiet, onClose, onOpenInLibrary, onL
   ) ?? NO_IDS;
 
   const boardLabel = boardDisplayName(board);
-  const count = sealed
-    ? (sq.type === 'counting' ? resolveClosedBoardCounterDisplay(task, squareWindowContext.eventsByTaskId, board).displayed : 0)
-    : state.currentCount;
-  const hubLinked = sq.type === 'counting' && task.sharedCounterId != null && !isWindowStampedDerived(task);
   const closedRow = sealed
     ? <ClosedRow label={closedLabel(board.sealedAt)} onLateLog={isLateLogRoutable(sq.type, hubLinked) ? () => onLateLog(task.id) : undefined} />
     : null;
 
-  const sourceId = resolveSharedCounterSourceId(task, data.sharedCounterSourceIds);
-  const kind = sq.countKind ?? resolveFamilyCountKind(task, (id) => taskMap[id]);
 
   /** Shows a strip made by a write that COMMITTED. */
   const showStrip = (key: string, text: string, undo: Strip['undo']): void => setStrip({ key, text, undo, seq: play.getWriteSeq() });
@@ -134,54 +110,26 @@ function ResolvedSheet({ board, data, play, quiet, onClose, onOpenInLibrary, onL
     else setStrip((cur) => (cur ? { ...cur, seq: play.getWriteSeq() } : cur));
   };
 
+  const deps: WriteDeps = { play, quiet, taskMap, sharedCounterSourceIds: data.sharedCounterSourceIds };
+
   const logCounting = async (direction: 'add' | 'remove', amount: number, persist: boolean): Promise<void> => {
-    if (play.isWriting || sealed) return;
-    let applied = 0;
-    let undo: Strip['undo'] | null = null;
-    await quiet(async () => {
-      if (sourceId) {
-        applied = direction === 'add'
-          ? await play.handleSharedCounterIncrement(sourceId, amount, persist)
-          : await play.handleSharedCounterDecrement(sourceId, amount, false);
-        undo = () => play.undoCounterLog(sourceId);
-        return;
-      }
-      const r = await play.logStandaloneCount(bt.id, direction === 'add' ? amount : -amount);
-      if (!r) return;
-      applied = r.applied;
-      // Restore the count read INSIDE the write — the true prior value.
-      undo = () => play.handleComplete(bt.id, { currentCount: r.before });
-    });
-    if (applied <= 0 || !undo) return;
-    // A shared counter's own write already persisted its default.
-    if (persist && direction === 'add' && !sourceId) void setCounterDefaultLogAmount(task.id, amount).catch((e) => logError('Persist default log amount', e));
-    showStrip('self', logStripText(direction === 'add' ? 'logged' : 'removed', applied, kind, sq.unit ?? '', boardLabel), undo);
+    if (sealed) return;
+    const r = await countingLog(deps, bt, task, direction, amount, persist);
+    if (r) showStrip('self', logStripText(direction === 'add' ? 'logged' : 'removed', r.applied, kind, sq.unit ?? '', boardLabel), r.undo);
   };
 
   const logChild = async (childTaskId: string, amount: number, persist: boolean): Promise<void> => {
     const child = sq.children?.find((c) => c.taskId === childTaskId);
-    const childTask = taskMap[childTaskId];
-    if (!child?.count || !childTask || play.isWriting || sealed) return;
-    const childSource = resolveSharedCounterSourceId(childTask, data.sharedCounterSourceIds);
-    let applied = 0;
-    await quiet(async () => { applied = await play.handleCompoundChildIncrement(childTaskId, 1, amount); });
-    if (applied <= 0) return;
-    if (persist) void setCounterDefaultLogAmount(childSource ?? childTaskId, amount).catch((e) => logError('Persist default log amount', e));
-    showStrip(
-      childTaskId,
-      logStripText('logged', applied, child.count.kind, child.count.unit, boardLabel),
-      () => (childSource ? play.undoCounterLog(childSource) : play.handleCompoundChildIncrement(childTaskId, -1, applied).then((n) => n > 0)),
-    );
+    if (!child?.count || sealed) return;
+    const r = await childLog(deps, childTaskId, amount, persist);
+    if (r) showStrip(childTaskId, logStripText('logged', r.applied, child.count.kind, child.count.unit, boardLabel), r.undo);
   };
 
   const toggleChild = async (childTaskId: string): Promise<void> => {
     const child = sq.children?.find((c) => c.taskId === childTaskId);
-    if (!child || play.isWriting || sealed) return;
-    let to: boolean | null = null;
-    await quiet(async () => { to = await play.handleCompoundChildToggle(childTaskId); });
-    if (to === null) return;
-    const now = to as boolean;
-    showStrip('toggle', `${child.title} · ${now ? 'done' : 'not done'}`, () => play.handleCompoundChildToggle(childTaskId, !now).then((r) => r !== null));
+    if (!child || sealed) return;
+    const r = await childToggle(deps, childTaskId);
+    if (r) showStrip('toggle', `${child.title} · ${r.to ? 'done' : 'not done'}`, r.undo);
   };
 
   const header = { type: sq.type, title: sq.title, closedBoardName: sealed ? boardLabel : undefined, onClose, onOpenInLibrary: () => onOpenInLibrary(task.id) };
@@ -192,7 +140,7 @@ function ResolvedSheet({ board, data, play, quiet, onClose, onOpenInLibrary, onL
       <CountingBody
         count={count} goal={sq.maxCount ?? 0} kind={kind} unit={sq.unit ?? ''} boardLabel={boardLabel}
         busy={play.isWriting} closedRow={closedRow} stripText={visible?.key === 'self' ? visible.text : null}
-        removeDisabled={count <= 0}
+        removeDisabled={count <= 0} initialEntry={initialEntry}
         onLog={(d, a, p) => void logCounting(d, a, p)} onUndo={() => void runUndo()}
       />
     );

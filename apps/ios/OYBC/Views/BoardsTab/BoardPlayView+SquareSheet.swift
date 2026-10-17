@@ -33,7 +33,7 @@ extension BoardPlayView {
     /// Normal: toggle immediately and raise the Undo toast ("Finish Dune · done" /
     /// "Week 42"); a credited counter appends " · +1 Books" when the write lands
     /// (`triggerCreditToast`). Undo re-toggles.
-    private func toggleNormalSquare(boardTask: BoardTask, task: Task) {
+    func toggleNormalSquare(boardTask: BoardTask, task: Task) {
         let wasDone = windowedIsCompleted(task)
         viewModel.handleNormalTap(boardTask: boardTask)
         guard viewModel.isProcessing else { return } // the write never started
@@ -54,10 +54,12 @@ extension BoardPlayView {
     /// counter to its second line. A log from the square sheet has its own
     /// inline strip, so no toast.
     func triggerCreditToast(payload: SharedCounterCreditToastPayload) {
-        guard squareSheetBoardTaskId == nil else { return }
+        var creditedTaskId: String?
+        if case let .uncomplete(taskId, _) = payload.undo { creditedTaskId = taskId }
+        let action = CreditToastAction.resolve(sheetOpen: squareSheetBoardTaskId != nil, showing: creditToast, creditedTaskId: creditedTaskId)
+        guard action != .ignore else { return }
         withAnimation(.spring(response: 0.45, dampingFraction: 0.8)) {
-            if let current = creditToast, let placement = current.retoggle,
-               case let .uncomplete(taskId, _) = payload.undo, taskId == placement.taskId {
+            if action == .augmentNormal, let current = creditToast, let placement = current.retoggle {
                 let root = taskMap[payload.sourceTaskId]
                 let name = root.map { CounterSettings.counterDisplayName($0) } ?? ""
                 let credit = "+\(formatCount(payload.amount, kind: resolveCountKind(root?.countKind))) \(name)"
@@ -82,6 +84,11 @@ extension BoardPlayView {
     ///
     /// - Returns: False when a write is in flight — the caller keeps the toast so Undo can be retried.
     func undoCreditToastState(_ toast: CreditToastState) -> Bool {
+        if let undo = toast.squareUndo {
+            guard !viewModel.isProcessing else { return false }
+            viewModel.undoSquareLog(undo)
+            return true
+        }
         if let placement = toast.retoggle, let wasDone = toast.wasDone {
             return viewModel.setNormalCompleted(boardTask: placement, completed: wasDone)
         }
@@ -95,7 +102,7 @@ extension BoardPlayView {
     @ViewBuilder
     var squareSheet: some View {
         if let id = squareSheetBoardTaskId, let content = squareSheetContent(boardTaskId: id) {
-            SquareSheetView(content: content, strip: squareLogStrip, actions: squareSheetActions)
+            SquareSheetView(content: content, strip: squareLogStrip, actions: squareSheetActions, initialEntry: squareSheetEntry)
                 .presentationDetents([.medium, .large])
                 .presentationDragIndicator(.visible)
                 .presentationBackground(Color.risoPaper)
@@ -107,6 +114,7 @@ extension BoardPlayView {
     /// unmounted: the library, a watched board, or the late-log sheet.
     func drainSquareSheetHandOffs() {
         squareLogStrip = nil
+        squareSheetEntry = nil
         if let id = pendingTaskDetailTaskId {
             pendingTaskDetailTaskId = nil
             taskDetailSheetTaskId = TaskIdItem(id: id)
@@ -119,6 +127,24 @@ extension BoardPlayView {
                 routeLateLogTap(routable: isLateLogRoutable(task: task), boardTask: placement, task: task)
             }
         }
+    }
+
+    /// Precomputes which DONE Normal squares on this board cannot be un-completed (their
+    /// only completions are sealed-window-immune), off-main, so the hold menu builds from
+    /// memory. Re-run whenever the board's data reloads (`.task(id:)` on the board stamp).
+    func loadMenuSealBlockedIds() async {
+        guard !isBoardLocked else { menuSealBlockedIds = []; return }
+        let ids = boardTasks.compactMap { bt -> String? in
+            guard let task = viewModel.placedTask(bt), task.type == .normal, windowedIsCompleted(task) else { return nil }
+            return task.id
+        }
+        let db = viewModel.database
+        let blocked = await _Concurrency.Task.detached(priority: .utility) { () -> Set<String> in
+            var out: Set<String> = []
+            for id in ids where (try? db.isUncompleteBlockedBySeal(taskId: id)) == true { out.insert(id) }
+            return out
+        }.value
+        menuSealBlockedIds = blocked
     }
 
     /// Windowed Completion (docs Decision 9): resolve `isUncompleteBlockedBySeal`
@@ -149,7 +175,7 @@ extension BoardPlayView {
 
     /// The windowed count state of a counting task on THIS board, with the chips
     /// `tapLogChips(familyKind, windowGoal, windowedCount)` yields.
-    private func squareCountState(_ task: Task) -> SquareSheetContent.ChildCount {
+    func squareCountState(_ task: Task) -> SquareSheetContent.ChildCount {
         let kind = resolveFamilyCountKind(task, lookup: { taskMap[$0] })
         let goal = task.maxCount ?? 0
         let current = windowedCount(task)
@@ -210,7 +236,7 @@ extension BoardPlayView {
 
     /// The watched-board card, from the kernel's per-cell state (the same lookup
     /// the grid cell reads); names are local lookups outside the kernel's domain.
-    private func squareAchievement(_ bt: BoardTask, _ task: Task) -> SquareSheetContent.Achievement {
+    func squareAchievement(_ bt: BoardTask, _ task: Task) -> SquareSheetContent.Achievement {
         let trigger = task.achievementTrigger ?? .greenlog
         let state = viewModel.kernelCellStates[bt.id]?.achievement
         if let refBoardId = task.referencedBoardId {
@@ -250,18 +276,9 @@ extension BoardPlayView {
                 viewModel.undoSquareLog(strip.undo)
             },
             onToggleChild: { id in
-                guard !viewModel.isProcessing, let placement = currentSquareSheetPlacement,
-                      let raw = taskMap[id] else { return }
+                guard let placement = currentSquareSheetPlacement else { return }
                 squareLogStrip = nil
-                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-                let child = PlacementParams.withChildTarget(raw, childTargets: placement.childTargets)
-                let wasDone = viewModel.compoundChildIsCompleted(child)
-                viewModel.handleCompoundChildToggle(childTask: child)
-                squareLogStrip = SquareLogStrip.afterWrite(started: viewModel.isProcessing, SquareLogStrip(
-                    boardTaskId: placement.id, scopeTaskId: id,
-                    text: SquareSheetFormat.toggleText(title: child.title, nowDone: !wasDone),
-                    undo: .restoreToggle(taskId: id, wasDone: wasDone)
-                ))
+                squareLogStrip = performChildToggle(placement: placement, childId: id)
             },
             // Mark done toggles, closes the sheet and raises the same Undo toast as a tap.
             onMarkDone: {
@@ -286,22 +303,31 @@ extension BoardPlayView {
         squareSheetBoardTaskId.flatMap { id in boardTasks.first(where: { $0.id == id }) }
     }
 
-    /// One chip / entry write from the sheet, then the Undo strip. A preset or
-    /// rest chip never persists a default; only an "Other…" entry does.
+    /// One chip / entry write from the sheet, then the Undo strip.
     private func squareSheetLog(taskId: String, amount: CountValue, persistAsDefault: Bool, removing: Bool) {
-        guard !viewModel.isProcessing, let bt = currentSquareSheetPlacement else { return }
+        guard let bt = currentSquareSheetPlacement else { return }
         squareLogStrip = nil // any new write invalidates the previous strip
+        squareLogStrip = performSquareLog(placement: bt, taskId: taskId, amount: amount, persistAsDefault: persistAsDefault, removing: removing)
+    }
+
+    /// The counting write behind a sheet chip / entry and a hold-menu log. A preset or
+    /// rest chip never persists a default; only an "Other…" entry does.
+    ///
+    /// - Returns: The strip describing the write (text + undo recipe), or nil when no
+    ///   write started. The caller shows it as the sheet's strip or the menu's toast.
+    func performSquareLog(placement bt: BoardTask, taskId: String, amount: CountValue, persistAsDefault: Bool, removing: Bool) -> SquareLogStrip? {
+        guard !viewModel.isProcessing else { return nil }
         let isOwn = taskId == bt.taskId
         let resolved: Task? = isOwn
             ? viewModel.placedTask(bt)
             : taskMap[taskId].map { PlacementParams.withChildTarget($0, childTargets: bt.childTargets) }
-        guard let task = resolved else { return }
+        guard let task = resolved else { return nil }
         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
         let placement = isOwn ? bt : boardTasks.first(where: { $0.taskId == taskId && !$0.isDeleted })
         let state = squareCountState(task)
         // The amount actually applied: a removal clamps at the windowed count.
         let applied = removing ? min(amount, state.current) : amount
-        guard applied > 0 else { return }
+        guard applied > 0 else { return nil }
         let delta = removing ? -applied : amount
         let undo = viewModel.squareLogUndo(for: task, placement: placement, delta: delta)
         if isOwn {
@@ -314,13 +340,28 @@ extension BoardPlayView {
             viewModel.handleCompoundChildIncrement(childTask: task, direction: removing ? -1 : 1, amount: amount, persistAsDefault: persistAsDefault)
         }
         let root = viewModel.sharedCounterSourceId(for: task).flatMap { taskMap[$0] }
-        squareLogStrip = SquareLogStrip.afterWrite(started: viewModel.isProcessing, SquareLogStrip(
+        return SquareLogStrip.afterWrite(started: viewModel.isProcessing, SquareLogStrip(
             boardTaskId: bt.id, scopeTaskId: taskId,
             text: SquareSheetFormat.logText(
                 amount: applied, kind: state.kind, unit: (root ?? task).unit ?? "",
                 board: board?.displayName ?? "", removed: removing
             ),
             undo: undo
+        ))
+    }
+
+    /// The write behind a compound child toggle (sheet checklist and hold menu): the
+    /// strip carries "‹child› · done" and the explicit revert.
+    func performChildToggle(placement: BoardTask, childId: String) -> SquareLogStrip? {
+        guard !viewModel.isProcessing, let raw = taskMap[childId] else { return nil }
+        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+        let child = PlacementParams.withChildTarget(raw, childTargets: placement.childTargets)
+        let wasDone = viewModel.compoundChildIsCompleted(child)
+        viewModel.handleCompoundChildToggle(childTask: child)
+        return SquareLogStrip.afterWrite(started: viewModel.isProcessing, SquareLogStrip(
+            boardTaskId: placement.id, scopeTaskId: childId,
+            text: SquareSheetFormat.toggleText(title: child.title, nowDone: !wasDone),
+            undo: .restoreToggle(taskId: childId, wasDone: wasDone)
         ))
     }
 }

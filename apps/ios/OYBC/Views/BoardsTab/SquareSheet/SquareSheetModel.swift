@@ -112,6 +112,26 @@ struct SquareLogStrip: Equatable {
     }
 }
 
+/// What a cross-board credit toast does to the toast already showing.
+enum CreditToastAction: Equatable {
+    case ignore
+    /// A Normal toggle's toast appends the credited counter to its second line.
+    case augmentNormal
+    case replace
+
+    /// - Parameters:
+    ///   - sheetOpen: A square sheet is up (it carries its own strip).
+    ///   - showing: The toast on screen, if any.
+    ///   - creditedTaskId: The task whose write the credit payload reports (`.uncomplete`), if any.
+    static func resolve(sheetOpen: Bool, showing: CreditToastState?, creditedTaskId: String?) -> CreditToastAction {
+        if sheetOpen { return .ignore }
+        if let showing, let placement = showing.retoggle, let creditedTaskId, creditedTaskId == placement.taskId { return .augmentNormal }
+        // A hold-menu write's toast must keep its Undo reversing exactly that write.
+        if showing?.squareUndo != nil { return .ignore }
+        return .replace
+    }
+}
+
 /// Copy and small derivations shared by the sheet views and the presenter.
 enum SquareSheetFormat {
 

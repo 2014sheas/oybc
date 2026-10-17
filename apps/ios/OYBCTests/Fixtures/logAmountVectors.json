@@ -8,11 +8,6 @@
     { "name": "continuous off-step goal kept as-is", "goal": 26.25, "kind": "continuous", "expected": [6.6, 13.1, 26.25] },
     { "name": "goal-less falls back to fixed", "goal": 0, "kind": "duration", "expected": [15, 30, 60] }
   ],
-  "boardSheetChipLabels": [
-    { "name": "discrete keeps +1 +10 #", "goal": 200, "kind": "discrete", "expected": ["+1", "+10", "#"] },
-    { "name": "continuous goal chips", "goal": 26.2, "kind": "continuous", "expected": ["6.6", "13.1", "26.2", "#"] },
-    { "name": "duration goal chips", "goal": 630, "kind": "duration", "expected": ["2h 38m", "5h 15m", "10h 30m", "#"] }
-  ],
   "hubChipLabels": [
     { "name": "discrete", "kind": "discrete", "expected": ["1", "10", "25", "#"] },
     { "name": "continuous", "kind": "continuous", "expected": ["0.5", "1", "5", "#"] },
@@ -22,18 +17,10 @@
     { "name": "discrete unchanged", "goal": 5, "kind": "discrete", "expected": [1, 2, 5] },
     { "name": "continuous", "goal": 26.2, "kind": "continuous", "expected": [6.6, 13.1, 26.2] }
   ],
-  "initialSelection": [
-    { "name": "discrete preset default", "kind": "discrete", "goal": 200, "default": 10, "expected": { "amount": 10, "isCustom": false } },
-    { "name": "discrete off-preset falls back to 1", "kind": "discrete", "goal": 200, "default": 7, "expected": { "amount": 1, "isCustom": false } },
-    { "name": "discrete keeps initialChipAmount's 25 even without a 25 chip", "kind": "discrete", "goal": 200, "default": 25, "expected": { "amount": 25, "isCustom": false } },
-    { "name": "continuous custom default shows on #", "kind": "continuous", "goal": 26.2, "default": 3.1, "expected": { "amount": 3.1, "isCustom": true } },
-    { "name": "continuous default matching a chip", "kind": "continuous", "goal": 26.2, "default": 13.1, "expected": { "amount": 13.1, "isCustom": false } },
-    { "name": "duration no default picks the quarter", "kind": "duration", "goal": 630, "default": null, "expected": { "amount": 158, "isCustom": false } }
-  ],
   "quickAmount": [
     { "name": "discrete default", "kind": "discrete", "goal": 200, "default": null, "expected": 1 },
     { "name": "continuous default", "kind": "continuous", "goal": 26.2, "default": 3.1, "expected": 3.1 },
-    { "name": "duration first chip", "kind": "duration", "goal": 630, "default": null, "expected": 158 }
+    { "name": "duration first chip", "kind": "duration", "goal": 630, "default": null, "expected": 15 }
   ],
   "pill": [
     { "name": "discrete", "kind": "discrete", "default": 10, "label": "+ Log", "opensDetail": false },
@@ -48,11 +35,6 @@
     { "name": "continuous credited", "amount": 3.1, "unit": "mi", "verb": "logged", "kind": "continuous", "counterName": "Miles", "boardNames": ["Daily grind"], "expected": "+3.1 Miles — also counted on Daily grind." },
     { "name": "duration credited removed", "amount": 30, "unit": "", "verb": "removed", "kind": "duration", "counterName": "Guitar", "boardNames": ["Daily grind", "October"], "expected": "−30m Guitar — also removed from Daily grind, October." },
     { "name": "discrete unchanged", "amount": 5, "unit": "pages", "verb": "logged", "kind": "discrete", "expected": "Logged +5 pages" }
-  ],
-  "customChipLabel": [
-    { "name": "continuous", "amount": 3.1, "kind": "continuous", "expected": "#3.1" },
-    { "name": "duration", "amount": 90, "kind": "duration", "expected": "#1h 30m" },
-    { "name": "discrete", "amount": 7, "kind": "discrete", "expected": "#7" }
   ],
   "tapChips": [
     { "name": "discrete with rest", "kind": "discrete", "goal": 20, "count": 12, "expected": ["+1", "+10", "+25", "+8 ✓", "Other…"], "values": [1, 10, 25, 8, null], "roles": ["preset", "preset", "preset", "rest", "other"] },

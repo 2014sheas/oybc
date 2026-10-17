@@ -53,6 +53,7 @@ struct CreditToastState {
     var detail: String? = nil
     var retoggle: BoardTask? = nil
     var wasDone: Bool? = nil // completed state BEFORE the toggle (Undo restores it)
+    var squareUndo: SquareLogUndo? = nil // a menu log's exact reversal
 }
 
 // MARK: - ArrivalBannerData / ArrivalNavTarget (Shared Counters P3)
@@ -186,6 +187,7 @@ struct BoardPlayView: View {
     @State var squareSheetBoardTaskId: String?
     /// The Undo strip under the sheet's chips after a log.
     @State var squareLogStrip: SquareLogStrip?
+    @State var squareSheetEntry: SquareSheetEntry? // opens the sheet straight into an entry
     /// Hand-offs drained once the square sheet has unmounted (library, late log).
     @State var pendingTaskDetailTaskId: String?
     @State var pendingLateLogBoardTaskId: String?
@@ -207,6 +209,7 @@ struct BoardPlayView: View {
     /// square sheet would be inert (every completion sealed-window-immune);
     /// loaded when the sheet opens (`loadSealBlockedTaskIds`).
     @State var sealBlockedTaskIds: Set<String> = []
+    @State var menuSealBlockedIds: Set<String> = [] // done Normal squares whose un-complete is inert (hold menu)
     // MARK: Edit-mode draft state (Board Edit redesign slice 3)
     // The edit-draft *data* layer lives entirely on `BoardPlayViewModel`
     // (`editSquaresDraft` / `editCenterType` / `editSquaresEditCells`, D20 —
@@ -721,6 +724,7 @@ struct BoardPlayView: View {
         }
         // D15 closed-board late-log sheet.
         .sheet(item: $lateLogTarget) { item in lateLogSheet(for: item) }
+        .task(id: "\(board?.version ?? 0)-\(board?.completedTasks ?? 0)-\(boardTasks.count)-\(board?.sealedAt ?? "")") { await loadMenuSealBlockedIds() }
         .onChange(of: squareSheetBoardTaskId) { _, newValue in
             squareLogStrip = nil
             loadSealBlockedTaskIds(for: newValue)
@@ -1024,7 +1028,6 @@ struct BoardPlayView: View {
         // linked-counter rule).
         let rawCount = task?.currentCount ?? 0
         let maxVal = task?.maxCount ?? 0
-        let isLinkedCounter = task?.sharedCounterId != nil
         // D16 — CLOSED shows the window count, not the old max/0 snapshot.
         let current: CountValue = {
             guard let t = task else { return 0 }
@@ -1113,94 +1116,11 @@ struct BoardPlayView: View {
             compoundRequiredCount: compoundRequiredCount,
             onTap: { handlePlaySquareTap(boardTask: boardTask, task: task) }
         )
-        .contextMenu {
-            risoContextMenu(boardTask: boardTask, task: task, isCompleted: isCompleted, taskType: taskType, current: current, maxVal: maxVal, isLinkedCounter: isLinkedCounter)
-        }
+        .contextMenu { squareMenu(boardTask: boardTask, task: task) }
         // P3 — pulse the square when it just arrived from an elsewhere log.
         // Applied at the call site (not inside RisoBoardPlayCell) so the
         // snapshot-covered cell internals stay untouched.
         .arrivePulse(active: task.map { arrivedTaskIds.contains($0.id) } ?? false)
-    }
-
-    /// Context menu items — preserved exactly from original `playSquare`, now
-    /// extracted so they can be attached to `RisoBoardPlayCell`.
-    @ViewBuilder
-    private func risoContextMenu(
-        boardTask: BoardTask,
-        task: Task?,
-        isCompleted: Bool,
-        taskType: TaskType,
-        current: CountValue,
-        maxVal: CountValue,
-        isLinkedCounter: Bool
-    ) -> some View {
-        switch taskType {
-        case .normal:
-            Button(
-                isCompleted ? "Mark Incomplete" : "Mark Complete",
-                systemImage: isCompleted ? "xmark.circle" : "checkmark.circle"
-            ) {
-                guard !isBoardLocked else { return }
-                viewModel.handleNormalTap(boardTask: boardTask)
-            }
-            .disabled(isProcessing || isBoardLocked)
-
-            Button("View Details", systemImage: "info.circle") {
-                squareSheetBoardTaskId = boardTask.id
-            }
-            Button("Open in library", systemImage: "book") {
-                taskDetailSheetTaskId = TaskIdItem(id: boardTask.taskId)
-            }
-
-        case .counting:
-            if let t = task {
-                let kind = resolveFamilyCountKind(t, lookup: { taskMap[$0] })
-                let source = viewModel.sharedCounterSourceId(for: t).flatMap { taskMap[$0] }
-                // Discrete keeps the shared source's default (else 1); the
-                // new kinds remember per task. Never persists a new default.
-                let remembered = kind == .discrete ? source?.defaultLogAmount : (source ?? t).defaultLogAmount
-                let chips = CounterLogAmount.hubChips(kind: kind)
-                let quickAmount = CounterLogAmount.quickAmount(kind: kind, chips: chips, defaultLogAmount: remembered)
-                Button(CountingMenuLabels.add(amount: quickAmount, kind: kind, unit: t.unit ?? "", action: t.action ?? "item"), systemImage: "plus") {
-                    guard !isBoardLocked else { return }
-                    viewModel.handleCountingTap(boardTask: boardTask, task: t, amount: quickAmount)
-                }
-                // No maxVal gate — overshoot is a feature (never clamp).
-                .disabled(isProcessing || isBoardLocked)
-                if kind != .discrete {
-                    Button(CountingMenuLabels.customAmount, systemImage: "number") { squareSheetBoardTaskId = boardTask.id }
-                        .disabled(isBoardLocked)
-                }
-                Button(CountingMenuLabels.remove(amount: quickAmount, kind: kind, unit: t.unit ?? "", action: t.action ?? "item"), systemImage: "minus") {
-                    guard !isBoardLocked else { return }
-                    viewModel.handleCountingDecrement(boardTask: boardTask, task: t, amount: quickAmount)
-                }
-                // P2: isLinkedCounter no longer disables − (decrementSharedCounter handles fan-out).
-                .disabled(current == 0 || isProcessing || isBoardLocked)
-                Button("View Details", systemImage: "info.circle") {
-                    squareSheetBoardTaskId = boardTask.id
-                }
-                Button("Open in library", systemImage: "book") {
-                    taskDetailSheetTaskId = TaskIdItem(id: t.id)
-                }
-            }
-
-        case .compound:
-            Button("View Children", systemImage: "list.bullet") {
-                squareSheetBoardTaskId = boardTask.id
-            }
-            Button("Open in library", systemImage: "book") {
-                taskDetailSheetTaskId = TaskIdItem(id: boardTask.taskId)
-            }
-
-        case .achievement:
-            Button("View Details", systemImage: "info.circle") {
-                squareSheetBoardTaskId = boardTask.id
-            }
-            Button("Open in library", systemImage: "book") {
-                taskDetailSheetTaskId = TaskIdItem(id: boardTask.taskId)
-            }
-        }
     }
 
     // MARK: - Interaction handlers moved to BoardPlayViewModel (B2-I2)
