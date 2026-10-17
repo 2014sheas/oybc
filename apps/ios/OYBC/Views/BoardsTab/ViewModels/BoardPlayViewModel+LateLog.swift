@@ -46,11 +46,13 @@ extension BoardPlayViewModel {
     func wouldLateLogCompoundRuleBeMet(compoundTaskId: String, childTaskIds: Set<String>) -> Bool {
         guard let b = board, b.sealedAt != nil, let compound = taskMap[compoundTaskId] else { return false }
         let now = AppDatabase.currentTimestamp()
+        let placement = boardTasks.first { $0.taskId == compoundTaskId && !$0.isDeleted }
         return AppDatabase.planCompoundLateLog(
             board: b, compound: compound, requestedChildIds: childTaskIds,
             taskById: taskMap, childrenByCompound: compoundChildrenByCompound,
             eventsByTaskId: windowEventsByTaskId,
-            occurredAt: lateLogOccurredAt(board: b, nowIso: now), now: now
+            occurredAt: lateLogOccurredAt(board: b, nowIso: now), now: now,
+            childTargets: placement?.childTargets
         ).isRuleMet
     }
 

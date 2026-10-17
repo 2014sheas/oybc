@@ -69,7 +69,8 @@ extension BoardPlayView {
         guard routable, let t = task else { return }
         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
         lateLogErrorMessage = nil
-        lateLogTarget = LateLogSheetItem(id: boardTask.id, boardTaskId: boardTask.id, task: t)
+        // The placement-adjusted task (slice 2a): the sheet's goal is the placement's.
+        lateLogTarget = LateLogSheetItem(id: boardTask.id, boardTaskId: boardTask.id, task: viewModel.placedTask(boardTask) ?? t)
     }
 
     /// "Sep 1 – 30" — the closed board's window label.
@@ -128,8 +129,10 @@ extension BoardPlayView {
 
         case .compound:
             let children = viewModel.compoundChildrenByCompound[task.id] ?? []
+            let childTargets = viewModel.boardTasks.first { $0.id == item.boardTaskId }?.childTargets
             let parts: [LateLogCompoundPart] = children.compactMap { link in
-                guard let child = viewModel.taskMap[link.childTaskId], !child.isDeleted else { return nil }
+                guard let raw = viewModel.taskMap[link.childTaskId], !raw.isDeleted else { return nil }
+                let child = PlacementParams.withChildTarget(raw, childTargets: childTargets) // slice 2a
                 // A linked counting child is stageable too (slice 0): its +1 logs on its root.
                 let isStageable = child.type == .normal || child.type == .counting
                 let alreadyDone: Bool = {

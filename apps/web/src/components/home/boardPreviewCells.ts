@@ -10,7 +10,7 @@ import {
   type Task,
   type TaskEvent,
 } from '@oybc/shared';
-import { taskToSquareState, type SquareWindowContext } from '../../db/adapters';
+import { taskToSquareState, type SquareWindowContext, placedTaskFor } from '../../db/adapters';
 
 /**
  * One rendered cell of a board mini-preview, row-major over `size*size`.
@@ -129,7 +129,7 @@ export function buildBoardPreviewCells(
         continue;
       }
 
-      const task = taskMap[bt.taskId];
+      const task = placedTaskFor(bt, taskMap);
       if (!task) {
         cells.push({ kind: 'empty' });
         continue;
@@ -138,7 +138,7 @@ export function buildBoardPreviewCells(
       const taskChildren = childrenByCompound[task.id] ?? [];
       const squareState = taskToSquareState(
         task, taskChildren, taskMap, childrenByCompound, windowContext,
-        cellStateByBoardTaskId[bt.id],
+        cellStateByBoardTaskId[bt.id], bt.childTargets,
       );
       const cellIndex = row * size + col;
       const completed = isSealed ? sealedCellSet.has(cellIndex) : squareState.isCompleted;

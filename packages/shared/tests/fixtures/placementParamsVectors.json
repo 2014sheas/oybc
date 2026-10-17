@@ -1,0 +1,202 @@
+{
+  "_note": "Hand-authored vectors for placementParams.ts <-> Helpers/PlacementParams.swift (docs/TASK_WINDOW_REWORK.md slice 2a). `task` carries only the fields read; `placement` null = no placement; `settings` = the root's title settings (null = none). `expectedGoal` null = no goal; `expectedTitle` the rendered title.",
+  "vectors": [
+    {
+      "name": "no placement: the task's own goal and title",
+      "task": {
+        "type": "counting",
+        "title": "Read 50 pages",
+        "action": "Read",
+        "unit": "pages",
+        "maxCount": 50,
+        "countKind": "discrete"
+      },
+      "placement": null,
+      "settings": null,
+      "expectedGoal": 50,
+      "expectedTitle": "Read 50 pages"
+    },
+    {
+      "name": "a placement with no parameters changes nothing",
+      "task": {
+        "type": "counting",
+        "title": "Read 50 pages",
+        "action": "Read",
+        "unit": "pages",
+        "maxCount": 50,
+        "countKind": "discrete"
+      },
+      "placement": {},
+      "settings": null,
+      "expectedGoal": 50,
+      "expectedTitle": "Read 50 pages"
+    },
+    {
+      "name": "targetOverride in the task's kind is the goal; an auto title re-renders at it",
+      "task": {
+        "type": "counting",
+        "title": "Read 50 pages",
+        "action": "Read",
+        "unit": "pages",
+        "maxCount": 50,
+        "countKind": "discrete"
+      },
+      "placement": {
+        "targetOverride": 70,
+        "targetKind": "discrete"
+      },
+      "settings": null,
+      "expectedGoal": 70,
+      "expectedTitle": "Read 70 pages"
+    },
+    {
+      "name": "a custom title carries verbatim under a goal override",
+      "task": {
+        "type": "counting",
+        "title": "Big reading week",
+        "action": "Read",
+        "unit": "pages",
+        "maxCount": 50,
+        "countKind": "discrete"
+      },
+      "placement": {
+        "targetOverride": 70,
+        "targetKind": "discrete"
+      },
+      "settings": null,
+      "expectedGoal": 70,
+      "expectedTitle": "Big reading week"
+    },
+    {
+      "name": "titleOverride wins over everything",
+      "task": {
+        "type": "counting",
+        "title": "Read 50 pages",
+        "action": "Read",
+        "unit": "pages",
+        "maxCount": 50,
+        "countKind": "discrete"
+      },
+      "placement": {
+        "targetOverride": 70,
+        "targetKind": "discrete",
+        "titleOverride": "  Pages, pages  "
+      },
+      "settings": null,
+      "expectedGoal": 70,
+      "expectedTitle": "Pages, pages"
+    },
+    {
+      "name": "a continuous frozen target read by a discrete root rounds half-up (min 1)",
+      "task": {
+        "type": "counting",
+        "title": "Run 10 miles",
+        "action": "Run",
+        "unit": "miles",
+        "maxCount": 10,
+        "countKind": "discrete"
+      },
+      "placement": {
+        "targetOverride": 2.4,
+        "targetKind": "continuous"
+      },
+      "settings": null,
+      "expectedGoal": 2,
+      "expectedTitle": "Run 2 miles"
+    },
+    {
+      "name": "a continuous frozen target read by a discrete root: 0.3 floors to 1 (no singular template: the unit stays as written)",
+      "task": {
+        "type": "counting",
+        "title": "Run 10 miles",
+        "action": "Run",
+        "unit": "miles",
+        "maxCount": 10,
+        "countKind": "discrete"
+      },
+      "placement": {
+        "targetOverride": 0.3,
+        "targetKind": "continuous"
+      },
+      "settings": null,
+      "expectedGoal": 1,
+      "expectedTitle": "Run 1 miles"
+    },
+    {
+      "name": "a discrete frozen target read by a continuous root is kept as is",
+      "task": {
+        "type": "counting",
+        "title": "Run 10 miles",
+        "action": "Run",
+        "unit": "miles",
+        "maxCount": 10,
+        "countKind": "continuous"
+      },
+      "placement": {
+        "targetOverride": 3,
+        "targetKind": "discrete"
+      },
+      "settings": null,
+      "expectedGoal": 3,
+      "expectedTitle": "Run 3 miles"
+    },
+    {
+      "name": "a goal override on a NORMAL task is ignored (title too, unless overridden)",
+      "task": {
+        "type": "normal",
+        "title": "Meditate",
+        "action": null,
+        "unit": null,
+        "maxCount": null,
+        "countKind": null
+      },
+      "placement": {
+        "targetOverride": 5,
+        "targetKind": "discrete"
+      },
+      "settings": null,
+      "expectedGoal": null,
+      "expectedTitle": "Meditate"
+    },
+    {
+      "name": "a titleOverride on a NORMAL task applies",
+      "task": {
+        "type": "normal",
+        "title": "Meditate",
+        "action": null,
+        "unit": null,
+        "maxCount": null,
+        "countKind": null
+      },
+      "placement": {
+        "titleOverride": "Sit still"
+      },
+      "settings": null,
+      "expectedGoal": null,
+      "expectedTitle": "Sit still"
+    },
+    {
+      "name": "root templates render the overridden goal for a linked task (plural template)",
+      "task": {
+        "type": "counting",
+        "title": "Read 50 pages",
+        "action": "Read",
+        "unit": "pages",
+        "maxCount": 50,
+        "countKind": "discrete",
+        "sharedCounterId": "root"
+      },
+      "placement": {
+        "targetOverride": 3,
+        "targetKind": "discrete"
+      },
+      "settings": {
+        "counterName": "Reading",
+        "titleTemplateSingular": "Read one page",
+        "titleTemplatePlural": "Read #N pages"
+      },
+      "expectedGoal": 3,
+      "expectedTitle": "Read 3 pages"
+    }
+  ]
+}

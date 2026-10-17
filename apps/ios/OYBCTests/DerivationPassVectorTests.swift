@@ -97,6 +97,12 @@ final class DerivationPassVectorTests: XCTestCase {
         let taskId: String
         let row: Int
         let col: Int
+        struct MiniChildTarget: Decodable { let childId: String; let target: CountValue }
+        /// Slice 2a — optional placement parameters.
+        let targetOverride: CountValue?
+        let targetKind: String?
+        let childTargets: [MiniChildTarget]?
+        let titleOverride: String?
     }
 
     private struct MiniBoard: Decodable {
@@ -295,6 +301,10 @@ final class DerivationPassVectorTests: XCTestCase {
             row: m.row,
             col: m.col,
             isCenter: false,
+            targetOverride: m.targetOverride,
+            targetKind: m.targetKind.flatMap(CountKind.init(rawValue:)),
+            childTargets: m.childTargets?.map { PlacementChildTarget(childId: $0.childId, target: $0.target) },
+            titleOverride: m.titleOverride,
             createdAt: ts,
             updatedAt: ts,
             version: 1

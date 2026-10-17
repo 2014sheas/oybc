@@ -3,6 +3,7 @@ import { detectBingos, type BoardSize, CenterSquareType } from '@oybc/bingo-core
 import { AchievementTrigger, BoardStatus, TaskType } from '../constants/enums';
 import { isWithinTimeframe } from './calendarBoundaries';
 import { evaluateCompound } from './compoundEvaluation';
+import { withPlacementParams } from './placementParams';
 import {
   resolveTaskWindowState,
   resolveDerivedCounterWindowState,
@@ -487,8 +488,8 @@ export function computeBoardGrid(
 
     const isDone =
       t.type === TaskType.COMPOUND
-        ? evaluateCompound(t, childrenByCompound, taskById, compoundCtx)
-        : resolvePrimitive(t);
+        ? evaluateCompound(t, childrenByCompound, taskById, compoundCtx, bt.childTargets)
+        : resolvePrimitive(withPlacementParams(t, bt));
     if (isDone) {
       grid[idx] = true;
       completedTasks += 1;

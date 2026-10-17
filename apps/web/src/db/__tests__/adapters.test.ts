@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { TaskType, type CellState, type Task, type TaskEvent } from '@oybc/shared';
+import type { BoardTask } from '@oybc/shared';
 import {
   buildSquareWindowContext,
   resolveClosedBoardCounterDisplay,
   taskToSquareData,
   taskToSquareState,
+  placedTaskFor,
 } from '../adapters';
 
 /**
@@ -315,5 +317,23 @@ describe('taskToSquareData — counter kinds (docs/COUNTER_KINDS.md D5)', () => 
     expect(taskToSquareData(linked, undefined, { root, lk: linked }).countKind).toBe('continuous');
     expect(taskToSquareData(counting({ id: 'plain' })).countKind).toBe('discrete');
     expect(taskToSquareData(makeLifetimeCompleteTask('n')).countKind).toBeUndefined();
+  });
+});
+
+describe('placedTaskFor (TASK_WINDOW_REWORK slice 2a)', () => {
+  it('returns the library row untouched for a placement without parameters, and the adjusted goal / title with them', () => {
+    const root: Task = {
+      id: 'root', userId: 'u', title: 'Read 100 pages', type: TaskType.COUNTING, action: 'Read', unit: 'pages', maxCount: 100,
+      isCompleted: false, totalCompletions: 0, totalInstances: 0, createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z', version: 1, isDeleted: false,
+    } as Task;
+    const linked: Task = { ...root, id: 'link', title: 'Read 50 pages', maxCount: 50, sharedCounterId: 'root' } as Task;
+    const taskMap = { root, link: linked };
+    const plain = { id: 'bt', boardId: 'b', taskId: 'link', row: 0, col: 0, isCenter: false, createdAt: '', updatedAt: '', version: 1, isDeleted: false } as BoardTask;
+    expect(placedTaskFor(plain, taskMap)).toBe(linked);
+    const withGoal = placedTaskFor({ ...plain, targetOverride: 70, targetKind: 'discrete' }, taskMap)!;
+    expect(withGoal.maxCount).toBe(70);
+    expect(withGoal.title).toBe('Read 70 pages');
+    expect(placedTaskFor({ ...plain, titleOverride: 'Pages' }, taskMap)!.title).toBe('Pages');
+    expect(placedTaskFor({ ...plain, taskId: 'nope' }, taskMap)).toBeUndefined();
   });
 });

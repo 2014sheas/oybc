@@ -17,7 +17,7 @@ import {
   useCounterArrivals,
   type CreditedToast,
 } from '../hooks';
-import { resolveClosedBoardCounterDisplay, taskToSquareData, taskToSquareState } from '../db/adapters';
+import { placedTaskFor, resolveClosedBoardCounterDisplay, taskToSquareData, taskToSquareState } from '../db/adapters';
 import {
   DetailModal,
   FloatingContextMenu,
@@ -351,13 +351,13 @@ export function BoardPlaySurface({
   // field), in `useCountingLogModal`; the count is the modal's windowed value.
   const quickAmount = useCountingLogModal(selectedSquareId, (btId) => {
     const bt = boardTasks.find((b) => b.id === btId);
-    const task = bt ? taskMap[bt.taskId] : undefined;
+    const task = bt ? placedTaskFor(bt, taskMap) : undefined;
     if (!bt || !task || task.type !== TaskType.COUNTING) return null;
     const children = compoundChildrenByCompound[task.id] ?? [];
     return {
       boardTaskId: btId, task, taskMap, isSealed,
       sourceId: resolveSharedCounterSourceId(task, sharedCounterSourceIds),
-      currentCount: taskToSquareState(task, children, taskMap, compoundChildrenByCompound, squareWindowContext, cellStateByBoardTaskId[btId]).currentCount,
+      currentCount: taskToSquareState(task, children, taskMap, compoundChildrenByCompound, squareWindowContext, cellStateByBoardTaskId[btId], bt.childTargets).currentCount,
       onIncrementShared: (s, a, p) => void handleSharedCounterIncrement(s, a, p),
       onDecrementShared: (s, a, p) => void handleSharedCounterDecrement(s, a, p),
       onSetStandaloneCount: (b, next) => void handleComplete(b, { currentCount: next }),
@@ -627,8 +627,8 @@ export function BoardPlaySurface({
                   continue;
                 }
 
-                // ── Resolve the base task from taskMap ───────────────────
-                const task: Task | undefined = resolvedTaskId ? taskMap[resolvedTaskId] : undefined;
+                const cellBt = boardTaskId ? boardTasks.find((b) => b.id === boardTaskId) : undefined; // slice 2a: placement-adjusted
+                const task: Task | undefined = !resolvedTaskId ? undefined : cellBt?.taskId === resolvedTaskId ? placedTaskFor(cellBt, taskMap) : taskMap[resolvedTaskId];
                 if (!task) {
                   cells.push(
                     <div key={`missing-${boardTaskId}`} className={styles.emptySquare}>?</div>
@@ -641,10 +641,10 @@ export function BoardPlaySurface({
                 // THIS placement (achievement completion has no other source).
                 const cellState = boardTaskId ? cellStateByBoardTaskId[boardTaskId] : undefined;
                 const squareData = taskToSquareData(
-                  task, taskChildren, taskMap, compoundChildrenByCompound, squareWindowContext,
+                  task, taskChildren, taskMap, compoundChildrenByCompound, squareWindowContext, cellBt?.childTargets,
                 );
                 const squareState = taskToSquareState(
-                  task, taskChildren, taskMap, compoundChildrenByCompound, squareWindowContext, cellState,
+                  task, taskChildren, taskMap, compoundChildrenByCompound, squareWindowContext, cellState, cellBt?.childTargets,
                 );
                 // Windowed Completion — on a SEALED board, `done` reads the
                 // frozen `sealedCompletedCells` snapshot (docs §Effects of
@@ -875,15 +875,15 @@ export function BoardPlaySurface({
       {!editMode && selectedSquareId && (() => {
         const bt = boardTasks.find((b) => b.id === selectedSquareId);
         if (!bt) return null;
-        const task = taskMap[bt.taskId];
+        const task = placedTaskFor(bt, taskMap);
         if (!task) return null;
         const taskChildren = compoundChildrenByCompound[task.id] ?? [];
         const squareData = taskToSquareData(
-          task, taskChildren, taskMap, compoundChildrenByCompound, squareWindowContext,
+          task, taskChildren, taskMap, compoundChildrenByCompound, squareWindowContext, bt.childTargets,
         );
         const squareState = taskToSquareState(
           task, taskChildren, taskMap, compoundChildrenByCompound, squareWindowContext,
-          cellStateByBoardTaskId[bt.id],
+          cellStateByBoardTaskId[bt.id], bt.childTargets,
         );
         // Use squareState.currentCount (baseline-adjusted for linked counters)
         // rather than the raw task.currentCount accumulator. For standalone
@@ -938,15 +938,15 @@ export function BoardPlaySurface({
       {!editMode && contextMenu && (() => {
         const bt = boardTasks.find((b) => b.id === contextMenu.squareId);
         if (!bt) return null;
-        const task = taskMap[bt.taskId];
+        const task = placedTaskFor(bt, taskMap);
         if (!task) return null;
         const taskChildren = compoundChildrenByCompound[task.id] ?? [];
         const squareData = taskToSquareData(
-          task, taskChildren, taskMap, compoundChildrenByCompound, squareWindowContext,
+          task, taskChildren, taskMap, compoundChildrenByCompound, squareWindowContext, bt.childTargets,
         );
         const squareState = taskToSquareState(
           task, taskChildren, taskMap, compoundChildrenByCompound, squareWindowContext,
-          cellStateByBoardTaskId[bt.id],
+          cellStateByBoardTaskId[bt.id], bt.childTargets,
         );
         // Use squareState.currentCount (baseline-adjusted for linked counters).
         const menuCurrentCount = squareState.currentCount;
@@ -1045,13 +1045,10 @@ export function BoardPlaySurface({
           squares editor now. */}
 
       {/* D15 — the closed-board direct-log sheet. */}
-      {isSealed && lateLogTaskId && taskMap[lateLogTaskId] && (
-        <LateLogSheet
-          board={board} task={taskMap[lateLogTaskId]} taskMap={taskMap}
-          compoundChildrenByCompound={compoundChildrenByCompound}
-          onClose={() => setLateLogTaskId(null)}
-        />
-      )}
+      {isSealed && lateLogTaskId && taskMap[lateLogTaskId] && (() => { const lateLogBt = boardTasks.find((b) => b.taskId === lateLogTaskId && !b.isDeleted); return ( // slice 2a
+        <LateLogSheet board={board} task={(lateLogBt && placedTaskFor(lateLogBt, taskMap)) ?? taskMap[lateLogTaskId]} taskMap={taskMap}
+          compoundChildrenByCompound={compoundChildrenByCompound} childTargets={lateLogBt?.childTargets} onClose={() => setLateLogTaskId(null)} />
+      ); })()}
 
       {/* "Board saved" toast — displayed after a successful edit-mode save (~2.4s). */}
       {savedToast && (

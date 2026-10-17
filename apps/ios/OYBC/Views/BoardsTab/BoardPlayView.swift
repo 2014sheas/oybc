@@ -1036,7 +1036,7 @@ struct BoardPlayView: View {
     ///   - highlighted: Set of indices that are on a completed bingo line.
     @ViewBuilder
     private func risoPlaySquare(boardTask: BoardTask, index: Int, highlighted: Set<Int>) -> some View {
-        let task = taskMap[boardTask.taskId]
+        let task = viewModel.placedTask(boardTask) // slice 2a: placement-adjusted
         let taskType = task?.type ?? .normal
         // Completion derivation — preserved verbatim from original playSquare.
         // Compounds: NEVER read Task.isCompleted. Achievements: derive from
@@ -1055,7 +1055,7 @@ struct BoardPlayView: View {
                     compound: task,
                     childrenByCompound: compoundChildrenByCompound,
                     taskById: taskMap,
-                    windowContext: boardWindowContext
+                    windowContext: boardWindowContext, childTargets: boardTask.childTargets
                 )
             }
             if task.type == .achievement {
@@ -1092,7 +1092,7 @@ struct BoardPlayView: View {
         // Compound child progress — mirrors original playSquare.
         let compoundLinks = task.map { compoundChildrenByCompound[$0.id] ?? [] } ?? []
         let compoundDoneCount = compoundLinks.filter { link in
-            guard let childTask = taskMap[link.childTaskId], !childTask.isDeleted else { return false }
+            guard let raw = taskMap[link.childTaskId], !raw.isDeleted else { return false }; let childTask = PlacementParams.withChildTarget(raw, childTargets: boardTask.childTargets) // slice 2a
             if childTask.type == .compound {
                 return CompoundEvaluation.evaluate(
                     compound: childTask,
@@ -1450,7 +1450,7 @@ struct BoardPlayView: View {
         // snapshot (docs §Effects of sealed), never live events.
         let isCompleted = isSealed
             ? (board?.sealedCompletedCells?.contains(cellIndex(for: boardTask)) ?? false)
-            : (taskMap[boardTask.taskId].map { windowedIsCompleted($0) } ?? false)
+            : (viewModel.placedTask(boardTask).map { windowedIsCompleted($0) } ?? false)
         // Windowed Completion (docs Decision 9) — if every live completion is
         // sealed-window-immune, un-completing here would be inert (the
         // tombstone finds nothing to tombstone). Disable + explain instead of
@@ -1559,7 +1559,7 @@ struct BoardPlayView: View {
                         .foregroundStyle(Color.risoMuted)
                 } else {
                     ForEach(links, id: \.id) { link in
-                        let childTask = taskMap[link.childTaskId]
+                        let childTask = taskMap[link.childTaskId].map { PlacementParams.withChildTarget($0, childTargets: boardTask.childTargets) } // slice 2a
                         // The windowed child state `handleCompoundChildToggle` inverts.
                         let isDone = childTask.map { viewModel.compoundChildIsCompleted($0) } ?? false
                         // Windowed Completion (docs Decision 9) — a child whose

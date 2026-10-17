@@ -612,3 +612,14 @@ export type { TaskWindowCaptionTask } from './taskWindowCaption';
 
 export { normalizePlacementFields, withNormalizedPlacementFields, TITLE_OVERRIDE_MAX } from './placementFields';
 export type { PlacementFields } from './placementFields';
+
+export {
+  convertGoalToKind,
+  placementGoal,
+  childTargetFor,
+  placementTitle,
+  withPlacementParams,
+  withChildTarget,
+  resolveSquareState,
+} from './placementParams';
+export type { PlacementParams } from './placementParams';

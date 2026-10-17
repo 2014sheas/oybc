@@ -8,6 +8,7 @@ import {
   isQuantizedCount,
   isWindowStampedDerived,
   quantizeCount,
+  withPlacementParams,
   lateLogOccurredAt,
   selectClosedBoardLateLogs,
   SyncOperationType,
@@ -427,11 +428,16 @@ async function isCompoundRuleMetOnClosedBoard(
       isDeleted: false,
     } as TaskEvent);
   });
+  // The PLACEMENT's child goals (slice 2a) — what the sealed re-derive scores with.
+  const placement = await db.boardTasks
+    .where('boardId').equals(board.id)
+    .filter((bt) => bt.taskId === compound.id && !bt.isDeleted)
+    .first();
   return evaluateCompound(compound, childrenByCompound, taskById, {
     windowStart: board.startDate,
     windowEnd: boardWindowEnd(board),
     eventsByTaskId,
-  });
+  }, placement?.childTargets);
 }
 
 /**
@@ -585,8 +591,14 @@ export async function readClosedBoardSquareState(
 ): Promise<ClosedBoardSquareState | null> {
   const board = await db.boards.get(boardId);
   if (!board || board.isDeleted || board.sealedAt == null) return null;
-  const task = await db.tasks.get(taskId);
-  if (!task || task.isDeleted) return null;
+  const rawTask = await db.tasks.get(taskId);
+  if (!rawTask || rawTask.isDeleted) return null;
+  // The placement-adjusted task (slice 2a): the sheet's goal is the placement's.
+  const placement = await db.boardTasks
+    .where('boardId').equals(boardId)
+    .filter((bt) => bt.taskId === taskId && !bt.isDeleted)
+    .first();
+  const task = withPlacementParams(rawTask, placement ?? null);
 
   if (task.type === TaskType.NORMAL) {
     const events = await db.taskEvents.where('taskId').equals(taskId).toArray();
