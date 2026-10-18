@@ -626,7 +626,7 @@ export {
 export type { PlacementParams } from './placementParams';
 
 // ===== TASK_WINDOW_REWORK slice 4 — the migration sweep =====
-export { planPlacementSweep, rekeyIds, rekeyRecordKeys } from './placementSweep';
+export { planPlacementSweep, rekeyIds, rekeyRecordKeys, isWindowStampedDerivedCompound } from './placementSweep';
 export type {
   SweepWorkspace,
   SweepRepoint,

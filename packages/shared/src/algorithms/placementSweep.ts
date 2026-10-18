@@ -6,15 +6,16 @@ import type { CompoundChild } from '../types/compoundChild';
 import type { Task } from '../types/task';
 import type { TaskEvent } from '../types/taskEvent';
 import type { CountKind } from './countValue';
-import { resolveCountKind } from './countValue';
+import { isWholeCountKind, quantizeCount, resolveCountKind } from './countValue';
 import { computeBoardGrid } from './derivationPass';
-import { isWindowStampedDerived } from './memberRules';
+import { derivedCompoundId, derivedTaskId, isWindowStampedDerived } from './memberRules';
+import type { PlacementChildTarget } from '../types/boardTask';
 import { boundWindowContextAtSeal, type WindowEvaluationContext } from './taskEvents';
 import { isAutoCounterTitle } from './taskTitle';
 
 /**
  * placementSweep.ts — the migration sweep (docs/TASK_WINDOW_REWORK.md
- * §Migration sweep, slice 4a: derived COUNTERS; 4b adds derived compounds).
+ * §Migration sweep; slice 4a: derived COUNTERS, slice 4b: derived COMPOUNDS).
  *
  * A state-based, deterministic, equivalence-gated plan: every live placement
  * that still points at a legacy window-stamped derived counter is repointed
@@ -56,6 +57,8 @@ export interface SweepRepoint {
   toTaskId: string;
   targetOverride?: number;
   targetKind?: CountKind;
+  /** Slice 4b — a derived compound's forward-mapped per-child targets, keyed by the SOURCE child id. */
+  childTargets?: PlacementChildTarget[];
   titleOverride?: string;
   /** The board is sealed — the applier takes the named `repointSealedPlacement` path. */
   sealed: boolean;
@@ -64,7 +67,7 @@ export interface SweepRepoint {
 export type SweepBoardOutcomeKind = 'repointed' | 'refused';
 
 /** Why a board was refused; `null` when it was repointed. */
-export type SweepRefusalReason = 'rootMissing' | 'duplicateRoot' | 'derivationChanged';
+export type SweepRefusalReason = 'rootMissing' | 'duplicateRoot' | 'derivationChanged' | 'compoundMismatch';
 
 export interface SweepBoardOutcome {
   boardId: string;
@@ -154,12 +157,119 @@ function applyRepoint(bt: BoardTask, r: SweepRepoint): BoardTask {
   delete next.targetOverride;
   delete next.targetKind;
   delete next.titleOverride;
+  delete next.childTargets;
   if (r.targetOverride !== undefined) {
     next.targetOverride = r.targetOverride;
     next.targetKind = r.targetKind;
   }
+  if (r.childTargets !== undefined) next.childTargets = r.childTargets;
   if (r.titleOverride !== undefined) next.titleOverride = r.titleOverride;
   return next;
+}
+
+/**
+ * A legacy per-window derived COMPOUND (B2): a compound carrying a window
+ * stamp and the wizard provenance mark. The web / iOS `isWindowStampedDerivedCompound`
+ * twins read the same two marks.
+ */
+export function isWindowStampedDerivedCompound(
+  t: Pick<Task, 'type' | 'startDate' | 'createdInWizard'>,
+): boolean {
+  return t.type === TaskType.COMPOUND && !!t.startDate && t.createdInWizard === true;
+}
+
+/** A counting task's own goal in its kind (whole kinds floor, `≥ 1`; continuous quantizes), or `null`. */
+function ownGoalOf(t: Pick<Task, 'maxCount' | 'countKind'>): number | null {
+  if (typeof t.maxCount !== 'number') return null;
+  if (isWholeCountKind(resolveCountKind(t))) return t.maxCount >= 1 ? Math.floor(t.maxCount) : null;
+  return t.maxCount > 0 ? quantizeCount(t.maxCount) : null;
+}
+
+interface CompoundMatch {
+  source: Task;
+  childTargets: PlacementChildTarget[];
+  /** derived child id → its root, for the rule re-key map. */
+  childRekey: Record<string, string>;
+}
+
+/**
+ * Slice 4b — find a derived compound's SOURCE by forward uuidv5 match and
+ * map its children forward (docs §Migration sweep step 3). Candidates are
+ * live, un-marked compounds with the same operator and threshold; the mint
+ * board is tried as the placing board first, then every board by id
+ * (deleted ones included — the id is all the match needs). The source's
+ * live children map forward: a counting child `c` whose
+ * `derivedTaskId(mint, c.sharedCounterId ?? c.id)` is a live child of the
+ * derived compound maps to that derived part (collapsed siblings allowed),
+ * any other child maps to itself. The forward-mapped set must equal the
+ * derived compound's live child set; a derived part's frozen goal becomes a
+ * `childTargets` entry keyed by the SOURCE child id when it differs from the
+ * child's own goal (an existing entry on the placement keyed by the source
+ * child wins; one keyed by the derived child is re-keyed).
+ *
+ * @returns The match, or `null` (the board is refused with `compoundMismatch`).
+ */
+function matchDerivedCompound(
+  derived: Task,
+  placingBoardId: string,
+  bt: BoardTask,
+  liveTasks: readonly Task[],
+  taskById: Record<string, Task>,
+  allBoardIds: readonly string[],
+  childrenByCompound: Record<string, CompoundChild[]>,
+): CompoundMatch | null {
+  const derivedKids = (childrenByCompound[derived.id] ?? []).map((k) => k.childTaskId);
+  const derivedKidSet = new Set(derivedKids);
+  const sources = liveTasks
+    .filter(
+      (t) =>
+        t.type === TaskType.COMPOUND &&
+        !isWindowStampedDerivedCompound(t) &&
+        (t.operator ?? null) === (derived.operator ?? null) &&
+        (t.threshold ?? null) === (derived.threshold ?? null),
+    )
+    .sort(byId);
+  const mintBoards = [placingBoardId, ...allBoardIds.filter((id) => id !== placingBoardId)];
+  for (const mint of mintBoards) {
+    for (const source of sources) {
+      if (derivedCompoundId(mint, source.id) !== derived.id) continue;
+      const sourceKids = [...(childrenByCompound[source.id] ?? [])].sort(
+        (a, b) => a.childIndex - b.childIndex || (a.childTaskId < b.childTaskId ? -1 : a.childTaskId > b.childTaskId ? 1 : 0),
+      );
+      const mapped = new Set<string>();
+      const childTargets: PlacementChildTarget[] = [];
+      const childRekey: Record<string, string> = {};
+      let ok = sourceKids.length > 0;
+      for (const k of sourceKids) {
+        const c = taskById[k.childTaskId];
+        if (!c || c.isDeleted) {
+          ok = false;
+          break;
+        }
+        let target: string = c.id;
+        if (c.type === TaskType.COUNTING) {
+          const root = c.sharedCounterId ?? c.id;
+          const part = derivedTaskId(mint, root);
+          const partRow = taskById[part];
+          if (derivedKidSet.has(part) && partRow && !partRow.isDeleted) {
+            target = part;
+            childRekey[part] = root;
+            const existing =
+              bt.childTargets?.find((e) => e.childId === c.id) ?? bt.childTargets?.find((e) => e.childId === part);
+            const goal = existing?.target ?? partRow.maxCount;
+            if (typeof goal === 'number' && goal > 0 && goal !== ownGoalOf(c) && !childTargets.some((e) => e.childId === c.id)) {
+              childTargets.push({ childId: c.id, target: goal });
+            }
+          }
+        }
+        mapped.add(target);
+      }
+      if (!ok) continue;
+      if (mapped.size !== derivedKidSet.size || [...mapped].some((id) => !derivedKidSet.has(id))) continue;
+      return { source, childTargets, childRekey };
+    }
+  }
+  return null;
 }
 
 /**
@@ -172,7 +282,9 @@ function applyRepoint(bt: BoardTask, r: SweepRepoint): BoardTask {
 export function planPlacementSweep(ws: SweepWorkspace, now: string): PlacementSweepPlan {
   void now;
   const liveTasks = ws.tasks.filter((t) => !t.isDeleted);
-  const marked = liveTasks.filter((t) => t.type === TaskType.COUNTING && isWindowStampedDerived(t));
+  const marked = liveTasks.filter(
+    (t) => (t.type === TaskType.COUNTING && isWindowStampedDerived(t)) || isWindowStampedDerivedCompound(t),
+  );
   if (marked.length === 0) return { ...EMPTY_PLAN, rekey: {} };
 
   const taskById: Record<string, Task> = {};
@@ -180,6 +292,7 @@ export function planPlacementSweep(ws: SweepWorkspace, now: string): PlacementSw
   const markedById = new Map(marked.map((t) => [t.id, t]));
   const allBoards = ws.boards.filter((b) => !b.isDeleted);
   const boardById = new Map(allBoards.map((b) => [b.id, b]));
+  const allBoardIds = [...ws.boards].map((b) => b.id).sort();
   const livePlacements = ws.boardTasks.filter((bt) => !bt.isDeleted && boardById.has(bt.boardId));
   const liveLinks = ws.compoundChildren.filter((c) => !c.isDeleted);
   const childrenByCompound: Record<string, CompoundChild[]> = {};
@@ -227,12 +340,34 @@ export function planPlacementSweep(ws: SweepWorkspace, now: string): PlacementSw
     // Build the proposed placements; refuse on a missing root or a duplicate.
     const proposed: BoardTask[] = [];
     const boardRepoints: SweepRepoint[] = [];
+    const childRekeys: Record<string, string> = {};
     const placedTaskIds = new Set(placements.filter((bt) => !markedById.has(bt.taskId)).map((bt) => bt.taskId));
     let reason: SweepRefusalReason | null = null;
     for (const bt of placements) {
       const row = markedById.get(bt.taskId);
       if (!row) {
         proposed.push(bt);
+        continue;
+      }
+      if (row.type === TaskType.COMPOUND) {
+        // Slice 4b — a derived compound → its source with forward-mapped child targets.
+        const match = matchDerivedCompound(row, boardId, bt, liveTasks, taskById, allBoardIds, childrenByCompound);
+        if (!match) {
+          reason = 'compoundMismatch';
+          break;
+        }
+        if (placedTaskIds.has(match.source.id)) {
+          reason = 'duplicateRoot';
+          break;
+        }
+        placedTaskIds.add(match.source.id);
+        const r: SweepRepoint = { boardId, boardTaskId: bt.id, fromTaskId: row.id, toTaskId: match.source.id, sealed };
+        if (match.childTargets.length > 0) r.childTargets = match.childTargets;
+        const title = bt.titleOverride?.trim() || (row.title.trim() !== match.source.title.trim() ? row.title.trim() : '');
+        if (title) r.titleOverride = title;
+        for (const [part, root] of Object.entries(match.childRekey)) childRekeys[part] = root;
+        boardRepoints.push(r);
+        proposed.push(applyRepoint(bt, r));
         continue;
       }
       const root = row.sharedCounterId ? taskById[row.sharedCounterId] : undefined;
@@ -261,6 +396,8 @@ export function planPlacementSweep(ws: SweepWorkspace, now: string): PlacementSw
     }
     repoints.push(...boardRepoints);
     for (const r of boardRepoints) rekey[r.fromTaskId] = r.toTaskId;
+    // A derived compound's derived parts re-key to their roots too (rules keyed by part ids).
+    for (const [part, root] of Object.entries(childRekeys)) rekey[part] = root;
     touched.push(boardId);
     outcomes.push({ boardId, outcome: 'repointed', reason: null, sealedSnapshotDrift: drift });
   }

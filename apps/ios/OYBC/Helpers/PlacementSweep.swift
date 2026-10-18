@@ -1,6 +1,6 @@
 import Foundation
 
-// MARK: - Placement sweep planner (TASK_WINDOW_REWORK slice 4a — derived counters)
+// MARK: - Placement sweep planner (TASK_WINDOW_REWORK slice 4a derived counters, 4b derived compounds)
 //
 // Swift twin of `packages/shared/src/algorithms/placementSweep.ts`, pinned by
 // `placementSweepVectors.json`. A pure, deterministic, equivalence-gated plan:
@@ -33,6 +33,8 @@ extension BoardSources {
         var toTaskId: String
         var targetOverride: CountValue?
         var targetKind: CountKind?
+        /// Slice 4b: a derived compound's forward-mapped per-child targets, keyed by the SOURCE child id.
+        var childTargets: [PlacementChildTarget]?
         var titleOverride: String?
         /// The board is sealed — the applier takes the named `repointSealedPlacement` path.
         var sealed: Bool
@@ -40,7 +42,7 @@ extension BoardSources {
 
     enum SweepBoardOutcomeKind: String, Codable, Equatable { case repointed, refused }
 
-    enum SweepRefusalReason: String, Codable, Equatable { case rootMissing, duplicateRoot, derivationChanged }
+    enum SweepRefusalReason: String, Codable, Equatable { case rootMissing, duplicateRoot, derivationChanged, compoundMismatch }
 
     struct SweepBoardOutcome: Codable, Equatable {
         var boardId: String
@@ -125,8 +127,77 @@ extension BoardSources {
         next.taskId = r.toTaskId
         next.targetOverride = r.targetOverride
         next.targetKind = r.targetOverride != nil ? r.targetKind : nil
+        next.childTargets = r.childTargets
         next.titleOverride = r.titleOverride
         return next
+    }
+
+    /// A legacy per-window derived COMPOUND (B2): a compound carrying a window
+    /// stamp and the wizard provenance mark. Twin of the TS helper.
+    static func isWindowStampedDerivedCompound(_ task: Task) -> Bool {
+        task.type == .compound && !(task.startDate ?? "").isEmpty && task.createdInWizard
+    }
+
+    /// A counting task's own goal in its kind (whole kinds floor, `>= 1`; continuous quantizes), or nil.
+    private static func sweepOwnGoal(_ t: Task) -> CountValue? {
+        guard let max = t.maxCount else { return nil }
+        if isWholeCountKind(resolveCountKind(t.countKind)) { return max >= 1 ? max.rounded(.down) : nil }
+        return max > 0 ? quantizeCount(max) : nil
+    }
+
+    private struct SweepCompoundMatch {
+        var source: Task
+        var childTargets: [PlacementChildTarget]
+        /// derived child id to its root, for the rule re-key map.
+        var childRekey: [String: String]
+    }
+
+    /// Slice 4b: find a derived compound's SOURCE by forward uuidv5 match and
+    /// map its children forward. Twin of the TS `matchDerivedCompound`.
+    private static func matchDerivedCompound(
+        derived: Task, placingBoardId: String, bt: BoardTask, liveTasks: [Task], taskById: [String: Task],
+        allBoardIds: [String], childrenByCompound: [String: [CompoundChild]]
+    ) -> SweepCompoundMatch? {
+        let derivedKidSet = Set((childrenByCompound[derived.id] ?? []).map(\.childTaskId))
+        let sources = liveTasks.filter {
+            $0.type == .compound && !isWindowStampedDerivedCompound($0)
+                && $0.operatorType == derived.operatorType && $0.threshold == derived.threshold
+        }.sorted { $0.id < $1.id }
+        let mintBoards = [placingBoardId] + allBoardIds.filter { $0 != placingBoardId }
+        for mint in mintBoards {
+            for source in sources {
+                guard derivedCompoundId(boardId: mint, compoundId: source.id) == derived.id else { continue }
+                let sourceKids = (childrenByCompound[source.id] ?? []).sorted {
+                    $0.childIndex != $1.childIndex ? $0.childIndex < $1.childIndex : $0.childTaskId < $1.childTaskId
+                }
+                var mapped = Set<String>()
+                var childTargets: [PlacementChildTarget] = []
+                var childRekey: [String: String] = [:]
+                var ok = !sourceKids.isEmpty
+                for k in sourceKids {
+                    guard let c = taskById[k.childTaskId], !c.isDeleted else { ok = false; break }
+                    var target = c.id
+                    if c.type == .counting {
+                        let root = c.sharedCounterId ?? c.id
+                        let part = derivedTaskId(boardId: mint, rootTaskId: root)
+                        if derivedKidSet.contains(part), let partRow = taskById[part], !partRow.isDeleted {
+                            target = part
+                            childRekey[part] = root
+                            let existing = bt.childTargets?.first { $0.childId == c.id } ?? bt.childTargets?.first { $0.childId == part }
+                            if let goal = existing?.target ?? partRow.maxCount, goal > 0, goal != sweepOwnGoal(c),
+                               !childTargets.contains(where: { $0.childId == c.id }) {
+                                childTargets.append(PlacementChildTarget(childId: c.id, target: goal))
+                            }
+                        }
+                    }
+                    mapped.insert(target)
+                }
+                if !ok { continue }
+                if mapped != derivedKidSet { continue }
+                return SweepCompoundMatch(source: source, childTargets: childTargets, childRekey: childRekey)
+            }
+        }
+        return nil
     }
 
     /// Plan the sweep over a workspace (slice 4a — derived counters). Twin of
@@ -138,7 +209,8 @@ extension BoardSources {
     /// - Returns: The plan; empty when no marked row exists.
     static func planPlacementSweep(ws: SweepWorkspace, now: String) -> PlacementSweepPlan {
         _ = now
-        let marked = ws.tasks.filter { !$0.isDeleted && $0.type == .counting && isWindowStampedDerived($0) }
+        let liveTasks = ws.tasks.filter { !$0.isDeleted }
+        let marked = liveTasks.filter { ($0.type == .counting && isWindowStampedDerived($0)) || isWindowStampedDerivedCompound($0) }
         if marked.isEmpty { return PlacementSweepPlan() }
 
         var taskById: [String: Task] = [:]
@@ -146,6 +218,7 @@ extension BoardSources {
         let markedById = Dictionary(marked.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
         let allBoards = ws.boards.filter { !$0.isDeleted }
         let boardById = Dictionary(allBoards.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+        let allBoardIds = ws.boards.map(\.id).sorted()
         let livePlacements = ws.boardTasks.filter { !$0.isDeleted && boardById[$0.boardId] != nil }
         let liveLinks = ws.compoundChildren.filter { !$0.isDeleted }
         var childrenByCompound: [String: [CompoundChild]] = [:]
@@ -193,10 +266,34 @@ extension BoardSources {
 
             var proposed: [BoardTask] = []
             var boardRepoints: [SweepRepoint] = []
+            var childRekeys: [String: String] = [:]
             var placedTaskIds = Set(placements.filter { markedById[$0.taskId] == nil }.map(\.taskId))
             var reason: SweepRefusalReason?
             for bt in placements {
                 guard let row = markedById[bt.taskId] else { proposed.append(bt); continue }
+
+                if row.type == .compound {
+                    guard let match = matchDerivedCompound(
+                        derived: row, placingBoardId: boardId, bt: bt, liveTasks: liveTasks, taskById: taskById,
+                        allBoardIds: allBoardIds, childrenByCompound: childrenByCompound
+                    ) else { reason = .compoundMismatch; break }
+                    if placedTaskIds.contains(match.source.id) { reason = .duplicateRoot; break }
+                    placedTaskIds.insert(match.source.id)
+                    var r = SweepRepoint(
+                        boardId: boardId, boardTaskId: bt.id, fromTaskId: row.id, toTaskId: match.source.id, sealed: sealed
+                    )
+                    if !match.childTargets.isEmpty { r.childTargets = match.childTargets }
+                    let existingTitle = bt.titleOverride?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                    let rowTitle = row.title.trimmingCharacters(in: .whitespacesAndNewlines)
+                    let title = !existingTitle.isEmpty
+                        ? existingTitle
+                        : (rowTitle != match.source.title.trimmingCharacters(in: .whitespacesAndNewlines) ? rowTitle : "")
+                    if !title.isEmpty { r.titleOverride = title }
+                    for (part, root) in match.childRekey { childRekeys[part] = root }
+                    boardRepoints.append(r)
+                    proposed.append(applySweepRepoint(bt, r))
+                    continue
+                }
                 guard let rootId = row.sharedCounterId, !rootId.isEmpty,
                       let root = taskById[rootId], !root.isDeleted else { reason = .rootMissing; break }
                 if placedTaskIds.contains(root.id) { reason = .duplicateRoot; break }
@@ -214,6 +311,7 @@ extension BoardSources {
             if before != after { refuse(.derivationChanged, drift); continue }
             repoints.append(contentsOf: boardRepoints)
             for r in boardRepoints { rekey[r.fromTaskId] = r.toTaskId }
+            for (part, root) in childRekeys { rekey[part] = root }
             touched.append(boardId)
             outcomes.append(SweepBoardOutcome(boardId: boardId, outcome: .repointed, reason: nil, sealedSnapshotDrift: drift))
         }

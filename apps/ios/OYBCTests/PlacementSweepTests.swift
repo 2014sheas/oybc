@@ -139,6 +139,91 @@ final class PlacementSweepTests: XCTestCase {
         XCTAssertFalse(try sweep(db).wroteAnything)
     }
 
+    // MARK: - Derived compounds (slice 4b)
+
+    private func link(_ compound: String, _ child: String, _ index: Int) throws -> CompoundChild {
+        try SweepFixture.decode(CompoundChild.self, defaults: [
+            "createdAt": SweepFixture.ts, "updatedAt": SweepFixture.ts, "version": 1, "isDeleted": false,
+        ], mini: ["id": "\(compound)-\(child)", "compoundTaskId": compound, "childTaskId": child, "childIndex": index])
+    }
+
+    /// Source compound S (counting child c1 goal 10 + normal c2) and its derived
+    /// compound for board B (part P goal 5 + c2), placed on B. `derivedKids`
+    /// overrides the derived compound's children (to force a mismatch).
+    private func seedDerivedCompound(_ d: Database, derivedKids: [String]? = nil) throws -> (derived: String, part: String) {
+        let dId = BoardSources.derivedCompoundId(boardId: "B", compoundId: "S")
+        let pId = BoardSources.derivedTaskId(boardId: "B", rootTaskId: "c1")
+        try task("c1", ["maxCount": 10, "title": "Read 10 pages"]).insert(d)
+        try task("c2", ["type": "normal", "title": "Stretch"]).insert(d)
+        try task("S", ["type": "compound", "operator": "AND", "title": "Morning"]).insert(d)
+        try link("S", "c1", 0).insert(d)
+        try link("S", "c2", 1).insert(d)
+        let marks: [String: Any] = ["timeframe": "weekly", "startDate": "2026-10-05T00:00:00", "createdInWizard": true]
+        try task(dId, marks.merging(["type": "compound", "operator": "AND", "title": "Morning"]) { _, n in n }).insert(d)
+        try task(pId, marks.merging(["sharedCounterId": "c1", "maxCount": 5]) { _, n in n }).insert(d)
+        for (i, kid) in (derivedKids ?? [pId, "c2"]).enumerated() { try link(dId, kid, i).insert(d) }
+        try board("B").insert(d)
+        try placement("B-D", board: "B", task: dId).insert(d)
+        return (dId, pId)
+    }
+
+    func testDerivedCompoundRepointsToSourceWithChildTargets() throws {
+        let db = try makeDb()
+        var ids: (derived: String, part: String) = ("", "")
+        try db.write { ids = try self.seedDerivedCompound($0) }
+        let gridBefore = try db.read { try Board.fetchOne($0, key: "B") }!.completedTasks
+        let s = try sweep(db)
+        XCTAssertEqual(s.repointed, 1)
+        XCTAssertTrue(s.refused.isEmpty)
+        let bt = try db.read { try BoardTask.fetchOne($0, key: "B-D") }!
+        XCTAssertEqual(bt.taskId, "S")
+        XCTAssertEqual(bt.childTargets, [PlacementChildTarget(childId: "c1", target: 5)])
+        XCTAssertNil(bt.targetOverride)
+        XCTAssertNil(bt.titleOverride)
+        XCTAssertEqual(try db.read { try Board.fetchOne($0, key: "B") }!.completedTasks, gridBefore)
+        XCTAssertEqual(ids.derived, BoardSources.derivedCompoundId(boardId: "B", compoundId: "S"))
+    }
+
+    func testCompoundMismatchStripsTheCompound() throws {
+        let db = try makeDb()
+        var ids: (derived: String, part: String) = ("", "")
+        try db.write { d in
+            ids = try self.seedDerivedCompound(d, derivedKids: [])
+            try self.link(ids.derived, ids.part, 0).insert(d) // c2 missing: mapped set differs
+        }
+        let s = try sweep(db)
+        XCTAssertEqual(s.repointed, 0)
+        XCTAssertEqual(s.stripped, 1)
+        XCTAssertEqual(s.refused.first?.reason, .compoundMismatch)
+        let t = try db.read { try Task.fetchOne($0, key: ids.derived) }!
+        XCTAssertNil(t.timeframe); XCTAssertNil(t.startDate)
+        XCTAssertEqual(try db.read { try BoardTask.fetchOne($0, key: "B-D") }!.taskId, ids.derived)
+    }
+
+    func testOrphanDerivedCompoundIsTombstonedWithItsLinksAndPartsRetireNext() throws {
+        let db = try makeDb()
+        var ids: (derived: String, part: String) = ("", "")
+        try db.write { d in
+            ids = try self.seedDerivedCompound(d)
+            // Unplace it: the compound and its part are now unplaced; the compound has no live parent.
+            try d.execute(sql: "DELETE FROM board_tasks WHERE id = 'B-D'")
+        }
+        let before = try queue(db).count
+        let first = try sweep(db)
+        XCTAssertEqual(first.orphansTombstoned, 1)
+        XCTAssertTrue(try db.read { try Task.fetchOne($0, key: ids.derived) }!.isDeleted)
+        let links = try db.read { try CompoundChild.filter(Column("compoundTaskId") == ids.derived).fetchAll($0) }
+        XCTAssertEqual(links.count, 2)
+        XCTAssertTrue(links.allSatisfy { $0.isDeleted })
+        let added = try queue(db).dropFirst(before)
+        XCTAssertTrue(added.contains { $0.entityType == "compoundChildren" && $0.operationType == .delete })
+        XCTAssertTrue(added.contains { $0.entityType == "tasks" && $0.entityId == ids.derived && $0.operationType == .delete })
+        // Second run retires the now-unlinked part; a third writes nothing.
+        XCTAssertEqual(try sweep(db).orphansTombstoned, 1)
+        XCTAssertTrue(try db.read { try Task.fetchOne($0, key: ids.part) }!.isDeleted)
+        XCTAssertFalse(try sweep(db).wroteAnything)
+    }
+
     func testTemplatePoolAndDraftRekeys() throws {
         let db = try makeDb()
         try db.write { d in

@@ -410,7 +410,7 @@ extension AppDatabase {
     /// - Parameter task: The task row to test.
     /// - Returns: True when the row is a per-window derived compound.
     static func isWindowStampedDerivedCompound(_ task: Task) -> Bool {
-        task.type == .compound && !(task.startDate ?? "").isEmpty && task.createdInWizard
+        BoardSources.isWindowStampedDerivedCompound(task)
     }
 
     /// The live window-stamped derived counters that derive from `rootTaskId`.

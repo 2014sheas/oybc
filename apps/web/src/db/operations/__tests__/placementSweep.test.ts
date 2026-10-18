@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { Board, Pool, RecurringBoardTemplate, Task } from '@oybc/shared';
-import { BoardStatus } from '@oybc/shared';
+import { BoardStatus, OperatorType, TaskType, derivedCompoundId, derivedTaskId } from '@oybc/shared';
 import { db } from '../../internal';
 import { runPlacementSweep } from '../placementSweep';
 import { decodeRecurringDraftMix, encodeRecurringDraftMix } from '../../recurringDraftMix';
@@ -150,5 +150,69 @@ describe('runPlacementSweep', () => {
     const third = await runPlacementSweep(USER, NOW);
     expect(third.repoints + third.strips + third.orphans).toBe(0);
     expect(await db.syncQueue.count()).toBe(queueAfterFirst + 1);
+  });
+});
+
+describe('runPlacementSweep — derived compounds (slice 4b)', () => {
+  const SRC = 'src-compound';
+  const CHILD = 'child-run';
+
+  async function seedCompound(): Promise<{ dc: string; part: string }> {
+    const dc = derivedCompoundId(JUNE.id, SRC);
+    const part = derivedTaskId(JUNE.id, ROOT);
+    const source = {
+      ...rootTask({ id: SRC, title: 'Fit', type: TaskType.COMPOUND, operator: OperatorType.AND, maxCount: undefined, unit: undefined, action: undefined }),
+    } as unknown as Task;
+    const child = rootTask({ id: CHILD, title: 'Run 100 miles', sharedCounterId: ROOT });
+    const derivedC = { ...source, id: dc, startDate: JUNE.startDate, createdInWizard: true, version: 2 } as Task;
+    const derivedPart = derived(part, { sharedCounterId: ROOT, maxCount: 5 });
+    await db.tasks.bulkPut([rootTask(), child, source, derivedC, derivedPart]);
+    await db.boards.put(boardRow(JUNE, { completedTasks: 1 }));
+    await db.boardTasks.put(placement('btc', JUNE.id, dc));
+    await db.compoundChildren.bulkPut([
+      { id: 'l-src', compoundTaskId: SRC, childTaskId: CHILD, childIndex: 0, createdAt: T0, updatedAt: T0, version: 1, isDeleted: false },
+      { id: 'l-der', compoundTaskId: dc, childTaskId: part, childIndex: 0, createdAt: T0, updatedAt: T0, version: 1, isDeleted: false },
+    ] as never);
+    await db.taskEvents.put(incEvent('e1', ROOT, 5, '2026-06-10T10:00:00.000Z'));
+    return { dc, part };
+  }
+
+  it('repoints a derived compound at its source with childTargets and keeps the grid', async () => {
+    const { dc } = await seedCompound();
+    const gridBefore = 1;
+    const s = await runPlacementSweep(USER, NOW);
+    expect(s.repoints).toBe(1);
+    const bt = (await db.boardTasks.get('btc'))!;
+    expect(bt.taskId).toBe(SRC);
+    expect(bt.childTargets).toEqual([{ childId: CHILD, target: 5 }]);
+    expect(await queued('boardTasks')).toContain('btc');
+    expect((await db.boards.get(JUNE.id))!.completedTasks).toBe(gridBefore);
+    expect(dc).not.toBe(SRC);
+  });
+
+  it('refuses a mismatched compound and strips it', async () => {
+    const { dc } = await seedCompound();
+    await db.compoundChildren.put({ id: 'l-src2', compoundTaskId: SRC, childTaskId: 'extra', childIndex: 1, createdAt: T0, updatedAt: T0, version: 1, isDeleted: false } as never);
+    await db.tasks.put(rootTask({ id: 'extra', title: 'Extra' }));
+    const s = await runPlacementSweep(USER, NOW);
+    expect(s.refused.length).toBe(1);
+    expect((await db.boardTasks.get('btc'))!.taskId).toBe(dc);
+    expect('startDate' in (await db.tasks.get(dc))!).toBe(false);
+  });
+
+  it('tombstones an orphan derived compound with its links, retires parts next run, then goes quiet', async () => {
+    const { dc, part } = await seedCompound();
+    await db.boardTasks.delete('btc');
+    const first = await runPlacementSweep(USER, NOW);
+    expect(first.orphans).toBeGreaterThanOrEqual(1);
+    expect((await db.tasks.get(dc))!.isDeleted).toBe(true);
+    expect((await db.compoundChildren.get('l-der'))!.isDeleted).toBe(true);
+    const second = await runPlacementSweep(USER, NOW);
+    expect((await db.tasks.get(part))!.isDeleted).toBe(true);
+    expect(second.orphans).toBeGreaterThanOrEqual(0);
+    const q = await db.syncQueue.count();
+    const third = await runPlacementSweep(USER, NOW);
+    expect(third.repoints + third.strips + third.orphans).toBe(0);
+    expect(await db.syncQueue.count()).toBe(q);
   });
 });

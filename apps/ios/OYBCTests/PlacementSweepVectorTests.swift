@@ -82,6 +82,15 @@ final class PlacementSweepVectorTests: XCTestCase {
         }
     }
 
+    /// The fixture exercises the 4b outcomes: a compound mismatch and a repoint carrying child targets.
+    func testFixtureCoversCompoundOutcomes() throws {
+        let cases = try SweepFixture.loadFixture()["planPlacementSweep"] as! [[String: Any]]
+        let expected = cases.compactMap { $0["expected"] as? [String: Any] }
+        let reasons = expected.flatMap { ($0["outcomes"] as? [[String: Any]] ?? []).compactMap { $0["reason"] as? String } }
+        XCTAssertTrue(reasons.contains("compoundMismatch"))
+        XCTAssertTrue(expected.contains { ($0["repoints"] as? [[String: Any]] ?? []).contains { $0["childTargets"] != nil } })
+    }
+
     /// Applying each plan and re-planning reaches an empty plan within three runs, with no repoint after the first.
     func testConvergence() throws {
         let cases = try SweepFixture.loadFixture()["planPlacementSweep"] as! [[String: Any]]
@@ -98,6 +107,7 @@ final class PlacementSweepVectorTests: XCTestCase {
                     next.taskId = r.toTaskId
                     next.targetOverride = r.targetOverride
                     next.targetKind = r.targetKind
+                    next.childTargets = r.childTargets
                     next.titleOverride = r.titleOverride
                     return next
                 }

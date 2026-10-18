@@ -1,5 +1,5 @@
 {
-  "_note": "Hand-authored vectors for packages/shared/src/algorithms/placementSweep.ts (TASK_WINDOW_REWORK slice 4a) ↔ Swift Helpers/PlacementSweep.swift. Mini shapes: tasks default type counting / isCompleted false / isDeleted false; boards default active 3×3 weekly over the fixed window; boardTasks default not deleted; events default kind increment / not deleted. `expected` is the whole plan (deep equal; arrays in planner order). Expected values were cross-checked by running the TS planner once during authoring.",
+  "_note": "Hand-authored vectors for packages/shared/src/algorithms/placementSweep.ts (TASK_WINDOW_REWORK slices 4a counters + 4b compounds) ↔ Swift Helpers/PlacementSweep.swift. Mini shapes: tasks default type counting / isCompleted false / isDeleted false; boards default active 3×3 weekly over the fixed window; boardTasks default not deleted; events default kind increment / not deleted. `expected` is the whole plan (deep equal; arrays in planner order). Expected values were cross-checked by running the TS planner once during authoring.",
   "window": {
     "startDate": "2026-10-05T00:00:00",
     "endDate": "2026-10-11T23:59:59.999"
@@ -2693,6 +2693,2093 @@
         "rekey": {},
         "touchedBoardIds": [],
         "outcomes": []
+      }
+    },
+    {
+      "name": "4b: a derived compound repoints to its SOURCE (forward uuidv5 match) with the derived part's frozen goal as a childTargets entry keyed by the source child; the part re-keys to its root",
+      "ws": {
+        "tasks": [
+          {
+            "id": "c1",
+            "type": "counting",
+            "title": "Read 8 pages",
+            "isCompleted": false,
+            "isDeleted": false,
+            "action": "Read",
+            "unit": "pages",
+            "maxCount": 8
+          },
+          {
+            "id": "S",
+            "type": "compound",
+            "title": "Compound S",
+            "isCompleted": false,
+            "isDeleted": false,
+            "operator": "AND"
+          },
+          {
+            "id": "e997ab6e-3a9b-5094-a083-f91a02526b5a",
+            "type": "compound",
+            "title": "Compound S",
+            "isCompleted": false,
+            "isDeleted": false,
+            "operator": "AND",
+            "startDate": "2026-10-05T00:00:00",
+            "endDate": "2026-10-11T23:59:59.999",
+            "timeframe": "weekly",
+            "createdInWizard": true
+          },
+          {
+            "id": "43bf3680-3cf7-5f7c-bff2-20466a71b9a4",
+            "type": "counting",
+            "title": "Read 2 pages",
+            "isCompleted": false,
+            "isDeleted": false,
+            "action": "Read",
+            "unit": "pages",
+            "maxCount": 2,
+            "sharedCounterId": "c1",
+            "startDate": "2026-10-05T00:00:00",
+            "endDate": "2026-10-11T23:59:59.999",
+            "timeframe": "weekly",
+            "createdInWizard": true
+          },
+          {
+            "id": "n0",
+            "type": "normal",
+            "title": "Normal 0",
+            "isCompleted": false,
+            "isDeleted": false
+          },
+          {
+            "id": "n1",
+            "type": "normal",
+            "title": "Normal 1",
+            "isCompleted": false,
+            "isDeleted": false
+          },
+          {
+            "id": "n2",
+            "type": "normal",
+            "title": "Normal 2",
+            "isCompleted": false,
+            "isDeleted": false
+          },
+          {
+            "id": "n3",
+            "type": "normal",
+            "title": "Normal 3",
+            "isCompleted": false,
+            "isDeleted": false
+          },
+          {
+            "id": "n4",
+            "type": "normal",
+            "title": "Normal 4",
+            "isCompleted": false,
+            "isDeleted": false
+          },
+          {
+            "id": "n5",
+            "type": "normal",
+            "title": "Normal 5",
+            "isCompleted": false,
+            "isDeleted": false
+          },
+          {
+            "id": "n6",
+            "type": "normal",
+            "title": "Normal 6",
+            "isCompleted": false,
+            "isDeleted": false
+          },
+          {
+            "id": "n7",
+            "type": "normal",
+            "title": "Normal 7",
+            "isCompleted": false,
+            "isDeleted": false
+          },
+          {
+            "id": "n8",
+            "type": "normal",
+            "title": "Normal 8",
+            "isCompleted": false,
+            "isDeleted": false
+          }
+        ],
+        "boards": [
+          {
+            "id": "B",
+            "name": "B",
+            "status": "active",
+            "boardSize": 3,
+            "timeframe": "weekly",
+            "startDate": "2026-10-05T00:00:00",
+            "endDate": "2026-10-11T23:59:59.999",
+            "centerSquareType": "none",
+            "isDeleted": false
+          }
+        ],
+        "boardTasks": [
+          {
+            "id": "B-D",
+            "boardId": "B",
+            "taskId": "e997ab6e-3a9b-5094-a083-f91a02526b5a",
+            "row": 0,
+            "col": 0,
+            "isDeleted": false
+          },
+          {
+            "id": "B-n1",
+            "boardId": "B",
+            "taskId": "n1",
+            "row": 0,
+            "col": 1,
+            "isDeleted": false
+          },
+          {
+            "id": "B-n2",
+            "boardId": "B",
+            "taskId": "n2",
+            "row": 0,
+            "col": 2,
+            "isDeleted": false
+          },
+          {
+            "id": "B-n3",
+            "boardId": "B",
+            "taskId": "n3",
+            "row": 1,
+            "col": 0,
+            "isDeleted": false
+          },
+          {
+            "id": "B-n4",
+            "boardId": "B",
+            "taskId": "n4",
+            "row": 1,
+            "col": 1,
+            "isDeleted": false
+          },
+          {
+            "id": "B-n5",
+            "boardId": "B",
+            "taskId": "n5",
+            "row": 1,
+            "col": 2,
+            "isDeleted": false
+          },
+          {
+            "id": "B-n6",
+            "boardId": "B",
+            "taskId": "n6",
+            "row": 2,
+            "col": 0,
+            "isDeleted": false
+          },
+          {
+            "id": "B-n7",
+            "boardId": "B",
+            "taskId": "n7",
+            "row": 2,
+            "col": 1,
+            "isDeleted": false
+          },
+          {
+            "id": "B-n8",
+            "boardId": "B",
+            "taskId": "n8",
+            "row": 2,
+            "col": 2,
+            "isDeleted": false
+          }
+        ],
+        "compoundChildren": [
+          {
+            "compoundTaskId": "S",
+            "childTaskId": "c1",
+            "isDeleted": false
+          },
+          {
+            "compoundTaskId": "S",
+            "childTaskId": "n0",
+            "isDeleted": false
+          },
+          {
+            "compoundTaskId": "e997ab6e-3a9b-5094-a083-f91a02526b5a",
+            "childTaskId": "43bf3680-3cf7-5f7c-bff2-20466a71b9a4",
+            "isDeleted": false
+          },
+          {
+            "compoundTaskId": "e997ab6e-3a9b-5094-a083-f91a02526b5a",
+            "childTaskId": "n0",
+            "isDeleted": false
+          }
+        ],
+        "events": [
+          {
+            "taskId": "c1",
+            "kind": "increment",
+            "delta": 2,
+            "occurredAt": "2026-10-06T10:00:00.000Z",
+            "isDeleted": false
+          }
+        ]
+      },
+      "expected": {
+        "repoints": [
+          {
+            "boardId": "B",
+            "boardTaskId": "B-D",
+            "fromTaskId": "e997ab6e-3a9b-5094-a083-f91a02526b5a",
+            "toTaskId": "S",
+            "sealed": false,
+            "childTargets": [
+              {
+                "childId": "c1",
+                "target": 2
+              }
+            ]
+          }
+        ],
+        "strips": [],
+        "orphanTombstones": [],
+        "rekey": {
+          "e997ab6e-3a9b-5094-a083-f91a02526b5a": "S",
+          "43bf3680-3cf7-5f7c-bff2-20466a71b9a4": "c1"
+        },
+        "touchedBoardIds": [
+          "B"
+        ],
+        "outcomes": [
+          {
+            "boardId": "B",
+            "outcome": "repointed",
+            "reason": null,
+            "sealedSnapshotDrift": false
+          }
+        ]
+      }
+    },
+    {
+      "name": "4b: a renamed derived compound carries its title as titleOverride",
+      "ws": {
+        "tasks": [
+          {
+            "id": "c1",
+            "type": "counting",
+            "title": "Read 8 pages",
+            "isCompleted": false,
+            "isDeleted": false,
+            "action": "Read",
+            "unit": "pages",
+            "maxCount": 8
+          },
+          {
+            "id": "S",
+            "type": "compound",
+            "title": "Compound S",
+            "isCompleted": false,
+            "isDeleted": false,
+            "operator": "AND"
+          },
+          {
+            "id": "e997ab6e-3a9b-5094-a083-f91a02526b5a",
+            "type": "compound",
+            "title": "Custom comp",
+            "isCompleted": false,
+            "isDeleted": false,
+            "operator": "AND",
+            "startDate": "2026-10-05T00:00:00",
+            "endDate": "2026-10-11T23:59:59.999",
+            "timeframe": "weekly",
+            "createdInWizard": true
+          },
+          {
+            "id": "43bf3680-3cf7-5f7c-bff2-20466a71b9a4",
+            "type": "counting",
+            "title": "Read 2 pages",
+            "isCompleted": false,
+            "isDeleted": false,
+            "action": "Read",
+            "unit": "pages",
+            "maxCount": 2,
+            "sharedCounterId": "c1",
+            "startDate": "2026-10-05T00:00:00",
+            "endDate": "2026-10-11T23:59:59.999",
+            "timeframe": "weekly",
+            "createdInWizard": true
+          },
+          {
+            "id": "n0",
+            "type": "normal",
+            "title": "Normal 0",
+            "isCompleted": false,
+            "isDeleted": false
+          },
+          {
+            "id": "n1",
+            "type": "normal",
+            "title": "Normal 1",
+            "isCompleted": false,
+            "isDeleted": false
+          },
+          {
+            "id": "n2",
+            "type": "normal",
+            "title": "Normal 2",
+            "isCompleted": false,
+            "isDeleted": false
+          },
+          {
+            "id": "n3",
+            "type": "normal",
+            "title": "Normal 3",
+            "isCompleted": false,
+            "isDeleted": false
+          },
+          {
+            "id": "n4",
+            "type": "normal",
+            "title": "Normal 4",
+            "isCompleted": false,
+            "isDeleted": false
+          },
+          {
+            "id": "n5",
+            "type": "normal",
+            "title": "Normal 5",
+            "isCompleted": false,
+            "isDeleted": false
+          },
+          {
+            "id": "n6",
+            "type": "normal",
+            "title": "Normal 6",
+            "isCompleted": false,
+            "isDeleted": false
+          },
+          {
+            "id": "n7",
+            "type": "normal",
+            "title": "Normal 7",
+            "isCompleted": false,
+            "isDeleted": false
+          },
+          {
+            "id": "n8",
+            "type": "normal",
+            "title": "Normal 8",
+            "isCompleted": false,
+            "isDeleted": false
+          }
+        ],
+        "boards": [
+          {
+            "id": "B",
+            "name": "B",
+            "status": "active",
+            "boardSize": 3,
+            "timeframe": "weekly",
+            "startDate": "2026-10-05T00:00:00",
+            "endDate": "2026-10-11T23:59:59.999",
+            "centerSquareType": "none",
+            "isDeleted": false
+          }
+        ],
+        "boardTasks": [
+          {
+            "id": "B-D",
+            "boardId": "B",
+            "taskId": "e997ab6e-3a9b-5094-a083-f91a02526b5a",
+            "row": 0,
+            "col": 0,
+            "isDeleted": false
+          },
+          {
+            "id": "B-n1",
+            "boardId": "B",
+            "taskId": "n1",
+            "row": 0,
+            "col": 1,
+            "isDeleted": false
+          },
+          {
+            "id": "B-n2",
+            "boardId": "B",
+            "taskId": "n2",
+            "row": 0,
+            "col": 2,
+            "isDeleted": false
+          },
+          {
+            "id": "B-n3",
+            "boardId": "B",
+            "taskId": "n3",
+            "row": 1,
+            "col": 0,
+            "isDeleted": false
+          },
+          {
+            "id": "B-n4",
+            "boardId": "B",
+            "taskId": "n4",
+            "row": 1,
+            "col": 1,
+            "isDeleted": false
+          },
+          {
+            "id": "B-n5",
+            "boardId": "B",
+            "taskId": "n5",
+            "row": 1,
+            "col": 2,
+            "isDeleted": false
+          },
+          {
+            "id": "B-n6",
+            "boardId": "B",
+            "taskId": "n6",
+            "row": 2,
+            "col": 0,
+            "isDeleted": false
+          },
+          {
+            "id": "B-n7",
+            "boardId": "B",
+            "taskId": "n7",
+            "row": 2,
+            "col": 1,
+            "isDeleted": false
+          },
+          {
+            "id": "B-n8",
+            "boardId": "B",
+            "taskId": "n8",
+            "row": 2,
+            "col": 2,
+            "isDeleted": false
+          }
+        ],
+        "compoundChildren": [
+          {
+            "compoundTaskId": "S",
+            "childTaskId": "c1",
+            "isDeleted": false
+          },
+          {
+            "compoundTaskId": "S",
+            "childTaskId": "n0",
+            "isDeleted": false
+          },
+          {
+            "compoundTaskId": "e997ab6e-3a9b-5094-a083-f91a02526b5a",
+            "childTaskId": "43bf3680-3cf7-5f7c-bff2-20466a71b9a4",
+            "isDeleted": false
+          },
+          {
+            "compoundTaskId": "e997ab6e-3a9b-5094-a083-f91a02526b5a",
+            "childTaskId": "n0",
+            "isDeleted": false
+          }
+        ],
+        "events": [
+          {
+            "taskId": "c1",
+            "kind": "increment",
+            "delta": 2,
+            "occurredAt": "2026-10-06T10:00:00.000Z",
+            "isDeleted": false
+          }
+        ]
+      },
+      "expected": {
+        "repoints": [
+          {
+            "boardId": "B",
+            "boardTaskId": "B-D",
+            "fromTaskId": "e997ab6e-3a9b-5094-a083-f91a02526b5a",
+            "toTaskId": "S",
+            "sealed": false,
+            "childTargets": [
+              {
+                "childId": "c1",
+                "target": 2
+              }
+            ],
+            "titleOverride": "Custom comp"
+          }
+        ],
+        "strips": [],
+        "orphanTombstones": [],
+        "rekey": {
+          "e997ab6e-3a9b-5094-a083-f91a02526b5a": "S",
+          "43bf3680-3cf7-5f7c-bff2-20466a71b9a4": "c1"
+        },
+        "touchedBoardIds": [
+          "B"
+        ],
+        "outcomes": [
+          {
+            "boardId": "B",
+            "outcome": "repointed",
+            "reason": null,
+            "sealedSnapshotDrift": false
+          }
+        ]
+      }
+    },
+    {
+      "name": "4b: a derived part whose frozen goal equals the source child's own goal needs no childTargets entry",
+      "ws": {
+        "tasks": [
+          {
+            "id": "c1",
+            "type": "counting",
+            "title": "Read 8 pages",
+            "isCompleted": false,
+            "isDeleted": false,
+            "action": "Read",
+            "unit": "pages",
+            "maxCount": 8
+          },
+          {
+            "id": "S",
+            "type": "compound",
+            "title": "Compound S",
+            "isCompleted": false,
+            "isDeleted": false,
+            "operator": "AND"
+          },
+          {
+            "id": "e997ab6e-3a9b-5094-a083-f91a02526b5a",
+            "type": "compound",
+            "title": "Compound S",
+            "isCompleted": false,
+            "isDeleted": false,
+            "operator": "AND",
+            "startDate": "2026-10-05T00:00:00",
+            "endDate": "2026-10-11T23:59:59.999",
+            "timeframe": "weekly",
+            "createdInWizard": true
+          },
+          {
+            "id": "43bf3680-3cf7-5f7c-bff2-20466a71b9a4",
+            "type": "counting",
+            "title": "Read 8 pages",
+            "isCompleted": false,
+            "isDeleted": false,
+            "action": "Read",
+            "unit": "pages",
+            "maxCount": 8,
+            "sharedCounterId": "c1",
+            "startDate": "2026-10-05T00:00:00",
+            "endDate": "2026-10-11T23:59:59.999",
+            "timeframe": "weekly",
+            "createdInWizard": true
+          },
+          {
+            "id": "n0",
+            "type": "normal",
+            "title": "Normal 0",
+            "isCompleted": false,
+            "isDeleted": false
+          },
+          {
+            "id": "n1",
+            "type": "normal",
+            "title": "Normal 1",
+            "isCompleted": false,
+            "isDeleted": false
+          },
+          {
+            "id": "n2",
+            "type": "normal",
+            "title": "Normal 2",
+            "isCompleted": false,
+            "isDeleted": false
+          },
+          {
+            "id": "n3",
+            "type": "normal",
+            "title": "Normal 3",
+            "isCompleted": false,
+            "isDeleted": false
+          },
+          {
+            "id": "n4",
+            "type": "normal",
+            "title": "Normal 4",
+            "isCompleted": false,
+            "isDeleted": false
+          },
+          {
+            "id": "n5",
+            "type": "normal",
+            "title": "Normal 5",
+            "isCompleted": false,
+            "isDeleted": false
+          },
+          {
+            "id": "n6",
+            "type": "normal",
+            "title": "Normal 6",
+            "isCompleted": false,
+            "isDeleted": false
+          },
+          {
+            "id": "n7",
+            "type": "normal",
+            "title": "Normal 7",
+            "isCompleted": false,
+            "isDeleted": false
+          },
+          {
+            "id": "n8",
+            "type": "normal",
+            "title": "Normal 8",
+            "isCompleted": false,
+            "isDeleted": false
+          }
+        ],
+        "boards": [
+          {
+            "id": "B",
+            "name": "B",
+            "status": "active",
+            "boardSize": 3,
+            "timeframe": "weekly",
+            "startDate": "2026-10-05T00:00:00",
+            "endDate": "2026-10-11T23:59:59.999",
+            "centerSquareType": "none",
+            "isDeleted": false
+          }
+        ],
+        "boardTasks": [
+          {
+            "id": "B-D",
+            "boardId": "B",
+            "taskId": "e997ab6e-3a9b-5094-a083-f91a02526b5a",
+            "row": 0,
+            "col": 0,
+            "isDeleted": false
+          },
+          {
+            "id": "B-n1",
+            "boardId": "B",
+            "taskId": "n1",
+            "row": 0,
+            "col": 1,
+            "isDeleted": false
+          },
+          {
+            "id": "B-n2",
+            "boardId": "B",
+            "taskId": "n2",
+            "row": 0,
+            "col": 2,
+            "isDeleted": false
+          },
+          {
+            "id": "B-n3",
+            "boardId": "B",
+            "taskId": "n3",
+            "row": 1,
+            "col": 0,
+            "isDeleted": false
+          },
+          {
+            "id": "B-n4",
+            "boardId": "B",
+            "taskId": "n4",
+            "row": 1,
+            "col": 1,
+            "isDeleted": false
+          },
+          {
+            "id": "B-n5",
+            "boardId": "B",
+            "taskId": "n5",
+            "row": 1,
+            "col": 2,
+            "isDeleted": false
+          },
+          {
+            "id": "B-n6",
+            "boardId": "B",
+            "taskId": "n6",
+            "row": 2,
+            "col": 0,
+            "isDeleted": false
+          },
+          {
+            "id": "B-n7",
+            "boardId": "B",
+            "taskId": "n7",
+            "row": 2,
+            "col": 1,
+            "isDeleted": false
+          },
+          {
+            "id": "B-n8",
+            "boardId": "B",
+            "taskId": "n8",
+            "row": 2,
+            "col": 2,
+            "isDeleted": false
+          }
+        ],
+        "compoundChildren": [
+          {
+            "compoundTaskId": "S",
+            "childTaskId": "c1",
+            "isDeleted": false
+          },
+          {
+            "compoundTaskId": "S",
+            "childTaskId": "n0",
+            "isDeleted": false
+          },
+          {
+            "compoundTaskId": "e997ab6e-3a9b-5094-a083-f91a02526b5a",
+            "childTaskId": "43bf3680-3cf7-5f7c-bff2-20466a71b9a4",
+            "isDeleted": false
+          },
+          {
+            "compoundTaskId": "e997ab6e-3a9b-5094-a083-f91a02526b5a",
+            "childTaskId": "n0",
+            "isDeleted": false
+          }
+        ],
+        "events": [
+          {
+            "taskId": "c1",
+            "kind": "increment",
+            "delta": 8,
+            "occurredAt": "2026-10-06T10:00:00.000Z",
+            "isDeleted": false
+          }
+        ]
+      },
+      "expected": {
+        "repoints": [
+          {
+            "boardId": "B",
+            "boardTaskId": "B-D",
+            "fromTaskId": "e997ab6e-3a9b-5094-a083-f91a02526b5a",
+            "toTaskId": "S",
+            "sealed": false
+          }
+        ],
+        "strips": [],
+        "orphanTombstones": [],
+        "rekey": {
+          "e997ab6e-3a9b-5094-a083-f91a02526b5a": "S",
+          "43bf3680-3cf7-5f7c-bff2-20466a71b9a4": "c1"
+        },
+        "touchedBoardIds": [
+          "B"
+        ],
+        "outcomes": [
+          {
+            "boardId": "B",
+            "outcome": "repointed",
+            "reason": null,
+            "sealedSnapshotDrift": false
+          }
+        ]
+      }
+    },
+    {
+      "name": "4b: refused — the derived compound's children do not map forward from any source (extra child) → marks stripped",
+      "ws": {
+        "tasks": [
+          {
+            "id": "c1",
+            "type": "counting",
+            "title": "Read 8 pages",
+            "isCompleted": false,
+            "isDeleted": false,
+            "action": "Read",
+            "unit": "pages",
+            "maxCount": 8
+          },
+          {
+            "id": "S",
+            "type": "compound",
+            "title": "Compound S",
+            "isCompleted": false,
+            "isDeleted": false,
+            "operator": "AND"
+          },
+          {
+            "id": "e997ab6e-3a9b-5094-a083-f91a02526b5a",
+            "type": "compound",
+            "title": "Compound S",
+            "isCompleted": false,
+            "isDeleted": false,
+            "operator": "AND",
+            "startDate": "2026-10-05T00:00:00",
+            "endDate": "2026-10-11T23:59:59.999",
+            "timeframe": "weekly",
+            "createdInWizard": true
+          },
+          {
+            "id": "43bf3680-3cf7-5f7c-bff2-20466a71b9a4",
+            "type": "counting",
+            "title": "Read 2 pages",
+            "isCompleted": false,
+            "isDeleted": false,
+            "action": "Read",
+            "unit": "pages",
+            "maxCount": 2,
+            "sharedCounterId": "c1",
+            "startDate": "2026-10-05T00:00:00",
+            "endDate": "2026-10-11T23:59:59.999",
+            "timeframe": "weekly",
+            "createdInWizard": true
+          },
+          {
+            "id": "n0",
+            "type": "normal",
+            "title": "Normal 0",
+            "isCompleted": false,
+            "isDeleted": false
+          },
+          {
+            "id": "n1",
+            "type": "normal",
+            "title": "Normal 1",
+            "isCompleted": false,
+            "isDeleted": false
+          },
+          {
+            "id": "n2",
+            "type": "normal",
+            "title": "Normal 2",
+            "isCompleted": false,
+            "isDeleted": false
+          },
+          {
+            "id": "n3",
+            "type": "normal",
+            "title": "Normal 3",
+            "isCompleted": false,
+            "isDeleted": false
+          },
+          {
+            "id": "n4",
+            "type": "normal",
+            "title": "Normal 4",
+            "isCompleted": false,
+            "isDeleted": false
+          },
+          {
+            "id": "n5",
+            "type": "normal",
+            "title": "Normal 5",
+            "isCompleted": false,
+            "isDeleted": false
+          },
+          {
+            "id": "n6",
+            "type": "normal",
+            "title": "Normal 6",
+            "isCompleted": false,
+            "isDeleted": false
+          },
+          {
+            "id": "n7",
+            "type": "normal",
+            "title": "Normal 7",
+            "isCompleted": false,
+            "isDeleted": false
+          },
+          {
+            "id": "n8",
+            "type": "normal",
+            "title": "Normal 8",
+            "isCompleted": false,
+            "isDeleted": false
+          }
+        ],
+        "boards": [
+          {
+            "id": "B",
+            "name": "B",
+            "status": "active",
+            "boardSize": 3,
+            "timeframe": "weekly",
+            "startDate": "2026-10-05T00:00:00",
+            "endDate": "2026-10-11T23:59:59.999",
+            "centerSquareType": "none",
+            "isDeleted": false
+          }
+        ],
+        "boardTasks": [
+          {
+            "id": "B-D",
+            "boardId": "B",
+            "taskId": "e997ab6e-3a9b-5094-a083-f91a02526b5a",
+            "row": 0,
+            "col": 0,
+            "isDeleted": false
+          },
+          {
+            "id": "B-n1",
+            "boardId": "B",
+            "taskId": "n1",
+            "row": 0,
+            "col": 1,
+            "isDeleted": false
+          },
+          {
+            "id": "B-n2",
+            "boardId": "B",
+            "taskId": "n2",
+            "row": 0,
+            "col": 2,
+            "isDeleted": false
+          },
+          {
+            "id": "B-n3",
+            "boardId": "B",
+            "taskId": "n3",
+            "row": 1,
+            "col": 0,
+            "isDeleted": false
+          },
+          {
+            "id": "B-n4",
+            "boardId": "B",
+            "taskId": "n4",
+            "row": 1,
+            "col": 1,
+            "isDeleted": false
+          },
+          {
+            "id": "B-n5",
+            "boardId": "B",
+            "taskId": "n5",
+            "row": 1,
+            "col": 2,
+            "isDeleted": false
+          },
+          {
+            "id": "B-n6",
+            "boardId": "B",
+            "taskId": "n6",
+            "row": 2,
+            "col": 0,
+            "isDeleted": false
+          },
+          {
+            "id": "B-n7",
+            "boardId": "B",
+            "taskId": "n7",
+            "row": 2,
+            "col": 1,
+            "isDeleted": false
+          },
+          {
+            "id": "B-n8",
+            "boardId": "B",
+            "taskId": "n8",
+            "row": 2,
+            "col": 2,
+            "isDeleted": false
+          }
+        ],
+        "compoundChildren": [
+          {
+            "compoundTaskId": "S",
+            "childTaskId": "c1",
+            "isDeleted": false
+          },
+          {
+            "compoundTaskId": "S",
+            "childTaskId": "n0",
+            "isDeleted": false
+          },
+          {
+            "compoundTaskId": "e997ab6e-3a9b-5094-a083-f91a02526b5a",
+            "childTaskId": "43bf3680-3cf7-5f7c-bff2-20466a71b9a4",
+            "isDeleted": false
+          },
+          {
+            "compoundTaskId": "e997ab6e-3a9b-5094-a083-f91a02526b5a",
+            "childTaskId": "n0",
+            "isDeleted": false
+          },
+          {
+            "compoundTaskId": "e997ab6e-3a9b-5094-a083-f91a02526b5a",
+            "childTaskId": "n1",
+            "isDeleted": false
+          }
+        ],
+        "events": [
+          {
+            "taskId": "c1",
+            "kind": "increment",
+            "delta": 2,
+            "occurredAt": "2026-10-06T10:00:00.000Z",
+            "isDeleted": false
+          }
+        ]
+      },
+      "expected": {
+        "repoints": [],
+        "strips": [
+          "e997ab6e-3a9b-5094-a083-f91a02526b5a"
+        ],
+        "orphanTombstones": [],
+        "rekey": {},
+        "touchedBoardIds": [],
+        "outcomes": [
+          {
+            "boardId": "B",
+            "outcome": "refused",
+            "reason": "compoundMismatch",
+            "sealedSnapshotDrift": false
+          }
+        ]
+      }
+    },
+    {
+      "name": "4b: refused — the source compound is already placed on the board → duplicateRoot, marks stripped",
+      "ws": {
+        "tasks": [
+          {
+            "id": "c1",
+            "type": "counting",
+            "title": "Read 8 pages",
+            "isCompleted": false,
+            "isDeleted": false,
+            "action": "Read",
+            "unit": "pages",
+            "maxCount": 8
+          },
+          {
+            "id": "S",
+            "type": "compound",
+            "title": "Compound S",
+            "isCompleted": false,
+            "isDeleted": false,
+            "operator": "AND"
+          },
+          {
+            "id": "e997ab6e-3a9b-5094-a083-f91a02526b5a",
+            "type": "compound",
+            "title": "Compound S",
+            "isCompleted": false,
+            "isDeleted": false,
+            "operator": "AND",
+            "startDate": "2026-10-05T00:00:00",
+            "endDate": "2026-10-11T23:59:59.999",
+            "timeframe": "weekly",
+            "createdInWizard": true
+          },
+          {
+            "id": "43bf3680-3cf7-5f7c-bff2-20466a71b9a4",
+            "type": "counting",
+            "title": "Read 2 pages",
+            "isCompleted": false,
+            "isDeleted": false,
+            "action": "Read",
+            "unit": "pages",
+            "maxCount": 2,
+            "sharedCounterId": "c1",
+            "startDate": "2026-10-05T00:00:00",
+            "endDate": "2026-10-11T23:59:59.999",
+            "timeframe": "weekly",
+            "createdInWizard": true
+          },
+          {
+            "id": "n0",
+            "type": "normal",
+            "title": "Normal 0",
+            "isCompleted": false,
+            "isDeleted": false
+          },
+          {
+            "id": "n1",
+            "type": "normal",
+            "title": "Normal 1",
+            "isCompleted": false,
+            "isDeleted": false
+          },
+          {
+            "id": "n2",
+            "type": "normal",
+            "title": "Normal 2",
+            "isCompleted": false,
+            "isDeleted": false
+          },
+          {
+            "id": "n3",
+            "type": "normal",
+            "title": "Normal 3",
+            "isCompleted": false,
+            "isDeleted": false
+          },
+          {
+            "id": "n4",
+            "type": "normal",
+            "title": "Normal 4",
+            "isCompleted": false,
+            "isDeleted": false
+          },
+          {
+            "id": "n5",
+            "type": "normal",
+            "title": "Normal 5",
+            "isCompleted": false,
+            "isDeleted": false
+          },
+          {
+            "id": "n6",
+            "type": "normal",
+            "title": "Normal 6",
+            "isCompleted": false,
+            "isDeleted": false
+          },
+          {
+            "id": "n7",
+            "type": "normal",
+            "title": "Normal 7",
+            "isCompleted": false,
+            "isDeleted": false
+          },
+          {
+            "id": "n8",
+            "type": "normal",
+            "title": "Normal 8",
+            "isCompleted": false,
+            "isDeleted": false
+          }
+        ],
+        "boards": [
+          {
+            "id": "B",
+            "name": "B",
+            "status": "active",
+            "boardSize": 3,
+            "timeframe": "weekly",
+            "startDate": "2026-10-05T00:00:00",
+            "endDate": "2026-10-11T23:59:59.999",
+            "centerSquareType": "none",
+            "isDeleted": false
+          }
+        ],
+        "boardTasks": [
+          {
+            "id": "B-D",
+            "boardId": "B",
+            "taskId": "e997ab6e-3a9b-5094-a083-f91a02526b5a",
+            "row": 0,
+            "col": 0,
+            "isDeleted": false
+          },
+          {
+            "id": "B-S",
+            "boardId": "B",
+            "taskId": "S",
+            "row": 0,
+            "col": 1,
+            "isDeleted": false
+          },
+          {
+            "id": "B-n2",
+            "boardId": "B",
+            "taskId": "n2",
+            "row": 0,
+            "col": 2,
+            "isDeleted": false
+          },
+          {
+            "id": "B-n3",
+            "boardId": "B",
+            "taskId": "n3",
+            "row": 1,
+            "col": 0,
+            "isDeleted": false
+          },
+          {
+            "id": "B-n4",
+            "boardId": "B",
+            "taskId": "n4",
+            "row": 1,
+            "col": 1,
+            "isDeleted": false
+          },
+          {
+            "id": "B-n5",
+            "boardId": "B",
+            "taskId": "n5",
+            "row": 1,
+            "col": 2,
+            "isDeleted": false
+          },
+          {
+            "id": "B-n6",
+            "boardId": "B",
+            "taskId": "n6",
+            "row": 2,
+            "col": 0,
+            "isDeleted": false
+          },
+          {
+            "id": "B-n7",
+            "boardId": "B",
+            "taskId": "n7",
+            "row": 2,
+            "col": 1,
+            "isDeleted": false
+          },
+          {
+            "id": "B-n8",
+            "boardId": "B",
+            "taskId": "n8",
+            "row": 2,
+            "col": 2,
+            "isDeleted": false
+          }
+        ],
+        "compoundChildren": [
+          {
+            "compoundTaskId": "S",
+            "childTaskId": "c1",
+            "isDeleted": false
+          },
+          {
+            "compoundTaskId": "S",
+            "childTaskId": "n0",
+            "isDeleted": false
+          },
+          {
+            "compoundTaskId": "e997ab6e-3a9b-5094-a083-f91a02526b5a",
+            "childTaskId": "43bf3680-3cf7-5f7c-bff2-20466a71b9a4",
+            "isDeleted": false
+          },
+          {
+            "compoundTaskId": "e997ab6e-3a9b-5094-a083-f91a02526b5a",
+            "childTaskId": "n0",
+            "isDeleted": false
+          }
+        ],
+        "events": [
+          {
+            "taskId": "c1",
+            "kind": "increment",
+            "delta": 2,
+            "occurredAt": "2026-10-06T10:00:00.000Z",
+            "isDeleted": false
+          }
+        ]
+      },
+      "expected": {
+        "repoints": [],
+        "strips": [
+          "e997ab6e-3a9b-5094-a083-f91a02526b5a"
+        ],
+        "orphanTombstones": [],
+        "rekey": {},
+        "touchedBoardIds": [],
+        "outcomes": [
+          {
+            "boardId": "B",
+            "outcome": "refused",
+            "reason": "duplicateRoot",
+            "sealedSnapshotDrift": false
+          }
+        ]
+      }
+    },
+    {
+      "name": "4b: an unplaced derived compound is an orphan; its derived part (child of the still-live compound) is not, this run",
+      "ws": {
+        "tasks": [
+          {
+            "id": "c1",
+            "type": "counting",
+            "title": "Read 8 pages",
+            "isCompleted": false,
+            "isDeleted": false,
+            "action": "Read",
+            "unit": "pages",
+            "maxCount": 8
+          },
+          {
+            "id": "S",
+            "type": "compound",
+            "title": "Compound S",
+            "isCompleted": false,
+            "isDeleted": false,
+            "operator": "AND"
+          },
+          {
+            "id": "e997ab6e-3a9b-5094-a083-f91a02526b5a",
+            "type": "compound",
+            "title": "Compound S",
+            "isCompleted": false,
+            "isDeleted": false,
+            "operator": "AND",
+            "startDate": "2026-10-05T00:00:00",
+            "endDate": "2026-10-11T23:59:59.999",
+            "timeframe": "weekly",
+            "createdInWizard": true
+          },
+          {
+            "id": "43bf3680-3cf7-5f7c-bff2-20466a71b9a4",
+            "type": "counting",
+            "title": "Read 2 pages",
+            "isCompleted": false,
+            "isDeleted": false,
+            "action": "Read",
+            "unit": "pages",
+            "maxCount": 2,
+            "sharedCounterId": "c1",
+            "startDate": "2026-10-05T00:00:00",
+            "endDate": "2026-10-11T23:59:59.999",
+            "timeframe": "weekly",
+            "createdInWizard": true
+          },
+          {
+            "id": "n0",
+            "type": "normal",
+            "title": "Normal 0",
+            "isCompleted": false,
+            "isDeleted": false
+          },
+          {
+            "id": "n1",
+            "type": "normal",
+            "title": "Normal 1",
+            "isCompleted": false,
+            "isDeleted": false
+          },
+          {
+            "id": "n2",
+            "type": "normal",
+            "title": "Normal 2",
+            "isCompleted": false,
+            "isDeleted": false
+          },
+          {
+            "id": "n3",
+            "type": "normal",
+            "title": "Normal 3",
+            "isCompleted": false,
+            "isDeleted": false
+          },
+          {
+            "id": "n4",
+            "type": "normal",
+            "title": "Normal 4",
+            "isCompleted": false,
+            "isDeleted": false
+          },
+          {
+            "id": "n5",
+            "type": "normal",
+            "title": "Normal 5",
+            "isCompleted": false,
+            "isDeleted": false
+          },
+          {
+            "id": "n6",
+            "type": "normal",
+            "title": "Normal 6",
+            "isCompleted": false,
+            "isDeleted": false
+          },
+          {
+            "id": "n7",
+            "type": "normal",
+            "title": "Normal 7",
+            "isCompleted": false,
+            "isDeleted": false
+          },
+          {
+            "id": "n8",
+            "type": "normal",
+            "title": "Normal 8",
+            "isCompleted": false,
+            "isDeleted": false
+          }
+        ],
+        "boards": [
+          {
+            "id": "B",
+            "name": "B",
+            "status": "active",
+            "boardSize": 3,
+            "timeframe": "weekly",
+            "startDate": "2026-10-05T00:00:00",
+            "endDate": "2026-10-11T23:59:59.999",
+            "centerSquareType": "none",
+            "isDeleted": false
+          }
+        ],
+        "boardTasks": [
+          {
+            "id": "B-n0",
+            "boardId": "B",
+            "taskId": "n0",
+            "row": 0,
+            "col": 0,
+            "isDeleted": false
+          },
+          {
+            "id": "B-n1",
+            "boardId": "B",
+            "taskId": "n1",
+            "row": 0,
+            "col": 1,
+            "isDeleted": false
+          },
+          {
+            "id": "B-n2",
+            "boardId": "B",
+            "taskId": "n2",
+            "row": 0,
+            "col": 2,
+            "isDeleted": false
+          },
+          {
+            "id": "B-n3",
+            "boardId": "B",
+            "taskId": "n3",
+            "row": 1,
+            "col": 0,
+            "isDeleted": false
+          },
+          {
+            "id": "B-n4",
+            "boardId": "B",
+            "taskId": "n4",
+            "row": 1,
+            "col": 1,
+            "isDeleted": false
+          },
+          {
+            "id": "B-n5",
+            "boardId": "B",
+            "taskId": "n5",
+            "row": 1,
+            "col": 2,
+            "isDeleted": false
+          },
+          {
+            "id": "B-n6",
+            "boardId": "B",
+            "taskId": "n6",
+            "row": 2,
+            "col": 0,
+            "isDeleted": false
+          },
+          {
+            "id": "B-n7",
+            "boardId": "B",
+            "taskId": "n7",
+            "row": 2,
+            "col": 1,
+            "isDeleted": false
+          },
+          {
+            "id": "B-n8",
+            "boardId": "B",
+            "taskId": "n8",
+            "row": 2,
+            "col": 2,
+            "isDeleted": false
+          }
+        ],
+        "compoundChildren": [
+          {
+            "compoundTaskId": "S",
+            "childTaskId": "c1",
+            "isDeleted": false
+          },
+          {
+            "compoundTaskId": "S",
+            "childTaskId": "n0",
+            "isDeleted": false
+          },
+          {
+            "compoundTaskId": "e997ab6e-3a9b-5094-a083-f91a02526b5a",
+            "childTaskId": "43bf3680-3cf7-5f7c-bff2-20466a71b9a4",
+            "isDeleted": false
+          },
+          {
+            "compoundTaskId": "e997ab6e-3a9b-5094-a083-f91a02526b5a",
+            "childTaskId": "n0",
+            "isDeleted": false
+          }
+        ],
+        "events": []
+      },
+      "expected": {
+        "repoints": [],
+        "strips": [],
+        "orphanTombstones": [
+          "e997ab6e-3a9b-5094-a083-f91a02526b5a"
+        ],
+        "rekey": {},
+        "touchedBoardIds": [],
+        "outcomes": []
+      }
+    },
+    {
+      "name": "4b: the mint board may differ from the placing board (a deleted board A minted it; B places it)",
+      "ws": {
+        "tasks": [
+          {
+            "id": "c1",
+            "type": "counting",
+            "title": "Read 8 pages",
+            "isCompleted": false,
+            "isDeleted": false,
+            "action": "Read",
+            "unit": "pages",
+            "maxCount": 8
+          },
+          {
+            "id": "S",
+            "type": "compound",
+            "title": "Compound S",
+            "isCompleted": false,
+            "isDeleted": false,
+            "operator": "AND"
+          },
+          {
+            "id": "0df76a22-e7ad-582b-864b-58b83b8a613e",
+            "type": "compound",
+            "title": "Compound S",
+            "isCompleted": false,
+            "isDeleted": false,
+            "operator": "AND",
+            "startDate": "2026-10-05T00:00:00",
+            "endDate": "2026-10-11T23:59:59.999",
+            "timeframe": "weekly",
+            "createdInWizard": true
+          },
+          {
+            "id": "7e2298a2-57a6-5ba7-a2bf-8951953ad180",
+            "type": "counting",
+            "title": "Read 2 pages",
+            "isCompleted": false,
+            "isDeleted": false,
+            "action": "Read",
+            "unit": "pages",
+            "maxCount": 2,
+            "sharedCounterId": "c1",
+            "startDate": "2026-10-05T00:00:00",
+            "endDate": "2026-10-11T23:59:59.999",
+            "timeframe": "weekly",
+            "createdInWizard": true
+          },
+          {
+            "id": "n0",
+            "type": "normal",
+            "title": "Normal 0",
+            "isCompleted": false,
+            "isDeleted": false
+          },
+          {
+            "id": "n1",
+            "type": "normal",
+            "title": "Normal 1",
+            "isCompleted": false,
+            "isDeleted": false
+          },
+          {
+            "id": "n2",
+            "type": "normal",
+            "title": "Normal 2",
+            "isCompleted": false,
+            "isDeleted": false
+          },
+          {
+            "id": "n3",
+            "type": "normal",
+            "title": "Normal 3",
+            "isCompleted": false,
+            "isDeleted": false
+          },
+          {
+            "id": "n4",
+            "type": "normal",
+            "title": "Normal 4",
+            "isCompleted": false,
+            "isDeleted": false
+          },
+          {
+            "id": "n5",
+            "type": "normal",
+            "title": "Normal 5",
+            "isCompleted": false,
+            "isDeleted": false
+          },
+          {
+            "id": "n6",
+            "type": "normal",
+            "title": "Normal 6",
+            "isCompleted": false,
+            "isDeleted": false
+          },
+          {
+            "id": "n7",
+            "type": "normal",
+            "title": "Normal 7",
+            "isCompleted": false,
+            "isDeleted": false
+          },
+          {
+            "id": "n8",
+            "type": "normal",
+            "title": "Normal 8",
+            "isCompleted": false,
+            "isDeleted": false
+          }
+        ],
+        "boards": [
+          {
+            "id": "A",
+            "name": "A",
+            "status": "active",
+            "boardSize": 3,
+            "timeframe": "weekly",
+            "startDate": "2026-10-05T00:00:00",
+            "endDate": "2026-10-11T23:59:59.999",
+            "centerSquareType": "none",
+            "isDeleted": true
+          },
+          {
+            "id": "B",
+            "name": "B",
+            "status": "active",
+            "boardSize": 3,
+            "timeframe": "weekly",
+            "startDate": "2026-10-05T00:00:00",
+            "endDate": "2026-10-11T23:59:59.999",
+            "centerSquareType": "none",
+            "isDeleted": false
+          }
+        ],
+        "boardTasks": [
+          {
+            "id": "B-D",
+            "boardId": "B",
+            "taskId": "0df76a22-e7ad-582b-864b-58b83b8a613e",
+            "row": 0,
+            "col": 0,
+            "isDeleted": false
+          },
+          {
+            "id": "B-n1",
+            "boardId": "B",
+            "taskId": "n1",
+            "row": 0,
+            "col": 1,
+            "isDeleted": false
+          },
+          {
+            "id": "B-n2",
+            "boardId": "B",
+            "taskId": "n2",
+            "row": 0,
+            "col": 2,
+            "isDeleted": false
+          },
+          {
+            "id": "B-n3",
+            "boardId": "B",
+            "taskId": "n3",
+            "row": 1,
+            "col": 0,
+            "isDeleted": false
+          },
+          {
+            "id": "B-n4",
+            "boardId": "B",
+            "taskId": "n4",
+            "row": 1,
+            "col": 1,
+            "isDeleted": false
+          },
+          {
+            "id": "B-n5",
+            "boardId": "B",
+            "taskId": "n5",
+            "row": 1,
+            "col": 2,
+            "isDeleted": false
+          },
+          {
+            "id": "B-n6",
+            "boardId": "B",
+            "taskId": "n6",
+            "row": 2,
+            "col": 0,
+            "isDeleted": false
+          },
+          {
+            "id": "B-n7",
+            "boardId": "B",
+            "taskId": "n7",
+            "row": 2,
+            "col": 1,
+            "isDeleted": false
+          },
+          {
+            "id": "B-n8",
+            "boardId": "B",
+            "taskId": "n8",
+            "row": 2,
+            "col": 2,
+            "isDeleted": false
+          }
+        ],
+        "compoundChildren": [
+          {
+            "compoundTaskId": "S",
+            "childTaskId": "c1",
+            "isDeleted": false
+          },
+          {
+            "compoundTaskId": "S",
+            "childTaskId": "n0",
+            "isDeleted": false
+          },
+          {
+            "compoundTaskId": "0df76a22-e7ad-582b-864b-58b83b8a613e",
+            "childTaskId": "7e2298a2-57a6-5ba7-a2bf-8951953ad180",
+            "isDeleted": false
+          },
+          {
+            "compoundTaskId": "0df76a22-e7ad-582b-864b-58b83b8a613e",
+            "childTaskId": "n0",
+            "isDeleted": false
+          }
+        ],
+        "events": [
+          {
+            "taskId": "c1",
+            "kind": "increment",
+            "delta": 2,
+            "occurredAt": "2026-10-06T10:00:00.000Z",
+            "isDeleted": false
+          }
+        ]
+      },
+      "expected": {
+        "repoints": [
+          {
+            "boardId": "B",
+            "boardTaskId": "B-D",
+            "fromTaskId": "0df76a22-e7ad-582b-864b-58b83b8a613e",
+            "toTaskId": "S",
+            "sealed": false,
+            "childTargets": [
+              {
+                "childId": "c1",
+                "target": 2
+              }
+            ]
+          }
+        ],
+        "strips": [],
+        "orphanTombstones": [],
+        "rekey": {
+          "0df76a22-e7ad-582b-864b-58b83b8a613e": "S",
+          "7e2298a2-57a6-5ba7-a2bf-8951953ad180": "c1"
+        },
+        "touchedBoardIds": [
+          "B"
+        ],
+        "outcomes": [
+          {
+            "boardId": "B",
+            "outcome": "repointed",
+            "reason": null,
+            "sealedSnapshotDrift": false
+          }
+        ]
+      }
+    },
+    {
+      "name": "4b: a slice-3a childTargets entry already keyed by the source child wins over the part's frozen goal",
+      "ws": {
+        "tasks": [
+          {
+            "id": "c1",
+            "type": "counting",
+            "title": "Read 8 pages",
+            "isCompleted": false,
+            "isDeleted": false,
+            "action": "Read",
+            "unit": "pages",
+            "maxCount": 8
+          },
+          {
+            "id": "S",
+            "type": "compound",
+            "title": "Compound S",
+            "isCompleted": false,
+            "isDeleted": false,
+            "operator": "AND"
+          },
+          {
+            "id": "e997ab6e-3a9b-5094-a083-f91a02526b5a",
+            "type": "compound",
+            "title": "Compound S",
+            "isCompleted": false,
+            "isDeleted": false,
+            "operator": "AND",
+            "startDate": "2026-10-05T00:00:00",
+            "endDate": "2026-10-11T23:59:59.999",
+            "timeframe": "weekly",
+            "createdInWizard": true
+          },
+          {
+            "id": "43bf3680-3cf7-5f7c-bff2-20466a71b9a4",
+            "type": "counting",
+            "title": "Read 2 pages",
+            "isCompleted": false,
+            "isDeleted": false,
+            "action": "Read",
+            "unit": "pages",
+            "maxCount": 2,
+            "sharedCounterId": "c1",
+            "startDate": "2026-10-05T00:00:00",
+            "endDate": "2026-10-11T23:59:59.999",
+            "timeframe": "weekly",
+            "createdInWizard": true
+          },
+          {
+            "id": "n0",
+            "type": "normal",
+            "title": "Normal 0",
+            "isCompleted": false,
+            "isDeleted": false
+          },
+          {
+            "id": "n1",
+            "type": "normal",
+            "title": "Normal 1",
+            "isCompleted": false,
+            "isDeleted": false
+          },
+          {
+            "id": "n2",
+            "type": "normal",
+            "title": "Normal 2",
+            "isCompleted": false,
+            "isDeleted": false
+          },
+          {
+            "id": "n3",
+            "type": "normal",
+            "title": "Normal 3",
+            "isCompleted": false,
+            "isDeleted": false
+          },
+          {
+            "id": "n4",
+            "type": "normal",
+            "title": "Normal 4",
+            "isCompleted": false,
+            "isDeleted": false
+          },
+          {
+            "id": "n5",
+            "type": "normal",
+            "title": "Normal 5",
+            "isCompleted": false,
+            "isDeleted": false
+          },
+          {
+            "id": "n6",
+            "type": "normal",
+            "title": "Normal 6",
+            "isCompleted": false,
+            "isDeleted": false
+          },
+          {
+            "id": "n7",
+            "type": "normal",
+            "title": "Normal 7",
+            "isCompleted": false,
+            "isDeleted": false
+          },
+          {
+            "id": "n8",
+            "type": "normal",
+            "title": "Normal 8",
+            "isCompleted": false,
+            "isDeleted": false
+          }
+        ],
+        "boards": [
+          {
+            "id": "B",
+            "name": "B",
+            "status": "active",
+            "boardSize": 3,
+            "timeframe": "weekly",
+            "startDate": "2026-10-05T00:00:00",
+            "endDate": "2026-10-11T23:59:59.999",
+            "centerSquareType": "none",
+            "isDeleted": false
+          }
+        ],
+        "boardTasks": [
+          {
+            "id": "B-D",
+            "boardId": "B",
+            "taskId": "e997ab6e-3a9b-5094-a083-f91a02526b5a",
+            "row": 0,
+            "col": 0,
+            "isDeleted": false,
+            "childTargets": [
+              {
+                "childId": "c1",
+                "target": 3
+              }
+            ]
+          },
+          {
+            "id": "B-n1",
+            "boardId": "B",
+            "taskId": "n1",
+            "row": 0,
+            "col": 1,
+            "isDeleted": false
+          },
+          {
+            "id": "B-n2",
+            "boardId": "B",
+            "taskId": "n2",
+            "row": 0,
+            "col": 2,
+            "isDeleted": false
+          },
+          {
+            "id": "B-n3",
+            "boardId": "B",
+            "taskId": "n3",
+            "row": 1,
+            "col": 0,
+            "isDeleted": false
+          },
+          {
+            "id": "B-n4",
+            "boardId": "B",
+            "taskId": "n4",
+            "row": 1,
+            "col": 1,
+            "isDeleted": false
+          },
+          {
+            "id": "B-n5",
+            "boardId": "B",
+            "taskId": "n5",
+            "row": 1,
+            "col": 2,
+            "isDeleted": false
+          },
+          {
+            "id": "B-n6",
+            "boardId": "B",
+            "taskId": "n6",
+            "row": 2,
+            "col": 0,
+            "isDeleted": false
+          },
+          {
+            "id": "B-n7",
+            "boardId": "B",
+            "taskId": "n7",
+            "row": 2,
+            "col": 1,
+            "isDeleted": false
+          },
+          {
+            "id": "B-n8",
+            "boardId": "B",
+            "taskId": "n8",
+            "row": 2,
+            "col": 2,
+            "isDeleted": false
+          }
+        ],
+        "compoundChildren": [
+          {
+            "compoundTaskId": "S",
+            "childTaskId": "c1",
+            "isDeleted": false
+          },
+          {
+            "compoundTaskId": "S",
+            "childTaskId": "n0",
+            "isDeleted": false
+          },
+          {
+            "compoundTaskId": "e997ab6e-3a9b-5094-a083-f91a02526b5a",
+            "childTaskId": "43bf3680-3cf7-5f7c-bff2-20466a71b9a4",
+            "isDeleted": false
+          },
+          {
+            "compoundTaskId": "e997ab6e-3a9b-5094-a083-f91a02526b5a",
+            "childTaskId": "n0",
+            "isDeleted": false
+          }
+        ],
+        "events": [
+          {
+            "taskId": "c1",
+            "kind": "increment",
+            "delta": 3,
+            "occurredAt": "2026-10-06T10:00:00.000Z",
+            "isDeleted": false
+          }
+        ]
+      },
+      "expected": {
+        "repoints": [
+          {
+            "boardId": "B",
+            "boardTaskId": "B-D",
+            "fromTaskId": "e997ab6e-3a9b-5094-a083-f91a02526b5a",
+            "toTaskId": "S",
+            "sealed": false,
+            "childTargets": [
+              {
+                "childId": "c1",
+                "target": 3
+              }
+            ]
+          }
+        ],
+        "strips": [],
+        "orphanTombstones": [],
+        "rekey": {
+          "e997ab6e-3a9b-5094-a083-f91a02526b5a": "S",
+          "43bf3680-3cf7-5f7c-bff2-20466a71b9a4": "c1"
+        },
+        "touchedBoardIds": [
+          "B"
+        ],
+        "outcomes": [
+          {
+            "boardId": "B",
+            "outcome": "repointed",
+            "reason": null,
+            "sealedSnapshotDrift": false
+          }
+        ]
       }
     }
   ],

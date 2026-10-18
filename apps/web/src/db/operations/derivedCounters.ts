@@ -1,7 +1,7 @@
 import type { Collection } from 'dexie';
 import {
+  isWindowStampedDerivedCompound,
   SyncOperationType,
-  TaskType,
   computeWindowBaseline,
   derivedTaskId,
   isWindowStampedDerived,
@@ -150,24 +150,6 @@ export async function refreshPulledDerivedBaseline(task: Task): Promise<boolean>
 }
 
 // ─── Deletion sweep (docs/BOARD_SOURCES.md §Member rules — *Deletion*) ────────
-
-/**
- * Is this STORED row one of our per-window derived COMPOUNDS?
- *
- * The compound twin of `isWindowStampedDerived` (which keys off the
- * shared-counter link a compound doesn't have): a window start plus the
- * wizard-born provenance flag on a compound row. A hand-made compound carries
- * neither, and a timeboxed one carries only the first — so the pair is what
- * identifies a row the planner re-targeted for exactly one window.
- *
- * @param t - The task row to test.
- * @returns True when the row is a per-window derived compound.
- */
-export function isWindowStampedDerivedCompound(
-  t: Pick<Task, 'type' | 'startDate' | 'createdInWizard'>,
-): boolean {
-  return t.type === TaskType.COMPOUND && !!t.startDate && t.createdInWizard === true;
-}
 
 /**
  * The live window-stamped derived counters that derive from `rootTaskId`.

@@ -1,6 +1,7 @@
 import { db } from '../internal';
 import {
   buildRepeatBoardTemplateInput,
+  isWindowStampedDerivedCompound,
   isWindowStampedDerived,
   resolveCountKind,
   SyncOperationType,
@@ -13,7 +14,6 @@ import {
 } from '@oybc/shared';
 import { generateUUID, currentTimestamp } from '../utils';
 import { addToSyncQueue } from './syncQueue';
-import { isWindowStampedDerivedCompound } from './derivedCounters';
 import { assertBoardMetadataWritable } from './boardLifecycle';
 
 /**
