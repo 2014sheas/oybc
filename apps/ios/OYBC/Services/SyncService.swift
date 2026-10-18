@@ -335,26 +335,15 @@ final class SyncService: ObservableObject {
         return result
     }
 
-    /// Pushes all pending sync queue items to Firestore.
-    ///
-    /// For each pending item:
-    /// 1. Marks it `inProgress` in the queue.
-    /// 2. Reads the remote Firestore document (if it exists) for conflict checking.
-    /// 3. Resolves conflicts using LWW.
-    /// 4. Writes to Firestore if local wins (or remote doesn't exist).
-    /// 5. Updates the local GRDB record if remote wins.
-    /// 6. Marks the queue item `completed` or `failed`.
+    /// Pushes all pending sync queue items to Firestore: marks each
+    /// `inProgress`, reads the remote doc, resolves LWW, writes if local wins
+    /// (or the remote is absent) or updates the local record if remote wins,
+    /// then marks it `completed` / `failed`. Guarded by `isSyncing` so a
+    /// debounced second push can't start mid-flight (mirrors the web loop);
+    /// `fullSync` owns the flag and calls `pushSyncCore` directly.
     ///
     /// - Parameter userId: The authenticated user's Firestore UID.
     /// - Returns: Push result summary.
-    /// Public push entry point — guarded by `isSyncing` so a debounced
-    /// second push can't start mid-flight. Mirrors the web sync loop's
-    /// guard. `fullSync` (which already owns `isSyncing`) calls
-    /// `pushSyncCore` directly to avoid double-locking the flag.
-    ///
-    /// Without this guard the queue maintenance below could re-queue
-    /// items an in-flight push has already marked IN_PROGRESS, causing
-    /// duplicate Firestore writes and conflict-handling churn.
     func pushSync(userId: String) async -> PushResult {
         guard !isSyncing else {
             log("Push skipped — another push is in flight")
@@ -428,16 +417,12 @@ final class SyncService: ObservableObject {
         return result
     }
 
-    /// Pulls remote changes, collection by collection in `pullApplyOrder`
-    /// (dependency order), each resuming from its own checkpoint (or
-    /// `lastSyncedAt` when it has none). Every collection applies in batches
-    /// OFF the main actor (`AppDatabase.applyPullBatch`): one transaction +
-    /// one cascade + one checkpoint per batch, so a killed pull resumes where
-    /// it stopped instead of re-applying everything. The main actor only
-    /// publishes each batch's outcome.
-    ///
-    /// The heal sweeps + the `users.lastSyncedAt` stamp run only when every
-    /// collection applied cleanly in THIS pull.
+    /// Pulls remote changes, collection by collection in `pullApplyOrder`,
+    /// each resuming from its own checkpoint (or `lastSyncedAt` when it has
+    /// none), in batches OFF the main actor (`AppDatabase.applyPullBatch`: one
+    /// transaction + cascade + checkpoint per batch). Docs an earlier build
+    /// quarantined are re-fetched first. The heal sweeps + the
+    /// `users.lastSyncedAt` stamp run only when every collection applied cleanly.
     ///
     /// - Parameters:
     ///   - userId: The authenticated user's Firestore UID.
@@ -446,15 +431,15 @@ final class SyncService: ObservableObject {
     /// - Returns: Pull result summary.
     func pullSync(userId: String, lastSyncedAt: String?) async -> PullResult {
         var result = PullResult()
-        // Stamped as `lastSyncedAt` on a clean pull — the START, not the end:
-        // it is the fallback watermark for collections with no checkpoint (and
-        // the listeners' start), so a doc written remotely DURING this pull
-        // must still be >= it. `>=` + the echo guard make the re-read free.
+        // Stamped as `lastSyncedAt` on a clean pull: the START, not the end (the
+        // fallback watermark + listeners' start, so a doc written DURING this
+        // pull stays >= it; `>=` + the echo guard make the re-read free).
         let pullStartedAt = AppDatabase.currentTimestamp()
 
         // The parent user doc (`users/{userId}`) — synced profile fields like
         // `preferences` replicate back through it.
         await processPullUserDocument(userId: userId, result: &result)
+        await retryQuarantinedDocs(userId: userId, result: &result)
 
         let fallback = lastSyncedAt.flatMap(DateFormatting.parseISO).map(PullWatermark.init(date:))
         let checkpoints = (try? await database.readAsync { db in
@@ -550,8 +535,7 @@ final class SyncService: ObservableObject {
                     let winner = resolveConflict(local: payload, remote: remoteData)
                     if winner == "remote" {
                         // Remote is newer — don't delete, restore remote version locally
-                        let grdbTable = collectionGRDBTable(item.entityType)
-                        try upsertLocalRecord(grdbTable: grdbTable, data: remoteData)
+                        try upsertRemoteWinner(entityType: item.entityType, data: remoteData, userId: userId)
                         try markCompleted(item)
                         result.conflicts += 1
                         recordEvent(.conflict)
@@ -599,10 +583,7 @@ final class SyncService: ObservableObject {
                 log(msg)
             } else {
                 // Remote wins — update the local GRDB record with the remote data.
-                try upsertLocalRecord(
-                    grdbTable: collectionGRDBTable(item.entityType),
-                    data: remoteData
-                )
+                try upsertRemoteWinner(entityType: item.entityType, data: remoteData, userId: userId)
                 try markCompleted(item)
                 result.conflicts += 1
                 recordEvent(.conflict)
@@ -664,11 +645,26 @@ final class SyncService: ObservableObject {
         }
     }
 
+    /// Forward-compat (issue #300): re-fetches docs an EARLIER build skipped
+    /// (`AppDatabase.retryQuarantinedPullDocs`; a no-op until the build changed).
+    /// A failure never fails the pull — the ledger rows stay for the next cycle.
+    private func retryQuarantinedDocs(userId: String, result: inout PullResult) async {
+        var report = PullBatchOutcome()
+        do {
+            report = try await database.retryQuarantinedPullDocs(source: pullSource, userId: userId)
+        } catch {
+            report.details = ["Quarantine retry skipped: \(error.localizedDescription)"]
+        }
+        recordBatch(pulled: report.pulled)
+        result.pulled += report.pulled
+        result.details += report.details
+        report.details.forEach(log)
+    }
+
     /// Pulls one collection from its checkpoint and applies it in
     /// `_syncedAt`-ordered chunks, each its own off-main batch transaction
-    /// with its own checkpoint. A throw stops the collection ("Pull failed")
-    /// with every earlier chunk committed + checkpointed; the next pull
-    /// resumes from there.
+    /// with its own checkpoint. A throw stops the collection ("Pull failed");
+    /// earlier chunks stay committed and the next pull resumes from there.
     private func processPullCollection(
         collection: PullCollection, userId: String, since: PullWatermark?, result: inout PullResult
     ) async {
@@ -741,12 +737,16 @@ final class SyncService: ObservableObject {
 
     // MARK: - Local DB Helpers
 
-    /// Push-path remote-wins write-back: upserts a remote doc into `grdbTable`
-    /// (no cascade — the push path never cascaded). The helper is shared with
-    /// the pull engine (`AppDatabase.upsertPulledRecord`).
-    private func upsertLocalRecord(grdbTable: String, data: [String: Any]) throws {
+    /// Push-path remote-wins write-back: upserts the remote doc that beat a
+    /// queued write (no cascade — the push path never cascaded), but only if this
+    /// build can decode it; an undecodable winner is quarantined instead of
+    /// landing raw (`AppDatabase.upsertDecodableOrQuarantine`, issue #300).
+    private func upsertRemoteWinner(entityType: String, data: [String: Any], userId: String) throws {
+        let collection = (firestoreName: entityType, grdbTable: collectionGRDBTable(entityType))
         try database.write { db in
-            try AppDatabase.upsertPulledRecord(db: db, grdbTable: grdbTable, data: data)
+            _ = try AppDatabase.upsertDecodableOrQuarantine(
+                db: db, collection: collection, id: data["id"] as? String ?? "", data: data, userId: userId
+            )
         }
     }
 

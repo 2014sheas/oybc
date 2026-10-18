@@ -21,6 +21,7 @@ import { runBoardCascadeForTask, runBoardCascadeForTasks, runBoardCascadeForBoar
 import { reDeriveSealedBoardsByIds } from './sealing';
 import { addToSyncQueue, stampTransactionSyncOwner } from './syncQueue';
 import { refreshWatchersForBoards } from './boardLifecycle';
+import { quarantinePulledDoc, releaseQuarantinedDocs } from './syncQuarantine';
 
 /**
  * Apply a remote document from a syncable subcollection to the local Dexie
@@ -39,7 +40,10 @@ import { refreshWatchersForBoards } from './boardLifecycle';
  * touching Dexie. A failed parse (missing fields, wrong types, version < 1,
  * userId mismatch for user-scoped collections) logs a `Skipped` status and
  * returns without writing — corrupted remote data must never reach the
- * local source-of-truth DB.
+ * local source-of-truth DB. A schema failure (an unknown enum value from a
+ * newer app version included) also QUARANTINES the doc in the local ledger
+ * (`syncQuarantine.ts`): the pull checkpoint moves past it, so a later build
+ * re-fetches it by id instead of losing it (issue #300).
  *
  * @param collectionName The Firestore subcollection being pulled.
  * @param remoteData The raw document data from Firestore (untrusted).
@@ -84,7 +88,8 @@ export async function applyRemoteSubdoc(
       typeof (remoteData as { id?: unknown })?.id === 'string'
         ? (remoteData as { id: string }).id
         : '?';
-    return `Skipped malformed ${collectionName}/${id}: ${reason}`;
+    const ledgered = await quarantinePulledDoc(authenticatedUserId, collectionName, remoteData, reason);
+    return `Skipped malformed ${collectionName}/${id}: ${reason}${ledgered ? ' (quarantined)' : ''}`;
   }
 
   const validated = parsed.data as SyncableEntity;
@@ -117,9 +122,13 @@ export async function applyRemoteSubdoc(
     }
     const parentTask = await db.tasks.get(compoundTaskId);
     if (!parentTask) {
-      // No local parent — could be a legitimate cross-device race. Defer:
-      // skip this pull cycle, the safety net will retry. Don't accept blind.
-      return `Skipped compoundChildren/${validated.id}: parent compound not yet present locally`;
+      // No local parent — a cross-device race, or the parent was itself
+      // quarantined (a newer app version's compound). Ledger it: the pull
+      // checkpoint moves past this child, so the ledger is what re-fetches it
+      // once the parent can be applied. Don't accept blind.
+      const reason = 'parent compound not yet present locally';
+      await quarantinePulledDoc(authenticatedUserId, collectionName, validated, reason);
+      return `Skipped compoundChildren/${validated.id}: ${reason}`;
     }
     if (parentTask.userId !== authenticatedUserId) {
       return `Skipped compoundChildren/${validated.id}: parent userId mismatch`;
@@ -138,6 +147,7 @@ export async function applyRemoteSubdoc(
   // put and the cascade. LWW itself is untouched — a genuinely different row
   // still resolves through `resolveConflict` below.
   if (localData && !rowsGenuinelyDiffer(localData, validated)) {
+    await releaseQuarantinedDocs(authenticatedUserId, collectionName, [validated.id]);
     return `Unchanged ${collectionName}/${validated.id} (identical to local)`;
   }
 
@@ -179,6 +189,7 @@ export async function applyRemoteSubdoc(
         }
       });
     }
+    await releaseQuarantinedDocs(authenticatedUserId, collectionName, [validated.id]);
     return null; // local-wins → re-enqueued (if it differs) so it re-asserts
   }
 
@@ -299,11 +310,46 @@ export async function applyRemoteSubdoc(
     },
   );
 
+  await releaseQuarantinedDocs(authenticatedUserId, collectionName, [validated.id]);
   recordSyncEvent('pulled');
   if (isNew) {
     return `Pulled ${collectionName}/${validated.id} (new)`;
   }
   return `Pulled ${collectionName}/${validated.id} (remote v${validated.version} > local v${(localData as SyncableEntity).version})`;
+}
+
+/**
+ * Push-path remote-wins write-back: stores the remote doc that beat a queued
+ * local write, but only if THIS build can decode it — the same schema gate the
+ * pull applies. An undecodable winner (a newer app version's value) is
+ * quarantined instead of landing raw in Dexie, where every typed reader would
+ * trip on it (issue #300). The validated (key-stripped) row is stored, exactly
+ * as the pull stores it. iOS twin: `upsertRemoteWinner` in `SyncService.swift`.
+ *
+ * @param entityType - The doc's collection, or `'users'` for the parent doc
+ *   (stored as-is; its preferences are tolerant by construction).
+ * @param remoteData - The remote doc (untrusted).
+ * @param userId - The signed-in uid.
+ * @returns True when the row was stored; false when it was quarantined.
+ */
+export async function putRemoteWinner(
+  entityType: SyncCollection | 'users',
+  remoteData: SyncableEntity,
+  userId: string,
+): Promise<boolean> {
+  if (entityType === 'users') {
+    await db.table('users').put(remoteData);
+    return true;
+  }
+  const parsed = COLLECTION_SCHEMAS[entityType].safeParse(remoteData);
+  if (!parsed.success) {
+    const reason = parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join(', ');
+    await quarantinePulledDoc(userId, entityType, remoteData, reason);
+    return false;
+  }
+  await db.table(entityType).put(parsed.data);
+  await releaseQuarantinedDocs(userId, entityType, [remoteData.id]);
+  return true;
 }
 
 /**

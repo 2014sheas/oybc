@@ -605,7 +605,7 @@ oybc/
 
 ### Database Schema (Identical Across Platforms)
 
-**Tables** (iOS GRDB names; web Dexie uses the camelCase store names in `apps/web/src/db/database.ts`; canonical: the GRDB migrations registered in `apps/ios/OYBC/Database/AppDatabase.swift` (+ `AppDatabase+Migrations.swift`) and the Dexie schema): `users`, `boards`, `tasks`, `compound_children`, `board_tasks`, `task_events`, `recurring_board_templates`, `default_pools`, `pools`, `core_board_defaults`, `sync_queue`, `sync_watermarks` (LOCAL-ONLY per-collection pull checkpoints — GRDB v40 / Dexie `syncWatermarks` v19; never synced, not a sync collection; see `docs/SYNC_STRATEGY.md` §Pull Sync). `task_events` is the Windowed Completion occurrence log (`kind: completion | increment` + `occurredAt`) — see [§Windowed Completion](#windowed-completion-event-sourced-shipped). The legacy `task_steps` / `composite_tasks` / `composite_nodes` / `progress_counters` tables were **removed in Wave 2 (PRs #411–#414)** — see top-of-doc Task model section.
+**Tables** (iOS GRDB names; web Dexie uses the camelCase store names in `apps/web/src/db/database.ts`; canonical: the GRDB migrations registered in `apps/ios/OYBC/Database/AppDatabase.swift` (+ `AppDatabase+Migrations.swift`) and the Dexie schema): `users`, `boards`, `tasks`, `compound_children`, `board_tasks`, `task_events`, `recurring_board_templates`, `default_pools`, `pools`, `core_board_defaults`, `sync_queue`, `sync_watermarks` (LOCAL-ONLY per-collection pull checkpoints — GRDB v40 / Dexie `syncWatermarks` v19; never synced, not a sync collection; see `docs/SYNC_STRATEGY.md` §Pull Sync), `sync_quarantine` (LOCAL-ONLY ledger of pulled docs this build could not apply — GRDB v48 / Dexie `syncQuarantine` v22; see `docs/SYNC_STRATEGY.md` §Forward-compatible pull). `task_events` is the Windowed Completion occurrence log (`kind: completion | increment` + `occurredAt`) — see [§Windowed Completion](#windowed-completion-event-sourced-shipped). The legacy `task_steps` / `composite_tasks` / `composite_nodes` / `progress_counters` tables were **removed in Wave 2 (PRs #411–#414)** — see top-of-doc Task model section.
 
 **Key Design Elements**:
 
@@ -631,6 +631,8 @@ oybc/
 **Cross-Board Features**: Achievement squares and bingo lines always recomputed from source data.
 
 **Counting conflicts** resolve by **union-of-events** on `taskEvents`, not merge. The old Phase-4 additive-merge shared-counter sync (`sharedCounterMerge` + `lastSyncedCount` stamping) was **retired** by Windowed Completion (dead code deleted in WC PR D; `lastSyncedCount` field/column kept inert for decode compat).
+
+**Forward-compatible pull (issue #300):** a pulled doc this build cannot decode (an unknown enum value from a newer app version) is skipped and ledgered in `sync_quarantine`, never failing its batch; a later build re-fetches it by id (`retryQuarantinedPullDocs` ↔ `retryQuarantinedDocs`). Real DB errors still roll the batch back. A new foreign key into `tasks`/`boards`, or a new strict enum on a synced model, must keep `SyncForwardCompatTests` green. See `docs/SYNC_STRATEGY.md` §Forward-compatible pull.
 
 See `docs/SYNC_STRATEGY.md` for details.
 

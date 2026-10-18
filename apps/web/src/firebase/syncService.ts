@@ -47,7 +47,8 @@ import {
   type PullWatermark,
 } from '@oybc/shared';
 import { applyTaskEventsBatch, healMissingCompletionEvents } from '../db/operations/taskEventPull';
-import { applyRemoteSubdoc, rowsGenuinelyDiffer } from '../db/operations/pullApply';
+import { applyRemoteSubdoc, putRemoteWinner, rowsGenuinelyDiffer } from '../db/operations/pullApply';
+import { retryQuarantinedDocs } from '../db/operations/quarantineRetry';
 import { advancePullWatermark, fetchPullWatermarks } from '../db/operations/syncWatermarks';
 
 // Stamp every enqueue with the LIVE signed-in uid (docs/GUEST_MODE.md
@@ -245,8 +246,8 @@ export async function pushSync(
           const resolution = resolveConflict(payload, remoteData);
           if (resolution.winner === 'remote') {
             // Remote is newer — don't delete, keep remote version locally
-            const table = db.table(entityType);
-            await table.put(remoteData);
+            // (only if this build can decode it — else it is quarantined).
+            await putRemoteWinner(entityType, remoteData, userId);
             await markSyncItemCompleted(item.id);
             result.conflicts++;
             recordSyncEvent('conflict');
@@ -288,9 +289,8 @@ export async function pushSync(
           `Pushed ${entityType}/${item.entityId} (local v${payload.version} > remote v${remoteData.version})`
         );
       } else {
-        // Remote wins — update local DB with remote data
-        const table = db.table(entityType);
-        await table.put(remoteData);
+        // Remote wins — update local DB with remote data (decodable only).
+        await putRemoteWinner(entityType, remoteData, userId);
         await markSyncItemCompleted(item.id);
         result.conflicts++;
         recordSyncEvent('conflict');
@@ -459,6 +459,20 @@ export async function pullSync(
     const errorMsg = err instanceof Error ? err.message : String(err);
     result.details.push(`Pull failed for users/${userId}: ${errorMsg}`);
     hadPullError = true;
+  }
+
+  // Forward-compat (issue #300): docs a PREVIOUS build skipped (a newer app
+  // version's values) are re-fetched by id once the build changed. A failed
+  // retry never fails the pull — the ledger rows stay for the next cycle.
+  try {
+    const retried = await retryQuarantinedDocs(userId, async (collectionName, docId) => {
+      const snap = await getDoc(doc(firestore, 'users', userId, collectionName, docId));
+      return snap.exists() ? (snap.data() as Record<string, unknown>) : null;
+    });
+    result.pulled += retried.pulled;
+    result.details.push(...retried.details);
+  } catch (err) {
+    result.details.push(`Quarantine retry skipped: ${err instanceof Error ? err.message : String(err)}`);
   }
 
   // Each collection resumes from its own checkpoint (the highest server

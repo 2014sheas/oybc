@@ -59,6 +59,29 @@ final class FakePullSource: PullDocumentSource, @unchecked Sendable {
         }
     }
 
+    /// Every `fetchDocument` call, in order: `collection/id`.
+    var documentFetches: [String] { lock.withLock { _documentFetches } }
+    private var _documentFetches: [String] = []
+
+    /// Makes every `fetchDocument` throw (a transport failure).
+    var failDocumentFetch = false
+
+    func fetchDocument(userId: String, collection: String, id: String) async throws -> [String: Any]? {
+        try lock.withLock {
+            if failDocumentFetch { throw URLError(.notConnectedToInternet) }
+            _documentFetches.append("\(collection)/\(id)")
+            return docsByCollection[collection]?.first { ($0["id"] as? String) == id }
+        }
+    }
+
+    /// Replaces the doc with `doc["id"]` in `collection` (a remote edit).
+    func replace(_ doc: [String: Any], in collection: String) {
+        lock.withLock {
+            docsByCollection[collection, default: []].removeAll { ($0["id"] as? String) == (doc["id"] as? String) }
+            docsByCollection[collection, default: []].append(doc)
+        }
+    }
+
     func listenUserDoc(userId: String, onChange: @escaping ([String: Any]) -> Void) -> PullListener {
         lock.withLock { _events.append("listen:users") }
         return PullListener {}

@@ -146,9 +146,13 @@ extension AppDatabase {
     }
 
     /// The batch body, inside the caller's transaction: LWW-apply every doc,
-    /// collecting what changed, then ONE cascade over the union.
+    /// collecting what changed, then ONE cascade over the union. A doc this
+    /// build cannot decode (an unknown enum value from a newer app version) —
+    /// or one whose task / board is itself quarantined — is rolled out of the
+    /// table, ledgered in `sync_quarantine` and skipped, never failing the batch
+    /// (`AppDatabase+PullQuarantine.swift`).
     ///
-    /// - Throws: A GRDB / decode error from an upsert or the cascade.
+    /// - Throws: A GRDB error from an upsert or the cascade.
     static func applyPullBatchTx(db: Database, collection: PullCollection, docs: [[String: Any]], userId: String) throws -> PullBatchOutcome {
         var outcome = PullBatchOutcome()
         outcome.maxSyncedAt = nextPullWatermark(nil, docs.map { PullWatermark(syncedAtValue: $0["_syncedAt"]) })
@@ -164,9 +168,13 @@ extension AppDatabase {
         var previousCountsTowardRoots: [String: String] = [:]
         var changedBoardIds = Set<String>()
         var pulledBoards: [PulledBoard] = []
+        // Docs that settled (applied, echoed or local-won): released from the
+        // quarantine ledger once the loop is done.
+        var settledIds: [String] = []
         for remote in docs {
-            // Validate before touching GRDB — a malformed doc is skipped (the
-            // safety-net pull retries); only real DB errors abort the batch.
+            // Validate before touching GRDB — a doc failing the baseline invariants
+            // is a permanent reject (skipped, never ledgered); only real DB errors
+            // abort the batch.
             if let reason = validateRemotePullDocument(collection: name, data: remote, authenticatedUserId: userId) {
                 outcome.details.append("Skipped \(name): \(reason)")
                 continue
@@ -174,15 +182,19 @@ extension AppDatabase {
             guard let id = remote["id"] as? String else { continue }
             if name == "compoundChildren", let skip = try compoundParentSkipReason(db: db, remote: remote, userId: userId) {
                 outcome.details.append("Skipped \(name)/\(id): \(skip)")
+                // A parent missing locally is usually a quarantined compound: the
+                // checkpoint moves past this link, so ledger it for the retry.
+                if skip == orphanedChildReason { try quarantinePulledDoc(db: db, userId: userId, collection: name, docId: id, reason: skip) }
                 continue
             }
             let local = try fetchPullLocalRecord(db: db, grdbTable: collection.grdbTable, id: id)
             // Echo guard (sync-churn fix): same version + updatedAt = the same
             // authored write (usually our own push coming back) — no upsert,
             // no cascade.
-            if let local, !pullRowsGenuinelyDiffer(local: local, remote: remote) { continue }
+            if let local, !pullRowsGenuinelyDiffer(local: local, remote: remote) { settledIds.append(id); continue }
             let remoteV = toInt(remote["version"])
             if let local, resolveConflict(local: local, remote: remote) == "local" {
+                settledIds.append(id)
                 outcome.conflicts += 1
                 outcome.details.append("Kept local \(name)/\(id) (local v\(toInt(local["version"])) >= remote v\(remoteV))")
                 // Board-integrity PR-4 (Item 1): re-assert the fresher local
@@ -190,9 +202,20 @@ extension AppDatabase {
                 try reassertPullLocalWin(db: db, entityType: name, entityId: id, localData: local, remoteData: remote, ownerUid: userId)
                 continue
             }
+            // A new placement / link whose task or board is quarantined would trip
+            // its table's foreign key — ledger it as a dependent instead.
+            if local == nil, let dependency = try quarantinedDependencyReason(db: db, userId: userId, collection: name, remote: remote) {
+                outcome.details.append("Quarantined \(name)/\(id): \(dependency)")
+                try quarantinePulledDoc(db: db, userId: userId, collection: name, docId: id, reason: dependency)
+                continue
+            }
             // Windowed Completion: counting conflicts resolve by union-of-
             // events, so a pulled Task just LWW-upserts like any other row.
-            try upsertPulledRecord(db: db, grdbTable: collection.grdbTable, data: remote)
+            if let reason = try upsertDecodableOrQuarantine(db: db, collection: collection, id: id, data: remote, userId: userId) {
+                outcome.details.append("Quarantined \(name)/\(id): \(reason)")
+                continue
+            }
+            settledIds.append(id)
             outcome.pulled += 1
             let kind = local.map { "remote v\(remoteV) > local v\(toInt($0["version"]))" } ?? "new"
             outcome.details.append("Pulled \(name)/\(id) (\(kind))")
@@ -215,6 +238,8 @@ extension AppDatabase {
             }
         }
 
+        try releaseQuarantinedDocs(db: db, userId: userId, collection: name, ids: settledIds)
+
         // ONE cascade per batch, same transaction — a cascade error rolls
         // back every upsert above.
         if !changedTaskIds.isEmpty {
@@ -234,7 +259,7 @@ extension AppDatabase {
     private static func compoundParentSkipReason(db: Database, remote: [String: Any], userId: String) throws -> String? {
         guard let parentId = remote["compoundTaskId"] as? String, !parentId.isEmpty else { return "missing compoundTaskId" }
         guard let row = try Row.fetchOne(db, sql: "SELECT userId FROM tasks WHERE id = ?", arguments: [parentId]) else {
-            return "parent compound not yet present locally"
+            return orphanedChildReason
         }
         let parentUserId: String? = row["userId"]
         return parentUserId == userId ? nil : "parent userId mismatch"
@@ -255,6 +280,8 @@ extension AppDatabase {
         var details: [String] = []
         var pulled = 0
         var affectedTaskIds = Set<String>()
+        var settledIds: [String] = []
+        let collection: PullCollection = ("taskEvents", "task_events")
         for raw in rawDocs {
             if let reason = validateRemotePullDocument(collection: "taskEvents", data: raw, authenticatedUserId: userId) {
                 details.append("Skipped taskEvents/\((raw["id"] as? String) ?? "?"): \(reason)")
@@ -263,12 +290,19 @@ extension AppDatabase {
             guard let id = raw["id"] as? String else { continue }
             let local = try fetchPullLocalRecord(db: db, grdbTable: "task_events", id: id)
             // Echo guard: an identical row must not re-run the recompute + cascade.
-            if let local, !pullRowsGenuinelyDiffer(local: local, remote: raw) { continue }
-            if let local, resolveConflict(local: local, remote: raw) != "remote" { continue }
-            try upsertPulledRecord(db: db, grdbTable: "task_events", data: raw)
+            if let local, !pullRowsGenuinelyDiffer(local: local, remote: raw) { settledIds.append(id); continue }
+            if let local, resolveConflict(local: local, remote: raw) != "remote" { settledIds.append(id); continue }
+            // A future event `kind` (or any shape this build can't read) is
+            // ledgered + skipped, never failing the batch.
+            if let reason = try upsertDecodableOrQuarantine(db: db, collection: collection, id: id, data: raw, userId: userId) {
+                details.append("Quarantined taskEvents/\(id): \(reason)")
+                continue
+            }
+            settledIds.append(id)
             if let taskId = raw["taskId"] as? String { affectedTaskIds.insert(taskId) }
             pulled += 1
         }
+        try releaseQuarantinedDocs(db: db, userId: userId, collection: "taskEvents", ids: settledIds)
         // Recompute caches once per affected local task (non-authored writes).
         let cascadeTaskIds = try recomputePulledTaskCaches(db: db, taskIds: affectedTaskIds)
         // ONE derivation pass per affected LIVE board; roots expand to their
@@ -295,10 +329,15 @@ extension AppDatabase {
     /// idempotent), ENQUEUE a CREATE owned by `userId`, then run the same
     /// recompute + board cascade + sealed re-derive the event pull uses.
     /// Respects LWW against an existing row with that id (an undo tombstone is
-    /// never resurrected). Twin of web `healMissingCompletionEvents`.
+    /// never resurrected). Skipped while any `taskEvents` doc is quarantined.
+    /// Twin of web `healMissingCompletionEvents`.
     ///
     /// - Returns: The number of events minted.
     static func healMissingCompletionEventsTx(db: Database, userId: String) throws -> Int {
+        // An event this build could not read (a newer app version's kind) may be
+        // the very completion a task looks "missing" — never mint over it
+        // (issue #300). Heals resume once the ledger clears.
+        if try hasQuarantinedDocs(db: db, userId: userId, collection: "taskEvents") { return 0 }
         let tasks = try Task.fetchAll(db)
         var hasLiveEvent = Set<String>()
         for e in try TaskEvent.fetchAll(db) where !e.isDeleted { hasLiveEvent.insert(e.taskId) }

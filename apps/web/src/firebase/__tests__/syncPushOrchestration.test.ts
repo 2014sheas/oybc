@@ -12,7 +12,7 @@ const { db } = await import('../../db/internal');
 const { addToSyncQueue } = await import('../../db/operations/syncQueue');
 
 const USER = 'me';
-const TASK_ID = 'task-1';
+const TASK_ID = '20000000-0000-4000-8000-000000000001';
 const PATH = `users/${USER}/tasks/${TASK_ID}`;
 
 /** In-memory `SyncDocStore`: a path → doc map plus a log of every write. */
@@ -31,9 +31,15 @@ function makeFakeStore(docs: Record<string, SyncableEntity> = {}) {
   return { store, writes, failNextWrites: (err: Error) => (failWith = err) };
 }
 
-/** A minimal task-shaped syncable row; only the LWW fields matter to push. */
+/**
+ * A schema-valid task row (the remote-wins write-back only stores a doc this
+ * build can decode — `putRemoteWinner`); only the LWW fields matter to push.
+ */
 function task(version: number, updatedAt: string, title: string): SyncableEntity {
-  return { id: TASK_ID, userId: USER, title, version, updatedAt, isDeleted: false };
+  return {
+    id: TASK_ID, userId: USER, title, type: 'normal', totalCompletions: 0, totalInstances: 0,
+    createdAt: '2026-09-01T00:00:00.000Z', version, updatedAt, isDeleted: false,
+  } as unknown as SyncableEntity;
 }
 
 async function enqueueLocal(local: SyncableEntity): Promise<void> {
@@ -89,7 +95,7 @@ describe('pushSync — LWW orchestration through the doc-store seam', () => {
 
     expect(result).toMatchObject({ pushed: 0, conflicts: 1, failed: 0 });
     expect(writes).toHaveLength(0);
-    expect(await db.table('tasks').get(TASK_ID)).toEqual(remote);
+    expect(await db.table('tasks').get(TASK_ID)).toMatchObject({ title: remote.title, version: remote.version });
     expect((await onlyQueueItem()).status).toBe(SyncStatus.COMPLETED);
   });
 
@@ -102,7 +108,7 @@ describe('pushSync — LWW orchestration through the doc-store seam', () => {
 
     expect(result).toMatchObject({ pushed: 0, conflicts: 1, failed: 0 });
     expect(writes).toHaveLength(0);
-    expect(await db.table('tasks').get(TASK_ID)).toEqual(remote);
+    expect(await db.table('tasks').get(TASK_ID)).toMatchObject({ title: remote.title, version: remote.version });
     expect((await onlyQueueItem()).status).toBe(SyncStatus.COMPLETED);
   });
 

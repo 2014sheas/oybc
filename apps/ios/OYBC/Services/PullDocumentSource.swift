@@ -42,6 +42,14 @@ protocol PullDocumentSource {
     /// - Throws: Any transport / permission error.
     func fetchCollection(userId: String, collection: String, since: PullWatermark?) async throws -> PullDocs
 
+    /// Reads ONE subcollection doc by id — the forward-compat quarantine
+    /// retry (`AppDatabase.retryQuarantinedPullDocs`) re-fetches exactly the
+    /// docs an earlier build could not apply.
+    ///
+    /// - Returns: The doc's data, or nil when it no longer exists.
+    /// - Throws: Any transport / permission error.
+    func fetchDocument(userId: String, collection: String, id: String) async throws -> [String: Any]?
+
     /// Listens to the parent user doc. `onChange` gets each delivered doc.
     func listenUserDoc(userId: String, onChange: @escaping ([String: Any]) -> Void) -> PullListener
 
@@ -75,6 +83,11 @@ struct LiveFirestorePullSource: PullDocumentSource {
         let query: Query = since.map { colRef.whereField("_syncedAt", isGreaterThanOrEqualTo: $0.timestamp) } ?? colRef
         let snapshot = try await query.getDocuments()
         return PullDocs(docs: snapshot.documents.map { $0.data() })
+    }
+
+    func fetchDocument(userId: String, collection: String, id: String) async throws -> [String: Any]? {
+        let snapshot = try await userRef(userId).collection(collection).document(id).getDocument()
+        return snapshot.exists ? snapshot.data() : nil
     }
 
     func listenUserDoc(userId: String, onChange: @escaping ([String: Any]) -> Void) -> PullListener {

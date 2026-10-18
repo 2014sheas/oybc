@@ -530,6 +530,7 @@
 		C11179154A466702370478F1 /* rootFieldPropagationVectors.json in Resources */ = {isa = PBXBuildFile; fileRef = 4D0CC4304F33CB47695662D9 /* rootFieldPropagationVectors.json */; };
 		C1DECA45BCA68827BAEE301D /* MigrationV25Helpers.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6471911226A1A2B5B85C9C00 /* MigrationV25Helpers.swift */; };
 		C21D1CB5B562EFAD0E9AECB9 /* DerivationPassTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = EEA091BEC9F9DE7F7EDCC979 /* DerivationPassTests.swift */; };
+		C4181E30AB8EE8AD9946F705 /* AppDatabase+PullQuarantine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C25201E52A045A656956876 /* AppDatabase+PullQuarantine.swift */; };
 		C4903DA8141E43F8DC4430B5 /* countsTowardVectors.json in Resources */ = {isa = PBXBuildFile; fileRef = E35FADC0BF1719D740F6736E /* countsTowardVectors.json */; };
 		C4F62A4FC2133382EDA2279B /* SyncClearableFieldsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C5CBC331A3281433A1E74792 /* SyncClearableFieldsTests.swift */; };
 		C5384CBDCCD8F3D06E1C7ECC /* RisoKitSnapshotTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F8E921B9360700165D3B8FC4 /* RisoKitSnapshotTests.swift */; };
@@ -654,6 +655,7 @@
 		EE0FBBC7062E63C774C2B4AB /* AppDatabase+LateLog.swift in Sources */ = {isa = PBXBuildFile; fileRef = F10E15FDC946FC25587B18AC /* AppDatabase+LateLog.swift */; };
 		EE131CB76D6C35F1C4425588 /* UndoToast.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD566E612AAA6DC0BE58E80F /* UndoToast.swift */; };
 		EE25B39F85027177B63A16E7 /* RisoProfileRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2B9CC1100E046499CED2041 /* RisoProfileRow.swift */; };
+		EE73E7ED43269AB805DC1762 /* SyncForwardCompatTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1294AC8348AEE5792D31EE81 /* SyncForwardCompatTests.swift */; };
 		EE8923EC70C290866809AF19 /* CreateHubView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 672279842817679C05C429E7 /* CreateHubView.swift */; };
 		F02EFBFB31451B4B12E78D75 /* SquareSheetAchievementView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 186000F1C92481CEB0AB18E8 /* SquareSheetAchievementView.swift */; };
 		F07FD14260D9793A3E65DAA6 /* CountersHubView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BFC1DDA95C4B2F0C7BDB80C3 /* CountersHubView.swift */; };
@@ -776,6 +778,7 @@
 		122F83127D65EB023917FFAB /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		125176FA0300B1BFBF347D45 /* BoardPlayView+SquareMenu.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "BoardPlayView+SquareMenu.swift"; sourceTree = "<group>"; };
 		126F42F412556B811891438D /* EditTaskSheetCompoundGateTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EditTaskSheetCompoundGateTests.swift; sourceTree = "<group>"; };
+		1294AC8348AEE5792D31EE81 /* SyncForwardCompatTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncForwardCompatTests.swift; sourceTree = "<group>"; };
 		12E40CD446269125D504EEAD /* AppDatabaseTaskEditTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDatabaseTaskEditTests.swift; sourceTree = "<group>"; };
 		14228E76A2DE23D976EB65E8 /* RecurringBoardSpawn.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecurringBoardSpawn.swift; sourceTree = "<group>"; };
 		149C3CA55D0467096B13D935 /* Task.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Task.swift; sourceTree = "<group>"; };
@@ -1113,6 +1116,7 @@
 		8B122B4E9CF8919412F035E6 /* ShuffleUnlockedTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShuffleUnlockedTests.swift; sourceTree = "<group>"; };
 		8B855114D9D1ABBD09A57B5D /* CoreDefaultsEditSheetView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoreDefaultsEditSheetView.swift; sourceTree = "<group>"; };
 		8BF579A9C2BDD5DB1909FAEB /* RisoStatusPill.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RisoStatusPill.swift; sourceTree = "<group>"; };
+		8C25201E52A045A656956876 /* AppDatabase+PullQuarantine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AppDatabase+PullQuarantine.swift"; sourceTree = "<group>"; };
 		8C8AFDB07CF042D1FBEC96C7 /* ShareBoardSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareBoardSheet.swift; sourceTree = "<group>"; };
 		8CE14469AB6B07BC1F1ACE5A /* SyncQueueCoalescingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncQueueCoalescingTests.swift; sourceTree = "<group>"; };
 		8D16DCDA3A1D3F5B68FAA0FE /* RisoEditBoardSnapshotTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RisoEditBoardSnapshotTests.swift; sourceTree = "<group>"; };
@@ -1552,6 +1556,7 @@
 				0D5AF7B218C63139D1B21CFE /* AppDatabase+Pools.swift */,
 				75BA39182F3A8524C59F45ED /* AppDatabase+PullApply.swift */,
 				B5558FF023FA90424EAD479F /* AppDatabase+PullCascade.swift */,
+				8C25201E52A045A656956876 /* AppDatabase+PullQuarantine.swift */,
 				299B47E50D202CC6C826FDE3 /* AppDatabase+RecurringTemplates.swift */,
 				A49EBAB6AA498C77915839DD /* AppDatabase+RootFieldPropagation.swift */,
 				4F5E1477A50B66E23FBD143C /* AppDatabase+Sealing.swift */,
@@ -1970,6 +1975,7 @@
 				C4282D47EBEE0A79D201BD60 /* SyncContractTests.swift */,
 				B82CC793387A6846DCE84C89 /* SyncExhaustedRetryTests.swift */,
 				D8D1DAFCB4254C5992DBF9A8 /* SyncFirstPullFlagTests.swift */,
+				1294AC8348AEE5792D31EE81 /* SyncForwardCompatTests.swift */,
 				4C1481315E8E8BB325D17E95 /* SyncPullApplyTests.swift */,
 				22F3F453799627D58399AF21 /* SyncPullBatchTests.swift */,
 				602D21A7B74BDBF7DA3B5D38 /* SyncPushOrchestrationTests.swift */,
@@ -2663,6 +2669,7 @@
 				74E4406EF8E7C57A98133F85 /* AppDatabase+Pools.swift in Sources */,
 				ECE35BBF5369FC669478ADAA /* AppDatabase+PullApply.swift in Sources */,
 				D343ECA0DC11A77E1ED54A6D /* AppDatabase+PullCascade.swift in Sources */,
+				C4181E30AB8EE8AD9946F705 /* AppDatabase+PullQuarantine.swift in Sources */,
 				F9CCC1B0372F9B8ED0A11199 /* AppDatabase+RecurringTemplates.swift in Sources */,
 				B26362BD5CED3DA4D56590D5 /* AppDatabase+RootFieldPropagation.swift in Sources */,
 				4F88BB1744F35331B8C67A63 /* AppDatabase+Sealing.swift in Sources */,
@@ -3178,6 +3185,7 @@
 				5B16EAEB465D05D72A60411A /* SyncContractTests.swift in Sources */,
 				020E10C1F3BABC28404C7615 /* SyncExhaustedRetryTests.swift in Sources */,
 				8100CC3708AF4C723146F199 /* SyncFirstPullFlagTests.swift in Sources */,
+				EE73E7ED43269AB805DC1762 /* SyncForwardCompatTests.swift in Sources */,
 				FCC1F1AEF3467B42B1E6EC46 /* SyncPullApplyTests.swift in Sources */,
 				E03CCB7FEED17ADA9F52D210 /* SyncPullBatchTests.swift in Sources */,
 				11A3337D3A3B0B9FA6811AD9 /* SyncPushOrchestrationTests.swift in Sources */,
