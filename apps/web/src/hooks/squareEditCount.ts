@@ -1,3 +1,4 @@
+import type { PlacementParams } from '@oybc/shared';
 import type { PendingTaskPayload } from '../pages/createPage/useCreateFormState';
 import type { BoardEditTaskOverride } from './squaresEditReducer';
 
@@ -20,6 +21,8 @@ export interface SquareDraftCell {
   taskId: string;
   /** Set only for a staged NEW (not-yet-persisted) task — D14. */
   pending?: PendingTaskPayload;
+  /** A staged add / replace's placement parameters (a root picked with a goal) — written with the placement at Save. */
+  placement?: PlacementParams;
   isLocked: boolean;
   /** `null` ⇒ this cell held no live placement when the draft was seeded (a staged ADD). */
   originalTaskId: string | null;

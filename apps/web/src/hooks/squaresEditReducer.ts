@@ -7,6 +7,7 @@ import {
   type BoardTask,
   type CompoundChild,
   type Task,
+  type PlacementParams,
 } from '@oybc/shared';
 import type { UpdateTaskPatch } from '../db/operations/tasks';
 import {
@@ -156,20 +157,25 @@ export function seedDraft(
   };
 }
 
+/** A picker result: an existing task (optionally with placement parameters) or a staged new task. */
+export type StagedPick = { taskId: string; placement?: PlacementParams } | { pending: PendingTaskPayload };
+
 export function stageAdd(
   state: SquaresEditDraftState,
   row: number,
   col: number,
-  pick: { taskId: string } | { pending: PendingTaskPayload },
+  pick: StagedPick,
 ): SquaresEditDraftState {
   const taskId = 'pending' in pick ? pick.pending.task.id : pick.taskId;
   const pending = 'pending' in pick ? pick.pending : undefined;
+  const placement = 'pending' in pick ? undefined : pick.placement;
   const cell: SquareDraftCell = {
     cellId: `new-${row}-${col}-${taskId}`,
     row,
     col,
     taskId,
     pending,
+    ...(placement ? { placement } : {}),
     isLocked: false,
     originalTaskId: null,
     originalRow: row,
@@ -182,13 +188,14 @@ export function stageAdd(
 export function stageReplace(
   state: SquaresEditDraftState,
   cellId: string,
-  pick: { taskId: string } | { pending: PendingTaskPayload },
+  pick: StagedPick,
 ): SquaresEditDraftState {
   const taskId = 'pending' in pick ? pick.pending.task.id : pick.taskId;
   const pending = 'pending' in pick ? pick.pending : undefined;
+  const placement = 'pending' in pick ? undefined : pick.placement;
   return {
     ...state,
-    cells: state.cells.map((c) => (c.cellId === cellId ? { ...c, taskId, pending } : c)),
+    cells: state.cells.map((c) => (c.cellId === cellId ? { ...c, taskId, pending, placement } : c)),
   };
 }
 

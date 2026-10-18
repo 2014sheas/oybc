@@ -271,8 +271,9 @@ export function WizardQuickAddRow({
    * own goal) go to the host. Nothing is created or written to the root.
    */
   function handleCounterDefaultPicked(root: Task): void {
-    handleExistingPicked(root);
+    // Parameters first: a host that reads them when the pick lands (Board Edit's picker) needs them already.
     onPlacementParams?.(root.id, hostWindow ? quickAddPlacementParams(root, hostWindow) : null);
+    handleExistingPicked(root);
   }
 
   /**
@@ -280,8 +281,8 @@ export function WizardQuickAddRow({
    * placement override on this board. Nothing is written to the counter root.
    */
   function handleCounterGoalPicked(root: Task, goal: number): void {
-    handleExistingPicked(root);
     onPlacementParams?.(root.id, hostWindow ? counterGoalParams(root, goal, hostWindow) : null);
+    handleExistingPicked(root);
     setRowGoalText((m) => ({ ...m, [root.id]: '' }));
   }
 

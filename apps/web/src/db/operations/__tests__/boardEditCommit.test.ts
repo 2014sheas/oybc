@@ -679,3 +679,50 @@ describe('commitSquareEdits — type switches and compound overrides', () => {
     expect((await db.tasks.get('task-a'))?.currentCount).toBeUndefined();
   });
 });
+
+describe('commitSquareEdits — a picked counter root carries its placement parameters (slice 3b)', () => {
+  it('add: the staged placement is written onto the new BoardTask', async () => {
+    await db.boards.add(seedBoard());
+    await db.tasks.add(seedTask('root', { type: TaskType.COUNTING, action: 'Run', unit: 'km', isCounter: true }));
+
+    await commitSquareEdits(
+      baseInput({
+        cells: [
+          cell({
+            cellId: 'new-0-0-root', taskId: 'root', row: 0, col: 0, originalTaskId: null,
+            placement: { targetOverride: 12, targetKind: 'discrete' },
+          }),
+        ],
+      }),
+    );
+
+    const rows = await db.boardTasks.where('boardId').equals(BOARD).toArray();
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ taskId: 'root', targetOverride: 12, targetKind: 'discrete' });
+    expect(await db.tasks.count()).toBe(1);
+  });
+
+  it('replace: the placement is set on the replaced BoardTask after the swap', async () => {
+    await db.boards.add(seedBoard());
+    await db.tasks.bulkAdd([
+      seedTask('old'),
+      seedTask('root', { type: TaskType.COUNTING, action: 'Run', unit: 'km', isCounter: true }),
+    ]);
+    await db.boardTasks.add(seedPlacement('bt-1', 'old', 0, 0, { titleOverride: 'Stale' }));
+
+    await commitSquareEdits(
+      baseInput({
+        cells: [
+          cell({
+            cellId: 'bt-1', taskId: 'root', row: 0, col: 0, originalTaskId: 'old',
+            placement: { targetOverride: 9, targetKind: 'discrete' },
+          }),
+        ],
+      }),
+    );
+
+    const row = (await db.boardTasks.get('bt-1'))!;
+    expect(row).toMatchObject({ taskId: 'root', targetOverride: 9, targetKind: 'discrete' });
+    expect(row.titleOverride).toBeUndefined();
+  });
+});
