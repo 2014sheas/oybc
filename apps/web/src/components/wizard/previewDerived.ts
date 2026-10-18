@@ -38,6 +38,7 @@ import {
 } from '@oybc/shared';
 import type { BoardWizardController } from '../../pages/createHub/useBoardWizard';
 import type { TaskLibrary } from '../../pages/createPage/useTaskLibrary';
+import { rollExplicitGoal } from '../../db/operations/explicitGoalRoll';
 import { resolveWizardDates } from './wizardDates';
 import type { WizardPlacement } from './wizardPersist';
 
@@ -168,6 +169,17 @@ export function applyPreviewDerivedCells(
     const { taskId: _taskId, ...planParams } = planned;
     const explicit = controller.placementParams?.get(id);
     const merged: PlacementParams = explicit ? { ...planParams, ...explicit } : planParams;
+    // Same rule (and rng order) as the save: a hand-added counter's dice roll
+    // around its explicit goal (iOS `BoardWizardPreviewDerived` → `overlaying`).
+    if (explicit?.targetOverride != null && controller.manualTaskIds.has(id)) {
+      const rolled = rollExplicitGoal(
+        { target: explicit.targetOverride, kind: explicit.targetKind ?? 'discrete' },
+        manualTaskVary[id] ?? 0,
+        rng,
+      );
+      merged.targetOverride = rolled.target;
+      merged.targetKind = rolled.kind;
+    }
     if (merged.targetOverride != null || merged.titleOverride != null) paramsByOriginalId.set(id, merged);
   });
   if (paramsByOriginalId.size === 0) return placement;

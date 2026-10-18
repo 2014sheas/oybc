@@ -529,6 +529,7 @@ extension BoardWizardViewModel {
             pendingTasks.removeValue(forKey: dropped)
             stagedEdits.removeValue(forKey: dropped)
             placementParams.removeValue(forKey: dropped)
+            typedPlacementIds.remove(dropped)
             poolOrder.removeAll { $0 == dropped }
         }
         selectedTaskIds = newSelection

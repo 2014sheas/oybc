@@ -47,7 +47,10 @@ struct CounterDetailLogCard: View {
                 .font(.risoHead(15, .extraBold))
                 .foregroundStyle(Color.risoPaper)
 
-            TapLogChipRow(chips: CounterLogAmount.tapChips(kind: group.countKind, goal: nil), disabled: isLogging) { chip in
+            TapLogChipRow(
+                chips: CounterLogAmount.tapChips(kind: group.countKind, goal: nil), disabled: isLogging,
+                unit: countKindNeedsUnit(group.countKind) ? (group.unit ?? "") : ""
+            ) { chip in
                 if let value = chip.value {
                     onLog(value, .add)
                 } else {

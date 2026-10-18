@@ -563,6 +563,11 @@ Tuesday, forgot 5 mi, logs it Friday from the Tuesday board.
   tombstones exactly one (an authored tombstone: version bump + enqueue) after
   re-checking `isEventSealImmune` against **every** window, then runs the
   same re-derivation. Every other sealed-window event stays immune.
+  **Amended 2026-10-18 (owner):** the sheet offers Undo only for a late log the
+  undo would accept — `undoableLateLogs` (↔ `selectUndoableClosedBoardLateLogs`)
+  is the selector minus seal-immune events, read by both the sheet and
+  `undoLateLog`. A log made on an ended-but-unsealed board before Close is part
+  of the closed window: permanent, shown as "Already complete".
   `undoLastCounterLog` (the Counters hub Undo toast) also refuses a
   seal-immune entry and runs the sealed re-derive + watcher refresh. Immune
   windows for a shared-counter ROOT include the sealed boards placing its

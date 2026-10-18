@@ -104,13 +104,15 @@ export function quickAddPlacementParams(root: Task, window: PlacementBoard): Pla
 /**
  * The wizard's per-cell parameters re-stamped for a CHANGED window: a counter
  * whose override was the OLD window's default follows to the new window's
- * default; a typed goal stays. iOS twin:
+ * default; a typed goal stays (an entry in `typedIds` is never moved, even when
+ * it happens to equal the old default). iOS twin:
  * `QuickAddCounterPlacement.restampedPlacementParams`.
  *
  * @param params - The wizard's parameters keyed by task id.
  * @param rootOf - Looks up the counter root for a task id.
  * @param from - The window the parameters were last stamped for.
  * @param to - The board's current window.
+ * @param typedIds - Ids whose entry the person typed; they never follow.
  * @returns The same map when nothing moved, else a new one.
  */
 export function restampPlacementParams(
@@ -118,11 +120,12 @@ export function restampPlacementParams(
   rootOf: (id: string) => Task | undefined,
   from: PlacementBoard,
   to: PlacementBoard,
+  typedIds: ReadonlySet<string> = new Set(),
 ): ReadonlyMap<string, PlacementParams> {
   let next: Map<string, PlacementParams> | null = null;
   for (const [id, p] of params) {
     const root = rootOf(id);
-    if (!root || p.targetOverride == null || p.targetOverride !== placementGoalForCounter(root, from)) continue;
+    if (typedIds.has(id) || !root || p.targetOverride == null || p.targetOverride !== placementGoalForCounter(root, from)) continue;
     const moved = quickAddPlacementParams(root, to);
     next ??= new Map(params);
     if (moved) next.set(id, moved);

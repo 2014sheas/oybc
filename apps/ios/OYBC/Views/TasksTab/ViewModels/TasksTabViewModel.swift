@@ -287,8 +287,9 @@ final class TasksTabViewModel {
     /// "In progress" predicate. Counting tasks: not done and the context-less
     /// event count > 0 (`contextlessCounterState` — a linked member reads its
     /// root's lifetime events, slice 2c). Compound tasks:
-    /// at least one child Task is completed but the parent isn't (child
-    /// completion state read out of `library.libraryTasks` via id match).
+    /// at least one child Task is done but the parent isn't (child
+    /// state read out of `library.libraryTasks` via id match; a counting child
+    /// through `isDone`'s event state, not its stale cache).
     static func isInProgress(_ task: Task, library: TaskLibraryViewModel) -> Bool {
         if task.type == .counting {
             let state = contextlessCounterState(task: task, eventsByTaskId: library.eventsByTaskId)
@@ -298,7 +299,9 @@ final class TasksTabViewModel {
         if task.type == .compound {
             let children = library.compoundChildrenByCompound[task.id] ?? []
             for link in children {
-                if let child = library.task(byId: link.childTaskId), child.isCompleted {
+                // A counting child reads its event state (a linked row's cache is
+                // stale by design); every other type its `isCompleted` cache.
+                if let child = library.task(byId: link.childTaskId), isDone(child, library: library) {
                     return true
                 }
             }

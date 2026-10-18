@@ -308,6 +308,71 @@ describe('commitSquareEdits — board-scoped edits', () => {
     expect((await db.tasks.get('T'))!.description).toBeUndefined();
   });
 
+  describe('childTargets follow a forked sub-task (C4)', () => {
+    const counting = (id: string, title: string) =>
+      task(id, { title, type: TaskType.COUNTING, action: 'Read', unit: 'pages', maxCount: 10, currentCount: 0 });
+    const countingStep = (over: Partial<ChildPatch>) =>
+      child({ childTaskId: 'C1', title: 'Read', isCounting: true, action: 'Read', unit: 'pages', goal: '10', childType: TaskType.COUNTING, ...over });
+
+    async function seed(withTarget: boolean): Promise<void> {
+      await db.tasks.bulkAdd([
+        task('P', { title: 'Study', type: TaskType.COMPOUND, operator: OperatorType.AND }),
+        counting('C1', 'Read'),
+        task('C2', { title: 'Notes' }),
+      ]);
+      await db.compoundChildren.bulkAdd([link('l1', 'P', 'C1', 0), link('l2', 'P', 'C2', 1)]);
+      await db.boardTasks.bulkAdd([
+        { ...placement('bt1', B1, 'P'), ...(withTarget ? { childTargets: [{ childId: 'C1', target: 4 }] } : {}) },
+        placement('bt2', B2, 'C1'),
+      ]);
+    }
+
+    it('re-keys the parent placement\'s childTargets entry onto the fork, in the same Save, version-bumped and synced', async () => {
+      await seed(true);
+      // The editor seeds the goal field from the placement's entry (4).
+      const patch = compoundPatch('Study', [countingStep({ title: 'Read more', goal: '4' }), child({ childTaskId: 'C2', title: 'Notes' })]);
+      await commitSquareEdits(input([cell({ cellId: 'bt1', taskId: 'P' })], [['P', { title: 'Study', compound: patch }]]));
+
+      const fork = forkTaskId(B1, 'C1');
+      expect((await db.tasks.get(fork))!.title).toBe('Read more');
+      const bt = (await db.boardTasks.get('bt1'))!;
+      expect(bt.childTargets).toEqual([{ childId: fork, target: 4 }]);
+      expect(bt.version).toBeGreaterThan(1);
+      expect(await syncedIds('boardTasks')).toContain('bt1');
+    });
+
+    it('a goal edit and the fork in ONE Save land on the fork\'s key (not the pre-fork one)', async () => {
+      await seed(false);
+      const patch = compoundPatch('Study', [countingStep({ title: 'Read more', goal: '6' }), child({ childTaskId: 'C2', title: 'Notes' })]);
+      await commitSquareEdits(input([cell({ cellId: 'bt1', taskId: 'P' })], [['P', { title: 'Study', compound: patch }]]));
+
+      const fork = forkTaskId(B1, 'C1');
+      expect((await db.boardTasks.get('bt1'))!.childTargets).toEqual([{ childId: fork, target: 6 }]);
+    });
+
+    it('a sub-task forked through its OWN square re-keys the holder compound\'s entry on this board', async () => {
+      await seed(true);
+      await db.boardTasks.add(placement('btc', B1, 'C1', 0, 1));
+      await commitSquareEdits(
+        input([cell({ cellId: 'btc', taskId: 'C1', col: 1 }), cell({ cellId: 'bt1', taskId: 'P' })], [['C1', { description: 'ten pages' }]]),
+      );
+
+      const fork = forkTaskId(B1, 'C1');
+      expect((await db.boardTasks.get('bt1'))!.childTargets).toEqual([{ childId: fork, target: 4 }]);
+      const live = (await db.compoundChildren.where('compoundTaskId').equals('P').toArray()).filter((l) => !l.isDeleted);
+      expect(live.map((l) => l.childTaskId).sort()).toEqual(['C2', fork].sort());
+    });
+
+    it('leaves another board\'s placement of the same compound untouched', async () => {
+      await seed(true);
+      await db.boardTasks.add({ ...placement('bt3', B2, 'P', 1, 0), childTargets: [{ childId: 'C1', target: 9 }] });
+      const patch = compoundPatch('Study', [countingStep({ title: 'Read more', goal: '4' }), child({ childTaskId: 'C2', title: 'Notes' })]);
+      await commitSquareEdits(input([cell({ cellId: 'bt1', taskId: 'P' })], [['P', { title: 'Study', compound: patch }]]));
+      // P is also placed on B2, so it is forked for B1 and the B2 placement keeps the original keys.
+      expect((await db.boardTasks.get('bt3'))!.childTargets).toEqual([{ childId: 'C1', target: 9 }]);
+    });
+  });
+
   it('drops the override of a square replaced in the same session (no fork, original untouched)', async () => {
     await db.tasks.bulkAdd([task('T', { title: 'Read' }), task('X', { title: 'Other' })]);
     await db.boardTasks.bulkAdd([placement('bt1', B1, 'T'), placement('bt2', B2, 'T')]);

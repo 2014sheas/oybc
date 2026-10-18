@@ -324,12 +324,43 @@ extension BoardWizardViewModel {
     /// - Parameters:
     ///   - taskId: The cell's task.
     ///   - params: The parameters, or nil to clear.
+    ///   - typed: True when the person typed the goal (vs an automatic window
+    ///     default); a clear drops the mark. Undo reads `typedPlacementIds`
+    ///     before the call to restore it.
     /// - Returns: The previous value (for Undo).
     @discardableResult
-    func setPlacementParams(taskId: String, _ params: PlacementParamsDraft?) -> PlacementParamsDraft? {
+    func setPlacementParams(taskId: String, _ params: PlacementParamsDraft?, typed: Bool = false) -> PlacementParamsDraft? {
         let previous = placementParams[taskId]
-        if let params, !params.isEmpty { placementParams[taskId] = params } else { placementParams.removeValue(forKey: taskId) }
+        if let params, !params.isEmpty {
+            placementParams[taskId] = params
+            if typed { typedPlacementIds.insert(taskId) } else { typedPlacementIds.remove(taskId) }
+        } else {
+            placementParams.removeValue(forKey: taskId)
+            typedPlacementIds.remove(taskId)
+        }
         return previous
+    }
+
+    /// A repeating board's stored `manualTaskTargets` as editor placement
+    /// params: target to `targetOverride`, kind to `targetKind`, title to
+    /// `titleOverride`, (the caller marks them typed: they were frozen from typed goals).
+    /// Entries for ids no longer hand-added are dropped (they would never freeze).
+    ///
+    /// - Parameters:
+    ///   - frozen: The record's `manualTaskTargets`.
+    ///   - manualTaskIds: The record's hand-added layer.
+    /// - Returns: The params to seed `placementParams` with.
+    static func placementParams(
+        fromFrozen frozen: [String: ManualTaskTarget]?, manualTaskIds: [String]
+    ) -> [String: PlacementParamsDraft] {
+        let manual = Set(manualTaskIds)
+        var out: [String: PlacementParamsDraft] = [:]
+        for (id, target) in frozen ?? [:] where manual.contains(id) {
+            out[id] = PlacementParamsDraft(
+                targetOverride: target.target, targetKind: target.kind, titleOverride: target.title
+            )
+        }
+        return out
     }
 
     /// Re-derive the window-default overrides after the board's timeframe /
@@ -346,7 +377,7 @@ extension BoardWizardViewModel {
             uniquingKeysWith: { first, _ in first }
         )
         for (id, params) in placementParams {
-            guard let root = roots[id], let override = params.targetOverride else { continue }
+            guard !typedPlacementIds.contains(id), let root = roots[id], let override = params.targetOverride else { continue }
             let fields = CounterSettings.Fields(task: root)
             let oldDefault = CounterPlacement.placementGoalForCounter(
                 fields, timeframe: old.timeframe, startDate: old.startDate, endDate: old.endDate

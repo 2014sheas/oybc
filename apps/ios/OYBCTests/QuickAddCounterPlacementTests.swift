@@ -258,12 +258,12 @@ final class QuickAddCounterPlacementTests: XCTestCase {
         vm.updateSize(1)
         vm.updateCenterType(.none)
         vm.toggleTaskSelection("root")
-        vm.setPlacementParams(taskId: "root", PlacementParamsDraft(targetOverride: 9, targetKind: .discrete))
+        vm.setPlacementParams(taskId: "root", PlacementParamsDraft(targetOverride: 9, targetKind: .discrete), typed: true)
 
         let tasks = [ "root": try XCTUnwrap(K.fetchTask(db, "root")) ]
-        let frozen = frozenManualTaskTargets(manualTaskIds: Array(vm.manualTaskIds), params: vm.placementParams, tasksById: tasks)
+        let frozen = frozenManualTaskTargets(manualTaskIds: Array(vm.manualTaskIds), params: vm.placementParams, typedIds: vm.typedPlacementIds, tasksById: tasks)
         XCTAssertEqual(frozen, ["root": ManualTaskTarget(target: 9, kind: .discrete, title: nil)])
-        XCTAssertTrue(frozenManualTaskTargets(manualTaskIds: [], params: vm.placementParams, tasksById: tasks).isEmpty,
+        XCTAssertTrue(frozenManualTaskTargets(manualTaskIds: [], params: vm.placementParams, typedIds: vm.typedPlacementIds, tasksById: tasks).isEmpty,
                       "only hand-added members freeze")
 
         let exp = expectation(description: "persist")

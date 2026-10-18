@@ -36,16 +36,17 @@ export interface CompoundSubtaskCandidate {
 export type CompoundSubtaskAction = { kind: 'toggle'; childId: string } | { kind: 'log'; childId: string };
 
 /**
- * The hold menu's "Complete next sub-task": the first open child that can be
- * toggled (Normal or a nested Compound); when only counting children remain
- * open, a log on the first of them. Achievements are never actionable here.
+ * The hold menu's "Complete next sub-task": the first open NORMAL child to
+ * toggle; when only counting children remain open, a log on the first of them.
+ * A nested Compound or an Achievement is never picked — neither owns events,
+ * so a toggle on one would write nothing (it is opened through its own sheet).
  *
  * @param children - The compound's children in display order.
  * @returns The action, or `undefined` when nothing is open.
  */
 export function nextCompoundSubtask(children: ReadonlyArray<CompoundSubtaskCandidate>): CompoundSubtaskAction | undefined {
   const open = children.filter((c) => !c.isCompleted);
-  const toggle = open.find((c) => c.type === TaskType.NORMAL || c.type === TaskType.COMPOUND);
+  const toggle = open.find((c) => c.type === TaskType.NORMAL);
   if (toggle) return { kind: 'toggle', childId: toggle.id };
   const log = open.find((c) => c.type === TaskType.COUNTING);
   return log ? { kind: 'log', childId: log.id } : undefined;

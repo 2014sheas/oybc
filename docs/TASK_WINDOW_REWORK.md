@@ -538,7 +538,19 @@ them. Drafts keep placing original ids with no parameters; parameters are
 planned at the activating save, as the mint was. `RecurringBoardTemplate`
 gains `manualTaskTargets` (per hand-added task: target, kind, optional title)
 so Repeat copies a placement's frozen override and spawn applies it to
-hand-added members; sourced members re-plan from rules. Merging 3b is not
+hand-added members; sourced members re-plan from rules. **Amended 2026-10-18
+(owner, post-merge review):** the wizard freezes only goals the user TYPED
+(quick-add goal entry, an editor goal edit, entries hydrated from the record);
+a quick-add's automatic window default stays unfrozen and is re-planned at each
+spawn. Provenance rides beside the parameters as `typedPlacementIds` (wizard
+state + the `recurringDraftMix` blob; a blob without the key reads as all
+typed), so no flag reaches a `BoardTask`. Editing a repeating board hydrates
+its parameters from `manualTaskTargets` (they used to be wiped on save). A
+member with vary dice rolls AROUND its explicit goal (`rollTarget(goal, …)`,
+`rollExplicitGoal` ↔ `rolledExplicitGoal`) at the one-off save and at every
+spawn, instead of the explicit goal replacing the roll. A Board Edit fork of a
+compound's child re-keys that board's `childTargets` entry old → fork in the
+same write. Merging 3b is not
 lockstep-gated (both clients read every placement field since 2a); the WEB
 DEPLOY of 3b waits for the TestFlight build carrying 3a.
 

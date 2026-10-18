@@ -102,7 +102,9 @@ struct RisoQuickAddRowView: View {
     /// A counter ROOT was picked at `goal` (the board window's default, or one
     /// the row asked for): the host sets the cell's placement parameter. Nil
     /// hosts place the root plainly.
-    var onCounterGoalPicked: ((_ root: OYBC.Task, _ goal: CountValue) -> Void)? = nil
+    /// `typed` is true when the person entered the goal (a root nothing resolves
+    /// for); false for the board window's automatic default.
+    var onCounterGoalPicked: ((_ root: OYBC.Task, _ goal: CountValue, _ typed: Bool) -> Void)? = nil
 
     @State private var text: String = ""
     /// The text a pick left in the field — the dropdown hides while it is unchanged.
@@ -184,7 +186,7 @@ struct RisoQuickAddRowView: View {
         seedText: String = "",
         presetCountsTowardCounterId: String? = nil,
         linksCounterPicks: Bool = false,
-        onCounterGoalPicked: ((_ root: OYBC.Task, _ goal: CountValue) -> Void)? = nil
+        onCounterGoalPicked: ((_ root: OYBC.Task, _ goal: CountValue, _ typed: Bool) -> Void)? = nil
     ) {
         self.userId = userId
         self.defaultTimeframe = defaultTimeframe
@@ -301,12 +303,12 @@ struct RisoQuickAddRowView: View {
                             text = ""
                         }
                     },
-                    onPickWithGoal: { goal in
+                    onPickWithGoal: { goal, typed in
                         // The root is placed as itself; the goal rides as a
                         // placement parameter (slice 3b) — no copy is created.
                         // Goal first: a host that confirms on the pick (Board Edit's
                         // picker) needs it already buffered.
-                        onCounterGoalPicked?(task, goal)
+                        onCounterGoalPicked?(task, goal, typed)
                         onExistingTaskPicked?(task)
                         text = ""
                     }
@@ -398,7 +400,7 @@ private struct QuickAddMatchRow: View {
     /// Place the existing task (a plain row, or a root with a goal source).
     let onPick: () -> Void
     /// Place the root at the entered goal (a placement parameter).
-    let onPickWithGoal: (CountValue) -> Void
+    let onPickWithGoal: (_ goal: CountValue, _ typed: Bool) -> Void
 
     @State private var goalText = ""
 
@@ -455,12 +457,12 @@ private struct QuickAddMatchRow: View {
 
     /// A plain pick — or, for a counter on a one-off board, its linked copy at the default.
     private func pick() {
-        if linksCounterPick, isRoot, let source { onPickWithGoal(source.goal) } else { onPick() }
+        if linksCounterPick, isRoot, let source { onPickWithGoal(source.goal, false) } else { onPick() }
     }
 
     private func pickWithGoal() {
         guard let goal = enteredGoal else { return }
-        onPickWithGoal(goal)
+        onPickWithGoal(goal, true)
         goalText = ""
     }
 

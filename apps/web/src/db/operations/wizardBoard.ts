@@ -37,6 +37,7 @@ import { buildWindowContext } from './windowContext';
 import { createBoardTask, deleteBoardTasksForBoard } from './boardTasks';
 import { runBoardCascadeForTask } from './orchestration';
 import { addToSyncQueue } from './syncQueue';
+import { rollExplicitGoal } from './explicitGoalRoll';
 import { applyKindSwitchThenGoalGuard, withRootCountKind } from './countKindSwitch';
 import {
   applyCompoundStructureEditInTransaction,
@@ -754,6 +755,7 @@ export async function persistWizardBoardRows({
       // the planner's for that cell, like a hand-added member beats a source
       // copy. A fork remaps the key like every other id-keyed wizard map.
       const wizardParams = status === 'active' ? (placementParams ?? {}) : {};
+      const manualSet = new Set(manualTaskIds ?? []);
 
       let placedSoFar = 0;
       // Two members resolving to one task (the planner maps a legacy derived
@@ -776,6 +778,17 @@ export async function persistWizardBoardRows({
         const { taskId: _planTaskId, ...planParams } = plan;
         const explicit = wizardParams[task.id] ?? wizardParams[taskId];
         const params: PlacementParams = explicit ? { ...planParams, ...explicit } : planParams;
+        // The explicit goal replaces the planner's base, so a hand-added
+        // counter's dice roll around it (none = the goal as-is).
+        if (explicit?.targetOverride != null && manualSet.has(task.id)) {
+          const rolled = rollExplicitGoal(
+            { target: explicit.targetOverride, kind: explicit.targetKind ?? 'discrete' },
+            manualTaskVary?.[task.id] ?? manualTaskVary?.[taskId] ?? 0,
+            rng ?? Math.random,
+          );
+          params.targetOverride = rolled.target;
+          params.targetKind = rolled.kind;
+        }
         const row = Math.floor(i / size);
         const col = i % size;
         const isCenterPos = isOddBoard && row === centerRow && col === centerCol;

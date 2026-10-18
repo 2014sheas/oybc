@@ -223,7 +223,8 @@ function NormalBody({
     setBusy(true);
     try {
       if (isGreen && hasLateLog) {
-        await undo(task.id);
+        // A refused undo (the log froze meanwhile) changed nothing: stay open.
+        if (!(await undo(task.id))) return;
       } else {
         await commitCompletion(task.id);
       }

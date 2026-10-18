@@ -155,7 +155,7 @@ export async function applyStagedCompoundChildEdits(
           if (scoped.forked) {
             // The holder walk already repointed a placed parent's link; an
             // edited parent not placed yet (the wizard) is repointed here.
-            await repointCompoundLink(parentId, childId, scoped.targetId, now);
+            await repointCompoundLink(parentId, childId, scoped.targetId, now, scope?.boardId);
             linkByChildId = new Map((await readLinks()).map((l) => [l.childTaskId, l]));
             childId = scoped.targetId;
             existingChild = (await db.tasks.get(childId)) ?? existingChild;

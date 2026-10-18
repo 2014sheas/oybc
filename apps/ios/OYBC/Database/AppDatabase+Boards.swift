@@ -708,7 +708,17 @@ extension AppDatabase {
                 var placementIds: [String] = []
                 for (index, var row) in placedRows.enumerated() {
                     var placement = index < planned.count ? planned[index] : BoardSources.PlannedPlacement(taskId: row.taskId)
-                    if let draft = explicit[row.taskId] { placement = draft.overlaying(placement) }
+                    if let draft = explicit[row.taskId] {
+                        // Dice roll around the explicit goal (hand-added members only).
+                        let isManual = manualTaskIds.contains(row.taskId)
+                        let ownTask: Task? = isManual ? try Task.fetchOne(db, key: row.taskId) : nil
+                        placement = draft.overlaying(
+                            placement,
+                            vary: isManual ? (manualTaskVary[row.taskId] ?? .off) : .off,
+                            task: ownTask,
+                            rng: rng
+                        )
+                    }
                     placementIds.append(placement.taskId)
                     guard seenTaskIds.insert(placement.taskId).inserted else {
                         #if DEBUG

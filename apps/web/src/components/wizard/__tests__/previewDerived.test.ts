@@ -381,6 +381,27 @@ describe('applyPreviewDerivedCells — the Preview dry run (B3 RC6)', () => {
     expect(out[0]!.title).toBe('Run 8 miles');
   });
 
+  it('a hand-added counter with dice previews a roll AROUND its explicit goal, like the save', () => {
+    const counter = makeCounter('c1', 30);
+    const controller = makeController({
+      tasks: [counter],
+      supplyTaskIds: [],
+      manualTaskIds: ['c1'],
+      manualTaskVary: { c1: 2 },
+      placementParams: new Map([['c1', { targetOverride: 40, targetKind: 'discrete' as const }]]),
+    });
+
+    const goals = new Set<number>();
+    for (let seed = 0; seed < 12; seed++) {
+      const out = applyPreviewDerivedCells(placementOf([counter]), controller, makeLibrary([counter]), makePreviewRng(seed));
+      goals.add(out[0]!.maxCount ?? 0);
+    }
+    // Rolled around 40 (not the task's own 30): more than one value, none of them 30-centred.
+    expect(goals.size).toBeGreaterThan(1);
+    expect([...goals].every((g) => g >= 1)).toBe(true);
+    expect(Math.min(...goals) + Math.max(...goals)).toBeGreaterThan(60);
+  });
+
   it('keeps a One-square compound member as its original task, so its children still resolve', () => {
     // A compound whose counting part is re-targeted mints a derived COMPOUND
     // at persist time. Its cell renders identically (same title, same type),

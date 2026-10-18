@@ -144,7 +144,21 @@ extension AppDatabase {
         }
 
         if let repoint {
+            // A Replace clears a placement's parameters (the old task's don't follow a
+            // swap) — but a fork IS the same task for this board, so its goal / title /
+            // per-child goals stay.
+            let before = try BoardTask.fetchOne(db, key: repoint.boardTaskId)
             try updateBoardTaskAndCascade(db: db, boardTaskId: repoint.boardTaskId, newTaskId: fork.id)
+            if let before {
+                var keep = PlacementParamsPatch()
+                if let target = before.targetOverride {
+                    keep.targetOverride = .set(target)
+                    keep.targetKind = before.targetKind.map { .set($0) } ?? .keep
+                }
+                if let title = before.titleOverride { keep.titleOverride = .set(title) }
+                if let targets = before.childTargets { keep.childTargets = .set(targets) }
+                try setPlacementParams(db: db, boardTaskId: before.id, patch: keep, now: now)
+            }
         }
         for holderId in holderIds {
             try replaceInHolderSubtree(db: db, holderId: holderId, oldId: taskId, newId: fork.id, board: board, now: now)
@@ -170,7 +184,9 @@ extension AppDatabase {
             .sorted { $0.childIndex != $1.childIndex ? $0.childIndex < $1.childIndex : $0.id < $1.id }
         for link in links {
             if link.childTaskId == oldId {
-                try repointCompoundLink(db: db, compoundId: privateHolderId, oldChildId: oldId, newChildId: newId, now: now)
+                try repointCompoundLink(
+                    db: db, compoundId: privateHolderId, oldChildId: oldId, newChildId: newId, boardId: board.id, now: now
+                )
                 continue
             }
             // An intermediate compound on the path to `oldId`.
@@ -190,9 +206,15 @@ extension AppDatabase {
     ///   - compoundId: The parent compound.
     ///   - oldChildId: The child the link points at today.
     ///   - newChildId: The child it must point at.
+    ///   - boardId: When the repoint is board-scoped (a fork for that board),
+    ///     the board whose placement(s) of `compoundId` carry `childTargets`
+    ///     keyed by `oldChildId`: the key moves to `newChildId` in the same
+    ///     transaction (version bump + enqueue), so the fork is scored at the
+    ///     board's per-child goal rather than its own. nil = global repoint.
     ///   - now: ISO8601 stamp.
     static func repointCompoundLink(
-        db: Database, compoundId: String, oldChildId: String, newChildId: String, now: String
+        db: Database, compoundId: String, oldChildId: String, newChildId: String,
+        boardId: String? = nil, now: String
     ) throws {
         let links = try CompoundChild
             .filter(Column("compoundTaskId") == compoundId && Column("childTaskId") == oldChildId
@@ -206,6 +228,34 @@ extension AppDatabase {
             try SyncQueueBuilder.makeItem(
                 entityType: "compoundChildren", entityId: link.id, operationType: .update, payload: link, now: now
             ).enqueue(db)
+        }
+        if let boardId, !links.isEmpty {
+            try rekeyChildTargets(
+                db: db, boardId: boardId, compoundId: compoundId, oldChildId: oldChildId, newChildId: newChildId, now: now
+            )
+        }
+    }
+
+    /// Move a per-child goal from `oldChildId` to `newChildId` on every live
+    /// placement of `compoundId` on `boardId` (an existing entry for the new id
+    /// wins). A placement that doesn't name the old child is left untouched.
+    private static func rekeyChildTargets(
+        db: Database, boardId: String, compoundId: String, oldChildId: String, newChildId: String, now: String
+    ) throws {
+        let placements = try BoardTask
+            .filter(Column("boardId") == boardId && Column("taskId") == compoundId && Column("isDeleted") == false)
+            .fetchAll(db)
+        for placement in placements {
+            guard let targets = placement.childTargets, targets.contains(where: { $0.childId == oldChildId }) else { continue }
+            let hasNew = targets.contains { $0.childId == newChildId }
+            let rekeyed: [PlacementChildTarget] = targets.compactMap { entry in
+                guard entry.childId == oldChildId else { return entry }
+                return hasNew ? nil : PlacementChildTarget(childId: newChildId, target: entry.target)
+            }
+            try setPlacementParams(
+                db: db, boardTaskId: placement.id,
+                patch: PlacementParamsPatch(childTargets: rekeyed.isEmpty ? .clear : .set(rekeyed)), now: now
+            )
         }
     }
 

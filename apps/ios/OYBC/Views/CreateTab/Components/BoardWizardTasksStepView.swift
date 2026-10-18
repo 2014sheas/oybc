@@ -121,8 +121,11 @@ struct BoardWizardTasksStepView: View {
     var onPendingCreated: ((_ payload: PendingTaskPayload) -> Void)? = nil
     /// The wizard's per-cell placement parameters (`BoardWizardViewModel.placementParams`).
     var placementParams: [String: PlacementParamsDraft] = [:]
-    /// Set / clear one cell's placement parameters; returns the previous value.
-    var onSetPlacementParams: ((_ taskId: String, _ params: PlacementParamsDraft?) -> PlacementParamsDraft?)? = nil
+    /// The ids in `placementParams` whose goal was typed (`BoardWizardViewModel.typedPlacementIds`).
+    var placementTyped: Set<String> = []
+    /// Set / clear one cell's placement parameters (`typed`: the goal was typed,
+    /// not an automatic default); returns the previous value.
+    var onSetPlacementParams: ((_ taskId: String, _ params: PlacementParamsDraft?, _ typed: Bool) -> PlacementParamsDraft?)? = nil
     /// The board's window changed: re-derive the window-default overrides.
     var onRestampPlacementParams: ((_ window: CounterPlacement.PickWindow) -> Void)? = nil
 
@@ -426,8 +429,8 @@ struct BoardWizardTasksStepView: View {
                                 toggleSelection(task.id)
                             },
                             linksCounterPicks: !isRecurring,
-                            onCounterGoalPicked: { root, goal in
-                                _ = onSetPlacementParams?(root.id, PlacementParamsDraft.forCounterGoal(goal, root: root))
+                            onCounterGoalPicked: { root, goal, typed in
+                                _ = onSetPlacementParams?(root.id, PlacementParamsDraft.forCounterGoal(goal, root: root), typed)
                             }
                         )
                     }
@@ -843,15 +846,16 @@ struct BoardWizardTasksStepView: View {
         editingTaskId = nil
         guard goalChanged || restChanged else { return true }
         var previousParams: PlacementParamsDraft?? = nil
+        let previousTyped = placementTyped.contains(task.id)
         if goalChanged {
             // A blank / unparseable goal leaves the placement as it was.
             if let goal = parseCountInput(editDraft.goal, kind: editDraft.countKind), goal > 0 {
-                previousParams = .some(onSetPlacementParams(task.id, PlacementParamsDraft.forCounterGoal(goal, root: base)))
+                previousParams = .some(onSetPlacementParams(task.id, PlacementParamsDraft.forCounterGoal(goal, root: base), true))
             }
         }
         let previousStaged = restChanged ? onStageEdit(rest, task.id) : nil
         showToast("Task edited") {
-            if let previousParams { _ = onSetPlacementParams(task.id, previousParams) }
+            if let previousParams { _ = onSetPlacementParams(task.id, previousParams, previousTyped) }
             if restChanged { onRevertEdit(task.id, previousStaged) }
         }
         return true

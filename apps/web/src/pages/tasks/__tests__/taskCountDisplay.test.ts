@@ -81,3 +81,28 @@ describe('isInProgress (status filter)', () => {
     expect(isInProgress(LINKED, LIBRARY, { 'root-1': [inc('root-1', 5)] })).toBe(false);
   });
 });
+
+describe('isInProgress — compound with a counting child (C7)', () => {
+  const COMPOUND = task({ id: 'cmp', type: TaskType.COMPOUND, maxCount: undefined, action: undefined, unit: undefined } as Partial<Task>);
+  const library = (child: Task) =>
+    ({
+      taskMap: { [child.id]: child, cmp: COMPOUND },
+      compoundChildrenByCompound: { cmp: [{ compoundTaskId: 'cmp', childTaskId: child.id, childIndex: 0, isDeleted: false }] },
+    }) as unknown as TaskLibrary;
+
+  it('a linked counting child whose ROOT reached the goal counts as completed even with a stale latch', () => {
+    const child = task({ id: 'kid', sharedCounterId: 'root-1', maxCount: 5, isCompleted: false });
+    expect(isInProgress(COMPOUND, library(child), { 'root-1': [inc('root-1', 5)] })).toBe(true);
+  });
+
+  it('a counting child whose cache latch says completed but whose events say otherwise does not count', () => {
+    const child = task({ id: 'kid', sharedCounterId: 'root-1', maxCount: 5, isCompleted: true });
+    expect(isInProgress(COMPOUND, library(child), { 'root-1': [inc('root-1', 2)] })).toBe(false);
+  });
+
+  it('a non-counting child still reads the isCompleted cache', () => {
+    const done = task({ id: 'kid', type: TaskType.NORMAL, isCompleted: true });
+    expect(isInProgress(COMPOUND, library(done), {})).toBe(true);
+    expect(isInProgress(COMPOUND, library({ ...done, isCompleted: false }), {})).toBe(false);
+  });
+});

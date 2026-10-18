@@ -210,7 +210,8 @@ extension AppDatabase {
                             // parent's link; a parent not placed yet (the
                             // wizard) is repointed here.
                             try repointCompoundLink(
-                                db: db, compoundId: parentId, oldChildId: childId, newChildId: scoped.targetId, now: now
+                                db: db, compoundId: parentId, oldChildId: childId, newChildId: scoped.targetId,
+                                boardId: scopeBoard?.id, now: now
                             )
                             linkByChildId = Dictionary(try readLinks().map { ($0.childTaskId, $0) }, uniquingKeysWith: { a, _ in a })
                             childId = scoped.targetId

@@ -3,6 +3,7 @@ import {
   TaskType,
   boardWindowEnd,
   evaluateCompound,
+  findTransitiveParentCompounds,
   isEventOwningTask,
   isEventSealImmune,
   isQuantizedCount,
@@ -23,7 +24,7 @@ import {
   appendCompletionEvent,
   appendIncrementEvent,
   insertIncrementEventRaw,
-  computeTaskCachesFromEvents,
+  stampTaskCachesAuthored,
   getSealImmuneWindowsForTask,
 } from './taskEvents';
 import { loadPlacementReach } from './placementReach';
@@ -41,7 +42,7 @@ import { runBoardCascadeForTasks } from './orchestration';
  */
 
 /** Board metadata / task-shape guards these entry points enforce. */
-export type LateLogErrorKind = 'boardNotFound' | 'boardNotClosed' | 'taskNotFound' | 'wrongType' | 'ruleNotMet';
+export type LateLogErrorKind = 'boardNotFound' | 'boardNotClosed' | 'taskNotFound' | 'taskNotPlaced' | 'wrongType' | 'ruleNotMet';
 
 /** Thrown by every entry point in this file on a guard failure. */
 export class LateLogError extends Error {
@@ -85,25 +86,6 @@ async function applyLateLogSideEffects(changedTaskIds: Iterable<string>, lateLog
   if (affectedBoardIds.size > 0) await refreshWatchersForBoards(affectedBoardIds);
 }
 
-/** Restamp an event-owning task's lifetime caches (mirrors `taskEvents.ts`'s
- *  private `stampTaskCachesAuthored` — duplicated here rather than exported,
- *  since it's a one-line wrapper around the exported pure function). */
-async function restampCaches(taskId: string, now: string): Promise<void> {
-  const task = await db.tasks.get(taskId);
-  if (!task || !isEventOwningTask(task)) return;
-  const events = await db.taskEvents.where('taskId').equals(taskId).toArray();
-  const caches = computeTaskCachesFromEvents(task, events);
-  await db.tasks.update(taskId, {
-    isCompleted: caches.isCompleted,
-    currentCount: caches.currentCount,
-    completedAt: caches.completedAt,
-    updatedAt: now,
-    version: (task.version ?? 0) + 1,
-  });
-  const updated = await db.tasks.get(taskId);
-  if (updated) await addToSyncQueue('tasks', taskId, SyncOperationType.UPDATE, updated);
-}
-
 /** Guard shared by every entry point: the board exists, is live, and is closed. */
 async function requireClosedBoard(boardId: string) {
   const board = await db.boards.get(boardId);
@@ -136,6 +118,41 @@ function hasCompletionInSealedWindow(
 }
 
 /**
+ * Guard shared by the late-log writers: the task is placed on `boardId` —
+ * directly, or inside a placed compound (any depth). A task the board does
+ * not show must never get an event authored "from" it.
+ */
+async function requireTaskPlacedOnBoard(boardId: string, taskId: string): Promise<void> {
+  const reach = findTransitiveParentCompounds(taskId, await db.compoundChildren.toArray());
+  reach.add(taskId);
+  const onBoard = await db.boardTasks
+    .where('boardId')
+    .equals(boardId)
+    .filter((bt) => !bt.isDeleted && reach.has(bt.taskId))
+    .count();
+  if (onBoard === 0) throw new LateLogError('taskNotPlaced', taskId);
+}
+
+/**
+ * The late logs a person can still UNDO on a closed board: the board's
+ * authored late logs ({@link selectClosedBoardLateLogs}) minus any event that
+ * is seal-immune (`isEventSealImmune` over every containing board's immune
+ * windows — e.g. a log made on the ended-but-unsealed board before Close).
+ * Such an event is part of the closed window and stays permanent, so it is
+ * neither offered for Undo nor picked by {@link undoLateLog}. Newest first.
+ */
+async function undoableLateLogs(
+  events: ReadonlyArray<TaskEvent>,
+  board: Board,
+  eventTaskId: string,
+): Promise<TaskEvent[]> {
+  const candidates = selectClosedBoardLateLogs(events, board, eventTaskId);
+  if (candidates.length === 0) return candidates;
+  const immuneWindows = await getSealImmuneWindowsForTask(eventTaskId);
+  return candidates.filter((e) => !isEventSealImmune(e, immuneWindows));
+}
+
+/**
  * Late-log a NORMAL task's completion on a closed board (D7). No-op if the
  * task is already complete inside the sealed window (never a duplicate
  * event).
@@ -152,6 +169,7 @@ export async function lateLogCompletion(
 ): Promise<void> {
   await db.transaction('rw', LATE_LOG_TABLES, async () => {
     const board = await requireClosedBoard(boardId);
+    await requireTaskPlacedOnBoard(boardId, taskId);
     const task = await db.tasks.get(taskId);
     if (!task || task.isDeleted) throw new LateLogError('taskNotFound', taskId);
     if (task.type !== TaskType.NORMAL) throw new LateLogError('wrongType', taskId);
@@ -200,6 +218,7 @@ export async function lateLogIncrement(
   }
   await db.transaction('rw', LATE_LOG_TABLES, async () => {
     const board = await requireClosedBoard(boardId);
+    await requireTaskPlacedOnBoard(boardId, taskId);
     const task = await db.tasks.get(taskId);
     if (!task || task.isDeleted) throw new LateLogError('taskNotFound', taskId);
     if (task.type !== TaskType.COUNTING) throw new LateLogError('wrongType', taskId);
@@ -275,6 +294,7 @@ export async function lateLogCompoundParts(
 ): Promise<void> {
   await db.transaction('rw', LATE_LOG_TABLES, async () => {
     const board = await requireClosedBoard(boardId);
+    await requireTaskPlacedOnBoard(boardId, compoundTaskId);
     const compound = await db.tasks.get(compoundTaskId);
     if (!compound || compound.isDeleted) throw new LateLogError('taskNotFound', compoundTaskId);
     if (compound.type !== TaskType.COMPOUND) throw new LateLogError('wrongType', compoundTaskId);
@@ -480,15 +500,12 @@ export async function undoLateLog(
     const effectiveTaskId = task.sharedCounterId ?? taskId;
 
     const events = await db.taskEvents.where('taskId').equals(effectiveTaskId).toArray();
-    const candidates = selectClosedBoardLateLogs(events, board, effectiveTaskId);
-    const entry = candidates[0];
-    if (!entry) return false;
-
     // D10 — a late log re-freezes once ANY containing board (not just this
-    // one) seals AFTER it was created; check the general immunity rule
-    // before tombstoning, not just this board's own provenance.
-    const immuneWindows = await getSealImmuneWindowsForTask(effectiveTaskId);
-    if (isEventSealImmune(entry, immuneWindows)) return false;
+    // one) seals AFTER it was created, and a log made on the ended-but-unsealed
+    // board before Close is part of the closed window: both are permanent, so
+    // only the remaining ones are candidates.
+    const entry = (await undoableLateLogs(events, board, effectiveTaskId))[0];
+    if (!entry) return false;
 
     await db.taskEvents.update(entry.id, {
       isDeleted: true,
@@ -499,36 +516,11 @@ export async function undoLateLog(
     const savedEvent = await db.taskEvents.get(entry.id);
     if (savedEvent) await addToSyncQueue('taskEvents', entry.id, SyncOperationType.DELETE, savedEvent, 0);
 
-    if (entry.kind === 'completion') {
-      await restampCaches(effectiveTaskId, now);
-      await applyLateLogSideEffects([effectiveTaskId], entry.occurredAt);
-      return true;
-    }
-
-    // increment — effectiveTaskId is always a ROOT (standalone counter or a
-    // shared-counter source): correct its lifetime `currentCount` by
-    // subtracting the reversed entry's delta (raw-appended events bypass the
-    // cache restamp — see `insertIncrementEventRaw`'s docstring), preserving
-    // the one-way completion latch, exactly like `undoLastCounterLog`.
-    const root = await db.tasks.get(effectiveTaskId);
-    if (root) {
-      const entryDelta = entry.delta ?? 0;
-      const currentCount = root.currentCount ?? 0;
-      const newRootCount = Math.max(0, quantizeCount(currentCount - entryDelta));
-      const rootWasCompleted = root.isCompleted;
-      const rootNowCompleted =
-        rootWasCompleted || (root.maxCount != null && newRootCount >= root.maxCount);
-
-      await db.tasks.update(effectiveTaskId, {
-        currentCount: newRootCount,
-        isCompleted: rootNowCompleted,
-        completedAt: !rootWasCompleted && rootNowCompleted ? now : root.completedAt,
-        updatedAt: now,
-        version: (root.version ?? 0) + 1,
-      });
-      const savedRoot = await db.tasks.get(effectiveTaskId);
-      if (savedRoot) await addToSyncQueue('tasks', effectiveTaskId, SyncOperationType.UPDATE, savedRoot, 0);
-    }
+    // The lifetime caches are RECOMPUTED from the remaining events (the
+    // tombstone above is already visible), never adjusted arithmetically — a
+    // reversed log that had completed the root un-completes it, exactly like
+    // iOS `stampTaskCachesAuthored`.
+    await stampTaskCachesAuthored(effectiveTaskId, now);
 
     await applyLateLogSideEffects([effectiveTaskId, taskId], entry.occurredAt);
     return true;
@@ -546,8 +538,8 @@ export interface ClosedBoardSquareState {
   /** For COUNTING only: the sealed-bounded windowed count (D16); `0` for NORMAL. */
   count: number;
   /** Late logs made directly on this board for this task (root-resolved for
-   *  a linked square), newest first — `[]` means nothing to
-   *  undo. */
+   *  a linked square), newest first, seal-immune ones excluded — `[]` means
+   *  nothing to undo. */
   lateLogs: TaskEvent[];
   /** The event-owning id whose events this state was READ from — the tapped
    *  task for NORMAL/plain COUNTING, or the ROOT for a linked square (linked
@@ -584,7 +576,7 @@ export async function readClosedBoardSquareState(
   if (task.type === TaskType.NORMAL) {
     const events = await db.taskEvents.where('taskId').equals(taskId).toArray();
     const isGreen = hasCompletionInSealedWindow(events, board.startDate, board.endDate, board.sealedAt);
-    const lateLogs = selectClosedBoardLateLogs(events, board, taskId);
+    const lateLogs = await undoableLateLogs(events, board, taskId);
     return { isGreen, count: 0, lateLogs, effectiveTaskId: taskId };
   }
 
@@ -600,7 +592,7 @@ export async function readClosedBoardSquareState(
     { [effectiveTaskId]: rootEvents.filter((e) => !e.isDeleted) },
     board,
   );
-  const lateLogs = selectClosedBoardLateLogs(rootEvents, board, effectiveTaskId);
+  const lateLogs = await undoableLateLogs(rootEvents, board, effectiveTaskId);
   return { isGreen, count, lateLogs, effectiveTaskId };
 }
 

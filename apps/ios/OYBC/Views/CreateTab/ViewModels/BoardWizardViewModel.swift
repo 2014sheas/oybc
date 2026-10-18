@@ -160,6 +160,10 @@ final class BoardWizardViewModel {
     /// record does not carry them (a recurring window re-plans from the root's
     /// defaults). Cleared when the task leaves the selection.
     var placementParams: [String: PlacementParamsDraft] = [:]
+    /// The ids in `placementParams` whose goal the person TYPED (not an automatic
+    /// window default). Only these freeze into a repeating board's
+    /// `manualTaskTargets` and survive a window restamp.
+    var typedPlacementIds: Set<String> = []
     /// The window `placementParams` were last derived at (in-memory; a resumed
     /// draft adopts the draft board's own window).
     var placementParamsWindow: CounterPlacement.PickWindow?
@@ -349,6 +353,7 @@ final class BoardWizardViewModel {
                 // the blob alongside the ids they belong to.
                 self.manualTaskVary = mix.manualTaskVary
                 self.placementParams = mix.placementParams
+                self.typedPlacementIds = Set(mix.typedPlacementIds)
                 self.placementParamsWindow = CounterPlacement.PickWindow(
                     timeframe: d.board.timeframe, startDate: d.board.startDate, endDate: d.board.endDate
                 )
@@ -407,6 +412,11 @@ final class BoardWizardViewModel {
             // §Member rules (B3) — the record's stored dice for hand-added
             // members (nil on every pre-B1 row → no dice).
             self.manualTaskVary = t.manualTaskVary ?? [:]
+            // The record's frozen per-window goals / titles round-trip through
+            // the editor as TYPED placement params, so a Save re-freezes them
+            // instead of writing the field absent.
+            self.placementParams = Self.placementParams(fromFrozen: t.manualTaskTargets, manualTaskIds: recordManualIds)
+            self.typedPlacementIds = Set(self.placementParams.keys)
         } else {
             let initialSize = preferences.defaultBoardSize.rawValue
             self.size = initialSize
@@ -848,6 +858,7 @@ final class BoardWizardViewModel {
         manualTaskIds = []
         manualTaskVary = [:]
         placementParams = [:]
+        typedPlacementIds = []
         placementParamsWindow = nil
         childrenByCompoundId = [:]
         currentStep = 1

@@ -40,10 +40,17 @@ struct RecurringDraftMixPayload: Codable {
     /// (additive key an older client ignores); the activating save writes them
     /// onto the `board_tasks` rows.
     var placementParams: [String: PlacementParamsDraft]
+    /// Which `placementParams` entries the person TYPED (vs an automatic window
+    /// default); only typed ones freeze into a repeating board's
+    /// `manualTaskTargets`. Written whenever `placementParams` is non-empty. A
+    /// blob without the key (an older client) decodes with EVERY id typed — the
+    /// previous freeze-everything behaviour — and ids with no entry are dropped.
+    /// Web twin: `typedPlacementIds`.
+    var typedPlacementIds: [String]
 
     private enum CodingKeys: String, CodingKey {
         case v, poolIds, manualTaskIds, removedTaskIds, sources
-        case manualTaskVary, placementParams
+        case manualTaskVary, placementParams, typedPlacementIds
     }
 
     init(
@@ -52,7 +59,8 @@ struct RecurringDraftMixPayload: Codable {
         removedTaskIds: [String],
         sources: [BoardSource]? = nil,
         manualTaskVary: [String: VaryLevel] = [:],
-        placementParams: [String: PlacementParamsDraft] = [:]
+        placementParams: [String: PlacementParamsDraft] = [:],
+        typedPlacementIds: [String]? = nil
     ) {
         self.poolIds = poolIds
         self.manualTaskIds = manualTaskIds
@@ -60,6 +68,7 @@ struct RecurringDraftMixPayload: Codable {
         self.sources = sources
         self.manualTaskVary = manualTaskVary
         self.placementParams = placementParams
+        self.typedPlacementIds = typedPlacementIds ?? placementParams.keys.sorted()
     }
 
     init(from decoder: Decoder) throws {
@@ -81,6 +90,9 @@ struct RecurringDraftMixPayload: Codable {
         )
         manualTaskVary = decodedVary ?? [:]
         placementParams = ((try? container.decodeIfPresent([String: PlacementParamsDraft].self, forKey: .placementParams)) ?? nil) ?? [:]
+        let storedTyped = (try? container.decodeIfPresent([String].self, forKey: .typedPlacementIds)) ?? nil
+        let decodedParams = placementParams
+        typedPlacementIds = storedTyped.map { $0.filter { decodedParams[$0] != nil } } ?? decodedParams.keys.sorted()
     }
 
     func encode(to encoder: Encoder) throws {
@@ -109,6 +121,7 @@ struct RecurringDraftMixPayload: Codable {
         }
         if !placementParams.isEmpty {
             try container.encode(placementParams, forKey: .placementParams)
+            try container.encode(typedPlacementIds.sorted(), forKey: .typedPlacementIds)
         }
     }
 

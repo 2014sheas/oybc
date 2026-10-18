@@ -107,6 +107,13 @@ export interface BoardWizardState {
    */
   placementParams: Map<string, PlacementParams>;
   /**
+   * The `placementParams` ids whose goal the person TYPED. Only a typed goal
+   * is frozen into a repeating board's `manualTaskTargets`; a quick-add's
+   * automatic window default is re-evaluated at every spawn. Persisted on the
+   * draft blob (`typedPlacementIds`).
+   */
+  placementTyped: ReadonlySet<string>;
+  /**
    * §Member rules (B3, RC7) — the live compound-children map (library links
    * + this session's pending compounds + the staged-edit overlay), the
    * lookup a Split-up expansion and the rule editor's part rows both read.
@@ -308,7 +315,7 @@ export interface BoardWizardActions {
    * them onto the cell's `BoardTask`. Mirrors iOS
    * `BoardWizardViewModel.setPlacementParams`.
    */
-  setPlacementParams: (taskId: string, params: PlacementParams | null) => void;
+  setPlacementParams: (taskId: string, params: PlacementParams | null, typed?: boolean) => void;
   /**
    * Re-stamp the parameters for a changed window: an override at the old
    * window's default follows to the new window's; a typed goal stays.

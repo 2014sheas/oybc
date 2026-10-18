@@ -178,6 +178,18 @@ final class TaskDetailViewModel: ObservableObject {
         }
     }
 
+    /// The host (re)appeared — first presentation, or a pop back from a pushed
+    /// screen. Drops the hero's Undo strip first: it describes a write from
+    /// BEFORE the push, and its Undo would otherwise reverse the counter's
+    /// LATEST log, which may since have been written elsewhere (Counter
+    /// Detail). Then loads like `load(taskId:)`.
+    ///
+    /// - Parameter taskId: The task the host shows.
+    func hostAppeared(taskId: String) async {
+        strip = nil
+        await load(taskId: taskId)
+    }
+
     /// Re-reads everything (after a write, an edit, or returning from Counter Detail).
     func refresh() async { await load() }
 

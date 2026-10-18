@@ -517,9 +517,11 @@ extension BoardPlayViewModel {
                   let placement = try BoardTask
                     .filter(Column("boardId") == boardId && Column("taskId") == target && Column("isDeleted") == false)
                     .fetchOne(db) else { continue }
+            let finalChildren: [Task]? = final.type == .compound ? try Self.storedChildren(db: db, parentId: final.id) : nil
             let patch = BoardEditParamSplit.parameterPatch(
-                override: input.override, task: final, placement: placement,
-                storedChildren: final.type == .compound ? try Self.storedChildren(db: db, parentId: final.id) : nil,
+                override: Self.overrideFollowingChildForks(input.override, boardId: boardId, storedChildren: finalChildren),
+                task: final, placement: placement,
+                storedChildren: finalChildren,
                 titleSettings: try final.sharedCounterId.flatMap { try Task.fetchOne(db, key: $0) }
                     .map(CounterSettings.TitleSettings.init(task:))
             )
@@ -530,6 +532,27 @@ extension BoardPlayViewModel {
         for id in touched.sorted() {
             try AppDatabase.recheckCountsToward(db: db, taskId: id, strict: false)
         }
+    }
+
+    /// The override with each compound step that named a sub-task this Save
+    /// forked for `boardId` re-pointed at the fork (the parent now links the
+    /// fork, so the step's goal must be matched against the fork's row, and its
+    /// placement `childTargets` entry was re-keyed to the fork's id).
+    nonisolated static func overrideFollowingChildForks(
+        _ override: StagedTaskOverride, boardId: String, storedChildren: [Task]?
+    ) -> StagedTaskOverride {
+        guard var structure = override.compound, let storedChildren else { return override }
+        let live = Set(storedChildren.map(\.id))
+        var changed = false
+        for i in structure.children.indices {
+            guard let id = structure.children[i].childTaskId, !live.contains(id) else { continue }
+            let fork = BoardScopedFork.forkTaskId(boardId: boardId, taskId: id)
+            if live.contains(fork) { structure.children[i].childTaskId = fork; changed = true }
+        }
+        guard changed else { return override }
+        var out = override
+        out.compound = structure
+        return out
     }
 
     /// A compound's live sub-tasks in `childIndex` order.

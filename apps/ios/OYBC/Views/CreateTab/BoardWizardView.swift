@@ -453,7 +453,8 @@ struct BoardWizardView: View {
                     wizard.addPendingTask(payload)
                 },
                 placementParams: wizard.placementParams,
-                onSetPlacementParams: { wizard.setPlacementParams(taskId: $0, $1) },
+                placementTyped: wizard.typedPlacementIds,
+                onSetPlacementParams: { wizard.setPlacementParams(taskId: $0, $1, typed: $2) },
                 onRestampPlacementParams: { wizard.restampPlacementParams(to: $0) },
                 pendingTasks: wizard.pendingTasks,
                 onBack: { wizard.goBack() },

@@ -7,11 +7,11 @@ import {
   placeBoard,
   resolveSourceAvailable,
   selectBoardTasks,
-  type ManualTaskTarget,
   type PendingTemplateSpawn,
   type Task,
 } from '@oybc/shared';
 import { algorithmSupplies } from '../../pages/createHub/wizardSources';
+import { freezeTypedManualTargets } from '../../pages/createHub/wizardPlacementParamsLogic';
 import {
   createRecurringBoardTemplate,
   softDeleteRecurringBoardTemplate,
@@ -411,6 +411,7 @@ export async function persistWizardBoard({
           manualTaskVary: controller.manualTaskVary,
           // TASK_WINDOW_REWORK slice 3b — the wizard's per-cell parameters.
           placementParams: Object.fromEntries(controller.placementParams),
+          typedPlacementIds: [...controller.placementTyped],
         })
       : undefined;
 
@@ -578,18 +579,15 @@ export async function persistRecurringTemplate({
   // §Member rules (B3, RC3) — dice for hand-added counters, persisted on the
   // record so each recurring board rolls them for its own window.
   const manualTaskVary = controller.manualTaskVary;
-  // TASK_WINDOW_REWORK slice 3b — a hand-added member's typed goal is frozen
+  // TASK_WINDOW_REWORK slice 3b — a hand-added member's TYPED goal is frozen
   // on the record; each spawn applies it as that member's placement override.
-  const manualTaskTargets: Record<string, ManualTaskTarget> = {};
-  for (const id of manualTaskIds) {
-    const p = controller.placementParams.get(id);
-    if (p?.targetOverride == null) continue;
-    manualTaskTargets[id] = {
-      target: p.targetOverride,
-      kind: p.targetKind ?? 'discrete',
-      ...(p.titleOverride !== undefined ? { title: p.titleOverride } : {}),
-    };
-  }
+  // A quick-add's automatic window default is never frozen (the planner
+  // re-derives it for every spawn window).
+  const manualTaskTargets = freezeTypedManualTargets(
+    manualTaskIds,
+    controller.placementParams,
+    controller.placementTyped,
+  );
   // Creation-time snapshot — not read by the spawn, but still read by
   // other surfaces (see this function's docstring).
   const seedTaskIds = Array.from(controller.selectedTaskIds);

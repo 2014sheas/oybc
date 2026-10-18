@@ -1,6 +1,6 @@
 import { formatCount, type CountKind } from '@oybc/shared';
 import { StatusPill } from '../../StatusPill';
-import { LogControls } from './LogControls';
+import { LogControls, type LogResult } from './LogControls';
 import { goalLine, heroCountSize, progressPill, restLine, restToGo } from './squareSheetModel';
 import styles from './SquareSheet.module.css';
 
@@ -21,7 +21,7 @@ export interface CountingBodyProps {
   removeDisabled: boolean;
   initialEntry?: 'add' | 'remove';
   trailing?: React.ReactNode;
-  onLog: (direction: 'add' | 'remove', amount: number, persist: boolean) => void;
+  onLog: (direction: 'add' | 'remove', amount: number, persist: boolean) => LogResult;
   onUndo: () => void;
 }
 

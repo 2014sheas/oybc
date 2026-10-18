@@ -103,7 +103,7 @@ struct SquarePickerSheetView: View {
                             placementStartDate: startDate,
                             placementEndDate: endDate,
                             linksCounterPicks: true,
-                            onCounterGoalPicked: { root, goal in
+                            onCounterGoalPicked: { root, goal, _ in
                                 bufferedPlacement[root.id] = PlacementParamsDraft.forCounterGoal(goal, root: root)
                             }
                         )

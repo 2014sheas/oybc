@@ -13,8 +13,9 @@ import GRDB
 //   - `lateLogCompoundParts` — a COMPOUND square's staged child parts
 //     (NORMAL → completion, plain COUNTING → +1); commits only once the
 //     rule is met.
-//   - `undoLateLog` — reverses exactly the newest late log on `taskId`
-//     (`selectClosedBoardLateLogs`), never any other sealed-window event.
+//   - `undoLateLog` — reverses exactly the newest UNDOABLE late log on
+//     `taskId` (`selectUndoableClosedBoardLateLogs`: a seal-immune log is
+//     permanent), never any other sealed-window event.
 //
 // Every entry point: guards the board is CLOSED and the task is placed on it
 // (directly or via a placed compound), stamps `occurredAt` at the board's
@@ -382,26 +383,29 @@ extension AppDatabase {
 
     // MARK: - undoLateLog (D10, R2)
 
-    /// Reverses exactly the newest late log a user made on `boardId` for
-    /// `taskId` (`selectClosedBoardLateLogs` — newest `createdAt` first). For
-    /// a linked square, pass the ROOT id (linked rows own no
-    /// events). Silent no-op if there is nothing to undo.
+    /// Reverses the newest UNDOABLE late log a user made on `boardId` for
+    /// `taskId` (`selectUndoableClosedBoardLateLogs` — newest `createdAt`
+    /// first; a seal-immune log is permanent and never a candidate). For a
+    /// linked square, pass the ROOT id (linked rows own no events).
     ///
+    /// - Returns: `true` when a late log was reversed; `false` (nothing written)
+    ///   when there is nothing undoable — none was made, or every one is
+    ///   re-frozen by a seal.
     /// - Throws: `LateLogError.boardNotClosed`.
-    func undoLateLog(boardId: String, taskId: String, now: String = AppDatabase.currentTimestamp()) throws {
-        try write { db in
+    @discardableResult
+    func undoLateLog(boardId: String, taskId: String, now: String = AppDatabase.currentTimestamp()) throws -> Bool {
+        try write { db -> Bool in
             let board = try Self.fetchClosedBoard(db: db, boardId: boardId)
 
             let allEvents = try TaskEvent.filter(Column("taskId") == taskId).fetchAll(db)
-            let lateLogs = selectClosedBoardLateLogs(events: allEvents, board: board, taskId: taskId)
-            guard var latest = lateLogs.first else { return } // nothing to undo
-
             // D10: a late log re-freezes once ANY containing board (not just
             // `boardId`) seals AFTER it was created — `selectClosedBoardLateLogs`
-            // only knows about `boardId`'s own seal instant, so check the FULL
+            // only knows about `boardId`'s own seal instant, so apply the FULL
             // cross-board immunity predicate before touching anything.
             let immuneWindows = try Self.sealImmuneWindows(db: db, taskId: taskId)
-            guard !isEventSealImmune(latest, windows: immuneWindows) else { return } // re-frozen by a later seal
+            guard var latest = selectUndoableClosedBoardLateLogs(
+                events: allEvents, board: board, taskId: taskId, immuneWindows: immuneWindows
+            ).first else { return false } // nothing to undo
 
             latest.isDeleted = true
             latest.deletedAt = now
@@ -415,6 +419,7 @@ extension AppDatabase {
             try Self.stampTaskCachesAuthored(db: db, taskId: taskId, now: now)
 
             try Self.reDeriveAfterLateLogWrite(db: db, changedTaskIds: [taskId], now: now, lateLogStamp: latest.occurredAt)
+            return true
         }
     }
 }

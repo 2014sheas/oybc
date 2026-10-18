@@ -3,6 +3,7 @@ import {
   TaskType,
   counterDisplayName,
   effectiveCenter,
+  isEventOwningTask,
   quantizeCount,
   resolveCountKind,
   resolveTaskWindowState,
@@ -641,6 +642,10 @@ export function useBoardPlay(params: UseBoardPlayParams): UseBoardPlayResult {
 
       // Only the CURRENT-board placement is eligible for handleComplete.
       const currentBt = boardTasks.find((bt) => bt.taskId === childTaskId);
+      // A child that is not placed here and owns no events (a nested compound,
+      // an achievement) has nothing to author: report no write, so no
+      // "done" strip / toast with an Undo appears for a no-op.
+      if (!currentBt && !isEventOwningTask(childTask)) return null;
       const desired =
         explicit ?? compoundChildToggleDesired(childTask, taskMap, compoundChildrenByCompound, squareWindowContext);
 

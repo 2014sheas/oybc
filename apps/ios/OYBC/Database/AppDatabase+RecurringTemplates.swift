@@ -195,12 +195,15 @@ extension AppDatabase {
     ///   - sourceClock: The instant a board source's "is it open" is judged
     ///     against (owner ruling 2026-09-24: sources are open boards).
     ///     Defaults to `AppDatabase.sourceClock`; tests inject it.
+    ///   - rng: Uniform `[0, 1)` source for the member-rule dice rolls
+    ///     (unseeded in production; tests inject a fixed one).
     /// - Returns: `.spawned(...)` on success or `.skipped(...)` with a reason.
     func spawnRecurringBoard(
         _ spawn: PendingTemplateSpawn,
         boardId: String,
         now: String,
-        sourceClock: Date = AppDatabase.sourceClock()
+        sourceClock: Date = AppDatabase.sourceClock(),
+        rng: () -> Double = { Double.random(in: 0..<1) }
     ) throws -> RecurringSpawnOutcome {
         let template = spawn.template
         let size = template.boardSize
@@ -460,7 +463,8 @@ extension AppDatabase {
                     mode: .recurring,
                     tasksById: tasksById,
                     childrenByCompoundId: childrenByCompound,
-                    sourceWindowByTaskId: sourceWindowByTaskId
+                    sourceWindowByTaskId: sourceWindowByTaskId,
+                    rng: rng
                 )
                 // Ruling 1 (slice 3b): a hand-added member Repeat froze keeps its
                 // frozen target / kind / title — it wins over the planner's
@@ -468,9 +472,15 @@ extension AppDatabase {
                 let manualSet = Set(manualTaskIds)
                 for (index, id) in selectedIds.enumerated() where index < planned.count {
                     guard manualSet.contains(id), let frozen = template.manualTaskTargets?[id] else { continue }
-                    planned[index].targetOverride = frozen.target
+                    // The frozen target is the dice's CENTRE: a hand-added counter
+                    // with dice re-rolls around it every spawn; no dice keeps it as-is.
+                    let vary = template.manualTaskVary?[id] ?? .off
+                    planned[index].targetOverride = ExplicitGoalRoll.rolledExplicitGoal(
+                        goal: frozen.target, kind: frozen.kind, vary: vary, rng: rng
+                    )
                     planned[index].targetKind = frozen.kind
-                    planned[index].titleOverride = frozen.title
+                    // Only a frozen title replaces the planner's (web `recurringBoardSpawn`).
+                    if let title = frozen.title { planned[index].titleOverride = title }
                 }
 
                 let orderedPool: [Task] = selectedIds.enumerated().compactMap { index, id in

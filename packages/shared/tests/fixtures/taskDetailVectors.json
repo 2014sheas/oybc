@@ -69,12 +69,28 @@
       "expected": { "kind": "toggle", "childId": "c" }
     },
     {
-      "name": "nested compound child is toggleable",
+      "name": "nested compound child is skipped",
       "children": [
         { "id": "a", "type": "compound", "isCompleted": false },
         { "id": "b", "type": "normal", "isCompleted": false }
       ],
-      "expected": { "kind": "toggle", "childId": "a" }
+      "expected": { "kind": "toggle", "childId": "b" }
+    },
+    {
+      "name": "only a nested compound open is not actionable",
+      "children": [
+        { "id": "a", "type": "normal", "isCompleted": true },
+        { "id": "b", "type": "compound", "isCompleted": false }
+      ],
+      "expected": null
+    },
+    {
+      "name": "nested compound is skipped for a counting log too",
+      "children": [
+        { "id": "a", "type": "compound", "isCompleted": false },
+        { "id": "b", "type": "counting", "isCompleted": false }
+      ],
+      "expected": { "kind": "log", "childId": "b" }
     },
     {
       "name": "only counting children open logs on the first",

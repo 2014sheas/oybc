@@ -201,7 +201,13 @@ func applyPreviewDerivedCells(
     var placedByOriginalId: [String: BoardSources.PlannedPlacement] = [:]
     for (index, id) in orderedIds.enumerated() where index < plan.placements.count {
         var planned = plan.placements[index]
-        if let explicit = controller.placementParams[id] { planned = explicit.overlaying(planned) }
+        if let explicit = controller.placementParams[id] {
+            let isManual = controller.manualTaskIds.contains(id)
+            planned = explicit.overlaying(
+                planned, vary: isManual ? (controller.manualTaskVary[id] ?? .off) : .off,
+                task: tasksById[id], rng: rng
+            )
+        }
         if planned.targetOverride != nil || planned.titleOverride != nil { placedByOriginalId[id] = planned }
     }
     if placedByOriginalId.isEmpty { return placement }

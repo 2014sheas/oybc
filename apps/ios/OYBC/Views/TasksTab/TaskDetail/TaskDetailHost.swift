@@ -36,7 +36,7 @@ struct TaskDetailHost: View {
                 Text("Loading…").font(.risoBody(14, .semibold)).foregroundStyle(Color.risoMuted).padding()
             }
         }
-        .onAppear { _Concurrency.Task { await vm.load(taskId: taskId) } }
+        .onAppear { _Concurrency.Task { await vm.hostAppeared(taskId: taskId) } }
         .onChange(of: taskId) { _, id in _Concurrency.Task { await vm.load(taskId: id) } }
         .sheet(isPresented: $showEdit) { editSheet }
         .sheet(isPresented: $showCounterSettings) { counterSettingsSheet }

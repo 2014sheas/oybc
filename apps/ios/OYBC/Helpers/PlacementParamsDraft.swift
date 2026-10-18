@@ -11,7 +11,6 @@ struct PlacementParamsDraft: Codable, Equatable {
     var targetKind: CountKind?
     /// A per-board title.
     var titleOverride: String?
-
     /// True when the draft carries nothing to write.
     var isEmpty: Bool { targetOverride == nil && titleOverride == nil }
 
@@ -48,13 +47,27 @@ struct PlacementParamsDraft: Codable, Equatable {
     /// field the draft sets replaces the planner's; the planner's
     /// `childTargets` are kept.
     ///
-    /// - Parameter planned: The planner's placement for this cell.
+    /// A hand-added member's dice roll AROUND the explicit goal (in its kind),
+    /// not around the planner's default: pass its `vary` + `task` + `rng`. No
+    /// dice (the default) keeps the explicit goal as-is.
+    ///
+    /// - Parameters:
+    ///   - planned: The planner's placement for this cell.
+    ///   - vary: The member's dice level (hand-added counting members only).
+    ///   - task: The placed task (its kind is the fallback kind).
+    ///   - rng: Uniform `[0, 1)` source; consumed at most once, and only when `vary` is on.
     /// - Returns: The placement to write.
-    func overlaying(_ planned: BoardSources.PlannedPlacement) -> BoardSources.PlannedPlacement {
+    func overlaying(
+        _ planned: BoardSources.PlannedPlacement,
+        vary: VaryLevel = .off,
+        task: Task? = nil,
+        rng: () -> Double = { Double.random(in: 0..<1) }
+    ) -> BoardSources.PlannedPlacement {
         var out = planned
         if let target = targetOverride {
-            out.targetOverride = target
-            out.targetKind = targetKind ?? planned.targetKind
+            let kind = targetKind ?? planned.targetKind ?? resolveCountKind(task?.countKind)
+            out.targetOverride = ExplicitGoalRoll.rolledExplicitGoal(goal: target, kind: kind, vary: vary, rng: rng)
+            out.targetKind = kind
         }
         if let title = titleOverride { out.titleOverride = title }
         return out

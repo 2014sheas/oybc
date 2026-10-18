@@ -25,6 +25,7 @@ import { useWizardCompoundChildren, useWizardMemberRules } from './useWizardMemb
 import { useWizardDerived } from './useWizardDerived';
 import { useManualRowOps } from './useManualRowOps';
 import { useWizardPlacementParams } from './useWizardPlacementParams';
+import { initialPlacementParamsSeed } from './wizardPlacementParamsLogic';
 import { resolveInitialWizardTimeframe } from './wizardTimeframeSeed';
 
 /** Stable empty fallback so a caller that omits `tasksById` doesn't cause
@@ -341,11 +342,15 @@ export function useBoardWizard({
   // goal, hand-edited goal); survive a draft resume via the mix blob.
   const {
     placementParams,
+    placementTyped,
     setPlacementParams,
     clearPlacementParams,
     prunePlacementParamsFor,
     restampPlacementParams,
-  } = useWizardPlacementParams(() => decodedRecurringDraftMix?.placementParams ?? {}, tasksById);
+  } = useWizardPlacementParams(
+    () => initialPlacementParamsSeed(decodedRecurringDraftMix, effectiveTemplate?.manualTaskTargets, templateHydration?.manualTaskIds),
+    tasksById,
+  );
 
   /**
    * Board Sources P4 — purge follow-on state for ids that LEFT the
@@ -923,6 +928,7 @@ export function useBoardWizard({
     manualTaskIds,
     manualTaskVary,
     placementParams,
+    placementTyped,
     childrenByCompoundId,
     supplyInfoBySourceId,
     expandedSourceIds,

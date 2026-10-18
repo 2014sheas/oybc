@@ -14,6 +14,7 @@ import {
 import { db } from '../../../db/internal';
 import { emptyPatch, type ChildPatch, type TaskEditPatch } from '../../../db/taskEditPatch';
 import { decodeRecurringDraftMix } from '../../../db/recurringDraftMix';
+import { initialPlacementParamsSeed } from '../../../pages/createHub/wizardPlacementParamsLogic';
 import {
   buildWizardPlacement,
   deleteEditedRecurringTemplate,
@@ -72,6 +73,7 @@ function makeController(overrides: Partial<BoardWizardController> = {}): BoardWi
     removedTaskIds: new Set<string>(),
     pendingTasks: new Map(),
     placementParams: new Map(),
+    placementTyped: new Set<string>(),
     currentStep: 1,
     draftBoardId: null,
     editingTemplateId: null,
@@ -651,6 +653,7 @@ describe('Board Creation Split (web PR D) — recurring draft save writes isRecu
       ],
       manualTaskVary: {},
       placementParams: {},
+      typedPlacementIds: [],
     });
 
     // Board Sources P1: a ONE-OFF draft save now snapshots the blob too
@@ -680,6 +683,7 @@ describe('Board Creation Split (web PR D) — recurring draft save writes isRecu
       sources: [],
       manualTaskVary: {},
       placementParams: {},
+      typedPlacementIds: [],
     });
   });
 
@@ -1131,15 +1135,18 @@ describe('persist paths — manualTaskVary threading (§Member rules B3)', () =>
     expect(template?.manualTaskVary).toEqual({ [taskIds[0]]: 1 });
   });
 
-  it('a repeating CREATE freezes a hand-added member\'s typed goal as manualTaskTargets (slice 3b)', async () => {
+  it('a repeating CREATE freezes only a hand-added member\'s TYPED goal as manualTaskTargets (slice 3b, C3)', async () => {
     const taskIds = await seedTasks(POOL_SIZE);
     const controller = makeController({
       selectedTaskIds: new Set(taskIds),
       manualTaskIds: new Set(taskIds),
       placementParams: new Map([
         [taskIds[0], { targetOverride: 12, targetKind: 'discrete' as const }],
+        // A quick-add's automatic window default: never frozen.
+        [taskIds[1], { targetOverride: 7, targetKind: 'discrete' as const }],
         ['not-hand-added', { targetOverride: 3, targetKind: 'discrete' as const }],
       ]),
+      placementTyped: new Set([taskIds[0], 'not-hand-added']),
       tasksRequired: 8,
     });
 
@@ -1147,6 +1154,42 @@ describe('persist paths — manualTaskVary threading (§Member rules B3)', () =>
 
     const template = await db.recurringBoardTemplates.get(result.templateId);
     expect(template?.manualTaskTargets).toEqual({ [taskIds[0]]: { target: 12, kind: 'discrete' } });
+  });
+
+  it('an auto-only wizard leaves the record with no manualTaskTargets at all (C3)', async () => {
+    const taskIds = await seedTasks(POOL_SIZE);
+    const controller = makeController({
+      selectedTaskIds: new Set(taskIds),
+      manualTaskIds: new Set(taskIds),
+      placementParams: new Map([[taskIds[0], { targetOverride: 7, targetKind: 'discrete' as const }]]),
+      tasksRequired: 8,
+    });
+    const result = await persistRecurringTemplate({ controller, userId: 'user-1' });
+    const template = await db.recurringBoardTemplates.get(result.templateId);
+    expect(template?.manualTaskTargets).toBeUndefined();
+  });
+
+  it('editing a repeating board keeps its frozen goals: hydrate from the record, save, same manualTaskTargets (C1)', async () => {
+    const taskIds = await seedTasks(POOL_SIZE);
+    const frozen = { [taskIds[0]]: { target: 12, kind: 'discrete' as const, title: 'Twelve' } };
+    await db.recurringBoardTemplates.add(
+      makeTemplate({ id: 'tmpl-frozen', manualTaskIds: [taskIds[0]], manualTaskTargets: frozen }),
+    );
+    // What the wizard seeds from the record (useBoardWizard) ...
+    const { params, typedIds } = initialPlacementParamsSeed(null, frozen);
+    const controller = makeController({
+      editingTemplateId: 'tmpl-frozen',
+      selectedTaskIds: new Set(taskIds),
+      manualTaskIds: new Set([taskIds[0]]),
+      placementParams: new Map(Object.entries(params)),
+      placementTyped: new Set(typedIds),
+      tasksRequired: 8,
+    });
+
+    await persistRecurringTemplate({ controller, userId: 'user-1' });
+
+    // ... must round-trip through Save untouched.
+    expect((await db.recurringBoardTemplates.get('tmpl-frozen'))?.manualTaskTargets).toEqual(frozen);
   });
 
   it('a repeating EDIT updates manualTaskVary on the existing record', async () => {
