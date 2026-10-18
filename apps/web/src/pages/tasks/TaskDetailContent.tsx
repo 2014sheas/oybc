@@ -1,623 +1,89 @@
-import { useMemo, useState } from 'react';
-import { useLiveQuery } from 'dexie-react-hooks';
-import { Link } from 'react-router-dom';
-import {
-  AchievementTrigger,
-  TaskType,
-  boardPlacementStatus,
-  compoundRuleLabel,
-  taskWindowCaptionLines,
-  type Board,
-  type BoardTask,
-  type CompoundChild,
-  type RecurringBoardTemplate,
-  type Task,
-} from '@oybc/shared';
-import {
-  CompoundEditValidationError,
-  fetchBoard,
-  fetchBoardsByIds,
-  fetchBoardTasksForTask,
-  fetchCompoundChildren,
-  fetchTask,
-  fetchTasksByIds,
-  saveTaskEdit,
-} from '../../db/operations';
-import {
-  computeTaskDeletionImpact,
-  deleteTaskWithCascade,
-  fetchCompoundParentsForTask,
-  type TaskDeletionImpact,
-} from '../../db/operations/tasks';
-import {
-  fetchRecurringBoardTemplate,
-  fetchTemplatesReferencingTask,
-} from '../../db/operations/recurringBoardTemplates';
-import { TypeBadge } from '../../components/TypeBadge';
-import { StatusPill, type StatusPillStatus } from '../../components/StatusPill';
-import { formatRelativeTime } from '../../utils/relativeTime';
-import { LinkedCounterCaptionView } from './LinkedCounterCaptionView';
+import { useState } from 'react';
+import type { Task } from '@oybc/shared';
+import { CompoundEditValidationError, saveTaskEdit } from '../../db/operations';
+import { computeTaskDeletionImpact, deleteTaskWithCascade, type TaskDeletionImpact } from '../../db/operations/tasks';
+import { useTaskDetail } from '../../hooks/useTaskDetail';
 import { TaskEditSheet } from './TaskEditSheet';
 import { TaskConfirmDeleteDialog } from './TaskConfirmDeleteDialog';
-import { countingDetailLine, displayedCountFor } from './taskCountDisplay';
-import styles from './TaskDetailContent.module.css';
+import { TaskDetailHero, type DetailChrome } from './taskDetail/TaskDetailHero';
+import { TaskDetailSections } from './taskDetail/TaskDetailSections';
+import type { DetailSegment } from './taskDetail/taskDetailModel';
+import styles from './taskDetail/TaskDetail.module.css';
 
-// ─── Types ────────────────────────────────────────────────────────────────────
+export type { DetailChrome } from './taskDetail/TaskDetailHero';
 
 export interface TaskDetailContentProps {
   task: Task;
-  /**
-   * Called after a successful edit or deletion intent. The route consumer
-   * passes a no-op; the sheet consumer can use it to trigger list refreshes.
-   */
+  /** After a successful edit (the sheet refreshes its task row). */
   onChanged: () => void;
-  /**
-   * Called for the back / close affordance. The route consumer passes
-   * `() => navigate('/tasks')`. The sheet consumer passes `() => setOpen(false)`.
-   * When omitted, no back affordance is rendered in the header (the route
-   * shows the existing Link header; the sheet renders its own Done button).
-   */
-  onClose?: () => void;
-  /**
-   * Called when a chip or child row inside the content wants to navigate
-   * to another task's detail. Route consumer: `(id) => navigate('/tasks/'+id)`.
-   * Sheet consumer: swaps internal taskId state (replace semantics).
-   */
-  onOpenTask?: (taskId: string) => void;
-  /**
-   * Called when the counter-root row on a linked counting task is
-   * tapped. Receives the task's `sharedCounterId`.
-   */
-  onOpenCounter?: (sharedCounterId: string) => void;
-}
-
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
-/** Map a task to its badge type string. COMPOUND tasks always map to
- *  'compound' — the ordered/unordered distinction is not surfaced in UI. */
-function typeLabel(task: Task): string {
-  if (task.type !== TaskType.COMPOUND) return task.type;
-  return 'compound';
-}
-
-function formatDate(iso: string): string {
-  try {
-    const d = new Date(iso);
-    return d.toLocaleDateString(undefined, {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-    });
-  } catch {
-    return iso;
-  }
-}
-
-// ─── Sub-components ────────────────────────────────────────────────────────────
-
-/** The pill state for a task's lifetime view (RB7 — a linked member's progress is its window's, not its root's total). */
-function taskPillStatus(task: Task): StatusPillStatus {
-  if (task.isCompleted) return 'completed';
-  if (task.type === TaskType.COUNTING && displayedCountFor(task) > 0) return 'inProgress';
-  return 'notStarted';
-}
-
-function CountingSourceCaption({
-  sharedCounterId,
-  onOpenCounter,
-  heading,
-}: {
-  sharedCounterId: string;
-  onOpenCounter?: (sharedCounterId: string) => void;
-  /** When set, the row sits in a section with this heading — rendered only once the root resolves. */
-  heading?: string;
-}): React.ReactElement | null {
-  // Phase 2 — Shared Counters: single-row lookup for the source task title.
-  // Rendered only when sharedCounterId is present, so the hook always fires.
-  //
-  // useLiveQuery returns `undefined` as the initial (loading) value regardless
-  // of what the query eventually resolves to. `db.tasks.get()` resolves to
-  // `undefined` when the row doesn't exist — so both "loading" and "not found"
-  // would be indistinguishable if we relied on `undefined` alone.
-  //
-  // Fix: pass `null` as the initial value so the three states are distinct:
-  //   undefined  → loading (initial value not yet overwritten by the query)
-  //   null       → not found (query resolved to undefined → we map to null)
-  //   Task       → loaded successfully
-  const rawResult = useLiveQuery(
-    () => fetchTask(sharedCounterId),
-    [sharedCounterId],
-  );
-  // Map query result: undefined (DB miss) → null (not-found sentinel).
-  // Until the first query result arrives rawResult is the initial `undefined`.
-  const isLoading = rawResult === undefined;
-  const sourceTask = (rawResult as Task | undefined) ?? null;
-  // Also treat soft-deleted rows as not-found.
-  const found = sourceTask !== null && !sourceTask.isDeleted;
-
-  const row = (
-    <LinkedCounterCaptionView
-      sharedCounterId={sharedCounterId}
-      isLoading={isLoading}
-      sourceTask={found ? (sourceTask as Task) : null}
-      onOpenCounter={onOpenCounter}
-    />
-  );
-  if (heading === undefined) return row;
-  if (!found || !onOpenCounter) return null;
-  return (
-    <section className={styles.section}>
-      <h2 className={styles.sectionHeading}>{heading}</h2>
-      {row}
-    </section>
-  );
+  /** Route: back link. Sheet: Done pill + the return pill after an in-sheet swap. */
+  chrome: DetailChrome;
+  /** After the task is deleted (the route leaves to /tasks, the sheet closes). */
+  onDeleted: () => void;
+  onOpenTask: (taskId: string) => void;
+  onOpenBoard: (boardId: string) => void;
+  onOpenCounter: (counterId: string) => void;
+  /** Controlled segment (the sheet keeps it across task swaps); omitted = local state. */
+  segment?: DetailSegment;
+  onSegment?: (segment: DetailSegment) => void;
 }
 
 /**
- * Resolves an Achievement task's `referencedBoardId` to that board's name
- * — mirroring `AchievementTemplateFact` below (loading/found/not-found
- * three-state pattern) so a board-referenced achievement shows the same
- * kind of human-readable fact as a template-referenced one, matching iOS
- * `RisoTaskDetailContentView.typeSubtitle`'s board-name resolution
- * (`affectedBoards.first { $0.id == boardId }?.name ?? "a board"`). Keeps
- * the existing "View" link alongside the name.
- */
-function AchievementBoardFact({ boardId }: { boardId: string }): React.ReactElement {
-  const rawResult = useLiveQuery(
-    () => fetchBoard(boardId),
-    [boardId],
-  );
-  const isLoading = rawResult === undefined;
-  const board = (rawResult as Board | undefined) ?? null;
-  const found = board !== null && !board.isDeleted;
-
-  return (
-    <p className={styles.metaLine}>
-      Watches board:{' '}
-      {isLoading ? (
-        <em>loading…</em>
-      ) : found ? (
-        <>
-          <strong>{(board as Board).name}</strong>{' '}
-          <Link to={`/boards/${boardId}`} className={styles.boardLink}>
-            View
-          </Link>
-        </>
-      ) : (
-        <em>a board (deleted or not found)</em>
-      )}
-    </p>
-  );
-}
-
-/**
- * Resolves an Achievement task's `referencedTemplateId` to its repeating
- * board's name, matching iOS `RisoTaskDetailContentView`'s
- * `templates.first { $0.id == tplId }?.name ?? "a template"` lookup — the
- * web detail view previously rendered the raw UUID (`Watches template ID:
- * {task.referencedTemplateId}`), which isn't user-facing. Same
- * loading/not-found/found three-state pattern as `CountingSourceCaption`.
- */
-function AchievementTemplateFact({
-  templateId,
-  requiredCount,
-}: {
-  templateId: string;
-  requiredCount?: number;
-}): React.ReactElement {
-  const rawResult = useLiveQuery(
-    () => fetchRecurringBoardTemplate(templateId),
-    [templateId],
-  );
-  const isLoading = rawResult === undefined;
-  const template = (rawResult as RecurringBoardTemplate | undefined) ?? null;
-  const found = template !== null && !template.isDeleted;
-
-  return (
-    <p className={styles.metaLine}>
-      Watches repeating board:{' '}
-      {isLoading ? (
-        <em>loading…</em>
-      ) : found ? (
-        <strong>{(template as RecurringBoardTemplate).name}</strong>
-      ) : (
-        <em>a repeating board (deleted or not found)</em>
-      )}
-      {requiredCount !== undefined && ` · ${requiredCount} required`}
-    </p>
-  );
-}
-
-/**
- * The task's own window and linked-counter kind, under the type facts
- * (`taskWindowCaptionLines` — iOS twin in `RisoTaskDetailContentView`'s
- * Details row). Renders nothing for a task with neither.
- */
-function TaskWindowFacts({ task }: { task: Task }): React.ReactElement | null {
-  const lines = taskWindowCaptionLines(task);
-  if (lines.length === 0) return null;
-  return (
-    <section className={styles.section} aria-label="Window">
-      {lines.map((line) => (
-        <p key={line} className={styles.windowLine}>
-          {line}
-        </p>
-      ))}
-    </section>
-  );
-}
-
-function TypeSpecificFacts({
-  task,
-  onOpenCounter,
-}: {
-  task: Task;
-  onOpenCounter?: (sharedCounterId: string) => void;
-}): React.ReactElement | null {
-  if (task.type === TaskType.COUNTING) {
-    // RB7 — baseline-adjusted for a linked member (see `taskCountDisplay`).
-    const current = displayedCountFor(task);
-    const max = task.maxCount ?? 0;
-    const pct = max > 0 ? Math.min(100, Math.round((current / max) * 100)) : 0;
-    return (
-      <section className={styles.section}>
-        <h2 className={styles.sectionHeading}>Counting</h2>
-        <p className={styles.metaLine}>
-          {countingDetailLine(task)}
-        </p>
-        {max > 0 && (
-          <div className={styles.progressBar} aria-label={`Progress ${pct}%`}>
-            <div className={styles.progressFill} style={{ width: `${pct}%` }} />
-          </div>
-        )}
-        {/* Phase 2 — Linked counter indicator. Detail-sheet only (no list/cell badge). */}
-        {task.sharedCounterId != null && (
-          <CountingSourceCaption sharedCounterId={task.sharedCounterId} onOpenCounter={onOpenCounter} />
-        )}
-      </section>
-    );
-  }
-  if (task.type === TaskType.ACHIEVEMENT) {
-    const trigger = task.achievementTrigger ?? AchievementTrigger.GREENLOG;
-    return (
-      <section className={styles.section}>
-        <h2 className={styles.sectionHeading}>Achievement</h2>
-        <p className={styles.metaLine}>
-          Trigger: {trigger === AchievementTrigger.BINGO ? 'Bingo' : 'Greenlog'}
-        </p>
-        {task.referencedBoardId && (
-          <AchievementBoardFact boardId={task.referencedBoardId} />
-        )}
-        {task.referencedTemplateId && (
-          <AchievementTemplateFact
-            templateId={task.referencedTemplateId}
-            requiredCount={task.requiredCount}
-          />
-        )}
-      </section>
-    );
-  }
-  return null;
-}
-
-// ─── Main exported component ──────────────────────────────────────────────────
-
-/**
- * TaskDetailContent — shareable task detail body.
+ * TaskDetailContent — one page, two presentations (route and "Open in library"
+ * sheet): the type-coloured hero with its live control, then the segmented
+ * All · Boards · Links · Activity body. Data comes from `useTaskDetail`; chrome
+ * (back / Done / return pill) is the caller's.
  *
- * Renders all sections:
- *   - Title + TypeBadge + StatusPill + description
- *   - Type-specific facts (counting / achievement)
- *   - Subtask of (parent compound back-refs)         NEW
- *   - Subtasks (compound children summary)           NEW
- *   - Part of recurring template                     NEW
- *   - Usage (board placements)
- *   - Timestamps (restyled with relative time)       NEW
- *   - Edit / Delete actions
- *
- * Chrome (back button, routing) is the caller's responsibility.
+ * @returns The page body.
  */
 export function TaskDetailContent({
-  task,
-  onChanged,
-  onClose,
-  onOpenTask,
-  onOpenCounter,
+  task, onChanged, chrome, onDeleted, onOpenTask, onOpenBoard, onOpenCounter, segment, onSegment,
 }: TaskDetailContentProps): React.ReactElement {
-  const taskId = task.id;
-
-  // ── Placement / board data ─────────────────────────────────────────────
-
-  const placements = useLiveQuery(
-    async () => fetchBoardTasksForTask(taskId),
-    [taskId],
-  ) as BoardTask[] | undefined;
-
-  const placementBoardIds = useMemo(() => {
-    if (!placements) return [] as string[];
-    return Array.from(new Set(placements.map((bt) => bt.boardId)));
-  }, [placements]);
-
-  const placementBoardIdsKey = placementBoardIds.join(',');
-  const affectedBoards = useLiveQuery(
-    async () =>
-      placementBoardIds.length === 0 ? [] : await fetchBoardsByIds(placementBoardIds),
-    [placementBoardIdsKey],
-  ) as Board[] | undefined;
-
-  // ── Parent compounds (subtask-of back-ref) ─────────────────────────────
-
-  const parentCompounds = useLiveQuery(
-    () => fetchCompoundParentsForTask(taskId),
-    [taskId],
-  ) as Task[] | undefined;
-
-  // ── Child tasks (compound children summary) ────────────────────────────
-
-  const compoundChildren = useLiveQuery(
-    async () =>
-      task.type === TaskType.COMPOUND ? fetchCompoundChildren(taskId) : [],
-    [taskId, task.type],
-  ) as CompoundChild[] | undefined;
-
-  // Sort children by childIndex
-  const sortedChildren = useMemo(() => {
-    if (!compoundChildren) return [];
-    return [...compoundChildren].sort((a, b) => a.childIndex - b.childIndex);
-  }, [compoundChildren]);
-
-  // Build a task map for child title/type lookups
-  const childTaskIds = useMemo(
-    () => sortedChildren.map((c) => c.childTaskId),
-    [sortedChildren],
-  );
-  const childTaskIdsKey = childTaskIds.join(',');
-  const childTasks = useLiveQuery(
-    async () =>
-      childTaskIds.length === 0 ? [] : fetchTasksByIds(childTaskIds),
-    [childTaskIdsKey],
-  ) as Task[] | undefined;
-
-  const childTaskMap = useMemo(() => {
-    const m: Record<string, Task> = {};
-    for (const t of childTasks ?? []) m[t.id] = t;
-    return m;
-  }, [childTasks]);
-
-  // Sub-tasks that actually render (a link whose child row hasn't loaded or
-  // is missing renders nothing) — the rule label counts these.
-  const resolvedChildCount = sortedChildren.filter((link) => !!childTaskMap[link.childTaskId]).length;
-
-  // ── Recurring template back-refs ───────────────────────────────────────
-
-  const referencingTemplates = useLiveQuery(
-    () => fetchTemplatesReferencingTask(taskId),
-    [taskId],
-  );
-
-  // ── Edit / delete UI state ─────────────────────────────────────────────
-
+  const data = useTaskDetail(task);
+  const [localSegment, setLocalSegment] = useState<DetailSegment>('all');
   const [isEditing, setIsEditing] = useState(false);
-  const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleteImpact, setDeleteImpact] = useState<TaskDeletionImpact | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const handleDeleteClick = async () => {
+  const handleDelete = async (): Promise<void> => {
     setError(null);
     try {
-      const impact = await computeTaskDeletionImpact(taskId);
-      setDeleteImpact(impact);
-      setConfirmDelete(true);
+      setDeleteImpact(await computeTaskDeletionImpact(task.id));
     } catch (e) {
       setError(`Failed to compute delete impact: ${(e as Error).message}`);
     }
   };
 
-  const handleConfirmDelete = async () => {
+  const confirmDelete = async (): Promise<void> => {
     setError(null);
     try {
-      await deleteTaskWithCascade(taskId);
+      await deleteTaskWithCascade(task.id);
+      setDeleteImpact(null);
       onChanged();
-      onClose?.();
+      onDeleted();
     } catch (e) {
       setError(`Failed to delete task: ${(e as Error).message}`);
-      setConfirmDelete(false);
+      setDeleteImpact(null);
     }
   };
 
-  // Relative times
-  const lastCompletedRel = formatRelativeTime(task.completedAt);
-  const updatedRel = formatRelativeTime(task.updatedAt);
-
   return (
     <div className={styles.shell}>
-      {/* No back affordance here — the caller (route page or sheet wrapper)
-          owns the header chrome since their navigation semantics differ:
-          route → "‹ Tasks" link to /tasks; sheet → "Done" button. */}
-
-      {/* Title + badges + description */}
-      <section className={styles.titleSection}>
-        <h1 className={styles.title}>{task.title || '(untitled task)'}</h1>
-        <div className={styles.badges}>
-          <TypeBadge type={typeLabel(task)} />
-          <StatusPill status={taskPillStatus(task)} />
-        </div>
-        {task.description && (
-          <p className={styles.description}>{task.description}</p>
-        )}
-      </section>
-
-      {/* Type-specific facts */}
-      <TypeSpecificFacts task={task} onOpenCounter={onOpenCounter} />
-
-      {/* The task's own window + link kind (read-only; empty for a plain task). */}
-      <TaskWindowFacts task={task} />
-
-      {/* Unit task of a counter: the same row a linked copy shows, any type. */}
-      {task.countsTowardCounterId != null && (
-        <CountingSourceCaption sharedCounterId={task.countsTowardCounterId} onOpenCounter={onOpenCounter} heading="Counter" />
-      )}
-
-      {/* Subtask of: parent compound back-refs */}
-      {parentCompounds && parentCompounds.length > 0 && (
-        <section className={styles.section}>
-          <h2 className={styles.sectionHeading}>Subtask of</h2>
-          <div className={styles.chipRow}>
-            {parentCompounds.map((parent) => (
-              <button
-                key={parent.id}
-                type="button"
-                className={styles.taskChip}
-                onClick={() => onOpenTask?.(parent.id)}
-                aria-label={`Open parent task: ${parent.title || '(untitled task)'}`}
-              >
-                <TypeBadge type={typeLabel(parent)} />
-                {parent.title || '(untitled task)'}
-              </button>
-            ))}
-          </div>
-        </section>
-      )}
-
-      {/* Subtasks: compound children summary */}
-      {task.type === TaskType.COMPOUND && sortedChildren.length >= 0 && (
-        <section className={styles.section}>
-          <h2 className={styles.sectionHeading}>
-            Subtasks{sortedChildren.length > 0 ? ` (${sortedChildren.length})` : ''}
-          </h2>
-          {resolvedChildCount > 0 && (
-            <p className={styles.metaLine}>
-              {compoundRuleLabel(task.operator, task.threshold, resolvedChildCount)}
-            </p>
-          )}
-          {sortedChildren.length === 0 ? (
-            <p className={styles.metaLine}>No subtasks yet.</p>
-          ) : (
-            <div className={styles.subtaskList}>
-              {sortedChildren.map((link) => {
-                const child = childTaskMap[link.childTaskId];
-                if (!child) return null;
-                return (
-                  <button
-                    key={link.id}
-                    type="button"
-                    className={styles.subtaskRow}
-                    onClick={() => onOpenTask?.(child.id)}
-                    aria-label={`Open subtask: ${child.title || '(untitled task)'}`}
-                  >
-                    <span className={child.isCompleted ? styles.subtaskCheck : styles.subtaskCheckEmpty}>
-                      {child.isCompleted ? '✓' : '○'}
-                    </span>
-                    <TypeBadge type={typeLabel(child)} />
-                    <span className={`${styles.subtaskTitle} ${child.isCompleted ? styles.subtaskTitleDone : ''}`}>
-                      {child.title || '(untitled task)'}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-          )}
-        </section>
-      )}
-
-      {/* Part of a repeating board */}
-      {referencingTemplates && referencingTemplates.length > 0 && (
-        <section className={styles.section}>
-          <h2 className={styles.sectionHeading}>Part of a repeating board</h2>
-          <div className={styles.chipRow}>
-            {referencingTemplates.map((tmpl) => (
-              <Link
-                key={tmpl.id}
-                to="/profile/board-settings"
-                className={styles.templateChip}
-                aria-label={`Part of repeating board: ${tmpl.name}`}
-              >
-                Part of: {tmpl.name}
-              </Link>
-            ))}
-          </div>
-        </section>
-      )}
-
-      {/* Usage: board placements */}
-      <section className={styles.section}>
-        <h2 className={styles.sectionHeading}>Usage</h2>
-        <p className={styles.metaLine}>
-          Total completions: {task.totalCompletions ?? 0}
-        </p>
-        {placements && placements.length > 0 && affectedBoards ? (
-          <ul className={styles.boardList}>
-            {affectedBoards.map((b) => (
-              <li key={b.id}>
-                <Link to={`/boards/${b.id}`} className={styles.boardLink}>
-                  {b.name}
-                </Link>{' '}
-                <span className={styles.boardStatusTag}>{boardPlacementStatus(b)}</span>
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p className={styles.metaLine}>
-            Not placed on any board yet.
-          </p>
-        )}
-      </section>
-
-      {/* Timestamps — restyled with relative time */}
-      <section className={styles.section}>
-        <h2 className={styles.sectionHeading}>Timestamps</h2>
-        <div className={styles.timestampGrid}>
-          {task.completedAt && lastCompletedRel && (
-            <div className={styles.timestampRow}>
-              <span className={styles.timestampLabel}>Last completed</span>
-              <span className={`${styles.timestampValue} ${styles.timestampLead}`}>
-                {lastCompletedRel}
-              </span>
-            </div>
-          )}
-          <div className={styles.timestampRow}>
-            <span className={styles.timestampLabel}>Created</span>
-            <span className={styles.timestampValue}>{formatDate(task.createdAt)}</span>
-          </div>
-          <div className={styles.timestampRow}>
-            <span className={styles.timestampLabel}>Updated</span>
-            <span className={styles.timestampValue}>
-              {formatDate(task.updatedAt)}
-              {updatedRel && (
-                <span className={styles.timestampRelative}>({updatedRel})</span>
-              )}
-            </span>
-          </div>
-        </div>
-      </section>
-
+      <TaskDetailHero
+        task={task} data={data} chrome={chrome} onEdit={() => setIsEditing(true)} onDelete={() => void handleDelete()}
+        onOpenTask={onOpenTask} onOpenBoard={onOpenBoard} onOpenCounter={onOpenCounter}
+      />
+      <TaskDetailSections
+        task={task} data={data} segment={segment ?? localSegment} onSegment={onSegment ?? setLocalSegment}
+        onOpenTask={onOpenTask} onOpenBoard={onOpenBoard} onOpenCounter={onOpenCounter}
+      />
       {error && <p className={styles.error}>{error}</p>}
-
-      {/* Actions */}
-      <footer className={styles.actions}>
-        <button
-          type="button"
-          className={styles.editButton}
-          onClick={() => setIsEditing(true)}
-        >
-          Edit
-        </button>
-        <button
-          type="button"
-          className={styles.deleteButton}
-          onClick={handleDeleteClick}
-        >
-          Delete
-        </button>
-      </footer>
-
-      {/* Edit sheet */}
       {isEditing && (
         <TaskEditSheet
           task={task}
           onSubmit={async (patch) => {
             try {
-              await saveTaskEdit(taskId, patch);
+              await saveTaskEdit(task.id, patch);
               onChanged();
               setIsEditing(false);
             } catch (e) {
@@ -629,18 +95,8 @@ export function TaskDetailContent({
           onCancel={() => setIsEditing(false)}
         />
       )}
-
-      {/* Confirm delete dialog */}
-      {confirmDelete && deleteImpact && (
-        <TaskConfirmDeleteDialog
-          task={task}
-          impact={deleteImpact}
-          onConfirm={handleConfirmDelete}
-          onCancel={() => {
-            setConfirmDelete(false);
-            setDeleteImpact(null);
-          }}
-        />
+      {deleteImpact && (
+        <TaskConfirmDeleteDialog task={task} impact={deleteImpact} onConfirm={confirmDelete} onCancel={() => setDeleteImpact(null)} />
       )}
     </div>
   );

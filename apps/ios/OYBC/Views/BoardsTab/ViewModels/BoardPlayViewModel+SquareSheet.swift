@@ -36,6 +36,9 @@ extension BoardPlayViewModel {
         case let .childDelta(taskId, delta):
             guard let child = taskMap[taskId] else { return }
             runCompoundChildFallbackDelta(childTask: child, delta: -delta)
+        case let .restoreNormal(boardTaskId, wasDone):
+            guard let placement = boardTasks.first(where: { $0.id == boardTaskId }) else { return }
+            setNormalCompleted(boardTask: placement, completed: wasDone)
         case let .restoreToggle(taskId, wasDone):
             // Explicit revert to the prior state — a no-op when it already holds.
             guard let child = taskMap[taskId], compoundChildIsCompleted(child) != wasDone else { return }

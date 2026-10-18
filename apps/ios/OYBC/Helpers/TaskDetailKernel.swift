@@ -160,4 +160,39 @@ enum TaskDetailKernel {
             .map(\.row)
         return Activity(rows: sorted, completionCount: completions)
     }
+
+    // MARK: - Closest line
+
+    /// The watched board's best unfinished line, for the achievement card.
+    struct ClosestLine: Equatable {
+        /// Row-major cell indices along the line, in reading order.
+        let cells: [Int]
+        /// How many of those cells are complete.
+        let done: Int
+    }
+
+    /// The unfinished line (rows, columns, then the two diagonals —
+    /// `detectBingos`' order) with the most completed cells; the earliest
+    /// wins a tie.
+    ///
+    /// - Parameters:
+    ///   - completionGrid: Row-major completion flags, length `gridSize²`.
+    ///   - gridSize: The board's edge (3, 4 or 5).
+    /// - Returns: The line, or `nil` when every line is complete or the grid
+    ///   is malformed.
+    static func closestLine(_ completionGrid: [Bool], gridSize: Int) -> ClosestLine? {
+        guard gridSize >= 1, completionGrid.count == gridSize * gridSize else { return nil }
+        let range = Array(0..<gridSize)
+        var lines: [[Int]] = range.map { r in range.map { r * gridSize + $0 } }
+        lines += range.map { c in range.map { $0 * gridSize + c } }
+        lines.append(range.map { $0 * gridSize + $0 })
+        lines.append(range.map { $0 * gridSize + (gridSize - 1 - $0) })
+        var best: ClosestLine?
+        for cells in lines {
+            let done = cells.filter { completionGrid[$0] }.count
+            if done == gridSize { continue }
+            if best == nil || done > best!.done { best = ClosestLine(cells: cells, done: done) }
+        }
+        return best
+    }
 }

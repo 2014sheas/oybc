@@ -1,231 +1,57 @@
 import SwiftUI
-import GRDB
 
-/// Task detail page — route-pushed shell that owns `taskId` resolution,
-/// async data loading, and the delete-confirm alert. Renders
-/// `TaskDetailContentView` for all visible content.
-///
-/// iOS twin of web's `TaskDetailPage.tsx`.
+/// Task detail — the route pushed from the Tasks tab (and Counter Detail's unit-task rows).
+/// A thin shell: `TaskDetailViewModel` owns the data and writes, `TaskDetailHost` the sheets,
+/// `TaskDetailScreen` the pixels. iOS twin of web's `TaskDetailPage.tsx`.
 struct TaskDetailView: View {
     let taskId: String
     let userId: String
     let onChanged: () -> Void
     let onDeleted: () -> Void
-    /// Cross-tab navigation: when the user taps a board name in Usage,
-    /// switch to the Boards tab and push BoardPlayView for that id.
-    /// Plumbed in from MainTabView, which owns boardsPath + selectedTab.
+    /// Cross-tab navigation: a board row switches to the Boards tab and pushes that board.
     let onOpenBoard: (String) -> Void
-    /// Opens Counter detail for a linked task's shared counter (pushed on the
-    /// caller's stack — Tasks tab).
+    /// Opens Counter detail (pushed on the caller's stack — Tasks tab).
     var onOpenCounter: (String) -> Void = { _ in }
     /// Injected database (ROADMAP B3 seam); defaults to the app singleton.
     var database: AppDatabase = .shared
 
-    @State private var task: Task?
-    @State private var placements: [BoardTask] = []
-    @State private var affectedBoards: [Board] = []
-    @State private var parentCompounds: [Task] = []
-    @State private var compoundChildren: [Task] = []
-    @State private var templates: [RecurringBoardTemplate] = []
-    // Achievement re-target picker data
-    @State private var allBoardsForPicker: [Board] = []
-    @State private var allTemplatesForPicker: [RecurringBoardTemplate] = []
-    @State private var loadError: String?
-    @State private var saveError: String?
+    @StateObject private var vm: TaskDetailViewModel
+    @State private var tab: TaskDetailTab = .all
+    /// In-detail navigation: a parent chip / child row pushes another detail.
+    @State private var openedTaskId: TaskIdItem?
+    @Environment(\.dismiss) private var dismiss
 
-    @State private var showDeleteConfirm: Bool = false
-    @State private var deleteImpact: AppDatabase.TaskDeletionImpact?
-
-    /// Drives in-detail navigation: tapping a parent compound chip or
-    /// child task row pushes another TaskDetailView onto the stack.
-    @State private var openedChildTaskId: TaskIdItem?
+    init(
+        taskId: String, userId: String, onChanged: @escaping () -> Void, onDeleted: @escaping () -> Void,
+        onOpenBoard: @escaping (String) -> Void, onOpenCounter: @escaping (String) -> Void = { _ in },
+        database: AppDatabase = .shared
+    ) {
+        self.taskId = taskId
+        self.userId = userId
+        self.onChanged = onChanged
+        self.onDeleted = onDeleted
+        self.onOpenBoard = onOpenBoard
+        self.onOpenCounter = onOpenCounter
+        self.database = database
+        _vm = StateObject(wrappedValue: TaskDetailViewModel(taskId: taskId, database: database))
+    }
 
     var body: some View {
-        Group {
-            if let loadError {
-                Text(loadError)
-                    .foregroundStyle(Color.risoRed)
-                    .padding()
-            } else if let task {
-                RisoTaskDetailContentView(
-                    task: task,
-                    placements: placements,
-                    affectedBoards: affectedBoards,
-                    parentCompounds: parentCompounds,
-                    compoundChildren: compoundChildren,
-                    templates: templates,
-                    database: database,
-                    saveError: saveError,
-                    allBoardsForPicker: allBoardsForPicker,
-                    allTemplatesForPicker: allTemplatesForPicker,
-                    onEditSubmit: { patch in
-                        _Concurrency.Task { await saveEdits(patch: patch) }
-                    },
-                    onDeleteTap: {
-                        _Concurrency.Task { await prepareDelete() }
-                    },
-                    onOpenTask: { id in
-                        openedChildTaskId = TaskIdItem(id: id)
-                    },
-                    onOpenBoard: onOpenBoard,
-                    onOpenCounter: onOpenCounter
-                )
-            } else {
-                Text("Loading…").foregroundStyle(Color.risoMuted).padding()
-            }
-        }
-        .navigationTitle("")
-        .navigationBarTitleDisplayMode(.inline)
-        .onAppear {
-            _Concurrency.Task { await reload() }
-        }
-        .navigationDestination(item: $openedChildTaskId) { item in
+        TaskDetailHost(
+            vm: vm, taskId: taskId, presentation: .route, tab: $tab,
+            onBack: { dismiss() },
+            onOpenTask: { openedTaskId = TaskIdItem(id: $0) },
+            onOpenCounter: onOpenCounter, onOpenBoard: onOpenBoard,
+            onChanged: onChanged, onDeleted: onDeleted
+        )
+        .toolbar(.hidden, for: .navigationBar)
+        .background(InteractivePopEnabler()) // swipe-back survives the hidden bar
+        .navigationDestination(item: $openedTaskId) { item in
             TaskDetailView(
-                taskId: item.id,
-                userId: userId,
-                onChanged: onChanged,
-                onDeleted: onChanged,
-                onOpenBoard: onOpenBoard,
-                onOpenCounter: onOpenCounter,
-                database: database
+                taskId: item.id, userId: userId, onChanged: onChanged,
+                onDeleted: { openedTaskId = nil; onChanged() }, // a deleted child pops its page
+                onOpenBoard: onOpenBoard, onOpenCounter: onOpenCounter, database: database
             )
         }
-        .alert("Delete task?", isPresented: $showDeleteConfirm, presenting: deleteImpact) { _ in
-            Button("Cancel", role: .cancel) {
-                deleteImpact = nil
-            }
-            Button("Delete", role: .destructive) {
-                _Concurrency.Task { await performDelete() }
-            }
-        } message: { impact in
-            Text(deleteConfirmMessage(impact: impact))
-        }
-    }
-
-    // MARK: - Reload
-
-    private func reload() async {
-        let db = database
-        let taskId = taskId
-        let userId = userId
-        do {
-            let snapshot = try await _Concurrency.Task.detached(priority: .userInitiated) {
-                let loaded = try db.fetchTask(id: taskId)
-                var bts: [BoardTask] = []
-                var boards: [Board] = []
-                var parents: [Task] = []
-                var children: [Task] = []
-                var tpls: [RecurringBoardTemplate] = []
-                if let loaded = loaded, !loaded.isDeleted {
-                    bts = try db.fetchBoardTasksForTask(taskId: taskId)
-                    let boardIds = Array(Set(bts.map { $0.boardId }))
-                    boards = try db.fetchBoards(ids: boardIds)
-                    parents = try db.fetchCompoundParents(forTaskId: taskId)
-                    children = try db.fetchCompoundChildrenTasks(parentTaskId: taskId)
-                    tpls = try db.fetchTemplatesReferencingTask(taskId)
-                }
-                // Load picker data for Achievement re-target — only when
-                // the task is actually an achievement. Skipping for other
-                // task types avoids two extra GRDB reads per detail open.
-                // Use the view's `userId` prop (not `loaded?.userId ?? ""`)
-                // so we never query with an empty userId string.
-                var pickerBoards: [Board] = []
-                var pickerTemplates: [RecurringBoardTemplate] = []
-                if loaded?.type == .achievement {
-                    pickerBoards = try db.fetchBoards(userId: userId)
-                    pickerTemplates = try db.fetchRecurringBoardTemplates(userId: userId)
-                }
-                return (loaded, bts, boards, parents, children, tpls, pickerBoards, pickerTemplates)
-            }.value
-            await MainActor.run {
-                self.task = snapshot.0
-                self.placements = snapshot.1
-                self.affectedBoards = snapshot.2
-                self.parentCompounds = snapshot.3
-                self.compoundChildren = snapshot.4
-                self.templates = snapshot.5
-                self.allBoardsForPicker = snapshot.6
-                self.allTemplatesForPicker = snapshot.7
-                self.loadError = nil
-            }
-        } catch {
-            let message = "Failed to load task: \(error.localizedDescription)"
-            await MainActor.run { self.loadError = message }
-        }
-    }
-
-    // MARK: - Edit
-
-    /// Save the edit sheet's patch through `AppDatabase.applyTaskEditPatch`
-    /// (validation + Achievement cycle check + save/cascade in one write).
-    private func saveEdits(patch: EditTaskSheet.Patch) async {
-        let db = database
-        let id = taskId
-        do {
-            let saved = try await _Concurrency.Task.detached(priority: .userInitiated) {
-                try db.applyTaskEditPatch(taskId: id, patch: patch)
-            }.value
-            await MainActor.run {
-                task = saved
-                saveError = nil
-                onChanged()
-            }
-        } catch {
-            let message = AppDatabase.taskEditErrorMessage(error)
-            await MainActor.run { saveError = message }
-        }
-    }
-
-    // MARK: - Delete
-
-    private func prepareDelete() async {
-        do {
-            let id = taskId
-            let db = database
-            let impact = try await _Concurrency.Task.detached(priority: .userInitiated) {
-                try db.computeTaskDeletionImpact(taskId: id)
-            }.value
-            await MainActor.run {
-                deleteImpact = impact
-                showDeleteConfirm = true
-            }
-        } catch {
-            let message = "Failed to compute delete impact: \(error.localizedDescription)"
-            await MainActor.run { saveError = message }
-        }
-    }
-
-    private func performDelete() async {
-        do {
-            let id = taskId
-            let db = database
-            try await _Concurrency.Task.detached(priority: .userInitiated) {
-                try db.deleteTaskWithCascade(taskId: id)
-            }.value
-            await MainActor.run { onDeleted() }
-        } catch {
-            let message = "Failed to delete: \(error.localizedDescription)"
-            await MainActor.run { saveError = message }
-        }
-    }
-
-    private func deleteConfirmMessage(impact: AppDatabase.TaskDeletionImpact) -> String {
-        var lines: [String] = ["This can't be undone."]
-        if impact.boardTaskCount > 0 {
-            lines.append(
-                "Removes from \(impact.boardTaskCount) board square\(impact.boardTaskCount == 1 ? "" : "s") across \(impact.affectedBoardIds.count) board\(impact.affectedBoardIds.count == 1 ? "" : "s").",
-            )
-        }
-        if impact.childLinkCount > 0 {
-            lines.append(
-                "Detaches from \(impact.childLinkCount) compound parent\(impact.childLinkCount == 1 ? "" : "s").",
-            )
-        }
-        if impact.parentLinkCount > 0 {
-            lines.append(
-                "Releases \(impact.parentLinkCount) subtask\(impact.parentLinkCount == 1 ? "" : "s") (subtasks stay in your library).",
-            )
-        }
-        return lines.joined(separator: "\n")
     }
 }

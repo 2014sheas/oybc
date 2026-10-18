@@ -18,6 +18,7 @@ export interface CountingBodyProps {
   stripText: string | null;
   removeDisabled: boolean;
   initialEntry?: 'add' | 'remove';
+  trailing?: React.ReactNode;
   onLog: (direction: 'add' | 'remove', amount: number, persist: boolean) => void;
   onUndo: () => void;
 }
@@ -57,7 +58,7 @@ export function CountingBody(p: CountingBodyProps): React.ReactElement {
           </div>
           <LogControls
             kind={p.kind} unit={p.unit} goal={p.goal} count={p.count} size="regular" busy={p.busy}
-            stripText={p.stripText} removeDisabled={p.removeDisabled} initialEntry={p.initialEntry} onLog={p.onLog} onUndo={p.onUndo}
+            stripText={p.stripText} removeDisabled={p.removeDisabled} initialEntry={p.initialEntry} trailing={p.trailing} onLog={p.onLog} onUndo={p.onUndo}
           />
         </>
       )}

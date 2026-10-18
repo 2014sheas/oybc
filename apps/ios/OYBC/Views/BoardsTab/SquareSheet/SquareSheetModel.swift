@@ -88,6 +88,8 @@ enum SquareLogUndo: Equatable {
     case childDelta(taskId: String, delta: CountValue)
     /// A compound child toggle: restore the completed state it had before.
     case restoreToggle(taskId: String, wasDone: Bool)
+    /// A Normal square toggle (Task Detail's hero): restore its prior completed state.
+    case restoreNormal(boardTaskId: String, wasDone: Bool)
 }
 
 /// The strip shown under the chips after a log. `scopeTaskId` is the task that

@@ -27,6 +27,7 @@ private struct BoardPlayTitleChrome: ViewModifier {
             content
                 .navigationBarTitleDisplayMode(.inline)
                 .navigationBarBackButtonHidden(true)
+                .background(InteractivePopEnabler()) // swipe-back survives the hidden back button
         } else {
             content
         }
@@ -312,28 +313,10 @@ struct BoardPlayView: View {
     /// own window (the kernel's rule), a hub-linked row's latch — so a cell
     /// never paints green while stats count it incomplete. Callers must branch
     /// compound / achievement before calling.
-    func windowedIsCompleted(_ task: Task) -> Bool {
-        if task.sharedCounterId != nil {
-            return resolveLinkedCounterDisplay(
-                task: task, eventsByTaskId: windowEventsByTaskId, sealedAt: board?.sealedAt,
-                window: board.map(LinkedCounterWindow.init(board:))
-            ).isCompleted
-        }
-        return viewModel.windowedState(of: task).isCompleted
-    }
+    func windowedIsCompleted(_ task: Task) -> Bool { viewModel.windowedCompletedValue(task) }
 
-    /// Windowed count of a counting square: event-owning (source / plain) via
-    /// its own events; a linked counter via `resolveLinkedCounterDisplay`
-    /// (window-stamped: root sum in its window; hub-linked: count − baseline).
-    func windowedCount(_ task: Task) -> CountValue {
-        if task.sharedCounterId != nil {
-            return resolveLinkedCounterDisplay(
-                task: task, eventsByTaskId: windowEventsByTaskId, sealedAt: board?.sealedAt,
-                window: board.map(LinkedCounterWindow.init(board:))
-            ).displayed
-        }
-        return viewModel.windowedState(of: task).count
-    }
+    /// Windowed count of a counting square (see `BoardPlayViewModel.windowedCountValue`).
+    func windowedCount(_ task: Task) -> CountValue { viewModel.windowedCountValue(task) }
 
     // MARK: - Edit-mode squares draft (Board Edit redesign slice 3)
     //
@@ -753,6 +736,7 @@ struct BoardPlayView: View {
                     pendingOpenBoardId = newBoardId
                     taskDetailSheetTaskId = nil
                 },
+                originBoardId: viewModel.board?.id,
                 database: viewModel.database
             )
         }

@@ -149,25 +149,4 @@ final class UnitTaskRowsSnapshotTests: XCTestCase {
     func testPoolListUnitRowsLight() {
         assertSnapshot(of: poolList(), as: .image(layout: .fixed(width: 393, height: 250), traits: traits(false)), record: recordMode)
     }
-
-    // MARK: - Task Detail "Counter" row
-
-    private func detail(dark: Bool) -> some View {
-        RisoTaskDetailContentView(
-            task: unit("u3", "Finish Dune", .normal),
-            placements: [], affectedBoards: [], parentCompounds: [], compoundChildren: [], templates: [],
-            now: SnapshotFixtures.fixedNow,
-            onEditSubmit: { _ in }, onDeleteTap: {}, onOpenTask: { _ in }, onOpenBoard: { _ in },
-            counterSourceOverride: LinkedCounterSource(title: "Books", lifetime: 12, unit: "books", kind: .discrete)
-        )
-        .frame(width: 393, height: 520)
-    }
-
-    func testDetailCounterRowLight() {
-        assertSnapshot(of: detail(dark: false), as: .image(layout: .fixed(width: 393, height: 520), traits: traits(false)), record: recordMode)
-    }
-
-    func testDetailCounterRowDark() {
-        assertSnapshot(of: detail(dark: true), as: .image(layout: .fixed(width: 393, height: 520), traits: traits(true)), record: recordMode)
-    }
 }

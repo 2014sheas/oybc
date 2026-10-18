@@ -39,3 +39,7 @@ export type { RisoTaskType } from './RisoTypeBadge';
 export { TapLogChipRow } from './TapLogChipRow';
 
 export { UndoStrip } from './UndoStrip';
+
+export { RisoToolbarPill } from './RisoToolbarPill';
+
+export { RisoReturnPill } from './RisoReturnPill';

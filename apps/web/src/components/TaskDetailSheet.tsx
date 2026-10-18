@@ -1,192 +1,94 @@
 import { useEffect, useRef, useState } from 'react';
+import { useLiveQuery } from 'dexie-react-hooks';
 import { useLocation, useNavigate } from 'react-router-dom';
+import type { Task } from '@oybc/shared';
 import { fetchTask } from '../db/operations';
 import { useModalA11y } from '../hooks/useModalA11y';
 import { TaskDetailContent } from '../pages/tasks/TaskDetailContent';
+import type { DetailSegment } from '../pages/tasks/taskDetail/taskDetailModel';
+import type { RisoTaskType } from './riso';
 import styles from './TaskDetailSheet.module.css';
 
 interface TaskDetailSheetProps {
-  /**
-   * Task ID to display. When null, the sheet renders nothing (closed state).
-   */
+  /** Task ID to display. When null, the sheet renders nothing (closed state). */
   taskId: string | null;
-  /** Called when the user dismisses the sheet (Done button, backdrop tap, or Escape). */
+  /** Called when the user dismisses the sheet (Done pill, backdrop tap, or Escape). */
   onClose: () => void;
   /**
-   * Called when a chip or child row inside the detail content wants to
-   * navigate to another task. The sheet swaps its internal taskId state
-   * ("replace" semantics — same sheet, different task).
-   * Optional: if omitted, navigation chips inside the content are still
-   * rendered but will no-op on click.
+   * The board the sheet was opened from: tapping that board's row just
+   * dismisses; any other board closes the sheet and navigates to it.
    */
-  onOpenTask?: (taskId: string) => void;
+  fromBoardId?: string;
 }
 
 /**
- * TaskDetailSheet — presents `TaskDetailContent` as a fixed-overlay sheet.
+ * TaskDetailSheet — "Open in library": the SAME `TaskDetailContent` the route
+ * renders, presented as a fixed-overlay sheet (grabber, Done pill grouped with
+ * ⋯, no back chevron). In-sheet navigation pushes onto a stack; once swapped, a
+ * return pill (type letter + previous name) takes the chevron slot and pops.
+ * The selected segment survives swaps.
  *
- * Mount at a page root and drive it with `taskId` state. When `taskId` is
- * set the sheet slides in over the current content; when null it renders
- * nothing.
- *
- * **Navigation semantics (v1 — "replace")**: when the content fires
- * `onOpenTask`, the sheet swaps its internal task ID in place. There is no
- * breadcrumb trail. If `onOpenTask` is provided by the caller, that callback
- * runs instead (use this when the parent wants to manage the navigation
- * stack itself). TODO: add a "← back to <prev task>" affordance in a
- * follow-up once the replace semantics prove insufficient.
- *
- * **404 handling**: a one-shot `db.tasks.get()` confirms the row exists at
- * mount. If the task was deleted while the sheet was open, the sheet shows
- * "No longer exists" and offers a close button rather than silently dangling.
+ * @returns The sheet, or null when `taskId` is null.
  */
-export function TaskDetailSheet({
-  taskId,
-  onClose,
-  onOpenTask,
-}: TaskDetailSheetProps): React.ReactElement | null {
-  // Internal task ID state — initialized from prop, reset when prop changes.
-  // This enables the "replace" navigation semantic inside the sheet.
-  const [innerTaskId, setInnerTaskId] = useState<string | null>(taskId);
-
-  // Sync prop → inner state whenever the caller swaps the outer task.
-  useEffect(() => {
-    setInnerTaskId(taskId);
-  }, [taskId]);
-
+export function TaskDetailSheet({ taskId, onClose, fromBoardId }: TaskDetailSheetProps): React.ReactElement | null {
   if (taskId === null) return null;
-
-  return (
-    <SheetBody
-      taskId={innerTaskId}
-      onClose={onClose}
-      onOpenTask={(id) => {
-        if (onOpenTask) {
-          onOpenTask(id);
-        } else {
-          // Replace semantics: swap inner task ID.
-          setInnerTaskId(id);
-        }
-      }}
-    />
-  );
+  // Keyed by the opening task: a fresh open starts a fresh stack + segment.
+  return <SheetBody key={taskId} rootTaskId={taskId} onClose={onClose} fromBoardId={fromBoardId} />;
 }
 
-// ─── Internal sheet body (loaded once taskId is non-null) ─────────────────────
+function SheetBody({ rootTaskId, onClose, fromBoardId }: { rootTaskId: string; onClose: () => void; fromBoardId?: string }): React.ReactElement {
+  const [stack, setStack] = useState<string[]>([rootTaskId]);
+  const [segment, setSegment] = useState<DetailSegment>('all');
+  const currentId = stack[stack.length - 1];
+  const previousId = stack.length > 1 ? stack[stack.length - 2] : null;
 
-interface SheetBodyProps {
-  taskId: string | null;
-  onClose: () => void;
-  onOpenTask: (taskId: string) => void;
-}
-
-function SheetBody({ taskId, onClose, onOpenTask }: SheetBodyProps): React.ReactElement | null {
-  const [resolved, setResolved] = useState<'pending' | 'present' | 'missing'>('pending');
-  const [task, setTask] = useState<import('@oybc/shared').Task | null>(null);
-
-  // Auto-dismiss when the user navigates anywhere outside the sheet
-  // (e.g. clicks a board Link in Usage, or a template Link in
-  // "Part of recurring template"). Without this, the sheet stays
-  // mounted over the new route and the navigation looks broken.
-  // Internal chip-to-detail swaps (`setInnerTaskId`) don't change the
-  // URL, so they don't trigger this effect.
+  // Auto-dismiss when the user navigates anywhere outside the sheet. In-sheet
+  // swaps don't change the URL, so they don't trigger this.
   const location = useLocation();
   const navigate = useNavigate();
   const initialPath = useRef(location.pathname);
-  const { ref: modalRef, props: modalProps } = useModalA11y<HTMLDivElement>({
-    open: true,
-    onCancel: onClose,
-  });
+  const { ref: modalRef, props: modalProps } = useModalA11y<HTMLDivElement>({ open: true, onCancel: onClose });
   useEffect(() => {
-    if (location.pathname !== initialPath.current) {
-      onClose();
-    }
+    if (location.pathname !== initialPath.current) onClose();
   }, [location.pathname, onClose]);
 
-  useEffect(() => {
-    if (!taskId) {
-      setResolved('missing');
-      return;
-    }
-    setResolved('pending');
-    let cancelled = false;
-    void (async () => {
-      const row = await fetchTask(taskId);
-      if (cancelled) return;
-      if (row === undefined || row.isDeleted) {
-        setResolved('missing');
-      } else {
-        setTask(row);
-        setResolved('present');
-      }
-    })();
-    return () => { cancelled = true; };
-  }, [taskId]);
+  // Live: an edit refreshes the page; a delete (or a missing id) shows the empty state.
+  const task = useLiveQuery<Task | null>(async () => (await fetchTask(currentId)) ?? null, [currentId]);
+  const previous = useLiveQuery<Task | null>(async () => (previousId ? (await fetchTask(previousId)) ?? null : null), [previousId]);
+  const missing = task === null || (task !== undefined && task.isDeleted);
 
-  // Keep task state fresh when the DB row changes while the sheet is open
-  // (e.g. after a successful edit). useLiveQuery would be cleaner here but
-  // requires using it at the top level; the one-shot pattern plus a
-  // post-edit `onChanged` callback achieves the same result without adding
-  // a live subscription in a conditionally-rendered component.
-  const handleChanged = async () => {
-    if (!taskId) return;
-    const row = await fetchTask(taskId);
-    if (!row || row.isDeleted) {
-      onClose();
-    } else {
-      setTask(row);
-    }
-  };
+  const leave = (path: string): void => { onClose(); navigate(path); };
 
   return (
-    <div
-      className={styles.backdrop}
-      onClick={onClose}
-      role="presentation"
-    >
-      <div
-        ref={modalRef}
-        className={styles.sheetPanel}
-        role="dialog"
-        aria-label="Task detail"
-        {...modalProps}
-        onClick={(e) => e.stopPropagation()}
-      >
-        {/* Top-right Done button */}
-        <div className={styles.sheetToolbar}>
-          <button
-            type="button"
-            className={styles.doneButton}
-            onClick={onClose}
-          >
-            Done
-          </button>
-        </div>
+    <div className={styles.backdrop} onClick={onClose} role="presentation">
+      <div ref={modalRef} className={styles.sheetPanel} role="dialog" aria-label="Task detail" {...modalProps} onClick={(e) => e.stopPropagation()}>
+        {task === undefined && <p className={styles.statusMessage}>Loading…</p>}
 
-        {resolved === 'pending' && (
-          <p className={styles.statusMessage}>Loading…</p>
-        )}
-
-        {resolved === 'missing' && (
+        {missing && (
           <div className={styles.missingState}>
             <p className={styles.statusMessage}>This task no longer exists.</p>
-            <button
-              type="button"
-              className={styles.doneButton}
-              onClick={onClose}
-            >
-              Close
-            </button>
+            <button type="button" className={styles.doneButton} onClick={onClose}>Close</button>
           </div>
         )}
 
-        {resolved === 'present' && task && (
+        {task && !task.isDeleted && (
           <TaskDetailContent
+            key={task.id}
             task={task}
-            onChanged={handleChanged}
-            onClose={onClose}
-            onOpenTask={onOpenTask}
-            onOpenCounter={(id) => { onClose(); navigate(`/profile/counters/${id}`); }}
+            onChanged={() => {}}
+            onDeleted={onClose}
+            chrome={{
+              kind: 'sheet',
+              onDone: onClose,
+              returnTo: previous && !previous.isDeleted
+                ? { title: previous.title || '(untitled task)', type: previous.type as RisoTaskType, onReturn: () => setStack((s) => s.slice(0, -1)) }
+                : undefined,
+            }}
+            segment={segment}
+            onSegment={setSegment}
+            onOpenTask={(id) => setStack((s) => [...s, id])}
+            onOpenBoard={(id) => (id === fromBoardId ? onClose() : leave(`/boards/${id}`))}
+            onOpenCounter={(id) => leave(`/profile/counters/${id}`)}
           />
         )}
       </div>

@@ -88,7 +88,7 @@ extension BoardPlayView {
                 doneCount: candidates.filter(\.isCompleted).count, total: candidates.count
             ))
         case .achievement:
-            let a = squareAchievement(bt, task)
+            let a = viewModel.squareAchievement(bt, task)
             body = .achievement(isMet: a.isMet, watchedName: a.watchedName, openBoardId: a.openBoardId)
         }
         return SquareMenuInput(
@@ -105,15 +105,15 @@ extension BoardPlayView {
             guard !viewModel.isProcessing else { return }
             toggleNormalSquare(boardTask: bt, task: task)
         case let .log(amount):
-            showMenuLogToast(performSquareLog(placement: bt, taskId: bt.taskId, amount: amount, persistAsDefault: false, removing: false))
+            showMenuLogToast(viewModel.performSquareLog(placement: bt, taskId: bt.taskId, amount: amount, persistAsDefault: false, removing: false))
         case .logOther:
             openSquareSheet(bt, entry: SquareSheetEntry(scopeTaskId: bt.taskId, isRemove: false))
         case .remove:
             openSquareSheet(bt, entry: SquareSheetEntry(scopeTaskId: bt.taskId, isRemove: true))
         case let .completeNextSubtask(childId):
-            showMenuLogToast(performChildToggle(placement: bt, childId: childId))
+            showMenuLogToast(viewModel.performChildToggle(placement: bt, childId: childId))
         case let .logChild(childId, amount):
-            showMenuLogToast(performSquareLog(placement: bt, taskId: childId, amount: amount, persistAsDefault: false, removing: false))
+            showMenuLogToast(viewModel.performSquareLog(placement: bt, taskId: childId, amount: amount, persistAsDefault: false, removing: false))
         case .allSubtasks, .details:
             openSquareSheet(bt, entry: nil)
         case let .openBoard(id):

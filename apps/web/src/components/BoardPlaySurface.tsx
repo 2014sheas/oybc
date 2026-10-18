@@ -847,7 +847,7 @@ export function BoardPlaySurface({
         <TaskDetailSheet
           taskId={openedTaskInLibrary}
           onClose={() => setOpenedTaskInLibrary(null)}
-          onOpenTask={(id) => setOpenedTaskInLibrary(id)}
+          fromBoardId={board.id}
         />
       )}
 

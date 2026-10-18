@@ -355,7 +355,6 @@ export function CompoundTaskWizard({
       <TaskDetailSheet
         taskId={openedTaskInLibrary}
         onClose={() => setOpenedTaskInLibrary(null)}
-        onOpenTask={(id) => setOpenedTaskInLibrary(id)}
       />
     </div>
   );

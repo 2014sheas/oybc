@@ -22,6 +22,9 @@ struct TapLogChipRow: View {
     let chips: [CounterLogAmount.TapChip]
     var size: Size = .regular
     var disabled: Bool = false
+    /// On a coloured hero: the keyline of "Other…" and every hard shadow use the
+    /// non-inverting `inkStatic` (the design draws them ink on blue / teal / purple).
+    var onColor: Bool = false
     let onChip: (CounterLogAmount.TapChip) -> Void
 
     private static let gap: CGFloat = 6
@@ -74,11 +77,11 @@ struct TapLogChipRow: View {
                 .background(RoundedRectangle(cornerRadius: Riso.cardRadius).fill(isOther ? Color.risoPaper2 : Color.risoGold))
                 .overlay(
                     RoundedRectangle(cornerRadius: Riso.cardRadius)
-                        .strokeBorder(isOther ? Color.risoInk : Color.risoInkStatic, lineWidth: size.keyline)
+                        .strokeBorder(isOther && !onColor ? Color.risoInk : Color.risoInkStatic, lineWidth: size.keyline)
                 )
                 .contentShape(RoundedRectangle(cornerRadius: Riso.cardRadius))
         }
-        .buttonStyle(TapLogChipButtonStyle(collapsed: disabled))
+        .buttonStyle(TapLogChipButtonStyle(collapsed: disabled, shadow: onColor ? .risoInkStatic : .risoInk))
         .disabled(disabled)
         .opacity(disabled ? 0.45 : 1)
         .accessibilityLabel(isOther ? "Log another amount" : "Log \(chip.label)")
@@ -89,6 +92,7 @@ struct TapLogChipRow: View {
 /// draws no shadow at all.
 private struct TapLogChipButtonStyle: ButtonStyle {
     let collapsed: Bool
+    var shadow: Color = .risoInk
 
     func makeBody(configuration: Configuration) -> some View {
         let pressed = configuration.isPressed
@@ -96,7 +100,7 @@ private struct TapLogChipButtonStyle: ButtonStyle {
         return configuration.label
             .background(
                 RoundedRectangle(cornerRadius: Riso.cardRadius)
-                    .fill(Color.risoInk)
+                    .fill(shadow)
                     .offset(x: pressed || collapsed ? 0 : offset, y: pressed || collapsed ? 0 : offset)
             )
             .offset(x: pressed ? offset : 0, y: pressed ? offset : 0)

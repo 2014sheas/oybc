@@ -202,5 +202,14 @@
         "completionCount": 0
       }
     }
+  ],
+  "closestLine": [
+    { "name": "row with most done", "gridSize": 3, "grid": [true, true, false, false, false, false, false, false, false], "expected": { "cells": [0, 1, 2], "done": 2 } },
+    { "name": "completed line is skipped for the next best", "gridSize": 3, "grid": [true, true, true, true, false, false, false, false, false], "expected": { "cells": [0, 3, 6], "done": 2 } },
+    { "name": "tie goes to the earliest line", "gridSize": 3, "grid": [false, false, false, false, false, false, false, false, false], "expected": { "cells": [0, 1, 2], "done": 0 } },
+    { "name": "anti diagonal", "gridSize": 3, "grid": [false, false, true, false, true, false, false, false, false], "expected": { "cells": [2, 4, 6], "done": 2 } },
+    { "name": "main diagonal on 5x5", "gridSize": 5, "grid": [true, false, false, false, false, false, true, false, false, false, false, false, true, false, false, false, false, false, true, false, false, false, false, false, false], "expected": { "cells": [0, 6, 12, 18, 24], "done": 4 } },
+    { "name": "every line complete", "gridSize": 3, "grid": [true, true, true, true, true, true, true, true, true], "expected": null },
+    { "name": "malformed grid", "gridSize": 3, "grid": [true, false], "expected": null }
   ]
 }

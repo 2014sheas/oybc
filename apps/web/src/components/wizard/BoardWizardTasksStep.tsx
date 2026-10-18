@@ -943,7 +943,6 @@ export function BoardWizardTasksStep({
       <TaskDetailSheet
         taskId={openedTaskInLibrary}
         onClose={() => setOpenedTaskInLibrary(null)}
-        onOpenTask={(id) => setOpenedTaskInLibrary(id)}
       />
 
       {removeSourceConfirm}

@@ -27,7 +27,11 @@ final class TaskDetailKernelTests: XCTestCase {
     private struct RowV: Decodable { let key: String; let kind: String; let at: String; let text: String }
     private struct ExpectedV: Decodable { let rows: [RowV]; let completionCount: Int }
     private struct ActivityV: Decodable { let name: String; let input: InputV; let expected: ExpectedV }
-    private struct Fixture: Decodable { let heroAnchor: [AnchorV]; let nextSubtask: [NextV]; let activity: [ActivityV] }
+    private struct LineV: Decodable { let cells: [Int]; let done: Int }
+    private struct ClosestV: Decodable { let name: String; let gridSize: Int; let grid: [Bool]; let expected: LineV? }
+    private struct Fixture: Decodable {
+        let heroAnchor: [AnchorV]; let nextSubtask: [NextV]; let activity: [ActivityV]; let closestLine: [ClosestV]
+    }
 
     private func fixture() throws -> Fixture {
         let url = try XCTUnwrap(Bundle(for: Self.self).url(forResource: "taskDetailVectors", withExtension: "json"))
@@ -89,6 +93,14 @@ final class TaskDetailKernelTests: XCTestCase {
             XCTAssertEqual(got.rows.map(\.kind.rawValue), v.expected.rows.map(\.kind), v.name)
             XCTAssertEqual(got.rows.map(\.at), v.expected.rows.map(\.at), v.name)
             XCTAssertEqual(got.rows.map(\.text), v.expected.rows.map(\.text), v.name)
+        }
+    }
+
+    func testClosestLineVectors() throws {
+        for v in try fixture().closestLine {
+            let got = TaskDetailKernel.closestLine(v.grid, gridSize: v.gridSize)
+            XCTAssertEqual(got?.cells, v.expected?.cells, v.name)
+            XCTAssertEqual(got?.done, v.expected?.done, v.name)
         }
     }
 }

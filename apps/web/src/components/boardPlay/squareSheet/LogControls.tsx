@@ -21,6 +21,8 @@ export interface LogControlsProps {
   removeDisabled?: boolean;
   /** Opens the entry at once (the hold menu's "Log other amount…" / "Remove…"). */
   initialEntry?: 'add' | 'remove';
+  /** Right of the Remove link (Task Detail's Edit). */
+  trailing?: React.ReactNode;
   /** `persist` is true only for an explicit "Other…" add (the existing default-amount rule). */
   onLog: (direction: 'add' | 'remove', amount: number, persist: boolean) => void;
   onUndo: () => void;
@@ -34,7 +36,7 @@ export interface LogControlsProps {
  * @returns The controls.
  */
 export function LogControls({
-  kind, unit, goal, count, size, busy, stripText, removeDisabled, initialEntry, onLog, onUndo,
+  kind, unit, goal, count, size, busy, stripText, removeDisabled, initialEntry, trailing, onLog, onUndo,
 }: LogControlsProps): React.ReactElement {
   const [entry, setEntry] = useState<{ mode: 'add' | 'remove'; draft: string } | null>(initialEntry ? { mode: initialEntry, draft: '' } : null);
   const amount = entry ? entryAmount(parseCountInput(entry.draft, kind)) : null;
@@ -90,6 +92,7 @@ export function LogControls({
           >
             − Remove…
           </button>
+          {trailing}
         </div>
       )}
     </>

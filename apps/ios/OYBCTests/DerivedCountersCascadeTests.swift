@@ -1041,20 +1041,15 @@ final class DerivedCountersCascadeTests: XCTestCase {
         XCTAssertGreaterThan(after.version, 1, "the retired member's board re-derived in-txn")
     }
 
-    // MARK: - (h) read audit — the count STRING (final-review item 9)
+    // MARK: - (h) read audit — the displayed count (final-review item 9)
 
-    func test_countingSubtitle_readsTheLinkedMembersOwnNumberNotTheRootMirror() {
-        // A member of a root at 12 whose window opened at 10, goal 5.
+    func test_displayedCount_readsTheLinkedMembersOwnNumberNotTheRootMirror() {
+        // A member of a root at 12 whose window opened at 10.
         let linked = countingTask(id: "linked-h", sharedCounterId: "root-1",
                                   baseline: 10, maxCount: 5, currentCount: 12)
-        XCTAssertEqual(TaskCountDisplay.countingSubtitle(for: linked), "Run · 2 / 5 km")
+        XCTAssertEqual(TaskCountDisplay.displayedCount(for: linked), 2)
 
         let rootTask = countingTask(id: "root-h", maxCount: 20, currentCount: 12)
-        XCTAssertEqual(TaskCountDisplay.countingSubtitle(for: rootTask), "Run · 12 / 20 km")
-    }
-
-    func test_countingSubtitle_goalLessShowsItsTotalAlone() {
-        let goalless = countingTask(id: "goalless-h", maxCount: nil, currentCount: 3)
-        XCTAssertEqual(TaskCountDisplay.countingSubtitle(for: goalless), "Run · 3 km")
+        XCTAssertEqual(TaskCountDisplay.displayedCount(for: rootTask), 12)
     }
 }

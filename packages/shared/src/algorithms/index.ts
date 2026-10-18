@@ -137,7 +137,7 @@ export {
   tapLogChips,
 } from './logAmounts';
 export type { LogChip, TapLogChip } from './logAmounts';
-export { pickHeroAnchorBoard, nextCompoundSubtask, buildTaskActivity } from './taskDetail';
+export { pickHeroAnchorBoard, nextCompoundSubtask, buildTaskActivity, closestLine } from './taskDetail';
 export type {
   CompoundSubtaskCandidate,
   CompoundSubtaskAction,
@@ -145,6 +145,7 @@ export type {
   TaskActivityRow,
   TaskActivityInput,
   TaskActivity,
+  ClosestLine,
 } from './taskDetail';
 
 // ===== Pair-derived counter display names (R1 — counters refresh) =====
@@ -613,9 +614,6 @@ export {
 } from './boardExpiry';
 
 export type { ExpiringBoardFields } from './boardExpiry';
-
-export { taskWindowCaptionLines } from './taskWindowCaption';
-export type { TaskWindowCaptionTask } from './taskWindowCaption';
 
 export { normalizePlacementFields, withNormalizedPlacementFields, TITLE_OVERRIDE_MAX } from './placementFields';
 export type { PlacementFields } from './placementFields';
