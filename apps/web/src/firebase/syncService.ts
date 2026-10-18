@@ -465,10 +465,15 @@ export async function pullSync(
   // version's values) are re-fetched by id once the build changed. A failed
   // retry never fails the pull — the ledger rows stay for the next cycle.
   try {
-    const retried = await retryQuarantinedDocs(userId, async (collectionName, docId) => {
-      const snap = await getDoc(doc(firestore, 'users', userId, collectionName, docId));
-      return snap.exists() ? (snap.data() as Record<string, unknown>) : null;
-    });
+    const retried = await retryQuarantinedDocs(
+      userId,
+      async (collectionName, docId) => {
+        const snap = await getDoc(doc(firestore, 'users', userId, collectionName, docId));
+        return snap.exists() ? (snap.data() as Record<string, unknown>) : null;
+      },
+      // A sign-out / account switch mid-pass must not write the old user's docs.
+      { isActive: () => auth.currentUser?.uid === userId },
+    );
     result.pulled += retried.pulled;
     result.details.push(...retried.details);
   } catch (err) {

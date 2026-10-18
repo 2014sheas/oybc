@@ -96,17 +96,26 @@ describe('CoreBoardDefaultSchema', () => {
       }
     });
 
-    it('reject an out-of-range size and a CHOSEN centre (CHOSEN is a per-board pick, never a default)', () => {
-      expect(() => CoreBoardDefaultSchema.parse(validRow({ defaultBoardSize: 6 }))).toThrow();
-      expect(() => CoreBoardDefaultSchema.parse(validRow({ defaultBoardSize: '5' }))).toThrow();
-      expect(() =>
-        CoreBoardDefaultSchema.parse(validRow({ defaultCenterType: CenterSquareType.CHOSEN })),
-      ).toThrow();
+    it('read an out-of-range size and a CHOSEN centre as ABSENT (lenient on a pulled row, like iOS; the input schemas stay strict)', () => {
+      for (const over of [
+        { defaultBoardSize: 6 },
+        { defaultBoardSize: '5' },
+        { defaultCenterType: CenterSquareType.CHOSEN },
+        { defaultCenterType: 'wild' },
+      ]) {
+        const parsed = CoreBoardDefaultSchema.parse(validRow(over));
+        expect(parsed.defaultBoardSize).toBeUndefined();
+        expect(parsed.defaultCenterType).toBeUndefined();
+      }
+      expect(() => CreateCoreBoardDefaultInputSchema.parse({
+        timeframe: Timeframe.DAILY, corePoolIds: [], coreDefaultTaskIds: [], defaultCenterType: CenterSquareType.CHOSEN,
+      })).toThrow();
     });
 
-    it('reject null on the ROW (a clear is stored as absent, never null — the Board.sealedAt posture)', () => {
-      expect(() => CoreBoardDefaultSchema.parse(validRow({ defaultBoardSize: null }))).toThrow();
-      expect(() => CoreBoardDefaultSchema.parse(validRow({ defaultCenterType: null }))).toThrow();
+    it('read null on the ROW as absent (a clear is stored as absent, never null — the Board.sealedAt posture)', () => {
+      const parsed = CoreBoardDefaultSchema.parse(validRow({ defaultBoardSize: null, defaultCenterType: null }));
+      expect(parsed.defaultBoardSize).toBeUndefined();
+      expect(parsed.defaultCenterType).toBeUndefined();
     });
   });
 });

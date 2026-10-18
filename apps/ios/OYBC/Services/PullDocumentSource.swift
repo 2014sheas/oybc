@@ -29,7 +29,7 @@ final class PullListener {
 /// Deliberately NOT `@MainActor`: its async reads run on the generic
 /// executor, so turning a large snapshot into dictionaries (`data()`) happens
 /// off the main thread.
-protocol PullDocumentSource {
+protocol PullDocumentSource: Sendable {
     /// Reads the parent `users/{userId}` doc.
     ///
     /// - Returns: The doc's data, or nil when it doesn't exist.

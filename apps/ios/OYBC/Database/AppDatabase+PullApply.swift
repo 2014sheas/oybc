@@ -184,7 +184,9 @@ extension AppDatabase {
                 outcome.details.append("Skipped \(name)/\(id): \(skip)")
                 // A parent missing locally is usually a quarantined compound: the
                 // checkpoint moves past this link, so ledger it for the retry.
-                if skip == orphanedChildReason { try quarantinePulledDoc(db: db, userId: userId, collection: name, docId: id, reason: skip) }
+                if skip == orphanedChildReason {
+                    try quarantinePulledDoc(db: db, userId: userId, collection: name, docId: id, reason: skip, subjectId: quarantineSubjectId(collection: name, remote: remote))
+                }
                 continue
             }
             let local = try fetchPullLocalRecord(db: db, grdbTable: collection.grdbTable, id: id)
@@ -202,11 +204,16 @@ extension AppDatabase {
                 try reassertPullLocalWin(db: db, entityType: name, entityId: id, localData: local, remoteData: remote, ownerUid: userId)
                 continue
             }
-            // A new placement / link whose task or board is quarantined would trip
-            // its table's foreign key — ledger it as a dependent instead.
-            if local == nil, let dependency = try quarantinedDependencyReason(db: db, userId: userId, collection: name, remote: remote) {
+            // A placement / link (NEW, or an existing one a newer client re-pointed
+            // in place — Board Edit swaps a square's task) whose task or board is
+            // quarantined would trip its table's foreign key and roll the whole
+            // batch back: ledger it as a dependent and keep any old local row.
+            if let dependency = try quarantinedDependencyReason(db: db, userId: userId, collection: name, remote: remote) {
                 outcome.details.append("Quarantined \(name)/\(id): \(dependency)")
-                try quarantinePulledDoc(db: db, userId: userId, collection: name, docId: id, reason: dependency)
+                try quarantinePulledDoc(
+                    db: db, userId: userId, collection: name, docId: id, reason: dependency,
+                    subjectId: quarantineSubjectId(collection: name, remote: remote)
+                )
                 continue
             }
             // Windowed Completion: counting conflicts resolve by union-of-
@@ -329,21 +336,22 @@ extension AppDatabase {
     /// idempotent), ENQUEUE a CREATE owned by `userId`, then run the same
     /// recompute + board cascade + sealed re-derive the event pull uses.
     /// Respects LWW against an existing row with that id (an undo tombstone is
-    /// never resurrected). Skipped while any `taskEvents` doc is quarantined.
+    /// never resurrected). Skips a task that has a quarantined `taskEvents` doc.
     /// Twin of web `healMissingCompletionEvents`.
     ///
     /// - Returns: The number of events minted.
     static func healMissingCompletionEventsTx(db: Database, userId: String) throws -> Int {
         // An event this build could not read (a newer app version's kind) may be
-        // the very completion a task looks "missing" — never mint over it
-        // (issue #300). Heals resume once the ledger clears.
-        if try hasQuarantinedDocs(db: db, userId: userId, collection: "taskEvents") { return 0 }
+        // the very completion its task looks "missing" — never mint over THAT
+        // task's events (issue #300). Every other task still heals.
+        let unreadableEventTasks = try quarantinedSubjectIds(db: db, userId: userId, collection: "taskEvents")
         let tasks = try Task.fetchAll(db)
         var hasLiveEvent = Set<String>()
         for e in try TaskEvent.fetchAll(db) where !e.isDeleted { hasLiveEvent.insert(e.taskId) }
         let toMint = tasks.compactMap { task -> TaskEvent? in
             guard task.userId == userId, !task.isDeleted, isEventOwningTask(task),
                   !hasLiveEvent.contains(task.id), // events are authoritative
+                  !unreadableEventTasks.contains(task.id), // an unreadable event may be the completion
                   task.isCompleted || (task.currentCount ?? 0) > 0 else { return nil }
             return buildBackfillTaskEvent(task: task)
         }

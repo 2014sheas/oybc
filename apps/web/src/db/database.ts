@@ -498,6 +498,12 @@ export interface SyncQuarantineRow {
   reason: string;
   /** The build (`currentAppBuild()`) that last failed to apply it. */
   appBuild: string;
+  /**
+   * The entity this doc is ABOUT, for scoped reactions (docs/SYNC_STRATEGY.md
+   * §Forward-compatible pull): an event's `taskId`, a placement's `boardId`, a
+   * compound link's parent `compoundTaskId`; absent for other collections.
+   */
+  subjectId?: string;
   /** ISO8601 — when it was first quarantined. */
   quarantinedAt: string;
 }

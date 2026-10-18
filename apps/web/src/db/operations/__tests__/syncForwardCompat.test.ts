@@ -5,6 +5,8 @@ import { applyRemoteSubdoc } from '../pullApply';
 import { applyTaskEventsBatch } from '../taskEventPull';
 import { retryQuarantinedDocs } from '../quarantineRetry';
 import {
+  QUARANTINE_FETCH_CONCURRENCY,
+  QUARANTINE_RETRY_LIMIT,
   currentAppBuild,
   fetchRetryableQuarantine,
   listQuarantinedDocs,
@@ -150,14 +152,21 @@ describe('applyRemoteSubdoc — a future enum value is skipped and ledgered (nev
 });
 
 describe('healMissingCompletionEvents — never mints over an event this build could not read', () => {
-  it('waits while a taskEvents doc is quarantined, then resumes', async () => {
-    await db.tasks.put(task(1, { isCompleted: true }) as never);
-    await quarantinePulledDoc(USER, 'taskEvents', event(1, { kind: 'decrement' }), 'x');
+  it('skips only the task that has a quarantined event; every other task still heals, and it resumes after release', async () => {
+    await db.tasks.bulkPut([task(1, { isCompleted: true }), task(2, { isCompleted: true })] as never);
+    await quarantinePulledDoc(USER, 'taskEvents', event(1, { kind: 'decrement', taskId: uuid(2, 1) }), 'x');
 
-    expect(await healMissingCompletionEvents(USER)).toBe(0);
-    expect(await db.taskEvents.count()).toBe(0);
+    expect(await healMissingCompletionEvents(USER)).toBe(1); // task 2 only
+    expect((await db.taskEvents.toArray()).map((e) => e.taskId)).toEqual([uuid(2, 2)]);
 
     await releaseQuarantinedDocs(USER, 'taskEvents', [uuid(4, 1)]);
+    expect(await healMissingCompletionEvents(USER)).toBe(1); // task 1 resumes
+  });
+
+  it('an unreadable event that names no task blocks nothing', async () => {
+    await db.tasks.put(task(1, { isCompleted: true }) as never);
+    await quarantinePulledDoc(USER, 'taskEvents', { id: uuid(4, 9), userId: USER, kind: 'decrement' }, 'x');
+
     expect(await healMissingCompletionEvents(USER)).toBe(1);
   });
 });
@@ -203,7 +212,7 @@ describe('retryQuarantinedDocs — a new build re-fetches exactly what an earlie
     await quarantinePulledDoc(USER, 'tasks', task(1, { type: 'habit' }), 'x', NEW);
     const remote = makeRemote({});
 
-    const out = await retryQuarantinedDocs(USER, remote.fetchDoc, NEW);
+    const out = await retryQuarantinedDocs(USER, remote.fetchDoc, { appBuild: NEW });
 
     expect(out).toEqual({ pulled: 0, details: [] });
     expect(remote.fetches).toEqual([]);
@@ -217,7 +226,7 @@ describe('retryQuarantinedDocs — a new build re-fetches exactly what an earlie
     // the new build understands the type — the remote doc is now valid
     const remote = makeRemote({ [`tasks/${uuid(2, 1)}`]: task(1), [`boardTasks/${uuid(3, 1)}`]: placement(1) });
 
-    const out = await retryQuarantinedDocs(USER, remote.fetchDoc, NEW);
+    const out = await retryQuarantinedDocs(USER, remote.fetchDoc, { appBuild: NEW });
 
     expect(remote.fetches).toEqual([`tasks/${uuid(2, 1)}`, `boardTasks/${uuid(3, 1)}`]);
     expect(out.pulled).toBe(2);
@@ -230,8 +239,8 @@ describe('retryQuarantinedDocs — a new build re-fetches exactly what an earlie
     await quarantinePulledDoc(USER, 'tasks', task(1, { type: 'habit' }), 'x', OLD);
     const remote = makeRemote({ [`tasks/${uuid(2, 1)}`]: task(1, { type: 'habit' }) });
 
-    await retryQuarantinedDocs(USER, remote.fetchDoc, NEW);
-    await retryQuarantinedDocs(USER, remote.fetchDoc, NEW);
+    await retryQuarantinedDocs(USER, remote.fetchDoc, { appBuild: NEW });
+    await retryQuarantinedDocs(USER, remote.fetchDoc, { appBuild: NEW });
 
     expect(remote.fetches).toEqual([`tasks/${uuid(2, 1)}`]);
     expect((await listQuarantinedDocs(USER)).map((r) => [r.docId, r.appBuild])).toEqual([[uuid(2, 1), NEW]]);
@@ -241,7 +250,7 @@ describe('retryQuarantinedDocs — a new build re-fetches exactly what an earlie
     await quarantinePulledDoc(USER, 'tasks', task(1), 'x', OLD);
     const remote = makeRemote({ [`tasks/${uuid(2, 1)}`]: task(1, { userId: 'someone-else' }) });
 
-    await retryQuarantinedDocs(USER, remote.fetchDoc, NEW);
+    await retryQuarantinedDocs(USER, remote.fetchDoc, { appBuild: NEW });
 
     expect(await db.tasks.count()).toBe(0);
     expect((await listQuarantinedDocs(USER)).map((r) => r.appBuild)).toEqual([NEW]);
@@ -250,7 +259,7 @@ describe('retryQuarantinedDocs — a new build re-fetches exactly what an earlie
   it('releases a doc that no longer exists on the server', async () => {
     await quarantinePulledDoc(USER, 'tasks', task(1, { type: 'habit' }), 'x', OLD);
 
-    const out = await retryQuarantinedDocs(USER, makeRemote({}).fetchDoc, NEW);
+    const out = await retryQuarantinedDocs(USER, makeRemote({}).fetchDoc, { appBuild: NEW });
 
     expect(out.details).toEqual([`Released quarantined tasks/${uuid(2, 1)}: no longer on the server`]);
     expect(await listQuarantinedDocs(USER)).toEqual([]);
@@ -261,7 +270,7 @@ describe('retryQuarantinedDocs — a new build re-fetches exactly what an earlie
     await quarantinePulledDoc(USER, 'taskEvents', event(1, { kind: 'decrement' }), 'x', OLD);
     const remote = makeRemote({ [`taskEvents/${uuid(4, 1)}`]: event(1) });
 
-    const out = await retryQuarantinedDocs(USER, remote.fetchDoc, NEW);
+    const out = await retryQuarantinedDocs(USER, remote.fetchDoc, { appBuild: NEW });
 
     expect(out.pulled).toBe(1);
     expect(await db.taskEvents.count()).toBe(1);
@@ -272,17 +281,113 @@ describe('retryQuarantinedDocs — a new build re-fetches exactly what an earlie
     for (const n of [1, 2, 3]) await quarantinePulledDoc(USER, 'tasks', task(n, { type: 'habit' }), 'x', OLD);
     const remote = makeRemote({});
 
-    await retryQuarantinedDocs(USER, remote.fetchDoc, NEW, 2);
+    await retryQuarantinedDocs(USER, remote.fetchDoc, { appBuild: NEW, limit: 2 });
 
     expect(remote.fetches).toHaveLength(2);
     expect(await listQuarantinedDocs(USER)).toHaveLength(1);
   });
 
-  it('propagates a transport failure and leaves every row for the next pull', async () => {
+  it('a transport failure does not throw: rows stay for the next pull and the failure is reported', async () => {
     await quarantinePulledDoc(USER, 'tasks', task(1, { type: 'habit' }), 'x', OLD);
 
-    await expect(retryQuarantinedDocs(USER, async () => { throw new Error('offline'); }, NEW)).rejects.toThrow('offline');
+    const out = await retryQuarantinedDocs(USER, async () => { throw new Error('offline'); }, { appBuild: NEW });
 
+    expect(out.pulled).toBe(0);
+    expect(out.details).toEqual(['Quarantine retry skipped: offline']);
     expect((await listQuarantinedDocs(USER)).map((r) => r.appBuild)).toEqual([OLD]);
+  });
+
+  it('a failure in a LATER collection keeps the earlier collections\' applied count and re-stamps only what finished', async () => {
+    await quarantinePulledDoc(USER, 'tasks', task(1, { type: 'habit' }), 'x', OLD);
+    await db.boards.put(board(1) as never);
+    await quarantinePulledDoc(USER, 'boardTasks', placement(1), 'depends', OLD);
+    const fetchDoc = async (collection: string): Promise<Record<string, unknown> | null> => {
+      if (collection === 'boardTasks') throw new Error('offline');
+      return task(1);
+    };
+
+    const out = await retryQuarantinedDocs(USER, fetchDoc, { appBuild: NEW });
+
+    expect(out.pulled).toBe(1);
+    expect(await db.tasks.count()).toBe(1);
+    expect(out.details).toContain('Quarantine retry skipped: offline');
+    expect((await listQuarantinedDocs(USER)).map((r) => [r.collection, r.appBuild])).toEqual([['boardTasks', OLD]]);
+  });
+
+  it('stops without applying anything once the signed-in account is no longer the one it runs for', async () => {
+    await quarantinePulledDoc(USER, 'tasks', task(1, { type: 'habit' }), 'x', OLD);
+    const remote = makeRemote({ [`tasks/${uuid(2, 1)}`]: task(1) });
+    let active = true;
+    const fetchDoc = async (collection: string, id: string) => {
+      const doc = await remote.fetchDoc(collection, id);
+      active = false; // sign-out / wipe / account switch lands while the read is in flight
+      return doc;
+    };
+
+    const out = await retryQuarantinedDocs(USER, fetchDoc, { appBuild: NEW, isActive: () => active });
+
+    expect(out.details).toEqual(['Quarantine retry stopped: the signed-in account changed']);
+    expect(await db.tasks.count()).toBe(0);
+    expect((await listQuarantinedDocs(USER)).map((r) => r.appBuild)).toEqual([OLD]);
+  });
+
+  it('does not even fetch when the account already changed', async () => {
+    await quarantinePulledDoc(USER, 'tasks', task(1, { type: 'habit' }), 'x', OLD);
+    const remote = makeRemote({});
+
+    await retryQuarantinedDocs(USER, remote.fetchDoc, { appBuild: NEW, isActive: () => false });
+
+    expect(remote.fetches).toEqual([]);
+  });
+
+  it('fetches with bounded concurrency (at most 8 in flight) and defaults to a small per-pull cap', async () => {
+    expect(QUARANTINE_RETRY_LIMIT).toBeLessThanOrEqual(50);
+    for (let n = 1; n <= 30; n += 1) await quarantinePulledDoc(USER, 'tasks', task(n, { type: 'habit' }), 'x', OLD);
+    let inFlight = 0;
+    let peak = 0;
+    const fetchDoc = async (): Promise<Record<string, unknown> | null> => {
+      inFlight += 1;
+      peak = Math.max(peak, inFlight);
+      await new Promise((resolve) => setTimeout(resolve, 2));
+      inFlight -= 1;
+      return null;
+    };
+
+    await retryQuarantinedDocs(USER, fetchDoc, { appBuild: NEW });
+
+    expect(peak).toBeGreaterThan(1);
+    expect(peak).toBeLessThanOrEqual(QUARANTINE_FETCH_CONCURRENCY);
+    expect(await listQuarantinedDocs(USER)).toEqual([]);
+  });
+});
+
+describe('an UPDATE of an existing row (the re-point hole): applies or ledgers, never wedges', () => {
+  it('a compound link re-pointed at a parent that is not local is ledgered; the old local link stays intact', async () => {
+    await db.tasks.bulkPut([task(1, { type: 'compound', operator: 'AND' }), task(2)] as never);
+    const link = (over: Record<string, unknown>) => ({
+      id: uuid(5, 1), compoundTaskId: uuid(2, 1), childTaskId: uuid(2, 2), childIndex: 0,
+      createdAt: NOW, updatedAt: NOW, version: 1, isDeleted: false, ...over,
+    });
+    await applyRemoteSubdoc('compoundChildren', link({}), USER);
+
+    const status = await applyRemoteSubdoc('compoundChildren', link({ version: 2, compoundTaskId: uuid(2, 50) }), USER);
+
+    expect(status).toMatch(/parent compound not yet present locally$/);
+    expect(await db.compoundChildren.get(uuid(5, 1))).toMatchObject({ version: 1, compoundTaskId: uuid(2, 1) });
+    expect((await listQuarantinedDocs(USER)).map((r) => [r.collection, r.docId, r.subjectId])).toEqual([
+      ['compoundChildren', uuid(5, 1), uuid(2, 50)],
+    ]);
+  });
+
+  it('a placement re-pointed at a quarantined task simply applies (Dexie has no foreign keys); it renders as a missing cell', async () => {
+    await db.boards.put(board(1) as never);
+    await applyRemoteSubdoc('tasks', task(1), USER);
+    await applyRemoteSubdoc('tasks', task(2, { type: 'habit' }), USER); // quarantined
+    await applyRemoteSubdoc('boardTasks', placement(1), USER);
+
+    const status = await applyRemoteSubdoc('boardTasks', placement(1, { version: 2, taskId: uuid(2, 2) }), USER);
+
+    expect(status).toMatch(/^Pulled /);
+    expect(await db.boardTasks.get(uuid(3, 1))).toMatchObject({ version: 2, taskId: uuid(2, 2) });
   });
 });

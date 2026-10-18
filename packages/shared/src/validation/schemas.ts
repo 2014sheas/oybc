@@ -50,6 +50,24 @@ const CenterSquareTypeSchema = z.preprocess(
   z.nativeEnum(CenterSquareType)
 );
 
+/**
+ * `CenterSquareType` as a STORED / PULLED value (`BoardSchema`, the full
+ * `RecurringBoardTemplateSchema`): any unknown or retired string — the removed
+ * `custom_free` included — reads as FREE, exactly iOS's
+ * `CenterSquareType.init(from:)` (Board.swift), so the same pulled doc applies
+ * identically on both platforms instead of being quarantined on web only
+ * (issue #300; docs/SYNC_STRATEGY.md §Forward-compatible pull). A non-string
+ * value still fails (iOS: `decode(String.self)` throws). User-input schemas
+ * keep the strict `CenterSquareTypeSchema`.
+ */
+export const PulledCenterSquareTypeSchema = z.preprocess(
+  (v) =>
+    typeof v === 'string' && !(Object.values(CenterSquareType) as string[]).includes(v)
+      ? CenterSquareType.FREE
+      : v,
+  z.nativeEnum(CenterSquareType)
+);
+
 export const CreateBoardInputSchema = z.object({
   name: z.string().min(1).max(100),
   description: z.string().max(500).optional(),
@@ -91,7 +109,7 @@ export const BoardSchema = z.object({
   timeframe: z.nativeEnum(Timeframe),
   startDate: FlexibleDateTime,
   endDate: FlexibleDateTime.optional(),   // Absent for INDEFINITE boards
-  centerSquareType: CenterSquareTypeSchema,
+  centerSquareType: PulledCenterSquareTypeSchema,
   centerTaskId: z.string().uuid().optional(),
   isRandomized: z.boolean(),
   totalTasks: z.number().int().min(0),
@@ -840,7 +858,11 @@ export const CoreBoardDefaultSchema = z.object({
   timeframe: RecurringTimeframeSchema,
   corePoolIds: z.array(z.string().uuid()),
   coreDefaultTaskIds: z.array(z.string().uuid()),
-  ...coreBoardSetupOverrideFields,
+  // Lenient on a pulled row, like iOS `CoreBoardDefault.init(from:)`: an absent,
+  // null, unknown or out-of-range size / centre reads as absent (= inherit the
+  // prefs), never a rejected doc (issue #300).
+  defaultBoardSize: coreBoardSetupOverrideFields.defaultBoardSize.catch(undefined),
+  defaultCenterType: coreBoardSetupOverrideFields.defaultCenterType.catch(undefined),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
   lastSyncedAt: z.string().datetime().optional(),

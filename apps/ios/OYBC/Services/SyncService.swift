@@ -295,7 +295,7 @@ final class SyncService: ObservableObject {
     /// The userId the orchestrator is currently bound to. `nil` means
     /// `start(userId:)` hasn't been called or `stop()` ran. Used for
     /// idempotency — repeat calls with the same userId are no-ops.
-    private var runningForUserId: String?
+    var runningForUserId: String? // internal (not private) so tests can stage an account switch
 
     // MARK: - Public API
 
@@ -649,12 +649,11 @@ final class SyncService: ObservableObject {
     /// (`AppDatabase.retryQuarantinedPullDocs`; a no-op until the build changed).
     /// A failure never fails the pull — the ledger rows stay for the next cycle.
     private func retryQuarantinedDocs(userId: String, result: inout PullResult) async {
-        var report = PullBatchOutcome()
-        do {
-            report = try await database.retryQuarantinedPullDocs(source: pullSource, userId: userId)
-        } catch {
-            report.details = ["Quarantine retry skipped: \(error.localizedDescription)"]
-        }
+        let report = await database.retryQuarantinedPullDocs(
+            source: pullSource, userId: userId,
+            // A sign-out / account switch mid-pass must not write the old user's docs.
+            isActive: { [weak self] in self.map { $0.runningForUserId == nil || $0.runningForUserId == userId } ?? false }
+        )
         recordBatch(pulled: report.pulled)
         result.pulled += report.pulled
         result.details += report.details
@@ -743,11 +742,7 @@ final class SyncService: ObservableObject {
     /// landing raw (`AppDatabase.upsertDecodableOrQuarantine`, issue #300).
     private func upsertRemoteWinner(entityType: String, data: [String: Any], userId: String) throws {
         let collection = (firestoreName: entityType, grdbTable: collectionGRDBTable(entityType))
-        try database.write { db in
-            _ = try AppDatabase.upsertDecodableOrQuarantine(
-                db: db, collection: collection, id: data["id"] as? String ?? "", data: data, userId: userId
-            )
-        }
+        try database.write { db in try AppDatabase.applyPushRemoteWinner(db: db, collection: collection, data: data, userId: userId) }
     }
 
     // MARK: - Sync Queue Helpers

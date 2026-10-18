@@ -240,6 +240,7 @@ extension AppDatabase {
                     reason TEXT NOT NULL,
                     appBuild TEXT NOT NULL,
                     quarantinedAt TEXT NOT NULL,
+                    subjectId TEXT, -- the entity the doc is ABOUT: an event's taskId, a placement's boardId, a link's parent
                     PRIMARY KEY (userId, collection, docId)
                 )
                 """)

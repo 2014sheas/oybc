@@ -314,6 +314,90 @@ final class SyncForwardCompatTests: XCTestCase {
         XCTAssertLessThan(update.completedTasks, board.boardSize * board.boardSize, "so the board can never greenlog from it")
     }
 
+    // MARK: - 2b. An UPDATE that re-points an existing row
+
+    /// Board Edit swaps a square's task IN PLACE (the placement keeps its id, gets
+    /// a new `taskId` and a higher version). When the new task is one this build
+    /// quarantined, the upsert would set a foreign key to a row that doesn't
+    /// exist and roll the whole placements batch back, every pull — the exact
+    /// wedge. The dependency check therefore runs for existing rows too: the
+    /// re-point is ledgered and the old local row stays as it was.
+    private func repointed(_ doc: [String: Any], _ set: [String: Any]) -> [String: Any] {
+        var out = doc
+        out["version"] = 2
+        out["updatedAt"] = "2026-07-02T00:00:00.000Z"
+        for (key, value) in set { out[key] = value }
+        return out
+    }
+
+    func test_existingPlacement_repointedAtAQuarantinedTask_isLedgered_theBatchApplies_theOldRowStays() async throws {
+        let db = try makeDb()
+        try await apply(db, boardsCol, [boardDoc(1)])
+        try await apply(db, tasksCol, [taskDoc(1), taskDoc(2, type: "habit"), taskDoc(3)])
+        let original = placementDoc(1, boardId: uuid(1, 1), taskId: uuid(2, 1))
+        try await apply(db, placementsCol, [original])
+        let swapped = repointed(original, ["taskId": uuid(2, 2)])
+        let sibling = placementDoc(2, boardId: uuid(1, 1), taskId: uuid(2, 3), row: 0, col: 1)
+
+        let outcome = try await apply(db, placementsCol, [swapped, sibling])
+
+        XCTAssertEqual(outcome.pulled, 1, "the sibling applied; the re-point did not wedge the batch")
+        let stored = try XCTUnwrap(try db.read { try BoardTask.fetchOne($0, key: self.uuid(3, 1)) })
+        XCTAssertEqual(stored.version, 1)
+        XCTAssertEqual(stored.taskId, uuid(2, 1), "the old row is intact")
+        let row = try XCTUnwrap(try ledger(db).first { $0.collection == "boardTasks" })
+        XCTAssertEqual(row.docId, uuid(3, 1))
+        XCTAssertEqual(row.reason, "depends on quarantined tasks/\(uuid(2, 2))")
+        XCTAssertEqual(row.subjectId, uuid(1, 1), "a placement is about its board")
+        XCTAssertEqual(try watermarks(db)["boardTasks"], PullWatermark(syncedAtValue: stamp(2)))
+
+        // The app updates and understands the type: the retry ingests the task, then the re-point.
+        try ledgerAsOldBuild(db)
+        let source = FakePullSource(docsByCollection: ["tasks": [taskDoc(2)], "boardTasks": [swapped]])
+        let retried = await db.retryQuarantinedPullDocs(source: source, userId: userId)
+        XCTAssertEqual(retried.pulled, 2)
+        XCTAssertEqual(try db.read { try BoardTask.fetchOne($0, key: self.uuid(3, 1)) }?.taskId, uuid(2, 2))
+        XCTAssertEqual(try ledger(db).count, 0)
+    }
+
+    func test_existingPlacement_repointedAtAQuarantinedBoard_isLedgered_theOldRowStays() async throws {
+        let db = try makeDb()
+        try await apply(db, boardsCol, [boardDoc(1), boardDoc(2, status: "paused")])
+        try await apply(db, tasksCol, [taskDoc(1)])
+        let original = placementDoc(1, boardId: uuid(1, 1), taskId: uuid(2, 1))
+        try await apply(db, placementsCol, [original])
+
+        let outcome = try await apply(db, placementsCol, [repointed(original, ["boardId": uuid(1, 2)])])
+
+        XCTAssertEqual(outcome.pulled, 0)
+        XCTAssertEqual(try db.read { try BoardTask.fetchOne($0, key: self.uuid(3, 1)) }?.boardId, uuid(1, 1))
+        XCTAssertEqual(try ledger(db).first { $0.collection == "boardTasks" }?.reason, "depends on quarantined boards/\(uuid(1, 2))")
+    }
+
+    func test_existingCompoundLink_repointedAtAQuarantinedChild_orAMissingParent_isLedgered_theOldLinkStays() async throws {
+        let db = try makeDb()
+        try await apply(db, tasksCol, [taskDoc(1, type: "compound", operatorType: "AND"), taskDoc(2), taskDoc(3, type: "habit"), taskDoc(4)])
+        let original = linkDoc(1, parentId: uuid(2, 1), childId: uuid(2, 2))
+        try await apply(db, linksCol, [original])
+        let sibling = linkDoc(2, parentId: uuid(2, 1), childId: uuid(2, 4))
+
+        let toQuarantinedChild = repointed(original, ["childTaskId": uuid(2, 3)])
+        let first = try await apply(db, linksCol, [toQuarantinedChild, sibling])
+        XCTAssertEqual(first.pulled, 1, "the sibling link applied; the re-point did not wedge the batch")
+
+        let toMissingParent = repointed(original, ["compoundTaskId": uuid(2, 50)])
+        let second = try await apply(db, linksCol, [toMissingParent])
+        XCTAssertEqual(second.pulled, 0)
+
+        let stored = try XCTUnwrap(try db.read { try CompoundChild.fetchOne($0, key: self.uuid(5, 1)) })
+        XCTAssertEqual(stored.version, 1)
+        XCTAssertEqual(stored.compoundTaskId, uuid(2, 1))
+        XCTAssertEqual(stored.childTaskId, uuid(2, 2))
+        let row = try XCTUnwrap(try ledger(db).first { $0.collection == "compoundChildren" && $0.docId == uuid(5, 1) })
+        XCTAssertEqual(row.reason, AppDatabase.orphanedChildReason, "the latest skip reason wins")
+        XCTAssertEqual(row.subjectId, uuid(2, 50), "a link is about its parent")
+    }
+
     // MARK: - 3. Never lose: retry on a new build
 
     /// A remote with a future-typed task T (stamped BEFORE the task checkpoint),
@@ -406,7 +490,7 @@ final class SyncForwardCompatTests: XCTestCase {
         try ledgerAsOldBuild(db)
         let source = FakePullSource(docsByCollection: [:])
 
-        _ = try await db.retryQuarantinedPullDocs(source: source, userId: userId, appBuild: "1.0(2)", limit: 2)
+        _ = await db.retryQuarantinedPullDocs(source: source, userId: userId, appBuild: "1.0(2)", limit: 2)
 
         XCTAssertEqual(source.documentFetches.count, 2)
         XCTAssertEqual(try ledger(db).count, 1, "the third row waits for the next pull")
@@ -427,6 +511,80 @@ final class SyncForwardCompatTests: XCTestCase {
         XCTAssertEqual(try ledger(db).first?.appBuild, oldBuild, "untouched — retried on the next pull")
     }
 
+    /// A mutable flag a `@Sendable` guard closure can read.
+    private final class ActiveFlag: @unchecked Sendable { var active = true }
+
+    func test_retry_stopsWhenTheAccountChangesMidPass_beforeAnythingIsWritten() async throws {
+        let db = try makeDb()
+        try await apply(db, tasksCol, [taskDoc(1, type: "habit")])
+        try ledgerAsOldBuild(db)
+        let flag = ActiveFlag()
+        let source = FakePullSource(docsByCollection: ["tasks": [taskDoc(1)]])
+        source.onFetchDocument = { flag.active = false } // a sign-out / wipe lands while the read is in flight
+
+        let out = await db.retryQuarantinedPullDocs(source: source, userId: userId, isActive: { flag.active })
+
+        XCTAssertEqual(out.details, ["Quarantine retry stopped: the signed-in account changed"])
+        XCTAssertEqual(out.pulled, 0)
+        XCTAssertEqual(try count(db, "tasks"), 0, "the old user's doc was not re-inserted")
+        XCTAssertEqual(try ledger(db).first?.appBuild, oldBuild, "untouched — retried on the next pull for that user")
+    }
+
+    func test_pullSync_skipsTheRetryWhenAnotherAccountIsRunning() async throws {
+        let db = try makeDb()
+        try await apply(db, tasksCol, [taskDoc(1, type: "habit")])
+        try ledgerAsOldBuild(db)
+        let source = FakePullSource(docsByCollection: ["tasks": [taskDoc(1)]])
+        let sut = makeSut(db, source: source)
+        sut.runningForUserId = "someone-else"
+
+        let result = await sut.pullSync(userId: userId, lastSyncedAt: nil)
+
+        XCTAssertTrue(result.details.contains("Quarantine retry stopped: the signed-in account changed"), "\(result.details)")
+        XCTAssertEqual(source.documentFetches, [])
+        XCTAssertEqual(try count(db, "tasks"), 0)
+    }
+
+    func test_retry_laterCollectionFailure_stillCountsTheEarlierCollections_andPostsTheLiveUpdateSignal() async throws {
+        let db = try makeDb()
+        try await apply(db, boardsCol, [boardDoc(1)])
+        // T (stamp 1) is ledgered; a normal task (stamp 9) moves the tasks checkpoint past it.
+        try await apply(db, tasksCol, [taskDoc(1, type: "habit"), taskDoc(9)])
+        // P (stamp 1) is ledgered as T's dependent; P2 (stamp 8) moves the placements checkpoint past it.
+        let dependent = placementDoc(1, boardId: uuid(1, 1), taskId: uuid(2, 1))
+        let normal = placementDoc(8, boardId: uuid(1, 1), taskId: uuid(2, 9), row: 0, col: 1)
+        try await apply(db, placementsCol, [dependent, normal])
+        XCTAssertEqual(try ledger(db).map(\.collection).sorted(), ["boardTasks", "tasks"])
+        try ledgerAsOldBuild(db)
+        let source = FakePullSource(docsByCollection: ["tasks": [taskDoc(1), taskDoc(9)], "boardTasks": [dependent, normal]])
+        source.failDocumentFetchCollection = "boardTasks"
+        let note = expectation(forNotification: .oybcSyncDidApplyChanges, object: nil)
+
+        let result = await makeSut(db, source: source).pullSync(userId: userId, lastSyncedAt: nil)
+
+        XCTAssertEqual(try count(db, "tasks"), 2, "the task retry applied before the placement fetch failed")
+        XCTAssertGreaterThanOrEqual(result.pulled, 1, "and still counts toward pulled")
+        XCTAssertTrue(result.details.contains { $0.hasPrefix("Quarantine retry skipped") })
+        XCTAssertEqual(try ledger(db).map { [$0.collection, $0.appBuild] }, [["boardTasks", oldBuild]], "only the unfinished collection waits")
+        await fulfillment(of: [note], timeout: 2)
+    }
+
+    func test_retry_fetchesWithBoundedConcurrency_andTheDefaultCapIsSmall() async throws {
+        XCTAssertLessThanOrEqual(AppDatabase.quarantineRetryLimit, 50)
+        let db = try makeDb()
+        try await apply(db, tasksCol, (1...30).map { taskDoc($0, type: "habit") })
+        try ledgerAsOldBuild(db)
+        let source = FakePullSource(docsByCollection: [:])
+        source.documentFetchDelay = 5_000_000
+
+        _ = await db.retryQuarantinedPullDocs(source: source, userId: userId, limit: 100)
+
+        XCTAssertEqual(source.documentFetches.count, 30)
+        XCTAssertGreaterThan(source.peakInFlightDocumentFetches, 1, "fetches overlap")
+        XCTAssertLessThanOrEqual(source.peakInFlightDocumentFetches, AppDatabase.quarantineFetchConcurrency)
+        XCTAssertEqual(try ledger(db).count, 0)
+    }
+
     func test_aQuarantinedDocThatArrivesDecodable_isReleasedByTheOrdinaryPull() async throws {
         let db = try makeDb()
         try await apply(db, tasksCol, [taskDoc(1, type: "habit")])
@@ -442,21 +600,36 @@ final class SyncForwardCompatTests: XCTestCase {
 
     /// A completed task with no live event looks like a fresh-install backfill gap
     /// the heal would repair by minting a completion — but an event this build
-    /// could not read may be that very completion, so the heal waits.
-    func test_healOnPull_neverMintsOverAnUnreadableEvent_thenResumes() async throws {
+    /// could not read may be that very completion, so THAT task waits (and only
+    /// that one: every other task still heals).
+    func test_healOnPull_skipsOnlyTheTaskWithAnUnreadableEvent_thenResumes() async throws {
         let db = try makeDb()
-        var completed = taskDoc(1)
-        completed["isCompleted"] = true
-        try await apply(db, tasksCol, [completed])
+        var one = taskDoc(1), two = taskDoc(2)
+        one["isCompleted"] = true
+        two["isCompleted"] = true
+        try await apply(db, tasksCol, [one, two])
         try await apply(db, eventsCol, [eventDoc(1, taskId: uuid(2, 1), kind: "decrement")])
-        XCTAssertEqual(try ledger(db).map(\.collection), ["taskEvents"])
+        let row = try XCTUnwrap(try ledger(db).first)
+        XCTAssertEqual([row.collection, row.subjectId], ["taskEvents", uuid(2, 1)], "the ledger row names the task the event is about")
         let sut = makeSut(db)
 
-        XCTAssertEqual(sut.healMissingCompletionEvents(userId: userId), 0)
-        XCTAssertEqual(try count(db, "task_events"), 0)
+        XCTAssertEqual(sut.healMissingCompletionEvents(userId: userId), 1, "task 2 heals; task 1 waits")
+        XCTAssertEqual(try db.read { try TaskEvent.fetchAll($0) }.map(\.taskId), [uuid(2, 2)])
 
         try db.write { try AppDatabase.releaseQuarantinedDocs(db: $0, userId: self.userId, collection: "taskEvents", ids: [self.uuid(4, 1)]) }
-        XCTAssertEqual(sut.healMissingCompletionEvents(userId: userId), 1)
+        XCTAssertEqual(sut.healMissingCompletionEvents(userId: userId), 1, "task 1 resumes once the ledger row clears")
+    }
+
+    func test_healOnPull_anUnreadableEventThatNamesNoTask_blocksNothing() async throws {
+        let db = try makeDb()
+        var one = taskDoc(1)
+        one["isCompleted"] = true
+        try await apply(db, tasksCol, [one])
+        // A ledger row with no subject (the event doc named no task).
+        try db.write { try AppDatabase.quarantinePulledDoc(db: $0, userId: self.userId, collection: "taskEvents", docId: self.uuid(4, 9), reason: "x") }
+        XCTAssertEqual(try ledger(db).count, 1)
+
+        XCTAssertEqual(makeSut(db).healMissingCompletionEvents(userId: userId), 1)
     }
 
     // MARK: - 4. Never clobber (push)
@@ -527,6 +700,24 @@ final class SyncForwardCompatTests: XCTestCase {
         XCTAssertEqual(try ledger(db).map(\.docId), [id])
         XCTAssertEqual(store.docs["users/\(userId)/tasks/\(id)"]?["title"] as? String, "from the future", "and nothing was written over the remote")
         assertEveryTableReadable(db)
+    }
+
+    func test_push_aDecodableRemoteWinner_releasesItsLedgerRow() async throws {
+        let db = try makeDb()
+        let id = uuid(2, 1)
+        let store = MergingDocStore()
+        store.docs["users/\(userId)/tasks/\(id)"] = [
+            "id": id, "userId": userId, "title": "now readable", "type": "normal", "version": 9,
+            "updatedAt": "2026-07-09T00:00:00.000Z", "createdAt": t0, "isDeleted": false,
+        ]
+        try enqueue(localTask(id: id, version: 2, title: "local"), in: db)
+        try db.write { try AppDatabase.quarantinePulledDoc(db: $0, userId: self.userId, collection: "tasks", docId: id, reason: "old failure", appBuild: self.oldBuild) }
+
+        let result = await SyncService(database: db, currentAuthUid: { [userId] in userId }, docStore: store).pushSync(userId: userId)
+
+        XCTAssertEqual(result.conflicts, 1)
+        XCTAssertEqual(try db.fetchTask(id: id)?.title, "now readable")
+        XCTAssertEqual(try ledger(db).count, 0, "stored by the push remote-win, so the ledger row is released (web twin: putRemoteWinner)")
     }
 
     // MARK: - 5. Guards

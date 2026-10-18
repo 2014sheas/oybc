@@ -16,7 +16,7 @@ import { reDeriveSealedBoardsForTasks } from './sealing';
 import { refreshWatchersForBoards, resolveAffectedBoardIds } from './boardLifecycle';
 import { recordSyncEvent } from '../../firebase/syncStatus';
 import { rowsGenuinelyDiffer } from './pullApply';
-import { hasQuarantinedDocs, quarantinePulledDoc, releaseQuarantinedDocs } from './syncQuarantine';
+import { quarantinedSubjectIds, quarantinePulledDoc, releaseQuarantinedDocs } from './syncQuarantine';
 
 /**
  * Batched pull-path handler for the `taskEvents` collection
@@ -168,8 +168,8 @@ export async function applyTaskEventsBatch(
  * Carve-outs (derived counters / compound / achievement) return `null` from
  * `buildBackfillTaskEvent` and are skipped — they don't own events.
  *
- * Skipped entirely while any `taskEvents` doc is quarantined (see
- * `syncQuarantine.ts`): an unreadable event may be the missing completion.
+ * Skips a task that has a quarantined `taskEvents` doc (see `syncQuarantine.ts`):
+ * an unreadable event may be its missing completion.
  *
  * @param userId The authenticated user's uid (scope guard, mirrors the batch).
  * @returns The number of completion/increment events minted this pass.
@@ -178,9 +178,10 @@ export async function healMissingCompletionEvents(userId: string): Promise<numbe
   let minted = 0;
 
   // An event this build could not read (a newer app version's kind) may be the
-  // very completion a task looks "missing" — never mint over it (issue #300).
-  // Heals resume once the ledger clears.
-  if (await hasQuarantinedDocs(userId, 'taskEvents')) return 0;
+  // very completion its task looks "missing" — never mint over THAT task's
+  // events (issue #300). Every other task still heals; the rest resume once the
+  // ledger row clears.
+  const unreadableEventTasks = await quarantinedSubjectIds(userId, 'taskEvents');
 
   // Everything — the candidate scan AND the writes — runs in ONE transaction so
   // the whole sweep is atomic against concurrent local writes (matches the iOS
@@ -201,6 +202,7 @@ export async function healMissingCompletionEvents(userId: string): Promise<numbe
         if (task.userId !== userId) continue;
         if (task.isDeleted || !isEventOwningTask(task)) continue;
         if (hasLiveEvent.has(task.id)) continue; // live events → they're authoritative
+        if (unreadableEventTasks.has(task.id)) continue; // an unreadable event may be the completion
         const complete = task.isCompleted === true || (task.currentCount ?? 0) > 0;
         if (!complete) continue;
         const ev = buildBackfillTaskEvent(task); // null for carve-outs / genuinely-incomplete

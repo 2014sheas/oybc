@@ -17,8 +17,15 @@ import type { SyncQuarantineRow } from '../database';
  * Firebase-free on purpose (same #280/#281 reason as `pullApply.ts`).
  */
 
-/** Max ledger rows one retry pass re-fetches (the rest wait for the next pull). */
-export const QUARANTINE_RETRY_LIMIT = 200;
+/**
+ * Max ledger rows one retry pass re-fetches (the rest wait for the next pull).
+ * Kept small so the pass — which runs BEFORE the real pull — can never
+ * meaningfully delay first-pull completion on a slow link.
+ */
+export const QUARANTINE_RETRY_LIMIT = 50;
+
+/** Retry fetches in flight at once. */
+export const QUARANTINE_FETCH_CONCURRENCY = 8;
 
 /**
  * The identity of THIS build: a doc quarantined by build B is retried only by a
@@ -40,6 +47,24 @@ export function currentAppBuild(): string {
 function docIdOf(remoteData: unknown): string | null {
   const id = (remoteData as { id?: unknown } | null)?.id;
   return typeof id === 'string' && id.length > 0 ? id : null;
+}
+
+/**
+ * The entity a skipped doc is ABOUT (`SyncQuarantineRow.subjectId`): an event's
+ * `taskId`, a placement's `boardId`, a compound link's parent.
+ *
+ * @param collection - The pulled subcollection.
+ * @param remoteData - The raw remote doc.
+ * @returns The subject id, or null.
+ */
+function subjectIdOf(collection: string, remoteData: unknown): string | null {
+  const key =
+    collection === 'taskEvents' ? 'taskId'
+    : collection === 'boardTasks' ? 'boardId'
+    : collection === 'compoundChildren' ? 'compoundTaskId'
+    : null;
+  const value = key ? (remoteData as Record<string, unknown>)[key] : null;
+  return typeof value === 'string' && value.length > 0 ? value : null;
 }
 
 /**
@@ -68,6 +93,7 @@ export async function quarantinePulledDoc(
   const owner = (remoteData as { userId?: unknown }).userId;
   if (typeof owner === 'string' && owner !== userId) return false;
   const existing = await db.syncQuarantine.get([userId, collection, docId]);
+  const subjectId = subjectIdOf(collection, remoteData);
   await db.syncQuarantine.put({
     userId,
     collection,
@@ -75,6 +101,7 @@ export async function quarantinePulledDoc(
     reason,
     appBuild,
     quarantinedAt: existing?.quarantinedAt ?? new Date().toISOString(),
+    ...(subjectId ? { subjectId } : {}),
   });
   console.warn(`[sync] quarantined ${collection}/${docId}: ${reason}`);
   return true;
@@ -118,14 +145,16 @@ export async function fetchRetryableQuarantine(
 }
 
 /**
- * Whether any doc of `collection` is quarantined for `userId`.
+ * The subject ids (`subjectId`) of the quarantined docs of `collection` — for
+ * `taskEvents`, the tasks that have an event this build could not read.
  *
  * @param userId - The signed-in uid.
  * @param collection - The pulled subcollection.
- * @returns True when the ledger holds at least one such doc.
+ * @returns The distinct subject ids.
  */
-export async function hasQuarantinedDocs(userId: string, collection: string): Promise<boolean> {
-  return (await db.syncQuarantine.where('userId').equals(userId).filter((r) => r.collection === collection).count()) > 0;
+export async function quarantinedSubjectIds(userId: string, collection: string): Promise<Set<string>> {
+  const rows = await db.syncQuarantine.where('userId').equals(userId).filter((r) => r.collection === collection).toArray();
+  return new Set(rows.flatMap((r) => (r.subjectId ? [r.subjectId] : [])));
 }
 
 /**

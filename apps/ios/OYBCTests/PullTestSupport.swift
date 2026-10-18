@@ -65,13 +65,31 @@ final class FakePullSource: PullDocumentSource, @unchecked Sendable {
 
     /// Makes every `fetchDocument` throw (a transport failure).
     var failDocumentFetch = false
+    /// Makes `fetchDocument` throw for this collection only.
+    var failDocumentFetchCollection: String?
+    /// Sleep inside every `fetchDocument` (ns) — lets a test observe concurrency.
+    var documentFetchDelay: UInt64 = 0
+    /// Runs inside every `fetchDocument`, after the read (a mid-pass sign-out).
+    var onFetchDocument: (@Sendable () -> Void)?
+    private var _inFlight = 0
+    private var _peakInFlight = 0
+    /// The most `fetchDocument` calls ever in flight at once.
+    var peakInFlightDocumentFetches: Int { lock.withLock { _peakInFlight } }
 
     func fetchDocument(userId: String, collection: String, id: String) async throws -> [String: Any]? {
-        try lock.withLock {
-            if failDocumentFetch { throw URLError(.notConnectedToInternet) }
+        lock.withLock {
+            _inFlight += 1
+            _peakInFlight = max(_peakInFlight, _inFlight)
+        }
+        defer { lock.withLock { _inFlight -= 1 } }
+        if documentFetchDelay > 0 { try await _Concurrency.Task.sleep(nanoseconds: documentFetchDelay) }
+        let doc: [String: Any]? = try lock.withLock {
+            if failDocumentFetch || failDocumentFetchCollection == collection { throw URLError(.notConnectedToInternet) }
             _documentFetches.append("\(collection)/\(id)")
             return docsByCollection[collection]?.first { ($0["id"] as? String) == id }
         }
+        onFetchDocument?()
+        return doc
     }
 
     /// Replaces the doc with `doc["id"]` in `collection` (a remote edit).

@@ -36,12 +36,20 @@ struct QuarantinedDoc: Equatable, Sendable {
     let reason: String
     /// The build that last failed to apply it.
     let appBuild: String
+    /// The entity the doc is ABOUT — an event's `taskId`, a placement's
+    /// `boardId`, a compound link's parent (`quarantineSubjectId`); nil elsewhere.
+    let subjectId: String?
 }
 
 extension AppDatabase {
 
     /// Max ledger rows one retry pass re-fetches (the rest wait for the next pull).
-    static let quarantineRetryLimit = 200
+    /// Small on purpose: the pass runs BEFORE the real pull, so it must never
+    /// meaningfully delay first-pull completion on a slow link.
+    static let quarantineRetryLimit = 50
+
+    /// Retry fetches in flight at once.
+    static let quarantineFetchConcurrency = 8
 
     /// The reason a compound link is skipped when its parent compound is not
     /// local — the one pre-existing skip that is also ledgered.
@@ -58,6 +66,22 @@ extension AppDatabase {
 
     // MARK: - Ledger
 
+    /// The entity a skipped doc is ABOUT (`QuarantinedDoc.subjectId`): an event's
+    /// `taskId`, a placement's `boardId`, a compound link's parent.
+    ///
+    /// - Returns: The subject id, or nil for other collections / a doc without it.
+    static func quarantineSubjectId(collection: String, remote: [String: Any]) -> String? {
+        let key: String
+        switch collection {
+        case "taskEvents": key = "taskId"
+        case "boardTasks": key = "boardId"
+        case "compoundChildren": key = "compoundTaskId"
+        default: return nil
+        }
+        guard let id = remote[key] as? String, !id.isEmpty else { return nil }
+        return id
+    }
+
     /// Records `docId` as skipped by this build. Idempotent: re-quarantining an
     /// id updates its reason + build and keeps its original `quarantinedAt`.
     ///
@@ -67,17 +91,19 @@ extension AppDatabase {
     ///   - collection: The Firestore subcollection.
     ///   - docId: The doc's entity id.
     ///   - reason: Why it was skipped.
+    ///   - subjectId: The entity it is about (`quarantineSubjectId`).
     ///   - appBuild: The recording build (default: this build).
     /// - Throws: A GRDB error.
     static func quarantinePulledDoc(
         db: Database, userId: String, collection: String, docId: String, reason: String,
-        appBuild: String = currentAppBuild
+        subjectId: String? = nil, appBuild: String = currentAppBuild
     ) throws {
         try db.execute(sql: """
-            INSERT INTO sync_quarantine (userId, collection, docId, reason, appBuild, quarantinedAt)
-            VALUES (?, ?, ?, ?, ?, ?)
-            ON CONFLICT (userId, collection, docId) DO UPDATE SET reason = excluded.reason, appBuild = excluded.appBuild
-            """, arguments: [userId, collection, docId, reason, appBuild, currentTimestamp()])
+            INSERT INTO sync_quarantine (userId, collection, docId, reason, appBuild, quarantinedAt, subjectId)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT (userId, collection, docId)
+            DO UPDATE SET reason = excluded.reason, appBuild = excluded.appBuild, subjectId = excluded.subjectId
+            """, arguments: [userId, collection, docId, reason, appBuild, currentTimestamp(), subjectId])
         dlog("[SyncService] quarantined \(collection)/\(docId): \(reason)")
     }
 
@@ -113,11 +139,9 @@ extension AppDatabase {
     /// - Throws: A GRDB error.
     static func retryableQuarantine(db: Database, userId: String, appBuild: String, limit: Int) throws -> [QuarantinedDoc] {
         try Row.fetchAll(db, sql: """
-            SELECT collection, docId, reason, appBuild FROM sync_quarantine
+            SELECT collection, docId, reason, appBuild, subjectId FROM sync_quarantine
             WHERE userId = ? AND appBuild != ? ORDER BY quarantinedAt, docId LIMIT ?
-            """, arguments: [userId, appBuild, limit]).map {
-            QuarantinedDoc(collection: $0["collection"], docId: $0["docId"], reason: $0["reason"], appBuild: $0["appBuild"])
-        }
+            """, arguments: [userId, appBuild, limit]).map(quarantinedDoc)
     }
 
     /// Every ledger row for `userId` (diagnostics and tests).
@@ -125,17 +149,23 @@ extension AppDatabase {
     /// - Throws: A GRDB error.
     static func fetchQuarantinedDocs(db: Database, userId: String) throws -> [QuarantinedDoc] {
         try Row.fetchAll(db, sql: """
-            SELECT collection, docId, reason, appBuild FROM sync_quarantine WHERE userId = ? ORDER BY collection, docId
-            """, arguments: [userId]).map {
-            QuarantinedDoc(collection: $0["collection"], docId: $0["docId"], reason: $0["reason"], appBuild: $0["appBuild"])
-        }
+            SELECT collection, docId, reason, appBuild, subjectId FROM sync_quarantine WHERE userId = ? ORDER BY collection, docId
+            """, arguments: [userId]).map(quarantinedDoc)
     }
 
-    /// Whether any doc of `collection` is in the ledger for `userId`.
-    static func hasQuarantinedDocs(db: Database, userId: String, collection: String) throws -> Bool {
-        try Row.fetchOne(
-            db, sql: "SELECT 1 FROM sync_quarantine WHERE userId = ? AND collection = ? LIMIT 1", arguments: [userId, collection]
-        ) != nil
+    private static func quarantinedDoc(_ row: Row) -> QuarantinedDoc {
+        QuarantinedDoc(collection: row["collection"], docId: row["docId"], reason: row["reason"], appBuild: row["appBuild"], subjectId: row["subjectId"])
+    }
+
+    /// The subject ids of `collection`'s ledgered docs — for `taskEvents`, the
+    /// tasks that have an event this build could not read.
+    ///
+    /// - Throws: A GRDB error.
+    static func quarantinedSubjectIds(db: Database, userId: String, collection: String) throws -> Set<String> {
+        Set(try String.fetchAll(
+            db, sql: "SELECT DISTINCT subjectId FROM sync_quarantine WHERE userId = ? AND collection = ? AND subjectId IS NOT NULL",
+            arguments: [userId, collection]
+        ))
     }
 
     /// Whether `docId` is in the ledger.
@@ -211,8 +241,24 @@ extension AppDatabase {
             return .commit
         }
         guard let failure else { return nil }
-        try quarantinePulledDoc(db: db, userId: userId, collection: collection.firestoreName, docId: id, reason: failure)
+        try quarantinePulledDoc(
+            db: db, userId: userId, collection: collection.firestoreName, docId: id, reason: failure,
+            subjectId: quarantineSubjectId(collection: collection.firestoreName, remote: data)
+        )
         return failure
+    }
+
+    /// Push-path remote-wins write-back: stores the remote doc that beat a queued
+    /// local write ONLY if this build can decode it (else it is quarantined), and
+    /// releases any ledger row for it once stored — web twin `putRemoteWinner`.
+    ///
+    /// - Throws: A real DB error, as `upsertDecodableOrQuarantine`.
+    static func applyPushRemoteWinner(db: Database, collection: PullCollection, data: [String: Any], userId: String) throws {
+        let id = data["id"] as? String ?? ""
+        let failure = try upsertDecodableOrQuarantine(db: db, collection: collection, id: id, data: data, userId: userId)
+        if failure == nil, !id.isEmpty, pullApplyOrder.contains(collection.firestoreName) {
+            try releaseQuarantinedDocs(db: db, userId: userId, collection: collection.firestoreName, ids: [id])
+        }
     }
 
     // MARK: - Dependents
@@ -251,53 +297,98 @@ extension AppDatabase {
 
     // MARK: - Retry on a new build
 
+    /// A fetched ledger doc (`nil` = gone from the server). `@unchecked Sendable`:
+    /// the payload is an immutable value tree once the source returned it.
+    private struct FetchedQuarantinedDoc: @unchecked Sendable {
+        let id: String
+        let doc: [String: Any]?
+    }
+
+    /// Reads `ids` of one collection with at most `quarantineFetchConcurrency`
+    /// reads in flight.
+    ///
+    /// - Returns: One entry per id, in `ids` order.
+    /// - Throws: The first transport error from `source`.
+    private static func fetchQuarantinedDocuments(
+        source: PullDocumentSource, userId: String, collection: String, ids: [String]
+    ) async throws -> [FetchedQuarantinedDoc] {
+        let fetched = try await withThrowingTaskGroup(of: FetchedQuarantinedDoc.self) { group in
+            var results: [FetchedQuarantinedDoc] = []
+            var next = 0
+            while next < min(quarantineFetchConcurrency, ids.count) {
+                let id = ids[next]
+                next += 1
+                group.addTask { FetchedQuarantinedDoc(id: id, doc: try await source.fetchDocument(userId: userId, collection: collection, id: id)) }
+            }
+            while let result = try await group.next() {
+                results.append(result)
+                if next < ids.count {
+                    let id = ids[next]
+                    next += 1
+                    group.addTask { FetchedQuarantinedDoc(id: id, doc: try await source.fetchDocument(userId: userId, collection: collection, id: id)) }
+                }
+            }
+            return results
+        }
+        let order = Dictionary(uniqueKeysWithValues: ids.enumerated().map { ($1, $0) })
+        return fetched.sorted { (order[$0.id] ?? 0) < (order[$1.id] ?? 0) }
+    }
+
     /// Re-fetches the docs a PREVIOUS build quarantined and applies them through
     /// the normal batch path, collection by collection in `pullApplyOrder` (a
     /// compound's task before its children, a task before its placements).
     /// Does nothing until the build changed: only rows recorded by another build
-    /// are selected. Per collection, ONE transaction releases the docs that no
-    /// longer exist, stamps every fetched row as tried by this build, and applies
-    /// the docs — which releases the ones that now decode and re-ledgers the rest.
+    /// are selected. Per collection the docs are fetched a few at a time, then
+    /// ONE transaction releases the docs that no longer exist, stamps every
+    /// fetched row as tried by this build, and applies the docs — which releases
+    /// the ones that now decode and re-ledgers the rest.
+    ///
+    /// Never throws: a transport failure or an account change stops the pass and
+    /// returns what earlier collections already applied (their `pulled` count
+    /// still counts); the unfinished rows keep their old build and wait for the
+    /// next pull.
     ///
     /// - Parameters:
     ///   - source: The remote reader (production: Firestore).
     ///   - userId: The signed-in uid.
     ///   - appBuild: The running build (default: this build).
     ///   - limit: Max rows per pass (default `quarantineRetryLimit`).
+    ///   - isActive: false once the signed-in account is no longer `userId`
+    ///     (production: `SyncService.runningForUserId`) — checked before every
+    ///     collection's fetch and again before its write, so a sign-out or wipe
+    ///     mid-pass never re-inserts the old user's docs.
     /// - Returns: The aggregated outcome (`pulled` + per-doc details).
-    /// - Throws: A transport error from `source` or a GRDB error — the rows stay
-    ///   for the next pull.
     func retryQuarantinedPullDocs(
         source: PullDocumentSource, userId: String,
-        appBuild: String = AppDatabase.currentAppBuild, limit: Int = AppDatabase.quarantineRetryLimit
-    ) async throws -> PullBatchOutcome {
+        appBuild: String = AppDatabase.currentAppBuild, limit: Int = AppDatabase.quarantineRetryLimit,
+        isActive: @MainActor @Sendable () -> Bool = { true }
+    ) async -> PullBatchOutcome {
         var total = PullBatchOutcome()
-        let rows = try await readAsync { db in
-            try Self.retryableQuarantine(db: db, userId: userId, appBuild: appBuild, limit: limit)
-        }
-        for collection in pullApplyCollections {
-            let ids = rows.filter { $0.collection == collection.firestoreName }.map(\.docId)
-            if ids.isEmpty { continue }
-            var docs: [[String: Any]] = []
-            var gone: [String] = []
-            for id in ids {
-                if let doc = try await source.fetchDocument(userId: userId, collection: collection.firestoreName, id: id) {
-                    docs.append(doc)
-                } else {
-                    gone.append(id)
+        let accountChanged = "Quarantine retry stopped: the signed-in account changed"
+        do {
+            let rows = try await readAsync { db in
+                try Self.retryableQuarantine(db: db, userId: userId, appBuild: appBuild, limit: limit)
+            }
+            for collection in pullApplyCollections {
+                let ids = rows.filter { $0.collection == collection.firestoreName }.map(\.docId)
+                if ids.isEmpty { continue }
+                guard await isActive() else { total.details.append(accountChanged); break }
+                let fetched = try await Self.fetchQuarantinedDocuments(source: source, userId: userId, collection: collection.firestoreName, ids: ids)
+                guard await isActive() else { total.details.append(accountChanged); break }
+                let docs = PullDocs(docs: fetched.compactMap(\.doc))
+                let goneIds = fetched.filter { $0.doc == nil }.map(\.id)
+                let outcome = try await writeAsync { db in
+                    try Self.releaseQuarantinedDocs(db: db, userId: userId, collection: collection.firestoreName, ids: goneIds)
+                    try Self.stampQuarantineAttempt(db: db, userId: userId, collection: collection.firestoreName, ids: ids, appBuild: appBuild)
+                    return try Self.applyPullBatchTx(db: db, collection: collection, docs: docs.docs, userId: userId)
                 }
+                total.pulled += outcome.pulled
+                total.conflicts += outcome.conflicts
+                total.details.append(contentsOf: goneIds.map { "Released quarantined \(collection.firestoreName)/\($0): no longer on the server" })
+                total.details.append(contentsOf: outcome.details.map { "Retry \($0)" })
             }
-            let fetched = PullDocs(docs: docs)
-            let goneIds = gone
-            let outcome = try await writeAsync { db in
-                try Self.releaseQuarantinedDocs(db: db, userId: userId, collection: collection.firestoreName, ids: goneIds)
-                try Self.stampQuarantineAttempt(db: db, userId: userId, collection: collection.firestoreName, ids: ids, appBuild: appBuild)
-                return try Self.applyPullBatchTx(db: db, collection: collection, docs: fetched.docs, userId: userId)
-            }
-            total.pulled += outcome.pulled
-            total.conflicts += outcome.conflicts
-            total.details.append(contentsOf: goneIds.map { "Released quarantined \(collection.firestoreName)/\($0): no longer on the server" })
-            total.details.append(contentsOf: outcome.details.map { "Retry \($0)" })
+        } catch {
+            total.details.append("Quarantine retry skipped: \(error.localizedDescription)")
         }
         return total
     }
