@@ -96,7 +96,7 @@ final class AccountSecuritySnapshotTests: XCTestCase {
     func testStatusBannerLight() {
         assertSnapshot(
             of: content(state(password: true, google: false, apple: false),
-                        status: "Verification link sent to new@example.com. Tap it there to finish the change."),
+                        status: "Verification link sent to new@example.com"),
             as: .image(layout: .fixed(width: 393, height: 780)),
             record: recordMode
         )

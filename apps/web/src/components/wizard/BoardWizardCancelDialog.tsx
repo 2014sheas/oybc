@@ -80,7 +80,7 @@ export function BoardWizardCancelDialog({
           Close this board?
         </h3>
         <p className={styles.body}>
-          You've made changes that haven't been saved yet. What would you like to do?
+          You've made changes that haven't been saved yet.
         </p>
         <div className={styles.actions}>
           <button

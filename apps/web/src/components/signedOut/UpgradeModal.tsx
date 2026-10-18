@@ -192,10 +192,6 @@ export function UpgradeModal({ onClose }: UpgradeModalProps): React.ReactElement
 
         <div className={styles.soKicker}>Save your account</div>
         <div className={styles.soAuthH}>Don’t lose this board.</div>
-        <p className={styles.soAuthP}>
-          Add a sign-in method to keep your boards, streaks, and GREENLOG history — and sync them
-          across every device.
-        </p>
 
         <div className={styles.soAuthBtns}>
           <RisoButton

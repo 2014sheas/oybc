@@ -8,8 +8,7 @@ import styles from './SignedOut.module.css';
 
 /** Honest copy for the one offline-first exception (docs/GUEST_MODE.md):
  *  minting the anonymous uid needs one network round-trip. */
-const GUEST_OFFLINE_MESSAGE =
-  'You’re offline. Connect once to start as a guest — then it works offline.';
+const GUEST_OFFLINE_MESSAGE = 'You’re offline. Connect to continue as a guest.';
 
 export type AuthMode = 'signin' | 'signup';
 
@@ -119,11 +118,6 @@ export function SignInModal({ mode, onClose, onSwitchMode }: SignInModalProps): 
 
         <div className={styles.soKicker}>{isUp ? 'Create your account' : 'Welcome back'}</div>
         <div className={styles.soAuthH}>{isUp ? 'Start your first board.' : 'Sign in to OYBC.'}</div>
-        <p className={styles.soAuthP}>
-          {isUp
-            ? 'Free to start. Your boards, streaks, and GREENLOG history sync across every device.'
-            : 'Pick up your boards and streaks right where you left them.'}
-        </p>
 
         <div className={styles.soAuthBtns}>
           <RisoButton

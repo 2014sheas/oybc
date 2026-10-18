@@ -48,10 +48,9 @@ final class CounterLogAmountTests: XCTestCase {
             XCTAssertEqual(CounterLogAmount.pillOpensDetail(kind: v.kind, defaultLogAmount: v.default), v.opensDetail, v.name)
         }
         for v in f.toast {
-            if let names = v.boardNames {
-                let boards = names.enumerated().map { AppDatabase.AffectedBoard(boardId: "b\($0.offset)", boardName: $0.element) }
+            if v.boardNames != nil {
                 XCTAssertEqual(BoardPlayViewModel.sharedCreditToastText(
-                    counterName: v.counterName ?? "", amount: v.amount, kind: v.kind, otherBoards: boards, isIncrement: v.verb == "logged"
+                    counterName: v.counterName ?? "", amount: v.amount, kind: v.kind, isIncrement: v.verb == "logged"
                 ), v.expected, v.name)
             } else {
                 XCTAssertEqual(CounterLogToastView.text(amount: v.amount, unit: v.unit, verb: v.verb == "logged" ? .logged : .removed, kind: v.kind), v.expected, v.name)

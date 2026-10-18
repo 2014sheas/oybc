@@ -206,9 +206,6 @@ struct ProfileEmptyStreakTileContent: View {
                 Text("No streak yet")
                     .font(.risoHead(17, .extraBold))
                     .foregroundStyle(Color.risoMuted)
-                Text("Clear a board to start one.")
-                    .font(.risoBody(11, .semibold))
-                    .foregroundStyle(Color.risoMuted)
             }
         }
     }

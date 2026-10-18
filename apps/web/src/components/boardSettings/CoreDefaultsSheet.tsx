@@ -333,7 +333,7 @@ export function CoreDefaultsSheet({
               <span className={styles.kicker}>Default tasks ({defaultTasks.length})</span>
             </div>
             {defaultTasks.length === 0 && (
-              <p className={styles.helper}>No default tasks yet — add some below.</p>
+              <p className={styles.helper}>No default tasks.</p>
             )}
             {defaultTasks.length > 0 && (
               <div className={styles.chips}>

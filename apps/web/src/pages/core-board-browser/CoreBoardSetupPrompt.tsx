@@ -28,11 +28,6 @@ export function CoreBoardSetupPrompt({
   return (
     <div className={styles.setupPrompt}>
       <p className={styles.setupText}>No board for {label} yet.</p>
-      <p className={styles.setupSub}>
-        {isPast
-          ? 'Add a past board to fill in this window.'
-          : 'Set up a board for this window to start tracking your goals.'}
-      </p>
       <RisoButton
         kind="primary"
         icon={<RisoIcon name="plus" size={15} />}

@@ -205,10 +205,6 @@ export function BoardSettingsPage(): React.ReactElement {
       {templates.length === 0 ? (
         <div className={styles.emptyState}>
           <p className={styles.emptyTitle}>No repeating boards yet.</p>
-          <p className={styles.emptyBody}>
-            From the Create tab, tap <strong>&quot;Start a new board&quot;</strong> and choose a
-            repeat cadence in Setup.
-          </p>
         </div>
       ) : (
         <div className={styles.card}>

@@ -232,9 +232,6 @@ struct RisoSourcePickerSheetView: View {
                 .font(.risoHead(15, .bold))
                 .foregroundStyle(Color.risoInk)
                 .multilineTextAlignment(.center)
-            Text("Try another word, or add tasks from your library.")
-                .font(.risoBody(11, .semibold))
-                .foregroundStyle(Color.risoMuted)
         }
         .frame(maxWidth: .infinity)
         .padding(.top, 32)

@@ -115,10 +115,7 @@ function ExistingFlatRow({
     return (
       <div className={styles.flatRow}>
         <div className={styles.flatCenter}>
-          <span className={styles.flatTitle}>Unknown task</span>
-          <span className={styles.flatSubtitle}>
-            The selected library item is no longer available. Remove this row.
-          </span>
+          <span className={styles.flatTitle}>Task unavailable</span>
         </div>
         <button type="button" className={styles.flatRemoveButton} onClick={onRemove} aria-label="Remove subtask">
           ×
@@ -305,11 +302,7 @@ function InlineFields({
           className={styles.titleInput}
           value={draft.title}
           onChange={(e) => onUpdate({ title: e.target.value } as Partial<InlineSubtaskDraft>)}
-          placeholder={
-            draft.inlineType === 'counting'
-              ? 'Optional — leave blank to auto-name'
-              : 'Enter task title'
-          }
+          placeholder="Enter task title"
           maxLength={TITLE_MAX_LENGTH}
         />
       </div>

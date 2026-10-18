@@ -47,6 +47,9 @@ final class RisoProfileSubpagesSnapshotTests: XCTestCase {
         .risoCard()
         .risoHardShadow(Riso.Shadow.small, radius: Riso.cardRadius)
         .padding(Riso.gutter)
+        // Fill the fixed snapshot frame with paper (a shorter card must not
+        // expose the host's white above / below it).
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color.risoPaper)
     }
 

@@ -276,11 +276,6 @@ export function LibrarySheet({
                     setGroupByCompound((v) => !v);
                     setExpandedCompositeId(null);
                   }}
-                  title={
-                    groupByCompound
-                      ? 'Grouping ON — subtasks hidden from flat list'
-                      : 'Grouping OFF — show all tasks at top level'
-                  }
                 >
                   {groupByCompound ? 'Group subtasks ✓' : 'Group subtasks'}
                 </button>
@@ -293,7 +288,7 @@ export function LibrarySheet({
                   {searchQuery.trim().length > 0
                     ? `No tasks match "${searchQuery}".`
                     : activeFilter === 'from-parents'
-                      ? 'No parent boards. Create a weekly/monthly/yearly board first.'
+                      ? 'No parent boards found.'
                       : 'No tasks yet.'}
                 </div>
               ) : (

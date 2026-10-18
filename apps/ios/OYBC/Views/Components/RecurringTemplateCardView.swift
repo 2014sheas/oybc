@@ -130,19 +130,19 @@ struct RecurringTemplateCard: View {
     static func attentionCopy(_ reason: SpawnAttentionReason) -> String {
         switch reason {
         case .poolTooSmall:
-            return "Mix is too small for the current configuration. Edit tasks to add more."
+            return "Not enough tasks"
         case .hasDeletedTasks:
-            return "A task in this mix was deleted. Edit tasks to refresh it."
+            return "A task was deleted"
         case .unsupportedTimeframe:
-            return "This board's timeframe is no longer supported."
+            return "Timeframe no longer supported"
         case .unsupportedCenter:
-            return "This board's center cell is no longer supported."
+            return "Center square no longer supported"
         case .noPoolTasksResolved:
-            return "None of this board's tasks could be loaded. Edit tasks to refresh it."
+            return "Tasks couldn't be loaded"
         case .spawnFailed:
-            return "Couldn't make the next board. Try editing tasks to refresh it."
+            return "Couldn't make the next board"
         case .sourceBoardMissing:
-            return "It pulls from a board that was deleted or archived. Edit tasks to remove that source."
+            return "A source board was deleted or archived"
         }
     }
 

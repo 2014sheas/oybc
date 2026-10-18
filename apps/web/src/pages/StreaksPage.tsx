@@ -303,9 +303,6 @@ export function StreaksPage(): React.ReactElement {
         <div className={styles.emptyHistory}>
           <span className={styles.emptyIcon} aria-hidden="true">✓</span>
           <p className={styles.emptyPrimary}>No completed boards yet</p>
-          <p className={styles.emptySub}>
-            Complete all tasks on any board to add it here.
-          </p>
         </div>
       ) : (
         <div className={styles.historyCard}>

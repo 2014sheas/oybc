@@ -13,7 +13,7 @@ describe('formatCounterLogToastText', () => {
         counterName: 'Push-ups',
         boardNames: ['Daily Grind'],
       }),
-    ).toBe('+10 Push-ups — also counted on Daily Grind.');
+    ).toBe('+10 Push-ups');
   });
 
   it('renders the R3 credited decrement copy byte-exact', () => {
@@ -25,10 +25,10 @@ describe('formatCounterLogToastText', () => {
         counterName: 'Push-ups',
         boardNames: ['Daily Grind'],
       }),
-    ).toBe('−10 Push-ups — also removed from Daily Grind.');
+    ).toBe('−10 Push-ups');
   });
 
-  it('joins multiple board names with a comma (existing toast formatting, unchanged)', () => {
+  it('never lists the credited boards', () => {
     expect(
       formatCounterLogToastText({
         amount: 1,
@@ -37,7 +37,7 @@ describe('formatCounterLogToastText', () => {
         counterName: 'Push-ups',
         boardNames: ['Daily Grind', 'Weekly Warmup'],
       }),
-    ).toBe('+1 Push-ups — also counted on Daily Grind, Weekly Warmup.');
+    ).toBe('+1 Push-ups');
   });
 
   it('falls back to the standalone Hub/Detail copy when boardNames is absent', () => {

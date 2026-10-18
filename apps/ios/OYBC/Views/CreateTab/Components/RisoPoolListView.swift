@@ -18,11 +18,7 @@ struct RisoPoolListView: View {
 
         var header: String { self == .board ? "On your board" : "In this pool" }
         var removeLabel: String { self == .board ? "Remove from board" : "Remove from pool" }
-        var emptyNote: String {
-            self == .board
-                ? "Nothing in your pool yet — type your own, add a special type, or pull from a pool or board."
-                : "Nothing in this pool yet — type your own or add a special type."
-        }
+        var emptyNote: String { "Nothing here yet." }
     }
 
     var surface: Surface = .board
@@ -49,9 +45,6 @@ struct RisoPoolListView: View {
     /// Fired when the user taps a row's pencil (editable tasks only). nil ⇒ no
     /// pencil is shown (e.g. snapshot contexts that don't wire editing).
     var onEdit: ((_ taskId: String) -> Void)? = nil
-    /// Count of OTHER boards each task is placed on — drives the "On N other
-    /// boards" detail line for simple tasks. Absent ⇒ not shared.
-    var sharedCountByTaskId: [String: Int] = [:]
     /// The board's window: a counting row that isn't a linked copy captions
     /// the goal placement gives it there (a counter's window default, else its own).
     var counterGoalWindow: CounterPlacement.PickWindow? = nil
@@ -302,8 +295,7 @@ struct RisoPoolListView: View {
         let base: String? = {
             switch task.type {
             case .normal:
-                let shared = sharedCountByTaskId[task.id] ?? 0
-                return shared > 0 ? "On \(shared) other board\(shared == 1 ? "" : "s")" : nil
+                return nil
             case .counting:
                 // The goal the board will get: a counter's window default, else its own.
                 if let goal = boardGoal(task) {
@@ -320,12 +312,7 @@ struct RisoPoolListView: View {
                 let children = effectiveChildrenByCompound[task.id] ?? []
                 let n = children.count
                 guard n > 0 else { return nil }
-                // "with a goal" = sub-tasks that resolve to a Counting task.
-                let counting = children.filter {
-                    effectiveTaskById[$0.childTaskId]?.type == .counting
-                }.count
                 var parts = ["\(n) sub-task\(n == 1 ? "" : "s")"]
-                if counting > 0 { parts.append("\(counting) with a goal") }
                 switch task.operatorType {
                 case .or: parts.append("any of \(n)")
                 case .mOfN: parts.append("≥\(task.threshold ?? n) of \(n)")
@@ -333,12 +320,7 @@ struct RisoPoolListView: View {
                 }
                 return parts.joined(separator: " · ")
             case .achievement:
-                // referencedBoardId/referencedTemplateId are UUIDs, not names,
-                // and the watched board/template isn't loaded here — describe the
-                // target kind + trigger rather than leaking a raw id.
-                let trigger = task.achievementTrigger == .bingo ? "First Bingo" : "GREENLOG"
-                let target = task.referencedBoardId != nil ? "a board" : "a repeating board"
-                return "Watch \(target) · \(trigger)"
+                return task.achievementTrigger == .bingo ? "First Bingo" : "GREENLOG"
             }
         }()
 

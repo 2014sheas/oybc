@@ -287,7 +287,7 @@ private struct LoginView: View {
                 || (ns.domain == NSURLErrorDomain
                     && [NSURLErrorNotConnectedToInternet, NSURLErrorNetworkConnectionLost, NSURLErrorTimedOut].contains(ns.code))
             errorMessage = offline
-                ? "You're offline. Connect once to start as a guest — then the app works offline."
+                ? "You're offline. Connect to continue as a guest."
                 : error.localizedDescription
         }
     }

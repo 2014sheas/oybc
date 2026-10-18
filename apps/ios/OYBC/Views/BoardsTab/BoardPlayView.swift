@@ -487,7 +487,7 @@ struct BoardPlayView: View {
             // ── P2/R3: Shared-counter credited toast (slides from bottom) ──
             // Unified onto `CounterLogToastView` (R2) via its `message`
             // override — same card chrome as the Counters Hub/Detail toasts,
-            // now with the pinned "+N counterName — also counted on…" copy
+            // now with the pinned "+N counterName" copy
             // and an Undo pill that reverses the whole logged entry.
             if let creditToast {
                 VStack {

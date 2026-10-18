@@ -364,10 +364,10 @@ struct BoardWizardTasksStepView: View {
             if let base = by[id] { by[id] = params.apply(to: base, root: base.sharedCounterId.flatMap { by[$0] }) }
         }
         // Inline Task Editing — synthesize placeholder Task entries for
-        // brand-new staged compound sub-tasks (no real Task row yet) so the
-        // pool subtitle's "N with a goal" subcount can resolve their type via
-        // the matching synthetic childTaskId `effectiveChildrenByCompound`
-        // produces above.
+        // brand-new staged compound sub-tasks (no real Task row yet) so
+        // type-dependent reads (windowed completion, row tags) can resolve
+        // them via the matching synthetic childTaskId
+        // `effectiveChildrenByCompound` produces above.
         for (id, task) in stagedNewChildPlaceholders(userId: userId, stagedEdits: stagedEdits) {
             by[id] = task
         }
@@ -496,7 +496,6 @@ struct BoardWizardTasksStepView: View {
                         centerTaskId = (centerTaskId == taskId) ? nil : taskId
                     },
                     onEdit: { taskId in openEditor(taskId) },
-                    sharedCountByTaskId: taskBoardCounts,
                     counterGoalWindow: pickWindow,
                     editingTaskId: editingTaskId,
                     editor: { task in

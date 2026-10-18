@@ -26,10 +26,10 @@ export interface CounterLogToastTextInput {
  * Builds the toast's display text.
  *
  * Copy contract (Counters Refresh R3 — pinned byte-exact, web ↔ iOS):
- *   credited increment: "+{N} {counterName} — also counted on {board list}."
- *   credited decrement: "−{N} {counterName} — also removed from {board list}."
- *   (board list = a plain comma-join of `boardNames`, unchanged from the
- *   retired `RisoCreditedToast`)
+ *   credited increment: "+{N} {counterName}"
+ *   credited decrement: "−{N} {counterName}"
+ *   (`boardNames` only selects the credited variant; the names are not shown —
+ *   which boards were credited is provenance the UI does not narrate)
  *
  * Falls back to the R2 standalone copy ("Logged +{N} {unit}" / "Removed {N}
  * {unit}") when `boardNames` is absent or empty — the Hub/Detail Log card's
@@ -41,8 +41,7 @@ export function formatCounterLogToastText(input: CounterLogToastTextInput): stri
 
   if (boardNames != null && boardNames.length > 0) {
     const sign = verb === 'logged' ? '+' : '−';
-    const verbPhrase = verb === 'logged' ? 'also counted on' : 'also removed from';
-    return `${sign}${amountText} ${counterName ?? ''} — ${verbPhrase} ${boardNames.join(', ')}.`;
+    return `${sign}${amountText} ${counterName ?? ''}`.trimEnd();
   }
   const withUnit = `${amountText}${countUnitSuffix(kind, unit)}`;
   return verb === 'logged' ? `Logged +${withUnit}` : `Removed ${withUnit}`;

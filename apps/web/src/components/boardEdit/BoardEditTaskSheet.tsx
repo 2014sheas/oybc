@@ -359,11 +359,7 @@ export function BoardEditTaskSheet({
             value={title}
             onChange={(e) => setTitle(e.target.value)}
             autoFocus
-            placeholder={
-              selected === TaskType.COUNTING
-                ? 'Auto-generated from goal if blank…'
-                : 'Task name…'
-            }
+            placeholder="Task name…"
           />
         </label>
 
