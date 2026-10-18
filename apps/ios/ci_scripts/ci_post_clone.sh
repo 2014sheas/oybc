@@ -15,7 +15,9 @@
 #    CURRENT_PROJECT_VERSION, and Xcode Cloud provides a monotonically
 #    increasing CI_BUILD_NUMBER — so releases never need a manual bump
 #    committed to the repo. (MARKETING_VERSION stays repo-managed in
-#    project.yml; bump that deliberately per release.)
+#    project.yml; bump that deliberately per release.) OYBC/Info.plist reads
+#    $(MARKETING_VERSION) / $(CURRENT_PROJECT_VERSION), so the stamped value is
+#    what the bundle reports.
 set -eu
 
 REPO="${CI_PRIMARY_REPOSITORY_PATH:?not running under Xcode Cloud}"

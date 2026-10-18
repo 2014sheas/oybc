@@ -71,7 +71,6 @@ extension BoardPlayView {
                     timeframe: b.timeframe, isCore: b.isCore
                 ),
                 cells: momentPosterCells(replay: m.replay, cells: inputs, kind: m.kind),
-                boardId: b.id,
                 onDismiss: { showShareBoardSheet = false }
             )
             .presentationDetents([.medium, .large])
