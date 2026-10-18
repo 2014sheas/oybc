@@ -13,6 +13,8 @@ import {
 import { usePreferences } from '../hooks';
 import { RisoSegmented, RisoButton } from '../components/riso';
 import { UpgradeModal } from '../components/signedOut/UpgradeModal';
+import { exportAnonymisedWorkspace } from '../db/operations/workspaceExport';
+import { downloadJson } from '../utils/downloadJson';
 import { useModalA11y } from '../hooks/useModalA11y';
 import profileStyles from './ProfilePage.module.css';
 import styles from './SettingsPage.module.css';
@@ -225,6 +227,19 @@ export function SettingsPage(): React.ReactElement {
               <span className={profileStyles.rowLabel}>Playground</span>
               <span className={profileStyles.rowArrow}>&rarr;</span>
             </Link>
+            <button
+              type="button"
+              className={`${profileStyles.settingsRow} ${profileStyles.rowLink}`}
+              style={{ width: '100%', background: 'none', border: 'none', font: 'inherit', textAlign: 'left', cursor: 'pointer' }}
+              onClick={() => {
+                if (!user) return;
+                exportAnonymisedWorkspace(user.id)
+                  .then((ws) => downloadJson('oybc-workspace.anonymised.json', ws))
+                  .catch((err) => console.error('[export-workspace] failed', err));
+              }}
+            >
+              <span className={profileStyles.rowLabel}>Export anonymised workspace</span>
+            </button>
           </div>
         </>
       )}

@@ -448,6 +448,15 @@ export class AppDatabase extends Dexie {
       // Dynamic import avoids a top-of-file cycle (migrationV20 imports `db`).
       return import('./operations/migrationV20').then((mod) => mod.runMigrationV20(tx));
     });
+
+    // v21 — first-open migration sweep (TASK_WINDOW_REWORK slice 4a): repoints
+    // legacy window-stamped derived counters at their roots for every user row.
+    // No schema shape change; the sweep also runs at every app open and after
+    // every clean pull. See `operations/migrationV21.ts`.
+    this.version(21).stores({}).upgrade((tx) => {
+      // Dynamic import avoids a top-of-file cycle (migrationV21 imports `db`).
+      return import('./operations/migrationV21').then((mod) => mod.runMigrationV21(tx));
+    });
   }
 }
 
