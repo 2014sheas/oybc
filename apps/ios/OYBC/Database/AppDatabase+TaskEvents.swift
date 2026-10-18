@@ -172,17 +172,9 @@ extension AppDatabase {
         // Filter in SWIFT, not SQL: static db-helpers can be reached from
         // pre-v27 migration contexts where the column doesn't exist yet
         // (decode defaults false; pre-v27 rows are all live).
-        let boardTasks = try BoardTask.fetchAll(db).filter { !$0.isDeleted }
-        let children = try CompoundChild.filter(Column("isDeleted") == false).fetchAll(db)
-        // A shared-counter ROOT is never placed itself — its window-stamped
-        // derived rows are, and they resolve from the root's events (Board
-        // Edit redesign slice 4, D10). Reach the sealed boards placing those
-        // rows too, like the sealed re-derivation's reachability.
-        var affected = Set<String>()
-        for id in try Self.withWindowStampedDerived(db: db, taskIds: [taskId]) {
-            let parents = DerivationPass.findTransitiveParentCompounds(changedTaskId: id, children: children)
-            affected.formUnion(DerivationPass.findAffectedBoardIds(changedTaskId: id, parentCompounds: parents, boardTasks: boardTasks))
-        }
+        // Reached through the ONE placement reach (slice 2c): the task, its
+        // linked rows (a ROOT is never placed itself) and their parent compounds.
+        let affected = try Self.placementReach(db: db, taskIds: [taskId]).boardIds
         let placing = sealedBoards.filter { affected.contains($0.id) }
         return buildSealImmuneWindows(
             sealedBoards: placing.compactMap { b in
@@ -482,22 +474,24 @@ extension AppDatabase {
         return WindowEvaluationContext(eventsByTaskId: eventsByTaskId)
     }
 
-    /// Live-cascade reachability for a pull that moved some roots' event sets:
-    /// `taskIds` plus every live window-stamped derived row linked to one of
-    /// them (shared `expandToWindowStampedDerived`, via the v32
-    /// `idx_tasks_shared_counter` index). The root is never placed, but those
-    /// rows resolve from its events in the derivation kernel, so the batched
-    /// board cascade must start from them too. Mirrors the web
-    /// `withWindowStampedDerived` (`db/operations/derivedCounters.ts`).
+    /// The ONE placement reach for a changed task set (TASK_WINDOW_REWORK slice
+    /// 2c; shared `placementsReachedByTasks`): loads every Task, the live
+    /// compound links and the live placements, then walks them in
+    /// `DerivationPass.placementsReachedByTasks`. Mirrors the web
+    /// `loadPlacementReach`. Tombstones are filtered in SWIFT, not SQL: static
+    /// db-helpers can be reached from pre-v27 migration contexts where the
+    /// `isDeleted` column doesn't exist yet (decode defaults false).
     ///
     /// - Parameters:
-    ///   - db: The pull's open transaction.
-    ///   - taskIds: The tasks whose events changed in this pull.
-    /// - Returns: `taskIds` plus the reachable derived row ids.
-    static func withWindowStampedDerived(db: Database, taskIds: Set<String>) throws -> Set<String> {
-        guard !taskIds.isEmpty else { return taskIds }
-        let linked = try Task.filter(taskIds.contains(Column("sharedCounterId"))).fetchAll(db)
-        return expandToWindowStampedDerived(ids: taskIds, tasks: linked)
+    ///   - db: An open GRDB connection (a pull transaction or a read).
+    ///   - taskIds: The tasks whose events (or derived state) changed.
+    /// - Returns: The reach (`taskIds` = cascade input, `boardIds`, placements).
+    static func placementReach(db: Database, taskIds: Set<String>) throws -> PlacementReach {
+        guard !taskIds.isEmpty else { return PlacementReach(taskIds: taskIds, compoundIds: [], boardIds: [], placements: []) }
+        let tasks = try Task.fetchAll(db)
+        let children = try CompoundChild.fetchAll(db).filter { !$0.isDeleted }
+        let boardTasks = try BoardTask.fetchAll(db).filter { !$0.isDeleted }
+        return DerivationPass.placementsReachedByTasks(ids: taskIds, tasks: tasks, compoundChildren: children, boardTasks: boardTasks)
     }
 
     /// Resolve a single event-owning task's windowed state for `taskId` in the

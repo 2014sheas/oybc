@@ -5,6 +5,7 @@ import {
   TaskType,
   activeBoardPlacementCounts,
   computeBrowsableTasks,
+  contextlessCounterState,
   normalizeSearchText,
   type Board,
   type BoardTask,
@@ -14,7 +15,6 @@ import { fetchAllBoards, fetchAllBoardTasks } from '../../db/operations';
 import type { TaskLibrary } from '../createPage/useTaskLibrary';
 import { taskSearchMatchesWithCounter, type TaskLookup } from '../../components/counters/rowCounterTagName';
 import { counterRootIdsIn, isExpiredForBrowse } from '../../components/wizard/quickAddCounterPlacement';
-import { displayedCountFor } from './taskCountDisplay';
 
 /** Type-filter chips on the Tasks tab. Mirrors the wizard's set but
  *  adds ACHIEVEMENT (which the wizard hides because achievements can't
@@ -332,33 +332,41 @@ function matchesStatusFilter(
   const inProgress = isInProgress(task, library);
   switch (filter) {
     case 'completed':
-      return task.isCompleted === true;
+      return isTaskDone(task, library);
     case 'in-progress':
-      return !task.isCompleted && inProgress;
+      return !isTaskDone(task, library) && inProgress;
     case 'never-started':
-      return !task.isCompleted && !inProgress;
+      return !isTaskDone(task, library) && !inProgress;
   }
 }
 
 /**
- * "In progress" predicate. Counting tasks: any DISPLAYED count > 0 and not
- * done — `displayedCountFor`, so a linked member is measured against its own
- * baseline and not against its root's lifetime total (RB7); reading
- * `currentCount` raw here would call every member of a used root "in
- * progress" the moment its window opened. Compound tasks: at least one child Task is completed but
+ * Done predicate for the status filter. Counting tasks read the context-less
+ * event state (lifetime sum vs goal — a linked row measures its root); every
+ * other type keeps the `isCompleted` cache.
+ */
+function isTaskDone(task: Task, library: TaskLibrary): boolean {
+  if (task.type === TaskType.COUNTING) {
+    return contextlessCounterState(task, library.eventsByTaskId).isCompleted;
+  }
+  return task.isCompleted === true;
+}
+
+/**
+ * "In progress" predicate. Counting tasks: a lifetime count > 0 from the
+ * event log and not done (`contextlessCounterState` — a linked member reads
+ * its root's events). Compound tasks: at least one child Task is completed but
  * the compound parent isn't (we read child completion state out of
  * `library.taskMap`, which already has all the user's Tasks indexed).
  * Normal + Achievement tasks have no fractional state, so they're
  * either completed or never-started.
  */
 export function isInProgress(task: Task, library: TaskLibrary): boolean {
-  if (task.isCompleted) return false;
   if (task.type === TaskType.COUNTING) {
-    // RB7 — a linked member's progress is its window's (currentCount minus
-    // baseline), never its root's lifetime total; a member sitting exactly at
-    // its baseline has not started.
-    return displayedCountFor(task) > 0;
+    const state = contextlessCounterState(task, library.eventsByTaskId);
+    return !state.isCompleted && state.count > 0;
   }
+  if (task.isCompleted) return false;
   if (task.type === TaskType.COMPOUND) {
     const children = library.compoundChildrenByCompound[task.id] ?? [];
     for (const link of children) {

@@ -2,7 +2,6 @@ import { counterDisplayName, TaskType, type Task } from '@oybc/shared';
 import { counterRowTitle } from '../../components/counters/counterRowTitle';
 import { RisoTypeBadge } from '../../components/riso';
 import { UnitTag } from '../../components/counters/UnitTag';
-import { computeStatusLabel } from './taskCountDisplay';
 import { formatRelativeTime } from '../../utils/relativeTime';
 import styles from './TaskRow.module.css';
 
@@ -86,11 +85,6 @@ export function TaskRow({
   isFamilyRoot = false,
   counterTagName = null,
 }: TaskRowProps): React.ReactElement {
-  // A family root carries NO count anywhere on the row — not in the title, not
-  // in the subtitle, and not in the status slot, whose counting branch is
-  // `{current} / {max}`. iOS's twin row has no count column at all, so leaving
-  // this in would also be a fresh parity gap.
-  const status = isFamilyRoot ? '' : computeStatusLabel(task);
   const subtitle = computeSubtitle(task, childCount, isFamilyRoot);
   // Unknown ≠ unused: render nothing until the placement join resolves
   // (late-mutation audit, shape B) — "Unused" flipping to "On 3 active
@@ -107,7 +101,7 @@ export function TaskRow({
     ? counterDisplayName(task)
     : task.title;
   const titleForA11y = displayTitle || '(untitled task)';
-  const metaText = [subtitle, status, lastCompleted ? `Last completed ${lastCompleted}` : '', usage ?? '']
+  const metaText = [subtitle, lastCompleted ? `Last completed ${lastCompleted}` : '', usage ?? '']
     .filter(Boolean)
     .join(' · ');
 

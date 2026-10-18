@@ -375,6 +375,26 @@ final class LinkedCounterWindowHealTests: XCTestCase {
         XCTAssertEqual(j.sealedCompletedCells ?? [], [])
     }
 
+    /// Slice 2c parity: the heal cascades the touched ROOTS too (web
+    /// `touchedIds ∪ touchedRoots`), so a board placing an UNTOUCHED, already
+    /// correctly stamped row of the same root is re-derived from the root's events.
+    func test_healCascadesTouchedRoots_reDerivingBoardsOfUntouchedLinkedRows() throws {
+        let db = try makeDb()
+        try db.saveTask(K.task("hub", sharedCounterId: "root"))
+        try db.saveTask(K.task("done", maxCount: 2, sharedCounterId: "root",
+                               startDate: septStart, endDate: septEnd, createdInWizard: true))
+        try db.saveBoard(K.board(id: "J", startDate: juneStart, endDate: juneEnd))
+        try db.saveBoard(K.board(id: "S", startDate: septStart, endDate: septEnd))
+        try db.saveBoardTask(K.placement(id: "btJ", boardId: "J", taskId: "hub"))
+        try db.saveBoardTask(K.placement(id: "btS", boardId: "S", taskId: "done"))
+        try K.addIncrement(db, taskId: "root", delta: 3, occurredAt: "2026-09-10T00:00:00.000Z")
+        XCTAssertEqual(try db.fetchBoard(id: "S")?.completedTasks, 0, "stale stored stats before the heal")
+
+        _ = try heal(db)
+        XCTAssertEqual(try db.fetchBoard(id: "S")?.completedTasks, 1,
+                       "3 in-window logs reach the goal of 2 — S re-derived via the touched root")
+    }
+
     func test_otherUsersRowsIgnored_andUnplacedRowUntouched() throws {
         let db = try makeDb()
         try db.saveTask(K.task("hubUnplaced", sharedCounterId: "root"))

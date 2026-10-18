@@ -8,7 +8,6 @@ import {
   isEligibleSourceBoard,
   isEventOwningTask,
   isSourceSupplyTask,
-  isWindowStampedDerived,
   withPlacementParams,
   poolSourceSupplyById,
   withEffectiveMemberRules,
@@ -165,8 +164,8 @@ export function resolveBoardSourceSupply(
 
 /**
  * The task ids whose events {@link resolveBoardSourceSupply} reads for a
- * board's placed `tasks`: every placed id, plus the ROOT of each
- * window-stamped derived row (its done-state resolves from the root's events,
+ * board's placed `tasks`: every placed id, plus the ROOT of each counting
+ * linked row (its done-state resolves from the root's events,
  * and a root is never placed itself).
  *
  * @param tasks - The board's placed tasks.
@@ -176,7 +175,7 @@ export function supplyEventTaskIds(tasks: Iterable<Task>): string[] {
   const ids = new Set<string>();
   for (const t of tasks) {
     ids.add(t.id);
-    if (t.sharedCounterId && isWindowStampedDerived(t)) ids.add(t.sharedCounterId);
+    if (t.type === TaskType.COUNTING && t.sharedCounterId) ids.add(t.sharedCounterId);
   }
   return [...ids];
 }

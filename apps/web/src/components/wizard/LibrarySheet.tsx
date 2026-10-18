@@ -56,7 +56,7 @@ export interface LibrarySheetProps {
    *  (Phase 6.1). Empty when the current timeframe has no parents. */
   parentBoardTasks: Task[];
   /** Owner ruling 2026-09-22 — task ids that HEAD a shared-counter family
-   *  (`useTaskLibrary().familyRootIds`). Such a row shows the generic
+   *  (`useBrowseFamilyRootIds`). Such a row shows the generic
    *  `formatCounterName` label instead of its stored title; tapping it still
    *  adds the root itself, exactly as before. Passed in rather than derived
    *  here because it must be computed over the FULL library — the browse rule

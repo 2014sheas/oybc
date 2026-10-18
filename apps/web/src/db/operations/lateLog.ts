@@ -27,7 +27,8 @@ import {
   computeTaskCachesFromEvents,
   getSealImmuneWindowsForTask,
 } from './taskEvents';
-import { refreshDerivedBaselines, withWindowStampedDerived } from './derivedCounters';
+import { refreshDerivedBaselines } from './derivedCounters';
+import { loadPlacementReach } from './placementReach';
 import { propagateToLinkedRows } from './tasks.sharedCounter';
 import { reDeriveSealedBoardsForTasks } from './sealing';
 import { resolveAffectedBoardIds, refreshWatchersForBoards } from './boardLifecycle';
@@ -79,10 +80,10 @@ async function applyLateLogSideEffects(changedTaskIds: Iterable<string>, lateLog
   const affectedBoardIds = await resolveAffectedBoardIds(ids);
   // A shared-counter ROOT is never placed: live-cascade from its
   // window-stamped derived rows too (iOS `reDeriveAfterLateLogWrite` reaches
-  // the same boards via `boardIdsReachedByTasks`). `lateLogStamp` = the
+  // the same boards via the shared placement reach). `lateLogStamp` = the
   // instant this path stamped: only a counts-toward credit at that instant is
   // exempt from the counter's sealed windows (D11).
-  await runBoardCascadeForTasks(await withWindowStampedDerived(new Set(ids)), { lateLogStamp });
+  await runBoardCascadeForTasks((await loadPlacementReach(new Set(ids))).taskIds, { lateLogStamp });
   await reDeriveSealedBoardsForTasks(ids);
   if (affectedBoardIds.size > 0) await refreshWatchersForBoards(affectedBoardIds);
 }

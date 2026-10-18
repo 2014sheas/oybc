@@ -301,7 +301,7 @@ final class WindowedCompletionTests: XCTestCase {
     /// 2026-09-23 amendment: the root is never placed, but a window-stamped
     /// derived row resolves from its events in the kernel. A pulled in-window
     /// ROOT event must reach the LIVE board placing only the derived row (the
-    /// live cascade expands roots via `withWindowStampedDerived`), or the
+    /// live cascade expands roots via `placementReach`), or the
     /// board's stored stats stay stale. Twin of the web taskEventPull.test.ts
     /// case of the same intent.
     func test_applyTaskEventsBatch_rootEventCascadesLiveBoardPlacingWindowStampedDerived() throws {

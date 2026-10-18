@@ -111,6 +111,12 @@ final class TaskLibraryViewModel {
     /// `TaskLibrary.familyRootIds`.
     var familyRootIds: Set<String> = []
 
+    /// The workspace's non-deleted `TaskEvent` log grouped by `taskId` (whole
+    /// log, Gate 1 ruling 2026-10-17): the context-less counter readers
+    /// (`contextlessCounterState`) resolve a library counter from its root's
+    /// lifetime events, never the latch or `baseline`.
+    var eventsByTaskId: [String: [TaskEvent]] = [:]
+
     /// Most recent load error, surfaced to the user as a caption.
     /// Cleared on successful reload.
     var loadError: String?
@@ -191,6 +197,8 @@ final class TaskLibraryViewModel {
             let children = try await Self.loadCompoundChildren(database: database)
             let boardTasks = try await Self.loadAllBoardTasks(database: database)
             let boards = try await Self.loadBoards(userId: userId, database: database)
+            let allEvents = try await database.read { db in try TaskEvent.filter(Column("isDeleted") == false).fetchAll(db) }
+            let eventsByTask = Dictionary(grouping: allEvents, by: \.taskId)
             let boardStatusById = Dictionary(boards.map { ($0.id, $0.status) }, uniquingKeysWith: { a, _ in a })
             // #73 — child-id set + reverse (child → parents) map, derived up
             // front because the browsable filter needs it (compound children
@@ -209,6 +217,7 @@ final class TaskLibraryViewModel {
             )
             await MainActor.run {
                 self.libraryTasks = tasks
+                self.eventsByTaskId = eventsByTask
                 self.browsableTasks = browsable
                 self.allCompoundChildren = children
                 self.allLibraryBoardTasks = boardTasks

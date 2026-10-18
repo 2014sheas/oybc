@@ -143,11 +143,13 @@ final class WindowStampedDerivedDisplayTests: XCTestCase {
         XCTAssertTrue(done(met))
     }
 
-    func test_hubLinkedMember_keepsLatchAndBaselineMath() {
+    // Re-pinned (slice 2c): a window-less hub-linked row reads the root's
+    // lifetime EVENTS (20 logged), not `currentCount - baseline` / the latch.
+    func test_hubLinkedMember_readsTheRootsLifetimeEvents() {
         let hub = makeTask("hub", maxCount: 10, currentCount: 20, isCompleted: true,
                            windowStamped: false, baseline: 5)
         let shown = resolveLinkedCounterDisplay(task: hub, eventsByTaskId: eventsByTaskId)
-        XCTAssertEqual(shown.displayed, 15)
+        XCTAssertEqual(shown.displayed, 20)
         XCTAssertTrue(shown.isCompleted)
     }
 

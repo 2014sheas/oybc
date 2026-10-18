@@ -28,7 +28,7 @@ import {
 import { useParentBoardTasks } from '../../hooks';
 import { useDismissOnOutsideInteraction } from '../../hooks/useDismissOnOutsideInteraction';
 import type { PendingTaskPayload } from '../../pages/createPage/useCreateFormState';
-import { useBrowsableTasks, type TaskLibrary } from '../../pages/createPage/useTaskLibrary';
+import { useBrowsableTasks, useBrowseFamilyRootIds, type TaskLibrary } from '../../pages/createPage/useTaskLibrary';
 import {
   computeCounterClashes,
   type SupplyInfoMap,
@@ -355,6 +355,7 @@ export function BoardWizardTasksStep({
   const planMode: PlanMode = isRecurring ? 'recurring' : 'oneOff';
 
   const browsableTasks = useBrowsableTasks(library.allTasks, library.childToParents);
+  const familyRootIds = useBrowseFamilyRootIds(library.allTasks);
   const effectiveAllTasks = useMemo<Task[]>(() => {
     // Browse the draft-filtered set (hides other drafts' wizard-orphans), but
     // always merge THIS session's in-memory pending tasks so the just-created
@@ -729,7 +730,7 @@ export function BoardWizardTasksStep({
         onContextMenu={(taskId, x, y) => setRowContextMenu({ taskId, x, y })}
         currentTimeframe={currentTimeframe}
         parentBoardTasks={parentBoardTasks}
-        familyRootIds={library.familyRootIds}
+        familyRootIds={familyRootIds}
       />
       )}
 

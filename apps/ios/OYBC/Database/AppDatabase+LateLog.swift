@@ -131,20 +131,9 @@ extension AppDatabase {
 
     /// Every non-deleted board placing one of `taskIds` — directly, via a
     /// placed parent compound, or (for a shared-counter ROOT, which is never
-    /// placed itself) via one of its window-stamped derived rows.
+    /// placed itself) via one of its linked rows (`placementReach`).
     static func boardIdsReachedByTasks(db: Database, taskIds: Set<String>) throws -> Set<String> {
-        guard !taskIds.isEmpty else { return [] }
-        let allChildren = try CompoundChild.filter(Column("isDeleted") == false).fetchAll(db)
-        let allBoardTasks = try BoardTask.filter(Column("isDeleted") == false).fetchAll(db)
-        let reachable = try Self.withWindowStampedDerived(db: db, taskIds: taskIds)
-        var boardIds = Set<String>()
-        for taskId in reachable {
-            let parents = DerivationPass.findTransitiveParentCompounds(changedTaskId: taskId, children: allChildren)
-            boardIds.formUnion(DerivationPass.findAffectedBoardIds(
-                changedTaskId: taskId, parentCompounds: parents, boardTasks: allBoardTasks
-            ))
-        }
-        return boardIds
+        try Self.placementReach(db: db, taskIds: taskIds).boardIds
     }
 
     /// Propagates a ROOT counter's new lifetime count to every LIVE linked row

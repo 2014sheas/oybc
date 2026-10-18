@@ -186,10 +186,15 @@ describe('window-stamped derived cells render what the kernel resolves (items 4 
       isCompleted: false,
       currentCount: 3,
     });
-    // Context-less (library) reads keep the lifetime mirror.
+    // Slice 2c: a context-less read with no event map is 0 (neither the
+    // mirror nor the latch is read); with a context it is the root's window sum.
     expect(taskToSquareState(hub, undefined, { ...taskMap, hub }, {})).toMatchObject({
-      isCompleted: true,
-      currentCount: 15,
+      isCompleted: false,
+      currentCount: 0,
+    });
+    expect(taskToSquareState(hub, undefined, { ...taskMap, hub }, {}, ctx(EVENTS))).toMatchObject({
+      isCompleted: false,
+      currentCount: 3,
     });
   });
 

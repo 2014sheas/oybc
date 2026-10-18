@@ -278,7 +278,7 @@ extension AppDatabase {
         // ONE derivation pass per affected LIVE board; roots expand to their
         // window-stamped derived rows.
         if !cascadeTaskIds.isEmpty {
-            try runPullCascadeForTasks(db: db, changedTaskIds: withWindowStampedDerived(db: db, taskIds: cascadeTaskIds), ownerUid: userId)
+            try runPullCascadeForTasks(db: db, changedTaskIds: placementReach(db: db, taskIds: cascadeTaskIds).taskIds, ownerUid: userId)
         }
         // Sealed boards re-derive from the event union (the only sanctioned
         // mutation of a sealed record) — `affectedTaskIds`, so a sealed board
@@ -343,7 +343,7 @@ extension AppDatabase {
         }
         _ = try recomputeTaskCachesAndRefreshDerived(db: db, taskIds: healedTaskIds)
         if !healedTaskIds.isEmpty {
-            try runPullCascadeForTasks(db: db, changedTaskIds: withWindowStampedDerived(db: db, taskIds: healedTaskIds), ownerUid: userId)
+            try runPullCascadeForTasks(db: db, changedTaskIds: placementReach(db: db, taskIds: healedTaskIds).taskIds, ownerUid: userId)
             try reDeriveSealedBoards(db: db, changedTaskIds: healedTaskIds)
         }
         return minted

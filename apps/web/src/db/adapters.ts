@@ -22,13 +22,11 @@ import type { CompoundChildCount, SquareTaskType, TaskSquareData, SquareState } 
  * window context threaded into {@link taskToSquareState}. When present, primitive
  * (normal / plain-counting) squares resolve against the board's window via
  * TaskEvents instead of the lifetime `isCompleted` / `currentCount` caches;
- * compound squares inherit the window; window-stamped derived counters resolve
- * from their ROOT's events inside their own `[startDate, endDate]` (the same
- * `resolveLinkedCounterDisplay` / `resolveDerivedCounterWindowState` the kernel
- * uses — docs §Derived-task carve-out, amended 2026-09-23); hub-linked derived
- * counters stay on their cache (the carve-out). When absent, behavior is
- * byte-identical to the pre-Windowed-Completion lifetime read (library
- * surfaces, tests).
+ * compound squares inherit the window; linked counters resolve from their
+ * ROOT's events over the host window (`resolveLinkedCounterDisplay`, the same
+ * rule the kernel uses). When absent, plain tasks read their lifetime caches
+ * (library surfaces, tests) and a linked counter reads its root's lifetime
+ * events.
  *
  * The window is `[windowStart, windowEnd]`, inclusive at both ends (2026-09-24
  * amendment of WC Decision 1): an ended board's squares ignore events logged
@@ -85,11 +83,11 @@ export function buildSquareWindowContext(
 /**
  * Whether a compound's CHILD reads complete on a board — exactly the checkmark
  * the compound detail sheet paints (and the kernel's `resolvePrimitiveChildState`
- * order): nested compounds evaluate against the host window; window-stamped
- * derived counters resolve from their root's events in their own window;
+ * order): nested compounds evaluate against the host window; linked
+ * counters resolve from their root's events over the host window;
  * event-owning children resolve against the host board's
- * `[windowStart, windowEnd]`; hub-linked derived children (and every child when
- * no window context is given) read their lifetime cache.
+ * `[windowStart, windowEnd]`; every child reads its lifetime cache when
+ * no window context is given.
  *
  * @param childTask - The child task to resolve.
  * @param taskMap - id → Task lookup (nested compound children resolve through it).
@@ -311,8 +309,8 @@ export function taskToSquareData(
  * Under the unified compound model, BoardTask is placement-only. When
  * `windowContext` is supplied (every board surface), primitive and compound
  * state resolve **windowed** against `task_events` for that board's window —
- * the Task row's lifetime caches are read only for the HUB-LINKED derived
- * shared-counter carve-out, or as the no-context fallback (library/legacy callers). See
+ * the Task row's lifetime caches are read only as the no-context fallback
+ * (legacy callers; a linked counter reads its root's lifetime events). See
  * docs/WINDOWED_COMPLETION.md §Task caches. Progress-step completion
  * (completedStepIds) is no longer tracked per-board — returns an empty Set
  * for non-compound tasks.
@@ -386,11 +384,13 @@ export function taskToSquareState(
   //     one-way latch is not read.
   //   - HUB-LINKED rows (no window stamp) WITH a window context: the root's
   //     increment sum inside THIS board's window (owner rule 2026-10-01).
-  //   - Context-less reads (library): the baseline-adjusted mirror
-  //     (`currentCount − baseline`) + the propagation-stamped latch.
+  //   - No window context: the ROOT's lifetime event sum — and 0 without an
+  //     event map (every production board surface passes a context; the
+  //     library reads `contextlessCounterState` itself). Neither baseline nor
+  //     the latch is read.
   if (task.sharedCounterId != null) {
     // A non-window-stamped linked row resolves over THIS board's window too
-    // (owner rule 2026-10-01); a context-less caller keeps the lifetime read.
+    // (owner rule 2026-10-01).
     const { displayed, isCompleted } = resolveLinkedCounterDisplay(
       task,
       windowContext?.eventsByTaskId,

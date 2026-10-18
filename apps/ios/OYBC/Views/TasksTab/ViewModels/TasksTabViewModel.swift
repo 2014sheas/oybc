@@ -266,26 +266,35 @@ final class TasksTabViewModel {
     ) -> Bool {
         switch filter {
         case .any: return true
-        case .completed: return task.isCompleted
+        case .completed: return isDone(task, library: library)
         case .inProgress:
-            return !task.isCompleted && Self.isInProgress(task, library: library)
+            return !isDone(task, library: library) && Self.isInProgress(task, library: library)
         case .neverStarted:
-            return !task.isCompleted && !Self.isInProgress(task, library: library)
+            return !isDone(task, library: library) && !Self.isInProgress(task, library: library)
         }
     }
 
-    /// "In progress" predicate. Counting tasks: the DISPLAYED count > 0 and
-    /// not done — `TaskCountDisplay.displayedCount`, so a linked member is
-    /// measured against its own baseline and not against its root's lifetime
-    /// total (RB7); reading `currentCount` raw here would call every member of
-    /// a used root "in progress" the moment its window opened. Compound tasks:
+    /// Whether a library task is done. Counting tasks read the context-less
+    /// event state (`contextlessCounterState`: the owner's lifetime events vs
+    /// its goal — never the latch); every other type its `isCompleted`.
+    static func isDone(_ task: Task, library: TaskLibraryViewModel) -> Bool {
+        if task.type == .counting {
+            return contextlessCounterState(task: task, eventsByTaskId: library.eventsByTaskId).isCompleted
+        }
+        return task.isCompleted
+    }
+
+    /// "In progress" predicate. Counting tasks: not done and the context-less
+    /// event count > 0 (`contextlessCounterState` — a linked member reads its
+    /// root's lifetime events, slice 2c). Compound tasks:
     /// at least one child Task is completed but the parent isn't (child
     /// completion state read out of `library.libraryTasks` via id match).
     static func isInProgress(_ task: Task, library: TaskLibraryViewModel) -> Bool {
-        if task.isCompleted { return false }
         if task.type == .counting {
-            return TaskCountDisplay.displayedCount(for: task) > 0
+            let state = contextlessCounterState(task: task, eventsByTaskId: library.eventsByTaskId)
+            return !state.isCompleted && state.count > 0
         }
+        if task.isCompleted { return false }
         if task.type == .compound {
             let children = library.compoundChildrenByCompound[task.id] ?? []
             for link in children {

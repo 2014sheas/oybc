@@ -11,7 +11,7 @@ import {
 } from '../db/operations/tasks';
 import { CompoundEditValidationError, saveTaskEdit } from '../db/operations';
 import { usePools } from '../hooks';
-import { useTaskLibrary } from './createPage/useTaskLibrary';
+import { useBrowseFamilyRootIds, useTaskLibrary } from './createPage/useTaskLibrary';
 import { TasksFilterControls } from './tasks/TasksFilterControls';
 import { TaskRow } from './tasks/TaskRow';
 import { TaskEditSheet } from './tasks/TaskEditSheet';
@@ -48,6 +48,7 @@ export interface TasksPageProps {
 export function TasksPage({ userId }: TasksPageProps): React.ReactElement {
   const navigate = useNavigate();
   const library = useTaskLibrary(userId);
+  const familyRootIds = useBrowseFamilyRootIds(library.allTasks);
   const filters = useTasksFilters(library);
   const [showNewTaskSheet, setShowNewTaskSheet] = useState(false);
 
@@ -101,7 +102,7 @@ export function TasksPage({ userId }: TasksPageProps): React.ReactElement {
    */
   const openTask = (taskId: string): void => {
     navigate(
-      library.familyRootIds.has(taskId) ? `/profile/counters/${taskId}` : `/tasks/${taskId}`,
+      familyRootIds.has(taskId) ? `/profile/counters/${taskId}` : `/tasks/${taskId}`,
     );
   };
 
@@ -225,8 +226,8 @@ export function TasksPage({ userId }: TasksPageProps): React.ReactElement {
                       }
                       usageCountsLoaded={filters.usageCountsLoaded}
                       childCount={children.length}
-                      isFamilyRoot={library.familyRootIds.has(task.id)}
-                      counterTagName={library.familyRootIds.has(task.id) ? null : rowCounterTagName(task, library.taskMap)}
+                      isFamilyRoot={familyRootIds.has(task.id)}
+                      counterTagName={familyRootIds.has(task.id) ? null : rowCounterTagName(task, library.taskMap)}
                       onClick={openTask}
                       onEdit={handleRowEdit}
                       onDelete={handleRowDelete}
@@ -259,8 +260,8 @@ export function TasksPage({ userId }: TasksPageProps): React.ReactElement {
                                 }
                                 usageCountsLoaded={filters.usageCountsLoaded}
                                 childCount={grandchildren}
-                                isFamilyRoot={library.familyRootIds.has(child.id)}
-                                counterTagName={library.familyRootIds.has(child.id) ? null : rowCounterTagName(child, library.taskMap)}
+                                isFamilyRoot={familyRootIds.has(child.id)}
+                                counterTagName={familyRootIds.has(child.id) ? null : rowCounterTagName(child, library.taskMap)}
                                 onClick={openTask}
                               />
                             </li>

@@ -311,21 +311,10 @@ extension AppDatabase {
         // sealed boards placing those rows, or two devices that sealed from
         // different root-event sets never converge. Mirrors the TS
         // `reDeriveSealedBoardsForTasks`.
-        let reachable = expandToWindowStampedDerived(ids: changedTaskIds, tasks: lookups.taskById.values)
-
-        var affectedBoardIds = Set<String>()
-        for taskId in reachable {
-            let parents = DerivationPass.findTransitiveParentCompounds(
-                changedTaskId: taskId,
-                children: lookups.allChildren
-            )
-            let ids = DerivationPass.findAffectedBoardIds(
-                changedTaskId: taskId,
-                parentCompounds: parents,
-                boardTasks: lookups.allBoardTasks
-            )
-            affectedBoardIds.formUnion(ids)
-        }
+        let affectedBoardIds = DerivationPass.placementsReachedByTasks(
+            ids: changedTaskIds, tasks: Array(lookups.taskById.values),
+            compoundChildren: lookups.allChildren, boardTasks: lookups.allBoardTasks
+        ).boardIds
 
         try reDeriveSealedBoardSnapshots(db: db, boardIds: affectedBoardIds, lookups: lookups)
     }

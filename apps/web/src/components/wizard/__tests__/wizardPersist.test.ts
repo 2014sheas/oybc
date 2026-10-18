@@ -8,7 +8,6 @@ import {
   derivedTaskId,
   resolveMix,
   varyRange,
-  sharedCounterRootIds,
   type Pool,
   type RecurringBoardTemplate,
   type Task,
@@ -450,7 +449,7 @@ function emptyTaskLibrary(allTasks: Task[] = []): TaskLibrary {
     compoundChildrenByCompound: {},
     childTaskIds: new Set(),
     childToParents: {},
-    familyRootIds: sharedCounterRootIds(allTasks),
+    eventsByTaskId: {},
   };
 }
 
