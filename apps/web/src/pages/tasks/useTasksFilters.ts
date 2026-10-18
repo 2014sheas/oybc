@@ -362,8 +362,9 @@ function isTaskDone(task: Task, eventsByTaskId: Record<string, TaskEvent[]>): bo
  * "In progress" predicate. Counting tasks: a lifetime count > 0 from the
  * event log and not done (`contextlessCounterState` — a linked member reads
  * its root's events). Compound tasks: at least one child Task is completed but
- * the compound parent isn't (we read child completion state out of
- * `library.taskMap`, which already has all the user's Tasks indexed).
+ * the compound parent isn't (child tasks come from `library.taskMap`, which
+ * already has all the user's Tasks indexed; a COUNTING child is done per its
+ * events, every other type per the `isCompleted` cache — {@link isTaskDone}).
  * Normal + Achievement tasks have no fractional state, so they're
  * either completed or never-started.
  */
@@ -381,7 +382,8 @@ export function isInProgress(
     const children = library.compoundChildrenByCompound[task.id] ?? [];
     for (const link of children) {
       const child = library.taskMap[link.childTaskId];
-      if (child?.isCompleted) return true;
+      // A counting child reads its events (the cache latch goes stale: an increment writes only the root).
+      if (child && isTaskDone(child, eventsByTaskId)) return true;
     }
     return false;
   }

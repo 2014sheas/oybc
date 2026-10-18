@@ -43,7 +43,9 @@ it). Engineering decisions recorded here were ruled by the owner on 2026-10-17.
 6. **Counting children inside a compound are driven, never toggled:** their
    checklist box is a `+` that unfolds the chips inline. "Complete next
    sub-task" skips counting children; if only counting children remain it
-   becomes "Log +‹default› · ‹child›".
+   becomes "Log +‹default› · ‹child›". It toggles only Normal children: a
+   nested compound or achievement child completes from its own state, so it is
+   never picked and its checklist box is read-only status (2026-10-18).
 7. **"Open in library" is board-agnostic:** identical content to the route.
 8. **Closed (sealed) boards:** same square sheet, read-only, one "Late log…"
    action; the hold menu collapses write items to "Late log…". A write in

@@ -42,15 +42,16 @@ enum TaskDetailKernel {
         case log(childId: String)
     }
 
-    /// The first open child that can be toggled (Normal or a nested Compound);
-    /// when only counting children remain open, a log on the first of them.
-    /// Achievements are never actionable here.
+    /// The first open child that can be toggled (Normal only); when only
+    /// counting children remain open, a log on the first of them. A nested
+    /// Compound owns no events (its completion derives from its own children)
+    /// and an Achievement is a watcher, so neither is ever picked.
     ///
     /// - Parameter children: The compound's children in display order.
     /// - Returns: The action, or `nil` when nothing is open.
     static func nextSubtask(_ children: [SubtaskCandidate]) -> SubtaskAction? {
         let open = children.filter { !$0.isCompleted }
-        if let t = open.first(where: { $0.type == .normal || $0.type == .compound }) { return .toggle(childId: t.id) }
+        if let t = open.first(where: { $0.type == .normal }) { return .toggle(childId: t.id) }
         if let c = open.first(where: { $0.type == .counting }) { return .log(childId: c.id) }
         return nil
     }

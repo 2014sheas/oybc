@@ -961,6 +961,36 @@ describe('persistWizardBoardRows — manualTaskVary (B3)', () => {
     expect(rows[0]).toMatchObject({ taskId: HAND, targetOverride: hi });
   });
 
+  it('an EXPLICIT goal is the dice base (C2): vary rolls AROUND the typed goal, not the task\'s own', async () => {
+    const task = await seedHandAddedCounter();
+    const placement = new Array(9).fill(null);
+    placement[0] = task;
+    const run = async (rng: () => number, vary: 0 | 2) =>
+      (
+        await db.boardTasks
+          .where('boardId')
+          .equals(
+            await persistWizardBoardRows(
+              baseInput({
+                placement: [...placement],
+                sources: [],
+                manualTaskIds: [HAND],
+                manualTaskVary: vary === 0 ? {} : { [HAND]: vary },
+                placementParams: { [HAND]: { targetOverride: 40, targetKind: 'discrete' } },
+                rng,
+              }),
+            ),
+          )
+          .toArray()
+      )[0];
+
+    // "A lot" = ±50 % of the TYPED 40 → [20, 60]; the task's own 10 plays no part.
+    expect(await run(() => 0, 2)).toMatchObject({ taskId: HAND, targetOverride: 20, targetKind: 'discrete' });
+    expect(await run(() => 0.999, 2)).toMatchObject({ taskId: HAND, targetOverride: 60 });
+    // No dice: the typed goal as-is.
+    expect(await run(() => 0, 0)).toMatchObject({ taskId: HAND, targetOverride: 40 });
+  });
+
   it('vary 0 (or an absent map) places the hand-added task itself — nothing is minted', async () => {
     const task = await seedHandAddedCounter();
     const placement = new Array(9).fill(null);

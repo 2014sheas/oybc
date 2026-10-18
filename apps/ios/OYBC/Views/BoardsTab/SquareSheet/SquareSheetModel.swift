@@ -19,6 +19,11 @@ struct SquareSheetContent: Equatable {
         var sealBlocked: Bool = false
         /// A counting child: its box is a `+` that unfolds the chips inline.
         var counting: ChildCount? = nil
+
+        /// Whether the checklist box can write: a Normal child toggles, a counting
+        /// child opens its chips. A nested Compound / Achievement owns no events,
+        /// so its box is a read-only status.
+        var isToggleable: Bool { counting != nil || kind == .normal }
     }
 
     /// A counting child's windowed progress on this board.
@@ -204,6 +209,7 @@ enum SquareSheetFormat {
     /// The a11y label of a compound child's checklist box.
     static func childBoxLabel(_ child: SquareSheetContent.Child, isOpen: Bool) -> String {
         if child.counting != nil { return "\(isOpen ? "Hide" : "Log on") \(child.title)" }
+        if !child.isToggleable { return "\(child.title), \(child.isDone ? "done" : "not done")" }
         return "\(child.isDone ? "Undo " : "Complete ")\(child.title)"
     }
 }

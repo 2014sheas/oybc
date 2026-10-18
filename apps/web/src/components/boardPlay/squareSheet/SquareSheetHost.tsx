@@ -129,17 +129,20 @@ function ResolvedSheet({ board, data, play, quiet, onClose, onOpenInLibrary, onL
 
   const deps: WriteDeps = { play, quiet, taskMap, sharedCounterSourceIds: data.sharedCounterSourceIds };
 
-  const logCounting = async (direction: 'add' | 'remove', amount: number, persist: boolean): Promise<void> => {
-    if (sealed) return;
+  /** Each log resolves whether it COMMITTED (an entry field clears only then). */
+  const logCounting = async (direction: 'add' | 'remove', amount: number, persist: boolean): Promise<boolean> => {
+    if (sealed) return false;
     const r = await countingLog(deps, bt, task, direction, amount, persist);
     if (r) showStrip('self', logStripText(direction === 'add' ? 'logged' : 'removed', r.applied, kind, sq.unit ?? '', boardLabel), r.undo);
+    return r !== null;
   };
 
-  const logChild = async (childTaskId: string, amount: number, persist: boolean): Promise<void> => {
+  const logChild = async (childTaskId: string, amount: number, persist: boolean): Promise<boolean> => {
     const child = sq.children?.find((c) => c.taskId === childTaskId);
-    if (!child?.count || sealed) return;
+    if (!child?.count || sealed) return false;
     const r = await childLog(deps, childTaskId, amount, persist);
     if (r) showStrip(childTaskId, logStripText('logged', r.applied, child.count.kind, child.count.unit, boardLabel), r.undo);
+    return r !== null;
   };
 
   const toggleChild = async (childTaskId: string): Promise<void> => {
@@ -149,11 +152,12 @@ function ResolvedSheet({ board, data, play, quiet, onClose, onOpenInLibrary, onL
     if (r) showStrip('toggle', `${child.title} · ${r.to ? 'done' : 'not done'}`, r.undo);
   };
 
-  const removeChild = async (childTaskId: string, amount: number): Promise<void> => {
+  const removeChild = async (childTaskId: string, amount: number): Promise<boolean> => {
     const child = sq.children?.find((c) => c.taskId === childTaskId);
-    if (!child?.count || sealed) return;
+    if (!child?.count || sealed) return false;
     const r = await childRemove(deps, childTaskId, amount);
     if (r) showStrip(childTaskId, logStripText('removed', r.applied, child.count.kind, child.count.unit, boardLabel), r.undo);
+    return r !== null;
   };
 
   const toggleNormal = async (): Promise<void> => {
@@ -164,7 +168,13 @@ function ResolvedSheet({ board, data, play, quiet, onClose, onOpenInLibrary, onL
     if (play.isWriting) return;
     let ok = false;
     await quiet(async () => { ok = await play.handleComplete(bt.id, { isCompleted: !done }); });
-    if (ok) showStrip('normal', `${task.title} · ${done ? 'not done' : 'done'}`, () => play.handleComplete(bt.id, { isCompleted: done }));
+    // The Undo is quiet like the forward write (it never raises the credited toast).
+    const reverse = async (): Promise<boolean> => {
+      let reverted = false;
+      await quiet(async () => { reverted = await play.handleComplete(bt.id, { isCompleted: done }); });
+      return reverted;
+    };
+    if (ok) showStrip('normal', `${task.title} · ${done ? 'not done' : 'done'}`, reverse);
   };
 
   const hero = variant === 'hero';
@@ -179,7 +189,7 @@ function ResolvedSheet({ board, data, play, quiet, onClose, onOpenInLibrary, onL
         boardLabel={boardLabel} busy={play.isWriting} dim={dim} closedRow={closedRow}
         stripText={visible?.key === heroChild.taskId ? visible.text : null}
         removeDisabled={heroChild.count.current <= 0} trailing={trailing}
-        onLog={(d, a, p) => void (d === 'add' ? logChild(heroChild.taskId, a, p) : removeChild(heroChild.taskId, a))}
+        onLog={(d, a, p) => (d === 'add' ? logChild(heroChild.taskId, a, p) : removeChild(heroChild.taskId, a))}
         onUndo={() => void runUndo()}
       />
     ) : (
@@ -203,7 +213,7 @@ function ResolvedSheet({ board, data, play, quiet, onClose, onOpenInLibrary, onL
         count={count} goal={sq.maxCount ?? 0} kind={kind} unit={sq.unit ?? ''} boardLabel={boardLabel}
         busy={play.isWriting} dim={dim} closedRow={closedRow} stripText={visible?.key === 'self' ? visible.text : null}
         removeDisabled={count <= 0} initialEntry={initialEntry} trailing={hero ? trailing : undefined}
-        onLog={(d, a, p) => void logCounting(d, a, p)} onUndo={() => void runUndo()}
+        onLog={(d, a, p) => logCounting(d, a, p)} onUndo={() => void runUndo()}
       />
     );
   } else if (sq.type === 'compound') {
@@ -215,7 +225,7 @@ function ResolvedSheet({ board, data, play, quiet, onClose, onOpenInLibrary, onL
         toggleStripText={visible?.key === 'toggle' ? visible.text : null}
         onToggleChild={(id) => void toggleChild(id)}
         onUnfoldChild={setOpenChildId}
-        onLogChild={(id, a, p) => void logChild(id, a, p)} onUndoChild={() => void runUndo()} onUndoToggle={() => void runUndo()}
+        onLogChild={(id, a, p) => logChild(id, a, p)} onUndoChild={() => void runUndo()} onUndoToggle={() => void runUndo()}
         onOpenChild={onOpenInLibrary}
       />
     );

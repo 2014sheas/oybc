@@ -160,7 +160,9 @@ extension BoardPlayViewModel {
     /// The write behind a compound child toggle (sheet checklist, hold menu, Task Detail):
     /// the strip carries "‹child› · done" and the explicit revert.
     func performChildToggle(placement: BoardTask, childId: String) -> SquareLogStrip? {
-        guard !isProcessing, let raw = taskMap[childId] else { return nil }
+        // Only a Normal child toggles: a nested Compound / Achievement owns no
+        // events, so a "toggle" would write nothing yet leave a done strip.
+        guard !isProcessing, let raw = taskMap[childId], raw.type == .normal else { return nil }
         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
         let child = PlacementParams.withChildTarget(raw, childTargets: placement.childTargets)
         let wasDone = compoundChildIsCompleted(child)

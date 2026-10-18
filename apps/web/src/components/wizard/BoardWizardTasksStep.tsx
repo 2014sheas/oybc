@@ -219,8 +219,11 @@ export interface BoardWizardTasksStepProps {
   onRestoreToPool: (taskId: string, index: number, payload: PendingTaskPayload | undefined) => void;
   /** The wizard's per-cell placement parameters (`useBoardWizard.placementParams`). */
   placementParams?: ReadonlyMap<string, PlacementParams>;
-  /** Set (or clear) one cell's parameters. Routes to `useBoardWizard.setPlacementParams`. */
-  onSetPlacementParams?: (taskId: string, params: PlacementParams | null) => void;
+  /** The ids whose parameters the person typed (`useBoardWizard.placementTyped`). */
+  placementTyped?: ReadonlySet<string>;
+  /** Set (or clear) one cell's parameters; `typed` marks a hand-typed goal.
+   *  Routes to `useBoardWizard.setPlacementParams`. */
+  onSetPlacementParams?: (taskId: string, params: PlacementParams | null, typed?: boolean) => void;
   /** Re-stamp the parameters for a changed window. Routes to `useBoardWizard.restampPlacementParams`. */
   onRestampPlacementParams?: (from: PlacementBoard, to: PlacementBoard) => void;
 
@@ -303,6 +306,7 @@ export function BoardWizardTasksStep({
   onRevertEdit,
   onRestoreToPool,
   placementParams,
+  placementTyped,
   onSetPlacementParams,
   onRestampPlacementParams,
   onBack,
@@ -599,16 +603,21 @@ export function BoardWizardTasksStep({
       const kind = editDraft.countKind ?? resolveCountKind(root);
       const goalWindow: PlacementBoard = { timeframe: currentTimeframe, startDate: currentStartDate, endDate: currentEndDate };
       const previousParams = placementParams?.get(taskId) ?? null;
+      const previousTyped = placementTyped?.has(taskId) ?? false;
+      // The goal is typed only when this edit changed it; otherwise the
+      // entry keeps whatever provenance it had.
+      const goalTyped = (editBaseline ? editDraft.goal !== editBaseline.goal : true) || previousTyped;
       onSetPlacementParams?.(
         taskId,
         counterGoalParams({ ...root, countKind: kind }, parseCountInput(editDraft.goal, kind), goalWindow),
+        goalTyped,
       );
       const ownGoal = root.maxCount != null ? formatCountForInput(root.maxCount, kind) : '';
       const rest = { ...editDraft, goal: ownGoal };
       const restChanged = !editBaseline || !patchesEqual(rest, { ...editBaseline, goal: ownGoal });
       const previousStaged = restChanged ? onStageEdit(taskId, rest) : undefined;
       showToast('Task edited', () => {
-        onSetPlacementParams?.(taskId, previousParams);
+        onSetPlacementParams?.(taskId, previousParams, previousTyped);
         if (restChanged) onRevertEdit(taskId, previousStaged);
       });
       return;

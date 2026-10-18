@@ -64,7 +64,7 @@ struct SquareSheetCountingView: View {
         }
         .padding(.top, 14)
 
-        TapLogChipRow(chips: count.chips, disabled: content.isBusy, busyLook: content.showsBusyLook) { chip in
+        TapLogChipRow(chips: count.chips, disabled: content.isBusy, busyLook: content.showsBusyLook, unit: countKindNeedsUnit(count.kind) ? count.unit : "") { chip in
             if let value = chip.value {
                 actions.onLog(content.taskId, value, false)
             } else {

@@ -29,6 +29,9 @@ struct TapLogChipRow: View {
     /// On a coloured hero: the keyline of "Other…" and every hard shadow use the
     /// non-inverting `inkStatic` (the design draws them ink on blue / teal / purple).
     var onColor: Bool = false
+    /// The unit noun for the chips' accessible names ("Log +10 pages"); empty for
+    /// duration / unit-less (the label already carries "h" / "m").
+    var unit: String = ""
     let onChip: (CounterLogAmount.TapChip) -> Void
 
     private static let gap: CGFloat = 6
@@ -89,7 +92,19 @@ struct TapLogChipRow: View {
         .buttonStyle(TapLogChipButtonStyle(collapsed: busyLook ?? disabled, shadow: onColor ? .risoInkStatic : .risoInk))
         .disabled(disabled)
         .opacity(busyLook ?? disabled ? 0.45 : 1)
-        .accessibilityLabel(isOther ? "Log another amount" : "Log \(chip.label)")
+        .accessibilityLabel(Self.accessibilityName(chip, unit: unit))
+    }
+
+    /// "Log +10 pages" / "Log the rest, +8 pages" / "Log another amount" (web twin `chipName`).
+    static func accessibilityName(_ chip: CounterLogAmount.TapChip, unit: String) -> String {
+        if chip.role == .other { return "Log another amount" }
+        let suffix = unit.isEmpty ? "" : " \(unit)"
+        if chip.role == .rest {
+            var base = chip.label
+            if base.hasSuffix("✓") { base = String(base.dropLast()).trimmingCharacters(in: .whitespaces) }
+            return "Log the rest, \(base)\(suffix)"
+        }
+        return "Log \(chip.label)\(suffix)"
     }
 }
 

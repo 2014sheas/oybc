@@ -135,5 +135,12 @@ export async function childToggle(d: WriteDeps, childTaskId: string): Promise<{ 
   await d.quiet(async () => { to = await d.play.handleCompoundChildToggle(childTaskId); });
   if (to === null) return null;
   const now = to as boolean;
-  return { to: now, undo: () => d.play.handleCompoundChildToggle(childTaskId, !now).then((r) => r !== null) };
+  // The reversal is quiet like the forward write: an Undo never raises the
+  // credited toast the sheet withholds.
+  const undo: Undo = async () => {
+    let back: boolean | null = null;
+    await d.quiet(async () => { back = await d.play.handleCompoundChildToggle(childTaskId, !now); });
+    return back !== null;
+  };
+  return { to: now, undo };
 }

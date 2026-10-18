@@ -465,6 +465,7 @@ func persistWizardBoard(
     // TASK_WINDOW_REWORK slice 3b — the wizard's per-cell placement
     // parameters: onto the draft blob, and (active save) onto the rows.
     let capturedPlacementParams = controller.placementParams
+    let capturedTypedPlacementIds = controller.typedPlacementIds
     // Bug #85 — snapshot the pending tasks dictionary from the controller
     // before going async so we don't race against concurrent mutations on
     // the main actor. Dictionary is a value type (copy-on-write) so this
@@ -555,7 +556,8 @@ func persistWizardBoard(
                     removedTaskIds: Array(capturedRemovedTaskIds),
                     sources: capturedSources,
                     manualTaskVary: capturedManualTaskVary,
-                    placementParams: capturedPlacementParams
+                    placementParams: capturedPlacementParams,
+                    typedPlacementIds: capturedTypedPlacementIds.sorted()
                 )
                 if let encodedMix = mixPayload.encoded() {
                     boardDict["recurringDraftMix"] = encodedMix
@@ -713,6 +715,7 @@ func persistRecurringTemplate(
     let manualTaskVary = controller.manualTaskVary
     // Slice 3b — a typed goal / title on a hand-added row is frozen onto the record.
     let capturedPlacementParams = controller.placementParams
+    let capturedTypedPlacementIds = controller.typedPlacementIds
     let editingTemplateId = controller.editingTemplateId
     let weekStartDay = controller.weekStartDay
     let now = AppDatabase.currentTimestamp()
@@ -785,7 +788,7 @@ func persistRecurringTemplate(
             }
 
             let manualTaskTargets = frozenManualTaskTargets(
-                manualTaskIds: manualTaskIds, params: capturedPlacementParams,
+                manualTaskIds: manualTaskIds, params: capturedPlacementParams, typedIds: capturedTypedPlacementIds,
                 tasksById: Dictionary(
                     (try database.fetchTasks(ids: Array(capturedPlacementParams.keys))).map { ($0.id, $0) },
                     uniquingKeysWith: { first, _ in first }
@@ -930,21 +933,23 @@ func persistRecurringTemplate(
 /// The hand-added members' frozen per-window parameters a REPEATING-board
 /// wizard writes onto the record (slice 3b; web `wizardPersist.ts`): for each
 /// hand-added id whose controller params carry a goal and/or a title,
-/// `{ target, kind, title? }`. Window-default params from quick-add are never
-/// set on a repeating wizard, so only typed goals land here. A title-only
-/// param freezes the task's own goal.
+/// `{ target, kind, title? }`. Only TYPED entries freeze (`typedIds` — the ids the
+/// goal-typing path and hydrating a stored repeating board marked): a quick-add's
+/// automatic window-default goal is not frozen, the planner re-evaluates it per
+/// spawn. A title-only param freezes the task's own goal.
 ///
 /// - Parameters:
 ///   - manualTaskIds: The hand-added layer.
 ///   - params: The controller's per-cell placement parameters.
+///   - typedIds: The ids whose goal was typed.
 ///   - tasksById: The tasks those params name (kind / own goal).
 /// - Returns: The map to store (empty ⇒ store the field absent).
 func frozenManualTaskTargets(
-    manualTaskIds: [String], params: [String: PlacementParamsDraft], tasksById: [String: Task]
+    manualTaskIds: [String], params: [String: PlacementParamsDraft], typedIds: Set<String>, tasksById: [String: Task]
 ) -> [String: ManualTaskTarget] {
     var out: [String: ManualTaskTarget] = [:]
     for id in manualTaskIds {
-        guard let p = params[id], let task = tasksById[id] else { continue }
+        guard typedIds.contains(id), let p = params[id], let task = tasksById[id] else { continue }
         guard let target = p.targetOverride ?? (p.titleOverride != nil ? task.maxCount : nil), target > 0 else { continue }
         out[id] = ManualTaskTarget(
             target: target, kind: p.targetKind ?? resolveCountKind(task.countKind), title: p.titleOverride

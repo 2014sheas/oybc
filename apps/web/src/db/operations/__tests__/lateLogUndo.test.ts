@@ -392,3 +392,80 @@ describe('the sheet entry point (useLateLog) — window-stamped derived square e
     expect((await db.boards.get(DAILY))?.sealedCompletedCells).toEqual([]);
   });
 });
+
+describe('seal-immune logs on the closed board are permanent (C5)', () => {
+  const ENDED_UNSEALED_LOG_AT = '2026-07-02T00:00:00.500Z'; // after endDate, before the seal (DAILY_SEALED_AT)
+  const event = (id: string, kind: 'completion' | 'increment', delta?: number) => ({
+    id, userId: USER, taskId: TASK, kind, ...(delta !== undefined ? { delta } : {}), boardId: DAILY,
+    occurredAt: DAILY_END, createdAt: ENDED_UNSEALED_LOG_AT, updatedAt: ENDED_UNSEALED_LOG_AT, version: 1, isDeleted: false,
+  });
+
+  it('a completion logged on the ended-but-unsealed board before Close is not offered for Undo and the undo refuses it', async () => {
+    await seedNormalTask(TASK);
+    await seedBoard(DAILY);
+    await placeTask(DAILY, TASK, 0);
+    await db.taskEvents.add(event('own-surface', 'completion'));
+    await sealBoard(DAILY, DAILY_SEALED_AT);
+
+    const state = await readClosedBoardSquareState(DAILY, TASK);
+    expect(state).toMatchObject({ isGreen: true, lateLogs: [] }); // the sheet shows "Already complete"
+    expect(await undoLateLog(DAILY, TASK, '2026-07-05T00:00:00.000Z')).toBe(false);
+    expect((await db.taskEvents.get('own-surface'))?.isDeleted).toBe(false);
+  });
+
+  it('a counting log made the same way is permanent; a real late log after the seal stays undoable', async () => {
+    await seedCountingTask(TASK, 10);
+    await seedBoard(DAILY);
+    await placeTask(DAILY, TASK, 0);
+    await db.taskEvents.add(event('own-surface', 'increment', 4));
+    await sealBoard(DAILY, DAILY_SEALED_AT);
+    await lateLogIncrement(DAILY, TASK, 2, FRIDAY_NOW);
+
+    const state = await readClosedBoardSquareState(DAILY, TASK);
+    expect(state?.lateLogs).toHaveLength(1); // only the post-seal late log
+    expect(await undoLateLog(DAILY, TASK, '2026-07-05T00:00:00.000Z')).toBe(true);
+    expect((await readClosedBoardSquareState(DAILY, TASK))?.lateLogs).toEqual([]);
+    expect(await undoLateLog(DAILY, TASK, '2026-07-05T00:01:00.000Z')).toBe(false);
+    expect((await db.taskEvents.get('own-surface'))?.isDeleted).toBe(false);
+  });
+});
+
+describe('late-log twin parity with iOS (C9)', () => {
+  it('refuses a task that is not placed on the closed board (taskNotPlaced), writes nothing', async () => {
+    await seedNormalTask(TASK);
+    await seedCountingTask('other', 5);
+    await seedBoard(DAILY);
+    await placeTask(DAILY, 'other', 0);
+    await sealBoard(DAILY, DAILY_SEALED_AT);
+
+    await expect(lateLogCompletion(DAILY, TASK, FRIDAY_NOW)).rejects.toMatchObject({ kind: 'taskNotPlaced' });
+    await seedCountingTask('loose', 5);
+    await expect(lateLogIncrement(DAILY, 'loose', 1, FRIDAY_NOW)).rejects.toMatchObject({ kind: 'taskNotPlaced' });
+    expect(await db.taskEvents.count()).toBe(0);
+  });
+
+  it('undo RECOMPUTES the lifetime caches from events: reversing the log that completed the root un-completes it', async () => {
+    await seedCountingTask(TASK, 5);
+    await seedBoard(DAILY);
+    await placeTask(DAILY, TASK, 0);
+    await sealBoard(DAILY, DAILY_SEALED_AT);
+
+    await lateLogIncrement(DAILY, TASK, 5, FRIDAY_NOW);
+    expect((await db.tasks.get(TASK))?.isCompleted).toBe(true);
+
+    expect(await undoLateLog(DAILY, TASK, '2026-07-05T00:00:00.000Z')).toBe(true);
+    const root = await db.tasks.get(TASK);
+    expect(root).toMatchObject({ currentCount: 0, isCompleted: false });
+    expect(root?.completedAt).toBeUndefined();
+  });
+
+  it('undoing a completion un-completes the NORMAL task\'s cache', async () => {
+    await seedNormalTask(TASK);
+    await seedBoard(DAILY);
+    await placeTask(DAILY, TASK, 0);
+    await sealBoard(DAILY, DAILY_SEALED_AT);
+    await lateLogCompletion(DAILY, TASK, FRIDAY_NOW);
+    await undoLateLog(DAILY, TASK, '2026-07-05T00:00:00.000Z');
+    expect((await db.tasks.get(TASK))?.isCompleted).toBe(false);
+  });
+});

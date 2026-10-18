@@ -406,6 +406,42 @@ final class DerivedCountersCascadeTests: XCTestCase {
         XCTAssertTrue(TasksTabViewModel.isDone(started, library: library))
     }
 
+    /// A compound's "In progress" reads a COUNTING child's event state, never
+    /// its (stale) `isCompleted` latch.
+    func test_isInProgress_compoundReadsCountingChildFromEvents() {
+        let library = TaskLibraryViewModel()
+        let compound = Task(
+            id: "cmp", userId: userId, title: "Routine", type: .compound, operatorType: .and,
+            totalCompletions: 0, totalInstances: 0, createdAt: now, updatedAt: now, version: 1, isDeleted: false
+        )
+        let stale = countingTask(id: "kid", sharedCounterId: "root-1", maxCount: 5, currentCount: 5, isCompleted: true)
+        library.libraryTasks = [compound, stale]
+        library.compoundChildrenByCompound = ["cmp": [CompoundChild(
+            id: "l1", compoundTaskId: "cmp", childTaskId: "kid", childIndex: 0,
+            createdAt: now, updatedAt: now, version: 1, isDeleted: false
+        )]]
+
+        library.eventsByTaskId = [:]
+        XCTAssertFalse(TasksTabViewModel.isInProgress(compound, library: library),
+                       "a stale latch with no events is not progress")
+
+        library.eventsByTaskId = increments("root-1", [5])
+        XCTAssertTrue(TasksTabViewModel.isInProgress(compound, library: library),
+                      "a child that reached its goal in events is progress")
+
+        // A non-counting child still reads its cache.
+        var normalKid = Task(
+            id: "nk", userId: userId, title: "n", type: .normal,
+            totalCompletions: 0, totalInstances: 0, createdAt: now, updatedAt: now, version: 1, isDeleted: false
+        )
+        normalKid.isCompleted = true
+        library.libraryTasks = [compound, normalKid]
+        library.compoundChildrenByCompound = ["cmp": [CompoundChild(
+            id: "l2", compoundTaskId: "cmp", childTaskId: "nk", childIndex: 0,
+            createdAt: now, updatedAt: now, version: 1, isDeleted: false
+        )]]
+        XCTAssertTrue(TasksTabViewModel.isInProgress(compound, library: library))
+    }
 
     // MARK: - (h) read audit — the displayed count (final-review item 9)
 

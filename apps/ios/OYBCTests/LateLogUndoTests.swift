@@ -203,4 +203,82 @@ final class LateLogUndoTests: XCTestCase {
         XCTAssertEqual(live[0].occurredAt, "2026-07-08T00:00:00.000Z", "the surviving event is stamped at Tuesday's endDate")
         XCTAssertEqual(try fetchBoard(db, "tue").sealedCompletedCells, [0])
     }
+
+    // MARK: - Seal-immune late logs are permanent (owner ruling 2026-10-18)
+
+    private let immStart = "2026-07-07T00:00:00.000Z"
+    private let immEnd = "2026-07-08T00:00:00.000Z"
+
+    private func waitUntil(timeout: TimeInterval = 30, _ predicate: () -> Bool) -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        while !predicate() && Date() < deadline { RunLoop.current.run(until: Date().addingTimeInterval(0.01)) }
+        return predicate()
+    }
+
+    /// A log made on the ended-but-UNSEALED board (created after its end, back-stamped
+    /// at its end), then Close: the selector still admits it, the undo refuses it.
+    private func seedLogBeforeClose(_ db: AppDatabase) throws {
+        try seedUser(db)
+        try db.saveTask(makeTask("t1"))
+        try db.saveBoard(makeBoard(id: "D", startDate: immStart, endDate: immEnd))
+        try db.saveBoardTask(makeBoardTask(id: "bt-d", boardId: "D", taskId: "t1"))
+        try db.write {
+            try TaskEvent(
+                id: "e-late", userId: self.userId, taskId: "t1", kind: .completion, delta: nil,
+                occurredAt: self.immEnd, boardId: "D", createdAt: "2026-07-08T10:00:00.000Z",
+                updatedAt: "2026-07-08T10:00:00.000Z", lastSyncedAt: nil, version: 1, isDeleted: false, deletedAt: nil
+            ).save($0)
+        }
+        XCTAssertTrue(try db.closeBoard(boardId: "D", now: "2026-07-09T00:00:00.000Z"))
+    }
+
+    func test_undoLateLog_logMadeBeforeClose_isSealImmune_returnsFalse_andWritesNothing() throws {
+        let db = try makeDb()
+        try seedLogBeforeClose(db)
+        let board = try fetchBoard(db, "D")
+        let all = try events(db, taskId: "t1")
+        XCTAssertEqual(selectClosedBoardLateLogs(events: all, board: board, taskId: "t1").map(\.id), ["e-late"],
+                       "the selector's contract is unchanged")
+        let windows = try db.read { try AppDatabase.sealImmuneWindows(db: $0, taskId: "t1") }
+        XCTAssertTrue(selectUndoableClosedBoardLateLogs(events: all, board: board, taskId: "t1", immuneWindows: windows).isEmpty)
+
+        XCTAssertFalse(try db.undoLateLog(boardId: "D", taskId: "t1", now: "2026-07-10T00:00:00.000Z"))
+        XCTAssertFalse(try events(db, taskId: "t1").first { $0.id == "e-late" }!.isDeleted)
+    }
+
+    func test_viewModel_hasClosedBoardLateLog_excludesSealImmuneLog_andUndoReportsFalse() throws {
+        let db = try makeDb()
+        try seedLogBeforeClose(db)
+        let vm = BoardPlayViewModel(boardId: "D", userId: userId, database: db)
+        vm.reload()
+        XCTAssertTrue(waitUntil { vm.board?.id == "D" && vm.taskMap["t1"] != nil })
+        let task = try XCTUnwrap(vm.taskMap["t1"])
+        XCTAssertFalse(vm.hasClosedBoardLateLog(for: task), "the sheet shows the normal state, not Undo")
+
+        var result: Bool??
+        _Concurrency.Task { @MainActor in result = .some(try? await vm.undoLateLog(for: task)) }
+        XCTAssertTrue(waitUntil { result != nil })
+        XCTAssertEqual(result, .some(.some(false)), "an undo that did nothing says so")
+    }
+
+    func test_viewModel_hasClosedBoardLateLog_trueForARealClosedBoardLateLog_andUndoReportsTrue() throws {
+        let db = try makeDb()
+        try seedUser(db)
+        try db.saveTask(makeTask("t1"))
+        try db.saveBoard(makeBoard(id: "D", startDate: immStart, endDate: immEnd,
+                                    sealedAt: "2026-07-09T00:00:00.000Z", sealedCompletedCells: []))
+        try db.saveBoardTask(makeBoardTask(id: "bt-d", boardId: "D", taskId: "t1"))
+        try db.lateLogCompletion(boardId: "D", taskId: "t1", now: "2026-07-10T00:00:00.000Z")
+        let vm = BoardPlayViewModel(boardId: "D", userId: userId, database: db)
+        vm.reload()
+        XCTAssertTrue(waitUntil { vm.board?.id == "D" && vm.taskMap["t1"] != nil })
+        let task = try XCTUnwrap(vm.taskMap["t1"])
+        XCTAssertTrue(waitUntil { vm.hasClosedBoardLateLog(for: task) })
+
+        var result: Bool??
+        _Concurrency.Task { @MainActor in result = .some(try? await vm.undoLateLog(for: task)) }
+        XCTAssertTrue(waitUntil { result != nil })
+        XCTAssertEqual(result, .some(.some(true)))
+        XCTAssertTrue(try events(db, taskId: "t1").allSatisfy(\.isDeleted))
+    }
 }

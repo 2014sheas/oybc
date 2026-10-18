@@ -53,6 +53,12 @@ export interface RecurringDraftMixPayload {
    *  Always present on decode (`{}` default); omitted from the encoded blob
    *  when empty. An older client ignores the key. */
   placementParams: Record<string, PlacementParams>;
+  /** The `placementParams` ids whose goal the person TYPED (only these freeze
+   *  into a repeating board's `manualTaskTargets`). Always present on decode;
+   *  a blob without the key (written before provenance was tracked) decodes
+   *  with EVERY placementParams id typed — the previous freeze-everything
+   *  behaviour. */
+  typedPlacementIds: string[];
 }
 
 const EMPTY_MIX: RecurringDraftMixPayload = {
@@ -62,6 +68,7 @@ const EMPTY_MIX: RecurringDraftMixPayload = {
   sources: [],
   manualTaskVary: {},
   placementParams: {},
+  typedPlacementIds: [],
 };
 
 /**
@@ -71,10 +78,14 @@ const EMPTY_MIX: RecurringDraftMixPayload = {
  * `[0, all]` pool pulls — the wizard always passes its native sources.
  */
 export function encodeRecurringDraftMix(
-  mix: Omit<RecurringDraftMixPayload, 'sources' | 'manualTaskVary' | 'placementParams'> & {
+  mix: Omit<
+    RecurringDraftMixPayload,
+    'sources' | 'manualTaskVary' | 'placementParams' | 'typedPlacementIds'
+  > & {
     sources?: BoardSource[];
     manualTaskVary?: Record<string, VaryLevel>;
     placementParams?: Record<string, PlacementParams>;
+    typedPlacementIds?: string[];
   },
 ): string {
   return JSON.stringify({
@@ -87,7 +98,10 @@ export function encodeRecurringDraftMix(
       ? { manualTaskVary: mix.manualTaskVary }
       : {}),
     ...(mix.placementParams && Object.keys(mix.placementParams).length
-      ? { placementParams: mix.placementParams }
+      ? {
+          placementParams: mix.placementParams,
+          typedPlacementIds: mix.typedPlacementIds ?? Object.keys(mix.placementParams),
+        }
       : {}),
   });
 }
@@ -173,11 +187,15 @@ export function decodeRecurringDraftMix(json: string | undefined): RecurringDraf
         Array.isArray(rawSources) && rawSources.every(isBoardSource)
           ? (rawSources as BoardSource[])
           : sourcesFromMixFields(trio);
+      const placementParams = sanitizePlacementParams(record.placementParams);
       return {
         ...trio,
         sources,
         manualTaskVary: sanitizeVary(record.manualTaskVary),
-        placementParams: sanitizePlacementParams(record.placementParams),
+        placementParams,
+        typedPlacementIds: isStringArray(record.typedPlacementIds)
+          ? record.typedPlacementIds.filter((id) => id in placementParams)
+          : Object.keys(placementParams),
       };
     }
     return EMPTY_MIX;

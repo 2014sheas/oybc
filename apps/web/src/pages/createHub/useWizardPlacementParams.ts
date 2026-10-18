@@ -13,13 +13,25 @@
 import { useCallback, useState } from 'react';
 import type { PlacementBoard, PlacementParams, Task } from '@oybc/shared';
 import { restampPlacementParams } from '../../components/wizard/quickAddCounterPlacement';
-import { withPlacementParamsFor, withoutPlacementParams } from './wizardPlacementParamsLogic';
+import {
+  type WizardPlacementParamsSeed,
+  withPlacementParamsFor,
+  withTypedPlacementFor,
+  withoutPlacementParams,
+  withoutTypedPlacement,
+} from './wizardPlacementParamsLogic';
 
 /** The parameters layer's state and actions. */
 export interface WizardPlacementParamsController {
   placementParams: Map<string, PlacementParams>;
-  /** Set (or, with null, clear) one cell's parameters. */
-  setPlacementParams: (taskId: string, params: PlacementParams | null) => void;
+  /**
+   * The ids whose entry the person TYPED (a hand-typed goal). Only these are
+   * frozen into a repeating board's `manualTaskTargets`; an automatic window
+   * default stays derived.
+   */
+  placementTyped: ReadonlySet<string>;
+  /** Set (or, with null, clear) one cell's parameters; `typed` marks a hand-typed goal. */
+  setPlacementParams: (taskId: string, params: PlacementParams | null, typed?: boolean) => void;
   /** Drop every cell's parameters. */
   clearPlacementParams: () => void;
   /** Drop the parameters of ids that left the selection. */
@@ -31,42 +43,51 @@ export interface WizardPlacementParamsController {
 /**
  * The wizard's placement-parameter state.
  *
- * @param initial - Lazy initial map (draft blob > empty).
+ * @param initial - Lazy initial state (draft blob > repeating record's frozen goals > empty).
  * @param tasksById - The wizard's task lookup, for counter roots.
  * @returns The state and its actions.
  */
 export function useWizardPlacementParams(
-  initial: () => Record<string, PlacementParams>,
+  initial: () => WizardPlacementParamsSeed,
   tasksById: Record<string, Task>,
 ): WizardPlacementParamsController {
+  const [seed] = useState(initial);
   const [placementParams, setParams] = useState<Map<string, PlacementParams>>(
-    () => new Map(Object.entries(initial())),
+    () => new Map(Object.entries(seed.params)),
   );
+  const [placementTyped, setTyped] = useState<ReadonlySet<string>>(() => new Set(seed.typedIds));
 
-  const setPlacementParams = useCallback((taskId: string, params: PlacementParams | null) => {
-    setParams((prev) => withPlacementParamsFor(prev, taskId, params) as Map<string, PlacementParams>);
-  }, []);
+  const setPlacementParams = useCallback(
+    (taskId: string, params: PlacementParams | null, typed = false) => {
+      setParams((prev) => withPlacementParamsFor(prev, taskId, params) as Map<string, PlacementParams>);
+      setTyped((prev) => withTypedPlacementFor(prev, taskId, params !== null && typed));
+    },
+    [],
+  );
 
   const clearPlacementParams = useCallback(() => {
     setParams((prev) => (prev.size === 0 ? prev : new Map()));
+    setTyped((prev) => (prev.size === 0 ? prev : new Set()));
   }, []);
 
   const prunePlacementParamsFor = useCallback((taskIds: readonly string[]) => {
     setParams((prev) => withoutPlacementParams(prev, taskIds) as Map<string, PlacementParams>);
+    setTyped((prev) => withoutTypedPlacement(prev, taskIds));
   }, []);
 
   const restamp = useCallback(
     (from: PlacementBoard, to: PlacementBoard) => {
       setParams((prev) => {
-        const next = restampPlacementParams(prev, (id) => tasksById[id], from, to);
+        const next = restampPlacementParams(prev, (id) => tasksById[id], from, to, placementTyped);
         return next === prev ? prev : new Map(next);
       });
     },
-    [tasksById],
+    [tasksById, placementTyped],
   );
 
   return {
     placementParams,
+    placementTyped,
     setPlacementParams,
     clearPlacementParams,
     prunePlacementParamsFor,

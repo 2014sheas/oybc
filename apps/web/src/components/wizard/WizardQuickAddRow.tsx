@@ -88,7 +88,7 @@ export interface WizardQuickAddRowProps {
   /** Receives a picked counter root's placement parameters (null = none). A
    *  host with a board window passes it; it also enables the inline Goal entry
    *  for a counter with no resolvable goal. */
-  onPlacementParams?: (taskId: string, params: PlacementParams | null) => void;
+  onPlacementParams?: (taskId: string, params: PlacementParams | null, typed?: boolean) => void;
   /**
    * Fired when the user taps a dropdown match to REUSE that existing task
    * instead of creating a new one. The host appends the existing task's id
@@ -281,7 +281,7 @@ export function WizardQuickAddRow({
    * placement override on this board. Nothing is written to the counter root.
    */
   function handleCounterGoalPicked(root: Task, goal: number): void {
-    onPlacementParams?.(root.id, hostWindow ? counterGoalParams(root, goal, hostWindow) : null);
+    onPlacementParams?.(root.id, hostWindow ? counterGoalParams(root, goal, hostWindow) : null, true);
     handleExistingPicked(root);
     setRowGoalText((m) => ({ ...m, [root.id]: '' }));
   }

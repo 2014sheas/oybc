@@ -50,6 +50,7 @@ import { updateBoardTaskAndCascade } from './boardTasks';
 import { runBoardCascadeForTasks } from './orchestration';
 import { addToSyncQueue } from './syncQueue';
 import { stampTaskCachesAuthored } from './taskEvents';
+import { setPlacementParams } from './placementParams';
 
 /** Outcome of {@link ensureBoardScopedTask}. */
 export interface BoardScopedTarget {
@@ -187,7 +188,7 @@ async function replaceInHolderSubtree(
     .sort((a, b) => a.childIndex - b.childIndex || (a.id < b.id ? -1 : 1));
   for (const l of links) {
     if (l.childTaskId === oldId) {
-      await repointCompoundLink(privateHolderId, oldId, newId, now);
+      await repointCompoundLink(privateHolderId, oldId, newId, now, boardId);
       continue;
     }
     // An intermediate compound on the path to `oldId`.
@@ -202,16 +203,24 @@ async function replaceInHolderSubtree(
  * (version bump + UPDATE enqueue). No-op when no such live link exists — e.g.
  * the holder walk already rewrote it.
  *
+ * With a `boardId`, the compound's placement on that board also has its
+ * `childTargets` entry for `oldChildId` re-keyed to `newChildId`
+ * ({@link rekeyChildTarget}) in the same transaction — the per-child goal
+ * belongs to the child the square now shows, never the original it left.
+ *
  * @param compoundId - The parent compound.
  * @param oldChildId - The child the link points at today.
  * @param newChildId - The child it must point at.
  * @param now - ISO8601 stamp.
+ * @param boardId - The board the edit is made from; absent = a global edit
+ *   (no placement to re-key).
  */
 export async function repointCompoundLink(
   compoundId: string,
   oldChildId: string,
   newChildId: string,
   now: string,
+  boardId?: string,
 ): Promise<void> {
   const links = (await db.compoundChildren.where('compoundTaskId').equals(compoundId).toArray()).filter(
     (l) => !l.isDeleted && l.childTaskId === oldChildId,
@@ -221,6 +230,44 @@ export async function repointCompoundLink(
     await db.compoundChildren.put(updated);
     await addToSyncQueue('compoundChildren', l.id, SyncOperationType.UPDATE, updated);
   }
+  if (boardId !== undefined) await rekeyChildTarget(boardId, compoundId, oldChildId, newChildId, now);
+}
+
+/**
+ * Re-key one `childTargets` entry on a compound's placement: a child that was
+ * forked for `boardId` carries the original's per-board goal, so the entry
+ * naming `oldChildId` is renamed to `newChildId` (an entry already naming the
+ * fork wins, and the stale one is dropped). One authored placement write
+ * (version bump + UPDATE enqueue + board re-derive) through
+ * {@link setPlacementParams}; no-op when the compound has no live placement on
+ * the board, the placement has no entry for `oldChildId`, or the board is
+ * sealed.
+ *
+ * @param boardId - The board whose placement is re-keyed.
+ * @param compoundId - The compound placed on it.
+ * @param oldChildId - The child id the entry names today.
+ * @param newChildId - The fork the entry must name.
+ * @param now - ISO8601 stamp.
+ */
+export async function rekeyChildTarget(
+  boardId: string,
+  compoundId: string,
+  oldChildId: string,
+  newChildId: string,
+  now: string,
+): Promise<void> {
+  const placement = await db.boardTasks
+    .where('boardId')
+    .equals(boardId)
+    .filter((bt) => !bt.isDeleted && bt.taskId === compoundId)
+    .first();
+  const targets = placement?.childTargets;
+  if (!placement || !targets?.some((t) => t.childId === oldChildId)) return;
+  const hasFork = targets.some((t) => t.childId === newChildId);
+  const next = targets
+    .filter((t) => !(hasFork && t.childId === oldChildId))
+    .map((t) => (t.childId === oldChildId ? { ...t, childId: newChildId } : t));
+  await setPlacementParams(placement.id, { childTargets: next }, now);
 }
 
 /**

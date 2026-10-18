@@ -93,6 +93,21 @@ final class TaskDetailViewModelTests: XCTestCase {
         try place(db, bt: "bt0", board: "b0", task: "c1")
     }
 
+    /// Review fix C8: popping back to Task Detail drops a hero strip that describes a write from before
+    /// the push (its Undo would reverse the counter's LATEST log, which may be a Counter Detail log).
+    func test_hostReappearing_dropsTheHeroUndoStrip() async throws {
+        let db = try AppDatabase.makeTestInstance()
+        try seedCounting(db)
+        let vm = await loaded(db, taskId: "c1")
+        vm.log(amount: 5)
+        await eventually { !vm.isBusy && vm.strip != nil }
+
+        await vm.hostAppeared(taskId: "c1")
+
+        XCTAssertNil(vm.strip, "the strip does not survive push/pop")
+        XCTAssertEqual(count(vm), 5, "the model itself reloads")
+    }
+
     // MARK: Anchor
 
     func test_anchorIsTheSoonestEndingActiveBoard_andRowsSplitActiveFromPast() async throws {

@@ -33,6 +33,7 @@ import {
 } from '@oybc/shared';
 import { generateUUID, currentTimestamp } from '../utils';
 import { addToSyncQueue } from './syncQueue';
+import { rollExplicitGoal } from './explicitGoalRoll';
 import { resolveBoardSourceSupply, resolveOpenSourceBoard } from './boardSources';
 
 /**
@@ -84,13 +85,15 @@ export type SpawnResult =
  * @param options.now - The instant a board source's "is it open" is judged
  *   against (owner ruling 2026-09-24: sources are open boards). Defaults to
  *   the wall clock; tests inject it.
+ * @param options.rng - Dice-roll source (default `Math.random`); tests inject it.
  * @returns The new board, or the structured skip reason.
  */
 export async function spawnTemplateBoard(
   spawn: PendingTemplateSpawn,
-  options: { now?: Date } = {},
+  options: { now?: Date; rng?: () => number } = {},
 ): Promise<SpawnResult> {
   const sourceClock = options.now ?? new Date();
+  const rng = options.rng ?? Math.random;
   const { template, windowStart, windowEnd, suggestedName } = spawn;
 
   const boardId = generateUUID();
@@ -354,7 +357,7 @@ export async function spawnTemplateBoard(
         tasksById,
         childrenByCompoundId: childrenByCompound,
         sourceWindowByTaskId,
-        rng: Math.random,
+        rng,
       }).placements;
       // Repeat's frozen overrides (`manualTaskTargets`) win over the planner's
       // result for a HAND-ADDED member; sourced members keep re-planning from
@@ -366,11 +369,18 @@ export async function spawnTemplateBoard(
           sourceId !== undefined && manualSet.has(sourceId)
             ? template.manualTaskTargets?.[sourceId]
             : undefined;
-        if (frozen === undefined) return p;
+        if (frozen === undefined || sourceId === undefined) return p;
+        // The frozen goal replaces the planner's base, so this member's dice
+        // re-roll around it for every spawn (none = the goal as-is).
+        const rolled = rollExplicitGoal(
+          { target: frozen.target, kind: frozen.kind },
+          template.manualTaskVary?.[sourceId] ?? 0,
+          rng,
+        );
         return {
           ...p,
-          targetOverride: frozen.target,
-          targetKind: frozen.kind,
+          targetOverride: rolled.target,
+          targetKind: rolled.kind,
           ...(frozen.title !== undefined ? { titleOverride: frozen.title } : {}),
         };
       });

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { TaskType, type BoardTask, type Task } from '@oybc/shared';
-import { childLog, childRemove, countingLog, type Play, type WriteDeps } from '../squareWrites';
+import { childLog, childRemove, childToggle, countingLog, type Play, type WriteDeps } from '../squareWrites';
 
 const NOW = '2026-01-01T00:00:00.000Z';
 const task = (o: Partial<Task>): Task => ({
@@ -160,5 +160,31 @@ describe('committed predicates', () => {
     await r?.undo();
     expect(ok(held[1], true)).toBe(true);
     expect(ok(held[1], false)).toBe(false);
+  });
+});
+
+describe('childToggle (C8)', () => {
+  it('its Undo runs QUIET like the forward write, so it never raises the credited toast', async () => {
+    const quietDepth: number[] = [];
+    let depth = 0;
+    const toggles: Array<[string, boolean | undefined, number]> = [];
+    const { play } = fakePlay({
+      handleCompoundChildToggle: (async (id: string, to?: boolean) => { toggles.push([id, to, depth]); return to ?? true; }) as Play['handleCompoundChildToggle'],
+    });
+    const d = deps(play, { quiet: async (w) => { depth += 1; quietDepth.push(depth); try { await w(); } finally { depth -= 1; } } });
+
+    const r = await childToggle(d, 'kid');
+    expect(r?.to).toBe(true);
+    expect(await r?.undo()).toBe(true);
+    // forward toggle (undefined target) and the reversal (to=false) both ran inside `quiet`
+    expect(toggles).toEqual([['kid', undefined, 1], ['kid', false, 1]]);
+    expect(quietDepth).toEqual([1, 1]);
+  });
+
+  it('an Undo the hook refused (null) reports false', async () => {
+    let n = 0;
+    const { play } = fakePlay({ handleCompoundChildToggle: (async () => (n++ === 0 ? true : null)) as Play['handleCompoundChildToggle'] });
+    const r = await childToggle(deps(play), 'kid');
+    expect(await r?.undo()).toBe(false);
   });
 });

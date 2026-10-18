@@ -32,10 +32,21 @@ extension BoardPlayViewModel {
     /// Whether `taskId` (the event-owning id — pass the ROOT for a
     /// window-stamped derived square) has an undoable late log on the
     /// CURRENT (closed) board — drives the sheet's "Undo late log" swap (D15).
+    ///
+    /// Seal-immune candidates (a log made on the ended-but-unsealed board
+    /// before Close) are permanent and don't count: the same immune windows
+    /// the undo itself applies, so the sheet never offers an undo that no-ops.
     func hasClosedBoardLateLog(taskId: String) -> Bool {
         guard let b = board, b.sealedAt != nil else { return false }
         let events = windowEventsByTaskId[taskId] ?? []
-        return !selectClosedBoardLateLogs(events: events, board: b, taskId: taskId).isEmpty
+        // Cheap pure check first; the immune-window read only runs when a candidate exists.
+        guard !selectClosedBoardLateLogs(events: events, board: b, taskId: taskId).isEmpty else { return false }
+        guard let windows = try? database.read({ db in try AppDatabase.sealImmuneWindows(db: db, taskId: taskId) }) else {
+            return false
+        }
+        return !selectUndoableClosedBoardLateLogs(
+            events: events, board: b, taskId: taskId, immuneWindows: windows
+        ).isEmpty
     }
 
     /// Pre-check for the compound late-log sheet: would committing
@@ -84,12 +95,15 @@ extension BoardPlayViewModel {
         }
     }
 
-    /// Reverses the newest late log on `taskId` (D10/R2). Silent no-op if
-    /// there's nothing undoable (already re-frozen by a later seal, or none
-    /// was ever made).
-    func undoLateLog(taskId: String) async throws {
+    /// Reverses the newest undoable late log on `taskId` (D10/R2).
+    ///
+    /// - Returns: `true` when a log was reversed; `false` when there was
+    ///   nothing undoable (re-frozen by a seal, or none made) — nothing was
+    ///   written, so the caller must not report success. `nil` when another
+    ///   late-log write was already in flight (the call was dropped).
+    func undoLateLog(taskId: String) async throws -> Bool? {
         let bid = boardId
-        try await runLateLogWrite { db in try db.undoLateLog(boardId: bid, taskId: taskId) }
+        return try await runLateLogWrite { db in try db.undoLateLog(boardId: bid, taskId: taskId) }
     }
 
     /// The single choke point every late-log write above runs through: an
@@ -100,13 +114,15 @@ extension BoardPlayViewModel {
     /// on the main actor BEFORE the first suspension point, so two calls can't
     /// both pass it, and cleared in `defer` (success or throw). Then the write
     /// runs off the main thread and the view model reloads.
-    private func runLateLogWrite(_ write: @escaping @Sendable (AppDatabase) throws -> Void) async throws {
-        guard !isLateLogInFlight else { return }
+    @discardableResult
+    private func runLateLogWrite<T: Sendable>(_ write: @escaping @Sendable (AppDatabase) throws -> T) async throws -> T? {
+        guard !isLateLogInFlight else { return nil }
         isLateLogInFlight = true
         defer { isLateLogInFlight = false }
         let db = database
-        try await _Concurrency.Task.detached(priority: .userInitiated) { try write(db) }.value
+        let result = try await _Concurrency.Task.detached(priority: .userInitiated) { try write(db) }.value
         reload()
+        return result
     }
 
     // MARK: - Task-based entry points (what the late-log sheet calls)
@@ -136,8 +152,8 @@ extension BoardPlayViewModel {
 
     /// Reverses the newest late log for the tapped square — against the
     /// event-owning id (the ROOT for a window-stamped derived row).
-    func undoLateLog(for task: Task) async throws {
-        guard let id = lateLogEventOwningTaskId(for: task) else { return }
-        try await undoLateLog(taskId: id)
+    func undoLateLog(for task: Task) async throws -> Bool? {
+        guard let id = lateLogEventOwningTaskId(for: task) else { return false }
+        return try await undoLateLog(taskId: id)
     }
 }

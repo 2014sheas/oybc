@@ -9,6 +9,7 @@ const EMPTY = {
   sources: [],
   manualTaskVary: {},
   placementParams: {},
+  typedPlacementIds: [],
 };
 
 /** The [0, all] pool source the codec derives for a trio-only input. */
@@ -38,6 +39,7 @@ describe('encodeRecurringDraftMix / decodeRecurringDraftMix', () => {
       ],
       manualTaskVary: {},
       placementParams: {},
+      typedPlacementIds: [],
     });
   });
 
@@ -59,6 +61,7 @@ describe('encodeRecurringDraftMix / decodeRecurringDraftMix', () => {
       sources,
       manualTaskVary: {},
       placementParams: {},
+      typedPlacementIds: [],
     };
     expect(decodeRecurringDraftMix(encodeRecurringDraftMix(mix))).toEqual(mix);
   });
@@ -76,6 +79,7 @@ describe('encodeRecurringDraftMix / decodeRecurringDraftMix', () => {
       sources: [derivedSource('pool-1', ['gone'])],
       manualTaskVary: {},
       placementParams: {},
+      typedPlacementIds: [],
     });
   });
 
@@ -124,6 +128,7 @@ describe('encodeRecurringDraftMix / decodeRecurringDraftMix', () => {
       sources: [derivedSource('pool-1', [])],
       manualTaskVary: {},
       placementParams: {},
+      typedPlacementIds: [],
     });
   });
 });
@@ -229,5 +234,33 @@ describe('placementParams (additive, v stays 2)', () => {
       placementParams: { a: { targetOverride: -3 }, b: 'x' },
     });
     expect(decodeRecurringDraftMix(bad).placementParams).toEqual({});
+  });
+});
+
+describe('typedPlacementIds (additive provenance of placementParams)', () => {
+  it('round-trips the typed ids and drops ones without an entry', () => {
+    const json = encodeRecurringDraftMix({
+      poolIds: [], manualTaskIds: [], removedTaskIds: [],
+      placementParams: { a: { targetOverride: 12, targetKind: 'discrete' }, b: { targetOverride: 7, targetKind: 'discrete' } },
+      typedPlacementIds: ['a', 'ghost'],
+    });
+    expect(decodeRecurringDraftMix(json).typedPlacementIds).toEqual(['a']);
+  });
+
+  it('a blob written before provenance existed decodes with every entry typed (the old freeze-all behaviour)', () => {
+    const legacy = JSON.stringify({
+      v: 2, poolIds: [], manualTaskIds: [], removedTaskIds: [], sources: [],
+      placementParams: { a: { targetOverride: 12, targetKind: 'discrete' } },
+    });
+    expect(decodeRecurringDraftMix(legacy).typedPlacementIds).toEqual(['a']);
+  });
+
+  it('an explicit empty list means nothing is typed', () => {
+    const json = encodeRecurringDraftMix({
+      poolIds: [], manualTaskIds: [], removedTaskIds: [],
+      placementParams: { a: { targetOverride: 7, targetKind: 'discrete' } },
+      typedPlacementIds: [],
+    });
+    expect(decodeRecurringDraftMix(json).typedPlacementIds).toEqual([]);
   });
 });

@@ -243,4 +243,50 @@ final class BoardPlayViewModelSquareSheetTests: XCTestCase {
         RunLoop.current.run(until: Date().addingTimeInterval(0.2))
         XCTAssertFalse(vm.compoundChildIsCompleted(kid))
     }
+
+    /// Review fix C6: a nested compound / achievement child is never toggled — no write, and no
+    /// "done" strip describing a write that never happened. A Normal child still toggles.
+    func test_performChildToggle_nestedCompoundWritesNothingAndLeavesNoStrip() throws {
+        let db = try AppDatabase.makeTestInstance()
+        try seedUser(db)
+        try db.saveBoard(board("b1"))
+        for t in [task("P", type: .compound), task("N", type: .compound), task("K", type: .normal), task("Z", type: .normal)] {
+            try db.saveTask(t)
+        }
+        try place(db, bt: "bt1", taskId: "P")
+        try link(db, parent: "P", child: "N")
+        try link(db, parent: "N", child: "K")
+        let now = AppDatabase.currentTimestamp()
+        try db.write { d in
+            try CompoundChild(
+                id: "P-Z", compoundTaskId: "P", childTaskId: "Z", childIndex: 1,
+                createdAt: now, updatedAt: now, version: 1, isDeleted: false
+            ).save(d)
+        }
+        let vm = loadedVM(db)
+        let placement = try XCTUnwrap(vm.boardTasks.first { $0.id == "bt1" })
+
+        XCTAssertNil(vm.performChildToggle(placement: placement, childId: "N"), "nested compound: no strip")
+        XCTAssertTrue(try events(db, "N").isEmpty)
+        XCTAssertTrue(try events(db, "K").isEmpty)
+
+        let toggled = vm.performChildToggle(placement: placement, childId: "Z")
+        XCTAssertNotNil(toggled, "a Normal child still toggles")
+        XCTAssertTrue(waitUntil { !vm.isProcessing })
+    }
+
+    func test_sheetChild_nestedCompoundIsAReadOnlyStatusRow() {
+        typealias Child = SquareSheetContent.Child
+        XCTAssertTrue(Child(id: "n", title: "n", kind: .normal, isDone: false).isToggleable)
+        XCTAssertFalse(Child(id: "c", title: "c", kind: .compound, isDone: true).isToggleable)
+        XCTAssertFalse(Child(id: "a", title: "a", kind: .achievement, isDone: false).isToggleable)
+        XCTAssertEqual(
+            SquareSheetFormat.childBoxLabel(Child(id: "c", title: "Inner", kind: .compound, isDone: true), isOpen: false),
+            "Inner, done"
+        )
+        XCTAssertEqual(
+            SquareSheetFormat.childBoxLabel(Child(id: "n", title: "Walk", kind: .normal, isDone: false), isOpen: false),
+            "Complete Walk"
+        )
+    }
 }

@@ -405,6 +405,7 @@ export function BoardWizardPage({
             onRevertEdit={wizard.revertEdit}
             onRestoreToPool={wizard.restoreToPool}
             placementParams={wizard.placementParams}
+            placementTyped={wizard.placementTyped}
             onSetPlacementParams={wizard.setPlacementParams}
             onRestampPlacementParams={wizard.restampPlacementParams}
             onBack={wizard.goBack}

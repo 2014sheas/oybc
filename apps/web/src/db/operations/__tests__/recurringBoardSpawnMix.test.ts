@@ -1089,6 +1089,40 @@ describe('spawnTemplateBoard — member-rule placement parameters (slice 3b)', (
     });
     expect(placed.find((bt) => bt.taskId === ROOT)).toMatchObject({ targetOverride: 5 });
   });
+
+  it('manualTaskTargets + dice (C2): the frozen goal is the roll base, re-rolled per spawn; no dice = as-is', async () => {
+    await seedWeeklySourceBoard();
+    await db.tasks.add({
+      id: 'hand', userId: 'user-1', title: 'Read 20 pages', type: TaskType.COUNTING, action: 'Read', unit: 'pages',
+      maxCount: 20, currentCount: 0, isCompleted: false, totalCompletions: 0, totalInstances: 0,
+      createdAt: NOW, updatedAt: NOW, version: 1, isDeleted: false,
+    } as Task);
+    const spawn = async (id: string, vary: 0 | 2, rng: () => number) => {
+      const template: RecurringBoardTemplate = {
+        ...dailyTemplate(),
+        id,
+        manualTaskIds: ['hand'],
+        sources: dailyTemplate().sources!.map((src) => ({ ...src, max: 7 })),
+        manualTaskVary: vary === 0 ? {} : { hand: vary },
+        manualTaskTargets: { hand: { target: 40, kind: 'discrete' } },
+      };
+      await db.recurringBoardTemplates.add(template);
+      const result = await spawnTemplateBoard(
+        { template, windowStart: WINDOW_START, windowEnd: WINDOW_END, suggestedName: id },
+        { rng },
+      );
+      expect(result.ok).toBe(true);
+      if (!result.ok) throw new Error('spawn failed');
+      const placed = await db.boardTasks.where('boardId').equals(result.boardId).toArray();
+      return placed.find((bt) => bt.taskId === 'hand')!;
+    };
+
+    // "A lot" (±50 %) around the FROZEN 40, not around the task's own goal 20.
+    expect(await spawn('t-low', 2, () => 0)).toMatchObject({ targetOverride: 20, targetKind: 'discrete' });
+    expect(await spawn('t-high', 2, () => 0.999)).toMatchObject({ targetOverride: 60, targetKind: 'discrete' });
+    // No dice: the frozen goal untouched.
+    expect(await spawn('t-flat', 0, () => 0)).toMatchObject({ targetOverride: 40, targetKind: 'discrete' });
+  });
 });
 
 /**

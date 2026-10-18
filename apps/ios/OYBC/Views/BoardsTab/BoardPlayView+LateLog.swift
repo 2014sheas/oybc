@@ -203,8 +203,10 @@ extension BoardPlayView {
     /// id (the ROOT for a window-stamped derived row).
     private func runLateLogUndo(task: Task) async {
         do {
-            try await viewModel.undoLateLog(for: task)
-            lateLogTarget = nil
+            switch try await viewModel.undoLateLog(for: task) {
+            case .some(true): lateLogTarget = nil
+            case .some(false), .none: break // nothing was undoable (the reloaded sheet drops the Undo) / a write is in flight
+            }
         } catch {
             lateLogErrorMessage = "Couldn't undo — please try again."
         }

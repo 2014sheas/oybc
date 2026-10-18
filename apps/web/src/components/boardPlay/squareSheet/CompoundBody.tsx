@@ -2,7 +2,7 @@ import { formatCount } from '@oybc/shared';
 import { RisoIcon, RisoTypeBadge, UndoStrip } from '../../riso';
 import { StatusPill } from '../../StatusPill';
 import type { CompoundChild } from '../../interactiveTaskSquareUtils';
-import { LogControls } from './LogControls';
+import { LogControls, type LogResult } from './LogControls';
 import { childMeta, progressPill, subtaskLine } from './squareSheetModel';
 import styles from './SquareSheet.module.css';
 
@@ -28,7 +28,7 @@ export interface CompoundBodyProps {
   onUndoToggle: () => void;
   onToggleChild: (childTaskId: string) => void;
   onUnfoldChild: (childTaskId: string | null) => void;
-  onLogChild: (childTaskId: string, amount: number, persist: boolean) => void;
+  onLogChild: (childTaskId: string, amount: number, persist: boolean) => LogResult;
   onUndoChild: () => void;
   onOpenChild: (childTaskId: string) => void;
 }
@@ -63,10 +63,13 @@ export function CompoundBody(p: CompoundBodyProps): React.ReactElement {
       <div className={styles.checklist}>
         {p.children.map((child) => {
           const open = p.openChildId === child.taskId;
+          // A nested Compound / Achievement owns no events: its box shows its
+          // derived state but is never a toggle (it opens through its name).
+          const derivedOnly = child.taskType === 'compound' || child.taskType === 'achievement';
           return (
             <div key={child.taskId} className={styles.child}>
               <div className={styles.childRow}>
-                {p.closedRow ? (
+                {p.closedRow || derivedOnly ? (
                   <span className={`${styles.box} ${child.isCompleted ? styles.boxDone : ''}`} aria-hidden="true">
                     {child.isCompleted ? <RisoIcon name="check" size={16} /> : null}
                   </span>

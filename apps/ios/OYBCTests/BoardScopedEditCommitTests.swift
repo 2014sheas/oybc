@@ -584,4 +584,108 @@ final class BoardScopedEditCommitTests: XCTestCase {
         XCTAssertEqual(try liveChildIds(db, of: "H"), [cFork])
         XCTAssertEqual(try placedTaskId(db, "bt2"), "C")
     }
+
+    // MARK: - childTargets follow a forked sub-task (review fix C4)
+
+    private func childTargets(_ db: AppDatabase, _ boardTaskId: String) throws -> [PlacementChildTarget]? {
+        try db.read { try BoardTask.fetchOne($0, key: boardTaskId) }?.childTargets
+    }
+
+    /// A counting sub-task placed elsewhere is forked by a rename: the parent
+    /// square's per-child goal moves to the fork's key (version bump + sync),
+    /// and a goal typed in the same Save lands on the fork.
+    func testForkedSubTaskKeepsTheParentsChildTarget() throws {
+        let db = try makeDb()
+        try seedBoards(db)
+        for t in [task("P", title: "Morning", type: .compound), counting("C1", title: "Read", goal: 3), task("C2", title: "Coffee")] {
+            try db.saveTask(t)
+        }
+        try insert(db, [
+            link("l1", "P", "C1", 0), link("l2", "P", "C2", 1),
+            placement("bt1", board: "B1", task: "P"), placement("bt2", board: "B2", task: "C1"),
+        ])
+        try db.write { d in
+            _ = try AppDatabase.setPlacementParams(
+                db: d, boardTaskId: "bt1",
+                patch: PlacementParamsPatch(childTargets: .set([PlacementChildTarget(childId: "C1", target: 7)])),
+                now: "2026-10-07T00:00:00.000Z"
+            )
+        }
+        let before = try XCTUnwrap(try db.read { try BoardTask.fetchOne($0, key: "bt1") })
+        var structure = TaskEditPatch(title: "Morning")
+        structure.operatorType = .and
+        var c1 = ChildPatch(from: try XCTUnwrap(try fetchTask(db, "C1")))
+        c1.action = "Skim"
+        c1.goal = "7"
+        structure.children = [c1, ChildPatch(from: try XCTUnwrap(try fetchTask(db, "C2")))]
+
+        try commit(db, stagedId: "P", boardTaskId: "bt1", override("Morning", .compound, compound: structure))
+
+        let c1Fork = BoardScopedFork.forkTaskId(boardId: "B1", taskId: "C1")
+        XCTAssertEqual(try fetchTask(db, c1Fork)?.action, "Skim")
+        XCTAssertEqual(try childTargets(db, "bt1"), [PlacementChildTarget(childId: c1Fork, target: 7)],
+                       "the old key is gone; the fork is scored at the board's goal")
+        let after = try XCTUnwrap(try db.read { try BoardTask.fetchOne($0, key: "bt1") })
+        XCTAssertGreaterThan(after.version, before.version)
+        XCTAssertFalse(try db.fetchPendingSyncItems().filter { $0.entityType == "boardTasks" && $0.entityId == "bt1" }.isEmpty)
+    }
+
+    func testForkedSubTaskTakesAGoalTypedInTheSameSave() throws {
+        let db = try makeDb()
+        try seedBoards(db)
+        for t in [task("P", title: "Morning", type: .compound), counting("C1", title: "Read", goal: 3), task("C2", title: "Coffee")] {
+            try db.saveTask(t)
+        }
+        try insert(db, [
+            link("l1", "P", "C1", 0), link("l2", "P", "C2", 1),
+            placement("bt1", board: "B1", task: "P"), placement("bt2", board: "B2", task: "C1"),
+        ])
+        var structure = TaskEditPatch(title: "Morning")
+        structure.operatorType = .and
+        var c1 = ChildPatch(from: try XCTUnwrap(try fetchTask(db, "C1")))
+        c1.action = "Skim"
+        c1.goal = "9"
+        structure.children = [c1, ChildPatch(from: try XCTUnwrap(try fetchTask(db, "C2")))]
+
+        try commit(db, stagedId: "P", boardTaskId: "bt1", override("Morning", .compound, compound: structure))
+
+        let c1Fork = BoardScopedFork.forkTaskId(boardId: "B1", taskId: "C1")
+        XCTAssertEqual(try childTargets(db, "bt1"), [PlacementChildTarget(childId: c1Fork, target: 9)])
+    }
+
+    /// The holder walk (a compound placed on the board AND elsewhere, its child forked): the
+    /// private holder's placement re-keys too.
+    func testHolderWalkRekeysTheHoldersChildTargets() throws {
+        let db = try makeDb()
+        try seedBoards(db)
+        for t in [counting("T", title: "Walk", action: "Walk", unit: "km", goal: 5), task("H", title: "Habits", type: .compound), task("X", title: "Water")] {
+            try db.saveTask(t)
+        }
+        try insert(db, [
+            link("lh1", "H", "T", 0), link("lh2", "H", "X", 1),
+            placement("bt1", board: "B1", task: "T"),
+            placement("bt1h", board: "B1", task: "H", col: 1),
+            placement("bt2h", board: "B2", task: "H"),
+            placement("bt2", board: "B2", task: "T", col: 1),
+        ])
+        try db.write { d in
+            _ = try AppDatabase.setPlacementParams(
+                db: d, boardTaskId: "bt1h",
+                patch: PlacementParamsPatch(childTargets: .set([PlacementChildTarget(childId: "T", target: 4)])),
+                now: "2026-10-07T00:00:00.000Z"
+            )
+        }
+
+        try db.write { d in
+            try AppDatabase.ensureBoardScopedTask(
+                db: d, taskId: "T", board: try self.board("B1", start: Self.b1Start, end: Self.b1End),
+                editedType: .counting, now: "2026-10-08T12:00:00.000Z"
+            )
+        }
+
+        let tFork = BoardScopedFork.forkTaskId(boardId: "B1", taskId: "T")
+        let hFork = BoardScopedFork.forkTaskId(boardId: "B1", taskId: "H")
+        XCTAssertEqual(try placedTaskId(db, "bt1h"), hFork)
+        XCTAssertEqual(try childTargets(db, "bt1h"), [PlacementChildTarget(childId: tFork, target: 4)])
+    }
 }

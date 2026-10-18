@@ -5,6 +5,13 @@ import { RisoButton, TapLogChipRow, UndoStrip } from '../../riso';
 import { entryAmount } from './squareSheetModel';
 import styles from './LogControls.module.css';
 
+/**
+ * What a log handler reports: nothing (assume it was taken), or — sync or
+ * async — whether it COMMITTED. A custom-amount entry is cleared only when it
+ * did, so a log refused while another write was in flight keeps the typing.
+ */
+export type LogResult = void | boolean | Promise<void | boolean>;
+
 export interface LogControlsProps {
   kind: CountKind;
   unit: string;
@@ -26,7 +33,7 @@ export interface LogControlsProps {
   /** Right of the Remove link (Task Detail's Edit). */
   trailing?: React.ReactNode;
   /** `persist` is true only for an explicit "Other…" add (the existing default-amount rule). */
-  onLog: (direction: 'add' | 'remove', amount: number, persist: boolean) => void;
+  onLog: (direction: 'add' | 'remove', amount: number, persist: boolean) => LogResult;
   onUndo: () => void;
 }
 
@@ -54,8 +61,11 @@ export function LogControls({
 
   function commit(): void {
     if (!entry || amount === null || busy) return;
-    onLog(entry.mode, amount, entry.mode === 'add');
-    setEntry(null);
+    const sent = entry;
+    void Promise.resolve(onLog(sent.mode, amount, sent.mode === 'add')).then((took) => {
+      // Clear only what was sent and only when it was taken.
+      if (took !== false) setEntry((cur) => (cur === sent ? null : cur));
+    });
   }
 
   return (

@@ -140,3 +140,23 @@ func selectClosedBoardLateLogs(events: [TaskEvent], board: Board, taskId: String
         taskId: taskId
     )
 }
+
+/// The late logs `undoLateLog` can actually reverse: `selectClosedBoardLateLogs`
+/// minus the seal-immune ones (a log made on the ended-but-unsealed board and
+/// created at or before a containing board's `sealedAt` is part of the sealed
+/// record and permanent — owner ruling 2026-10-18). Same `isEventSealImmune` +
+/// immune windows the undo applies, so the sheet's "Undo late log" is offered
+/// only when the undo will do something. Newest `createdAt` first.
+///
+/// - Parameters:
+///   - events: Candidate events (may be unfiltered).
+///   - board: The closed board.
+///   - taskId: The event-owning task id (the ROOT for a linked square).
+///   - immuneWindows: `AppDatabase.sealImmuneWindows(db:taskId:)` for `taskId`.
+/// - Returns: The undoable late logs, newest first.
+func selectUndoableClosedBoardLateLogs(
+    events: [TaskEvent], board: Board, taskId: String, immuneWindows: [SealImmuneWindow]
+) -> [TaskEvent] {
+    selectClosedBoardLateLogs(events: events, board: board, taskId: taskId)
+        .filter { !isEventSealImmune($0, windows: immuneWindows) }
+}

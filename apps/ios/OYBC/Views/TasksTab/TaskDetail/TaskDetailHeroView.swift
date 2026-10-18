@@ -224,7 +224,7 @@ struct TaskDetailHeroView: View {
             }
             .padding(.top, 16)
 
-            TapLogChipRow(chips: count.chips, disabled: isBusy, busyLook: looksBusy, onColor: true) { chip in
+            TapLogChipRow(chips: count.chips, disabled: isBusy, busyLook: looksBusy, onColor: true, unit: countKindNeedsUnit(count.kind) ? count.unit : "") { chip in
                 if let value = chip.value {
                     actions.onLog(model.taskId, value, false)
                 } else {
@@ -377,8 +377,8 @@ struct TaskDetailHeroView: View {
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .disabled(child.counting == nil && locked)
-                .opacity(child.counting == nil && looksLocked ? 0.45 : 1)
+                .disabled(child.counting == nil && (locked || !child.isToggleable))
+                .opacity(child.counting == nil && child.isToggleable && looksLocked ? 0.45 : 1)
                 .accessibilityLabel(SquareSheetFormat.childBoxLabel(child, isOpen: isOpen))
                 RisoTypeBadge(kind: child.kind, style: .letterSquare)
                 Button { actions.onOpenTask(child.id) } label: {
@@ -406,7 +406,7 @@ struct TaskDetailHeroView: View {
             if isOpen, let count = child.counting {
                 VStack(alignment: .leading, spacing: 8) {
                     HeroBar(value: count.goal > 0 ? min(count.current, count.goal) / count.goal : 0, height: 8, keyline: Color.risoOnColor)
-                    TapLogChipRow(chips: count.chips, size: .compact, disabled: isBusy, busyLook: looksBusy, onColor: true) { chip in
+                    TapLogChipRow(chips: count.chips, size: .compact, disabled: isBusy, busyLook: looksBusy, onColor: true, unit: countKindNeedsUnit(count.kind) ? count.unit : "") { chip in
                         if let value = chip.value { actions.onLog(child.id, value, false) } else {
                             entry = SquareSheetEntry(scopeTaskId: child.id, isRemove: false)
                         }
