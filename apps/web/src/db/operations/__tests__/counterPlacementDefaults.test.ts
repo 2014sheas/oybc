@@ -1,16 +1,17 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { CenterSquareType, Timeframe, derivedTaskId, isWindowStampedDerived, type Task } from '@oybc/shared';
+import { CenterSquareType, Timeframe, derivedTaskId, withPlacementParams, type Task } from '@oybc/shared';
 import { db } from '../../internal';
 import { addBoardTaskToBoard, updateBoardTaskAndCascade } from '../boardTasks';
 import { persistWizardBoardRows, type PersistWizardBoardRowsInput } from '../wizardBoard';
 import { ROOT, SEPT, USER, boardRow, clearAll, hubLinked, placement, rootTask } from './linkedCounterFixtures';
 
 /**
- * docs/SHARED_COUNTER_SETTINGS.md §2 (PR 2) — placing a shared counter mints
- * its per-board copy at the counter's default goal for the board's timeframe,
- * titled through the root's templates. A counter with no defaults places
- * exactly as before. Covers both mint paths: Board Edit (add + Replace via the
- * placement choke points) and the wizard's hand-added branch (persist).
+ * docs/SHARED_COUNTER_SETTINGS.md §2 + TASK_WINDOW_REWORK slice 3a — the
+ * Board Edit placement choke points (add + Replace) place a counter ROOT as-is
+ * and carry the counter's default goal for the board's timeframe as the
+ * placement's `targetOverride` + `targetKind` (no per-board copy is minted); a
+ * linked task is placed with no parameters. The wizard's hand-added branch
+ * (persist) still mints until slice 3b.
  */
 
 const SEPT_ROW = derivedTaskId(SEPT.id, ROOT);
@@ -31,70 +32,75 @@ afterEach(async () => {
 });
 
 describe('Board Edit placement — a counter root with a timeframe default', () => {
-  it('add: mints the per-board copy at the default, titled from the root template', async () => {
+  it('add: places the root AS-IS with the default as targetOverride (no copy is minted)', async () => {
     await db.tasks.put(withDefaults());
 
     const bt = await addBoardTaskToBoard(SEPT.id, ROOT, 0, 0);
 
-    expect(bt.taskId).toBe(SEPT_ROW);
-    const row = (await db.tasks.get(SEPT_ROW))!;
-    expect(row.maxCount).toBe(30);
-    expect(row.title).toBe('Run 30 mi');
-    expect(row.sharedCounterId).toBe(ROOT);
-    expect(isWindowStampedDerived(row)).toBe(true);
-    expect(row.startDate).toBe(SEPT.startDate);
+    expect(bt).toMatchObject({ taskId: ROOT, targetOverride: 30, targetKind: 'discrete' });
+    expect(await db.tasks.get(SEPT_ROW)).toBeUndefined();
+    const stored = (await db.boardTasks.get(bt.id))!;
+    expect(stored).toMatchObject({ taskId: ROOT, targetOverride: 30, targetKind: 'discrete' });
+    // The root keeps its own goal and title; the square reads the placement.
+    const root = (await db.tasks.get(ROOT))!;
+    expect(root.maxCount).toBe(100);
+    expect(withPlacementParams(root, stored).maxCount).toBe(30);
+    expect(withPlacementParams(root, stored).title).toBe('Run 30 mi');
   });
 
-  it('replace: the replacement copy carries the default too', async () => {
+  it('replace: the replacement carries the default as a parameter; the old parameters are dropped', async () => {
     await db.tasks.put(withDefaults());
     await db.tasks.put(hubLinked('X', { sharedCounterId: undefined, title: 'Other' }));
-    await db.boardTasks.put(placement('bt-1', SEPT.id, 'X'));
+    await db.boardTasks.put({ ...placement('bt-1', SEPT.id, 'X'), titleOverride: 'Old name', targetOverride: 4 });
 
     await updateBoardTaskAndCascade('bt-1', ROOT);
 
-    expect((await db.boardTasks.get('bt-1'))!.taskId).toBe(SEPT_ROW);
-    expect((await db.tasks.get(SEPT_ROW))!.maxCount).toBe(30);
-  });
-
-  it('no defaults: the root itself is placed, exactly as before', async () => {
-    await db.tasks.put(rootTask({ titleTemplatePlural: 'Run #N mi' }));
-    const bt = await addBoardTaskToBoard(SEPT.id, ROOT, 0, 0);
-    expect(bt.taskId).toBe(ROOT);
+    const bt = (await db.boardTasks.get('bt-1'))!;
+    expect(bt).toMatchObject({ taskId: ROOT, targetOverride: 30, targetKind: 'discrete', version: 2 });
+    expect(bt.titleOverride).toBeUndefined();
     expect(await db.tasks.get(SEPT_ROW)).toBeUndefined();
   });
 
-  it('a default equal to the root goal places the root (no identical clone)', async () => {
+  it('no defaults: the root is placed with no parameters, exactly as before', async () => {
+    await db.tasks.put(rootTask({ titleTemplatePlural: 'Run #N mi' }));
+    const bt = await addBoardTaskToBoard(SEPT.id, ROOT, 0, 0);
+    expect(bt.taskId).toBe(ROOT);
+    expect(bt.targetOverride).toBeUndefined();
+    expect(await db.tasks.get(SEPT_ROW)).toBeUndefined();
+  });
+
+  it('a default equal to the root goal writes no override', async () => {
     await db.tasks.put(rootTask({ timeframeGoals: { monthly: 100 } }));
     const bt = await addBoardTaskToBoard(SEPT.id, ROOT, 0, 0);
     expect(bt.taskId).toBe(ROOT);
+    expect(bt.targetOverride).toBeUndefined();
+    expect(bt.targetKind).toBeUndefined();
   });
 
-  it('a revived copy keeps its own goal', async () => {
+  it('explicit placement parameters win over the default rule', async () => {
     await db.tasks.put(withDefaults());
-    await addBoardTaskToBoard(SEPT.id, ROOT, 0, 0);
-    await db.tasks.update(SEPT_ROW, { maxCount: 12, isDeleted: true, deletedAt: '2026-09-09T00:00:00.000Z' });
-    await db.boardTasks.where('boardId').equals(SEPT.id).modify({ isDeleted: true });
 
-    const bt = await addBoardTaskToBoard(SEPT.id, ROOT, 0, 1);
+    const bt = await addBoardTaskToBoard(SEPT.id, ROOT, 0, 0, {
+      placement: { targetOverride: 12, targetKind: 'discrete', titleOverride: 'Twelve' },
+    });
 
-    expect(bt.taskId).toBe(SEPT_ROW);
-    const row = (await db.tasks.get(SEPT_ROW))!;
-    expect(row.isDeleted).toBe(false);
-    expect(row.maxCount).toBe(12);
+    expect(bt).toMatchObject({ taskId: ROOT, targetOverride: 12, targetKind: 'discrete', titleOverride: 'Twelve' });
+    expect((await db.boardTasks.get(bt.id))!.targetOverride).toBe(12);
   });
 });
 
 describe('Board Edit placement — a linked task', () => {
-  it('keeps its own goal; its copy title renders through the root template', async () => {
+  it('is placed as-is with no parameters (it keeps its own goal and title)', async () => {
     await db.tasks.put(withDefaults());
     await db.tasks.put(hubLinked('H', { title: 'Run 10 miles', maxCount: 10 }));
 
     const bt = await addBoardTaskToBoard(SEPT.id, 'H', 0, 0);
 
-    const row = (await db.tasks.get(bt.taskId))!;
-    expect(bt.taskId).toBe(SEPT_ROW);
-    expect(row.maxCount).toBe(10);
-    expect(row.title).toBe('Run 10 mi');
+    expect(bt.taskId).toBe('H');
+    expect(bt.targetOverride).toBeUndefined();
+    expect(bt.titleOverride).toBeUndefined();
+    expect(await db.tasks.get(SEPT_ROW)).toBeUndefined();
+    expect((await db.tasks.get('H'))!.maxCount).toBe(10);
   });
 });
 

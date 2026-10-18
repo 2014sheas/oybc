@@ -54,7 +54,9 @@ describe('commitSquareEdits — staged kind switch', () => {
   it('kind switch then goal edit, atomic (Review Focus 4)', async () => {
     const { boardId, rootId, cells } = await seedBoardWithCounter({ maxCount: 26.2, countKind: 'continuous' });
     await commit(boardId, cells, rootId, { countKind: 'discrete', maxCount: 30, action: 'Run', unit: 'mi', title: 'Run 30 mi' });
-    expect(await db.tasks.get(rootId)).toMatchObject({ countKind: 'discrete', maxCount: 30, title: 'Run 30 mi' });
+    // The switch (and the unit) edit the task; the typed goal is this board's PARAMETER.
+    expect(await db.tasks.get(rootId)).toMatchObject({ countKind: 'discrete', maxCount: 26, unit: 'mi', title: 'Run 26 mi' });
+    expect(await db.boardTasks.get('bt-0')).toMatchObject({ targetOverride: 30, targetKind: 'discrete' });
   });
 
   it('a fractional goal at the new whole kind rolls the whole Save back', async () => {

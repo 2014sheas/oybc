@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   CenterSquareType,
   resolveFamilyCountKind,
+  withPlacementParams,
   type Board,
   type BoardSize,
   type BoardTask,
@@ -209,9 +210,12 @@ export function useSquaresEditDraft(
     (taskId: string): Task | undefined => {
       const base = taskMap[taskId] ?? state.cells.find((c) => c.taskId === taskId)?.pending?.task;
       if (!base) return undefined;
-      return applyOverrideForDisplay(base, state.taskOverrides.get(taskId));
+      // The placement's parameters (goal / title) sit under any staged override.
+      const placement = boardTasks.find((bt) => !bt.isDeleted && bt.taskId === taskId);
+      const settings = base.sharedCounterId ? taskMap[base.sharedCounterId] : null;
+      return applyOverrideForDisplay(withPlacementParams(base, placement, settings), state.taskOverrides.get(taskId));
     },
-    [taskMap, state.cells, state.taskOverrides],
+    [taskMap, boardTasks, state.cells, state.taskOverrides],
   );
 
   const resolveOriginalTask = useCallback(

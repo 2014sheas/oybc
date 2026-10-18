@@ -1613,3 +1613,46 @@ describe('spawnTemplateBoard — pool-level default dice (2026-10-06)', () => {
     expect(await placedIds(boardId)).toContain(ROOT);
   });
 });
+
+describe('spawnTemplateBoard — slice 3a (a board member\'s goal is the supplying placement\'s)', () => {
+  it('pulls a root placed at targetOverride 70 on a weekly board into a daily spawn at ceil(70/7) = 10', async () => {
+    const poolTaskIds = ['f1', 'f2', 'f3', 'f4', 'f5', 'f6', 'f7'];
+    for (const id of poolTaskIds) await seedTask(id);
+    await db.pools.add({
+      id: 'pool-1', userId: 'user-1', name: 'Pool', taskIds: poolTaskIds,
+      createdAt: NOW, updatedAt: NOW, version: 1, isDeleted: false,
+    });
+    await db.tasks.add({
+      id: 'r1', userId: 'user-1', title: 'Run 35 km', type: TaskType.COUNTING, action: 'Run', unit: 'km', maxCount: 35,
+      isCompleted: false, totalCompletions: 0, totalInstances: 0, createdAt: NOW, updatedAt: NOW, version: 1, isDeleted: false,
+    });
+    await db.boards.add({
+      id: 'weekly-src', userId: 'user-1', name: 'Weekly', status: BoardStatus.ACTIVE, boardSize: 3,
+      timeframe: Timeframe.WEEKLY, startDate: '2026-07-13T00:00:00.000', endDate: '2026-07-19T23:59:59.999',
+      centerSquareType: CenterSquareType.NONE, isRandomized: false, totalTasks: 9, completedTasks: 0,
+      linesCompleted: 0, completedLineIds: [], createdAt: NOW, updatedAt: NOW, version: 1, isDeleted: false,
+    });
+    await db.boardTasks.add({
+      id: 'bt-r1', boardId: 'weekly-src', taskId: 'r1', row: 0, col: 0, isCenter: false,
+      targetOverride: 70, targetKind: 'discrete', createdAt: NOW, updatedAt: NOW, version: 1, isDeleted: false,
+    });
+    const template: RecurringBoardTemplate = {
+      id: 'tmpl-3a', userId: 'user-1', name: 'Daily', timeframe: Timeframe.DAILY, boardSize: 3,
+      centerSquareType: CenterSquareType.FREE, isRandomized: false, seedTaskIds: [], manualTaskIds: [],
+      sources: [
+        { sourceId: 'weekly-src', kind: 'board', min: 1, max: null, excludedTaskIds: [], filter: 'all' },
+        { sourceId: 'pool-1', kind: 'pool', min: 0, max: null, excludedTaskIds: [], filter: 'all' },
+      ],
+      lastSpawnedWindowKey: null, isActive: true, createdAt: NOW, updatedAt: NOW, version: 1, isDeleted: false,
+    };
+    await db.recurringBoardTemplates.add(template);
+
+    const result = await spawnTemplateBoard({
+      template, windowStart: WINDOW_START, windowEnd: WINDOW_END, suggestedName: 'Daily — July 19',
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const minted = await db.tasks.get(derivedTaskId(result.boardId, 'r1'));
+    expect(minted?.maxCount).toBe(10);
+  });
+});

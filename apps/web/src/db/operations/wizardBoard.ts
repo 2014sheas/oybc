@@ -535,6 +535,7 @@ async function mintWizardDerivedRows(
     rawSupplies.push({
       source,
       supplyTaskIds: availableSupplyIds(source, info.supplyTaskIds, info.doneTaskIds),
+      goalByTaskId: info.goalByTaskId,
     });
   }
 
@@ -554,11 +555,12 @@ async function mintWizardDerivedRows(
     }
   }
 
-  const supplies = applyMemberRules(
-    rawSupplies.map((s) => ({ source: s.source, supplyTaskIds: resolveSourceAvailable(s) })),
-    childrenByCompoundId,
-    tasksById,
-  );
+  const availableSupplies = rawSupplies.map((s) => ({
+    source: s.source,
+    supplyTaskIds: resolveSourceAvailable(s),
+    goalByTaskId: s.goalByTaskId,
+  }));
+  const supplies = applyMemberRules(availableSupplies, childrenByCompoundId, tasksById);
 
   // Auto targets pro-rate by the SOURCE window, looked up per supplied id and
   // per child of a compound member (never by the compound's own id).

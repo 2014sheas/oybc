@@ -5,15 +5,14 @@ import {
   Timeframe,
   type Board,
   type BoardTask,
-  type CompoundChild,
   type Task,
   type TaskEvent,
 } from '@oybc/shared';
 import { db } from '../../internal';
 
 /**
- * Shared seeding helpers for the windowed-linked-counter tests (heal sweep,
- * placement choke points, the June/September regression). Hub-linked =
+ * Shared seeding helpers for the windowed-linked-counter tests (placement choke
+ * points, the June/September regression). Hub-linked =
  * `sharedCounterId` set, not window-stamped.
  */
 
@@ -77,23 +76,6 @@ export function hubLinked(id: string, over: Partial<Task> = {}): Task {
   } as Task;
 }
 
-export function compoundTask(id: string): Task {
-  return {
-    id,
-    userId: USER,
-    title: 'Compound',
-    type: TaskType.COMPOUND,
-    operator: 'AND',
-    isCompleted: false,
-    totalCompletions: 0,
-    totalInstances: 0,
-    createdAt: T0,
-    updatedAt: T0,
-    version: 1,
-    isDeleted: false,
-  } as unknown as Task;
-}
-
 export function boardRow(
   w: { id: string; startDate: string; endDate: string },
   over: Partial<Board> = {},
@@ -134,19 +116,6 @@ export function placement(id: string, boardId: string, taskId: string, row = 0, 
     version: 1,
     isDeleted: false,
   };
-}
-
-export function link(id: string, compoundTaskId: string, childTaskId: string): CompoundChild {
-  return {
-    id,
-    compoundTaskId,
-    childTaskId,
-    childIndex: 0,
-    createdAt: T0,
-    updatedAt: T0,
-    version: 1,
-    isDeleted: false,
-  } as CompoundChild;
 }
 
 export function incEvent(id: string, taskId: string, delta: number, occurredAt: string): TaskEvent {

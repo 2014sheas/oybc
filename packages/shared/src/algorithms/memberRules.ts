@@ -142,7 +142,8 @@ export function applyMemberRules(
         partOf[c] = id;
       }
     }
-    return { source: supply.source, supplyTaskIds: out, partOf };
+    // Slice 3a: a board source's effective goals ride along (`goalByTaskId`).
+    return { ...supply, supplyTaskIds: out, partOf };
   });
 }
 
