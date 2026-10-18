@@ -11,7 +11,8 @@ import { CountingBody } from './CountingBody';
 import { NormalBody } from './NormalBody';
 import { SquareSheet } from './SquareSheet';
 import styles from './SquareSheet.module.css';
-import { childLog, childToggle, countingLog, type Play, type WriteDeps } from './squareWrites';
+import { childLog, childRemove, childToggle, countingLog, type Play, type WriteDeps } from './squareWrites';
+import { useBusyLook } from '../../../hooks/useBusyLook';
 import { closedLabel, daysLeftLabel, isLateLogRoutable, liveStrip, logStripText } from './squareSheetModel';
 
 type Data = SquareViewData;
@@ -87,7 +88,9 @@ function ResolvedSheet({ board, data, play, quiet, onClose, onOpenInLibrary, onL
   const [now] = useState(() => Date.now());
 
   const { taskMap } = data;
-  const { sq, sealed, done, count, kind } = resolveSquareView(board, data, bt, task);
+  const { sq, sealed, done, count, kind } = resolveSquareView(board, data, bt, task, play.pendingCounts);
+  // Controls are inert for the whole write; they only LOOK busy if it runs long.
+  const dim = useBusyLook(play.isWriting);
 
   // Completed Normal rows whose green a sealed window holds cannot be un-completed.
   const heldIds = [
@@ -148,13 +151,9 @@ function ResolvedSheet({ board, data, play, quiet, onClose, onOpenInLibrary, onL
 
   const removeChild = async (childTaskId: string, amount: number): Promise<void> => {
     const child = sq.children?.find((c) => c.taskId === childTaskId);
-    if (!child?.count || sealed || play.isWriting) return;
-    let applied = 0;
-    await quiet(async () => { applied = await play.handleCompoundChildIncrement(childTaskId, -1, amount); });
-    if (applied > 0) {
-      showStrip(childTaskId, logStripText('removed', applied, child.count.kind, child.count.unit, boardLabel),
-        () => play.handleCompoundChildIncrement(childTaskId, 1, applied).then((n) => n > 0));
-    }
+    if (!child?.count || sealed) return;
+    const r = await childRemove(deps, childTaskId, amount);
+    if (r) showStrip(childTaskId, logStripText('removed', r.applied, child.count.kind, child.count.unit, boardLabel), r.undo);
   };
 
   const toggleNormal = async (): Promise<void> => {
@@ -177,7 +176,7 @@ function ResolvedSheet({ board, data, play, quiet, onClose, onOpenInLibrary, onL
     const childBody = heroChild.count ? (
       <CountingBody
         count={heroChild.count.current} goal={heroChild.count.max} kind={heroChild.count.kind} unit={heroChild.count.unit}
-        boardLabel={boardLabel} busy={play.isWriting} closedRow={closedRow}
+        boardLabel={boardLabel} busy={play.isWriting} dim={dim} closedRow={closedRow}
         stripText={visible?.key === heroChild.taskId ? visible.text : null}
         removeDisabled={heroChild.count.current <= 0} trailing={trailing}
         onLog={(d, a, p) => void (d === 'add' ? logChild(heroChild.taskId, a, p) : removeChild(heroChild.taskId, a))}
@@ -185,7 +184,7 @@ function ResolvedSheet({ board, data, play, quiet, onClose, onOpenInLibrary, onL
       />
     ) : (
       <NormalBody
-        done={heroChild.isCompleted} busy={play.isWriting} blocked={blockedIds.has(heroChild.taskId)} closedRow={closedRow}
+        done={heroChild.isCompleted} busy={play.isWriting} dim={dim} blocked={blockedIds.has(heroChild.taskId)} closedRow={closedRow}
         onToggle={() => void toggleChild(heroChild.taskId)} stripText={visible?.key === 'toggle' ? visible.text : null}
         onUndo={() => void runUndo()} trailing={trailing} notDoneLabel={notDoneLabel}
       />
@@ -202,7 +201,7 @@ function ResolvedSheet({ board, data, play, quiet, onClose, onOpenInLibrary, onL
     body = (
       <CountingBody
         count={count} goal={sq.maxCount ?? 0} kind={kind} unit={sq.unit ?? ''} boardLabel={boardLabel}
-        busy={play.isWriting} closedRow={closedRow} stripText={visible?.key === 'self' ? visible.text : null}
+        busy={play.isWriting} dim={dim} closedRow={closedRow} stripText={visible?.key === 'self' ? visible.text : null}
         removeDisabled={count <= 0} initialEntry={initialEntry} trailing={hero ? trailing : undefined}
         onLog={(d, a, p) => void logCounting(d, a, p)} onUndo={() => void runUndo()}
       />
@@ -210,7 +209,7 @@ function ResolvedSheet({ board, data, play, quiet, onClose, onOpenInLibrary, onL
   } else if (sq.type === 'compound') {
     body = (
       <CompoundBody
-        children={sq.children ?? []} done={done} boardLabel={boardLabel} busy={play.isWriting} closedRow={closedRow}
+        children={sq.children ?? []} done={done} boardLabel={boardLabel} busy={play.isWriting} dim={dim} closedRow={closedRow}
         blockedChildIds={blockedIds}
         openChildId={openChildId} stripText={visible && visible.key === openChildId ? visible.text : null}
         toggleStripText={visible?.key === 'toggle' ? visible.text : null}
@@ -241,7 +240,7 @@ function ResolvedSheet({ board, data, play, quiet, onClose, onOpenInLibrary, onL
   } else {
     body = (
       <NormalBody
-        done={done} busy={play.isWriting} blocked={blockedIds.has(task.id)} closedRow={closedRow}
+        done={done} busy={play.isWriting} dim={dim} blocked={blockedIds.has(task.id)} closedRow={closedRow}
         onToggle={() => void toggleNormal()} stripText={visible?.key === 'normal' ? visible.text : null}
         onUndo={() => void runUndo()} trailing={hero ? trailing : undefined} notDoneLabel={hero ? notDoneLabel : undefined}
       />

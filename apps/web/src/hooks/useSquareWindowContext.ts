@@ -4,7 +4,7 @@ import { boardWindowEnd, type Board, type TaskEvent } from '@oybc/shared';
 import { db } from '../db/internal';
 import { buildSquareWindowContext, type SquareWindowContext } from '../db/adapters';
 
-// Module-scoped frozen empty array — see EMPTY_BOARD_TASKS in useBoardPlayData.ts
+// Module-scoped frozen empty array — see the EMPTY_* arrays in useBoardPlayData.ts
 // for why: a stable fallback preserves React Compiler's memoization of
 // downstream useMemo/useCallback deps.
 const EMPTY_TASK_EVENTS = Object.freeze([]) as unknown as TaskEvent[];

@@ -13,8 +13,10 @@ export interface LogControlsProps {
   /** The windowed count the rest is measured from. */
   count: number;
   size: 'regular' | 'compact';
-  /** A write is in flight — chips, entry and Undo disable, never hide. */
+  /** A write is in flight — chips, entry and Undo are inert at once (never hidden). */
   busy: boolean;
+  /** The busy LOOK (dimmed, shadow collapsed): `busy` held ~250 ms. Defaults to `busy`. */
+  dim?: boolean;
   /** The Undo strip's line; absent = no strip. */
   stripText: string | null;
   /** The "− Remove…" link (regular size only). */
@@ -36,7 +38,7 @@ export interface LogControlsProps {
  * @returns The controls.
  */
 export function LogControls({
-  kind, unit, goal, count, size, busy, stripText, removeDisabled, initialEntry, trailing, onLog, onUndo,
+  kind, unit, goal, count, size, busy, dim = busy, stripText, removeDisabled, initialEntry, trailing, onLog, onUndo,
 }: LogControlsProps): React.ReactElement {
   const [entry, setEntry] = useState<{ mode: 'add' | 'remove'; draft: string } | null>(initialEntry ? { mode: initialEntry, draft: '' } : null);
   const amount = entry ? entryAmount(parseCountInput(entry.draft, kind)) : null;
@@ -51,14 +53,14 @@ export function LogControls({
   }
 
   function commit(): void {
-    if (!entry || amount === null) return;
+    if (!entry || amount === null || busy) return;
     onLog(entry.mode, amount, entry.mode === 'add');
     setEntry(null);
   }
 
   return (
     <>
-      <TapLogChipRow chips={chips} size={size} disabled={busy} onChip={onChip} unit={kind === 'duration' ? '' : unit} label="Log amount" />
+      <TapLogChipRow chips={chips} size={size} disabled={dim} inert={busy && !dim} onChip={onChip} unit={kind === 'duration' ? '' : unit} label="Log amount" />
       {entry && (
         <div className={styles.entryRow}>
           <div className={styles.entryField}>
@@ -76,19 +78,19 @@ export function LogControls({
               onEscape={() => setEntry(null)}
             />
           </div>
-          <RisoButton size="small" kind="gold" disabled={busy || amount === null} onClick={commit}>
+          <RisoButton size="small" kind="gold" disabled={dim || amount === null} onClick={commit}>
             {entry.mode === 'add' ? 'Log' : 'Remove'}
           </RisoButton>
         </div>
       )}
-      {stripText && <UndoStrip text={stripText} onUndo={onUndo} disabled={busy} compact={size === 'compact'} />}
+      {stripText && <UndoStrip text={stripText} onUndo={() => { if (!busy) onUndo(); }} disabled={dim} compact={size === 'compact'} />}
       {size === 'regular' && (
         <div className={styles.removeRow}>
           <button
             type="button"
             className={styles.removeLink}
-            disabled={busy || removeDisabled}
-            onClick={() => setEntry({ mode: 'remove', draft: '' })}
+            disabled={dim || removeDisabled}
+            onClick={() => { if (!busy) setEntry({ mode: 'remove', draft: '' }); }}
           >
             − Remove…
           </button>

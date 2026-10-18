@@ -8,6 +8,8 @@ struct TaskDetailHeroView: View {
     let model: TaskDetailModel
     var strip: SquareLogStrip? = nil
     var isBusy = false
+    /// Whether the dimmed busy look shows (only after `BusyLook.delay`); nil follows `isBusy`.
+    var busyLook: Bool? = nil
     var presentation: TaskDetailPresentation = .route
     var actions = TaskDetailActions()
     /// Snapshot seam: a compound's counting child opened on appear.
@@ -19,18 +21,22 @@ struct TaskDetailHeroView: View {
     @State private var entry: SquareSheetEntry?
 
     init(
-        model: TaskDetailModel, strip: SquareLogStrip? = nil, isBusy: Bool = false,
+        model: TaskDetailModel, strip: SquareLogStrip? = nil, isBusy: Bool = false, busyLook: Bool? = nil,
         presentation: TaskDetailPresentation = .route, actions: TaskDetailActions = TaskDetailActions(),
         initialOpenChildId: String? = nil, initialEntry: SquareSheetEntry? = nil
     ) {
         self.model = model
         self.strip = strip
         self.isBusy = isBusy
+        self.busyLook = busyLook
         self.presentation = presentation
         self.actions = actions
         _openChildId = State(initialValue: initialOpenChildId)
         _entry = State(initialValue: initialEntry)
     }
+
+    /// The 45% busy look — delayed behind `BusyLook.delay`; the controls themselves go inert at once.
+    private var looksBusy: Bool { busyLook ?? isBusy }
 
     // MARK: - Palette
 
@@ -171,7 +177,7 @@ struct TaskDetailHeroView: View {
     private func stripView(scope: String, compact: Bool) -> some View {
         Group {
             if let strip, strip.scopeTaskId == scope {
-                UndoStrip(text: strip.text, compact: compact, disabled: isBusy, onUndo: actions.onUndo)
+                UndoStrip(text: strip.text, compact: compact, disabled: isBusy, busyLook: looksBusy, onUndo: actions.onUndo)
             }
         }
     }
@@ -218,7 +224,7 @@ struct TaskDetailHeroView: View {
             }
             .padding(.top, 16)
 
-            TapLogChipRow(chips: count.chips, disabled: isBusy, onColor: true) { chip in
+            TapLogChipRow(chips: count.chips, disabled: isBusy, busyLook: looksBusy, onColor: true) { chip in
                 if let value = chip.value {
                     actions.onLog(model.taskId, value, false)
                 } else {
@@ -246,7 +252,7 @@ struct TaskDetailHeroView: View {
                 }
                 .buttonStyle(.plain)
                 .disabled(isBusy || count.current <= 0)
-                .opacity(isBusy || count.current <= 0 ? 0.45 : 1)
+                .opacity(looksBusy || count.current <= 0 ? 0.45 : 1)
                 Spacer()
                 editButton
             }
@@ -303,7 +309,7 @@ struct TaskDetailHeroView: View {
             HStack(spacing: 10) {
                 RisoButton(title: isDone ? "Done" : "Mark done", kind: isDone ? .green : .gold, systemImage: "checkmark", fullWidth: true, action: actions.onMarkDone)
                     .disabled(isBusy || (isDone && sealBlocked))
-                    .opacity(isBusy || (isDone && sealBlocked) ? 0.45 : 1)
+                    .opacity(looksBusy || (isDone && sealBlocked) ? 0.45 : 1)
                 editButton
             }
             .padding(.top, 14)
@@ -352,6 +358,7 @@ struct TaskDetailHeroView: View {
     private func childRow(_ child: SquareSheetContent.Child) -> some View {
         let isOpen = openChildId == child.id && child.counting != nil
         let locked = isBusy || (child.isDone && child.sealBlocked)
+        let looksLocked = looksBusy || (child.isDone && child.sealBlocked)
         return VStack(spacing: 0) {
             HStack(spacing: 10) {
                 Button {
@@ -371,7 +378,7 @@ struct TaskDetailHeroView: View {
                 }
                 .buttonStyle(.plain)
                 .disabled(child.counting == nil && locked)
-                .opacity(child.counting == nil && locked ? 0.45 : 1)
+                .opacity(child.counting == nil && looksLocked ? 0.45 : 1)
                 .accessibilityLabel(SquareSheetFormat.childBoxLabel(child, isOpen: isOpen))
                 RisoTypeBadge(kind: child.kind, style: .letterSquare)
                 Button { actions.onOpenTask(child.id) } label: {
@@ -399,7 +406,7 @@ struct TaskDetailHeroView: View {
             if isOpen, let count = child.counting {
                 VStack(alignment: .leading, spacing: 8) {
                     HeroBar(value: count.goal > 0 ? min(count.current, count.goal) / count.goal : 0, height: 8, keyline: Color.risoOnColor)
-                    TapLogChipRow(chips: count.chips, size: .compact, disabled: isBusy, onColor: true) { chip in
+                    TapLogChipRow(chips: count.chips, size: .compact, disabled: isBusy, busyLook: looksBusy, onColor: true) { chip in
                         if let value = chip.value { actions.onLog(child.id, value, false) } else {
                             entry = SquareSheetEntry(scopeTaskId: child.id, isRemove: false)
                         }

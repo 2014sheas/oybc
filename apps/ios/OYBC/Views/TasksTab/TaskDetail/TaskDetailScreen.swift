@@ -8,6 +8,7 @@ struct TaskDetailScreen: View {
     let model: TaskDetailModel
     var strip: SquareLogStrip? = nil
     var isBusy = false
+    var busyLook: Bool? = nil
     var presentation: TaskDetailPresentation = .route
     @Binding var tab: TaskDetailTab
     var actions = TaskDetailActions()
@@ -20,7 +21,7 @@ struct TaskDetailScreen: View {
         ScrollView {
             VStack(spacing: 0) {
                 TaskDetailHeroView(
-                    model: model, strip: strip, isBusy: isBusy, presentation: presentation, actions: actions,
+                    model: model, strip: strip, isBusy: isBusy, busyLook: busyLook, presentation: presentation, actions: actions,
                     initialOpenChildId: initialOpenChildId, initialEntry: initialEntry
                 )
                 if let saveError {

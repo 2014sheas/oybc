@@ -73,8 +73,12 @@ struct SquareSheetContent: Equatable {
     /// The board name every progress line names ("Week 42").
     let boardName: String
     var closed: Closed? = nil
-    /// A write is in flight: controls disable (45%, no shadow) but never hide.
+    /// A write is in flight: controls are non-interactive at once but never hide.
     var isBusy: Bool = false
+    /// Whether the dimmed busy look (45%, no shadow) shows — only after `BusyLook.delay`;
+    /// nil follows `isBusy`.
+    var busyLook: Bool? = nil
+    var showsBusyLook: Bool { busyLook ?? isBusy }
     let body: Body
 }
 

@@ -57,10 +57,6 @@ export interface TaskLibrary {
   /** Reverse map: child task id → array of parent compound task ids.
    *  A child can belong to multiple parents (multi-parent display). */
   childToParents: Record<string, string[]>;
-  /** Every non-deleted `taskEvents` row in the workspace, grouped by `taskId`
-   *  (Gate 1 ruling, slice 2c). Context-less library readers
-   *  (`contextlessCounterState`) sum a counter's lifetime events from it. */
-  eventsByTaskId: Record<string, TaskEvent[]>;
 }
 
 export function useTaskLibrary(userId: string | undefined): TaskLibrary {
@@ -119,9 +115,6 @@ export function useTaskLibrary(userId: string | undefined): TaskLibrary {
     return { childTaskIds: ids, childToParents: parents };
   }, [compoundChildrenByCompound]);
 
-  const eventsByTaskId =
-    useLiveQuery(async () => (await buildWindowContext()).eventsByTaskId, []) ?? EMPTY_EVENTS_BY_TASK_ID;
-
   return {
     allTasks,
     allCompoundChildren,
@@ -129,8 +122,23 @@ export function useTaskLibrary(userId: string | undefined): TaskLibrary {
     compoundChildrenByCompound,
     childTaskIds,
     childToParents,
-    eventsByTaskId,
   };
+}
+
+/**
+ * Every non-deleted `taskEvents` row in the workspace, grouped by `taskId`
+ * (Gate 1 ruling, slice 2c). Context-less library readers
+ * (`contextlessCounterState`) sum a counter's lifetime events from it.
+ *
+ * Opt-in on purpose: it is a full `taskEvents` scan that re-runs on every
+ * event write, so only the Tasks tab's status filters call it. It used to be
+ * part of `useTaskLibrary`, which made every board render pay for the scan on
+ * every log.
+ */
+export function useLibraryEventsByTaskId(): Record<string, TaskEvent[]> {
+  return (
+    useLiveQuery(async () => (await buildWindowContext()).eventsByTaskId, []) ?? EMPTY_EVENTS_BY_TASK_ID
+  );
 }
 
 /**

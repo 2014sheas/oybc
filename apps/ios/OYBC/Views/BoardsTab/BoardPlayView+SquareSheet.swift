@@ -129,48 +129,6 @@ extension BoardPlayView {
         }
     }
 
-    /// Precomputes which DONE Normal squares on this board cannot be un-completed (their
-    /// only completions are sealed-window-immune), off-main, so the hold menu builds from
-    /// memory. Re-run whenever the board's data reloads (`.task(id:)` on the board stamp).
-    func loadMenuSealBlockedIds() async {
-        guard !isBoardLocked else { menuSealBlockedIds = []; return }
-        let ids = boardTasks.compactMap { bt -> String? in
-            guard let task = viewModel.placedTask(bt), task.type == .normal, windowedIsCompleted(task) else { return nil }
-            return task.id
-        }
-        let db = viewModel.database
-        let blocked = await _Concurrency.Task.detached(priority: .utility) { () -> Set<String> in
-            var out: Set<String> = []
-            for id in ids where (try? db.isUncompleteBlockedBySeal(taskId: id)) == true { out.insert(id) }
-            return out
-        }.value
-        menuSealBlockedIds = blocked
-    }
-
-    /// Windowed Completion (docs Decision 9): resolve `isUncompleteBlockedBySeal`
-    /// for the sheet's own task and its compound children, off-main, so a
-    /// completion held only by a sealed window disables its un-complete.
-    func loadSealBlockedTaskIds(for boardTaskId: String?) {
-        guard let boardTaskId,
-              let bt = boardTasks.first(where: { $0.id == boardTaskId }),
-              let task = taskMap[bt.taskId] else {
-            sealBlockedTaskIds = []
-            return
-        }
-        var candidateIds: [String] = [task.id]
-        if task.type == .compound {
-            candidateIds.append(contentsOf: (viewModel.compoundChildrenByCompound[task.id] ?? []).map { $0.childTaskId })
-        }
-        let db = viewModel.database
-        _Concurrency.Task.detached(priority: .utility) {
-            var blocked: Set<String> = []
-            for id in candidateIds {
-                if let isBlocked = try? db.isUncompleteBlockedBySeal(taskId: id), isBlocked { blocked.insert(id) }
-            }
-            await MainActor.run { self.sealBlockedTaskIds = blocked }
-        }
-    }
-
     // MARK: Content
 
     /// Builds the sheet's props for a placement; nil when it no longer resolves.
@@ -186,17 +144,17 @@ extension BoardPlayView {
         switch task.type {
         case .normal:
             let isDone = viewModel.squareNormalDone(bt, task)
-            body = .normal(isDone: isDone, sealBlocked: isDone && sealBlockedTaskIds.contains(task.id))
+            body = .normal(isDone: isDone, sealBlocked: isDone && viewModel.derived.sealBlockedTaskIds.contains(task.id))
         case .counting:
             body = .counting(viewModel.squareCountState(task))
         case .compound:
-            body = .compound(viewModel.squareCompound(bt, task, sealBlocked: sealBlockedTaskIds))
+            body = .compound(viewModel.squareCompound(bt, task, sealBlocked: viewModel.derived.sealBlockedTaskIds))
         case .achievement:
             body = .achievement(viewModel.squareAchievement(bt, task))
         }
         return SquareSheetContent(
             boardTaskId: bt.id, taskId: task.id, title: task.title, kind: RisoTaskKind(taskType: task.type),
-            boardName: board?.displayName ?? "", closed: closed, isBusy: viewModel.isProcessing, body: body
+            boardName: board?.displayName ?? "", closed: closed, isBusy: viewModel.isProcessing, busyLook: viewModel.showsBusyLook, body: body
         )
     }
 

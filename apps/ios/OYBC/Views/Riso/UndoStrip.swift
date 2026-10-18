@@ -10,6 +10,8 @@ struct UndoStrip: View {
     var compact: Bool = false
     /// A write in flight — Undo stays visible but inert.
     var disabled: Bool = false
+    /// Whether the dimmed busy look shows; nil follows `disabled` (see `BusyLook`).
+    var busyLook: Bool? = nil
     let onUndo: () -> Void
 
     var body: some View {
@@ -25,7 +27,7 @@ struct UndoStrip: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             RisoUndoPill(scale: compact ? .part : .member, accessibilityLabel: "Undo", action: onUndo)
                 .disabled(disabled)
-                .opacity(disabled ? 0.45 : 1)
+                .opacity(busyLook ?? disabled ? 0.45 : 1)
         }
         .padding(.leading, compact ? 10 : 12)
         .padding(.trailing, compact ? 6 : 8)

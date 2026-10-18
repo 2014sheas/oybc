@@ -46,6 +46,11 @@ describe('CountingBody', () => {
     expect(out.match(/<button[^>]*disabled/g)?.length).toBeGreaterThanOrEqual(5);
     expect(out).toContain('>Other…<');
   });
+  it('a write in flight with no busy look yet keeps the controls looking live', () => {
+    const out = html(counting({ busy: true, dim: false }));
+    expect(out.match(/<button[^>]*disabled=""/g)).toBeNull();
+    expect(out).toContain('>Other…<');
+  });
   it('renders the Undo strip line', () => {
     const out = html(counting({ stripText: 'Logged +5 pages · Week 42' }));
     expect(out).toContain('Logged +5 pages · Week 42');

@@ -449,7 +449,6 @@ function emptyTaskLibrary(allTasks: Task[] = []): TaskLibrary {
     compoundChildrenByCompound: {},
     childTaskIds: new Set(),
     childToParents: {},
-    eventsByTaskId: {},
   };
 }
 

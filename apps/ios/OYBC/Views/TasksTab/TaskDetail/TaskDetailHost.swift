@@ -29,7 +29,7 @@ struct TaskDetailHost: View {
                 Text(loadError).font(.risoBody(14, .semibold)).foregroundStyle(Color.risoRed).padding()
             } else if let model = vm.model {
                 TaskDetailScreen(
-                    model: model, strip: vm.strip, isBusy: vm.isBusy, presentation: presentation, tab: $tab,
+                    model: model, strip: vm.strip, isBusy: vm.isBusy, busyLook: vm.showsBusyLook, presentation: presentation, tab: $tab,
                     actions: actions, saveError: vm.saveError
                 )
             } else {

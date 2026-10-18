@@ -1,5 +1,4 @@
 import { useMemo } from 'react';
-import { useLiveQuery } from 'dexie-react-hooks';
 import {
   computeBoardGrid,
   detectBingos,
@@ -12,7 +11,6 @@ import {
   type RecurringBoardTemplate,
   type Task,
 } from '@oybc/shared';
-import { db } from '../db/internal';
 import type { SquareWindowContext } from '../db/adapters';
 import { useBoardTasksQuery } from './useBoardTasks';
 import { resolveBoardPlacementsQuery } from './boardPlacementsQuery';
@@ -29,9 +27,8 @@ import type { AchievementSquareBadgeData } from '../components/InteractiveTaskSq
 // every render and trips `react-hooks/preserve-manual-memoization`. Typed as
 // the mutable element array because consumers (legacy step helpers) require
 // `T[]`, not `readonly T[]`; the runtime frozen array still throws on mutation.
-const EMPTY_BOARD_TASKS = Object.freeze([]) as unknown as BoardTask[];
 // Phase 6.3 — frozen empty fallbacks for the workspace-wide board /
-// template hooks. Same pattern as EMPTY_BOARD_TASKS above (preserves
+// template hooks. Same pattern as the empty arrays above (preserves
 // React Compiler memoization of downstream deps).
 const EMPTY_BOARDS = Object.freeze([]) as unknown as Board[];
 const EMPTY_TEMPLATES = Object.freeze([]) as unknown as RecurringBoardTemplate[];
@@ -45,7 +42,6 @@ export interface BoardPlayData {
   boardTasks: BoardTask[];
   taskMap: Record<string, Task>;
   compoundChildrenByCompound: Record<string, CompoundChild[]>;
-  allBoardTasks: BoardTask[];
   allBoards: Board[];
   achievementBadgesByBoardTaskId: Record<string, AchievementSquareBadgeData>;
   /**
@@ -123,16 +119,16 @@ export function useBoardPlayData(board: Board, userId: string | undefined): Boar
   // filters tombstones (defense-in-depth on top of the query's own filter).
   // `boardTasksLoaded` keeps "query unresolved" apart from "loaded, zero
   // placements" — an emptied board must render, not show Loading forever.
-  const { boardTasks, loaded: boardTasksLoaded } = resolveBoardPlacementsQuery(
-    useBoardTasksQuery(boardId),
-    gridSize,
+  // Memoised on the raw query result: `resolvePlacements` returns a fresh array,
+  // and every downstream memo (kernel, cell states, badges, counter roots) keys
+  // on `boardTasks` identity — unmemoised, they all re-ran on EVERY render.
+  const placementsQuery = useBoardTasksQuery(boardId);
+  const { boardTasks, loaded: boardTasksLoaded } = useMemo(
+    () => resolveBoardPlacementsQuery(placementsQuery, gridSize),
+    [placementsQuery, gridSize],
   );
   // Compound resolution data (all BoardTasks workspace-wide for child lookup).
   const { taskMap, compoundChildrenByCompound } = useTaskLibrary(userId);
-
-  // Workspace-wide BoardTask list for compound child toggle fallback.
-  const allBoardTasks: BoardTask[] =
-    useLiveQuery(() => db.boardTasks.filter((bt) => !bt.isDeleted).toArray(), []) ?? EMPTY_BOARD_TASKS;
 
   // Phase 6.3 — workspace data needed by per-cell badge data computation
   // for ACHIEVEMENT-typed Tasks. Reuses existing hooks; `useBoards`
@@ -259,14 +255,18 @@ export function useBoardPlayData(board: Board, userId: string | undefined): Boar
   // resolution. Kept as separate steps (rather than reading resolvePlacements'
   // order directly) so this stays correct even if a future caller passes
   // `boardTasks` through additional filtering before this point.
-  const sortedBoardTasks = [...boardTasks].sort((a, b) =>
-    a.row !== b.row ? a.row - b.row : a.col - b.col
+  const sortedBoardTasks = useMemo(
+    () => [...boardTasks].sort((a, b) => (a.row !== b.row ? a.row - b.row : a.col - b.col)),
+    [boardTasks],
   );
 
-  const btByPosition: Record<string, BoardTask> = {};
-  for (const bt of sortedBoardTasks) {
-    btByPosition[`${bt.row}-${bt.col}`] = bt;
-  }
+  const btByPosition = useMemo(() => {
+    const byPosition: Record<string, BoardTask> = {};
+    for (const bt of sortedBoardTasks) {
+      byPosition[`${bt.row}-${bt.col}`] = bt;
+    }
+    return byPosition;
+  }, [sortedBoardTasks]);
 
   const isExpired = isBoardExpired(board);
 
@@ -274,7 +274,6 @@ export function useBoardPlayData(board: Board, userId: string | undefined): Boar
     boardTasks,
     taskMap,
     compoundChildrenByCompound,
-    allBoardTasks,
     allBoards,
     achievementBadgesByBoardTaskId,
     cellStateByBoardTaskId,

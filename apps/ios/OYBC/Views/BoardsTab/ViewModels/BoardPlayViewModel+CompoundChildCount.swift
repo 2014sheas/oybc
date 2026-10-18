@@ -68,6 +68,7 @@ extension BoardPlayViewModel {
         let currentBoardId = board?.id
         let database = self.database
         setProcessing(true)
+        addPendingCount(delta, forFamily: Self.countFamilyKey(childTask))
         _Concurrency.Task.detached(priority: .userInitiated) { [weak self] in
             guard let self else { return }
             do {

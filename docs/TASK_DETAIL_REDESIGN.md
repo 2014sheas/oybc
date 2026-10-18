@@ -47,8 +47,11 @@ it). Engineering decisions recorded here were ruled by the owner on 2026-10-17.
 7. **"Open in library" is board-agnostic:** identical content to the route.
 8. **Closed (sealed) boards:** same square sheet, read-only, one "Late log…"
    action; the hold menu collapses write items to "Late log…". A write in
-   flight disables controls (45% opacity, hard shadow collapsed) — never hides
-   them.
+   flight disables controls at once — never hides them — and the count moves
+   on the tap (an optimistic delta, rolled back if the write fails). The dimmed
+   look (45% opacity, hard shadow collapsed) appears only when the write is
+   still in flight after 250 ms (owner, 2026-10-18: the dim on every fast tap
+   read as the board reloading).
 
 **Library rows (owner, 2026-10-18):** every Tasks-tab row opens Task Detail —
 a shared-counter family's root included (this reverses the 2026-09-22 rule

@@ -127,7 +127,6 @@ function makeLibrary(tasks: Task[]): TaskLibrary {
     compoundChildrenByCompound: {},
     childTaskIds: new Set<string>(),
     childToParents: {},
-    eventsByTaskId: {},
   };
 }
 

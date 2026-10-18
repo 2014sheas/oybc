@@ -14,11 +14,7 @@ extension BoardPlayView {
     /// D15: whether a CLOSED board's square for `task` routes to the
     /// late-log sheet (NORMAL / any COUNTING, linked included / COMPOUND)
     /// rather than staying interaction-locked (ACHIEVEMENT).
-    func isLateLogRoutable(task: Task?) -> Bool {
-        guard isBoardLocked, let t = task else { return false }
-        if t.type == .compound { return true }
-        return viewModel.lateLogEventOwningTaskId(for: t) != nil
-    }
+    func isLateLogRoutable(task: Task?) -> Bool { viewModel.lateLogRoutable(task: task) }
 
     /// The three-card stat bar, with the sealed ENDED card (existing) and
     /// D14's ended-not-sealed "still logging" card.

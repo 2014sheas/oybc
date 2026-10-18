@@ -1,4 +1,5 @@
 import type { TapLogChip } from '@oybc/shared';
+import { chipKey } from './chipKey';
 import styles from './TapLogChipRow.module.css';
 
 export interface TapLogChipRowProps {
@@ -6,8 +7,13 @@ export interface TapLogChipRowProps {
   chips: ReadonlyArray<TapLogChip>;
   /** `regular` 44px (sheet / hero), `compact` 34px (compound child rows). */
   size?: 'regular' | 'compact';
-  /** A write is in flight — opacity 0.45, hard shadow collapsed, layout unchanged. */
+  /** The busy look — opacity 0.45, hard shadow collapsed, layout unchanged. Really disabled. */
   disabled?: boolean;
+  /**
+   * A write is in flight but the busy look has not shown yet (it waits ~250 ms):
+   * the chips look live and swallow taps, so the re-entrancy guard holds at once.
+   */
+  inert?: boolean;
   /** The unit noun for the chips' accessible names ("Log +10 pages"); omit for duration / unit-less. */
   unit?: string;
   /** Accessible name of the group. */
@@ -34,20 +40,21 @@ function chipName(chip: TapLogChip, unit: string): string {
  *
  * @returns The chip row.
  */
-export function TapLogChipRow({ chips, size = 'regular', disabled = false, unit = '', label = 'Log amount', onChip }: TapLogChipRowProps): React.ReactElement {
+export function TapLogChipRow({ chips, size = 'regular', disabled = false, inert = false, unit = '', label = 'Log amount', onChip }: TapLogChipRowProps): React.ReactElement {
   return (
     <div className={`${styles.row} ${size === 'compact' ? styles.compact : ''}`} role="group" aria-label={label}>
-      {chips.map((chip, i) => {
+      {chips.map((chip) => {
         const long = chip.role === 'rest' && chip.label.length >= LONG_REST_LABEL;
         const cls = [styles.chip, chip.role === 'other' ? styles.other : styles.gold, long ? styles.long : ''].filter(Boolean).join(' ');
         return (
           <button
-            key={chip.role === 'other' ? 'other' : `${i}-${chip.value}`}
+            key={chipKey(chip)}
             type="button"
             className={cls}
             disabled={disabled}
+            aria-disabled={inert || undefined}
             aria-label={chipName(chip, unit)}
-            onClick={() => onChip(chip)}
+            onClick={() => { if (!inert) onChip(chip); }}
           >
             {chip.label}
           </button>

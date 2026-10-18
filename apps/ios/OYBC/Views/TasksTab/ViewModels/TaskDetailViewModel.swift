@@ -30,6 +30,8 @@ final class TaskDetailViewModel: ObservableObject {
     @Published private(set) var strip: SquareLogStrip?
     /// A write is in flight — the hero's controls disable but never hide.
     @Published private(set) var isBusy = false
+    /// The dimmed busy look: `isBusy` held for `BusyLook.delay` (controls go inert at once).
+    @Published private(set) var showsBusyLook = false
     @Published var saveError: String?
 
     // MARK: - Collaborators
@@ -55,6 +57,7 @@ final class TaskDetailViewModel: ObservableObject {
     /// drives there (nil when the square IS the task).
     private var anchorChoice: AppDatabase.HeroAnchorCandidate?
     private var anchorSub: AnyCancellable?
+    private var busyLookSub: AnyCancellable?
     private var processingSub: AnyCancellable?
     private var watched: BoardPlayViewModel?
     private var watchedSub: AnyCancellable?
@@ -64,6 +67,12 @@ final class TaskDetailViewModel: ObservableObject {
         self.taskId = taskId
         self.database = database
         self.clock = now
+        busyLookSub = $isBusy.delayedBusyLook().sink { [weak self] in self?.showsBusyLook = $0 }
+    }
+
+    /// Test seam: the snapshot read. Production always uses `fetchSnapshot`.
+    var snapshotFetcher: @Sendable (String, AppDatabase, Bool) throws -> Snapshot? = { id, db, userTasks in
+        try TaskDetailViewModel.fetchSnapshot(taskId: id, database: db, includeUserTasks: userTasks)
     }
 
     // MARK: - Snapshot
@@ -87,7 +96,8 @@ final class TaskDetailViewModel: ObservableObject {
         /// Live events keyed by task id — the task's own and its counter root's.
         let events: [String: [TaskEvent]]
         let counterRoot: Task?
-        let userTasks: [Task]
+        /// The user's tasks for the edit sheet's pickers; nil on a post-write refresh (the previous list stands).
+        let userTasks: [Task]?
         let pickerBoards: [Board]
         let pickerTemplates: [RecurringBoardTemplate]
         /// Task ids (own + compound children) whose un-complete would be inert (Decision 9).
@@ -97,7 +107,7 @@ final class TaskDetailViewModel: ObservableObject {
         let childLinks: [CompoundChild]
     }
 
-    nonisolated static func fetchSnapshot(taskId: String, database db: AppDatabase) throws -> Snapshot? {
+    nonisolated static func fetchSnapshot(taskId: String, database db: AppDatabase, includeUserTasks: Bool = true) throws -> Snapshot? {
         guard let task = try db.fetchTask(id: taskId), !task.isDeleted else { return nil }
         let userId = task.userId
         // Placement resolution (PR 5): the placement REACH, each board scored by the shared kernel.
@@ -107,11 +117,11 @@ final class TaskDetailViewModel: ObservableObject {
         let parents = try db.fetchCompoundParents(forTaskId: taskId)
         let children = try db.fetchCompoundChildrenTasks(parentTaskId: taskId)
         let templates = try db.fetchTemplatesReferencingTask(taskId)
-        let userTasks = try db.fetchTasks(userId: userId)
+        let userTasks = includeUserTasks ? try db.fetchTasks(userId: userId) : nil
         let counterId: String? = task.type == .counting
             ? (task.sharedCounterId ?? (task.isCounter == true ? task.id : nil))
             : task.countsTowardCounterId
-        let root = counterId.flatMap { id in userTasks.first { $0.id == id && !$0.isDeleted } }
+        let root = try counterId.flatMap { try db.fetchTask(id: $0) }.flatMap { $0.isDeleted || $0.userId != userId ? nil : $0 }
         let links = task.type == .compound ? try db.fetchCompoundChildren(compoundTaskId: taskId) : []
         var ids = [task.id]
         if let rootId = task.sharedCounterId { ids.append(rootId) }
@@ -121,9 +131,10 @@ final class TaskDetailViewModel: ObservableObject {
         }
         ids = Array(Set(ids))
         let events = try db.read { d -> [String: [TaskEvent]] in
-            var out: [String: [TaskEvent]] = [:]
-            for id in ids {
-                out[id] = try TaskEvent.filter(Column("taskId") == id && Column("isDeleted") == false).fetchAll(d)
+            // One query for every id (a task id with no events keeps its empty entry).
+            var out: [String: [TaskEvent]] = Dictionary(uniqueKeysWithValues: ids.map { ($0, []) })
+            for e in try TaskEvent.filter(ids.contains(Column("taskId")) && Column("isDeleted") == false).fetchAll(d) {
+                out[e.taskId, default: []].append(e)
             }
             return out
         }
@@ -131,8 +142,7 @@ final class TaskDetailViewModel: ObservableObject {
         if task.type == .achievement {
             picker = (try db.fetchBoards(userId: userId), try db.fetchRecurringBoardTemplates(userId: userId))
         }
-        var blocked: Set<String> = []
-        for id in [task.id] + children.map(\.id) where (try? db.isUncompleteBlockedBySeal(taskId: id)) == true { blocked.insert(id) }
+        let blocked = (try? db.sealBlockedTaskIds(taskIds: Set([task.id] + children.map(\.id)))) ?? []
         let watchedBoard = try task.referencedBoardId.flatMap { try db.fetchBoards(ids: [$0]).first { !$0.isDeleted } }
         return Snapshot(
             task: task, placements: placements, anchorCandidates: reached.anchorCandidates, boards: boards, rows: reached.rows, taskById: reached.taskById, parents: parents, children: children, templates: templates,
@@ -151,8 +161,9 @@ final class TaskDetailViewModel: ObservableObject {
         let token = loadToken
         let id = self.taskId, db = database
         do {
+            let fetch = snapshotFetcher
             let snap = try await _Concurrency.Task.detached(priority: .userInitiated) {
-                try Self.fetchSnapshot(taskId: id, database: db)
+                try fetch(id, db, true)
             }.value
             guard token == loadToken else { return }
             guard let snap else {
@@ -177,7 +188,7 @@ final class TaskDetailViewModel: ObservableObject {
         pickerBoards = snap.pickerBoards
         pickerTemplates = snap.pickerTemplates
         counterRoot = snap.counterRoot
-        userTasks = snap.userTasks
+        if let all = snap.userTasks { userTasks = all }
         // The hero anchors on a square that IS the task — its own, a counter root's
         // linked row's, or a direct-parent compound's (binding decision 3, amended
         // 2026-10-18): the best rank with a square in play, its soonest-ending board.
@@ -224,17 +235,25 @@ final class TaskDetailViewModel: ObservableObject {
     }
 
     private var refreshing = false
-    private func refreshAfterWrite() async {
-        guard !refreshing else { return }
+    /// A refresh was requested while one was in flight: its snapshot may predate that write, so
+    /// run once more when the in-flight fetch lands (a dropped request left the lower sections stale).
+    private var refreshQueued = false
+    /// Re-reads the non-anchor sections after a write. Coalesces: a request during a fetch sets a
+    /// dirty flag and the loop reads again afterwards, so the last write is always reflected.
+    func refreshAfterWrite() async {
+        if refreshing { refreshQueued = true; return }
         refreshing = true
         defer { refreshing = false }
-        let id = taskId, db = database
-        guard let snap = try? await _Concurrency.Task.detached(priority: .userInitiated, operation: {
-            try Self.fetchSnapshot(taskId: id, database: db)
-        }).value, id == taskId else { return }
-        snapshot = snap
-        task = snap.task
-        rebuild()
+        repeat {
+            refreshQueued = false
+            let id = taskId, db = database, fetch = snapshotFetcher
+            guard let snap = try? await _Concurrency.Task.detached(priority: .userInitiated, operation: {
+                try fetch(id, db, false)
+            }).value, id == taskId else { continue }
+            snapshot = snap
+            task = snap.task
+            rebuild()
+        } while refreshQueued
     }
 
     /// The achievement's watched board, loaded through its own board view model so its
@@ -293,7 +312,7 @@ final class TaskDetailViewModel: ObservableObject {
         let task = snap.task
         let now = clock()
         let root = snap.counterRoot
-        let family = resolveFamilyCountKind(task, lookup: { id in id == root?.id ? root : snap.userTasks.first { $0.id == id } })
+        let family = resolveFamilyCountKind(task, lookup: { id in id == root?.id ? root : snap.taskById[id] })
         let counterName = task.type == .normal ? root.map { CounterSettings.counterDisplayName($0) } : nil
         let ruleLabel: String? = task.type == .compound
             ? CompoundEvaluation.compoundRuleLabel(task.operatorType, threshold: task.threshold, childCount: snap.children.count)

@@ -64,9 +64,12 @@ struct SquareMenuInput {
 
     let title: String
     let kind: RisoTaskKind
-    let body: Body
+    var body: Body
     var isClosed = false
     var lateLogRoutable = false
+    /// Writes render disabled. The items are system-drawn, so this IS the menu's busy look:
+    /// the caller passes the delayed look (`BusyLook.delay`); the actions re-check the real
+    /// in-flight flag themselves.
     var isBusy = false
 }
 

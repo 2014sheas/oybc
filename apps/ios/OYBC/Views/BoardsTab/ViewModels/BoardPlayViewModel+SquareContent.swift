@@ -23,8 +23,15 @@ extension BoardPlayViewModel {
         return windowedState(of: task).isCompleted
     }
 
-    /// Windowed count of a counting square (linked counters via `resolveLinkedCounterDisplay`).
+    /// Windowed count of a counting square (linked counters via `resolveLinkedCounterDisplay`),
+    /// plus the optimistic delta of the write in flight (`pendingCountDeltas`): what every
+    /// board-play surface shows. Write handlers compute from `windowedBaseCountValue` / `windowedState`.
     func windowedCountValue(_ task: Task) -> CountValue {
+        windowedBaseCountValue(task) + (pendingCountDeltas[Self.countFamilyKey(task)] ?? 0)
+    }
+
+    /// The loaded windowed count, without any optimistic delta.
+    func windowedBaseCountValue(_ task: Task) -> CountValue {
         if task.sharedCounterId != nil {
             return resolveLinkedCounterDisplay(
                 task: task, eventsByTaskId: windowEventsByTaskId, sealedAt: board?.sealedAt,

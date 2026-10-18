@@ -13,6 +13,7 @@ export type Play = Pick<
   UseBoardPlayResult,
   | 'handleComplete' | 'handleSharedCounterIncrement' | 'handleSharedCounterDecrement' | 'undoCounterLog'
   | 'handleCompoundChildToggle' | 'handleCompoundChildIncrement' | 'logStandaloneCount' | 'isWriting' | 'writeSeq' | 'getWriteSeq'
+  | 'pendingCounts' | 'withPending'
 >;
 
 export interface WriteDeps {
@@ -53,36 +54,70 @@ export async function countingLog(
 ): Promise<Committed | null> {
   if (d.play.isWriting) return null;
   const sourceId = resolveSharedCounterSourceId(task, d.sharedCounterSourceIds);
+  const key = sourceId ?? task.id;
+  const sign = direction === 'add' ? 1 : -1;
   let out: Committed | null = null;
   await d.quiet(async () => {
     if (sourceId) {
-      const applied = direction === 'add'
-        ? await d.play.handleSharedCounterIncrement(sourceId, amount, persist)
-        : await d.play.handleSharedCounterDecrement(sourceId, amount, false);
-      if (applied > 0) out = { applied, undo: () => d.play.undoCounterLog(sourceId) };
+      const applied = await d.play.withPending(
+        key, sign * amount,
+        () => (direction === 'add'
+          ? d.play.handleSharedCounterIncrement(sourceId, amount, persist)
+          : d.play.handleSharedCounterDecrement(sourceId, amount, false)),
+        (n) => n > 0,
+      );
+      if (applied > 0) out = { applied, undo: () => d.play.withPending(key, -sign * applied, () => d.play.undoCounterLog(sourceId), () => true) };
       return;
     }
-    const r = await d.play.logStandaloneCount(bt.id, direction === 'add' ? amount : -amount);
+    const r = await d.play.withPending(key, sign * amount, () => d.play.logStandaloneCount(bt.id, sign * amount), (c) => c !== null);
     // Restore the count read INSIDE the write — the true prior value.
-    if (r) out = { applied: r.applied, undo: () => d.play.handleComplete(bt.id, { currentCount: quantizeCount(r.before) }) };
+    if (r) {
+      out = {
+        applied: r.applied,
+        undo: () => d.play.withPending(key, -sign * r.applied, () => d.play.handleComplete(bt.id, { currentCount: quantizeCount(r.before) }), (ok) => ok),
+      };
+    }
   });
   if (out && persist && direction === 'add' && !sourceId) persistDefault(task.id, amount);
   return out;
 }
 
-/** Logs `amount` on a compound's counting child; Undo removes exactly what was applied. */
-export async function childLog(d: WriteDeps, childTaskId: string, amount: number, persist: boolean): Promise<Committed | null> {
+/**
+ * Steps a compound's counting child by `direction * amount` and reports what
+ * committed; Undo steps back exactly what was applied. A linked child steps
+ * on its counter's key.
+ */
+async function childStep(
+  d: WriteDeps, childTaskId: string, direction: 1 | -1, amount: number, persist: boolean,
+): Promise<Committed | null> {
   const childTask = d.taskMap[childTaskId];
   if (!childTask || d.play.isWriting) return null;
   const childSource = resolveSharedCounterSourceId(childTask, d.sharedCounterSourceIds);
+  const key = childSource ?? childTaskId;
   let applied = 0;
-  await d.quiet(async () => { applied = await d.play.handleCompoundChildIncrement(childTaskId, 1, amount); });
+  await d.quiet(async () => {
+    applied = await d.play.withPending(key, direction * amount, () => d.play.handleCompoundChildIncrement(childTaskId, direction, amount), (n) => n > 0);
+  });
   if (applied <= 0) return null;
-  if (persist) persistDefault(childSource ?? childTaskId, amount);
-  return {
-    applied,
-    undo: () => (childSource ? d.play.undoCounterLog(childSource) : d.play.handleCompoundChildIncrement(childTaskId, -1, applied).then((n) => n > 0)),
+  if (persist && direction > 0) persistDefault(childSource ?? childTaskId, amount);
+  // Undo reverses exactly what was applied: a linked child's log undoes on its counter,
+  // anything else steps the other way.
+  const reverse = async (): Promise<boolean | void> => {
+    if (direction > 0 && childSource) return d.play.withPending(key, -applied, () => d.play.undoCounterLog(childSource), () => true);
+    const back = (direction > 0 ? -1 : 1) as 1 | -1;
+    return d.play.withPending<boolean>(key, back * applied, () => d.play.handleCompoundChildIncrement(childTaskId, back, applied).then((n) => n > 0), (ok) => ok);
   };
+  return { applied, undo: reverse };
+}
+
+/** Logs `amount` on a compound's counting child; Undo removes exactly what was applied. */
+export function childLog(d: WriteDeps, childTaskId: string, amount: number, persist: boolean): Promise<Committed | null> {
+  return childStep(d, childTaskId, 1, amount, persist);
+}
+
+/** Removes `amount` from a compound's counting child; Undo logs exactly what was removed. */
+export function childRemove(d: WriteDeps, childTaskId: string, amount: number): Promise<Committed | null> {
+  return childStep(d, childTaskId, -1, amount, false);
 }
 
 /** Toggles a compound child; Undo is the explicit revert to the prior state. */

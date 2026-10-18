@@ -211,6 +211,8 @@ test.describe('Windowed Completion (issue #317)', () => {
     // Tap opens the square sheet (counter kinds §5 — web no longer logs +1 on tap).
     await counterSquare.click();
     await page.getByRole('dialog').getByRole('button', { name: /^Log \+1\b/ }).click();
+    // The count moves on tap; the Undo strip is the committed write, so wait for it before leaving.
+    await expect(page.getByRole('dialog').getByRole('status')).toContainText('Logged +1');
     await page.keyboard.press('Escape');
     await expect(counterSquare).toContainText('1/10');
 

@@ -25,23 +25,15 @@ enum DateFormatting {
     /// calendar-bound board start/end dates (intentionally timezone-less
     /// so boundaries match the user's wall clock).
     ///
-    /// `DateFormatter` is NOT thread-safe, so we instantiate the
-    /// local-format parsers per call. Parse is rare enough (display-layer
-    /// only) that the allocation cost is negligible.
+    /// The local-format parse goes through `LocalISOParser` (cached
+    /// `DateFormatter`s behind a lock, rebuilt when `TimeZone.current` /
+    /// `Calendar.current` change) — board bounds are local ISO strings, so every
+    /// window resolution lands on this path and the old per-call formatter
+    /// allocation was the dominant render cost on a populated workspace.
     static func parseISO(_ iso: String) -> Date? {
         if let d = isoParserWithFractional.date(from: iso) { return d }
         if let d = isoParserNoFractional.date(from: iso) { return d }
-
-        for format in ["yyyy-MM-dd'T'HH:mm:ss.SSS", "yyyy-MM-dd'T'HH:mm:ss"] {
-            let f = DateFormatter()
-            f.calendar = Calendar.current
-            f.locale = Locale(identifier: "en_US_POSIX")
-            f.timeZone = TimeZone.current
-            f.dateFormat = format
-            if let d = f.date(from: iso) { return d }
-        }
-
-        return nil
+        return LocalISOParser.shared.parse(iso)
     }
 
     /// Encodes `date` as a canonical UTC event timestamp with millisecond
@@ -96,5 +88,49 @@ enum DateFormatting {
         guard let endDate else { return c >= s }
         guard let e = parseISO(endDate) else { return false }
         return c >= s && c <= e
+    }
+}
+
+/// Parses the timezone-less local ISO shapes (`yyyy-MM-dd'T'HH:mm:ss.SSS`,
+/// `yyyy-MM-dd'T'HH:mm:ss`) on the user's wall clock. `DateFormatter` is not
+/// thread-safe, so the two cached instances are only touched under `lock`; they
+/// are rebuilt whenever the current time zone or calendar differs from the ones
+/// they were built for — the same semantics as the per-call formatters this
+/// replaced (`TimeZone.current` / `Calendar.current` read at parse time).
+final class LocalISOParser {
+    static let shared = LocalISOParser()
+
+    private let lock = NSLock()
+    private var builtTimeZone: String?
+    private var builtCalendar: Calendar.Identifier?
+    private var fractional: DateFormatter?
+    private var basic: DateFormatter?
+    /// Formatter (re)builds so far — lets a test prove the cache is reused.
+    private(set) var buildCount = 0
+
+    /// - Parameter iso: A local ISO string.
+    /// - Returns: The instant on the current wall clock, or nil when it matches neither shape.
+    func parse(_ iso: String) -> Date? {
+        let timeZone = TimeZone.current
+        let calendar = Calendar.current
+        lock.lock()
+        defer { lock.unlock() }
+        if timeZone.identifier != builtTimeZone || calendar.identifier != builtCalendar || fractional == nil || basic == nil {
+            fractional = Self.makeFormatter("yyyy-MM-dd'T'HH:mm:ss.SSS", timeZone: timeZone, calendar: calendar)
+            basic = Self.makeFormatter("yyyy-MM-dd'T'HH:mm:ss", timeZone: timeZone, calendar: calendar)
+            builtTimeZone = timeZone.identifier
+            builtCalendar = calendar.identifier
+            buildCount += 1
+        }
+        return fractional?.date(from: iso) ?? basic?.date(from: iso)
+    }
+
+    private static func makeFormatter(_ format: String, timeZone: TimeZone, calendar: Calendar) -> DateFormatter {
+        let f = DateFormatter()
+        f.calendar = calendar
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.timeZone = timeZone
+        f.dateFormat = format
+        return f
     }
 }
