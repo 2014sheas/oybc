@@ -1,9 +1,10 @@
 import Foundation
 import FirebaseAuth
 
-/// User-facing copy for errors on the signed-out sign-in surfaces (`LoginView`
-/// in `AuthGateView.swift`, the onboarding sign-in panel in
-/// `OnboardingView.swift`) — never Firebase's raw `localizedDescription`.
+/// User-facing copy for errors on the sign-in surfaces (`LoginView` in
+/// `AuthGateView.swift`, the onboarding sign-in panel in `OnboardingView.swift`,
+/// the guest `UpgradeAccountSheet`) — never Firebase's raw
+/// `localizedDescription`. `AuthServiceError`s keep their own curated copy.
 ///
 /// Web twin: `signInErrorMessage` in `apps/web/src/firebase/authService.ts`
 /// (same codes, same wording; the shared lines mirror `friendlyError` in
@@ -21,6 +22,7 @@ enum SignInErrorMessage {
     static let weakPassword = "Pick a stronger password (at least 6 characters)."
     static let tooManyRequests = "Too many attempts. Try again later."
     static let userDisabled = "This account has been disabled."
+    static let differentSignInMethod = "This email uses a different sign-in method."
     static let offline = "You're offline. Connect and try again."
     static let fallback = "Something went wrong. Please try again."
 
@@ -29,9 +31,12 @@ enum SignInErrorMessage {
     /// - Parameter error: The error the auth call threw.
     /// - Returns: The message to show, or nil when the user cancelled an
     ///   Apple or Google sheet (`AuthService.isAuthCancellation`) — a
-    ///   cancellation shows nothing.
+    ///   cancellation shows nothing. Callers that branch on the error (e.g. a
+    ///   link collision) do so on the raw error first and map only for display.
     static func message(for error: Error) -> String? {
         if AuthService.isAuthCancellation(error) { return nil }
+        // Our own errors already carry curated one-line copy.
+        if let serviceError = error as? AuthServiceError { return serviceError.errorDescription ?? fallback }
         if isOffline(error) { return offline }
         let nsError = error as NSError
         guard nsError.domain == AuthErrorDomain, let code = AuthErrorCode(rawValue: nsError.code) else {
@@ -50,6 +55,8 @@ enum SignInErrorMessage {
             return tooManyRequests
         case .userDisabled:
             return userDisabled
+        case .accountExistsWithDifferentCredential:
+            return differentSignInMethod
         default:
             return fallback
         }

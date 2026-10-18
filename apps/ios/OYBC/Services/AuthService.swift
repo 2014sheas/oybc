@@ -660,8 +660,10 @@ final class AuthService: ObservableObject {
     /// Firebase's revoke needs a signed-in user, so it can't follow `delete()`.
     /// - Reauth fails → nothing changed; the error propagates.
     /// - Revoke fails → the account is NOT deleted (intact, Apple still linked)
-    ///   and `appleRevocationFailed` propagates; the user just retries. Never a
-    ///   deleted account whose Apple token survives.
+    ///   and `appleRevocationFailed` propagates. Never a deleted account whose
+    ///   Apple token survives. A transient failure clears on retry; a persistent
+    ///   one is the Firebase Apple provider missing its Services ID / key (ops
+    ///   prerequisite — CLAUDE.md §Account & security).
     /// - Revoke succeeds, `delete()` fails (e.g. offline) → the error
     ///   propagates and nothing local is wiped. The account survives with Apple
     ///   linked; Apple only asks for consent again on the next Sign in with
@@ -956,7 +958,7 @@ enum AuthServiceError: LocalizedError {
         case .syncQueueClearFailed:
             return "Couldn't sign out safely — local changes couldn't be cleared. Try again."
         case .missingAppleAuthorizationCode, .appleRevocationFailed:
-            return "Couldn't disconnect Apple, so your account wasn't deleted. Try again."
+            return "Couldn't disconnect Apple. Your account wasn't deleted."
         case .appleRevocationRequired:
             return "Confirm with Apple to delete this account."
         }

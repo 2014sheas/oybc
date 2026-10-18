@@ -33,6 +33,7 @@ describe('authService.signInErrorMessage', () => {
     ['auth/weak-password', 'Pick a stronger password (at least 6 characters).'],
     ['auth/too-many-requests', 'Too many attempts. Try again later.'],
     ['auth/user-disabled', 'This account has been disabled.'],
+    ['auth/account-exists-with-different-credential', 'This email uses a different sign-in method.'],
     ['auth/network-request-failed', 'You’re offline. Connect and try again.'],
   ])('maps %s to short copy', (code, message) => {
     expect(signInErrorMessage(authError(code))).toBe(message);

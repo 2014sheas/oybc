@@ -195,6 +195,7 @@ const SIGN_IN_ERROR_MESSAGES: Readonly<Record<string, string>> = {
   'auth/weak-password': 'Pick a stronger password (at least 6 characters).',
   'auth/too-many-requests': 'Too many attempts. Try again later.',
   'auth/user-disabled': 'This account has been disabled.',
+  'auth/account-exists-with-different-credential': 'This email uses a different sign-in method.',
   'auth/network-request-failed': 'You’re offline. Connect and try again.',
   'auth/popup-blocked':
     'Your browser blocked the sign-in popup — allow popups for this site, then try again.',

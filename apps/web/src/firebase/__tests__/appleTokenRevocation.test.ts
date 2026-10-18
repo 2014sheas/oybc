@@ -170,7 +170,7 @@ describe('accountSecurity — Apple token revocation on delete', () => {
 
   it('maps the revoke errors to one-line copy', () => {
     expect(friendlyError(new Error(APPLE_REVOCATION_FAILED_ERROR))).toBe(
-      'Couldn’t disconnect Apple, so your account wasn’t deleted. Try again.'
+      'Couldn’t disconnect Apple. Your account wasn’t deleted.'
     );
     expect(friendlyError(new Error(APPLE_REVOCATION_REQUIRED_ERROR))).toBe(
       'Confirm with Apple to delete this account.'

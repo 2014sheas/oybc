@@ -137,7 +137,7 @@ export function friendlyError(err: unknown): string {
   // Delete of an Apple-linked account (5.1.1(v)): the revoke failed, or the
   // plain delete path was used. Either way the account is intact.
   if (message === APPLE_REVOCATION_FAILED_ERROR) {
-    return 'Couldn’t disconnect Apple, so your account wasn’t deleted. Try again.';
+    return 'Couldn’t disconnect Apple. Your account wasn’t deleted.';
   }
   if (message === APPLE_REVOCATION_REQUIRED_ERROR) {
     return 'Confirm with Apple to delete this account.';
@@ -347,8 +347,11 @@ export async function deleteAccount(): Promise<void> {
  * silent no-op without one), so it can't follow `delete()`:
  * - Popup fails / is closed → nothing changed; the error propagates.
  * - Revoke fails (or no token came back) → the account is NOT deleted (intact,
- *   Apple still linked) and `APPLE_REVOCATION_FAILED_ERROR` is thrown; the user
- *   just retries. Never a deleted account whose Apple token survives.
+ *   Apple still linked) and `APPLE_REVOCATION_FAILED_ERROR` is thrown. Never a
+ *   deleted account whose Apple token survives. A transient failure clears on
+ *   retry; a persistent one (or a missing token) is the Firebase Apple provider
+ *   lacking its Services ID / key (ops prerequisite — CLAUDE.md §Account &
+ *   security).
  * - Revoke succeeds, `delete()` fails → the error propagates and nothing local
  *   is wiped; the account survives with Apple linked, and Apple only asks for
  *   consent again on the next Sign in with Apple. A retry runs a fresh popup.

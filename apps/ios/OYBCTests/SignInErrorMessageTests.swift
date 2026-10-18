@@ -33,6 +33,15 @@ final class SignInErrorMessageTests: XCTestCase {
                        "Too many attempts. Try again later.")
         XCTAssertEqual(SignInErrorMessage.message(for: authError(.userDisabled)),
                        "This account has been disabled.")
+        // Signed up with Google, then tried Apple with the same email.
+        XCTAssertEqual(SignInErrorMessage.message(for: authError(.accountExistsWithDifferentCredential)),
+                       "This email uses a different sign-in method.")
+    }
+
+    func testServiceErrorsKeepTheirOwnCopy() {
+        XCTAssertEqual(SignInErrorMessage.message(for: AuthServiceError.noCurrentUser), "You're not signed in.")
+        XCTAssertEqual(SignInErrorMessage.message(for: AuthServiceError.appleRevocationFailed),
+                       "Couldn't disconnect Apple. Your account wasn't deleted.")
     }
 
     func testConnectivityFailuresReadAsOffline() {
