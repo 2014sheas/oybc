@@ -119,7 +119,7 @@ extension AppDatabase {
     // MARK: Placement writes
 
     /// A live placement's repoint: `taskId`, the override / kind / title set or
-    /// cleared (explicit SQL NULL), `childTargets` untouched, `version += 1`,
+    /// cleared (explicit SQL NULL), `childTargets` set or cleared likewise, `version += 1`,
     /// one `boardTasks` UPDATE enqueue.
     ///
     /// - Returns: True when the placement was written (false when it moved on since the plan).
@@ -150,6 +150,7 @@ extension AppDatabase {
             patch.targetOverride = .clear
             patch.targetKind = .clear
         }
+        patch.childTargets = repoint.childTargets.map { .set($0) } ?? .clear
         patch.titleOverride = repoint.titleOverride.map { .set($0) } ?? .clear
         var next = current.applyingPlacementParams(patch)
         next.taskId = repoint.toTaskId
@@ -171,7 +172,7 @@ extension AppDatabase {
     /// fields carry the clears). A row that is no longer marked is left alone.
     private static func stripWindowMarks(db: Database, taskId: String, now: String) throws -> Bool {
         guard let task = try Task.fetchOne(db, key: taskId), !task.isDeleted,
-              BoardSources.isWindowStampedDerived(task) else { return false }
+              BoardSources.isWindowStampedDerived(task) || BoardSources.isWindowStampedDerivedCompound(task) else { return false }
         try db.execute(
             sql: "UPDATE tasks SET timeframe = NULL, startDate = NULL, endDate = NULL, baseline = 0, version = version + 1, updatedAt = ? WHERE id = ?",
             arguments: [now, taskId]
