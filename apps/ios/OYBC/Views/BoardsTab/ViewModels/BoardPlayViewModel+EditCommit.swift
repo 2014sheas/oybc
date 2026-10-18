@@ -69,15 +69,18 @@ extension BoardPlayViewModel {
     ///   - taskId: The task now occupying the square.
     ///   - pending: Non-nil when `taskId`'s task doesn't exist in the DB yet
     ///     (D14) — inserted at Save with `createdInWizard: false`.
-    private func stagePlacement(cellKey: String, taskId: String, pending: PendingTaskPayload?) {
+    private func stagePlacement(
+        cellKey: String, taskId: String, pending: PendingTaskPayload?, placement: PlacementParamsDraft? = nil
+    ) {
         if var existing = editSquaresDraft[cellKey] {
             existing.taskId = taskId
             existing.pending = pending
+            existing.placement = placement
             editSquaresDraft[cellKey] = existing
         } else {
             editSquaresDraft[cellKey] = SquaresDraftCell(
                 id: "new-\(AppDatabase.generateUUID())", isNew: true,
-                taskId: taskId, pending: pending, isLocked: false,
+                taskId: taskId, pending: pending, placement: placement, isLocked: false,
                 originalRow: nil, originalCol: nil,
                 originalTaskId: nil, originalIsLocked: false
             )
@@ -86,15 +89,19 @@ extension BoardPlayViewModel {
 
     /// Stages a fresh placement on an EMPTY square (D13/D17 — the picker is
     /// the only path onto the board now; the play-mode "+" is retired).
-    func handleEditAdd(cellKey: String, taskId: String, pending: PendingTaskPayload? = nil) {
-        stagePlacement(cellKey: cellKey, taskId: taskId, pending: pending)
+    func handleEditAdd(
+        cellKey: String, taskId: String, pending: PendingTaskPayload? = nil, placement: PlacementParamsDraft? = nil
+    ) {
+        stagePlacement(cellKey: cellKey, taskId: taskId, pending: pending, placement: placement)
     }
 
     /// Stages a task-ID replacement on an OCCUPIED square (no DB write until
     /// Save). Same picker sheet as Add (D13); pass `pending` when the user
     /// created a brand-new task via the quick-add row.
-    func handleEditReplace(cellKey: String, taskId: String, pending: PendingTaskPayload? = nil) {
-        stagePlacement(cellKey: cellKey, taskId: taskId, pending: pending)
+    func handleEditReplace(
+        cellKey: String, taskId: String, pending: PendingTaskPayload? = nil, placement: PlacementParamsDraft? = nil
+    ) {
+        stagePlacement(cellKey: cellKey, taskId: taskId, pending: pending, placement: placement)
     }
 
     /// Stages a cell removal (no DB write). Drops the cell from the squares
@@ -180,9 +187,9 @@ extension BoardPlayViewModel {
         }
 
         // (3) Replacements — EXISTING cells whose task changed.
-        let cellReplacements: [(boardTaskId: String, newTaskId: String)] = draftSnapshot.values
+        let cellReplacements: [(boardTaskId: String, newTaskId: String, placement: PlacementParamsDraft?)] = draftSnapshot.values
             .filter { !$0.isNew && $0.taskId != $0.originalTaskId }
-            .map { (boardTaskId: $0.id, newTaskId: $0.taskId) }
+            .map { (boardTaskId: $0.id, newTaskId: $0.taskId, placement: $0.placement) }
 
         // (4) Task-field overrides — keyed by the STAGED task id (= the placed
         // task id since slice 3a). Applied AFTER replacements + adds (step 7b)
@@ -217,10 +224,10 @@ extension BoardPlayViewModel {
             }
 
         // (7) Adds — staged new placements, at their CURRENT slot.
-        let cellAdds: [(row: Int, col: Int, taskId: String, isLocked: Bool)] = draftSnapshot
-            .compactMap { key, cell -> (row: Int, col: Int, taskId: String, isLocked: Bool)? in
+        let cellAdds: [(row: Int, col: Int, taskId: String, isLocked: Bool, placement: PlacementParamsDraft?)] = draftSnapshot
+            .compactMap { key, cell -> (row: Int, col: Int, taskId: String, isLocked: Bool, placement: PlacementParamsDraft?)? in
                 guard cell.isNew, let (row, col) = parseSquareCellKey(key) else { return nil }
-                return (row: row, col: col, taskId: cell.taskId, isLocked: cell.isLocked)
+                return (row: row, col: col, taskId: cell.taskId, isLocked: cell.isLocked, placement: cell.placement)
             }
 
         // (5b / 8) Lock changes — EXISTING cells only (a staged add's lock is
@@ -319,6 +326,18 @@ extension BoardPlayViewModel {
                             boardTaskId: replacement.boardTaskId,
                             newTaskId: replacement.newTaskId
                         )
+                        // Slice 3b: the pick's parameters (a goal) land on the swapped placement.
+                        if let p = replacement.placement {
+                            _ = try AppDatabase.setPlacementParams(
+                                db: db, boardTaskId: replacement.boardTaskId,
+                                patch: PlacementParamsPatch(
+                                    targetOverride: p.targetOverride.map { .set($0) } ?? .keep,
+                                    targetKind: p.targetKind.map { .set($0) } ?? .keep,
+                                    titleOverride: p.titleOverride.map { .set($0) } ?? .keep
+                                ),
+                                now: now
+                            )
+                        }
                     }
 
                     // 4. (moved to 7b — overrides remap to the placed ids.)
@@ -355,7 +374,10 @@ extension BoardPlayViewModel {
                         try AppDatabase.addBoardTaskToBoard(
                             db: db, boardId: bid, taskId: add.taskId,
                             position: (row: add.row, col: add.col),
-                            isLocked: add.isLocked
+                            isLocked: add.isLocked,
+                            targetOverride: add.placement?.targetOverride,
+                            targetKind: add.placement?.targetKind,
+                            titleOverride: add.placement?.titleOverride
                         )
                     }
 

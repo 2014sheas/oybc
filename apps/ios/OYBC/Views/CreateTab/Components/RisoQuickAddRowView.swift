@@ -304,8 +304,10 @@ struct RisoQuickAddRowView: View {
                     onPickWithGoal: { goal in
                         // The root is placed as itself; the goal rides as a
                         // placement parameter (slice 3b) — no copy is created.
-                        onExistingTaskPicked?(task)
+                        // Goal first: a host that confirms on the pick (Board Edit's
+                        // picker) needs it already buffered.
                         onCounterGoalPicked?(task, goal)
+                        onExistingTaskPicked?(task)
                         text = ""
                     }
                 )

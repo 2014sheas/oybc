@@ -42,13 +42,19 @@ struct SquarePickerSheetView: View {
     /// `pending` is non-nil for a not-yet-created task (Normal / Counting /
     /// Achievement, D14) — nil for an existing task OR a just-created
     /// Compound (created immediately by the special panel).
-    let onConfirm: (_ taskId: String, _ pending: PendingTaskPayload?) -> Void
+    /// `placement` carries the placement parameters of a counter pick (the
+    /// board window's goal, or a typed one) — slice 3b.
+    let onConfirm: (_ taskId: String, _ pending: PendingTaskPayload?, _ placement: PlacementParamsDraft?) -> Void
     /// The board's timeframe: a counter match row resolves the goal a placed
     /// copy would get on it (none → an inline Goal entry).
     var timeframe: Timeframe? = nil
     /// The board's window (a CUSTOM board's default scales to it).
     var startDate: String? = nil
     var endDate: String? = nil
+
+    /// The latest parameters a counter pick reported, by task id (the row
+    /// reports the goal just before it confirms the pick).
+    @State private var bufferedPlacement: [String: PlacementParamsDraft] = [:]
 
     // MARK: - Derived
 
@@ -85,17 +91,21 @@ struct SquarePickerSheetView: View {
                             defaultEndDate: nil,
                             onTaskCreated: { _, _, _ in },
                             onPendingCreated: { payload in
-                                onConfirm(payload.task.id, payload)
+                                onConfirm(payload.task.id, payload, nil)
                             },
                             onLibraryReloadRequested: {},
                             libraryTasks: candidateTasks,
                             counterRootTasks: counterRootTasks,
                             onExistingTaskPicked: { task in
-                                onConfirm(task.id, nil)
+                                onConfirm(task.id, nil, bufferedPlacement[task.id])
                             },
                             placementTimeframe: timeframe,
                             placementStartDate: startDate,
-                            placementEndDate: endDate
+                            placementEndDate: endDate,
+                            linksCounterPicks: true,
+                            onCounterGoalPicked: { root, goal in
+                                bufferedPlacement[root.id] = PlacementParamsDraft.forCounterGoal(goal, root: root)
+                            }
                         )
 
                         RisoSpecialTaskPanel(
@@ -107,10 +117,10 @@ struct SquarePickerSheetView: View {
                             suggestionPool: counterRootTasks + candidateTasks,
                             onTaskCreated: { _, _, _ in },
                             onCompoundCreated: { task in
-                                onConfirm(task.id, nil)
+                                onConfirm(task.id, nil, nil)
                             },
                             onPendingCreated: { payload in
-                                onConfirm(payload.task.id, payload)
+                                onConfirm(payload.task.id, payload, nil)
                             },
                             onLibraryReloadRequested: {},
                             allowAchievement: true,
@@ -154,6 +164,6 @@ struct SquarePickerSheetView: View {
         userId: "u1",
         candidateTasks: [],
         onDismiss: {},
-        onConfirm: { _, _ in }
+        onConfirm: { _, _, _ in }
     )
 }
