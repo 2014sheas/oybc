@@ -6,7 +6,7 @@
  */
 import {
   AchievementTrigger, OperatorType, TaskType, boardDisplayName, compoundRuleLabel, formatCountTotal, formatTimeframeLabel,
-  isBoardActiveForList, isBoardEnded, isCoreBoard, resolveCountKind, resolveFamilyCountKind,
+  isBoardActiveForList, isCoreBoard, resolveCountKind, resolveFamilyCountKind,
   type Board, type Task, type TaskActivityKind, type TaskPlacementRow,
 } from '@oybc/shared';
 
@@ -118,7 +118,8 @@ export function buildBoardRows(input: BoardRowInput): BoardRow[] {
     if (r.count != null) {
       const kind = resolveFamilyCountKind(member, (id) => input.taskById[id]);
       const goal = r.goal ?? 0;
-      value = `${formatCountTotal(r.count, kind)}/${formatCountTotal(goal, kind)}`;
+      // A goal-less counter shows its count alone (iOS twin: `rowValue`).
+      value = goal > 0 ? `${formatCountTotal(r.count, kind)}/${formatCountTotal(goal, kind)}` : formatCountTotal(r.count, kind);
       fraction = goal > 0 ? Math.min(1, r.count / goal) : 0;
     } else if (r.childrenTotal != null && r.childrenTotal > 0) {
       value = `${r.childrenDone ?? 0}/${r.childrenTotal}`;
@@ -130,7 +131,10 @@ export function buildBoardRows(input: BoardRowInput): BoardRow[] {
     const active = !draft && isBoardActiveForList(board, now);
     const window = formatTimeframeLabel(board.timeframe, board.startDate, now);
     const ends = endsText(board.endDate, nowMs);
-    const ended = !draft && isBoardEnded(board, nowMs);
+    // Missed = the window is OVER (its endDate is past) and the member did not
+    // complete it — a closed board included (iOS twin: `windowIsOver`).
+    const endMs = board.endDate ? new Date(board.endDate).getTime() : NaN;
+    const ended = !draft && !Number.isNaN(endMs) && endMs < nowMs;
     // Only a member with something to miss: a Normal, a Counting with a goal, a Compound with sub-tasks.
     const missable = member.type === TaskType.NORMAL
       || (member.type === TaskType.COUNTING && (r.goal ?? 0) > 0)

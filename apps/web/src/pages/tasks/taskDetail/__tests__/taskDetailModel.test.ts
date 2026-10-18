@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { BoardStatus, CenterSquareType, OperatorType, TaskType, Timeframe, type Board, type BoardTask, type CompoundChild, type Task, type TaskPlacementRow } from '@oybc/shared';
+import { BoardStatus, CenterSquareType, OperatorType, TaskType, Timeframe, type Board, type BoardTask, type CompoundChild, type Task, type TaskEvent, type TaskPlacementRow } from '@oybc/shared';
 import { db } from '../../../../db/internal';
 import { loadTaskDetailPlacements } from '../../../../db/operations/taskDetailPlacements';
 import { activityDot, activityWhen, buildBoardRows, heroKicker, heroTone, notDoneLabel, segmentOptions, subtasksHeading } from '../taskDetailModel';
@@ -108,6 +108,19 @@ describe('buildBoardRows', () => {
     expect(rows[0].badge).toBe('Core · weekly');
   });
 
+  it('a closed board whose window is over, not done, is missed — same rule as iOS', () => {
+    const closed = board({ endDate: iso(new Date(NOW.getTime() - 864e5)), sealedAt: iso(new Date(NOW.getTime() - 3600e3)), sealedCompletedCells: [] });
+    const [row] = buildBoardRows(input([kRow({ count: 3, goal: 20 })], [closed]));
+    expect(row).toMatchObject({ active: false, missed: true });
+    expect(row.caption).toMatch(/closed$/);
+  });
+
+  it('a goal-less counter shows its count alone', () => {
+    const noGoal = task({ type: TaskType.COUNTING, maxCount: undefined });
+    const [row] = buildBoardRows({ rows: [kRow({ count: 3, goal: null })], boards: [board({})], taskById: { t: noGoal }, now: NOW });
+    expect(row.value).toBe('3');
+  });
+
   it('a compound member reads n/N; a goal-less counting member is never missed', () => {
     const compound = task({ id: 'c', type: TaskType.COMPOUND, operator: OperatorType.AND });
     const [c] = buildBoardRows({ rows: [kRow({ memberTaskId: 'c', childrenDone: 1, childrenTotal: 3 })], boards: [board({})], taskById: { c: compound }, now: NOW });
@@ -154,6 +167,34 @@ describe('loadTaskDetailPlacements (PR 5 — placement resolution)', () => {
     expect(got.ownPlacements).toEqual([]);
     expect(got.boards.map((b) => b.id)).toEqual(['b1']);
     expect(got.rows).toEqual([expect.objectContaining({ boardId: 'b1', memberTaskId: 's', viaCompoundId: 'P', done: false })]);
+  });
+
+  const done = (taskId: string): TaskEvent => ({
+    id: `done-${taskId}`, taskId, userId: 'u', kind: 'completion', occurredAt: iso(new Date(NOW.getTime() - 3600e3)),
+    createdAt: iso(NOW), updatedAt: iso(NOW), version: 1, isDeleted: false,
+  }) as TaskEvent;
+
+  it('a compound loads its nested sub-tree: a nested sub-compound counts its own sub-tasks', async () => {
+    await db.tasks.bulkAdd([
+      task({ id: 'P', type: TaskType.COMPOUND, operator: OperatorType.AND }),
+      task({ id: 'n' }),
+      task({ id: 'Q', type: TaskType.COMPOUND, operator: OperatorType.AND }),
+      task({ id: 'm' }),
+    ]);
+    await db.compoundChildren.bulkAdd([link('P', 'n'), link('P', 'Q'), link('Q', 'm')]);
+    await db.boards.add(board({}));
+    await db.boardTasks.add(placement({ taskId: 'P' }));
+    await db.taskEvents.bulkAdd([done('n'), done('m')]);
+    const got = await loadTaskDetailPlacements('P');
+    expect(got.rows).toEqual([expect.objectContaining({ memberTaskId: 'P', done: true, childrenDone: 2, childrenTotal: 2 })]);
+  });
+
+  it('an achievement reads its watched board (a bingo there completes its cell)', async () => {
+    await db.tasks.add(task({ id: 'a', type: TaskType.ACHIEVEMENT, achievementTrigger: 'bingo' as never, referencedBoardId: 'W' }));
+    await db.boards.bulkAdd([board({}), board({ id: 'W', linesCompleted: 1 })]);
+    await db.boardTasks.add(placement({ taskId: 'a' }));
+    const got = await loadTaskDetailPlacements('a');
+    expect(got.rows).toEqual([expect.objectContaining({ boardId: 'b1', memberTaskId: 'a', done: true })]);
   });
 
   it('a counter root reaches its linked row\'s board; tombstoned placements and boards drop out', async () => {

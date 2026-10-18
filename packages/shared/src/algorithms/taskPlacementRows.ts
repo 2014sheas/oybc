@@ -62,12 +62,19 @@ export interface TaskPlacementRowsInput {
 /**
  * The reached placement a board's row reads: the task's own direct placement
  * first, then any other direct one (a linked row), then one reached through a
- * compound; ties break on member id, then placement id — independent of the
- * reach's iteration order, so the twins agree.
+ * compound it is a DIRECT child of (so that placement's child target applies),
+ * then a deeper one; ties break on member id, then placement id — independent
+ * of the reach's iteration order, so the twins agree.
  */
-function pickPerBoard(taskId: string, reach: ReadonlyArray<ReachedPlacement>): Map<string, ReachedPlacement> {
-  const rank = (p: ReachedPlacement): number =>
-    p.viaCompoundId == null ? (p.memberTaskId === taskId ? 0 : 1) : 2;
+function pickPerBoard(
+  taskId: string,
+  reach: ReadonlyArray<ReachedPlacement>,
+  children: Readonly<Record<string, CompoundChild[]>>,
+): Map<string, ReachedPlacement> {
+  const rank = (p: ReachedPlacement): number => {
+    if (p.viaCompoundId == null) return p.memberTaskId === taskId ? 0 : 1;
+    return isDirectChildOf(children, p.viaCompoundId, p.memberTaskId) ? 2 : 3;
+  };
   const before = (a: ReachedPlacement, b: ReachedPlacement): boolean =>
     rank(a) !== rank(b) ? rank(a) < rank(b)
       : a.memberTaskId !== b.memberTaskId ? a.memberTaskId < b.memberTaskId
@@ -80,6 +87,11 @@ function pickPerBoard(taskId: string, reach: ReadonlyArray<ReachedPlacement>): M
   return best;
 }
 
+/** Whether `childId` is a live direct child of `compoundId`. */
+function isDirectChildOf(children: Readonly<Record<string, CompoundChild[]>>, compoundId: string, childId: string): boolean {
+  return (children[compoundId] ?? []).some((l) => !l.isDeleted && l.childTaskId === childId);
+}
+
 /**
  * One row per board the task reaches, ordered by board id (callers sort for
  * display).
@@ -89,7 +101,7 @@ function pickPerBoard(taskId: string, reach: ReadonlyArray<ReachedPlacement>): M
  *   are missing, are skipped.
  */
 export function taskPlacementRows(input: TaskPlacementRowsInput): TaskPlacementRow[] {
-  const picked = pickPerBoard(input.taskId, input.reach);
+  const picked = pickPerBoard(input.taskId, input.reach, input.childrenByCompound);
   const order = [...picked.keys()].sort();
   const taskById = input.taskById as Record<string, Task>;
   const children = input.childrenByCompound as Record<string, CompoundChild[]>;
@@ -111,9 +123,7 @@ export function taskPlacementRows(input: TaskPlacementRowsInput): TaskPlacementR
     // Direct: the placement's own parameters. Via a compound: the parent
     // placement's child target applies only to its DIRECT children.
     const direct = reached.viaCompoundId == null;
-    const isDirectChild = !direct && (children[reached.viaCompoundId as string] ?? []).some(
-      (l) => !l.isDeleted && l.childTaskId === member.id,
-    );
+    const isDirectChild = !direct && isDirectChildOf(children, reached.viaCompoundId as string, member.id);
     const subject = direct ? withPlacementParams(member, bt) : withChildTarget(member, isDirectChild ? bt.childTargets : undefined);
 
     let done: boolean;
@@ -125,14 +135,16 @@ export function taskPlacementRows(input: TaskPlacementRowsInput): TaskPlacementR
     if (subject.type === TaskType.COMPOUND) {
       const ownTargets = direct ? bt.childTargets : undefined;
       done = evaluateCompound(subject, children, taskById, ctx, ownTargets);
-      const kids = (children[subject.id] ?? []).filter((l) => !l.isDeleted).flatMap((l) => {
+      // Every live link counts — a link to a missing / deleted task is a sub-task
+      // not done, exactly as `evaluateCompound` scores it.
+      const links = (children[subject.id] ?? []).filter((l) => !l.isDeleted);
+      childrenTotal = links.length;
+      childrenDone = links.filter((l) => {
         const t = taskById[l.childTaskId];
-        return t && !t.isDeleted ? [withChildTarget(t, ownTargets)] : [];
-      });
-      childrenTotal = kids.length;
-      childrenDone = kids.filter((k) =>
-        k.type === TaskType.COMPOUND ? evaluateCompound(k, children, taskById, ctx) : resolveSquareState(k, undefined, ctx).isCompleted,
-      ).length;
+        if (!t || t.isDeleted) return false;
+        const k = withChildTarget(t, ownTargets);
+        return k.type === TaskType.COMPOUND ? evaluateCompound(k, children, taskById, ctx) : resolveSquareState(k, undefined, ctx).isCompleted;
+      }).length;
     } else if (subject.type === TaskType.ACHIEVEMENT) {
       // An achievement's state is its cell in the board's own grid.
       const onBoard = resolvePlacements(input.boardTasksByBoard[boardId] ?? [], board.boardSize);

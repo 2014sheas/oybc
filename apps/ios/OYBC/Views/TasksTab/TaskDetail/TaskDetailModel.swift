@@ -104,7 +104,7 @@ struct TaskDetailModel: Equatable {
     /// "Completed 3× all-time · updated 2d ago".
     var footer: String = ""
 
-    /// The Boards tab's count chip: "Boards · 2" (all placements today; PR 5 widens it).
+    /// The Boards tab's count chip: "Boards · 2" (every board the task reaches).
     var boardCount: Int { activeBoards.count + pastBoards.count }
 }
 

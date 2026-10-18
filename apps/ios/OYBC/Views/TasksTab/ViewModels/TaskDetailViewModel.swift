@@ -9,8 +9,9 @@ import GRDB
 ///   the hero is read through an *anchor* `BoardPlayViewModel` — the soonest-ending
 ///   active board the task is placed on (`TaskDetailKernel.heroAnchorBoard`) — so the
 ///   count, goal, completion and compound children come from the same windowed
-///   resolvers board play uses. The anchor input is `snapshot.boards` (today's
-///   placements; PR 5 widens placement resolution — keep that seam).
+///   resolvers board play uses. The anchor input is the boards of the task's OWN
+///   placements; the Boards rows come from the placement reach
+///   (`fetchTaskDetailPlacements` → `TaskPlacementRows`).
 /// - **Writes:** the hero writes through the anchor placement via the anchor view
 ///   model's handlers (`completeTaskOrchestrated`, shared-counter increment /
 ///   decrement, compound child toggle / increment) and Undoes through the same

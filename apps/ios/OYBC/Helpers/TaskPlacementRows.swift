@@ -29,13 +29,22 @@ enum TaskPlacementRows {
         let childrenTotal: Int?
     }
 
+    /// Whether `childId` is a live direct child of `compoundId`.
+    static func isDirectChild(_ childId: String, of compoundId: String, childrenByCompound: [String: [CompoundChild]]) -> Bool {
+        (childrenByCompound[compoundId] ?? []).contains { !$0.isDeleted && $0.childTaskId == childId }
+    }
+
     /// The reached placement a board's row reads: the task's own direct placement
     /// first, then any other direct one (a linked row), then one reached through a
-    /// compound; ties break on member id, then placement id — independent of the
-    /// reach's iteration order.
-    static func pickPerBoard(taskId: String, reach: [ReachedPlacement]) -> [String: ReachedPlacement] {
+    /// compound it is a DIRECT child of (so that placement's child target
+    /// applies), then a deeper one; ties break on member id, then placement id —
+    /// independent of the reach's iteration order.
+    static func pickPerBoard(
+        taskId: String, reach: [ReachedPlacement], childrenByCompound: [String: [CompoundChild]]
+    ) -> [String: ReachedPlacement] {
         func rank(_ p: ReachedPlacement) -> Int {
-            p.viaCompoundId == nil ? (p.memberTaskId == taskId ? 0 : 1) : 2
+            guard let via = p.viaCompoundId else { return p.memberTaskId == taskId ? 0 : 1 }
+            return isDirectChild(p.memberTaskId, of: via, childrenByCompound: childrenByCompound) ? 2 : 3
         }
         func before(_ a: ReachedPlacement, _ b: ReachedPlacement) -> Bool {
             if rank(a) != rank(b) { return rank(a) < rank(b) }
@@ -72,7 +81,7 @@ enum TaskPlacementRows {
         boardTasksByBoard: [String: [BoardTask]],
         allBoards: [Board]
     ) -> [Row] {
-        let picked = pickPerBoard(taskId: taskId, reach: reach)
+        let picked = pickPerBoard(taskId: taskId, reach: reach, childrenByCompound: childrenByCompound)
         var out: [Row] = []
         for boardId in picked.keys.sorted() {
             guard let reached = picked[boardId], let board = boardsById[boardId], !board.isDeleted,
@@ -90,8 +99,8 @@ enum TaskPlacementRows {
             // Direct: the placement's own parameters. Via a compound: the parent
             // placement's child target applies only to its DIRECT children.
             let direct = reached.viaCompoundId == nil
-            let isDirectChild = !direct && (childrenByCompound[reached.viaCompoundId ?? ""] ?? [])
-                .contains { !$0.isDeleted && $0.childTaskId == member.id }
+            let isDirectChild = !direct
+                && Self.isDirectChild(member.id, of: reached.viaCompoundId ?? "", childrenByCompound: childrenByCompound)
             let subject = direct
                 ? PlacementParams.apply(member, placement: bt)
                 : PlacementParams.withChildTarget(member, childTargets: isDirectChild ? bt.childTargets : nil)
@@ -109,13 +118,14 @@ enum TaskPlacementRows {
                     compound: subject, childrenByCompound: childrenByCompound, taskById: taskById,
                     windowContext: ctx, childTargets: ownTargets
                 )
-                let kids: [Task] = (childrenByCompound[subject.id] ?? []).filter { !$0.isDeleted }.compactMap { link in
-                    guard let t = taskById[link.childTaskId], !t.isDeleted else { return nil }
-                    return PlacementParams.withChildTarget(t, childTargets: ownTargets)
-                }
-                childrenTotal = kids.count
-                childrenDone = kids.filter { k in
-                    k.type == .compound
+                // Every live link counts — a link to a missing / deleted task is a
+                // sub-task not done, exactly as `CompoundEvaluation.evaluate` scores it.
+                let links = (childrenByCompound[subject.id] ?? []).filter { !$0.isDeleted }
+                childrenTotal = links.count
+                childrenDone = links.filter { link in
+                    guard let t = taskById[link.childTaskId], !t.isDeleted else { return false }
+                    let k = PlacementParams.withChildTarget(t, childTargets: ownTargets)
+                    return k.type == .compound
                         ? CompoundEvaluation.evaluate(compound: k, childrenByCompound: childrenByCompound, taskById: taskById, windowContext: ctx)
                         : PlacementParams.resolveSquareState(k, placement: nil, ctx: ctx).isCompleted
                 }.count

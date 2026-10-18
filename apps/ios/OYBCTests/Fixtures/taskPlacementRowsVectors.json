@@ -692,6 +692,156 @@
           "childrenTotal": null
         }
       ]
+    },
+    {
+      "name": "a live link to a deleted sub-task counts as a sub-task not done",
+      "taskId": "P",
+      "tasks": [
+        {
+          "id": "P",
+          "type": "compound",
+          "operator": "AND"
+        },
+        {
+          "id": "n",
+          "type": "normal"
+        },
+        {
+          "id": "x",
+          "type": "normal",
+          "isDeleted": true
+        }
+      ],
+      "boards": [
+        {
+          "id": "B",
+          "startDate": "2026-10-12T00:00:00.000Z",
+          "endDate": "2026-10-18T23:59:59.999Z"
+        }
+      ],
+      "boardTasks": [
+        {
+          "id": "btP",
+          "boardId": "B",
+          "taskId": "P",
+          "row": 0,
+          "col": 0
+        }
+      ],
+      "links": [
+        {
+          "id": "l1",
+          "compoundTaskId": "P",
+          "childTaskId": "n"
+        },
+        {
+          "id": "l2",
+          "compoundTaskId": "P",
+          "childTaskId": "x"
+        }
+      ],
+      "events": [
+        {
+          "taskId": "n",
+          "kind": "completion",
+          "occurredAt": "2026-10-13T10:00:00.000Z"
+        }
+      ],
+      "expected": [
+        {
+          "boardId": "B",
+          "boardTaskId": "btP",
+          "memberTaskId": "P",
+          "viaCompoundId": null,
+          "done": false,
+          "count": null,
+          "goal": null,
+          "childrenDone": 1,
+          "childrenTotal": 2
+        }
+      ]
+    },
+    {
+      "name": "reached through two compounds on one board: the one it is a DIRECT child of wins (its child target applies), whatever the placement ids",
+      "taskId": "s",
+      "tasks": [
+        {
+          "id": "s",
+          "type": "counting",
+          "maxCount": 10
+        },
+        {
+          "id": "I",
+          "type": "compound",
+          "operator": "AND"
+        },
+        {
+          "id": "O",
+          "type": "compound",
+          "operator": "AND"
+        }
+      ],
+      "boards": [
+        {
+          "id": "B",
+          "startDate": "2026-10-12T00:00:00.000Z",
+          "endDate": "2026-10-18T23:59:59.999Z"
+        }
+      ],
+      "boardTasks": [
+        {
+          "id": "btA",
+          "boardId": "B",
+          "taskId": "O",
+          "row": 0,
+          "col": 0
+        },
+        {
+          "id": "btZ",
+          "boardId": "B",
+          "taskId": "I",
+          "row": 0,
+          "col": 1,
+          "childTargets": [
+            {
+              "childId": "s",
+              "target": 3
+            }
+          ]
+        }
+      ],
+      "links": [
+        {
+          "id": "l1",
+          "compoundTaskId": "I",
+          "childTaskId": "s"
+        },
+        {
+          "id": "l2",
+          "compoundTaskId": "O",
+          "childTaskId": "I"
+        }
+      ],
+      "events": [
+        {
+          "taskId": "s",
+          "delta": 3,
+          "occurredAt": "2026-10-14T10:00:00.000Z"
+        }
+      ],
+      "expected": [
+        {
+          "boardId": "B",
+          "boardTaskId": "btZ",
+          "memberTaskId": "s",
+          "viaCompoundId": "I",
+          "done": true,
+          "count": 3,
+          "goal": 3,
+          "childrenDone": null,
+          "childrenTotal": null
+        }
+      ]
     }
   ]
 }

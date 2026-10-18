@@ -80,7 +80,7 @@ final class TaskPlacementRowsVectorTests: XCTestCase {
         let data = try Data(contentsOf: url)
         let fixture = try JSONDecoder().decode(Fixture.self, from: data)
         let raws = try rawVectors(data)
-        XCTAssertEqual(fixture.vectors.count, 11)
+        XCTAssertEqual(fixture.vectors.count, 13)
 
         for (v, raw) in zip(fixture.vectors, raws) {
             let tasks = try XCTUnwrap(raw["tasks"] as? [[String: Any]]).map(task)

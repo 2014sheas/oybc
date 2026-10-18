@@ -61,7 +61,7 @@ function build(v: Record<string, any>) {
 
 describe('taskPlacementRows — shared vectors', () => {
   it('covers the fixture', () => {
-    expect(fixture.vectors.length).toBe(11);
+    expect(fixture.vectors.length).toBe(13);
   });
   for (const v of fixture.vectors) {
     it(v.name, () => {
