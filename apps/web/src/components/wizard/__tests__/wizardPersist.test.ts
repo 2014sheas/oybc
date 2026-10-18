@@ -1234,8 +1234,14 @@ describe('persist paths — manualTaskVary threading (§Member rules B3)', () =>
     );
     expect(placement).toBeDefined();
     const [lo, hi] = varyRange(GOAL, 1, GOAL);
-    expect(placement?.targetOverride).toBeGreaterThanOrEqual(lo);
-    expect(placement?.targetOverride).toBeLessThanOrEqual(hi);
+    // Slice 3b: the planner writes an override only when the rolled target
+    // differs from the task's own goal — a roll that lands ON the goal leaves
+    // the placement parameter-less (the plain task). Either outcome is inside
+    // the dice range.
+    const effective = placement?.targetOverride ?? GOAL;
+    expect(effective).toBeGreaterThanOrEqual(lo);
+    expect(effective).toBeLessThanOrEqual(hi);
+    if (placement?.targetOverride !== undefined) expect(placement.targetOverride).not.toBe(GOAL);
   });
 });
 

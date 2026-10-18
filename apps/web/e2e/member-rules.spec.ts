@@ -50,8 +50,6 @@ const FILLER_IDS = Array.from(
 const REPEATING_BOARD_ID = '70000000-0000-0000-0000-000000000040';
 
 const COUNTER_ROOT_ID = '70000000-0000-0000-0000-000000000050';
-const LIVE_MEMBER_ID = '70000000-0000-0000-0000-000000000051';
-const STALE_MEMBER_ID = '70000000-0000-0000-0000-000000000052';
 const COUNTERS_BOARD_ID = '70000000-0000-0000-0000-000000000053';
 
 // Windows are computed from "now" so the seeded board is genuinely live
@@ -645,10 +643,15 @@ test.describe('Wizard edit mode — no standing note', () => {
   });
 });
 
-test.describe('Counters hub — expired derived counters', () => {
-  test('hides an expired per-window derived counter until "Show expired tasks"', async ({
+test.describe('Counters hub — expired placements', () => {
+  test('hides a card on an ended board until "Show expired tasks"', async ({
     page,
   }) => {
+    // TASK_WINDOW_REWORK: a hub card IS a placement (slice 2b) and "expired"
+    // is the HOST board's window having ended — the per-window derived rows
+    // this test used to seed are repointed to their root by the slice-4 sweep
+    // on app open, so the shape under test is the root placed twice.
+    const ENDED_BOARD_ID = '70000000-0000-0000-0000-000000000054';
     await seedBoard(page, {
       id: COUNTERS_BOARD_ID,
       name: 'Counter Board',
@@ -659,8 +662,18 @@ test.describe('Counters hub — expired derived counters', () => {
       endDate: MONTH_OUT_ISO,
       centerSquareType: 'none',
     });
+    await seedBoard(page, {
+      id: ENDED_BOARD_ID,
+      name: 'Last Month Board',
+      boardSize: 3,
+      timeframe: 'daily',
+      status: 'active',
+      startDate: new Date(NOW.getTime() - 31 * 24 * 60 * 60 * 1000).toISOString(),
+      endDate: LAST_MONTH_ISO,
+      centerSquareType: 'none',
+    });
 
-    // The root counter — the shared tally every member moves.
+    // The root counter — the shared tally every placement moves.
     await seedTask(page, {
       id: COUNTER_ROOT_ID,
       title: 'Run miles',
@@ -670,60 +683,38 @@ test.describe('Counters hub — expired derived counters', () => {
       currentCount: 12,
       isCounter: true,
     });
-    // A live window-stamped derived member...
-    await seedTask(page, {
-      id: LIVE_MEMBER_ID,
-      title: 'Run 5 miles',
-      type: 'counting',
-      action: 'Run',
-      unit: 'miles',
-      maxCount: 5,
-      sharedCounterId: COUNTER_ROOT_ID,
-      createdInWizard: true,
-      timeframe: 'daily',
-      startDate: HOUR_AGO_ISO,
-      endDate: MONTH_OUT_ISO,
-    });
-    // ...and one whose window closed a month ago.
-    await seedTask(page, {
-      id: STALE_MEMBER_ID,
-      title: 'Run 9 miles',
-      type: 'counting',
-      action: 'Run',
-      unit: 'miles',
-      maxCount: 9,
-      sharedCounterId: COUNTER_ROOT_ID,
-      createdInWizard: true,
-      timeframe: 'daily',
-      startDate: LAST_MONTH_ISO,
-      endDate: LAST_MONTH_ISO,
-    });
+    // Placed on the live board at this window's goal...
     await seedBoardTask(page, {
       id: `${COUNTERS_BOARD_ID}-bt-0`,
       boardId: COUNTERS_BOARD_ID,
-      taskId: LIVE_MEMBER_ID,
+      taskId: COUNTER_ROOT_ID,
       row: 0,
       col: 0,
+      targetOverride: 5,
+      targetKind: 'discrete',
     });
+    // ...and on a board whose window closed a month ago.
     await seedBoardTask(page, {
-      id: `${COUNTERS_BOARD_ID}-bt-1`,
-      boardId: COUNTERS_BOARD_ID,
-      taskId: STALE_MEMBER_ID,
+      id: `${ENDED_BOARD_ID}-bt-0`,
+      boardId: ENDED_BOARD_ID,
+      taskId: COUNTER_ROOT_ID,
       row: 0,
-      col: 1,
+      col: 0,
+      targetOverride: 9,
+      targetKind: 'discrete',
     });
 
     await page.goto('/profile/counters');
     await expect(page.getByRole('heading', { name: 'Counters', level: 1 })).toBeVisible();
 
     // The ledger card's rows are board · window, so the observable is the
-    // footer count: only the LIVE member is counting now.
+    // footer count: only the LIVE board's card is counting now.
     await expect(page.getByText('1 task · 1 board')).toBeVisible();
 
-    // Toggle it on — same control and copy as the Tasks tab — and the
-    // expired member joins the card.
+    // Toggle it on — same control and copy as the Tasks tab — and the ended
+    // board's card joins the ledger.
     await page.getByLabel('Show expired tasks').check();
-    await expect(page.getByText('2 tasks · 1 board')).toBeVisible();
+    await expect(page.getByText('1 task · 2 boards')).toBeVisible();
     // The setting lives in the URL, so Detail opens with it rather than
     // silently resetting.
     await expect(page).toHaveURL(/showExpired=1/);

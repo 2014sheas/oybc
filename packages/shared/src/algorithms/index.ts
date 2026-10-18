@@ -624,3 +624,16 @@ export {
   resolveLinkedCounterDisplay,
 } from './placementParams';
 export type { PlacementParams } from './placementParams';
+
+// ===== TASK_WINDOW_REWORK slice 4 — the migration sweep =====
+export { planPlacementSweep, rekeyIds, rekeyRecordKeys } from './placementSweep';
+export type {
+  SweepWorkspace,
+  SweepRepoint,
+  SweepBoardOutcome,
+  SweepBoardOutcomeKind,
+  SweepRefusalReason,
+  PlacementSweepPlan,
+} from './placementSweep';
+export { anonymiseWorkspace } from './workspaceAnonymiser';
+export type { AnonymisableWorkspace, AnonymisedWorkspace } from './workspaceAnonymiser';

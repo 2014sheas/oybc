@@ -407,6 +407,8 @@ struct MainTabView: View {
             // suspension point, so a buffered target is routed immediately
             // rather than after the reconcile's awaits.
             routePendingDeepLink()
+            // Task/window rework slice 4a: the once-per-launch placement sweep.
+            if let userId = authService.currentUser?.id { await AppDatabase.shared.runPlacementSweepOnOpen(userId: userId) }
             await reconcileNotifications()
         }
         .onChange(of: scenePhase) { _, newPhase in

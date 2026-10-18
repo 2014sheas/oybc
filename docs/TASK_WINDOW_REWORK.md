@@ -420,8 +420,8 @@ is installed on the owner's device. Slices 3 and 6 are split so that the
 | **2b — Hub, arrivals, library, credits and supply on placements** (MERGED #630, 2026-10-17) | Counters hub re-modelled: a card IS a placement (`boardTaskId`, `viaCompoundId`; the root's placements + its linked tasks' placements + the placements of their parent compounds at the `childTargets` goal; an unplaced task has no card — owner ruling 2026-10-17); root rule (c) "placed with a `targetOverride`" in `sharedCounterRootIds(tasks, boardTasks)`; arrivals and the iOS library family row use the same rule; counts-toward credits and the Counter Detail "Counts toward" rows score each placement with its parameters; the Sources sheet supply scores "done" at the placement's goal. Vectors: hub-group vectors re-pinned + 3 placement cases, 2 credits cases. `pickPrimaryBoard` stays only for the counts-toward row's representative board. | `pickPrimaryBoard` in the hub; task-level hub cards; lifetime rows for unplaced members. |
 | **2c — Reachability + context-less readers** (PR open 2026-10-17 — see §Slice 2c) | `placementsReachedByRoot` replacing `withWindowStampedDerived` / `expandToWindowStampedDerived` / iOS `boardIdsReachedByTasks` in the pull cascade, sealing, late log and the heal; `resolveLinkedCounterDisplay` as a thin wrapper over the kernel; library lifetime from events for the context-less readers; the web library family row reads rule (c) (it stays lookup-only until then). | `withWindowStampedDerived`; the context-less `maxCount ?? 0` completion read. |
 | **3a — Writers stop minting (both clients)** (MERGED #638, 2026-10-18) | Delete the heal, its post-pull sweep and the choke points' resolve step; Board Edit writes overrides / `childTargets` / `titleOverride` instead of forking; copy-writers (Repeat, board-source pulls, core next-window) resolve derived rows at write time; `BoardSourceSupplyInfo` carries the effective goal. | The heal, `placementNeedsCopy`, fork-on-goal-edit. |
-| **3b — Planner emits placements** (in progress 2026-10-18) | `planDerivedTasks` output shape; wizard persist, spawn, quick-add write parameters. Gated on both clients carrying 3a. | Minting paths. |
-| **4 — Migration sweep** | The gated sweep above, at open and after every pull; seal re-derivation vectors; counts-toward boundary; `repointSealedPlacement`. | Every derived row that can be repointed safely; the rest stripped to plain rows. |
+| **3b — Planner emits placements** (MERGED #639, 2026-10-18) | `planDerivedTasks` output shape; wizard persist, spawn, quick-add write parameters. Gated on both clients carrying 3a. | Minting paths. |
+| **4 — Migration sweep** (4a PR open 2026-10-18; 4b next) | The gated sweep above, at open and after every pull; seal re-derivation vectors; counts-toward boundary; `repointSealedPlacement`. | Every derived row that can be repointed safely; the rest stripped to plain rows. |
 | **5 — Retire the machinery** | Delete propagation, freeze, baseline refresh, derived deletion cascades, three-mark predicates, task-window kernel inputs, the own-stamp fallback; clear stamped rows' window fields; re-base the expired filters; drop the sweep once both clients carry it and the fixture shows **no marked rows**; docs: replace the `CLAUDE.md` Windowed Completion paragraph with the model statement and move its history into an ADR log in `WINDOWED_COMPLETION.md`; `BOARD_SOURCES.md` §Member rules rewritten in placement terms. | The four derived-row invariants. |
 | **6a — Forks read shadows (both clients)** | Kernel: shadowing-clone rule, undo writes shadow tombstones, affected-boards walk includes forks. | — |
 | **6b — Forks stop cloning** | `planBoardScopedFork` stops cloning events. Gated on both clients carrying 6a. | Duplicate occurrences in the log. |
@@ -555,6 +555,29 @@ collapse onto one square — each child rolls its own target (one
 is ignored (board sources only). The old-vs-new equivalence check (every
 former draft's `maxCount` == the placement's effective goal, titles through
 `placementTitle`) held for every other vector.
+
+**Slice 4 Gate 1 rulings (2026-10-18):** (a) two PRs — 4a repoints derived
+COUNTERS (plus rule re-keys, orphans, the sealed write path, the triggers and
+the counts-toward boundary), 4b repoints derived COMPOUNDS by forward uuidv5
+matching with `childTargets`; both land before slice 5. (b) The anonymised
+owner fixture comes from a dev-only "Export anonymised workspace" action on
+the web Developer settings (ids hashed, titles replaced) that the owner runs
+after a clean pull and commits under `packages/shared/tests/fixtures/`; a
+Jest test runs the sweep planner over it and asserts no sealed board's
+re-derivation changes. (c) The sweep runs on EVERY app open and after every
+clean pull (idempotent, exits fast with no marked rows); GRDB v47 / Dexie v21
+are only the first open.
+
+**Slice 4a implementation notes (2026-10-18, as built):** orphans are the
+marked rows that were unplaced and unlinked BEFORE a run — a row a run
+repoints away from retires on the NEXT run (after the pull has converged
+every device's placements), so two devices never race a tombstone against a
+placement; a row repointed on one board and refused on another is not
+stripped in that run (the next run settles it once nothing repoints it);
+the gate compares cell completion, `completedTasks` and sorted bingo lines
+(stored `status` is not part of it); the owner fixture keeps ids verbatim
+(UUIDs carry no personal data and 4b's forward uuidv5 match needs the real
+pairs) and anonymises text only.
 
 ## Acceptance
 

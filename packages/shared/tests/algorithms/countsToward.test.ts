@@ -383,6 +383,13 @@ describe('isOccurrenceWanted / keptCreditIdsFor (D11)', () => {
     expect(isOccurrenceWanted({ countsTowardSince: undefined }, { occurredAt: T0 })).toBe(true);
     expect(isOccurrenceWanted({ countsTowardSince: '2026-10-10T00:00:00.000Z' }, { occurredAt: '2026-10-09T23:59:59.999Z' })).toBe(false);
     expect(isOccurrenceWanted({ countsTowardSince: '2026-10-10T00:00:00.000Z' }, { occurredAt: '2026-10-10T00:00:00.000Z' })).toBe(true);
+    // TASK_WINDOW_REWORK slice 4 ruling: a repointed placement on a board whose
+    // window ENDED before the contributor's `since` never credits — every
+    // occurrence that window can hold (a late log is stamped at its endDate)
+    // predates `since`, so it is unwanted. Otherwise it credits as any placement.
+    const endedBoardEnd = '2026-10-04T23:59:59.999';
+    expect(isOccurrenceWanted({ countsTowardSince: '2026-10-10T00:00:00.000Z' }, { occurredAt: new Date(endedBoardEnd).toISOString() })).toBe(false);
+    expect(isOccurrenceWanted({ countsTowardSince: '2026-10-01T00:00:00.000Z' }, { occurredAt: new Date(endedBoardEnd).toISOString() })).toBe(true);
     expect(isOccurrenceWanted({ countsTowardSince: 'garbage' }, { occurredAt: T0 })).toBe(true);
     expect(isOccurrenceWanted({ countsTowardSince: '2026-10-10T00:00:00.000Z' }, { occurredAt: 'garbage' })).toBe(false);
   });

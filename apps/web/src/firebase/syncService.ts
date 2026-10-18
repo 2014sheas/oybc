@@ -47,6 +47,7 @@ import {
   type PullWatermark,
 } from '@oybc/shared';
 import { applyTaskEventsBatch, healMissingCompletionEvents } from '../db/operations/taskEventPull';
+import { runPlacementSweep } from '../db/operations/placementSweep';
 import { applyRemoteSubdoc, rowsGenuinelyDiffer } from '../db/operations/pullApply';
 import { advancePullWatermark, fetchPullWatermarks } from '../db/operations/syncWatermarks';
 
@@ -533,6 +534,23 @@ export async function pullSync(
       // Never let the heal fail the pull — it retries next cycle.
       result.details.push(
         `Heal-on-pull skipped: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+
+    // Migration sweep (TASK_WINDOW_REWORK slice 4): repoint legacy derived
+    // counters at their roots, right after the heal. Idempotent, exits with no
+    // write when no marked row exists; never fails the pull.
+    try {
+      const swept = await runPlacementSweep(userId);
+      const wrote = swept.repoints + swept.strips + swept.orphans;
+      if (wrote > 0) {
+        result.details.push(
+          `Placement sweep: ${swept.repoints} repointed, ${swept.strips} stripped, ${swept.orphans} retired`,
+        );
+      }
+    } catch (err) {
+      result.details.push(
+        `Placement sweep skipped: ${err instanceof Error ? err.message : String(err)}`,
       );
     }
 
