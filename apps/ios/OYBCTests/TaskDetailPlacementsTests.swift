@@ -42,6 +42,35 @@ final class TaskDetailPlacementsTests: XCTestCase {
         XCTAssertEqual(got.rows.first?.done, false)
     }
 
+    /// Binding decision 3 (3): a direct Normal / Counting sub-task anchors on its
+    /// compound's square; a sub-compound, or a deeper descendant, does not.
+    func test_aDirectSubTaskAnchorsOnItsCompoundsSquare_aSubCompoundOrDeeperOneDoesNot() throws {
+        let db = try AppDatabase.makeTestInstance()
+        try K.seedUser(db)
+        for id in ["P", "Q"] {
+            var c = K.task(id, maxCount: nil)
+            c.type = .compound
+            c.operatorType = .and
+            try db.saveTask(c)
+        }
+        try db.saveTask(K.task("n", maxCount: 3))
+        try db.saveTask(K.task("m", maxCount: 3))
+        try db.write { db in
+            try self.link("P", "n").save(db)
+            try self.link("P", "Q").save(db)
+            try self.link("Q", "m").save(db)
+        }
+        try db.saveBoard(K.board(id: "B", startDate: start, endDate: end, timeframe: .weekly))
+        try db.saveBoardTask(K.placement(id: "btP", boardId: "B", taskId: "P"))
+
+        let n = try db.fetchTaskDetailPlacements(taskId: "n").anchorCandidates
+        XCTAssertEqual(n.map(\.placement.id), ["btP"])
+        XCTAssertEqual(n.map(\.childTaskId), ["n"])
+        XCTAssertEqual(n.map(\.rank), [2])
+        XCTAssertTrue(try db.fetchTaskDetailPlacements(taskId: "Q").anchorCandidates.isEmpty)
+        XCTAssertTrue(try db.fetchTaskDetailPlacements(taskId: "m").anchorCandidates.isEmpty)
+    }
+
     func test_aCounterRoot_reachesItsLinkedRowsBoard_andDeletedBoardsDropOut() throws {
         let db = try AppDatabase.makeTestInstance()
         try K.seedUser(db)
@@ -60,6 +89,9 @@ final class TaskDetailPlacementsTests: XCTestCase {
         let got = try db.fetchTaskDetailPlacements(taskId: "r")
 
         XCTAssertTrue(got.ownPlacements.isEmpty)
+        // The root's hero may anchor on its linked row's square (a log there writes the root).
+        XCTAssertEqual(got.anchorCandidates.map(\.placement.id), ["bt1", "bt2"])
+        XCTAssertEqual(got.anchorCandidates.map(\.rank), [1, 1])
         XCTAssertEqual(got.rows.map(\.boardId), ["B"])
         XCTAssertEqual(got.rows.first?.memberTaskId, "l")
         XCTAssertEqual(got.rows.first?.done, true)

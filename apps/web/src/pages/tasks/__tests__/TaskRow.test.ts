@@ -7,7 +7,7 @@ import { TaskRow } from '../TaskRow';
 /**
  * Owner ruling 2026-09-22 — the Tasks-tab library shows ONE generic row per
  * shared-counter family. This pins what that row actually RENDERS: the
- * pair-derived label, the goal-free subtitle, the counter-opening accessible
+ * pair-derived label, the goal-free subtitle, the Task-detail accessible
  * name, and the absence of any count. A standalone counter is unchanged.
  *
  * iOS twin: `RisoTasksTabSnapshotTests.testLibraryCounterFamilyRow*`.
@@ -66,16 +66,14 @@ describe('TaskRow — shared-counter family root', () => {
     // the `{current} / {max}` status slot.
     expect(html).not.toContain('12 / 35');
     expect(html).not.toContain('35');
-    // The accessible name says it opens the COUNTER, not "details" — the tap
-    // goes to the Counters hub, so "details" would mislead a screen reader.
-    expect(html).toContain('aria-label="Open the Read pages counter"');
-    expect(html).not.toContain('details"');
+    // The tap opens Task detail like every other row (owner, 2026-10-18).
+    expect(html).toContain('aria-label="Open Read pages details"');
   });
 
   it('falls back to the stored title when the (action, unit) pair yields nothing', () => {
     const html = render(counter({ action: undefined, unit: undefined, title: 'Legacy row' }), true);
     expect(html).toContain('Legacy row');
-    expect(html).toContain('aria-label="Open the Legacy row counter"');
+    expect(html).toContain('aria-label="Open Legacy row details"');
   });
 
   it('leaves a standalone counter alone — stored title, generated subtitle, no progress', () => {

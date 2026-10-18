@@ -51,6 +51,9 @@ final class TaskDetailViewModel: ObservableObject {
     // MARK: - Anchor + watched board
 
     private(set) var anchor: BoardPlayViewModel?
+    /// The square the hero drives on the anchor board, and the compound child it
+    /// drives there (nil when the square IS the task).
+    private var anchorChoice: AppDatabase.HeroAnchorCandidate?
     private var anchorSub: AnyCancellable?
     private var processingSub: AnyCancellable?
     private var watched: BoardPlayViewModel?
@@ -70,6 +73,8 @@ final class TaskDetailViewModel: ObservableObject {
         let task: Task
         /// The task's OWN live placements (hero anchor, "Placed on" Activity rows).
         let placements: [BoardTask]
+        /// The squares the hero may anchor on, best rank first (binding decision 3).
+        let anchorCandidates: [AppDatabase.HeroAnchorCandidate]
         /// Every live board the task reaches (own, a linked row's, a parent compound's) — PR 5.
         let boards: [Board]
         /// One kernel row per reached board (`TaskPlacementRows`).
@@ -130,7 +135,7 @@ final class TaskDetailViewModel: ObservableObject {
         for id in [task.id] + children.map(\.id) where (try? db.isUncompleteBlockedBySeal(taskId: id)) == true { blocked.insert(id) }
         let watchedBoard = try task.referencedBoardId.flatMap { try db.fetchBoards(ids: [$0]).first { !$0.isDeleted } }
         return Snapshot(
-            task: task, placements: placements, boards: boards, rows: reached.rows, taskById: reached.taskById, parents: parents, children: children, templates: templates,
+            task: task, placements: placements, anchorCandidates: reached.anchorCandidates, boards: boards, rows: reached.rows, taskById: reached.taskById, parents: parents, children: children, templates: templates,
             events: events, counterRoot: root, userTasks: userTasks, pickerBoards: picker.0, pickerTemplates: picker.1,
             sealBlocked: blocked, watchedBoard: watchedBoard, childLinks: links
         )
@@ -173,11 +178,26 @@ final class TaskDetailViewModel: ObservableObject {
         pickerTemplates = snap.pickerTemplates
         counterRoot = snap.counterRoot
         userTasks = snap.userTasks
-        // The hero anchors on the task's OWN square: its sheet is that square's.
-        let ownBoardIds = Set(snap.placements.map(\.boardId))
-        let anchorBoard = TaskDetailKernel.heroAnchorBoard(snap.boards.filter { ownBoardIds.contains($0.id) }, now: clock())
-        setAnchor(anchorBoard?.id)
+        // The hero anchors on a square that IS the task — its own, a counter root's
+        // linked row's, or a direct-parent compound's (binding decision 3, amended
+        // 2026-10-18): the best rank with a square in play, its soonest-ending board.
+        anchorChoice = Self.chooseAnchor(snap.anchorCandidates, boards: snap.boards, now: clock())
+        setAnchor(anchorChoice?.placement.boardId)
         if snap.task.type == .achievement { setWatched(snap.task.referencedBoardId) } else { watched = nil; watchedSub = nil }
+    }
+
+    /// The best-ranked candidate whose board is in play; within a rank, the soonest-ending board.
+    nonisolated static func chooseAnchor(
+        _ candidates: [AppDatabase.HeroAnchorCandidate], boards: [Board], now: Date
+    ) -> AppDatabase.HeroAnchorCandidate? {
+        for rank in 0...2 {
+            let ofRank = candidates.filter { $0.rank == rank }
+            let ids = Set(ofRank.map(\.placement.boardId))
+            if let board = TaskDetailKernel.heroAnchorBoard(boards.filter { ids.contains($0.id) }, now: now) {
+                return ofRank.first { $0.placement.boardId == board.id }
+            }
+        }
+        return nil
     }
 
     private func setAnchor(_ boardId: String?) {
@@ -255,9 +275,14 @@ final class TaskDetailViewModel: ObservableObject {
 
     // MARK: - Model
 
+    /// The anchor board's live copy of the chosen square.
     private var anchorPlacement: BoardTask? {
-        anchor?.boardTasks.first { $0.taskId == taskId && !$0.isDeleted }
+        guard let a = anchor, let choice = anchorChoice, choice.placement.boardId == a.boardId else { return nil }
+        return a.boardTasks.first { $0.id == choice.placement.id && !$0.isDeleted }
     }
+
+    /// The compound child the hero drives, when the anchor square is its parent's.
+    private var anchorChildId: String? { anchorChoice?.childTaskId }
 
     private func rebuild() {
         guard let snap = snapshot else { return }
@@ -281,6 +306,12 @@ final class TaskDetailViewModel: ObservableObject {
         if let a = anchor, let bt = anchorPlacement, let placed = a.placedTask(bt), a.board != nil {
             anchorName = a.board?.displayName
             anchorTimeframe = a.board?.timeframe
+            if let childId = anchorChildId {
+                // The hero is ONE child of the anchor compound: its own control.
+                if let child = a.squareCompound(bt, placed, sealBlocked: snap.sealBlocked).children.first(where: { $0.id == childId }) {
+                    if let count = child.counting { hero = .counting(count) } else { hero = .normal(isDone: child.isDone, sealBlocked: child.sealBlocked) }
+                }
+            } else {
             switch task.type {
             case .counting:
                 hero = .counting(a.squareCountState(placed))
@@ -300,6 +331,15 @@ final class TaskDetailViewModel: ObservableObject {
                 let grid = (watched?.board).map { Self.completionGrid(board: $0, boardTasks: watched?.boardTasks ?? [], cellStates: watched?.kernelCellStates ?? [:]) } ?? []
                 hero = .achievement(.init(card: card, closestLine: line, lineCells: line.map { l in l.cells.map { grid.indices.contains($0) ? grid[$0] : false } } ?? []))
             }
+            }
+        } else if anchorChoice == nil, task.type == .counting {
+            // No square in play: the board-less control over the all-time count.
+            let source = boardlessSource(snap)
+            let current = source?.currentCount ?? 0
+            hero = .boardlessCounting(.init(
+                current: current, goal: 0, unit: source?.unit ?? task.unit ?? "", kind: family,
+                chips: CounterLogAmount.tapChips(kind: family, goal: nil)
+            ))
         }
 
         // Counter row.
@@ -457,6 +497,11 @@ final class TaskDetailViewModel: ObservableObject {
 
     /// Toggles a Normal task on the anchor board; the strip names the new state.
     func toggleNormal() {
+        if let childId = anchorChildId {
+            toggleChild(childId)
+            strip = strip.map(rescopedToPage)
+            return
+        }
         guard let a = anchor, let bt = anchorPlacement, let placed = a.placedTask(bt), !a.isProcessing else { return }
         let wasDone = a.squareNormalDone(bt, placed)
         strip = nil
@@ -470,10 +515,85 @@ final class TaskDetailViewModel: ObservableObject {
 
     /// A chip / entry log (or removal) on the task itself, or on one of its counting children.
     func log(taskId logged: String? = nil, amount: CountValue, persistAsDefault: Bool = false, removing: Bool = false) {
-        guard let a = anchor, let bt = anchorPlacement else { return }
+        guard let a = anchor, let bt = anchorPlacement else {
+            if anchorChoice == nil { boardlessLog(amount: amount, persistAsDefault: persistAsDefault, removing: removing) }
+            return
+        }
+        // On a compound child's anchor the hero's own log is the child's.
+        let requested = logged ?? taskId
+        let target = requested == taskId ? (anchorChildId ?? taskId) : requested
         strip = nil
-        strip = a.performSquareLog(placement: bt, taskId: logged ?? taskId, amount: amount, persistAsDefault: persistAsDefault, removing: removing)
+        let written = a.performSquareLog(placement: bt, taskId: target, amount: amount, persistAsDefault: persistAsDefault, removing: removing)
+        // A remapped hero write (a root anchored on a linked child) keeps the hero's strip scope.
+        strip = requested == taskId ? written.map(rescopedToPage) : written
     }
+
+    /// The strip re-scoped to this page's task, so the hero shows it whatever square it wrote.
+    private func rescopedToPage(_ s: SquareLogStrip) -> SquareLogStrip {
+        SquareLogStrip(boardTaskId: s.boardTaskId, scopeTaskId: taskId, text: s.text, undo: s.undo)
+    }
+
+    // MARK: - Board-less writes (no square in play)
+
+    /// The task a board-less log writes: a linked row's root, else the task itself
+    /// (a unit task's counter credit follows from its own cascade).
+    private func boardlessSource(_ snap: Snapshot) -> Task? {
+        snap.task.sharedCounterId != nil ? snap.counterRoot : snap.task
+    }
+
+    /// Logs (or removes) "now" through the counter writes the Counters hub uses.
+    private func boardlessLog(amount: CountValue, persistAsDefault: Bool, removing: Bool) {
+        guard let snap = snapshot, let source = boardlessSource(snap), !isBusy, amount > 0 else { return }
+        let db = database, id = source.id
+        let kind = resolveFamilyCountKind(source, lookup: { $0 == source.id ? source : nil })
+        let unit = source.unit ?? ""
+        strip = nil
+        isBusy = true
+        _Concurrency.Task {
+            defer { isBusy = false }
+            do {
+                let applied: CountValue = try await _Concurrency.Task.detached(priority: .userInitiated) {
+                    if removing { return -(try db.decrementSharedCounter(sourceTaskId: id, by: amount).effectiveDelta.magnitude) }
+                    _ = try db.incrementSharedCounter(sourceTaskId: id, by: amount)
+                    if persistAsDefault { try db.setCounterDefaultLogAmount(sourceTaskId: id, amount: amount) }
+                    return amount
+                }.value
+                await refreshAfterWrite()
+                guard applied != 0 else { return }
+                strip = SquareLogStrip(
+                    boardTaskId: "", scopeTaskId: taskId,
+                    text: SquareSheetFormat.logText(amount: applied.magnitude, kind: kind, unit: unit, board: Self.allTime, removed: applied < 0),
+                    undo: applied > 0 ? .counterLog(sourceTaskId: id) : .childDelta(taskId: id, delta: applied)
+                )
+            } catch {
+                saveError = "Couldn't log: \(error.localizedDescription)"
+            }
+        }
+    }
+
+    /// Reverses a board-less write: the counter's last log entry, or re-adds a removal.
+    private func boardlessUndo(_ undo: SquareLogUndo) {
+        let db = database
+        isBusy = true
+        _Concurrency.Task {
+            defer { isBusy = false }
+            do {
+                try await _Concurrency.Task.detached(priority: .userInitiated) {
+                    switch undo {
+                    case let .counterLog(id): _ = try db.undoLastCounterLog(sourceTaskId: id)
+                    case let .childDelta(id, delta) where delta < 0: _ = try db.incrementSharedCounter(sourceTaskId: id, by: -delta)
+                    default: break
+                    }
+                }.value
+                await refreshAfterWrite()
+            } catch {
+                saveError = "Couldn't undo: \(error.localizedDescription)"
+            }
+        }
+    }
+
+    /// The board-less hero's label (the count's scope).
+    nonisolated static let allTime = "All-time"
 
     /// A compound child's checklist toggle.
     func toggleChild(_ childId: String) {
@@ -484,6 +604,7 @@ final class TaskDetailViewModel: ObservableObject {
 
     /// Reverses exactly the write the strip describes.
     func undo() {
+        if anchor == nil, let s = strip, !isBusy { strip = nil; boardlessUndo(s.undo); return }
         guard let a = anchor, let s = strip, !a.isProcessing else { return }
         strip = nil
         a.undoSquareLog(s.undo)

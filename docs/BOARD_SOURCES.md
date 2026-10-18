@@ -1694,7 +1694,10 @@ visible in the Tasks-tab library beside its root. Two rules:
    Counters hub detail** for that root (web `/profile/counters/:rootId`, iOS
    `CounterDetailView(counterId:)` via a `TasksTabRoute` pushed on the
    existing `NavigationPath`) — the page that already lists the family's
-   windows. A standalone counter (no members, not `isCounter`) is unchanged:
+   windows. *(Amended 2026-10-18 by the owner: the row now opens Task Detail
+   like every other row — Task Detail's Boards tab lists the family's
+   placements and its Shared counter row opens Counter Detail; see
+   `docs/TASK_DETAIL_REDESIGN.md` §Library rows.)* A standalone counter (no members, not `isCounter`) is unchanged:
    "Read 1 book" keeps its count and opens `TaskDetail`. The wizard's
    Library sheet renders from the same browse set, so members drop out of it
    too and the family root appears there under its generic label; adding it

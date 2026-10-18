@@ -1,10 +1,11 @@
-import { test, expect, seedBoard, seedBoardTask, seedCompoundChild, seedTask } from './_fixtures/bypass';
+import { test, expect, readTask, seedBoard, seedBoardTask, seedCompoundChild, seedTask } from './_fixtures/bypass';
 
 /**
  * Task Detail shell (docs/TASK_DETAIL_REDESIGN.md §A/B): one page, two
  * presentations. The hero's live control writes through the anchor placement
  * (the soonest-ending in-play board); segments All · Boards · Links · Activity;
- * the sheet's Done pill and return pill; no anchor → no control.
+ * the sheet's Done pill and return pill; no square in play → a counting task
+ * logs all-time, any other type has no control.
  */
 
 const now = new Date();
@@ -100,15 +101,46 @@ test.describe('Task Detail shell', () => {
     await expect(page).toHaveURL(new RegExp(`/boards/${BOARD}|/boards/core/`));
   });
 
-  test('No anchor: no control — kicker, title, description and Edit; Boards says Not on a board', async ({ page }) => {
+  test('No square in play: a counting task logs all-time with Undo; any other type has no control', async ({ page }) => {
     await page.goto(`/tasks/${LONE}?__oybc_test_bypass=1`);
     await expect(page.getByRole('heading', { level: 1, name: 'Unplaced idea' })).toBeVisible();
     await expect(page.getByText('Nobody has placed me')).toBeVisible();
     await expect(page.getByRole('button', { name: 'Edit', exact: true })).toBeVisible();
-    await expect(page.getByText('Tap to log')).toHaveCount(0);
-    await expect(page.getByRole('button', { name: /^Log \+/ })).toHaveCount(0);
+    await expect(page.getByText('Tap to log')).toBeVisible();
+    await page.getByRole('button', { name: 'Log +1 reps' }).click();
+    await expect(page.getByRole('status').getByText('Logged +1 reps · All-time')).toBeVisible();
+    await expect.poll(async () => (await readTask(page, LONE))?.currentCount).toBe(1);
+    await page.getByRole('button', { name: 'Undo', exact: true }).click();
+    await expect.poll(async () => (await readTask(page, LONE))?.currentCount).toBe(0);
     await seg(page, /^Boards/).click();
     await expect(page.getByText('Not on a board')).toBeVisible();
+
+    await seedTask(page, { id: id(31), title: 'Someday chore', type: 'normal' });
+    await page.goto(`/tasks/${id(31)}?__oybc_test_bypass=1`);
+    await expect(page.getByRole('button', { name: 'Edit', exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Mark done' })).toHaveCount(0);
+  });
+
+  test('Library counter row opens Task Detail; the root anchors on its linked row\'s square and a log writes the root', async ({ page }) => {
+    const ROOT = id(32);
+    await seedTask(page, { id: ROOT, title: 'Read pages', type: 'counting', action: 'Read', unit: 'pages', isCounter: true });
+    await seedTask(page, { id: id(33), title: 'Read 30 pages', type: 'counting', action: 'Read', unit: 'pages', maxCount: 30, sharedCounterId: ROOT, baseline: 0 });
+    await seedBoardTask(page, { id: bt(6), boardId: BOARD, taskId: id(33), row: 1, col: 1 });
+    await page.goto('/tasks?__oybc_test_bypass=1');
+    await page.getByRole('button', { name: 'Open Read pages details' }).click();
+    await expect(page).toHaveURL(new RegExp(`/tasks/${ROOT}`));
+    await expect(page.getByText('/ 30 pages · Week 42')).toBeVisible();
+    await page.getByRole('button', { name: 'Log +10 pages' }).click();
+    await expect(page.getByRole('status').getByText('Logged +10 pages · Week 42')).toBeVisible();
+    await expect.poll(async () => (await readTask(page, ROOT))?.currentCount).toBe(10);
+  });
+
+  test('A sub-task placed only through its compound drives that square', async ({ page }) => {
+    await page.goto(`/tasks/${WALK}?__oybc_test_bypass=1`);
+    await page.getByRole('button', { name: 'Mark done' }).click();
+    await expect(page.getByRole('button', { name: 'Done', exact: true })).toBeVisible();
+    await page.goto(`/tasks/${COMPOUND}?__oybc_test_bypass=1`);
+    await expect(page.getByRole('checkbox', { name: 'Walk the dog' })).toBeChecked();
   });
 
   test('⋯ menu: Delete task… opens the existing confirm; counting offers counter settings only when linked', async ({ page }) => {

@@ -112,19 +112,57 @@ final class TaskDetailViewModelTests: XCTestCase {
         XCTAssertEqual(model.activeBoards[0].value, "0")
     }
 
-    func test_noAnchor_noHeroControl_andNoWriteHappens() async throws {
+    /// Binding decision 3 (4): a counting task with no square in play gets the
+    /// board-less control — all-time count, a log "now" with Undo.
+    func test_noSquareInPlay_countingLogsAllTime_andUndoReversesIt() async throws {
         let db = try AppDatabase.makeTestInstance()
         try seedUser(db)
         try db.saveBoard(board("b0", start: "2026-10-05T00:00:00.000", end: "2026-10-11T23:59:59.999"))
         try db.saveTask(task("c1", type: .counting, maxCount: 20))
         try place(db, bt: "bt0", board: "b0", task: "c1")
-        let vm = await loaded(db, taskId: "c1", expectHero: false)
+        let vm = await loaded(db, taskId: "c1")
+        func allTime() -> CountValue? { if case let .boardlessCounting(c)? = vm.model?.hero { return c.current }; return nil }
 
-        XCTAssertEqual(vm.model?.hero, TaskDetailModel.Hero.none)
+        XCTAssertEqual(allTime(), 0)
         XCTAssertNil(vm.model?.anchorName)
         vm.log(amount: 5)
-        XCTAssertNil(vm.strip)
-        XCTAssertEqual(try db.read { try TaskEvent.fetchCount($0) }, 0)
+        await eventually { allTime() == 5 && !vm.isBusy && vm.strip != nil }
+        XCTAssertEqual(vm.strip?.text, "Logged +5 pages · All-time")
+        XCTAssertEqual(vm.strip?.undo, .counterLog(sourceTaskId: "c1"))
+
+        vm.undo()
+        await eventually { allTime() == 0 && !vm.isBusy }
+    }
+
+    func test_noSquareInPlay_aNormalTaskHasNoControl() async throws {
+        let db = try AppDatabase.makeTestInstance()
+        try seedUser(db)
+        try db.saveTask(task("n0", type: .normal))
+        let vm = await loaded(db, taskId: "n0", expectHero: false)
+        XCTAssertEqual(vm.model?.hero, TaskDetailModel.Hero.none)
+    }
+
+    /// Binding decision 3 (3): a sub-task placed only through its compound drives
+    /// that square — its own Normal toggle, written as the compound child toggle.
+    func test_subTaskPlacedThroughItsCompound_togglesThroughThatSquare() async throws {
+        let db = try AppDatabase.makeTestInstance()
+        try seedUser(db)
+        try db.saveBoard(board("b1"))
+        try db.saveTask(task("s", type: .normal))
+        try db.saveTask(task("P", type: .compound))
+        let t = AppDatabase.currentTimestamp()
+        try db.write { try CompoundChild(
+            id: "l1", compoundTaskId: "P", childTaskId: "s", childIndex: 0,
+            createdAt: t, updatedAt: t, lastSyncedAt: nil, version: 1, isDeleted: false, deletedAt: nil
+        ).save($0) }
+        try place(db, bt: "btP", board: "b1", task: "P")
+        let vm = await loaded(db, taskId: "s")
+        func isDone() -> Bool? { if case let .normal(done, _)? = vm.model?.hero { return done }; return nil }
+
+        XCTAssertEqual(isDone(), false)
+        XCTAssertEqual(vm.model?.anchorName, "Board b1")
+        vm.toggleNormal()
+        await eventually { isDone() == true && !vm.isBusy }
     }
 
     // MARK: Writes through the anchor placement
@@ -143,6 +181,59 @@ final class TaskDetailViewModelTests: XCTestCase {
         vm.undo()
         XCTAssertNil(vm.strip)
         await eventually { self.count(vm) == 0 && !vm.isBusy }
+    }
+
+    /// Owner, 2026-10-18 — the library's counter row opens Task detail, so a
+    /// counter ROOT placed only through a linked row must still get the counting
+    /// hero (chips): it anchors on the linked square, and a log writes the root.
+    func test_counterRootAnchorsOnItsLinkedRowsSquare_andALogWritesTheRoot() async throws {
+        let db = try AppDatabase.makeTestInstance()
+        try seedUser(db)
+        try db.saveBoard(board("b1"))
+        var root = task("r", type: .counting)
+        root.isCounter = true
+        try db.saveTask(root)
+        var linked = task("l", type: .counting, maxCount: 20)
+        linked.sharedCounterId = "r"
+        linked.baseline = 0
+        try db.saveTask(linked)
+        try place(db, bt: "btL", board: "b1", task: "l")
+
+        let vm = await loaded(db, taskId: "r")
+        XCTAssertEqual(count(vm), 0, "the root gets the counting hero")
+
+        vm.log(amount: 3)
+        await eventually { self.count(vm) == 3 && !vm.isBusy }
+        let rootEvents = try db.read { try TaskEvent.filter(Column("taskId") == "r" && Column("isDeleted") == false).fetchAll($0) }
+        XCTAssertEqual(rootEvents.map(\.delta), [3])
+    }
+
+    /// A root whose only in-play square is a linked row INSIDE a compound: the
+    /// hero drives that child and its Undo strip stays scoped to the root's page.
+    func test_counterRootAnchoredOnALinkedCompoundChild_logShowsItsStrip() async throws {
+        let db = try AppDatabase.makeTestInstance()
+        try seedUser(db)
+        try db.saveBoard(board("b1"))
+        var root = task("r", type: .counting)
+        root.isCounter = true
+        try db.saveTask(root)
+        var linked = task("l", type: .counting, maxCount: 20)
+        linked.sharedCounterId = "r"
+        linked.baseline = 0
+        try db.saveTask(linked)
+        try db.saveTask(task("P", type: .compound))
+        let t = AppDatabase.currentTimestamp()
+        try db.write { try CompoundChild(
+            id: "lk", compoundTaskId: "P", childTaskId: "l", childIndex: 0,
+            createdAt: t, updatedAt: t, lastSyncedAt: nil, version: 1, isDeleted: false, deletedAt: nil
+        ).save($0) }
+        try place(db, bt: "btP", board: "b1", task: "P")
+
+        let vm = await loaded(db, taskId: "r")
+        XCTAssertEqual(count(vm), 0)
+        vm.log(amount: 2)
+        XCTAssertEqual(vm.strip?.scopeTaskId, "r")
+        await eventually { self.count(vm) == 2 && !vm.isBusy }
     }
 
     func test_removalStripNamesTheAppliedAmount() async throws {

@@ -153,6 +153,8 @@ struct TaskDetailHeroView: View {
             HStack { Spacer(); editButton }.padding(.top, 18)
         case let .counting(count):
             countingBody(count)
+        case let .boardlessCounting(count):
+            countingBody(count, boardless: true)
         case let .normal(isDone, sealBlocked):
             normalBody(isDone: isDone, sealBlocked: sealBlocked)
         case let .compound(compound, rule):
@@ -180,7 +182,9 @@ struct TaskDetailHeroView: View {
 
     // MARK: Counting
 
-    private func countingBody(_ count: SquareSheetContent.ChildCount) -> some View {
+    /// - Parameter boardless: No square in play — the all-time count with no goal,
+    ///   bar or rest line (binding decision 3 (4)).
+    private func countingBody(_ count: SquareSheetContent.ChildCount, boardless: Bool = false) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(alignment: .lastTextBaseline, spacing: 8) {
                 Text(formatCount(count.current, kind: count.kind))
@@ -190,23 +194,25 @@ struct TaskDetailHeroView: View {
                     .foregroundStyle(fg)
                     .lineLimit(1)
                     .minimumScaleFactor(0.6)
-                Text(SquareSheetFormat.countLine(goal: count.goal, unit: count.unit, kind: count.kind, board: model.anchorName ?? ""))
+                Text(boardless ? TaskDetailViewModel.allTime : SquareSheetFormat.countLine(goal: count.goal, unit: count.unit, kind: count.kind, board: model.anchorName ?? ""))
                     .font(.risoHead(14, .bold))
                     .foregroundStyle(sub)
                     .lineLimit(1)
                     .minimumScaleFactor(0.7)
                 Spacer(minLength: 4)
-                pill(SquareSheetFormat.countStatus(current: count.current, goal: count.goal))
+                if !boardless { pill(SquareSheetFormat.countStatus(current: count.current, goal: count.goal)) }
             }
             .padding(.top, 18)
 
-            HeroBar(value: count.goal > 0 ? min(count.current, count.goal) / count.goal : 0, height: 12, keyline: fg)
-                .padding(.top, 12)
+            if !boardless {
+                HeroBar(value: count.goal > 0 ? min(count.current, count.goal) / count.goal : 0, height: 12, keyline: fg)
+                    .padding(.top, 12)
+            }
 
             HStack(alignment: .firstTextBaseline) {
                 Text("TAP TO LOG").font(.risoBody(9, .bold)).tracking(1).foregroundStyle(sub)
                 Spacer()
-                if let rest = SquareSheetFormat.restLine(current: count.current, goal: count.goal, kind: count.kind, board: model.anchorName ?? "") {
+                if !boardless, let rest = SquareSheetFormat.restLine(current: count.current, goal: count.goal, kind: count.kind, board: model.anchorName ?? "") {
                     Text(rest).font(.risoBody(11, .semibold)).foregroundStyle(sub)
                 }
             }

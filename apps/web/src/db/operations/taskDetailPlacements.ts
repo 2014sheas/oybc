@@ -13,8 +13,10 @@ import {
 
 /** Task Detail's placement read (docs/TASK_DETAIL_REDESIGN.md PR 5). */
 export interface TaskDetailPlacements {
-  /** The task's OWN live placements — the hero anchor and the "Placed on" Activity rows. */
+  /** The task's OWN live placements — the "Placed on" Activity rows. */
   ownPlacements: BoardTask[];
+  /** The squares the hero may anchor on, best first (see {@link HeroAnchorCandidate}). */
+  anchorCandidates: HeroAnchorCandidate[];
   /** Every live board the task reaches (own, a linked row's, a parent compound's). */
   boards: Board[];
   /** One row per reached board, read through the board grid's resolvers. */
@@ -25,6 +27,20 @@ export interface TaskDetailPlacements {
   childrenByCompound: Record<string, CompoundChild[]>;
   /** Live events of every task in `taskById`. */
   events: TaskEvent[];
+}
+
+/**
+ * A square the Task Detail hero may anchor on (docs/TASK_DETAIL_REDESIGN.md
+ * binding decision 3, amended 2026-10-18): the task's own placement (rank 0),
+ * a counter root's linked row's (rank 1), or a compound a Normal / Counting
+ * task (or its linked row) is a DIRECT child of (rank 2; the hero is that
+ * child's control — a sub-compound has no single control there).
+ */
+export interface HeroAnchorCandidate {
+  placement: BoardTask;
+  /** The compound child the hero drives, or `null` when the square IS the task. */
+  childTaskId: string | null;
+  rank: 0 | 1 | 2;
 }
 
 /** Group `xs` by `key`. */
@@ -122,6 +138,13 @@ export async function loadTaskDetailPlacements(taskId: string): Promise<TaskDeta
     });
     return {
       ownPlacements: boardTasks.filter((bt) => bt.taskId === taskId),
+      anchorCandidates: reach.placements.flatMap((p): HeroAnchorCandidate[] => {
+        if (p.viaCompoundId == null) return [{ placement: p.boardTask, childTaskId: null, rank: p.memberTaskId === taskId ? 0 : 1 }];
+        const direct = (childrenByCompound[p.viaCompoundId] ?? []).some((l) => l.childTaskId === p.memberTaskId);
+        const member = taskById[p.memberTaskId];
+        const drivable = member?.type === TaskType.NORMAL || member?.type === TaskType.COUNTING;
+        return direct && drivable ? [{ placement: p.boardTask, childTaskId: p.memberTaskId, rank: 2 }] : [];
+      }).sort((a, b) => a.rank - b.rank),
       boards: live,
       rows,
       taskById,

@@ -123,9 +123,7 @@ export function TaskRow({
         type="button"
         className={styles.mainButton}
         onClick={() => onClick(task.id)}
-        aria-label={
-          isFamilyRoot ? `Open the ${titleForA11y} counter` : `Open ${titleForA11y} details`
-        }
+        aria-label={`Open ${titleForA11y} details`}
       >
         <div className={styles.rowMain}>
           <RisoTypeBadge type={task.type} />
