@@ -542,6 +542,20 @@ hand-added members; sourced members re-plan from rules. Merging 3b is not
 lockstep-gated (both clients read every placement field since 2a); the WEB
 DEPLOY of 3b waits for the TestFlight build carrying 3a.
 
+**Slice 3b implementation notes (2026-10-18, as built):** the planner's
+`param` rule emits `targetOverride` only when the rolled target differs from
+the PLACED task's own goal, which subsumes the old "no identical clone"
+shortcut; a hand-added linked member is placed as itself (no per-window copy,
+the kernel reads the host window), so a stale stored title on such a member
+now renders as stored rather than through the root's templates until the
+root's next propagation (`counterPlacementVectors` "a hand-added linked row
+keeps its own goal" re-pinned); two split parts sharing one root no longer
+collapse onto one square — each child rolls its own target (one
+`memberRuleVectors` rng count re-pinned); a pool source's stray `goalByTaskId`
+is ignored (board sources only). The old-vs-new equivalence check (every
+former draft's `maxCount` == the placement's effective goal, titles through
+`placementTitle`) held for every other vector.
+
 ## Acceptance
 
 - After slice 5: `grep` finds no non-test reference to `isWindowStampedDerived`,

@@ -6,9 +6,15 @@ import {
   UNDO_TOAST_MS,
   activeBoardPlacementCounts,
   buildCounterFamilyMap,
+  formatCountForInput,
+  parseCountInput,
+  resolveCountKind,
+  withPlacementParams,
   type BoardSource,
   type BoardWindow,
   type CompoundChild,
+  type PlacementBoard,
+  type PlacementParams,
   type PlanMode,
   type Pool,
   type Task,
@@ -58,8 +64,7 @@ import { mergeSuggestionPool } from './suggestionPool';
 import { TasksPoolHeader } from './TasksPoolHeader';
 import { WizardSourceRows } from './WizardSourceRows';
 import { WizardQuickAddRow } from './WizardQuickAddRow';
-import { counterRootIdsIn, counterRowEditCopy, restampPendingCounterCopy } from './quickAddCounterPlacement';
-import { currentTimestamp, generateUUID } from '../../db/utils';
+import { counterGoalParams, counterRootIdsIn, isSharedCounterRoot, quickAddPlacementParams } from './quickAddCounterPlacement';
 import { TaskDetailSheet } from '../TaskDetailSheet';
 import { useRemoveSourceConfirm } from './useRemoveSourceConfirm';
 import styles from './BoardWizardTasksStep.module.css';
@@ -212,8 +217,12 @@ export interface BoardWizardTasksStepProps {
    *  its pending payload when non-`undefined`). Routes to
    *  `useBoardWizard.restoreToPool`. */
   onRestoreToPool: (taskId: string, index: number, payload: PendingTaskPayload | undefined) => void;
-  /** Swap a hand-added row for another in place. Routes to `useBoardWizard.replaceManualTask`. */
-  onReplaceManualTask?: (oldId: string, newId: string, payload: PendingTaskPayload | undefined) => void;
+  /** The wizard's per-cell placement parameters (`useBoardWizard.placementParams`). */
+  placementParams?: ReadonlyMap<string, PlacementParams>;
+  /** Set (or clear) one cell's parameters. Routes to `useBoardWizard.setPlacementParams`. */
+  onSetPlacementParams?: (taskId: string, params: PlacementParams | null) => void;
+  /** Re-stamp the parameters for a changed window. Routes to `useBoardWizard.restampPlacementParams`. */
+  onRestampPlacementParams?: (from: PlacementBoard, to: PlacementBoard) => void;
 
   /** Navigates to the previous wizard step. */
   onBack: () => void;
@@ -293,7 +302,9 @@ export function BoardWizardTasksStep({
   onStageEdit,
   onRevertEdit,
   onRestoreToPool,
-  onReplaceManualTask,
+  placementParams,
+  onSetPlacementParams,
+  onRestampPlacementParams,
   onBack,
   onNext,
 }: BoardWizardTasksStepProps): React.ReactElement {
@@ -331,16 +342,19 @@ export function BoardWizardTasksStep({
     }
     return merged;
   }, [library.taskMap, pendingTasks, stagedEdits, userId]);
-  // A counter copy picked before the board's timeframe / dates changed follows the current window.
+  // A counter goal set before the board's timeframe / dates changed follows the current window.
+  const stampedWindowRef = useRef<PlacementBoard>({
+    timeframe: currentTimeframe,
+    startDate: currentStartDate,
+    endDate: currentEndDate,
+  });
   useEffect(() => {
-    if (!pendingTasks || !onPendingCreated) return;
-    const window = { timeframe: currentTimeframe, startDate: currentStartDate, endDate: currentEndDate };
-    for (const payload of pendingTasks.values()) {
-      const root = payload.task.sharedCounterId ? library.taskMap[payload.task.sharedCounterId] : undefined;
-      const next = root ? restampPendingCounterCopy(payload, root, window) : null;
-      if (next) onPendingCreated(next);
-    }
-  }, [pendingTasks, library.taskMap, currentTimeframe, currentStartDate, currentEndDate, onPendingCreated]);
+    const from = stampedWindowRef.current;
+    const to: PlacementBoard = { timeframe: currentTimeframe, startDate: currentStartDate, endDate: currentEndDate };
+    stampedWindowRef.current = to;
+    if (from.timeframe === to.timeframe && from.startDate === to.startDate && from.endDate === to.endDate) return;
+    onRestampPlacementParams?.(from, to);
+  }, [currentTimeframe, currentStartDate, currentEndDate, onRestampPlacementParams]);
   // §Member rules (B3) — the window the rules pro-rate a pulled counting
   // target AGAINST, and which planning mode applies. Both are already
   // props; nothing new is threaded from the page for them.
@@ -418,9 +432,11 @@ export function BoardWizardTasksStep({
   // At most one row open at a time.
   const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
   const [editDraft, setEditDraft] = useState<TaskEditPatch | null>(null);
-  /** A counter ROOT row edits as its board-only linked copy at the window
-   *  default (`counterRowEditCopy`); Save swaps it in. Mirrors iOS `editCounterCopy`. */
-  const [editCounterCopy, setEditCounterCopy] = useState<PendingTaskPayload | null>(null);
+  /** A counter ROOT row edits at the goal its placement gives it (the window
+   *  default or the wizard's parameter): the placement-adjusted task the editor
+   *  opened on. Save puts the goal on the placement, never on the counter.
+   *  Mirrors iOS `editCounterSeed`. */
+  const [editCounterSeed, setEditCounterSeed] = useState<Task | null>(null);
   /** The draft as it was when the editor opened — used to tell whether the
    *  user actually changed anything on Discard (comparing against a fresh
    *  `patchFromTask` would never carry compound children, so it would
@@ -529,24 +545,24 @@ export function BoardWizardTasksStep({
     const row = effectiveTaskMap[taskId];
     if (!row) return;
     const staged = stagedEdits.get(taskId);
-    const copy =
-      // Only a hand-added library row (the list's rows) — never a task new to this wizard.
-      staged || !onReplaceManualTask || !poolOrder.includes(taskId) || pendingTasks?.has(taskId)
-        ? null
-        : counterRowEditCopy(row, counterRootIdsIn(effectiveTaskMap), userId, generateUUID(), currentTimestamp(), {
-            timeframe: currentTimeframe,
-            startDate: currentStartDate,
-            endDate: currentEndDate,
-          });
-    setEditCounterCopy(copy);
-    const task = copy?.task ?? row;
+    const goalWindow: PlacementBoard = { timeframe: currentTimeframe, startDate: currentStartDate, endDate: currentEndDate };
+    const seed =
+      // Only a hand-added counter root (the list's rows) — never a task new to this wizard.
+      onSetPlacementParams &&
+      poolOrder.includes(taskId) &&
+      !pendingTasks?.has(taskId) &&
+      isSharedCounterRoot(row, counterRootIdsIn(effectiveTaskMap))
+        ? withPlacementParams(row, placementParams?.get(taskId) ?? quickAddPlacementParams(row, goalWindow), row)
+        : null;
+    setEditCounterSeed(seed);
+    const task = seed ?? row;
     let draft: TaskEditPatch;
     if (staged) {
       // Reopen: reuse the staged patch verbatim. `effectiveTaskMap`'s
       // overlay carries scalar edits (title/counting) but NOT compound
       // child edits, so reconstructing children here would silently
       // revert a prior sub-task rename/add/delete.
-      draft = staged;
+      draft = seed ? { ...staged, goal: (task.maxCount != null ? formatCountForInput(task.maxCount, resolveCountKind(task)) : '') } : staged;
     } else {
       // First open: `seedPatchForEditor` blanks a Counting task's Title
       // field when it still matches its auto-generated form, so the title
@@ -574,15 +590,28 @@ export function BoardWizardTasksStep({
    *  with undo to the previous snapshot. */
   function saveEdit(taskId: string): void {
     if (!editDraft) return;
-    if (editCounterCopy) {
-      // A counter row: an edit lands on its board-only copy, never the counter.
-      const copy = editCounterCopy;
-      setEditCounterCopy(null);
+    if (editCounterSeed) {
+      // A counter row: the goal lands on this board's placement, every other
+      // edit stages as usual — never the counter's own goal.
+      const root = effectiveTaskMap[taskId];
+      setEditCounterSeed(null);
       setEditingTaskId(null);
-      if (editBaseline && patchesEqual(editDraft, editBaseline)) return;
-      onReplaceManualTask?.(taskId, copy.task.id, copy);
-      onStageEdit(copy.task.id, editDraft);
-      showToast('Task edited', () => onReplaceManualTask?.(copy.task.id, taskId, undefined));
+      if (!root || (editBaseline && patchesEqual(editDraft, editBaseline))) return;
+      const kind = editDraft.countKind ?? resolveCountKind(root);
+      const goalWindow: PlacementBoard = { timeframe: currentTimeframe, startDate: currentStartDate, endDate: currentEndDate };
+      const previousParams = placementParams?.get(taskId) ?? null;
+      onSetPlacementParams?.(
+        taskId,
+        counterGoalParams({ ...root, countKind: kind }, parseCountInput(editDraft.goal, kind), goalWindow),
+      );
+      const ownGoal = root.maxCount != null ? formatCountForInput(root.maxCount, kind) : '';
+      const rest = { ...editDraft, goal: ownGoal };
+      const restChanged = !editBaseline || !patchesEqual(rest, { ...editBaseline, goal: ownGoal });
+      const previousStaged = restChanged ? onStageEdit(taskId, rest) : undefined;
+      showToast('Task edited', () => {
+        onSetPlacementParams?.(taskId, previousParams);
+        if (restChanged) onRevertEdit(taskId, previousStaged);
+      });
       return;
     }
     const previous = onStageEdit(taskId, editDraft);
@@ -604,15 +633,15 @@ export function BoardWizardTasksStep({
     // "changed".
     const changed = !patchesEqual(editDraft, editBaseline);
     const keptDraft = editDraft;
-    const keptCopy = editCounterCopy;
+    const keptSeed = editCounterSeed;
     const keptBaseline = editBaseline;
     setEditingTaskId(null);
-    setEditCounterCopy(null);
+    setEditCounterSeed(null);
     if (changed) {
       showToast('Edit discarded', () => {
         setEditDraft(keptDraft);
         setEditBaseline(keptBaseline);
-        setEditCounterCopy(keptCopy);
+        setEditCounterSeed(keptSeed);
         setEditingTaskId(taskId);
       });
     }
@@ -674,6 +703,7 @@ export function BoardWizardTasksStep({
             selectedIds={selectedTaskIds}
             onExistingTaskPicked={onTaskCreated}
             linksCounterPicks={!isRecurring}
+            onPlacementParams={onSetPlacementParams}
           />
         </div>
 
@@ -741,6 +771,7 @@ export function BoardWizardTasksStep({
         effectiveChildrenByCompound={effectiveChildrenByCompound}
         taskBoardCounts={taskBoardCounts}
         counterGoalWindow={{ timeframe: currentTimeframe, startDate: currentStartDate, endDate: currentEndDate }}
+        placementParams={placementParams}
         centerTaskMode={centerTaskMode}
         centerTaskId={centerTaskId}
         onCenterClick={handleCenterRadio}
@@ -751,7 +782,7 @@ export function BoardWizardTasksStep({
         editor={(task) =>
           editDraft && (
             <PoolRowEditor
-              task={editCounterCopy?.task ?? task}
+              task={editCounterSeed ?? task}
               draft={editDraft}
               onDraftChange={setEditDraft}
               onSave={() => saveEdit(task.id)}

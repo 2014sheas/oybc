@@ -4,7 +4,6 @@ import {
   CenterSquareType,
   TaskType,
   Timeframe,
-  derivedTaskId,
   type Board,
   type BoardTask,
   type Task,
@@ -99,7 +98,7 @@ describe('persistWizardBoardRows — pulling from a board that holds an overridd
     );
   });
 
-  async function pullFrom(sourcePlacement: Partial<BoardTask>): Promise<Task | undefined> {
+  async function pullFrom(sourcePlacement: Partial<BoardTask>): Promise<BoardTask | undefined> {
     const root = counter(ROOT, 35);
     await db.tasks.add(root);
     await db.boards.add(board());
@@ -122,16 +121,18 @@ describe('persistWizardBoardRows — pulling from a board that holds an overridd
       manualTaskIds: [],
     };
     const boardId = await persistWizardBoardRows(input);
-    return db.tasks.get(derivedTaskId(boardId, ROOT));
+    // Slice 3b: the root is placed AS ITSELF with the pro-rated override — no new task row.
+    expect(await db.tasks.count()).toBe(1);
+    return (await db.boardTasks.where('boardId').equals(boardId).toArray()).find((bt) => bt.taskId === ROOT);
   }
 
   it('pro-rates from the SUPPLYING placement\'s goal: 70 weekly gives 10 daily (not 35 -> 5)', async () => {
-    const minted = await pullFrom({ targetOverride: 70, targetKind: 'discrete' });
-    expect(minted?.maxCount).toBe(10);
+    const placed = await pullFrom({ targetOverride: 70, targetKind: 'discrete' });
+    expect(placed).toMatchObject({ targetOverride: 10, targetKind: 'discrete' });
   });
 
   it('control: with no override the root\'s own goal pro-rates (35 weekly gives 5 daily)', async () => {
-    const minted = await pullFrom({});
-    expect(minted?.maxCount).toBe(5);
+    const placed = await pullFrom({});
+    expect(placed).toMatchObject({ targetOverride: 5, targetKind: 'discrete' });
   });
 });

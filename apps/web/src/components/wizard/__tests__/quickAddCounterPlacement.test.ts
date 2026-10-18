@@ -1,18 +1,18 @@
 import { describe, expect, it } from 'vitest';
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { TaskType, Timeframe, isWindowStampedDerived, type Task } from '@oybc/shared';
+import { TaskType, Timeframe, type PlacementParams, type Task } from '@oybc/shared';
 import {
-  buildPendingLinkedCounter,
+  counterGoalParams,
   counterMatchRowName,
   counterRootIdsIn,
-  counterRowEditCopy,
   isExpiredForBrowse,
-  isLinkedPendingPayload,
   isSharedCounterRoot,
   quickAddExcludedIds,
-  restampPendingCounterCopy,
+  quickAddPlacementParams,
+  restampPlacementParams,
 } from '../quickAddCounterPlacement';
+import { withPlacementParamsFor, withoutPlacementParams } from '../../../pages/createHub/wizardPlacementParamsLogic';
 import { WizardQuickAddRow } from '../WizardQuickAddRow';
 
 const T0 = '2026-10-01T00:00:00.000Z';
@@ -65,32 +65,7 @@ describe('isExpiredForBrowse', () => {
   });
 });
 
-describe('buildPendingLinkedCounter', () => {
-  it('a linked counting task at the typed goal, titled through the root templates, with NO window fields', () => {
-    const root = task({ titleTemplateSingular: 'Read #N book', titleTemplatePlural: 'Read #N novels', counterName: 'Books' });
-    const { task: t, childTasks, childLinks } = buildPendingLinkedCounter(root, 3, 'u1', 'new', T0);
-    expect(t).toMatchObject({
-      id: 'new', userId: 'u1', type: TaskType.COUNTING, title: 'Read 3 novels', action: 'Read', unit: 'books', maxCount: 3,
-      sharedCounterId: 'root', baseline: 412, currentCount: 0, createdInWizard: true, version: 1, isDeleted: false,
-    });
-    expect('countKind' in t).toBe(false);
-    expect(t.startDate).toBeUndefined();
-    expect(t.timeframe).toBeUndefined();
-    expect(isWindowStampedDerived(t)).toBe(false);
-    expect(childTasks).toEqual([]);
-    expect(childLinks).toEqual([]);
-    // With a host board window the row is stamped like `useLinkedCounterCreate`'s,
-    // so wherever it IS persisted (a draft, a repeating board's members) it expires.
-    const stamped = buildPendingLinkedCounter(root, 3, 'u1', 'n4', T0, {
-      timeframe: Timeframe.WEEKLY, startDate: '2026-10-05T00:00:00.000', endDate: '2026-10-11T23:59:59.999',
-    }).task;
-    expect(stamped).toMatchObject({ timeframe: Timeframe.WEEKLY, startDate: '2026-10-05T00:00:00.000', endDate: '2026-10-11T23:59:59.999' });
-    expect(isLinkedPendingPayload({ task: stamped, childTasks: [], childLinks: [] })).toBe(true);
-    expect(isLinkedPendingPayload({ task: { ...stamped, sharedCounterId: undefined }, childTasks: [], childLinks: [] })).toBe(false);
-    expect(buildPendingLinkedCounter(root, 1, 'u1', 'n2', T0).task.title).toBe('Read 1 book');
-    expect(buildPendingLinkedCounter(task({ countKind: 'continuous', unit: 'mi' }), 2.5, 'u1', 'n3', T0).task).toMatchObject({ countKind: 'continuous', title: 'Read 2.5 mi' });
-  });
-
+describe('counterMatchRowName', () => {
   it('the row name is the counter display name', () => {
     expect(counterMatchRowName(task({ counterName: 'Reading' }))).toBe('Reading');
     expect(counterMatchRowName(task({ action: 'Do', unit: 'push-ups' }))).toBe('Push-ups');
@@ -102,7 +77,7 @@ describe('WizardQuickAddRow match rows', () => {
     renderToStaticMarkup(
       React.createElement(WizardQuickAddRow, {
         userId: 'u1', onTaskCreated: () => {}, libraryTasks: library, onExistingTaskPicked: () => {},
-        currentTimeframe: Timeframe.WEEKLY, onPendingCreated: () => {}, ...props,
+        currentTimeframe: Timeframe.WEEKLY, onPlacementParams: () => {}, ...props,
       }),
     );
 
@@ -164,10 +139,10 @@ describe('WizardQuickAddRow match rows', () => {
     const noBoard = render(library, { seedText: 'book', currentTimeframe: undefined });
     expect(noBoard.split('<li ').slice(1).find((r) => r.includes('>Pages<'))!).toContain('tagDense');
     expect(noBoard).not.toContain('role="group"');
-    // A host without `onPendingCreated` (no deferred path) keeps the plain row for the no-default root too.
-    const noPending = render(library, { seedText: 'book', onPendingCreated: undefined });
-    expect(noPending).toContain('tagDense');
-    expect(noPending).not.toContain('role="group"');
+    // A host without `onPlacementParams` keeps the plain row for the no-default root too.
+    const noParams = render(library, { seedText: 'book', onPlacementParams: undefined });
+    expect(noParams).toContain('tagDense');
+    expect(noParams).not.toContain('role="group"');
   });
 });
 
@@ -180,43 +155,57 @@ describe('quickAddExcludedIds', () => {
   });
 });
 
-describe('restampPendingCounterCopy', () => {
-  const root = task({ timeframeGoals: { daily: 2, weekly: 10 } });
+describe('quick-add placement parameters', () => {
+  const root = task({ maxCount: 100, timeframeGoals: { daily: 2, weekly: 10 } });
   const daily = { timeframe: Timeframe.DAILY, startDate: '2026-10-14', endDate: '2026-10-14' };
   const weekly = { timeframe: Timeframe.WEEKLY, startDate: '2026-10-12', endDate: '2026-10-18' };
 
-  it('moves an untouched copy to the new window and its default', () => {
-    const picked = buildPendingLinkedCounter(root, 2, 'u1', 'copy', T0, daily);
-    const next = restampPendingCounterCopy(picked, root, weekly);
-    expect(next?.task).toMatchObject({ id: 'copy', maxCount: 10, timeframe: Timeframe.WEEKLY, startDate: '2026-10-12' });
+  it('a root is placed as itself with the window default as its override', () => {
+    expect(quickAddPlacementParams(root, weekly)).toEqual({ targetOverride: 10, targetKind: 'discrete' });
+    expect(quickAddPlacementParams(root, daily)).toEqual({ targetOverride: 2, targetKind: 'discrete' });
   });
 
-  it('keeps a typed goal, moving only the window', () => {
-    const typed = buildPendingLinkedCounter(root, 7, 'u1', 'copy', T0, daily);
-    expect(restampPendingCounterCopy(typed, root, weekly)?.task).toMatchObject({ maxCount: 7, timeframe: Timeframe.WEEKLY });
+  it('no parameters when the window goal is the root own goal', () => {
+    expect(quickAddPlacementParams(task({ maxCount: 5 }), weekly)).toBeNull();
+    expect(quickAddPlacementParams(task({ maxCount: 10, timeframeGoals: { weekly: 10 } }), weekly)).toBeNull();
   });
 
-  it('is a no-op on the same window', () => {
-    const picked = buildPendingLinkedCounter(root, 2, 'u1', 'copy', T0, daily);
-    expect(restampPendingCounterCopy(picked, root, daily)).toBeNull();
+  it('a typed goal is kept even when it equals the root own goal while a window default differs', () => {
+    expect(counterGoalParams(root, 100, weekly)).toEqual({ targetOverride: 100, targetKind: 'discrete' });
+    expect(counterGoalParams(task({ maxCount: 5 }), 5, weekly)).toBeNull();
+    expect(counterGoalParams(root, null, weekly)).toBeNull();
+  });
+
+  it('selecting sets the entry, deselecting clears it', () => {
+    const none = new Map<string, PlacementParams>();
+    const set = withPlacementParamsFor(none, 'root', quickAddPlacementParams(root, weekly));
+    expect(set.get('root')).toEqual({ targetOverride: 10, targetKind: 'discrete' });
+    expect(withoutPlacementParams(set, ['root']).size).toBe(0);
+    expect(withoutPlacementParams(set, ['other'])).toBe(set);
+    expect(withPlacementParamsFor(set, 'root', null).size).toBe(0);
+    expect(withPlacementParamsFor(none, 'root', null)).toBe(none);
   });
 });
 
-describe('counterRowEditCopy', () => {
-  const root = task({ timeframeGoals: { daily: 2, weekly: 10 } });
+describe('restampPlacementParams', () => {
+  const root = task({ maxCount: 100, timeframeGoals: { daily: 2, weekly: 10 } });
+  const daily = { timeframe: Timeframe.DAILY, startDate: '2026-10-14', endDate: '2026-10-14' };
   const weekly = { timeframe: Timeframe.WEEKLY, startDate: '2026-10-12', endDate: '2026-10-18' };
+  const rootOf = (id: string): Task | undefined => (id === 'root' ? root : undefined);
 
-  it('a counter row edits as a linked copy at the window default, on the window', () => {
-    const copy = counterRowEditCopy(root, new Set(), 'u1', 'copy', T0, weekly);
-    expect(copy?.task).toMatchObject({
-      id: 'copy', sharedCounterId: 'root', maxCount: 10, timeframe: Timeframe.WEEKLY, startDate: '2026-10-12',
-    });
-    expect(copy && isLinkedPendingPayload(copy)).toBe(true);
+  it('an override at the old window default follows to the new default', () => {
+    const params = new Map<string, PlacementParams>([['root', { targetOverride: 2, targetKind: 'discrete' }]]);
+    expect(restampPlacementParams(params, rootOf, daily, weekly).get('root')).toEqual({ targetOverride: 10, targetKind: 'discrete' });
   });
 
-  it('is null for anything that is not a counter root', () => {
-    expect(counterRowEditCopy(task({ isCounter: false, maxCount: 4 }), new Set(), 'u1', 'c', T0, weekly)).toBeNull();
-    expect(counterRowEditCopy(task({ sharedCounterId: 'other', maxCount: 4 }), new Set(), 'u1', 'c', T0, weekly)).toBeNull();
-    expect(counterRowEditCopy(task({ type: TaskType.NORMAL }), new Set(), 'u1', 'c', T0, weekly)).toBeNull();
+  it('a typed goal stays', () => {
+    const params = new Map<string, PlacementParams>([['root', { targetOverride: 7, targetKind: 'discrete' }]]);
+    expect(restampPlacementParams(params, rootOf, daily, weekly)).toBe(params);
+  });
+
+  it('an entry whose new default is the root own goal is dropped', () => {
+    const own = task({ maxCount: 10, timeframeGoals: { daily: 2, weekly: 10 } });
+    const params = new Map<string, PlacementParams>([['root', { targetOverride: 2, targetKind: 'discrete' }]]);
+    expect(restampPlacementParams(params, () => own, daily, weekly).has('root')).toBe(false);
   });
 });

@@ -4,6 +4,7 @@ import {
   SyncOperationType,
   TaskType,
   applyMemberRules,
+  planDerivedTasks,
   computeBoardStatsUpdate,
   boardDerivedStateChanged,
   isGoalLessCounter,
@@ -19,6 +20,8 @@ import {
   type BoardWindow,
   type CompoundChild,
   type CreateBoardInput,
+  type PlacementParams,
+  type PlannedPlacement,
   type Pool,
   type Task,
   type TaskEvent,
@@ -30,7 +33,6 @@ import { type TaskEditPatch, applyPatchToTask, validatePatch } from '../taskEdit
 import { activateBoard, createBoard, updateBoard } from './boards';
 import { resolveBoardSourceSupply, resolveSourceBoard, supplyEventTaskIds } from './boardSources';
 import { fetchCompoundChildrenByCompoundIds } from './compoundChildren';
-import { candidateRootIds, planAndMintDerivedRows } from './derivedCounters';
 import { buildWindowContext } from './windowContext';
 import { createBoardTask, deleteBoardTasksForBoard } from './boardTasks';
 import { runBoardCascadeForTask } from './orchestration';
@@ -122,6 +124,14 @@ export interface PersistWizardBoardRowsInput {
    * asserted exactly instead of only bounded by its range.
    */
   rng?: () => number;
+  /**
+   * TASK_WINDOW_REWORK slice 3b — the wizard's per-cell placement parameters
+   * (`controller.placementParams`: a quick-added counter's window goal, a
+   * hand-edited goal), keyed by task id. An explicit parameter wins over the
+   * planner's for that cell. Applied on ACTIVE saves only (a draft places
+   * original ids with no parameters; the blob carries them for resume).
+   */
+  placementParams?: Record<string, PlacementParams>;
 }
 
 /**
@@ -201,33 +211,6 @@ export async function persistWizardPendingTasks(
       }
     }
   });
-}
-
-/**
- * Remove a pending LINKED counting row (the quick-add match row's, or the
- * special panel's auto-link create) that a mint replaced with the board's
- * deterministic per-board copy: its `tasks` row and its sync CREATE item are
- * deleted inside the caller's transaction, so from outside it was never
- * written or enqueued. Scoped to bare linked pending rows ONLY — an ordinary
- * pending pool task that overflows the board is still created (overfill is
- * the variety mechanism). Twin: iOS `AppDatabase.dropReplacedLinkedPendingRows`.
- *
- * MUST run inside an open `rw` transaction scoping `tasks` + `syncQueue`.
- *
- * @param pendingTasks - The payloads the caller wrote.
- * @param placedTaskIds - The ids actually placed on the board.
- */
-export async function dropReplacedLinkedPendingRows(
-  pendingTasks: readonly WizardPendingTaskWrite[],
-  placedTaskIds: ReadonlySet<string>,
-): Promise<void> {
-  for (const payload of pendingTasks) {
-    const t = payload.task;
-    const isLinkedPending = !!t.sharedCounterId && t.type === TaskType.COUNTING && payload.childTasks.length === 0;
-    if (!isLinkedPending || placedTaskIds.has(t.id)) continue;
-    await db.tasks.delete(t.id);
-    await db.syncQueue.where('[entityType+entityId]').equals(['tasks', t.id]).delete();
-  }
 }
 
 /**
@@ -436,9 +419,10 @@ export async function applyStagedTaskEditsForWizardPersist(
 }
 
 /**
- * Board Sources §Member rules (B2) — resolve this board's per-member rules
- * and mint what they call for, inside the board-write transaction and BEFORE
- * the `board_tasks` rows that will point at the results.
+ * Board Sources §Member rules — resolve this board's per-member rules into
+ * PLACEMENT PARAMETERS (TASK_WINDOW_REWORK slice 3b: the planner emits
+ * parameters, never rows — nothing is minted), inside the board-write
+ * transaction and before the `board_tasks` rows that will carry them.
  *
  * Rebuilds the supplies the same way the spawn path does — pool members via
  * `poolSourceSupplyById`, board members via `resolveSourceBoard` (series
@@ -451,24 +435,16 @@ export async function applyStagedTaskEditsForWizardPersist(
  * Must run inside the caller's transaction (scoping `boards`, `boardTasks`,
  * `tasks`, `pools`, `compoundChildren`, `taskEvents`, `syncQueue`).
  *
- * @param boardId - The board being written (half of every derived id).
- * @param userId - Owner of the rows minted.
- * @param now - ISO8601 mint instant.
  * @param selectedIds - The placed task ids, in placement order.
  * @param sources - The wizard's pulled sources.
  * @param manualTaskIds - The hand-added layer.
  * @param window - The board's own window.
- * @param taskSnapshot - The caller's single `tasks` snapshot. Read here and
- *   MUTATED with the minted rows (read back from Dexie, since RB3 may skip a
- *   live one) so the caller's derivation pass needs no second full-table read.
+ * @param taskSnapshot - The caller's single `tasks` snapshot (read only).
  * @param manualTaskVary - Dice levels for the hand-added layer (B3, RC3).
  * @param rng - Vary-roll source; `undefined` = the platform rng (RB6).
- * @returns The ids to place, positionally 1:1 with `selectedIds`.
+ * @returns One planned placement per `selectedIds` entry, in order.
  */
-async function mintWizardDerivedRows(
-  boardId: string,
-  userId: string,
-  now: string,
+async function planWizardPlacements(
   selectedIds: string[],
   sources: BoardSource[],
   manualTaskIds: string[],
@@ -476,11 +452,9 @@ async function mintWizardDerivedRows(
   taskSnapshot: Record<string, Task>,
   manualTaskVary: Record<string, VaryLevel>,
   rng: (() => number) | undefined,
-): Promise<string[]> {
+): Promise<PlannedPlacement[]> {
   // The planner gets LIVE rows only — a soft-deleted root reachable through a
-  // member's `sharedCounterId` must not be mirrored into a new derived row.
-  // (The caller's derivation pass keeps the unfiltered snapshot, which is what
-  // it has always been given.)
+  // member's `sharedCounterId` must not drive a placement.
   const tasksById: Record<string, Task> = {};
   for (const t of Object.values(taskSnapshot)) if (!t.isDeleted) tasksById[t.id] = t;
 
@@ -574,44 +548,24 @@ async function mintWizardDerivedRows(
     }
   }
 
-  const roots = candidateRootIds(selectedIds, tasksById, childrenByCompoundId);
-  const events =
-    roots.length > 0 ? await db.taskEvents.where('taskId').anyOf(roots).toArray() : [];
-
-  const { placementIds, minted } = await planAndMintDerivedRows({
-    boardId,
-    userId,
-    now,
+  const { placements } = planDerivedTasks({
     selectedIds,
     supplies,
     manualTaskIds,
     // §Member rules (B3, RC3) — the wizard's hand-added dice, authored in the
-    // Sources sheet's hand-added rows (RB9's `{}` placeholder is retired).
+    // Sources sheet's hand-added rows.
     manualTaskVary,
     window,
     // A repeating board never reaches here (its "Create Board" persists a
     // record and spawns through `spawnTemplateBoard`), so this path is always
-    // the one-off mode. A board-pulled counting target still pro-rates by
-    // window length here — mode no longer gates that — but 'oneOff' makes
-    // this path prefill the pro-rated target explicitly rather than leaving
-    // it to auto-target at spawn (owner ruling 2026-09-21:
-    // docs/BOARD_SOURCES.md §Member rules).
+    // the one-off mode.
     mode: 'oneOff',
     tasksById,
     childrenByCompoundId,
     sourceWindowByTaskId,
-    events,
-    rng,
+    rng: rng ?? Math.random,
   });
-
-  // Read the minted rows BACK into the caller's snapshot rather than trusting
-  // the built ones: RB3 skips an already-live row, so what is stored is the
-  // authority for what the board then derives from.
-  for (const row of minted.tasks) {
-    const stored = await db.tasks.get(row.id);
-    if (stored !== undefined) taskSnapshot[row.id] = stored;
-  }
-  return placementIds;
+  return placements;
 }
 
 /**
@@ -651,11 +605,13 @@ export async function persistWizardBoardRows({
   manualTaskIds: initialManualTaskIds,
   manualTaskVary: initialManualTaskVary,
   rng,
+  placementParams: initialPlacementParams,
 }: PersistWizardBoardRowsInput): Promise<string> {
   // Rebound by a board-scoped staged edit that forks a placed task.
   let placement = initialPlacement;
   let manualTaskIds = initialManualTaskIds;
   let manualTaskVary = initialManualTaskVary;
+  let placementParams = initialPlacementParams;
   const isOddBoard = size % 2 !== 0;
   const centerRow = Math.floor(size / 2);
   const centerCol = Math.floor(size / 2);
@@ -743,12 +699,16 @@ export async function persistWizardBoardRows({
           ...placement.map((t) => t?.id).filter((id): id is string => id != null),
           ...(manualTaskIds ?? []),
           ...Object.keys(manualTaskVary ?? {}),
+          ...Object.keys(placementParams ?? {}),
         ]);
         if (forks.size > 0) {
           placement = placement.map((t) => (t && forks.has(t.id) ? { ...t, id: forks.get(t.id)! } : t));
           manualTaskIds = manualTaskIds?.map((id) => forks.get(id) ?? id);
           manualTaskVary = Object.fromEntries(
             Object.entries(manualTaskVary ?? {}).map(([id, v]) => [forks.get(id) ?? id, v]),
+          );
+          placementParams = Object.fromEntries(
+            Object.entries(placementParams ?? {}).map(([id, v]) => [forks.get(id) ?? id, v]),
           );
         }
       }
@@ -761,30 +721,22 @@ export async function persistWizardBoardRows({
       const taskSnapshot: Record<string, Task> = {};
       for (const t of await db.tasks.toArray()) taskSnapshot[t.id] = t;
 
-      // ── Board Sources §Member rules (B2): mint before placing ───────────
+      // ── Board Sources §Member rules: plan placement parameters ──────────
       // The placed ids are resolved against this board's window; a member
-      // governed by a rule is replaced IN PLACE by its window-stamped derived
-      // counter (or derived compound), so a pinned/centre square keeps its
-      // cell. The rows are written here, before the `board_tasks` rows that
-      // reference them, inside this transaction.
+      // governed by a rule (or a counter root with a window default) is
+      // placed AS ITSELF carrying `targetOverride` / `childTargets` /
+      // `titleOverride` — nothing is minted (TASK_WINDOW_REWORK slice 3b).
       //
-      // ACTIVE SAVES ONLY. A derived id is `uuidv5(boardId, root)` — it does
-      // NOT encode the window — while a DRAFT's window is still editable: save
-      // a draft weekly, resume it, switch it to daily, save it active, and the
-      // RB3 "live row → skip" rule would keep the first row's timeframe /
-      // dates / target / baseline for a window the board no longer has. A
-      // draft therefore places its original member ids and the activating save
-      // derives the window once, from final values. (It also means an
-      // abandoned draft leaves no derived rows behind at all.)
+      // ACTIVE SAVES ONLY (Gate 1 ruling): a DRAFT's window is still
+      // editable, so it places the original member ids with no parameters
+      // (the draft blob carries the wizard's parameters for resume) and the
+      // activating save plans the window once, from final values.
       const selectedIds = placement
         .map((t) => t?.id)
         .filter((id): id is string => id != null);
-      const placementIds =
+      const planned =
         status === 'active' && selectedIds.length > 0
-          ? await mintWizardDerivedRows(
-              boardId,
-              userId,
-              currentTimestamp(),
+          ? await planWizardPlacements(
               selectedIds,
               sources ?? [],
               manualTaskIds ?? [],
@@ -798,32 +750,22 @@ export async function persistWizardBoardRows({
               rng,
             )
           : [];
-
-      // (A CHOSEN centre that resolves to a derived counter used to need the
-      // board's `centerTaskId` to follow it. The mint only runs on ACTIVE
-      // saves, and an active save no longer writes CHOSEN / `centerTaskId`
-      // (slice 3 D4) — the derived id simply lands in the locked centre cell.)
-
-      // A pending LINKED row the mint just replaced with the board's own copy
-      // is never left behind as an orphan library member: it was written above
-      // only so the planner could read it, and leaves this transaction unwritten
-      // and unenqueued. A draft keeps it (the draft's placement references it).
-      if (status === 'active' && placementIds.length > 0) {
-        await dropReplacedLinkedPendingRows(pendingTasks, new Set(placementIds));
-      }
+      // Explicit wizard parameters (quick-add goal, hand-edited goal) win over
+      // the planner's for that cell, like a hand-added member beats a source
+      // copy. A fork remaps the key like every other id-keyed wizard map.
+      const wizardParams = status === 'active' ? (placementParams ?? {}) : {};
 
       let placedSoFar = 0;
-      // Two members sharing a shared-counter root collapse onto ONE derived
-      // counter. Counter-family exclusivity forbids that at selection time, so
-      // this is belt-and-braces — but `createBoardTask` THROWS on a duplicate
-      // `taskId`, which would abort the whole save, so the repeat cell is left
-      // empty instead.
+      // Two members resolving to one task (the planner maps a legacy derived
+      // row onto its root) both appear in the plan; `createBoardTask` THROWS
+      // on a duplicate `taskId`, so the repeat cell is left empty instead.
       const placedPlacementIds = new Set<string>();
       for (let i = 0; i < placement.length; i++) {
         const task = placement[i];
         if (task === null) continue;
-        const taskId = placementIds[placedSoFar] ?? task.id;
+        const plan: PlannedPlacement = planned[placedSoFar] ?? { taskId: task.id };
         placedSoFar += 1;
+        const taskId = plan.taskId;
         if (placedPlacementIds.has(taskId)) {
           console.warn(
             `persistWizardBoardRows: task ${taskId} resolved twice on board ${boardId}; leaving cell ${i} empty`,
@@ -831,6 +773,9 @@ export async function persistWizardBoardRows({
           continue;
         }
         placedPlacementIds.add(taskId);
+        const { taskId: _planTaskId, ...planParams } = plan;
+        const explicit = wizardParams[task.id] ?? wizardParams[taskId];
+        const params: PlacementParams = explicit ? { ...planParams, ...explicit } : planParams;
         const row = Math.floor(i / size);
         const col = i % size;
         const isCenterPos = isOddBoard && row === centerRow && col === centerCol;
@@ -843,6 +788,7 @@ export async function persistWizardBoardRows({
           // centre); an active CHOSEN save writes a LOCKED placement instead.
           isCenter: isCenterPos && centerType === CenterSquareType.CHOSEN && !translateChosen,
           ...(isCenterPos && translateChosen ? { isLocked: true } : {}),
+          ...params,
         });
       }
 

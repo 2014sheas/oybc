@@ -2,8 +2,10 @@ import { db } from '../internal';
 import {
   buildRepeatBoardTemplateInput,
   isWindowStampedDerived,
+  resolveCountKind,
   SyncOperationType,
   type Board,
+  type ManualTaskTarget,
   type RecurringBoardTemplate,
   type Timeframe,
   type WeekStartDay,
@@ -110,6 +112,7 @@ export async function repeatBoardAsRecurring(
       );
 
       const boardTaskIds: string[] = [];
+      const manualTaskTargets: Record<string, ManualTaskTarget> = {};
       const seenTaskIds = new Set<string>();
       for (const bt of sortedBoardTasks) {
         // Board Sources §Member rules (B2, RB4) — a per-window derived
@@ -125,8 +128,8 @@ export async function repeatBoardAsRecurring(
         // day the user deletes the board they repeated. The root is durable
         // library content and is what each new window re-mints from anyway. A
         // root placed directly (with a `targetOverride`, slice 3a) already
-        // carries its own id. The override itself is not copied yet: the
-        // template has no per-task target field (TASK_WINDOW_REWORK slice 3b).
+        // carries its own id; its frozen override / title is collected below into
+        // the record's `manualTaskTargets` (TASK_WINDOW_REWORK slice 3b).
         // A root that is itself missing or deleted contributes no member.
         let memberId = bt.taskId;
         if (task && isWindowStampedDerived(task) && task.sharedCounterId != null) {
@@ -137,9 +140,25 @@ export async function repeatBoardAsRecurring(
         if (seenTaskIds.has(memberId)) continue;
         seenTaskIds.add(memberId);
         boardTaskIds.push(memberId);
+        // Slice 3b (ruling 1): Repeat copies a placement's frozen override.
+        const keyTask = task ?? placedTaskById.get(memberId);
+        const target = bt.targetOverride ?? (bt.titleOverride != null ? keyTask?.maxCount : undefined);
+        if (keyTask && typeof target === 'number' && target > 0) {
+          manualTaskTargets[memberId] = {
+            target,
+            kind: bt.targetKind ?? resolveCountKind(keyTask),
+            ...(bt.titleOverride != null ? { title: bt.titleOverride } : {}),
+          };
+        }
       }
 
-      const input = buildRepeatBoardTemplateInput(board, boardTaskIds, cadence, weekStartDay);
+      const input = buildRepeatBoardTemplateInput(
+        board,
+        boardTaskIds,
+        cadence,
+        weekStartDay,
+        manualTaskTargets,
+      );
 
       const template: RecurringBoardTemplate = {
         id: generateUUID(),
@@ -160,6 +179,7 @@ export async function repeatBoardAsRecurring(
         // this record and gives the member-rules readers a real empty map.
         sources: [],
         manualTaskVary: {},
+        ...(input.manualTaskTargets ? { manualTaskTargets: input.manualTaskTargets } : {}),
         lastSpawnedWindowKey: input.lastSpawnedWindowKey,
         isActive: input.isActive,
         createdAt: now,

@@ -870,298 +870,18 @@ describe('spawnTemplateBoard — counter-family exclusivity (2026-09-08)', () =>
       .equals(result.boardId)
       .toArray();
     const placedIds = new Set(placements.map((bt) => bt.taskId));
-    // The hand-added family member wins the family slot — and, since the
-    // windowed-linked-counters rule (2026-10-01), a hand-added LINKED member
-    // is minted as this board's own window-stamped row rather than placed as
-    // itself: the placed id is `derivedTaskId(board, root)`, derived from the
-    // hand-added member (its goal 4, not the root's 10). The pool-supplied
-    // root still never lands.
-    const minted = derivedTaskId(result.boardId, 'win-root');
-    expect(placedIds.has(minted)).toBe(true);
-    expect(placedIds.has('win-derived')).toBe(false);
+    // The hand-added family member wins the family slot and is placed as
+    // ITSELF (slice 3b: nothing is minted; the kernel reads a linked square
+    // over the host board's window). The pool-supplied root never lands.
+    expect(placedIds.has('win-derived')).toBe(true);
     expect(placedIds.has('win-root')).toBe(false);
-    const mintedRow = await db.tasks.get(minted);
-    expect(mintedRow?.sharedCounterId).toBe('win-root');
-    expect(mintedRow?.maxCount).toBe(4);
-    expect(mintedRow?.startDate).toBe(WINDOW_START);
-    expect(mintedRow?.createdInWizard).toBe(true);
+    expect(await db.tasks.get(derivedTaskId(result.boardId, 'win-root'))).toBeUndefined();
+    const placed = placements.find((bt) => bt.taskId === 'win-derived');
+    expect(placed?.targetOverride).toBeUndefined(); // its own goal (4) stands
   });
 });
 
-describe('spawnTemplateBoard — series binding (loose-ends sweep 2026-09-09)', () => {
-  const seedSeriesInstance = async (
-    boardId: string,
-    seriesId: string,
-    taskIds: string[],
-    opts: { status?: BoardStatus; startDate?: string; endDate?: string } = {},
-  ) => {
-    await db.boards.add({
-      id: boardId,
-      userId: 'user-1',
-      name: `Instance ${boardId}`,
-      status: opts.status ?? BoardStatus.ACTIVE,
-      boardSize: 3,
-      timeframe: Timeframe.WEEKLY,
-      startDate: opts.startDate ?? NOW,
-      endDate: opts.endDate ?? WINDOW_END,
-      centerSquareType: CenterSquareType.NONE,
-      isRandomized: true,
-      totalTasks: taskIds.length,
-      completedTasks: 0,
-      linesCompleted: 0,
-      completedLineIds: [],
-      spawnedFromTemplateId: seriesId,
-      createdAt: NOW,
-      updatedAt: NOW,
-      version: 1,
-      isDeleted: false,
-    });
-    await db.boardTasks.bulkAdd(
-      taskIds.map((taskId, i) => ({
-        id: `bt-${boardId}-${taskId}`,
-        boardId,
-        taskId,
-        row: Math.floor(i / 3),
-        col: i % 3,
-        isCenter: false,
-        createdAt: NOW,
-        updatedAt: NOW,
-        version: 1,
-        isDeleted: false,
-      })),
-    );
-  };
-
-  it('a pull stored against an ARCHIVED old window hops to the series\' live instance', async () => {
-    // Old window (archived) carried old-1..3; the live current window
-    // carries new-1..9. The pull stored the OLD instance's id — the hop
-    // must supply the NEW instance's squares and never trigger the ask.
-    const oldIds = ['old-1', 'old-2', 'old-3'];
-    const newIds = Array.from({ length: 9 }, (_, i) => `new-${i}`);
-    for (const id of [...oldIds, ...newIds]) await seedTask(id);
-    await seedSeriesInstance('inst-old', 'series-1', oldIds, {
-      status: BoardStatus.ARCHIVED,
-      startDate: '2026-07-06T00:00:00.000Z',
-      endDate: '2026-07-12T23:59:59.999Z',
-    });
-    await seedSeriesInstance('inst-live', 'series-1', newIds, {
-      startDate: '2026-07-13T00:00:00.000Z',
-      endDate: '2026-07-19T23:59:59.999Z',
-    });
-
-    const template: RecurringBoardTemplate = {
-      id: 'tmpl-hop',
-      userId: 'user-1',
-      name: 'Hop Board',
-      timeframe: Timeframe.DAILY,
-      boardSize: 3,
-      centerSquareType: CenterSquareType.NONE,
-      isRandomized: true,
-      seedTaskIds: [],
-      manualTaskIds: [],
-      sources: [
-        {
-          sourceId: 'inst-old', // the STORED (stale) instance id
-          kind: 'board',
-          min: 0,
-          max: null,
-          excludedTaskIds: [],
-          filter: 'all',
-        },
-      ],
-      lastSpawnedWindowKey: null,
-      isActive: true,
-      createdAt: NOW,
-      updatedAt: NOW,
-      version: 1,
-      isDeleted: false,
-    };
-    await db.recurringBoardTemplates.add(template);
-
-    const result = await spawnTemplateBoard({
-      template,
-      windowStart: WINDOW_START,
-      windowEnd: WINDOW_END,
-      suggestedName: 'Hop Board — July 19',
-    });
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
-    const placed = new Set(
-      (await db.boardTasks.where('boardId').equals(result.boardId).toArray()).map(
-        (bt) => bt.taskId,
-      ),
-    );
-    expect(placed).toEqual(new Set(newIds));
-    for (const id of oldIds) expect(placed.has(id)).toBe(false);
-  });
-
-  it('a series with no instance OPEN NOW deals nothing from it and records the note', async () => {
-    // Owner ruling 2026-09-24: the only instance is LAST week's (ended) —
-    // the old fallback ("newest started") pulled from it. Now that source
-    // supplies nothing, the window still spawns from the manual layer, and
-    // the result records the windowless source for the provenance note.
-    const manual = Array.from({ length: 9 }, (_, i) => `m${i}`);
-    const stale = ['stale-1', 'stale-2'];
-    for (const id of [...manual, ...stale]) await seedTask(id);
-    await seedSeriesInstance('inst-last-week', 'series-2', stale, {
-      startDate: '2026-07-06T00:00:00.000Z',
-      endDate: '2026-07-12T23:59:59.999Z',
-    });
-    const template: RecurringBoardTemplate = {
-      id: 'tmpl-windowless',
-      userId: 'user-1',
-      name: 'Windowless Board',
-      timeframe: Timeframe.DAILY,
-      boardSize: 3,
-      centerSquareType: CenterSquareType.NONE,
-      isRandomized: true,
-      seedTaskIds: [],
-      manualTaskIds: manual,
-      sources: [
-        {
-          sourceId: 'inst-last-week',
-          kind: 'board',
-          min: 0,
-          max: null,
-          excludedTaskIds: [],
-          filter: 'all',
-        },
-      ],
-      lastSpawnedWindowKey: null,
-      isActive: true,
-      createdAt: NOW,
-      updatedAt: NOW,
-      version: 1,
-      isDeleted: false,
-    };
-    await db.recurringBoardTemplates.add(template);
-
-    const result = await spawnTemplateBoard({
-      template,
-      windowStart: WINDOW_START,
-      windowEnd: WINDOW_END,
-      suggestedName: 'Windowless — July 19',
-    });
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
-    expect(result.noBoardForWindowSourceIds).toEqual(['inst-last-week']);
-    const placed = (await db.boardTasks.where('boardId').equals(result.boardId).toArray()).map(
-      (bt) => bt.taskId,
-    );
-    expect(new Set(placed)).toEqual(new Set(manual));
-    for (const id of stale) expect(placed).not.toContain(id);
-  });
-
-  it('a series with NO live instance still triggers the source_board_missing ask', async () => {
-    const manual = Array.from({ length: 9 }, (_, i) => `m${i}`);
-    for (const id of manual) await seedTask(id);
-    for (const id of ['dead-1']) await seedTask(id);
-    await seedSeriesInstance('inst-a', 'series-dead', ['dead-1'], {
-      status: BoardStatus.ARCHIVED,
-    });
-    await seedSeriesInstance('inst-b', 'series-dead', ['dead-1'], {
-      status: BoardStatus.ARCHIVED,
-      startDate: '2026-07-01T00:00:00.000Z',
-    });
-
-    const template: RecurringBoardTemplate = {
-      id: 'tmpl-dead-series',
-      userId: 'user-1',
-      name: 'Dead Series Board',
-      timeframe: Timeframe.DAILY,
-      boardSize: 3,
-      centerSquareType: CenterSquareType.NONE,
-      isRandomized: true,
-      seedTaskIds: [],
-      manualTaskIds: manual,
-      sources: [
-        {
-          sourceId: 'inst-a',
-          kind: 'board',
-          min: 0,
-          max: null,
-          excludedTaskIds: [],
-          filter: 'all',
-        },
-      ],
-      lastSpawnedWindowKey: null,
-      isActive: true,
-      createdAt: NOW,
-      updatedAt: NOW,
-      version: 1,
-      isDeleted: false,
-    };
-    await db.recurringBoardTemplates.add(template);
-
-    const result = await spawnTemplateBoard({
-      template,
-      windowStart: WINDOW_START,
-      windowEnd: WINDOW_END,
-      suggestedName: 'Dead Series — July 19',
-    });
-    expect(result).toEqual({
-      ok: false,
-      templateId: 'tmpl-dead-series',
-      reason: 'source_board_missing',
-    });
-  });
-});
-
-describe('resolveSourceBoard — local-wall-clock reference (review-caught Critical)', () => {
-  it("the default reference resolves today's LOCAL window, not a UTC-shifted one", async () => {
-    // Board dates are LOCAL wall-clock ISO strings (toLocalISO — no Z).
-    // The default reference must sort against them correctly regardless
-    // of the machine's UTC offset: build two series instances around the
-    // local now and assert the current one wins.
-    const { resolveSourceBoard } = await import('../boardSources');
-    const { toLocalISO } = await import('@oybc/shared');
-    const nowLocal = new Date();
-    const hourMs = 60 * 60 * 1000;
-    const mkBoard = (id: string, start: Date, end: Date, status = BoardStatus.ACTIVE) => ({
-      id,
-      userId: 'user-1',
-      name: id,
-      status,
-      boardSize: 3 as const,
-      timeframe: Timeframe.DAILY,
-      startDate: toLocalISO(start),
-      endDate: toLocalISO(end),
-      centerSquareType: CenterSquareType.NONE,
-      isRandomized: true,
-      totalTasks: 0,
-      completedTasks: 0,
-      linesCompleted: 0,
-      completedLineIds: [],
-      spawnedFromTemplateId: 'series-local',
-      createdAt: NOW,
-      updatedAt: NOW,
-      version: 1,
-      isDeleted: false,
-    });
-    await db.boards.bulkAdd([
-      mkBoard(
-        'inst-yesterday',
-        new Date(nowLocal.getTime() - 30 * hourMs),
-        new Date(nowLocal.getTime() - 6 * hourMs),
-      ),
-      mkBoard(
-        'inst-today',
-        new Date(nowLocal.getTime() - 5 * hourMs),
-        new Date(nowLocal.getTime() + 5 * hourMs),
-      ),
-    ]);
-
-    const resolved = await resolveSourceBoard('inst-yesterday');
-    expect(resolved?.id).toBe('inst-today');
-  });
-});
-
-/**
- * Board Sources §Member rules (B2) — the spawn path resolves each pulled
- * board's per-member rules against the window it is spawning and mints the
- * window-stamped derived counters before the `board_tasks` rows.
- */
-describe('spawnTemplateBoard — member-rule mint', () => {
+describe('spawnTemplateBoard — member-rule placement parameters (slice 3b)', () => {
   const ROOT = 'root-counter';
   const SRC = 'src-weekly-board';
   const PRE_WINDOW = '2026-07-10T00:00:00.000Z';
@@ -1266,10 +986,11 @@ describe('spawnTemplateBoard — member-rule mint', () => {
     isDeleted: false,
   });
 
-  it('pro-rates the weekly 35 goal onto a daily board (5) and seeds the window baseline', async () => {
+  it('pro-rates the weekly 35 goal onto a daily board (5) as the placement override — no row is minted', async () => {
     await seedWeeklySourceBoard();
     const template = dailyTemplate();
     await db.recurringBoardTemplates.add(template);
+    const taskCount = await db.tasks.count();
 
     const result = await spawnTemplateBoard({
       template,
@@ -1280,22 +1001,19 @@ describe('spawnTemplateBoard — member-rule mint', () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
 
-    const derivedId = derivedTaskId(result.boardId, ROOT);
-    const derived = await db.tasks.get(derivedId);
-    expect(derived?.maxCount).toBe(5); // ceil(35 × 1 day / 7 days)
-    expect(derived?.baseline).toBe(9); // the whole pre-window log
-    expect(derived?.currentCount).toBe(9); // mirrors the root, so 0 this window
-    expect(derived?.isCompleted).toBe(false);
+    expect(await db.tasks.count()).toBe(taskCount);
+    expect(await db.tasks.get(derivedTaskId(result.boardId, ROOT))).toBeUndefined();
 
-    const placed = (await db.boardTasks.where('boardId').equals(result.boardId).toArray()).map(
-      (bt) => bt.taskId,
-    );
+    const placed = await db.boardTasks.where('boardId').equals(result.boardId).toArray();
     expect(placed).toHaveLength(8);
-    expect(placed).toContain(derivedId);
-    expect(placed).not.toContain(ROOT); // the root itself never lands
+    // The root itself lands, carrying ceil(35 × 1 day / 7 days) = 5.
+    const rootRow = placed.find((bt) => bt.taskId === ROOT);
+    expect(rootRow).toMatchObject({ targetOverride: 5, targetKind: 'discrete' });
+    // The root keeps its own goal; its lifetime cache is not touched.
+    expect((await db.tasks.get(ROOT))?.maxCount).toBe(35);
   });
 
-  it('a second window mints its own derived row and never rewrites the first one', async () => {
+  it('a second window carries its own parameters; the first board\'s placement is never rewritten', async () => {
     await seedWeeklySourceBoard();
     const template = dailyTemplate();
     await db.recurringBoardTemplates.add(template);
@@ -1308,8 +1026,9 @@ describe('spawnTemplateBoard — member-rule mint', () => {
     });
     expect(first.ok).toBe(true);
     if (!first.ok) return;
-    const firstDerivedId = derivedTaskId(first.boardId, ROOT);
-    const firstRow = await db.tasks.get(firstDerivedId);
+    const firstRow = (await db.boardTasks.where('boardId').equals(first.boardId).toArray()).find(
+      (bt) => bt.taskId === ROOT,
+    );
 
     const second = await spawnTemplateBoard({
       template: { ...template, lastSpawnedWindowKey: WINDOW_START },
@@ -1320,23 +1039,55 @@ describe('spawnTemplateBoard — member-rule mint', () => {
     expect(second.ok).toBe(true);
     if (!second.ok) return;
 
-    const secondDerivedId = derivedTaskId(second.boardId, ROOT);
-    expect(secondDerivedId).not.toBe(firstDerivedId);
-    expect((await db.tasks.get(secondDerivedId))?.startDate).toBe(
-      '2026-07-20T00:00:00.000Z',
+    const secondRow = (await db.boardTasks.where('boardId').equals(second.boardId).toArray()).find(
+      (bt) => bt.taskId === ROOT,
     );
-
-    // The first window's row is frozen — an earlier board's derived counter
-    // is that window's record and must not be re-stamped by a later spawn.
-    const firstAfter = await db.tasks.get(firstDerivedId);
+    expect(secondRow?.id).not.toBe(firstRow?.id);
+    expect(secondRow).toMatchObject({ targetOverride: 5 });
+    const firstAfter = await db.boardTasks.get(firstRow!.id);
     expect(firstAfter?.version).toBe(firstRow?.version);
     expect(firstAfter?.updatedAt).toBe(firstRow?.updatedAt);
-    expect(firstAfter?.startDate).toBe(WINDOW_START);
+    // No task row was ever created for either window.
+    expect(await db.tasks.where('sharedCounterId').equals(ROOT).count()).toBe(0);
+  });
 
-    // One CREATE per derived row — never a duplicate for the same id.
-    const queued = await db.syncQueue.toArray();
-    expect(queued.filter((q) => q.entityId === firstDerivedId)).toHaveLength(1);
-    expect(queued.filter((q) => q.entityId === secondDerivedId)).toHaveLength(1);
+  it('manualTaskTargets: a frozen override lands on the HAND-ADDED member and wins over the planner; a sourced member re-plans', async () => {
+    await seedWeeklySourceBoard();
+    // A second counter hand-added with a frozen override of 9 (own goal 20).
+    await db.tasks.add({
+      id: 'hand', userId: 'user-1', title: 'Read 20 pages', type: TaskType.COUNTING, action: 'Read', unit: 'pages',
+      maxCount: 20, currentCount: 0, isCompleted: false, totalCompletions: 0, totalInstances: 0,
+      createdAt: NOW, updatedAt: NOW, version: 1, isDeleted: false,
+    } as Task);
+    const template: RecurringBoardTemplate = {
+      ...dailyTemplate(),
+      id: 'tmpl-frozen',
+      manualTaskIds: ['hand'],
+      sources: dailyTemplate().sources!.map((src) => ({ ...src, max: 7 })),
+      // An entry for a SOURCED member is ignored: sourced members re-plan.
+      manualTaskTargets: {
+        hand: { target: 9, kind: 'discrete', title: 'Nine pages' },
+        [ROOT]: { target: 99, kind: 'discrete' },
+      },
+    };
+    await db.recurringBoardTemplates.add(template);
+
+    const result = await spawnTemplateBoard({
+      template,
+      windowStart: WINDOW_START,
+      windowEnd: WINDOW_END,
+      suggestedName: 'Daily — July 19',
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    const placed = await db.boardTasks.where('boardId').equals(result.boardId).toArray();
+    expect(placed.find((bt) => bt.taskId === 'hand')).toMatchObject({
+      targetOverride: 9,
+      targetKind: 'discrete',
+      titleOverride: 'Nine pages',
+    });
+    expect(placed.find((bt) => bt.taskId === ROOT)).toMatchObject({ targetOverride: 5 });
   });
 });
 
@@ -1570,21 +1321,17 @@ describe('spawnTemplateBoard — pool-level default dice (2026-10-06)', () => {
     return (await db.boardTasks.where('boardId').equals(boardId).toArray()).map((bt) => bt.taskId);
   }
 
-  it('a member with no stored rule inherits the pool default: the spawned copy is ROLLED inside varyRange', async () => {
+  it('a member with no stored rule inherits the pool default: the spawned placement is ROLLED inside varyRange', async () => {
     await seedPool({ [ROOT]: 2 });
     const boardId = await spawnOnce(poolTemplate());
 
     const [lo, hi] = varyRange(GOAL, 2, GOAL);
     expect(lo).toBeLessThan(hi); // the range is real, not collapsed
-    const derived = await db.tasks.get(derivedTaskId(boardId, ROOT));
-    expect(derived).toBeDefined();
-    expect(derived?.sharedCounterId).toBe(ROOT);
-    expect(derived?.maxCount).toBeGreaterThanOrEqual(lo);
-    expect(derived?.maxCount).toBeLessThanOrEqual(hi);
-
-    const placed = await placedIds(boardId);
-    expect(placed).toContain(derived?.id);
-    expect(placed).not.toContain(ROOT);
+    expect(await db.tasks.get(derivedTaskId(boardId, ROOT))).toBeUndefined();
+    const row = (await db.boardTasks.where('boardId').equals(boardId).toArray()).find((bt) => bt.taskId === ROOT);
+    expect(row).toBeDefined();
+    expect(row?.targetOverride).toBeGreaterThanOrEqual(lo);
+    expect(row?.targetOverride).toBeLessThanOrEqual(hi);
   });
 
   it('a stored source vary wins over the pool default (seeded platform rng pins the level)', async () => {
@@ -1599,7 +1346,8 @@ describe('spawnTemplateBoard — pool-level default dice (2026-10-06)', () => {
       const [loOverride] = varyRange(GOAL, 1, GOAL);
       const [loDefault] = varyRange(GOAL, 2, GOAL);
       expect(loOverride).not.toBe(loDefault); // the assertion discriminates
-      expect(await db.tasks.get(derivedTaskId(boardId, ROOT))).toMatchObject({ maxCount: loOverride });
+      const row = (await db.boardTasks.where('boardId').equals(boardId).toArray()).find((bt) => bt.taskId === ROOT);
+      expect(row).toMatchObject({ targetOverride: loOverride });
     } finally {
       random.mockRestore();
     }
@@ -1652,7 +1400,8 @@ describe('spawnTemplateBoard — slice 3a (a board member\'s goal is the supplyi
     });
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    const minted = await db.tasks.get(derivedTaskId(result.boardId, 'r1'));
-    expect(minted?.maxCount).toBe(10);
+    const row = (await db.boardTasks.where('boardId').equals(result.boardId).toArray()).find((bt) => bt.taskId === 'r1');
+    expect(row).toMatchObject({ targetOverride: 10, targetKind: 'discrete' });
+    expect(await db.tasks.get(derivedTaskId(result.boardId, 'r1'))).toBeUndefined();
   });
 });
