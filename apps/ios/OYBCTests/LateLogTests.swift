@@ -248,7 +248,10 @@ final class LateLogTests: XCTestCase {
         XCTAssertEqual(try db.fetchTask(id: "t-sibling")?.currentCount, 5)
     }
 
-    func test_lateLogIncrement_hubLinkedDerived_isNoOp() throws {
+    func test_lateLogIncrement_hubLinkedUnstamped_authorsOnRootAndReDerives() throws {
+        // OQ2 retired (TASK_WINDOW_REWORK slice 3a): a linked square that was
+        // never window-stamped logs on its ROOT at the board's endDate and the
+        // closed board re-derives from the root's in-window sum.
         let db = try makeDb(); try seedUser(db)
         try db.saveTask(makeTask("t-root", type: .counting, maxCount: 100, currentCount: 0))
         let hub = makeTask("t-hub", type: .counting, maxCount: 10, sharedCounterId: "t-root", startDate: nil, baseline: 0, currentCount: 0)
@@ -257,10 +260,13 @@ final class LateLogTests: XCTestCase {
                                     sealedAt: "2026-07-09T00:00:00.000Z", sealedCompletedCells: []))
         try db.saveBoardTask(makeBoardTask(id: "bt1", boardId: "b1", taskId: "t-hub"))
 
-        try db.lateLogIncrement(boardId: "b1", taskId: "t-hub", delta: 5, now: "2026-07-10T00:00:00.000Z")
+        try db.lateLogIncrement(boardId: "b1", taskId: "t-hub", delta: 10, now: "2026-07-10T00:00:00.000Z")
 
-        XCTAssertEqual(try events(db, taskId: "t-root").count, 0, "a hub-linked derived square is not tappable on a closed board (OQ2)")
-        XCTAssertEqual(try db.fetchTask(id: "t-root")?.currentCount, 0)
+        let rootEvents = try events(db, taskId: "t-root")
+        XCTAssertEqual(rootEvents.count, 1)
+        XCTAssertEqual(rootEvents[0].boardId, "b1")
+        XCTAssertEqual(try events(db, taskId: "t-hub").count, 0, "linked rows own no events")
+        XCTAssertEqual(try fetchBoard(db, "b1").sealedCompletedCells, [0])
     }
 
     // MARK: - lateLogCompoundParts (COMPOUND)

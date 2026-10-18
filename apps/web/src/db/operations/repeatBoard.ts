@@ -124,7 +124,10 @@ export async function repeatBoardAsRecurring(
         // would be skipped as `has_deleted_tasks` for every future window the
         // day the user deletes the board they repeated. The root is durable
         // library content and is what each new window re-mints from anyway. A
-        // root that is itself missing or deleted contributes no member.
+        // root placed directly (with a `targetOverride`, slice 3a) already
+        // carries its own id. The override itself is not copied yet: the
+        // template has no per-task target field (TASK_WINDOW_REWORK slice 3b).
+        // A root that is itself missing or deleted contributes no member.
         let memberId = bt.taskId;
         if (task && isWindowStampedDerived(task) && task.sharedCounterId != null) {
           const root = rootById.get(task.sharedCounterId);

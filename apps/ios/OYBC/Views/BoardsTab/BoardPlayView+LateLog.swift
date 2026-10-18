@@ -12,9 +12,8 @@ import UIKit
 extension BoardPlayView {
 
     /// D15: whether a CLOSED board's square for `task` routes to the
-    /// late-log sheet (NORMAL / plain-or-source COUNTING /
-    /// window-stamped-derived COUNTING / COMPOUND) rather than staying
-    /// interaction-locked (a hub-linked derived counter / ACHIEVEMENT — OQ2).
+    /// late-log sheet (NORMAL / any COUNTING, linked included / COMPOUND)
+    /// rather than staying interaction-locked (ACHIEVEMENT).
     func isLateLogRoutable(task: Task?) -> Bool {
         guard isBoardLocked, let t = task else { return false }
         if t.type == .compound { return true }

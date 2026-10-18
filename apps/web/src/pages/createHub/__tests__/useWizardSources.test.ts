@@ -215,12 +215,14 @@ describe('boardSupplyEntry (the async board-supply effect mapping)', () => {
       supplyTaskIds: ['a', 'b'],
       doneTaskIds: new Set(['b']),
       windowCountByTaskId: { a: 3 },
+      goalByTaskId: { a: 12 },
       sourceWindow: { timeframe: Timeframe.WEEKLY, startDate: '2026-09-14', endDate: null },
     });
     expect(entry).toMatchObject({ displayName: 'Monday', rawSupplyTaskIds: ['a', 'b'] });
     expect(entry.isPending).toBeUndefined();
     // §Member rules (B3) — the windowed counts + source window ride along.
     expect(entry.windowCountByTaskId).toEqual({ a: 3 });
+    expect(entry.goalByTaskId).toEqual({ a: 12 });
     expect(entry.sourceWindow?.timeframe).toBe(Timeframe.WEEKLY);
   });
 
@@ -260,6 +262,7 @@ describe('boardSupplyEntryForResolution', () => {
         supplyTaskIds: ['a'],
         doneTaskIds: new Set(),
         windowCountByTaskId: {},
+        goalByTaskId: {},
         sourceWindow: { timeframe: Timeframe.WEEKLY, startDate: '2026-09-14', endDate: null },
       },
     });

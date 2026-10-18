@@ -78,6 +78,16 @@ import type { Task } from '../types/task';
 export interface BoardSourceSupply {
   source: BoardSource;
   supplyTaskIds: string[];
+  /**
+   * TASK_WINDOW_REWORK slice 3a — a board source's EFFECTIVE goal per
+   * supplied member: the placement's `targetOverride` (in the member's kind)
+   * when the square carries one, else absent (the member's own `maxCount`
+   * applies). Keyed by task id; a compound placement's `childTargets` land
+   * here keyed by child id. Pool sources never carry it. The planner reads a
+   * board-sourced member's goal from here first, so pulling a root placed at
+   * 70 of 300 pro-rates from 70.
+   */
+  goalByTaskId?: Record<string, number>;
 }
 
 /**

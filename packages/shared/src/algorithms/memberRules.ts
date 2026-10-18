@@ -142,7 +142,8 @@ export function applyMemberRules(
         partOf[c] = id;
       }
     }
-    return { source: supply.source, supplyTaskIds: out, partOf };
+    // Slice 3a: a board source's effective goals ride along (`goalByTaskId`).
+    return { ...supply, supplyTaskIds: out, partOf };
   });
 }
 
@@ -416,11 +417,23 @@ export function planDerivedTasks(args: PlanDerivedTasksArgs): PlanDerivedTasksRe
   };
   // A whole kind's baseline cache is floored (the heal path's rule); continuous quantizes.
   const wholeBaseline = (x: number, kind: CountKind): number => (isWholeCountKind(kind) ? Math.floor(x) : quantizeCount(x));
-  const mint = (t: PlanTask, replacesId: string, target: number, vary: VaryLevel): DerivedTaskDraft => {
+  /**
+   * A supplied member's EFFECTIVE goal (slice 3a): the source placement's
+   * `targetOverride` when the board source carries one (`goalByTaskId`), else
+   * the member's own goal. A hand-added member reads its own.
+   */
+  const effectiveGoalOf = (id: string, t: PlanTask, sup: ExpandedSupply | undefined): number | null => {
+    const supplied = sup?.goalByTaskId?.[id];
+    if (typeof supplied === 'number' && supplied > 0) {
+      return isWholeCountKind(resolveCountKind(t)) ? (supplied >= 1 ? Math.floor(supplied) : null) : quantizeCount(supplied);
+    }
+    return goalOf(t);
+  };
+  const mint = (t: PlanTask, replacesId: string, target: number, vary: VaryLevel, effGoal?: number | null): DerivedTaskDraft => {
     // The vary clamp's ceiling: the member's goal, or a timeframe default
     // above it (a goal-less root's default IS its goal). Every pre-default
     // target is ≤ the goal, so this is the goal exactly as before.
-    const goal = Math.max(goalOf(t) ?? 0, target);
+    const goal = Math.max(effGoal ?? goalOf(t) ?? 0, target);
     const root = t.sharedCounterId ?? t.id;
     // The dedupe is checked BEFORE the roll: a collapsed occurrence consumes
     // no rng sample, so a seeded sequence reproduces identically on both
@@ -464,7 +477,11 @@ export function planDerivedTasks(args: PlanDerivedTasksArgs): PlanDerivedTasksRe
     const parentId = sup?.partOf[id];
 
     if (t.type === TaskType.COUNTING) {
-      const ownGoal = goalOf(t);
+      // Slice 3a: a board-sourced member's goal is the SUPPLYING placement's
+      // effective goal (its `targetOverride`, else its own `maxCount`) — a
+      // root placed at 70 of 300 pro-rates from 70, never 300.
+      const ownGoal = effectiveGoalOf(id, t, sup);
+      const overridden = ownGoal !== goalOf(t);
       // A hand-added or POOL-sourced ROOT with a timeframe default for this
       // board that differs from its own goal is minted at that default — the
       // default is also the vary roll's base (docs/SHARED_COUNTER_SETTINGS.md
@@ -542,11 +559,13 @@ export function planDerivedTasks(args: PlanDerivedTasksArgs): PlanDerivedTasksRe
           // the same stale `startDate` so it never heals. It must re-mint for
           // THIS window, exactly as the hand-added branch's
           // `isWindowStampedMember` guard above already ensures.
-          if (target === ownGoal && vary === 0 && t.sharedCounterId == null) {
+          // Slice 3a: a supplied override is not the root's own goal — placing the
+          // root as-is would read 300 where the source square read 70, so it mints.
+          if (target === ownGoal && vary === 0 && t.sharedCounterId == null && !overridden) {
             placementIds.push(id);
             continue;
           }
-          placementIds.push(mint(t, id, target, vary).id);
+          placementIds.push(mint(t, id, target, vary, ownGoal).id);
           continue;
         }
         placementIds.push(id);
@@ -559,15 +578,15 @@ export function planDerivedTasks(args: PlanDerivedTasksArgs): PlanDerivedTasksRe
         // No identical clone (owner ruling 2026-09-22) — see the split-part
         // branch above for the reasoning, the `sharedCounterId` guard included;
         // same rule, same shape.
-        if (target === ownGoal && vary === 0 && t.sharedCounterId == null) {
+        if (target === ownGoal && vary === 0 && t.sharedCounterId == null && !overridden) {
           placementIds.push(id);
           continue;
         }
-        placementIds.push(mint(t, id, target, vary).id);
+        placementIds.push(mint(t, id, target, vary, ownGoal).id);
         continue;
       }
       if (vary > 0) {
-        placementIds.push(mint(t, id, goal, vary).id);
+        placementIds.push(mint(t, id, goal, vary, ownGoal).id);
         continue;
       }
       placementIds.push(id);
@@ -590,7 +609,8 @@ export function planDerivedTasks(args: PlanDerivedTasksArgs): PlanDerivedTasksRe
       }
       const plans = kids.map((k) => {
         const c = tasksById[k.childTaskId];
-        const goal = c ? goalOf(c) : null;
+        // Slice 3a: a compound placement's `childTargets` arrive keyed by child id.
+        const goal = c ? effectiveGoalOf(k.childTaskId, c, sup) : null;
         if (!c || c.type !== TaskType.COUNTING || goal === null) return { k, c, derive: false as const };
         const part: BoardSourcePartRule = rule.parts?.[k.childTaskId] ?? {};
         const vary: VaryLevel = part.vary ?? rule.vary ?? 0;
@@ -600,6 +620,7 @@ export function planDerivedTasks(args: PlanDerivedTasksArgs): PlanDerivedTasksRe
         return {
           k,
           c,
+          goal,
           derive: true as const,
           target: resolveTarget(
             goal,
@@ -619,7 +640,7 @@ export function planDerivedTasks(args: PlanDerivedTasksArgs): PlanDerivedTasksRe
       const children: DerivedCompoundChildDraft[] = [];
       const seenChildIds = new Set<string>();
       for (const p of plans) {
-        const childTaskId = p.derive ? mint(p.c, p.k.childTaskId, p.target, p.vary).id : p.k.childTaskId;
+        const childTaskId = p.derive ? mint(p.c, p.k.childTaskId, p.target, p.vary, p.goal).id : p.k.childTaskId;
         // Two parts that collapse onto one derived counter (same shared-counter
         // root) would otherwise emit the same `childTaskId` — and the same
         // `linkId` — twice. First in `childIndex` order wins, keeping its own

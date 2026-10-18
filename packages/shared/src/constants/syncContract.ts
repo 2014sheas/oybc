@@ -173,14 +173,10 @@ export const PULL_APPLY_ORDER = [
  *  - `coreBoardDefaults.defaultBoardSize` / `defaultCenterType` — a
  *    per-timeframe size / centre override cleared back to "inherit prefs"
  *    (docs/POOLS_RECURRING.md §Per-timeframe size + centre).
- *  - `tasks.endDate` — the windowed-linked-counter heal (2026-10-01,
- *    `planLinkedCounterWindowHeal`) stamps a linked row with its board's
- *    window; a stamp onto an INDEFINITE board (`endDate` absent) must clear a
- *    legacy task-level `endDate` on every device, or the row's window would
- *    end on one device and run open on another.
- *  - `tasks.timeframe` / `startDate` — the same heal UN-stamps a linked row
- *    a compound carries (2026-10-16); the cleared window must reach every
- *    device, or the row stays pinned to one board's window elsewhere.
+ *  - `tasks.endDate` / `timeframe` / `startDate` — written by the retired
+ *    windowed-linked-counter heal (2026-10-01 → TASK_WINDOW_REWORK slice 3a):
+ *    its stamps and un-stamps already live in synced rows, and the slice-5
+ *    clear of previously stamped rows' window fields needs the same path.
  *  - `tasks.counterName` / `titleTemplateSingular` / `titleTemplatePlural` /
  *    `timeframeGoals` — a shared counter setting cleared back to its default
  *    is stored ABSENT (docs/SHARED_COUNTER_SETTINGS.md D3).

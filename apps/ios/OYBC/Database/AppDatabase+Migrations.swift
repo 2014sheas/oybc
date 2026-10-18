@@ -108,33 +108,9 @@ extension AppDatabase {
             try db.execute(sql: "ALTER TABLE core_board_defaults ADD COLUMN defaultCenterType TEXT")
         }
 
-        // v37: windowed linked counters (owner rule 2026-10-01 — a counting
-        // square accounts only for logs inside its board's window). Heals every
-        // pre-rule hub-linked counter placed on a board into per-board
-        // window-stamped rows (stamp in place for the earliest board, a
-        // deterministic copy for each further one) — AUTHORED writes, so peers
-        // converge. Data-only, no schema change; the same sweep re-runs after
-        // each clean pull (`SyncService`) to catch rows other devices wrote.
-        migrator.registerMigration("v37") { db in
-            let userIds = try String.fetchAll(db, sql: "SELECT id FROM users")
-            // Best-effort: a heal failure must NEVER brick database open — the
-            // post-pull sweep retries it (idempotent), so log and move on.
-            for userId in userIds {
-                do {
-                    // Savepoint: a mid-heal failure rolls back that user's partial writes.
-                    try db.inSavepoint {
-                        try AppDatabase.healLinkedCounterWindowsTx(
-                            db: db, userId: userId, now: AppDatabase.currentTimestamp()
-                        )
-                        return .commit
-                    }
-                } catch {
-                    #if DEBUG
-                    dlog("[Migration v37] linked-counter heal skipped for a user: \(error.localizedDescription)")
-                    #endif
-                }
-            }
-        }
+        // v37: windowed linked-counter heal — retired (TASK_WINDOW_REWORK slice 3a);
+        // the slice-4 sweep repoints stamped rows. Registered as a no-op to keep the version.
+        migrator.registerMigration("v37") { _ in }
 
         // v38: Pool-level default dice (docs/BOARD_SOURCES.md §Member rules →
         // Pool-level defaults, 2026-10-06) — `Pool.memberVary`, a JSON-string
@@ -212,31 +188,9 @@ extension AppDatabase {
             try db.execute(sql: "ALTER TABLE tasks ADD COLUMN countsTowardSince TEXT")
         }
 
-        // v44: re-run the windowed-linked-counter heal once (2026-10-16). The
-        // v37 sweep stamped a linked counting row that a compound carried with
-        // its first board's window; a daily series that re-places the same
-        // compound every window then read that child over its FIRST day
-        // everywhere (0 of 10 after a 26-mile log) and froze it out of
-        // propagation. The planner now never stamps a compound member and
-        // un-stamps one an earlier heal pinned. Data-only, same shape as v37;
-        // the post-pull sweep re-runs the same heal for rows pulled later.
-        migrator.registerMigration("v44") { db in
-            let userIds = try String.fetchAll(db, sql: "SELECT id FROM users")
-            for userId in userIds {
-                do {
-                    try db.inSavepoint {
-                        try AppDatabase.healLinkedCounterWindowsTx(
-                            db: db, userId: userId, now: AppDatabase.currentTimestamp()
-                        )
-                        return .commit
-                    }
-                } catch {
-                    #if DEBUG
-                    dlog("[Migration v44] linked-counter heal skipped for a user: \(error.localizedDescription)")
-                    #endif
-                }
-            }
-        }
+        // v44: heal re-run — retired (TASK_WINDOW_REWORK slice 3a); the slice-4
+        // sweep repoints stamped rows. Registered as a no-op to keep the version.
+        migrator.registerMigration("v44") { _ in }
 
         // v45: Task/window rework slice 1 (docs/TASK_WINDOW_REWORK.md) — the
         // per-placement parameters on `board_tasks`: `targetOverride` (REAL),

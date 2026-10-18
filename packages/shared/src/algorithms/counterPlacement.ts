@@ -149,7 +149,7 @@ export function placementGoalSource(root: CounterSettingsFields, board: Placemen
  * @param board - The board receiving the placement.
  * @returns True when a copy must be minted.
  */
-export function placementNeedsCopy(root: CounterSettingsFields, board: PlacementBoard): boolean {
+export function placementNeedsOverride(root: CounterSettingsFields, board: PlacementBoard): boolean {
   const dflt = counterTimeframeDefault(root, board.timeframe, board);
   return dflt !== null && dflt !== positive(root.maxCount);
 }

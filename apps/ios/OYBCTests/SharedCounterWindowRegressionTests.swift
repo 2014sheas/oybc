@@ -38,11 +38,6 @@ final class SharedCounterWindowRegressionTests: XCTestCase {
         let juneBefore = try XCTUnwrap(db.fetchBoard(id: "june"))
         XCTAssertEqual(juneBefore.completedTasks, 0)
 
-        // The heal (v37 / post-pull) rewrites June's hub-linked row.
-        _ = try db.healLinkedCounterWindows(userId: K.userId)
-        let juneRowBefore = try XCTUnwrap(K.fetchTask(db, "june-miles"))
-        XCTAssertTrue(BoardSources.isWindowStampedForBoard(juneRowBefore, board: juneBefore))
-        let juneVersionBefore = juneRowBefore.version
         let juneBoardVersionBefore = try XCTUnwrap(db.fetchBoard(id: "june")).version
 
         let result = try db.incrementSharedCounter(sourceTaskId: "miles", by: 5, boardId: "sept", now: logNow)
@@ -76,7 +71,8 @@ final class SharedCounterWindowRegressionTests: XCTestCase {
         // written to its row / board by the propagation.
         XCTAssertEqual(june.completedTasks, 0)
         XCTAssertEqual(june.sealedCompletedCells ?? [], [])
-        XCTAssertEqual(juneRow.version, juneVersionBefore, "no propagation write to June's row")
+        // (June's UNSTAMPED hub-linked row still takes the legacy latch write until
+        // slice 5 retires `propagateIncrement`; the kernel ignores it, so nothing shows.)
         XCTAssertEqual(june.version, juneBoardVersionBefore, "no cascade write to June's board")
 
         // September's member did count the log; June is not credited.
@@ -85,7 +81,7 @@ final class SharedCounterWindowRegressionTests: XCTestCase {
                        "an ended board can no longer change — it isn't a credit target either")
     }
 
-    /// The credit list never names a closed or ended board, even pre-heal.
+    /// The credit list never names a closed or ended board.
     func test_creditList_excludesClosedAndEndedBoards() throws {
         let db = try seed()
         let result = try db.incrementSharedCounter(sourceTaskId: "miles", by: 1, boardId: "sept", now: logNow)
@@ -103,29 +99,17 @@ final class SharedCounterWindowRegressionTests: XCTestCase {
         XCTAssertFalse(AppDatabase.boardCanStillCountLogs(sealed, now: logNow))
     }
 
-    /// Late log on a HEALED former hub-linked row of a closed board: it now
-    /// routes to its ROOT (window-stamped) instead of the OQ2 no-op.
-    func test_lateLogOnHealedRow_routesToRoot() throws {
-        let db = try seed()
-        _ = try db.healLinkedCounterWindows(userId: K.userId)
-        try db.lateLogIncrement(boardId: "june", taskId: "june-miles", delta: 1, now: "2026-10-02T00:00:00.000Z")
-        let ev = try db.read { try TaskEvent.filter(Column("taskId") == "miles" && Column("boardId") == "june").fetchAll($0) }
-        XCTAssertEqual(ev.count, 1)
-        XCTAssertEqual(DateFormatting.parseISO(ev[0].occurredAt), DateFormatting.parseISO(juneEnd))
-        XCTAssertEqual(try XCTUnwrap(db.fetchBoard(id: "june")).sealedCompletedCells ?? [], [], "3 < 6 — still not complete")
-    }
-
-    /// PRE-HEAL variant: June's row is still the UNSTAMPED hub-linked copy.
+    /// June's row is the UNSTAMPED hub-linked copy (the heal is retired).
     /// The +5 on September writes June's lifetime latch (complete: 7 >= 6), but
     /// the kernel fallback alone — through the real grid path with June's SEALED
     /// context — still shows 2 miles and an incomplete cell.
-    func test_preHeal_septemberLog_juneGridStillShowsTwo_viaKernelFallback() throws {
+    func test_septemberLog_juneGridStillShowsTwo_viaKernelFallback() throws {
         let db = try seed()
         _ = try db.incrementSharedCounter(sourceTaskId: "miles", by: 5, boardId: "sept", now: logNow)
 
         let june = try XCTUnwrap(db.fetchBoard(id: "june"))
         let juneRow = try XCTUnwrap(K.fetchTask(db, "june-miles"))
-        XCTAssertNil(juneRow.startDate, "still the unstamped hub-linked row (no heal ran)")
+        XCTAssertNil(juneRow.startDate, "still the unstamped hub-linked row")
 
         let allEvents = try db.read { try TaskEvent.filter(Column("isDeleted") == false).fetchAll($0) }
         let byTask = Dictionary(grouping: allEvents, by: \.taskId)
@@ -151,36 +135,5 @@ final class SharedCounterWindowRegressionTests: XCTestCase {
         )
         XCTAssertEqual(shown.displayed, 2)
         XCTAssertFalse(shown.isCompleted)
-    }
-
-    /// A sealed re-derivation after the heal where June's cell actually CHANGES:
-    /// the old latch (7 >= 5) painted it green and the snapshot recorded it;
-    /// only 2 miles fall in June, so the heal's re-derivation drops it.
-    func test_heal_reDerivesSealedJune_cellDropsWhenLatchWasWrong() throws {
-        let db = try AppDatabase.makeTestInstance()
-        try K.seedUser(db)
-        try db.saveTask(K.task("miles", maxCount: 100, currentCount: 7))
-        try db.saveTask(K.task(
-            "june-miles", maxCount: 5, sharedCounterId: "miles", baseline: 0, currentCount: 7, isCompleted: true
-        ))
-        try db.saveBoard(K.board(id: "june", startDate: juneStart, endDate: juneEnd))
-        try db.saveBoardTask(K.placement(id: "btJ", boardId: "june", taskId: "june-miles"))
-        try K.addIncrement(db, taskId: "miles", delta: 2, occurredAt: "2026-06-10T00:00:00.000Z")
-        try K.addIncrement(db, taskId: "miles", delta: 5, occurredAt: "2026-09-10T00:00:00.000Z")
-        XCTAssertTrue(try db.sealBoard(boardId: "june", now: "2026-07-02T00:00:00.000Z"))
-        // Seal with the OLD latch's answer: the cell recorded as complete.
-        try db.write {
-            try $0.execute(sql: "UPDATE boards SET sealedCompletedCells = '[0]', completedTasks = 1 WHERE id = 'june'")
-        }
-        let before = try XCTUnwrap(db.fetchBoard(id: "june"))
-        XCTAssertEqual(before.sealedCompletedCells ?? [], [0])
-        XCTAssertEqual(before.completedTasks, 1)
-
-        let r = try db.healLinkedCounterWindows(userId: K.userId)
-        XCTAssertEqual(r.stamped, 1)
-
-        let after = try XCTUnwrap(db.fetchBoard(id: "june"))
-        XCTAssertEqual(after.sealedCompletedCells ?? [], [], "the snapshot no longer contains the cell")
-        XCTAssertEqual(after.completedTasks, 0, "completedTasks dropped")
     }
 }

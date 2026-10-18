@@ -12,18 +12,18 @@ extension BoardPlayViewModel {
 
     /// The event-owning task id a late log authors against for `task`:
     ///   - NORMAL / plain-or-source COUNTING → its own id.
-    ///   - Window-stamped derived counter → its ROOT id (`sharedCounterId`) —
-    ///     derived rows own no events (carve-out).
-    ///   - Hub-linked derived counter / COMPOUND / ACHIEVEMENT → `nil` (not a
-    ///     single-event target; compound has its own commit path, the other
-    ///     two are no-ops on a closed board — OQ2).
+    ///   - LINKED counter (stamped or not) → its ROOT id (`sharedCounterId`) —
+    ///     linked rows own no events (the hub-linked no-op, OQ2, is retired —
+    ///     TASK_WINDOW_REWORK slice 3a).
+    ///   - COMPOUND / ACHIEVEMENT → `nil` (not a single-event target; compound
+    ///     has its own commit path, achievement is a no-op on a closed board).
     func lateLogEventOwningTaskId(for task: Task) -> String? {
         switch task.type {
         case .normal:
             return task.id
         case .counting:
-            guard let root = task.sharedCounterId else { return task.id }
-            return BoardSources.isWindowStampedDerived(task) ? root : nil
+            guard let root = task.sharedCounterId, !root.isEmpty else { return task.id }
+            return root
         case .compound, .achievement:
             return nil
         }

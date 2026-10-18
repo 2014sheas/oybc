@@ -72,6 +72,14 @@ export interface BoardSourceSupplyInfo {
    */
   windowCountByTaskId: Record<string, number>;
   /**
+   * TASK_WINDOW_REWORK slice 3a — the EFFECTIVE goal of each supplied member
+   * whose placement carries one: `targetOverride` (read through
+   * `withPlacementParams`) keyed by the task id, and a compound placement's
+   * `childTargets` keyed by each child id. A member with no entry reads its own
+   * goal. Feeds `BoardSourceSupply.goalByTaskId` (the planner pro-rates from it).
+   */
+  goalByTaskId: Record<string, number>;
+  /**
    * §Member rules (B3, RC5) — the source board's OWN window, so a caller
    * can pro-rate an auto target (`effectiveMemberTarget`) without a second
    * board read.
@@ -110,6 +118,7 @@ export function resolveBoardSourceSupply(
   const supply: string[] = [];
   const done = new Set<string>();
   const windowCountByTaskId: Record<string, number> = {};
+  const goalByTaskId: Record<string, number> = {};
   for (const bt of rows) {
     const raw = tasksById[bt.taskId];
     // `isSourceSupplyTask`: achievements never enter source supply —
@@ -120,6 +129,9 @@ export function resolveBoardSourceSupply(
     const task = withPlacementParams(raw, bt);
     seen.add(task.id);
     supply.push(task.id);
+    // Slice 3a: the placement's effective goal rides along with the supply.
+    if (bt.targetOverride != null && task.maxCount != null) goalByTaskId[task.id] = task.maxCount;
+    for (const ct of bt.childTargets ?? []) goalByTaskId[ct.childId] = ct.target;
     let isDone: boolean;
     // A window-stamped derived counter is done by its ROOT's increments inside
     // its own window — the kernel's rule (docs §Derived-task carve-out,
@@ -154,6 +166,7 @@ export function resolveBoardSourceSupply(
     supplyTaskIds: supply,
     doneTaskIds: done,
     windowCountByTaskId,
+    goalByTaskId,
     sourceWindow: {
       timeframe: board.timeframe,
       startDate: board.startDate ?? null,
@@ -492,6 +505,7 @@ export async function fetchTemplateSupplyResolution(
       supplies.push({
         source,
         supplyTaskIds: availableSupplyIds(source, info?.supplyTaskIds ?? [], info?.doneTaskIds),
+        ...(info ? { goalByTaskId: info.goalByTaskId } : {}),
       });
     }
     byTemplateId[entry.template.id] = {

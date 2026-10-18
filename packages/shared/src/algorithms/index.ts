@@ -45,7 +45,7 @@ export {
   placementGoalForCounter,
   counterPickGoal,
   placementGoalSource,
-  placementNeedsCopy,
+  placementNeedsOverride,
   taskSearchMatches,
 } from './counterPlacement';
 export type { PlacementBoard, PlacementExistingCopy, PlacementGoalSource } from './counterPlacement';
@@ -565,16 +565,8 @@ export type {
 export {
   sameWindowStart,
   isWindowStampedForBoard,
-  planLinkedCounterWindowHeal,
-  windowStampedCopyDraft,
 } from './linkedCounterWindowHeal';
 
-export type {
-  LinkedCounterWindowHealInput,
-  LinkedCounterWindowStamp,
-  LinkedCounterWindowCopy,
-  LinkedCounterWindowHealPlan,
-} from './linkedCounterWindowHeal';
 
 // ===== Board-scoped task edits — fork ids + planner (docs/BOARD_SCOPED_TASK_EDITS.md, PR 1) =====
 export {

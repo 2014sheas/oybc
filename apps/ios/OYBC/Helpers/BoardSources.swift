@@ -34,6 +34,10 @@ enum BoardSources {
     struct Supply {
         let source: BoardSource
         let supplyTaskIds: [String]
+        /// Slice 3a: a BOARD source's effective goal per supplied member (the
+        /// placement's `targetOverride`; a compound placement's `childTargets`
+        /// keyed by child id). Pool sources never carry it. `nil` = none.
+        var goalByTaskId: [String: CountValue]? = nil
     }
 
     /// Result of `computeSourceCapacity` — TS twin `SourceCapacityResult`.

@@ -47,6 +47,7 @@ import {
   FORK_CONFIRM_BODY,
   FORK_DONE_LABEL,
   needsForkConfirm,
+  patchHasNonParameterFields,
   sheetDoneLabel,
   sheetWouldFork,
   useForkCheck,
@@ -259,7 +260,17 @@ export function BoardEditTaskSheet({
     [task.id, ...(compoundDraft?.children ?? []).map((c) => c.childTaskId ?? '')],
     boardId,
   );
-  const wouldFork = forkCheck !== null && sheetWouldFork(task.id, editorOpen ? compoundDraft : null, forkCheck);
+  // Parameter-only edits (goal, title, a child's goal) land on the placement and never fork.
+  const nonParameterEdits =
+    problem !== null || forkCheck === null
+      ? true
+      : patchHasNonParameterFields(
+          original,
+          buildSheetOverride(input),
+          (compoundBaseline?.children ?? []).flatMap((c) => (c.childTaskId && forkCheck.rows[c.childTaskId]) || []),
+        );
+  const wouldFork =
+    forkCheck !== null && sheetWouldFork(task.id, editorOpen ? compoundDraft : null, forkCheck, nonParameterEdits);
   const canSave = problem === null && !checking && forkCheck !== null;
   const goalNum = parseGoal(goalStr, countKind);
   const needsUnit = countKindNeedsUnit(countKind);

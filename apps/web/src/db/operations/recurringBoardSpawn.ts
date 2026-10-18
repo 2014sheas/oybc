@@ -17,6 +17,7 @@ import {
   sourcesForRecord,
   type Board,
   type BoardSource,
+  type BoardSourceSupply,
   type BoardWindow,
   type BoardTask,
   type CompoundChild,
@@ -201,10 +202,13 @@ export async function spawnTemplateBoard(
       const resolveBoardSupply = async (sourceBoard: Board, source: BoardSource) => {
         const rows = await db.boardTasks.where('boardId').equals(sourceBoard.id).toArray();
         const info = resolveBoardSourceSupply(sourceBoard, rows, tasksById, eventsByTaskId);
-        return availableSupplyIds(source, info.supplyTaskIds, info.doneTaskIds);
+        return {
+          supplyTaskIds: availableSupplyIds(source, info.supplyTaskIds, info.doneTaskIds),
+          goalByTaskId: info.goalByTaskId,
+        };
       };
 
-      const supplies = [];
+      const supplies: BoardSourceSupply[] = [];
       for (const source of sources) {
         if (source.kind === 'pool') {
           supplies.push({
@@ -219,9 +223,7 @@ export async function spawnTemplateBoard(
         const sourceBoard = sourceBoardById.get(source.sourceId);
         supplies.push({
           source,
-          supplyTaskIds: sourceBoard
-            ? await resolveBoardSupply(sourceBoard, source)
-            : [],
+          ...(sourceBoard ? await resolveBoardSupply(sourceBoard, source) : { supplyTaskIds: [] }),
         });
       }
       // Board Sources §Member rules (B2) — spec step 1: Split-up expansion
@@ -230,11 +232,12 @@ export async function spawnTemplateBoard(
       // `split: true` compound therefore contributes its PARTS as selectable
       // squares (and never itself), so what Settings' capacity says and what
       // this spawn places can't disagree.
-      const ruleSupplies = applyMemberRules(
-        supplies.map((s) => ({ source: s.source, supplyTaskIds: resolveSourceAvailable(s) })),
-        childrenByCompound,
-        tasksById,
-      );
+      const availableSupplies = supplies.map((s) => ({
+        source: s.source,
+        supplyTaskIds: resolveSourceAvailable(s),
+        goalByTaskId: s.goalByTaskId,
+      }));
+      const ruleSupplies = applyMemberRules(availableSupplies, childrenByCompound, tasksById);
 
       // The manual layer isn't deleted-filtered (caller-curated, matching
       // resolveMix's old contract), but hard-gone ids ARE dropped — the

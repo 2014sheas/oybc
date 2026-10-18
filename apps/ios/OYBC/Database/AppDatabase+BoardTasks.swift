@@ -99,17 +99,6 @@ extension AppDatabase {
             let oldTaskId = boardTask.taskId
             let now = Self.currentTimestamp()
 
-            // Windowed linked counters (owner rule 2026-10-01): a linked
-            // counting task that isn't window-stamped for THIS board resolves
-            // to the board's own per-window row. This is what makes Board
-            // Edit's replace-square (BoardPlayViewModel+EditCommit → here)
-            // window-safe — it bypasses the wizard's member-rule planner.
-            var newTaskId = newTaskId
-            if let target = try Task.fetchOne(db, key: newTaskId) {
-                newTaskId = try Self.resolveWindowStampedPlacementId(
-                    db: db, task: target, board: owningBoard, now: now
-                )
-            }
             // No-op guard: swapping to the same task writes nothing.
             guard oldTaskId != newTaskId else { return }
 
@@ -124,10 +113,22 @@ extension AppDatabase {
 
             // ── Apply the boardTask patch ──
 
+            // Slice 3a: the task is placed as-is (no per-board copy). The old
+            // task's parameters do not follow the swap; a counter ROOT gets its
+            // board-timeframe default as `targetOverride` instead.
             boardTask.taskId = newTaskId
+            var reset = PlacementParamsPatch(
+                targetOverride: .clear, targetKind: .clear, childTargets: .clear, titleOverride: .clear
+            )
+            if let target = try Task.fetchOne(db, key: newTaskId) {
+                let dflt = Self.defaultPlacementParams(task: target, board: owningBoard)
+                if dflt.targetOverride != .keep { reset.targetOverride = dflt.targetOverride; reset.targetKind = dflt.targetKind }
+            }
+            boardTask = boardTask.applyingPlacementParams(reset)
             boardTask.updatedAt = now
             boardTask.version += 1
             try boardTask.save(db)
+            try Self.writePlacementParamColumns(db: db, boardTask: boardTask)
             try SyncQueueBuilder.makeItem(
                 entityType: "boardTasks",
                 entityId: boardTaskId,
@@ -632,11 +633,17 @@ extension AppDatabase {
         _ boardId: String,
         taskId: String,
         position: (row: Int, col: Int),
-        isLocked: Bool = false
+        isLocked: Bool = false,
+        targetOverride: CountValue? = nil,
+        targetKind: CountKind? = nil,
+        childTargets: [PlacementChildTarget]? = nil,
+        titleOverride: String? = nil
     ) throws -> BoardTask {
         try write { db in
             try Self.addBoardTaskToBoard(
-                db: db, boardId: boardId, taskId: taskId, position: position, isLocked: isLocked
+                db: db, boardId: boardId, taskId: taskId, position: position, isLocked: isLocked,
+                targetOverride: targetOverride, targetKind: targetKind,
+                childTargets: childTargets, titleOverride: titleOverride
             )
         }
     }
@@ -657,6 +664,10 @@ extension AppDatabase {
     ///   - position: Grid position `(row, col)` (0-based).
     ///   - isLocked: Initial lock state of the new placement (a staged add can
     ///     carry a lock from the draft).
+    ///   - targetOverride: Explicit per-board goal (wins over the counter-root default rule).
+    ///   - targetKind: The kind `targetOverride` is expressed in.
+    ///   - childTargets: Explicit per-child goals for a compound.
+    ///   - titleOverride: Explicit per-board title.
     /// - Returns: The newly-created `BoardTask` record.
     /// - Throws: `AppDatabaseError.invalidPlacement` for a closed / missing
     ///   board, an out-of-bounds or occupied cell, or a duplicate task; GRDB errors.
@@ -666,23 +677,15 @@ extension AppDatabase {
         boardId: String,
         taskId: String,
         position: (row: Int, col: Int),
-        isLocked: Bool = false
+        isLocked: Bool = false,
+        targetOverride: CountValue? = nil,
+        targetKind: CountKind? = nil,
+        childTargets: [PlacementChildTarget]? = nil,
+        titleOverride: String? = nil
     ) throws -> BoardTask {
         let now = AppDatabase.currentTimestamp()
 
-        // Windowed linked counters (owner rule 2026-10-01): a linked counting
-        // task that isn't window-stamped for THIS board resolves to the
-        // board's own per-window row. This is what makes Board Edit's
-        // add-square (BoardPlayViewModel+EditCommit → here) window-safe — it
-        // bypasses the wizard's member-rule planner. Closed / missing boards
-        // are left to the guard below (nothing is minted for them).
-        var taskId = taskId
-        if let target = try Task.fetchOne(db, key: taskId),
-           let board = try Board.fetchOne(db, key: boardId), !board.isDeleted, board.sealedAt == nil {
-            taskId = try Self.resolveWindowStampedPlacementId(db: db, task: target, board: board, now: now)
-        }
-
-        let newBoardTask = BoardTask(
+        var newBoardTask = BoardTask(
             id: AppDatabase.generateUUID(),
             boardId: boardId,
             taskId: taskId,
@@ -690,6 +693,10 @@ extension AppDatabase {
             col: position.col,
             isCenter: false,
             isLocked: isLocked,
+            targetOverride: targetOverride,
+            targetKind: targetKind,
+            childTargets: childTargets,
+            titleOverride: titleOverride,
             createdAt: now,
             updatedAt: now,
             version: 1
@@ -738,6 +745,13 @@ extension AppDatabase {
         }
         guard !liveOnBoard.contains(where: { $0.taskId == taskId }) else {
             throw AppDatabaseError.invalidPlacement("This task is already placed on this board.")
+        }
+
+        // Slice 3a: the task is placed as-is. A counter ROOT with a timeframe
+        // default for this board gets it as `targetOverride` unless the caller
+        // passed explicit parameters (which win).
+        if targetOverride == nil, let task = try Task.fetchOne(db, key: taskId) {
+            newBoardTask = newBoardTask.applyingPlacementParams(Self.defaultPlacementParams(task: task, board: owningBoard))
         }
 
         try newBoardTask.save(db)

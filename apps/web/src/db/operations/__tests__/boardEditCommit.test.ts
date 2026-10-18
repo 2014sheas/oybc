@@ -5,6 +5,7 @@ import {
   OperatorType,
   TaskType,
   Timeframe,
+  withPlacementParams,
   type Board,
   type BoardTask,
   type Task,
@@ -90,7 +91,7 @@ afterEach(async () => {
 });
 
 describe('commitSquareEdits', () => {
-  it('a pending LINKED row the add replaced with the board copy is never written — no orphan member, no sync item', async () => {
+  it('a pending LINKED row is placed as-is — slice 3a mints no per-board copy', async () => {
     const { derivedTaskId } = await import('@oybc/shared');
     await db.boards.add(seedBoard());
     await db.tasks.add(seedTask('root', { type: TaskType.COUNTING, action: 'Read', unit: 'pages', isCounter: true, currentCount: 40 }));
@@ -107,12 +108,10 @@ describe('commitSquareEdits', () => {
 
     const copyId = derivedTaskId(BOARD, 'root');
     const placements = await db.boardTasks.where('boardId').equals(BOARD).toArray();
-    expect(placements.map((p) => p.taskId)).toEqual([copyId]);
-    expect(await db.tasks.get(copyId)).toMatchObject({ maxCount: 5, sharedCounterId: 'root' });
-    expect(await db.tasks.get('pending-linked')).toBeUndefined();
-    const queued = await db.syncQueue.toArray();
-    expect(queued.some((q) => q.entityType === 'tasks' && q.entityId === 'pending-linked')).toBe(false);
-    expect((await db.tasks.where('sharedCounterId').equals('root').toArray()).map((t) => t.id)).toEqual([copyId]);
+    expect(placements.map((p) => p.taskId)).toEqual(['pending-linked']);
+    expect(placements[0].targetOverride).toBeUndefined(); // a linked row is placed with no parameters
+    expect(await db.tasks.get('pending-linked')).toMatchObject({ maxCount: 5, sharedCounterId: 'root' });
+    expect(await db.tasks.get(copyId)).toBeUndefined();
   });
 
   it('writes a pending new task (createdInWizard: false) + its placement + 2 queue rows', async () => {
@@ -403,7 +402,9 @@ describe('commitSquareEdits — type switches and compound overrides', () => {
       }),
     );
 
-    expect((await db.tasks.get('comp'))).toMatchObject({ title: 'Combo', operator: OperatorType.OR, version: 2 });
+    // The operator edits the task; the new name is this board's titleOverride.
+    expect((await db.tasks.get('comp'))).toMatchObject({ title: 'Task comp', operator: OperatorType.OR, version: 2 });
+    expect((await db.boardTasks.get('bt-a'))?.titleOverride).toBe('Combo');
     expect((await liveLinks('comp')).map((l) => l.childTaskId).sort()).toEqual(['c1', 'lib']);
     expect((await db.compoundChildren.get('l2'))?.isDeleted).toBe(true);
     expect((await db.tasks.get('c2'))?.isDeleted).toBe(false); // link only
@@ -438,9 +439,15 @@ describe('commitSquareEdits — type switches and compound overrides', () => {
         taskOverrides: new Map([['task-a', override]]),
       }),
     );
+    // The goal is a PLACEMENT parameter: the task keeps its own goal and
+    // title, and the auto title re-renders at the placement's goal.
     expect(await db.tasks.get('task-a')).toMatchObject({
-      type: TaskType.COUNTING, title: 'Run 8 km', action: 'Run', maxCount: 8, unit: 'km', version: 2,
+      type: TaskType.COUNTING, title: 'Run 5 km', action: 'Run', maxCount: 5, unit: 'km', version: 1,
     });
+    const bt = (await db.boardTasks.get('bt-a'))!;
+    expect(bt).toMatchObject({ targetOverride: 8, targetKind: 'discrete' });
+    expect(bt.titleOverride).toBeUndefined();
+    expect(withPlacementParams((await db.tasks.get('task-a'))!, bt).title).toBe('Run 8 km');
   });
 
   it('a goal-only edit on a custom-titled Counting task keeps the custom title', async () => {
@@ -456,7 +463,11 @@ describe('commitSquareEdits — type switches and compound overrides', () => {
         taskOverrides: new Map([['task-a', override]]),
       }),
     );
-    expect(await db.tasks.get('task-a')).toMatchObject({ title: 'Morning run', maxCount: 8, version: 2 });
+    expect(await db.tasks.get('task-a')).toMatchObject({ title: 'Morning run', maxCount: 5, version: 1 });
+    const bt = (await db.boardTasks.get('bt-a'))!;
+    expect(bt).toMatchObject({ targetOverride: 8, targetKind: 'discrete' });
+    expect(bt.titleOverride).toBeUndefined();
+    expect(withPlacementParams((await db.tasks.get('task-a'))!, bt).title).toBe('Morning run');
   });
 
   it('Counting → Simple clears action / unit / maxCount', async () => {
@@ -582,7 +593,8 @@ describe('commitSquareEdits — type switches and compound overrides', () => {
         taskOverrides: new Map([['task-a', { ...staged, ...back }]]),
       }),
     );
-    expect(await db.tasks.get('task-a')).toMatchObject({ type: TaskType.NORMAL, title: 'Renamed' });
+    expect(await db.tasks.get('task-a')).toMatchObject({ type: TaskType.NORMAL, title: 'Task task-a', version: 1 });
+    expect((await db.boardTasks.get('bt-a'))?.titleOverride).toBe('Renamed');
     expect(await db.compoundChildren.count()).toBe(0);
     expect(await db.tasks.count()).toBe(1);
   });
@@ -610,7 +622,8 @@ describe('commitSquareEdits — type switches and compound overrides', () => {
         taskOverrides: new Map([['task-a', { type: TaskType.COUNTING, title: 'Renamed' }]]),
       }),
     );
-    expect((await db.tasks.get('task-a'))?.title).toBe('Renamed');
+    expect((await db.tasks.get('task-a'))?.title).toBe('Task task-a');
+    expect((await db.boardTasks.get('bt-a'))?.titleOverride).toBe('Renamed');
   });
 
   it('convert A then Remove A → Save converts nothing', async () => {
@@ -651,7 +664,8 @@ describe('commitSquareEdits — type switches and compound overrides', () => {
         taskOverrides: new Map([['task-a', { type: TaskType.COMPOUND, title: 'Renamed', compound: undefined }]]),
       }),
     );
-    expect(await db.tasks.get('task-a')).toMatchObject({ type: TaskType.COMPOUND, title: 'Renamed' });
+    expect(await db.tasks.get('task-a')).toMatchObject({ type: TaskType.COMPOUND, title: 'Task task-a', version: 1 });
+    expect((await db.boardTasks.get('bt-a'))?.titleOverride).toBe('Renamed');
   });
 
   it('conversion clears currentCount (iOS-aligned)', async () => {

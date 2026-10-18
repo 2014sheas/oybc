@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import type { Task } from '@oybc/shared';
 import { fetchTasksByIds } from '../../db/operations';
 import { fetchWouldForkOnBoard } from '../../db/operations/boardScopedEdit';
+import { splitBoardEditOverride, type BoardEditOverride } from '../../db/boardEditPlacementSplit';
 import { applyStepToChildTask, type ChildPatch, type TaskEditPatch } from '../../db/taskEditPatch';
 
 /**
@@ -51,8 +52,9 @@ export interface ForkCheck {
 const NO_FORKS: ForkCheck = { forking: new Set(), rows: {} };
 
 /**
- * Whether a compound-editor step changes its stored sub-task — the same
- * comparison the Save's `applyStagedCompoundChildEdits` makes.
+ * Whether a compound-editor step changes its stored sub-task's title, action
+ * or unit — the fields a board-scoped Save writes to the sub-task. A goal
+ * change is a placement parameter (`childTargets`) and never forks.
  *
  * @param row - The stored sub-task (absent = nothing to change).
  * @param step - The editor's step for it.
@@ -65,21 +67,43 @@ export function childStepChanged(row: Task | undefined, step: ChildPatch): boole
   return (
     next.title !== row.title ||
     (next.action ?? '') !== (row.action ?? '') ||
-    (next.unit ?? '') !== (row.unit ?? '') ||
-    next.maxCount !== row.maxCount
+    (next.unit ?? '') !== (row.unit ?? '')
   );
 }
 
 /**
+ * Whether a staged override edits anything but placement parameters (goal,
+ * title, an existing compound child's goal) — i.e. whether its Save still
+ * takes the board-scoped task-edit path that may fork.
+ *
+ * @param task - The STORED task.
+ * @param patch - The staged override (`buildSheetOverride`).
+ * @param storedChildren - A compound's stored children, in link order.
+ * @returns `true` when a non-parameter field changes.
+ */
+export function patchHasNonParameterFields(task: Task, patch: BoardEditOverride, storedChildren: Task[] = []): boolean {
+  return splitBoardEditOverride({ stored: task, patch, storedChildren }).rest !== null;
+}
+
+/**
  * Whether the sheet's Save would fork anything: the task itself, or a
- * sub-task the compound editor changes that is placed on another board.
+ * sub-task the compound editor changes that is placed on another board. An
+ * edit of parameter fields only (goal, title, a child's goal) lands on the
+ * placement and never forks.
  *
  * @param taskId - The sheet's task.
  * @param draft - The open compound editor's draft (`null` when not shown).
  * @param check - The loaded {@link ForkCheck}.
+ * @param nonParameterEdits - Whether the draft edits a non-parameter field.
  * @returns `true` when the label must read "Save for this board".
  */
-export function sheetWouldFork(taskId: string, draft: TaskEditPatch | null, check: ForkCheck): boolean {
+export function sheetWouldFork(
+  taskId: string,
+  draft: TaskEditPatch | null,
+  check: ForkCheck,
+  nonParameterEdits: boolean,
+): boolean {
+  if (!nonParameterEdits) return false;
   if (check.forking.has(taskId)) return true;
   return (draft?.children ?? []).some(
     (c) => c.childTaskId != null && check.forking.has(c.childTaskId) && childStepChanged(check.rows[c.childTaskId], c),

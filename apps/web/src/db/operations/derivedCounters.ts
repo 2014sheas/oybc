@@ -456,7 +456,7 @@ async function hasLivePlacementElsewhere(
 }
 
 // `sameWindowStart` (final-review M2) now lives in `@oybc/shared`
-// (`linkedCounterWindowHeal.ts`) so the placement gate `isWindowStampedForBoard`
+// (`linkedCounterWindowHeal.ts`, shared) so the placement gate `isWindowStampedForBoard`
 // and this file's `isMintedForBoard` share one instant-compare definition.
 
 /**

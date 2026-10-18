@@ -7,7 +7,6 @@ import {
   type TaskEvent,
 } from '@oybc/shared';
 import { db } from '../../internal';
-import { healLinkedCounterWindows } from '../linkedCounterWindowHeal';
 import { incrementSharedCounter } from '../tasks.sharedCounter';
 import { buildSquareWindowContext, taskToSquareState } from '../../adapters';
 import {
@@ -19,7 +18,6 @@ import {
   hubLinked,
   incEvent,
   placement,
-  queued,
   rootTask,
 } from './linkedCounterFixtures';
 
@@ -80,10 +78,7 @@ afterEach(async () => {
 
 describe('a late log on an ended September board never moves the closed June board', () => {
   it('stamps at September\'s endDate, leaves June untouched, and credits no closed board', async () => {
-    await healLinkedCounterWindows('user-1'); // June's hub-linked row becomes window-stamped
-    const juneRowAfterHeal = (await db.tasks.get('H-june'))!;
-    const juneBoardAfterHeal = (await db.boards.get(JUNE.id))!;
-    const juneQueueBefore = (await queued('tasks')).filter((id) => id === 'H-june').length;
+    const juneBoardBefore = (await db.boards.get(JUNE.id))!;
 
     const { affectedBoards } = await incrementSharedCounter(ROOT, 5, SEPT.id);
 
@@ -94,12 +89,9 @@ describe('a late log on an ended September board never moves the closed June boa
     // Lifetime root count moved by +5.
     expect((await db.tasks.get(ROOT))!.currentCount).toBe(7);
 
-    // June's row: no authored write, no enqueue, same cache.
+    // June's row is a plain linked row: its lifetime cache may move (retired
+    // with the propagation machinery, slice 5) but nothing reads it for June.
     const juneRow = (await db.tasks.get('H-june'))!;
-    expect(juneRow.version).toBe(juneRowAfterHeal.version);
-    expect(juneRow.currentCount).toBe(2);
-    expect(juneRow.isCompleted).toBe(false);
-    expect((await queued('tasks')).filter((id) => id === 'H-june').length).toBe(juneQueueBefore);
 
     // June's DISPLAY is the in-window sum (2), bounded at its seal.
     const june = (await db.boards.get(JUNE.id))!;
@@ -111,8 +103,8 @@ describe('a late log on an ended September board never moves the closed June boa
 
     // June's sealed snapshot / stats are unchanged.
     expect(june.sealedCompletedCells).toEqual([]);
-    expect(june.completedTasks).toBe(juneBoardAfterHeal.completedTasks);
-    expect(june.version).toBe(juneBoardAfterHeal.version);
+    expect(june.completedTasks).toBe(juneBoardBefore.completedTasks);
+    expect(june.version).toBe(juneBoardBefore.version);
 
     // September's own square took the log.
     const sept = resolveLinkedCounterDisplay((await db.tasks.get(SEPT_ROW))!, await eventsByTask());
@@ -147,9 +139,8 @@ describe('a late log on an ended September board never moves the closed June boa
     expect(affectedBoards.map((b) => b.boardId)).not.toContain(OPEN);
   });
 
-  it('PRE-HEAL: the kernel fallback alone keeps June\'s UNSTAMPED row at 2 through the real grid path', async () => {
-    // No heal: June's row is still hub-linked (unstamped) with the latch the
-    // owner's device has.
+  it('the kernel alone keeps June\'s UNSTAMPED row at 2 through the real grid path', async () => {
+    // June's row is hub-linked (unstamped) with the latch the owner's device has.
     await db.tasks.put(hubLinked('H-june', { maxCount: 5, currentCount: 2, isCompleted: false }));
     await incrementSharedCounter(ROOT, 5, SEPT.id);
 
@@ -163,23 +154,5 @@ describe('a late log on an ended September board never moves the closed June boa
 
     expect(state.currentCount).toBe(2);
     expect(state.isCompleted).toBe(false);
-  });
-
-  it('sealed re-derivation after the heal actually CHANGES June: a latched-complete cell drops out', async () => {
-    // The owner's device: June's row carries the lifetime latch (7 >= 5, complete)
-    // although only 2 miles fall inside June; June was sealed with the old latch.
-    await db.taskEvents.put(incEvent('e-aug', ROOT, 5, '2026-08-01T00:00:00.000Z'));
-    await db.tasks.put(rootTask({ currentCount: 7 }));
-    await db.tasks.put(hubLinked('H-june', { maxCount: 5, currentCount: 7, isCompleted: true }));
-    await db.boards.put(
-      boardRow(JUNE, { sealedAt: SEALED_AT, sealedCompletedCells: [0], completedTasks: 1 }),
-    );
-    expect((await db.boards.get(JUNE.id))!.sealedCompletedCells).toEqual([0]);
-
-    await healLinkedCounterWindows('user-1');
-
-    const june = (await db.boards.get(JUNE.id))!;
-    expect(june.sealedCompletedCells).toEqual([]);
-    expect(june.completedTasks).toBe(0);
   });
 });

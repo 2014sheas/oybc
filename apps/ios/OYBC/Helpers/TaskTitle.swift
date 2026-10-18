@@ -115,10 +115,8 @@ extension TaskTitle {
     /// target differs, because the user chose that name. An auto (or empty)
     /// title is regenerated from the copy's `action` / NEW `maxCount` /
     /// `unit` — through the member's own templates when it is a root carrying
-    /// them (absent = the formula, exactly as before the 2026-10-06 fix). Shared by
-    /// `BoardSources.planDerivedTasks`'s mint and the linked-counter window
-    /// heal's `windowStampedCopyDraft` so the two mint paths can never
-    /// disagree.
+    /// them (absent = the formula, exactly as before the 2026-10-06 fix). Used by
+    /// `BoardSources.planDerivedTasks`'s mint.
     ///
     /// - Parameters:
     ///   - member: The member being copied (its own title / action / unit / goal).

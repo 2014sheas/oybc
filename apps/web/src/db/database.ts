@@ -440,9 +440,9 @@ export class AppDatabase extends Dexie {
       syncWatermarks: '[userId+collection]',
     });
 
-    // v20: re-run the windowed-linked-counter heal (2026-10-16) — the v18
-    // sweep had stamped compound-carried linked rows with their first board's
-    // window; the planner now un-stamps those. See `operations/migrationV20.ts`.
+    // v20: was a re-run of the windowed-linked-counter heal (2026-10-16); the
+    // heal is retired (TASK_WINDOW_REWORK slice 3a) and the migration is a
+    // registered no-op. See `operations/migrationV20.ts`.
     // No schema shape change (`.stores({})` no-op), same vehicle as v17/v18.
     this.version(20).stores({}).upgrade((tx) => {
       // Dynamic import avoids a top-of-file cycle (migrationV20 imports `db`).

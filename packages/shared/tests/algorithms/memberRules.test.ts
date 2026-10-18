@@ -120,6 +120,16 @@ describe('applyMemberRules', () => {
     expect(out[0].partOf).toEqual(v.expectedPartOf);
     expect(out[0].source.sourceId).toBe('s1');
   });
+
+  it('carries a board source\'s goalByTaskId through the expansion (slice 3a)', () => {
+    const out = applyMemberRules(
+      [{ source: src(1, 'board', {}), supplyTaskIds: ['r1'], goalByTaskId: { r1: 70 } }],
+      {},
+      { r1: { id: 'r1', type: TaskType.COUNTING } },
+    );
+    expect(out[0].goalByTaskId).toEqual({ r1: 70 });
+    expect(out[0].supplyTaskIds).toEqual(['r1']);
+  });
 });
 
 describe('planDerivedTasks', () => {
@@ -174,6 +184,7 @@ describe('planDerivedTasks', () => {
       source: src(i + 1, s.kind, s.memberRules),
       supplyTaskIds: s.supply,
       partOf: s.partOf ?? {},
+      ...(s.goalByTaskId ? { goalByTaskId: s.goalByTaskId } : {}),
     }));
     const seeded = makeSeededRng(v.seed);
     let rngCalls = 0;

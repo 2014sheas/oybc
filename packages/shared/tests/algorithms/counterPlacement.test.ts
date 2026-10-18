@@ -7,12 +7,11 @@ import {
   normalizeSearchText,
   placementGoalForCounter,
   placementGoalSource,
-  placementNeedsCopy,
+  placementNeedsOverride,
   taskSearchMatches,
 } from '../../src/algorithms/counterPlacement';
 import { counterCopyTitle, generateCounterTaskTitle } from '../../src/algorithms/taskTitle';
 import { derivedTaskId, planDerivedTasks } from '../../src/algorithms/memberRules';
-import { windowStampedCopyDraft } from '../../src/algorithms/linkedCounterWindowHeal';
 import { effectiveMemberTarget, memberStepperMax } from '../../src/algorithms/memberRulesDisplay';
 import type { Timeframe } from '../../src/constants/enums';
 
@@ -55,12 +54,12 @@ describe('counterPlacementVectors — placementGoalSource (the match row)', () =
   });
 });
 
-describe('counterPlacementVectors — placementNeedsCopy', () => {
+describe('counterPlacementVectors — placementNeedsOverride', () => {
   it('pins both outcomes', () => {
-    expect(new Set((V.placementNeedsCopy as any[]).map((v) => v.expected))).toEqual(new Set([true, false]));
+    expect(new Set((V.placementNeedsOverride as any[]).map((v) => v.expected))).toEqual(new Set([true, false]));
   });
-  it.each(V.placementNeedsCopy as any[])('$name', (v: any) => {
-    expect(placementNeedsCopy(v.root, v.board)).toBe(v.expected);
+  it.each(V.placementNeedsOverride as any[])('$name', (v: any) => {
+    expect(placementNeedsOverride(v.root, v.board)).toBe(v.expected);
   });
 });
 
@@ -141,40 +140,6 @@ describe('counterPlacementVectors — planDerivedTasks (placement defaults)', ()
   });
 });
 
-describe('windowStampedCopyDraft — root settings + placement goal', () => {
-  const copy = {
-    id: 'cp',
-    boardId: 'b',
-    boardTaskId: '',
-    sourceTaskId: 'L',
-    rootTaskId: 'T',
-    timeframe: 'weekly' as Timeframe,
-    startDate: '2026-10-05T00:00:00',
-    endDate: '2026-10-11T23:59:59',
-  };
-  const source = { title: 'Read 5 books', action: 'Read', unit: 'books', maxCount: 5 };
-
-  it('renders the title through the root templates at the placement goal', () => {
-    const d = windowStampedCopyDraft(copy, source, 0, {
-      settings: { titleTemplatePlural: 'Finish #N novels' },
-      maxCount: 3,
-    });
-    expect(d?.maxCount).toBe(3);
-    expect(d?.title).toBe('Finish 3 novels');
-  });
-
-  it('without options behaves exactly as before', () => {
-    const d = windowStampedCopyDraft(copy, source, 0);
-    expect(d?.maxCount).toBe(5);
-    expect(d?.title).toBe('Read 5 books');
-  });
-
-  it('a goal-less source takes the placement goal', () => {
-    const d = windowStampedCopyDraft(copy, { ...source, maxCount: undefined, title: 'Read books' }, 0, { maxCount: 4 });
-    expect(d?.maxCount).toBe(4);
-    expect(d?.title).toBe('Read 4 books');
-  });
-});
 
 describe('counterPlacementVectors — memberStepperMax admits a default above the goal', () => {
   it.each(V.memberStepperMax as any[])('$name', (v: any) => {

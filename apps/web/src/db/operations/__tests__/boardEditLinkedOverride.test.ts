@@ -1,14 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { derivedTaskId } from '@oybc/shared';
+import { derivedTaskId, forkTaskId } from '@oybc/shared';
 import { db } from '../../internal';
 import { commitSquareEdits, type CommitSquareEditsInput } from '../boardEditCommit';
 import type { SquareDraftCell } from '../../../hooks/squareEditCount';
-import { ROOT, SEPT, boardRow, clearAll, hubLinked, placement, rootTask } from './linkedCounterFixtures';
+import { JUNE, ROOT, SEPT, boardRow, clearAll, hubLinked, placement, rootTask } from './linkedCounterFixtures';
 
 /**
- * Board Edit Save — a linked counter lands as its per-board window-stamped
- * copy, so a staged "Edit task…" override (keyed by the STAGED library id)
- * must be remapped onto the placed copy; the library source is never patched.
+ * Board Edit Save — a linked counter is placed AS-IS (TASK_WINDOW_REWORK
+ * slice 3a: no per-board copy is minted); a staged "Edit task…" override's
+ * parameter fields (goal, title) land on the placement, never the library row.
  */
 
 const SEPT_ROW = derivedTaskId(SEPT.id, ROOT);
@@ -51,7 +51,7 @@ afterEach(async () => {
 });
 
 describe('commitSquareEdits — overrides on linked counters', () => {
-  it('replace-with-linked + override: the per-board copy carries the override, the library source is untouched', async () => {
+  it('replace-with-linked + override: the linked row is placed as-is, the override rides on the placement', async () => {
     await db.tasks.put(hubLinked('H', { title: 'Library title' }));
     await db.tasks.put(hubLinked('X', { sharedCounterId: undefined, title: 'Other' }));
     await db.boardTasks.put(placement('bt-1', SEPT.id, 'X'));
@@ -63,12 +63,14 @@ describe('commitSquareEdits — overrides on linked counters', () => {
       }),
     );
 
-    expect((await db.boardTasks.get('bt-1'))!.taskId).toBe(SEPT_ROW);
-    expect((await db.tasks.get(SEPT_ROW))!.title).toBe('Edited on this board');
+    const bt = (await db.boardTasks.get('bt-1'))!;
+    expect(bt.taskId).toBe('H');
+    expect(bt.titleOverride).toBe('Edited on this board');
+    expect(await db.tasks.get(SEPT_ROW)).toBeUndefined();
     expect((await db.tasks.get('H'))!.title).toBe('Library title');
   });
 
-  it('add-linked + override: same remap on the add path', async () => {
+  it('add-linked + override: same on the add path', async () => {
     await db.tasks.put(hubLinked('H', { title: 'Library title' }));
 
     await commitSquareEdits(
@@ -79,12 +81,32 @@ describe('commitSquareEdits — overrides on linked counters', () => {
     );
 
     const placed = (await db.boardTasks.where('boardId').equals(SEPT.id).toArray())[0];
-    expect(placed.taskId).toBe(SEPT_ROW);
-    expect((await db.tasks.get(SEPT_ROW))!.title).toBe('Edited on this board');
+    expect(placed.taskId).toBe('H');
+    expect(placed.titleOverride).toBe('Edited on this board');
+    expect(await db.tasks.get(SEPT_ROW)).toBeUndefined();
     expect((await db.tasks.get('H'))!.title).toBe('Library title');
   });
 
-  it('a plain task override applies to that task as before', async () => {
+  it('a goal edit on a linked row writes targetOverride in the row\'s own kind and forks nothing', async () => {
+    await db.tasks.put(hubLinked('H', { maxCount: 5 }));
+    await db.boardTasks.put(placement('bt-h', SEPT.id, 'H'));
+    await db.boardTasks.put(placement('bt-h2', JUNE.id, 'H'));
+    await db.boards.put(boardRow(JUNE));
+
+    await commitSquareEdits(
+      input({
+        cells: [cell({ cellId: 'bt-h', taskId: 'H', row: 0, col: 0 })],
+        taskOverrides: new Map([['H', { maxCount: 9, action: 'Run', unit: 'miles', title: 'Run 9 miles' }]]),
+      }),
+    );
+
+    expect(await db.boardTasks.get('bt-h')).toMatchObject({ taskId: 'H', targetOverride: 9, targetKind: 'discrete' });
+    expect((await db.boardTasks.get('bt-h2'))!.targetOverride).toBeUndefined();
+    expect((await db.tasks.get('H'))!).toMatchObject({ maxCount: 5, version: 2 });
+    expect(await db.tasks.get(forkTaskId(SEPT.id, 'H'))).toBeUndefined();
+  });
+
+  it('a plain task override applies to the placement, not the task', async () => {
     await db.tasks.put(hubLinked('P', { sharedCounterId: undefined, title: 'Plain' }));
     await db.boardTasks.put(placement('bt-p', SEPT.id, 'P'));
 
@@ -95,6 +117,7 @@ describe('commitSquareEdits — overrides on linked counters', () => {
       }),
     );
 
-    expect((await db.tasks.get('P'))!.title).toBe('Plain edited');
+    expect((await db.tasks.get('P'))!.title).toBe('Plain');
+    expect((await db.boardTasks.get('bt-p'))!.titleOverride).toBe('Plain edited');
   });
 });

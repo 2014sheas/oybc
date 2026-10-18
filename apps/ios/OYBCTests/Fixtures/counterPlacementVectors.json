@@ -309,7 +309,7 @@
       "expected": 30
     }
   ],
-  "placementNeedsCopy": [
+  "placementNeedsOverride": [
     {
       "name": "a default that differs from the root goal",
       "root": {

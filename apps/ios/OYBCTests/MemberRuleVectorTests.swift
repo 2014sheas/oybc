@@ -138,6 +138,8 @@ final class MemberRuleVectorTests: XCTestCase {
         let supply: [String]
         let partOf: [String: String]?
         let memberRules: [String: BoardSourceMemberRule]
+        /// Slice 3a — the board source's effective goal per supplied member.
+        let goalByTaskId: [String: CountValue]?
     }
 
     private struct ExpectedDerived: Decodable {
@@ -906,7 +908,8 @@ final class MemberRuleVectorTests: XCTestCase {
                         memberRules: raw.memberRules
                     ),
                     supplyTaskIds: raw.supply,
-                    partOf: raw.partOf ?? [:]
+                    partOf: raw.partOf ?? [:],
+                    goalByTaskId: raw.goalByTaskId
                 )
             }
             let seeded = SeededRng(seed: v.seed)

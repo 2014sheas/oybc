@@ -8,8 +8,8 @@ import GRDB
 //
 //   - `lateLogCompletion` — a NORMAL square's "Mark done on board".
 //   - `lateLogIncrement` — a plain/source COUNTING square's "+N", OR a
-//     window-stamped derived counter's "+N" (the increment lands on its
-//     ROOT); a hub-linked derived counter is a no-op (OQ2).
+//     LINKED counter's "+N" (the increment lands on its ROOT; the old
+//     hub-linked no-op, OQ2, is retired — TASK_WINDOW_REWORK slice 3a).
 //   - `lateLogCompoundParts` — a COMPOUND square's staged child parts
 //     (NORMAL → completion, plain COUNTING → +1); commits only once the
 //     rule is met.
@@ -36,8 +36,8 @@ enum LateLogError: Error, Equatable {
     /// compound).
     case taskNotPlaced
     /// The task's type doesn't match the entry point called (e.g.
-    /// `lateLogCompletion` on a COUNTING task), or a hub-linked derived
-    /// counter / achievement task (not tappable — OQ2).
+    /// `lateLogCompletion` on a COUNTING task), or an achievement task
+    /// (not tappable).
     case wrongTaskType
     /// `lateLogCompoundParts`: the staged child completions don't satisfy the
     /// compound's operator rule yet — nothing was written.
@@ -215,12 +215,13 @@ extension AppDatabase {
     ///
     ///   - Plain / source counting (`sharedCounterId == nil`): appends the
     ///     increment directly (event-owning).
-    ///   - Window-stamped derived counter: the increment is appended on the
-    ///     ROOT (derived rows own no events — carve-out), then propagated to
-    ///     every OTHER live linked row exactly like `incrementSharedCounter`
+    ///   - LINKED counter (window-stamped or not): the increment is appended
+    ///     on the ROOT (linked rows own no events), then propagated to every
+    ///     OTHER live linked row exactly like `incrementSharedCounter`
     ///     (frozen rows are skipped for writes, still reached for cascade).
-    ///   - Hub-linked derived counter (no `startDate`): no-op — its square
-    ///     isn't tappable on a closed board (OQ2 default).
+    ///     The old hub-linked no-op (OQ2) is retired — slice 3a: every linked
+    ///     square resolves over its board's window, and linked placements
+    ///     are never stamped any more.
     ///
     /// - Throws: `LateLogError.boardNotClosed` / `.taskNotPlaced` /
     ///   `.wrongTaskType` / `.invalidDelta`.
@@ -234,16 +235,9 @@ extension AppDatabase {
             guard let task = try Task.fetchOne(db, key: taskId), task.type == .counting else {
                 throw LateLogError.wrongTaskType
             }
-            // Plain / source counting authors on itself; a window-stamped
-            // derived row authors on its ROOT (derived rows own no events —
-            // carve-out); a hub-linked derived row is not tappable (OQ2).
-            let rootId: String
-            if let sharedCounterId = task.sharedCounterId {
-                guard BoardSources.isWindowStampedDerived(task) else { return }
-                rootId = sharedCounterId
-            } else {
-                rootId = taskId
-            }
+            // Plain / source counting authors on itself; a LINKED row authors
+            // on its ROOT (linked rows own no events).
+            let rootId = (task.sharedCounterId?.isEmpty == false) ? task.sharedCounterId! : taskId
             let occurredAt = lateLogOccurredAt(board: board, nowIso: now)
             // `boardId` = the closed board on BOTH branches — it is what makes
             // the event a late log (`selectClosedBoardLateLogs` /
