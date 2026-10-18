@@ -491,6 +491,15 @@ final class SyncService: ObservableObject {
         } catch {
             log("Heal-on-pull skipped: \(error.localizedDescription)")
         }
+        // Task/window rework slice 4a: the placement sweep after every clean pull
+        // (state-based; never fails the pull).
+        do {
+            let now = AppDatabase.currentTimestamp()
+            let swept = try await database.writeAsync { db in try AppDatabase.runPlacementSweepTx(db: db, userId: userId, now: now) }
+            if swept.wroteAnything { result.pulled += swept.writeCount; recordBatch(pulled: swept.writeCount); result.details.append("Swept \(swept.writeCount) derived placement row(s)") }
+        } catch {
+            log("Placement sweep skipped: \(error.localizedDescription)")
+        }
         do {
             let now = AppDatabase.currentTimestamp()
             try await database.writeAsync { db in

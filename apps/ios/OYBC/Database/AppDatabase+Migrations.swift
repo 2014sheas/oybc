@@ -217,6 +217,26 @@ extension AppDatabase {
         migrator.registerMigration("v46") { db in
             try db.execute(sql: "ALTER TABLE recurring_board_templates ADD COLUMN manualTaskTargets TEXT")
         }
+
+        // v47: Task/window rework slice 4a — the placement sweep's first trigger
+        // (docs/TASK_WINDOW_REWORK.md §Migration sweep). No schema change: runs
+        // the gated, state-based sweep for every local user (repoint derived
+        // counters' placements at their roots, strip refused boards' window
+        // marks, re-key stored rules). A failure is logged and never bricks
+        // database open — the post-pull and per-launch triggers retry.
+        migrator.registerMigration("v47") { db in
+            let now = AppDatabase.currentTimestamp()
+            for userId in try String.fetchAll(db, sql: "SELECT id FROM users ORDER BY id") {
+                do {
+                    try db.inSavepoint {
+                        try AppDatabase.runPlacementSweepTx(db: db, userId: userId, now: now)
+                        return .commit
+                    }
+                } catch {
+                    dlog("[PlacementSweep] v47 sweep skipped for \(userId): \(error.localizedDescription)")
+                }
+            }
+        }
     }
 }
 
