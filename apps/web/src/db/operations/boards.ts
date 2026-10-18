@@ -323,18 +323,6 @@ export async function fetchAllBoardsSortedByName(): Promise<Board[]> {
 }
 
 /**
- * Fetch non-deleted boards by an explicit set of ids.
- *
- * @param ids - Board ids to fetch.
- * @returns The matching non-deleted Board rows.
- */
-export async function fetchBoardsByIds(ids: string[]): Promise<Board[]> {
-  return healBoardNames(
-    await db.boards.where('id').anyOf(ids).filter((b) => !b.isDeleted).toArray(),
-  );
-}
-
-/**
  * Fetch the user's CORE boards for a timeframe.
  *
  * Uses the `[userId+timeframe+status]` compound index to scan only the

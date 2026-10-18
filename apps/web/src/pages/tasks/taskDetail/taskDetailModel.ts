@@ -6,13 +6,9 @@
  */
 import {
   AchievementTrigger, OperatorType, TaskType, boardDisplayName, compoundRuleLabel, formatCountTotal, formatTimeframeLabel,
-  boardWindowEnd, isBoardActiveForList, isBoardEnded, isCoreBoard, resolveCountKind,
-  type Board, type BoardTask, type CompoundChild, type Task, type TaskActivityKind,
+  isBoardActiveForList, isBoardEnded, isCoreBoard, resolveCountKind, resolveFamilyCountKind,
+  type Board, type Task, type TaskActivityKind, type TaskPlacementRow,
 } from '@oybc/shared';
-import {
-  placedTaskFor, taskToSquareData, taskToSquareState, buildSquareWindowContext,
-} from '../../../db/adapters';
-import type { TaskEvent } from '@oybc/shared';
 
 export type DetailSegment = 'all' | 'boards' | 'links' | 'activity';
 
@@ -92,50 +88,42 @@ function endsText(endDate: string | null | undefined, now: number): string | nul
 }
 
 export interface BoardRowInput {
-  task: Task;
+  /** `taskPlacementRows` output — one per reached board. */
+  rows: ReadonlyArray<TaskPlacementRow>;
+  /** The reached boards, in display order (the caller sorts). */
   boards: ReadonlyArray<Board>;
-  /** Live events for the task, its counter root and its sub-tasks (and their roots). */
-  events: ReadonlyArray<TaskEvent>;
-  taskMap: Record<string, Task>;
-  childrenByCompound: Record<string, CompoundChild[]>;
-  placements: ReadonlyArray<BoardTask>;
+  /** Workspace tasks — the rows' members and their counter roots. */
+  taskById: Readonly<Record<string, Task>>;
   now: Date;
 }
 
 /**
- * The task's state on each board it is placed on, read through the same
- * windowed resolvers board play uses (`taskToSquareState` over the board's own
- * window). PR 5 changes which placements feed this; the input is `placements`
- * + `boards` so that swap stays a one-line change in `useTaskDetail`.
+ * The Boards rows, formatted from the kernel's per-board state
+ * (`taskPlacementRows`: the placement reach, each board read through the
+ * grid's own resolvers). A row may show a member reached THROUGH a compound
+ * (a sub-task) or a counter root's linked row — its value is that member's.
  *
- * @returns Rows in the Boards tab's own order (the caller sorts).
+ * @returns One row per board that has a kernel row, in `boards` order.
  */
 export function buildBoardRows(input: BoardRowInput): BoardRow[] {
   const { now } = input;
   const nowMs = now.getTime();
-  return input.boards.map((board) => {
-    // The same context board play builds (window end via `boardWindowEnd`, the seal bound), and the
-    // placement-adjusted task (targetOverride / titleOverride), so a row reads exactly what the grid shows.
-    const ctx = { ...buildSquareWindowContext([...input.events], board.startDate, boardWindowEnd(board)), sealedAt: board.sealedAt ?? null };
-    const placement = input.placements.find((p) => p.boardId === board.id);
-    const task = (placement && placedTaskFor(placement, input.taskMap)) ?? input.task;
-    const links = input.childrenByCompound[task.id] ?? [];
-    const sq = taskToSquareData(task, links, input.taskMap, input.childrenByCompound, ctx, placement?.childTargets);
-    const state = taskToSquareState(task, links, input.taskMap, input.childrenByCompound, ctx, undefined, placement?.childTargets);
-    const sealedDone = board.sealedAt != null && placement
-      ? (board.sealedCompletedCells ?? []).includes(placement.row * board.boardSize + placement.col) : null;
-    const done = sealedDone ?? state.isCompleted;
+  const byBoard = new Map(input.rows.map((r) => [r.boardId, r]));
+  return input.boards.flatMap((board) => {
+    const r = byBoard.get(board.id);
+    const member = r ? input.taskById[r.memberTaskId] : undefined;
+    if (!r || !member) return [];
     let value: string | null = null;
-    let fraction = done ? 1 : 0;
-    if (sq.type === 'counting') {
-      const kind = sq.countKind ?? resolveCountKind(task);
-      value = `${formatCountTotal(state.currentCount, kind)}/${formatCountTotal(sq.maxCount ?? 0, kind)}`;
-      fraction = (sq.maxCount ?? 0) > 0 ? Math.min(1, state.currentCount / (sq.maxCount ?? 1)) : 0;
-    } else if (sq.type === 'compound' && sq.children && sq.children.length > 0) {
-      const n = sq.children.filter((c) => c.isCompleted).length;
-      value = `${n}/${sq.children.length}`;
-      fraction = done ? 1 : n / sq.children.length;
-    } else if (done) {
+    let fraction = r.done ? 1 : 0;
+    if (r.count != null) {
+      const kind = resolveFamilyCountKind(member, (id) => input.taskById[id]);
+      const goal = r.goal ?? 0;
+      value = `${formatCountTotal(r.count, kind)}/${formatCountTotal(goal, kind)}`;
+      fraction = goal > 0 ? Math.min(1, r.count / goal) : 0;
+    } else if (r.childrenTotal != null && r.childrenTotal > 0) {
+      value = `${r.childrenDone ?? 0}/${r.childrenTotal}`;
+      fraction = r.done ? 1 : (r.childrenDone ?? 0) / r.childrenTotal;
+    } else if (r.done) {
       value = 'Done';
     }
     const draft = board.status === 'draft';
@@ -143,16 +131,19 @@ export function buildBoardRows(input: BoardRowInput): BoardRow[] {
     const window = formatTimeframeLabel(board.timeframe, board.startDate, now);
     const ends = endsText(board.endDate, nowMs);
     const ended = !draft && isBoardEnded(board, nowMs);
-    return {
+    // Only a member with something to miss: a Normal, a Counting with a goal, a Compound with sub-tasks.
+    const missable = member.type === TaskType.NORMAL
+      || (member.type === TaskType.COUNTING && (r.goal ?? 0) > 0)
+      || (member.type === TaskType.COMPOUND && (r.childrenTotal ?? 0) > 0);
+    return [{
       boardId: board.id,
       name: boardDisplayName(board),
       badge: isCoreBoard(board) ? `Core · ${board.timeframe}` : null,
       caption: draft ? 'Draft' : active ? [window, ends].filter(Boolean).join(' · ') : [window, board.sealedAt ? 'closed' : 'expired'].join(' · '),
-      value, done, fraction, draft, active,
-      // Only a task with something to miss: a Normal, a Counting with a goal, a Compound with sub-tasks.
-      missed: ended && !done && (sq.type === 'normal' || (sq.type === 'counting' && (sq.maxCount ?? 0) > 0) || (sq.type === 'compound' && (sq.children?.length ?? 0) > 0)),
+      value, done: r.done, fraction, draft, active,
+      missed: ended && !r.done && missable,
       endDate: board.endDate ?? null,
-    };
+    }];
   });
 }
 

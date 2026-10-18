@@ -75,16 +75,33 @@ final class TaskDetailFormatTests: XCTestCase {
         XCTAssertTrue(InteractivePopEnabler.shouldBegin(viewControllerCount: 2))
     }
 
-    func testMissedAndReadEndRules() {
+    func testMissedRules_readTheBoardsRow() {
         let normal = Task(id: "n", userId: "u", title: "n", type: .normal, action: nil, unit: nil, maxCount: nil, totalCompletions: 0, totalInstances: 0, createdAt: "2026-01-01T00:00:00.000Z", updatedAt: "2026-01-01T00:00:00.000Z", version: 1, isDeleted: false)
+        func row(goal: CountValue? = nil, total: Int? = nil) -> TaskPlacementRows.Row {
+            .init(boardId: "b", boardTaskId: "bt", memberTaskId: "n", viaCompoundId: nil, done: false,
+                  count: goal == nil ? nil : 0, goal: goal, childrenDone: total == nil ? nil : 0, childrenTotal: total)
+        }
         var counting = normal
         counting.type = .counting
-        XCTAssertTrue(TaskDetailViewModel.canBeMissed(normal))
-        XCTAssertFalse(TaskDetailViewModel.canBeMissed(counting), "no goal → nothing to miss")
-        counting.maxCount = 5
-        XCTAssertTrue(TaskDetailViewModel.canBeMissed(counting))
+        var compound = normal
+        compound.type = .compound
         var achievement = normal
         achievement.type = .achievement
-        XCTAssertFalse(TaskDetailViewModel.canBeMissed(achievement))
+        XCTAssertTrue(TaskDetailViewModel.canBeMissed(normal, row: row()))
+        XCTAssertFalse(TaskDetailViewModel.canBeMissed(counting, row: row(goal: 0)), "no goal on that board → nothing to miss")
+        XCTAssertTrue(TaskDetailViewModel.canBeMissed(counting, row: row(goal: 5)))
+        XCTAssertFalse(TaskDetailViewModel.canBeMissed(compound, row: row(total: 0)))
+        XCTAssertTrue(TaskDetailViewModel.canBeMissed(compound, row: row(total: 2)))
+        XCTAssertFalse(TaskDetailViewModel.canBeMissed(achievement, row: row()))
+    }
+
+    func testRowValue_formatsTheKernelRow() {
+        let t = Task(id: "c", userId: "u", title: "c", type: .counting, action: nil, unit: nil, maxCount: 20, totalCompletions: 0, totalInstances: 0, createdAt: "2026-01-01T00:00:00.000Z", updatedAt: "2026-01-01T00:00:00.000Z", version: 1, isDeleted: false)
+        let counting = TaskPlacementRows.Row(boardId: "b", boardTaskId: "bt", memberTaskId: "c", viaCompoundId: "P", done: false, count: 12, goal: 20, childrenDone: nil, childrenTotal: nil)
+        XCTAssertEqual(TaskDetailViewModel.rowValue(counting, member: t, taskById: ["c": t]), .init(value: "12", sub: "/20", done: false, fraction: 0.6))
+        let compound = TaskPlacementRows.Row(boardId: "b", boardTaskId: "bt", memberTaskId: "c", viaCompoundId: nil, done: false, count: nil, goal: nil, childrenDone: 1, childrenTotal: 4)
+        XCTAssertEqual(TaskDetailViewModel.rowValue(compound, member: t, taskById: [:]), .init(value: "1", sub: "/4", done: false, fraction: 0.25))
+        let normal = TaskPlacementRows.Row(boardId: "b", boardTaskId: "bt", memberTaskId: "c", viaCompoundId: nil, done: true, count: nil, goal: nil, childrenDone: nil, childrenTotal: nil)
+        XCTAssertEqual(TaskDetailViewModel.rowValue(normal, member: t, taskById: [:]), .init(value: "Done", sub: nil, done: true, fraction: 1))
     }
 }

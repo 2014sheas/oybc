@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { BoardStatus, CenterSquareType, OperatorType, TaskType, Timeframe, type Board, type BoardTask, type Task, type TaskEvent } from '@oybc/shared';
+import { BoardStatus, CenterSquareType, OperatorType, TaskType, Timeframe, type Board, type BoardTask, type CompoundChild, type Task, type TaskPlacementRow } from '@oybc/shared';
 import { db } from '../../../../db/internal';
-import { resolveTaskPlacements } from '../../../../hooks/useTaskDetail';
+import { loadTaskDetailPlacements } from '../../../../db/operations/taskDetailPlacements';
 import { activityDot, activityWhen, buildBoardRows, heroKicker, heroTone, notDoneLabel, segmentOptions, subtasksHeading } from '../taskDetailModel';
 
 const NOW = new Date('2026-10-15T12:00:00');
@@ -20,10 +20,6 @@ const placement = (o: Partial<BoardTask> = {}): BoardTask => ({
   id: 'p1', boardId: 'b1', taskId: 't', row: 0, col: 0, isCenter: false,
   createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z', version: 1, isDeleted: false, ...o,
 });
-const inc = (taskId: string, delta: number, at: Date): TaskEvent => ({
-  id: `e${taskId}${delta}${at.getTime()}`, taskId, userId: 'u', kind: 'increment', delta, occurredAt: iso(at),
-  createdAt: iso(at), updatedAt: iso(at), version: 1, isDeleted: false,
-}) as TaskEvent;
 
 describe('heroKicker', () => {
   it('derives each type\'s kicker from data', () => {
@@ -67,14 +63,18 @@ describe('segments + activity dots', () => {
   });
 });
 
+/** A kernel row (`taskPlacementRows`) for board `boardId`. */
+const kRow = (o: Partial<TaskPlacementRow> = {}): TaskPlacementRow => ({
+  boardId: 'b1', boardTaskId: 'p1', memberTaskId: 't', viaCompoundId: null, done: false,
+  count: null, goal: null, childrenDone: null, childrenTotal: null, ...o,
+});
+
 describe('buildBoardRows', () => {
   const counting = task({ type: TaskType.COUNTING, maxCount: 20, unit: 'pages', action: 'Read' });
-  const input = (events: TaskEvent[], boards: Board[]) => ({
-    task: counting, boards, events, taskMap: { t: counting }, childrenByCompound: {}, placements: [placement()], now: NOW,
-  });
+  const input = (rows: TaskPlacementRow[], boards: Board[]) => ({ rows, boards, taskById: { t: counting }, now: NOW });
 
-  it('reads the windowed count per board; active rows carry window · ends · days left', () => {
-    const [row] = buildBoardRows(input([inc('t', 12, new Date(NOW.getTime() - 864e5))], [board({})]));
+  it('formats the windowed count; active rows carry window · ends · days left', () => {
+    const [row] = buildBoardRows(input([kRow({ count: 12, goal: 20 })], [board({})]));
     expect(row.value).toBe('12/20');
     expect(row.done).toBe(false);
     expect(row.fraction).toBeCloseTo(0.6);
@@ -84,7 +84,7 @@ describe('buildBoardRows', () => {
   });
 
   it('an overshoot stays visible and the ring is full', () => {
-    const [row] = buildBoardRows(input([inc('t', 25, new Date(NOW.getTime() - 864e5))], [board({})]));
+    const [row] = buildBoardRows(input([kRow({ count: 25, goal: 20, done: true })], [board({})]));
     expect(row.value).toBe('25/20');
     expect(row.done).toBe(true);
     expect(row.fraction).toBe(1);
@@ -93,15 +93,30 @@ describe('buildBoardRows', () => {
   it('an ended, incomplete board is past and missed; a draft is past and never missed', () => {
     const ended = board({ id: 'b2', endDate: iso(new Date(NOW.getTime() - 864e5)) });
     const draft = board({ id: 'b3', status: BoardStatus.DRAFT });
-    const rows = buildBoardRows({ ...input([], [ended, draft]), placements: [placement({ boardId: 'b2' }), placement({ id: 'p3', boardId: 'b3' })] });
+    const rows = buildBoardRows(input(
+      [kRow({ boardId: 'b2', count: 0, goal: 20 }), kRow({ boardId: 'b3', boardTaskId: 'p3', count: 0, goal: 20 })],
+      [ended, draft],
+    ));
     expect(rows[0]).toMatchObject({ active: false, missed: true });
     expect(rows[0].caption).toMatch(/expired$/);
     expect(rows[1]).toMatchObject({ draft: true, active: false, missed: false, caption: 'Draft' });
   });
 
-  it('a core board gets the Core badge', () => {
-    const [row] = buildBoardRows(input([], [board({ isCore: true })]));
-    expect(row.badge).toBe('Core · weekly');
+  it('a core board gets the Core badge; a board with no kernel row is skipped', () => {
+    const rows = buildBoardRows(input([kRow({ count: 0, goal: 20 })], [board({ isCore: true }), board({ id: 'b9' })]));
+    expect(rows).toHaveLength(1);
+    expect(rows[0].badge).toBe('Core · weekly');
+  });
+
+  it('a compound member reads n/N; a goal-less counting member is never missed', () => {
+    const compound = task({ id: 'c', type: TaskType.COMPOUND, operator: OperatorType.AND });
+    const [c] = buildBoardRows({ rows: [kRow({ memberTaskId: 'c', childrenDone: 1, childrenTotal: 3 })], boards: [board({})], taskById: { c: compound }, now: NOW });
+    expect(c.value).toBe('1/3');
+    expect(c.fraction).toBeCloseTo(1 / 3);
+    const noGoal = task({ type: TaskType.COUNTING, maxCount: undefined });
+    const ended = board({ endDate: iso(new Date(NOW.getTime() - 864e5)) });
+    const [n] = buildBoardRows({ rows: [kRow({ count: 0, goal: null })], boards: [ended], taskById: { t: noGoal }, now: NOW });
+    expect(n.missed).toBe(false);
   });
 });
 
@@ -121,33 +136,39 @@ describe('notDoneLabel + subtasksHeading', () => {
   });
 });
 
-describe('buildBoardRows — per-placement reads', () => {
-  it('reads the placement-adjusted goal (targetOverride) and the seal bound', () => {
-    const counting = task({ type: TaskType.COUNTING, maxCount: 20, unit: 'pages' });
-    const events = [inc('t', 12, new Date(NOW.getTime() - 864e5))];
-    const [row] = buildBoardRows({
-      task: counting, boards: [board({})], events, taskMap: { t: counting }, childrenByCompound: {},
-      placements: [placement({ targetOverride: 10, targetKind: 'discrete' } as Partial<BoardTask>)], now: NOW,
-    });
-    expect(row.value).toBe('12/10');
-    // A seal before the log hides it (the seal bound reaches the resolvers).
-    const sealed = board({ sealedAt: iso(new Date(NOW.getTime() - 2 * 864e5 + 1000)), sealedCompletedCells: [] });
-    const [closed] = buildBoardRows({ task: counting, boards: [sealed], events, taskMap: { t: counting }, childrenByCompound: {}, placements: [placement()], now: NOW });
-    expect(closed.done).toBe(false);
+describe('loadTaskDetailPlacements (PR 5 — placement resolution)', () => {
+  afterEach(async () => {
+    await Promise.all([db.boardTasks.clear(), db.boards.clear(), db.tasks.clear(), db.compoundChildren.clear(), db.taskEvents.clear()]);
   });
-  it('a counting task without a goal is never "missed"', () => {
-    const noGoal = task({ type: TaskType.COUNTING, maxCount: undefined });
-    const ended = board({ endDate: iso(new Date(NOW.getTime() - 864e5)) });
-    const [row] = buildBoardRows({ task: noGoal, boards: [ended], events: [], taskMap: { t: noGoal }, childrenByCompound: {}, placements: [placement()], now: NOW });
-    expect(row.missed).toBe(false);
-  });
-});
+  const link = (compoundTaskId: string, childTaskId: string): CompoundChild => ({
+    id: `l-${compoundTaskId}-${childTaskId}`, userId: 'u', compoundTaskId, childTaskId, childIndex: 0,
+    createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z', version: 1, isDeleted: false,
+  }) as CompoundChild;
 
-describe('resolveTaskPlacements (the PR 5 seam)', () => {
-  afterEach(async () => { await db.boardTasks.clear(); });
-  it('returns the live placements of the task id', async () => {
-    await db.boardTasks.bulkAdd([placement(), placement({ id: 'p2', taskId: 'other' }), placement({ id: 'p3', isDeleted: true })]);
-    const got = await resolveTaskPlacements('t');
-    expect(got.map((p) => p.id)).toEqual(['p1']);
+  it('a sub-task placed only through its compound gets that board, scored as the sub-task', async () => {
+    await db.tasks.bulkAdd([task({ id: 's' }), task({ id: 'P', type: TaskType.COMPOUND, operator: OperatorType.AND })]);
+    await db.compoundChildren.add(link('P', 's'));
+    await db.boards.add(board({}));
+    await db.boardTasks.bulkAdd([placement({ taskId: 'P' }), placement({ id: 'p9', taskId: 'other' })]);
+    const got = await loadTaskDetailPlacements('s');
+    expect(got.ownPlacements).toEqual([]);
+    expect(got.boards.map((b) => b.id)).toEqual(['b1']);
+    expect(got.rows).toEqual([expect.objectContaining({ boardId: 'b1', memberTaskId: 's', viaCompoundId: 'P', done: false })]);
+  });
+
+  it('a counter root reaches its linked row\'s board; tombstoned placements and boards drop out', async () => {
+    await db.tasks.bulkAdd([
+      task({ id: 'r', type: TaskType.COUNTING, isCounter: true }),
+      task({ id: 'l', type: TaskType.COUNTING, maxCount: 5, sharedCounterId: 'r', baseline: 0 }),
+    ]);
+    await db.boards.bulkAdd([board({}), board({ id: 'bx', isDeleted: true })]);
+    await db.boardTasks.bulkAdd([
+      placement({ taskId: 'l' }),
+      placement({ id: 'p2', boardId: 'bx', taskId: 'l' }),
+      placement({ id: 'p3', taskId: 'r', isDeleted: true }),
+    ]);
+    const got = await loadTaskDetailPlacements('r');
+    expect(got.ownPlacements).toEqual([]);
+    expect(got.rows.map((r) => [r.boardId, r.memberTaskId, r.goal])).toEqual([['b1', 'l', 5]]);
   });
 });
