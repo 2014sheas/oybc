@@ -37,18 +37,6 @@ export async function fetchBoardTasks(boardId: string): Promise<BoardTask[]> {
 }
 
 /**
- * Fetch every non-deleted BoardTask placement row referencing a given Task.
- *
- * Returns the full placement rows for per-placement UI (task detail).
- *
- * @param taskId - The placed Task's id.
- * @returns All non-deleted BoardTask rows whose `taskId` matches.
- */
-export async function fetchBoardTasksForTask(taskId: string): Promise<BoardTask[]> {
-  return db.boardTasks.where('taskId').equals(taskId).filter((bt) => !bt.isDeleted).toArray();
-}
-
-/**
  * Soft-deletes (tombstones) every live `BoardTask` row for the given board
  * and queues each tombstone for sync. Used when re-saving a draft whose
  * task placement has changed — simpler than diffing the old layout against

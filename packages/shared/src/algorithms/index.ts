@@ -138,6 +138,8 @@ export {
 } from './logAmounts';
 export type { LogChip, TapLogChip } from './logAmounts';
 export { pickHeroAnchorBoard, nextCompoundSubtask, buildTaskActivity, closestLine } from './taskDetail';
+export { taskPlacementRows } from './taskPlacementRows';
+export type { TaskPlacementRow, TaskPlacementRowsInput } from './taskPlacementRows';
 export type {
   CompoundSubtaskCandidate,
   CompoundSubtaskAction,

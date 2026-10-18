@@ -29,17 +29,6 @@ extension AppDatabase {
         }
     }
 
-    /// Fetch every LIVE `BoardTask` row that references a specific Task. Used
-    /// by the Task detail view to list "placed on N boards" and by the
-    /// cascade-delete impact preview.
-    func fetchBoardTasksForTask(taskId: String) throws -> [BoardTask] {
-        return try read { db in
-            try BoardTask
-                .filter(Column("taskId") == taskId && Column("isDeleted") == false)
-                .fetchAll(db)
-        }
-    }
-
     func saveBoardTask(_ boardTask: BoardTask) throws {
         try write { db in
             try boardTask.save(db)

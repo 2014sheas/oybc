@@ -9,8 +9,9 @@ import GRDB
 ///   the hero is read through an *anchor* `BoardPlayViewModel` — the soonest-ending
 ///   active board the task is placed on (`TaskDetailKernel.heroAnchorBoard`) — so the
 ///   count, goal, completion and compound children come from the same windowed
-///   resolvers board play uses. The anchor input is `snapshot.boards` (today's
-///   placements; PR 5 widens placement resolution — keep that seam).
+///   resolvers board play uses. The anchor input is the boards of the task's OWN
+///   placements; the Boards rows come from the placement reach
+///   (`fetchTaskDetailPlacements` → `TaskPlacementRows`).
 /// - **Writes:** the hero writes through the anchor placement via the anchor view
 ///   model's handlers (`completeTaskOrchestrated`, shared-counter increment /
 ///   decrement, compound child toggle / increment) and Undoes through the same
@@ -67,8 +68,14 @@ final class TaskDetailViewModel: ObservableObject {
     /// Everything not read through the anchor board.
     struct Snapshot {
         let task: Task
+        /// The task's OWN live placements (hero anchor, "Placed on" Activity rows).
         let placements: [BoardTask]
+        /// Every live board the task reaches (own, a linked row's, a parent compound's) — PR 5.
         let boards: [Board]
+        /// One kernel row per reached board (`TaskPlacementRows`).
+        let rows: [TaskPlacementRows.Row]
+        /// Workspace tasks by id (the rows' members and their roots).
+        let taskById: [String: Task]
         let parents: [Task]
         let children: [Task]
         let templates: [RecurringBoardTemplate]
@@ -88,8 +95,10 @@ final class TaskDetailViewModel: ObservableObject {
     nonisolated static func fetchSnapshot(taskId: String, database db: AppDatabase) throws -> Snapshot? {
         guard let task = try db.fetchTask(id: taskId), !task.isDeleted else { return nil }
         let userId = task.userId
-        let placements = try db.fetchBoardTasksForTask(taskId: taskId).filter { !$0.isDeleted }
-        let boards = try db.fetchBoards(ids: Array(Set(placements.map(\.boardId)))).filter { !$0.isDeleted }
+        // Placement resolution (PR 5): the placement REACH, each board scored by the shared kernel.
+        let reached = try db.fetchTaskDetailPlacements(taskId: taskId)
+        let placements = reached.ownPlacements
+        let boards = reached.boards
         let parents = try db.fetchCompoundParents(forTaskId: taskId)
         let children = try db.fetchCompoundChildrenTasks(parentTaskId: taskId)
         let templates = try db.fetchTemplatesReferencingTask(taskId)
@@ -121,7 +130,7 @@ final class TaskDetailViewModel: ObservableObject {
         for id in [task.id] + children.map(\.id) where (try? db.isUncompleteBlockedBySeal(taskId: id)) == true { blocked.insert(id) }
         let watchedBoard = try task.referencedBoardId.flatMap { try db.fetchBoards(ids: [$0]).first { !$0.isDeleted } }
         return Snapshot(
-            task: task, placements: placements, boards: boards, parents: parents, children: children, templates: templates,
+            task: task, placements: placements, boards: boards, rows: reached.rows, taskById: reached.taskById, parents: parents, children: children, templates: templates,
             events: events, counterRoot: root, userTasks: userTasks, pickerBoards: picker.0, pickerTemplates: picker.1,
             sealBlocked: blocked, watchedBoard: watchedBoard, childLinks: links
         )
@@ -164,7 +173,9 @@ final class TaskDetailViewModel: ObservableObject {
         pickerTemplates = snap.pickerTemplates
         counterRoot = snap.counterRoot
         userTasks = snap.userTasks
-        let anchorBoard = TaskDetailKernel.heroAnchorBoard(snap.boards, now: clock())
+        // The hero anchors on the task's OWN square: its sheet is that square's.
+        let ownBoardIds = Set(snap.placements.map(\.boardId))
+        let anchorBoard = TaskDetailKernel.heroAnchorBoard(snap.boards.filter { ownBoardIds.contains($0.id) }, now: clock())
         setAnchor(anchorBoard?.id)
         if snap.task.type == .achievement { setWatched(snap.task.referencedBoardId) } else { watched = nil; watchedSub = nil }
     }
@@ -312,11 +323,12 @@ final class TaskDetailViewModel: ObservableObject {
             if compareBoardsForList(b, a, now: now) { return false }
             return a.id < b.id
         }
+        let kernelRows = Dictionary(snap.rows.map { ($0.boardId, $0) }, uniquingKeysWith: { a, _ in a })
         for board in ordered {
-            guard let placement = snap.placements.first(where: { $0.boardId == board.id }) else { continue }
+            guard let kernelRow = kernelRows[board.id], let member = snap.taskById[kernelRow.memberTaskId] else { continue }
             let isDraft = board.status == .draft
             let isActive = !isDraft && isBoardActiveForList(board, now: now)
-            var v = rowValue(task: task, board: board, placement: placement, snap: snap)
+            var v = Self.rowValue(kernelRow, member: member, taskById: snap.taskById)
             if task.type == .achievement, board.id == anchor?.boardId, case let .achievement(a) = hero, a.card.isMet {
                 v = RowValue(value: "Done", sub: nil, done: true, fraction: 1)
             }
@@ -332,7 +344,7 @@ final class TaskDetailViewModel: ObservableObject {
             } else {
                 // Missed = the window is OVER and the task did not complete it (a board closed
                 // before its end is not missed). Normal, Counting with a goal, Compound.
-                if !isDraft, Self.windowIsOver(board, now: now), !row.isDone, Self.canBeMissed(task) {
+                if !isDraft, Self.windowIsOver(board, now: now), !row.isDone, Self.canBeMissed(member, row: kernelRow) {
                     missed.append(.init(boardId: board.id, endDate: board.endDate ?? board.startDate))
                 }
                 row.caption = TaskDetailFormat.pastCaption(
@@ -406,81 +418,39 @@ final class TaskDetailViewModel: ObservableObject {
         return end < now
     }
 
-    /// Normal, Counting with a goal, and Compound can be missed; achievements cannot.
-    nonisolated static func canBeMissed(_ task: Task) -> Bool {
-        switch task.type {
-        case .normal, .compound: return true
-        case .counting: return (task.maxCount ?? 0) > 0
+    /// A row's member can be missed when it has something to miss: a Normal, a
+    /// Counting with a goal on that board, a Compound with sub-tasks; never an
+    /// achievement.
+    nonisolated static func canBeMissed(_ member: Task, row: TaskPlacementRows.Row) -> Bool {
+        switch member.type {
+        case .normal: return true
+        case .counting: return (row.goal ?? 0) > 0
+        case .compound: return (row.childrenTotal ?? 0) > 0
         case .achievement: return false
         }
     }
 
-    /// The window's inclusive upper bound for this board's reads: its end, or the seal when the
-    /// board was closed first.
-    nonisolated static func readEnd(_ board: Board) -> String? {
-        let end = boardWindowEnd(board)
-        guard let sealed = board.sealedAt, let sealedDate = parseISO8601Date(sealed) else { return end }
-        guard let end, let endDate = parseISO8601Date(end) else { return sealed }
-        return sealedDate < endDate ? sealed : end
-    }
-
-    /// A placement row's value for a board, from that board's window: Normal ("Done" or nothing),
-    /// Counting ("12" / "/20"), Compound ("2" / "/3"). Achievement rows are set by the caller.
-    private func rowValue(task: Task, board: Board, placement: BoardTask, snap: Snapshot) -> RowValue? {
-        let rootTask = task.sharedCounterId.flatMap { id in snap.userTasks.first { $0.id == id } }
-        let placed = PlacementParams.apply(task, placement: placement, settings: rootTask.map { CounterSettings.TitleSettings(task: $0) })
-        let end = Self.readEnd(board)
-        let cellIndex = placement.row * board.boardSize + placement.col
-        switch task.type {
-        case .normal:
-            let done = board.sealedCompletedCells.map { $0.contains(cellIndex) }
-                ?? resolveTaskWindowState(task: placed, events: snap.events[task.id] ?? [], windowStart: board.startDate, windowEnd: end).isCompleted
-            return RowValue(value: done ? "Done" : nil, sub: nil, done: done, fraction: done ? 1 : 0)
-        case .counting:
-            let kind = resolveFamilyCountKind(placed, lookup: { id in rootTask?.id == id ? rootTask : nil })
-            let goal = placed.maxCount ?? 0
-            let count: CountValue
-            if placed.sharedCounterId != nil {
-                count = resolveLinkedCounterDisplay(
-                    task: placed, eventsByTaskId: snap.events, sealedAt: board.sealedAt, window: LinkedCounterWindow(board: board)
-                ).displayed
-            } else {
-                count = resolveTaskWindowState(task: placed, events: snap.events[task.id] ?? [], windowStart: board.startDate, windowEnd: end).count
-            }
+    /// A placement row's value, formatted from the kernel's per-board state:
+    /// Normal ("Done" or nothing), Counting ("12" / "/20"), Compound ("2" / "/3").
+    /// The member may be a sub-task reached through a compound or a counter
+    /// root's linked row — the value is the member's.
+    nonisolated static func rowValue(_ row: TaskPlacementRows.Row, member: Task, taskById: [String: Task]) -> RowValue? {
+        if let count = row.count {
+            let kind = resolveFamilyCountKind(member, lookup: { taskById[$0] })
+            let goal = row.goal ?? 0
             return RowValue(
                 value: formatCount(count, kind: kind), sub: goal > 0 ? "/\(formatCount(goal, kind: kind))" : nil,
-                done: goal > 0 && count >= goal, fraction: goal > 0 ? min(1, count / goal) : 0
+                done: row.done, fraction: goal > 0 ? min(1, count / goal) : 0
             )
-        case .compound:
-            let children = snap.children.map { PlacementParams.withChildTarget($0, childTargets: placement.childTargets) }
-            var byId = Dictionary(uniqueKeysWithValues: snap.userTasks.map { ($0.id, $0) })
-            for c in children { byId[c.id] = c }
-            byId[placed.id] = placed
-            let context = CompoundWindowContext(windowStart: board.startDate, windowEnd: end, eventsByTaskId: snap.events)
-            func childDone(_ child: Task) -> Bool {
-                if child.type == .compound {
-                    return CompoundEvaluation.evaluate(compound: child, childrenByCompound: [:], taskById: byId, windowContext: context)
-                }
-                if child.sharedCounterId != nil {
-                    return resolveLinkedCounterDisplay(
-                        task: child, eventsByTaskId: snap.events, sealedAt: board.sealedAt, window: LinkedCounterWindow(board: board)
-                    ).isCompleted
-                }
-                return resolveTaskWindowState(task: child, events: snap.events[child.id] ?? [], windowStart: board.startDate, windowEnd: end).isCompleted
-            }
-            let doneCount = children.filter(childDone).count
-            let done = board.sealedCompletedCells.map { $0.contains(cellIndex) }
-                ?? CompoundEvaluation.evaluate(
-                    compound: placed, childrenByCompound: [placed.id: snap.childLinks], taskById: byId,
-                    windowContext: context, childTargets: placement.childTargets
-                )
-            return RowValue(
-                value: "\(doneCount)", sub: "/\(children.count)", done: done,
-                fraction: children.isEmpty ? 0 : Double(doneCount) / Double(children.count)
-            )
-        case .achievement:
-            return nil
         }
+        if let total = row.childrenTotal, total > 0 {
+            let doneCount = row.childrenDone ?? 0
+            return RowValue(
+                value: "\(doneCount)", sub: "/\(total)", done: row.done,
+                fraction: row.done ? 1 : Double(doneCount) / Double(total)
+            )
+        }
+        return RowValue(value: row.done ? "Done" : nil, sub: nil, done: row.done, fraction: row.done ? 1 : 0)
     }
 
     // MARK: - Hero writes (through the anchor placement)

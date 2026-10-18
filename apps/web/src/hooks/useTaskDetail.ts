@@ -4,25 +4,13 @@ import {
   TaskType, boardDisplayName, boardWindowEnd, buildTaskActivity, compareBoardsForList, pickHeroAnchorBoard, resolveFamilyCountKind,
   type Board, type BoardTask, type CompoundChild, type RecurringBoardTemplate, type Task, type TaskActivity,
 } from '@oybc/shared';
-import { fetchBoardTasksForTask, fetchBoard, fetchBoardsByIds, fetchCompoundChildren, fetchTask, fetchTasksByIds } from '../db/operations';
+import { fetchBoard, fetchCompoundChildren, fetchTask, fetchTasksByIds } from '../db/operations';
+import { loadTaskDetailPlacements } from '../db/operations/taskDetailPlacements';
 import { fetchLiveEventsForTaskIds } from '../db/operations/lateLog';
 import { fetchCompoundParentsForTask } from '../db/operations/tasks';
 import { fetchRecurringBoardTemplate, fetchTemplatesReferencingTask } from '../db/operations/recurringBoardTemplates';
 import { buildSquareWindowContext, resolveCompoundChildCompleted } from '../db/adapters';
 import { buildBoardRows, type BoardRow } from '../pages/tasks/taskDetail/taskDetailModel';
-
-/**
- * The boards a task is placed on — THE seam PR 5 (placement resolution) swaps:
- * today only placements of the library task's own id; PR 5 resolves linked
- * counters and sub-tasks placed through a parent. Everything below reads
- * placements only through this function.
- *
- * @param taskId - The task.
- * @returns Its live placements.
- */
-export async function resolveTaskPlacements(taskId: string): Promise<BoardTask[]> {
-  return fetchBoardTasksForTask(taskId);
-}
 
 /** One compound sub-task, link + task. */
 export interface DetailChild {
@@ -33,8 +21,9 @@ export interface DetailChild {
 export interface TaskDetailData {
   /** Placements + boards resolved (false while the first read is in flight). */
   placementsLoaded: boolean;
+  /** The task's OWN live placements (hero anchor, "Placed on" Activity rows). */
   placements: BoardTask[];
-  /** Placement boards in the Boards tab's own order. */
+  /** Every board the task reaches (own, a linked row's, a parent compound's), in the Boards tab's own order. */
   boards: Board[];
   /** The soonest-ending in-play board and the placement on it; undefined = no anchor ("Not on a board"). */
   anchor: { board: Board; placement: BoardTask } | undefined;
@@ -66,10 +55,10 @@ const EMPTY: never[] = [];
  */
 export function useTaskDetail(task: Task): TaskDetailData {
   const taskId = task.id;
-  const placements = useLiveQuery(() => resolveTaskPlacements(taskId), [taskId]);
-  const boardIds = useMemo(() => [...new Set((placements ?? []).map((p) => p.boardId))], [placements]);
-  const boardIdsKey = boardIds.join(',');
-  const rawBoards = useLiveQuery(async () => (boardIds.length === 0 ? [] : fetchBoardsByIds(boardIds)), [boardIdsKey]);
+  // Placement resolution (PR 5): the placement REACH, each board scored by the shared kernel.
+  const reached = useLiveQuery(() => loadTaskDetailPlacements(taskId), [taskId]);
+  const placements = reached?.ownPlacements;
+  const rawBoards = reached?.boards;
 
   const parentCompounds = useLiveQuery(() => fetchCompoundParentsForTask(taskId), [taskId]);
   const links = useLiveQuery(
@@ -107,7 +96,9 @@ export function useTaskDetail(task: Task): TaskDetailData {
   return useMemo<TaskDetailData>(() => {
     const now = new Date();
     const boards = [...(rawBoards ?? [])].filter((b) => !b.isDeleted).sort((a, b) => compareBoardsForList(a, b, now) || (a.id < b.id ? -1 : 1));
-    const anchorBoard = pickHeroAnchorBoard(boards, now);
+    // The hero anchors on the task's OWN square: its sheet is that square's.
+    const ownBoardIds = new Set((placements ?? []).map((p) => p.boardId));
+    const anchorBoard = pickHeroAnchorBoard(boards.filter((b) => ownBoardIds.has(b.id)), now);
     const anchorPlacement = anchorBoard ? (placements ?? []).find((p) => p.boardId === anchorBoard.id) : undefined;
     const children: DetailChild[] = sortedLinks.flatMap((link) => {
       const t = (childTasks ?? []).find((c) => c.id === link.childTaskId);
@@ -115,15 +106,18 @@ export function useTaskDetail(task: Task): TaskDetailData {
     });
     const taskMap: Record<string, Task> = { [task.id]: task };
     for (const t of [...(roots ?? []), ...(childTasks ?? [])]) taskMap[t.id] = t;
-    const childrenByCompound: Record<string, CompoundChild[]> = { [task.id]: sortedLinks };
+    // The anchor's sub-task ticks read the WORKSPACE maps, so a nested sub-compound evaluates its own children.
+    const fullTaskMap = reached ? { ...reached.taskById, ...taskMap } : taskMap;
+    const childrenByCompound: Record<string, CompoundChild[]> = { ...(reached?.childrenByCompound ?? {}), [task.id]: sortedLinks };
     const anchorCtx = anchorBoard
-      ? { ...buildSquareWindowContext(events ?? [], anchorBoard.startDate, boardWindowEnd(anchorBoard)), sealedAt: anchorBoard.sealedAt ?? null }
+      ? { ...buildSquareWindowContext(reached?.events ?? events ?? [], anchorBoard.startDate, boardWindowEnd(anchorBoard)), sealedAt: anchorBoard.sealedAt ?? null }
       : undefined;
     const childDone: Record<string, boolean> = {};
-    if (anchorCtx) for (const c of children) childDone[c.task.id] = resolveCompoundChildCompleted(c.task, taskMap, childrenByCompound, anchorCtx);
-    const rows = buildBoardRows({ task, boards, events: events ?? [], taskMap, childrenByCompound, placements: placements ?? [], now });
+    if (anchorCtx) for (const c of children) childDone[c.task.id] = resolveCompoundChildCompleted(c.task, fullTaskMap, childrenByCompound, anchorCtx);
+    const rows = buildBoardRows({ rows: reached?.rows ?? [], boards, taskById: reached?.taskById ?? taskMap, now });
     const names: Record<string, string> = {};
     for (const b of boards) names[b.id] = boardDisplayName(b);
+    // "Placed on" rows name the task's own placements only.
     const own = new Set([task.id, ...(task.sharedCounterId ? [task.sharedCounterId] : [])]);
     const activity = events && placements
       ? buildTaskActivity({
@@ -143,5 +137,5 @@ export function useTaskDetail(task: Task): TaskDetailData {
       watchedTemplate: task.referencedTemplateId ? (watchedTemplateRaw === undefined ? undefined : watchedTemplateRaw && !watchedTemplateRaw.isDeleted ? watchedTemplateRaw : null) : null,
       activity,
     };
-  }, [task, rawBoards, placements, sortedLinks, childTasks, roots, events, parentCompounds, counterRoot, templates, watchedBoardRaw, watchedTemplateRaw]);
+  }, [task, reached, rawBoards, placements, sortedLinks, childTasks, roots, events, parentCompounds, counterRoot, templates, watchedBoardRaw, watchedTemplateRaw]);
 }

@@ -160,7 +160,7 @@ Header row (type square · title · meta), first item gold.
 | **2 · Tap contract + square sheet** | Kit first (tap-to-log chip row, Undo strip, return pill on both; web `RisoToolbarPill` + undo pill promoted into `components/riso/`) — it lands with its first consumer because knip fails an unused web export. Then the square sheet (new files), Normal Undo toast, compound `+` children, Achievement tap, web busy flag, Counter Detail on `tapLogChips`. Deletes `RisoCountingStepperSheet` / `CountingStepperModel` / `detailSheet` content / `CompoundChildRow` stepper and web `DetailModal` counting branches + `useCountingLogModal`. |
 | **3 · Hold menu** | Unified vocabulary + closed-board "Late log…" on both. |
 | **4 · Task Detail shell** | Hero per type, segments (All / Links / Activity live; Boards shows today's placement list), ⋯ menu, sheet Done + return pill. |
-| **5 · Boards tab + placement resolution** | **Gated on rework 2c.** Active list + Past & drafts, + Place; placements resolved through `placementsReachedByRoot` and compound parents so linked counters and sub-tasks placed via a parent stop reading "On 0 boards". |
+| **5 · Boards tab + placement resolution** | Active list + Past & drafts; placements resolved through the slice-2c placement reach (`placementsReachedByTasks`) so linked counters and sub-tasks placed via a parent stop reading "On 0 boards"; every row read through the grid's resolvers (`taskPlacementRows`). "+ Place" omitted (owner, 2026-10-18). |
 
 ## PR 2 — detailed scope (rides in #634 with PR 1)
 
@@ -341,6 +341,27 @@ linked task; a board is "missed" only once its window has ended (goal > 0 for
 counting); iOS swipe-back is kept on the custom-chrome routes by a scoped
 `InteractivePopEnabler`. **Carried to PR 5:** achievement values and nested
 sub-compound evaluation on non-anchor board rows.
+
+**PR 5 resolutions (implementation, 2026-10-18):** a task's boards are its
+placement REACH — its own placements, a counter root's linked rows', and every
+containing compound's — scored per board by the shared `taskPlacementRows`
+(`taskPlacementRows.ts` ↔ `TaskPlacementRows.swift`,
+`taskPlacementRowsVectors.json`): a direct placement through
+`resolveSquareState` + its parameters, a member reached through a compound at
+the parent placement's `childTargets` (direct children only; deeper levels keep
+their own goal), a compound counting its sub-tasks with the full nested link
+map (a nested sub-compound evaluates its own children), an achievement read
+from its cell in `computeBoardGrid`, a closed board's own cell from
+`sealedCompletedCells` and everything else bounded at `sealedAt`. One row per
+board: the task's own placement, then a linked row's, then the first through a
+compound (ties by member id, then placement id — order-independent so the twins
+agree). The data read is one per platform (web `loadTaskDetailPlacements` ↔
+`AppDatabase.fetchTaskDetailPlacements`). **The hero still anchors on the
+task's OWN placements only** — its control is that square's sheet, so a
+sub-task that lives only inside a compound gets Boards rows but no hero count.
+"Placed on" Activity rows stay the task's own placements. **"+ Place" is
+omitted** (owner, 2026-10-18), as "Place on a board…" was in PR 4 — placing
+stays a board-side action.
 
 ### Constraints every PR honours
 
