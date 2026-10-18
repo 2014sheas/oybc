@@ -52,6 +52,9 @@
       "defaultBoardSize",
       "defaultCenterType"
     ],
+    "recurringBoardTemplates": [
+      "manualTaskTargets"
+    ],
     "boardTasks": [
       "targetOverride",
       "targetKind",

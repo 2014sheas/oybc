@@ -486,7 +486,6 @@ export {
   isWindowStampedDerived,
   isFrozenDerivedRow,
   isFrozenRowReachedByEvent,
-  buildDerivedRows,
 } from './memberRules';
 
 export type {
@@ -494,14 +493,10 @@ export type {
   PlanMode,
   BoardWindow,
   PlanTask,
-  DerivedTaskDraft,
-  DerivedCompoundChildDraft,
-  DerivedCompoundDraft,
+  PlannedPlacement,
   PlanDerivedTasksArgs,
   PlanDerivedTasksResult,
   BaselineEvent,
-  DerivedRowsInput,
-  DerivedRows,
 } from './memberRules';
 
 // ===== Member rules — display + rule-editing helpers (B3, docs/BOARD_SOURCES.md §Member rules) =====

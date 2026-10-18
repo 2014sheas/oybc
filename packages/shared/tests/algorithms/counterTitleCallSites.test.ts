@@ -75,6 +75,10 @@ const ALLOWLIST: Record<string, { count: number; reason: string }> = {
   },
   'apps/web/src/pages/createPage/createFormCounting.ts': { count: 3, reason: NEW_TASK },
   // ── shared ──
+  'packages/shared/src/algorithms/memberRules.ts': {
+    count: 1,
+    reason: `${TEMPLATE_AWARE} — slice 3b planner: is a legacy derived row's title custom (then it rides onto its root's placement as titleOverride)`,
+  },
   'packages/shared/src/algorithms/rootFieldPropagation.ts': { count: 2, reason: TEMPLATE_AWARE },
 };
 

@@ -5,6 +5,21 @@ import {
   RecurringCenterSquareTypeSchema,
 } from './schemas';
 import { BoardSourcesArraySchema, ManualTaskVarySchema } from './boardSource';
+import { CountKindSchema } from './countValue';
+
+/**
+ * TASK_WINDOW_REWORK slice 3b — a hand-added member's frozen placement target
+ * on a repeating board: `{ target, kind, title? }` keyed by task id. A doc
+ * from a client that predates the field reads as absent.
+ */
+export const ManualTaskTargetsSchema = z.record(
+  z.string(),
+  z.object({
+    target: z.number().positive(),
+    kind: CountKindSchema,
+    title: z.string().min(1).max(200).optional(),
+  }),
+);
 
 /**
  * RecurringBoardTemplate object schemas — moved out of the frozen
@@ -43,6 +58,7 @@ export const CreateRecurringBoardTemplateInputSchema = z.object({
   removedTaskIds: z.array(z.string().uuid()).optional(),
   sources: BoardSourcesArraySchema.optional(),
   manualTaskVary: ManualTaskVarySchema.optional(),
+  manualTaskTargets: ManualTaskTargetsSchema.optional(),
 }).refine(
   (data) => {
     // No duplicate seedTaskIds — each pool entry must reference a distinct
@@ -75,6 +91,7 @@ export const UpdateRecurringBoardTemplateInputSchema = z.object({
   removedTaskIds: z.array(z.string().uuid()).optional(),
   sources: BoardSourcesArraySchema.optional(),
   manualTaskVary: ManualTaskVarySchema.optional(),
+  manualTaskTargets: ManualTaskTargetsSchema.optional(),
 }).refine(
   (data) => {
     if (data.seedTaskIds === undefined) return true;
@@ -110,6 +127,7 @@ export const RecurringBoardTemplateSchema = z.object({
   // (docs/BOARD_SOURCES.md). Written alongside the trio during P1.
   sources: BoardSourcesArraySchema.optional(),
   manualTaskVary: ManualTaskVarySchema.optional(),
+  manualTaskTargets: ManualTaskTargetsSchema.optional(),
   lastSpawnedWindowKey: z.string().nullable(),
   isActive: z.boolean(),
   createdAt: z.string().datetime(),

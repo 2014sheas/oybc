@@ -711,8 +711,7 @@
     }
   ],
   "planDerivedTasks": {
-    "_note": "Placement through the member-rule planner (memberRules.ts planDerivedTasks <-> BoardSources.planDerivedTasks). Every task here is also the roots map. 'derived:X' = derivedTaskId(boardId, X). Baselines are 0, vary is off (no rng).",
-    "boardId": "b-week",
+    "_note": "Placement through the member-rule planner (memberRules.ts planDerivedTasks <-> BoardSources.planDerivedTasks). Every task here is also the roots map. Slice 3b: expected.placements = one { taskId, targetOverride?, targetKind?, titleOverride? } per selected id (an override only when it differs from the placed task's own goal). Vary is off (no rng).",
     "tasks": {
       "R": {
         "type": "counting",
@@ -828,14 +827,11 @@
         ],
         "supplies": [],
         "expected": {
-          "placement": [
-            "derived:R"
-          ],
-          "drafts": [
+          "placements": [
             {
-              "root": "R",
-              "maxCount": 3,
-              "title": "Read 3 books"
+              "taskId": "R",
+              "targetOverride": 3,
+              "targetKind": "discrete"
             }
           ]
         }
@@ -851,14 +847,11 @@
         ],
         "supplies": [],
         "expected": {
-          "placement": [
-            "derived:T"
-          ],
-          "drafts": [
+          "placements": [
             {
-              "root": "T",
-              "maxCount": 1,
-              "title": "Finish 1 novel"
+              "taskId": "T",
+              "targetOverride": 1,
+              "targetKind": "discrete"
             }
           ]
         }
@@ -874,10 +867,11 @@
         ],
         "supplies": [],
         "expected": {
-          "placement": [
-            "P"
-          ],
-          "drafts": []
+          "placements": [
+            {
+              "taskId": "P"
+            }
+          ]
         }
       },
       {
@@ -891,10 +885,11 @@
         ],
         "supplies": [],
         "expected": {
-          "placement": [
-            "R"
-          ],
-          "drafts": []
+          "placements": [
+            {
+              "taskId": "R"
+            }
+          ]
         }
       },
       {
@@ -908,14 +903,11 @@
         ],
         "supplies": [],
         "expected": {
-          "placement": [
-            "derived:G"
-          ],
-          "drafts": [
+          "placements": [
             {
-              "root": "G",
-              "maxCount": 350,
-              "title": "Do 350 push-ups"
+              "taskId": "G",
+              "targetOverride": 350,
+              "targetKind": "discrete"
             }
           ]
         }
@@ -931,14 +923,9 @@
         ],
         "supplies": [],
         "expected": {
-          "placement": [
-            "derived:T"
-          ],
-          "drafts": [
+          "placements": [
             {
-              "root": "T",
-              "maxCount": 5,
-              "title": "Finish 5 novels"
+              "taskId": "L"
             }
           ]
         }
@@ -959,14 +946,11 @@
           }
         ],
         "expected": {
-          "placement": [
-            "derived:R"
-          ],
-          "drafts": [
+          "placements": [
             {
-              "root": "R",
-              "maxCount": 3,
-              "title": "Read 3 books"
+              "taskId": "S",
+              "targetOverride": 3,
+              "targetKind": "discrete"
             }
           ]
         }
@@ -987,14 +971,11 @@
           }
         ],
         "expected": {
-          "placement": [
-            "derived:P"
-          ],
-          "drafts": [
+          "placements": [
             {
-              "root": "P",
-              "maxCount": 7,
-              "title": "Run 7 miles"
+              "taskId": "S2",
+              "targetOverride": 7,
+              "targetKind": "discrete"
             }
           ]
         }
@@ -1020,14 +1001,11 @@
           }
         ],
         "expected": {
-          "placement": [
-            "derived:R"
-          ],
-          "drafts": [
+          "placements": [
             {
-              "root": "R",
-              "maxCount": 5,
-              "title": "Read 5 books"
+              "taskId": "S",
+              "targetOverride": 5,
+              "targetKind": "discrete"
             }
           ]
         }
@@ -1048,14 +1026,11 @@
           }
         ],
         "expected": {
-          "placement": [
-            "derived:U"
-          ],
-          "drafts": [
+          "placements": [
             {
-              "root": "U",
-              "maxCount": 40,
-              "title": "Walk 40 km"
+              "taskId": "S3",
+              "targetOverride": 40,
+              "targetKind": "discrete"
             }
           ]
         }
@@ -1076,14 +1051,11 @@
           }
         ],
         "expected": {
-          "placement": [
-            "derived:R"
-          ],
-          "drafts": [
+          "placements": [
             {
-              "root": "R",
-              "maxCount": 3,
-              "title": "Read 3 books"
+              "taskId": "R",
+              "targetOverride": 3,
+              "targetKind": "discrete"
             }
           ]
         }
@@ -1110,14 +1082,11 @@
         ],
         "rng": 0.99,
         "expected": {
-          "placement": [
-            "derived:R"
-          ],
-          "drafts": [
+          "placements": [
             {
-              "root": "R",
-              "maxCount": 4,
-              "title": "Read 4 books"
+              "taskId": "R",
+              "targetOverride": 4,
+              "targetKind": "discrete"
             }
           ]
         }
@@ -1138,10 +1107,11 @@
           }
         ],
         "expected": {
-          "placement": [
-            "P"
-          ],
-          "drafts": []
+          "placements": [
+            {
+              "taskId": "P"
+            }
+          ]
         }
       },
       {
@@ -1160,10 +1130,11 @@
           }
         ],
         "expected": {
-          "placement": [
-            "S2"
-          ],
-          "drafts": []
+          "placements": [
+            {
+              "taskId": "S2"
+            }
+          ]
         }
       },
       {
@@ -1177,14 +1148,11 @@
         ],
         "supplies": [],
         "expected": {
-          "placement": [
-            "derived:H"
-          ],
-          "drafts": [
+          "placements": [
             {
-              "root": "H",
-              "maxCount": 7,
-              "title": "Read 7 pages"
+              "taskId": "H",
+              "targetOverride": 7,
+              "targetKind": "discrete"
             }
           ]
         }
@@ -1205,14 +1173,11 @@
           }
         ],
         "expected": {
-          "placement": [
-            "derived:H"
-          ],
-          "drafts": [
+          "placements": [
             {
-              "root": "H",
-              "maxCount": 7,
-              "title": "Read 7 pages"
+              "taskId": "H",
+              "targetOverride": 7,
+              "targetKind": "discrete"
             }
           ]
         }
@@ -1233,14 +1198,11 @@
           }
         ],
         "expected": {
-          "placement": [
-            "derived:H"
-          ],
-          "drafts": [
+          "placements": [
             {
-              "root": "H",
-              "maxCount": 14,
-              "title": "Read 14 pages"
+              "taskId": "S4",
+              "targetOverride": 14,
+              "targetKind": "discrete"
             }
           ]
         }

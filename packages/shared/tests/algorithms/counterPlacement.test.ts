@@ -11,7 +11,7 @@ import {
   taskSearchMatches,
 } from '../../src/algorithms/counterPlacement';
 import { counterCopyTitle, generateCounterTaskTitle } from '../../src/algorithms/taskTitle';
-import { derivedTaskId, planDerivedTasks } from '../../src/algorithms/memberRules';
+import { planDerivedTasks } from '../../src/algorithms/memberRules';
 import { effectiveMemberTarget, memberStepperMax } from '../../src/algorithms/memberRulesDisplay';
 import type { Timeframe } from '../../src/constants/enums';
 
@@ -97,8 +97,6 @@ describe('counterPlacementVectors — planDerivedTasks (placement defaults)', ()
     Object.entries(P.tasks).map(([id, t]: [string, any]) => [id, { id, sharedCounterId: null, ...t }])
   );
   const win = (tf: string) => ({ timeframe: tf as Timeframe, startDate: null, endDate: null });
-  const resolve = (token: string): string =>
-    token.startsWith('derived:') ? derivedTaskId(P.boardId, token.slice('derived:'.length)) : token;
 
   it.each(P.vectors as any[])('$name', (v: any) => {
     const out = planDerivedTasks({
@@ -118,7 +116,6 @@ describe('counterPlacementVectors — planDerivedTasks (placement defaults)', ()
       })),
       manualTaskIds: v.manual,
       manualTaskVary: {},
-      boardId: P.boardId,
       window: win(v.window),
       mode: 'oneOff',
       tasksById,
@@ -126,17 +123,14 @@ describe('counterPlacementVectors — planDerivedTasks (placement defaults)', ()
       sourceWindowByTaskId: Object.fromEntries(
         Object.entries(P.sourceWindows).map(([id, tf]) => [id, win(tf as string)])
       ),
-      baselineByRootId: {},
       rootsById: tasksById,
       rng: () => {
         if (v.rng === undefined) throw new Error('vary is off — no rng');
         return v.rng;
       },
     });
-    expect(out.placementIds).toEqual(v.expected.placement.map(resolve));
-    expect(out.derivedTasks.map((d) => ({ root: d.rootTaskId, maxCount: d.maxCount, title: d.title }))).toEqual(
-      v.expected.drafts
-    );
+    // Slice 3b: one placement per selected id, compared whole.
+    expect(JSON.parse(JSON.stringify(out.placements))).toEqual(v.expected.placements);
   });
 });
 

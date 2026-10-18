@@ -214,6 +214,8 @@ export const CLEARABLE_FIELDS_BY_COLLECTION = {
     'countsTowardSince',
   ],
   coreBoardDefaults: ['defaultBoardSize', 'defaultCenterType'],
+  // Slice 3b: a repeating board edited back to no frozen targets stores the map ABSENT.
+  recurringBoardTemplates: ['manualTaskTargets'],
   boardTasks: ['targetOverride', 'targetKind', 'childTargets', 'titleOverride'],
   // A revived counts-toward credit (a tombstoned event reconciled back to
   // live) drops `deletedAt`; without this the stale stamp survived the

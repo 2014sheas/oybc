@@ -1,3 +1,4 @@
+import type { CountKind } from '../algorithms/countValue';
 import { Timeframe, CenterSquareType } from "../constants/enums";
 import type { BoardSource, VaryLevel } from "./boardSource";
 import { BoardSize } from "../constants";
@@ -32,6 +33,17 @@ import { BoardSize } from "../constants";
  *   window (idempotent spawning); `null` ⇒ spawn immediately on next open.
  * - `Timeframe.CUSTOM` and `CenterSquareType.CHOSEN` are excluded (Zod-enforced).
  */
+/**
+ * One hand-added member's frozen placement target on a repeating board
+ * (slice 3b): the per-window goal in the kind it was frozen in, plus the
+ * placement title when the repeated square carried one.
+ */
+export interface ManualTaskTarget {
+  target: number;
+  kind: CountKind;
+  title?: string;
+}
+
 export interface RecurringBoardTemplate {
   // Identity
   id: string; // UUID (client-generated)
@@ -76,6 +88,14 @@ export interface RecurringBoardTemplate {
   sources?: BoardSource[];
   /** Dice for hand-added counters on a recurring board (§Member rules). Additive; absent = {}. */
   manualTaskVary?: Record<string, VaryLevel>;
+  /**
+   * TASK_WINDOW_REWORK slice 3b — a hand-added member's frozen per-board
+   * target (and custom title), copied by "Repeat this board" from the
+   * placement it repeats (ruling 1) and applied by spawn as that member's
+   * placement parameters. Keyed by task id. Sourced members never appear
+   * here (they re-plan from rules). Additive; absent = {}.
+   */
+  manualTaskTargets?: Record<string, ManualTaskTarget>;
 
   // Spawn state
   lastSpawnedWindowKey: string | null; // local ISO startDate of last spawn, or null
@@ -114,6 +134,14 @@ export interface CreateRecurringBoardTemplateInput {
   sources?: BoardSource[];
   /** Dice for hand-added counters on a recurring board (§Member rules). Additive; absent = {}. */
   manualTaskVary?: Record<string, VaryLevel>;
+  /**
+   * TASK_WINDOW_REWORK slice 3b — a hand-added member's frozen per-board
+   * target (and custom title), copied by "Repeat this board" from the
+   * placement it repeats (ruling 1) and applied by spawn as that member's
+   * placement parameters. Keyed by task id. Sourced members never appear
+   * here (they re-plan from rules). Additive; absent = {}.
+   */
+  manualTaskTargets?: Record<string, ManualTaskTarget>;
 }
 
 /**
@@ -137,4 +165,12 @@ export interface UpdateRecurringBoardTemplateInput {
   sources?: BoardSource[];
   /** Dice for hand-added counters on a recurring board (§Member rules). Additive; absent = {}. */
   manualTaskVary?: Record<string, VaryLevel>;
+  /**
+   * TASK_WINDOW_REWORK slice 3b — a hand-added member's frozen per-board
+   * target (and custom title), copied by "Repeat this board" from the
+   * placement it repeats (ruling 1) and applied by spawn as that member's
+   * placement parameters. Keyed by task id. Sourced members never appear
+   * here (they re-plan from rules). Additive; absent = {}.
+   */
+  manualTaskTargets?: Record<string, ManualTaskTarget>;
 }
