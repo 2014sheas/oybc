@@ -224,7 +224,7 @@
 		50814C3BD70E25A6F8185419 /* RecurringTemplateCardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7EC19B0424570FE4922F8968 /* RecurringTemplateCardView.swift */; };
 		50D6EF5AEC63ECA472FD8E4D /* CycleDetectionVectorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CFC8212667315B8E65232788 /* CycleDetectionVectorTests.swift */; };
 		514EA18EFB2539AE81E83686 /* AppStoreMetadataTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 062C46DAC6A37EF3FF634F73 /* AppStoreMetadataTests.swift */; };
-		51870B5D912C9DEF088A30A7 /* GoogleSignInSwift in Frameworks */ = {isa = PBXBuildFile; productRef = EDD4468E4592EA5DCFBBE66A /* GoogleSignInSwift */; };
+		51870B5D912C9DEF088A30A7 /* GoogleSignIn in Frameworks */ = {isa = PBXBuildFile; productRef = 63CE473C73B22D4EFDC81AED /* GoogleSignIn */; };
 		5218A1B5CCDA64BCF64447A6 /* HelpView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E96E63CE79A554A055A14ACE /* HelpView.swift */; };
 		522C70B93FE4AB74F1D31371 /* BoardEditOptionsSnapshotTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 31DA97614BEAFC5F7B3F76A3 /* BoardEditOptionsSnapshotTests.swift */; };
 		52B416C9FF8F4BD8FAE81F95 /* BoardPlayViewModel+Window.swift in Sources */ = {isa = PBXBuildFile; fileRef = 108DAB32D75769C532DD56E0 /* BoardPlayViewModel+Window.swift */; };
@@ -370,7 +370,7 @@
 		87789241DB6CC5FD13647675 /* BoardWizardTemplateEditTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 470E19EAC2E380D0F57E5465 /* BoardWizardTemplateEditTests.swift */; };
 		87958E87D898554F2BB5E248 /* CountsToward.swift in Sources */ = {isa = PBXBuildFile; fileRef = E43537830F823B9B602403C0 /* CountsToward.swift */; };
 		880A10F1B5C929928DDE6CC2 /* SquaresEditGridUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 731688D67F0B78AF3048EFC4 /* SquaresEditGridUITests.swift */; };
-		88AC024943E462F0AF5F00B8 /* GoogleSignIn in Frameworks */ = {isa = PBXBuildFile; productRef = 63CE473C73B22D4EFDC81AED /* GoogleSignIn */; };
+		88AC024943E462F0AF5F00B8 /* FirebaseCrashlytics in Frameworks */ = {isa = PBXBuildFile; productRef = 67468AED4C08DED94B6DCDEE /* FirebaseCrashlytics */; };
 		890D6C7D3D0A195E3BFF1E44 /* TaskDetailScopedReadsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 36BB39454E4C15339169F432 /* TaskDetailScopedReadsTests.swift */; };
 		893CF9F9E6DC2EE4C3E1F946 /* RisoSourcePickerSheetView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 375A061AD0CF8DECC28D32C7 /* RisoSourcePickerSheetView.swift */; };
 		893DE653B6DD8D5826705284 /* AppleNonce.swift in Sources */ = {isa = PBXBuildFile; fileRef = 883F7DA1339B283615F3D7D3 /* AppleNonce.swift */; };
@@ -519,6 +519,7 @@
 		BE0554C84F80828C0662A252 /* TaskExpiry.swift in Sources */ = {isa = PBXBuildFile; fileRef = ABEBA4124A93DC22DE779E3F /* TaskExpiry.swift */; };
 		BE179F24012BBDEAD16EFC3D /* BoardPlayHeaderView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6B871FF233474BBB9DD29AD /* BoardPlayHeaderView.swift */; };
 		BE3F516696E7268BAC49D3E5 /* RisoBoardCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 08FC3FFE13228CD857591068 /* RisoBoardCard.swift */; };
+		BE63AC62274C051775A17C90 /* CrashReporting.swift in Sources */ = {isa = PBXBuildFile; fileRef = F66538D6D4351A9C8873915B /* CrashReporting.swift */; };
 		BECA1D3017CA6E0A229E6533 /* UUIDv5.swift in Sources */ = {isa = PBXBuildFile; fileRef = E06C42D379970D782F6091C7 /* UUIDv5.swift */; };
 		BF25DF0D1007E0448FC56801 /* CreateFormViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01DCC1B869DCD626A926C690 /* CreateFormViewModel.swift */; };
 		BF29F73C9B77F2CBAD44CA3D /* RisoRangeSliderSnapshotTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 256A0AF997716E40C0EC2392 /* RisoRangeSliderSnapshotTests.swift */; };
@@ -644,6 +645,7 @@
 		EB81A8FC9B222614B10C9DDC /* DraftSourcesCapacityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE4869B69FCEC7DE44D221A6 /* DraftSourcesCapacityTests.swift */; };
 		EB88F5D5AD90B84D9095B24F /* PlacementParamsWriteTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B3C559913E8F082F182670AA /* PlacementParamsWriteTests.swift */; };
 		EBC898A735DCBACA25F0E3AC /* WindowedCompletionSealingSnapshotTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BFA90DC3E5AB8DBE675439D4 /* WindowedCompletionSealingSnapshotTests.swift */; };
+		EBCE262D7D5E211B2715A7C7 /* GoogleSignInSwift in Frameworks */ = {isa = PBXBuildFile; productRef = EDD4468E4592EA5DCFBBE66A /* GoogleSignInSwift */; };
 		EBFFD402763F2A7C1A5E55A7 /* Streaks.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8A050E4A006F1F0489F02076 /* Streaks.swift */; };
 		EC4D7D74EF488E9483EC2FFC /* CycleDetectionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0EB4FF22AFFCA34D5F53426C /* CycleDetectionTests.swift */; };
 		EC8ECDD51637AF7057DE3CF5 /* BoardWizardMemberRulesTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3BC153057198F607E638C867 /* BoardWizardMemberRulesTests.swift */; };
@@ -1388,6 +1390,7 @@
 		F52758172BF42B17A7FABC03 /* ViewModelInjectionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ViewModelInjectionTests.swift; sourceTree = "<group>"; };
 		F6249D7C234E0775FBCEA095 /* BoardPlacementTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BoardPlacementTests.swift; sourceTree = "<group>"; };
 		F64B7B140E47262BBDC36013 /* BoardPlayViewModel+SharedCounterWrites.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "BoardPlayViewModel+SharedCounterWrites.swift"; sourceTree = "<group>"; };
+		F66538D6D4351A9C8873915B /* CrashReporting.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CrashReporting.swift; sourceTree = "<group>"; };
 		F6D35D62C9AA4E9927899346 /* RisoBoardsHomeSnapshotTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RisoBoardsHomeSnapshotTests.swift; sourceTree = "<group>"; };
 		F6D69A2FEC04E8F6BB6FD264 /* boardDerivedStateVectors.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = boardDerivedStateVectors.json; sourceTree = "<group>"; };
 		F715654B51C84A71255FABA7 /* DraftTaskVisibilityTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DraftTaskVisibilityTests.swift; sourceTree = "<group>"; };
@@ -1431,8 +1434,9 @@
 				2EF19E402C1B931693900274 /* GRDB in Frameworks */,
 				79AFC76C8AE9E5A02354E0A2 /* FirebaseAuth in Frameworks */,
 				64BCFBAA10D300F11C77EF1E /* FirebaseFirestore in Frameworks */,
-				88AC024943E462F0AF5F00B8 /* GoogleSignIn in Frameworks */,
-				51870B5D912C9DEF088A30A7 /* GoogleSignInSwift in Frameworks */,
+				88AC024943E462F0AF5F00B8 /* FirebaseCrashlytics in Frameworks */,
+				51870B5D912C9DEF088A30A7 /* GoogleSignIn in Frameworks */,
+				EBCE262D7D5E211B2715A7C7 /* GoogleSignInSwift in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -1662,6 +1666,7 @@
 				F81CA8472D1840765E6210A9 /* CompoundChildEligibility.swift */,
 				C1B2C5598136DD61C84DE532 /* CompoundEvaluation.swift */,
 				355962AACBA78E1DEC29F282 /* CounterArrivalStore.swift */,
+				F66538D6D4351A9C8873915B /* CrashReporting.swift */,
 				9F714DD146988F2C085D5EA4 /* CycleDetection.swift */,
 				085F1D48B28D5DF264475FBF /* DerivationPass.swift */,
 				671E32BA540C77976400B3FC /* FirestoreDocStore.swift */,
@@ -2435,6 +2440,7 @@
 				FB60A2471061045431151B6B /* GRDB */,
 				C75445B6764BE3BD13B11782 /* FirebaseAuth */,
 				91A45F3247DF5222CFEC856D /* FirebaseFirestore */,
+				67468AED4C08DED94B6DCDEE /* FirebaseCrashlytics */,
 				63CE473C73B22D4EFDC81AED /* GoogleSignIn */,
 				EDD4468E4592EA5DCFBBE66A /* GoogleSignInSwift */,
 			);
@@ -2796,6 +2802,7 @@
 				5DE44D758EC7A1361FBF1FC7 /* CountsTowardLabels.swift in Sources */,
 				3647B31C5F08CCB160E90F95 /* CountsTowardPatch.swift in Sources */,
 				A138F98629DF6591E599E444 /* CountsTowardSectionView.swift in Sources */,
+				BE63AC62274C051775A17C90 /* CrashReporting.swift in Sources */,
 				BF25DF0D1007E0448FC56801 /* CreateFormViewModel.swift in Sources */,
 				954145DABD1091A49880E115 /* CreateHubBoardCTAView.swift in Sources */,
 				E0894E4DE72A0307D028E9C8 /* CreateHubDraftsListView.swift in Sources */,
@@ -3707,6 +3714,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = DD961413FF6BF06CD1601127 /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */;
 			productName = GoogleSignIn;
+		};
+		67468AED4C08DED94B6DCDEE /* FirebaseCrashlytics */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 63C5754F3131857FB77E7F13 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseCrashlytics;
 		};
 		91A45F3247DF5222CFEC856D /* FirebaseFirestore */ = {
 			isa = XCSwiftPackageProductDependency;

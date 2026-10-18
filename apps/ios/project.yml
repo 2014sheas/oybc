@@ -78,6 +78,12 @@ targets:
         product: FirebaseAuth
       - package: FirebaseSDK
         product: FirebaseFirestore
+      # Crash reporting only (ROADMAP Track L0). Deliberately NOT
+      # FirebaseAnalytics: the owner ruled out any analytics SDK for 1.0, and
+      # linking it would drag in GoogleAppMeasurement (and the IDFA/tracking
+      # declarations that come with it). Crashlytics runs without it.
+      - package: FirebaseSDK
+        product: FirebaseCrashlytics
       - package: GoogleSignIn
         product: GoogleSignIn
       - package: GoogleSignIn

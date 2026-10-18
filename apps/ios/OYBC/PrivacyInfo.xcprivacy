@@ -8,7 +8,8 @@
 	     piece of user data sent off-device must be added here (and to the App
 	     Store Connect nutrition label). See CLAUDE.md, Privacy manifest. -->
 
-	<!-- No cross-app/site tracking and no analytics SDK in 1.0. -->
+	<!-- No cross-app/site tracking and no analytics SDK (FirebaseAnalytics /
+	     GoogleAppMeasurement) in 1.0; Crashlytics is the only diagnostics SDK. -->
 	<key>NSPrivacyTracking</key>
 	<false/>
 	<key>NSPrivacyTrackingDomains</key>
@@ -40,7 +41,18 @@
 	<!-- Data sent off-device for the app's own functionality: Firebase Auth
 	     (email, uid, display name) and the Firestore sync of the user's boards,
 	     tasks, events and preferences. All linked to the user, none used for
-	     tracking, purpose App Functionality. -->
+	     tracking, purpose App Functionality.
+
+	     Crash reporting (Firebase Crashlytics, release builds only — see
+	     Services/CrashReporting.swift): crash data and other diagnostic data,
+	     NOT linked to the user (the app never calls Crashlytics.setUserID or
+	     attaches custom keys, logs or user content to a report), not used for
+	     tracking, purpose App Functionality. Both entries mirror the manifest
+	     bundled with the Crashlytics SDK. FirebaseInstallations and
+	     GoogleDataTransport (pulled in by Crashlytics / Sessions) additionally
+	     declare OtherDiagnosticData for the Analytics purpose in their own
+	     manifests; Xcode's aggregated privacy report shows that, and the App
+	     Store Connect nutrition label must agree with the report. -->
 	<key>NSPrivacyCollectedDataTypes</key>
 	<array>
 		<dict>
@@ -84,6 +96,30 @@
 			<string>NSPrivacyCollectedDataTypeOtherUserContent</string>
 			<key>NSPrivacyCollectedDataTypeLinked</key>
 			<true/>
+			<key>NSPrivacyCollectedDataTypeTracking</key>
+			<false/>
+			<key>NSPrivacyCollectedDataTypePurposes</key>
+			<array>
+				<string>NSPrivacyCollectedDataTypePurposeAppFunctionality</string>
+			</array>
+		</dict>
+		<dict>
+			<key>NSPrivacyCollectedDataType</key>
+			<string>NSPrivacyCollectedDataTypeCrashData</string>
+			<key>NSPrivacyCollectedDataTypeLinked</key>
+			<false/>
+			<key>NSPrivacyCollectedDataTypeTracking</key>
+			<false/>
+			<key>NSPrivacyCollectedDataTypePurposes</key>
+			<array>
+				<string>NSPrivacyCollectedDataTypePurposeAppFunctionality</string>
+			</array>
+		</dict>
+		<dict>
+			<key>NSPrivacyCollectedDataType</key>
+			<string>NSPrivacyCollectedDataTypeOtherDiagnosticData</string>
+			<key>NSPrivacyCollectedDataTypeLinked</key>
+			<false/>
 			<key>NSPrivacyCollectedDataTypeTracking</key>
 			<false/>
 			<key>NSPrivacyCollectedDataTypePurposes</key>

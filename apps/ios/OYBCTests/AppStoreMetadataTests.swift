@@ -43,28 +43,69 @@ final class AppStoreMetadataTests: XCTestCase {
         XCTAssertEqual(apis[0]["NSPrivacyAccessedAPITypeReasons"] as? [String], ["CA92.1"])
     }
 
-    /// Exactly the data the app sends off-device for its own functionality
-    /// (Firebase Auth email / uid / display name + Firestore user content),
-    /// each linked to the user, never used for tracking.
+    /// The declared purposes and linkage the manifest must carry per collected
+    /// data type. The first four are what the app sends off-device for its own
+    /// functionality (Firebase Auth email / uid / display name + Firestore user
+    /// content): linked to the user. The last two are Crashlytics' crash
+    /// reporting (`CrashReporting`): never linked, because no user id or user
+    /// content is ever attached to a report. Nothing is used for tracking.
+    private static let expectedCollectedData: [String: (linked: Bool, purposes: Set<String>)] = [
+        "NSPrivacyCollectedDataTypeEmailAddress": (true, ["NSPrivacyCollectedDataTypePurposeAppFunctionality"]),
+        "NSPrivacyCollectedDataTypeName": (true, ["NSPrivacyCollectedDataTypePurposeAppFunctionality"]),
+        "NSPrivacyCollectedDataTypeUserID": (true, ["NSPrivacyCollectedDataTypePurposeAppFunctionality"]),
+        "NSPrivacyCollectedDataTypeOtherUserContent": (true, ["NSPrivacyCollectedDataTypePurposeAppFunctionality"]),
+        "NSPrivacyCollectedDataTypeCrashData": (false, ["NSPrivacyCollectedDataTypePurposeAppFunctionality"]),
+        "NSPrivacyCollectedDataTypeOtherDiagnosticData": (false, ["NSPrivacyCollectedDataTypePurposeAppFunctionality"]),
+    ]
+
+    /// Exactly the expected data types, each declared once, with the expected
+    /// linkage and purposes, and none used for tracking.
     func testPrivacyManifestCollectedDataTypes() throws {
         let manifest = try loadManifest()
         let collected = try XCTUnwrap(manifest["NSPrivacyCollectedDataTypes"] as? [[String: Any]])
         let types = collected.compactMap { $0["NSPrivacyCollectedDataType"] as? String }
-        XCTAssertEqual(Set(types), [
-            "NSPrivacyCollectedDataTypeEmailAddress",
-            "NSPrivacyCollectedDataTypeName",
-            "NSPrivacyCollectedDataTypeUserID",
-            "NSPrivacyCollectedDataTypeOtherUserContent",
-        ])
+        XCTAssertEqual(Set(types), Set(Self.expectedCollectedData.keys))
         XCTAssertEqual(types.count, Set(types).count, "a data type is declared twice")
         for entry in collected {
-            XCTAssertEqual(entry["NSPrivacyCollectedDataTypeLinked"] as? Bool, true)
-            XCTAssertEqual(entry["NSPrivacyCollectedDataTypeTracking"] as? Bool, false)
-            XCTAssertEqual(
-                entry["NSPrivacyCollectedDataTypePurposes"] as? [String],
-                ["NSPrivacyCollectedDataTypePurposeAppFunctionality"]
-            )
+            let type = try XCTUnwrap(entry["NSPrivacyCollectedDataType"] as? String)
+            let expected = try XCTUnwrap(Self.expectedCollectedData[type], type)
+            XCTAssertEqual(entry["NSPrivacyCollectedDataTypeLinked"] as? Bool, expected.linked, type)
+            XCTAssertEqual(entry["NSPrivacyCollectedDataTypeTracking"] as? Bool, false, type)
+            let purposes = try XCTUnwrap(entry["NSPrivacyCollectedDataTypePurposes"] as? [String], type)
+            XCTAssertEqual(Set(purposes), expected.purposes, type)
+            XCTAssertEqual(purposes.count, Set(purposes).count, "\(type) repeats a purpose")
         }
+    }
+
+    // MARK: - Crash reporting
+
+    /// Crash data is declared NOT linked to the user — which is only true while
+    /// the app attaches no identity to reports. The shipping sources must never
+    /// call `Crashlytics.setUserID` (nor attach user content as custom keys / logs).
+    func testSourcesNeverIdentifyTheUserToCrashlytics() throws {
+        let sourcesRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()  // OYBCTests
+            .deletingLastPathComponent()  // apps/ios
+            .appendingPathComponent("OYBC")
+        let enumerator = try XCTUnwrap(FileManager.default.enumerator(at: sourcesRoot, includingPropertiesForKeys: nil))
+        let identityCalls = ["setUserID", "setCustomValue", "setCustomKeysAndValues", ".log(", ".record("]
+        var offenders: [String] = []
+        for case let url as URL in enumerator where url.pathExtension == "swift" {
+            let text = try String(contentsOf: url, encoding: .utf8)
+            guard text.contains("import FirebaseCrashlytics") else { continue }
+            offenders += identityCalls.filter { text.contains($0) }.map { "\(url.lastPathComponent): \($0)" }
+        }
+        XCTAssertEqual(offenders, [], "Crashlytics must carry no user identity — update the privacy manifest first")
+    }
+
+    /// Developer builds and the hosted test suites must never send reports;
+    /// shipping builds must. This suite runs in Debug.
+    func testCrashCollectionIsDisabledInDebugOnly() {
+        #if DEBUG
+        XCTAssertFalse(CrashReporting.isCollectionEnabled)
+        #else
+        XCTAssertTrue(CrashReporting.isCollectionEnabled)
+        #endif
     }
 
     // MARK: - Version strings

@@ -32,6 +32,7 @@ struct OYBCApp: App {
 
         _ = AppDatabase.shared
         FirebaseApp.configure()
+        CrashReporting.configure()
 
         // Stamp every sync-queue item with the LIVE signed-in uid so the push
         // path can drop another account's rows (docs/GUEST_MODE.md §Collision).
