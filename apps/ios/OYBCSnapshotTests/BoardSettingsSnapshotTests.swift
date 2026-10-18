@@ -117,11 +117,13 @@ final class BoardSettingsSnapshotTests: XCTestCase {
 
     // MARK: - CoreDefaultsEditSheetView — BOARD section states
 
-    func testDefaultsExplicit3x3FreeLight() {
-        assertSnapshot(of: defaultsSheetExplicit(size: .three, centerType: .free), as: .image(layout: .fixed(width: 393, height: 660), traits: lightTraits()), record: recordMode)
+    // 5x5 differs from the inherited `.defaults` size (3x3), so the sheet
+    // can only show it by reading the row's override.
+    func testDefaultsExplicit5x5FreeLight() {
+        assertSnapshot(of: defaultsSheetExplicit(size: .five, centerType: .free), as: .image(layout: .fixed(width: 393, height: 660), traits: lightTraits()), record: recordMode)
     }
-    func testDefaultsExplicit3x3FreeDark() {
-        assertSnapshot(of: defaultsSheetExplicit(size: .three, centerType: .free), as: .image(layout: .fixed(width: 393, height: 660), traits: darkTraits()), record: recordMode)
+    func testDefaultsExplicit5x5FreeDark() {
+        assertSnapshot(of: defaultsSheetExplicit(size: .five, centerType: .free), as: .image(layout: .fixed(width: 393, height: 660), traits: darkTraits()), record: recordMode)
     }
     func testDefaultsExplicit4x4Light() {
         // 4x4 has no centre concept — the "Free space" row is hidden.

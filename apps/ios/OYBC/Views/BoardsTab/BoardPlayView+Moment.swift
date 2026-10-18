@@ -8,6 +8,9 @@ struct MomentPresentation: Equatable {
     let kind: MomentTrigger.Kind
     let replay: BoardMomentReplay
     let cells: [MomentCellInput]
+    /// True for a BINGOS-card replay of a moment already earned — it never
+    /// counts toward, or triggers, the review prompt (`ReviewPromptPolicy`).
+    var isReplay = false
 }
 
 /// A trigger waiting for the post-write reload to apply (see `MomentGate`).
@@ -32,19 +35,22 @@ extension BoardPlayView {
     @ViewBuilder
     var momentOverlayLayer: some View {
         if let m = moment, let b = board {
-            RisoMomentOverlay(
-                kind: m.kind, replay: m.replay, cells: m.cells,
-                boardName: b.name, linesCompleted: b.linesCompleted,
-                streak: greenlogStreakCount, timeframe: b.timeframe, isCore: b.isCore,
-                onShare: { showShareBoardSheet = true },
-                onBack: {
-                    withAnimation(.easeOut(duration: 0.25)) { moment = nil }
-                },
-                onNewBoard: {
-                    withAnimation(.easeOut(duration: 0.25)) { moment = nil }
-                    MomentIntent.startNewBoard()
-                }
-            )
+            RequestReviewReader { requestReview in
+                RisoMomentOverlay(
+                    kind: m.kind, replay: m.replay, cells: m.cells,
+                    boardName: b.name, linesCompleted: b.linesCompleted,
+                    streak: greenlogStreakCount, timeframe: b.timeframe, isCore: b.isCore,
+                    onShare: { showShareBoardSheet = true },
+                    onBack: {
+                        withAnimation(.easeOut(duration: 0.25)) { moment = nil }
+                        requestReviewIfDue(afterDismissing: m, using: requestReview)
+                    },
+                    onNewBoard: {
+                        withAnimation(.easeOut(duration: 0.25)) { moment = nil }
+                        MomentIntent.startNewBoard()
+                    }
+                )
+            }
             // The field bleeds edge to edge on its own (`field.ignoresSafeArea()`
             // inside); the content keeps the safe-area insets so the kicker
             // clears the status bar. The tab bar steps aside for the moment —
@@ -102,7 +108,10 @@ extension BoardPlayView {
         guard momentPending == nil, MomentGate.shouldOpen(whileOpen: moment?.kind),
               let replay = viewModel.momentReplay() else { return }
         refreshStreaks()
-        let presentation = MomentPresentation(kind: kind, replay: replay, cells: viewModel.momentCellInputs(replay: replay))
+        let presentation = MomentPresentation(
+            kind: kind, replay: replay, cells: viewModel.momentCellInputs(replay: replay), isReplay: true
+        )
+        noteMomentOpenedForReview(presentation)
         withAnimation(.easeIn(duration: 0.3)) { moment = presentation }
     }
 
@@ -124,6 +133,7 @@ extension BoardPlayView {
             let presentation = MomentPresentation(
                 kind: p.trigger.kind, replay: replay, cells: viewModel.momentCellInputs(replay: replay)
             )
+            noteMomentOpenedForReview(presentation)
             withAnimation(.easeIn(duration: 0.3)) { moment = presentation }
         }
     }

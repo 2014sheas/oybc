@@ -69,7 +69,11 @@ export interface UserPreferences {
  */
 export const DEFAULT_USER_PREFERENCES: UserPreferences = {
   weekStartDay: 'monday',
-  defaultBoardSize: 5,
+  // 3×3 for new users (Track L, 2026-10-18). A stored size is always kept —
+  // only prefs MISSING the field (brand-new users, pre-preferences records)
+  // pick this up via `mergeUserPreferences`. Mirrors iOS
+  // `UserPreferences.defaults`.
+  defaultBoardSize: 3,
   defaultCenterType: CenterSquareType.FREE,
   defaultTimeframe: Timeframe.CUSTOM,
   defaultRandomize: true,

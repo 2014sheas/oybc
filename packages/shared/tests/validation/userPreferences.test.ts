@@ -331,6 +331,28 @@ describe('mergeUserPreferences', () => {
     expect(merged.defaultRandomize).toBe(DEFAULT_USER_PREFERENCES.defaultRandomize);
   });
 
+  // Track L (2026-10-18): new users default to a 3×3 board. A stored size is
+  // the user's (or an older client's) explicit value and always survives —
+  // only a payload MISSING the field picks up the new default.
+  describe('defaultBoardSize — 3×3 for new users, stored sizes kept', () => {
+    it('defaults a brand-new user to 3×3', () => {
+      expect(DEFAULT_USER_PREFERENCES.defaultBoardSize).toBe(3);
+      expect(mergeUserPreferences(undefined).defaultBoardSize).toBe(3);
+    });
+
+    it('fills a payload missing the field with 3', () => {
+      const legacy = { ...DEFAULT_USER_PREFERENCES } as Record<string, unknown>;
+      delete legacy.defaultBoardSize;
+      expect(
+        mergeUserPreferences(legacy as Partial<typeof DEFAULT_USER_PREFERENCES>).defaultBoardSize,
+      ).toBe(3);
+    });
+
+    it.each([3, 4, 5] as const)('keeps a stored size of %p', (size) => {
+      expect(mergeUserPreferences({ defaultBoardSize: size }).defaultBoardSize).toBe(size);
+    });
+  });
+
   it('returns a fresh object (not the defaults reference)', () => {
     const merged = mergeUserPreferences(undefined);
     expect(merged).not.toBe(DEFAULT_USER_PREFERENCES);

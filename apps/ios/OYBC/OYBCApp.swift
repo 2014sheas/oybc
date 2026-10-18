@@ -41,6 +41,10 @@ struct OYBCApp: App {
         // lazily after auth) so a cold-launch-from-tap is captured before
         // Firebase resolves the auth state. See NotificationDelegate.
         NotificationDelegate.shared.register()
+
+        // The App Store review prompt never shows on the first launch
+        // (ReviewPromptPolicy) — count this one.
+        ReviewPromptPolicy.live.recordLaunch()
     }
 
     var body: some Scene {

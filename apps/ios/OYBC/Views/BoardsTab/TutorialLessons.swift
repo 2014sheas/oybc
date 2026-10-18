@@ -82,7 +82,7 @@ let tutorialLessons: [TutorialLesson] = [
         id: "bingo", pos: 3, systemImage: "star", tag: "Playing",
         title: "Score a bingo",
         blurb: "Complete a full row, column, or diagonal to lock in a bingo. Lines glow gold — stack them for streaks.",
-        steps: ["Fill five squares in a line", "The whole line locks gold", "Each line is a bingo"],
+        steps: ["Fill every square in a line", "The whole line locks gold", "Each line is a bingo"],
         cta: "See a near-bingo", target: .openABoard
     ),
     // index 4 = FREE center
