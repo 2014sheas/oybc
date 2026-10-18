@@ -6,9 +6,11 @@ import XCTest
 /// owner's anonymised workspace export, kept outside the repo) on every
 /// timestamp string actually present in that data.
 ///
-/// The numbers print as `[iso-bench] ...` lines; the only assertions are
-/// bit-for-bit agreement and a deliberately lenient "faster" floor (the test
-/// target is a Debug build, where the fast path's win is smallest).
+/// Always on (deterministic): the fast path and the formatter chain agree on
+/// every input. Opt-in (`OYBC_RUN_BENCH=1`; from xcodebuild
+/// `TEST_RUNNER_OYBC_RUN_BENCH=1`): the timing loops, the `[iso-bench]` lines
+/// and the "faster" ratio assertion. A wall-clock ratio does not belong in the
+/// required CI job - one stalled shared runner would flake it.
 final class ISO8601ParseBenchmarkTests: XCTestCase {
 
     /// The parse chain before #570: cached internet-date-time formatters, then
@@ -39,8 +41,18 @@ final class ISO8601ParseBenchmarkTests: XCTestCase {
         return (seconds, checksum)
     }
 
+    /// True when the opt-in timing run was requested.
+    private var benchEnabled: Bool { ProcessInfo.processInfo.environment["OYBC_RUN_BENCH"] == "1" }
+
+    /// Asserts the fast path and the formatter chain agree on every input (one
+    /// untimed pass); with `OYBC_RUN_BENCH=1` also times `repeats` passes of
+    /// each, prints the ratio and asserts it is comfortably above 1.
     private func report(_ label: String, inputs: [String], repeats: Int) {
         let chain = FormatterChain()
+        let agreement = time(inputs, repeats: 1, chain.parse)
+        XCTAssertEqual(agreement.checksum, time(inputs, repeats: 1, DateFormatting.parseISO).checksum, "\(label): the fast path changed a result")
+        guard benchEnabled else { return }
+
         _ = time(Array(inputs.prefix(200)), repeats: 1, chain.parse) // warm formatters + caches
         _ = time(Array(inputs.prefix(200)), repeats: 1, DateFormatting.parseISO)
         let old = time(inputs, repeats: repeats, chain.parse)
@@ -50,7 +62,6 @@ final class ISO8601ParseBenchmarkTests: XCTestCase {
         let newMicros = new.seconds / parses * 1e6
         print(String(format: "[iso-bench] %@: %d parses  formatters %.2f us/parse  fast path %.3f us/parse  ratio %.1fx",
                      label, Int(parses), oldMicros, newMicros, oldMicros / newMicros))
-        XCTAssertEqual(old.checksum, new.checksum, "\(label): the fast path changed a result")
         XCTAssertGreaterThan(oldMicros / newMicros, 3, "\(label): the fast path should beat the formatters comfortably even in Debug")
     }
 

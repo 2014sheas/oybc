@@ -161,12 +161,6 @@ final class ISO8601FastParserTests: XCTestCase {
     /// skipped (gap) / repeated (overlap) wall-clock times always defer.
     func test_local_aroundDaylightSavingTransitions_neverDisagrees_andGapsAndOverlapsDefer() throws {
         try requireGregorianCurrentCalendar()
-        var utc = Calendar(identifier: .gregorian)
-        utc.timeZone = TimeZone(identifier: "UTC")!
-        func wallClock(_ naiveSeconds: Int, fraction: String = "") -> String {
-            let c = utc.dateComponents([.year, .month, .day, .hour, .minute, .second], from: Date(timeIntervalSince1970: Double(naiveSeconds)))
-            return "\(pad(c.year!, 4))-\(pad(c.month!, 2))-\(pad(c.day!, 2))T\(pad(c.hour!, 2)):\(pad(c.minute!, 2)):\(pad(c.second!, 2))\(fraction)"
-        }
         let start = Date(timeIntervalSince1970: 1_577_836_800) // 2020-01-01
         let end = Date(timeIntervalSince1970: 2_082_758_400)   // 2036-01-01
         for id in ["America/New_York", "America/Los_Angeles", "Europe/London", "Australia/Sydney", "Australia/Lord_Howe", "Pacific/Chatham", "America/Santiago"] {
@@ -176,33 +170,114 @@ final class ISO8601FastParserTests: XCTestCase {
             var seen = 0, handled = 0, gapOrOverlapSamples = 0
             while let t = transition, t < end {
                 seen += 1
-                let before = zone.secondsFromGMT(for: t.addingTimeInterval(-1))
-                let after = zone.secondsFromGMT(for: t)
-                let anchor = Int(t.timeIntervalSince1970) + before
-                for step in stride(from: -30 * 3600, through: 30 * 3600, by: 900) {
-                    for (offset, fraction) in [(0, ""), (-1, ".999"), (1, ".001")] {
-                        let naive = anchor + step + offset
-                        let s = wallClock(naive, fraction: fraction)
-                        let fast = ISO8601FastParser.parse(s, accepting: .local, timeZone: zone)
-                        if let fast {
-                            handled += 1
-                            assertSame(fast, oracle.parse(s), "\(id) \(s)")
-                        }
-                        // Skipped (spring-forward) or repeated (fall-back) wall clock.
-                        let lo = Int(t.timeIntervalSince1970) + min(before, after)
-                        let hi = Int(t.timeIntervalSince1970) + max(before, after)
-                        if before != after, naive >= lo, naive < hi {
-                            gapOrOverlapSamples += 1
-                            XCTAssertNil(fast, "\(id) \(s) is skipped or repeated: the formatter must decide")
-                        }
-                    }
-                }
+                let result = sweepWallClocks(around: t, zone: zone, oracle: oracle, label: id)
+                handled += result.handled
+                gapOrOverlapSamples += result.skippedOrRepeated
                 transition = zone.nextDaylightSavingTimeTransition(after: t)
             }
             XCTAssertGreaterThan(seen, 0, "\(id): no transitions found")
             XCTAssertGreaterThan(handled, 0, "\(id): the fast path never answered")
             XCTAssertGreaterThan(gapOrOverlapSamples, 0, "\(id): no gap/overlap sample was exercised")
         }
+    }
+
+    /// Offset changes that are NOT daylight-saving transitions
+    /// (`nextDaylightSavingTimeTransition` never reports them): a skipped day
+    /// (Apia, 2011-12-30), a permanent-offset move (Istanbul 2016), half-hour
+    /// shifts (Pyongyang 2015 and 2018) and Caracas (2007, 2016). The offset
+    /// guard looks at the offsets themselves, so the fast path must still defer
+    /// on every skipped or repeated wall-clock time and agree with the
+    /// formatter everywhere it does answer.
+    func test_local_aroundNonDaylightSavingOffsetChanges_neverDisagrees_andSkippedTimesDefer() throws {
+        try requireGregorianCurrentCalendar()
+        // (zone, window start, window end, an offset change must exist inside it)
+        let cases: [(String, String, String, Bool)] = [
+            ("Pacific/Apia", "2011-12-28", "2012-01-01", true),
+            ("Europe/Istanbul", "2016-03-26", "2016-03-29", true),
+            ("Europe/Istanbul", "2016-09-05", "2016-09-10", false), // went permanent +03: the offset does not move
+            ("Asia/Pyongyang", "2015-08-13", "2015-08-17", true),
+            ("Asia/Pyongyang", "2018-05-03", "2018-05-07", true),
+            ("America/Caracas", "2007-12-07", "2007-12-11", true),
+            ("America/Caracas", "2016-04-29", "2016-05-03", true),
+        ]
+        var utcDay = Calendar(identifier: .gregorian)
+        utcDay.timeZone = TimeZone(identifier: "UTC")!
+        func instant(_ day: String) throws -> Date {
+            let parts = day.split(separator: "-").compactMap { Int($0) }
+            return try XCTUnwrap(utcDay.date(from: DateComponents(year: parts[0], month: parts[1], day: parts[2])))
+        }
+        for (id, from, to, expectsChange) in cases {
+            let zone = try XCTUnwrap(TimeZone(identifier: id))
+            let oracle = Oracle(timeZone: zone)
+            let windowStart = try instant(from), windowEnd = try instant(to)
+            let change = offsetChange(in: zone, from: windowStart, to: windowEnd)
+            let label = "\(id) \(from)"
+            if expectsChange { XCTAssertNotNil(change, "\(label): this runtime's tz data has no offset change in the window") }
+            // The sweep is centred on the change, or on the window middle when there is none.
+            let centre = change ?? windowStart.addingTimeInterval(windowEnd.timeIntervalSince(windowStart) / 2)
+            let result = sweepWallClocks(around: centre, zone: zone, oracle: oracle, label: label)
+            XCTAssertGreaterThan(result.handled, 0, "\(label): the fast path never answered")
+            if change != nil { XCTAssertGreaterThan(result.skippedOrRepeated, 0, "\(label): no skipped or repeated sample was exercised") }
+        }
+    }
+
+    /// Wall-clock strings within ±30h of `transition` (15-minute steps, plus +-1 s
+    /// with fractions): where the fast path answers it must equal the oracle; any
+    /// wall-clock time the change skips or repeats must defer.
+    ///
+    /// - Returns: How many strings the fast path answered, and how many
+    ///   skipped/repeated strings were checked.
+    private func sweepWallClocks(around transition: Date, zone: TimeZone, oracle: Oracle, label: String) -> (handled: Int, skippedOrRepeated: Int) {
+        let t = Int(transition.timeIntervalSince1970)
+        let before = zone.secondsFromGMT(for: transition.addingTimeInterval(-1))
+        let after = zone.secondsFromGMT(for: transition)
+        let skippedOrRepeatedRange = before == after ? 0..<0 : (t + min(before, after))..<(t + max(before, after))
+        var handled = 0, skippedOrRepeated = 0
+        for step in stride(from: -30 * 3600, through: 30 * 3600, by: 900) {
+            for (offset, fraction) in [(0, ""), (-1, ".999"), (1, ".001")] {
+                let naive = t + before + step + offset
+                let s = wallClock(naive, fraction: fraction)
+                let fast = ISO8601FastParser.parse(s, accepting: .local, timeZone: zone)
+                if let fast {
+                    handled += 1
+                    assertSame(fast, oracle.parse(s), "\(label) \(s)")
+                }
+                if skippedOrRepeatedRange.contains(naive) {
+                    skippedOrRepeated += 1
+                    XCTAssertNil(fast, "\(label) \(s) is skipped or repeated: the formatter must decide")
+                }
+            }
+        }
+        return (handled, skippedOrRepeated)
+    }
+
+    /// The first instant in `[from, to]` (whole seconds) at which `zone`'s UTC
+    /// offset differs from the one before it, or nil when it never changes.
+    private func offsetChange(in zone: TimeZone, from: Date, to: Date) -> Date? {
+        var probe = from
+        while probe < to {
+            let next = probe.addingTimeInterval(3600)
+            if zone.secondsFromGMT(for: probe) != zone.secondsFromGMT(for: next) {
+                // Bisect (probe, next] down to the second the new offset starts.
+                var low = Int(probe.timeIntervalSince1970), high = Int(next.timeIntervalSince1970)
+                let old = zone.secondsFromGMT(for: probe)
+                while high - low > 1 {
+                    let mid = (low + high) / 2
+                    if zone.secondsFromGMT(for: Date(timeIntervalSince1970: Double(mid))) == old { low = mid } else { high = mid }
+                }
+                return Date(timeIntervalSince1970: Double(high))
+            }
+            probe = next
+        }
+        return nil
+    }
+
+    /// `yyyy-MM-ddTHH:mm:ss` + `fraction` for a wall clock given as seconds-since-1970-read-as-UTC.
+    private func wallClock(_ naiveSeconds: Int, fraction: String = "") -> String {
+        var utc = Calendar(identifier: .gregorian)
+        utc.timeZone = TimeZone(identifier: "UTC")!
+        let c = utc.dateComponents([.year, .month, .day, .hour, .minute, .second], from: Date(timeIntervalSince1970: Double(naiveSeconds)))
+        return "\(pad(c.year!, 4))-\(pad(c.month!, 2))-\(pad(c.day!, 2))T\(pad(c.hour!, 2)):\(pad(c.minute!, 2)):\(pad(c.second!, 2))\(fraction)"
     }
 
     // MARK: - Out-of-grammar input defers

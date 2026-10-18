@@ -63,11 +63,21 @@ final class BoardLogLagPureTests: XCTestCase {
     }
 
     func test_parseISO_reusesItsFormatters_andIsSafeAcrossThreads() {
-        _ = DateFormatting.parseISO("2026-10-18T00:00:00.000") // warm
+        // The canonical local/UTC shapes are answered by `ISO8601FastParser`, which never touches
+        // `LocalISOParser`; this year is outside the fast path's range, so a local string with it
+        // still goes through the cached formatters and exercises the cache.
+        let deferred = "2201-06-01T00:00:00.000"
+        XCTAssertNil(ISO8601FastParser.parse(deferred), "precondition: the fast path defers, so this input reaches LocalISOParser")
+        _ = DateFormatting.parseISO(deferred) // warm
         let before = LocalISOParser.shared.buildCount
         DispatchQueue.concurrentPerform(iterations: 400) { i in
-            let d = DateFormatting.parseISO(i.isMultiple(of: 2) ? "2026-10-18T00:00:00.000" : "2026-10-18T10:00:00")
-            XCTAssertNotNil(d)
+            let input: String
+            switch i % 3 {
+            case 0: input = deferred
+            case 1: input = "2026-10-18T00:00:00.000"
+            default: input = "2201-06-01T10:00:00"
+            }
+            XCTAssertNotNil(DateFormatting.parseISO(input))
         }
         XCTAssertEqual(LocalISOParser.shared.buildCount, before, "no rebuilds while the zone is stable")
     }
