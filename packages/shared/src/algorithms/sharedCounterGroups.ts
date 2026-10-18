@@ -71,7 +71,7 @@ export interface SharedCounterMemberTask {
    *  `eventsByTaskId`): the ROOT's increment sum over the host board's window
    *  for a linked card, the root's OWN events for a root card — each bounded
    *  at a sealed board's `sealedAt`, the play cell's numbers. Without events,
-   *  the lifetime arithmetic (`lifetime − baseline`). */
+   *  the root's lifetime total (`baseline` is never read). */
   logged: number;
   /** `logged >= goal` (only when `goal > 0`). Over-achievement is real. */
   met: boolean;

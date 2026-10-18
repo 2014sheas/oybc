@@ -286,6 +286,43 @@ final class CounterOpsTests: XCTestCase {
         XCTAssertTrue(source.isDeleted)
     }
 
+    /// Web twin: "an unlinked member's lifetime caches follow its seed event,
+    /// never the stale latch (slice 5)".
+    func test_deleteCounterWithUnlink_cachesFollowTheSeedEvent_notTheStaleLatch() throws {
+        let db = try makeDb()
+        try seedUser(db)
+        try db.saveTask(makeSourceTask(id: "src1", currentCount: 60))
+        try db.write { grdb in
+            try TaskEvent(
+                id: "ev-src1", userId: "u1", taskId: "src1", kind: .increment, delta: 60,
+                occurredAt: "2026-07-01T00:00:00.000Z", boardId: nil, createdAt: self.now, updatedAt: self.now,
+                lastSyncedAt: nil, version: 1, isDeleted: false, deletedAt: nil
+            ).save(grdb)
+        }
+        // Goal 50 reached by the total 60 — the latch never moved.
+        try db.saveTask(makeMemberTask(sourceId: "src1", maxCount: 50))
+        // Goal 100 above the total, with a stale latch that says done.
+        var stale = makeMemberTask(id: "member2", sourceId: "src1", maxCount: 100)
+        stale.isCompleted = true
+        stale.completedAt = now
+        try db.saveTask(stale)
+
+        try db.deleteCounterWithUnlink(sourceId: "src1", now: now)
+
+        let reached = try XCTUnwrap(try db.read { try Task.fetchOne($0, key: "member1") })
+        XCTAssertEqual(reached.currentCount, 60)
+        XCTAssertTrue(reached.isCompleted)
+        XCTAssertEqual(reached.completedAt, TaskEvents.seedEventOccurredAt)
+        XCTAssertEqual(reached.version, 2)
+        let short = try XCTUnwrap(try db.read { try Task.fetchOne($0, key: "member2") })
+        XCTAssertEqual(short.currentCount, 60)
+        XCTAssertFalse(short.isCompleted)
+        XCTAssertNil(short.completedAt)
+        XCTAssertEqual(short.version, 2)
+        let queued = try db.fetchPendingSyncItems().filter { $0.entityType == "tasks" && $0.entityId == "member1" }
+        XCTAssertEqual(queued.count, 1)
+    }
+
     func test_deleteCounterWithUnlink_skipsSnapshotEventWhenDisplayedIsZero() throws {
         let db = try makeDb()
         try seedUser(db)

@@ -212,14 +212,8 @@ extension AppDatabase {
                 member.currentCount = displayed
                 member.updatedAt = now
                 member.version += 1
+                // Unlinked first: the seed append below needs an event owner.
                 try member.save(db)
-                try SyncQueueBuilder.makeItem(
-                    entityType: "tasks",
-                    entityId: member.id,
-                    operationType: .update,
-                    payload: member,
-                    now: now
-                ).enqueue(db)
                 if displayed > 0 {
                     // Anchor the carried-over lifetime snapshot at the seed
                     // sentinel (not `now`) so it is excluded from day-bucketing
@@ -233,6 +227,20 @@ extension AppDatabase {
                         occurredAt: TaskEvents.seedEventOccurredAt
                     )
                 }
+                // Now an event owner: its lifetime caches follow its events,
+                // never the linked row's stale latch (same version, one enqueue).
+                let memberEvents = try TaskEvent.filter(Column("taskId") == member.id).fetchAll(db)
+                let caches = Self.computeTaskCachesFromEvents(task: member, events: memberEvents)
+                member.isCompleted = caches.isCompleted
+                member.completedAt = caches.completedAt
+                try member.save(db)
+                try SyncQueueBuilder.makeItem(
+                    entityType: "tasks",
+                    entityId: member.id,
+                    operationType: .update,
+                    payload: member,
+                    now: now
+                ).enqueue(db)
             }
 
             // "Counts toward" (docs/SHARED_COUNTER_SETTINGS.md §3e) — contributors

@@ -450,22 +450,14 @@ export async function archiveBoard(id: string): Promise<void> {
  * as a later-wins operation against any concurrent update on another
  * device (the same rationale as `deleteTaskWithCascade`'s task tombstone).
  *
- * Board Sources §Member rules (B2, RB5) — the board's window-stamped derived
- * rows go with it, once nothing else holds them: a derived counter/compound
- * left behind by its last board is a row the user never authored, pointing at
- * a window that no longer has a board. A derived row still placed on another
- * LIVE board survives (a live placement is a live `board_tasks` row on a live
- * board). The board's OWN `board_tasks` rows are deliberately left as they
- * are — `deleteBoard` has never tombstoned them, and changing that is a
- * separate concern from this cascade.
- *
- * The board tombstone and the derived cascade share one transaction so a
- * mid-flight failure can't leave retired tasks under a live board.
+ * The board's own `board_tasks` rows are deliberately left as they are —
+ * `deleteBoard` has never tombstoned them. (Until TASK_WINDOW_REWORK slice 5
+ * it also retired the board's window-stamped derived rows; none exist now.)
  */
 export async function deleteBoard(id: string): Promise<void> {
   await db.transaction(
     'rw',
-    [db.boards, db.tasks, db.boardTasks, db.compoundChildren, db.syncQueue],
+    [db.boards, db.syncQueue],
     async () => {
       const existing = await db.boards.get(id);
       if (!existing) return;

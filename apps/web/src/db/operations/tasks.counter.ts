@@ -10,10 +10,11 @@ import {
   renderCounterTitle,
   type CountKind,
   type Task,
+  type TaskEvent,
 } from '@oybc/shared';
 import { generateUUID, currentTimestamp } from '../utils';
 import { addToSyncQueue } from './syncQueue';
-import { insertIncrementEventRaw } from './taskEvents';
+import { computeTaskCachesFromEvents, insertIncrementEventRaw } from './taskEvents';
 import { deleteTaskWithCascadeInTxn } from './tasks.deletion';
 import { unflagContributorsOf } from './countsToward';
 
@@ -195,11 +196,20 @@ export async function deleteCounterWithUnlink(sourceId: string): Promise<void> {
       const eventsByTaskId = { [sourceId]: rootEvents.filter((e) => !e.isDeleted) };
       for (const m of members) {
         const displayed = contextlessCounterState(m, eventsByTaskId).count;
+        // Now an event owner: its lifetime caches follow its (seed) event,
+        // never the linked row's stale latch.
+        const seed = { kind: 'increment', delta: displayed, occurredAt: SEED_EVENT_OCCURRED_AT, isDeleted: false } as TaskEvent;
+        const caches = computeTaskCachesFromEvents(
+          { ...m, sharedCounterId: null, baseline: null },
+          displayed > 0 ? [seed] : [],
+        );
         const unlinked: Task = {
           ...m,
           sharedCounterId: null,
           baseline: null,
           currentCount: displayed,
+          isCompleted: caches.isCompleted,
+          completedAt: caches.completedAt,
           updatedAt: now,
           version: m.version + 1,
         };

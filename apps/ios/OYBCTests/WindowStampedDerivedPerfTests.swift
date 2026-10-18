@@ -100,12 +100,12 @@ final class WindowStampedDerivedPerfTests: XCTestCase {
         let row = makeRow()
         let events = makeEvents()
 
-        let state = resolveLinkedCounterWindowState(task: row, rootEvents: events)
+        let state = resolveLinkedCounterWindowState(startDate: row.startDate, endDate: row.endDate, maxCount: row.maxCount, countKind: row.countKind, rootEvents: events)
         XCTAssertEqual(state.count, 1_000, "only the mid-window increments count")
         XCTAssertTrue(state.isCompleted)
 
         let baselineMs = parseBaselineMs(events)
-        let elapsedMs = bestOf { _ = resolveLinkedCounterWindowState(task: row, rootEvents: events) }
+        let elapsedMs = bestOf { _ = resolveLinkedCounterWindowState(startDate: row.startDate, endDate: row.endDate, maxCount: row.maxCount, countKind: row.countKind, rootEvents: events) }
         assertNearParseCost("resolveLinkedCounterWindowState", elapsedMs: elapsedMs, baselineMs: baselineMs)
     }
 

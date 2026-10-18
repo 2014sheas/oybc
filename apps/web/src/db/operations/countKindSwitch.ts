@@ -15,6 +15,7 @@ import {
 import { db } from '../internal';
 import { addToSyncQueue } from './syncQueue';
 import { runBoardCascadeForTasks } from './orchestration';
+import { reDeriveSealedBoardsForTasks } from './sealing';
 import { computeTaskCachesFromEvents } from './taskEvents';
 import { countContributorsOf } from './countsToward';
 
@@ -60,8 +61,9 @@ export class CountKindSwitchError extends Error {
  * Writes `countKind = to` (always explicit — the field is never cleared) plus
  * the `planCountKindSwitch` goal / default-amount rounding on the root and on
  * every live row whose `sharedCounterId` is the root, each with a version
- * bump + UPDATE enqueue. Then the board cascade re-derives every board placing
- * a written row (a placement's frozen `targetKind` keeps its goal's kind).
+ * bump + UPDATE enqueue. Then the board cascade re-derives every live board
+ * placing a written row and the sealed re-derive every closed one (a
+ * placement's frozen `targetKind` keeps its goal's kind).
  * `taskEvents` are never touched: a whole kind rounds the window SUM at read
  * time, so switching back restores the exact fractional count. The root's
  * lifetime caches (`isCompleted` / `currentCount` / `completedAt`) are
@@ -143,6 +145,9 @@ export async function switchCounterKindInTransaction(
   }
 
   await runBoardCascadeForTasks(writtenIds);
+  // A linked row's goal may have rounded; one on a CLOSED board re-derives
+  // deterministically (the sanctioned sealed path — the live cascade skips it).
+  await reDeriveSealedBoardsForTasks(writtenIds);
   return writtenIds;
 }
 

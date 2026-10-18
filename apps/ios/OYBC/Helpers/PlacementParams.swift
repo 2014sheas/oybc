@@ -101,9 +101,8 @@ struct LinkedCounterDisplay {
 ///
 /// - `window` given (the placing board's window) -> the ROOT's increment sum
 ///   inside THAT window, whatever the row's own stamp says (slice 0);
-/// - no `window`, a window-stamped row -> its own stamp (retired in slice 5);
-/// - no `window`, any other linked row -> `contextlessCounterState` (the root's
-///   lifetime events). Neither `currentCount - baseline` nor the latch is read.
+/// - no `window` -> `contextlessCounterState` (the root's lifetime events).
+///   Neither the row's own stamp, `currentCount - baseline` nor the latch is read.
 ///
 /// `sealedAt` (the row's board is sealed) bounds every event at that instant
 /// first (`boundWindowContextAtSeal`); an unparseable value applies no bound.

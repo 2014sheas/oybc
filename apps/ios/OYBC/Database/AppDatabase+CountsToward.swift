@@ -81,10 +81,9 @@ extension AppDatabase {
     /// `writeCountsTowardForTasks`). For every task in `changedTaskIds` and
     /// every compound transitively containing one, reconcile its credit set
     /// and apply each action (event row, version bump, enqueue); then, for
-    /// each counter root whose events moved, run a hand log's writes —
-    /// restamp the root's caches, refresh window-stamped baselines, write its
-    /// live copies — and re-enter one level deeper for contributors containing
-    /// those copies. Board derivation is left to the caller's ONE pass over
+    /// each counter root whose events moved, restamp the root's caches and
+    /// re-enter one level deeper for contributors containing its linked rows
+    /// (which resolve from its events and are never written). Board derivation is left to the caller's ONE pass over
     /// `cascadeIds`; `finishCountsTowardRoots` runs after it. Idempotent.
     ///
     /// Relevance: rows that can never contribute (`CountsToward.canContribute`)

@@ -225,6 +225,28 @@ describe('deleteCounterWithUnlink (P5 decision 8)', () => {
     expect(source!.isDeleted).toBe(true);
   });
 
+  it('an unlinked member\'s lifetime caches follow its seed event, never the stale latch (slice 5)', async () => {
+    await db.tasks.add({
+      id: 'src1', userId: 'u1', title: 'Push-ups (reps)', type: TaskType.COUNTING, action: 'Push-ups',
+      unit: 'reps', isCounter: true, currentCount: 60, isCompleted: false, totalCompletions: 0,
+      totalInstances: 0, createdAt: NOW, updatedAt: NOW, version: 1, isDeleted: false,
+    } as unknown as Task);
+    await db.taskEvents.add(rootIncrement('src1', 60));
+    // Goal 50, root total 60 — the latch never moved (nothing writes it now).
+    await db.tasks.add(counterMember({ isCompleted: false }));
+    // A second member whose stale latch says done, with a goal above the total.
+    await db.tasks.add(counterMember({ id: 'member2', maxCount: 100, isCompleted: true, completedAt: NOW }));
+
+    await deleteCounterWithUnlink('src1');
+
+    const reached = (await db.tasks.get('member1'))!;
+    expect(reached).toMatchObject({ currentCount: 60, isCompleted: true, version: 2 });
+    expect(reached.completedAt).toBe(SEED_EVENT_OCCURRED_AT);
+    const short = (await db.tasks.get('member2'))!;
+    expect(short).toMatchObject({ currentCount: 60, isCompleted: false, version: 2 });
+    expect(short.completedAt).toBeUndefined();
+  });
+
   it("F4: the unlink snapshot event does NOT inflate the member's Today bucket", async () => {
     await db.tasks.add({
       id: 'src4',

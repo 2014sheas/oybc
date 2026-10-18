@@ -183,6 +183,24 @@ describe('switchCounterKind', () => {
     expect(await db.taskEvents.toArray()).toEqual(eventsBefore);
   });
 
+  it('re-derives a CLOSED board placing a linked row whose goal rounded (the sanctioned sealed path)', async () => {
+    // Ended row goal 2.45; the root logged 2.4 inside the ended window → not met.
+    await seedFamily({ countKind: 'continuous', rootGoal: 26.2, endedTarget: 2.45 });
+    await db.taskEvents.add({
+      id: 'ev-ended', userId: USER, taskId: ROOT, kind: 'increment', delta: 2.4,
+      occurredAt: '2026-09-16T10:00:00.000Z', createdAt: '2026-09-16T10:00:00.000Z',
+      updatedAt: '2026-09-16T10:00:00.000Z', version: 1, isDeleted: false,
+    } as TaskEvent);
+    await db.boards.update(BOARD_ENDED, { sealedAt: '2026-09-21T09:00:00.000Z', sealedCompletedCells: [] });
+
+    await switchCounterKind(ROOT, 'discrete', NOW);
+
+    // Discrete: goal 2, count 2 → the closed board's record now holds the cell.
+    const ended = await db.boards.get(BOARD_ENDED);
+    expect(ended?.completedTasks).toBe(1);
+    expect(ended?.sealedCompletedCells).toEqual([0]);
+  });
+
   it('round trip restores the exact window count', async () => {
     await seedFamily({ countKind: 'continuous', rootGoal: 26.2, liveTarget: 6.1, deltas: [0.4, 0.4, 0.4] });
     expect(await displayedCountFor(LIVE)).toBe(1.2);

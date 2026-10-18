@@ -380,9 +380,8 @@ export async function createCompound(
  * a value replaces it.
  *
  * `timeframe` / `startDate` / `endDate` are omitted outright: a task's own
- * window is set only at creation (wizard) and by member-rules stamping,
- * where it IS a window-stamped derived row's completion window. No edit
- * path may write it (it would un-stamp or move the derived row's window).
+ * window is set only at creation and is never a kernel input
+ * (TASK_WINDOW_REWORK slice 5); no edit path writes it.
  */
 export type UpdateTaskPatch = Omit<
   Partial<Task>,
@@ -658,10 +657,9 @@ export async function toggleTaskCompletionAndCascade(taskId: string): Promise<vo
  * COUNTING — events + the late-log stamp). A NON-event-owning child is a
  * no-op: early return — no latch write, no event, no sync enqueue, and no
  * cascade (nothing changed, so there is nothing to re-derive). Its state is never
- * authored from here — a hub-linked derived counter's latch is propagation
- * output from its ROOT, a window-stamped derived row is never authored (its
- * state resolves from the root's in-window events; once its window ends it is
- * frozen), and a nested compound is derived from its own children.
+ * authored from here — a linked counter resolves from its ROOT's events (a
+ * log on it authors on the root, never the row), and a nested compound is
+ * derived from its own children.
  *
  * Also a no-op if the child is missing or the host board is sealed (a sealed board's
  * record is permanent; its surface is play-locked anyway).

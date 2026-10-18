@@ -164,10 +164,9 @@ async function loadWorkspace(): Promise<Workspace> {
  * The cascade hook, WRITE phase (§3b). For every task in `changedTaskIds` and
  * every compound transitively containing one, reconcile its credit set and
  * apply each action (event row, version bump, enqueue); then, for each
- * counter root whose events moved, run a hand log's writes — restamp the
- * root's lifetime caches, refresh window-stamped baselines, propagate to its
- * live copies — and re-enter one level deeper for contributors that contain
- * those copies. Board derivation is left to the caller's ONE pass over
+ * counter root whose events moved, restamp the root's lifetime caches and
+ * re-enter one level deeper for contributors that contain its linked rows
+ * (which resolve from its events and are never written). Board derivation is left to the caller's ONE pass over
  * `cascadeIds` (so a copy on the contributor's own board is read with the new
  * increment and its bingo lands in that pass's result map);
  * {@link finishCountsTowardRoots} runs after it. Idempotent: a replay with no

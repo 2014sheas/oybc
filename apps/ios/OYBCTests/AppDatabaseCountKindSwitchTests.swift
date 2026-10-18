@@ -89,6 +89,25 @@ final class AppDatabaseCountKindSwitchTests: XCTestCase {
         XCTAssertEqual(try eventSnapshot(db), eventsBefore)
     }
 
+    /// Web twin: "re-derives a CLOSED board placing a linked row whose goal
+    /// rounded (the sanctioned sealed path)".
+    func test_switch_reDerivesAClosedBoardWhoseLinkedGoalRounded() throws {
+        // Ended row goal 2.45; the root logged 2.4 inside the ended window → not met.
+        let db = try seedFamily(kind: .continuous, rootGoal: 26.2, endedTarget: 2.45)
+        try K.addIncrement(db, taskId: "root", delta: 2.4, occurredAt: "2026-09-16T10:00:00.000Z")
+        var ended = try XCTUnwrap(db.fetchBoard(id: "bEnded"))
+        ended.sealedAt = "2026-09-21T09:00:00.000Z"
+        ended.sealedCompletedCells = []
+        try db.saveBoard(ended)
+
+        try db.switchCounterKind(rootTaskId: "root", to: .discrete, now: now)
+
+        // Discrete: goal 2, count 2 → the closed board's record now holds the cell.
+        let after = try XCTUnwrap(db.fetchBoard(id: "bEnded"))
+        XCTAssertEqual(after.completedTasks, 1)
+        XCTAssertEqual(after.sealedCompletedCells, [0])
+    }
+
     func test_roundTrip_restoresExactWindowCount() throws {
         let db = try seedFamily(kind: .continuous, rootGoal: 26.2, liveTarget: 6.1, deltas: [0.4, 0.4, 0.4])
         XCTAssertEqual(try displayedLive(db), 1.2)

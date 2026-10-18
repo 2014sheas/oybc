@@ -177,6 +177,9 @@ extension AppDatabase {
         }
 
         try Self.runBoardCascadeForTasks(db: db, changedTaskIds: writtenIds, now: nowIso)
+        // A linked row's goal may have rounded; one on a CLOSED board re-derives
+        // deterministically (the sanctioned sealed path — the live cascade skips it).
+        try Self.reDeriveSealedBoards(db: db, changedTaskIds: Set(writtenIds))
         return writtenIds
     }
 

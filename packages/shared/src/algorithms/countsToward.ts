@@ -233,7 +233,7 @@ function completedBy(event: TaskEvent | null): ContributionState {
     : INCOMPLETE;
 }
 
-/** A latched row (achievement, hub-linked copy in a lifetime window): its cache + `completedAt`. */
+/** A latched row (an achievement): its cache + `completedAt`. */
 function latchState(task: Task): ContributionState {
   return task.isCompleted ? { isCompleted: true, completedAt: task.completedAt ?? null } : INCOMPLETE;
 }
@@ -324,11 +324,10 @@ function stateOf(
  *     instant is the `occurredAt` of the increment that last crossed it
  *     (`completingEventId`). A goal of 0 is degenerate: complete, but no
  *     increment ever crosses it, so no event names the occurrence.
- *   - Window-stamped linked COUNTING (a compound child) — the root's events
- *     inside its own window, same crossing rule (`completingTaskId` = the
- *     root). Any other linked child resolves over the HOST window (owner rule
- *     2026-10-01); only a lifetime window reads its latch (`completedAt`), as
- *     `evaluateCompound` does.
+ *   - Linked COUNTING (a compound child) — the ROOT's events over the host
+ *     window (owner rule 2026-10-01), or the root's lifetime with none, same
+ *     crossing rule (`completingTaskId` = the root); never its own stamp or
+ *     latch, as `evaluateCompound` does.
  *   - COMPOUND — the operator over its live children (the same states
  *     `evaluateCompound` gives in that window); the instant is when the rule
  *     became satisfied: All of → the LAST child's (the max), Any of → the

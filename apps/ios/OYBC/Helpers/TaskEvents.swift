@@ -211,44 +211,12 @@ func lateLogOccurredAt(board: Board, nowIso: String) -> String {
     return DateFormatting.utcISOString(end)
 }
 
-// MARK: - Window-stamped derived counters (amended carve-out, 2026-09-23)
-
-/// Resolve a **window-stamped derived counter**'s state from its ROOT's events
-/// (docs/WINDOWED_COMPLETION.md §Derived-task carve-out, amended 2026-09-23;
-/// docs/BOARD_SOURCES.md §Plan B2 notes → "Window-stamped derived counters").
-///
-/// The row owns no events, but carries its own window (`startDate` /
-/// `endDate`, stamped from the board it was minted for) and per-window target
-/// (`maxCount`), so its completion is a pure function of the root's converged
-/// increment events inside that window — never the one-way propagation latch,
-/// which a LATER window's increments can set (audit 2026-09-23 finding #1).
-///
-/// Window membership follows `DateFormatting.isWithinTimeframe` — the same
-/// `[startDate, endDate]` convention (inclusive both ends, parsed compare,
-/// `nil` `endDate` = unbounded) the kernel uses for board windows. Signed
-/// deltas are summed as-is, then low-clamped at 0; completion is
-/// `maxCount != nil && count >= maxCount` (slice 2a: one rule).
-/// Overshoot is valid. `baseline` is NOT read.
-///
-/// Mirrors the TS `resolveLinkedCounterWindowState`.
-///
-/// - Parameters:
-///   - task: The window-stamped derived counter (its window + target).
-///   - rootEvents: The ROOT task's events; deleted rows and completion events
-///     are ignored internally.
-/// - Returns: `{ isCompleted, count }` with `count` the clamped in-window sum.
-func resolveLinkedCounterWindowState(task: Task, rootEvents: [TaskEvent]) -> TaskWindowState {
-    windowStampedDerivedState(
-        startDate: task.startDate, endDate: task.endDate, maxCount: task.maxCount,
-        countKind: task.countKind, rootEvents: rootEvents, sealedBound: nil
-    )
-}
+// MARK: - Linked counters (resolve from the root's events)
 
 /// A board's window as a linked counting square is evaluated against it:
 /// `[startDate, endDate]`, inclusive both ends (`endDate == nil` = open-ended).
-/// The shape a display / hub reader hands `resolveLinkedCounterDisplay` for a
-/// row that is NOT window-stamped — the placing board's own window. Twin of
-/// the TS `LinkedCounterWindow`.
+/// The shape a display / hub reader hands `resolveLinkedCounterDisplay` — the
+/// placing board's own window. Twin of the TS `LinkedCounterWindow`.
 struct LinkedCounterWindow: Equatable {
     let startDate: String
     let endDate: String?
@@ -265,34 +233,33 @@ extension LinkedCounterWindow {
     }
 }
 
-/// Shared body of `resolveLinkedCounterWindowState` and the sealed display
-/// path. The window bounds (and `sealedBound`) are parsed ONCE per call and
-/// each event's `occurredAt` once, then compared as `Date`s — a wizard row's
-/// local-ISO bounds cost a `DateFormatter` allocation per `parseISO`, so
-/// re-parsing them per event (via `isWithinTimeframe`) was thousands of
-/// allocations per body pass on the main thread.
+/// A linked counting row's state over one window `[startDate, endDate]`: the
+/// sum of its ROOT's live increment deltas inside the window, low-clamped at 0
+/// and finalised at the kind, complete iff `maxCount != nil && count >=
+/// maxCount` (the one completion rule; overshoot valid). The bounds are parsed
+/// ONCE per call and each event's `occurredAt` once — a wizard row's local-ISO
+/// bounds cost a `DateFormatter` allocation per `parseISO`, so re-parsing them
+/// per event was thousands of allocations per body pass on the main thread.
 ///
 /// Edge semantics are exactly `DateFormatting.isWithinTimeframe`'s: an
-/// unparseable `startDate` → count 0; an `endDate` present but unparseable →
-/// count 0; `endDate == nil` → unbounded above; inclusive both ends; an
-/// unparseable `occurredAt` is out. `sealedBound` additionally drops events
-/// with `occurredAt > sealedBound` (the `boundWindowContextAtSeal` rule).
+/// unparseable / empty `startDate` → count 0; an `endDate` present but
+/// unparseable → count 0; `endDate == nil` → unbounded above; inclusive both
+/// ends; an unparseable `occurredAt` is out. Twin of the TS
+/// `resolveLinkedCounterWindowState`.
 ///
 /// - Parameters:
-///   - startDate: The window's inclusive lower bound (a row's own stamp, or
-///     the placing board's `startDate`).
+///   - startDate: The window's inclusive lower bound (the host board's).
 ///   - endDate: The window's inclusive upper bound, or `nil` for open-ended.
-///   - maxCount: The per-window target (`task.maxCount`).
+///   - maxCount: The goal (the placement-adjusted row's).
+///   - countKind: The row's kind.
 ///   - rootEvents: The ROOT task's events.
-///   - sealedBound: The parsed `sealedAt` of the row's board, or `nil`.
 /// - Returns: `{ isCompleted, count }` with `count` the clamped in-window sum.
-private func windowStampedDerivedState(
+func resolveLinkedCounterWindowState(
     startDate: String?,
     endDate: String?,
     maxCount: CountValue?,
     countKind: CountKind?,
-    rootEvents: [TaskEvent],
-    sealedBound: Date?
+    rootEvents: [TaskEvent]
 ) -> TaskWindowState {
     /// Clamped-below in-window sum; 0 when the bounds don't parse.
     func windowSum() -> CountValue {
@@ -309,7 +276,6 @@ private func windowStampedDerivedState(
             guard let occurred = DateFormatting.parseISO(e.occurredAt),
                   occurred >= lower else { continue }
             if let upper, occurred > upper { continue }
-            if let sealedBound, occurred > sealedBound { continue }
             sum += e.delta ?? 0
         }
         return sum
@@ -345,9 +311,9 @@ func resolveDerivedCounterWindowState(
     // is given, otherwise over the root's lifetime. Its own stamp, baseline
     // and latch are never read (TASK_WINDOW_REWORK slice 5).
     guard let windowStart else { return contextlessCounterState(task: task, eventsByTaskId: eventsByTaskId) }
-    return windowStampedDerivedState(
+    return resolveLinkedCounterWindowState(
         startDate: windowStart, endDate: windowEnd, maxCount: task.maxCount,
-        countKind: task.countKind, rootEvents: eventsByTaskId[rootId] ?? [], sealedBound: nil
+        countKind: task.countKind, rootEvents: eventsByTaskId[rootId] ?? []
     )
 }
 

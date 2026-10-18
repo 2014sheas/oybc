@@ -248,7 +248,7 @@ extension AppDatabase {
     /// An event whose Task isn't local yet is upserted (shape only) and skipped
     /// by the recompute: `pullApplyOrder` pulls events before task rows, so the
     /// SAME pull's tasks batch brings that row (with its author's caches) and
-    /// its cascade + derived-baseline refresh read these events.
+    /// its cascade reads these events.
     ///
     /// - Returns: Pulled-row count + per-row skip details.
     static func applyTaskEventsBatchTx(db: Database, userId: String, rawDocs: [[String: Any]]) throws -> (pulled: Int, details: [String]) {

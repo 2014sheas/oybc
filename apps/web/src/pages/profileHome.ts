@@ -169,7 +169,7 @@ export function selectRecentCounters(
     .map((group) => ({
       group,
       lastLoggedAt: lastLoggedTimestamp(group, tasksById, eventsBySourceId),
-      member: selectMostRecentlyLoggedMember(group, tasksById),
+      member: selectMostRecentlyLoggedMember(group),
     }))
     .sort((a, b) => {
       if (a.lastLoggedAt !== b.lastLoggedAt) return a.lastLoggedAt < b.lastLoggedAt ? 1 : -1;
@@ -183,35 +183,34 @@ export function selectRecentCounters(
  * column (spec: "member label + 6px progress bar for the most recently
  * logged member").
  *
- * Only the source task owns raw log events — a linked member's own display
- * value is DERIVED (`sharedCounterGroups.ts`). Every log write bumps
- * `updatedAt` on the source and on every live (non-frozen) linked row it
- * touches (`propagateToLinkedRows`), while a window-stamped member outside
- * the log's window is frozen and left untouched — so the linked member with
- * the greatest `updatedAt` is the one the latest log actually reached. Ties
- * (e.g. several classic, non-window linked members all move together) break
- * on board name for a deterministic, stable pick.
+ * Only the source task owns log events, and a log made now counts on every
+ * placement whose board is in play (`isActive` — the Boards tab's rule), so
+ * the card the latest log reached is an ACTIVE one. Active cards win; ties
+ * (several boards in play) break on board name, then card id, for a
+ * deterministic, stable pick. A linked row's own fields are never read —
+ * since TASK_WINDOW_REWORK slice 5 a log writes the root alone.
  *
  * Returns `null` when the counter has no linked members yet (a hub-born,
  * member-less counter) — the row then shows no member column.
  */
 export function selectMostRecentlyLoggedMember(
   group: SharedCounterGroup,
-  tasksById: ReadonlyMap<string, Task>,
 ): SharedCounterMemberTask | null {
   let best: SharedCounterMemberTask | null = null;
-  let bestUpdatedAt = '';
+  const rank = (m: SharedCounterMemberTask): [number, string, string] => [
+    m.isActive ? 0 : 1,
+    m.boardName ?? '',
+    m.boardTaskId,
+  ];
   for (const member of group.tasks) {
     if (member.isSource) continue;
-    const updatedAt = tasksById.get(member.taskId)?.updatedAt ?? '';
-    if (
-      best === null ||
-      updatedAt > bestUpdatedAt ||
-      (updatedAt === bestUpdatedAt && (member.boardName ?? '') < (best.boardName ?? ''))
-    ) {
+    if (best === null) {
       best = member;
-      bestUpdatedAt = updatedAt;
+      continue;
     }
+    const [a1, a2, a3] = rank(member);
+    const [b1, b2, b3] = rank(best);
+    if (a1 < b1 || (a1 === b1 && (a2 < b2 || (a2 === b2 && a3 < b3)))) best = member;
   }
   return best;
 }

@@ -49,7 +49,7 @@ struct SharedCounterMemberTask: Identifiable {
     /// `eventsByTaskId`): the ROOT's increment sum over the host board's
     /// window for a linked card, the root's OWN events for a root card — each
     /// bounded at a sealed board's `sealedAt`, the play cell's numbers.
-    /// Without events, the lifetime arithmetic (`lifetime − baseline`).
+    /// Without events, the root's lifetime total (`baseline` is never read).
     let logged: CountValue
     /// `logged >= goal` (only when goal > 0). Over-achievement is real.
     let met: Bool
