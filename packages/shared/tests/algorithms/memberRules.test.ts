@@ -174,6 +174,7 @@ describe('planDerivedTasks', () => {
       source: src(i + 1, s.kind, s.memberRules),
       supplyTaskIds: s.supply,
       partOf: s.partOf ?? {},
+      ...(s.goalByTaskId ? { goalByTaskId: s.goalByTaskId } : {}),
     }));
     const seeded = makeSeededRng(v.seed);
     let rngCalls = 0;
