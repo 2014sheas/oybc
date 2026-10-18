@@ -115,8 +115,7 @@ final class LinkedCounterPlacementMintTests: XCTestCase {
         XCTAssertEqual(rowCount, 1, "only the library row — nothing minted")
     }
 
-    /// Board Edit's picker: a goal-less counter picked through the no-default
-    /// Goal entry stages a pending LINKED row; Save persists it as-is (slice 3a).
+    /// Board Edit stages a pending LINKED row; Save persists it as-is (slice 3a).
     func test_boardEditSave_pendingLinkedRow_isPersistedAndPlacedAsIs() throws {
         let db = try makeDb()
         var rootTask = try XCTUnwrap(K.fetchTask(db, "root"))
@@ -128,8 +127,9 @@ final class LinkedCounterPlacementMintTests: XCTestCase {
         let vm = loadedVM(db)
         vm.seedEditDraft(from: try XCTUnwrap(vm.board))
 
-        let pending = QuickAddCounterPlacement.pendingLinkedTask(
-            root: rootTask, goal: 5, userId: K.userId, now: septStart
+        let pending = PendingTaskPayload(
+            task: K.task("pending-linked", maxCount: 5, sharedCounterId: "root", createdInWizard: true),
+            childTasks: [], childLinks: []
         )
         vm.handleEditAdd(cellKey: "0-1", taskId: pending.task.id, pending: pending)
         XCTAssertTrue(vm.handleEditSave())

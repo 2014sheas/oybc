@@ -528,6 +528,7 @@ extension BoardWizardViewModel {
             if centerTaskId == dropped { centerTaskId = nil }
             pendingTasks.removeValue(forKey: dropped)
             stagedEdits.removeValue(forKey: dropped)
+            placementParams.removeValue(forKey: dropped)
             poolOrder.removeAll { $0 == dropped }
         }
         selectedTaskIds = newSelection

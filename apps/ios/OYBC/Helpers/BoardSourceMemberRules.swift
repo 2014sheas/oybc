@@ -324,77 +324,45 @@ extension BoardSources {
         }
     }
 
-    /// An in-memory window-stamped derived counter, before B2 persists it.
-    struct DerivedTaskDraft: Equatable {
-        let id: String
-        /// The shared-counter root this derives from (`sharedCounterId ?? id`).
-        let rootTaskId: String
-        /// The member id that produced it (may be another derived counter).
-        let sourceMemberId: String
-        /// The selected id this draft stands in for on the board.
-        let replacesId: String
-        let maxCount: CountValue
-        /// The kind the copy counts in — the root's (D5).
-        let countKind: CountKind
-        /// Event-derived lifetime count at mint time — a cache, never authored.
-        let baseline: CountValue
-        let title: String
-        let action: String
-        let unit: String
-        let timeframe: Timeframe
-        let startDate: String?
-        let endDate: String?
+    /// One planned placement (TASK_WINDOW_REWORK slice 3b): the task a
+    /// `board_tasks` row points at and the parameters the square carries.
+    /// The planner emits ONE per selected id, in order — never a row to mint.
+    /// Twin of the TS `PlannedPlacement`.
+    struct PlannedPlacement: Equatable {
+        /// The member itself; a legacy window-stamped derived row resolves to its ROOT.
+        var taskId: String
+        /// The planned per-window target, in `targetKind`; only when it differs from the placed task's own goal.
+        var targetOverride: CountValue?
+        var targetKind: CountKind?
+        /// A re-targeted compound's per-child targets (direct children only).
+        var childTargets: [PlacementChildTarget]?
+        /// A legacy derived row's custom title, carried onto the root's placement.
+        var titleOverride: String?
+
+        init(
+            taskId: String,
+            targetOverride: CountValue? = nil,
+            targetKind: CountKind? = nil,
+            childTargets: [PlacementChildTarget]? = nil,
+            titleOverride: String? = nil
+        ) {
+            self.taskId = taskId
+            self.targetOverride = targetOverride
+            self.targetKind = targetKind
+            self.childTargets = childTargets
+            self.titleOverride = titleOverride
+        }
     }
 
-    /// One `compound_children` link of a ``DerivedCompoundDraft``.
-    struct DerivedCompoundChildDraft: Equatable {
-        let linkId: String
-        let childTaskId: String
-        let childIndex: Int
-        /// True when `childTaskId` is a derived counter rather than the original child.
-        let isDerived: Bool
-    }
-
-    /// An in-memory derived compound (a One-square compound with re-targeted parts).
-    struct DerivedCompoundDraft: Equatable {
-        let id: String
-        let sourceCompoundId: String
-        let replacesId: String
-        let title: String
-        /// Swift names the field `operatorType` (as `Task` does — `operator`
-        /// is a Swift keyword); it is the TS twin's `operator`.
-        let operatorType: OperatorType?
-        let threshold: Int?
-        /// The window this derived compound is stamped for — the same one its
-        /// parts carry, copied from the board being assembled. ``buildDerivedRows(drafts:userId:now:rootsById:compoundsById:)``
-        /// writes it onto the compound `Task` row, so the derived compound
-        /// expires with its window exactly like its parts do.
-        let timeframe: Timeframe
-        let startDate: String?
-        let endDate: String?
-        let children: [DerivedCompoundChildDraft]
-    }
-
-    /// Output of ``planDerivedTasks(selectedIds:supplies:manualTaskIds:manualTaskVary:boardId:window:mode:tasksById:childrenByCompoundId:sourceWindowByTaskId:baselineByRootId:rng:)``.
+    /// Output of ``planDerivedTasks(selectedIds:supplies:manualTaskIds:manualTaskVary:window:mode:tasksById:childrenByCompoundId:sourceWindowByTaskId:rootsById:rng:)``.
     struct PlanDerivedTasksResult: Equatable {
-        /// What actually lands in `board_tasks`, in `selectedIds` order.
-        let placementIds: [String]
-        let derivedTasks: [DerivedTaskDraft]
-        let derivedCompounds: [DerivedCompoundDraft]
+        /// One per `selectedIds` entry, in `selectedIds` order.
+        let placements: [PlannedPlacement]
     }
 
-    /// A member is LINKED to a shared counter — a window-stamped derived
-    /// counter (both marks) OR a hub-linked copy (`sharedCounterId` alone).
-    ///
-    /// Owner rule 2026-10-01: a counting square on a board accounts only for
-    /// the counter's logs inside that board's window, so EVERY linked
-    /// hand-added member is re-minted as a window-stamped row for the window
-    /// being planned (before, only an already-window-stamped member or a
-    /// vary > 0 roll minted). Deliberately looser than the exported
-    /// ``isWindowStampedDerived(_:)``, which also requires `createdInWizard`
-    /// — a PLANNED member is judged on `sharedCounterId` alone, while the
-    /// exported predicate identifies a STORED row and wants all three. Twin
-    /// of the TS `isLinkedMember`.
+    /// A member is LINKED to a shared counter — a legacy window-stamped
+    /// derived counter OR a hub-linked copy (`sharedCounterId` alone). Judged
+    /// on `sharedCounterId` alone (twin of the TS `isLinkedMember`).
     private static func isLinkedMember(_ task: Task) -> Bool {
         !(task.sharedCounterId ?? "").isEmpty
     }
@@ -410,58 +378,38 @@ extension BoardSources {
         return maxCount > 0 ? quantizeCount(maxCount) : nil
     }
 
-    /// One child of a One-square compound, plus the decision made about it.
-    private struct ChildPlan {
-        let link: CompoundChild
-        let child: Task?
-        let derive: Bool
-        let target: CountValue
-        let vary: VaryLevel
-        /// The child's effective goal (slice 3a) — the vary clamp's ceiling.
-        var goal: CountValue? = nil
-    }
-
-    /// Spec step 3 — decide, per selected id, whether it is placed as-is or
-    /// replaced by a window-stamped derived counter / derived compound.
+    /// Spec step 3 — decide, per selected id, what its `board_tasks` row
+    /// points at and which placement parameters it carries (slice 3b: the
+    /// planner emits parameters, never rows).
     ///
-    /// Semantics (rng sampling order, precedence, the no-identical-clone rule
-    /// and the collapse rule): see the TS twin `planDerivedTasks` in
-    /// `packages/shared/src/algorithms/memberRules.ts` — mirrored exactly and
-    /// pinned by `memberRuleVectors.json`.
+    /// Semantics (rng sampling order, precedence, the override-only-when-
+    /// different rule, legacy derived rows resolving to their root): see the
+    /// TS twin `planDerivedTasks` in `packages/shared/src/algorithms/memberRules.ts`
+    /// — mirrored exactly and pinned by `memberRuleVectors.json`.
     ///
     /// - Parameters:
     ///   - selectedIds: The task ids picked for the board, in placement order.
     ///   - supplies: Per-source supplies, already Split-up expanded.
     ///   - manualTaskIds: Hand-added ids — they win over any source copy.
     ///   - manualTaskVary: Hand-added id → its dice.
-    ///   - boardId: The board being assembled (seeds every derived id).
-    ///   - window: The board's window; every derived draft is stamped with it.
-    ///   - mode: One-off or recurring. Does not gate the target math (the
-    ///     vectors pin identical resolution in both modes).
+    ///   - window: The board's window.
+    ///   - mode: One-off or recurring. Does not gate the target math.
     ///   - tasksById: Id → task, for every selected id and compound child.
     ///   - childrenByCompoundId: Compound id → its `compound_children` rows.
-    ///   - sourceWindowByTaskId: Task id → the window of the source board it
-    ///     came from. Keyed by every id whose source window matters —
-    ///     supplied members AND the children of a One-square compound (a
-    ///     compound's parts are pro-rated by looking up the CHILD's id,
-    ///     never the compound's).
-    ///   - baselineByRootId: Shared-counter root id → its event-derived lifetime count.
-    ///   - rootsById: Root id → root, for roots not in `tasksById` (copy titles
-    ///     render through the root's templates; board pulls consult its defaults).
+    ///   - sourceWindowByTaskId: Task id → the window of the source board it came from.
+    ///   - rootsById: Root id → root, for roots not in `tasksById`.
     ///   - rng: Uniform `[0, 1)` source.
-    /// - Returns: Placement ids plus the derived drafts they refer to.
+    /// - Returns: One ``PlannedPlacement`` per selected id.
     static func planDerivedTasks(
         selectedIds: [String],
         supplies: [ExpandedSupply],
         manualTaskIds: [String],
         manualTaskVary: [String: VaryLevel],
-        boardId: String,
         window: BoardWindow,
         mode: PlanMode,
         tasksById: [String: Task],
         childrenByCompoundId: [String: [CompoundChild]],
         sourceWindowByTaskId: [String: BoardWindow],
-        baselineByRootId: [String: CountValue],
         rootsById: [String: Task] = [:],
         rng: () -> Double
     ) -> PlanDerivedTasksResult {
@@ -480,10 +428,7 @@ extension BoardSources {
             startDate: window.startDate,
             endDate: window.endDate
         )
-        var placementIds: [String] = []
-        var derivedTasks: [DerivedTaskDraft] = []
-        var derivedCompounds: [DerivedCompoundDraft] = []
-        var derivedByRoot: [String: DerivedTaskDraft] = [:]
+        var placements: [PlannedPlacement] = []
 
         func supplying(_ id: String) -> ExpandedSupply? {
             supplies.first { $0.supplyTaskIds.contains(id) }
@@ -498,14 +443,8 @@ extension BoardSources {
         }
         /// The pre-vary target: an explicit rule if there is one, else the
         /// window-pro-rated ``autoTarget(goal:sourceDays:targetDays:kind:)`` for a
-        /// BOARD-sourced member, else the member's own goal. The gate is
-        /// `fromBoard` alone — pool-sourced and hand-added members never
-        /// auto-target (they offer vary / split / part-exclusion only), while
-        /// a board-pulled member pro-rates on one-off AND recurring boards
-        /// alike (owner ruling 2026-09-21).
-        ///
-        /// The final clamp is kept verbatim from the TS twin (only observable
-        /// on an off-step explicit target).
+        /// BOARD-sourced member, else the member's own goal. The final clamp is
+        /// kept verbatim from the TS twin (only observable on an off-step explicit target).
         func resolveTarget(
             goal: CountValue,
             explicit: CountValue?,
@@ -536,10 +475,10 @@ extension BoardSources {
             return Swift.min(Swift.max(countTargetStep(kind), floorToCountStep(base, kind: kind)), goal)
         }
         /// A supplied member's EFFECTIVE goal (slice 3a): the source placement's
-        /// `targetOverride` when the board source carries one (`goalByTaskId`),
+        /// `targetOverride` when a BOARD source carries one (`goalByTaskId`),
         /// else the member's own goal. A hand-added member reads its own.
         func effectiveGoalOf(_ id: String, _ task: Task, _ sup: ExpandedSupply?) -> CountValue? {
-            if let supplied = sup?.goalByTaskId?[id], supplied > 0 {
+            if sup?.source.kind == .board, let supplied = sup?.goalByTaskId?[id], supplied > 0 {
                 if isWholeCountKind(resolveCountKind(task.countKind)) {
                     return supplied >= 1 ? supplied.rounded(.down) : nil
                 }
@@ -547,47 +486,41 @@ extension BoardSources {
             }
             return goalOf(task)
         }
-        func mint(
-            _ task: Task, replacesId: String, target: CountValue, vary: VaryLevel, effGoal: CountValue? = nil
-        ) -> DerivedTaskDraft {
-            // The vary clamp's ceiling: the goal (the supplying placement's
-            // effective one), or a timeframe default above it (every
-            // pre-default target is ≤ the goal, so unchanged there).
-            let goal = Swift.max(effGoal ?? goalOf(task) ?? 0, target)
-            let root = task.sharedCounterId ?? task.id
-            // The dedupe is checked BEFORE the roll: a collapsed occurrence
-            // consumes no rng sample, so a seeded sequence reproduces
-            // identically on both platforms (TS twin, verbatim).
-            if let existing = derivedByRoot[root] { return existing }
-            let countKind = resolveCountKind(task.countKind)
-            let maxCount = rollTarget(t: target, level: vary, goal: goal, rng: rng, kind: countKind)
-            let action = task.action ?? ""
-            let unit = task.unit ?? ""
-            let draft = DerivedTaskDraft(
-                id: derivedTaskId(boardId: boardId, rootTaskId: root),
-                rootTaskId: root,
-                sourceMemberId: task.id,
-                replacesId: replacesId,
-                maxCount: maxCount,
-                countKind: countKind,
-                baseline: isWholeCountKind(countKind) ? (baselineByRootId[root] ?? 0).rounded(.down) : quantizeCount(baselineByRootId[root] ?? 0),
-                title: TaskTitle.counterCopyTitle(
-                    member: task, newMaxCount: maxCount, settings: rootOf(task).map(CounterSettings.TitleSettings.init(task:))
-                ),
-                action: action,
-                unit: unit,
-                timeframe: window.timeframe,
-                startDate: window.startDate,
-                endDate: window.endDate
-            )
-            derivedByRoot[root] = draft
-            derivedTasks.append(draft)
-            return draft
+        /// The task a member's placement points at: a legacy derived row → its root.
+        func placedIdOf(_ t: Task) -> String {
+            if isWindowStampedDerived(t), let sid = t.sharedCounterId, !sid.isEmpty { return sid }
+            return t.id
+        }
+        /// The placement for `t` at the pre-vary `target` rolled by `vary`: the
+        /// override lands only when the rolled target differs from the PLACED
+        /// task's own goal; a legacy derived row's custom title rides onto its
+        /// root's placement.
+        func param(_ t: Task, _ target: CountValue, _ vary: VaryLevel, _ effGoal: CountValue?) -> PlannedPlacement {
+            let goal = Swift.max(effGoal ?? goalOf(t) ?? 0, target)
+            let kind = resolveCountKind(t.countKind)
+            let rolled = rollTarget(t: target, level: vary, goal: goal, rng: rng, kind: kind)
+            let placedId = placedIdOf(t)
+            let placed: Task? = placedId == t.id ? t : (tasksById[placedId] ?? rootsById[placedId])
+            var out = PlannedPlacement(taskId: placedId)
+            let placedOwn = placed.flatMap { goalOf($0) }
+            if placedOwn == nil || rolled != placedOwn {
+                out.targetOverride = rolled
+                out.targetKind = kind
+            }
+            if placedId != t.id {
+                let custom = !TaskTitle.isAutoCounterTitle(
+                    title: t.title, action: t.action ?? "", maxCount: t.maxCount, unit: t.unit ?? "",
+                    countKind: kind, settings: rootOf(t).map(CounterSettings.TitleSettings.init(task:))
+                )
+                let trimmed = t.title.trimmingCharacters(in: .whitespacesAndNewlines)
+                if custom && !trimmed.isEmpty { out.titleOverride = trimmed }
+            }
+            return out
         }
 
         for id in selectedIds {
             guard let task = tasksById[id] else {
-                placementIds.append(id)
+                placements.append(PlannedPlacement(taskId: id))
                 continue
             }
             let isManual = manual.contains(id)
@@ -597,54 +530,30 @@ extension BoardSources {
             let parentId = supply?.partOf[id]
 
             if task.type == .counting {
-                // Slice 3a: a board-sourced member's goal is the SUPPLYING
-                // placement's effective goal (its `targetOverride`, else its own
-                // `maxCount`) — a root placed at 70 of 300 pro-rates from 70.
                 let ownGoal = effectiveGoalOf(id, task, supply)
-                let overridden = ownGoal != goalOf(task)
-                // A hand-added or POOL-sourced ROOT with a differing default mints
-                // at it (also the vary base); a LINKED row keeps its own goal.
+                // A hand-added or POOL-sourced ROOT with a differing default
+                // takes it (also the vary base); a LINKED row keeps its own goal.
                 if isManual || (supply != nil && !fromBoard), !isLinkedMember(task),
                    let dflt = defaultOf(task), dflt != ownGoal {
                     let vary = isManual ? (manualTaskVary[id] ?? .off)
                         : parentId.map { rules[$0]?.parts?[id]?.vary ?? .off } ?? (rules[id]?.vary ?? .off)
-                    placementIds.append(mint(task, replacesId: id, target: dflt, vary: vary).id)
+                    placements.append(param(task, dflt, vary, ownGoal))
                     continue
                 }
                 // A goal-less member pulled from a board takes its root's default.
                 guard let goal = ownGoal ?? (fromBoard ? defaultOf(rootOf(task)) : nil) else {
-                    // Goal-less (an accumulator — including a goal-less
-                    // LINKED member): nothing to mint a per-window target
-                    // from, so it is placed as-is. Documented edge of the
-                    // 2026-10-01 rule; `TaskSchema` requires a goal on every
-                    // non-hub-born counting task, so this is defensive.
-                    placementIds.append(id)
+                    // Goal-less (an accumulator): nothing to target — placed as-is.
+                    placements.append(PlannedPlacement(taskId: placedIdOf(task)))
                     continue
                 }
                 if isManual {
-                    let vary = manualTaskVary[id] ?? .off
-                    // A LINKED member (window-stamped OR hub-linked) is ALWAYS
-                    // minted for this window — owner rule 2026-10-01. Vary off
-                    // consumes no rng.
-                    if isLinkedMember(task) {
-                        placementIds.append(mint(task, replacesId: id, target: goal, vary: vary).id)
-                        continue
-                    }
-                    if vary != .off {
-                        placementIds.append(mint(task, replacesId: id, target: goal, vary: vary).id)
-                        continue
-                    }
-                    placementIds.append(id)
+                    placements.append(param(task, goal, manualTaskVary[id] ?? .off, ownGoal))
                     continue
                 }
                 if let parentId {
-                    // Split part — the part rule governs; the parent's
-                    // `vary` is ignored.
+                    // Split part — the part rule governs; the parent's `vary` is ignored.
                     let part = rules[parentId]?.parts?[id] ?? BoardSourcePartRule()
                     let vary = part.vary ?? .off
-                    // `target` — member- OR part-level — is honoured on
-                    // board sources only; a pool member offers vary / split
-                    // / part-exclusion and nothing else.
                     if fromBoard || vary != .off {
                         let target = resolveTarget(
                             goal: goal,
@@ -653,23 +562,10 @@ extension BoardSources {
                             taskIdForWindow: id,
                             kind: resolveCountKind(task.countKind)
                         )
-                        // Slice 3a: a supplied override is not the root's own goal —
-                        // placing the root as-is would read 300 where the source
-                        // square read 70, so it mints (the `!overridden` guard).
-                        // No identical clone (owner ruling 2026-09-22) — the TS
-                        // twin carries the full reasoning, including why the
-                        // `sharedCounterId == nil` guard is load-bearing (a
-                        // window-stamped member must re-mint for THIS window).
-                        if target == ownGoal, vary == .off, task.sharedCounterId == nil, !overridden {
-                            placementIds.append(id)
-                            continue
-                        }
-                        placementIds.append(
-                            mint(task, replacesId: id, target: target, vary: vary, effGoal: ownGoal).id
-                        )
+                        placements.append(param(task, target, vary, ownGoal))
                         continue
                     }
-                    placementIds.append(id)
+                    placements.append(PlannedPlacement(taskId: placedIdOf(task)))
                     continue
                 }
                 let rule = rules[id] ?? BoardSourceMemberRule()
@@ -682,111 +578,50 @@ extension BoardSources {
                         taskIdForWindow: id,
                         kind: resolveCountKind(task.countKind)
                     )
-                    // No identical clone (owner ruling 2026-09-22) — same rule as the split part.
-                    if target == ownGoal, vary == .off, task.sharedCounterId == nil, !overridden {
-                        placementIds.append(id)
-                        continue
-                    }
-                    placementIds.append(mint(task, replacesId: id, target: target, vary: vary, effGoal: ownGoal).id)
+                    placements.append(param(task, target, vary, ownGoal))
                     continue
                 }
-                if vary != .off {
-                    placementIds.append(mint(task, replacesId: id, target: goal, vary: vary, effGoal: ownGoal).id)
-                    continue
-                }
-                placementIds.append(id)
+                // Pool-sourced: vary only.
+                placements.append(param(task, goal, vary, ownGoal))
                 continue
             }
 
             if task.type == .compound, supply != nil, rules[id]?.split != true {
-                // Total comparator, as in `applyMemberRules` — a duplicate
-                // `childIndex` must not roll in a different order (and so
-                // consume the seeded rng differently) than the TS twin.
+                // Total comparator, as in `applyMemberRules`.
                 let kids = (childrenByCompoundId[id] ?? [])
                     .sorted { ($0.childIndex, $0.childTaskId) < ($1.childIndex, $1.childTaskId) }
                 guard let rule = rules[id], !kids.isEmpty else {
-                    placementIds.append(id)
+                    placements.append(PlannedPlacement(taskId: id))
                     continue
                 }
-                let plans: [ChildPlan] = kids.map { link in
-                    let child = tasksById[link.childTaskId]
-                    // Slice 3a: a compound placement's `childTargets` arrive keyed by child id.
-                    let goal = child.flatMap { effectiveGoalOf(link.childTaskId, $0, supply) }
-                    guard let child, child.type == .counting, let goal else {
-                        return ChildPlan(link: link, child: child, derive: false, target: 0, vary: .off)
-                    }
+                var childTargets: [PlacementChildTarget] = []
+                for link in kids {
+                    guard let child = tasksById[link.childTaskId], child.type == .counting,
+                          let goal = effectiveGoalOf(link.childTaskId, child, supply) else { continue }
                     let part = rule.parts?[link.childTaskId] ?? BoardSourcePartRule()
                     let vary = part.vary ?? rule.vary ?? .off
-                    // Board sources only, as in the split-part branch above.
                     let hasTarget = fromBoard && (part.target != nil || (rule.vary ?? .off) != .off)
-                    if !hasTarget && vary == .off {
-                        return ChildPlan(link: link, child: child, derive: false, target: 0, vary: .off)
-                    }
+                    if !hasTarget && vary == .off { continue }
+                    let kind = resolveCountKind(child.countKind)
                     let target = resolveTarget(
                         goal: goal,
                         explicit: fromBoard ? part.target : nil,
                         fromBoard: fromBoard,
                         taskIdForWindow: link.childTaskId,
-                        kind: resolveCountKind(child.countKind)
+                        kind: kind
                     )
-                    return ChildPlan(link: link, child: child, derive: true, target: target, vary: vary, goal: goal)
+                    let rolled = rollTarget(t: target, level: vary, goal: Swift.max(goal, target), rng: rng, kind: kind)
+                    // An entry only when the child's target differs from its own goal.
+                    if rolled == goalOf(child) { continue }
+                    childTargets.append(PlacementChildTarget(childId: link.childTaskId, target: rolled))
                 }
-                guard plans.contains(where: { $0.derive }) else {
-                    placementIds.append(id)
-                    continue
-                }
-                let compoundId = derivedCompoundId(boardId: boardId, compoundId: id)
-                var children: [DerivedCompoundChildDraft] = []
-                var seenChildIds = Set<String>()
-                for plan in plans {
-                    let childTaskId: String
-                    if plan.derive, let child = plan.child {
-                        childTaskId = mint(
-                            child,
-                            replacesId: plan.link.childTaskId,
-                            target: plan.target,
-                            vary: plan.vary,
-                            effGoal: plan.goal
-                        ).id
-                    } else {
-                        childTaskId = plan.link.childTaskId
-                    }
-                    // Two parts that collapse onto one derived counter (same
-                    // shared-counter root) would otherwise emit the same
-                    // `childTaskId` — and the same `linkId` — twice. First in
-                    // `childIndex` order wins, keeping its own `childIndex`
-                    // and `linkId`.
-                    guard seenChildIds.insert(childTaskId).inserted else { continue }
-                    children.append(DerivedCompoundChildDraft(
-                        linkId: derivedLinkId(derivedCompoundId: compoundId, childId: childTaskId),
-                        childTaskId: childTaskId,
-                        childIndex: plan.link.childIndex,
-                        isDerived: plan.derive
-                    ))
-                }
-                derivedCompounds.append(DerivedCompoundDraft(
-                    id: compoundId,
-                    sourceCompoundId: id,
-                    replacesId: id,
-                    title: task.title,
-                    operatorType: task.operatorType,
-                    threshold: task.threshold,
-                    timeframe: window.timeframe,
-                    startDate: window.startDate,
-                    endDate: window.endDate,
-                    children: children
-                ))
-                placementIds.append(compoundId)
+                placements.append(PlannedPlacement(taskId: id, childTargets: childTargets.isEmpty ? nil : childTargets))
                 continue
             }
 
-            placementIds.append(id)
+            placements.append(PlannedPlacement(taskId: id))
         }
 
-        return PlanDerivedTasksResult(
-            placementIds: placementIds,
-            derivedTasks: derivedTasks,
-            derivedCompounds: derivedCompounds
-        )
+        return PlanDerivedTasksResult(placements: placements)
     }
 }

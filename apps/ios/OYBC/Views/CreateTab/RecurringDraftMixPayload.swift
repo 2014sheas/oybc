@@ -34,10 +34,16 @@ struct RecurringDraftMixPayload: Codable {
     /// re-encodes byte-identically. The blob version stays `2`: this is a
     /// purely additive key an older client ignores.
     var manualTaskVary: [String: VaryLevel]
+    /// TASK_WINDOW_REWORK slice 3b — the wizard's per-cell placement
+    /// parameters (a quick-added counter's window goal, a hand-edited goal),
+    /// keyed by task id, so a resumed draft keeps them. Omitted when empty
+    /// (additive key an older client ignores); the activating save writes them
+    /// onto the `board_tasks` rows.
+    var placementParams: [String: PlacementParamsDraft]
 
     private enum CodingKeys: String, CodingKey {
         case v, poolIds, manualTaskIds, removedTaskIds, sources
-        case manualTaskVary
+        case manualTaskVary, placementParams
     }
 
     init(
@@ -45,13 +51,15 @@ struct RecurringDraftMixPayload: Codable {
         manualTaskIds: [String],
         removedTaskIds: [String],
         sources: [BoardSource]? = nil,
-        manualTaskVary: [String: VaryLevel] = [:]
+        manualTaskVary: [String: VaryLevel] = [:],
+        placementParams: [String: PlacementParamsDraft] = [:]
     ) {
         self.poolIds = poolIds
         self.manualTaskIds = manualTaskIds
         self.removedTaskIds = removedTaskIds
         self.sources = sources
         self.manualTaskVary = manualTaskVary
+        self.placementParams = placementParams
     }
 
     init(from decoder: Decoder) throws {
@@ -72,6 +80,7 @@ struct RecurringDraftMixPayload: Codable {
             forKey: .manualTaskVary
         )
         manualTaskVary = decodedVary ?? [:]
+        placementParams = ((try? container.decodeIfPresent([String: PlacementParamsDraft].self, forKey: .placementParams)) ?? nil) ?? [:]
     }
 
     func encode(to encoder: Encoder) throws {
@@ -97,6 +106,9 @@ struct RecurringDraftMixPayload: Codable {
         // omission can't say.)
         if !manualTaskVary.isEmpty {
             try container.encode(manualTaskVary, forKey: .manualTaskVary)
+        }
+        if !placementParams.isEmpty {
+            try container.encode(placementParams, forKey: .placementParams)
         }
     }
 

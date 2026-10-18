@@ -693,6 +693,32 @@ final class DerivedCountersCascadeTests: XCTestCase {
         XCTAssertFalse((stored.manualTaskIds ?? []).contains("compound-r1"))
     }
 
+    /// Slice 3b (ruling 1): Repeat copies a placement's frozen override / title
+    /// into the record's `manualTaskTargets`, keyed by the member id.
+    func test_repeatBoard_collectsManualTaskTargetsFromPlacementOverrides() throws {
+        let database = try makeDb()
+        let board = try makeBoard(id: "board-r4")
+        try database.write { db in
+            try board.insert(db)
+            try self.plainTask(id: self.root, type: .counting).insert(db)
+            try self.plainTask(id: "plain-r4").insert(db)
+            try BoardTask(
+                id: "bt-r4a", boardId: board.id, taskId: self.root, row: 0, col: 0, isCenter: false,
+                targetOverride: 7, targetKind: .discrete, titleOverride: "Seven",
+                createdAt: self.earlier, updatedAt: self.earlier, version: 1
+            ).insert(db)
+            try self.placement(id: "bt-r4b", boardId: board.id, taskId: "plain-r4").insert(db)
+        }
+
+        let template = try XCTUnwrap(try database.repeatBoardAsTemplate(
+            board: board, cadence: .weekly, userId: userId, weekStartDay: "monday", now: now
+        ))
+
+        XCTAssertEqual(template.manualTaskTargets, [root: ManualTaskTarget(target: 7, kind: .discrete, title: "Seven")])
+        let stored = try XCTUnwrap(try database.fetchRecurringBoardTemplate(id: template.id))
+        XCTAssertEqual(stored.manualTaskTargets?[root]?.target, 7)
+    }
+
     func test_repeatBoard_recordSurvivesDeletingTheBoardItWasRepeatedFrom() throws {
         // Final-review FI2 — before the amendment the record named the DERIVED
         // id, the board delete retired that row, and validateSpawnPool then

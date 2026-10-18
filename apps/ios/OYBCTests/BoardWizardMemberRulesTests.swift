@@ -449,29 +449,53 @@ final class BoardWizardMemberRulesTests: XCTestCase {
                        "a counter created in the wizard is dice-able before it is ever written")
     }
 
-    /// A counter row's edit swaps it for its board-only copy in place —
-    /// position, dice and center mark carry over — and Undo swaps back.
-    func test_replaceManualTask_swapsInPlaceCarryingDiceAndCenter() throws {
+    // MARK: - Placement parameters (TASK_WINDOW_REWORK slice 3b)
+
+    func test_setPlacementParams_setsClearsAndReturnsThePreviousValue() throws {
         let vm = makeVM(try makeDb())
-        for id in ["a", "root", "b"] { vm.toggleTaskSelection(id) }
-        vm.manualTaskVary = ["root": .little]
-        vm.centerTaskId = "root"
-        let copy = makeTask("copy", type: .counting, maxCount: 10)
+        let p = PlacementParamsDraft(targetOverride: 5, targetKind: .discrete)
+        XCTAssertNil(vm.setPlacementParams(taskId: "root", p))
+        XCTAssertEqual(vm.placementParams, ["root": p])
+        XCTAssertEqual(vm.setPlacementParams(taskId: "root", nil), p, "Undo gets the previous value")
+        XCTAssertTrue(vm.placementParams.isEmpty)
+        vm.setPlacementParams(taskId: "root", PlacementParamsDraft())
+        XCTAssertTrue(vm.placementParams.isEmpty, "an empty draft clears")
+    }
 
-        vm.replaceManualTask("root", with: "copy", payload: PendingTaskPayload(task: copy, childTasks: [], childLinks: []))
+    func test_placementParams_leaveWithTheTask() throws {
+        let vm = makeVM(try makeDb())
+        vm.toggleTaskSelection("root")
+        vm.setPlacementParams(taskId: "root", PlacementParamsDraft(targetOverride: 5, targetKind: .discrete))
+        vm.toggleTaskSelection("root")
+        XCTAssertFalse(vm.selectedTaskIds.contains("root"))
+        XCTAssertNil(vm.placementParams["root"], "a stale entry must not ride into the draft blob")
+    }
 
-        XCTAssertEqual(vm.poolOrder, ["a", "copy", "b"])
-        XCTAssertEqual(vm.selectedTaskIds, ["a", "copy", "b"])
-        XCTAssertEqual(vm.manualTaskVary, ["copy": .little])
-        XCTAssertEqual(vm.centerTaskId, "copy")
-        XCTAssertNotNil(vm.pendingTasks["copy"])
+    func test_restampPlacementParams_followsOnlyAnOverrideThatEqualledTheOldDefault() throws {
+        let database = try makeDb()
+        var root = makeTask("root", type: .counting, maxCount: 100)
+        root.timeframeGoals = CounterTimeframeGoals(daily: 2, weekly: 10)
+        var typed = makeTask("typed", type: .counting, maxCount: 100)
+        typed.timeframeGoals = CounterTimeframeGoals(daily: 2, weekly: 10)
+        try database.write { db in
+            try root.save(db)
+            try typed.save(db)
+        }
+        let vm = makeVM(database)
+        let daily = CounterPlacement.PickWindow(
+            timeframe: .daily, startDate: "2026-10-14T00:00:00", endDate: "2026-10-14T23:59:59"
+        )
+        let weekly = CounterPlacement.PickWindow(
+            timeframe: .weekly, startDate: "2026-10-12T00:00:00", endDate: "2026-10-18T23:59:59"
+        )
+        vm.restampPlacementParams(to: daily)
+        vm.setPlacementParams(taskId: "root", PlacementParamsDraft(targetOverride: 2, targetKind: .discrete))
+        vm.setPlacementParams(taskId: "typed", PlacementParamsDraft(targetOverride: 7, targetKind: .discrete))
 
-        vm.replaceManualTask("copy", with: "root", payload: nil)
+        vm.restampPlacementParams(to: weekly)
 
-        XCTAssertEqual(vm.poolOrder, ["a", "root", "b"])
-        XCTAssertEqual(vm.selectedTaskIds, ["a", "root", "b"])
-        XCTAssertEqual(vm.manualTaskVary, ["root": .little])
-        XCTAssertNil(vm.pendingTasks["copy"], "the copy leaves with its pending payload")
+        XCTAssertEqual(vm.placementParams["root"]?.targetOverride, 10, "the untouched default follows the window")
+        XCTAssertEqual(vm.placementParams["typed"]?.targetOverride, 7, "a typed goal is kept")
     }
 
     /// Undo of a ✕ re-enters the row as a hand-add, so the next selection

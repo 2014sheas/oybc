@@ -92,12 +92,17 @@ struct RisoQuickAddRowView: View {
 
     /// Counter Detail's "+ New" preset: the create counts toward this counter.
     var presetCountsTowardCounterId: String? = nil
-    /// A one-off board wizard: picking a counter adds a pending LINKED copy at
-    /// the window's default goal (`placementGoalSource`) instead of the root,
-    /// so the row shows that goal and an edit to it stays on this board.
-    /// Default false (a repeating board keeps the root: each spawn mints its
-    /// own window's default). Web twin: `WizardQuickAddRow.linksCounterPicks`.
+    /// A one-off board wizard: picking a counter places the root itself and
+    /// reports the window's default goal (`placementGoalSource`) through
+    /// `onCounterGoalPicked`, so the row shows that goal and an edit to it
+    /// stays on this board's placement. Default false (a repeating board keeps
+    /// the plain root: each spawn plans its own window's default). Web twin:
+    /// `WizardQuickAddRow.linksCounterPicks`.
     var linksCounterPicks: Bool = false
+    /// A counter ROOT was picked at `goal` (the board window's default, or one
+    /// the row asked for): the host sets the cell's placement parameter. Nil
+    /// hosts place the root plainly.
+    var onCounterGoalPicked: ((_ root: OYBC.Task, _ goal: CountValue) -> Void)? = nil
 
     @State private var text: String = ""
     /// The text a pick left in the field — the dropdown hides while it is unchanged.
@@ -178,7 +183,8 @@ struct RisoQuickAddRowView: View {
         excludeGoalLessCounters: Bool = false,
         seedText: String = "",
         presetCountsTowardCounterId: String? = nil,
-        linksCounterPicks: Bool = false
+        linksCounterPicks: Bool = false,
+        onCounterGoalPicked: ((_ root: OYBC.Task, _ goal: CountValue) -> Void)? = nil
     ) {
         self.userId = userId
         self.defaultTimeframe = defaultTimeframe
@@ -203,6 +209,7 @@ struct RisoQuickAddRowView: View {
         _text = State(initialValue: seedText)
         self.presetCountsTowardCounterId = presetCountsTowardCounterId
         self.linksCounterPicks = linksCounterPicks
+        self.onCounterGoalPicked = onCounterGoalPicked
     }
 
     /// The preset applies to an immediate Normal create only.
@@ -283,8 +290,8 @@ struct RisoQuickAddRowView: View {
                     timeframe: placementTimeframe ?? defaultTimeframe,
                     startDate: placementTimeframe != nil ? placementStartDate : defaultStartDate,
                     endDate: placementTimeframe != nil ? placementEndDate : defaultEndDate,
-                    canCreatePending: onPendingCreated != nil,
-                    linksCounterPick: linksCounterPicks && onPendingCreated != nil,
+                    canCreatePending: onCounterGoalPicked != nil,
+                    linksCounterPick: linksCounterPicks && onCounterGoalPicked != nil,
                     onPick: {
                         onExistingTaskPicked?(task)
                         if let next = textAfterPick?(task) {
@@ -295,14 +302,10 @@ struct RisoQuickAddRowView: View {
                         }
                     },
                     onPickWithGoal: { goal in
-                        let payload = QuickAddCounterPlacement.pendingLinkedTask(
-                            root: task, goal: goal, userId: userId, now: AppDatabase.currentTimestamp(),
-                            timeframe: placementTimeframe ?? defaultTimeframe,
-                            startDate: placementTimeframe != nil ? placementStartDate : defaultStartDate,
-                            endDate: placementTimeframe != nil ? placementEndDate : defaultEndDate
-                        )
-                        onTaskCreated(payload.task.id, payload.task.title, TaskType.counting.rawValue)
-                        onPendingCreated?(payload)
+                        // The root is placed as itself; the goal rides as a
+                        // placement parameter (slice 3b) — no copy is created.
+                        onExistingTaskPicked?(task)
+                        onCounterGoalPicked?(task, goal)
                         text = ""
                     }
                 )
@@ -370,8 +373,8 @@ struct RisoQuickAddRowView: View {
 /// ROOT shows badge · counter name · a dense kind tag · plus — no goal text
 /// (owner ruling 2026-10-12: redundant on the row). In a board context
 /// (`timeframe` set), a goal-less root with no default for the board instead
-/// shows an inline Goal entry that gates the plus (the row then places a
-/// pending linked counting task at that goal). Web twin: `WizardQuickAddRow`'s
+/// shows an inline Goal entry that gates the plus (the row then places the root
+/// with that goal as a placement parameter). Web twin: `WizardQuickAddRow`'s
 /// match row.
 private struct QuickAddMatchRow: View {
     let task: OYBC.Task
@@ -392,7 +395,7 @@ private struct QuickAddMatchRow: View {
     var linksCounterPick: Bool = false
     /// Place the existing task (a plain row, or a root with a goal source).
     let onPick: () -> Void
-    /// Place a pending linked task at the entered goal.
+    /// Place the root at the entered goal (a placement parameter).
     let onPickWithGoal: (CountValue) -> Void
 
     @State private var goalText = ""

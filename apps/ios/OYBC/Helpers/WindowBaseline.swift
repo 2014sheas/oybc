@@ -1,13 +1,13 @@
 import Foundation
 
-// MARK: - Board Sources §Member rules (B2) — baseline + row building
+// MARK: - Window baseline + legacy derived-row predicates
 //
-// Split out of `BoardSourceMemberRules.swift` (file-size guardrail). Swift twin
-// of the row-building half of `packages/shared/src/algorithms/memberRules.ts`.
+// Swift twin of the baseline half of `packages/shared/src/algorithms/memberRules.ts`.
+// (The B2 row builder was retired in TASK_WINDOW_REWORK slice 3b.)
 
 extension BoardSources {
 
-    // MARK: - B2: baseline + row building
+    // MARK: - Baseline
 
     /// The window baseline of a shared-counter root: the lifetime count the
     /// root had reached when the window opened, so the derived counter's
@@ -109,137 +109,5 @@ extension BoardSources {
               let end = DateFormatting.parseISO(endDate),
               let nowDate = DateFormatting.parseISO(now) else { return false }
         return nowDate > end
-    }
-
-    /// Output of ``buildDerivedRows(drafts:userId:now:rootsById:compoundsById:)``
-    /// — complete, writable rows. (Swift twin of the TS `DerivedRows`
-    /// interface; a named struct rather than a bare tuple so the two write
-    /// paths and their tests can name the type.)
-    struct DerivedRows {
-        var tasks: [Task]
-        var links: [CompoundChild]
-    }
-
-    /// Materialise the ``planDerivedTasks(selectedIds:supplies:manualTaskIds:manualTaskVary:boardId:window:mode:tasksById:childrenByCompoundId:sourceWindowByTaskId:baselineByRootId:rng:)``
-    /// drafts as complete `Task` / `CompoundChild` rows. Pure — the caller
-    /// writes them (in one transaction, before the `board_tasks` rows that
-    /// point at them).
-    ///
-    /// Derived counters come first, in draft order, then the derived
-    /// compounds; every row keeps the deterministic id its draft carries, so
-    /// re-deriving the same window overwrites rather than duplicates. A
-    /// derived counter mirrors its root's lifetime `currentCount` and reads
-    /// its window value from that minus `baseline`, so `isCompleted` at mint
-    /// is whatever `deriveDisplayedCount` already says — a root that has raced
-    /// past the target is born complete rather than hand-initialised to false.
-    ///
-    /// Two invariants the CALLER owes, because the builder degrades quietly
-    /// rather than throwing: every `rootTaskId` in `drafts.derivedTasks` must
-    /// be present in `rootsById` (a missing root mirrors a count of 0, writing
-    /// a row that contradicts its own root until the next increment heals it),
-    /// and every `sourceCompoundId` in `drafts.derivedCompounds` must be
-    /// present in `compoundsById`.
-    ///
-    /// - Parameters:
-    ///   - drafts: The drafts to materialise, straight out of `planDerivedTasks`.
-    ///   - userId: Owner of every row written.
-    ///   - now: ISO8601 mint time — every row's `createdAt` / `updatedAt`.
-    ///   - rootsById: Root id → the root row (its `currentCount` is mirrored).
-    ///   - compoundsById: Source compound id → the row the derived compound copies from.
-    /// - Returns: The derived `Task` rows and the derived compounds' child links.
-    static func buildDerivedRows(
-        drafts: PlanDerivedTasksResult,
-        userId: String,
-        now: String,
-        rootsById: [String: Task],
-        compoundsById: [String: Task]
-    ) -> DerivedRows {
-        var tasks: [Task] = []
-        var links: [CompoundChild] = []
-
-        for draft in drafts.derivedTasks {
-            let mirror = rootsById[draft.rootTaskId]?.currentCount ?? 0
-            let shown = deriveDisplayedCount(
-                derivedBaseline: draft.baseline,
-                derivedMaxCount: draft.maxCount,
-                sourceCurrentCount: mirror,
-                countKind: draft.countKind
-            )
-            tasks.append(Task(
-                id: draft.id,
-                userId: userId,
-                title: draft.title,
-                type: .counting,
-                // `planDerivedTasks` fills these with "" for an action-less
-                // counter; an empty string is not a value — leave the column
-                // absent instead.
-                action: draft.action.isEmpty ? nil : draft.action,
-                unit: draft.unit.isEmpty ? nil : draft.unit,
-                maxCount: draft.maxCount,
-                totalCompletions: 0,
-                totalInstances: 0,
-                isCompleted: shown.isCompleted,
-                // Stamped here or never: every other write path stamps
-                // `completedAt` on the false → true transition, and for a row
-                // born complete that transition has already happened.
-                completedAt: shown.isCompleted ? now : nil,
-                currentCount: mirror,
-                createdAt: now,
-                updatedAt: now,
-                version: 1,
-                isDeleted: false,
-                timeframe: draft.timeframe,
-                startDate: draft.startDate,
-                endDate: draft.endDate,
-                sharedCounterId: draft.rootTaskId,
-                baseline: draft.baseline,
-                createdInWizard: true,
-                countKind: draft.countKind
-            ))
-        }
-
-        for compound in drafts.derivedCompounds {
-            let source = compoundsById[compound.sourceCompoundId]
-            tasks.append(Task(
-                id: compound.id,
-                userId: userId,
-                title: compound.title,
-                description: source?.description,
-                type: .compound,
-                operatorType: compound.operatorType,
-                // A nil threshold stays nil (the column is absent), exactly as
-                // the TS twin refuses to write an explicit null there.
-                threshold: compound.threshold,
-                totalCompletions: 0,
-                totalInstances: 0,
-                // Written false for column uniformity and never read: a
-                // compound's completion is derived from its children.
-                isCompleted: false,
-                createdAt: now,
-                updatedAt: now,
-                version: 1,
-                isDeleted: false,
-                timeframe: compound.timeframe,
-                startDate: compound.startDate,
-                endDate: compound.endDate,
-                createdInWizard: true
-            ))
-            for child in compound.children {
-                links.append(CompoundChild(
-                    id: child.linkId,
-                    compoundTaskId: compound.id,
-                    childTaskId: child.childTaskId,
-                    childIndex: child.childIndex,
-                    createdAt: now,
-                    updatedAt: now,
-                    lastSyncedAt: nil,
-                    version: 1,
-                    isDeleted: false,
-                    deletedAt: nil
-                ))
-            }
-        }
-
-        return DerivedRows(tasks: tasks, links: links)
     }
 }
