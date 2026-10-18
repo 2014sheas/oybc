@@ -1,6 +1,11 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useAuth } from '../../firebase/useAuth';
-import { isOfflineError } from '../../firebase/authService';
+import {
+  isOfflineError,
+  passwordResetSentStatus,
+  sendPasswordReset,
+  signInErrorMessage,
+} from '../../firebase/authService';
 import { useModalA11y } from '../../hooks/useModalA11y';
 import { RisoButton } from '../riso';
 import { ModalArt } from './SignedOutArt';
@@ -37,6 +42,9 @@ export function SignInModal({ mode, onClose, onSwitchMode }: SignInModalProps): 
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  /** Address a "Forgot password?" reset went to; null hides the status line. */
+  const [resetSentTo, setResetSentTo] = useState<string | null>(null);
+  const emailRef = useRef<HTMLInputElement>(null);
   const isUp = mode === 'signup';
 
   // aria-modal, Escape → close, Tab trap, focus restore.
@@ -52,9 +60,10 @@ export function SignInModal({ mode, onClose, onSwitchMode }: SignInModalProps): 
     cardRef.current?.focus();
   }, [cardRef]);
 
-  // Clear a stale error when the user toggles sign-in ↔ sign-up.
+  // Clear a stale error / reset status when the user toggles sign-in ↔ sign-up.
   useEffect(() => {
     setError(null);
+    setResetSentTo(null);
   }, [mode]);
 
   // Lock background scroll while the modal is open (restored on close).
@@ -67,14 +76,13 @@ export function SignInModal({ mode, onClose, onSwitchMode }: SignInModalProps): 
   }, []);
 
   /**
-   * Run an auth action with shared busy/error handling. `mapError` lets a
-   * caller override the fallback message for a specific error (e.g. the
-   * guest button's offline copy) — return null to fall through to the
-   * default `err.message`/`fallback` handling.
+   * Run an auth action with shared busy/error handling. Errors show as
+   * `signInErrorMessage` copy (a closed popup shows nothing); `mapError` lets
+   * a caller override it for a specific error (e.g. the guest button's
+   * offline copy) — return null to fall through to the default.
    */
   async function run(
     action: () => Promise<unknown>,
-    fallback: string,
     mapError?: (err: unknown) => string | null
   ): Promise<void> {
     if (busy) return;
@@ -82,10 +90,10 @@ export function SignInModal({ mode, onClose, onSwitchMode }: SignInModalProps): 
     setBusy(true);
     try {
       await action();
-      // On success the gate unmounts us; no further state work needed.
+      // A sign-in success unmounts us (the gate swaps trees); a reset sets
+      // its own status inside `action`.
     } catch (err) {
-      const mapped = mapError?.(err) ?? null;
-      setError(mapped ?? (err instanceof Error ? err.message : fallback));
+      setError(mapError?.(err) ?? signInErrorMessage(err));
     } finally {
       setBusy(false);
     }
@@ -93,11 +101,23 @@ export function SignInModal({ mode, onClose, onSwitchMode }: SignInModalProps): 
 
   function handleEmailSubmit(e: React.FormEvent): void {
     e.preventDefault();
+    setResetSentTo(null);
     const trimmed = email.trim();
-    void run(
-      () => (isUp ? signUp(trimmed, password) : signIn(trimmed, password)),
-      isUp ? 'Could not create account' : 'Could not sign in'
-    );
+    void run(() => (isUp ? signUp(trimmed, password) : signIn(trimmed, password)));
+  }
+
+  /**
+   * "Forgot password?" — send a reset link to the typed email. An empty or
+   * malformed address gets the email field's own validation message, exactly
+   * like submitting the form; the confirmation reads the same whether or not
+   * an account uses the address (`sendPasswordReset` is enumeration-safe).
+   */
+  function handleForgotPassword(): void {
+    if (busy || !emailRef.current?.reportValidity()) return;
+    setResetSentTo(null);
+    void run(async () => {
+      setResetSentTo(await sendPasswordReset(email));
+    });
   }
 
   return (
@@ -125,7 +145,7 @@ export function SignInModal({ mode, onClose, onSwitchMode }: SignInModalProps): 
             size="large"
             fullWidth
             disabled={busy}
-            onClick={() => void run(signInWithApple, 'Apple sign-in failed')}
+            onClick={() => void run(signInWithApple)}
           >
             Continue with Apple
           </RisoButton>
@@ -134,7 +154,7 @@ export function SignInModal({ mode, onClose, onSwitchMode }: SignInModalProps): 
             size="large"
             fullWidth
             disabled={busy}
-            onClick={() => void run(signInWithGoogle, 'Google sign-in failed')}
+            onClick={() => void run(signInWithGoogle)}
           >
             Continue with Google
           </RisoButton>
@@ -148,13 +168,17 @@ export function SignInModal({ mode, onClose, onSwitchMode }: SignInModalProps): 
               Email
             </label>
             <input
+              ref={emailRef}
               id="so-auth-email"
               className={styles.soInput}
               type="email"
               placeholder="you@example.com"
               autoComplete="email"
               value={email}
-              onChange={(e) => setEmail(e.target.value)}
+              onChange={(e) => {
+                setEmail(e.target.value);
+                setResetSentTo(null);
+              }}
               required
             />
           </div>
@@ -175,7 +199,23 @@ export function SignInModal({ mode, onClose, onSwitchMode }: SignInModalProps): 
             />
           </div>
 
+          {!isUp && (
+            <button
+              type="button"
+              className={styles.soForgot}
+              onClick={handleForgotPassword}
+              disabled={busy}
+            >
+              Forgot password?
+            </button>
+          )}
+
           {error && <div className={styles.soError}>{error}</div>}
+          {!isUp && !error && resetSentTo && (
+            <div className={styles.soStatus} role="status">
+              {passwordResetSentStatus(resetSentTo)}
+            </div>
+          )}
 
           <RisoButton kind="primary" size="large" fullWidth type="submit" disabled={busy}>
             {busy ? 'Please wait…' : isUp ? 'Create account' : 'Continue with email'}
@@ -195,10 +235,8 @@ export function SignInModal({ mode, onClose, onSwitchMode }: SignInModalProps): 
             fullWidth
             disabled={busy}
             onClick={() =>
-              void run(
-                signInAnonymously,
-                'Could not continue as a guest',
-                (err) => (isOfflineError(err) ? GUEST_OFFLINE_MESSAGE : null)
+              void run(signInAnonymously, (err) =>
+                isOfflineError(err) ? GUEST_OFFLINE_MESSAGE : null
               )
             }
           >

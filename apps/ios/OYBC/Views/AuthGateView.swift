@@ -16,6 +16,11 @@ import FirebaseAuth
 /// ```
 struct AuthGateView<Content: View>: View {
     @ObservedObject var authService: AuthService
+    /// Mode the login form opens in when it first appears: true = "Create an
+    /// account" (a first-run user arriving from onboarding), false = "Welcome
+    /// back". Read only when the form is created; a later change (onboarding
+    /// finishing) doesn't flip a form already on screen.
+    var loginStartsInCreateAccount: Bool = false
     @StateObject private var networkMonitor = NetworkMonitor()
     @StateObject private var tutorialStore = TutorialProgressStore()
     let content: () -> Content
@@ -33,7 +38,7 @@ struct AuthGateView<Content: View>: View {
                     .environmentObject(networkMonitor)
                     .environmentObject(tutorialStore)
             } else {
-                LoginView(authService: authService)
+                LoginView(authService: authService, startsInCreateAccount: loginStartsInCreateAccount)
             }
         }
     }
@@ -66,12 +71,23 @@ private struct LoginView: View {
 
     @State private var email: String = ""
     @State private var password: String = ""
-    @State private var isCreatingAccount: Bool = false
+    @State private var isCreatingAccount: Bool
     @State private var isSubmitting: Bool = false
     @State private var errorMessage: String?
+    /// "Reset link sent to …" after a "Forgot password?" send; cleared when the
+    /// email, the mode, or the next submission changes the context.
+    @State private var statusMessage: String?
 
     // Apple Sign-In nonce — generated fresh per request.
     @State private var currentNonce: String?
+
+    /// - Parameters:
+    ///   - authService: The shared auth service.
+    ///   - startsInCreateAccount: Open in "Create an account" mode (first run).
+    init(authService: AuthService, startsInCreateAccount: Bool) {
+        self.authService = authService
+        _isCreatingAccount = State(initialValue: startsInCreateAccount)
+    }
 
     var body: some View {
         NavigationStack {
@@ -111,6 +127,8 @@ private struct LoginView: View {
         VStack(spacing: 14) {
             if let errorMessage {
                 errorBanner(errorMessage)
+            } else if let statusMessage {
+                statusBanner(statusMessage)
             }
 
             RisoTextField(placeholder: "Email", text: $email)
@@ -118,12 +136,17 @@ private struct LoginView: View {
                 .textContentType(.emailAddress)
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
+                .onChange(of: email) { _, _ in statusMessage = nil }
 
             RisoSecureField(
                 placeholder: "Password",
                 text: $password,
                 textContentType: isCreatingAccount ? .newPassword : .password
             )
+
+            if !isCreatingAccount {
+                forgotPasswordButton
+            }
 
             RisoButton(
                 title: isSubmitting
@@ -142,6 +165,7 @@ private struct LoginView: View {
                 withAnimation(.easeInOut(duration: 0.2)) {
                     isCreatingAccount.toggle()
                     errorMessage = nil
+                    statusMessage = nil
                 }
             }, label: {
                 Text(
@@ -153,6 +177,21 @@ private struct LoginView: View {
                 .foregroundStyle(Color.risoMuted)
             })
         }
+    }
+
+    /// "Forgot password?" — sends a reset link to the email typed above. Gated
+    /// like "Sign in": disabled while the email field is empty or a request is
+    /// in flight; a malformed address comes back as the form's error banner.
+    private var forgotPasswordButton: some View {
+        let isEmailEmpty = PasswordReset.normalizedEmail(email).isEmpty
+        return SwiftUI.Button("Forgot password?") {
+            _Concurrency.Task { await sendPasswordReset() }
+        }
+        .font(.risoBody(13, .semibold))
+        .foregroundStyle(Color.risoMuted)
+        .frame(maxWidth: .infinity, alignment: .trailing)
+        .disabled(isSubmitting || isEmailEmpty)
+        .opacity(isSubmitting || isEmailEmpty ? 0.55 : 1)
     }
 
     private var dividerSection: some View {
@@ -215,8 +254,10 @@ private struct LoginView: View {
             }
         )
         // Dark mode flips the Riso paper near-black; a `.black` Apple button
-        // would vanish, so use the light glyph there.
+        // would vanish, so use the light glyph there. The system button
+        // doesn't restyle in place, so rebuild it when the scheme flips.
         .signInWithAppleButtonStyle(colorScheme == .dark ? .white : .black)
+        .id(colorScheme)
         .frame(height: 50)
         .disabled(isSubmitting)
     }
@@ -236,11 +277,28 @@ private struct LoginView: View {
         .risoCard(fill: .risoPaper)
     }
 
+    /// One-line confirmation banner (the success twin of `errorBanner`).
+    @ViewBuilder
+    private func statusBanner(_ message: String) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: "checkmark.circle.fill")
+                .foregroundStyle(Color.risoGreen)
+            Text(message)
+                .font(.risoBody(13, .semibold))
+                .foregroundStyle(Color.risoInk)
+            Spacer(minLength: 0)
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .risoCard(fill: .risoPaper)
+    }
+
     // MARK: - Actions
 
     private func submitEmailPassword() async {
         isSubmitting = true
         errorMessage = nil
+        statusMessage = nil
         defer { isSubmitting = false }
 
         do {
@@ -250,7 +308,25 @@ private struct LoginView: View {
                 try await authService.signIn(email: email, password: password)
             }
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = SignInErrorMessage.message(for: error)
+        }
+    }
+
+    /// Sends a password-reset link to the typed email. The confirmation is the
+    /// same whether or not an account uses the address (`AuthService.
+    /// sendPasswordReset(toEmail:)` is enumeration-safe); any other failure
+    /// (malformed address, offline) shows in the error banner.
+    private func sendPasswordReset() async {
+        isSubmitting = true
+        errorMessage = nil
+        statusMessage = nil
+        defer { isSubmitting = false }
+
+        do {
+            let sentTo = try await authService.sendPasswordReset(toEmail: email)
+            statusMessage = PasswordReset.sentStatus(for: sentTo)
+        } catch {
+            errorMessage = SignInErrorMessage.message(for: error)
         }
     }
 
@@ -267,7 +343,8 @@ private struct LoginView: View {
         do {
             try await authService.signInWithGoogle(presenting: rootVC)
         } catch {
-            errorMessage = error.localizedDescription
+            // nil for a cancelled Google sheet — backing out shows nothing.
+            errorMessage = SignInErrorMessage.message(for: error)
         }
     }
 
@@ -282,13 +359,9 @@ private struct LoginView: View {
         do {
             try await authService.signInAnonymously()
         } catch {
-            let ns = error as NSError
-            let offline = ns.code == AuthErrorCode.networkError.rawValue
-                || (ns.domain == NSURLErrorDomain
-                    && [NSURLErrorNotConnectedToInternet, NSURLErrorNetworkConnectionLost, NSURLErrorTimedOut].contains(ns.code))
-            errorMessage = offline
+            errorMessage = SignInErrorMessage.isOffline(error)
                 ? "You're offline. Connect to continue as a guest."
-                : error.localizedDescription
+                : SignInErrorMessage.message(for: error)
         }
     }
 
@@ -306,14 +379,11 @@ private struct LoginView: View {
             do {
                 try await authService.signInWithApple(authorization: authorization, rawNonce: nonce)
             } catch {
-                errorMessage = error.localizedDescription
+                errorMessage = SignInErrorMessage.message(for: error)
             }
         case .failure(let error):
-            // ASAuthorizationError.canceled (1001) is user-initiated; suppress it.
-            let asError = error as? ASAuthorizationError
-            if asError?.code != .canceled {
-                errorMessage = error.localizedDescription
-            }
+            // A cancelled Apple sheet maps to nil — nothing shown.
+            errorMessage = SignInErrorMessage.message(for: error)
         }
     }
 }

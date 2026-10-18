@@ -249,6 +249,28 @@ final class AuthService: ObservableObject {
         return user
     }
 
+    /// Sends a password-reset email from the signed-out login form's
+    /// "Forgot password?" action, to the address typed in the form.
+    ///
+    /// Enumeration-safe: Firebase's `userNotFound` returns normally, exactly
+    /// like a real send, so the form's confirmation never reveals whether an
+    /// account uses the address (`PasswordReset.countsAsSent`). Any other
+    /// failure propagates for the form's normal error banner.
+    ///
+    /// - Parameter email: The email field's text (trimmed here).
+    /// - Returns: The normalized address the reset was sent to.
+    /// - Throws: A Firebase `AuthError` (e.g. `invalidEmail`, `networkError`).
+    @discardableResult
+    func sendPasswordReset(toEmail email: String) async throws -> String {
+        let normalized = PasswordReset.normalizedEmail(email)
+        do {
+            try await authClient.sendPasswordReset(email: normalized)
+        } catch where PasswordReset.countsAsSent(error) {
+            // No account for this address — report it exactly like a send.
+        }
+        return normalized
+    }
+
     // MARK: - Guest (anonymous)
 
     /// Signs in as a guest via Firebase anonymous auth (docs/GUEST_MODE.md).
@@ -588,7 +610,82 @@ final class AuthService: ObservableObject {
 
     // MARK: - Account & Security: delete account
 
-    /// Permanently deletes the account and all of its data.
+    /// True when deleting the signed-in account must go through
+    /// `deleteAccountRevokingApple` — it has Sign in with Apple linked
+    /// (`AppleTokenRevocation.isRequired`), however the user signed in. Read
+    /// from the live Firebase user, not the published `providerState`, so a
+    /// stale UI state can't route an Apple account past the revoke.
+    var deleteRequiresAppleRevocation: Bool {
+        AppleTokenRevocation.isRequired(providerIDs: authClient.currentUserSnapshot?.providerIDs ?? [])
+    }
+
+    /// Permanently deletes an account that has NO Sign in with Apple linked
+    /// (password / Google accounts, and the guest "Discard guest data" path).
+    /// Requires recent login (throws `requiresRecentLogin` → the caller
+    /// reauthenticates and retries). See `performAccountDeletion` for the
+    /// load-bearing ordering.
+    ///
+    /// - Throws: `AuthServiceError.noCurrentUser`;
+    ///   `AuthServiceError.appleRevocationRequired` when the account has Apple
+    ///   linked (use `deleteAccountRevokingApple` — App Store 5.1.1(v)); or the
+    ///   Firebase delete error.
+    func deleteAccount() async throws {
+        guard authClient.currentUserSnapshot != nil else { throw AuthServiceError.noCurrentUser }
+        guard !deleteRequiresAppleRevocation else { throw AuthServiceError.appleRevocationRequired }
+        try await performAccountDeletion()
+    }
+
+    /// Permanently deletes an account that has Sign in with Apple linked,
+    /// revoking its Apple token first (App Store 5.1.1(v)). The fresh Apple
+    /// authorization IS the delete's reauth: its identity token refreshes login
+    /// recency and its single-use `authorizationCode` revokes the token.
+    ///
+    /// - Parameters:
+    ///   - authorization: The `ASAuthorization` from a fresh Apple request.
+    ///   - rawNonce: The raw nonce that request was built with.
+    /// - Throws: `.invalidAppleCredential` / `.missingAppleAuthorizationCode`
+    ///   for an unusable authorization, plus everything the
+    ///   `(credential:authorizationCode:)` core throws.
+    func deleteAccountRevokingApple(authorization: ASAuthorization, rawNonce: String) async throws {
+        let credential = try appleCredential(from: authorization, rawNonce: rawNonce)
+        let appleID = authorization.credential as? ASAuthorizationAppleIDCredential
+        guard let code = AppleTokenRevocation.authorizationCodeString(from: appleID?.authorizationCode) else {
+            throw AuthServiceError.missingAppleAuthorizationCode
+        }
+        try await deleteAccountRevokingApple(credential: credential, authorizationCode: code)
+    }
+
+    /// Core of the Apple delete: reauthenticate → revoke → delete. Internal so
+    /// tests can drive it with a fake `AuthClient`. The order is forced —
+    /// Firebase's revoke needs a signed-in user, so it can't follow `delete()`.
+    /// - Reauth fails → nothing changed; the error propagates.
+    /// - Revoke fails → the account is NOT deleted (intact, Apple still linked)
+    ///   and `appleRevocationFailed` propagates; the user just retries. Never a
+    ///   deleted account whose Apple token survives.
+    /// - Revoke succeeds, `delete()` fails (e.g. offline) → the error
+    ///   propagates and nothing local is wiped. The account survives with Apple
+    ///   linked; Apple only asks for consent again on the next Sign in with
+    ///   Apple, which lands in the same account. A retry runs a fresh
+    ///   authorization end to end.
+    ///
+    /// - Parameters:
+    ///   - credential: Firebase credential built from the fresh Apple authorization.
+    ///   - authorizationCode: That authorization's UTF-8 decoded code.
+    /// - Throws: `.noCurrentUser`, the reauth error, `.appleRevocationFailed`,
+    ///   or the delete error.
+    func deleteAccountRevokingApple(credential: AuthCredential, authorizationCode: String) async throws {
+        guard authClient.currentUserSnapshot != nil else { throw AuthServiceError.noCurrentUser }
+        try await authClient.reauthenticateCurrentUser(with: credential)
+        do {
+            try await authClient.revokeAppleToken(authorizationCode: authorizationCode)
+        } catch {
+            dlog("⚠️ AuthService.deleteAccountRevokingApple: Apple token revoke failed, account NOT deleted: \(error)")
+            throw AuthServiceError.appleRevocationFailed
+        }
+        try await performAccountDeletion()
+    }
+
+    /// Deletes the Auth user, then tears down and wipes everything local.
     ///
     /// Ordering is load-bearing: the Firebase Auth user is deleted FIRST. That's
     /// the only step that can fail for auth reasons (`requiresRecentLogin` → the
@@ -599,11 +696,9 @@ final class AuthService: ObservableObject {
     /// `users/{uid}` doc — client rules forbid it). We then tear down local
     /// sync/observers BEFORE wiping the device DB so nothing re-pushes (which
     /// would resurrect the just-purged Firestore data) or observes mid-delete.
-    func deleteAccount() async throws {
-        guard let user = Auth.auth().currentUser else { throw AuthServiceError.noCurrentUser }
-
+    private func performAccountDeletion() async throws {
         // 1. Delete the Auth user (→ server-side `onUserDeleted` purges Firestore).
-        try await user.delete()
+        try await authClient.deleteCurrentUser()
 
         // 2. Stop sync/observers before the local wipe so nothing re-pulls or
         //    re-pushes during teardown (the auth-state listener also does this,
@@ -839,6 +934,14 @@ enum AuthServiceError: LocalizedError {
     case noCurrentUser
     case cannotUnlinkLastProvider
     case syncQueueClearFailed
+    /// Apple's authorization carried no usable `authorizationCode`, so the
+    /// Apple token can't be revoked — the account is not deleted.
+    case missingAppleAuthorizationCode
+    /// Revoking the Sign in with Apple token failed — the account is not deleted.
+    case appleRevocationFailed
+    /// `deleteAccount()` was called for an account with Apple linked; it must
+    /// go through `deleteAccountRevokingApple` (App Store 5.1.1(v)).
+    case appleRevocationRequired
 
     var errorDescription: String? {
         switch self {
@@ -852,6 +955,10 @@ enum AuthServiceError: LocalizedError {
             return "You can't remove your only sign-in method. Add another first."
         case .syncQueueClearFailed:
             return "Couldn't sign out safely — local changes couldn't be cleared. Try again."
+        case .missingAppleAuthorizationCode, .appleRevocationFailed:
+            return "Couldn't disconnect Apple, so your account wasn't deleted. Try again."
+        case .appleRevocationRequired:
+            return "Confirm with Apple to delete this account."
         }
     }
 }

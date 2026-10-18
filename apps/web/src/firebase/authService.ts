@@ -3,6 +3,7 @@ import {
   signInWithEmailAndPassword,
   signInWithPopup,
   signInAnonymously as firebaseSignInAnonymously,
+  sendPasswordResetEmail,
   signOut as firebaseSignOut,
   onAuthStateChanged as firebaseOnAuthStateChanged,
   updateProfile,
@@ -87,6 +88,52 @@ export async function signIn(email: string, password: string): Promise<User> {
 }
 
 /**
+ * True when a `sendPasswordResetEmail` failure must still read as "sent":
+ * `auth/user-not-found`, which would otherwise reveal that no account uses the
+ * address. (With Firebase email-enumeration protection on, the server never
+ * returns it; this keeps the form safe when it is off.) Mirrors iOS
+ * `PasswordReset.countsAsSent`.
+ *
+ * @param error - The error `sendPasswordResetEmail` rejected with
+ * @returns True when the caller should report success
+ */
+export function resetErrorCountsAsSent(error: unknown): boolean {
+  return (error as { code?: string } | undefined)?.code === 'auth/user-not-found';
+}
+
+/**
+ * The status line the sign-in form shows after a reset send, e.g.
+ * "Reset link sent to alex@example.com". Mirrors iOS `PasswordReset.sentStatus`.
+ *
+ * @param email - The trimmed address the reset went to
+ * @returns The one-line confirmation
+ */
+export function passwordResetSentStatus(email: string): string {
+  return `Reset link sent to ${email}`;
+}
+
+/**
+ * Send a password-reset email from the signed-out sign-in form's
+ * "Forgot password?" action. Enumeration-safe: `auth/user-not-found` resolves
+ * exactly like a real send, so the confirmation never reveals whether an
+ * account uses the address. Mirrors iOS `AuthService.sendPasswordReset(toEmail:)`.
+ *
+ * @param email - The email field's value (trimmed here)
+ * @returns The trimmed address the reset was sent to
+ * @throws The Firebase error for any other failure (e.g. `auth/invalid-email`,
+ *   `auth/network-request-failed`) — the form shows it like any auth error
+ */
+export async function sendPasswordReset(email: string): Promise<string> {
+  const normalized = email.trim();
+  try {
+    await sendPasswordResetEmail(auth, normalized);
+  } catch (err) {
+    if (!resetErrorCountsAsSent(err)) throw err;
+  }
+  return normalized;
+}
+
+/**
  * Sign in with Google via popup.
  *
  * @returns The local User record
@@ -133,6 +180,45 @@ export async function signInAnonymously(): Promise<User> {
  */
 export function isOfflineError(error: unknown): boolean {
   return (error as { code?: string } | undefined)?.code === 'auth/network-request-failed';
+}
+
+/** Sign-in surface copy, keyed by Firebase auth error code. A wrong password
+ *  and an unknown address read the same (no account enumeration); the shared
+ *  lines mirror `friendlyError` in `accountSecurity.ts`. */
+const SIGN_IN_ERROR_MESSAGES: Readonly<Record<string, string>> = {
+  'auth/invalid-credential': 'Incorrect email or password.',
+  'auth/invalid-login-credentials': 'Incorrect email or password.',
+  'auth/wrong-password': 'Incorrect email or password.',
+  'auth/user-not-found': 'Incorrect email or password.',
+  'auth/invalid-email': 'That email address looks invalid.',
+  'auth/email-already-in-use': 'That email is already in use by another account.',
+  'auth/weak-password': 'Pick a stronger password (at least 6 characters).',
+  'auth/too-many-requests': 'Too many attempts. Try again later.',
+  'auth/user-disabled': 'This account has been disabled.',
+  'auth/network-request-failed': 'You’re offline. Connect and try again.',
+  'auth/popup-blocked':
+    'Your browser blocked the sign-in popup — allow popups for this site, then try again.',
+};
+
+/** Codes for a popup the user closed themselves — nothing to report. */
+const SIGN_IN_CANCELLED_CODES = new Set([
+  'auth/popup-closed-by-user',
+  'auth/cancelled-popup-request',
+  'auth/user-cancelled',
+]);
+
+/**
+ * User-facing copy for an error on the signed-out sign-in form — never
+ * Firebase's raw message. Mirrors iOS `SignInErrorMessage.message(for:)`.
+ *
+ * @param error - The error a sign-in / sign-up / reset / popup call threw
+ * @returns The message to show, or null when the user closed the provider
+ *   popup themselves (a cancellation shows nothing)
+ */
+export function signInErrorMessage(error: unknown): string | null {
+  const code = (error as { code?: string } | undefined)?.code;
+  if (code && SIGN_IN_CANCELLED_CODES.has(code)) return null;
+  return (code && SIGN_IN_ERROR_MESSAGES[code]) || 'Something went wrong. Please try again.';
 }
 
 /**

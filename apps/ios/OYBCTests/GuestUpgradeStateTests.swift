@@ -25,6 +25,12 @@ private final class FakeAuthClient: AuthClient {
     }
 
     func reloadCurrentUser() async throws {}
+
+    // Not exercised by these tests (see AuthRecoveryAndRevocationTests).
+    func sendPasswordReset(email: String) async throws {}
+    func reauthenticateCurrentUser(with credential: AuthCredential) async throws {}
+    func revokeAppleToken(authorizationCode: String) async throws {}
+    func deleteCurrentUser() async throws {}
 }
 
 /// Guest-mode stateful invariants (docs/GUEST_MODE.md, CLAUDE.md §Guest Mode):
