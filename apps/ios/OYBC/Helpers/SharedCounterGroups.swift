@@ -9,7 +9,7 @@ import Foundation
 // A "counter" = one SOURCE counting task (a task with ≥1 live task linking
 // to it via `sharedCounterId`) + every task that links to it. The source
 // task's `currentCount` is the lifetime total; each member's displayed value
-// is derived via `deriveDisplayedCount` (SharedCounter.swift).
+// is resolved from the root's events (or the lifetime total with none).
 //
 // Keep in sync with the TS source. The 11 test cases in
 // `OYBCTests/SharedCounterGroupsTests.swift` mirror those in
@@ -337,13 +337,8 @@ func buildSharedCounterGroups(
                     task: task, eventsByTaskId: eventsByTaskId, sealedAt: board.sealedAt, window: hostWindow
                 ).displayed
             } else {
-                // No events supplied: the library's lifetime arithmetic (source baseline 0).
-                displayed = deriveDisplayedCount(
-                    derivedBaseline: isSource ? 0 : (task.baseline ?? 0),
-                    derivedMaxCount: goal,
-                    sourceCurrentCount: lifetime,
-                    countKind: task.countKind
-                ).displayed
+                // No events supplied: the root's lifetime total (`baseline` is never read).
+                displayed = finalizeWindowCount(lifetime, kind: resolveCountKind(task.countKind))
             }
             boardIdSet.insert(board.id)
             memberTaskIds.insert(task.id)

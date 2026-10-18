@@ -322,9 +322,9 @@ final class AppDatabaseCounterLogOpsTests: XCTestCase {
         XCTAssertEqual(fetched.completedAt, completedAt)
     }
 
-    // MARK: - undoLastCounterLog: linked-task propagation
+    // MARK: - undoLastCounterLog: linked tasks are not written
 
-    func test_undo_propagatesToLinkedTasks() throws {
+    func test_undo_neverWritesLinkedTasks() throws {
         let db = try makeDb()
         try seedUser(db)
         let source = makeSourceTask(id: "src-link", currentCount: 20, maxCount: 100)
@@ -336,7 +336,8 @@ final class AppDatabaseCounterLogOpsTests: XCTestCase {
         _ = try db.undoLastCounterLog(sourceTaskId: "src-link")
 
         let fetchedLinked = try XCTUnwrap(try db.read { try Task.fetchOne($0, key: "lnk-1") })
-        XCTAssertEqual(fetchedLinked.currentCount, 15, "linked task must mirror the corrected source count")
+        XCTAssertEqual(fetchedLinked.version, linked.version, "a linked row is never written by an undo")
+        XCTAssertEqual(fetchedLinked.currentCount, linked.currentCount)
     }
 
     // MARK: - undoLastCounterLog: affectedBoards
@@ -441,7 +442,7 @@ final class AppDatabaseCounterLogOpsTests: XCTestCase {
         XCTAssertEqual(try db.fetchTask(id: "c1")?.currentCount, 0.3)
     }
 
-    func test_propagation_keepsContinuousLinkedFraction() throws {
+    func test_continuousLinkedFraction_readsFromTheRootsEvents() throws {
         let db = try makeDb()
         try seedUser(db)
         var root = makeSourceTask(id: "r1", currentCount: 0, maxCount: 10)
@@ -454,8 +455,7 @@ final class AppDatabaseCounterLogOpsTests: XCTestCase {
         _ = try db.incrementSharedCounter(sourceTaskId: "r1", by: 0.5)
 
         let after = try XCTUnwrap(try db.fetchTask(id: "l1"))
-        XCTAssertEqual(after.currentCount, 0.5)
-        XCTAssertFalse(after.isCompleted, "0.5 of 1 must not round up to complete")
+        XCTAssertEqual(after.version, linked.version, "a linked row is never written")
         let events = try db.read { dbc in try TaskEvent.filter(Column("taskId") == "r1").fetchAll(dbc) }
         XCTAssertEqual(
             TaskCountDisplay.displayedCount(for: after, eventsByTaskId: Dictionary(grouping: events, by: \.taskId)), 0.5

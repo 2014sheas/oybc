@@ -7,11 +7,8 @@ import {
   TaskType,
   boardWindowEnd,
   isEventSealImmune,
-  isFrozenDerivedRow,
   isQuantizedCount,
   quantizeCount,
-  isFrozenRowReachedByEvent,
-  propagateIncrement,
   resolveTaskWindowState,
   selectLastIncrementEntry,
 } from '@oybc/shared';
@@ -19,7 +16,7 @@ import { currentTimestamp } from '../utils';
 import { addToSyncQueue } from './syncQueue';
 import { runBoardCascadeForTasks } from './orchestration';
 import { insertIncrementEventRaw, lateLogStampForBoard, getSealImmuneWindowsForTask } from './taskEvents';
-import { refreshDerivedBaselines } from './derivedCounters';
+import { loadPlacementReach } from './placementReach';
 import { isBoardCreditable } from '../../utils/boardDisplayUtils';
 import { reDeriveSealedBoardsForTasks } from './sealing';
 import { resolveAffectedBoardIds, refreshWatchersForBoards } from './boardLifecycle';
@@ -31,176 +28,68 @@ export interface AffectedBoard {
 }
 
 /**
- * Shared tail of increment / decrement / undo: re-derive every LIVE linked
- * row of `sourceTaskId` from `newSourceCount`, write + enqueue each as an
- * authored update, collect the ACTIVE boards to credit, and run ONE batched
- * board cascade for the source plus those rows.
- *
- * Propagation freeze (docs/WINDOWED_COMPLETION.md §Derived-task carve-out,
- * docs/BOARD_SOURCES.md §Plan B2 notes): a window-stamped derived row whose
- * window has ended (`isFrozenDerivedRow`) gets no authored write, no enqueue
- * and no credit. The kernel resolves such rows from the root's in-window
- * events, not the latch; an increment / decrement normally stamps its event
- * `now` (after every frozen window), so it cannot change a frozen row's
- * completion and the row is left out of the cascade too — each "+1" is
- * bounded to the rows whose windows are still open. Two events CAN land
- * inside a frozen row's window (`reachOccurredAt`): an UNDO tombstones an
- * EARLIER event, and a LATE LOG from an ended board's own surface is stamped
- * at that board's `endDate` (`lateLogOccurredAt`, 2026-09-24 amendment of WC
- * Decision 1). Either DOES change that row's kernel sum: those rows
- * (`isFrozenRowReachedByEvent`) join the cascade set — cascade only, still no
- * write / enqueue — so their boards' stored stats follow the event.
- * Hub-linked rows (no `startDate`), indefinite rows and in-window rows
- * propagate as before.
+ * Shared tail of increment / decrement / undo / late log: the root's event
+ * log just moved. Every live linked row resolves from those events on its
+ * board (TASK_WINDOW_REWORK slice 5 — nothing is written to a linked row), so
+ * this collects the ACTIVE boards to credit, runs ONE batched board cascade
+ * for the root and its linked rows, and — for an event stamped away from
+ * `now` (a late log at an ended board's `endDate`) — re-derives the sealed
+ * boards whose window may hold it and refreshes their watchers.
  *
  * Must run inside the caller's `rw` transaction covering `tasks`,
  * `taskEvents`, `boards`, `boardTasks`, `compoundChildren` and `syncQueue`.
  *
- * @param sourceTaskId     The shared-counter root whose count just changed.
- * @param newSourceCount   The root's `currentCount` after the change.
- * @param now              The operation's ISO8601 timestamp (also the freeze clock).
- * @param reachOccurredAt  The `occurredAt` of the event this operation wrote or
- *   tombstoned (a `now` stamp reaches no frozen row, so passing it is inert).
- * @returns The live ACTIVE boards placing the source or an unfrozen linked row,
- *   read BEFORE the cascade rewrites board status.
+ * @param sourceTaskId     The shared-counter root whose events just moved.
+ * @param now              The operation's ISO8601 timestamp.
+ * @param reachOccurredAt  The `occurredAt` of the event this operation wrote
+ *   or tombstoned, when known.
+ * @returns The live ACTIVE boards placing the root or a linked row, read
+ *   BEFORE the cascade rewrites board status.
  */
-export async function propagateToLinkedRows(
+export async function runCounterRootCascade(
   sourceTaskId: string,
-  newSourceCount: number,
   now: string,
   reachOccurredAt?: string,
 ): Promise<AffectedBoard[]> {
-  const { linkedIds, reachedFrozenIds } = await writeLinkedRowPropagation(
-    sourceTaskId,
-    newSourceCount,
-    now,
-    reachOccurredAt,
-  );
+  const reach = await loadPlacementReach([sourceTaskId]);
+  const changedIds = [...reach.taskIds];
 
-  // Collect ACTIVE boards containing the source + any UNFROZEN linked task
-  // BEFORE the cascade rewrites board stats/status — the "also counted" toast set.
-  const allChangedTaskIds = [sourceTaskId, ...linkedIds];
-  const placements = await db.boardTasks
-    .where('taskId').anyOf(allChangedTaskIds)
-    .filter((bt) => !bt.isDeleted)
-    .toArray();
-  const uniqueBoardIds = [...new Set(placements.map((p) => p.boardId))];
-  const boardRows = uniqueBoardIds.length > 0
-    ? await db.boards.where('id').anyOf(uniqueBoardIds).toArray()
-    : [];
+  // The "also counted" toast set: boards placing the root or a linked row
+  // directly, read BEFORE the cascade rewrites board stats/status.
+  const directBoardIds = new Set(
+    reach.placements.filter((p) => p.viaCompoundId == null).map((p) => p.boardTask.boardId),
+  );
+  const boardRows = directBoardIds.size > 0 ? await db.boards.where('id').anyOf([...directBoardIds]).toArray() : [];
   const affectedBoards: AffectedBoard[] = boardRows
-    // Windowed linked counters: a sealed (Closed) or ended board cannot change,
-    // so it is never credited (`status` alone leaves a closed board `.active`).
+    // A sealed (Closed) or ended board cannot change, so it is never credited.
     .filter((b) => isBoardCreditable(b, new Date(now)))
     .map((b) => ({ boardId: b.id, boardName: b.name }));
 
-  // ONE batched cascade: lookups + window context built once, each affected
-  // board recomputed once (it reads the rows written above, same transaction).
-  // Its per-board result map is not needed — credit comes from the pre-read above.
-  await runBoardCascadeForTasks([...allChangedTaskIds, ...reachedFrozenIds]);
+  await runBoardCascadeForTasks(changedIds);
 
   // One late-log tail (TASK_WINDOW_REWORK slice 0): an event stamped at an
-  // ended board's `endDate` (`reachOccurredAt !== now`) can land inside a
-  // SEALED containing board's window (a closed weekly around an ended daily).
-  // The live cascade above skips sealed boards, and only the pull path on
-  // the OTHER device re-derived them — so the sealed record diverged across
-  // devices. Re-derive them here, then refresh watchers, exactly as undo
-  // does (iOS twin: `runSharedCounterCascade(lateLogStamp:)`).
+  // ended board's `endDate` can land inside a SEALED containing board's
+  // window; the live cascade skips sealed boards (iOS twin:
+  // `runSharedCounterCascade(lateLogStamp:)`).
   if (reachOccurredAt != null && reachOccurredAt !== now) {
-    const reached = [...allChangedTaskIds, ...reachedFrozenIds];
-    await reDeriveSealedBoardsForTasks(reached);
-    const touched = await resolveAffectedBoardIds(reached);
-    if (touched.size > 0) await refreshWatchersForBoards(touched);
+    await reDeriveSealedBoardsForTasks(changedIds);
+    if (reach.boardIds.size > 0) await refreshWatchersForBoards(reach.boardIds);
   }
 
   return affectedBoards;
 }
 
 /**
- * The WRITE half of {@link propagateToLinkedRows}, with no board cascade:
- * re-derive and write (authored, enqueued) every live unfrozen linked row of
- * `sourceTaskId` from `newSourceCount`, and name the frozen rows whose window
- * holds `reachOccurredAt`. The counts-toward hook uses it so the caller's ONE
- * board pass derives the copies' boards too (docs/SHARED_COUNTER_SETTINGS.md §3b).
- *
- * Same transaction contract as {@link propagateToLinkedRows}.
- *
- * @param sourceTaskId    The shared-counter root whose count just changed.
- * @param newSourceCount  The root's `currentCount` after the change.
- * @param now             The operation's ISO8601 timestamp (also the freeze clock).
- * @param reachOccurredAt The moved event's `occurredAt`, if any.
- * @returns The written linked row ids and the frozen rows to cascade only.
- */
-export async function writeLinkedRowPropagation(
-  sourceTaskId: string,
-  newSourceCount: number,
-  now: string,
-  reachOccurredAt?: string,
-): Promise<{ linkedIds: string[]; reachedFrozenIds: string[] }> {
-  // Indexed read (the `sharedCounterId` index exists since Dexie v11), then
-  // drop tombstones; split off the rows whose window has ended.
-  const linkedRows = await db.tasks
-    .where('sharedCounterId')
-    .equals(sourceTaskId)
-    .filter((t) => !t.isDeleted)
-    .toArray();
-  const linkedTasks = linkedRows.filter((t) => !isFrozenDerivedRow(t, now));
-  // Undo across the window end / late log into an ended window — cascade-only
-  // reach into frozen rows whose window holds the event.
-  const reachedFrozenIds =
-    reachOccurredAt === undefined
-      ? []
-      : linkedRows.filter((t) => isFrozenRowReachedByEvent(t, reachOccurredAt, now)).map((t) => t.id);
-
-  const propagationResults = propagateIncrement(
-    { currentCount: newSourceCount },
-    linkedTasks.map((t) => ({
-      id: t.id,
-      baseline: t.baseline,
-      maxCount: t.maxCount,
-      isCompleted: t.isCompleted,
-      countKind: t.countKind,
-    })),
-  );
-
-  for (const result of propagationResults) {
-    const linkedTask = linkedTasks.find((t) => t.id === result.taskId);
-    if (!linkedTask) continue;
-
-    const wasCompleted = linkedTask.isCompleted;
-    const nowCompleted = result.newIsCompleted; // one-way latch applied by propagateIncrement
-
-    const linkedPatch: Partial<Task> = {
-      currentCount: result.newCurrentCount,
-      isCompleted: nowCompleted,
-      completedAt: !wasCompleted && nowCompleted ? now : linkedTask.completedAt,
-      updatedAt: now,
-      version: (linkedTask.version ?? 0) + 1,
-    };
-    await db.tasks.update(result.taskId, linkedPatch);
-    const savedLinked = await db.tasks.get(result.taskId);
-    if (savedLinked) {
-      await addToSyncQueue('tasks', result.taskId, SyncOperationType.UPDATE, savedLinked, 0);
-    }
-  }
-
-  return { linkedIds: linkedTasks.map((t) => t.id), reachedFrozenIds };
-}
-
-/**
  * Phase 3 — Shared Counters increment hot-path.
  *
- * Increments the source task's `currentCount` by `by` (default 1), then
- * re-derives every live linked task (tasks where `sharedCounterId === sourceTaskId`,
- * `!isDeleted`, and not a window-stamped derived row whose window has ended —
- * see {@link propagateToLinkedRows}) and runs ONE batched board derivation
- * cascade for the source AND those linked tasks — all inside one Dexie
- * transaction.
+ * Increments the source task's `currentCount` by `by` (default 1), appends
+ * the increment event, and runs ONE batched board derivation cascade for the
+ * source and its live linked rows (which resolve from the source's events —
+ * see {@link runCounterRootCascade}) — all inside one Dexie transaction. An
+ * increment writes the root alone: no linked-row write, no sync item for a copy.
  *
  * Invariants enforced:
  *   - NO HIGH-END CLAMP on the source's `currentCount`. Overshoot is intentional.
- *   - ONE-WAY LATCH on each linked task's `isCompleted`: once `true`, stays
- *     `true` regardless of the re-derived value.
  *   - All writes (task rows + board cascade + sync entries) are atomic. A
  *     partial failure rolls back everything.
  *
@@ -277,28 +166,15 @@ export async function incrementSharedCounter(
         await addToSyncQueue('tasks', sourceTaskId, SyncOperationType.UPDATE, savedSource, 0);
       }
 
-      // Windowed Completion (docs §Write paths — "incrementSharedCounter …
-      // becomes append-event-on-source + propagation-stamp of derived tasks").
-      // Append a +by increment event on the SOURCE only (derived tasks are
-      // carved out — they never own events). Raw append, no cache restamp: the
+      // Windowed Completion: append a +by increment event on the SOURCE only
+      // (linked rows never own events). Raw append, no cache restamp: the
       // source's lifetime `currentCount` is already written authoritatively
       // above and equals the lifetime event sum.
       const occurredAt = await lateLogStampForBoard(boardId, now);
       await insertIncrementEventRaw(sourceTaskId, by, undefined, now, occurredAt);
 
-      // Board Sources §Member rules (B2) — the root's event log just moved, so
-      // every window-stamped derived counter hanging off it may need a new
-      // `baseline`. Refreshed BEFORE the propagation read below so the derived
-      // rows' displayed counts (and the board cascade at the end of this
-      // transaction) are computed against the corrected boundary rather than a
-      // stale one. Non-authored: `baseline` only, no version bump, no enqueue.
-      // (No `events` argument: neither op has the root's log in hand, so
-      // passing one would mean adding the very read it saves.)
-      await refreshDerivedBaselines(sourceTaskId);
-
-      // 3–7. Propagate to the live linked rows, collect credited boards, and
-      // run ONE batched board cascade (see `propagateToLinkedRows`).
-      const affectedBoards = await propagateToLinkedRows(sourceTaskId, newSourceCount, now, occurredAt);
+      // 3. Collect credited boards and run ONE batched board cascade.
+      const affectedBoards = await runCounterRootCascade(sourceTaskId, now, occurredAt);
 
       return { affectedBoards };
     },
@@ -312,9 +188,8 @@ export async function incrementSharedCounter(
  *     `boardId`, `eff` is further clamped to that board's WINDOW count
  *     (`[startDate, endDate]`) — the count its cell shows.
  *   - If `eff === 0` → no-op, returns `{ affectedBoards: [], effectiveDelta: 0 }`.
- *   - ONE-WAY COMPLETION LATCH is preserved: decrement does NOT un-complete any
- *     task — once `isCompleted` is true it stays true. This is consistent with the
- *     increment engine.
+ *   - The source's ONE-WAY COMPLETION LATCH is preserved: decrement does NOT
+ *     un-complete it (a lifetime cache; boards evaluate events).
  *
  * Returns the DISTINCT live ACTIVE boards containing any member task of the group,
  * and the `effectiveDelta` (positive 2dp number = actual units removed, 0 on no-op).
@@ -408,20 +283,8 @@ export async function decrementSharedCounter(
       const occurredAt = await lateLogStampForBoard(boardId, now);
       await insertIncrementEventRaw(sourceTaskId, -eff, undefined, now, occurredAt);
 
-      // Board Sources §Member rules (B2) — the root's event log just moved, so
-      // every window-stamped derived counter hanging off it may need a new
-      // `baseline`. Refreshed BEFORE the propagation read below so the derived
-      // rows' displayed counts (and the board cascade at the end of this
-      // transaction) are computed against the corrected boundary rather than a
-      // stale one. Non-authored: `baseline` only, no version bump, no enqueue.
-      // (No `events` argument: neither op has the root's log in hand, so
-      // passing one would mean adding the very read it saves.)
-      await refreshDerivedBaselines(sourceTaskId);
-
-      // 4–8. Propagate (same pure helper as increment — it re-derives from the
-      // new source count and ORs in the one-way latch, so decrement never
-      // un-completes), collect credited boards, run ONE batched cascade.
-      const affectedBoards = await propagateToLinkedRows(sourceTaskId, newSourceCount, now, occurredAt);
+      // 4. Collect credited boards and run ONE batched cascade.
+      const affectedBoards = await runCounterRootCascade(sourceTaskId, now, occurredAt);
 
       return { affectedBoards, effectiveDelta: eff };
     },
@@ -469,12 +332,8 @@ export interface UndoCounterLogResult {
  *   4. ONE-WAY COMPLETION LATCH preserved, matching increment/decrement:
  *      undo does not un-complete an already-completed source. (Undo is a
  *      narrow reversal of the ledger entry, not a full re-derivation.)
- *   5. Propagate to live linked tasks via `propagateIncrement` and run ONE
- *      batched board cascade for the source + those linked tasks, exactly
- *      like increment/decrement — plus (cascade only, no write) any FROZEN
- *      window-stamped row whose window contains the undone entry's
- *      `occurredAt`, whose kernel sum the tombstone just changed (undo across
- *      the window end; see {@link propagateToLinkedRows}).
+ *   5. Run ONE batched board cascade for the source + its live linked rows,
+ *      exactly like increment/decrement ({@link runCounterRootCascade}).
  *
  * No-op (returns `{ affectedBoards: [], undoneAmount: 0 }`) when the source
  * is missing/deleted or has no undoable entry — callers should treat that
@@ -560,29 +419,8 @@ export async function undoLastCounterLog(sourceTaskId: string): Promise<UndoCoun
         await addToSyncQueue('tasks', sourceTaskId, SyncOperationType.UPDATE, savedSource, 0);
       }
 
-      // Board Sources §Member rules (B2) — the root's event log just moved, so
-      // every window-stamped derived counter hanging off it may need a new
-      // `baseline`. Refreshed BEFORE the propagation read below so the derived
-      // rows' displayed counts (and the board cascade at the end of this
-      // transaction) are computed against the corrected boundary rather than a
-      // stale one. Non-authored: `baseline` only, no version bump, no enqueue.
-      // This op ALREADY read the root's log (step 2), so it passes it through
-      // instead of re-reading — with the just-tombstoned entry marked, since
-      // the in-memory copy predates step 3's write.
-      await refreshDerivedBaselines(
-        sourceTaskId,
-        events.map((e) => (e.id === entry.id ? { ...e, isDeleted: true } : e)),
-      );
-
-      // 6–8. Propagate to the live linked rows exactly like
-      // increment/decrement, then run ONE batched board cascade — which also
-      // reaches (cascade-only) frozen rows whose window holds the undone event.
-      const affectedBoards = await propagateToLinkedRows(
-        sourceTaskId,
-        newSourceCount,
-        now,
-        entry.occurredAt,
-      );
+      // 6. Collect credited boards and run ONE batched board cascade.
+      const affectedBoards = await runCounterRootCascade(sourceTaskId, now, entry.occurredAt);
 
       // Board Edit redesign slice 4 (D9) — the undone entry may also fall
       // inside a SEALED containing board's frozen window (e.g. undoing a

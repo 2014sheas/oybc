@@ -47,18 +47,6 @@ struct CounterDeleteConfirmView: View {
                         membersSection
                     }
 
-                    // §Member rules (B3, RC12) — window-stamped derived
-                    // counters made from this root go with it (the B2
-                    // deletion cascade), which the member-unlink list above
-                    // does NOT cover: those rows are removed, not unlinked.
-                    // Rendered OUTSIDE (below) the members section, exactly
-                    // as web's `CounterDeleteConfirmDialog` places it.
-                    if let note = BoardSources.derivedCounterRemovalNote(
-                        count: impact.derivedWindowCounterCount
-                    ) {
-                        RisoImpactNote(text: note)
-                    }
-
                     // Unit tasks are kept as ordinary tasks (decoupled).
                     if let note = CountsTowardLabels.deleteNote(unitTaskCount: impact.unitTaskCount) {
                         RisoImpactNote(text: note)
@@ -189,10 +177,7 @@ struct CounterDeleteConfirmView: View {
         childLinkCount: 0,
         parentLinkCount: 0,
         counterMemberCount: 1,
-        counterMembers: [member],
-        // B3 RC12 — non-zero so the Xcode canvas exercises the
-        // derived-counter line (the snapshot suite covers 0 and > 0 both).
-        derivedWindowCounterCount: 2
+        counterMembers: [member]
     )
     CounterDeleteConfirmView(
         group: group,

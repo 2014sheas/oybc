@@ -1,9 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { derivedTaskId, forkTaskId } from '@oybc/shared';
+import { forkTaskId } from '@oybc/shared';
 import { db } from '../../internal';
 import { commitSquareEdits, type CommitSquareEditsInput } from '../boardEditCommit';
 import type { SquareDraftCell } from '../../../hooks/squareEditCount';
 import { JUNE, ROOT, SEPT, boardRow, clearAll, hubLinked, placement, rootTask } from './linkedCounterFixtures';
+import { legacyDerivedTaskId } from './legacyDerivedIds';
 
 /**
  * Board Edit Save — a linked counter is placed AS-IS (TASK_WINDOW_REWORK
@@ -11,7 +12,7 @@ import { JUNE, ROOT, SEPT, boardRow, clearAll, hubLinked, placement, rootTask } 
  * parameter fields (goal, title) land on the placement, never the library row.
  */
 
-const SEPT_ROW = derivedTaskId(SEPT.id, ROOT);
+const SEPT_ROW = legacyDerivedTaskId(SEPT.id, ROOT);
 
 function cell(
   o: Partial<SquareDraftCell> & Pick<SquareDraftCell, 'cellId' | 'taskId' | 'row' | 'col'>,

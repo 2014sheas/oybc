@@ -34,8 +34,7 @@ import type { Board } from '../types/board';
 import type { BoardTask } from '../types/boardTask';
 import type { TaskEvent } from '../types/taskEvent';
 import { TaskType, Timeframe } from '../constants/enums';
-import { quantizeCount, resolveCountKind, type CountKind } from './countValue';
-import { deriveDisplayedCount } from './sharedCounter';
+import { finalizeWindowCount, quantizeCount, resolveCountKind, type CountKind } from './countValue';
 import { formatTimeframeLabel } from './calendarBoundaries';
 import { counterDisplayName } from './counterSettings';
 import { boardWindowEnd, boundWindowContextAtSeal, resolveTaskWindowState } from './taskEvents';
@@ -388,9 +387,8 @@ export function buildSharedCounterGroups(
           hostWindow,
         ).displayed;
       } else {
-        // No events supplied: the library's lifetime arithmetic (source baseline 0).
-        const baseline = isSource ? 0 : task.baseline ?? 0;
-        displayed = deriveDisplayedCount({ baseline, maxCount: goal, countKind: task.countKind }, { currentCount: lifetime }).displayed;
+        // No events supplied: the root's lifetime total (`baseline` is never read).
+        displayed = finalizeWindowCount(lifetime, resolveCountKind(task));
       }
 
       boardIds.add(board.id);

@@ -437,14 +437,11 @@ export function computeBoardGrid(
   /** Resolve a primitive (normal / counting) square, windowed or lifetime. */
   const resolvePrimitive = (t: Task): boolean => {
     if (!windowContext) return t.isCompleted;
-    // Linked (derived) counter: resolved from its ROOT's increment events —
-    // never the one-way latch, which a later window's increments can set
-    // (docs §Derived-task carve-out rule 4, amended 2026-09-23 / 2026-10-01).
-    // A window-stamped row reads its own `[startDate, endDate]`; any other
-    // linked row reads THIS board's window (`compoundCtx`), the owner rule
-    // that retired the hub-linked latch carve-out on boards. The sealed
-    // path's context is already bounded at `sealedAt`, so this is a pure
-    // function of the converged in-window event union there too.
+    // Linked counter: resolved from its ROOT's increment events over THIS
+    // board's window (`compoundCtx`; an indefinite board reads the root's
+    // lifetime) — never the latch. The sealed path's context is already
+    // bounded at `sealedAt`, so this is a pure function of the converged
+    // in-window event union there too.
     const derived = resolveDerivedCounterWindowState(t, windowContext.eventsByTaskId, compoundCtx);
     if (derived) return derived.isCompleted;
     // Compound / achievement rows never reach here (they're branched above);

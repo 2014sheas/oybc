@@ -149,7 +149,7 @@ final class UnitTasksSnapshotTests: XCTestCase {
         )
         let impact = AppDatabase.TaskDeletionImpact(
             boardTaskCount: 0, affectedBoardIds: [], affectedBoards: [], childLinkCount: 0, parentLinkCount: 0,
-            counterMemberCount: 1, counterMembers: [member], derivedWindowCounterCount: 0, unitTaskCount: unitTasks
+            counterMemberCount: 1, counterMembers: [member], unitTaskCount: unitTasks
         )
         return CounterDeleteConfirmView(group: group, impact: impact, onConfirm: {}, onCancel: {})
     }

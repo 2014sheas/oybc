@@ -3,7 +3,7 @@ import XCTest
 
 /// Smoke guard for the derived-counter hot path (final-fix wave F1).
 ///
-/// `resolveWindowStampedDerivedState` runs per derived cell per body pass on
+/// `resolveLinkedCounterWindowState` runs per derived cell per body pass on
 /// the main thread. A board row minted by the wizard carries LOCAL-ISO window
 /// bounds (`yyyy-MM-dd'T'HH:mm:ss.SSS`, no zone), which `DateFormatting.parseISO`
 /// can only parse by allocating a `DateFormatter`. Re-parsing the bounds per
@@ -100,13 +100,13 @@ final class WindowStampedDerivedPerfTests: XCTestCase {
         let row = makeRow()
         let events = makeEvents()
 
-        let state = resolveWindowStampedDerivedState(task: row, rootEvents: events)
+        let state = resolveLinkedCounterWindowState(task: row, rootEvents: events)
         XCTAssertEqual(state.count, 1_000, "only the mid-window increments count")
         XCTAssertTrue(state.isCompleted)
 
         let baselineMs = parseBaselineMs(events)
-        let elapsedMs = bestOf { _ = resolveWindowStampedDerivedState(task: row, rootEvents: events) }
-        assertNearParseCost("resolveWindowStampedDerivedState", elapsedMs: elapsedMs, baselineMs: baselineMs)
+        let elapsedMs = bestOf { _ = resolveLinkedCounterWindowState(task: row, rootEvents: events) }
+        assertNearParseCost("resolveLinkedCounterWindowState", elapsedMs: elapsedMs, baselineMs: baselineMs)
     }
 
     func testLinkedDisplayWithSealedAtOverTwoThousandEventsIsFast() {

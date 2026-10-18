@@ -82,11 +82,9 @@ extension AppDatabase {
     /// parent whose window already closed too), then refresh achievement
     /// watchers over every board whose stats just changed.
     ///
-    /// `changedTaskIds` may include ids reached only for CASCADE purposes
-    /// (e.g. a frozen window-stamped row whose window holds the event) —
-    /// board-reachability doesn't distinguish authored from cascade-only,
-    /// which is exactly the desired effect (their boards re-derive; the rows
-    /// themselves are never written here).
+    /// `changedTaskIds` may include ids reached only for CASCADE purposes (a
+    /// shared-counter ROOT, whose linked rows are placed) — board-reachability
+    /// walks the root's placement reach, so their boards re-derive.
     ///
     /// MUST run inside the caller's write transaction, after the event
     /// append/tombstone + any task-cache/propagation writes.
@@ -122,7 +120,7 @@ extension AppDatabase {
         }
 
         // Sealed re-derivation already does its own reachability expansion
-        // (incl. window-stamped derived roots) — covers the closed board
+        // (incl. linked roots) — covers the closed board
         // itself plus any sealed parent.
         try Self.reDeriveSealedBoards(db: db, changedTaskIds: changedTaskIds)
 
@@ -134,43 +132,6 @@ extension AppDatabase {
     /// placed itself) via one of its linked rows (`placementReach`).
     static func boardIdsReachedByTasks(db: Database, taskIds: Set<String>) throws -> Set<String> {
         try Self.placementReach(db: db, taskIds: taskIds).boardIds
-    }
-
-    /// Propagates a ROOT counter's new lifetime count to every LIVE linked row
-    /// (hub-linked + unfrozen window-stamped), exactly like
-    /// `incrementSharedCounter`, after a late log / its undo moved the root's
-    /// log. Frozen rows whose window holds `reachOccurredAt` are returned for
-    /// cascade only — never written.
-    ///
-    /// - Returns: The linked row ids to add to the re-derivation set.
-    static func propagateRootLogToLinkedRows(
-        db: Database, rootId: String, reachOccurredAt: String, now: String,
-        ownerUid: String? = SyncQueueOwnership.currentUid()
-    ) throws -> Set<String> {
-        guard let rootAfter = try Task.fetchOne(db, key: rootId) else { return [] }
-        let (linkedTasks, reachedFrozenIds) = try Self.fetchLinkedTasksForLog(
-            db: db, sourceTaskId: rootId, reachOccurredAt: reachOccurredAt, now: now
-        )
-        let propagation = propagateIncrement(
-            sourceAfterCurrentCount: rootAfter.currentCount ?? 0,
-            linkedTasks: linkedTasks.map {
-                PropagateIncrementLinkedTask(id: $0.id, baseline: $0.baseline, maxCount: $0.maxCount, isCompleted: $0.isCompleted, countKind: $0.countKind)
-            }
-        )
-        for (result, var linked) in zip(propagation, linkedTasks) {
-            let wasCompleted = linked.isCompleted
-            linked.currentCount = result.newCurrentCount
-            linked.isCompleted = result.newIsCompleted
-            if !wasCompleted && result.newIsCompleted { linked.completedAt = now }
-            linked.updatedAt = now
-            linked.version += 1
-            try linked.save(db)
-            try SyncQueueBuilder.makeItem(
-                entityType: "tasks", entityId: linked.id, operationType: .update, payload: linked, now: now,
-                ownerUid: ownerUid
-            ).enqueue(db)
-        }
-        return Set(linkedTasks.map(\.id)).union(reachedFrozenIds)
     }
 
     // MARK: - lateLogCompletion (NORMAL)
@@ -208,20 +169,17 @@ extension AppDatabase {
         }
     }
 
-    // MARK: - lateLogIncrement (COUNTING — plain, source, or window-stamped derived)
+    // MARK: - lateLogIncrement (COUNTING — plain, source, or linked)
 
     /// Logs `delta` (> 0) on a closed board's COUNTING square, stamped at the
     /// board's `endDate`.
     ///
     ///   - Plain / source counting (`sharedCounterId == nil`): appends the
     ///     increment directly (event-owning).
-    ///   - LINKED counter (window-stamped or not): the increment is appended
-    ///     on the ROOT (linked rows own no events), then propagated to every
-    ///     OTHER live linked row exactly like `incrementSharedCounter`
-    ///     (frozen rows are skipped for writes, still reached for cascade).
-    ///     The old hub-linked no-op (OQ2) is retired — slice 3a: every linked
-    ///     square resolves over its board's window, and linked placements
-    ///     are never stamped any more.
+    ///   - LINKED counter: the increment is appended on the ROOT (linked
+    ///     rows own no events); every linked row resolves from the root's
+    ///     events, so the side effects re-derive the root's placement reach
+    ///     and nothing else is written.
     ///
     /// - Throws: `LateLogError.boardNotClosed` / `.taskNotPlaced` /
     ///   `.wrongTaskType` / `.invalidDelta`.
@@ -243,11 +201,9 @@ extension AppDatabase {
             // the event a late log (`selectClosedBoardLateLogs` /
             // `isEventSealImmune`), i.e. undoable (R2).
             try Self.appendIncrementEvent(db: db, taskId: rootId, delta: delta, boardId: boardId, now: now, occurredAt: occurredAt)
-            try Self.refreshDerivedBaselines(db: db, rootTaskId: rootId)
-            let linkedIds = try Self.propagateRootLogToLinkedRows(
-                db: db, rootId: rootId, reachOccurredAt: occurredAt, now: now
-            )
-            try Self.reDeriveAfterLateLogWrite(db: db, changedTaskIds: linkedIds.union([rootId]), now: now, lateLogStamp: occurredAt)
+            // The side effects walk the root's placement reach (its linked rows
+            // resolve from its events), so nothing else is written.
+            try Self.reDeriveAfterLateLogWrite(db: db, changedTaskIds: [rootId, taskId], now: now, lateLogStamp: occurredAt)
         }
     }
 
@@ -418,11 +374,7 @@ extension AppDatabase {
             // `lateLogIncrement` writes it for a placed linked square.
             for (childId, root) in plan.linkedIncrementRoots.sorted(by: { $0.key < $1.key }) {
                 try Self.appendIncrementEvent(db: db, taskId: root, delta: 1, boardId: boardId, now: now, occurredAt: occurredAt)
-                try Self.refreshDerivedBaselines(db: db, rootTaskId: root)
-                let linkedIds = try Self.propagateRootLogToLinkedRows(
-                    db: db, rootId: root, reachOccurredAt: occurredAt, now: now
-                )
-                touched.formUnion(linkedIds); touched.insert(root); touched.insert(childId)
+                touched.insert(root); touched.insert(childId)
             }
             try Self.reDeriveAfterLateLogWrite(db: db, changedTaskIds: touched, now: now, lateLogStamp: occurredAt)
         }
@@ -432,7 +384,7 @@ extension AppDatabase {
 
     /// Reverses exactly the newest late log a user made on `boardId` for
     /// `taskId` (`selectClosedBoardLateLogs` — newest `createdAt` first). For
-    /// a window-stamped derived square, pass the ROOT id (derived rows own no
+    /// a linked square, pass the ROOT id (linked rows own no
     /// events). Silent no-op if there is nothing to undo.
     ///
     /// - Throws: `LateLogError.boardNotClosed`.
@@ -462,15 +414,7 @@ extension AppDatabase {
 
             try Self.stampTaskCachesAuthored(db: db, taskId: taskId, now: now)
 
-            var changedIds: Set<String> = [taskId]
-            if let refreshed = try Task.fetchOne(db, key: taskId), refreshed.type == .counting, refreshed.sharedCounterId == nil {
-                try Self.refreshDerivedBaselines(db: db, rootTaskId: taskId)
-                changedIds.formUnion(try Self.propagateRootLogToLinkedRows(
-                    db: db, rootId: taskId, reachOccurredAt: latest.occurredAt, now: now
-                ))
-            }
-
-            try Self.reDeriveAfterLateLogWrite(db: db, changedTaskIds: changedIds, now: now, lateLogStamp: latest.occurredAt)
+            try Self.reDeriveAfterLateLogWrite(db: db, changedTaskIds: [taskId], now: now, lateLogStamp: latest.occurredAt)
         }
     }
 }

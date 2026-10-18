@@ -182,73 +182,6 @@ final class MemberRuleVectorTests: XCTestCase {
         let children: [String: [RawChild]]
         let sourceWindows: [String: String]
         let vectors: [PlanVector]
-        let idPins: [String: String]
-    }
-
-    // MARK: - B2 fixture decoding (windowBaseline)
-
-    /// A loosely-typed JSON value, so an `expected` row can be subset-matched
-    /// against the produced row field-by-field (the Swift analogue of Jest's
-    /// `toMatchObject`) without a hand-written comparison per field.
-    private enum FixtureValue: Decodable, Equatable {
-        case string(String)
-        case bool(Bool)
-        case int(Int)
-        case double(Double)
-        case null
-        case array([FixtureValue])
-        case object([String: FixtureValue])
-
-        init(from decoder: Decoder) throws {
-            let container = try decoder.singleValueContainer()
-            if container.decodeNil() { self = .null; return }
-            // Bool BEFORE Int — `JSONDecoder` would otherwise reject, and the
-            // ordering documents the intent either way.
-            if let value = try? container.decode(Bool.self) { self = .bool(value); return }
-            if let value = try? container.decode(Int.self) { self = .int(value); return }
-            if let value = try? container.decode(Double.self) { self = .double(value); return }
-            if let value = try? container.decode(String.self) { self = .string(value); return }
-            if let value = try? container.decode([FixtureValue].self) { self = .array(value); return }
-            self = .object(try container.decode([String: FixtureValue].self))
-        }
-    }
-
-    private struct RawBaselineEvent: Decodable {
-        let taskId: String
-        let kind: String
-        let delta: CountValue?
-        let occurredAt: String
-        let isDeleted: Bool
-    }
-
-    private struct FrozenRowTask: Decodable {
-        let sharedCounterId: String?
-        let startDate: String?
-        let endDate: String?
-        let createdInWizard: Bool
-    }
-
-    private struct FrozenRowVector: Decodable {
-        let name: String
-        let task: FrozenRowTask
-        let now: String
-        let expected: Bool
-    }
-
-    private struct FrozenReachedVector: Decodable {
-        let name: String
-        let task: FrozenRowTask
-        let occurredAt: String
-        let now: String
-        let expected: Bool
-    }
-
-    private struct BaselineVector: Decodable {
-        let name: String
-        let root: String
-        let boundary: String
-        let events: [RawBaselineEvent]
-        let expected: CountValue
     }
 
     // MARK: - B3 fixture decoding (display + rule editing)
@@ -474,9 +407,6 @@ final class MemberRuleVectorTests: XCTestCase {
         let autoTarget: [AutoTargetVector]
         let varyRange: [VaryRangeVector]
         let rollTarget: [RollTargetVector]
-        let windowBaseline: [BaselineVector]
-        let frozenDerivedRow: [FrozenRowVector]
-        let frozenRowReachedByEvent: [FrozenReachedVector]
         let applyMemberRules: ApplySection
         let planDerivedTasks: PlanSection
         let display: DisplaySection
@@ -689,60 +619,6 @@ final class MemberRuleVectorTests: XCTestCase {
 
     // MARK: - planDerivedTasks
 
-    /// The cross-platform proof that Swift's `UUIDv5` + the name formats
-    /// agree with TS: every pinned literal must be reproducible here.
-    func testIdNamespacesMatchPins() throws {
-        let plan = try loadFixture().planDerivedTasks
-        let board = plan.boardId
-        let pins = plan.idPins
-
-        for root in ["r1", "r2", "c1", "c3", "a1", "r3"] {
-            XCTAssertEqual(
-                BoardSources.derivedTaskId(boardId: board, rootTaskId: root),
-                pins["derived:\(root)"],
-                "derived:\(root)"
-            )
-        }
-        let compoundC = try XCTUnwrap(pins["derivedCompound:C"])
-        let compoundC2 = try XCTUnwrap(pins["derivedCompound:C2"])
-        XCTAssertEqual(BoardSources.derivedCompoundId(boardId: board, compoundId: "C"), compoundC)
-        XCTAssertEqual(BoardSources.derivedCompoundId(boardId: board, compoundId: "C2"), compoundC2)
-
-        XCTAssertEqual(
-            BoardSources.derivedLinkId(
-                derivedCompoundId: compoundC2,
-                childId: try XCTUnwrap(pins["derived:c3"])
-            ),
-            pins["link:derivedCompound:C2:derived:c3"]
-        )
-        XCTAssertEqual(
-            BoardSources.derivedLinkId(
-                derivedCompoundId: compoundC2,
-                childId: try XCTUnwrap(pins["derived:c1"])
-            ),
-            pins["link:derivedCompound:C2:derived:c1"]
-        )
-        XCTAssertEqual(
-            BoardSources.derivedLinkId(
-                derivedCompoundId: compoundC,
-                childId: try XCTUnwrap(pins["derived:c1"])
-            ),
-            pins["link:derivedCompound:C:derived:c1"]
-        )
-        XCTAssertEqual(
-            BoardSources.derivedLinkId(derivedCompoundId: compoundC, childId: "c2"),
-            pins["link:derivedCompound:C:c2"]
-        )
-
-        // Shape check — a real RFC 4122 v5 uuid, not a hand-typed string.
-        let pattern = "^[0-9a-f]{8}-[0-9a-f]{4}-5[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
-        let derivedR1 = try XCTUnwrap(pins["derived:r1"])
-        XCTAssertNotNil(
-            derivedR1.range(of: pattern, options: .regularExpression),
-            "derived:r1 pin is not a v5 uuid: \(derivedR1)"
-        )
-    }
-
     func testPlanDerivedTasks() throws {
         let fixture = try loadFixture()
         let plan = fixture.planDerivedTasks
@@ -814,119 +690,6 @@ final class MemberRuleVectorTests: XCTestCase {
             childTargets: p.childTargets.map { $0.map { .init(childId: $0.childId, target: $0.target) } },
             titleOverride: p.titleOverride
         )
-    }
-
-    // MARK: - Propagation freeze: isFrozenDerivedRow
-
-    func testIsFrozenDerivedRow() throws {
-        let fixture = try loadFixture()
-        XCTAssertGreaterThanOrEqual(fixture.frozenDerivedRow.count, 4)
-        for v in fixture.frozenDerivedRow {
-            var task = makeTask(id: "d1", type: .counting)
-            task.sharedCounterId = v.task.sharedCounterId
-            task.startDate = v.task.startDate
-            task.endDate = v.task.endDate
-            task.createdInWizard = v.task.createdInWizard
-            XCTAssertEqual(BoardSources.isFrozenDerivedRow(task, now: v.now), v.expected, v.name)
-        }
-    }
-
-    func testIsFrozenRowReachedByEvent() throws {
-        let fixture = try loadFixture()
-        XCTAssertGreaterThanOrEqual(fixture.frozenRowReachedByEvent.count, 5)
-        for v in fixture.frozenRowReachedByEvent {
-            var task = makeTask(id: "d1", type: .counting)
-            task.sharedCounterId = v.task.sharedCounterId
-            task.startDate = v.task.startDate
-            task.endDate = v.task.endDate
-            task.createdInWizard = v.task.createdInWizard
-            XCTAssertEqual(
-                BoardSources.isFrozenRowReachedByEvent(task, occurredAt: v.occurredAt, now: v.now),
-                v.expected, v.name
-            )
-        }
-    }
-
-    // MARK: - B2: computeWindowBaseline
-
-    func testComputeWindowBaseline() throws {
-        let fixture = try loadFixture()
-        XCTAssertFalse(fixture.windowBaseline.isEmpty)
-        for v in fixture.windowBaseline {
-            let events = v.events.enumerated().map { index, raw in
-                TaskEvent(
-                    id: "e\(index)",
-                    userId: "u1",
-                    taskId: raw.taskId,
-                    kind: TaskEventKind(rawValue: raw.kind) ?? .completion,
-                    delta: raw.delta,
-                    occurredAt: raw.occurredAt,
-                    boardId: nil,
-                    createdAt: Self.isoStamp,
-                    updatedAt: Self.isoStamp,
-                    lastSyncedAt: nil,
-                    version: 1,
-                    isDeleted: raw.isDeleted,
-                    deletedAt: raw.isDeleted ? Self.isoStamp : nil
-                )
-            }
-            XCTAssertEqual(
-                BoardSources.computeWindowBaseline(
-                    rootTaskId: v.root,
-                    events: events,
-                    boundary: v.boundary
-                ),
-                v.expected,
-                v.name
-            )
-        }
-    }
-
-    // MARK: - B2: isWindowStampedDerived (the STORED-row predicate)
-
-    /// Mirrors the TS twin's five cases 1:1. All three marks are required —
-    /// each on its own is ordinary user data.
-    func testIsWindowStampedDerived() {
-        func row(
-            sharedCounterId: String? = "11111111-0000-4000-8000-000000000001",
-            startDate: String? = "2026-09-18",
-            createdInWizard: Bool = true
-        ) -> Task {
-            Task(
-                id: "t1",
-                userId: "u1",
-                title: "T",
-                type: .counting,
-                totalCompletions: 0,
-                totalInstances: 0,
-                createdAt: Self.isoStamp,
-                updatedAt: Self.isoStamp,
-                version: 1,
-                isDeleted: false,
-                startDate: startDate,
-                sharedCounterId: sharedCounterId,
-                createdInWizard: createdInWizard
-            )
-        }
-        XCTAssertTrue(BoardSources.isWindowStampedDerived(row()))
-        XCTAssertFalse(
-            BoardSources.isWindowStampedDerived(row(sharedCounterId: nil)),
-            "no sharedCounterId → a plain window-scoped counting task"
-        )
-        XCTAssertFalse(
-            BoardSources.isWindowStampedDerived(row(startDate: nil)),
-            "no startDate → an ordinary linked counter, not window-stamped"
-        )
-        XCTAssertFalse(
-            BoardSources.isWindowStampedDerived(row(createdInWizard: false)),
-            "not wizard-born → a hand-made linked + timeboxed counter"
-        )
-        // Swift's `createdInWizard` is a non-optional Bool, so the TS twin's
-        // "absent" and "explicitly false" cases collapse into the one above —
-        // the empty-string shapes are what stand in for the other degenerate
-        // inputs a decoded row can actually carry.
-        XCTAssertFalse(BoardSources.isWindowStampedDerived(row(sharedCounterId: "")))
-        XCTAssertFalse(BoardSources.isWindowStampedDerived(row(startDate: "")))
     }
 
     // MARK: - B3 display + rule editing

@@ -438,7 +438,7 @@ export function taskToSquareState(
  * sealedAt)]`), not the old max/0 snapshot display and not the lifetime
  * cache, so a partial late log is visible ("3/5", not just green/grey).
  * Mirrors the sealing data layer's `boundWindowContextAtSeal` +
- * `resolveTaskWindowState` / `resolveWindowStampedDerivedState` pattern —
+ * `resolveTaskWindowState` / `resolveLinkedCounterWindowState` pattern —
  * same bound, so the count and the frozen `sealedCompletedCells` green can
  * never disagree — but synchronous, built from an already-loaded event map
  * (`SquareWindowContext.eventsByTaskId`) for render-time use.

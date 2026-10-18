@@ -6,14 +6,10 @@
  * nominal window length of a timeframe, the pro-rated auto target when a
  * counting member crosses windows, the vary (dice) range and its seeded
  * roll (those four in `memberRuleTargets.ts`, re-exported here), Split-up
- * supply expansion, and the plan that decides — per selected
- * id — whether it is placed as-is or replaced by a window-stamped derived
- * counter / derived compound (B1), plus the window baseline those derived
- * counters start from and the complete `Task` / `CompoundChild` rows they
- * materialise into (B2).
+ * supply expansion, and the plan that decides — per selected id — the
+ * placement parameters each square carries (TASK_WINDOW_REWORK slice 3b).
  *
- * Nothing here is wired into a write path yet: this module produces rows,
- * the platform layers write them. No persistence, no platform code, no side
+ * The platform layers write the plan. No persistence, no platform code, no side
  * effects — the only non-determinism is the injected `rng`, and the module
  * is written so a seeded sequence reproduces exactly.
  *
@@ -35,60 +31,15 @@ import type {
 import type { PlacementChildTarget } from '../types/boardTask';
 import type { CompoundChild } from '../types/compoundChild';
 import type { Task } from '../types/task';
-import type { TaskEvent } from '../types/taskEvent';
 import type { BoardSourceSupply } from './boardSources';
-import { isTimeframeExpired, isWithinTimeframe } from './calendarBoundaries';
 import { countTargetStep, floorToCountStep, isWholeCountKind, quantizeCount, resolveCountKind } from './countValue';
 import type { CountKind } from './countValue';
 import { counterTimeframeDefault } from './counterPlacement';
 import type { CounterSettingsFields } from './counterSettings';
 import { autoTarget, nominalWindowDays, rollTarget } from './memberRuleTargets';
-import { isAutoCounterTitle } from './taskTitle';
-import { uuidv5 } from './uuidv5';
 
 // Target arithmetic lives in memberRuleTargets.ts (1000-line cap); re-exported here.
 export { autoTarget, nominalWindowDays, rollTarget, varyRange } from './memberRuleTargets';
-
-/** uuidv5 name prefix for a per-window derived counter. */
-export const DERIVED_TASK_NS = 'sources:derived';
-/** uuidv5 name prefix for a per-window derived compound. */
-export const DERIVED_COMPOUND_NS = 'sources:derived-compound';
-/** uuidv5 name prefix for a derived compound's `compound_children` link. */
-export const DERIVED_LINK_NS = 'sources:derived-link';
-
-/**
- * Deterministic id of the derived counter for `rootTaskId` on `boardId`.
- *
- * @param boardId - The board the derived counter is stamped for.
- * @param rootTaskId - The shared-counter root (`sharedCounterId ?? id`).
- * @returns A stable uuidv5 — re-deriving the same window yields the same id.
- */
-export function derivedTaskId(boardId: string, rootTaskId: string): string {
-  return uuidv5(`${DERIVED_TASK_NS}:${boardId}:${rootTaskId}`);
-}
-
-/**
- * Deterministic id of the derived compound for `compoundId` on `boardId`.
- *
- * @param boardId - The board the derived compound is stamped for.
- * @param compoundId - The source compound task's id.
- * @returns A stable uuidv5.
- */
-export function derivedCompoundId(boardId: string, compoundId: string): string {
-  return uuidv5(`${DERIVED_COMPOUND_NS}:${boardId}:${compoundId}`);
-}
-
-/**
- * Deterministic id of the `compound_children` link from a derived compound to
- * one of its children (derived or original).
- *
- * @param derivedCompound - The derived compound's id (from {@link derivedCompoundId}).
- * @param childId - The child task id the link points at.
- * @returns A stable uuidv5.
- */
-export function derivedLinkId(derivedCompound: string, childId: string): string {
-  return uuidv5(`${DERIVED_LINK_NS}:${derivedCompound}:${childId}`);
-}
 
 /** A {@link BoardSourceSupply} after Split-up expansion. */
 export interface ExpandedSupply extends BoardSourceSupply {
@@ -164,7 +115,7 @@ export interface BoardWindow {
 /** The slice of `Task` {@link planDerivedTasks} reads. */
 export type PlanTask = Pick<
   Task,
-  'id' | 'type' | 'title' | 'action' | 'unit' | 'maxCount' | 'sharedCounterId' | 'startDate' | 'createdInWizard' | 'operator' | 'threshold' | 'countKind'
+  'id' | 'type' | 'title' | 'action' | 'unit' | 'maxCount' | 'sharedCounterId' | 'operator' | 'threshold' | 'countKind'
 > &
   Pick<CounterSettingsFields, 'counterName' | 'titleTemplateSingular' | 'titleTemplatePlural' | 'timeframeGoals'>;
 
@@ -173,23 +124,18 @@ export type PlanTask = Pick<
  * `board_tasks` row points at and the parameters the square carries. The
  * planner emits ONE per selected id, in order — never a row to mint.
  *
- *   - `taskId` — the member itself; a legacy window-stamped derived row
- *     (`isWindowStampedDerived`) resolves to its ROOT, so no derived row ever
- *     gains a new placement.
+ *   - `taskId` — the member itself.
  *   - `targetOverride` / `targetKind` — the planned per-window target, in the
- *     member's kind, present only when it differs from the PLACED task's own
- *     goal (a placement whose target equals the goal is the plain task).
+ *     member's kind, present only when it differs from the task's own goal
+ *     (a placement whose target equals the goal is the plain task).
  *   - `childTargets` — a re-targeted compound's per-child targets (direct
  *     children only), present only for children whose target differs.
- *   - `titleOverride` — a legacy derived row's custom title, carried onto the
- *     root's placement so the square keeps reading as the user named it.
  */
 export interface PlannedPlacement {
   taskId: string;
   targetOverride?: number;
   targetKind?: CountKind;
   childTargets?: PlacementChildTarget[];
-  titleOverride?: string;
 }
 
 export interface PlanDerivedTasksArgs {
@@ -271,13 +217,10 @@ function goalOf(t: Pick<PlanTask, 'maxCount' | 'countKind'>): number | null {
  * board takes its root's default.
  *
  * Output rules: a placement carries `targetOverride` only when the resolved
- * (rolled) target differs from the PLACED task's own goal — so the old
+ * (rolled) target differs from the task's own goal — so the old
  * "no identical clone" rule is now the general case; a linked member is
  * placed as itself (the kernel reads the host window since slice 0 — the
- * per-window copy is gone); a legacy window-stamped derived row resolves to
- * its ROOT, its custom title riding along as `titleOverride`. Two members
- * that resolve to the same task id both appear in the output — the writer
- * dedupes `board_tasks` (one row per task per board, docs/BOARD_INTEGRITY.md).
+ * per-window copy is gone).
  *
  * @param args - See {@link PlanDerivedTasksArgs}.
  * @returns One {@link PlannedPlacement} per selected id.
@@ -357,14 +300,10 @@ export function planDerivedTasks(args: PlanDerivedTasksArgs): PlanDerivedTasksRe
     }
     return goalOf(t);
   };
-  /** The task a member's placement points at: a legacy derived row → its root. */
-  const placedIdOf = (t: PlanTask): string =>
-    isWindowStampedDerived(t) && t.sharedCounterId ? t.sharedCounterId : t.id;
   /**
    * The placement for `t` at the pre-vary `target` rolled by `vary`: the
-   * override lands only when the rolled target differs from the PLACED task's
-   * own goal; a legacy derived row's custom title rides onto its root's
-   * placement.
+   * override lands only when the rolled target differs from the task's own
+   * goal.
    */
   const param = (t: PlanTask, target: number, vary: VaryLevel, effGoal?: number | null): PlannedPlacement => {
     // The vary clamp's ceiling: the member's goal, or a timeframe default
@@ -373,18 +312,11 @@ export function planDerivedTasks(args: PlanDerivedTasksArgs): PlanDerivedTasksRe
     const goal = Math.max(effGoal ?? goalOf(t) ?? 0, target);
     const kind = resolveCountKind(t);
     const rolled = rollTarget(target, vary, goal, rng, kind);
-    const placedId = placedIdOf(t);
-    const placed: Pick<PlanTask, 'maxCount' | 'countKind'> | undefined =
-      placedId === t.id ? t : (tasksById[placedId] ?? rootsById[placedId]);
-    const out: PlannedPlacement = { taskId: placedId };
-    const placedOwn = placed ? goalOf(placed) : null;
-    if (placedOwn === null || rolled !== placedOwn) {
+    const out: PlannedPlacement = { taskId: t.id };
+    const own = goalOf(t);
+    if (own === null || rolled !== own) {
       out.targetOverride = rolled;
       out.targetKind = kind;
-    }
-    if (placedId !== t.id) {
-      const custom = !isAutoCounterTitle(t.title, t.action ?? '', t.maxCount, t.unit ?? '', kind, rootOf(t) ?? null);
-      if (custom && t.title.trim().length > 0) out.titleOverride = t.title.trim();
     }
     return out;
   };
@@ -431,14 +363,13 @@ export function planDerivedTasks(args: PlanDerivedTasksArgs): PlanDerivedTasksRe
         // Goal-less (an accumulator — including a goal-less LINKED member):
         // nothing to target, so it is placed as-is. `TaskSchema` requires a
         // goal on every non-hub-born counting task, so this is defensive.
-        placements.push({ taskId: placedIdOf(t) });
+        placements.push({ taskId: id });
         continue;
       }
       if (isManual) {
         // A hand-added member is placed as itself at its own goal — the kernel
         // reads the host window (slice 0), so a linked member needs no copy;
-        // only a vary roll (or a legacy derived row resolving to its root)
-        // produces parameters.
+        // only a vary roll produces parameters.
         placements.push(param(t, goal, manualTaskVary[id] ?? 0, ownGoal));
         continue;
       }
@@ -459,7 +390,7 @@ export function planDerivedTasks(args: PlanDerivedTasksArgs): PlanDerivedTasksRe
           placements.push(param(t, target, vary, ownGoal));
           continue;
         }
-        placements.push({ taskId: placedIdOf(t) });
+        placements.push({ taskId: id });
         continue;
       }
       const rule: BoardSourceMemberRule = rules[id] ?? {};
@@ -513,143 +444,4 @@ export function planDerivedTasks(args: PlanDerivedTasksArgs): PlanDerivedTasksRe
     placements.push({ taskId: id });
   }
   return { placements };
-}
-
-// ── B2: baseline + row building ──────────────────────────────────────────────
-
-/** The slice of a `TaskEvent` {@link computeWindowBaseline} reads. */
-export type BaselineEvent = Pick<TaskEvent, 'taskId' | 'kind' | 'delta' | 'occurredAt' | 'isDeleted'>;
-
-/**
- * The window baseline of a shared-counter root: the lifetime count the root
- * had reached when the window opened, so the derived counter's displayed
- * value (`root.currentCount − baseline`) starts this window at zero.
- *
- * Ruling RB2 — the sum of the `delta`s of the root's LIVE increment events
- * whose `occurredAt` is strictly BEFORE `boundary`, clamped at 0. Completion
- * events, tombstoned events and other tasks' events are ignored, and an event
- * exactly ON the boundary belongs to the new window, not to the baseline.
- *
- * Both sides are compared as INSTANTS (`Date.parse`), never as strings: board
- * dates are local ISO (`2026-09-18T00:00:00`, no offset) while events carry a
- * UTC stamp, so a lexical compare — or re-stamping a local date as UTC — would
- * move the boundary by the local offset and admit or drop every event either
- * side of local midnight. A stamp that doesn't parse (on either side) skips
- * the event rather than counting it.
- *
- * `boundary` is decided by the CALLER (the board's `startDate`, or the mint
- * `now` for an INDEFINITE / date-less board) — this helper never guesses it.
- * It must be a FULL timestamp (local ISO or offset-bearing); a date-only
- * string is not supported and parses inconsistently across platforms —
- * `Date.parse('2026-09-18')` is UTC midnight per the ES spec (date-only forms
- * are UTC, date-TIME forms without an offset are local), while the iOS twin's
- * ISO parser has no date-only format at all and would return 0 instead.
- *
- * @param rootTaskId - The shared-counter root whose events are summed.
- * @param events - Candidate events; any task's, any kind, live or tombstoned.
- * @param boundary - ISO8601 instant the window opens at.
- * @returns The baseline count (integer ≥ 0).
- */
-export function computeWindowBaseline(
-  rootTaskId: string,
-  events: BaselineEvent[],
-  boundary: string
-): number {
-  const b = Date.parse(boundary);
-  if (Number.isNaN(b)) return 0;
-  let sum = 0;
-  for (const e of events) {
-    if (e.isDeleted || e.taskId !== rootTaskId || e.kind !== 'increment') continue;
-    if (typeof e.delta !== 'number' || !Number.isFinite(e.delta)) continue;
-    const t = Date.parse(e.occurredAt);
-    if (Number.isNaN(t) || !(t < b)) continue;
-    sum += e.delta;
-  }
-  return Math.max(0, quantizeCount(sum));
-}
-
-/**
- * Is this STORED task row one of our per-window derived counters?
- *
- * All three marks together — a shared-counter link, a window start, and the
- * wizard-born provenance flag. Each alone is ordinary user data: a hand-made
- * linked counter has the first, a timeboxed task the second, a wizard-born
- * task the third. Only the three together identify a row this pipeline minted
- * for one window (and may therefore refresh or retire when that window is
- * re-derived).
- *
- * @param t - The task row to test.
- * @returns True when the row is a window-stamped derived counter.
- */
-export function isWindowStampedDerived(
-  t: Pick<Task, 'sharedCounterId' | 'startDate' | 'createdInWizard'>
-): boolean {
-  return !!t.sharedCounterId && !!t.startDate && t.createdInWizard === true;
-}
-
-/**
- * Is this STORED row a window-stamped derived counter whose window has ENDED,
- * so shared-counter propagation must skip it (the propagation freeze)?
- *
- * Shared-counter increment / decrement / undo skip a frozen row's authored
- * write and sync enqueue — which bounds each "+1" to the rows whose windows
- * are still open instead of one row per board per window forever. The
- * propagated latch is not what completion reads: the kernel resolves
- * window-stamped rows from the ROOT's events inside `[startDate, endDate]`
- * (`resolveDerivedCounterWindowState`). So an increment / decrement (whose
- * new event is stamped `now`, after every frozen window) cannot change a
- * frozen row's completion and skips its cascade too. An UNDO can: it
- * tombstones an EARLIER event that may lie inside a frozen window — undo
- * therefore still cascades (never writes) the frozen rows
- * {@link isFrozenRowReachedByEvent} names.
- * (`refreshDerivedBaselines` is non-authored and is NOT gated by this.)
- *
- * "Ended" uses the kernel's window convention (`isWithinTimeframe`, inclusive
- * of `endDate`): the row is frozen only once `now` is strictly after its
- * `endDate` instant — a row whose `endDate` is today stays live until then.
- * Rows with no `endDate` (indefinite) and hub-linked rows (no `startDate`,
- * so not {@link isWindowStampedDerived}) are never frozen; they propagate as
- * before. An unparseable `endDate` or `now` is treated as not frozen (the
- * pre-freeze behaviour).
- *
- * @param t   - The linked task row to test.
- * @param now - The current instant as an ISO8601 string (a parameter, never
- *              read from the clock here, so the predicate stays pure).
- * @returns True when propagation must skip the row.
- */
-export function isFrozenDerivedRow(
-  t: Pick<Task, 'sharedCounterId' | 'startDate' | 'createdInWizard' | 'endDate'>,
-  now: string,
-): boolean {
-  if (!isWindowStampedDerived(t) || t.endDate == null) return false;
-  return isTimeframeExpired(t.endDate, new Date(now));
-}
-
-/**
- * Undo across the window end: is `t` a FROZEN window-stamped derived row
- * ({@link isFrozenDerivedRow} at `now`) whose own window `[startDate,
- * endDate]` contains `occurredAt` — the instant of the event an undo just
- * tombstoned?
- *
- * The kernel counts that event toward such a row, so tombstoning it can flip
- * the row's completion; the freeze still forbids an authored write, but the
- * row's BOARD must be re-derived (cascade only — no task write, no enqueue)
- * or its stored `completedTasks` / `linesCompleted` / status stay stale until
- * a seal or pull. Window membership is the kernel's own `isWithinTimeframe`
- * (inclusive both ends, parsed compare), so this names exactly the frozen
- * rows whose kernel sum the undo changed. An unparseable date is "not
- * reached" (it cannot be frozen either).
- *
- * @param t          - The linked task row to test.
- * @param occurredAt - The undone event's `occurredAt`.
- * @param now        - The undo's timestamp (the freeze clock).
- * @returns True when the undo must cascade (never write) this frozen row.
- */
-export function isFrozenRowReachedByEvent(
-  t: Pick<Task, 'sharedCounterId' | 'startDate' | 'createdInWizard' | 'endDate'>,
-  occurredAt: string,
-  now: string,
-): boolean {
-  if (!isFrozenDerivedRow(t, now) || !t.startDate) return false;
-  return isWithinTimeframe(occurredAt, t.startDate, t.endDate ?? null);
 }

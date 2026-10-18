@@ -75,19 +75,23 @@ enum PlacementParams {
     /// against the placement's goal. Twin of the TS `resolveSquareState`.
     static func resolveSquareState(_ task: Task, placement: BoardTask?, ctx: CompoundWindowContext) -> TaskWindowState {
         let effective = apply(task, placement: placement)
+        // A linked row: the root's events over the host window, or its lifetime.
         if let derived = resolveDerivedCounterWindowState(
             task: effective, eventsByTaskId: ctx.eventsByTaskId, windowStart: ctx.windowStart, windowEnd: ctx.windowEnd
         ) {
             return derived
         }
-        if effective.type == .counting, let linked = effective.sharedCounterId, !linked.isEmpty {
-            // A linked row with no host window (library, compound Task Detail, a hub
-            // card with no board): the ROOT's lifetime events, never the latch (slice 2c).
-            return contextlessCounterState(task: effective, eventsByTaskId: ctx.eventsByTaskId)
-        }
         let events = ctx.eventsByTaskId[effective.id] ?? []
         return resolveTaskWindowState(task: effective, events: events, windowStart: ctx.windowStart, windowEnd: ctx.windowEnd)
     }
+}
+
+/// What a linked counting square shows: the count and whether it reaches the goal.
+struct LinkedCounterDisplay {
+    /// The displayed count (low-clamped at 0, never high-clamped; overshoot is valid).
+    let displayed: CountValue
+    /// True when a goal exists and `displayed` reaches it.
+    let isCompleted: Bool
 }
 
 /// What a LINKED counting square or row SHOWS: a thin wrapper over
@@ -120,12 +124,12 @@ func resolveLinkedCounterDisplay(
     sealedAt: String? = nil,
     window: LinkedCounterWindow? = nil,
     placement: BoardTask? = nil
-) -> DeriveDisplayedCountResult {
+) -> LinkedCounterDisplay {
     var events = eventsByTaskId ?? [:]
     if let sealedAt, let sealed = DateFormatting.parseISO(sealedAt) {
         events = boundWindowContextAtSeal(eventsByTaskId: events, sealedAtMs: sealed.timeIntervalSince1970 * 1000).eventsByTaskId
     }
     let ctx = CompoundWindowContext(windowStart: window?.startDate, windowEnd: window?.endDate, eventsByTaskId: events)
     let state = PlacementParams.resolveSquareState(task, placement: placement, ctx: ctx)
-    return DeriveDisplayedCountResult(displayed: state.count, isCompleted: state.isCompleted)
+    return LinkedCounterDisplay(displayed: state.count, isCompleted: state.isCompleted)
 }

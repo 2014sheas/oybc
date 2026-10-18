@@ -16,6 +16,7 @@ import type { SquareDraftCell } from '../../../hooks/squareEditCount';
 import { taskToSquareState } from '../../adapters';
 import { newChildPatch, type ChildPatch, type TaskEditPatch } from '../../taskEditPatch';
 import { buildSheetOverride, seedSheetTitle } from '../../../components/boardEdit/boardEditTaskSheetModel';
+import { legacyDerivedTaskId } from './legacyDerivedIds';
 
 /**
  * Board Edit redesign slice 3 (T2) — `commitSquareEdits`, the squares
@@ -92,7 +93,6 @@ afterEach(async () => {
 
 describe('commitSquareEdits', () => {
   it('a pending LINKED row is placed as-is — slice 3a mints no per-board copy', async () => {
-    const { derivedTaskId } = await import('@oybc/shared');
     await db.boards.add(seedBoard());
     await db.tasks.add(seedTask('root', { type: TaskType.COUNTING, action: 'Read', unit: 'pages', isCounter: true, currentCount: 40 }));
     const pending = seedTask('pending-linked', {
@@ -106,7 +106,7 @@ describe('commitSquareEdits', () => {
       }),
     );
 
-    const copyId = derivedTaskId(BOARD, 'root');
+    const copyId = legacyDerivedTaskId(BOARD, 'root');
     const placements = await db.boardTasks.where('boardId').equals(BOARD).toArray();
     expect(placements.map((p) => p.taskId)).toEqual(['pending-linked']);
     expect(placements[0].targetOverride).toBeUndefined(); // a linked row is placed with no parameters

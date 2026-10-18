@@ -211,7 +211,7 @@ final class LateLogTests: XCTestCase {
 
     // MARK: - lateLogIncrement (window-stamped derived counter — carve-out)
 
-    func test_lateLogIncrement_windowStampedDerived_appendsOnRoot_propagatesToSiblings() throws {
+    func test_lateLogIncrement_linkedSquare_appendsOnRoot_neverWritesSiblings() throws {
         let db = try makeDb(); try seedUser(db)
         try db.saveTask(makeTask("t-root", type: .counting, maxCount: 100))
 
@@ -243,9 +243,9 @@ final class LateLogTests: XCTestCase {
         // The sealed board re-derives green from the ROOT's in-window sum.
         XCTAssertEqual(try fetchBoard(db, "b1").sealedCompletedCells, [0])
 
-        // The hub-linked sibling mirrors the root's new lifetime count.
+        // A linked sibling is never written (it resolves from the root's events).
         _ = sibling
-        XCTAssertEqual(try db.fetchTask(id: "t-sibling")?.currentCount, 5)
+        XCTAssertEqual(try db.fetchTask(id: "t-sibling")?.currentCount, 0)
     }
 
     func test_lateLogIncrement_hubLinkedUnstamped_authorsOnRootAndReDerives() throws {

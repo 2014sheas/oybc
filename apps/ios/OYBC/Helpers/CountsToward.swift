@@ -224,25 +224,12 @@ enum CountsToward {
         case .counting:
             if let rootId = task.sharedCounterId, !rootId.isEmpty {
                 let rootEvents = ctx.eventsByTaskId[rootId] ?? []
-                // Context window wins (slice 0): a BOARD window applies to every
-                // linked row; a stamped row reads its own stamp only from a
-                // context-less (lifetime) caller; a hub-linked row with no
-                // window reads its latch.
-                if ctx.windowStart != nil {
-                    guard let derived = resolveDerivedCounterWindowState(
-                        task: task, eventsByTaskId: ctx.eventsByTaskId, windowStart: ctx.windowStart, windowEnd: ctx.windowEnd
-                    ), derived.isCompleted else { return .incomplete }
-                    return completed(by: crossingEvent(eventsInWindow(rootEvents, ctx), target: task.maxCount ?? 0))
-                }
-                if BoardSources.isWindowStampedDerived(task) {
-                    guard resolveWindowStampedDerivedState(task: task, rootEvents: rootEvents).isCompleted else { return .incomplete }
-                    let own = CompoundWindowContext(windowStart: task.startDate, windowEnd: task.endDate, eventsByTaskId: [:])
-                    return completed(by: crossingEvent(eventsInWindow(rootEvents, own), target: task.maxCount ?? 0))
-                }
-                // Context-less hub-linked row: the latch until slice 5 — but a goal-less
-                // row is never complete (the one completion rule, slice 2c).
-                if task.maxCount == nil { return .incomplete }
-                return latchState(task)
+                // The ROOT's events over the board window, or its lifetime with
+                // none (slice 5 — the latch is never read).
+                guard resolveDerivedCounterWindowState(
+                    task: task, eventsByTaskId: ctx.eventsByTaskId, windowStart: ctx.windowStart, windowEnd: ctx.windowEnd
+                )?.isCompleted ?? false else { return .incomplete }
+                return completed(by: crossingEvent(eventsInWindow(rootEvents, ctx), target: task.maxCount ?? 0))
             }
             let events = ctx.eventsByTaskId[task.id] ?? []
             guard resolveTaskWindowState(task: task, events: events, windowStart: ctx.windowStart, windowEnd: ctx.windowEnd).isCompleted else {

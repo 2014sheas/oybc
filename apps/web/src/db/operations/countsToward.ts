@@ -11,7 +11,6 @@ import {
   findTransitiveParentCompounds,
   forkLineageIds,
   isCreditWriteSealSuppressed,
-  isFrozenRowReachedByEvent,
   keptCreditIdsFor,
   lineageCreditDelta,
   lineageRootId,
@@ -29,8 +28,7 @@ import {
 import { currentTimestamp } from '../utils';
 import { addToSyncQueue } from './syncQueue';
 import { getSealImmuneWindowsForTask, stampTaskCachesAuthored } from './taskEvents';
-import { refreshDerivedBaselines } from './derivedCounters';
-import { writeLinkedRowPropagation } from './tasks.sharedCounter';
+import { loadPlacementReach } from './placementReach';
 import { reDeriveSealedBoardsForTasks } from './sealing';
 import { refreshWatchersForBoards, resolveAffectedBoardIds } from './boardLifecycle';
 import { runBoardCascadeForTasks } from './orchestration';
@@ -251,12 +249,8 @@ export async function writeCountsTowardForTasks(
   const immuneByRoot: Record<string, ReadonlyArray<SealImmuneWindow>> = {};
   const storedById: Record<string, TaskEvent | undefined> = {};
 
-  const reach = new Map<string, string[]>();
-  const noteReach = (rootId: string, occurredAt: string): void => {
-    const list = reach.get(rootId) ?? [];
-    if (!list.includes(occurredAt)) list.push(occurredAt);
-    reach.set(rootId, list);
-  };
+  // The counter roots whose events this pass moved.
+  const reachedRoots = new Set<string>();
   for (const task of relevant) {
     const inputs = inputsFor(task);
     const members = [task, ...(lineageByTask.get(task.id) ?? []).map((id) => ws.taskById[id]).filter(isDefined)];
@@ -283,12 +277,12 @@ export async function writeCountsTowardForTasks(
       if (isCreditWriteSealSuppressed(action, immuneByRoot, now, lateLogStamp)) continue;
       await writeCountsTowardAction(action, task.userId, storedById[action.eventId], now);
       storedById[action.eventId] = await db.taskEvents.get(action.eventId);
-      for (const { rootId, occurredAt } of creditActionReach(action)) noteReach(rootId, occurredAt);
+      for (const { rootId } of creditActionReach(action)) reachedRoots.add(rootId);
     }
   }
 
-  for (const [rootId, instants] of reach) {
-    const ids = await writeCounterRootLog(rootId, instants, now);
+  for (const rootId of reachedRoots) {
+    const ids = await writeCounterRootLog(rootId, now);
     if (ids.length === 0) continue;
     out.rootIds.add(rootId);
     for (const id of ids) out.cascadeIds.add(id);
@@ -349,27 +343,18 @@ async function writeCountsTowardAction(
 }
 
 /**
- * A counter root's events moved: a hand log's writes (`incrementSharedCounter`
- * / `undoLastCounterLog`) without the board cascade — restamp the root's
- * lifetime caches from events, refresh window-stamped baselines, write its
- * live copies, and name the frozen copies whose window holds a moved instant.
+ * A counter root's events moved: restamp the root's lifetime caches from
+ * events (authored) and name the tasks to re-derive — the root and its live
+ * linked rows, which resolve from its events and are never written
+ * (TASK_WINDOW_REWORK slice 5).
  *
- * @returns The root + copy ids to re-derive (`[]` for a deleted root).
+ * @returns The root + linked-row ids to re-derive (`[]` for a deleted root).
  */
-async function writeCounterRootLog(rootId: string, instants: string[], now: string): Promise<string[]> {
+async function writeCounterRootLog(rootId: string, now: string): Promise<string[]> {
   const root = await db.tasks.get(rootId);
   if (!root || root.isDeleted) return [];
   await stampTaskCachesAuthored(rootId, now);
-  await refreshDerivedBaselines(rootId);
-  const after = await db.tasks.get(rootId);
-  const [first, ...rest] = instants;
-  const { linkedIds, reachedFrozenIds } = await writeLinkedRowPropagation(rootId, after?.currentCount ?? 0, now, first);
-  const ids = new Set([rootId, ...linkedIds, ...reachedFrozenIds]);
-  if (rest.length > 0) {
-    const linked = await db.tasks.where('sharedCounterId').equals(rootId).filter((t) => !t.isDeleted).toArray();
-    for (const t of linked) if (rest.some((at) => isFrozenRowReachedByEvent(t, at, now))) ids.add(t.id);
-  }
-  return [...ids];
+  return [...(await loadPlacementReach([rootId])).taskIds];
 }
 
 /**

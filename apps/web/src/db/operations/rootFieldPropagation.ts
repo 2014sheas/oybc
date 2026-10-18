@@ -56,7 +56,7 @@ export async function readRootPropagationSnapshot(taskId: string): Promise<RootP
  *
  * @param snapshot - From {@link readRootPropagationSnapshot}, read before the save's writes.
  * @param patch - The root's edit.
- * @param nowIso - ISO8601 write time / freeze clock.
+ * @param nowIso - ISO8601 write time.
  * @returns The copy ids written.
  */
 export async function propagateRootFieldsInTransaction(
@@ -64,7 +64,7 @@ export async function propagateRootFieldsInTransaction(
   patch: RootFieldEditPatch,
   nowIso: string,
 ): Promise<string[]> {
-  const plan = planRootFieldPropagation(snapshot.root, patch, snapshot.copies, nowIso);
+  const plan = planRootFieldPropagation(snapshot.root, patch, snapshot.copies);
   const versionBefore = new Map(snapshot.copies.map((c) => [c.id, c.version ?? 0]));
   const written: string[] = [];
   for (const { copyId, patch: fields } of plan) {

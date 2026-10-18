@@ -142,8 +142,6 @@ final class DerivedCountersTests: XCTestCase {
             taskId: rootId, targetOverride: 4, targetKind: .discrete
         )], "the explicit member target is a parameter on the member's own placement")
         XCTAssertEqual(try database.read { try Task.fetchCount($0) }, tasksBefore, "no task row minted")
-        let derivedId = BoardSources.derivedTaskId(boardId: boardId, rootTaskId: rootId)
-        XCTAssertNil(try database.read { try Task.fetchOne($0, key: derivedId) })
         XCTAssertEqual(try database.fetchPendingSyncItems().count, 0, "nothing enqueued")
     }
 
@@ -249,35 +247,7 @@ final class DerivedCountersTests: XCTestCase {
         XCTAssertEqual(try database.fetchPendingSyncItems().count, 0)
     }
 
-    // MARK: - 1b. A legacy derived row resolves to its root
 
-    func test_plan_legacyDerivedRowPlacesItsRoot_withItsCustomTitle() throws {
-        let database = try makeDb()
-        let root = makeCountingTask(id: rootId, maxCount: 10, currentCount: 0)
-        let legacy = Task(
-            id: "legacy-1", userId: userId, title: "My reading", type: .counting,
-            action: "Read", unit: "pages", maxCount: 4,
-            totalCompletions: 0, totalInstances: 0, createdAt: now, updatedAt: now, version: 1, isDeleted: false,
-            timeframe: .daily, startDate: windowStart, endDate: windowEnd,
-            sharedCounterId: rootId, baseline: 0, createdInWizard: true
-        )
-        try database.write { db in
-            try root.save(db)
-            try legacy.save(db)
-        }
-        let planned = try database.write { db in
-            try AppDatabase.planPlacements(
-                db: db, selectedIds: ["legacy-1"], supplies: [], manualTaskIds: ["legacy-1"], manualTaskVary: [:],
-                window: self.window, mode: .oneOff,
-                tasksById: [rootId: root, "legacy-1": legacy], childrenByCompoundId: [:], sourceWindowByTaskId: [:]
-            )
-        }
-        XCTAssertEqual(planned.first?.taskId, rootId, "no derived row gains a new placement")
-        XCTAssertEqual(planned.first?.targetOverride, 4)
-        XCTAssertEqual(planned.first?.titleOverride, "My reading")
-    }
-
-    // MARK: - 5. Refresh (non-authored)
 
     /// A window-stamped derived row whose stored `baseline` is stale.
     private func seedDerivedRow(
@@ -299,72 +269,6 @@ final class DerivedCountersTests: XCTestCase {
             try derived.save(db)
         }
         return derived
-    }
-
-    func test_refresh_rewritesTheBaselineWithoutAuthoringTheRow() throws {
-        let database = try makeDb()
-        let derived = try seedDerivedRow(database, baseline: 0, startDate: windowStart)
-        try database.write { db in
-            // 7 before the window, 5 inside it → baseline must become 7.
-            try self.makeIncrementEvent(id: "e1", taskId: self.rootId, delta: 4,
-                                        at: "2026-09-16T08:00:00.000Z").save(db)
-            try self.makeIncrementEvent(id: "e2", taskId: self.rootId, delta: 3,
-                                        at: "2026-09-17T08:00:00.000Z").save(db)
-            try self.makeIncrementEvent(id: "e3", taskId: self.rootId, delta: 5,
-                                        at: "2026-09-18T08:00:00.000Z").save(db)
-        }
-
-        let touched = try database.write { db in
-            try AppDatabase.refreshDerivedBaselines(db: db, rootTaskId: self.rootId)
-        }
-        XCTAssertEqual(touched, 1)
-
-        let after = try XCTUnwrap(try database.read { try Task.fetchOne($0, key: derived.id) })
-        XCTAssertEqual(after.baseline, 7, "4 + 3 strictly before the window start")
-        XCTAssertEqual(after.version, derived.version, "non-authored: no version bump")
-        XCTAssertEqual(after.updatedAt, derived.updatedAt, "non-authored: updatedAt untouched")
-        XCTAssertEqual(try syncRows(database, entityId: derived.id).count, 0,
-                       "non-authored: nothing enqueued")
-    }
-
-    func test_refresh_returnsZeroWhenNothingMoved() throws {
-        let database = try makeDb()
-        let derived = try seedDerivedRow(database, baseline: 7, startDate: windowStart)
-        try database.write { db in
-            try self.makeIncrementEvent(id: "e1", taskId: self.rootId, delta: 7,
-                                        at: "2026-09-17T08:00:00.000Z").save(db)
-        }
-        let touched = try database.write { db in
-            try AppDatabase.refreshDerivedBaselines(db: db, rootTaskId: self.rootId)
-        }
-        XCTAssertEqual(touched, 0, "a correct baseline is not rewritten at all")
-        let after = try XCTUnwrap(try database.read { try Task.fetchOne($0, key: derived.id) })
-        XCTAssertEqual(after.baseline, 7)
-    }
-
-    func test_refresh_leavesAHandMadeLinkedCounterAlone() throws {
-        let database = try makeDb()
-        // Two of the three marks only (no `createdInWizard`) — the user's own
-        // "start from zero" linked counter, which this pipeline never rewrites.
-        let handMade = Task(
-            id: "hand-made", userId: userId, title: "Read 4 pages", type: .counting,
-            maxCount: 4, totalCompletions: 0, totalInstances: 0,
-            createdAt: now, updatedAt: now, version: 2, isDeleted: false,
-            timeframe: .daily, startDate: windowStart, endDate: windowEnd,
-            sharedCounterId: rootId, baseline: 0, createdInWizard: false
-        )
-        try database.write { db in
-            try self.makeCountingTask(id: self.rootId, currentCount: 0).save(db)
-            try handMade.save(db)
-            try self.makeIncrementEvent(id: "e1", taskId: self.rootId, delta: 9,
-                                        at: "2026-09-17T08:00:00.000Z").save(db)
-        }
-        let touched = try database.write { db in
-            try AppDatabase.refreshDerivedBaselines(db: db, rootTaskId: self.rootId)
-        }
-        XCTAssertEqual(touched, 0)
-        let after = try XCTUnwrap(try database.read { try Task.fetchOne($0, key: "hand-made") })
-        XCTAssertEqual(after.baseline, 0, "a hand-made linked counter keeps its own baseline")
     }
 
     // MARK: - 6. Persist gate (saveWizardBoard)
@@ -576,8 +480,6 @@ final class DerivedCountersTests: XCTestCase {
         let outcome = try spawn(database, template)
         guard case .spawned = outcome else { return XCTFail("expected a spawn, got \(outcome)") }
 
-        let derivedId = BoardSources.derivedTaskId(boardId: "spawned-1", rootTaskId: rootId)
-        XCTAssertNil(try database.read { try Task.fetchOne($0, key: derivedId) }, "nothing is minted")
         let placed = try database.read { db in
             try BoardTask.filter(Column("boardId") == "spawned-1" && Column("isDeleted") == false)
                 .fetchAll(db)

@@ -71,14 +71,12 @@ import type { Task } from '../types/task';
 import type { TaskEvent } from '../types/taskEvent';
 import { quantizeCount, resolveCountKind } from './countValue';
 import { createForkEventResolver, isForkLineageLoaded, lineageRootId, type ForkEventResolver } from './countsTowardLineage';
-import { isWindowStampedDerived } from './memberRules';
 import {
   boardWindowEnd,
   boundWindowContextAtSeal,
   isEventSealImmune,
   resolveDerivedCounterWindowState,
   resolveTaskWindowState,
-  resolveWindowStampedDerivedState,
   type CompoundWindowContext,
   type SealImmuneWindow,
 } from './taskEvents';
@@ -262,24 +260,10 @@ function stateOf(
   if (task.type === TaskType.COUNTING) {
     if (task.sharedCounterId) {
       const rootEvents = ctx.eventsByTaskId[task.sharedCounterId] ?? [];
-      // Context window wins (slice 0): a BOARD window applies to every
-      // linked row; a stamped row reads its own stamp only from a
-      // context-less (lifetime) caller; a hub-linked row with no window
-      // reads its latch.
-      if (ctx.windowStart != null) {
-        const derived = resolveDerivedCounterWindowState(task, ctx.eventsByTaskId, ctx);
-        if (!derived?.isCompleted) return INCOMPLETE;
-        return completedBy(crossingEvent(eventsInWindow(rootEvents, ctx), task.maxCount ?? 0));
-      }
-      if (isWindowStampedDerived(task)) {
-        if (!resolveWindowStampedDerivedState(task, rootEvents).isCompleted) return INCOMPLETE;
-        const own = { windowStart: task.startDate as string, windowEnd: task.endDate ?? null };
-        return completedBy(crossingEvent(eventsInWindow(rootEvents, own), task.maxCount ?? 0));
-      }
-      // Context-less hub-linked row: the latch until slice 5 — but a goal-less
-      // row is never complete (the one completion rule, slice 2c).
-      if (task.maxCount == null) return INCOMPLETE;
-      return latchState(task);
+      // The ROOT's events over the board window, or its lifetime with none
+      // (slice 5 — the latch is never read).
+      if (!resolveDerivedCounterWindowState(task, ctx.eventsByTaskId, ctx)?.isCompleted) return INCOMPLETE;
+      return completedBy(crossingEvent(eventsInWindow(rootEvents, ctx), task.maxCount ?? 0));
     }
     const events = ctx.eventsByTaskId[task.id] ?? [];
     if (!resolveTaskWindowState(task, events, ctx.windowStart, ctx.windowEnd).isCompleted) return INCOMPLETE;

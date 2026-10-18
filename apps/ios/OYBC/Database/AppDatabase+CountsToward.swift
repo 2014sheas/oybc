@@ -160,7 +160,8 @@ extension AppDatabase {
         }
         var storedById: [String: TaskEvent] = [:]
 
-        var reach: [(rootId: String, instants: [String])] = []
+        // The counter roots whose events this pass moved, in first-seen order.
+        var reachedRoots: [String] = []
         for task in relevant {
             let taskInputs = inputs(for: task)
             let members = [task] + (lineageByTask[task.id] ?? []).compactMap { ws.taskById[$0] }
@@ -188,19 +189,13 @@ extension AppDatabase {
                     db: db, action: action, userId: task.userId, existing: storedById[action.eventId], now: now, pullOwnerUid: pullOwnerUid
                 )
                 storedById[action.eventId] = try TaskEvent.fetchOne(db, key: action.eventId)
-                for r in action.reach {
-                    if let i = reach.firstIndex(where: { $0.rootId == r.rootId }) {
-                        if !reach[i].instants.contains(r.occurredAt) { reach[i].instants.append(r.occurredAt) }
-                    } else {
-                        reach.append((r.rootId, [r.occurredAt]))
-                    }
-                }
+                for r in action.reach where !reachedRoots.contains(r.rootId) { reachedRoots.append(r.rootId) }
             }
         }
-        for r in reach {
-            let ids = try writeCounterRootLog(db: db, rootId: r.rootId, instants: r.instants, now: now, pullOwnerUid: pullOwnerUid)
+        for rootId in reachedRoots {
+            let ids = try writeCounterRootLog(db: db, rootId: rootId, now: now, pullOwnerUid: pullOwnerUid)
             guard !ids.isEmpty else { continue }
-            out.rootIds.insert(r.rootId)
+            out.rootIds.insert(rootId)
             out.cascadeIds.formUnion(ids)
             // Chained contributors: a compound containing one of these copies.
             let deeper = try writeCountsToward(
@@ -257,23 +252,17 @@ extension AppDatabase {
         }
     }
 
-    /// A counter root's events moved: a hand log's writes without the board
-    /// cascade — restamp the root's caches, refresh window-stamped baselines,
-    /// write its live copies, name the frozen copies whose window holds a
-    /// moved instant. Returns the root + copy ids (empty for a deleted root).
+    /// A counter root's events moved: restamp the root's lifetime caches from
+    /// events (authored) and name the tasks to re-derive — the root and its
+    /// live linked rows, which resolve from its events and are never written
+    /// (TASK_WINDOW_REWORK slice 5). Returns them (empty for a deleted root).
     private static func writeCounterRootLog(
-        db: Database, rootId: String, instants: [String], now: String, pullOwnerUid: String?
+        db: Database, rootId: String, now: String, pullOwnerUid: String?
     ) throws -> Set<String> {
-        guard let root = try Task.fetchOne(db, key: rootId), !root.isDeleted, let first = instants.first else { return [] }
+        guard let root = try Task.fetchOne(db, key: rootId), !root.isDeleted else { return [] }
         let owner = pullOwnerUid ?? SyncQueueOwnership.currentUid()
         try stampTaskCachesAuthored(db: db, taskId: rootId, now: now, ownerUid: owner)
-        try refreshDerivedBaselines(db: db, rootTaskId: rootId)
-        var ids: Set<String> = [rootId]
-        ids.formUnion(try propagateRootLogToLinkedRows(db: db, rootId: rootId, reachOccurredAt: first, now: now, ownerUid: owner))
-        for at in instants.dropFirst() {
-            ids.formUnion(try fetchLinkedTasksForLog(db: db, sourceTaskId: rootId, reachOccurredAt: at, now: now).reachedFrozenIds)
-        }
-        return ids
+        return try placementReach(db: db, taskIds: [rootId]).taskIds
     }
 
     /// The cascade hook, FINISH phase — after the caller's board pass:

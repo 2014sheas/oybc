@@ -1,6 +1,5 @@
 import { useModalA11y } from '../../hooks/useModalA11y';
 import { unitTasksKeptNote } from './countsTowardLabels';
-import { derivedCounterRemovalNote } from './derivedCounterRemovalNote';
 import styles from './CounterDeleteConfirmDialog.module.css';
 
 /** One linked member row shown in the confirm dialog's unlink list. */
@@ -17,18 +16,8 @@ export interface CounterDeleteConfirmDialogProps {
   /** The counter's display name (hero-card name / group.name). */
   counterName: string;
   /** `impact.counterMemberCount` — number of live linked tasks that will be
-   *  UNLINKED and keep their counts. Since B2 this excludes the counter's
-   *  window-stamped derived members, which the delete retires outright
-   *  (`impact.derivedWindowCounterCount`) — so the "will be unlinked" copy
-   *  below stays true of every task this number covers. */
+   *  UNLINKED and keep their counts. */
   memberCount: number;
-  /**
-   * §Member rules (B3, RC12) — `impact.derivedWindowCounterCount`: the
-   * counter's per-window DERIVED members, which the delete RETIRES rather
-   * than unlinks. Called out on its own line so "unlinked and keep their
-   * counts" is never read as covering them. `0` renders nothing.
-   */
-  derivedWindowCounterCount: number;
   /**
    * `impact.unitTaskCount` — the counter's unit tasks, which the delete keeps
    * as ordinary tasks; a muted line says so. `0` / absent renders nothing.
@@ -59,7 +48,6 @@ export interface CounterDeleteConfirmDialogProps {
 export function CounterDeleteConfirmDialog({
   counterName,
   memberCount,
-  derivedWindowCounterCount,
   unitTaskCount = 0,
   members,
   busy,
@@ -67,13 +55,6 @@ export function CounterDeleteConfirmDialog({
   onCancel,
 }: CounterDeleteConfirmDialogProps): React.ReactElement {
   const hasMembers = memberCount > 0;
-  // Rendered OUTSIDE the members section: a counter can have only derived
-  // members (every placement came from a wizard-built board), in which case
-  // `memberCount` is 0 and the section above never renders — but the derived
-  // ones are still being removed and must still be announced. The sentence
-  // comes from the one helper both web confirm dialogs share, so it can
-  // never drift from `TaskConfirmDeleteDialog`'s (or from iOS's).
-  const derivedNote = derivedCounterRemovalNote(derivedWindowCounterCount);
   const unitTasksNote = unitTasksKeptNote(unitTaskCount);
   const { ref: modalRef, props: modalProps } = useModalA11y<HTMLDivElement>({
     open: true,
@@ -115,10 +96,6 @@ export function CounterDeleteConfirmDialog({
               ))}
             </ul>
           </div>
-        )}
-
-        {derivedNote !== null && (
-          <p className={styles.derivedNote}>{derivedNote}</p>
         )}
 
         {unitTasksNote !== null && <p className={styles.derivedNote}>{unitTasksNote}</p>}

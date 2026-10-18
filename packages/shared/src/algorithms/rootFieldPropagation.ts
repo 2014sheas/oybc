@@ -1,7 +1,6 @@
 import { TaskType } from '../constants/enums';
 import type { Task } from '../types/task';
 import { planCountKindSwitch, resolveCountKind, type CountKind } from './countValue';
-import { isFrozenDerivedRow } from './memberRules';
 import { renderCounterTitle } from './counterSettings';
 import { isAutoCounterTitle, type CounterTitleSettings } from './taskTitle';
 
@@ -94,9 +93,6 @@ export type RootPropagationCopy = Pick<
   | 'maxCount'
   | 'countKind'
   | 'sharedCounterId'
-  | 'startDate'
-  | 'endDate'
-  | 'createdInWizard'
   | 'isDeleted'
 > & {
   /** Placed on a sealed (closed) board — a permanent record, never rewritten. */
@@ -121,7 +117,7 @@ export interface RootFieldPropagationEntry {
  *
  * Rules (each copy judged on its own pre-edit fields):
  * - Only a live COUNTING row linked to this root (`sharedCounterId == root.id`,
- *   not deleted, not frozen by `isFrozenDerivedRow`, not on a sealed board)
+ *   not deleted, not on a sealed board)
  *   is a candidate; a root that is itself linked plans nothing.
  * - action / unit: a changed root value is copied verbatim.
  * - title: when the root's NEW title is custom and changed, every live copy
@@ -136,14 +132,12 @@ export interface RootFieldPropagationEntry {
  * @param root - The root before the edit.
  * @param patch - The root's edit.
  * @param copies - Candidate copies before the edit.
- * @param now - ISO8601 freeze clock.
  * @returns One entry per copy that changes, sorted by copy id.
  */
 export function planRootFieldPropagation(
   root: RootPropagationRoot,
   patch: RootFieldEditPatch,
   copies: readonly RootPropagationCopy[],
-  now: string,
 ): RootFieldPropagationEntry[] {
   if (root.type !== TaskType.COUNTING || root.sharedCounterId != null) return [];
 
@@ -178,7 +172,7 @@ export function planRootFieldPropagation(
 
   const out: RootFieldPropagationEntry[] = [];
   for (const copy of copies) {
-    if (!isLiveCopy(copy, root.id, now)) continue;
+    if (!isLiveCopy(copy, root.id)) continue;
     const entry = planCopy(copy, {
       kindChanged, kindAfter, actionChanged, actionAfter, unitChanged, unitAfter,
       carriedTitle: carryRootTitle ? titleAfter : null,
@@ -210,16 +204,14 @@ interface RootOutcome {
  *
  * @param copy - The candidate.
  * @param rootId - The root's id.
- * @param now - ISO8601 freeze clock.
  * @returns True when the copy is live.
  */
-function isLiveCopy(copy: RootPropagationCopy, rootId: string, now: string): boolean {
+function isLiveCopy(copy: RootPropagationCopy, rootId: string): boolean {
   return (
     copy.type === TaskType.COUNTING &&
     copy.sharedCounterId === rootId &&
     !copy.isDeleted &&
-    copy.onSealedBoard !== true &&
-    !isFrozenDerivedRow(copy, now)
+    copy.onSealedBoard !== true
   );
 }
 

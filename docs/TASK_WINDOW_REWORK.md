@@ -422,7 +422,7 @@ is installed on the owner's device. Slices 3 and 6 are split so that the
 | **3a — Writers stop minting (both clients)** (MERGED #638, 2026-10-18) | Delete the heal, its post-pull sweep and the choke points' resolve step; Board Edit writes overrides / `childTargets` / `titleOverride` instead of forking; copy-writers (Repeat, board-source pulls, core next-window) resolve derived rows at write time; `BoardSourceSupplyInfo` carries the effective goal. | The heal, `placementNeedsCopy`, fork-on-goal-edit. |
 | **3b — Planner emits placements** (MERGED #639, 2026-10-18) | `planDerivedTasks` output shape; wizard persist, spawn, quick-add write parameters. Gated on both clients carrying 3a. | Minting paths. |
 | **4 — Migration sweep** (MERGED: 4a #640, 4b #641, 2026-10-18) | The gated sweep above, at open and after every pull; seal re-derivation vectors; counts-toward boundary; `repointSealedPlacement`. | Every derived row that can be repointed safely; the rest stripped to plain rows. |
-| **5 — Retire the machinery** | Delete propagation, freeze, baseline refresh, derived deletion cascades, three-mark predicates, task-window kernel inputs, the own-stamp fallback; clear stamped rows' window fields; re-base the expired filters; drop the sweep once both clients carry it and the fixture shows **no marked rows**; docs: replace the `CLAUDE.md` Windowed Completion paragraph with the model statement and move its history into an ADR log in `WINDOWED_COMPLETION.md`; `BOARD_SOURCES.md` §Member rules rewritten in placement terms. | The four derived-row invariants. |
+| **5 — Retire the machinery** (machinery + sweep: PR open 2026-10-18; expired filters next) | Delete propagation, freeze, baseline refresh, derived deletion cascades, three-mark predicates, task-window kernel inputs, the own-stamp fallback; clear stamped rows' window fields; re-base the expired filters; drop the sweep once both clients carry it and the fixture shows **no marked rows**; docs: replace the `CLAUDE.md` Windowed Completion paragraph with the model statement and move its history into an ADR log in `WINDOWED_COMPLETION.md`; `BOARD_SOURCES.md` §Member rules rewritten in placement terms. | The four derived-row invariants. |
 | **6a — Forks read shadows (both clients)** | Kernel: shadowing-clone rule, undo writes shadow tombstones, affected-boards walk includes forks. | — |
 | **6b — Forks stop cloning** | `planBoardScopedFork` stops cloning events. Gated on both clients carrying 6a. | Duplicate occurrences in the log. |
 
@@ -592,12 +592,42 @@ and no entry is written when the part's frozen goal equals the child's own;
 the parts re-key to their roots; an unplaced derived compound is an orphan
 and its parts retire on the next run.
 
-**Before slice 5 (owner):** install the TestFlight build carrying slice 4 and
-open the app (the sweep runs on device); run the web dev build after a clean
-pull and use Settings › Developer › Export anonymised workspace; commit the
-file as `packages/shared/tests/fixtures/ownerWorkspace.anonymised.json`. The
-skipped acceptance test then runs; slice 5 drops the sweep only when that
-fixture shows no marked rows.
+**Before slice 5 (owner) — done 2026-10-18:** the TestFlight build carrying
+slice 4 ran the sweep on device; the web export after a clean pull is
+committed as `packages/shared/tests/fixtures/owner/workspace.anonymised.json`
+(a subfolder, so the iOS fixture mirror skips it). Over it the slice-4 sweep
+planned **0 repoints, 0 refused, 0 strips, 0 orphans, no sealed-board drift**
+— 541 tasks, 33 boards, 0 live marked rows (27 tombstoned ones) — so slice 5
+drops the sweep too.
+
+**Slice 5 implementation notes (2026-10-18, as built):**
+- One linked-row dispatch: `resolveDerivedCounterWindowState` returns the
+  root's in-window state on a board and `contextlessCounterState` (root
+  lifetime) with no `windowStart`, so the grid, compound children, credits
+  and display all stop reading a linked row's latch — including on an
+  indefinite board, which used to read it. `resolveWindowStampedDerivedState`
+  is renamed `resolveLinkedCounterWindowState`.
+- Counts-toward `stateOf`: a context-less linked contributor reads the root's
+  lifetime events (crossing event for `completedAt`), never the latch.
+- Increment / decrement / undo / late log / counts-toward write the root row
+  and its event, then one cascade over `placementsReachedByTasks([root])`;
+  credited boards are those placing the root or a linked row directly.
+- `deleteCounterWithUnlink` seeds each unlinked member from the root's
+  lifetime events (`currentCount − baseline` is gone), so a member keeps the
+  counter's total.
+- **Deviation from §Retired:** root-field propagation and the kind-switch
+  fan-out to live linked rows are KEPT (minus the freeze). Linked rows that a
+  compound carries were never stamped, so they are not "copies" the rework
+  replaced; a root rename or kind switch must still reach them. An
+  ended-board row now receives both (only a sealed-board row is skipped by
+  root-field propagation).
+- The sweep (`planPlacementSweep`, both appliers, the open / post-pull
+  triggers) is deleted; Dexie v21 / GRDB v47 stay registered as no-ops. The
+  developer export stays.
+- `tasks.timeframe` / `startDate` / `endDate` stay clearable sync fields for
+  now: no slice-5 writer clears them, but the TestFlight build of slice 4
+  still can until every device updates — dropping them is a later cleanup.
+- Deferred to the next PR: the expired filters re-based on placements.
 
 ## Acceptance
 

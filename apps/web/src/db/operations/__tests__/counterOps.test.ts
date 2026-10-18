@@ -14,9 +14,18 @@ import {
   OperatorType,
   deriveCounterDailyTotals,
   type Task,
+  type TaskEvent,
 } from '@oybc/shared';
 
 const NOW = '2026-07-16T10:00:00.000Z';
+
+/** A live increment event on `taskId` (the root's lifetime is its event sum). */
+function rootIncrement(taskId: string, delta: number, id = `ev-${taskId}`): TaskEvent {
+  return {
+    id, taskId, userId: 'u1', kind: 'increment', delta, occurredAt: NOW,
+    createdAt: NOW, updatedAt: NOW, version: 1, isDeleted: false,
+  } as TaskEvent;
+}
 
 function counterMember(overrides: Partial<Task> = {}): Task {
   return {
@@ -189,7 +198,9 @@ describe('deleteCounterWithUnlink (P5 decision 8)', () => {
       version: 1,
       isDeleted: false,
     } as unknown as Task);
-    // member: baseline 10, maxCount 50 → displayed = 40 - 10 = 30
+    await db.taskEvents.add(rootIncrement('src1', 40));
+    // member: a stored baseline of 10 is never read (slice 5) — the snapshot
+    // is the root's lifetime event sum, 40.
     await db.tasks.add(counterMember());
 
     await deleteCounterWithUnlink('src1');
@@ -198,13 +209,13 @@ describe('deleteCounterWithUnlink (P5 decision 8)', () => {
     expect(member).toBeDefined();
     expect(member!.sharedCounterId).toBeNull();
     expect(member!.baseline).toBeNull();
-    expect(member!.currentCount).toBe(30);
+    expect(member!.currentCount).toBe(40);
     expect(member!.isDeleted).toBe(false);
     expect(member!.version).toBe(2);
 
     const memberEvents = await db.taskEvents.where('taskId').equals('member1').toArray();
     expect(memberEvents).toHaveLength(1);
-    expect(memberEvents[0].delta).toBe(30);
+    expect(memberEvents[0].delta).toBe(40);
     // F4: the carried-over lifetime snapshot is anchored at the seed sentinel
     // (a starting balance), NOT `now` — so it stays out of day-bucketing.
     expect(memberEvents[0].occurredAt).toBe(SEED_EVENT_OCCURRED_AT);
@@ -518,77 +529,8 @@ describe('createCompound — inline counting child auto-link (R1 counters refres
   });
 });
 
-describe('deleteCounterWithUnlink — window-stamped derived split (B2 §Member rules deletion)', () => {
-  /**
-   * Deleting a counter root splits its members two ways: a member the user
-   * authored is UNLINKED and keeps its progress (P5 decision 8, unchanged),
-   * while a per-window derived counter this pipeline minted is RETIRED with
-   * its placement — it has no meaning without its root, and unlinking it
-   * would strand a mystery row on a board the user never added it to.
-   */
-  async function seedRoot(id: string): Promise<void> {
-    await db.tasks.add({
-      id,
-      userId: 'u1',
-      title: 'Push-ups (reps)',
-      type: TaskType.COUNTING,
-      action: 'Push-ups',
-      unit: 'reps',
-      isCounter: true,
-      currentCount: 40,
-      isCompleted: false,
-      totalCompletions: 0,
-      totalInstances: 0,
-      createdAt: NOW,
-      updatedAt: NOW,
-      version: 1,
-      isDeleted: false,
-    } as unknown as Task);
-  }
-
-  it('retires the window-stamped members (+ placements) and unlinks the ordinary one', async () => {
-    await seedRoot('src-split');
-    // Ordinary member: baseline 10, maxCount 50, root at 40 → keeps 30.
-    await db.tasks.add(counterMember({ id: 'ordinary1', sharedCounterId: 'src-split' }));
-    await db.tasks.add(
-      counterMember({
-        id: 'windowed1',
-        sharedCounterId: 'src-split',
-        createdInWizard: true,
-        startDate: '2026-07-13T00:00:00.000',
-      }),
-    );
-    await db.boardTasks.add({
-      id: 'bt-windowed1',
-      boardId: 'board-x',
-      taskId: 'windowed1',
-      row: 0,
-      col: 0,
-      isCenter: false,
-      createdAt: NOW,
-      updatedAt: NOW,
-      version: 1,
-      isDeleted: false,
-    } as never);
-
-    await deleteCounterWithUnlink('src-split');
-
-    const windowed = await db.tasks.get('windowed1');
-    expect(windowed!.isDeleted).toBe(true);
-    expect(windowed!.version).toBe(2);
-    // No carried-over snapshot event for a retired row.
-    expect(await db.taskEvents.where('taskId').equals('windowed1').toArray()).toHaveLength(0);
-    expect((await db.boardTasks.get('bt-windowed1'))!.isDeleted).toBe(true);
-
-    const ordinary = await db.tasks.get('ordinary1');
-    expect(ordinary!.isDeleted).toBe(false);
-    expect(ordinary!.sharedCounterId).toBeNull();
-    expect(ordinary!.currentCount).toBe(30);
-  });
-});
-
-describe('computeTaskDeletionImpact — derived-window split (B2 RB11)', () => {
-  it('counts window-stamped members separately from the ordinary members that will be unlinked', async () => {
+describe('computeTaskDeletionImpact — counter members (slice 5)', () => {
+  it('lists every live linked member, a formerly stamped row included — all are unlinked and kept', async () => {
     await db.tasks.add({
       id: 'src-impact',
       userId: 'u1',
@@ -618,14 +560,7 @@ describe('computeTaskDeletionImpact — derived-window split (B2 RB11)', () => {
 
     const impact = await computeTaskDeletionImpact('src-impact');
 
-    expect(impact.counterMemberCount).toBe(1);
-    expect(impact.counterMembers.map((m) => m.id)).toEqual(['ord-a']);
-    expect(impact.derivedWindowCounterCount).toBe(1);
-  });
-
-  it('reports zero derived-window counters for a plain source', async () => {
-    await db.tasks.add(standaloneCountingTask());
-    const impact = await computeTaskDeletionImpact('standalone1');
-    expect(impact.derivedWindowCounterCount).toBe(0);
+    expect(impact.counterMemberCount).toBe(2);
+    expect(impact.counterMembers.map((m) => m.id).sort()).toEqual(['ord-a', 'win-a']);
   });
 });

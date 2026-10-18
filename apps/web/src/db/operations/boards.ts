@@ -18,10 +18,6 @@ import { fetchAllCompoundChildren } from './compoundChildren';
 import { fetchAllBoardTasks, buildBoardTaskTombstone } from './boardTasks';
 import { buildWindowContext } from './windowContext';
 import { healBoardName, healBoardNames } from './boardNames';
-import {
-  softDeleteWindowStampedDerived,
-  windowStampedDerivedOrphanedByBoard,
-} from './derivedCounters';
 
 /**
  * Board CRUD Operations
@@ -482,10 +478,6 @@ export async function deleteBoard(id: string): Promise<void> {
       });
       const board = await db.boards.get(id);
       if (board) await addToSyncQueue('boards', id, SyncOperationType.DELETE, board);
-
-      // After the tombstone, so the "live placement" test excludes this board.
-      const orphaned = await windowStampedDerivedOrphanedByBoard(id);
-      await softDeleteWindowStampedDerived(orphaned, now);
     },
   );
 }

@@ -89,8 +89,8 @@ struct Task: Codable, FetchableRecord, PersistableRecord, Identifiable {
     var endDate: String? // ISO8601
 
     // Phase 2 — Shared Counters. Points at the source counting task whose
-    // `currentCount` drives this task's displayed value via
-    // `deriveDisplayedCount()`. Nil for non-linked tasks. Only meaningful
+    // `currentCount` drives this task's displayed value
+    // (resolved from the root's events). Nil for non-linked tasks. Only meaningful
     // when `type == .counting`. Stored as TEXT; no DB-level FK constraint
     // (soft-delete semantics make hard constraints unworkable).
     var sharedCounterId: String?

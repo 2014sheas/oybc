@@ -72,8 +72,7 @@ enum RootFieldPropagation {
     ///
     /// Rules (each copy judged on its own pre-edit fields):
     /// - Only a live COUNTING row linked to this root (`sharedCounterId == root.id`,
-    ///   not deleted, not frozen by `BoardSources.isFrozenDerivedRow`, not on a
-    ///   sealed board) is a candidate; a root that is itself linked plans nothing.
+    ///   not deleted, not on a sealed board) is a candidate; a root that is itself linked plans nothing.
     /// - action / unit: a changed root value is copied verbatim.
     /// - title: when the root's NEW title is custom and changed, every live copy
     ///   carries it verbatim (the #542 mint rule). Otherwise an AUTO copy title
@@ -87,9 +86,8 @@ enum RootFieldPropagation {
     ///   - root: The root before the edit.
     ///   - patch: The root's edit.
     ///   - copies: Candidate copies before the edit.
-    ///   - now: ISO8601 freeze clock.
     /// - Returns: One entry per copy that changes, sorted by copy id.
-    static func plan(root: Task, patch: EditPatch, copies: [Copy], now: String) -> [Entry] {
+    static func plan(root: Task, patch: EditPatch, copies: [Copy]) -> [Entry] {
         guard root.type == .counting, root.sharedCounterId == nil else { return [] }
 
         let rootKind = resolveCountKind(root.countKind)
@@ -125,7 +123,7 @@ enum RootFieldPropagation {
             settingsBefore: settingsBefore, settingsAfter: settingsAfter
         )
         return copies
-            .filter { isLiveCopy($0, rootId: root.id, now: now) }
+            .filter { isLiveCopy($0, rootId: root.id) }
             .compactMap { planCopy($0.task, root: outcome) }
             .sorted { $0.copyId < $1.copyId }
     }
@@ -139,13 +137,12 @@ enum RootFieldPropagation {
     }
 
     /// Whether `copy` is a live copy of `rootId` that a root edit may write.
-    private static func isLiveCopy(_ copy: Copy, rootId: String, now: String) -> Bool {
+    private static func isLiveCopy(_ copy: Copy, rootId: String) -> Bool {
         let task = copy.task
         return task.type == .counting
             && task.sharedCounterId == rootId
             && !task.isDeleted
             && !copy.onSealedBoard
-            && !BoardSources.isFrozenDerivedRow(task, now: now)
     }
 
     /// One copy's patch under the root outcome, or nil when nothing changes.

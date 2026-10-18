@@ -3,7 +3,6 @@ import type { Task } from '../types/task';
 import type { TaskEvent } from '../types/taskEvent';
 import { TaskType } from '../constants/enums';
 import { isWithinTimeframe } from './calendarBoundaries';
-import { isWindowStampedDerived } from './memberRules';
 import { finalizeWindowCount, resolveCountKind, type CountKind } from './countValue';
 
 /**
@@ -36,12 +35,10 @@ export interface TaskWindowState {
  * Context threaded through windowed compound evaluation (docs §Semantics —
  * "evaluateCompound gains a window-context parameter"). When present, primitive
  * children resolve against `windowStart` via {@link resolveTaskWindowState};
- * window-stamped derived counters resolve from their root's events in their own
- * window ({@link resolveDerivedCounterWindowState}); any other linked counting
- * child resolves over the host window the same way (owner rule 2026-10-01 —
- * only a context with no `windowStart` still reads such a child's latch);
- * nested compounds inherit the SAME `windowStart` / `windowEnd` (host-window
- * inheritance).
+ * a linked counting child resolves from its ROOT's events over the host window
+ * ({@link resolveDerivedCounterWindowState}), or over the root's lifetime with
+ * no `windowStart` ({@link contextlessCounterState}); nested compounds inherit
+ * the SAME `windowStart` / `windowEnd` (host-window inheritance).
  */
 export interface CompoundWindowContext {
   /** Window lower bound (`board.startDate`), or `null` for lifetime. */
@@ -213,35 +210,19 @@ export function lateLogOccurredAt(
 }
 
 /**
- * Resolve a **window-stamped derived counter**'s state from its ROOT's events
- * (docs/WINDOWED_COMPLETION.md §Derived-task carve-out, amended 2026-09-23;
- * docs/BOARD_SOURCES.md §Plan B2 notes → "Window-stamped derived counters").
+ * A linked counting row's state over one window `[startDate, endDate]`: the
+ * sum of its ROOT's live increment deltas inside the window (inclusive both
+ * ends, parsed compare via {@link isWithinTimeframe}; `endDate == null` is
+ * open-ended), low-clamped at 0 and finalised at the row's kind, complete iff
+ * `maxCount != null && count >= maxCount` (the one completion rule). A row
+ * owns no events; neither its `baseline` nor its latch is read. With no
+ * `startDate` it reads nothing (count 0).
  *
- * A window-stamped derived counter owns no events (carve-out item 1), but it
- * carries its own window (`startDate` / `endDate`, stamped from the board it
- * was minted for) and a per-window target (`maxCount`). Its completion is
- * therefore a pure function of the root's converged increment events inside
- * that window — never the propagation-stamped one-way latch, which a LATER
- * window's increments can set and which made sealed re-derivation diverge
- * across devices (audit 2026-09-23 finding #1).
- *
- * Window membership uses {@link isWithinTimeframe} — the SAME `[startDate,
- * endDate]` convention (inclusive both ends, parsed-timestamp compare, `null`
- * `endDate` = unbounded) the kernel already uses for board windows. Deltas are
- * signed (a decrement is a negative delta) and summed as-is; the sum is then
- * low-clamped at 0 exactly like {@link resolveTaskWindowState} and
- * `deriveDisplayedCount`. Completion is `maxCount != null && count >= maxCount` (slice 2a: one rule) — the
- * derived-counter convention (unlike `deriveDisplayedCount`'s context-less path,
- * where a missing / 0 target still reads complete until slice 2b re-models the hub). Overshoot is valid; nothing is high-clamped.
- *
- * `baseline` is NOT read — it stays a non-authored display cache.
- *
- * @param task       The window-stamped derived counter (its window + target).
- * @param rootEvents The ROOT task's events (`eventsByTaskId[task.sharedCounterId]`);
- *                   deleted rows and completion events are ignored internally.
+ * @param task       The window and the goal (the placement-adjusted row's).
+ * @param rootEvents The ROOT task's events; deleted rows and completions ignored.
  * @returns `{ isCompleted, count }` where `count` is the clamped in-window sum.
  */
-export function resolveWindowStampedDerivedState(
+export function resolveLinkedCounterWindowState(
   task: {
     startDate?: string | null;
     endDate?: string | null;
@@ -268,7 +249,7 @@ export function resolveWindowStampedDerivedState(
  * A board's window as a linked counting square is evaluated against it:
  * `[startDate, endDate]`, inclusive both ends (`endDate == null` = open-ended).
  * The shape a display / hub reader hands {@link resolveLinkedCounterDisplay}
- * for a row that is NOT window-stamped — the placing board's own window.
+ * — the placing board's own window.
  */
 export interface LinkedCounterWindow {
   startDate: string;
@@ -276,41 +257,25 @@ export interface LinkedCounterWindow {
 }
 
 /**
- * Kernel dispatch for the derived-counter branch: a COUNTING row with a
- * `sharedCounterId` resolves from its ROOT's increment events via
- * {@link resolveWindowStampedDerivedState}'s summation, over the window that
- * applies to it; anything else returns `null` so the caller falls through to
- * its existing branches (event-owning → `resolveTaskWindowState`).
+ * Kernel dispatch for a LINKED counting row (`sharedCounterId` set): it owns
+ * no events and resolves from its ROOT's —
  *
- * Which window (owner rule 2026-10-01 — a counting square on a board accounts
- * ONLY for the counter's logs inside that board's window):
+ *   - with a context window (`windowStart != null`, a board's) → the root's
+ *     increments inside `[windowStart, windowEnd]` (owner rule 2026-10-01: a
+ *     counting square accounts only for the counter's logs inside its board's
+ *     window; the sealed path's context is already bounded at `sealedAt`);
+ *   - with none (library, compound Task Detail, a hub card with no board, an
+ *     indefinite board) → the root's lifetime ({@link contextlessCounterState}).
  *
- *   - **Window-stamped** ({@link isWindowStampedDerived}) → the row's OWN
- *     stamped `[startDate, endDate]`, as before.
- *   - **Any other linked row** (a hub-linked copy with no `startDate`, or a
- *     linked row that carries a window but is not wizard-born) WITH a context
- *     window (`contextWindow.windowStart != null`) → the CONTEXT window
- *     `[windowStart, windowEnd]`, i.e. the placing board's (the sealed path's
- *     context is already bounded at `sealedAt` by its builder). The
- *     lifetime-latch carve-out these rows used to take on a board is retired.
- *   - No context window (a lifetime / library reader) → `null`: the caller
- *     keeps its latch read for that context-less case only.
- *
- * A root with no entry in `eventsByTaskId` resolves as zero events (count 0) —
- * never as "fall back to the latch". Every production context builder loads
- * the whole workspace's non-deleted events keyed by `taskId` (so the root's
- * events are present even when only the derived row is placed), and the
- * sealed context drops keys whose events were all bounded away — for that
- * case "absent" genuinely means "nothing in the window".
+ * Returns `null` for any other task, which the caller resolves as an event
+ * owner. A row's own `startDate` / `endDate`, its `baseline` and its latch are
+ * never read (TASK_WINDOW_REWORK slice 5). A root with no entry in
+ * `eventsByTaskId` resolves as zero events.
  *
  * @param task           The task being resolved.
- * @param eventsByTaskId The window context's grouped events.
- * @param contextWindow  The evaluating board's window (`windowStart` /
- *                       `windowEnd`, the `CompoundWindowContext` shape), or
- *                       absent for a context-less caller.
- * @returns The derived window state, or `null` when `task` is not a linked
- *          counter, or is a non-window-stamped one with no context window.
- *          Precedence (slice 0): context window → own stamp → `null`.
+ * @param eventsByTaskId The context's grouped events.
+ * @param contextWindow  The evaluating board's window, or absent.
+ * @returns The linked row's state, or `null` for a non-linked task.
  */
 export function resolveDerivedCounterWindowState(
   task: Task,
@@ -318,23 +283,11 @@ export function resolveDerivedCounterWindowState(
   contextWindow?: Pick<CompoundWindowContext, 'windowStart' | 'windowEnd'>,
 ): TaskWindowState | null {
   if (task.type !== TaskType.COUNTING || !task.sharedCounterId) return null;
-  const rootEvents = eventsByTaskId[task.sharedCounterId] ?? [];
-  // Context window wins (docs/TASK_WINDOW_REWORK.md slice 0, 2026-10-16): a
-  // BOARD window, when given, is the window for EVERY linked row — stamped
-  // or hub-linked. The row's own stamp is read only by a context-less
-  // caller (library, compound Task Detail, `computeTaskCachesFromEvents`,
-  // credits for unplaced compounds, a hub card with no board); the stamped
-  // fallback is retired in slice 5.
-  if (contextWindow?.windowStart != null) {
-    return resolveWindowStampedDerivedState(
-      { startDate: contextWindow.windowStart, endDate: contextWindow.windowEnd, maxCount: task.maxCount, countKind: task.countKind },
-      rootEvents,
-    );
-  }
-  if (isWindowStampedDerived(task)) {
-    return resolveWindowStampedDerivedState(task, rootEvents);
-  }
-  return null;
+  if (contextWindow?.windowStart == null) return contextlessCounterState(task, eventsByTaskId);
+  return resolveLinkedCounterWindowState(
+    { startDate: contextWindow.windowStart, endDate: contextWindow.windowEnd, maxCount: task.maxCount, countKind: task.countKind },
+    eventsByTaskId[task.sharedCounterId] ?? [],
+  );
 }
 
 /**
@@ -377,7 +330,7 @@ export function contextlessCounterState(
  * snapshots re-derive from the event union): keep only events with
  * `occurredAt <= sealedAtMs`, dropping a task's key when none survive. Applied
  * to EVERY task's events — including a shared-counter ROOT's, which is what a
- * window-stamped derived cell now reads — so a post-seal increment can never
+ * linked cell reads — so a post-seal increment can never
  * leak into a frozen record. At seal time `sealedAtMs = now`, so nothing is
  * dropped; the bound matters for pull-path re-derivation.
  *

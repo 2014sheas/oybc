@@ -97,9 +97,6 @@ extension AppDatabase {
                 now: now
             ).enqueue(db)
 
-            // After the tombstone, so the "live placement" test excludes this board.
-            let orphaned = try Self.windowStampedDerivedOrphanedByBoard(db: db, boardId: id)
-            try Self.softDeleteWindowStampedDerived(db: db, taskIds: orphaned, now: now)
         }
     }
 

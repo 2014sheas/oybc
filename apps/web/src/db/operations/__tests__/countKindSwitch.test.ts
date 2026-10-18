@@ -23,9 +23,9 @@ import { createTask } from '../tasks.crud';
 
 /**
  * Counter kinds — the root kind switch + family cascade (docs/COUNTER_KINDS.md
- * D4/D5, Review Focus #2 / #3). Setup follows
- * `sharedCounterPropagationFreeze.test.ts`: a root, an in-window derived row
- * (live) and an ended derived row (frozen), each placed on its own board.
+ * D4/D5, Review Focus #2 / #3). Setup: a root and two linked rows, one on a
+ * live board and one on an ended board — both are the family and both switch
+ * (slice 5 retired the propagation freeze).
  */
 
 const USER = 'user-1';
@@ -171,16 +171,15 @@ afterEach(async () => {
 });
 
 describe('switchCounterKind', () => {
-  it('continuous → discrete rounds root and live family, frozen row and events untouched', async () => {
+  it('continuous → discrete rounds the root and its whole family; events untouched', async () => {
     await seedFamily({ countKind: 'continuous', rootGoal: 26.2, liveTarget: 6.1, endedTarget: 6.4, deltas: [0.4, 0.4, 0.4] });
     const eventsBefore = await db.taskEvents.toArray();
-    const endedBefore = await db.tasks.get(ENDED);
 
     await switchCounterKind(ROOT, 'discrete', NOW);
 
     expect(await db.tasks.get(ROOT)).toMatchObject({ countKind: 'discrete', maxCount: 26, defaultLogAmount: 1, version: 2 });
     expect(await db.tasks.get(LIVE)).toMatchObject({ countKind: 'discrete', maxCount: 6, version: 5 });
-    expect(await db.tasks.get(ENDED)).toEqual(endedBefore);
+    expect(await db.tasks.get(ENDED)).toMatchObject({ countKind: 'discrete', maxCount: 6, version: 5 });
     expect(await db.taskEvents.toArray()).toEqual(eventsBefore);
   });
 
@@ -226,7 +225,7 @@ describe('switchCounterKind', () => {
     expect(await db.syncQueue.count()).toBe(0);
   });
 
-  it('enqueues one task UPDATE per written row (root + live only) and writes discrete explicitly', async () => {
+  it('enqueues one task UPDATE per written row (root + family) and writes discrete explicitly', async () => {
     await seedFamily({ countKind: 'discrete', rootGoal: 30, liveTarget: 5 });
     await db.tasks.update(ROOT, { countKind: undefined }); // pre-feature root: absent ⇒ discrete
 
@@ -234,7 +233,7 @@ describe('switchCounterKind', () => {
     await switchCounterKind(ROOT, 'discrete', NOW);
 
     const taskItems = (await db.syncQueue.toArray()).filter((i) => i.entityType === 'tasks');
-    expect(taskItems.map((i) => i.entityId).sort()).toEqual([ROOT, LIVE].sort());
+    expect(taskItems.map((i) => i.entityId).sort()).toEqual([ROOT, LIVE, ENDED].sort());
     const root = await db.tasks.get(ROOT);
     expect(root!.countKind).toBe('discrete');
     expect(root!.version).toBe(3);
@@ -265,22 +264,22 @@ describe('linked rows carry the root kind (D5)', () => {
 });
 
 describe('previewCounterKindSwitch', () => {
-  it('continuous → discrete: rounded logged, custom title kept, live linked count only', async () => {
+  it('continuous → discrete: rounded logged, custom title kept, every linked row counted', async () => {
     await seedFamily({ countKind: 'continuous', rootGoal: 26.2, deltas: [12.75] });
-    expect(await previewCounterKindSwitch(ROOT, 'discrete', NOW)).toEqual({
+    expect(await previewCounterKindSwitch(ROOT, 'discrete')).toEqual({
       from: 'continuous', to: 'discrete', titleBefore: 'Run', titleAfter: 'Run',
-      loggedBefore: 12.75, loggedAfter: 13, linkedCount: 1, // LIVE counts, ENDED is frozen
+      loggedBefore: 12.75, loggedAfter: 13, linkedCount: 2,
     });
   });
   it('an auto title regenerates at the rounded goal', async () => {
     await seedFamily({ countKind: 'continuous', rootGoal: 26.2, deltas: [] });
     await db.tasks.update(ROOT, { title: 'Run 26.2 km' });
-    expect((await previewCounterKindSwitch(ROOT, 'discrete', NOW))?.titleAfter).toBe('Run 26 km');
+    expect((await previewCounterKindSwitch(ROOT, 'discrete'))?.titleAfter).toBe('Run 26 km');
   });
   it('refused switches and linked rows preview null', async () => {
     await seedFamily({ countKind: 'continuous', rootGoal: 26.2 });
-    expect(await previewCounterKindSwitch(ROOT, 'duration', NOW)).toBeNull();
-    expect(await previewCounterKindSwitch(LIVE, 'discrete', NOW)).toBeNull();
+    expect(await previewCounterKindSwitch(ROOT, 'duration')).toBeNull();
+    expect(await previewCounterKindSwitch(LIVE, 'discrete')).toBeNull();
   });
 });
 

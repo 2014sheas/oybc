@@ -12,7 +12,6 @@ final class LinkedCounterPlacementMintTests: XCTestCase {
     private let septStart = "2026-09-01T00:00:00.000Z", septEnd = "2026-09-30T00:00:00.000Z"
     private let augStart = "2026-08-01T00:00:00.000Z", augEnd = "2026-08-31T00:00:00.000Z"
 
-    private func derived(_ board: String) -> String { BoardSources.derivedTaskId(boardId: board, rootTaskId: "root") }
 
     private func makeDb(size: Int = 3) throws -> AppDatabase {
         let db = try AppDatabase.makeTestInstance()
@@ -30,8 +29,6 @@ final class LinkedCounterPlacementMintTests: XCTestCase {
         let bt = try db.addBoardTaskToBoard("b1", taskId: "hub", position: (row: 0, col: 0))
         XCTAssertEqual(bt.taskId, "hub", "slice 3a: writers stop minting")
         XCTAssertNil(bt.targetOverride)
-        XCTAssertNil(try K.fetchTask(db, derived("b1")))
-        XCTAssertTrue(try K.queue(db, type: "tasks", id: derived("b1")).isEmpty)
         XCTAssertEqual(try K.fetchTask(db, "hub")?.version, 1, "the library row is untouched")
     }
 
@@ -43,7 +40,6 @@ final class LinkedCounterPlacementMintTests: XCTestCase {
 
         let bt = try db.addBoardTaskToBoard("b1", taskId: "hub", position: (row: 0, col: 0))
         XCTAssertEqual(bt.taskId, "hub")
-        XCTAssertNil(try K.fetchTask(db, derived("b1")))
     }
 
     func test_add_taskStampedForAnotherWindow_isPlacedAsIs() throws {
@@ -51,7 +47,6 @@ final class LinkedCounterPlacementMintTests: XCTestCase {
         try db.saveTask(K.task("aug", sharedCounterId: "root", startDate: augStart, endDate: augEnd, createdInWizard: true))
         let bt = try db.addBoardTaskToBoard("b1", taskId: "aug", position: (row: 0, col: 0))
         XCTAssertEqual(bt.taskId, "aug")
-        XCTAssertNil(try K.fetchTask(db, derived("b1")))
         XCTAssertEqual(try K.fetchTask(db, "aug")?.startDate, augStart, "the other window's row is untouched")
     }
 
@@ -60,7 +55,6 @@ final class LinkedCounterPlacementMintTests: XCTestCase {
         try db.saveTask(K.task("mine", sharedCounterId: "root", startDate: septStart, endDate: septEnd, createdInWizard: true))
         let bt = try db.addBoardTaskToBoard("b1", taskId: "mine", position: (row: 0, col: 0))
         XCTAssertEqual(bt.taskId, "mine")
-        XCTAssertNil(try K.fetchTask(db, derived("b1")))
     }
 
     func test_add_plainTaskUntouched() throws {
@@ -76,7 +70,6 @@ final class LinkedCounterPlacementMintTests: XCTestCase {
         try db.saveBoardTask(K.placement(id: "bt", boardId: "b1", taskId: "old", size: 3))
         try db.updateBoardTaskAndCascade(boardTaskId: "bt", newTaskId: "hub")
         XCTAssertEqual(try db.fetchBoardTasks(boardId: "b1").first?.taskId, "hub")
-        XCTAssertNil(try K.fetchTask(db, derived("b1")))
     }
 
     // MARK: - Real ViewModel path (Board Edit Save)
@@ -139,7 +132,6 @@ final class LinkedCounterPlacementMintTests: XCTestCase {
         XCTAssertEqual(placed, ["old", pending.task.id].sorted())
         XCTAssertEqual(try K.fetchTask(db, pending.task.id)?.maxCount, 5)
         XCTAssertEqual(try K.queue(db, type: "tasks", id: pending.task.id).first?.operationType, .create)
-        XCTAssertNil(try K.fetchTask(db, derived("b1")), "no copy minted")
     }
 
     // MARK: - Picker parameters (slice 3b)

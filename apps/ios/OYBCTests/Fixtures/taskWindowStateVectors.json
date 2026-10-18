@@ -630,15 +630,12 @@
   "_linkedCounterDisplayNote": "resolveLinkedCounterDisplay (placementParams.ts, slice 2c) <-> Swift PlacementParams.resolveLinkedCounterDisplay: what a LINKED counting square/row shows — a thin wrapper over resolveSquareState. `window` given (the placing board's {startDate,endDate}) = the ROOT's increment sum inside THAT window, whatever the row's own stamp; no window + window-stamped row = its own stamp; no window + any other linked row = contextlessCounterState (the root's lifetime sum). `sealedAt` bounds every event first (boundWindowContextAtSeal). Optional `placement` {targetOverride,targetKind,childTargets,titleOverride} applies the square's parameters. No event map = no events (0, incomplete). currentCount − baseline and the latch are never read. Consumed by packages/shared/tests/algorithms/taskEvents.test.ts and apps/ios/OYBCTests/TaskEventVectorTests.swift.",
   "linkedCounterDisplay": [
     {
-      "name": "window-stamped-in-window-sum-not-lifetime-total",
-      "note": "Owner repro shape: root +20 lifetime, only +3 inside the row's window; the propagated latch says true. Shows 3 and is incomplete (old display: 20 / latch true).",
+      "name": "linked-in-window-sum-not-lifetime-total",
+      "note": "Owner repro shape: root +20 lifetime, only +3 inside the row's window; the propagated latch says true. Shows 3 and is incomplete (old display: 20 / latch true). The window is passed as the board window (slice 5: a row's own stamp is not read).",
       "task": {
         "type": "counting",
         "maxCount": 20,
         "sharedCounterId": "root-1",
-        "startDate": "2026-09-14T00:00:00.000Z",
-        "endDate": "2026-09-20T23:59:59.999Z",
-        "createdInWizard": true,
         "baseline": 0,
         "currentCount": 20,
         "isCompleted": true
@@ -663,18 +660,19 @@
       "expected": {
         "displayed": 3,
         "isCompleted": false
+      },
+      "window": {
+        "startDate": "2026-09-14T00:00:00.000Z",
+        "endDate": "2026-09-20T23:59:59.999Z"
       }
     },
     {
-      "name": "window-stamped-post-endDate-events-ignored",
-      "note": "Every root event lands after endDate: 0, incomplete, despite the latch and currentCount - baseline = 5.",
+      "name": "linked-post-endDate-events-ignored",
+      "note": "Every root event lands after endDate: 0, incomplete, despite the latch and currentCount - baseline = 5. The window is passed as the board window (slice 5: a row's own stamp is not read).",
       "task": {
         "type": "counting",
         "maxCount": 5,
         "sharedCounterId": "root-1",
-        "startDate": "2026-09-14T00:00:00.000Z",
-        "endDate": "2026-09-20T23:59:59.999Z",
-        "createdInWizard": true,
         "baseline": 10,
         "currentCount": 15,
         "isCompleted": true
@@ -699,18 +697,19 @@
       "expected": {
         "displayed": 0,
         "isCompleted": false
+      },
+      "window": {
+        "startDate": "2026-09-14T00:00:00.000Z",
+        "endDate": "2026-09-20T23:59:59.999Z"
       }
     },
     {
-      "name": "window-stamped-pre-startDate-events-ignored",
-      "note": "A +10 before startDate is excluded; +4 in window < 5.",
+      "name": "linked-pre-startDate-events-ignored",
+      "note": "A +10 before startDate is excluded; +4 in window < 5. The window is passed as the board window (slice 5: a row's own stamp is not read).",
       "task": {
         "type": "counting",
         "maxCount": 5,
         "sharedCounterId": "root-1",
-        "startDate": "2026-09-14T00:00:00.000Z",
-        "endDate": "2026-09-20T23:59:59.999Z",
-        "createdInWizard": true,
         "baseline": 0,
         "currentCount": 0,
         "isCompleted": false
@@ -735,18 +734,19 @@
       "expected": {
         "displayed": 4,
         "isCompleted": false
+      },
+      "window": {
+        "startDate": "2026-09-14T00:00:00.000Z",
+        "endDate": "2026-09-20T23:59:59.999Z"
       }
     },
     {
-      "name": "window-stamped-overshoot-shown-not-clamped",
-      "note": "In-window 25 of 20: displayed 25 (never high-clamped), complete.",
+      "name": "linked-overshoot-shown-not-clamped",
+      "note": "In-window 25 of 20: displayed 25 (never high-clamped), complete. The window is passed as the board window (slice 5: a row's own stamp is not read).",
       "task": {
         "type": "counting",
         "maxCount": 20,
         "sharedCounterId": "root-1",
-        "startDate": "2026-09-14T00:00:00.000Z",
-        "endDate": "2026-09-20T23:59:59.999Z",
-        "createdInWizard": true,
         "baseline": 0,
         "currentCount": 25,
         "isCompleted": false
@@ -771,18 +771,19 @@
       "expected": {
         "displayed": 25,
         "isCompleted": true
+      },
+      "window": {
+        "startDate": "2026-09-14T00:00:00.000Z",
+        "endDate": "2026-09-20T23:59:59.999Z"
       }
     },
     {
-      "name": "window-stamped-deleted-root-event-ignored",
-      "note": "A tombstoned in-window event is not counted.",
+      "name": "linked-deleted-root-event-ignored",
+      "note": "A tombstoned in-window event is not counted. The window is passed as the board window (slice 5: a row's own stamp is not read).",
       "task": {
         "type": "counting",
         "maxCount": 3,
         "sharedCounterId": "root-1",
-        "startDate": "2026-09-14T00:00:00.000Z",
-        "endDate": "2026-09-20T23:59:59.999Z",
-        "createdInWizard": true,
         "baseline": 0,
         "currentCount": 0,
         "isCompleted": true
@@ -807,18 +808,19 @@
       "expected": {
         "displayed": 2,
         "isCompleted": false
+      },
+      "window": {
+        "startDate": "2026-09-14T00:00:00.000Z",
+        "endDate": "2026-09-20T23:59:59.999Z"
       }
     },
     {
-      "name": "window-stamped-indefinite-row-bounded-by-sealedAt",
-      "note": "endDate null: only the sealedAt bound applies — +2 before the seal counts, +5 after does not.",
+      "name": "linked-indefinite-row-bounded-by-sealedAt",
+      "note": "endDate null: only the sealedAt bound applies — +2 before the seal counts, +5 after does not. The window is passed as the board window (slice 5: a row's own stamp is not read).",
       "task": {
         "type": "counting",
         "maxCount": 5,
         "sharedCounterId": "root-1",
-        "startDate": "2026-09-14T00:00:00.000Z",
-        "endDate": null,
-        "createdInWizard": true,
         "baseline": 0,
         "currentCount": 7,
         "isCompleted": true
@@ -843,18 +845,19 @@
       "expected": {
         "displayed": 2,
         "isCompleted": false
+      },
+      "window": {
+        "startDate": "2026-09-14T00:00:00.000Z",
+        "endDate": null
       }
     },
     {
-      "name": "window-stamped-no-root-events-zero",
-      "note": "The root has no events in the map: 0, incomplete (never the latch).",
+      "name": "linked-no-root-events-zero",
+      "note": "The root has no events in the map: 0, incomplete (never the latch). The window is passed as the board window (slice 5: a row's own stamp is not read).",
       "task": {
         "type": "counting",
         "maxCount": 1,
         "sharedCounterId": "root-1",
-        "startDate": "2026-09-14T00:00:00.000Z",
-        "endDate": "2026-09-20T23:59:59.999Z",
-        "createdInWizard": true,
         "baseline": 0,
         "currentCount": 4,
         "isCompleted": true
@@ -864,6 +867,10 @@
       "expected": {
         "displayed": 0,
         "isCompleted": false
+      },
+      "window": {
+        "startDate": "2026-09-14T00:00:00.000Z",
+        "endDate": "2026-09-20T23:59:59.999Z"
       }
     },
     {
@@ -927,15 +934,12 @@
       }
     },
     {
-      "name": "window-stamped-without-event-map-reads-no-events",
-      "note": "No event map = no events: 0 and incomplete. Baseline maths and the latch are retired (slice 2c); callers must supply events.",
+      "name": "linked-without-event-map-reads-no-events",
+      "note": "No event map = no events: 0 and incomplete. Baseline maths and the latch are retired (slice 2c); callers must supply events. The window is passed as the board window (slice 5: a row's own stamp is not read).",
       "task": {
         "type": "counting",
         "maxCount": 3,
         "sharedCounterId": "root-1",
-        "startDate": "2026-09-14T00:00:00.000Z",
-        "endDate": "2026-09-20T23:59:59.999Z",
-        "createdInWizard": true,
         "baseline": 2,
         "currentCount": 9,
         "isCompleted": true
@@ -945,6 +949,10 @@
       "expected": {
         "displayed": 0,
         "isCompleted": false
+      },
+      "window": {
+        "startDate": "2026-09-14T00:00:00.000Z",
+        "endDate": "2026-09-20T23:59:59.999Z"
       }
     },
     {
@@ -1191,8 +1199,8 @@
       }
     },
     {
-      "name": "window-stamped-row-takes-a-passed-board-window-over-its-own-stamp",
-      "note": "Context window wins (TASK_WINDOW_REWORK slice 0): a window-stamped row resolves over the board window a caller passes (October: the +9 counts, 9 >= 5), not its own Sep 14-20 stamp. The own stamp is read only when no window is passed (next vector).",
+      "name": "linked-row-reads-the-passed-board-window-not-its-own-stamp",
+      "note": "A linked row resolves over the board window a caller passes (October: the +9 counts, 9 >= 5); its stored Sep 14-20 stamp is never read (TASK_WINDOW_REWORK slice 5).",
       "task": {
         "type": "counting",
         "maxCount": 5,
@@ -1231,8 +1239,8 @@
       }
     },
     {
-      "name": "window-stamped-row-with-no-window-passed-reads-its-own-stamp",
-      "note": "The context-less fallback (kept until slice 5): no board window, so the row reads its own Sep 14-20 stamp — +3 only, not met.",
+      "name": "linked-row-with-no-window-reads-the-root-lifetime-not-its-stamp",
+      "note": "No board window: the ROOT's lifetime (+3 +9 = 12 >= 5), never the row's own stamp (retired in slice 5).",
       "task": {
         "type": "counting",
         "maxCount": 5,
@@ -1263,8 +1271,8 @@
       "sealedAt": null,
       "window": null,
       "expected": {
-        "displayed": 3,
-        "isCompleted": false
+        "displayed": 12,
+        "isCompleted": true
       }
     },
     {

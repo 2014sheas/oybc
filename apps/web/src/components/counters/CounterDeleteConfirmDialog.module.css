@@ -182,7 +182,7 @@
   }
 }
 
-/* §Member rules (B3, RC12) — the per-window derived-counter retirement line. */
+/* The muted note under the members list (unit tasks kept). */
 .derivedNote {
   margin: 10px 0 0;
   font-family: var(--riso-font-body);

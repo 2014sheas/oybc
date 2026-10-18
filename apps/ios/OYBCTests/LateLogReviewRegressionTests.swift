@@ -141,9 +141,9 @@ final class LateLogReviewRegressionTests: XCTestCase {
         XCTAssertEqual(try fetchBoard(db, "D").sealedCompletedCells, [], "the closed daily rolls back")
     }
 
-    // MARK: - Plain source counter: propagate to hub-linked rows (web parity)
+    // MARK: - Plain source counter: linked rows are not written (slice 5)
 
-    func test_lateLogIncrement_plainSource_propagatesToHubLinkedRow() throws {
+    func test_lateLogIncrement_plainSource_neverWritesTheHubLinkedRow() throws {
         let db = try makeDb(); try seedUser(db)
         try db.saveTask(makeTask("t-root", type: .counting, maxCount: 10, currentCount: 0))
         try db.saveTask(makeTask("t-hub", type: .counting, maxCount: 10, sharedCounterId: "t-root",
@@ -155,7 +155,7 @@ final class LateLogReviewRegressionTests: XCTestCase {
         try db.lateLogIncrement(boardId: "D", taskId: "t-root", delta: 3, now: "2026-07-10T12:00:00.000Z")
 
         XCTAssertEqual(try db.fetchTask(id: "t-root")?.currentCount, 3)
-        XCTAssertEqual(try db.fetchTask(id: "t-hub")?.currentCount, 3, "the hub-linked row mirrors the root, like incrementSharedCounter")
+        XCTAssertEqual(try db.fetchTask(id: "t-hub")?.currentCount, 0, "a linked row is never written by a late log")
     }
 
     // MARK: - Window-stamped derived: late log is undoable, and re-freezes

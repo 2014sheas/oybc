@@ -123,7 +123,6 @@ final class RootFieldPropagationVectorTests: XCTestCase {
     }
 
     private struct Fixture: Decodable {
-        let now: String
         let vectors: [FixVector]
     }
 
@@ -186,7 +185,7 @@ final class RootFieldPropagationVectorTests: XCTestCase {
                 countKind: try v.patch.countKind.map { try XCTUnwrap(CountKind(rawValue: $0)) },
                 settings: v.patch.settings(root: root)
             )
-            let out = RootFieldPropagation.plan(root: root, patch: patch, copies: copies, now: fixture.now)
+            let out = RootFieldPropagation.plan(root: root, patch: patch, copies: copies)
             let expected = v.expected.map {
                 RootFieldPropagation.Entry(
                     copyId: $0.copyId,

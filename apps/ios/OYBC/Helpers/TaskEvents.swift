@@ -230,14 +230,14 @@ func lateLogOccurredAt(board: Board, nowIso: String) -> String {
 /// `maxCount != nil && count >= maxCount` (slice 2a: one rule).
 /// Overshoot is valid. `baseline` is NOT read.
 ///
-/// Mirrors the TS `resolveWindowStampedDerivedState`.
+/// Mirrors the TS `resolveLinkedCounterWindowState`.
 ///
 /// - Parameters:
 ///   - task: The window-stamped derived counter (its window + target).
 ///   - rootEvents: The ROOT task's events; deleted rows and completion events
 ///     are ignored internally.
 /// - Returns: `{ isCompleted, count }` with `count` the clamped in-window sum.
-func resolveWindowStampedDerivedState(task: Task, rootEvents: [TaskEvent]) -> TaskWindowState {
+func resolveLinkedCounterWindowState(task: Task, rootEvents: [TaskEvent]) -> TaskWindowState {
     windowStampedDerivedState(
         startDate: task.startDate, endDate: task.endDate, maxCount: task.maxCount,
         countKind: task.countKind, rootEvents: rootEvents, sealedBound: nil
@@ -265,7 +265,7 @@ extension LinkedCounterWindow {
     }
 }
 
-/// Shared body of `resolveWindowStampedDerivedState` and the sealed display
+/// Shared body of `resolveLinkedCounterWindowState` and the sealed display
 /// path. The window bounds (and `sealedBound`) are parsed ONCE per call and
 /// each event's `occurredAt` once, then compared as `Date`s — a wizard row's
 /// local-ISO bounds cost a `DateFormatter` allocation per `parseISO`, so
@@ -320,26 +320,11 @@ private func windowStampedDerivedState(
     return TaskWindowState(isCompleted: maxCount.map { count >= $0 } ?? false, count: count)
 }
 
-/// Kernel dispatch for the derived-counter branch: a `.counting` row with a
-/// `sharedCounterId` resolves from its ROOT's increment events over the window
-/// that applies to it; anything else returns `nil` so the caller falls through
-/// (event-owning → `resolveTaskWindowState`).
-///
-/// Which window (owner rule 2026-10-01 — a counting square on a board accounts
-/// ONLY for the counter's logs inside that board's window):
-///   - Window-stamped (`BoardSources.isWindowStampedDerived`) → the row's OWN
-///     stamped `[startDate, endDate]`, as before.
-///   - Any other linked row (hub-linked, or windowed but not wizard-born) WITH
-///     a context window (`windowStart != nil`) → the CONTEXT window
-///     `[windowStart, windowEnd]` — the placing board's. The lifetime-latch
-///     carve-out these rows used to take on a board is retired.
-///   - No context window (a lifetime / library reader) → `nil`: the caller
-///     keeps its latch read for that context-less case only.
-///
-/// A root with no entry in `eventsByTaskId` resolves as zero events — never as
-/// a latch fallback. Every production context builder loads the workspace's
-/// non-deleted events keyed by `taskId`, and the sealed context drops only keys
-/// whose events were all bounded away (its bound is already applied).
+/// Kernel dispatch for a LINKED counting row (`sharedCounterId` set): it owns
+/// no events and resolves from its ROOT's, over the context window when
+/// `windowStart != nil` (owner rule 2026-10-01), else over the root's lifetime
+/// (`contextlessCounterState`). Returns `nil` only for non-linked tasks.
+/// A row's own stamp, baseline and latch are never read (slice 5).
 ///
 /// Mirrors the TS `resolveDerivedCounterWindowState`.
 ///
@@ -348,8 +333,7 @@ private func windowStampedDerivedState(
 ///   - eventsByTaskId: The window context's grouped events.
 ///   - windowStart: The evaluating board's window start, or `nil` (context-less).
 ///   - windowEnd: Its inclusive upper bound, or `nil` for open-ended.
-/// - Returns: The derived window state, or `nil` when `task` is not a linked
-///   counter, or is a non-window-stamped one with no context window.
+/// - Returns: The linked row's state, or `nil` for a non-linked task.
 func resolveDerivedCounterWindowState(
     task: Task,
     eventsByTaskId: [String: [TaskEvent]],
@@ -357,21 +341,14 @@ func resolveDerivedCounterWindowState(
     windowEnd: String? = nil
 ) -> TaskWindowState? {
     guard task.type == .counting, let rootId = task.sharedCounterId else { return nil }
-    let rootEvents = eventsByTaskId[rootId] ?? []
-    // Context window wins (docs/TASK_WINDOW_REWORK.md slice 0, 2026-10-16): a
-    // BOARD window, when given, is the window for EVERY linked row — stamped
-    // or hub-linked. The row's own stamp is read only by a context-less
-    // caller; that fallback is retired in slice 5.
-    if let windowStart {
-        return windowStampedDerivedState(
-            startDate: windowStart, endDate: windowEnd, maxCount: task.maxCount,
-            countKind: task.countKind, rootEvents: rootEvents, sealedBound: nil
-        )
-    }
-    if BoardSources.isWindowStampedDerived(task) {
-        return resolveWindowStampedDerivedState(task: task, rootEvents: rootEvents)
-    }
-    return nil
+    // A linked row reads its ROOT's events: over the context window when one
+    // is given, otherwise over the root's lifetime. Its own stamp, baseline
+    // and latch are never read (TASK_WINDOW_REWORK slice 5).
+    guard let windowStart else { return contextlessCounterState(task: task, eventsByTaskId: eventsByTaskId) }
+    return windowStampedDerivedState(
+        startDate: windowStart, endDate: windowEnd, maxCount: task.maxCount,
+        countKind: task.countKind, rootEvents: eventsByTaskId[rootId] ?? [], sealedBound: nil
+    )
 }
 
 /// A counting task's state with NO host window (TASK_WINDOW_REWORK slice 2c):
@@ -608,29 +585,4 @@ func buildBackfillTaskEvent(task: Task) -> TaskEvent? {
         isDeleted: false,
         deletedAt: nil
     )
-}
-
-// MARK: - Undo across the window end (derived-counter freeze)
-
-extension BoardSources {
-    /// Undo across the window end: is `task` a FROZEN window-stamped derived
-    /// row (`isFrozenDerivedRow(_:now:)`) whose own `[startDate, endDate]`
-    /// contains `occurredAt` — the instant of the event an undo just
-    /// tombstoned? The kernel counts that event toward the row, so the undo
-    /// can flip its completion: its boards must be re-derived (cascade only —
-    /// the freeze still forbids an authored write / enqueue). Window
-    /// membership is the kernel's own `DateFormatting.isWithinTimeframe`.
-    ///
-    /// Mirrors the TS `isFrozenRowReachedByEvent`; pinned by
-    /// `memberRuleVectors.json#frozenRowReachedByEvent`.
-    ///
-    /// - Parameters:
-    ///   - task: The linked task row to test.
-    ///   - occurredAt: The undone event's `occurredAt`.
-    ///   - now: The undo's timestamp (the freeze clock).
-    /// - Returns: True when the undo must cascade (never write) this row.
-    static func isFrozenRowReachedByEvent(_ task: Task, occurredAt: String, now: String) -> Bool {
-        guard isFrozenDerivedRow(task, now: now), let startDate = task.startDate else { return false }
-        return DateFormatting.isWithinTimeframe(occurredAt, startDate: startDate, endDate: task.endDate)
-    }
 }

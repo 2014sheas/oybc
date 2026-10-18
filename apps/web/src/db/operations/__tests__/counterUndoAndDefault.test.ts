@@ -97,15 +97,16 @@ describe('undoLastCounterLog (R2)', () => {
     expect((await db.tasks.get('src1'))!.currentCount).toBe(20);
   });
 
-  it('propagates the correction to linked tasks', async () => {
+  it('writes the root alone — a linked task is never written (slice 5)', async () => {
     await db.tasks.add(source());
     await db.tasks.add(linkedMember());
+    const before = await db.tasks.get('member1');
     await incrementSharedCounter('src1', 30);
-    expect((await db.tasks.get('member1'))!.currentCount).toBe(30);
-
     await undoLastCounterLog('src1');
     expect((await db.tasks.get('src1'))!.currentCount).toBe(0);
-    expect((await db.tasks.get('member1'))!.currentCount).toBe(0);
+    expect(await db.tasks.get('member1')).toEqual(before);
+    const queued = await db.syncQueue.where('entityType').equals('tasks').toArray();
+    expect(queued.map((q) => q.entityId)).not.toContain('member1');
   });
 
   it('collects affected ACTIVE boards', async () => {

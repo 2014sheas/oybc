@@ -4,7 +4,6 @@ import {
   CenterSquareType,
   Timeframe,
   TaskType,
-  derivedTaskId,
   resolveMix,
   varyRange,
   type Pool,
@@ -13,6 +12,7 @@ import {
 } from '@oybc/shared';
 import { db } from '../../internal';
 import { spawnTemplateBoard } from '../recurringBoardSpawn';
+import { legacyDerivedTaskId } from './legacyDerivedIds';
 
 /**
  * P1 (Task Pools + Recurring Boards Rework, docs/POOLS_RECURRING.md
@@ -875,7 +875,7 @@ describe('spawnTemplateBoard — counter-family exclusivity (2026-09-08)', () =>
     // over the host board's window). The pool-supplied root never lands.
     expect(placedIds.has('win-derived')).toBe(true);
     expect(placedIds.has('win-root')).toBe(false);
-    expect(await db.tasks.get(derivedTaskId(result.boardId, 'win-root'))).toBeUndefined();
+    expect(await db.tasks.get(legacyDerivedTaskId(result.boardId, 'win-root'))).toBeUndefined();
     const placed = placements.find((bt) => bt.taskId === 'win-derived');
     expect(placed?.targetOverride).toBeUndefined(); // its own goal (4) stands
   });
@@ -1002,7 +1002,7 @@ describe('spawnTemplateBoard — member-rule placement parameters (slice 3b)', (
     if (!result.ok) return;
 
     expect(await db.tasks.count()).toBe(taskCount);
-    expect(await db.tasks.get(derivedTaskId(result.boardId, ROOT))).toBeUndefined();
+    expect(await db.tasks.get(legacyDerivedTaskId(result.boardId, ROOT))).toBeUndefined();
 
     const placed = await db.boardTasks.where('boardId').equals(result.boardId).toArray();
     expect(placed).toHaveLength(8);
@@ -1327,7 +1327,7 @@ describe('spawnTemplateBoard — pool-level default dice (2026-10-06)', () => {
 
     const [lo, hi] = varyRange(GOAL, 2, GOAL);
     expect(lo).toBeLessThan(hi); // the range is real, not collapsed
-    expect(await db.tasks.get(derivedTaskId(boardId, ROOT))).toBeUndefined();
+    expect(await db.tasks.get(legacyDerivedTaskId(boardId, ROOT))).toBeUndefined();
     const row = (await db.boardTasks.where('boardId').equals(boardId).toArray()).find((bt) => bt.taskId === ROOT);
     expect(row).toBeDefined();
     expect(row?.targetOverride).toBeGreaterThanOrEqual(lo);
@@ -1357,7 +1357,7 @@ describe('spawnTemplateBoard — pool-level default dice (2026-10-06)', () => {
     await seedPool(undefined);
     const boardId = await spawnOnce(poolTemplate());
 
-    expect(await db.tasks.get(derivedTaskId(boardId, ROOT))).toBeUndefined();
+    expect(await db.tasks.get(legacyDerivedTaskId(boardId, ROOT))).toBeUndefined();
     expect(await placedIds(boardId)).toContain(ROOT);
   });
 });
@@ -1402,6 +1402,6 @@ describe('spawnTemplateBoard — slice 3a (a board member\'s goal is the supplyi
     if (!result.ok) return;
     const row = (await db.boardTasks.where('boardId').equals(result.boardId).toArray()).find((bt) => bt.taskId === 'r1');
     expect(row).toMatchObject({ targetOverride: 10, targetKind: 'discrete' });
-    expect(await db.tasks.get(derivedTaskId(result.boardId, 'r1'))).toBeUndefined();
+    expect(await db.tasks.get(legacyDerivedTaskId(result.boardId, 'r1'))).toBeUndefined();
   });
 });

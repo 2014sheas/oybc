@@ -15,8 +15,8 @@ import { saveTaskEdit } from '../compoundStructureEdit';
 /**
  * Board-scoped task edits PR 3 (docs/BOARD_SCOPED_TASK_EDITS.md §6): a hub
  * root's Task Detail edit propagates title / action / unit to its LIVE
- * per-board copies — never the goal, never a frozen / deleted / sealed-board
- * copy — with one authored write (version bump + enqueue) per changed copy.
+ * per-board copies (an ended board's included — slice 5 retired the freeze)
+ * — never the goal, never a deleted / sealed-board copy — with one authored write (version bump + enqueue) per changed copy.
  * iOS twin: `AppDatabaseRootFieldPropagationTests`.
  */
 
@@ -98,15 +98,15 @@ async function seedBoard(id: string, window: typeof LIVE_WINDOW, taskId: string,
   await db.boardTasks.add(bt);
 }
 
-/** Root + live / frozen / deleted / sealed-board copies, each placed on its own board. */
+/** Root + live / ended-board / deleted / sealed-board copies, each placed on its own board. */
 async function seedFamily(rootOver: Partial<Task> = {}, liveOver: Partial<Task> = {}): Promise<void> {
   await db.tasks.add(counting(ROOT, { isCounter: true, ...rootOver }));
   await db.tasks.add(copy('c-live', 10, LIVE_WINDOW, liveOver));
-  await db.tasks.add(copy('c-frozen', 8, ENDED_WINDOW));
+  await db.tasks.add(copy('c-ended', 8, ENDED_WINDOW));
   await db.tasks.add(copy('c-deleted', 9, LIVE_WINDOW, { isDeleted: true, deletedAt: SEEDED }));
   await db.tasks.add(copy('c-sealed', 7, LIVE_WINDOW));
   await seedBoard('b-live', LIVE_WINDOW, 'c-live');
-  await seedBoard('b-frozen', ENDED_WINDOW, 'c-frozen');
+  await seedBoard('b-ended', ENDED_WINDOW, 'c-ended');
   await seedBoard('b-sealed', LIVE_WINDOW, 'c-sealed', '2026-10-07T12:00:00.000Z');
 }
 
@@ -149,17 +149,17 @@ describe('saveTaskEdit — root → copy propagation', () => {
       maxCount: 10,
       version: 5,
     });
-    await expectUntouched('c-frozen', 'Run 8 miles');
+    expect(await db.tasks.get('c-ended')).toMatchObject({ title: 'Jog 8 miles', action: 'Jog', maxCount: 8, version: 5 });
     await expectUntouched('c-sealed', 'Run 7 miles');
     expect(await db.tasks.get('c-deleted')).toMatchObject({ title: 'Run 9 miles', version: 4 });
-    expect(await queuedTaskIds()).toEqual(['c-live', ROOT].sort());
+    expect(await queuedTaskIds()).toEqual(['c-ended', 'c-live', ROOT].sort());
   });
 
   it('a custom root rename carries verbatim to the live copy', async () => {
     await seedFamily();
     await saveTaskEdit(ROOT, { title: 'Marathon block' });
     expect(await db.tasks.get('c-live')).toMatchObject({ title: 'Marathon block', maxCount: 10, version: 5 });
-    await expectUntouched('c-frozen', 'Run 8 miles');
+    expect(await db.tasks.get('c-ended')).toMatchObject({ title: 'Marathon block', maxCount: 8, version: 5 });
   });
 
   it('a custom copy title is kept when the root title stays auto (unit change still lands)', async () => {
