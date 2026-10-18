@@ -147,13 +147,19 @@ export interface WizardPlacementParamsSeed {
  *
  * @param draftMix - The decoded draft blob's parameters, or null (no blob).
  * @param manualTaskTargets - The editing record's `manualTaskTargets`.
+ * @param manualTaskIds - The record's hand-added ids; a frozen entry for a task
+ *   that is no longer hand-added is dropped (iOS `placementParamsFromFrozen`).
+ *   Absent = keep every entry.
  * @returns The seed.
  */
 export function initialPlacementParamsSeed(
   draftMix: { placementParams: Record<string, PlacementParams>; typedPlacementIds: readonly string[] } | null,
   manualTaskTargets: Record<string, ManualTaskTarget> | undefined,
+  manualTaskIds?: readonly string[],
 ): WizardPlacementParamsSeed {
   if (draftMix) return { params: draftMix.placementParams, typedIds: draftMix.typedPlacementIds };
-  const frozen = placementParamsFromManualTargets(manualTaskTargets);
+  const all = placementParamsFromManualTargets(manualTaskTargets);
+  const keep = manualTaskIds ? new Set(manualTaskIds) : null;
+  const frozen = keep ? Object.fromEntries(Object.entries(all).filter(([id]) => keep.has(id))) : all;
   return { params: frozen, typedIds: Object.keys(frozen) };
 }

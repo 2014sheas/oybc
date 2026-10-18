@@ -53,4 +53,12 @@ describe('wizardPlacementParamsLogic — typed provenance + frozen-goal hydratio
     expect(withoutTypedPlacement(s, ['x'])).toBe(s);
     expect([...withoutTypedPlacement(s, ['a', 'x'])]).toEqual([]);
   });
+
+  it('drops a frozen entry whose task is no longer hand-added (iOS twin)', () => {
+    const { params, typedIds } = initialPlacementParamsSeed(null, frozen, []);
+    expect(params).toEqual({});
+    expect(typedIds).toEqual([]);
+    const kept = initialPlacementParamsSeed(null, frozen, Object.keys(frozen));
+    expect(Object.keys(kept.params).sort()).toEqual(Object.keys(frozen).sort());
+  });
 });

@@ -348,7 +348,7 @@ export function useBoardWizard({
     prunePlacementParamsFor,
     restampPlacementParams,
   } = useWizardPlacementParams(
-    () => initialPlacementParamsSeed(decodedRecurringDraftMix, effectiveTemplate?.manualTaskTargets),
+    () => initialPlacementParamsSeed(decodedRecurringDraftMix, effectiveTemplate?.manualTaskTargets, templateHydration?.manualTaskIds),
     tasksById,
   );
 

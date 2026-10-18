@@ -479,7 +479,8 @@ extension AppDatabase {
                         goal: frozen.target, kind: frozen.kind, vary: vary, rng: rng
                     )
                     planned[index].targetKind = frozen.kind
-                    planned[index].titleOverride = frozen.title
+                    // Only a frozen title replaces the planner's (web `recurringBoardSpawn`).
+                    if let title = frozen.title { planned[index].titleOverride = title }
                 }
 
                 let orderedPool: [Task] = selectedIds.enumerated().compactMap { index, id in
