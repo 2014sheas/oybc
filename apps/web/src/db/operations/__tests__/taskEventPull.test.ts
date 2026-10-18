@@ -230,6 +230,23 @@ describe('applyTaskEventsBatch — batched pull recompute', () => {
     expect(after?.version).toBe(5);
   });
 
+  it('heals a stale totalCompletions from the pulled events without authoring a write (#384)', async () => {
+    await seedNormalTask(TASK_A); // stored totalCompletions 0 (the pre-#384 value)
+    // One live local completion, plus two pulled: a second completion and a
+    // tombstone of a third (a tombstone never counts).
+    await db.taskEvents.add(completionEvent('30000000-0000-4000-8000-000000000007', TASK_A));
+    await applyTaskEventsBatch(USER, [
+      completionEvent('30000000-0000-4000-8000-000000000008', TASK_A, { occurredAt: '2026-06-02T00:00:00.000Z' }),
+      completionEvent('30000000-0000-4000-8000-000000000009', TASK_A, { isDeleted: true, deletedAt: OCCUR }),
+    ]);
+
+    const after = await db.tasks.get(TASK_A);
+    expect(after?.totalCompletions).toBe(2);
+    expect(after?.version).toBe(5); // non-authored: no version bump…
+    const taskItems = (await db.syncQueue.toArray()).filter((r) => r.entityType === 'tasks' && r.entityId === TASK_A);
+    expect(taskItems).toHaveLength(0); // …and no sync enqueue (no pull-path churn)
+  });
+
   it('rejects a userId-mismatched event row', async () => {
     const res = await applyTaskEventsBatch(USER, [
       completionEvent('30000000-0000-4000-8000-000000000006', TASK_A, { userId: 'someone-else' }),

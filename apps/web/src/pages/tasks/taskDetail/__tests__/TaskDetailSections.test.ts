@@ -87,6 +87,10 @@ describe('TaskDetailSections', () => {
     expect(out).toContain('Oct 12');
     expect(out).toContain('var(--riso-blue)');
     expect(out).toContain('Completed 3× all-time');
+    // A Counting task logs increments, not completions: no count (#384).
+    const counting = render('activity', data(), task({ type: TaskType.COUNTING }));
+    expect(counting).not.toContain('× all-time');
+    expect(counting).toContain('Updated ');
   });
 });
 

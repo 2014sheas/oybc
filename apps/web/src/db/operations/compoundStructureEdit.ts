@@ -485,7 +485,9 @@ async function saveTaskEditFields(taskId: string, submit: TaskEditSubmit): Promi
       }
       await updateTaskAndCascade(taskId, basicPatch);
       if (propagation) {
-        const { title, action, unit, maxCount } = basicPatch;
+        // The post-write title, as iOS passes it (#576 item 3).
+        const title = (await db.tasks.get(taskId))?.title;
+        const { action, unit, maxCount } = basicPatch;
         await propagateRootFieldsInTransaction(
           propagation,
           { title, action, unit, maxCount, countKind, ...counterSettingsEdit(basicPatch) },
@@ -559,7 +561,7 @@ export function taskTypeSwitchAllowed(from: TaskType, to: TaskType): boolean {
  *
  *   - Into Compound (`override.compound` required): link guard +
  *     `validatePatch`, then the row becomes `type: COMPOUND` with the counting
- *     fields and the own latch cleared, and the shared
+ *     fields, the own latch and `totalCompletions` cleared, and the shared
  *     {@link applyCompoundStructureEditInTransaction} writes the rule,
  *     sub-task CRUD, version bump, enqueue and batched cascade.
  *   - Simple ⇄ Counting: a whole-row update that DELIBERATELY BYPASSES
@@ -607,7 +609,7 @@ export async function applyTaskTypeSwitchInTransaction(
       countsToward: existing.countsTowardCounterId != null,
     });
     if (problem !== null) throw new CompoundEditValidationError(problem);
-    const base: Task = { ...existing, type: TaskType.COMPOUND, isCompleted: false, completedAt: undefined };
+    const base: Task = { ...existing, type: TaskType.COMPOUND, isCompleted: false, completedAt: undefined, totalCompletions: 0 };
     for (const k of COUNTING_ONLY_FIELDS) base[k] = undefined;
     const description = 'description' in plainFields ? (plainFields.description ?? '') : undefined;
     // A conversion must never write an operator-less compound (iOS defaults `.and`).
@@ -639,6 +641,7 @@ export async function applyTaskTypeSwitchInTransaction(
   patch.isCompleted = caches.isCompleted;
   patch.currentCount = caches.currentCount;
   patch.completedAt = caches.completedAt;
+  patch.totalCompletions = caches.totalCompletions;
   await db.tasks.update(existing.id, patch);
   const updated = await db.tasks.get(existing.id);
   if (updated) await addToSyncQueue('tasks', existing.id, SyncOperationType.UPDATE, updated);

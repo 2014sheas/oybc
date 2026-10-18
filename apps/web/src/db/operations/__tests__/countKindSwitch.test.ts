@@ -183,8 +183,9 @@ describe('switchCounterKind', () => {
     expect(await db.taskEvents.toArray()).toEqual(eventsBefore);
   });
 
-  it('re-derives a CLOSED board placing a linked row whose goal rounded (the sanctioned sealed path)', async () => {
+  it('leaves a linked row on a CLOSED board untouched, so the closed record never changes (#576 item 2)', async () => {
     // Ended row goal 2.45; the root logged 2.4 inside the ended window → not met.
+    // Switched, that row would round to goal 2 / count 2 and flip the record.
     await seedFamily({ countKind: 'continuous', rootGoal: 26.2, endedTarget: 2.45 });
     await db.taskEvents.add({
       id: 'ev-ended', userId: USER, taskId: ROOT, kind: 'increment', delta: 2.4,
@@ -192,13 +193,18 @@ describe('switchCounterKind', () => {
       updatedAt: '2026-09-16T10:00:00.000Z', version: 1, isDeleted: false,
     } as TaskEvent);
     await db.boards.update(BOARD_ENDED, { sealedAt: '2026-09-21T09:00:00.000Z', sealedCompletedCells: [] });
+    // The confirm counts only the rows the switch writes.
+    expect((await previewCounterKindSwitch(ROOT, 'discrete'))?.linkedCount).toBe(1);
 
     await switchCounterKind(ROOT, 'discrete', NOW);
 
-    // Discrete: goal 2, count 2 → the closed board's record now holds the cell.
+    expect(await db.tasks.get(ENDED)).toMatchObject({ countKind: 'continuous', maxCount: 2.45, version: 4 });
+    expect(await db.tasks.get(LIVE)).toMatchObject({ countKind: 'discrete', maxCount: 6, version: 5 });
     const ended = await db.boards.get(BOARD_ENDED);
-    expect(ended?.completedTasks).toBe(1);
-    expect(ended?.sealedCompletedCells).toEqual([0]);
+    expect(ended?.completedTasks).toBe(0);
+    expect(ended?.sealedCompletedCells).toEqual([]);
+    const taskItems = (await db.syncQueue.toArray()).filter((i) => i.entityType === 'tasks');
+    expect(taskItems.map((i) => i.entityId).sort()).toEqual([LIVE, ROOT].sort());
   });
 
   it('round trip restores the exact window count', async () => {

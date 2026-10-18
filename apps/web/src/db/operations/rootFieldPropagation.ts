@@ -86,12 +86,14 @@ export async function propagateRootFieldsInTransaction(
 }
 
 /**
- * Whether `taskId` has a live placement on a live sealed board.
+ * Whether `taskId` has a live placement on a live sealed board — the copy is
+ * then a closed board's permanent record, which neither root → copy
+ * propagation nor the kind switch (`countKindSwitch.ts`) rewrites.
  *
  * @param taskId - The copy.
  * @returns True when any such placement exists.
  */
-async function isPlacedOnSealedBoard(taskId: string): Promise<boolean> {
+export async function isPlacedOnSealedBoard(taskId: string): Promise<boolean> {
   const placements = await db.boardTasks.where('taskId').equals(taskId).filter((bt) => !bt.isDeleted).toArray();
   if (placements.length === 0) return false;
   const boards = await db.boards.bulkGet(placements.map((bt) => bt.boardId));

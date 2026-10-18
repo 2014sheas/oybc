@@ -86,8 +86,17 @@ extension AppDatabase {
         return written
     }
 
-    /// Whether `taskId` has a live placement on a live sealed board.
-    private static func isPlacedOnSealedBoard(db: Database, taskId: String) throws -> Bool {
+    /// Whether `taskId` has a live placement on a live sealed board — the copy
+    /// is then a closed board's permanent record, which neither root → copy
+    /// propagation nor the kind switch (`familyRowsToSwitch`) rewrites. Twin of
+    /// the web `isPlacedOnSealedBoard`.
+    ///
+    /// - Parameters:
+    ///   - db: An open transaction.
+    ///   - taskId: The copy.
+    /// - Returns: True when any such placement exists.
+    /// - Throws: A database error if a read fails.
+    static func isPlacedOnSealedBoard(db: Database, taskId: String) throws -> Bool {
         let boardIds = try BoardTask
             .filter(Column("taskId") == taskId && Column("isDeleted") == false)
             .fetchAll(db)

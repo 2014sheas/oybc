@@ -233,6 +233,7 @@ extension AppDatabase {
                 let caches = Self.computeTaskCachesFromEvents(task: member, events: memberEvents)
                 member.isCompleted = caches.isCompleted
                 member.completedAt = caches.completedAt
+                member.totalCompletions = caches.totalCompletions
                 try member.save(db)
                 try SyncQueueBuilder.makeItem(
                     entityType: "tasks",

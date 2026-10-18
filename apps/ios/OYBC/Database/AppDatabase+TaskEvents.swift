@@ -31,9 +31,9 @@ enum TaskEvents {
 // lifetime caches ride the SAME transaction so a peer / older surface never sees
 // an event without its cache stamp (or vice versa).
 //
-// `Task.isCompleted` / `currentCount` / `completedAt` are demoted to LIFETIME
-// caches: recomputed from the full non-deleted event set, never trusted for
-// anything windowed (grids + derivation read events via
+// `Task.isCompleted` / `currentCount` / `completedAt` / `totalCompletions` are
+// LIFETIME caches: recomputed from the full non-deleted event set, never
+// trusted for anything windowed (grids + derivation read events via
 // `resolveTaskWindowState` / `computeBoardStatsUpdate`).
 
 extension AppDatabase {
@@ -44,6 +44,11 @@ extension AppDatabase {
         let isCompleted: Bool
         let currentCount: CountValue?
         let completedAt: String?
+        /// How many times a NORMAL task was completed: its non-deleted
+        /// `completion` events. Always 0 for COUNTING — its occurrences are
+        /// increments, and a completion event left over from a Simple →
+        /// Counting switch counts nothing for the new type (issue #384).
+        let totalCompletions: Int
     }
 
     /// Pure recompute of an event-owning task's LIFETIME caches from its events
@@ -57,6 +62,8 @@ extension AppDatabase {
     /// (low-clamped at 0 — overshoot preserved); `isCompleted` iff sum ≥
     /// maxCount; `completedAt` is the latest increment's `occurredAt` when
     /// complete.
+    /// `totalCompletions` is the number of live completion events for NORMAL,
+    /// 0 for COUNTING.
     ///
     /// Mirrors `computeTaskCachesFromEvents` in taskEvents.ts.
     ///
@@ -77,17 +84,22 @@ extension AppDatabase {
                     if completedAt == nil || e.occurredAt > completedAt! { completedAt = e.occurredAt }
                 }
             }
-            return TaskCacheFields(isCompleted: isCompleted, currentCount: count, completedAt: completedAt)
+            return TaskCacheFields(
+                isCompleted: isCompleted, currentCount: count, completedAt: completedAt, totalCompletions: 0
+            )
         }
 
         // NORMAL (and defensive non-counting owners).
         var completedAt: String? = nil
-        var hasCompletion = false
+        var totalCompletions = 0
         for e in live where e.kind == .completion {
-            hasCompletion = true
+            totalCompletions += 1
             if completedAt == nil || e.occurredAt > completedAt! { completedAt = e.occurredAt }
         }
-        return TaskCacheFields(isCompleted: hasCompletion, currentCount: task.currentCount, completedAt: completedAt)
+        return TaskCacheFields(
+            isCompleted: totalCompletions > 0, currentCount: task.currentCount, completedAt: completedAt,
+            totalCompletions: totalCompletions
+        )
     }
 
     /// Stamp the recomputed lifetime caches onto a task as an AUTHORED write
@@ -110,6 +122,7 @@ extension AppDatabase {
         task.isCompleted = caches.isCompleted
         task.currentCount = caches.currentCount
         task.completedAt = caches.completedAt
+        task.totalCompletions = caches.totalCompletions
         task.updatedAt = now
         task.version += 1
         try task.save(db)
@@ -138,8 +151,8 @@ extension AppDatabase {
         let caches = computeTaskCachesFromEvents(task: task, events: events)
         // Overwrite only the completion-cache fields — no version bump, no enqueue.
         try db.execute(
-            sql: "UPDATE tasks SET isCompleted = ?, currentCount = ?, completedAt = ? WHERE id = ?",
-            arguments: [caches.isCompleted, caches.currentCount, caches.completedAt, taskId]
+            sql: "UPDATE tasks SET isCompleted = ?, currentCount = ?, completedAt = ?, totalCompletions = ? WHERE id = ?",
+            arguments: [caches.isCompleted, caches.currentCount, caches.completedAt, caches.totalCompletions, taskId]
         )
     }
 

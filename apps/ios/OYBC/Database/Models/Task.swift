@@ -61,6 +61,9 @@ struct Task: Codable, FetchableRecord, PersistableRecord, Identifiable {
     var requiredCount: Int?
 
     // Aggregate stats
+    /// Lifetime cache (issue #384): a NORMAL task's non-deleted `completion`
+    /// events; 0 for COUNTING. Stamped with the other caches by
+    /// `computeTaskCachesFromEvents` (web `TaskCacheFields` twin).
     var totalCompletions: Int
     var totalInstances: Int
 

@@ -169,6 +169,24 @@ export function activityWhen(at: string): string {
   return Number.isNaN(t) ? '' : new Date(t).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
 
+/**
+ * The Activity footer: "Completed 3× all-time · updated 2d ago" for a Simple
+ * task; "Updated 2d ago" for every other type. Only a Simple task's
+ * completions are recorded occurrences (`completion` events — the same count
+ * its `totalCompletions` cache holds); a Counting task logs increments and a
+ * Compound / Achievement owns no events, so a completion count there would be
+ * a permanent 0 (issue #384). iOS twin: `TaskDetailFormat.footer`.
+ *
+ * @param type - The task's type.
+ * @param completions - Its live completion events (`buildTaskActivity`'s `completionCount`).
+ * @param updated - `task.updatedAt` as relative time, or null when unparseable.
+ * @returns The footer text ("" for a non-Simple task with no `updated`).
+ */
+export function activityFooter(type: TaskType, completions: number, updated: string | null): string {
+  if (type !== TaskType.NORMAL) return updated ? `Updated ${updated}` : '';
+  return `Completed ${completions}× all-time${updated ? ` · updated ${updated}` : ''}`;
+}
+
 /** "NOT DONE THIS WEEK" / "NOT DONE TODAY" / "… THIS MONTH" / "… THIS YEAR" from the anchor's timeframe; custom / indefinite: "NOT DONE". */
 export function notDoneLabel(timeframe: string | undefined): string {
   switch (timeframe) {
