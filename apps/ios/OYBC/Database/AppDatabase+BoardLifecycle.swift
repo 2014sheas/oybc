@@ -69,9 +69,12 @@ extension AppDatabase {
 
     /// Reopens a closed board: clears `sealedAt` + `sealedCompletedCells`,
     /// stamps `reopenedAt` (so it never auto-closes again — D1/D4), bumps
-    /// `version`, enqueues sync, re-derives this board LIVE from its
+    /// `version`, enqueues sync, re-aligns any linked counter copy the seal
+    /// had frozen at an old kind (`realignLinkedKindsOnReopen`,
+    /// docs/COUNTER_KINDS.md D5), re-derives this board LIVE from its
     /// `[startDate, endDate]` event union (status ACTIVE ↔ COMPLETED
-    /// included), then refreshes achievement watchers. One transaction.
+    /// included) and every live board a re-aligned copy reaches, then
+    /// refreshes achievement watchers. One transaction.
     ///
     /// Writes no template / spawn row — a reopened board never re-triggers
     /// recurring spawn.
@@ -107,7 +110,13 @@ extension AppDatabase {
                 now: now
             ).enqueue(db)
 
+            // A linked copy the seal froze at an old kind follows its root again.
+            let realigned = try Self.realignLinkedKindsOnReopen(db: db, boardId: boardId, now: now)
+
             try Self.reDeriveLiveBoardTx(db: db, boardId: boardId, now: now)
+            if !realigned.isEmpty {
+                try Self.runBoardCascadeForTasks(db: db, changedTaskIds: realigned, now: now)
+            }
             try Self.refreshWatchersForBoards(db: db, changedBoardIds: [boardId], now: now)
             return true
         }

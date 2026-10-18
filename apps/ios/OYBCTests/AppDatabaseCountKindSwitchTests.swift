@@ -117,6 +117,73 @@ final class AppDatabaseCountKindSwitchTests: XCTestCase {
         XCTAssertEqual(try taskQueueIds(db), ["live", "root"])
     }
 
+    /// Web twin: "leaves a linked row a sealed board holds only through a
+    /// placed compound untouched (#576 item 2)".
+    func test_switch_leavesALinkedRowHeldOnlyThroughASealedCompoundUntouched() throws {
+        let db = try seedFamily(kind: .continuous, rootGoal: 26.2)
+        var sub = K.task("sub", maxCount: 2.45, sharedCounterId: "root",
+                         startDate: endedStart, endDate: endedEnd, createdInWizard: true, baseline: 0)
+        sub.countKind = .continuous
+        try db.saveTask(sub)
+        try K.seedCompoundHolder(db, compoundId: "cmp", childId: "sub", boardId: "bSealedCmp",
+                                 startDate: endedStart, endDate: endedEnd, sealedAt: "2026-09-21T09:00:00.000Z")
+        let subBefore = try XCTUnwrap(K.fetchTask(db, "sub"))
+        XCTAssertEqual(try db.previewCounterKindSwitch(rootTaskId: "root", to: .discrete)?.linkedCount, 2)
+
+        try db.switchCounterKind(rootTaskId: "root", to: .discrete, now: now)
+
+        let after = try XCTUnwrap(K.fetchTask(db, "sub"))
+        XCTAssertEqual(after.countKind, .continuous)
+        XCTAssertEqual(after.maxCount, 2.45)
+        XCTAssertEqual(after.version, subBefore.version)
+        XCTAssertEqual(try K.fetchTask(db, "live")?.countKind, .discrete)
+    }
+
+    /// Web twin: "Reopen re-aligns a copy the seal froze at the old kind (D5)".
+    func test_reopen_realignsACopyTheSealFrozeAtTheOldKind() throws {
+        let db = try seedFamily(kind: .continuous, rootGoal: 26.2, endedTarget: 2.45)
+        try K.addIncrement(db, taskId: "root", delta: 2.4, occurredAt: "2026-09-16T10:00:00.000Z")
+        var ended = try XCTUnwrap(db.fetchBoard(id: "bEnded"))
+        ended.sealedAt = "2026-09-21T09:00:00.000Z"
+        ended.sealedCompletedCells = []
+        try db.saveBoard(ended)
+        try db.switchCounterKind(rootTaskId: "root", to: .discrete, now: now)
+        let frozen = try XCTUnwrap(K.fetchTask(db, "ended"))
+        XCTAssertEqual(frozen.countKind, .continuous)
+        try db.write { try SyncQueueItem.deleteAll($0) }
+
+        try db.reopenBoard(boardId: "bEnded", now: "2026-09-23T12:00:00.000Z")
+
+        // The kind switch's own write, landed now: kind + rounded goal, one authored write.
+        let row = try XCTUnwrap(K.fetchTask(db, "ended"))
+        XCTAssertEqual(row.countKind, .discrete)
+        XCTAssertEqual(row.maxCount, 2)
+        XCTAssertEqual(row.version, frozen.version + 1)
+        XCTAssertEqual(try taskQueueIds(db), ["ended"])
+        // The reopened board re-derives at the aligned kind: 2.4 rounds to 2, goal 2 → done.
+        XCTAssertEqual(try db.fetchBoard(id: "bEnded")?.completedTasks, 1)
+    }
+
+    /// Web twin: "Reopen leaves a copy alone while another sealed board still holds it".
+    func test_reopen_leavesACopyAloneWhileAnotherSealedBoardHoldsIt() throws {
+        let db = try seedFamily(kind: .continuous, rootGoal: 26.2, endedTarget: 2.45)
+        var ended = try XCTUnwrap(db.fetchBoard(id: "bEnded"))
+        ended.sealedAt = "2026-09-21T09:00:00.000Z"
+        ended.sealedCompletedCells = []
+        try db.saveBoard(ended)
+        try K.seedCompoundHolder(db, compoundId: "cmp", childId: "ended", boardId: "bOtherSealed",
+                                 startDate: endedStart, endDate: endedEnd, sealedAt: "2026-09-21T09:00:00.000Z")
+        try db.switchCounterKind(rootTaskId: "root", to: .discrete, now: now)
+        let frozen = try XCTUnwrap(K.fetchTask(db, "ended"))
+
+        try db.reopenBoard(boardId: "bEnded", now: "2026-09-23T12:00:00.000Z")
+
+        let row = try XCTUnwrap(K.fetchTask(db, "ended"))
+        XCTAssertEqual(row.countKind, .continuous)
+        XCTAssertEqual(row.maxCount, 2.45)
+        XCTAssertEqual(row.version, frozen.version)
+    }
+
     func test_roundTrip_restoresExactWindowCount() throws {
         let db = try seedFamily(kind: .continuous, rootGoal: 26.2, liveTarget: 6.1, deltas: [0.4, 0.4, 0.4])
         XCTAssertEqual(try displayedLive(db), 1.2)

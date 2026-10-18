@@ -507,6 +507,60 @@ extension AppDatabase {
         return DerivationPass.placementsReachedByTasks(ids: taskIds, tasks: tasks, compoundChildren: children, boardTasks: boardTasks)
     }
 
+    /// Each task's OWN reached boards — the `placementReach` walk run per id
+    /// (directly placed, or a sub-task of a placed compound at any depth),
+    /// with the tables read once for the whole set. Mirrors the web
+    /// `loadReachedBoardIdsByTask`.
+    ///
+    /// - Parameters:
+    ///   - db: An open GRDB connection (a write transaction or a read).
+    ///   - taskIds: The tasks to resolve.
+    /// - Returns: Task id → the board ids its placements reach.
+    /// - Throws: A database error if a read fails.
+    static func reachedBoardIdsByTask(db: Database, taskIds: Set<String>) throws -> [String: Set<String>] {
+        guard !taskIds.isEmpty else { return [:] }
+        let tasks = try Task.fetchAll(db)
+        let children = try CompoundChild.fetchAll(db).filter { !$0.isDeleted }
+        let boardTasks = try BoardTask.fetchAll(db).filter { !$0.isDeleted }
+        var out: [String: Set<String>] = [:]
+        for id in taskIds {
+            out[id] = DerivationPass.placementsReachedByTasks(
+                ids: [id], tasks: tasks, compoundChildren: children, boardTasks: boardTasks
+            ).boardIds
+        }
+        return out
+    }
+
+    /// The ids of every live (non-deleted) SEALED board, as stored now.
+    /// Mirrors the web `loadLiveSealedBoardIds`.
+    ///
+    /// - Parameter db: An open GRDB connection.
+    /// - Returns: The sealed board ids.
+    /// - Throws: A database error if the read fails.
+    static func liveSealedBoardIds(db: Database) throws -> Set<String> {
+        Set(try Board.filter(Column("isDeleted") == false).fetchAll(db).filter { $0.sealedAt != nil }.map(\.id))
+    }
+
+    /// The ids among `taskIds` whose placement reach includes a live SEALED
+    /// board — directly, or as a sub-task of a compound placed there at any
+    /// depth. Such a task is part of a closed board's permanent record: root →
+    /// copy propagation and the kind switch leave it untouched (issue #576
+    /// item 2). Returns at once, without reading the reach tables, when
+    /// nothing is sealed. Mirrors the web `taskIdsReachingSealedBoards`.
+    ///
+    /// - Parameters:
+    ///   - db: An open GRDB connection.
+    ///   - taskIds: The candidates.
+    /// - Returns: The subset held by a sealed board.
+    /// - Throws: A database error if a read fails.
+    static func taskIdsReachingSealedBoards(db: Database, taskIds: Set<String>) throws -> Set<String> {
+        guard !taskIds.isEmpty else { return [] }
+        let sealed = try liveSealedBoardIds(db: db)
+        guard !sealed.isEmpty else { return [] }
+        let reach = try reachedBoardIdsByTask(db: db, taskIds: taskIds)
+        return Set(reach.filter { !$0.value.isDisjoint(with: sealed) }.keys)
+    }
+
     /// Resolve a single event-owning task's windowed state for `taskId` in the
     /// given board window `[windowStart, windowEnd]` (inclusive). Convenience
     /// used by write choke points that need the current windowed count before

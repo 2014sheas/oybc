@@ -73,6 +73,30 @@ enum LinkedWindowKit {
         }
     }
 
+    /// Make `childId` the only sub-task of a new compound `compoundId`, and
+    /// place that compound on a new board `boardId` (sealed when `sealedAt`
+    /// is given) — a linked copy a board holds only through a compound.
+    static func seedCompoundHolder(
+        _ db: AppDatabase, compoundId: String, childId: String, boardId: String,
+        startDate: String, endDate: String, sealedAt: String? = nil
+    ) throws {
+        var compound = task(compoundId, maxCount: nil, title: "Block")
+        compound.type = .compound
+        compound.action = nil
+        compound.unit = nil
+        compound.operatorType = .and
+        try db.saveTask(compound)
+        let now = "2026-05-01T00:00:00.000Z"
+        try db.write { d in
+            try CompoundChild(
+                id: "cc-\(compoundId)", compoundTaskId: compoundId, childTaskId: childId, childIndex: 0,
+                createdAt: now, updatedAt: now, version: 1, isDeleted: false
+            ).save(d)
+        }
+        try db.saveBoard(board(id: boardId, startDate: startDate, endDate: endDate, timeframe: .weekly, sealedAt: sealedAt))
+        try db.saveBoardTask(placement(id: "bt-\(boardId)", boardId: boardId, taskId: compoundId))
+    }
+
     static func fetchTask(_ db: AppDatabase, _ id: String) throws -> Task? { try db.fetchTask(id: id) }
 
     static func queue(_ db: AppDatabase, type: String, id: String) throws -> [SyncQueueItem] {

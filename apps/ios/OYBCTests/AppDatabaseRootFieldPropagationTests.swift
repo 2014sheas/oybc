@@ -103,6 +103,22 @@ final class AppDatabaseRootFieldPropagationTests: XCTestCase {
         XCTAssertEqual(try queuedTaskIds(db), ["c-frozen", "c-live", "root"])
     }
 
+    /// Web twin: "a copy a sealed board holds only through a placed compound
+    /// is untouched too (#576 item 2)".
+    func test_copyHeldBySealedBoardOnlyThroughACompound_isUntouched() throws {
+        let db = try seedFamily()
+        try db.saveTask(copy("c-sub", goal: 5, start: liveStart, end: liveEnd))
+        try K.seedCompoundHolder(db, compoundId: "cmp", childId: "c-sub", boardId: "b-sealed-cmp",
+                                 startDate: liveStart, endDate: liveEnd, sealedAt: "2026-10-07T12:00:00.000Z")
+
+        try db.applyTaskEditPatch(
+            taskId: "root", patch: patch(title: "Jog 30 miles", action: "Jog", unit: "miles", goal: "30"), now: now
+        )
+
+        try assertUntouched(db, "c-sub", title: "Run 5 miles")
+        XCTAssertEqual(try K.fetchTask(db, "c-live")?.action, "Jog")
+    }
+
     func test_customRootRename_carriesVerbatimToLiveCopy() throws {
         let db = try seedFamily()
         try db.applyTaskEditPatch(taskId: "root", patch: patch(title: "Marathon block"), now: now)

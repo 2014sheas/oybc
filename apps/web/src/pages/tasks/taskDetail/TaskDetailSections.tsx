@@ -98,7 +98,7 @@ function ActivityCard({ task, data, full, onSegment }: { task: Task; data: TaskD
             </div>
           ))}
           <div className={styles.activityFoot}>
-            {activityFooter(task.type, data.activity?.completionCount ?? 0, updated)}
+            {activityFooter(task.type, data.activity?.completionCount ?? null, updated)}
           </div>
         </>
       ) : (

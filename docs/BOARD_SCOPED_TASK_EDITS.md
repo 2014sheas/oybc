@@ -157,7 +157,7 @@ board"** **[D6 — ruled yes]** so the scope is visible as a control label, not 
   **title / action / unit** edit from Task Detail propagates to every *live*
   copy (sealed/frozen rows untouched); **goal** does not (each board scales its
   own target); **kind** propagates through the kind switch, which skips a copy
-  placed on a sealed board the same way (#576 item 2, 2026-10-18). This closes
+  a sealed board holds the same way (#576 item 2, 2026-10-18). This closes
   the `COUNTER_KINDS.md` D5 mismatch ("same cascade as a Goal edit" — there is
   none today). Ships in the same train (§9, PR 3) because it is the global half
   of the same rule.
@@ -331,14 +331,16 @@ Tracked in [#576](https://github.com/2014sheas/oybc/issues/576):
 1. Web Board Edit's Save label briefly drops to "Done" while the fork check
    reloads after adding or linking a sub-task (`BoardEditTaskSheet.tsx`
    fork-check key).
-2. **Resolved 2026-10-18.** The kind switch skips a linked copy placed on a
-   sealed board, through the same `isPlacedOnSealedBoard` predicate root-field
-   propagation uses (`familyRowsToSwitch` in `countKindSwitch.ts` ↔
-   `AppDatabase+CountKindSwitch.swift`, which the switch confirm's preview
-   count reads too), so a closed board's copy keeps its kind and goal and its
-   record never changes. Both rules still read direct placements only: a
-   linked copy that sits on a sealed board only as a sub-task of a placed
-   compound is still written by both.
+2. **Resolved 2026-10-18.** The kind switch skips a linked copy a sealed
+   board holds, through the same predicate root-field propagation uses:
+   `taskIdsReachingSealedBoards` (web `placementReach.ts` ↔ iOS
+   `AppDatabase+TaskEvents.swift`) — the placement reach, so a copy held
+   directly OR as a sub-task of a compound placed on the sealed board counts.
+   `familyRowsToSwitch` (`countKindSwitch.ts` ↔
+   `AppDatabase+CountKindSwitch.swift`) applies it, and the switch confirm's
+   preview count reads the same rows. A closed board's copy keeps its kind
+   and goal, so its record never changes; Reopen re-aligns it
+   (`docs/COUNTER_KINDS.md` D5).
 3. **Resolved 2026-10-18.** Web now passes the post-write title, as iOS does.
 4. The edge described in the PR 2 Wizard note: a source-pulled counting member
    forked via a hand-added compound's sub-task editor is skipped by the

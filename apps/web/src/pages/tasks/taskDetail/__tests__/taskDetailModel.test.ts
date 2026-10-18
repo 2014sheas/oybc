@@ -137,6 +137,9 @@ describe('activityFooter (#384)', () => {
   it('a Simple task carries its completion count; every other type only the update time', () => {
     expect(activityFooter(TaskType.NORMAL, 3, '2 days ago')).toBe('Completed 3× all-time · updated 2 days ago');
     expect(activityFooter(TaskType.NORMAL, 0, null)).toBe('Completed 0× all-time');
+    // Feed still loading: no placeholder count.
+    expect(activityFooter(TaskType.NORMAL, null, '2 days ago')).toBe('Updated 2 days ago');
+    expect(activityFooter(TaskType.NORMAL, null, null)).toBe('');
     for (const type of [TaskType.COUNTING, TaskType.COMPOUND, TaskType.ACHIEVEMENT]) {
       expect(activityFooter(type, 0, '2 days ago')).toBe('Updated 2 days ago');
       expect(activityFooter(type, 4, null)).toBe('');

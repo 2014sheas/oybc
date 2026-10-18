@@ -33,7 +33,8 @@ enum RootFieldPropagation {
     /// A candidate copy (any row read by `sharedCounterId == root.id`), as stored BEFORE the edit.
     struct Copy {
         let task: Task
-        /// Placed on a sealed (closed) board — a permanent record, never rewritten.
+        /// Held by a sealed (closed) board — placed there directly or as a
+        /// sub-task of a compound placed there — a permanent record, never rewritten.
         let onSealedBoard: Bool
     }
 

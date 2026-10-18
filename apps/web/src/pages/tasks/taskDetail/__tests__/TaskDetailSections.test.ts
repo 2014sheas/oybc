@@ -92,6 +92,12 @@ describe('TaskDetailSections', () => {
     expect(counting).not.toContain('× all-time');
     expect(counting).toContain('Updated ');
   });
+
+  it('Activity footer while the feed is loading: the update time alone, never a placeholder count', () => {
+    const loading = render('activity', data({ activity: undefined }));
+    expect(loading).not.toContain('× all-time');
+    expect(loading).toContain('Updated ');
+  });
 });
 
 describe('kit pills + menu + data hook (first render)', () => {

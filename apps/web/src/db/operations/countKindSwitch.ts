@@ -18,7 +18,7 @@ import { runBoardCascadeForTasks } from './orchestration';
 import { reDeriveSealedBoardsForTasks } from './sealing';
 import { computeTaskCachesFromEvents } from './taskEvents';
 import { countContributorsOf } from './countsToward';
-import { isPlacedOnSealedBoard } from './rootFieldPropagation';
+import { loadLiveSealedBoardIds, loadReachedBoardIdsByTask, taskIdsReachingSealedBoards } from './placementReach';
 
 /**
  * countKindSwitch.ts — counter kinds, web half of the family-wide kind rules
@@ -61,12 +61,12 @@ export class CountKindSwitchError extends Error {
  *
  * Writes `countKind = to` (always explicit — the field is never cleared) plus
  * the `planCountKindSwitch` goal / default-amount rounding on the root and on
- * every row {@link familyRowsToSwitch} returns (live linked rows NOT placed on
- * a sealed board — a closed board's copy keeps its kind and goal, the same
- * exclusion as root → copy propagation), each with a version bump + UPDATE
- * enqueue. Then the board cascade re-derives every live board placing a
- * written row and the sealed re-derive every closed one placing the root (a
- * placement's frozen `targetKind` keeps its goal's kind).
+ * every row {@link familyRowsToSwitch} returns (live linked rows no sealed
+ * board holds — a closed board's copy keeps its kind and goal until Reopen
+ * re-aligns it, the same exclusion as root → copy propagation), each with a
+ * version bump + UPDATE enqueue. Then the board cascade re-derives every live
+ * board placing a written row and the sealed re-derive every closed one
+ * placing the root (a placement's frozen `targetKind` keeps its goal's kind).
  * `taskEvents` are never touched: a whole kind rounds the window SUM at read
  * time, so switching back restores the exact fractional count. The root's
  * lifetime caches (`isCompleted` / `currentCount` / `completedAt` /
@@ -148,12 +148,19 @@ export async function switchCounterKindInTransaction(
   return writtenIds;
 }
 
+/** A linked row a kind write moves, with its `planCountKindSwitch` patch. */
+interface KindRowWrite {
+  row: Task;
+  patch: Partial<Task>;
+}
+
 /**
  * The linked rows a kind switch of `rootId` to `to` writes, each with its
  * `planCountKindSwitch` patch: live rows linked to the root whose kind
- * actually moves, minus any placed on a sealed board (issue #576 item 2 —
- * the exclusion `planRootFieldPropagation` applies, via the same
- * {@link isPlacedOnSealedBoard}). Shared by the switch and its preview so the
+ * actually moves, minus any a sealed board holds — directly or as a
+ * sub-task of a compound placed there (issue #576 item 2; the exclusion
+ * `planRootFieldPropagation` applies, via the same
+ * `taskIdsReachingSealedBoards`). Shared by the switch and its preview so the
  * confirm's count is exactly the rows written. Runs inside the caller's
  * transaction (or a read).
  *
@@ -161,23 +168,66 @@ export async function switchCounterKindInTransaction(
  * @param to - The requested kind.
  * @returns The rows to write, in index order.
  */
-async function familyRowsToSwitch(
-  rootId: string,
-  to: CountKind,
-): Promise<Array<{ row: Task; patch: Partial<Task> }>> {
+async function familyRowsToSwitch(rootId: string, to: CountKind): Promise<KindRowWrite[]> {
   const family = await db.tasks
     .where('sharedCounterId')
     .equals(rootId)
     .filter((t) => !t.isDeleted)
     .toArray();
-  const out: Array<{ row: Task; patch: Partial<Task> }> = [];
+  const moving: KindRowWrite[] = [];
   for (const row of family) {
     const patch = planCountKindSwitch(row, resolveCountKind(row), to);
-    if (!patch) continue; // already `to` (or a kind that never switches)
-    if (await isPlacedOnSealedBoard(row.id)) continue; // a closed board's record
-    out.push({ row, patch });
+    if (patch) moving.push({ row, patch }); // else already `to` (or a kind that never switches)
   }
-  return out;
+  const sealed = await taskIdsReachingSealedBoards(moving.map((m) => m.row.id));
+  return moving.filter((m) => !sealed.has(m.row.id)); // a closed board's record
+}
+
+/**
+ * Reopen's kind re-alignment (docs/COUNTER_KINDS.md D5): a linked row's kind
+ * mirrors its root's except while a sealed board holds it. When Reopen frees
+ * `boardId`, every live linked COUNTING row that board reaches (directly or
+ * through a placed compound) whose kind differs from its root's — and that no
+ * OTHER sealed board still holds — takes the root's kind through
+ * `planCountKindSwitch`, as the kind switch would have written it: one
+ * authored write each (version bump + UPDATE enqueue).
+ *
+ * Must run inside Reopen's `rw` transaction, AFTER the seal is cleared. It
+ * does not cascade: the caller re-derives the boards the returned rows reach.
+ *
+ * @param boardId - The board just reopened.
+ * @param nowIso - ISO8601 write time.
+ * @returns The ids of the rows re-aligned.
+ */
+export async function realignLinkedKindsOnReopen(boardId: string, nowIso: string): Promise<string[]> {
+  const linked = await db.tasks
+    .filter((t) => !t.isDeleted && t.type === TaskType.COUNTING && t.sharedCounterId != null)
+    .toArray();
+  const rootIds = [...new Set(linked.map((t) => t.sharedCounterId as string))];
+  const roots = new Map<string, Task>();
+  for (const r of await db.tasks.bulkGet(rootIds)) {
+    if (r && !r.isDeleted && r.type === TaskType.COUNTING) roots.set(r.id, r);
+  }
+  const drifted: Array<KindRowWrite & { to: CountKind }> = [];
+  for (const row of linked) {
+    const root = roots.get(row.sharedCounterId as string);
+    if (!root) continue;
+    const to = resolveCountKind(root);
+    const patch = planCountKindSwitch(row, resolveCountKind(row), to);
+    if (patch) drifted.push({ row, patch, to });
+  }
+  if (drifted.length === 0) return [];
+
+  const reach = await loadReachedBoardIdsByTask(drifted.map((d) => d.row.id));
+  const sealed = await loadLiveSealedBoardIds();
+  const written: string[] = [];
+  for (const { row, patch, to } of drifted) {
+    const boards = reach.get(row.id) ?? new Set<string>();
+    if (!boards.has(boardId) || [...boards].some((b) => sealed.has(b))) continue;
+    await writeKindSwitch(row, to, patch, nowIso);
+    written.push(row.id);
+  }
+  return written;
 }
 
 /** A whole kind received a fractional goal (D4) — the caller's transaction rolls back. */

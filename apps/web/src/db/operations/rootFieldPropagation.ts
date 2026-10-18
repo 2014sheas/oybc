@@ -9,6 +9,7 @@ import {
 import { db } from '../internal';
 import { addToSyncQueue } from './syncQueue';
 import { runBoardCascadeForTasks } from './orchestration';
+import { taskIdsReachingSealedBoards } from './placementReach';
 
 /**
  * rootFieldPropagation.ts — web half of "a counter ROOT's Task Detail edit
@@ -21,7 +22,7 @@ import { runBoardCascadeForTasks } from './orchestration';
 /** The root + its candidate copies, read BEFORE the root edit is written. */
 export interface RootPropagationSnapshot {
   root: Task;
-  /** Every row with `sharedCounterId == root.id`, annotated with sealed-board placement. */
+  /** Every row with `sharedCounterId == root.id`, annotated with sealed-board reach. */
   copies: Array<Task & RootPropagationCopy>;
 }
 
@@ -38,9 +39,10 @@ export async function readRootPropagationSnapshot(taskId: string): Promise<RootP
   if (!root || root.isDeleted || root.type !== TaskType.COUNTING || root.sharedCounterId != null) return null;
   const rows = await db.tasks.where('sharedCounterId').equals(root.id).toArray();
   if (rows.length === 0) return null;
-  const copies = await Promise.all(
-    rows.map(async (row) => ({ ...row, onSealedBoard: await isPlacedOnSealedBoard(row.id) })),
-  );
+  // A copy a sealed board holds — directly or through a placed compound — is
+  // that closed board's record (issue #576 item 2).
+  const sealed = await taskIdsReachingSealedBoards(rows.map((row) => row.id));
+  const copies = rows.map((row) => ({ ...row, onSealedBoard: sealed.has(row.id) }));
   return { root, copies };
 }
 
@@ -83,19 +85,4 @@ export async function propagateRootFieldsInTransaction(
   }
   if (written.length > 0) await runBoardCascadeForTasks(written);
   return written;
-}
-
-/**
- * Whether `taskId` has a live placement on a live sealed board — the copy is
- * then a closed board's permanent record, which neither root → copy
- * propagation nor the kind switch (`countKindSwitch.ts`) rewrites.
- *
- * @param taskId - The copy.
- * @returns True when any such placement exists.
- */
-export async function isPlacedOnSealedBoard(taskId: string): Promise<boolean> {
-  const placements = await db.boardTasks.where('taskId').equals(taskId).filter((bt) => !bt.isDeleted).toArray();
-  if (placements.length === 0) return false;
-  const boards = await db.boards.bulkGet(placements.map((bt) => bt.boardId));
-  return boards.some((b) => b != null && !b.isDeleted && b.sealedAt != null);
 }

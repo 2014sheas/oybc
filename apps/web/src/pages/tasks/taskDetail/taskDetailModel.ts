@@ -177,13 +177,17 @@ export function activityWhen(at: string): string {
  * Compound / Achievement owns no events, so a completion count there would be
  * a permanent 0 (issue #384). iOS twin: `TaskDetailFormat.footer`.
  *
+ * Until the feed has loaded (`completions` null) a Simple task shows the
+ * update time alone, never a placeholder "Completed 0×".
+ *
  * @param type - The task's type.
- * @param completions - Its live completion events (`buildTaskActivity`'s `completionCount`).
+ * @param completions - Its live completion events (`buildTaskActivity`'s
+ *   `completionCount`), or null while the feed is loading.
  * @param updated - `task.updatedAt` as relative time, or null when unparseable.
- * @returns The footer text ("" for a non-Simple task with no `updated`).
+ * @returns The footer text ("" when there is no count to show and no `updated`).
  */
-export function activityFooter(type: TaskType, completions: number, updated: string | null): string {
-  if (type !== TaskType.NORMAL) return updated ? `Updated ${updated}` : '';
+export function activityFooter(type: TaskType, completions: number | null, updated: string | null): string {
+  if (type !== TaskType.NORMAL || completions === null) return updated ? `Updated ${updated}` : '';
   return `Completed ${completions}× all-time${updated ? ` · updated ${updated}` : ''}`;
 }
 

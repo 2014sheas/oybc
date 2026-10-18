@@ -155,6 +155,20 @@ describe('saveTaskEdit — root → copy propagation', () => {
     expect(await queuedTaskIds()).toEqual(['c-ended', 'c-live', ROOT].sort());
   });
 
+  it('a copy a sealed board holds only through a placed compound is untouched too (#576 item 2)', async () => {
+    await seedFamily();
+    // c-sub is a sub-task of compound cmp, and cmp is the square on a sealed board.
+    await db.tasks.add(copy('c-sub', 5, LIVE_WINDOW));
+    await db.tasks.add({ ...counting('cmp', { title: 'Morning block', type: TaskType.COMPOUND }), action: undefined, unit: undefined, maxCount: undefined, currentCount: undefined } as Task);
+    await db.compoundChildren.add({ id: 'cc-sub', compoundTaskId: 'cmp', childTaskId: 'c-sub', childIndex: 0, createdAt: SEEDED, updatedAt: SEEDED, version: 1, isDeleted: false });
+    await seedBoard('b-sealed-cmp', LIVE_WINDOW, 'cmp', '2026-10-07T12:00:00.000Z');
+
+    await saveTaskEdit(ROOT, { title: 'Jog 30 miles', action: 'Jog', unit: 'miles', maxCount: 30 });
+
+    await expectUntouched('c-sub', 'Run 5 miles');
+    expect(await db.tasks.get('c-live')).toMatchObject({ action: 'Jog', version: 5 });
+  });
+
   it('a custom root rename carries verbatim to the live copy', async () => {
     await seedFamily();
     await saveTaskEdit(ROOT, { title: 'Marathon block' });
