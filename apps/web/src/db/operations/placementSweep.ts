@@ -48,11 +48,12 @@ const EMPTY_SUMMARY: PlacementSweepSummary = {
 
 /** The placement as the repoint writes it: new task, carried parameters, others cleared. */
 async function writeRepoint(bt: BoardTask, r: SweepRepoint, now: string): Promise<void> {
-  const { targetOverride: _t, targetKind: _k, titleOverride: _o, ...base } = bt;
+  const { targetOverride: _t, targetKind: _k, titleOverride: _o, childTargets: _c, ...base } = bt;
   const patched: BoardTask = withNormalizedPlacementFields({
     ...base,
     taskId: r.toTaskId,
     ...(r.targetOverride !== undefined ? { targetOverride: r.targetOverride, targetKind: r.targetKind } : {}),
+    ...(r.childTargets !== undefined ? { childTargets: r.childTargets } : {}),
     ...(r.titleOverride !== undefined ? { titleOverride: r.titleOverride } : {}),
     updatedAt: now,
     version: (bt.version ?? 0) + 1,
