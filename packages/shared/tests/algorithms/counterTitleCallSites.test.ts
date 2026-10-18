@@ -84,6 +84,14 @@ const ALLOWLIST: Record<string, { count: number; reason: string }> = {
     reason: `${TEMPLATE_AWARE} — slice 3b planner: is a legacy derived row's title custom (then it rides onto its root's placement as titleOverride)`,
   },
   'packages/shared/src/algorithms/rootFieldPropagation.ts': { count: 2, reason: TEMPLATE_AWARE },
+  'packages/shared/src/algorithms/placementSweep.ts': {
+    count: 1,
+    reason: `${TEMPLATE_AWARE} — slice 4a sweep: is a legacy derived row's title custom (then it rides onto the repointed placement as titleOverride)`,
+  },
+  'packages/shared/src/algorithms/workspaceAnonymiser.ts': {
+    count: 1,
+    reason: `${TEMPLATE_AWARE} — dev-only export (slice 4): decides whether a counting title is auto so the anonymised fixture keeps that property`,
+  },
 };
 
 const CALL = /generateCounterTaskTitle\(|isAutoCounterTitle\(/;
