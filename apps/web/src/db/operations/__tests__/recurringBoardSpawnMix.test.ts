@@ -1330,8 +1330,10 @@ describe('spawnTemplateBoard — pool-level default dice (2026-10-06)', () => {
     expect(await db.tasks.get(legacyDerivedTaskId(boardId, ROOT))).toBeUndefined();
     const row = (await db.boardTasks.where('boardId').equals(boardId).toArray()).find((bt) => bt.taskId === ROOT);
     expect(row).toBeDefined();
-    expect(row?.targetOverride).toBeGreaterThanOrEqual(lo);
-    expect(row?.targetOverride).toBeLessThanOrEqual(hi);
+    // A roll that lands on the task's own goal stores no override (it would be redundant).
+    const target = row?.targetOverride ?? GOAL;
+    expect(target).toBeGreaterThanOrEqual(lo);
+    expect(target).toBeLessThanOrEqual(hi);
   });
 
   it('a stored source vary wins over the pool default (seeded platform rng pins the level)', async () => {
