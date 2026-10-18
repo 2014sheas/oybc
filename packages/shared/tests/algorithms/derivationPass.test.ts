@@ -6,9 +6,10 @@ import {
   computeBoardStatsUpdate,
   computeBoardGrid,
   type CellState,
+  placementsReachedByTasks,
+  placementsReachedByRoot,
 } from '../../src/algorithms/derivationPass';
 import { CenterSquareType, TaskType, BoardStatus, Timeframe } from '../../src/constants/enums';
-import { expandToWindowStampedDerived } from '../../src/algorithms/taskEvents';
 import type {
   Task,
   CompoundChild,
@@ -152,24 +153,26 @@ interface CbsuVector {
   expectedCells?: CellState[];
 }
 
-interface EtwsdVector {
+interface ReachVector {
   name: string;
+  note?: string;
   ids: string[];
-  tasks: {
-    id: string;
-    isDeleted: boolean;
-    sharedCounterId: string | null;
-    startDate: string | null;
-    createdInWizard: boolean;
-  }[];
-  expected: string[];
+  tasks: { id: string; type: string; isDeleted: boolean; sharedCounterId: string | null }[];
+  compoundChildren: MiniChild[];
+  boardTasks: { id: string; boardId: string; taskId: string; isDeleted: boolean }[];
+  expected: {
+    taskIds: string[];
+    compoundIds: string[];
+    boardIds: string[];
+    placements: { boardTaskId: string; memberTaskId: string; viaCompoundId: string | null }[];
+  };
 }
 
 interface Fixture {
   findTransitiveParentCompounds: FtpcVector[];
   findAffectedBoardIds: FabiVector[];
   computeBoardStatsUpdate: CbsuVector[];
-  expandToWindowStampedDerived: EtwsdVector[];
+  placementsReached: ReachVector[];
 }
 
 const fixture: Fixture = JSON.parse(fs.readFileSync(FIXTURE_PATH, 'utf8'));
@@ -329,21 +332,64 @@ describe('findAffectedBoardIds (fixture-driven, tests/fixtures/derivationPassVec
   }
 });
 
-describe('expandToWindowStampedDerived (fixture-driven, tests/fixtures/derivationPassVectors.json)', () => {
+describe('placementsReachedByTasks (fixture-driven, tests/fixtures/derivationPassVectors.json)', () => {
   it('fixture is non-empty', () => {
-    expect(fixture.expandToWindowStampedDerived.length).toBeGreaterThan(0);
+    expect(fixture.placementsReached.length).toBeGreaterThan(0);
   });
 
-  for (const v of fixture.expandToWindowStampedDerived) {
+  const sortPlacements = (
+    a: { boardTaskId: string; memberTaskId: string },
+    b: { boardTaskId: string; memberTaskId: string },
+  ): number => `${a.boardTaskId}|${a.memberTaskId}`.localeCompare(`${b.boardTaskId}|${b.memberTaskId}`);
+
+  for (const v of fixture.placementsReached) {
     it(v.name, () => {
       const tasks = v.tasks.map((t) => ({
-        ...t,
+        id: t.id,
+        type: t.type as TaskType,
+        isDeleted: t.isDeleted,
         sharedCounterId: t.sharedCounterId ?? undefined,
-        startDate: t.startDate ?? undefined,
       }));
-      expect([...expandToWindowStampedDerived(v.ids, tasks)].sort()).toEqual(v.expected);
+      const boardTasks: BoardTask[] = v.boardTasks.map((m) => ({
+        id: m.id,
+        boardId: m.boardId,
+        taskId: m.taskId,
+        row: 0,
+        col: 0,
+        isCenter: false,
+        createdAt: BASE_TS,
+        updatedAt: BASE_TS,
+        version: 1,
+        isDeleted: m.isDeleted,
+      }));
+      const reach = placementsReachedByTasks(v.ids, {
+        tasks,
+        compoundChildren: v.compoundChildren.map(toChild),
+        boardTasks,
+      });
+      expect([...reach.taskIds].sort()).toEqual(v.expected.taskIds);
+      expect([...reach.compoundIds].sort()).toEqual(v.expected.compoundIds);
+      expect([...reach.boardIds].sort()).toEqual(v.expected.boardIds);
+      expect(
+        reach.placements
+          .map((p) => ({ boardTaskId: p.boardTask.id, memberTaskId: p.memberTaskId, viaCompoundId: p.viaCompoundId }))
+          .sort(sortPlacements),
+      ).toEqual(v.expected.placements);
     });
   }
+
+  it('placementsReachedByRoot is the single-id form', () => {
+    const v = fixture.placementsReached.find((c) => c.ids.length === 1 && c.expected.placements.length > 0)!;
+    const lookups = {
+      tasks: v.tasks.map((t) => ({ ...t, type: t.type as TaskType, sharedCounterId: t.sharedCounterId ?? undefined })),
+      compoundChildren: v.compoundChildren.map(toChild),
+      boardTasks: v.boardTasks.map((m) => ({
+        id: m.id, boardId: m.boardId, taskId: m.taskId, row: 0, col: 0, isCenter: false,
+        createdAt: BASE_TS, updatedAt: BASE_TS, version: 1, isDeleted: m.isDeleted,
+      })),
+    };
+    expect(placementsReachedByRoot(v.ids[0], lookups)).toEqual(placementsReachedByTasks(v.ids, lookups));
+  });
 });
 
 describe('computeBoardStatsUpdate (fixture-driven, tests/fixtures/derivationPassVectors.json)', () => {

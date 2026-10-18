@@ -4,8 +4,13 @@ import type { Task, TaskEvent } from '../types';
 import type { CountKind } from './countValue';
 import { isWholeCountKind, quantizeCount, resolveCountKind } from './countValue';
 import { counterCopyTitle, type CounterTitleSettings } from './taskTitle';
-import type { CompoundWindowContext, TaskWindowState } from './taskEvents';
-import { resolveDerivedCounterWindowState, resolveTaskWindowState } from './taskEvents';
+import type { CompoundWindowContext, LinkedCounterWindow, TaskWindowState } from './taskEvents';
+import {
+  boundWindowContextAtSeal,
+  contextlessCounterState,
+  resolveDerivedCounterWindowState,
+  resolveTaskWindowState,
+} from './taskEvents';
 
 /**
  * placementParams.ts — how a square READS its placement's parameters
@@ -163,8 +168,56 @@ export function resolveSquareState(
   if (derived) return derived;
   const events: TaskEvent[] = ctx.eventsByTaskId[effective.id] ?? [];
   if (effective.type === TaskType.COUNTING && effective.sharedCounterId) {
-    // A hub-linked row with no host window: the context-less latch (slice 5 retires this).
-    return { isCompleted: effective.isCompleted, count: effective.currentCount ?? 0 };
+    // A linked row with no host window (library, compound Task Detail, a hub
+    // card with no board): the ROOT's lifetime events, never the latch (slice 2c).
+    return contextlessCounterState(effective, ctx.eventsByTaskId);
   }
   return resolveTaskWindowState(effective, events, ctx.windowStart, ctx.windowEnd ?? null);
+}
+
+/**
+ * What a LINKED counting square or row SHOWS — a thin wrapper over
+ * {@link resolveSquareState} (TASK_WINDOW_REWORK slice 2c: display = kernel),
+ * so a cell can never paint green (or read N/N) while board stats count it
+ * incomplete:
+ *
+ *   - `window` given (the placing board's `[startDate, endDate]`) → the ROOT's
+ *     increment sum inside THAT window, whatever the row's own stamp says
+ *     (context window wins, slice 0);
+ *   - no `window`, a window-stamped row → its own stamp (the context-less
+ *     fallback slice 5 retires);
+ *   - no `window`, any other linked row → {@link contextlessCounterState}
+ *     (the root's lifetime events). Neither `currentCount − baseline` nor the
+ *     propagation latch is read any more; no event map reads as no events.
+ *
+ * `sealedAt` (the row's board is sealed) bounds every event at that instant
+ * first — {@link boundWindowContextAtSeal}, the sealed re-derive's filter; an
+ * unparseable value applies no bound. `placement` applies the square's
+ * parameters (goal / kind / title) before resolving. Overshoot is shown;
+ * never high-clamped.
+ *
+ * @param task           The linked counting task being rendered.
+ * @param eventsByTaskId Non-deleted events grouped by `taskId`, or none.
+ * @param sealedAt       The row's board `sealedAt`, when that board is sealed.
+ * @param window         The placing board's window, when there is one.
+ * @param placement      The square's placement parameters, when placed.
+ * @returns `{ displayed, isCompleted }`.
+ */
+export function resolveLinkedCounterDisplay(
+  task: Task,
+  eventsByTaskId: Record<string, TaskEvent[]> | null | undefined,
+  sealedAt?: string | null,
+  window?: LinkedCounterWindow | null,
+  placement?: PlacementParams | null,
+): { displayed: number; isCompleted: boolean } {
+  let events: Record<string, TaskEvent[]> = eventsByTaskId ?? {};
+  const sealedAtMs = sealedAt ? new Date(sealedAt).getTime() : NaN;
+  if (!Number.isNaN(sealedAtMs)) events = boundWindowContextAtSeal(events, sealedAtMs).eventsByTaskId;
+  const ctx: CompoundWindowContext = {
+    eventsByTaskId: events,
+    windowStart: window?.startDate ?? null,
+    windowEnd: window?.endDate ?? null,
+  };
+  const { count, isCompleted } = resolveSquareState(task, placement, ctx);
+  return { displayed: count, isCompleted };
 }

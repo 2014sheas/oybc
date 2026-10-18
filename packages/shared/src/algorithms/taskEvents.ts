@@ -4,7 +4,6 @@ import type { TaskEvent } from '../types/taskEvent';
 import { TaskType } from '../constants/enums';
 import { isWithinTimeframe } from './calendarBoundaries';
 import { isWindowStampedDerived } from './memberRules';
-import { deriveDisplayedCount } from './sharedCounter';
 import { finalizeWindowCount, resolveCountKind, type CountKind } from './countValue';
 
 /**
@@ -339,104 +338,38 @@ export function resolveDerivedCounterWindowState(
 }
 
 /**
- * What a LINKED (derived) counting square or row SHOWS: its displayed count and
- * its completion — the events-based variant of `deriveDisplayedCount`
- * (docs/WINDOWED_COMPLETION.md §Derived-task carve-out, amended 2026-09-23).
+ * A counting task's state with NO host window (TASK_WINDOW_REWORK slice 2c):
+ * the library, a compound Task Detail, a hub card with no board, the kernel's
+ * context-less linked branch. Reads EVENTS, never the propagation latch or
+ * `currentCount − baseline`:
  *
- * - **Window-stamped** (`isWindowStampedDerived`, COUNTING) with an event map:
- *   the ROOT's increment sum inside the row's own `[startDate, endDate]` via
- *   {@link resolveWindowStampedDerivedState} — the SAME function the derivation
- *   kernel resolves the cell with, so a cell can never paint green (or read
- *   N/N) while board stats count it incomplete. When `sealedAt` is given (the
- *   row's board is sealed) root events after it are dropped first, matching
- *   {@link boundWindowContextAtSeal} on the sealed re-derive; this only binds
- *   when the row has no `endDate` (an unparseable `sealedAt` applies no bound). Overshoot is shown; never high-clamped.
- * - **Any other linked row** (hub-linked, or windowed but not wizard-born)
- *   with an event map AND a `window` — the placing board's `[startDate,
- *   endDate]` (owner rule 2026-10-01): the ROOT's increment sum inside THAT
- *   window, bounded at `sealedAt` the same way. The kernel resolves the cell
- *   over the same context window ({@link resolveDerivedCounterWindowState}),
- *   so display and stats agree here too. The row's own `startDate` (if any)
- *   is NOT read — a non-wizard-born stamp is ordinary user data.
- * - No event map, or a non-window-stamped row with no `window` (library /
- *   lifetime readers): `currentCount − baseline` (low-clamped) for the count,
- *   and the propagation-stamped latch `task.isCompleted` for completion — the
- *   only place the latch is still read for a linked row.
+ *   - a LINKED row (`sharedCounterId`) sums its ROOT's live increment events
+ *     over the root's lifetime;
+ *   - a root or plain counter sums its own.
  *
- * @param task           The linked counting task being rendered.
+ * Complete iff a goal exists and the sum reaches it (`maxCount != null &&
+ * sum >= maxCount`) — the one completion rule; a goal-less row is never green
+ * at 0. A missing key counts as no events. Non-counting tasks return
+ * `{ false, 0 }` — callers route those through `resolveTaskWindowState`.
+ *
+ * @param task           The counting task (placement-adjusted when placed).
  * @param eventsByTaskId Non-deleted events grouped by `taskId` (the whole
- *                       workspace, or at least the root's), or `null`/`undefined`
- *                       when the caller has none.
- * @param sealedAt       The row's board `sealedAt`, when that board is sealed.
- * @param window         The placing board's window. When given it is THE
- *                       window for any linked row, stamped or not (slice 0);
- *                       a stamped row reads its own stamp only without one.
- * @returns `{ displayed, isCompleted }`.
+ *                       workspace, or at least the owner's). `null` = none.
+ * @returns `{ isCompleted, count }` — `count` finalised at the task's kind.
  */
-export function resolveLinkedCounterDisplay(
-  task: Task,
+export function contextlessCounterState(
+  task: Pick<Task, 'id' | 'type' | 'sharedCounterId' | 'maxCount' | 'countKind'>,
   eventsByTaskId: Record<string, TaskEvent[]> | null | undefined,
-  sealedAt?: string | null,
-  window?: LinkedCounterWindow | null,
-): { displayed: number; isCompleted: boolean } {
-  if (eventsByTaskId && task.type === TaskType.COUNTING && task.sharedCounterId) {
-    const stamped = isWindowStampedDerived(task);
-    if (window || stamped) {
-      let rootEvents = eventsByTaskId[task.sharedCounterId] ?? [];
-      const sealedAtMs = sealedAt ? new Date(sealedAt).getTime() : NaN;
-      if (!Number.isNaN(sealedAtMs)) {
-        rootEvents = rootEvents.filter((e) => new Date(e.occurredAt).getTime() <= sealedAtMs);
-      }
-      // Context window wins (slice 0): the placing board's window, when
-      // given, applies to a stamped row too; the own stamp is the
-      // context-less fallback only.
-      const { count, isCompleted } = resolveWindowStampedDerivedState(
-        window ? { startDate: window.startDate, endDate: window.endDate, maxCount: task.maxCount, countKind: task.countKind } : task,
-        rootEvents,
-      );
-      return { displayed: count, isCompleted };
-    }
+): TaskWindowState {
+  if (task.type !== TaskType.COUNTING) return { isCompleted: false, count: 0 };
+  const ownerId = task.sharedCounterId || task.id;
+  let sum = 0;
+  for (const e of eventsByTaskId?.[ownerId] ?? []) {
+    if (e.isDeleted || e.kind !== 'increment') continue;
+    sum += e.delta ?? 0;
   }
-  const { displayed } = deriveDisplayedCount(
-    { baseline: task.baseline ?? 0, maxCount: task.maxCount ?? 0, countKind: task.countKind },
-    { currentCount: task.currentCount ?? 0 },
-  );
-  return { displayed, isCompleted: task.isCompleted };
-}
-
-/**
- * Cascade reachability for linked (derived) counters: return `ids` UNION the
- * ids of every LIVE row whose `sharedCounterId` is in `ids` — window-stamped
- * AND hub-linked alike (owner rule 2026-10-01; before it, only
- * {@link isWindowStampedDerived} rows were added).
- *
- * A shared-counter ROOT is never placed on a board, but every linked row
- * resolves FROM the root's events on a board
- * ({@link resolveDerivedCounterWindowState}: a window-stamped row over its own
- * window, any other linked row over the placing board's). So whenever a
- * root's event set changes (a pulled / healed / logged / undone event), the
- * placement walk that finds affected boards must start from ALL of those rows
- * — the LIVE cascade, the SEALED re-derivation and the increment cascade
- * alike. Ids that aren't roots pass through unchanged. (The name predates the
- * widening and is kept for its platform call sites.)
- *
- * @param ids   The task ids whose events changed.
- * @param tasks Candidate task rows (any superset of the linked rows — the
- *              whole workspace, or just the rows with `sharedCounterId` in `ids`).
- * @returns A new set: `ids` plus the reachable linked row ids.
- */
-export function expandToWindowStampedDerived(
-  ids: Iterable<string>,
-  tasks: Iterable<Pick<Task, 'id' | 'isDeleted' | 'sharedCounterId' | 'startDate' | 'createdInWizard'>>,
-): Set<string> {
-  const roots = new Set(ids);
-  const out = new Set(roots);
-  if (roots.size === 0) return out;
-  for (const t of tasks) {
-    if (t.isDeleted || !t.sharedCounterId || !roots.has(t.sharedCounterId)) continue;
-    out.add(t.id);
-  }
-  return out;
+  const count = finalizeWindowCount(sum, resolveCountKind(task));
+  return { isCompleted: task.maxCount != null && count >= task.maxCount, count };
 }
 
 /**

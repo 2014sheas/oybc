@@ -489,6 +489,13 @@ display/kernel split, the context-less readers, and three parity defects.
    (`useBrowsableTasks`), fed to TasksPage and the wizard Library sheet;
    `useTaskLibrary` stays lookup-only.
 
+**Gate 1 rulings (2026-10-17):** (a) the hub is rewired onto the reach
+helper now — `buildSharedCounterGroups` consumes `placementsReachedByRoot`'s
+`placements` (member placement + `viaCompoundId`) instead of its own parent
+walk, so the hub, the cascade and the sealed re-derive share ONE reach;
+(b) the library's context-less readers load the whole workspace event log
+(the existing `eventsByTaskId` loaders), not a roots-only subset.
+
 ## Acceptance
 
 - After slice 5: `grep` finds no non-test reference to `isWindowStampedDerived`,
