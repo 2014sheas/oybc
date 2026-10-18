@@ -77,6 +77,22 @@ test.describe('Profile → Settings', () => {
     await expect(page.getByText('Coming soon')).toHaveCount(2);
   });
 
+  // Legal links (App Store 5.1.1(i)) — the hosted pages on oybc.com. URLs are
+  // spelled out here (e2e never imports @oybc/shared); the Vitest suite
+  // `components/legal/__tests__/legalLinks.test.ts` pins them to LEGAL_LINKS.
+  for (const route of ['/profile/settings', '/profile/help']) {
+    test(`${route} links the Privacy Policy and Terms of Use in a new tab`, async ({ page }) => {
+      await page.goto(`${route}?__oybc_test_bypass=1`);
+
+      const privacy = page.getByRole('link', { name: 'Privacy Policy' });
+      const terms = page.getByRole('link', { name: 'Terms of Use' });
+      await expect(privacy).toHaveAttribute('href', 'https://oybc.com/privacy');
+      await expect(terms).toHaveAttribute('href', 'https://oybc.com/terms');
+      await expect(privacy).toHaveAttribute('target', '_blank');
+      await expect(terms).toHaveAttribute('target', '_blank');
+    });
+  }
+
   test('Sign out opens the confirm modal', async ({ page }) => {
     await page.goto('/profile/settings?__oybc_test_bypass=1');
 

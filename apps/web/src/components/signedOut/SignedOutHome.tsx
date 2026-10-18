@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { LEGAL_LINKS } from '@oybc/shared';
 import { RisoButton, RisoBrandMark, RisoIcon, RisoSegmented } from '../riso';
 import { HeroBoard, BeatMini, type BeatState } from './SignedOutArt';
 import { SignInModal, type AuthMode } from './SignInModal';
@@ -185,10 +186,13 @@ export function SignedOutHome(): React.ReactElement {
         <div className={styles.soFootLegal}>
           <span>OYBC · On Your Bingo Card</span>
           <span className={styles.soFootLegalLinks}>
-            {/* Placeholder until the legal pages exist (pre-launch). Buttons, not
-                hrefless <a>s, so they're keyboard-focusable + announced correctly. */}
-            <button type="button">Privacy</button>
-            <button type="button">Terms</button>
+            {Object.values(LEGAL_LINKS).map((link) => (
+              <a key={link.url} href={link.url} target="_blank" rel="noopener noreferrer">
+                {link.label}
+              </a>
+            ))}
+            {/* Placeholder until a support address exists (#528). A button, not an
+                hrefless <a>, so it's keyboard-focusable + announced correctly. */}
             <button type="button">Contact</button>
           </span>
         </div>

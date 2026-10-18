@@ -1,4 +1,5 @@
 import { Link } from 'react-router-dom';
+import { LegalLinksCard } from '../components/legal/LegalLinksCard';
 import profileStyles from './ProfilePage.module.css';
 import styles from './HelpPage.module.css';
 
@@ -11,8 +12,9 @@ import styles from './HelpPage.module.css';
  * (owner decision 1) treats that as a real pre-release design gap rather
  * than something to fake, so this page shows a clearly-marked "Coming soon"
  * placeholder in its place. "Contact support" is likewise a placeholder
- * (owner decision 4) until a real support address exists. Nothing else
- * belongs on this page — do not add FAQ content.
+ * (owner decision 4) until a real support address exists. Below them, the
+ * Legal links (Privacy Policy / Terms of Use). Nothing else belongs on this
+ * page — do not add FAQ content.
  */
 export function HelpPage(): React.ReactElement {
   return (
@@ -38,6 +40,8 @@ export function HelpPage(): React.ReactElement {
           <span className={styles.disabledCaption}>Coming soon</span>
         </div>
       </div>
+
+      <LegalLinksCard />
     </div>
   );
 }

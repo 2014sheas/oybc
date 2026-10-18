@@ -332,6 +332,10 @@ struct OnboardingView: View {
             .padding(.horizontal, Riso.gutter)
 
             Spacer()
+
+            LegalLinksFooter()
+                .padding(.horizontal, Riso.gutter)
+                .padding(.bottom, 20)
         }
     }
 

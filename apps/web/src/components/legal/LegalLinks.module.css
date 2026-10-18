@@ -1,0 +1,69 @@
+/* Legal links (Privacy Policy / Terms of Use) — the Settings + Help card and
+   the sign-in footer line. iOS twins: LegalLinksCard.swift /
+   LegalLinksFooter.swift. */
+
+/* ─── Card (Settings, Help) — same shell + row rhythm as Settings' rows ─── */
+.card {
+  background: var(--riso-paper-2);
+  border: 2px solid var(--riso-ink);
+  border-radius: 14px;
+  box-shadow: 4px 4px 0 var(--riso-shadow-ink);
+  overflow: hidden;
+  margin-bottom: 20px;
+}
+.row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 13px 16px;
+  border-bottom: 1.5px solid var(--riso-hair);
+  text-decoration: none;
+  color: inherit;
+}
+.row:last-child {
+  border-bottom: none;
+}
+.row:focus-visible {
+  outline: 3px solid var(--riso-blue);
+  outline-offset: -3px;
+}
+.rowLabel {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--riso-font-head);
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--riso-ink);
+}
+.rowArrow {
+  flex-shrink: 0;
+  font-family: var(--riso-font-head);
+  font-weight: 800;
+  font-size: 16px;
+  color: var(--riso-muted);
+}
+
+/* ─── Footer line (sign-in modal) ─── */
+.footer {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 8px;
+  margin-top: 16px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--riso-muted);
+}
+.footer a {
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.footer a:hover {
+  color: var(--riso-ink);
+}
+.footer a:focus-visible {
+  outline: 2px solid var(--riso-blue);
+  outline-offset: 2px;
+}

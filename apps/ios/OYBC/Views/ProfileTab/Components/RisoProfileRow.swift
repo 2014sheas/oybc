@@ -2,7 +2,7 @@ import SwiftUI
 
 /// A single row inside a Riso profile card.
 ///
-/// Layout: `[icon-square] [label + caption?] [count pill?] [value?] [chevron?]`
+/// Layout: `[icon-square] [label + caption?] [count pill?] [value?] [chevron? | external?]`
 ///
 /// - `icon`: An SF Symbol name rendered in a 26×26 keyline square.
 /// - `label`: Row title (Bricolage 700, ink).
@@ -13,6 +13,8 @@ import SwiftUI
 ///   the prototype's `ts-lib-count` style.
 /// - `value`: Optional trailing text (Archivo semibold, muted).
 /// - `chevron`: When `true`, renders a `>` disclosure indicator.
+/// - `external`: When `true`, renders a `↗` indicator instead — the row opens
+///   a web page outside the app (Settings / Help legal links).
 /// - `danger`: When `true`, label + icon use red ink (Sign Out row).
 struct RisoProfileRow: View {
     let icon: String
@@ -21,6 +23,7 @@ struct RisoProfileRow: View {
     var countBadge: Int? = nil
     var value: String? = nil
     var chevron: Bool = false
+    var external: Bool = false
     var danger: Bool = false
 
     private var labelColor: Color { danger ? .risoRed : .risoInk }
@@ -62,9 +65,9 @@ struct RisoProfileRow: View {
                     .lineLimit(1)
             }
 
-            // Chevron
-            if chevron {
-                Image(systemName: "chevron.right")
+            // Chevron (in-app push) or ↗ (opens outside the app)
+            if chevron || external {
+                Image(systemName: external ? "arrow.up.right" : "chevron.right")
                     .font(.system(size: 12, weight: .bold))
                     .foregroundStyle(Color.risoMuted)
             }

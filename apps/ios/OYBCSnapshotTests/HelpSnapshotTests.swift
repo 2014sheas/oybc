@@ -44,7 +44,7 @@ final class HelpSnapshotTests: XCTestCase {
     func testInProgressLight() {
         assertSnapshot(
             of: helpView(completed: 3),
-            as: .image(layout: .fixed(width: 393, height: 500)),
+            as: .image(layout: .fixed(width: 393, height: 620)),
             record: recordMode
         )
     }
@@ -53,7 +53,7 @@ final class HelpSnapshotTests: XCTestCase {
         assertSnapshot(
             of: helpView(completed: 3),
             as: .image(
-                layout: .fixed(width: 393, height: 500),
+                layout: .fixed(width: 393, height: 620),
                 traits: .init(userInterfaceStyle: .dark)
             ),
             record: recordMode
@@ -65,7 +65,7 @@ final class HelpSnapshotTests: XCTestCase {
     func testCompleteLight() {
         assertSnapshot(
             of: helpView(completed: TutorialProgressStore.totalLessons),
-            as: .image(layout: .fixed(width: 393, height: 500)),
+            as: .image(layout: .fixed(width: 393, height: 620)),
             record: recordMode
         )
     }
@@ -74,7 +74,7 @@ final class HelpSnapshotTests: XCTestCase {
         assertSnapshot(
             of: helpView(completed: TutorialProgressStore.totalLessons),
             as: .image(
-                layout: .fixed(width: 393, height: 500),
+                layout: .fixed(width: 393, height: 620),
                 traits: .init(userInterfaceStyle: .dark)
             ),
             record: recordMode

@@ -499,6 +499,7 @@
   display: flex;
   gap: 18px;
 }
+.soFootLegalLinks a,
 .soFootLegalLinks button {
   font: inherit;
   color: inherit;
@@ -506,7 +507,12 @@
   border: 0;
   padding: 0;
   cursor: pointer;
+  text-decoration: none;
 }
+.soFootLegalLinks a:hover {
+  color: var(--riso-on-color);
+}
+.soFootLegalLinks a:focus-visible,
 .soFootLegalLinks button:focus-visible {
   outline: 2px solid var(--riso-on-color);
   outline-offset: 2px;
