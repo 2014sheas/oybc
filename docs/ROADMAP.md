@@ -14,7 +14,9 @@ Canonical output of the full project review run on **2026-07-06** (concept / arc
 
 ## Track L — iOS 1.0 launch (decided 2026-10-14) — **ACTIVE, takes priority over every other track**
 
-Output of the 2026-10-14 pre-submission review (App Store readiness audit, backlog sweep, product/UX inventory, competitive scan). **Target: in App Review by early December**, so 1.0 is live for the yearly-bingo-card season. Phases run roughly in order; L0 and L1 start immediately and in parallel, and L4.5's inventory + mechanical sweeps may start early. Items that already have a track entry point at it rather than restating it. Open owner decisions are marked **[decide]**. **Scope:** Track L is iOS-launch-scoped, but rule 6 still applies — any change to shared types or behaviour (3×3 default, default pools, tiers) lands on web in the same PR or records the justified gap.
+Output of the 2026-10-14 pre-submission review (App Store readiness audit, backlog sweep, product/UX inventory, competitive scan). **Target: in App Review by the end of October 2026** (owner, 2026-10-18 — moved up from the review's early-December estimate), so 1.0 is live for the yearly-bingo-card season. Phases run roughly in order; L0 and L1 start immediately and in parallel, and L4.5's inventory + mechanical sweeps may start early. Items that already have a track entry point at it rather than restating it. Owner decisions are marked **Decided (owner, 2026-10-18)**; anything still open is marked **[decide]**.
+
+**Since 2026-10-14 (shipped to `dev`):** the task/window rework slices 0–5 (#627–#643 — per-placement parameters; the derived-row machinery and its migration sweep retired), the Task Detail redesign train (#634–#636, #644), the second caption purge (#623) and the CI audit (#631 — parallel iOS jobs, gated snapshots, sharded e2e, coverage floor). Both feature trains were owner-directed during the counters freeze below; the freeze stands from here. **Scope:** Track L is iOS-launch-scoped, but rule 6 still applies — any change to shared types or behaviour (3×3 default, default pools, tiers) lands on web in the same PR or records the justified gap.
 
 ### L0 — Stabilize + infrastructure
 - **Counters feature freeze:** bug fixes only on counters / compound / counts-toward until 1.0 (the most-churned surface — ~20 of the last 50 commits).
@@ -22,7 +24,7 @@ Output of the 2026-10-14 pre-submission review (App Store readiness audit, backl
 - **E9** App Check on iOS (App Attest), with the debug provider for simulator / tests. Ship unenforced, watch the App Check metrics, then enforce callables → Firestore. Firestore enforcement applies to every client, so the web app must be registered (reCAPTCHA Enterprise) or stay off the prod project before that switch.
 - #570 launch-path parse cost moves here from L4 — a launch-watchdog kill is the most likely runtime rejection, and every later phase adds launch work.
 - Crash reporting (Crashlytics — Firebase is already linked); dSYM upload wired into the Xcode Cloud workflow or stacks are unsymbolicated.
-- Minimal funnel instrumentation so the L2 north-star (install → first bingo) is measurable at all; it changes the privacy manifest + nutrition label. **[decide]** Firebase Analytics vs a privacy-first counter.
+- Funnel instrumentation: **Decided (owner, 2026-10-18): none for 1.0** — no analytics SDK, so the privacy manifest and nutrition label declare no analytics collection; the L2 north-star (install → first bingo) is unmeasured until a post-1.0 decision.
 - Xcode Cloud Files-and-Folders start condition (`apps/ios/**`, `packages/**`) to protect the daily upload cap during the launch train.
 
 ### L1 — App Review blockers — `S` each
@@ -38,16 +40,17 @@ Output of the 2026-10-14 pre-submission review (App Store readiness audit, backl
 ### L2 — First run (absorbs F2 / [#157](https://github.com/2014sheas/oybc/issues/157))
 0. **Tier model first (L3a):** the tutorial's locked squares and the free daily core board need the gating model, so the pure `ProGating` tier definitions + entitlement read land at the start of L2; the purchase flow stays in L3.
 1. **Default board size 3×3** for new users: `UserPreferences.defaults` (iOS) and `mergeUserPreferences` (shared) together. Users with a stored size keep it; only prefs missing the field pick up the new default.
-2. **Default pools** — curated content, seeded on first user action (never in the background) with deterministic ids (uuidv5 of user + pool slug) so multi-device / guest-link sign-ins don't duplicate; seeded tasks are ordinary editable tasks. Wire them into `core_board_defaults` so the free daily core board is pre-filled on first setup. **[decide]** pool list + contents.
-3. **Tutorial rework** — an interactive, bingo-board-shaped tutorial covering every concept; ends with the user's first real playable board from a default pool. Pro lesson squares are previewable but locked; the payoff is a **bingo**, and at least one fully free line (middle row or a centre diagonal) guarantees every free user reaches it. North-star metric: install → first bingo. Progress today lives in a device-local UserDefaults `TutorialProgressStore`; decide whether the new tutorial's state syncs (reinstall / second device) or is deliberately per-device.
+2. **Default pools** — curated content, seeded on first user action (never in the background) with deterministic ids (uuidv5 of user + pool slug) so multi-device / guest-link sign-ins don't duplicate; seeded tasks are ordinary editable tasks. Wire them into `core_board_defaults` so the free daily core board is pre-filled on first setup. **Decided (owner, 2026-10-18): themed pools** (e.g. Fitness, Reading, Home), **contents written by the owner**. **[decide]** which themed pool, if any, pre-fills the free daily core board — settled with the contents.
+3. **Tutorial rework** — an interactive, bingo-board-shaped tutorial covering every concept; ends with the user's first real playable board from a default pool. Pro lesson squares are previewable but locked; the payoff is a **bingo**, and at least one fully free line (middle row or a centre diagonal) guarantees every free user reaches it. North-star metric: install → first bingo. Progress today lives in a device-local UserDefaults `TutorialProgressStore`. **Decided (owner, 2026-10-18): tutorial progress syncs** (survives reinstall and a second device) — a synced field or collection, so it is a sync-contract change (`SYNC_COLLECTIONS` ↔ `firestore.rules`) and lands on web under rule 6 even though the tutorial itself is iOS-only.
 
 ### L3 — Monetization (PR [#452](https://github.com/2014sheas/oybc/pull/452))
-- Rebase #452; `ProGating` already carries the decided tiers from L2's L3a step. **Free:** basic tasks, default pools, the daily core board, 5 **active** boards. **Pro:** everything else (recurring beyond daily, compound, achievement, shared counters / counts-toward, sources, …).
+- Rebase #452; `ProGating` already carries the decided tiers from L2's L3a step. **Decided (owner, 2026-10-18) — 1.0 ships freemium.** **Free:** Normal and **Counting** tasks, default pools, the **daily** core board, 5 **active** boards. **Pro:** everything else — repeating boards, the weekly / monthly / yearly core boards, Compound, Achievement, shared counters / counts-toward, sources, …
+- **Active boards (the free cap of 5):** one-off boards **and the daily core board** use a slot; **drafts** and **ended-but-not-closed** boards do not. Repeating boards are Pro, so a spawned instance only uses a slot for a user whose Pro has lapsed.
+- **Pricing:** $2.99/mo with a **7-day** trial · $21.99/yr with a **14-day** trial · $39.99 lifetime (limited-time early adopter). `docs/MONETIZATION.md` (on the #452 branch) still says a 7-day trial on both subscriptions, that the free cap counts one-off boards only and that every core board is Pro — update it in the #452 rebase.
 - Gated affordances show a lock and open the paywall — never vanish. The active-board cap blocks **Activate**, not "Start a new board".
 - Paywall: Restore Purchases, terms + privacy links (3.1.2), sandbox purchases verified in the review build.
-- Lapse behaviour: existing Pro boards / counters / history stay readable and keep working through their window; only *creating* Pro things locks. Handle Pro-only data syncing onto an unentitled device.
+- Lapse behaviour — **Decided (owner, 2026-10-18): keep playing, no new Pro.** Existing Pro boards / tasks / counters / history keep working; only *creating* Pro things (and activating a board past the cap) locks. Handle Pro-only data syncing onto an unentitled device.
 - E10 RevenueCat items: `REFUND_REVERSED`, exact lifetime product-id list.
-- **[decide]** counting tasks free or Pro · what counts as "active" (drafts, ended-unclosed, does the daily core board use a slot) · pricing (subscription / lifetime / trial).
 
 ### L4 — Hardening
 - `DatabaseQueue` → `DatabasePool` (CLAUDE.md pull-engine follow-up 1) if #570's fix (moved to L0) doesn't clear large-account launch.
@@ -56,7 +59,7 @@ Output of the 2026-10-14 pre-submission review (App Store readiness audit, backl
 - [#576](https://github.com/2014sheas/oybc/issues/576) kind switch still rewrites copies on sealed boards.
 - B5: triage `try?` on write paths — at minimum log to crash reporting.
 - Accessibility: compact-stepper `@ScaledMetric` fix (F11 B3.1), Dynamic Type caps on grid cells, VoiceOver labels on wizard + play-surface sheets.
-- **[decide]** C7 sign-out local-data wipe (privacy on shared devices).
+- C7 sign-out local-data wipe — **Decided (owner, 2026-10-18): no wipe**; sign-out keeps today's behaviour (data is per-user; guest "Discard guest data" stays the one destructive path).
 - Close stale issues (#270, #284, #374, #370).
 
 ### L4.5 — UI polish + de-slop pass
