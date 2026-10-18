@@ -212,6 +212,22 @@ final class SyncForwardCompatTests: XCTestCase {
         XCTAssertEqual(stored.targetOverride, 5)
     }
 
+    /// iOS reads a tolerant value as the fallback but keeps the RAW column, so a build
+    /// that understands the value reads it back with no re-fetch (web persists the
+    /// coerced row instead and recovers through its lossy ledger row).
+    func test_tolerantRead_keepsTheRawColumn_andReadsTheFallback() async throws {
+        let db = try makeDb()
+        var doc = boardDoc(1)
+        doc["centerSquareType"] = "wild"
+
+        let outcome = try await apply(db, boardsCol, [doc])
+
+        XCTAssertEqual(outcome.pulled, 1)
+        XCTAssertEqual(try db.read { try String.fetchOne($0, sql: "SELECT centerSquareType FROM boards WHERE id = ?", arguments: [self.uuid(1, 1)]) }, "wild")
+        XCTAssertEqual(try db.fetchBoard(id: uuid(1, 1))?.centerSquareType, .free)
+        XCTAssertEqual(try ledger(db).count, 0, "iOS needs no ledger row for a lossy read")
+    }
+
     // MARK: - 2. Dependents
 
     func test_placementOfAQuarantinedTask_isLedgeredAsDependent_notAForeignKeyFailure() async throws {
@@ -545,6 +561,44 @@ final class SyncForwardCompatTests: XCTestCase {
         XCTAssertEqual(try count(db, "tasks"), 0)
     }
 
+    /// A plain sign-out / account delete calls `stop()`, which nils `runningForUserId`
+    /// — the old guard (`nil || == userId`) let a mid-fetch retry still write the old
+    /// user's docs into the wiped DB. A pass begun under a running service is bound to it.
+    func test_signOutMidRetry_nothingIsWritten() async throws {
+        let db = try makeDb()
+        try await apply(db, tasksCol, [taskDoc(1, type: "habit")])
+        try ledgerAsOldBuild(db)
+        let source = FakePullSource(docsByCollection: ["tasks": [taskDoc(1)]])
+        let sut = makeSut(db, source: source)
+        sut.runningForUserId = userId
+        source.onFetchDocument = { // sign-out lands while the read is in flight
+            DispatchQueue.main.sync { MainActor.assumeIsolated { sut.runningForUserId = nil } }
+        }
+
+        let result = await sut.pullSync(userId: userId, lastSyncedAt: nil)
+
+        XCTAssertTrue(result.details.contains("Quarantine retry stopped: the signed-in account changed"), "\(result.details)")
+        XCTAssertEqual(source.documentFetches, ["tasks/\(uuid(2, 1))"])
+        XCTAssertEqual(try count(db, "tasks"), 0, "the old user's doc was not re-inserted")
+        XCTAssertEqual(try ledger(db).first?.appBuild, oldBuild)
+    }
+
+    func test_signOutMidPull_theOrdinaryCollectionPassWritesNothing() async throws {
+        let db = try makeDb()
+        let source = FakePullSource(docsByCollection: ["tasks": [taskDoc(1), taskDoc(2)]])
+        let sut = makeSut(db, source: source)
+        sut.runningForUserId = userId
+        source.onFetch = { collection in // sign-out lands while the collection read is in flight
+            guard collection == "tasks" else { return }
+            await MainActor.run { sut.runningForUserId = nil }
+        }
+
+        let result = await sut.pullSync(userId: userId, lastSyncedAt: nil)
+
+        XCTAssertTrue(result.details.contains { $0.hasPrefix("Pull failed for tasks") }, "\(result.details)")
+        XCTAssertEqual(try count(db, "tasks"), 0)
+    }
+
     func test_retry_laterCollectionFailure_stillCountsTheEarlierCollections_andPostsTheLiveUpdateSignal() async throws {
         let db = try makeDb()
         try await apply(db, boardsCol, [boardDoc(1)])
@@ -620,16 +674,22 @@ final class SyncForwardCompatTests: XCTestCase {
         XCTAssertEqual(sut.healMissingCompletionEvents(userId: userId), 1, "task 1 resumes once the ledger row clears")
     }
 
-    func test_healOnPull_anUnreadableEventThatNamesNoTask_blocksNothing() async throws {
+    /// An unreadable event that names no task could belong to ANY task, so the
+    /// scoped skip cannot rule one out: it fails safe to the whole-account skip.
+    func test_healOnPull_anUnreadableEventThatNamesNoTask_failsSafeToSkippingEveryTask_thenResumes() async throws {
         let db = try makeDb()
         var one = taskDoc(1)
         one["isCompleted"] = true
         try await apply(db, tasksCol, [one])
         // A ledger row with no subject (the event doc named no task).
         try db.write { try AppDatabase.quarantinePulledDoc(db: $0, userId: self.userId, collection: "taskEvents", docId: self.uuid(4, 9), reason: "x") }
-        XCTAssertEqual(try ledger(db).count, 1)
+        let sut = makeSut(db)
 
-        XCTAssertEqual(makeSut(db).healMissingCompletionEvents(userId: userId), 1)
+        XCTAssertEqual(sut.healMissingCompletionEvents(userId: userId), 0)
+        XCTAssertEqual(try count(db, "task_events"), 0)
+
+        try db.write { try AppDatabase.releaseQuarantinedDocs(db: $0, userId: self.userId, collection: "taskEvents", ids: [self.uuid(4, 9)]) }
+        XCTAssertEqual(sut.healMissingCompletionEvents(userId: userId), 1)
     }
 
     // MARK: - 4. Never clobber (push)

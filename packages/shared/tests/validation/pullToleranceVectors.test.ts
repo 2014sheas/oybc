@@ -15,8 +15,9 @@ import {
  * §Forward-compatible pull). The SAME fixture is run end-to-end through web's
  * `applyRemoteSubdoc` (`apps/web/.../pullToleranceVectors.test.ts`) and iOS's
  * `applyPullBatch` (`PullToleranceVectorTests.swift`); this suite pins the
- * schema layer both web paths build on and that the iOS bundle copy is
- * byte-identical.
+ * schema layer both web paths build on. The iOS bundle copy is kept
+ * byte-identical by `tests/fixtures/fixtureSync.test.ts`
+ * (`pnpm --filter @oybc/shared run gen:sync-fixtures`).
  */
 
 interface Vector {
@@ -28,10 +29,6 @@ interface Vector {
 }
 
 const FIXTURE_PATH = path.join(__dirname, '../fixtures/pullToleranceVectors.json');
-const IOS_COPY_PATH = path.join(
-  __dirname,
-  '../../../../apps/ios/OYBCTests/Fixtures/pullToleranceVectors.json',
-);
 const fixture = JSON.parse(fs.readFileSync(FIXTURE_PATH, 'utf8')) as {
   bases: Record<string, Record<string, unknown>>;
   cases: Vector[];
@@ -68,14 +65,5 @@ describe('pull tolerance vectors — schema layer', () => {
         expect({ [field]: parsed[field] ?? null }).toEqual({ [field]: want });
       }
     }
-  });
-});
-
-describe('pullToleranceVectors iOS bundle copy', () => {
-  // xcodegen can't bundle a resource from outside apps/ios, so the iOS suite
-  // reads a checked-in copy (hand-authored — copy both by hand when editing).
-  it('is byte-identical to tests/fixtures/pullToleranceVectors.json', () => {
-    expect(fs.existsSync(IOS_COPY_PATH)).toBe(true);
-    expect(fs.readFileSync(IOS_COPY_PATH, 'utf8')).toEqual(fs.readFileSync(FIXTURE_PATH, 'utf8'));
   });
 });

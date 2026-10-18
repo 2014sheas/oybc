@@ -24,6 +24,14 @@ import type { SyncQuarantineRow } from '../database';
  */
 export const QUARANTINE_RETRY_LIMIT = 50;
 
+/**
+ * Reason prefix of a ledger row for a doc that WAS applied but read tolerantly
+ * (an unknown `centerSquareType` stored as `free`, an unknown core-default size
+ * stored as absent): the row exists only so a later build re-reads the doc
+ * strictly. See `lossyReason` in `pullApply.ts`.
+ */
+export const LOSSY_REASON_PREFIX = 'lossy: ';
+
 /** Retry fetches in flight at once. */
 export const QUARANTINE_FETCH_CONCURRENCY = 8;
 
@@ -142,6 +150,18 @@ export async function fetchRetryableQuarantine(
     .filter((r) => r.appBuild !== appBuild)
     .sort((a, b) => a.quarantinedAt.localeCompare(b.quarantinedAt))
     .slice(0, limit);
+}
+
+/**
+ * Whether any quarantined doc of `collection` has no `subjectId` (it named no
+ * entity), so a reaction scoped by subject cannot rule it out.
+ *
+ * @param userId - The signed-in uid.
+ * @param collection - The pulled subcollection.
+ * @returns True when such a row exists.
+ */
+export async function hasUnscopedQuarantinedDocs(userId: string, collection: string): Promise<boolean> {
+  return (await db.syncQuarantine.where('userId').equals(userId).filter((r) => r.collection === collection && !r.subjectId).count()) > 0;
 }
 
 /**

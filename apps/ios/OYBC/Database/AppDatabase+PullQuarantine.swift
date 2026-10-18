@@ -157,6 +157,17 @@ extension AppDatabase {
         QuarantinedDoc(collection: row["collection"], docId: row["docId"], reason: row["reason"], appBuild: row["appBuild"], subjectId: row["subjectId"])
     }
 
+    /// Whether any ledgered doc of `collection` has NO `subjectId` (the doc named
+    /// no entity), so a reaction scoped by subject cannot rule it out.
+    ///
+    /// - Throws: A GRDB error.
+    static func hasUnscopedQuarantinedDocs(db: Database, userId: String, collection: String) throws -> Bool {
+        try Row.fetchOne(
+            db, sql: "SELECT 1 FROM sync_quarantine WHERE userId = ? AND collection = ? AND subjectId IS NULL LIMIT 1",
+            arguments: [userId, collection]
+        ) != nil
+    }
+
     /// The subject ids of `collection`'s ledgered docs — for `taskEvents`, the
     /// tasks that have an event this build could not read.
     ///

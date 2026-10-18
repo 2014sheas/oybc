@@ -59,7 +59,8 @@ describe('pull tolerance vectors — web end to end', () => {
     const ledger = (await listQuarantinedDocs(USER)).filter((r) => r.collection === vector.collection);
     if (vector.disposition === 'applied') {
       expect(stored).toBe(true);
-      expect(ledger).toEqual([]);
+      // Applied normally; the only ledger row a tolerant read may leave is the LOSSY marker.
+      expect(ledger.filter((r) => !r.reason.startsWith('lossy: '))).toEqual([]);
       for (const [field, want] of Object.entries(vector.expect ?? {})) {
         expect({ [field]: row?.[field] ?? null }).toEqual({ [field]: want });
       }

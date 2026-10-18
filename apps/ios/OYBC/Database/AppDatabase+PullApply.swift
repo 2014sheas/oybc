@@ -336,14 +336,17 @@ extension AppDatabase {
     /// idempotent), ENQUEUE a CREATE owned by `userId`, then run the same
     /// recompute + board cascade + sealed re-derive the event pull uses.
     /// Respects LWW against an existing row with that id (an undo tombstone is
-    /// never resurrected). Skips a task that has a quarantined `taskEvents` doc.
+    /// never resurrected). Skips a task that has a quarantined `taskEvents` doc (all
+    /// tasks while one such doc names no task).
     /// Twin of web `healMissingCompletionEvents`.
     ///
     /// - Returns: The number of events minted.
     static func healMissingCompletionEventsTx(db: Database, userId: String) throws -> Int {
         // An event this build could not read (a newer app version's kind) may be
         // the very completion its task looks "missing" — never mint over THAT
-        // task's events (issue #300). Every other task still heals.
+        // task's events (issue #300). Every other task still heals — unless an
+        // unreadable event named no task, which could belong to any: then none do.
+        if try hasUnscopedQuarantinedDocs(db: db, userId: userId, collection: "taskEvents") { return 0 }
         let unreadableEventTasks = try quarantinedSubjectIds(db: db, userId: userId, collection: "taskEvents")
         let tasks = try Task.fetchAll(db)
         var hasLiveEvent = Set<String>()

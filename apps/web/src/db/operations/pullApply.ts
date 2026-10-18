@@ -21,7 +21,7 @@ import { runBoardCascadeForTask, runBoardCascadeForTasks, runBoardCascadeForBoar
 import { reDeriveSealedBoardsByIds } from './sealing';
 import { addToSyncQueue, stampTransactionSyncOwner } from './syncQueue';
 import { refreshWatchersForBoards } from './boardLifecycle';
-import { quarantinePulledDoc, releaseQuarantinedDocs } from './syncQuarantine';
+import { LOSSY_REASON_PREFIX, quarantinePulledDoc, releaseQuarantinedDocs } from './syncQuarantine';
 
 /**
  * Apply a remote document from a syncable subcollection to the local Dexie
@@ -73,6 +73,55 @@ export function rowsGenuinelyDiffer(local: SyncableEntity, remote: SyncableEntit
   return local.version !== remote.version || local.updatedAt !== remote.updatedAt;
 }
 
+/**
+ * The stored-row fields a pull reads TOLERANTLY (the schema coerces an unknown
+ * value instead of rejecting the doc — the iOS-parity posture of
+ * `docs/SYNC_STRATEGY.md` §Forward-compatible pull).
+ */
+const TOLERANT_FIELDS: Partial<Record<SyncCollection, readonly string[]>> = {
+  boards: ['centerSquareType'],
+  recurringBoardTemplates: ['centerSquareType'],
+  coreBoardDefaults: ['defaultBoardSize', 'defaultCenterType'],
+};
+
+/**
+ * Why a doc that parsed was read LOSSILY: a tolerant field held a value the
+ * schema coerced away (`wild` → `free`, size `6` → absent). A newer build may
+ * understand that value, so the applied row is ledgered (`LOSSY_REASON_PREFIX`)
+ * for a later build to re-read. Absent / null values and the retired
+ * `custom_free` are not "a value from the future" and are not flagged.
+ *
+ * @param collection - The pulled subcollection.
+ * @param raw - The raw remote doc.
+ * @param parsed - Its schema-parsed form.
+ * @returns The lossy reason, or null when nothing was coerced.
+ */
+function lossyReason(collection: SyncCollection, raw: unknown, parsed: unknown): string | null {
+  const lost = (TOLERANT_FIELDS[collection] ?? []).filter((field) => {
+    const was = (raw as Record<string, unknown>)[field];
+    if (was === undefined || was === null || was === 'custom_free') return false;
+    return (parsed as Record<string, unknown>)[field] !== was;
+  });
+  return lost.length === 0
+    ? null
+    : `${LOSSY_REASON_PREFIX}${lost.map((f) => `${f}=${JSON.stringify((raw as Record<string, unknown>)[f])}`).join(', ')} read tolerantly`;
+}
+
+/**
+ * Brings the ledger in line with an APPLIED / identical doc: a lossy read
+ * (re-)ledgers it for a later build; a strict one releases any row.
+ *
+ * @param userId - The signed-in uid.
+ * @param collection - The pulled subcollection.
+ * @param raw - The raw remote doc.
+ * @param id - The doc id.
+ * @param lossy - `lossyReason`'s result.
+ */
+async function settleLedger(userId: string, collection: SyncCollection, raw: unknown, id: string, lossy: string | null): Promise<void> {
+  if (lossy) await quarantinePulledDoc(userId, collection, raw, lossy);
+  else await releaseQuarantinedDocs(userId, collection, [id]);
+}
+
 export async function applyRemoteSubdoc(
   collectionName: SyncCollection,
   remoteData: unknown,
@@ -93,6 +142,7 @@ export async function applyRemoteSubdoc(
   }
 
   const validated = parsed.data as SyncableEntity;
+  const lossy = lossyReason(collectionName, remoteData, validated);
 
   // Guard against a peer writing a document with a spoofed `userId`
   // into its own path — reject anything that doesn't match the
@@ -146,8 +196,15 @@ export async function applyRemoteSubdoc(
   // re-push every containing board on every cycle. Nothing changed: skip the
   // put and the cascade. LWW itself is untouched — a genuinely different row
   // still resolves through `resolveConflict` below.
-  if (localData && !rowsGenuinelyDiffer(localData, validated)) {
-    await releaseQuarantinedDocs(authenticatedUserId, collectionName, [validated.id]);
+  // Exception: a doc ledgered as LOSSY whose strict parse now succeeds (a newer
+  // build understands the value) has a stored row that still holds the coerced
+  // fallback — re-apply it even though version + updatedAt match.
+  const identical = !!localData && !rowsGenuinelyDiffer(localData, validated);
+  const wasLossy =
+    identical && !lossy &&
+    (await db.syncQuarantine.get([authenticatedUserId, collectionName, validated.id]))?.reason.startsWith(LOSSY_REASON_PREFIX) === true;
+  if (identical && !wasLossy) {
+    await settleLedger(authenticatedUserId, collectionName, remoteData, validated.id, lossy);
     return `Unchanged ${collectionName}/${validated.id} (identical to local)`;
   }
 
@@ -310,7 +367,7 @@ export async function applyRemoteSubdoc(
     },
   );
 
-  await releaseQuarantinedDocs(authenticatedUserId, collectionName, [validated.id]);
+  await settleLedger(authenticatedUserId, collectionName, remoteData, validated.id, lossy);
   recordSyncEvent('pulled');
   if (isNew) {
     return `Pulled ${collectionName}/${validated.id} (new)`;
@@ -348,7 +405,7 @@ export async function putRemoteWinner(
     return false;
   }
   await db.table(entityType).put(parsed.data);
-  await releaseQuarantinedDocs(userId, entityType, [remoteData.id]);
+  await settleLedger(userId, entityType, remoteData, remoteData.id, lossyReason(entityType, remoteData, parsed.data));
   return true;
 }
 

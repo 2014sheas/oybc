@@ -435,11 +435,12 @@ final class SyncService: ObservableObject {
         // fallback watermark + listeners' start, so a doc written DURING this
         // pull stays >= it; `>=` + the echo guard make the re-read free).
         let pullStartedAt = AppDatabase.currentTimestamp()
+        let bound = runningForUserId // the account this pass began under
 
         // The parent user doc (`users/{userId}`) — synced profile fields like
         // `preferences` replicate back through it.
         await processPullUserDocument(userId: userId, result: &result)
-        await retryQuarantinedDocs(userId: userId, result: &result)
+        await retryQuarantinedDocs(userId: userId, bound: bound, result: &result)
 
         let fallback = lastSyncedAt.flatMap(DateFormatting.parseISO).map(PullWatermark.init(date:))
         let checkpoints = (try? await database.readAsync { db in
@@ -447,7 +448,7 @@ final class SyncService: ObservableObject {
         }) ?? [:]
         for collection in pullApplyCollections {
             await processPullCollection(
-                collection: collection, userId: userId,
+                collection: collection, userId: userId, bound: bound,
                 since: checkpoints[collection.firestoreName] ?? fallback, result: &result
             )
         }
@@ -465,10 +466,9 @@ final class SyncService: ObservableObject {
         return result
     }
 
-    /// Clean-pull tail: heal-on-pull (docs/WINDOWED_COMPLETION.md
-    /// §Heal-on-pull) — idempotent, in its own async write — then the `users.lastSyncedAt` stamp (the
+    /// Clean-pull tail: heal-on-pull (docs/WINDOWED_COMPLETION.md §Heal-on-pull;
+    /// idempotent, never fails the pull), then the `users.lastSyncedAt` stamp (the
     /// checkpoint fallback + web parity), stamped with the pull's START time.
-    /// Heals never fail the pull.
     private func finishCleanPull(userId: String, pullStartedAt: String, result: inout PullResult) async {
         do {
             let healed = try await database.writeAsync { db in try AppDatabase.healMissingCompletionEventsTx(db: db, userId: userId) }
@@ -645,14 +645,20 @@ final class SyncService: ObservableObject {
         }
     }
 
+    /// Whether a pass begun with `bound` as the running uid may still write for
+    /// `userId`: a bound pass ends at sign-out (`stop()` → nil) or an account switch;
+    /// an unbound one (service never started — tests) keeps the lenient rule.
+    private func mayWrite(userId: String, bound: String?) -> Bool {
+        guard let bound else { return runningForUserId == nil || runningForUserId == userId }
+        return bound == userId && runningForUserId == bound
+    }
+
     /// Forward-compat (issue #300): re-fetches docs an EARLIER build skipped
-    /// (`AppDatabase.retryQuarantinedPullDocs`; a no-op until the build changed).
-    /// A failure never fails the pull — the ledger rows stay for the next cycle.
-    private func retryQuarantinedDocs(userId: String, result: inout PullResult) async {
+    /// (`AppDatabase.retryQuarantinedPullDocs`); a failure never fails the pull.
+    private func retryQuarantinedDocs(userId: String, bound: String?, result: inout PullResult) async {
         let report = await database.retryQuarantinedPullDocs(
             source: pullSource, userId: userId,
-            // A sign-out / account switch mid-pass must not write the old user's docs.
-            isActive: { [weak self] in self.map { $0.runningForUserId == nil || $0.runningForUserId == userId } ?? false }
+            isActive: { [weak self] in self?.mayWrite(userId: userId, bound: bound) ?? false }
         )
         recordBatch(pulled: report.pulled)
         result.pulled += report.pulled
@@ -665,14 +671,13 @@ final class SyncService: ObservableObject {
     /// with its own checkpoint. A throw stops the collection ("Pull failed");
     /// earlier chunks stay committed and the next pull resumes from there.
     private func processPullCollection(
-        collection: PullCollection, userId: String, since: PullWatermark?, result: inout PullResult
+        collection: PullCollection, userId: String, bound: String?, since: PullWatermark?, result: inout PullResult
     ) async {
         do {
             let fetched = try await pullSource.fetchCollection(userId: userId, collection: collection.firestoreName, since: since)
             for chunk in await Self.checkpointChunks(fetched) {
-                // An account switch (`stop()`/`start()`) can land mid-pull now
-                // that batches commit after an await — drop the rest.
-                guard runningForUserId == nil || runningForUserId == userId else {
+                // A sign-out / account switch can land mid-pull (batches commit after an await).
+                guard mayWrite(userId: userId, bound: bound) else {
                     throw SyncError.invalidPayload("sync stopped for this user")
                 }
                 let outcome = try await database.applyPullBatch(collection: collection, docs: chunk, userId: userId, checkpoint: true)

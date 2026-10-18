@@ -163,11 +163,87 @@ describe('healMissingCompletionEvents — never mints over an event this build c
     expect(await healMissingCompletionEvents(USER)).toBe(1); // task 1 resumes
   });
 
-  it('an unreadable event that names no task blocks nothing', async () => {
+  it('an unreadable event that names no task could belong to any: it fails safe to skipping every task, then resumes', async () => {
     await db.tasks.put(task(1, { isCompleted: true }) as never);
     await quarantinePulledDoc(USER, 'taskEvents', { id: uuid(4, 9), userId: USER, kind: 'decrement' }, 'x');
 
+    expect(await healMissingCompletionEvents(USER)).toBe(0);
+    expect(await db.taskEvents.count()).toBe(0);
+
+    await releaseQuarantinedDocs(USER, 'taskEvents', [uuid(4, 9)]);
     expect(await healMissingCompletionEvents(USER)).toBe(1);
+  });
+});
+
+describe('a tolerantly-read doc is applied AND ledgered as lossy, so a newer build can re-read it', () => {
+  const lossyRows = async () => (await listQuarantinedDocs(USER)).filter((r) => r.reason.startsWith('lossy: '));
+
+  it('stores the fallback, ledgers the coerced field, and flags nothing for null / absent / retired / valid values', async () => {
+    expect(await applyRemoteSubdoc('boards', board(1, { centerSquareType: 'wild' }), USER)).toMatch(/^Pulled /);
+    expect((await db.boards.get(uuid(1, 1)))?.centerSquareType).toBe('free');
+    expect((await lossyRows()).map((r) => [r.collection, r.docId, r.reason])).toEqual([
+      ['boards', uuid(1, 1), 'lossy: centerSquareType="wild" read tolerantly'],
+    ]);
+
+    await applyRemoteSubdoc('boards', board(2, { centerSquareType: 'custom_free' }), USER); // retired, not "from the future"
+    await applyRemoteSubdoc('boards', board(3, { centerSquareType: 'chosen' }), USER);
+    await applyRemoteSubdoc('coreBoardDefaults', core(1, { defaultBoardSize: null }), USER);
+    await applyRemoteSubdoc('coreBoardDefaults', core(2, { defaultBoardSize: 4, defaultCenterType: 'none' }), USER);
+    expect((await lossyRows()).map((r) => r.docId)).toEqual([uuid(1, 1)]);
+
+    await applyRemoteSubdoc('coreBoardDefaults', core(3, { defaultBoardSize: 6, defaultCenterType: 'wild' }), USER);
+    await applyRemoteSubdoc('recurringBoardTemplates', template(1, { centerSquareType: 'wild' }), USER);
+    expect((await lossyRows()).map((r) => r.collection).sort()).toEqual(['boards', 'coreBoardDefaults', 'recurringBoardTemplates']);
+  });
+
+  it('is not re-read under the build that read it, and the next pull of an identical doc keeps the marker', async () => {
+    await applyRemoteSubdoc('boards', board(1, { centerSquareType: 'wild' }), USER);
+    expect(await fetchRetryableQuarantine(USER, currentAppBuild())).toEqual([]);
+
+    expect(await applyRemoteSubdoc('boards', board(1, { centerSquareType: 'wild' }), USER)).toMatch(/^Unchanged /);
+    expect(await lossyRows()).toHaveLength(1);
+  });
+
+  it('a build that understands the value re-reads the ledgered doc by id and replaces the stored fallback', async () => {
+    await applyRemoteSubdoc('boards', board(1, { centerSquareType: 'wild' }), USER);
+    await db.syncQuarantine.toCollection().modify({ appBuild: OLD });
+    // the new build parses the (same-version) doc strictly — modelled by a value it knows
+    const fetchDoc = async () => board(1, { centerSquareType: 'none' });
+
+    const out = await retryQuarantinedDocs(USER, fetchDoc, { appBuild: NEW });
+
+    expect(out.pulled).toBe(1);
+    expect((await db.boards.get(uuid(1, 1)))?.centerSquareType).toBe('none');
+    expect(await listQuarantinedDocs(USER)).toEqual([]);
+  });
+
+  it('the ordinary pull re-applies an identical doc whose ledger row is lossy once it parses strictly (the boundary-doc case)', async () => {
+    await applyRemoteSubdoc('boards', board(1, { centerSquareType: 'wild' }), USER);
+
+    const status = await applyRemoteSubdoc('boards', board(1, { centerSquareType: 'none' }), USER);
+
+    expect(status).toMatch(/^Pulled /);
+    expect((await db.boards.get(uuid(1, 1)))?.centerSquareType).toBe('none');
+    expect(await listQuarantinedDocs(USER)).toEqual([]);
+  });
+
+  it('a doc that is still lossy under the new build stays ledgered, re-stamped, and is not re-read again by it', async () => {
+    await applyRemoteSubdoc('boards', board(1, { centerSquareType: 'wild' }), USER);
+    await db.syncQuarantine.toCollection().modify({ appBuild: OLD });
+    const fetches: string[] = [];
+    const fetchDoc = async (c: string, id: string) => { fetches.push(`${c}/${id}`); return board(1, { centerSquareType: 'wild' }); };
+
+    await retryQuarantinedDocs(USER, fetchDoc, { appBuild: NEW });
+    await retryQuarantinedDocs(USER, fetchDoc, { appBuild: NEW });
+
+    expect(fetches).toHaveLength(1);
+    expect((await lossyRows()).map((r) => r.appBuild)).toEqual([NEW]);
+    expect((await db.boards.get(uuid(1, 1)))?.centerSquareType).toBe('free');
+  });
+
+  it('a push remote-win that reads tolerantly is ledgered too', async () => {
+    expect(await putRemoteWinner('boards', board(1, { centerSquareType: 'wild' }) as never, USER)).toBe(true);
+    expect((await lossyRows()).map((r) => r.docId)).toEqual([uuid(1, 1)]);
   });
 });
 

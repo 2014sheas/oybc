@@ -16,7 +16,7 @@ import { reDeriveSealedBoardsForTasks } from './sealing';
 import { refreshWatchersForBoards, resolveAffectedBoardIds } from './boardLifecycle';
 import { recordSyncEvent } from '../../firebase/syncStatus';
 import { rowsGenuinelyDiffer } from './pullApply';
-import { quarantinedSubjectIds, quarantinePulledDoc, releaseQuarantinedDocs } from './syncQuarantine';
+import { hasUnscopedQuarantinedDocs, quarantinedSubjectIds, quarantinePulledDoc, releaseQuarantinedDocs } from './syncQuarantine';
 
 /**
  * Batched pull-path handler for the `taskEvents` collection
@@ -169,7 +169,8 @@ export async function applyTaskEventsBatch(
  * `buildBackfillTaskEvent` and are skipped — they don't own events.
  *
  * Skips a task that has a quarantined `taskEvents` doc (see `syncQuarantine.ts`):
- * an unreadable event may be its missing completion.
+ * an unreadable event may be its missing completion (every task, while one such
+ * doc names no task).
  *
  * @param userId The authenticated user's uid (scope guard, mirrors the batch).
  * @returns The number of completion/increment events minted this pass.
@@ -180,7 +181,9 @@ export async function healMissingCompletionEvents(userId: string): Promise<numbe
   // An event this build could not read (a newer app version's kind) may be the
   // very completion its task looks "missing" — never mint over THAT task's
   // events (issue #300). Every other task still heals; the rest resume once the
-  // ledger row clears.
+  // ledger row clears. An unreadable event that named no task could belong to any
+  // task, so then none heals.
+  if (await hasUnscopedQuarantinedDocs(userId, 'taskEvents')) return 0;
   const unreadableEventTasks = await quarantinedSubjectIds(userId, 'taskEvents');
 
   // Everything — the candidate scan AND the writes — runs in ONE transaction so
