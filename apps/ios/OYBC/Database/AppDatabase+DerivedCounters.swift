@@ -394,7 +394,9 @@ extension AppDatabase {
                     supplyTaskIds: info.supplyTaskIds,
                     doneTaskIds: info.doneTaskIds
                 )
-                rawSupplies.append(BoardSources.Supply(source: source, supplyTaskIds: raw))
+                rawSupplies.append(BoardSources.Supply(
+                    source: source, supplyTaskIds: raw, goalByTaskId: info.goalByTaskId
+                ))
             }
         }
 
@@ -415,7 +417,8 @@ extension AppDatabase {
             rawSupplies.map {
                 BoardSources.Supply(
                     source: $0.source,
-                    supplyTaskIds: BoardSources.resolveSourceAvailable($0)
+                    supplyTaskIds: BoardSources.resolveSourceAvailable($0),
+                    goalByTaskId: $0.goalByTaskId
                 )
             },
             childrenByCompoundId: childrenByCompoundId,
@@ -726,7 +729,7 @@ extension AppDatabase {
     /// - Returns: True when both name the same instant (or the same literal).
     static func sameWindowStart(_ a: String?, _ b: String?) -> Bool {
         // The definition moved to `BoardSources.sameWindowStart` (Helpers/
-        // LinkedCounterWindowHeal.swift) so the placement gate
+        // LinkedCounterWindowHeal.swift) so the predicate
         // `isWindowStampedForBoard` and this file share one instant compare;
         // this forwarder keeps the existing call sites.
         BoardSources.sameWindowStart(a, b)

@@ -71,8 +71,12 @@ final class BoardEditKindSwitchTests: XCTestCase {
         XCTAssertEqual(save(vm), .saved)
         let row = try XCTUnwrap(db.fetchTask(id: "root"))
         XCTAssertEqual(row.countKind, .discrete)
-        XCTAssertEqual(row.maxCount, 30)
-        XCTAssertEqual(row.title, "Run 30 miles")
+        // Slice 3a: the kind switch is a task edit (the stored goal converts 26.2 -> 26);
+        // the typed goal is a placement parameter in the NEW kind.
+        XCTAssertEqual(row.maxCount, 26)
+        let bt = try XCTUnwrap(try db.fetchBoardTasks(boardId: "b1").first { $0.taskId == "root" })
+        XCTAssertEqual(bt.targetOverride, 30)
+        XCTAssertEqual(bt.targetKind, .discrete)
     }
 
     func testFractionalGoalAtTheNewWholeKindRollsTheSaveBack() throws {

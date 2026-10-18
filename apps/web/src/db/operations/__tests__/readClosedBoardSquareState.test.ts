@@ -201,7 +201,7 @@ describe('readClosedBoardSquareState — COUNTING', () => {
     expect(state?.lateLogs).toHaveLength(1);
   });
 
-  it('returns null for a hub-linked derived counter (OQ2 — not tappable)', async () => {
+  it('a hub-linked (unstamped) linked counter resolves to its ROOT (OQ2 retired, slice 3a)', async () => {
     const ROOT = 'root-hub';
     const LINKED = 'linked-hub';
     await seedCountingTask(ROOT, 10);
@@ -210,6 +210,10 @@ describe('readClosedBoardSquareState — COUNTING', () => {
     await placeTask(DAILY, LINKED, 0);
     await sealBoard(DAILY, DAILY_SEALED_AT);
 
-    expect(await readClosedBoardSquareState(DAILY, LINKED)).toBeNull();
+    const state = await readClosedBoardSquareState(DAILY, LINKED);
+    expect(state).not.toBeNull();
+    expect(state?.effectiveTaskId).toBe(ROOT);
+    expect(state?.count).toBe(0);
+    expect(state?.isGreen).toBe(false);
   });
 });

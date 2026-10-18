@@ -63,7 +63,7 @@ function ResolvedMenu({ position, board, data, play, toasts, onClose, onOpenShee
 
   const model = buildSquareMenu({
     type: sq.type, title: sq.title, closed: view.sealed,
-    lateLogRoutable: isLateLogRoutable(sq.type, view.hubLinked),
+    lateLogRoutable: isLateLogRoutable(sq.type),
     done: view.done, uncompleteBlocked,
     counting: sq.type === 'counting' ? { count: view.count, goal: sq.maxCount ?? 0, kind: view.kind, unit: sq.unit ?? '', defaultAmount: defaultOf(task) } : undefined,
     compound: sq.type === 'compound' ? { children } : undefined,

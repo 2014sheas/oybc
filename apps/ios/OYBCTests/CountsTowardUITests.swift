@@ -235,7 +235,10 @@ final class CountsTowardUITests: XCTestCase {
             try placement("bt1", bA, simple).save(d)
             try placement("bt2", bB, simple).save(d)
         }
-        try commit(db, stagedId: simple, boardTaskId: "bt1", staged("Renamed"))
+        // A type switch is a task edit (a rename is a placement parameter and never forks).
+        try commit(db, stagedId: simple, boardTaskId: "bt1", StagedTaskOverride(
+            title: "", type: .counting, action: "Read", unit: "pages", maxCount: 3, compound: nil
+        ))
         let forkId = BoardScopedFork.forkTaskId(boardId: bA, taskId: simple)
         let fork = try fetch(db, forkId)
         XCTAssertEqual(fork.countsTowardCounterId, root)

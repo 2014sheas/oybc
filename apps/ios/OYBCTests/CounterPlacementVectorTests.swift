@@ -109,7 +109,7 @@ final class CounterPlacementVectorTests: XCTestCase {
         let placementGoalForCounter: [GoalVector]
         let counterPickGoal: [PickVector]
         let placementGoalSource: [SourceVector]
-        let placementNeedsCopy: [NeedsVector]
+        let placementNeedsOverride: [NeedsVector]
         let counterSearchMatches: [SearchVector]
         let taskSearchMatches: [TaskSearchVector]
         let counterCopyTitleWithRoot: [CopyVector]
@@ -179,11 +179,11 @@ final class CounterPlacementVectorTests: XCTestCase {
     }
 
     func testPlacementNeedsCopy() throws {
-        let vectors = try loadFixture().placementNeedsCopy
+        let vectors = try loadFixture().placementNeedsOverride
         XCTAssertEqual(Set(vectors.map(\.expected)), [true, false])
         for v in vectors {
             XCTAssertEqual(
-                CounterPlacement.placementNeedsCopy(
+                CounterPlacement.placementNeedsOverride(
                     v.root.fields, timeframe: try tf(v.board.timeframe), startDate: v.board.startDate, endDate: v.board.endDate
                 ),
                 v.expected, v.name

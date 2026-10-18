@@ -324,7 +324,9 @@ extension AppDatabase {
                             supplyTaskIds: info.supplyTaskIds,
                             doneTaskIds: info.doneTaskIds
                         )
-                        supplies.append(BoardSources.Supply(source: source, supplyTaskIds: raw))
+                        supplies.append(BoardSources.Supply(
+                            source: source, supplyTaskIds: raw, goalByTaskId: info.goalByTaskId
+                        ))
                     }
                 }
 
@@ -339,7 +341,8 @@ extension AppDatabase {
                     supplies.map {
                         BoardSources.Supply(
                             source: $0.source,
-                            supplyTaskIds: BoardSources.resolveSourceAvailable($0)
+                            supplyTaskIds: BoardSources.resolveSourceAvailable($0),
+                            goalByTaskId: $0.goalByTaskId
                         )
                     },
                     childrenByCompoundId: childrenByCompound,
@@ -764,7 +767,9 @@ extension AppDatabase {
                 // board (RB5), so a record naming it would be skipped as
                 // `.hasDeletedTasks` for every future window the day the user
                 // deletes the board they repeated. The root is durable library
-                // content and is what each new window re-mints from anyway. A
+                // content and is what each new window re-mints from anyway. (Slice
+                // 3a: a root placed with a `targetOverride` is recorded by its root id
+                // the same way; the template has no per-task target field until 3b.) A
                 // root that is itself missing or deleted contributes no member.
                 var memberId = bt.taskId
                 if let task,

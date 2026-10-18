@@ -55,12 +55,13 @@ export function closedLabel(sealedAt: string | null | undefined): string {
 }
 
 /**
- * Whether a closed board's square can open the late-log sheet: achievement
- * squares and hub-linked derived counters have nothing to log (OQ2), so the
- * sheet shows no `Late log…` button for them.
+ * Whether a closed board's square can open the late-log sheet: an achievement
+ * square has nothing to log, so the sheet shows no `Late log…` button for it.
+ * A linked counter logs on its root (the old OQ2 exclusion is retired —
+ * TASK_WINDOW_REWORK slice 3a).
  */
-export function isLateLogRoutable(squareType: 'normal' | 'counting' | 'compound' | 'achievement', hubLinkedCounter: boolean): boolean {
-  return squareType !== 'achievement' && !hubLinkedCounter;
+export function isLateLogRoutable(squareType: 'normal' | 'counting' | 'compound' | 'achievement'): boolean {
+  return squareType !== 'achievement';
 }
 
 /** The watched board's "‹n› days left" ("Last day" under 24h); null when open-ended or already over. */

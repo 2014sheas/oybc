@@ -108,17 +108,17 @@ enum CounterPlacement {
         return inWindow ?? placementGoalForCounter(root, timeframe: .indefinite)
     }
 
-    /// Whether hand-adding the ROOT itself must mint a per-board copy: only
+    /// Whether hand-adding the ROOT itself must carry a per-board `targetOverride`: only
     /// when it carries a timeframe default for this board that differs from
-    /// its own goal. TS twin: `placementNeedsCopy`.
+    /// its own goal. TS twin: `placementNeedsOverride`.
     ///
     /// - Parameters:
     ///   - root: The counter root's fields.
     ///   - timeframe: The board's timeframe.
     ///   - startDate: The board's start (CUSTOM only).
     ///   - endDate: The board's end (CUSTOM only).
-    /// - Returns: True when a copy must be minted.
-    static func placementNeedsCopy(
+    /// - Returns: True when an override must be written.
+    static func placementNeedsOverride(
         _ root: CounterSettings.Fields, timeframe: Timeframe, startDate: String? = nil, endDate: String? = nil
     ) -> Bool {
         guard let dflt = counterTimeframeDefault(root, timeframe: timeframe, startDate: startDate, endDate: endDate)

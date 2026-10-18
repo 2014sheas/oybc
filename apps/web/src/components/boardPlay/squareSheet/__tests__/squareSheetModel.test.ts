@@ -44,11 +44,10 @@ describe('squareSheetModel', () => {
   });
 
   it('late log is routable except for achievement squares and hub-linked counters', () => {
-    expect(isLateLogRoutable('counting', false)).toBe(true);
-    expect(isLateLogRoutable('normal', false)).toBe(true);
-    expect(isLateLogRoutable('compound', false)).toBe(true);
-    expect(isLateLogRoutable('achievement', false)).toBe(false);
-    expect(isLateLogRoutable('counting', true)).toBe(false);
+    expect(isLateLogRoutable('counting')).toBe(true);
+    expect(isLateLogRoutable('normal')).toBe(true);
+    expect(isLateLogRoutable('compound')).toBe(true);
+    expect(isLateLogRoutable('achievement')).toBe(false);
   });
 
   it('days left: ceil to whole days; null once over or open-ended', () => {

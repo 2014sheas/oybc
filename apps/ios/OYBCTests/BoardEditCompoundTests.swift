@@ -175,7 +175,8 @@ final class BoardEditCompoundTests: XCTestCase {
 
         let row = try XCTUnwrap(dbTask(db, "cmp"))
         XCTAssertEqual(row.operatorType, .or)
-        XCTAssertEqual(row.title, "Renamed")
+        XCTAssertEqual(row.title, "Task cmp", "the rename is a placement parameter (slice 3a)")
+        XCTAssertEqual(try db.fetchBoardTasks(boardId: "b1").first { $0.taskId == "cmp" }?.titleOverride, "Renamed")
         XCTAssertEqual(try db.fetchCompoundChildrenTasks(parentTaskId: "cmp").map(\.id), ["c1", "c3"])
         XCTAssertNotNil(dbTask(db, "c2"), "an unlinked sub-task survives in the library")
     }
@@ -389,7 +390,8 @@ final class BoardEditCompoundTests: XCTestCase {
                           children: try db.fetchCompoundChildrenTasks(parentTaskId: "cmp"))
         XCTAssertNil(vm.editTaskOverrides["cmp"]?.compound)
         XCTAssertEqual(save(vm), .saved)
-        XCTAssertEqual(dbTask(db, "cmp")?.title, "Just a rename")
+        XCTAssertEqual(dbTask(db, "cmp")?.title, "Task cmp")
+        XCTAssertEqual(try db.fetchBoardTasks(boardId: "b1").first { $0.taskId == "cmp" }?.titleOverride, "Just a rename")
     }
 
     // MARK: - Switch back before Save
@@ -421,7 +423,8 @@ final class BoardEditCompoundTests: XCTestCase {
         XCTAssertEqual(save(vm), .saved)
         let row = try XCTUnwrap(dbTask(db, "tn"))
         XCTAssertEqual(row.type, .normal, "no conversion")
-        XCTAssertEqual(row.title, "Renamed")
+        XCTAssertEqual(row.title, "Task tn")
+        XCTAssertEqual(try db.fetchBoardTasks(boardId: "b1").first { $0.taskId == "tn" }?.titleOverride, "Renamed")
         XCTAssertTrue(try db.fetchAllCompoundChildren().isEmpty)
         XCTAssertNil(dbTask(db, "n1"), "no sub-task rows were minted")
     }
@@ -688,11 +691,20 @@ final class BoardEditCompoundTests: XCTestCase {
         vm.handleEditTaskOverride(taskId: "c", patch: patch(seeded, .counting, action: "Run", unit: "km", maxCount: 8))
         XCTAssertEqual(save(vm), .saved)
 
+        // Slice 3a: a goal edit lands on the PLACEMENT; the library task is untouched.
         let c = try XCTUnwrap(dbTask(db, "c"))
         XCTAssertEqual(c.type, .counting)
-        XCTAssertEqual(c.maxCount, 8)
-        XCTAssertEqual(c.title, "Run 8 km", "the stale 'Run 5 km' must not survive a goal of 8")
-        XCTAssertEqual(c.version, 2)
+        XCTAssertEqual(c.maxCount, 5)
+        XCTAssertEqual(c.title, "Run 5 km")
+        XCTAssertEqual(c.version, 1)
+        let bt = try XCTUnwrap(try db.fetchBoardTasks(boardId: "b1").first { $0.taskId == "c" })
+        XCTAssertEqual(bt.targetOverride, 8)
+        XCTAssertEqual(bt.targetKind, .discrete)
+        XCTAssertNil(bt.titleOverride, "an auto title is never frozen into an override")
+        XCTAssertEqual(
+            PlacementParams.apply(c, placement: bt).title, "Run 8 km",
+            "the stale 'Run 5 km' must not survive a goal of 8"
+        )
     }
 
     func test_countingGoalOnlyEdit_customTitle_isKept() throws {
@@ -710,8 +722,11 @@ final class BoardEditCompoundTests: XCTestCase {
         XCTAssertEqual(save(vm), .saved)
 
         let c = try XCTUnwrap(dbTask(db, "c"))
-        XCTAssertEqual(c.maxCount, 8)
+        XCTAssertEqual(c.maxCount, 5, "the goal lands on the placement")
         XCTAssertEqual(c.title, "Morning run")
+        let bt = try XCTUnwrap(try db.fetchBoardTasks(boardId: "b1").first { $0.taskId == "c" })
+        XCTAssertEqual(bt.targetOverride, 8)
+        XCTAssertNil(bt.titleOverride, "unchanged custom title carries no override")
     }
 
     func test_boardEditAllowsTypeSwitch_matrix() {

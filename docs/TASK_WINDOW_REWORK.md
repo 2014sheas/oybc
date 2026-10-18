@@ -520,6 +520,13 @@ board-scoped path and forks only when the task is placed elsewhere.
 commit decide fork-or-not from the patch's non-parameter fields. There is no
 separate "core next-window" writer in the code — core windows go through the
 wizard prefill, so that item is covered by the supply's effective goal.
+(d) Folded in: the closed-board late log's "hub-linked derived counter is a
+no-op" rule (OQ2) is retired on both platforms — since slice 0 every linked
+square resolves over its board's window, and since 3a a linked placement is
+never stamped, so a late log on ANY linked square authors on its root at the
+board's `endDate` and the sheet routes to it (`lateLogIncrement`,
+`undoLateLog`, `readClosedBoardSquareState`, `isLateLogRoutable` ↔
+`lateLogEventOwningTaskId`).
 
 ## Acceptance
 

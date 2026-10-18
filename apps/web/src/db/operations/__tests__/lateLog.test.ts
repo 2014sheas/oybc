@@ -407,7 +407,7 @@ describe('lateLogIncrement', () => {
     expect(board?.sealedCompletedCells).toEqual([0]); // re-derived from the root's in-window events
   });
 
-  it('hub-linked derived counter (no startDate) is a no-op (OQ2)', async () => {
+  it('a hub-linked (unstamped) linked counter authors on its ROOT and re-derives the closed board (OQ2 retired, slice 3a)', async () => {
     const ROOT = 'root-hub';
     const LINKED = 'linked-hub';
     await seedCountingTask(ROOT, 10);
@@ -416,10 +416,14 @@ describe('lateLogIncrement', () => {
     await placeTask(DAILY, LINKED, 0);
     await sealBoard(DAILY, DAILY_SEALED_AT);
 
-    await lateLogIncrement(DAILY, LINKED, 3, FRIDAY_NOW);
+    await lateLogIncrement(DAILY, LINKED, 5, FRIDAY_NOW);
 
-    expect(await eventsFor(ROOT)).toHaveLength(0);
-    expect((await db.boards.get(DAILY))?.sealedCompletedCells).toEqual([]);
+    const rootEvents = await eventsFor(ROOT);
+    expect(rootEvents).toHaveLength(1);
+    expect(rootEvents[0].boardId).toBe(DAILY);
+    expect(await eventsFor(LINKED)).toHaveLength(0);
+    // The linked square (goal 5) is green from the root's in-window +5.
+    expect((await db.boards.get(DAILY))?.sealedCompletedCells).toEqual([0]);
   });
 
   it('throws on an unsealed board', async () => {

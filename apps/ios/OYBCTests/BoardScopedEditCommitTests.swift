@@ -35,6 +35,24 @@ final class BoardScopedEditCommitTests: XCTestCase {
         return t
     }
 
+    /// A counting task (goal 3 pages by default). Slice 3a: a goal / title edit is a
+    /// placement parameter and never forks, so the fork tests edit its ACTION.
+    private func counting(_ id: String, title: String, action: String = "Read", unit: String = "pages", goal: CountValue = 3) -> Task {
+        var t = task(id, title: title, type: .counting)
+        t.action = action
+        t.unit = unit
+        t.maxCount = goal
+        return t
+    }
+
+    private func increment(_ id: String, task: String, delta: CountValue, at: String) -> TaskEvent {
+        TaskEvent(
+            id: id, userId: "u1", taskId: task, kind: .increment, delta: delta,
+            occurredAt: at, boardId: nil, createdAt: Self.t0, updatedAt: Self.t0,
+            lastSyncedAt: nil, version: 1, isDeleted: false, deletedAt: nil
+        )
+    }
+
     private func board(_ id: String, start: String, end: String, sealedAt: String? = nil) throws -> Board {
         var dict: [String: Any] = [
             "id": id, "userId": "u1", "name": id, "status": "active", "boardSize": 3,
@@ -126,33 +144,59 @@ final class BoardScopedEditCommitTests: XCTestCase {
 
         try commit(db, stagedId: "T", boardTaskId: "bt1", override("Read 20 pages"))
 
-        XCTAssertEqual(try fetchTask(db, "T")?.title, "Read 20 pages")
+        // Slice 3a: a rename is a placement parameter — the task keeps its title.
+        XCTAssertEqual(try fetchTask(db, "T")?.title, "Read")
+        XCTAssertEqual(try db.read { try BoardTask.fetchOne($0, key: "bt1") }?.titleOverride, "Read 20 pages")
         XCTAssertNil(try fetchTask(db, BoardScopedFork.forkTaskId(boardId: "B1", taskId: "T")))
         XCTAssertEqual(try placedTaskId(db, "bt1"), "T")
+    }
+
+    /// A rename or goal edit never forks, even when the task is placed elsewhere.
+    func testParameterOnlyEditNeverForksATaskPlacedElsewhere() throws {
+        let db = try makeDb()
+        try seedBoards(db)
+        try db.saveTask(counting("T", title: "Read 3 pages"))
+        try insert(db, [placement("bt1", board: "B1", task: "T"), placement("bt2", board: "B2", task: "T")])
+
+        try commit(db, stagedId: "T", boardTaskId: "bt1", override("", .counting, action: "Read", unit: "pages", maxCount: 5))
+
+        XCTAssertNil(try fetchTask(db, BoardScopedFork.forkTaskId(boardId: "B1", taskId: "T")))
+        XCTAssertEqual(try fetchTask(db, "T")?.maxCount, 3, "the library keeps its own goal")
+        XCTAssertEqual(try fetchTask(db, "T")?.version, 1)
+        let bt1 = try XCTUnwrap(try db.read { try BoardTask.fetchOne($0, key: "bt1") })
+        XCTAssertEqual(bt1.targetOverride, 5)
+        XCTAssertEqual(bt1.targetKind, .discrete)
+        XCTAssertNil(try db.read { try BoardTask.fetchOne($0, key: "bt2") }?.targetOverride)
+        // An untouched sheet (the same values again) writes nothing more.
+        let versionAfter = bt1.version
+        try commit(db, stagedId: "T", boardTaskId: "bt1", override("", .counting, action: "Read", unit: "pages", maxCount: 5))
+        XCTAssertEqual(try db.read { try BoardTask.fetchOne($0, key: "bt1") }?.version, versionAfter)
     }
 
     func testForksWhenPlacedElsewhereAndMigratesCompletion() throws {
         let db = try makeDb()
         try seedBoards(db)
-        try db.saveTask(task("T", title: "Read"))
+        try db.saveTask(counting("T", title: "Read 3 pages"))
         try insert(db, [
             placement("bt1", board: "B1", task: "T"), placement("bt2", board: "B2", task: "T"),
-            completion("e-in", task: "T", at: "2026-10-06T09:00:00.000Z"),
-            completion("e-out", task: "T", at: "2026-10-02T09:00:00.000Z"),
+            increment("e-in", task: "T", delta: 3, at: "2026-10-06T09:00:00.000Z"),
+            increment("e-out", task: "T", delta: 1, at: "2026-10-02T09:00:00.000Z"),
         ])
 
-        try commit(db, stagedId: "T", boardTaskId: "bt1", override("Read a chapter"))
+        // An ACTION edit is a task edit (not a placement parameter), so it forks.
+        try commit(db, stagedId: "T", boardTaskId: "bt1", override("", .counting, action: "Skim", unit: "pages", maxCount: 3))
 
         let forkId = BoardScopedFork.forkTaskId(boardId: "B1", taskId: "T")
         let fork = try XCTUnwrap(try fetchTask(db, forkId))
-        XCTAssertEqual(fork.title, "Read a chapter")
+        XCTAssertEqual(fork.action, "Skim")
+        XCTAssertEqual(fork.title, "Skim 3 pages")
         XCTAssertEqual(fork.forkedFromTaskId, "T")
         XCTAssertTrue(fork.createdInWizard)
         XCTAssertTrue(fork.isCompleted, "caches stamped from the migrated events")
-        XCTAssertEqual(fork.completedAt, "2026-10-06T09:00:00.000Z")
 
         let original = try XCTUnwrap(try fetchTask(db, "T"))
-        XCTAssertEqual(original.title, "Read")
+        XCTAssertEqual(original.action, "Read")
+        XCTAssertEqual(original.title, "Read 3 pages")
         XCTAssertEqual(original.version, 1)
         XCTAssertEqual(try placedTaskId(db, "bt1"), forkId)
         XCTAssertEqual(try placedTaskId(db, "bt2"), "T")
@@ -203,15 +247,19 @@ final class BoardScopedEditCommitTests: XCTestCase {
             link("l1", "P", "C1", 0), link("l2", "P", "C2", 1),
             placement("bt1", board: "B1", task: "P"), placement("bt2", board: "B2", task: "P"),
         ])
+        // The rule changes (And -> Or): a structure edit, so it forks; the rename is a parameter.
         var structure = TaskEditPatch(title: "Morning routine")
-        structure.operatorType = .and
+        structure.operatorType = .or
         structure.children = [ChildPatch(from: try XCTUnwrap(try fetchTask(db, "C1"))), ChildPatch(from: try XCTUnwrap(try fetchTask(db, "C2")))]
 
         try commit(db, stagedId: "P", boardTaskId: "bt1", override("Morning routine", .compound, compound: structure))
 
         let forkId = BoardScopedFork.forkTaskId(boardId: "B1", taskId: "P")
-        XCTAssertEqual(try fetchTask(db, forkId)?.title, "Morning routine")
+        XCTAssertEqual(try fetchTask(db, forkId)?.operatorType, .or)
+        XCTAssertEqual(try fetchTask(db, forkId)?.title, "Morning")
+        XCTAssertEqual(try db.read { try BoardTask.fetchOne($0, key: "bt1") }?.titleOverride, "Morning routine")
         XCTAssertEqual(try fetchTask(db, "P")?.title, "Morning")
+        XCTAssertEqual(try fetchTask(db, "P")?.operatorType, .and)
         XCTAssertEqual(try liveChildIds(db, of: forkId), ["C1", "C2"])
         XCTAssertEqual(try liveChildIds(db, of: "P"), ["C1", "C2"])
         XCTAssertNil(try fetchTask(db, BoardScopedFork.forkTaskId(boardId: "B1", taskId: "C1")))
@@ -247,7 +295,7 @@ final class BoardScopedEditCommitTests: XCTestCase {
     func testHolderPlacedElsewhereIsForkedFirstAndItsCopiedLinkRepointed() throws {
         let db = try makeDb()
         try seedBoards(db)
-        for t in [task("T", title: "Walk"), task("H", title: "Habits", type: .compound), task("X", title: "Water")] {
+        for t in [counting("T", title: "Walk", action: "Walk", unit: "km", goal: 5), task("H", title: "Habits", type: .compound), task("X", title: "Water")] {
             try db.saveTask(t)
         }
         try insert(db, [
@@ -257,7 +305,7 @@ final class BoardScopedEditCommitTests: XCTestCase {
             placement("bt2h", board: "B2", task: "H"),
         ])
 
-        try commit(db, stagedId: "T", boardTaskId: "bt1", override("Walk 5k"))
+        try commit(db, stagedId: "T", boardTaskId: "bt1", override("Walk", .counting, action: "Hike", unit: "km", maxCount: 5))
 
         let tFork = BoardScopedFork.forkTaskId(boardId: "B1", taskId: "T")
         let hFork = BoardScopedFork.forkTaskId(boardId: "B1", taskId: "H")
@@ -286,10 +334,10 @@ final class BoardScopedEditCommitTests: XCTestCase {
     func testReplayConvergesOnTheSameRows() throws {
         let db = try makeDb()
         try seedBoards(db)
-        try db.saveTask(task("T", title: "Read"))
+        try db.saveTask(counting("T", title: "Read 3 pages"))
         try insert(db, [
             placement("bt1", board: "B1", task: "T"), placement("bt2", board: "B2", task: "T"),
-            completion("e-in", task: "T", at: "2026-10-06T09:00:00.000Z"),
+            increment("e-in", task: "T", delta: 3, at: "2026-10-06T09:00:00.000Z"),
         ])
         func snapshot() throws -> [String] {
             try db.read { d in
@@ -299,11 +347,14 @@ final class BoardScopedEditCommitTests: XCTestCase {
             }
         }
 
-        try commit(db, stagedId: "T", boardTaskId: "bt1", override("Read more"))
+        let ov = override("", .counting, action: "Skim", unit: "pages", maxCount: 3)
+        try commit(db, stagedId: "T", boardTaskId: "bt1", ov)
         let first = try snapshot()
-        try commit(db, stagedId: "T", boardTaskId: "bt1", cellTaskId: "T", override("Read more"))
+        // A reopened session stages the same edit against the (already forked) square.
+        let forkId = BoardScopedFork.forkTaskId(boardId: "B1", taskId: "T")
+        try commit(db, stagedId: forkId, boardTaskId: "bt1", ov)
         XCTAssertEqual(try snapshot(), first)
-        XCTAssertEqual(try fetchTask(db, BoardScopedFork.forkTaskId(boardId: "B1", taskId: "T"))?.title, "Read more")
+        XCTAssertEqual(try fetchTask(db, forkId)?.action, "Skim")
     }
 
     func testSealedBoardNeverReachesTheFork() throws {
@@ -347,7 +398,7 @@ final class BoardScopedEditCommitTests: XCTestCase {
     func testHolderEditedAfterItsSubTaskForkedInTheSameSaveKeepsTheFork() throws {
         let db = try makeDb()
         try seedBoards(db)
-        for t in [task("C", title: "Stretch"), task("H", title: "Habits", type: .compound), task("X", title: "Water")] {
+        for t in [counting("C", title: "Stretch", action: "Stretch", unit: "min", goal: 10), task("H", title: "Habits", type: .compound), task("X", title: "Water")] {
             try db.saveTask(t)
         }
         try insert(db, [
@@ -357,34 +408,41 @@ final class BoardScopedEditCommitTests: XCTestCase {
         ])
         // The holder sheet was seeded from the stored rows: C still "Stretch".
         var structure = TaskEditPatch(title: "Habits renamed")
-        structure.operatorType = .and
+        structure.operatorType = .or
         structure.children = [ChildPatch(from: try XCTUnwrap(try fetchTask(db, "C"))), ChildPatch(from: try XCTUnwrap(try fetchTask(db, "X")))]
 
         try commitAll(db, [
-            ("C", "btc", override("Stretch 10 min")),
+            ("C", "btc", override("Stretch", .counting, action: "Stretch hard", unit: "min", maxCount: 10)),
             ("H", "bth", override("Habits renamed", .compound, compound: structure)),
         ])
 
         let cFork = BoardScopedFork.forkTaskId(boardId: "B1", taskId: "C")
         XCTAssertEqual(try liveChildIds(db, of: "H"), [cFork, "X"].sorted())
-        XCTAssertEqual(try fetchTask(db, cFork)?.title, "Stretch 10 min")
-        XCTAssertEqual(try fetchTask(db, "H")?.title, "Habits renamed")
+        XCTAssertEqual(try fetchTask(db, cFork)?.action, "Stretch hard")
+        XCTAssertEqual(try fetchTask(db, "H")?.operatorType, .or)
+        XCTAssertEqual(try db.read { try BoardTask.fetchOne($0, key: "bth") }?.titleOverride, "Habits renamed")
     }
 
     func testAFailingLaterOverrideRollsTheForkBack() throws {
         let db = try makeDb()
         try seedBoards(db)
-        try db.saveTask(task("T", title: "Read"))
+        try db.saveTask(counting("T", title: "Read 3 pages"))
         try db.saveTask(task("P", title: "Bad", type: .compound))
+        try db.saveTask(task("K", title: "Kid"))
         try insert(db, [
+            link("lk", "P", "K", 0),
             placement("bt1", board: "B1", task: "T"), placement("bt2", board: "B2", task: "T"),
             placement("btp", board: "B1", task: "P", col: 1),
         ])
+        // Removing the only sub-task leaves an invalid (empty) compound.
         var empty = TaskEditPatch(title: "Bad")
         empty.operatorType = .and
+        var gone = ChildPatch(from: try XCTUnwrap(try fetchTask(db, "K")))
+        gone.markedDeleted = true
+        empty.children = [gone]
 
         XCTAssertThrowsError(try commitAll(db, [
-            ("T", "bt1", override("Renamed")),
+            ("T", "bt1", override("", .counting, action: "Skim", unit: "pages", maxCount: 3)),
             ("P", "btp", override("Bad", .compound, compound: empty)),
         ]))
         XCTAssertNil(try fetchTask(db, BoardScopedFork.forkTaskId(boardId: "B1", taskId: "T")))

@@ -1,4 +1,4 @@
-import { isWindowStampedDerived, resolveFamilyCountKind, type Board, type BoardTask, type CountKind, type Task } from '@oybc/shared';
+import { resolveFamilyCountKind, type Board, type BoardTask, type CountKind, type Task } from '@oybc/shared';
 import type { BoardPlayData } from '../../../hooks';
 import { resolveClosedBoardCounterDisplay, taskToSquareData, taskToSquareState } from '../../../db/adapters';
 import type { SquareState, TaskSquareData } from '../../interactiveTaskSquareUtils';
@@ -19,8 +19,6 @@ export interface SquareView {
   /** The windowed count (a sealed board: the sealed-bounded one); 0 for non-counting. */
   count: number;
   kind: CountKind;
-  /** A hub-linked derived counter: nothing to late-log. */
-  hubLinked: boolean;
 }
 
 /**
@@ -44,6 +42,5 @@ export function resolveSquareView(board: Board, data: SquareViewData, bt: BoardT
       ? (sq.type === 'counting' ? resolveClosedBoardCounterDisplay(task, squareWindowContext.eventsByTaskId, board).displayed : 0)
       : state.currentCount,
     kind: sq.countKind ?? resolveFamilyCountKind(task, (id) => taskMap[id]),
-    hubLinked: sq.type === 'counting' && task.sharedCounterId != null && !isWindowStampedDerived(task),
   };
 }

@@ -254,6 +254,17 @@ struct LinkedCounterWindow: Equatable {
     let endDate: String?
 }
 
+extension LinkedCounterWindow {
+    /// The window a linked counting square on `board` is evaluated against:
+    /// the board's own `[startDate, endDate]` (owner rule 2026-10-01). Sealing
+    /// is bounded separately via `resolveLinkedCounterDisplay(sealedAt:)`.
+    ///
+    /// - Parameter board: The placing board.
+    init(board: Board) {
+        self.init(startDate: board.startDate, endDate: board.endDate)
+    }
+}
+
 /// Shared body of `resolveWindowStampedDerivedState` and the sealed display
 /// path. The window bounds (and `sealedBound`) are parsed ONCE per call and
 /// each event's `occurredAt` once, then compared as `Date`s — a wizard row's

@@ -6,7 +6,6 @@ import {
   isEventOwningTask,
   isEventSealImmune,
   isQuantizedCount,
-  isWindowStampedDerived,
   quantizeCount,
   withPlacementParams,
   lateLogOccurredAt,
@@ -178,16 +177,16 @@ export async function lateLogCompletion(
  *    task (which may itself be a shared-counter root with live linked rows —
  *    propagated exactly like {@link incrementSharedCounter}, just without its
  *    sealed no-op).
- *  - **Window-stamped derived** ({@link isWindowStampedDerived}): the event is
- *    authored on the ROOT (`task.sharedCounterId`), never the derived row
- *    itself (WC's derived-task carve-out) — the closed board's own square
- *    resolves from the root's in-window events on the next read.
- *  - **Hub-linked derived** (no `startDate`): a full no-op (OQ2 default) — its
- *    state is the lifetime latch, not windowed; a backdated root log would
- *    repaint every board placing it.
+ *  - **Linked** (`sharedCounterId` set — window-stamped or not): the event is
+ *    authored on the ROOT, never the linked row itself (linked rows own no
+ *    events) — the closed board's square resolves from the root's in-window
+ *    events on the next read. The old "hub-linked is a no-op" rule (OQ2) is
+ *    retired (TASK_WINDOW_REWORK slice 3a): since slice 0 every linked square
+ *    on a board resolves over that board's window, and since 3a linked
+ *    placements are never stamped.
  *
  * @param boardId The closed board the log is made from.
- * @param taskId  The COUNTING task (or window-stamped derived row) tapped.
+ * @param taskId  The COUNTING task (or linked row) tapped.
  * @param delta   A positive 2dp amount to log.
  * @param now     Write timestamp; the event is stamped at the board's
  *   `endDate`.
@@ -206,9 +205,6 @@ export async function lateLogIncrement(
     const task = await db.tasks.get(taskId);
     if (!task || task.isDeleted) throw new LateLogError('taskNotFound', taskId);
     if (task.type !== TaskType.COUNTING) throw new LateLogError('wrongType', taskId);
-
-    // Hub-linked derived counter — OQ2: not tappable on a closed board.
-    if (task.sharedCounterId != null && !isWindowStampedDerived(task)) return;
 
     const rootId = task.sharedCounterId ?? taskId;
     const root = await db.tasks.get(rootId);
@@ -471,11 +467,11 @@ export async function previewLateLogCompoundRule(
  * task (D10 / owner ruling R2) — identified by provenance (`boardId` +
  * `occurredAt` == the board's `endDate` instant), never a marker field, and
  * ordered by `createdAt` descending so repeated taps undo one at a time. For
- * a window-stamped derived square, resolves to the ROOT's late logs (derived
- * rows own no events).
+ * a linked square, resolves to the ROOT's late logs (linked rows own no
+ * events).
  *
  * @param boardId The closed board the log was made on.
- * @param taskId  The task (or window-stamped derived row) to undo for.
+ * @param taskId  The task (or linked row) to undo for.
  * @param now     Write timestamp for the tombstone.
  * @returns `true` if a late log was found and undone; `false` if there was
  *   none (the caller should hide/disable the affordance).
@@ -490,8 +486,7 @@ export async function undoLateLog(
     const task = await db.tasks.get(taskId);
     if (!task || task.isDeleted) throw new LateLogError('taskNotFound', taskId);
 
-    const effectiveTaskId =
-      isWindowStampedDerived(task) && task.sharedCounterId != null ? task.sharedCounterId : taskId;
+    const effectiveTaskId = task.sharedCounterId ?? taskId;
 
     const events = await db.taskEvents.where('taskId').equals(effectiveTaskId).toArray();
     const candidates = selectClosedBoardLateLogs(events, board, effectiveTaskId);
@@ -581,7 +576,7 @@ export interface ClosedBoardSquareState {
  * Read-only state for the late-log sheet's normal/counting body — one query,
  * reused by `useLiveQuery` so the sheet updates as events change. Returns
  * `null` when the board isn't closed or the task can't be late-logged from
- * this sheet (missing/deleted/wrong type/hub-linked derived — OQ2).
+ * this sheet (missing / deleted / wrong type).
  *
  * @param boardId The closed board.
  * @param taskId  The tapped square's task (NORMAL or COUNTING).
@@ -609,7 +604,6 @@ export async function readClosedBoardSquareState(
   }
 
   if (task.type !== TaskType.COUNTING) return null;
-  if (task.sharedCounterId != null && !isWindowStampedDerived(task)) return null; // hub-linked — OQ2
 
   const effectiveTaskId = task.sharedCounterId ?? taskId;
   const rootEvents = await db.taskEvents.where('taskId').equals(effectiveTaskId).toArray();

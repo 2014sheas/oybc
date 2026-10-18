@@ -80,7 +80,7 @@ function ResolvedSheet({ board, data, play, quiet, onClose, onOpenInLibrary, onL
   const [now] = useState(() => Date.now());
 
   const { taskMap } = data;
-  const { sq, sealed, done, count, kind, hubLinked } = resolveSquareView(board, data, bt, task);
+  const { sq, sealed, done, count, kind } = resolveSquareView(board, data, bt, task);
 
   // Completed Normal rows whose green a sealed window holds cannot be un-completed.
   const heldIds = [
@@ -95,7 +95,7 @@ function ResolvedSheet({ board, data, play, quiet, onClose, onOpenInLibrary, onL
 
   const boardLabel = boardDisplayName(board);
   const closedRow = sealed
-    ? <ClosedRow label={closedLabel(board.sealedAt)} onLateLog={isLateLogRoutable(sq.type, hubLinked) ? () => onLateLog(task.id) : undefined} />
+    ? <ClosedRow label={closedLabel(board.sealedAt)} onLateLog={isLateLogRoutable(sq.type) ? () => onLateLog(task.id) : undefined} />
     : null;
 
 
