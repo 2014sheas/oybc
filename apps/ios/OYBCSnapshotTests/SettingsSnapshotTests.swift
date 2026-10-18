@@ -23,7 +23,7 @@ final class SettingsSnapshotTests: XCTestCase {
     func testSignedInLight() {
         assertSnapshot(
             of: composedSettingsView(isGuest: false),
-            as: .image(layout: .fixed(width: 393, height: 700)),
+            as: .image(layout: .fixed(width: 393, height: 840)),
             record: recordMode
         )
     }
@@ -32,7 +32,7 @@ final class SettingsSnapshotTests: XCTestCase {
         assertSnapshot(
             of: composedSettingsView(isGuest: false),
             as: .image(
-                layout: .fixed(width: 393, height: 700),
+                layout: .fixed(width: 393, height: 840),
                 traits: .init(userInterfaceStyle: .dark)
             ),
             record: recordMode
@@ -44,7 +44,7 @@ final class SettingsSnapshotTests: XCTestCase {
     func testGuestLight() {
         assertSnapshot(
             of: composedSettingsView(isGuest: true),
-            as: .image(layout: .fixed(width: 393, height: 780)),
+            as: .image(layout: .fixed(width: 393, height: 920)),
             record: recordMode
         )
     }
@@ -54,8 +54,8 @@ final class SettingsSnapshotTests: XCTestCase {
     /// Static reconstruction of `SettingsView`'s body. Mirrors the
     /// production layout: kicker/title header → APPEARANCE card (Theme) →
     /// PREFERENCES card (Notifications w/ caption, Account & security
-    /// [signed-in only], Help & getting started) → Sign Out / guest cards
-    /// → version footer.
+    /// [signed-in only], Help & getting started) → LEGAL card (the real
+    /// `LegalLinksCard`) → Sign Out / guest cards → version footer.
     @ViewBuilder
     private func composedSettingsView(isGuest: Bool) -> some View {
         ZStack(alignment: .top) {
@@ -79,6 +79,11 @@ final class SettingsSnapshotTests: XCTestCase {
 
                     sectionLabel("Preferences")
                     preferencesCard(isGuest: isGuest)
+                        .padding(.horizontal, Riso.gutter)
+                        .padding(.bottom, 18)
+
+                    sectionLabel("Legal")
+                    LegalLinksCard()
                         .padding(.horizontal, Riso.gutter)
                         .padding(.bottom, 18)
 

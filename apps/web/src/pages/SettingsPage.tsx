@@ -13,6 +13,7 @@ import {
 import { usePreferences } from '../hooks';
 import { RisoSegmented, RisoButton } from '../components/riso';
 import { UpgradeModal } from '../components/signedOut/UpgradeModal';
+import { LegalLinksCard } from '../components/legal/LegalLinksCard';
 import { exportAnonymisedWorkspace } from '../db/operations/workspaceExport';
 import { downloadJson } from '../utils/downloadJson';
 import { useModalA11y } from '../hooks/useModalA11y';
@@ -54,8 +55,8 @@ const RENEWAL_TOGGLES: {
  * §Screens — Web, frame `#5b`). Pushed from the new Settings pill button on
  * `ProfilePage`. Hosts everything that used to live directly on Profile but
  * is touched rarely: Theme, Account & security, Help & getting started,
- * Board renewals, the dev-only Playground link, Sign Out, and the version
- * footer.
+ * Board renewals, the Legal links (Privacy Policy / Terms of Use), the
+ * dev-only Playground link, Sign Out, and the version footer.
  *
  * Sync UI (`SyncStatusIndicator`) is NOT relocated here — it's deleted
  * entirely (owner decision 2, 2026-09-30): sync keeps running silently with
@@ -215,6 +216,10 @@ export function SettingsPage(): React.ReactElement {
           </div>
         ))}
       </div>
+
+      {/* Legal — the hosted Privacy Policy + Terms of Use (App Store 5.1.1(i)). */}
+      <div className={profileStyles.sectionLabel}>Legal</div>
+      <LegalLinksCard />
 
       {/* Developer tools — dev builds only (the Playground can wipe the real
           local database, so this section, and the route it links to, must

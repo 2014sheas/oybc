@@ -5,10 +5,11 @@ import SwiftUI
 ///
 /// Houses everything that used to live directly on Profile but is touched
 /// rarely: Theme, Notifications, Account & security, Help & getting
-/// started, Sign Out, the version footer, and the DEBUG-only developer
-/// affordances. Guest mode keeps its existing substitutions (the "Save your
-/// account" CTA card in place of Account & security, "Discard guest data"
-/// in place of Sign Out) — ported verbatim from the old `ProfileView`.
+/// started, the Legal links (Privacy Policy / Terms of Use), Sign Out, the
+/// version footer, and the DEBUG-only developer affordances. Guest mode keeps
+/// its existing substitutions (the "Save your account" CTA card in place of
+/// Account & security, "Discard guest data" in place of Sign Out) — ported
+/// verbatim from the old `ProfileView`.
 ///
 /// Sync UI (`RisoSyncRow` / `SyncSheet`) is NOT relocated here — it was
 /// deleted entirely (owner decision, `.superpowers/sdd/2026-09-30-profile-reorg/owner-decisions.md`
@@ -58,6 +59,11 @@ struct SettingsView: View {
 
                     sectionLabel("Preferences")
                     preferencesCard
+                        .padding(.horizontal, Riso.gutter)
+                        .padding(.bottom, 18)
+
+                    sectionLabel("Legal")
+                    LegalLinksCard()
                         .padding(.horizontal, Riso.gutter)
                         .padding(.bottom, 18)
 

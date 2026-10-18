@@ -70,6 +70,18 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      # The legal pages (privacy.html / terms.html) mark every fact the owner
+      # must supply with <mark class="owner">. None may reach the live site, so
+      # the deploy (not the PR preview, which is where they get reviewed)
+      # fails while any page still carries one. See docs/COMING_SOON.md
+      # §Legal pages.
+      - name: Refuse unfilled legal placeholders
+        run: |
+          if grep -n 'class="owner"' apps/coming-soon/*.html; then
+            echo "::error::apps/coming-soon still has [OWNER: ...] placeholders. Fill or remove them before deploying."
+            exit 1
+          fi
+
       - name: Setup pnpm
         # v6 reads the pnpm version from `package.json#packageManager`
         # (pinned to 9.15.4 at the repo root) and ignores any `version:`

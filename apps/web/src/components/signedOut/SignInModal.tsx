@@ -3,6 +3,7 @@ import { useAuth } from '../../firebase/useAuth';
 import { isOfflineError } from '../../firebase/authService';
 import { useModalA11y } from '../../hooks/useModalA11y';
 import { RisoButton } from '../riso';
+import { LegalLinksFooter } from '../legal/LegalLinksFooter';
 import { ModalArt } from './SignedOutArt';
 import styles from './SignedOut.module.css';
 
@@ -205,6 +206,8 @@ export function SignInModal({ mode, onClose, onSwitchMode }: SignInModalProps): 
             Continue without an account
           </RisoButton>
         </div>
+
+        <LegalLinksFooter />
       </div>
     </div>
   );

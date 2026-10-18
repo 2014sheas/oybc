@@ -1,0 +1,399 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Privacy Policy · OYBC</title>
+    <meta
+      name="description"
+      content="How OYBC (On Your Bingo Card) handles your information: what we collect, why, where it lives, and how to delete it."
+    />
+    <meta name="theme-color" content="#F1E9D9" />
+    <link rel="canonical" href="https://oybc.com/privacy" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+
+    <!-- Riso design system fonts: Bricolage Grotesque (head) + Archivo (body) -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,600;12..96,700;12..96,800&family=Archivo:wght@400;500;600;700;800;900&display=swap"
+      rel="stylesheet"
+    />
+  </head>
+  <body class="grain">
+    <!--
+      DRAFT FOR OWNER REVIEW. Every owner mark (mark.owner) is a fact the code
+      can't establish (legal entity, contact, dates, jurisdiction, age) — fill
+      each one in and delete the mark before merging; hosting.yml's deploy job
+      refuses to publish a page that still contains one. The two dashed
+      "lg-opt" sections describe features that are not shipped yet
+      (subscriptions, crash reporting): hide (`hidden`) or delete each until
+      its feature ships.
+    -->
+    <div class="cs lg">
+      <header class="cs-nav">
+        <a class="cs-brand" href="/" aria-label="OYBC home">
+          <div class="cs-mark" aria-hidden="true">
+            <i class="on"></i><i></i><i class="on"></i>
+            <i></i><i class="free"></i><i></i>
+            <i class="on"></i><i></i><i class="on"></i>
+          </div>
+          <div class="cs-word">OYBC<small>ON YOUR BINGO CARD</small></div>
+        </a>
+        <div class="cs-nav-right">
+          <div class="cs-seg" role="group" aria-label="Colour theme">
+            <button type="button" data-theme="day" class="on" aria-pressed="true">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <circle cx="12" cy="12" r="4.2" />
+                <path
+                  d="M12 2v2.5M12 19.5V22M4.2 4.2l1.8 1.8M18 18l1.8 1.8M2 12h2.5M19.5 12H22M4.2 19.8 6 18M18 6l1.8-1.8"
+                />
+              </svg>
+              Day
+            </button>
+            <button type="button" data-theme="night" aria-pressed="false">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z" />
+              </svg>
+              Night
+            </button>
+          </div>
+        </div>
+      </header>
+
+      <main class="lg-main">
+        <div class="lg-head">
+          <div class="cs-kicker"><span class="cs-kicker-name">OYBC</span>Legal</div>
+          <h1 class="lg-title">Privacy Policy</h1>
+          <p class="lg-meta">Effective <mark class="owner">[OWNER: effective date]</mark></p>
+          <nav class="lg-switch" aria-label="Legal documents">
+            <a href="/privacy" aria-current="page">Privacy Policy</a>
+            <a href="/terms">Terms of Use</a>
+          </nav>
+        </div>
+
+        <article class="lg-doc">
+          <section class="lg-sum" aria-labelledby="short">
+            <h2 id="short">The short version</h2>
+            <ul>
+              <li>
+                Your boards and tasks live on your device first. When you're signed in, we copy them
+                to our cloud database (Google Firebase) so they sync between your devices.
+              </li>
+              <li>No ads, no analytics, no tracking. We don't sell your information.</li>
+              <li>
+                You can delete your account in the app at any time. Your synced data is then deleted
+                from our servers.
+              </li>
+              <li>
+                Reminders are set up on your iPhone and delivered by iOS. We don't run a push
+                server.
+              </li>
+            </ul>
+          </section>
+
+          <h2 id="who">1. Who we are</h2>
+          <p>
+            OYBC (“On Your Bingo Card”) is operated by
+            <mark class="owner">[OWNER: legal name of the person or company that operates OYBC]</mark>
+            (“we”, “us”).
+            This policy covers the OYBC app for iPhone, the OYBC web app and the oybc.com website.
+            Questions about it go to
+            <mark class="owner">[OWNER: privacy contact email, e.g. hello@oybc.com]</mark>.
+          </p>
+
+          <h2 id="collect">2. What we collect</h2>
+
+          <h3>Account information</h3>
+          <p>You can use OYBC with an account or as a guest.</p>
+          <ul>
+            <li>
+              <strong>Email and password:</strong> your email address. Your password is handled by
+              Firebase Authentication (run by Google) and never reaches our database.
+            </li>
+            <li>
+              <strong>Sign in with Apple:</strong> the email address on your Apple ID — or a private
+              relay address if you choose Hide My Email — and your name, if you choose to share it.
+            </li>
+            <li>
+              <strong>Sign in with Google:</strong> the email address, name and profile photo link
+              on your Google account.
+            </li>
+            <li>
+              <strong>Guest:</strong> an anonymous account with a random ID and no email or name. If
+              you save your account later, your guest data stays with it.
+            </li>
+            <li><strong>Display name:</strong> the name you set on your profile, if any.</li>
+          </ul>
+          <p>
+            Firebase Authentication also keeps basic account records, such as when the account was
+            created, when it last signed in, and which sign-in methods are linked.
+          </p>
+
+          <h3>What you put in OYBC</h3>
+          <p>
+            Your boards, tasks, sub-tasks, counters, task pools, repeating boards and board
+            defaults; each completion or count you log, with its time; and your preferences
+            (theme, week start, board defaults and notification settings, including your reminder
+            time). This is the content of the app, and we use it only to run OYBC for you.
+          </p>
+
+          <h3>Your profile record</h3>
+          <p>
+            Your account has one profile record: your account ID, email address, display name,
+            profile photo link (from Google, if any), your preferences, and when the record was
+            created and last updated. It syncs like the rest of your data.
+          </p>
+
+          <h3>The oybc.com launch list</h3>
+          <p>
+            If you join the launch list on oybc.com, we store your email address, where you signed
+            up (for example, the Coming Soon page), when you signed up, and whether you've
+            unsubscribed. We use it to send you a one-time confirmation and to tell you when OYBC
+            launches. We also receive an email notice of each new signup.
+          </p>
+
+          <h3>Technical information</h3>
+          <p>
+            Like any online service, our hosting and database provider (Google Firebase) processes
+            the technical information needed to handle requests — such as IP addresses, device or
+            browser type and request times — and may keep it in service logs. We don't use it to
+            profile or track you. The oybc.com website and the OYBC web app load their fonts from
+            Google Fonts, so your browser sends your IP address to Google when it fetches them.
+          </p>
+
+          <h3>What we don't collect</h3>
+          <ul>
+            <li>
+              No analytics, advertising or tracking tools. We don't track you across other apps or
+              websites, and the app doesn't use your device's advertising identifier.
+            </li>
+            <li>No location, contacts, camera, microphone or health data.</li>
+            <li>No access to your photo library (see Photos below).</li>
+            <li>We don't sell your personal information or share it for advertising.</li>
+          </ul>
+
+          <h2 id="permissions">3. Permissions on iPhone</h2>
+          <ul>
+            <li>
+              <strong>Notifications</strong> (off until you turn them on): reminders — a board about
+              to end, a new week, month or year starting, a daily reminder at a time you pick — are
+              scheduled by the app on your iPhone while it's open, and iOS delivers them. There's no
+              push-notification server; the only reminder information we store is the notification
+              settings in your preferences.
+            </li>
+            <li>
+              <strong>Photos</strong> (add only): when you save a share poster, OYBC asks to add
+              images to your photo library. It can only add the poster; it can't see or read your
+              photos.
+            </li>
+            <li>
+              <strong>Sharing:</strong> a share poster is made on your device and goes only where
+              you send it. What happens after that is up to the app or service you choose.
+            </li>
+          </ul>
+
+          <h2 id="use">4. How we use your information</h2>
+          <ul>
+            <li>To run OYBC: sign you in, and store and sync your data across your devices.</li>
+            <li>
+              To keep your account secure: Firebase Authentication sends password-reset and
+              email-change emails on our behalf, and our database rules let only your signed-in
+              account read or write your data.
+            </li>
+            <li>To answer you when you contact us.</li>
+            <li>To send launch-list emails, if you joined the list.</li>
+          </ul>
+          <p>
+            If you're in the European Economic Area or the UK, our legal bases are: providing the
+            service you asked for (account and app data); your consent (launch-list emails — you can
+            withdraw it by unsubscribing); and our legitimate interest in running a secure service
+            (technical and security information).
+          </p>
+
+          <h2 id="where">5. Where your data lives</h2>
+          <ul>
+            <li>
+              <strong>On your device.</strong> OYBC keeps your data in a database on your device
+              (inside the app on iPhone; in your browser's storage on the web), so it works offline.
+              The web app also keeps a few display settings in your browser's local storage.
+            </li>
+            <li>
+              <strong>In the cloud.</strong> When you're signed in (guests included), your data is
+              copied to Google Cloud Firestore under your account and synced in the background. Our
+              Firebase project stores data in Google Cloud's United States multi-region, and our
+              server functions run in the United States. If you live elsewhere, your data is
+              transferred to the US.
+              <mark class="owner"
+                >[OWNER: re-check both locations if the production Firebase project differs from
+                today's (Firestore nam5, functions us-central1).]</mark
+              >
+            </li>
+            <li>
+              <strong>Security.</strong> Data travels over encrypted (HTTPS) connections, and our
+              database rules restrict each account's data to that account. No system is perfectly
+              secure, so we can't guarantee absolute security.
+            </li>
+          </ul>
+
+          <h2 id="share">6. Who we share it with</h2>
+          <p>We use these service providers to run OYBC. They process data on our behalf:</p>
+          <ul>
+            <li>
+              <strong>Google</strong> — Firebase Authentication, Cloud Firestore, Cloud Functions and
+              Firebase Hosting (sign-in, storage and sync, account deletion, hosting oybc.com),
+              Google Sign-In, and Google Fonts.
+              <a href="https://firebase.google.com/support/privacy" rel="noopener">Firebase privacy</a>
+              ·
+              <a href="https://policies.google.com/privacy" rel="noopener">Google Privacy Policy</a>
+            </li>
+            <li>
+              <strong>Apple</strong> — Sign in with Apple, if you choose it.
+              <a href="https://www.apple.com/legal/privacy/" rel="noopener">Apple Privacy Policy</a>
+            </li>
+            <li>
+              <strong>Resend</strong> — sends launch-list emails (your email address only).
+              <a href="https://resend.com/legal/privacy-policy" rel="noopener">Resend Privacy Policy</a>
+            </li>
+          </ul>
+          <p>
+            Beyond that, we share information only if the law requires it, to protect someone's
+            safety or rights, or as part of a merger, sale or reorganisation of OYBC.
+          </p>
+
+          <h2 id="retention">7. How long we keep it, and deleting it</h2>
+          <ul>
+            <li>We keep your account and synced data for as long as you have an account.</li>
+            <li>
+              When you delete a board or task, it's marked as deleted rather than erased, so your
+              other devices remove it too. Deleted items stay in your synced data, hidden, until
+              your account is deleted.
+            </li>
+            <li>
+              <strong>Delete your account</strong> in Settings → Account &amp; security → Delete
+              account (iPhone and web). As a guest, use Settings → Discard guest data. This deletes
+              your sign-in account; our server then deletes all of your synced data from our
+              database, and the app erases its local database on that device. We keep one record —
+              your account's internal ID and the time it was deleted — so a device that's still
+              signed in can't upload data again afterwards.
+            </li>
+            <li>
+              Signing out doesn't erase the data stored on that device. Data on another device you
+              used stays there until you delete the app or clear the browser's site data.
+            </li>
+            <li>Technical logs held by our providers are deleted on those providers' schedules.</li>
+            <li>
+              <strong>Launch list:</strong> we keep it until we've announced the launch
+              <mark class="owner">[OWNER: confirm how long the list is kept after launch]</mark>. If
+              you unsubscribe, we keep your address marked as unsubscribed so we don't email you
+              again. Email us to have it erased completely.
+            </li>
+          </ul>
+
+          <h2 id="rights">8. Your choices and rights</h2>
+          <ul>
+            <li>
+              <strong>See and correct:</strong> everything you've entered is visible and editable in
+              the app, and you can change your email, password and display name there.
+            </li>
+            <li><strong>Delete:</strong> as described above.</li>
+            <li><strong>Unsubscribe:</strong> every launch-list email has an unsubscribe link.</li>
+            <li>
+              <strong>Notifications:</strong> turn them off in OYBC's notification settings or in
+              iOS Settings.
+            </li>
+            <li>
+              <strong>Anything else</strong>, including a copy of your data: email
+              <mark class="owner">[OWNER: privacy contact email]</mark>.
+            </li>
+          </ul>
+          <p>
+            Depending on where you live (for example the EEA, the UK or California), you may have
+            the right to access, correct, delete or port your data, to object to or restrict how
+            it's used, and to complain to your local data-protection authority. We'll respond within
+            the time the law requires. We don't sell or “share” personal information as California
+            law defines those terms.
+          </p>
+
+          <h2 id="children">9. Children</h2>
+          <p>
+            OYBC isn't directed to children under
+            <mark class="owner">[OWNER: minimum age, e.g. 13]</mark>, and we don't knowingly collect
+            their personal information. If you believe a child has given us information, contact us
+            and we'll delete it.
+          </p>
+
+          <section class="lg-opt" aria-labelledby="subscriptions">
+            <span class="lg-opt-tag">Applies once paid plans launch</span>
+            <h2 id="subscriptions">Subscriptions</h2>
+            <p>
+              <mark class="owner"
+                >[OWNER: paid plans are not shipped yet — publish this section when they are. Until then, delete this section or add the <code>hidden</code> attribute to it, and delete this mark: the hosting deploy refuses any page that still has one.
+                Before publishing, extend the account-deletion purge (it removes users/{uid} only)
+                to the entitlements/{uid} record, or state how long that record is kept.]</mark
+              >
+            </p>
+            <p>
+              Paid plans (OYBC Pro) are bought through the App Store with your Apple ID, and need an
+              account (not a guest account). Apple processes the payment; we never see your card
+              details. We use RevenueCat to manage subscriptions: RevenueCat receives your OYBC
+              account ID and your purchase details from Apple (such as the product, purchase and
+              expiry dates, price, currency and store country) and tells our server whether your
+              plan is active. Our server stores your plan status — plan, expiry date and store —
+              with your account so Pro works on all your devices.
+              <a href="https://www.revenuecat.com/privacy" rel="noopener">RevenueCat Privacy Policy</a>
+            </p>
+          </section>
+
+          <section class="lg-opt" aria-labelledby="crashes">
+            <span class="lg-opt-tag">Applies once crash reporting ships</span>
+            <h2 id="crashes">Crash reports</h2>
+            <p>
+              <mark class="owner"
+                >[OWNER: crash reporting is not shipped yet — publish this section with it. Until then, delete this section or add the <code>hidden</code> attribute to it, and delete this mark: the hosting deploy refuses any page that still has one.
+                Keep it true: no user ID, custom keys or logs carrying board or task content.]</mark
+              >
+            </p>
+            <p>
+              If the iPhone app crashes, it sends a crash report to Firebase Crashlytics (Google) so
+              we can find and fix the problem. A report contains the crash log (where in the app it
+              failed), your device model, iOS version, the app version, the device's state at the
+              time (such as free memory and storage), and a random ID for that installation of the
+              app. It doesn't include your boards or tasks and isn't linked to your OYBC account.
+              We use crash reports only to fix crashes — never for tracking or advertising. Google
+              keeps crash data for a limited period
+              <mark class="owner">[OWNER: verify Crashlytics' current retention, documented as 90 days]</mark>.
+            </p>
+          </section>
+
+          <h2 id="changes">10. Changes to this policy</h2>
+          <p>
+            When we update this policy we'll post the new version here with a new effective date.
+            If a change is significant, we'll also let you know in the app or by email.
+          </p>
+
+          <h2 id="contact">11. Contact</h2>
+          <p>
+            <mark class="owner">[OWNER: legal name]</mark><br />
+            <mark class="owner">[OWNER: postal address]</mark><br />
+            <mark class="owner">[OWNER: privacy contact email]</mark>
+          </p>
+        </article>
+      </main>
+
+      <footer class="cs-foot">
+        <div class="cs-foot-in">
+          <span>OYBC · On Your Bingo Card · oybc.com</span>
+          <span class="cs-foot-links">
+            <a href="/privacy" aria-current="page">Privacy</a>
+            <a href="/terms">Terms</a>
+            <a href="mailto:hello@oybc.com">hello@oybc.com</a>
+          </span>
+        </div>
+      </footer>
+    </div>
+
+    <script type="module" src="/src/legal.ts"></script>
+  </body>
+</html>

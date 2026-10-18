@@ -7,6 +7,10 @@ It is deliberately **not** part of `apps/web` — see
 
 Vite + vanilla TS + CSS. No React, no Firebase JS SDK, no app code.
 
+It also hosts the legal pages the apps link to — `/privacy` and `/terms`
+(`privacy.html` / `terms.html`, served extension-free by `cleanUrls` in
+`firebase.json`). See `docs/COMING_SOON.md` §Legal pages.
+
 ## Develop
 
 ```bash

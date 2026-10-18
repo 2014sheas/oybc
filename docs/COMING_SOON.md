@@ -23,9 +23,13 @@ marketing page, not an app feature.
 ```
 apps/coming-soon/
   index.html        static shell: fonts, nav, hero, poster frame, beats, footer
-  src/main.ts       board build + escalation, tap-to-play, theme toggle, email submit
-  src/styles.css    self-contained Riso tokens (:root + .night) + base + all .cs-* rules
-  vite.config.ts    build → dist/ (target es2020)
+  privacy.html      /privacy — the Privacy Policy (see §Legal pages)
+  terms.html        /terms — the Terms of Use (see §Legal pages)
+  src/main.ts       board build + escalation, tap-to-play, email submit
+  src/legal.ts      entry script for the two legal pages (theme toggle only)
+  src/theme.ts      Day/Night toggle shared by every page
+  src/styles.css    self-contained Riso tokens (:root + .night) + base + all .cs-* / .lg-* rules
+  vite.config.ts    multi-page build (index + privacy + terms) → dist/ (target es2020)
   tsconfig.json     strict, DOM lib, noEmit (vite transpiles)
   eslint.config.js  flat config (no React plugins)
   README.md         deploy + DNS + launch-flip instructions
@@ -139,6 +143,7 @@ that — try again.", button re-enabled).
 "hosting": {
   "public": "apps/coming-soon/dist",
   "ignore": ["firebase.json", "**/.*", "**/node_modules/**"],
+  "cleanUrls": true, // /privacy + /terms (see §Legal pages)
   "rewrites": [
     { "source": "/api/subscribe", "function": { "functionId": "subscribe", "region": "us-central1" } },
     { "source": "**", "destination": "/index.html" }
@@ -151,6 +156,35 @@ The `/api/subscribe` rewrite is listed **before** the catch-all so it wins. The
 catch-all serves the placeholder for every other path (the "only public route"
 requirement). See `apps/coming-soon/README.md` for the custom-domain,
 `app.oybc.com` relocation, robots/noindex, and launch-flip steps.
+
+## Legal pages (`/privacy`, `/terms`)
+
+ROADMAP Track L1 (App Store 5.1.1(i); the paywall will also need both links,
+3.1.2). Two static documents on the same poster chrome (nav, grain, footer,
+Day/Night toggle), styled by the `.lg-*` block in `src/styles.css`:
+
+- **Build**: each page is its own Rollup input in `vite.config.ts`, so it lands
+  in `dist/` as `privacy.html` / `terms.html`.
+- **Serving**: `firebase.json` sets `"cleanUrls": true`, so Hosting serves
+  `dist/privacy.html` at `/privacy` (and redirects `/privacy.html` there).
+  Hosting matches static files **before** rewrites, so the `**` catch-all never
+  sees these paths. Keep the URLs extension-free — the apps link to them.
+- **The apps link here** through one constant per platform: `LEGAL_LINKS`
+  (`packages/shared/src/constants/legalLinks.ts`) ↔ `LegalLinks`
+  (`apps/ios/OYBC/Constants/LegalLinks.swift`). Settings, Help and the sign-in
+  screens show them (web `components/legal/*` ↔ iOS
+  `Views/Components/LegalLinks{Card,Footer}.swift`).
+  `packages/shared/tests/constants/legalLinks.test.ts` pins the chain (page file
+  exists, is a Vite input, `cleanUrls` on, no rewrite claims the path) and
+  `OYBCTests/LegalLinksTests.swift` pins the Swift twin to the TS file.
+- **Content is fact-checked against the code** (auth providers, synced fields,
+  the deletion purge + `deletedUsers` marker, local notifications, add-only
+  Photos, no analytics SDK, the launch list). Change the text when the
+  behaviour changes. Facts the code can't establish are `<mark class="owner">`
+  placeholders, and `hosting.yml`'s deploy job refuses to publish while any
+  page still has one (PR previews still render them, for review). The dashed
+  `.lg-opt` sections (subscriptions, crash reports) describe features that
+  haven't shipped: hide (`hidden`) or delete each until its feature ships.
 
 ## CI
 

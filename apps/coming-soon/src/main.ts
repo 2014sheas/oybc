@@ -5,6 +5,7 @@
    Function). No framework. See docs/COMING_SOON.md.
    ============================================================ */
 import './styles.css';
+import { initTheme } from './theme';
 
 /* ---- locked production config (handoff "Locked direction" table) ---- */
 const FREE = 12; // center free square
@@ -140,24 +141,6 @@ function initBeats(): void {
     wrap.append(mini, text);
     container.appendChild(wrap);
   }
-}
-
-/* ============================================================
-   Day / Night theme toggle.
-   ============================================================ */
-function initTheme(): void {
-  const buttons = document.querySelectorAll<HTMLButtonElement>('.cs-seg button[data-theme]');
-  buttons.forEach((btn) => {
-    btn.addEventListener('click', () => {
-      const night = btn.dataset.theme === 'night';
-      document.body.classList.toggle('night', night);
-      buttons.forEach((b) => {
-        const on = b.dataset.theme === (night ? 'night' : 'day');
-        b.classList.toggle('on', on);
-        b.setAttribute('aria-pressed', String(on));
-      });
-    });
-  });
 }
 
 /* ============================================================

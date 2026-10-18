@@ -5,10 +5,11 @@ import SwiftUI
 ///
 /// Contents: a "Getting started" card showing `{done}/8` with a button that
 /// opens the tutorial board (or, once complete, replays it after a confirm),
-/// and a "Contact support" row that is an intentional PLACEHOLDER — present,
+/// a "Contact support" row that is an intentional PLACEHOLDER — present,
 /// disabled, caption "Coming soon" (owner decision #4,
 /// `.superpowers/sdd/2026-09-30-profile-reorg/owner-decisions.md`) until a
-/// real support address exists. Nothing else — no FAQ content.
+/// real support address exists — and the Legal links (Privacy Policy / Terms
+/// of Use). Nothing else — no FAQ content.
 struct HelpView: View {
     @EnvironmentObject var tutorialStore: TutorialProgressStore
 
@@ -33,6 +34,10 @@ struct HelpView: View {
                         .padding(.bottom, 18)
 
                     contactSupportCard
+                        .padding(.horizontal, Riso.gutter)
+                        .padding(.bottom, 18)
+
+                    LegalLinksCard()
                         .padding(.horizontal, Riso.gutter)
                         .padding(.bottom, 18)
                 }

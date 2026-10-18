@@ -3,6 +3,7 @@ export * from './syncRetry';
 export * from './syncQueueOwnership';
 export * from './syncContract';
 export * from './proGating';
+export * from './legalLinks';
 
 export { BOARD_SIZES, type BoardSize } from '@oybc/bingo-core';
 

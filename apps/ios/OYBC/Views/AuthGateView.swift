@@ -83,6 +83,7 @@ private struct LoginView: View {
                         emailPasswordSection
                         dividerSection
                         socialSignInSection
+                        LegalLinksFooter()
                     }
                     .padding(.horizontal, 24)
                     .padding(.top, 48)
