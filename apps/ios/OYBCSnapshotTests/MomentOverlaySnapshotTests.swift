@@ -123,6 +123,14 @@ final class MomentOverlaySnapshotTests: XCTestCase {
         snap(overlay(.greenlogSample, lines: 12, streak: 3, timeframe: .weekly, isCore: true), dark: true)
     }
     func testGreenlog5x5NoChip() { snap(overlay(.greenlogSample, lines: 12)) }
+    /// The tutorial's "Preview a GREENLOG": no share / new-board actions.
+    func testGreenlogPreviewBackOnly() {
+        let m = MomentPresentation.greenlogSample
+        snap(RisoMomentOverlay(
+            kind: m.kind, replay: m.replay, cells: m.cells, boardName: "Sample board",
+            linesCompleted: 12, beatOverride: momentFinalBeat(m.replay, kind: m.kind), isPreview: true
+        ))
+    }
     /// Beat 28 = 24 landed + 3: the first four sweep bands (r + c ≤ 2) are green.
     func testGreenlog5x5MidSweep() {
         snap(overlay(.greenlogSample, beat: 28, lines: 12, streak: 3, timeframe: .weekly, isCore: true))
