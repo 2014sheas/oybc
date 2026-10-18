@@ -421,7 +421,7 @@ is installed on the owner's device. Slices 3 and 6 are split so that the
 | **2c — Reachability + context-less readers** (PR open 2026-10-17 — see §Slice 2c) | `placementsReachedByRoot` replacing `withWindowStampedDerived` / `expandToWindowStampedDerived` / iOS `boardIdsReachedByTasks` in the pull cascade, sealing, late log and the heal; `resolveLinkedCounterDisplay` as a thin wrapper over the kernel; library lifetime from events for the context-less readers; the web library family row reads rule (c) (it stays lookup-only until then). | `withWindowStampedDerived`; the context-less `maxCount ?? 0` completion read. |
 | **3a — Writers stop minting (both clients)** (MERGED #638, 2026-10-18) | Delete the heal, its post-pull sweep and the choke points' resolve step; Board Edit writes overrides / `childTargets` / `titleOverride` instead of forking; copy-writers (Repeat, board-source pulls, core next-window) resolve derived rows at write time; `BoardSourceSupplyInfo` carries the effective goal. | The heal, `placementNeedsCopy`, fork-on-goal-edit. |
 | **3b — Planner emits placements** (MERGED #639, 2026-10-18) | `planDerivedTasks` output shape; wizard persist, spawn, quick-add write parameters. Gated on both clients carrying 3a. | Minting paths. |
-| **4 — Migration sweep** (4a PR open 2026-10-18; 4b next) | The gated sweep above, at open and after every pull; seal re-derivation vectors; counts-toward boundary; `repointSealedPlacement`. | Every derived row that can be repointed safely; the rest stripped to plain rows. |
+| **4 — Migration sweep** (MERGED: 4a #640, 4b #641, 2026-10-18) | The gated sweep above, at open and after every pull; seal re-derivation vectors; counts-toward boundary; `repointSealedPlacement`. | Every derived row that can be repointed safely; the rest stripped to plain rows. |
 | **5 — Retire the machinery** | Delete propagation, freeze, baseline refresh, derived deletion cascades, three-mark predicates, task-window kernel inputs, the own-stamp fallback; clear stamped rows' window fields; re-base the expired filters; drop the sweep once both clients carry it and the fixture shows **no marked rows**; docs: replace the `CLAUDE.md` Windowed Completion paragraph with the model statement and move its history into an ADR log in `WINDOWED_COMPLETION.md`; `BOARD_SOURCES.md` §Member rules rewritten in placement terms. | The four derived-row invariants. |
 | **6a — Forks read shadows (both clients)** | Kernel: shadowing-clone rule, undo writes shadow tombstones, affected-boards walk includes forks. | — |
 | **6b — Forks stop cloning** | `planBoardScopedFork` stops cloning events. Gated on both clients carrying 6a. | Duplicate occurrences in the log. |
@@ -578,6 +578,26 @@ the gate compares cell completion, `completedTasks` and sorted bingo lines
 (stored `status` is not part of it); the owner fixture keeps ids verbatim
 (UUIDs carry no personal data and 4b's forward uuidv5 match needs the real
 pairs) and anonymises text only.
+
+**Slice 4b implementation notes (2026-10-18, as built):** a derived
+compound's source is found by forward uuidv5 match over live un-marked
+compounds with the same operator / threshold, the placing board tried first
+and then every board (deleted ones included — the id is all the match
+needs); the source's children map forward (a counting child → its derived
+part when that part is a live child of the derived compound, else itself;
+collapsed siblings allowed) and the mapped set must equal the derived
+compound's live children (`compoundMismatch` otherwise); `childTargets` is
+keyed by the SOURCE child, a slice-3a entry keyed by the source child wins,
+and no entry is written when the part's frozen goal equals the child's own;
+the parts re-key to their roots; an unplaced derived compound is an orphan
+and its parts retire on the next run.
+
+**Before slice 5 (owner):** install the TestFlight build carrying slice 4 and
+open the app (the sweep runs on device); run the web dev build after a clean
+pull and use Settings › Developer › Export anonymised workspace; commit the
+file as `packages/shared/tests/fixtures/ownerWorkspace.anonymised.json`. The
+skipped acceptance test then runs; slice 5 drops the sweep only when that
+fixture shows no marked rows.
 
 ## Acceptance
 
