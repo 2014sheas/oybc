@@ -419,8 +419,8 @@ is installed on the owner's device. Slices 3 and 6 are split so that the
 | **2a — Kernel reads placements** (MERGED #629, 2026-10-17) | `resolveSquareState`, `placementTitle`, `withPlacementParams` / `withChildTarget`; the derivation pass, cells, previews, late-log selectors and sealed re-derive read the placement; one completion rule in `windowStampedDerivedState`. Vectors: `placementParamsVectors` (new), `derivationPassVectors` extended. | Two completion rules on the kernel path; display ≠ kernel on the play surfaces. |
 | **2b — Hub, arrivals, library, credits and supply on placements** (MERGED #630, 2026-10-17) | Counters hub re-modelled: a card IS a placement (`boardTaskId`, `viaCompoundId`; the root's placements + its linked tasks' placements + the placements of their parent compounds at the `childTargets` goal; an unplaced task has no card — owner ruling 2026-10-17); root rule (c) "placed with a `targetOverride`" in `sharedCounterRootIds(tasks, boardTasks)`; arrivals and the iOS library family row use the same rule; counts-toward credits and the Counter Detail "Counts toward" rows score each placement with its parameters; the Sources sheet supply scores "done" at the placement's goal. Vectors: hub-group vectors re-pinned + 3 placement cases, 2 credits cases. `pickPrimaryBoard` stays only for the counts-toward row's representative board. | `pickPrimaryBoard` in the hub; task-level hub cards; lifetime rows for unplaced members. |
 | **2c — Reachability + context-less readers** (PR open 2026-10-17 — see §Slice 2c) | `placementsReachedByRoot` replacing `withWindowStampedDerived` / `expandToWindowStampedDerived` / iOS `boardIdsReachedByTasks` in the pull cascade, sealing, late log and the heal; `resolveLinkedCounterDisplay` as a thin wrapper over the kernel; library lifetime from events for the context-less readers; the web library family row reads rule (c) (it stays lookup-only until then). | `withWindowStampedDerived`; the context-less `maxCount ?? 0` completion read. |
-| **3a — Writers stop minting (both clients)** (in progress 2026-10-18) | Delete the heal, its post-pull sweep and the choke points' resolve step; Board Edit writes overrides / `childTargets` / `titleOverride` instead of forking; copy-writers (Repeat, board-source pulls, core next-window) resolve derived rows at write time; `BoardSourceSupplyInfo` carries the effective goal. | The heal, `placementNeedsCopy`, fork-on-goal-edit. |
-| **3b — Planner emits placements** | `planDerivedTasks` output shape; wizard persist, spawn, quick-add write parameters. Gated on both clients carrying 3a. | Minting paths. |
+| **3a — Writers stop minting (both clients)** (MERGED #638, 2026-10-18) | Delete the heal, its post-pull sweep and the choke points' resolve step; Board Edit writes overrides / `childTargets` / `titleOverride` instead of forking; copy-writers (Repeat, board-source pulls, core next-window) resolve derived rows at write time; `BoardSourceSupplyInfo` carries the effective goal. | The heal, `placementNeedsCopy`, fork-on-goal-edit. |
+| **3b — Planner emits placements** (in progress 2026-10-18) | `planDerivedTasks` output shape; wizard persist, spawn, quick-add write parameters. Gated on both clients carrying 3a. | Minting paths. |
 | **4 — Migration sweep** | The gated sweep above, at open and after every pull; seal re-derivation vectors; counts-toward boundary; `repointSealedPlacement`. | Every derived row that can be repointed safely; the rest stripped to plain rows. |
 | **5 — Retire the machinery** | Delete propagation, freeze, baseline refresh, derived deletion cascades, three-mark predicates, task-window kernel inputs, the own-stamp fallback; clear stamped rows' window fields; re-base the expired filters; drop the sweep once both clients carry it and the fixture shows **no marked rows**; docs: replace the `CLAUDE.md` Windowed Completion paragraph with the model statement and move its history into an ADR log in `WINDOWED_COMPLETION.md`; `BOARD_SOURCES.md` §Member rules rewritten in placement terms. | The four derived-row invariants. |
 | **6a — Forks read shadows (both clients)** | Kernel: shadowing-clone rule, undo writes shadow tombstones, affected-boards walk includes forks. | — |
@@ -527,6 +527,34 @@ never stamped, so a late log on ANY linked square authors on its root at the
 board's `endDate` and the sheet routes to it (`lateLogIncrement`,
 `undoLateLog`, `readClosedBoardSquareState`, `isLateLogRoutable` ↔
 `lateLogEventOwningTaskId`).
+
+**Slice 3b Gate 1 rulings (2026-10-18):** (a) the wizard's quick-add of a
+shared counter places the ROOT with a placement override — no per-board copy
+row is minted; (b) a hand-added counter row's edited goal (and the member-rule
+target stepper's result) is a placement override too — `counterRowEditCopy` /
+`restampPendingCounterCopy` and their pending-copy rows are retired; the
+wizard carries per-cell placement parameters in its state and persist writes
+them. Drafts keep placing original ids with no parameters; parameters are
+planned at the activating save, as the mint was. `RecurringBoardTemplate`
+gains `manualTaskTargets` (per hand-added task: target, kind, optional title)
+so Repeat copies a placement's frozen override and spawn applies it to
+hand-added members; sourced members re-plan from rules. Merging 3b is not
+lockstep-gated (both clients read every placement field since 2a); the WEB
+DEPLOY of 3b waits for the TestFlight build carrying 3a.
+
+**Slice 3b implementation notes (2026-10-18, as built):** the planner's
+`param` rule emits `targetOverride` only when the rolled target differs from
+the PLACED task's own goal, which subsumes the old "no identical clone"
+shortcut; a hand-added linked member is placed as itself (no per-window copy,
+the kernel reads the host window), so a stale stored title on such a member
+now renders as stored rather than through the root's templates until the
+root's next propagation (`counterPlacementVectors` "a hand-added linked row
+keeps its own goal" re-pinned); two split parts sharing one root no longer
+collapse onto one square — each child rolls its own target (one
+`memberRuleVectors` rng count re-pinned); a pool source's stray `goalByTaskId`
+is ignored (board sources only). The old-vs-new equivalence check (every
+former draft's `maxCount` == the placement's effective goal, titles through
+`placementTitle`) held for every other vector.
 
 ## Acceptance
 

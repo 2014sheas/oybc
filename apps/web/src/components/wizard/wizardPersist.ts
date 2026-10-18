@@ -7,6 +7,7 @@ import {
   placeBoard,
   resolveSourceAvailable,
   selectBoardTasks,
+  type ManualTaskTarget,
   type PendingTemplateSpawn,
   type Task,
 } from '@oybc/shared';
@@ -408,6 +409,8 @@ export async function persistWizardBoard({
           // §Member rules (B3, RC3) — hand-added counters' dice ride in the
           // blob so a resumed draft reopens with them intact.
           manualTaskVary: controller.manualTaskVary,
+          // TASK_WINDOW_REWORK slice 3b — the wizard's per-cell parameters.
+          placementParams: Object.fromEntries(controller.placementParams),
         })
       : undefined;
 
@@ -439,6 +442,8 @@ export async function persistWizardBoard({
     // §Member rules (B3, RC3) — the mint rolls a hand-added counter's target
     // inside its dice range; without this it would always take the goal.
     manualTaskVary: controller.manualTaskVary,
+    // TASK_WINDOW_REWORK slice 3b — an explicit wizard parameter wins over the planner's.
+    placementParams: Object.fromEntries(controller.placementParams),
   });
 }
 
@@ -573,6 +578,18 @@ export async function persistRecurringTemplate({
   // §Member rules (B3, RC3) — dice for hand-added counters, persisted on the
   // record so each recurring board rolls them for its own window.
   const manualTaskVary = controller.manualTaskVary;
+  // TASK_WINDOW_REWORK slice 3b — a hand-added member's typed goal is frozen
+  // on the record; each spawn applies it as that member's placement override.
+  const manualTaskTargets: Record<string, ManualTaskTarget> = {};
+  for (const id of manualTaskIds) {
+    const p = controller.placementParams.get(id);
+    if (p?.targetOverride == null) continue;
+    manualTaskTargets[id] = {
+      target: p.targetOverride,
+      kind: p.targetKind ?? 'discrete',
+      ...(p.titleOverride !== undefined ? { title: p.titleOverride } : {}),
+    };
+  }
   // Creation-time snapshot — not read by the spawn, but still read by
   // other surfaces (see this function's docstring).
   const seedTaskIds = Array.from(controller.selectedTaskIds);
@@ -590,6 +607,7 @@ export async function persistRecurringTemplate({
       removedTaskIds,
       sources,
       manualTaskVary,
+      manualTaskTargets,
       // `isActive` isn't surfaced in the wizard form (the templates list
       // owns the pause toggle), so leave it untouched on edit.
       // `seedTaskIds` intentionally omitted — the create-time snapshot is
@@ -611,6 +629,7 @@ export async function persistRecurringTemplate({
     removedTaskIds,
     sources,
     manualTaskVary,
+    manualTaskTargets,
   });
 
   // Compute the spawn window and create the board. `spawnTemplateBoard`

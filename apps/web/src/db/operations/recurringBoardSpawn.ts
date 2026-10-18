@@ -12,6 +12,8 @@ import {
   withEffectiveMemberRules,
   availableSupplyIds,
   applyMemberRules,
+  planDerivedTasks,
+  withNormalizedPlacementFields,
   resolveSourceAvailable,
   selectBoardTasks,
   sourcesForRecord,
@@ -21,6 +23,7 @@ import {
   type BoardWindow,
   type BoardTask,
   type CompoundChild,
+  type PlannedPlacement,
   type Pool,
   type RecurringBoardTemplate,
   type Task,
@@ -31,7 +34,6 @@ import {
 import { generateUUID, currentTimestamp } from '../utils';
 import { addToSyncQueue } from './syncQueue';
 import { resolveBoardSourceSupply, resolveOpenSourceBoard } from './boardSources';
-import { candidateRootIds, planAndMintDerivedRows } from './derivedCounters';
 
 /**
  * Recurring-board spawn (Phase 6.2).
@@ -311,11 +313,10 @@ export async function spawnTemplateBoard(
           reason: 'pool_too_small',
         };
       }
-      // Board Sources §Member rules (B2, docs/BOARD_SOURCES.md §Member rules —
+      // Board Sources §Member rules (docs/BOARD_SOURCES.md §Member rules —
       // *Resolution pipeline* steps 3/5): the picked ids are resolved against
-      // this window's rules and any window-stamped derived counter / derived
-      // compound they call for is MINTED HERE — before the `board_tasks` rows
-      // below point at it, in this same transaction.
+      // this window's rules into PLACEMENT PARAMETERS (TASK_WINDOW_REWORK
+      // slice 3b) — nothing is minted; the `board_tasks` rows below carry them.
       // Auto targets pro-rate a member's goal by the ratio of the SOURCE
       // board's window to this one, so every supplied id — and every child of
       // a compound member, which is looked up by the CHILD's id — needs its
@@ -337,14 +338,7 @@ export async function spawnTemplateBoard(
           }
         }
       }
-      const rootEvents: TaskEvent[] = [];
-      for (const root of candidateRootIds(selection.taskIds, tasksById, childrenByCompound)) {
-        for (const e of eventsByTaskId[root] ?? []) rootEvents.push(e);
-      }
-      const { placementIds, minted } = await planAndMintDerivedRows({
-        boardId,
-        userId: template.userId,
-        now,
+      const planned = planDerivedTasks({
         selectedIds: selection.taskIds,
         supplies: ruleSupplies,
         manualTaskIds,
@@ -360,24 +354,31 @@ export async function spawnTemplateBoard(
         tasksById,
         childrenByCompoundId: childrenByCompound,
         sourceWindowByTaskId,
-        events: rootEvents,
+        rng: Math.random,
+      }).placements;
+      // Repeat's frozen overrides (`manualTaskTargets`) win over the planner's
+      // result for a HAND-ADDED member; sourced members keep re-planning from
+      // their rules (TASK_WINDOW_REWORK slice 3b, ruling 1).
+      const manualSet = new Set(manualTaskIds);
+      const placements: PlannedPlacement[] = planned.map((p, i) => {
+        const sourceId = selection.taskIds[i];
+        const frozen =
+          sourceId !== undefined && manualSet.has(sourceId)
+            ? template.manualTaskTargets?.[sourceId]
+            : undefined;
+        if (frozen === undefined) return p;
+        return {
+          ...p,
+          targetOverride: frozen.target,
+          targetKind: frozen.kind,
+          ...(frozen.title !== undefined ? { titleOverride: frozen.title } : {}),
+        };
       });
-      // Fold the minted rows into the snapshots the placement and the
-      // derivation pass below read from. Read BACK rather than trusting the
-      // built row: RB3 skips an already-live row, so what is stored is the
-      // authority for what the board then derives from.
-      for (const row of minted.tasks) {
-        const stored = await db.tasks.get(row.id);
-        if (stored !== undefined) tasksById[row.id] = stored;
-      }
-      for (const link of minted.links) {
-        const stored = await db.compoundChildren.get(link.id);
-        if (stored === undefined || stored.isDeleted) continue;
-        (childrenByCompound[stored.compoundTaskId] ??= []).push(stored);
-      }
+      const paramsByTaskId = new Map<string, PlannedPlacement>();
+      for (const p of placements) if (!paramsByTaskId.has(p.taskId)) paramsByTaskId.set(p.taskId, p);
 
-      const orderedPool: Task[] = selection.taskIds
-        .map((id, i) => tasksById[placementIds[i] ?? id])
+      const orderedPool: Task[] = placements
+        .map((p) => tasksById[p.taskId])
         .filter((t): t is Task => t !== undefined);
 
       const placement = buildSpawnPlacement({
@@ -437,9 +438,11 @@ export async function spawnTemplateBoard(
           continue;
         }
         placedTaskIds.add(t.id);
+        const { taskId: _plannedTaskId, ...params } = paramsByTaskId.get(t.id) ?? { taskId: t.id };
         const row = Math.floor(cell / template.boardSize);
         const col = cell % template.boardSize;
-        boardTasks.push({
+        boardTasks.push(
+          withNormalizedPlacementFields<BoardTask>({
           id: generateUUID(),
           boardId,
           taskId: t.id,
@@ -453,11 +456,13 @@ export async function spawnTemplateBoard(
           isCenter:
             cell === centerCellIndex &&
             template.centerSquareType === CenterSquareType.CHOSEN,
+          ...params,
           createdAt: now,
           updatedAt: now,
           version: 1,
           isDeleted: false,
-        });
+          }),
+        );
       }
 
       // Windowed Completion (docs/WINDOWED_COMPLETION.md §What this closes —
@@ -467,12 +472,10 @@ export async function spawnTemplateBoard(
       // FREE center still auto-fills. The invariant "stored stats are
       // always derivation output" now holds from the first row written.
       // (`childrenByCompound` hoisted above the supply resolution — the
-      // member-rules plan needs it too; the minted derived links were pushed
-      // into it, so a derived compound evaluates against its own parts here.)
-      // Reuse the `tasksById` map read at the top of this closure for
-      // mix resolution — the only `tasks` writes in between are the member-
-      // rule mint's, and those rows were read back into the map above, so it
-      // is still an accurate snapshot for the derivation pass.
+      // member-rules plan needs it too.)
+      // Reuse the `tasksById` map read at the top of this closure for mix
+      // resolution — nothing writes `tasks` in between, so it is still an
+      // accurate snapshot for the derivation pass.
       const taskById: Record<string, Task> = tasksById;
       // (eventsByTaskId hoisted above the supply resolution — board-kind
       // sources need it for the 'todo' filter; reused here for stats.)

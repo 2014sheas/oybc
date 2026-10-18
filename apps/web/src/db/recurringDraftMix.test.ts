@@ -8,6 +8,7 @@ const EMPTY = {
   removedTaskIds: [],
   sources: [],
   manualTaskVary: {},
+  placementParams: {},
 };
 
 /** The [0, all] pool source the codec derives for a trio-only input. */
@@ -36,6 +37,7 @@ describe('encodeRecurringDraftMix / decodeRecurringDraftMix', () => {
         derivedSource('pool-2', ['removed-1']),
       ],
       manualTaskVary: {},
+      placementParams: {},
     });
   });
 
@@ -56,6 +58,7 @@ describe('encodeRecurringDraftMix / decodeRecurringDraftMix', () => {
       removedTaskIds: [],
       sources,
       manualTaskVary: {},
+      placementParams: {},
     };
     expect(decodeRecurringDraftMix(encodeRecurringDraftMix(mix))).toEqual(mix);
   });
@@ -72,6 +75,7 @@ describe('encodeRecurringDraftMix / decodeRecurringDraftMix', () => {
       removedTaskIds: ['gone'],
       sources: [derivedSource('pool-1', ['gone'])],
       manualTaskVary: {},
+      placementParams: {},
     });
   });
 
@@ -119,6 +123,7 @@ describe('encodeRecurringDraftMix / decodeRecurringDraftMix', () => {
       removedTaskIds: [],
       sources: [derivedSource('pool-1', [])],
       manualTaskVary: {},
+      placementParams: {},
     });
   });
 });
@@ -197,5 +202,32 @@ describe('manualTaskVary (additive, v stays 2)', () => {
       JSON.stringify({ v: 2, poolIds: [], manualTaskIds: [], removedTaskIds: [], sources: [s] }),
     );
     expect(p.sources[0]).toEqual(s);
+  });
+});
+
+describe('placementParams (additive, v stays 2)', () => {
+  it('omits an empty map from the encoded blob, and decodes a blob without it to {}', () => {
+    const json = encodeRecurringDraftMix({ poolIds: [], manualTaskIds: [], removedTaskIds: [], placementParams: {} });
+    expect('placementParams' in JSON.parse(json)).toBe(false);
+    expect(decodeRecurringDraftMix(json).placementParams).toEqual({});
+  });
+
+  it('round-trips a goal override and drops a malformed entry', () => {
+    const json = encodeRecurringDraftMix({
+      poolIds: [],
+      manualTaskIds: ['a'],
+      removedTaskIds: [],
+      placementParams: { a: { targetOverride: 12, targetKind: 'discrete' } },
+    });
+    expect(JSON.parse(json).v).toBe(2);
+    expect(decodeRecurringDraftMix(json).placementParams).toEqual({ a: { targetOverride: 12, targetKind: 'discrete' } });
+    const bad = JSON.stringify({
+      v: 2,
+      poolIds: [],
+      manualTaskIds: [],
+      removedTaskIds: [],
+      placementParams: { a: { targetOverride: -3 }, b: 'x' },
+    });
+    expect(decodeRecurringDraftMix(bad).placementParams).toEqual({});
   });
 });

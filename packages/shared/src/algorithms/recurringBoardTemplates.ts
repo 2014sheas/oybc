@@ -36,7 +36,7 @@ import { getTimeframeBoundaries, formatWindowLabel } from './calendarBoundaries'
 import { Timeframe } from '../constants/enums';
 import type { Board } from '../types/board';
 import type { Task } from '../types/task';
-import type { RecurringBoardTemplate } from '../types/recurringBoardTemplate';
+import type { ManualTaskTarget, RecurringBoardTemplate } from '../types/recurringBoardTemplate';
 import type { WeekStartDay } from './calendarBoundaries';
 
 /**
@@ -347,6 +347,8 @@ export interface RepeatBoardTemplateInput {
   centerSquareType: CenterSquareType;
   isRandomized: boolean;
   manualTaskIds: string[];
+  /** Slice 3b — frozen per-member targets of the repeated placements (absent when none). */
+  manualTaskTargets?: Record<string, ManualTaskTarget>;
   isActive: true;
   /**
    * Pre-seeded to the CADENCE's window containing the board's start date —
@@ -402,6 +404,7 @@ export function buildRepeatBoardTemplateInput(
   boardTaskIds: string[],
   cadence: Timeframe,
   weekStartDay: WeekStartDay,
+  manualTaskTargets: Record<string, ManualTaskTarget> = {},
 ): RepeatBoardTemplateInput {
   const { startDate: lastSpawnedWindowKey } = getTimeframeBoundaries(
     cadence,
@@ -419,6 +422,8 @@ export function buildRepeatBoardTemplateInput(
     centerSquareType: effectiveCenter(board.centerSquareType),
     isRandomized: board.isRandomized,
     manualTaskIds: [...boardTaskIds],
+    // Slice 3b: the repeated placements' frozen overrides / titles (ruling 1).
+    ...(Object.keys(manualTaskTargets).length > 0 ? { manualTaskTargets } : {}),
     isActive: true,
     lastSpawnedWindowKey,
     seedTaskIds: [...boardTaskIds],

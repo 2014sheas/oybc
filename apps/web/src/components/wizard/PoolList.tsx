@@ -5,8 +5,10 @@ import {
   formatCount,
   resolveCountKind,
   varyRangeLabel,
+  withPlacementParams,
   type CompoundChild,
   type PlacementBoard,
+  type PlacementParams,
   type Task,
   type VaryLevel,
 } from '@oybc/shared';
@@ -44,6 +46,9 @@ export interface PoolListProps {
   /** The board's window: a counting row that isn't a linked copy captions
    *  the goal placement gives it there (a counter's window default, else its own). */
   counterGoalWindow?: PlacementBoard;
+  /** The wizard's per-cell placement parameters (a quick-added / hand-edited
+   *  counter goal): the row reads the goal and title the placement gives. */
+  placementParams?: ReadonlyMap<string, PlacementParams>;
 
   centerTaskMode: boolean;
   centerTaskId: string | null;
@@ -114,6 +119,7 @@ export function PoolList({
   effectiveChildrenByCompound,
   taskBoardCounts,
   counterGoalWindow,
+  placementParams,
   centerTaskMode,
   centerTaskId,
   onCenterClick,
@@ -133,8 +139,9 @@ export function PoolList({
     .filter((t): t is Task => t !== undefined);
   // The goal the board will get: a counter's window default, else its own.
   const windowGoalOf = (task: Task): number | null =>
-    counterGoalWindow && task.type === TaskType.COUNTING && !task.sharedCounterId
-      ? placementGoalForCounter(task, counterGoalWindow)
+    task.type === TaskType.COUNTING && !task.sharedCounterId
+      ? (placementParams?.get(task.id)?.targetOverride ??
+        (counterGoalWindow ? placementGoalForCounter(task, counterGoalWindow) : null))
       : null;
   // The dice column only exists when SOME row can use it, so a board with
   // no counting tasks keeps the original 2-or-3-slot gutter width.
@@ -165,6 +172,7 @@ export function PoolList({
             const isExpanded = expandedId === task.id;
             const counterTagName = rowCounterTagName(task, effectiveTaskMap);
             const windowGoal = windowGoalOf(task);
+            const placed = withPlacementParams(task, placementParams?.get(task.id), task);
             const subtitle =
               windowGoal !== null
                 ? `goal ${formatCount(windowGoal, resolveCountKind(task))}`
@@ -224,7 +232,7 @@ export function PoolList({
                 >
                   <TypeBadge type={task.type} letterOnly />
                   <div className={styles.rowText}>
-                    <span className={styles.rowTitle}>{task.title || '(untitled task)'}</span>
+                    <span className={styles.rowTitle}>{placed.title || '(untitled task)'}</span>
                     {(counterTagName || subtitle) && (
                       <span className={styles.rowSubtitle}>
                         {counterTagName && <UnitTag name={counterTagName} dense />}

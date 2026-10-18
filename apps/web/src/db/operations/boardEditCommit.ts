@@ -123,6 +123,8 @@ export async function commitSquareEdits(input: CommitSquareEditsInput): Promise<
       for (const cell of cells) {
         if (cell.originalTaskId !== null && cell.taskId !== cell.originalTaskId) {
           await updateBoardTaskAndCascade(cell.cellId, cell.taskId);
+          // A root picked with a goal: the parameters ride the replaced placement.
+          if (cell.placement) await setPlacementParams(cell.cellId, cell.placement, currentTimestamp());
         }
       }
 
@@ -155,6 +157,7 @@ export async function commitSquareEdits(input: CommitSquareEditsInput): Promise<
         if (cell.originalTaskId === null) {
           await addBoardTaskToBoard(boardId, cell.taskId, cell.row, cell.col, {
             isLocked: cell.isLocked,
+            ...(cell.placement ? { placement: cell.placement } : {}),
           });
         }
       }

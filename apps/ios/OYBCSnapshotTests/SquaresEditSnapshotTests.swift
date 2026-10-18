@@ -203,7 +203,7 @@ final class SquaresEditSnapshotTests: XCTestCase {
                 userId: "u1",
                 candidateTasks: makeCandidates(),
                 onDismiss: {},
-                onConfirm: { _, _ in }
+                onConfirm: { _, _, _ in }
             ),
             as: .image(layout: .fixed(width: 393, height: 500)),
             record: recordMode
@@ -217,7 +217,7 @@ final class SquaresEditSnapshotTests: XCTestCase {
                 userId: "u1",
                 candidateTasks: makeCandidates(),
                 onDismiss: {},
-                onConfirm: { _, _ in }
+                onConfirm: { _, _, _ in }
             ),
             as: .image(
                 layout: .fixed(width: 393, height: 500),
@@ -234,7 +234,7 @@ final class SquaresEditSnapshotTests: XCTestCase {
                 userId: "u1",
                 candidateTasks: makeCandidates(),
                 onDismiss: {},
-                onConfirm: { _, _ in }
+                onConfirm: { _, _, _ in }
             ),
             as: .image(layout: .fixed(width: 393, height: 500)),
             record: recordMode

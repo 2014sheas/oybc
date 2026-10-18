@@ -14,6 +14,8 @@ import type {
   CenterSquareType,
   CompoundChild,
   ExpandedSupply,
+  PlacementBoard,
+  PlacementParams,
   Pool,
   RecurringBoardTemplate,
   Task,
@@ -98,6 +100,12 @@ export interface BoardWizardState {
    * record (`RecurringBoardTemplate.manualTaskVary`).
    */
   manualTaskVary: Record<string, VaryLevel>;
+  /**
+   * TASK_WINDOW_REWORK slice 3b — per-cell placement parameters (a quick-added
+   * counter's window goal, a hand-edited goal), keyed by task id. Persisted on
+   * the draft blob; an explicit entry wins over the planner's for that cell.
+   */
+  placementParams: Map<string, PlacementParams>;
   /**
    * §Member rules (B3, RC7) — the live compound-children map (library links
    * + this session's pending compounds + the staged-edit overlay), the
@@ -295,12 +303,17 @@ export interface BoardWizardActions {
    */
   restoreToPool: (taskId: string, index: number, payload: PendingTaskPayload | undefined) => void;
   /**
-   * Swap a hand-added row for another in place — a counter ROOT row for the
-   * board-only linked copy its edit saves as, and back for Undo. Keeps the
-   * position, dice and center mark. Mirrors iOS
-   * `BoardWizardViewModel.replaceManualTask`.
+   * TASK_WINDOW_REWORK slice 3b — set (or, with null, clear) one cell's
+   * placement parameters: a counter ROOT's goal on this board. Persist writes
+   * them onto the cell's `BoardTask`. Mirrors iOS
+   * `BoardWizardViewModel.setPlacementParams`.
    */
-  replaceManualTask: (oldId: string, newId: string, payload: PendingTaskPayload | undefined) => void;
+  setPlacementParams: (taskId: string, params: PlacementParams | null) => void;
+  /**
+   * Re-stamp the parameters for a changed window: an override at the old
+   * window's default follows to the new window's; a typed goal stays.
+   */
+  restampPlacementParams: (from: PlacementBoard, to: PlacementBoard) => void;
 }
 
 /** Computed flags exposed to step components for validation + display. */

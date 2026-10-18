@@ -1,5 +1,5 @@
 import type { Page } from '@playwright/test';
-import { test, expect, openCreateHub, startOneOffWizard } from './_fixtures/bypass';
+import { test, expect, openCreateHub, seedBoardTask, seedTask, startOneOffWizard } from './_fixtures/bypass';
 
 /**
  * Regression — owner report 2026-09-30: "counter tasks derived from a larger
@@ -17,6 +17,12 @@ import { test, expect, openCreateHub, startOneOffWizard } from './_fixtures/bypa
  * Drives the real UI end to end (wizard → Sources sheet → activate), then
  * reads IndexedDB + the hub / detail / Profile home. The decisive case
  * moves the page clock PAST the weekly's `endDate` — red before the fix.
+ *
+ * Since TASK_WINDOW_REWORK slice 3b the wizard no longer MINTS a window-stamped
+ * derived row (it places the root with a `targetOverride`), so `derivedRow`
+ * seeds the LEGACY row an earlier build wrote — re-pointing the weekly's root
+ * placement at it — which is exactly the member the hub's expiry rule must
+ * keep reading until the migration sweep (slice 4) retires such rows.
  */
 
 type Row = Record<string, unknown>;
@@ -122,11 +128,36 @@ async function createCoreWeeklyFromMonthly(page: Page): Promise<string> {
 }
 
 async function derivedRow(page: Page, rootId: string): Promise<Row> {
-  const tasks = await dumpStore(page, 'tasks');
-  const derived = tasks.filter((t) => t.sharedCounterId === rootId && !t.isDeleted);
-  expect(derived.length, 'window-stamped derived row minted').toBe(1);
-  expect(derived[0].startDate, 'derived row startDate').toBeTruthy();
-  return derived[0];
+  const boards = await dumpStore(page, 'boards');
+  const weekly = boards.find((b) => b.timeframe === 'weekly' && !b.isDeleted)!;
+  const placements = await dumpStore(page, 'boardTasks');
+  const rootPlacement = placements.find((bt) => bt.boardId === weekly.id && bt.taskId === rootId && !bt.isDeleted);
+  expect(rootPlacement, 'the weekly places the root (slice 3b: as itself, with an override)').toBeTruthy();
+  expect(rootPlacement!.targetOverride, 'placement override').toBe(25);
+
+  const legacy = {
+    id: 'cccccccc-hubx-0001-task-000000000001',
+    title: 'Run 25 miles',
+    type: 'counting' as const,
+    action: 'Run',
+    unit: 'miles',
+    maxCount: 25,
+    sharedCounterId: rootId,
+    baseline: 0,
+    timeframe: 'weekly' as const,
+    startDate: weekly.startDate as string,
+    endDate: weekly.endDate as string,
+    createdInWizard: true,
+  };
+  await seedTask(page, legacy);
+  await seedBoardTask(page, {
+    id: rootPlacement!.id as string,
+    boardId: weekly.id as string,
+    taskId: legacy.id,
+    row: rootPlacement!.row as number,
+    col: rootPlacement!.col as number,
+  });
+  return legacy;
 }
 
 /** Hub + detail + Profile home all list the counter (and, on detail, the member). */

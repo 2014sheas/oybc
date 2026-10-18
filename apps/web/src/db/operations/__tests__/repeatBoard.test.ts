@@ -336,6 +336,53 @@ describe('repeatBoardAsRecurring', () => {
     expect(template.seedTaskIds).not.toContain('derived-compound-1');
   });
 
+  it('collects manualTaskTargets from overridden placements, keyed by the member id Repeat records (slice 3b, ruling 1)', async () => {
+    const board = buildOneOffBoard();
+    await db.boards.add(board);
+    await seedTask('plain-1');
+    await db.tasks.add({
+      id: 'root-9', userId: USER_ID, title: 'Run 100 km', type: TaskType.COUNTING, action: 'Run', unit: 'km',
+      maxCount: 100, currentCount: 0, isCompleted: false, totalCompletions: 0, totalInstances: 0,
+      createdAt: NOW, updatedAt: NOW, version: 1, isDeleted: false,
+    } as unknown as Task);
+    await db.tasks.add({
+      id: 'legacy-derived', userId: USER_ID, title: 'Run 5 km (this week)', type: TaskType.COUNTING, action: 'Run', unit: 'km',
+      maxCount: 5, sharedCounterId: 'root-10', baseline: 0, currentCount: 0, isCompleted: false, totalCompletions: 0,
+      totalInstances: 0, createdInWizard: true, startDate: '2026-05-06T00:00:00.000',
+      createdAt: NOW, updatedAt: NOW, version: 1, isDeleted: false,
+    } as unknown as Task);
+    await db.tasks.add({
+      id: 'root-10', userId: USER_ID, title: 'Run 50 km', type: TaskType.COUNTING, action: 'Run', unit: 'km', maxCount: 50,
+      currentCount: 0, isCompleted: false, totalCompletions: 0, totalInstances: 0,
+      createdAt: NOW, updatedAt: NOW, version: 1, isDeleted: false,
+    } as unknown as Task);
+    await seedBoardTask(board.id, 'plain-1', 0, 0);
+    await seedBoardTask(board.id, 'root-9', 0, 1, { targetOverride: 30, targetKind: 'discrete', titleOverride: 'Run 30 km!' });
+    // A legacy derived row carrying its own override is recorded under its ROOT id.
+    await seedBoardTask(board.id, 'legacy-derived', 0, 2, { targetOverride: 7, targetKind: 'discrete' });
+
+    const template = await repeatBoardAsRecurring(board, Timeframe.DAILY, USER_ID, 'monday');
+
+    expect(template.manualTaskIds).toEqual(['plain-1', 'root-9', 'root-10']);
+    expect(template.manualTaskTargets).toEqual({
+      'root-9': { target: 30, kind: 'discrete', title: 'Run 30 km!' },
+      'root-10': { target: 7, kind: 'discrete' },
+    });
+    expect((await db.recurringBoardTemplates.get(template.id))?.manualTaskTargets).toEqual(template.manualTaskTargets);
+  });
+
+  it('a board with no overridden placement records no manualTaskTargets at all', async () => {
+    const board = buildOneOffBoard();
+    await db.boards.add(board);
+    await seedTask('t-a');
+    await seedBoardTask(board.id, 't-a', 0, 0);
+
+    const template = await repeatBoardAsRecurring(board, Timeframe.DAILY, USER_ID, 'monday');
+
+    expect(template.manualTaskTargets).toBeUndefined();
+    expect('manualTaskTargets' in (await db.recurringBoardTemplates.get(template.id))!).toBe(false);
+  });
+
   it('survives deleting the board it was repeated from — no has_deleted_tasks (FI2)', async () => {
     // The regression FI2 names: before the amendment the record's manual
     // layer held the DERIVED id, the board delete retired that row, and

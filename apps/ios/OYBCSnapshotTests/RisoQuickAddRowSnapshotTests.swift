@@ -81,7 +81,9 @@ final class RisoQuickAddRowSnapshotTests: XCTestCase {
                 libraryTasks: [root],
                 selectedIds: [],
                 onExistingTaskPicked: { _ in },
-                seedText: seedText
+                seedText: seedText,
+                // The wizard host: it takes the picked counter's goal.
+                onCounterGoalPicked: { _, _ in }
             )
             .padding(Riso.gutter)
         }

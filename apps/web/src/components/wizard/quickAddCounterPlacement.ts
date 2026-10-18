@@ -1,22 +1,24 @@
 import {
   TaskType,
-  Timeframe,
   counterDisplayName,
   isTaskExpired,
   placementGoalForCounter,
-  renderCounterTitle,
+  placementNeedsOverride,
   resolveCountKind,
   sharedCounterRootIds,
+  type PlacementBoard,
+  type PlacementParams,
   type Task,
 } from '@oybc/shared';
 import { taskLookupValues, type TaskLookup } from '../counters/rowCounterTagName';
-import type { PendingTaskPayload } from '../../pages/createPage/useCreateFormState';
 
 /**
  * quickAddCounterPlacement.ts — the pure half of the quick-add / picker match
  * row for a shared counter (docs/SHARED_COUNTER_SETTINGS.md §2; design
- * handoff `PlaceFrame.dc.html`): which rows are counters and the pending
- * LINKED task the no-default row builds. iOS twin:
+ * handoff `PlaceFrame.dc.html`): which rows are counters and the PLACEMENT
+ * PARAMETERS a quick-added / hand-edited counter goal becomes
+ * (TASK_WINDOW_REWORK slice 3b — the wizard places the ROOT itself with a
+ * `targetOverride`; no per-board copy row exists). iOS twin:
  * `QuickAddCounterPlacement.swift`.
  */
 
@@ -67,108 +69,66 @@ export function counterRootIdsIn(lookup: TaskLookup): Set<string> {
   return sharedCounterRootIds(taskLookupValues(lookup));
 }
 
-/** The host board's window, stamped on the pending linked row (as `useLinkedCounterCreate` does). */
-export interface PendingLinkedWindow {
-  timeframe?: Timeframe;
-  startDate?: string;
-  endDate?: string;
-}
-
 /**
- * The pending LINKED counting task the no-default match row builds from a
- * typed goal — the special panel's deferred auto-link shape
- * (`useLinkedCounterCreate`): linked to the root, the root's verb / noun /
- * kind, the typed goal, the title rendered through the root's templates,
- * start-from-zero baseline, wizard-born, and the host board's window fields
- * so that, wherever the row IS persisted (a draft; a repeating board's
- * member list), it expires with its window. On an active one-off save and in
- * Board Edit the planner / placement resolver mint the per-board copy at this
- * goal — a picked LINKED row keeps its own goal — and the persist seams then
- * never write this row (`dropReplacedLinkedPendingRows`). Nothing is written
- * to the root.
+ * The placement parameters a counter ROOT's `goal` on a board window needs:
+ * `{ targetOverride, targetKind }` unless the goal is the root's own AND no
+ * window default would override it at persist (then the plain task is the
+ * placement and there are no parameters). An explicit goal that equals the
+ * root's own while the window default differs IS kept — the planner would
+ * otherwise re-apply the default over the person's choice.
  *
  * @param root - The counter root.
- * @param goal - The typed goal (positive, at the root's kind).
- * @param userId - Owner of the new task.
- * @param id - The new task's id.
- * @param now - ISO8601 creation instant.
- * @param window - The host board's timeframe / dates, when it has them.
- * @returns The payload for `onPendingCreated`.
- */
-export function buildPendingLinkedCounter(
-  root: Task,
-  goal: number,
-  userId: string,
-  id: string,
-  now: string,
-  window: PendingLinkedWindow = {},
-): PendingTaskPayload {
-  const kind = resolveCountKind(root);
-  const task: Task = {
-    id,
-    userId,
-    title: renderCounterTitle(root, goal),
-    type: TaskType.COUNTING,
-    action: root.action ?? '',
-    unit: root.unit ?? '',
-    maxCount: goal,
-    ...(kind !== 'discrete' ? { countKind: kind } : {}),
-    currentCount: 0,
-    sharedCounterId: root.id,
-    baseline: root.currentCount ?? 0,
-    isCompleted: false,
-    totalCompletions: 0,
-    totalInstances: 0,
-    createdAt: now,
-    updatedAt: now,
-    version: 1,
-    isDeleted: false,
-    ...(window.timeframe !== undefined ? { timeframe: window.timeframe } : {}),
-    ...(window.startDate !== undefined ? { startDate: window.startDate } : {}),
-    ...(window.endDate !== undefined ? { endDate: window.endDate } : {}),
-    createdInWizard: true,
-  };
-  return { task, childTasks: [], childLinks: [] };
-}
-
-/**
- * The linked copy a hand-added counter ROOT row edits as: the pending linked
- * task at the board window's default goal (`placementGoalForCounter`), so the
- * row's editor opens on the goal the board will get and a Save swaps the
- * counter for this board-only copy — never writing the root. iOS twin:
- * `QuickAddCounterPlacement.counterRowEditCopy`.
- *
- * @param task - The row's task.
- * @param linkedRootIds - {@link counterRootIdsIn} over the surface's full task set.
- * @param userId - Owner of the copy.
- * @param id - The copy's id.
- * @param now - ISO8601 creation instant.
+ * @param goal - The goal in the root's kind (positive), or null.
  * @param window - The host board's window.
- * @returns The copy's payload, or null when `task` isn't a counter root or no goal resolves.
+ * @returns The parameters to carry, or null for none.
  */
-export function counterRowEditCopy(
-  task: Task,
-  linkedRootIds: ReadonlySet<string>,
-  userId: string,
-  id: string,
-  now: string,
-  window: PendingLinkedWindow & { timeframe: Timeframe },
-): PendingTaskPayload | null {
-  if (!isSharedCounterRoot(task, linkedRootIds)) return null;
-  const goal = placementGoalForCounter(task, window);
-  return goal === null ? null : buildPendingLinkedCounter(task, goal, userId, id, now, window);
+export function counterGoalParams(root: Task, goal: number | null | undefined, window: PlacementBoard): PlacementParams | null {
+  if (goal == null || !(goal > 0)) return null;
+  if (goal === root.maxCount && !placementNeedsOverride(root, window)) return null;
+  return { targetOverride: goal, targetKind: resolveCountKind(root) };
 }
 
 /**
- * Is this pending payload a bare LINKED counting row (the match row's or the
- * special panel's auto-link create) — the only pending shape a mint replaces
- * with the per-board copy, so the persist seams must not write it once it is
- * not among the placed ids. Ordinary pending pool tasks are never dropped.
+ * The parameters quick-adding a counter ROOT carries: the root's goal for the
+ * host window (its timeframe default), when that differs from its own goal.
+ * iOS twin: `QuickAddCounterPlacement.quickAddPlacementParams`.
  *
- * @param payload - A pending payload.
+ * @param root - The counter root.
+ * @param window - The host board's window.
+ * @returns The parameters, or null when the root places as-is.
  */
-export function isLinkedPendingPayload(payload: PendingTaskPayload): boolean {
-  return !!payload.task.sharedCounterId && payload.task.type === TaskType.COUNTING && payload.childTasks.length === 0;
+export function quickAddPlacementParams(root: Task, window: PlacementBoard): PlacementParams | null {
+  return counterGoalParams(root, placementGoalForCounter(root, window), window);
+}
+
+/**
+ * The wizard's per-cell parameters re-stamped for a CHANGED window: a counter
+ * whose override was the OLD window's default follows to the new window's
+ * default; a typed goal stays. iOS twin:
+ * `QuickAddCounterPlacement.restampedPlacementParams`.
+ *
+ * @param params - The wizard's parameters keyed by task id.
+ * @param rootOf - Looks up the counter root for a task id.
+ * @param from - The window the parameters were last stamped for.
+ * @param to - The board's current window.
+ * @returns The same map when nothing moved, else a new one.
+ */
+export function restampPlacementParams(
+  params: ReadonlyMap<string, PlacementParams>,
+  rootOf: (id: string) => Task | undefined,
+  from: PlacementBoard,
+  to: PlacementBoard,
+): ReadonlyMap<string, PlacementParams> {
+  let next: Map<string, PlacementParams> | null = null;
+  for (const [id, p] of params) {
+    const root = rootOf(id);
+    if (!root || p.targetOverride == null || p.targetOverride !== placementGoalForCounter(root, from)) continue;
+    const moved = quickAddPlacementParams(root, to);
+    next ??= new Map(params);
+    if (moved) next.set(id, moved);
+    else next.delete(id);
+  }
+  return next ?? params;
 }
 
 /**
@@ -196,42 +156,4 @@ export function quickAddExcludedIds(selectedIds: ReadonlySet<string>, lookup: Ta
     if (t.sharedCounterId && selectedIds.has(t.id)) excluded.add(t.sharedCounterId);
   }
   return excluded;
-}
-
-/**
- * A pending linked counter copy re-stamped onto the board's CURRENT window,
- * for when the wizard's timeframe / dates change after the pick: the window
- * fields move, and a goal still at the old window's default (never typed)
- * follows to the new window's default. A typed goal is kept; a staged row
- * edit still overrides either at display and persist. iOS twin:
- * `QuickAddCounterPlacement.restampedPendingCounterCopy`.
- *
- * @param payload - Any pending payload.
- * @param root - The counter the copy links to.
- * @param window - The board's current window.
- * @returns The re-stamped payload, or null when it isn't a linked copy or is already on this window.
- */
-export function restampPendingCounterCopy(
-  payload: PendingTaskPayload,
-  root: Task,
-  window: PendingLinkedWindow & { timeframe: Timeframe },
-): PendingTaskPayload | null {
-  if (!isLinkedPendingPayload(payload)) return null;
-  const t = payload.task;
-  if (t.timeframe === window.timeframe && t.startDate === window.startDate && t.endDate === window.endDate) return null;
-  const oldDefault = t.timeframe
-    ? placementGoalForCounter(root, { timeframe: t.timeframe, startDate: t.startDate, endDate: t.endDate })
-    : null;
-  const goal =
-    oldDefault !== null && t.maxCount === oldDefault ? (placementGoalForCounter(root, window) ?? t.maxCount) : t.maxCount;
-  const { timeframe: _tf, startDate: _s, endDate: _e, ...rest } = t;
-  const task: Task = {
-    ...rest,
-    maxCount: goal,
-    title: goal != null ? renderCounterTitle(root, goal) : t.title,
-    timeframe: window.timeframe,
-    ...(window.startDate !== undefined ? { startDate: window.startDate } : {}),
-    ...(window.endDate !== undefined ? { endDate: window.endDate } : {}),
-  };
-  return { ...payload, task };
 }

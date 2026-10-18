@@ -315,33 +315,48 @@ extension BoardWizardViewModel {
         )
     }
 
-    /// Swap one hand-added row for another in place — a counter ROOT row for
-    /// the board-only linked copy its edit saves as, and back again for Undo
-    /// (`QuickAddCounterPlacement.counterRowEditCopy`). The new row keeps the
-    /// old one's position, dice and center mark; the old row's pending payload
-    /// and staged edit leave with it. Web twin: the Tasks step's
-    /// `replaceManualRow`.
+    // MARK: - Placement parameters (TASK_WINDOW_REWORK slice 3b)
+
+    /// Set (or clear, with nil) one cell's placement parameters — a
+    /// quick-added counter's window goal, a hand-edited goal. An empty draft
+    /// clears. Persist writes the survivors onto the `board_tasks` rows.
     ///
     /// - Parameters:
-    ///   - oldId: The hand-added row leaving.
-    ///   - newId: The row taking its place.
-    ///   - payload: `newId`'s pending payload (nil for a library task).
-    func replaceManualTask(_ oldId: String, with newId: String, payload: PendingTaskPayload?) {
-        guard oldId != newId, manualTaskIds.contains(oldId) else { return }
-        let index = poolOrder.firstIndex(of: oldId) ?? poolOrder.count
-        let vary = manualTaskVary[oldId]
-        let wasCenter = centerTaskId == oldId
-        manualTaskIds.remove(oldId)
-        pendingTasks.removeValue(forKey: oldId)
-        stagedEdits.removeValue(forKey: oldId)
-        poolOrder.removeAll { $0 == oldId }
-        manualTaskVary.removeValue(forKey: oldId)
-        if let payload { pendingTasks[newId] = payload }
-        manualTaskIds.insert(newId)
-        if !poolOrder.contains(newId) { poolOrder.insert(newId, at: min(index, poolOrder.count)) }
-        if let vary { manualTaskVary[newId] = vary }
-        recomputeSelectionFromSources()
-        if wasCenter { centerTaskId = newId }
+    ///   - taskId: The cell's task.
+    ///   - params: The parameters, or nil to clear.
+    /// - Returns: The previous value (for Undo).
+    @discardableResult
+    func setPlacementParams(taskId: String, _ params: PlacementParamsDraft?) -> PlacementParamsDraft? {
+        let previous = placementParams[taskId]
+        if let params, !params.isEmpty { placementParams[taskId] = params } else { placementParams.removeValue(forKey: taskId) }
+        return previous
+    }
+
+    /// Re-derive the window-default overrides after the board's timeframe /
+    /// dates changed: only an override that EQUALLED the old window's default
+    /// follows to the new window's (a typed goal is kept). The first call just
+    /// records the window the parameters were derived at.
+    ///
+    /// - Parameter window: The board's current window.
+    func restampPlacementParams(to window: CounterPlacement.PickWindow) {
+        defer { placementParamsWindow = window }
+        guard let old = placementParamsWindow, old != window, !placementParams.isEmpty else { return }
+        let roots = Dictionary(
+            ((try? database.fetchTasks(ids: Array(placementParams.keys))) ?? []).map { ($0.id, $0) },
+            uniquingKeysWith: { first, _ in first }
+        )
+        for (id, params) in placementParams {
+            guard let root = roots[id], let override = params.targetOverride else { continue }
+            let fields = CounterSettings.Fields(task: root)
+            let oldDefault = CounterPlacement.placementGoalForCounter(
+                fields, timeframe: old.timeframe, startDate: old.startDate, endDate: old.endDate
+            )
+            guard override == oldDefault else { continue }
+            let next = CounterPlacement.placementGoalForCounter(
+                fields, timeframe: window.timeframe, startDate: window.startDate, endDate: window.endDate
+            )
+            setPlacementParams(taskId: id, next.flatMap { PlacementParamsDraft.forCounterGoal($0, root: root) })
+        }
     }
 
     // MARK: - Shared commit

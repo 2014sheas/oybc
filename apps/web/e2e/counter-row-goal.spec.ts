@@ -13,8 +13,8 @@ import {
  * Owner bug 2026-10-14 — a shared counter on the wizard's "On your board"
  * list (the counter itself, as a repeating board keeps it) opens its editor
  * with the board window's default goal filled in, offers the dice around
- * that default, and an edit saves as a board-only linked copy — the counter
- * itself is never written. Undo puts the counter back.
+ * that default, and an edit saves as this board's placement goal (slice 3b) — the
+ * counter itself is never written. Undo puts the goal back.
  */
 
 const ROOT = 'eeeeeeee-crg0-0001-task-000000000001';
@@ -38,7 +38,7 @@ test.describe('Wizard — a counter row on the board', () => {
     });
   });
 
-  test('editor opens on the window default, dice is offered, an edit lands on a copy and Undo restores the counter', async ({ page }) => {
+  test('editor opens on the window default, dice is offered, an edit lands on the placement and Undo restores the goal', async ({ page }) => {
     await openCreateHub(page);
     await startRecurringWizard(page);
     await page.getByLabel(/board name/i).fill('Counter Row Board');

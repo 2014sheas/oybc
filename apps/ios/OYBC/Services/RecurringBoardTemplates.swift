@@ -345,6 +345,8 @@ struct RepeatBoardTemplateInput {
     let poolIds: [String]
     /// Always empty — nothing to remove from an empty pool union.
     let removedTaskIds: [String]
+    /// Slice 3b — frozen per-member targets of the repeated placements (nil when none).
+    var manualTaskTargets: [String: ManualTaskTarget]? = nil
 }
 
 /// Builds the `RepeatBoardTemplateInput` for "Repeat this board…".
@@ -371,6 +373,8 @@ struct RepeatBoardTemplateInput {
 ///     — `.custom`/`.indefinite` never reach here; the picker doesn't offer
 ///     them).
 ///   - weekStartDay: `"monday"` / `"sunday"` — only affects `.weekly`.
+///   - manualTaskTargets: Slice 3b — the repeated placements' frozen
+///     targets / titles, keyed by member id; written only when non-empty.
 /// - Returns: `nil` only on an unparseable `boardStartDate` (should never
 ///   happen for a live board).
 func buildRepeatBoardTemplateInput(
@@ -381,7 +385,8 @@ func buildRepeatBoardTemplateInput(
     boardStartDate: String,
     boardTaskIds: [String],
     cadence: Timeframe,
-    weekStartDay: String
+    weekStartDay: String,
+    manualTaskTargets: [String: ManualTaskTarget] = [:]
 ) -> RepeatBoardTemplateInput? {
     guard let anchor = parseISO8601Date(boardStartDate) else { return nil }
     guard let window = computeTimeframeBoundaries(
@@ -405,6 +410,7 @@ func buildRepeatBoardTemplateInput(
         lastSpawnedWindowKey: windowKey,
         seedTaskIds: boardTaskIds,
         poolIds: [],
-        removedTaskIds: []
+        removedTaskIds: [],
+        manualTaskTargets: manualTaskTargets.isEmpty ? nil : manualTaskTargets
     )
 }

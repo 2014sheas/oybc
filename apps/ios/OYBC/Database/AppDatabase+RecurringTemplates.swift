@@ -419,12 +419,11 @@ extension AppDatabase {
                     selectedIds = taskIds
                 }
 
-                // Board Sources §Member rules (B2, docs/BOARD_SOURCES.md
-                // §Member rules — *Resolution pipeline* steps 3/5): the picked
-                // ids are resolved against this window's rules and any
-                // window-stamped derived counter / derived compound they call
-                // for is MINTED HERE — before the `board_tasks` rows below
-                // point at it, in this same transaction.
+                // Board Sources §Member rules (docs/BOARD_SOURCES.md §Member rules
+                // — *Resolution pipeline* step 3; slice 3b): the picked ids are
+                // resolved against this window's rules into PLACEMENT PARAMETERS
+                // — nothing is minted; each `board_tasks` row below points at the
+                // member itself and carries its planned target / child targets.
                 // Auto targets pro-rate a member's goal by the ratio of the
                 // SOURCE board's window to this one, so every supplied id —
                 // and every child of a compound member, which is looked up by
@@ -445,19 +444,8 @@ extension AppDatabase {
                         }
                     }
                 }
-                let roots = AppDatabase.candidateRootIds(
-                    selectedIds: selectedIds,
-                    tasksById: tasksById,
-                    childrenByCompoundId: childrenByCompound
-                )
-                let rootEvents = roots.isEmpty
-                    ? []
-                    : try TaskEvent.filter(roots.contains(Column("taskId"))).fetchAll(db)
-                let mintResult = try AppDatabase.planAndMintDerivedRows(
+                var planned = try AppDatabase.planPlacements(
                     db: db,
-                    boardId: boardId,
-                    userId: template.userId,
-                    now: now,
                     selectedIds: selectedIds,
                     supplies: ruleSupplies,
                     manualTaskIds: manualTaskIds,
@@ -472,25 +460,26 @@ extension AppDatabase {
                     mode: .recurring,
                     tasksById: tasksById,
                     childrenByCompoundId: childrenByCompound,
-                    sourceWindowByTaskId: sourceWindowByTaskId,
-                    events: rootEvents
+                    sourceWindowByTaskId: sourceWindowByTaskId
                 )
-                // Fold the minted rows into the snapshots the placement and the
-                // derivation pass below read from. Read BACK rather than
-                // trusting the built row: RB3 skips an already-live row, so
-                // what is STORED is the authority for what the board derives.
-                for row in mintResult.minted.tasks {
-                    if let stored = try Task.fetchOne(db, key: row.id) { tasksById[row.id] = stored }
-                }
-                for link in mintResult.minted.links {
-                    guard let stored = try CompoundChild.fetchOne(db, key: link.id),
-                          !stored.isDeleted else { continue }
-                    childrenByCompound[stored.compoundTaskId, default: []].append(stored)
+                // Ruling 1 (slice 3b): a hand-added member Repeat froze keeps its
+                // frozen target / kind / title — it wins over the planner's
+                // result for that member; sourced members re-plan from rules.
+                let manualSet = Set(manualTaskIds)
+                for (index, id) in selectedIds.enumerated() where index < planned.count {
+                    guard manualSet.contains(id), let frozen = template.manualTaskTargets?[id] else { continue }
+                    planned[index].targetOverride = frozen.target
+                    planned[index].targetKind = frozen.kind
+                    planned[index].titleOverride = frozen.title
                 }
 
                 let orderedPool: [Task] = selectedIds.enumerated().compactMap { index, id in
-                    tasksById[index < mintResult.placementIds.count ? mintResult.placementIds[index] : id]
+                    tasksById[index < planned.count ? planned[index].taskId : id] ?? tasksById[id]
                 }
+                // The first cell to place a task keeps its parameters (a legacy
+                // derived row resolves to its root, so two members can collide).
+                var plannedByTaskId: [String: BoardSources.PlannedPlacement] = [:]
+                for p in planned where plannedByTaskId[p.taskId] == nil { plannedByTaskId[p.taskId] = p }
 
                 let placement = buildSpawnPlacement(template: template, poolTasks: orderedPool)
 
@@ -526,8 +515,8 @@ extension AppDatabase {
                 // Shared with the wizard-save path so the `isCenter` rule
                 // stays identical: only a `.chosen` centre task is flagged
                 // (a `.none` centre holds an ordinary task, not a FREE cell).
-                // Two members that share a shared-counter root collapse onto
-                // ONE derived counter, so the same id can reach the placement
+                // Two members can resolve to ONE task (a legacy derived row
+                // resolves to its root), so the same id can reach the placement
                 // twice. Counter-family exclusivity already forbids that at
                 // selection time, making this belt-and-braces — but a
                 // duplicate `taskId` on one board trips the
@@ -555,7 +544,7 @@ extension AppDatabase {
                         return false
                     }
                     return true
-                }
+                }.map { row in plannedByTaskId[row.taskId].map { row.withPlanned($0) } ?? row }
 
                 // Windowed Completion (docs/WINDOWED_COMPLETION.md §What this
                 // closes — respawn-bleed row): run the derivation pass at spawn so
@@ -566,15 +555,11 @@ extension AppDatabase {
                 // output" now holds from the first row written. Mirrors the web
                 // `spawnTemplateBoard` change.
                 // (`childrenByCompound` is hoisted above the supply resolution
-                // — the member-rules plan needs it too; the minted derived
-                // links were folded into it, so a derived compound evaluates
-                // against its own parts here.)
+                // — the member-rules plan needs it too.)
                 let windowContext = try AppDatabase.buildWindowContext(db: db)
                 // Reuse the `tasksById` map read at the top of this closure for
-                // source resolution — the only `tasks` writes in between are
-                // the member-rule mint's, and those rows were read back into
-                // the map above, so it is still an accurate snapshot for the
-                // derivation pass (mirrors web's reuse of `tasksById`).
+                // source resolution — nothing writes `tasks` in between, so it
+                // is still an accurate snapshot for the derivation pass.
                 let taskById: [String: Task] = tasksById
                 let allBoardsForDerivation = try Board
                     .filter(Column("isDeleted") == false)
@@ -754,6 +739,7 @@ extension AppDatabase {
 
             var seen = Set<String>()
             var boardTaskIds: [String] = []
+            var manualTaskTargets: [String: ManualTaskTarget] = [:]
             for bt in placements {
                 let task = placedTaskById[bt.taskId]
                 // Board Sources §Member rules (B2, RB4) — a per-window derived
@@ -767,10 +753,11 @@ extension AppDatabase {
                 // board (RB5), so a record naming it would be skipped as
                 // `.hasDeletedTasks` for every future window the day the user
                 // deletes the board they repeated. The root is durable library
-                // content and is what each new window re-mints from anyway. (Slice
-                // 3a: a root placed with a `targetOverride` is recorded by its root id
-                // the same way; the template has no per-task target field until 3b.) A
-                // root that is itself missing or deleted contributes no member.
+                // content and is what each new window re-plans from anyway. A root
+                // placed with a `targetOverride` already carries its own id; its
+                // frozen override / title is collected below into the record's
+                // `manualTaskTargets` (slice 3b, ruling 1). A root that is itself
+                // missing or deleted contributes no member.
                 var memberId = bt.taskId
                 if let task,
                    BoardSources.isWindowStampedDerived(task),
@@ -780,6 +767,16 @@ extension AppDatabase {
                 }
                 guard seen.insert(memberId).inserted else { continue }
                 boardTaskIds.append(memberId)
+                // Slice 3b (ruling 1): Repeat copies a placement's frozen override.
+                let keyTask = memberId == bt.taskId ? task : rootById[memberId]
+                let frozen = bt.targetOverride ?? (bt.titleOverride != nil ? keyTask?.maxCount : nil)
+                if let keyTask, let frozen, frozen > 0 {
+                    manualTaskTargets[memberId] = ManualTaskTarget(
+                        target: frozen,
+                        kind: bt.targetKind ?? resolveCountKind(keyTask.countKind),
+                        title: bt.titleOverride
+                    )
+                }
             }
 
             guard let input = buildRepeatBoardTemplateInput(
@@ -790,7 +787,8 @@ extension AppDatabase {
                 boardStartDate: board.startDate,
                 boardTaskIds: boardTaskIds,
                 cadence: cadence,
-                weekStartDay: weekStartDay
+                weekStartDay: weekStartDay,
+                manualTaskTargets: manualTaskTargets
             ) else { return }
 
             let template = RecurringBoardTemplate(
@@ -813,6 +811,7 @@ extension AppDatabase {
                 // and gives the member-rules readers a real empty map.
                 sources: [],
                 manualTaskVary: [:],
+                manualTaskTargets: input.manualTaskTargets,
                 lastSpawnedWindowKey: input.lastSpawnedWindowKey,
                 isActive: input.isActive,
                 createdAt: now,

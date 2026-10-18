@@ -2,27 +2,22 @@
  * previewDerived.ts — the wizard Preview's member-rule DRY RUN (B3 RC6,
  * docs/BOARD_SOURCES.md §Member rules).
  *
- * Step 3 previews the board a person is about to create. Since B2 the
- * persist path no longer places every picked task verbatim: a counting
- * member carrying a target/vary rule is replaced by a window-stamped
- * DERIVED counter whose `maxCount` is the rolled target, and a One-square
- * compound with re-targeted parts is replaced by a derived compound. Left
- * alone, the Preview would show "Run 30 miles" for a cell the board will
- * actually carry as "Run 24 miles".
+ * Step 3 previews the board a person is about to create. The persist path
+ * does not place every picked task verbatim: a counting member carrying a
+ * target/vary rule, or a counter root with a window default, is placed with
+ * PLACEMENT PARAMETERS (`targetOverride` / `titleOverride`, TASK_WINDOW_REWORK
+ * slice 3b). Left alone, the Preview would show "Run 30 miles" for a cell the
+ * board will actually carry as "Run 24 miles".
  *
  * So the Preview runs the SAME planner (`planDerivedTasks`) over the same
- * inputs and re-labels each cell the rules would re-mint with a synthetic
- * stand-in `Task` — a display object, never a row:
+ * inputs and re-labels each cell whose placement carries parameters with
+ * `withPlacementParams` — a synthetic stand-in `Task`, a display object,
+ * never a row:
  *
- * - **no DB writes** — nothing here touches Dexie or the sync queue; the
- *   real mint happens inside the board-create transaction
- *   (`db/operations/derivedCounters.ts`);
- * - **`baselineByRootId` is `{}`** — the baseline only affects a derived
- *   counter's stored starting count, never the target or title this
- *   renders;
+ * - **no DB writes** — nothing here touches Dexie or the sync queue;
  * - **the roll is a SAMPLE** — the Preview seeds the planner from the
  *   Shuffle nonce (so one nonce always previews the same numbers and
- *   Shuffle visibly re-rolls), while persist mints with the platform rng.
+ *   Shuffle visibly re-rolls), while persist rolls with the platform rng.
  *   The board a person gets carries a fresh roll inside the same range.
  *
  * One-off boards only. A repeating board's Preview is the 5b summary card —
@@ -33,9 +28,11 @@
 import {
   makeSeededRng,
   planDerivedTasks,
+  withPlacementParams,
   type BoardWindow,
   type CompoundChild,
   type ExpandedSupply,
+  type PlacementParams,
   type PlanTask,
   type VaryLevel,
 } from '@oybc/shared';
@@ -43,13 +40,6 @@ import type { BoardWizardController } from '../../pages/createHub/useBoardWizard
 import type { TaskLibrary } from '../../pages/createPage/useTaskLibrary';
 import { resolveWizardDates } from './wizardDates';
 import type { WizardPlacement } from './wizardPersist';
-
-/**
- * Board id used when the wizard has no draft row yet. Derived ids are a
- * pure function of `(boardId, rootTaskId)` and this dry run never writes
- * one, so the value only has to be stable within a render.
- */
-const PREVIEW_BOARD_ID = 'preview';
 
 /**
  * The id→task universe the planner reads: the live library, this session's
@@ -118,21 +108,19 @@ function previewWindow(controller: BoardWizardController): BoardWindow {
 }
 
 /**
- * Replace every placement cell the member rules would re-mint with a
- * synthetic stand-in carrying the rolled target and its generated title.
+ * Re-label every placement cell whose planned placement carries parameters
+ * with a synthetic stand-in showing the rolled target and its title.
  *
  * Pure and side-effect free. The planner is fed the placement's own order
- * (nulls skipped), so cell *i*'s task maps positionally to `placementIds[i]`
- * — a replaced cell keeps its place, exactly as the persist path places it.
+ * (nulls skipped), so cell *i*'s task maps positionally to `placements[i]`.
+ * The wizard's explicit per-cell parameters (`controller.placementParams`)
+ * win over the planner's, exactly as the persist path merges them.
  *
- * The stand-in copies the original task and overrides the four fields a
- * person can see change — `title`, `maxCount`, `action`, `unit` — plus the
- * window-stamped link (`sharedCounterId`/`startDate`/`endDate`/
- * `createdInWizard`) so its count resolves from the root's events in THIS
- * board's window, exactly as the minted row will. Its `id`
- * stays the ORIGINAL's — see the comment at the swap; that is what keeps the
- * Save handler writing real `board_tasks` rows. Derived COMPOUNDS are
- * deliberately not stood in for either.
+ * The stand-in is `withPlacementParams(task, params, root)` and keeps the
+ * ORIGINAL task's `id`. That is not cosmetic: the Save handler persists the
+ * user's arranged order, and `persistWizardBoardRows` re-plans from
+ * `placement.map((t) => t.id)`. A compound's `childTargets` change nothing a
+ * cell renders, so a compound needs no stand-in.
  *
  * @param placement - The placement `buildWizardPlacement` just computed.
  * @param controller - Live wizard state (supplies, rules, window, manual ids).
@@ -158,12 +146,11 @@ export function applyPreviewDerivedCells(
   if (orderedIds.length === 0) return placement;
 
   const manualTaskVary: Record<string, VaryLevel> = controller.manualTaskVary ?? {};
-  const { placementIds, derivedTasks } = planDerivedTasks({
+  const { placements } = planDerivedTasks({
     selectedIds: orderedIds,
     supplies,
     manualTaskIds: Array.from(controller.manualTaskIds),
     manualTaskVary,
-    boardId: controller.draftBoardId ?? PREVIEW_BOARD_ID,
     window: previewWindow(controller),
     // One-off only — the Preview's cell grid doesn't exist for a repeating
     // board, and the caller gates on `!controller.isRecurring`.
@@ -171,68 +158,29 @@ export function applyPreviewDerivedCells(
     tasksById,
     childrenByCompoundId,
     sourceWindowByTaskId: sourceWindowByTaskId(controller, supplies, childrenByCompoundId),
-    // Display only — a baseline shifts a derived counter's starting count,
-    // never the target or the title this renders.
-    baselineByRootId: {},
     rng,
   });
 
-  if (derivedTasks.length === 0) return placement;
-
-  // ── What a stand-in may and may not change ────────────────────────────
-  //
-  // The stand-in keeps the ORIGINAL task's `id`. That is not cosmetic: the
-  // Save handler persists `placementRef.current` (the user's arranged
-  // order), and `persistWizardBoardRows` re-derives its own selection from
-  // `placement.map((t) => t.id)` before minting the real derived rows. A
-  // preview-only derived id fed back in would miss every `tasksById` lookup
-  // and be written STRAIGHT into `board_tasks` — a placement row pointing at
-  // a task that does not exist. Nothing renders a cell's id, so keeping the
-  // original costs nothing and keeps the preview and the persist path
-  // reading the same task graph (windowed events, compound children, the
-  // staged-edit overlay all still resolve).
-  //
-  // Counting members only, likewise deliberately. A One-square compound that
-  // re-targets its parts is ALSO replaced at mint time (by a derived
-  // compound), but nothing about that is visible on a CELL: same title, same
-  // type, same operator — only its children's targets differ, and a cell
-  // renders none of them.
-  const counterById = new Map(derivedTasks.map((d) => [d.id, d]));
-  const rolledByOriginalId = new Map<string, (typeof derivedTasks)[number]>();
+  const paramsByOriginalId = new Map<string, PlacementParams>();
   orderedIds.forEach((id, i) => {
-    const next = placementIds[i];
-    if (next === undefined || next === id) return;
-    const counter = counterById.get(next);
-    if (counter !== undefined) rolledByOriginalId.set(id, counter);
+    const planned = placements[i];
+    if (planned === undefined) return;
+    const { taskId: _taskId, ...planParams } = planned;
+    const explicit = controller.placementParams?.get(id);
+    const merged: PlacementParams = explicit ? { ...planParams, ...explicit } : planParams;
+    if (merged.targetOverride != null || merged.titleOverride != null) paramsByOriginalId.set(id, merged);
   });
-  if (rolledByOriginalId.size === 0) return placement;
+  if (paramsByOriginalId.size === 0) return placement;
 
   return placement.map((task) => {
     if (task === null) return task;
-    const counter = rolledByOriginalId.get(task.id);
-    if (counter === undefined) return task;
-    return {
-      ...task,
-      title: counter.title,
-      maxCount: counter.maxCount,
-      countKind: counter.countKind,
-      action: counter.action || undefined,
-      unit: counter.unit || undefined,
-      // The stand-in IS the counter the persist path will mint: a
-      // window-stamped derived row on THIS board's window. So it resolves the
-      // way the real cell will (`resolveLinkedCounterDisplay` — the ROOT's
-      // increments inside `[startDate, endDate]`), never an original's own
-      // window (a pulled member that is itself window-stamped carries its
-      // SOURCE board's window) and never a root's lifetime. The mirror
-      // columns are zeroed: they are not read for a window-stamped row, and a
-      // stale pair must not leak into any lifetime reader.
-      sharedCounterId: counter.rootTaskId,
-      startDate: counter.startDate ?? undefined,
-      endDate: counter.endDate ?? undefined,
-      createdInWizard: true,
-      currentCount: 0,
-      baseline: 0,
-    };
+    const params = paramsByOriginalId.get(task.id);
+    if (params === undefined) return task;
+    // A legacy derived row planned onto its ROOT previews the root's task.
+    const root = task.sharedCounterId ? tasksById[task.sharedCounterId] : undefined;
+    // The stand-in previews UNSTARTED: the mirror columns of the original (a
+    // legacy row carries another window's progress) are not this board's.
+    return { ...withPlacementParams(task, params, root ?? task), currentCount: 0, baseline: 0 };
   });
 }
 

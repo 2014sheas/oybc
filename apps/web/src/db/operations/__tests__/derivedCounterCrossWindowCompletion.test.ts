@@ -5,7 +5,6 @@ import {
   TaskType,
   Timeframe,
   computeBoardGrid,
-  derivedTaskId,
   type Board,
   type BoardSource,
   type Task,
@@ -172,19 +171,16 @@ async function createDailyPulling(weeklyId: string, member: Task): Promise<strin
 }
 
 async function completeDailyAndAssertWeekly(dailyId: string, weeklyId: string, weeklyTaskId: string) {
-  const dId = derivedTaskId(dailyId, ROOT);
-  const d = (await db.tasks.get(dId))!;
-  // Precondition: the daily's member IS a distinct minted row with a smaller target.
-  expect(d).toBeDefined();
-  expect(d.sharedCounterId).toBe(ROOT);
-  expect(d.maxCount).toBe(3); // ceil(20 * 1 / 7)
+  // Precondition (slice 3b): the daily places the ROOT itself with a smaller,
+  // pro-rated override — no minted row.
   const dailyBt = (await db.boardTasks.where('boardId').equals(dailyId).toArray())[0];
-  expect(dailyBt.taskId).toBe(dId);
+  expect(dailyBt.taskId).toBe(ROOT);
+  expect(dailyBt.targetOverride).toBe(3); // ceil(20 * 1 / 7)
+  expect(await db.tasks.count()).toBe(1);
 
-  // Log on the daily cell until it completes (the play surface routes a
-  // derived cell to incrementSharedCounter(root)).
+  // Log on the daily cell until it completes (the play surface routes the
+  // cell to incrementSharedCounter(root)).
   await incrementSharedCounter(ROOT, 3);
-  expect((await db.tasks.get(dId))!.isCompleted).toBe(true);
   expect((await db.boards.get(dailyId))!.completedTasks).toBe(1);
 
   // Weekly: 3 of 20 this week — must NOT be complete.
@@ -221,10 +217,10 @@ describe('REPRO derived counter: completing the daily must not complete the week
   });
 
   it.each([0, 25])(
-    'variant B (history=%i): weekly member is a window-stamped DERIVED counter (target 20) pulled from a monthly',
+    'variant B (history=%i): weekly member is the ROOT placed with a target-20 override, pulled from a monthly',
     async (history) => {
       await seedRoot(history);
-      // Make the root's goal larger than the weekly's so the weekly member is minted.
+      // Make the root's goal larger than the weekly's so the weekly member carries an override.
       await db.tasks.update(ROOT, { maxCount: 80, isCompleted: history >= 80 });
       const monthly: Board = {
         id: MONTH_SRC,
@@ -264,13 +260,12 @@ describe('REPRO derived counter: completing the daily must not complete the week
       const weeklyId = await persistWizardBoardRows(
         input({ placement: wp, sources: [boardSource(MONTH_SRC, { [ROOT]: { target: 20 } })] }),
       );
-      const wId = derivedTaskId(weeklyId, ROOT);
-      const wRow = (await db.tasks.get(wId))!;
-      expect(wRow.maxCount).toBe(20);
-      expect(wRow.isCompleted).toBe(false);
+      const wBt = (await db.boardTasks.where('boardId').equals(weeklyId).toArray())[0];
+      expect(wBt).toMatchObject({ taskId: ROOT, targetOverride: 20 });
+      expect(await db.tasks.count()).toBe(1);
 
-      const dailyId = await createDailyPulling(weeklyId, wRow);
-      const r = await completeDailyAndAssertWeekly(dailyId, weeklyId, wId);
+      const dailyId = await createDailyPulling(weeklyId, (await db.tasks.get(ROOT))!);
+      const r = await completeDailyAndAssertWeekly(dailyId, weeklyId, ROOT);
       expect(r.weeklyTask.isCompleted).toBe(false);
       expect(r.cell).toBeDefined();
       expect(r.cell!.isCompleted).toBe(false);
@@ -375,8 +370,8 @@ describe('REPRO (bug): daily log completes a PAST-window, unsealed weekly board 
           sources: [boardSource(MONTH_SRC, { [ROOT]: { target: 20 } })],
         }),
       );
-      weeklyTaskId = derivedTaskId(weeklyId, ROOT);
-      expect((await db.tasks.get(weeklyTaskId))!.maxCount).toBe(20);
+      weeklyTaskId = ROOT;
+      expect((await db.boardTasks.where('boardId').equals(weeklyId).toArray())[0].targetOverride).toBe(20);
     }
     // 17 of 20 logged INSIDE last week's window — the weekly goal is NOT met.
     vi.setSystemTime(new Date('2026-09-16T18:00:00.000'));
@@ -402,12 +397,11 @@ describe('REPRO (bug): daily log completes a PAST-window, unsealed weekly board 
     const dailyId = await createDailyPulling(weeklyId, member);
     await betweenPullAndLog();
     vi.setSystemTime(NOW); // 2026-09-23 — three days after the weekly ended
-    const dId = derivedTaskId(dailyId, ROOT);
-    const d = (await db.tasks.get(dId))!;
-    expect(d.maxCount).toBeLessThan(20); // a distinct, pro-rated daily row
-    expect((await db.boardTasks.where('boardId').equals(dailyId).toArray())[0].taskId).toBe(dId);
-    await incrementSharedCounter(ROOT, d.maxCount!); // complete the daily square
-    expect((await db.tasks.get(dId))!.isCompleted).toBe(true);
+    const dailyBt = (await db.boardTasks.where('boardId').equals(dailyId).toArray())[0];
+    expect(dailyBt.taskId).toBe(ROOT);
+    expect(dailyBt.targetOverride).toBeLessThan(20); // a pro-rated daily override
+    await incrementSharedCounter(ROOT, dailyBt.targetOverride!); // complete the daily square
+    expect((await db.boards.get(dailyId))!.completedTasks).toBe(1);
     return dailyId;
   }
 
@@ -424,38 +418,32 @@ describe('REPRO (bug): daily log completes a PAST-window, unsealed weekly board 
     expect(w.board.completedTasks).toBe(0);
   });
 
-  it('weekly square = window-stamped DERIVED counter (target 20): stays incomplete after a post-window daily log', async () => {
+  it('weekly square = ROOT placed with a target-20 override: stays incomplete after a post-window daily log', async () => {
     const { weeklyId, weeklyTaskId } = await buildPastWeekly('derived');
     await logTodayOnDaily(weeklyId, (await db.tasks.get(weeklyTaskId))!);
     const w = await weeklyCellState(weeklyId);
     // Failed on dev: propagateIncrement latched the weekly row (currentCount 20 − baseline 0 >= 20).
-    // Now: the ended row is frozen (no latch write) AND the kernel reads the
-    // root's in-window sum (17 < 20), so both the row and the cell stay incomplete.
-    expect(w.taskById[weeklyTaskId].isCompleted).toBe(false);
+    // Now the kernel reads the root's in-window sum (17 < 20), so the cell stays incomplete.
     expect(w.cells.find((c) => c.taskId === weeklyTaskId)!.isCompleted).toBe(false);
     expect(w.board.completedTasks).toBe(0);
     // Pin the KERNEL too: a stale latch (a pre-freeze client's write, synced
     // in) must not green the cell — completion comes from the root's events.
-    await db.tasks.update(weeklyTaskId, { isCompleted: true });
+    await db.tasks.update(weeklyTaskId, { isCompleted: true, currentCount: 20 });
     const stale = await weeklyCellState(weeklyId);
     expect(stale.cells.find((c) => c.taskId === weeklyTaskId)!.isCompleted).toBe(false);
     expect(stale.completedTasks).toBe(0);
   });
 
-  it('SEALED weekly with a DERIVED square: a pull-path re-derive after the daily log keeps the frozen record (audit finding #1)', async () => {
+  it('SEALED weekly with an OVERRIDDEN root square: a pull-path re-derive after the daily log keeps the frozen record (audit finding #1)', async () => {
     const { weeklyId, weeklyTaskId } = await buildPastWeekly('derived');
     await logTodayOnDaily(weeklyId, (await db.tasks.get(weeklyTaskId))!, async () => {
       vi.setSystemTime(new Date('2026-09-22T19:00:00.000')); // past the 42h backstop
       expect(await sealBoard(weeklyId)).toBe(true);
       expect((await db.boards.get(weeklyId))!.sealedCompletedCells ?? []).toEqual([]);
     });
-    // On dev the weekly row latched from this post-seal log. Now the ended row
-    // is frozen (propagation skips it), so the latch is never written — and
-    // even if it were, the re-derive below would not read it.
-    expect((await db.tasks.get(weeklyTaskId))!.isCompleted).toBe(false);
     // Pin the KERNEL too, not just the freeze: a latch written by a pre-freeze
     // client and synced in must still not green the sealed record.
-    await db.tasks.update(weeklyTaskId, { isCompleted: true });
+    await db.tasks.update(weeklyTaskId, { isCompleted: true, currentCount: 20 });
     await db.transaction(
       'rw',
       [db.boards, db.boardTasks, db.tasks, db.compoundChildren, db.taskEvents, db.syncQueue],

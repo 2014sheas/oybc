@@ -207,6 +207,16 @@ extension AppDatabase {
             try db.execute(sql: "ALTER TABLE board_tasks ADD COLUMN childTargets TEXT")
             try db.execute(sql: "ALTER TABLE board_tasks ADD COLUMN titleOverride TEXT")
         }
+
+        // v46: Task/window rework slice 3b — `manualTaskTargets` on templates: a
+        // hand-added task's frozen target / kind / title, copied by Repeat from
+        // the placement and applied by spawn. Nullable TEXT (sorted-keys-free
+        // JSON object, like v31's `manualTaskVary`); no backfill, no index.
+        // Synced under the existing per-row LWW as a clearable field. Web: no
+        // Dexie bump (unindexed).
+        migrator.registerMigration("v46") { db in
+            try db.execute(sql: "ALTER TABLE recurring_board_templates ADD COLUMN manualTaskTargets TEXT")
+        }
     }
 }
 

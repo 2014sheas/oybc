@@ -36,6 +36,10 @@ struct SquaresDraftCell {
     /// way on iOS: its child tasks + links ride in the payload and are
     /// inserted at Save (web persists a picker-born compound immediately).
     var pending: PendingTaskPayload?
+    /// TASK_WINDOW_REWORK slice 3b — the placement parameters the picker staged
+    /// (a counter's window goal, a typed goal) for this pick; written onto the
+    /// placement at Save. nil for an existing placement that keeps its own.
+    var placement: PlacementParamsDraft? = nil
     /// Draft lock state (`Lock in place` / `Unlock`). For a staged add this
     /// is written directly by `addBoardTaskToBoard(isLocked:)` at Save — it
     /// is never diffed against `originalIsLocked` for that case (see

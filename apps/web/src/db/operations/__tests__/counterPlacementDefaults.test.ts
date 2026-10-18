@@ -10,8 +10,8 @@ import { ROOT, SEPT, USER, boardRow, clearAll, hubLinked, placement, rootTask } 
  * Board Edit placement choke points (add + Replace) place a counter ROOT as-is
  * and carry the counter's default goal for the board's timeframe as the
  * placement's `targetOverride` + `targetKind` (no per-board copy is minted); a
- * linked task is placed with no parameters. The wizard's hand-added branch
- * (persist) still mints until slice 3b.
+ * linked task is placed with no parameters. Slice 3b: the wizard's persist
+ * (hand-added and pool-pulled roots) places parameters the same way.
  */
 
 const SEPT_ROW = derivedTaskId(SEPT.id, ROOT);
@@ -128,7 +128,7 @@ describe('Wizard hand-add — a counter root with a timeframe default', () => {
     manualTaskIds: [ROOT],
   });
 
-  it('mints the copy at the weekly default with the templated title', async () => {
+  it('places the root AS-IS with the weekly default as its override; the square reads the templated title', async () => {
     const root = rootTask({
       timeframeGoals: { weekly: 7 },
       titleTemplateSingular: 'Run #N mile',
@@ -139,14 +139,13 @@ describe('Wizard hand-add — a counter root with a timeframe default', () => {
     const boardId = await persistWizardBoardRows(input(root));
 
     const placed = await db.boardTasks.where('boardId').equals(boardId).toArray();
-    const copyId = derivedTaskId(boardId, ROOT);
-    expect(placed.map((p) => p.taskId)).toEqual([copyId]);
-    const row = (await db.tasks.get(copyId))!;
-    expect(row.maxCount).toBe(7);
-    expect(row.title).toBe('Run 7 mi');
+    expect(placed.map((p) => p.taskId)).toEqual([ROOT]);
+    expect(placed[0]).toMatchObject({ targetOverride: 7, targetKind: 'discrete' });
+    expect(await db.tasks.count()).toBe(1);
+    expect(withPlacementParams(root, placed[0]).title).toBe('Run 7 mi');
   });
 
-  it('a POOL-pulled root mints at its weekly default too (a source pull and a hand-add agree)', async () => {
+  it('a POOL-pulled root takes its weekly default too (a source pull and a hand-add agree)', async () => {
     const root = rootTask({ timeframeGoals: { weekly: 3 }, titleTemplatePlural: 'Run #N mi' });
     await db.tasks.put(root);
     await db.pools.add({
@@ -160,11 +159,39 @@ describe('Wizard hand-add — a counter root with a timeframe default', () => {
       sources: [{ sourceId: 'pool-1', kind: 'pool', min: 0, max: null, excludedTaskIds: [], filter: 'all' }],
     });
 
-    const copyId = derivedTaskId(boardId, ROOT);
     const placed = await db.boardTasks.where('boardId').equals(boardId).toArray();
-    expect(placed.map((p) => p.taskId)).toEqual([copyId]);
-    expect((await db.tasks.get(copyId))?.maxCount).toBe(3);
-    expect((await db.tasks.get(copyId))?.title).toBe('Run 3 mi');
+    expect(placed.map((p) => p.taskId)).toEqual([ROOT]);
+    expect(placed[0]).toMatchObject({ targetOverride: 3, targetKind: 'discrete' });
+    expect(await db.tasks.count()).toBe(1);
+    expect(withPlacementParams(root, placed[0]).title).toBe('Run 3 mi');
+  });
+
+  it('an explicit wizard parameter wins over the planner\'s default for that cell', async () => {
+    const root = rootTask({ timeframeGoals: { weekly: 7 }, titleTemplatePlural: 'Run #N mi' });
+    await db.tasks.put(root);
+
+    const boardId = await persistWizardBoardRows({
+      ...input(root),
+      placementParams: { [ROOT]: { targetOverride: 12, targetKind: 'discrete' } },
+    });
+
+    const placed = await db.boardTasks.where('boardId').equals(boardId).toArray();
+    expect(placed[0]).toMatchObject({ taskId: ROOT, targetOverride: 12, targetKind: 'discrete' });
+  });
+
+  it('a DRAFT save places the original id with no parameters (planned at the activating save)', async () => {
+    const root = rootTask({ timeframeGoals: { weekly: 7 } });
+    await db.tasks.put(root);
+
+    const boardId = await persistWizardBoardRows({
+      ...input(root),
+      status: 'draft',
+      placementParams: { [ROOT]: { targetOverride: 12, targetKind: 'discrete' } },
+    });
+
+    const placed = await db.boardTasks.where('boardId').equals(boardId).toArray();
+    expect(placed.map((p) => p.taskId)).toEqual([ROOT]);
+    expect(placed[0].targetOverride).toBeUndefined();
   });
 
   it('no defaults: the root itself is placed, exactly as before', async () => {

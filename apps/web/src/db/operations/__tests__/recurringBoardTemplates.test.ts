@@ -89,6 +89,27 @@ describe('recurringBoardTemplates CRUD', () => {
     expect(withDice.manualTaskVary).toEqual({ t1: 2 });
   });
 
+  it('manualTaskTargets (slice 3b): create omits an empty map, keeps a populated one; update replaces it and an empty map clears it', async () => {
+    const empty = await createRecurringBoardTemplate('user-1', { ...baseInput(), manualTaskTargets: {} });
+    expect('manualTaskTargets' in empty).toBe(false);
+
+    const withTargets = await createRecurringBoardTemplate('user-1', {
+      ...baseInput(),
+      manualTaskTargets: { t1: { target: 12, kind: 'discrete', title: 'Twelve' } },
+    });
+    expect(withTargets.manualTaskTargets).toEqual({ t1: { target: 12, kind: 'discrete', title: 'Twelve' } });
+    expect((await fetchRecurringBoardTemplate(withTargets.id))?.manualTaskTargets).toEqual(withTargets.manualTaskTargets);
+
+    await updateRecurringBoardTemplate(withTargets.id, { manualTaskTargets: { t2: { target: 3, kind: 'continuous' } } });
+    expect((await fetchRecurringBoardTemplate(withTargets.id))?.manualTaskTargets).toEqual({
+      t2: { target: 3, kind: 'continuous' },
+    });
+
+    await updateRecurringBoardTemplate(withTargets.id, { manualTaskTargets: {} });
+    const cleared = await fetchRecurringBoardTemplate(withTargets.id);
+    expect(cleared && 'manualTaskTargets' in cleared).toBe(false);
+  });
+
   it('Pause/Resume: updateRecurringBoardTemplate flips isActive and bumps version', async () => {
     const template = await createRecurringBoardTemplate('user-1', baseInput());
     expect(template.isActive).toBe(true);

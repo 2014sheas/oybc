@@ -4,6 +4,7 @@ import { createTask } from '../../db/operations/tasks';
 import { generateUUID, currentTimestamp } from '../../db/utils';
 import { RisoButton, RisoIcon, RisoTypeBadge } from '../riso';
 import type { PendingTaskPayload } from '../../pages/createPage/useCreateFormState';
+import type { PlacementParams } from '@oybc/shared';
 import { selectQuickAddMatches } from '../pools/poolEditSheetSelectors';
 import { GoalEntry } from '../counters/GoalEntry';
 import { KindTag } from '../counters/KindTag';
@@ -11,11 +12,12 @@ import { rowCounterTagName, type TaskLookup } from '../counters/rowCounterTagNam
 import { UnitTag } from '../counters/UnitTag';
 import { buildTaskSubtitle } from './TaskRow';
 import {
-  buildPendingLinkedCounter,
+  counterGoalParams,
   counterMatchRowName,
   counterRootIdsIn,
   isSharedCounterRoot,
   quickAddExcludedIds,
+  quickAddPlacementParams,
 } from './quickAddCounterPlacement';
 import styles from './WizardQuickAddRow.module.css';
 
@@ -77,12 +79,16 @@ export interface WizardQuickAddRowProps {
    *  surface). Defaults to empty — only meaningful alongside `libraryTasks`.
    *  A counter linked to by a selected task is excluded too (one per scope). */
   selectedIds?: Set<string>;
-  /** A one-off board wizard: picking a counter adds a pending LINKED copy at
-   *  the window's default goal (`placementGoalSource`) instead of the root,
-   *  so the row shows that goal and an edit to it stays on this board.
-   *  Default false (a repeating board keeps the root: each spawn mints its
-   *  own window's default). iOS twin: `RisoQuickAddRowView.linksCounterPicks`. */
+  /** A one-off board wizard: picking a counter selects the ROOT and hands its
+   *  window's goal (`placementGoalSource`) to `onPlacementParams`, so the row
+   *  shows that goal and the persist places the root with that override.
+   *  Default false (a repeating board keeps the bare root: each spawn applies
+   *  its own window's default). iOS twin: `RisoQuickAddRowView.linksCounterPicks`. */
   linksCounterPicks?: boolean;
+  /** Receives a picked counter root's placement parameters (null = none). A
+   *  host with a board window passes it; it also enables the inline Goal entry
+   *  for a counter with no resolvable goal. */
+  onPlacementParams?: (taskId: string, params: PlacementParams | null) => void;
   /**
    * Fired when the user taps a dropdown match to REUSE that existing task
    * instead of creating a new one. The host appends the existing task's id
@@ -171,8 +177,9 @@ const PLACEHOLDERS = [
  * on every host (the root is the counter, not a task). On a board host
  * (`currentTimeframe`) where no goal resolves at all, the row holds an
  * empty kind-aware Goal entry and the "+" stays dimmed until a number is
- * typed; the pick then hands a pending LINKED counting task at that goal to
- * `onPendingCreated` (hosts without it keep the plain row).
+ * typed; the pick then selects the root and hands the typed goal to
+ * `onPlacementParams` as its placement override (hosts without it keep the
+ * plain row).
  *
  * iOS source: `Views/CreateTab/Components/RisoQuickAddRowView.swift`.
  */
@@ -189,6 +196,7 @@ export function WizardQuickAddRow({
   excludeGoalLessCounters = false,
   selectedIds,
   linksCounterPicks = false,
+  onPlacementParams,
   onExistingTaskPicked,
   onSubmitText,
   canSubmitText = true,
@@ -252,22 +260,30 @@ export function WizardQuickAddRow({
     inputRef.current?.focus();
   }
 
+  /** The host board's window, when this row has one. */
+  const hostWindow = currentTimeframe
+    ? { timeframe: currentTimeframe, startDate: currentStartDate, endDate: currentEndDate }
+    : undefined;
+
   /**
-   * The no-default counter row's "+": the typed goal becomes a pending LINKED
-   * counting task (minted into this board's copy at persist / Save). Nothing
-   * is written to the counter root.
+   * A counter root picked with its window's default goal: the root is
+   * selected as itself and its parameters (if the default differs from its
+   * own goal) go to the host. Nothing is created or written to the root.
+   */
+  function handleCounterDefaultPicked(root: Task): void {
+    // Parameters first: a host that reads them when the pick lands (Board Edit's picker) needs them already.
+    onPlacementParams?.(root.id, hostWindow ? quickAddPlacementParams(root, hostWindow) : null);
+    handleExistingPicked(root);
+  }
+
+  /**
+   * The no-default counter row's "+": the typed goal becomes the root's
+   * placement override on this board. Nothing is written to the counter root.
    */
   function handleCounterGoalPicked(root: Task, goal: number): void {
-    const payload = buildPendingLinkedCounter(root, goal, userId, generateUUID(), currentTimestamp(), {
-      timeframe: currentTimeframe,
-      startDate: currentStartDate,
-      endDate: currentEndDate,
-    });
-    onTaskCreated(payload.task);
-    onPendingCreated!(payload);
+    onPlacementParams?.(root.id, hostWindow ? counterGoalParams(root, goal, hostWindow) : null);
+    handleExistingPicked(root);
     setRowGoalText((m) => ({ ...m, [root.id]: '' }));
-    updateText('');
-    inputRef.current?.focus();
   }
 
   /** The dropdown row for one match — a counter root gets the name · kind tag. */
@@ -298,12 +314,12 @@ export function WizardQuickAddRow({
       currentTimeframe !== undefined
         ? placementGoalSource(task, { timeframe: currentTimeframe, startDate: currentStartDate, endDate: currentEndDate })
         : null;
-    const needsGoal = currentTimeframe !== undefined && onPendingCreated !== undefined && source === null;
+    const needsGoal = currentTimeframe !== undefined && onPlacementParams !== undefined && source === null;
     if (!needsGoal) {
-      // One-off wizard: the counter lands as its linked copy at the default goal.
+      // One-off wizard: the counter lands as itself, placed at the default goal.
       const pick =
-        linksCounterPicks && onPendingCreated !== undefined && source !== null
-          ? () => handleCounterGoalPicked(task, source.goal)
+        linksCounterPicks && onPlacementParams !== undefined && source !== null
+          ? () => handleCounterDefaultPicked(task)
           : () => handleExistingPicked(task);
       return (
         <button type="button" className={styles.dropdownRowButton} onClick={pick}>

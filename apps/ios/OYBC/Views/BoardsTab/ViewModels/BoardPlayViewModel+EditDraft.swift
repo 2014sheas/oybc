@@ -27,6 +27,12 @@ extension BoardPlayViewModel {
                 map[cell.taskId] = adjusted
             }
         }
+        // Slice 3b: a staged add / replace carrying picked parameters reads
+        // through the one placement rule (the override then lays over that).
+        for cell in editSquaresDraft.values {
+            guard let params = cell.placement, cell.pending == nil, let base = map[cell.taskId] else { continue }
+            map[cell.taskId] = params.apply(to: base, root: base.sharedCounterId.flatMap { map[$0] })
+        }
         guard !editTaskOverrides.isEmpty else { return map }
         for (taskId, override) in editTaskOverrides {
             guard let t = map[taskId] else { continue }

@@ -115,8 +115,7 @@ final class LinkedCounterPlacementMintTests: XCTestCase {
         XCTAssertEqual(rowCount, 1, "only the library row — nothing minted")
     }
 
-    /// Board Edit's picker: a goal-less counter picked through the no-default
-    /// Goal entry stages a pending LINKED row; Save persists it as-is (slice 3a).
+    /// Board Edit stages a pending LINKED row; Save persists it as-is (slice 3a).
     func test_boardEditSave_pendingLinkedRow_isPersistedAndPlacedAsIs() throws {
         let db = try makeDb()
         var rootTask = try XCTUnwrap(K.fetchTask(db, "root"))
@@ -128,8 +127,9 @@ final class LinkedCounterPlacementMintTests: XCTestCase {
         let vm = loadedVM(db)
         vm.seedEditDraft(from: try XCTUnwrap(vm.board))
 
-        let pending = QuickAddCounterPlacement.pendingLinkedTask(
-            root: rootTask, goal: 5, userId: K.userId, now: septStart
+        let pending = PendingTaskPayload(
+            task: K.task("pending-linked", maxCount: 5, sharedCounterId: "root", createdInWizard: true),
+            childTasks: [], childLinks: []
         )
         vm.handleEditAdd(cellKey: "0-1", taskId: pending.task.id, pending: pending)
         XCTAssertTrue(vm.handleEditSave())
@@ -140,6 +140,49 @@ final class LinkedCounterPlacementMintTests: XCTestCase {
         XCTAssertEqual(try K.fetchTask(db, pending.task.id)?.maxCount, 5)
         XCTAssertEqual(try K.queue(db, type: "tasks", id: pending.task.id).first?.operationType, .create)
         XCTAssertNil(try K.fetchTask(db, derived("b1")), "no copy minted")
+    }
+
+    // MARK: - Picker parameters (slice 3b)
+
+    /// A counter root added through the picker carries the picked goal.
+    func test_boardEditSave_add_withPickerParams_writesTheOverride() throws {
+        let db = try makeDb()
+        try db.saveTask(K.task("old", maxCount: 5))
+        try db.saveBoardTask(K.placement(id: "bt", boardId: "b1", taskId: "old", size: 3))
+        let vm = loadedVM(db)
+        vm.seedEditDraft(from: try XCTUnwrap(vm.board))
+
+        vm.handleEditAdd(
+            cellKey: "1-1", taskId: "root",
+            placement: PlacementParamsDraft(targetOverride: 6, targetKind: .discrete)
+        )
+        XCTAssertEqual(vm.editSquaresDraft["1-1"]?.placement?.targetOverride, 6, "staged in the draft")
+        XCTAssertEqual(vm.editDraftTaskMap["root"]?.maxCount, 6, "the staged grid reads the placement goal")
+        saveAndWait(vm)
+
+        let placed = try XCTUnwrap(try db.fetchBoardTasks(boardId: "b1").first { $0.row == 1 && $0.col == 1 })
+        XCTAssertEqual(placed.taskId, "root")
+        XCTAssertEqual(placed.targetOverride, 6)
+        XCTAssertEqual(try K.fetchTask(db, "root")?.maxCount, 100, "the library root keeps its goal")
+    }
+
+    func test_boardEditSave_replace_withPickerParams_setsTheOverride() throws {
+        let db = try makeDb()
+        try db.saveTask(K.task("old", maxCount: 5))
+        try db.saveBoardTask(K.placement(id: "bt", boardId: "b1", taskId: "old", size: 3))
+        let vm = loadedVM(db)
+        vm.seedEditDraft(from: try XCTUnwrap(vm.board))
+
+        vm.handleEditReplace(
+            cellKey: "0-0", taskId: "root",
+            placement: PlacementParamsDraft(targetOverride: 8, targetKind: .discrete)
+        )
+        saveAndWait(vm)
+
+        let placed = try XCTUnwrap(try db.fetchBoardTasks(boardId: "b1").first)
+        XCTAssertEqual(placed.taskId, "root")
+        XCTAssertEqual(placed.targetOverride, 8)
+        XCTAssertEqual(placed.targetKind, .discrete)
     }
 
     // MARK: - Board Edit override remap (review Major)

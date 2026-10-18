@@ -6,35 +6,28 @@ import Foundation
 // docs/BOARD_SOURCES.md §Member rules). iOS twin of web's
 // `apps/web/src/components/wizard/previewDerived.ts`.
 //
-// Step 3 previews the board a person is about to create. Since B2 the persist
-// path no longer places every picked task verbatim: a counting member carrying
-// a target/vary rule is replaced by a window-stamped DERIVED counter whose
-// `maxCount` is the rolled target, and a One-square compound with re-targeted
-// parts is replaced by a derived compound. Left alone, the Preview would show
-// "Run 30 miles" for a cell the board will actually carry as "Run 24 miles".
+// Step 3 previews the board a person is about to create. The persist path no
+// longer places every picked task verbatim: a counting member carrying a
+// target/vary rule is placed with a `targetOverride` (the rolled target), and
+// the wizard's own per-cell parameters (`controller.placementParams`) win over
+// the planner's (TASK_WINDOW_REWORK slice 3b). Left alone, the Preview would
+// show "Run 30 miles" for a cell the board will actually carry as "Run 24 miles".
 //
 // So the Preview runs the SAME planner (`BoardSources.planDerivedTasks`) over
-// the same inputs and re-labels each cell the rules would re-mint with a
-// synthetic stand-in `Task` — a display object, never a row:
+// the same inputs and re-labels each cell whose placement carries a goal or a
+// title through `PlacementParams.apply` — a display object, never a row:
 //
 //   • no DB writes — nothing here touches GRDB or the sync queue; the real
-//     mint happens inside the board-create transaction
-//     (`AppDatabase+DerivedCounters.swift`);
-//   • `baselineByRootId` is empty — the baseline only affects a derived
-//     counter's stored starting count, never the target or title this renders;
+//     parameters are written inside the board-create transaction
+//     (`AppDatabase+DerivedCounters.swift`, `saveWizardBoard`);
 //   • the roll is a SAMPLE — the Preview seeds the planner from the Shuffle
 //     nonce (so one nonce always previews the same numbers and Shuffle visibly
-//     re-rolls), while persist mints with the platform rng. The board a person
+//     re-rolls), while persist rolls with the platform rng. The board a person
 //     gets carries a fresh roll inside the same range.
 //
 // One-off boards only. A repeating board's Preview is the 5b summary card — it
 // has no cell grid to stand tasks in, and its targets are pro-rated per
 // repeated window rather than once at create time.
-
-/// Board id used when the wizard has no draft row yet. Derived ids are a pure
-/// function of `(boardId, rootTaskId)` and this dry run never writes one, so
-/// the value only has to be stable within a render.
-let previewBoardId = "preview"
 
 /// Warm-up steps discarded before the Preview's first roll.
 ///
@@ -100,7 +93,7 @@ private func previewPlanTasksById(
 /// `planDerivedTasks`'s `sourceWindowByTaskId`). Pool sources have no window
 /// of their own and contribute nothing.
 ///
-/// Mirrors the persist path's construction in `mintWizardDerivedRows`.
+/// Mirrors the persist path's construction in `planWizardPlacements`.
 ///
 /// - Parameters:
 ///   - controller: Live wizard state (holds the per-source supply info).
@@ -186,7 +179,6 @@ func applyPreviewDerivedCells(
         supplies: supplies,
         manualTaskIds: Array(controller.manualTaskIds),
         manualTaskVary: controller.manualTaskVary,
-        boardId: controller.draftBoardId ?? previewBoardId,
         window: previewWindow(controller: controller),
         // One-off only — the Preview's cell grid doesn't exist for a repeating
         // board, and the caller gates on `!controller.isRecurring`.
@@ -197,65 +189,40 @@ func applyPreviewDerivedCells(
             controller: controller, supplies: supplies,
             childrenByCompoundId: childrenByCompoundId
         ),
-        // Display only — a baseline shifts a derived counter's starting count,
-        // never the target or the title this renders.
-        baselineByRootId: [:],
         rng: rng
     )
 
-    if plan.derivedTasks.isEmpty { return placement }
-
-    // ── What a stand-in may and may not change ─────────────────────────────
-    //
-    // The stand-in keeps the ORIGINAL task's `id`. That is not cosmetic:
-    // `saveWizardBoard` re-derives its own selection from the placement's ids
-    // before minting the real derived rows. A preview-only derived id fed back
-    // in would miss every `tasksById` lookup and be written STRAIGHT into
-    // `board_tasks` — a placement row pointing at a task that does not exist
-    // (and the pending-task drain would never see its original). Nothing
-    // renders a cell's id, so keeping the original costs nothing and keeps the
-    // preview and the persist path reading the same task graph.
-    //
-    // Counting members only, likewise deliberately. A One-square compound that
-    // re-targets its parts is ALSO replaced at mint time (by a derived
-    // compound), but nothing about that is visible on a CELL: same title, same
-    // type, same operator — only its children's targets differ, and a cell
-    // renders none of them. A derived compound id here would also orphan the
-    // children lookup the cell's completion resolves through.
-    var counterById: [String: BoardSources.DerivedTaskDraft] = [:]
-    for draft in plan.derivedTasks { counterById[draft.id] = draft }
-
-    var rolledByOriginalId: [String: BoardSources.DerivedTaskDraft] = [:]
-    for (index, id) in orderedIds.enumerated() {
-        guard index < plan.placementIds.count else { continue }
-        let next = plan.placementIds[index]
-        if next == id { continue }
-        if let counter = counterById[next] { rolledByOriginalId[id] = counter }
+    // The wizard's explicit per-cell parameters win over the planner's, as at
+    // persist (`saveWizardBoard`). A cell is re-labelled only when its
+    // placement carries a goal or a title; it keeps the ORIGINAL task's id
+    // (nothing renders a cell's id, and the persist path re-plans from the
+    // placement's ids), and a compound's per-child targets are not visible on
+    // a cell so they are not stood in for.
+    var placedByOriginalId: [String: BoardSources.PlannedPlacement] = [:]
+    for (index, id) in orderedIds.enumerated() where index < plan.placements.count {
+        var planned = plan.placements[index]
+        if let explicit = controller.placementParams[id] { planned = explicit.overlaying(planned) }
+        if planned.targetOverride != nil || planned.titleOverride != nil { placedByOriginalId[id] = planned }
     }
-    if rolledByOriginalId.isEmpty { return placement }
+    if placedByOriginalId.isEmpty { return placement }
 
     return placement.map { cell in
-        guard let task = cell, let counter = rolledByOriginalId[task.id] else { return cell }
-        var standIn = task
-        standIn.title = counter.title
-        standIn.maxCount = counter.maxCount
-        standIn.action = counter.action.isEmpty ? nil : counter.action
-        standIn.unit = counter.unit.isEmpty ? nil : counter.unit
-        // The stand-in IS the counter the persist path will mint: a
-        // window-stamped derived row on THIS board's window, so it resolves
-        // the way the real cell will (`resolveLinkedCounterDisplay` — the
-        // ROOT's increments inside `[startDate, endDate]`), never an
-        // original's own window (a pulled member that is itself
-        // window-stamped carries its SOURCE board's window) and never a
-        // root's lifetime. The mirror columns are zeroed: they are not read
-        // for a window-stamped row and must not leak into a lifetime reader.
-        standIn.countKind = counter.countKind
-        standIn.sharedCounterId = counter.rootTaskId
-        standIn.startDate = counter.startDate
-        standIn.endDate = counter.endDate
-        standIn.createdInWizard = true
-        standIn.currentCount = 0
-        standIn.baseline = 0
+        guard let task = cell, let planned = placedByOriginalId[task.id] else { return cell }
+        let row = BoardTask(
+            id: "preview", boardId: "preview", taskId: task.id, row: 0, col: 0, isCenter: false,
+            targetOverride: planned.targetOverride, targetKind: planned.targetKind,
+            titleOverride: planned.titleOverride, createdAt: "", updatedAt: "", version: 1
+        )
+        let root = task.sharedCounterId.flatMap { tasksById[$0] } ?? task
+        var standIn = PlacementParams.apply(
+            task, placement: row, settings: CounterSettings.TitleSettings(task: root)
+        )
+        // A fresh window starts at zero (the kernel reads the root's events
+        // inside the board's window); the lifetime mirror is not this cell's count.
+        if task.type == .counting, planned.targetOverride != nil {
+            standIn.currentCount = 0
+            standIn.baseline = 0
+        }
         return standIn
     }
 }

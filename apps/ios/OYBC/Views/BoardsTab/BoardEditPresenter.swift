@@ -84,12 +84,12 @@ struct BoardEditPresenter: ViewModifier {
                     candidateTasks: candidateTasks(for: target.mode),
                     counterRootTasks: allTasks,
                     onDismiss: { pickerTarget = nil },
-                    onConfirm: { taskId, pending in
+                    onConfirm: { taskId, pending, placement in
                         switch target.mode {
                         case .add:
-                            viewModel.handleEditAdd(cellKey: target.cellKey, taskId: taskId, pending: pending)
+                            viewModel.handleEditAdd(cellKey: target.cellKey, taskId: taskId, pending: pending, placement: placement)
                         case .replace:
-                            viewModel.handleEditReplace(cellKey: target.cellKey, taskId: taskId, pending: pending)
+                            viewModel.handleEditReplace(cellKey: target.cellKey, taskId: taskId, pending: pending, placement: placement)
                         }
                         pickerTarget = nil
                     },

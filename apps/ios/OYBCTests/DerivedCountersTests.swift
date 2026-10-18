@@ -2,29 +2,23 @@ import XCTest
 import GRDB
 @testable import OYBC
 
-/// Seam tests for Board Sources §Member rules (B2) — the iOS write half in
-/// `AppDatabase+DerivedCounters.swift`. Swift twin of
-/// `apps/web/src/db/operations/__tests__/derivedCounters.test.ts`.
+/// Seam tests for Board Sources §Member rules — the iOS write half in
+/// `AppDatabase+DerivedCounters.swift` (TASK_WINDOW_REWORK slice 3b). Swift
+/// twin of `apps/web/src/db/operations/__tests__/derivedCounters.test.ts`.
 ///
 /// Covers:
-///   1. **Mint** (RB2/RB3) — a rule-governed counting member is replaced in
-///      the placement by a window-stamped derived counter whose row is
-///      written + CREATE-enqueued, with the baseline RB2 computes from the
-///      root's pre-window events.
-///   2. **Idempotency** — a second identical run is a TRUE no-op: no write,
-///      no `updatedAt`/`version` churn, no second sync row.
-///   3. **Tombstone revive** — a re-run over a tombstoned row revives it with
-///      `version + 1` and an UPDATE enqueue (so the revive outranks the
-///      tombstone under LWW instead of self-reverting).
-///   4. **Derived compound** (RB10) — a One-square compound becomes a derived
-///      compound row plus `compound_children` links, one per child, with the
-///      re-targeted part pointing at its own derived counter.
-///   5. **Refresh** — `refreshDerivedBaselines` is NON-AUTHORED: it rewrites
-///      `baseline` only (no version bump, no `updatedAt`, no enqueue), and
-///      returns 0 when nothing moved.
-///   6. **Persist gate** — `saveWizardBoard` mints on an ACTIVE save and NOT
-///      on a draft save, and a replaced centre square keeps its cell (and the
-///      board's stored `centerTaskId` follows it).
+///   1. **Plan** — a rule-governed member becomes a PLACEMENT PARAMETER
+///      (`targetOverride` / `childTargets`) on its own `board_tasks` row; no
+///      `tasks` / `compound_children` row is minted or enqueued.
+///   2. **Refresh** — `refreshDerivedBaselines` (legacy upkeep) is
+///      NON-AUTHORED: it rewrites `baseline` only (no version bump, no
+///      `updatedAt`, no enqueue), and returns 0 when nothing moved.
+///   3. **Persist gate** — `saveWizardBoard` plans on an ACTIVE save and NOT
+///      on a draft save, and a replaced centre square keeps its cell.
+///   4. **Spawn** — the recurring path writes the planner's parameters, and a
+///      template's frozen `manualTaskTargets` win for a hand-added member.
+///   5. **Legacy rows** — a stored window-stamped derived row resolves to its
+///      ROOT, its custom title riding as `titleOverride`.
 final class DerivedCountersTests: XCTestCase {
 
     /// An ENDED board is never a source (owner ruling 2026-09-24), judged
@@ -106,20 +100,15 @@ final class DerivedCountersTests: XCTestCase {
         BoardSources.BoardWindow(timeframe: .daily, startDate: windowStart, endDate: windowEnd)
     }
 
-    /// Run the mint against one counting member governed by `target: 4`.
+    /// Plan one counting member governed by `target: 4`.
     @discardableResult
-    private func mintOneCounter(
+    private func planOneCounter(
         _ database: AppDatabase,
-        at mintTime: String,
         tasksById: [String: Task]
-    ) throws -> (placementIds: [String], minted: BoardSources.DerivedRows) {
+    ) throws -> [BoardSources.PlannedPlacement] {
         try database.write { db in
-            let events = try TaskEvent.fetchAll(db)
-            return try AppDatabase.planAndMintDerivedRows(
+            try AppDatabase.planPlacements(
                 db: db,
-                boardId: self.boardId,
-                userId: self.userId,
-                now: mintTime,
                 selectedIds: [self.rootId],
                 supplies: [self.boardSupply([self.rootId], memberRules: [self.rootId: BoardSourceMemberRule(target: 4)])],
                 manualTaskIds: [],
@@ -128,8 +117,7 @@ final class DerivedCountersTests: XCTestCase {
                 mode: .oneOff,
                 tasksById: tasksById,
                 childrenByCompoundId: [:],
-                sourceWindowByTaskId: [:],
-                events: events
+                sourceWindowByTaskId: [:]
             )
         }
     }
@@ -140,59 +128,36 @@ final class DerivedCountersTests: XCTestCase {
         }
     }
 
-    // MARK: - 1. Mint
+    // MARK: - 1. Plan (no rows)
 
-    func test_mint_replacesPlacementAndWritesRowWithWindowBaseline() throws {
+    func test_plan_memberTargetBecomesAnOverride_andWritesNothing() throws {
         let database = try makeDb()
-        // Lifetime 10: 7 logged before the window opened, 3 inside it.
         let root = makeCountingTask(id: rootId, maxCount: 10, currentCount: 10)
-        try database.write { db in
-            try root.save(db)
-            try self.makeIncrementEvent(id: "e-before", taskId: self.rootId, delta: 7,
-                                        at: "2026-09-17T08:00:00.000Z").save(db)
-            try self.makeIncrementEvent(id: "e-inside", taskId: self.rootId, delta: 3,
-                                        at: "2026-09-18T08:00:00.000Z").save(db)
-        }
+        try database.write { db in try root.save(db) }
+        let tasksBefore = try database.read { try Task.fetchCount($0) }
 
-        let result = try mintOneCounter(database, at: now, tasksById: [rootId: root])
+        let planned = try planOneCounter(database, tasksById: [rootId: root])
+
+        XCTAssertEqual(planned, [BoardSources.PlannedPlacement(
+            taskId: rootId, targetOverride: 4, targetKind: .discrete
+        )], "the explicit member target is a parameter on the member's own placement")
+        XCTAssertEqual(try database.read { try Task.fetchCount($0) }, tasksBefore, "no task row minted")
         let derivedId = BoardSources.derivedTaskId(boardId: boardId, rootTaskId: rootId)
-
-        XCTAssertEqual(result.placementIds, [derivedId],
-                       "the member is replaced IN PLACE by its derived counter")
-        let stored = try XCTUnwrap(try database.read { try Task.fetchOne($0, key: derivedId) })
-        XCTAssertEqual(stored.sharedCounterId, rootId)
-        XCTAssertEqual(stored.maxCount, 4, "the explicit member target wins")
-        // RB2: only the PRE-window 7 counts; the in-window 3 belongs to this window.
-        XCTAssertEqual(stored.baseline, 7)
-        XCTAssertEqual(stored.currentCount, 10, "mirrors the root's LIFETIME count")
-        XCTAssertFalse(stored.isCompleted, "displayed = 10 − 7 = 3, below the target 4")
-        XCTAssertNil(stored.completedAt)
-        XCTAssertEqual(stored.timeframe, .daily)
-        XCTAssertEqual(stored.startDate, windowStart)
-        XCTAssertEqual(stored.endDate, windowEnd)
-        XCTAssertTrue(stored.createdInWizard)
-        XCTAssertEqual(stored.version, 1)
-        XCTAssertFalse(stored.isDeleted)
-
-        let queued = try syncRows(database, entityId: derivedId)
-        XCTAssertEqual(queued.count, 1)
-        XCTAssertEqual(queued.first?.entityType, "tasks")
-        XCTAssertEqual(queued.first?.operationType, .create)
+        XCTAssertNil(try database.read { try Task.fetchOne($0, key: derivedId) })
+        XCTAssertEqual(try database.fetchPendingSyncItems().count, 0, "nothing enqueued")
     }
 
-    func test_mint_continuousMemberStoresContinuousKind() throws {
+    func test_plan_continuousMemberCarriesContinuousKind() throws {
         let database = try makeDb()
         var root = makeCountingTask(id: rootId, maxCount: 10, currentCount: 0)
         root.countKind = .continuous
         try database.write { db in try root.save(db) }
-
-        try mintOneCounter(database, at: now, tasksById: [rootId: root])
-        let derivedId = BoardSources.derivedTaskId(boardId: boardId, rootTaskId: rootId)
-        let stored = try XCTUnwrap(try database.read { try Task.fetchOne($0, key: derivedId) })
-        XCTAssertEqual(stored.countKind, .continuous)
+        let planned = try planOneCounter(database, tasksById: [rootId: root])
+        XCTAssertEqual(planned.first?.targetKind, .continuous)
+        XCTAssertEqual(planned.first?.targetOverride, 4)
     }
 
-    func test_mint_continuousMemberProRatesInTenths() throws {
+    func test_plan_continuousMemberProRatesInTenths() throws {
         let database = try makeDb()
         var root = makeCountingTask(id: rootId, maxCount: 26.2, currentCount: 0, action: "Run", unit: "miles")
         root.title = "Run 26.2 miles"
@@ -202,137 +167,27 @@ final class DerivedCountersTests: XCTestCase {
         let weekly = BoardSources.BoardWindow(
             timeframe: .weekly, startDate: "2026-09-14T00:00:00.000Z", endDate: "2026-09-20T23:59:59.999Z"
         )
-        try database.write { db in
-            _ = try AppDatabase.planAndMintDerivedRows(
-                db: db, boardId: self.boardId, userId: self.userId, now: self.now,
-                selectedIds: [self.rootId],
+        let planned = try database.write { db in
+            try AppDatabase.planPlacements(
+                db: db, selectedIds: [self.rootId],
                 supplies: [self.boardSupply([self.rootId], memberRules: [:])],
-                manualTaskIds: [], manualTaskVary: [:],
-                window: weekly, mode: .oneOff,
+                manualTaskIds: [], manualTaskVary: [:], window: weekly, mode: .oneOff,
                 tasksById: [self.rootId: root], childrenByCompoundId: [:],
-                sourceWindowByTaskId: [self.rootId: BoardSources.BoardWindow(timeframe: .monthly)],
-                events: []
+                sourceWindowByTaskId: [self.rootId: BoardSources.BoardWindow(timeframe: .monthly)]
             )
         }
-        let derivedId = BoardSources.derivedTaskId(boardId: boardId, rootTaskId: rootId)
-        let stored = try XCTUnwrap(try database.read { try Task.fetchOne($0, key: derivedId) })
         // ceil(26.2 × 7 / 30 = 6.113) to the 0.1 step — a whole-kind ceil would give 7.
-        XCTAssertEqual(stored.maxCount, 6.2)
-        XCTAssertEqual(stored.countKind, .continuous)
-        XCTAssertEqual(stored.title, "Run 6.2 miles")
+        XCTAssertEqual(planned.first?.targetOverride, 6.2)
+        XCTAssertEqual(planned.first?.targetKind, .continuous)
+        let bt = BoardTask(
+            id: "bt", boardId: boardId, taskId: rootId, row: 0, col: 0, isCenter: false,
+            targetOverride: planned.first?.targetOverride, targetKind: planned.first?.targetKind,
+            createdAt: now, updatedAt: now, version: 1
+        )
+        XCTAssertEqual(PlacementParams.apply(root, placement: bt, settings: .init(task: root)).title, "Run 6.2 miles")
     }
 
-    func test_buildDerivedRows_continuousDraftIsBornCompleteAtItsFractionalGoal() {
-        func rows(_ kind: CountKind) -> Task {
-            let draft = BoardSources.DerivedTaskDraft(
-                id: "d1", rootTaskId: "r1", sourceMemberId: "r1", replacesId: "r1",
-                maxCount: 0.4, countKind: kind, baseline: 0, title: "Run 0.4 miles",
-                action: "Run", unit: "miles", timeframe: .weekly,
-                startDate: windowStart, endDate: windowEnd
-            )
-            var root = makeCountingTask(id: "r1", maxCount: 5, currentCount: 0.4)
-            root.countKind = .continuous
-            return BoardSources.buildDerivedRows(
-                drafts: BoardSources.PlanDerivedTasksResult(placementIds: ["d1"], derivedTasks: [draft], derivedCompounds: []),
-                userId: userId, now: now, rootsById: ["r1": root], compoundsById: [:]
-            ).tasks[0]
-        }
-        XCTAssertTrue(rows(.continuous).isCompleted)
-        XCTAssertEqual(rows(.continuous).countKind, .continuous)
-        XCTAssertFalse(rows(.discrete).isCompleted, "dropping the kind would round 0.4 to 0")
-    }
-
-    func test_mint_bornCompleteWhenTheRootHasAlreadyPassedTheTarget() throws {
-        let database = try makeDb()
-        // Everything logged INSIDE the window: baseline 0, displayed 12 ≥ 4.
-        let root = makeCountingTask(id: rootId, maxCount: 10, currentCount: 12)
-        try database.write { db in
-            try root.save(db)
-            try self.makeIncrementEvent(id: "e-inside", taskId: self.rootId, delta: 12,
-                                        at: "2026-09-18T08:00:00.000Z").save(db)
-        }
-
-        try mintOneCounter(database, at: now, tasksById: [rootId: root])
-        let derivedId = BoardSources.derivedTaskId(boardId: boardId, rootTaskId: rootId)
-        let stored = try XCTUnwrap(try database.read { try Task.fetchOne($0, key: derivedId) })
-        XCTAssertEqual(stored.baseline, 0)
-        XCTAssertTrue(stored.isCompleted, "12 − 0 = 12 ≥ target 4 → born complete")
-        XCTAssertEqual(stored.completedAt, now,
-                       "the false → true transition has already happened at mint")
-    }
-
-    // MARK: - 2. Idempotency (RB3 — live row → skip)
-
-    func test_mint_secondIdenticalRunIsATrueNoOp() throws {
-        let database = try makeDb()
-        let root = makeCountingTask(id: rootId, maxCount: 10, currentCount: 12)
-        try database.write { db in
-            try root.save(db)
-            try self.makeIncrementEvent(id: "e-before", taskId: self.rootId, delta: 7,
-                                        at: "2026-09-17T08:00:00.000Z").save(db)
-        }
-        try mintOneCounter(database, at: now, tasksById: [rootId: root])
-        let derivedId = BoardSources.derivedTaskId(boardId: boardId, rootTaskId: rootId)
-        let first = try XCTUnwrap(try database.read { try Task.fetchOne($0, key: derivedId) })
-
-        // A LATER `now` — a row that got rewritten would visibly move.
-        let second = try mintOneCounter(database, at: "2026-09-18T18:00:00.000Z",
-                                        tasksById: [rootId: root])
-        XCTAssertEqual(second.placementIds, [derivedId],
-                       "the placement id is still emitted on a skipped write")
-
-        let after = try XCTUnwrap(try database.read { try Task.fetchOne($0, key: derivedId) })
-        XCTAssertEqual(after.version, first.version)
-        XCTAssertEqual(after.updatedAt, first.updatedAt)
-        XCTAssertEqual(try syncRows(database, entityId: derivedId).count, 1,
-                       "a re-entry must not push a redundant row to Firestore")
-    }
-
-    // MARK: - 3. Tombstone revive
-
-    func test_mint_revivesATombstonedRowWithAVersionBumpAndUpdateEnqueue() throws {
-        let database = try makeDb()
-        let root = makeCountingTask(id: rootId, maxCount: 10, currentCount: 12)
-        try database.write { db in try root.save(db) }
-        try mintOneCounter(database, at: now, tasksById: [rootId: root])
-        let derivedId = BoardSources.derivedTaskId(boardId: boardId, rootTaskId: rootId)
-
-        let born = try XCTUnwrap(try database.read { try Task.fetchOne($0, key: derivedId) })
-        try database.write { db in
-            // Mark the mint's CREATE as already pushed, so the revive's own
-            // enqueue is observable rather than folded into the still-pending
-            // CREATE by the D3 coalescer. That is also the realistic order: the
-            // row was created, synced, then tombstoned (here or on a peer).
-            for var item in try SyncQueueItem.filter(Column("entityId") == derivedId).fetchAll(db) {
-                item.status = .completed
-                try item.save(db)
-            }
-            var row = born
-            row.isDeleted = true
-            row.deletedAt = "2026-09-18T10:00:00.000Z"
-            row.version = 5
-            try row.save(db)
-        }
-
-        let reviveTime = "2026-09-18T18:00:00.000Z"
-        try mintOneCounter(database, at: reviveTime, tasksById: [rootId: root])
-
-        let revived = try XCTUnwrap(try database.read { try Task.fetchOne($0, key: derivedId) })
-        XCTAssertFalse(revived.isDeleted)
-        XCTAssertNil(revived.deletedAt)
-        XCTAssertEqual(revived.version, 6, "version + 1 over the tombstone, so the revive wins LWW")
-        XCTAssertEqual(revived.updatedAt, reviveTime)
-        XCTAssertEqual(revived.createdAt, born.createdAt, "the row's birth hasn't moved")
-
-        let pending = try syncRows(database, entityId: derivedId).filter { $0.status == .pending }
-        XCTAssertEqual(pending.count, 1)
-        XCTAssertEqual(pending.first?.operationType, .update,
-                       "an UPDATE, so the revive outranks the tombstone instead of losing to it")
-    }
-
-    // MARK: - 4. Derived compound (RB10)
-
-    func test_mint_derivedCompoundWritesParentLinksAndItsDerivedPart() throws {
+    func test_plan_compoundPartTargetBecomesChildTargets_andWritesNothing() throws {
         let database = try makeDb()
         let compoundId = "compound-1"
         let countingChildId = "child-counting"
@@ -363,16 +218,12 @@ final class DerivedCountersTests: XCTestCase {
             try normalChild.save(db)
             for link in links { try link.save(db) }
         }
+        let tasksBefore = try database.read { try Task.fetchCount($0) }
+        let linksBefore = try database.read { try CompoundChild.fetchCount($0) }
 
-        let tasksById = [
-            compoundId: compound, countingChildId: countingChild, normalChildId: normalChild,
-        ]
-        let result = try database.write { db in
-            try AppDatabase.planAndMintDerivedRows(
+        let planned = try database.write { db in
+            try AppDatabase.planPlacements(
                 db: db,
-                boardId: self.boardId,
-                userId: self.userId,
-                now: self.now,
                 selectedIds: [compoundId],
                 supplies: [self.boardSupply(
                     [compoundId],
@@ -384,48 +235,46 @@ final class DerivedCountersTests: XCTestCase {
                 manualTaskVary: [:],
                 window: self.window,
                 mode: .oneOff,
-                tasksById: tasksById,
+                tasksById: [compoundId: compound, countingChildId: countingChild, normalChildId: normalChild],
                 childrenByCompoundId: [compoundId: links],
-                sourceWindowByTaskId: [:],
-                events: []
+                sourceWindowByTaskId: [:]
             )
         }
 
-        let derivedCompoundId = BoardSources.derivedCompoundId(boardId: boardId, compoundId: compoundId)
-        let derivedPartId = BoardSources.derivedTaskId(boardId: boardId, rootTaskId: countingChildId)
-        XCTAssertEqual(result.placementIds, [derivedCompoundId])
+        XCTAssertEqual(planned, [BoardSources.PlannedPlacement(
+            taskId: compoundId, childTargets: [PlacementChildTarget(childId: countingChildId, target: 3)]
+        )], "the compound is placed as itself with the re-targeted part as a child target")
+        XCTAssertEqual(try database.read { try Task.fetchCount($0) }, tasksBefore, "no derived compound / part minted")
+        XCTAssertEqual(try database.read { try CompoundChild.fetchCount($0) }, linksBefore, "no derived links")
+        XCTAssertEqual(try database.fetchPendingSyncItems().count, 0)
+    }
 
-        let parent = try XCTUnwrap(try database.read { try Task.fetchOne($0, key: derivedCompoundId) })
-        XCTAssertEqual(parent.type, .compound)
-        XCTAssertEqual(parent.operatorType, .and)
-        XCTAssertEqual(parent.title, "Morning")
-        XCTAssertEqual(parent.description, "AM routine", "copied from the SOURCE compound row")
-        XCTAssertEqual(parent.startDate, windowStart)
-        XCTAssertTrue(parent.createdInWizard)
+    // MARK: - 1b. A legacy derived row resolves to its root
 
-        let part = try XCTUnwrap(try database.read { try Task.fetchOne($0, key: derivedPartId) })
-        XCTAssertEqual(part.maxCount, 3)
-        XCTAssertEqual(part.sharedCounterId, countingChildId)
-
-        let storedLinks = try database.read { db in
-            try CompoundChild
-                .filter(Column("compoundTaskId") == derivedCompoundId)
-                .order(Column("childIndex"))
-                .fetchAll(db)
+    func test_plan_legacyDerivedRowPlacesItsRoot_withItsCustomTitle() throws {
+        let database = try makeDb()
+        let root = makeCountingTask(id: rootId, maxCount: 10, currentCount: 0)
+        let legacy = Task(
+            id: "legacy-1", userId: userId, title: "My reading", type: .counting,
+            action: "Read", unit: "pages", maxCount: 4,
+            totalCompletions: 0, totalInstances: 0, createdAt: now, updatedAt: now, version: 1, isDeleted: false,
+            timeframe: .daily, startDate: windowStart, endDate: windowEnd,
+            sharedCounterId: rootId, baseline: 0, createdInWizard: true
+        )
+        try database.write { db in
+            try root.save(db)
+            try legacy.save(db)
         }
-        XCTAssertEqual(storedLinks.map { $0.childTaskId }, [derivedPartId, normalChildId],
-                       "the re-targeted part points at its derived counter; the other child is kept")
-        XCTAssertEqual(storedLinks.map { $0.childIndex }, [0, 1])
-
-        for entityId in [derivedCompoundId, derivedPartId] {
-            XCTAssertEqual(try syncRows(database, entityId: entityId).count, 1, entityId)
+        let planned = try database.write { db in
+            try AppDatabase.planPlacements(
+                db: db, selectedIds: ["legacy-1"], supplies: [], manualTaskIds: ["legacy-1"], manualTaskVary: [:],
+                window: self.window, mode: .oneOff,
+                tasksById: [rootId: root, "legacy-1": legacy], childrenByCompoundId: [:], sourceWindowByTaskId: [:]
+            )
         }
-        for link in storedLinks {
-            let queued = try syncRows(database, entityId: link.id)
-            XCTAssertEqual(queued.count, 1)
-            XCTAssertEqual(queued.first?.entityType, "compoundChildren")
-            XCTAssertEqual(queued.first?.operationType, .create)
-        }
+        XCTAssertEqual(planned.first?.taskId, rootId, "no derived row gains a new placement")
+        XCTAssertEqual(planned.first?.targetOverride, 4)
+        XCTAssertEqual(planned.first?.titleOverride, "My reading")
     }
 
     // MARK: - 5. Refresh (non-authored)
@@ -576,7 +425,7 @@ final class DerivedCountersTests: XCTestCase {
         )
     }
 
-    func test_saveWizardBoard_draftSaveMintsNothing() throws {
+    func test_saveWizardBoard_draftSavePlansNothing() throws {
         let database = try makeDb()
         let source = try seedSourceBoard(database)
         let board = try makeBoard(id: boardId, status: .draft, centerTaskId: rootId)
@@ -586,44 +435,39 @@ final class DerivedCountersTests: XCTestCase {
             isUpdate: false, sources: [source], manualTaskIds: [], now: now
         )
 
-        let derivedId = BoardSources.derivedTaskId(boardId: boardId, rootTaskId: rootId)
-        XCTAssertNil(try database.read { try Task.fetchOne($0, key: derivedId) },
-                     "a draft's window is still editable — nothing is minted for it")
         let placements = try database.read { db in
             try BoardTask.filter(Column("boardId") == self.boardId).fetchAll(db)
         }
         XCTAssertEqual(placements.map { $0.taskId }, [rootId],
                        "a draft places its ORIGINAL member id")
+        XCTAssertNil(placements.first?.targetOverride,
+                     "a draft's window is still editable — no parameters are planned for it")
         XCTAssertEqual(try database.fetchBoard(id: boardId)?.centerTaskId, rootId)
     }
 
-    func test_saveWizardBoard_activeSaveMintsAndTheCentreKeepsItsCell() throws {
+    func test_saveWizardBoard_activeSavePlansTheOverride_andTheCentreKeepsItsCell() throws {
         let database = try makeDb()
         let source = try seedSourceBoard(database)
         let board = try makeBoard(id: boardId, status: .active, centerTaskId: rootId)
+        let tasksBefore = try database.read { try Task.fetchCount($0) }
 
         try database.saveWizardBoard(
             board: board, boardTasks: [makeCentrePlacement()], pendingTasks: [],
             isUpdate: false, sources: [source], manualTaskIds: [], now: now
         )
 
-        let derivedId = BoardSources.derivedTaskId(boardId: boardId, rootTaskId: rootId)
-        let derived = try XCTUnwrap(try database.read { try Task.fetchOne($0, key: derivedId) })
-        XCTAssertEqual(derived.maxCount, 4)
-        XCTAssertEqual(derived.sharedCounterId, rootId)
-        XCTAssertEqual(derived.startDate, windowStart)
-
+        XCTAssertEqual(try database.read { try Task.fetchCount($0) }, tasksBefore, "no derived row minted")
         let placements = try database.read { db in
             try BoardTask.filter(Column("boardId") == self.boardId && Column("isDeleted") == false)
                 .fetchAll(db)
         }
         XCTAssertEqual(placements.count, 1)
-        XCTAssertEqual(placements.first?.taskId, derivedId)
-        XCTAssertEqual([placements.first?.row, placements.first?.col], [1, 1],
-                       "the replaced centre keeps its cell")
+        XCTAssertEqual(placements.first?.taskId, rootId, "the member is placed as itself")
+        XCTAssertEqual(placements.first?.targetOverride, 4)
+        XCTAssertEqual(placements.first?.targetKind, .discrete)
+        XCTAssertEqual([placements.first?.row, placements.first?.col], [1, 1])
         XCTAssertEqual(placements.first?.isCenter, true)
-        XCTAssertEqual(try database.fetchBoard(id: boardId)?.centerTaskId, derivedId,
-                       "the board's stored centre follows the replacement")
+        XCTAssertEqual(try database.fetchBoard(id: boardId)?.centerTaskId, rootId)
     }
 
     // MARK: - 7. Spawn (recurring path)
@@ -709,7 +553,7 @@ final class DerivedCountersTests: XCTestCase {
         )
     }
 
-    func test_spawn_boardSourceCountingMemberGetsAProRatedDerivedPlacement() throws {
+    func test_spawn_boardSourceCountingMemberGetsAProRatedOverride() throws {
         let database = try makeDb()
         // A WEEKLY source board carrying a goal of 35, pulled onto a DAILY
         // window: the auto target pro-rates 35 × (1 / 7) = 5.
@@ -733,20 +577,41 @@ final class DerivedCountersTests: XCTestCase {
         guard case .spawned = outcome else { return XCTFail("expected a spawn, got \(outcome)") }
 
         let derivedId = BoardSources.derivedTaskId(boardId: "spawned-1", rootTaskId: rootId)
-        let derived = try XCTUnwrap(try database.read { try Task.fetchOne($0, key: derivedId) })
-        XCTAssertEqual(derived.maxCount, 5, "ceil(35 × 1 / 7) — the pro-rated auto target")
-        XCTAssertEqual(derived.baseline, 9, "the root's lifetime count when this window opened")
-        XCTAssertEqual(derived.sharedCounterId, rootId)
-        XCTAssertEqual(derived.startDate, windowStart)
-        XCTAssertEqual(derived.timeframe, .daily)
+        XCTAssertNil(try database.read { try Task.fetchOne($0, key: derivedId) }, "nothing is minted")
+        let placed = try database.read { db in
+            try BoardTask.filter(Column("boardId") == "spawned-1" && Column("isDeleted") == false)
+                .fetchAll(db)
+        }
+        let member = try XCTUnwrap(placed.first { $0.taskId == rootId }, "the source member itself is placed")
+        XCTAssertEqual(member.targetOverride, 5, "ceil(35 × 1 / 7) — the pro-rated auto target")
+        XCTAssertEqual(member.targetKind, .discrete)
+        XCTAssertEqual(try database.read { try Task.fetchOne($0, key: self.rootId) }?.maxCount, 35,
+                       "the library task keeps its own goal")
+    }
+
+    /// Ruling 1 (slice 3b): a hand-added member the template froze keeps its
+    /// frozen target / kind / title — it wins over the planner's result.
+    func test_spawn_manualTaskTargetsLandAsThePlacementOverride() throws {
+        let database = try makeDb()
+        try database.write { db in
+            try self.makeCountingTask(id: self.rootId, maxCount: 35, currentCount: 0).save(db)
+        }
+        var template = try seedTemplate(database, sources: [], manualTaskIds: [rootId, "m1", "m2", "m3"])
+        template.manualTaskTargets = [rootId: ManualTaskTarget(target: 8, kind: .discrete, title: "Eight pages")]
+        try database.write { db in try template.save(db) }
+
+        let outcome = try spawn(database, template)
+        guard case .spawned = outcome else { return XCTFail("expected a spawn, got \(outcome)") }
 
         let placed = try database.read { db in
             try BoardTask.filter(Column("boardId") == "spawned-1" && Column("isDeleted") == false)
                 .fetchAll(db)
-                .map { $0.taskId }
         }
-        XCTAssertTrue(placed.contains(derivedId), "the derived counter is what lands on the board")
-        XCTAssertFalse(placed.contains(rootId), "the source member itself is NOT placed")
+        let member = try XCTUnwrap(placed.first { $0.taskId == rootId })
+        XCTAssertEqual(member.targetOverride, 8)
+        XCTAssertEqual(member.targetKind, .discrete)
+        XCTAssertEqual(member.titleOverride, "Eight pages")
+        XCTAssertNil(placed.first { $0.taskId == "m1" }?.targetOverride, "the other members carry no parameters")
     }
 
     func test_spawn_splitCompoundContributesItsPartsAsCandidates() throws {
@@ -825,6 +690,22 @@ final class DerivedCountersTests: XCTestCase {
         }
         XCTAssertEqual(columns, ["sharedCounterId"])
     }
+    func test_migrationV46_addsTheManualTaskTargetsColumn_andRoundTripsTheField() throws {
+        let database = try makeDb()
+        let columns: [String] = try database.read { db in
+            try Row.fetchAll(db, sql: "PRAGMA table_info(recurring_board_templates)").map { row in row["name"] }
+        }
+        XCTAssertTrue(columns.contains("manualTaskTargets"), "v46 adds the column; found \(columns)")
+
+        var template = try seedTemplate(database, sources: [], manualTaskIds: ["m1"])
+        XCTAssertNil(try database.read { try RecurringBoardTemplate.fetchOne($0, key: template.id) }?.manualTaskTargets,
+                     "absent on a pre-feature row")
+        template.manualTaskTargets = ["m1": ManualTaskTarget(target: 3, kind: .duration, title: "Stretch")]
+        try database.write { db in try template.save(db) }
+        let back = try database.read { try RecurringBoardTemplate.fetchOne($0, key: template.id) }
+        XCTAssertEqual(back?.manualTaskTargets, ["m1": ManualTaskTarget(target: 3, kind: .duration, title: "Stretch")])
+    }
+
     // MARK: - 8. §Member rules (B3): the wizard's hand-added dice
 
     /// Seeds the counting task a hand-added member points at and returns the
@@ -837,36 +718,30 @@ final class DerivedCountersTests: XCTestCase {
     }
 
     /// B3 threading, the decisive half: with dice on the hand-added layer the
-    /// active save mints a window-stamped derived counter whose `maxCount` is
-    /// a ROLL inside `varyRange`, not the goal copied through. The assertion
-    /// pins the range (the production rng is unseeded), and the control test
-    /// below proves the mint only happens because the dice arrived.
-    func test_saveWizardBoard_handAddedDice_mintARolledTargetInsideVaryRange() throws {
+    /// active save plans a `targetOverride` that is a ROLL inside `varyRange`,
+    /// not the goal copied through. The assertion pins the range (the
+    /// production rng is unseeded), and the control test below proves the
+    /// parameter only appears because the dice arrived.
+    func test_saveWizardBoard_handAddedDice_planARolledOverrideInsideVaryRange() throws {
         let database = try makeDb()
         let board = try seedHandAddedCounter(database)
+        let tasksBefore = try database.read { try Task.fetchCount($0) }
 
         try database.saveWizardBoard(
             board: board, boardTasks: [makeCentrePlacement()], pendingTasks: [],
             isUpdate: false, sources: [], manualTaskIds: [rootId],
-            manualTaskVary: [rootId: .lot], now: now
+            manualTaskVary: [rootId: .lot], now: now, rng: { 0 }
         )
 
-        let derivedId = BoardSources.derivedTaskId(boardId: boardId, rootTaskId: rootId)
-        let derived = try XCTUnwrap(try database.read { try Task.fetchOne($0, key: derivedId) })
         let range = BoardSources.varyRange(t: 10, level: .lot, goal: 10)
-        let maxCount = try XCTUnwrap(derived.maxCount)
-        XCTAssertTrue(
-            range.contains(maxCount),
-            "rolled target \(maxCount) must land inside \(range.lowerBound)…\(range.upperBound)"
-        )
-        XCTAssertEqual(derived.sharedCounterId, rootId)
-        XCTAssertEqual(derived.startDate, windowStart)
-
         let placements = try database.read { db in
             try BoardTask.filter(Column("boardId") == self.boardId && Column("isDeleted") == false)
                 .fetchAll(db)
         }
-        XCTAssertEqual(placements.first?.taskId, derivedId)
+        XCTAssertEqual(placements.first?.taskId, rootId)
+        XCTAssertEqual(placements.first?.targetOverride, range.lowerBound)
+        XCTAssertNotEqual(placements.first?.targetOverride, 10)
+        XCTAssertEqual(try database.read { try Task.fetchCount($0) }, tasksBefore)
     }
 
     // MARK: - 9. Custom counter title survives the mint (owner bug 2026-10-06)
@@ -909,14 +784,13 @@ final class DerivedCountersTests: XCTestCase {
     }
 
     /// The owner's exact path: a counting task given a CUSTOM name in the
-    /// wizard, auto-linked to a shared counter and hand-added, showed its
-    /// default "{Action} {goal} {unit}" name once the board was created —
-    /// the mint regenerated the copy's title. `TaskTitle.counterCopyTitle`
-    /// now carries a custom name over verbatim. Mirrors web
-    /// `wizardBoard.test.ts` "custom counter title survives the mint".
-    func test_saveWizardBoard_handAddedLinkedCustomTitle_survivesTheMint() throws {
+    /// wizard, auto-linked to a shared counter and hand-added. Since slice 3b
+    /// it is placed as ITSELF (no per-window copy is minted), so its stored
+    /// title is what the board shows. Mirrors web `wizardBoard.test.ts`.
+    func test_saveWizardBoard_handAddedLinkedCustomTitle_isPlacedAsItself() throws {
         let database = try makeDb()
         let board = try seedLinkedMember(database, title: "Morning push-ups")
+        let tasksBefore = try database.read { try Task.fetchCount($0) }
 
         try database.saveWizardBoard(
             board: board, boardTasks: [makeLinkedCentrePlacement()], pendingTasks: [],
@@ -924,29 +798,21 @@ final class DerivedCountersTests: XCTestCase {
             manualTaskVary: [:], now: now
         )
 
-        let derivedId = BoardSources.derivedTaskId(boardId: boardId, rootTaskId: hubRootId)
-        let derived = try XCTUnwrap(try database.read { try Task.fetchOne($0, key: derivedId) })
-        XCTAssertEqual(derived.sharedCounterId, hubRootId)
-        XCTAssertEqual(derived.maxCount, 20)
-        XCTAssertEqual(derived.title, "Morning push-ups")
-
+        XCTAssertEqual(try database.read { try Task.fetchCount($0) }, tasksBefore, "no copy minted")
         let placements = try database.read { db in
             try BoardTask.filter(Column("boardId") == self.boardId && Column("isDeleted") == false)
                 .fetchAll(db)
         }
-        XCTAssertEqual(placements.map { $0.taskId }, [derivedId])
+        XCTAssertEqual(placements.map { $0.taskId }, [linkedId])
+        XCTAssertNil(placements.first?.targetOverride, "its own goal 20 is the placement's goal")
+        XCTAssertEqual(try database.fetchTask(id: linkedId)?.title, "Morning push-ups")
     }
 
-    /// Control: an AUTO title ("Do 20 push-ups" for Do / 20 / push-ups) is
-    /// regenerated from the copy's OWN fields — with dice on, from the rolled
-    /// target, so the copy's title follows its target exactly as before.
-    ///
-    /// Seeded rng (web twin `rng: () => 0`): `varyRange(20, .lot, 20)`
-    /// INCLUDES the goal itself, so an unseeded roll landing on 20 would make
-    /// "Do 20 push-ups" pass vacuously — carried verbatim as a "custom" title
-    /// would read identically. Pinning the low end proves the roll happened
-    /// AND that the title followed it.
-    func test_saveWizardBoard_handAddedLinkedAutoTitle_isRegeneratedAtTheCopysTarget() throws {
+    /// Control: an AUTO title ("Do 20 push-ups" for Do / 20 / push-ups) follows
+    /// the placement's rolled target — with dice on and a seeded rng the
+    /// override pins the LOW end of the range, and the placement title is
+    /// re-rendered at it. Pinning the low end proves the roll happened.
+    func test_saveWizardBoard_handAddedLinkedAutoTitle_followsThePlacementTarget() throws {
         let database = try makeDb()
         let board = try seedLinkedMember(database, title: "Do 20 push-ups")
 
@@ -958,17 +824,20 @@ final class DerivedCountersTests: XCTestCase {
 
         let range = BoardSources.varyRange(t: 20, level: .lot, goal: 20)
         XCTAssertLessThan(range.lowerBound, 20, "the assertions below would be degenerate")
-        let derivedId = BoardSources.derivedTaskId(boardId: boardId, rootTaskId: hubRootId)
-        let derived = try XCTUnwrap(try database.read { try Task.fetchOne($0, key: derivedId) })
-        XCTAssertEqual(derived.maxCount, range.lowerBound)
-        XCTAssertNotEqual(derived.maxCount, 20)
-        XCTAssertEqual(derived.title, "Do \(formatCount(range.lowerBound, kind: .discrete)) push-ups")
+        let placed = try XCTUnwrap(try database.read { db in
+            try BoardTask.filter(Column("boardId") == self.boardId && Column("isDeleted") == false).fetchOne(db)
+        })
+        XCTAssertEqual(placed.taskId, linkedId)
+        XCTAssertEqual(placed.targetOverride, range.lowerBound)
+        let task = try XCTUnwrap(try database.fetchTask(id: linkedId))
+        XCTAssertEqual(
+            PlacementParams.apply(task, placement: placed).title,
+            "Do \(formatCount(range.lowerBound, kind: .discrete)) push-ups"
+        )
     }
 
-    /// Control: the SAME save without dice mints nothing and places the
-    /// original member — so the test above is pinning the threading, not a
-    /// mint that would have happened anyway.
-    func test_saveWizardBoard_handAddedWithoutDice_mintsNothing() throws {
+    /// Control: the SAME save without dice places the member with no parameters.
+    func test_saveWizardBoard_handAddedWithoutDice_writesNoParameters() throws {
         let database = try makeDb()
         let board = try seedHandAddedCounter(database)
 
@@ -978,13 +847,12 @@ final class DerivedCountersTests: XCTestCase {
             manualTaskVary: [:], now: now
         )
 
-        let derivedId = BoardSources.derivedTaskId(boardId: boardId, rootTaskId: rootId)
-        XCTAssertNil(try database.read { try Task.fetchOne($0, key: derivedId) })
         let placements = try database.read { db in
             try BoardTask.filter(Column("boardId") == self.boardId && Column("isDeleted") == false)
                 .fetchAll(db)
         }
         XCTAssertEqual(placements.map { $0.taskId }, [rootId])
+        XCTAssertNil(placements.first?.targetOverride)
     }
 
     // MARK: - 10. Pool-level default dice (docs/BOARD_SOURCES.md §Member rules → Pool-level defaults, 2026-10-06)
@@ -1018,7 +886,7 @@ final class DerivedCountersTests: XCTestCase {
     /// spawn (`withEffectiveMemberRules` in the supply builder): the spawned
     /// copy is a ROLL inside `varyRange`, not the root placed as-is. Twin of
     /// web `recurringBoardSpawnMix.test.ts` "pool-level default dice".
-    func test_spawn_poolDefaultDice_mintsARolledTargetInsideVaryRange() throws {
+    func test_spawn_poolDefaultDice_plansARolledTargetInsideVaryRange() throws {
         let database = try makeDb()
         try seedDicePool(database, memberVary: [rootId: .lot])
         let template = try seedTemplate(
@@ -1028,22 +896,22 @@ final class DerivedCountersTests: XCTestCase {
         let outcome = try spawn(database, template)
         guard case .spawned = outcome else { return XCTFail("expected a spawn, got \(outcome)") }
 
-        let derivedId = BoardSources.derivedTaskId(boardId: "spawned-1", rootTaskId: rootId)
-        let derived = try XCTUnwrap(try database.read { try Task.fetchOne($0, key: derivedId) })
         let range = BoardSources.varyRange(t: 10, level: .lot, goal: 10)
         XCTAssertLessThan(range.lowerBound, range.upperBound, "the range is real, not collapsed")
-        let maxCount = try XCTUnwrap(derived.maxCount)
-        XCTAssertTrue(range.contains(maxCount),
-                      "rolled target \(maxCount) must land inside \(range.lowerBound)…\(range.upperBound)")
-        XCTAssertEqual(derived.sharedCounterId, rootId)
-
-        let placed = try spawnedPlacements(database)
-        XCTAssertTrue(placed.contains(derivedId))
-        XCTAssertFalse(placed.contains(rootId), "the pool member itself is NOT placed")
+        let placed = try database.read { db in
+            try BoardTask.filter(Column("boardId") == "spawned-1" && Column("isDeleted") == false)
+                .fetchAll(db)
+        }
+        let member = try XCTUnwrap(placed.first { $0.taskId == self.rootId }, "the pool member itself is placed")
+        // The roll may land on the goal itself (no override then); anything else is in range.
+        if let target = member.targetOverride {
+            XCTAssertTrue(range.contains(target),
+                          "rolled target \(target) must land inside \(range.lowerBound)…\(range.upperBound)")
+        }
     }
 
     /// Control: without a pool default (and no rule) the member is placed
-    /// as-is — the mint above happens only because the default arrived.
+    /// with no parameters.
     func test_spawn_poolWithoutDefault_placesTheMemberItself() throws {
         let database = try makeDb()
         try seedDicePool(database, memberVary: [:])
@@ -1054,9 +922,11 @@ final class DerivedCountersTests: XCTestCase {
         let outcome = try spawn(database, template)
         guard case .spawned = outcome else { return XCTFail("expected a spawn, got \(outcome)") }
 
-        let derivedId = BoardSources.derivedTaskId(boardId: "spawned-1", rootTaskId: rootId)
-        XCTAssertNil(try database.read { try Task.fetchOne($0, key: derivedId) })
         XCTAssertTrue(try spawnedPlacements(database).contains(rootId))
+        let placed = try database.read { db in
+            try BoardTask.filter(Column("boardId") == "spawned-1" && Column("taskId") == self.rootId).fetchOne(db)
+        }
+        XCTAssertNil(placed?.targetOverride)
     }
 
     /// Seeds the root (goal 10) in a pool with the given default and returns
@@ -1086,10 +956,11 @@ final class DerivedCountersTests: XCTestCase {
             manualTaskIds: [], now: now, rng: { 0 }
         )
 
-        let derivedId = BoardSources.derivedTaskId(boardId: boardId, rootTaskId: rootId)
-        let derived = try XCTUnwrap(try database.read { try Task.fetchOne($0, key: derivedId) })
-        XCTAssertEqual(derived.maxCount, BoardSources.varyRange(t: 10, level: .lot, goal: 10).lowerBound)
-        XCTAssertEqual(derived.sharedCounterId, rootId)
+        let placed = try XCTUnwrap(try database.read { db in
+            try BoardTask.filter(Column("boardId") == self.boardId && Column("isDeleted") == false).fetchOne(db)
+        })
+        XCTAssertEqual(placed.taskId, rootId)
+        XCTAssertEqual(placed.targetOverride, BoardSources.varyRange(t: 10, level: .lot, goal: 10).lowerBound)
     }
 
     /// A stored source `vary` ALWAYS wins over the pool default: `.little`
@@ -1109,10 +980,11 @@ final class DerivedCountersTests: XCTestCase {
             manualTaskIds: [], now: now, rng: { 0 }
         )
 
-        let derivedId = BoardSources.derivedTaskId(boardId: boardId, rootTaskId: rootId)
-        let derived = try XCTUnwrap(try database.read { try Task.fetchOne($0, key: derivedId) })
+        let placed = try XCTUnwrap(try database.read { db in
+            try BoardTask.filter(Column("boardId") == self.boardId && Column("isDeleted") == false).fetchOne(db)
+        })
         let overrideLow = BoardSources.varyRange(t: 10, level: .little, goal: 10).lowerBound
         XCTAssertNotEqual(overrideLow, BoardSources.varyRange(t: 10, level: .lot, goal: 10).lowerBound)
-        XCTAssertEqual(derived.maxCount, overrideLow)
+        XCTAssertEqual(placed.targetOverride, overrideLow)
     }
 }

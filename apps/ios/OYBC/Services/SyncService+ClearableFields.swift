@@ -34,6 +34,8 @@ let clearableFieldsByCollection: [String: [String]] = [
     ],
     // Task/window rework slice 1 — a cleared per-placement parameter is stored ABSENT.
     "boardTasks": ["targetOverride", "targetKind", "childTargets", "titleOverride"],
+    // Slice 3b — a Repeat with no frozen hand-added targets stores the field ABSENT.
+    "recurringBoardTemplates": ["manualTaskTargets"],
     // A revived counts-toward credit drops `deletedAt` (SHARED_COUNTER_SETTINGS §3b).
     "taskEvents": ["deletedAt"],
 ]

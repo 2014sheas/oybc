@@ -152,10 +152,12 @@ export async function fetchAllBoardTasks(): Promise<BoardTask[]> {
  * docs/BOARD_INTEGRITY.md.
  */
 export async function createBoardTask(
-  input: CreateBoardTaskInput
+  input: CreateBoardTaskInput & PlacementParams,
 ): Promise<BoardTask> {
   const now = currentTimestamp();
-  const boardTask: BoardTask = {
+  // TASK_WINDOW_REWORK slice 3b: the wizard / spawn write the planner's
+  // placement parameters with the row; canonicalised like every other writer.
+  const boardTask: BoardTask = withNormalizedPlacementFields({
     id: generateUUID(),
     boardId: input.boardId,
     taskId: input.taskId,
@@ -163,11 +165,15 @@ export async function createBoardTask(
     col: input.col,
     isCenter: input.isCenter,
     ...(input.isLocked === true ? { isLocked: true } : {}),
+    targetOverride: input.targetOverride,
+    targetKind: input.targetKind,
+    childTargets: input.childTargets,
+    titleOverride: input.titleOverride,
     createdAt: now,
     updatedAt: now,
     version: 1,
     isDeleted: false,
-  };
+  } as BoardTask);
 
   await db.transaction('rw', [db.boards, db.boardTasks, db.syncQueue], async () => {
     const owningBoard = await db.boards.get(input.boardId);

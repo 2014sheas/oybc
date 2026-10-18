@@ -404,7 +404,9 @@ export function BoardWizardPage({
             onStageEdit={wizard.stageEdit}
             onRevertEdit={wizard.revertEdit}
             onRestoreToPool={wizard.restoreToPool}
-            onReplaceManualTask={wizard.replaceManualTask}
+            placementParams={wizard.placementParams}
+            onSetPlacementParams={wizard.setPlacementParams}
+            onRestampPlacementParams={wizard.restampPlacementParams}
             onBack={wizard.goBack}
             onNext={wizard.goNext}
           />

@@ -750,6 +750,16 @@
         "unit": "liters",
         "maxCount": 0.05,
         "countKind": "continuous"
+      },
+      "w2": {
+        "type": "counting",
+        "title": "Legacy copy",
+        "action": "Read",
+        "unit": "pages",
+        "maxCount": 5,
+        "sharedCounterId": "r1",
+        "startDate": "2026-09-11T00:00:00",
+        "createdInWizard": true
       }
     },
     "children": {
@@ -816,23 +826,15 @@
         "manualTaskVary": {},
         "seed": 42,
         "expected": {
-          "placement": [
-            "derived:r1"
-          ],
-          "derived": [
+          "placements": [
             {
-              "root": "r1",
-              "sourceMember": "r1",
-              "replaces": "r1",
-              "maxCount": 5,
-              "baseline": 12,
-              "title": "Read 5 pages",
-              "action": "Read",
-              "unit": "pages"
+              "taskId": "r1",
+              "targetOverride": 5,
+              "targetKind": "discrete"
             }
-          ],
-          "compounds": []
-        }
+          ]
+        },
+        "expectedRngCalls": 0
       },
       {
         "name": "board counting override: target 20 wins over auto",
@@ -857,20 +859,15 @@
         "manualTaskVary": {},
         "seed": 42,
         "expected": {
-          "placement": [
-            "derived:r1"
-          ],
-          "derived": [
+          "placements": [
             {
-              "root": "r1",
-              "sourceMember": "r1",
-              "replaces": "r1",
-              "maxCount": 20,
-              "baseline": 12
+              "taskId": "r1",
+              "targetOverride": 20,
+              "targetKind": "discrete"
             }
-          ],
-          "compounds": []
-        }
+          ]
+        },
+        "expectedRngCalls": 0
       },
       {
         "name": "board counting oneOff, no target: pro-rates exactly like recurring now that resolveTarget's gate is fromBoard ALONE - r1 35 weekly to daily gives 5 (was 35 before the 2026-09-21 owner ruling)",
@@ -892,23 +889,15 @@
         "seed": 42,
         "note": "Deliberately identical to the first vector except for `mode`, so the pair pins mode-INDEPENDENCE: a board-sourced member resolves to the same 5 either way. The one-off/recurring difference now lives only in whether the wizard WRITES an explicit target at pull time (prefilledOneOffTarget), not in this math.",
         "expected": {
-          "placement": [
-            "derived:r1"
-          ],
-          "derived": [
+          "placements": [
             {
-              "root": "r1",
-              "sourceMember": "r1",
-              "replaces": "r1",
-              "maxCount": 5,
-              "baseline": 12,
-              "title": "Read 5 pages",
-              "action": "Read",
-              "unit": "pages"
+              "taskId": "r1",
+              "targetOverride": 5,
+              "targetKind": "discrete"
             }
-          ],
-          "compounds": []
-        }
+          ]
+        },
+        "expectedRngCalls": 0
       },
       {
         "name": "pool counting oneOff with a target: the surviving half of the gate - placed as-is, never derived",
@@ -934,12 +923,13 @@
         "seed": 42,
         "note": "Opening the gate on `fromBoard` alone must not leak auto-targeting onto POOL members on a one-off board either: r2 is a monthly 10 onto a daily board, which would pro-rate to 1 if the gate were open, and its explicit target 3 would be honoured if pool targets counted. Neither happens - r2 is placed as-is and nothing is derived.",
         "expected": {
-          "placement": [
-            "r2"
-          ],
-          "derived": [],
-          "compounds": []
-        }
+          "placements": [
+            {
+              "taskId": "r2"
+            }
+          ]
+        },
+        "expectedRngCalls": 0
       },
       {
         "name": "vary roll on board auto: t=5 lvl1 then [4,6]; seed 42 gives 4+floor(0.2523x3)=4",
@@ -964,20 +954,15 @@
         "manualTaskVary": {},
         "seed": 42,
         "expected": {
-          "placement": [
-            "derived:r1"
-          ],
-          "derived": [
+          "placements": [
             {
-              "root": "r1",
-              "sourceMember": "r1",
-              "replaces": "r1",
-              "maxCount": 4,
-              "baseline": 12
+              "taskId": "r1",
+              "targetOverride": 4,
+              "targetKind": "discrete"
             }
-          ],
-          "compounds": []
-        }
+          ]
+        },
+        "expectedRngCalls": 1
       },
       {
         "name": "pool counting as-is (no vary)",
@@ -1003,12 +988,13 @@
         "seed": 42,
         "note": "ANY target on a pool source is ignored - member-level (here) or part-level (see the split-part and One-square pool vectors below). A pool member offers vary / split / part-exclusion and nothing else, so this member is placed as-is.",
         "expected": {
-          "placement": [
-            "r2"
-          ],
-          "derived": [],
-          "compounds": []
-        }
+          "placements": [
+            {
+              "taskId": "r2"
+            }
+          ]
+        },
+        "expectedRngCalls": 0
       },
       {
         "name": "pool counting with vary: t=goal=10 lvl2 then [5,15]; seed 42 gives 5+floor(0.2523x11=2.776)=7",
@@ -1033,20 +1019,15 @@
         "manualTaskVary": {},
         "seed": 42,
         "expected": {
-          "placement": [
-            "derived:r2"
-          ],
-          "derived": [
+          "placements": [
             {
-              "root": "r2",
-              "sourceMember": "r2",
-              "replaces": "r2",
-              "maxCount": 7,
-              "baseline": 3
+              "taskId": "r2",
+              "targetOverride": 7,
+              "targetKind": "discrete"
             }
-          ],
-          "compounds": []
-        }
+          ]
+        },
+        "expectedRngCalls": 1
       },
       {
         "name": "hand-added with manualTaskVary: r2 lvl1 then [8,12]; seed 42 gives 9; baseline 3",
@@ -1064,20 +1045,15 @@
         "seed": 42,
         "note": "r2 goal is 10 and a hand-added member rolls around its own goal, so varyRange(10,1,10) = [max(1,round(8))=8, round(12)=12] = [8,12] - hi is NOT capped at the goal (fixed 2026-10-06; the first implementation clamped to [8,10] and rolled 8). sample1 = 1083814273/2^32 = 0.25235, so 8 + floor(0.25235 x 5 = 1.2617) = 8 + 1 = 9.",
         "expected": {
-          "placement": [
-            "derived:r2"
-          ],
-          "derived": [
+          "placements": [
             {
-              "root": "r2",
-              "sourceMember": "r2",
-              "replaces": "r2",
-              "maxCount": 9,
-              "baseline": 3
+              "taskId": "r2",
+              "targetOverride": 9,
+              "targetKind": "discrete"
             }
-          ],
-          "compounds": []
-        }
+          ]
+        },
+        "expectedRngCalls": 1
       },
       {
         "name": "hand-added counting without vary then as-is; normal always as-is",
@@ -1094,13 +1070,16 @@
         "manualTaskVary": {},
         "seed": 42,
         "expected": {
-          "placement": [
-            "r2",
-            "n1"
-          ],
-          "derived": [],
-          "compounds": []
-        }
+          "placements": [
+            {
+              "taskId": "r2"
+            },
+            {
+              "taskId": "n1"
+            }
+          ]
+        },
+        "expectedRngCalls": 0
       },
       {
         "name": "hand-added wins over source copy: r1 in a board supply AND manual, no manual vary then as-is",
@@ -1123,12 +1102,13 @@
         "manualTaskVary": {},
         "seed": 42,
         "expected": {
-          "placement": [
-            "r1"
-          ],
-          "derived": [],
-          "compounds": []
-        }
+          "placements": [
+            {
+              "taskId": "r1"
+            }
+          ]
+        },
+        "expectedRngCalls": 0
       },
       {
         "name": "split part on a board source: c1 8 weekly to daily gives ceil(8/7)=2; part target 3 overrides to 3",
@@ -1164,21 +1144,18 @@
         "manualTaskVary": {},
         "seed": 42,
         "expected": {
-          "placement": [
-            "derived:c1",
-            "c2"
-          ],
-          "derived": [
+          "placements": [
             {
-              "root": "c1",
-              "sourceMember": "c1",
-              "replaces": "c1",
-              "maxCount": 3,
-              "baseline": 0
+              "taskId": "c1",
+              "targetOverride": 3,
+              "targetKind": "discrete"
+            },
+            {
+              "taskId": "c2"
             }
-          ],
-          "compounds": []
-        }
+          ]
+        },
+        "expectedRngCalls": 0
       },
       {
         "name": "split part auto (no part target): c1 then 2",
@@ -1210,20 +1187,15 @@
         "seed": 42,
         "note": "member-level vary is IGNORED in split mode: the part carries no vary of its own, so t=autoTarget(8,7,1)=2 at lvl0 gives 2 and the rng is untouched.",
         "expected": {
-          "placement": [
-            "derived:c1"
-          ],
-          "derived": [
+          "placements": [
             {
-              "root": "c1",
-              "sourceMember": "c1",
-              "replaces": "c1",
-              "maxCount": 2,
-              "baseline": 0
+              "taskId": "c1",
+              "targetOverride": 2,
+              "targetKind": "discrete"
             }
-          ],
-          "compounds": []
-        }
+          ]
+        },
+        "expectedRngCalls": 0
       },
       {
         "name": "One-square compound with member-level vary on a board source then derived compound; c1 auto 2, lvl1 gives [round(1.6)=2, round(2.4)=2] = 2; c2 original",
@@ -1249,43 +1221,19 @@
         "seed": 42,
         "note": "lo == hi so the roll short-circuits and never samples the rng.",
         "expected": {
-          "placement": [
-            "derivedCompound:C"
-          ],
-          "derived": [
+          "placements": [
             {
-              "root": "c1",
-              "sourceMember": "c1",
-              "replaces": "c1",
-              "maxCount": 2,
-              "baseline": 0
-            }
-          ],
-          "compounds": [
-            {
-              "source": "C",
-              "replaces": "C",
-              "timeframe": "daily",
-              "startDate": "2026-09-18T00:00:00",
-              "endDate": "2026-09-18T00:00:00",
-              "title": "Morning",
-              "operator": "AND",
-              "threshold": null,
-              "children": [
+              "taskId": "C",
+              "childTargets": [
                 {
-                  "child": "derived:c1",
-                  "childIndex": 0,
-                  "isDerived": true
-                },
-                {
-                  "child": "c2",
-                  "childIndex": 1,
-                  "isDerived": false
+                  "childId": "c1",
+                  "target": 2
                 }
               ]
             }
           ]
-        }
+        },
+        "expectedRngCalls": 0
       },
       {
         "name": "One-square compound with a part target only: board source, parts.c1.target 4 then derived compound, c1 gives 4",
@@ -1315,40 +1263,19 @@
         "seed": 42,
         "note": "A part-level target is honoured on BOARD sources only, so this vector uses kind board. The explicit 4 beats autoTarget(8,7,1)=2; vary is 0 so the rng is untouched.",
         "expected": {
-          "placement": [
-            "derivedCompound:C"
-          ],
-          "derived": [
+          "placements": [
             {
-              "root": "c1",
-              "sourceMember": "c1",
-              "replaces": "c1",
-              "maxCount": 4,
-              "baseline": 0
-            }
-          ],
-          "compounds": [
-            {
-              "source": "C",
-              "replaces": "C",
-              "timeframe": "daily",
-              "startDate": "2026-09-18T00:00:00",
-              "endDate": "2026-09-18T00:00:00",
-              "children": [
+              "taskId": "C",
+              "childTargets": [
                 {
-                  "child": "derived:c1",
-                  "childIndex": 0,
-                  "isDerived": true
-                },
-                {
-                  "child": "c2",
-                  "childIndex": 1,
-                  "isDerived": false
+                  "childId": "c1",
+                  "target": 4
                 }
               ]
             }
           ]
-        }
+        },
+        "expectedRngCalls": 0
       },
       {
         "name": "One-square compound with no rule on a board source then as-is",
@@ -1369,12 +1296,13 @@
         "manualTaskVary": {},
         "seed": 42,
         "expected": {
-          "placement": [
-            "C"
-          ],
-          "derived": [],
-          "compounds": []
-        }
+          "placements": [
+            {
+              "taskId": "C"
+            }
+          ]
+        },
+        "expectedRngCalls": 0
       },
       {
         "name": "window-stamped hand-added member re-mints: w1 (root r1, maxCount 5) then derived root r1, target 5, baseline 12",
@@ -1389,20 +1317,13 @@
         "manualTaskVary": {},
         "seed": 42,
         "expected": {
-          "placement": [
-            "derived:r1"
-          ],
-          "derived": [
+          "placements": [
             {
-              "root": "r1",
-              "sourceMember": "w1",
-              "replaces": "w1",
-              "maxCount": 5,
-              "baseline": 12
+              "taskId": "w1"
             }
-          ],
-          "compounds": []
-        }
+          ]
+        },
+        "expectedRngCalls": 0
       },
       {
         "name": "hand-added HUB-LINKED member (sharedCounterId set, no startDate) is ALWAYS minted for this window: c4 (root r2, goal 4) with vary off then derived root r2, target 4, baseline 3, no rng sample",
@@ -1421,23 +1342,14 @@
         "expectedRngCalls": 0,
         "note": "Owner rule 2026-10-01: a counting square on a board accounts only for the counter's logs inside that board's window, so a hand-added member that derives from a root (window-stamped OR hub-linked) is re-minted as a window-stamped row for THIS window. Before this rule c4 placed as-is (no startDate, vary off). Vary off takes no sample; n1 (normal) is still placed as-is. A goal-less linked member would still place as-is (nothing to mint a target from) - documented edge.",
         "expected": {
-          "placement": [
-            "derived:r2",
-            "n1"
-          ],
-          "derived": [
+          "placements": [
             {
-              "root": "r2",
-              "sourceMember": "c4",
-              "replaces": "c4",
-              "maxCount": 4,
-              "baseline": 3,
-              "title": "Run 4 miles",
-              "action": "Run",
-              "unit": "miles"
+              "taskId": "c4"
+            },
+            {
+              "taskId": "n1"
             }
-          ],
-          "compounds": []
+          ]
         }
       },
       {
@@ -1470,12 +1382,13 @@
         "manualTaskVary": {},
         "seed": 42,
         "expected": {
-          "placement": [
-            "r1"
-          ],
-          "derived": [],
-          "compounds": []
-        }
+          "placements": [
+            {
+              "taskId": "r1"
+            }
+          ]
+        },
+        "expectedRngCalls": 0
       },
       {
         "name": "two rolls consume rng in selectedIds order: r1 (board auto 5, lvl1 [4,6]) then r2 (pool lvl1 [8,12])",
@@ -1513,28 +1426,20 @@
         "seed": 42,
         "note": "sample1 = 1083814273/2^32 = 0.25235 so r1 = 4 + floor(0.25235 x 3) = 4. sample2 = 378494188/2^32 = 0.08813 so r2 = 8 + floor(0.08813 x 5 = 0.4407) = 8. r2 (goal 10, t = goal) rolls inside the symmetric [8,12] (5 values) since 2026-10-06; the capped [8,10] of the first implementation gave the same 8.",
         "expected": {
-          "placement": [
-            "derived:r1",
-            "derived:r2"
-          ],
-          "derived": [
+          "placements": [
             {
-              "root": "r1",
-              "sourceMember": "r1",
-              "replaces": "r1",
-              "maxCount": 4,
-              "baseline": 12
+              "taskId": "r1",
+              "targetOverride": 4,
+              "targetKind": "discrete"
             },
             {
-              "root": "r2",
-              "sourceMember": "r2",
-              "replaces": "r2",
-              "maxCount": 8,
-              "baseline": 3
+              "taskId": "r2",
+              "targetOverride": 8,
+              "targetKind": "discrete"
             }
-          ],
-          "compounds": []
-        }
+          ]
+        },
+        "expectedRngCalls": 2
       },
       {
         "name": "third sample never taken: three level-1 rolls r1 [4,6], r2 [8,12], c1 (board auto 2 then [2,2] lo==hi so NO sample)",
@@ -1586,35 +1491,23 @@
         "expectedRngCalls": 2,
         "note": "sample3 = 2479403867/2^32 = 0.57728 is left unconsumed - asserted via a counting rng wrapper (expectedRngCalls = 2). As in the two-roll vector, r2's range is the symmetric [8,12] and sample2 lands on 8.",
         "expected": {
-          "placement": [
-            "derived:r1",
-            "derived:r2",
-            "derived:c1"
-          ],
-          "derived": [
+          "placements": [
             {
-              "root": "r1",
-              "sourceMember": "r1",
-              "replaces": "r1",
-              "maxCount": 4,
-              "baseline": 12
+              "taskId": "r1",
+              "targetOverride": 4,
+              "targetKind": "discrete"
             },
             {
-              "root": "r2",
-              "sourceMember": "r2",
-              "replaces": "r2",
-              "maxCount": 8,
-              "baseline": 3
+              "taskId": "r2",
+              "targetOverride": 8,
+              "targetKind": "discrete"
             },
             {
-              "root": "c1",
-              "sourceMember": "c1",
-              "replaces": "c1",
-              "maxCount": 2,
-              "baseline": 0
+              "taskId": "c1",
+              "targetOverride": 2,
+              "targetKind": "discrete"
             }
-          ],
-          "compounds": []
+          ]
         }
       },
       {
@@ -1651,12 +1544,13 @@
         "seed": 42,
         "note": "The part-level twin of the member-level pool vector: target 5 is ignored because the source is a pool, and with no vary there is nothing left to derive, so c1 is placed as its original self. Contrast the board-source split vector, where the same part target yields a derived counter.",
         "expected": {
-          "placement": [
-            "c1"
-          ],
-          "derived": [],
-          "compounds": []
-        }
+          "placements": [
+            {
+              "taskId": "c1"
+            }
+          ]
+        },
+        "expectedRngCalls": 0
       },
       {
         "name": "children roll in childIndex order, not array order",
@@ -1692,45 +1586,17 @@
         "expectedRngCalls": 2,
         "note": "C2's children are stored [c1 (childIndex 1), c3 (childIndex 0)], so childIndex order is c3 then c1 - the reverse of array order. c3 (childIndex 0) first: target 10 vary 1, goal 20, varyRange(10,1,20) = [max(1,round(8))=8, min(20,round(12)=12)=12] = [8,12]; sample1 = 1083814273/2^32 = 0.25235, 8 + floor(0.25235 x 5 = 1.2617) = 9. c1 (childIndex 1) second: target 6 vary 2, goal 8, varyRange(6,2,8) = [max(1,round(3))=3, round(9)=9] = [3,9] (hi overshoots the goal 8 - no ceiling since 2026-10-06); sample2 = 378494188/2^32 = 0.08813, 3 + floor(0.08813 x 7 = 0.6169) = 3. Array order would instead give c1 = 3+floor(0.25235x7=1.766) = 4 and c3 = 8+floor(0.08813x5=0.441) = 8, so this vector discriminates. Both parts derive, so expectedRngCalls is 2.",
         "expected": {
-          "placement": [
-            "derivedCompound:C2"
-          ],
-          "derived": [
+          "placements": [
             {
-              "root": "c3",
-              "sourceMember": "c3",
-              "replaces": "c3",
-              "maxCount": 9,
-              "baseline": 0
-            },
-            {
-              "root": "c1",
-              "sourceMember": "c1",
-              "replaces": "c1",
-              "maxCount": 3,
-              "baseline": 0
-            }
-          ],
-          "compounds": [
-            {
-              "source": "C2",
-              "replaces": "C2",
-              "timeframe": "daily",
-              "startDate": "2026-09-18T00:00:00",
-              "endDate": "2026-09-18T00:00:00",
-              "title": "Evening",
-              "operator": "OR",
-              "threshold": null,
-              "children": [
+              "taskId": "C2",
+              "childTargets": [
                 {
-                  "child": "derived:c3",
-                  "childIndex": 0,
-                  "isDerived": true
+                  "childId": "c3",
+                  "target": 9
                 },
                 {
-                  "child": "derived:c1",
-                  "childIndex": 1,
-                  "isDerived": true
+                  "childId": "c1",
+                  "target": 3
                 }
               ]
             }
@@ -1765,12 +1631,13 @@
         "seed": 42,
         "note": "The One-square twin of the split-part pool vector, and the pool counterpart of the board vector directly above: a part-level target is ignored on a pool source, so no part derives, the whole compound is placed as its original self, and the rng is untouched. This is also the only vector that reaches the \"a rule exists but derives nothing\" exit (as opposed to the no-rule-at-all exit).",
         "expected": {
-          "placement": [
-            "C"
-          ],
-          "derived": [],
-          "compounds": []
-        }
+          "placements": [
+            {
+              "taskId": "C"
+            }
+          ]
+        },
+        "expectedRngCalls": 0
       },
       {
         "name": "action-less counting member keeps its own title",
@@ -1792,23 +1659,15 @@
         "seed": 42,
         "note": "a1 has no action and no unit, so the derived draft carries action = \"\" and unit = \"\" and the title falls back to the source task's own title rather than a generated \"<action> <n> <unit>\" string. Target is autoTarget(12,7,1) = min(12, ceil(12/7) = 2) = 2, vary 0 so the rng is untouched.",
         "expected": {
-          "placement": [
-            "derived:a1"
-          ],
-          "derived": [
+          "placements": [
             {
-              "root": "a1",
-              "sourceMember": "a1",
-              "replaces": "a1",
-              "maxCount": 2,
-              "baseline": 0,
-              "title": "Meditate",
-              "action": "",
-              "unit": ""
+              "taskId": "a1",
+              "targetOverride": 2,
+              "targetKind": "discrete"
             }
-          ],
-          "compounds": []
-        }
+          ]
+        },
+        "expectedRngCalls": 0
       },
       {
         "name": "two parts of one compound sharing a counter root collapse to ONE child and take NO extra sample",
@@ -1835,33 +1694,17 @@
         "expectedRngCalls": 0,
         "note": "C3's children are r2 (childIndex 0, its own root) and c4 (childIndex 1, sharedCounterId r2) - the same counter family authored twice inside one compound, which counter-family exclusivity does NOT prevent (it constrains board selection, not compound authorship). r2: goal 10, monthly source to a daily board, autoTarget = min(10, ceil(10 x 1 / 30) = 1) = 1; varyRange(1, 1, 10) = [max(1, round(0.8)) = 1, min(10, round(1.2)) = 1] = [1,1], so lo == hi and the roll takes no sample. c4: goal 4, root r2, so the per-root dedupe hits BEFORE the roll and c4 takes no sample either - hence expectedRngCalls 0. Both parts resolve to the SAME derived id, so the children list collapses to one entry (first in childIndex order, keeping childIndex 0); without the collapse the compound would carry one childTaskId - and one linkId, a pure function of (compound, child) - twice.",
         "expected": {
-          "placement": [
-            "derivedCompound:C3"
-          ],
-          "derived": [
+          "placements": [
             {
-              "root": "r2",
-              "sourceMember": "r2",
-              "replaces": "r2",
-              "maxCount": 1,
-              "baseline": 3
-            }
-          ],
-          "compounds": [
-            {
-              "source": "C3",
-              "replaces": "C3",
-              "timeframe": "daily",
-              "startDate": "2026-09-18T00:00:00",
-              "endDate": "2026-09-18T00:00:00",
-              "title": "Legs",
-              "operator": "AND",
-              "threshold": null,
-              "children": [
+              "taskId": "C3",
+              "childTargets": [
                 {
-                  "child": "derived:r2",
-                  "childIndex": 0,
-                  "isDerived": true
+                  "childId": "r2",
+                  "target": 1
+                },
+                {
+                  "childId": "c4",
+                  "target": 1
                 }
               ]
             }
@@ -1895,36 +1738,20 @@
         "manual": [],
         "manualTaskVary": {},
         "seed": 42,
-        "expectedRngCalls": 0,
-        "note": "The discriminating twin of the vector above. There c4's own range was degenerate ([1,1]) so the sample count could not tell roll-then-dedupe from dedupe-then-roll. Here c4 carries an explicit part target 5, clamped to its goal 4, and varyRange(4, 1, 4) = [max(1, round(3.2)) = 3, round(4.8) = 5] = [3,5] - a NON-degenerate range that would consume a sample if the roll ran. It must not: c4's root is r2, which r2 (childIndex 0) already minted, so the dedupe returns that draft before rolling and expectedRngCalls stays 0. Roll-before-dedupe would make it 1 and leave the seeded sequence dependent on how many members happen to collapse. r2 itself is unchanged (auto target 1, [1,1], no sample), and the collapsed children list is the same single entry.",
+        "expectedRngCalls": 1,
+        "note": "The discriminating twin of the vector above. There c4's own range was degenerate ([1,1]) so the sample count could not tell roll-then-dedupe from dedupe-then-roll. Here c4 carries an explicit part target 5, clamped to its goal 4, and varyRange(4, 1, 4) = [max(1, round(3.2)) = 3, round(4.8) = 5] = [3,5] - a NON-degenerate range that would consume a sample if the roll ran. It must not: c4's root is r2, which r2 (childIndex 0) already minted, so the dedupe returns that draft before rolling and expectedRngCalls stays 0. Roll-before-dedupe would make it 1 and leave the seeded sequence dependent on how many members happen to collapse. r2 itself is unchanged (auto target 1, [1,1], no sample), and the collapsed children list is the same single entry. Slice 3b: 0 \u2192 1 rng sample(s) \u2014 collapsed parts no longer share one roll; each child rolls its own target.",
         "expected": {
-          "placement": [
-            "derivedCompound:C3"
-          ],
-          "derived": [
+          "placements": [
             {
-              "root": "r2",
-              "sourceMember": "r2",
-              "replaces": "r2",
-              "maxCount": 1,
-              "baseline": 3
-            }
-          ],
-          "compounds": [
-            {
-              "source": "C3",
-              "replaces": "C3",
-              "timeframe": "daily",
-              "startDate": "2026-09-18T00:00:00",
-              "endDate": "2026-09-18T00:00:00",
-              "title": "Legs",
-              "operator": "AND",
-              "threshold": null,
-              "children": [
+              "taskId": "C3",
+              "childTargets": [
                 {
-                  "child": "derived:r2",
-                  "childIndex": 0,
-                  "isDerived": true
+                  "childId": "r2",
+                  "target": 1
+                },
+                {
+                  "childId": "c4",
+                  "target": 3
                 }
               ]
             }
@@ -1952,11 +1779,11 @@
         "expectedRngCalls": 0,
         "note": "Owner ruling 2026-09-22. Every OTHER board vector pulls cross-timeframe, so it pro-rates and still derives; d1 is the same-timeframe case, where autoTarget(12, 1, 1) returns the goal unchanged and the derived row would be a byte-for-byte clone of its root (same target, same regenerated title) - the 'Read 1 book' twin the owner saw on device. The literal root id 'd1' must land in placement and derived must be EMPTY. expectedRngCalls 0 also pins that the skip is decided before any roll, so a seeded sequence cannot shift.",
         "expected": {
-          "placement": [
-            "d1"
-          ],
-          "derived": [],
-          "compounds": []
+          "placements": [
+            {
+              "taskId": "d1"
+            }
+          ]
         }
       },
       {
@@ -1984,22 +1811,13 @@
         "expectedRngCalls": 1,
         "note": "The skip needs BOTH halves - target == goal AND vary off. A vary range is a real difference from the root, so the identical-looking pull still mints, and the rolled 11 (not 12) proves the derived row is not a clone. Title flipped 2026-10-06 (custom-counter-title fix): d1's stored title 'Push-ups 12' is NOT the auto title for Push-ups / 12 / reps ('Push-ups 12 reps'), so it is a custom name and counterCopyTitle carries it over verbatim - the copy is titled 'Push-ups 12' at target 11, never 'Push-ups 11 reps' as before the fix.",
         "expected": {
-          "placement": [
-            "derived:d1"
-          ],
-          "derived": [
+          "placements": [
             {
-              "root": "d1",
-              "sourceMember": "d1",
-              "replaces": "d1",
-              "maxCount": 11,
-              "baseline": 4,
-              "title": "Push-ups 12",
-              "action": "Push-ups",
-              "unit": "reps"
+              "taskId": "d1",
+              "targetOverride": 11,
+              "targetKind": "discrete"
             }
-          ],
-          "compounds": []
+          ]
         }
       },
       {
@@ -2027,11 +1845,11 @@
         "expectedRngCalls": 0,
         "note": "The skip reads resolveTarget's RESULT, not how it got there: a hand-set target that happens to equal the goal collapses exactly like the same-timeframe auto target, even though r1 is pulled weekly to daily and would otherwise pro-rate to 5 (see the first vector in this section). This is the discriminating pair for a naive implementation that only checks 'is the source window the same'.",
         "expected": {
-          "placement": [
-            "r1"
-          ],
-          "derived": [],
-          "compounds": []
+          "placements": [
+            {
+              "taskId": "r1"
+            }
+          ]
         }
       },
       {
@@ -2070,12 +1888,14 @@
         "expectedRngCalls": 0,
         "note": "The part-branch twin of the member vectors. Contrast 'split part on a board source ... part target 3 overrides to 3', which is the same shape with target 3 != goal 8 and DOES mint. c2 (a normal task) is placed as itself in both.",
         "expected": {
-          "placement": [
-            "c1",
-            "c2"
-          ],
-          "derived": [],
-          "compounds": []
+          "placements": [
+            {
+              "taskId": "c1"
+            },
+            {
+              "taskId": "c2"
+            }
+          ]
         }
       },
       {
@@ -2099,22 +1919,11 @@
         "expectedRngCalls": 0,
         "note": "The wrong-window guard. w1 carries sharedCounterId r1 AND startDate 2026-09-17 - it is yesterday's daily row, and resolveBoardSourceSupply happily lets it into today's supply. autoTarget(5, 1, 1) returns the goal 5 unchanged, so target == goal and vary is off: without the `sharedCounterId == null` half of the condition this would place w1 itself, putting YESTERDAY's window-stamped row on today's board (its startDate still names the old window, so the derived-counter carve-out reads the old baseline and the square can open already complete, and refreshDerivedBaselines recomputes from the same stale startDate so it never heals). It must re-mint for THIS window instead - collapsing onto root r1, which is why the placement is derived:r1 and the draft replaces w1 while sourcing from it. Baseline 12 is r1 own, freshly taken for this window. The hand-added branch has always guarded this with isWindowStampedMember.",
         "expected": {
-          "placement": [
-            "derived:r1"
-          ],
-          "derived": [
+          "placements": [
             {
-              "root": "r1",
-              "sourceMember": "w1",
-              "replaces": "w1",
-              "maxCount": 5,
-              "baseline": 12,
-              "title": "Read 5 pages",
-              "action": "Read",
-              "unit": "pages"
+              "taskId": "w1"
             }
-          ],
-          "compounds": []
+          ]
         }
       },
       {
@@ -2132,22 +1941,11 @@
         "expectedRngCalls": 0,
         "note": "Owner bug 2026-10-06: a counting task given a custom name in the wizard showed its default '{Action} {goal} {unit}' name once the board was created, because the mint regenerated the copy's title whenever action was set. The rule now: a title is custom iff non-empty after trimming AND different (case-sensitive, trimmed) from generateCounterTaskTitle(own action, own maxCount, own unit); a custom title carries over verbatim. h1 is the owner's exact shape - a wizard-created counter auto-linked to hub root r1 (sharedCounterId set, no startDate), hand-added, vary off, always minted since 2026-10-01.",
         "expected": {
-          "placement": [
-            "derived:r1"
-          ],
-          "derived": [
+          "placements": [
             {
-              "root": "r1",
-              "sourceMember": "h1",
-              "replaces": "h1",
-              "maxCount": 6,
-              "baseline": 12,
-              "title": "Morning pages",
-              "action": "Read",
-              "unit": "pages"
+              "taskId": "h1"
             }
-          ],
-          "compounds": []
+          ]
         }
       },
       {
@@ -2167,22 +1965,13 @@
         "expectedRngCalls": 1,
         "note": "The control for the custom-title vector: c4's title IS its auto title, so the copy's title follows the copy's NEW maxCount exactly as before the 2026-10-06 fix. varyRange(4, 1, 4) = [max(1, round(3.2)) = 3, round(4.8) = 5] = [3,5]; sample1 = 0.25235 so 3 + floor(0.25235 x 3 = 0.757) = 3.",
         "expected": {
-          "placement": [
-            "derived:r2"
-          ],
-          "derived": [
+          "placements": [
             {
-              "root": "r2",
-              "sourceMember": "c4",
-              "replaces": "c4",
-              "maxCount": 3,
-              "baseline": 3,
-              "title": "Run 3 miles",
-              "action": "Run",
-              "unit": "miles"
+              "taskId": "c4",
+              "targetOverride": 3,
+              "targetKind": "discrete"
             }
-          ],
-          "compounds": []
+          ]
         }
       },
       {
@@ -2206,22 +1995,13 @@
         "expectedRngCalls": 0,
         "note": "Same shape as the first vector in this section (r1 35 weekly to daily gives autoTarget ceil(35/7) = 5) but with a custom name: the user chose 'Big read', so the pro-rated copy is still 'Big read', not 'Read 5 pages'. Baseline 0 (r3 has no events).",
         "expected": {
-          "placement": [
-            "derived:r3"
-          ],
-          "derived": [
+          "placements": [
             {
-              "root": "r3",
-              "sourceMember": "r3",
-              "replaces": "r3",
-              "maxCount": 5,
-              "baseline": 1,
-              "title": "Big read",
-              "action": "Read",
-              "unit": "pages"
+              "taskId": "r3",
+              "targetOverride": 5,
+              "targetKind": "discrete"
             }
-          ],
-          "compounds": []
+          ]
         }
       },
       {
@@ -2250,23 +2030,13 @@
         "expectedRngCalls": 0,
         "note": "A vector may carry its own `window`, overriding the section's daily one (the harness then checks the drafts against it). autoTarget pro-rates in 0.1 steps: ceil(26.2x7/30 = 6.113) = 6.2.",
         "expected": {
-          "placement": [
-            "derived:k1"
-          ],
-          "derived": [
+          "placements": [
             {
-              "root": "k1",
-              "sourceMember": "k1",
-              "replaces": "k1",
-              "maxCount": 6.2,
-              "countKind": "continuous",
-              "baseline": 0,
-              "title": "Run 6.2 miles",
-              "action": "Run",
-              "unit": "miles"
+              "taskId": "k1",
+              "targetOverride": 6.2,
+              "targetKind": "continuous"
             }
-          ],
-          "compounds": []
+          ]
         }
       },
       {
@@ -2298,23 +2068,13 @@
         "seed": 42,
         "expectedRngCalls": 1,
         "expected": {
-          "placement": [
-            "derived:k1"
-          ],
-          "derived": [
+          "placements": [
             {
-              "root": "k1",
-              "sourceMember": "k1",
-              "replaces": "k1",
-              "maxCount": 5.6,
-              "countKind": "continuous",
-              "baseline": 0,
-              "title": "Run 5.6 miles",
-              "action": "Run",
-              "unit": "miles"
+              "taskId": "k1",
+              "targetOverride": 5.6,
+              "targetKind": "continuous"
             }
-          ],
-          "compounds": []
+          ]
         }
       },
       {
@@ -2342,23 +2102,13 @@
         "seed": 42,
         "expectedRngCalls": 0,
         "expected": {
-          "placement": [
-            "derived:m1"
-          ],
-          "derived": [
+          "placements": [
             {
-              "root": "m1",
-              "sourceMember": "m1",
-              "replaces": "m1",
-              "maxCount": 140,
-              "countKind": "duration",
-              "baseline": 0,
-              "title": "Meditate 2h 20m",
-              "action": "Meditate",
-              "unit": "minutes"
+              "taskId": "m1",
+              "targetOverride": 140,
+              "targetKind": "duration"
             }
-          ],
-          "compounds": []
+          ]
         }
       },
       {
@@ -2386,11 +2136,11 @@
         "seed": 42,
         "expectedRngCalls": 0,
         "expected": {
-          "placement": [
-            "k2"
-          ],
-          "derived": [],
-          "compounds": []
+          "placements": [
+            {
+              "taskId": "k2"
+            }
+          ]
         }
       },
       {
@@ -2418,11 +2168,11 @@
         "seed": 42,
         "expectedRngCalls": 0,
         "expected": {
-          "placement": [
-            "k3"
-          ],
-          "derived": [],
-          "compounds": []
+          "placements": [
+            {
+              "taskId": "k3"
+            }
+          ]
         }
       },
       {
@@ -2448,22 +2198,13 @@
         "seed": 42,
         "expectedRngCalls": 0,
         "expected": {
-          "placement": [
-            "derived:r1"
-          ],
-          "derived": [
+          "placements": [
             {
-              "root": "r1",
-              "sourceMember": "r1",
-              "replaces": "r1",
-              "maxCount": 10,
-              "baseline": 12,
-              "title": "Read 10 pages",
-              "action": "Read",
-              "unit": "pages"
+              "taskId": "r1",
+              "targetOverride": 10,
+              "targetKind": "discrete"
             }
-          ],
-          "compounds": []
+          ]
         }
       },
       {
@@ -2489,22 +2230,13 @@
         "seed": 42,
         "expectedRngCalls": 0,
         "expected": {
-          "placement": [
-            "derived:d1"
-          ],
-          "derived": [
+          "placements": [
             {
-              "root": "d1",
-              "sourceMember": "d1",
-              "replaces": "d1",
-              "maxCount": 8,
-              "baseline": 4,
-              "title": "Push-ups 12",
-              "action": "Push-ups",
-              "unit": "reps"
+              "taskId": "d1",
+              "targetOverride": 8,
+              "targetKind": "discrete"
             }
-          ],
-          "compounds": []
+          ]
         }
       },
       {
@@ -2534,22 +2266,13 @@
         "seed": 42,
         "expectedRngCalls": 0,
         "expected": {
-          "placement": [
-            "derived:r1"
-          ],
-          "derived": [
+          "placements": [
             {
-              "root": "r1",
-              "sourceMember": "r1",
-              "replaces": "r1",
-              "maxCount": 20,
-              "baseline": 12,
-              "title": "Read 20 pages",
-              "action": "Read",
-              "unit": "pages"
+              "taskId": "r1",
+              "targetOverride": 20,
+              "targetKind": "discrete"
             }
-          ],
-          "compounds": []
+          ]
         }
       },
       {
@@ -2575,15 +2298,60 @@
         "seed": 42,
         "expectedRngCalls": 0,
         "expected": {
-          "placement": [
-            "r1"
-          ],
-          "derived": [],
-          "compounds": []
+          "placements": [
+            {
+              "taskId": "r1"
+            }
+          ]
+        }
+      },
+      {
+        "name": "slice 3b: a legacy window-stamped derived row resolves to its ROOT \u2014 hand-added w2 (root r1, goal 5, custom title) places r1 with targetOverride 5 and titleOverride \"Legacy copy\"",
+        "mode": "oneOff",
+        "selected": [
+          "w2"
+        ],
+        "supplies": [],
+        "manual": [
+          "w2"
+        ],
+        "manualTaskVary": {},
+        "seed": 42,
+        "expectedRngCalls": 0,
+        "expected": {
+          "placements": [
+            {
+              "taskId": "r1",
+              "targetOverride": 5,
+              "targetKind": "discrete",
+              "titleOverride": "Legacy copy"
+            }
+          ]
+        }
+      },
+      {
+        "name": "slice 3b: a hub-linked member whose target equals its own goal carries NO parameters \u2014 c4 (root r2, goal 4) hand-added, vary off, is placed as itself",
+        "mode": "oneOff",
+        "selected": [
+          "c4"
+        ],
+        "supplies": [],
+        "manual": [
+          "c4"
+        ],
+        "manualTaskVary": {},
+        "seed": 42,
+        "expectedRngCalls": 0,
+        "expected": {
+          "placements": [
+            {
+              "taskId": "c4"
+            }
+          ]
         }
       }
     ],
-    "idPinsNote": "Literal uuidv5 outputs, computed ONCE with the TS uuidv5 (default OYBC namespace). Swift must reproduce them independently. Names: 'sources:derived:<boardId>:<root>', 'sources:derived-compound:<boardId>:<compound>', 'sources:derived-link:<derivedCompoundId>:<childId>'. The link name's <childId> is the LITERAL child task id - a derived uuid for a derived child, the raw source id for an original one. idPins itself is a clean token -> uuid map with no stray keys.",
+    "idPinsNote": "Literal uuidv5 outputs, computed ONCE with the TS uuidv5 (default OYBC namespace). Since slice 3b the planner emits placements (no derived ids), so these pin only derivedTaskId / derivedCompoundId / derivedLinkId themselves (the slice-4 sweep matches on them). Names: 'sources:derived:<boardId>:<root>', 'sources:derived-compound:<boardId>:<compound>', 'sources:derived-link:<derivedCompoundId>:<childId>'.",
     "idPins": {
       "derived:r1": "8c32fbb1-bdc9-5b11-8ede-5683b0bcaa84",
       "derived:r2": "0c1ed2ca-b02b-5fd6-9543-7ac3dc0cf4d9",
@@ -2602,7 +2370,8 @@
       "derived:d1": "3ea2feac-9e3f-521f-8bcf-be5f19ef385f",
       "derived:k1": "56383771-86db-52f7-8fd0-9a3e9f795167",
       "derived:m1": "fe9bc543-64fd-5104-b6a6-b45eebd98fb4"
-    }
+    },
+    "resultNote": "planDerivedTasks (slice 3b) returns { placements } \u2014 one per selected id: { taskId, targetOverride?, targetKind?, childTargets?: [{childId,target}], titleOverride? }. expected.placements is compared whole (deep equal); expectedRngCalls pins the seeded-sample count."
   },
   "windowBaseline": [
     {
@@ -2763,424 +2532,6 @@
       "note": "The other half of the same rule: with no usable boundary nothing can be shown to precede it, so the baseline is 0."
     }
   ],
-  "derivedRows": {
-    "note": "buildDerivedRows turns the planDerivedTasks drafts into full Task / CompoundChild rows. Ids are TOKENS resolved through `ids` below. Unlike the planDerivedTasks section (whose short r1/c1 names are only ever map keys), these ids are uuid-shaped because the produced rows are asserted against Zod TaskSchema / CompoundChildSchema, which require a uuid for id, sharedCounterId, compoundTaskId and childTaskId - that schema pass is the completeness check that no required Task field was forgotten. The derived / link ids in `ids` are literal uuidv5 outputs of derivedTaskId / derivedCompoundId / derivedLinkId over `boardId` plus those uuids, pinned by their own test. Expected `tasks` / `links` are SUBSET matches (every listed field is asserted; unlisted fields are not), but the ORDER and LENGTH of both arrays are asserted in full: derived counters in draft order first, then derived compounds. An `expectedAbsent` list on an expected row asserts those fields are absent/undefined on the produced row - it is how the null-threshold rule is pinned (a draft threshold of null must produce NO threshold field, because Zod rejects an explicit null there).",
-    "boardId": "b0a7d000-0000-4000-8000-000000000001",
-    "userId": "u1",
-    "now": "2026-09-18T09:00:00.000Z",
-    "ids": {
-      "R1": "11111111-0000-4000-8000-000000000001",
-      "R2": "11111111-0000-4000-8000-000000000002",
-      "K1": "11111111-0000-4000-8000-0000000000c1",
-      "K2": "11111111-0000-4000-8000-0000000000c2",
-      "C": "11111111-0000-4000-8000-00000000000c",
-      "derived:R1": "1f224a6a-a2a7-58a2-8676-c68bc6a720a6",
-      "derived:R2": "d1bef344-df54-5d5f-9b1b-6adead374e06",
-      "derivedCompound:C": "72b3e051-6ba4-5909-8fdf-61faa90175cb",
-      "link:derivedCompound:C:derived:R1": "b1eecab6-4eb6-595a-90e2-37889ec54484",
-      "link:derivedCompound:C:K2": "7901b291-4e6e-5604-8486-0b5ccf7ae016"
-    },
-    "idsNote": "R1 / R2 are shared-counter roots, K1 / K2 the two children of the source compound C (K1 counting, K2 not), all keyed by token. `roots` and `compounds` are keyed by the same tokens and resolved to their uuids before the call.",
-    "roots": {
-      "R1": {
-        "currentCount": 12,
-        "action": "Read",
-        "unit": "pages"
-      },
-      "R2": {
-        "currentCount": 3,
-        "action": "Run",
-        "unit": "miles"
-      }
-    },
-    "compounds": {
-      "C": {
-        "operator": "AND",
-        "threshold": null,
-        "title": "Morning",
-        "description": "AM routine"
-      }
-    },
-    "vectors": [
-      {
-        "name": "a continuous draft writes its countKind and its fractional goal (12-12=0 < 6.2)",
-        "note": "The draft's countKind is copied onto the Task row verbatim; absent on a draft reads as discrete.",
-        "drafts": {
-          "placementIds": [
-            "derived:R1"
-          ],
-          "derivedTasks": [
-            {
-              "id": "derived:R1",
-              "rootTaskId": "R1",
-              "sourceMemberId": "R1",
-              "replacesId": "R1",
-              "maxCount": 6.2,
-              "countKind": "continuous",
-              "baseline": 12,
-              "title": "Read 6.2 pages",
-              "action": "Read",
-              "unit": "pages",
-              "timeframe": "daily",
-              "startDate": "2026-09-18T00:00:00",
-              "endDate": "2026-09-18T00:00:00"
-            }
-          ],
-          "derivedCompounds": []
-        },
-        "expected": {
-          "tasks": [
-            {
-              "id": "derived:R1",
-              "type": "counting",
-              "sharedCounterId": "R1",
-              "maxCount": 6.2,
-              "countKind": "continuous",
-              "baseline": 12,
-              "currentCount": 12,
-              "isCompleted": false,
-              "title": "Read 6.2 pages"
-            }
-          ],
-          "links": []
-        }
-      },
-      {
-        "name": "one derived counter: mirror + isCompleted false (12-12=0 < 5)",
-        "note": "currentCount MIRRORS the root's lifetime count (12) rather than the window count; the window value is derived from it and `baseline` at read time, so displayed = max(0, 12-12) = 0, which is below the target 5.",
-        "drafts": {
-          "placementIds": [
-            "derived:R1"
-          ],
-          "derivedTasks": [
-            {
-              "id": "derived:R1",
-              "rootTaskId": "R1",
-              "sourceMemberId": "R1",
-              "replacesId": "R1",
-              "maxCount": 5,
-              "baseline": 12,
-              "title": "Read 5 pages",
-              "action": "Read",
-              "unit": "pages",
-              "timeframe": "daily",
-              "startDate": "2026-09-18T00:00:00",
-              "endDate": "2026-09-18T00:00:00"
-            }
-          ],
-          "derivedCompounds": []
-        },
-        "expected": {
-          "tasks": [
-            {
-              "id": "derived:R1",
-              "type": "counting",
-              "sharedCounterId": "R1",
-              "maxCount": 5,
-              "baseline": 12,
-              "currentCount": 12,
-              "isCompleted": false,
-              "createdInWizard": true,
-              "timeframe": "daily",
-              "startDate": "2026-09-18T00:00:00",
-              "endDate": "2026-09-18T00:00:00",
-              "version": 1,
-              "isDeleted": false,
-              "userId": "u1",
-              "createdAt": "2026-09-18T09:00:00.000Z",
-              "updatedAt": "2026-09-18T09:00:00.000Z",
-              "title": "Read 5 pages",
-              "action": "Read",
-              "unit": "pages",
-              "totalCompletions": 0,
-              "totalInstances": 0,
-              "expectedAbsent": [
-                "completedAt"
-              ]
-            }
-          ],
-          "links": []
-        }
-      },
-      {
-        "name": "isCompleted latches true at mint when mirror minus baseline is at or above the target (3-0=3 >= 2)",
-        "note": "A fresh window whose root has already accumulated past the target is born complete - the mint runs the same deriveDisplayedCount the read path does, so it must not be hand-initialised to false. `completedAt` is stamped at the same moment: the false-to-true transition every other write path stamps it on has already happened here, so a row left without it would never get one.",
-        "drafts": {
-          "placementIds": [
-            "derived:R2"
-          ],
-          "derivedTasks": [
-            {
-              "id": "derived:R2",
-              "rootTaskId": "R2",
-              "sourceMemberId": "R2",
-              "replacesId": "R2",
-              "maxCount": 2,
-              "baseline": 0,
-              "title": "Run 2 miles",
-              "action": "Run",
-              "unit": "miles",
-              "timeframe": "daily",
-              "startDate": "2026-09-18T00:00:00",
-              "endDate": "2026-09-18T00:00:00"
-            }
-          ],
-          "derivedCompounds": []
-        },
-        "expected": {
-          "tasks": [
-            {
-              "id": "derived:R2",
-              "sharedCounterId": "R2",
-              "currentCount": 3,
-              "baseline": 0,
-              "maxCount": 2,
-              "isCompleted": true,
-              "completedAt": "2026-09-18T09:00:00.000Z"
-            }
-          ],
-          "links": []
-        }
-      },
-      {
-        "name": "derived compound: parent row + two links, derived child first",
-        "note": "The compound row copies title / operator from the draft and `description` from the SOURCE compound (compounds map), carries the same window as its parts, and is born isCompleted false (a compound row's isCompleted is written for column uniformity and never read). Its null threshold must not be written as null - see expectedAbsent.",
-        "drafts": {
-          "placementIds": [
-            "derivedCompound:C"
-          ],
-          "derivedTasks": [
-            {
-              "id": "derived:R1",
-              "rootTaskId": "R1",
-              "sourceMemberId": "K1",
-              "replacesId": "K1",
-              "maxCount": 2,
-              "baseline": 12,
-              "title": "Read 2 pages",
-              "action": "Read",
-              "unit": "pages",
-              "timeframe": "daily",
-              "startDate": "2026-09-18T00:00:00",
-              "endDate": "2026-09-18T00:00:00"
-            }
-          ],
-          "derivedCompounds": [
-            {
-              "id": "derivedCompound:C",
-              "sourceCompoundId": "C",
-              "replacesId": "C",
-              "title": "Morning",
-              "operator": "AND",
-              "threshold": null,
-              "timeframe": "daily",
-              "startDate": "2026-09-18T00:00:00",
-              "endDate": "2026-09-18T00:00:00",
-              "children": [
-                {
-                  "linkId": "link:derivedCompound:C:derived:R1",
-                  "childTaskId": "derived:R1",
-                  "childIndex": 0,
-                  "isDerived": true
-                },
-                {
-                  "linkId": "link:derivedCompound:C:K2",
-                  "childTaskId": "K2",
-                  "childIndex": 1,
-                  "isDerived": false
-                }
-              ]
-            }
-          ]
-        },
-        "expected": {
-          "tasks": [
-            {
-              "id": "derived:R1",
-              "type": "counting",
-              "sharedCounterId": "R1",
-              "maxCount": 2,
-              "baseline": 12,
-              "currentCount": 12,
-              "isCompleted": false
-            },
-            {
-              "id": "derivedCompound:C",
-              "type": "compound",
-              "operator": "AND",
-              "title": "Morning",
-              "description": "AM routine",
-              "createdInWizard": true,
-              "timeframe": "daily",
-              "startDate": "2026-09-18T00:00:00",
-              "endDate": "2026-09-18T00:00:00",
-              "isCompleted": false,
-              "totalCompletions": 0,
-              "totalInstances": 0,
-              "version": 1,
-              "isDeleted": false,
-              "userId": "u1",
-              "createdAt": "2026-09-18T09:00:00.000Z",
-              "updatedAt": "2026-09-18T09:00:00.000Z",
-              "expectedAbsent": [
-                "threshold",
-                "maxCount",
-                "sharedCounterId",
-                "baseline"
-              ]
-            }
-          ],
-          "links": [
-            {
-              "id": "link:derivedCompound:C:derived:R1",
-              "compoundTaskId": "derivedCompound:C",
-              "childTaskId": "derived:R1",
-              "childIndex": 0,
-              "version": 1,
-              "isDeleted": false,
-              "createdAt": "2026-09-18T09:00:00.000Z",
-              "updatedAt": "2026-09-18T09:00:00.000Z"
-            },
-            {
-              "id": "link:derivedCompound:C:K2",
-              "compoundTaskId": "derivedCompound:C",
-              "childTaskId": "K2",
-              "childIndex": 1,
-              "version": 1,
-              "isDeleted": false,
-              "createdAt": "2026-09-18T09:00:00.000Z",
-              "updatedAt": "2026-09-18T09:00:00.000Z"
-            }
-          ]
-        }
-      },
-      {
-        "name": "M_OF_N compound carries its operator and threshold through",
-        "note": "The positive half of the threshold rule: a real threshold IS written (the vector above pins that a null one is not). Same drafts as the vector above apart from operator / threshold.",
-        "drafts": {
-          "placementIds": [
-            "derivedCompound:C"
-          ],
-          "derivedTasks": [
-            {
-              "id": "derived:R1",
-              "rootTaskId": "R1",
-              "sourceMemberId": "K1",
-              "replacesId": "K1",
-              "maxCount": 2,
-              "baseline": 12,
-              "title": "Read 2 pages",
-              "action": "Read",
-              "unit": "pages",
-              "timeframe": "daily",
-              "startDate": "2026-09-18T00:00:00",
-              "endDate": "2026-09-18T00:00:00"
-            }
-          ],
-          "derivedCompounds": [
-            {
-              "id": "derivedCompound:C",
-              "sourceCompoundId": "C",
-              "replacesId": "C",
-              "title": "Morning",
-              "operator": "M_OF_N",
-              "threshold": 2,
-              "timeframe": "daily",
-              "startDate": "2026-09-18T00:00:00",
-              "endDate": "2026-09-18T00:00:00",
-              "children": [
-                {
-                  "linkId": "link:derivedCompound:C:derived:R1",
-                  "childTaskId": "derived:R1",
-                  "childIndex": 0,
-                  "isDerived": true
-                },
-                {
-                  "linkId": "link:derivedCompound:C:K2",
-                  "childTaskId": "K2",
-                  "childIndex": 1,
-                  "isDerived": false
-                }
-              ]
-            }
-          ]
-        },
-        "expected": {
-          "tasks": [
-            {
-              "id": "derived:R1",
-              "type": "counting"
-            },
-            {
-              "id": "derivedCompound:C",
-              "type": "compound",
-              "operator": "M_OF_N",
-              "threshold": 2
-            }
-          ],
-          "links": [
-            {
-              "id": "link:derivedCompound:C:derived:R1",
-              "compoundTaskId": "derivedCompound:C",
-              "childTaskId": "derived:R1",
-              "childIndex": 0
-            },
-            {
-              "id": "link:derivedCompound:C:K2",
-              "compoundTaskId": "derivedCompound:C",
-              "childTaskId": "K2",
-              "childIndex": 1
-            }
-          ]
-        }
-      },
-      {
-        "name": "an action-less draft writes no action / unit rather than empty strings",
-        "note": "planDerivedTasks fills action / unit with \"\" for a counter that has neither (the title then falls back to the source task's own). Empty strings must not reach the row: the column stays absent, exactly as a hand-made action-less counter would be. Displayed = max(0, 3-3) = 0 < 2, so it is not complete.",
-        "drafts": {
-          "placementIds": [
-            "derived:R2"
-          ],
-          "derivedTasks": [
-            {
-              "id": "derived:R2",
-              "rootTaskId": "R2",
-              "sourceMemberId": "R2",
-              "replacesId": "R2",
-              "maxCount": 2,
-              "baseline": 3,
-              "title": "Meditate",
-              "action": "",
-              "unit": "",
-              "timeframe": "daily",
-              "startDate": "2026-09-18T00:00:00",
-              "endDate": "2026-09-18T00:00:00"
-            }
-          ],
-          "derivedCompounds": []
-        },
-        "expected": {
-          "tasks": [
-            {
-              "id": "derived:R2",
-              "type": "counting",
-              "title": "Meditate",
-              "sharedCounterId": "R2",
-              "currentCount": 3,
-              "baseline": 3,
-              "maxCount": 2,
-              "isCompleted": false,
-              "expectedAbsent": [
-                "action",
-                "unit"
-              ]
-            }
-          ],
-          "links": []
-        }
-      }
-    ]
-  },
   "display": {
     "notes": {
       "seededTargets": "seededTargetsForSource vectors reuse the bare-timeframe window convention above (a missing `sourceWindow` key means the field is OMITTED, i.e. the span is unknowable). `tasks` carries only the two fields the calculation reads - `type` and an optional `maxCount` - matching TS's Pick<Task,'type'|'maxCount'> and Swift's BoardSources.SeededTargetTask. Every `expected` value is hand-computed as autoTarget(max(1, goal - windowCount), sourceDays, targetDays), never read back from the function under test.",
@@ -3372,7 +2723,7 @@
         "level": 1,
         "goal": 20,
         "unit": "mi",
-        "expected": "8–12 mi"
+        "expected": "8\u201312 mi"
       },
       {
         "name": "level 2 with no unit then the range alone, no trailing space (hi 15 overshoots the goal 12 - symmetric since 2026-10-06)",
@@ -3380,15 +2731,15 @@
         "level": 2,
         "goal": 12,
         "unit": "",
-        "expected": "5–15"
+        "expected": "5\u201315"
       },
       {
-        "name": "the docs' own example: t == goal 5, a little, then 4–6 mi (the owner bug rendered 4–5)",
+        "name": "the docs' own example: t == goal 5, a little, then 4\u20136 mi (the owner bug rendered 4\u20135)",
         "t": 5,
         "level": 1,
         "goal": 5,
         "unit": "mi",
-        "expected": "4–6 mi"
+        "expected": "4\u20136 mi"
       },
       {
         "name": "half-up tie with a unit (same numbers as the varyRange fixture's half-up vector)",
@@ -3396,7 +2747,7 @@
         "level": 2,
         "goal": 20,
         "unit": "pages",
-        "expected": "2–5 pages"
+        "expected": "2\u20135 pages"
       },
       {
         "name": "COLLAPSED range then the single value, not a 2-2 range - owner ruling 2026-09-22; a weekly 10-rep counter pro-rated onto a daily board targets 2, and varyRange(2,1,10) is 2...2",
@@ -3423,22 +2774,22 @@
         "expected": null
       },
       {
-        "name": "continuous t 6.1 a little then 4.9–7.3 miles",
+        "name": "continuous t 6.1 a little then 4.9\u20137.3 miles",
         "t": 6.1,
         "level": 1,
         "goal": 26.2,
         "unit": "miles",
         "countKind": "continuous",
-        "expected": "4.9–7.3 miles"
+        "expected": "4.9\u20137.3 miles"
       },
       {
-        "name": "continuous range on whole tenths renders without trailing zeros: t 10 then 8–12 mi",
+        "name": "continuous range on whole tenths renders without trailing zeros: t 10 then 8\u201312 mi",
         "t": 10,
         "level": 1,
         "goal": 26.2,
         "unit": "mi",
         "countKind": "continuous",
-        "expected": "8–12 mi"
+        "expected": "8\u201312 mi"
       },
       {
         "name": "continuous COLLAPSED range then the single value 0.1",
@@ -3450,22 +2801,22 @@
         "expected": "0.1"
       },
       {
-        "name": "continuous ends share precision: t 26.2 a little then 21.0–31.4 miles",
+        "name": "continuous ends share precision: t 26.2 a little then 21.0\u201331.4 miles",
         "t": 26.2,
         "level": 1,
         "goal": 26.2,
         "unit": "miles",
         "countKind": "continuous",
-        "expected": "21.0–31.4 miles"
+        "expected": "21.0\u201331.4 miles"
       },
       {
-        "name": "duration 1-minute range: t 630 a little then 8h 24m–12h 36m",
+        "name": "duration 1-minute range: t 630 a little then 8h 24m\u201312h 36m",
         "t": 630,
         "level": 1,
         "goal": 630,
         "unit": "",
         "countKind": "duration",
-        "expected": "8h 24m–12h 36m"
+        "expected": "8h 24m\u201312h 36m"
       }
     ],
     "splitSquaresNote": [
@@ -3555,18 +2906,18 @@
         "goal": 20,
         "unit": "mi",
         "expected": {
-          "text": "8–12 mi",
+          "text": "8\u201312 mi",
           "varying": true
         }
       },
       {
-        "name": "vary a lot overshoots the goal: +/-50% of 10 on a goal of 12 is 5–15, never capped at 12 (fixed 2026-10-06)",
+        "name": "vary a lot overshoots the goal: +/-50% of 10 on a goal of 12 is 5\u201315, never capped at 12 (fixed 2026-10-06)",
         "target": 10,
         "level": 2,
         "goal": 12,
         "unit": "mi",
         "expected": {
-          "text": "5–15 mi",
+          "text": "5\u201315 mi",
           "varying": true
         }
       },
@@ -3610,7 +2961,7 @@
         "unit": "miles",
         "countKind": "continuous",
         "expected": {
-          "text": "4.9–7.3 miles",
+          "text": "4.9\u20137.3 miles",
           "varying": true
         }
       }
@@ -4711,10 +4062,10 @@
   ],
   "poolDefaults": {
     "notes": {
-      "model": "Pool-level default dice (docs/BOARD_SOURCES.md §Member rules → Pool-level defaults, 2026-10-06). `Pool.memberVary` is task id → VaryLevel; only 1 | 2 are ever STORED (prunePoolMemberVary drops a 0, the same default-pruning rule withMemberRule applies to a source rule). Pool defaults are LIVE — pulling a pool stores NO rule on the source; effectiveMemberRules is the read-time FALLBACK every reader applies (persist / spawn / Preview / the member row): a stored source `vary` always wins, the pool default fills in only where the member's stored rule carries no `vary` at all. Nothing here is persisted — the effective map is handed to the planner in place of the stored row.",
-      "shapes": "`pool` carries only the three fields the helpers read — `id`, `taskIds`, and an optional `memberVary` map (a MISSING key means the field is absent, which both platforms read as an empty map). `source` carries `sourceId`, `kind` and an optional `memberRules` (null = no key, exactly as the display vectors above). The harness wraps each into a full BoardSource / Pool with neutral values for every other field. `memberVary` values are raw ints so Swift maps them through VaryLevel(rawValue:).",
+      "model": "Pool-level default dice (docs/BOARD_SOURCES.md \u00a7Member rules \u2192 Pool-level defaults, 2026-10-06). `Pool.memberVary` is task id \u2192 VaryLevel; only 1 | 2 are ever STORED (prunePoolMemberVary drops a 0, the same default-pruning rule withMemberRule applies to a source rule). Pool defaults are LIVE \u2014 pulling a pool stores NO rule on the source; effectiveMemberRules is the read-time FALLBACK every reader applies (persist / spawn / Preview / the member row): a stored source `vary` always wins, the pool default fills in only where the member's stored rule carries no `vary` at all. Nothing here is persisted \u2014 the effective map is handed to the planner in place of the stored row.",
+      "shapes": "`pool` carries only the three fields the helpers read \u2014 `id`, `taskIds`, and an optional `memberVary` map (a MISSING key means the field is absent, which both platforms read as an empty map). `source` carries `sourceId`, `kind` and an optional `memberRules` (null = no key, exactly as the display vectors above). The harness wraps each into a full BoardSource / Pool with neutral values for every other field. `memberVary` values are raw ints so Swift maps them through VaryLevel(rawValue:).",
       "shouldKeepVaryOff": "shouldKeepVaryOff vectors use the same `pool` shape (null = no pool); `expected` is the bare boolean a Sources-sheet setter passes as withMemberRule's keepVaryOff.",
-      "unchangedSource": "effectiveMemberRules vectors carry `unchangedSource`: true pins that withEffectiveMemberRules returns its input UNCHANGED — the identical object on TS (`toBe`), an equal value on Swift — so a source that inherits nothing stays byte-identical (a rule-less source keeps NO memberRules key, never gains `{}`). false pins that the returned copy's memberRules equal `expected`. `expected` is always the full effective map as effectiveMemberRules returns it, `{}` when empty."
+      "unchangedSource": "effectiveMemberRules vectors carry `unchangedSource`: true pins that withEffectiveMemberRules returns its input UNCHANGED \u2014 the identical object on TS (`toBe`), an equal value on Swift \u2014 so a source that inherits nothing stays byte-identical (a rule-less source keeps NO memberRules key, never gains `{}`). false pins that the returned copy's memberRules equal `expected`. `expected` is always the full effective map as effectiveMemberRules returns it, `{}` when empty."
     },
     "prunePoolMemberVary": [
       {

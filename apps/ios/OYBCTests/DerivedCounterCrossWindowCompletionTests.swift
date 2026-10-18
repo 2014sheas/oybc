@@ -9,7 +9,9 @@ import GRDB
 /// weekly board has a larger goal count that is not met yet."
 ///
 /// Swift twin of `apps/web/src/db/operations/__tests__/derivedCounterCrossWindowCompletion.test.ts`.
-/// Production paths only: `saveWizardBoard` (wizard active save → mint),
+/// Production paths only: `saveWizardBoard` (wizard active save → placement
+/// parameters, slice 3b: the daily's member is the ROOT placed with a
+/// `targetOverride`, never a minted per-window copy),
 /// `incrementSharedCounter` (what `BoardPlayViewModel.handleCountingTap`
 /// routes a shared cell to), `DerivationPass.computeBoardGrid` with
 /// `buildWindowContext` (the play grid's per-cell resolver).
@@ -121,14 +123,18 @@ final class DerivedCounterCrossWindowCompletionTests: XCTestCase {
         }
     }
 
+    /// The daily's single placement: the root itself, at the pro-rated override.
+    private func dailyPlacement(_ database: AppDatabase, dailyId: String) throws -> BoardTask {
+        let bt = try XCTUnwrap(try database.fetchBoardTasks(boardId: dailyId).first,
+                               "precondition: the daily placed its member")
+        XCTAssertEqual(bt.taskId, rootId, "the root itself — no minted per-window copy")
+        XCTAssertEqual(bt.targetOverride, 3, "precondition: ceil(20 × 1 / 7)")
+        return bt
+    }
+
     private func completeDaily(_ database: AppDatabase, dailyId: String) throws {
-        let dId = BoardSources.derivedTaskId(boardId: dailyId, rootTaskId: rootId)
-        let d = try XCTUnwrap(try database.read { try Task.fetchOne($0, key: dId) },
-                              "precondition: the daily's member is a distinct minted row")
-        XCTAssertEqual(d.sharedCounterId, rootId)
-        XCTAssertEqual(d.maxCount, 3, "precondition: ceil(20 × 1 / 7)")
+        _ = try dailyPlacement(database, dailyId: dailyId)
         _ = try database.incrementSharedCounter(sourceTaskId: rootId, by: 3)
-        XCTAssertEqual(try database.read { try Task.fetchOne($0, key: dId) }?.isCompleted, true)
         XCTAssertEqual(try database.fetchBoard(id: dailyId)?.completedTasks, 1)
     }
 
@@ -175,15 +181,14 @@ final class DerivedCounterCrossWindowCompletionTests: XCTestCase {
                                   memberRules: [rootId: BoardSourceMemberRule(target: 20)])],
             manual: [], memberId: rootId
         )
-        let wId = BoardSources.derivedTaskId(boardId: weeklyId, rootTaskId: rootId)
-        let wRow = try XCTUnwrap(try database.read { try Task.fetchOne($0, key: wId) })
-        XCTAssertEqual(wRow.maxCount, 20)
-        XCTAssertFalse(wRow.isCompleted)
+        let wPlacement = try XCTUnwrap(try database.fetchBoardTasks(boardId: weeklyId).first)
+        XCTAssertEqual(wPlacement.taskId, rootId)
+        XCTAssertEqual(wPlacement.targetOverride, 20, "the weekly carries the member-rule target")
 
-        let dailyId = try createDailyPulling(database, weeklyId: weeklyId, memberId: wId)
+        let dailyId = try createDailyPulling(database, weeklyId: weeklyId, memberId: rootId)
         try completeDaily(database, dailyId: dailyId)
         let w = try weeklyCell(database, weeklyId: weeklyId)
-        XCTAssertEqual(w.placedTask?.id, wId)
+        XCTAssertEqual(w.placedTask?.id, rootId)
         XCTAssertEqual(w.placedTask?.isCompleted, false)
         XCTAssertEqual(w.cell?.isCompleted, false)
         XCTAssertEqual(w.board.completedTasks, 0)
@@ -255,7 +260,7 @@ final class DerivedCounterCrossWindowCompletionTests: XCTestCase {
             board: weekly, boardTasks: [placement(boardId: "weekly", taskId: rootId)], pendingTasks: [],
             isUpdate: false, sources: sources, manualTaskIds: manual, now: AppDatabase.currentTimestamp()
         )
-        let weeklyTaskId = derived ? BoardSources.derivedTaskId(boardId: "weekly", rootTaskId: rootId) : rootId
+        let weeklyTaskId = rootId
         let before = try weeklyCell(database, weeklyId: "weekly")
         XCTAssertEqual(before.placedTask?.id, weeklyTaskId)
         XCTAssertEqual(before.cell?.isCompleted, false, "precondition: 17 of 20 — not met in its own window")
@@ -274,11 +279,9 @@ final class DerivedCounterCrossWindowCompletionTests: XCTestCase {
         defer { AppDatabase.sourceClock = { Date() } }
         let dailyId = try createDailyPulling(database, weeklyId: weeklyId, memberId: memberId)
         AppDatabase.sourceClock = { Date() }
-        let dId = BoardSources.derivedTaskId(boardId: dailyId, rootTaskId: rootId)
-        let d = try XCTUnwrap(try database.read { try Task.fetchOne($0, key: dId) })
-        XCTAssertEqual(d.maxCount, 3, "a distinct, pro-rated daily row")
+        _ = try dailyPlacement(database, dailyId: dailyId)
         _ = try database.incrementSharedCounter(sourceTaskId: rootId, by: 3)
-        XCTAssertEqual(try database.read { try Task.fetchOne($0, key: dId) }?.isCompleted, true)
+        XCTAssertEqual(try database.fetchBoard(id: dailyId)?.completedTasks, 1)
     }
 
     func test_pastWeeklyRootSquare_staysIncompleteAfterPostWindowDailyLog() throws {
@@ -422,19 +425,15 @@ final class DerivedCounterCrossWindowCompletionTests: XCTestCase {
         XCTAssertEqual(try database.fetchTask(id: rootId)?.currentCount, 5)
     }
 
-    /// A late log stamped at the ended weekly's `endDate` falls inside its
-    /// FROZEN window-stamped derived row: the row is never written, but the
-    /// weekly's stored stats must re-derive (cascade only).
-    func test_lateSharedCounterLog_reachesFrozenDerivedRow_cascadeOnly() throws {
+    /// A late log stamped at the ended weekly's `endDate` falls inside the
+    /// weekly's window: the placement (root + override 20) reads 17 + 3, and the
+    /// weekly's stored stats must re-derive.
+    func test_lateSharedCounterLog_reachesTheEndedPlacement_andReDerivesTheStats() throws {
         let database = try makeDb()
-        let (weeklyId, weeklyTaskId) = try pastWeekly(database, derived: true)
-        let rowBefore = try XCTUnwrap(try database.read { try Task.fetchOne($0, key: weeklyTaskId) })
+        let (weeklyId, _) = try pastWeekly(database, derived: true)
 
         _ = try database.incrementSharedCounter(sourceTaskId: rootId, by: 3, boardId: weeklyId)
 
-        let rowAfter = try XCTUnwrap(try database.read { try Task.fetchOne($0, key: weeklyTaskId) })
-        XCTAssertEqual(rowAfter.version, rowBefore.version, "frozen row is never written")
-        XCTAssertFalse(rowAfter.isCompleted, "no latch write on a frozen row")
         let w = try weeklyCell(database, weeklyId: weeklyId)
         XCTAssertEqual(w.cell?.isCompleted, true, "kernel: 17 + 3 in the row's window")
         XCTAssertEqual(try database.fetchBoard(id: weeklyId)?.completedTasks, 1, "stored stats re-derived")
