@@ -206,6 +206,27 @@ final class UserPreferencesCodableTests: XCTestCase {
         XCTAssertTrue(decoded.recurringYearlyEnabled)
     }
 
+    // MARK: - Default board size (Track L — 3x3 for new users)
+
+    func testNewUserDefaultsTo3x3() {
+        XCTAssertEqual(UserPreferences.defaults.defaultBoardSize, .three)
+        XCTAssertEqual(UserPreferences.merge(nil).defaultBoardSize, .three)
+    }
+
+    func testPayloadMissingBoardSizeDecodesAs3x3() throws {
+        let json = """
+        { "weekStartDay": "monday", "defaultCenterType": "free", "theme": "system" }
+        """
+        XCTAssertEqual(try decode(json).defaultBoardSize, .three)
+    }
+
+    func testStoredBoardSizeIsKept() throws {
+        for size in [3, 4, 5] {
+            let decoded = try decode(#"{ "defaultBoardSize": \#(size) }"#)
+            XCTAssertEqual(decoded.defaultBoardSize.rawValue, size, "A stored \(size)x\(size) must survive decode.")
+        }
+    }
+
     // MARK: - Retired fields (celebrationIntensity / haptics)
 
     func testLegacyCelebrationIntensityAndHapticsKeysAreIgnoredOnDecode() throws {

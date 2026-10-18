@@ -82,7 +82,7 @@ let tutorialLessons: [TutorialLesson] = [
         id: "bingo", pos: 3, systemImage: "star", tag: "Playing",
         title: "Score a bingo",
         blurb: "Complete a full row, column, or diagonal to lock in a bingo. Lines glow gold — stack them for streaks.",
-        steps: ["Fill five squares in a line", "The whole line locks gold", "Each line is a bingo"],
+        steps: ["Fill every square in a line", "The whole line locks gold", "Each line is a bingo"],
         cta: "See a near-bingo", target: .openABoard
     ),
     // index 4 = FREE center
@@ -90,21 +90,21 @@ let tutorialLessons: [TutorialLesson] = [
         id: "recurring", pos: 5, systemImage: "repeat", tag: "Automate",
         title: "Repeating boards",
         blurb: "A repeating board prints a fresh card each cycle from a pool you pick — set it once and a new board is waiting every week.",
-        steps: ["Create a board → set Repeats", "You → Board settings", "Pause, resume, or edit its mix"],
+        steps: ["Create a board → set Repeats", "Profile → Board settings", "Pause, resume, or edit its mix"],
         cta: "Open Board settings", target: .boardSettings
     ),
     TutorialLesson(
         id: "pools", pos: 6, systemImage: "square.grid.3x3", tag: "Automate",
         title: "Core boards & pools",
         blurb: "Board settings holds your core boards' defaults — curate a pool or a few tasks and every renewed board deals from it.",
-        steps: ["You → Board settings", "Tap a timeframe's defaults", "Attach a pool or add tasks"],
+        steps: ["Profile → Board settings", "Tap a timeframe's defaults", "Attach a pool or add tasks"],
         cta: "Set up your defaults", target: .boardSettings
     ),
     TutorialLesson(
         id: "settings", pos: 7, systemImage: "gearshape", tag: "Settings",
         title: "Make it yours",
-        blurb: "Dark mode, celebration intensity, board defaults — tune OYBC until it feels like yours.",
-        steps: ["Open the You tab", "Try Appearance → Dark", "Set your board preferences"],
+        blurb: "Dark mode, board defaults — tune OYBC until it feels like yours.",
+        steps: ["Open the Profile tab", "Try Appearance → Dark", "Set your board preferences"],
         cta: "Open settings", target: .settings
     ),
     TutorialLesson(

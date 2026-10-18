@@ -198,12 +198,13 @@ struct MainTabView: View {
                 RisoMomentOverlay(
                     kind: sample.kind, replay: sample.replay, cells: sample.cells,
                     boardName: "Sample board", linesCompleted: 12,
-                    // Preview only — both buttons just close it (no real share).
-                    onShare: { showGreenlogPreview = false },
-                    onBack: { showGreenlogPreview = false },
-                    onNewBoard: { showGreenlogPreview = false }
+                    // Preview only — no share / new-board actions, just the way back.
+                    isPreview: true,
+                    onBack: { showGreenlogPreview = false }
                 )
-                .ignoresSafeArea()
+                // The field bleeds edge to edge on its own; the content keeps
+                // the safe-area insets so the kicker clears the status bar and
+                // "Back to board" clears the home indicator (as on the board).
                 .transition(.opacity)
                 .zIndex(30)
             }

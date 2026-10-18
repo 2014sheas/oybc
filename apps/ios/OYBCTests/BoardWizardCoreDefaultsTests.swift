@@ -140,9 +140,11 @@ final class BoardWizardCoreDefaultsTests: XCTestCase {
     func testPrefill_RowWithSizeAndCentre_OpensAtTheRowsValues() throws {
         let db = try makeDb()
         try seedUser(db)
+        // Both values differ from UserPreferences.defaults (3x3 / free), so
+        // the assertions can only pass by reading the row.
         _ = try db.upsertCoreBoardDefaultAndEnqueue(
             userId: userId, timeframe: .daily, corePoolIds: [], coreDefaultTaskIds: [],
-            defaultBoardSize: .set(.three), defaultCenterType: .set(DefaultCenterSquareType.none),
+            defaultBoardSize: .set(.five), defaultCenterType: .set(DefaultCenterSquareType.none),
             now: AppDatabase.currentTimestamp()
         )
 
@@ -150,7 +152,7 @@ final class BoardWizardCoreDefaultsTests: XCTestCase {
             preferences: .defaults, prefilledRecurringTimeframe: .daily, userId: userId, database: db
         )
 
-        XCTAssertEqual(vm.size, 3)
+        XCTAssertEqual(vm.size, 5)
         XCTAssertEqual(vm.centerType, .none)
     }
 
@@ -163,8 +165,8 @@ final class BoardWizardCoreDefaultsTests: XCTestCase {
             preferences: .defaults, prefilledRecurringTimeframe: .yearly, userId: userId, database: db
         )
 
-        // UserPreferences.defaults is 5x5 / free.
-        XCTAssertEqual(vm.size, 5)
+        // UserPreferences.defaults is 3x3 / free (Track L — new users get 3x3).
+        XCTAssertEqual(vm.size, 3)
         XCTAssertEqual(vm.centerType, .free)
     }
 
@@ -223,20 +225,20 @@ final class BoardWizardCoreDefaultsTests: XCTestCase {
         try seedUser(db)
         _ = try db.upsertCoreBoardDefaultAndEnqueue(
             userId: userId, timeframe: .daily, corePoolIds: [], coreDefaultTaskIds: [],
-            defaultBoardSize: .set(.three), defaultCenterType: .set(DefaultCenterSquareType.none),
+            defaultBoardSize: .set(.five), defaultCenterType: .set(DefaultCenterSquareType.none),
             now: AppDatabase.currentTimestamp()
         )
         let vm = BoardWizardViewModel(
             preferences: .defaults, prefilledRecurringTimeframe: .daily, userId: userId, database: db
         )
-        XCTAssertEqual(vm.size, 3)
-        vm.updateSize(5) // simulate the user changing it mid-flow
+        XCTAssertEqual(vm.size, 5)
+        vm.updateSize(4) // simulate the user changing it mid-flow
 
         vm.reset()
 
         // reset() must re-resolve the SAME row-backed defaults, not
-        // collapse to UserPreferences.defaults (5x5 / free).
-        XCTAssertEqual(vm.size, 3)
+        // collapse to UserPreferences.defaults (3x3 / free).
+        XCTAssertEqual(vm.size, 5)
         XCTAssertEqual(vm.centerType, .none)
     }
 

@@ -92,7 +92,11 @@ struct UserPreferences: Codable, Equatable {
 
     static let defaults = UserPreferences(
         weekStartDay: .monday,
-        defaultBoardSize: .five,
+        // 3×3 for new users (Track L, 2026-10-18). A stored size is always
+        // kept — only payloads MISSING the key (brand-new users, pre-v5 rows)
+        // pick this up via `init(from:)`. Mirrors the shared
+        // `DEFAULT_USER_PREFERENCES`.
+        defaultBoardSize: .three,
         defaultCenterType: .free,
         defaultTimeframe: .custom,
         defaultRandomize: true,

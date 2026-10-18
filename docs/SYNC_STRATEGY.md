@@ -479,7 +479,7 @@ Synced user preferences live on the `User` record itself as a nested `preference
 Core / board-creation defaults:
 
 - `weekStartDay` — `'monday' | 'sunday'`
-- `defaultBoardSize` — `3 | 4 | 5`
+- `defaultBoardSize` — `3 | 4 | 5` (default `3` since Track L, 2026-10-18 — a stored size is always kept; only prefs missing the field pick up the 3×3 default)
 - `defaultCenterType` — `FREE | NONE` (narrowed from `CenterSquareType`; CHOSEN requires per-board context)
 - `defaultTimeframe` — `daily | weekly | monthly | yearly | custom`
 - `defaultRandomize` — `boolean`

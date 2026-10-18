@@ -47,6 +47,9 @@ struct RisoMomentOverlay: View {
     var celebrationIntensity: Int = 7
     /// Snapshot seam: pins the replay at a beat (no clock, no motion).
     var beatOverride: Int? = nil
+    /// A sample with no board behind it (the tutorial's "Preview a GREENLOG"):
+    /// no share or new-board actions, only the way back.
+    var isPreview: Bool = false
     var onShare: () -> Void = {}
     /// Dismisses back to the play board.
     var onBack: () -> Void = {}
@@ -226,7 +229,9 @@ struct RisoMomentOverlay: View {
 
     private var buttons: some View {
         VStack(spacing: 10) {
-            if kind == .bingo {
+            if isPreview {
+                RisoButton(title: "Back to board", kind: .neutral, fullWidth: true, large: true, action: onBack)
+            } else if kind == .bingo {
                 RisoButton(title: "Share this bingo", kind: .gold, systemImage: "square.and.arrow.up",
                            fullWidth: true, large: true, action: onShare)
                 RisoButton(title: "Back to board", kind: .neutral, fullWidth: true, large: true, action: onBack)

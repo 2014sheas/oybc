@@ -5,15 +5,15 @@ import { test, expect, readCoreBoardDefault } from './_fixtures/bypass';
  * docs/POOLS_RECURRING.md §Per-timeframe size + centre, owner-decided
  * 2026-09-29). Covers the BOARD section of `CoreDefaultsSheet`:
  *
- *   1. Setting an explicit override (Daily → 3×3, no free space) saves
- *      it, the Board-settings summary line grows the "3×3 · no free
+ *   1. Setting an explicit override (Daily → 5×5, no free space) saves
+ *      it, the Board-settings summary line grows the "5×5 · no free
  *      space" suffix, and the wizard's core setup step (reached via the
  *      Boards-tab pager's "Set up" deep link, `/create?recurringTimeframe=…`)
  *      prefills from it.
  *   2. Clearing back to inherit ("Use new-board default") deletes both
  *      keys (never stores `null` — the sync-clearable-fields contract)
  *      and the wizard falls back to the global new-board default
- *      (5×5 / free space — `DEFAULT_USER_PREFERENCES`).
+ *      (3×3 / free space — `DEFAULT_USER_PREFERENCES`).
  *   3. An even size (Weekly → 4×4) hides the Free-space control entirely
  *      and stores an explicit `none` (mirrors the wizard's own coercion).
  *
@@ -40,15 +40,15 @@ async function openDefaultsSheet(
 }
 
 test.describe('Per-timeframe core-board default size + centre', () => {
-  test('Daily 3×3/no-free-space: saves, summarizes, prefills the wizard; clearing restores the global default', async ({
+  test('Daily 5×5/no-free-space: saves, summarizes, prefills the wizard; clearing restores the global default', async ({
     page,
   }) => {
     const sheet = await openDefaultsSheet(page, 'Daily');
 
     // BOARD section: size segmented defaults to the RESOLVED (inherited)
-    // value — 5×5 (DEFAULT_USER_PREFERENCES) — with the muted inherit note.
+    // value — 3×3 (DEFAULT_USER_PREFERENCES) — with the muted inherit note.
     const sizeGroup = sheet.getByRole('group', { name: 'Board size' });
-    await expect(sizeGroup.getByRole('button', { name: '5×5', exact: true })).toHaveAttribute(
+    await expect(sizeGroup.getByRole('button', { name: '3×3', exact: true })).toHaveAttribute(
       'aria-pressed',
       'true',
     );
@@ -56,13 +56,14 @@ test.describe('Per-timeframe core-board default size + centre', () => {
     // neither size nor centre is explicit.
     await expect(sheet.getByText('Default', { exact: true })).toHaveCount(1);
 
-    // Pick 3×3, then turn OFF the inherited Free space (odd board, so the
-    // toggle is visible and starts checked — the global default is FREE).
+    // Pick 5×5 (an override that differs from the inherited 3×3), then turn
+    // OFF the inherited Free space (odd board, so the toggle is visible and
+    // starts checked — the global default is FREE).
     // The checkbox itself is visually hidden (the styled track is the
     // visible affordance), so assert its `checked` state directly and
     // interact via its associated `<label>` text (native label-click
     // semantics) rather than Playwright's visibility-gated `.uncheck()`.
-    await sizeGroup.getByRole('button', { name: '3×3', exact: true }).click();
+    await sizeGroup.getByRole('button', { name: '5×5', exact: true }).click();
     const freeSpaceCheckbox = sheet.locator('#core-defaults-free-space');
     const freeSpaceLabel = sheet.getByText('Free space', { exact: true });
     await expect(freeSpaceCheckbox).toBeChecked();
@@ -81,20 +82,20 @@ test.describe('Per-timeframe core-board default size + centre', () => {
     // Board-settings summary line grows the size/centre suffix.
     const prefilledTasksGroup = page.getByRole('group', { name: 'Pre-filled tasks by timeframe' });
     await expect(prefilledTasksGroup.getByRole('button', { name: /^Daily/ })).toContainText(
-      '3×3 · no free space',
+      '5×5 · no free space',
     );
 
     // At-rest: both fields stored as explicit values (never inferred).
     const savedRow = await readCoreBoardDefault(page, 'daily');
     expect(savedRow).not.toBeNull();
-    expect((savedRow as Record<string, unknown>).defaultBoardSize).toBe(3);
+    expect((savedRow as Record<string, unknown>).defaultBoardSize).toBe(5);
     expect((savedRow as Record<string, unknown>).defaultCenterType).toBe('none');
 
     // The wizard's core setup step (Boards-tab pager's "Set up" deep link)
-    // prefills from the saved override: 3×3 selected, centre "None".
+    // prefills from the saved override: 5×5 selected, centre "None".
     await page.goto('/create?recurringTimeframe=daily&__oybc_test_bypass=1');
     await expect(page.getByText('Core board for')).toBeVisible();
-    await expect(page.getByRole('button', { name: '3×3', exact: true })).toHaveAttribute(
+    await expect(page.getByRole('button', { name: '5×5', exact: true })).toHaveAttribute(
       'aria-pressed',
       'true',
     );
@@ -103,7 +104,7 @@ test.describe('Per-timeframe core-board default size + centre', () => {
     // Back to settings: clear the override back to inherit.
     const sheet2 = await openDefaultsSheet(page, 'Daily');
     await expect(
-      sheet2.getByRole('group', { name: 'Board size' }).getByRole('button', { name: '3×3', exact: true }),
+      sheet2.getByRole('group', { name: 'Board size' }).getByRole('button', { name: '5×5', exact: true }),
     ).toHaveAttribute('aria-pressed', 'true');
     await sheet2.getByRole('button', { name: 'Use new-board default', exact: true }).click();
     await expect(sheet2.getByText('Default', { exact: true })).toHaveCount(1);
@@ -124,10 +125,10 @@ test.describe('Per-timeframe core-board default size + centre', () => {
     expect(Object.prototype.hasOwnProperty.call(clearedRow as object, 'defaultBoardSize')).toBe(false);
     expect(Object.prototype.hasOwnProperty.call(clearedRow as object, 'defaultCenterType')).toBe(false);
 
-    // The wizard now falls back to the global new-board default (5×5 / free).
+    // The wizard now falls back to the global new-board default (3×3 / free).
     await page.goto('/create?recurringTimeframe=daily&__oybc_test_bypass=1');
     await expect(page.getByText('Core board for')).toBeVisible();
-    await expect(page.getByRole('button', { name: '5×5', exact: true })).toHaveAttribute(
+    await expect(page.getByRole('button', { name: '3×3', exact: true })).toHaveAttribute(
       'aria-pressed',
       'true',
     );
@@ -138,7 +139,7 @@ test.describe('Per-timeframe core-board default size + centre', () => {
     const sheet = await openDefaultsSheet(page, 'Weekly');
 
     const sizeGroup = sheet.getByRole('group', { name: 'Board size' });
-    await expect(sheet.getByText('Free space', { exact: true })).toBeVisible(); // 5×5 default is odd
+    await expect(sheet.getByText('Free space', { exact: true })).toBeVisible(); // 3×3 default is odd
 
     await sizeGroup.getByRole('button', { name: '4×4', exact: true }).click();
     await expect(sheet.getByText('Free space', { exact: true })).toHaveCount(0);
