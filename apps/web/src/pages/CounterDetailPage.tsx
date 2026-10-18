@@ -438,7 +438,6 @@ export function CounterDetailPage(): React.ReactElement {
         <CounterDeleteConfirmDialog
           counterName={group.name}
           memberCount={deleteImpact.counterMemberCount}
-          derivedWindowCounterCount={deleteImpact.derivedWindowCounterCount}
           unitTaskCount={deleteImpact.unitTaskCount}
           members={deleteImpact.counterMembers.map((m) => ({
             id: m.id,

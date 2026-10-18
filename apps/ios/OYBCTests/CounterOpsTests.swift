@@ -257,9 +257,16 @@ final class CounterOpsTests: XCTestCase {
     func test_deleteCounterWithUnlink_unlinksMembersWithSnapshotEventThenSoftDeletesSource() throws {
         let db = try makeDb()
         try seedUser(db)
-        // source count 40; member baseline 10, maxCount 50 → displayed = 30
+        // The root's lifetime events sum to 30; the member's baseline (10) is never read.
         try db.saveTask(makeSourceTask(id: "src1", currentCount: 40))
         try db.saveTask(makeMemberTask(sourceId: "src1", baseline: 10, maxCount: 50))
+        try db.write { grdb in
+            try TaskEvent(
+                id: "ev-src1", userId: "u1", taskId: "src1", kind: .increment, delta: 30,
+                occurredAt: "2026-07-01T00:00:00.000Z", boardId: nil, createdAt: self.now, updatedAt: self.now,
+                lastSyncedAt: nil, version: 1, isDeleted: false, deletedAt: nil
+            ).save(grdb)
+        }
 
         try db.deleteCounterWithUnlink(sourceId: "src1", now: now)
 
@@ -277,6 +284,43 @@ final class CounterOpsTests: XCTestCase {
 
         let source = try XCTUnwrap(try db.read { try Task.fetchOne($0, key: "src1") })
         XCTAssertTrue(source.isDeleted)
+    }
+
+    /// Web twin: "an unlinked member's lifetime caches follow its seed event,
+    /// never the stale latch (slice 5)".
+    func test_deleteCounterWithUnlink_cachesFollowTheSeedEvent_notTheStaleLatch() throws {
+        let db = try makeDb()
+        try seedUser(db)
+        try db.saveTask(makeSourceTask(id: "src1", currentCount: 60))
+        try db.write { grdb in
+            try TaskEvent(
+                id: "ev-src1", userId: "u1", taskId: "src1", kind: .increment, delta: 60,
+                occurredAt: "2026-07-01T00:00:00.000Z", boardId: nil, createdAt: self.now, updatedAt: self.now,
+                lastSyncedAt: nil, version: 1, isDeleted: false, deletedAt: nil
+            ).save(grdb)
+        }
+        // Goal 50 reached by the total 60 — the latch never moved.
+        try db.saveTask(makeMemberTask(sourceId: "src1", maxCount: 50))
+        // Goal 100 above the total, with a stale latch that says done.
+        var stale = makeMemberTask(id: "member2", sourceId: "src1", maxCount: 100)
+        stale.isCompleted = true
+        stale.completedAt = now
+        try db.saveTask(stale)
+
+        try db.deleteCounterWithUnlink(sourceId: "src1", now: now)
+
+        let reached = try XCTUnwrap(try db.read { try Task.fetchOne($0, key: "member1") })
+        XCTAssertEqual(reached.currentCount, 60)
+        XCTAssertTrue(reached.isCompleted)
+        XCTAssertEqual(reached.completedAt, TaskEvents.seedEventOccurredAt)
+        XCTAssertEqual(reached.version, 2)
+        let short = try XCTUnwrap(try db.read { try Task.fetchOne($0, key: "member2") })
+        XCTAssertEqual(short.currentCount, 60)
+        XCTAssertFalse(short.isCompleted)
+        XCTAssertNil(short.completedAt)
+        XCTAssertEqual(short.version, 2)
+        let queued = try db.fetchPendingSyncItems().filter { $0.entityType == "tasks" && $0.entityId == "member1" }
+        XCTAssertEqual(queued.count, 1)
     }
 
     func test_deleteCounterWithUnlink_skipsSnapshotEventWhenDisplayedIsZero() throws {
@@ -412,86 +456,33 @@ final class CounterOpsTests: XCTestCase {
         XCTAssertNil(member.sharedCounterId)
     }
 
-    // MARK: - Board Sources §Member rules (B2): baseline refresh on local writes
+    // MARK: - Slice 5: a counter log never writes a linked row
 
-    /// A window-stamped derived counter whose window opens in the FUTURE, so
-    /// every event logged by the ops below lands strictly BEFORE its boundary
-    /// and the baseline provably has to move. That is what makes these
-    /// assertions non-degenerate: with the refresh removed, the baseline stays
-    /// 0 and the displayed count (and therefore `isCompleted`) is wrong.
-    private static let futureWindowStart = "2099-01-01T00:00:00.000Z"
-
-    private func makeWindowStampedDerived(
-        id: String = "derived-1",
-        sourceId: String,
-        maxCount: CountValue = 3,
-        baseline: CountValue = 0
-    ) -> Task {
-        Task(
-            id: id, userId: "u1", title: "Push-ups goal", type: .counting,
-            action: "Push-ups", unit: "reps", maxCount: maxCount,
-            totalCompletions: 0, totalInstances: 0,
-            isCompleted: false, currentCount: 0,
-            createdAt: now, updatedAt: now, version: 1, isDeleted: false,
-            timeframe: .yearly, startDate: Self.futureWindowStart,
-            endDate: "2099-12-31T23:59:59.999Z",
-            sharedCounterId: sourceId, baseline: baseline, createdInWizard: true
-        )
-    }
-
-    /// Seeds a counter source at 0 plus one window-stamped derived member.
-    private func seedRefreshFixture(_ db: AppDatabase) throws {
+    func test_counterLogs_neverWriteALinkedRow_noBaselineRefresh() throws {
+        let db = try makeDb()
         try seedUser(db)
         try db.write { grdb in
             try self.makeSourceTask(id: "src", currentCount: 0).save(grdb)
-            try self.makeWindowStampedDerived(sourceId: "src").save(grdb)
+            try Task(
+                id: "derived-1", userId: "u1", title: "Push-ups goal", type: .counting,
+                action: "Push-ups", unit: "reps", maxCount: 3,
+                totalCompletions: 0, totalInstances: 0,
+                isCompleted: false, currentCount: 0,
+                createdAt: self.now, updatedAt: self.now, version: 1, isDeleted: false,
+                timeframe: .yearly, startDate: "2099-01-01T00:00:00.000Z",
+                endDate: "2099-12-31T23:59:59.999Z",
+                sharedCounterId: "src", baseline: 0, createdInWizard: true
+            ).save(grdb)
         }
-    }
-
-    func test_incrementSharedCounter_refreshesTheDerivedBaselineBeforePropagating() throws {
-        let db = try makeDb()
-        try seedRefreshFixture(db)
 
         _ = try db.incrementSharedCounter(sourceTaskId: "src", by: 5)
-
-        let derived = try XCTUnwrap(try db.read { try Task.fetchOne($0, key: "derived-1") })
-        XCTAssertEqual(derived.baseline, 5,
-                       "the +5 event precedes the derived row's window, so it is baseline")
-        XCTAssertEqual(derived.currentCount, 5, "the mirror still tracks the source's lifetime count")
-        XCTAssertFalse(
-            derived.isCompleted,
-            "displayed = 5 − 5 = 0, below the goal of 3 — proves the refresh ran BEFORE propagation"
-        )
-    }
-
-    func test_decrementSharedCounter_refreshesTheDerivedBaselineBeforePropagating() throws {
-        let db = try makeDb()
-        try seedRefreshFixture(db)
-        _ = try db.incrementSharedCounter(sourceTaskId: "src", by: 5)
-
         _ = try db.decrementSharedCounter(sourceTaskId: "src", by: 2)
+        _ = try db.undoLastCounterLog(sourceTaskId: "src")
 
         let derived = try XCTUnwrap(try db.read { try Task.fetchOne($0, key: "derived-1") })
-        XCTAssertEqual(derived.baseline, 3, "5 − 2, both events preceding the window")
-        XCTAssertEqual(derived.currentCount, 3)
-    }
-
-    func test_undoLastCounterLog_refreshesTheBaselineAfterTombstoningAPreWindowEvent() throws {
-        let db = try makeDb()
-        try seedRefreshFixture(db)
-        _ = try db.incrementSharedCounter(sourceTaskId: "src", by: 7)
-        let beforeUndo = try XCTUnwrap(try db.read { try Task.fetchOne($0, key: "derived-1") })
-        XCTAssertEqual(beforeUndo.baseline, 7, "precondition: the log is in the baseline")
-
-        let result = try db.undoLastCounterLog(sourceTaskId: "src")
-        XCTAssertEqual(result.undoneAmount, 7)
-
-        let derived = try XCTUnwrap(try db.read { try Task.fetchOne($0, key: "derived-1") })
-        XCTAssertEqual(
-            derived.baseline, 0,
-            "the undone event is TOMBSTONED, so it leaves the baseline — the in-memory " +
-            "event list the op passes through must carry that tombstone"
-        )
+        XCTAssertEqual(derived.version, 1, "a linked row is never written")
+        XCTAssertEqual(derived.baseline, 0, "baseline is never refreshed")
         XCTAssertEqual(derived.currentCount, 0)
+        XCTAssertFalse(derived.isCompleted)
     }
 }

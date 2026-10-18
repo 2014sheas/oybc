@@ -177,9 +177,17 @@ describe('evaluateCompound — windowed', () => {
     };
     expect(evaluateCompound(parent, children, taskById, preWindow)).toBe(false);
 
-    // A LIFETIME context (no windowStart) is the only place the latch survives.
+    // A LIFETIME context (no windowStart) reads the root's lifetime events —
+    // never the latch (TASK_WINDOW_REWORK slice 5).
     derived.isCompleted = true;
-    const lifetime: CompoundWindowContext = { windowStart: null, windowEnd: null, eventsByTaskId: {} };
+    const lifetimeEmpty: CompoundWindowContext = { windowStart: null, windowEnd: null, eventsByTaskId: {} };
+    expect(evaluateCompound(parent, children, taskById, lifetimeEmpty)).toBe(false);
+    derived.isCompleted = false;
+    const lifetime: CompoundWindowContext = {
+      windowStart: null,
+      windowEnd: null,
+      eventsByTaskId: { 'src-1': [increment('src-1', PRE_WINDOW, 10)] },
+    };
     expect(evaluateCompound(parent, children, taskById, lifetime)).toBe(true);
   });
 });

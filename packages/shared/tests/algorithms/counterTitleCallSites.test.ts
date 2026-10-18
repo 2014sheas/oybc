@@ -34,14 +34,6 @@ const ALLOWLIST: Record<string, { count: number; reason: string }> = {
     reason: `${NEW_TASK}; the existing-child edit passes the child's own settings`,
   },
   'apps/ios/OYBC/Database/AppDatabase+CountKindSwitch.swift': { count: 2, reason: TEMPLATE_AWARE },
-  'apps/ios/OYBC/Helpers/PlacementSweep.swift': {
-    count: 1,
-    reason: `${TEMPLATE_AWARE} — slice 4a sweep twin: is a legacy derived row's title custom (then it rides onto the repointed placement as titleOverride)`,
-  },
-  'apps/ios/OYBC/Helpers/BoardSourceMemberRules.swift': {
-    count: 1,
-    reason: `${TEMPLATE_AWARE} — slice 3b planner twin: is a legacy derived row's title custom (then it rides onto its root's placement as titleOverride)`,
-  },
   'apps/ios/OYBC/Helpers/BoardEditParamSplit.swift': {
     count: 3,
     reason: `${TEMPLATE_AWARE} — slice 3a Board Edit split: is the stored / typed / child title the auto formula (then a goal edit is a placement parameter, not a rename)`,
@@ -71,7 +63,6 @@ const ALLOWLIST: Record<string, { count: number; reason: string }> = {
   'apps/web/src/components/compoundWizard/compoundSubtaskDraft.ts': { count: 1, reason: NEW_TASK },
   'apps/web/src/components/counters/counterEditModel.ts': { count: 1, reason: TEMPLATE_AWARE },
   'apps/web/src/components/counters/counterRowTitle.ts': { count: 1, reason: TEMPLATE_AWARE },
-  'apps/web/src/components/playground/SharedCounterPlayground.tsx': { count: 2, reason: 'dev-only playground' },
   'apps/web/src/db/boardEditPlacementSplit.ts': {
     count: 3,
     reason: `${TEMPLATE_AWARE} — slice 3a Board Edit split: auto-title detection for the typed / stored title, and the regenerated auto title at the task's own goal when action / unit change`,
@@ -83,15 +74,7 @@ const ALLOWLIST: Record<string, { count: number; reason: string }> = {
   },
   'apps/web/src/pages/createPage/createFormCounting.ts': { count: 3, reason: NEW_TASK },
   // ── shared ──
-  'packages/shared/src/algorithms/memberRules.ts': {
-    count: 1,
-    reason: `${TEMPLATE_AWARE} — slice 3b planner: is a legacy derived row's title custom (then it rides onto its root's placement as titleOverride)`,
-  },
   'packages/shared/src/algorithms/rootFieldPropagation.ts': { count: 2, reason: TEMPLATE_AWARE },
-  'packages/shared/src/algorithms/placementSweep.ts': {
-    count: 1,
-    reason: `${TEMPLATE_AWARE} — slice 4a sweep: is a legacy derived row's title custom (then it rides onto the repointed placement as titleOverride)`,
-  },
   'packages/shared/src/algorithms/workspaceAnonymiser.ts': {
     count: 1,
     reason: `${TEMPLATE_AWARE} — dev-only export (slice 4): decides whether a counting title is auto so the anonymised fixture keeps that property`,

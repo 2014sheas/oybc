@@ -13,7 +13,6 @@ final class CounterPlacementMintTests: XCTestCase {
     private typealias K = LinkedWindowKit
     private let septStart = "2026-09-01T00:00:00.000Z", septEnd = "2026-09-30T00:00:00.000Z"
 
-    private func derived(_ board: String) -> String { BoardSources.derivedTaskId(boardId: board, rootTaskId: "root") }
 
     /// A 100-mile counter root; SEPT ("b1") is a MONTHLY board.
     private func root(goals: CounterTimeframeGoals? = CounterTimeframeGoals(monthly: 30), plural: String? = "Run #N mi") -> Task {
@@ -39,7 +38,6 @@ final class CounterPlacementMintTests: XCTestCase {
         XCTAssertEqual(bt.taskId, "root", "slice 3a: the root itself is placed, never a copy")
         XCTAssertEqual(bt.targetOverride, 30)
         XCTAssertEqual(bt.targetKind, .discrete)
-        XCTAssertNil(try K.fetchTask(db, derived("b1")), "no per-board copy is minted")
         let stored = try XCTUnwrap(try db.fetchBoardTasks(boardId: "b1").first)
         XCTAssertEqual(stored.targetOverride, 30, "persisted, not just returned")
         let rootRow = try XCTUnwrap(K.fetchTask(db, "root"))
@@ -55,7 +53,6 @@ final class CounterPlacementMintTests: XCTestCase {
         let placed = try XCTUnwrap(try db.fetchBoardTasks(boardId: "b1").first)
         XCTAssertEqual(placed.taskId, "root")
         XCTAssertEqual(placed.targetOverride, 30)
-        XCTAssertNil(try K.fetchTask(db, derived("b1")))
     }
 
     /// A swap drops the OLD task's parameters (written as explicit NULLs).
@@ -81,7 +78,6 @@ final class CounterPlacementMintTests: XCTestCase {
         let bt = try db.addBoardTaskToBoard("b1", taskId: "root", position: (row: 0, col: 0))
         XCTAssertEqual(bt.taskId, "root")
         XCTAssertNil(bt.targetOverride)
-        XCTAssertNil(try K.fetchTask(db, derived("b1")))
     }
 
     func test_add_defaultEqualToRootGoal_placesRootWithoutOverride() throws {
@@ -108,7 +104,6 @@ final class CounterPlacementMintTests: XCTestCase {
         let bt = try db.addBoardTaskToBoard("b1", taskId: "hub", position: (row: 0, col: 0))
         XCTAssertEqual(bt.taskId, "hub")
         XCTAssertNil(bt.targetOverride)
-        XCTAssertNil(try K.fetchTask(db, derived("b1")))
         XCTAssertEqual(try K.fetchTask(db, "hub")?.maxCount, 10)
     }
 
@@ -179,7 +174,6 @@ final class CounterPlacementMintTests: XCTestCase {
         // would give ceil(30 × 7 / 30) = 7, the root's weekly default wins.
         XCTAssertEqual(out.map(\.taskId), ["monthCopy"])
         XCTAssertEqual(out.first?.targetOverride, 4)
-        XCTAssertNil(try K.fetchTask(db, BoardSources.derivedTaskId(boardId: "wk", rootTaskId: "root")))
     }
 }
 

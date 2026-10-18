@@ -7,7 +7,6 @@ import { counterCopyTitle, type CounterTitleSettings } from './taskTitle';
 import type { CompoundWindowContext, LinkedCounterWindow, TaskWindowState } from './taskEvents';
 import {
   boundWindowContextAtSeal,
-  contextlessCounterState,
   resolveDerivedCounterWindowState,
   resolveTaskWindowState,
 } from './taskEvents';
@@ -164,14 +163,10 @@ export function resolveSquareState(
   ctx: CompoundWindowContext,
 ): TaskWindowState {
   const effective = withPlacementParams(task, placement);
+  // A linked row: the root's events over the host window, or its lifetime.
   const derived = resolveDerivedCounterWindowState(effective, ctx.eventsByTaskId, ctx);
   if (derived) return derived;
   const events: TaskEvent[] = ctx.eventsByTaskId[effective.id] ?? [];
-  if (effective.type === TaskType.COUNTING && effective.sharedCounterId) {
-    // A linked row with no host window (library, compound Task Detail, a hub
-    // card with no board): the ROOT's lifetime events, never the latch (slice 2c).
-    return contextlessCounterState(effective, ctx.eventsByTaskId);
-  }
   return resolveTaskWindowState(effective, events, ctx.windowStart, ctx.windowEnd ?? null);
 }
 
@@ -184,11 +179,9 @@ export function resolveSquareState(
  *   - `window` given (the placing board's `[startDate, endDate]`) → the ROOT's
  *     increment sum inside THAT window, whatever the row's own stamp says
  *     (context window wins, slice 0);
- *   - no `window`, a window-stamped row → its own stamp (the context-less
- *     fallback slice 5 retires);
- *   - no `window`, any other linked row → {@link contextlessCounterState}
- *     (the root's lifetime events). Neither `currentCount − baseline` nor the
- *     propagation latch is read any more; no event map reads as no events.
+ *   - no `window` → {@link contextlessCounterState} (the root's lifetime
+ *     events). Neither the row's own stamp, `currentCount − baseline` nor the
+ *     latch is read; no event map reads as no events.
  *
  * `sealedAt` (the row's board is sealed) bounds every event at that instant
  * first — {@link boundWindowContextAtSeal}, the sealed re-derive's filter; an

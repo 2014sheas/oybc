@@ -71,15 +71,8 @@ extension AppDatabase {
     /// Does NOT cascade to BoardTask placements — see
     /// `deleteDraftWithCascade` for the draft-only cascading variant.
     ///
-    /// Board Sources §Member rules (B2, RB5) — the board's window-stamped
-    /// derived rows go with it, once nothing else holds them: a derived
-    /// counter/compound left behind by its last board is a row the user never
-    /// authored, pointing at a window that no longer has a board. One still
-    /// placed on another LIVE board survives. The board's OWN `board_tasks`
-    /// rows stay as they are (see above) — the sweep's candidate query reads
-    /// tombstoned placements too, so it does not depend on that. The board
-    /// tombstone and the derived cascade share one transaction so a mid-flight
-    /// failure can't leave retired tasks under a live board.
+    /// (Until TASK_WINDOW_REWORK slice 5 it also retired the board's
+    /// window-stamped derived rows; none exist now.)
     func deleteBoard(id: String) throws {
         try write { db in
             guard var board = try Board.fetchOne(db, key: id) else { return }
@@ -97,9 +90,6 @@ extension AppDatabase {
                 now: now
             ).enqueue(db)
 
-            // After the tombstone, so the "live placement" test excludes this board.
-            let orphaned = try Self.windowStampedDerivedOrphanedByBoard(db: db, boardId: id)
-            try Self.softDeleteWindowStampedDerived(db: db, taskIds: orphaned, now: now)
         }
     }
 

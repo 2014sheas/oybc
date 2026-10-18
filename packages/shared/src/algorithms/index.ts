@@ -204,7 +204,7 @@ export {
   resolveTaskWindowState,
   boardWindowEnd,
   lateLogOccurredAt,
-  resolveWindowStampedDerivedState,
+  resolveLinkedCounterWindowState,
   resolveDerivedCounterWindowState,
   contextlessCounterState,
   boundWindowContextAtSeal,
@@ -363,14 +363,10 @@ export {
 
 export { computeBrowsableTasks, isGoalLessCounter } from './browsableTasks';
 
-// ===== Phase 1 + Phase 3 — Shared counter =====
-export { deriveDisplayedCount, propagateIncrement } from './sharedCounter';
-
-export type {
-  PropagateIncrementSource,
-  PropagateIncrementLinkedTask,
-  LinkedTaskIncrementResult,
-} from './sharedCounter';
+// Phase 1/3's `deriveDisplayedCount` / `propagateIncrement` (the
+// `currentCount − baseline` display and the linked-row latch stamp) were
+// retired by TASK_WINDOW_REWORK slice 5: every reader resolves a linked row
+// from its root's events, and an increment writes the root alone.
 
 // Phase 4's `sharedCounterMerge` (additiveMergeCount / needsAdditiveMerge) was
 // retired by Windowed Completion — counting-task conflicts now resolve by
@@ -470,22 +466,12 @@ export type {
 
 // ===== Member rules (B1, docs/BOARD_SOURCES.md §Member rules) =====
 export {
-  DERIVED_TASK_NS,
-  DERIVED_COMPOUND_NS,
-  DERIVED_LINK_NS,
-  derivedTaskId,
-  derivedCompoundId,
-  derivedLinkId,
   nominalWindowDays,
   autoTarget,
   varyRange,
   rollTarget,
   applyMemberRules,
   planDerivedTasks,
-  computeWindowBaseline,
-  isWindowStampedDerived,
-  isFrozenDerivedRow,
-  isFrozenRowReachedByEvent,
 } from './memberRules';
 
 export type {
@@ -496,7 +482,6 @@ export type {
   PlannedPlacement,
   PlanDerivedTasksArgs,
   PlanDerivedTasksResult,
-  BaselineEvent,
 } from './memberRules';
 
 // ===== Member rules — display + rule-editing helpers (B3, docs/BOARD_SOURCES.md §Member rules) =====
@@ -556,11 +541,6 @@ export type {
   CoreBoardSetupPrefs,
 } from './coreBoardSetupDefaults';
 
-// ===== Windowed linked counters — heal planner + placement gate (owner rule 2026-10-01) =====
-export {
-  sameWindowStart,
-  isWindowStampedForBoard,
-} from './linkedCounterWindowHeal';
 
 
 // ===== Board-scoped task edits — fork ids + planner (docs/BOARD_SCOPED_TASK_EDITS.md, PR 1) =====
@@ -625,15 +605,6 @@ export {
 } from './placementParams';
 export type { PlacementParams } from './placementParams';
 
-// ===== TASK_WINDOW_REWORK slice 4 — the migration sweep =====
-export { planPlacementSweep, rekeyIds, rekeyRecordKeys, isWindowStampedDerivedCompound } from './placementSweep';
-export type {
-  SweepWorkspace,
-  SweepRepoint,
-  SweepBoardOutcome,
-  SweepBoardOutcomeKind,
-  SweepRefusalReason,
-  PlacementSweepPlan,
-} from './placementSweep';
+// ===== Developer export — the anonymised workspace fixture (TASK_WINDOW_REWORK slice 4) =====
 export { anonymiseWorkspace } from './workspaceAnonymiser';
 export type { AnonymisableWorkspace, AnonymisedWorkspace } from './workspaceAnonymiser';

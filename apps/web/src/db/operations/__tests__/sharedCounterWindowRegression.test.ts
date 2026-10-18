@@ -2,7 +2,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   Timeframe,
   boardWindowEnd,
-  derivedTaskId,
   resolveLinkedCounterDisplay,
   type TaskEvent,
 } from '@oybc/shared';
@@ -20,6 +19,7 @@ import {
   placement,
   rootTask,
 } from './linkedCounterFixtures';
+import { legacyDerivedTaskId } from './legacyDerivedIds';
 
 /**
  * The owner's scenario (2026-10-01): a +5 logged from an ENDED, unsealed
@@ -33,7 +33,7 @@ import {
  */
 
 const NOW = '2026-10-01T00:00:00.000Z';
-const SEPT_ROW = derivedTaskId(SEPT.id, ROOT);
+const SEPT_ROW = legacyDerivedTaskId(SEPT.id, ROOT);
 const SEALED_AT = '2026-07-01T00:00:00.000Z';
 
 async function seedScenario(): Promise<void> {
@@ -107,7 +107,10 @@ describe('a late log on an ended September board never moves the closed June boa
     expect(june.version).toBe(juneBoardBefore.version);
 
     // September's own square took the log.
-    const sept = resolveLinkedCounterDisplay((await db.tasks.get(SEPT_ROW))!, await eventsByTask());
+    const sept = resolveLinkedCounterDisplay((await db.tasks.get(SEPT_ROW))!, await eventsByTask(), null, {
+      startDate: SEPT.startDate,
+      endDate: SEPT.endDate,
+    });
     expect(sept.displayed).toBe(5);
 
     // Credit toast: the closed June board is never named.
@@ -118,7 +121,7 @@ describe('a late log on an ended September board never moves the closed June boa
     // An open-ended window-stamped row never freezes (`endDate` absent), so
     // only the board predicate can keep a CLOSED board out of the toast.
     const OPEN = 'board-open-sealed';
-    const openRow = derivedTaskId(OPEN, ROOT);
+    const openRow = legacyDerivedTaskId(OPEN, ROOT);
     await db.tasks.put(
       hubLinked(openRow, {
         createdInWizard: true,

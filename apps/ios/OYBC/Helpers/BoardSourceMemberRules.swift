@@ -24,47 +24,6 @@ import Foundation
 // is still `BoardSources.planDerivedTasks(...)` either way.
 extension BoardSources {
 
-    // MARK: - Deterministic id namespaces
-
-    /// uuidv5 name prefix for a per-window derived counter.
-    static let derivedTaskNamespace = "sources:derived"
-    /// uuidv5 name prefix for a per-window derived compound.
-    static let derivedCompoundNamespace = "sources:derived-compound"
-    /// uuidv5 name prefix for a derived compound's `compound_children` link.
-    static let derivedLinkNamespace = "sources:derived-link"
-
-    /// Deterministic id of the derived counter for `rootTaskId` on `boardId`.
-    ///
-    /// - Parameters:
-    ///   - boardId: The board the derived counter is stamped for.
-    ///   - rootTaskId: The shared-counter root (`sharedCounterId ?? id`).
-    /// - Returns: A stable uuidv5 — re-deriving the same window yields the same id.
-    static func derivedTaskId(boardId: String, rootTaskId: String) -> String {
-        UUIDv5.uuidv5(name: "\(derivedTaskNamespace):\(boardId):\(rootTaskId)")
-    }
-
-    /// Deterministic id of the derived compound for `compoundId` on `boardId`.
-    ///
-    /// - Parameters:
-    ///   - boardId: The board the derived compound is stamped for.
-    ///   - compoundId: The source compound task's id.
-    /// - Returns: A stable uuidv5.
-    static func derivedCompoundId(boardId: String, compoundId: String) -> String {
-        UUIDv5.uuidv5(name: "\(derivedCompoundNamespace):\(boardId):\(compoundId)")
-    }
-
-    /// Deterministic id of the `compound_children` link from a derived
-    /// compound to one of its children (derived or original).
-    ///
-    /// - Parameters:
-    ///   - derivedCompoundId: The derived compound's id (from ``derivedCompoundId(boardId:compoundId:)``).
-    ///   - childId: The child task id the link points at — the LITERAL id,
-    ///     i.e. a derived uuid for a derived child, the raw source id otherwise.
-    /// - Returns: A stable uuidv5.
-    static func derivedLinkId(derivedCompoundId: String, childId: String) -> String {
-        UUIDv5.uuidv5(name: "\(derivedLinkNamespace):\(derivedCompoundId):\(childId)")
-    }
-
     // MARK: - Window arithmetic
 
     /// UTC-anchored `Calendar` — the day arithmetic below must never use
@@ -329,14 +288,16 @@ extension BoardSources {
     /// The planner emits ONE per selected id, in order — never a row to mint.
     /// Twin of the TS `PlannedPlacement`.
     struct PlannedPlacement: Equatable {
-        /// The member itself; a legacy window-stamped derived row resolves to its ROOT.
+        /// The member itself.
         var taskId: String
-        /// The planned per-window target, in `targetKind`; only when it differs from the placed task's own goal.
+        /// The planned per-window target, in `targetKind`; only when it differs from the task's own goal.
         var targetOverride: CountValue?
         var targetKind: CountKind?
         /// A re-targeted compound's per-child targets (direct children only).
         var childTargets: [PlacementChildTarget]?
-        /// A legacy derived row's custom title, carried onto the root's placement.
+        /// A per-board title. The planner NEVER sets it; only an explicit wizard
+        /// draft (`PlacementParamsDraft.overlaying`) carries one, so persist can
+        /// write it with the planned parameters in one pass.
         var titleOverride: String?
 
         init(
@@ -486,34 +447,18 @@ extension BoardSources {
             }
             return goalOf(task)
         }
-        /// The task a member's placement points at: a legacy derived row → its root.
-        func placedIdOf(_ t: Task) -> String {
-            if isWindowStampedDerived(t), let sid = t.sharedCounterId, !sid.isEmpty { return sid }
-            return t.id
-        }
         /// The placement for `t` at the pre-vary `target` rolled by `vary`: the
-        /// override lands only when the rolled target differs from the PLACED
-        /// task's own goal; a legacy derived row's custom title rides onto its
-        /// root's placement.
+        /// override lands only when the rolled target differs from the task's
+        /// own goal.
         func param(_ t: Task, _ target: CountValue, _ vary: VaryLevel, _ effGoal: CountValue?) -> PlannedPlacement {
             let goal = Swift.max(effGoal ?? goalOf(t) ?? 0, target)
             let kind = resolveCountKind(t.countKind)
             let rolled = rollTarget(t: target, level: vary, goal: goal, rng: rng, kind: kind)
-            let placedId = placedIdOf(t)
-            let placed: Task? = placedId == t.id ? t : (tasksById[placedId] ?? rootsById[placedId])
-            var out = PlannedPlacement(taskId: placedId)
-            let placedOwn = placed.flatMap { goalOf($0) }
-            if placedOwn == nil || rolled != placedOwn {
+            var out = PlannedPlacement(taskId: t.id)
+            let own = goalOf(t)
+            if own == nil || rolled != own {
                 out.targetOverride = rolled
                 out.targetKind = kind
-            }
-            if placedId != t.id {
-                let custom = !TaskTitle.isAutoCounterTitle(
-                    title: t.title, action: t.action ?? "", maxCount: t.maxCount, unit: t.unit ?? "",
-                    countKind: kind, settings: rootOf(t).map(CounterSettings.TitleSettings.init(task:))
-                )
-                let trimmed = t.title.trimmingCharacters(in: .whitespacesAndNewlines)
-                if custom && !trimmed.isEmpty { out.titleOverride = trimmed }
             }
             return out
         }
@@ -543,7 +488,7 @@ extension BoardSources {
                 // A goal-less member pulled from a board takes its root's default.
                 guard let goal = ownGoal ?? (fromBoard ? defaultOf(rootOf(task)) : nil) else {
                     // Goal-less (an accumulator): nothing to target — placed as-is.
-                    placements.append(PlannedPlacement(taskId: placedIdOf(task)))
+                    placements.append(PlannedPlacement(taskId: id))
                     continue
                 }
                 if isManual {
@@ -565,7 +510,7 @@ extension BoardSources {
                         placements.append(param(task, target, vary, ownGoal))
                         continue
                     }
-                    placements.append(PlannedPlacement(taskId: placedIdOf(task)))
+                    placements.append(PlannedPlacement(taskId: id))
                     continue
                 }
                 let rule = rules[id] ?? BoardSourceMemberRule()

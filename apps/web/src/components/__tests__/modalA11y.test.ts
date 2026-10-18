@@ -111,7 +111,6 @@ const CASES: DialogCase[] = [
       React.createElement(CounterDeleteConfirmDialog, {
         counterName: 'Push-ups',
         memberCount: 0,
-        derivedWindowCounterCount: 0,
         members: [],
         busy: false,
         onConfirm: noop,
@@ -132,8 +131,7 @@ const CASES: DialogCase[] = [
           parentLinkCount: 0,
           counterMemberCount: 0,
           counterMembers: [],
-          derivedWindowCounterCount: 0,
-          countsTowardCounter: null,
+            countsTowardCounter: null,
           unitTaskCount: 0,
         },
         onConfirm: noop,

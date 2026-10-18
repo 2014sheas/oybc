@@ -713,8 +713,7 @@ extension AppDatabase {
                 .order(Column("row"), Column("col"), Column("id"))
                 .fetchAll(db)
 
-            // ONE batched read for the RB4 check below (the batched style this
-            // file's neighbours use), not a `get` per cell.
+            // One batched read for the override lookup below, not a `get` per cell.
             let placedTaskIds = Array(Set(placements.map { $0.taskId }))
             var placedTaskById: [String: Task] = [:]
             for task in try Task.filter(placedTaskIds.contains(Column("id"))).fetchAll(db) {
@@ -725,50 +724,17 @@ extension AppDatabase {
             // (shouldn't happen post board-integrity hardening, but this
             // mirrors makeWizardBoardTaskRows' dedup posture defensively)
             // must not appear twice in manualTaskIds.
-            // RB4 amended (final-review FI2) — the roots behind any placed
-            // window-stamped derived counters, in ONE batched read.
-            let rootIds = Array(Set(placedTaskById.values
-                .filter { BoardSources.isWindowStampedDerived($0) }
-                .compactMap { $0.sharedCounterId }))
-            var rootById: [String: Task] = [:]
-            if !rootIds.isEmpty {
-                for root in try Task.filter(rootIds.contains(Column("id"))).fetchAll(db) {
-                    rootById[root.id] = root
-                }
-            }
-
             var seen = Set<String>()
             var boardTaskIds: [String] = []
             var manualTaskTargets: [String: ManualTaskTarget] = [:]
             for bt in placements {
-                let task = placedTaskById[bt.taskId]
-                // Board Sources §Member rules (B2, RB4) — a per-window derived
-                // COMPOUND is this window's re-targeted copy of a source
-                // compound; carrying it forward as a hand-added member would
-                // pin every future window to it.
-                if let task, Self.isWindowStampedDerivedCompound(task) { continue }
-                // RB4 amended (final-review FI2) — a derived COUNTER is
-                // recorded by its ROOT id, never its own. The derived row
-                // belongs to THIS board's window and is retired with this
-                // board (RB5), so a record naming it would be skipped as
-                // `.hasDeletedTasks` for every future window the day the user
-                // deletes the board they repeated. The root is durable library
-                // content and is what each new window re-plans from anyway. A root
-                // placed with a `targetOverride` already carries its own id; its
-                // frozen override / title is collected below into the record's
-                // `manualTaskTargets` (slice 3b, ruling 1). A root that is itself
-                // missing or deleted contributes no member.
-                var memberId = bt.taskId
-                if let task,
-                   BoardSources.isWindowStampedDerived(task),
-                   let rootId = task.sharedCounterId {
-                    guard let root = rootById[rootId], !root.isDeleted else { continue }
-                    memberId = root.id
-                }
+                // A placement is recorded by its own task id (slice 5: no
+                // derived rows remain); its frozen override / title rides along.
+                let keyTask = placedTaskById[bt.taskId]
+                let memberId = bt.taskId
                 guard seen.insert(memberId).inserted else { continue }
                 boardTaskIds.append(memberId)
                 // Slice 3b (ruling 1): Repeat copies a placement's frozen override.
-                let keyTask = memberId == bt.taskId ? task : rootById[memberId]
                 let frozen = bt.targetOverride ?? (bt.titleOverride != nil ? keyTask?.maxCount : nil)
                 if let keyTask, let frozen, frozen > 0 {
                     manualTaskTargets[memberId] = ManualTaskTarget(

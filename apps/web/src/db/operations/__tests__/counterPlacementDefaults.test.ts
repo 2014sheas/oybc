@@ -1,9 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { CenterSquareType, Timeframe, derivedTaskId, withPlacementParams, type Task } from '@oybc/shared';
+import { CenterSquareType, Timeframe, withPlacementParams, type Task } from '@oybc/shared';
 import { db } from '../../internal';
 import { addBoardTaskToBoard, updateBoardTaskAndCascade } from '../boardTasks';
 import { persistWizardBoardRows, type PersistWizardBoardRowsInput } from '../wizardBoard';
 import { ROOT, SEPT, USER, boardRow, clearAll, hubLinked, placement, rootTask } from './linkedCounterFixtures';
+import { legacyDerivedTaskId } from './legacyDerivedIds';
 
 /**
  * docs/SHARED_COUNTER_SETTINGS.md §2 + TASK_WINDOW_REWORK slice 3a — the
@@ -14,7 +15,7 @@ import { ROOT, SEPT, USER, boardRow, clearAll, hubLinked, placement, rootTask } 
  * (hand-added and pool-pulled roots) places parameters the same way.
  */
 
-const SEPT_ROW = derivedTaskId(SEPT.id, ROOT);
+const SEPT_ROW = legacyDerivedTaskId(SEPT.id, ROOT);
 /** SEPT is a MONTHLY board — a monthly default of 30 for a 100-mile counter. */
 const withDefaults = (over: Partial<Task> = {}): Task =>
   rootTask({ timeframeGoals: { monthly: 30 }, titleTemplatePlural: 'Run #N mi', ...over });

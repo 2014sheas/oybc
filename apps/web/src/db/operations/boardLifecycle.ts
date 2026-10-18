@@ -89,9 +89,7 @@ export async function closeBoard(boardId: string, now: string = currentTimestamp
  * naturally sees the just-cleared `sealedAt` inside this same transaction),
  * then refreshes any achievement watcher of this board (D8).
  *
- * Spawns nothing (no template / recurring write). Window-stamped derived
- * counters have nothing to unfreeze here — `isFrozenDerivedRow` keys on
- * `now > row.endDate`, not `sealedAt` (docs/BOARD_SOURCES.md §Plan B2 notes).
+ * Spawns nothing (no template / recurring write).
  *
  * @param boardId The board to reopen.
  * @param now     The reopen timestamp (defaults to wall-clock).

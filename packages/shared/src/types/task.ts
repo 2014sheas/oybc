@@ -385,8 +385,7 @@ export interface UpdateTaskInput {
 
   // `timeframe` / `startDate` / `endDate` are deliberately NOT updatable.
   // A task's own window is set only at creation (wizard board window) and
-  // by member-rules stamping of window-stamped derived rows, whose
-  // completion window it IS — an edit path must never un-stamp or move it.
+  // is never a kernel input (TASK_WINDOW_REWORK slice 5).
 
   /**
    * Phase 2 — Shared Counters. `null` clears the shared-counter link

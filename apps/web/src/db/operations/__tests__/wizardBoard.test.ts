@@ -5,7 +5,6 @@ import {
   OperatorType,
   TaskType,
   Timeframe,
-  derivedTaskId,
   varyRange,
   withPlacementParams,
   type Board,
@@ -22,6 +21,7 @@ import {
   type PersistWizardBoardRowsInput,
   type WizardPendingTaskWrite,
 } from '../wizardBoard';
+import { legacyDerivedTaskId } from './legacyDerivedIds';
 
 /**
  * Item 2 (bingo-pipeline hardening) — wizard board creation bypassed
@@ -110,18 +110,10 @@ function baseInput(
 
 describe('persistWizardBoardRows — a quick-added counter root places AS ITSELF (slice 3b: no pending linked copy, no orphan member)', () => {
   const ROOT = uuid(90);
-  const LEGACY = uuid(91);
   const root = (): Task => ({
     id: ROOT, userId: USER, title: 'Pages', type: TaskType.COUNTING, action: 'Read', unit: 'pages', isCounter: true,
     currentCount: 40, isCompleted: false, totalCompletions: 0, totalInstances: 0, createdAt: START, updatedAt: START,
     version: 1, isDeleted: false,
-  });
-  /** A pre-3b window-stamped derived row a draft (or hand-add) may still reference. */
-  const legacyDerived = (): Task => ({
-    id: LEGACY, userId: USER, title: 'Read 5 pages', type: TaskType.COUNTING, action: 'Read', unit: 'pages', maxCount: 5,
-    currentCount: 0, sharedCounterId: ROOT, baseline: 40, isCompleted: false, totalCompletions: 0, totalInstances: 0,
-    createdAt: START, updatedAt: START, version: 1, isDeleted: false, timeframe: Timeframe.DAILY, startDate: START,
-    createdInWizard: true,
   });
 
   it('active save: the root is placed with the wizard\'s typed goal as its override — no new task row, nothing enqueued for one', async () => {
@@ -147,27 +139,13 @@ describe('persistWizardBoardRows — a quick-added counter root places AS ITSELF
     expect(queued.some((q) => q.entityType === 'boardTasks' && q.entityId === placed[0].id)).toBe(true);
   });
 
-  it('a placed legacy window-stamped row resolves to its ROOT on an active save', async () => {
-    await db.tasks.add(root());
-    await db.tasks.add(legacyDerived());
-    const placement = new Array(9).fill(null);
-    placement[0] = legacyDerived();
-
-    const boardId = await persistWizardBoardRows(baseInput({ placement, manualTaskIds: [LEGACY], status: 'active' }));
-
-    const placed = await db.boardTasks.where('boardId').equals(boardId).toArray();
-    expect(placed.map((p) => p.taskId)).toEqual([ROOT]);
-    expect(placed[0]).toMatchObject({ targetOverride: 5, targetKind: 'discrete' });
-  });
-
   it('two cells resolving to one task leave the repeat cell empty (one row per task per board)', async () => {
     await db.tasks.add(root());
-    await db.tasks.add(legacyDerived());
     const placement = new Array(9).fill(null);
     placement[0] = root();
-    placement[1] = legacyDerived();
+    placement[1] = root();
 
-    const boardId = await persistWizardBoardRows(baseInput({ placement, manualTaskIds: [ROOT, LEGACY], status: 'active' }));
+    const boardId = await persistWizardBoardRows(baseInput({ placement, manualTaskIds: [ROOT], status: 'active' }));
 
     expect((await db.boardTasks.where('boardId').equals(boardId).toArray()).map((p) => p.taskId)).toEqual([ROOT]);
   });
@@ -758,7 +736,7 @@ describe('persistWizardBoardRows — member-rule placement parameters (slice 3b)
       }),
     );
 
-    expect(await db.tasks.get(derivedTaskId(boardId, ROOT))).toBeUndefined();
+    expect(await db.tasks.get(legacyDerivedTaskId(boardId, ROOT))).toBeUndefined();
     expect(await db.tasks.where('sharedCounterId').equals(ROOT).count()).toBe(0);
 
     const rows = await db.boardTasks.where('boardId').equals(boardId).toArray();
@@ -956,7 +934,7 @@ describe('persistWizardBoardRows — manualTaskVary (B3)', () => {
 
     const [lo, hi] = varyRange(GOAL, 1, GOAL);
     expect(lo).toBeLessThan(GOAL); // the assertion below is not degenerate
-    expect(await db.tasks.get(derivedTaskId(boardId, HAND))).toBeUndefined();
+    expect(await db.tasks.get(legacyDerivedTaskId(boardId, HAND))).toBeUndefined();
     const rows = await db.boardTasks.where('boardId').equals(boardId).toArray();
     expect(rows[0].taskId).toBe(HAND);
     expect(rows[0].targetOverride).toBe(lo);
@@ -992,7 +970,7 @@ describe('persistWizardBoardRows — manualTaskVary (B3)', () => {
       baseInput({ placement, sources: [], manualTaskIds: [HAND] }),
     );
 
-    expect(await db.tasks.get(derivedTaskId(boardId, HAND))).toBeUndefined();
+    expect(await db.tasks.get(legacyDerivedTaskId(boardId, HAND))).toBeUndefined();
     const rows = await db.boardTasks.where('boardId').equals(boardId).toArray();
     expect(rows[0].taskId).toBe(HAND);
   });
@@ -1097,7 +1075,7 @@ describe('persistWizardBoardRows — pool-level default dice (2026-10-06)', () =
       baseInput({ placement, sources: [poolSource()], manualTaskIds: [] }),
     );
 
-    expect(await db.tasks.get(derivedTaskId(boardId, MEMBER))).toBeUndefined();
+    expect(await db.tasks.get(legacyDerivedTaskId(boardId, MEMBER))).toBeUndefined();
     const rows = await db.boardTasks.where('boardId').equals(boardId).toArray();
     expect(rows[0].taskId).toBe(MEMBER);
   });
@@ -1167,7 +1145,7 @@ describe('persistWizardBoardRows — custom counter title survives planning (202
     );
 
     // The linked member is placed as itself: its custom title and goal stand.
-    expect(await db.tasks.get(derivedTaskId(boardId, HUB_ROOT))).toBeUndefined();
+    expect(await db.tasks.get(legacyDerivedTaskId(boardId, HUB_ROOT))).toBeUndefined();
     const rows = await db.boardTasks.where('boardId').equals(boardId).toArray();
     expect(rows[0]).toMatchObject({ taskId: LINKED });
     expect(rows[0].targetOverride).toBeUndefined();

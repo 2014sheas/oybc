@@ -37,9 +37,6 @@ interface FixCopy {
   maxCount?: number;
   countKind?: CountKind;
   sharedCounterId?: string | null;
-  startDate?: string;
-  endDate?: string;
-  createdInWizard?: boolean;
   isDeleted?: boolean;
   onSealedBoard?: boolean;
 }
@@ -51,7 +48,6 @@ interface FixVector {
   expected: Array<{ copyId: string; patch: Record<string, string> }>;
 }
 interface Fixture {
-  now: string;
   vectors: FixVector[];
 }
 
@@ -83,9 +79,6 @@ const makeCopy = (c: FixCopy): RootPropagationCopy => ({
   maxCount: c.maxCount,
   countKind: c.countKind,
   sharedCounterId: c.sharedCounterId === null ? undefined : (c.sharedCounterId ?? 'root'),
-  startDate: c.startDate,
-  endDate: c.endDate,
-  createdInWizard: c.createdInWizard ?? true,
   isDeleted: c.isDeleted ?? false,
   onSealedBoard: c.onSealedBoard ?? false,
 });
@@ -97,7 +90,7 @@ describe('planRootFieldPropagation — shared vectors', () => {
 
   for (const v of fixture.vectors) {
     it(v.name, () => {
-      const out = planRootFieldPropagation(makeRoot(v.root), v.patch, v.copies.map(makeCopy), fixture.now);
+      const out = planRootFieldPropagation(makeRoot(v.root), v.patch, v.copies.map(makeCopy));
       expect(out).toEqual(v.expected);
       for (const entry of out) expect(entry.patch).not.toHaveProperty('maxCount');
     });

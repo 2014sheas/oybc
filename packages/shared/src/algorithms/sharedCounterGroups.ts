@@ -34,8 +34,7 @@ import type { Board } from '../types/board';
 import type { BoardTask } from '../types/boardTask';
 import type { TaskEvent } from '../types/taskEvent';
 import { TaskType, Timeframe } from '../constants/enums';
-import { quantizeCount, resolveCountKind, type CountKind } from './countValue';
-import { deriveDisplayedCount } from './sharedCounter';
+import { finalizeWindowCount, quantizeCount, resolveCountKind, type CountKind } from './countValue';
 import { formatTimeframeLabel } from './calendarBoundaries';
 import { counterDisplayName } from './counterSettings';
 import { boardWindowEnd, boundWindowContextAtSeal, resolveTaskWindowState } from './taskEvents';
@@ -72,7 +71,7 @@ export interface SharedCounterMemberTask {
    *  `eventsByTaskId`): the ROOT's increment sum over the host board's window
    *  for a linked card, the root's OWN events for a root card — each bounded
    *  at a sealed board's `sealedAt`, the play cell's numbers. Without events,
-   *  the lifetime arithmetic (`lifetime − baseline`). */
+   *  the root's lifetime total (`baseline` is never read). */
   logged: number;
   /** `logged >= goal` (only when `goal > 0`). Over-achievement is real. */
   met: boolean;
@@ -388,9 +387,8 @@ export function buildSharedCounterGroups(
           hostWindow,
         ).displayed;
       } else {
-        // No events supplied: the library's lifetime arithmetic (source baseline 0).
-        const baseline = isSource ? 0 : task.baseline ?? 0;
-        displayed = deriveDisplayedCount({ baseline, maxCount: goal, countKind: task.countKind }, { currentCount: lifetime }).displayed;
+        // No events supplied: the root's lifetime total (`baseline` is never read).
+        displayed = finalizeWindowCount(lifetime, resolveCountKind(task));
       }
 
       boardIds.add(board.id);

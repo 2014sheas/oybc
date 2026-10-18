@@ -430,9 +430,9 @@ export function useBoardPlay(params: UseBoardPlayParams): UseBoardPlayResult {
    *   (b) a linked (derived) counting task whose `sharedCounterId` points to
    *       the source.
    *
-   * Both cases route to `incrementSharedCounter(sourceId)` which handles the
-   * full propagation transactionally (source update → linked task re-derive →
-   * cascade for all affected boards).
+   * Both cases route to `incrementSharedCounter(sourceId)`, which writes the
+   * source + its event and cascades every board placing the source or a
+   * linked row, transactionally.
    *
    * Post-increment bingo/greenlog flash: we re-fetch the board after the
    * transaction and compare stats against the pre-increment snapshot.

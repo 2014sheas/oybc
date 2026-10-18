@@ -222,7 +222,6 @@ final class QuickAddCounterPlacementTests: XCTestCase {
         XCTAssertEqual(rows.first?.targetOverride, 5)
         XCTAssertEqual(rows.first?.targetKind, .discrete)
         XCTAssertEqual(try db.read { try Task.fetchCount($0) }, tasksBefore, "no task row minted")
-        XCTAssertNil(try K.fetchTask(db, BoardSources.derivedTaskId(boardId: "b1", rootTaskId: "root")))
         XCTAssertTrue(try K.queue(db, type: "tasks", id: "root").isEmpty, "the counter itself is not written")
     }
 

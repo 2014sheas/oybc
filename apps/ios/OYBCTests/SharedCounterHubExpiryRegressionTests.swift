@@ -114,7 +114,7 @@ final class SharedCounterHubExpiryRegressionTests: XCTestCase {
             "createdAt": now, "updatedAt": now, "version": 1, "isDeleted": false,
         ]
         let board = try JSONDecoder().decode(Board.self, from: JSONSerialization.data(withJSONObject: dict))
-        let derivedId = BoardSources.derivedTaskId(boardId: boardId, rootTaskId: rootId)
+        let derivedId = "legacy-derived-\(boardId)"
         try db.write { db in
             try board.save(db)
             try OYBC.Task(
@@ -156,7 +156,6 @@ final class SharedCounterHubExpiryRegressionTests: XCTestCase {
         let weeklyId = try seedLegacyWeekly(db, windowDate: Date())
 
         let d = try derivedRow(db)
-        XCTAssertTrue(BoardSources.isWindowStampedDerived(d))
         XCTAssertEqual(d.maxCount, 25)
         let placed = try db.read { db in
             try BoardTask.filter(Column("boardId") == weeklyId && Column("isDeleted") == false).fetchAll(db)

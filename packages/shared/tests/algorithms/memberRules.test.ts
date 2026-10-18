@@ -17,15 +17,7 @@ import {
   rollTarget,
   applyMemberRules,
   planDerivedTasks,
-  derivedTaskId,
-  derivedCompoundId,
-  derivedLinkId,
-  computeWindowBaseline,
-  isWindowStampedDerived,
-  isFrozenDerivedRow,
-  isFrozenRowReachedByEvent,
 } from '../../src/algorithms/memberRules';
-import type { BaselineEvent } from '../../src/algorithms/memberRules';
 import type { VaryLevel, BoardSource } from '../../src/types';
 
 const V: any = JSON.parse(
@@ -144,34 +136,6 @@ describe('planDerivedTasks', () => {
     Object.entries(P.sourceWindows).map(([id, tf]) => [id, win(tf as string)])
   );
 
-  it('pins the three id namespaces as literals', () => {
-    expect(derivedTaskId(P.boardId, 'r1')).toBe(P.idPins['derived:r1']);
-    expect(derivedTaskId(P.boardId, 'r2')).toBe(P.idPins['derived:r2']);
-    expect(derivedTaskId(P.boardId, 'c1')).toBe(P.idPins['derived:c1']);
-    expect(derivedTaskId(P.boardId, 'c3')).toBe(P.idPins['derived:c3']);
-    expect(derivedTaskId(P.boardId, 'a1')).toBe(P.idPins['derived:a1']);
-    expect(derivedTaskId(P.boardId, 'r3')).toBe(P.idPins['derived:r3']);
-    expect(derivedCompoundId(P.boardId, 'C2')).toBe(P.idPins['derivedCompound:C2']);
-    expect(derivedLinkId(P.idPins['derivedCompound:C2'], P.idPins['derived:c3'])).toBe(
-      P.idPins['link:derivedCompound:C2:derived:c3']
-    );
-    expect(derivedLinkId(P.idPins['derivedCompound:C2'], P.idPins['derived:c1'])).toBe(
-      P.idPins['link:derivedCompound:C2:derived:c1']
-    );
-    expect(derivedCompoundId(P.boardId, 'C')).toBe(P.idPins['derivedCompound:C']);
-    expect(derivedLinkId(P.idPins['derivedCompound:C'], P.idPins['derived:c1'])).toBe(
-      P.idPins['link:derivedCompound:C:derived:c1']
-    );
-    expect(derivedLinkId(P.idPins['derivedCompound:C'], 'c2')).toBe(
-      P.idPins['link:derivedCompound:C:c2']
-    );
-    expect(P.idPins['derived:r1']).toMatch(
-      /^[0-9a-f]{8}-[0-9a-f]{4}-5[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/
-    );
-  });
-
-
-
   it.each(P.vectors as any[])('$name', (v: any) => {
     const supplies = v.supplies.map((s: any, i: number) => ({
       source: src(i + 1, s.kind, s.memberRules),
@@ -213,72 +177,3 @@ describe('planDerivedTasks', () => {
     }
   });
 });
-
-// ─── B2: baseline + row building ─────────────────────────────────────────────
-
-describe('computeWindowBaseline', () => {
-  it.each(V.windowBaseline as any[])('$name', (v: any) => {
-    expect(computeWindowBaseline(v.root, v.events as BaselineEvent[], v.boundary)).toBe(v.expected);
-  });
-});
-
-describe('isWindowStampedDerived', () => {
-  const full = {
-    sharedCounterId: '11111111-0000-4000-8000-000000000001',
-    startDate: '2026-09-18',
-    createdInWizard: true,
-  };
-
-  it('all three marks then true', () => {
-    expect(isWindowStampedDerived(full)).toBe(true);
-  });
-
-  it('no sharedCounterId then false (a plain window-scoped counting task)', () => {
-    expect(isWindowStampedDerived({ ...full, sharedCounterId: null })).toBe(false);
-  });
-
-  it('no startDate then false (an ordinary linked counter, not window-stamped)', () => {
-    expect(isWindowStampedDerived({ ...full, startDate: undefined })).toBe(false);
-  });
-
-  it('createdInWizard absent then false (a hand-made linked + timeboxed counter)', () => {
-    expect(isWindowStampedDerived({ ...full, createdInWizard: undefined })).toBe(false);
-  });
-
-  it('createdInWizard explicitly false then false', () => {
-    // The shape a Swift `Bool` (non-optional, defaulting to false) actually
-    // hits — distinct from the absent case above, same answer.
-    expect(isWindowStampedDerived({ ...full, createdInWizard: false })).toBe(false);
-  });
-});
-
-describe('isFrozenDerivedRow', () => {
-  it('fixture carries vectors (no silent skip)', () => {
-    expect((V.frozenDerivedRow as any[]).length).toBeGreaterThanOrEqual(4);
-  });
-  it.each(V.frozenDerivedRow as any[])('$name', (v: any) => {
-    const task = {
-      sharedCounterId: v.task.sharedCounterId,
-      startDate: v.task.startDate ?? undefined,
-      endDate: v.task.endDate ?? undefined,
-      createdInWizard: v.task.createdInWizard,
-    };
-    expect(isFrozenDerivedRow(task, v.now)).toBe(v.expected);
-  });
-});
-
-describe('isFrozenRowReachedByEvent', () => {
-  it('fixture carries vectors (no silent skip)', () => {
-    expect((V.frozenRowReachedByEvent as any[]).length).toBeGreaterThanOrEqual(5);
-  });
-  it.each(V.frozenRowReachedByEvent as any[])('$name', (v: any) => {
-    const task = {
-      sharedCounterId: v.task.sharedCounterId,
-      startDate: v.task.startDate ?? undefined,
-      endDate: v.task.endDate ?? undefined,
-      createdInWizard: v.task.createdInWizard,
-    };
-    expect(isFrozenRowReachedByEvent(task, v.occurredAt, v.now)).toBe(v.expected);
-  });
-});
-

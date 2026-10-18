@@ -26,9 +26,7 @@ import {
   computeTaskCachesFromEvents,
   getSealImmuneWindowsForTask,
 } from './taskEvents';
-import { refreshDerivedBaselines } from './derivedCounters';
 import { loadPlacementReach } from './placementReach';
-import { propagateToLinkedRows } from './tasks.sharedCounter';
 import { reDeriveSealedBoardsForTasks } from './sealing';
 import { resolveAffectedBoardIds, refreshWatchersForBoards } from './boardLifecycle';
 import { runBoardCascadeForTasks } from './orchestration';
@@ -77,8 +75,8 @@ async function applyLateLogSideEffects(changedTaskIds: Iterable<string>, lateLog
   const ids = [...new Set(changedTaskIds)];
   if (ids.length === 0) return;
   const affectedBoardIds = await resolveAffectedBoardIds(ids);
-  // A shared-counter ROOT is never placed: live-cascade from its
-  // window-stamped derived rows too (iOS `reDeriveAfterLateLogWrite` reaches
+  // A shared-counter ROOT is never placed: live-cascade from its linked
+  // rows too (iOS `reDeriveAfterLateLogWrite` reaches
   // the same boards via the shared placement reach). `lateLogStamp` = the
   // instant this path stamped: only a counts-toward credit at that instant is
   // exempt from the counter's sealed windows (D11).
@@ -175,9 +173,9 @@ export async function lateLogCompletion(
  *
  *  - **Plain / source** (`sharedCounterId == null`): appends directly on the
  *    task (which may itself be a shared-counter root with live linked rows —
- *    propagated exactly like {@link incrementSharedCounter}, just without its
+ *    cascaded exactly like {@link incrementSharedCounter}, just without its
  *    sealed no-op).
- *  - **Linked** (`sharedCounterId` set — window-stamped or not): the event is
+ *  - **Linked** (`sharedCounterId` set): the event is
  *    authored on the ROOT, never the linked row itself (linked rows own no
  *    events) — the closed board's square resolves from the root's in-window
  *    events on the next read. The old "hub-linked is a no-op" rule (OQ2) is
@@ -227,13 +225,8 @@ export async function lateLogIncrement(
     if (savedRoot) await addToSyncQueue('tasks', rootId, SyncOperationType.UPDATE, savedRoot, 0);
 
     await insertIncrementEventRaw(rootId, delta, boardId, now, occurredAt);
-    await refreshDerivedBaselines(rootId);
-    // Propagates to every LIVE linked row (frozen ones reached cascade-only
-    // via `isFrozenRowReachedByEvent`, since `occurredAt` falls in this
-    // closed board's own window) and runs the live cascade for the source +
-    // linked ids (sealed boards are skipped there — `applyLateLogSideEffects`
-    // below covers the sealed re-derive for THIS board).
-    await propagateToLinkedRows(rootId, newRootCount, now, occurredAt);
+    // The live cascade over the root's reach (its linked rows resolve from
+    // its events), the sealed re-derive and the watchers.
     await applyLateLogSideEffects([rootId, taskId], occurredAt);
   });
 }
@@ -320,8 +313,6 @@ export async function lateLogCompoundParts(
         const savedRoot = await db.tasks.get(rootId);
         if (savedRoot) await addToSyncQueue('tasks', rootId, SyncOperationType.UPDATE, savedRoot, 0);
         await insertIncrementEventRaw(rootId, delta, boardId, now, occurredAt);
-        await refreshDerivedBaselines(rootId);
-        await propagateToLinkedRows(rootId, newRootCount, now, occurredAt);
         touchedTaskIds.add(rootId);
       } else {
         await appendIncrementEvent(action.childTaskId, action.delta as number, boardId, now, occurredAt);
@@ -537,12 +528,6 @@ export async function undoLateLog(
       });
       const savedRoot = await db.tasks.get(effectiveTaskId);
       if (savedRoot) await addToSyncQueue('tasks', effectiveTaskId, SyncOperationType.UPDATE, savedRoot, 0);
-
-      await refreshDerivedBaselines(
-        effectiveTaskId,
-        events.map((e) => (e.id === entry.id ? { ...e, isDeleted: true } : e)),
-      );
-      await propagateToLinkedRows(effectiveTaskId, newRootCount, now, entry.occurredAt);
     }
 
     await applyLateLogSideEffects([effectiveTaskId, taskId], entry.occurredAt);
@@ -561,12 +546,12 @@ export interface ClosedBoardSquareState {
   /** For COUNTING only: the sealed-bounded windowed count (D16); `0` for NORMAL. */
   count: number;
   /** Late logs made directly on this board for this task (root-resolved for
-   *  a window-stamped derived square), newest first — `[]` means nothing to
+   *  a linked square), newest first — `[]` means nothing to
    *  undo. */
   lateLogs: TaskEvent[];
   /** The event-owning id whose events this state was READ from — the tapped
-   *  task for NORMAL/plain COUNTING, or the ROOT for a window-stamped derived
-   *  square (derived rows own no events). Read-side only: the write/undo
+   *  task for NORMAL/plain COUNTING, or the ROOT for a linked square (linked
+   *  rows own no events). Read-side only: the write/undo
    *  entry points (`lateLogIncrement`, `undoLateLog`, …) take the TAPPED
    *  (placed) task id and resolve the root themselves. */
   effectiveTaskId: string;

@@ -133,11 +133,10 @@ export function resolveBoardSourceSupply(
     if (bt.targetOverride != null && task.maxCount != null) goalByTaskId[task.id] = task.maxCount;
     for (const ct of bt.childTargets ?? []) goalByTaskId[ct.childId] = ct.target;
     let isDone: boolean;
-    // A window-stamped derived counter is done by its ROOT's increments inside
-    // its own window — the kernel's rule (docs §Derived-task carve-out,
-    // amended 2026-09-23) — never the one-way latch, which a later window's
-    // logs can set. Its window count is deliberately NOT fed to the prefill
-    // (`windowCountByTaskId`): that map stays event-owning counters only.
+    // A linked counter is done by its ROOT's increments inside this board's
+    // window — the kernel's rule — never the latch. Its window count is
+    // deliberately NOT fed to the prefill (`windowCountByTaskId`): that map
+    // stays event-owning counters only.
     const derived = resolveDerivedCounterWindowState(task, eventsByTaskId, {
       windowStart: board.startDate,
       windowEnd: boardWindowEnd(board),

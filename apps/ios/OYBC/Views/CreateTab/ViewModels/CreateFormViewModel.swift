@@ -659,9 +659,7 @@ final class CreateFormViewModel {
             version: 1,
             isDeleted: false
             // No window on a hand-made compound (web parity, TASK_WINDOW_REWORK
-            // slice 0): with the wizard's dates + `createdInWizard` it matched
-            // `isWindowStampedDerivedCompound`, so Repeat dropped it and
-            // deleting its only board retired it (audit Major 3).
+            // slice 0): a window + `createdInWizard` marks a legacy derived row.
         )
         if let target = countsTowardTarget {
             if let problem = CountsToward.problem(

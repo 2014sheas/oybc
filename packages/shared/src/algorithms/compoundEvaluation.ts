@@ -60,25 +60,21 @@ export function evaluateCompound(
 
 /**
  * Resolve a single primitive (non-compound) child's completion, honoring the
- * window context when present. Linked (derived) counting children resolve
- * from their root's events — a window-stamped one over its own window, any
- * other over the host window (owner rule 2026-10-01; the hub-linked latch
- * carve-out is retired on boards); every other event-owning primitive
- * resolves windowed. Only a context with no `windowStart` (lifetime) still
- * reads a linked child's latch.
+ * window context when present. A linked counting child resolves from its
+ * ROOT's events — over the host window, or the root's lifetime when the
+ * context has no `windowStart` (never the latch); every other event-owning
+ * primitive resolves windowed.
  */
 export function resolvePrimitiveChildState(
   child: Task,
   windowContext: CompoundWindowContext | undefined,
 ): boolean {
   if (!windowContext) return child.isCompleted;
-  // Linked counter child (a "Split up" member's part, or a hub-linked copy):
-  // resolve from the ROOT's events inside the applicable window, never the
-  // latch — the same branch `computeBoardGrid`'s `resolvePrimitive` takes.
+  // Linked counter child: resolve from the ROOT's events — the same branch
+  // `computeBoardGrid`'s `resolvePrimitive` takes.
   const derived = resolveDerivedCounterWindowState(child, windowContext.eventsByTaskId, windowContext);
   if (derived) return derived.isCompleted;
-  // Lifetime context (no `windowStart`) for a linked child, and the
-  // defensive non-event-owning fallthrough: the cache.
+  // The defensive non-event-owning fallthrough: the cache.
   if (!isEventOwningTask(child)) return child.isCompleted;
   const events = windowContext.eventsByTaskId[child.id] ?? [];
   return resolveTaskWindowState(

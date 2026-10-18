@@ -1279,7 +1279,6 @@ final class BoardPlayViewModelTests: XCTestCase {
         }
         let payload = try JSONDecoder().decode(Task.self, from: Data(try XCTUnwrap(created.first).payload.utf8))
         XCTAssertEqual(payload.countKind, .continuous, "the CREATE payload carries the kind too")
-        XCTAssertNil(dbTask(db, BoardSources.derivedTaskId(boardId: "b1", rootTaskId: "root-amt")), "no copy is minted")
     }
 
     /// D15 — removals run BEFORE adds so a freed position is never mistaken

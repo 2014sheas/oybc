@@ -251,25 +251,25 @@ final class SharedCounterGroupsTests: XCTestCase {
         XCTAssertEqual(derivedView.over, 482)
     }
 
-    // MARK: - 3. Start-from-zero baseline
+    // MARK: - 3. Baseline is never read (slice 5)
 
-    func test_appliesStartFromZeroBaseline() {
+    func test_noEvents_showsTheLifetimeTotal_baselineIgnored() {
         let src = counter("src", currentCount: 100)
-        // Linked when source was at 70 → baseline 70 → displayed = 100 - 70 = 30.
+        // Baseline 70 is a dead field: with no events supplied the row shows the lifetime total.
         let der = counter("der", maxCount: 50, sharedCounterId: "src", baseline: 70)
         let groups = buildSharedCounterGroups(
             tasks: [src, der], boardTasks: [placement("src", "b1"), placement("der", "b1")], boards: [board("b1", status: .active)]
         )
 
         let derived = groups[0].tasks.first { $0.taskId == "der" }!
-        XCTAssertEqual(derived.logged, 30)
+        XCTAssertEqual(derived.logged, 100)
         XCTAssertEqual(derived.goal, 50)
-        XCTAssertFalse(derived.met)
+        XCTAssertTrue(derived.met)
     }
 
-    // MARK: - 4. Baseline exceeds count → clamp to 0
+    // MARK: - 4. A baseline above the count no longer clamps
 
-    func test_clampsToZeroWhenBaselineExceedsCount() {
+    func test_baselineAboveCount_isIgnored() {
         let src = counter("src", currentCount: 20)
         let der = counter("der", maxCount: 10, sharedCounterId: "src", baseline: 50)
         let groups = buildSharedCounterGroups(
@@ -277,9 +277,9 @@ final class SharedCounterGroupsTests: XCTestCase {
         )
 
         let derived = groups[0].tasks.first { $0.taskId == "der" }!
-        XCTAssertEqual(derived.logged, 0)
-        XCTAssertFalse(derived.met)
-        XCTAssertEqual(derived.over, 0)
+        XCTAssertEqual(derived.logged, 20)
+        XCTAssertTrue(derived.met)
+        XCTAssertEqual(derived.over, 10)
     }
 
     // MARK: - 5. DRAFT board → task inactive

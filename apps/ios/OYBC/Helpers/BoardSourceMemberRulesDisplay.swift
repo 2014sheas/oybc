@@ -323,21 +323,6 @@ extension BoardSources {
         return MemberSummary(text: "1 square", varying: level != .off)
     }
 
-    /// The delete-confirm line warning that window-stamped derived counters
-    /// made from this task will go with it (B3 RC12).
-    ///
-    /// Copy is VERBATIM from web's `CounterDeleteConfirmDialog` — singular
-    /// "counter" at one, plural otherwise. Lives here so the two iOS confirm
-    /// sheets (`CounterDeleteConfirmView`, `TaskDeleteConfirmView`) can never
-    /// word it differently from each other or from web.
-    ///
-    /// - Parameter count: `TaskDeletionImpact.derivedWindowCounterCount`.
-    /// - Returns: The sentence, or `nil` when there is nothing to warn about.
-    static func derivedCounterRemovalNote(count: Int) -> String? {
-        guard count > 0 else { return nil }
-        return "\(count) board counter\(count == 1 ? "" : "s") made from this one will be removed."
-    }
-
     // MARK: - Rule accessors
 
     /// Read a member's rule off a source, never nil — an absent rule reads as

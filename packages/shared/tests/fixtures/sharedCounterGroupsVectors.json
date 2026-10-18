@@ -105,7 +105,7 @@
       ]
     },
     {
-      "name": "applies-start-from-zero-baseline",
+      "name": "ignores-the-stored-baseline",
       "tasks": [
         {
           "id": "src",
@@ -173,9 +173,9 @@
               "boardId": "b1",
               "boardName": "Board b1",
               "goal": 50,
-              "logged": 30,
-              "met": false,
-              "over": 0,
+              "logged": 100,
+              "met": true,
+              "over": 50,
               "isActive": true,
               "viaCompoundId": null
             }
@@ -184,7 +184,7 @@
       ]
     },
     {
-      "name": "clamps-derived-value-to-zero",
+      "name": "a-linked-card-with-no-events-reads-the-root-lifetime",
       "tasks": [
         {
           "id": "src",
@@ -252,9 +252,9 @@
               "boardId": "b1",
               "boardName": "Board b1",
               "goal": 10,
-              "logged": 0,
-              "met": false,
-              "over": 0,
+              "logged": 20,
+              "met": true,
+              "over": 10,
               "isActive": true,
               "viaCompoundId": null
             }
