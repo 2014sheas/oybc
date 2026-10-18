@@ -86,19 +86,6 @@ enum ProGating {
     /// ("…:00.000Z", what the webhook/JS `toISOString()` emit) and plain
     /// ("…:00Z") forms.
     private static func parseISO8601(_ value: String) -> Date? {
-        if let d = iso8601Fractional.date(from: value) { return d }
-        return iso8601Plain.date(from: value)
+        DateFormatting.parseInternetISO(value)
     }
-
-    private static let iso8601Fractional: ISO8601DateFormatter = {
-        let f = ISO8601DateFormatter()
-        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        return f
-    }()
-
-    private static let iso8601Plain: ISO8601DateFormatter = {
-        let f = ISO8601DateFormatter()
-        f.formatOptions = [.withInternetDateTime]
-        return f
-    }()
 }

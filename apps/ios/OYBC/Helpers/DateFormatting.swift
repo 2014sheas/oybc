@@ -25,15 +25,35 @@ enum DateFormatting {
     /// calendar-bound board start/end dates (intentionally timezone-less
     /// so boundaries match the user's wall clock).
     ///
-    /// The local-format parse goes through `LocalISOParser` (cached
+    /// This is THE parse entry point (the global `parseISO8601Date(_:)` forwards
+    /// here). Canonical shapes - UTC `...Z` and zone-less local, with 0-9
+    /// fractional digits - are answered by `ISO8601FastParser` (#570: the
+    /// formatters rebuild ICU state per parse and were the hot instruction in
+    /// the 2026-10-07 launch-watchdog crash). Anything else - offsets, lenient
+    /// day rollover, junk, a DST gap/overlap, a non-Gregorian calendar - falls
+    /// through to the formatters, which remain the reference; the fast path's
+    /// answer is bit-for-bit what they return.
+    ///
+    /// The local-format fallback goes through `LocalISOParser` (cached
     /// `DateFormatter`s behind a lock, rebuilt when `TimeZone.current` /
-    /// `Calendar.current` change) — board bounds are local ISO strings, so every
-    /// window resolution lands on this path and the old per-call formatter
-    /// allocation was the dominant render cost on a populated workspace.
+    /// `Calendar.current` change).
     static func parseISO(_ iso: String) -> Date? {
+        if let d = ISO8601FastParser.parse(iso) { return d }
         if let d = isoParserWithFractional.date(from: iso) { return d }
         if let d = isoParserNoFractional.date(from: iso) { return d }
         return LocalISOParser.shared.parse(iso)
+    }
+
+    /// Parses a zoned internet date-time (`...Z` / offset, with or without
+    /// fractional seconds) - for callers that never accept zone-less local
+    /// strings (relative-time labels, entitlement expiry). Same fast path and
+    /// formatter fallback as `parseISO(_:)`, minus the local-time shapes.
+    ///
+    /// - Parameter iso: An internet date-time string.
+    /// - Returns: The instant, or nil when it is not a zoned ISO timestamp.
+    static func parseInternetISO(_ iso: String) -> Date? {
+        if let d = ISO8601FastParser.parse(iso, accepting: .utc) { return d }
+        return isoParserWithFractional.date(from: iso) ?? isoParserNoFractional.date(from: iso)
     }
 
     /// Encodes `date` as a canonical UTC event timestamp with millisecond

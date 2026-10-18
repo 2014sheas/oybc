@@ -456,6 +456,7 @@ final class SyncPullBatchTests: XCTestCase {
         let total = docs.values.map(\.count).reduce(0, +)
 
         let db = try AppDatabase.makeTestInstance()
+        if userDoc == nil { try seedUser(db, uid: uid) }
         let sut = SyncService(database: db, currentAuthUid: { uid }, docStore: NullDocStore(), pullSource: FakePullSource(docsByCollection: docs, userDoc: userDoc))
         let heartbeat = MainThreadHeartbeat()
         heartbeat.start()
@@ -468,7 +469,7 @@ final class SyncPullBatchTests: XCTestCase {
 
         // Pre-fix shape, for comparison: per-doc writes on the main thread.
         let legacyDb = try AppDatabase.makeTestInstance()
-        if let userDoc { _ = try legacyDb.write { try AppDatabase.applyPulledUserDocTx(db: $0, userId: uid, remoteData: userDoc) } }
+        if let userDoc { _ = try legacyDb.write { try AppDatabase.applyPulledUserDocTx(db: $0, userId: uid, remoteData: userDoc) } } else { try seedUser(legacyDb, uid: uid) }
         let legacy = SyncService(database: legacyDb, currentAuthUid: { uid }, docStore: NullDocStore(), pullSource: FakePullSource(docsByCollection: [:]))
         let legacyStarted = Date()
         let legacyOrder = ["boards", "tasks", "boardTasks", "compoundChildren", "recurringBoardTemplates", "pools", "coreBoardDefaults"]
@@ -487,7 +488,9 @@ final class SyncPullBatchTests: XCTestCase {
     /// most tasks, turns each ISO `_syncedAt` into a `Date` and drops the
     /// dump-only `_id` / `_updateTime` keys.
     private func loadDump(_ path: String) throws -> (String, [String: [[String: Any]]], [String: Any]?) {
-        let root = try XCTUnwrap(try JSONSerialization.jsonObject(with: Data(contentsOf: URL(fileURLWithPath: path))) as? [String: [String: Any]])
+        let object = try JSONSerialization.jsonObject(with: Data(contentsOf: URL(fileURLWithPath: path)))
+        if let flat = object as? [String: Any], flat["tasks"] is [Any] { return try flatWorkspaceDocs(flat) }
+        let root = try XCTUnwrap(object as? [String: [String: Any]])
         let (uid, account) = try XCTUnwrap(root.max { ($0.value["tasks"] as? [Any])?.count ?? 0 < ($1.value["tasks"] as? [Any])?.count ?? 0 })
         func clean(_ doc: [String: Any]) -> [String: Any] {
             var out = doc
@@ -501,5 +504,37 @@ final class SyncPullBatchTests: XCTestCase {
             docs[name] = ((account[name] as? [[String: Any]]) ?? []).map(clean)
         }
         return (uid, docs, (account["user"] as? [String: Any]).map(clean))
+    }
+
+    /// The owning user row a flat workspace export lacks (every synced row has a
+    /// `userId` foreign key to it).
+    private func seedUser(_ db: AppDatabase, uid: String) throws {
+        let now = AppDatabase.currentTimestamp()
+        try db.saveUser(User(
+            id: uid, email: "owner@example.com", displayName: "Owner", photoURL: nil,
+            preferences: User.encodePreferences(.defaults),
+            createdAt: now, updatedAt: now, lastSyncedAt: nil, version: 1
+        ))
+    }
+
+    /// The flat anonymised workspace export (`{ tasks, boards, boardTasks,
+    /// compoundChildren, events, templates, pools }`, one account): renames the
+    /// collections to their pull names and stamps a rising `_syncedAt` per doc so
+    /// checkpoints and batching behave as on a real pull.
+    private func flatWorkspaceDocs(_ flat: [String: Any]) throws -> (String, [String: [[String: Any]]], [String: Any]?) {
+        let names = ["tasks": "tasks", "boards": "boards", "boardTasks": "boardTasks", "compoundChildren": "compoundChildren",
+                     "events": "taskEvents", "templates": "recurringBoardTemplates", "pools": "pools"]
+        var docs: [String: [[String: Any]]] = [:]
+        for name in pullApplyOrder { docs[name] = [] }
+        for (exportName, pullName) in names {
+            let rows = (flat[exportName] as? [[String: Any]]) ?? []
+            docs[pullName] = rows.enumerated().map { index, row in
+                var doc = row
+                doc["_syncedAt"] = Date(timeIntervalSince1970: 1_790_000_000 + TimeInterval(index))
+                return doc
+            }
+        }
+        let uid = try XCTUnwrap((flat["tasks"] as? [[String: Any]])?.first?["userId"] as? String)
+        return (uid, docs, nil)
     }
 }

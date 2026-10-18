@@ -455,9 +455,9 @@ extension AppDatabase {
         if let d = val as? Double { return d }
         if let b = val as? Bool { return b }
         if let ts = val as? Timestamp {
-            let formatter = ISO8601DateFormatter()
-            formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-            return formatter.string(from: ts.dateValue())
+            // The shared cached formatter (same options) - a fresh `ISO8601DateFormatter`
+            // per Timestamp value was an allocation per field per doc on the pull path.
+            return DateFormatting.utcISOString(ts.dateValue())
         }
         if val is [Any] || val is [String: Any] {
             guard let data = try? JSONSerialization.data(withJSONObject: val) else { return nil }
