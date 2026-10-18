@@ -13,6 +13,8 @@ export interface CountingBodyProps {
   unit: string;
   boardLabel: string;
   busy: boolean;
+  /** The busy look (see `LogControls`); defaults to `busy`. */
+  dim?: boolean;
   /** Closed board: the frozen count only — the caller supplies the lock row instead of the controls. */
   closedRow: React.ReactNode | null;
   stripText: string | null;
@@ -57,7 +59,7 @@ export function CountingBody(p: CountingBodyProps): React.ReactElement {
             {rest > 0 && <span className={styles.eyebrowRest}>{restLine(rest, p.kind, p.boardLabel)}</span>}
           </div>
           <LogControls
-            kind={p.kind} unit={p.unit} goal={p.goal} count={p.count} size="regular" busy={p.busy}
+            kind={p.kind} unit={p.unit} goal={p.goal} count={p.count} size="regular" busy={p.busy} dim={p.dim}
             stripText={p.stripText} removeDisabled={p.removeDisabled} initialEntry={p.initialEntry} trailing={p.trailing} onLog={p.onLog} onUndo={p.onUndo}
           />
         </>

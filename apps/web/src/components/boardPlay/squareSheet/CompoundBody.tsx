@@ -14,6 +14,8 @@ export interface CompoundBodyProps {
   done: boolean;
   boardLabel: string;
   busy: boolean;
+  /** The busy look (see `LogControls`); defaults to `busy`. */
+  dim?: boolean;
   closedRow: React.ReactNode | null;
   /** The counting child whose chips are unfolded (one at a time). */
   /** Completed plain children whose un-complete is blocked by a sealed window. */
@@ -39,6 +41,7 @@ export interface CompoundBodyProps {
  * @returns The body.
  */
 export function CompoundBody(p: CompoundBodyProps): React.ReactElement {
+  const dim = p.dim ?? p.busy;
   const doneCount = p.children.filter((c) => c.isCompleted).length;
   const pill = progressPill(p.done, doneCount > 0);
   return (
@@ -84,8 +87,8 @@ export function CompoundBody(p: CompoundBodyProps): React.ReactElement {
                     aria-checked={child.isCompleted}
                     aria-label={child.title}
                     className={`${styles.box} ${child.isCompleted ? styles.boxDone : ''}`}
-                    disabled={p.busy || (child.isCompleted && p.blockedChildIds.has(child.taskId))}
-                    onClick={() => p.onToggleChild(child.taskId)}
+                    disabled={dim || (child.isCompleted && p.blockedChildIds.has(child.taskId))}
+                    onClick={() => { if (!p.busy) p.onToggleChild(child.taskId); }}
                   >
                     {child.isCompleted && <RisoIcon name="check" size={16} />}
                   </button>
@@ -118,7 +121,7 @@ export function CompoundBody(p: CompoundBodyProps): React.ReactElement {
                   </div>
                   <LogControls
                     kind={child.count.kind} unit={child.count.unit} goal={child.count.max} count={child.count.current}
-                    size="compact" busy={p.busy} stripText={p.stripText}
+                    size="compact" busy={p.busy} dim={dim} stripText={p.stripText}
                     onLog={(_dir, amount, persist) => p.onLogChild(child.taskId, amount, persist)} onUndo={p.onUndoChild}
                   />
                 </div>
@@ -127,7 +130,7 @@ export function CompoundBody(p: CompoundBodyProps): React.ReactElement {
           );
         })}
       </div>
-      {p.toggleStripText && <UndoStrip text={p.toggleStripText} onUndo={p.onUndoToggle} disabled={p.busy} />}
+      {p.toggleStripText && <UndoStrip text={p.toggleStripText} onUndo={() => { if (!p.busy) p.onUndoToggle(); }} disabled={dim} />}
       {p.closedRow}
     </>
   );

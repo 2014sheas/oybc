@@ -7,6 +7,7 @@ import { resolveSquareView, type SquareViewData } from '../squareSheet/resolveSq
 import { isLateLogRoutable, logStripText } from '../squareSheet/squareSheetModel';
 import { childLog, childToggle, countingLog, type Play, type Undo, type WriteDeps } from '../squareSheet/squareWrites';
 import type { useSquareToasts } from '../squareSheet/useSquareToasts';
+import { useBusyLook } from '../../../hooks/useBusyLook';
 import { SquareMenu } from './SquareMenu';
 import { buildSquareMenu, type MenuChild, type MenuItem } from './squareMenuItems';
 
@@ -42,7 +43,8 @@ export function SquareMenuHost(props: SquareMenuHostProps): React.ReactElement |
 
 function ResolvedMenu({ position, board, data, play, toasts, onClose, onOpenSheet, onOpenInLibrary, onLateLog, onOpenBoard, bt, task }: SquareMenuHostProps & { bt: BoardTask; task: Task }): React.ReactElement {
   const { taskMap } = data;
-  const view = resolveSquareView(board, data, bt, task);
+  const view = resolveSquareView(board, data, bt, task, play.pendingCounts);
+  const dim = useBusyLook(play.isWriting);
   const { sq } = view;
   const boardLabel = boardDisplayName(board);
   const uncompleteBlocked = useLiveQuery(
@@ -116,7 +118,7 @@ function ResolvedMenu({ position, board, data, play, toasts, onClose, onOpenShee
 
   return (
     <SquareMenu
-      model={model} position={position} busy={play.isWriting}
+      model={model} position={position} busy={play.isWriting} dim={dim}
       onChoose={(item) => { onClose(); void run(item); }}
       onClose={onClose}
     />

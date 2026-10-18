@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { formatCount, resolveCountKind, type Task } from '@oybc/shared';
 import { LogControls } from '../../../components/boardPlay/squareSheet/LogControls';
 import { heroCountSize, logStripText } from '../../../components/boardPlay/squareSheet/squareSheetModel';
@@ -9,6 +9,9 @@ import {
   setCounterDefaultLogAmount,
   undoLastCounterLog,
 } from '../../../db/operations/tasks';
+import { resolvePendingCount } from '../../../hooks/pendingCounts';
+import { usePendingCounts } from '../../../hooks/usePendingCounts';
+import { useBusyLook } from '../../../hooks/useBusyLook';
 
 const ALL_TIME = 'All-time';
 
@@ -39,8 +42,14 @@ export function BoardlessCountingHero({ task, counterRoot, trailing }: Boardless
   const source = task.sharedCounterId ? counterRoot ?? null : task;
   const kind = resolveCountKind(source ?? task);
   const unit = (source ?? task).unit ?? '';
-  const count = source?.currentCount ?? 0;
+  const live = source?.currentCount ?? 0;
   const [busy, setBusy] = useState(false);
+  // The count moves on tap (pending), not when the live row re-emits; controls are inert for the
+  // whole write and only LOOK busy if it runs long.
+  const liveOf = useCallback(() => live, [live]);
+  const { pending, withPending } = usePendingCounts(liveOf, source);
+  const count = source ? resolvePendingCount(pending, source.id, live) : live;
+  const dim = useBusyLook(busy);
   const [strip, setStrip] = useState<Strip | null>(null);
   const inFlight = useRef(false);
 
@@ -63,14 +72,20 @@ export function BoardlessCountingHero({ task, counterRoot, trailing }: Boardless
     const id = source.id;
     void run(async () => {
       if (direction === 'add') {
-        await incrementSharedCounter(id, amount);
+        await withPending(id, amount, () => incrementSharedCounter(id, amount), () => true);
         if (persist) await setCounterDefaultLogAmount(id, amount);
-        return { text: logStripText('logged', amount, kind, unit, ALL_TIME), undo: () => undoLastCounterLog(id) };
+        return {
+          text: logStripText('logged', amount, kind, unit, ALL_TIME),
+          undo: () => withPending(id, -amount, () => undoLastCounterLog(id), (r) => r.undoneAmount !== 0),
+        };
       }
-      const { effectiveDelta } = await decrementSharedCounter(id, amount);
+      const { effectiveDelta } = await withPending(id, -amount, () => decrementSharedCounter(id, amount), (r) => r.effectiveDelta !== 0);
       const removed = Math.abs(effectiveDelta);
       if (removed <= 0) return null;
-      return { text: logStripText('removed', removed, kind, unit, ALL_TIME), undo: () => incrementSharedCounter(id, removed) };
+      return {
+        text: logStripText('removed', removed, kind, unit, ALL_TIME),
+        undo: () => withPending(id, removed, () => incrementSharedCounter(id, removed), () => true),
+      };
     });
   };
 
@@ -92,7 +107,7 @@ export function BoardlessCountingHero({ task, counterRoot, trailing }: Boardless
         <span className={sheetStyles.eyebrow}>Tap to log</span>
       </div>
       <LogControls
-        kind={kind} unit={unit} goal={null} count={count} size="regular" busy={busy || !source}
+        kind={kind} unit={unit} goal={null} count={count} size="regular" busy={busy || !source} dim={dim || !source}
         stripText={strip?.text ?? null} removeDisabled={count <= 0} trailing={trailing}
         onLog={onLog} onUndo={onUndo}
       />

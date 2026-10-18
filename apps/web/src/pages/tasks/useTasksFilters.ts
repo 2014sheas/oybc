@@ -10,9 +10,11 @@ import {
   type Board,
   type BoardTask,
   type Task,
+  type TaskEvent,
 } from '@oybc/shared';
 import { fetchAllBoards, fetchAllBoardTasks } from '../../db/operations';
 import type { TaskLibrary } from '../createPage/useTaskLibrary';
+import { useLibraryEventsByTaskId } from '../createPage/useLibraryEventsByTaskId';
 import { taskSearchMatchesWithCounter, type TaskLookup } from '../../components/counters/rowCounterTagName';
 import { counterRootIdsIn, isExpiredForBrowse } from '../../components/wizard/quickAddCounterPlacement';
 
@@ -102,6 +104,8 @@ const EMPTY_BOARDS = Object.freeze([]) as unknown as Board[];
  * state change produces a fresh `filteredTasks` array via memo.
  */
 export function useTasksFilters(library: TaskLibrary): TasksFiltersApi {
+  // Opt-in workspace event scan — only the status filter reads it.
+  const eventsByTaskId = useLibraryEventsByTaskId();
   const [search, setSearch] = useState('');
   const [typeFilter, setTypeFilter] = useState<TypeFilter>('all');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('any');
@@ -226,7 +230,7 @@ export function useTasksFilters(library: TaskLibrary): TasksFiltersApi {
         return independentlyPlacedTaskIds.has(t.id);
       })
       .filter((t) => matchesSearch(t, trimmed, library.taskMap))
-      .filter((t) => matchesStatusFilter(t, library, statusFilter));
+      .filter((t) => matchesStatusFilter(t, library, eventsByTaskId, statusFilter));
     const used = applyUsageFilter(
       typed,
       usageFilter,
@@ -243,6 +247,7 @@ export function useTasksFilters(library: TaskLibrary): TasksFiltersApi {
       .sort((a, b) => compareTasks(a, b, sortBy, placementCountByTaskId));
   }, [
     library,
+    eventsByTaskId,
     browsableTasks,
     search,
     typeFilter,
@@ -326,17 +331,18 @@ export function matchesSearch(task: Task, trimmedLowerQuery: string, pool: TaskL
 function matchesStatusFilter(
   task: Task,
   library: TaskLibrary,
+  eventsByTaskId: Record<string, TaskEvent[]>,
   filter: StatusFilter,
 ): boolean {
   if (filter === 'any') return true;
-  const inProgress = isInProgress(task, library);
+  const inProgress = isInProgress(task, library, eventsByTaskId);
   switch (filter) {
     case 'completed':
-      return isTaskDone(task, library);
+      return isTaskDone(task, eventsByTaskId);
     case 'in-progress':
-      return !isTaskDone(task, library) && inProgress;
+      return !isTaskDone(task, eventsByTaskId) && inProgress;
     case 'never-started':
-      return !isTaskDone(task, library) && !inProgress;
+      return !isTaskDone(task, eventsByTaskId) && !inProgress;
   }
 }
 
@@ -345,9 +351,9 @@ function matchesStatusFilter(
  * event state (lifetime sum vs goal — a linked row measures its root); every
  * other type keeps the `isCompleted` cache.
  */
-function isTaskDone(task: Task, library: TaskLibrary): boolean {
+function isTaskDone(task: Task, eventsByTaskId: Record<string, TaskEvent[]>): boolean {
   if (task.type === TaskType.COUNTING) {
-    return contextlessCounterState(task, library.eventsByTaskId).isCompleted;
+    return contextlessCounterState(task, eventsByTaskId).isCompleted;
   }
   return task.isCompleted === true;
 }
@@ -361,9 +367,13 @@ function isTaskDone(task: Task, library: TaskLibrary): boolean {
  * Normal + Achievement tasks have no fractional state, so they're
  * either completed or never-started.
  */
-export function isInProgress(task: Task, library: TaskLibrary): boolean {
+export function isInProgress(
+  task: Task,
+  library: TaskLibrary,
+  eventsByTaskId: Record<string, TaskEvent[]>,
+): boolean {
   if (task.type === TaskType.COUNTING) {
-    const state = contextlessCounterState(task, library.eventsByTaskId);
+    const state = contextlessCounterState(task, eventsByTaskId);
     return !state.isCompleted && state.count > 0;
   }
   if (task.isCompleted) return false;

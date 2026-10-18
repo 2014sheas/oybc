@@ -55,19 +55,28 @@ extension AppDatabase {
         now: String,
         lateLogStamp: String? = nil
     ) throws -> [AffectedBoard] {
-        let reach = try Self.placementReach(db: db, taskIds: [sourceTaskId])
-        let allChangedTaskIds = reach.taskIds.sorted()
-        // "Counts toward" (docs/SHARED_COUNTER_SETTINGS.md §3b): a compound that
-        // contains one of these copies may have just completed.
-        let countsToward = try Self.writeCountsToward(db: db, changedTaskIds: allChangedTaskIds, now: now)
-        let allTasksWS: [Task] = try Task.fetchAll(db)
+        // ONE fetch of the structure (tasks, live links, live placements) feeds both the reach and
+        // the derivation below — the reach used to refetch all three through `placementReach`.
+        // Links and placements are not touched by the counts-toward pass, so they stay valid.
+        var allTasksWS: [Task] = try Task.fetchAll(db)
         let allChildren: [CompoundChild] = try CompoundChild
             .filter(Column("isDeleted") == false)
             .fetchAll(db)
         let allBoardTasks: [BoardTask] = try BoardTask
             .filter(Column("isDeleted") == false)
             .fetchAll(db)
+        let reach = DerivationPass.placementsReachedByTasks(
+            ids: [sourceTaskId], tasks: allTasksWS, compoundChildren: allChildren, boardTasks: allBoardTasks
+        )
+        let allChangedTaskIds = reach.taskIds.sorted()
+        // "Counts toward" (docs/SHARED_COUNTER_SETTINGS.md §3b): a compound that
+        // contains one of these copies may have just completed.
+        let countsToward = try Self.writeCountsToward(db: db, changedTaskIds: allChangedTaskIds, now: now)
+        // The pass restamps counter-root caches (task rows) — refetch only when it wrote something.
+        if !countsToward.rootIds.isEmpty { allTasksWS = try Task.fetchAll(db) }
         let allBoards: [Board] = try Board.fetchAll(db)
+        var boardById: [String: Board] = [:]
+        for b in allBoards { boardById[b.id] = b }
         // Windowed Completion — the source counting square is event-owning, so
         // its board reads are windowed; the cascade must evaluate with the event
         // context (docs §Sync). Linked squares resolve from the root's events.
@@ -151,7 +160,7 @@ extension AppDatabase {
         var creditBoards: [AffectedBoard] = []
         for bt in allBoardTasks {
             guard memberTaskIdSet.contains(bt.taskId),
-                  let board = allBoards.first(where: { $0.id == bt.boardId }),
+                  let board = boardById[bt.boardId],
                   Self.boardCanStillCountLogs(board, now: now),
                   !seenBoardIds.contains(board.id)
             else { continue }

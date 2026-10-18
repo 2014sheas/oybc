@@ -120,7 +120,7 @@ struct SquareSheetView: View {
                 action: actions.onMarkDone
             )
             .disabled(content.isBusy || (isDone && sealBlocked))
-            .opacity(content.isBusy || (isDone && sealBlocked) ? 0.45 : 1)
+            .opacity(content.showsBusyLook || (isDone && sealBlocked) ? 0.45 : 1)
             .padding(.top, 14)
         }
     }

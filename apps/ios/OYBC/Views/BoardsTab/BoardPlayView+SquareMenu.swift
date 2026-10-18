@@ -15,10 +15,11 @@ extension BoardPlayView {
     /// The menu rows for a square. The header is a section title ("‹title› · ‹meta›"):
     /// a system `contextMenu` can't host a custom header view, and a custom `preview:`
     /// would replace the held square's own preview — so the system cell preview stays.
+    /// The input is the placement's apply-time `menu` (no windowed resolution per body pass),
+    /// with the busy look and any optimistic count folded in.
     @ViewBuilder
-    func squareMenu(boardTask: BoardTask, task: Task?) -> some View {
-        if let task {
-            let input = squareMenuInput(boardTask: boardTask, task: task)
+    func squareMenu(boardTask: BoardTask, task: Task?, render: PlacementRender) -> some View {
+        if let task, let input = viewModel.menuInput(for: render) {
             Section(SquareMenu.headerText(input)) {
                 ForEach(Array(SquareMenu.entries(for: input).enumerated()), id: \.offset) { _, entry in
                     switch entry {
@@ -40,61 +41,6 @@ extension BoardPlayView {
                 }
             }
         }
-    }
-
-    // MARK: Input
-
-    /// Facts a counting task's menu rows need (the quick amount's remembered default
-    /// follows the shared source for discrete counters, else the task's own).
-    private func squareMenuCounting(_ t: Task) -> SquareMenuInput.Counting {
-        let kind = resolveFamilyCountKind(t, lookup: { taskMap[$0] })
-        let source = viewModel.sharedCounterSourceId(for: t).flatMap { taskMap[$0] }
-        return SquareMenuInput.Counting(
-            kind: kind, unit: t.unit ?? "", current: windowedCount(t), goal: t.maxCount ?? 0,
-            rememberedDefault: kind == .discrete ? source?.defaultLogAmount : (source ?? t).defaultLogAmount
-        )
-    }
-
-    func squareMenuInput(boardTask bt: BoardTask, task: Task) -> SquareMenuInput {
-        let body: SquareMenuInput.Body
-        switch task.type {
-        case .normal:
-            let index = bt.row * (board?.boardSize ?? 3) + bt.col
-            let isDone = isSealed ? (board?.sealedCompletedCells?.contains(index) ?? false) : windowedIsCompleted(task)
-            // From the precomputed set — the menu never reads the database while it builds.
-            body = .normal(isDone: isDone, sealBlocked: SquareMenu.sealBlocked(
-                isDone: isDone, isClosed: isBoardLocked, taskId: task.id, cached: menuSealBlockedIds
-            ))
-        case .counting:
-            body = .counting(squareMenuCounting(task))
-        case .compound:
-            let children: [Task] = (viewModel.compoundChildrenByCompound[task.id] ?? []).compactMap { link in
-                guard let raw = taskMap[link.childTaskId], !raw.isDeleted else { return nil }
-                return PlacementParams.withChildTarget(raw, childTargets: bt.childTargets)
-            }
-            let candidates = children.map {
-                TaskDetailKernel.SubtaskCandidate(id: $0.id, type: $0.type, isCompleted: viewModel.compoundChildIsCompleted($0))
-            }
-            let next = TaskDetailKernel.nextSubtask(candidates)
-            var nextId: String?
-            switch next {
-            case let .toggle(childId)?, let .log(childId)?: nextId = childId
-            case nil: nextId = nil
-            }
-            let nextChild = children.first { $0.id == nextId }
-            body = .compound(SquareMenuInput.Compound(
-                next: next, nextChildTitle: nextChild?.title,
-                nextChild: nextChild.flatMap { $0.type == .counting ? squareMenuCounting($0) : nil },
-                doneCount: candidates.filter(\.isCompleted).count, total: candidates.count
-            ))
-        case .achievement:
-            let a = viewModel.squareAchievement(bt, task)
-            body = .achievement(isMet: a.isMet, watchedName: a.watchedName, openBoardId: a.openBoardId)
-        }
-        return SquareMenuInput(
-            title: task.title, kind: RisoTaskKind(taskType: task.type), body: body,
-            isClosed: isBoardLocked, lateLogRoutable: isLateLogRoutable(task: task), isBusy: viewModel.isProcessing
-        )
     }
 
     // MARK: Actions

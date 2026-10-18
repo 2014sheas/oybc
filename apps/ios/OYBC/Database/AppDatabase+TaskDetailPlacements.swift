@@ -29,31 +29,125 @@ extension AppDatabase {
         let rank: Int
     }
 
+    /// The placement reach of a task set read with KEYED queries (twin of the web
+    /// `loadTaskDetailPlacements`): the live link graph whole (ancestors are walked through
+    /// it), the ids' live linked rows by `sharedCounterId`, then only the tasks of their
+    /// ancestor / descendant compounds and the placements of the ancestors — not every
+    /// task, placement and event in the workspace. The result equals the unscoped
+    /// `placementReach` for the same ids.
+    struct ScopedReach {
+        let reach: PlacementReach
+        /// Members, their ancestors and sub-trees (counter roots are added by the caller's `loadTasks`).
+        var taskById: [String: Task]
+        /// Every live compound link.
+        let links: [CompoundChild]
+        /// Live placements of the members and their ancestor compounds.
+        let boardTasks: [BoardTask]
+        let childIdsByCompound: [String: [String]]
+    }
+
+    /// Fetches the tasks in `ids` that `taskById` doesn't hold yet (chunked under SQLite's variable limit).
+    static func loadMissingTasks(db: Database, ids: some Collection<String>, into taskById: inout [String: Task]) throws {
+        let missing = Set(ids).filter { taskById[$0] == nil }.sorted()
+        for start in stride(from: 0, to: missing.count, by: 400) {
+            for t in try Task.fetchAll(db, keys: Array(missing[start..<min(start + 400, missing.count)])) { taskById[t.id] = t }
+        }
+    }
+
+    /// Every id reachable from `seeds` through `edges` (the seeds included).
+    fileprivate static func closure(_ seeds: some Sequence<String>, _ edges: [String: [String]]) -> Set<String> {
+        var out = Set(seeds)
+        var queue = Array(out)
+        var head = 0
+        while head < queue.count {
+            let id = queue[head]; head += 1
+            for next in edges[id] ?? [] where out.insert(next).inserted { queue.append(next) }
+        }
+        return out
+    }
+
+    static func scopedPlacementReach(db: Database, taskIds: Set<String>) throws -> ScopedReach {
+        let links = try CompoundChild.filter(Column("isDeleted") == false).fetchAll(db)
+        var parentsByChild: [String: [String]] = [:]
+        var childIdsByCompound: [String: [String]] = [:]
+        for l in links {
+            parentsByChild[l.childTaskId, default: []].append(l.compoundTaskId)
+            childIdsByCompound[l.compoundTaskId, default: []].append(l.childTaskId)
+        }
+        // Members: the ids and their live linked rows (a counter root is never placed itself).
+        var members = taskIds
+        let ids = taskIds.sorted()
+        for start in stride(from: 0, to: ids.count, by: 400) {
+            let chunk = Array(ids[start..<min(start + 400, ids.count)])
+            let linked = try Task.filter(chunk.contains(Column("sharedCounterId")) && Column("isDeleted") == false).fetchAll(db)
+            members.formUnion(linked.map(\.id))
+        }
+        let ancestors = closure(members, parentsByChild)
+        let subtree = closure(members, childIdsByCompound)
+        var taskById: [String: Task] = [:]
+        try loadMissingTasks(db: db, ids: ancestors.union(subtree), into: &taskById)
+
+        var boardTasks: [BoardTask] = []
+        let ancestorIds = ancestors.sorted()
+        for start in stride(from: 0, to: ancestorIds.count, by: 400) {
+            let chunk = Array(ancestorIds[start..<min(start + 400, ancestorIds.count)])
+            boardTasks += try BoardTask.filter(chunk.contains(Column("taskId")) && Column("isDeleted") == false).fetchAll(db)
+        }
+        let reach = DerivationPass.placementsReachedByTasks(
+            ids: taskIds, tasks: Array(taskById.values), compoundChildren: links, boardTasks: boardTasks
+        )
+        return ScopedReach(reach: reach, taskById: taskById, links: links, boardTasks: boardTasks, childIdsByCompound: childIdsByCompound)
+    }
+
     /// Resolve where a task lives on boards: its placement REACH (the one the
     /// cascade and the hub use — own placements, a counter root's linked rows',
     /// every containing compound's), each board's row scored by
     /// `TaskPlacementRows.rows` over that board's window. One read, so the rows,
-    /// the boards and the anchor placements agree.
+    /// the boards and the anchor placements agree. The reads are keyed to what the
+    /// reach can touch (`scopedPlacementReach`), so a write elsewhere in a large
+    /// workspace costs this nothing.
     ///
     /// - Parameter taskId: The task whose detail page this is.
     /// - Returns: The placement read.
     func fetchTaskDetailPlacements(taskId: String) throws -> TaskDetailPlacements {
         try read { db in
-            let tasks = try Task.fetchAll(db)
-            let links = try CompoundChild.filter(Column("isDeleted") == false).fetchAll(db)
-            let boardTasks = try BoardTask.filter(Column("isDeleted") == false).fetchAll(db)
-            let reach = DerivationPass.placementsReachedByTasks(
-                ids: [taskId], tasks: tasks, compoundChildren: links, boardTasks: boardTasks
-            )
+            var scoped = try Self.scopedPlacementReach(db: db, taskIds: [taskId])
+            let reach = scoped.reach
+            let links = scoped.links
             let reachedBoards = reach.boardIds.isEmpty
                 ? []
                 : try Board.filter(reach.boardIds.contains(Column("id"))).fetchAll(db)
-            let taskById = Dictionary(tasks.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
-            let watches = reach.placements.contains { taskById[$0.memberTaskId]?.type == .achievement }
-            let allBoards = watches ? try Board.fetchAll(db) : reachedBoards
-            let events = try TaskEvent.filter(Column("isDeleted") == false).fetchAll(db)
-
             let live = reachedBoards.filter { !$0.isDeleted }
+
+            // An achievement's value is its cell in its board's grid: that board's cells (and
+            // their sub-trees) and every board it may watch.
+            var boardTasksByBoard: [String: [BoardTask]] = [:]
+            var allBoards: [Board] = live
+            let watcherBoardIds = Set(
+                reach.placements.filter { scoped.taskById[$0.memberTaskId]?.type == .achievement }.map { $0.boardTask.boardId }
+            )
+            if !watcherBoardIds.isEmpty {
+                let cells = try BoardTask
+                    .filter(watcherBoardIds.contains(Column("boardId")) && Column("isDeleted") == false)
+                    .fetchAll(db)
+                boardTasksByBoard = Dictionary(grouping: cells, by: \.boardId)
+                let cellClosure = Self.closure(cells.map(\.taskId), scoped.childIdsByCompound)
+                try Self.loadMissingTasks(db: db, ids: cellClosure, into: &scoped.taskById)
+                allBoards = try Board.filter(Column("isDeleted") == false).fetchAll(db)
+            }
+            // A linked task reads its counter root's events.
+            try Self.loadMissingTasks(
+                db: db, ids: scoped.taskById.values.compactMap { $0.sharedCounterId.flatMap { $0.isEmpty ? nil : $0 } },
+                into: &scoped.taskById
+            )
+            let taskById = scoped.taskById
+            var events: [TaskEvent] = []
+            let eventTaskIds = taskById.keys.sorted()
+            for start in stride(from: 0, to: eventTaskIds.count, by: 400) {
+                let chunk = Array(eventTaskIds[start..<min(start + 400, eventTaskIds.count)])
+                events += try TaskEvent.filter(chunk.contains(Column("taskId")) && Column("isDeleted") == false).fetchAll(db)
+            }
+
             let rows = TaskPlacementRows.rows(
                 taskId: taskId,
                 reach: reach.placements,
@@ -61,11 +155,11 @@ extension AppDatabase {
                 taskById: taskById,
                 childrenByCompound: Dictionary(grouping: links, by: \.compoundTaskId),
                 eventsByTaskId: Dictionary(grouping: events, by: \.taskId),
-                boardTasksByBoard: Dictionary(grouping: boardTasks.filter { reach.boardIds.contains($0.boardId) }, by: \.boardId),
-                allBoards: allBoards.filter { !$0.isDeleted }
+                boardTasksByBoard: boardTasksByBoard,
+                allBoards: allBoards
             )
             return TaskDetailPlacements(
-                ownPlacements: boardTasks.filter { $0.taskId == taskId },
+                ownPlacements: scoped.boardTasks.filter { $0.taskId == taskId },
                 anchorCandidates: Self.heroAnchorCandidates(
                     taskId: taskId, reach: reach.placements, taskById: taskById,
                     childrenByCompound: Dictionary(grouping: links, by: \.compoundTaskId)

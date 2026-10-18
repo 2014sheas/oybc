@@ -31,17 +31,8 @@ extension BoardPlayViewModel {
 
     /// Compound children grouped by parent compound task id, sorted by
     /// `childIndex` — the one grouping the kernel rebuild, the grid and the
-    /// detail sheet share.
-    var compoundChildrenByCompound: [String: [CompoundChild]] {
-        var grouped: [String: [CompoundChild]] = [:]
-        for c in allCompoundChildren {
-            grouped[c.compoundTaskId, default: []].append(c)
-        }
-        for id in grouped.keys {
-            grouped[id]?.sort { $0.childIndex < $1.childIndex }
-        }
-        return grouped
-    }
+    /// detail sheet share. Built once per apply (`derived`).
+    var compoundChildrenByCompound: [String: [CompoundChild]] { derived.compoundChildrenByCompound }
 
     /// The placement-adjusted task a surface renders for `bt` (slice 2a):
     /// `PlacementParams.apply` with the root's title settings for a linked

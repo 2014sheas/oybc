@@ -54,7 +54,7 @@ Canonical: [`docs/TASK_DETAIL_REDESIGN.md`](docs/TASK_DETAIL_REDESIGN.md) (hando
 3. **Square contract.** Tap = the type's one obvious action (Normal toggles + Undo toast; Counting / Compound / Achievement open the one square sheet). Hold = that action first (gold), then the type's other quick actions, then Details · Open in library.
 4. **Counting children inside a compound are driven, never toggled** (`+` box → inline chips). "Complete next sub-task" skips them; if only counting children remain it becomes "Log +default · <child>".
 5. **"Open in library" is board-agnostic** — identical content to the route.
-6. **Closed boards:** same sheet, read-only, one "Late log…"; the hold menu collapses write items to "Late log…". A write in flight disables controls (45%, hard shadow collapsed), never hides them.
+6. **Closed boards:** same sheet, read-only, one "Late log…"; the hold menu collapses write items to "Late log…". A write in flight disables controls at once and never hides them; the count moves on the tap (optimistic, rolled back on failure) and the dimmed look (45%, hard shadow collapsed) shows only after 250 ms in flight (amended 2026-10-18).
 
 ## Windowed Completion (event-sourced, shipped)
 

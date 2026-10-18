@@ -125,6 +125,11 @@ extension BoardPlayViewModel {
     func undoSharedCounterLog(sourceTaskId: String) {
         guard !isProcessing else { return }
         setProcessing(true)
+        // Undo moves the number at once too: the entry it will reverse, when it sits in this board's window.
+        if let entry = selectLastIncrementEntry(events: windowEventsByTaskId[sourceTaskId] ?? [], sourceTaskId: sourceTaskId),
+           let start = windowStart, DateFormatting.isWithinTimeframe(entry.occurredAt, startDate: start, endDate: windowEnd) {
+            addPendingCount(-(entry.delta ?? 0), forFamily: sourceTaskId)
+        }
         let database = self.database
         let currentBoardId = board?.id
         _Concurrency.Task.detached(priority: .userInitiated) { [weak self] in

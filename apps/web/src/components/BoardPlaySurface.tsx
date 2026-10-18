@@ -1,20 +1,17 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   AchievementTrigger,
-  CenterSquareType,
   buildCounterFamilyMap,
-  effectiveCenter,
   isBoardEnded,
-  isCoreBoard, isLegacyChosenCenterLocked,
+  isCoreBoard,
   type Board,
-  type Task,
 } from '@oybc/shared';
 import {
   useBoardPlayData,
   useBoardPlay,
   useCounterArrivals,
 } from '../hooks';
-import { placedTaskFor, resolveClosedBoardCounterDisplay, taskToSquareData, taskToSquareState } from '../db/adapters';
+import { placedTaskFor } from '../db/adapters';
 import { SquareMenuHost } from './boardPlay/squareMenu/SquareMenuHost';
 import type { ContextMenuState } from './interactiveTaskSquareUtils';
 import { SquareSheetHost } from './boardPlay/squareSheet/SquareSheetHost';
@@ -34,13 +31,15 @@ import { canEditSquares } from './boardActions/boardMenu';
 import { usePreferences } from '../hooks/usePreferences';
 import { useNavigate } from 'react-router-dom';
 import {
-  boardDisplayName, compactStreakLabel, getHighlightedSquares, resolveFamilyCountKind,
+  boardDisplayName, compactStreakLabel,
 } from '@oybc/shared';
 import { gatedStreak } from '../utils/gatedStreak';
 import { RisoIcon } from './riso';
 import { RisoBoardCell } from './board/RisoBoardCell';
+import { BoardPlayCell } from './board/BoardPlayCell';
+import { usePlayCellEntries, type PlayTaskEntry } from './board/boardPlayCells';
 import { RisoBoardGrid } from './board/RisoBoardGrid';
-import { freeCellModel, taskCellLabel, toBoardCellModel } from './board/cellModel';
+import { taskCellLabel } from './board/cellModel';
 import { useBoardMoment } from './play/useBoardMoment';
 import type { FlashOutcome } from './boardPlayFlash';
 import { CounterLogToast } from './counters/CounterLogToast';
@@ -142,10 +141,6 @@ export function BoardPlaySurface({
   // `sealedCompletedCells` snapshot (not live event queries), and every play
   // interaction (tap, context menu, +, edit entry) is disabled.
   const isSealed = board.sealedAt != null;
-  const sealedCellSet = useMemo(
-    () => new Set(isSealed ? (board.sealedCompletedCells ?? []) : []),
-    [isSealed, board.sealedCompletedCells],
-  );
 
   // ── UI state ───────────────────────────────────────────────────────────
 
@@ -326,6 +321,8 @@ export function BoardPlaySurface({
     isWriting,
     writeSeq,
     getWriteSeq,
+    pendingCounts,
+    withPending,
   } = useBoardPlay({
     board,
     editMode,
@@ -356,6 +353,37 @@ export function BoardPlaySurface({
     sharedCounterSourceIds,
     windowContext: squareWindowContext,
   });
+
+  // The grid's cell models: derived once per real input change (a toast, a busy
+  // flip or a flash re-renders this surface without touching a cell).
+  const achievementBoardTaskIds = useMemo(
+    () => new Set(Object.keys(achievementBadgesByBoardTaskId)),
+    [achievementBadgesByBoardTaskId],
+  );
+  const cellEntries = usePlayCellEntries({
+    board, gridSize, btByPosition, taskMap, compoundChildrenByCompound, cellStateByBoardTaskId, squareWindowContext,
+    sharedCounterSourceIds, achievementBoardTaskIds, liveCompletedLineIds, arrivedTaskIds, pendingCounts,
+  });
+
+  // Cell handlers read the latest state through a ref, so their identity never
+  // changes and the memoised cells below keep skipping renders.
+  const tapRef = useRef({ isWriting, handleComplete, tapNormal: toasts.tapNormal, boardLabel: boardDisplayName(board) });
+  useEffect(() => {
+    tapRef.current = { isWriting, handleComplete, tapNormal: toasts.tapNormal, boardLabel: boardDisplayName(board) };
+  });
+  const onCellTap = useCallback((entry: PlayTaskEntry): void => {
+    // Tap contract (docs/TASK_DETAIL_REDESIGN.md): a Normal square toggles at once + an Undo toast;
+    // every other type — and every square on a closed board — opens the square sheet.
+    if (!entry.normalTap) {
+      setSheet({ id: entry.boardTaskId });
+      return;
+    }
+    const t = tapRef.current;
+    if (!t.isWriting) void t.tapNormal(t.handleComplete, { boardTaskId: entry.boardTaskId, ...entry.normalTap, boardLabel: t.boardLabel });
+  }, []);
+  const onCellHold = useCallback((squareId: string, e: React.MouseEvent): void => {
+    setContextMenu({ squareId, x: e.clientX, y: e.clientY });
+  }, []);
 
   // The banner's tap target: the single distinct arrived counter's Detail page,
   // or the Counters Hub when squares arrived from more than one counter (the
@@ -551,155 +579,29 @@ export function BoardPlaySurface({
         />
       ) : (
         <RisoBoardGrid size={gridSize} cellSize={90} className={isSealed ? play.sealedGrid : undefined}>
-          {(() => {
-            const cells: React.ReactElement[] = [];
-            // Gold-ring the cells in completed bingo lines. Board-integrity
-            // PR-3, Part 3 (ring coherence): a LIVE (unsealed) board rings
-            // from `liveCompletedLineIds` — detected from the SAME kernel
-            // grid `cellStateByBoardTaskId` was built from THIS render —
-            // rather than `board.completedLineIds`, whose write lags one
-            // cascade transaction behind the reactive grid. A SEALED board
-            // keeps its frozen `completedLineIds` snapshot (the permanent
-            // read-only record; never re-derived live).
-            const highlightedSquares = getHighlightedSquares(
-              isSealed ? (board.completedLineIds ?? []) : liveCompletedLineIds,
-              gridSize,
-            );
-
-            for (let row = 0; row < gridSize; row++) {
-              for (let col = 0; col < gridSize; col++) {
-                const posKey = `${row}-${col}`;
-                const isCenter =
-                  gridSize % 2 === 1 &&
-                  row === Math.floor(gridSize / 2) &&
-                  col === Math.floor(gridSize / 2);
-
-                // Board Edit slice 3 (D1) — a live board reads its center
-                // through `effectiveCenter` (CHOSEN → NONE); a legacy-CHOSEN
-                // center is a normal (task-square, effectively-locked) cell,
-                // never pinned.
-                const centerType = board.centerSquareType as CenterSquareType;
-                const isFreeCenter = isCenter && effectiveCenter(centerType) === CenterSquareType.FREE;
-
-                const bt = btByPosition[posKey];
-                const boardTaskId = bt?.id;
-                const resolvedTaskId = bt?.taskId;
-
-                // ── Empty / center cells ─────────────────────────────────
-                if (!boardTaskId) {
-                  if (isFreeCenter) {
-                    // The FREE center — pinned, not tappable in play mode.
-                    cells.push(
-                      <RisoBoardCell key={`center-${row}-${col}`} cell={freeCellModel(`center-${row}-${col}`)} />
-                    );
-                  } else {
-                    // Empty cell (non-center, or a NONE center with no task).
-                    // D17 retires the play-mode "+" — every structural edit
-                    // now goes through the squares editor.
-                    cells.push(
-                      <div key={`empty-${row}-${col}`} className={styles.emptySquare} />
-                    );
-                  }
-                  continue;
-                }
-
-                const cellBt = boardTaskId ? boardTasks.find((b) => b.id === boardTaskId) : undefined; // slice 2a: placement-adjusted
-                const task: Task | undefined = !resolvedTaskId ? undefined : cellBt?.taskId === resolvedTaskId ? placedTaskFor(cellBt, taskMap) : taskMap[resolvedTaskId];
-                if (!task) {
-                  cells.push(
-                    <div key={`missing-${boardTaskId}`} className={styles.emptySquare}>?</div>
-                  );
-                  continue;
-                }
-
-                const taskChildren = compoundChildrenByCompound[task.id] ?? [];
-                // Board-integrity PR-3 — the kernel's per-cell resolution for
-                // THIS placement (achievement completion has no other source).
-                const cellState = boardTaskId ? cellStateByBoardTaskId[boardTaskId] : undefined;
-                const squareData = taskToSquareData(
-                  task, taskChildren, taskMap, compoundChildrenByCompound, squareWindowContext, cellBt?.childTargets,
-                );
-                const squareState = taskToSquareState(
-                  task, taskChildren, taskMap, compoundChildrenByCompound, squareWindowContext, cellState, cellBt?.childTargets,
-                );
-                // Windowed Completion — on a SEALED board, `done` reads the
-                // frozen `sealedCompletedCells` snapshot (docs §Effects of
-                // sealed), never live event queries (which could bleed a
-                // post-seal log of the same task from another live board).
-                const cellIndex = row * gridSize + col;
-                const taskIsCompleted = isSealed
-                  ? sealedCellSet.has(cellIndex)
-                  : squareState.isCompleted;
-                // Use squareState.currentCount (baseline-adjusted for linked
-                // counters). For standalone counters this equals task.currentCount.
-                // D16 — a CLOSED counting square shows the sealed-bounded
-                // WINDOWED count (e.g. "3/5"), same bound `taskIsCompleted` used.
-                const taskCurrentCount = isSealed
-                  ? squareData.type === 'counting'
-                    ? resolveClosedBoardCounterDisplay(task, squareWindowContext.eventsByTaskId, board).displayed
-                    : 0
-                  : squareState.currentCount;
-
-                // Phase 2 — Shared Counters: mark the cell as shared when
-                // it is a source OR a linked derived counter, so the
-                // two-dot ↔ marker appears on the grid while not done.
-                // A contributing task ("counts toward", any type) carries the same mark.
-                const isSharedCountingTask =
-                  !taskIsCompleted &&
-                  ((squareData.type === 'counting' && (task.sharedCounterId != null || sharedCounterSourceIds.has(task.id))) || task.countsTowardCounterId != null);
-
-                // Board Edit redesign slice 3 (D1) — the lock chip reflects
-                // the EFFECTIVE lock: a stored lock, or a legacy-CHOSEN
-                // board's positional center (not yet normalized on disk).
-                const effectiveLocked =
-                  bt?.isLocked === true || isLegacyChosenCenterLocked(centerType, row, col, gridSize);
-
-                const cellModel = toBoardCellModel({
-                  key: boardTaskId,
-                  task,
-                  done: taskIsCompleted,
-                  currentCount: squareData.type === 'counting' ? taskCurrentCount : undefined,
-                  isLine: highlightedSquares.has(row * gridSize + col),
-                  isShared: isSharedCountingTask,
-                  // Phase 3 — pulse squares that just filled in from an elsewhere log.
-                  isArrived: resolvedTaskId != null && arrivedTaskIds.has(resolvedTaskId),
-                  locked: effectiveLocked,
-                  countKind: resolveFamilyCountKind(task, (id) => taskMap[id]),
-                });
-
-                // ── Click handler ────────────────────────────────────────
-                // Tap contract (docs/TASK_DETAIL_REDESIGN.md): a Normal square
-                // toggles at once + an Undo toast; every other type — and every
-                // square on a closed board — opens the square sheet.
-                const handlePlayClick = !isSealed && squareData.type === 'normal'
-                  ? () => { if (!isWriting) void toasts.tapNormal(handleComplete, { boardTaskId, taskId: task.id, title: task.title, wasDone: taskIsCompleted, boardLabel: boardDisplayName(board) }); }
-                  : () => setSheet({ id: boardTaskId });
-
-                cells.push(
-                  <RisoBoardCell
-                    key={boardTaskId}
-                    cell={cellModel}
+          {cellEntries.map((entry) => {
+            switch (entry.kind) {
+              case 'free':
+                // The FREE center — pinned, not tappable in play mode.
+                return <RisoBoardCell key={entry.key} cell={entry.cell} />;
+              case 'empty':
+                // D17 retires the play-mode "+" — every structural edit goes through the squares editor.
+                return <div key={entry.key} className={styles.emptySquare} />;
+              case 'missing':
+                return <div key={entry.key} className={styles.emptySquare}>?</div>;
+              case 'task':
+                return (
+                  <BoardPlayCell
+                    key={entry.key}
+                    entry={entry}
                     cellSize={90}
-                    badge={
-                      achievementBadgesByBoardTaskId[boardTaskId] ? (
-                        <span className={play.achvBadge} title="Achievement">
-                          A
-                        </span>
-                      ) : undefined
-                    }
-                    onClick={handlePlayClick}
-                    held={contextMenu?.squareId === boardTaskId}
-                    onContextMenu={(e) => {
-                      e.preventDefault();
-                      setContextMenu({ squareId: boardTaskId, x: e.clientX, y: e.clientY });
-                    }}
-                  />,
+                    held={contextMenu?.squareId === entry.boardTaskId}
+                    onTap={onCellTap}
+                    onHold={onCellHold}
+                  />
                 );
-              }
             }
-
-            return cells;
-          })()}
+          })}
         </RisoBoardGrid>
       )}
 
@@ -828,7 +730,7 @@ export function BoardPlaySurface({
           boardTaskId={sheet.id}
           board={board}
           data={{ boardTasks, taskMap, compoundChildrenByCompound, allBoards, achievementBadgesByBoardTaskId, cellStateByBoardTaskId, sharedCounterSourceIds, squareWindowContext, gridSize }}
-          play={{ handleComplete, handleSharedCounterIncrement, handleSharedCounterDecrement, undoCounterLog, handleCompoundChildToggle, handleCompoundChildIncrement, logStandaloneCount, isWriting, writeSeq, getWriteSeq }}
+          play={{ handleComplete, handleSharedCounterIncrement, handleSharedCounterDecrement, undoCounterLog, handleCompoundChildToggle, handleCompoundChildIncrement, logStandaloneCount, isWriting, writeSeq, getWriteSeq, pendingCounts, withPending }}
           quiet={toasts.captureCredits}
           onClose={closeSheet}
           onOpenInLibrary={(taskId) => { closeSheet(); setOpenedTaskInLibrary(taskId); }}
@@ -856,7 +758,7 @@ export function BoardPlaySurface({
         <SquareMenuHost
           squareId={contextMenu.squareId} position={{ x: contextMenu.x, y: contextMenu.y }} board={board}
           data={{ boardTasks, taskMap, compoundChildrenByCompound, allBoards, achievementBadgesByBoardTaskId, cellStateByBoardTaskId, sharedCounterSourceIds, squareWindowContext, gridSize }}
-          play={{ handleComplete, handleSharedCounterIncrement, handleSharedCounterDecrement, undoCounterLog, handleCompoundChildToggle, handleCompoundChildIncrement, logStandaloneCount, isWriting, writeSeq, getWriteSeq }}
+          play={{ handleComplete, handleSharedCounterIncrement, handleSharedCounterDecrement, undoCounterLog, handleCompoundChildToggle, handleCompoundChildIncrement, logStandaloneCount, isWriting, writeSeq, getWriteSeq, pendingCounts, withPending }}
           toasts={toasts} onClose={() => setContextMenu(null)}
           onOpenSheet={(id, entry) => setSheet({ id, entry })}
           onOpenInLibrary={setOpenedTaskInLibrary} onLateLog={setLateLogTaskId}

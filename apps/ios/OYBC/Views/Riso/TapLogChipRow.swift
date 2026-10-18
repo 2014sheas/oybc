@@ -7,7 +7,9 @@ import SwiftUI
 /// `components/riso/TapLogChipRow.tsx`.
 ///
 /// Disabled (a write in flight) keeps the layout: opacity 0.45 and the shadow
-/// collapses to 0 — chips are never hidden.
+/// collapses to 0 — chips are never hidden. A caller that wants a write to turn
+/// the chips inert at once but look busy only if it runs long passes `busyLook`
+/// (`BusyLook.delay`); nil follows `disabled`.
 struct TapLogChipRow: View {
 
     /// Row scale — the square sheet's hero chips vs a compound child's inline row.
@@ -22,6 +24,8 @@ struct TapLogChipRow: View {
     let chips: [CounterLogAmount.TapChip]
     var size: Size = .regular
     var disabled: Bool = false
+    /// Whether the dimmed busy look shows; nil follows `disabled`.
+    var busyLook: Bool? = nil
     /// On a coloured hero: the keyline of "Other…" and every hard shadow use the
     /// non-inverting `inkStatic` (the design draws them ink on blue / teal / purple).
     var onColor: Bool = false
@@ -52,7 +56,8 @@ struct TapLogChipRow: View {
             let total = chips.reduce(0) { $0 + Self.weight($1) }
             let room = geo.size.width - Self.gap * CGFloat(max(chips.count - 1, 0))
             HStack(spacing: Self.gap) {
-                ForEach(Array(chips.enumerated()), id: \.offset) { _, chip in
+                // Identity by role (preset value / rest / other) so a chip never morphs into another between logs.
+                ForEach(chips, id: \.rowID) { chip in
                     chipButton(chip)
                         .frame(width: total > 0 ? room * Self.weight(chip) / total : 0)
                 }
@@ -81,11 +86,16 @@ struct TapLogChipRow: View {
                 )
                 .contentShape(RoundedRectangle(cornerRadius: Riso.cardRadius))
         }
-        .buttonStyle(TapLogChipButtonStyle(collapsed: disabled, shadow: onColor ? .risoInkStatic : .risoInk))
+        .buttonStyle(TapLogChipButtonStyle(collapsed: busyLook ?? disabled, shadow: onColor ? .risoInkStatic : .risoInk))
         .disabled(disabled)
-        .opacity(disabled ? 0.45 : 1)
+        .opacity(busyLook ?? disabled ? 0.45 : 1)
         .accessibilityLabel(isOther ? "Log another amount" : "Log \(chip.label)")
     }
+}
+
+extension CounterLogAmount.TapChip {
+    /// Stable row identity: a preset by its value, the rest chip and "Other…" by role.
+    var rowID: String { role == .preset ? "preset-\(value ?? 0)" : role.rawValue }
 }
 
 /// Press = translate 2pt and the 2pt hard shadow to 0; `collapsed` (disabled)

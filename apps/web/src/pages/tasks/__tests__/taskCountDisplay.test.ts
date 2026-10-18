@@ -51,9 +51,7 @@ function inc(taskId: string, delta: number, id = `${taskId}-${delta}-${Math.rand
 const LINKED = task({ sharedCounterId: 'root-1', baseline: 10, maxCount: 5, currentCount: 12 });
 const ROOT = task({ id: 'root-1', currentCount: 99, maxCount: 20 });
 
-function library(eventsByTaskId: Record<string, TaskEvent[]>): TaskLibrary {
-  return { taskMap: {}, compoundChildrenByCompound: {}, eventsByTaskId } as unknown as TaskLibrary;
-}
+const LIBRARY = { taskMap: {}, compoundChildrenByCompound: {} } as unknown as TaskLibrary;
 
 describe('displayedCountFor', () => {
   it('a linked row reads its ROOT’s lifetime increments, ignoring baseline / mirror', () => {
@@ -72,14 +70,14 @@ describe('displayedCountFor', () => {
 
 describe('isInProgress (status filter)', () => {
   it('a linked member with root increments below goal is in progress', () => {
-    expect(isInProgress(LINKED, library({ 'root-1': [inc('root-1', 2)] }))).toBe(true);
+    expect(isInProgress(LINKED, LIBRARY, { 'root-1': [inc('root-1', 2)] })).toBe(true);
   });
 
   it('a counter with no events is not in progress, whatever its stale mirror says', () => {
-    expect(isInProgress(LINKED, library({}))).toBe(false);
+    expect(isInProgress(LINKED, LIBRARY, {})).toBe(false);
   });
 
   it('a counter at its goal is done, not in progress', () => {
-    expect(isInProgress(LINKED, library({ 'root-1': [inc('root-1', 5)] }))).toBe(false);
+    expect(isInProgress(LINKED, LIBRARY, { 'root-1': [inc('root-1', 5)] })).toBe(false);
   });
 });

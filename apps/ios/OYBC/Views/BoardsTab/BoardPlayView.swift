@@ -206,11 +206,9 @@ struct BoardPlayView: View {
     @State private var arrivalNavTarget: ArrivalNavTarget? = nil
     /// Drives the task-detail library sheet (separate from the square sheet).
     @State var taskDetailSheetTaskId: TaskIdItem?
-    /// Windowed Completion (docs Decision 9): task ids whose un-complete in the
-    /// square sheet would be inert (every completion sealed-window-immune);
-    /// loaded when the sheet opens (`loadSealBlockedTaskIds`).
-    @State var sealBlockedTaskIds: Set<String> = []
-    @State var menuSealBlockedIds: Set<String> = [] // done Normal squares whose un-complete is inert (hold menu)
+    // Windowed Completion (docs Decision 9): which tasks' un-complete would be inert (every
+    // completion sealed-window-immune) is computed per apply from the loaded data —
+    // `viewModel.derived.sealBlockedTaskIds` — never by a database read at render time.
     // MARK: Edit-mode draft state (Board Edit redesign slice 3)
     // The edit-draft *data* layer lives entirely on `BoardPlayViewModel`
     // (`editSquaresDraft` / `editCenterType` / `editSquaresEditCells`, D20 —
@@ -299,15 +297,6 @@ struct BoardPlayView: View {
 
     // MARK: - Windowed reads (Windowed Completion)
 
-    /// The workspace's non-deleted TaskEvents grouped by taskId (from the VM).
-    private var windowEventsByTaskId: [String: [TaskEvent]] { viewModel.windowEventsByTaskId }
-
-    /// The compound window context for the current board, `[startDate,
-    /// endDate]` (VM-owned) — passed into `CompoundEvaluation.evaluate` so
-    /// compound squares resolve their primitive children windowed (docs
-    /// §Semantics). Derived-counting children are carved out inside the kernel.
-    private var boardWindowContext: CompoundWindowContext { viewModel.compoundWindowContext }
-
     /// Windowed completed state of a primitive square. A linked counter reads
     /// `resolveLinkedCounterDisplay` — a window-stamped row's root sum in its
     /// own window (the kernel's rule), a hub-linked row's latch — so a cell
@@ -324,9 +313,6 @@ struct BoardPlayView: View {
     // the tap-menu title all live on `BoardPlayViewModel` /
     // `BoardEditPresenter` now — this view only routes a grid tap to
     // `editSquareMenuTarget` / `editPickerTarget` (`handleSquareTap` below).
-
-    /// Compound children grouped by parent compound task ID, sorted by childIndex.
-    private var compoundChildrenByCompound: [String: [CompoundChild]] { viewModel.compoundChildrenByCompound }
 
     /// Board-integrity PR-3 — kernel-derived per-cell state for THIS board,
     /// keyed by `boardTaskId`. `DerivationPass.computeBoardGrid` is now the
@@ -361,20 +347,10 @@ struct BoardPlayView: View {
         board?.boardSize ?? 3
     }
 
-    /// Position lookup for fast grid rendering: "row-col" → BoardTask.
-    ///
-    /// Board-integrity PR-2 (Part 2): resolves `boardTasks` through
-    /// `PlacementIntegrity.resolvePlacements` first, so a raw duplicate row
-    /// (pre-repair, or a sealed board whose corrupt rows aren't touched by
-    /// the repair pass's stats side) can't make this map disagree with what
-    /// derivation counted — both consume the SAME deterministic winner.
-    private var btByPosition: [String: BoardTask] {
-        var map: [String: BoardTask] = [:]
-        for bt in PlacementIntegrity.resolvePlacements(boardTasks, boardSize: gridSize) {
-            map["\(bt.row)-\(bt.col)"] = bt
-        }
-        return map
-    }
+    /// Position lookup for fast grid rendering: "row-col" → BoardTask. Built once per apply by the
+    /// view model through `PlacementIntegrity.resolvePlacements` (board-integrity PR-2), so this map
+    /// can't disagree with what derivation counted.
+    private var btByPosition: [String: BoardTask] { viewModel.derived.placementsByPosition }
 
     /// Whether the current board is a frozen, read-only historical record
     /// (docs §Effects of sealed: "Not editable" — a sealed board can never be
@@ -707,11 +683,7 @@ struct BoardPlayView: View {
         }
         // D15 closed-board late-log sheet.
         .sheet(item: $lateLogTarget) { item in lateLogSheet(for: item) }
-        .task(id: "\(board?.version ?? 0)-\(board?.completedTasks ?? 0)-\(boardTasks.count)-\(board?.sealedAt ?? "")") { await loadMenuSealBlockedIds() }
-        .onChange(of: squareSheetBoardTaskId) { _, newValue in
-            squareLogStrip = nil
-            loadSealBlockedTaskIds(for: newValue)
-        }
+        .onChange(of: squareSheetBoardTaskId) { _, _ in squareLogStrip = nil }
         // `onDismiss:` fires AFTER the sheet has visually unmounted, so
         // the subsequent boardsPath mutation (via onOpenBoard) lands in
         // a clean SwiftUI transaction. Using .onChange of the item here
@@ -976,88 +948,11 @@ struct BoardPlayView: View {
     ///   - highlighted: Set of indices that are on a completed bingo line.
     @ViewBuilder
     private func risoPlaySquare(boardTask: BoardTask, index: Int, highlighted: Set<Int>) -> some View {
-        let task = viewModel.placedTask(boardTask) // slice 2a: placement-adjusted
+        // Everything below is resolved ONCE per apply (`BoardPlayViewModel+Derived.swift`); a body
+        // pass only reads it. The count adds the write in flight's optimistic delta.
+        let render = viewModel.placementRender(for: boardTask)
+        let task = render.task // slice 2a: placement-adjusted
         let taskType = task?.type ?? .normal
-        // Completion derivation — preserved verbatim from original playSquare.
-        // Compounds: NEVER read Task.isCompleted. Achievements: derive from
-        // cross-board references. Primitives: read Task.isCompleted directly.
-        // Windowed Completion — a SEALED board renders `done` from the frozen
-        // `sealedCompletedCells` snapshot (docs §Effects of sealed), never
-        // live event queries (which could bleed a post-seal log of the same
-        // task from another live board).
-        let isCompleted: Bool = {
-            if isSealed {
-                return board?.sealedCompletedCells?.contains(index) ?? false
-            }
-            guard let task = task else { return false }
-            if task.type == .compound {
-                return CompoundEvaluation.evaluate(
-                    compound: task,
-                    childrenByCompound: compoundChildrenByCompound,
-                    taskById: taskMap,
-                    windowContext: boardWindowContext, childTargets: boardTask.childTargets
-                )
-            }
-            if task.type == .achievement {
-                // Board-integrity PR-3 — the kernel's ACHIEVEMENT branch is
-                // the single source of truth; see `kernelCellStates`.
-                return kernelCellStates[boardTask.id]?.isCompleted ?? false
-            }
-            // Windowed Completion — every primitive resolves windowed; linked
-            // counters through `resolveLinkedCounterDisplay` (see helper).
-            return windowedIsCompleted(task)
-        }()
-
-        // Counting display values — windowed (`windowedCount` owns the
-        // linked-counter rule).
-        let rawCount = task?.currentCount ?? 0
-        let maxVal = task?.maxCount ?? 0
-        // D16 — CLOSED shows the window count, not the old max/0 snapshot.
-        let current: CountValue = {
-            guard let t = task else { return 0 }
-            if t.type == .counting { return windowedCount(t) }
-            return rawCount
-        }()
-
-        // P2: Shared-counter marker — true for source tasks that have linked tasks
-        // pointing at them, for linked tasks with sharedCounterId set, or (P5)
-        // for a promoted zero-link counter (`isCounter == true`) — mirrors web
-        // `useBoardPlayData.ts`'s `sharedCounterSourceIds` set exactly. R3:
-        // routed through `viewModel.sharedCounterSourceId(for:)` (single
-        // source of truth for this detection, shared with the stepper sheet
-        // and the tap-routing handlers).
-        let isSharedCounterCell = viewModel.showsSharedCounterMark(for: task)
-
-        // Compound child progress — mirrors original playSquare.
-        let compoundLinks = task.map { compoundChildrenByCompound[$0.id] ?? [] } ?? []
-        let compoundDoneCount = compoundLinks.filter { link in
-            guard let raw = taskMap[link.childTaskId], !raw.isDeleted else { return false }; let childTask = PlacementParams.withChildTarget(raw, childTargets: boardTask.childTargets) // slice 2a
-            if childTask.type == .compound {
-                return CompoundEvaluation.evaluate(
-                    compound: childTask,
-                    childrenByCompound: compoundChildrenByCompound,
-                    taskById: taskMap,
-                    windowContext: boardWindowContext
-                )
-            }
-            // Windowed child progress (linked children via the helper).
-            return windowedIsCompleted(childTask)
-        }.count
-
-        // Operator-aware completion target for the cell's progress bar —
-        // mirrors the web square sheet's fractions (OR → any one child completes;
-        // M_OF_N → threshold; AND → all children) and matches the
-        // `CompoundEvaluation` semantics that color the cell (compound teal).
-        let compoundRequiredCount: Int = {
-            guard let t = task, t.type == .compound, !compoundLinks.isEmpty else {
-                return compoundLinks.count
-            }
-            switch t.operatorType {
-            case .or:        return 1
-            case .mOfN:      return Swift.max(1, t.threshold ?? 1)
-            case .and, nil:  return compoundLinks.count
-            }
-        }()
 
         let cellKind: CellTaskType = {
             switch taskType {
@@ -1086,21 +981,21 @@ struct BoardPlayView: View {
         RisoBoardPlayCell(
             title: task?.title ?? "Unknown",
             taskType: cellKind,
-            isCompleted: isCompleted,
+            isCompleted: viewModel.displayCompleted(of: render),
             isBingoLine: highlighted.contains(index),
             isCenter: false,
             isInteractionLocked: false, // a closed board still opens the read-only square sheet
             showsLockChip: effectiveLockChip,
-            currentCount: current,
-            maxCount: maxVal,
-            countKind: task.map { resolveFamilyCountKind($0, lookup: { taskMap[$0] }) } ?? .discrete,
-            isSharedCounter: isSharedCounterCell,
-            compoundDoneCount: compoundDoneCount,
-            compoundChildCount: compoundLinks.count,
-            compoundRequiredCount: compoundRequiredCount,
+            currentCount: viewModel.displayCount(of: render),
+            maxCount: render.maxCount,
+            countKind: render.countKind,
+            isSharedCounter: render.isSharedCounter,
+            compoundDoneCount: render.compoundDoneCount,
+            compoundChildCount: render.compoundChildCount,
+            compoundRequiredCount: render.compoundRequiredCount,
             onTap: { handlePlaySquareTap(boardTask: boardTask, task: task) }
         )
-        .contextMenu { squareMenu(boardTask: boardTask, task: task) }
+        .contextMenu { squareMenu(boardTask: boardTask, task: task, render: render) }
         // P3 — pulse the square when it just arrived from an elsewhere log.
         // Applied at the call site (not inside RisoBoardPlayCell) so the
         // snapshot-covered cell internals stay untouched.

@@ -64,7 +64,7 @@ struct SquareSheetCountingView: View {
         }
         .padding(.top, 14)
 
-        TapLogChipRow(chips: count.chips, disabled: content.isBusy) { chip in
+        TapLogChipRow(chips: count.chips, disabled: content.isBusy, busyLook: content.showsBusyLook) { chip in
             if let value = chip.value {
                 actions.onLog(content.taskId, value, false)
             } else {
@@ -82,7 +82,7 @@ struct SquareSheetCountingView: View {
         }
 
         if showsStrip, let strip {
-            UndoStrip(text: strip.text, disabled: content.isBusy, onUndo: actions.onUndo)
+            UndoStrip(text: strip.text, disabled: content.isBusy, busyLook: content.showsBusyLook, onUndo: actions.onUndo)
                 .padding(.top, 10)
         }
 
@@ -96,7 +96,7 @@ struct SquareSheetCountingView: View {
             }
             .buttonStyle(.plain)
             .disabled(content.isBusy || count.current <= 0)
-            .opacity(content.isBusy || count.current <= 0 ? 0.45 : 1)
+            .opacity(content.showsBusyLook || count.current <= 0 ? 0.45 : 1)
             Spacer()
         }
         .padding(.top, 6)

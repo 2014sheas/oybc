@@ -106,7 +106,7 @@ struct SquareSheetCompoundView: View {
             if isOpen, let count = child.counting { expansion(child, count) }
             // A toggle child's write leaves its own inline strip.
             if child.counting == nil, let strip, strip.isVisible(boardTaskId: content.boardTaskId, scopeTaskId: child.id) {
-                UndoStrip(text: strip.text, compact: true, disabled: content.isBusy, onUndo: actions.onUndo)
+                UndoStrip(text: strip.text, compact: true, disabled: content.isBusy, busyLook: content.showsBusyLook, onUndo: actions.onUndo)
                     .padding(.horizontal, 10)
                     .padding(.bottom, 8)
             }
@@ -118,6 +118,7 @@ struct SquareSheetCompoundView: View {
     private func box(_ child: SquareSheetContent.Child, isOpen: Bool) -> some View {
         let fill: Color = child.isDone ? .risoGreen : (isOpen ? .risoGold : .clear)
         let locked = content.isBusy || content.closed != nil || (child.isDone && child.sealBlocked)
+        let looksLocked = content.showsBusyLook || content.closed != nil || (child.isDone && child.sealBlocked)
         return Button {
             if child.counting != nil {
                 openChildId = isOpen ? nil : child.id
@@ -140,7 +141,7 @@ struct SquareSheetCompoundView: View {
         .buttonStyle(.plain)
         // Opening a counting child's chips is not a write; only a toggle is gated by busy / closed.
         .disabled(child.counting == nil ? locked : content.closed != nil)
-        .opacity(child.counting == nil && locked ? 0.45 : 1)
+        .opacity(child.counting == nil && looksLocked ? 0.45 : 1)
         .accessibilityLabel(SquareSheetFormat.childBoxLabel(child, isOpen: isOpen))
     }
 
@@ -151,7 +152,7 @@ struct SquareSheetCompoundView: View {
                 value: count.goal > 0 ? min(count.current, count.goal) / count.goal : 0,
                 color: count.goal > 0 && count.current >= count.goal ? .risoGreen : .risoBlue, height: 8
             )
-            TapLogChipRow(chips: count.chips, size: .compact, disabled: content.isBusy) { chip in
+            TapLogChipRow(chips: count.chips, size: .compact, disabled: content.isBusy, busyLook: content.showsBusyLook) { chip in
                 if let value = chip.value {
                     actions.onLog(child.id, value, false)
                 } else {
@@ -165,7 +166,7 @@ struct SquareSheetCompoundView: View {
                 }, onCancel: { entry = nil })
             }
             if let strip, strip.isVisible(boardTaskId: content.boardTaskId, scopeTaskId: child.id) {
-                UndoStrip(text: strip.text, compact: true, disabled: content.isBusy, onUndo: actions.onUndo)
+                UndoStrip(text: strip.text, compact: true, disabled: content.isBusy, busyLook: content.showsBusyLook, onUndo: actions.onUndo)
             }
         }
         .padding(.horizontal, 10)

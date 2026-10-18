@@ -8,8 +8,10 @@ export interface SquareMenuProps {
   model: SquareMenuModel;
   /** Cursor position the menu anchors to (clamped into the viewport). */
   position: { x: number; y: number };
-  /** A write is in flight — write items disable. */
+  /** A write is in flight — write items are inert at once. */
   busy: boolean;
+  /** The busy LOOK (write items dimmed): `busy` held ~250 ms. Defaults to `busy`. */
+  dim?: boolean;
   onChoose: (item: MenuItem) => void;
   onClose: () => void;
 }
@@ -22,7 +24,7 @@ export interface SquareMenuProps {
  *
  * @returns The menu.
  */
-export function SquareMenu({ model, position, busy, onChoose, onClose }: SquareMenuProps): React.ReactElement {
+export function SquareMenu({ model, position, busy, dim = busy, onChoose, onClose }: SquareMenuProps): React.ReactElement {
   const ref = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState(position);
   // `onClose` is an inline closure — read it through a ref so the setup effect runs ONCE.
@@ -102,8 +104,9 @@ export function SquareMenu({ model, position, busy, onChoose, onClose }: SquareM
             className={`${styles.item} ${gold ? styles.gold : ''}`}
             tabIndex={entry.id === activeId ? 0 : -1}
             onFocus={() => setActiveId(entry.id)}
-            disabled={entry.disabled || (busy && entry.write)}
-            onClick={() => onChoose(entry)}
+            disabled={entry.disabled || (dim && entry.write)}
+            aria-disabled={(busy && entry.write) || undefined}
+            onClick={() => { if (!(busy && entry.write)) onChoose(entry); }}
           >
             <span className={styles.icon}><RisoIcon name={entry.icon} size={16} /></span>
             <span className={styles.label}>{entry.label}</span>

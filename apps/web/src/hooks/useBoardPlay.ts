@@ -28,6 +28,7 @@ import { incrementCompoundChildFallback, toggleCompoundChildFallback, undoLastCo
 import { commitSquareEdits } from '../db/operations/boardEditCommit';
 import type { ContextMenuState } from '../components/interactiveTaskSquareUtils';
 import { useSquaresEditDraft, type UseSquaresEditDraftResult } from './useSquaresEditDraft';
+import { usePendingCounts, type UsePendingCountsResult } from './usePendingCounts';
 
 /** The flagged tasks placed on this board, in board order (the credited toast's contributors). */
 export function onBoardContributors(boardTasks: ReadonlyArray<BoardTask>, taskMap: Record<string, Task>): Task[] {
@@ -211,8 +212,9 @@ export interface UseBoardPlayResult {
    * credited-toast Undo pill), flashing any board COMPLETED→ACTIVE / lost-bingo
    * transition the reversal causes (F1 — mirrors `handleSharedCounterDecrement`).
    * May throw (invalid source); the caller owns the toast-dismiss + error path.
+   * @returns true when an entry was reversed, false when there was nothing to undo.
    */
-  undoCounterLog: (sourceTaskId: string) => Promise<void>;
+  undoCounterLog: (sourceTaskId: string) => Promise<boolean>;
   /** The credited toast's Undo: reverses a hand log, or un-completes a counts-toward contributor. */
   undoCreditedToast: (toast: CreditedToast) => Promise<void>;
   /**
@@ -240,6 +242,14 @@ export interface UseBoardPlayResult {
   getWriteSeq: () => number;
   /** A play-mode write or undo is in flight — the sheet disables (never hides) its controls. */
   isWriting: boolean;
+  /**
+   * Pending (optimistic) counts: a log's expected count, shown the moment it is
+   * tapped. Render `resolvePendingCount(pendingCounts, countKeyFor(task), live)`
+   * wherever a counting square's number is drawn.
+   */
+  pendingCounts: UsePendingCountsResult['pending'];
+  /** Holds a pending count for the duration of one count write (see `usePendingCounts`). */
+  withPending: UsePendingCountsResult['withPending'];
 }
 
 /**
@@ -292,6 +302,19 @@ export function useBoardPlay(params: UseBoardPlayParams): UseBoardPlayResult {
       if (inFlight.current === 0) setIsWriting(false);
     }
   }, []);
+
+  // The windowed count of a counter key (its root / own task) in this board's
+  // window — what a surface draws when nothing is pending.
+  const liveOf = useCallback(
+    (key: string): number => {
+      const keyTask = taskMap[key];
+      if (!keyTask) return 0;
+      const { windowStart, windowEnd, eventsByTaskId } = squareWindowContext;
+      return resolveTaskWindowState(keyTask, eventsByTaskId[key] ?? [], windowStart, windowEnd).count;
+    },
+    [taskMap, squareWindowContext],
+  );
+  const { pending: pendingCounts, withPending } = usePendingCounts(liveOf, squareWindowContext);
 
   const editDraft = useSquaresEditDraft({
     board,
@@ -565,17 +588,18 @@ export function useBoardPlay(params: UseBoardPlayParams): UseBoardPlayResult {
    * owns the error log + credited-toast dismissal.
    */
   const undoCounterLogRaw = useCallback(
-    async (sourceTaskId: string): Promise<void> => {
+    async (sourceTaskId: string): Promise<boolean> => {
       // Capture the pre-undo board stats for the board-transition flash.
       const boardBefore = await db.boards.get(boardId);
       const { undoneAmount } = await undoLastCounterLog(sourceTaskId);
       // No-op: nothing was reversed (no undoable entry) → no state change.
-      if (undoneAmount === 0) return;
+      if (undoneAmount === 0) return false;
       const boardAfter = await db.boards.get(boardId);
-      if (!boardBefore || !boardAfter) return;
+      if (!boardBefore || !boardAfter) return true;
 
       const outcome = flashFromBoardSnapshots(boardBefore, boardAfter, false);
       if (outcome) onFlash(outcome);
+      return true;
     },
     [boardId, onFlash],
   );
@@ -770,5 +794,7 @@ export function useBoardPlay(params: UseBoardPlayParams): UseBoardPlayResult {
     isWriting,
     writeSeq,
     getWriteSeq,
+    pendingCounts,
+    withPending,
   };
 }

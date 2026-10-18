@@ -4,6 +4,8 @@ import { StatusPill } from '../../StatusPill';
 export interface NormalBodyProps {
   done: boolean;
   busy: boolean;
+  /** The busy look (dimmed button); defaults to `busy`. The button is inert for all of `busy`. */
+  dim?: boolean;
   /** Un-completing is blocked: the completion is held by a sealed window. */
   blocked: boolean;
   closedRow: React.ReactNode | null;
@@ -23,7 +25,7 @@ export interface NormalBodyProps {
  *
  * @returns The body.
  */
-export function NormalBody({ done, busy, blocked, closedRow, onToggle, stripText, onUndo, trailing, notDoneLabel }: NormalBodyProps): React.ReactElement {
+export function NormalBody({ done, busy, dim = busy, blocked, closedRow, onToggle, stripText, onUndo, trailing, notDoneLabel }: NormalBodyProps): React.ReactElement {
   return (
     <>
       <div>
@@ -32,14 +34,14 @@ export function NormalBody({ done, busy, blocked, closedRow, onToggle, stripText
       {closedRow ?? (
         <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
           <div style={{ flex: 1 }}>
-            <RisoButton kind={done ? 'green' : 'gold'} fullWidth disabled={busy || (done && blocked)} icon={<RisoIcon name="check" size={16} aria-hidden="true" />} onClick={onToggle}>
+            <RisoButton kind={done ? 'green' : 'gold'} fullWidth disabled={dim || (done && blocked)} icon={<RisoIcon name="check" size={16} aria-hidden="true" />} onClick={() => { if (!busy) onToggle(); }}>
               {done ? 'Done' : 'Mark done'}
             </RisoButton>
           </div>
           {trailing}
         </div>
       )}
-      {stripText && onUndo && <UndoStrip text={stripText} onUndo={onUndo} disabled={busy} />}
+      {stripText && onUndo && <UndoStrip text={stripText} onUndo={() => { if (!busy) onUndo(); }} disabled={dim} />}
     </>
   );
 }
