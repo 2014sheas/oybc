@@ -256,11 +256,18 @@ struct ShareBoardSheet: View {
     /// Uses `PHPhotoLibrary.performChanges` (not the fire-and-forget
     /// `UIImageWriteToSavedPhotosAlbum`) so a denied permission or write
     /// failure surfaces to the user via `saveToast` instead of silently
-    /// doing nothing.
+    /// doing nothing. Asks for add-only access first: the app declares only
+    /// `NSPhotoLibraryAddUsageDescription`, so the prompt must never be the
+    /// read-write one an implicit `performChanges` authorization could raise.
     private func saveImageToPhotos() {
         _Concurrency.Task { @MainActor in
             guard let image = renderPosterImage() else {
                 showSaveToast("Couldn't render the image.")
+                return
+            }
+            let access = await PHPhotoLibrary.requestAuthorization(for: .addOnly)
+            guard access == .authorized || access == .limited else {
+                showSaveToast("Couldn't save — check Photos access in Settings.")
                 return
             }
             do {
