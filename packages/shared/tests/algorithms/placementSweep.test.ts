@@ -45,7 +45,8 @@ function full(ws: MiniWorkspace) {
 describe('planPlacementSweep (fixture-driven)', () => {
   it('fixture covers every outcome', () => {
     const outcomes = new Set(fixture.planPlacementSweep.flatMap((v) => v.expected.outcomes.map((o) => o.reason ?? o.outcome)));
-    expect(outcomes).toEqual(new Set(['repointed', 'rootMissing', 'duplicateRoot', 'derivationChanged']));
+    expect(outcomes).toEqual(new Set(['repointed', 'rootMissing', 'duplicateRoot', 'derivationChanged', 'compoundMismatch']));
+    expect(fixture.planPlacementSweep.some((v) => v.expected.repoints.some((r) => r.childTargets !== undefined))).toBe(true);
     expect(fixture.planPlacementSweep.some((v) => v.expected.orphanTombstones.length > 0)).toBe(true);
     expect(fixture.planPlacementSweep.some((v) => v.expected.repoints.some((r) => r.sealed))).toBe(true);
   });
