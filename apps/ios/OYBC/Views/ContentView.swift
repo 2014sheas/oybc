@@ -32,7 +32,12 @@ struct ContentView: View {
 
     var body: some View {
         ZStack {
-            AuthGateView(authService: authService) {
+            // A login form created while first-run onboarding is up (it sits
+            // underneath the overlay) opens in "Create an account" mode, so the
+            // new user leaving onboarding via "Continue with email" / "Skip"
+            // isn't greeted with "Welcome back". A form created later (after a
+            // sign-out) opens in sign-in mode.
+            AuthGateView(authService: authService, loginStartsInCreateAccount: showOnboarding) {
                 MainTabView()
             }
 

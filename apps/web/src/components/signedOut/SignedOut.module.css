@@ -636,6 +636,32 @@
   text-align: left;
   margin-bottom: 12px;
 }
+/* "Forgot password?" — sign-in mode only; a quiet text link under the
+   password field, styled like the footer's switch link. */
+.soForgot {
+  display: block;
+  margin: -4px 0 12px auto;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--riso-blue);
+  font-family: var(--riso-font-body);
+  font-size: 12.5px;
+  font-weight: 800;
+  cursor: pointer;
+}
+.soForgot:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+/* One-line confirmation after a reset send (success twin of .soError). */
+.soStatus {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--riso-ink);
+  text-align: left;
+  margin-bottom: 12px;
+}
 .soAuthFoot {
   font-size: 12.5px;
   font-weight: 600;

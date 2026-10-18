@@ -61,6 +61,10 @@ struct OnboardingView: View {
     @State private var step: OnboardingStep
     @State private var slideIndex: Int
 
+    /// Picks the Apple button style: the ink-fill pill is black on light paper
+    /// and white on dark paper (where a black pill would vanish).
+    @Environment(\.colorScheme) private var colorScheme
+
     // MARK: - Sign-in state
 
     @State private var isSubmitting: Bool = false
@@ -374,16 +378,17 @@ struct OnboardingView: View {
 
     // MARK: - Apple Sign-In button
 
-    /// Ink-filled pill matching the design: black background, Apple glyph +
-    /// "Continue with Apple" in cream. Uses `SignInWithAppleButton` behind the
-    /// scenes but styled to match the Riso system.
+    /// Ink-filled pill matching the design: the system `SignInWithAppleButton`
+    /// in the Riso ink colour — black on light paper, white on dark paper (the
+    /// same rule as `LoginView`).
     private var appleSignInButton: some View {
         // SignInWithAppleButton must use the system style; we layer Riso
         // styling on top via a custom overlay approach. Because ASAuthorizationController
         // must use the system button, we use a ZStack with an overlay tap that
         // triggers the system presentation — but that requires the real
         // SignInWithAppleButton to receive touch. Instead we use the real button
-        // styled `.black` at the correct height, which matches the ink-fill design.
+        // at the correct height, styled to the ink colour (black light / white
+        // dark), which matches the ink-fill design.
         SignInWithAppleButton(
             .signIn,
             onRequest: { request in
@@ -396,7 +401,9 @@ struct OnboardingView: View {
                 _Concurrency.Task { await handleAppleSignIn(result) }
             }
         )
-        .signInWithAppleButtonStyle(.black)
+        .signInWithAppleButtonStyle(colorScheme == .dark ? .white : .black)
+        // The system button doesn't restyle in place; rebuild on a scheme flip.
+        .id(colorScheme)
         .frame(maxWidth: .infinity)
         .frame(height: 56)
         .clipShape(Capsule())
@@ -450,22 +457,10 @@ struct OnboardingView: View {
             // Advance to notif-priming (not straight to onDone).
             advanceToNotif()
         } catch {
-            errorMessage = Self.isOfflineError(error)
+            errorMessage = SignInErrorMessage.isOffline(error)
                 ? "You're offline. Connect to continue as a guest."
-                : error.localizedDescription
+                : SignInErrorMessage.message(for: error)
         }
-    }
-
-    /// Whether an error is a "no network" failure (the guest first-launch case).
-    private static func isOfflineError(_ error: Error) -> Bool {
-        let ns = error as NSError
-        if ns.code == AuthErrorCode.networkError.rawValue { return true }
-        if ns.domain == NSURLErrorDomain,
-           ns.code == NSURLErrorNotConnectedToInternet || ns.code == NSURLErrorNetworkConnectionLost
-               || ns.code == NSURLErrorTimedOut {
-            return true
-        }
-        return false
     }
 
     private func handleAppleSignIn(_ result: Result<ASAuthorization, Error>) async {
@@ -498,15 +493,12 @@ struct OnboardingView: View {
                 // Auth state listener handles the rest; advance to notif-priming.
                 advanceToNotif()
             } catch {
-                errorMessage = error.localizedDescription
+                errorMessage = SignInErrorMessage.message(for: error)
             }
 
         case .failure(let error):
-            // ASAuthorizationError.canceled (1001) is user-initiated; suppress it.
-            let asError = error as? ASAuthorizationError
-            if asError?.code != .canceled {
-                errorMessage = error.localizedDescription
-            }
+            // A cancelled Apple sheet maps to nil — nothing shown.
+            errorMessage = SignInErrorMessage.message(for: error)
         }
     }
 

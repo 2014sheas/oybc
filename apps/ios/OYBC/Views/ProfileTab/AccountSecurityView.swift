@@ -15,7 +15,9 @@ import GoogleSignIn
 ///                        the last remaining provider can't be removed).
 ///   Danger zone        — Delete account → inline dashed-red confirm. Deletion
 ///                        purges Firestore server-side via a Cloud Function,
-///                        deletes the Auth user, and wipes local data.
+///                        deletes the Auth user, and wipes local data. An
+///                        Apple-linked account first revokes its Sign in with
+///                        Apple token (App Store 5.1.1(v)).
 ///
 /// Split into a thin environment-bound container (`AccountSecurityView`) and a
 /// presentational leaf (`AccountSecurityContent`, props + closures) so the leaf
@@ -175,7 +177,21 @@ struct AccountSecurityView: View {
     /// Delete reauths proactively (before any work) so we never run the
     /// server-side Firestore purge and then fail at `currentUser.delete()`,
     /// leaving a half-deleted account.
+    ///
+    /// An account with Sign in with Apple linked (however the user signed in)
+    /// skips the provider-choice sheet: the Apple authorization is the reauth,
+    /// and its fresh authorization code revokes the Apple token before the
+    /// account is deleted (App Store 5.1.1(v); `deleteAccountRevokingApple`).
+    /// Cancelling Apple's sheet is swallowed by `runSensitive`; a failed revoke
+    /// leaves the account intact and shows in the error banner.
     private func startDelete() {
+        if authService.deleteRequiresAppleRevocation {
+            runSensitive({
+                let (authorization, nonce) = try await appleCoordinator.authenticate()
+                try await authService.deleteAccountRevokingApple(authorization: authorization, rawNonce: nonce)
+            }, success: "")
+            return
+        }
         pendingRetry = { try await authService.deleteAccount() }
         pendingSuccessMessage = ""
         activeSheet = .reauth
@@ -603,10 +619,6 @@ private struct ReauthSheet: View {
     var body: some View {
         AccountSheetScaffold(title: "Confirm it's you", onCancel: onCancel) {
             VStack(alignment: .leading, spacing: 14) {
-                Text("For your security, please sign in again to continue.")
-                    .font(.risoBody(13, .regular)).foregroundStyle(Color.risoMuted)
-                    .fixedSize(horizontal: false, vertical: true)
-
                 if let error {
                     Text(error).font(.risoBody(12, .regular)).foregroundStyle(Color.risoRed)
                 }

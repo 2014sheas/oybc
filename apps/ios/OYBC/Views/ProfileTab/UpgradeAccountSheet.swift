@@ -246,14 +246,15 @@ struct UpgradeAccountSheet: View {
 
     /// Shared failure path for all three link attempts: swallow user
     /// cancellations, route a collision into the confirm alert, otherwise
-    /// surface the error inline.
+    /// surface the error inline. The branching reads the raw error; only the
+    /// displayed text goes through `SignInErrorMessage`.
     private func handleLinkFailure(_ error: Error, method: UpgradeMethod) {
         if AuthService.isAuthCancellation(error) { return }
         if AuthService.isCredentialCollision(error) {
             pendingCollision = method
             return
         }
-        errorMessage = error.localizedDescription
+        errorMessage = SignInErrorMessage.message(for: error)
     }
 
     // MARK: - Collision resolution
@@ -297,7 +298,7 @@ struct UpgradeAccountSheet: View {
                 )
             } catch {
                 if !AuthService.isAuthCancellation(error) {
-                    errorMessage = error.localizedDescription
+                    errorMessage = SignInErrorMessage.message(for: error)
                 }
             }
         }

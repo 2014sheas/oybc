@@ -16,11 +16,14 @@ import {
   linkWithPopup,
   reauthenticateWithCredential,
   reauthenticateWithPopup,
+  revokeAccessToken,
   sendPasswordResetEmail,
   unlink as fbUnlink,
   updatePassword as fbUpdatePassword,
   verifyBeforeUpdateEmail,
   type AuthError,
+  type User as FirebaseUser,
+  type UserCredential,
 } from 'firebase/auth';
 import { auth } from './config';
 import { startSyncLoop, stopSyncLoop } from './syncService';
@@ -50,6 +53,28 @@ export const EMPTY_PROVIDER_STATE: ProviderState = {
 };
 
 /**
+ * Derive a `ProviderState` from a user's linked provider IDs
+ * (`providerData[].providerId`). Pure; mirrors iOS `computeProviderState`.
+ *
+ * @param providerIds - The account's linked provider IDs
+ * @returns Which sign-in methods are linked, and how many
+ */
+export function providerStateFromIds(providerIds: Iterable<string>): ProviderState {
+  const ids = new Set(providerIds);
+  return {
+    hasPassword: ids.has(PASSWORD_PROVIDER_ID),
+    hasGoogle: ids.has(GOOGLE_PROVIDER_ID),
+    hasApple: ids.has(APPLE_PROVIDER_ID),
+    providerCount: ids.size,
+  };
+}
+
+/** The provider IDs linked to a Firebase user (empty for a guest). */
+function providerIdsOf(user: FirebaseUser): string[] {
+  return (user.providerData ?? []).map((p) => p.providerId);
+}
+
+/**
  * Read the current account's linked-provider state. Reloads the Firebase user
  * first so it reflects any out-of-band changes (mirrors iOS refreshProviderState).
  */
@@ -61,13 +86,20 @@ export async function getProviderState(): Promise<ProviderState> {
   } catch {
     // Reload can fail offline; fall back to the cached providerData.
   }
-  const ids = new Set((auth.currentUser?.providerData ?? []).map((p) => p.providerId));
-  return {
-    hasPassword: ids.has(PASSWORD_PROVIDER_ID),
-    hasGoogle: ids.has(GOOGLE_PROVIDER_ID),
-    hasApple: ids.has(APPLE_PROVIDER_ID),
-    providerCount: ids.size,
-  };
+  return providerStateFromIds(auth.currentUser ? providerIdsOf(auth.currentUser) : []);
+}
+
+/**
+ * True when deleting an account must first revoke its Sign in with Apple token
+ * (App Store Review Guideline 5.1.1(v)) — any account with `apple.com` linked,
+ * however the user signed in. A guest has no providers and never qualifies.
+ * Mirrors iOS `AppleTokenRevocation.isRequired`.
+ *
+ * @param providers - The account's linked-provider state
+ * @returns True when the delete must go through `deleteAccountRevokingApple`
+ */
+export function requiresAppleRevocation(providers: Pick<ProviderState, 'hasApple'>): boolean {
+  return providers.hasApple;
 }
 
 /** True when an error is Firebase's `requires-recent-login` — the cue to run a
@@ -97,9 +129,18 @@ export function friendlyError(err: unknown): string {
   if (isRecentLoginRequired(err)) {
     return 'For your security, the current password didn’t match or your session is stale. Re-enter it and try again.';
   }
+  const message = (err as { message?: string } | undefined)?.message;
   // Connected-accounts (5b-ii) case.
-  if ((err as { message?: string } | undefined)?.message === LAST_PROVIDER_ERROR) {
+  if (message === LAST_PROVIDER_ERROR) {
     return 'You can’t disconnect your only sign-in method — add another first.';
+  }
+  // Delete of an Apple-linked account (5.1.1(v)): the revoke failed, or the
+  // plain delete path was used. Either way the account is intact.
+  if (message === APPLE_REVOCATION_FAILED_ERROR) {
+    return 'Couldn’t disconnect Apple. Your account wasn’t deleted.';
+  }
+  if (message === APPLE_REVOCATION_REQUIRED_ERROR) {
+    return 'Confirm with Apple to delete this account.';
   }
   const code = (err as { code?: string } | undefined)?.code;
   if (code === 'auth/wrong-password' || code === 'auth/invalid-credential') {
@@ -137,15 +178,6 @@ export async function reauthWithGoogle(): Promise<void> {
   const user = auth.currentUser;
   if (!user) throw new Error('No signed-in user');
   await reauthenticateWithPopup(user, new GoogleAuthProvider());
-}
-
-/** Reauthenticate via the Apple popup handshake. */
-export async function reauthWithApple(): Promise<void> {
-  const user = auth.currentUser;
-  if (!user) throw new Error('No signed-in user');
-  const provider = new OAuthProvider('apple.com');
-  provider.addScope('email');
-  await reauthenticateWithPopup(user, provider);
 }
 
 // ─── Change email / password ────────────────────────────────────────────────
@@ -268,8 +300,91 @@ export async function unlinkProvider(providerId: string): Promise<void> {
 
 // ─── Danger zone: delete account (Phase 5b-iii) ───────────────────────────────
 
+/** Thrown when revoking the Sign in with Apple token fails (or the Apple popup
+ *  returned no access token to revoke) — the account is NOT deleted. */
+export const APPLE_REVOCATION_FAILED_ERROR = 'apple-revocation-failed';
+
+/** Thrown when `deleteAccount` is called for an account with Apple linked; it
+ *  must go through `deleteAccountRevokingApple` (App Store 5.1.1(v)). */
+export const APPLE_REVOCATION_REQUIRED_ERROR = 'apple-revocation-required';
+
 /**
- * Permanently delete the account + all of its data. Mirrors iOS `deleteAccount`.
+ * The Apple OAuth access token carried by an Apple popup result, or null when
+ * the result has none.
+ *
+ * @param result - The `UserCredential` an Apple popup resolved with
+ * @returns The access token `revokeAccessToken` takes, or null
+ */
+export function appleAccessTokenFromResult(result: UserCredential): string | null {
+  return OAuthProvider.credentialFromResult(result)?.accessToken ?? null;
+}
+
+/**
+ * Permanently delete an account that has NO Sign in with Apple linked
+ * (password / Google accounts, and the guest "Discard guest data" path).
+ * Mirrors iOS `deleteAccount`. Requires recent login (caller reauthenticates
+ * first). See `deleteSignedInUser` for the load-bearing ordering.
+ *
+ * @throws Error(`APPLE_REVOCATION_REQUIRED_ERROR`) when the account has Apple
+ *   linked (use `deleteAccountRevokingApple`), or the Firebase delete error
+ */
+export async function deleteAccount(): Promise<void> {
+  const user = auth.currentUser;
+  if (!user) throw new Error('No signed-in user');
+  if (requiresAppleRevocation(providerStateFromIds(providerIdsOf(user)))) {
+    throw new Error(APPLE_REVOCATION_REQUIRED_ERROR);
+  }
+  await deleteSignedInUser(user);
+}
+
+/**
+ * Permanently delete an account that has Sign in with Apple linked, revoking
+ * its Apple token first (App Store 5.1.1(v)). Mirrors iOS
+ * `deleteAccountRevokingApple`. The Apple reauth popup IS the delete's reauth
+ * (it refreshes login recency) and yields a fresh Apple access token to revoke.
+ *
+ * The order is forced — `revokeAccessToken` needs a signed-in user (it is a
+ * silent no-op without one), so it can't follow `delete()`:
+ * - Popup fails / is closed → nothing changed; the error propagates.
+ * - Revoke fails (or no token came back) → the account is NOT deleted (intact,
+ *   Apple still linked) and `APPLE_REVOCATION_FAILED_ERROR` is thrown. Never a
+ *   deleted account whose Apple token survives. A transient failure clears on
+ *   retry; a persistent one (or a missing token) is the Firebase Apple provider
+ *   lacking its Services ID / key (ops prerequisite — CLAUDE.md §Account &
+ *   security).
+ * - Revoke succeeds, `delete()` fails → the error propagates and nothing local
+ *   is wiped; the account survives with Apple linked, and Apple only asks for
+ *   consent again on the next Sign in with Apple. A retry runs a fresh popup.
+ *
+ * @throws The popup error, Error(`APPLE_REVOCATION_FAILED_ERROR`), or the
+ *   Firebase delete error
+ */
+export async function deleteAccountRevokingApple(): Promise<void> {
+  const user = auth.currentUser;
+  if (!user) throw new Error('No signed-in user');
+
+  // Apple reauth popup — refreshes login recency + yields a fresh access token.
+  const provider = new OAuthProvider(APPLE_PROVIDER_ID);
+  provider.addScope('email');
+  const result = await reauthenticateWithPopup(user, provider);
+  const accessToken = appleAccessTokenFromResult(result);
+  if (!accessToken) {
+    console.error('[accountSecurity] Apple reauth returned no access token; account NOT deleted');
+    throw new Error(APPLE_REVOCATION_FAILED_ERROR);
+  }
+  const revoked = await revokeAccessToken(auth, accessToken).then(
+    () => true,
+    (err: unknown) => {
+      console.error('[accountSecurity] Apple token revoke failed; account NOT deleted', err);
+      return false;
+    }
+  );
+  if (!revoked) throw new Error(APPLE_REVOCATION_FAILED_ERROR);
+  await deleteSignedInUser(user);
+}
+
+/**
+ * Delete the Firebase Auth user, then wipe every local table.
  *
  * Ordering is load-bearing: delete the Firebase Auth user FIRST. That's the only
  * step that can fail for auth reasons (`requires-recent-login` → the caller
@@ -285,12 +400,11 @@ export async function unlinkProvider(providerId: string): Promise<void> {
  * the Auth user is gone we wipe every local Dexie table (sync queue
  * included, so nothing re-pushes and resurrects the just-purged Firestore data).
  * The Firebase auth-state listener then nils the session → the app shows the
- * signed-out home. Requires recent login (caller reauthenticates first).
+ * signed-out home.
+ *
+ * @param user - The signed-in Firebase user to delete
  */
-export async function deleteAccount(): Promise<void> {
-  const user = auth.currentUser;
-  if (!user) throw new Error('No signed-in user');
-
+async function deleteSignedInUser(user: FirebaseUser): Promise<void> {
   // 1. Stop the sync loop BEFORE deleting: a push racing the server-side
   //    purge would resurrect just-deleted Firestore data, and the ID token
   //    stays valid until it expires. (iOS orders it differently — it calls

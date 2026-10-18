@@ -8,15 +8,16 @@ import {
   EMPTY_PROVIDER_STATE,
   GOOGLE_PROVIDER_ID,
   deleteAccount,
+  deleteAccountRevokingApple,
   friendlyError,
   getProviderState,
   linkApple,
   linkGoogle,
   linkPassword,
-  reauthWithApple,
   reauthWithGoogle,
   reauthWithPassword,
   reconcileEmailIfChanged,
+  requiresAppleRevocation,
   sendPasswordResetToCurrentUser,
   unlinkProvider,
   updateAccountEmail,
@@ -402,9 +403,12 @@ function AddPasswordSheet({
 
 /**
  * Delete-account sheet — reauthenticate (password field, or OAuth popup), then
- * permanently delete. On success the Firebase auth listener nils the session and
- * the app swaps to the signed-out home, so this component unmounts (busy stays
- * true until then). `busy` is only reset on failure.
+ * permanently delete. An account with Sign in with Apple linked (however the
+ * user signed in) always reauths through the Apple popup, whose fresh access
+ * token revokes the Apple token before the delete (App Store 5.1.1(v)). On
+ * success the Firebase auth listener nils the session and the app swaps to the
+ * signed-out home, so this component unmounts (busy stays true until then).
+ * `busy` is only reset on failure.
  */
 function DeleteAccountSheet({
   providers,
@@ -416,16 +420,22 @@ function DeleteAccountSheet({
   const [current, setCurrent] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const viaApple = requiresAppleRevocation(providers);
+  const needsPassword = !viaApple && providers.hasPassword;
 
   const submit = async (): Promise<void> => {
     setBusy(true);
     setError(null);
     try {
-      // Reauth (delete requires recent login) using whatever provider they have.
-      if (providers.hasPassword) await reauthWithPassword(current);
-      else if (providers.hasGoogle) await reauthWithGoogle();
-      else if (providers.hasApple) await reauthWithApple();
-      await deleteAccount();
+      if (viaApple) {
+        // Apple popup = the reauth; revoke, then delete.
+        await deleteAccountRevokingApple();
+      } else {
+        // Reauth (delete requires recent login) using whatever provider they have.
+        if (providers.hasPassword) await reauthWithPassword(current);
+        else if (providers.hasGoogle) await reauthWithGoogle();
+        await deleteAccount();
+      }
       // Success: auth-state listener tears down the session → signed-out home.
     } catch (err) {
       setError(friendlyError(err));
@@ -439,7 +449,7 @@ function DeleteAccountSheet({
         This permanently erases every board, streak, and GREENLOG across all your devices. It
         can’t be undone.
       </p>
-      {providers.hasPassword ? (
+      {needsPassword && (
         <Field
           label="Current password"
           type="password"
@@ -447,11 +457,6 @@ function DeleteAccountSheet({
           onChange={setCurrent}
           autoFocus
         />
-      ) : (
-        <p className={styles.sheetBody}>
-          You’ll be asked to re-authenticate with{' '}
-          {providers.hasGoogle ? 'Google' : 'Apple'} to confirm.
-        </p>
       )}
       {error && <p className={styles.sheetError}>{error}</p>}
       <div className={styles.sheetActions}>
@@ -462,7 +467,7 @@ function DeleteAccountSheet({
           type="button"
           className={styles.deleteForeverButton}
           onClick={() => void submit()}
-          disabled={busy || (providers.hasPassword && !current)}
+          disabled={busy || (needsPassword && !current)}
         >
           {busy ? 'Deleting…' : 'Delete forever'}
         </button>
