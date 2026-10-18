@@ -23,12 +23,18 @@ it). Engineering decisions recorded here were ruled by the owner on 2026-10-17.
 1. No explanatory captions (existing owner rule). Labels, data, status pills.
 2. **Completion is windowed.** Any progress shown names its board
    ("12 / 20 pages · Week 42"). Library list rows carry no progress.
-3. **Hero anchor:** the soonest-ending active board the task is placed on —
-   placements whose board passes `isBoardActiveForList`, in the Boards tab's
-   own order (`compareBoardsForList`: soonest `endDate`, open-ended last, then
-   most recent activity), board id as the final tie-break (`pickHeroAnchorBoard`). No anchor → the hero shows no
-   count and the Boards card shows "Not on a board". Same rule for route and
-   sheet.
+3. **Hero anchor** *(amended 2026-10-18)*: the soonest-ending active board
+   (`isBoardActiveForList`, the Boards tab's own order — `compareBoardsForList`,
+   board id as the final tie-break; `pickHeroAnchorBoard`) among the squares
+   that ARE the task, in this order: **(1)** its own placement; **(2)** for a
+   counter root, a linked row's placement (a log there writes the root);
+   **(3)** for a Normal or Counting sub-task, the square of a compound it is
+   a DIRECT child of — the hero is that child's control (counting: chips
+   through the compound child write; normal: the toggle; a sub-compound has
+   no single control there and falls through). **(4) No square in play:** a counting task
+   gets a **board-less** control — its count is the counter's all-time total,
+   chips log "now" through the counter writes the hub uses, with Undo; any
+   other type shows no control. Same rule for route and sheet.
 4. **One-gesture logging:** chips write immediately; Undo replaces
    confirmation. Retires `RisoCountingStepperSheet`'s stepper, the detail
    sheet's counting card, `CompoundChildRow`'s mini stepper and their web twins.
@@ -43,6 +49,12 @@ it). Engineering decisions recorded here were ruled by the owner on 2026-10-17.
    action; the hold menu collapses write items to "Late log…". A write in
    flight disables controls (45% opacity, hard shadow collapsed) — never hides
    them.
+
+**Library rows (owner, 2026-10-18):** every Tasks-tab row opens Task Detail —
+a shared-counter family's root included (this reverses the 2026-09-22 rule
+that sent it to Counter Detail). Counter Detail stays reachable from Task
+Detail's Shared counter row, the Counters hub and Profile; the two pages stay
+separate for now.
 
 ## Engineering decisions (owner, 2026-10-17)
 

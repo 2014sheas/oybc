@@ -25,8 +25,12 @@ export interface TaskDetailData {
   placements: BoardTask[];
   /** Every board the task reaches (own, a linked row's, a parent compound's), in the Boards tab's own order. */
   boards: Board[];
-  /** The soonest-ending in-play board and the placement on it; undefined = no anchor ("Not on a board"). */
-  anchor: { board: Board; placement: BoardTask } | undefined;
+  /**
+   * The soonest-ending in-play board and the square on it the hero drives —
+   * `childTaskId` set when that square is a compound the task is a direct child
+   * of. Undefined = no anchor (a counting task then gets the board-less control).
+   */
+  anchor: { board: Board; placement: BoardTask; childTaskId: string | null } | undefined;
   /** Sub-task id → done in the ANCHOR's window (empty without an anchor: no tick). */
   childDone: Record<string, boolean>;
   rows: BoardRow[];
@@ -96,10 +100,23 @@ export function useTaskDetail(task: Task): TaskDetailData {
   return useMemo<TaskDetailData>(() => {
     const now = new Date();
     const boards = [...(rawBoards ?? [])].filter((b) => !b.isDeleted).sort((a, b) => compareBoardsForList(a, b, now) || (a.id < b.id ? -1 : 1));
-    // The hero anchors on the task's OWN square: its sheet is that square's.
-    const ownBoardIds = new Set((placements ?? []).map((p) => p.boardId));
-    const anchorBoard = pickHeroAnchorBoard(boards.filter((b) => ownBoardIds.has(b.id)), now);
-    const anchorPlacement = anchorBoard ? (placements ?? []).find((p) => p.boardId === anchorBoard.id) : undefined;
+    // The hero anchors on a square that IS the task — its own, a counter root's
+    // linked row's, or a direct-parent compound's (binding decision 3, amended
+    // 2026-10-18); on the chosen board, the best-ranked square.
+    // The best rank with a square in play wins; within it, the soonest-ending board.
+    const anchorCandidates = reached?.anchorCandidates ?? [];
+    let anchorBoard: Board | undefined;
+    let anchorCandidate: (typeof anchorCandidates)[number] | undefined;
+    for (const rank of [0, 1, 2] as const) {
+      const ofRank = anchorCandidates.filter((c) => c.rank === rank);
+      const ids = new Set(ofRank.map((c) => c.placement.boardId));
+      anchorBoard = pickHeroAnchorBoard(boards.filter((b) => ids.has(b.id)), now);
+      if (anchorBoard) {
+        const boardId = anchorBoard.id;
+        anchorCandidate = ofRank.find((c) => c.placement.boardId === boardId);
+        break;
+      }
+    }
     const children: DetailChild[] = sortedLinks.flatMap((link) => {
       const t = (childTasks ?? []).find((c) => c.id === link.childTaskId);
       return t ? [{ link, task: t }] : [];
@@ -130,7 +147,9 @@ export function useTaskDetail(task: Task): TaskDetailData {
     return {
       placementsLoaded: placements !== undefined && rawBoards !== undefined,
       placements: placements ?? EMPTY, boards,
-      anchor: anchorBoard && anchorPlacement ? { board: anchorBoard, placement: anchorPlacement } : undefined,
+      anchor: anchorBoard && anchorCandidate
+        ? { board: anchorBoard, placement: anchorCandidate.placement, childTaskId: anchorCandidate.childTaskId }
+        : undefined,
       childDone, rows, parentCompounds: parentCompounds ?? EMPTY, children, counterRoot,
       templates: templates ?? EMPTY,
       watchedBoard: task.referencedBoardId ? (watchedBoardRaw === undefined ? undefined : watchedBoardRaw && !watchedBoardRaw.isDeleted ? watchedBoardRaw : null) : null,

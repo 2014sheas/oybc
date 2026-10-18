@@ -169,6 +169,22 @@ describe('loadTaskDetailPlacements (PR 5 — placement resolution)', () => {
     expect(got.rows).toEqual([expect.objectContaining({ boardId: 'b1', memberTaskId: 's', viaCompoundId: 'P', done: false })]);
   });
 
+  it('a direct Normal / Counting sub-task anchors on its compound\'s square; a sub-compound or a deeper one does not', async () => {
+    await db.tasks.bulkAdd([
+      task({ id: 'P', type: TaskType.COMPOUND, operator: OperatorType.AND }),
+      task({ id: 'n' }),
+      task({ id: 'Q', type: TaskType.COMPOUND, operator: OperatorType.AND }),
+      task({ id: 'm' }),
+    ]);
+    await db.compoundChildren.bulkAdd([link('P', 'n'), link('P', 'Q'), link('Q', 'm')]);
+    await db.boards.add(board({}));
+    await db.boardTasks.add(placement({ taskId: 'P' }));
+    const candidates = async (id: string) => (await loadTaskDetailPlacements(id)).anchorCandidates.map((c) => [c.placement.id, c.childTaskId, c.rank]);
+    expect(await candidates('n')).toEqual([['p1', 'n', 2]]);
+    expect(await candidates('Q')).toEqual([]);
+    expect(await candidates('m')).toEqual([]);
+  });
+
   const done = (taskId: string): TaskEvent => ({
     id: `done-${taskId}`, taskId, userId: 'u', kind: 'completion', occurredAt: iso(new Date(NOW.getTime() - 3600e3)),
     createdAt: iso(NOW), updatedAt: iso(NOW), version: 1, isDeleted: false,
@@ -210,6 +226,8 @@ describe('loadTaskDetailPlacements (PR 5 — placement resolution)', () => {
     ]);
     const got = await loadTaskDetailPlacements('r');
     expect(got.ownPlacements).toEqual([]);
+    // The root's hero may anchor on its linked row's square (a log there writes the root).
+    expect(got.anchorCandidates.map((c) => [c.placement.id, c.childTaskId, c.rank])).toEqual([['p1', null, 1], ['p2', null, 1]]);
     expect(got.rows.map((r) => [r.boardId, r.memberTaskId, r.goal])).toEqual([['b1', 'l', 5]]);
   });
 });

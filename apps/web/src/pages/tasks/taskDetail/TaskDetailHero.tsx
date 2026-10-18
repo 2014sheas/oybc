@@ -2,6 +2,7 @@ import { TaskType, counterDisplayName, formatCountTotal, resolveCountKind, type 
 import { RisoButton, RisoIcon, RisoReturnPill, RisoToolbarPill, type RisoTaskType } from '../../../components/riso';
 import type { TaskDetailData } from '../../../hooks/useTaskDetail';
 import { AnchoredHero } from './AnchoredHero';
+import { BoardlessCountingHero } from './BoardlessCountingHero';
 import { DetailMenu } from './DetailMenu';
 import { WatchedBoardHero } from './WatchedBoardHero';
 import { heroKicker, heroTone } from './taskDetailModel';
@@ -44,7 +45,8 @@ function CounterRow({ task, root, onOpen }: { task: Task; root: Task; onOpen: ()
 /**
  * The type-coloured hero band: nav row (back / return pill · ⋯ · Done), kicker,
  * title, description and the type's one live control (docs/TASK_DETAIL_REDESIGN.md
- * §A). No anchor board → no control: kicker, title, description and Edit only.
+ * §A). No square in play → a counting task gets the board-less control; any
+ * other type shows kicker, title, description and Edit only.
  *
  * @returns The band.
  */
@@ -83,7 +85,9 @@ export function TaskDetailHero({ task, data, chrome, onEdit, onDelete, onOpenTas
             onOpenBoard={onOpenBoard} trailing={edit}
           />
         ) : anchored && data.anchor ? (
-          <AnchoredHero task={task} anchor={data.anchor} userId={task.userId} trailing={edit} onOpenTask={onOpenTask} />
+          <AnchoredHero anchor={data.anchor} userId={task.userId} trailing={edit} onOpenTask={onOpenTask} />
+        ) : data.placementsLoaded && task.type === TaskType.COUNTING ? (
+          <BoardlessCountingHero key={task.id} task={task} counterRoot={root} trailing={edit} />
         ) : (
           data.placementsLoaded && <div className={styles.editOnly}>{edit}</div>
         )}

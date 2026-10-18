@@ -38,6 +38,13 @@ export interface SquareSheetHostProps {
   trailing?: React.ReactNode;
   /** Hero only: the Normal not-done pill's label, from the anchor's timeframe. */
   notDoneLabel?: string;
+  /**
+   * Hero only: the compound child the hero drives (the task is a direct child of
+   * this square's compound — binding decision 3, amended 2026-10-18). Its own
+   * body renders — counting chips / the Normal toggle — through the compound
+   * child writes.
+   */
+  heroChildTaskId?: string | null;
 }
 
 /** An Undo strip: its line, the one write that reverses it, and the write sequence it was made at. */
@@ -74,7 +81,7 @@ function logError(what: string, err: unknown): void {
  * strip (written only when its write committed; hidden by any later write on
  * this board; gone when the sheet closes) and the one unfolded compound child.
  */
-function ResolvedSheet({ board, data, play, quiet, onClose, onOpenInLibrary, onLateLog, onOpenBoard, onToggleNormal, initialEntry, variant = 'sheet', trailing, notDoneLabel, bt, task }: SquareSheetHostProps & { bt: BoardTask; task: Task }): React.ReactElement {
+function ResolvedSheet({ board, data, play, quiet, onClose, onOpenInLibrary, onLateLog, onOpenBoard, onToggleNormal, initialEntry, variant = 'sheet', trailing, notDoneLabel, heroChildTaskId, bt, task }: SquareSheetHostProps & { bt: BoardTask; task: Task }): React.ReactElement {
   const [strip, setStrip] = useState<Strip | null>(null);
   const [openChildId, setOpenChildId] = useState<string | null>(null);
   const [now] = useState(() => Date.now());
@@ -139,6 +146,17 @@ function ResolvedSheet({ board, data, play, quiet, onClose, onOpenInLibrary, onL
     if (r) showStrip('toggle', `${child.title} · ${r.to ? 'done' : 'not done'}`, r.undo);
   };
 
+  const removeChild = async (childTaskId: string, amount: number): Promise<void> => {
+    const child = sq.children?.find((c) => c.taskId === childTaskId);
+    if (!child?.count || sealed || play.isWriting) return;
+    let applied = 0;
+    await quiet(async () => { applied = await play.handleCompoundChildIncrement(childTaskId, -1, amount); });
+    if (applied > 0) {
+      showStrip(childTaskId, logStripText('removed', applied, child.count.kind, child.count.unit, boardLabel),
+        () => play.handleCompoundChildIncrement(childTaskId, 1, applied).then((n) => n > 0));
+    }
+  };
+
   const toggleNormal = async (): Promise<void> => {
     if (onToggleNormal) {
       onToggleNormal(bt.id, task.title, done);
@@ -152,6 +170,32 @@ function ResolvedSheet({ board, data, play, quiet, onClose, onOpenInLibrary, onL
 
   const hero = variant === 'hero';
   const header = { type: sq.type, title: sq.title, closedBoardName: sealed ? boardLabel : undefined, onClose, onOpenInLibrary: () => onOpenInLibrary(task.id) };
+
+  // The hero drives one compound child: that child's own body, not the compound's.
+  const heroChild = hero && heroChildTaskId ? sq.children?.find((c) => c.taskId === heroChildTaskId) : undefined;
+  if (heroChild) {
+    const childBody = heroChild.count ? (
+      <CountingBody
+        count={heroChild.count.current} goal={heroChild.count.max} kind={heroChild.count.kind} unit={heroChild.count.unit}
+        boardLabel={boardLabel} busy={play.isWriting} closedRow={closedRow}
+        stripText={visible?.key === heroChild.taskId ? visible.text : null}
+        removeDisabled={heroChild.count.current <= 0} trailing={trailing}
+        onLog={(d, a, p) => void (d === 'add' ? logChild(heroChild.taskId, a, p) : removeChild(heroChild.taskId, a))}
+        onUndo={() => void runUndo()}
+      />
+    ) : (
+      <NormalBody
+        done={heroChild.isCompleted} busy={play.isWriting} blocked={blockedIds.has(heroChild.taskId)} closedRow={closedRow}
+        onToggle={() => void toggleChild(heroChild.taskId)} stripText={visible?.key === 'toggle' ? visible.text : null}
+        onUndo={() => void runUndo()} trailing={trailing} notDoneLabel={notDoneLabel}
+      />
+    );
+    return (
+      <div className={`${styles.body} ${heroChild.count ? styles.onColor : ''}`} style={{ marginTop: 18 }}>
+        {childBody}
+      </div>
+    );
+  }
 
   let body: React.ReactElement;
   if (sq.type === 'counting') {

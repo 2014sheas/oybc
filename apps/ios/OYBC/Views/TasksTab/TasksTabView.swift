@@ -46,9 +46,9 @@ enum TasksTabPlusAction: Equatable {
 /// intact). A bottom-sheet approach would require a separate sheet layer on
 /// top of the existing edit/delete/new-task sheets; the push path is simpler
 /// and already wired correctly for board navigation. Noted as a divergence
-/// from the prototype's sheet tap in the phase summary. Since the 2026-09-22
-/// ruling a row whose task heads a shared-counter family pushes
-/// `TasksTabRoute.counter` instead — see `openTask(_:)`.
+/// from the prototype's sheet tap in the phase summary. Every row — a
+/// counter family's root included — pushes Task detail (owner, 2026-10-18);
+/// `TasksTabRoute.counter` is reached from Task detail's Shared counter row.
 ///
 /// iOS twin of web's `TasksPage.tsx`.
 struct TasksTabView: View {
@@ -575,16 +575,12 @@ struct TasksTabView: View {
 
     // MARK: - Navigation
 
-    /// Row tap. Owner ruling 2026-09-22 — a task that HEADS a shared-counter
-    /// family opens the Counters hub's detail for that root; everything else
-    /// opens Task detail, exactly as before. iOS twin of web's
+    /// Row tap: every row opens Task detail — a counter family's root included
+    /// (owner, 2026-10-18: one behaviour for every row; Task detail's Shared
+    /// counter row opens the counter's page). iOS twin of web's
     /// `TasksPage.openTask`.
     private func openTask(_ taskId: String) {
-        if library.familyRootIds.contains(taskId) {
-            path.append(TasksTabRoute.counter(id: taskId))
-        } else {
-            path.append(taskId)
-        }
+        path.append(taskId)
     }
 
     // MARK: - Quick-action handlers

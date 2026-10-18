@@ -1,4 +1,4 @@
-import type { Board, BoardTask, Task } from '@oybc/shared';
+import type { Board, BoardTask } from '@oybc/shared';
 import { useBoardPlay, useBoardPlayData } from '../../../hooks';
 import { notDoneLabel } from './taskDetailModel';
 import { SquareSheetHost } from '../../../components/boardPlay/squareSheet/SquareSheetHost';
@@ -7,8 +7,7 @@ import { useSquareToasts } from '../../../components/boardPlay/squareSheet/useSq
 const noop = (): void => {};
 
 export interface AnchoredHeroProps {
-  task: Task;
-  anchor: { board: Board; placement: BoardTask };
+  anchor: { board: Board; placement: BoardTask; childTaskId: string | null };
   userId: string;
   /** Edit (placed by each body). */
   trailing: React.ReactNode;
@@ -25,7 +24,7 @@ export interface AnchoredHeroProps {
  *
  * @returns The hero body.
  */
-export function AnchoredHero({ task, anchor, userId, trailing, onOpenTask }: AnchoredHeroProps): React.ReactElement | null {
+export function AnchoredHero({ anchor, userId, trailing, onOpenTask }: AnchoredHeroProps): React.ReactElement | null {
   const { board } = anchor;
   const data = useBoardPlayData(board, userId);
   const toasts = useSquareToasts();
@@ -34,11 +33,13 @@ export function AnchoredHero({ task, anchor, userId, trailing, onOpenTask }: Anc
     gridSize: data.gridSize, playLocked: board.sealedAt != null, squareWindowContext: data.squareWindowContext,
     sharedCounterSourceIds: data.sharedCounterSourceIds, onFlash: noop, onCreditedToast: toasts.onCreditedToast, setContextMenu: noop,
   });
-  if (!data.boardTasksLoaded || !data.taskMap[task.id]) return null;
+  // The anchor square's own task (a counter root anchors on a linked row's square).
+  if (!data.boardTasksLoaded || !data.taskMap[anchor.placement.taskId]) return null;
   return (
     <SquareSheetHost
       variant="hero" boardTaskId={anchor.placement.id} board={board} data={data} play={play} quiet={toasts.captureCredits}
       onClose={noop} onOpenInLibrary={onOpenTask} onLateLog={noop} onOpenBoard={noop} trailing={trailing} notDoneLabel={notDoneLabel(board.timeframe)}
+      heroChildTaskId={anchor.childTaskId}
     />
   );
 }

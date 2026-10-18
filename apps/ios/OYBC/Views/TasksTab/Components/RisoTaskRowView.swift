@@ -94,7 +94,8 @@ struct RisoTaskRowView: View {
 
     private var accessibilityText: String {
         let name = displayTitle.isEmpty ? "untitled task" : displayTitle
-        return isFamilyRoot ? "Open the \(name) counter" : "Open \(name) details"
+        // Every row opens Task detail, a family root included (owner, 2026-10-18).
+        return "Open \(name) details"
     }
 
     private var risoKind: RisoTaskKind {

@@ -94,16 +94,12 @@ export function TasksPage({ userId }: TasksPageProps): React.ReactElement {
   };
 
   /**
-   * Row tap. Owner ruling 2026-09-22 — a task that HEADS a shared-counter
-   * family opens the Counters hub's detail for that root (the page that
-   * already lists the family's per-window rows), not Task detail: the library
-   * shows the counter once, generically, and the hub owns the windows. A
-   * standalone counter is unchanged.
+   * Row tap: every row opens Task detail — a counter family's root included
+   * (owner, 2026-10-18: one behaviour for every row; Task detail's Shared
+   * counter row opens the counter's page). iOS twin: `TasksTabView.openTask`.
    */
   const openTask = (taskId: string): void => {
-    navigate(
-      familyRootIds.has(taskId) ? `/profile/counters/${taskId}` : `/tasks/${taskId}`,
-    );
+    navigate(`/tasks/${taskId}`);
   };
 
   // Resolve the row-level quick-action callbacks. The Tasks page owns

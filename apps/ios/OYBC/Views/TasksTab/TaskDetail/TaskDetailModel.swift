@@ -21,6 +21,8 @@ struct TaskDetailModel: Equatable {
     enum Hero: Equatable {
         case none
         case counting(SquareSheetContent.ChildCount)
+        /// A counting task with no square in play: the all-time count, logging "now".
+        case boardlessCounting(SquareSheetContent.ChildCount)
         case normal(isDone: Bool, sealBlocked: Bool)
         case compound(SquareSheetContent.Compound, ruleLabel: String)
         case achievement(AchievementHero)
