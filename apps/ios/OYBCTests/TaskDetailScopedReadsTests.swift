@@ -175,4 +175,56 @@ final class TaskDetailScopedReadsTests: XCTestCase {
         XCTAssertEqual(asked, [false], "a write refresh doesn't reread the user's whole library")
         XCTAssertEqual(vm.userTasks.count, loadedCount)
     }
+
+    // MARK: - Board-less hero is optimistic
+
+    private func boardlessCount(_ vm: TaskDetailViewModel) -> CountValue? {
+        if case let .boardlessCounting(c)? = vm.model?.hero { return c.current }
+        return nil
+    }
+
+    func test_theBoardlessHeroMovesOnTap_holdsUntilTheSnapshotLands_andRollsBackOnFailure() async throws {
+        let db = try AppDatabase.makeTestInstance(); try K.seedUser(db)
+        var counter = K.task("solo", maxCount: nil); counter.isCounter = true
+        try db.saveTask(counter)
+        let vm = TaskDetailViewModel(taskId: "solo", database: db, now: { Date(timeIntervalSince1970: 1_792_000_000) })
+        await vm.load()
+        for _ in 0..<500 where vm.model == nil { try await _Concurrency.Task.sleep(nanoseconds: 10_000_000) }
+        XCTAssertEqual(boardlessCount(vm), 0)
+
+        var samples: [CountValue] = []
+        let sub = vm.$model.sink { m in if case let .boardlessCounting(c)? = m?.hero { samples.append(c.current) } }
+        defer { sub.cancel() }
+
+        // Hold the post-write refresh so "write landed, snapshot pending" is observable.
+        let started = DispatchSemaphore(value: 0), release = DispatchSemaphore(value: 0)
+        vm.snapshotFetcher = { id, database, includeUserTasks in
+            started.signal(); release.wait()
+            return try TaskDetailViewModel.fetchSnapshot(taskId: id, database: database, includeUserTasks: includeUserTasks)
+        }
+        vm.log(amount: 5)
+        XCTAssertEqual(boardlessCount(vm), 5, "moves on the tap, before the write")
+        await _Concurrency.Task.detached { started.wait() }.value // the write landed; its refresh is in flight
+        XCTAssertEqual(try db.fetchTask(id: "solo")?.currentCount, 5)
+        XCTAssertEqual(boardlessCount(vm), 5, "held by the delta while the snapshot is pending")
+        release.signal()
+        for _ in 0..<500 where vm.isBusy { try await _Concurrency.Task.sleep(nanoseconds: 10_000_000) }
+        XCTAssertEqual(boardlessCount(vm), 5, "snapshot applied, delta cleared: still 5, not 10")
+        XCTAssertEqual(samples, samples.sorted(), "never new -> old -> new")
+        XCTAssertEqual(samples.last, 5)
+
+        // Undo moves at once as well.
+        release.signal()
+        vm.undo()
+        XCTAssertEqual(boardlessCount(vm), 0)
+        for _ in 0..<500 where vm.isBusy { try await _Concurrency.Task.sleep(nanoseconds: 10_000_000) }
+        XCTAssertEqual(boardlessCount(vm), 0)
+
+        // A failed write rolls back.
+        try db.write { try $0.execute(sql: "DROP TABLE task_events") }
+        vm.log(amount: 3)
+        for _ in 0..<500 where vm.isBusy { try await _Concurrency.Task.sleep(nanoseconds: 10_000_000) }
+        XCTAssertEqual(boardlessCount(vm), 0, "rolled back")
+        XCTAssertNotNil(vm.saveError)
+    }
 }

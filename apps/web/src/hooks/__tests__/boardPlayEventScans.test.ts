@@ -21,8 +21,12 @@ vi.mock('dexie-react-hooks', () => ({
   },
 }));
 
+// CI has no `.env.local`; the hooks barrel reaches the Firebase config.
+vi.mock('../../firebase/config', () => ({ auth: {}, firestore: {} }));
+
 const { useBoardPlayData } = await import('../useBoardPlayData');
-const { useTaskLibrary, useLibraryEventsByTaskId } = await import('../../pages/createPage/useTaskLibrary');
+const { useTaskLibrary } = await import('../../pages/createPage/useTaskLibrary');
+const { useLibraryEventsByTaskId } = await import('../../pages/createPage/useLibraryEventsByTaskId');
 
 const NOW = '2026-01-01T00:00:00.000Z';
 const board: Board = {

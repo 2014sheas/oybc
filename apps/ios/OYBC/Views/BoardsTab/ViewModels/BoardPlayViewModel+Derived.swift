@@ -96,6 +96,16 @@ extension BoardPlayViewModel {
         return render.baseCount + (pendingCountDeltas[key] ?? 0)
     }
 
+    /// Whether a cell paints complete. A counting square with an optimistic delta in flight follows
+    /// the moved count against the placement goal the cell shows (`goal > 0 && count >= goal`), in
+    /// both directions — going green on a log and un-green on a removal / Undo (web: `boardPlayCells`).
+    func displayCompleted(of render: PlacementRender) -> Bool {
+        guard render.countFamilyKey != nil, !isSealedBoard else { return render.isCompleted }
+        let shown = displayCount(of: render)
+        guard shown != render.baseCount else { return render.isCompleted }
+        return render.maxCount > 0 && shown >= render.maxCount
+    }
+
     /// The hold menu's input with the live busy look and any optimistic count folded in.
     func menuInput(for render: PlacementRender) -> SquareMenuInput? {
         guard var input = render.menu else { return nil }

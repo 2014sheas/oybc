@@ -43,6 +43,14 @@ function persistDefault(taskId: string, amount: number): void {
 }
 
 /**
+ * Reverses a counter's latest log under a pending hold. Resolves void (the Undo
+ * contract); the hold is kept only when something was actually reversed.
+ */
+async function undoCounter(d: WriteDeps, key: string, delta: number, sourceId: string): Promise<void> {
+  await d.play.withPending(key, delta, () => d.play.undoCounterLog(sourceId), (reversed) => reversed);
+}
+
+/**
  * Adds / removes an amount on a Counting square. A shared counter writes
  * through its source (which persists its own default); a standalone square
  * reads its prior count INSIDE the write (`logStandaloneCount`).
@@ -66,7 +74,7 @@ export async function countingLog(
           : d.play.handleSharedCounterDecrement(sourceId, amount, false)),
         (n) => n > 0,
       );
-      if (applied > 0) out = { applied, undo: () => d.play.withPending(key, -sign * applied, () => d.play.undoCounterLog(sourceId), () => true) };
+      if (applied > 0) out = { applied, undo: () => undoCounter(d, key, -sign * applied, sourceId) };
       return;
     }
     const r = await d.play.withPending(key, sign * amount, () => d.play.logStandaloneCount(bt.id, sign * amount), (c) => c !== null);
@@ -103,7 +111,7 @@ async function childStep(
   // Undo reverses exactly what was applied: a linked child's log undoes on its counter,
   // anything else steps the other way.
   const reverse = async (): Promise<boolean | void> => {
-    if (direction > 0 && childSource) return d.play.withPending(key, -applied, () => d.play.undoCounterLog(childSource), () => true);
+    if (direction > 0 && childSource) return undoCounter(d, key, -applied, childSource);
     const back = (direction > 0 ? -1 : 1) as 1 | -1;
     return d.play.withPending<boolean>(key, back * applied, () => d.play.handleCompoundChildIncrement(childTaskId, back, applied).then((n) => n > 0), (ok) => ok);
   };

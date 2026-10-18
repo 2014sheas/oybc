@@ -71,7 +71,7 @@ final class BoardPlayViewModel: ObservableObject {
     /// True while an interaction write (tap / stepper / swap / add / remove) is in
     /// flight. The view reads this to disable controls; only the moved handlers mutate it.
     /// A write ending (success AFTER its reload applied, or failure) drops its optimistic count with it.
-    @Published private(set) var isProcessing = false { didSet { if !isProcessing { pendingCountDeltas = [:] } } }
+    @Published private(set) var isProcessing = false { didSet { if !isProcessing { pendingCountDeltas = [:]; runDeferredSyncReload() } } }
     /// +BoardActions' write seam for `isProcessing` (the setter stays private to the VM file).
     func setProcessing(_ value: Bool) { isProcessing = value }
     /// Optimistic count deltas of the write in flight, by counter family (`countFamilyKey`): added on
@@ -82,6 +82,8 @@ final class BoardPlayViewModel: ObservableObject {
     /// (controls go inert at once via `isProcessing`; they just don't dim for a fast write).
     @Published private(set) var showsBusyLook = false
     private var busyLookSub: AnyCancellable?
+    /// A sync pull landed while a write was in flight; its reload runs once the write ends (see `+SyncReload`).
+    var syncReloadDeferred = false
     /// Per-apply lookups + per-placement render inputs (see `BoardPlayViewModel+Derived.swift`).
     private(set) var derived = BoardPlayDerived()
     /// Test hook: seconds `reload` waits before fetching, to widen the write-done / reload-pending window. Always 0 in production.
@@ -319,33 +321,6 @@ final class BoardPlayViewModel: ObservableObject {
     /// reload — the caller reloads immediately after.
     func setUserId(_ userId: String?) {
         self.userId = userId
-    }
-
-    /// Board-integrity PR-4 (Item 5): reload in response to a sync pull's
-    /// post-apply signal.
-    ///
-    /// Guard: skips while `editSaveInFlight` — `handleEditSave`'s own commit
-    /// runs the composed write transaction (Item 3) and then calls `reload()`
-    /// itself on success; a pull-triggered reload racing in in the middle
-    /// would either be immediately superseded by that follow-up reload (the
-    /// `reloadToken` stale-result guard keeps whichever finishes last) or, in
-    /// the worst case, briefly show a stale grid mid-Save — never a torn
-    /// write, since `reload()` never writes.
-    ///
-    /// Residual (not guarded here): a reload while the user is IN edit mode
-    /// with unsaved staged changes (editMode == true but editSaveInFlight ==
-    /// false — `editMode` itself is view-side `@State`, not visible to the
-    /// VM). `editSquaresDraft` / `editTaskOverrides` are separate `@Published`
-    /// state seeded once from `boardTasks` at edit-mode-entry
-    /// (`seedEditDraft`), so a reload's fresh `boardTasks` does NOT
-    /// retroactively rewrite the staged draft — only the read-only grid
-    /// behind the edit panel would refresh. This matches how a local tap's
-    /// reload already behaves while edit mode is open today (no worse than
-    /// existing behavior), so it's left unguarded rather than threading a
-    /// second view-owned flag down into the VM.
-    private func handleSyncDidApplyChanges() {
-        guard !editSaveInFlight else { return }
-        reload()
     }
 
     // MARK: - Actions

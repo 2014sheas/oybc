@@ -981,7 +981,7 @@ struct BoardPlayView: View {
         RisoBoardPlayCell(
             title: task?.title ?? "Unknown",
             taskType: cellKind,
-            isCompleted: render.isCompleted,
+            isCompleted: viewModel.displayCompleted(of: render),
             isBingoLine: highlighted.contains(index),
             isCenter: false,
             isInteractionLocked: false, // a closed board still opens the read-only square sheet

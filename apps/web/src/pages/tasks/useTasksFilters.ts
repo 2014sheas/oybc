@@ -13,7 +13,8 @@ import {
   type TaskEvent,
 } from '@oybc/shared';
 import { fetchAllBoards, fetchAllBoardTasks } from '../../db/operations';
-import { useLibraryEventsByTaskId, type TaskLibrary } from '../createPage/useTaskLibrary';
+import type { TaskLibrary } from '../createPage/useTaskLibrary';
+import { useLibraryEventsByTaskId } from '../createPage/useLibraryEventsByTaskId';
 import { taskSearchMatchesWithCounter, type TaskLookup } from '../../components/counters/rowCounterTagName';
 import { counterRootIdsIn, isExpiredForBrowse } from '../../components/wizard/quickAddCounterPlacement';
 

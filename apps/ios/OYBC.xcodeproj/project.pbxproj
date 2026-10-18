@@ -81,6 +81,7 @@
 		1DA505C6223426215FFD8BD4 /* SourceSheetBoardEntriesTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC491DEE8ABF2C8193A95057 /* SourceSheetBoardEntriesTests.swift */; };
 		1E9B61DCAA4CE9FD7198008F /* BoardActionsPresenter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3EF8D38247562ED09748B5E1 /* BoardActionsPresenter.swift */; };
 		1F1DE6A2D02B0EB1BC972FC0 /* MomentSample.swift in Sources */ = {isa = PBXBuildFile; fileRef = E979EFDA0F76FCFE685AA5ED /* MomentSample.swift */; };
+		1F34179FF617AA6164AB9939 /* BoardPlayViewModel+SyncReload.swift in Sources */ = {isa = PBXBuildFile; fileRef = CBB2A0479EA713ACFF4D8A3E /* BoardPlayViewModel+SyncReload.swift */; };
 		1F86E90477B32252B675108D /* AppDatabase+CompoundStructureEdit.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB048DAB5D5A772C210BADB6 /* AppDatabase+CompoundStructureEdit.swift */; };
 		2015EA2FCCA896B9F131C1E7 /* SyncQueueBuilder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8909013EF9D9767B1F494EAF /* SyncQueueBuilder.swift */; };
 		20303A5F782938E9478A07B5 /* TaskLibraryViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2C781A106EEE50F8886C0DBE /* TaskLibraryViewModel.swift */; };
@@ -1265,6 +1266,7 @@
 		CB048DAB5D5A772C210BADB6 /* AppDatabase+CompoundStructureEdit.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AppDatabase+CompoundStructureEdit.swift"; sourceTree = "<group>"; };
 		CB485872FBBB0218FA812F8D /* LateLogInFlightGuardTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LateLogInFlightGuardTests.swift; sourceTree = "<group>"; };
 		CB54CA8DAE5996104CB72DA8 /* TaskIdItem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskIdItem.swift; sourceTree = "<group>"; };
+		CBB2A0479EA713ACFF4D8A3E /* BoardPlayViewModel+SyncReload.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "BoardPlayViewModel+SyncReload.swift"; sourceTree = "<group>"; };
 		CC2241CE9069C5B296837472 /* TimeframeFormatting.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimeframeFormatting.swift; sourceTree = "<group>"; };
 		CC4A22E2E4D5599195C9B9D1 /* ProviderState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderState.swift; sourceTree = "<group>"; };
 		CCB1F2EC19ED79761D9BC5C0 /* WindowStampedDerivedPerfTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowStampedDerivedPerfTests.swift; sourceTree = "<group>"; };
@@ -1402,7 +1404,7 @@
 		FF5F9FDA837D8BC9484CCF6C /* CoreBoardDefault.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoreBoardDefault.swift; sourceTree = "<group>"; };
 		FF67441213041C9A9901261C /* RisoCoreTimeframeGrid.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RisoCoreTimeframeGrid.swift; sourceTree = "<group>"; };
 		FFB954BE701004999E12FBE9 /* CoreBoardWindowViewModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoreBoardWindowViewModelTests.swift; sourceTree = "<group>"; };
-		"TEMP_08FD524B-0682-4900-BF1B-E00B95D12134" /* Signing.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Signing.xcconfig; sourceTree = "<group>"; };
+		"TEMP_A5FF642D-4B79-4F32-B004-E262B1452BF4" /* Signing.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Signing.xcconfig; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -1704,6 +1706,7 @@
 				F64B7B140E47262BBDC36013 /* BoardPlayViewModel+SharedCounterWrites.swift */,
 				7A9E4F43EBF2FE4DD19D9B72 /* BoardPlayViewModel+SquareContent.swift */,
 				F2C4DA9CD6F3599BF5FE97BA /* BoardPlayViewModel+SquareSheet.swift */,
+				CBB2A0479EA713ACFF4D8A3E /* BoardPlayViewModel+SyncReload.swift */,
 				108DAB32D75769C532DD56E0 /* BoardPlayViewModel+Window.swift */,
 				47517530008B9B3DD408CB3B /* CoreBoardWindowViewModel.swift */,
 			);
@@ -2391,10 +2394,10 @@
 			path = OYBCUITests;
 			sourceTree = "<group>";
 		};
-		"TEMP_18B6DEE5-A606-4408-9A95-4F370B247F28" /* ios */ = {
+		"TEMP_F846A2C8-911E-4E59-B910-FBD7CE37A2F7" /* ios */ = {
 			isa = PBXGroup;
 			children = (
-				"TEMP_08FD524B-0682-4900-BF1B-E00B95D12134" /* Signing.xcconfig */,
+				"TEMP_A5FF642D-4B79-4F32-B004-E262B1452BF4" /* Signing.xcconfig */,
 			);
 			path = ios;
 			sourceTree = "<group>";
@@ -2709,6 +2712,7 @@
 				339DBC1F0999C33EC4E7A1B8 /* BoardPlayViewModel+SharedCounterWrites.swift in Sources */,
 				2EE35E9B16B639BFEC076365 /* BoardPlayViewModel+SquareContent.swift in Sources */,
 				703A14360E1BFD95FD2B5217 /* BoardPlayViewModel+SquareSheet.swift in Sources */,
+				1F34179FF617AA6164AB9939 /* BoardPlayViewModel+SyncReload.swift in Sources */,
 				52B416C9FF8F4BD8FAE81F95 /* BoardPlayViewModel+Window.swift in Sources */,
 				9A8E4D538167A7565D607C18 /* BoardPlayViewModel.swift in Sources */,
 				7AA6F2FF45FEA7537E0A3922 /* BoardPreviewCells.swift in Sources */,
@@ -3306,7 +3310,7 @@
 /* Begin XCBuildConfiguration section */
 		017A8B55D46C455027C5CBDA /* Debug */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = "TEMP_08FD524B-0682-4900-BF1B-E00B95D12134" /* Signing.xcconfig */;
+			baseConfigurationReference = "TEMP_A5FF642D-4B79-4F32-B004-E262B1452BF4" /* Signing.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = OYBC/OYBC.entitlements;
@@ -3403,7 +3407,7 @@
 		};
 		2D2075CA2813758686875591 /* Release */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = "TEMP_08FD524B-0682-4900-BF1B-E00B95D12134" /* Signing.xcconfig */;
+			baseConfigurationReference = "TEMP_A5FF642D-4B79-4F32-B004-E262B1452BF4" /* Signing.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = OYBC/OYBC.entitlements;

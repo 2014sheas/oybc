@@ -76,7 +76,7 @@ export function BoardlessCountingHero({ task, counterRoot, trailing }: Boardless
         if (persist) await setCounterDefaultLogAmount(id, amount);
         return {
           text: logStripText('logged', amount, kind, unit, ALL_TIME),
-          undo: () => withPending(id, -amount, () => undoLastCounterLog(id), () => true),
+          undo: () => withPending(id, -amount, () => undoLastCounterLog(id), (r) => r.undoneAmount !== 0),
         };
       }
       const { effectiveDelta } = await withPending(id, -amount, () => decrementSharedCounter(id, amount), (r) => r.effectiveDelta !== 0);

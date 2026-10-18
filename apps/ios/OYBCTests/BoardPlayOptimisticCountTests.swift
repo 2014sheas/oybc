@@ -193,4 +193,56 @@ final class BoardPlayOptimisticCountTests: XCTestCase {
         XCTAssertTrue(waitUntil { !vm.isProcessing })
         XCTAssertFalse(vm.showsBusyLook, "clears with the write")
     }
+
+    // MARK: Completed state follows the optimistic count (web parity)
+
+    func test_aCellGoesGreenAndBackWithTheOptimisticCount() throws {
+        let db = try AppDatabase.makeTestInstance(); try seed(db, counterRoot: true)
+        let vm = loadedVM(db)
+        let bt = try XCTUnwrap(vm.boardTasks.first)
+        let render = { vm.placementRender(for: bt) }
+        XCTAssertFalse(vm.displayCompleted(of: render()))
+
+        vm.snapshotDelay = 0.4
+        vm.handleCountingTap(boardTask: bt, task: try XCTUnwrap(vm.taskMap["c1"]), amount: 20) // the goal
+        XCTAssertEqual(shown(vm), 20)
+        XCTAssertTrue(vm.displayCompleted(of: render()), "green on the tap, before the reload")
+        XCTAssertTrue(waitUntil { !vm.isProcessing })
+        XCTAssertTrue(vm.displayCompleted(of: render()), "and still green once loaded")
+
+        vm.snapshotDelay = 0.4
+        vm.undoSharedCounterLog(sourceTaskId: "c1")
+        XCTAssertEqual(shown(vm), 0)
+        XCTAssertFalse(vm.displayCompleted(of: render()), "un-green on the Undo tap")
+        XCTAssertTrue(waitUntil { !vm.isProcessing })
+        XCTAssertFalse(vm.displayCompleted(of: render()))
+    }
+
+    // MARK: Sync reloads wait for an in-flight write
+
+    func test_aSyncReloadDuringAWriteIsDeferredUntilTheWriteEnds() throws {
+        let db = try AppDatabase.makeTestInstance(); try seed(db, counterRoot: true)
+        let vm = loadedVM(db)
+        let bt = try XCTUnwrap(vm.boardTasks.first)
+        let applies = vm.applyCount
+        vm.snapshotDelay = 0.4
+        vm.handleCountingTap(boardTask: bt, task: try XCTUnwrap(vm.taskMap["c1"]), amount: 5)
+        XCTAssertTrue(vm.isProcessing)
+
+        vm.handleSyncDidApplyChanges()
+        XCTAssertTrue(vm.syncReloadDeferred, "parked, not run: it could read the write while the delta is pending")
+
+        XCTAssertTrue(waitUntil { !vm.isProcessing })
+        vm.snapshotDelay = 0
+        XCTAssertTrue(waitUntil { vm.applyCount >= applies + 2 }, "the deferred reload ran once after the write")
+        _ = waitUntil(timeout: 0.5) { false }
+        XCTAssertEqual(vm.applyCount, applies + 2)
+        XCTAssertFalse(vm.syncReloadDeferred)
+        XCTAssertEqual(shown(vm), 5)
+
+        let idle = vm.applyCount
+        vm.handleSyncDidApplyChanges() // idle: reloads at once
+        XCTAssertFalse(vm.syncReloadDeferred)
+        XCTAssertTrue(waitUntil { vm.applyCount > idle })
+    }
 }

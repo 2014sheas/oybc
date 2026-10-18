@@ -9,14 +9,12 @@ import {
   type CompoundChild,
   type Board,
   type BoardTask,
-  type TaskEvent,
 } from '@oybc/shared';
 import {
   fetchAllBoards,
   fetchAllBoardTasks,
   fetchAllCompoundChildren,
 } from '../../db/operations';
-import { buildWindowContext } from '../../db/operations/windowContext';
 import { useTasks } from '../../hooks';
 
 // Stable empty fallbacks for `?? FALLBACK` — see BoardPlayPage.tsx for rationale.
@@ -24,7 +22,6 @@ const EMPTY_TASKS = Object.freeze([]) as unknown as Task[];
 const EMPTY_COMPOUND_CHILDREN = Object.freeze([]) as unknown as CompoundChild[];
 const EMPTY_BOARD_TASKS = Object.freeze([]) as unknown as BoardTask[];
 const EMPTY_BOARDS = Object.freeze([]) as unknown as Board[];
-const EMPTY_EVENTS_BY_TASK_ID: Record<string, TaskEvent[]> = Object.freeze({}) as Record<string, TaskEvent[]>;
 
 /**
  * Loads the user's task library — unified under the compound model.
@@ -123,22 +120,6 @@ export function useTaskLibrary(userId: string | undefined): TaskLibrary {
     childTaskIds,
     childToParents,
   };
-}
-
-/**
- * Every non-deleted `taskEvents` row in the workspace, grouped by `taskId`
- * (Gate 1 ruling, slice 2c). Context-less library readers
- * (`contextlessCounterState`) sum a counter's lifetime events from it.
- *
- * Opt-in on purpose: it is a full `taskEvents` scan that re-runs on every
- * event write, so only the Tasks tab's status filters call it. It used to be
- * part of `useTaskLibrary`, which made every board render pay for the scan on
- * every log.
- */
-export function useLibraryEventsByTaskId(): Record<string, TaskEvent[]> {
-  return (
-    useLiveQuery(async () => (await buildWindowContext()).eventsByTaskId, []) ?? EMPTY_EVENTS_BY_TASK_ID
-  );
 }
 
 /**

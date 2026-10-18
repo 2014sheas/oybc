@@ -238,6 +238,12 @@ final class TaskDetailViewModel: ObservableObject {
     /// A refresh was requested while one was in flight: its snapshot may predate that write, so
     /// run once more when the in-flight fetch lands (a dropped request left the lower sections stale).
     private var refreshQueued = false
+    /// The board-less hero's optimistic delta (web `BoardlessCountingHero`): added to its all-time count
+    /// from the tap until the snapshot carrying the write has applied, or the write fails.
+    private var boardlessPending: CountValue = 0
+    /// The board-less write has committed: a refresh that STARTS now carries it, so applying that one
+    /// clears `boardlessPending` (an earlier in-flight refresh must not — it predates the write).
+    private var boardlessWriteLanded = false
     /// Re-reads the non-anchor sections after a write. Coalesces: a request during a fetch sets a
     /// dirty flag and the loop reads again afterwards, so the last write is always reflected.
     func refreshAfterWrite() async {
@@ -247,11 +253,13 @@ final class TaskDetailViewModel: ObservableObject {
         repeat {
             refreshQueued = false
             let id = taskId, db = database, fetch = snapshotFetcher
+            let carriesBoardlessWrite = boardlessWriteLanded
             guard let snap = try? await _Concurrency.Task.detached(priority: .userInitiated, operation: {
                 try fetch(id, db, false)
             }).value, id == taskId else { continue }
             snapshot = snap
             task = snap.task
+            if carriesBoardlessWrite { clearBoardlessPending() }
             rebuild()
         } while refreshQueued
     }
@@ -354,7 +362,7 @@ final class TaskDetailViewModel: ObservableObject {
         } else if anchorChoice == nil, task.type == .counting {
             // No square in play: the board-less control over the all-time count.
             let source = boardlessSource(snap)
-            let current = source?.currentCount ?? 0
+            let current = (source?.currentCount ?? 0) + boardlessPending
             hero = .boardlessCounting(.init(
                 current: current, goal: 0, unit: source?.unit ?? task.unit ?? "", kind: family,
                 chips: CounterLogAmount.tapChips(kind: family, goal: nil)
@@ -567,6 +575,10 @@ final class TaskDetailViewModel: ObservableObject {
         let kind = resolveFamilyCountKind(source, lookup: { $0 == source.id ? source : nil })
         let unit = source.unit ?? ""
         strip = nil
+        // The number moves on the tap; a removal never shows below zero.
+        boardlessPending = removing ? -min(amount, source.currentCount ?? 0) : amount
+        boardlessWriteLanded = false
+        rebuild()
         isBusy = true
         _Concurrency.Task {
             defer { isBusy = false }
@@ -577,7 +589,9 @@ final class TaskDetailViewModel: ObservableObject {
                     if persistAsDefault { try db.setCounterDefaultLogAmount(sourceTaskId: id, amount: amount) }
                     return amount
                 }.value
+                boardlessWriteLanded = true
                 await refreshAfterWrite()
+                if !refreshing { clearBoardlessPending() } // the refresh failed or was folded: don't strand the delta
                 guard applied != 0 else { return }
                 strip = SquareLogStrip(
                     boardTaskId: "", scopeTaskId: taskId,
@@ -585,6 +599,7 @@ final class TaskDetailViewModel: ObservableObject {
                     undo: applied > 0 ? .counterLog(sourceTaskId: id) : .childDelta(taskId: id, delta: applied)
                 )
             } catch {
+                clearBoardlessPending()
                 saveError = "Couldn't log: \(error.localizedDescription)"
             }
         }
@@ -593,6 +608,17 @@ final class TaskDetailViewModel: ObservableObject {
     /// Reverses a board-less write: the counter's last log entry, or re-adds a removal.
     private func boardlessUndo(_ undo: SquareLogUndo) {
         let db = database
+        // Undo moves the number at once too: the entry it will reverse / the removal it re-adds.
+        switch undo {
+        case let .counterLog(id):
+            boardlessPending = -(selectLastIncrementEntry(events: snapshot?.events[id] ?? [], sourceTaskId: id)?.delta ?? 0)
+        case let .childDelta(_, delta) where delta < 0:
+            boardlessPending = -delta
+        default:
+            boardlessPending = 0
+        }
+        boardlessWriteLanded = false
+        rebuild()
         isBusy = true
         _Concurrency.Task {
             defer { isBusy = false }
@@ -604,11 +630,23 @@ final class TaskDetailViewModel: ObservableObject {
                     default: break
                     }
                 }.value
+                boardlessWriteLanded = true
                 await refreshAfterWrite()
+                if !refreshing { clearBoardlessPending() }
             } catch {
+                clearBoardlessPending()
                 saveError = "Couldn't undo: \(error.localizedDescription)"
             }
         }
+    }
+
+    /// Drops the board-less optimistic delta (the snapshot now carries the write, or the write failed)
+    /// and rebuilds when it was non-zero.
+    private func clearBoardlessPending() {
+        let had = boardlessPending != 0
+        boardlessPending = 0
+        boardlessWriteLanded = false
+        if had { rebuild() }
     }
 
     /// The board-less hero's label (the count's scope).

@@ -5,7 +5,7 @@ import Foundation
 /// amended 2026-10-18): controls turn non-interactive the moment a write starts (the
 /// re-entrancy guard is unchanged), but the dimmed look (45% opacity, collapsed hard
 /// shadow) appears only when the write is still in flight after `delay` — a fast write
-/// never flashes the dim. Web twin: `BUSY_LOOK_DELAY_MS` in `utils/busyLook.ts`.
+/// never flashes the dim. Web twin: `BUSY_LOOK_DELAY_MS` in `hooks/useBusyLook.ts`.
 enum BusyLook {
     /// Seconds a write must stay in flight before the dimmed look shows.
     static let delay: TimeInterval = 0.25
