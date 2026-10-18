@@ -10,7 +10,8 @@ import {
 import { db } from '../internal';
 import { runBoardCascadeForTasks } from './orchestration';
 import { recomputeTaskCachesFromPull } from './taskEvents';
-import { refreshDerivedBaselines, withWindowStampedDerived } from './derivedCounters';
+import { refreshDerivedBaselines } from './derivedCounters';
+import { loadPlacementReach } from './placementReach';
 import { addToSyncQueue, stampTransactionSyncOwner } from './syncQueue';
 import { reDeriveSealedBoardsForTasks } from './sealing';
 import { refreshWatchersForBoards, resolveAffectedBoardIds } from './boardLifecycle';
@@ -119,7 +120,7 @@ export async function applyTaskEventsBatch(
       //    Expanded to the window-stamped derived rows of each affected root:
       //    the root is never placed, but those rows resolve from its events.
       if (cascadeTaskIds.size > 0) {
-        await runBoardCascadeForTasks(await withWindowStampedDerived(cascadeTaskIds));
+        await runBoardCascadeForTasks((await loadPlacementReach(cascadeTaskIds)).taskIds);
       }
 
       // 5. Seal re-derivation (docs §Seal snapshots re-derive from the event
@@ -227,7 +228,7 @@ export async function healMissingCompletionEvents(userId: string): Promise<numbe
         // is a new pre-window occurrence for any derived counter on this root.
         await refreshDerivedBaselines(taskId);
       }
-      await runBoardCascadeForTasks(await withWindowStampedDerived(healedTaskIds));
+      await runBoardCascadeForTasks((await loadPlacementReach(healedTaskIds)).taskIds);
       await reDeriveSealedBoardsForTasks(healedTaskIds);
     },
   );

@@ -28,7 +28,8 @@
 
 import type { Task } from '../types/task';
 import type { CompoundChild } from '../types/compoundChild';
-import { withChildTarget, withPlacementParams } from './placementParams';
+import { resolveLinkedCounterDisplay, withChildTarget, withPlacementParams } from './placementParams';
+import { placementsReachedByRoot } from './derivationPass';
 import type { Board } from '../types/board';
 import type { BoardTask } from '../types/boardTask';
 import type { TaskEvent } from '../types/taskEvent';
@@ -37,12 +38,7 @@ import { quantizeCount, resolveCountKind, type CountKind } from './countValue';
 import { deriveDisplayedCount } from './sharedCounter';
 import { formatTimeframeLabel } from './calendarBoundaries';
 import { counterDisplayName } from './counterSettings';
-import {
-  boardWindowEnd,
-  boundWindowContextAtSeal,
-  resolveLinkedCounterDisplay,
-  resolveTaskWindowState,
-} from './taskEvents';
+import { boardWindowEnd, boundWindowContextAtSeal, resolveTaskWindowState } from './taskEvents';
 import { isTaskExpired } from './taskExpiry';
 import { isBoardActiveForList, type InPlayBoardFields } from './boardListSort';
 
@@ -304,14 +300,11 @@ export function buildSharedCounterGroups(
   const boardsById = new Map<string, Board>(input.boards.map((b) => [b.id, b]));
   const now = input.memberVisibility?.now ?? new Date();
   const livePlacements = input.boardTasks.filter((bt) => !bt.isDeleted);
-  // Live compound links by CHILD — the parents a linked task is reached through.
-  const parentsByChild = new Map<string, string[]>();
-  for (const c of input.compoundChildren ?? []) {
-    if (c.isDeleted) continue;
-    const list = parentsByChild.get(c.childTaskId) ?? [];
-    list.push(c.compoundTaskId);
-    parentsByChild.set(c.childTaskId, list);
-  }
+  // A card IS a placement: the ONE reach (slice 2c) — the root's own
+  // placements, its linked rows' placements and the placements of their
+  // transitive parent compounds — shared with the cascade and the sealed
+  // re-derive, so the hub can never list a square the kernel doesn't reach.
+  const reachLookups = { tasks, compoundChildren: input.compoundChildren ?? [], boardTasks: livePlacements };
 
   // Source task ids = every task pointed at by a live linked task's
   // `sharedCounterId`, PLUS the P5 hub-born counters (a COUNTING task flagged
@@ -347,24 +340,6 @@ export function buildSharedCounterGroups(
     // The root is the title-settings source for its linked cards (web `placedTaskFor`).
     const settings = source;
     const linkedById = new Map<string, Task>(linked.map((t) => [t.id, t]));
-    // Every (transitive) parent compound of a linked task → the linked
-    // children reached through it, direct children first.
-    const childrenViaCompound = new Map<string, Task[]>();
-    for (const child of linked) {
-      const seen = new Set<string>();
-      const stack = [...(parentsByChild.get(child.id) ?? [])];
-      while (stack.length > 0) {
-        const parentId = stack.pop() as string;
-        if (seen.has(parentId)) continue;
-        seen.add(parentId);
-        const parent = tasksById.get(parentId);
-        if (!parent || parent.type !== TaskType.COMPOUND) continue;
-        const list = childrenViaCompound.get(parentId) ?? [];
-        list.push(child);
-        childrenViaCompound.set(parentId, list);
-        stack.push(...(parentsByChild.get(parentId) ?? []));
-      }
-    }
 
     const boardIds = new Set<string>();
     const memberTaskIds = new Set<string>();
@@ -445,22 +420,23 @@ export function buildSharedCounterGroups(
     };
 
     const memberViews: SharedCounterMemberTask[] = [];
-    for (const bt of livePlacements) {
+    for (const { boardTask: bt, memberTaskId, viaCompoundId } of placementsReachedByRoot(sourceId, reachLookups).placements) {
       const board = boardsById.get(bt.boardId);
       if (!board || board.isDeleted || isExpiredPlacement(board)) continue;
-      if (bt.taskId === sourceId) {
+      if (memberTaskId === sourceId) {
+        if (viaCompoundId !== null) continue; // a root is never a compound child
         memberViews.push(card(bt, board, withPlacementParams(source, bt, settings), 'root', null));
         continue;
       }
-      const linkedTask = linkedById.get(bt.taskId);
-      if (linkedTask) {
+      // The reach lists every live linked row; the hub shows the visible ones.
+      const linkedTask = linkedById.get(memberTaskId);
+      if (!linkedTask) continue;
+      if (viaCompoundId === null) {
         memberViews.push(card(bt, board, withPlacementParams(linkedTask, bt, settings), 'linked', null));
         continue;
       }
-      for (const child of childrenViaCompound.get(bt.taskId) ?? []) {
-        // `childTargets` bind direct children only; a nested child keeps its own goal.
-        memberViews.push(card(bt, board, withChildTarget(child, bt.childTargets), 'child', bt.taskId));
-      }
+      // `childTargets` bind direct children only; a nested child keeps its own goal.
+      memberViews.push(card(bt, board, withChildTarget(linkedTask, bt.childTargets), 'child', viaCompoundId));
     }
 
     // Deterministic card order: root cards first, then by board name, task id, placement id.

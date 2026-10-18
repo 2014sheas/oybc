@@ -81,10 +81,51 @@ enum PlacementParams {
             return derived
         }
         if effective.type == .counting, let linked = effective.sharedCounterId, !linked.isEmpty {
-            // A hub-linked row with no host window: the context-less latch (slice 5 retires this).
-            return TaskWindowState(isCompleted: effective.isCompleted, count: effective.currentCount ?? 0)
+            // A linked row with no host window (library, compound Task Detail, a hub
+            // card with no board): the ROOT's lifetime events, never the latch (slice 2c).
+            return contextlessCounterState(task: effective, eventsByTaskId: ctx.eventsByTaskId)
         }
         let events = ctx.eventsByTaskId[effective.id] ?? []
         return resolveTaskWindowState(task: effective, events: events, windowStart: ctx.windowStart, windowEnd: ctx.windowEnd)
     }
+}
+
+/// What a LINKED counting square or row SHOWS: a thin wrapper over
+/// `PlacementParams.resolveSquareState` (TASK_WINDOW_REWORK slice 2c: display =
+/// kernel), so a cell can never paint green (or read N/N) while board stats
+/// count it incomplete.
+///
+/// - `window` given (the placing board's window) -> the ROOT's increment sum
+///   inside THAT window, whatever the row's own stamp says (slice 0);
+/// - no `window`, a window-stamped row -> its own stamp (retired in slice 5);
+/// - no `window`, any other linked row -> `contextlessCounterState` (the root's
+///   lifetime events). Neither `currentCount - baseline` nor the latch is read.
+///
+/// `sealedAt` (the row's board is sealed) bounds every event at that instant
+/// first (`boundWindowContextAtSeal`); an unparseable value applies no bound.
+/// `placement` applies the square's goal / kind / title first. Overshoot is
+/// shown, never high-clamped. Mirrors the TS `resolveLinkedCounterDisplay`;
+/// pinned by `taskWindowStateVectors.json#linkedCounterDisplay`.
+///
+/// - Parameters:
+///   - task: The linked counting task being rendered.
+///   - eventsByTaskId: Non-deleted events grouped by `taskId`, or `nil`.
+///   - sealedAt: The row's board `sealedAt`, when that board is sealed.
+///   - window: The placing board's window, when there is one.
+///   - placement: The square's placement parameters, when placed.
+/// - Returns: The displayed count and completion.
+func resolveLinkedCounterDisplay(
+    task: Task,
+    eventsByTaskId: [String: [TaskEvent]]?,
+    sealedAt: String? = nil,
+    window: LinkedCounterWindow? = nil,
+    placement: BoardTask? = nil
+) -> DeriveDisplayedCountResult {
+    var events = eventsByTaskId ?? [:]
+    if let sealedAt, let sealed = DateFormatting.parseISO(sealedAt) {
+        events = boundWindowContextAtSeal(eventsByTaskId: events, sealedAtMs: sealed.timeIntervalSince1970 * 1000).eventsByTaskId
+    }
+    let ctx = CompoundWindowContext(windowStart: window?.startDate, windowEnd: window?.endDate, eventsByTaskId: events)
+    let state = PlacementParams.resolveSquareState(task, placement: placement, ctx: ctx)
+    return DeriveDisplayedCountResult(displayed: state.count, isCompleted: state.isCompleted)
 }

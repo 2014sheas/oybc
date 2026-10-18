@@ -78,11 +78,13 @@ describe('TaskRow — shared-counter family root', () => {
     expect(html).toContain('aria-label="Open the Legacy row counter"');
   });
 
-  it('leaves a standalone counter alone — stored title, generated subtitle, its count', () => {
+  it('leaves a standalone counter alone — stored title, generated subtitle, no progress', () => {
     const html = render(counter(), false);
 
     expect(html).toContain('Read 35 pages');
-    expect(html).toContain('12 / 35');
+    // Library rows carry no progress (slice 2c): no status fragment.
+    expect(html).not.toContain('12 / 35');
+    expect(html).not.toContain('Completed');
     expect(html).toContain('aria-label="Open Read 35 pages details"');
     expect(html).not.toContain('Open the Read pages counter');
   });

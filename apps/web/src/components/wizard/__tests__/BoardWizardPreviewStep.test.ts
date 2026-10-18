@@ -5,7 +5,6 @@ import {
   CenterSquareType,
   Timeframe,
   TaskType,
-  sharedCounterRootIds,
   type BoardSource,
   type CompoundChild,
   type Task,
@@ -128,7 +127,7 @@ function makeLibrary(tasks: Task[]): TaskLibrary {
     compoundChildrenByCompound: {},
     childTaskIds: new Set<string>(),
     childToParents: {},
-    familyRootIds: sharedCounterRootIds(tasks),
+    eventsByTaskId: {},
   };
 }
 

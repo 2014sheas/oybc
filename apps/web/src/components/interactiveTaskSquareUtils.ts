@@ -84,10 +84,8 @@ export interface TaskSquareData {
   sharedCounterId?: string | null;
   /**
    * Phase 3 — Shared Counters. The baseline offset for a linked derived
-   * counter. Mirrors `Task.baseline`. Used by `taskToSquareState` to
-   * baseline-adjust `state.currentCount` via `deriveDisplayedCount` so
-   * the rendered value reflects the derived count, not the raw source
-   * accumulator.
+   * counter. Mirrors `Task.baseline`; display reads the root's events
+   * (`resolveLinkedCounterDisplay`), not this offset.
    *
    * Non-null only when `sharedCounterId` is non-null.
    */

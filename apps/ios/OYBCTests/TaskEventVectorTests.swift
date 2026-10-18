@@ -185,6 +185,14 @@ final class TaskEventVectorTests: XCTestCase {
         /// a non-window-stamped row; absent or null = no window.
         let window: Window?
         struct Window: Decodable { let startDate: String; let endDate: String? }
+        struct Placement: Decodable {
+            let targetOverride: CountValue?
+            let targetKind: CountKind?
+            let childTargets: [PlacementChildTarget]?
+            let titleOverride: String?
+        }
+        /// Optional (slice 2c) — the square's placement parameters.
+        let placement: Placement?
         let expected: Expected
     }
 
@@ -212,10 +220,58 @@ final class TaskEventVectorTests: XCTestCase {
                 })
             }
             let window = v.window.map { LinkedCounterWindow(startDate: $0.startDate, endDate: $0.endDate) }
+            let placement = v.placement.map {
+                BoardTask(
+                    id: "bt", boardId: "b", taskId: "t", row: 0, col: 0, isCenter: false,
+                    targetOverride: $0.targetOverride, targetKind: $0.targetKind,
+                    childTargets: $0.childTargets, titleOverride: $0.titleOverride,
+                    createdAt: ts, updatedAt: ts, version: 1
+                )
+            }
             let result = resolveLinkedCounterDisplay(
-                task: task, eventsByTaskId: events, sealedAt: v.sealedAt, window: window
+                task: task, eventsByTaskId: events, sealedAt: v.sealedAt, window: window, placement: placement
             )
             XCTAssertEqual(result.displayed, v.expected.displayed, "Vector '\(v.name)' displayed")
+            XCTAssertEqual(result.isCompleted, v.expected.isCompleted, "Vector '\(v.name)' isCompleted")
+        }
+    }
+
+    // MARK: - contextlessCounterState vectors (slice 2c)
+
+    private struct ContextlessVector: Decodable {
+        struct MiniTask: Decodable {
+            let id: String
+            let type: String
+            let maxCount: CountValue?
+            let sharedCounterId: String?
+            let countKind: CountKind?
+        }
+        let name: String
+        let task: MiniTask
+        let eventsByTaskId: [String: [WindowEvent]]?
+        let expected: WindowVector.Expected
+    }
+
+    private struct ContextlessFixture: Decodable { let contextlessCounterState: [ContextlessVector] }
+
+    func testContextlessCounterStateVectors() throws {
+        let fixture = try loadFixture("taskWindowStateVectors", as: ContextlessFixture.self)
+        XCTAssertFalse(fixture.contextlessCounterState.isEmpty)
+        for v in fixture.contextlessCounterState {
+            let m = v.task
+            let task = Task(
+                id: m.id, userId: "u", title: m.id,
+                type: TaskType(rawValue: m.type) ?? .normal,
+                maxCount: m.maxCount,
+                totalCompletions: 0, totalInstances: 0,
+                createdAt: ts, updatedAt: ts, version: 1, isDeleted: false,
+                sharedCounterId: m.sharedCounterId, countKind: m.countKind
+            )
+            let events = v.eventsByTaskId.map { map in
+                Dictionary(uniqueKeysWithValues: map.map { id, evs in (id, evs.map { makeEvent($0, taskId: id) }) })
+            }
+            let result = contextlessCounterState(task: task, eventsByTaskId: events)
+            XCTAssertEqual(result.count, v.expected.count, "Vector '\(v.name)' count")
             XCTAssertEqual(result.isCompleted, v.expected.isCompleted, "Vector '\(v.name)' isCompleted")
         }
     }

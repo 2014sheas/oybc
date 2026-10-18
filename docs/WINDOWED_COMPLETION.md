@@ -822,9 +822,9 @@ user-favorable double credit. That edge caused the root-square counter bug
   one seal re-derivation per affected sealed board — all inside the same
   transaction (per the atomic pull-path invariant). Do not bump `version` on the
   recompute stamps (pull paths don't author writes). A shared-counter ROOT is
-  never placed, but its window-stamped derived rows resolve from its events, so
-  both passes expand a changed root id to those rows
-  (`expandToWindowStampedDerived`); the sealed pass reads the root's events
+  never placed, but every live linked row resolves from its events, so both
+  passes walk the one placement reach from a changed root id
+  (`placementsReachedByTasks`, TASK_WINDOW_REWORK slice 2c); the sealed pass reads the root's events
   bounded at `sealedAt`, never a derived row's latch — a post-seal root
   increment leaves a sealed snapshot byte-stable, a late in-window one
   converges it (pinned end to end by web `derivedCounterSealedPull.test.ts` ↔

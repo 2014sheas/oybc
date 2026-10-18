@@ -456,6 +456,9 @@ final class AppDatabaseCounterLogOpsTests: XCTestCase {
         let after = try XCTUnwrap(try db.fetchTask(id: "l1"))
         XCTAssertEqual(after.currentCount, 0.5)
         XCTAssertFalse(after.isCompleted, "0.5 of 1 must not round up to complete")
-        XCTAssertEqual(TaskCountDisplay.displayedCount(for: after), 0.5)
+        let events = try db.read { dbc in try TaskEvent.filter(Column("taskId") == "r1").fetchAll(dbc) }
+        XCTAssertEqual(
+            TaskCountDisplay.displayedCount(for: after, eventsByTaskId: Dictionary(grouping: events, by: \.taskId)), 0.5
+        )
     }
 }

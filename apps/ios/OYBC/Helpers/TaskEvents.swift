@@ -363,96 +363,28 @@ func resolveDerivedCounterWindowState(
     return nil
 }
 
-/// What a LINKED (derived) counting square or row SHOWS: its displayed count
-/// and its completion — the events-based variant of `deriveDisplayedCount`
-/// (docs/WINDOWED_COMPLETION.md §Derived-task carve-out, amended 2026-09-23).
-///
-/// - Window-stamped (`BoardSources.isWindowStampedDerived`, `.counting`) with
-///   an event map: the ROOT's increment sum inside the row's own
-///   `[startDate, endDate]` via `resolveWindowStampedDerivedState` — the SAME
-///   function the kernel resolves the cell with, so a cell can never paint
-///   green (or read N/N) while board stats count it incomplete. With
-///   `sealedAt` (the row's board is sealed) root events after it are dropped
-///   first, matching `boundWindowContextAtSeal`; an unparseable `sealedAt`
-///   applies no bound. Overshoot is shown, never high-clamped.
-/// - Any other linked row (hub-linked, or windowed but not wizard-born) with
-///   an event map AND a `window` — the placing board's `[startDate, endDate]`
-///   (owner rule 2026-10-01): the ROOT's increment sum inside THAT window,
-///   bounded at `sealedAt` the same way. The kernel resolves the cell over the
-///   same context window (`resolveDerivedCounterWindowState`), so display and
-///   stats agree here too. The row's own `startDate` (if any) is NOT read.
-/// - No event map, or a non-window-stamped row with no `window` (library /
-///   lifetime readers): `currentCount − baseline` (low-clamped) for the count
-///   and the propagation-stamped latch `task.isCompleted` for completion — the
-///   only place the latch is still read for a linked row.
-///
-/// Mirrors the TS `resolveLinkedCounterDisplay`; pinned by
-/// `taskWindowStateVectors.json#linkedCounterDisplay`.
+/// A counting task's state with NO host window (TASK_WINDOW_REWORK slice 2c):
+/// the library, a compound Task Detail, a hub card with no board, the kernel's
+/// context-less linked branch. Reads EVENTS, never the propagation latch or
+/// `currentCount - baseline`: a LINKED row sums its ROOT's live increment
+/// events over the root's lifetime; a root / plain counter sums its own.
+/// Complete iff a goal exists and the sum reaches it (never green at 0 for a
+/// goal-less row). A missing key counts as no events; non-counting tasks
+/// return `(false, 0)`. Mirrors the TS `contextlessCounterState`.
 ///
 /// - Parameters:
-///   - task: The linked counting task being rendered.
+///   - task: The counting task (placement-adjusted when placed).
 ///   - eventsByTaskId: Non-deleted events grouped by `taskId`, or `nil`.
-///   - sealedAt: The row's board `sealedAt`, when that board is sealed.
-///   - window: The placing board's window. When given it is THE window for
-///     any linked row, stamped or not (slice 0); a stamped row reads its own
-///     stamp only without one.
-/// - Returns: The displayed count and completion.
-func resolveLinkedCounterDisplay(
-    task: Task,
-    eventsByTaskId: [String: [TaskEvent]]?,
-    sealedAt: String? = nil,
-    window: LinkedCounterWindow? = nil
-) -> DeriveDisplayedCountResult {
-    if let eventsByTaskId, task.type == .counting, let rootId = task.sharedCounterId,
-       BoardSources.isWindowStampedDerived(task) || window != nil {
-        // An unparseable `sealedAt` applies no bound (parsed once, not per event).
-        let sealedBound = sealedAt.flatMap { DateFormatting.parseISO($0) }
-        // Context window wins (slice 0): the placing board's window, when
-        // given, applies to a stamped row too; the own stamp is the
-        // context-less fallback only.
-        let state = windowStampedDerivedState(
-            startDate: window?.startDate ?? task.startDate,
-            endDate: window != nil ? window?.endDate : task.endDate,
-            maxCount: task.maxCount,
-            countKind: task.countKind,
-            rootEvents: eventsByTaskId[rootId] ?? [],
-            sealedBound: sealedBound
-        )
-        return DeriveDisplayedCountResult(displayed: state.count, isCompleted: state.isCompleted)
+/// - Returns: `{ isCompleted, count }` with `count` finalised at the task's kind.
+func contextlessCounterState(task: Task, eventsByTaskId: [String: [TaskEvent]]?) -> TaskWindowState {
+    guard task.type == .counting else { return TaskWindowState(isCompleted: false, count: 0) }
+    let ownerId = (task.sharedCounterId?.isEmpty == false) ? task.sharedCounterId! : task.id
+    var sum: CountValue = 0
+    for e in eventsByTaskId?[ownerId] ?? [] where !e.isDeleted && e.kind == .increment {
+        sum += e.delta ?? 0
     }
-    let shown = deriveDisplayedCount(
-        derivedBaseline: task.baseline ?? 0,
-        derivedMaxCount: task.maxCount ?? 0,
-        sourceCurrentCount: task.currentCount ?? 0,
-        countKind: task.countKind
-    )
-    return DeriveDisplayedCountResult(displayed: shown.displayed, isCompleted: task.isCompleted)
-}
-
-/// Cascade reachability for linked (derived) counters: `ids` UNION the ids
-/// of every LIVE row whose `sharedCounterId` is in `ids` — window-stamped AND
-/// hub-linked alike (owner rule 2026-10-01; before it, only
-/// `BoardSources.isWindowStampedDerived` rows were added). A root is never
-/// placed, but every linked row resolves FROM its events on a board (its own
-/// window, or the placing board's), so a changed root must reach the boards
-/// placing any of them — in the LIVE cascade, the SEALED re-derivation and
-/// the increment cascade alike. Non-root ids pass through. (The name predates
-/// the widening and is kept for its call sites.)
-///
-/// Mirrors the TS `expandToWindowStampedDerived`.
-///
-/// - Parameters:
-///   - ids: The task ids whose events changed.
-///   - tasks: Candidate rows (any superset of the linked rows).
-/// - Returns: `ids` plus the reachable linked row ids.
-func expandToWindowStampedDerived<S: Sequence>(ids: Set<String>, tasks: S) -> Set<String> where S.Element == Task {
-    var out = ids
-    guard !ids.isEmpty else { return out }
-    for t in tasks where !t.isDeleted {
-        guard let root = t.sharedCounterId, !root.isEmpty, ids.contains(root) else { continue }
-        out.insert(t.id)
-    }
-    return out
+    let count = finalizeWindowCount(sum, kind: resolveCountKind(task.countKind))
+    return TaskWindowState(isCompleted: task.maxCount.map { count >= $0 } ?? false, count: count)
 }
 
 /// Bound a window context's events at a sealed board's `sealedAt` (docs §Seal

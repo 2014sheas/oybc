@@ -276,6 +276,9 @@ function stateOf(
         const own = { windowStart: task.startDate as string, windowEnd: task.endDate ?? null };
         return completedBy(crossingEvent(eventsInWindow(rootEvents, own), task.maxCount ?? 0));
       }
+      // Context-less hub-linked row: the latch until slice 5 — but a goal-less
+      // row is never complete (the one completion rule, slice 2c).
+      if (task.maxCount == null) return INCOMPLETE;
       return latchState(task);
     }
     const events = ctx.eventsByTaskId[task.id] ?? [];

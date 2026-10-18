@@ -8,7 +8,8 @@ import {
 } from '@oybc/shared';
 import { db } from '../internal';
 import { runBoardCascadeForTasks } from './orchestration';
-import { refreshDerivedBaselines, withWindowStampedDerived } from './derivedCounters';
+import { refreshDerivedBaselines } from './derivedCounters';
+import { loadPlacementReach } from './placementReach';
 import { materializeWindowCopy } from './linkedCounterPlacement';
 import { addToSyncQueue, stampTransactionSyncOwner } from './syncQueue';
 import { reDeriveSealedBoardsForTasks } from './sealing';
@@ -198,7 +199,7 @@ export async function healLinkedCounterWindows(
       }
 
       for (const root of touchedRoots) await refreshDerivedBaselines(root);
-      const cascadeIds = await withWindowStampedDerived(new Set([...touchedIds, ...touchedRoots]));
+      const cascadeIds = (await loadPlacementReach(new Set([...touchedIds, ...touchedRoots]))).taskIds;
       await runBoardCascadeForTasks(cascadeIds);
       await reDeriveSealedBoardsForTasks(cascadeIds);
     },

@@ -261,9 +261,10 @@ func buildSharedCounterGroups(
     let boardsById = Dictionary(uniqueKeysWithValues: boards.map { ($0.id, $0) })
     let now = memberVisibility?.now ?? Date()
     let livePlacements = boardTasks.filter { !$0.isDeleted }
-    // Live compound links by CHILD — the parents a linked task is reached through.
-    var parentsByChild: [String: [String]] = [:]
-    for c in compoundChildren where !c.isDeleted { parentsByChild[c.childTaskId, default: []].append(c.compoundTaskId) }
+    // A card IS a placement: the ONE reach (slice 2c) — the root's own
+    // placements, its linked rows' placements and the placements of their
+    // transitive parent compounds — shared with the cascade and the sealed
+    // re-derive, so the hub can never list a square the kernel doesn't reach.
 
     // Map source task id → its linked tasks. The key set is
     // `sharedCounterRootIds` — every task pointed at by a live
@@ -297,21 +298,6 @@ func buildSharedCounterGroups(
         // The root is the title-settings source for its linked cards (`BoardPlayViewModel.placedTask`).
         let settings = CounterSettings.TitleSettings(task: source)
         let linkedById = Dictionary(uniqueKeysWithValues: linked.map { ($0.id, $0) })
-        // Every (transitive) parent compound of a linked task → the linked
-        // children reached through it, direct children first.
-        var childrenViaCompound: [String: [Task]] = [:]
-        for child in linked {
-            var seen = Set<String>()
-            var stack = parentsByChild[child.id] ?? []
-            while let parentId = stack.popLast() {
-                if seen.contains(parentId) { continue }
-                seen.insert(parentId)
-                guard let parent = tasksById[parentId], parent.type == .compound else { continue }
-                childrenViaCompound[parentId, default: []].append(child)
-                stack.append(contentsOf: parentsByChild[parentId] ?? [])
-            }
-        }
-
         var boardIdSet = Set<String>()
         var memberTaskIds = Set<String>()
         var activeTaskIds = Set<String>()
@@ -386,19 +372,24 @@ func buildSharedCounterGroups(
         }
 
         var memberViews: [SharedCounterMemberTask] = []
-        for bt in livePlacements {
+        let reached = DerivationPass.placementsReachedByRoot(
+            rootId: sourceId, tasks: liveTasks, compoundChildren: compoundChildren, boardTasks: livePlacements
+        ).placements
+        for hit in reached {
+            let bt = hit.boardTask
             guard let board = boardsById[bt.boardId], !board.isDeleted, !isExpiredPlacement(board) else { continue }
-            if bt.taskId == sourceId {
+            if hit.memberTaskId == sourceId {
+                if hit.viaCompoundId != nil { continue } // a root is never a compound child
                 memberViews.append(card(bt, board, PlacementParams.apply(source, placement: bt, settings: settings), isSource: true, viaCompoundId: nil))
                 continue
             }
-            if let linkedTask = linkedById[bt.taskId] {
-                memberViews.append(card(bt, board, PlacementParams.apply(linkedTask, placement: bt, settings: settings), isSource: false, viaCompoundId: nil))
-                continue
-            }
-            for child in childrenViaCompound[bt.taskId] ?? [] {
+            // The reach lists every live linked row; the hub shows the visible ones.
+            guard let linkedTask = linkedById[hit.memberTaskId] else { continue }
+            if let via = hit.viaCompoundId {
                 // `childTargets` bind direct children only; a nested child keeps its own goal.
-                memberViews.append(card(bt, board, PlacementParams.withChildTarget(child, childTargets: bt.childTargets), isSource: false, viaCompoundId: bt.taskId))
+                memberViews.append(card(bt, board, PlacementParams.withChildTarget(linkedTask, childTargets: bt.childTargets), isSource: false, viaCompoundId: via))
+            } else {
+                memberViews.append(card(bt, board, PlacementParams.apply(linkedTask, placement: bt, settings: settings), isSource: false, viaCompoundId: nil))
             }
         }
 

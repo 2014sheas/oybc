@@ -6,10 +6,8 @@ import {
   boardDerivedStateChanged,
   computeBoardStatsUpdate,
   computeSealedCompletedCells,
-  findAffectedBoardIds,
-  findTransitiveParentCompounds,
   isBoardPastBackstop,
-  expandToWindowStampedDerived,
+  placementsReachedByTasks,
   resolvePlacements,
   type Board,
   type BoardTask,
@@ -378,20 +376,11 @@ export async function reDeriveSealedBoardsForTasks(
   // `await import()` here would break the ambient Dexie transaction.)
   const allChildren = Object.values(lookups.childrenByCompound).flat();
 
-  // A shared-counter ROOT is never placed itself, but every window-stamped
-  // derived counter linked to it resolves FROM its events (derivation kernel,
-  // docs §Derived-task carve-out rule 4, amended 2026-09-23). A late in-window
-  // root event must therefore re-derive the sealed boards placing those rows,
-  // or two devices that sealed from different root-event sets never converge.
-  const reachable = expandToWindowStampedDerived(changed, Object.values(lookups.taskById));
-
-  const affectedBoardIds = new Set<string>();
-  for (const taskId of reachable) {
-    const parents = findTransitiveParentCompounds(taskId, allChildren);
-    for (const id of findAffectedBoardIds(taskId, parents, lookups.allBoardTasks)) {
-      affectedBoardIds.add(id);
-    }
-  }
+  const affectedBoardIds = placementsReachedByTasks(changed, {
+    tasks: Object.values(lookups.taskById),
+    compoundChildren: allChildren,
+    boardTasks: lookups.allBoardTasks,
+  }).boardIds;
 
   await reDeriveSealedBoards(affectedBoardIds, lookups);
 }

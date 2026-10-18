@@ -564,3 +564,100 @@ enum DerivationPass {
         return (grid, completedTasks, cells)
     }
 }
+
+/// One live placement a changed task reaches: the placement row, the MEMBER
+/// (the changed task or a linked row of it) read on that square, and the
+/// compound the member is reached through (`nil` for a direct placement).
+/// Twin of the TS `ReachedPlacement`.
+struct ReachedPlacement {
+    let boardTask: BoardTask
+    let memberTaskId: String
+    let viaCompoundId: String?
+}
+
+/// What a set of changed tasks reaches (TASK_WINDOW_REWORK slice 2c). Twin of
+/// the TS `PlacementReach`.
+struct PlacementReach {
+    /// `ids` plus every live linked row of each id — the cascade input.
+    /// Parent compounds are NOT included: the cascade walks them itself.
+    var taskIds: Set<String>
+    /// Every live compound that transitively contains a member.
+    var compoundIds: Set<String>
+    /// Every board placing a member directly or through a reached compound.
+    var boardIds: Set<String>
+    /// One entry per (placement, member) pair, in placement order.
+    var placements: [ReachedPlacement]
+}
+
+extension DerivationPass {
+    /// The ONE reach for a changed task set (slice 2c): the live cascade, the
+    /// sealed re-derivation, seal-immune windows, late-log / pull paths and the
+    /// Counters hub all walk placements from here.
+    ///
+    /// Members = each id itself (a non-root passes through, live or not) plus
+    /// every LIVE task whose `sharedCounterId` is one of the ids. A member's
+    /// transitive parents are reached through LIVE links to LIVE `.compound`
+    /// tasks only. A placement is reached when it is live and places a member
+    /// directly, or places a reached compound (one entry per member reached
+    /// through it, direct children first). Mirrors the TS
+    /// `placementsReachedByTasks`.
+    ///
+    /// - Parameters:
+    ///   - ids: The task ids whose events (or derived state) changed.
+    ///   - tasks: Workspace tasks (any superset; deleted rows filtered here).
+    ///   - compoundChildren: Compound links (deleted filtered here).
+    ///   - boardTasks: Placements (deleted filtered here).
+    /// - Returns: The reach; empty when `ids` is empty.
+    static func placementsReachedByTasks(
+        ids: Set<String>, tasks: [Task], compoundChildren: [CompoundChild], boardTasks: [BoardTask]
+    ) -> PlacementReach {
+        var reach = PlacementReach(taskIds: ids, compoundIds: [], boardIds: [], placements: [])
+        guard !ids.isEmpty else { return reach }
+
+        var liveById: [String: Task] = [:]
+        for t in tasks where !t.isDeleted {
+            liveById[t.id] = t
+            if let root = t.sharedCounterId, !root.isEmpty, ids.contains(root) { reach.taskIds.insert(t.id) }
+        }
+        var parentsByChild: [String: [String]] = [:]
+        for c in compoundChildren where !c.isDeleted {
+            parentsByChild[c.childTaskId, default: []].append(c.compoundTaskId)
+        }
+        // compound id -> members reached through it (direct children first).
+        var membersViaCompound: [String: [String]] = [:]
+        for memberId in reach.taskIds {
+            var seen = Set<String>()
+            var queue = parentsByChild[memberId] ?? []
+            var head = 0
+            while head < queue.count {
+                let parentId = queue[head]; head += 1
+                if !seen.insert(parentId).inserted { continue }
+                guard let parent = liveById[parentId], parent.type == .compound else { continue }
+                reach.compoundIds.insert(parentId)
+                membersViaCompound[parentId, default: []].append(memberId)
+                queue.append(contentsOf: parentsByChild[parentId] ?? [])
+            }
+        }
+        for bt in boardTasks where !bt.isDeleted {
+            if reach.taskIds.contains(bt.taskId) {
+                reach.boardIds.insert(bt.boardId)
+                reach.placements.append(ReachedPlacement(boardTask: bt, memberTaskId: bt.taskId, viaCompoundId: nil))
+                continue
+            }
+            guard let via = membersViaCompound[bt.taskId] else { continue }
+            reach.boardIds.insert(bt.boardId)
+            for memberId in via {
+                reach.placements.append(ReachedPlacement(boardTask: bt, memberTaskId: memberId, viaCompoundId: bt.taskId))
+            }
+        }
+        return reach
+    }
+
+    /// `placementsReachedByTasks` for one shared-counter root (or any single
+    /// task): the Counters hub's card source.
+    static func placementsReachedByRoot(
+        rootId: String, tasks: [Task], compoundChildren: [CompoundChild], boardTasks: [BoardTask]
+    ) -> PlacementReach {
+        placementsReachedByTasks(ids: [rootId], tasks: tasks, compoundChildren: compoundChildren, boardTasks: boardTasks)
+    }
+}

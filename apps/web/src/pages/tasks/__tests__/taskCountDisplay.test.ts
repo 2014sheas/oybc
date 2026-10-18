@@ -1,19 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { TaskType, type Task } from '@oybc/shared';
-import { computeStatusLabel, displayedCountFor } from '../taskCountDisplay';
+import { TaskType, type Task, type TaskEvent } from '@oybc/shared';
+import { displayedCountFor } from '../taskCountDisplay';
 import { isInProgress } from '../useTasksFilters';
 import type { TaskLibrary } from '../../createPage/useTaskLibrary';
 
 /**
- * Board Sources §Member rules B2 (web) — RB7, the linked-count read audit.
- *
- * A linked counting task stores its ROOT's lifetime total in `currentCount`
- * (the propagation mirror) and its window's starting value in `baseline`.
- * Every library surface that printed `currentCount` raw was therefore
- * printing the root's lifetime number on a per-window row: a member of a
- * root at 12 with a baseline of 10 shows `2 / 5`, never `12`. The board
- * surfaces already derived it (`db/adapters.ts`); these are the four reads
- * that did not.
+ * Slice 2c — context-less library readers read the workspace event log
+ * (`contextlessCounterState`), never `baseline`, `currentCount` or the
+ * `isCompleted` latch. A linked row measures its ROOT's lifetime increments.
  */
 
 const NOW = '2026-09-18T10:00:00.000Z';
@@ -39,73 +33,53 @@ function task(over: Partial<Task> = {}): Task {
   } as Task;
 }
 
-/** The root at 12, a window that opened at 10, a personal goal of 5. */
-const LINKED = task({ sharedCounterId: 'root-1', baseline: 10, maxCount: 5, currentCount: 12 });
-/** A root/standalone counter: `currentCount` IS its own value. */
-const ROOT = task({ currentCount: 12, maxCount: 20 });
+function inc(taskId: string, delta: number, id = `${taskId}-${delta}-${Math.random()}`): TaskEvent {
+  return {
+    id,
+    userId: 'u1',
+    taskId,
+    kind: 'increment',
+    delta,
+    occurredAt: NOW,
+    createdAt: NOW,
+    updatedAt: NOW,
+    version: 1,
+    isDeleted: false,
+  } as TaskEvent;
+}
 
-const EMPTY_LIBRARY = {
-  taskMap: {},
-  compoundChildrenByCompound: {},
-} as unknown as TaskLibrary;
+const LINKED = task({ sharedCounterId: 'root-1', baseline: 10, maxCount: 5, currentCount: 12 });
+const ROOT = task({ id: 'root-1', currentCount: 99, maxCount: 20 });
+
+function library(eventsByTaskId: Record<string, TaskEvent[]>): TaskLibrary {
+  return { taskMap: {}, compoundChildrenByCompound: {}, eventsByTaskId } as unknown as TaskLibrary;
+}
 
 describe('displayedCountFor', () => {
-  it('baseline-adjusts a linked task (the root total is not the member’s count)', () => {
-    expect(displayedCountFor(LINKED)).toBe(2);
+  it('a linked row reads its ROOT’s lifetime increments, ignoring baseline / mirror', () => {
+    expect(displayedCountFor(LINKED, { 'root-1': [inc('root-1', 3), inc('root-1', 4)] })).toBe(7);
   });
 
-  it('returns the raw count for a root / standalone counter', () => {
-    expect(displayedCountFor(ROOT)).toBe(12);
+  it('a root / standalone counter reads its own events, ignoring currentCount', () => {
+    expect(displayedCountFor(ROOT, { 'root-1': [inc('root-1', 2)] })).toBe(2);
   });
 
-  it('clamps below the baseline to 0 and never clamps overshoot', () => {
-    expect(displayedCountFor(task({ sharedCounterId: 'r', baseline: 20, currentCount: 5 }))).toBe(0);
-    expect(
-      displayedCountFor(task({ sharedCounterId: 'r', baseline: 0, maxCount: 5, currentCount: 9 })),
-    ).toBe(9);
-  });
-});
-
-describe('computeStatusLabel', () => {
-  it('shows the member’s windowed progress, not the root’s lifetime total', () => {
-    expect(computeStatusLabel(LINKED)).toBe('2 / 5');
-  });
-
-  it('leaves a root counter’s label unchanged', () => {
-    expect(computeStatusLabel(ROOT)).toBe('12 / 20');
-  });
-
-  it('shows no progress label for a linked member still at its baseline', () => {
-    expect(
-      computeStatusLabel(task({ sharedCounterId: 'r', baseline: 12, maxCount: 5, currentCount: 12 })),
-    ).toBe('');
-  });
-
-  it('completion still wins over any count', () => {
-    expect(computeStatusLabel(task({ ...LINKED, isCompleted: true }))).toBe('Completed');
+  it('is 0 with no events and never clamps overshoot', () => {
+    expect(displayedCountFor(LINKED, null)).toBe(0);
+    expect(displayedCountFor(LINKED, { 'root-1': [inc('root-1', 9)] })).toBe(9);
   });
 });
 
 describe('isInProgress (status filter)', () => {
-  it('treats a linked member above its baseline as in progress', () => {
-    expect(isInProgress(LINKED, EMPTY_LIBRARY)).toBe(true);
+  it('a linked member with root increments below goal is in progress', () => {
+    expect(isInProgress(LINKED, library({ 'root-1': [inc('root-1', 2)] }))).toBe(true);
   });
 
-  it('does NOT treat a linked member at its baseline as in progress (the root’s history is not its progress)', () => {
-    const untouched = task({ sharedCounterId: 'r', baseline: 12, maxCount: 5, currentCount: 12 });
-    expect(isInProgress(untouched, EMPTY_LIBRARY)).toBe(false);
+  it('a counter with no events is not in progress, whatever its stale mirror says', () => {
+    expect(isInProgress(LINKED, library({}))).toBe(false);
   });
 
-  it('is unchanged for a root counter', () => {
-    expect(isInProgress(ROOT, EMPTY_LIBRARY)).toBe(true);
-  });
-});
-
-describe('computeStatusLabel per kind', () => {
-  it('status labels format per kind', () => {
-    const base = { type: TaskType.COUNTING, sharedCounterId: null, baseline: null, isCompleted: false } as const;
-    expect(computeStatusLabel({ ...base, currentCount: 12.4, maxCount: 26.2, countKind: 'continuous' })).toBe('12.4 / 26.2');
-    expect(computeStatusLabel({ ...base, currentCount: 270, maxCount: 630, countKind: 'duration' })).toBe('4h 30m / 10h 30m');
-    expect(computeStatusLabel({ ...base, currentCount: 6, maxCount: 10 })).toBe('6 / 10');
+  it('a counter at its goal is done, not in progress', () => {
+    expect(isInProgress(LINKED, library({ 'root-1': [inc('root-1', 5)] }))).toBe(false);
   });
 });

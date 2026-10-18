@@ -75,6 +75,7 @@ describe('counter kinds — web write-path guards', () => {
     const after = (await db.tasks.get(linked.id))!;
     expect(after.currentCount).toBe(0.5);
     expect(after.isCompleted).toBe(false);
-    expect(displayedCountFor(after)).toBe(0.5);
+    const events = await db.taskEvents.where('taskId').equals(root.id).toArray();
+    expect(displayedCountFor(after, { [root.id]: events })).toBe(0.5);
   });
 });

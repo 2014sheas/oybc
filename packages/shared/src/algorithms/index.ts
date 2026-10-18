@@ -165,9 +165,18 @@ export {
   computeBoardStatsUpdate,
   computeSealedCompletedCells,
   computeBoardGrid,
+  placementsReachedByTasks,
+  placementsReachedByRoot,
 } from './derivationPass';
 
-export type { BoardStatsUpdate, CellState, AchievementCellBadge } from './derivationPass';
+export type {
+  BoardStatsUpdate,
+  CellState,
+  AchievementCellBadge,
+  PlacementReach,
+  PlacementReachLookups,
+  ReachedPlacement,
+} from './derivationPass';
 
 // Sync-churn fix — board derivation writes only when derived state changed.
 export {
@@ -197,8 +206,7 @@ export {
   lateLogOccurredAt,
   resolveWindowStampedDerivedState,
   resolveDerivedCounterWindowState,
-  resolveLinkedCounterDisplay,
-  expandToWindowStampedDerived,
+  contextlessCounterState,
   boundWindowContextAtSeal,
   buildSealImmuneWindows,
   isEventSealImmune,
@@ -626,5 +634,6 @@ export {
   withPlacementParams,
   withChildTarget,
   resolveSquareState,
+  resolveLinkedCounterDisplay,
 } from './placementParams';
 export type { PlacementParams } from './placementParams';

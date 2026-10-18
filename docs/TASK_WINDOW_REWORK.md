@@ -417,8 +417,8 @@ is installed on the owner's device. Slices 3 and 6 are split so that the
 | **0 — Context window wins** (MERGED #627, 2026-10-16) | Kernel: when a BOARD window is present, every linked row resolves over it (`resolveDerivedCounterWindowState` / `resolveLinkedCounterDisplay`, `countsToward.stateOf`, hub member cards; TS + Swift, vectors re-pinned). **The own-stamp branch stays as the context-less fallback** until slice 5; the context-less readers are listed and vector-pinned. Plus: one late-log tail, closed-board late log for linked children, provenance-matched late logs, iOS wizard-compound parity, drafts out of the heal, web `sealedAt` for compound children, decrement latch parity, un-stamp resets `baseline`. Seal re-derivation checked over the owner's export (local script + anonymised fixture) before merge. | Audit Majors 1, 2, 3, 5 and the read side of 4; five Minors. No migration. |
 | **1 — Placement fields** (MERGED #628, 2026-10-16) | `BoardTask.targetOverride` / `targetKind` / `childTargets` / `titleOverride` in shared types + Zod (per-field catch) + the shared `normalizePlacementFields` normaliser (vector-pinned, applied after the web pull parse and in the iOS decoder), GRDB `v45` (no Dexie bump — unindexed), canonical JSON for the array, sync contract clearable fields (TS + Swift map), fixture regen. Inert: no reader, no writer. | — |
 | **2a — Kernel reads placements** (MERGED #629, 2026-10-17) | `resolveSquareState`, `placementTitle`, `withPlacementParams` / `withChildTarget`; the derivation pass, cells, previews, late-log selectors and sealed re-derive read the placement; one completion rule in `windowStampedDerivedState`. Vectors: `placementParamsVectors` (new), `derivationPassVectors` extended. | Two completion rules on the kernel path; display ≠ kernel on the play surfaces. |
-| **2b — Hub, arrivals, library, credits and supply on placements** (PR open 2026-10-17) | Counters hub re-modelled: a card IS a placement (`boardTaskId`, `viaCompoundId`; the root's placements + its linked tasks' placements + the placements of their parent compounds at the `childTargets` goal; an unplaced task has no card — owner ruling 2026-10-17); root rule (c) "placed with a `targetOverride`" in `sharedCounterRootIds(tasks, boardTasks)`; arrivals and the iOS library family row use the same rule; counts-toward credits and the Counter Detail "Counts toward" rows score each placement with its parameters; the Sources sheet supply scores "done" at the placement's goal. Vectors: hub-group vectors re-pinned + 3 placement cases, 2 credits cases. `pickPrimaryBoard` stays only for the counts-toward row's representative board. | `pickPrimaryBoard` in the hub; task-level hub cards; lifetime rows for unplaced members. |
-| **2c — Reachability + context-less readers** (next) | `placementsReachedByRoot` replacing `withWindowStampedDerived` / `expandToWindowStampedDerived` / iOS `boardIdsReachedByTasks` in the pull cascade, sealing, late log and the heal; `resolveLinkedCounterDisplay` as a thin wrapper over the kernel; library lifetime from events for the context-less readers; the web library family row reads rule (c) (it stays lookup-only until then). | `withWindowStampedDerived`; the context-less `maxCount ?? 0` completion read. |
+| **2b — Hub, arrivals, library, credits and supply on placements** (MERGED #630, 2026-10-17) | Counters hub re-modelled: a card IS a placement (`boardTaskId`, `viaCompoundId`; the root's placements + its linked tasks' placements + the placements of their parent compounds at the `childTargets` goal; an unplaced task has no card — owner ruling 2026-10-17); root rule (c) "placed with a `targetOverride`" in `sharedCounterRootIds(tasks, boardTasks)`; arrivals and the iOS library family row use the same rule; counts-toward credits and the Counter Detail "Counts toward" rows score each placement with its parameters; the Sources sheet supply scores "done" at the placement's goal. Vectors: hub-group vectors re-pinned + 3 placement cases, 2 credits cases. `pickPrimaryBoard` stays only for the counts-toward row's representative board. | `pickPrimaryBoard` in the hub; task-level hub cards; lifetime rows for unplaced members. |
+| **2c — Reachability + context-less readers** (PR open 2026-10-17 — see §Slice 2c) | `placementsReachedByRoot` replacing `withWindowStampedDerived` / `expandToWindowStampedDerived` / iOS `boardIdsReachedByTasks` in the pull cascade, sealing, late log and the heal; `resolveLinkedCounterDisplay` as a thin wrapper over the kernel; library lifetime from events for the context-less readers; the web library family row reads rule (c) (it stays lookup-only until then). | `withWindowStampedDerived`; the context-less `maxCount ?? 0` completion read. |
 | **3a — Writers stop minting (both clients)** | Delete the heal, its post-pull sweep and the choke points' resolve step; Board Edit writes overrides / `childTargets` / `titleOverride` instead of forking; copy-writers (Repeat, board-source pulls, core next-window) resolve derived rows at write time; `BoardSourceSupplyInfo` carries the effective goal. | The heal, `placementNeedsCopy`, fork-on-goal-edit. |
 | **3b — Planner emits placements** | `planDerivedTasks` output shape; wizard persist, spawn, quick-add write parameters. Gated on both clients carrying 3a. | Minting paths. |
 | **4 — Migration sweep** | The gated sweep above, at open and after every pull; seal re-derivation vectors; counts-toward boundary; `repointSealedPlacement`. | Every derived row that can be repointed safely; the rest stripped to plain rows. |
@@ -429,6 +429,82 @@ is installed on the owner's device. Slices 3 and 6 are split so that the
 Slice 0 is independent and ships first. Slices 1, 2 and 3a are additive and
 merge one at a time; 3b after both clients carry 3a. Slices 4 and 5 are the
 cut-over; 6a/6b can ride alongside 4/5.
+
+## Slice 2c — detailed scope (2026-10-17)
+
+Mapped against the code after 2b. Today's expansion
+(`expandToWindowStampedDerived`) already adds every live linked row of a root
+(hub-linked and window-stamped alike, owner rule 2026-10-01), so the reach is
+right; what changes is one helper with the right output shape, the
+display/kernel split, the context-less readers, and three parity defects.
+
+1. **`placementsReachedByTasks(ids, lookups)` + `placementsReachedByRoot(rootId, lookups)`**
+   (shared `derivationPass.ts` ↔ `DerivationPass`), returning
+   `{ taskIds, boardIds, placements }`: each id itself, every live task whose
+   `sharedCounterId` is that id (derived rows included until slice 5), their
+   transitive parent compounds (deleted links AND deleted compound tasks
+   skipped), and the live placements of all of those. `taskIds` stays the
+   cascade input (counts-toward runs off it); `boardIds` feeds sealed
+   re-derive and watchers; `placements` serves the hub. Replaces every reach
+   site: web `withWindowStampedDerived` (deleted) and `resolveAffectedBoardIds`'
+   body, `sealing.reDeriveSealedBoardsForTasks`, `taskEvents.getSealImmuneWindowsForTask`,
+   `lateLog.applyLateLogSideEffects`, `taskEventPull` (batch + heal backfill),
+   `linkedCounterWindowHeal`; iOS `withWindowStampedDerived`,
+   `boardIdsReachedByTasks`, `sealImmuneWindows`, `reDeriveSealedBoards`,
+   `PullApply` (batch, backfill, watchers). `expandToWindowStampedDerived` is
+   deleted; its four vectors move to a `placementsReached` section with new
+   cases (compound parent of a linked child, a root's own override placement,
+   deleted link / compound / placement, non-root pass-through, a linked row's
+   own id).
+2. **Parity defects fixed here:** the web Sources supply loader
+   (`supplyEventTaskIds`) loads the root's events for EVERY counting linked
+   row, not only window-stamped ones (iOS already does; hub-linked supply was
+   never "done"); the iOS heal re-derives touched roots' boards like web.
+   The increment / undo paths' frozen-row narrowing (`isFrozenRowReachedByEvent`)
+   is untouched — it is retired machinery (slice 5).
+3. **Display = kernel.** `resolveLinkedCounterDisplay(task, events, sealedAt?, window?, placement?)`
+   becomes a thin wrapper over `resolveSquareState` (optional placement;
+   `sealedAt` applied through `boundWindowContextAtSeal`). Re-pin
+   `linkedCounterDisplay` vectors.
+4. **Context-less readers read events, not the latch or `baseline`.** New
+   shared `contextlessCounterState(task, tasksById, eventsByTaskId)` ↔ Swift:
+   a linked row reads its ROOT's lifetime increment sum; a root / plain
+   counter its own; complete iff `maxCount != null && sum >= maxCount`
+   (never green at 0). The kernel's context-less linked branch
+   (`resolveSquareState` with no board window) and `resolveLinkedCounterDisplay`'s
+   fallback use it, so the `currentCount − baseline` display and the latch are
+   no longer read by any board, preview or library surface. Library readers
+   (web `taskCountDisplay`, `useTasksFilters` in-progress / completed; iOS
+   `TaskCountDisplay`, `TasksTabViewModel`) use it. **Library rows carry no
+   progress** (Task Detail redesign binding decision 2; the rework's
+   "Linked to ‹counter› · ‹lifetime total›" row copy is superseded by the
+   no-provenance-copy rule — rows already carry the counter tag): the web
+   row's "cur / max" / "Completed" status label is removed (iOS shows none).
+   `countsToward.stateOf`'s latch keeps reading the latch until slice 5 but
+   stops treating a goal-less linked row as complete (`maxCount != null`
+   required) — the credit set must not move otherwise. Writers
+   (`propagateIncrement`) are untouched.
+5. **Web library family row on rule (c):** `familyRootIds` computed from
+   `sharedCounterRootIds(tasks, boardTasks)` in the browse hook
+   (`useBrowsableTasks`), fed to TasksPage and the wizard Library sheet;
+   `useTaskLibrary` stays lookup-only.
+
+**Gate 1 rulings (2026-10-17):** (a) the hub is rewired onto the reach
+helper now — `buildSharedCounterGroups` consumes `placementsReachedByRoot`'s
+`placements` (member placement + `viaCompoundId`) instead of its own parent
+walk, so the hub, the cascade and the sealed re-derive share ONE reach;
+(b) the library's context-less readers load the whole workspace event log
+(the existing `eventsByTaskId` loaders), not a roots-only subset.
+
+**Implementation notes (2026-10-17, as built):** the reach's `taskIds` is the
+seeds plus their live linked rows — parent compounds are returned separately
+as `compoundIds` (the cascade already walks parents itself and counts-toward
+must not see a compound twice); `resolveLinkedCounterDisplay` with NO event
+map reads as no events (`0`, incomplete) — every caller supplies the map;
+`contextlessCounterState(task, eventsByTaskId)` needs no task lookup (the
+owner is `sharedCounterId ?? id`); web `familyRootIds` leaves `TaskLibrary`
+for a sibling browse hook (`useBrowseFamilyRootIds`), which subscribes to
+`boardTasks` like `useBrowsableTasks` does.
 
 ## Acceptance
 

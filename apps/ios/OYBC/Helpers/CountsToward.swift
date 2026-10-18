@@ -239,6 +239,9 @@ enum CountsToward {
                     let own = CompoundWindowContext(windowStart: task.startDate, windowEnd: task.endDate, eventsByTaskId: [:])
                     return completed(by: crossingEvent(eventsInWindow(rootEvents, own), target: task.maxCount ?? 0))
                 }
+                // Context-less hub-linked row: the latch until slice 5 — but a goal-less
+                // row is never complete (the one completion rule, slice 2c).
+                if task.maxCount == nil { return .incomplete }
                 return latchState(task)
             }
             let events = ctx.eventsByTaskId[task.id] ?? []

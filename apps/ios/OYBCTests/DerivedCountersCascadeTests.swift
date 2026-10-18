@@ -867,42 +867,62 @@ final class DerivedCountersCascadeTests: XCTestCase {
         )
     }
 
-    func test_displayedCount_baselineAdjustsALinkedTaskAndReadsARootRaw() {
-        // The root at 12, a window that opened at 10, a personal goal of 5.
-        let linked = countingTask(id: "linked", sharedCounterId: "root-1",
-                                  baseline: 10, maxCount: 5, currentCount: 12)
-        XCTAssertEqual(TaskCountDisplay.displayedCount(for: linked), 2)
-
-        let rootTask = countingTask(id: "root", maxCount: 20, currentCount: 12)
-        XCTAssertEqual(TaskCountDisplay.displayedCount(for: rootTask), 12)
+    /// Live increment events for `rootId` (one per delta), keyed for the
+    /// context-less readers.
+    private func increments(_ rootId: String, _ deltas: [CountValue]) -> [String: [TaskEvent]] {
+        [rootId: deltas.enumerated().map { i, d in
+            TaskEvent(
+                id: "ev-\(rootId)-\(i)", userId: userId, taskId: rootId,
+                kind: .increment, delta: d, occurredAt: earlier, boardId: nil,
+                createdAt: earlier, updatedAt: earlier,
+                lastSyncedAt: nil, version: 1, isDeleted: false, deletedAt: nil
+            )
+        }]
     }
 
-    func test_displayedCount_clampsBelowTheBaselineToZeroAndNeverClampsOvershoot() {
-        let under = countingTask(id: "under", sharedCounterId: "r", baseline: 20,
-                                 maxCount: 5, currentCount: 5)
-        XCTAssertEqual(TaskCountDisplay.displayedCount(for: under), 0)
+    // Slice 2c: the count is the root's lifetime EVENT sum — `baseline` and the
+    // `currentCount` mirror are no longer read by any library reader.
+    func test_displayedCount_linkedMemberReadsTheRootsLifetimeEvents() {
+        let linked = countingTask(id: "linked", sharedCounterId: "root-1",
+                                  baseline: 10, maxCount: 5, currentCount: 12)
+        let events = increments("root-1", [10, 2])
+        XCTAssertEqual(TaskCountDisplay.displayedCount(for: linked, eventsByTaskId: events), 12,
+                       "re-pinned: lifetime events, no baseline subtraction")
+
+        let rootTask = countingTask(id: "root-1", maxCount: 20, currentCount: 99)
+        XCTAssertEqual(TaskCountDisplay.displayedCount(for: rootTask, eventsByTaskId: events), 12,
+                       "re-pinned: the root's own events, not the currentCount mirror")
+    }
+
+    func test_displayedCount_noEventsIsZeroAndOvershootIsNeverClamped() {
+        let none = countingTask(id: "under", sharedCounterId: "r", baseline: 20,
+                                maxCount: 5, currentCount: 5)
+        XCTAssertEqual(TaskCountDisplay.displayedCount(for: none, eventsByTaskId: nil), 0)
 
         let over = countingTask(id: "over", sharedCounterId: "r", baseline: 0,
-                                maxCount: 5, currentCount: 9)
-        XCTAssertEqual(TaskCountDisplay.displayedCount(for: over), 9,
+                                maxCount: 5, currentCount: 0)
+        XCTAssertEqual(TaskCountDisplay.displayedCount(for: over, eventsByTaskId: increments("r", [9])), 9,
                        "overshoot past the goal is real progress — never clamped")
     }
 
-    func test_isInProgress_measuresALinkedMemberAgainstItsOwnBaseline() {
+    func test_isInProgress_readsTheRootsLifetimeEvents() {
         let library = TaskLibraryViewModel()
-        // The root has run to 12, but this member's window opened at 12 too:
-        // displayed 0, so the member has not started. Reading `currentCount`
-        // raw would call it in progress the moment its window opened.
-        let fresh = countingTask(id: "fresh", sharedCounterId: "root-1",
-                                 baseline: 12, maxCount: 5, currentCount: 12)
-        XCTAssertFalse(TasksTabViewModel.isInProgress(fresh, library: library))
-
+        library.eventsByTaskId = increments("root-1", [3])
+        // Re-pinned: a member of a root with events is in progress (lifetime
+        // reading, baseline no longer subtracted); a member of an untouched
+        // root is not.
         let started = countingTask(id: "started", sharedCounterId: "root-1",
-                                   baseline: 10, maxCount: 5, currentCount: 12)
+                                   baseline: 12, maxCount: 5, currentCount: 12)
         XCTAssertTrue(TasksTabViewModel.isInProgress(started, library: library))
 
-        let rootTask = countingTask(id: "root", maxCount: 20, currentCount: 12)
-        XCTAssertTrue(TasksTabViewModel.isInProgress(rootTask, library: library))
+        let fresh = countingTask(id: "fresh", sharedCounterId: "root-2",
+                                 baseline: 0, maxCount: 5, currentCount: 12)
+        XCTAssertFalse(TasksTabViewModel.isInProgress(fresh, library: library))
+
+        // Reaching the goal is done, not in progress — read from events, not the latch.
+        library.eventsByTaskId = increments("root-1", [5])
+        XCTAssertFalse(TasksTabViewModel.isInProgress(started, library: library))
+        XCTAssertTrue(TasksTabViewModel.isDone(started, library: library))
     }
 
     // MARK: - (g) affected-board folds (final-review items 7 + 10)
@@ -1043,13 +1063,9 @@ final class DerivedCountersCascadeTests: XCTestCase {
 
     // MARK: - (h) read audit — the displayed count (final-review item 9)
 
-    func test_displayedCount_readsTheLinkedMembersOwnNumberNotTheRootMirror() {
-        // A member of a root at 12 whose window opened at 10.
+    func test_displayedCount_readsTheRootsEventsNotTheMirror() {
         let linked = countingTask(id: "linked-h", sharedCounterId: "root-1",
                                   baseline: 10, maxCount: 5, currentCount: 12)
-        XCTAssertEqual(TaskCountDisplay.displayedCount(for: linked), 2)
-
-        let rootTask = countingTask(id: "root-h", maxCount: 20, currentCount: 12)
-        XCTAssertEqual(TaskCountDisplay.displayedCount(for: rootTask), 12)
+        XCTAssertEqual(TaskCountDisplay.displayedCount(for: linked, eventsByTaskId: increments("root-1", [4])), 4)
     }
 }

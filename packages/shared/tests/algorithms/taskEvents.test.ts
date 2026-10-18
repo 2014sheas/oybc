@@ -2,12 +2,13 @@ import * as fs from 'fs';
 import * as path from 'path';
 import {
   resolveTaskWindowState,
-  resolveLinkedCounterDisplay,
   lateLogOccurredAt,
   boardWindowEnd,
   isEventOwningTask,
   SEED_EVENT_OCCURRED_AT,
+  contextlessCounterState,
 } from '../../src/algorithms/taskEvents';
+import { resolveLinkedCounterDisplay } from '../../src/algorithms/placementParams';
 import type { Task, TaskEvent, TaskEventKind } from '../../src/types';
 import { TaskType } from '../../src/constants/enums';
 import type { CountKind } from '../../src/algorithms/countValue';
@@ -95,11 +96,26 @@ interface LinkedDisplayVector {
   /** Optional (owner rule 2026-10-01) — the placing board's window for a
    *  non-window-stamped row; absent or null = no window. */
   window?: { startDate: string; endDate: string | null } | null;
+  /** Optional (slice 2c) — the square's placement parameters. */
+  placement?: {
+    targetOverride: number | null;
+    targetKind: CountKind | null;
+    childTargets: null;
+    titleOverride: string | null;
+  } | null;
   expected: { displayed: number; isCompleted: boolean };
+}
+interface ContextlessVector {
+  name: string;
+  note?: string;
+  task: { id: string; type: string; maxCount: number | null; sharedCounterId: string | null; countKind: CountKind | null };
+  eventsByTaskId: Record<string, VectorEvent[]> | null;
+  expected: { isCompleted: boolean; count: number };
 }
 const fixture: {
   vectors: Vector[];
   linkedCounterDisplay: LinkedDisplayVector[];
+  contextlessCounterState: ContextlessVector[];
   lateLogOccurredAt: LateLogVector[];
 } = JSON.parse(
   fs.readFileSync(path.join(__dirname, '../fixtures/taskWindowStateVectors.json'), 'utf8'),
@@ -282,7 +298,59 @@ describe('resolveLinkedCounterDisplay (fixture-driven, taskWindowStateVectors.js
           );
         }
       }
-      expect(resolveLinkedCounterDisplay(task, eventsByTaskId, v.sealedAt, v.window ?? null)).toEqual(v.expected);
+      expect(
+        resolveLinkedCounterDisplay(
+          task,
+          eventsByTaskId,
+          v.sealedAt,
+          v.window ?? null,
+          v.placement
+            ? {
+                targetOverride: v.placement.targetOverride ?? undefined,
+                targetKind: v.placement.targetKind ?? undefined,
+                childTargets: undefined,
+                titleOverride: v.placement.titleOverride ?? undefined,
+              }
+            : null,
+        ),
+      ).toEqual(v.expected);
+    });
+  }
+});
+
+// ─── contextlessCounterState (fixture-driven, slice 2c) ─────────────────────
+
+describe('contextlessCounterState (fixture-driven, taskWindowStateVectors.json#contextlessCounterState)', () => {
+  it('fixture section is present and non-trivial', () => {
+    expect(fixture.contextlessCounterState.length).toBeGreaterThanOrEqual(6);
+  });
+
+  for (const v of fixture.contextlessCounterState) {
+    it(v.name, () => {
+      const task = makeTask({
+        id: v.task.id,
+        type: v.task.type as TaskType,
+        maxCount: v.task.maxCount ?? undefined,
+        sharedCounterId: v.task.sharedCounterId ?? undefined,
+        countKind: v.task.countKind ?? undefined,
+      });
+      let eventsByTaskId: Record<string, TaskEvent[]> | null = null;
+      if (v.eventsByTaskId) {
+        eventsByTaskId = {};
+        for (const [taskId, evs] of Object.entries(v.eventsByTaskId)) {
+          eventsByTaskId[taskId] = evs.map((e, i) =>
+            makeEvent({
+              id: `${taskId}-${i}`,
+              taskId,
+              kind: e.kind,
+              delta: e.delta ?? undefined,
+              occurredAt: e.occurredAt,
+              isDeleted: e.isDeleted,
+            }),
+          );
+        }
+      }
+      expect(contextlessCounterState(task, eventsByTaskId)).toEqual(v.expected);
     });
   }
 });
