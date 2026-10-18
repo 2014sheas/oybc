@@ -1,17 +1,11 @@
 import { useEffect, useCallback, useState, useRef } from 'react';
-import { useModalA11y } from '../hooks/useModalA11y';
-import { TypeBadge } from './TypeBadge';
 import styles from './InteractiveTaskSquare.module.css';
-import { customChipLabel, formatCount, formatCountWithUnit, type CountKind } from '@oybc/shared';
 import {
   progressFraction,
   progressBarLabel,
-  type QuickAmountProps,
   type TaskSquareData,
   type SquareState,
 } from './interactiveTaskSquareUtils';
-import { parseCustomLogAmount } from './counters/amountChips';
-import { GoalEntry } from './counters/GoalEntry';
 
 // ─── FloatingContextMenu ──────────────────────────────────────────────────────
 
@@ -39,39 +33,6 @@ interface ContextMenuProps {
    * for ALL task types. Triggers the task library detail sheet.
    */
   onOpenInLibrary?: (taskId: string) => void;
-  /**
-   * Counters Refresh R3 — quick-action amount options for a shared counting
-   * square (source or linked). When present, replaces the counting section's
-   * "+ Add {action} (+1)" button with three amount actions: "+1", "+{default}"
-   * (skipped when it collides with 1), and "# Custom amount…". The custom item
-   * routes to `onOpenCustom` rather than opening an inline input here — a
-   * floating, cursor-anchored menu isn't a safe place to lay out a text field
-   * (position is measured once on mount; growing the menu would overflow).
-   * Callers wire `onOpenCustom` to open the square's detail modal, which owns
-   * the full picker (`DetailModal`'s `quickAmount` prop). Decrement / Reset
-   * stay the existing unlabeled-amount items — amount-mirrored decrement
-   * lives in the detail modal only.
-   */
-  sharedAmountActions?: {
-    unit: string;
-    defaultAmount: number;
-    onAdd: (amount: number) => void;
-    onOpenCustom: () => void;
-  };
-  /**
-   * Continuous / Duration squares: `+ Add {last} {unit}` / `# Custom amount…`
-   * / `− Remove {last} {unit}` at the last-used amount. Replaces
-   * `sharedAmountActions` and the plain +/− items; Discrete never sets it.
-   */
-  amountActions?: {
-    kind: CountKind;
-    amount: number;
-    unit: string;
-    onAdd: (amount: number) => void;
-    onRemove: (amount: number) => void;
-    onOpenCustom: () => void;
-    removeDisabled: boolean;
-  };
 }
 
 /**
@@ -98,8 +59,6 @@ export function FloatingContextMenu({
   onResetCount,
   onViewDetails,
   onOpenInLibrary,
-  sharedAmountActions,
-  amountActions,
   children,
 }: ContextMenuProps) {
   const menuRef = useRef<HTMLDivElement>(null);
@@ -155,106 +114,25 @@ export function FloatingContextMenu({
 
       {sq.type === 'counting' && (
         <>
-          {amountActions ? (
-            <>
-              <button
-                className={styles.contextMenuItem}
-                onClick={() => {
-                  amountActions.onAdd(amountActions.amount);
-                  onClose();
-                }}
-              >
-                + Add {formatCountWithUnit(amountActions.amount, amountActions.kind, amountActions.unit)}
-              </button>
-              <button
-                className={styles.contextMenuItem}
-                onClick={() => {
-                  amountActions.onOpenCustom();
-                  onClose();
-                }}
-              >
-                # Custom amount…
-              </button>
-              <button
-                className={styles.contextMenuItem}
-                disabled={amountActions.removeDisabled}
-                onClick={() => {
-                  amountActions.onRemove(amountActions.amount);
-                  onClose();
-                }}
-              >
-                − Remove {formatCountWithUnit(amountActions.amount, amountActions.kind, amountActions.unit)}
-              </button>
-            </>
-          ) : sharedAmountActions ? (
-            <>
-              {/* R3 — shared counting square quick actions. Overshoot is
-                  intentional (feedback_counter_overshoot_is_valid) — never
-                  disabled based on count. */}
-              <button
-                className={styles.contextMenuItem}
-                onClick={() => {
-                  sharedAmountActions.onAdd(1);
-                  onClose();
-                }}
-              >
-                + Add 1 {sharedAmountActions.unit}
-              </button>
-              {sharedAmountActions.defaultAmount !== 1 && (
-                <button
-                  className={styles.contextMenuItem}
-                  onClick={() => {
-                    sharedAmountActions.onAdd(sharedAmountActions.defaultAmount);
-                    onClose();
-                  }}
-                >
-                  + Add {sharedAmountActions.defaultAmount} {sharedAmountActions.unit}
-                </button>
-              )}
-              <button
-                className={styles.contextMenuItem}
-                onClick={() => {
-                  sharedAmountActions.onOpenCustom();
-                  onClose();
-                }}
-              >
-                # Custom amount…
-              </button>
-            </>
-          ) : (
-            <button
-              className={styles.contextMenuItem}
-              onClick={() => {
-                onIncrementCount?.(sq.id);
-                onClose();
-              }}
-              // Phase 3 — Shared Counters: overshoot is intentional, so
-              // the add button is never disabled based on count alone. For
-              // linked counters (sharedCounterId != null) there is no
-              // meaningful high-end limit — the source drives completion.
-              // For standalone counters we also allow overshoot per the
-              // feedback_counter_overshoot_is_valid invariant.
-            >
-              + Add {sq.action} (+1)
-            </button>
-          )}
-          {!amountActions && (
-            <button
-              className={styles.contextMenuItem}
-              // Linked counters can't be decremented directly (the handler
-              // no-ops) — disable instead of presenting a dead control, matching
-              // the detail modal (#342 review M1).
-              disabled={state.currentCount <= 0 || sq.sharedCounterId != null}
-              onClick={() => {
-                onDecrementCount?.(sq.id);
-                onClose();
-              }}
-            >
-              {/* R3: shared squares mirror the ADD amount on remove (contract:
-                  "decrement mirrors the add amount") — plain counting stays −1. */}
-              − Remove {sq.action} (−{sharedAmountActions ? sharedAmountActions.defaultAmount : 1})
-            </button>
-          )}
+          <button
+            className={styles.contextMenuItem}
+            onClick={() => {
+              onIncrementCount?.(sq.id);
+              onClose();
+            }}
+          >
+            + Add {sq.action} (+1)
+          </button>
+          <button
+            className={styles.contextMenuItem}
+            disabled={state.currentCount <= 0 || sq.sharedCounterId != null}
+            onClick={() => {
+              onDecrementCount?.(sq.id);
+              onClose();
+            }}
+          >
+            − Remove {sq.action} (−1)
+          </button>
           <button
             className={styles.contextMenuItem}
             disabled={state.currentCount <= 0}
@@ -344,6 +222,8 @@ interface InteractiveTaskSquareProps {
   onContextMenu?: (e: React.MouseEvent) => void;
   /** Compound tasks only: called when the user toggles a child task in the detail sheet. */
   onCompoundChildToggle?: (childTaskId: string) => void;
+  /** Compound tasks only: a counting child's stepper — `+1` logs its step, `-1` removes it. */
+  onCompoundChildIncrement?: (childTaskId: string, direction: 1 | -1) => void;
   /** Phase 6.3: when set, the cell renders an achievement-square badge
    *  at the top-left indicating cross-board tracking. */
   achievementBadge?: AchievementSquareBadgeData;
@@ -444,410 +324,6 @@ export function InteractiveTaskSquare({
           <div className={styles.progressBarLabel}>{barLabel}</div>
         </div>
       )}
-    </div>
-  );
-}
-
-// ─── DetailModal ──────────────────────────────────────────────────────────────
-
-interface DetailModalProps {
-  sq: TaskSquareData;
-  state: SquareState;
-  onClose: () => void;
-  onToggleComplete: (id: string) => void;
-  onIncrementCount: (id: string) => void;
-  onDecrementCount: (id: string) => void;
-  /** Compound tasks only: called when the user toggles a child task in the detail sheet. */
-  onCompoundChildToggle?: (childTaskId: string) => void;
-  /**
-   * Optional: when provided, each compound child row renders a small "ⓘ"
-   * icon button that fires this callback with the child's task ID. Opens
-   * the library detail sheet for that child without leaving the board.
-   */
-  onOpenInLibrary?: (taskId: string) => void;
-  /**
-   * Board-integrity PR-3 (issue #360) — achievement-square watch-target
-   * data, when `sq.type === 'achievement'`. Same shape as the grid badge
-   * (`formatAchievementBadgeLabel` below); the modal is the read-only
-   * "View Details" surface for an achievement square (tap on the grid is a
-   * no-op — mirrors iOS), so this is the only place its watch target is
-   * explained to the user.
-   */
-  achievementBadge?: AchievementSquareBadgeData;
-  /**
-   * Log-amount controls (docs/COUNTER_KINDS.md §5) — see `QuickAmountProps`.
-   * Absent for a standalone Discrete square, which keeps the plain −/+ stepper.
-   */
-  quickAmount?: QuickAmountProps;
-}
-
-/**
- * A detail modal rendered as a fixed overlay with backdrop.
- *
- * Presents type-appropriate controls: a toggle button for normal tasks, a
- * counter with +/− buttons for counting tasks, and a child-task list for
- * compound tasks. Backdrop clicks and Escape key close the modal.
- *
- * @param sq - Task data to display
- * @param state - Current state of the task
- * @param onClose - Called when the user dismisses the modal
- * @param onToggleComplete - Called with square id to toggle normal task completion
- * @param onIncrementCount - Called with square id to add one count unit
- * @param onDecrementCount - Called with square id to remove one count unit
- * @param onCompoundChildToggle - Compound tasks only: called with childTaskId to toggle a child
- */
-export function DetailModal({
-  sq,
-  state,
-  onClose,
-  onToggleComplete,
-  onIncrementCount,
-  onDecrementCount,
-  onCompoundChildToggle,
-  onOpenInLibrary,
-  quickAmount,
-  achievementBadge,
-}: DetailModalProps) {
-  // aria-modal, Escape → close, initial focus, Tab trap, focus restore.
-  const { ref: modalRef, props: modalProps } = useModalA11y<HTMLDivElement>({
-    open: true,
-    onCancel: onClose,
-  });
-
-  const fraction = progressFraction(sq, state);
-  const barLabel = progressBarLabel(sq, state);
-  const countKind = sq.countKind ?? 'discrete';
-
-  /** Human-readable caption for the compound operator. */
-  function compoundOperatorCaption(): string {
-    if (sq.type !== 'compound') return '';
-    const total = sq.children?.length ?? 0;
-    if (sq.operator === 'OR') return `Any 1 of ${total}`;
-    if (sq.operator === 'M_OF_N') return `At least ${sq.threshold ?? '?'} of ${total}`;
-    return `All ${total} of ${total}`;
-  }
-
-  return (
-    <div
-      className={styles.modalBackdrop}
-      onClick={onClose}
-      role="presentation"
-    >
-      {/* Inner content stops propagation so clicks don't close */}
-      <div
-        ref={modalRef}
-        className={styles.modal}
-        onClick={(e) => e.stopPropagation()}
-        role="dialog"
-        aria-labelledby="modal-title"
-        {...modalProps}
-      >
-        <button
-          className={styles.modalCloseButton}
-          onClick={onClose}
-          aria-label="Close"
-        >
-          ✕
-        </button>
-
-        <h3 id="modal-title" className={styles.modalTitle}>
-          {sq.title}
-        </h3>
-
-        {/* Normal task */}
-        {sq.type === 'normal' && (
-          <>
-            {sq.description && (
-              <p className={styles.modalDescription}>{sq.description}</p>
-            )}
-            <button
-              className={`${styles.modalButton} ${
-                state.isCompleted
-                  ? styles.modalButtonIncomplete
-                  : styles.modalButtonComplete
-              }`}
-              onClick={() => onToggleComplete(sq.id)}
-            >
-              {state.isCompleted ? 'Mark Incomplete' : 'Mark Complete'}
-            </button>
-          </>
-        )}
-
-        {/* Counting task */}
-        {sq.type === 'counting' && (
-          <>
-            <p className={styles.modalMeta}>
-              {sq.action} · {formatCountWithUnit(sq.maxCount ?? 0, countKind, sq.unit)}
-            </p>
-            {/* Progress bar — gold past the goal (handoff LogSheet web frame). */}
-            <div className={styles.modalProgressBar}>
-              <div
-                className={`${styles.modalProgressFill} ${styles.modalProgressFillCounting} ${
-                  state.currentCount > (sq.maxCount ?? 0) ? styles.modalProgressFillOver : ''
-                }`}
-                style={{ width: `${Math.min(1, fraction) * 100}%` }}
-              />
-              <div className={styles.modalProgressLabel}>{barLabel}</div>
-            </div>
-
-            {quickAmount && quickAmount.kind !== 'discrete' ? (
-              // Counter kinds §5 — Continuous / Duration: ¼ · ½ · goal · #
-              // chips set the always-open amount field; − and + apply it.
-              <div className={styles.quickAmountRow}>
-                <div className={styles.quickChipRow} role="group" aria-label="Log amount presets">
-                  {quickAmount.options.map((chip, i) => {
-                    const isCustomChip = chip.value === null;
-                    const on = isCustomChip
-                      ? quickAmount.isCustomActive
-                      : !quickAmount.isCustomActive && chip.value === quickAmount.selected;
-                    return (
-                      <button
-                        key={isCustomChip ? 'custom' : `${i}-${chip.value}`}
-                        type="button"
-                        className={`${styles.quickChip} ${on ? styles.quickChipSelected : ''}`}
-                        aria-pressed={on}
-                        onClick={() => (isCustomChip ? quickAmount.onOpenCustom() : quickAmount.onSelectChip(chip.value as number))}
-                      >
-                        {isCustomChip && on && quickAmount.selected !== null
-                          ? customChipLabel(quickAmount.selected, quickAmount.kind)
-                          : chip.label}
-                      </button>
-                    );
-                  })}
-                </div>
-                <GoalEntry
-                  kind={quickAmount.kind}
-                  value={quickAmount.amountText}
-                  onChange={quickAmount.onAmountTextChange}
-                  aria-label="Log amount"
-                  suffix={quickAmount.unit || undefined}
-                  placeholder="Amount"
-                  invalid={quickAmount.selected === null && quickAmount.amountText.trim() !== ''}
-                  dense
-                />
-                <div className={styles.quickAmountActions}>
-                  <button
-                    type="button"
-                    className={styles.counterButton}
-                    onClick={quickAmount.onRemove}
-                    disabled={quickAmount.busy || quickAmount.removeDisabled}
-                    aria-label={
-                      quickAmount.selected === null
-                        ? 'Remove'
-                        : `Remove ${formatCountWithUnit(quickAmount.selected, quickAmount.kind, quickAmount.unit)}`
-                    }
-                  >
-                    −
-                  </button>
-                  <span className={styles.counterValue}>
-                    {formatCount(state.currentCount, quickAmount.kind)}/{formatCount(sq.maxCount ?? 0, quickAmount.kind)}
-                  </span>
-                  <button
-                    type="button"
-                    className={styles.quickAddBtn}
-                    onClick={quickAmount.onAdd}
-                    disabled={quickAmount.busy || quickAmount.selected === null}
-                  >
-                    {quickAmount.addLabel}
-                  </button>
-                </div>
-              </div>
-            ) : quickAmount ? (
-              // R3 — shared Discrete square: the "+1 / +10 / #" quick-action
-              // row REPLACES the plain stepper. Both Add and Remove apply
-              // `quickAmount.selected` (mirrored), so decrementing after a
-              // bulk add removes the same bulk amount.
-              <div className={styles.quickAmountRow}>
-                <div className={styles.quickChipRow} role="group" aria-label="Log amount">
-                  {(() => {
-                    // Index-based (not per-item value comparison) so a chip
-                    // collision (e.g. default === 1) highlights only the
-                    // FIRST matching chip — mirrors Counter Detail's
-                    // `selectedChipIndex` convention.
-                    const selectedChipIndex = quickAmount.isCustomActive
-                      ? quickAmount.options.length - 1
-                      : quickAmount.options.findIndex((o) => o.value === quickAmount.selected);
-                    return quickAmount.options.map((chip, i) => {
-                      const selected = i === selectedChipIndex;
-                      const isCustomChip = chip.value === null;
-                      return (
-                        <button
-                          key={isCustomChip ? 'custom' : `${i}-${chip.value}`}
-                          type="button"
-                          className={`${styles.quickChip} ${selected ? styles.quickChipSelected : ''}`}
-                          aria-pressed={selected}
-                          onClick={() =>
-                            isCustomChip ? quickAmount.onOpenCustom() : quickAmount.onSelectChip(chip.value as number)
-                          }
-                        >
-                          {isCustomChip && selected ? customChipLabel(quickAmount.selected ?? 0, quickAmount.kind) : chip.label}
-                        </button>
-                      );
-                    });
-                  })()}
-                </div>
-                {quickAmount.customOpen && (
-                  <div className={styles.quickCustomInputRow}>
-                    <input
-                      type="number"
-                      inputMode="numeric"
-                      min={1}
-                      step={1}
-                      autoFocus
-                      value={quickAmount.customDraft}
-                      onChange={(e) => quickAmount.onCustomDraftChange(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') quickAmount.onConfirmCustom();
-                        if (e.key === 'Escape') e.stopPropagation();
-                      }}
-                      className={styles.quickCustomInput}
-                      placeholder="Amount"
-                      aria-label="Custom log amount"
-                    />
-                    <button
-                      type="button"
-                      className={styles.quickCustomConfirm}
-                      onClick={quickAmount.onConfirmCustom}
-                      disabled={quickAmount.busy || parseCustomLogAmount(quickAmount.customDraft) == null}
-                    >
-                      OK
-                    </button>
-                  </div>
-                )}
-                <div className={styles.quickAmountActions}>
-                  <button
-                    type="button"
-                    className={styles.counterButton}
-                    onClick={quickAmount.onRemove}
-                    disabled={quickAmount.busy || quickAmount.removeDisabled}
-                    aria-label={`Remove ${quickAmount.selected} ${quickAmount.unit}`}
-                  >
-                    −
-                  </button>
-                  <span className={styles.counterValue}>
-                    {formatCount(state.currentCount, countKind)} / {formatCount(sq.maxCount ?? 0, countKind)}
-                  </span>
-                  <button
-                    type="button"
-                    className={styles.quickAddBtn}
-                    onClick={quickAmount.onAdd}
-                    disabled={quickAmount.busy}
-                    aria-label={`Add ${quickAmount.selected} ${quickAmount.unit}`}
-                  >
-                    {quickAmount.addLabel}
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <div className={styles.counterRow}>
-                <button
-                  className={styles.counterButton}
-                  disabled={state.currentCount <= 0}
-                  onClick={() => onDecrementCount(sq.id)}
-                  aria-label="Decrease"
-                >
-                  −
-                </button>
-                <span className={styles.counterValue}>
-                  {formatCount(state.currentCount, countKind)} / {formatCount(sq.maxCount ?? 0, countKind)}
-                </span>
-                <button
-                  className={styles.counterButton}
-                  onClick={() => onIncrementCount(sq.id)}
-                  aria-label="Increase"
-                >
-                  +
-                </button>
-              </div>
-            )}
-            {onOpenInLibrary && (
-              <button
-                type="button"
-                className={styles.taskDetailsRow}
-                aria-label="Task details"
-                onClick={() => onOpenInLibrary(sq.id)}
-              >
-                <TypeBadge type="counting" size="small" letterOnly />
-                <span className={styles.taskDetailsText}>Task details</span>
-                <span className={styles.taskDetailsChevron} aria-hidden="true">›</span>
-              </button>
-            )}
-          </>
-        )}
-
-        {/* Compound task */}
-        {sq.type === 'compound' && (
-          <>
-            {sq.description && (
-              <p className={styles.modalDescription}>{sq.description}</p>
-            )}
-            {/* Operator caption */}
-            <p className={styles.compoundOperatorCaption}>{compoundOperatorCaption()}</p>
-            {/* Progress bar */}
-            <div className={styles.modalProgressBar}>
-              <div
-                className={`${styles.modalProgressFill} ${styles.modalProgressFillCompound}`}
-                style={{ width: `${fraction * 100}%` }}
-              />
-              <div className={styles.modalProgressLabel}>{barLabel}</div>
-            </div>
-            {/* Child task list */}
-            <ul className={styles.compoundChildList}>
-              {(sq.children ?? []).map((child) => (
-                <li
-                  key={child.taskId}
-                  className={styles.compoundChildItem}
-                  onClick={() => onCompoundChildToggle?.(child.taskId)}
-                  role="button"
-                  tabIndex={0}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' || e.key === ' ') {
-                      e.preventDefault();
-                      onCompoundChildToggle?.(child.taskId);
-                    }
-                  }}
-                  aria-pressed={child.isCompleted}
-                >
-                  <span className={styles.compoundChildCheck}>
-                    {child.isCompleted ? '✓' : '○'}
-                  </span>
-                  <span
-                    className={`${styles.compoundChildLabel} ${
-                      child.isCompleted ? styles.compoundChildLabelDone : ''
-                    }`}
-                  >
-                    {child.title}
-                  </span>
-                  {onOpenInLibrary && (
-                    <button
-                      type="button"
-                      className={styles.compoundChildInfoButton}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onOpenInLibrary(child.taskId);
-                      }}
-                      aria-label={`Open ${child.title} in library`}
-                      title="View task in library"
-                    >
-                      ⓘ
-                    </button>
-                  )}
-                </li>
-              ))}
-            </ul>
-          </>
-        )}
-
-        {/* Achievement task — board-integrity PR-3 (issue #360). Read-only:
-            no toggle/increment affordance. Tap on the grid is a no-op
-            (mirrors iOS); this modal (reached via the context menu's "View
-            Details") shows the watch target. */}
-        {sq.type === 'achievement' && (
-          <p className={styles.modalMeta}>
-            {achievementBadge ? formatAchievementBadgeLabel(achievementBadge) : 'No watch target set.'}
-          </p>
-        )}
-      </div>
     </div>
   );
 }

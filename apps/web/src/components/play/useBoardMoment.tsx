@@ -9,6 +9,7 @@ import {
   type BoardTask,
   type CellState,
   type CompoundChild,
+  type MomentKind,
   type Task,
   isCoreBoard,
 } from '@oybc/shared';
@@ -44,6 +45,8 @@ export interface UseBoardMomentParams {
 export interface UseBoardMomentResult {
   /** Open the moment for a `bingo` / `greenlog` flash outcome. */
   open: (outcome: FlashOutcome) => void;
+  /** Re-open a moment the board already earned (the Bingos card), at once. */
+  replay: (kind: MomentKind) => void;
   /** The moment overlay + its share sheet, or `null` while closed. */
   node: React.ReactElement | null;
 }
@@ -82,6 +85,17 @@ export function useBoardMoment(p: UseBoardMomentParams): UseBoardMomentResult {
     }, OPEN_DELAY_MS);
   }, []);
 
+  // A replay of an earned moment opens straight away: no write to wait for, no
+  // cell pop to finish. Ignored while one is pending or open.
+  const replayEarned = useCallback((kind: MomentKind): void => {
+    if (phaseRef.current !== 'idle') return;
+    phaseRef.current = 'open';
+    pendingKindRef.current = kind;
+    setForced(false);
+    setSnapshot(null);
+    setTrigger({ kind, newLineIds: [] });
+  }, []);
+
   // While pending, the replay + end-state cells track the live data (the ready
   // gate waits for the write to show). Once opened they are FROZEN: a sync
   // landing mid-replay must not mutate the frames.
@@ -111,7 +125,7 @@ export function useBoardMoment(p: UseBoardMomentParams): UseBoardMomentResult {
     if (next !== snapshot) setSnapshot(next);
   }, [snapshot, live, ready, forced]);
 
-  if (!trigger || !snapshot) return { open, node: null };
+  if (!trigger || !snapshot) return { open, replay: replayEarned, node: null };
   const { replay, cells } = snapshot;
 
   const lineCount = Object.keys(replay.lineClosureBeat).length;
@@ -149,5 +163,5 @@ export function useBoardMoment(p: UseBoardMomentParams): UseBoardMomentResult {
       )}
     </>
   );
-  return { open, node: createPortal(node, document.body) };
+  return { open, replay: replayEarned, node: createPortal(node, document.body) };
 }

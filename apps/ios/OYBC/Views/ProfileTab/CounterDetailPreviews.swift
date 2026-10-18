@@ -5,7 +5,7 @@ import SwiftUI
 #if DEBUG
 #Preview("Counter Detail — populated") {
     let srcMember = SharedCounterMemberTask(
-        taskId: "src",
+        boardTaskId: "bt-src-bm", taskId: "src",
         taskTitle: "Push-ups",
         isSource: true,
         boardId: "bm",
@@ -16,10 +16,10 @@ import SwiftUI
         logged: 512,
         met: false,
         over: 0,
-        isActive: true
+        isActive: true, viaCompoundId: nil
     )
     let weekMember = SharedCounterMemberTask(
-        taskId: "der1",
+        boardTaskId: "bt-der1-bw", taskId: "der1",
         taskTitle: "Push-ups",
         isSource: false,
         boardId: "bw",
@@ -30,21 +30,21 @@ import SwiftUI
         logged: 45,
         met: true,
         over: 15,
-        isActive: true
+        isActive: true, viaCompoundId: nil
     )
     let inactiveMember = SharedCounterMemberTask(
-        taskId: "der2",
+        boardTaskId: "bt-der2-draft", taskId: "der2",
         taskTitle: "Push-ups",
         isSource: false,
-        boardId: nil,
-        boardName: nil,
+        boardId: "draft",
+        boardName: "Draft board",
         timeframe: .daily,
         window: nil,
         goal: 10,
         logged: 0,
         met: false,
         over: 0,
-        isActive: false
+        isActive: false, viaCompoundId: nil
     )
     let group = SharedCounterGroup(
         counterId: "src",
@@ -77,7 +77,7 @@ import SwiftUI
 
 #Preview("Counter Detail — empty / 0 lifetime") {
     let src = SharedCounterMemberTask(
-        taskId: "src",
+        boardTaskId: "bt-src-b1", taskId: "src",
         taskTitle: "Morning runs",
         isSource: true,
         boardId: "b1",
@@ -88,7 +88,7 @@ import SwiftUI
         logged: 0,
         met: false,
         over: 0,
-        isActive: true
+        isActive: true, viaCompoundId: nil
     )
     let group = SharedCounterGroup(
         counterId: "src",

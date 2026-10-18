@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import {
   TaskType,
+  activeBoardPlacementCounts,
   isSourceSupplyTask,
   type CompoundChild,
   type Pool,
@@ -10,7 +11,7 @@ import {
   type VaryLevel,
 } from '@oybc/shared';
 import { useModalA11y } from '../../hooks/useModalA11y';
-import { fetchAllBoardTasks, fetchAllCompoundChildren } from '../../db/operations';
+import { fetchAllBoardTasks, fetchAllBoards, fetchAllCompoundChildren } from '../../db/operations';
 import type { TaskEditPatch } from '../../db/taskEditPatch';
 import { PoolList } from '../wizard/PoolList';
 import { PoolRowEditor } from '../wizard/PoolRowEditor';
@@ -125,23 +126,17 @@ export function PoolEditorBody({
   // placements (the usage hint). `undefined` until first resolved.
   const linksQuery = useLiveQuery(() => fetchAllCompoundChildren(), []);
   const boardTasksQuery = useLiveQuery(() => fetchAllBoardTasks(), []);
+  const boardsQuery = useLiveQuery(() => fetchAllBoards(), []);
 
   const linksByCompound = useMemo(() => {
     const compoundIds = new Set(allTasks.filter((t) => t.type === TaskType.COMPOUND).map((t) => t.id));
     return groupLinksByCompound((linksQuery ?? []).filter((l) => compoundIds.has(l.compoundTaskId)));
   }, [linksQuery, allTasks]);
 
-  const taskBoardCounts = useMemo(() => {
-    const buckets = new Map<string, Set<string>>();
-    for (const bt of boardTasksQuery ?? []) {
-      let set = buckets.get(bt.taskId);
-      if (!set) buckets.set(bt.taskId, (set = new Set<string>()));
-      set.add(bt.boardId);
-    }
-    const counts: Record<string, number> = {};
-    for (const [id, set] of buckets) counts[id] = set.size;
-    return counts;
-  }, [boardTasksQuery]);
+  const taskBoardCounts = useMemo(
+    () => activeBoardPlacementCounts(boardTasksQuery ?? [], boardsQuery ?? []),
+    [boardTasksQuery, boardsQuery],
+  );
 
   const view = useMemo(
     () => buildPoolEditorView(userId, taskIds, allTasks, sessionTaskCache, linksByCompound, stagedEdits),

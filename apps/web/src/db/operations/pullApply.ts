@@ -12,9 +12,9 @@ import {
   SyncOperationType,
   type SyncCollection,
   type Task,
+  withNormalizedPlacementFields,
 } from '@oybc/shared';
 import { db } from '../internal';
-import { refreshPulledDerivedBaseline } from './derivedCounters';
 import { resolveConflict, type SyncableEntity } from '../../firebase/conflictResolver';
 import { recordSyncEvent } from '../../firebase/syncStatus';
 import { runBoardCascadeForTask, runBoardCascadeForTasks, runBoardCascadeForBoardId } from './orchestration';
@@ -220,14 +220,6 @@ export async function applyRemoteSubdoc(
       // compound's derived state had flipped. The cascade is idempotent
       // and small-N, so always running it is the safer + iOS-parity choice.
       if (collectionName === 'tasks') {
-        // Board Sources §Member rules (B2, final-review FI1): a pulled
-        // window-stamped derived counter carries the MINTING device's
-        // `baseline`, which is short whenever that device was missing a
-        // pre-window increment this one holds. Re-derive it from the local
-        // event union — non-authored (baseline only, no version bump, no
-        // enqueue), and BEFORE the cascade so the board stats below read the
-        // corrected number.
-        await refreshPulledDerivedBaseline(validated as unknown as Task);
         // "Counts toward" (D11): a pulled row that was flagged here but is now
         // unflagged or re-pointed hands its previous root to the cascade, so
         // the credits keyed on that root are reconciled (every credit key
@@ -337,7 +329,16 @@ type RemoteSchema = {
 export const COLLECTION_SCHEMAS: Record<SyncCollection, RemoteSchema> = {
   boards: BoardSchema,
   tasks: TaskSchema,
-  boardTasks: BoardTaskSchema,
+  // Task/window rework slice 1: the per-placement parameters are
+  // normalised to their canonical shape right after the parse (cross-field
+  // rules Zod's per-field `.catch` can't express), exactly as iOS does in
+  // `BoardTask.init(from:)`, so both clients store one row.
+  boardTasks: {
+    safeParse: (input: unknown) => {
+      const r = BoardTaskSchema.safeParse(input);
+      return r.success ? { success: true as const, data: withNormalizedPlacementFields(r.data) } : r;
+    },
+  },
   compoundChildren: CompoundChildSchema,
   recurringBoardTemplates: RecurringBoardTemplateSchema,
   defaultPools: DefaultPoolSchema,

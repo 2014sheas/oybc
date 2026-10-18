@@ -67,7 +67,7 @@ export async function repairPlacementIntegrity(
 
       for (const bt of toTombstone) {
         const tombstoned = buildBoardTaskTombstone(bt, now);
-        await db.boardTasks.update(bt.id, tombstoned);
+        await db.boardTasks.put(tombstoned);
         await addToSyncQueue('boardTasks', bt.id, SyncOperationType.DELETE, tombstoned, 0);
       }
       repairedBoardIds.push(board.id);

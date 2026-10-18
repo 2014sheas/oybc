@@ -152,6 +152,18 @@ final class BoardWizardViewModel {
     /// and on the repeating record; see `BoardWizardViewModel+MemberRules`.
     var manualTaskVary: [String: VaryLevel] = [:]
 
+    /// TASK_WINDOW_REWORK slice 3b — per-cell placement parameters, keyed by
+    /// task id: a quick-added counter's window goal, a hand-edited goal (and a
+    /// per-board title). Persist writes them onto the `board_tasks` row (an
+    /// explicit parameter wins over the planner's) and the Preview reads them.
+    /// Persisted on the draft blob like `manualTaskVary`; the repeating-board
+    /// record does not carry them (a recurring window re-plans from the root's
+    /// defaults). Cleared when the task leaves the selection.
+    var placementParams: [String: PlacementParamsDraft] = [:]
+    /// The window `placementParams` were last derived at (in-memory; a resumed
+    /// draft adopts the draft board's own window).
+    var placementParamsWindow: CounterPlacement.PickWindow?
+
     /// §Member rules (B3, RC7) — the live `compound_children` links a
     /// Split-up expansion reads, keyed by compound task id. Reloaded by
     /// `refreshCompoundChildren()` whenever the pulled sources change.
@@ -336,6 +348,10 @@ final class BoardWizardViewModel {
                 // §Member rules (B3) — the hand-added layer's dice ride on
                 // the blob alongside the ids they belong to.
                 self.manualTaskVary = mix.manualTaskVary
+                self.placementParams = mix.placementParams
+                self.placementParamsWindow = CounterPlacement.PickWindow(
+                    timeframe: d.board.timeframe, startDate: d.board.startDate, endDate: d.board.endDate
+                )
             } else {
                 self.selectedTaskIds = Set(d.boardTasks.map { $0.taskId })
                 // Preserve placement order on resume so the pool doesn't reshuffle.
@@ -751,6 +767,7 @@ final class BoardWizardViewModel {
     /// under-fills (a `nil` grid cell). Library tasks pass `nil`.
     func restoreToPool(_ taskId: String, at index: Int, payload: PendingTaskPayload? = nil) {
         selectedTaskIds.insert(taskId)
+        manualTaskIds.insert(taskId) // re-enters as a hand-add (web twin does the same)
         if !poolOrder.contains(taskId) {
             poolOrder.insert(taskId, at: min(max(0, index), poolOrder.count))
         }
@@ -830,6 +847,8 @@ final class BoardWizardViewModel {
         expandedSourceIds = []
         manualTaskIds = []
         manualTaskVary = [:]
+        placementParams = [:]
+        placementParamsWindow = nil
         childrenByCompoundId = [:]
         currentStep = 1
     }

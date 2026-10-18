@@ -351,7 +351,6 @@ export function CounterDetailPage(): React.ReactElement {
             key={`${group.counterId}-${kind}`}
             kind={kind}
             unit={group.unit}
-            defaultLogAmount={group.defaultLogAmount}
             lifetime={group.lifetime}
             isLogging={isLogging}
             onLog={(direction, amount) => void handleLog(direction, amount)}
@@ -376,7 +375,7 @@ export function CounterDetailPage(): React.ReactElement {
               </RisoSectionLabel>
               <div className={styles.taskCardsGrid} role="list" aria-label="Active tasks sharing this counter">
                 {activeTasks.map((task) => (
-                  <div key={task.taskId} role="listitem">
+                  <div key={`${task.boardTaskId}:${task.taskId}`} role="listitem">
                     <CounterDetailTaskCard task={task} unit={group.unit} kind={kind} />
                   </div>
                 ))}
@@ -390,7 +389,7 @@ export function CounterDetailPage(): React.ReactElement {
               <RisoSectionLabel>Not counting now</RisoSectionLabel>
               <div role="list" aria-label="Inactive tasks not currently counting">
                 {inactiveTasks.map((task) => (
-                  <div key={task.taskId} role="listitem">
+                  <div key={`${task.boardTaskId}:${task.taskId}`} role="listitem">
                     <CounterDetailTaskCard task={task} unit={group.unit} kind={kind} inactive />
                   </div>
                 ))}
@@ -439,7 +438,6 @@ export function CounterDetailPage(): React.ReactElement {
         <CounterDeleteConfirmDialog
           counterName={group.name}
           memberCount={deleteImpact.counterMemberCount}
-          derivedWindowCounterCount={deleteImpact.derivedWindowCounterCount}
           unitTaskCount={deleteImpact.unitTaskCount}
           members={deleteImpact.counterMembers.map((m) => ({
             id: m.id,

@@ -7,11 +7,11 @@ import SwiftUI
 /// Deliberately the same lazy-detection banner vocabulary as the recurring
 /// Core Boards grid (OQ3 resolution: one row per closing board — mirrors the
 /// 6.1 recurring-window prompt, which already renders one tappable row per
-/// pending window). Each row: the board name + the window that ended, a
-/// **Log** action (opens the still-live board — the closing window keeps
-/// evaluating events until sealed) and a **Seal** action (freezes the
-/// snapshot via the seal transaction). The row disappears once the board is
-/// sealed (the caller's VM reload drops it).
+/// pending window). Each row: the board name + the window that ended; a tap
+/// anywhere on the row opens the still-live board to log (the closing window
+/// keeps evaluating events until sealed), and the **Close out** button seals
+/// it (freezes the snapshot via the seal transaction). The row disappears
+/// once the board is sealed (the caller's VM reload drops it).
 ///
 /// Pure leaf view — takes data + closures as props, holds no persistence, so
 /// it renders deterministically for snapshot coverage.
@@ -37,6 +37,7 @@ struct ClosingOutBannerView: View {
                         .tracking(0.8)
                 }
                 .foregroundStyle(Color.risoInk)
+                .padding(.horizontal, 6)
 
                 VStack(spacing: 8) {
                     ForEach(boards, id: \.id) { board in
@@ -49,15 +50,19 @@ struct ClosingOutBannerView: View {
                     }
                 }
             }
-            .padding(14)
+            // Tight inner margins so the rows get the card's width; the
+            // header keeps a small inset of its own to line up with them.
+            .padding(.horizontal, 8)
+            .padding(.top, 12)
+            .padding(.bottom, 10)
             .risoCard(fill: .risoPaper2)
             .risoHardShadow(Riso.Shadow.card)
         }
     }
 }
 
-/// One closing-out board row: name + "Ended <window> — anything left to log?"
-/// + Log/Seal actions.
+/// One closing-out board row: name + "Ended <window>"
+/// + the Close out action. Tapping anywhere else on the row opens the board.
 private struct ClosingOutBoardRow: View {
     let board: Board
     let isSealing: Bool
@@ -78,24 +83,29 @@ private struct ClosingOutBoardRow: View {
                     .font(.risoHead(14, .extraBold))
                     .foregroundStyle(Color.risoInk)
                     .lineLimit(1)
-                Text("Ended \(windowLabel) — anything left to log?")
+                Text("Ended \(windowLabel)")
                     .font(.risoBody(11.5, .semibold))
                     .foregroundStyle(Color.risoMuted)
                     .lineLimit(2)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 
-            HStack(spacing: 8) {
-                RisoButton(title: "Log", kind: .neutral, small: true) { onLog() }
-                    .disabled(isSealing)
-                RisoButton(title: isSealing ? "Closing…" : "Close out", kind: .gold, small: true) { onSeal() }
-                    .disabled(isSealing)
-                    .accessibilityLabel("Close out \(board.name)")
-            }
+            .accessibilityElement(children: .combine)
+            .accessibilityAddTraits(.isButton)
+            .accessibilityAction { if !isSealing { onLog() } }
+
+            RisoButton(title: isSealing ? "Closing…" : "Close out", kind: .gold, small: true) { onSeal() }
+                .disabled(isSealing)
+                .accessibilityLabel("Close out \(board.name)")
         }
-        .padding(10)
+        .padding(.vertical, 10)
+        .padding(.horizontal, 12)
         .risoCard(fill: .risoPaper)
         .risoHardShadow(Riso.Shadow.small)
+        // The whole row (padding included) opens the board; the Close out
+        // button's own tap wins over this parent gesture.
+        .contentShape(Rectangle())
+        .onTapGesture { if !isSealing { onLog() } }
     }
 }
 

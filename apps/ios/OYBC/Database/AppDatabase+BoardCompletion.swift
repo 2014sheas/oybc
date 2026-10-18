@@ -191,8 +191,8 @@ extension AppDatabase {
             if let boardId, try Board.fetchOne(db, key: boardId)?.sealedAt != nil { return [:] }
             // Non-event-owning (or missing) child: nothing is authored (see the rule above).
             guard let child = try Task.fetchOne(db, key: childTaskId), isEventOwningTask(child) else { return [:] }
+            let occurredAt = try Self.lateLogStampForBoard(db: db, boardId: boardId, now: now)
             if desiredCompleted {
-                let occurredAt = try Self.lateLogStampForBoard(db: db, boardId: boardId, now: now)
                 try Self.appendCompletionEvent(
                     db: db, taskId: childTaskId, boardId: boardId, now: now, occurredAt: occurredAt
                 )
@@ -202,11 +202,79 @@ extension AppDatabase {
                 )
             }
 
-            return try Self.runBoardCascadeForTaskWithResults(
+            let results = try Self.runBoardCascadeForTaskWithResults(
                 db: db,
                 changedTaskId: childTaskId,
                 now: now
             )
+            try Self.finishLateStampedWrite(db: db, childTaskId: childTaskId, occurredAt: occurredAt, now: now, results: results)
+            return results
         }
+    }
+
+    /// The count companion of `toggleCompoundChildFallback`: the compound
+    /// sheet's stepper on a plain COUNTING child NOT placed on the host board
+    /// (`BoardPlayViewModel.handleCompoundChildIncrement`). `delta` moves the
+    /// child's count in the HOST BOARD'S WINDOW — an `increment` event stamped
+    /// `lateLogStampForBoard` (the board's `endDate` once its window has
+    /// ended), a decrement gated so the window sum stays ≥ 0 — then the
+    /// cross-board cascade, in ONE transaction. Mirrors the web
+    /// `incrementCompoundChildFallback` (`tasks.crud.ts`).
+    ///
+    /// Only an event-owning counting child is authored here; a linked child's
+    /// count is its counter's, logged through `incrementSharedCounter` by the
+    /// caller. A no-op (empty result) for a missing / non-counting / derived
+    /// child, a zero (gated) delta, or a sealed host board.
+    ///
+    /// - Parameters:
+    ///   - childTaskId: The counting child.
+    ///   - delta: Signed amount (positive logs, negative removes).
+    ///   - windowStart: The host board's `startDate`.
+    ///   - windowEnd: The host board's inclusive upper bound, or `nil` (indefinite).
+    ///   - boardId: The host board (event provenance + late-log stamp).
+    ///   - now: ISO8601 timestamp stamped on every row written here.
+    /// - Returns: A `[boardId: CascadeBoardResult]` map for flash derivation.
+    func incrementCompoundChildFallback(
+        childTaskId: String,
+        delta: CountValue,
+        windowStart: String,
+        windowEnd: String?,
+        boardId: String?,
+        now: String
+    ) throws -> [String: CascadeBoardResult] {
+        try write { db in
+            if let boardId, try Board.fetchOne(db, key: boardId)?.sealedAt != nil { return [:] }
+            guard let child = try Task.fetchOne(db, key: childTaskId),
+                  child.type == .counting, isEventOwningTask(child)
+            else { return [:] }
+            let current = try Self.windowedState(
+                db: db, taskId: childTaskId, windowStart: windowStart, windowEnd: windowEnd
+            ).count
+            let gated = quantizeCount(delta < 0 ? max(delta, -current) : delta)
+            guard gated != 0 else { return [:] }
+            let occurredAt = try Self.lateLogStampForBoard(db: db, boardId: boardId, now: now)
+            try Self.appendIncrementEvent(
+                db: db, taskId: childTaskId, delta: gated, boardId: boardId, now: now, occurredAt: occurredAt
+            )
+            let results = try Self.runBoardCascadeForTaskWithResults(db: db, changedTaskId: childTaskId, now: now)
+            try Self.finishLateStampedWrite(db: db, childTaskId: childTaskId, occurredAt: occurredAt, now: now, results: results)
+            return results
+        }
+    }
+
+    /// One late-log tail (TASK_WINDOW_REWORK slice 0): a compound-child
+    /// fallback whose event was stamped at an ended board's `endDate` may have
+    /// landed inside a SEALED containing board's window; the live cascade skips
+    /// sealed boards, so re-derive them and refresh watchers — the same tail
+    /// undo and the shared-counter paths run. A no-op for a `now`-stamped write.
+    private static func finishLateStampedWrite(
+        db: Database, childTaskId: String, occurredAt: String, now: String, results: [String: CascadeBoardResult]
+    ) throws {
+        guard occurredAt != now else { return }
+        try reDeriveSealedBoards(db: db, changedTaskIds: [childTaskId])
+        // Every reached board, sealed ones included — `results` only names the
+        // live boards the cascade wrote (review of #627).
+        let reached = try boardIdsReachedByTasks(db: db, taskIds: [childTaskId]).union(results.keys)
+        try refreshWatchersForBoards(db: db, changedBoardIds: reached, now: now)
     }
 }

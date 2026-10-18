@@ -126,7 +126,9 @@ function place(taskId: string, row: number, col: number): BoardTask {
 function ctx(events: TaskEvent[]): SquareWindowContext {
   const eventsByTaskId: Record<string, TaskEvent[]> = {};
   for (const e of events) (eventsByTaskId[e.taskId] ??= []).push(e);
-  return { windowStart: WS, windowEnd: null, eventsByTaskId };
+  // The board's REAL window (slice 0: context window wins — an open-ended
+  // context here would count the post-window +17 against every member).
+  return { windowStart: WS, windowEnd: WE, eventsByTaskId };
 }
 
 // +3 inside the window, +17 three days after it ended (the repro's daily log).
@@ -184,10 +186,15 @@ describe('window-stamped derived cells render what the kernel resolves (items 4 
       isCompleted: false,
       currentCount: 3,
     });
-    // Context-less (library) reads keep the lifetime mirror.
+    // Slice 2c: a context-less read with no event map is 0 (neither the
+    // mirror nor the latch is read); with a context it is the root's window sum.
     expect(taskToSquareState(hub, undefined, { ...taskMap, hub }, {})).toMatchObject({
-      isCompleted: true,
-      currentCount: 15,
+      isCompleted: false,
+      currentCount: 0,
+    });
+    expect(taskToSquareState(hub, undefined, { ...taskMap, hub }, {}, ctx(EVENTS))).toMatchObject({
+      isCompleted: false,
+      currentCount: 3,
     });
   });
 

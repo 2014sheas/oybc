@@ -12,7 +12,6 @@ import SnapshotTesting
 ///   - `RisoTasksControlsView` (header controls) in light + dark.
 ///   - Tasks-tab header + Library/Pools pill segment (P2 Task 3) in
 ///     light + dark — see `TasksTabHeaderSegmentPreview` below.
-///   - `RisoTaskDetailContentView` for a Normal task in light + dark.
 ///
 /// All timestamps are pinned via `SnapshotFixtures.fixedTimestamp` so
 /// renders stay deterministic across machines and days.
@@ -456,116 +455,6 @@ final class RisoTasksTabSnapshotTests: XCTestCase {
         assertSnapshot(
             of: tasksTabHeaderWithSegment(),
             as: .image(layout: .fixed(width: 393, height: 140), traits: darkTraits()),
-            record: recordMode
-        )
-    }
-
-    // MARK: - RisoTaskDetailContentView — Normal task
-
-    func testDetailNormalLight() {
-        let task = SnapshotFixtures.makeTask(id: "t-detail", title: "Meditate 10 min", type: .normal)
-        let view = RisoTaskDetailContentView(
-            task: task,
-            placements: [],
-            affectedBoards: [],
-            parentCompounds: [],
-            compoundChildren: [],
-            templates: [],
-            now: SnapshotFixtures.fixedNow,
-            onEditSubmit: { _ in },
-            onDeleteTap: {},
-            onOpenTask: { _ in },
-            onOpenBoard: { _ in }
-        )
-        .frame(width: 393, height: 520)
-        assertSnapshot(
-            of: view,
-            as: .image(layout: .fixed(width: 393, height: 520), traits: lightTraits()),
-            record: recordMode
-        )
-    }
-
-    func testDetailNormalDark() {
-        let task = SnapshotFixtures.makeTask(id: "t-detail", title: "Meditate 10 min", type: .normal)
-        let view = RisoTaskDetailContentView(
-            task: task,
-            placements: [],
-            affectedBoards: [],
-            parentCompounds: [],
-            compoundChildren: [],
-            templates: [],
-            now: SnapshotFixtures.fixedNow,
-            onEditSubmit: { _ in },
-            onDeleteTap: {},
-            onOpenTask: { _ in },
-            onOpenBoard: { _ in }
-        )
-        .frame(width: 393, height: 520)
-        assertSnapshot(
-            of: view,
-            as: .image(layout: .fixed(width: 393, height: 520), traits: darkTraits()),
-            record: recordMode
-        )
-    }
-
-    // MARK: - RisoTaskDetailContentView — Compound task
-
-    func testDetailCompoundLight() {
-        let task = SnapshotFixtures.makeTask(
-            id: "t-compound", title: "Daily wellness", type: .compound,
-            operatorType: .and
-        )
-        let children = [
-            SnapshotFixtures.makeTask(id: "t-leaf-water", title: "Drink water", type: .normal),
-            SnapshotFixtures.makeTask(id: "t-leaf-stretch", title: "Stretch 5 min", type: .normal),
-        ]
-        let view = RisoTaskDetailContentView(
-            task: task,
-            placements: [],
-            affectedBoards: [],
-            parentCompounds: [],
-            compoundChildren: children,
-            templates: [],
-            now: SnapshotFixtures.fixedNow,
-            onEditSubmit: { _ in },
-            onDeleteTap: {},
-            onOpenTask: { _ in },
-            onOpenBoard: { _ in }
-        )
-        .frame(width: 393, height: 600)
-        assertSnapshot(
-            of: view,
-            as: .image(layout: .fixed(width: 393, height: 600), traits: lightTraits()),
-            record: recordMode
-        )
-    }
-
-    func testDetailCompoundDark() {
-        let task = SnapshotFixtures.makeTask(
-            id: "t-compound", title: "Daily wellness", type: .compound,
-            operatorType: .and
-        )
-        let children = [
-            SnapshotFixtures.makeTask(id: "t-leaf-water", title: "Drink water", type: .normal),
-            SnapshotFixtures.makeTask(id: "t-leaf-stretch", title: "Stretch 5 min", type: .normal),
-        ]
-        let view = RisoTaskDetailContentView(
-            task: task,
-            placements: [],
-            affectedBoards: [],
-            parentCompounds: [],
-            compoundChildren: children,
-            templates: [],
-            now: SnapshotFixtures.fixedNow,
-            onEditSubmit: { _ in },
-            onDeleteTap: {},
-            onOpenTask: { _ in },
-            onOpenBoard: { _ in }
-        )
-        .frame(width: 393, height: 600)
-        assertSnapshot(
-            of: view,
-            as: .image(layout: .fixed(width: 393, height: 600), traits: darkTraits()),
             record: recordMode
         )
     }

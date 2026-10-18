@@ -59,6 +59,13 @@ struct RecurringBoardTemplate: Codable, FetchableRecord, PersistableRecord {
     // absent/pre-stamp, a valid JSON object (even `{}`) ⇒ that map.
     var manualTaskVary: [String: VaryLevel]?
 
+    // TASK_WINDOW_REWORK slice 3b — a hand-added task's frozen target / kind /
+    // title, copied from the placement "Repeat this board" was cut from; spawn
+    // applies it to that hand-added member (sourced members re-plan from their
+    // rules). Same tri-state JSON-string TEXT contract as `manualTaskVary`
+    // (migration v46); clearable on sync.
+    var manualTaskTargets: [String: ManualTaskTarget]?
+
     // Spawn state
     var lastSpawnedWindowKey: String?
     var isActive: Bool
@@ -85,7 +92,7 @@ struct RecurringBoardTemplate: Codable, FetchableRecord, PersistableRecord {
         case seedTaskIds
         case poolIds, manualTaskIds, removedTaskIds
         case sources
-        case manualTaskVary
+        case manualTaskVary, manualTaskTargets
         case lastSpawnedWindowKey, isActive
         case createdAt, updatedAt
         case lastSyncedAt, version, isDeleted, deletedAt
@@ -105,6 +112,7 @@ struct RecurringBoardTemplate: Codable, FetchableRecord, PersistableRecord {
         removedTaskIds: [String]? = nil,
         sources: [BoardSource]? = nil,
         manualTaskVary: [String: VaryLevel]? = nil,
+        manualTaskTargets: [String: ManualTaskTarget]? = nil,
         lastSpawnedWindowKey: String? = nil,
         isActive: Bool,
         createdAt: String,
@@ -127,6 +135,7 @@ struct RecurringBoardTemplate: Codable, FetchableRecord, PersistableRecord {
         self.removedTaskIds = removedTaskIds
         self.sources = sources
         self.manualTaskVary = manualTaskVary
+        self.manualTaskTargets = manualTaskTargets
         self.lastSpawnedWindowKey = lastSpawnedWindowKey
         self.isActive = isActive
         self.createdAt = createdAt
@@ -184,6 +193,14 @@ struct RecurringBoardTemplate: Codable, FetchableRecord, PersistableRecord {
             manualTaskVary = try? JSONDecoder().decode([String: VaryLevel].self, from: data)
         } else {
             manualTaskVary = nil
+        }
+
+        // Slice 3b — same tri-state contract as `manualTaskVary`.
+        if let jsonString = (try? container.decodeIfPresent(String.self, forKey: .manualTaskTargets)) ?? nil,
+           let data = jsonString.data(using: .utf8) {
+            manualTaskTargets = try? JSONDecoder().decode([String: ManualTaskTarget].self, from: data)
+        } else {
+            manualTaskTargets = nil
         }
 
         lastSpawnedWindowKey = try container.decodeIfPresent(String.self, forKey: .lastSpawnedWindowKey)
@@ -296,6 +313,16 @@ struct RecurringBoardTemplate: Codable, FetchableRecord, PersistableRecord {
             }
         }
 
+        // Slice 3b — JSON-string TEXT column, key OMITTED when nil.
+        if let manualTaskTargets = manualTaskTargets {
+            if let data = try? JSONEncoder().encode(manualTaskTargets),
+               let jsonString = String(data: data, encoding: .utf8) {
+                try container.encode(jsonString, forKey: .manualTaskTargets)
+            } else {
+                try container.encode("{}", forKey: .manualTaskTargets)
+            }
+        }
+
         // `lastSpawnedWindowKey` is `String?` on iOS but `string | null`
         // (NOT `string | undefined`) in the shared Zod schema. The default
         // Optional encode behavior would *omit* the key when nil, which a
@@ -315,4 +342,13 @@ struct RecurringBoardTemplate: Codable, FetchableRecord, PersistableRecord {
         try container.encode(isDeleted, forKey: .isDeleted)
         try container.encodeIfPresent(deletedAt, forKey: .deletedAt)
     }
+}
+
+/// One hand-added task's frozen per-window parameters on a repeating board
+/// (TS twin `ManualTaskTarget`): the target a Repeat copied from a placement,
+/// the kind it is expressed in, and an optional per-board title.
+struct ManualTaskTarget: Codable, Equatable {
+    var target: CountValue
+    var kind: CountKind
+    var title: String?
 }

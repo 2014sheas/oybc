@@ -2,8 +2,6 @@ import { db } from '../internal';
 import {
   SyncOperationType,
   isBoardClosingOut,
-  findTransitiveParentCompounds,
-  findAffectedBoardIds,
   findWatcherTaskIds,
   TaskType,
 } from '@oybc/shared';
@@ -11,7 +9,7 @@ import { currentTimestamp } from '../utils';
 import { addToSyncQueue } from './syncQueue';
 import { sealBoard, reDeriveSealedBoardsForTasks } from './sealing';
 import { runBoardCascadeForBoardId, runBoardCascadeForTasks } from './orchestration';
-import { withWindowStampedDerived } from './derivedCounters';
+import { loadPlacementReach } from './placementReach';
 
 /**
  * Board Edit redesign slice 4 — Close / Reopen + the achievement-watcher
@@ -91,9 +89,7 @@ export async function closeBoard(boardId: string, now: string = currentTimestamp
  * naturally sees the just-cleared `sealedAt` inside this same transaction),
  * then refreshes any achievement watcher of this board (D8).
  *
- * Spawns nothing (no template / recurring write). Window-stamped derived
- * counters have nothing to unfreeze here — `isFrozenDerivedRow` keys on
- * `now > row.endDate`, not `sealedAt` (docs/BOARD_SOURCES.md §Plan B2 notes).
+ * Spawns nothing (no template / recurring write).
  *
  * @param boardId The board to reopen.
  * @param now     The reopen timestamp (defaults to wall-clock).
@@ -154,20 +150,7 @@ export async function resolveAffectedBoardIds(changedTaskIds: Iterable<string>):
   const ids = new Set(changedTaskIds);
   if (ids.size === 0) return new Set();
 
-  // A shared-counter ROOT is never placed itself: expand to its
-  // window-stamped derived rows (every sibling, not just the tapped one) so a
-  // watcher of ANY board placing one refreshes — the same reachability
-  // `reDeriveSealedBoardsForTasks` and iOS `boardIdsReachedByTasks` use.
-  const reachable = await withWindowStampedDerived(ids);
-  const boardTasks = await db.boardTasks.filter((bt) => !bt.isDeleted).toArray();
-  const children = await db.compoundChildren.filter((c) => !c.isDeleted).toArray();
-
-  const affected = new Set<string>();
-  for (const taskId of reachable) {
-    const parents = findTransitiveParentCompounds(taskId, children);
-    for (const id of findAffectedBoardIds(taskId, parents, boardTasks)) affected.add(id);
-  }
-  return affected;
+  return (await loadPlacementReach(ids)).boardIds;
 }
 
 /**

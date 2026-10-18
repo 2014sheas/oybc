@@ -10,7 +10,7 @@ import {
 import { db } from '../internal';
 import { runBoardCascadeForTasks } from './orchestration';
 import { recomputeTaskCachesFromPull } from './taskEvents';
-import { refreshDerivedBaselines, withWindowStampedDerived } from './derivedCounters';
+import { loadPlacementReach } from './placementReach';
 import { addToSyncQueue, stampTransactionSyncOwner } from './syncQueue';
 import { reDeriveSealedBoardsForTasks } from './sealing';
 import { refreshWatchersForBoards, resolveAffectedBoardIds } from './boardLifecycle';
@@ -104,22 +104,15 @@ export async function applyTaskEventsBatch(
         const task = await db.tasks.get(taskId);
         if (!task || !isEventOwningTask(task)) continue;
         await recomputeTaskCachesFromPull(taskId);
-        // Board Sources §Member rules (B2) — a pulled event that predates a
-        // board's window changes that window's `baseline`, so refresh every
-        // window-stamped derived counter hanging off this root in the same
-        // sweep. Same non-authored contract as the cache recompute above (no
-        // version bump, no enqueue) and same batching: once per affected root,
-        // before the single cascade below reads the derived rows.
-        await refreshDerivedBaselines(taskId);
         cascadeTaskIds.add(taskId);
       }
 
       // 4. ONE derivation pass per affected LIVE board (batched over the task
       //    set). Sealed boards are excluded here (fan-out exclusion).
-      //    Expanded to the window-stamped derived rows of each affected root:
-      //    the root is never placed, but those rows resolve from its events.
+      //    Expanded to the linked rows of each affected root: the root is
+      //    never placed, but those rows resolve from its events.
       if (cascadeTaskIds.size > 0) {
-        await runBoardCascadeForTasks(await withWindowStampedDerived(cascadeTaskIds));
+        await runBoardCascadeForTasks((await loadPlacementReach(cascadeTaskIds)).taskIds);
       }
 
       // 5. Seal re-derivation (docs §Seal snapshots re-derive from the event
@@ -223,11 +216,8 @@ export async function healMissingCompletionEvents(userId: string): Promise<numbe
       // sealed re-derive over the healed set — same shape as applyTaskEventsBatch.
       for (const taskId of healedTaskIds) {
         await recomputeTaskCachesFromPull(taskId);
-        // Same B2 baseline refresh as the batch path — a healed backfill event
-        // is a new pre-window occurrence for any derived counter on this root.
-        await refreshDerivedBaselines(taskId);
       }
-      await runBoardCascadeForTasks(await withWindowStampedDerived(healedTaskIds));
+      await runBoardCascadeForTasks((await loadPlacementReach(healedTaskIds)).taskIds);
       await reDeriveSealedBoardsForTasks(healedTaskIds);
     },
   );

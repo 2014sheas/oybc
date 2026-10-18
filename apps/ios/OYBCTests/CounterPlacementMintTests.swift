@@ -2,17 +2,17 @@ import XCTest
 import GRDB
 @testable import OYBC
 
-/// docs/SHARED_COUNTER_SETTINGS.md §2 (PR 2) — placing a shared counter mints
-/// its per-board copy at the counter's default goal for the board's timeframe,
-/// titled through the root's templates; a counter with no defaults places
+/// docs/SHARED_COUNTER_SETTINGS.md §2 (PR 2) — placing a shared counter carries
+/// the counter's default goal for the board's timeframe as a placement
+/// parameter, titled through the root's templates; a counter with no defaults places
 /// exactly as before. Covers Board Edit (add + Replace via the placement choke
-/// points) and the wizard / spawn mint (`planAndMintDerivedRows`: hand-added
-/// root and a board-sourced member). Web twin: `counterPlacementDefaults.test.ts`.
+/// points) and the wizard / spawn PLAN (`planPlacements`, slice 3b: hand-added
+/// root and a board-sourced member become placement parameters — nothing is
+/// minted). Web twin: `counterPlacementDefaults.test.ts`.
 final class CounterPlacementMintTests: XCTestCase {
     private typealias K = LinkedWindowKit
     private let septStart = "2026-09-01T00:00:00.000Z", septEnd = "2026-09-30T00:00:00.000Z"
 
-    private func derived(_ board: String) -> String { BoardSources.derivedTaskId(boardId: board, rootTaskId: "root") }
 
     /// A 100-mile counter root; SEPT ("b1") is a MONTHLY board.
     private func root(goals: CounterTimeframeGoals? = CounterTimeframeGoals(monthly: 30), plural: String? = "Run #N mi") -> Task {
@@ -32,111 +32,129 @@ final class CounterPlacementMintTests: XCTestCase {
 
     // MARK: - Board Edit (placement choke points)
 
-    func test_add_rootWithDefault_mintsCopyAtDefault_titledFromTemplate() throws {
+    func test_add_rootWithDefault_writesTargetOverride_titledFromTemplate() throws {
         let db = try makeDb(root: root())
         let bt = try db.addBoardTaskToBoard("b1", taskId: "root", position: (row: 0, col: 0))
-        XCTAssertEqual(bt.taskId, derived("b1"))
-        let row = try XCTUnwrap(K.fetchTask(db, derived("b1")))
-        XCTAssertEqual(row.maxCount, 30)
-        XCTAssertEqual(row.title, "Run 30 mi")
-        XCTAssertEqual(row.sharedCounterId, "root")
-        XCTAssertTrue(BoardSources.isWindowStampedForBoard(row, board: try XCTUnwrap(db.fetchBoard(id: "b1"))))
+        XCTAssertEqual(bt.taskId, "root", "slice 3a: the root itself is placed, never a copy")
+        XCTAssertEqual(bt.targetOverride, 30)
+        XCTAssertEqual(bt.targetKind, .discrete)
+        let stored = try XCTUnwrap(try db.fetchBoardTasks(boardId: "b1").first)
+        XCTAssertEqual(stored.targetOverride, 30, "persisted, not just returned")
+        let rootRow = try XCTUnwrap(K.fetchTask(db, "root"))
+        XCTAssertEqual(PlacementParams.apply(rootRow, placement: stored).title, "Run 30 mi")
+        XCTAssertEqual(rootRow.maxCount, 100, "the library root keeps its own goal")
     }
 
-    func test_replace_rootWithDefault_copyCarriesDefault() throws {
+    func test_replace_rootWithDefault_placementCarriesDefault() throws {
         let db = try makeDb(root: root())
         try db.saveTask(K.task("old", maxCount: 5))
         try db.saveBoardTask(K.placement(id: "bt", boardId: "b1", taskId: "old", size: 3))
         try db.updateBoardTaskAndCascade(boardTaskId: "bt", newTaskId: "root")
-        XCTAssertEqual(try db.fetchBoardTasks(boardId: "b1").first?.taskId, derived("b1"))
-        XCTAssertEqual(try K.fetchTask(db, derived("b1"))?.maxCount, 30)
+        let placed = try XCTUnwrap(try db.fetchBoardTasks(boardId: "b1").first)
+        XCTAssertEqual(placed.taskId, "root")
+        XCTAssertEqual(placed.targetOverride, 30)
+    }
+
+    /// A swap drops the OLD task's parameters (written as explicit NULLs).
+    func test_replace_dropsTheOldPlacementsParameters() throws {
+        let db = try makeDb(root: root(goals: nil))
+        try db.saveTask(K.task("old", maxCount: 5))
+        try db.saveTask(K.task("next", maxCount: 8))
+        var bt = K.placement(id: "bt", boardId: "b1", taskId: "old", size: 3)
+        bt.targetOverride = 9
+        bt.targetKind = .discrete
+        bt.titleOverride = "Custom"
+        try db.saveBoardTask(bt)
+        try db.updateBoardTaskAndCascade(boardTaskId: "bt", newTaskId: "next")
+        let placed = try XCTUnwrap(try db.fetchBoardTasks(boardId: "b1").first)
+        XCTAssertEqual(placed.taskId, "next")
+        XCTAssertNil(placed.targetOverride)
+        XCTAssertNil(placed.targetKind)
+        XCTAssertNil(placed.titleOverride)
     }
 
     func test_add_rootWithoutDefaults_placesRootAsBefore() throws {
         let db = try makeDb(root: root(goals: nil))
-        XCTAssertEqual(try db.addBoardTaskToBoard("b1", taskId: "root", position: (row: 0, col: 0)).taskId, "root")
-        XCTAssertNil(try K.fetchTask(db, derived("b1")))
+        let bt = try db.addBoardTaskToBoard("b1", taskId: "root", position: (row: 0, col: 0))
+        XCTAssertEqual(bt.taskId, "root")
+        XCTAssertNil(bt.targetOverride)
     }
 
-    func test_add_defaultEqualToRootGoal_placesRoot() throws {
+    func test_add_defaultEqualToRootGoal_placesRootWithoutOverride() throws {
         let db = try makeDb(root: root(goals: CounterTimeframeGoals(monthly: 100)))
-        XCTAssertEqual(try db.addBoardTaskToBoard("b1", taskId: "root", position: (row: 0, col: 0)).taskId, "root")
+        let bt = try db.addBoardTaskToBoard("b1", taskId: "root", position: (row: 0, col: 0))
+        XCTAssertEqual(bt.taskId, "root")
+        XCTAssertNil(bt.targetOverride)
     }
 
-    func test_add_revivedCopy_keepsItsOwnGoal() throws {
+    /// Explicit parameters passed by Board Edit win over the default rule.
+    func test_add_explicitParameters_winOverTheDefaultRule() throws {
         let db = try makeDb(root: root())
-        _ = try db.addBoardTaskToBoard("b1", taskId: "root", position: (row: 0, col: 0))
-        try db.write { d in
-            try d.execute(sql: "UPDATE tasks SET maxCount = 12, isDeleted = 1 WHERE id = ?", arguments: [self.derived("b1")])
-            try d.execute(sql: "UPDATE board_tasks SET isDeleted = 1 WHERE boardId = 'b1'")
-        }
-        let bt = try db.addBoardTaskToBoard("b1", taskId: "root", position: (row: 0, col: 1))
-        XCTAssertEqual(bt.taskId, derived("b1"))
-        let row = try XCTUnwrap(K.fetchTask(db, derived("b1")))
-        XCTAssertFalse(row.isDeleted)
-        XCTAssertEqual(row.maxCount, 12)
+        let bt = try db.addBoardTaskToBoard(
+            "b1", taskId: "root", position: (row: 0, col: 0), targetOverride: 12, targetKind: .discrete,
+            titleOverride: "Twelve"
+        )
+        XCTAssertEqual(bt.targetOverride, 12)
+        XCTAssertEqual(try db.fetchBoardTasks(boardId: "b1").first?.titleOverride, "Twelve")
     }
 
-    func test_add_linkedTask_keepsOwnGoal_titleFromRootTemplate() throws {
+    func test_add_linkedTask_isPlacedAsIs_withNoParameters() throws {
         let db = try makeDb(root: root())
         try db.saveTask(K.task("hub", maxCount: 10, sharedCounterId: "root", title: "Run 10 miles"))
         let bt = try db.addBoardTaskToBoard("b1", taskId: "hub", position: (row: 0, col: 0))
-        let row = try XCTUnwrap(K.fetchTask(db, bt.taskId))
-        XCTAssertEqual(bt.taskId, derived("b1"))
-        XCTAssertEqual(row.maxCount, 10)
-        XCTAssertEqual(row.title, "Run 10 mi")
+        XCTAssertEqual(bt.taskId, "hub")
+        XCTAssertNil(bt.targetOverride)
+        XCTAssertEqual(try K.fetchTask(db, "hub")?.maxCount, 10)
     }
 
-    // MARK: - Wizard / spawn mint
+    // MARK: - Wizard / spawn plan
 
     private let weekStart = "2026-09-07T00:00:00", weekEnd = "2026-09-13T23:59:59"
 
-    private func mint(
+    private func plan(
         _ database: AppDatabase, selected: [String], manual: [String], supplies: [BoardSources.ExpandedSupply] = [],
         tasksById: [String: Task], sourceWindows: [String: BoardSources.BoardWindow] = [:]
-    ) throws -> (placementIds: [String], minted: BoardSources.DerivedRows) {
-        try database.write { db in
-            try AppDatabase.planAndMintDerivedRows(
-                db: db, boardId: "wk", userId: K.userId, now: "2026-09-07T08:00:00.000Z",
-                selectedIds: selected, supplies: supplies, manualTaskIds: manual, manualTaskVary: [:],
+    ) throws -> [BoardSources.PlannedPlacement] {
+        let tasksBefore = try database.read { try Task.fetchCount($0) }
+        let out = try database.write { db in
+            try AppDatabase.planPlacements(
+                db: db, selectedIds: selected, supplies: supplies, manualTaskIds: manual, manualTaskVary: [:],
                 window: .init(timeframe: .weekly, startDate: self.weekStart, endDate: self.weekEnd), mode: .oneOff,
-                tasksById: tasksById, childrenByCompoundId: [:], sourceWindowByTaskId: sourceWindows,
-                events: try TaskEvent.fetchAll(db)
+                tasksById: tasksById, childrenByCompoundId: [:], sourceWindowByTaskId: sourceWindows
             )
         }
+        XCTAssertEqual(try database.read { try Task.fetchCount($0) }, tasksBefore, "planning writes no task rows")
+        return out
     }
 
-    func test_wizardHandAdd_rootWithWeeklyDefault_mintsCopyAtDefault() throws {
+    func test_wizardHandAdd_rootWithWeeklyDefault_plansAnOverrideAtTheDefault() throws {
         var r = root(goals: CounterTimeframeGoals(weekly: 7))
         r.titleTemplateSingular = "Run #N mile"
         let db = try makeDb(root: r)
-        let out = try mint(db, selected: ["root"], manual: ["root"], tasksById: ["root": r])
-        let copyId = BoardSources.derivedTaskId(boardId: "wk", rootTaskId: "root")
-        XCTAssertEqual(out.placementIds, [copyId])
-        let row = try XCTUnwrap(K.fetchTask(db, copyId))
-        XCTAssertEqual(row.maxCount, 7)
-        XCTAssertEqual(row.title, "Run 7 mi")
+        let out = try plan(db, selected: ["root"], manual: ["root"], tasksById: ["root": r])
+        XCTAssertEqual(out, [BoardSources.PlannedPlacement(taskId: "root", targetOverride: 7, targetKind: .discrete)])
+        let bt = K.placement(id: "bt", boardId: "wk", taskId: "root").withPlanned(out[0])
+        XCTAssertEqual(PlacementParams.apply(r, placement: bt, settings: .init(task: r)).title, "Run 7 mi")
     }
 
     func test_wizardHandAdd_rootWithoutDefaults_placedAsBefore() throws {
         let r = root(goals: nil)
         let db = try makeDb(root: r)
-        let out = try mint(db, selected: ["root"], manual: ["root"], tasksById: ["root": r])
-        XCTAssertEqual(out.placementIds, ["root"])
-        XCTAssertTrue(out.minted.tasks.isEmpty)
+        let out = try plan(db, selected: ["root"], manual: ["root"], tasksById: ["root": r])
+        XCTAssertEqual(out, [BoardSources.PlannedPlacement(taskId: "root")])
     }
 
-    func test_poolPull_rootMintsAtItsWeeklyDefault() throws {
+    func test_poolPull_rootPlansItsWeeklyDefault() throws {
         let r = root(goals: CounterTimeframeGoals(weekly: 3))
         let db = try makeDb(root: r)
         let supply = BoardSources.ExpandedSupply(
             source: BoardSource(sourceId: "pool-1", kind: .pool), supplyTaskIds: ["root"], partOf: [:]
         )
-        let out = try mint(db, selected: ["root"], manual: [], supplies: [supply], tasksById: ["root": r])
-        let copyId = BoardSources.derivedTaskId(boardId: "wk", rootTaskId: "root")
-        XCTAssertEqual(out.placementIds, [copyId])
-        XCTAssertEqual(try K.fetchTask(db, copyId)?.maxCount, 3)
-        XCTAssertEqual(try K.fetchTask(db, copyId)?.title, "Run 3 mi")
+        let out = try plan(db, selected: ["root"], manual: [], supplies: [supply], tasksById: ["root": r])
+        XCTAssertEqual(out.map(\.taskId), ["root"])
+        XCTAssertEqual(out.first?.targetOverride, 3)
+        let bt = K.placement(id: "bt", boardId: "wk", taskId: "root").withPlanned(out[0])
+        XCTAssertEqual(PlacementParams.apply(r, placement: bt, settings: .init(task: r)).title, "Run 3 mi")
     }
 
     func test_sourcePull_consultsRootDefaultBeforeProRating() throws {
@@ -148,15 +166,14 @@ final class CounterPlacementMintTests: XCTestCase {
             source: BoardSource(sourceId: "b1", kind: .board), supplyTaskIds: ["monthCopy"], partOf: [:]
         )
         // Only the member is in `tasksById` — the root comes from the database.
-        let out = try mint(
+        let out = try plan(
             db, selected: ["monthCopy"], manual: [], supplies: [supply], tasksById: ["monthCopy": member],
             sourceWindows: ["monthCopy": .init(timeframe: .monthly, startDate: septStart, endDate: septEnd)]
         )
-        let copyId = BoardSources.derivedTaskId(boardId: "wk", rootTaskId: "root")
-        XCTAssertEqual(out.placementIds, [copyId])
-        // Pro-rating alone would give ceil(30 × 7 / 30) = 7.
-        XCTAssertEqual(try K.fetchTask(db, copyId)?.maxCount, 4)
-        XCTAssertEqual(try K.fetchTask(db, copyId)?.title, "Run 4 mi")
+        // The linked member is placed as itself (no per-window copy); pro-rating alone
+        // would give ceil(30 × 7 / 30) = 7, the root's weekly default wins.
+        XCTAssertEqual(out.map(\.taskId), ["monthCopy"])
+        XCTAssertEqual(out.first?.targetOverride, 4)
     }
 }
 

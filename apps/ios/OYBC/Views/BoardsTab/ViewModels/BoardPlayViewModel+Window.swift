@@ -43,6 +43,15 @@ extension BoardPlayViewModel {
         return grouped
     }
 
+    /// The placement-adjusted task a surface renders for `bt` (slice 2a):
+    /// `PlacementParams.apply` with the root's title settings for a linked
+    /// task. Web twin `placedTaskFor`.
+    func placedTask(_ bt: BoardTask) -> Task? {
+        guard let task = taskMap[bt.taskId] else { return nil }
+        let root = task.sharedCounterId.flatMap { taskMap[$0] }
+        return PlacementParams.apply(task, placement: bt, settings: root.map { CounterSettings.TitleSettings(task: $0) })
+    }
+
     /// Resolve an event-owning primitive task's windowed state for the current
     /// board window `[windowStart, windowEnd]` (docs §Semantics). Callers must
     /// branch derived / compound / achievement BEFORE calling — this delegates

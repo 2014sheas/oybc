@@ -228,7 +228,6 @@ final class BoardWizardPreviewDerivedTests: XCTestCase {
         XCTAssertEqual(standIn.action, "Run")
         XCTAssertEqual(standIn.unit, "miles")
         XCTAssertEqual(standIn.currentCount, 0, "a fresh window starts at zero")
-        XCTAssertEqual(standIn.baseline, 0)
 
         // A plain member the rules never touch is handed back untouched.
         XCTAssertEqual(byId["n1"]?.title, "Task n1")
@@ -264,7 +263,7 @@ final class BoardWizardPreviewDerivedTests: XCTestCase {
 
     // MARK: - 4. Derived compounds are NOT stood in (RC6 item 2)
 
-    func test_derivedCompoundIsPlannedButTheCellKeepsTheOriginalCompound() throws {
+    func test_compoundChildTargetsArePlannedButTheCellKeepsTheOriginalCompound() throws {
         let database = try seedSourceBoard()
         let vm = pulledVM(database)
         let library = try makeLibrary(database)
@@ -297,7 +296,6 @@ final class BoardWizardPreviewDerivedTests: XCTestCase {
             supplies: vm.expandedSupplies,
             manualTaskIds: Array(vm.manualTaskIds),
             manualTaskVary: vm.manualTaskVary,
-            boardId: previewBoardId,
             window: BoardSources.BoardWindow(
                 timeframe: vm.timeframe, startDate: start, endDate: end
             ),
@@ -305,20 +303,17 @@ final class BoardWizardPreviewDerivedTests: XCTestCase {
             tasksById: tasksById,
             childrenByCompoundId: vm.childrenByCompoundId,
             sourceWindowByTaskId: sourceWindowByTaskId,
-            baselineByRootId: [:],
             rng: makePreviewRng(shuffleNonce: 11)
         )
-        let derivedCompound = try XCTUnwrap(plan.derivedCompounds.first)
-        XCTAssertEqual(derivedCompound.sourceCompoundId, "C")
-        XCTAssertTrue(plan.placementIds.contains(derivedCompound.id),
-                      "the persist path would place the DERIVED compound id")
+        let compoundPlacement = try XCTUnwrap(plan.placements.first { $0.taskId == "C" })
+        XCTAssertNotNil(compoundPlacement.childTargets,
+                        "the persist path would re-target this compound's parts (slice 3b: as child targets)")
 
         // …and yet the preview cell is the original compound, untouched.
         let compoundCell = try XCTUnwrap(cells(placement)["C"])
         XCTAssertEqual(compoundCell.title, "Task C")
         XCTAssertEqual(compoundCell.type, .compound)
-        XCTAssertFalse(orderedIds.contains(derivedCompound.id),
-                       "a derived compound id in a cell would orphan the children lookup")
+        XCTAssertTrue(orderedIds.contains("C"), "the compound keeps its own cell")
     }
 
     // MARK: - 5. The dry run writes nothing (RC6 item 4)
@@ -365,7 +360,7 @@ final class BoardWizardPreviewDerivedTests: XCTestCase {
         let standIn = try XCTUnwrap(cells(placement)["cnt"])
 
         XCTAssertEqual(standIn.title, "Task cnt",
-                       "persist mints the real rows itself — it must get the raw member")
+                       "persist plans the real placement parameters itself — it must get the raw member")
         XCTAssertEqual(standIn.maxCount, countingGoal)
     }
 }

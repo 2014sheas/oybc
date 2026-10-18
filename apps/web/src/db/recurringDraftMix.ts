@@ -29,7 +29,13 @@
  * (`apps/ios/OYBC/Views/CreateTab/RecurringDraftMixPayload.swift`).
  */
 
-import { sourcesFromMixFields, type BoardSource, type VaryLevel } from '@oybc/shared';
+import {
+  normalizePlacementFields,
+  sourcesFromMixFields,
+  type BoardSource,
+  type PlacementParams,
+  type VaryLevel,
+} from '@oybc/shared';
 
 export interface RecurringDraftMixPayload {
   poolIds: string[];
@@ -42,6 +48,11 @@ export interface RecurringDraftMixPayload {
    *  Always present on decode (`{}` default); omitted from the encoded
    *  blob when empty so an existing draft encodes byte-identically. */
   manualTaskVary: Record<string, VaryLevel>;
+  /** TASK_WINDOW_REWORK slice 3b — the wizard's per-cell placement
+   *  parameters (a quick-added / hand-edited counter goal), keyed by task id.
+   *  Always present on decode (`{}` default); omitted from the encoded blob
+   *  when empty. An older client ignores the key. */
+  placementParams: Record<string, PlacementParams>;
 }
 
 const EMPTY_MIX: RecurringDraftMixPayload = {
@@ -50,6 +61,7 @@ const EMPTY_MIX: RecurringDraftMixPayload = {
   removedTaskIds: [],
   sources: [],
   manualTaskVary: {},
+  placementParams: {},
 };
 
 /**
@@ -59,9 +71,10 @@ const EMPTY_MIX: RecurringDraftMixPayload = {
  * `[0, all]` pool pulls — the wizard always passes its native sources.
  */
 export function encodeRecurringDraftMix(
-  mix: Omit<RecurringDraftMixPayload, 'sources' | 'manualTaskVary'> & {
+  mix: Omit<RecurringDraftMixPayload, 'sources' | 'manualTaskVary' | 'placementParams'> & {
     sources?: BoardSource[];
     manualTaskVary?: Record<string, VaryLevel>;
+    placementParams?: Record<string, PlacementParams>;
   },
 ): string {
   return JSON.stringify({
@@ -72,6 +85,9 @@ export function encodeRecurringDraftMix(
     sources: mix.sources ?? sourcesFromMixFields(mix),
     ...(mix.manualTaskVary && Object.keys(mix.manualTaskVary).length
       ? { manualTaskVary: mix.manualTaskVary }
+      : {}),
+    ...(mix.placementParams && Object.keys(mix.placementParams).length
+      ? { placementParams: mix.placementParams }
       : {}),
   });
 }
@@ -103,6 +119,22 @@ function sanitizeVary(v: unknown): Record<string, VaryLevel> {
   const out: Record<string, VaryLevel> = {};
   for (const [k, lvl] of Object.entries(v as Record<string, unknown>))
     if (lvl === 0 || lvl === 1 || lvl === 2) out[k] = lvl;
+  return out;
+}
+
+/**
+ * Keeps the entries of a decoded `placementParams` that survive the canonical
+ * placement-field normaliser (a malformed goal is dropped); an array is
+ * rejected outright, like {@link sanitizeVary}.
+ */
+function sanitizePlacementParams(v: unknown): Record<string, PlacementParams> {
+  if (v === null || typeof v !== 'object' || Array.isArray(v)) return {};
+  const out: Record<string, PlacementParams> = {};
+  for (const [k, raw] of Object.entries(v as Record<string, unknown>)) {
+    if (raw === null || typeof raw !== 'object') continue;
+    const norm = normalizePlacementFields(raw as PlacementParams);
+    if (norm.targetOverride !== undefined || norm.titleOverride !== undefined) out[k] = norm;
+  }
   return out;
 }
 
@@ -141,7 +173,12 @@ export function decodeRecurringDraftMix(json: string | undefined): RecurringDraf
         Array.isArray(rawSources) && rawSources.every(isBoardSource)
           ? (rawSources as BoardSource[])
           : sourcesFromMixFields(trio);
-      return { ...trio, sources, manualTaskVary: sanitizeVary(record.manualTaskVary) };
+      return {
+        ...trio,
+        sources,
+        manualTaskVary: sanitizeVary(record.manualTaskVary),
+        placementParams: sanitizePlacementParams(record.placementParams),
+      };
     }
     return EMPTY_MIX;
   } catch {

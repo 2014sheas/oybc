@@ -1,9 +1,10 @@
 import { db } from '../internal';
 import {
   buildRepeatBoardTemplateInput,
-  isWindowStampedDerived,
+  resolveCountKind,
   SyncOperationType,
   type Board,
+  type ManualTaskTarget,
   type RecurringBoardTemplate,
   type Timeframe,
   type WeekStartDay,
@@ -11,7 +12,6 @@ import {
 } from '@oybc/shared';
 import { generateUUID, currentTimestamp } from '../utils';
 import { addToSyncQueue } from './syncQueue';
-import { isWindowStampedDerivedCompound } from './derivedCounters';
 import { assertBoardMetadataWritable } from './boardLifecycle';
 
 /**
@@ -84,59 +84,42 @@ export async function repeatBoardAsRecurring(
       const sortedBoardTasks = [...rawBoardTasks].sort(
         (a, b) => a.row * board.boardSize + a.col - (b.row * board.boardSize + b.col),
       );
-      // One batched read for the RB4 check below (the batched style this
-      // file's neighbours use), not a `get` per cell.
+      // One batched read for the override lookup below, not a `get` per cell.
       const placedTasks = await db.tasks
         .where('id')
         .anyOf([...new Set(sortedBoardTasks.map((bt) => bt.taskId))])
         .toArray();
       const placedTaskById = new Map(placedTasks.map((t) => [t.id, t]));
 
-      // RB4 amended (final-review FI2) — the roots behind any placed
-      // window-stamped derived counters, in one batched read.
-      const rootIds = [
-        ...new Set(
-          placedTasks
-            .filter((t) => isWindowStampedDerived(t))
-            .map((t) => t.sharedCounterId)
-            .filter((id): id is string => id != null),
-        ),
-      ];
-      const rootById = new Map(
-        (rootIds.length > 0 ? await db.tasks.where('id').anyOf(rootIds).toArray() : []).map((t) => [
-          t.id,
-          t,
-        ]),
-      );
-
       const boardTaskIds: string[] = [];
+      const manualTaskTargets: Record<string, ManualTaskTarget> = {};
       const seenTaskIds = new Set<string>();
       for (const bt of sortedBoardTasks) {
-        // Board Sources §Member rules (B2, RB4) — a per-window derived
-        // COMPOUND is this window's re-targeted copy of a source compound;
-        // carrying it forward as a hand-added member would pin every future
-        // window to it.
-        const task = placedTaskById.get(bt.taskId);
-        if (task && isWindowStampedDerivedCompound(task)) continue;
-        // RB4 amended (final-review FI2) — a derived COUNTER is recorded by
-        // its ROOT id, never its own. The derived row belongs to THIS board's
-        // window and is retired with this board (RB5), so a record naming it
-        // would be skipped as `has_deleted_tasks` for every future window the
-        // day the user deletes the board they repeated. The root is durable
-        // library content and is what each new window re-mints from anyway. A
-        // root that is itself missing or deleted contributes no member.
-        let memberId = bt.taskId;
-        if (task && isWindowStampedDerived(task) && task.sharedCounterId != null) {
-          const root = rootById.get(task.sharedCounterId);
-          if (!root || root.isDeleted) continue;
-          memberId = root.id;
-        }
+        // A placement is recorded by its own task id (slice 5: no derived
+        // rows remain); its frozen override / title rides along below.
+        const keyTask = placedTaskById.get(bt.taskId);
+        const memberId = bt.taskId;
         if (seenTaskIds.has(memberId)) continue;
         seenTaskIds.add(memberId);
         boardTaskIds.push(memberId);
+        // Slice 3b (ruling 1): Repeat copies a placement's frozen override.
+        const target = bt.targetOverride ?? (bt.titleOverride != null ? keyTask?.maxCount : undefined);
+        if (keyTask && typeof target === 'number' && target > 0) {
+          manualTaskTargets[memberId] = {
+            target,
+            kind: bt.targetKind ?? resolveCountKind(keyTask),
+            ...(bt.titleOverride != null ? { title: bt.titleOverride } : {}),
+          };
+        }
       }
 
-      const input = buildRepeatBoardTemplateInput(board, boardTaskIds, cadence, weekStartDay);
+      const input = buildRepeatBoardTemplateInput(
+        board,
+        boardTaskIds,
+        cadence,
+        weekStartDay,
+        manualTaskTargets,
+      );
 
       const template: RecurringBoardTemplate = {
         id: generateUUID(),
@@ -157,6 +140,7 @@ export async function repeatBoardAsRecurring(
         // this record and gives the member-rules readers a real empty map.
         sources: [],
         manualTaskVary: {},
+        ...(input.manualTaskTargets ? { manualTaskTargets: input.manualTaskTargets } : {}),
         lastSpawnedWindowKey: input.lastSpawnedWindowKey,
         isActive: input.isActive,
         createdAt: now,

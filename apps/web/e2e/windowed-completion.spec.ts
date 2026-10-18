@@ -137,7 +137,7 @@ test.describe('Windowed Completion (issue #317)', () => {
     });
   });
 
-  test('the bleed-green kill: pre-window completion renders grey on the board while the library stays lifetime-complete; complete/un-complete via the UI round-trips through a reload', async ({
+  test('the bleed-green kill: pre-window completion renders grey on the board while the library row carries no completion text; complete/un-complete via the UI round-trips through a reload', async ({
     page,
   }) => {
     // ── 1. Open the board — the square is INCOMPLETE despite the lifetime cache. ──
@@ -149,12 +149,16 @@ test.describe('Windowed Completion (issue #317)', () => {
     await expect(square).toHaveAttribute('aria-pressed', 'false');
     await expect(page.getByText('0/9')).toBeVisible();
 
-    // The Tasks-tab library row for the SAME task still reads lifetime-complete —
-    // both true simultaneously is the design's core promise.
+    // The Tasks-tab library row for the SAME task is listed as an ordinary row:
+    // since TASK_WINDOW_REWORK slice 2c library rows carry NO progress or
+    // completion text (the lifetime state lives in the status filter, not the
+    // row), so the grey board square and the library row never disagree in
+    // front of the user.
     await page.goto('/tasks?__oybc_test_bypass=1');
     await expect(page.getByRole('heading', { name: 'Task library', level: 1 })).toBeVisible();
     const libraryRow = page.getByRole('button', { name: `Open ${NORMAL_TASK_TITLE} details` });
-    await expect(libraryRow).toContainText('Completed');
+    await expect(libraryRow).toBeVisible();
+    await expect(libraryRow).not.toContainText('Completed');
 
     // Visual evidence for review: incomplete board + lifetime-complete library
     // disagreeing on purpose (repo convention: .playwright-mcp/).
@@ -185,13 +189,15 @@ test.describe('Windowed Completion (issue #317)', () => {
     await expect(page.getByRole('heading', { name: NORMAL_BOARD_NAME })).toBeVisible();
     await expect(square).toHaveAttribute('aria-pressed', 'false');
 
-    // The library still reads lifetime-complete — the surviving pre-window
-    // event keeps the recomputed lifetime cache `isCompleted: true`.
+    // The library row is still listed, still without a completion fragment
+    // (slice 2c) — the surviving pre-window event is the status filter's
+    // business, not the row's.
     await page.goto('/tasks?__oybc_test_bypass=1');
-    await expect(libraryRow).toContainText('Completed');
+    await expect(libraryRow).toBeVisible();
+    await expect(libraryRow).not.toContainText('Completed');
   });
 
-  test('counting task: a windowed increment via the UI reflects only in-window progress while the library shows the lifetime total', async ({
+  test('counting task: a windowed increment via the UI reflects only in-window progress while the library row carries no count', async ({
     page,
   }) => {
     await page.goto(`/boards/${COUNTING_BOARD_ID}?__oybc_test_bypass=1`);
@@ -202,9 +208,9 @@ test.describe('Windowed Completion (issue #317)', () => {
     await expect(counterSquare).toBeVisible();
     await expect(counterSquare).toContainText('0/10');
 
-    // Tap opens the stepper modal (counter kinds §5 — web no longer logs +1 on tap).
+    // Tap opens the square sheet (counter kinds §5 — web no longer logs +1 on tap).
     await counterSquare.click();
-    await page.getByRole('dialog').getByRole('button', { name: 'Increase' }).click();
+    await page.getByRole('dialog').getByRole('button', { name: /^Log \+1\b/ }).click();
     await page.keyboard.press('Escape');
     await expect(counterSquare).toContainText('1/10');
 
@@ -213,11 +219,13 @@ test.describe('Windowed Completion (issue #317)', () => {
     await expect(page.getByRole('heading', { name: COUNTING_BOARD_NAME })).toBeVisible();
     await expect(page.getByRole('button', { name: COUNTING_TASK_TITLE })).toContainText('1/10');
 
-    // The library shows the LIFETIME total (5 pre-window + 1 windowed = 6),
-    // not the windowed count — the same square legitimately disagrees with
-    // its own library row.
+    // The library row carries NO count (slice 2c: rows show goal, never
+    // progress) — the windowed 1/10 on the board is the only number the user
+    // sees for this task, so the two surfaces cannot disagree.
     await page.goto('/tasks?__oybc_test_bypass=1');
     const libraryRow = page.getByRole('button', { name: `Open ${COUNTING_TASK_TITLE} details` });
-    await expect(libraryRow).toContainText('6 / 10');
+    await expect(libraryRow).toBeVisible();
+    await expect(libraryRow).not.toContainText('6 / 10');
+    await expect(libraryRow).not.toContainText('1 / 10');
   });
 });

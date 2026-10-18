@@ -3,8 +3,9 @@ import GRDB
 @testable import OYBC
 
 /// The quick-add / Board Edit picker's counter rows (docs/SHARED_COUNTER_SETTINGS.md §2):
-/// which tasks are counter roots, the pending LINKED task a goal-less root is
-/// placed as, and the pure models behind the sheet's Template / Defaults fields.
+/// which tasks are counter roots, the placement parameter a root's window goal
+/// rides as (slice 3b: no copy is minted), and the pure models behind the
+/// sheet's Template / Defaults fields.
 final class QuickAddCounterPlacementTests: XCTestCase {
 
     private func counting(
@@ -43,6 +44,38 @@ final class QuickAddCounterPlacementTests: XCTestCase {
         XCTAssertTrue(QuickAddCounterPlacement.isSharedCounterRoot(plain, linkedRootIds: ids))
         XCTAssertFalse(QuickAddCounterPlacement.isSharedCounterRoot(copy, linkedRootIds: ids))
         XCTAssertFalse(QuickAddCounterPlacement.isSharedCounterRoot(plain))
+    }
+
+    /// Owner bug report 2026-10-14: a counter root born in a June board's wizard
+    /// carries June's window, yet it is the counter — the Tasks tab and the
+    /// Library sheet keep listing it while hiding ordinary expired rows.
+    func testExpiredForBrowse_exemptsCounterRoots() {
+        let now = ISO8601DateFormatter().date(from: "2026-10-14T12:00:00Z")!
+        func june(_ t: Task) -> Task {
+            var t = t
+            t.timeframe = .monthly
+            t.startDate = "2026-06-01T00:00:00.000"
+            t.endDate = "2026-06-30T23:59:59.999"
+            return t
+        }
+        XCTAssertFalse(QuickAddCounterPlacement.isExpiredForBrowse(june(counting(isCounter: true)), linkedRootIds: [], now: now))
+        XCTAssertFalse(QuickAddCounterPlacement.isExpiredForBrowse(
+            june(counting(goals: CounterTimeframeGoals(daily: 100))), linkedRootIds: [], now: now
+        ))
+        var plain = june(counting(id: "p"))
+        plain.maxCount = 100
+        let copy = june(counting(id: "c", sharedCounterId: "p"))
+        let ids = QuickAddCounterPlacement.counterRootIds(in: [plain, copy])
+        XCTAssertFalse(QuickAddCounterPlacement.isExpiredForBrowse(plain, linkedRootIds: ids, now: now)) // linked-to → a root
+        XCTAssertTrue(QuickAddCounterPlacement.isExpiredForBrowse(plain, linkedRootIds: [], now: now))
+        XCTAssertTrue(QuickAddCounterPlacement.isExpiredForBrowse(copy, linkedRootIds: ids, now: now))
+        var normal = june(counting())
+        normal.type = .normal
+        XCTAssertTrue(QuickAddCounterPlacement.isExpiredForBrowse(normal, linkedRootIds: [], now: now))
+        // In its window, or without an endDate: never expired.
+        let inWindow = ISO8601DateFormatter().date(from: "2026-06-15T12:00:00Z")!
+        XCTAssertFalse(QuickAddCounterPlacement.isExpiredForBrowse(plain, linkedRootIds: [], now: inWindow))
+        XCTAssertFalse(QuickAddCounterPlacement.isExpiredForBrowse(counting(), linkedRootIds: [], now: now))
     }
 
     /// The compound editor's sub-task search lists every counter root as the
@@ -128,56 +161,45 @@ final class QuickAddCounterPlacementTests: XCTestCase {
         )
     }
 
-    func testPendingLinkedTaskIsALinkedRowWithoutAWindow() {
+    // MARK: - Placement parameters (slice 3b)
+
+    func testForCounterGoalIsAnOverrideOnlyWhenItDiffersFromTheRootsGoal() {
+        var root = counting(isCounter: true, kind: .duration)
+        root.maxCount = 30
+        XCTAssertNil(PlacementParamsDraft.forCounterGoal(30, root: root), "the plain root")
+        XCTAssertNil(PlacementParamsDraft.forCounterGoal(0, root: root))
+        let p = PlacementParamsDraft.forCounterGoal(90, root: root)
+        XCTAssertEqual(p?.targetOverride, 90)
+        XCTAssertEqual(p?.targetKind, .duration)
+        XCTAssertNil(p?.titleOverride)
+    }
+
+    func testApplyReadsThePlacementGoalAndRendersTheTitleThroughTheRootsTemplates() {
         var root = counting(isCounter: true)
+        root.maxCount = 4
+        root.title = "Read 4 books"   // the auto title; a custom name would be carried verbatim
         root.titleTemplatePlural = "Read #N novels"
-        let payload = QuickAddCounterPlacement.pendingLinkedTask(
-            root: root, goal: 12, userId: "u2", now: "2026-10-10T10:00:00.000"
-        )
-        let t = payload.task
-        XCTAssertNotEqual(t.id, root.id)
-        XCTAssertEqual(t.userId, "u2")
-        XCTAssertEqual(t.type, .counting)
-        XCTAssertEqual(t.action, "Read")
-        XCTAssertEqual(t.unit, "books")
-        XCTAssertEqual(t.maxCount, 12)
-        XCTAssertEqual(t.sharedCounterId, "root")
-        XCTAssertEqual(t.baseline, 7)
-        XCTAssertEqual(t.title, "Read 12 novels")
-        XCTAssertTrue(t.createdInWizard)
-        XCTAssertFalse(t.isCounter)
-        XCTAssertNil(t.countKind)
-        XCTAssertNil(t.timeframe)
-        XCTAssertNil(t.startDate)
-        XCTAssertNil(t.endDate)
-        XCTAssertTrue(payload.childTasks.isEmpty)
-        XCTAssertTrue(payload.childLinks.isEmpty)
+        let p = PlacementParamsDraft.forCounterGoal(12, root: root)!
+        let shown = p.apply(to: root, root: root)
+        XCTAssertEqual(shown.maxCount, 12)
+        XCTAssertEqual(shown.title, "Read 12 novels")
+        XCTAssertEqual(shown.id, "root")
     }
 
-    func testPendingLinkedTaskCarriesTheHostBoardWindow_andIsALinkedPendingPayload() {
-        let root = counting(isCounter: true)
-        let payload = QuickAddCounterPlacement.pendingLinkedTask(
-            root: root, goal: 3, userId: "u1", now: "n",
-            timeframe: .weekly, startDate: "2026-10-05T00:00:00.000", endDate: "2026-10-11T23:59:59.999"
+    func testOverlayWinsOverThePlannersFieldsAndKeepsItsChildTargets() {
+        let planned = BoardSources.PlannedPlacement(
+            taskId: "t", targetOverride: 5, targetKind: .discrete,
+            childTargets: [PlacementChildTarget(childId: "c", target: 2)], titleOverride: "Planned"
         )
-        XCTAssertEqual(payload.task.timeframe, .weekly)
-        XCTAssertEqual(payload.task.startDate, "2026-10-05T00:00:00.000")
-        XCTAssertEqual(payload.task.endDate, "2026-10-11T23:59:59.999")
-        XCTAssertTrue(QuickAddCounterPlacement.isLinkedPendingPayload(payload))
-        var plain = payload.task
-        plain.sharedCounterId = nil
-        XCTAssertFalse(QuickAddCounterPlacement.isLinkedPendingPayload(
-            PendingTaskPayload(task: plain, childTasks: [], childLinks: [])
-        ))
+        let out = PlacementParamsDraft(targetOverride: 9, targetKind: .discrete).overlaying(planned)
+        XCTAssertEqual(out.targetOverride, 9)
+        XCTAssertEqual(out.titleOverride, "Planned")
+        XCTAssertEqual(out.childTargets?.count, 1)
     }
 
-    // MARK: - Persist seam: a replaced linked pending row is never written
-
-    /// An active one-off save with a hand-added linked pending row: the board
-    /// places `derivedTaskId(board, root)` at the typed goal, and the pending
-    /// row — written only so the planner could read it — leaves the
-    /// transaction unwritten and unenqueued (no orphan member on Counter Detail).
-    func testSaveWizardBoard_replacedLinkedPendingRow_isNeverPersistedOrEnqueued() throws {
+    /// An active save: the root is placed as itself with the wizard's override
+    /// on the row, and NO task row is created or enqueued.
+    func testSaveWizardBoard_rootPlacementCarriesTheWizardParameter_andMintsNothing() throws {
         typealias K = LinkedWindowKit
         let db = try AppDatabase.makeTestInstance()
         try K.seedUser(db)
@@ -187,29 +209,24 @@ final class QuickAddCounterPlacementTests: XCTestCase {
         let start = "2026-09-01T00:00:00.000Z", end = "2026-09-30T00:00:00.000Z"
         var board = K.board(id: "b1", startDate: start, endDate: end, size: 1)
         board.status = .active
-        let pending = QuickAddCounterPlacement.pendingLinkedTask(
-            root: rootTask, goal: 5, userId: K.userId, now: start,
-            timeframe: .monthly, startDate: start, endDate: end
-        )
-        let row = K.placement(id: "bt", boardId: "b1", taskId: pending.task.id)
+        let tasksBefore = try db.read { try Task.fetchCount($0) }
 
         try db.saveWizardBoard(
-            board: board, boardTasks: [row], pendingTasks: [pending],
-            isUpdate: false, manualTaskIds: [pending.task.id], now: start
+            board: board, boardTasks: [K.placement(id: "bt", boardId: "b1", taskId: "root")],
+            pendingTasks: [], isUpdate: false, manualTaskIds: ["root"],
+            placementParams: ["root": PlacementParamsDraft(targetOverride: 5, targetKind: .discrete)], now: start
         )
 
-        let copyId = BoardSources.derivedTaskId(boardId: "b1", rootTaskId: "root")
-        XCTAssertEqual(try db.fetchBoardTasks(boardId: "b1").map(\.taskId), [copyId])
-        XCTAssertEqual(try K.fetchTask(db, copyId)?.maxCount, 5)
-        XCTAssertNil(try K.fetchTask(db, pending.task.id), "the replaced pending row is not written")
-        XCTAssertTrue(try K.queue(db, type: "tasks", id: pending.task.id).isEmpty, "…and not enqueued")
-        XCTAssertFalse(try K.queue(db, type: "tasks", id: copyId).isEmpty, "the copy is")
-        let linked = try db.read { try Task.filter(Column("sharedCounterId") == "root").fetchAll($0).map(\.id) }
-        XCTAssertEqual(linked, [copyId], "exactly one row links to the root — no ghost member")
+        let rows = try db.fetchBoardTasks(boardId: "b1")
+        XCTAssertEqual(rows.map(\.taskId), ["root"])
+        XCTAssertEqual(rows.first?.targetOverride, 5)
+        XCTAssertEqual(rows.first?.targetKind, .discrete)
+        XCTAssertEqual(try db.read { try Task.fetchCount($0) }, tasksBefore, "no task row minted")
+        XCTAssertTrue(try K.queue(db, type: "tasks", id: "root").isEmpty, "the counter itself is not written")
     }
 
-    /// A draft save keeps the pending row (the draft's placement references it) and mints nothing.
-    func testSaveWizardBoard_draft_keepsTheLinkedPendingRow() throws {
+    /// A draft save places the original id with no parameters.
+    func testSaveWizardBoard_draft_writesNoParameters() throws {
         typealias K = LinkedWindowKit
         let db = try AppDatabase.makeTestInstance()
         try K.seedUser(db)
@@ -219,26 +236,57 @@ final class QuickAddCounterPlacementTests: XCTestCase {
         let start = "2026-09-01T00:00:00.000Z", end = "2026-09-30T00:00:00.000Z"
         var board = K.board(id: "b1", startDate: start, endDate: end, size: 1)
         board.status = .draft
-        let pending = QuickAddCounterPlacement.pendingLinkedTask(
-            root: rootTask, goal: 5, userId: K.userId, now: start,
-            timeframe: .monthly, startDate: start, endDate: end
-        )
         try db.saveWizardBoard(
-            board: board, boardTasks: [K.placement(id: "bt", boardId: "b1", taskId: pending.task.id)],
-            pendingTasks: [pending], isUpdate: false, manualTaskIds: [pending.task.id], now: start
+            board: board, boardTasks: [K.placement(id: "bt", boardId: "b1", taskId: "root")],
+            pendingTasks: [], isUpdate: false, manualTaskIds: ["root"],
+            placementParams: ["root": PlacementParamsDraft(targetOverride: 5, targetKind: .discrete)], now: start
         )
-        XCTAssertEqual(try db.fetchBoardTasks(boardId: "b1").map(\.taskId), [pending.task.id])
-        XCTAssertNotNil(try K.fetchTask(db, pending.task.id))
-        XCTAssertNil(try K.fetchTask(db, BoardSources.derivedTaskId(boardId: "b1", rootTaskId: "root")))
+        let row = try db.fetchBoardTasks(boardId: "b1").first
+        XCTAssertEqual(row?.taskId, "root")
+        XCTAssertNil(row?.targetOverride)
     }
 
-    func testPendingLinkedTaskKeepsANonDiscreteKindAndZeroBaseline() {
-        var root = counting(isCounter: true, kind: .duration)
-        root.currentCount = nil
-        let t = QuickAddCounterPlacement.pendingLinkedTask(root: root, goal: 90, userId: "u1", now: "n").task
-        XCTAssertEqual(t.countKind, .duration)
-        XCTAssertEqual(t.baseline, 0)
-        XCTAssertEqual(t.title, "Read 1h 30m")
+    /// A typed goal on a hand-added counter row of a REPEATING wizard lands on the template.
+    @MainActor func testRecurringPersist_typedGoalLandsAsManualTaskTargets() throws {
+        typealias K = LinkedWindowKit
+        let db = try AppDatabase.makeTestInstance()
+        try K.seedUser(db)
+        try db.saveTask(K.task("root", maxCount: 30))
+        let vm = BoardWizardViewModel(preferences: .defaults, startRecurring: true, userId: K.userId, database: db)
+        vm.name = "Weekly"
+        vm.updateTimeframe(.weekly)
+        vm.updateSize(1)
+        vm.updateCenterType(.none)
+        vm.toggleTaskSelection("root")
+        vm.setPlacementParams(taskId: "root", PlacementParamsDraft(targetOverride: 9, targetKind: .discrete))
+
+        let tasks = [ "root": try XCTUnwrap(K.fetchTask(db, "root")) ]
+        let frozen = frozenManualTaskTargets(manualTaskIds: Array(vm.manualTaskIds), params: vm.placementParams, tasksById: tasks)
+        XCTAssertEqual(frozen, ["root": ManualTaskTarget(target: 9, kind: .discrete, title: nil)])
+        XCTAssertTrue(frozenManualTaskTargets(manualTaskIds: [], params: vm.placementParams, tasksById: tasks).isEmpty,
+                      "only hand-added members freeze")
+
+        let exp = expectation(description: "persist")
+        var outcome: RecurringTemplatePersistOutcome?
+        persistRecurringTemplate(
+            controller: vm, userId: K.userId, database: db,
+            onSuccess: { outcome = $0; exp.fulfill() }, onError: { XCTFail($0); exp.fulfill() }
+        )
+        wait(for: [exp], timeout: 10)
+        XCTAssertNotNil(outcome)
+        let stored = try db.read { try RecurringBoardTemplate.fetchAll($0) }
+        XCTAssertEqual(stored.first?.manualTaskTargets?["root"]?.target, 9)
+    }
+
+    func testDraftBlobCarriesPlacementParams_andOmitsThemWhenEmpty() {
+        let with = RecurringDraftMixPayload(
+            poolIds: [], manualTaskIds: ["root"], removedTaskIds: [], sources: [],
+            placementParams: ["root": PlacementParamsDraft(targetOverride: 5, targetKind: .discrete)]
+        )
+        let round = RecurringDraftMixPayload.decoded(from: with.encoded())
+        XCTAssertEqual(round.placementParams["root"]?.targetOverride, 5)
+        let empty = RecurringDraftMixPayload(poolIds: [], manualTaskIds: [], removedTaskIds: [], sources: [])
+        XCTAssertFalse(empty.encoded()?.contains("placementParams") ?? true)
     }
 
     func testTemplateFieldExampleCountsAndRendering() {
@@ -269,4 +317,5 @@ final class QuickAddCounterPlacementTests: XCTestCase {
         XCTAssertEqual(DefaultsRowModel.invalid(texts, kind: .discrete), [.monthly, .yearly])
         XCTAssertEqual(DefaultsRowModel.texts(from: [.weekly: 2.5], kind: .continuous), [.weekly: "2.5"])
     }
+
 }

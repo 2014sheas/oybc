@@ -446,3 +446,27 @@ describe('compound overrides (Board Edit — edit / convert to compound)', () =>
     expect(deriveEditCount({ state: s1, boardCenterType: CenterSquareType.NONE })).toBe(1);
   });
 });
+
+describe('staged placement parameters (slice 3b)', () => {
+  const placement = { targetOverride: 12, targetKind: 'discrete' as const };
+
+  it('stageAdd stores the pick\'s placement on the new cell, which is dirty', () => {
+    const state = seedDraft([], CenterSquareType.NONE, 3);
+    const next = stageAdd(state, 0, 1, { taskId: 'root', placement });
+    expect(next.cells[0]).toMatchObject({ taskId: 'root', originalTaskId: null, placement });
+    expect(deriveEditCount({ state: next, boardCenterType: CenterSquareType.NONE })).toBe(1);
+  });
+
+  it('stageReplace sets the placement, and a later plain replace clears it', () => {
+    const state = seedDraft([bt('bt-a', 'task-a', 0, 0)], CenterSquareType.NONE, 3);
+    const withParams = stageReplace(state, 'bt-a', { taskId: 'root', placement });
+    expect(withParams.cells[0]).toMatchObject({ taskId: 'root', placement });
+    const plain = stageReplace(withParams, 'bt-a', { taskId: 'task-b' });
+    expect(plain.cells[0].placement).toBeUndefined();
+  });
+
+  it('an add without parameters carries none', () => {
+    const next = stageAdd(seedDraft([], CenterSquareType.NONE, 3), 0, 0, { taskId: 'x' });
+    expect('placement' in next.cells[0]).toBe(false);
+  });
+});

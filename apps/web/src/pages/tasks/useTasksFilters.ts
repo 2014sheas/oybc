@@ -3,9 +3,10 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import {
   BoardStatus,
   TaskType,
+  activeBoardPlacementCounts,
   computeBrowsableTasks,
+  contextlessCounterState,
   normalizeSearchText,
-  isTaskExpired,
   type Board,
   type BoardTask,
   type Task,
@@ -13,7 +14,7 @@ import {
 import { fetchAllBoards, fetchAllBoardTasks } from '../../db/operations';
 import type { TaskLibrary } from '../createPage/useTaskLibrary';
 import { taskSearchMatchesWithCounter, type TaskLookup } from '../../components/counters/rowCounterTagName';
-import { displayedCountFor } from './taskCountDisplay';
+import { counterRootIdsIn, isExpiredForBrowse } from '../../components/wizard/quickAddCounterPlacement';
 
 /** Type-filter chips on the Tasks tab. Mirrors the wizard's set but
  *  adds ACHIEVEMENT (which the wizard hides because achievements can't
@@ -154,26 +155,22 @@ export function useTasksFilters(library: TaskLibrary): TasksFiltersApi {
     // duplicate rows on one board. Previously this counted every raw row incl.
     // rows on deleted boards, so the pool disagreed with task-detail.
     const allBoardsByTask: Record<string, Set<string>> = {};
-    const activeBoardsByTask: Record<string, Set<string>> = {};
     for (const bt of allBoardTasks) {
       if (!boardStatusById[bt.boardId]) continue; // skip soft-deleted boards
       (allBoardsByTask[bt.taskId] ??= new Set<string>()).add(bt.boardId);
-      if (boardStatusById[bt.boardId] === BoardStatus.ACTIVE) {
-        // DISTINCT active boards too — the row's "N active" must match the
-        // task-detail page (distinct active boards), not raw row count.
-        (activeBoardsByTask[bt.taskId] ??= new Set<string>()).add(bt.boardId);
-      }
     }
     const all: Record<string, number> = {};
     for (const [taskId, boardIds] of Object.entries(allBoardsByTask)) {
       all[taskId] = boardIds.size;
     }
-    const active: Record<string, number> = {};
-    for (const [taskId, boardIds] of Object.entries(activeBoardsByTask)) {
-      active[taskId] = boardIds.size;
-    }
-    return { placementCountByTaskId: all, activePlacementCountByTaskId: active };
-  }, [allBoardTasks, boardStatusById]);
+    // "N active" = DISTINCT boards still in play (`activeBoardPlacementCounts`:
+    // ACTIVE, not closed, not past their endDate) — the same rule the
+    // task-detail page, the wizard's usage hint and the Boards tab use.
+    return {
+      placementCountByTaskId: all,
+      activePlacementCountByTaskId: activeBoardPlacementCounts(allBoardTasks, allBoards),
+    };
+  }, [allBoardTasks, allBoards, boardStatusById]);
 
   // Issue #73 — child task ids that have at least one BoardTask placement
   // of their own. These children are NOT suppressed from the top level even
@@ -211,6 +208,10 @@ export function useTasksFilters(library: TaskLibrary): TasksFiltersApi {
     return ids;
   }, [search, groupByCompound, library.childToParents, library.taskMap, independentlyPlacedTaskIds]);
 
+  // Counter roots over the FULL library (the browse rule hides the members
+  // that make a root) — the expiry filter's exemption set.
+  const counterRootIds = useMemo(() => counterRootIdsIn(library.taskMap), [library.taskMap]);
+
   const filteredTasks = useMemo(() => {
     const trimmed = search.trim().toLowerCase();
     // Browse the draft-filtered set: wizard-born tasks placed only on draft
@@ -234,8 +235,9 @@ export function useTasksFilters(library: TaskLibrary): TasksFiltersApi {
     );
     // Phase 6.Y — Default-hide expired timeboxed tasks unless the
     // user explicitly toggles them on. Indefinite tasks (no endDate)
-    // are unaffected.
-    const visible = showExpired ? used : used.filter((t) => !isTaskExpired(t));
+    // are unaffected, and a counter ROOT is never hidden: it is the
+    // counter, whatever window its creation board stamped on it.
+    const visible = showExpired ? used : used.filter((t) => !isExpiredForBrowse(t, counterRootIds));
     return visible
       .slice() // copy before sort so we don't mutate the memoized library
       .sort((a, b) => compareTasks(a, b, sortBy, placementCountByTaskId));
@@ -252,6 +254,7 @@ export function useTasksFilters(library: TaskLibrary): TasksFiltersApi {
     sortBy,
     placementCountByTaskId,
     activePlacementCountByTaskId,
+    counterRootIds,
   ]);
 
   return {
@@ -329,33 +332,41 @@ function matchesStatusFilter(
   const inProgress = isInProgress(task, library);
   switch (filter) {
     case 'completed':
-      return task.isCompleted === true;
+      return isTaskDone(task, library);
     case 'in-progress':
-      return !task.isCompleted && inProgress;
+      return !isTaskDone(task, library) && inProgress;
     case 'never-started':
-      return !task.isCompleted && !inProgress;
+      return !isTaskDone(task, library) && !inProgress;
   }
 }
 
 /**
- * "In progress" predicate. Counting tasks: any DISPLAYED count > 0 and not
- * done — `displayedCountFor`, so a linked member is measured against its own
- * baseline and not against its root's lifetime total (RB7); reading
- * `currentCount` raw here would call every member of a used root "in
- * progress" the moment its window opened. Compound tasks: at least one child Task is completed but
+ * Done predicate for the status filter. Counting tasks read the context-less
+ * event state (lifetime sum vs goal — a linked row measures its root); every
+ * other type keeps the `isCompleted` cache.
+ */
+function isTaskDone(task: Task, library: TaskLibrary): boolean {
+  if (task.type === TaskType.COUNTING) {
+    return contextlessCounterState(task, library.eventsByTaskId).isCompleted;
+  }
+  return task.isCompleted === true;
+}
+
+/**
+ * "In progress" predicate. Counting tasks: a lifetime count > 0 from the
+ * event log and not done (`contextlessCounterState` — a linked member reads
+ * its root's events). Compound tasks: at least one child Task is completed but
  * the compound parent isn't (we read child completion state out of
  * `library.taskMap`, which already has all the user's Tasks indexed).
  * Normal + Achievement tasks have no fractional state, so they're
  * either completed or never-started.
  */
 export function isInProgress(task: Task, library: TaskLibrary): boolean {
-  if (task.isCompleted) return false;
   if (task.type === TaskType.COUNTING) {
-    // RB7 — a linked member's progress is its window's (currentCount minus
-    // baseline), never its root's lifetime total; a member sitting exactly at
-    // its baseline has not started.
-    return displayedCountFor(task) > 0;
+    const state = contextlessCounterState(task, library.eventsByTaskId);
+    return !state.isCompleted && state.count > 0;
   }
+  if (task.isCompleted) return false;
   if (task.type === TaskType.COMPOUND) {
     const children = library.compoundChildrenByCompound[task.id] ?? [];
     for (const link of children) {

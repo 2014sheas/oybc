@@ -93,6 +93,10 @@ interface MiniPlacement {
   boardId: string;
   taskId: string;
   isDeleted?: boolean;
+  /** Slice 2b — the placement's parameters (scored with the window). */
+  targetOverride?: number;
+  targetKind?: CountKind;
+  childTargets?: Array<{ childId: string; target: number }>;
 }
 
 const T0 = '2026-01-01T00:00:00.000Z';
@@ -166,8 +170,11 @@ function toBoard(m: MiniBoard): Pick<Board, 'id' | 'isDeleted' | 'status' | 'sta
   };
 }
 
-function toPlacement(m: MiniPlacement, i: number): Pick<BoardTask, 'id' | 'boardId' | 'taskId' | 'isDeleted'> {
-  return { id: `bt${i}`, boardId: m.boardId, taskId: m.taskId, isDeleted: m.isDeleted ?? false };
+function toPlacement(m: MiniPlacement, i: number): ContributionInputs['placements'][number] & Pick<BoardTask, 'id'> {
+  return {
+    id: `bt${i}`, boardId: m.boardId, taskId: m.taskId, isDeleted: m.isDeleted ?? false,
+    targetOverride: m.targetOverride, targetKind: m.targetKind, childTargets: m.childTargets,
+  };
 }
 
 function group<T extends { compoundTaskId?: string; taskId?: string }>(rows: T[], key: 'compoundTaskId' | 'taskId'): Record<string, T[]> {
@@ -376,6 +383,13 @@ describe('isOccurrenceWanted / keptCreditIdsFor (D11)', () => {
     expect(isOccurrenceWanted({ countsTowardSince: undefined }, { occurredAt: T0 })).toBe(true);
     expect(isOccurrenceWanted({ countsTowardSince: '2026-10-10T00:00:00.000Z' }, { occurredAt: '2026-10-09T23:59:59.999Z' })).toBe(false);
     expect(isOccurrenceWanted({ countsTowardSince: '2026-10-10T00:00:00.000Z' }, { occurredAt: '2026-10-10T00:00:00.000Z' })).toBe(true);
+    // TASK_WINDOW_REWORK slice 4 ruling: a repointed placement on a board whose
+    // window ENDED before the contributor's `since` never credits — every
+    // occurrence that window can hold (a late log is stamped at its endDate)
+    // predates `since`, so it is unwanted. Otherwise it credits as any placement.
+    const endedBoardEnd = '2026-10-04T23:59:59.999';
+    expect(isOccurrenceWanted({ countsTowardSince: '2026-10-10T00:00:00.000Z' }, { occurredAt: new Date(endedBoardEnd).toISOString() })).toBe(false);
+    expect(isOccurrenceWanted({ countsTowardSince: '2026-10-01T00:00:00.000Z' }, { occurredAt: new Date(endedBoardEnd).toISOString() })).toBe(true);
     expect(isOccurrenceWanted({ countsTowardSince: 'garbage' }, { occurredAt: T0 })).toBe(true);
     expect(isOccurrenceWanted({ countsTowardSince: '2026-10-10T00:00:00.000Z' }, { occurredAt: 'garbage' })).toBe(false);
   });

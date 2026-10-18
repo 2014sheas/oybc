@@ -7,14 +7,17 @@ import type {
   CycleCheckCandidate,
   CycleCheckContext,
 } from '@oybc/shared';
-import { AchievementTrigger, SyncOperationType, TaskType, OperatorType, boardDisplayName, countsTowardProblem, hasCycle, isEventOwningTask, isGoalLessCounter } from '@oybc/shared';
+import { AchievementTrigger, SyncOperationType, TaskType, OperatorType, boardDisplayName, countsTowardProblem, hasCycle, isEventOwningTask, isGoalLessCounter, quantizeCount, resolveTaskWindowState } from '@oybc/shared';
 import { CountsTowardError, setCountsTowardInTransaction, syncCountsTowardFor } from './countsToward';
 import { generateUUID, currentTimestamp } from '../utils';
 import { addToSyncQueue } from './syncQueue';
 import { runBoardCascadeForTask } from './orchestration';
+import { reDeriveSealedBoardsForTasks } from './sealing';
+import { resolveAffectedBoardIds, refreshWatchersForBoards } from './boardLifecycle';
 import { withRootCountKind } from './countKindSwitch';
 import {
   appendCompletionEvent,
+  appendIncrementEvent,
   lateLogStampForBoard,
   tombstoneLatestCompletion,
   tombstoneWindowCompletions,
@@ -377,9 +380,8 @@ export async function createCompound(
  * a value replaces it.
  *
  * `timeframe` / `startDate` / `endDate` are omitted outright: a task's own
- * window is set only at creation (wizard) and by member-rules stamping,
- * where it IS a window-stamped derived row's completion window. No edit
- * path may write it (it would un-stamp or move the derived row's window).
+ * window is set only at creation and is never a kernel input
+ * (TASK_WINDOW_REWORK slice 5); no edit path writes it.
  */
 export type UpdateTaskPatch = Omit<
   Partial<Task>,
@@ -655,10 +657,9 @@ export async function toggleTaskCompletionAndCascade(taskId: string): Promise<vo
  * COUNTING — events + the late-log stamp). A NON-event-owning child is a
  * no-op: early return — no latch write, no event, no sync enqueue, and no
  * cascade (nothing changed, so there is nothing to re-derive). Its state is never
- * authored from here — a hub-linked derived counter's latch is propagation
- * output from its ROOT, a window-stamped derived row is never authored (its
- * state resolves from the root's in-window events; once its window ends it is
- * frozen), and a nested compound is derived from its own children.
+ * authored from here — a linked counter resolves from its ROOT's events (a
+ * log on it authors on the root, never the row), and a nested compound is
+ * derived from its own children.
  *
  * Also a no-op if the child is missing or the host board is sealed (a sealed board's
  * record is permanent; its surface is play-locked anyway).
@@ -686,13 +687,76 @@ export async function toggleCompoundChildFallback(
       // Non-event-owning child: nothing is authored (see the rule above).
       if (!isEventOwningTask(task)) return;
       const now = currentTimestamp();
+      const occurredAt = await lateLogStampForBoard(boardId, now);
       if (desiredCompleted) {
-        const occurredAt = await lateLogStampForBoard(boardId, now);
         await appendCompletionEvent(childTaskId, boardId, now, occurredAt);
       } else {
         await tombstoneWindowCompletions(childTaskId, windowStart, now, windowEnd);
       }
       await runBoardCascadeForTask(childTaskId);
+      await finishLateStampedWrite(childTaskId, occurredAt, now);
+    },
+  );
+}
+
+/**
+ * One late-log tail (TASK_WINDOW_REWORK slice 0): a compound-child fallback
+ * whose event was stamped at an ended board's `endDate` may have landed inside
+ * a SEALED containing board's window; the live cascade skips sealed boards,
+ * so re-derive them and refresh watchers — the same tail undo and the
+ * shared-counter paths run. A no-op for a `now`-stamped write.
+ */
+async function finishLateStampedWrite(childTaskId: string, occurredAt: string, now: string): Promise<void> {
+  if (occurredAt === now) return;
+  await reDeriveSealedBoardsForTasks([childTaskId]);
+  const touched = await resolveAffectedBoardIds([childTaskId]);
+  if (touched.size > 0) await refreshWatchersForBoards(touched);
+}
+
+/**
+ * Board-context stepper for a plain COUNTING compound child NOT placed on the
+ * host board (`useBoardPlay.handleCompoundChildIncrement`; iOS twin
+ * `incrementCompoundChildFallback`). The count companion of
+ * {@link toggleCompoundChildFallback}: `delta` moves the child's count in the
+ * HOST BOARD'S WINDOW — an `increment` event stamped via `lateLogStampForBoard`
+ * (the board's `endDate` once its window has ended), a decrement gated so the
+ * window sum stays ≥ 0 — then the cross-board cascade, in ONE transaction.
+ *
+ * Only an event-owning counting child is authored here; a linked child's count
+ * is its counter's, logged through `incrementSharedCounter` by the caller. A
+ * no-op for a missing / non-counting / derived child, a zero (gated) delta, or
+ * a sealed host board.
+ *
+ * @param childTaskId - The counting child.
+ * @param delta - Signed amount (positive logs, negative removes).
+ * @param windowStart - The host board's `startDate`.
+ * @param windowEnd - The host board's `endDate`, or `null` (indefinite).
+ * @param boardId - The host board (event provenance + late-log stamp).
+ */
+export async function incrementCompoundChildFallback(
+  childTaskId: string,
+  delta: number,
+  windowStart: string,
+  windowEnd: string | null,
+  boardId: string,
+): Promise<void> {
+  await db.transaction(
+    'rw',
+    [db.tasks, db.taskEvents, db.boards, db.boardTasks, db.compoundChildren, db.syncQueue],
+    async () => {
+      const task = await db.tasks.get(childTaskId);
+      const board = await db.boards.get(boardId);
+      if (!task || board?.sealedAt) return;
+      if (task.type !== TaskType.COUNTING || !isEventOwningTask(task)) return;
+      const live = (await db.taskEvents.where('taskId').equals(childTaskId).toArray()).filter((e) => !e.isDeleted);
+      const current = resolveTaskWindowState(task, live, windowStart, windowEnd).count;
+      const gated = quantizeCount(delta < 0 ? Math.max(delta, -current) : delta);
+      if (gated === 0) return;
+      const now = currentTimestamp();
+      const occurredAt = await lateLogStampForBoard(boardId, now);
+      await appendIncrementEvent(childTaskId, gated, boardId, now, occurredAt);
+      await runBoardCascadeForTask(childTaskId);
+      await finishLateStampedWrite(childTaskId, occurredAt, now);
     },
   );
 }

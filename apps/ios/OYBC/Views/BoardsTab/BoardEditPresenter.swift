@@ -84,12 +84,12 @@ struct BoardEditPresenter: ViewModifier {
                     candidateTasks: candidateTasks(for: target.mode),
                     counterRootTasks: allTasks,
                     onDismiss: { pickerTarget = nil },
-                    onConfirm: { taskId, pending in
+                    onConfirm: { taskId, pending, placement in
                         switch target.mode {
                         case .add:
-                            viewModel.handleEditAdd(cellKey: target.cellKey, taskId: taskId, pending: pending)
+                            viewModel.handleEditAdd(cellKey: target.cellKey, taskId: taskId, pending: pending, placement: placement)
                         case .replace:
-                            viewModel.handleEditReplace(cellKey: target.cellKey, taskId: taskId, pending: pending)
+                            viewModel.handleEditReplace(cellKey: target.cellKey, taskId: taskId, pending: pending, placement: placement)
                         }
                         pickerTarget = nil
                     },
@@ -211,12 +211,15 @@ struct BoardEditPresenter: ViewModifier {
         let needsChildren = task.type == .compound && !hasStagedCompound && pendingCompoundChildren(for: task) == nil
         let taskId = task.id
         let userId = task.userId
+        // Slice 3a: existing children seed at this square's per-child goals.
+        let childTargets = viewModel.boardTasks.first { $0.taskId == taskId }?.childTargets
         return {
             await _Concurrency.Task.detached(priority: .userInitiated) {
                 var inputs = SquareEditTaskSheet.CompoundInputs(children: nil, libraryTasks: [], allLinks: [])
                 if needsChildren {
                     do {
                         inputs.children = try database.fetchCompoundChildrenTasks(parentTaskId: taskId)
+                            .map { PlacementParams.withChildTarget($0, childTargets: childTargets) }
                     } catch {
                         inputs.childrenError = "Couldn’t load sub-tasks: \(error.localizedDescription)"
                     }

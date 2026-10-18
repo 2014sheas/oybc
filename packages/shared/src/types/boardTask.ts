@@ -1,3 +1,5 @@
+import type { CountKind } from '../algorithms/countValue';
+
 /**
  * BoardTask - Junction table linking boards and tasks
  *
@@ -35,6 +37,38 @@ export interface BoardTask {
    */
   isLocked?: boolean;
 
+  // ── Per-placement parameters (docs/TASK_WINDOW_REWORK.md, slice 1) ──
+  // All optional and absent on every pre-rework row. INERT in slice 1: no
+  // reader (slice 2) and no writer (slice 3) exists yet; the fields are
+  // typed, validated, stored and synced (clearable) so both clients carry
+  // the shape before anything writes it (the lockstep rule).
+  /**
+   * A counting placement's goal for THIS board (owner ruling 2026-10-16:
+   * frozen when the board is made or the square is edited). Absent ⇒ the
+   * task's own `maxCount`. Positive, quantized to `targetKind`'s step.
+   */
+  targetOverride?: number;
+  /**
+   * The count kind `targetOverride` is expressed in. Written together with
+   * `targetOverride`, never alone (a kind without an override is dropped on
+   * normalisation). A later kind switch on the root never rewrites it.
+   */
+  targetKind?: CountKind;
+  /**
+   * A compound placement's per-child goals for THIS board, keyed by the
+   * compound's own DIRECT child task ids (a linked child by its own id).
+   * Sorted by `childId`, unique, each target positive; `[]` is normalised
+   * to absent. An ARRAY, not a map: Firestore writes are `merge: true` and
+   * a map deep-merges, so a removed key would survive remotely.
+   */
+  childTargets?: PlacementChildTarget[];
+  /**
+   * A per-board title for a counter square (owner ruling 2026-10-16: a
+   * rename never forks). Absent ⇒ the root's templates at the placement's
+   * goal. Trimmed, non-empty.
+   */
+  titleOverride?: string;
+
   // Timestamps
   createdAt: string;             // ISO8601
   updatedAt: string;             // ISO8601
@@ -44,6 +78,14 @@ export interface BoardTask {
   version: number;               // Optimistic locking
   isDeleted: boolean;            // Soft delete (tombstone)
   deletedAt?: string;            // ISO8601
+}
+
+/** One entry of {@link BoardTask.childTargets}. */
+export interface PlacementChildTarget {
+  /** The compound's direct child task id. */
+  childId: string;
+  /** That child's goal on this board; positive, quantized to the child's kind. */
+  target: number;
 }
 
 /**

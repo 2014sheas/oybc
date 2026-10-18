@@ -21,7 +21,6 @@ function render(over: Partial<CounterDeleteConfirmDialogProps> = {}): string {
   const props: CounterDeleteConfirmDialogProps = {
     counterName: 'Miles run',
     memberCount: 0,
-    derivedWindowCounterCount: 0,
     members: [],
     busy: false,
     onConfirm: () => {},
@@ -31,8 +30,8 @@ function render(over: Partial<CounterDeleteConfirmDialogProps> = {}): string {
   return renderToStaticMarkup(React.createElement(CounterDeleteConfirmDialog, props));
 }
 
-describe('CounterDeleteConfirmDialog — derived-counter line (B3 RC12)', () => {
-  it('says nothing about board counters when there are none', () => {
+describe('CounterDeleteConfirmDialog — members', () => {
+  it('lists the linked tasks that will be unlinked', () => {
     const html = render({
       memberCount: 2,
       members: [
@@ -43,28 +42,6 @@ describe('CounterDeleteConfirmDialog — derived-counter line (B3 RC12)', () => 
 
     expect(html).toContain('2 linked tasks');
     expect(html).not.toContain('will be removed.');
-  });
-
-  it('uses the singular for exactly one board counter', () => {
-    const html = render({ derivedWindowCounterCount: 1 });
-    expect(html).toContain('1 board counter made from this one will be removed.');
-  });
-
-  it('uses the plural for more than one', () => {
-    const html = render({
-      memberCount: 1,
-      members: [{ id: 'a', title: 'Morning run', boardName: 'This week' }],
-      derivedWindowCounterCount: 4,
-    });
-    expect(html).toContain('4 board counters made from this one will be removed.');
-  });
-
-  it('shows the line even when the counter has no unlinkable members left', () => {
-    // Every placement came from a wizard-built board: `memberCount` is 0, so
-    // the members section never renders — but three squares are still going.
-    const html = render({ memberCount: 0, derivedWindowCounterCount: 3 });
-    expect(html).not.toContain('will be unlinked');
-    expect(html).toContain('3 board counters made from this one will be removed.');
   });
 });
 

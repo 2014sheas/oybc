@@ -1,5 +1,5 @@
 import { db } from '../internal';
-import { CenterSquareType, TaskType } from '@oybc/shared';
+import { CenterSquareType, TaskType, isWholeCountKind, type Task } from '@oybc/shared';
 import { assertBoardEditable, updateBoardAndCascade } from './boards';
 import {
   addBoardTaskToBoard,
@@ -12,7 +12,10 @@ import {
 import { applyBoardEditTaskOverrideInTransaction } from './compoundStructureEdit';
 import { ensureBoardScopedTask, stampForkCaches } from './boardScopedEdit';
 import { assertCountsTowardStillValid } from './countsToward';
-import { dropReplacedLinkedPendingRows, persistWizardPendingTasks } from './wizardBoard';
+import { persistWizardPendingTasks } from './wizardBoard';
+import { setPlacementParams } from './placementParams';
+import { KindGoalError } from './countKindSwitch';
+import { splitBoardEditOverride } from '../boardEditPlacementSplit';
 import type { SquareDraftCell } from '../../hooks/squareEditCount';
 import type { BoardEditTaskOverride } from '../../hooks/squaresEditReducer';
 import { currentTimestamp } from '../utils';
@@ -55,8 +58,7 @@ export interface CommitSquareEditsInput {
  *   2. `normalizeLegacyChosenCenter` if the on-disk board is still CHOSEN
  *      (D2) — runs regardless of what the rest of the session touched, as
  *      long as SOME edit landed here (Save is disabled at 0 edits).
- *   3. Replacements (`updateBoardTaskAndCascade`). A linked counter lands as
- *      its per-board copy, so the staged→placed id is recorded.
+ *   3. Replacements (`updateBoardTaskAndCascade`).
  *   4. (moved to 7b — see below.)
  *   5. Removals (`removeBoardTaskFromBoard`) — BEFORE moves/adds so freed
  *      positions are not occupied.
@@ -66,13 +68,13 @@ export interface CommitSquareEditsInput {
  *      lock first (slice-3 self-review).
  *   6. Moves (`reorderBoardTasks`).
  *   7. Adds (`addBoardTaskToBoard`, with `isLocked` from the draft).
- *   7b. Task-field overrides (`applyBoardEditTaskOverrideInTransaction` — a
- *       Simple⇄Counting type switch, or a compound edit / conversion that
- *       THROWS on invalid input so the whole Save rolls back), remapped from the staged
- *      id to the id actually placed (the per-board copy of a linked counter);
- *      the library source is never patched by a remapped override. Each
- *      override is BOARD-SCOPED: a task placed on any other board is forked
- *      first (`ensureBoardScopedTask`) and the edit lands on the fork.
+ *   7b. Task-field overrides, split by `splitBoardEditOverride`: goal / title /
+ *       a compound child's goal go onto the PLACEMENT (`setPlacementParams`);
+ *       the rest (`applyBoardEditTaskOverrideInTransaction` — a Simple⇄Counting
+ *       type switch, or a compound edit / conversion that THROWS on invalid
+ *       input so the whole Save rolls back) is BOARD-SCOPED: a task placed on
+ *       any other board is forked first (`ensureBoardScopedTask`) and the edit
+ *       lands on the fork.
  *   8. LOCKS on pre-existing cells (`setBoardTaskLocked(true)`) — AFTER
  *      moves, so "move → Lock in place" lands the row at its new slot first.
  *      A NEW cell's lock was already written by step 7.
@@ -117,21 +119,12 @@ export async function commitSquareEdits(input: CommitSquareEditsInput): Promise<
         await normalizeLegacyChosenCenter(boardId, centerCellKeepLocked);
       }
 
-      // staged (library) task id -> the id actually placed on THIS board.
-      // A linked counter is placed as its per-board window-stamped copy
-      // (`derivedTaskId(board, root)`), so step 4's overrides — keyed by the
-      // staged id — must be remapped onto the placed row, never the library
-      // source. Populated by steps 3 and 7 only when the two ids differ.
-      const placedIdByStagedId = new Map<string, string>();
-
       // 3. Replacements.
       for (const cell of cells) {
         if (cell.originalTaskId !== null && cell.taskId !== cell.originalTaskId) {
           await updateBoardTaskAndCascade(cell.cellId, cell.taskId);
-          const placed = await db.boardTasks.get(cell.cellId);
-          if (placed && placed.taskId !== cell.taskId) {
-            placedIdByStagedId.set(cell.taskId, placed.taskId);
-          }
+          // A root picked with a goal: the parameters ride the replaced placement.
+          if (cell.placement) await setPlacementParams(cell.cellId, cell.placement, currentTimestamp());
         }
       }
 
@@ -162,44 +155,55 @@ export async function commitSquareEdits(input: CommitSquareEditsInput): Promise<
       // 7. Adds.
       for (const cell of cells) {
         if (cell.originalTaskId === null) {
-          const added = await addBoardTaskToBoard(boardId, cell.taskId, cell.row, cell.col, {
+          await addBoardTaskToBoard(boardId, cell.taskId, cell.row, cell.col, {
             isLocked: cell.isLocked,
+            ...(cell.placement ? { placement: cell.placement } : {}),
           });
-          if (added.taskId !== cell.taskId) placedIdByStagedId.set(cell.taskId, added.taskId);
         }
       }
 
-      // 7a. A pending LINKED row that steps 3 / 7 replaced with the board's
-      //     own copy is never left behind as an orphan library member: it was
-      //     written in step 1 only so the choke points could read it.
-      if (pendingWrites.length > 0) {
-        const placed = new Set(cells.map((c) => placedIdByStagedId.get(c.taskId) ?? c.taskId));
-        await dropReplacedLinkedPendingRows(pendingWrites, placed);
-      }
-
       // 7b. Task-field overrides — AFTER replacements and adds so each lands on
-      //     the id actually placed (see `placedIdByStagedId`). Overrides apply
-      //     to the placed row ONLY; a remapped override never patches the
-      //     library source. Removals/unlocks/moves are independent of task
-      //     fields, so running these here preserves their ordering.
+      //     the placed task. Each override splits (TASK_WINDOW_REWORK slice
+      //     3a): PARAMETER fields (a counting goal, a title, an existing
+      //     compound child's goal) are written onto this board's PLACEMENT
+      //     (`setPlacementParams`) and never touch the task; every other field
+      //     is BOARD-SCOPED — a task placed on any other board is forked first
+      //     (`ensureBoardScopedTask`) and the edit lands on the fork.
       const now = currentTimestamp();
       // Only overrides for a task STILL placed by a final cell commit: a staged
       // edit on a removed / replaced square would otherwise be a destructive
       // conversion of a task that left the board.
       const placedStagedIds = new Set(cells.map((c) => c.taskId));
-      const patched = new Set<string>();
-      for (const [stagedId, patch] of taskOverrides.entries()) {
-        if (!placedStagedIds.has(stagedId)) continue;
-        const targetId = placedIdByStagedId.get(stagedId) ?? stagedId;
-        if (patched.has(targetId)) continue;
-        patched.add(targetId);
-        // Board-scoped (docs/BOARD_SCOPED_TASK_EDITS.md): a task placed on any
-        // other board is forked first and the edit lands on the fork.
-        const stored = await db.tasks.get(targetId);
+      for (const [taskId, patch] of taskOverrides.entries()) {
+        if (!placedStagedIds.has(taskId)) continue;
+        const stored = await db.tasks.get(taskId);
         if (!stored || stored.isDeleted) continue;
-        const editedType = patch.compound ? TaskType.COMPOUND : (patch.type ?? stored.type);
-        const scoped = await ensureBoardScopedTask(targetId, boardId, editedType, now);
-        await applyBoardEditTaskOverrideInTransaction(scoped.targetId, patch, now, { boardId });
+        const placement = await db.boardTasks
+          .where('boardId')
+          .equals(boardId)
+          .filter((bt) => !bt.isDeleted && bt.taskId === taskId)
+          .first();
+        const links = (await db.compoundChildren.where('compoundTaskId').equals(taskId).toArray())
+          .filter((l) => !l.isDeleted)
+          .sort((a, b) => a.childIndex - b.childIndex);
+        const childRows = await db.tasks.bulkGet(links.map((l) => l.childTaskId));
+        const rootSettings = stored.sharedCounterId ? ((await db.tasks.get(stored.sharedCounterId)) ?? null) : null;
+        const { params, rest } = splitBoardEditOverride({
+          stored,
+          placement,
+          patch,
+          storedChildren: childRows.filter((t): t is Task => !!t && !t.isDeleted),
+          rootSettings,
+        });
+        // A typed goal the (new) whole kind refuses rolls the whole Save back.
+        if (params.targetOverride != null && params.targetKind && isWholeCountKind(params.targetKind) && !Number.isInteger(params.targetOverride)) {
+          throw new KindGoalError();
+        }
+        if (placement && Object.keys(params).length > 0) await setPlacementParams(placement.id, params, now);
+        if (!rest) continue;
+        const editedType = rest.compound ? TaskType.COMPOUND : (rest.type ?? patch.type ?? stored.type);
+        const scoped = await ensureBoardScopedTask(taskId, boardId, editedType, now);
+        await applyBoardEditTaskOverrideInTransaction(scoped.targetId, rest, now, { boardId });
         // An already-flagged compound whose sub-tasks changed: the structure
         // may not have closed a feeding loop (§3e) — refused, the Save rolls back.
         await assertCountsTowardStillValid(scoped.targetId);

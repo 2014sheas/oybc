@@ -47,7 +47,6 @@ import {
   type PullWatermark,
 } from '@oybc/shared';
 import { applyTaskEventsBatch, healMissingCompletionEvents } from '../db/operations/taskEventPull';
-import { healLinkedCounterWindows } from '../db/operations/linkedCounterWindowHeal';
 import { applyRemoteSubdoc, rowsGenuinelyDiffer } from '../db/operations/pullApply';
 import { advancePullWatermark, fetchPullWatermarks } from '../db/operations/syncWatermarks';
 
@@ -534,22 +533,6 @@ export async function pullSync(
       // Never let the heal fail the pull — it retries next cycle.
       result.details.push(
         `Heal-on-pull skipped: ${err instanceof Error ? err.message : String(err)}`,
-      );
-    }
-
-    // Windowed linked counters (owner rule 2026-10-01): stamp / split any
-    // hub-linked counter a fresh install just pulled onto a board. Same
-    // clean-pull gate, idempotent, never fails the pull.
-    try {
-      const healedLinked = await healLinkedCounterWindows(userId);
-      if (healedLinked.stamped + healedLinked.copied > 0) {
-        result.details.push(
-          `Healed linked counters: ${healedLinked.stamped} stamped, ${healedLinked.copied} copied`,
-        );
-      }
-    } catch (err) {
-      result.details.push(
-        `Linked-counter heal skipped: ${err instanceof Error ? err.message : String(err)}`,
       );
     }
 

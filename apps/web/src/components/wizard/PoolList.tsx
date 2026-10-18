@@ -1,9 +1,14 @@
 import { useState } from 'react';
 import {
   TaskType,
+  placementGoalForCounter,
+  formatCount,
   resolveCountKind,
   varyRangeLabel,
+  withPlacementParams,
   type CompoundChild,
+  type PlacementBoard,
+  type PlacementParams,
   type Task,
   type VaryLevel,
 } from '@oybc/shared';
@@ -19,7 +24,7 @@ function nextVary(level: VaryLevel): VaryLevel {
   return level === 0 ? 1 : level === 1 ? 2 : 0;
 }
 
-/** A hand-added counting row earns a dice: it needs a goal to vary around. */
+/** A hand-added counting row earns a dice: it needs a goal to vary around (a counter's window default first). */
 function countingGoal(task: Task): number {
   return task.type === TaskType.COUNTING ? (task.maxCount ?? 0) : 0;
 }
@@ -38,6 +43,12 @@ export interface PoolListProps {
   effectiveTaskMap: Record<string, Task>;
   effectiveChildrenByCompound: Record<string, CompoundChild[]>;
   taskBoardCounts: Record<string, number>;
+  /** The board's window: a counting row that isn't a linked copy captions
+   *  the goal placement gives it there (a counter's window default, else its own). */
+  counterGoalWindow?: PlacementBoard;
+  /** The wizard's per-cell placement parameters (a quick-added / hand-edited
+   *  counter goal): the row reads the goal and title the placement gives. */
+  placementParams?: ReadonlyMap<string, PlacementParams>;
 
   centerTaskMode: boolean;
   centerTaskId: string | null;
@@ -107,6 +118,8 @@ export function PoolList({
   effectiveTaskMap,
   effectiveChildrenByCompound,
   taskBoardCounts,
+  counterGoalWindow,
+  placementParams,
   centerTaskMode,
   centerTaskId,
   onCenterClick,
@@ -124,9 +137,16 @@ export function PoolList({
   const poolTasks = poolOrder
     .map((id) => effectiveTaskMap[id])
     .filter((t): t is Task => t !== undefined);
+  // The goal the board will get: a counter's window default, else its own.
+  const windowGoalOf = (task: Task): number | null =>
+    task.type === TaskType.COUNTING && !task.sharedCounterId
+      ? (placementParams?.get(task.id)?.targetOverride ??
+        (counterGoalWindow ? placementGoalForCounter(task, counterGoalWindow) : null))
+      : null;
   // The dice column only exists when SOME row can use it, so a board with
   // no counting tasks keeps the original 2-or-3-slot gutter width.
-  const showVaryColumn = onSetManualVary !== undefined && poolTasks.some((t) => countingGoal(t) > 0);
+  const showVaryColumn =
+    onSetManualVary !== undefined && poolTasks.some((t) => (windowGoalOf(t) ?? countingGoal(t)) > 0);
 
   return (
     <div className={styles.section}>
@@ -138,11 +158,7 @@ export function PoolList({
       </div>
 
       {poolTasks.length === 0 && !leadingRows ? (
-        <p className={styles.emptyNote}>
-          {surface === 'pool'
-            ? 'Nothing in this pool yet — type your own or add a special type.'
-            : 'Nothing in your pool yet — type your own, add a special type, or pull from a pool or board.'}
-        </p>
+        <p className={styles.emptyNote}>Nothing here yet.</p>
       ) : (
         <ul className={styles.list}>
           {leadingRows}
@@ -151,11 +167,13 @@ export function PoolList({
             const isCenter = centerTaskMode && centerTaskId === task.id;
             const isExpanded = expandedId === task.id;
             const counterTagName = rowCounterTagName(task, effectiveTaskMap);
-            const subtitle = buildPoolRowSubtitle(
-              task,
-              effectiveChildrenByCompound[task.id] ?? [],
-            );
-            const goal = countingGoal(task);
+            const windowGoal = windowGoalOf(task);
+            const placed = withPlacementParams(task, placementParams?.get(task.id), task);
+            const subtitle =
+              windowGoal !== null
+                ? `goal ${formatCount(windowGoal, resolveCountKind(task))}`
+                : buildPoolRowSubtitle(task, effectiveChildrenByCompound[task.id] ?? []);
+            const goal = windowGoal ?? countingGoal(task);
             const varyLevel: VaryLevel = manualTaskVary?.[task.id] ?? 0;
             // Hand-added counters vary around their own goal — there is no
             // source window to pro-rate against.
@@ -210,7 +228,7 @@ export function PoolList({
                 >
                   <TypeBadge type={task.type} letterOnly />
                   <div className={styles.rowText}>
-                    <span className={styles.rowTitle}>{task.title || '(untitled task)'}</span>
+                    <span className={styles.rowTitle}>{placed.title || '(untitled task)'}</span>
                     {(counterTagName || subtitle) && (
                       <span className={styles.rowSubtitle}>
                         {counterTagName && <UnitTag name={counterTagName} dense />}

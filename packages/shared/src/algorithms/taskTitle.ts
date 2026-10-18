@@ -112,7 +112,7 @@ export function isAutoCounterTitle(
  * copy's `action` / NEW `maxCount` / `unit` — through the member's own title
  * templates when it is a root carrying them (absent = the formula, exactly as
  * before the 2026-10-06 fix). Shared by `planDerivedTasks`'s mint and the linked-counter
- * window heal's `windowStampedCopyDraft` so the two mint paths can never
+ * retired window heal's copy draft (slice 3a) so the two mint paths could never
  * disagree; Swift twin `TaskTitle.counterCopyTitle`.
  *
  * A LINKED member (`sharedCounterId` set) carries no templates of its own,

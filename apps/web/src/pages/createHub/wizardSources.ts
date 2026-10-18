@@ -69,6 +69,12 @@ export interface WizardSourceSupply {
    */
   windowCountByTaskId?: Record<string, number>;
   /**
+   * TASK_WINDOW_REWORK slice 3a — board sources only: each supplied member's
+   * EFFECTIVE goal where its placement carries one (`targetOverride`; a
+   * compound placement's `childTargets` keyed by child id). Never set for pools.
+   */
+  goalByTaskId?: Record<string, number>;
+  /**
    * §Member rules (B3, RC5) — board sources only: the source board's own
    * window, for pro-rating an auto target against the board being built.
    */
@@ -127,7 +133,11 @@ export function algorithmSupplies(
     const source = withEffectiveMemberRules(stored, poolsById[stored.sourceId]);
     const info = supplyInfo[source.sourceId];
     const ids = availableSupplyIds(source, info?.rawSupplyTaskIds ?? [], info?.doneTaskIds);
-    return { source, supplyTaskIds: resolveSourceAvailable({ source, supplyTaskIds: ids }) };
+    return {
+      source,
+      supplyTaskIds: resolveSourceAvailable({ source, supplyTaskIds: ids }),
+      ...(info?.goalByTaskId ? { goalByTaskId: info.goalByTaskId } : {}),
+    };
   });
   return applyMemberRules(raw, childrenByCompoundId, tasksById);
 }

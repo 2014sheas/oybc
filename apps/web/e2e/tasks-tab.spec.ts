@@ -116,7 +116,7 @@ test.describe('Tasks tab', () => {
     // Detail page reflects the new title; navigate back to the list and
     // confirm it shows there too (Dexie live-query propagation).
     await expect(page.getByRole('heading', { name: 'Read for 45 minutes' })).toBeVisible();
-    await page.getByRole('link', { name: '‹ Tasks' }).click();
+    await page.getByRole('main').getByRole('button', { name: 'Tasks', exact: true }).click();
     await expect(page.getByText('Read for 45 minutes')).toBeVisible();
     await expect(page.getByText('Read for 30 minutes')).not.toBeVisible();
   });
@@ -130,7 +130,8 @@ test.describe('Tasks tab', () => {
     // Detail-page action button is exactly "Delete" — `exact: true` avoids
     // the transient strict-mode clash with the list's per-row "Delete {name}"
     // buttons while the list is still unmounting behind the detail route.
-    await page.getByRole('button', { name: 'Delete', exact: true }).click();
+    await page.getByRole('button', { name: 'Task options' }).click();
+    await page.getByRole('menuitem', { name: 'Delete task…' }).click();
 
     // Confirm dialog shows the cascade impact. "Stretch" sits on 1 board.
     const dialog = page.getByRole('alertdialog', { name: 'Confirm delete' });
@@ -251,7 +252,7 @@ test.describe('Tasks tab', () => {
     await expect(page.getByRole('heading', { name: 'Read for 30 minutes' })).toBeVisible();
 
     // Round-trip via the list to confirm Dexie didn't get the update.
-    await page.getByRole('link', { name: '‹ Tasks' }).click();
+    await page.getByRole('main').getByRole('button', { name: 'Tasks', exact: true }).click();
     await expect(page.getByText('Read for 30 minutes')).toBeVisible();
     await expect(page.getByText('THIS SHOULD NOT PERSIST')).not.toBeVisible();
   });
@@ -319,7 +320,7 @@ test.describe('Tasks tab', () => {
     await square.click({ button: 'right' });
 
     // The new menu item is the only place "Open in library" appears.
-    await page.getByRole('button', { name: /open in library/i }).click();
+    await page.getByRole('menuitem', { name: /open in library/i }).click();
 
     // TaskDetailSheet mounts over BoardPlay — the task title appears as
     // the detail heading. URL stays on the board (sheet is overlay state,
@@ -330,7 +331,7 @@ test.describe('Tasks tab', () => {
     ).toBeVisible();
 
     // The sheet shows the Usage section listing this board.
-    await expect(page.getByText('Total completions:')).toBeVisible();
+    await expect(page.getByText(/On boards now/i)).toBeVisible();
   });
 
   test('clicking a board link inside the sheet navigates AND dismisses the sheet', async ({ page }) => {
@@ -361,7 +362,7 @@ test.describe('Tasks tab', () => {
 
     await page.goto(`/boards/${BOARD_ID}?__oybc_test_bypass=1`);
     await page.getByRole('button', { name: 'Stretch' }).first().click({ button: 'right' });
-    await page.getByRole('button', { name: /open in library/i }).click();
+    await page.getByRole('menuitem', { name: /open in library/i }).click();
 
     // Sheet is open on the original board.
     await expect(page).toHaveURL(new RegExp(`/boards/${BOARD_ID}`));
@@ -369,7 +370,7 @@ test.describe('Tasks tab', () => {
 
     // Click the OTHER board's link in Usage. The sheet should dismiss
     // and the URL should land on the second board.
-    await page.getByRole('link', { name: 'Other Board' }).click();
+    await page.getByRole('button', { name: 'Open board Other Board' }).click();
     await expect(page).toHaveURL(new RegExp(`/boards/${SECOND_BOARD_ID}`));
     // Sheet heading no longer visible — sheet has unmounted.
     await expect(page.getByRole('heading', { name: 'Stretch', level: 1 })).not.toBeVisible();
@@ -452,7 +453,8 @@ test.describe('Tasks tab', () => {
     await page.getByRole('button', { name: /open workout routine details/i }).click();
     // Detail-page "Delete" is exact — avoids the transient strict-mode clash
     // with the list's per-row "Delete {name}" buttons while the list unmounts.
-    await page.getByRole('button', { name: 'Delete', exact: true }).click();
+    await page.getByRole('button', { name: 'Task options' }).click();
+    await page.getByRole('menuitem', { name: 'Delete task…' }).click();
 
     const dialog = page.getByRole('alertdialog', { name: 'Confirm delete' });
     await expect(dialog).toBeVisible();

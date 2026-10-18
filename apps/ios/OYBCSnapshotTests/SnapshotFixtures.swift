@@ -63,6 +63,12 @@ enum SnapshotFixtures {
             library.allCompoundChildren = children
             library.compoundChildrenByCompound = groupChildren(children)
             library.allLibraryBoardTasks = sampleBoardTasks(taskIds: tasks.prefix(5).map { $0.id })
+            // The board those placements sit on — still in play and clock-free
+            // (indefinite), so the active-only usage counts render.
+            library.libraryBoards = [makeBoard(id: "board-fixture-1", name: "Fixture", timeframe: .indefinite)]
+            library.activeBoardCounts = activeBoardPlacementCounts(
+                library.allLibraryBoardTasks, boards: library.libraryBoards
+            )
         case .memberRules:
             let (tasks, children) = memberRulesTaskSet()
             library.libraryTasks = tasks

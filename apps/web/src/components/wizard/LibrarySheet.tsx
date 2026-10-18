@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
-import { PARENT_TIMEFRAMES, TaskType, isTaskExpired, type CompoundChild, type Task, type Timeframe } from '@oybc/shared';
+import { PARENT_TIMEFRAMES, TaskType, type CompoundChild, type Task, type Timeframe } from '@oybc/shared';
 import { useModalA11y } from '../../hooks/useModalA11y';
 import { RisoChip, RisoTypeBadge } from '../riso';
 import { rowCounterTagName, taskSearchMatchesWithCounter } from '../counters/rowCounterTagName';
 import { UnitTag } from '../counters/UnitTag';
+import { counterRootIdsIn, isExpiredForBrowse } from './quickAddCounterPlacement';
 import { renderTaskRow } from './TaskRow';
 import stepStyles from './BoardWizardTasksStep.module.css';
 import styles from './LibrarySheet.module.css';
@@ -55,7 +56,7 @@ export interface LibrarySheetProps {
    *  (Phase 6.1). Empty when the current timeframe has no parents. */
   parentBoardTasks: Task[];
   /** Owner ruling 2026-09-22 — task ids that HEAD a shared-counter family
-   *  (`useTaskLibrary().familyRootIds`). Such a row shows the generic
+   *  (`useBrowseFamilyRootIds`). Such a row shows the generic
    *  `formatCounterName` label instead of its stored title; tapping it still
    *  adds the root itself, exactly as before. Passed in rather than derived
    *  here because it must be computed over the FULL library — the browse rule
@@ -132,7 +133,10 @@ export function LibrarySheet({
     // its stored "Read 35 pages" (owner ruling 2026-09-22). Twin of iOS
     // `RisoLibrarySheetView.matches`.
     const matches = (t: Task): boolean => taskSearchMatchesWithCounter(searchQuery, t, effectiveTaskMap);
-    const notExpired = (t: Task): boolean => !isTaskExpired(t);
+    // Expired tasks are left out — except a counter root, which is the
+    // counter whatever window its creation board stamped on it.
+    const rootIds = counterRootIdsIn(effectiveTaskMap);
+    const notExpired = (t: Task): boolean => !isExpiredForBrowse(t, rootIds);
 
     if (activeFilter === 'from-parents') {
       const filtered = parentBoardTasks.filter((t) => notExpired(t) && matches(t));
@@ -272,11 +276,6 @@ export function LibrarySheet({
                     setGroupByCompound((v) => !v);
                     setExpandedCompositeId(null);
                   }}
-                  title={
-                    groupByCompound
-                      ? 'Grouping ON — subtasks hidden from flat list'
-                      : 'Grouping OFF — show all tasks at top level'
-                  }
                 >
                   {groupByCompound ? 'Group subtasks ✓' : 'Group subtasks'}
                 </button>
@@ -289,7 +288,7 @@ export function LibrarySheet({
                   {searchQuery.trim().length > 0
                     ? `No tasks match "${searchQuery}".`
                     : activeFilter === 'from-parents'
-                      ? 'No parent boards. Create a weekly/monthly/yearly board first.'
+                      ? 'No parent boards found.'
                       : 'No tasks yet.'}
                 </div>
               ) : (

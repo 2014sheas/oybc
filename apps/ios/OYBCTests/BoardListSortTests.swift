@@ -111,6 +111,55 @@ final class BoardListSortTests: XCTestCase {
         let draftNew = makeBoard(id: "draftNew", status: .draft, updatedAt: "2026-06-11T00:00:00.000Z")
         XCTAssertEqual(sortIds([draftOld, active, draftNew]), ["active", "draftNew", "draftOld"])
     }
+
+    // MARK: - activeBoardPlacementCounts (TS twin pinned in boardListSort.test.ts)
+
+    func test_activeBoardPlacementCounts_countsDistinctStillInPlayBoardsOnly() {
+        let boards = [
+            makeBoard(id: "a1"), makeBoard(id: "a2"),
+            makeBoard(id: "done", status: .completed), makeBoard(id: "draft", status: .draft),
+            makeBoard(id: "sealed", sealedAt: "2026-06-14T00:00:00.000Z"),
+            makeBoard(id: "ended", endDate: "2026-06-14T00:00:00.000Z"),
+        ]
+        func bt(_ task: String, _ board: String, deleted: Bool = false) -> BoardTask {
+            var row = BoardTask(
+                id: "\(task)-\(board)-\(deleted)", boardId: board, taskId: task, row: 0, col: 0,
+                isCenter: false, createdAt: "", updatedAt: "", lastSyncedAt: nil, version: 1
+            )
+            row.isDeleted = deleted
+            return row
+        }
+        let counts = activeBoardPlacementCounts(
+            [bt("t", "a1"), bt("t", "a2"), bt("t", "done"), bt("t", "draft"), bt("t", "sealed"),
+             bt("t", "ended"), bt("t", "unknown"), bt("u", "a1", deleted: true), bt("v", "done")],
+            boards: boards, now: now
+        )
+        XCTAssertEqual(counts, ["t": 2])
+    }
+
+    // MARK: - isBoardActiveForList / boardPlacementStatus (boardListSort.test.ts twins)
+
+    func test_isBoardActiveForList_endedOrClosedActiveBoardIsNotInPlay() {
+        XCTAssertTrue(isBoardActiveForList(makeBoard(id: "a"), now: now))
+        XCTAssertTrue(isBoardActiveForList(makeBoard(id: "indef", timeframe: .indefinite, endDate: nil), now: now))
+        XCTAssertFalse(isBoardActiveForList(makeBoard(id: "ended", endDate: "2026-06-10T00:00:00.000Z"), now: now))
+        XCTAssertFalse(isBoardActiveForList(makeBoard(id: "closed", sealedAt: "2026-06-12T00:00:00.000Z"), now: now))
+        XCTAssertFalse(isBoardActiveForList(makeBoard(id: "done", status: .completed), now: now))
+        XCTAssertFalse(isBoardActiveForList(makeBoard(id: "draft", status: .draft), now: now))
+    }
+
+    func test_boardPlacementStatus_expiredAndClosedOverTheStoredStatus() {
+        XCTAssertEqual(boardPlacementStatus(makeBoard(id: "a"), now: now), "active")
+        XCTAssertEqual(boardPlacementStatus(makeBoard(id: "ended", endDate: "2026-06-10T00:00:00.000Z"), now: now), "expired")
+        XCTAssertEqual(boardPlacementStatus(makeBoard(id: "closed", sealedAt: "2026-06-12T00:00:00.000Z"), now: now), "closed")
+        XCTAssertEqual(
+            boardPlacementStatus(makeBoard(id: "closedDone", status: .completed, sealedAt: "2026-06-12T00:00:00.000Z"), now: now),
+            "closed"
+        )
+        XCTAssertEqual(boardPlacementStatus(makeBoard(id: "done", status: .completed), now: now), "completed")
+        XCTAssertEqual(boardPlacementStatus(makeBoard(id: "draft", status: .draft), now: now), "draft")
+        XCTAssertEqual(boardPlacementStatus(makeBoard(id: "indef", timeframe: .indefinite, endDate: nil), now: now), "active")
+    }
 }
 
 private extension ISO8601DateFormatter {

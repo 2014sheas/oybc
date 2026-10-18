@@ -109,10 +109,19 @@ final class CountsTowardVectorTests: XCTestCase {
         let boardId: String
         let taskId: String
         let isDeleted: Bool?
+        /// Slice 2b — the placement's parameters (scored with the window).
+        let targetOverride: CountValue?
+        let targetKind: String?
+        let childTargets: [MiniChildTarget]?
+
+        struct MiniChildTarget: Decodable { let childId: String; let target: CountValue }
 
         func placement(_ index: Int) -> BoardTask {
             BoardTask(
                 id: "bt\(index)", boardId: boardId, taskId: taskId, row: 0, col: 0, isCenter: false,
+                targetOverride: targetOverride,
+                targetKind: targetKind.flatMap(CountKind.init(rawValue:)),
+                childTargets: childTargets?.map { PlacementChildTarget(childId: $0.childId, target: $0.target) },
                 createdAt: "2026-01-01T00:00:00.000Z", updatedAt: "2026-01-01T00:00:00.000Z",
                 version: 1, isDeleted: isDeleted ?? false
             )

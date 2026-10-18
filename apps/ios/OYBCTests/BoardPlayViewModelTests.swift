@@ -399,6 +399,11 @@ final class BoardPlayViewModelTests: XCTestCase {
 
     /// Reads a single Task straight from the DB (post-write committed state).
     /// Non-throwing so it flattens cleanly into `waitUntil` predicates.
+    /// The live placement's per-board title for `taskId` on board `b1`.
+    private func titleOverride(_ db: AppDatabase, _ taskId: String) throws -> String? {
+        try db.fetchBoardTasks(boardId: "b1").first { $0.taskId == taskId }?.titleOverride
+    }
+
     private func dbTask(_ db: AppDatabase, _ id: String) -> Task? {
         (try? db.fetchTasks(userId: "u1"))?.first { $0.id == id }
     }
@@ -625,13 +630,11 @@ final class BoardPlayViewModelTests: XCTestCase {
         XCTAssertTrue(waitUntil { vm.flashEvent?.creditToast != nil },
                       "credit toast flash event never published for the OTHER board")
         let payload = try XCTUnwrap(vm.flashEvent?.creditToast)
-        XCTAssertTrue(payload.message.contains("Board b2"))
-        // R3: pinned copy contract — "+{N} {counterName} — also counted on
-        // {board list}." `c-src` has action "Do" + unit "reps" (no title
+        // Pinned copy contract — "+{N} {counterName}". `c-src` has action "Do" + unit "reps" (no title
         // override), so the pair-derived counter name is "Reps" — proves
         // this reads `formatCounterName` and NOT the stored title ("Task
         // c-src"), which is exactly what R3's `counterDisplayName` fix targets.
-        XCTAssertEqual(payload.message, "+1 Reps — also counted on Board b2.")
+        XCTAssertEqual(payload.message, "+1 Reps")
         XCTAssertEqual(payload.sourceTaskId, "c-src")
         XCTAssertEqual(payload.amount, 1)
     }
@@ -1235,10 +1238,9 @@ final class BoardPlayViewModelTests: XCTestCase {
     }
 
     /// Counter kinds (D5) — a picker quick-add row linked to a continuous
-    /// root: Save places the board's own window-stamped copy, stored with the
-    /// root's kind (the VM-built row carries none of its own). The pending
-    /// linked row the copy replaced is never written or enqueued (no orphan
-    /// member — docs/SHARED_COUNTER_SETTINGS.md §5 UI PR notes).
+    /// root: Save persists the pending linked row as-is (slice 3a: no per-board
+    /// copy is minted), stored with the root's kind (the VM-built row carries
+    /// none of its own), and places it with no parameters.
     func test_handleEditSave_pendingLinkedRow_carriesRootCountKind() throws {
         let db = try makeDb()
         try seedWorkspace(db)
@@ -1265,18 +1267,16 @@ final class BoardPlayViewModelTests: XCTestCase {
         XCTAssertTrue(vm.handleEditSave())
         XCTAssertTrue(waitUntil { vm.editEvent?.outcome == .saved })
 
-        let copyId = BoardSources.derivedTaskId(boardId: "b1", rootTaskId: "root-amt")
-        XCTAssertNotNil(try db.fetchBoardTasks(boardId: "b1").first { $0.taskId == copyId }, "the copy is what is placed")
-        XCTAssertEqual(dbTask(db, copyId)?.countKind, .continuous)
-        XCTAssertEqual(dbTask(db, copyId)?.maxCount, 5)
+        let placement = try XCTUnwrap(try db.fetchBoardTasks(boardId: "b1").first { $0.taskId == "pending-linked" },
+                                      "the pending row itself is placed")
+        XCTAssertNil(placement.targetOverride, "a linked row is placed with no parameters")
+        XCTAssertEqual(dbTask(db, "pending-linked")?.countKind, .continuous)
+        XCTAssertEqual(dbTask(db, "pending-linked")?.maxCount, 5)
         let created = try db.fetchPendingSyncItems().filter {
-            $0.entityType == "tasks" && $0.entityId == copyId && $0.operationType == .create
+            $0.entityType == "tasks" && $0.entityId == "pending-linked" && $0.operationType == .create
         }
         let payload = try JSONDecoder().decode(Task.self, from: Data(try XCTUnwrap(created.first).payload.utf8))
         XCTAssertEqual(payload.countKind, .continuous, "the CREATE payload carries the kind too")
-        // The replaced pending row left no trace: no row, no sync item.
-        XCTAssertNil(dbTask(db, "pending-linked"))
-        XCTAssertFalse(try db.fetchPendingSyncItems().contains { $0.entityType == "tasks" && $0.entityId == "pending-linked" })
     }
 
     /// D15 — removals run BEFORE adds so a freed position is never mistaken
@@ -1471,7 +1471,8 @@ final class BoardPlayViewModelTests: XCTestCase {
 
         let compound = try XCTUnwrap(dbTask(db, "tc"))
         XCTAssertEqual(compound.type, .compound, "a compound cannot be switched out of Compound")
-        XCTAssertEqual(compound.title, "Renamed compound", "the title still commits")
+        XCTAssertEqual(compound.title, "Task tc", "a title edit lands on the placement, not the task")
+        XCTAssertEqual(try titleOverride(db, "tc"), "Renamed compound", "the title still commits")
         XCTAssertEqual(try db.fetchCompoundChildrenTasks(parentTaskId: "tc").map(\.id), ["c1", "c2"],
                        "the compound's links stay intact")
 
@@ -1483,7 +1484,8 @@ final class BoardPlayViewModelTests: XCTestCase {
 
         let bare = try XCTUnwrap(dbTask(db, "tn2"))
         XCTAssertEqual(bare.type, .normal, "a switch into Compound without a rule + sub-tasks is ignored")
-        XCTAssertEqual(bare.title, "Renamed bare", "the title still commits")
+        XCTAssertEqual(bare.title, "Task tn2")
+        XCTAssertEqual(try titleOverride(db, "tn2"), "Renamed bare", "the title still commits")
     }
 
     // MARK: - I3 (Board Edit consolidation, D8 `keep`) — Board details Save
@@ -1613,13 +1615,15 @@ final class BoardPlayViewModelTests: XCTestCase {
 
         let a = try XCTUnwrap(dbTask(db, "ta"))
         XCTAssertEqual(a.type, .achievement, "Board Edit must not rewrite an achievement's type")
-        XCTAssertEqual(a.title, "Renamed watcher", "the title still commits")
+        XCTAssertEqual(a.title, "Task ta")
+        XCTAssertEqual(try titleOverride(db, "ta"), "Renamed watcher", "the title still commits")
         XCTAssertEqual(a.referencedBoardId, "b-ref")
         XCTAssertEqual(a.achievementTrigger, .bingo)
 
         let b = try XCTUnwrap(dbTask(db, "tb"))
         XCTAssertEqual(b.type, .achievement, "an achievement cannot be switched to Counting")
-        XCTAssertEqual(b.title, "Flipped to counting")
+        XCTAssertEqual(b.title, "Task tb")
+        XCTAssertEqual(try titleOverride(db, "tb"), "Flipped to counting")
         XCTAssertEqual(b.referencedBoardId, "b-ref")
         XCTAssertEqual(b.achievementTrigger, .greenlog)
         XCTAssertNil(b.action, "no counting fields land on an achievement")
@@ -1680,7 +1684,8 @@ final class BoardPlayViewModelTests: XCTestCase {
         XCTAssertTrue(waitUntil { vm.editEvent?.outcome == .saved })
         let saved = try XCTUnwrap(dbTask(db, "tn"))
         XCTAssertEqual(saved.type, .normal)
-        XCTAssertEqual(saved.title, "Renamed")
+        XCTAssertEqual(saved.title, "Task tn")
+        XCTAssertEqual(try titleOverride(db, "tn"), "Renamed")
     }
 
     // `test_handleEditSave_blankName_doesNotStart` removed (Board Edit

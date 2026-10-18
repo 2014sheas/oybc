@@ -97,19 +97,19 @@ extension AppDatabase {
     /// Writes `countKind = to` (always explicit — the field is never cleared)
     /// plus the `planCountKindSwitch` goal / default-amount rounding on the
     /// root and on every live row whose `sharedCounterId` is the root, each
-    /// with a version bump + `.update` enqueue. A window-stamped derived row
-    /// whose window has ended (`BoardSources.isFrozenDerivedRow`) is a
-    /// permanent record and keeps its kind and goal. Then the board cascade
-    /// re-derives every board placing a written row. `task_events` are never
-    /// touched: a whole kind rounds the window SUM at read time, so switching
-    /// back restores the exact fractional count. Lifetime caches
+    /// with a version bump + `.update` enqueue. Then the board cascade
+    /// re-derives every board placing a written row (a placement's frozen
+    /// `targetKind` keeps its goal's kind). `task_events` are never touched: a
+    /// whole kind rounds the window SUM at read time, so switching back
+    /// restores the exact fractional count. The root's lifetime caches
     /// (`isCompleted` / `currentCount` / `completedAt`) are restamped from
-    /// events in the same write.
+    /// events in the same write; a linked row's caches are never read (it
+    /// resolves from the root's events) and are not written.
     ///
     /// - Parameters:
     ///   - rootTaskId: The counter root (a COUNTING task with no `sharedCounterId`).
     ///   - to: The requested kind.
-    ///   - now: The switch instant (also the freeze clock).
+    ///   - now: The switch instant.
     /// - Throws: `CountKindSwitchError` for a refused switch; a database
     ///   error if the write fails.
     func switchCounterKind(rootTaskId: String, to: CountKind, now: Date = Date()) throws {
@@ -126,7 +126,7 @@ extension AppDatabase {
     ///   - db: The open write transaction.
     ///   - rootTaskId: The counter root.
     ///   - to: The requested kind.
-    ///   - now: The switch instant (also the freeze clock).
+    ///   - now: The switch instant.
     /// - Returns: The ids written (root first, then each live family row).
     /// - Throws: `CountKindSwitchError` for a refused switch; a database error.
     @discardableResult
@@ -149,9 +149,7 @@ extension AppDatabase {
         if to != .discrete, try !Self.countsTowardContributors(db: db, counterId: root.id).isEmpty {
             throw CountKindSwitchError.hasContributors
         }
-        // Lifetime caches recomputed from events in the same write (the root
-        // via computeTaskCachesFromEvents, linked rows via propagateIncrement
-        // from the root's new count — the event-append path's rules).
+        // The root's lifetime caches recomputed from events in the same write.
         var patchedRoot = root
         if let maxCount = rootPatch.maxCount { patchedRoot.maxCount = maxCount }
         patchedRoot.countKind = to
@@ -167,30 +165,21 @@ extension AppDatabase {
             .filter(Column("sharedCounterId") == root.id)
             .filter(Column("isDeleted") == false)
             .fetchAll(db)
-        for row in family where !BoardSources.isFrozenDerivedRow(row, now: nowIso) {
+        for row in family {
             guard let rowPatch = planCountKindSwitch(
                 maxCount: row.maxCount,
                 defaultLogAmount: row.defaultLogAmount,
                 from: resolveCountKind(row.countKind),
                 to: to
             ) else { continue } // already `to` (or a kind that never switches)
-            let derived = propagateIncrement(
-                sourceAfterCurrentCount: rootCaches.currentCount ?? 0,
-                linkedTasks: [PropagateIncrementLinkedTask(
-                    id: row.id, baseline: row.baseline,
-                    maxCount: rowPatch.maxCount ?? row.maxCount,
-                    isCompleted: row.isCompleted, countKind: to
-                )]
-            )[0]
-            let completedAt = !row.isCompleted && derived.newIsCompleted ? nowIso : row.completedAt
-            try Self.writeKindSwitch(
-                db: db, task: row, to: to, patch: rowPatch, now: nowIso,
-                caches: (derived.newIsCompleted, derived.newCurrentCount, completedAt)
-            )
+            try Self.writeKindSwitch(db: db, task: row, to: to, patch: rowPatch, now: nowIso, caches: nil)
             writtenIds.append(row.id)
         }
 
         try Self.runBoardCascadeForTasks(db: db, changedTaskIds: writtenIds, now: nowIso)
+        // A linked row's goal may have rounded; one on a CLOSED board re-derives
+        // deterministically (the sanctioned sealed path — the live cascade skips it).
+        try Self.reDeriveSealedBoards(db: db, changedTaskIds: Set(writtenIds))
         return writtenIds
     }
 
@@ -204,7 +193,7 @@ extension AppDatabase {
     ///   - taskId: The edited task.
     ///   - to: The kind the editor chose; nil = unchanged.
     ///   - maxCount: The goal the caller is about to write, if any.
-    ///   - now: Switch instant / freeze clock.
+    ///   - now: Switch instant.
     /// - Returns: True when a switch was written (only a live COUNTING root
     ///   whose kind differs switches).
     /// - Throws: `CountKindSwitchError.goalNotWhole` when `maxCount` is
@@ -235,12 +224,10 @@ extension AppDatabase {
     /// - Parameters:
     ///   - rootTaskId: The counter root.
     ///   - to: The requested kind.
-    ///   - now: Freeze clock for the family count.
     /// - Returns: The preview, or nil for a missing / non-counting / linked
     ///   task or a refused switch.
-    func previewCounterKindSwitch(rootTaskId: String, to: CountKind, now: Date = Date()) throws -> KindSwitchPreview? {
-        let nowIso = DateFormatting.utcISOString(now)
-        return try read { db in
+    func previewCounterKindSwitch(rootTaskId: String, to: CountKind) throws -> KindSwitchPreview? {
+        try read { db in
             guard let root = try Task.fetchOne(db, key: rootTaskId), !root.isDeleted,
                   root.type == .counting, root.sharedCounterId == nil else { return nil }
             let family = try Task
@@ -249,11 +236,10 @@ extension AppDatabase {
                 .fetchAll(db)
             // Exactly the rows switchCounterKind(db:…) would write.
             let linkedCount = family.filter { row in
-                !BoardSources.isFrozenDerivedRow(row, now: nowIso)
-                    && planCountKindSwitch(
-                        maxCount: row.maxCount, defaultLogAmount: row.defaultLogAmount,
-                        from: resolveCountKind(row.countKind), to: to
-                    ) != nil
+                planCountKindSwitch(
+                    maxCount: row.maxCount, defaultLogAmount: row.defaultLogAmount,
+                    from: resolveCountKind(row.countKind), to: to
+                ) != nil
             }.count
             return KindSwitchPreview.planned(task: root, to: to, linkedCount: linkedCount)
         }
@@ -263,12 +249,14 @@ extension AppDatabase {
     /// `.update` enqueue. Runs inside the caller's write transaction.
     private static func writeKindSwitch(
         db: Database, task: Task, to: CountKind, patch: CountKindSwitchPatch, now: String,
-        caches: (isCompleted: Bool, currentCount: CountValue?, completedAt: String?)
+        caches: (isCompleted: Bool, currentCount: CountValue?, completedAt: String?)?
     ) throws {
         var updated = task
-        updated.isCompleted = caches.isCompleted
-        updated.currentCount = caches.currentCount
-        updated.completedAt = caches.completedAt
+        if let caches {
+            updated.isCompleted = caches.isCompleted
+            updated.currentCount = caches.currentCount
+            updated.completedAt = caches.completedAt
+        }
         if let maxCount = patch.maxCount { updated.maxCount = maxCount }
         if let amount = patch.defaultLogAmount { updated.defaultLogAmount = amount }
         updated.countKind = to

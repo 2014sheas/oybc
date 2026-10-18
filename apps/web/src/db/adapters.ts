@@ -2,31 +2,31 @@ import {
   TaskType,
   evaluateCompound,
   isEventOwningTask,
-  isWindowStampedDerived,
   resolveDerivedCounterWindowState,
   resolveFamilyCountKind,
   resolveLinkedCounterDisplay,
   resolveTaskWindowState,
-  resolveWindowStampedDerivedState,
   type Task,
   type TaskEvent,
   type CompoundChild,
   type CellState,
+  withPlacementParams,
+  withChildTarget,
+  type PlacementChildTarget,
+  type BoardTask,
 } from '@oybc/shared';
-import type { TaskSquareData, SquareState } from '../components/interactiveTaskSquareUtils';
+import type { CompoundChildCount, SquareTaskType, TaskSquareData, SquareState } from '../components/interactiveTaskSquareUtils';
 
 /**
  * Windowed Completion (docs/WINDOWED_COMPLETION.md §Semantics): the per-square
  * window context threaded into {@link taskToSquareState}. When present, primitive
  * (normal / plain-counting) squares resolve against the board's window via
  * TaskEvents instead of the lifetime `isCompleted` / `currentCount` caches;
- * compound squares inherit the window; window-stamped derived counters resolve
- * from their ROOT's events inside their own `[startDate, endDate]` (the same
- * `resolveLinkedCounterDisplay` / `resolveDerivedCounterWindowState` the kernel
- * uses — docs §Derived-task carve-out, amended 2026-09-23); hub-linked derived
- * counters stay on their cache (the carve-out). When absent, behavior is
- * byte-identical to the pre-Windowed-Completion lifetime read (library
- * surfaces, tests).
+ * compound squares inherit the window; linked counters resolve from their
+ * ROOT's events over the host window (`resolveLinkedCounterDisplay`, the same
+ * rule the kernel uses). When absent, plain tasks read their lifetime caches
+ * (library surfaces, tests) and a linked counter reads its root's lifetime
+ * events.
  *
  * The window is `[windowStart, windowEnd]`, inclusive at both ends (2026-09-24
  * amendment of WC Decision 1): an ended board's squares ignore events logged
@@ -41,6 +41,12 @@ export interface SquareWindowContext {
    * construction site states the bound explicitly.
    */
   windowEnd: string | null;
+  /**
+   * The board's `sealedAt` when it is closed (slice 0): a linked row's
+   * display drops root events after the seal, exactly as the sealed
+   * re-derive does — iOS passes `board?.sealedAt` everywhere, web did not.
+   */
+  sealedAt?: string | null;
   /** This workspace's non-deleted TaskEvents grouped by `taskId`. */
   eventsByTaskId: Record<string, TaskEvent[]>;
 }
@@ -77,11 +83,11 @@ export function buildSquareWindowContext(
 /**
  * Whether a compound's CHILD reads complete on a board — exactly the checkmark
  * the compound detail sheet paints (and the kernel's `resolvePrimitiveChildState`
- * order): nested compounds evaluate against the host window; window-stamped
- * derived counters resolve from their root's events in their own window;
+ * order): nested compounds evaluate against the host window; linked
+ * counters resolve from their root's events over the host window;
  * event-owning children resolve against the host board's
- * `[windowStart, windowEnd]`; hub-linked derived children (and every child when
- * no window context is given) read their lifetime cache.
+ * `[windowStart, windowEnd]`; every child reads its lifetime cache when
+ * no window context is given.
  *
  * @param childTask - The child task to resolve.
  * @param taskMap - id → Task lookup (nested compound children resolve through it).
@@ -142,6 +148,55 @@ export function compoundChildToggleDesired(
 }
 
 /**
+ * A counting child's count for the compound square sheet's checklist row: the
+ * same windowed read the checkmark uses — a linked child reads its counter's
+ * in-window total (`resolveLinkedCounterDisplay`), an event-owning child its
+ * own events in the host window — and the amount a tap logs: a linked child
+ * steps by its counter's default log amount, a plain one by 1.
+ *
+ * @param childTask - The child task.
+ * @param taskMap - id → Task lookup (the counter root's default amount / kind).
+ * @param windowContext - The host board's window context, if any.
+ * @returns The count model, or `undefined` for a non-counting child.
+ */
+export function compoundChildCount(
+  childTask: Task,
+  taskMap: Record<string, Task>,
+  windowContext?: SquareWindowContext,
+): CompoundChildCount | undefined {
+  if (childTask.type !== TaskType.COUNTING) return undefined;
+  // The counter the step logs on: a linked child's root, or the child itself
+  // when it IS a counter root (hub counter, or linked to by another live task)
+  // — iOS `BoardPlayViewModel.sharedCounterSourceId(for:)`.
+  const isRoot =
+    childTask.isCounter === true ||
+    Object.values(taskMap).some((t) => t.sharedCounterId === childTask.id && !t.isDeleted);
+  const rootId = childTask.sharedCounterId ?? (isRoot ? childTask.id : undefined);
+  const root = rootId ? taskMap[rootId] : undefined;
+  let current: number;
+  if (childTask.sharedCounterId) {
+    current = resolveLinkedCounterDisplay(
+      childTask,
+      windowContext?.eventsByTaskId,
+      windowContext?.sealedAt ?? undefined,
+      windowContext ? { startDate: windowContext.windowStart, endDate: windowContext.windowEnd } : undefined,
+    ).displayed;
+  } else if (windowContext && isEventOwningTask(childTask)) {
+    const evts = windowContext.eventsByTaskId[childTask.id] ?? [];
+    current = resolveTaskWindowState(childTask, evts, windowContext.windowStart, windowContext.windowEnd).count;
+  } else {
+    current = childTask.currentCount ?? 0;
+  }
+  return {
+    current,
+    max: childTask.maxCount ?? 0,
+    unit: childTask.unit ?? '',
+    kind: resolveFamilyCountKind(childTask, (id) => taskMap[id]),
+    step: root?.defaultLogAmount ?? 1,
+  };
+}
+
+/**
  * Converts a Task record to the TaskSquareData shape expected by
  * InteractiveTaskSquare.
  *
@@ -156,12 +211,30 @@ export function compoundChildToggleDesired(
  * @param windowContext - Windowed Completion context for primitive/compound resolution
  * @returns TaskSquareData suitable for InteractiveTaskSquare
  */
+/**
+ * The placement-adjusted task a board surface renders for `bt` (slice 2a):
+ * `withPlacementParams` with the root's title settings for a linked task.
+ * `undefined` when the task is missing from the map.
+ *
+ * @param bt - The placement.
+ * @param taskMap - The workspace tasks by id.
+ * @returns The task to render, or `undefined`.
+ */
+export function placedTaskFor(bt: Pick<BoardTask, 'taskId'> & Partial<BoardTask>, taskMap: Record<string, Task>): Task | undefined {
+  const task = taskMap[bt.taskId];
+  if (!task) return undefined;
+  const root = task.sharedCounterId ? taskMap[task.sharedCounterId] : undefined;
+  return withPlacementParams(task, bt, root ?? null);
+}
+
 export function taskToSquareData(
   task: Task,
   compoundChildren?: CompoundChild[],
   taskMap?: Record<string, Task>,
   childrenByCompound?: Record<string, CompoundChild[]>,
   windowContext?: SquareWindowContext,
+  /** The compound placement's per-child goals (slice 2a), direct children only. */
+  childTargets?: PlacementChildTarget[] | null,
 ): TaskSquareData {
   // Board-integrity PR-3 (issue #360, finding 2) — ACHIEVEMENT squares are
   // read-only on the grid; their completion derives from the watched
@@ -191,9 +264,11 @@ export function taskToSquareData(
     const resolveChild = (childTask: Task): boolean =>
       resolveCompoundChildCompleted(childTask, map, cbMap, windowContext);
     const children = links.map((link) => {
-      const childTask = map[link.childTaskId];
-      if (!childTask) return { taskId: link.childTaskId, title: '<missing>', isCompleted: false };
-      return { taskId: link.childTaskId, title: childTask.title, isCompleted: resolveChild(childTask) };
+      const rawChild = map[link.childTaskId];
+      if (!rawChild) return { taskId: link.childTaskId, title: '<missing>', isCompleted: false };
+      const childTask = withChildTarget(rawChild, childTargets);
+      const count = compoundChildCount(childTask, map, windowContext);
+      return { taskId: link.childTaskId, title: childTask.title, isCompleted: resolveChild(childTask), taskType: childTask.type as SquareTaskType, ...(count ? { count } : {}) };
     });
 
     return {
@@ -234,8 +309,8 @@ export function taskToSquareData(
  * Under the unified compound model, BoardTask is placement-only. When
  * `windowContext` is supplied (every board surface), primitive and compound
  * state resolve **windowed** against `task_events` for that board's window —
- * the Task row's lifetime caches are read only for the HUB-LINKED derived
- * shared-counter carve-out, or as the no-context fallback (library/legacy callers). See
+ * the Task row's lifetime caches are read only as the no-context fallback
+ * (legacy callers; a linked counter reads its root's lifetime events). See
  * docs/WINDOWED_COMPLETION.md §Task caches. Progress-step completion
  * (completedStepIds) is no longer tracked per-board — returns an empty Set
  * for non-compound tasks.
@@ -263,6 +338,8 @@ export function taskToSquareState(
   childrenByCompound?: Record<string, CompoundChild[]>,
   windowContext?: SquareWindowContext,
   cellState?: CellState,
+  /** The compound placement's per-child goals (slice 2a), direct children only. */
+  childTargets?: PlacementChildTarget[] | null,
 ): SquareState {
   // Board-integrity PR-3 (issue #360, finding 2) — ACHIEVEMENT squares read
   // their completion from the kernel's per-cell resolution, never a lifetime
@@ -290,7 +367,7 @@ export function taskToSquareState(
         }
       : undefined;
     return {
-      isCompleted: evaluateCompound(task, cbMap, map, compoundCtx),
+      isCompleted: evaluateCompound(task, cbMap, map, compoundCtx, childTargets),
       currentCount: 0,
       completedStepIds: new Set<string>(),
     };
@@ -299,7 +376,7 @@ export function taskToSquareState(
   // Shared Counters — a linked (derived) counting square. `resolveLinkedCounterDisplay`
   // is the single display rule (docs §Derived-task carve-out, amended
   // 2026-09-23), so every consumer of `SquareState` (grid squares,
-  // DetailModal, FloatingContextMenu, progress bar) sees the same thing:
+  // square sheet, FloatingContextMenu, progress bar) sees the same thing:
   //   - WINDOW-STAMPED rows: count AND completion are the ROOT's increment sum
   //     inside the row's own `[startDate, endDate]` — the same function the
   //     derivation kernel resolves the cell with, so a cell can never paint
@@ -307,15 +384,17 @@ export function taskToSquareState(
   //     one-way latch is not read.
   //   - HUB-LINKED rows (no window stamp) WITH a window context: the root's
   //     increment sum inside THIS board's window (owner rule 2026-10-01).
-  //   - Context-less reads (library): the baseline-adjusted mirror
-  //     (`currentCount − baseline`) + the propagation-stamped latch.
+  //   - No window context: the ROOT's lifetime event sum — and 0 without an
+  //     event map (every production board surface passes a context; the
+  //     library reads `contextlessCounterState` itself). Neither baseline nor
+  //     the latch is read.
   if (task.sharedCounterId != null) {
     // A non-window-stamped linked row resolves over THIS board's window too
-    // (owner rule 2026-10-01); a context-less caller keeps the lifetime read.
+    // (owner rule 2026-10-01).
     const { displayed, isCompleted } = resolveLinkedCounterDisplay(
       task,
       windowContext?.eventsByTaskId,
-      undefined,
+      windowContext?.sealedAt ?? undefined,
       windowContext ? { startDate: windowContext.windowStart, endDate: windowContext.windowEnd } : null,
     );
     return {
@@ -359,7 +438,7 @@ export function taskToSquareState(
  * sealedAt)]`), not the old max/0 snapshot display and not the lifetime
  * cache, so a partial late log is visible ("3/5", not just green/grey).
  * Mirrors the sealing data layer's `boundWindowContextAtSeal` +
- * `resolveTaskWindowState` / `resolveWindowStampedDerivedState` pattern —
+ * `resolveTaskWindowState` / `resolveLinkedCounterWindowState` pattern —
  * same bound, so the count and the frozen `sealedCompletedCells` green can
  * never disagree — but synchronous, built from an already-loaded event map
  * (`SquareWindowContext.eventsByTaskId`) for render-time use.
@@ -376,26 +455,20 @@ export function resolveClosedBoardCounterDisplay(
   eventsByTaskId: Record<string, TaskEvent[]>,
   board: { startDate: string; endDate?: string | null; sealedAt?: string | null },
 ): { displayed: number; isCompleted: boolean } {
-  const rootId = task.sharedCounterId ?? task.id;
-  const rootEvents = (eventsByTaskId[rootId] ?? []).filter((e) => !e.isDeleted);
+  // Display = kernel (slice 0): a linked row is exactly what the live cell
+  // shows, bounded at the seal; this used to be a fourth hand-rolled copy of
+  // the in-window sum.
+  if (task.sharedCounterId != null) {
+    return resolveLinkedCounterDisplay(task, eventsByTaskId, board.sealedAt ?? undefined, {
+      startDate: board.startDate,
+      endDate: board.endDate ?? null,
+    });
+  }
+  const ownEvents = (eventsByTaskId[task.id] ?? []).filter((e) => !e.isDeleted);
   const sealedMs = board.sealedAt ? new Date(board.sealedAt).getTime() : NaN;
   const bounded = Number.isNaN(sealedMs)
-    ? rootEvents
-    : rootEvents.filter((e) => new Date(e.occurredAt).getTime() <= sealedMs);
-
-  if (isWindowStampedDerived(task)) {
-    const state = resolveWindowStampedDerivedState(task, bounded);
-    return { displayed: state.count, isCompleted: state.isCompleted };
-  }
-  if (task.sharedCounterId != null) {
-    // Owner rule 2026-10-01: a linked row that is not window-stamped is the
-    // root's sealed-bounded sum over THIS board's window — never the latch.
-    const state = resolveWindowStampedDerivedState(
-      { startDate: board.startDate, endDate: board.endDate ?? null, maxCount: task.maxCount, countKind: task.countKind },
-      bounded,
-    );
-    return { displayed: state.count, isCompleted: state.isCompleted };
-  }
+    ? ownEvents
+    : ownEvents.filter((e) => new Date(e.occurredAt).getTime() <= sealedMs);
   const { count, isCompleted } = resolveTaskWindowState(task, bounded, board.startDate, board.endDate ?? null);
   return { displayed: count, isCompleted };
 }

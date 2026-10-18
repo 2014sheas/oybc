@@ -41,6 +41,12 @@ struct BoardSourceSupplyInfo: Equatable {
     /// can pro-rate an auto target (`effectiveMemberTarget`) without a second
     /// board read.
     let sourceWindow: BoardSources.BoardWindow
+    /// TASK_WINDOW_REWORK slice 3a — the source board's EFFECTIVE goal for a
+    /// supplied member: a counting placement's `targetOverride` (in the task's
+    /// kind), and a compound placement's `childTargets` keyed by child id.
+    /// Members without a per-board goal have no entry (their own goal applies).
+    /// Pool supplies never carry it. Feeds `planDerivedTasks`'s `goalOf`.
+    var goalByTaskId: [String: CountValue] = [:]
 }
 
 extension AppDatabase {
@@ -280,14 +286,27 @@ extension AppDatabase {
         var supply: [String] = []
         var done = Set<String>()
         var windowCountByTaskId: [String: CountValue] = [:]
-        for id in placedIds {
+        var goalByTaskId: [String: CountValue] = [:]
+        for bt in rows {
+            let id = bt.taskId
             // `isSourceSupplyTask`: achievements never enter source supply —
             // hand-placed watchers on the pulled board stay on that board only.
-            guard let task = taskById[id],
-                  BoardSources.isSourceSupplyTask(task),
+            guard let raw = taskById[id],
+                  BoardSources.isSourceSupplyTask(raw),
                   !seen.contains(id) else { continue }
+            // Slice 2b: "done" is scored at the PLACEMENT's goal (web `resolveBoardSourceSupply`).
+            let task = PlacementParams.apply(raw, placement: bt)
             seen.insert(id)
             supply.append(id)
+            // Slice 3a: the placement's effective goal rides on the supply.
+            if bt.targetOverride != nil, raw.type == .counting, let goal = task.maxCount {
+                goalByTaskId[id] = goal
+            }
+            for entry in bt.childTargets ?? [] {
+                if let child = try Task.fetchOne(db, key: entry.childId), !child.isDeleted, child.type == .counting {
+                    goalByTaskId[entry.childId] = PlacementParams.withChildTarget(child, childTargets: bt.childTargets).maxCount
+                }
+            }
             let isDone: Bool
             // A window-stamped derived counter is done by its ROOT's
             // increments inside its own window — the kernel's rule (docs
@@ -322,7 +341,8 @@ extension AppDatabase {
             supplyTaskIds: supply,
             doneTaskIds: done,
             windowCountByTaskId: windowCountByTaskId,
-            sourceWindow: Self.boardWindow(board)
+            sourceWindow: Self.boardWindow(board),
+            goalByTaskId: goalByTaskId
         )
     }
 
@@ -426,7 +446,9 @@ extension AppDatabase {
                     supplyTaskIds: info.supplyTaskIds,
                     doneTaskIds: info.doneTaskIds
                 )
-                supplies.append(BoardSources.Supply(source: source, supplyTaskIds: raw))
+                supplies.append(BoardSources.Supply(
+                    source: source, supplyTaskIds: raw, goalByTaskId: info.goalByTaskId
+                ))
             }
             let t = entry.template
             let isUnmigrated = t.sources == nil && t.poolIds == nil

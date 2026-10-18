@@ -71,15 +71,8 @@ extension AppDatabase {
     /// Does NOT cascade to BoardTask placements — see
     /// `deleteDraftWithCascade` for the draft-only cascading variant.
     ///
-    /// Board Sources §Member rules (B2, RB5) — the board's window-stamped
-    /// derived rows go with it, once nothing else holds them: a derived
-    /// counter/compound left behind by its last board is a row the user never
-    /// authored, pointing at a window that no longer has a board. One still
-    /// placed on another LIVE board survives. The board's OWN `board_tasks`
-    /// rows stay as they are (see above) — the sweep's candidate query reads
-    /// tombstoned placements too, so it does not depend on that. The board
-    /// tombstone and the derived cascade share one transaction so a mid-flight
-    /// failure can't leave retired tasks under a live board.
+    /// (Until TASK_WINDOW_REWORK slice 5 it also retired the board's
+    /// window-stamped derived rows; none exist now.)
     func deleteBoard(id: String) throws {
         try write { db in
             guard var board = try Board.fetchOne(db, key: id) else { return }
@@ -97,9 +90,6 @@ extension AppDatabase {
                 now: now
             ).enqueue(db)
 
-            // After the tombstone, so the "live placement" test excludes this board.
-            let orphaned = try Self.windowStampedDerivedOrphanedByBoard(db: db, boardId: id)
-            try Self.softDeleteWindowStampedDerived(db: db, taskIds: orphaned, now: now)
         }
     }
 
@@ -590,43 +580,20 @@ extension AppDatabase {
     ///   - isUpdate: `true` when updating an existing draft (old placements
     ///     are soft-deleted (tombstoned) + DELETE-enqueued first); `false` for
     ///     fresh create.
-    ///   - sources: Board Sources §Member rules (B2) — the wizard's pulled
-    ///     sources, used to re-resolve each placed member's rules and mint the
-    ///     window-stamped derived rows they call for. Empty = nothing to mint.
+    ///   - sources: Board Sources §Member rules — the wizard's pulled
+    ///     sources, used to re-resolve each placed member's rules into
+    ///     placement parameters. Empty = nothing to plan.
     ///   - manualTaskIds: The hand-added layer (B2); hand-added members beat
     ///     any source copy in the plan.
     ///   - manualTaskVary: §Member rules (B3) — dice for hand-added counting
     ///     members, keyed by task id. Empty = nothing varies on that layer.
+    ///   - placementParams: TASK_WINDOW_REWORK slice 3b — the wizard's explicit
+    ///     per-cell parameters keyed by task id; they win over the planner's.
+    ///     Applied on ACTIVE saves only.
     ///   - now: ISO8601 timestamp for the sync-queue rows.
     ///   - rng: Uniform `[0, 1)` source for the member-rule dice rolls —
     ///     unseeded in production; tests inject a fixed one (web twin
     ///     `persistWizardBoardRows({ rng })`).
-    /// Remove a pending LINKED counting row (the quick-add match row's, or
-    /// the special panel's auto-link create) that a mint replaced with the
-    /// board's deterministic per-board copy: its `tasks` row and its sync
-    /// CREATE item are deleted inside the caller's transaction, so from
-    /// outside it was never written or enqueued. Scoped to bare linked
-    /// pending rows ONLY (`QuickAddCounterPlacement.isLinkedPendingPayload`)
-    /// — an ordinary pending pool task that overflows the board is still
-    /// created (overfill is the variety mechanism). Web twin:
-    /// `dropReplacedLinkedPendingRows` (`wizardBoard.ts`).
-    ///
-    /// - Parameters:
-    ///   - db: The active write transaction.
-    ///   - pending: The payloads the caller wrote.
-    ///   - placedTaskIds: The ids actually placed on the board.
-    static func dropReplacedLinkedPendingRows(
-        db: Database, pending: [PendingTaskPayload], placedTaskIds: Set<String>
-    ) throws {
-        for payload in pending
-        where QuickAddCounterPlacement.isLinkedPendingPayload(payload) && !placedTaskIds.contains(payload.task.id) {
-            _ = try Task.deleteOne(db, key: payload.task.id)
-            _ = try SyncQueueItem
-                .filter(Column("entityType") == "tasks" && Column("entityId") == payload.task.id)
-                .deleteAll(db)
-        }
-    }
-
     func saveWizardBoard(
         board: Board,
         boardTasks: [BoardTask],
@@ -636,6 +603,7 @@ extension AppDatabase {
         sources: [BoardSource] = [],
         manualTaskIds: [String] = [],
         manualTaskVary: [String: VaryLevel] = [:],
+        placementParams: [String: PlacementParamsDraft] = [:],
         now: String,
         rng: () -> Double = { Double.random(in: 0..<1) }
     ) throws {
@@ -666,6 +634,7 @@ extension AppDatabase {
             // THIS board (its id + window, passed as a value — the row is
             // written below), so a task placed on any other board is forked
             // and the fork is what the mint and the placements below see.
+            let originalTaskIds = boardTasks.map(\.taskId)
             var boardTasks = boardTasks
             var manualTaskIds = manualTaskIds
             var manualTaskVary = manualTaskVary
@@ -696,29 +665,28 @@ extension AppDatabase {
                 }
             }
 
-            // ── Board Sources §Member rules (B2): mint before placing ──────
-            // Each placed member is resolved against THIS board's window; a
-            // member governed by a rule is replaced IN PLACE by its
-            // window-stamped derived counter (or derived compound), so a
-            // pinned/centre square keeps its cell. The rows are written here,
-            // before the `board_tasks` rows that reference them, in this txn.
+            // ── Board Sources §Member rules: plan placement parameters ─────
+            // Each placed member is resolved against THIS board's window into
+            // a placement (TASK_WINDOW_REWORK slice 3b): the `board_tasks` row
+            // points at the member itself (a legacy derived row resolves to
+            // its root) and carries the planned target / child targets / title
+            // — nothing is minted. A pinned/centre square keeps its cell.
             //
-            // ACTIVE SAVES ONLY. A derived id is `uuidv5(boardId, root)` — it
-            // does NOT encode the window — while a DRAFT's window is still
-            // editable: save a draft weekly, resume it, switch it to daily,
-            // save it active, and RB3's "live row → skip" would keep the first
-            // row's timeframe / dates / target / baseline for a window the
-            // board no longer has. A draft therefore places its original member
-            // ids and the activating save derives the window once, from final
-            // values. (An abandoned draft then leaves no derived rows at all.)
+            // ACTIVE SAVES ONLY: a DRAFT's window is still editable, so a draft
+            // places its original member ids with no parameters and the
+            // activating save plans the window once, from final values.
             var boardToSave = board
             var placedRows = boardTasks
             if board.status == .active, !placedRows.isEmpty {
-                let placementIds = try Self.mintWizardDerivedRows(
+                // Forked ids carry their parameters under the fork's id.
+                var explicit = placementParams
+                for (index, row) in boardTasks.enumerated() where index < originalTaskIds.count {
+                    if row.taskId != originalTaskIds[index], let p = placementParams[originalTaskIds[index]] {
+                        explicit[row.taskId] = p
+                    }
+                }
+                let planned = try Self.planWizardPlacements(
                     db: db,
-                    boardId: board.id,
-                    userId: board.userId,
-                    now: now,
                     selectedIds: placedRows.map { $0.taskId },
                     sources: sources,
                     manualTaskIds: manualTaskIds,
@@ -730,43 +698,30 @@ extension AppDatabase {
                     ),
                     rng: rng
                 )
-                // Two members sharing a shared-counter root collapse onto ONE
-                // derived counter. Counter-family exclusivity forbids that at
-                // selection time, so this is belt-and-braces — but a duplicate
-                // `taskId` on one board trips the placement-integrity
-                // invariants (docs/BOARD_INTEGRITY.md), so the repeat cell is
-                // dropped rather than written.
-                //
-                // The invariant this trades away, stated plainly: the board
-                // comes out one square short, against "boards are always
-                // exactly filled". Throwing would be worse (a save the user
-                // cannot complete), so the guard drops the cell and LOGS — the
-                // log is the only signal that the unreachable path fired, and
-                // it exists on both platforms (web `console.warn`s here).
+                // A legacy derived row resolves to its root, so two members can
+                // land on one task. A duplicate `taskId` on one board trips the
+                // placement-integrity invariants (docs/BOARD_INTEGRITY.md), so
+                // the repeat cell is dropped rather than written (and LOGGED —
+                // the only signal the unreachable path fired; web `console.warn`s).
                 var seenTaskIds = Set<String>()
                 var deduped: [BoardTask] = []
+                var placementIds: [String] = []
                 for (index, var row) in placedRows.enumerated() {
-                    if index < placementIds.count { row.taskId = placementIds[index] }
-                    guard seenTaskIds.insert(row.taskId).inserted else {
+                    var placement = index < planned.count ? planned[index] : BoardSources.PlannedPlacement(taskId: row.taskId)
+                    if let draft = explicit[row.taskId] { placement = draft.overlaying(placement) }
+                    placementIds.append(placement.taskId)
+                    guard seenTaskIds.insert(placement.taskId).inserted else {
                         #if DEBUG
-                        dlog("saveWizardBoard: task \(row.taskId) resolved twice on board \(board.id); leaving cell \(index) empty")
+                        dlog("saveWizardBoard: task \(placement.taskId) resolved twice on board \(board.id); leaving cell \(index) empty")
                         #endif
                         continue
                     }
+                    row = row.withPlanned(placement)
                     deduped.append(row)
                 }
                 placedRows = deduped
-                // A pending LINKED row the mint just replaced with the board's
-                // own copy is never left behind as an orphan library member: it
-                // was written above only so the planner could read it, and
-                // leaves this transaction unwritten and unenqueued. A draft
-                // keeps it (the draft's placement references it).
-                try Self.dropReplacedLinkedPendingRows(
-                    db: db, pending: pendingTasks, placedTaskIds: Set(placedRows.map(\.taskId))
-                )
-                // A CHOSEN centre that resolved to a derived counter must have
-                // the board's stored `centerTaskId` follow it, or a resumed
-                // draft would stop recognising its own centre square.
+                // A CHOSEN centre that resolved to another id (a legacy derived
+                // row's root) must have the stored `centerTaskId` follow it.
                 if let centre = board.centerTaskId,
                    let index = boardTasks.firstIndex(where: { $0.taskId == centre }),
                    index < placementIds.count {

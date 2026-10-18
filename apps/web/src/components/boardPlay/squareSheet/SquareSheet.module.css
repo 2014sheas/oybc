@@ -1,0 +1,484 @@
+/* Board square sheet (docs/TASK_DETAIL_REDESIGN.md §PR 2). Bottom sheet on
+   phone, centred 460px modal on desktop. The body is paper: counts use the
+   adaptive type colours; gold chips + --riso-ink-static never flip. */
+.backdrop {
+  position: fixed;
+  inset: 0;
+  background-color: rgba(0, 0, 0, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1100;
+}
+
+.sheet {
+  background: var(--riso-paper);
+  color: var(--riso-ink);
+  border: 2px solid var(--riso-ink);
+  border-radius: 12px;
+  padding: 18px 20px 20px;
+  width: 460px;
+  max-width: 92vw;
+  max-height: 82vh;
+  overflow-y: auto;
+  box-shadow: 6px 6px 0 var(--riso-shadow-ink);
+}
+
+.grabber {
+  display: none;
+  width: 36px;
+  height: 5px;
+  border-radius: 999px;
+  background: var(--riso-muted);
+  opacity: 0.5;
+  margin: 0 auto 12px;
+}
+
+@media (max-width: 640px) {
+  .backdrop {
+    align-items: flex-end;
+  }
+  .sheet {
+    width: 100%;
+    max-width: 100%;
+    max-height: 88vh;
+    padding: 10px 20px 24px;
+    border-width: 2px 0 0;
+    border-radius: 12px 12px 0 0;
+    box-shadow: none;
+  }
+  .grabber {
+    display: block;
+  }
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.title {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--riso-font-head);
+  font-weight: 800;
+  font-size: 18px;
+  letter-spacing: -0.02em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.closedBadge {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  padding: 3px 8px;
+  border: 1.5px solid var(--riso-ink);
+  border-radius: 999px;
+  background: var(--riso-paper-2);
+  color: var(--riso-ink);
+  font-family: var(--riso-font-head);
+  font-weight: 800;
+  font-size: 9px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+.libraryPill {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 8px 6px 12px;
+  border: 1.5px solid var(--riso-ink);
+  border-radius: 999px;
+  background: var(--riso-paper-2);
+  color: var(--riso-ink);
+  font-family: var(--riso-font-head);
+  font-weight: 700;
+  font-size: 12px;
+  cursor: pointer;
+}
+.libraryPill:focus-visible,
+.box:focus-visible,
+.childName:focus-visible {
+  outline: 3px solid var(--riso-blue);
+  outline-offset: 2px;
+}
+
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+/* ── Hero count row ── */
+.heroRow {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+}
+.count {
+  font-family: var(--riso-font-head);
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  line-height: 0.86;
+  font-variant-numeric: tabular-nums;
+}
+.countBlue { color: var(--riso-blue); }
+.countTeal { color: var(--riso-teal); }
+.heroLine {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--riso-font-head);
+  font-weight: 700;
+  font-size: 13px;
+  color: var(--riso-muted);
+  padding-bottom: 3px;
+}
+.heroPill {
+  margin-left: auto;
+  padding-bottom: 3px;
+}
+
+.bar {
+  height: 12px;
+  border: 2px solid var(--riso-ink);
+  border-radius: 999px;
+  background: var(--riso-paper-2);
+  overflow: hidden;
+}
+.barSmall {
+  height: 8px;
+  border-width: 1.5px;
+}
+.barFill {
+  height: 100%;
+  background: var(--riso-blue);
+}
+.barFillOver {
+  background: var(--riso-gold);
+}
+.segments {
+  display: flex;
+  gap: 4px;
+}
+.segment {
+  flex: 1;
+  height: 12px;
+  border: 2px solid var(--riso-ink);
+  border-radius: 999px;
+  background: var(--riso-paper-2);
+}
+.segmentDone {
+  background: var(--riso-gold);
+}
+
+/* ── Tap to log ── */
+.eyebrowRow {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+.eyebrow {
+  font-family: var(--riso-font-head);
+  font-weight: 800;
+  font-size: 9px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--riso-muted);
+}
+.eyebrowRest {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--riso-muted);
+}
+/* ── Closed row ── */
+.closedRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1.5px solid var(--riso-ink);
+  border-radius: var(--riso-r-card);
+  background: var(--riso-paper-2);
+}
+.closedLock {
+  display: inline-flex;
+  color: var(--riso-muted);
+}
+.closedText {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--riso-font-head);
+  font-weight: 700;
+  font-size: 13px;
+}
+
+/* ── Compound checklist ── */
+.checklist {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.child {
+  display: flex;
+  flex-direction: column;
+  border: 1.5px solid var(--riso-ink);
+  border-radius: var(--riso-r-card);
+  background: var(--riso-paper-2);
+  overflow: hidden;
+}
+.childRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 8px 8px 10px;
+}
+.box {
+  width: 28px;
+  height: 28px;
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 2px solid var(--riso-ink);
+  border-radius: 6px;
+  background: var(--riso-paper);
+  color: var(--riso-ink);
+  font-family: var(--riso-font-head);
+  font-weight: 800;
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+}
+.boxDone {
+  background: var(--riso-teal);
+  color: var(--riso-on-color);
+}
+.box:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.childName {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.childTitle {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--riso-font-head);
+  font-weight: 700;
+  font-size: 14px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.childTitleDone {
+  opacity: 0.75;
+}
+.childMeta {
+  font-size: 12px;
+  font-weight: 800;
+  color: var(--riso-blue);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.chevron {
+  display: inline-flex;
+  color: var(--riso-muted);
+}
+.childOpen {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px 10px 10px;
+  border-top: 1.5px solid var(--riso-hair);
+  background: var(--riso-paper);
+}
+
+/* ── Achievement ── */
+.watchRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.watchTrigger {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--riso-muted);
+}
+.watchCard {
+  padding: 12px;
+  border: 2px solid var(--riso-ink);
+  border-radius: var(--riso-r-card);
+  background: var(--riso-paper-2);
+}
+.watchTop {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.watchEyebrow {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--riso-muted);
+}
+.timeframeBadge {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 6px;
+  border: 1.5px solid var(--riso-ink);
+  border-radius: 6px;
+  background: var(--riso-paper);
+  color: var(--riso-muted);
+  font-family: var(--riso-font-head);
+  font-weight: 700;
+  font-size: 9px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+.daysLeft {
+  margin-left: auto;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--riso-muted);
+}
+.watchBottom {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 6px;
+}
+.watchName {
+  font-family: var(--riso-font-head);
+  font-weight: 800;
+  font-size: 22px;
+  letter-spacing: -0.02em;
+  overflow-wrap: anywhere;
+}
+.watchProgress {
+  font-family: var(--riso-font-head);
+  font-weight: 800;
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.closedHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 6px 0 0 32px;
+}
+.closedBoard {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--riso-muted);
+}
+
+/* ── Achievement closest line ── */
+.lineRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+}
+.lineLabel {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--riso-muted);
+  white-space: nowrap;
+}
+.lineCells {
+  display: flex;
+  flex: 1;
+  gap: 4px;
+  justify-content: flex-end;
+}
+.lineCell {
+  width: 22px;
+  height: 22px;
+  border-radius: 5px;
+  border: 1.5px solid var(--riso-ink-static);
+  background: transparent;
+}
+.lineCellDone {
+  background: var(--riso-gold);
+}
+
+/* ── On-colour tone: the same bodies on Task Detail's blue / teal / purple band.
+   DARK-MODE CONTRACT: on-colour and ink-static never flip. ── */
+.onColor {
+  color: var(--riso-on-color);
+  --log-link: var(--riso-lavender);
+}
+.onColor .countBlue,
+.onColor .countTeal {
+  color: var(--riso-on-color);
+}
+.onColor .heroLine,
+.onColor .eyebrow,
+.onColor .eyebrowRest,
+.onColor .childMeta,
+.onColor .chevron,
+.onColor .watchEyebrow,
+.onColor .daysLeft,
+.onColor .lineLabel {
+  color: var(--riso-lavender);
+}
+.onColor .bar,
+.onColor .segment {
+  border-color: var(--riso-on-color);
+  background: transparent;
+}
+.onColor .barFill {
+  background: var(--riso-gold);
+}
+.onColor .segmentDone {
+  background: var(--riso-gold);
+}
+.onColor .child {
+  border-color: var(--riso-on-color);
+  background: transparent;
+}
+.onColor .childOpen {
+  background: transparent;
+  border-top-color: var(--riso-lavender);
+}
+.onColor .box {
+  border-color: var(--riso-on-color);
+  background: transparent;
+  color: var(--riso-on-color);
+}
+.onColor .boxDone {
+  background: var(--riso-on-color);
+  color: var(--riso-teal);
+}
+.onColor .watchCard {
+  background: transparent;
+  border: 1.5px solid var(--riso-on-color);
+}
+.onColor .timeframeBadge {
+  background: transparent;
+  border-color: var(--riso-on-color);
+  color: var(--riso-on-color);
+}
+.onColor .closedBadge {
+  border-color: var(--riso-ink-static);
+  color: var(--riso-muted);
+}

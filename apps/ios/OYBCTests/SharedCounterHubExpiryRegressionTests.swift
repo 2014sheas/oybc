@@ -13,9 +13,13 @@ import GRDB
 /// back. The rule now lives in the kernel (`memberVisibility`) and runs
 /// AFTER root detection.
 ///
-/// Drives the REAL wizard persist path (`BoardWizardViewModel` →
-/// `buildWizardPlacement` → `resolveWizardDates` → `persistWizardBoard` →
-/// `mintWizardDerivedRows`) against a test DB, then reads the hub through
+/// Since TASK_WINDOW_REWORK slice 3b nothing mints the weekly member any more
+/// (the planner emits placement parameters), so the fixture seeds the LEGACY
+/// window-stamped derived row an earlier build wrote — the shape this
+/// regression is about, and what the slice-5 sweep will still meet. The
+/// monthly board goes through the REAL wizard persist path
+/// (`BoardWizardViewModel` → `buildWizardPlacement` → `resolveWizardDates` →
+/// `persistWizardBoard`) against a test DB, then the hub is read through
 /// `fetchSharedCounterGroups(userId:showExpired:now:)` — exactly what
 /// `CountersHubView` / `CounterDetailView` / `ProfileHomeViewModel` call.
 /// The wizard's window boundaries read the real wall clock; the hub reads
@@ -92,29 +96,40 @@ final class SharedCounterHubExpiryRegressionTests: XCTestCase {
         return try persist(vm, db, status: .active)
     }
 
-    /// A weekly board that pulls the monthly via the Sources sheet, with an
-    /// explicit target on the counter member.
-    private func configureWeekly(_ vm: BoardWizardViewModel, monthlyId: String, target: CountValue) {
-        vm.name = "This week"
-        if !vm.isCore { vm.updateTimeframe(.weekly) }
-        vm.updateSize(3)
-        vm.updateCenterType(.none)
-        vm.isRandomized = false
-        vm.pullBoard(boardId: monthlyId)
-        vm.setMemberTarget(sourceId: monthlyId, taskId: rootId, target: target)
-    }
-
-    /// A core weekly board (the pager's Set-up / banner path) for the window
-    /// holding `windowDate`.
-    @MainActor
-    private func makeCoreWeekly(_ db: AppDatabase, monthlyId: String, windowDate: Date) throws -> String {
-        let vm = BoardWizardViewModel(
-            preferences: .defaults, prefilledRecurringTimeframe: .weekly,
-            targetWindowDate: windowDate, userId: userId, database: db
-        )
-        XCTAssertTrue(vm.isCore)
-        configureWeekly(vm, monthlyId: monthlyId, target: 25)
-        return try persist(vm, db, status: .active)
+    /// A weekly board (a LEGACY build's output) for the window holding
+    /// `windowDate`: the window-stamped derived member the old mint wrote,
+    /// placed on an active board.
+    private func seedLegacyWeekly(_ db: AppDatabase, windowDate: Date) throws -> String {
+        let window = try XCTUnwrap(computeTimeframeBoundaries(
+            timeframe: .weekly, referenceDate: windowDate, weekStartDay: "monday"
+        ))
+        let start = wizardLocalISOString(window.start), end = wizardLocalISOString(window.end)
+        let now = AppDatabase.currentTimestamp()
+        let boardId = "weekly-\(start)"
+        let dict: [String: Any] = [
+            "id": boardId, "userId": userId, "name": "This week", "status": BoardStatus.active.rawValue,
+            "boardSize": 1, "timeframe": Timeframe.weekly.rawValue, "startDate": start, "endDate": end,
+            "centerSquareType": CenterSquareType.none.rawValue, "isRandomized": false,
+            "totalTasks": 1, "completedTasks": 0, "linesCompleted": 0,
+            "createdAt": now, "updatedAt": now, "version": 1, "isDeleted": false,
+        ]
+        let board = try JSONDecoder().decode(Board.self, from: JSONSerialization.data(withJSONObject: dict))
+        let derivedId = "legacy-derived-\(boardId)"
+        try db.write { db in
+            try board.save(db)
+            try OYBC.Task(
+                id: derivedId, userId: self.userId, title: "Run 25 miles", type: .counting,
+                action: "Run", unit: "miles", maxCount: 25, totalCompletions: 0, totalInstances: 0,
+                isCompleted: false, currentCount: 0, createdAt: now, updatedAt: now, version: 1, isDeleted: false,
+                timeframe: .weekly, startDate: start, endDate: end,
+                sharedCounterId: self.rootId, baseline: 0, createdInWizard: true
+            ).save(db)
+            try BoardTask(
+                id: "bt-\(boardId)", boardId: boardId, taskId: derivedId, row: 0, col: 0, isCenter: false,
+                createdAt: now, updatedAt: now, version: 1
+            ).save(db)
+        }
+        return boardId
     }
 
     private func derivedRow(_ db: AppDatabase) throws -> OYBC.Task {
@@ -122,7 +137,7 @@ final class SharedCounterHubExpiryRegressionTests: XCTestCase {
             try OYBC.Task
                 .filter(Column("sharedCounterId") == self.rootId && Column("isDeleted") == false)
                 .fetchOne(db)
-        }, "one window-stamped derived row was minted for the weekly")
+        }, "the legacy window-stamped derived row of the weekly")
     }
 
     private func hubGroup(
@@ -137,13 +152,10 @@ final class SharedCounterHubExpiryRegressionTests: XCTestCase {
     @MainActor func test_liveWeeklyMember_listsUnderTheMonthlyRoot() throws {
         let db = try makeDb()
         let monthlyId = try makeMonthly(db)
-        let vm = BoardWizardViewModel(preferences: .defaults, userId: userId, database: db)
-        configureWeekly(vm, monthlyId: monthlyId, target: 25)
-        XCTAssertTrue(vm.selectedTaskIds.contains(rootId), "source supplied the root; sources=\(vm.sources)")
-        let weeklyId = try persist(vm, db, status: .active)
+        _ = monthlyId
+        let weeklyId = try seedLegacyWeekly(db, windowDate: Date())
 
         let d = try derivedRow(db)
-        XCTAssertTrue(BoardSources.isWindowStampedDerived(d))
         XCTAssertEqual(d.maxCount, 25)
         let placed = try db.read { db in
             try BoardTask.filter(Column("boardId") == weeklyId && Column("isDeleted") == false).fetchAll(db)
@@ -163,7 +175,7 @@ final class SharedCounterHubExpiryRegressionTests: XCTestCase {
     @MainActor func test_coreWeekly_rootStaysInTheHubAfterTheWeekEnds() throws {
         let db = try makeDb()
         let monthlyId = try makeMonthly(db)
-        try makeCoreWeekly(db, monthlyId: monthlyId, windowDate: Date())
+        _ = monthlyId; _ = try seedLegacyWeekly(db, windowDate: Date())
         let d = try derivedRow(db)
         let end = try XCTUnwrap(TaskExpiry.parseTaskEndDate(try XCTUnwrap(d.endDate)))
         let later = end.addingTimeInterval(3600)
@@ -186,7 +198,7 @@ final class SharedCounterHubExpiryRegressionTests: XCTestCase {
     @MainActor func test_corePastWeek_rootIsInTheHubNow() throws {
         let db = try makeDb()
         let monthlyId = try makeMonthly(db)
-        try makeCoreWeekly(db, monthlyId: monthlyId, windowDate: Date().addingTimeInterval(-7 * 86400))
+        _ = monthlyId; _ = try seedLegacyWeekly(db, windowDate: Date().addingTimeInterval(-7 * 86400))
         let d = try derivedRow(db)
         let now = Date()
         XCTAssertTrue(TaskExpiry.isTaskExpired(d, now: now), "last week's member is over already")
@@ -206,7 +218,7 @@ final class SharedCounterHubExpiryRegressionTests: XCTestCase {
     @MainActor func test_profileHome_keepsTheCounterAfterTheWeekEnds() throws {
         let db = try makeDb()
         let monthlyId = try makeMonthly(db)
-        try makeCoreWeekly(db, monthlyId: monthlyId, windowDate: Date())
+        _ = monthlyId; _ = try seedLegacyWeekly(db, windowDate: Date())
         let d = try derivedRow(db)
         let end = try XCTUnwrap(TaskExpiry.parseTaskEndDate(try XCTUnwrap(d.endDate)))
         let later = end.addingTimeInterval(3600)

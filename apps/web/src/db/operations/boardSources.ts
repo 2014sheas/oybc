@@ -8,7 +8,7 @@ import {
   isEligibleSourceBoard,
   isEventOwningTask,
   isSourceSupplyTask,
-  isWindowStampedDerived,
+  withPlacementParams,
   poolSourceSupplyById,
   withEffectiveMemberRules,
   pickOpenSeriesInstance,
@@ -22,6 +22,7 @@ import {
   type BoardWindow,
   type CompoundChild,
   type RecurringBoardTemplate,
+  type BoardTask,
   type Task,
   type TaskEvent,
 } from '@oybc/shared';
@@ -71,6 +72,14 @@ export interface BoardSourceSupplyInfo {
    */
   windowCountByTaskId: Record<string, number>;
   /**
+   * TASK_WINDOW_REWORK slice 3a — the EFFECTIVE goal of each supplied member
+   * whose placement carries one: `targetOverride` (read through
+   * `withPlacementParams`) keyed by the task id, and a compound placement's
+   * `childTargets` keyed by each child id. A member with no entry reads its own
+   * goal. Feeds `BoardSourceSupply.goalByTaskId` (the planner pro-rates from it).
+   */
+  goalByTaskId: Record<string, number>;
+  /**
    * §Member rules (B3, RC5) — the source board's OWN window, so a caller
    * can pro-rate an auto target (`effectiveMemberTarget`) without a second
    * board read.
@@ -98,7 +107,7 @@ export function resolveBoardSourceSupply(
     row: number;
     col: number;
     isDeleted?: boolean;
-  }>,
+  } & Partial<Pick<BoardTask, 'targetOverride' | 'targetKind' | 'childTargets' | 'titleOverride'>>>,
   tasksById: Record<string, Task>,
   eventsByTaskId: Record<string, TaskEvent[]>,
 ): BoardSourceSupplyInfo {
@@ -109,20 +118,25 @@ export function resolveBoardSourceSupply(
   const supply: string[] = [];
   const done = new Set<string>();
   const windowCountByTaskId: Record<string, number> = {};
+  const goalByTaskId: Record<string, number> = {};
   for (const bt of rows) {
-    const task = tasksById[bt.taskId];
+    const raw = tasksById[bt.taskId];
     // `isSourceSupplyTask`: achievements never enter source supply —
     // hand-placed watchers on the pulled board stay on that board only.
-    if (task === undefined || task.isDeleted || !isSourceSupplyTask(task) || seen.has(task.id))
+    if (raw === undefined || raw.isDeleted || !isSourceSupplyTask(raw) || seen.has(raw.id))
       continue;
+    // Slice 2b: "done" is scored at the PLACEMENT's goal (iOS `resolveSupply`).
+    const task = withPlacementParams(raw, bt);
     seen.add(task.id);
     supply.push(task.id);
+    // Slice 3a: the placement's effective goal rides along with the supply.
+    if (bt.targetOverride != null && task.maxCount != null) goalByTaskId[task.id] = task.maxCount;
+    for (const ct of bt.childTargets ?? []) goalByTaskId[ct.childId] = ct.target;
     let isDone: boolean;
-    // A window-stamped derived counter is done by its ROOT's increments inside
-    // its own window — the kernel's rule (docs §Derived-task carve-out,
-    // amended 2026-09-23) — never the one-way latch, which a later window's
-    // logs can set. Its window count is deliberately NOT fed to the prefill
-    // (`windowCountByTaskId`): that map stays event-owning counters only.
+    // A linked counter is done by its ROOT's increments inside this board's
+    // window — the kernel's rule — never the latch. Its window count is
+    // deliberately NOT fed to the prefill (`windowCountByTaskId`): that map
+    // stays event-owning counters only.
     const derived = resolveDerivedCounterWindowState(task, eventsByTaskId, {
       windowStart: board.startDate,
       windowEnd: boardWindowEnd(board),
@@ -151,6 +165,7 @@ export function resolveBoardSourceSupply(
     supplyTaskIds: supply,
     doneTaskIds: done,
     windowCountByTaskId,
+    goalByTaskId,
     sourceWindow: {
       timeframe: board.timeframe,
       startDate: board.startDate ?? null,
@@ -161,8 +176,8 @@ export function resolveBoardSourceSupply(
 
 /**
  * The task ids whose events {@link resolveBoardSourceSupply} reads for a
- * board's placed `tasks`: every placed id, plus the ROOT of each
- * window-stamped derived row (its done-state resolves from the root's events,
+ * board's placed `tasks`: every placed id, plus the ROOT of each counting
+ * linked row (its done-state resolves from the root's events,
  * and a root is never placed itself).
  *
  * @param tasks - The board's placed tasks.
@@ -172,7 +187,7 @@ export function supplyEventTaskIds(tasks: Iterable<Task>): string[] {
   const ids = new Set<string>();
   for (const t of tasks) {
     ids.add(t.id);
-    if (t.sharedCounterId && isWindowStampedDerived(t)) ids.add(t.sharedCounterId);
+    if (t.type === TaskType.COUNTING && t.sharedCounterId) ids.add(t.sharedCounterId);
   }
   return [...ids];
 }
@@ -489,6 +504,7 @@ export async function fetchTemplateSupplyResolution(
       supplies.push({
         source,
         supplyTaskIds: availableSupplyIds(source, info?.supplyTaskIds ?? [], info?.doneTaskIds),
+        ...(info ? { goalByTaskId: info.goalByTaskId } : {}),
       });
     }
     byTemplateId[entry.template.id] = {

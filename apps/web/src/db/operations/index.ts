@@ -6,6 +6,7 @@ export * from './boards';
 export * from './compoundChildren';
 export * from './tasks';
 export * from './boardTasks';
+export * from './placementParams';
 export * from './syncQueue';
 export * from './users';
 export * from './wizardBoard';

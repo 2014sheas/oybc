@@ -12,18 +12,18 @@ extension BoardPlayViewModel {
 
     /// The event-owning task id a late log authors against for `task`:
     ///   - NORMAL / plain-or-source COUNTING → its own id.
-    ///   - Window-stamped derived counter → its ROOT id (`sharedCounterId`) —
-    ///     derived rows own no events (carve-out).
-    ///   - Hub-linked derived counter / COMPOUND / ACHIEVEMENT → `nil` (not a
-    ///     single-event target; compound has its own commit path, the other
-    ///     two are no-ops on a closed board — OQ2).
+    ///   - LINKED counter (stamped or not) → its ROOT id (`sharedCounterId`) —
+    ///     linked rows own no events (the hub-linked no-op, OQ2, is retired —
+    ///     TASK_WINDOW_REWORK slice 3a).
+    ///   - COMPOUND / ACHIEVEMENT → `nil` (not a single-event target; compound
+    ///     has its own commit path, achievement is a no-op on a closed board).
     func lateLogEventOwningTaskId(for task: Task) -> String? {
         switch task.type {
         case .normal:
             return task.id
         case .counting:
-            guard let root = task.sharedCounterId else { return task.id }
-            return BoardSources.isWindowStampedDerived(task) ? root : nil
+            guard let root = task.sharedCounterId, !root.isEmpty else { return task.id }
+            return root
         case .compound, .achievement:
             return nil
         }
@@ -46,11 +46,13 @@ extension BoardPlayViewModel {
     func wouldLateLogCompoundRuleBeMet(compoundTaskId: String, childTaskIds: Set<String>) -> Bool {
         guard let b = board, b.sealedAt != nil, let compound = taskMap[compoundTaskId] else { return false }
         let now = AppDatabase.currentTimestamp()
+        let placement = boardTasks.first { $0.taskId == compoundTaskId && !$0.isDeleted }
         return AppDatabase.planCompoundLateLog(
             board: b, compound: compound, requestedChildIds: childTaskIds,
             taskById: taskMap, childrenByCompound: compoundChildrenByCompound,
             eventsByTaskId: windowEventsByTaskId,
-            occurredAt: lateLogOccurredAt(board: b, nowIso: now), now: now
+            occurredAt: lateLogOccurredAt(board: b, nowIso: now), now: now,
+            childTargets: placement?.childTargets
         ).isRuleMet
     }
 

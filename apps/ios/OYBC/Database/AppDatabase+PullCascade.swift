@@ -59,15 +59,13 @@ extension AppDatabase {
     }
 
     /// Run the derivation pass for a Task (or compound parent) whose row was
-    /// just upserted by a pull. B2 final-review FI1: refreshes a pulled
-    /// window-stamped derived counter's baseline first (non-authored).
+    /// just upserted by a pull.
     ///
     /// - Parameters:
     ///   - db: The pull's write transaction.
     ///   - changedTaskId: The task that was just upserted.
     ///   - ownerUid: The uid the pull runs for (owns the enqueues).
     static func runPullCascade(db: Database, changedTaskId: String, ownerUid: String) throws {
-        try refreshPulledDerivedBaseline(db: db, taskId: changedTaskId)
         try runPullCascadeForTasks(db: db, changedTaskIds: [changedTaskId], ownerUid: ownerUid)
     }
 

@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react';
-import { InteractiveTaskSquare, DetailModal, FloatingContextMenu } from '../InteractiveTaskSquare';
+import { InteractiveTaskSquare, FloatingContextMenu } from '../InteractiveTaskSquare';
 import {
   applyAction,
   type TaskSquareData,
@@ -88,13 +88,7 @@ export function TaskSquareActionsPlayground() {
   const [squareStates, setSquareStates] = useState<Record<string, SquareState>>(
     buildInitialState,
   );
-  const [selectedSquareId, setSelectedSquareId] = useState<string | null>(null);
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
-
-  /** The square currently shown in the modal */
-  const selectedSquare = selectedSquareId
-    ? DEMO_SQUARES.find((s) => s.id === selectedSquareId) ?? null
-    : null;
 
   // ── State mutators ──────────────────────────────────────────────────────────
 
@@ -143,7 +137,6 @@ export function TaskSquareActionsPlayground() {
 
   const handleResetAll = useCallback(() => {
     setSquareStates(buildInitialState());
-    setSelectedSquareId(null);
     setContextMenu(null);
   }, []);
 
@@ -181,18 +174,6 @@ export function TaskSquareActionsPlayground() {
         ))}
       </div>
 
-      {/* Detail modal */}
-      {selectedSquare && squareStates[selectedSquare.id] && (
-        <DetailModal
-          sq={selectedSquare}
-          state={squareStates[selectedSquare.id]}
-          onClose={() => setSelectedSquareId(null)}
-          onToggleComplete={handleToggleComplete}
-          onIncrementCount={handleIncrementCount}
-          onDecrementCount={handleDecrementCount}
-        />
-      )}
-
       {/* Floating context menu */}
       {contextMenu && (() => {
         const sq = DEMO_SQUARES.find((s) => s.id === contextMenu.squareId);
@@ -207,10 +188,6 @@ export function TaskSquareActionsPlayground() {
             onIncrementCount={handleIncrementCount}
             onDecrementCount={handleDecrementCount}
             onResetCount={handleResetCount}
-            onViewDetails={(id) => {
-              setContextMenu(null);
-              setSelectedSquareId(id);
-            }}
           />
         );
       })()}

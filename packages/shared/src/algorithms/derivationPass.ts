@@ -3,6 +3,7 @@ import { detectBingos, type BoardSize, CenterSquareType } from '@oybc/bingo-core
 import { AchievementTrigger, BoardStatus, TaskType } from '../constants/enums';
 import { isWithinTimeframe } from './calendarBoundaries';
 import { evaluateCompound } from './compoundEvaluation';
+import { withPlacementParams } from './placementParams';
 import {
   resolveTaskWindowState,
   resolveDerivedCounterWindowState,
@@ -68,6 +69,137 @@ export function findAffectedBoardIds(
     if (taskIds.has(bt.taskId)) out.add(bt.boardId);
   }
   return out;
+}
+
+/**
+ * The rows {@link placementsReachedByTasks} walks. Any superset of the live
+ * workspace works (deleted rows are filtered internally).
+ */
+export interface PlacementReachLookups {
+  tasks: Iterable<Pick<Task, 'id' | 'isDeleted' | 'sharedCounterId' | 'type'>>;
+  compoundChildren: Iterable<Pick<CompoundChild, 'compoundTaskId' | 'childTaskId' | 'isDeleted'>>;
+  boardTasks: Iterable<BoardTask>;
+}
+
+/**
+ * One live placement a changed task reaches: the placement row, the MEMBER
+ * (the changed task or a linked row of it) that is read on that square, and
+ * the compound the member is reached through when the square places a parent
+ * compound rather than the member itself (`null` for a direct placement).
+ */
+export interface ReachedPlacement {
+  boardTask: BoardTask;
+  memberTaskId: string;
+  viaCompoundId: string | null;
+}
+
+/**
+ * What a set of changed tasks reaches (TASK_WINDOW_REWORK slice 2c): the
+ * cascade input, the boards to re-derive and the placements standing for the
+ * members.
+ */
+export interface PlacementReach {
+  /** `ids` plus every live linked row of each id — the cascade input (counts-toward runs off it). Parent compounds are NOT included: the cascade walks them itself. */
+  taskIds: Set<string>;
+  /** Every live compound that transitively contains a member. */
+  compoundIds: Set<string>;
+  /** Every board placing a member directly or through a reached compound. */
+  boardIds: Set<string>;
+  /** The placements, one per (placement, member) pair, in placement order. */
+  placements: ReachedPlacement[];
+}
+
+/**
+ * The ONE reach for a changed task set (TASK_WINDOW_REWORK slice 2c): the
+ * live cascade, the sealed re-derivation, the seal-immune windows, the
+ * late-log and pull paths and the Counters hub all walk placements from here.
+ *
+ * Members = each id itself (a non-root passes through unchanged, whether or
+ * not it is a live row) plus every LIVE task whose `sharedCounterId` is one
+ * of the ids — window-stamped and hub-linked alike (owner rule 2026-10-01): a
+ * shared-counter ROOT is never placed, but every linked row resolves FROM its
+ * events on a board. A member's transitive parent compounds are reached
+ * through LIVE links to LIVE compound tasks only (a deleted link, a deleted or
+ * missing compound task, or a non-compound "parent" stops the walk). A
+ * placement is reached when it is live and places a member directly, or
+ * places a reached compound — then one entry per member reached through it,
+ * direct children first.
+ *
+ * @param ids     The task ids whose events (or derived state) changed.
+ * @param lookups Workspace rows (any superset; deleted rows filtered here).
+ * @returns The reach; empty when `ids` is empty.
+ */
+export function placementsReachedByTasks(
+  ids: Iterable<string>,
+  lookups: PlacementReachLookups,
+): PlacementReach {
+  const seeds = new Set(ids);
+  const taskIds = new Set(seeds);
+  const compoundIds = new Set<string>();
+  const boardIds = new Set<string>();
+  const placements: ReachedPlacement[] = [];
+  if (seeds.size === 0) return { taskIds, compoundIds, boardIds, placements };
+
+  const liveById = new Map<string, Pick<Task, 'id' | 'isDeleted' | 'sharedCounterId' | 'type'>>();
+  for (const t of lookups.tasks) {
+    if (t.isDeleted) continue;
+    liveById.set(t.id, t);
+    if (t.sharedCounterId && seeds.has(t.sharedCounterId)) taskIds.add(t.id);
+  }
+
+  // Live links by child, for the upward walk.
+  const parentsByChild = new Map<string, string[]>();
+  for (const c of lookups.compoundChildren) {
+    if (c.isDeleted) continue;
+    const list = parentsByChild.get(c.childTaskId) ?? [];
+    list.push(c.compoundTaskId);
+    parentsByChild.set(c.childTaskId, list);
+  }
+
+  // compound id → the members reached through it (direct children first).
+  const membersViaCompound = new Map<string, string[]>();
+  for (const memberId of taskIds) {
+    const seen = new Set<string>();
+    const queue = [...(parentsByChild.get(memberId) ?? [])];
+    while (queue.length > 0) {
+      const parentId = queue.shift() as string;
+      if (seen.has(parentId)) continue;
+      seen.add(parentId);
+      const parent = liveById.get(parentId);
+      if (!parent || parent.type !== TaskType.COMPOUND) continue;
+      compoundIds.add(parentId);
+      const list = membersViaCompound.get(parentId) ?? [];
+      list.push(memberId);
+      membersViaCompound.set(parentId, list);
+      queue.push(...(parentsByChild.get(parentId) ?? []));
+    }
+  }
+
+  for (const bt of lookups.boardTasks) {
+    if (bt.isDeleted) continue;
+    if (taskIds.has(bt.taskId)) {
+      boardIds.add(bt.boardId);
+      placements.push({ boardTask: bt, memberTaskId: bt.taskId, viaCompoundId: null });
+      continue;
+    }
+    const via = membersViaCompound.get(bt.taskId);
+    if (!via) continue;
+    boardIds.add(bt.boardId);
+    for (const memberId of via) placements.push({ boardTask: bt, memberTaskId: memberId, viaCompoundId: bt.taskId });
+  }
+
+  return { taskIds, compoundIds, boardIds, placements };
+}
+
+/**
+ * {@link placementsReachedByTasks} for one shared-counter root (or any single
+ * task): the Counters hub's card source.
+ *
+ * @param rootId  The root (or task) id.
+ * @param lookups Workspace rows.
+ */
+export function placementsReachedByRoot(rootId: string, lookups: PlacementReachLookups): PlacementReach {
+  return placementsReachedByTasks([rootId], lookups);
 }
 
 /**
@@ -305,14 +437,11 @@ export function computeBoardGrid(
   /** Resolve a primitive (normal / counting) square, windowed or lifetime. */
   const resolvePrimitive = (t: Task): boolean => {
     if (!windowContext) return t.isCompleted;
-    // Linked (derived) counter: resolved from its ROOT's increment events —
-    // never the one-way latch, which a later window's increments can set
-    // (docs §Derived-task carve-out rule 4, amended 2026-09-23 / 2026-10-01).
-    // A window-stamped row reads its own `[startDate, endDate]`; any other
-    // linked row reads THIS board's window (`compoundCtx`), the owner rule
-    // that retired the hub-linked latch carve-out on boards. The sealed
-    // path's context is already bounded at `sealedAt`, so this is a pure
-    // function of the converged in-window event union there too.
+    // Linked counter: resolved from its ROOT's increment events over THIS
+    // board's window (`compoundCtx`; an indefinite board reads the root's
+    // lifetime) — never the latch. The sealed path's context is already
+    // bounded at `sealedAt`, so this is a pure function of the converged
+    // in-window event union there too.
     const derived = resolveDerivedCounterWindowState(t, windowContext.eventsByTaskId, compoundCtx);
     if (derived) return derived.isCompleted;
     // Compound / achievement rows never reach here (they're branched above);
@@ -487,8 +616,8 @@ export function computeBoardGrid(
 
     const isDone =
       t.type === TaskType.COMPOUND
-        ? evaluateCompound(t, childrenByCompound, taskById, compoundCtx)
-        : resolvePrimitive(t);
+        ? evaluateCompound(t, childrenByCompound, taskById, compoundCtx, bt.childTargets)
+        : resolvePrimitive(withPlacementParams(t, bt));
     if (isDone) {
       grid[idx] = true;
       completedTasks += 1;

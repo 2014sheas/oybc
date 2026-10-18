@@ -477,6 +477,10 @@ export interface SeedBoardTask {
   isCenter?: boolean;
   /** Board Edit redesign slice 1 — per-square lock. */
   isLocked?: boolean;
+  /** TASK_WINDOW_REWORK slice 1 — placement parameters. */
+  targetOverride?: number;
+  targetKind?: 'discrete' | 'continuous' | 'duration';
+  titleOverride?: string;
   // Phase 6.3 — `BoardTask` is now a pure placement record. The
   // achievement-square config moved to `Task` (`type='achievement'`
   // + `referencedBoardId` / `referencedTemplateId` / `achievementTrigger`

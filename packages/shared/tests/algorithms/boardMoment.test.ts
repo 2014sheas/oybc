@@ -12,6 +12,7 @@ import {
   momentCounterAt,
   momentFinalBeat,
   momentPosterCells,
+  replayMomentKind,
   type BoardMomentReplay,
   type MomentKind,
 } from '../../src/algorithms/boardMoment';
@@ -277,5 +278,24 @@ describe('momentPosterCells vectors', () => {
     const out = momentPosterCells(c.replay, [...c.cells].reverse(), c.kind);
     expect(out.map((x) => x.idx)).toEqual([...c.cells].reverse().map((x: any) => x.idx));
     expect(Object.keys(out[0]).sort()).toEqual(['idx', 'isFree', 'label', 'state', 'type']);
+  });
+});
+
+describe('replayMomentKind', () => {
+  const k = (status: BoardStatus, completedTasks: number, linesCompleted: number, totalTasks = 9) =>
+    replayMomentKind({ status, completedTasks, totalTasks, linesCompleted });
+  it('replays the greenlog on a completed board', () => {
+    expect(k(BoardStatus.COMPLETED, 9, 8)).toBe('greenlog');
+  });
+  it('replays the greenlog on an archived full board (status no longer COMPLETED)', () => {
+    expect(k(BoardStatus.ARCHIVED, 9, 8)).toBe('greenlog');
+  });
+  it('replays the bingo on a board with a line', () => {
+    expect(k(BoardStatus.ACTIVE, 4, 1)).toBe('bingo');
+    expect(k(BoardStatus.ARCHIVED, 7, 3)).toBe('bingo');
+  });
+  it('has nothing to replay without a line', () => {
+    expect(k(BoardStatus.ACTIVE, 2, 0)).toBeNull();
+    expect(k(BoardStatus.DRAFT, 0, 0, 0)).toBeNull();
   });
 });

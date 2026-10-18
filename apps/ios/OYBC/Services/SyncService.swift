@@ -481,8 +481,7 @@ final class SyncService: ObservableObject {
     }
 
     /// Clean-pull tail: heal-on-pull (docs/WINDOWED_COMPLETION.md
-    /// §Heal-on-pull) + the windowed-linked-counter sweep — idempotent, each
-    /// in its own async write — then the `users.lastSyncedAt` stamp (the
+    /// §Heal-on-pull) — idempotent, in its own async write — then the `users.lastSyncedAt` stamp (the
     /// checkpoint fallback + web parity), stamped with the pull's START time.
     /// Heals never fail the pull.
     private func finishCleanPull(userId: String, pullStartedAt: String, result: inout PullResult) async {
@@ -491,15 +490,6 @@ final class SyncService: ObservableObject {
             if healed > 0 { result.pulled += healed; recordBatch(pulled: healed); result.details.append("Healed \(healed) missing completion event(s)") }
         } catch {
             log("Heal-on-pull skipped: \(error.localizedDescription)")
-        }
-        do {
-            let windowed = try await database.writeAsync { db in
-                try AppDatabase.healLinkedCounterWindowsTx(db: db, userId: userId, now: AppDatabase.currentTimestamp())
-            }
-            let total = windowed.stamped + windowed.copied
-            if total > 0 { result.pulled += total; result.details.append("Windowed \(total) linked counter(s)") }
-        } catch {
-            log("Linked-counter window heal skipped: \(error.localizedDescription)")
         }
         do {
             let now = AppDatabase.currentTimestamp()

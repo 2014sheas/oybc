@@ -1,0 +1,64 @@
+name: CodeQL
+
+# Static security analysis (2026-10 CI audit). Free for public repos; results
+# land in the repo's Security → Code scanning tab and as PR annotations.
+#
+# Languages: javascript-typescript (web, shared, bingo-core, play, functions,
+# firestore-rules-tests, scripts) and actions (these workflow files). Swift is
+# deliberately NOT analysed: CodeQL's Swift extractor needs a full macOS build
+# of the app, which would add a fourth ~10-min macOS job to every PR. Revisit
+# if iOS gains server-facing or crypto code beyond Firebase's SDKs.
+#
+# Advisory for now — not a required check. Make it required once a few weeks
+# of runs show its alerts are worth blocking on.
+
+on:
+  pull_request:
+    branches: [dev]
+  push:
+    branches: [dev]
+  schedule:
+    # Weekly re-scan of `dev` so newly published queries reach unchanged code.
+    - cron: '23 6 * * 1'
+
+concurrency:
+  group: codeql-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  analyze:
+    name: analyze (${{ matrix.language }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      security-events: write   # upload results to code scanning
+      actions: read
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [javascript-typescript, actions]
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v4
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: none
+          # Generated / vendored output that would only add noise.
+          config: |
+            paths-ignore:
+              - '**/node_modules/**'
+              - '**/dist/**'
+              - '**/lib/**'
+              - '**/coverage/**'
+              - 'apps/ios/**'
+
+      - name: Analyze
+        uses: github/codeql-action/analyze@v4
+        with:
+          category: /language:${{ matrix.language }}

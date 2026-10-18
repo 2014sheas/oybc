@@ -4,10 +4,8 @@ import {
   finalizeWindowCount,
   generateCounterTaskTitle,
   isAutoCounterTitle,
-  isFrozenDerivedRow,
   isWholeCountKind,
   planCountKindSwitch,
-  propagateIncrement,
   quantizeCount,
   resolveCountKind,
   type CountKind,
@@ -17,6 +15,7 @@ import {
 import { db } from '../internal';
 import { addToSyncQueue } from './syncQueue';
 import { runBoardCascadeForTasks } from './orchestration';
+import { reDeriveSealedBoardsForTasks } from './sealing';
 import { computeTaskCachesFromEvents } from './taskEvents';
 import { countContributorsOf } from './countsToward';
 
@@ -62,20 +61,19 @@ export class CountKindSwitchError extends Error {
  * Writes `countKind = to` (always explicit — the field is never cleared) plus
  * the `planCountKindSwitch` goal / default-amount rounding on the root and on
  * every live row whose `sharedCounterId` is the root, each with a version
- * bump + UPDATE enqueue. A window-stamped derived row whose window has ended
- * (`isFrozenDerivedRow`) is a permanent record and keeps its kind and goal.
- * Then the board cascade re-derives every board placing a written row.
+ * bump + UPDATE enqueue. Then the board cascade re-derives every live board
+ * placing a written row and the sealed re-derive every closed one (a
+ * placement's frozen `targetKind` keeps its goal's kind).
  * `taskEvents` are never touched: a whole kind rounds the window SUM at read
- * time, so switching back restores the exact fractional count. The lifetime
- * caches (`isCompleted` / `currentCount` / `completedAt`) are recomputed from
- * events in the same write — the root via `computeTaskCachesFromEvents`, each
- * linked row via `propagateIncrement` from the root's new count (the same
- * rules the event-append path uses) — so the library / Task Detail / hub
- * agree with the board grids on the new kind.
+ * time, so switching back restores the exact fractional count. The root's
+ * lifetime caches (`isCompleted` / `currentCount` / `completedAt`) are
+ * recomputed from events in the same write (`computeTaskCachesFromEvents`);
+ * a linked row's caches are never read (it resolves from the root's events)
+ * and are not written.
  *
  * @param rootTaskId - The counter root (a COUNTING task with no `sharedCounterId`).
  * @param to - The requested kind.
- * @param now - The switch instant (also the freeze clock). Defaults to now.
+ * @param now - The switch instant. Defaults to now.
  * @throws {CountKindSwitchError} `not-counting` when the id is not a live
  *   COUNTING task; `not-a-root` for a linked row (only roots switch);
  *   `refused` when the root cannot move from its kind to `to` (duration
@@ -101,7 +99,7 @@ export async function switchCounterKind(
  *
  * @param rootTaskId - The counter root.
  * @param to - The requested kind.
- * @param nowIso - The switch instant (also the freeze clock), ISO8601.
+ * @param nowIso - The switch instant, ISO8601.
  * @returns The ids written (root first, then each live family row).
  * @throws {CountKindSwitchError} as {@link switchCounterKind}.
  */
@@ -140,33 +138,16 @@ export async function switchCounterKindInTransaction(
     .filter((t) => !t.isDeleted)
     .toArray();
   for (const row of family) {
-    if (isFrozenDerivedRow(row, nowIso)) continue;
     const rowPatch = planCountKindSwitch(row, resolveCountKind(row), to);
     if (!rowPatch) continue; // already `to` (or a kind that never switches)
-    const [derived] = propagateIncrement({ currentCount: rootCaches.currentCount ?? 0 }, [
-      {
-        id: row.id,
-        baseline: row.baseline,
-        maxCount: rowPatch.maxCount ?? row.maxCount,
-        isCompleted: row.isCompleted,
-        countKind: to,
-      },
-    ]);
-    await writeKindSwitch(
-      row,
-      to,
-      {
-        ...rowPatch,
-        currentCount: derived.newCurrentCount,
-        isCompleted: derived.newIsCompleted,
-        completedAt: !row.isCompleted && derived.newIsCompleted ? nowIso : row.completedAt,
-      },
-      nowIso,
-    );
+    await writeKindSwitch(row, to, rowPatch, nowIso);
     writtenIds.push(row.id);
   }
 
   await runBoardCascadeForTasks(writtenIds);
+  // A linked row's goal may have rounded; one on a CLOSED board re-derives
+  // deterministically (the sanctioned sealed path — the live cascade skips it).
+  await reDeriveSealedBoardsForTasks(writtenIds);
   return writtenIds;
 }
 
@@ -186,7 +167,7 @@ export class KindGoalError extends Error {
  * @param taskId - The edited task.
  * @param to - The kind the editor chose; undefined = unchanged.
  * @param maxCount - The goal the caller is about to write, if any.
- * @param nowIso - Switch instant / freeze clock.
+ * @param nowIso - Switch instant.
  * @returns True when a switch was written.
  * @throws {KindGoalError} when `maxCount` is fractional at a whole final kind.
  */
@@ -271,11 +252,9 @@ export function planKindSwitchPreview(
 export async function previewCounterKindSwitch(
   rootTaskId: string,
   to: CountKind,
-  now: Date = new Date(),
 ): Promise<KindSwitchPreview | null> {
   const root = await db.tasks.get(rootTaskId);
   if (!root || root.isDeleted || root.type !== TaskType.COUNTING || root.sharedCounterId != null) return null;
-  const nowIso = now.toISOString();
   const family = await db.tasks
     .where('sharedCounterId')
     .equals(root.id)
@@ -283,7 +262,7 @@ export async function previewCounterKindSwitch(
     .toArray();
   // Exactly the rows switchCounterKindInTransaction would write.
   const linkedCount = family.filter(
-    (row) => !isFrozenDerivedRow(row, nowIso) && planCountKindSwitch(row, resolveCountKind(row), to) !== null,
+    (row) => planCountKindSwitch(row, resolveCountKind(row), to) !== null,
   ).length;
   return planKindSwitchPreview(root, to, linkedCount);
 }

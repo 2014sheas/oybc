@@ -1,0 +1,74 @@
+/* TapLogChipRow — one-gesture log chips (docs/TASK_DETAIL_REDESIGN.md E3).
+   DARK-MODE CONTRACT: gold + --riso-ink-static never flip; "Other…" is the
+   adaptive paper-2 fill with adaptive ink. */
+.row {
+  display: flex;
+  gap: 7px;
+}
+
+.chip {
+  /* Content-sized, spare room shared: a label only shrinks (never before "Other…") when the row truly can't fit. */
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 44px;
+  padding: 0 3px;
+  border: 2px solid var(--riso-ink-static);
+  border-radius: var(--riso-r-card);
+  font-family: var(--riso-font-head);
+  font-weight: 800;
+  font-size: 15px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+  box-shadow: 2px 2px 0 var(--riso-shadow-ink);
+  transition: transform 0.1s ease-out, box-shadow 0.1s ease-out;
+}
+
+.compact .chip {
+  height: 34px;
+  font-size: 13px;
+}
+
+.gold {
+  background: var(--riso-gold);
+  color: var(--riso-ink-static);
+}
+
+.other {
+  /* Never truncates: it keeps its content width; the preset / rest chips shrink around it. */
+  flex: 0 0 auto;
+  padding: 0 8px;
+  overflow: visible;
+  text-overflow: clip;
+  font-size: 13px;
+  background: var(--riso-paper-2);
+  color: var(--riso-ink);
+}
+
+.long {
+  flex: 1.3 1 auto;
+  font-size: 12px;
+}
+
+.chip:active:not(:disabled) {
+  transform: translate(2px, 2px);
+  box-shadow: 0 0 0 var(--riso-shadow-ink);
+}
+
+.chip:focus-visible {
+  outline: 3px solid var(--riso-blue);
+  outline-offset: 2px;
+}
+
+.chip:disabled {
+  opacity: 0.45;
+  box-shadow: none;
+  cursor: default;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chip {
+    transition: none;
+  }
+}

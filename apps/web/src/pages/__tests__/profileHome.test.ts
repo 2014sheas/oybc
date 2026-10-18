@@ -89,6 +89,8 @@ function makeEvent(id: string, taskId: string, over: Partial<TaskEvent> = {}): T
 
 function makeMember(over: Partial<SharedCounterMemberTask> = {}): SharedCounterMemberTask {
   return {
+    boardTaskId: 'bt-member-1',
+    viaCompoundId: null,
     taskId: 'member-1',
     taskTitle: 'Member 1',
     isSource: false,
@@ -114,7 +116,7 @@ function makeGroup(over: Partial<SharedCounterGroup> = {}): SharedCounterGroup {
     countKind: 'discrete',
     lifetime: 500,
     defaultLogAmount: 10,
-    tasks: [makeMember({ taskId: 'source-1', isSource: true, boardId: null, boardName: null })],
+    tasks: [makeMember({ taskId: 'source-1', isSource: true, boardId: 'board-src', boardName: 'Source board' })],
     taskCount: 1,
     boardCount: 0,
     activeTaskCount: 0,
@@ -234,37 +236,25 @@ describe('formatLastLoggedLabel', () => {
 describe('selectMostRecentlyLoggedMember', () => {
   it('returns null when the counter has no linked members', () => {
     const group = makeGroup(); // source-only
-    expect(selectMostRecentlyLoggedMember(group, new Map())).toBeNull();
+    expect(selectMostRecentlyLoggedMember(group)).toBeNull();
   });
 
-  it('picks the linked member whose raw task row was touched most recently', () => {
-    const source = makeMember({ taskId: 'source-1', isSource: true, boardId: null, boardName: null });
-    const older = makeMember({ taskId: 'm-old', boardName: 'February Fitness' });
-    const newer = makeMember({ taskId: 'm-new', boardName: 'March Fitness' });
-    const group = makeGroup({ tasks: [source, older, newer], taskCount: 3, boardCount: 2 });
+  it('picks the card on a board in play — a log made now reaches only active placements', () => {
+    const source = makeMember({ taskId: 'source-1', isSource: true, boardId: 'board-src', boardName: 'Source board' });
+    const ended = makeMember({ taskId: 'm-old', boardName: 'Alpha Fitness', isActive: false });
+    const live = makeMember({ taskId: 'm-new', boardName: 'March Fitness', isActive: true });
+    const group = makeGroup({ tasks: [source, ended, live], taskCount: 3, boardCount: 2 });
 
-    const tasksById = new Map<string, Task>([
-      ['m-old', makeTask('m-old', { updatedAt: '2026-09-20T00:00:00.000Z' })],
-      ['m-new', makeTask('m-new', { updatedAt: '2026-09-29T00:00:00.000Z' })],
-    ]);
-
-    const picked = selectMostRecentlyLoggedMember(group, tasksById);
-    expect(picked?.taskId).toBe('m-new');
+    expect(selectMostRecentlyLoggedMember(group)?.taskId).toBe('m-new');
   });
 
   it('breaks a tie on board name deterministically', () => {
-    const source = makeMember({ taskId: 'source-1', isSource: true, boardId: null, boardName: null });
-    const a = makeMember({ taskId: 'm-a', boardName: 'Zebra Board' });
-    const b = makeMember({ taskId: 'm-b', boardName: 'Alpha Board' });
+    const source = makeMember({ taskId: 'source-1', isSource: true, boardId: 'board-src', boardName: 'Source board' });
+    const a = makeMember({ taskId: 'm-a', boardName: 'Zebra Board', isActive: true });
+    const b = makeMember({ taskId: 'm-b', boardName: 'Alpha Board', isActive: true });
     const group = makeGroup({ tasks: [source, a, b], taskCount: 3, boardCount: 2 });
 
-    const sameStamp = '2026-09-20T00:00:00.000Z';
-    const tasksById = new Map<string, Task>([
-      ['m-a', makeTask('m-a', { updatedAt: sameStamp })],
-      ['m-b', makeTask('m-b', { updatedAt: sameStamp })],
-    ]);
-
-    expect(selectMostRecentlyLoggedMember(group, tasksById)?.taskId).toBe('m-b');
+    expect(selectMostRecentlyLoggedMember(group)?.taskId).toBe('m-b');
   });
 });
 
@@ -320,7 +310,7 @@ describe('selectRecentCounters', () => {
   });
 
   it('attaches the resolved member for each row', () => {
-    const source = makeMember({ taskId: 'source-1', isSource: true, boardId: null, boardName: null });
+    const source = makeMember({ taskId: 'source-1', isSource: true, boardId: 'board-src', boardName: 'Source board' });
     const linked = makeMember({ taskId: 'm-1', boardName: 'Spring 10K' });
     const group = makeGroup({ counterId: 'source-1', tasks: [source, linked], taskCount: 2, boardCount: 1 });
     const tasksById = new Map<string, Task>([['m-1', makeTask('m-1', { updatedAt: '2026-09-25T00:00:00.000Z' })]]);

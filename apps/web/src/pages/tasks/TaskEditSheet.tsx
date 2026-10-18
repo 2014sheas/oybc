@@ -61,8 +61,7 @@ export interface TaskEditSheetProps {
  * TaskEditSheet — modal sheet for editing a task's editable fields.
  *
  * A task's own window (`timeframe` / `startDate` / `endDate`) is NOT
- * editable here: it is set only at creation and by member-rules stamping
- * (where it is a window-stamped derived row's completion window).
+ * editable here: it is set only at creation and is never a kernel input.
  *
  * M1 additions:
  *   - Achievement re-target: mode toggle (specific board vs recurring template)

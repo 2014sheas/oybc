@@ -23,6 +23,8 @@ import { appendSource } from './wizardSourcesLogic';
 import { useWizardSources } from './useWizardSources';
 import { useWizardCompoundChildren, useWizardMemberRules } from './useWizardMemberRules';
 import { useWizardDerived } from './useWizardDerived';
+import { useManualRowOps } from './useManualRowOps';
+import { useWizardPlacementParams } from './useWizardPlacementParams';
 import { resolveInitialWizardTimeframe } from './wizardTimeframeSeed';
 
 /** Stable empty fallback so a caller that omits `tasksById` doesn't cause
@@ -335,6 +337,16 @@ export function useBoardWizard({
     [size, centerType],
   );
 
+  // TASK_WINDOW_REWORK slice 3b — per-cell placement parameters (quick-add
+  // goal, hand-edited goal); survive a draft resume via the mix blob.
+  const {
+    placementParams,
+    setPlacementParams,
+    clearPlacementParams,
+    prunePlacementParamsFor,
+    restampPlacementParams,
+  } = useWizardPlacementParams(() => decodedRecurringDraftMix?.placementParams ?? {}, tasksById);
+
   /**
    * Board Sources P4 — purge follow-on state for ids that LEFT the
    * selection via a source action (remove/exclude/filter). Center,
@@ -367,7 +379,8 @@ export function useBoardWizard({
       }
       return changed ? next : prev;
     });
-  }, []);
+    prunePlacementParamsFor(droppedIds);
+  }, [prunePlacementParamsFor]);
 
   // P5 (Task Pools + Recurring Boards Rework, docs/POOLS_RECURRING.md
   // §Surfaces item 6 "Core-board setup") — the CoreBoardDefault prefill's
@@ -738,6 +751,7 @@ export function useBoardWizard({
         // dice with it, or the stale entry rides into the draft blob / the
         // repeating record and lives there forever.
         pruneManualVaryFor(taskId);
+        prunePlacementParamsFor([taskId]);
       } else {
         setManualTaskIds((prev) => {
           if (prev.has(taskId)) return prev;
@@ -759,6 +773,7 @@ export function useBoardWizard({
       expandedSupplies,
       tasksById,
       pruneManualVaryFor,
+      prunePlacementParamsFor,
       setSources,
       setManualTaskIds,
     ],
@@ -812,47 +827,12 @@ export function useBoardWizard({
     });
   }, []);
 
-  /**
-   * Inline Task Editing (web PR-2) — restore a removed task to the pool at
-   * its original index. See `BoardWizardActions.restoreToPool`.
-   *
-   * Deliberately does NOT route through `toggleTaskSelection` (which always
-   * appends at the end of `poolOrder`) — Undo must restore the task at the
-   * exact index it was removed from, mirroring iOS
-   * `BoardWizardViewModel.restoreToPool`.
-   */
-  const restoreToPool = useCallback(
-    (taskId: string, index: number, payload: PendingTaskPayload | undefined) => {
-      setSelectedTaskIds((prev) => {
-        if (prev.has(taskId)) return prev;
-        const next = new Set(prev);
-        next.add(taskId);
-        return next;
-      });
-      setPoolOrder((prev) => {
-        if (prev.includes(taskId)) return prev;
-        const next = [...prev];
-        next.splice(Math.min(Math.max(index, 0), next.length), 0, taskId);
-        return next;
-      });
-      if (payload !== undefined) {
-        setPendingTasks((prev) => {
-          const next = new Map(prev);
-          next.set(taskId, payload);
-          return next;
-        });
-      }
-      // Board Sources P4 — a restored task re-enters as a hand-add (manual
-      // wins over any standing source exclude, which persists).
-      setManualTaskIds((prev) => {
-        if (prev.has(taskId)) return prev;
-        const next = new Set(prev);
-        next.add(taskId);
-        return next;
-      });
-    },
-    [setManualTaskIds],
-  );
+  const { restoreToPool } = useManualRowOps({
+    setSelectedTaskIds,
+    setPoolOrder,
+    setPendingTasks,
+    setManualTaskIds,
+  });
 
   const setCenterTaskId = useCallback((id: string | null) => {
     setCenterTaskIdRaw(id);
@@ -911,7 +891,8 @@ export function useBoardWizard({
     resetSources();
     // §Member rules (B3) — and the rules layered on top of it.
     resetMemberRules();
-  }, [preferences, coreBoardDefault, isRecurring, resetSources, resetMemberRules]);
+    clearPlacementParams();
+  }, [preferences, coreBoardDefault, isRecurring, resetSources, resetMemberRules, clearPlacementParams]);
 
   // ── Derived flags ─────────────────────────────────────────────────────
   // The whole `BoardWizardDerived` slice (step gates + copy, the
@@ -941,6 +922,7 @@ export function useBoardWizard({
     sources,
     manualTaskIds,
     manualTaskVary,
+    placementParams,
     childrenByCompoundId,
     supplyInfoBySourceId,
     expandedSourceIds,
@@ -982,6 +964,8 @@ export function useBoardWizard({
     stageEdit,
     revertEdit,
     restoreToPool,
+    setPlacementParams,
+    restampPlacementParams,
     goToStep,
     goNext,
     goBack,

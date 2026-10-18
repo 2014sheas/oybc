@@ -2,12 +2,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   AchievementTrigger,
   CenterSquareType,
-  TaskType,
   buildCounterFamilyMap,
   effectiveCenter,
   isBoardEnded,
   isCoreBoard, isLegacyChosenCenterLocked,
-  isWindowStampedDerived,
   type Board,
   type Task,
 } from '@oybc/shared';
@@ -15,20 +13,12 @@ import {
   useBoardPlayData,
   useBoardPlay,
   useCounterArrivals,
-  type CreditedToast,
 } from '../hooks';
-import { resolveClosedBoardCounterDisplay, taskToSquareData, taskToSquareState } from '../db/adapters';
-import {
-  DetailModal,
-  FloatingContextMenu,
-} from './InteractiveTaskSquare';
+import { placedTaskFor, resolveClosedBoardCounterDisplay, taskToSquareData, taskToSquareState } from '../db/adapters';
+import { SquareMenuHost } from './boardPlay/squareMenu/SquareMenuHost';
 import type { ContextMenuState } from './interactiveTaskSquareUtils';
-import {
-  resolveSharedCounterDefaultAmount,
-  resolveSharedCounterSourceId,
-} from './boardPlaySharedCounterUtils';
-import { setCounterDefaultLogAmount } from '../db/operations/tasks';
-import { useCountingLogModal } from './boardPlay/useCountingLogModal';
+import { SquareSheetHost } from './boardPlay/squareSheet/SquareSheetHost';
+import { useSquareToasts } from './boardPlay/squareSheet/useSquareToasts';
 import { recurringBadgeState } from './boards/recurringBadgeState';
 import { RecurringBadge } from './RecurringBadge';
 import { TaskDetailSheet } from './TaskDetailSheet';
@@ -44,7 +34,7 @@ import { canEditSquares } from './boardActions/boardMenu';
 import { usePreferences } from '../hooks/usePreferences';
 import { useNavigate } from 'react-router-dom';
 import {
-  boardSheetChips, compactStreakLabel, getHighlightedSquares, quantizeCount, quickLogAmount, resolveFamilyCountKind,
+  boardDisplayName, compactStreakLabel, getHighlightedSquares, resolveFamilyCountKind,
 } from '@oybc/shared';
 import { gatedStreak } from '../utils/gatedStreak';
 import { RisoIcon } from './riso';
@@ -58,6 +48,7 @@ import { RisoArrivalBanner } from './play/RisoArrivalBanner';
 import { EndedBanner } from './boardPlay/EndedBanner';
 import { BoardStatusPill } from './boardPlay/BoardStatusPill';
 import { BoardLeftStatCard } from './boardPlay/BoardLeftStatCard';
+import { BingosStatCard } from './boardPlay/BingosStatCard';
 import { LateLogSheet } from './lateLog/LateLogSheet';
 import styles from '../pages/BoardPlayPage.module.css';
 import play from './play/Play.module.css';
@@ -164,7 +155,9 @@ export function BoardPlaySurface({
   // Board Edit redesign slice 4 (D12–D16) — "Ended, not closed" (pinned clock).
   const isEnded = isBoardEnded(board, nowPinned.getTime());
   const [flashMessage, setFlashMessage] = useState<FlashMessage | null>(null);
-  const [selectedSquareId, setSelectedSquareId] = useState<string | null>(null);
+  // The open square sheet: its placement, and the entry a hold-menu item asked for (one state, so every exit clears both).
+  const [sheet, setSheet] = useState<{ id: string; entry?: 'add' | 'remove' } | null>(null);
+  const closeSheet = (): void => setSheet(null);
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   const [openedTaskInLibrary, setOpenedTaskInLibrary] = useState<string | null>(null);
   // D15 — the closed-board direct-log sheet.
@@ -179,11 +172,10 @@ export function BoardPlaySurface({
   // "Board saved" green toast shown after a successful edit-mode save.
   const [savedToast, setSavedToast] = useState(false);
   const savedToastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  // Phase 2 — Shared Counters: credited toast shown after an increment/decrement
-  // that ripples to OTHER boards. The `key` field forces CounterLogToast to
-  // remount (resetting its timer) when consecutive logs fire quickly.
-  // R3: amount-aware + Undo — shape matches `useBoardPlay`'s `CreditedToast`.
-  const [creditedToast, setCreditedToast] = useState<CreditedToast | null>(null);
+  // The one toast slot (latest wins): a credited-counter ripple (R3) or a
+  // Normal tap's "‹title› · done" (docs/TASK_DETAIL_REDESIGN.md §Tap contract).
+  const toasts = useSquareToasts();
+  const { creditedToast, setCreditedToast } = toasts;
   // Board Edit redesign slice 3 — the squares-editor tap/picker/edit-task
   // overlay state. Owned here (not `useBoardPlay`) since it's pure transient
   // chrome, not draft data.
@@ -277,7 +269,7 @@ export function BoardPlaySurface({
   const streakFor = (t: AchievementTrigger): number =>
     gatedStreak(prefsReady, board.timeframe, t, allBoards, prefs.weekStartDay, nowPinned);
   const greenlogStreak = streakFor(AchievementTrigger.GREENLOG);
-  const { open: openMoment, node: momentNode } = useBoardMoment({
+  const { open: openMoment, replay: replayMoment, node: momentNode } = useBoardMoment({
     board, boardTasks, taskMap, compoundChildrenByCompound, allBoards, cellStateByBoardTaskId,
     btByPosition, squareWindowContext, gridSize, greenlogStreak, streakFor,
   });
@@ -327,7 +319,13 @@ export function BoardPlaySurface({
     handleSharedCounterIncrement,
     handleSharedCounterDecrement,
     undoCreditedToast,
+    undoCounterLog,
     handleCompoundChildToggle,
+    handleCompoundChildIncrement,
+    logStandaloneCount,
+    isWriting,
+    writeSeq,
+    getWriteSeq,
   } = useBoardPlay({
     board,
     editMode,
@@ -339,27 +337,10 @@ export function BoardPlaySurface({
     // locked only on sealed boards; an expired-but-unsealed board stays live.
     playLocked: isSealed,
     squareWindowContext,
+    sharedCounterSourceIds,
     onFlash: showFlash,
-    onCreditedToast: setCreditedToast,
+    onCreditedToast: toasts.onCreditedToast,
     setContextMenu,
-  });
-
-  // Counter kinds §5 — the detail modal's log-amount controls (chips + amount
-  // field), in `useCountingLogModal`; the count is the modal's windowed value.
-  const quickAmount = useCountingLogModal(selectedSquareId, (btId) => {
-    const bt = boardTasks.find((b) => b.id === btId);
-    const task = bt ? taskMap[bt.taskId] : undefined;
-    if (!bt || !task || task.type !== TaskType.COUNTING) return null;
-    const children = compoundChildrenByCompound[task.id] ?? [];
-    return {
-      boardTaskId: btId, task, taskMap, isSealed,
-      sourceId: resolveSharedCounterSourceId(task, sharedCounterSourceIds),
-      currentCount: taskToSquareState(task, children, taskMap, compoundChildrenByCompound, squareWindowContext, cellStateByBoardTaskId[btId]).currentCount,
-      onIncrementShared: (s, a, p) => void handleSharedCounterIncrement(s, a, p),
-      onDecrementShared: (s, a, p) => void handleSharedCounterDecrement(s, a, p),
-      onSetStandaloneCount: (b, next) => void handleComplete(b, { currentCount: next }),
-      onPersistDefault: (id, a) => void setCounterDefaultLogAmount(id, a).catch((err) => console.error('Persist default log amount failed:', err)),
-    };
   });
 
   // ── Passive completion (Shared Counters P3) ─────────────────────────────
@@ -424,26 +405,24 @@ export function BoardPlaySurface({
       {creditedToast && (
         <CounterLogToast
           key={creditedToast.key}
+          text={creditedToast.text}
+          detail={creditedToast.detail}
           amount={creditedToast.amount}
           unit=""
           verb={creditedToast.verb}
           counterName={creditedToast.counterName}
           boardNames={creditedToast.boardNames}
-          onUndo={() => {
-            // Await-then-clear like R2's Hub/Detail callers (#342 review M3):
-            // a failed undo must not leave the user believing it succeeded.
-            void (async () => {
-              try {
-                // Route through the hook so the reversal flashes any board
-                // COMPLETED→ACTIVE / lost-bingo transition it causes (F1);
-                // a counts-toward credit's Undo un-completes the task instead.
-                await undoCreditedToast(creditedToast);
-              } catch (err) {
-                console.error('Undo failed', err);
-              } finally {
-                setCreditedToast(null);
-              }
-            })();
+          onUndo={async () => {
+            // Route through the hook so the reversal flashes any board
+            // COMPLETED→ACTIVE / lost-bingo transition it causes (F1); a
+            // counts-toward credit's Undo un-completes the task instead. A
+            // failed Undo keeps the toast (cleared only on success).
+            try {
+              await undoCreditedToast(creditedToast);
+              setCreditedToast(null);
+            } catch (err) {
+              console.error('Undo failed', err);
+            }
           }}
           onDone={() => setCreditedToast(null)}
         />
@@ -535,13 +514,7 @@ export function BoardPlaySurface({
               isSealed={isSealed} isEnded={isEnded} timeframe={board.timeframe}
               endDate={board.endDate} nowPinned={nowPinned}
             />
-            <div className={`${play.stat} ${play.gold}`}>
-              <div className={play.statK}>Bingos</div>
-              <div className={play.statV}>
-                <span className={play.starS} aria-hidden="true" />
-                {board.linesCompleted}
-              </div>
-            </div>
+            <BingosStatCard board={board} onReplay={replayMoment} />
           </div>
         </aside>
       )}
@@ -630,8 +603,8 @@ export function BoardPlaySurface({
                   continue;
                 }
 
-                // ── Resolve the base task from taskMap ───────────────────
-                const task: Task | undefined = resolvedTaskId ? taskMap[resolvedTaskId] : undefined;
+                const cellBt = boardTaskId ? boardTasks.find((b) => b.id === boardTaskId) : undefined; // slice 2a: placement-adjusted
+                const task: Task | undefined = !resolvedTaskId ? undefined : cellBt?.taskId === resolvedTaskId ? placedTaskFor(cellBt, taskMap) : taskMap[resolvedTaskId];
                 if (!task) {
                   cells.push(
                     <div key={`missing-${boardTaskId}`} className={styles.emptySquare}>?</div>
@@ -644,10 +617,10 @@ export function BoardPlaySurface({
                 // THIS placement (achievement completion has no other source).
                 const cellState = boardTaskId ? cellStateByBoardTaskId[boardTaskId] : undefined;
                 const squareData = taskToSquareData(
-                  task, taskChildren, taskMap, compoundChildrenByCompound, squareWindowContext,
+                  task, taskChildren, taskMap, compoundChildrenByCompound, squareWindowContext, cellBt?.childTargets,
                 );
                 const squareState = taskToSquareState(
-                  task, taskChildren, taskMap, compoundChildrenByCompound, squareWindowContext, cellState,
+                  task, taskChildren, taskMap, compoundChildrenByCompound, squareWindowContext, cellState, cellBt?.childTargets,
                 );
                 // Windowed Completion — on a SEALED board, `done` reads the
                 // frozen `sealedCompletedCells` snapshot (docs §Effects of
@@ -694,40 +667,13 @@ export function BoardPlaySurface({
                   countKind: resolveFamilyCountKind(task, (id) => taskMap[id]),
                 });
 
-                // ── Click handler (play mode) ────────────────────────────
-                // Sealing REPLACES the old expiry-based interaction lock
-                // (docs §Lifecycle: an expired-but-unsealed board is "still
-                // fully live" — the closing-out banner's Log action opens it
-                // to log late activity; the backstop bounds the overtime).
-                const handlePlayClick = !isSealed
-                  ? () => {
-                      // Board-integrity PR-3 (issue #360, finding 2) —
-                      // Achievement squares are read-only on the grid; tap
-                      // is a no-op (mirrors iOS `case .achievement: break`).
-                      // Detail is reachable via the context-menu "View
-                      // Details" item (falls through FloatingContextMenu's
-                      // type switch to the common item), never a plain tap.
-                      if (squareData.type === 'achievement') {
-                        return;
-                      }
-                      // Counter kinds §5 — every counting tap opens the modal
-                      // (web Discrete no longer logs +1 on tap).
-                      if (squareData.type === 'compound' || squareData.type === 'counting') {
-                        setSelectedSquareId(boardTaskId);
-                      } else {
-                        void handleComplete(boardTaskId, {
-                          isCompleted: !taskIsCompleted,
-                        });
-                      }
-                    }
-                  : () => {
-                      // D15 — closed-board tap opens the late-log sheet;
-                      // achievement / hub-linked derived (OQ2) stay a no-op.
-                      const hubLinked = squareData.type === 'counting'
-                        && task.sharedCounterId != null && !isWindowStampedDerived(task);
-                      if (squareData.type === 'achievement' || hubLinked) return;
-                      setLateLogTaskId(task.id);
-                    };
+                // ── Click handler ────────────────────────────────────────
+                // Tap contract (docs/TASK_DETAIL_REDESIGN.md): a Normal square
+                // toggles at once + an Undo toast; every other type — and every
+                // square on a closed board — opens the square sheet.
+                const handlePlayClick = !isSealed && squareData.type === 'normal'
+                  ? () => { if (!isWriting) void toasts.tapNormal(handleComplete, { boardTaskId, taskId: task.id, title: task.title, wasDone: taskIsCompleted, boardLabel: boardDisplayName(board) }); }
+                  : () => setSheet({ id: boardTaskId });
 
                 cells.push(
                   <RisoBoardCell
@@ -742,8 +688,8 @@ export function BoardPlaySurface({
                       ) : undefined
                     }
                     onClick={handlePlayClick}
+                    held={contextMenu?.squareId === boardTaskId}
                     onContextMenu={(e) => {
-                      if (isSealed) return;
                       e.preventDefault();
                       setContextMenu({ squareId: boardTaskId, x: e.clientX, y: e.clientY });
                     }}
@@ -873,189 +819,60 @@ export function BoardPlaySurface({
         );
       })()}
 
-      {/* Detail Modal, context menu, swap modal, remove/add modals — all hidden
-          in edit mode (the grid is display-only; no tap interactions allowed). */}
-      {!editMode && selectedSquareId && (() => {
-        const bt = boardTasks.find((b) => b.id === selectedSquareId);
-        if (!bt) return null;
-        const task = taskMap[bt.taskId];
-        if (!task) return null;
-        const taskChildren = compoundChildrenByCompound[task.id] ?? [];
-        const squareData = taskToSquareData(
-          task, taskChildren, taskMap, compoundChildrenByCompound, squareWindowContext,
-        );
-        const squareState = taskToSquareState(
-          task, taskChildren, taskMap, compoundChildrenByCompound, squareWindowContext,
-          cellStateByBoardTaskId[bt.id],
-        );
-        // Use squareState.currentCount (baseline-adjusted for linked counters)
-        // rather than the raw task.currentCount accumulator. For standalone
-        // counters the two values are identical; for linked derived counters
-        // taskToSquareState has already applied deriveDisplayedCount.
-        const modalCurrentCount = squareState.currentCount;
-
-        return (
-          <DetailModal
-            sq={squareData}
-            state={squareState}
-            onClose={() => setSelectedSquareId(null)}
-            onToggleComplete={() => {
-              if (isSealed) return;
-              // `handleComplete` now comes from `useBoardPlay`; the ref-access
-              // chain that previously tripped `react-hooks/refs` is no longer
-              // visible to the analyzer (the handler is an opaque hook return),
-              // so the per-site disable directives here were removed (B2-W3).
-              void handleComplete(bt.id, { isCompleted: !squareState.isCompleted });
-            }}
-            onIncrementCount={() => {
-              // Standalone Discrete squares only — every other counting square
-              // routes through `quickAmount.onAdd`.
-              if (isSealed) return;
-              void handleComplete(bt.id, { currentCount: modalCurrentCount + 1 });
-            }}
-            onDecrementCount={() => {
-              // Standalone Discrete squares only — every other counting square
-              // routes through `quickAmount.onRemove`.
-              if (isSealed) return;
-              if (modalCurrentCount > 0) void handleComplete(bt.id, { currentCount: modalCurrentCount - 1 });
-            }}
-            onCompoundChildToggle={
-              squareData.type === 'compound' ? handleCompoundChildToggle : undefined
-            }
-            onOpenInLibrary={(taskId) => { setSelectedSquareId(null); setOpenedTaskInLibrary(taskId); }}
-            quickAmount={quickAmount}
-            achievementBadge={achievementBadgesByBoardTaskId[bt.id]}
-          />
-        );
-      })()}
+      {/* Square sheet (tap on Counting / Compound / Achievement, any square on a
+          closed board, hold menu's Details) — hidden in edit mode. */}
+      {!editMode && sheet && (
+        <SquareSheetHost
+          key={`${sheet.id}:${sheet.entry ?? ''}`}
+          initialEntry={sheet.entry}
+          boardTaskId={sheet.id}
+          board={board}
+          data={{ boardTasks, taskMap, compoundChildrenByCompound, allBoards, achievementBadgesByBoardTaskId, cellStateByBoardTaskId, sharedCounterSourceIds, squareWindowContext, gridSize }}
+          play={{ handleComplete, handleSharedCounterIncrement, handleSharedCounterDecrement, undoCounterLog, handleCompoundChildToggle, handleCompoundChildIncrement, logStandaloneCount, isWriting, writeSeq, getWriteSeq }}
+          quiet={toasts.captureCredits}
+          onClose={closeSheet}
+          onOpenInLibrary={(taskId) => { closeSheet(); setOpenedTaskInLibrary(taskId); }}
+          onLateLog={(taskId) => { closeSheet(); setLateLogTaskId(taskId); }}
+          onOpenBoard={(boardId) => { closeSheet(); navigate(`/boards/${boardId}`); }}
+          onToggleNormal={(boardTaskId, title, wasDone) => {
+            closeSheet();
+            const taskId = boardTasks.find((b) => b.id === boardTaskId)?.taskId ?? '';
+            if (!isWriting) void toasts.tapNormal(handleComplete, { boardTaskId, taskId, title, wasDone, boardLabel: boardDisplayName(board) });
+          }}
+        />
+      )}
 
       {/* Task library sheet — "Open in library" from context menu or compound child rows */}
       {!editMode && (
         <TaskDetailSheet
           taskId={openedTaskInLibrary}
           onClose={() => setOpenedTaskInLibrary(null)}
-          onOpenTask={(id) => setOpenedTaskInLibrary(id)}
+          fromBoardId={board.id}
         />
       )}
 
-      {/* Floating Context Menu */}
-      {!editMode && contextMenu && (() => {
-        const bt = boardTasks.find((b) => b.id === contextMenu.squareId);
-        if (!bt) return null;
-        const task = taskMap[bt.taskId];
-        if (!task) return null;
-        const taskChildren = compoundChildrenByCompound[task.id] ?? [];
-        const squareData = taskToSquareData(
-          task, taskChildren, taskMap, compoundChildrenByCompound, squareWindowContext,
-        );
-        const squareState = taskToSquareState(
-          task, taskChildren, taskMap, compoundChildrenByCompound, squareWindowContext,
-          cellStateByBoardTaskId[bt.id],
-        );
-        // Use squareState.currentCount (baseline-adjusted for linked counters).
-        const menuCurrentCount = squareState.currentCount;
-        // Linked derived counters are read-only — decrement/reset must be gated.
-        const isLinkedCounter = squareData.sharedCounterId != null;
-
-        // R3 — quick-action amount options (shared counting squares only).
-        // The "# Custom amount…" item opens the detail modal (which owns
-        // the full picker) rather than an inline input — see the prop's
-        // docstring on `FloatingContextMenu` for why.
-        const menuSourceId = resolveSharedCounterSourceId(task, sharedCounterSourceIds);
-        const menuKind = resolveFamilyCountKind(task, (id) => taskMap[id]);
-        const amountActions = squareData.type === 'counting' && menuKind !== 'discrete'
-          ? {
-              kind: menuKind,
-              amount: quickLogAmount(
-                menuKind, boardSheetChips(menuKind, task.maxCount ?? 0),
-                (menuSourceId ? taskMap[menuSourceId] : task)?.defaultLogAmount,
-              ),
-              unit: task.unit ?? '',
-              onAdd: (a: number) => (menuSourceId
-                ? void handleSharedCounterIncrement(menuSourceId, a, false)
-                : void handleComplete(bt.id, { currentCount: quantizeCount(menuCurrentCount + a) })),
-              onRemove: (a: number) => (menuSourceId
-                ? void handleSharedCounterDecrement(menuSourceId, a, false)
-                : void handleComplete(bt.id, { currentCount: Math.max(0, quantizeCount(menuCurrentCount - a)) })),
-              onOpenCustom: () => setSelectedSquareId(bt.id),
-              removeDisabled: isLinkedCounter || menuCurrentCount <= 0,
-            }
-          : undefined;
-        const sharedAmountActions =
-          squareData.type === 'counting' && menuSourceId && menuKind === 'discrete'
-            ? {
-                unit: task.unit ?? '',
-                defaultAmount: resolveSharedCounterDefaultAmount(taskMap[menuSourceId]),
-                onAdd: (amount: number) => void handleSharedCounterIncrement(menuSourceId, amount, false),
-                onOpenCustom: () => setSelectedSquareId(bt.id),
-              }
-            : undefined;
-
-        return (
-          <FloatingContextMenu
-            sq={squareData}
-            state={squareState}
-            position={{ x: contextMenu.x, y: contextMenu.y }}
-            onClose={() => setContextMenu(null)}
-            onToggleComplete={() => {
-              void handleComplete(bt.id, { isCompleted: !squareState.isCompleted });
-              setContextMenu(null);
-            }}
-            onIncrementCount={() => {
-              // Standalone (non-shared) counting squares only — shared
-              // squares route through `sharedAmountActions.onAdd` above.
-              void handleComplete(bt.id, { currentCount: menuCurrentCount + 1 });
-              setContextMenu(null);
-            }}
-            onDecrementCount={() => {
-              // Linked derived counters are read-only — no decrement.
-              if (isLinkedCounter) { setContextMenu(null); return; }
-              // Phase 2 — Source shared counters route through decrementSharedCounter.
-              // R3: mirror the ADD amount (the counter's default) per the
-              // contract "decrement mirrors the add amount" — matches iOS's
-              // context menu and this menu's own remove label.
-              if (sharedCounterSourceIds.has(task.id)) {
-                void handleSharedCounterDecrement(
-                  task.id,
-                  resolveSharedCounterDefaultAmount(task),
-                );
-              } else if (menuCurrentCount > 0) {
-                void handleComplete(bt.id, { currentCount: menuCurrentCount - 1 });
-              }
-              setContextMenu(null);
-            }}
-            onResetCount={() => {
-              // Linked derived counters are read-only — no reset.
-              if (isLinkedCounter) { setContextMenu(null); return; }
-              void handleComplete(bt.id, { currentCount: 0, isCompleted: false });
-              setContextMenu(null);
-            }}
-            onViewDetails={() => {
-              setSelectedSquareId(bt.id);
-              setContextMenu(null);
-            }}
-            onOpenInLibrary={(taskId) => {
-              setOpenedTaskInLibrary(taskId);
-              setContextMenu(null);
-            }}
-            sharedAmountActions={sharedAmountActions}
-            amountActions={amountActions}
-          />
-        );
-      })()}
+      {/* Hold menu — the same vocabulary on every square, open or closed board. */}
+      {!editMode && contextMenu && (
+        <SquareMenuHost
+          squareId={contextMenu.squareId} position={{ x: contextMenu.x, y: contextMenu.y }} board={board}
+          data={{ boardTasks, taskMap, compoundChildrenByCompound, allBoards, achievementBadgesByBoardTaskId, cellStateByBoardTaskId, sharedCounterSourceIds, squareWindowContext, gridSize }}
+          play={{ handleComplete, handleSharedCounterIncrement, handleSharedCounterDecrement, undoCounterLog, handleCompoundChildToggle, handleCompoundChildIncrement, logStandaloneCount, isWriting, writeSeq, getWriteSeq }}
+          toasts={toasts} onClose={() => setContextMenu(null)}
+          onOpenSheet={(id, entry) => setSheet({ id, entry })}
+          onOpenInLibrary={setOpenedTaskInLibrary} onLateLog={setLateLogTaskId}
+          onOpenBoard={(id) => navigate(`/boards/${id}`)}
+        />
+      )}
 
       {/* D17 — the play-mode "+" add-to-empty-cell modal is retired. Every
           structural edit (add/replace/remove/move/lock) goes through the
           squares editor now. */}
 
       {/* D15 — the closed-board direct-log sheet. */}
-      {isSealed && lateLogTaskId && taskMap[lateLogTaskId] && (
-        <LateLogSheet
-          board={board} task={taskMap[lateLogTaskId]} taskMap={taskMap}
-          compoundChildrenByCompound={compoundChildrenByCompound}
-          onClose={() => setLateLogTaskId(null)}
-        />
-      )}
+      {isSealed && lateLogTaskId && taskMap[lateLogTaskId] && (() => { const lateLogBt = boardTasks.find((b) => b.taskId === lateLogTaskId && !b.isDeleted); return ( // slice 2a
+        <LateLogSheet board={board} task={(lateLogBt && placedTaskFor(lateLogBt, taskMap)) ?? taskMap[lateLogTaskId]} taskMap={taskMap}
+          compoundChildrenByCompound={compoundChildrenByCompound} childTargets={lateLogBt?.childTargets} onClose={() => setLateLogTaskId(null)} />
+      ); })()}
 
       {/* "Board saved" toast — displayed after a successful edit-mode save (~2.4s). */}
       {savedToast && (

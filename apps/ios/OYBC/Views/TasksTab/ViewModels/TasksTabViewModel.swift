@@ -78,6 +78,10 @@ final class TasksTabViewModel {
     /// Status map for non-deleted boards. Loaded once per `reload`; the
     /// usage filter and the row's "On N active boards" hint both read it.
     var boardStatusById: [String: BoardStatus] = [:]
+    /// The boards still in play (`isBoardActiveForList`) — the "N active"
+    /// hint and the "On active boards" filter count only these, like the
+    /// task-detail page and the wizard's usage hint.
+    var activeBoardIds: Set<String> = []
     /// False until `reload()` lands — an empty `boardStatusById` then
     /// means "placements not joined yet", NOT "this task is on no
     /// boards". Rows used to read "0 bds · 0 active" and then flip
@@ -108,6 +112,7 @@ final class TasksTabViewModel {
                     m[b.id] = b.status
                 }
                 self.boardStatusById = m
+                self.activeBoardIds = Set(boards.filter { isBoardActiveForList($0) }.map(\.id))
                 self.usageCountsLoaded = true
                 self.loadError = nil
             }
@@ -144,16 +149,16 @@ final class TasksTabViewModel {
         return boardsByTask.mapValues { $0.count }
     }
 
-    /// `taskId` → count of placements on boards whose `status == .active`.
-    /// Drives the usage filter's "On active boards" value plus the row's
-    /// primary usage hint.
+    /// `taskId` → count of DISTINCT boards still in play (`activeBoardIds`)
+    /// the task is placed on. Drives the usage filter's "On active boards"
+    /// value plus the row's primary usage hint.
     func activePlacementCounts(boardTasks: [BoardTask]) -> [String: Int] {
-        // DISTINCT active boards per task — matches the task-detail page
-        // (`affectedBoards.filter { $0.status == .active }.count`) so the row's
-        // "N active" agrees with detail. (Was raw row count, which over-counts
-        // if a task has >1 board_task row on the same active board.)
+        // DISTINCT in-play boards per task — matches the task-detail page
+        // (`affectedBoards.filter { isBoardActiveForList($0) }.count`) so the
+        // row's "N active" agrees with detail. (Was raw row count, which
+        // over-counts if a task has >1 board_task row on the same board.)
         var boardsByTask: [String: Set<String>] = [:]
-        for bt in boardTasks where boardStatusById[bt.boardId] == .active {
+        for bt in boardTasks where activeBoardIds.contains(bt.boardId) {
             boardsByTask[bt.taskId, default: []].insert(bt.boardId)
         }
         return boardsByTask.mapValues { $0.count }
@@ -197,8 +202,14 @@ final class TasksTabViewModel {
 
         // Phase 6.Y — Default-hide expired timeboxed tasks unless the
         // user explicitly toggles them on. Indefinite tasks (no
-        // endDate) are unaffected.
-        let visible = showExpired ? used : used.filter { !Self.isTaskExpired($0) }
+        // endDate) are unaffected, and a counter ROOT is never hidden: it
+        // is the counter, whatever window its creation board stamped on it
+        // (roots over the FULL library — the browse rule hides the members
+        // that make a root).
+        let rootIds = QuickAddCounterPlacement.counterRootIds(in: library.libraryTasks)
+        let visible = showExpired
+            ? used
+            : used.filter { !QuickAddCounterPlacement.isExpiredForBrowse($0, linkedRootIds: rootIds) }
 
         return visible.sorted { Self.compare($0, $1, sort: sortBy, placementCounts: placementCounts) }
     }
@@ -255,26 +266,35 @@ final class TasksTabViewModel {
     ) -> Bool {
         switch filter {
         case .any: return true
-        case .completed: return task.isCompleted
+        case .completed: return isDone(task, library: library)
         case .inProgress:
-            return !task.isCompleted && Self.isInProgress(task, library: library)
+            return !isDone(task, library: library) && Self.isInProgress(task, library: library)
         case .neverStarted:
-            return !task.isCompleted && !Self.isInProgress(task, library: library)
+            return !isDone(task, library: library) && !Self.isInProgress(task, library: library)
         }
     }
 
-    /// "In progress" predicate. Counting tasks: the DISPLAYED count > 0 and
-    /// not done — `TaskCountDisplay.displayedCount`, so a linked member is
-    /// measured against its own baseline and not against its root's lifetime
-    /// total (RB7); reading `currentCount` raw here would call every member of
-    /// a used root "in progress" the moment its window opened. Compound tasks:
+    /// Whether a library task is done. Counting tasks read the context-less
+    /// event state (`contextlessCounterState`: the owner's lifetime events vs
+    /// its goal — never the latch); every other type its `isCompleted`.
+    static func isDone(_ task: Task, library: TaskLibraryViewModel) -> Bool {
+        if task.type == .counting {
+            return contextlessCounterState(task: task, eventsByTaskId: library.eventsByTaskId).isCompleted
+        }
+        return task.isCompleted
+    }
+
+    /// "In progress" predicate. Counting tasks: not done and the context-less
+    /// event count > 0 (`contextlessCounterState` — a linked member reads its
+    /// root's lifetime events, slice 2c). Compound tasks:
     /// at least one child Task is completed but the parent isn't (child
     /// completion state read out of `library.libraryTasks` via id match).
     static func isInProgress(_ task: Task, library: TaskLibraryViewModel) -> Bool {
-        if task.isCompleted { return false }
         if task.type == .counting {
-            return TaskCountDisplay.displayedCount(for: task) > 0
+            let state = contextlessCounterState(task: task, eventsByTaskId: library.eventsByTaskId)
+            return !state.isCompleted && state.count > 0
         }
+        if task.isCompleted { return false }
         if task.type == .compound {
             let children = library.compoundChildrenByCompound[task.id] ?? []
             for link in children {

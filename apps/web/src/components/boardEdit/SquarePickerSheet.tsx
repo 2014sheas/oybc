@@ -1,11 +1,13 @@
-import type { Task, Timeframe } from '@oybc/shared';
+import { useRef } from 'react';
+import type { PlacementParams, Task, Timeframe } from '@oybc/shared';
 import { useModalA11y } from '../../hooks/useModalA11y';
 import type { PendingTaskPayload } from '../../pages/createPage/useCreateFormState';
 import { WizardQuickAddRow } from '../wizard/WizardQuickAddRow';
 import { SpecialTaskPanel } from '../wizard/SpecialTaskPanel';
+import { takeExistingPick, type PlacementBuffer } from './squarePick';
 import styles from './SquarePickerSheet.module.css';
 
-export type SquarePick = { taskId: string } | { pending: PendingTaskPayload };
+export type SquarePick = { taskId: string; placement?: PlacementParams } | { pending: PendingTaskPayload };
 
 export interface SquarePickerSheetProps {
   /** 'replace' shows the outgoing task's title; 'add' shows "Empty square" (D13, OQ4). */
@@ -59,6 +61,10 @@ export function SquarePickerSheet({
     onCancel: onClose,
   });
 
+  // The quick-add row reports a picked counter root's parameters just before
+  // the pick itself lands; buffer them per task id so the pick carries them.
+  const bufferedParams = useRef<PlacementBuffer>(new Map());
+
   const kicker = mode === 'replace' ? 'Replace square' : 'Add square';
   const title = mode === 'replace' ? currentTaskTitle || '(untitled task)' : 'Empty square';
 
@@ -89,7 +95,11 @@ export function SquarePickerSheet({
           currentEndDate={endDate}
           libraryTasks={libraryTasks}
           lookupTasks={lookupTasks}
-          onExistingTaskPicked={(task) => onPick({ taskId: task.id })}
+          linksCounterPicks
+          onPlacementParams={(taskId, params) => bufferedParams.current.set(taskId, params)}
+          onExistingTaskPicked={(task) => {
+            onPick(takeExistingPick(bufferedParams.current, task.id));
+          }}
           onTaskCreated={() => { /* no-op — onPendingCreated below carries the same payload */ }}
           onPendingCreated={(payload) => onPick({ pending: payload })}
         />

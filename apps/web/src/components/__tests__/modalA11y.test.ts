@@ -38,7 +38,6 @@ import { MissingSourceDialog } from '../boards/MissingSourceDialog';
 import { BoardEditTaskSheet } from '../boardEdit/BoardEditTaskSheet';
 import { SquareTapMenu } from '../boardEdit/SquareTapMenu';
 import { SquarePickerSheet } from '../boardEdit/SquarePickerSheet';
-import { DetailModal } from '../InteractiveTaskSquare';
 import { TaskDetailSheet } from '../TaskDetailSheet';
 import { PoolEditorModal } from '../pools/PoolEditorModal';
 import { PoolPickerSheet } from '../pools/PoolPickerSheet';
@@ -112,7 +111,6 @@ const CASES: DialogCase[] = [
       React.createElement(CounterDeleteConfirmDialog, {
         counterName: 'Push-ups',
         memberCount: 0,
-        derivedWindowCounterCount: 0,
         members: [],
         busy: false,
         onConfirm: noop,
@@ -133,8 +131,7 @@ const CASES: DialogCase[] = [
           parentLinkCount: 0,
           counterMemberCount: 0,
           counterMembers: [],
-          derivedWindowCounterCount: 0,
-          countsTowardCounter: null,
+            countsTowardCounter: null,
           unitTaskCount: 0,
         },
         onConfirm: noop,
@@ -232,18 +229,6 @@ const CASES: DialogCase[] = [
         libraryTasks: [TASK],
         onPick: noop,
         onClose: noop,
-      }),
-  },
-  {
-    name: 'DetailModal (InteractiveTaskSquare)',
-    element: () =>
-      React.createElement(DetailModal, {
-        sq: { id: 'sq-1', title: 'Read', type: 'normal' },
-        state: { isCompleted: false, currentCount: 0, completedStepIds: new Set<string>() },
-        onClose: noop,
-        onToggleComplete: noop,
-        onIncrementCount: noop,
-        onDecrementCount: noop,
       }),
   },
   {

@@ -4,8 +4,9 @@ import GRDB
 
 /// Counter kinds — the root kind switch + family cascade
 /// (docs/COUNTER_KINDS.md D4/D5, Review Focus #2 / #3). Web twin:
-/// `countKindSwitch.test.ts`. A root, an in-window derived row (live) and an
-/// ended derived row (frozen), each placed on its own board.
+/// `countKindSwitch.test.ts`. A root and two linked rows (one on a live board,
+/// one on an ended board) — both are the family and both switch (slice 5
+/// retired the propagation freeze).
 @MainActor
 final class AppDatabaseCountKindSwitchTests: XCTestCase {
     private typealias K = LinkedWindowKit
@@ -66,11 +67,10 @@ final class AppDatabaseCountKindSwitchTests: XCTestCase {
         try db.fetchPendingSyncItems().filter { $0.entityType == "tasks" }.map(\.entityId).sorted()
     }
 
-    func test_continuousToDiscrete_roundsRootAndLiveFamily_frozenRowAndEventsUntouched() throws {
+    func test_continuousToDiscrete_roundsRootAndWholeFamily_eventsUntouched() throws {
         let db = try seedFamily(kind: .continuous, rootGoal: 26.2, liveTarget: 6.1, endedTarget: 6.4,
                                 deltas: [0.4, 0.4, 0.4])
         let eventsBefore = try eventSnapshot(db)
-        let endedBefore = try XCTUnwrap(K.fetchTask(db, "ended"))
 
         try db.switchCounterKind(rootTaskId: "root", to: .discrete, now: now)
 
@@ -84,11 +84,28 @@ final class AppDatabaseCountKindSwitchTests: XCTestCase {
         XCTAssertEqual(live.maxCount, 6)
         XCTAssertEqual(live.version, 2)
         let ended = try XCTUnwrap(K.fetchTask(db, "ended"))
-        XCTAssertEqual(ended.countKind, .continuous)
-        XCTAssertEqual(ended.maxCount, 6.4)
-        XCTAssertEqual(ended.version, endedBefore.version)
-        XCTAssertEqual(ended.updatedAt, endedBefore.updatedAt)
+        XCTAssertEqual(ended.countKind, .discrete)
+        XCTAssertEqual(ended.maxCount, 6)
         XCTAssertEqual(try eventSnapshot(db), eventsBefore)
+    }
+
+    /// Web twin: "re-derives a CLOSED board placing a linked row whose goal
+    /// rounded (the sanctioned sealed path)".
+    func test_switch_reDerivesAClosedBoardWhoseLinkedGoalRounded() throws {
+        // Ended row goal 2.45; the root logged 2.4 inside the ended window → not met.
+        let db = try seedFamily(kind: .continuous, rootGoal: 26.2, endedTarget: 2.45)
+        try K.addIncrement(db, taskId: "root", delta: 2.4, occurredAt: "2026-09-16T10:00:00.000Z")
+        var ended = try XCTUnwrap(db.fetchBoard(id: "bEnded"))
+        ended.sealedAt = "2026-09-21T09:00:00.000Z"
+        ended.sealedCompletedCells = []
+        try db.saveBoard(ended)
+
+        try db.switchCounterKind(rootTaskId: "root", to: .discrete, now: now)
+
+        // Discrete: goal 2, count 2 → the closed board's record now holds the cell.
+        let after = try XCTUnwrap(db.fetchBoard(id: "bEnded"))
+        XCTAssertEqual(after.completedTasks, 1)
+        XCTAssertEqual(after.sealedCompletedCells, [0])
     }
 
     func test_roundTrip_restoresExactWindowCount() throws {
@@ -168,9 +185,9 @@ final class AppDatabaseCountKindSwitchTests: XCTestCase {
 
         let taskItems = try db.fetchPendingSyncItems().filter { $0.entityType == "tasks" }
         // Two switches, one PENDING row per entity: the queue coalesces
-        // (SyncQueueBuilder), same shape as web's `[ROOT, LIVE]`.
-        XCTAssertEqual(taskItems.map(\.entityId).sorted(), ["live", "root"])
-        XCTAssertEqual(taskItems.count, 2)
+        // (SyncQueueBuilder), same shape as web's `[ROOT, LIVE, ENDED]`.
+        XCTAssertEqual(taskItems.map(\.entityId).sorted(), ["ended", "live", "root"])
+        XCTAssertEqual(taskItems.count, 3)
         let root = try XCTUnwrap(K.fetchTask(db, "root"))
         XCTAssertEqual(root.countKind, .discrete)
         XCTAssertEqual(root.version, 3)
@@ -202,9 +219,9 @@ final class AppDatabaseCountKindSwitchTests: XCTestCase {
 
     func test_preview_roundsLogged_keepsCustomTitle_countsLiveFamilyOnly() throws {
         let db = try seedFamily(kind: .continuous, rootGoal: 26.2, deltas: [12.75])
-        let p = try XCTUnwrap(db.previewCounterKindSwitch(rootTaskId: "root", to: .discrete, now: now))
+        let p = try XCTUnwrap(db.previewCounterKindSwitch(rootTaskId: "root", to: .discrete))
         XCTAssertEqual(p, KindSwitchPreview(from: .continuous, to: .discrete, titleBefore: "root", titleAfter: "root",
-                                            loggedBefore: 12.75, loggedAfter: 13, linkedCount: 1))
+                                            loggedBefore: 12.75, loggedAfter: 13, linkedCount: 2))
     }
 
     func test_preview_autoTitleRegenerates_refusedAndLinkedPreviewNil() throws {
@@ -214,9 +231,9 @@ final class AppDatabaseCountKindSwitchTests: XCTestCase {
             root.title = "Run 26.2 miles"
             try root.save(conn)
         }
-        XCTAssertEqual(try db.previewCounterKindSwitch(rootTaskId: "root", to: .discrete, now: now)?.titleAfter, "Run 26 miles")
-        XCTAssertNil(try db.previewCounterKindSwitch(rootTaskId: "root", to: .duration, now: now))
-        XCTAssertNil(try db.previewCounterKindSwitch(rootTaskId: "live", to: .discrete, now: now))
+        XCTAssertEqual(try db.previewCounterKindSwitch(rootTaskId: "root", to: .discrete)?.titleAfter, "Run 26 miles")
+        XCTAssertNil(try db.previewCounterKindSwitch(rootTaskId: "root", to: .duration))
+        XCTAssertNil(try db.previewCounterKindSwitch(rootTaskId: "live", to: .discrete))
     }
 
     func test_guard_switchesRootAndLiveFamily_thenAcceptsAWholeGoal() throws {

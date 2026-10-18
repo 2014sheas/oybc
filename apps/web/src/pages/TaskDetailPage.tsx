@@ -16,9 +16,6 @@ import pageStyles from './TaskDetailPage.module.css';
  * All content is delegated to `<TaskDetailContent>`, which can also be
  * mounted as a sheet over other surfaces (e.g., BoardPlayPage).
  *
- * Route-mode: `onClose` is NOT passed to `TaskDetailContent`, so the
- * content component skips its own back affordance. The route back link
- * is rendered here in a small header row above the content.
  */
 export function TaskDetailPage(): React.ReactElement {
   const { id } = useParams<{ id: string }>();
@@ -89,17 +86,15 @@ export function TaskDetailPage(): React.ReactElement {
 
   return (
     <div className={pageStyles.shell}>
-      <header className={pageStyles.header}>
-        <Link to="/tasks" className={pageStyles.back}>
-          ‹ Tasks
-        </Link>
-      </header>
       <TaskDetailContent
+        key={task.id}
         task={task}
         onChanged={() => {}}
-        onClose={() => navigate('/tasks')}
+        onDeleted={() => navigate('/tasks')}
+        chrome={{ kind: 'route', onBack: () => navigate('/tasks') }}
         onOpenTask={(taskId) => { navigate(`/tasks/${taskId}`); }}
-        onOpenCounter={(id) => { navigate(`/profile/counters/${id}`); }}
+        onOpenBoard={(boardId) => { navigate(`/boards/${boardId}`); }}
+        onOpenCounter={(counterId) => { navigate(`/profile/counters/${counterId}`); }}
       />
     </div>
   );

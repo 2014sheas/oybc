@@ -3,448 +3,1717 @@
   "vectors": [
     {
       "name": "normal-in-window-complete",
-      "task": { "type": "normal", "maxCount": null },
+      "task": {
+        "type": "normal",
+        "maxCount": null
+      },
       "windowStart": "2026-07-01T00:00:00.000Z",
       "events": [
-        { "kind": "completion", "delta": null, "occurredAt": "2026-07-05T12:00:00.000Z", "isDeleted": false }
+        {
+          "kind": "completion",
+          "delta": null,
+          "occurredAt": "2026-07-05T12:00:00.000Z",
+          "isDeleted": false
+        }
       ],
-      "expected": { "isCompleted": true, "count": 1 }
+      "expected": {
+        "isCompleted": true,
+        "count": 1
+      }
     },
     {
       "name": "normal-pre-window-incomplete",
-      "task": { "type": "normal", "maxCount": null },
+      "task": {
+        "type": "normal",
+        "maxCount": null
+      },
       "windowStart": "2026-07-01T00:00:00.000Z",
       "events": [
-        { "kind": "completion", "delta": null, "occurredAt": "2026-06-20T12:00:00.000Z", "isDeleted": false }
+        {
+          "kind": "completion",
+          "delta": null,
+          "occurredAt": "2026-06-20T12:00:00.000Z",
+          "isDeleted": false
+        }
       ],
-      "expected": { "isCompleted": false, "count": 0 }
+      "expected": {
+        "isCompleted": false,
+        "count": 0
+      }
     },
     {
       "name": "normal-tombstoned-incomplete",
-      "task": { "type": "normal", "maxCount": null },
+      "task": {
+        "type": "normal",
+        "maxCount": null
+      },
       "windowStart": "2026-07-01T00:00:00.000Z",
       "events": [
-        { "kind": "completion", "delta": null, "occurredAt": "2026-07-05T12:00:00.000Z", "isDeleted": true }
+        {
+          "kind": "completion",
+          "delta": null,
+          "occurredAt": "2026-07-05T12:00:00.000Z",
+          "isDeleted": true
+        }
       ],
-      "expected": { "isCompleted": false, "count": 0 }
+      "expected": {
+        "isCompleted": false,
+        "count": 0
+      }
     },
     {
       "name": "normal-boundary-occurredAt-equals-windowStart-included",
-      "task": { "type": "normal", "maxCount": null },
+      "task": {
+        "type": "normal",
+        "maxCount": null
+      },
       "windowStart": "2026-07-01T00:00:00.000Z",
       "events": [
-        { "kind": "completion", "delta": null, "occurredAt": "2026-07-01T00:00:00.000Z", "isDeleted": false }
+        {
+          "kind": "completion",
+          "delta": null,
+          "occurredAt": "2026-07-01T00:00:00.000Z",
+          "isDeleted": false
+        }
       ],
-      "expected": { "isCompleted": true, "count": 1 }
+      "expected": {
+        "isCompleted": true,
+        "count": 1
+      }
     },
     {
       "name": "normal-multiple-completions-count",
-      "task": { "type": "normal", "maxCount": null },
+      "task": {
+        "type": "normal",
+        "maxCount": null
+      },
       "windowStart": "2026-07-01T00:00:00.000Z",
       "events": [
-        { "kind": "completion", "delta": null, "occurredAt": "2026-07-02T08:00:00.000Z", "isDeleted": false },
-        { "kind": "completion", "delta": null, "occurredAt": "2026-07-06T09:00:00.000Z", "isDeleted": false }
+        {
+          "kind": "completion",
+          "delta": null,
+          "occurredAt": "2026-07-02T08:00:00.000Z",
+          "isDeleted": false
+        },
+        {
+          "kind": "completion",
+          "delta": null,
+          "occurredAt": "2026-07-06T09:00:00.000Z",
+          "isDeleted": false
+        }
       ],
-      "expected": { "isCompleted": true, "count": 2 }
+      "expected": {
+        "isCompleted": true,
+        "count": 2
+      }
     },
     {
       "name": "normal-lifetime-counts-pre-window-event",
-      "task": { "type": "normal", "maxCount": null },
+      "task": {
+        "type": "normal",
+        "maxCount": null
+      },
       "windowStart": null,
       "events": [
-        { "kind": "completion", "delta": null, "occurredAt": "2026-06-20T12:00:00.000Z", "isDeleted": false }
+        {
+          "kind": "completion",
+          "delta": null,
+          "occurredAt": "2026-06-20T12:00:00.000Z",
+          "isDeleted": false
+        }
       ],
-      "expected": { "isCompleted": true, "count": 1 }
+      "expected": {
+        "isCompleted": true,
+        "count": 1
+      }
     },
     {
       "name": "counting-in-window-complete",
-      "task": { "type": "counting", "maxCount": 5 },
+      "task": {
+        "type": "counting",
+        "maxCount": 5
+      },
       "windowStart": "2026-07-01T00:00:00.000Z",
       "events": [
-        { "kind": "increment", "delta": 3, "occurredAt": "2026-07-02T08:00:00.000Z", "isDeleted": false },
-        { "kind": "increment", "delta": 2, "occurredAt": "2026-07-03T08:00:00.000Z", "isDeleted": false }
+        {
+          "kind": "increment",
+          "delta": 3,
+          "occurredAt": "2026-07-02T08:00:00.000Z",
+          "isDeleted": false
+        },
+        {
+          "kind": "increment",
+          "delta": 2,
+          "occurredAt": "2026-07-03T08:00:00.000Z",
+          "isDeleted": false
+        }
       ],
-      "expected": { "isCompleted": true, "count": 5 }
+      "expected": {
+        "isCompleted": true,
+        "count": 5
+      }
     },
     {
       "name": "counting-in-window-partial-incomplete",
-      "task": { "type": "counting", "maxCount": 10 },
+      "task": {
+        "type": "counting",
+        "maxCount": 10
+      },
       "windowStart": "2026-07-01T00:00:00.000Z",
       "events": [
-        { "kind": "increment", "delta": 3, "occurredAt": "2026-07-02T08:00:00.000Z", "isDeleted": false }
+        {
+          "kind": "increment",
+          "delta": 3,
+          "occurredAt": "2026-07-02T08:00:00.000Z",
+          "isDeleted": false
+        }
       ],
-      "expected": { "isCompleted": false, "count": 3 }
+      "expected": {
+        "isCompleted": false,
+        "count": 3
+      }
     },
     {
       "name": "counting-pre-window-increment-excluded",
-      "task": { "type": "counting", "maxCount": 5 },
+      "task": {
+        "type": "counting",
+        "maxCount": 5
+      },
       "windowStart": "2026-07-01T00:00:00.000Z",
       "events": [
-        { "kind": "increment", "delta": 4, "occurredAt": "2026-06-25T08:00:00.000Z", "isDeleted": false },
-        { "kind": "increment", "delta": 1, "occurredAt": "2026-07-02T08:00:00.000Z", "isDeleted": false }
+        {
+          "kind": "increment",
+          "delta": 4,
+          "occurredAt": "2026-06-25T08:00:00.000Z",
+          "isDeleted": false
+        },
+        {
+          "kind": "increment",
+          "delta": 1,
+          "occurredAt": "2026-07-02T08:00:00.000Z",
+          "isDeleted": false
+        }
       ],
-      "expected": { "isCompleted": false, "count": 1 }
+      "expected": {
+        "isCompleted": false,
+        "count": 1
+      }
     },
     {
       "name": "counting-tombstoned-increment-excluded",
-      "task": { "type": "counting", "maxCount": 5 },
+      "task": {
+        "type": "counting",
+        "maxCount": 5
+      },
       "windowStart": "2026-07-01T00:00:00.000Z",
       "events": [
-        { "kind": "increment", "delta": 5, "occurredAt": "2026-07-02T08:00:00.000Z", "isDeleted": true }
+        {
+          "kind": "increment",
+          "delta": 5,
+          "occurredAt": "2026-07-02T08:00:00.000Z",
+          "isDeleted": true
+        }
       ],
-      "expected": { "isCompleted": false, "count": 0 }
+      "expected": {
+        "isCompleted": false,
+        "count": 0
+      }
     },
     {
       "name": "counting-negative-sum-clamped-to-zero",
-      "task": { "type": "counting", "maxCount": 5 },
+      "task": {
+        "type": "counting",
+        "maxCount": 5
+      },
       "windowStart": "2026-07-01T00:00:00.000Z",
       "events": [
-        { "kind": "increment", "delta": 2, "occurredAt": "2026-07-02T08:00:00.000Z", "isDeleted": false },
-        { "kind": "increment", "delta": -5, "occurredAt": "2026-07-03T08:00:00.000Z", "isDeleted": false }
+        {
+          "kind": "increment",
+          "delta": 2,
+          "occurredAt": "2026-07-02T08:00:00.000Z",
+          "isDeleted": false
+        },
+        {
+          "kind": "increment",
+          "delta": -5,
+          "occurredAt": "2026-07-03T08:00:00.000Z",
+          "isDeleted": false
+        }
       ],
-      "expected": { "isCompleted": false, "count": 0 }
+      "expected": {
+        "isCompleted": false,
+        "count": 0
+      }
     },
     {
       "name": "counting-overshoot-preserved-not-high-clamped",
-      "task": { "type": "counting", "maxCount": 5 },
+      "task": {
+        "type": "counting",
+        "maxCount": 5
+      },
       "windowStart": "2026-07-01T00:00:00.000Z",
       "events": [
-        { "kind": "increment", "delta": 8, "occurredAt": "2026-07-02T08:00:00.000Z", "isDeleted": false }
+        {
+          "kind": "increment",
+          "delta": 8,
+          "occurredAt": "2026-07-02T08:00:00.000Z",
+          "isDeleted": false
+        }
       ],
-      "expected": { "isCompleted": true, "count": 8 }
+      "expected": {
+        "isCompleted": true,
+        "count": 8
+      }
     },
     {
       "name": "counting-lifetime-counts-all-increments",
-      "task": { "type": "counting", "maxCount": 5 },
+      "task": {
+        "type": "counting",
+        "maxCount": 5
+      },
       "windowStart": null,
       "events": [
-        { "kind": "increment", "delta": 4, "occurredAt": "2026-06-25T08:00:00.000Z", "isDeleted": false },
-        { "kind": "increment", "delta": 3, "occurredAt": "2026-07-02T08:00:00.000Z", "isDeleted": false }
+        {
+          "kind": "increment",
+          "delta": 4,
+          "occurredAt": "2026-06-25T08:00:00.000Z",
+          "isDeleted": false
+        },
+        {
+          "kind": "increment",
+          "delta": 3,
+          "occurredAt": "2026-07-02T08:00:00.000Z",
+          "isDeleted": false
+        }
       ],
-      "expected": { "isCompleted": true, "count": 7 }
+      "expected": {
+        "isCompleted": true,
+        "count": 7
+      }
     },
     {
       "name": "counting-completion-events-ignored-by-counting-branch",
-      "task": { "type": "counting", "maxCount": 1 },
+      "task": {
+        "type": "counting",
+        "maxCount": 1
+      },
       "windowStart": "2026-07-01T00:00:00.000Z",
       "events": [
-        { "kind": "completion", "delta": null, "occurredAt": "2026-07-02T08:00:00.000Z", "isDeleted": false }
+        {
+          "kind": "completion",
+          "delta": null,
+          "occurredAt": "2026-07-02T08:00:00.000Z",
+          "isDeleted": false
+        }
       ],
-      "expected": { "isCompleted": false, "count": 0 }
+      "expected": {
+        "isCompleted": false,
+        "count": 0
+      }
     },
     {
       "name": "normal-no-events-incomplete",
-      "task": { "type": "normal", "maxCount": null },
+      "task": {
+        "type": "normal",
+        "maxCount": null
+      },
       "windowStart": "2026-07-01T00:00:00.000Z",
       "events": [],
-      "expected": { "isCompleted": false, "count": 0 }
+      "expected": {
+        "isCompleted": false,
+        "count": 0
+      }
     },
     {
       "name": "end-bound-counting-increment-one-ms-after-windowEnd-excluded",
-      "task": { "type": "counting", "maxCount": 5 },
+      "task": {
+        "type": "counting",
+        "maxCount": 5
+      },
       "windowStart": "2026-07-01T00:00:00.000Z",
       "windowEnd": "2026-07-07T23:59:59.999Z",
       "events": [
-        { "kind": "increment", "delta": 3, "occurredAt": "2026-07-03T12:00:00.000Z", "isDeleted": false },
-        { "kind": "increment", "delta": 2, "occurredAt": "2026-07-08T00:00:00.000Z", "isDeleted": false }
+        {
+          "kind": "increment",
+          "delta": 3,
+          "occurredAt": "2026-07-03T12:00:00.000Z",
+          "isDeleted": false
+        },
+        {
+          "kind": "increment",
+          "delta": 2,
+          "occurredAt": "2026-07-08T00:00:00.000Z",
+          "isDeleted": false
+        }
       ],
-      "expected": { "isCompleted": false, "count": 3 }
+      "expected": {
+        "isCompleted": false,
+        "count": 3
+      }
     },
     {
       "name": "end-bound-counting-increment-exactly-at-windowEnd-counts-inclusive",
-      "task": { "type": "counting", "maxCount": 5 },
+      "task": {
+        "type": "counting",
+        "maxCount": 5
+      },
       "windowStart": "2026-07-01T00:00:00.000Z",
       "windowEnd": "2026-07-07T23:59:59.999Z",
       "events": [
-        { "kind": "increment", "delta": 3, "occurredAt": "2026-07-03T12:00:00.000Z", "isDeleted": false },
-        { "kind": "increment", "delta": 2, "occurredAt": "2026-07-07T23:59:59.999Z", "isDeleted": false }
+        {
+          "kind": "increment",
+          "delta": 3,
+          "occurredAt": "2026-07-03T12:00:00.000Z",
+          "isDeleted": false
+        },
+        {
+          "kind": "increment",
+          "delta": 2,
+          "occurredAt": "2026-07-07T23:59:59.999Z",
+          "isDeleted": false
+        }
       ],
-      "expected": { "isCompleted": true, "count": 5 }
+      "expected": {
+        "isCompleted": true,
+        "count": 5
+      }
     },
     {
       "name": "end-bound-normal-completion-after-windowEnd-incomplete",
-      "task": { "type": "normal", "maxCount": null },
+      "task": {
+        "type": "normal",
+        "maxCount": null
+      },
       "windowStart": "2026-07-01T00:00:00.000Z",
       "windowEnd": "2026-07-07T23:59:59.999Z",
       "events": [
-        { "kind": "completion", "delta": null, "occurredAt": "2026-07-08T00:04:00.000Z", "isDeleted": false }
+        {
+          "kind": "completion",
+          "delta": null,
+          "occurredAt": "2026-07-08T00:04:00.000Z",
+          "isDeleted": false
+        }
       ],
-      "expected": { "isCompleted": false, "count": 0 }
+      "expected": {
+        "isCompleted": false,
+        "count": 0
+      }
     },
     {
       "name": "end-bound-normal-completion-exactly-at-windowEnd-included",
-      "task": { "type": "normal", "maxCount": null },
+      "task": {
+        "type": "normal",
+        "maxCount": null
+      },
       "windowStart": "2026-07-01T00:00:00.000Z",
       "windowEnd": "2026-07-07T23:59:59.999Z",
       "events": [
-        { "kind": "completion", "delta": null, "occurredAt": "2026-07-07T23:59:59.999Z", "isDeleted": false }
+        {
+          "kind": "completion",
+          "delta": null,
+          "occurredAt": "2026-07-07T23:59:59.999Z",
+          "isDeleted": false
+        }
       ],
-      "expected": { "isCompleted": true, "count": 1 }
+      "expected": {
+        "isCompleted": true,
+        "count": 1
+      }
     },
     {
       "name": "end-bound-windowEnd-null-open-ended-unchanged",
-      "task": { "type": "counting", "maxCount": 5 },
+      "task": {
+        "type": "counting",
+        "maxCount": 5
+      },
       "windowStart": "2026-07-01T00:00:00.000Z",
       "windowEnd": null,
       "events": [
-        { "kind": "increment", "delta": 3, "occurredAt": "2026-07-03T12:00:00.000Z", "isDeleted": false },
-        { "kind": "increment", "delta": 2, "occurredAt": "2026-07-20T09:00:00.000Z", "isDeleted": false }
+        {
+          "kind": "increment",
+          "delta": 3,
+          "occurredAt": "2026-07-03T12:00:00.000Z",
+          "isDeleted": false
+        },
+        {
+          "kind": "increment",
+          "delta": 2,
+          "occurredAt": "2026-07-20T09:00:00.000Z",
+          "isDeleted": false
+        }
       ],
-      "expected": { "isCompleted": true, "count": 5 }
+      "expected": {
+        "isCompleted": true,
+        "count": 5
+      }
     },
     {
       "name": "end-bound-pre-windowStart-still-excluded-with-both-bounds",
-      "task": { "type": "counting", "maxCount": 5 },
+      "task": {
+        "type": "counting",
+        "maxCount": 5
+      },
       "windowStart": "2026-07-01T00:00:00.000Z",
       "windowEnd": "2026-07-07T23:59:59.999Z",
       "events": [
-        { "kind": "increment", "delta": 4, "occurredAt": "2026-06-30T23:59:59.999Z", "isDeleted": false },
-        { "kind": "increment", "delta": 2, "occurredAt": "2026-07-03T12:00:00.000Z", "isDeleted": false },
-        { "kind": "increment", "delta": 1, "occurredAt": "2026-07-08T00:00:00.000Z", "isDeleted": false }
+        {
+          "kind": "increment",
+          "delta": 4,
+          "occurredAt": "2026-06-30T23:59:59.999Z",
+          "isDeleted": false
+        },
+        {
+          "kind": "increment",
+          "delta": 2,
+          "occurredAt": "2026-07-03T12:00:00.000Z",
+          "isDeleted": false
+        },
+        {
+          "kind": "increment",
+          "delta": 1,
+          "occurredAt": "2026-07-08T00:00:00.000Z",
+          "isDeleted": false
+        }
       ],
-      "expected": { "isCompleted": false, "count": 2 }
+      "expected": {
+        "isCompleted": false,
+        "count": 2
+      }
     },
     {
       "name": "continuous-drift-completes",
-      "task": { "type": "counting", "maxCount": 0.3, "countKind": "continuous" },
+      "task": {
+        "type": "counting",
+        "maxCount": 0.3,
+        "countKind": "continuous"
+      },
       "windowStart": "2026-07-01T00:00:00.000Z",
       "events": [
-        { "kind": "increment", "delta": 0.1, "occurredAt": "2026-07-02T12:00:00.000Z", "isDeleted": false },
-        { "kind": "increment", "delta": 0.2, "occurredAt": "2026-07-03T12:00:00.000Z", "isDeleted": false }
+        {
+          "kind": "increment",
+          "delta": 0.1,
+          "occurredAt": "2026-07-02T12:00:00.000Z",
+          "isDeleted": false
+        },
+        {
+          "kind": "increment",
+          "delta": 0.2,
+          "occurredAt": "2026-07-03T12:00:00.000Z",
+          "isDeleted": false
+        }
       ],
-      "expected": { "isCompleted": true, "count": 0.3 }
+      "expected": {
+        "isCompleted": true,
+        "count": 0.3
+      }
     },
     {
       "name": "continuous-fractional-sum",
-      "task": { "type": "counting", "maxCount": 26.2, "countKind": "continuous" },
+      "task": {
+        "type": "counting",
+        "maxCount": 26.2,
+        "countKind": "continuous"
+      },
       "windowStart": "2026-07-01T00:00:00.000Z",
       "events": [
-        { "kind": "increment", "delta": 3.1, "occurredAt": "2026-07-02T12:00:00.000Z", "isDeleted": false },
-        { "kind": "increment", "delta": 5, "occurredAt": "2026-07-03T12:00:00.000Z", "isDeleted": false },
-        { "kind": "increment", "delta": 0.25, "occurredAt": "2026-07-04T12:00:00.000Z", "isDeleted": false }
+        {
+          "kind": "increment",
+          "delta": 3.1,
+          "occurredAt": "2026-07-02T12:00:00.000Z",
+          "isDeleted": false
+        },
+        {
+          "kind": "increment",
+          "delta": 5,
+          "occurredAt": "2026-07-03T12:00:00.000Z",
+          "isDeleted": false
+        },
+        {
+          "kind": "increment",
+          "delta": 0.25,
+          "occurredAt": "2026-07-04T12:00:00.000Z",
+          "isDeleted": false
+        }
       ],
-      "expected": { "isCompleted": false, "count": 8.35 }
+      "expected": {
+        "isCompleted": false,
+        "count": 8.35
+      }
     },
     {
       "name": "discrete-fractional-history-rounds",
-      "task": { "type": "counting", "maxCount": 1 },
+      "task": {
+        "type": "counting",
+        "maxCount": 1
+      },
       "windowStart": "2026-07-01T00:00:00.000Z",
       "events": [
-        { "kind": "increment", "delta": 0.4, "occurredAt": "2026-07-02T12:00:00.000Z", "isDeleted": false },
-        { "kind": "increment", "delta": 0.4, "occurredAt": "2026-07-03T12:00:00.000Z", "isDeleted": false },
-        { "kind": "increment", "delta": 0.4, "occurredAt": "2026-07-04T12:00:00.000Z", "isDeleted": false }
+        {
+          "kind": "increment",
+          "delta": 0.4,
+          "occurredAt": "2026-07-02T12:00:00.000Z",
+          "isDeleted": false
+        },
+        {
+          "kind": "increment",
+          "delta": 0.4,
+          "occurredAt": "2026-07-03T12:00:00.000Z",
+          "isDeleted": false
+        },
+        {
+          "kind": "increment",
+          "delta": 0.4,
+          "occurredAt": "2026-07-04T12:00:00.000Z",
+          "isDeleted": false
+        }
       ],
-      "expected": { "isCompleted": true, "count": 1 }
+      "expected": {
+        "isCompleted": true,
+        "count": 1
+      }
     },
     {
       "name": "continuous-same-history-exact",
-      "task": { "type": "counting", "maxCount": 1, "countKind": "continuous" },
+      "task": {
+        "type": "counting",
+        "maxCount": 1,
+        "countKind": "continuous"
+      },
       "windowStart": "2026-07-01T00:00:00.000Z",
       "events": [
-        { "kind": "increment", "delta": 0.4, "occurredAt": "2026-07-02T12:00:00.000Z", "isDeleted": false },
-        { "kind": "increment", "delta": 0.4, "occurredAt": "2026-07-03T12:00:00.000Z", "isDeleted": false },
-        { "kind": "increment", "delta": 0.4, "occurredAt": "2026-07-04T12:00:00.000Z", "isDeleted": false }
+        {
+          "kind": "increment",
+          "delta": 0.4,
+          "occurredAt": "2026-07-02T12:00:00.000Z",
+          "isDeleted": false
+        },
+        {
+          "kind": "increment",
+          "delta": 0.4,
+          "occurredAt": "2026-07-03T12:00:00.000Z",
+          "isDeleted": false
+        },
+        {
+          "kind": "increment",
+          "delta": 0.4,
+          "occurredAt": "2026-07-04T12:00:00.000Z",
+          "isDeleted": false
+        }
       ],
-      "expected": { "isCompleted": true, "count": 1.2 }
+      "expected": {
+        "isCompleted": true,
+        "count": 1.2
+      }
     },
     {
       "name": "continuous-overshoot-preserved",
-      "task": { "type": "counting", "maxCount": 26.2, "countKind": "continuous" },
+      "task": {
+        "type": "counting",
+        "maxCount": 26.2,
+        "countKind": "continuous"
+      },
       "windowStart": "2026-07-01T00:00:00.000Z",
       "events": [
-        { "kind": "increment", "delta": 28.4, "occurredAt": "2026-07-02T12:00:00.000Z", "isDeleted": false }
+        {
+          "kind": "increment",
+          "delta": 28.4,
+          "occurredAt": "2026-07-02T12:00:00.000Z",
+          "isDeleted": false
+        }
       ],
-      "expected": { "isCompleted": true, "count": 28.4 }
+      "expected": {
+        "isCompleted": true,
+        "count": 28.4
+      }
     }
   ],
-  "_linkedCounterDisplayNote": "resolveLinkedCounterDisplay (taskEvents.ts) <-> Swift resolveLinkedCounterDisplay (Helpers/TaskEvents.swift): what a LINKED counting square/row shows. Window-stamped rows (sharedCounterId + startDate + createdInWizard, COUNTING) with an event map = the ROOT's in-window increment sum ([startDate, endDate] inclusive, optional sealedAt bound) for BOTH count and completion; any other linked row WITH an event map AND a `window` (the placing board's { startDate, endDate }, 4th argument - owner rule 2026-10-01) = the ROOT's increment sum inside THAT window (optional sealedAt bound), the row's own non-wizard-born stamp ignored; no event map, or no window for a non-window-stamped row = currentCount - baseline (low-clamped) + the latch. eventsByTaskId null = no map; `window` absent or null = no window. Consumed by packages/shared/tests/algorithms/taskEvents.test.ts and apps/ios/OYBCTests/TaskEventVectorTests.swift.",
+  "_linkedCounterDisplayNote": "resolveLinkedCounterDisplay (placementParams.ts, slice 2c) <-> Swift PlacementParams.resolveLinkedCounterDisplay: what a LINKED counting square/row shows — a thin wrapper over resolveSquareState. `window` given (the placing board's {startDate,endDate}) = the ROOT's increment sum inside THAT window, whatever the row's own stamp; no window + window-stamped row = its own stamp; no window + any other linked row = contextlessCounterState (the root's lifetime sum). `sealedAt` bounds every event first (boundWindowContextAtSeal). Optional `placement` {targetOverride,targetKind,childTargets,titleOverride} applies the square's parameters. No event map = no events (0, incomplete). currentCount − baseline and the latch are never read. Consumed by packages/shared/tests/algorithms/taskEvents.test.ts and apps/ios/OYBCTests/TaskEventVectorTests.swift.",
   "linkedCounterDisplay": [
     {
-      "name": "window-stamped-in-window-sum-not-lifetime-total",
-      "note": "Owner repro shape: root +20 lifetime, only +3 inside the row's window; the propagated latch says true. Shows 3 and is incomplete (old display: 20 / latch true).",
-      "task": {"type": "counting", "maxCount": 20, "sharedCounterId": "root-1", "startDate": "2026-09-14T00:00:00.000Z", "endDate": "2026-09-20T23:59:59.999Z", "createdInWizard": true, "baseline": 0, "currentCount": 20, "isCompleted": true},
-      "eventsByTaskId": { "root-1": [ { "kind": "increment", "delta": 3, "occurredAt": "2026-09-16T18:00:00.000Z", "isDeleted": false }, { "kind": "increment", "delta": 17, "occurredAt": "2026-09-23T12:00:00.000Z", "isDeleted": false } ] },
+      "name": "linked-in-window-sum-not-lifetime-total",
+      "note": "Owner repro shape: root +20 lifetime, only +3 inside the row's window; the propagated latch says true. Shows 3 and is incomplete (old display: 20 / latch true). The window is passed as the board window (slice 5: a row's own stamp is not read).",
+      "task": {
+        "type": "counting",
+        "maxCount": 20,
+        "sharedCounterId": "root-1",
+        "baseline": 0,
+        "currentCount": 20,
+        "isCompleted": true
+      },
+      "eventsByTaskId": {
+        "root-1": [
+          {
+            "kind": "increment",
+            "delta": 3,
+            "occurredAt": "2026-09-16T18:00:00.000Z",
+            "isDeleted": false
+          },
+          {
+            "kind": "increment",
+            "delta": 17,
+            "occurredAt": "2026-09-23T12:00:00.000Z",
+            "isDeleted": false
+          }
+        ]
+      },
       "sealedAt": null,
-      "expected": { "displayed": 3, "isCompleted": false }
+      "expected": {
+        "displayed": 3,
+        "isCompleted": false
+      },
+      "window": {
+        "startDate": "2026-09-14T00:00:00.000Z",
+        "endDate": "2026-09-20T23:59:59.999Z"
+      }
     },
     {
-      "name": "window-stamped-post-endDate-events-ignored",
-      "note": "Every root event lands after endDate: 0, incomplete, despite the latch and currentCount - baseline = 5.",
-      "task": {"type": "counting", "maxCount": 5, "sharedCounterId": "root-1", "startDate": "2026-09-14T00:00:00.000Z", "endDate": "2026-09-20T23:59:59.999Z", "createdInWizard": true, "baseline": 10, "currentCount": 15, "isCompleted": true},
-      "eventsByTaskId": { "root-1": [ { "kind": "increment", "delta": 2, "occurredAt": "2026-09-21T00:00:00.000Z", "isDeleted": false }, { "kind": "increment", "delta": 3, "occurredAt": "2026-09-22T09:00:00.000Z", "isDeleted": false } ] },
+      "name": "linked-post-endDate-events-ignored",
+      "note": "Every root event lands after endDate: 0, incomplete, despite the latch and currentCount - baseline = 5. The window is passed as the board window (slice 5: a row's own stamp is not read).",
+      "task": {
+        "type": "counting",
+        "maxCount": 5,
+        "sharedCounterId": "root-1",
+        "baseline": 10,
+        "currentCount": 15,
+        "isCompleted": true
+      },
+      "eventsByTaskId": {
+        "root-1": [
+          {
+            "kind": "increment",
+            "delta": 2,
+            "occurredAt": "2026-09-21T00:00:00.000Z",
+            "isDeleted": false
+          },
+          {
+            "kind": "increment",
+            "delta": 3,
+            "occurredAt": "2026-09-22T09:00:00.000Z",
+            "isDeleted": false
+          }
+        ]
+      },
       "sealedAt": null,
-      "expected": { "displayed": 0, "isCompleted": false }
+      "expected": {
+        "displayed": 0,
+        "isCompleted": false
+      },
+      "window": {
+        "startDate": "2026-09-14T00:00:00.000Z",
+        "endDate": "2026-09-20T23:59:59.999Z"
+      }
     },
     {
-      "name": "window-stamped-pre-startDate-events-ignored",
-      "note": "A +10 before startDate is excluded; +4 in window < 5.",
-      "task": {"type": "counting", "maxCount": 5, "sharedCounterId": "root-1", "startDate": "2026-09-14T00:00:00.000Z", "endDate": "2026-09-20T23:59:59.999Z", "createdInWizard": true, "baseline": 0, "currentCount": 0, "isCompleted": false},
-      "eventsByTaskId": { "root-1": [ { "kind": "increment", "delta": 10, "occurredAt": "2026-09-13T23:59:59.999Z", "isDeleted": false }, { "kind": "increment", "delta": 4, "occurredAt": "2026-09-14T00:00:00.000Z", "isDeleted": false } ] },
+      "name": "linked-pre-startDate-events-ignored",
+      "note": "A +10 before startDate is excluded; +4 in window < 5. The window is passed as the board window (slice 5: a row's own stamp is not read).",
+      "task": {
+        "type": "counting",
+        "maxCount": 5,
+        "sharedCounterId": "root-1",
+        "baseline": 0,
+        "currentCount": 0,
+        "isCompleted": false
+      },
+      "eventsByTaskId": {
+        "root-1": [
+          {
+            "kind": "increment",
+            "delta": 10,
+            "occurredAt": "2026-09-13T23:59:59.999Z",
+            "isDeleted": false
+          },
+          {
+            "kind": "increment",
+            "delta": 4,
+            "occurredAt": "2026-09-14T00:00:00.000Z",
+            "isDeleted": false
+          }
+        ]
+      },
       "sealedAt": null,
-      "expected": { "displayed": 4, "isCompleted": false }
+      "expected": {
+        "displayed": 4,
+        "isCompleted": false
+      },
+      "window": {
+        "startDate": "2026-09-14T00:00:00.000Z",
+        "endDate": "2026-09-20T23:59:59.999Z"
+      }
     },
     {
-      "name": "window-stamped-overshoot-shown-not-clamped",
-      "note": "In-window 25 of 20: displayed 25 (never high-clamped), complete.",
-      "task": {"type": "counting", "maxCount": 20, "sharedCounterId": "root-1", "startDate": "2026-09-14T00:00:00.000Z", "endDate": "2026-09-20T23:59:59.999Z", "createdInWizard": true, "baseline": 0, "currentCount": 25, "isCompleted": false},
-      "eventsByTaskId": { "root-1": [ { "kind": "increment", "delta": 20, "occurredAt": "2026-09-15T08:00:00.000Z", "isDeleted": false }, { "kind": "increment", "delta": 5, "occurredAt": "2026-09-20T23:59:59.999Z", "isDeleted": false } ] },
+      "name": "linked-overshoot-shown-not-clamped",
+      "note": "In-window 25 of 20: displayed 25 (never high-clamped), complete. The window is passed as the board window (slice 5: a row's own stamp is not read).",
+      "task": {
+        "type": "counting",
+        "maxCount": 20,
+        "sharedCounterId": "root-1",
+        "baseline": 0,
+        "currentCount": 25,
+        "isCompleted": false
+      },
+      "eventsByTaskId": {
+        "root-1": [
+          {
+            "kind": "increment",
+            "delta": 20,
+            "occurredAt": "2026-09-15T08:00:00.000Z",
+            "isDeleted": false
+          },
+          {
+            "kind": "increment",
+            "delta": 5,
+            "occurredAt": "2026-09-20T23:59:59.999Z",
+            "isDeleted": false
+          }
+        ]
+      },
       "sealedAt": null,
-      "expected": { "displayed": 25, "isCompleted": true }
+      "expected": {
+        "displayed": 25,
+        "isCompleted": true
+      },
+      "window": {
+        "startDate": "2026-09-14T00:00:00.000Z",
+        "endDate": "2026-09-20T23:59:59.999Z"
+      }
     },
     {
-      "name": "window-stamped-deleted-root-event-ignored",
-      "note": "A tombstoned in-window event is not counted.",
-      "task": {"type": "counting", "maxCount": 3, "sharedCounterId": "root-1", "startDate": "2026-09-14T00:00:00.000Z", "endDate": "2026-09-20T23:59:59.999Z", "createdInWizard": true, "baseline": 0, "currentCount": 0, "isCompleted": true},
-      "eventsByTaskId": { "root-1": [ { "kind": "increment", "delta": 2, "occurredAt": "2026-09-15T08:00:00.000Z", "isDeleted": false }, { "kind": "increment", "delta": 5, "occurredAt": "2026-09-16T08:00:00.000Z", "isDeleted": true } ] },
+      "name": "linked-deleted-root-event-ignored",
+      "note": "A tombstoned in-window event is not counted. The window is passed as the board window (slice 5: a row's own stamp is not read).",
+      "task": {
+        "type": "counting",
+        "maxCount": 3,
+        "sharedCounterId": "root-1",
+        "baseline": 0,
+        "currentCount": 0,
+        "isCompleted": true
+      },
+      "eventsByTaskId": {
+        "root-1": [
+          {
+            "kind": "increment",
+            "delta": 2,
+            "occurredAt": "2026-09-15T08:00:00.000Z",
+            "isDeleted": false
+          },
+          {
+            "kind": "increment",
+            "delta": 5,
+            "occurredAt": "2026-09-16T08:00:00.000Z",
+            "isDeleted": true
+          }
+        ]
+      },
       "sealedAt": null,
-      "expected": { "displayed": 2, "isCompleted": false }
+      "expected": {
+        "displayed": 2,
+        "isCompleted": false
+      },
+      "window": {
+        "startDate": "2026-09-14T00:00:00.000Z",
+        "endDate": "2026-09-20T23:59:59.999Z"
+      }
     },
     {
-      "name": "window-stamped-indefinite-row-bounded-by-sealedAt",
-      "note": "endDate null: only the sealedAt bound applies — +2 before the seal counts, +5 after does not.",
-      "task": {"type": "counting", "maxCount": 5, "sharedCounterId": "root-1", "startDate": "2026-09-14T00:00:00.000Z", "endDate": null, "createdInWizard": true, "baseline": 0, "currentCount": 7, "isCompleted": true},
-      "eventsByTaskId": { "root-1": [ { "kind": "increment", "delta": 2, "occurredAt": "2026-09-15T08:00:00.000Z", "isDeleted": false }, { "kind": "increment", "delta": 5, "occurredAt": "2026-09-22T09:00:00.000Z", "isDeleted": false } ] },
+      "name": "linked-indefinite-row-bounded-by-sealedAt",
+      "note": "endDate null: only the sealedAt bound applies — +2 before the seal counts, +5 after does not. The window is passed as the board window (slice 5: a row's own stamp is not read).",
+      "task": {
+        "type": "counting",
+        "maxCount": 5,
+        "sharedCounterId": "root-1",
+        "baseline": 0,
+        "currentCount": 7,
+        "isCompleted": true
+      },
+      "eventsByTaskId": {
+        "root-1": [
+          {
+            "kind": "increment",
+            "delta": 2,
+            "occurredAt": "2026-09-15T08:00:00.000Z",
+            "isDeleted": false
+          },
+          {
+            "kind": "increment",
+            "delta": 5,
+            "occurredAt": "2026-09-22T09:00:00.000Z",
+            "isDeleted": false
+          }
+        ]
+      },
       "sealedAt": "2026-09-22T03:00:00.000Z",
-      "expected": { "displayed": 2, "isCompleted": false }
+      "expected": {
+        "displayed": 2,
+        "isCompleted": false
+      },
+      "window": {
+        "startDate": "2026-09-14T00:00:00.000Z",
+        "endDate": null
+      }
     },
     {
-      "name": "window-stamped-no-root-events-zero",
-      "note": "The root has no events in the map: 0, incomplete (never the latch).",
-      "task": {"type": "counting", "maxCount": 1, "sharedCounterId": "root-1", "startDate": "2026-09-14T00:00:00.000Z", "endDate": "2026-09-20T23:59:59.999Z", "createdInWizard": true, "baseline": 0, "currentCount": 4, "isCompleted": true},
+      "name": "linked-no-root-events-zero",
+      "note": "The root has no events in the map: 0, incomplete (never the latch). The window is passed as the board window (slice 5: a row's own stamp is not read).",
+      "task": {
+        "type": "counting",
+        "maxCount": 1,
+        "sharedCounterId": "root-1",
+        "baseline": 0,
+        "currentCount": 4,
+        "isCompleted": true
+      },
       "eventsByTaskId": {},
       "sealedAt": null,
-      "expected": { "displayed": 0, "isCompleted": false }
+      "expected": {
+        "displayed": 0,
+        "isCompleted": false
+      },
+      "window": {
+        "startDate": "2026-09-14T00:00:00.000Z",
+        "endDate": "2026-09-20T23:59:59.999Z"
+      }
     },
     {
-      "name": "hub-linked-keeps-baseline-math-and-latch",
-      "note": "No startDate (hub-linked P5 member): currentCount - baseline for the count, the latch for completion, even with root events present.",
-      "task": {"type": "counting", "maxCount": 3, "sharedCounterId": "root-1", "startDate": null, "endDate": null, "createdInWizard": null, "baseline": 10, "currentCount": 14, "isCompleted": false},
-      "eventsByTaskId": { "root-1": [ { "kind": "increment", "delta": 40, "occurredAt": "2026-09-15T08:00:00.000Z", "isDeleted": false } ] },
+      "name": "hub-linked-without-window-reads-root-lifetime-events",
+      "note": "No startDate, no window (a context-less reader): the ROOT's lifetime increment sum, scored against the goal — never currentCount − baseline, never the latch (slice 2c).",
+      "task": {
+        "type": "counting",
+        "maxCount": 3,
+        "sharedCounterId": "root-1",
+        "startDate": null,
+        "endDate": null,
+        "createdInWizard": null,
+        "baseline": 10,
+        "currentCount": 14,
+        "isCompleted": false
+      },
+      "eventsByTaskId": {
+        "root-1": [
+          {
+            "kind": "increment",
+            "delta": 40,
+            "occurredAt": "2026-09-15T08:00:00.000Z",
+            "isDeleted": false
+          }
+        ]
+      },
       "sealedAt": null,
-      "expected": { "displayed": 4, "isCompleted": false }
+      "expected": {
+        "displayed": 40,
+        "isCompleted": true
+      }
     },
     {
-      "name": "not-wizard-born-linked-row-keeps-baseline-math",
-      "note": "A hand-linked counter carrying a startDate but createdInWizard=false is not window-stamped: baseline math + latch.",
-      "task": {"type": "counting", "maxCount": 3, "sharedCounterId": "root-1", "startDate": "2026-09-14T00:00:00.000Z", "endDate": "2026-09-20T23:59:59.999Z", "createdInWizard": false, "baseline": 1, "currentCount": 6, "isCompleted": true},
-      "eventsByTaskId": { "root-1": [ { "kind": "increment", "delta": 1, "occurredAt": "2026-09-15T08:00:00.000Z", "isDeleted": false } ] },
+      "name": "not-wizard-born-linked-row-without-window-reads-root-lifetime-not-its-stamp",
+      "note": "A hand-linked counter with a startDate but createdInWizard=false is not window-stamped: with no window it reads the root's lifetime events (its stamp and latch are ignored).",
+      "task": {
+        "type": "counting",
+        "maxCount": 3,
+        "sharedCounterId": "root-1",
+        "startDate": "2026-09-14T00:00:00.000Z",
+        "endDate": "2026-09-20T23:59:59.999Z",
+        "createdInWizard": false,
+        "baseline": 1,
+        "currentCount": 6,
+        "isCompleted": true
+      },
+      "eventsByTaskId": {
+        "root-1": [
+          {
+            "kind": "increment",
+            "delta": 1,
+            "occurredAt": "2026-09-15T08:00:00.000Z",
+            "isDeleted": false
+          }
+        ]
+      },
       "sealedAt": null,
-      "expected": { "displayed": 5, "isCompleted": true }
+      "expected": {
+        "displayed": 1,
+        "isCompleted": false
+      }
     },
     {
-      "name": "window-stamped-without-event-map-falls-back-to-baseline-math",
-      "note": "No event map (lifetime reader): baseline math + latch, like the kernel's context-less fallback.",
-      "task": {"type": "counting", "maxCount": 3, "sharedCounterId": "root-1", "startDate": "2026-09-14T00:00:00.000Z", "endDate": "2026-09-20T23:59:59.999Z", "createdInWizard": true, "baseline": 2, "currentCount": 9, "isCompleted": true},
+      "name": "linked-without-event-map-reads-no-events",
+      "note": "No event map = no events: 0 and incomplete. Baseline maths and the latch are retired (slice 2c); callers must supply events. The window is passed as the board window (slice 5: a row's own stamp is not read).",
+      "task": {
+        "type": "counting",
+        "maxCount": 3,
+        "sharedCounterId": "root-1",
+        "baseline": 2,
+        "currentCount": 9,
+        "isCompleted": true
+      },
       "eventsByTaskId": null,
       "sealedAt": null,
-      "expected": { "displayed": 7, "isCompleted": true }
+      "expected": {
+        "displayed": 0,
+        "isCompleted": false
+      },
+      "window": {
+        "startDate": "2026-09-14T00:00:00.000Z",
+        "endDate": "2026-09-20T23:59:59.999Z"
+      }
     },
     {
       "name": "hub-linked-with-board-window-sums-root-inside-that-window-not-lifetime-math",
       "note": "Owner rule 2026-10-01: a hub-linked row rendered ON a board reads the ROOT's increments inside the BOARD's window (+2 on Sep 16); the +4 before and +3 after fall out. Old display: currentCount - baseline = 5, latch true.",
-      "task": {"type": "counting", "maxCount": 5, "sharedCounterId": "root-1", "startDate": null, "endDate": null, "createdInWizard": null, "baseline": 10, "currentCount": 15, "isCompleted": true},
-      "eventsByTaskId": { "root-1": [{ "kind": "increment", "delta": 4, "occurredAt": "2026-09-10T09:00:00.000Z", "isDeleted": false }, { "kind": "increment", "delta": 2, "occurredAt": "2026-09-16T18:00:00.000Z", "isDeleted": false }, { "kind": "increment", "delta": 3, "occurredAt": "2026-09-23T12:00:00.000Z", "isDeleted": false }] },
+      "task": {
+        "type": "counting",
+        "maxCount": 5,
+        "sharedCounterId": "root-1",
+        "startDate": null,
+        "endDate": null,
+        "createdInWizard": null,
+        "baseline": 10,
+        "currentCount": 15,
+        "isCompleted": true
+      },
+      "eventsByTaskId": {
+        "root-1": [
+          {
+            "kind": "increment",
+            "delta": 4,
+            "occurredAt": "2026-09-10T09:00:00.000Z",
+            "isDeleted": false
+          },
+          {
+            "kind": "increment",
+            "delta": 2,
+            "occurredAt": "2026-09-16T18:00:00.000Z",
+            "isDeleted": false
+          },
+          {
+            "kind": "increment",
+            "delta": 3,
+            "occurredAt": "2026-09-23T12:00:00.000Z",
+            "isDeleted": false
+          }
+        ]
+      },
       "sealedAt": null,
-      "window": { "startDate": "2026-09-14T00:00:00.000Z", "endDate": "2026-09-20T23:59:59.999Z" },
-      "expected": { "displayed": 2, "isCompleted": false }
+      "window": {
+        "startDate": "2026-09-14T00:00:00.000Z",
+        "endDate": "2026-09-20T23:59:59.999Z"
+      },
+      "expected": {
+        "displayed": 2,
+        "isCompleted": false
+      }
     },
     {
       "name": "hub-linked-with-board-window-reaches-goal-latch-false-ignored",
       "note": "The latch says false and currentCount - baseline = 0, but the in-window root sum meets the goal: complete.",
-      "task": {"type": "counting", "maxCount": 2, "sharedCounterId": "root-1", "startDate": null, "endDate": null, "createdInWizard": null, "baseline": 15, "currentCount": 15, "isCompleted": false},
-      "eventsByTaskId": { "root-1": [{ "kind": "increment", "delta": 2, "occurredAt": "2026-09-16T18:00:00.000Z", "isDeleted": false }] },
+      "task": {
+        "type": "counting",
+        "maxCount": 2,
+        "sharedCounterId": "root-1",
+        "startDate": null,
+        "endDate": null,
+        "createdInWizard": null,
+        "baseline": 15,
+        "currentCount": 15,
+        "isCompleted": false
+      },
+      "eventsByTaskId": {
+        "root-1": [
+          {
+            "kind": "increment",
+            "delta": 2,
+            "occurredAt": "2026-09-16T18:00:00.000Z",
+            "isDeleted": false
+          }
+        ]
+      },
       "sealedAt": null,
-      "window": { "startDate": "2026-09-14T00:00:00.000Z", "endDate": "2026-09-20T23:59:59.999Z" },
-      "expected": { "displayed": 2, "isCompleted": true }
+      "window": {
+        "startDate": "2026-09-14T00:00:00.000Z",
+        "endDate": "2026-09-20T23:59:59.999Z"
+      },
+      "expected": {
+        "displayed": 2,
+        "isCompleted": true
+      }
     },
     {
       "name": "hub-linked-with-indefinite-board-window-bounded-by-sealedAt",
       "note": "The board window is open-ended (endDate null) and the board is sealed Sep 18: the Sep 19 root log is dropped by the seal bound.",
-      "task": {"type": "counting", "maxCount": 5, "sharedCounterId": "root-1", "startDate": null, "endDate": null, "createdInWizard": null, "baseline": 10, "currentCount": 15, "isCompleted": true},
-      "eventsByTaskId": { "root-1": [{ "kind": "increment", "delta": 2, "occurredAt": "2026-09-16T18:00:00.000Z", "isDeleted": false }, { "kind": "increment", "delta": 3, "occurredAt": "2026-09-19T12:00:00.000Z", "isDeleted": false }] },
+      "task": {
+        "type": "counting",
+        "maxCount": 5,
+        "sharedCounterId": "root-1",
+        "startDate": null,
+        "endDate": null,
+        "createdInWizard": null,
+        "baseline": 10,
+        "currentCount": 15,
+        "isCompleted": true
+      },
+      "eventsByTaskId": {
+        "root-1": [
+          {
+            "kind": "increment",
+            "delta": 2,
+            "occurredAt": "2026-09-16T18:00:00.000Z",
+            "isDeleted": false
+          },
+          {
+            "kind": "increment",
+            "delta": 3,
+            "occurredAt": "2026-09-19T12:00:00.000Z",
+            "isDeleted": false
+          }
+        ]
+      },
       "sealedAt": "2026-09-18T00:00:00.000Z",
-      "window": { "startDate": "2026-09-14T00:00:00.000Z", "endDate": null },
-      "expected": { "displayed": 2, "isCompleted": false }
+      "window": {
+        "startDate": "2026-09-14T00:00:00.000Z",
+        "endDate": null
+      },
+      "expected": {
+        "displayed": 2,
+        "isCompleted": false
+      }
     },
     {
       "name": "hub-linked-with-board-window-deleted-and-completion-root-events-ignored",
       "note": "A tombstoned increment and a completion event inside the window contribute nothing; signed deltas sum.",
-      "task": {"type": "counting", "maxCount": 3, "sharedCounterId": "root-1", "startDate": null, "endDate": null, "createdInWizard": null, "baseline": 10, "currentCount": 15, "isCompleted": true},
-      "eventsByTaskId": { "root-1": [{ "kind": "increment", "delta": 5, "occurredAt": "2026-09-15T10:00:00.000Z", "isDeleted": true }, { "kind": "completion", "delta": null, "occurredAt": "2026-09-15T11:00:00.000Z", "isDeleted": false }, { "kind": "increment", "delta": 4, "occurredAt": "2026-09-16T18:00:00.000Z", "isDeleted": false }, { "kind": "increment", "delta": -1, "occurredAt": "2026-09-17T18:00:00.000Z", "isDeleted": false }] },
+      "task": {
+        "type": "counting",
+        "maxCount": 3,
+        "sharedCounterId": "root-1",
+        "startDate": null,
+        "endDate": null,
+        "createdInWizard": null,
+        "baseline": 10,
+        "currentCount": 15,
+        "isCompleted": true
+      },
+      "eventsByTaskId": {
+        "root-1": [
+          {
+            "kind": "increment",
+            "delta": 5,
+            "occurredAt": "2026-09-15T10:00:00.000Z",
+            "isDeleted": true
+          },
+          {
+            "kind": "completion",
+            "delta": null,
+            "occurredAt": "2026-09-15T11:00:00.000Z",
+            "isDeleted": false
+          },
+          {
+            "kind": "increment",
+            "delta": 4,
+            "occurredAt": "2026-09-16T18:00:00.000Z",
+            "isDeleted": false
+          },
+          {
+            "kind": "increment",
+            "delta": -1,
+            "occurredAt": "2026-09-17T18:00:00.000Z",
+            "isDeleted": false
+          }
+        ]
+      },
       "sealedAt": null,
-      "window": { "startDate": "2026-09-14T00:00:00.000Z", "endDate": "2026-09-20T23:59:59.999Z" },
-      "expected": { "displayed": 3, "isCompleted": true }
+      "window": {
+        "startDate": "2026-09-14T00:00:00.000Z",
+        "endDate": "2026-09-20T23:59:59.999Z"
+      },
+      "expected": {
+        "displayed": 3,
+        "isCompleted": true
+      }
     },
     {
-      "name": "hub-linked-without-window-keeps-baseline-math-and-latch-even-with-events",
-      "note": "No board window (a library / lifetime reader): the event map alone does not switch a hub-linked row to windowed display.",
-      "task": {"type": "counting", "maxCount": 5, "sharedCounterId": "root-1", "startDate": null, "endDate": null, "createdInWizard": null, "baseline": 10, "currentCount": 15, "isCompleted": true},
-      "eventsByTaskId": { "root-1": [{ "kind": "increment", "delta": 2, "occurredAt": "2026-09-16T18:00:00.000Z", "isDeleted": false }] },
+      "name": "hub-linked-without-window-sums-root-lifetime-latch-ignored",
+      "note": "No board window (library / lifetime reader): the root's lifetime sum (2 < 5) — the latch (true) is not read.",
+      "task": {
+        "type": "counting",
+        "maxCount": 5,
+        "sharedCounterId": "root-1",
+        "startDate": null,
+        "endDate": null,
+        "createdInWizard": null,
+        "baseline": 10,
+        "currentCount": 15,
+        "isCompleted": true
+      },
+      "eventsByTaskId": {
+        "root-1": [
+          {
+            "kind": "increment",
+            "delta": 2,
+            "occurredAt": "2026-09-16T18:00:00.000Z",
+            "isDeleted": false
+          }
+        ]
+      },
       "sealedAt": null,
       "window": null,
-      "expected": { "displayed": 5, "isCompleted": true }
+      "expected": {
+        "displayed": 2,
+        "isCompleted": false
+      }
     },
     {
       "name": "not-wizard-born-linked-row-with-board-window-reads-board-window-not-its-own-stamp",
       "note": "A linked row carrying a window but not createdInWizard is ordinary user data: on a board it reads the BOARD window (Sep 14-20 gives +1), never its own August stamp (+3).",
-      "task": {"type": "counting", "maxCount": 3, "sharedCounterId": "root-1", "startDate": "2026-08-01T00:00:00.000Z", "endDate": "2026-08-31T23:59:59.999Z", "createdInWizard": false, "baseline": 0, "currentCount": 4, "isCompleted": true},
-      "eventsByTaskId": { "root-1": [{ "kind": "increment", "delta": 3, "occurredAt": "2026-08-15T12:00:00.000Z", "isDeleted": false }, { "kind": "increment", "delta": 1, "occurredAt": "2026-09-16T18:00:00.000Z", "isDeleted": false }] },
+      "task": {
+        "type": "counting",
+        "maxCount": 3,
+        "sharedCounterId": "root-1",
+        "startDate": "2026-08-01T00:00:00.000Z",
+        "endDate": "2026-08-31T23:59:59.999Z",
+        "createdInWizard": false,
+        "baseline": 0,
+        "currentCount": 4,
+        "isCompleted": true
+      },
+      "eventsByTaskId": {
+        "root-1": [
+          {
+            "kind": "increment",
+            "delta": 3,
+            "occurredAt": "2026-08-15T12:00:00.000Z",
+            "isDeleted": false
+          },
+          {
+            "kind": "increment",
+            "delta": 1,
+            "occurredAt": "2026-09-16T18:00:00.000Z",
+            "isDeleted": false
+          }
+        ]
+      },
       "sealedAt": null,
-      "window": { "startDate": "2026-09-14T00:00:00.000Z", "endDate": "2026-09-20T23:59:59.999Z" },
-      "expected": { "displayed": 1, "isCompleted": false }
+      "window": {
+        "startDate": "2026-09-14T00:00:00.000Z",
+        "endDate": "2026-09-20T23:59:59.999Z"
+      },
+      "expected": {
+        "displayed": 1,
+        "isCompleted": false
+      }
     },
     {
-      "name": "window-stamped-row-ignores-a-passed-board-window-keeps-its-own-stamp",
-      "note": "A window-stamped row keeps its OWN stamped window (Sep 14-20 gives +3) even when a caller passes a different board window (October): the +9 in October does not count.",
-      "task": {"type": "counting", "maxCount": 5, "sharedCounterId": "root-1", "startDate": "2026-09-14T00:00:00.000Z", "endDate": "2026-09-20T23:59:59.999Z", "createdInWizard": true, "baseline": 0, "currentCount": 12, "isCompleted": true},
-      "eventsByTaskId": { "root-1": [{ "kind": "increment", "delta": 3, "occurredAt": "2026-09-16T18:00:00.000Z", "isDeleted": false }, { "kind": "increment", "delta": 9, "occurredAt": "2026-10-05T12:00:00.000Z", "isDeleted": false }] },
+      "name": "linked-row-reads-the-passed-board-window-not-its-own-stamp",
+      "note": "A linked row resolves over the board window a caller passes (October: the +9 counts, 9 >= 5); its stored Sep 14-20 stamp is never read (TASK_WINDOW_REWORK slice 5).",
+      "task": {
+        "type": "counting",
+        "maxCount": 5,
+        "sharedCounterId": "root-1",
+        "startDate": "2026-09-14T00:00:00.000Z",
+        "endDate": "2026-09-20T23:59:59.999Z",
+        "createdInWizard": true,
+        "baseline": 0,
+        "currentCount": 12,
+        "isCompleted": true
+      },
+      "eventsByTaskId": {
+        "root-1": [
+          {
+            "kind": "increment",
+            "delta": 3,
+            "occurredAt": "2026-09-16T18:00:00.000Z",
+            "isDeleted": false
+          },
+          {
+            "kind": "increment",
+            "delta": 9,
+            "occurredAt": "2026-10-05T12:00:00.000Z",
+            "isDeleted": false
+          }
+        ]
+      },
       "sealedAt": null,
-      "window": { "startDate": "2026-10-01T00:00:00.000Z", "endDate": "2026-10-31T23:59:59.999Z" },
-      "expected": { "displayed": 3, "isCompleted": false }
+      "window": {
+        "startDate": "2026-10-01T00:00:00.000Z",
+        "endDate": "2026-10-31T23:59:59.999Z"
+      },
+      "expected": {
+        "displayed": 9,
+        "isCompleted": true
+      }
+    },
+    {
+      "name": "linked-row-with-no-window-reads-the-root-lifetime-not-its-stamp",
+      "note": "No board window: the ROOT's lifetime (+3 +9 = 12 >= 5), never the row's own stamp (retired in slice 5).",
+      "task": {
+        "type": "counting",
+        "maxCount": 5,
+        "sharedCounterId": "root-1",
+        "startDate": "2026-09-14T00:00:00.000Z",
+        "endDate": "2026-09-20T23:59:59.999Z",
+        "createdInWizard": true,
+        "baseline": 0,
+        "currentCount": 12,
+        "isCompleted": true
+      },
+      "eventsByTaskId": {
+        "root-1": [
+          {
+            "kind": "increment",
+            "delta": 3,
+            "occurredAt": "2026-09-16T18:00:00.000Z",
+            "isDeleted": false
+          },
+          {
+            "kind": "increment",
+            "delta": 9,
+            "occurredAt": "2026-10-05T12:00:00.000Z",
+            "isDeleted": false
+          }
+        ]
+      },
+      "sealedAt": null,
+      "window": null,
+      "expected": {
+        "displayed": 12,
+        "isCompleted": true
+      }
+    },
+    {
+      "name": "goal-less-linked-row-with-window-shows-the-sum-but-is-never-complete",
+      "note": "One completion rule: no goal → never green, the count still shows.",
+      "task": {
+        "type": "counting",
+        "maxCount": null,
+        "sharedCounterId": "root-1",
+        "startDate": null,
+        "endDate": null,
+        "createdInWizard": null,
+        "baseline": 0,
+        "currentCount": 9,
+        "isCompleted": true
+      },
+      "eventsByTaskId": {
+        "root-1": [
+          {
+            "kind": "increment",
+            "delta": 3,
+            "occurredAt": "2026-09-16T18:00:00.000Z",
+            "isDeleted": false
+          }
+        ]
+      },
+      "sealedAt": null,
+      "window": {
+        "startDate": "2026-09-14T00:00:00.000Z",
+        "endDate": "2026-09-20T23:59:59.999Z"
+      },
+      "expected": {
+        "displayed": 3,
+        "isCompleted": false
+      }
+    },
+    {
+      "name": "placement-target-override-is-the-goal",
+      "note": "The square's placement goal (3) replaces the row's maxCount (10): 4 in window → complete.",
+      "task": {
+        "type": "counting",
+        "maxCount": 10,
+        "sharedCounterId": "root-1",
+        "startDate": null,
+        "endDate": null,
+        "createdInWizard": null,
+        "baseline": 0,
+        "currentCount": 0,
+        "isCompleted": false
+      },
+      "eventsByTaskId": {
+        "root-1": [
+          {
+            "kind": "increment",
+            "delta": 4,
+            "occurredAt": "2026-09-16T18:00:00.000Z",
+            "isDeleted": false
+          }
+        ]
+      },
+      "sealedAt": null,
+      "window": {
+        "startDate": "2026-09-14T00:00:00.000Z",
+        "endDate": "2026-09-20T23:59:59.999Z"
+      },
+      "placement": {
+        "targetOverride": 3,
+        "targetKind": "discrete",
+        "childTargets": null,
+        "titleOverride": null
+      },
+      "expected": {
+        "displayed": 4,
+        "isCompleted": true
+      }
+    },
+    {
+      "name": "placement-override-with-sealedAt-bound",
+      "note": "sealedAt drops the +5 after the seal; 2 < 3 → incomplete (the same bound the sealed re-derive applies).",
+      "task": {
+        "type": "counting",
+        "maxCount": 10,
+        "sharedCounterId": "root-1",
+        "startDate": null,
+        "endDate": null,
+        "createdInWizard": null,
+        "baseline": 0,
+        "currentCount": 0,
+        "isCompleted": false
+      },
+      "eventsByTaskId": {
+        "root-1": [
+          {
+            "kind": "increment",
+            "delta": 2,
+            "occurredAt": "2026-09-15T10:00:00.000Z",
+            "isDeleted": false
+          },
+          {
+            "kind": "increment",
+            "delta": 5,
+            "occurredAt": "2026-09-18T10:00:00.000Z",
+            "isDeleted": false
+          }
+        ]
+      },
+      "sealedAt": "2026-09-16T00:00:00.000Z",
+      "window": {
+        "startDate": "2026-09-14T00:00:00.000Z",
+        "endDate": null
+      },
+      "placement": {
+        "targetOverride": 3,
+        "targetKind": "discrete",
+        "childTargets": null,
+        "titleOverride": null
+      },
+      "expected": {
+        "displayed": 2,
+        "isCompleted": false
+      }
+    },
+    {
+      "name": "deleted-root-event-ignored-without-window",
+      "note": "A tombstoned increment never counts, in or out of a window.",
+      "task": {
+        "type": "counting",
+        "maxCount": 3,
+        "sharedCounterId": "root-1",
+        "startDate": null,
+        "endDate": null,
+        "createdInWizard": null,
+        "baseline": 0,
+        "currentCount": 5,
+        "isCompleted": true
+      },
+      "eventsByTaskId": {
+        "root-1": [
+          {
+            "kind": "increment",
+            "delta": 5,
+            "occurredAt": "2026-09-16T18:00:00.000Z",
+            "isDeleted": true
+          }
+        ]
+      },
+      "sealedAt": null,
+      "window": null,
+      "expected": {
+        "displayed": 0,
+        "isCompleted": false
+      }
     }
   ],
   "lateLogOccurredAt": [
     {
       "name": "open-window-stamps-now",
-      "board": { "endDate": "2026-09-20T23:59:59.999Z", "sealedAt": null },
+      "board": {
+        "endDate": "2026-09-20T23:59:59.999Z",
+        "sealedAt": null
+      },
       "nowIso": "2026-09-18T10:00:00.000Z",
       "expected": "now"
     },
     {
       "name": "no-endDate-indefinite-stamps-now",
-      "board": { "endDate": null, "sealedAt": null },
+      "board": {
+        "endDate": null,
+        "sealedAt": null
+      },
       "nowIso": "2026-09-18T10:00:00.000Z",
       "expected": "now"
     },
     {
       "name": "now-exactly-at-endDate-stamps-now",
-      "board": { "endDate": "2026-09-20T23:59:59.999Z", "sealedAt": null },
+      "board": {
+        "endDate": "2026-09-20T23:59:59.999Z",
+        "sealedAt": null
+      },
       "nowIso": "2026-09-20T23:59:59.999Z",
       "expected": "now"
     },
     {
       "name": "ended-unsealed-clamps-to-endDate",
-      "board": { "endDate": "2026-09-20T23:59:59.999Z", "sealedAt": null },
+      "board": {
+        "endDate": "2026-09-20T23:59:59.999Z",
+        "sealedAt": null
+      },
       "nowIso": "2026-09-21T00:04:00.000Z",
       "expected": "endDate"
     },
     {
       "name": "ended-unsealed-local-iso-endDate-clamps-to-same-instant-utc-encoded",
-      "board": { "endDate": "2026-09-20T23:59:59.999", "sealedAt": null },
+      "board": {
+        "endDate": "2026-09-20T23:59:59.999",
+        "sealedAt": null
+      },
       "nowIso": "2026-10-05T00:00:00.000Z",
       "expected": "endDate"
     },
     {
       "name": "ended-sealed-still-clamps-to-endDate-sealedAt-ignored",
-      "board": { "endDate": "2026-09-20T23:59:59.999Z", "sealedAt": "2026-09-22T09:00:00.000Z" },
+      "board": {
+        "endDate": "2026-09-20T23:59:59.999Z",
+        "sealedAt": "2026-09-22T09:00:00.000Z"
+      },
       "nowIso": "2026-09-23T00:00:00.000Z",
       "expected": "endDate"
     },
     {
       "name": "unparseable-endDate-fails-open-stamps-now",
-      "board": { "endDate": "not-a-date", "sealedAt": null },
+      "board": {
+        "endDate": "not-a-date",
+        "sealedAt": null
+      },
       "nowIso": "2026-09-21T00:04:00.000Z",
       "expected": "now"
+    }
+  ],
+  "_contextlessCounterStateNote": "contextlessCounterState (taskEvents.ts, slice 2c) <-> Swift contextlessCounterState(task:eventsByTaskId:): a counting task with NO host window. A linked row sums its ROOT's live increment events over the root's lifetime; a root / plain counter its own; complete iff maxCount != null && sum >= maxCount; count finalised at the task's kind. Non-counting → {false, 0}. task {id,type,maxCount,sharedCounterId,countKind}; eventsByTaskId null = no map.",
+  "contextlessCounterState": [
+    {
+      "name": "linked-row-sums-root-lifetime-including-events-outside-its-stamp",
+      "note": "A window-stamped row read with no window: lifetime, not the stamp (3 + 17 = 20 ≥ 20).",
+      "task": {
+        "id": "t",
+        "type": "counting",
+        "maxCount": 20,
+        "sharedCounterId": "root-1",
+        "countKind": null
+      },
+      "eventsByTaskId": {
+        "root-1": [
+          {
+            "kind": "increment",
+            "delta": 3,
+            "occurredAt": "2026-09-16T18:00:00.000Z",
+            "isDeleted": false
+          },
+          {
+            "kind": "increment",
+            "delta": 17,
+            "occurredAt": "2026-09-23T12:00:00.000Z",
+            "isDeleted": false
+          }
+        ]
+      },
+      "expected": {
+        "isCompleted": true,
+        "count": 20
+      }
+    },
+    {
+      "name": "root-or-plain-counter-sums-its-own-events",
+      "note": "No sharedCounterId: own key.",
+      "task": {
+        "id": "t",
+        "type": "counting",
+        "maxCount": 5,
+        "sharedCounterId": null,
+        "countKind": null
+      },
+      "eventsByTaskId": {
+        "t": [
+          {
+            "kind": "increment",
+            "delta": 2,
+            "occurredAt": "2026-09-16T18:00:00.000Z",
+            "isDeleted": false
+          },
+          {
+            "kind": "increment",
+            "delta": 3,
+            "occurredAt": "2026-09-17T18:00:00.000Z",
+            "isDeleted": false
+          }
+        ]
+      },
+      "expected": {
+        "isCompleted": true,
+        "count": 5
+      }
+    },
+    {
+      "name": "goal-less-counter-is-never-complete",
+      "note": "maxCount null: the sum shows, completion is false.",
+      "task": {
+        "id": "t",
+        "type": "counting",
+        "maxCount": null,
+        "sharedCounterId": "root-1",
+        "countKind": null
+      },
+      "eventsByTaskId": {
+        "root-1": [
+          {
+            "kind": "increment",
+            "delta": 7,
+            "occurredAt": "2026-09-16T18:00:00.000Z",
+            "isDeleted": false
+          }
+        ]
+      },
+      "expected": {
+        "isCompleted": false,
+        "count": 7
+      }
+    },
+    {
+      "name": "deleted-and-completion-events-ignored",
+      "note": "Only live increments count.",
+      "task": {
+        "id": "t",
+        "type": "counting",
+        "maxCount": 2,
+        "sharedCounterId": "root-1",
+        "countKind": null
+      },
+      "eventsByTaskId": {
+        "root-1": [
+          {
+            "kind": "increment",
+            "delta": 5,
+            "occurredAt": "2026-09-16T18:00:00.000Z",
+            "isDeleted": true
+          },
+          {
+            "kind": "completion",
+            "delta": null,
+            "occurredAt": "2026-09-16T19:00:00.000Z",
+            "isDeleted": false
+          },
+          {
+            "kind": "increment",
+            "delta": 2,
+            "occurredAt": "2026-09-17T18:00:00.000Z",
+            "isDeleted": false
+          }
+        ]
+      },
+      "expected": {
+        "isCompleted": true,
+        "count": 2
+      }
+    },
+    {
+      "name": "missing-key-is-zero",
+      "note": "No events for the owner → 0, incomplete.",
+      "task": {
+        "id": "t",
+        "type": "counting",
+        "maxCount": 1,
+        "sharedCounterId": "root-1",
+        "countKind": null
+      },
+      "eventsByTaskId": {
+        "other": [
+          {
+            "kind": "increment",
+            "delta": 9,
+            "occurredAt": "2026-09-16T18:00:00.000Z",
+            "isDeleted": false
+          }
+        ]
+      },
+      "expected": {
+        "isCompleted": false,
+        "count": 0
+      }
+    },
+    {
+      "name": "null-event-map-is-zero",
+      "note": "No map at all → 0, incomplete.",
+      "task": {
+        "id": "t",
+        "type": "counting",
+        "maxCount": 1,
+        "sharedCounterId": "root-1",
+        "countKind": null
+      },
+      "eventsByTaskId": null,
+      "expected": {
+        "isCompleted": false,
+        "count": 0
+      }
+    },
+    {
+      "name": "non-counting-task-is-zero-incomplete",
+      "note": "Callers route NORMAL through resolveTaskWindowState.",
+      "task": {
+        "id": "t",
+        "type": "normal",
+        "maxCount": null,
+        "sharedCounterId": null,
+        "countKind": null
+      },
+      "eventsByTaskId": {
+        "t": [
+          {
+            "kind": "increment",
+            "delta": 1,
+            "occurredAt": "2026-09-16T18:00:00.000Z",
+            "isDeleted": false
+          }
+        ]
+      },
+      "expected": {
+        "isCompleted": false,
+        "count": 0
+      }
+    },
+    {
+      "name": "continuous-kind-sums-fractional-deltas",
+      "note": "Continuous kind: 1.25 + 1.3 = 2.55 ≥ 2.5.",
+      "task": {
+        "id": "t",
+        "type": "counting",
+        "maxCount": 2.5,
+        "sharedCounterId": "root-1",
+        "countKind": "continuous"
+      },
+      "eventsByTaskId": {
+        "root-1": [
+          {
+            "kind": "increment",
+            "delta": 1.25,
+            "occurredAt": "2026-09-16T18:00:00.000Z",
+            "isDeleted": false
+          },
+          {
+            "kind": "increment",
+            "delta": 1.3,
+            "occurredAt": "2026-09-17T18:00:00.000Z",
+            "isDeleted": false
+          }
+        ]
+      },
+      "expected": {
+        "isCompleted": true,
+        "count": 2.55
+      }
     }
   ]
 }

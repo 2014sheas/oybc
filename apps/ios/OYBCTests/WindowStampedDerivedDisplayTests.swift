@@ -134,18 +134,22 @@ final class WindowStampedDerivedDisplayTests: XCTestCase {
         func done(_ t: Task) -> Bool {
             wizardPreviewIsCompleted(
                 task: t, taskById: taskMap, childrenByCompound: [:],
-                eventsByTaskId: eventsByTaskId, windowStart: ws, windowEnd: nil
+                // The board's REAL window (slice 0: context window wins — an
+                // open-ended context would count the post-window log too).
+                eventsByTaskId: eventsByTaskId, windowStart: ws, windowEnd: we
             )
         }
         XCTAssertFalse(done(latched))
         XCTAssertTrue(done(met))
     }
 
-    func test_hubLinkedMember_keepsLatchAndBaselineMath() {
+    // Re-pinned (slice 2c): a window-less hub-linked row reads the root's
+    // lifetime EVENTS (20 logged), not `currentCount - baseline` / the latch.
+    func test_hubLinkedMember_readsTheRootsLifetimeEvents() {
         let hub = makeTask("hub", maxCount: 10, currentCount: 20, isCompleted: true,
                            windowStamped: false, baseline: 5)
         let shown = resolveLinkedCounterDisplay(task: hub, eventsByTaskId: eventsByTaskId)
-        XCTAssertEqual(shown.displayed, 15)
+        XCTAssertEqual(shown.displayed, 20)
         XCTAssertTrue(shown.isCompleted)
     }
 
@@ -175,7 +179,7 @@ final class WindowStampedDerivedDisplayTests: XCTestCase {
         let groups = database.fetchSharedCounterGroups(userId: "u1", showExpired: true).groups
         let group = try XCTUnwrap(groups.first { $0.counterId == rootId })
         let logged = Dictionary(uniqueKeysWithValues: group.tasks.map { ($0.taskId, $0.logged) })
-        XCTAssertEqual(logged, [rootId: 20, "latched": 3, "met": 3])
+        XCTAssertEqual(logged, ["latched": 3, "met": 3]) // the unplaced root has no card (slice 2b)
         XCTAssertEqual(group.tasks.first { $0.taskId == "latched" }?.met, false)
     }
 }

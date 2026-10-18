@@ -15,6 +15,12 @@ enum RelativeTime {
     }()
 
     private static let isoParser = ISO8601DateFormatter()
+    /// Stored timestamps carry milliseconds ("…:00.000Z"); the plain parser rejects them.
+    private static let fractionalParser: ISO8601DateFormatter = {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return f
+    }()
 
     /// Returns a human-readable relative string for the given ISO 8601 date
     /// string, or `nil` when the input is `nil` or unparseable.
@@ -24,7 +30,7 @@ enum RelativeTime {
     ///   - now: Reference clock (defaults to the live clock; snapshot tests pin it).
     /// - Returns: A string like "just now", "5m ago", "3d ago", or `nil`.
     static func formatRelativeTime(_ iso: String?, now: Date = Date()) -> String? {
-        guard let iso, let date = isoParser.date(from: iso) else { return nil }
+        guard let iso, let date = isoParser.date(from: iso) ?? fractionalParser.date(from: iso) else { return nil }
         return formatter.localizedString(for: date, relativeTo: now)
     }
 }

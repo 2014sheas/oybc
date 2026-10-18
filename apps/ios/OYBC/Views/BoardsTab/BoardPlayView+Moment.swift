@@ -45,7 +45,11 @@ extension BoardPlayView {
                     MomentIntent.startNewBoard()
                 }
             )
-            .ignoresSafeArea()
+            // The field bleeds edge to edge on its own (`field.ignoresSafeArea()`
+            // inside); the content keeps the safe-area insets so the kicker
+            // clears the status bar. The tab bar steps aside for the moment —
+            // its buttons sit above the home indicator, not behind the bar.
+            .toolbar(.hidden, for: .tabBar)
             .transition(.opacity)
             .zIndex(20)
         }
@@ -89,6 +93,17 @@ extension BoardPlayView {
         let pending = MomentPending(trigger: trigger, boardId: b.id, applyCount: applyCount, start: Date())
         momentPending = pending
         pollMoment(chain: pending.id)
+    }
+
+    /// Re-opens a moment the board already earned — the BINGOS card's tap —
+    /// straight away (no write to wait for). Ignored while one is pending or
+    /// open, like any other trigger.
+    func replayMoment(_ kind: MomentTrigger.Kind) {
+        guard momentPending == nil, MomentGate.shouldOpen(whileOpen: moment?.kind),
+              let replay = viewModel.momentReplay() else { return }
+        refreshStreaks()
+        let presentation = MomentPresentation(kind: kind, replay: replay, cells: viewModel.momentCellInputs(replay: replay))
+        withAnimation(.easeIn(duration: 0.3)) { moment = presentation }
     }
 
     private func pollMoment(chain: UUID) {

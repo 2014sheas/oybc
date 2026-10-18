@@ -96,9 +96,11 @@ describe('syncContract fixture', () => {
     ]);
   });
 
-  it('tasks clears endDate (heal, 2026-10-01), the four shared counter settings (cleared to default = absent) and the three counts-toward fields', () => {
+  it('tasks clears endDate (heal, 2026-10-01), timeframe + startDate (compound-member un-stamp, 2026-10-16), the four shared counter settings (cleared to default = absent) and the three counts-toward fields', () => {
     expect([...CLEARABLE_FIELDS_BY_COLLECTION.tasks]).toEqual([
       'endDate',
+      'timeframe',
+      'startDate',
       'counterName',
       'titleTemplateSingular',
       'titleTemplatePlural',
@@ -148,7 +150,7 @@ describe('syncContract fixture', () => {
     expect(clearableFieldsFor('boards')).toEqual([...CLEARABLE_BOARD_FIELDS]);
     expect(clearableFieldsFor('coreBoardDefaults')).toEqual(['defaultBoardSize', 'defaultCenterType']);
     expect(clearableFieldsFor('tasks')).toEqual([...CLEARABLE_FIELDS_BY_COLLECTION.tasks]);
-    expect(clearableFieldsFor('boardTasks')).toEqual([]);
+    expect(clearableFieldsFor('boardTasks')).toEqual(['targetOverride', 'targetKind', 'childTargets', 'titleOverride']);
     expect(clearableFieldsFor('not-a-collection')).toEqual([]);
   });
 });

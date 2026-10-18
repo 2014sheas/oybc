@@ -17,18 +17,8 @@ import {
   rollTarget,
   applyMemberRules,
   planDerivedTasks,
-  derivedTaskId,
-  derivedCompoundId,
-  derivedLinkId,
-  computeWindowBaseline,
-  isWindowStampedDerived,
-  isFrozenDerivedRow,
-  isFrozenRowReachedByEvent,
-  buildDerivedRows,
 } from '../../src/algorithms/memberRules';
-import type { BaselineEvent } from '../../src/algorithms/memberRules';
-import { TaskSchema, CompoundChildSchema } from '../../src/validation/schemas';
-import type { VaryLevel, BoardSource, Task } from '../../src/types';
+import type { VaryLevel, BoardSource } from '../../src/types';
 
 const V: any = JSON.parse(
   fs.readFileSync(path.join(__dirname, '..', 'fixtures', 'memberRuleVectors.json'), 'utf8')
@@ -120,6 +110,16 @@ describe('applyMemberRules', () => {
     expect(out[0].partOf).toEqual(v.expectedPartOf);
     expect(out[0].source.sourceId).toBe('s1');
   });
+
+  it('carries a board source\'s goalByTaskId through the expansion (slice 3a)', () => {
+    const out = applyMemberRules(
+      [{ source: src(1, 'board', {}), supplyTaskIds: ['r1'], goalByTaskId: { r1: 70 } }],
+      {},
+      { r1: { id: 'r1', type: TaskType.COUNTING } },
+    );
+    expect(out[0].goalByTaskId).toEqual({ r1: 70 });
+    expect(out[0].supplyTaskIds).toEqual(['r1']);
+  });
 });
 
 describe('planDerivedTasks', () => {
@@ -135,45 +135,13 @@ describe('planDerivedTasks', () => {
   const sourceWindowByTaskId = Object.fromEntries(
     Object.entries(P.sourceWindows).map(([id, tf]) => [id, win(tf as string)])
   );
-  const resolveId = (token: string): string =>
-    token.startsWith('derived:') || token.startsWith('derivedCompound:') ? P.idPins[token] : token;
-
-  it('pins the three id namespaces as literals', () => {
-    expect(derivedTaskId(P.boardId, 'r1')).toBe(P.idPins['derived:r1']);
-    expect(derivedTaskId(P.boardId, 'r2')).toBe(P.idPins['derived:r2']);
-    expect(derivedTaskId(P.boardId, 'c1')).toBe(P.idPins['derived:c1']);
-    expect(derivedTaskId(P.boardId, 'c3')).toBe(P.idPins['derived:c3']);
-    expect(derivedTaskId(P.boardId, 'a1')).toBe(P.idPins['derived:a1']);
-    expect(derivedTaskId(P.boardId, 'r3')).toBe(P.idPins['derived:r3']);
-    expect(derivedCompoundId(P.boardId, 'C2')).toBe(P.idPins['derivedCompound:C2']);
-    expect(derivedLinkId(P.idPins['derivedCompound:C2'], P.idPins['derived:c3'])).toBe(
-      P.idPins['link:derivedCompound:C2:derived:c3']
-    );
-    expect(derivedLinkId(P.idPins['derivedCompound:C2'], P.idPins['derived:c1'])).toBe(
-      P.idPins['link:derivedCompound:C2:derived:c1']
-    );
-    expect(derivedCompoundId(P.boardId, 'C')).toBe(P.idPins['derivedCompound:C']);
-    expect(derivedLinkId(P.idPins['derivedCompound:C'], P.idPins['derived:c1'])).toBe(
-      P.idPins['link:derivedCompound:C:derived:c1']
-    );
-    expect(derivedLinkId(P.idPins['derivedCompound:C'], 'c2')).toBe(
-      P.idPins['link:derivedCompound:C:c2']
-    );
-    expect(P.idPins['derived:r1']).toMatch(
-      /^[0-9a-f]{8}-[0-9a-f]{4}-5[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/
-    );
-  });
-
-  /** pinned id → its fixture token, so a link id can be looked up by token. */
-  const tokenOfId: Record<string, string> = Object.fromEntries(
-    Object.entries(P.idPins).map(([k, id]) => [id as string, k])
-  );
 
   it.each(P.vectors as any[])('$name', (v: any) => {
     const supplies = v.supplies.map((s: any, i: number) => ({
       source: src(i + 1, s.kind, s.memberRules),
       supplyTaskIds: s.supply,
       partOf: s.partOf ?? {},
+      ...(s.goalByTaskId ? { goalByTaskId: s.goalByTaskId } : {}),
     }));
     const seeded = makeSeededRng(v.seed);
     let rngCalls = 0;
@@ -186,276 +154,26 @@ describe('planDerivedTasks', () => {
       supplies,
       manualTaskIds: v.manual,
       manualTaskVary: v.manualTaskVary,
-      boardId: P.boardId,
       window: v.window ?? P.window,
       mode: v.mode,
       tasksById,
       childrenByCompoundId,
       sourceWindowByTaskId,
-      baselineByRootId: P.baselines,
       rng,
     });
 
     if (v.expectedRngCalls !== undefined) expect(rngCalls).toBe(v.expectedRngCalls);
-    expect(out.placementIds).toEqual(v.expected.placement.map(resolveId));
-    expect(
-      out.derivedTasks.map((d) => ({
-        root: d.rootTaskId,
-        sourceMember: d.sourceMemberId,
-        replaces: d.replacesId,
-        maxCount: d.maxCount,
-        countKind: d.countKind,
-        baseline: d.baseline,
-      }))
-    ).toEqual(
-      v.expected.derived.map((d: any) => ({
-        root: d.root,
-        sourceMember: d.sourceMember,
-        replaces: d.replaces,
-        maxCount: d.maxCount,
-        countKind: d.countKind ?? 'discrete',
-        baseline: d.baseline,
-      }))
-    );
-    const window = v.window ?? P.window;
-    for (const d of out.derivedTasks) {
-      expect(d.id).toBe(P.idPins[`derived:${d.rootTaskId}`]);
-      expect(d.timeframe).toBe(window.timeframe);
-      expect(d.startDate).toBe(window.startDate);
-      expect(d.endDate).toBe(window.endDate);
-    }
-    for (const titled of v.expected.derived.filter((d: any) => d.title !== undefined)) {
-      const d = out.derivedTasks.find((x) => x.rootTaskId === titled.root);
-      expect(d).toBeDefined();
-      expect([d!.title, d!.action, d!.unit]).toEqual([titled.title, titled.action, titled.unit]);
-    }
-    expect(
-      out.derivedCompounds.map((c) => ({
-        source: c.sourceCompoundId,
-        replaces: c.replacesId,
-        timeframe: c.timeframe,
-        startDate: c.startDate,
-        endDate: c.endDate,
-        children: c.children.map((k) => ({
-          child: k.childTaskId,
-          childIndex: k.childIndex,
-          isDerived: k.isDerived,
-        })),
-      }))
-    ).toEqual(
-      v.expected.compounds.map((c: any) => ({
-        source: c.source,
-        replaces: c.replaces,
-        timeframe: c.timeframe,
-        startDate: c.startDate,
-        endDate: c.endDate,
-        children: c.children.map((k: any) => ({ ...k, child: resolveId(k.child) })),
-      }))
-    );
-    for (const c of out.derivedCompounds) {
-      expect(c.id).toBe(P.idPins[`derivedCompound:${c.sourceCompoundId}`]);
-      for (const k of c.children) {
-        const childToken = tokenOfId[k.childTaskId] ?? k.childTaskId;
-        expect(k.linkId).toBe(P.idPins[`link:derivedCompound:${c.sourceCompoundId}:${childToken}`]);
+    // Slice 3b: the planner emits one placement per selected id — compared whole.
+    expect(out.placements).toHaveLength(v.selected.length);
+    expect(JSON.parse(JSON.stringify(out.placements))).toEqual(v.expected.placements);
+    // A placement's override always carries its kind, and never equals the placed task's own goal.
+    for (const p of out.placements) {
+      if (p.targetOverride !== undefined) {
+        expect(p.targetKind).toBeDefined();
+        expect(p.targetOverride).not.toBe(tasksById[p.taskId]?.maxCount);
+      } else {
+        expect(p.targetKind).toBeUndefined();
       }
-    }
-    for (const titledC of v.expected.compounds.filter((c: any) => c.title !== undefined)) {
-      const c = out.derivedCompounds.find((x) => x.sourceCompoundId === titledC.source);
-      expect(c).toBeDefined();
-      expect([c!.title, c!.operator, c!.threshold]).toEqual([
-        titledC.title,
-        titledC.operator,
-        titledC.threshold,
-      ]);
-    }
-  });
-});
-
-// ─── B2: baseline + row building ─────────────────────────────────────────────
-
-describe('computeWindowBaseline', () => {
-  it.each(V.windowBaseline as any[])('$name', (v: any) => {
-    expect(computeWindowBaseline(v.root, v.events as BaselineEvent[], v.boundary)).toBe(v.expected);
-  });
-});
-
-describe('isWindowStampedDerived', () => {
-  const full = {
-    sharedCounterId: '11111111-0000-4000-8000-000000000001',
-    startDate: '2026-09-18',
-    createdInWizard: true,
-  };
-
-  it('all three marks then true', () => {
-    expect(isWindowStampedDerived(full)).toBe(true);
-  });
-
-  it('no sharedCounterId then false (a plain window-scoped counting task)', () => {
-    expect(isWindowStampedDerived({ ...full, sharedCounterId: null })).toBe(false);
-  });
-
-  it('no startDate then false (an ordinary linked counter, not window-stamped)', () => {
-    expect(isWindowStampedDerived({ ...full, startDate: undefined })).toBe(false);
-  });
-
-  it('createdInWizard absent then false (a hand-made linked + timeboxed counter)', () => {
-    expect(isWindowStampedDerived({ ...full, createdInWizard: undefined })).toBe(false);
-  });
-
-  it('createdInWizard explicitly false then false', () => {
-    // The shape a Swift `Bool` (non-optional, defaulting to false) actually
-    // hits — distinct from the absent case above, same answer.
-    expect(isWindowStampedDerived({ ...full, createdInWizard: false })).toBe(false);
-  });
-});
-
-describe('isFrozenDerivedRow', () => {
-  it('fixture carries vectors (no silent skip)', () => {
-    expect((V.frozenDerivedRow as any[]).length).toBeGreaterThanOrEqual(4);
-  });
-  it.each(V.frozenDerivedRow as any[])('$name', (v: any) => {
-    const task = {
-      sharedCounterId: v.task.sharedCounterId,
-      startDate: v.task.startDate ?? undefined,
-      endDate: v.task.endDate ?? undefined,
-      createdInWizard: v.task.createdInWizard,
-    };
-    expect(isFrozenDerivedRow(task, v.now)).toBe(v.expected);
-  });
-});
-
-describe('isFrozenRowReachedByEvent', () => {
-  it('fixture carries vectors (no silent skip)', () => {
-    expect((V.frozenRowReachedByEvent as any[]).length).toBeGreaterThanOrEqual(5);
-  });
-  it.each(V.frozenRowReachedByEvent as any[])('$name', (v: any) => {
-    const task = {
-      sharedCounterId: v.task.sharedCounterId,
-      startDate: v.task.startDate ?? undefined,
-      endDate: v.task.endDate ?? undefined,
-      createdInWizard: v.task.createdInWizard,
-    };
-    expect(isFrozenRowReachedByEvent(task, v.occurredAt, v.now)).toBe(v.expected);
-  });
-});
-
-describe('buildDerivedRows — countKind (R14)', () => {
-  const draft = (countKind: 'continuous' | 'discrete') => ({
-    derivedTasks: [
-      {
-        id: 'd1', rootTaskId: 'r1', sourceMemberId: 'r1', replacesId: 'r1',
-        maxCount: 0.4, countKind, baseline: 0, title: 'Run 0.4 miles', action: 'Run', unit: 'miles',
-        timeframe: Timeframe.WEEKLY, startDate: '2026-09-14T00:00:00.000', endDate: '2026-09-20T23:59:59.999',
-      },
-    ],
-    derivedCompounds: [],
-    placementIds: ['d1'],
-  });
-  const roots = { r1: { id: 'r1', currentCount: 0.4 } as Task };
-
-  it('a continuous draft is born complete at 0.4 of 0.4 and stores its kind', () => {
-    const out = buildDerivedRows({ drafts: draft('continuous') as any, userId: 'u1', now: '2026-09-14T00:00:00.000Z', rootsById: roots, compoundsById: {} });
-    expect(out.tasks[0].countKind).toBe('continuous');
-    expect(out.tasks[0].isCompleted).toBe(true);
-  });
-
-  it('the same numbers as a discrete draft round the 0.4 away and stay incomplete', () => {
-    const out = buildDerivedRows({ drafts: draft('discrete') as any, userId: 'u1', now: '2026-09-14T00:00:00.000Z', rootsById: roots, compoundsById: {} });
-    expect(out.tasks[0].isCompleted).toBe(false);
-  });
-});
-
-describe('buildDerivedRows', () => {
-  const D = V.derivedRows;
-  /** Fixture id token to its uuid; anything not a token passes through. */
-  const id = (token: string): string => D.ids[token] ?? token;
-  /**
-   * Recursively swap every id token inside a fixture value for its uuid.
-   *
-   * CAUTION: this rewrites EVERY string, not just id-bearing keys — a future
-   * vector whose `title` / `unit` / `name` happened to equal a token ("C",
-   * "R1", "K2") would be silently rewritten into a uuid. Keep the tokens
-   * distinct from any literal text a vector asserts.
-   */
-  const resolve = (value: any): any => {
-    if (Array.isArray(value)) return value.map(resolve);
-    if (value && typeof value === 'object') {
-      return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, resolve(v)]));
-    }
-    return typeof value === 'string' ? id(value) : value;
-  };
-
-  const rootsById = Object.fromEntries(
-    Object.entries(D.roots).map(([token, r]: [string, any]) => [id(token), { id: id(token), ...r }])
-  );
-  const compoundsById = Object.fromEntries(
-    Object.entries(D.compounds).map(([token, c]: [string, any]) => [
-      id(token),
-      { ...c, id: id(token), threshold: c.threshold ?? undefined },
-    ])
-  );
-
-  it('pins this section own derived + link ids as literals', () => {
-    expect(derivedTaskId(D.boardId, id('R1'))).toBe(D.ids['derived:R1']);
-    expect(derivedTaskId(D.boardId, id('R2'))).toBe(D.ids['derived:R2']);
-    expect(derivedCompoundId(D.boardId, id('C'))).toBe(D.ids['derivedCompound:C']);
-    expect(derivedLinkId(D.ids['derivedCompound:C'], D.ids['derived:R1'])).toBe(
-      D.ids['link:derivedCompound:C:derived:R1']
-    );
-    expect(derivedLinkId(D.ids['derivedCompound:C'], id('K2'))).toBe(
-      D.ids['link:derivedCompound:C:K2']
-    );
-  });
-
-  it.each(D.vectors as any[])('$name', (v: any) => {
-    const drafts = resolve(v.drafts);
-    const expected = resolve(v.expected);
-    const out = buildDerivedRows({
-      drafts,
-      userId: D.userId,
-      now: D.now,
-      rootsById,
-      compoundsById,
-    });
-
-    // Order + length in full: derived counters in draft order, then compounds.
-    expect(out.tasks.map((t) => t.id)).toEqual(expected.tasks.map((t: any) => t.id));
-    expect(out.links.map((l) => l.id)).toEqual(expected.links.map((l: any) => l.id));
-
-    out.tasks.forEach((row, i) => {
-      const { expectedAbsent = [], ...fields } = expected.tasks[i];
-      expect(row).toMatchObject(fields);
-      for (const absent of expectedAbsent as string[]) {
-        expect(row[absent as keyof Task]).toBeUndefined();
-      }
-      // Completeness: a forgotten required field fails here, not silently.
-      const parsed = TaskSchema.safeParse(row);
-      if (!parsed.success) {
-        throw new Error(`TaskSchema rejected ${row.id}: ${JSON.stringify(parsed.error.issues)}`);
-      }
-      expect(parsed.success).toBe(true);
-    });
-
-    out.links.forEach((link, i) => {
-      expect(link).toMatchObject(expected.links[i]);
-      const parsed = CompoundChildSchema.safeParse(link);
-      if (!parsed.success) {
-        throw new Error(
-          `CompoundChildSchema rejected ${link.id}: ${JSON.stringify(parsed.error.issues)}`
-        );
-      }
-      expect(parsed.success).toBe(true);
-    });
-
-    // The derived counters keep the draft ids verbatim (the deterministic
-    // uuidv5 minted by planDerivedTasks is the row id — never re-minted here).
-    expect(out.tasks.slice(0, drafts.derivedTasks.length).map((t) => t.id)).toEqual(
-      drafts.derivedTasks.map((d: any) => d.id)
-    );
-    for (const link of out.links) {
-      const parent = out.tasks.find((t) => t.id === link.compoundTaskId);
-      expect(parent?.type).toBe(TaskType.COMPOUND);
-      expect([link.createdAt, link.updatedAt]).toEqual([D.now, D.now]);
     }
   });
 });

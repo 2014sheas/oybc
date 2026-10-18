@@ -65,6 +65,11 @@ async function readRule(page: Page): Promise<{ operator?: string; threshold?: nu
   }, PARENT_ID);
 }
 
+/** Task Detail's sub-task list lives under the Links segment. */
+async function openLinks(page: import('@playwright/test').Page): Promise<void> {
+  await page.getByRole('button', { name: 'Links' }).click();
+}
+
 test.describe('Task Detail — compound editing', () => {
   test.beforeEach(async ({ page }) => {
     await seedTask(page, { id: PARENT_ID, title: 'Workout routine', type: 'compound' });
@@ -88,8 +93,9 @@ test.describe('Task Detail — compound editing', () => {
     await openTab(page, 'Tasks');
     await page.getByRole('button', { name: /open workout routine details/i }).click();
     await expect(page).toHaveURL(new RegExp(`/tasks/${PARENT_ID}`));
-    await expect(page.getByRole('heading', { name: 'Subtasks (2)' })).toBeVisible();
-    await expect(page.getByText('All of 2', { exact: true })).toBeVisible();
+    await openLinks(page);
+    await expect(page.getByRole('heading', { name: 'Sub-tasks (2)' })).toBeVisible();
+    await expect(page.getByText('COMPOUND · ALL OF 2')).toBeVisible();
     // The old "edited from the board-creation wizard" hint is gone.
     await expect(page.getByText(/board-creation wizard/i)).toHaveCount(0);
 
@@ -111,16 +117,18 @@ test.describe('Task Detail — compound editing', () => {
     await sheet.getByRole('button', { name: /save changes/i }).click();
     await expect(sheet).toHaveCount(0);
 
-    await expect(page.getByRole('heading', { name: 'Subtasks (3)' })).toBeVisible();
+    await openLinks(page);
+    await expect(page.getByRole('heading', { name: 'Sub-tasks (3)' })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Open subtask: Third' })).toBeVisible();
-    await expect(page.getByText('2 of 3', { exact: true })).toBeVisible();
+    await expect(page.getByText('COMPOUND · 2 OF 3')).toBeVisible();
     expect(await readRule(page)).toMatchObject({ operator: 'M_OF_N', threshold: 2, version: 2 });
 
     // Persisted: a reload re-reads IndexedDB.
     await page.reload();
-    await expect(page.getByRole('heading', { name: 'Subtasks (3)' })).toBeVisible();
+    await openLinks(page);
+    await expect(page.getByRole('heading', { name: 'Sub-tasks (3)' })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Open subtask: Third' })).toBeVisible();
-    await expect(page.getByText('2 of 3', { exact: true })).toBeVisible();
+    await expect(page.getByText('COMPOUND · 2 OF 3')).toBeVisible();
 
     // Reopening the sheet shows the saved rule.
     await page.getByRole('button', { name: 'Edit', exact: true }).click();
@@ -131,7 +139,8 @@ test.describe('Task Detail — compound editing', () => {
 
   test('with the Counting chip on, the Goal / Counting row appears, gates Enter, and Save persists a counting child', async ({ page }) => {
     await page.goto(`/tasks/${PARENT_ID}?__oybc_test_bypass=1`);
-    await expect(page.getByRole('heading', { name: 'Subtasks (2)' })).toBeVisible();
+    await openLinks(page);
+    await expect(page.getByRole('heading', { name: 'Sub-tasks (2)' })).toBeVisible();
     await page.getByRole('button', { name: 'Edit', exact: true }).click();
     const sheet = page.getByRole('dialog', { name: 'Edit task' });
     await expect(sheet.getByLabel('Sub-task 2 title')).toHaveValue('Squats');
@@ -173,7 +182,8 @@ test.describe('Task Detail — compound editing', () => {
 
     await sheet.getByRole('button', { name: /save changes/i }).click();
     await expect(sheet).toHaveCount(0);
-    await expect(page.getByRole('heading', { name: 'Subtasks (3)' })).toBeVisible();
+    await openLinks(page);
+    await expect(page.getByRole('heading', { name: 'Sub-tasks (3)' })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Open subtask: Run 5 km' })).toBeVisible();
     expect(await readCountingChild(page, 'Run 5 km')).toEqual({ type: 'counting', action: 'Run', maxCount: 5, unit: 'km' });
   });
@@ -190,13 +200,15 @@ test.describe('Task Detail — compound editing', () => {
     await expect(sheet.getByRole('button', { name: /save changes/i })).toBeEnabled();
     await sheet.getByRole('button', { name: /save changes/i }).click();
     await expect(sheet).toHaveCount(0);
-    await expect(page.getByRole('heading', { name: 'Subtasks (1)' })).toBeVisible();
+    await openLinks(page);
+    await expect(page.getByRole('heading', { name: 'Sub-tasks (1)' })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Open subtask: Pushups' })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Open subtask: Squats' })).toHaveCount(0);
 
     // Persisted: a reload re-reads IndexedDB.
     await page.reload();
-    await expect(page.getByRole('heading', { name: 'Subtasks (1)' })).toBeVisible();
+    await openLinks(page);
+    await expect(page.getByRole('heading', { name: 'Sub-tasks (1)' })).toBeVisible();
 
     // Zero sub-tasks is still a block.
     await page.getByRole('button', { name: 'Edit', exact: true }).click();
@@ -225,7 +237,7 @@ test.describe('Task Detail — compound editing', () => {
       isDeleted: true,
     });
     await page.reload();
-    await expect(page.getByRole('heading', { name: 'Subtasks', exact: true })).toBeVisible();
+    await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
 
     await page.getByRole('button', { name: 'Edit', exact: true }).click();
     const sheet = page.getByRole('dialog', { name: 'Edit task' });
@@ -236,7 +248,7 @@ test.describe('Task Detail — compound editing', () => {
 
     await expect(sheet).toHaveCount(0);
     await expect(page.getByRole('heading', { name: 'Arm day' })).toBeVisible();
-    await expect(page.getByRole('heading', { name: 'Subtasks', exact: true })).toBeVisible();
+    await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
   });
 
   test('links an existing library task by typing and clicking its match', async ({ page }) => {
@@ -244,7 +256,8 @@ test.describe('Task Detail — compound editing', () => {
     // A counting task with no unit would fail save validation — never offered.
     await seedTask(page, { id: UNITLESS_ID, title: 'Read 10', type: 'counting', action: 'Read', maxCount: 10 });
     await page.goto(`/tasks/${PARENT_ID}?__oybc_test_bypass=1`);
-    await expect(page.getByRole('heading', { name: 'Subtasks (2)' })).toBeVisible();
+    await openLinks(page);
+    await expect(page.getByRole('heading', { name: 'Sub-tasks (2)' })).toBeVisible();
 
     await page.getByRole('button', { name: 'Edit', exact: true }).click();
     const sheet = page.getByRole('dialog', { name: 'Edit task' });
@@ -267,11 +280,13 @@ test.describe('Task Detail — compound editing', () => {
 
     await sheet.getByRole('button', { name: /save changes/i }).click();
     await expect(sheet).toHaveCount(0);
-    await expect(page.getByRole('heading', { name: 'Subtasks (3)' })).toBeVisible();
+    await openLinks(page);
+    await expect(page.getByRole('heading', { name: 'Sub-tasks (3)' })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Open subtask: Stretch' })).toBeVisible();
 
     await page.reload();
-    await expect(page.getByRole('heading', { name: 'Subtasks (3)' })).toBeVisible();
+    await openLinks(page);
+    await expect(page.getByRole('heading', { name: 'Sub-tasks (3)' })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Open subtask: Stretch' })).toBeVisible();
     await page.getByRole('button', { name: 'Open subtask: Stretch' }).click();
     await expect(page).toHaveURL(new RegExp(`/tasks/${LIBRARY_ID}`));
@@ -285,7 +300,8 @@ test.describe('Task Detail — compound editing', () => {
       maxCount: 12, isCounter: true, timeframeGoals: { yearly: 50 },
     });
     await page.goto(`/tasks/${PARENT_ID}?__oybc_test_bypass=1`);
-    await expect(page.getByRole('heading', { name: 'Subtasks (2)' })).toBeVisible();
+    await openLinks(page);
+    await expect(page.getByRole('heading', { name: 'Sub-tasks (2)' })).toBeVisible();
     await page.getByRole('button', { name: 'Edit', exact: true }).click();
     const sheet = page.getByRole('dialog', { name: 'Edit task' });
     await expect(sheet.getByLabel('Sub-task 2 title')).toHaveValue('Squats');
@@ -305,7 +321,8 @@ test.describe('Task Detail — compound editing', () => {
 
     await sheet.getByRole('button', { name: /save changes/i }).click();
     await expect(sheet).toHaveCount(0);
-    await expect(page.getByRole('heading', { name: 'Subtasks (3)' })).toBeVisible();
+    await openLinks(page);
+    await expect(page.getByRole('heading', { name: 'Sub-tasks (3)' })).toBeVisible();
     expect(await readCountingChild(page, 'Read 50 pages')).toEqual({ type: 'counting', action: 'Read', maxCount: 50, unit: 'pages' });
   });
 });

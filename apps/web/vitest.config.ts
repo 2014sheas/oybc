@@ -13,10 +13,15 @@ import path from 'path';
  * tests exercise the same module graph the app does and don't require a
  * prior `pnpm --filter @oybc/shared build`.
  *
- * Coverage (`pnpm test:coverage` → `vitest run --coverage`) is REPORTED, not
- * gated: `text-summary` prints to the log, `json-summary` lands in
- * `coverage/coverage-summary.json` for the CI artifact. There is deliberately
- * no `thresholds` block yet — see CLAUDE.md §Testing Standards.
+ * Coverage (`pnpm test:coverage` → `vitest run --coverage`) is GATED by a
+ * FLOOR (2026-10 CI audit): `thresholds` below is the 2026-10-17 measurement
+ * (61.15 / 57.66 / 52.07 / 62.74) rounded down to the whole percent, so a PR
+ * that drops coverage by more than that rounding margin fails CI. It stops
+ * the slide (67.6% statements on 2026-09-23 → 61.2%) without demanding new
+ * tests. Raise the floor as coverage grows; never lower it to pass a run.
+ * `text-summary` prints to the log, `json-summary` lands in
+ * `coverage/coverage-summary.json` for the CI artifact. See CLAUDE.md
+ * §Testing Standards.
  */
 export default defineConfig({
   resolve: {
@@ -36,6 +41,12 @@ export default defineConfig({
       exclude: ['src/**/*.test.ts', 'src/**/*.d.ts'],
       reporter: ['text-summary', 'json-summary'],
       reportsDirectory: './coverage',
+      thresholds: {
+        statements: 61,
+        branches: 57,
+        functions: 52,
+        lines: 62,
+      },
     },
   },
 });

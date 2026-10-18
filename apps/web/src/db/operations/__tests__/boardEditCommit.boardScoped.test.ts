@@ -121,11 +121,50 @@ describe('commitSquareEdits — board-scoped edits', () => {
     await db.boardTasks.add(placement('bt1', B1, 'T'));
     // Pool / library presence is not a placement (D2) — nothing else here.
 
-    await commitSquareEdits(input([cell({ cellId: 'bt1', taskId: 'T' })], [['T', { title: 'Read 20 pages' }]]));
+    await commitSquareEdits(input([cell({ cellId: 'bt1', taskId: 'T' })], [['T', { description: 'Chapter a day' }]]));
 
-    expect((await db.tasks.get('T'))!.title).toBe('Read 20 pages');
+    expect((await db.tasks.get('T'))!.description).toBe('Chapter a day');
     expect(await db.tasks.get(forkTaskId(B1, 'T'))).toBeUndefined();
     expect((await db.boardTasks.get('bt1'))!.taskId).toBe('T');
+  });
+
+  it('a rename is a PARAMETER: it lands on the placement, never forks, and the other board keeps the title', async () => {
+    await db.tasks.add(task('T', { title: 'Read' }));
+    await db.boardTasks.bulkAdd([placement('bt1', B1, 'T'), placement('bt2', B2, 'T')]);
+
+    await commitSquareEdits(input([cell({ cellId: 'bt1', taskId: 'T' })], [['T', { title: 'Read 20 pages' }]]));
+
+    const bt1 = (await db.boardTasks.get('bt1'))!;
+    expect(bt1.titleOverride).toBe('Read 20 pages');
+    expect(bt1.taskId).toBe('T');
+    expect(bt1.version).toBe(2);
+    expect((await db.boardTasks.get('bt2'))!.titleOverride).toBeUndefined();
+    const original = (await db.tasks.get('T'))!;
+    expect(original.title).toBe('Read');
+    expect(original.version).toBe(1);
+    expect(await db.tasks.get(forkTaskId(B1, 'T'))).toBeUndefined();
+    expect(await syncedIds('boardTasks')).toContain('bt1');
+  });
+
+  it('retyping the stored title clears an existing titleOverride (the field is absent on the row)', async () => {
+    await db.tasks.add(task('T', { title: 'Read' }));
+    await db.boardTasks.add({ ...placement('bt1', B1, 'T'), titleOverride: 'Read 20 pages' });
+
+    await commitSquareEdits(input([cell({ cellId: 'bt1', taskId: 'T' })], [['T', { title: 'Read' }]]));
+
+    const bt1 = (await db.boardTasks.get('bt1'))!;
+    expect('titleOverride' in bt1).toBe(false);
+    expect(bt1.version).toBe(2);
+  });
+
+  it('a Save with no real change writes nothing', async () => {
+    await db.tasks.add(task('T', { title: 'Read' }));
+    await db.boardTasks.add({ ...placement('bt1', B1, 'T'), titleOverride: 'Read 20 pages' });
+
+    await commitSquareEdits(input([cell({ cellId: 'bt1', taskId: 'T' })], [['T', { title: 'Read 20 pages' }]]));
+
+    expect((await db.boardTasks.get('bt1'))!.version).toBe(1);
+    expect(await syncedIds('boardTasks')).toEqual([]);
   });
 
   it('forks when placed elsewhere: rename lands on the fork, completion is migrated, the other board is untouched', async () => {
@@ -136,11 +175,11 @@ describe('commitSquareEdits — board-scoped edits', () => {
       event('e-out', 'T', 'completion', '2026-10-02T09:00:00.000Z'), // B2's window only
     ]);
 
-    await commitSquareEdits(input([cell({ cellId: 'bt1', taskId: 'T' })], [['T', { title: 'Read a chapter' }]]));
+    await commitSquareEdits(input([cell({ cellId: 'bt1', taskId: 'T' })], [['T', { description: 'A chapter' }]]));
 
     const forkId = forkTaskId(B1, 'T');
     const fork = (await db.tasks.get(forkId))!;
-    expect(fork.title).toBe('Read a chapter');
+    expect(fork.description).toBe('A chapter');
     expect(fork.forkedFromTaskId).toBe('T');
     expect(fork.createdInWizard).toBe(true);
     // Lifetime caches stamped from the fork's own (migrated) events.
@@ -148,7 +187,7 @@ describe('commitSquareEdits — board-scoped edits', () => {
     expect(fork.completedAt).toBe('2026-10-06T09:00:00.000Z');
 
     const original = (await db.tasks.get('T'))!;
-    expect(original.title).toBe('Read');
+    expect(original.description).toBeUndefined();
     expect(original.version).toBe(1);
 
     expect((await db.boardTasks.get('bt1'))!.taskId).toBe(forkId);
@@ -198,14 +237,17 @@ describe('commitSquareEdits — board-scoped edits', () => {
     await db.compoundChildren.bulkAdd([link('l1', 'P', 'C1', 0), link('l2', 'P', 'C2', 1)]);
     await db.boardTasks.bulkAdd([placement('bt1', B1, 'P'), placement('bt2', B2, 'P')]);
 
-    const patch = compoundPatch('Morning routine', [
+    const patch = { ...compoundPatch('Morning routine', [
       child({ childTaskId: 'C1', title: 'Stretch' }),
       child({ childTaskId: 'C2', title: 'Coffee' }),
-    ]);
+    ]), operator: OperatorType.OR };
     await commitSquareEdits(input([cell({ cellId: 'bt1', taskId: 'P' })], [['P', { title: 'Morning routine', compound: patch }]]));
 
     const forkId = forkTaskId(B1, 'P');
-    expect((await db.tasks.get(forkId))!.title).toBe('Morning routine');
+    // The operator is a structure edit (forks); the rename rides on the placement.
+    expect((await db.tasks.get(forkId))!.operator).toBe(OperatorType.OR);
+    expect((await db.tasks.get(forkId))!.title).toBe('Morning');
+    expect((await db.boardTasks.get('bt1'))!.titleOverride).toBe('Morning routine');
     expect((await db.tasks.get('P'))!.title).toBe('Morning');
     const forkLinks = (await db.compoundChildren.where('compoundTaskId').equals(forkId).toArray()).filter((l) => !l.isDeleted);
     expect(forkLinks.map((l) => l.childTaskId).sort()).toEqual(['C1', 'C2']);
@@ -252,7 +294,7 @@ describe('commitSquareEdits — board-scoped edits', () => {
       placement('bt2h', B2, 'H'),
     ]);
 
-    await commitSquareEdits(input([cell({ cellId: 'bt1', taskId: 'T' })], [['T', { title: 'Walk 5k' }]]));
+    await commitSquareEdits(input([cell({ cellId: 'bt1', taskId: 'T' })], [['T', { description: '5k' }]]));
 
     const tFork = forkTaskId(B1, 'T');
     const hFork = forkTaskId(B1, 'H');
@@ -263,7 +305,7 @@ describe('commitSquareEdits — board-scoped edits', () => {
     expect(hForkLinks.map((l) => l.childTaskId).sort()).toEqual([tFork, 'X'].sort());
     const hLinks = (await db.compoundChildren.where('compoundTaskId').equals('H').toArray()).filter((l) => !l.isDeleted);
     expect(hLinks.map((l) => l.childTaskId).sort()).toEqual(['T', 'X']);
-    expect((await db.tasks.get('T'))!.title).toBe('Walk');
+    expect((await db.tasks.get('T'))!.description).toBeUndefined();
   });
 
   it('drops the override of a square replaced in the same session (no fork, original untouched)', async () => {
@@ -284,7 +326,7 @@ describe('commitSquareEdits — board-scoped edits', () => {
     await db.boardTasks.bulkAdd([placement('bt1', B1, 'T'), placement('bt2', B2, 'T')]);
     await db.taskEvents.add(event('e-in', 'T', 'completion', '2026-10-06T09:00:00.000Z'));
     const commit = () =>
-      commitSquareEdits(input([cell({ cellId: 'bt1', taskId: 'T' })], [['T', { title: 'Read more' }]]));
+      commitSquareEdits(input([cell({ cellId: 'bt1', taskId: 'T' })], [['T', { description: 'Read more' }]]));
 
     await commit();
     const snapshot = async () => ({
@@ -295,7 +337,7 @@ describe('commitSquareEdits — board-scoped edits', () => {
     const first = await snapshot();
     await commit();
     expect(await snapshot()).toEqual(first);
-    expect((await db.tasks.get(forkTaskId(B1, 'T')))!.title).toBe('Read more');
+    expect((await db.tasks.get(forkTaskId(B1, 'T')))!.description).toBe('Read more');
   });
 
   it('a sealed board never reaches the fork (the Save is refused before any write)', async () => {
@@ -321,30 +363,32 @@ describe('commitSquareEdits — board-scoped edits', () => {
       placement('btc', B1, 'C'), placement('bth', B1, 'H', 0, 1), placement('bt2', B2, 'C'),
     ]);
     // The holder sheet was seeded from the stored rows: C still "Stretch".
-    const patch = compoundPatch('Habits renamed', [
+    const patch = { ...compoundPatch('Habits', [
       child({ childTaskId: 'C', title: 'Stretch' }),
       child({ childTaskId: 'X', title: 'Water' }),
-    ]);
+    ]), operator: OperatorType.OR };
 
     await commitSquareEdits(
       input(
         [cell({ cellId: 'btc', taskId: 'C' }), cell({ cellId: 'bth', taskId: 'H', col: 1 })],
-        [['C', { title: 'Stretch 10 min' }], ['H', { title: 'Habits renamed', compound: patch }]],
+        [['C', { description: 'ten minutes' }], ['H', { title: 'Habits', compound: patch }]],
       ),
     );
 
     const cFork = forkTaskId(B1, 'C');
     const hLinks = (await db.compoundChildren.where('compoundTaskId').equals('H').toArray()).filter((l) => !l.isDeleted);
     expect(hLinks.map((l) => l.childTaskId).sort()).toEqual([cFork, 'X'].sort());
-    expect((await db.tasks.get(cFork))!.title).toBe('Stretch 10 min');
-    expect((await db.tasks.get('H'))!.title).toBe('Habits renamed');
+    expect((await db.tasks.get(cFork))!.description).toBe('ten minutes');
+    expect((await db.tasks.get('H'))!.operator).toBe(OperatorType.OR);
   });
 
   it('rolls the whole Save back when a later override fails: no fork row, placement unchanged', async () => {
     await db.tasks.bulkAdd([
       task('T', { title: 'Read' }),
       task('P', { title: 'Bad', type: TaskType.COMPOUND, operator: OperatorType.AND }),
+      task('C9', { title: 'Only child' }),
     ]);
+    await db.compoundChildren.add(link('l9', 'P', 'C9', 0));
     await db.boardTasks.bulkAdd([
       placement('bt1', B1, 'T'), placement('bt2', B2, 'T'), placement('btp', B1, 'P', 0, 1),
     ]);
@@ -353,7 +397,7 @@ describe('commitSquareEdits — board-scoped edits', () => {
       commitSquareEdits(
         input(
           [cell({ cellId: 'bt1', taskId: 'T' }), cell({ cellId: 'btp', taskId: 'P', col: 1 })],
-          [['T', { title: 'Renamed' }], ['P', { title: 'Bad', compound: compoundPatch('Bad', []) }]],
+          [['T', { description: 'Renamed' }], ['P', { title: 'Bad', compound: compoundPatch('Bad', []) }]],
         ),
       ),
     ).rejects.toThrow();

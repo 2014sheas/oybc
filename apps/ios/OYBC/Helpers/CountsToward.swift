@@ -209,7 +209,8 @@ enum CountsToward {
         ctx: CompoundWindowContext,
         childrenByCompound: [String: [CompoundChild]],
         taskById: [String: Task],
-        visiting: inout Set<String>
+        visiting: inout Set<String>,
+        childTargets: [PlacementChildTarget]? = nil
     ) -> ContributionState {
         if task.isDeleted { return .incomplete }
         switch task.type {
@@ -223,17 +224,11 @@ enum CountsToward {
         case .counting:
             if let rootId = task.sharedCounterId, !rootId.isEmpty {
                 let rootEvents = ctx.eventsByTaskId[rootId] ?? []
-                if BoardSources.isWindowStampedDerived(task) {
-                    guard resolveWindowStampedDerivedState(task: task, rootEvents: rootEvents).isCompleted else { return .incomplete }
-                    let own = CompoundWindowContext(windowStart: task.startDate, windowEnd: task.endDate, eventsByTaskId: [:])
-                    return completed(by: crossingEvent(eventsInWindow(rootEvents, own), target: task.maxCount ?? 0))
-                }
-                // Owner rule 2026-10-01: any other linked row on a board resolves
-                // over the HOST window; only a lifetime reader still reads its latch.
-                guard let derived = resolveDerivedCounterWindowState(
+                // The ROOT's events over the board window, or its lifetime with
+                // none (slice 5 — the latch is never read).
+                guard resolveDerivedCounterWindowState(
                     task: task, eventsByTaskId: ctx.eventsByTaskId, windowStart: ctx.windowStart, windowEnd: ctx.windowEnd
-                ) else { return latchState(task) }
-                guard derived.isCompleted else { return .incomplete }
+                )?.isCompleted ?? false else { return .incomplete }
                 return completed(by: crossingEvent(eventsInWindow(rootEvents, ctx), target: task.maxCount ?? 0))
             }
             let events = ctx.eventsByTaskId[task.id] ?? []
@@ -255,7 +250,11 @@ enum CountsToward {
                 childStates.append(.incomplete)
                 continue
             }
-            childStates.append(stateOf(child, ctx: ctx, childrenByCompound: childrenByCompound, taskById: taskById, visiting: &visiting))
+            // Direct children take the placement's child target; nested levels don't.
+            childStates.append(stateOf(
+                PlacementParams.withChildTarget(child, childTargets: childTargets),
+                ctx: ctx, childrenByCompound: childrenByCompound, taskById: taskById, visiting: &visiting
+            ))
         }
         visiting.remove(task.id)
 
@@ -294,11 +293,12 @@ enum CountsToward {
         childrenByCompound: [String: [CompoundChild]],
         taskById: [String: Task],
         eventsByTaskId: [String: [TaskEvent]],
-        window: Window = .lifetime
+        window: Window = .lifetime,
+        childTargets: [PlacementChildTarget]? = nil
     ) -> ContributionState {
         let ctx = CompoundWindowContext(windowStart: window.windowStart, windowEnd: window.windowEnd, eventsByTaskId: eventsByTaskId)
         var visiting = Set<String>()
-        let s = stateOf(task, ctx: ctx, childrenByCompound: childrenByCompound, taskById: taskById, visiting: &visiting)
+        let s = stateOf(task, ctx: ctx, childrenByCompound: childrenByCompound, taskById: taskById, visiting: &visiting, childTargets: childTargets)
         guard s.isCompleted else { return .incomplete }
         return ContributionState(
             isCompleted: true, completedAt: s.completedAt ?? task.createdAt,
@@ -428,9 +428,9 @@ enum CountsToward {
 
     /// The live boards placing `task`, each as the window its square is evaluated
     /// over (sealed → events bounded at `sealedAt`), by start date then board id.
-    private static func liveWindows(of task: Task, inputs: Inputs) -> [(boardId: String, startDate: String, ctx: CompoundWindowContext)] {
+    private static func liveWindows(of task: Task, inputs: Inputs) -> [(boardId: String, startDate: String, ctx: CompoundWindowContext, placement: BoardTask)] {
         var seen = Set<String>()
-        var out: [(boardId: String, startDate: String, ctx: CompoundWindowContext)] = []
+        var out: [(boardId: String, startDate: String, ctx: CompoundWindowContext, placement: BoardTask)] = []
         for p in inputs.placements where !p.isDeleted && p.taskId == task.id && !seen.contains(p.boardId) {
             seen.insert(p.boardId)
             guard let b = inputs.boardById[p.boardId], !b.isDeleted, b.status != .draft else { continue }
@@ -438,7 +438,7 @@ enum CountsToward {
             let events = sealedAtMs.isNaN
                 ? inputs.eventsByTaskId
                 : boundWindowContextAtSeal(eventsByTaskId: inputs.eventsByTaskId, sealedAtMs: sealedAtMs).eventsByTaskId
-            out.append((b.id, b.startDate, CompoundWindowContext(windowStart: b.startDate, windowEnd: boardWindowEnd(b), eventsByTaskId: events)))
+            out.append((b.id, b.startDate, CompoundWindowContext(windowStart: b.startDate, windowEnd: boardWindowEnd(b), eventsByTaskId: events), p))
         }
         return out.sorted { a, b in
             if let byInstant = instantBefore(a.startDate, b.startDate) { return byInstant }
@@ -463,10 +463,14 @@ enum CountsToward {
             if let prior = byId[id], !(epochMs(occurredAt) < epochMs(prior.occurredAt)) { return }
             byId[id] = Credit(eventId: id, rootId: rootId, occurrence: occurrence, occurredAt: occurredAt)
         }
-        func evaluate(_ ctx: CompoundWindowContext) -> ContributionState {
+        // Slice 2b: a placed window is scored with ITS placement's parameters —
+        // the goal the square shows is the goal the credit is earned at.
+        func evaluate(_ ctx: CompoundWindowContext, placement: BoardTask? = nil) -> ContributionState {
             resolveContributionState(
-                task, childrenByCompound: inputs.childrenByCompound, taskById: inputs.taskById,
-                eventsByTaskId: ctx.eventsByTaskId, window: Window(windowStart: ctx.windowStart, windowEnd: ctx.windowEnd)
+                placement.map { PlacementParams.apply(task, placement: $0) } ?? task,
+                childrenByCompound: inputs.childrenByCompound, taskById: inputs.taskById,
+                eventsByTaskId: ctx.eventsByTaskId, window: Window(windowStart: ctx.windowStart, windowEnd: ctx.windowEnd),
+                childTargets: placement?.childTargets
             )
         }
         let lifetimeCtx = CompoundWindowContext(windowStart: nil, windowEnd: nil, eventsByTaskId: inputs.eventsByTaskId)
@@ -479,8 +483,10 @@ enum CountsToward {
         case .counting:
             if let linked = task.sharedCounterId, !linked.isEmpty { return [] }
             let windows = liveWindows(of: task, inputs: inputs)
-            for ctx in windows.isEmpty ? [lifetimeCtx] : windows.map(\.ctx) {
-                let s = evaluate(ctx)
+            let scored: [(ctx: CompoundWindowContext, placement: BoardTask?)] =
+                windows.isEmpty ? [(lifetimeCtx, nil)] : windows.map { ($0.ctx, $0.placement) }
+            for (ctx, placement) in scored {
+                let s = evaluate(ctx, placement: placement)
                 if s.isCompleted, let crossing = s.completingEventId, let at = s.completedAt {
                     want(eventOccurrence(crossing, ownerId: s.completingTaskId ?? task.id, inputs: inputs, resolver: resolver), at)
                 }
@@ -499,7 +505,7 @@ enum CountsToward {
                 if s.isCompleted, let at = s.completedAt { want(childEvent(s) ?? .lifetime, at) }
             }
             for w in windows {
-                let s = evaluate(w.ctx)
+                let s = evaluate(w.ctx, placement: w.placement)
                 if s.isCompleted, let at = s.completedAt { want(childEvent(s) ?? .board(boardId: w.boardId), at) }
             }
         case .achievement:

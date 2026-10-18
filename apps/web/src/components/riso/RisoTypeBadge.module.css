@@ -28,3 +28,12 @@
   background: var(--riso-achievement);
   color: var(--riso-on-color);
 }
+
+.small {
+  width: 22px;
+  height: 22px;
+  border-width: 1.5px;
+  border-radius: 6px;
+  font-size: 10px;
+  line-height: 1;
+}

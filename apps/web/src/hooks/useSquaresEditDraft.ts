@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   CenterSquareType,
   resolveFamilyCountKind,
+  withPlacementParams,
   type Board,
   type BoardSize,
   type BoardTask,
@@ -9,7 +10,6 @@ import {
   type Task,
 } from '@oybc/shared';
 import { taskToSquareData, taskToSquareState, type SquareWindowContext } from '../db/adapters';
-import type { PendingTaskPayload } from '../pages/createPage/useCreateFormState';
 import { type BoardCellModel } from '../components/board/RisoBoardCell';
 import { freeCellModel, toBoardCellModel } from '../components/board/cellModel';
 import { isSquareDirty, type SquareDraftCell } from './squareEditCount';
@@ -34,6 +34,7 @@ import {
   type KeyboardMoveDir,
   type BoardEditTaskOverride,
   type SquaresEditDraftState,
+  type StagedPick,
 } from './squaresEditReducer';
 
 export type { SquareDraftCell } from './squareEditCount';
@@ -82,8 +83,8 @@ export interface UseSquaresEditDraftResult {
   resolveTask: (taskId: string) => Task | undefined;
   /** The task as stored / pending, WITHOUT any staged override. */
   resolveOriginalTask: (taskId: string) => Task | undefined;
-  stageAdd: (row: number, col: number, pick: { taskId: string } | { pending: PendingTaskPayload }) => void;
-  stageReplace: (cellId: string, pick: { taskId: string } | { pending: PendingTaskPayload }) => void;
+  stageAdd: (row: number, col: number, pick: StagedPick) => void;
+  stageReplace: (cellId: string, pick: StagedPick) => void;
   stageRemove: (cellId: string) => void;
   toggleLock: (cellId: string) => void;
   stageTaskEdit: (taskId: string, patch: BoardEditTaskOverride) => void;
@@ -165,12 +166,12 @@ export function useSquaresEditDraft(
   }, [editMode]);
 
   const stageAdd = useCallback(
-    (row: number, col: number, pick: { taskId: string } | { pending: PendingTaskPayload }) =>
+    (row: number, col: number, pick: StagedPick) =>
       setState((s) => stageAddPure(s, row, col, pick)),
     [],
   );
   const stageReplace = useCallback(
-    (cellId: string, pick: { taskId: string } | { pending: PendingTaskPayload }) =>
+    (cellId: string, pick: StagedPick) =>
       setState((s) => stageReplacePure(s, cellId, pick)),
     [],
   );
@@ -209,9 +210,16 @@ export function useSquaresEditDraft(
     (taskId: string): Task | undefined => {
       const base = taskMap[taskId] ?? state.cells.find((c) => c.taskId === taskId)?.pending?.task;
       if (!base) return undefined;
-      return applyOverrideForDisplay(base, state.taskOverrides.get(taskId));
+      // The placement's parameters (goal / title) sit under any staged override.
+      // A staged add / replace carries its own parameters; an existing placement reads its stored row.
+      const staged = state.cells.find(
+        (c) => c.taskId === taskId && c.placement && (c.originalTaskId === null || c.taskId !== c.originalTaskId),
+      );
+      const placement = staged?.placement ?? boardTasks.find((bt) => !bt.isDeleted && bt.taskId === taskId);
+      const settings = base.sharedCounterId ? taskMap[base.sharedCounterId] : null;
+      return applyOverrideForDisplay(withPlacementParams(base, placement, settings), state.taskOverrides.get(taskId));
     },
-    [taskMap, state.cells, state.taskOverrides],
+    [taskMap, boardTasks, state.cells, state.taskOverrides],
   );
 
   const resolveOriginalTask = useCallback(

@@ -1,12 +1,12 @@
 import { test, expect, seedBoard, seedTask, seedBoardTask, seedTaskEvent, readTask } from './_fixtures/bypass';
 
 /**
- * Board-scoped task edits PR 2 (docs/BOARD_SCOPED_TASK_EDITS.md): renaming a
- * task from Board Edit when it is also placed on another board affects THIS
- * board only. The sheet's Done reads "Save for this board", the first fork
- * asks once, this board shows the new title and stays completed (the
- * in-window completion migrates to the fork), and the other board keeps the
- * original task and title.
+ * Board-scoped task edits (docs/BOARD_SCOPED_TASK_EDITS.md) as amended by
+ * TASK_WINDOW_REWORK slice 3a: renaming a task from Board Edit when it is also
+ * placed on another board affects THIS board only — the rename is a placement
+ * parameter (`titleOverride`), so the sheet's Done reads "Done" (no fork, no
+ * confirm), this board shows the new title and stays completed, the task row
+ * is untouched, and the other board keeps the original title.
  */
 
 const now = new Date();
@@ -37,7 +37,7 @@ test.describe('Board-scoped edit — rename a task placed on two boards', () => 
     });
   });
 
-  test('Save for this board → confirm → this board renamed and still completed; the other board unchanged', async ({ page }) => {
+  test('Done → this board renamed on its placement and still completed; the task row and the other board unchanged', async ({ page }) => {
     await page.goto(`/boards/${THIS_BOARD}?__oybc_test_bypass=1`);
     await expect(page.getByRole('button', { name: 'Read a book' })).toHaveAttribute('aria-pressed', 'true');
 
@@ -46,11 +46,10 @@ test.describe('Board-scoped edit — rename a task placed on two boards', () => 
     await page.getByRole('button', { name: 'Edit task…' }).click();
     const sheet = page.getByRole('dialog', { name: 'Edit task' });
     await sheet.getByLabel('Title', { exact: true }).fill('Read a chapter');
-    await sheet.getByRole('button', { name: 'Save for this board' }).click();
-
-    const confirm = page.getByRole('alertdialog', { name: 'Save for this board?' });
-    await expect(confirm.getByText('Applies to this board only. Other boards keep the original.')).toBeVisible();
-    await confirm.getByRole('button', { name: 'Save for this board' }).click();
+    // A rename is a placement parameter (slice 3a): no fork, so Done is plain "Done".
+    await expect(sheet.getByRole('button', { name: 'Save for this board' })).toHaveCount(0);
+    await sheet.getByRole('button', { name: 'Done' }).click();
+    await expect(page.getByRole('alertdialog', { name: 'Save for this board?' })).toHaveCount(0);
 
     await page.getByRole('button', { name: 'Save changes' }).click();
     await expect(page.getByText('Board saved')).toBeVisible();

@@ -18,9 +18,10 @@
 .sheetPanel {
   width: 100%;
   max-width: 680px;
-  background: var(--riso-paper-2);
+  background: var(--riso-paper);
   border: 2px solid var(--riso-ink);
   border-radius: 16px 16px 0 0;
+  padding: 12px;
   max-height: 92vh;
   overflow-y: auto;
   display: flex;
@@ -35,16 +36,6 @@
   }
 }
 
-.sheetToolbar {
-  display: flex;
-  justify-content: flex-end;
-  padding: 10px 16px;
-  border-bottom: 2px solid var(--riso-ink);
-  position: sticky;
-  top: 0;
-  background: var(--riso-paper-2);
-  z-index: 1;
-}
 .doneButton {
   font-family: var(--riso-font-head);
   font-weight: 700;

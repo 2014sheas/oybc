@@ -38,6 +38,8 @@
     ],
     "tasks": [
       "endDate",
+      "timeframe",
+      "startDate",
       "counterName",
       "titleTemplateSingular",
       "titleTemplatePlural",
@@ -49,6 +51,15 @@
     "coreBoardDefaults": [
       "defaultBoardSize",
       "defaultCenterType"
+    ],
+    "recurringBoardTemplates": [
+      "manualTaskTargets"
+    ],
+    "boardTasks": [
+      "targetOverride",
+      "targetKind",
+      "childTargets",
+      "titleOverride"
     ],
     "taskEvents": [
       "deletedAt"

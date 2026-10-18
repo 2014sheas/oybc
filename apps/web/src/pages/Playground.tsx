@@ -4,7 +4,6 @@ import { BoardGeneratorPlayground } from '../components/playground/BoardGenerato
 import { TaskSquareActionsPlayground } from '../components/playground/TaskSquareActionsPlayground';
 import { BoardWizardTasksPlayground } from '../components/playground/BoardWizardTasksPlayground';
 import { CreateHubPlayground } from '../components/playground/CreateHubPlayground';
-import { SharedCounterPlayground } from '../components/playground/SharedCounterPlayground';
 import { SyncSimulationPlayground } from '../components/playground/SyncSimulationPlayground';
 import { RisoKitPlayground } from '../components/playground/RisoKitPlayground';
 import { BoardGridPlayground } from '../components/playground/BoardGridPlayground';
@@ -44,11 +43,6 @@ export function Playground() {
       id: 'riso-kit',
       title: 'Riso Foundation — primitive kit (Phase 0)',
       content: <RisoKitPlayground />,
-    },
-    {
-      id: 'shared-counter',
-      title: 'Shared Counters — Phase 1 spike (deriveDisplayedCount)',
-      content: <SharedCounterPlayground />,
     },
     {
       id: 'create-hub',

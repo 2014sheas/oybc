@@ -642,6 +642,8 @@ Remaining B2 items surfaced during B1 review: (a) **R9** — iOS has no `fetchCo
 
 #### Plan B2 — implementation notes (2026-09-18)
 
+> **History.** The derived-row machinery these notes describe (minting, `baseline`, the propagation freeze, the deletion cascades) was retired by TASK_WINDOW_REWORK slice 5 (2026-10-18); the notes are kept as the record of what shipped.
+
 Both platforms, one PR (#491).
 
 - **Landed**: mint at active-only wizard persist and at every recurring
@@ -1032,11 +1034,18 @@ Split up** with per-part rules. Hand-added counting tasks get dice too.
 The dice is **± around the target** — "a little" on a goal of 10 is 8–12,
 never 8–10 (fixed 2026-10-06 — the first implementation capped at the goal).
 Rules are resolved at persist (one-off) or at every spawn (recurring) into
-**derived counters** — ordinary `Task` rows linked to the family root by
-`sharedCounterId`, stamped with the board's window, with a
-**baseline computed from the root's events** so the board shows only what
-was logged inside its window. Nothing rolled or resolved is ever stored on
-the rule; the recurring board still stores a rule, never a task list.
+**placement parameters** on the square's `board_tasks` row — `targetOverride`
++ `targetKind` (a counting member's per-board goal), `childTargets` (a
+re-targeted compound's per-child goals) — while the placement still points
+at the member itself. The kernel scores the square from the event owner's
+events inside the board's window at the placement's goal, so the board shows
+only what was logged inside its window. Nothing rolled or resolved is ever
+stored on the rule; the recurring board still stores a rule, never a task
+list. *(Amended 2026-10-18, TASK_WINDOW_REWORK slice 5: until slice 3b the
+rules minted per-window "derived counter" / "derived compound" rows with a
+`baseline`; that machinery is retired — see
+[`TASK_WINDOW_REWORK.md`](TASK_WINDOW_REWORK.md) and the ADR log in
+[`WINDOWED_COMPLETION.md`](WINDOWED_COMPLETION.md#adr-log--derived-task-carve-out-history).)*
 
 ### Data model (additive; no `Task` schema change)
 
@@ -1086,6 +1095,9 @@ payload (`apps/web/src/db/recurringDraftMix.ts` ↔
 **stays `v: 2`**; both decoders default to `{}`. One-off boards store none
 of this — vary is rolled and materialized at persist.
 
+<details>
+<summary>History — the per-window derived rows (B2, retired by TASK_WINDOW_REWORK slice 5)</summary>
+
 **Derived counters reuse existing `Task` fields** — no new columns:
 
 | Field | Value |
@@ -1114,6 +1126,8 @@ ids `uuidv5('sources:derived-link:<derivedCompoundId>:<childId>')`.
 non-draft placement: a derived counter is browsable the moment its board
 exists and drops out of browse if the board goes.
 
+</details>
+
 **Never stored:** rolled targets, remaining amounts, resolved source
 instances, any task list for a recurring board.
 
@@ -1137,25 +1151,28 @@ instances, any task list for a recurring board.
    counters, compounds, split parts). Family exclusivity keys on
    `sharedCounterId ?? id` via `buildCounterFamilyMap`; the min-aware
    CHOSEN-center swap in `buildWizardPlacement` is untouched.
-3. **`planDerivedTasks`** (new; pure; vector-pinned) — after selection:
+3. **`planDerivedTasks`** (pure; vector-pinned) — after selection:
    ```
-   in:  selectedIds, sources (+memberRules), manualTaskVary,
-        board window {timeframe, startDate, endDate}, tasksById,
-        childrenByCompoundId, sourceWindowByMemberId, baselineByRootId, rng
-   out: { placementIds, derivedTasks: DerivedTaskDraft[], derivedCompounds: DerivedCompoundDraft[] }
+   in:  selectedIds, sources (+memberRules), manualTaskIds, manualTaskVary,
+        board window {timeframe, startDate, endDate}, tasksById, rootsById,
+        childrenByCompoundId, sourceWindowByTaskId, rng
+   out: { placements: PlannedPlacement[] }   // one per selected id, in order
    ```
    **Supplying source** = the first source in `sources` order whose
    expanded supply contains the id (the same first-wins rule as
    `memberRules`); its `kind` decides board-vs-pool treatment and only its
    rule applies. A hand-added id that is also in a source is treated as
-   hand-added (dedupe already drops the source copy). Per selected id:
-   - counting member whose supplying source is a **board** → derived,
-     `maxCount` = resolved target;
+   hand-added (dedupe already drops the source copy). Every placement points
+   at the member itself; per selected id:
+   - counting member whose supplying source is a **board** → `targetOverride`
+     = the resolved target (in the member's kind) when it differs from the
+     member's own goal;
    - counting member with `vary > 0` (any source, or hand-added via
-     `manualTaskVary`) → derived, rolled;
-   - split part that is counting with a target/vary → derived;
+     `manualTaskVary`) → the rolled target, same rule;
+   - split part that is counting with a target/vary → the same, on the part;
    - One-square compound with any counting part carrying a target/vary →
-     derived compound + derived children. **Effective part rule** for a
+     `childTargets` (direct children only, an entry only when a child's
+     target differs from its own goal). **Effective part rule** for a
      One-square compound: `parts[childId]` merged over the member-level
      rule — a member-level `vary` (the toggle-line dice) is treated as if
      every counting part carried that same `vary` (and, on a board source,
@@ -1163,13 +1180,10 @@ instances, any task list for a recurring board.
      the per-part `rollTarget`. It is never copied into `parts`; in Split
      mode the member-level `vary` is ignored and only `parts[*].vary`
      applies;
-   - hand-added member that is itself a window-stamped derived counter
-     (`sharedCounterId != null && startDate != null`) → **re-minted per
-     spawn** with target = its `maxCount`, root = its `sharedCounterId`
-     (keeps Board Edit → REPEATS working on a board born with targets);
-   - everything else → placed as-is.
-   Drafts are in-memory only; `buildWizardPlacement` returns them
-   alongside `pendingTasks` for the Preview and for persist.
+   - everything else → placed with no parameters.
+   A board-sourced member's goal is the SUPPLYING placement's effective goal
+   (`BoardSourceSupplyInfo.goalByTaskId`, slice 3a).
+
 4. **Target math** (`boardSources.ts` + twins):
    - `nominalWindowDays(timeframe)`: daily 1 · weekly 7 · monthly 30 ·
      yearly 365 · CUSTOM = actual span (`endDate − startDate + 1`) ·
@@ -1236,11 +1250,10 @@ instances, any task list for a recurring board.
      Shuffle re-rolls by re-running the plan (`shuffleNonce` ↔
      `reseedPlacement`); spawn uses the platform default rng.
 5. **Persist.** `persistWizardBoard` (`wizardPersist.ts` ↔
-   `BoardWizardPersist.swift`) and spawn write derived tasks +
-   `compound_children` + their sync-queue items **in the same transaction,
-   before `board_tasks`**. `baselineByRootId` is computed by the caller from
-   `task_events` (root-owned `increment` rows, `occurredAt < startDate ??
-   now`). Deterministic ids ⇒ a retry upserts.
+   `BoardWizardPersist.swift`) and spawn write each placement's parameters
+   onto its `board_tasks` row (no task rows are minted). Drafts place the
+   original ids with no parameters; parameters are planned at the activating
+   save.
 6. **Gap fix.** `repeatBoardAsTemplate` (`AppDatabase+RecurringTemplates.swift`)
    ↔ `repeatBoardAsRecurring` (`db/operations/repeatBoard.ts`) write
    `sources` (and `manualTaskVary: {}`) instead of the legacy trio only.
@@ -1249,135 +1262,39 @@ Edge rules: an empty/dead source contributes nothing (stale-inert, shipped
 behaviour); a pulled board that itself pulls is flattened because its live
 `board_tasks` are the supply.
 
-### Baseline — a pure function of the root's events
+### Baseline — retired
 
-`baseline = Σ root increment events with occurredAt < board.startDate`
-(INDEFINITE board → `< mint time`). Kept true at three points:
+A derived counter's `baseline` (Σ root increments before the window) was a
+non-authored display cache. Since TASK_WINDOW_REWORK slice 5 nothing reads
+or refreshes it; the column stays inert for decode compatibility, like
+`lastSyncedCount`.
 
-- **mint** — the only time `baseline` rides an authored write (the derived
-  task's initial insert, version 1, enqueued);
-- **local root writes** — `incrementSharedCounter` /
-  `decrementSharedCounter` / `undoLastCounterLog`
-  (`tasks.sharedCounter.ts` ↔ `AppDatabase+SharedCounters.swift`) gain
-  `refreshDerivedBaselines(rootId)` for the root's window-stamped derived
-  tasks;
-- **pull** — a **new, explicit sub-step** after
-  `recomputeTaskCachesFromPull(rootId)` in `applyTaskEventsBatch` and
-  `healMissingCompletionEvents` (`taskEventPull.ts` + iOS twin): for each
-  recomputed root, query its window-stamped derived tasks
-  (`sharedCounterId == rootId && startDate != null`) and recompute
-  `baseline`. The existing loop does NOT cover this — it iterates
-  event-owning tasks (`isEventOwningTask` gate) and derived tasks own no
-  events by construction. Closes late-synced backdated increments and keeps
-  sealed-board re-derivation deterministic;
-- **a `tasks` pull that lands a derived row itself** — `baseline` travels on
-  the wire (an authored write to a derived row ships the whole `Task`), so a
-  device that minted while missing a pre-window increment pushes a SHORT
-  value that overwrites a complete one by ordinary LWW. The pull-apply path
-  therefore re-derives the landed row's baseline from the LOCAL event union
-  before the board cascade, same non-authored posture. The honest
-  convergence claim is *converges once a pull carrying the missing events
-  reaches each device* — not "immediately, everywhere".
+### Where placement parameters show up
 
-**Sync rule: after mint, `baseline` is a pure, non-authored cache.** Both
-recompute paths follow the `recomputeTaskCachesFromPull` pattern — **no
-`version` bump, no sync enqueue**, on both platforms. Every device converges
-on the same value from the converged event union, so there is nothing to
-win an LWW race over; a versioned write here would rewrite every historical
-derived row of a root on every tap, on every device.
-
-This applies only to **window-stamped** derived tasks
-(`sharedCounterId != null && startDate != null`). Hub-authored derived
-counters (the Counters hub's create sheet, `CreateCounterSheet.tsx` ↔ iOS
-counterpart, via `resolveDeriveLinkTarget`) keep today's frozen baseline and
-that entry point stays. The two *wizard* entry points to that flow go away
-(the #471 member menu in B3, the From-a-board grid in A), and the iOS
-Library sheet's derive entry is stripped in B3 for web parity.
-
-(Amended 2026-09-23 for window-stamped rows — see §Plan B2 notes; the paragraphs below describe the pre-amendment model and hub-linked rows.)
-
-**Latch asymmetry, intended.** A refresh RAISES a baseline (a backdated
-increment arrives) and therefore lowers the displayed count, but it never
-re-evaluates the derived row's `isCompleted`. On the *local* counter paths
-the `propagateIncrement` that follows does re-evaluate, so the two paths can
-end on different completion states for the same converged data. That is
-deliberate: completion is a ONE-WAY latch — it only ever holds *up* — so the
-pull path declining to un-complete a square the user already earned is the
-conservative direction. Do not "fix" this by making the pull path clear the
-latch.
-
-Board reads/writes are unchanged: a derived cell displays
-`deriveDisplayedCount(derived, root)`; a tap increments the **root** (the
-reject-derived guard stays). `docs/WINDOWED_COMPLETION.md`'s carve-out
-paragraph gains: window-stamped derived counters are windowed *through
-their baseline*; the v1 cross-window bleed note is closed for them.
-
-**Read audit (B2):** because `currentCount` on a linked task is the root
-mirror, every surface that shows a linked task's count must read through
-`deriveDisplayedCount` (hub-linked rows) or `resolveLinkedCounterDisplay`
-(window-stamped rows, root events in the row's window — amended by the
-2026-09-23 derived-counter freeze) — Tasks tab row, Task detail, Library sheet row,
-Counters hub/detail, wizard member rows — on both platforms. Any straggler
-is a pre-existing bug that B makes visible; fix it, don't special-case.
-
-### Where derived counters show up
-
-- Tasks tab / wizard Library sheet: like any task, then default-hidden
-  after `endDate` by `isTaskExpired` (+ "show expired").
-- Counters hub/detail: the same `isTaskExpired` default + "show expired"
-  affordance, applied **inside** `buildSharedCounterGroups` via its optional
-  `memberVisibility: { showExpired, now }` input (absent → every live
-  member, so the vector-pinned output is unchanged; it also takes an
-  optional `eventsByTaskId` so window-stamped members display their own
-  window's count). The callers (`useSharedCounterGroups.ts` ↔
-  `AppDatabase.fetchSharedCounterGroups`) pass the WHOLE live task set;
-  root detection sees every member, expired or not, and only the member
-  rows are then filtered. Roots are never filtered — a root whose members
-  have all expired stays listed as a single-member group (2026-09-30
-  amendment; the caller-side pre-filter it replaced un-rooted such
-  counters and hid them).
+- Board cells, previews, the closed-board display, the Sources done-filter
+  and the Counters hub all read the placement's goal and title
+  (`withPlacementParams` / `resolveSquareState`); a hub card IS a placement.
+- Library surfaces (Tasks tab, wizard Library sheet) show the task itself —
+  its own goal, no per-board numbers.
 
 ### Deletion
 
-- **Board deleted → its window-stamped derived tasks are soft-deleted too.**
-  `deleteBoard` (`db/operations/boards.ts` ↔ `AppDatabase+Boards.swift`):
-  after tombstoning placements, soft-delete every task placed on that board
-  that is window-stamped derived (`createdInWizard && sharedCounterId !=
-  null && startDate != null`) and has no other live placement (a per-spawn
-  mint is placed on exactly one board, so this is precise).
-- Root counter deleted, generic path → `deleteTaskWithCascade` /
-  `deleteTaskWithCascadeInTxn` (`tasks.deletion.ts` ↔
-  `AppDatabase+Tasks.swift`) also soft-deletes the root's window-stamped
-  derived tasks + tombstones their placements; `computeTaskDeletionImpact`
-  counts them.
-- Root counter deleted, **Counters-hub path** → `deleteCounterWithUnlink`
-  (`tasks.counter.ts` ↔ `AppDatabase+Counters.swift`) today unlinks every
-  member (clears `sharedCounterId`/`baseline`, freezes the count) *before*
-  the cascade, which would turn every historical per-window derived counter
-  into a standalone orphan. It special-cases window-stamped members:
-  soft-delete them (+ tombstone placements); ordinary hub-derived members
-  keep unlink-and-preserve. `counterMembers` / the impact preview reflect
-  the split.
-- **Every newly-tombstoned derived task and placement bumps `version` and
-  enqueues its own sync item**, mirroring the existing loops in the same
-  functions — the "soft-delete helper forgot to enqueue → row resurrects on
-  pull" class has shipped before (PR #424).
-- Recurring board stopped/deleted → spawned boards and their derived tasks
-  stay.
+- A board delete, a task delete and a counter delete retire no extra rows:
+  there are no per-window task rows any more (TASK_WINDOW_REWORK slice 5).
+  `deleteCounterWithUnlink` only unlinks — each live linked member keeps the
+  counter's lifetime total (seeded from the root's events at the seed
+  sentinel) and stays in the library.
+- Recurring board stopped/deleted → spawned boards stay.
 
 ### Sync / codec / migration compat
 
-- Derived tasks and derived-compound links are ordinary `tasks` /
-  `compoundChildren` rows — **no `SYNC_COLLECTIONS` change**; the C4
-  sync-contract fixture and `check-sync-contract-rules.mjs` are unaffected.
+- Placement parameters are `board_tasks` fields (GRDB v45, clearable on
+  sync) — **no `SYNC_COLLECTIONS` change**; the C4 sync-contract fixture and
+  `check-sync-contract-rules.mjs` are unaffected.
 - `firestore.rules` validates only `id` / `version` / `userId` and a 10 KB
   document cap — no nested-shape validation of `sources`. Plan step: size a
   worst-case template (~20 board sources each carrying `memberRules` +
   `parts`) against the cap and bump it if needed.
-- Derived-compound `compoundChildren` rows arriving before their parent
-  Task row hit the existing skip-and-defer posture (`pullApply.ts`), the
-  same one WC documents for `taskEvents`; rules' `version >= existing`
-  permits the equal-version idempotent re-mint.
 - Web: no new Dexie index → no Dexie version bump. iOS: `BoardSource` +
   `RecurringDraftMixPayload` `decodeIfPresent`; `recurring_board_templates`
   gains one TEXT column (v31).
@@ -1389,9 +1306,8 @@ is a pre-existing bug that B makes visible; fix it, don't special-case.
 - **Double-spawn, stated honestly:** spawn mints a random `boardId` per
   device, so two devices racing one window already produce two duplicate
   boards (documented in `spawnTemplateBoard`; "the user deletes one").
-  Derived ids embed `boardId`, so each duplicate board mints its own
-  derived cluster; the board-delete cascade above is what keeps that from
-  leaving a permanent duplicate cluster in the library. Deterministic spawn
+  Since slice 3b no task rows are minted per board, so a duplicate board
+  leaves nothing behind in the library. Deterministic spawn
   board ids (`uuidv5(templateId + windowStart)`) would remove the race but
   change spawn identity + placement-row convergence — out of scope, noted
   as a follow-up.
@@ -1729,7 +1645,7 @@ Three shapes, chosen by what the row actually has:
   `isExpandable` and `summary`.
 
 **Owner ruling 2026-09-22 — no identical derived clones, and one generic
-family row in the library.** Device-testing #493 surfaced that pulling a
+family row in the library.** *(History for rule 1 — no derived rows are minted since slice 3b; rule 2 still holds.)* Device-testing #493 surfaced that pulling a
 counting task from a board always mints a window-stamped derived counter,
 even when nothing differs: "Read 1 book" (goal 1, can't be subdivided, vary
 off) spawned a second "Read 1 book" with an identical regenerated title,

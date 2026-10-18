@@ -94,14 +94,16 @@ final class CounterPlacementVectorTests: XCTestCase {
     private struct PlanSupply: Decodable {
         let kind: String; let supply: [String]; let memberRules: [String: BoardSourceMemberRule]?
     }
-    private struct PlanDraft: Decodable, Equatable { let root: String; let maxCount: Double; let title: String }
-    private struct PlanExpected: Decodable { let placement: [String]; let drafts: [PlanDraft] }
+    private struct PlanPlacement: Decodable, Equatable {
+        let taskId: String; var targetOverride: Double?; var targetKind: String?; var titleOverride: String?
+    }
+    private struct PlanExpected: Decodable { let placements: [PlanPlacement] }
     private struct PlanVector: Decodable {
         let name: String; let window: String; let selected: [String]; let manual: [String]
         let supplies: [PlanSupply]; let rng: Double?; let expected: PlanExpected
     }
     private struct Plan: Decodable {
-        let boardId: String; let tasks: [String: Root]; let sourceWindows: [String: String]; let vectors: [PlanVector]
+        let tasks: [String: Root]; let sourceWindows: [String: String]; let vectors: [PlanVector]
     }
 
     private struct Fixture: Decodable {
@@ -109,7 +111,7 @@ final class CounterPlacementVectorTests: XCTestCase {
         let placementGoalForCounter: [GoalVector]
         let counterPickGoal: [PickVector]
         let placementGoalSource: [SourceVector]
-        let placementNeedsCopy: [NeedsVector]
+        let placementNeedsOverride: [NeedsVector]
         let counterSearchMatches: [SearchVector]
         let taskSearchMatches: [TaskSearchVector]
         let counterCopyTitleWithRoot: [CopyVector]
@@ -179,11 +181,11 @@ final class CounterPlacementVectorTests: XCTestCase {
     }
 
     func testPlacementNeedsCopy() throws {
-        let vectors = try loadFixture().placementNeedsCopy
+        let vectors = try loadFixture().placementNeedsOverride
         XCTAssertEqual(Set(vectors.map(\.expected)), [true, false])
         for v in vectors {
             XCTAssertEqual(
-                CounterPlacement.placementNeedsCopy(
+                CounterPlacement.placementNeedsOverride(
                     v.root.fields, timeframe: try tf(v.board.timeframe), startDate: v.board.startDate, endDate: v.board.endDate
                 ),
                 v.expected, v.name
@@ -257,11 +259,6 @@ final class CounterPlacementVectorTests: XCTestCase {
         let p = try loadFixture().planDerivedTasks
         let tasksById = Dictionary(uniqueKeysWithValues: p.tasks.map { ($0.key, $0.value.task(id: $0.key)) })
         let sourceWindows = try p.sourceWindows.mapValues { BoardSources.BoardWindow(timeframe: try tf($0)) }
-        func resolve(_ token: String) -> String {
-            token.hasPrefix("derived:")
-                ? BoardSources.derivedTaskId(boardId: p.boardId, rootTaskId: String(token.dropFirst("derived:".count)))
-                : token
-        }
         for v in p.vectors {
             let supplies = v.supplies.enumerated().map { i, s in
                 BoardSources.ExpandedSupply(
@@ -273,18 +270,20 @@ final class CounterPlacementVectorTests: XCTestCase {
             }
             let out = BoardSources.planDerivedTasks(
                 selectedIds: v.selected, supplies: supplies, manualTaskIds: v.manual, manualTaskVary: [:],
-                boardId: p.boardId, window: .init(timeframe: try tf(v.window)), mode: .oneOff,
+                window: .init(timeframe: try tf(v.window)), mode: .oneOff,
                 tasksById: tasksById, childrenByCompoundId: [:], sourceWindowByTaskId: sourceWindows,
-                baselineByRootId: [:], rootsById: tasksById,
+                rootsById: tasksById,
                 rng: {
                     guard let r = v.rng else { XCTFail("vary is off — no rng"); return 0 }
                     return r
                 }
             )
-            XCTAssertEqual(out.placementIds, v.expected.placement.map(resolve), v.name)
             XCTAssertEqual(
-                out.derivedTasks.map { PlanDraft(root: $0.rootTaskId, maxCount: $0.maxCount, title: $0.title) },
-                v.expected.drafts, v.name
+                out.placements.map {
+                    PlanPlacement(taskId: $0.taskId, targetOverride: $0.targetOverride,
+                                  targetKind: $0.targetKind?.rawValue, titleOverride: $0.titleOverride)
+                },
+                v.expected.placements, v.name
             )
         }
     }

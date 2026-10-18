@@ -81,6 +81,13 @@ final class TaskLibraryViewModel {
     /// fetching the full table and tallying in-memory is fine at small N.
     var allLibraryBoardTasks: [BoardTask] = []
 
+    /// The user's non-deleted boards (loaded with `allLibraryBoardTasks`).
+    var libraryBoards: [Board] = []
+
+    /// Task id → distinct still-in-play boards it is placed on — the library
+    /// rows' board usage count (`activeBoardPlacementCounts`). Computed once per `reload()`, not per render.
+    var activeBoardCounts: [String: Int] = [:]
+
     /// Every task id that appears as a child of at least one compound.
     /// Recomputed on each reload alongside compoundChildrenByCompound.
     /// iOS twin of web's `TaskLibrary.childTaskIds`. (#73)
@@ -102,6 +109,12 @@ final class TaskLibraryViewModel {
     /// find no link targets at all. iOS twin of web's
     /// `TaskLibrary.familyRootIds`.
     var familyRootIds: Set<String> = []
+
+    /// The workspace's non-deleted `TaskEvent` log grouped by `taskId` (whole
+    /// log, Gate 1 ruling 2026-10-17): the context-less counter readers
+    /// (`contextlessCounterState`) resolve a library counter from its root's
+    /// lifetime events, never the latch or `baseline`.
+    var eventsByTaskId: [String: [TaskEvent]] = [:]
 
     /// Most recent load error, surfaced to the user as a caption.
     /// Cleared on successful reload.
@@ -182,7 +195,10 @@ final class TaskLibraryViewModel {
             let tasks = try await Self.loadTasks(userId: userId, database: database)
             let children = try await Self.loadCompoundChildren(database: database)
             let boardTasks = try await Self.loadAllBoardTasks(database: database)
-            let boardStatusById = try await Self.loadBoardStatuses(userId: userId, database: database)
+            let boards = try await Self.loadBoards(userId: userId, database: database)
+            let allEvents = try await database.read { db in try TaskEvent.filter(Column("isDeleted") == false).fetchAll(db) }
+            let eventsByTask = Dictionary(grouping: allEvents, by: \.taskId)
+            let boardStatusById = Dictionary(boards.map { ($0.id, $0.status) }, uniquingKeysWith: { a, _ in a })
             // #73 — child-id set + reverse (child → parents) map, derived up
             // front because the browsable filter needs it (compound children
             // inherit their parent compound's placements).
@@ -200,9 +216,12 @@ final class TaskLibraryViewModel {
             )
             await MainActor.run {
                 self.libraryTasks = tasks
+                self.eventsByTaskId = eventsByTask
                 self.browsableTasks = browsable
                 self.allCompoundChildren = children
                 self.allLibraryBoardTasks = boardTasks
+                self.libraryBoards = boards
+                self.activeBoardCounts = activeBoardPlacementCounts(boardTasks, boards: boards)
                 var grouped: [String: [CompoundChild]] = [:]
                 for c in children {
                     grouped[c.compoundTaskId, default: []].append(c)
@@ -213,7 +232,7 @@ final class TaskLibraryViewModel {
                 self.compoundChildrenByCompound = grouped
                 self.childTaskIds = childIds
                 self.childToParents = reverseMap
-                self.familyRootIds = sharedCounterRootIds(tasks)
+                self.familyRootIds = sharedCounterRootIds(tasks, boardTasks: boardTasks)
                 self.loadError = nil
             }
         } catch {
@@ -259,12 +278,11 @@ final class TaskLibraryViewModel {
     /// Map of non-deleted boardId → status for the user. Drives the
     /// draft-only-visibility filter (a placement on a deleted board is
     /// absent from this map and therefore ignored).
-    private static func loadBoardStatuses(userId: String, database: AppDatabase) async throws -> [String: BoardStatus] {
+    private static func loadBoards(userId: String, database: AppDatabase) async throws -> [Board] {
         try await database.read { db in
-            let boards = try Board
+            try Board
                 .filter(Column("userId") == userId && Column("isDeleted") == false)
                 .fetchAll(db).healingDisplayNames()
-            return Dictionary(boards.map { ($0.id, $0.status) }, uniquingKeysWith: { a, _ in a })
         }
     }
 

@@ -80,7 +80,6 @@ test.describe('Unit task rows', () => {
 
   test('Task Detail of a unit task: the Counter row opens Counter Detail', async ({ page }) => {
     await page.goto(`/tasks/${DUNE}?__oybc_test_bypass=1`);
-    await expect(page.getByRole('heading', { name: 'Counter' })).toBeVisible();
     await page.getByRole('button', { name: /^Open Books counter$/ }).click();
     await expect(page).toHaveURL(new RegExp(`/profile/counters/${ROOT}`));
   });

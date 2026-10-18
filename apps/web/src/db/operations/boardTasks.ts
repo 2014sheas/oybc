@@ -1,7 +1,12 @@
 import { db } from '../internal';
-import type { BoardTask, CreateBoardTaskInput } from '@oybc/shared';
+import type { BoardTask, CreateBoardTaskInput, Board, PlacementParams } from '@oybc/shared';
 import {
   SyncOperationType,
+  TaskType,
+  placementGoalForCounter,
+  placementNeedsOverride,
+  resolveCountKind,
+  withNormalizedPlacementFields,
   findTransitiveParentCompounds,
   findAffectedBoardIds,
   computeBoardStatsUpdate,
@@ -18,7 +23,6 @@ import { addToSyncQueue } from './syncQueue';
 import { writeBoardDerivedStats } from './boardDerivedWrite';
 import { fetchAllCompoundChildren } from './compoundChildren';
 import { buildWindowContext } from './windowContext';
-import { resolveBoardPlacementTaskId } from './linkedCounterPlacement';
 import { assertBoardEditable, updateBoard } from './boards';
 
 /**
@@ -30,18 +34,6 @@ import { assertBoardEditable, updateBoard } from './boards';
  */
 export async function fetchBoardTasks(boardId: string): Promise<BoardTask[]> {
   return db.boardTasks.where('boardId').equals(boardId).filter((bt) => !bt.isDeleted).toArray();
-}
-
-/**
- * Fetch every non-deleted BoardTask placement row referencing a given Task.
- *
- * Returns the full placement rows for per-placement UI (task detail).
- *
- * @param taskId - The placed Task's id.
- * @returns All non-deleted BoardTask rows whose `taskId` matches.
- */
-export async function fetchBoardTasksForTask(taskId: string): Promise<BoardTask[]> {
-  return db.boardTasks.where('taskId').equals(taskId).filter((bt) => !bt.isDeleted).toArray();
 }
 
 /**
@@ -62,7 +54,7 @@ export async function deleteBoardTasksForBoard(boardId: string): Promise<void> {
   const tasks = await db.boardTasks.where('boardId').equals(boardId).filter((bt) => !bt.isDeleted).toArray();
   for (const bt of tasks) {
     const tombstoned = buildBoardTaskTombstone(bt, now);
-    await db.boardTasks.update(bt.id, tombstoned);
+    await db.boardTasks.put(tombstoned);
     await addToSyncQueue('boardTasks', bt.id, SyncOperationType.DELETE, tombstoned);
   }
 }
@@ -76,6 +68,13 @@ export async function deleteBoardTasksForBoard(boardId: string): Promise<void> {
  *
  * @param existing - The live BoardTask row being removed.
  * @param now - The shared write timestamp for this deletion.
+ */
+/**
+ * The FULL tombstoned row (`...existing` + the tombstone stamps). Callers
+ * write it with `db.boardTasks.put(tombstoned)`, not `update(id, …)`: since
+ * the slice-1 placement parameters (`childTargets`, an array of objects),
+ * Dexie's `UpdateSpec<BoardTask>` no longer types a whole row, and a full-row
+ * put is the same write.
  */
 export function buildBoardTaskTombstone(existing: BoardTask, now: string): BoardTask {
   return {
@@ -141,10 +140,12 @@ export async function fetchAllBoardTasks(): Promise<BoardTask[]> {
  * docs/BOARD_INTEGRITY.md.
  */
 export async function createBoardTask(
-  input: CreateBoardTaskInput
+  input: CreateBoardTaskInput & PlacementParams,
 ): Promise<BoardTask> {
   const now = currentTimestamp();
-  const boardTask: BoardTask = {
+  // TASK_WINDOW_REWORK slice 3b: the wizard / spawn write the planner's
+  // placement parameters with the row; canonicalised like every other writer.
+  const boardTask: BoardTask = withNormalizedPlacementFields({
     id: generateUUID(),
     boardId: input.boardId,
     taskId: input.taskId,
@@ -152,11 +153,15 @@ export async function createBoardTask(
     col: input.col,
     isCenter: input.isCenter,
     ...(input.isLocked === true ? { isLocked: true } : {}),
+    targetOverride: input.targetOverride,
+    targetKind: input.targetKind,
+    childTargets: input.childTargets,
+    titleOverride: input.titleOverride,
     createdAt: now,
     updatedAt: now,
     version: 1,
     isDeleted: false,
-  };
+  } as BoardTask);
 
   await db.transaction('rw', [db.boards, db.boardTasks, db.syncQueue], async () => {
     const owningBoard = await db.boards.get(input.boardId);
@@ -264,7 +269,7 @@ export async function removeBoardTaskFromBoard(boardTaskId: string): Promise<voi
 
       // 1. Soft-delete (tombstone) the BoardTask placement.
       const tombstoned = buildBoardTaskTombstone(existing, now);
-      await db.boardTasks.update(boardTaskId, tombstoned);
+      await db.boardTasks.put(tombstoned);
 
       // Enqueue DELETE with the FRESH tombstoned payload (version bumped) —
       // not `existing`, whose stale version was the root cause of the
@@ -321,6 +326,26 @@ export async function removeBoardTaskFromBoard(boardTaskId: string): Promise<voi
 // ─── addBoardTaskToBoard ──────────────────────────────────────────────────────
 
 /**
+ * The default placement parameters for putting `task` on `board`
+ * (TASK_WINDOW_REWORK slice 3a): a counter ROOT (COUNTING, no
+ * `sharedCounterId`) whose timeframe default for the board differs from its
+ * own goal is placed AS-IS with `targetOverride` + `targetKind`; every other
+ * task (a linked row, a compound, a plain counter with no default) is placed
+ * with no parameters. Nothing is minted.
+ *
+ * @param task - The task being placed (undefined when it is not stored).
+ * @param board - The owning board.
+ * @returns The parameters to write onto the BoardTask (possibly empty).
+ */
+async function defaultPlacementParams(task: Task | undefined, board: Board): Promise<PlacementParams> {
+  if (!task || task.isDeleted || task.type !== TaskType.COUNTING || task.sharedCounterId) return {};
+  if (!placementNeedsOverride(task, board)) return {};
+  const goal = placementGoalForCounter(task, board);
+  if (goal == null) return {};
+  return { targetOverride: goal, targetKind: resolveCountKind(task) };
+}
+
+/**
  * Add a Task to an empty cell on an ACTIVE board (live-edit M4).
  *
  * Creates a new BoardTask placement record at the given grid position and runs
@@ -359,7 +384,7 @@ export async function addBoardTaskToBoard(
   taskId: string,
   row: number,
   col: number,
-  options?: { isLocked?: boolean },
+  options?: { isLocked?: boolean; placement?: PlacementParams },
 ): Promise<BoardTask> {
   const now = currentTimestamp();
 
@@ -427,17 +452,12 @@ export async function addBoardTaskToBoard(
         throw new Error(`addBoardTaskToBoard: task ${taskId} is already placed on board ${boardId}`);
       }
 
-      // Windowed linked counters (owner rule 2026-10-01): a linked counter
-      // that is not this board's own window-stamped row resolves to the
-      // board's deterministic per-window row. This is what makes Board
-      // Edit's add square (which bypasses the wizard's planner) window-safe.
-      const placedTaskId = await resolveBoardPlacementTaskId(owningBoard, taskId, now);
-      if (placedTaskId !== taskId) {
-        if (liveOnBoard.some((bt) => bt.taskId === placedTaskId)) {
-          throw new Error(`addBoardTaskToBoard: task ${placedTaskId} is already placed on board ${boardId}`);
-        }
-        newBoardTask = { ...newBoardTask, taskId: placedTaskId };
-      }
+      // TASK_WINDOW_REWORK slice 3a: the task is placed as-is. Explicit
+      // parameters (Board Edit) win over the counter-root default rule.
+      const params = options?.placement
+        ? options.placement
+        : await defaultPlacementParams(await db.tasks.get(taskId), owningBoard);
+      newBoardTask = withNormalizedPlacementFields({ ...newBoardTask, ...params });
 
       // 1. Write the new BoardTask placement.
       await db.boardTasks.add(newBoardTask);
@@ -819,18 +839,30 @@ export async function updateBoardTaskAndCascade(
       const owningBoard = await db.boards.get(existing.boardId);
       if (!owningBoard || owningBoard.isDeleted || owningBoard.sealedAt) return;
 
-      // Windowed linked counters (owner rule 2026-10-01): replacing a square
-      // with a linked counter places THIS board's own per-window row (see
-      // addBoardTaskToBoard — Board Edit bypasses the wizard planner).
-      const placedTaskId = await resolveBoardPlacementTaskId(owningBoard, newTaskId, now);
+      // TASK_WINDOW_REWORK slice 3a: the new task is placed as-is. A board-scoped
+      // fork of the SAME task (Board Edit's fork repoint) keeps the placement's
+      // parameters; any other replacement drops the old task's parameters and
+      // takes the counter-root default for this board.
+      const newTask = await db.tasks.get(newTaskId);
+      const isFork = newTask?.forkedFromTaskId === oldTaskId;
+      const {
+        targetOverride: _t,
+        targetKind: _k,
+        childTargets: _c,
+        titleOverride: _o,
+        ...bare
+      } = existing;
+      const base = isFork ? existing : bare;
+      const params = isFork ? {} : await defaultPlacementParams(newTask, owningBoard);
 
       // 3a. Patch the BoardTask row.
-      const patched: BoardTask = {
-        ...existing,
-        taskId: placedTaskId,
+      const patched: BoardTask = withNormalizedPlacementFields({
+        ...base,
+        ...params,
+        taskId: newTaskId,
         updatedAt: now,
         version: (existing.version ?? 0) + 1,
-      };
+      });
       await db.boardTasks.put(patched);
       await addToSyncQueue('boardTasks', boardTaskId, SyncOperationType.UPDATE, patched, 0);
 

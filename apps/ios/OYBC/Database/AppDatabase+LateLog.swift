@@ -8,8 +8,8 @@ import GRDB
 //
 //   - `lateLogCompletion` — a NORMAL square's "Mark done on board".
 //   - `lateLogIncrement` — a plain/source COUNTING square's "+N", OR a
-//     window-stamped derived counter's "+N" (the increment lands on its
-//     ROOT); a hub-linked derived counter is a no-op (OQ2).
+//     LINKED counter's "+N" (the increment lands on its ROOT; the old
+//     hub-linked no-op, OQ2, is retired — TASK_WINDOW_REWORK slice 3a).
 //   - `lateLogCompoundParts` — a COMPOUND square's staged child parts
 //     (NORMAL → completion, plain COUNTING → +1); commits only once the
 //     rule is met.
@@ -36,8 +36,8 @@ enum LateLogError: Error, Equatable {
     /// compound).
     case taskNotPlaced
     /// The task's type doesn't match the entry point called (e.g.
-    /// `lateLogCompletion` on a COUNTING task), or a hub-linked derived
-    /// counter / achievement task (not tappable — OQ2).
+    /// `lateLogCompletion` on a COUNTING task), or an achievement task
+    /// (not tappable).
     case wrongTaskType
     /// `lateLogCompoundParts`: the staged child completions don't satisfy the
     /// compound's operator rule yet — nothing was written.
@@ -82,11 +82,9 @@ extension AppDatabase {
     /// parent whose window already closed too), then refresh achievement
     /// watchers over every board whose stats just changed.
     ///
-    /// `changedTaskIds` may include ids reached only for CASCADE purposes
-    /// (e.g. a frozen window-stamped row whose window holds the event) —
-    /// board-reachability doesn't distinguish authored from cascade-only,
-    /// which is exactly the desired effect (their boards re-derive; the rows
-    /// themselves are never written here).
+    /// `changedTaskIds` may include ids reached only for CASCADE purposes (a
+    /// shared-counter ROOT, whose linked rows are placed) — board-reachability
+    /// walks the root's placement reach, so their boards re-derive.
     ///
     /// MUST run inside the caller's write transaction, after the event
     /// append/tombstone + any task-cache/propagation writes.
@@ -122,7 +120,7 @@ extension AppDatabase {
         }
 
         // Sealed re-derivation already does its own reachability expansion
-        // (incl. window-stamped derived roots) — covers the closed board
+        // (incl. linked roots) — covers the closed board
         // itself plus any sealed parent.
         try Self.reDeriveSealedBoards(db: db, changedTaskIds: changedTaskIds)
 
@@ -131,57 +129,9 @@ extension AppDatabase {
 
     /// Every non-deleted board placing one of `taskIds` — directly, via a
     /// placed parent compound, or (for a shared-counter ROOT, which is never
-    /// placed itself) via one of its window-stamped derived rows.
+    /// placed itself) via one of its linked rows (`placementReach`).
     static func boardIdsReachedByTasks(db: Database, taskIds: Set<String>) throws -> Set<String> {
-        guard !taskIds.isEmpty else { return [] }
-        let allChildren = try CompoundChild.filter(Column("isDeleted") == false).fetchAll(db)
-        let allBoardTasks = try BoardTask.filter(Column("isDeleted") == false).fetchAll(db)
-        let reachable = try Self.withWindowStampedDerived(db: db, taskIds: taskIds)
-        var boardIds = Set<String>()
-        for taskId in reachable {
-            let parents = DerivationPass.findTransitiveParentCompounds(changedTaskId: taskId, children: allChildren)
-            boardIds.formUnion(DerivationPass.findAffectedBoardIds(
-                changedTaskId: taskId, parentCompounds: parents, boardTasks: allBoardTasks
-            ))
-        }
-        return boardIds
-    }
-
-    /// Propagates a ROOT counter's new lifetime count to every LIVE linked row
-    /// (hub-linked + unfrozen window-stamped), exactly like
-    /// `incrementSharedCounter`, after a late log / its undo moved the root's
-    /// log. Frozen rows whose window holds `reachOccurredAt` are returned for
-    /// cascade only — never written.
-    ///
-    /// - Returns: The linked row ids to add to the re-derivation set.
-    static func propagateRootLogToLinkedRows(
-        db: Database, rootId: String, reachOccurredAt: String, now: String,
-        ownerUid: String? = SyncQueueOwnership.currentUid()
-    ) throws -> Set<String> {
-        guard let rootAfter = try Task.fetchOne(db, key: rootId) else { return [] }
-        let (linkedTasks, reachedFrozenIds) = try Self.fetchLinkedTasksForLog(
-            db: db, sourceTaskId: rootId, reachOccurredAt: reachOccurredAt, now: now
-        )
-        let propagation = propagateIncrement(
-            sourceAfterCurrentCount: rootAfter.currentCount ?? 0,
-            linkedTasks: linkedTasks.map {
-                PropagateIncrementLinkedTask(id: $0.id, baseline: $0.baseline, maxCount: $0.maxCount, isCompleted: $0.isCompleted, countKind: $0.countKind)
-            }
-        )
-        for (result, var linked) in zip(propagation, linkedTasks) {
-            let wasCompleted = linked.isCompleted
-            linked.currentCount = result.newCurrentCount
-            linked.isCompleted = result.newIsCompleted
-            if !wasCompleted && result.newIsCompleted { linked.completedAt = now }
-            linked.updatedAt = now
-            linked.version += 1
-            try linked.save(db)
-            try SyncQueueBuilder.makeItem(
-                entityType: "tasks", entityId: linked.id, operationType: .update, payload: linked, now: now,
-                ownerUid: ownerUid
-            ).enqueue(db)
-        }
-        return Set(linkedTasks.map(\.id)).union(reachedFrozenIds)
+        try Self.placementReach(db: db, taskIds: taskIds).boardIds
     }
 
     // MARK: - lateLogCompletion (NORMAL)
@@ -219,19 +169,17 @@ extension AppDatabase {
         }
     }
 
-    // MARK: - lateLogIncrement (COUNTING — plain, source, or window-stamped derived)
+    // MARK: - lateLogIncrement (COUNTING — plain, source, or linked)
 
     /// Logs `delta` (> 0) on a closed board's COUNTING square, stamped at the
     /// board's `endDate`.
     ///
     ///   - Plain / source counting (`sharedCounterId == nil`): appends the
     ///     increment directly (event-owning).
-    ///   - Window-stamped derived counter: the increment is appended on the
-    ///     ROOT (derived rows own no events — carve-out), then propagated to
-    ///     every OTHER live linked row exactly like `incrementSharedCounter`
-    ///     (frozen rows are skipped for writes, still reached for cascade).
-    ///   - Hub-linked derived counter (no `startDate`): no-op — its square
-    ///     isn't tappable on a closed board (OQ2 default).
+    ///   - LINKED counter: the increment is appended on the ROOT (linked
+    ///     rows own no events); every linked row resolves from the root's
+    ///     events, so the side effects re-derive the root's placement reach
+    ///     and nothing else is written.
     ///
     /// - Throws: `LateLogError.boardNotClosed` / `.taskNotPlaced` /
     ///   `.wrongTaskType` / `.invalidDelta`.
@@ -245,26 +193,17 @@ extension AppDatabase {
             guard let task = try Task.fetchOne(db, key: taskId), task.type == .counting else {
                 throw LateLogError.wrongTaskType
             }
-            // Plain / source counting authors on itself; a window-stamped
-            // derived row authors on its ROOT (derived rows own no events —
-            // carve-out); a hub-linked derived row is not tappable (OQ2).
-            let rootId: String
-            if let sharedCounterId = task.sharedCounterId {
-                guard BoardSources.isWindowStampedDerived(task) else { return }
-                rootId = sharedCounterId
-            } else {
-                rootId = taskId
-            }
+            // Plain / source counting authors on itself; a LINKED row authors
+            // on its ROOT (linked rows own no events).
+            let rootId = (task.sharedCounterId?.isEmpty == false) ? task.sharedCounterId! : taskId
             let occurredAt = lateLogOccurredAt(board: board, nowIso: now)
             // `boardId` = the closed board on BOTH branches — it is what makes
             // the event a late log (`selectClosedBoardLateLogs` /
             // `isEventSealImmune`), i.e. undoable (R2).
             try Self.appendIncrementEvent(db: db, taskId: rootId, delta: delta, boardId: boardId, now: now, occurredAt: occurredAt)
-            try Self.refreshDerivedBaselines(db: db, rootTaskId: rootId)
-            let linkedIds = try Self.propagateRootLogToLinkedRows(
-                db: db, rootId: rootId, reachOccurredAt: occurredAt, now: now
-            )
-            try Self.reDeriveAfterLateLogWrite(db: db, changedTaskIds: linkedIds.union([rootId]), now: now, lateLogStamp: occurredAt)
+            // The side effects walk the root's placement reach (its linked rows
+            // resolve from its events), so nothing else is written.
+            try Self.reDeriveAfterLateLogWrite(db: db, changedTaskIds: [rootId, taskId], now: now, lateLogStamp: occurredAt)
         }
     }
 
@@ -279,6 +218,9 @@ extension AppDatabase {
         let completionIds: Set<String>
         /// Plain COUNTING direct children to log `+1` on (D7).
         let incrementIds: Set<String>
+        /// LINKED counting direct children (slice 0) → the ROOT the `+1` is
+        /// written on (a linked row owns no events).
+        let linkedIncrementRoots: [String: String]
         /// The compound's rule under the staged state.
         let isRuleMet: Bool
     }
@@ -303,7 +245,8 @@ extension AppDatabase {
         childrenByCompound: [String: [CompoundChild]],
         eventsByTaskId: [String: [TaskEvent]],
         occurredAt: String,
-        now: String
+        now: String,
+        childTargets: [PlacementChildTarget]? = nil
     ) -> CompoundLateLogPlan {
         let sealedAtMs = board.sealedAt.flatMap { DateFormatting.parseISO($0) }
             .map { $0.timeIntervalSince1970 * 1000 } ?? .infinity
@@ -319,16 +262,22 @@ extension AppDatabase {
         let ownChildIds = Set((childrenByCompound[compound.id] ?? []).filter { !$0.isDeleted }.map(\.childTaskId))
         var completionIds = Set<String>()
         var incrementIds = Set<String>()
+        var linkedIncrementRoots: [String: String] = [:]
         for id in requestedChildIds where ownChildIds.contains(id) {
-            guard let child = taskById[id], !child.isDeleted, isEventOwningTask(child) else { continue }
+            guard let child = taskById[id], !child.isDeleted else { continue }
             switch child.type {
-            case .normal:
+            case .normal where isEventOwningTask(child):
                 let state = resolveTaskWindowState(
                     task: child, events: bounded[id] ?? [], windowStart: board.startDate, windowEnd: boardWindowEnd(board)
                 )
                 if !state.isCompleted { completionIds.insert(id) }
-            case .counting where child.sharedCounterId == nil:
+            case .counting where child.sharedCounterId == nil && isEventOwningTask(child):
                 incrementIds.insert(id)
+            case .counting:
+                // A LINKED counting child (slice 0) logs on its root, where the
+                // kernel reads it over this board's window.
+                guard let root = child.sharedCounterId, let rootTask = taskById[root], !rootTask.isDeleted else { continue }
+                linkedIncrementRoots[id] = root
             default:
                 continue
             }
@@ -344,15 +293,28 @@ extension AppDatabase {
                 lastSyncedAt: nil, version: 1, isDeleted: false, deletedAt: nil
             ))
         }
+        for (id, root) in linkedIncrementRoots {
+            staged[root, default: []].append(TaskEvent(
+                id: "staged-\(id)", userId: compound.userId, taskId: root,
+                kind: .increment, delta: 1,
+                occurredAt: occurredAt, boardId: board.id, createdAt: now, updatedAt: now,
+                lastSyncedAt: nil, version: 1, isDeleted: false, deletedAt: nil
+            ))
+        }
+        // The PLACEMENT's child goals (slice 2a) — what the sealed re-derive scores with.
         let met = CompoundEvaluation.evaluate(
             compound: compound,
             childrenByCompound: childrenByCompound,
             taskById: taskById,
             windowContext: CompoundWindowContext(
                 windowStart: board.startDate, windowEnd: boardWindowEnd(board), eventsByTaskId: staged
-            )
+            ),
+            childTargets: childTargets
         )
-        return CompoundLateLogPlan(completionIds: completionIds, incrementIds: incrementIds, isRuleMet: met)
+        return CompoundLateLogPlan(
+            completionIds: completionIds, incrementIds: incrementIds,
+            linkedIncrementRoots: linkedIncrementRoots, isRuleMet: met
+        )
     }
 
     /// Commits the staged parts of a COMPOUND square on a closed board —
@@ -390,10 +352,14 @@ extension AppDatabase {
             }
 
             let occurredAt = lateLogOccurredAt(board: board, nowIso: now)
+            let placement = try BoardTask
+                .filter(Column("boardId") == boardId && Column("taskId") == compoundTaskId && Column("isDeleted") == false)
+                .fetchOne(db)
             let plan = Self.planCompoundLateLog(
                 board: board, compound: compound, requestedChildIds: Set(childTaskIds),
                 taskById: taskById, childrenByCompound: childrenByCompound,
-                eventsByTaskId: eventsByTaskId, occurredAt: occurredAt, now: now
+                eventsByTaskId: eventsByTaskId, occurredAt: occurredAt, now: now,
+                childTargets: placement?.childTargets
             )
             guard plan.isRuleMet else { throw LateLogError.ruleNotMet }
 
@@ -403,7 +369,13 @@ extension AppDatabase {
             for id in plan.incrementIds {
                 try Self.appendIncrementEvent(db: db, taskId: id, delta: 1, boardId: boardId, now: now, occurredAt: occurredAt)
             }
-            let touched = plan.completionIds.union(plan.incrementIds).union([compoundTaskId])
+            var touched = plan.completionIds.union(plan.incrementIds).union([compoundTaskId])
+            // A linked child (slice 0): the `+1` is the ROOT's, exactly as
+            // `lateLogIncrement` writes it for a placed linked square.
+            for (childId, root) in plan.linkedIncrementRoots.sorted(by: { $0.key < $1.key }) {
+                try Self.appendIncrementEvent(db: db, taskId: root, delta: 1, boardId: boardId, now: now, occurredAt: occurredAt)
+                touched.insert(root); touched.insert(childId)
+            }
             try Self.reDeriveAfterLateLogWrite(db: db, changedTaskIds: touched, now: now, lateLogStamp: occurredAt)
         }
     }
@@ -412,7 +384,7 @@ extension AppDatabase {
 
     /// Reverses exactly the newest late log a user made on `boardId` for
     /// `taskId` (`selectClosedBoardLateLogs` — newest `createdAt` first). For
-    /// a window-stamped derived square, pass the ROOT id (derived rows own no
+    /// a linked square, pass the ROOT id (linked rows own no
     /// events). Silent no-op if there is nothing to undo.
     ///
     /// - Throws: `LateLogError.boardNotClosed`.
@@ -442,15 +414,7 @@ extension AppDatabase {
 
             try Self.stampTaskCachesAuthored(db: db, taskId: taskId, now: now)
 
-            var changedIds: Set<String> = [taskId]
-            if let refreshed = try Task.fetchOne(db, key: taskId), refreshed.type == .counting, refreshed.sharedCounterId == nil {
-                try Self.refreshDerivedBaselines(db: db, rootTaskId: taskId)
-                changedIds.formUnion(try Self.propagateRootLogToLinkedRows(
-                    db: db, rootId: taskId, reachOccurredAt: latest.occurredAt, now: now
-                ))
-            }
-
-            try Self.reDeriveAfterLateLogWrite(db: db, changedTaskIds: changedIds, now: now, lateLogStamp: latest.occurredAt)
+            try Self.reDeriveAfterLateLogWrite(db: db, changedTaskIds: [taskId], now: now, lateLogStamp: latest.occurredAt)
         }
     }
 }

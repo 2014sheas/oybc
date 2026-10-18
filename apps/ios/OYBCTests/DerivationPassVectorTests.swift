@@ -97,6 +97,12 @@ final class DerivationPassVectorTests: XCTestCase {
         let taskId: String
         let row: Int
         let col: Int
+        struct MiniChildTarget: Decodable { let childId: String; let target: CountValue }
+        /// Slice 2a — optional placement parameters.
+        let targetOverride: CountValue?
+        let targetKind: String?
+        let childTargets: [MiniChildTarget]?
+        let titleOverride: String?
     }
 
     private struct MiniBoard: Decodable {
@@ -164,26 +170,47 @@ final class DerivationPassVectorTests: XCTestCase {
         let expectedCells: [MiniCellState]?
     }
 
-    private struct EtwsdTask: Decodable {
+    private struct PrTask: Decodable {
         let id: String
+        let type: String
         let isDeleted: Bool
         let sharedCounterId: String?
-        let startDate: String?
-        let createdInWizard: Bool
     }
 
-    private struct EtwsdVector: Decodable {
+    private struct PrBoardTask: Decodable {
+        let id: String
+        let boardId: String
+        let taskId: String
+        let isDeleted: Bool
+    }
+
+    private struct PrPlacement: Decodable, Equatable {
+        let boardTaskId: String
+        let memberTaskId: String
+        let viaCompoundId: String?
+    }
+
+    private struct PrExpected: Decodable {
+        let taskIds: [String]
+        let compoundIds: [String]
+        let boardIds: [String]
+        let placements: [PrPlacement]
+    }
+
+    private struct PrVector: Decodable {
         let name: String
         let ids: [String]
-        let tasks: [EtwsdTask]
-        let expected: [String]
+        let tasks: [PrTask]
+        let compoundChildren: [MiniChild]
+        let boardTasks: [PrBoardTask]
+        let expected: PrExpected
     }
 
     private struct Fixture: Decodable {
         let findTransitiveParentCompounds: [FtpcVector]
         let findAffectedBoardIds: [FabiVector]
         let computeBoardStatsUpdate: [CbsuVector]
-        let expandToWindowStampedDerived: [EtwsdVector]
+        let placementsReached: [PrVector]
     }
 
     private func loadFixture() throws -> Fixture {
@@ -295,6 +322,10 @@ final class DerivationPassVectorTests: XCTestCase {
             row: m.row,
             col: m.col,
             isCenter: false,
+            targetOverride: m.targetOverride,
+            targetKind: m.targetKind.flatMap(CountKind.init(rawValue:)),
+            childTargets: m.childTargets?.map { PlacementChildTarget(childId: $0.childId, target: $0.target) },
+            titleOverride: m.titleOverride,
             createdAt: ts,
             updatedAt: ts,
             version: 1
@@ -369,22 +400,46 @@ final class DerivationPassVectorTests: XCTestCase {
         }
     }
 
-    func testExpandToWindowStampedDerivedVectors() throws {
+    func testPlacementsReachedVectors() throws {
         let fixture = try loadFixture()
-        XCTAssertFalse(fixture.expandToWindowStampedDerived.isEmpty)
-        for v in fixture.expandToWindowStampedDerived {
+        XCTAssertFalse(fixture.placementsReached.isEmpty)
+        for v in fixture.placementsReached {
             let tasks = v.tasks.map { m in
                 Task(
-                    id: m.id, userId: "u", title: m.id, type: .counting,
+                    id: m.id, userId: "u", title: m.id, type: TaskType(rawValue: m.type) ?? .counting,
                     totalCompletions: 0, totalInstances: 0,
                     createdAt: ts, updatedAt: ts, version: 1, isDeleted: m.isDeleted,
-                    startDate: m.startDate,
-                    sharedCounterId: m.sharedCounterId,
-                    createdInWizard: m.createdInWizard
+                    sharedCounterId: m.sharedCounterId
                 )
             }
-            let result = expandToWindowStampedDerived(ids: Set(v.ids), tasks: tasks)
-            XCTAssertEqual(result.sorted(), v.expected, "Vector '\(v.name)'")
+            let children = v.compoundChildren.enumerated().map { toChild($1, $0) }
+            let boardTasks = v.boardTasks.enumerated().map { idx, m in
+                BoardTask(
+                    id: m.id, boardId: m.boardId, taskId: m.taskId, row: 0, col: idx, isCenter: false,
+                    createdAt: ts, updatedAt: ts, version: 1, isDeleted: m.isDeleted
+                )
+            }
+            let reach = DerivationPass.placementsReachedByTasks(
+                ids: Set(v.ids), tasks: tasks, compoundChildren: children, boardTasks: boardTasks
+            )
+            let name = "Vector '\(v.name)'"
+            XCTAssertEqual(reach.taskIds.sorted(), v.expected.taskIds, name)
+            XCTAssertEqual(reach.compoundIds.sorted(), v.expected.compoundIds, name)
+            XCTAssertEqual(reach.boardIds.sorted(), v.expected.boardIds, name)
+            let placements = reach.placements
+                .map { PrPlacement(boardTaskId: $0.boardTask.id, memberTaskId: $0.memberTaskId, viaCompoundId: $0.viaCompoundId) }
+                .sorted { ($0.boardTaskId, $0.memberTaskId) < ($1.boardTaskId, $1.memberTaskId) }
+            let expected = v.expected.placements.sorted { ($0.boardTaskId, $0.memberTaskId) < ($1.boardTaskId, $1.memberTaskId) }
+            XCTAssertEqual(placements, expected, name)
+            // The single-root form is the same walk.
+            if v.ids.count == 1 {
+                let byRoot = DerivationPass.placementsReachedByRoot(
+                    rootId: v.ids[0], tasks: tasks, compoundChildren: children, boardTasks: boardTasks
+                )
+                XCTAssertEqual(byRoot.taskIds, reach.taskIds, name)
+                XCTAssertEqual(byRoot.boardIds, reach.boardIds, name)
+                XCTAssertEqual(byRoot.placements.count, reach.placements.count, name)
+            }
         }
     }
 

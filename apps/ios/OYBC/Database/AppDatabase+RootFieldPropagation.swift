@@ -57,7 +57,7 @@ extension AppDatabase {
         patch: RootFieldPropagation.EditPatch,
         now: String
     ) throws -> [String] {
-        let plan = RootFieldPropagation.plan(root: snapshot.root, patch: patch, copies: snapshot.copies, now: now)
+        let plan = RootFieldPropagation.plan(root: snapshot.root, patch: patch, copies: snapshot.copies)
         let versionBefore = Dictionary(
             snapshot.copies.map { ($0.task.id, $0.task.version) }, uniquingKeysWith: { first, _ in first }
         )

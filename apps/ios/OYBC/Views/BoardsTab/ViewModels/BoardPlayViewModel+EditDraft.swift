@@ -19,6 +19,20 @@ extension BoardPlayViewModel {
         for cell in editSquaresDraft.values {
             if let pending = cell.pending { map[pending.task.id] = pending.task }
         }
+        // Slice 3a: a square still on its ORIGINAL task reads the PLACEMENT-ADJUSTED
+        // task (its per-board goal / title), so the grid and the sheet seed what
+        // the board shows; a staged override then lays over that.
+        for cell in editSquaresDraft.values where !cell.isNew && cell.taskId == cell.originalTaskId {
+            if let placement = boardTasks.first(where: { $0.id == cell.id }), let adjusted = placedTask(placement) {
+                map[cell.taskId] = adjusted
+            }
+        }
+        // Slice 3b: a staged add / replace carrying picked parameters reads
+        // through the one placement rule (the override then lays over that).
+        for cell in editSquaresDraft.values {
+            guard let params = cell.placement, cell.pending == nil, let base = map[cell.taskId] else { continue }
+            map[cell.taskId] = params.apply(to: base, root: base.sharedCounterId.flatMap { map[$0] })
+        }
         guard !editTaskOverrides.isEmpty else { return map }
         for (taskId, override) in editTaskOverrides {
             guard let t = map[taskId] else { continue }

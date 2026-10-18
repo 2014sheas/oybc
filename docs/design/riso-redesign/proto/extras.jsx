@@ -23,7 +23,7 @@ const OB_SLIDES = [
     mood: "happy",
     kicker: "Welcome to",
     title: "OYBC",
-    body: "Own Your Bingo Card. Turn the goals you keep meaning to hit into a board you actually want to fill.",
+    body: "On Your Bingo Card. Turn the goals you keep meaning to hit into a board you actually want to fill.",
     art: "wordmark",
   },
   {
@@ -164,7 +164,7 @@ function ShareSheet({ open, board, stats, onClose }) {
                 <div><b>7d</b><span>Streak</span></div>
               </div>
             )}
-            <div className="sh-poster-foot">Own Your Bingo Card</div>
+            <div className="sh-poster-foot">On Your Bingo Card</div>
           </div>
 
           <button className={"sh-statline" + (withStats ? " on" : "")} onClick={() => setWithStats(v => !v)}>

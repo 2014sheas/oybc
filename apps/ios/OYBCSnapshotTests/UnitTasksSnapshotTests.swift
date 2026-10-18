@@ -140,8 +140,8 @@ final class UnitTasksSnapshotTests: XCTestCase {
             totalCompletions: 0, totalInstances: 0, currentCount: 12, createdAt: now, updatedAt: now, version: 1, isDeleted: false
         )
         let src = SharedCounterMemberTask(
-            taskId: "m1", taskTitle: "Read 12 books", isSource: false, boardId: "b1", boardName: "2026",
-            timeframe: .yearly, window: "2026", goal: 12, logged: 12, met: true, over: 0, isActive: true
+            boardTaskId: "bt-m1-b1", taskId: "m1", taskTitle: "Read 12 books", isSource: false, boardId: "b1", boardName: "2026",
+            timeframe: .yearly, window: "2026", goal: 12, logged: 12, met: true, over: 0, isActive: true, viaCompoundId: nil
         )
         let group = SharedCounterGroup(
             counterId: "ct-books", name: "Books", action: "Read", unit: "books", lifetime: 12,
@@ -149,7 +149,7 @@ final class UnitTasksSnapshotTests: XCTestCase {
         )
         let impact = AppDatabase.TaskDeletionImpact(
             boardTaskCount: 0, affectedBoardIds: [], affectedBoards: [], childLinkCount: 0, parentLinkCount: 0,
-            counterMemberCount: 1, counterMembers: [member], derivedWindowCounterCount: 0, unitTaskCount: unitTasks
+            counterMemberCount: 1, counterMembers: [member], unitTaskCount: unitTasks
         )
         return CounterDeleteConfirmView(group: group, impact: impact, onConfirm: {}, onCancel: {})
     }

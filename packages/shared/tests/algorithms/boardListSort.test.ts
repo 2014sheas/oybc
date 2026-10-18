@@ -1,4 +1,9 @@
-import { compareBoardsForList } from '../../src/algorithms/boardListSort';
+import {
+  activeBoardPlacementCounts,
+  boardPlacementStatus,
+  compareBoardsForList,
+  isBoardActiveForList,
+} from '../../src/algorithms/boardListSort';
 import type { Board } from '../../src/types/board';
 import { BoardStatus, CenterSquareType, Timeframe } from '../../src/constants/enums';
 
@@ -144,5 +149,68 @@ describe('compareBoardsForList', () => {
       updatedAt: '2026-06-11T00:00:00.000Z',
     });
     expect(sortIds([draftOld, active, draftNew])).toEqual(['active', 'draftNew', 'draftOld']);
+  });
+});
+
+describe('activeBoardPlacementCounts', () => {
+  const now = new Date('2026-06-22T12:00:00.000Z');
+  const boards = [
+    makeBoard({ id: 'a1' }),
+    makeBoard({ id: 'a2' }),
+    makeBoard({ id: 'done', status: BoardStatus.COMPLETED }),
+    makeBoard({ id: 'draft', status: BoardStatus.DRAFT }),
+    makeBoard({ id: 'sealed', sealedAt: '2026-06-21T00:00:00.000Z' }),
+    makeBoard({ id: 'ended', endDate: '2026-06-21T00:00:00.000Z' }),
+    makeBoard({ id: 'gone', isDeleted: true }),
+  ];
+
+  it('counts distinct still-in-play boards only', () => {
+    const counts = activeBoardPlacementCounts(
+      [
+        { taskId: 't', boardId: 'a1' },
+        { taskId: 't', boardId: 'a1' },
+        { taskId: 't', boardId: 'a2' },
+        { taskId: 't', boardId: 'done' },
+        { taskId: 't', boardId: 'draft' },
+        { taskId: 't', boardId: 'sealed' },
+        { taskId: 't', boardId: 'ended' },
+        { taskId: 't', boardId: 'gone' },
+        { taskId: 't', boardId: 'unknown' },
+        { taskId: 'u', boardId: 'a1', isDeleted: true },
+        { taskId: 'v', boardId: 'done' },
+      ],
+      boards,
+      now,
+    );
+    expect(counts).toEqual({ t: 2 });
+  });
+});
+
+describe('isBoardActiveForList / boardPlacementStatus', () => {
+  const inPlay = makeBoard({ id: 'a' });
+  const ended = makeBoard({ id: 'ended', endDate: '2026-06-10T00:00:00.000Z' });
+  const closed = makeBoard({ id: 'closed', sealedAt: '2026-06-12T00:00:00.000Z' });
+  const closedDone = makeBoard({ id: 'closedDone', status: BoardStatus.COMPLETED, sealedAt: '2026-06-12T00:00:00.000Z' });
+  const done = makeBoard({ id: 'done', status: BoardStatus.COMPLETED });
+  const draft = makeBoard({ id: 'draft', status: BoardStatus.DRAFT });
+  const indefinite = makeBoard({ id: 'indef', timeframe: Timeframe.INDEFINITE, endDate: undefined });
+
+  it('an ACTIVE board past its endDate, or closed, is not in play — only its stored status still says "active"', () => {
+    expect(isBoardActiveForList(inPlay, NOW)).toBe(true);
+    expect(isBoardActiveForList(indefinite, NOW)).toBe(true);
+    expect(isBoardActiveForList(ended, NOW)).toBe(false);
+    expect(isBoardActiveForList(closed, NOW)).toBe(false);
+    expect(isBoardActiveForList(done, NOW)).toBe(false);
+    expect(isBoardActiveForList(draft, NOW)).toBe(false);
+  });
+
+  it('labels an ended board "expired" and a sealed one "closed"; otherwise the stored status', () => {
+    expect(boardPlacementStatus(inPlay, NOW)).toBe('active');
+    expect(boardPlacementStatus(ended, NOW)).toBe('expired');
+    expect(boardPlacementStatus(closed, NOW)).toBe('closed');
+    expect(boardPlacementStatus(closedDone, NOW)).toBe('closed');
+    expect(boardPlacementStatus(done, NOW)).toBe('completed');
+    expect(boardPlacementStatus(draft, NOW)).toBe('draft');
+    expect(boardPlacementStatus(indefinite, NOW)).toBe('active');
   });
 });

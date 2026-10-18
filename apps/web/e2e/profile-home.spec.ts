@@ -57,7 +57,6 @@ test.describe('Profile home — tiles', () => {
   test('Streak tile shows the empty state with no bingo streak', async ({ page }) => {
     await page.goto('/profile?__oybc_test_bypass=1');
     await expect(page.getByText('No streak yet')).toBeVisible();
-    await expect(page.getByText('Clear a board to start one.')).toBeVisible();
 
     await page.getByRole('link', { name: /No streak yet/ }).click();
     await expect(page).toHaveURL(/\/profile\/streaks/);

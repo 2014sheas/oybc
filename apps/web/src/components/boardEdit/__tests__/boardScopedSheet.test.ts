@@ -81,14 +81,18 @@ describe('sheetWouldFork — the compound AND its edited sub-tasks', () => {
   });
 
   it('is true when the task itself forks', () => {
-    expect(sheetWouldFork('H', null, { forking: new Set(['H']), rows })).toBe(true);
+    expect(sheetWouldFork('H', null, { forking: new Set(['H']), rows }, true)).toBe(true);
+  });
+
+  it('is false when the draft edits parameter fields only (goal, title, a child goal)', () => {
+    expect(sheetWouldFork('H', null, { forking: new Set(['H']), rows }, false)).toBe(false);
   });
 
   it('is true only when a forking sub-task is actually changed', () => {
     const check = { forking: new Set(['C']), rows };
-    expect(sheetWouldFork('H', draft('Stretch'), check)).toBe(false);
-    expect(sheetWouldFork('H', draft('Stretch 10 min'), check)).toBe(true);
-    expect(sheetWouldFork('H', draft('Stretch 10 min'), { forking: new Set(['D']), rows })).toBe(false);
+    expect(sheetWouldFork('H', draft('Stretch'), check, true)).toBe(false);
+    expect(sheetWouldFork('H', draft('Stretch 10 min'), check, true)).toBe(true);
+    expect(sheetWouldFork('H', draft('Stretch 10 min'), { forking: new Set(['D']), rows }, true)).toBe(false);
   });
 
   it('childStepChanged ignores removed / blank steps and unknown rows', () => {

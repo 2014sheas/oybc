@@ -1,0 +1,34 @@
+/* Shared by the square sheet and Counter Detail's Log card. `--log-link` recolours the Remove link on a blue card. */
+.entryRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.entryField {
+  flex: 1;
+  min-width: 0;
+}
+.removeRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.removeLink {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--log-link, var(--riso-muted));
+  font-family: var(--riso-font-head);
+  font-weight: 700;
+  font-size: 12px;
+  cursor: pointer;
+}
+.removeLink:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.removeLink:focus-visible {
+  outline: 3px solid var(--riso-blue);
+  outline-offset: 2px;
+}

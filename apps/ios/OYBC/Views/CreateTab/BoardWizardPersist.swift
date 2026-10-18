@@ -112,7 +112,7 @@ enum WizardStatus: String {
 /// nothing moves after first paint. Shuffle bumps the seed.
 ///
 /// It is a PREVIEW affordance: the persist path never passes it —
-/// `saveWizardBoard` mints the real derived rows inside its own transaction,
+/// `saveWizardBoard` plans the real placement parameters inside its own transaction,
 /// with the platform rng, and would double-roll if the placement it was handed
 /// already carried stand-ins.
 func buildWizardPlacement(
@@ -294,8 +294,7 @@ func buildWizardPlacement(
 /// draft order. A brand-new sub-task (no real `childTaskId` yet, `isNew ==
 /// true`) gets a synthetic id (`"staged-child-<patchChildId>"`) so it still
 /// counts toward "N sub-tasks" — pair with `stagedNewChildPlaceholders(...)`
-/// below so type-dependent reads (the "N with a goal" subcount, windowed
-/// completion) can resolve it. A not-yet-persisted child trivially evaluates
+/// below so type-dependent reads (windowed completion) can resolve it. A not-yet-persisted child trivially evaluates
 /// as incomplete (no events exist for it yet), which is correct: it can't
 /// have contributed to any past completion.
 func effectiveCompoundChildrenByCompound(
@@ -463,6 +462,9 @@ func persistWizardBoard(
     // §Member rules (B3) — the hand-added layer's dice travel with the ids
     // they belong to: onto the draft blob, and into the mint on an active save.
     let capturedManualTaskVary = controller.manualTaskVary
+    // TASK_WINDOW_REWORK slice 3b — the wizard's per-cell placement
+    // parameters: onto the draft blob, and (active save) onto the rows.
+    let capturedPlacementParams = controller.placementParams
     // Bug #85 — snapshot the pending tasks dictionary from the controller
     // before going async so we don't race against concurrent mutations on
     // the main actor. Dictionary is a value type (copy-on-write) so this
@@ -552,7 +554,8 @@ func persistWizardBoard(
                     manualTaskIds: Array(capturedManualTaskIds),
                     removedTaskIds: Array(capturedRemovedTaskIds),
                     sources: capturedSources,
-                    manualTaskVary: capturedManualTaskVary
+                    manualTaskVary: capturedManualTaskVary,
+                    placementParams: capturedPlacementParams
                 )
                 if let encodedMix = mixPayload.encoded() {
                     boardDict["recurringDraftMix"] = encodedMix
@@ -617,13 +620,14 @@ func persistWizardBoard(
                 pendingTasks: pendingForSave,
                 stagedEdits: isActiveCreate ? capturedStagedEdits : [:],
                 isUpdate: isUpdate,
-                // Board Sources §Member rules (B2) — the mint re-resolves each
+                // Board Sources §Member rules — the planner re-resolves each
                 // placed member's rules against this board's final window, so
                 // it needs the wizard's sources + hand-added layer. Ignored on
                 // a draft save (see `saveWizardBoard`'s active-only gate).
                 sources: capturedSources,
                 manualTaskIds: Array(capturedManualTaskIds),
                 manualTaskVary: capturedManualTaskVary,
+                placementParams: capturedPlacementParams,
                 now: now
             )
 
@@ -707,6 +711,8 @@ func persistRecurringTemplate(
     // §Member rules (B3) — dice for hand-added counting members persist on
     // the record, so every future window rolls the same way this one does.
     let manualTaskVary = controller.manualTaskVary
+    // Slice 3b — a typed goal / title on a hand-added row is frozen onto the record.
+    let capturedPlacementParams = controller.placementParams
     let editingTemplateId = controller.editingTemplateId
     let weekStartDay = controller.weekStartDay
     let now = AppDatabase.currentTimestamp()
@@ -778,6 +784,14 @@ func persistRecurringTemplate(
                 )
             }
 
+            let manualTaskTargets = frozenManualTaskTargets(
+                manualTaskIds: manualTaskIds, params: capturedPlacementParams,
+                tasksById: Dictionary(
+                    (try database.fetchTasks(ids: Array(capturedPlacementParams.keys))).map { ($0.id, $0) },
+                    uniquingKeysWith: { first, _ in first }
+                )
+            )
+
             // ── Edit path ─────────────────────────────────────────────
             if let templateId = editingTemplateId {
                 guard let existing = try database.fetchRecurringBoardTemplate(id: templateId) else {
@@ -803,6 +817,8 @@ func persistRecurringTemplate(
                     removedTaskIds: removedTaskIds,
                     sources: sources,
                     manualTaskVary: manualTaskVary,
+                    // Edit replaces the stored map; empty is stored ABSENT (clearable).
+                    manualTaskTargets: manualTaskTargets.isEmpty ? nil : manualTaskTargets,
                     // `isActive` isn't surfaced in the wizard form (the
                     // templates list owns the pause toggle), so preserve.
                     lastSpawnedWindowKey: existing.lastSpawnedWindowKey,
@@ -846,6 +862,7 @@ func persistRecurringTemplate(
                 // deliberately keeps the empty map — there it means "clear the
                 // dice", which an omission can't express.
                 manualTaskVary: manualTaskVary.isEmpty ? nil : manualTaskVary,
+                manualTaskTargets: manualTaskTargets.isEmpty ? nil : manualTaskTargets,
                 lastSpawnedWindowKey: nil,
                 isActive: true,
                 createdAt: now,
@@ -908,4 +925,30 @@ func persistRecurringTemplate(
             }
         }
     }
+}
+
+/// The hand-added members' frozen per-window parameters a REPEATING-board
+/// wizard writes onto the record (slice 3b; web `wizardPersist.ts`): for each
+/// hand-added id whose controller params carry a goal and/or a title,
+/// `{ target, kind, title? }`. Window-default params from quick-add are never
+/// set on a repeating wizard, so only typed goals land here. A title-only
+/// param freezes the task's own goal.
+///
+/// - Parameters:
+///   - manualTaskIds: The hand-added layer.
+///   - params: The controller's per-cell placement parameters.
+///   - tasksById: The tasks those params name (kind / own goal).
+/// - Returns: The map to store (empty ⇒ store the field absent).
+func frozenManualTaskTargets(
+    manualTaskIds: [String], params: [String: PlacementParamsDraft], tasksById: [String: Task]
+) -> [String: ManualTaskTarget] {
+    var out: [String: ManualTaskTarget] = [:]
+    for id in manualTaskIds {
+        guard let p = params[id], let task = tasksById[id] else { continue }
+        guard let target = p.targetOverride ?? (p.titleOverride != nil ? task.maxCount : nil), target > 0 else { continue }
+        out[id] = ManualTaskTarget(
+            target: target, kind: p.targetKind ?? resolveCountKind(task.countKind), title: p.titleOverride
+        )
+    }
+    return out
 }

@@ -91,6 +91,11 @@ export async function createRecurringBoardTemplate(
   if (input.manualTaskVary !== undefined && Object.keys(input.manualTaskVary).length > 0) {
     template.manualTaskVary = { ...input.manualTaskVary };
   }
+  // TASK_WINDOW_REWORK slice 3b — Repeat's frozen per-task overrides. An EMPTY
+  // map is omitted (absent = {}).
+  if (input.manualTaskTargets !== undefined && Object.keys(input.manualTaskTargets).length > 0) {
+    template.manualTaskTargets = { ...input.manualTaskTargets };
+  }
   // Board Sources P1 — canonical sources stamp (docs/BOARD_SOURCES.md).
   if (input.sources !== undefined) {
     template.sources = input.sources.map((s) => ({
@@ -132,8 +137,18 @@ export async function updateRecurringBoardTemplate(
   for (const key of Object.keys(patch) as (keyof typeof patch)[]) {
     if (patch[key] === undefined) delete patch[key];
   }
+  // `manualTaskTargets` is a clearable field (absent = {}): an empty map
+  // removes it rather than storing `{}`.
+  const clearsTargets =
+    patch.manualTaskTargets !== undefined && Object.keys(patch.manualTaskTargets).length === 0;
+  if (clearsTargets) delete patch.manualTaskTargets;
 
   await db.recurringBoardTemplates.update(id, patch);
+  if (clearsTargets) {
+    await db.recurringBoardTemplates.where('id').equals(id).modify((t) => {
+      delete t.manualTaskTargets;
+    });
+  }
   const updated = await db.recurringBoardTemplates.get(id);
   if (updated) {
     await addToSyncQueue(

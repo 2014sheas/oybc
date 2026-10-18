@@ -4,7 +4,7 @@ import SwiftUI
 
 /// The three-card stat bar at the top of the play board:
 ///   - "SQUARES  14/25" + mini progress bar
-///   - "LEFT  4d  to fill it"
+///   - "LEFT  4d"
 ///   - "BINGOS  ★ 1" (solid gold card)
 ///
 /// Pure presentation — no database access.
@@ -16,13 +16,16 @@ struct RisoStatBar: View {
     /// "4d" or "Expired" etc — produced by `getExpiryLabel` in the caller.
     let expiryText: String
     /// When non-nil (a sealed board), the LEFT card becomes the
-    /// permanent-record card: "ENDED / <date> / permanent record".
+    /// closed card: "ENDED / <date>".
     var endedText: String? = nil
     /// Board Edit redesign slice 4 (D14): when non-nil (a board whose window
     /// ended but ISN'T sealed yet — "Ended, not closed"), the LEFT card
-    /// shows "LEFT / Ended / <date> · still logging". Ignored when
+    /// shows "LEFT / Ended / <date>". Ignored when
     /// `endedText` is set (closed wins).
     var endedStillLoggingDate: String? = nil
+    /// Set once the board has earned a moment (`replayMomentKind`): the gold
+    /// BINGOS card becomes a button that replays it. Nil = a plain card.
+    var onBingosTap: (() -> Void)? = nil
 
     var body: some View {
         HStack(alignment: .top, spacing: 9) {
@@ -33,7 +36,14 @@ struct RisoStatBar: View {
             leftCard
 
             // ── Bingos card (gold) ──
-            bingosCard
+            if let onBingosTap {
+                Button(action: onBingosTap) { bingosCard }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("\(linesCompleted) \(linesCompleted == 1 ? "bingo" : "bingos")")
+                    .accessibilityHint("Replays the moment")
+            } else {
+                bingosCard
+            }
         }
         .fixedSize(horizontal: false, vertical: true)
     }
@@ -63,7 +73,7 @@ struct RisoStatBar: View {
             .padding(.top, 3)
         }
         .padding(11)
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(Color.risoPaper2)
         .clipShape(RoundedRectangle(cornerRadius: Riso.cardRadius))
         .overlay(
@@ -83,10 +93,9 @@ struct RisoStatBar: View {
         return expiryText
     }
 
-    private var leftCardSubtitle: String {
-        if endedText != nil { return "permanent record" }
-        if let date = endedStillLoggingDate { return "\(date) · still logging" }
-        return "to fill it"
+    private var leftCardSubtitle: String? {
+        if endedText != nil { return nil }
+        return endedStillLoggingDate
     }
 
     private var leftCard: some View {
@@ -99,12 +108,14 @@ struct RisoStatBar: View {
                 .foregroundStyle(Color.risoInk)
                 .monospacedDigit()
 
-            Text(leftCardSubtitle)
-                .font(.risoBody(10, .bold))
-                .foregroundStyle(Color.risoMuted)
+            if let leftCardSubtitle {
+                Text(leftCardSubtitle)
+                    .font(.risoBody(10, .bold))
+                    .foregroundStyle(Color.risoMuted)
+            }
         }
         .padding(11)
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(Color.risoPaper2)
         .clipShape(RoundedRectangle(cornerRadius: Riso.cardRadius))
         .overlay(
@@ -133,7 +144,7 @@ struct RisoStatBar: View {
             }
         }
         .padding(11)
-        .frame(minWidth: 72, alignment: .leading)
+        .frame(minWidth: 72, maxHeight: .infinity, alignment: .topLeading)
         .background(Color.risoGold)
         .clipShape(RoundedRectangle(cornerRadius: Riso.cardRadius))
         .overlay(

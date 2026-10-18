@@ -93,10 +93,14 @@ final class AppDatabaseRootFieldPropagationTests: XCTestCase {
         XCTAssertEqual(live.action, "Jog")
         XCTAssertEqual(live.maxCount, 10)
         XCTAssertEqual(live.version, 5)
-        try assertUntouched(db, "c-frozen", title: "Run 8 miles")
+        // An ended-board copy propagates like any other (slice 5 retired the freeze).
+        let ended = try XCTUnwrap(K.fetchTask(db, "c-frozen"))
+        XCTAssertEqual(ended.title, "Jog 8 miles")
+        XCTAssertEqual(ended.action, "Jog")
+        XCTAssertEqual(ended.version, 5)
         try assertUntouched(db, "c-sealed", title: "Run 7 miles")
         XCTAssertEqual(try K.fetchTask(db, "c-deleted")?.version, 4)
-        XCTAssertEqual(try queuedTaskIds(db), ["c-live", "root"])
+        XCTAssertEqual(try queuedTaskIds(db), ["c-frozen", "c-live", "root"])
     }
 
     func test_customRootRename_carriesVerbatimToLiveCopy() throws {
@@ -106,7 +110,9 @@ final class AppDatabaseRootFieldPropagationTests: XCTestCase {
         XCTAssertEqual(live.title, "Marathon block")
         XCTAssertEqual(live.maxCount, 10)
         XCTAssertEqual(live.version, 5)
-        try assertUntouched(db, "c-frozen", title: "Run 8 miles")
+        let ended = try XCTUnwrap(K.fetchTask(db, "c-frozen"))
+        XCTAssertEqual(ended.title, "Marathon block", "an ended-board copy propagates too")
+        XCTAssertEqual(ended.version, 5)
     }
 
     func test_customCopyTitleKept_whenRootTitleStaysAuto() throws {

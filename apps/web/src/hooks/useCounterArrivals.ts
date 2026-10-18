@@ -1,3 +1,4 @@
+import { placedTaskFor } from '../db/adapters';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   TaskType,
@@ -55,8 +56,7 @@ function counterDisplayName(source: Task | undefined): string {
  * in isolation (issue #280 lesson).
  *
  * `displayed` uses `resolveLinkedCounterDisplay` for linked members (the
- * root's in-window sum for window-stamped rows, the baseline-adjusted
- * lifetime carve-out for hub-linked ones) and the board-WINDOWED count for sources — matching what
+ * root's sum inside the placing board's window) and the board-WINDOWED count for sources — matching what
  * the grid cell shows (issue #377; a source square's cell resolves via
  * `resolveTaskWindowState`, so the arrival baseline must too, or a library
  * decrement that tombstones a pre-window event desyncs the two).
@@ -68,7 +68,7 @@ export function buildArrivalSquares(input: BuildArrivalSquaresInput): ArrivalSqu
   const { boardTasks, taskMap, sharedCounterSourceIds, windowContext } = input;
   const squares: ArrivalSquare[] = [];
   for (const bt of boardTasks) {
-    const task = taskMap[bt.taskId];
+    const task = placedTaskFor(bt, taskMap);
     if (!task || task.type !== TaskType.COUNTING) continue;
 
     // Resolve the counter's SOURCE task id: a linked member points at its

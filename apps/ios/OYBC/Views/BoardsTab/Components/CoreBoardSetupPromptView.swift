@@ -50,16 +50,6 @@ struct CoreBoardSetupPromptView: View {
                 .risoH2()
                 .multilineTextAlignment(.center)
 
-            Text(
-                resumeDraft
-                    ? "Pick up where you left off and finish setting up this board."
-                    : (isPast
-                        ? "Add a past board to fill in this window."
-                        : "Set up a board for this window to start tracking your goals.")
-            )
-            .risoSub()
-            .multilineTextAlignment(.center)
-            .padding(.horizontal, 24)
 
             RisoButton(
                 title: resumeDraft

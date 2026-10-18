@@ -27,59 +27,63 @@
  */
 
 import type { Task } from '../types/task';
+import type { CompoundChild } from '../types/compoundChild';
+import { resolveLinkedCounterDisplay, withChildTarget, withPlacementParams } from './placementParams';
+import { placementsReachedByRoot } from './derivationPass';
 import type { Board } from '../types/board';
 import type { BoardTask } from '../types/boardTask';
 import type { TaskEvent } from '../types/taskEvent';
-import { BoardStatus, TaskType, Timeframe } from '../constants/enums';
-import { quantizeCount, resolveCountKind, type CountKind } from './countValue';
-import { deriveDisplayedCount } from './sharedCounter';
+import { TaskType, Timeframe } from '../constants/enums';
+import { finalizeWindowCount, quantizeCount, resolveCountKind, type CountKind } from './countValue';
 import { formatTimeframeLabel } from './calendarBoundaries';
 import { counterDisplayName } from './counterSettings';
-import { isWindowStampedDerived } from './memberRules';
-import {
-  boardWindowEnd,
-  boundWindowContextAtSeal,
-  resolveLinkedCounterDisplay,
-  resolveTaskWindowState,
-} from './taskEvents';
+import { boardWindowEnd, boundWindowContextAtSeal, resolveTaskWindowState } from './taskEvents';
 import { isTaskExpired } from './taskExpiry';
+import { isBoardActiveForList, type InPlayBoardFields } from './boardListSort';
 
 /**
  * One member task of a shared counter, resolved to its board placement +
  * window + progress, ready for a Hub/Detail row.
  */
 export interface SharedCounterMemberTask {
-  /** The member task's id. */
+  /** The placement this card stands for (slice 2b: members are placements). */
+  boardTaskId: string;
+  /** The member task on the card: the root, a linked task, or — when the
+   *  placement is a parent compound — the linked CHILD reached through it. */
   taskId: string;
-  /** The member task's display title. */
+  /** The card's title: the placement's `titleOverride`, else the root's
+   *  templates at the placement's goal, else the task's title. */
   taskTitle: string;
-  /** True for the source task (the accumulator), false for a linked task. */
+  /** True when the card's task is the root (the accumulator). */
   isSource: boolean;
-  /** The board this task is placed on (its "primary" non-deleted placement),
-   *  or null when the task is on no live board. */
-  boardId: string | null;
-  boardName: string | null;
-  /** The task's timeframe (for the accent dot color + window label). */
+  /** The host board. */
+  boardId: string;
+  boardName: string;
+  /** The host board's timeframe (accent dot colour + window label). */
   timeframe: Timeframe | null;
-  /** Human window label, e.g. "This week" → "Week of Mar 23 – 29, 2026",
-   *  "February 2026", "2026". Null when no timeframe/date is known. */
+  /** Human window label for the host board's window, e.g. "Week of Mar 23 – 29, 2026". */
   window: string | null;
-  /** The task's personal target (`maxCount`), 0 when unset. */
+  /** The placement's goal — `targetOverride` (converted to the task's kind),
+   *  a parent compound placement's `childTargets` entry, else the task's own
+   *  `maxCount` — 0 when unset. */
   goal: number;
-  /** The task's in-window displayed amount (when the caller supplies
-   *  `eventsByTaskId`): the ROOT's increment sum over a window-stamped row's
-   *  own window or a placed linked row's board window, and a PLACED source's
-   *  own events over its board's window — each bounded at a sealed board's
-   *  `sealedAt`, the play cell's numbers. An UNPLACED row (no board, no
-   *  window) keeps the lifetime arithmetic (`lifetime − baseline`). */
+  /** The in-window displayed amount (when the caller supplies
+   *  `eventsByTaskId`): the ROOT's increment sum over the host board's window
+   *  for a linked card, the root's OWN events for a root card — each bounded
+   *  at a sealed board's `sealedAt`, the play cell's numbers. Without events,
+   *  the root's lifetime total (`baseline` is never read). */
   logged: number;
   /** `logged >= goal` (only when `goal > 0`). Over-achievement is real. */
   met: boolean;
   /** `logged - goal` when over the goal, else 0 (for the "N over" caption). */
   over: number;
-  /** True when this task is "counting now" — its board is ACTIVE. Draft /
-   *  completed / archived / placeless tasks are inactive ("Not counting now"). */
+  /** True when this card is "counting now" — its board is still in play
+   *  ({@link isBoardActiveForList}: ACTIVE, not closed, not past its endDate).
+   *  Draft / completed / archived / closed / ended boards are inactive. */
   isActive: boolean;
+  /** The parent compound placed here, when the card's task is a linked child
+   *  reached through it; `null` for a direct placement. */
+  viaCompoundId: string | null;
 }
 
 /**
@@ -109,13 +113,13 @@ export interface SharedCounterGroup {
    * different one.
    */
   defaultLogAmount: number | null;
-  /** Source task first, then linked tasks (deterministic order). */
+  /** One card per placement — root cards first, then by board name, task, placement (deterministic). */
   tasks: SharedCounterMemberTask[];
-  /** Total member tasks (source + linked). */
+  /** Distinct member tasks with a card. */
   taskCount: number;
   /** Distinct live boards the counter appears on. */
   boardCount: number;
-  /** Member tasks that are counting now (active board). */
+  /** Distinct member tasks with a card that is counting now (active board). */
   activeTaskCount: number;
 }
 
@@ -156,25 +160,37 @@ export interface BuildSharedCounterGroupsInput {
    * vector-pinned output).
    */
   memberVisibility?: SharedCounterMemberVisibility;
+  /**
+   * Compound links (any state; deleted rows ignored). A linked task placed
+   * only through a parent compound gets a card per placement of that
+   * compound (slice 2b), with the placement's `childTargets` goal. Absent →
+   * no compound-reached cards.
+   */
+  compoundChildren?: ReadonlyArray<Pick<CompoundChild, 'compoundTaskId' | 'childTaskId' | 'isDeleted'>>;
 }
 
 /** See {@link BuildSharedCounterGroupsInput.memberVisibility}. */
 export interface SharedCounterMemberVisibility {
-  /** `true` lists expired members too. */
+  /** `true` lists expired members too — a linked task past its own stamp, and (slice 2b) any card whose host board's window has ended or closed. */
   showExpired: boolean;
-  /** Reference time for `isTaskExpired`; defaults to `new Date()` — inject
-   *  it in tests. */
+  /** Reference time for `isTaskExpired` and for each member's "counting
+   *  now" check; defaults to `new Date()` — inject it in tests. */
   now?: Date;
 }
 
 /**
- * Pick a member task's "primary" board placement: prefer an ACTIVE board, then
- * the most recent by startDate, then a stable id tie-break. Deterministic.
+ * Pick a member task's "primary" board placement: prefer a board still in play
+ * ({@link isBoardActiveForList} — never the stored status, which stays ACTIVE
+ * on an ended or closed board), then the most recent by startDate, then a
+ * stable id tie-break. Deterministic.
+ *
+ * @param now - Reference time for the in-play check (defaults to the clock).
  */
-export function pickPrimaryBoard<B extends Pick<Board, 'id' | 'isDeleted' | 'status' | 'startDate'>>(
+export function pickPrimaryBoard<B extends Pick<Board, 'id' | 'isDeleted' | 'startDate'> & InPlayBoardFields>(
   taskId: string,
   boardTasks: ReadonlyArray<Pick<BoardTask, 'taskId' | 'boardId' | 'isDeleted'>>,
   boardsById: Map<string, B>,
+  now: Date = new Date(),
 ): B | null {
   const candidates: B[] = [];
   for (const bt of boardTasks) {
@@ -184,8 +200,8 @@ export function pickPrimaryBoard<B extends Pick<Board, 'id' | 'isDeleted' | 'sta
   }
   if (candidates.length === 0) return null;
   candidates.sort((a, b) => {
-    const aActive = a.status === BoardStatus.ACTIVE ? 0 : 1;
-    const bActive = b.status === BoardStatus.ACTIVE ? 0 : 1;
+    const aActive = isBoardActiveForList(a, now) ? 0 : 1;
+    const bActive = isBoardActiveForList(b, now) ? 0 : 1;
     if (aActive !== bActive) return aActive - bActive;
     if (a.startDate !== b.startDate) return a.startDate < b.startDate ? 1 : -1; // newest first
     return a.id < b.id ? -1 : 1;
@@ -219,9 +235,13 @@ export function pickPrimaryBoard<B extends Pick<Board, 'id' | 'isDeleted' | 'sta
  * Mirror of the iOS `SharedCounterGroups.swift` `sharedCounterRootIds(_:)`.
  *
  * @param tasks - Candidate tasks (soft-deleted rows are filtered internally).
- * @returns The root ids, in discovery order (link roots first, then hub-born).
+ * @param boardTasks - Placements (any state); a live one with a `targetOverride` roots its task (rule c). Absent → rules a + b only.
+ * @returns The root ids, in discovery order (link roots, hub-born, then override-rooted).
  */
-export function sharedCounterRootIds(tasks: Task[]): Set<string> {
+export function sharedCounterRootIds(
+  tasks: Task[],
+  boardTasks?: ReadonlyArray<Pick<BoardTask, 'taskId' | 'isDeleted' | 'targetOverride'>>,
+): Set<string> {
   const live = tasks.filter((t) => !t.isDeleted);
   const liveById = new Map<string, Task>(live.map((t) => [t.id, t]));
   const roots = new Set<string>();
@@ -234,6 +254,15 @@ export function sharedCounterRootIds(tasks: Task[]): Set<string> {
     if (t.type === TaskType.COUNTING && t.isCounter === true && t.sharedCounterId == null) {
       roots.add(t.id);
     }
+  }
+  // (c) Slice 2b: a plain counter with a live placement carrying a
+  // `targetOverride` heads a family — the override is a per-board goal on
+  // one counter, which is what a hub counter is. (Not "placed on more than
+  // one board": that would make every recurring plain counter a hub counter.)
+  for (const bt of boardTasks ?? []) {
+    if (bt.isDeleted || bt.targetOverride == null) continue;
+    const t = liveById.get(bt.taskId);
+    if (t && t.type === TaskType.COUNTING && t.sharedCounterId == null) roots.add(t.id);
   }
   return roots;
 }
@@ -268,18 +297,25 @@ export function buildSharedCounterGroups(
   const tasks = input.tasks.filter((t) => !t.isDeleted);
   const tasksById = new Map<string, Task>(tasks.map((t) => [t.id, t]));
   const boardsById = new Map<string, Board>(input.boards.map((b) => [b.id, b]));
+  const now = input.memberVisibility?.now ?? new Date();
+  const livePlacements = input.boardTasks.filter((bt) => !bt.isDeleted);
+  // A card IS a placement: the ONE reach (slice 2c) — the root's own
+  // placements, its linked rows' placements and the placements of their
+  // transitive parent compounds — shared with the cascade and the sealed
+  // re-derive, so the hub can never list a square the kernel doesn't reach.
+  const reachLookups = { tasks, compoundChildren: input.compoundChildren ?? [], boardTasks: livePlacements };
 
   // Source task ids = every task pointed at by a live linked task's
   // `sharedCounterId`, PLUS the P5 hub-born counters (a COUNTING task flagged
-  // `isCounter` is a counter in its own right, even with zero linked tasks) —
-  // {@link sharedCounterRootIds}, which is the same walk this used to inline.
-  // Seeding an empty linked list for a member-less root lets it flow through
-  // the same member-view pipeline as a single-member group. A flagged row that
-  // is itself derived (`sharedCounterId` set) is malformed — Zod rejects the
-  // combination at create-input time, but synced rows are unguarded — and the
-  // helper ignores it defensively.
+  // `isCounter` is a counter in its own right, even with zero linked tasks),
+  // PLUS a plain counter placed with a `targetOverride` (slice 2b) —
+  // {@link sharedCounterRootIds}. Seeding an empty linked list for a
+  // member-less root lets it flow through the same card pipeline. A flagged
+  // row that is itself derived (`sharedCounterId` set) is malformed — Zod
+  // rejects the combination at create-input time, but synced rows are
+  // unguarded — and the helper ignores it defensively.
   const linkedBySource = new Map<string, Task[]>();
-  for (const rootId of sharedCounterRootIds(tasks)) linkedBySource.set(rootId, []);
+  for (const rootId of sharedCounterRootIds(tasks, livePlacements)) linkedBySource.set(rootId, []);
   for (const t of tasks) {
     const src = t.sharedCounterId;
     if (src == null) continue;
@@ -300,87 +336,115 @@ export function buildSharedCounterGroups(
     if (!source || source.type !== TaskType.COUNTING) continue;
 
     const lifetime = quantizeCount(source.currentCount ?? 0);
-    const members: Task[] = [source, ...linked];
+    // The root is the title-settings source for its linked cards (web `placedTaskFor`).
+    const settings = source;
+    const linkedById = new Map<string, Task>(linked.map((t) => [t.id, t]));
 
     const boardIds = new Set<string>();
-    let activeCount = 0;
+    const memberTaskIds = new Set<string>();
+    const activeTaskIds = new Set<string>();
+    /** `showExpired: false` also hides a card whose HOST window has ended or closed (a card is a placement). */
+    const isExpiredPlacement = (board: Board): boolean => {
+      if (!input.memberVisibility || input.memberVisibility.showExpired) return false;
+      if (board.sealedAt) return true;
+      const endMs = board.endDate ? new Date(board.endDate).getTime() : NaN;
+      return !Number.isNaN(endMs) && endMs < now.getTime();
+    };
 
-    const memberViews: SharedCounterMemberTask[] = members.map((m) => {
-      const isSource = m.id === sourceId;
-      // The source is the accumulator (baseline 0); linked tasks derive.
-      const baseline = isSource ? 0 : m.baseline ?? 0;
-      const goal = m.maxCount ?? 0;
-      const board = pickPrimaryBoard(m.id, input.boardTasks, boardsById);
-      // Window-stamped members read their own window from the root's events
-      // (never `lifetime − baseline`, which counts later windows' logs too);
-      // any other PLACED member reads its primary board's window the same
-      // way (owner rule 2026-10-01). An unplaced hub-linked member — no
-      // board, so no window — keeps the lifetime arithmetic.
-      const memberWindow =
-        !isWindowStampedDerived(m) && board
-          ? { startDate: board.startDate, endDate: board.endDate ?? null }
-          : null;
+    /** One card: the placement `bt` on `board`, standing for `task` (already placement-adjusted). */
+    const card = (
+      bt: BoardTask,
+      board: Board,
+      task: Task,
+      kind: 'root' | 'linked' | 'child',
+      viaCompoundId: string | null,
+    ): SharedCounterMemberTask => {
+      const isSource = kind === 'root';
+      const goal = task.maxCount ?? 0;
+      const hostWindow = { startDate: board.startDate, endDate: board.endDate ?? null };
       let displayed: number;
-      if (isSource && input.eventsByTaskId && board) {
-        // A PLACED source (a board-born counter's own square) is an
+      if (isSource && input.eventsByTaskId) {
+        // A PLACED root (a board-born counter's own square) is an
         // event-owning counting row: it reads its OWN events over its
         // board's window, sealed-bounded — the play cell's rule
         // (`resolveClosedBoardCounterDisplay` / the live window context) —
         // never the lifetime total, which is the group's `lifetime`.
-        const ownEvents = input.eventsByTaskId[m.id] ?? [];
+        const ownEvents = input.eventsByTaskId[task.id] ?? [];
         // An absent / unparseable `sealedAt` applies no bound.
         const sealedAtMs = board.sealedAt ? new Date(board.sealedAt).getTime() : NaN;
         const events = Number.isNaN(sealedAtMs)
           ? ownEvents
-          : boundWindowContextAtSeal({ [m.id]: ownEvents }, sealedAtMs).eventsByTaskId[m.id] ?? [];
-        displayed = resolveTaskWindowState(m, events, board.startDate, boardWindowEnd(board)).count;
-      } else if (!isSource && input.eventsByTaskId && (isWindowStampedDerived(m) || memberWindow)) {
+          : boundWindowContextAtSeal({ [task.id]: ownEvents }, sealedAtMs).eventsByTaskId[task.id] ?? [];
+        displayed = resolveTaskWindowState(task, events, board.startDate, boardWindowEnd(board)).count;
+      } else if (!isSource && input.eventsByTaskId) {
+        // Context window wins (slice 0): a placed linked task — stamped or
+        // not, direct or through a parent compound — reads the host board's
+        // window from the ROOT's events.
         displayed = resolveLinkedCounterDisplay(
-          m,
+          task,
           input.eventsByTaskId as Record<string, TaskEvent[]>,
-          board?.sealedAt ?? null,
-          memberWindow,
+          board.sealedAt ?? null,
+          hostWindow,
         ).displayed;
       } else {
-        // An unplaced source (a hub-born root) or unplaced linked row has no
-        // window: the library's lifetime arithmetic.
-        displayed = deriveDisplayedCount({ baseline, maxCount: goal, countKind: m.countKind }, { currentCount: lifetime }).displayed;
+        // No events supplied: the root's lifetime total (`baseline` is never read).
+        displayed = finalizeWindowCount(lifetime, resolveCountKind(task));
       }
 
-      if (board) boardIds.add(board.id);
-      const isActive = board?.status === BoardStatus.ACTIVE;
-      if (isActive) activeCount += 1;
-
-      // Window from the task's own timeframe/date (falls back to its board's).
-      const tf = m.timeframe ?? board?.timeframe ?? null;
-      const startDate = m.startDate ?? board?.startDate ?? null;
-      const window =
-        tf && startDate ? formatTimeframeLabel(tf, startDate) : null;
-
+      boardIds.add(board.id);
+      memberTaskIds.add(task.id);
+      // "Counting now" is the Boards tab's in-play rule, not the stored
+      // status — a board past its endDate (or closed) stays ACTIVE in the row.
+      const isActive = isBoardActiveForList(board, now);
+      if (isActive) activeTaskIds.add(task.id);
+      const window = board.startDate ? formatTimeframeLabel(board.timeframe, board.startDate) : null;
       const met = goal > 0 && displayed >= goal;
       return {
-        taskId: m.id,
-        taskTitle: m.title,
+        boardTaskId: bt.id,
+        taskId: task.id,
+        taskTitle: task.title,
         isSource,
-        boardId: board?.id ?? null,
-        boardName: board?.name ?? null,
-        timeframe: tf,
+        boardId: board.id,
+        boardName: board.name,
+        timeframe: board.timeframe ?? null,
         window,
         goal,
         logged: displayed,
         met,
         over: met ? quantizeCount(displayed - goal) : 0,
-        isActive: isActive ?? false,
+        isActive,
+        viaCompoundId,
       };
-    });
+    };
 
-    // Deterministic member order: source first, then by board name, then id.
+    const memberViews: SharedCounterMemberTask[] = [];
+    for (const { boardTask: bt, memberTaskId, viaCompoundId } of placementsReachedByRoot(sourceId, reachLookups).placements) {
+      const board = boardsById.get(bt.boardId);
+      if (!board || board.isDeleted || isExpiredPlacement(board)) continue;
+      if (memberTaskId === sourceId) {
+        if (viaCompoundId !== null) continue; // a root is never a compound child
+        memberViews.push(card(bt, board, withPlacementParams(source, bt, settings), 'root', null));
+        continue;
+      }
+      // The reach lists every live linked row; the hub shows the visible ones.
+      const linkedTask = linkedById.get(memberTaskId);
+      if (!linkedTask) continue;
+      if (viaCompoundId === null) {
+        memberViews.push(card(bt, board, withPlacementParams(linkedTask, bt, settings), 'linked', null));
+        continue;
+      }
+      // `childTargets` bind direct children only; a nested child keeps its own goal.
+      memberViews.push(card(bt, board, withChildTarget(linkedTask, bt.childTargets), 'child', viaCompoundId));
+    }
+
+    // Deterministic card order: root cards first, then by board name, task id, placement id.
     memberViews.sort((a, b) => {
       if (a.isSource !== b.isSource) return a.isSource ? -1 : 1;
       const an = a.boardName ?? '';
       const bn = b.boardName ?? '';
       if (an !== bn) return an < bn ? -1 : 1;
-      return a.taskId < b.taskId ? -1 : 1;
+      if (a.taskId !== b.taskId) return a.taskId < b.taskId ? -1 : 1;
+      return a.boardTaskId < b.boardTaskId ? -1 : 1;
     });
 
     groups.push({
@@ -395,9 +459,9 @@ export function buildSharedCounterGroups(
       lifetime,
       defaultLogAmount: source.defaultLogAmount ?? null,
       tasks: memberViews,
-      taskCount: memberViews.length,
+      taskCount: memberTaskIds.size,
       boardCount: boardIds.size,
-      activeTaskCount: activeCount,
+      activeTaskCount: activeTaskIds.size,
     });
   }
 

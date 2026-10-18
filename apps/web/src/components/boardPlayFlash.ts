@@ -62,7 +62,7 @@ export function messageOutcome(text: string): FlashOutcome {
  */
 export function deriveFlashOutcome(input: FlashOutcomeInput): FlashOutcome | null {
   if (input.boardReactivated) {
-    return messageOutcome('Board reactivated — no longer complete');
+    return messageOutcome('No longer complete');
   }
   if (input.lostBingos.length > 0) {
     return messageOutcome(`Bingo lost: ${input.lostBingos.join(', ')}`);

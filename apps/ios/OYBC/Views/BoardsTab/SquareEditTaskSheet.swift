@@ -87,24 +87,65 @@ struct SquareEditTaskSheet: View {
     /// Done's label for a sheet whose Save would (or would not) fork.
     static func doneLabel(wouldFork: Bool) -> String { wouldFork ? forkDoneLabel : "Done" }
 
-    /// Whether the sheet's Save would fork anything: the task itself, or a
-    /// sub-task the compound editor changes that is placed on another board.
+    /// Whether the sheet's Save would fork anything: the task itself (when the
+    /// draft still carries a NON-parameter field — a goal / title / child-goal
+    /// edit lands on the placement and never forks), or a sub-task the compound
+    /// editor changes in a non-goal way that is placed on another board.
     /// Twin of web `sheetWouldFork`.
     static func wouldFork(
-        taskId: String, draft: TaskEditPatch?, forkingTaskIds: Set<String>, rows: [String: Task]
+        taskId: String, draft: TaskEditPatch?, forkingTaskIds: Set<String>, rows: [String: Task],
+        hasNonParameter: Bool = true
     ) -> Bool {
-        if forkingTaskIds.contains(taskId) { return true }
+        if hasNonParameter && forkingTaskIds.contains(taskId) { return true }
         return (draft?.children ?? []).contains { step in
-            guard let id = step.childTaskId, forkingTaskIds.contains(id) else { return false }
-            return AppDatabase.childStepChanged(rows[id], step: step)
+            guard let id = step.childTaskId, forkingTaskIds.contains(id), let row = rows[id],
+                  !step.markedDeleted else { return false }
+            return BoardEditParamSplit.stepChangesNonParameter(step, row: row)
         }
+    }
+
+    /// Whether `patch` changes anything a placement parameter cannot carry
+    /// (action, unit, a kind or type switch, compound structure, a child's
+    /// action / unit / title). A goal, a title or an existing child's goal is a
+    /// PARAMETER: written onto the `BoardTask`, never forking. Twin of web
+    /// `boardScopedSheet.patchHasNonParameterFields`.
+    ///
+    /// - Parameters:
+    ///   - task: The task as STORED (not placement-adjusted, not staged).
+    ///   - patch: The sheet's Done patch.
+    ///   - storedChildren: A compound's stored sub-tasks in order; nil = unknown.
+    /// - Returns: True when the Save still takes the board-scoped (forking) path.
+    static func patchHasNonParameterFields(task: Task, patch: Patch, storedChildren: [Task]?) -> Bool {
+        BoardEditParamSplit.hasNonParameterFields(
+            task: task, override: StagedTaskOverride(patch: patch), storedChildren: storedChildren
+        )
+    }
+
+    /// The sheet's current draft as the patch Done would submit.
+    private var currentPatch: Patch {
+        Patch(
+            title: submittedTitle, type: type,
+            action: action.trimmingCharacters(in: .whitespaces), unit: unit.trimmingCharacters(in: .whitespaces),
+            maxCount: parseCountInput(maxCountStr, kind: countKind), compound: compoundSubmission,
+            countKind: type == .counting ? countKind : nil
+        )
+    }
+
+    /// The compound's stored sub-tasks in order (from the editor's baseline).
+    private var storedChildrenInOrder: [Task]? {
+        guard let baseline = compoundBaseline else { return nil }
+        let rows = baseline.children.compactMap { $0.childTaskId.flatMap { forkBaselineRows[$0] } }
+        return rows.count == baseline.children.count ? rows : nil
     }
 
     /// The live fork flag for this sheet's current draft.
     private var wouldFork: Bool {
         Self.wouldFork(
             taskId: task.id, draft: type == .compound ? compoundDraft : nil,
-            forkingTaskIds: forkingTaskIds, rows: forkBaselineRows
+            forkingTaskIds: forkingTaskIds, rows: forkBaselineRows,
+            hasNonParameter: Self.patchHasNonParameterFields(
+                task: original ?? task, patch: currentPatch, storedChildren: storedChildrenInOrder
+            )
         )
     }
 

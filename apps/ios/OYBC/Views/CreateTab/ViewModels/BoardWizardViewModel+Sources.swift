@@ -28,6 +28,9 @@ struct WizardSourceSupply: Equatable {
     /// expansion reads the same EFFECTIVE rules the persist does
     /// (`BoardSources.withEffectiveMemberRules`). Empty for boards.
     var poolDefaultVary: [String: VaryLevel] = [:]
+    /// Board sources only (slice 3a) — the source board's effective goal per
+    /// supplied member (`BoardSourceSupplyInfo.goalByTaskId`). Empty for pools.
+    var goalByTaskId: [String: CountValue] = [:]
 }
 
 extension WizardSourceSupply {
@@ -60,7 +63,8 @@ extension WizardSourceSupply {
                 rawSupplyTaskIds: info.supplyTaskIds,
                 doneTaskIds: info.doneTaskIds,
                 windowCountByTaskId: info.windowCountByTaskId,
-                sourceWindow: info.sourceWindow
+                sourceWindow: info.sourceWindow,
+                goalByTaskId: info.goalByTaskId
             )
         case .noWindow(let name):
             self.init(
@@ -141,11 +145,13 @@ extension BoardWizardViewModel {
                 supplyTaskIds: info?.rawSupplyTaskIds ?? [],
                 doneTaskIds: info?.doneTaskIds ?? []
             )
+            let goals = info?.goalByTaskId ?? [:]
             return BoardSources.Supply(
                 source: source,
                 supplyTaskIds: BoardSources.resolveSourceAvailable(
                     BoardSources.Supply(source: source, supplyTaskIds: ids)
-                )
+                ),
+                goalByTaskId: goals.isEmpty ? nil : goals
             )
         }
         return BoardSources.applyMemberRules(
@@ -522,6 +528,7 @@ extension BoardWizardViewModel {
             if centerTaskId == dropped { centerTaskId = nil }
             pendingTasks.removeValue(forKey: dropped)
             stagedEdits.removeValue(forKey: dropped)
+            placementParams.removeValue(forKey: dropped)
             poolOrder.removeAll { $0 == dropped }
         }
         selectedTaskIds = newSelection

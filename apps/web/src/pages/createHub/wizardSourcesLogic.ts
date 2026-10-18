@@ -351,6 +351,7 @@ export function boardSupplyEntry(info: BoardSourceSupplyInfo | null): WizardSour
     // window ride along: the remaining-target prefill and the auto-target
     // preview both read them off the supply cache, never a second board read.
     windowCountByTaskId: info.windowCountByTaskId,
+    goalByTaskId: info.goalByTaskId,
     sourceWindow: info.sourceWindow,
   };
 }

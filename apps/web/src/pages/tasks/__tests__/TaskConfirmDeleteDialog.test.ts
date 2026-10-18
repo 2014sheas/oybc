@@ -46,7 +46,6 @@ function impact(over: Partial<TaskDeletionImpact> = {}): TaskDeletionImpact {
     parentLinkCount: 0,
     counterMemberCount: 0,
     counterMembers: [],
-    derivedWindowCounterCount: 0,
     countsTowardCounter: null,
     unitTaskCount: 0,
     ...over,
@@ -64,21 +63,9 @@ function render(over: Partial<TaskDeletionImpact> = {}): string {
   );
 }
 
-describe('TaskConfirmDeleteDialog — derived-counter warning (B3 RC12)', () => {
-  it('warns about the board counters and drops the "no other rows" line', () => {
-    const html = render({ derivedWindowCounterCount: 3 });
-    expect(html).toContain('3 board counters made from this one will be removed.');
-    expect(html).not.toContain('No other rows affected.');
-  });
-
-  it('uses the singular for exactly one board counter', () => {
-    const html = render({ derivedWindowCounterCount: 1 });
-    expect(html).toContain('1 board counter made from this one will be removed.');
-    expect(html).not.toContain('No other rows affected.');
-  });
-
+describe('TaskConfirmDeleteDialog — impact lines', () => {
   it('says "No other rows affected." when nothing at all is affected', () => {
-    const html = render({ derivedWindowCounterCount: 0 });
+    const html = render();
     expect(html).toContain('No other rows affected.');
     expect(html).not.toContain('made from this one will be removed.');
   });

@@ -12,9 +12,8 @@ import UIKit
 extension BoardPlayView {
 
     /// D15: whether a CLOSED board's square for `task` routes to the
-    /// late-log sheet (NORMAL / plain-or-source COUNTING /
-    /// window-stamped-derived COUNTING / COMPOUND) rather than staying
-    /// interaction-locked (a hub-linked derived counter / ACHIEVEMENT — OQ2).
+    /// late-log sheet (NORMAL / any COUNTING, linked included / COMPOUND)
+    /// rather than staying interaction-locked (ACHIEVEMENT).
     func isLateLogRoutable(task: Task?) -> Bool {
         guard isBoardLocked, let t = task else { return false }
         if t.type == .compound { return true }
@@ -32,7 +31,11 @@ extension BoardPlayView {
                 linesCompleted: b.linesCompleted,
                 expiryText: risoExpiryText(board: b),
                 endedText: isSealed ? risoEndedText(board: b) : nil,
-                endedStillLoggingDate: (isEnded && !isSealed) ? risoEndedText(board: b) : nil
+                endedStillLoggingDate: (isEnded && !isSealed) ? risoEndedText(board: b) : nil,
+                onBingosTap: editMode ? nil : replayMomentKind(
+                    status: b.status, completedTasks: b.completedTasks, totalTasks: b.totalTasks, linesCompleted: b.linesCompleted
+                )
+                    .map { kind in { replayMoment(kind) } }
             )
             .padding(.horizontal, Riso.gutter)
             .padding(.top, 14)
@@ -50,7 +53,7 @@ extension BoardPlayView {
                 .padding(.top, 8)
         }
         if isBoardLocked {
-            Text("Board closed — a permanent record")
+            Text("Board closed")
                 .font(.risoBody(12, .semibold))
                 .foregroundStyle(Color.risoRed)
                 .padding(.horizontal, Riso.gutter)
@@ -65,7 +68,8 @@ extension BoardPlayView {
         guard routable, let t = task else { return }
         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
         lateLogErrorMessage = nil
-        lateLogTarget = LateLogSheetItem(id: boardTask.id, boardTaskId: boardTask.id, task: t)
+        // The placement-adjusted task (slice 2a): the sheet's goal is the placement's.
+        lateLogTarget = LateLogSheetItem(id: boardTask.id, boardTaskId: boardTask.id, task: viewModel.placedTask(boardTask) ?? t)
     }
 
     /// "Sep 1 – 30" — the closed board's window label.
@@ -124,9 +128,12 @@ extension BoardPlayView {
 
         case .compound:
             let children = viewModel.compoundChildrenByCompound[task.id] ?? []
+            let childTargets = viewModel.boardTasks.first { $0.id == item.boardTaskId }?.childTargets
             let parts: [LateLogCompoundPart] = children.compactMap { link in
-                guard let child = viewModel.taskMap[link.childTaskId], !child.isDeleted else { return nil }
-                let isStageable = child.type == .normal || (child.type == .counting && child.sharedCounterId == nil)
+                guard let raw = viewModel.taskMap[link.childTaskId], !raw.isDeleted else { return nil }
+                let child = PlacementParams.withChildTarget(raw, childTargets: childTargets) // slice 2a
+                // A linked counting child is stageable too (slice 0): its +1 logs on its root.
+                let isStageable = child.type == .normal || child.type == .counting
                 let alreadyDone: Bool = {
                     if child.type == .compound {
                         return CompoundEvaluation.evaluate(

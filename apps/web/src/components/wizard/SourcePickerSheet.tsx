@@ -150,9 +150,6 @@ export function SourcePickerSheet({
                   <p className={styles.noMatchesTitle}>
                     No pools or boards match &ldquo;{trimmedQuery}&rdquo;
                   </p>
-                  <p className={styles.noMatchesSubtitle}>
-                    Try another word, or add tasks from your library.
-                  </p>
                 </div>
               ) : (
                 <>

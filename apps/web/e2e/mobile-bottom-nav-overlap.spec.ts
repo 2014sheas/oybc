@@ -58,6 +58,7 @@ test.describe('Mobile bottom nav never covers sheets / toasts (390)', () => {
     await page.goto(`/boards/${BOARD}?__oybc_test_bypass=1`);
 
     await page.getByText('Jog 5 mi').first().click();
+    await page.getByRole('dialog').getByRole('button', { name: 'Late log…' }).click();
     const sheet = page.getByRole('dialog', { name: /Jog 5 mi/ });
     await expect(sheet).toBeVisible();
     const log = sheet.getByRole('button', { name: /^Log/ });
@@ -70,8 +71,7 @@ test.describe('Mobile bottom nav never covers sheets / toasts (390)', () => {
     await page.goto('/profile/counters?__oybc_test_bypass=1');
     await seedTask(page, { id: COUNTER, title: 'Run miles', type: 'counting', action: 'Run', unit: 'miles', isCounter: true, countKind: 'continuous', currentCount: 148.6 });
     await page.goto(`/profile/counters/${COUNTER}?__oybc_test_bypass=1`);
-    await page.getByRole('group', { name: 'Log amount' }).getByRole('button', { name: '0.5', exact: true }).click();
-    await page.getByRole('button', { name: 'Add 0.5 miles' }).click();
+    await page.getByRole('group', { name: 'Log amount' }).getByRole('button', { name: 'Log +0.5 miles' }).click();
     await expect(page.getByText('149.1', { exact: true })).toBeVisible();
 
     const undo = page.getByRole('button', { name: 'Undo', exact: true });
@@ -109,7 +109,7 @@ test.describe('Mobile bottom nav never covers sheets / toasts (390)', () => {
     await expect(sheet).toBeVisible();
     await expectSheetOverNav(sheet);
     // The bottom-anchored dashed row is tappable and acts (opens the special-type panel).
-    await sheet.getByRole('button', { name: /Add a counting, compound or achievement task/ }).click();
+    await sheet.getByRole('button', { name: /Counting · Compound · Achievement/ }).click();
     await expect(sheet.getByRole('button', { name: 'Counting', exact: true })).toBeVisible();
   });
 

@@ -32,10 +32,12 @@ final class SharedCounterGroupsVectorTests: XCTestCase {
         let endDate: String?
         let createdInWizard: Bool
         let countKind: CountKind?
+        /// Slice 2b — `"compound"` builds a parent compound; default counting.
+        let type: String?
 
         private enum CodingKeys: String, CodingKey {
             case id, title, currentCount, maxCount, sharedCounterId, baseline, isDeleted, isCounter
-            case startDate, endDate, createdInWizard, countKind
+            case startDate, endDate, createdInWizard, countKind, type
         }
 
         init(from decoder: Decoder) throws {
@@ -52,6 +54,7 @@ final class SharedCounterGroupsVectorTests: XCTestCase {
             endDate = try container.decodeIfPresent(String.self, forKey: .endDate)
             createdInWizard = try container.decodeIfPresent(Bool.self, forKey: .createdInWizard) ?? false
             countKind = try container.decodeIfPresent(CountKind.self, forKey: .countKind)
+            type = try container.decodeIfPresent(String.self, forKey: .type)
         }
     }
 
@@ -62,18 +65,57 @@ final class SharedCounterGroupsVectorTests: XCTestCase {
         let isDeleted: Bool
         /// Optional — a sealed board's seal instant.
         let sealedAt: String?
+        /// Optional own window (slice 0: a placed member reads its board's
+        /// window). `hasEndDate` distinguishes an absent key (shared default)
+        /// from an explicit `null` (open-ended).
+        let startDate: String?
+        let endDate: String?
+        let hasEndDate: Bool
+
+        private enum CodingKeys: String, CodingKey { case id, name, status, isDeleted, sealedAt, startDate, endDate }
+
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            id = try c.decode(String.self, forKey: .id)
+            name = try c.decode(String.self, forKey: .name)
+            status = try c.decode(String.self, forKey: .status)
+            isDeleted = try c.decode(Bool.self, forKey: .isDeleted)
+            sealedAt = try c.decodeIfPresent(String.self, forKey: .sealedAt)
+            startDate = try c.decodeIfPresent(String.self, forKey: .startDate)
+            hasEndDate = c.contains(.endDate)
+            endDate = try c.decodeIfPresent(String.self, forKey: .endDate)
+        }
     }
 
     private struct MiniBoardTask: Decodable {
         let taskId: String
         let boardId: String
+        let isDeleted: Bool?
+        /// Slice 2b — per-placement parameters; `id` overrides the converter's `bt-<taskId>-<boardId>`.
+        let id: String?
+        let targetOverride: CountValue?
+        let targetKind: String?
+        let childTargets: [MiniChildTarget]?
+        let titleOverride: String?
+    }
+
+    private struct MiniChildTarget: Decodable {
+        let childId: String
+        let target: CountValue
+    }
+
+    private struct MiniCompoundChild: Decodable {
+        let compoundTaskId: String
+        let childTaskId: String
     }
 
     private struct MiniMemberTask: Decodable {
+        let boardTaskId: String
         let taskId: String
         let isSource: Bool
-        let boardId: String?
-        let boardName: String?
+        let boardId: String
+        let boardName: String
+        let viaCompoundId: String?
         let goal: CountValue
         let logged: CountValue
         let met: Bool
@@ -97,6 +139,8 @@ final class SharedCounterGroupsVectorTests: XCTestCase {
         let tasks: [MiniTask]
         let boards: [MiniBoard]
         let boardTasks: [MiniBoardTask]
+        /// Optional — live compound links (slice 2b: a parent compound's placements are cards for its linked children).
+        let compoundChildren: [MiniCompoundChild]?
         /// Optional — root id → increment events, passed through as `eventsByTaskId`.
         let eventsByTaskId: [String: [MiniEvent]]?
         let expected: [MiniGroup]
@@ -150,7 +194,7 @@ final class SharedCounterGroupsVectorTests: XCTestCase {
             id: m.id,
             userId: "u1",
             title: m.title,
-            type: .counting,
+            type: m.type == "compound" ? .compound : .counting,
             // R1 (pair-derived counter names): intentionally left nil. These
             // fixture vectors predate pair-derived naming and were authored
             // to assert on `title`; leaving action/unit nil means
@@ -191,8 +235,7 @@ final class SharedCounterGroupsVectorTests: XCTestCase {
             "status": m.status,
             "boardSize": 5,
             "timeframe": "weekly",
-            "startDate": ts,
-            "endDate": "2026-02-07T12:00:00.000Z",
+            "startDate": m.startDate ?? ts,
             "centerSquareType": "free",
             "isRandomized": false,
             "totalTasks": 25,
@@ -203,6 +246,8 @@ final class SharedCounterGroupsVectorTests: XCTestCase {
             "version": 1,
             "isDeleted": m.isDeleted,
         ]
+        // Absent key ⇒ the shared default; explicit `null` ⇒ open-ended (no key).
+        if !m.hasEndDate { dict["endDate"] = "2026-02-07T12:00:00.000Z" } else if let end = m.endDate { dict["endDate"] = end }
         if let sealedAt = m.sealedAt { dict["sealedAt"] = sealedAt }
         let data = try! JSONSerialization.data(withJSONObject: dict)
         return try! JSONDecoder().decode(Board.self, from: data)
@@ -210,15 +255,27 @@ final class SharedCounterGroupsVectorTests: XCTestCase {
 
     private func toBoardTask(_ m: MiniBoardTask) -> BoardTask {
         BoardTask(
-            id: "bt-\(m.taskId)-\(m.boardId)",
+            id: m.id ?? "bt-\(m.taskId)-\(m.boardId)",
             boardId: m.boardId,
             taskId: m.taskId,
             row: 0,
             col: 0,
             isCenter: false,
+            targetOverride: m.targetOverride,
+            targetKind: m.targetKind.flatMap(CountKind.init(rawValue:)),
+            childTargets: m.childTargets?.map { PlacementChildTarget(childId: $0.childId, target: $0.target) },
+            titleOverride: m.titleOverride,
             createdAt: ts,
             updatedAt: ts,
-            version: 1
+            version: 1,
+            isDeleted: m.isDeleted ?? false
+        )
+    }
+
+    private func toCompoundChild(_ m: MiniCompoundChild, index: Int) -> CompoundChild {
+        CompoundChild(
+            id: "cc-\(m.compoundTaskId)-\(m.childTaskId)", compoundTaskId: m.compoundTaskId, childTaskId: m.childTaskId,
+            childIndex: index, createdAt: ts, updatedAt: ts, version: 1, isDeleted: false
         )
     }
 
@@ -226,11 +283,17 @@ final class SharedCounterGroupsVectorTests: XCTestCase {
         let fixture = try loadFixture()
         XCTAssertFalse(fixture.vectors.isEmpty)
         for v in fixture.vectors {
+            // Inside every vector board's window (`toBoard` ends them
+            // 2026-02-07), so an ACTIVE vector board is "counting now"
+            // whenever the suite runs — the TS runner pins the same instant.
+            let vectorNow = ISO8601DateFormatter().date(from: "2026-02-03T12:00:00Z")!
             let groups = buildSharedCounterGroups(
                 tasks: v.tasks.map(toTask),
                 boardTasks: v.boardTasks.map(toBoardTask),
                 boards: v.boards.map(toBoard),
-                eventsByTaskId: toEvents(v)
+                compoundChildren: (v.compoundChildren ?? []).enumerated().map { toCompoundChild($1, index: $0) },
+                eventsByTaskId: toEvents(v),
+                memberVisibility: SharedCounterMemberVisibility(showExpired: true, now: vectorNow)
             )
 
             XCTAssertEqual(groups.count, v.expected.count, "Vector '\(v.name)' group count")
@@ -246,6 +309,8 @@ final class SharedCounterGroupsVectorTests: XCTestCase {
                 XCTAssertEqual(g.tasks.count, exp.tasks.count, "Vector '\(v.name)' group[\(i)].tasks.count")
                 for (j, m) in g.tasks.enumerated() where j < exp.tasks.count {
                     let expMember = exp.tasks[j]
+                    XCTAssertEqual(m.boardTaskId, expMember.boardTaskId, "Vector '\(v.name)' [\(i)][\(j)].boardTaskId")
+                    XCTAssertEqual(m.viaCompoundId, expMember.viaCompoundId, "Vector '\(v.name)' [\(i)][\(j)].viaCompoundId")
                     XCTAssertEqual(m.taskId, expMember.taskId, "Vector '\(v.name)' [\(i)][\(j)].taskId")
                     XCTAssertEqual(m.isSource, expMember.isSource, "Vector '\(v.name)' [\(i)][\(j)].isSource")
                     XCTAssertEqual(m.boardId, expMember.boardId, "Vector '\(v.name)' [\(i)][\(j)].boardId")

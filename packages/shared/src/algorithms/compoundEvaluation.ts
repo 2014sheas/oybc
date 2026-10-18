@@ -1,3 +1,5 @@
+import { withChildTarget } from './placementParams';
+import type { PlacementChildTarget } from '../types/boardTask';
 import type { Task, CompoundChild } from '../types';
 import { OperatorType, TaskType } from '../constants/enums';
 import {
@@ -51,31 +53,28 @@ export function evaluateCompound(
   childrenByCompound: Record<string, CompoundChild[]>,
   taskById: Record<string, Task>,
   windowContext?: CompoundWindowContext,
+  childTargets?: PlacementChildTarget[] | null,
 ): boolean {
-  return evaluateCompoundInner(compound, childrenByCompound, taskById, new Set(), windowContext);
+  return evaluateCompoundInner(compound, childrenByCompound, taskById, new Set(), windowContext, childTargets);
 }
 
 /**
  * Resolve a single primitive (non-compound) child's completion, honoring the
- * window context when present. Linked (derived) counting children resolve
- * from their root's events — a window-stamped one over its own window, any
- * other over the host window (owner rule 2026-10-01; the hub-linked latch
- * carve-out is retired on boards); every other event-owning primitive
- * resolves windowed. Only a context with no `windowStart` (lifetime) still
- * reads a linked child's latch.
+ * window context when present. A linked counting child resolves from its
+ * ROOT's events — over the host window, or the root's lifetime when the
+ * context has no `windowStart` (never the latch); every other event-owning
+ * primitive resolves windowed.
  */
 export function resolvePrimitiveChildState(
   child: Task,
   windowContext: CompoundWindowContext | undefined,
 ): boolean {
   if (!windowContext) return child.isCompleted;
-  // Linked counter child (a "Split up" member's part, or a hub-linked copy):
-  // resolve from the ROOT's events inside the applicable window, never the
-  // latch — the same branch `computeBoardGrid`'s `resolvePrimitive` takes.
+  // Linked counter child: resolve from the ROOT's events — the same branch
+  // `computeBoardGrid`'s `resolvePrimitive` takes.
   const derived = resolveDerivedCounterWindowState(child, windowContext.eventsByTaskId, windowContext);
   if (derived) return derived.isCompleted;
-  // Lifetime context (no `windowStart`) for a linked child, and the
-  // defensive non-event-owning fallthrough: the cache.
+  // The defensive non-event-owning fallthrough: the cache.
   if (!isEventOwningTask(child)) return child.isCompleted;
   const events = windowContext.eventsByTaskId[child.id] ?? [];
   return resolveTaskWindowState(
@@ -92,6 +91,10 @@ function evaluateCompoundInner(
   taskById: Record<string, Task>,
   visiting: Set<string>,
   windowContext: CompoundWindowContext | undefined,
+  // The PLACEMENT's per-child goals (TASK_WINDOW_REWORK slice 2a) — applied to
+  // the placed compound's DIRECT children only; nested compounds' children
+  // keep their own goals.
+  childTargets?: PlacementChildTarget[] | null,
 ): boolean {
   if (compound.type !== TaskType.COMPOUND) {
     return compound.isCompleted;
@@ -104,13 +107,13 @@ function evaluateCompoundInner(
 
   const links = (childrenByCompound[compound.id] ?? []).filter((c) => !c.isDeleted);
   const childStates: boolean[] = links.map((link) => {
-    const child = taskById[link.childTaskId];
-    if (!child || child.isDeleted) return false;
-    if (child.type === TaskType.COMPOUND) {
-      // Nested compounds inherit the same host window.
-      return evaluateCompoundInner(child, childrenByCompound, taskById, visiting, windowContext);
+    const raw = taskById[link.childTaskId];
+    if (!raw || raw.isDeleted) return false;
+    if (raw.type === TaskType.COMPOUND) {
+      // Nested compounds inherit the same host window (and no child targets).
+      return evaluateCompoundInner(raw, childrenByCompound, taskById, visiting, windowContext);
     }
-    return resolvePrimitiveChildState(child, windowContext);
+    return resolvePrimitiveChildState(withChildTarget(raw, childTargets), windowContext);
   });
 
   visiting.delete(compound.id);

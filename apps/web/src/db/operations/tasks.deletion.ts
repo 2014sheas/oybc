@@ -10,7 +10,6 @@ import {
   computeBoardStatsUpdate,
   findAffectedBoardIds,
   findTransitiveParentCompounds,
-  isWindowStampedDerived,
   resolvePlacements,
 } from '@oybc/shared';
 import { currentTimestamp } from '../utils';
@@ -18,10 +17,6 @@ import { addToSyncQueue } from './syncQueue';
 import { writeBoardDerivedStats } from './boardDerivedWrite';
 import { buildWindowContext } from './windowContext';
 import { buildBoardTaskTombstone } from './boardTasks';
-import {
-  softDeleteWindowStampedDerived,
-  windowStampedDerivedIdsForRoot,
-} from './derivedCounters';
 import { applyCountsTowardInTransaction } from './countsToward';
 import { loadCountsTowardSection } from './countsTowardSection';
 
@@ -48,17 +43,11 @@ export interface TaskDeletionImpact {
   parentLinkCount: number;
   /** P5 — count of live tasks whose `sharedCounterId` points at this task
    *  (i.e. this task is a counter source) and that will be UNLINKED-and-
-   *  kept. 0 for any non-source task. Excludes the window-stamped derived
-   *  members counted below — those are deleted, not unlinked. */
+   *  kept. 0 for any non-source task. */
   counterMemberCount: number;
   /** P5 — the live counter-member Task rows themselves, so the confirm
    *  dialog can name them without a second fetch. `[]` for non-sources. */
   counterMembers: Task[];
-  /** B2 (RB11) — count of this root's live window-stamped derived counters,
-   *  which the cascade SOFT-DELETES (with their placements) rather than
-   *  unlinking: each is a per-window artifact of a board, not library
-   *  content the user authored. 0 for any non-source task. */
-  derivedWindowCounterCount: number;
   /** "Counts toward" (docs/SHARED_COUNTER_SETTINGS.md §3e) — the live counter
    *  this task counts toward, whose increment the delete tombstones; `null`
    *  when it counts toward nothing (or its counter is gone). */
@@ -103,14 +92,9 @@ export async function computeTaskDeletionImpact(
     .toArray();
   // P5 — live tasks whose sharedCounterId points at this task (i.e. this
   // task is a counter source). 0/[] for any non-source task.
-  //
-  // B2 (RB11) — those members split two ways at delete time, so the preview
-  // reports them separately: a window-stamped derived counter is retired
-  // with its placements, an ordinary member is unlinked and kept.
-  const allMembers = await db.tasks
+  const counterMembers = await db.tasks
     .where('sharedCounterId').equals(id)
     .filter((t) => !t.isDeleted).toArray();
-  const counterMembers = allMembers.filter((t) => !isWindowStampedDerived(t));
   const task = await db.tasks.get(id);
   // The same N as Counter Detail's heading: one per fork lineage.
   const unitTaskCount = (await loadCountsTowardSection(id)).rows.length;
@@ -123,7 +107,6 @@ export async function computeTaskDeletionImpact(
     parentLinkCount: parentLinks.length,
     counterMemberCount: counterMembers.length,
     counterMembers,
-    derivedWindowCounterCount: allMembers.length - counterMembers.length,
     countsTowardCounter: counter && !counter.isDeleted ? counter : null,
     unitTaskCount,
   };
@@ -149,9 +132,6 @@ export async function computeTaskDeletionImpact(
  *    the parent Task itself are untouched.
  * 4. **The Task itself** — soft-deleted (version bump + isDeleted=true
  *    + deletedAt), the standard LWW soft-delete semantics.
- * 4b. **Window-stamped derived counters deriving from this task** (Board
- *    Sources §Member rules, B2) — retired the same way, with their own
- *    placements and links. Ordinary linked members are NOT touched here.
  * 5. **Affected boards** — the standard windowed derivation cascade runs
  *    over every board that placed the task (directly or via a compound
  *    parent), so persisted bingo lines through the deleted task's cells
@@ -193,17 +173,10 @@ export async function deleteTaskWithCascade(id: string): Promise<void> {
  * @param id - The task to cascade-delete.
  * @param now - The write timestamp shared with the caller's other writes
  *   in the same transaction (so all rows agree on one instant).
- * @param extraAffectedBoardIds - Boards the CALLER already knows must
- *   re-derive in this transaction because of writes it made before calling
- *   (final-review item 10: `deleteCounterWithUnlink` retires the root's
- *   window-stamped members itself, so step 4b below can no longer find them
- *   or their boards). Merged into the affected set; unknown/sealed/deleted
- *   ids are skipped by step 5's own guards.
  */
 export async function deleteTaskWithCascadeInTxn(
   id: string,
   now: string,
-  extraAffectedBoardIds: Iterable<string> = [],
 ): Promise<void> {
   const existing = await db.tasks.get(id);
   if (!existing) return;
@@ -217,7 +190,6 @@ export async function deleteTaskWithCascadeInTxn(
   const allChildrenPre = (await db.compoundChildren.toArray()).filter((c) => !c.isDeleted);
   const parents = findTransitiveParentCompounds(id, allChildrenPre);
   const affectedBoardIds = new Set(findAffectedBoardIds(id, parents, allBoardTasksPre));
-  for (const boardId of extraAffectedBoardIds) affectedBoardIds.add(boardId);
 
   // 1. Soft-delete (tombstone) BoardTask placements.
   const placements = await db.boardTasks
@@ -226,7 +198,7 @@ export async function deleteTaskWithCascadeInTxn(
     .toArray();
   for (const bt of placements) {
     const tombstoned = buildBoardTaskTombstone(bt, now);
-    await db.boardTasks.update(bt.id, tombstoned);
+    await db.boardTasks.put(tombstoned);
     await addToSyncQueue('boardTasks', bt.id, SyncOperationType.DELETE, tombstoned);
   }
 
@@ -264,21 +236,6 @@ export async function deleteTaskWithCascadeInTxn(
   const updatedTask = await db.tasks.get(id);
   if (updatedTask) {
     await addToSyncQueue('tasks', id, SyncOperationType.DELETE, updatedTask);
-  }
-
-  // 4b. Board Sources §Member rules (B2) — the root's per-window derived
-  //     counters go with it: each is an artifact of one board's window and
-  //     means nothing once its root is gone (an ORDINARY linked member is
-  //     untouched here — `deleteCounterWithUnlink` preserves those). Their
-  //     boards join the affected set so a bingo line through a retired
-  //     derived cell re-derives below instead of glowing until a self-heal.
-  const derivedIds = await windowStampedDerivedIdsForRoot(id);
-  if (derivedIds.length > 0) {
-    const derivedIdSet = new Set(derivedIds);
-    for (const bt of allBoardTasksPre) {
-      if (derivedIdSet.has(bt.taskId)) affectedBoardIds.add(bt.boardId);
-    }
-    await softDeleteWindowStampedDerived(derivedIds, now);
   }
 
   // 5. Windowed board cascade over the pre-computed affected set (mirrors

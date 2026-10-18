@@ -7,7 +7,6 @@ import {
   autoTarget,
   generateCounterTaskTitle,
   varyRange,
-  sharedCounterRootIds,
   type BoardSource,
   type CompoundChild,
   type Task,
@@ -23,17 +22,17 @@ import { db } from '../../../db/internal';
 /**
  * §Member rules (B3, RC6) — the wizard Preview's DRY RUN.
  *
- * Since B2 the persist path replaces a counting member that carries a
- * target/vary rule with a window-stamped DERIVED counter whose `maxCount`
- * is the rolled target. These tests pin that the Preview shows the SAME
+ * Since slice 3b the persist path places a counting member that carries a
+ * target/vary rule AS ITSELF with a `targetOverride` placement parameter
+ * (the rolled target). These tests pin that the Preview shows the SAME
  * thing it is about to create:
  *
  * - the cell is a stand-in carrying the rolled target and the title that
  *   target generates — inside `varyRange`, never outside it — while keeping
  *   the original id the Save handler re-reads;
  * - the roll is seeded, so Shuffle (a new nonce) visibly re-rolls;
- * - nothing is written: the dry run is display-only and the real mint
- *   happens inside the board-create transaction;
+ * - nothing is written: the dry run is display-only and the real placement
+ *   parameters are written inside the board-create transaction;
  * - `buildWizardPlacement` WITHOUT `previewRules` is untouched — that is
  *   the persist path, which must not double-roll.
  */
@@ -104,7 +103,7 @@ function makeLibrary(tasks: Task[], children: CompoundChild[] = []): TaskLibrary
     compoundChildrenByCompound,
     childTaskIds: new Set(children.map((c) => c.childTaskId)),
     childToParents: {},
-    familyRootIds: sharedCounterRootIds(tasks),
+    eventsByTaskId: {},
   };
 }
 
@@ -120,6 +119,7 @@ function makeController(args: {
   childrenByCompoundId?: Record<string, CompoundChild[]>;
   manualTaskIds?: string[];
   manualTaskVary?: BoardWizardController['manualTaskVary'];
+  placementParams?: BoardWizardController['placementParams'];
   isRecurring?: boolean;
   isRandomized?: boolean;
   /** `'pool'` drops the target stepper AND the auto/explicit target branch. */
@@ -162,6 +162,7 @@ function makeController(args: {
     sources: [source],
     manualTaskIds: new Set(args.manualTaskIds ?? []),
     manualTaskVary: args.manualTaskVary ?? {},
+    placementParams: args.placementParams ?? new Map(),
     childrenByCompoundId,
     supplyInfoBySourceId,
     expandedSourceIds: new Set<string>(),
@@ -333,10 +334,9 @@ describe('applyPreviewDerivedCells — the Preview dry run (B3 RC6)', () => {
   });
 
   it('previews a stand-in as unstarted rather than inheriting another window\'s progress', () => {
-    // The minted counter is baseline-zeroed to THIS board's window. An
-    // original that is itself window-stamped carries a baseline for its OWN
-    // window, and `taskToSquareState`'s derived-counter carve-out would render
-    // that stale pair — so both fields are zeroed on the stand-in.
+    // The stand-in previews THIS board's window unstarted. An original that is
+    // itself window-stamped carries a baseline for its OWN window, so both
+    // mirror fields are zeroed on the stand-in.
     const counter = makeCounter('c1', 30, {
       sharedCounterId: 'root-1',
       createdInWizard: true,
@@ -359,6 +359,27 @@ describe('applyPreviewDerivedCells — the Preview dry run (B3 RC6)', () => {
 
     expect(out[0]!.currentCount).toBe(0);
     expect(out[0]!.baseline).toBe(0);
+  });
+
+  it('an explicit wizard parameter wins over the planner\'s for that cell (quick-added / hand-edited goal)', () => {
+    const counter = makeCounter('c1', 30);
+    const controller = makeController({
+      tasks: [counter],
+      supplyTaskIds: [],
+      manualTaskIds: ['c1'],
+      placementParams: new Map([['c1', { targetOverride: 8, targetKind: 'discrete' as const }]]),
+    });
+
+    const out = applyPreviewDerivedCells(
+      placementOf([counter]),
+      controller,
+      makeLibrary([counter]),
+      makePreviewRng(0),
+    );
+
+    expect(out[0]!.id).toBe('c1');
+    expect(out[0]!.maxCount).toBe(8);
+    expect(out[0]!.title).toBe('Run 8 miles');
   });
 
   it('keeps a One-square compound member as its original task, so its children still resolve', () => {

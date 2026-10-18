@@ -9,8 +9,8 @@ import { test, expect, seedBoard, seedTask, seedBoardTask, readBoard, openBoardO
  *
  * Walks the owner's device checklist end to end on one ad-hoc monthly
  * board:
- *   ENDED pill + banner + "LEFT / Ended / … · still logging" stat card
- *   → Edit → Close board → CLOSED pill + "ENDED / … / permanent record"
+ *   ENDED pill + banner + "LEFT / Ended / …" stat card
+ *   → Edit → Close board → CLOSED pill + "ENDED / …" stat card
  *   → tap a normal square → "Mark done on board" → green, still CLOSED
  *   → tap again → "Undo late log" → grey
  *   → Edit → Reopen board (verbatim alert copy) → ENDED again.
@@ -52,7 +52,6 @@ test.describe('Close / Reopen a board (Board Edit redesign slice 4)', () => {
     await expect(page.getByText('Ended', { exact: true }).first()).toBeVisible();
     await expect(page.getByText(/Ended .+/)).toBeVisible();
     await expect(page.getByText('Left', { exact: true })).toBeVisible();
-    await expect(page.getByText(/· still logging/)).toBeVisible();
     // Edit consolidation (D2) — `Edit board` is now VISIBLE on an ended
     // board (Edit is gated on "any non-draft board", not on squares being
     // editable); entering it shows the D4 reason line instead of the
@@ -69,7 +68,6 @@ test.describe('Close / Reopen a board (Board Edit redesign slice 4)', () => {
 
     // ── CLOSED ──────────────────────────────────────────────────────────
     await expect(page.getByText('Closed', { exact: true })).toBeVisible();
-    await expect(page.getByText('permanent record')).toBeVisible();
     await expect(page.getByText(/Board ended on .+\. Still logging/)).toHaveCount(0);
     // The CLOSED pill IS the feedback (iOS parity) — never the edit-save
     // toast. A point-in-time count, not a retrying `toHaveCount(0)`: the toast
@@ -82,6 +80,7 @@ test.describe('Close / Reopen a board (Board Edit redesign slice 4)', () => {
 
     // ── Direct late log on the closed board ────────────────────────────
     await page.getByText('Write the recap').click();
+    await page.getByRole('dialog').getByRole('button', { name: 'Late log…' }).click();
     const sheet = page.getByRole('dialog', { name: /Write the recap/ });
     await expect(sheet).toBeVisible();
     await expect(sheet.getByText('Closed', { exact: true })).toBeVisible();
@@ -95,6 +94,7 @@ test.describe('Close / Reopen a board (Board Edit redesign slice 4)', () => {
 
     // ── Undo the late log ───────────────────────────────────────────────
     await page.getByText('Write the recap').click();
+    await page.getByRole('dialog').getByRole('button', { name: 'Late log…' }).click();
     const sheet2 = page.getByRole('dialog', { name: /Write the recap/ });
     await expect(sheet2.getByRole('button', { name: 'Undo late log' })).toBeVisible();
     await sheet2.getByRole('button', { name: 'Undo late log' }).click();
@@ -118,6 +118,24 @@ test.describe('Close / Reopen a board (Board Edit redesign slice 4)', () => {
     const reopened = await readBoard(page, BOARD_ID);
     expect(reopened?.sealedAt).toBeFalsy();
     expect(reopened?.reopenedAt).toBeTruthy();
+  });
+
+  test('closing-out banner: a tap on the row opens the board; Close out closes it in place', async ({ page }) => {
+    await page.goto('/boards?__oybc_test_bypass=1');
+    const banner = page.getByRole('region', { name: 'Boards ready to close out' });
+    await expect(banner).toBeVisible();
+    // No separate Log button — the row itself is the way in.
+    await expect(banner.getByRole('button', { name: 'Log', exact: true })).toHaveCount(0);
+
+    // A click on the row's caption (not the name button) still opens it.
+    await banner.getByText(/^Ended /).click();
+    await expect(page).toHaveURL(new RegExp(`/boards/${BOARD_ID}`));
+
+    await page.goto('/boards?__oybc_test_bypass=1');
+    await banner.getByRole('button', { name: 'Close out Ship the redesign' }).click();
+    await expect(banner).toHaveCount(0);
+    await expect(page).toHaveURL(/\/boards(\?|$)/);
+    expect((await readBoard(page, BOARD_ID))?.sealedAt).toBeTruthy();
   });
 
   test('a reopened board never auto-closes and is excluded from the closing-out banner', async ({ page }) => {

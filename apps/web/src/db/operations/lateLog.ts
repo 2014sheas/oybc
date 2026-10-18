@@ -6,8 +6,8 @@ import {
   isEventOwningTask,
   isEventSealImmune,
   isQuantizedCount,
-  isWindowStampedDerived,
   quantizeCount,
+  withPlacementParams,
   lateLogOccurredAt,
   selectClosedBoardLateLogs,
   SyncOperationType,
@@ -26,8 +26,7 @@ import {
   computeTaskCachesFromEvents,
   getSealImmuneWindowsForTask,
 } from './taskEvents';
-import { refreshDerivedBaselines, withWindowStampedDerived } from './derivedCounters';
-import { propagateToLinkedRows } from './tasks.sharedCounter';
+import { loadPlacementReach } from './placementReach';
 import { reDeriveSealedBoardsForTasks } from './sealing';
 import { resolveAffectedBoardIds, refreshWatchersForBoards } from './boardLifecycle';
 import { runBoardCascadeForTasks } from './orchestration';
@@ -76,12 +75,12 @@ async function applyLateLogSideEffects(changedTaskIds: Iterable<string>, lateLog
   const ids = [...new Set(changedTaskIds)];
   if (ids.length === 0) return;
   const affectedBoardIds = await resolveAffectedBoardIds(ids);
-  // A shared-counter ROOT is never placed: live-cascade from its
-  // window-stamped derived rows too (iOS `reDeriveAfterLateLogWrite` reaches
-  // the same boards via `boardIdsReachedByTasks`). `lateLogStamp` = the
+  // A shared-counter ROOT is never placed: live-cascade from its linked
+  // rows too (iOS `reDeriveAfterLateLogWrite` reaches
+  // the same boards via the shared placement reach). `lateLogStamp` = the
   // instant this path stamped: only a counts-toward credit at that instant is
   // exempt from the counter's sealed windows (D11).
-  await runBoardCascadeForTasks(await withWindowStampedDerived(new Set(ids)), { lateLogStamp });
+  await runBoardCascadeForTasks((await loadPlacementReach(new Set(ids))).taskIds, { lateLogStamp });
   await reDeriveSealedBoardsForTasks(ids);
   if (affectedBoardIds.size > 0) await refreshWatchersForBoards(affectedBoardIds);
 }
@@ -174,18 +173,18 @@ export async function lateLogCompletion(
  *
  *  - **Plain / source** (`sharedCounterId == null`): appends directly on the
  *    task (which may itself be a shared-counter root with live linked rows —
- *    propagated exactly like {@link incrementSharedCounter}, just without its
+ *    cascaded exactly like {@link incrementSharedCounter}, just without its
  *    sealed no-op).
- *  - **Window-stamped derived** ({@link isWindowStampedDerived}): the event is
- *    authored on the ROOT (`task.sharedCounterId`), never the derived row
- *    itself (WC's derived-task carve-out) — the closed board's own square
- *    resolves from the root's in-window events on the next read.
- *  - **Hub-linked derived** (no `startDate`): a full no-op (OQ2 default) — its
- *    state is the lifetime latch, not windowed; a backdated root log would
- *    repaint every board placing it.
+ *  - **Linked** (`sharedCounterId` set): the event is
+ *    authored on the ROOT, never the linked row itself (linked rows own no
+ *    events) — the closed board's square resolves from the root's in-window
+ *    events on the next read. The old "hub-linked is a no-op" rule (OQ2) is
+ *    retired (TASK_WINDOW_REWORK slice 3a): since slice 0 every linked square
+ *    on a board resolves over that board's window, and since 3a linked
+ *    placements are never stamped.
  *
  * @param boardId The closed board the log is made from.
- * @param taskId  The COUNTING task (or window-stamped derived row) tapped.
+ * @param taskId  The COUNTING task (or linked row) tapped.
  * @param delta   A positive 2dp amount to log.
  * @param now     Write timestamp; the event is stamped at the board's
  *   `endDate`.
@@ -204,9 +203,6 @@ export async function lateLogIncrement(
     const task = await db.tasks.get(taskId);
     if (!task || task.isDeleted) throw new LateLogError('taskNotFound', taskId);
     if (task.type !== TaskType.COUNTING) throw new LateLogError('wrongType', taskId);
-
-    // Hub-linked derived counter — OQ2: not tappable on a closed board.
-    if (task.sharedCounterId != null && !isWindowStampedDerived(task)) return;
 
     const rootId = task.sharedCounterId ?? taskId;
     const root = await db.tasks.get(rootId);
@@ -229,13 +225,8 @@ export async function lateLogIncrement(
     if (savedRoot) await addToSyncQueue('tasks', rootId, SyncOperationType.UPDATE, savedRoot, 0);
 
     await insertIncrementEventRaw(rootId, delta, boardId, now, occurredAt);
-    await refreshDerivedBaselines(rootId);
-    // Propagates to every LIVE linked row (frozen ones reached cascade-only
-    // via `isFrozenRowReachedByEvent`, since `occurredAt` falls in this
-    // closed board's own window) and runs the live cascade for the source +
-    // linked ids (sealed boards are skipped there — `applyLateLogSideEffects`
-    // below covers the sealed re-derive for THIS board).
-    await propagateToLinkedRows(rootId, newRootCount, now, occurredAt);
+    // The live cascade over the root's reach (its linked rows resolve from
+    // its events), the sealed re-derive and the watchers.
     await applyLateLogSideEffects([rootId, taskId], occurredAt);
   });
 }
@@ -248,6 +239,12 @@ export interface LateLogCompoundAction {
   kind: 'completion' | 'increment';
   /** Required when `kind === 'increment'`; a positive 2dp number. */
   delta?: number;
+  /**
+   * For a LINKED counting child (slice 0): the shared-counter ROOT the
+   * increment is written on (a linked row owns no events). Filled by the
+   * planner; the sheet never sets it.
+   */
+  eventTaskId?: string;
 }
 
 /**
@@ -259,10 +256,10 @@ export interface LateLogCompoundAction {
  * ({@link previewLateLogCompoundRule} is the sheet's read-only twin) —
  * otherwise it throws `LateLogError('ruleNotMet')` and writes nothing.
  *
- * Non-event-owning children (a derived counter, or a nested compound) are
- * read-only and always skipped — matching the WC compound-child-fallback
- * rule. A plain COUNTING child that is ITSELF a shared-counter link is also
- * skipped here (out of scope for this sheet — vanishingly rare nesting).
+ * A nested compound child is read-only and skipped (the WC compound-child-
+ * fallback rule). A LINKED counting child (slice 0) logs on its ROOT, like a
+ * placed linked square's `lateLogIncrement`; before, it was skipped and the
+ * compound's rule could never be met from this sheet.
  *
  * @param boardId        The closed board the log is made from.
  * @param compoundTaskId The compound task placed on it.
@@ -295,6 +292,28 @@ export async function lateLogCompoundParts(
     for (const action of planned) {
       if (action.kind === 'completion') {
         await appendCompletionEvent(action.childTaskId, boardId, now, occurredAt);
+      } else if (action.eventTaskId) {
+        // A linked child (slice 0): the increment is the ROOT's, exactly as
+        // `lateLogIncrement` writes it for a placed linked square.
+        const rootId = action.eventTaskId;
+        const root = await db.tasks.get(rootId);
+        if (!root || root.isDeleted) continue;
+        const delta = action.delta as number;
+        const newRootCount = quantizeCount((root.currentCount ?? 0) + delta);
+        const rootWasCompleted = root.isCompleted;
+        const rootNowCompleted =
+          rootWasCompleted || (root.maxCount != null && newRootCount >= root.maxCount);
+        await db.tasks.update(rootId, {
+          currentCount: newRootCount,
+          isCompleted: rootNowCompleted,
+          completedAt: !rootWasCompleted && rootNowCompleted ? now : root.completedAt,
+          updatedAt: now,
+          version: (root.version ?? 0) + 1,
+        });
+        const savedRoot = await db.tasks.get(rootId);
+        if (savedRoot) await addToSyncQueue('tasks', rootId, SyncOperationType.UPDATE, savedRoot, 0);
+        await insertIncrementEventRaw(rootId, delta, boardId, now, occurredAt);
+        touchedTaskIds.add(rootId);
       } else {
         await appendIncrementEvent(action.childTaskId, action.delta as number, boardId, now, occurredAt);
       }
@@ -326,16 +345,26 @@ async function planCompoundActions(
   for (const action of actions) {
     if (!childIds.has(action.childTaskId)) continue;
     const child: Task | undefined = await db.tasks.get(action.childTaskId);
-    if (!child || child.isDeleted || !isEventOwningTask(child)) continue;
+    if (!child || child.isDeleted) continue;
+    // A LINKED counting child logs on its root (slice 0); everything else
+    // must own its events.
+    const linkedRoot = child.type === TaskType.COUNTING && child.sharedCounterId ? child.sharedCounterId : null;
+    if (!linkedRoot && !isEventOwningTask(child)) continue;
     if (action.kind === 'completion') {
       if (child.type !== TaskType.NORMAL) continue;
       const events = await db.taskEvents.where('taskId').equals(child.id).toArray();
       if (hasCompletionInSealedWindow(events, board.startDate, board.endDate, board.sealedAt as string)) continue;
       planned.push({ childTaskId: child.id, kind: 'completion' });
     } else {
-      if (child.type !== TaskType.COUNTING || child.sharedCounterId != null) continue;
+      if (child.type !== TaskType.COUNTING) continue;
       if (!isQuantizedCount(action.delta as number) || (action.delta as number) <= 0) continue;
-      planned.push({ childTaskId: child.id, kind: 'increment', delta: action.delta });
+      if (linkedRoot) {
+        const root = await db.tasks.get(linkedRoot);
+        if (!root || root.isDeleted) continue;
+        planned.push({ childTaskId: child.id, kind: 'increment', delta: action.delta, eventTaskId: linkedRoot });
+      } else {
+        planned.push({ childTaskId: child.id, kind: 'increment', delta: action.delta });
+      }
     }
   }
   return planned;
@@ -371,10 +400,12 @@ async function isCompoundRuleMetOnClosedBoard(
     (eventsByTaskId[e.taskId] ??= []).push(e);
   }
   planned.forEach((a, i) => {
-    (eventsByTaskId[a.childTaskId] ??= []).push({
+    // A linked child's staged increment lands on its ROOT, where the kernel reads it.
+    const eventTaskId = a.eventTaskId ?? a.childTaskId;
+    (eventsByTaskId[eventTaskId] ??= []).push({
       id: `staged-${i}`,
       userId: compound.userId,
-      taskId: a.childTaskId,
+      taskId: eventTaskId,
       kind: a.kind,
       ...(a.kind === 'increment' ? { delta: a.delta } : {}),
       occurredAt,
@@ -385,11 +416,16 @@ async function isCompoundRuleMetOnClosedBoard(
       isDeleted: false,
     } as TaskEvent);
   });
+  // The PLACEMENT's child goals (slice 2a) — what the sealed re-derive scores with.
+  const placement = await db.boardTasks
+    .where('boardId').equals(board.id)
+    .filter((bt) => bt.taskId === compound.id && !bt.isDeleted)
+    .first();
   return evaluateCompound(compound, childrenByCompound, taskById, {
     windowStart: board.startDate,
     windowEnd: boardWindowEnd(board),
     eventsByTaskId,
-  });
+  }, placement?.childTargets);
 }
 
 /**
@@ -422,11 +458,11 @@ export async function previewLateLogCompoundRule(
  * task (D10 / owner ruling R2) — identified by provenance (`boardId` +
  * `occurredAt` == the board's `endDate` instant), never a marker field, and
  * ordered by `createdAt` descending so repeated taps undo one at a time. For
- * a window-stamped derived square, resolves to the ROOT's late logs (derived
- * rows own no events).
+ * a linked square, resolves to the ROOT's late logs (linked rows own no
+ * events).
  *
  * @param boardId The closed board the log was made on.
- * @param taskId  The task (or window-stamped derived row) to undo for.
+ * @param taskId  The task (or linked row) to undo for.
  * @param now     Write timestamp for the tombstone.
  * @returns `true` if a late log was found and undone; `false` if there was
  *   none (the caller should hide/disable the affordance).
@@ -441,8 +477,7 @@ export async function undoLateLog(
     const task = await db.tasks.get(taskId);
     if (!task || task.isDeleted) throw new LateLogError('taskNotFound', taskId);
 
-    const effectiveTaskId =
-      isWindowStampedDerived(task) && task.sharedCounterId != null ? task.sharedCounterId : taskId;
+    const effectiveTaskId = task.sharedCounterId ?? taskId;
 
     const events = await db.taskEvents.where('taskId').equals(effectiveTaskId).toArray();
     const candidates = selectClosedBoardLateLogs(events, board, effectiveTaskId);
@@ -493,12 +528,6 @@ export async function undoLateLog(
       });
       const savedRoot = await db.tasks.get(effectiveTaskId);
       if (savedRoot) await addToSyncQueue('tasks', effectiveTaskId, SyncOperationType.UPDATE, savedRoot, 0);
-
-      await refreshDerivedBaselines(
-        effectiveTaskId,
-        events.map((e) => (e.id === entry.id ? { ...e, isDeleted: true } : e)),
-      );
-      await propagateToLinkedRows(effectiveTaskId, newRootCount, now, entry.occurredAt);
     }
 
     await applyLateLogSideEffects([effectiveTaskId, taskId], entry.occurredAt);
@@ -517,12 +546,12 @@ export interface ClosedBoardSquareState {
   /** For COUNTING only: the sealed-bounded windowed count (D16); `0` for NORMAL. */
   count: number;
   /** Late logs made directly on this board for this task (root-resolved for
-   *  a window-stamped derived square), newest first — `[]` means nothing to
+   *  a linked square), newest first — `[]` means nothing to
    *  undo. */
   lateLogs: TaskEvent[];
   /** The event-owning id whose events this state was READ from — the tapped
-   *  task for NORMAL/plain COUNTING, or the ROOT for a window-stamped derived
-   *  square (derived rows own no events). Read-side only: the write/undo
+   *  task for NORMAL/plain COUNTING, or the ROOT for a linked square (linked
+   *  rows own no events). Read-side only: the write/undo
    *  entry points (`lateLogIncrement`, `undoLateLog`, …) take the TAPPED
    *  (placed) task id and resolve the root themselves. */
   effectiveTaskId: string;
@@ -532,7 +561,7 @@ export interface ClosedBoardSquareState {
  * Read-only state for the late-log sheet's normal/counting body — one query,
  * reused by `useLiveQuery` so the sheet updates as events change. Returns
  * `null` when the board isn't closed or the task can't be late-logged from
- * this sheet (missing/deleted/wrong type/hub-linked derived — OQ2).
+ * this sheet (missing / deleted / wrong type).
  *
  * @param boardId The closed board.
  * @param taskId  The tapped square's task (NORMAL or COUNTING).
@@ -543,8 +572,14 @@ export async function readClosedBoardSquareState(
 ): Promise<ClosedBoardSquareState | null> {
   const board = await db.boards.get(boardId);
   if (!board || board.isDeleted || board.sealedAt == null) return null;
-  const task = await db.tasks.get(taskId);
-  if (!task || task.isDeleted) return null;
+  const rawTask = await db.tasks.get(taskId);
+  if (!rawTask || rawTask.isDeleted) return null;
+  // The placement-adjusted task (slice 2a): the sheet's goal is the placement's.
+  const placement = await db.boardTasks
+    .where('boardId').equals(boardId)
+    .filter((bt) => bt.taskId === taskId && !bt.isDeleted)
+    .first();
+  const task = withPlacementParams(rawTask, placement ?? null);
 
   if (task.type === TaskType.NORMAL) {
     const events = await db.taskEvents.where('taskId').equals(taskId).toArray();
@@ -554,7 +589,6 @@ export async function readClosedBoardSquareState(
   }
 
   if (task.type !== TaskType.COUNTING) return null;
-  if (task.sharedCounterId != null && !isWindowStampedDerived(task)) return null; // hub-linked — OQ2
 
   const effectiveTaskId = task.sharedCounterId ?? taskId;
   const rootEvents = await db.taskEvents.where('taskId').equals(effectiveTaskId).toArray();

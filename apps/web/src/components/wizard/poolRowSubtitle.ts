@@ -2,7 +2,7 @@ import {
   AchievementTrigger,
   OperatorType,
   TaskType,
-  formatCountWithUnit,
+  formatCount,
   resolveCountKind,
   type CompoundChild,
   type Task,
@@ -19,11 +19,9 @@ export function buildPoolRowSubtitle(
   let base: string | undefined;
   switch (task.type) {
     case TaskType.COUNTING: {
-      const { action, unit, maxCount } = task;
-      const kind = resolveCountKind(task);
-      if (action && (unit || kind === 'duration') && maxCount != null) {
-        base = `${action} · goal ${formatCountWithUnit(maxCount, kind, unit)}`;
-      }
+      // The title already reads "{action} {goal} {unit}" — the caption is the goal alone.
+      const { maxCount } = task;
+      if (maxCount != null && maxCount > 0) base = `goal ${formatCount(maxCount, resolveCountKind(task))}`;
       break;
     }
     case TaskType.COMPOUND: {
@@ -41,9 +39,7 @@ export function buildPoolRowSubtitle(
       break;
     }
     case TaskType.ACHIEVEMENT: {
-      const trigger = task.achievementTrigger === AchievementTrigger.BINGO ? 'First Bingo' : 'GREENLOG';
-      const target = task.referencedBoardId ? 'a board' : 'a repeating board';
-      base = `Watch ${target} · ${trigger}`;
+      base = task.achievementTrigger === AchievementTrigger.BINGO ? 'First Bingo' : 'GREENLOG';
       break;
     }
     default:

@@ -68,7 +68,11 @@ updates:
   # Lower cadence — Actions ecosystem moves slowly and security
   # advisories are rare.
   - package-ecosystem: "github-actions"
-    directory: "/"
+    # "/" covers .github/workflows; the composite actions under .github/actions
+    # (ios-setup pins actions/cache) need their own directory entries.
+    directories:
+      - "/"
+      - "/.github/actions/*"
     schedule:
       interval: "monthly"
     open-pull-requests-limit: 3

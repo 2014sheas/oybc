@@ -218,9 +218,6 @@ extension AppDatabase {
         // ONE cascade per batch, same transaction — a cascade error rolls
         // back every upsert above.
         if !changedTaskIds.isEmpty {
-            // B2 FI1: a pulled window-stamped derived counter's baseline is a
-            // non-authored cache refreshed per task before the derivation.
-            for taskId in changedTaskIds { _ = try refreshPulledDerivedBaseline(db: db, taskId: taskId) }
             try runPullCascadeForTasks(db: db, changedTaskIds: changedTaskIds, ownerUid: userId, previousCountsTowardRoots: previousCountsTowardRoots)
             // A new / changed sub-task link changes a compound's result on
             // SEALED boards too (the live cascade skips them): re-derive their
@@ -251,7 +248,7 @@ extension AppDatabase {
     /// An event whose Task isn't local yet is upserted (shape only) and skipped
     /// by the recompute: `pullApplyOrder` pulls events before task rows, so the
     /// SAME pull's tasks batch brings that row (with its author's caches) and
-    /// its cascade + derived-baseline refresh read these events.
+    /// its cascade reads these events.
     ///
     /// - Returns: Pulled-row count + per-row skip details.
     static func applyTaskEventsBatchTx(db: Database, userId: String, rawDocs: [[String: Any]]) throws -> (pulled: Int, details: [String]) {
@@ -272,13 +269,12 @@ extension AppDatabase {
             if let taskId = raw["taskId"] as? String { affectedTaskIds.insert(taskId) }
             pulled += 1
         }
-        // Recompute caches once per affected local task + refresh the window-
-        // stamped derived counters keyed off it (non-authored writes).
-        let cascadeTaskIds = try recomputeTaskCachesAndRefreshDerived(db: db, taskIds: affectedTaskIds)
+        // Recompute caches once per affected local task (non-authored writes).
+        let cascadeTaskIds = try recomputePulledTaskCaches(db: db, taskIds: affectedTaskIds)
         // ONE derivation pass per affected LIVE board; roots expand to their
-        // window-stamped derived rows.
+        // linked rows.
         if !cascadeTaskIds.isEmpty {
-            try runPullCascadeForTasks(db: db, changedTaskIds: withWindowStampedDerived(db: db, taskIds: cascadeTaskIds), ownerUid: userId)
+            try runPullCascadeForTasks(db: db, changedTaskIds: placementReach(db: db, taskIds: cascadeTaskIds).taskIds, ownerUid: userId)
         }
         // Sealed boards re-derive from the event union (the only sanctioned
         // mutation of a sealed record) — `affectedTaskIds`, so a sealed board
@@ -341,9 +337,9 @@ extension AppDatabase {
             healedTaskIds.insert(ev.taskId)
             minted += 1
         }
-        _ = try recomputeTaskCachesAndRefreshDerived(db: db, taskIds: healedTaskIds)
+        _ = try recomputePulledTaskCaches(db: db, taskIds: healedTaskIds)
         if !healedTaskIds.isEmpty {
-            try runPullCascadeForTasks(db: db, changedTaskIds: withWindowStampedDerived(db: db, taskIds: healedTaskIds), ownerUid: userId)
+            try runPullCascadeForTasks(db: db, changedTaskIds: placementReach(db: db, taskIds: healedTaskIds).taskIds, ownerUid: userId)
             try reDeriveSealedBoards(db: db, changedTaskIds: healedTaskIds)
         }
         return minted
@@ -424,6 +420,9 @@ extension AppDatabase {
         guard allowedGRDBTables.contains(grdbTable) else { throw SyncError.invalidPayload("Unknown table: \(grdbTable)") }
         var cleaned = data
         cleaned.removeValue(forKey: "_syncedAt")
+        // Task/window rework slice 1: a placement's parameters are stored in
+        // their canonical shape (the same rule web applies after its parse).
+        if grdbTable == "board_tasks" { BoardTask.normalizePulledPlacementFields(&cleaned) }
         guard !cleaned.isEmpty else { return }
         guard cleaned["id"] is String else {
             throw SyncError.invalidPayload("Document missing 'id' field for \(grdbTable) upsert")
@@ -527,5 +526,26 @@ extension AppDatabase {
         case "users": return try User.fetchOne(db, key: entityId).map(SyncQueueBuilder.encodePayload)
         default: return nil
         }
+    }
+
+    /// Restamp the lifetime caches of every pulled-event-affected local
+    /// event-owning task from its events (non-authored). A task whose row isn't
+    /// local yet is skipped: the pull applies events before task rows, so the
+    /// same pull's tasks batch brings it and its cascade reads these events.
+    ///
+    /// - Parameters:
+    ///   - db: The pull's open transaction.
+    ///   - taskIds: The tasks whose events were touched by this pull.
+    /// - Returns: The subset that exists locally AND owns events — what the
+    ///   caller then cascades over.
+    @discardableResult
+    static func recomputePulledTaskCaches(db: Database, taskIds: Set<String>) throws -> Set<String> {
+        var touched = Set<String>()
+        for taskId in taskIds {
+            guard let task = try Task.fetchOne(db, key: taskId), isEventOwningTask(task) else { continue }
+            try recomputeTaskCachesFromPull(db: db, taskId: taskId)
+            touched.insert(taskId)
+        }
+        return touched
     }
 }

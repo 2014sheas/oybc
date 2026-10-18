@@ -45,7 +45,7 @@ export {
   placementGoalForCounter,
   counterPickGoal,
   placementGoalSource,
-  placementNeedsCopy,
+  placementNeedsOverride,
   taskSearchMatches,
 } from './counterPlacement';
 export type { PlacementBoard, PlacementExistingCopy, PlacementGoalSource } from './counterPlacement';
@@ -129,16 +129,26 @@ export type {
 export {
   fixedLogChipAmounts,
   goalChipAmounts,
-  boardSheetChips,
   hubChips,
   lateLogChipAmounts,
-  initialLogSelection,
   quickLogAmount,
-  customChipLabel,
   logPillLabel,
   logPillOpensDetail,
+  tapLogChips,
 } from './logAmounts';
-export type { LogChip } from './logAmounts';
+export type { LogChip, TapLogChip } from './logAmounts';
+export { pickHeroAnchorBoard, nextCompoundSubtask, buildTaskActivity, closestLine } from './taskDetail';
+export { taskPlacementRows } from './taskPlacementRows';
+export type { TaskPlacementRow, TaskPlacementRowsInput } from './taskPlacementRows';
+export type {
+  CompoundSubtaskCandidate,
+  CompoundSubtaskAction,
+  TaskActivityKind,
+  TaskActivityRow,
+  TaskActivityInput,
+  TaskActivity,
+  ClosestLine,
+} from './taskDetail';
 
 // ===== Pair-derived counter display names (R1 — counters refresh) =====
 export { formatCounterName } from './counterName';
@@ -157,9 +167,18 @@ export {
   computeBoardStatsUpdate,
   computeSealedCompletedCells,
   computeBoardGrid,
+  placementsReachedByTasks,
+  placementsReachedByRoot,
 } from './derivationPass';
 
-export type { BoardStatsUpdate, CellState, AchievementCellBadge } from './derivationPass';
+export type {
+  BoardStatsUpdate,
+  CellState,
+  AchievementCellBadge,
+  PlacementReach,
+  PlacementReachLookups,
+  ReachedPlacement,
+} from './derivationPass';
 
 // Sync-churn fix — board derivation writes only when derived state changed.
 export {
@@ -168,6 +187,7 @@ export {
   momentCounterAt,
   momentFinalBeat,
   momentPosterCells,
+  replayMomentKind,
 } from './boardMoment';
 export type {
   BoardMomentReplay,
@@ -186,10 +206,9 @@ export {
   resolveTaskWindowState,
   boardWindowEnd,
   lateLogOccurredAt,
-  resolveWindowStampedDerivedState,
+  resolveLinkedCounterWindowState,
   resolveDerivedCounterWindowState,
-  resolveLinkedCounterDisplay,
-  expandToWindowStampedDerived,
+  contextlessCounterState,
   boundWindowContextAtSeal,
   buildSealImmuneWindows,
   isEventSealImmune,
@@ -335,18 +354,21 @@ export type {
 
 export { isTaskExpired } from './taskExpiry';
 
-export { compareBoardsForList, isBoardActiveForList } from './boardListSort';
+export {
+  activeBoardPlacementCounts,
+  boardPlacementStatus,
+  compareBoardsForList,
+  isBoardActiveForList,
+  type BoardPlacementStatus,
+  type InPlayBoardFields,
+} from './boardListSort';
 
 export { computeBrowsableTasks, isGoalLessCounter } from './browsableTasks';
 
-// ===== Phase 1 + Phase 3 — Shared counter =====
-export { deriveDisplayedCount, propagateIncrement } from './sharedCounter';
-
-export type {
-  PropagateIncrementSource,
-  PropagateIncrementLinkedTask,
-  LinkedTaskIncrementResult,
-} from './sharedCounter';
+// Phase 1/3's `deriveDisplayedCount` / `propagateIncrement` (the
+// `currentCount − baseline` display and the linked-row latch stamp) were
+// retired by TASK_WINDOW_REWORK slice 5: every reader resolves a linked row
+// from its root's events, and an increment writes the root alone.
 
 // Phase 4's `sharedCounterMerge` (additiveMergeCount / needsAdditiveMerge) was
 // retired by Windowed Completion — counting-task conflicts now resolve by
@@ -446,23 +468,12 @@ export type {
 
 // ===== Member rules (B1, docs/BOARD_SOURCES.md §Member rules) =====
 export {
-  DERIVED_TASK_NS,
-  DERIVED_COMPOUND_NS,
-  DERIVED_LINK_NS,
-  derivedTaskId,
-  derivedCompoundId,
-  derivedLinkId,
   nominalWindowDays,
   autoTarget,
   varyRange,
   rollTarget,
   applyMemberRules,
   planDerivedTasks,
-  computeWindowBaseline,
-  isWindowStampedDerived,
-  isFrozenDerivedRow,
-  isFrozenRowReachedByEvent,
-  buildDerivedRows,
 } from './memberRules';
 
 export type {
@@ -470,14 +481,9 @@ export type {
   PlanMode,
   BoardWindow,
   PlanTask,
-  DerivedTaskDraft,
-  DerivedCompoundChildDraft,
-  DerivedCompoundDraft,
+  PlannedPlacement,
   PlanDerivedTasksArgs,
   PlanDerivedTasksResult,
-  BaselineEvent,
-  DerivedRowsInput,
-  DerivedRows,
 } from './memberRules';
 
 // ===== Member rules — display + rule-editing helpers (B3, docs/BOARD_SOURCES.md §Member rules) =====
@@ -537,20 +543,7 @@ export type {
   CoreBoardSetupPrefs,
 } from './coreBoardSetupDefaults';
 
-// ===== Windowed linked counters — heal planner + placement gate (owner rule 2026-10-01) =====
-export {
-  sameWindowStart,
-  isWindowStampedForBoard,
-  planLinkedCounterWindowHeal,
-  windowStampedCopyDraft,
-} from './linkedCounterWindowHeal';
 
-export type {
-  LinkedCounterWindowHealInput,
-  LinkedCounterWindowStamp,
-  LinkedCounterWindowCopy,
-  LinkedCounterWindowHealPlan,
-} from './linkedCounterWindowHeal';
 
 // ===== Board-scoped task edits — fork ids + planner (docs/BOARD_SCOPED_TASK_EDITS.md, PR 1) =====
 export {
@@ -598,3 +591,22 @@ export {
 } from './boardExpiry';
 
 export type { ExpiringBoardFields } from './boardExpiry';
+
+export { normalizePlacementFields, withNormalizedPlacementFields, TITLE_OVERRIDE_MAX } from './placementFields';
+export type { PlacementFields } from './placementFields';
+
+export {
+  convertGoalToKind,
+  placementGoal,
+  childTargetFor,
+  placementTitle,
+  withPlacementParams,
+  withChildTarget,
+  resolveSquareState,
+  resolveLinkedCounterDisplay,
+} from './placementParams';
+export type { PlacementParams } from './placementParams';
+
+// ===== Developer export — the anonymised workspace fixture (TASK_WINDOW_REWORK slice 4) =====
+export { anonymiseWorkspace } from './workspaceAnonymiser';
+export type { AnonymisableWorkspace, AnonymisedWorkspace } from './workspaceAnonymiser';

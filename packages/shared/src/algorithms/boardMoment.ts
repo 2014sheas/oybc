@@ -1,3 +1,4 @@
+import { withPlacementParams } from './placementParams';
 /**
  * boardMoment.ts - the replay kernel behind the Bingo and Greenlog moments
  * (docs/BOARD_MOMENTS.md). When a write completes a line or the whole board,
@@ -32,7 +33,7 @@
  */
 
 import { detectBingos, getHighlightedSquares, type BoardSize } from '@oybc/bingo-core';
-import { CenterSquareType } from '../constants/enums';
+import { BoardStatus, CenterSquareType } from '../constants/enums';
 import type { Board } from '../types/board';
 import type { BoardTask } from '../types/boardTask';
 import type { CompoundChild } from '../types/compoundChild';
@@ -153,9 +154,11 @@ export function computeBoardMomentReplay(
     const placement = state
       ? boardTasks.find((bt) => bt.id === state.boardTaskId)
       : boardTasks.find((bt) => !bt.isDeleted && bt.row * size + bt.col === idx);
-    const task = placement ? taskById[placement.taskId] : undefined;
-    if (!placement || !task) continue;
-    const s = resolveContributionState(task, childrenByCompound, taskById, events, window);
+    const raw = placement ? taskById[placement.taskId] : undefined;
+    if (!placement || !raw) continue;
+    // The placement-adjusted task (slice 2a): its goal / child goals are the placement's.
+    const task = withPlacementParams(raw, placement);
+    const s = resolveContributionState(task, childrenByCompound, taskById, events, window, placement.childTargets);
     order.push({ boardTaskId: placement.id, idx, completedAt: s.isCompleted && s.completingEventId ? s.completedAt : null });
   }
   order.sort(compareEntries);
@@ -220,6 +223,22 @@ export function momentCellVisual(idx: number, beat: number, replay: BoardMomentR
 export function momentCounterAt(beat: number, replay: BoardMomentReplay): number {
   const landed = Math.min(Math.max(beat, 0), replay.order.length);
   return Math.max(0, replay.completedTasks - replay.order.length + landed);
+}
+
+/**
+ * Which moment a board's Bingos card replays on tap, or `null` when it has
+ * nothing to replay: a full board replays its Greenlog, a board with at least
+ * one line its Bingo. "Full" is `COMPLETED` OR every square counted — an
+ * archived board keeps its counts but not its `COMPLETED` status.
+ * Swift twin: `replayMomentKind(status:completedTasks:totalTasks:linesCompleted:)`.
+ */
+export function replayMomentKind(
+  board: Pick<Board, 'status' | 'completedTasks' | 'totalTasks' | 'linesCompleted'>,
+): MomentKind | null {
+  const full = board.status === BoardStatus.COMPLETED
+    || (board.totalTasks > 0 && board.completedTasks >= board.totalTasks);
+  if (full) return 'greenlog';
+  return board.linesCompleted >= 1 ? 'bingo' : null;
 }
 
 /** The clock's last beat: the end state, held. */

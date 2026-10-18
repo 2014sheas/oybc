@@ -108,33 +108,9 @@ extension AppDatabase {
             try db.execute(sql: "ALTER TABLE core_board_defaults ADD COLUMN defaultCenterType TEXT")
         }
 
-        // v37: windowed linked counters (owner rule 2026-10-01 — a counting
-        // square accounts only for logs inside its board's window). Heals every
-        // pre-rule hub-linked counter placed on a board into per-board
-        // window-stamped rows (stamp in place for the earliest board, a
-        // deterministic copy for each further one) — AUTHORED writes, so peers
-        // converge. Data-only, no schema change; the same sweep re-runs after
-        // each clean pull (`SyncService`) to catch rows other devices wrote.
-        migrator.registerMigration("v37") { db in
-            let userIds = try String.fetchAll(db, sql: "SELECT id FROM users")
-            // Best-effort: a heal failure must NEVER brick database open — the
-            // post-pull sweep retries it (idempotent), so log and move on.
-            for userId in userIds {
-                do {
-                    // Savepoint: a mid-heal failure rolls back that user's partial writes.
-                    try db.inSavepoint {
-                        try AppDatabase.healLinkedCounterWindowsTx(
-                            db: db, userId: userId, now: AppDatabase.currentTimestamp()
-                        )
-                        return .commit
-                    }
-                } catch {
-                    #if DEBUG
-                    dlog("[Migration v37] linked-counter heal skipped for a user: \(error.localizedDescription)")
-                    #endif
-                }
-            }
-        }
+        // v37: windowed linked-counter heal — retired (TASK_WINDOW_REWORK slice 3a);
+        // the slice-4 sweep repoints stamped rows. Registered as a no-op to keep the version.
+        migrator.registerMigration("v37") { _ in }
 
         // v38: Pool-level default dice (docs/BOARD_SOURCES.md §Member rules →
         // Pool-level defaults, 2026-10-06) — `Pool.memberVary`, a JSON-string
@@ -211,6 +187,40 @@ extension AppDatabase {
             // D11 — the instant the flag was set; only occurrences at or after it credit.
             try db.execute(sql: "ALTER TABLE tasks ADD COLUMN countsTowardSince TEXT")
         }
+
+        // v44: heal re-run — retired (TASK_WINDOW_REWORK slice 3a); the slice-4
+        // sweep repoints stamped rows. Registered as a no-op to keep the version.
+        migrator.registerMigration("v44") { _ in }
+
+        // v45: Task/window rework slice 1 (docs/TASK_WINDOW_REWORK.md) — the
+        // per-placement parameters on `board_tasks`: `targetOverride` (REAL),
+        // `targetKind` (TEXT), `childTargets` (TEXT, sorted-keys JSON array of
+        // {childId, target}) and `titleOverride` (TEXT). All nullable, no
+        // backfill (absent = the task's own goal / title), no index. INERT
+        // until slice 2 reads and slice 3 writes them; synced under the
+        // existing `boardTasks` per-row LWW with the four as clearable fields.
+        // No rules change. Web: no Dexie bump (unindexed — the v39/v41
+        // precedent).
+        migrator.registerMigration("v45") { db in
+            try db.execute(sql: "ALTER TABLE board_tasks ADD COLUMN targetOverride REAL")
+            try db.execute(sql: "ALTER TABLE board_tasks ADD COLUMN targetKind TEXT")
+            try db.execute(sql: "ALTER TABLE board_tasks ADD COLUMN childTargets TEXT")
+            try db.execute(sql: "ALTER TABLE board_tasks ADD COLUMN titleOverride TEXT")
+        }
+
+        // v46: Task/window rework slice 3b — `manualTaskTargets` on templates: a
+        // hand-added task's frozen target / kind / title, copied by Repeat from
+        // the placement and applied by spawn. Nullable TEXT (sorted-keys-free
+        // JSON object, like v31's `manualTaskVary`); no backfill, no index.
+        // Synced under the existing per-row LWW as a clearable field. Web: no
+        // Dexie bump (unindexed).
+        migrator.registerMigration("v46") { db in
+            try db.execute(sql: "ALTER TABLE recurring_board_templates ADD COLUMN manualTaskTargets TEXT")
+        }
+
+        // v47: the placement sweep's first trigger — retired (TASK_WINDOW_REWORK
+        // slice 5). No schema change; registered as a no-op to keep the version.
+        migrator.registerMigration("v47") { _ in }
     }
 }
 

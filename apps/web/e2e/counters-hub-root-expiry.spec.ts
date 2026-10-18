@@ -1,5 +1,5 @@
 import type { Page } from '@playwright/test';
-import { test, expect, openCreateHub, startOneOffWizard } from './_fixtures/bypass';
+import { test, expect, openCreateHub, seedBoardTask, seedTask, startOneOffWizard } from './_fixtures/bypass';
 
 /**
  * Regression — owner report 2026-09-30: "counter tasks derived from a larger
@@ -17,6 +17,12 @@ import { test, expect, openCreateHub, startOneOffWizard } from './_fixtures/bypa
  * Drives the real UI end to end (wizard → Sources sheet → activate), then
  * reads IndexedDB + the hub / detail / Profile home. The decisive case
  * moves the page clock PAST the weekly's `endDate` — red before the fix.
+ *
+ * Since TASK_WINDOW_REWORK slice 3b the wizard no longer MINTS a window-stamped
+ * derived row (it places the root with a `targetOverride`), so `derivedRow`
+ * seeds the LEGACY row an earlier build wrote — re-pointing the weekly's root
+ * placement at it — which is exactly the member the hub's expiry rule must
+ * keep reading until the migration sweep (slice 4) retires such rows.
  */
 
 type Row = Record<string, unknown>;
@@ -41,7 +47,7 @@ async function dumpStore(page: Page, store: string): Promise<Row[]> {
 
 /** Tasks step: add the "Run 100 miles" counting task through the special panel. */
 async function addCounter(page: Page): Promise<void> {
-  await page.getByRole('button', { name: 'Add a counting, compound or achievement task' }).click();
+  await page.getByRole('button', { name: 'Counting · Compound · Achievement' }).click();
   await page.getByRole('button', { name: 'Counting', exact: true }).click();
   await page.getByRole('textbox', { name: 'Verb' }).fill('Run');
   await page.getByRole('textbox', { name: 'Goal' }).fill('100');
@@ -122,11 +128,36 @@ async function createCoreWeeklyFromMonthly(page: Page): Promise<string> {
 }
 
 async function derivedRow(page: Page, rootId: string): Promise<Row> {
-  const tasks = await dumpStore(page, 'tasks');
-  const derived = tasks.filter((t) => t.sharedCounterId === rootId && !t.isDeleted);
-  expect(derived.length, 'window-stamped derived row minted').toBe(1);
-  expect(derived[0].startDate, 'derived row startDate').toBeTruthy();
-  return derived[0];
+  const boards = await dumpStore(page, 'boards');
+  const weekly = boards.find((b) => b.timeframe === 'weekly' && !b.isDeleted)!;
+  const placements = await dumpStore(page, 'boardTasks');
+  const rootPlacement = placements.find((bt) => bt.boardId === weekly.id && bt.taskId === rootId && !bt.isDeleted);
+  expect(rootPlacement, 'the weekly places the root (slice 3b: as itself, with an override)').toBeTruthy();
+  expect(rootPlacement!.targetOverride, 'placement override').toBe(25);
+
+  const legacy = {
+    id: 'cccccccc-hubx-0001-task-000000000001',
+    title: 'Run 25 miles',
+    type: 'counting' as const,
+    action: 'Run',
+    unit: 'miles',
+    maxCount: 25,
+    sharedCounterId: rootId,
+    baseline: 0,
+    timeframe: 'weekly' as const,
+    startDate: weekly.startDate as string,
+    endDate: weekly.endDate as string,
+    createdInWizard: true,
+  };
+  await seedTask(page, legacy);
+  await seedBoardTask(page, {
+    id: rootPlacement!.id as string,
+    boardId: weekly.id as string,
+    taskId: legacy.id,
+    row: rootPlacement!.row as number,
+    col: rootPlacement!.col as number,
+  });
+  return legacy;
 }
 
 /** Hub + detail + Profile home all list the counter (and, on detail, the member). */
@@ -185,6 +216,13 @@ test.describe('Counters hub — a board-born root stays listed when its members 
     // and the Profile home.
     const afterWeekly = new Date(new Date(weeklyEnd).getTime() + 24 * 60 * 60 * 1000);
     await page.clock.install({ time: afterWeekly });
+    // "Counting now" is the in-play rule (ACTIVE, not closed, not past its
+    // endDate), never the stored status: the ended weekly member is not
+    // counting, and the root's own monthly square counts only while the
+    // month is still open (a weekly that straddles the month end takes the
+    // monthly down with it).
+    const monthlyLive = afterWeekly.getTime() <= new Date(monthly!.endDate as string).getTime();
+    const countingNow = monthlyLive ? '1 task' : '0 tasks';
 
     await page.goto('/profile/counters');
     await expect(page.getByRole('heading', { name: 'Counters', level: 1 })).toBeVisible();
@@ -193,10 +231,9 @@ test.describe('Counters hub — a board-born root stays listed when its members 
       'hub still lists the monthly root after its only member expired',
     ).toBeVisible();
     // The ended weekly row is hidden by default: the card's only member row
-    // is the root's own square on the monthly board (that board's status is
-    // still `active` — sealing is a separate, lazy pass), so the footer
-    // counts one task, and the weekly row is nowhere on the page.
-    await expect(page.getByText('1 task · 1 board')).toBeVisible();
+    // is the root's own square on the monthly board, so the footer counts
+    // one board, and the weekly row is nowhere on the page.
+    await expect(page.getByText(`${countingNow} · 1 board`)).toBeVisible();
     await expect(page.getByText(d.title as string)).toHaveCount(0);
 
     // …and "Show expired tasks" lists it again. The toggle's state IS the
@@ -205,7 +242,8 @@ test.describe('Counters hub — a board-born root stays listed when its members 
     // flaky step in member-rules.spec.ts's hub test (ROADMAP E7).
     await page.goto('/profile/counters?showExpired=1');
     await expect(page.getByLabel('Show expired tasks')).toBeChecked();
-    await expect(page.getByText('2 tasks · 2 boards')).toBeVisible();
+    // Listed again, but an ended board's member is not counting now.
+    await expect(page.getByText(`${countingNow} · 2 boards`)).toBeVisible();
     await page.goto(`/profile/counters/${rootId}?showExpired=1`);
     await expect(page.getByRole('heading', { name: 'Run miles' })).toBeVisible();
     await expect(page.getByText(d.title as string).first()).toBeVisible();

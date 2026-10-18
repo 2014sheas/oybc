@@ -27,6 +27,7 @@ private struct BoardPlayTitleChrome: ViewModifier {
             content
                 .navigationBarTitleDisplayMode(.inline)
                 .navigationBarBackButtonHidden(true)
+                .background(InteractivePopEnabler()) // swipe-back survives the hidden back button
         } else {
             content
         }
@@ -40,7 +41,7 @@ private struct BoardPlayTitleChrome: ViewModifier {
 /// (fresh `UUID` per trigger) drives `CounterLogToastView`'s `.id(...)` so
 /// back-to-back logs restart the auto-dismiss timer cleanly — mirrors
 /// `CounterDetailView`'s `DetailToastState` pattern.
-private struct CreditToastState {
+struct CreditToastState {
     /// The shared counter's SOURCE task id — what `Undo` reverses.
     let sourceTaskId: String
     let amount: CountValue
@@ -49,6 +50,11 @@ private struct CreditToastState {
     let message: String
     let undo: SharedCounterCreditToastPayload.UndoKind
     let toastKey: String
+    /// A Normal toggle's toast: second line + the placement an Undo re-toggles.
+    var detail: String? = nil
+    var retoggle: BoardTask? = nil
+    var wasDone: Bool? = nil // completed state BEFORE the toggle (Undo restores it)
+    var squareUndo: SquareLogUndo? = nil // a menu log's exact reversal
 }
 
 // MARK: - ArrivalBannerData / ArrivalNavTarget (Shared Counters P3)
@@ -177,14 +183,15 @@ struct BoardPlayView: View {
     /// The showing credited toast's data (message + Undo target), or nil
     /// when no toast is up. R3: unified onto `CounterLogToastView` (amount-
     /// aware copy + Undo pill) — see `triggerCreditToast(payload:)`.
-    @State private var creditToast: CreditToastState? = nil
-    /// Board task id of the counting cell whose stepper sheet is open.
-    // internal for the +CountingStepper extension split
-    @State var countingStepperBoardTaskId: String?
-    /// Task whose detail sheet opens once the counting stepper sheet has
-    /// finished dismissing (see `drainPendingTaskDetail`).
-    // internal for the +CountingStepper extension split
+    @State var creditToast: CreditToastState? = nil
+    /// Board task id whose square sheet is open (`BoardPlayView+SquareSheet.swift`).
+    @State var squareSheetBoardTaskId: String?
+    /// The Undo strip under the sheet's chips after a log.
+    @State var squareLogStrip: SquareLogStrip?
+    @State var squareSheetEntry: SquareSheetEntry? // opens the sheet straight into an entry
+    /// Hand-offs drained once the square sheet has unmounted (library, late log).
     @State var pendingTaskDetailTaskId: String?
+    @State var pendingLateLogBoardTaskId: String?
     /// D15 late-log sheet target + its inline error (internal for `+LateLog`).
     @State var lateLogTarget: LateLogSheetItem?
     @State var lateLogErrorMessage: String?
@@ -197,24 +204,13 @@ struct BoardPlayView: View {
     @State private var arrivalBannerGeneration: Int = 0
     /// Sheet-presented nav target for the banner tap (Counter Detail / Hub).
     @State private var arrivalNavTarget: ArrivalNavTarget? = nil
-    @State private var detailBoardTaskId: String?
-    /// Drives the task-detail library sheet (separate from the board-play detail sheet).
-    // internal for the +CountingStepper extension split
+    /// Drives the task-detail library sheet (separate from the square sheet).
     @State var taskDetailSheetTaskId: TaskIdItem?
-    /// Child task detail opened from INSIDE the on-board detail sheet (the
-    /// compound child ⓘ button). Deliberately a separate item from
-    /// `taskDetailSheetTaskId`: that sheet presents from the view root, and
-    /// SwiftUI silently queues a sibling sheet until the detail sheet is
-    /// manually dismissed. This item's sheet presents from the detail
-    /// sheet's own content instead, stacking immediately — matching web's
-    /// overlay behavior (DetailModal + TaskDetailSheet are independent).
-    @State private var compoundChildDetailTaskId: TaskIdItem?
-    /// Windowed Completion (docs Decision 9 + §Write paths — "the toggle is
-    /// disabled with an explanatory affordance"). Task ids whose un-complete
-    /// affordance in `detailSheet` would be inert because every live
-    /// completion is sealed-window-immune. Populated on-demand when the
-    /// detail sheet opens (see `loadSealBlockedTaskIds`), not per grid render.
-    @State private var sealBlockedTaskIds: Set<String> = []
+    /// Windowed Completion (docs Decision 9): task ids whose un-complete in the
+    /// square sheet would be inert (every completion sealed-window-immune);
+    /// loaded when the sheet opens (`loadSealBlockedTaskIds`).
+    @State var sealBlockedTaskIds: Set<String> = []
+    @State var menuSealBlockedIds: Set<String> = [] // done Normal squares whose un-complete is inert (hold menu)
     // MARK: Edit-mode draft state (Board Edit redesign slice 3)
     // The edit-draft *data* layer lives entirely on `BoardPlayViewModel`
     // (`editSquaresDraft` / `editCenterType` / `editSquaresEditCells`, D20 —
@@ -254,11 +250,11 @@ struct BoardPlayView: View {
     /// this stash + watching `taskDetailSheetTaskId` for nil-transition
     /// (see `.onChange` below) sequences dismiss-then-navigate
     /// correctly.
-    @State private var pendingOpenBoardId: String?
+    @State var pendingOpenBoardId: String?
 
     /// Sheet `onDismiss` drain for `pendingOpenBoardId` (task-detail,
     /// nested child-detail, and counter arrival sheets all use it).
-    private func drainPendingOpenBoard() {
+    func drainPendingOpenBoard() {
         guard let target = pendingOpenBoardId else { return }
         pendingOpenBoardId = nil
         onOpenBoard(target)
@@ -317,28 +313,10 @@ struct BoardPlayView: View {
     /// own window (the kernel's rule), a hub-linked row's latch — so a cell
     /// never paints green while stats count it incomplete. Callers must branch
     /// compound / achievement before calling.
-    private func windowedIsCompleted(_ task: Task) -> Bool {
-        if task.sharedCounterId != nil {
-            return resolveLinkedCounterDisplay(
-                task: task, eventsByTaskId: windowEventsByTaskId, sealedAt: board?.sealedAt,
-                window: board.map(LinkedCounterWindow.init(board:))
-            ).isCompleted
-        }
-        return viewModel.windowedState(of: task).isCompleted
-    }
+    func windowedIsCompleted(_ task: Task) -> Bool { viewModel.windowedCompletedValue(task) }
 
-    /// Windowed count of a counting square: event-owning (source / plain) via
-    /// its own events; a linked counter via `resolveLinkedCounterDisplay`
-    /// (window-stamped: root sum in its window; hub-linked: count − baseline).
-    func windowedCount(_ task: Task) -> CountValue {
-        if task.sharedCounterId != nil {
-            return resolveLinkedCounterDisplay(
-                task: task, eventsByTaskId: windowEventsByTaskId, sealedAt: board?.sealedAt,
-                window: board.map(LinkedCounterWindow.init(board:))
-            ).displayed
-        }
-        return viewModel.windowedState(of: task).count
-    }
+    /// Windowed count of a counting square (see `BoardPlayViewModel.windowedCountValue`).
+    func windowedCount(_ task: Task) -> CountValue { viewModel.windowedCountValue(task) }
 
     // MARK: - Edit-mode squares draft (Board Edit redesign slice 3)
     //
@@ -509,7 +487,7 @@ struct BoardPlayView: View {
             // ── P2/R3: Shared-counter credited toast (slides from bottom) ──
             // Unified onto `CounterLogToastView` (R2) via its `message`
             // override — same card chrome as the Counters Hub/Detail toasts,
-            // now with the pinned "+N counterName — also counted on…" copy
+            // now with the pinned "+N counterName" copy
             // and an Undo pill that reverses the whole logged entry.
             if let creditToast {
                 VStack {
@@ -519,9 +497,9 @@ struct BoardPlayView: View {
                         unit: creditToast.unit,
                         verb: creditToast.verb,
                         message: creditToast.message,
+                        detail: creditToast.detail,
                         onUndo: {
-                            viewModel.undoCreditToast(creditToast.undo, sourceTaskId: creditToast.sourceTaskId)
-                            withAnimation(.easeOut(duration: 0.2)) { self.creditToast = nil }
+                            if undoCreditToastState(creditToast) { withAnimation(.easeOut(duration: 0.2)) { self.creditToast = nil } } // busy keeps the toast
                         },
                         onDone: {
                             withAnimation(.easeOut(duration: 0.2)) { self.creditToast = nil }
@@ -714,42 +692,24 @@ struct BoardPlayView: View {
         // Board Edit redesign slice 3 (T5) — the `.editEvent` outcome
         // observer (saved / saveFailed / boardClosed) moved into
         // `BoardEditPresenter`, which owns the alerts it drives.
-        // Counting stepper sheet — content + "Task details" hand-off live in
-        // `BoardPlayView+CountingStepper.swift`. The task-detail sheet is
-        // presented from `onDismiss` (SwiftUI queues a sibling sheet while
-        // another is up), via the `pendingTaskDetailTaskId` stash.
+        // The square sheet (counting / compound / achievement taps, Normal
+        // "View Details", every closed-board tap) — content, hand-offs and the
+        // drains live in `BoardPlayView+SquareSheet.swift`. The library and
+        // late-log sheets open from `onDismiss` (SwiftUI queues a sibling sheet).
         .sheet(
             isPresented: Binding(
-                get: { countingStepperBoardTaskId != nil },
-                set: { if !$0 { countingStepperBoardTaskId = nil } }
+                get: { squareSheetBoardTaskId != nil },
+                set: { if !$0 { squareSheetBoardTaskId = nil } }
             ),
-            onDismiss: drainPendingTaskDetail
+            onDismiss: drainSquareSheetHandOffs
         ) {
-            countingStepperSheetContent
+            squareSheet
         }
         // D15 closed-board late-log sheet.
         .sheet(item: $lateLogTarget) { item in lateLogSheet(for: item) }
-        .sheet(isPresented: Binding(
-            get: { detailBoardTaskId != nil },
-            set: { if !$0 { detailBoardTaskId = nil } }
-        ), onDismiss: {
-            // Drains cross-board nav requested from the NESTED child detail
-            // sheet (see `compoundChildDetailTaskId`): child dismiss closes
-            // this sheet, then navigation lands here post-unmount — same
-            // clean-transaction pattern as the library sheet below.
-            drainPendingOpenBoard()
-            // Board-integrity PR-5 (Item 5): this sheet's content (`detailSheet`)
-            // can complete/edit the task, and its NESTED child-detail sheet edits/
-            // deletes a compound child's `Task` itself — neither write goes through
-            // this VM, so refresh on dismiss like the M4 add-cell sheet on cancel.
-            viewModel.reloadBoardTasksAndTaskData()
-        }) {
-            detailSheet
-        }
-        // Windowed Completion — resolve seal-immunity for the un-complete
-        // affordance(s) the detail sheet is about to show. On-demand (sheet
-        // open only), not per grid render.
-        .onChange(of: detailBoardTaskId) { _, newValue in
+        .task(id: "\(board?.version ?? 0)-\(board?.completedTasks ?? 0)-\(boardTasks.count)-\(board?.sealedAt ?? "")") { await loadMenuSealBlockedIds() }
+        .onChange(of: squareSheetBoardTaskId) { _, newValue in
+            squareLogStrip = nil
             loadSealBlockedTaskIds(for: newValue)
         }
         // `onDismiss:` fires AFTER the sheet has visually unmounted, so
@@ -776,6 +736,7 @@ struct BoardPlayView: View {
                     pendingOpenBoardId = newBoardId
                     taskDetailSheetTaskId = nil
                 },
+                originBoardId: viewModel.board?.id,
                 database: viewModel.database
             )
         }
@@ -879,28 +840,7 @@ struct BoardPlayView: View {
     }
 
     // MARK: - P2/R3: Shared-counter credited toast helpers
-
-    /// Fires the credited toast for a shared-counter ripple that reached
-    /// other boards. R3: mounts a fresh `CreditToastState` (distinct
-    /// `toastKey`) so `CounterLogToastView`'s own `.id(...)`-scoped
-    /// auto-dismiss `.task` restarts cleanly for back-to-back logs — the
-    /// manual generation-token timer this used to hand-roll is now owned by
-    /// the shared component (mirrors `CounterDetailView`'s toast pattern).
-    ///
-    /// - Parameter payload: The credited toast's copy + Undo target.
-    private func triggerCreditToast(payload: SharedCounterCreditToastPayload) {
-        withAnimation(.spring(response: 0.45, dampingFraction: 0.8)) {
-            creditToast = CreditToastState(
-                sourceTaskId: payload.sourceTaskId,
-                amount: payload.amount,
-                unit: payload.unit,
-                verb: payload.isIncrement ? .logged : .removed,
-                message: payload.message,
-                undo: payload.undo,
-                toastKey: UUID().uuidString
-            )
-        }
-    }
+    // `triggerCreditToast(payload:)` lives in `BoardPlayView+SquareSheet.swift`.
 
     // `sharedCreditToastText(counterName:otherBoards:isIncrement:)` moved to
     // `BoardPlayViewModel` (B2-I2) — its only callers are the shared-counter
@@ -1036,7 +976,7 @@ struct BoardPlayView: View {
     ///   - highlighted: Set of indices that are on a completed bingo line.
     @ViewBuilder
     private func risoPlaySquare(boardTask: BoardTask, index: Int, highlighted: Set<Int>) -> some View {
-        let task = taskMap[boardTask.taskId]
+        let task = viewModel.placedTask(boardTask) // slice 2a: placement-adjusted
         let taskType = task?.type ?? .normal
         // Completion derivation — preserved verbatim from original playSquare.
         // Compounds: NEVER read Task.isCompleted. Achievements: derive from
@@ -1055,7 +995,7 @@ struct BoardPlayView: View {
                     compound: task,
                     childrenByCompound: compoundChildrenByCompound,
                     taskById: taskMap,
-                    windowContext: boardWindowContext
+                    windowContext: boardWindowContext, childTargets: boardTask.childTargets
                 )
             }
             if task.type == .achievement {
@@ -1072,7 +1012,6 @@ struct BoardPlayView: View {
         // linked-counter rule).
         let rawCount = task?.currentCount ?? 0
         let maxVal = task?.maxCount ?? 0
-        let isLinkedCounter = task?.sharedCounterId != nil
         // D16 — CLOSED shows the window count, not the old max/0 snapshot.
         let current: CountValue = {
             guard let t = task else { return 0 }
@@ -1092,7 +1031,7 @@ struct BoardPlayView: View {
         // Compound child progress — mirrors original playSquare.
         let compoundLinks = task.map { compoundChildrenByCompound[$0.id] ?? [] } ?? []
         let compoundDoneCount = compoundLinks.filter { link in
-            guard let childTask = taskMap[link.childTaskId], !childTask.isDeleted else { return false }
+            guard let raw = taskMap[link.childTaskId], !raw.isDeleted else { return false }; let childTask = PlacementParams.withChildTarget(raw, childTargets: boardTask.childTargets) // slice 2a
             if childTask.type == .compound {
                 return CompoundEvaluation.evaluate(
                     compound: childTask,
@@ -1106,7 +1045,7 @@ struct BoardPlayView: View {
         }.count
 
         // Operator-aware completion target for the cell's progress bar —
-        // mirrors web's DetailModal fractions (OR → any one child completes;
+        // mirrors the web square sheet's fractions (OR → any one child completes;
         // M_OF_N → threshold; AND → all children) and matches the
         // `CompoundEvaluation` semantics that color the cell (compound teal).
         let compoundRequiredCount: Int = {
@@ -1144,15 +1083,13 @@ struct BoardPlayView: View {
             )
         }()
 
-        let lateLogRoutable = isLateLogRoutable(task: task) // D15
-
         RisoBoardPlayCell(
             title: task?.title ?? "Unknown",
             taskType: cellKind,
             isCompleted: isCompleted,
             isBingoLine: highlighted.contains(index),
             isCenter: false,
-            isInteractionLocked: isBoardLocked && !lateLogRoutable,
+            isInteractionLocked: false, // a closed board still opens the read-only square sheet
             showsLockChip: effectiveLockChip,
             currentCount: current,
             maxCount: maxVal,
@@ -1161,550 +1098,13 @@ struct BoardPlayView: View {
             compoundDoneCount: compoundDoneCount,
             compoundChildCount: compoundLinks.count,
             compoundRequiredCount: compoundRequiredCount,
-            onTap: {
-                if isBoardLocked {
-                    routeLateLogTap(routable: lateLogRoutable, boardTask: boardTask, task: task)
-                    return
-                }
-                guard !isProcessing, !pagerSwipeActive else { return }
-                // Haptic feedback — fire immediately on tap (before async write
-                // lands).
-                let generator = UIImpactFeedbackGenerator(style: .medium)
-                generator.impactOccurred()
-                switch taskType {
-                case .normal:
-                    viewModel.handleNormalTap(boardTask: boardTask)
-                case .counting:
-                    // Tap → open counting stepper sheet
-                    countingStepperBoardTaskId = boardTask.id
-                case .compound:
-                    detailBoardTaskId = boardTask.id
-                case .achievement:
-                    break // read-only
-                }
-            }
+            onTap: { handlePlaySquareTap(boardTask: boardTask, task: task) }
         )
-        .contextMenu {
-            risoContextMenu(boardTask: boardTask, task: task, isCompleted: isCompleted, taskType: taskType, current: current, maxVal: maxVal, isLinkedCounter: isLinkedCounter)
-        }
+        .contextMenu { squareMenu(boardTask: boardTask, task: task) }
         // P3 — pulse the square when it just arrived from an elsewhere log.
         // Applied at the call site (not inside RisoBoardPlayCell) so the
         // snapshot-covered cell internals stay untouched.
         .arrivePulse(active: task.map { arrivedTaskIds.contains($0.id) } ?? false)
-    }
-
-    /// Context menu items — preserved exactly from original `playSquare`, now
-    /// extracted so they can be attached to `RisoBoardPlayCell`.
-    @ViewBuilder
-    private func risoContextMenu(
-        boardTask: BoardTask,
-        task: Task?,
-        isCompleted: Bool,
-        taskType: TaskType,
-        current: CountValue,
-        maxVal: CountValue,
-        isLinkedCounter: Bool
-    ) -> some View {
-        switch taskType {
-        case .normal:
-            Button(
-                isCompleted ? "Mark Incomplete" : "Mark Complete",
-                systemImage: isCompleted ? "xmark.circle" : "checkmark.circle"
-            ) {
-                guard !isBoardLocked else { return }
-                viewModel.handleNormalTap(boardTask: boardTask)
-            }
-            .disabled(isProcessing || isBoardLocked)
-
-            Button("View Details", systemImage: "info.circle") {
-                detailBoardTaskId = boardTask.id
-            }
-            Button("Open in library", systemImage: "book") {
-                taskDetailSheetTaskId = TaskIdItem(id: boardTask.taskId)
-            }
-
-        case .counting:
-            if let t = task {
-                let kind = resolveFamilyCountKind(t, lookup: { taskMap[$0] })
-                let source = viewModel.sharedCounterSourceId(for: t).flatMap { taskMap[$0] }
-                // Discrete keeps the shared source's default (else 1); the
-                // new kinds remember per task. Never persists a new default.
-                let remembered = kind == .discrete ? source?.defaultLogAmount : (source ?? t).defaultLogAmount
-                let chips = CounterLogAmount.boardSheetChips(kind: kind, goal: t.maxCount ?? 0)
-                let quickAmount = CounterLogAmount.quickAmount(kind: kind, chips: chips, defaultLogAmount: remembered)
-                Button(CountingMenuLabels.add(amount: quickAmount, kind: kind, unit: t.unit ?? "", action: t.action ?? "item"), systemImage: "plus") {
-                    guard !isBoardLocked else { return }
-                    viewModel.handleCountingTap(boardTask: boardTask, task: t, amount: quickAmount)
-                }
-                // No maxVal gate — overshoot is a feature (never clamp).
-                .disabled(isProcessing || isBoardLocked)
-                if kind != .discrete {
-                    Button(CountingMenuLabels.customAmount, systemImage: "number") { countingStepperBoardTaskId = boardTask.id }
-                        .disabled(isBoardLocked)
-                }
-                Button(CountingMenuLabels.remove(amount: quickAmount, kind: kind, unit: t.unit ?? "", action: t.action ?? "item"), systemImage: "minus") {
-                    guard !isBoardLocked else { return }
-                    viewModel.handleCountingDecrement(boardTask: boardTask, task: t, amount: quickAmount)
-                }
-                // P2: isLinkedCounter no longer disables − (decrementSharedCounter handles fan-out).
-                .disabled(current == 0 || isProcessing || isBoardLocked)
-                Button("View Details", systemImage: "info.circle") {
-                    detailBoardTaskId = boardTask.id
-                }
-                Button("Open in library", systemImage: "book") {
-                    taskDetailSheetTaskId = TaskIdItem(id: t.id)
-                }
-            }
-
-        case .compound:
-            Button("View Children", systemImage: "list.bullet") {
-                detailBoardTaskId = boardTask.id
-            }
-            Button("Open in library", systemImage: "book") {
-                taskDetailSheetTaskId = TaskIdItem(id: boardTask.taskId)
-            }
-
-        case .achievement:
-            Button("View Details", systemImage: "info.circle") {
-                detailBoardTaskId = boardTask.id
-            }
-            Button("Open in library", systemImage: "book") {
-                taskDetailSheetTaskId = TaskIdItem(id: boardTask.taskId)
-            }
-        }
-    }
-
-    // MARK: - Detail Sheet
-
-    /// Modal sheet for viewing and toggling task details (steps for progress, counter for counting).
-    @ViewBuilder
-    private var detailSheet: some View {
-        if let btId = detailBoardTaskId,
-           let bt = boardTasks.first(where: { $0.id == btId }),
-           let task = taskMap[bt.taskId] {
-            ZStack {
-                RisoPaperBackground().ignoresSafeArea()
-                VStack(spacing: 0) {
-                    // ── Header ──
-                    HStack(alignment: .top) {
-                        VStack(alignment: .leading, spacing: 3) {
-                            Text(task.title)
-                                .font(.risoHead(18, .extraBold))
-                                .foregroundStyle(Color.risoInk)
-                            Text(detailTypeLabel(for: task.type))
-                                .font(.risoBody(13, .semibold))
-                                .foregroundStyle(Color.risoMuted)
-                        }
-                        Spacer(minLength: 8)
-                        RisoToolbarPill(title: "Done") { detailBoardTaskId = nil }
-                    }
-                    .padding(.horizontal, Riso.gutter)
-                    .padding(.vertical, 16)
-
-                    ScrollView(showsIndicators: false) {
-                        VStack(alignment: .leading, spacing: 16) {
-                            switch task.type {
-                            case .normal:
-                                normalDetailContent(boardTask: bt)
-                            case .counting:
-                                countingDetailContent(boardTask: bt, task: task)
-                            case .compound:
-                                compoundDetailContent(boardTask: bt, task: task)
-                            case .achievement:
-                                achievementDetailContent(boardTask: bt, task: task)
-                            }
-                        }
-                        .padding(.horizontal, Riso.gutter)
-                        .padding(.bottom, 24)
-                    }
-                }
-            }
-            .presentationDetents([.medium, .large])
-            // Nested child detail — presented from the detail sheet's own
-            // content so it stacks immediately instead of waiting for the
-            // parent to dismiss (SwiftUI queues sibling sheets on one host).
-            .sheet(
-                item: $compoundChildDetailTaskId,
-                onDismiss: {
-                    // Cross-board nav from the nested sheet: also close the
-                    // parent detail sheet; its onDismiss drains
-                    // `pendingOpenBoardId` in a clean transaction.
-                    if pendingOpenBoardId != nil { detailBoardTaskId = nil }
-                    // Board-integrity PR-5 (Item 5): this nested sheet edits/deletes
-                    // the compound CHILD's `Task` itself — the parent `detailSheet`'s
-                    // compound-progress display and the grid both read stale
-                    // in-memory state until refreshed. Reload
-                    // unconditionally (not just on cross-board nav) so a
-                    // plain "Done" dismiss after an edit/delete still picks
-                    // up the change. When `detailBoardTaskId` is ALSO about
-                    // to nil out (the cross-board branch above), the outer
-                    // sheet's own onDismiss reloads again — redundant but
-                    // harmless (cheap local reads).
-                    viewModel.reloadBoardTasksAndTaskData()
-                }
-            ) { item in
-                TaskDetailSheetView(
-                    taskId: item.id,
-                    onClose: { compoundChildDetailTaskId = nil },
-                    onOpenBoard: { newBoardId in
-                        pendingOpenBoardId = newBoardId
-                        compoundChildDetailTaskId = nil
-                    },
-                    database: viewModel.database
-                )
-            }
-        }
-    }
-
-    /// Card section helper for the Riso detail sheet — `.risoSectionLabel()`
-    /// heading above a paper2 card. Mirrors `EditTaskSheet.risoSection`.
-    @ViewBuilder
-    private func detailSection<Content: View>(
-        _ label: String,
-        @ViewBuilder content: () -> Content
-    ) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(label).risoSectionLabel()
-            content()
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(12)
-                .risoCard(fill: .risoPaper2)
-                .risoHardShadow(Riso.Shadow.small)
-        }
-    }
-
-    /// Square Riso stepper button used by the counting detail card.
-    @ViewBuilder
-    private func detailStepperButton(
-        system: String, enabled: Bool, action: @escaping () -> Void
-    ) -> some View {
-        Button(action: action) {
-            Image(systemName: system)
-                .font(.system(size: 18, weight: .bold))
-                // Enabled glyph sits on gold — non-inverting ink for dark mode.
-                .foregroundStyle(enabled ? Color.risoInkStatic : Color.risoMuted)
-                .frame(width: 44, height: 44)
-                .risoCard(fill: enabled ? .risoGold : .risoPaper)
-        }
-        .buttonStyle(RisoButtonStyle())
-        .disabled(!enabled)
-        .accessibilityLabel(system == "plus" ? "Increment count" : "Decrement count")
-    }
-
-    /// Human-readable label for a task type shown in the detail sheet header.
-    ///
-    /// - Parameter type: The `TaskType` to describe.
-    /// - Returns: A short description string.
-    private func detailTypeLabel(for type: TaskType) -> String {
-        switch type {
-        case .normal:      return "Normal task"
-        case .counting:    return "Counting task"
-        case .compound:    return "Compound task"
-        case .achievement: return "Achievement task"
-        }
-    }
-
-    /// 0-based grid index (row * gridSize + col) for a BoardTask — used to
-    /// look up its membership in a sealed board's frozen `sealedCompletedCells`.
-    private func cellIndex(for boardTask: BoardTask) -> Int {
-        boardTask.row * gridSize + boardTask.col
-    }
-
-    /// Windowed Completion (docs Decision 9) — resolve `isUncompleteBlockedBySeal`
-    /// for every un-complete affordance the detail sheet is about to render:
-    /// the boardTask's own task (normal/counting Mark-complete button), plus
-    /// every compound child row (the sheet's "Children" list). Off-main; the
-    /// result populates `sealBlockedTaskIds` so the sheet renders
-    /// disabled-with-explanation for any task whose green is held entirely by
-    /// a sealed-window-immune completion.
-    ///
-    /// - Parameter boardTaskId: The `detailBoardTaskId` that just changed, or
-    ///   `nil` when the sheet closed (clears the set).
-    private func loadSealBlockedTaskIds(for boardTaskId: String?) {
-        guard let boardTaskId,
-              let bt = boardTasks.first(where: { $0.id == boardTaskId }),
-              let task = taskMap[bt.taskId] else {
-            sealBlockedTaskIds = []
-            return
-        }
-        var candidateIds: [String] = [task.id]
-        if task.type == .compound {
-            let children = compoundChildrenByCompound[task.id] ?? []
-            candidateIds.append(contentsOf: children.map { $0.childTaskId })
-        }
-        let db = viewModel.database
-        _Concurrency.Task.detached(priority: .utility) {
-            var blocked: Set<String> = []
-            for id in candidateIds {
-                if let isBlocked = try? db.isUncompleteBlockedBySeal(taskId: id), isBlocked {
-                    blocked.insert(id)
-                }
-            }
-            await MainActor.run { self.sealBlockedTaskIds = blocked }
-        }
-    }
-
-    @ViewBuilder
-    private func normalDetailContent(boardTask: BoardTask) -> some View {
-        // Windowed Completion — a SEALED board reads `done` from the frozen
-        // snapshot (docs §Effects of sealed), never live events.
-        let isCompleted = isSealed
-            ? (board?.sealedCompletedCells?.contains(cellIndex(for: boardTask)) ?? false)
-            : (taskMap[boardTask.taskId].map { windowedIsCompleted($0) } ?? false)
-        // Windowed Completion (docs Decision 9) — if every live completion is
-        // sealed-window-immune, un-completing here would be inert (the
-        // tombstone finds nothing to tombstone). Disable + explain instead of
-        // a tap that silently does nothing.
-        let sealBlocked = isCompleted && sealBlockedTaskIds.contains(boardTask.taskId)
-        detailSection("Completion") {
-            CompletionToggleView(
-                isCompleted: isCompleted,
-                sealBlocked: sealBlocked,
-                disabled: isProcessing || isBoardLocked
-            ) {
-                viewModel.handleNormalTap(boardTask: boardTask)
-                detailBoardTaskId = nil
-            }
-        }
-    }
-
-    @ViewBuilder
-    private func countingDetailContent(boardTask: BoardTask, task: Task) -> some View {
-        // Linked derived counters show `resolveLinkedCounterDisplay`'s count
-        // (via `windowedCount`), never the raw source accumulator.
-        let maxVal = task.maxCount ?? 0
-        let unitText = task.unit ?? ""
-        let isLinkedCounter = task.sharedCounterId != nil
-        // Windowed Completion — the windowed count (`windowedCount` owns the
-        // linked-counter rule). Slice 4 D16: a CLOSED board shows the same
-        // window count as its grid cell (partial late logs visible), not the
-        // old max/0 snapshot.
-        let current = windowedCount(task)
-
-        // R3: shared counting squares' quick +/- here use the counter's
-        // persisted default amount (was hardcoded 1) — same rule as the
-        // context-menu quick actions; the "#" custom entry lives in the
-        // stepper sheet's chip row, not this modal.
-        let quickAmount = viewModel.sharedCounterSourceId(for: task).flatMap { taskMap[$0]?.defaultLogAmount } ?? 1
-        let kind = resolveCountKind(task.countKind)
-
-        detailSection("Progress") {
-            VStack(alignment: .leading, spacing: 12) {
-                RisoProgressBar(
-                    value: maxVal > 0 ? min(current, maxVal) / maxVal : 0,
-                    color: current >= maxVal ? .risoGreen : .risoBlue
-                )
-
-                Text("\(formatCount(current, kind: kind)) / \(formatCount(maxVal, kind: kind))\(unitText.isEmpty ? "" : " \(unitText)")")
-                    .font(.risoBody(13, .semibold))
-                    .foregroundStyle(Color.risoMuted)
-
-                HStack(spacing: 16) {
-                    // P2: isLinkedCounter no longer disables − (decrementSharedCounter handles fan-out).
-                    detailStepperButton(
-                        system: "minus",
-                        enabled: current > 0 && !isProcessing && !isBoardLocked
-                    ) {
-                        viewModel.handleCountingDecrement(boardTask: boardTask, task: task, amount: quickAmount)
-                    }
-
-                    Spacer()
-
-                    Text(formatCount(current, kind: kind))
-                        .font(.risoHead(26, .extraBold))
-                        .monospacedDigit()
-                        .foregroundStyle(Color.risoInk)
-
-                    Spacer()
-
-                    detailStepperButton(
-                        system: "plus",
-                        // No maxVal gate — overshoot (current > maxCount) is a
-                        // feature, never clamped; matches the cell-tap stepper.
-                        enabled: !isProcessing && !isBoardLocked
-                    ) {
-                        viewModel.handleCountingTap(boardTask: boardTask, task: task, amount: quickAmount)
-                    }
-                }
-
-                // R3 contract: "labels disclose the amount" on BOTH platforms —
-                // when the stepper moves by the counter's default (not 1), say
-                // so; bare ± glyphs silently logging 10 broke the contract
-                // (#342 final review I1).
-                if quickAmount != 1 {
-                    Text("Steps by \(formatCount(quickAmount, kind: kind))\(unitText.isEmpty ? "" : " \(unitText)")")
-                        .font(.risoBody(11, .semibold))
-                        .foregroundStyle(Color.risoMuted)
-                        .frame(maxWidth: .infinity, alignment: .center)
-                }
-            }
-        }
-    }
-
-    /// Detail sheet content for a compound task: shows each child with its current
-    /// completion state and a tap handler that toggles the child's `Task.isCompleted`.
-    ///
-    /// - Parameters:
-    ///   - boardTask: The parent compound's `BoardTask` placement record.
-    ///   - task: The parent compound `Task`.
-    @ViewBuilder
-    private func compoundDetailContent(boardTask: BoardTask, task: Task) -> some View {
-        let links = (compoundChildrenByCompound[task.id] ?? [])
-
-        detailSection("Children") {
-            VStack(alignment: .leading, spacing: 0) {
-                if links.isEmpty {
-                    Text("No children found")
-                        .font(.risoBody(13, .semibold))
-                        .foregroundStyle(Color.risoMuted)
-                } else {
-                    ForEach(links, id: \.id) { link in
-                        let childTask = taskMap[link.childTaskId]
-                        // The windowed child state `handleCompoundChildToggle` inverts.
-                        let isDone = childTask.map { viewModel.compoundChildIsCompleted($0) } ?? false
-                        // Windowed Completion (docs Decision 9) — a child whose
-                        // only live completion(s) are sealed-window-immune
-                        // can't be un-completed from here; disable + explain.
-                        let sealBlocked = isDone && sealBlockedTaskIds.contains(link.childTaskId)
-
-                        VStack(alignment: .leading, spacing: 3) {
-                            HStack(spacing: 10) {
-                                Button {
-                                    guard let ct = childTask, !isBoardLocked, !isProcessing, !sealBlocked else { return }
-                                    viewModel.handleCompoundChildToggle(childTask: ct)
-                                } label: {
-                                    HStack(spacing: 8) {
-                                        Image(systemName: isDone ? "checkmark.circle.fill" : "circle")
-                                            .foregroundStyle(isDone ? Color.risoGreen : Color.risoMuted)
-                                        Text(childTask?.title ?? link.childTaskId)
-                                            .font(.risoBody(14, .semibold))
-                                            .foregroundStyle(Color.risoInk)
-                                        Spacer(minLength: 0)
-                                    }.padding(.vertical, 6).contentShape(Rectangle()) // whole row (incl. Spacer) is the tap target
-                                }
-                                .buttonStyle(.plain)
-                                .disabled(isProcessing || isBoardLocked || childTask == nil || sealBlocked)
-
-                                // Info button — opens the child task's detail, stacked
-                                // on top of this sheet (see `compoundChildDetailTaskId`).
-                                Button {
-                                    compoundChildDetailTaskId = TaskIdItem(id: link.childTaskId)
-                                } label: {
-                                    Image(systemName: "info.circle")
-                                        .font(.system(size: 16))
-                                        .foregroundStyle(Color.risoMuted)
-                                }
-                                .buttonStyle(.plain)
-                                .accessibilityLabel("Open \(childTask?.title ?? "task") in library")
-                            }
-                            if sealBlocked {
-                                Text("Closed window")
-                                    .font(.risoBody(11, .semibold))
-                                    .foregroundStyle(Color.risoMuted)
-                                    .padding(.leading, 24)
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    /// Phase 6.3 — detail content for an ACHIEVEMENT-typed Task.
-    /// Surfaces the cross-board target's current state so the user can
-    /// understand why the cell is (or isn't) complete.
-    ///
-    /// Board-integrity PR-3 — met/count/required numbers come straight from
-    /// `kernelCellStates` (the same lookup `achievementBadge(for:)` and the
-    /// play-grid completion branch consult), so this is no longer a THIRD
-    /// hand-copy of the trigger/meets/spawn-filter logic; only the display
-    /// NAME lookups (board/template name — outside the kernel's domain) stay
-    /// local.
-    @ViewBuilder
-    private func achievementDetailContent(boardTask: BoardTask, task: Task) -> some View {
-        let trigger = task.achievementTrigger ?? .greenlog
-        let achievement = kernelCellStates[boardTask.id]?.achievement
-
-        if let refBoardId = task.referencedBoardId {
-            // Match the !isDeleted filter used by achievementBadge(for:) so
-            // a soft-deleted watched board doesn't show here while the cell
-            // reads as not-complete.
-            let ref = allBoardsInWorkspace.first(where: { $0.id == refBoardId && !$0.isDeleted })
-            let isMet = achievement?.referencedBoardCompleted ?? false
-            detailSection("Watching board") {
-                if let ref {
-                    HStack(spacing: 8) {
-                        Image(systemName: isMet ? "checkmark.circle.fill" : "circle")
-                            .foregroundStyle(isMet ? Color.risoGreen : Color.risoMuted)
-                        Text(ref.name)
-                            .font(.risoBody(14, .semibold))
-                            .foregroundStyle(Color.risoInk)
-                        Spacer(minLength: 0)
-                        Text(trigger == .bingo ? "Bingo" : "Greenlog")
-                            .font(.risoBody(12, .bold))
-                            .foregroundStyle(Color.risoMuted)
-                    }
-                } else {
-                    Text("(referenced board unavailable)")
-                        .font(.risoBody(13, .semibold))
-                        .foregroundStyle(Color.risoMuted)
-                }
-            }
-        } else if let refTemplateId = task.referencedTemplateId {
-            let template = allTemplatesInWorkspace.first(where: { $0.id == refTemplateId })
-            let metCount = achievement?.templateInWindowMet ?? 0
-            let required = achievement?.templateRequiredCount ?? (task.requiredCount ?? 0)
-            // Total in-window spawn count (not just those meeting the
-            // trigger) is a display-only detail outside the kernel's
-            // completion-derivation domain (the kernel's CellState only
-            // carries `templateInWindowMet`, the met subset) — mirrors how
-            // board/template NAME lookups above also stay local. Recomputed
-            // with a plain filter (no trigger evaluation), so it can't drift
-            // on completion semantics.
-            let inWindowCount: Int = {
-                guard let parent = board else { return 0 }
-                return allBoardsInWorkspace.filter { b in
-                    !b.isDeleted
-                        && b.spawnedFromTemplateId == refTemplateId
-                        && DateFormatting.isWithinTimeframe(
-                            b.startDate,
-                            startDate: parent.startDate,
-                            endDate: parent.endDate
-                        )
-                }.count
-            }()
-            detailSection("Watching template") {
-                VStack(alignment: .leading, spacing: 6) {
-                    HStack(spacing: 8) {
-                        Image(systemName: "rectangle.stack")
-                            .foregroundStyle(Color.risoMuted)
-                        Text(template?.name ?? "(referenced template unavailable)")
-                            .font(.risoBody(14, .semibold))
-                            .foregroundStyle(Color.risoInk)
-                        Spacer(minLength: 0)
-                        // `met / required` — derivation requires metCount >=
-                        // requiredCount on a non-empty in-window set, so this is
-                        // the actual completion fraction.
-                        Text("\(metCount) / \(required)")
-                            .font(.risoHead(14, .bold))
-                            .monospacedDigit()
-                            .foregroundStyle(Color.risoInk)
-                        Text(trigger == .bingo ? "Bingo" : "Greenlog")
-                            .font(.risoBody(12, .bold))
-                            .foregroundStyle(Color.risoMuted)
-                    }
-                    Text("\(inWindowCount) in-window spawn\(inWindowCount == 1 ? "" : "s")")
-                        .font(.risoBody(12, .regular))
-                        .foregroundStyle(Color.risoMuted)
-                }
-            }
-        } else {
-            detailSection("Achievement") {
-                Text("This achievement task has no reference set.")
-                    .font(.risoBody(13, .semibold))
-                    .foregroundStyle(Color.risoMuted)
-            }
-        }
     }
 
     // MARK: - Interaction handlers moved to BoardPlayViewModel (B2-I2)

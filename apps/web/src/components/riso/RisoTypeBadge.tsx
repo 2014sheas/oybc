@@ -7,8 +7,10 @@ export type RisoTaskType = TaskType | 'normal' | 'counting' | 'compound' | 'achi
 
 const LETTER: Record<string, string> = {
   normal: 'N',
-  counting: 'C',
-  compound: 'K', // K avoids colliding with Counting's C
+  // "#" reads as "counting" and frees "C" for compound — the iOS kit's
+  // letters (RisoTaskKind.letter), so both platforms draw the same square.
+  counting: '#',
+  compound: 'C',
   achievement: 'A',
 };
 
@@ -21,19 +23,21 @@ const VARIANT: Record<string, string> = {
 
 export interface RisoTypeBadgeProps {
   type: RisoTaskType;
+  /** `small` is the 22px square of the square sheet's header / checklist rows. */
+  size?: 'default' | 'small';
 }
 
 /**
- * RisoTypeBadge — square type marker (N / C / K / A), color-coded by task type
+ * RisoTypeBadge — square type marker (N / # / C / A), color-coded by task type
  * (normal = paper, counting = blue, compound = teal, achievement = purple).
  *
  * Decorative (`aria-hidden`): the task title carries identity and the row's
  * meta line names the type, so the letter is redundant to assistive tech.
  * Shared by the Tasks library and the board wizard's Tasks step.
  */
-export function RisoTypeBadge({ type }: RisoTypeBadgeProps): React.ReactElement {
+export function RisoTypeBadge({ type, size = 'default' }: RisoTypeBadgeProps): React.ReactElement {
   return (
-    <span className={`${styles.badge} ${VARIANT[type] ?? styles.normal}`} aria-hidden="true">
+    <span className={`${styles.badge} ${VARIANT[type] ?? styles.normal} ${size === 'small' ? styles.small : ''}`} aria-hidden="true">
       {LETTER[type] ?? 'N'}
     </span>
   );

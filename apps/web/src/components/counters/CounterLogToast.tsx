@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { UNDO_TOAST_MS, type CountKind } from '@oybc/shared';
 import { useDismissOnOutsideInteraction } from '../../hooks/useDismissOnOutsideInteraction';
 import { formatCounterLogToastText } from './counterLogToastText';
@@ -34,8 +34,12 @@ export interface CounterLogToastProps {
   boardNames?: string[];
   /** The counter's kind (default Discrete). */
   kind?: CountKind;
+  /** Tap-contract toast: this line replaces the counter copy ("Finish Dune · done"). */
+  text?: string;
+  /** Muted second line under `text` ("Week 42 · +1 Books"). */
+  detail?: string;
   /** Reverses the log entry (`undoLastCounterLog`). Disabled while pending. */
-  onUndo: () => void;
+  onUndo: () => void | Promise<void>;
   /** Called after the auto-dismiss timer expires, on any interaction outside
    *  the toast, OR after Undo resolves. */
   onDone: () => void;
@@ -50,10 +54,8 @@ export interface CounterLogToastProps {
  * Two copy variants, selected by whether `boardNames` is a non-empty array:
  *   - Standalone (Hub/Detail, no `boardNames`): "Logged +{N} {unit}" /
  *     "Removed {N} {unit}".
- *   - Credited (board-play, R3 copy contract): "+{N} {counterName} — also
- *     counted on {board list}." / "−{N} {counterName} — also removed from
- *     {board list}." — board list is a plain comma-join, unchanged from the
- *     retired `RisoCreditedToast`.
+ *   - Credited (board-play, R3 copy contract): "+{N} {counterName}" /
+ *     "−{N} {counterName}".
  *
  * R3 retired the board-play-only `components/play/RisoCreditedToast.tsx`
  * (no Undo, fixed copy, 2.6s dismiss) in favor of extending this component —
@@ -71,6 +73,8 @@ export function CounterLogToast({
   counterName,
   boardNames,
   kind,
+  text: lineOverride,
+  detail,
   onUndo,
   onDone,
 }: CounterLogToastProps): React.ReactElement {
@@ -83,14 +87,27 @@ export function CounterLogToast({
   }, []);
 
   const ref = useRef<HTMLDivElement>(null);
+  // Undo is a write: its button stays disabled until it settles.
+  const [undoPending, setUndoPending] = useState(false);
   useDismissOnOutsideInteraction(ref, onDone);
 
-  const text = formatCounterLogToastText({ amount, unit, verb, counterName, boardNames, kind });
+  const text = lineOverride ?? formatCounterLogToastText({ amount, unit, verb, counterName, boardNames, kind });
 
   return (
     <div ref={ref} className={styles.toast} role="status" aria-live="polite" aria-atomic="true">
-      <span className={styles.text}>{text}</span>
-      <button type="button" className={styles.undoBtn} onClick={onUndo}>
+      <span className={styles.text}>
+        {text}
+        {detail && <span className={styles.detail}>{detail}</span>}
+      </span>
+      <button
+        type="button"
+        className={styles.undoBtn}
+        disabled={undoPending}
+        onClick={() => {
+          setUndoPending(true);
+          void Promise.resolve().then(onUndo).catch(() => undefined).finally(() => setUndoPending(false));
+        }}
+      >
         Undo
       </button>
     </div>

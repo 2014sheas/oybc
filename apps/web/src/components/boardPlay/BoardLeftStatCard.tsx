@@ -18,9 +18,8 @@ function formatCardDate(iso?: string | null): string {
 
 /**
  * BoardLeftStatCard — Board Edit redesign slice 4 (D14): the play rail's
- * 3rd stat card. CLOSED → "Ended / {date} / permanent record" (existing);
- * ENDED (not yet closed) → "Left / Ended / {date} · still logging"
- * (verbatim handoff copy); otherwise the ordinary expiry countdown. Extracted
+ * 3rd stat card. CLOSED → "Ended / {date}"; ENDED (not yet closed) →
+ * "Left / Ended / {date}"; otherwise the ordinary expiry countdown. Extracted
  * so `BoardPlaySurface` doesn't grow past its frozen file-size cap (D17).
  */
 export function BoardLeftStatCard({
@@ -37,7 +36,6 @@ export function BoardLeftStatCard({
         <div className={play.statV} style={{ fontSize: '18px' }}>
           {formatCardDate(endDate)}
         </div>
-        <div className={play.statSub}>permanent record</div>
       </div>
     );
   }
@@ -48,9 +46,7 @@ export function BoardLeftStatCard({
         <div className={play.statV} style={{ fontSize: '18px' }}>
           Ended
         </div>
-        <div className={play.statSub}>
-          {formatCardDate(endDate)} · still logging
-        </div>
+        <div className={play.statSub}>{formatCardDate(endDate)}</div>
       </div>
     );
   }

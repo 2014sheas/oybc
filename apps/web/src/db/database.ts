@@ -439,6 +439,22 @@ export class AppDatabase extends Dexie {
     this.version(19).stores({
       syncWatermarks: '[userId+collection]',
     });
+
+    // v20: was a re-run of the windowed-linked-counter heal (2026-10-16); the
+    // heal is retired (TASK_WINDOW_REWORK slice 3a) and the migration is a
+    // registered no-op. See `operations/migrationV20.ts`.
+    // No schema shape change (`.stores({})` no-op), same vehicle as v17/v18.
+    this.version(20).stores({}).upgrade((tx) => {
+      // Dynamic import avoids a top-of-file cycle (migrationV20 imports `db`).
+      return import('./operations/migrationV20').then((mod) => mod.runMigrationV20(tx));
+    });
+
+    // v21 — was the first-open migration sweep (TASK_WINDOW_REWORK slice 4a),
+    // retired in slice 5; a registered no-op. See `operations/migrationV21.ts`.
+    this.version(21).stores({}).upgrade((tx) => {
+      // Dynamic import avoids a top-of-file cycle (migrationV21 imports `db`).
+      return import('./operations/migrationV21').then((mod) => mod.runMigrationV21(tx));
+    });
   }
 }
 

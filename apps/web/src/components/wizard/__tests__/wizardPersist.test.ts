@@ -5,10 +5,8 @@ import {
   OperatorType,
   Timeframe,
   TaskType,
-  derivedTaskId,
   resolveMix,
   varyRange,
-  sharedCounterRootIds,
   type Pool,
   type RecurringBoardTemplate,
   type Task,
@@ -73,6 +71,7 @@ function makeController(overrides: Partial<BoardWizardController> = {}): BoardWi
     manualTaskIds: new Set<string>(),
     removedTaskIds: new Set<string>(),
     pendingTasks: new Map(),
+    placementParams: new Map(),
     currentStep: 1,
     draftBoardId: null,
     editingTemplateId: null,
@@ -450,7 +449,7 @@ function emptyTaskLibrary(allTasks: Task[] = []): TaskLibrary {
     compoundChildrenByCompound: {},
     childTaskIds: new Set(),
     childToParents: {},
-    familyRootIds: sharedCounterRootIds(allTasks),
+    eventsByTaskId: {},
   };
 }
 
@@ -652,6 +651,7 @@ describe('Board Creation Split (web PR D) — recurring draft save writes isRecu
         },
       ],
       manualTaskVary: {},
+      placementParams: {},
     });
 
     // Board Sources P1: a ONE-OFF draft save now snapshots the blob too
@@ -680,6 +680,7 @@ describe('Board Creation Split (web PR D) — recurring draft save writes isRecu
       removedTaskIds: [],
       sources: [],
       manualTaskVary: {},
+      placementParams: {},
     });
   });
 
@@ -1131,6 +1132,24 @@ describe('persist paths — manualTaskVary threading (§Member rules B3)', () =>
     expect(template?.manualTaskVary).toEqual({ [taskIds[0]]: 1 });
   });
 
+  it('a repeating CREATE freezes a hand-added member\'s typed goal as manualTaskTargets (slice 3b)', async () => {
+    const taskIds = await seedTasks(POOL_SIZE);
+    const controller = makeController({
+      selectedTaskIds: new Set(taskIds),
+      manualTaskIds: new Set(taskIds),
+      placementParams: new Map([
+        [taskIds[0], { targetOverride: 12, targetKind: 'discrete' as const }],
+        ['not-hand-added', { targetOverride: 3, targetKind: 'discrete' as const }],
+      ]),
+      tasksRequired: 8,
+    });
+
+    const result = await persistRecurringTemplate({ controller, userId: 'user-1' });
+
+    const template = await db.recurringBoardTemplates.get(result.templateId);
+    expect(template?.manualTaskTargets).toEqual({ [taskIds[0]]: { target: 12, kind: 'discrete' } });
+  });
+
   it('a repeating EDIT updates manualTaskVary on the existing record', async () => {
     const taskIds = await seedTasks(POOL_SIZE);
     await db.recurringBoardTemplates.add(
@@ -1184,9 +1203,9 @@ describe('persist paths — manualTaskVary threading (§Member rules B3)', () =>
     expect((await db.recurringBoardTemplates.get('tmpl-clear'))?.manualTaskVary).toEqual({});
   });
 
-  it('a one-off ACTIVE save reaches the mint: the hand-added counter is rolled inside its dice range', async () => {
+  it('a one-off ACTIVE save reaches the planner: the hand-added counter is placed with an override rolled inside its dice range', async () => {
     // The end-to-end proof that `persistWizardBoard` → `persistWizardBoardRows`
-    // → the member-rule mint carries the map (B2 passed a hard-coded `{}`).
+    // → the member-rule planner carries the map (B2 passed a hard-coded `{}`).
     const GOAL = 10;
     const counter = countingTask('vary-counter', GOAL);
     await db.tasks.add(counter);
@@ -1208,11 +1227,21 @@ describe('persist paths — manualTaskVary threading (§Member rules B3)', () =>
       status: 'active',
     });
 
-    const derived = await db.tasks.get(derivedTaskId(boardId, counter.id));
-    expect(derived).toBeDefined();
+    // Placed AS ITSELF with the rolled target — nothing minted.
+    expect(await db.tasks.count()).toBe(1);
+    const placement = (await db.boardTasks.where('boardId').equals(boardId).toArray()).find(
+      (bt) => bt.taskId === counter.id,
+    );
+    expect(placement).toBeDefined();
     const [lo, hi] = varyRange(GOAL, 1, GOAL);
-    expect(derived?.maxCount).toBeGreaterThanOrEqual(lo);
-    expect(derived?.maxCount).toBeLessThanOrEqual(hi);
+    // Slice 3b: the planner writes an override only when the rolled target
+    // differs from the task's own goal — a roll that lands ON the goal leaves
+    // the placement parameter-less (the plain task). Either outcome is inside
+    // the dice range.
+    const effective = placement?.targetOverride ?? GOAL;
+    expect(effective).toBeGreaterThanOrEqual(lo);
+    expect(effective).toBeLessThanOrEqual(hi);
+    if (placement?.targetOverride !== undefined) expect(placement.targetOverride).not.toBe(GOAL);
   });
 });
 

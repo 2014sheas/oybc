@@ -1,3 +1,5 @@
+import { withChildTarget, withPlacementParams } from './placementParams';
+import type { PlacementChildTarget } from '../types/boardTask';
 /**
  * countsToward.ts — "counts toward": any task as the unit of a Discrete
  * shared counter (docs/SHARED_COUNTER_SETTINGS.md §3, PR 3 — data + cascade).
@@ -69,14 +71,12 @@ import type { Task } from '../types/task';
 import type { TaskEvent } from '../types/taskEvent';
 import { quantizeCount, resolveCountKind } from './countValue';
 import { createForkEventResolver, isForkLineageLoaded, lineageRootId, type ForkEventResolver } from './countsTowardLineage';
-import { isWindowStampedDerived } from './memberRules';
 import {
   boardWindowEnd,
   boundWindowContextAtSeal,
   isEventSealImmune,
   resolveDerivedCounterWindowState,
   resolveTaskWindowState,
-  resolveWindowStampedDerivedState,
   type CompoundWindowContext,
   type SealImmuneWindow,
 } from './taskEvents';
@@ -233,7 +233,7 @@ function completedBy(event: TaskEvent | null): ContributionState {
     : INCOMPLETE;
 }
 
-/** A latched row (achievement, hub-linked copy in a lifetime window): its cache + `completedAt`. */
+/** A latched row (an achievement): its cache + `completedAt`. */
 function latchState(task: Task): ContributionState {
   return task.isCompleted ? { isCompleted: true, completedAt: task.completedAt ?? null } : INCOMPLETE;
 }
@@ -244,6 +244,7 @@ function stateOf(
   childrenByCompound: Record<string, CompoundChild[]>,
   taskById: Record<string, Task>,
   visiting: Set<string>,
+  childTargets?: PlacementChildTarget[] | null,
 ): ContributionState {
   if (task.isDeleted) return INCOMPLETE;
 
@@ -259,16 +260,9 @@ function stateOf(
   if (task.type === TaskType.COUNTING) {
     if (task.sharedCounterId) {
       const rootEvents = ctx.eventsByTaskId[task.sharedCounterId] ?? [];
-      if (isWindowStampedDerived(task)) {
-        if (!resolveWindowStampedDerivedState(task, rootEvents).isCompleted) return INCOMPLETE;
-        const own = { windowStart: task.startDate as string, windowEnd: task.endDate ?? null };
-        return completedBy(crossingEvent(eventsInWindow(rootEvents, own), task.maxCount ?? 0));
-      }
-      // Owner rule 2026-10-01: any other linked row on a board resolves over
-      // the HOST window; only a lifetime reader still reads its latch.
-      const derived = resolveDerivedCounterWindowState(task, ctx.eventsByTaskId, ctx);
-      if (!derived) return latchState(task);
-      if (!derived.isCompleted) return INCOMPLETE;
+      // The ROOT's events over the board window, or its lifetime with none
+      // (slice 5 — the latch is never read).
+      if (!resolveDerivedCounterWindowState(task, ctx.eventsByTaskId, ctx)?.isCompleted) return INCOMPLETE;
       return completedBy(crossingEvent(eventsInWindow(rootEvents, ctx), task.maxCount ?? 0));
     }
     const events = ctx.eventsByTaskId[task.id] ?? [];
@@ -285,7 +279,8 @@ function stateOf(
     .map((link) => {
       const child = taskById[link.childTaskId];
       if (!child || child.isDeleted) return INCOMPLETE;
-      return stateOf(child, ctx, childrenByCompound, taskById, visiting);
+      // Direct children take the placement's child target; nested levels don't.
+      return stateOf(withChildTarget(child, childTargets), ctx, childrenByCompound, taskById, visiting);
     });
   visiting.delete(task.id);
 
@@ -329,11 +324,10 @@ function stateOf(
  *     instant is the `occurredAt` of the increment that last crossed it
  *     (`completingEventId`). A goal of 0 is degenerate: complete, but no
  *     increment ever crosses it, so no event names the occurrence.
- *   - Window-stamped linked COUNTING (a compound child) — the root's events
- *     inside its own window, same crossing rule (`completingTaskId` = the
- *     root). Any other linked child resolves over the HOST window (owner rule
- *     2026-10-01); only a lifetime window reads its latch (`completedAt`), as
- *     `evaluateCompound` does.
+ *   - Linked COUNTING (a compound child) — the ROOT's events over the host
+ *     window (owner rule 2026-10-01), or the root's lifetime with none, same
+ *     crossing rule (`completingTaskId` = the root); never its own stamp or
+ *     latch, as `evaluateCompound` does.
  *   - COMPOUND — the operator over its live children (the same states
  *     `evaluateCompound` gives in that window); the instant is when the rule
  *     became satisfied: All of → the LAST child's (the max), Any of → the
@@ -360,9 +354,12 @@ export function resolveContributionState(
   taskById: Record<string, Task>,
   eventsByTaskId: Record<string, TaskEvent[]>,
   window: ContributionWindow = LIFETIME_WINDOW,
+  // The PLACEMENT's per-child goals for a placed compound (slice 2a) — its
+  // direct children only.
+  childTargets?: PlacementChildTarget[] | null,
 ): ContributionState {
   const ctx: CompoundWindowContext = { windowStart: window.windowStart, windowEnd: window.windowEnd, eventsByTaskId };
-  const s = stateOf(task, ctx, childrenByCompound, taskById, new Set());
+  const s = stateOf(task, ctx, childrenByCompound, taskById, new Set(), childTargets);
   if (!s.isCompleted) return INCOMPLETE;
   return {
     isCompleted: true,
@@ -392,7 +389,7 @@ export interface ContributionInputs {
    */
   allEventsByTaskId: Record<string, TaskEvent[]>;
   /** The contributor's placements, any state (rows for other tasks are ignored). */
-  placements: ReadonlyArray<Pick<BoardTask, 'boardId' | 'taskId' | 'isDeleted'>>;
+  placements: ReadonlyArray<Pick<BoardTask, 'boardId' | 'taskId' | 'isDeleted'> & Partial<Pick<BoardTask, 'targetOverride' | 'targetKind' | 'childTargets'>>>;
   /** Boards referenced by `placements`, any state. A board absent here is treated as not live. */
   boardById: Record<string, Pick<Board, 'id' | 'isDeleted' | 'status' | 'startDate' | 'endDate' | 'sealedAt'>>;
   /** A shared {@link ForkEventResolver}; one is created over the inputs when absent. */
@@ -419,10 +416,13 @@ function eventOccurrence(eventId: string, taskId: string, inputs: ContributionIn
   return { kind: 'event', eventId: owner ? resolver.resolve(eventId, owner) : eventId };
 }
 
-/** The live boards placing `task`, each as the window its square is evaluated over (sealed → bounded at `sealedAt`). */
-function liveWindowsOf(task: Task, inputs: ContributionInputs): Array<{ boardId: string; ctx: CompoundWindowContext }> {
+/** A placement row as `liveWindowsOf` carries it (its slice 2b parameters). */
+type LivePlacement = ContributionInputs['placements'][number];
+
+/** The live boards placing `task`, each as the window its square is evaluated over (sealed → bounded at `sealedAt`), with the placement. */
+function liveWindowsOf(task: Task, inputs: ContributionInputs): Array<{ boardId: string; ctx: CompoundWindowContext; placement: LivePlacement }> {
   const seen = new Set<string>();
-  const out: Array<{ boardId: string; startDate: string; ctx: CompoundWindowContext }> = [];
+  const out: Array<{ boardId: string; startDate: string; ctx: CompoundWindowContext; placement: LivePlacement }> = [];
   for (const p of inputs.placements) {
     if (p.isDeleted || p.taskId !== task.id || seen.has(p.boardId)) continue;
     seen.add(p.boardId);
@@ -432,7 +432,7 @@ function liveWindowsOf(task: Task, inputs: ContributionInputs): Array<{ boardId:
     const eventsByTaskId = Number.isNaN(sealedAtMs)
       ? inputs.eventsByTaskId
       : boundWindowContextAtSeal(inputs.eventsByTaskId, sealedAtMs).eventsByTaskId;
-    out.push({ boardId: b.id, startDate: b.startDate, ctx: { windowStart: b.startDate, windowEnd: boardWindowEnd(b), eventsByTaskId } });
+    out.push({ boardId: b.id, startDate: b.startDate, ctx: { windowStart: b.startDate, windowEnd: boardWindowEnd(b), eventsByTaskId }, placement: p });
   }
   return out.sort((a, b) => toMs(a.startDate) - toMs(b.startDate) || compareIds(a.boardId, b.boardId));
 }
@@ -480,8 +480,13 @@ export function resolveContributionCredits(
     const prior = byId.get(eventId);
     if (!prior || toMs(occurredAt) < toMs(prior.occurredAt)) byId.set(eventId, { eventId, rootId, occurrence, occurredAt });
   };
-  const evaluate = (ctx: CompoundWindowContext): ContributionState =>
-    resolveContributionState(task, inputs.childrenByCompound, inputs.taskById, ctx.eventsByTaskId, ctx);
+  // Slice 2b: a placed window is scored with ITS placement's parameters — the
+  // goal the square shows is the goal the credit is earned at.
+  const evaluate = (ctx: CompoundWindowContext, placement?: LivePlacement): ContributionState =>
+    resolveContributionState(
+      placement ? withPlacementParams(task, placement) : task,
+      inputs.childrenByCompound, inputs.taskById, ctx.eventsByTaskId, ctx, placement?.childTargets,
+    );
   const lifetimeCtx: CompoundWindowContext = { ...LIFETIME_WINDOW, eventsByTaskId: inputs.eventsByTaskId };
 
   if (task.type === TaskType.NORMAL) {
@@ -491,8 +496,8 @@ export function resolveContributionCredits(
   } else if (task.type === TaskType.COUNTING) {
     if (task.sharedCounterId) return [];
     const windows = liveWindowsOf(task, inputs);
-    for (const ctx of windows.length > 0 ? windows.map((w) => w.ctx) : [lifetimeCtx]) {
-      const s = evaluate(ctx);
+    for (const { ctx, placement } of windows.length > 0 ? windows : [{ ctx: lifetimeCtx, placement: undefined }]) {
+      const s = evaluate(ctx, placement);
       if (s.isCompleted && s.completingEventId) {
         want(eventOccurrence(s.completingEventId, s.completingTaskId ?? task.id, inputs, resolver), s.completedAt as string);
       }
@@ -509,7 +514,7 @@ export function resolveContributionCredits(
       if (s.isCompleted) want(childEvent(s) ?? { kind: 'lifetime' }, s.completedAt as string);
     }
     for (const w of windows) {
-      const s = evaluate(w.ctx);
+      const s = evaluate(w.ctx, w.placement);
       if (s.isCompleted) want(childEvent(s) ?? { kind: 'board', boardId: w.boardId }, s.completedAt as string);
     }
   }

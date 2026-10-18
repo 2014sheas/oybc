@@ -148,6 +148,37 @@ final class RisoKitSnapshotTests: XCTestCase {
             .frame(width: 353, height: 230)
     }
 
+    // MARK: - TapLogChipRow + UndoStrip (Task Detail redesign PR 2)
+    //
+    // The one-gesture log row at both scales (a discrete rest chip, a duration
+    // rest chip, disabled) and the inline Undo strip at both scales.
+
+    private func tapLogKit() -> some View {
+        VStack(alignment: .leading, spacing: 14) {
+            TapLogChipRow(chips: CounterLogAmount.tapChips(kind: .discrete, goal: 20, windowedCount: 12), onChip: { _ in })
+            TapLogChipRow(chips: CounterLogAmount.tapChips(kind: .duration, goal: 630, windowedCount: 270), onChip: { _ in })
+            TapLogChipRow(chips: CounterLogAmount.tapChips(kind: .continuous, goal: nil), size: .compact, onChip: { _ in })
+            TapLogChipRow(chips: CounterLogAmount.tapChips(kind: .discrete, goal: 20, windowedCount: 12), disabled: true, onChip: { _ in })
+            UndoStrip(text: "Logged +5 pages · Week 42", onUndo: {})
+            UndoStrip(text: "Logged +5 pages · Week 42", compact: true, onUndo: {})
+        }
+        .padding(16)
+        .frame(width: 393, height: 380, alignment: .top)
+        .background(Color.risoPaper)
+    }
+
+    func testTapLogChipRowAndUndoStripLight() {
+        assertSnapshot(of: tapLogKit(), as: .image(layout: .fixed(width: 393, height: 380)), record: recordMode)
+    }
+
+    func testTapLogChipRowAndUndoStripDark() {
+        assertSnapshot(
+            of: tapLogKit(),
+            as: .image(layout: .fixed(width: 393, height: 380), traits: .init(userInterfaceStyle: .dark)),
+            record: recordMode
+        )
+    }
+
     func testKindPickerStatesLight() {
         assertSnapshot(of: kindPickerStates(), as: .image(layout: .fixed(width: 353, height: 230)), record: recordMode)
     }

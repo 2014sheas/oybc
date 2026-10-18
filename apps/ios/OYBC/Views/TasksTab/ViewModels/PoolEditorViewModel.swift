@@ -101,12 +101,6 @@ final class PoolEditorViewModel {
         effectiveCompoundChildrenByCompound(library: library, pendingTasks: [:], stagedEdits: stagedEdits)
     }
 
-    /// taskId → count of distinct boards it is placed on.
-    var sharedCountByTaskId: [String: Int] {
-        var buckets: [String: Set<String>] = [:]
-        for bt in library.allLibraryBoardTasks { buckets[bt.taskId, default: []].insert(bt.boardId) }
-        return buckets.mapValues { $0.count }
-    }
 
     /// The RESOLVABLE subset of `poolTaskIds`, in order, staged edits applied.
     var selectedTasks: [Task] {

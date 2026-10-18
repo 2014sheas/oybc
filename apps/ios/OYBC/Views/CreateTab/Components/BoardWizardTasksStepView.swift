@@ -119,6 +119,12 @@ struct BoardWizardTasksStepView: View {
     /// Bug #85 — Called alongside `onTaskCreated` when a task is created in
     /// deferred-persist mode. Nil disables deferred mode (immediate persist).
     var onPendingCreated: ((_ payload: PendingTaskPayload) -> Void)? = nil
+    /// The wizard's per-cell placement parameters (`BoardWizardViewModel.placementParams`).
+    var placementParams: [String: PlacementParamsDraft] = [:]
+    /// Set / clear one cell's placement parameters; returns the previous value.
+    var onSetPlacementParams: ((_ taskId: String, _ params: PlacementParamsDraft?) -> PlacementParamsDraft?)? = nil
+    /// The board's window changed: re-derive the window-default overrides.
+    var onRestampPlacementParams: ((_ window: CounterPlacement.PickWindow) -> Void)? = nil
 
     /// Bug #85 — In-memory pending tasks owned by the wizard. Keyed by task.id.
     var pendingTasks: [String: PendingTaskPayload]? = nil
@@ -264,6 +270,9 @@ struct BoardWizardTasksStepView: View {
     /// from props the step already takes; nothing new is threaded from
     /// the container for them. Web twin: `wizardWindow` / `planMode` in
     /// `BoardWizardTasksStep.tsx`.
+    private var pickWindow: CounterPlacement.PickWindow {
+        .init(timeframe: currentTimeframe, startDate: currentStartDate, endDate: currentEndDate)
+    }
     private var wizardWindow: BoardSources.BoardWindow {
         BoardSources.BoardWindow(
             timeframe: currentTimeframe,
@@ -307,14 +316,8 @@ struct BoardWizardTasksStepView: View {
     // §Removed): core defaults now pre-pull as source rows, and the
     // Board-settings defaults sheet is the sole author surface.
 
-    /// taskId → count of distinct boards it's placed on (library usage hint).
-    private var taskBoardCounts: [String: Int] {
-        var buckets: [String: Set<String>] = [:]
-        for bt in library.allLibraryBoardTasks {
-            buckets[bt.taskId, default: []].insert(bt.boardId)
-        }
-        return buckets.mapValues { $0.count }
-    }
+    /// taskId → count of distinct still-in-play boards it's placed on (usage hint).
+    private var taskBoardCounts: [String: Int] { library.activeBoardCounts }
 
     /// Bug #85 / Inline Task Editing — effective compound-children map
     /// merging live + pending + staged child edits. Delegates to the shared
@@ -355,11 +358,16 @@ struct BoardWizardTasksStepView: View {
         for (id, patch) in stagedEdits {
             if let base = by[id] { by[id] = patch.applied(to: base) }
         }
+        // Slice 3b — a cell's placement parameters (a counter's window goal)
+        // read through the one placement rule, so rows show the board's goal.
+        for (id, params) in placementParams {
+            if let base = by[id] { by[id] = params.apply(to: base, root: base.sharedCounterId.flatMap { by[$0] }) }
+        }
         // Inline Task Editing — synthesize placeholder Task entries for
-        // brand-new staged compound sub-tasks (no real Task row yet) so the
-        // pool subtitle's "N with a goal" subcount can resolve their type via
-        // the matching synthetic childTaskId `effectiveChildrenByCompound`
-        // produces above.
+        // brand-new staged compound sub-tasks (no real Task row yet) so
+        // type-dependent reads (windowed completion, row tags) can resolve
+        // them via the matching synthetic childTaskId
+        // `effectiveChildrenByCompound` produces above.
         for (id, task) in stagedNewChildPlaceholders(userId: userId, stagedEdits: stagedEdits) {
             by[id] = task
         }
@@ -416,6 +424,10 @@ struct BoardWizardTasksStepView: View {
                             selectedIds: selectedTaskIds,
                             onExistingTaskPicked: { task in
                                 toggleSelection(task.id)
+                            },
+                            linksCounterPicks: !isRecurring,
+                            onCounterGoalPicked: { root, goal in
+                                _ = onSetPlacementParams?(root.id, PlacementParamsDraft.forCounterGoal(goal, root: root))
                             }
                         )
                     }
@@ -484,7 +496,7 @@ struct BoardWizardTasksStepView: View {
                         centerTaskId = (centerTaskId == taskId) ? nil : taskId
                     },
                     onEdit: { taskId in openEditor(taskId) },
-                    sharedCountByTaskId: taskBoardCounts,
+                    counterGoalWindow: pickWindow,
                     editingTaskId: editingTaskId,
                     editor: { task in
                         AnyView(
@@ -524,6 +536,8 @@ struct BoardWizardTasksStepView: View {
         .safeAreaInset(edge: .bottom) {
             footer
         }
+        // A window default picked before the board's timeframe / dates changed follows the current window.
+        .onAppear { onRestampPlacementParams?(pickWindow) }
         .overlay(alignment: .bottom) {
             if let toast {
                 toastOverlay(toast).dismissOnOutsideTouch {
@@ -769,14 +783,21 @@ struct BoardWizardTasksStepView: View {
     /// Open the inline editor for a row. Closes any other open editor (only one
     /// at a time). Seeds the draft from the effective (staged-overlaid) task.
     private func openEditor(_ taskId: String) {
-        guard let task = effectiveTaskById[taskId] else { return }
+        guard let row = effectiveTaskById[taskId] else { return }
+        let task = row
         let draft: TaskEditPatch
         if let staged = stagedEdits[taskId] {
             // Reopen: reuse the staged patch verbatim. The effectiveTaskById
             // overlay carries scalar edits (title/counting) but NOT compound
             // child edits, so reconstructing children here would silently revert
             // a prior step rename/add/delete.
-            draft = staged
+            var reopened = staged
+            // A counter root's staged patch pins the root's own goal; the
+            // editor shows the goal the board reads (the placement's).
+            if let params = placementParams[taskId], params.targetOverride != nil {
+                reopened.goal = row.maxCount.map { formatCountForInput($0, kind: resolveCountKind(row.countKind)) } ?? reopened.goal
+            }
+            draft = reopened
         } else {
             // First open: `seededForEditor` blanks a Counting task's Title
             // field when it still matches its auto-generated form, so the
@@ -801,9 +822,45 @@ struct BoardWizardTasksStepView: View {
         editingTaskId = taskId
     }
 
+    /// A hand-added counter ROOT row's edit (slice 3b): its GOAL lands on this
+    /// board's placement as a parameter (never the counter); every other field
+    /// stages as before, with the goal pinned to the root's own so the staged
+    /// patch cannot write the placement goal onto the counter. Returns false
+    /// for any other row (the plain staged path handles it).
+    private func saveCounterRootEdit(_ task: OYBC.Task) -> Bool {
+        let base = pendingTasks?[task.id]?.task ?? library.libraryTasks.first { $0.id == task.id } ?? task
+        guard let onSetPlacementParams,
+              QuickAddCounterPlacement.isSharedCounterRoot(
+                  base, linkedRootIds: QuickAddCounterPlacement.counterRootIds(in: Array(effectiveTaskById.values))
+              ) else { return false }
+        let ownGoal = base.maxCount.map { formatCountForInput($0, kind: resolveCountKind(base.countKind)) } ?? ""
+        var rest = editDraft
+        rest.goal = ownGoal
+        var ownBaseline = editBaseline
+        ownBaseline.goal = ownGoal
+        let goalChanged = editDraft.goal != editBaseline.goal
+        let restChanged = rest != ownBaseline
+        editingTaskId = nil
+        guard goalChanged || restChanged else { return true }
+        var previousParams: PlacementParamsDraft?? = nil
+        if goalChanged {
+            // A blank / unparseable goal leaves the placement as it was.
+            if let goal = parseCountInput(editDraft.goal, kind: editDraft.countKind), goal > 0 {
+                previousParams = .some(onSetPlacementParams(task.id, PlacementParamsDraft.forCounterGoal(goal, root: base)))
+            }
+        }
+        let previousStaged = restChanged ? onStageEdit(rest, task.id) : nil
+        showToast("Task edited") {
+            if let previousParams { _ = onSetPlacementParams(task.id, previousParams) }
+            if restChanged { onRevertEdit(task.id, previousStaged) }
+        }
+        return true
+    }
+
     /// Save the edit into the wizard's staged map (no DB write) and toast with
     /// undo to the previous snapshot.
     private func saveEdit(_ task: OYBC.Task) {
+        if saveCounterRootEdit(task) { return }
         let previous = onStageEdit(editDraft, task.id)
         editingTaskId = nil
         // "edited" (not "updated") — the change is captured for this board's

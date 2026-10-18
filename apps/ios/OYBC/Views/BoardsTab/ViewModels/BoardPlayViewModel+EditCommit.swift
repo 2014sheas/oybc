@@ -69,15 +69,18 @@ extension BoardPlayViewModel {
     ///   - taskId: The task now occupying the square.
     ///   - pending: Non-nil when `taskId`'s task doesn't exist in the DB yet
     ///     (D14) — inserted at Save with `createdInWizard: false`.
-    private func stagePlacement(cellKey: String, taskId: String, pending: PendingTaskPayload?) {
+    private func stagePlacement(
+        cellKey: String, taskId: String, pending: PendingTaskPayload?, placement: PlacementParamsDraft? = nil
+    ) {
         if var existing = editSquaresDraft[cellKey] {
             existing.taskId = taskId
             existing.pending = pending
+            existing.placement = placement
             editSquaresDraft[cellKey] = existing
         } else {
             editSquaresDraft[cellKey] = SquaresDraftCell(
                 id: "new-\(AppDatabase.generateUUID())", isNew: true,
-                taskId: taskId, pending: pending, isLocked: false,
+                taskId: taskId, pending: pending, placement: placement, isLocked: false,
                 originalRow: nil, originalCol: nil,
                 originalTaskId: nil, originalIsLocked: false
             )
@@ -86,15 +89,19 @@ extension BoardPlayViewModel {
 
     /// Stages a fresh placement on an EMPTY square (D13/D17 — the picker is
     /// the only path onto the board now; the play-mode "+" is retired).
-    func handleEditAdd(cellKey: String, taskId: String, pending: PendingTaskPayload? = nil) {
-        stagePlacement(cellKey: cellKey, taskId: taskId, pending: pending)
+    func handleEditAdd(
+        cellKey: String, taskId: String, pending: PendingTaskPayload? = nil, placement: PlacementParamsDraft? = nil
+    ) {
+        stagePlacement(cellKey: cellKey, taskId: taskId, pending: pending, placement: placement)
     }
 
     /// Stages a task-ID replacement on an OCCUPIED square (no DB write until
     /// Save). Same picker sheet as Add (D13); pass `pending` when the user
     /// created a brand-new task via the quick-add row.
-    func handleEditReplace(cellKey: String, taskId: String, pending: PendingTaskPayload? = nil) {
-        stagePlacement(cellKey: cellKey, taskId: taskId, pending: pending)
+    func handleEditReplace(
+        cellKey: String, taskId: String, pending: PendingTaskPayload? = nil, placement: PlacementParamsDraft? = nil
+    ) {
+        stagePlacement(cellKey: cellKey, taskId: taskId, pending: pending, placement: placement)
     }
 
     /// Stages a cell removal (no DB write). Drops the cell from the squares
@@ -115,15 +122,7 @@ extension BoardPlayViewModel {
     /// edit-mode draft task map picks this up immediately so the grid label
     /// updates.
     func handleEditTaskOverride(taskId: String, patch: SquareEditTaskSheet.Patch) {
-        editTaskOverrides[taskId] = StagedTaskOverride(
-            title: patch.title,
-            type: patch.type,
-            action: patch.action.isEmpty ? nil : patch.action,
-            unit: patch.unit.isEmpty ? nil : patch.unit,
-            maxCount: patch.maxCount,
-            compound: patch.compound,
-            countKind: patch.countKind
-        )
+        editTaskOverrides[taskId] = StagedTaskOverride(patch: patch)
     }
 
     /// D16 — Free center → task square. The center becomes an empty (dashed)
@@ -188,17 +187,19 @@ extension BoardPlayViewModel {
         }
 
         // (3) Replacements — EXISTING cells whose task changed.
-        let cellReplacements: [(boardTaskId: String, newTaskId: String)] = draftSnapshot.values
+        let cellReplacements: [(boardTaskId: String, newTaskId: String, placement: PlacementParamsDraft?)] = draftSnapshot.values
             .filter { !$0.isNew && $0.taskId != $0.originalTaskId }
-            .map { (boardTaskId: $0.id, newTaskId: $0.taskId) }
+            .map { (boardTaskId: $0.id, newTaskId: $0.taskId, placement: $0.placement) }
 
-        // (4) Task-field overrides — keyed by the STAGED task id. They are
-        // applied AFTER replacements + adds (step 7b) so each can be remapped to
-        // the id the placement choke point ACTUALLY placed: a linked counting
-        // task lands as the board's own window-stamped copy, and the override
-        // must patch that copy (never the library source).
+        // (4) Task-field overrides — keyed by the STAGED task id (= the placed
+        // task id since slice 3a). Applied AFTER replacements + adds (step 7b)
+        // so a freshly placed square's placement exists to carry parameters.
+        let pendingTaskIds = Set(draftSnapshot.values.compactMap { $0.pending?.task.id })
         let stagedOverrides: [StagedOverrideInput] = editTaskOverrides.map { taskId, override in
-            StagedOverrideInput(stagedId: taskId, override: override, mapTask: taskMap[taskId])
+            StagedOverrideInput(
+                stagedId: taskId, override: override, mapTask: taskMap[taskId],
+                isPending: pendingTaskIds.contains(taskId)
+            )
         }
         let stagedCellRefs: [StagedCellRef] = draftSnapshot.compactMap { key, cell in
             guard let (row, col) = parseSquareCellKey(key) else { return nil }
@@ -223,10 +224,10 @@ extension BoardPlayViewModel {
             }
 
         // (7) Adds — staged new placements, at their CURRENT slot.
-        let cellAdds: [(row: Int, col: Int, taskId: String, isLocked: Bool)] = draftSnapshot
-            .compactMap { key, cell -> (row: Int, col: Int, taskId: String, isLocked: Bool)? in
+        let cellAdds: [(row: Int, col: Int, taskId: String, isLocked: Bool, placement: PlacementParamsDraft?)] = draftSnapshot
+            .compactMap { key, cell -> (row: Int, col: Int, taskId: String, isLocked: Bool, placement: PlacementParamsDraft?)? in
                 guard cell.isNew, let (row, col) = parseSquareCellKey(key) else { return nil }
-                return (row: row, col: col, taskId: cell.taskId, isLocked: cell.isLocked)
+                return (row: row, col: col, taskId: cell.taskId, isLocked: cell.isLocked, placement: cell.placement)
             }
 
         // (5b / 8) Lock changes — EXISTING cells only (a staged add's lock is
@@ -325,6 +326,18 @@ extension BoardPlayViewModel {
                             boardTaskId: replacement.boardTaskId,
                             newTaskId: replacement.newTaskId
                         )
+                        // Slice 3b: the pick's parameters (a goal) land on the swapped placement.
+                        if let p = replacement.placement {
+                            _ = try AppDatabase.setPlacementParams(
+                                db: db, boardTaskId: replacement.boardTaskId,
+                                patch: PlacementParamsPatch(
+                                    targetOverride: p.targetOverride.map { .set($0) } ?? .keep,
+                                    targetKind: p.targetKind.map { .set($0) } ?? .keep,
+                                    titleOverride: p.titleOverride.map { .set($0) } ?? .keep
+                                ),
+                                now: now
+                            )
+                        }
                     }
 
                     // 4. (moved to 7b — overrides remap to the placed ids.)
@@ -361,27 +374,15 @@ extension BoardPlayViewModel {
                         try AppDatabase.addBoardTaskToBoard(
                             db: db, boardId: bid, taskId: add.taskId,
                             position: (row: add.row, col: add.col),
-                            isLocked: add.isLocked
+                            isLocked: add.isLocked,
+                            targetOverride: add.placement?.targetOverride,
+                            targetKind: add.placement?.targetKind,
+                            titleOverride: add.placement?.titleOverride
                         )
                     }
 
-                    // 7a. A pending LINKED row that steps 3 / 7 replaced with the
-                    //     board's own copy is never left behind as an orphan
-                    //     library member: it was written in step 1 only so the
-                    //     choke points could read it.
-                    if !pendingPayloads.isEmpty {
-                        let placedTaskIds = Set(
-                            try BoardTask
-                                .filter(Column("boardId") == bid && Column("isDeleted") == false)
-                                .fetchAll(db).map(\.taskId)
-                        )
-                        try AppDatabase.dropReplacedLinkedPendingRows(
-                            db: db, pending: pendingPayloads, placedTaskIds: placedTaskIds
-                        )
-                    }
-
-                    // 7b. Staged task-field overrides, remapped onto the ids the
-                    //     replacements/adds actually placed on this board.
+                    // 7b. Staged task-field overrides: parameters onto the
+                    //     placement, everything else board-scoped.
                     try Self.applyStagedOverrides(
                         db: db, boardId: bid, overrides: stagedOverrides, cells: stagedCellRefs, now: now
                     )
@@ -440,6 +441,8 @@ extension BoardPlayViewModel {
         let stagedId: String
         let override: StagedTaskOverride
         let mapTask: Task?
+        /// A not-yet-created task staged through the picker (inserted at step 1).
+        var isPending: Bool = false
     }
 
     /// One draft cell, reduced to what override remapping needs.
@@ -451,15 +454,25 @@ extension BoardPlayViewModel {
         let stagedTaskId: String
     }
 
-    /// Step 7b — apply each staged override to the task id actually placed on
-    /// this board, BOARD-SCOPED: a task placed on any other board is forked
-    /// first (`AppDatabase.ensureBoardScopedTask`) and the edit lands on the
-    /// fork, whose caches are then stamped from its migrated events. An
-    /// override whose task was placed as-is patches that task (the `taskMap`
-    /// row, as before); one whose placement resolved to a
-    /// different id (a linked counter's window-stamped copy) patches ONLY the
-    /// placed row — the library source is never touched. Runs inside the Save
-    /// transaction, after the replacement/add/move writes.
+    /// Step 7b — commit each staged override, split into PLACEMENT PARAMETERS
+    /// and everything else (TASK_WINDOW_REWORK slice 3a, Gate 1 rulings b / c,
+    /// `BoardEditParamSplit`):
+    ///
+    /// - A changed goal on a counting task, a changed title, or a changed goal
+    ///   on an existing compound child is written onto this square's
+    ///   `BoardTask` (`targetOverride` + `targetKind` / `titleOverride` /
+    ///   `childTargets`) through `AppDatabase.setPlacementParams`. The library
+    ///   task keeps its own goal and title, and nothing forks.
+    /// - Every other field (action, unit, a kind or type switch, compound
+    ///   structure) goes through the board-scoped path as before: a task placed
+    ///   on any other board is forked first (`AppDatabase.ensureBoardScopedTask`)
+    ///   and the edit lands on the fork. The path is skipped when nothing
+    ///   non-parameter remains.
+    ///
+    /// A pending (not-yet-created) task has no `mapTask`; its plain override was
+    /// merged into its payload at step 1, so only a compound override still
+    /// takes the full path. Runs inside the Save transaction, after the
+    /// replacement/add/move writes.
     ///
     /// - Parameters:
     ///   - db: The Save's open write transaction.
@@ -472,102 +485,134 @@ extension BoardPlayViewModel {
         cells: [StagedCellRef], now: String
     ) throws {
         guard !overrides.isEmpty, let board = try Board.fetchOne(db, key: boardId) else { return }
-        let placements = try BoardTask
-            .filter(Column("boardId") == boardId && Column("isDeleted") == false).fetchAll(db)
         var touched = Set<String>()
         for input in overrides {
             // Only a square still on the board commits its staged edit: a
-            // removed / replaced square's override is dropped (no targets).
-            let targets: [String] = cells.filter { $0.stagedTaskId == input.stagedId }.map { cell in
-                let placed = cell.isNew
-                    ? placements.first { $0.row == cell.row && $0.col == cell.col }
-                    : placements.first { $0.id == cell.boardTaskId }
-                return placed?.taskId ?? input.stagedId
+            // removed / replaced square's override is dropped.
+            guard cells.contains(where: { $0.stagedTaskId == input.stagedId }) else { continue }
+            var target = input.stagedId
+            // A pending task's plain override was merged into its payload at step 1;
+            // only a compound override still needs the inserted row (child CRUD + rule).
+            if input.isPending && input.override.compound == nil { continue }
+            guard let stored = try Task.fetchOne(db, key: target) ?? input.mapTask else { continue }
+            // A linked counter is never converted or given sub-tasks.
+            if stored.sharedCounterId != nil,
+               input.override.type != stored.type || input.override.compound != nil {
+                throw AppDatabase.TaskEditError.invalid(message: Self.linkedCounterTypeMessage)
             }
-            for placedTarget in Set(targets).sorted() {
-                var target = placedTarget
-                let isRemapped = target != input.stagedId
-                // A pending task's plain override was merged into its payload
-                // at step 1 (no `mapTask`); only a compound override still
-                // needs the inserted row (child CRUD + rule).
-                var row: Task? = isRemapped ? try Task.fetchOne(db, key: target) : input.mapTask
-                if row == nil && input.override.compound != nil {
-                    row = try Task.fetchOne(db, key: target)
-                }
-                guard var base = row else { continue }
-                // A linked counter is never converted or given sub-tasks.
-                if base.sharedCounterId != nil, input.override.type != base.type || input.override.compound != nil {
-                    throw AppDatabase.TaskEditError.invalid(message: Self.linkedCounterTypeMessage)
-                }
-                // Board-scoped (docs/BOARD_SCOPED_TASK_EDITS.md): a task placed
-                // on any other board is forked first; the edit lands on the fork.
-                let scoped = try AppDatabase.ensureBoardScopedTask(
-                    db: db, taskId: target, board: board, editedType: Self.editedType(input.override, base), now: now
-                )
-                if scoped.forked {
-                    target = scoped.targetId
-                    guard let forkRow = try Task.fetchOne(db, key: target) else { continue }
-                    base = forkRow
-                }
-                touched.insert(target)
-                // A stored counter ROOT switches kind first (inside this Save),
-                // then the typed goal is guarded at the final kind — a refused
-                // goal throws `goalNotWhole` and the whole Save rolls back. A
-                // remapped placed copy (target ≠ staged id) is never switched.
-                if !isRemapped, base.type == .counting, input.override.type == .counting,
-                   base.sharedCounterId == nil {
-                    if try AppDatabase.applyKindSwitchThenGoalGuard(
-                        db: db, taskId: target, to: input.override.countKind,
-                        maxCount: input.override.maxCount, now: Date()
-                    ) {
-                        guard let refreshed = try Task.fetchOne(db, key: target) else { continue }
-                        base = refreshed
-                    }
-                }
-                var updated = Self.applyingOverride(
-                    input.override, to: base, writesKind: input.override.type != base.type
-                )
-                if updated.type != base.type {
-                    // The shared type-switch write (also the global editor's).
-                    try AppDatabase.saveTypeSwitchedTask(
-                        db: db, original: base, switched: updated, structure: input.override.compound,
-                        now: now, scopeBoard: board
-                    )
-                    try AppDatabase.stampForkCaches(db: db, target: scoped, now: now)
-                    continue
-                }
-                if let structure = input.override.compound {
-                    // Mirrors `applyTaskEditPatch`'s compound branch (an
-                    // existing compound; a conversion took the branch above).
-                    guard updated.type == .compound else { continue }
-                    var titled = structure
-                    titled.title = input.override.title
-                    if let problem = try AppDatabase.compoundLinkProblem(db: db, parentId: updated.id, patch: titled) {
-                        throw AppDatabase.TaskEditError.invalid(message: problem)
-                    }
-                    if let problem = titled.validate(type: .compound, countsToward: updated.countsTowardCounterId != nil) {
-                        throw AppDatabase.TaskEditError.invalid(message: problem)
-                    }
-                    updated.updatedAt = now
-                    updated.version += 1
-                    try AppDatabase.applyStagedCompoundChildEdits(
-                        db: db, parent: updated, patch: titled, now: now, scopeBoard: board
-                    )
-                    try AppDatabase.saveTaskAndCascade(db: db, task: updated)
-                    try AppDatabase.stampForkCaches(db: db, target: scoped, now: now)
-                    continue
-                }
-                updated.updatedAt = now
-                updated.version += 1
-                try AppDatabase.saveTaskAndCascade(db: db, task: updated)
-                try AppDatabase.stampForkCaches(db: db, target: scoped, now: now)
+            let isPending = input.isPending
+            let storedChildren: [Task]? = stored.type == .compound ? try Self.storedChildren(db: db, parentId: stored.id) : nil
+            let hasNonParameter = isPending
+                || BoardEditParamSplit.hasNonParameterFields(task: stored, override: input.override, storedChildren: storedChildren)
+            if hasNonParameter {
+                let override = isPending
+                    ? input.override
+                    : BoardEditParamSplit.nonParameterOverride(input.override, task: stored, storedChildren: storedChildren)
+                if let forked = try Self.applyNonParameterOverride(
+                    db: db, board: board, target: target, base: stored, override: override,
+                    goalForGuard: input.override.maxCount, now: now, touched: &touched
+                ) { target = forked }
             }
+            guard !isPending, let final = try Task.fetchOne(db, key: target),
+                  let placement = try BoardTask
+                    .filter(Column("boardId") == boardId && Column("taskId") == target && Column("isDeleted") == false)
+                    .fetchOne(db) else { continue }
+            let patch = BoardEditParamSplit.parameterPatch(
+                override: input.override, task: final, placement: placement,
+                storedChildren: final.type == .compound ? try Self.storedChildren(db: db, parentId: final.id) : nil,
+                titleSettings: try final.sharedCounterId.flatMap { try Task.fetchOne(db, key: $0) }
+                    .map(CounterSettings.TitleSettings.init(task:))
+            )
+            try AppDatabase.setPlacementParams(db: db, boardTaskId: placement.id, patch: patch, now: now)
         }
         // Re-run the loop check against the post-edit rows so a loop closed by
         // this Save's sub-task edit never persists.
         for id in touched.sorted() {
             try AppDatabase.recheckCountsToward(db: db, taskId: id, strict: false)
         }
+    }
+
+    /// A compound's live sub-tasks in `childIndex` order.
+    nonisolated static func storedChildren(db: Database, parentId: String) throws -> [Task] {
+        let links = try CompoundChild
+            .filter(Column("compoundTaskId") == parentId && Column("isDeleted") == false)
+            .fetchAll(db)
+            .sorted { ($0.childIndex, $0.childTaskId) < ($1.childIndex, $1.childTaskId) }
+        var out: [Task] = []
+        for link in links {
+            if let child = try Task.fetchOne(db, key: link.childTaskId), !child.isDeleted { out.append(child) }
+        }
+        return out
+    }
+
+    /// The board-scoped, non-parameter half of one staged override (the pre-3a
+    /// body of `applyStagedOverrides`, minus the staged-id remap).
+    ///
+    /// - Returns: The fork's id when the edit forked the task, else nil.
+    nonisolated private static func applyNonParameterOverride(
+        db: Database, board: Board, target initialTarget: String, base initialBase: Task, override: StagedTaskOverride,
+        goalForGuard: CountValue?, now: String, touched: inout Set<String>
+    ) throws -> String? {
+        var target = initialTarget
+        var base = initialBase
+        // Board-scoped (docs/BOARD_SCOPED_TASK_EDITS.md): a task placed on any
+        // other board is forked first; the edit lands on the fork.
+        let scoped = try AppDatabase.ensureBoardScopedTask(
+            db: db, taskId: target, board: board, editedType: Self.editedType(override, base), now: now
+        )
+        if scoped.forked {
+            target = scoped.targetId
+            guard let forkRow = try Task.fetchOne(db, key: target) else { return nil }
+            base = forkRow
+        }
+        touched.insert(target)
+        // A stored counter ROOT switches kind first (inside this Save),
+        // then the typed goal is guarded at the final kind — a refused
+        // goal throws `goalNotWhole` and the whole Save rolls back.
+        if base.type == .counting, override.type == .counting, base.sharedCounterId == nil {
+            if try AppDatabase.applyKindSwitchThenGoalGuard(
+                db: db, taskId: target, to: override.countKind, maxCount: goalForGuard, now: Date()
+            ) {
+                guard let refreshed = try Task.fetchOne(db, key: target) else { return scoped.forked ? target : nil }
+                base = refreshed
+            }
+        }
+        var updated = Self.applyingOverride(override, to: base, writesKind: override.type != base.type)
+        if updated.type != base.type {
+            // The shared type-switch write (also the global editor's).
+            try AppDatabase.saveTypeSwitchedTask(
+                db: db, original: base, switched: updated, structure: override.compound,
+                now: now, scopeBoard: board
+            )
+            try AppDatabase.stampForkCaches(db: db, target: scoped, now: now)
+            return scoped.forked ? target : nil
+        }
+        if let structure = override.compound {
+            // Mirrors `applyTaskEditPatch`'s compound branch (an existing
+            // compound; a conversion took the branch above).
+            guard updated.type == .compound else { return scoped.forked ? target : nil }
+            var titled = structure
+            titled.title = override.title
+            if let problem = try AppDatabase.compoundLinkProblem(db: db, parentId: updated.id, patch: titled) {
+                throw AppDatabase.TaskEditError.invalid(message: problem)
+            }
+            if let problem = titled.validate(type: .compound, countsToward: updated.countsTowardCounterId != nil) {
+                throw AppDatabase.TaskEditError.invalid(message: problem)
+            }
+            updated.updatedAt = now
+            updated.version += 1
+            try AppDatabase.applyStagedCompoundChildEdits(
+                db: db, parent: updated, patch: titled, now: now, scopeBoard: board
+            )
+            try AppDatabase.saveTaskAndCascade(db: db, task: updated)
+            try AppDatabase.stampForkCaches(db: db, target: scoped, now: now)
+            return scoped.forked ? target : nil
+        }
+        updated.updatedAt = now
+        updated.version += 1
+        try AppDatabase.saveTaskAndCascade(db: db, task: updated)
+        try AppDatabase.stampForkCaches(db: db, target: scoped, now: now)
+        return scoped.forked ? target : nil
     }
 
     /// The task type an override leaves `task` with — what the board-scoped

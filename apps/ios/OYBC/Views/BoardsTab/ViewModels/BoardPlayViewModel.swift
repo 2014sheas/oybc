@@ -484,7 +484,7 @@ final class BoardPlayViewModel: ObservableObject {
     /// Resolves the shared-counter SOURCE task id for `task`, or `nil` when
     /// it doesn't participate in any shared-counter group. R3: extracted out
     /// of `handleCountingTap`/`handleCountingDecrement` so `BoardPlayView`
-    /// (chip visibility in `RisoCountingStepperSheet`, the context-menu
+    /// (the square sheet's chips, the context-menu
     /// default amount, the shared-cell marker) shares the exact same detection
     /// instead of re-deriving it — three call sites were re-implementing
     /// this before R3.
@@ -502,6 +502,11 @@ final class BoardPlayViewModel: ObservableObject {
         if let linkedSourceId = task.sharedCounterId { return linkedSourceId }
         if task.isCounter == true { return task.id }
         if allTasks.contains(where: { $0.sharedCounterId == task.id && !$0.isDeleted }) {
+            return task.id
+        }
+        // (c) Slice 2b: a plain counter placed with a `targetOverride` heads a
+        // family — the hub's `sharedCounterRootIds` rule.
+        if boardTasks.contains(where: { $0.taskId == task.id && !$0.isDeleted && $0.targetOverride != nil }) {
             return task.id
         }
         return nil
@@ -578,7 +583,7 @@ final class BoardPlayViewModel: ObservableObject {
     ///   - amount: Amount to log (R3; default 1 preserves prior behavior).
     ///   - persistAsDefault: R3 — forwarded to `setCounterDefaultLogAmount`
     ///     after a successful log; only `true` for an explicit custom entry.
-    private func runSharedCounterIncrement(
+    func runSharedCounterIncrement( // internal for the +CompoundChildCount extension
         sourceTaskId: String,
         counterName: String = "",
         unit: String = "", kind: CountKind = .discrete,
@@ -629,7 +634,7 @@ final class BoardPlayViewModel: ObservableObject {
                         unit: unit,
                         isIncrement: true,
                         message: Self.sharedCreditToastText(
-                            counterName: counterName, amount: amount, kind: kind, otherBoards: otherBoards, isIncrement: true
+                            counterName: counterName, amount: amount, kind: kind, isIncrement: true
                         )
                     )
 
@@ -663,7 +668,7 @@ final class BoardPlayViewModel: ObservableObject {
     ///     using the REQUESTED `amount` (the user's chosen preference, even
     ///     if the write itself got clamped) after a successful log; only
     ///     `true` for an explicit custom entry.
-    private func runSharedCounterDecrement(
+    func runSharedCounterDecrement( // internal for the +CompoundChildCount extension
         sourceTaskId: String,
         counterName: String = "",
         unit: String = "", kind: CountKind = .discrete,
@@ -724,7 +729,6 @@ final class BoardPlayViewModel: ObservableObject {
                         message: Self.sharedCreditToastText(
                             counterName: counterName,
                             amount: decrementResult.effectiveDelta, kind: kind,
-                            otherBoards: otherBoards,
                             isIncrement: false
                         )
                     )
@@ -934,12 +938,11 @@ final class BoardPlayViewModel: ObservableObject {
     /// Builds the credited toast copy for an increment or decrement (R3
     /// board-play touchpoints — pinned copy contract, byte-identical to web):
     ///
-    /// Increment: `"+{N} {counterName} — also counted on {board list}."`
-    /// Decrement:  `"−{N} {counterName} — also removed from {board list}."`
+    /// Increment: `"+{N} {counterName}"`
+    /// Decrement:  `"−{N} {counterName}"`
     ///
-    /// The board-list join (comma-separated, unchanged from the pre-R3 copy)
-    /// is intentionally NOT touched here — the copy contract pins the verb
-    /// wording + sign + amount + counter-name only.
+    /// No board list: which boards were credited is provenance, which the
+    /// UI does not narrate (CLAUDE.md "No explanatory copy").
     ///
     /// Pure (reads only its parameters) so it is `nonisolated` — the shared-
     /// counter handlers build the copy on their background task before hopping
@@ -949,17 +952,13 @@ final class BoardPlayViewModel: ObservableObject {
     ///   - counterName: The counter's display name — pair-derived
     ///     (`Self.counterDisplayName`), never raw `task.title`.
     ///   - amount: The amount just logged/removed (matches what Undo will reverse).
-    ///   - otherBoards: Boards OTHER than the current board that were credited.
     ///   - isIncrement: `true` for increment, `false` for decrement.
     nonisolated static func sharedCreditToastText(
         counterName: String,
         amount: CountValue, kind: CountKind,
-        otherBoards: [AppDatabase.AffectedBoard],
         isIncrement: Bool
     ) -> String {
-        let boardNames = otherBoards.map { $0.boardName }.joined(separator: ", ")
-        let (sign, phrase) = isIncrement ? ("+", "also counted on") : ("−", "also removed from")
-        return "\(sign)\(formatCount(amount, kind: kind)) \(counterName) — \(phrase) \(boardNames)."
+        "\(isIncrement ? "+" : "−")\(formatCount(amount, kind: kind)) \(counterName)"
     }
 
     /// Publishes the one-shot `flashEvent` (moment / credit toast) and mirrors the
@@ -1199,21 +1198,15 @@ final class BoardPlayViewModel: ObservableObject {
     func sharedCounterArrivalSquares() -> [ArrivalSquare] {
         let map = taskMap
         var out: [ArrivalSquare] = []
-        for bt in boardTasks {
-            guard let task = map[bt.taskId], task.type == .counting else { continue }
+        for bt in boardTasks where !bt.isDeleted {
+            // Slice 2b: the placed task (its placement goal / title) — web `placedTaskFor`.
+            guard let task = placedTask(bt), task.type == .counting else { continue }
 
-            let counterId: String
-            if let source = task.sharedCounterId {
-                counterId = source
-            } else if allTasks.contains(where: { $0.sharedCounterId == task.id && !$0.isDeleted })
-                || task.isCounter == true {
-                // P5: a promoted zero-link counter (no members yet) is still
-                // its own source — mirrors web `useBoardPlayData.ts:176`
-                // (`if (t.isCounter === true) sources.add(t.id)`), so it
-                // participates in arrival detection from the moment it's
-                // promoted, not just once a first member links to it.
-                counterId = task.id
-            } else {
+            // The family root: a linked task's target, else the task itself
+            // when it heads a family (`sharedCounterSourceId`'s rules — a
+            // promoted zero-link counter participates from the moment it's
+            // promoted, not just once a first member links to it).
+            guard let counterId = sharedCounterSourceId(for: task) else {
                 continue  // Not part of a shared-counter group.
             }
 
@@ -1245,7 +1238,7 @@ final class BoardPlayViewModel: ObservableObject {
     /// (R3 board-play touchpoints copy contract: NEVER raw `task.title` for
     /// the COUNTER name — matches `SharedCounterGroups.swift`'s `name`
     /// derivation and the Counters Hub/Detail labels verbatim).
-    private static func counterDisplayName(_ source: Task?) -> String {
+    static func counterDisplayName(_ source: Task?) -> String { // internal for +CompoundChildCount
         guard let source = source else { return "" }
         return CounterSettings.counterDisplayName(source)
     }

@@ -128,6 +128,27 @@
   text-transform: uppercase;
   color: var(--riso-muted);
 }
+.statButton {
+  display: block;
+  width: 100%;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  transition: transform 0.09s, box-shadow 0.09s;
+}
+.statButton:hover {
+  transform: translate(-1px, -1px);
+  box-shadow: 4px 4px 0 var(--riso-shadow-ink);
+}
+.statButton:active {
+  transform: translate(2px, 2px);
+  box-shadow: 1px 1px 0 var(--riso-shadow-ink);
+}
+.statButton:focus-visible {
+  outline: 3px solid var(--riso-blue);
+  outline-offset: 2px;
+}
 .stat.gold .statK {
   color: rgba(24, 18, 11, 0.65);
 }
@@ -149,7 +170,7 @@
   font-size: 16px;
   color: var(--riso-muted);
 }
-/* Small sub-caption inside a stat card ("permanent record"). */
+/* Small sub-caption inside a stat card (the ended date). */
 .statSub {
   font-family: var(--riso-font-body);
   font-size: 10px;

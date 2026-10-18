@@ -58,8 +58,9 @@ final class CounterDetailMembersTests: XCTestCase {
         XCTAssertEqual(snap.group?.lifetime, 10)
         XCTAssertEqual(logged(snap)["m-w"], 3)
         XCTAssertEqual(logged(snap)["m-e"], 7)
-        // The unplaced hub-born root has no window: lifetime.
-        XCTAssertEqual(logged(snap)["root"], 10)
+        // Slice 2b: cards are placements — the unplaced hub-born root has no card;
+        // its lifetime is the group's.
+        XCTAssertNil(logged(snap)["root"])
     }
 
     func test_boardBornRoot_placedOnThisWeek_shows3_notLifetime10() throws {
@@ -74,13 +75,13 @@ final class CounterDetailMembersTests: XCTestCase {
 
     func test_showExpired_off_hidesTheExpiredMember_openBoardMemberStays() throws {
         let ids = Set((load(try seed(rootPlacedOnW: false), showExpired: false).group?.tasks ?? []).map(\.taskId))
-        XCTAssertEqual(ids, ["root", "m-w"])
+        XCTAssertEqual(ids, ["m-w"]) // the unplaced root has no card (slice 2b)
     }
 
     func test_showExpired_on_listsTheExpiredMember_lifetimeUnchanged() throws {
         let db = try seed(rootPlacedOnW: false)
         let on = load(db, showExpired: true)
-        XCTAssertEqual(Set((on.group?.tasks ?? []).map(\.taskId)), ["root", "m-w", "m-e"])
+        XCTAssertEqual(Set((on.group?.tasks ?? []).map(\.taskId)), ["m-w", "m-e"])
         XCTAssertEqual(on.group?.lifetime, load(db, showExpired: false).group?.lifetime)
     }
 }
