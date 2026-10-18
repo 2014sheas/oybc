@@ -25,9 +25,14 @@ import { SignedOutHome } from '../../signedOut/SignedOutHome';
 
 const noop = (): void => {};
 
+/** `text` with every RegExp metacharacter (backslash included) escaped. */
+function escapeRegExp(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 /** Every `<a …>` opening tag whose href is `url`. */
 function anchorsTo(html: string, url: string): string[] {
-  return html.match(new RegExp(`<a\\b[^>]*href="${url.replace(/[.]/g, '\\.')}"[^>]*>`, 'g')) ?? [];
+  return html.match(new RegExp(`<a\\b[^>]*href="${escapeRegExp(url)}"[^>]*>`, 'g')) ?? [];
 }
 
 /** Rendered markup of `element` (wrapped in a router for pages that link). */
