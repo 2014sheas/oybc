@@ -5,6 +5,7 @@ import {
   SyncOperationType,
   buildCounterFamilyMap,
   buildSpawnPlacement,
+  healRetiredCounterCopies,
   validateSpawnPool,
   computeBoardStatsUpdate,
   fillableCellCount,
@@ -94,7 +95,7 @@ export async function spawnTemplateBoard(
 ): Promise<SpawnResult> {
   const sourceClock = options.now ?? new Date();
   const rng = options.rng ?? Math.random;
-  const { template, windowStart, windowEnd, suggestedName } = spawn;
+  const { windowStart, windowEnd, suggestedName } = spawn;
 
   const boardId = generateUUID();
   const now = currentTimestamp();
@@ -139,6 +140,10 @@ export async function spawnTemplateBoard(
       const allTasks = await db.tasks.toArray();
       const tasksById: Record<string, Task> = {};
       for (const t of allTasks) tasksById[t.id] = t;
+
+      // A hand-added linked copy the retired placement sweep tombstoned
+      // spawns as its root; the success write below persists the repoint.
+      const template = healRetiredCounterCopies(spawn.template, tasksById);
 
       const sources = sourcesForRecord(template);
 

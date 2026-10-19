@@ -29,6 +29,38 @@ enum QuickAddCounterPlacement {
         sharedCounterRootIds(tasks)
     }
 
+    /// The task behind a wizard row whose inline-edit GOAL lands on this
+    /// board's placement — a hand-added counter root — or nil for any other
+    /// row (its edit stages on the task as usual).
+    ///
+    /// - Parameters:
+    ///   - row: The row's (staged-overlaid) task.
+    ///   - pending: The row's not-yet-written task from this wizard, if any.
+    ///   - library: The library's tasks.
+    ///   - all: The surface's FULL task set (for linked roots).
+    /// - Returns: The root as stored, or nil.
+    static func counterRootEditBase(_ row: Task, pending: Task?, library: [Task], all: [Task]) -> Task? {
+        let base = pending ?? library.first { $0.id == row.id } ?? row
+        return isSharedCounterRoot(base, linkedRootIds: counterRootIds(in: all)) ? base : nil
+    }
+
+    /// A hand-added counter root's row as its inline editor opens on it when
+    /// the cell has no placement parameters yet: at the window default the
+    /// row shows, so the editor and the row read one goal. Nil when the
+    /// default is the root's own goal (the row already reads it). Web twin:
+    /// `openEditor`'s `quickAddPlacementParams` seed.
+    ///
+    /// - Parameters:
+    ///   - row: The root's row.
+    ///   - window: The board's window.
+    /// - Returns: The row at the window default, or nil.
+    static func editorSeed(_ row: Task, window: CounterPlacement.PickWindow) -> Task? {
+        let goal = CounterPlacement.placementGoalForCounter(
+            CounterSettings.Fields(task: row), timeframe: window.timeframe, startDate: window.startDate, endDate: window.endDate
+        )
+        return goal.flatMap { PlacementParamsDraft.forCounterGoal($0, root: row) }?.apply(to: row)
+    }
+
     /// Whether the browse surfaces (Tasks tab, Library sheet) hide `task` as
     /// expired: past its own `endDate` (`TaskExpiry.isTaskExpired`) and NOT a
     /// counter root. A root created inside a board wizard carries that board's

@@ -235,6 +235,10 @@ extension AppDatabase {
                 // web's `spawnTemplateBoard`).
                 let allTasks = try Task.fetchAll(db)
                 var tasksById = Dictionary(uniqueKeysWithValues: allTasks.map { ($0.id, $0) })
+                // A hand-added linked copy the retired placement sweep
+                // tombstoned spawns as its root; the success write below
+                // persists the repoint.
+                let template = healRetiredCounterCopies(spawn.template, tasksById: tasksById)
 
                 let sources = BoardSources.sourcesForRecord(
                     sources: template.sources,

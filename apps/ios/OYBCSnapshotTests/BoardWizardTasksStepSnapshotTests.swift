@@ -583,6 +583,23 @@ final class BoardWizardTasksStepSnapshotTests: XCTestCase {
         )
     }
 
+    /// Owner bug 2026-10-19: a counter root whose yearly default reads 1 on a
+    /// daily board shows its hand-edited goal (2), and the dice range is
+    /// around 2 — the placement goal wins over the window default.
+    func testPoolListCounterRootPlacementGoalWins() {
+        let view = makePoolListView(
+            manualTaskVary: ["t-counting-1": .lot],
+            counterRootGoal: PlacementParamsDraft(targetOverride: 2, targetKind: .continuous)
+        )
+            .padding(20)
+            .background(Color.risoPaper)
+        assertSnapshot(
+            of: view,
+            as: .image(layout: .fixed(width: 393, height: 300)),
+            record: recordMode
+        )
+    }
+
     func testPoolListHandAddedVaryDark() {
         let view = makePoolListView(manualTaskVary: ["t-counting-1": .lot])
             .padding(20)
@@ -755,7 +772,8 @@ final class BoardWizardTasksStepSnapshotTests: XCTestCase {
     private func makePoolListView(
         centerTaskMode: Bool = false,
         centerTaskId: String? = nil,
-        manualTaskVary: [String: VaryLevel] = [:]
+        manualTaskVary: [String: VaryLevel] = [:],
+        counterRootGoal: PlacementParamsDraft? = nil
     ) -> some View {
         // Build a stable set of tasks for the pool list
         let normalTask = SnapshotFixtures.makeTask(id: "t-normal-1", title: "Meditate 10 min", type: .normal)
@@ -765,7 +783,9 @@ final class BoardWizardTasksStepSnapshotTests: XCTestCase {
             type: .counting,
             action: "Run",
             unit: "km",
-            maxCount: 5
+            maxCount: 5,
+            countKind: counterRootGoal == nil ? nil : .continuous,
+            timeframeGoals: counterRootGoal == nil ? nil : CounterTimeframeGoals(yearly: 365)
         )
         let compoundTask = SnapshotFixtures.makeTask(
             id: "t-compound-and",
@@ -804,6 +824,8 @@ final class BoardWizardTasksStepSnapshotTests: XCTestCase {
             centerTaskId: centerTaskId,
             onSetCenter: { _ in },
             onEdit: { _ in },
+            counterGoalWindow: counterRootGoal == nil ? nil : .init(timeframe: .daily),
+            placementParams: counterRootGoal.map { [countingTask.id: $0] } ?? [:],
             manualTaskVary: manualTaskVary,
             // Non-nil only here: wiring it on every existing fixture would
             // put a dice on baselines that never asked for one.

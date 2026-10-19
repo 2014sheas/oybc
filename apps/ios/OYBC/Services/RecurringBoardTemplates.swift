@@ -281,6 +281,57 @@ func validateSpawnPool(
     return .ok
 }
 
+/// Repoint a repeating board's hand-added layer off retired linked counter
+/// copies. A `manualTaskIds` entry that is a DELETED task linked to a LIVE
+/// counter root (`sharedCounterId`) becomes that root — the slice-4a placement
+/// sweep tombstoned such copies as orphans without re-keying the records that
+/// named them, which left the spawn validator skipping every window with
+/// `.hasDeletedTasks`. The copy's dice move to the root, and its goal is kept
+/// as `manualTaskTargets[root]` (in the copy's kind) unless the root already
+/// sits on the board — then the person's own entries for it stand. Any other
+/// deleted entry (a task the person deleted) is left for the validator.
+/// TS twin: `healRetiredCounterCopies` (`recurringBoardTemplates.ts`).
+///
+/// - Parameters:
+///   - template: The repeating-board record.
+///   - tasksById: Every task, deleted rows included.
+/// - Returns: The healed record (unchanged when nothing is a retired copy).
+func healRetiredCounterCopies(_ template: RecurringBoardTemplate, tasksById: [String: Task]) -> RecurringBoardTemplate {
+    let manual = template.manualTaskIds ?? []
+    var rootOf: [String: String] = [:]
+    for id in manual {
+        guard let copy = tasksById[id], copy.isDeleted, let rootId = copy.sharedCounterId,
+              let root = tasksById[rootId], !root.isDeleted else { continue }
+        rootOf[id] = rootId
+    }
+    guard !rootOf.isEmpty else { return template }
+
+    func repoint(_ ids: [String]) -> [String] {
+        var seen = Set<String>()
+        return ids.map { rootOf[$0] ?? $0 }.filter { seen.insert($0).inserted }
+    }
+    var vary = template.manualTaskVary ?? [:]
+    var targets = template.manualTaskTargets ?? [:]
+    for copyId in manual {
+        guard let rootId = rootOf[copyId], let copy = tasksById[copyId] else { continue }
+        if let level = vary[copyId], vary[rootId] == nil { vary[rootId] = level }
+        vary[copyId] = nil
+        let carried = targets.removeValue(forKey: copyId)
+        if manual.contains(rootId) || targets[rootId] != nil { continue }
+        if let carried {
+            targets[rootId] = carried
+        } else if let goal = copy.maxCount, goal > 0 {
+            targets[rootId] = ManualTaskTarget(target: goal, kind: resolveCountKind(copy.countKind))
+        }
+    }
+    var healed = template
+    healed.seedTaskIds = repoint(template.seedTaskIds)
+    healed.manualTaskIds = repoint(manual)
+    if template.manualTaskVary != nil { healed.manualTaskVary = vary }
+    if template.manualTaskTargets != nil || !targets.isEmpty { healed.manualTaskTargets = targets }
+    return healed
+}
+
 /// Builds the cell-by-cell placement for a spawn. Returns an array of
 /// length `boardSize²` where each entry is a Task to place on that cell,
 /// or `nil` for the auto-completed FREE center on odd-sized
