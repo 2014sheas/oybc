@@ -319,6 +319,7 @@ export type { StreakPair, StreaksByTimeframe } from './streaks';
 export {
   findTemplatesPendingSpawn,
   validateSpawnPool,
+  healRetiredCounterCopies,
   buildSpawnPlacement,
   deriveSpawnedBoardName,
   buildRepeatBoardTemplateInput,

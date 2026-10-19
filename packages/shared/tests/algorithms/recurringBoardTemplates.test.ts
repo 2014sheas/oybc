@@ -4,6 +4,7 @@ import {
   buildSpawnPlacement,
   deriveSpawnedBoardName,
   buildRepeatBoardTemplateInput,
+  healRetiredCounterCopies,
 } from '../../src/algorithms/recurringBoardTemplates';
 import { getTimeframeBoundaries } from '../../src/algorithms/calendarBoundaries';
 import {
@@ -896,5 +897,92 @@ describe('findTemplatesPendingSpawn — dependency-ordered (F3: a consumer spawn
       now,
     );
     expect(pending.map((p) => p.template.id)).toEqual(['W', 'D']);
+  });
+});
+
+// The owner's daily repeating board (2026-10-19): the slice-4a sweep tombstoned
+// its hand-added linked copy "Run 2 Miles" as an orphan without re-keying the
+// record, so every window skipped with `has_deleted_tasks`.
+describe('healRetiredCounterCopies', () => {
+  const ROOT = 'root-miles';
+  const COPY = 'copy-miles';
+  const root = buildTask(ROOT, {
+    type: TaskType.COUNTING,
+    maxCount: 3,
+    countKind: 'continuous',
+    timeframeGoals: { yearly: 365 },
+  });
+  const copy = buildTask(COPY, {
+    type: TaskType.COUNTING,
+    maxCount: 2,
+    countKind: 'continuous',
+    sharedCounterId: ROOT,
+    isDeleted: true,
+    deletedAt: '2026-10-18T11:50:36Z',
+  });
+  const other = buildTask('other');
+  const byId = (...tasks: Task[]): Record<string, Task> => Object.fromEntries(tasks.map((t) => [t.id, t]));
+  const ownerTemplate = (overrides: Partial<RecurringBoardTemplate> = {}): RecurringBoardTemplate =>
+    buildTemplate({
+      seedTaskIds: ['other', ROOT],
+      manualTaskIds: [COPY, 'other'],
+      manualTaskVary: { [COPY]: 2, [ROOT]: 1, other: 1 },
+      ...overrides,
+    });
+
+  it('repoints the dead copy at its root, moves its dice and carries its goal', () => {
+    const healed = healRetiredCounterCopies(ownerTemplate({ manualTaskVary: { [COPY]: 2 } }), byId(root, copy, other));
+    expect(healed.manualTaskIds).toEqual([ROOT, 'other']);
+    expect(healed.seedTaskIds).toEqual(['other', ROOT]);
+    expect(healed.manualTaskVary).toEqual({ [ROOT]: 2 });
+    expect(healed.manualTaskTargets).toEqual({ [ROOT]: { target: 2, kind: 'continuous' } });
+  });
+
+  it('keeps an existing root dice entry and drops the copy key', () => {
+    const healed = healRetiredCounterCopies(ownerTemplate(), byId(root, copy, other));
+    expect(healed.manualTaskVary).toEqual({ [ROOT]: 1, other: 1 });
+  });
+
+  it('a frozen target already keyed by the copy moves to the root', () => {
+    const frozen = { [COPY]: { target: 4, kind: 'continuous' as const, title: 'Long run' } };
+    const healed = healRetiredCounterCopies(ownerTemplate({ manualTaskTargets: frozen }), byId(root, copy, other));
+    expect(healed.manualTaskTargets).toEqual({ [ROOT]: { target: 4, kind: 'continuous', title: 'Long run' } });
+  });
+
+  it('a root the person already re-added keeps its own goal and appears once', () => {
+    const t = ownerTemplate({ manualTaskIds: [COPY, ROOT, 'other'], manualTaskTargets: {} });
+    const healed = healRetiredCounterCopies(t, byId(root, copy, other));
+    expect(healed.manualTaskIds).toEqual([ROOT, 'other']);
+    expect(healed.manualTaskTargets).toEqual({});
+  });
+
+  it('turns the validator skip into a spawnable pool', () => {
+    const fillers = Array.from({ length: 7 }, (_, i) => buildTask(`f${i}`));
+    const tasks = byId(root, copy, other, ...fillers);
+    const t = ownerTemplate({
+      boardSize: 3,
+      centerSquareType: CenterSquareType.NONE,
+      manualTaskIds: [COPY, 'other', ...fillers.map((f) => f.id)],
+    });
+    const poolOf = (r: RecurringBoardTemplate): Task[] => (r.manualTaskIds ?? []).map((id) => tasks[id]);
+    expect(validateSpawnPool(t, poolOf(t))).toEqual({ ok: false, reason: 'has_deleted_tasks' });
+    const healed = healRetiredCounterCopies(t, tasks);
+    expect(validateSpawnPool(healed, poolOf(healed))).toEqual({ ok: true });
+  });
+
+  it('returns the same record when nothing is a retired copy', () => {
+    const t = ownerTemplate({ manualTaskIds: [ROOT, 'other'] });
+    expect(healRetiredCounterCopies(t, byId(root, copy, other))).toBe(t);
+  });
+
+  it('leaves a deleted task that is not a linked copy for the validator', () => {
+    const gone = buildTask('gone', { isDeleted: true });
+    const t = ownerTemplate({ manualTaskIds: ['gone', 'other'] });
+    expect(healRetiredCounterCopies(t, byId(gone, other))).toBe(t);
+  });
+
+  it('leaves a copy whose root is deleted too', () => {
+    const t = ownerTemplate();
+    expect(healRetiredCounterCopies(t, byId({ ...root, isDeleted: true }, copy, other))).toBe(t);
   });
 });

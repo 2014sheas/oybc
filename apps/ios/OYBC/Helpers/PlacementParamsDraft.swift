@@ -15,15 +15,25 @@ struct PlacementParamsDraft: Codable, Equatable {
     var isEmpty: Bool { targetOverride == nil && titleOverride == nil }
 
     /// The parameters a counter ROOT placed at `goal` carries: a goal override
-    /// (in the root's kind) only when it differs from the root's own goal; nil
-    /// when the placement is the plain task. Twin of the TS quick-add rule.
+    /// (in the root's kind) unless the goal is the root's own AND no window
+    /// default would override it on `window` (then the placement is the plain
+    /// task). An explicit own goal on a window whose default differs IS kept —
+    /// the board would otherwise read the default over the person's choice.
+    /// TS twin: `counterGoalParams`.
     ///
     /// - Parameters:
     ///   - goal: The goal the cell should read on this board.
     ///   - root: The shared-counter root being placed.
+    ///   - window: The host board's window, when the goal was typed for it.
     /// - Returns: The draft to store, or nil to clear.
-    static func forCounterGoal(_ goal: CountValue, root: Task) -> PlacementParamsDraft? {
-        guard goal > 0, goal != root.maxCount else { return nil }
+    static func forCounterGoal(_ goal: CountValue, root: Task, window: CounterPlacement.PickWindow? = nil) -> PlacementParamsDraft? {
+        guard goal > 0 else { return nil }
+        let windowOverrides = window.map {
+            CounterPlacement.placementNeedsOverride(
+                CounterSettings.Fields(task: root), timeframe: $0.timeframe, startDate: $0.startDate, endDate: $0.endDate
+            )
+        } ?? false
+        if goal == root.maxCount && !windowOverrides { return nil }
         return PlacementParamsDraft(targetOverride: goal, targetKind: resolveCountKind(root.countKind))
     }
 

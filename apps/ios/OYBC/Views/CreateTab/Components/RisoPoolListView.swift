@@ -48,6 +48,9 @@ struct RisoPoolListView: View {
     /// The board's window: a counting row that isn't a linked copy captions
     /// the goal placement gives it there (a counter's window default, else its own).
     var counterGoalWindow: CounterPlacement.PickWindow? = nil
+    /// The wizard's per-cell placement parameters: a hand-edited goal wins
+    /// over the window default (`BoardWizardViewModel.placementParams`).
+    var placementParams: [String: PlacementParamsDraft] = [:]
 
     /// The row currently open in the inline editor, if any. That row is
     /// replaced in place by `editor`.
@@ -276,10 +279,13 @@ struct RisoPoolListView: View {
 
     // MARK: - Helpers
 
-    /// The goal an unlinked counting row gets on this board: a counter's
-    /// window default, else its own (nil without `counterGoalWindow`).
+    /// The goal an unlinked counting row gets on this board: its placement
+    /// override, else a counter's window default, else its own (nil without
+    /// either). Web twin: `PoolList`'s `windowGoalOf`.
     private func boardGoal(_ task: OYBC.Task) -> CountValue? {
-        guard let w = counterGoalWindow, task.type == .counting, task.sharedCounterId == nil else { return nil }
+        guard task.type == .counting, task.sharedCounterId == nil else { return nil }
+        if let override = placementParams[task.id]?.targetOverride { return override }
+        guard let w = counterGoalWindow else { return nil }
         return CounterPlacement.placementGoalForCounter(
             CounterSettings.Fields(task: task), timeframe: w.timeframe, startDate: w.startDate, endDate: w.endDate
         )

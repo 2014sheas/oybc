@@ -174,6 +174,41 @@ final class QuickAddCounterPlacementTests: XCTestCase {
         XCTAssertNil(p?.titleOverride)
     }
 
+    /// Owner bug report 2026-10-19: a root with a yearly default (365 mi) reads
+    /// 1 on a daily board, so typing its OWN goal (3) must still be an override
+    /// — clearing it would show the window default again. Web: `counterGoalParams`.
+    func testForCounterGoalKeepsTheRootsOwnGoalWhereTheWindowDefaultDiffers() {
+        var root = counting(isCounter: true, goals: CounterTimeframeGoals(yearly: 365), kind: .continuous)
+        root.maxCount = 3
+        let daily = CounterPlacement.PickWindow(timeframe: .daily)
+        XCTAssertEqual(PlacementParamsDraft.forCounterGoal(3, root: root, window: daily)?.targetOverride, 3)
+        XCTAssertNil(PlacementParamsDraft.forCounterGoal(3, root: root), "no window: the plain root")
+        var plain = counting(isCounter: true)
+        plain.maxCount = 3
+        XCTAssertNil(PlacementParamsDraft.forCounterGoal(3, root: plain, window: daily), "no default to beat")
+    }
+
+    /// The inline editor opens on the goal the row shows (the window default),
+    /// not the root's own. Web: `openEditor`'s `quickAddPlacementParams` seed.
+    func testEditorSeedOpensAtTheWindowDefault() {
+        var root = counting(isCounter: true, goals: CounterTimeframeGoals(yearly: 365), kind: .continuous)
+        root.maxCount = 3
+        XCTAssertEqual(QuickAddCounterPlacement.editorSeed(root, window: .init(timeframe: .daily))?.maxCount, 1)
+        XCTAssertEqual(QuickAddCounterPlacement.editorSeed(root, window: .init(timeframe: .yearly))?.maxCount, 365)
+        var plain = counting(isCounter: true)
+        plain.maxCount = 3
+        XCTAssertNil(QuickAddCounterPlacement.editorSeed(plain, window: .init(timeframe: .daily)), "own goal is the default")
+    }
+
+    func testCounterRootEditBasePrefersTheStoredRowAndRejectsNonRoots() {
+        var stored = counting(isCounter: true)
+        stored.maxCount = 3
+        var staged = stored
+        staged.maxCount = 9
+        XCTAssertEqual(QuickAddCounterPlacement.counterRootEditBase(staged, pending: nil, library: [stored], all: [staged])?.maxCount, 3)
+        XCTAssertNil(QuickAddCounterPlacement.counterRootEditBase(counting(id: "x"), pending: nil, library: [], all: []))
+    }
+
     func testApplyReadsThePlacementGoalAndRendersTheTitleThroughTheRootsTemplates() {
         var root = counting(isCounter: true)
         root.maxCount = 4

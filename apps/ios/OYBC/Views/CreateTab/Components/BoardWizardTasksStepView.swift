@@ -346,7 +346,7 @@ struct BoardWizardTasksStepView: View {
     }
 
     /// Bug #85 — Per-id task lookup including pending parent + child tasks.
-    private var effectiveTaskById: [String: OYBC.Task] {
+    var effectiveTaskById: [String: OYBC.Task] {
         var by: [String: OYBC.Task] = Dictionary(uniqueKeysWithValues: library.libraryTasks.map { ($0.id, $0) })
         if let pending = pendingTasks {
             for payload in pending.values {
@@ -500,6 +500,7 @@ struct BoardWizardTasksStepView: View {
                     },
                     onEdit: { taskId in openEditor(taskId) },
                     counterGoalWindow: pickWindow,
+                    placementParams: placementParams,
                     editingTaskId: editingTaskId,
                     editor: { task in
                         AnyView(
@@ -787,7 +788,8 @@ struct BoardWizardTasksStepView: View {
     /// at a time). Seeds the draft from the effective (staged-overlaid) task.
     private func openEditor(_ taskId: String) {
         guard let row = effectiveTaskById[taskId] else { return }
-        let task = row
+        let seed = placementParams[taskId] == nil && counterRootBase(row) != nil ? QuickAddCounterPlacement.editorSeed(row, window: pickWindow) : nil
+        let task = seed ?? row
         let draft: TaskEditPatch
         if let staged = stagedEdits[taskId] {
             // Reopen: reuse the staged patch verbatim. The effectiveTaskById
@@ -797,8 +799,8 @@ struct BoardWizardTasksStepView: View {
             var reopened = staged
             // A counter root's staged patch pins the root's own goal; the
             // editor shows the goal the board reads (the placement's).
-            if let params = placementParams[taskId], params.targetOverride != nil {
-                reopened.goal = row.maxCount.map { formatCountForInput($0, kind: resolveCountKind(row.countKind)) } ?? reopened.goal
+            if seed != nil || placementParams[taskId]?.targetOverride != nil {
+                reopened.goal = task.maxCount.map { formatCountForInput($0, kind: resolveCountKind(task.countKind)) } ?? reopened.goal
             }
             draft = reopened
         } else {
@@ -831,11 +833,7 @@ struct BoardWizardTasksStepView: View {
     /// patch cannot write the placement goal onto the counter. Returns false
     /// for any other row (the plain staged path handles it).
     private func saveCounterRootEdit(_ task: OYBC.Task) -> Bool {
-        let base = pendingTasks?[task.id]?.task ?? library.libraryTasks.first { $0.id == task.id } ?? task
-        guard let onSetPlacementParams,
-              QuickAddCounterPlacement.isSharedCounterRoot(
-                  base, linkedRootIds: QuickAddCounterPlacement.counterRootIds(in: Array(effectiveTaskById.values))
-              ) else { return false }
+        guard let onSetPlacementParams, let base = counterRootBase(task) else { return false }
         let ownGoal = base.maxCount.map { formatCountForInput($0, kind: resolveCountKind(base.countKind)) } ?? ""
         var rest = editDraft
         rest.goal = ownGoal
@@ -850,7 +848,7 @@ struct BoardWizardTasksStepView: View {
         if goalChanged {
             // A blank / unparseable goal leaves the placement as it was.
             if let goal = parseCountInput(editDraft.goal, kind: editDraft.countKind), goal > 0 {
-                previousParams = .some(onSetPlacementParams(task.id, PlacementParamsDraft.forCounterGoal(goal, root: base), true))
+                previousParams = .some(onSetPlacementParams(task.id, PlacementParamsDraft.forCounterGoal(goal, root: base, window: pickWindow), true))
             }
         }
         let previousStaged = restChanged ? onStageEdit(rest, task.id) : nil

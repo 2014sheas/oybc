@@ -33,6 +33,7 @@ import {
   type BoardSize,
 } from '@oybc/bingo-core';
 import { getTimeframeBoundaries, formatWindowLabel } from './calendarBoundaries';
+import { resolveCountKind } from './countValue';
 import { Timeframe } from '../constants/enums';
 import type { Board } from '../types/board';
 import type { Task } from '../types/task';
@@ -287,6 +288,60 @@ export function validateSpawnPool(
     return { ok: false, reason: 'pool_too_small' };
   }
   return { ok: true };
+}
+
+/**
+ * Repoint a repeating board's hand-added layer off retired linked counter
+ * copies. A `manualTaskIds` entry that is a DELETED task linked to a LIVE
+ * counter root (`sharedCounterId`) becomes that root — the slice-4a placement
+ * sweep tombstoned such copies as orphans without re-keying the records that
+ * named them, which left the spawn validator skipping every window with
+ * `has_deleted_tasks`. The copy's dice move to the root, and its goal is kept
+ * as `manualTaskTargets[root]` (in the copy's kind) unless the root already
+ * sits on the board — then the person's own entries for it stand. Any other
+ * deleted entry (a task the person deleted) is left for the validator.
+ * iOS twin: `healRetiredCounterCopies` (`RecurringBoardTemplates.swift`).
+ *
+ * @param template - The repeating-board record.
+ * @param tasksById - Every task, deleted rows included.
+ * @returns The healed record, or the SAME object when nothing changed.
+ */
+export function healRetiredCounterCopies(
+  template: RecurringBoardTemplate,
+  tasksById: Readonly<Record<string, Task>>,
+): RecurringBoardTemplate {
+  const manual = template.manualTaskIds ?? [];
+  const rootOf = new Map<string, string>();
+  for (const id of manual) {
+    const copy = tasksById[id];
+    const rootId = copy?.isDeleted ? copy.sharedCounterId : undefined;
+    const root = rootId ? tasksById[rootId] : undefined;
+    if (rootId && root && !root.isDeleted) rootOf.set(id, rootId);
+  }
+  if (rootOf.size === 0) return template;
+
+  const repoint = (ids: string[]): string[] => [...new Set(ids.map((id) => rootOf.get(id) ?? id))];
+  const vary = { ...(template.manualTaskVary ?? {}) };
+  const targets: Record<string, ManualTaskTarget> = { ...(template.manualTaskTargets ?? {}) };
+  for (const [copyId, rootId] of rootOf) {
+    const copy = tasksById[copyId];
+    if (vary[copyId] !== undefined && vary[rootId] === undefined) vary[rootId] = vary[copyId];
+    delete vary[copyId];
+    const carried = targets[copyId];
+    delete targets[copyId];
+    if (manual.includes(rootId) || targets[rootId]) continue;
+    if (carried) targets[rootId] = carried;
+    else if (copy.maxCount != null && copy.maxCount > 0) {
+      targets[rootId] = { target: copy.maxCount, kind: resolveCountKind(copy) };
+    }
+  }
+  return {
+    ...template,
+    seedTaskIds: repoint(template.seedTaskIds),
+    manualTaskIds: repoint(manual),
+    ...(template.manualTaskVary ? { manualTaskVary: vary } : {}),
+    ...(template.manualTaskTargets || Object.keys(targets).length > 0 ? { manualTaskTargets: targets } : {}),
+  };
 }
 
 export interface BuildSpawnPlacementArgs {
