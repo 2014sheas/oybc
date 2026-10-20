@@ -3,6 +3,7 @@ import {
   BoardSizeSchema,
   RecurringTimeframeSchema,
   RecurringCenterSquareTypeSchema,
+  PulledCenterSquareTypeSchema,
 } from './schemas';
 import { BoardSourcesArraySchema, ManualTaskVarySchema } from './boardSource';
 import { CountKindSchema } from './countValue';
@@ -115,7 +116,9 @@ export const RecurringBoardTemplateSchema = z.object({
   name: z.string().min(1).max(120),
   timeframe: RecurringTimeframeSchema,
   boardSize: BoardSizeSchema,
-  centerSquareType: RecurringCenterSquareTypeSchema,
+  // Stored value, read like iOS: `chosen` is kept, any unknown / retired value is
+  // FREE (the create / update INPUT schemas above stay FREE | NONE only).
+  centerSquareType: PulledCenterSquareTypeSchema,
   isRandomized: z.boolean(),
   seedTaskIds: z.array(z.string().uuid()),
   // P1 — additive, optional generalized-source fields. See

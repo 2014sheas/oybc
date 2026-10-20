@@ -648,7 +648,8 @@ final class AuthService: ObservableObject {
         "sync_queue", "compound_children",
         "recurring_board_templates", "default_pools",
         "task_events", "pools", "core_board_defaults",
-        "sync_watermarks" // local-only pull checkpoints (v40)
+        "sync_watermarks", // local-only pull checkpoints (v40)
+        "sync_quarantine" // local-only forward-compat ledger (v48)
     ]
 
     /// Deletes every row across the local tables (preserving `schema_version` so

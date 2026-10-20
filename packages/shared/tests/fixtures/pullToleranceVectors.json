@@ -1,0 +1,35 @@
+{
+  "_comment": "Cross-platform pull-tolerance vectors (issue #300). Each case overlays `set` onto a per-collection base doc (built in code on each platform) and says what a PULL does with it: `applied` (stored; `expect` lists normalized fields, null = absent) or `quarantined` (skipped + ledgered). Run end-to-end by apps/web/src/db/operations/__tests__/pullToleranceVectors.test.ts (applyRemoteSubdoc) and apps/ios/OYBCTests/PullToleranceVectorTests.swift (applyPullBatch); the iOS copy under OYBCTests/Fixtures is regenerated with `pnpm --filter @oybc/shared run gen:sync-fixtures` and checked byte-identical by tests/fixtures/fixtureSync.test.ts. Strict = a value this build cannot read quarantines on BOTH platforms; tolerant = the same fallback on BOTH (centerSquareType unknown -> free, chosen kept; core-default size / centre unknown -> absent). `bases` are the per-collection docs (`$USER` = the signed-in uid); the fixed ids below are the ones a case's prerequisites use (a placement needs the base board + task).",
+  "bases": {
+    "boards": {"id": "00000001-0000-4000-8000-000000000001", "userId": "$USER", "name": "B", "status": "active", "boardSize": 3, "timeframe": "daily", "startDate": "2026-07-01T00:00:00.000Z", "centerSquareType": "none", "isRandomized": false, "totalTasks": 9, "completedTasks": 0, "linesCompleted": 0, "createdAt": "2026-07-01T00:00:00.000Z", "updatedAt": "2026-07-01T00:00:00.000Z", "version": 1, "isDeleted": false},
+    "tasks": {"id": "00000002-0000-4000-8000-000000000001", "userId": "$USER", "title": "T", "type": "normal", "isCompleted": false, "totalCompletions": 0, "totalInstances": 0, "createdAt": "2026-07-01T00:00:00.000Z", "updatedAt": "2026-07-01T00:00:00.000Z", "version": 1, "isDeleted": false},
+    "taskEvents": {"id": "00000004-0000-4000-8000-000000000001", "userId": "$USER", "taskId": "00000002-0000-4000-8000-000000000001", "kind": "completion", "occurredAt": "2026-07-01T00:00:00.000Z", "createdAt": "2026-07-01T00:00:00.000Z", "updatedAt": "2026-07-01T00:00:00.000Z", "version": 1, "isDeleted": false},
+    "boardTasks": {"id": "00000003-0000-4000-8000-000000000001", "boardId": "00000001-0000-4000-8000-000000000001", "taskId": "00000002-0000-4000-8000-000000000001", "row": 0, "col": 0, "isCenter": false, "createdAt": "2026-07-01T00:00:00.000Z", "updatedAt": "2026-07-01T00:00:00.000Z", "version": 1, "isDeleted": false},
+    "recurringBoardTemplates": {"id": "00000007-0000-4000-8000-000000000001", "userId": "$USER", "name": "R", "timeframe": "weekly", "boardSize": 3, "centerSquareType": "none", "isRandomized": false, "seedTaskIds": [], "lastSpawnedWindowKey": null, "isActive": true, "createdAt": "2026-07-01T00:00:00.000Z", "updatedAt": "2026-07-01T00:00:00.000Z", "version": 1, "isDeleted": false},
+    "coreBoardDefaults": {"id": "00000006-0000-4000-8000-000000000001", "userId": "$USER", "timeframe": "daily", "corePoolIds": [], "coreDefaultTaskIds": [], "createdAt": "2026-07-01T00:00:00.000Z", "updatedAt": "2026-07-01T00:00:00.000Z", "version": 1, "isDeleted": false}
+  },
+  "cases": [
+    {"name": "board centerSquareType unknown reads as free", "collection": "boards", "set": {"centerSquareType": "wild"}, "disposition": "applied", "expect": {"centerSquareType": "free"}},
+    {"name": "board centerSquareType retired custom_free reads as free", "collection": "boards", "set": {"centerSquareType": "custom_free"}, "disposition": "applied", "expect": {"centerSquareType": "free"}},
+    {"name": "board centerSquareType chosen is kept", "collection": "boards", "set": {"centerSquareType": "chosen"}, "disposition": "applied", "expect": {"centerSquareType": "chosen"}},
+    {"name": "board status unknown is quarantined", "collection": "boards", "set": {"status": "paused"}, "disposition": "quarantined"},
+    {"name": "board timeframe unknown is quarantined", "collection": "boards", "set": {"timeframe": "quarterly"}, "disposition": "quarantined"},
+    {"name": "template centerSquareType chosen is kept", "collection": "recurringBoardTemplates", "set": {"centerSquareType": "chosen"}, "disposition": "applied", "expect": {"centerSquareType": "chosen"}},
+    {"name": "template centerSquareType unknown reads as free", "collection": "recurringBoardTemplates", "set": {"centerSquareType": "wild"}, "disposition": "applied", "expect": {"centerSquareType": "free"}},
+    {"name": "template centerSquareType retired custom_free reads as free", "collection": "recurringBoardTemplates", "set": {"centerSquareType": "custom_free"}, "disposition": "applied", "expect": {"centerSquareType": "free"}},
+    {"name": "template timeframe unknown is quarantined", "collection": "recurringBoardTemplates", "set": {"timeframe": "quarterly"}, "disposition": "quarantined"},
+    {"name": "core default size out of range reads as absent", "collection": "coreBoardDefaults", "set": {"defaultBoardSize": 6}, "disposition": "applied", "expect": {"defaultBoardSize": null}},
+    {"name": "core default size of the wrong type reads as absent", "collection": "coreBoardDefaults", "set": {"defaultBoardSize": "big"}, "disposition": "applied", "expect": {"defaultBoardSize": null}},
+    {"name": "core default size 4 is kept", "collection": "coreBoardDefaults", "set": {"defaultBoardSize": 4}, "disposition": "applied", "expect": {"defaultBoardSize": 4}},
+    {"name": "core default centre chosen (not a default type) reads as absent", "collection": "coreBoardDefaults", "set": {"defaultCenterType": "chosen"}, "disposition": "applied", "expect": {"defaultCenterType": null}},
+    {"name": "core default centre unknown reads as absent", "collection": "coreBoardDefaults", "set": {"defaultCenterType": "wild"}, "disposition": "applied", "expect": {"defaultCenterType": null}},
+    {"name": "core default centre none is kept", "collection": "coreBoardDefaults", "set": {"defaultCenterType": "none"}, "disposition": "applied", "expect": {"defaultCenterType": "none"}},
+    {"name": "core default timeframe unknown is quarantined", "collection": "coreBoardDefaults", "set": {"timeframe": "quarterly"}, "disposition": "quarantined"},
+    {"name": "task type unknown is quarantined", "collection": "tasks", "set": {"type": "habit"}, "disposition": "quarantined"},
+    {"name": "task operator unknown is quarantined", "collection": "tasks", "set": {"type": "compound", "operator": "XOR"}, "disposition": "quarantined"},
+    {"name": "task achievementTrigger unknown is quarantined", "collection": "tasks", "set": {"achievementTrigger": "weekly"}, "disposition": "quarantined"},
+    {"name": "task countKind unknown is quarantined", "collection": "tasks", "set": {"countKind": "fuzzy"}, "disposition": "quarantined"},
+    {"name": "task event kind unknown is quarantined", "collection": "taskEvents", "set": {"kind": "decrement"}, "disposition": "quarantined"},
+    {"name": "placement targetKind unknown reads as absent, the target is kept", "collection": "boardTasks", "set": {"targetKind": "quantum", "targetOverride": 5}, "disposition": "applied", "expect": {"targetKind": null, "targetOverride": 5}}
+  ]
+}

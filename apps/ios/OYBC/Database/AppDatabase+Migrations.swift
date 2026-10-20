@@ -221,6 +221,30 @@ extension AppDatabase {
         // v47: the placement sweep's first trigger — retired (TASK_WINDOW_REWORK
         // slice 5). No schema change; registered as a no-op to keep the version.
         migrator.registerMigration("v47") { _ in }
+
+        // v48: forward-compat quarantine ledger (issue #300, ROADMAP Track L4;
+        // docs/SYNC_STRATEGY.md §Forward-compatible pull). LOCAL-ONLY: never
+        // synced, not a sync collection. One row per pulled doc this build could
+        // not apply (an unknown enum value from a newer app version, a missing
+        // dependency of one, a schema-invalid doc) — the pull checkpoint moves
+        // past it, so this row is what lets a LATER build re-fetch exactly that
+        // doc by id (`AppDatabase+PullQuarantine.swift`). `appBuild` is the build
+        // that last failed to apply it; a different build retries it. Cleared by
+        // `wipeLocalDatabase`. Web twin: the Dexie `syncQuarantine` store (v22).
+        migrator.registerMigration("v48") { db in
+            try db.execute(sql: """
+                CREATE TABLE sync_quarantine (
+                    userId TEXT NOT NULL,
+                    collection TEXT NOT NULL,
+                    docId TEXT NOT NULL,
+                    reason TEXT NOT NULL,
+                    appBuild TEXT NOT NULL,
+                    quarantinedAt TEXT NOT NULL,
+                    subjectId TEXT, -- the entity the doc is ABOUT: an event's taskId, a placement's boardId, a link's parent
+                    PRIMARY KEY (userId, collection, docId)
+                )
+                """)
+        }
     }
 }
 

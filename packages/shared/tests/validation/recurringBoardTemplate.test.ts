@@ -94,12 +94,16 @@ describe('RecurringBoardTemplateSchema', () => {
     ).toThrow();
   });
 
-  it('rejects CenterSquareType.CHOSEN (MVP excludes it)', () => {
-    expect(() =>
-      RecurringBoardTemplateSchema.parse(
-        validTemplate({ centerSquareType: CenterSquareType.CHOSEN }),
-      ),
-    ).toThrow();
+  it('keeps a stored CenterSquareType.CHOSEN and reads an unknown / retired value as FREE (iOS parity on a pulled row)', () => {
+    expect(
+      RecurringBoardTemplateSchema.parse(validTemplate({ centerSquareType: CenterSquareType.CHOSEN })).centerSquareType,
+    ).toBe(CenterSquareType.CHOSEN);
+    for (const unknown of ['wild', 'custom_free']) {
+      expect(
+        RecurringBoardTemplateSchema.parse(validTemplate({ centerSquareType: unknown })).centerSquareType,
+      ).toBe(CenterSquareType.FREE);
+    }
+    expect(() => RecurringBoardTemplateSchema.parse(validTemplate({ centerSquareType: 3 }))).toThrow();
   });
 
   it('accepts CenterSquareType.FREE / NONE', () => {
@@ -202,6 +206,14 @@ describe('RecurringBoardTemplateSchema', () => {
 // ─── CreateRecurringBoardTemplateInputSchema ──────────────────────────────────
 
 describe('CreateRecurringBoardTemplateInputSchema', () => {
+  it('still rejects CenterSquareType.CHOSEN and unknown values (user input is strict; only a PULLED row is lenient)', () => {
+    for (const bad of [CenterSquareType.CHOSEN, 'wild']) {
+      expect(() =>
+        CreateRecurringBoardTemplateInputSchema.parse(validCreateInput({ centerSquareType: bad })),
+      ).toThrow();
+    }
+  });
+
   it('accepts a valid input', () => {
     expect(() =>
       CreateRecurringBoardTemplateInputSchema.parse(validCreateInput()),

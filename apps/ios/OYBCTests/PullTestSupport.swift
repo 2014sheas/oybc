@@ -59,6 +59,47 @@ final class FakePullSource: PullDocumentSource, @unchecked Sendable {
         }
     }
 
+    /// Every `fetchDocument` call, in order: `collection/id`.
+    var documentFetches: [String] { lock.withLock { _documentFetches } }
+    private var _documentFetches: [String] = []
+
+    /// Makes every `fetchDocument` throw (a transport failure).
+    var failDocumentFetch = false
+    /// Makes `fetchDocument` throw for this collection only.
+    var failDocumentFetchCollection: String?
+    /// Sleep inside every `fetchDocument` (ns) — lets a test observe concurrency.
+    var documentFetchDelay: UInt64 = 0
+    /// Runs inside every `fetchDocument`, after the read (a mid-pass sign-out).
+    var onFetchDocument: (@Sendable () -> Void)?
+    private var _inFlight = 0
+    private var _peakInFlight = 0
+    /// The most `fetchDocument` calls ever in flight at once.
+    var peakInFlightDocumentFetches: Int { lock.withLock { _peakInFlight } }
+
+    func fetchDocument(userId: String, collection: String, id: String) async throws -> [String: Any]? {
+        lock.withLock {
+            _inFlight += 1
+            _peakInFlight = max(_peakInFlight, _inFlight)
+        }
+        defer { lock.withLock { _inFlight -= 1 } }
+        if documentFetchDelay > 0 { try await _Concurrency.Task.sleep(nanoseconds: documentFetchDelay) }
+        let doc: [String: Any]? = try lock.withLock {
+            if failDocumentFetch || failDocumentFetchCollection == collection { throw URLError(.notConnectedToInternet) }
+            _documentFetches.append("\(collection)/\(id)")
+            return docsByCollection[collection]?.first { ($0["id"] as? String) == id }
+        }
+        onFetchDocument?()
+        return doc
+    }
+
+    /// Replaces the doc with `doc["id"]` in `collection` (a remote edit).
+    func replace(_ doc: [String: Any], in collection: String) {
+        lock.withLock {
+            docsByCollection[collection, default: []].removeAll { ($0["id"] as? String) == (doc["id"] as? String) }
+            docsByCollection[collection, default: []].append(doc)
+        }
+    }
+
     func listenUserDoc(userId: String, onChange: @escaping ([String: Any]) -> Void) -> PullListener {
         lock.withLock { _events.append("listen:users") }
         return PullListener {}

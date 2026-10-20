@@ -21,6 +21,7 @@ import { runBoardCascadeForTask, runBoardCascadeForTasks, runBoardCascadeForBoar
 import { reDeriveSealedBoardsByIds } from './sealing';
 import { addToSyncQueue, stampTransactionSyncOwner } from './syncQueue';
 import { refreshWatchersForBoards } from './boardLifecycle';
+import { LOSSY_REASON_PREFIX, quarantinePulledDoc, releaseQuarantinedDocs } from './syncQuarantine';
 
 /**
  * Apply a remote document from a syncable subcollection to the local Dexie
@@ -39,7 +40,10 @@ import { refreshWatchersForBoards } from './boardLifecycle';
  * touching Dexie. A failed parse (missing fields, wrong types, version < 1,
  * userId mismatch for user-scoped collections) logs a `Skipped` status and
  * returns without writing — corrupted remote data must never reach the
- * local source-of-truth DB.
+ * local source-of-truth DB. A schema failure (an unknown enum value from a
+ * newer app version included) also QUARANTINES the doc in the local ledger
+ * (`syncQuarantine.ts`): the pull checkpoint moves past it, so a later build
+ * re-fetches it by id instead of losing it (issue #300).
  *
  * @param collectionName The Firestore subcollection being pulled.
  * @param remoteData The raw document data from Firestore (untrusted).
@@ -69,6 +73,55 @@ export function rowsGenuinelyDiffer(local: SyncableEntity, remote: SyncableEntit
   return local.version !== remote.version || local.updatedAt !== remote.updatedAt;
 }
 
+/**
+ * The stored-row fields a pull reads TOLERANTLY (the schema coerces an unknown
+ * value instead of rejecting the doc — the iOS-parity posture of
+ * `docs/SYNC_STRATEGY.md` §Forward-compatible pull).
+ */
+const TOLERANT_FIELDS: Partial<Record<SyncCollection, readonly string[]>> = {
+  boards: ['centerSquareType'],
+  recurringBoardTemplates: ['centerSquareType'],
+  coreBoardDefaults: ['defaultBoardSize', 'defaultCenterType'],
+};
+
+/**
+ * Why a doc that parsed was read LOSSILY: a tolerant field held a value the
+ * schema coerced away (`wild` → `free`, size `6` → absent). A newer build may
+ * understand that value, so the applied row is ledgered (`LOSSY_REASON_PREFIX`)
+ * for a later build to re-read. Absent / null values and the retired
+ * `custom_free` are not "a value from the future" and are not flagged.
+ *
+ * @param collection - The pulled subcollection.
+ * @param raw - The raw remote doc.
+ * @param parsed - Its schema-parsed form.
+ * @returns The lossy reason, or null when nothing was coerced.
+ */
+function lossyReason(collection: SyncCollection, raw: unknown, parsed: unknown): string | null {
+  const lost = (TOLERANT_FIELDS[collection] ?? []).filter((field) => {
+    const was = (raw as Record<string, unknown>)[field];
+    if (was === undefined || was === null || was === 'custom_free') return false;
+    return (parsed as Record<string, unknown>)[field] !== was;
+  });
+  return lost.length === 0
+    ? null
+    : `${LOSSY_REASON_PREFIX}${lost.map((f) => `${f}=${JSON.stringify((raw as Record<string, unknown>)[f])}`).join(', ')} read tolerantly`;
+}
+
+/**
+ * Brings the ledger in line with an APPLIED / identical doc: a lossy read
+ * (re-)ledgers it for a later build; a strict one releases any row.
+ *
+ * @param userId - The signed-in uid.
+ * @param collection - The pulled subcollection.
+ * @param raw - The raw remote doc.
+ * @param id - The doc id.
+ * @param lossy - `lossyReason`'s result.
+ */
+async function settleLedger(userId: string, collection: SyncCollection, raw: unknown, id: string, lossy: string | null): Promise<void> {
+  if (lossy) await quarantinePulledDoc(userId, collection, raw, lossy);
+  else await releaseQuarantinedDocs(userId, collection, [id]);
+}
+
 export async function applyRemoteSubdoc(
   collectionName: SyncCollection,
   remoteData: unknown,
@@ -84,10 +137,12 @@ export async function applyRemoteSubdoc(
       typeof (remoteData as { id?: unknown })?.id === 'string'
         ? (remoteData as { id: string }).id
         : '?';
-    return `Skipped malformed ${collectionName}/${id}: ${reason}`;
+    const ledgered = await quarantinePulledDoc(authenticatedUserId, collectionName, remoteData, reason);
+    return `Skipped malformed ${collectionName}/${id}: ${reason}${ledgered ? ' (quarantined)' : ''}`;
   }
 
   const validated = parsed.data as SyncableEntity;
+  const lossy = lossyReason(collectionName, remoteData, validated);
 
   // Guard against a peer writing a document with a spoofed `userId`
   // into its own path — reject anything that doesn't match the
@@ -117,9 +172,13 @@ export async function applyRemoteSubdoc(
     }
     const parentTask = await db.tasks.get(compoundTaskId);
     if (!parentTask) {
-      // No local parent — could be a legitimate cross-device race. Defer:
-      // skip this pull cycle, the safety net will retry. Don't accept blind.
-      return `Skipped compoundChildren/${validated.id}: parent compound not yet present locally`;
+      // No local parent — a cross-device race, or the parent was itself
+      // quarantined (a newer app version's compound). Ledger it: the pull
+      // checkpoint moves past this child, so the ledger is what re-fetches it
+      // once the parent can be applied. Don't accept blind.
+      const reason = 'parent compound not yet present locally';
+      await quarantinePulledDoc(authenticatedUserId, collectionName, validated, reason);
+      return `Skipped compoundChildren/${validated.id}: ${reason}`;
     }
     if (parentTask.userId !== authenticatedUserId) {
       return `Skipped compoundChildren/${validated.id}: parent userId mismatch`;
@@ -137,7 +196,15 @@ export async function applyRemoteSubdoc(
   // re-push every containing board on every cycle. Nothing changed: skip the
   // put and the cascade. LWW itself is untouched — a genuinely different row
   // still resolves through `resolveConflict` below.
-  if (localData && !rowsGenuinelyDiffer(localData, validated)) {
+  // Exception: a doc ledgered as LOSSY whose strict parse now succeeds (a newer
+  // build understands the value) has a stored row that still holds the coerced
+  // fallback — re-apply it even though version + updatedAt match.
+  const identical = !!localData && !rowsGenuinelyDiffer(localData, validated);
+  const wasLossy =
+    identical && !lossy &&
+    (await db.syncQuarantine.get([authenticatedUserId, collectionName, validated.id]))?.reason.startsWith(LOSSY_REASON_PREFIX) === true;
+  if (identical && !wasLossy) {
+    await settleLedger(authenticatedUserId, collectionName, remoteData, validated.id, lossy);
     return `Unchanged ${collectionName}/${validated.id} (identical to local)`;
   }
 
@@ -179,6 +246,7 @@ export async function applyRemoteSubdoc(
         }
       });
     }
+    await releaseQuarantinedDocs(authenticatedUserId, collectionName, [validated.id]);
     return null; // local-wins → re-enqueued (if it differs) so it re-asserts
   }
 
@@ -299,11 +367,46 @@ export async function applyRemoteSubdoc(
     },
   );
 
+  await settleLedger(authenticatedUserId, collectionName, remoteData, validated.id, lossy);
   recordSyncEvent('pulled');
   if (isNew) {
     return `Pulled ${collectionName}/${validated.id} (new)`;
   }
   return `Pulled ${collectionName}/${validated.id} (remote v${validated.version} > local v${(localData as SyncableEntity).version})`;
+}
+
+/**
+ * Push-path remote-wins write-back: stores the remote doc that beat a queued
+ * local write, but only if THIS build can decode it — the same schema gate the
+ * pull applies. An undecodable winner (a newer app version's value) is
+ * quarantined instead of landing raw in Dexie, where every typed reader would
+ * trip on it (issue #300). The validated (key-stripped) row is stored, exactly
+ * as the pull stores it. iOS twin: `upsertRemoteWinner` in `SyncService.swift`.
+ *
+ * @param entityType - The doc's collection, or `'users'` for the parent doc
+ *   (stored as-is; its preferences are tolerant by construction).
+ * @param remoteData - The remote doc (untrusted).
+ * @param userId - The signed-in uid.
+ * @returns True when the row was stored; false when it was quarantined.
+ */
+export async function putRemoteWinner(
+  entityType: SyncCollection | 'users',
+  remoteData: SyncableEntity,
+  userId: string,
+): Promise<boolean> {
+  if (entityType === 'users') {
+    await db.table('users').put(remoteData);
+    return true;
+  }
+  const parsed = COLLECTION_SCHEMAS[entityType].safeParse(remoteData);
+  if (!parsed.success) {
+    const reason = parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join(', ');
+    await quarantinePulledDoc(userId, entityType, remoteData, reason);
+    return false;
+  }
+  await db.table(entityType).put(parsed.data);
+  await settleLedger(userId, entityType, remoteData, remoteData.id, lossyReason(entityType, remoteData, parsed.data));
+  return true;
 }
 
 /**

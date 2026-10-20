@@ -21,10 +21,10 @@ import GRDB
 ///   1. Remote-wins LWW → upsert lands AND the pull cascade recomputes board
 ///      stats, atomically (a `pulled` event fires, board version bumps).
 ///   2. Local-wins LWW → upsert skipped, no cascade, no pull event.
-///   3. Cascade failure rolls back the upsert — a remote `tasks` doc with a
-///      forward-incompatible `type` passes validation, upserts as a raw row,
-///      then `runPullCascade`'s `Task.fetchAll` decode throws → the whole
-///      transaction rolls back → the row never persists.
+///   3. A remote `tasks` doc with a forward-incompatible `type` passes
+///      validation, but the typed probe cannot decode it → the upsert is rolled
+///      back (the row never persists), the doc is ledgered in `sync_quarantine`
+///      and the pull carries on (issue #300; see `SyncForwardCompatTests`).
 ///   4. Additive-merge is RETIRED (Windowed Completion): even a shared-counter
 ///      source with divergent local+remote counts falls through to plain LWW —
 ///      no merge, no version bump, `lastSyncedCount` left untouched.
@@ -181,18 +181,16 @@ final class SyncPullApplyTests: XCTestCase {
         XCTAssertEqual(sut.totalPulled, 0)
     }
 
-    // MARK: - 3. Cascade failure rolls back the upsert
+    // MARK: - 3. An undecodable doc never persists, and is ledgered
 
     /// Poison vector: a NEW `tasks` doc whose `type` is a value the local
     /// `TaskType` enum can't decode. It passes `validateRemotePullDocument`
     /// (valid UUID id, version ≥ 1, matching userId — validation never checks
-    /// `type`), so `upsertLocalRecord` writes the raw row. Then
-    /// `runPullCascade` calls `Task.fetchAll(db)`, which re-decodes every row
-    /// including the poisoned one and throws — inside the same transaction as
-    /// the upsert. The contract under test: the upsert is rolled back, so the
+    /// `type`). The contract under test: the upsert is rolled back, so the
     /// row never persists (a partial write would leave an undecodeable task
-    /// wedged in the table forever, with no safety net).
-    func test_cascadeFailure_rollsBackUpsert() throws {
+    /// wedged in the table), and the doc is ledgered for a later build to
+    /// re-fetch instead of failing the pull.
+    func test_undecodableDoc_neverPersists_andIsLedgered() throws {
         let db = try makeDb()
         try seedUser(db)
         let tid = newId()
@@ -206,11 +204,12 @@ final class SyncPullApplyTests: XCTestCase {
         ]
         sut.applyRemoteSubdoc(collection: taskCol, remoteData: poison, authenticatedUserId: userId)
 
-        // Transaction rolled back — the poisoned row must not exist (raw count,
-        // to avoid re-triggering the decode failure via the Codable fetch).
+        // The poisoned row must not exist (raw count, to avoid re-triggering the
+        // decode failure via the Codable fetch)…
         XCTAssertEqual(try rawTaskCount(db, id: tid), 0)
-        // No pull event was recorded (the apply threw before recordEvent).
+        // …no pull event was recorded, and the doc is in the quarantine ledger.
         XCTAssertEqual(sut.totalPulled, 0)
+        XCTAssertEqual(try db.read { try AppDatabase.fetchQuarantinedDocs(db: $0, userId: self.userId) }.map(\.docId), [tid])
     }
 
     // MARK: - 4. Additive-merge is NEUTERED (Windowed Completion, docs §Shared

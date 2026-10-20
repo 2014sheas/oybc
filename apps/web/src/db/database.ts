@@ -33,6 +33,8 @@ export class AppDatabase extends Dexie {
   coreBoardDefaults!: Table<CoreBoardDefault, string>;
   /** Local-only per-collection pull checkpoints (v19) — never synced. */
   syncWatermarks!: Table<SyncWatermark, [string, string]>;
+  /** Local-only forward-compat quarantine ledger (v22) — never synced. */
+  syncQuarantine!: Table<SyncQuarantineRow, [string, string, string]>;
 
   constructor() {
     super('oybc');
@@ -455,6 +457,16 @@ export class AppDatabase extends Dexie {
       // Dynamic import avoids a top-of-file cycle (migrationV21 imports `db`).
       return import('./operations/migrationV21').then((mod) => mod.runMigrationV21(tx));
     });
+
+    // v22: forward-compat quarantine ledger (issue #300; iOS GRDB v48
+    // `sync_quarantine`). LOCAL-ONLY: never synced, not a sync collection. One
+    // row per pulled doc this build could not apply (a value from a newer app
+    // version, or a schema-invalid doc), so a later build can re-fetch exactly
+    // those docs — the pull checkpoint has already moved past them. Cleared by
+    // the generic `db.tables` wipe. See `operations/syncQuarantine.ts`.
+    this.version(22).stores({
+      syncQuarantine: '[userId+collection+docId], userId',
+    });
   }
 }
 
@@ -469,6 +481,31 @@ export interface SyncWatermark {
   collection: string;
   seconds: number;
   nanoseconds: number;
+}
+
+/**
+ * A quarantined pulled doc (v22): this build could not apply it, so the pull
+ * skipped it and a later build re-fetches it by id. See
+ * `operations/syncQuarantine.ts`.
+ */
+export interface SyncQuarantineRow {
+  userId: string;
+  /** The Firestore subcollection (a `SYNC_COLLECTIONS` name). */
+  collection: string;
+  /** The doc's entity id. */
+  docId: string;
+  /** Why it was skipped (a validation message; never contains a uid). */
+  reason: string;
+  /** The build (`currentAppBuild()`) that last failed to apply it. */
+  appBuild: string;
+  /**
+   * The entity this doc is ABOUT, for scoped reactions (docs/SYNC_STRATEGY.md
+   * §Forward-compatible pull): an event's `taskId`, a placement's `boardId`, a
+   * compound link's parent `compoundTaskId`; absent for other collections.
+   */
+  subjectId?: string;
+  /** ISO8601 — when it was first quarantined. */
+  quarantinedAt: string;
 }
 
 // Export types for convenience

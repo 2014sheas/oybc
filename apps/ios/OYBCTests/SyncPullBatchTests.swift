@@ -167,20 +167,25 @@ final class SyncPullBatchTests: XCTestCase {
 
     func test_throwMidBatch_rollsBackTheWholeBatchAndItsCheckpoint() async throws {
         let db = try makeDb()
-        var docs = PullFixture(boards: 1).docs["tasks"]!
-        // Passes validation, upserts raw, then the cascade's decode throws.
+        let fixture = PullFixture(boards: 1)
+        _ = try await db.applyPullBatch(collection: boardsCol, docs: PullDocs(docs: fixture.docs["boards"]!), userId: userId, checkpoint: true)
+        _ = try await db.applyPullBatch(collection: tasksCol, docs: PullDocs(docs: fixture.docs["tasks"]!), userId: userId, checkpoint: true)
+        var docs = fixture.docs["boardTasks"]!
+        // A REAL error (not a decode failure — those are quarantined, see
+        // SyncForwardCompatTests): a placement of a task that is neither local
+        // nor quarantined trips the foreign key mid-batch.
         var poison = docs[0]
         poison["id"] = PullFixture.uuid(9, 1)
-        poison["type"] = "not_a_real_type"
+        poison["taskId"] = PullFixture.uuid(2, 999)
         docs.append(poison)
 
         do {
-            _ = try await db.applyPullBatch(collection: tasksCol, docs: PullDocs(docs: docs), userId: userId, checkpoint: true)
+            _ = try await db.applyPullBatch(collection: boardTasksCol, docs: PullDocs(docs: docs), userId: userId, checkpoint: true)
             XCTFail("the poisoned batch should throw")
         } catch {}
 
-        XCTAssertEqual(try count(db, "tasks"), 0, "good docs in the same batch must roll back too")
-        XCTAssertTrue(try watermarks(db).isEmpty, "the checkpoint must roll back with the batch")
+        XCTAssertEqual(try count(db, "board_tasks"), 0, "good docs in the same batch must roll back too")
+        XCTAssertNil(try watermarks(db)["boardTasks"], "the checkpoint must roll back with the batch")
     }
 
     func test_checkpointNeverMovesBackwards() async throws {

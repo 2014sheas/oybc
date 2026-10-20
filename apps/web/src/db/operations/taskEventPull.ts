@@ -16,6 +16,7 @@ import { reDeriveSealedBoardsForTasks } from './sealing';
 import { refreshWatchersForBoards, resolveAffectedBoardIds } from './boardLifecycle';
 import { recordSyncEvent } from '../../firebase/syncStatus';
 import { rowsGenuinelyDiffer } from './pullApply';
+import { hasUnscopedQuarantinedDocs, quarantinedSubjectIds, quarantinePulledDoc, releaseQuarantinedDocs } from './syncQuarantine';
 
 /**
  * Batched pull-path handler for the `taskEvents` collection
@@ -41,6 +42,10 @@ import { rowsGenuinelyDiffer } from './pullApply';
  * `recordSyncEvent` is imported from `firebase/syncStatus`, which is itself
  * import-free (no firebase SDK touch) despite living under `firebase/`.
  *
+ * A row that fails the schema (a future event `kind` included) is skipped and
+ * ledgered in the quarantine (`syncQuarantine.ts`) for a later build to
+ * re-fetch; the rest of the batch applies.
+ *
  * @param userId   The authenticated user's uid (for the userId scope check).
  * @param rawDocs  The untrusted raw event documents from Firestore.
  * @returns Pulled-row count + per-row skip/status details.
@@ -59,7 +64,8 @@ export async function applyTaskEventsBatch(
       const reason = parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join(', ');
       const id =
         typeof (raw as { id?: unknown })?.id === 'string' ? (raw as { id: string }).id : '?';
-      details.push(`Skipped malformed taskEvents/${id}: ${reason}`);
+      const ledgered = await quarantinePulledDoc(userId, 'taskEvents', raw, reason);
+      details.push(`Skipped malformed taskEvents/${id}: ${reason}${ledgered ? ' (quarantined)' : ''}`);
       continue;
     }
     const ev = parsed.data as TaskEvent;
@@ -132,6 +138,7 @@ export async function applyTaskEventsBatch(
     },
   );
 
+  await releaseQuarantinedDocs(userId, 'taskEvents', valid.map((ev) => ev.id));
   for (let i = 0; i < pulled; i += 1) recordSyncEvent('pulled');
   return { pulled, details };
 }
@@ -161,11 +168,23 @@ export async function applyTaskEventsBatch(
  * Carve-outs (derived counters / compound / achievement) return `null` from
  * `buildBackfillTaskEvent` and are skipped — they don't own events.
  *
+ * Skips a task that has a quarantined `taskEvents` doc (see `syncQuarantine.ts`):
+ * an unreadable event may be its missing completion (every task, while one such
+ * doc names no task).
+ *
  * @param userId The authenticated user's uid (scope guard, mirrors the batch).
  * @returns The number of completion/increment events minted this pass.
  */
 export async function healMissingCompletionEvents(userId: string): Promise<number> {
   let minted = 0;
+
+  // An event this build could not read (a newer app version's kind) may be the
+  // very completion its task looks "missing" — never mint over THAT task's
+  // events (issue #300). Every other task still heals; the rest resume once the
+  // ledger row clears. An unreadable event that named no task could belong to any
+  // task, so then none heals.
+  if (await hasUnscopedQuarantinedDocs(userId, 'taskEvents')) return 0;
+  const unreadableEventTasks = await quarantinedSubjectIds(userId, 'taskEvents');
 
   // Everything — the candidate scan AND the writes — runs in ONE transaction so
   // the whole sweep is atomic against concurrent local writes (matches the iOS
@@ -186,6 +205,7 @@ export async function healMissingCompletionEvents(userId: string): Promise<numbe
         if (task.userId !== userId) continue;
         if (task.isDeleted || !isEventOwningTask(task)) continue;
         if (hasLiveEvent.has(task.id)) continue; // live events → they're authoritative
+        if (unreadableEventTasks.has(task.id)) continue; // an unreadable event may be the completion
         const complete = task.isCompleted === true || (task.currentCount ?? 0) > 0;
         if (!complete) continue;
         const ev = buildBackfillTaskEvent(task); // null for carve-outs / genuinely-incomplete
