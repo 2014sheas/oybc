@@ -149,7 +149,7 @@ final class ShareBoardSheetSnapshotTests: XCTestCase {
     }
 
     private func sheetHost(_ s: (BoardShareContent, [PosterCell])) -> some View {
-        ShareBoardSheet(content: s.0, cells: s.1, boardId: "board-abc-123-def")
+        ShareBoardSheet(content: s.0, cells: s.1)
             .frame(maxWidth: .infinity)
             .background(Color.risoPaper)
     }

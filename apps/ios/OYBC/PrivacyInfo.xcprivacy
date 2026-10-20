@@ -1,0 +1,132 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- OYBC's own privacy manifest. GRDB, Firebase and GoogleSignIn ship their
+	     own manifests; this one declares only what the app's own sources do.
+	     Keep it in step with the sources: a new required-reason API or a new
+	     piece of user data sent off-device must be added here (and to the App
+	     Store Connect nutrition label). See CLAUDE.md, Privacy manifest. -->
+
+	<!-- No cross-app/site tracking and no analytics SDK (FirebaseAnalytics /
+	     GoogleAppMeasurement) in 1.0; Crashlytics is the only diagnostics SDK. -->
+	<key>NSPrivacyTracking</key>
+	<false/>
+	<key>NSPrivacyTrackingDomains</key>
+	<array/>
+
+	<!-- Required-reason APIs used by OYBC's own Swift sources (apps/ios/OYBC).
+	     UserDefaults.standard only, never an app-group suite:
+	       - Views/OnboardingView.swift  (UserDefaults.hasSeenOnboarding)
+	       - Views/ContentView.swift, Views/ProfileTab/SettingsView.swift
+	       - Services/TutorialProgressStore.swift
+	       - Services/CounterArrivalStore.swift
+	       - Services/AuthService.swift  (clearLocalUserDefaults, legacy
+	         weekStartDay migration)
+	     CA92.1 = read/write info only the app itself can access.
+	     No file-timestamp, system-boot-time, disk-space or active-keyboard API
+	     is called from the app's own sources. -->
+	<key>NSPrivacyAccessedAPITypes</key>
+	<array>
+		<dict>
+			<key>NSPrivacyAccessedAPIType</key>
+			<string>NSPrivacyAccessedAPICategoryUserDefaults</string>
+			<key>NSPrivacyAccessedAPITypeReasons</key>
+			<array>
+				<string>CA92.1</string>
+			</array>
+		</dict>
+	</array>
+
+	<!-- Data sent off-device for the app's own functionality: Firebase Auth
+	     (email, uid, display name) and the Firestore sync of the user's boards,
+	     tasks, events and preferences. All linked to the user, none used for
+	     tracking, purpose App Functionality.
+
+	     Crash reporting (Firebase Crashlytics, release builds only — see
+	     Services/CrashReporting.swift): crash data and other diagnostic data,
+	     NOT linked to the user (the app never calls Crashlytics.setUserID or
+	     attaches custom keys, logs or user content to a report), not used for
+	     tracking, purpose App Functionality. Both entries mirror the manifest
+	     bundled with the Crashlytics SDK. FirebaseInstallations and
+	     GoogleDataTransport (pulled in by Crashlytics / Sessions) additionally
+	     declare OtherDiagnosticData for the Analytics purpose in their own
+	     manifests; Xcode's aggregated privacy report shows that, and the App
+	     Store Connect nutrition label must agree with the report. -->
+	<key>NSPrivacyCollectedDataTypes</key>
+	<array>
+		<dict>
+			<key>NSPrivacyCollectedDataType</key>
+			<string>NSPrivacyCollectedDataTypeEmailAddress</string>
+			<key>NSPrivacyCollectedDataTypeLinked</key>
+			<true/>
+			<key>NSPrivacyCollectedDataTypeTracking</key>
+			<false/>
+			<key>NSPrivacyCollectedDataTypePurposes</key>
+			<array>
+				<string>NSPrivacyCollectedDataTypePurposeAppFunctionality</string>
+			</array>
+		</dict>
+		<dict>
+			<key>NSPrivacyCollectedDataType</key>
+			<string>NSPrivacyCollectedDataTypeName</string>
+			<key>NSPrivacyCollectedDataTypeLinked</key>
+			<true/>
+			<key>NSPrivacyCollectedDataTypeTracking</key>
+			<false/>
+			<key>NSPrivacyCollectedDataTypePurposes</key>
+			<array>
+				<string>NSPrivacyCollectedDataTypePurposeAppFunctionality</string>
+			</array>
+		</dict>
+		<dict>
+			<key>NSPrivacyCollectedDataType</key>
+			<string>NSPrivacyCollectedDataTypeUserID</string>
+			<key>NSPrivacyCollectedDataTypeLinked</key>
+			<true/>
+			<key>NSPrivacyCollectedDataTypeTracking</key>
+			<false/>
+			<key>NSPrivacyCollectedDataTypePurposes</key>
+			<array>
+				<string>NSPrivacyCollectedDataTypePurposeAppFunctionality</string>
+			</array>
+		</dict>
+		<dict>
+			<key>NSPrivacyCollectedDataType</key>
+			<string>NSPrivacyCollectedDataTypeOtherUserContent</string>
+			<key>NSPrivacyCollectedDataTypeLinked</key>
+			<true/>
+			<key>NSPrivacyCollectedDataTypeTracking</key>
+			<false/>
+			<key>NSPrivacyCollectedDataTypePurposes</key>
+			<array>
+				<string>NSPrivacyCollectedDataTypePurposeAppFunctionality</string>
+			</array>
+		</dict>
+		<dict>
+			<key>NSPrivacyCollectedDataType</key>
+			<string>NSPrivacyCollectedDataTypeCrashData</string>
+			<key>NSPrivacyCollectedDataTypeLinked</key>
+			<false/>
+			<key>NSPrivacyCollectedDataTypeTracking</key>
+			<false/>
+			<key>NSPrivacyCollectedDataTypePurposes</key>
+			<array>
+				<string>NSPrivacyCollectedDataTypePurposeAppFunctionality</string>
+			</array>
+		</dict>
+		<dict>
+			<key>NSPrivacyCollectedDataType</key>
+			<string>NSPrivacyCollectedDataTypeOtherDiagnosticData</string>
+			<key>NSPrivacyCollectedDataTypeLinked</key>
+			<false/>
+			<key>NSPrivacyCollectedDataTypeTracking</key>
+			<false/>
+			<key>NSPrivacyCollectedDataTypePurposes</key>
+			<array>
+				<string>NSPrivacyCollectedDataTypePurposeAppFunctionality</string>
+			</array>
+		</dict>
+	</array>
+</dict>
+</plist>

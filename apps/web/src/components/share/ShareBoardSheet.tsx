@@ -39,9 +39,9 @@ export interface ShareBoardSheetProps {
  * `document.styleSheets` (Bricolage Grotesque / Archivo from Google Fonts);
  * cannot be verified headlessly - mark for human browser QA.
  *
- * Deliberate divergences from iOS `ShareBoardSheet`: no "Copy link" row (boards
- * have no shareable URL on web) and no per-app targets (the Web Share API's
- * native sheet handles destinations).
+ * Deliberate divergence from iOS `ShareBoardSheet`: no per-app targets (the
+ * Web Share API's native sheet handles destinations). Neither platform has a
+ * "Copy link" row (boards have no shareable URL).
  *
  * Accessibility: `role="dialog"` + `useModalA11y` (aria-modal, Escape-to-close,
  * initial focus, Tab trap, focus restore).
